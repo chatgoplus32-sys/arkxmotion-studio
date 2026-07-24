@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Test Providers Page</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+    * { border-color: #2a2a2a; }
+    body { 
+      background-color: #0a0a0a; 
+      color: #f5f5f5; 
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="module">
+    import { createRoot } from 'https://esm.run/react-dom/client';
+    import { BrowserRouter as Router, Routes, Route } from 'https://esm.run/react-router-dom';
+    import React, { useState } from 'https://esm.run/react';
+
+    // Simple mock of the Zustand provider store
+    const providerStore = {
+      keys: {
+        weavy: [],
+        wavespeed: [],
+        magnific: [],
+        roboneo: [],
+        createpulse: [],
+        elevenlabs: [],
+        gemini: [],
+        openai: []
+      },
+      activeProvider: 'weavy',
+      routing: {
+        motion: 'weavy',
+        'narrative-video': 'weavy',
+        storyboard: 'weavy',
+        'bulk-fashion': 'weavy',
+        'image-to-video': 'weavy'
+      }
+    };
+
+    const cn = (...classes) => classes.filter(Boolean).join(' ');
+
+    const Button = ({ className, size = 'sm', variant = 'default', children, ...props }) => {
+      const base = 'inline-flex items-center justify-center rounded-xl font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50';
+      const sizes = { sm: 'h-9 px-3 text-sm' };
+      const variants = {
+        default: 'bg-primary text-primary-foreground hover:bg-primary/90',
+        outline: 'border border-input bg-background hover:bg-accent hover:text-accent-foreground'
+      };
+
+      const style = {
+        backgroundColor: variant === 'default' ? '#d4a017' : 'transparent',
+        color: variant === 'default' ? '#0a0a0a' : '#f5f5f5',
+        border: variant === 'outline' ? '1px solid #2a2a2a' : 'none'
+      };
+
+      return (
+        <button
+          className={cn(base, sizes[size], className)}
+          style={style}
+          {...props}
+        >
+          {children}
+        </button>
+      );
+    };
+
+    const Input = ({ className, placeholder, value, onChange, ...props }) => {
+      return (
+        <input
+          className={cn('flex h-10 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50', className)}
+          type="text"
+          placeholder={placeholder}
+          value={value}
+          onChange={onChange}
+          {...props}
+        />
+      );
+    };
+
+    const Label = ({ className, children, ...props }) => {
+      return (
+        <label
+          className={cn('text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70', className)}
+          {...props}
+        >
+          {children}
+        </label>
+      );
+    };
+
+    const Badge = ({ className, variant = 'default', children, ...props }) => {
+      const variants = {
+        default: 'bg-primary/10 text-primary',
+        success: 'bg-emerald-500/10 text-emerald-600',
+        warning: 'bg-amber-500/10 text-amber-600',
+        outline: 'border border-border',
+        destructive: 'bg-destructive/10 text-destructive'
+      };
+
+      return (
+        <span
+          className={cn('inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors', variants[variant], className)}
+          {...props}
+        >
+          {children}
+        </span>
+      );
+    };
+
+    const Section = ({ title, sub, right, children, className }) => {
+      return (
+        <div className={cn('rounded-2xl border border-border bg-card/50 p-5', className)}>
+          {(title || right) && (
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div>
+                {title && <h3 className="font-display text-base font-semibold">{title}</h3>}
+                {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
+              </div>
+              {right && <div className="shrink-0">{right}</div>}
+            </div>
+          )}
+          {children}
+        </div>
+      );
+    };
+
+    const PageHeader = ({ title, highlight, eyebrow, desc }) => {
+      return (
+        <div className="mb-6">
+          {eyebrow && (
+            <div className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">
+              {eyebrow}
+            </div>
+          )}
+          <h1 className="text-2xl md:text-3xl font-display font-bold">
+            {title}
+            {highlight && <span className="text-primary ml-2">{highlight}</span>}
+          </h1>
+          {desc && <p className="text-sm text-muted-foreground mt-1.5 max-w-2xl">{desc}</p>}
+        </div>
+      );
+    };
+
+    const PageContent = ({ children }) => {
+      return <div className="space-y-5">{children}</div>;
+    };
+
+    function ProvidersPage() {
+      const [showKeys, setShowKeys] = useState({});
+      const [newKeys, setNewKeys] = useState({
+        weavy: '',
+        wavespeed: '',
+        magnific: '',
+        roboneo: '',
+        createpulse: '',
+        elevenlabs: '',
+        gemini: '',
+        openai: ''
+      });
+      const [validating, setValidating] = useState({});
+
+      const totalKeys = Object.values(providerStore.keys).reduce((sum, k) => sum + k.length, 0);
+      const activeKeys = Object.values(providerStore.keys).reduce(
+        (sum, k) => sum + k.filter(key => key.status === 'active').length,
+        0
+      );
+
+      const getStatusBadge = (status) => {
+        switch (status) {
+          case 'active':
+            return <Badge variant="success">✅ Active</Badge>;
+          case 'expired':
+            return <Badge variant="warning">⚠️ Expired</Badge>;
+          case 'invalid':
+            return <Badge variant="destructive">❌ Invalid</Badge>;
+          case 'empty':
+            return <Badge variant="warning">⚠️ Empty</Badge>;
+          default:
+            return <Badge variant="outline">❓ Unknown</Badge>;
+        }
+      };
+
+      const handleAddKey = (provider) => {
+        const key = newKeys[provider].trim();
+        if (!key) return;
+
+        const newKey = {
+          id: 'test-id-' + Date.now(),
+          key: key,
+          name: `Test Key ${provider}`,
+          status: 'unknown'
+        };
+
+        providerStore.keys[provider] = [...(providerStore.keys[provider] || []), newKey];
+        setNewKeys({ ...newKeys, [provider]: '' });
+        console.log(`✅ Added key for ${provider}: ${key}`);
+      };
+
+      const handleValidateKey = async (provider, keyId) => {
+        setValidating({ ...validating, [keyId]: true });
+        await new Promise(resolve => setTimeout(resolve, 1500));
+
+        const keyIndex = providerStore.keys[provider].findIndex(k => k.id === keyId);
+        if (keyIndex > -1) {
+          providerStore.keys[provider][keyIndex].status = 'active';
+          providerStore.keys[provider][keyIndex].balance = Math.floor(Math.random() * 1000);
+          providerStore.keys[provider][keyIndex].lastChecked = Date.now();
+        }
+
+        setValidating({ ...validating, [keyId]: false });
+      };
+
+      return (
+        <PageContent>
+          <PageHeader
+            eyebrow="Configuration"
+            title="Provider"
+            highlight="Manager"
+            desc="Manage AI provider API keys and configure workflow routing."
+          />
+
+          {/* Stats */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div className="rounded-xl border border-border bg-card/50 p-4">
+              <div className="text-sm text-muted-foreground">Total Keys</div>
+              <div className="text-2xl font-bold mt-1">{totalKeys}</div>
+            </div>
+            <div className="rounded-xl border border-border bg-card/50 p-4">
+              <div className="text-sm text-muted-foreground">Active Keys</div>
+              <div className="text-2xl font-bold mt-1 text-emerald-500">{activeKeys}</div>
+            </div>
+            <div className="rounded-xl border border-border bg-card/50 p-4">
+              <div className="text-sm text-muted-foreground">Active Provider</div>
+              <div className="text-2xl font-bold mt-1">
+                🌊 Weavy
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* API Keys */}
+            <div className="lg:col-span-2 space-y-5">
+              <Section
+                title="🌊 Weavy"
+                sub="AI video generation platform with Kling, Sora, and more"
+                right={
+                  <Button
+                    size="sm"
+                    variant={providerStore.activeProvider === 'weavy' ? 'default' : 'outline'}
+                  >
+                    {providerStore.activeProvider === 'weavy' ? 'Active' : 'Set Active'}
+                  </Button>
+                }
+              >
+                <div className="space-y-3">
+                  {providerStore.keys.weavy.length === 0 ? (
+                    <div className="text-sm text-muted-foreground py-2 flex items-center gap-2">
+                      🔑 No API keys configured
+                    </div>
+                  ) : (
+                    providerStore.keys.weavy.map((key) => (
+                      <div
+                        key={key.id}
+                        className="flex items-center gap-2 p-3 rounded-lg border border-border bg-card/30"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium truncate">Test Key weavy</span>
+                            {getStatusBadge(key.status)}
+                          </div>
+                          <div className="text-xs text-muted-foreground font-mono mt-1">
+                            ••••••••••••••••••••••
+                          </div>
+                          {key.balance !== undefined && (
+                            <div className="text-xs mt-1">
+                              Balance:{' '}
+                              <span className="font-mono text-emerald-500">
+                                {key.balance}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => setShowKeys({ ...showKeys, [key.id]: !showKeys[key.id] })}
+                            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition"
+                          >
+                            {showKeys[key.id] ? '🙈' : '🔑'}
+                          </button>
+                          <button
+                            onClick={() => handleValidateKey('weavy', key.id)}
+                            disabled={validating[key.id]}
+                            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition disabled:opacity-50"
+                          >
+                            {validating[key.id] ? '⏳' : '🔄'}
+                          </button>
+                          <button
+                            onClick={() => console.log('Remove key:', key.id)}
+                            className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition"
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+
+                  {/* Add New Key */}
+                  <div className="flex gap-2">
+                    <Input
+                      value={newKeys.weavy}
+                      onChange={(e) => setNewKeys({ ...newKeys, weavy: e.target.value })}
+                      placeholder="Paste your Weavy token..."
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleAddKey('weavy');
+                      }}
+                    />
+                    <Button
+                      size="sm"
+                      onClick={() => handleAddKey('weavy')}
+                      disabled={!newKeys.weavy.trim()}
+                    >
+                      ➕ Add
+                    </Button>
+                  </div>
+                </div>
+              </Section>
+            </div>
+
+            {/* Routing Configuration */}
+            <div className="space-y-5">
+              <Section title="🔄 Workflow Routing" sub="Pilih provider untuk setiap workflow">
+                <div className="space-y-4">
+                  {['Motion Control', 'Naratif Video', 'Storyboard', 'Bulk Fashion', 'Image to Video'].map((workflow) => (
+                    <div key={workflow}>
+                      <Label>{workflow}</Label>
+                      <select className="flex h-10 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm">
+                        <option value="weavy">🌊 Weavy</option>
+                        <option value="wavespeed">⚡ Wavespeed</option>
+                        <option value="createpulse">💜 CreatePulse</option>
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              </Section>
+
+              <Section title="⚙️ Quick Actions">
+                <div className="space-y-2">
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start"
+                    onClick={() => console.log('Auto-detect provider')}
+                  >
+                    ⚡ Auto-detect best provider
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start"
+                    onClick={() => console.log('Reset settings')}
+                  >
+                    🗑️ Reset all settings
+                  </Button>
+                </div>
+              </Section>
+
+              <Section title="ℹ️ Provider Status">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between p-2 rounded-lg border border-border">
+                    <div className="flex items-center gap-2">
+                      <span>🌊</span>
+                      <span className="text-sm">Weavy</span>
+                    </div>
+                    <Badge variant="success">Ready</Badge>
+                  </div>
+                  <div className="flex items-center justify-between p-2 rounded-lg border border-border">
+                    <div className="flex items-center gap-2">
+                      <span>⚡</span>
+                      <span className="text-sm">Wavespeed</span>
+                    </div>
+                    <Badge variant="outline">No Key</Badge>
+                  </div>
+                </div>
+              </Section>
+            </div>
+          </div>
+        </PageContent>
+      );
+    }
+
+    function App() {
+      return (
+        <Router>
+          <PageContent>
+            <h1 className="text-4xl font-bold mb-4">Ark X Motion Studio - Providers Page Test</h1>
+            <p className="text-lg text-muted-foreground mb-6">Testing the providers page functionality</p>
+            <ProvidersPage />
+          </PageContent>
+        </Router>
+      );
+    }
+
+    const root = createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>

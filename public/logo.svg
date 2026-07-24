@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="silverGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#c0c0c0"/>
+      <stop offset="25%" style="stop-color:#e8e8e8"/>
+      <stop offset="50%" style="stop-color:#ffffff"/>
+      <stop offset="75%" style="stop-color:#e0e0e0"/>
+      <stop offset="100%" style="stop-color:#a0a0a0"/>
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#b8860b"/>
+      <stop offset="25%" style="stop-color:#d4a017"/>
+      <stop offset="50%" style="stop-color:#ffd700"/>
+      <stop offset="75%" style="stop-color:#e8b000"/>
+      <stop offset="100%" style="stop-color:#b8860b"/>
+    </linearGradient>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#050505"/>
+      <stop offset="100%" style="stop-color:#1a1a1a"/>
+    </linearGradient>
+    <linearGradient id="silverGradDark" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#707070"/>
+      <stop offset="50%" style="stop-color:#b0b0b0"/>
+      <stop offset="100%" style="stop-color:#808080"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="256" height="256" rx="24" fill="url(#bgGrad)"/>
+  
+  <!-- Subtle background pattern -->
+  <circle cx="128" cy="100" r="80" fill="none" stroke="url(#goldGrad)" stroke-width="0.3" opacity="0.2"/>
+  <circle cx="128" cy="100" r="60" fill="none" stroke="url(#silverGrad)" stroke-width="0.3" opacity="0.15"/>
+  
+  <!-- Triangle A - Silver/Chrome -->
+  <path d="M128 30 L196 170 L60 170 Z" 
+        fill="none" 
+        stroke="url(#silverGrad)" 
+        stroke-width="12" 
+        stroke-linejoin="round"
+        stroke-linecap="round"
+        filter="url(#glow)"/>
+  
+  <!-- Inner triangle detail -->
+  <path d="M128 55 L165 150 L91 150 Z" 
+        fill="none" 
+        stroke="url(#silverGradDark)" 
+        stroke-width="3" 
+        opacity="0.3"/>
+  
+  <!-- X shape - Gold with glow -->
+  <path d="M85 100 L175 160" stroke="url(#goldGrad)" stroke-width="16" stroke-linecap="round" filter="url(#glow)"/>
+  <path d="M175 100 L85 160" stroke="url(#goldGrad)" stroke-width="16" stroke-linecap="round" filter="url(#glow)"/>
+  
+  <!-- X inner highlight -->
+  <path d="M89 100 L171 158" stroke="#ffd700" stroke-width="4" stroke-linecap="round" opacity="0.7"/>
+  <path d="M171 100 L89 158" stroke="#ffd700" stroke-width="4" stroke-linecap="round" opacity="0.7"/>
+  
+  <!-- Speed lines -->
+  <path d="M178 108 L238 92" stroke="url(#goldGrad)" stroke-width="6" stroke-linecap="round" opacity="0.9"/>
+  <path d="M182 128 L244 128" stroke="url(#goldGrad)" stroke-width="6" stroke-linecap="round" opacity="0.7"/>
+  <path d="M178 148 L238 164" stroke="url(#goldGrad)" stroke-width="6" stroke-linecap="round" opacity="0.5"/>
+  <path d="M174 168 L224 196" stroke="url(#goldGrad)" stroke-width="4" stroke-linecap="round" opacity="0.3"/>
+  
+  <!-- Play button -->
+  <polygon points="110,118 110,142 134,130" fill="url(#goldGrad)"/>
+  
+  <!-- Play button glow -->
+  <circle cx="122" cy="130" r="22" fill="none" stroke="url(#goldGrad)" stroke-width="2" opacity="0.4"/>
+</svg>
