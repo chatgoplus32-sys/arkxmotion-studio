@@ -36,7 +36,7 @@ function extractUid(token: string): string {
   return '0'
 }
 
-export async function uploadToCatbox(file: File): Promise<string> {
+async function uploadToCatboxDirect(file: File): Promise<string> {
   const formData = new FormData()
   formData.append('reqtype', 'fileupload')
   formData.append('fileToUpload', file, file.name || 'upload.bin')
@@ -50,10 +50,38 @@ export async function uploadToCatbox(file: File): Promise<string> {
   const data = json?.data ?? json
 
   if (!res.ok || !data?.url) {
-    throw new Error(data?.error || `Upload gagal (${res.status})`)
+    throw new Error(data?.error || `Catbox error: ${json?.error || res.status}`)
   }
 
   return data.url
+}
+
+async function uploadTo0x0(file: File): Promise<string> {
+  const formData = new FormData()
+  formData.append('file', file, file.name || 'upload.bin')
+
+  const res = await fetch('/api/public/upload-0x0', {
+    method: 'POST',
+    body: formData,
+  })
+
+  const json = await res.json().catch(() => null)
+  const data = json?.data ?? json
+
+  if (!res.ok || !data?.url) {
+    throw new Error(data?.error || `0x0.st error: ${json?.error || res.status}`)
+  }
+
+  return data.url
+}
+
+export async function uploadToCatbox(file: File): Promise<string> {
+  try {
+    return await uploadToCatboxDirect(file)
+  } catch (e: any) {
+    console.log('[upload] catbox failed, trying 0x0.st:', e.message)
+    return await uploadTo0x0(file)
+  }
 }
 
 function buildTrackingParams(accessToken: string, pathScene: string, roomId: string) {
