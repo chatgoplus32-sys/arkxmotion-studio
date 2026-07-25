@@ -280,7 +280,8 @@ export default function MotionPage() {
 
   const handleDownload = useCallback(async (url: string, id: string) => {
     try {
-      const res = await fetch(url)
+      const proxyUrl = `/api/public/video-proxy?url=${encodeURIComponent(url)}`
+      const res = await fetch(proxyUrl)
       const blob = await res.blob()
       const a = document.createElement('a')
       a.href = URL.createObjectURL(blob)
@@ -504,7 +505,7 @@ export default function MotionPage() {
                 >
                   <div className="aspect-video bg-black/40 relative">
                     <video
-                      src={result.url}
+                      src={`/api/public/video-proxy?url=${encodeURIComponent(result.url)}`}
                       className="w-full h-full object-contain"
                       controls
                       muted
