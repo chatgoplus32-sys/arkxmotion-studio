@@ -205,19 +205,57 @@ export default function MotionPage() {
 
           addLog(`Slot ${i + 1}: [3/3] Polling for result...`)
 
-          const resultUrl = await pollMotionControl(
-            roboneoToken,
-            taskId,
-            roomId,
-            (status, pct) => addLog(`Slot ${i + 1}: [3/3] ${status} — ${pct}%`)
-          )
+          let resultUrl: string | null = null
+          const MAX_RESUBMIT = 3
+          for (let attempt = 1; attempt <= MAX_RESUBMIT; attempt++) {
+            try {
+              resultUrl = await pollMotionControl(
+                roboneoToken,
+                taskId,
+                roomId,
+                (status, pct) => addLog(`Slot ${i + 1}: [3/3] ${status} — ${pct}%`)
+              )
+              break
+            } catch (pollErr: any) {
+              const isBusy = /busy|sibuk|try again|later|overload|capacity|queue/i.test(pollErr.message)
+              if (isBusy && attempt < MAX_RESUBMIT) {
+                addLog(`Slot ${i + 1}: [3/3] Server sibuk, resubmit task baru... (attempt ${attempt + 1}/${MAX_RESUBMIT})`, 'warn')
+                await new Promise((r) => setTimeout(r, 5000))
+                if (isOmni) {
+                  const retry = await submitGoogleOmni({
+                    accessToken: roboneoToken,
+                    imageUrl,
+                    prompt: prompt.trim() || undefined,
+                    ratio: '9:16',
+                    videoDuration: 10,
+                  })
+                  taskId = retry.taskId
+                  roomId = retry.roomId
+                } else {
+                  const retry = await submitMotionControl({
+                    accessToken: roboneoToken,
+                    imageUrl,
+                    videoUrl: slot.videoUrl!,
+                    prompt: prompt.trim() || undefined,
+                    quality: 'std',
+                    orientation,
+                  })
+                  taskId = retry.taskId
+                  roomId = retry.roomId
+                }
+                addLog(`Slot ${i + 1}: [3/3] Task baru: ${taskId.slice(0, 20)}...`)
+                continue
+              }
+              throw pollErr
+            }
+          }
 
-          addLog(`Slot ${i + 1}: [3/3] Done ✓ ${resultUrl.slice(0, 60)}...`, 'success')
+          addLog(`Slot ${i + 1}: [3/3] Done ✓ ${resultUrl!.slice(0, 60)}...`, 'success')
 
           setResults((prev) => [
             {
               id: taskId,
-              url: resultUrl,
+              url: resultUrl!,
               prompt: prompt.trim() || '(no prompt)',
               date: new Date().toISOString(),
             },
