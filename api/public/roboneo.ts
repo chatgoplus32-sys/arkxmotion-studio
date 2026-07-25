@@ -15,33 +15,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const token = req.headers['x-roboneo-token'] || ''
+  const cookies = req.headers['x-roboneo-cookies'] || ''
+  const clientId = req.headers['x-roboneo-client-id'] || '1189857684'
   const { path, parameter } = req.body || {}
 
   if (!path) {
     return res.status(400).json({ ok: false, error: 'Missing path' })
   }
 
-  console.log(`[roboneo] path=${path} tokenLen=${String(token).length}`)
+  console.log(`[roboneo] path=${path} tokenLen=${String(token).length} clientId=${clientId}`)
 
   try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'access-token': String(token),
+      'client-id': String(clientId),
+      'Origin': 'https://www.roboneo.com',
+      'Referer': 'https://www.roboneo.com/',
+    }
+
+    if (cookies) {
+      headers['Cookie'] = String(cookies)
+    }
+
     const roboneoRes = await fetch(`${GATEWAY_URL}/${path}`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'access-token': String(token),
-        'client-id': '1189857684',
-        'Origin': 'https://www.roboneo.com',
-        'Referer': 'https://www.roboneo.com/',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
-        'Accept': 'application/json, text/plain, */*',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'sec-ch-ua': '"Chromium";v="137", "Not/A)Brand";v="24", "Google Chrome";v="137"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"Windows"',
-        'sec-fetch-dest': 'empty',
-        'sec-fetch-mode': 'cors',
-        'sec-fetch-site': 'cross-site',
-      },
+      headers,
       body: JSON.stringify(parameter || {}),
     })
 
