@@ -114,9 +114,25 @@ export default function SettingsPage() {
     setSelectedToken(token)
   }
 
-  const handleConfirmOrder = () => {
+  const handleConfirmOrder = async () => {
+    if (!selectedToken || !authStore.token) return
+    try {
+      const response = await fetch(`/api/tokens/${selectedToken.id}/buy`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${authStore.token}` }
+      })
+      if (response.ok) {
+        addToast('Order berhasil dibuat! Menunggu konfirmasi admin.', 'success')
+        fetchTokens()
+        fetchMyOrders()
+      } else {
+        const data = await response.json()
+        addToast(data.error || 'Gagal membuat order', 'error')
+      }
+    } catch {
+      addToast('Gagal membuat order', 'error')
+    }
     window.open(WHATSAPP_LINK, '_blank')
-    addToast('Link WhatsApp terbuka. Kirim pesan untuk konfirmasi order.', 'info')
     setSelectedToken(null)
   }
 

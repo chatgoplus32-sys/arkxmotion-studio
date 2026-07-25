@@ -20,6 +20,7 @@ import ProvidersPage from '@/pages/Providers'
 import SettingsPage from '@/pages/Settings'
 import AdminUsersPage from '@/pages/AdminUsers'
 import AdminTokensPage from '@/pages/AdminTokens'
+import AdminOrderTokensPage from '@/pages/AdminOrderTokens'
 import LoginPage from '@/pages/Login'
 import RegisterPage from '@/pages/Register'
 
@@ -60,6 +61,7 @@ export default function App() {
                       <Route path="/settings" element={<SettingsPage />} />
                       <Route path="/admin/users" element={<AdminUsersPage />} />
                       <Route path="/admin/tokens" element={<AdminTokensPage />} />
+                      <Route path="/admin/orders" element={<AdminOrderTokensPage />} />
                     </Routes>
                   </main>
                 </div>
