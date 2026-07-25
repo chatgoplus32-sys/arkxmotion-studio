@@ -3,6 +3,7 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Select, Label, Textarea, EmptyState, Badge } from '@/components/ui'
 import { Image, Upload, Rocket, Loader2, Trash2, Zap, Key, ExternalLink } from 'lucide-react'
 import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
+import { uploadToCatbox, submitGoogleOmni, pollMotionControl, compressVideo } from '@/lib/roboneo'
 
 interface ModelOption {
   value: string
@@ -323,6 +324,40 @@ export default function ImageToVideoPage() {
 
       if (provider === 'createpulse') {
         const videoUrl = await generateWithCreatePulse(apiKey)
+        setResults((prev) => [videoUrl, ...prev])
+        setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+      } else if (provider === 'roboneo') {
+        if (!apiKey) {
+          addLog('No Roboneo API key found. Add one in Providers page.', 'error')
+          throw new Error('No Roboneo API key')
+        }
+        if (!imgFile) {
+          addLog('Google Omni requires an image. Upload one first.', 'error')
+          throw new Error('No image provided')
+        }
+
+        addLog(`[1/3] Compressing image if needed...`)
+        const imageUrl = await uploadToCatbox(imgFile)
+        addLog(`[1/3] Image uploaded ✓ ${imageUrl.slice(0, 60)}...`)
+
+        addLog(`[2/3] Submitting to Google Omni (video_barley_i2v_omni_flash)...`)
+        addLog(`→ ratio: ${ratio}, duration: ${quality}s, prompt: "${prompt.trim() || '(none)'}"`)
+        const { taskId, roomId } = await submitGoogleOmni({
+          accessToken: apiKey,
+          imageUrl,
+          prompt: prompt.trim() || undefined,
+          ratio,
+          videoDuration: parseInt(quality) || 10,
+        })
+        addLog(`[2/3] Task created ✓ id=${taskId.slice(0, 20)}...`)
+
+        addLog(`[3/3] Polling for result...`)
+        const videoUrl = await pollMotionControl(
+          apiKey, taskId, roomId,
+          (status, pct) => addLog(`[3/3] ${status} — ${pct}%`)
+        )
+        addLog(`[3/3] Done ✓ ${videoUrl.slice(0, 60)}...`, 'success')
+
         setResults((prev) => [videoUrl, ...prev])
         setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
       } else {
