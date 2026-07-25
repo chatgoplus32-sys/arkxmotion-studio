@@ -146,6 +146,11 @@ export default function ImageToVideoPage() {
   })
   const [status, setStatus] = useState({ show: false, text: '', pct: 0, time: '' })
   const [generating, setGenerating] = useState(false)
+  const [logs, setLogs] = useState<Array<{ time: string; msg: string; level: string }>>([])
+
+  const addLog = (msg: string, level = 'info') => {
+    setLogs((prev) => [...prev, { time: new Date().toLocaleTimeString(), msg, level }].slice(-200))
+  }
 
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -205,13 +210,14 @@ export default function ImageToVideoPage() {
   const generateWithCreatePulse = async (apiKey: string) => {
     const duration = currentQuality?.duration || 10
 
-    // Upload image first if needed (for image-to-video)
+    addLog(`[1/4] Preparing image...`)
     let initImageUrl = undefined
     if (imgFile) {
       setStatus((s) => ({ ...s, text: 'Uploading image...', pct: 10 }))
-      // For now, we'll use a placeholder URL since we need a public URL
-      // In production, you'd upload to a hosting service first
       initImageUrl = imgUrl || undefined
+      addLog(`[1/4] Image URL: ${initImageUrl ? initImageUrl.slice(0, 60) + '...' : '(none)'}`)
+    } else {
+      addLog(`[1/4] No image provided (text-to-video mode)`)
     }
 
     const body: any = {
@@ -226,6 +232,9 @@ export default function ImageToVideoPage() {
       body.init_image_url = initImageUrl
     }
 
+    addLog(`[2/4] Submitting to CreatePulse...`)
+    addLog(`→ model: ${body.model}, ratio: ${ratio}, duration: ${duration}s`)
+    addLog(`→ prompt: "${prompt.trim() || '(none)'}"`)
     setStatus((s) => ({ ...s, text: 'Submitting to CreatePulse...', pct: 20 }))
 
     const submitRes = await fetch(`${CREATEPULSE_API}/generate`, {
@@ -239,17 +248,22 @@ export default function ImageToVideoPage() {
 
     if (!submitRes.ok) {
       const err = await submitRes.json().catch(() => ({}))
+      addLog(`[2/4] Submit failed: HTTP ${submitRes.status} — ${err.error || 'unknown'}`, 'error')
       throw new Error(err.error || `HTTP ${submitRes.status}`)
     }
 
     const submitData = await submitRes.json()
-    if (!submitData.ok) throw new Error(submitData.error || 'Submit failed')
+    if (!submitData.ok) {
+      addLog(`[2/4] Submit failed: ${submitData.error || 'unknown'}`, 'error')
+      throw new Error(submitData.error || 'Submit failed')
+    }
 
     const batchId = submitData.batchId
+    addLog(`[2/4] Task created ✓ batchId=${batchId}`)
     setStatus((s) => ({ ...s, text: `Processing... (batch: ${batchId.slice(0, 8)}...)`, pct: 40 }))
 
-    // Poll for result
-    const maxPolls = 120 // ~10 minutes
+    addLog(`[3/4] Polling for result...`)
+    const maxPolls = 120
     for (let i = 0; i < maxPolls; i++) {
       await new Promise((r) => setTimeout(r, 5000))
 
@@ -257,24 +271,31 @@ export default function ImageToVideoPage() {
         headers: { 'X-API-Key': apiKey },
       })
 
-      if (!pollRes.ok) continue
+      if (!pollRes.ok) {
+        addLog(`[3/4] Poll #${i + 1}: HTTP ${pollRes.status} (retrying...)`, 'warn')
+        continue
+      }
 
       const pollData = await pollRes.json()
       const pct = Math.min(90, 40 + (i / maxPolls) * 50)
+      addLog(`[3/4] Poll #${i + 1}: status=${pollData.status || 'unknown'}`)
       setStatus((s) => ({ ...s, text: `Status: ${pollData.status}...`, pct }))
 
       if (pollData.status === 'done' && pollData.url) {
         const videoUrl = pollData.url.startsWith('http')
           ? pollData.url
           : `https://createpulse.online${pollData.url}`
+        addLog(`[4/4] Done ✓ ${videoUrl.slice(0, 60)}...`, 'success')
         return videoUrl
       }
 
       if (pollData.status === 'failed') {
+        addLog(`[3/4] Failed: ${pollData.error || 'unknown'}`, 'error')
         throw new Error(pollData.error || 'Generation failed')
       }
     }
 
+    addLog(`[3/4] Timeout after ${maxPolls} polls`, 'error')
     throw new Error('Timeout: generation took too long')
   }
 
@@ -283,7 +304,10 @@ export default function ImageToVideoPage() {
     if (!hasActiveKey && provider !== 'roboneo') return
 
     setGenerating(true)
+    setLogs([])
     setStatus({ show: true, text: 'Memulai...', pct: 5, time: '' })
+    addLog(`Starting generation with ${provider} · ${currentModel?.label || model}`)
+    addLog(`Ratio: ${ratio}, Quality: ${quality}`)
 
     const startTime = Date.now()
     const timer = setInterval(() => {
@@ -311,6 +335,7 @@ export default function ImageToVideoPage() {
         setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai' }))
       }
     } catch (err: any) {
+      addLog(`Error: ${err.message}`, 'error')
       setStatus((s) => ({ ...s, pct: 100, text: `❌ Error: ${err.message}` }))
     } finally {
       clearInterval(timer)
@@ -526,6 +551,30 @@ export default function ImageToVideoPage() {
           </Section>
         </div>
       </div>
+
+      {/* Logs */}
+      {logs.length > 0 && (
+        <Section title={`📋 Log (${logs.length})`}>
+          <div className="max-h-40 overflow-y-auto overflow-x-hidden text-[11px] font-mono space-y-0.5">
+            {logs.map((log, i) => (
+              <div
+                key={i}
+                className={`break-all ${
+                  log.level === 'error'
+                    ? 'text-red-500'
+                    : log.level === 'success'
+                    ? 'text-emerald-500'
+                    : log.level === 'warn'
+                    ? 'text-amber-400'
+                    : 'text-muted-foreground'
+                }`}
+              >
+                [{log.time}] {log.msg}
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
 
       {/* Results */}
       <Section
