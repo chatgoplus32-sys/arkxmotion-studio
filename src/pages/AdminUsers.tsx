@@ -117,11 +117,10 @@ export default function AdminUsersPage() {
     <div>
       <PageHeader
         title="User Management"
-        description="Manage user registrations and approvals"
-        icon={<Users className="h-6 w-6" />}
+        desc="Manage user registrations and approvals"
       />
       <PageContent>
-        <Section title="Users" description="View and manage all registered users">
+        <Section title="Users" sub="View and manage all registered users">
           <div className="flex items-center gap-3 mb-4">
             <div className="flex gap-2">
               <button

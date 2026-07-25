@@ -144,11 +144,10 @@ export default function AdminOrderTokensPage() {
     <div>
       <PageHeader
         title="Konfirmasi Order Token"
-        description="Kelola order token dari user sesuai stok yang diupload"
-        icon={<ClipboardCheck className="h-6 w-6" />}
+        desc="Kelola order token dari user sesuai stok yang diupload"
       />
       <PageContent>
-        <Section title="Stok Token" description="Jumlah stok token per provider yang telah diupload">
+        <Section title="Stok Token" sub="Jumlah stok token per provider yang telah diupload">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             {tokens.map((s) => (
               <div key={s.provider} className="p-4 rounded-xl border border-border bg-background/50">

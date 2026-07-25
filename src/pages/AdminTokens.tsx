@@ -128,8 +128,7 @@ export default function AdminTokensPage() {
     <div>
       <PageHeader
         title="Upload Token"
-        description="Upload stok token Roboneo, Framia, dan Weavy"
-        icon={<Key className="h-6 w-6" />}
+        desc="Upload stok token Roboneo, Framia, dan Weavy"
       />
       <PageContent>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
@@ -167,7 +166,7 @@ export default function AdminTokensPage() {
 
         <Section
           title={`${PROVIDERS.find(p => p.key === activeTab)?.label}`}
-          description={`Total: ${stock[activeTab].total} | Tersedia: ${stock[activeTab].available} | Terjual: ${stock[activeTab].sold}`}
+          sub={`Total: ${stock[activeTab].total} | Tersedia: ${stock[activeTab].available} | Terjual: ${stock[activeTab].sold}`}
           right={
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={fetchStock} disabled={isLoading}>

@@ -1,5 +1,5 @@
 import { PageHeader, PageContent } from '@/components/layout'
-import { Section, Button, Label, Select } from '@/components/ui'
+import { Section, Button, Label, Select, Input } from '@/components/ui'
 import { Shield, Square, Trash2, AlertTriangle, Loader2, ShoppingCart, Copy, ExternalLink, X } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
 import { useAuthStore } from '@/stores/authStore'
@@ -112,10 +112,6 @@ export default function SettingsPage() {
   useEffect(() => {
     fetchMyOrders()
   }, [fetchMyOrders])
-
-  const handleBuyToken = (token: TokenItem) => {
-    setSelectedToken(token)
-  }
 
   const handleConfirmBuy = async () => {
     if (!authStore.token) return

@@ -195,12 +195,12 @@ export default function MotionPage() {
       const slot = validSlots[i]
 
       if (isRoboneo && slot.image) {
+        let taskId: string = ''
+        let roomId: string = ''
         try {
           addLog(`Slot ${i + 1}: [1/3] Uploading image to host...`)
           const imageUrl = await uploadToCatbox(slot.image)
           addLog(`Slot ${i + 1}: [1/3] Image uploaded ✓ ${imageUrl.slice(0, 50)}...`)
-
-          let taskId: string, roomId: string
 
           if (isOmni) {
             addLog(`Slot ${i + 1}: [2/3] Submitting to Google Omni (video_barley_i2v_omni_flash)...`)
