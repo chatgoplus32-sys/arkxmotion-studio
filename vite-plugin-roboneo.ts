@@ -49,6 +49,42 @@ export function roboneoProxyPlugin(): Plugin {
         }
       })
 
+      server.middlewares.use('/backend/api/video', async (req, res) => {
+        if (req.method === 'OPTIONS') {
+          res.writeHead(200, {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, OPTIONS',
+            'Access-Control-Allow-Headers': '*',
+          })
+          res.end()
+          return
+        }
+        const targetUrl = `http://localhost:3000${req.url || ''}`
+        try {
+          const proxyRes = await fetch(targetUrl)
+          const headers: Record<string, string> = {
+            'Content-Type': proxyRes.headers.get('content-type') || 'video/mp4',
+            'Access-Control-Allow-Origin': '*',
+          }
+          const contentLength = proxyRes.headers.get('content-length')
+          if (contentLength) headers['Content-Length'] = contentLength
+          res.writeHead(proxyRes.status, headers)
+          if (proxyRes.body) {
+            const reader = proxyRes.body.getReader()
+            while (true) {
+              const { done, value } = await reader.read()
+              if (done) break
+              res.write(value)
+            }
+          }
+          res.end()
+        } catch (err: any) {
+          console.error(`[video-proxy] error:`, err.message)
+          res.writeHead(502)
+          res.end('Video proxy error')
+        }
+      })
+
       server.middlewares.use('/api/public/roboneo', async (req, res) => {
         if (req.method !== 'POST') {
           res.writeHead(405)

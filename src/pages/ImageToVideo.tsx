@@ -161,7 +161,8 @@ export default function ImageToVideoPage() {
 
   const handleDownload = useCallback(async (url: string, index: number) => {
     try {
-      const res = await fetch(url)
+      const proxyUrl = `/api/public/createpulse?action=download&url=${encodeURIComponent(url)}`
+      const res = await fetch(proxyUrl)
       const blob = await res.blob()
       const blobUrl = URL.createObjectURL(blob)
       const a = document.createElement('a')

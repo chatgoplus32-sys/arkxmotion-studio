@@ -33,6 +33,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(r.status).json(data)
     }
 
+    if (action === 'download') {
+      const videoUrl = req.query.url || req.body?.url
+      if (!videoUrl || typeof videoUrl !== 'string') {
+        return res.status(400).json({ error: 'Missing url parameter' })
+      }
+      const fullUrl = videoUrl.startsWith('http') ? videoUrl : `https://createpulse.online${videoUrl}`
+      const r = await fetch(fullUrl)
+      if (!r.ok) {
+        return res.status(r.status).json({ error: `Upstream returned ${r.status}` })
+      }
+      const contentType = r.headers.get('content-type') || 'video/mp4'
+      const contentLength = r.headers.get('content-length')
+      const headers: Record<string, string> = {
+        'Content-Type': contentType,
+        'Access-Control-Allow-Origin': '*',
+        'Content-Disposition': 'attachment',
+      }
+      if (contentLength) headers['Content-Length'] = contentLength
+      res.writeHead(200, headers)
+      if (r.body) {
+        const reader = r.body.getReader()
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          res.write(value)
+        }
+      }
+      return res.end()
+    }
+
     return res.status(400).json({ error: 'Unknown action' })
   } catch (err: any) {
     return res.status(502).json({ error: err.message })
