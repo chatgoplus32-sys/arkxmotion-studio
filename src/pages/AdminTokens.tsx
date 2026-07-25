@@ -3,7 +3,7 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Input, Label, Textarea } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
-import { Key, Plus, Trash2, RefreshCw, Upload } from 'lucide-react'
+import { Key, Plus, RefreshCw, Upload } from 'lucide-react'
 
 interface Token {
   id: number
@@ -23,39 +23,62 @@ const PROVIDERS: { key: Provider; label: string }[] = [
   { key: 'weavy', label: 'Weavy' },
 ]
 
+interface StockInfo {
+  total: number
+  available: number
+  sold: number
+  price: number
+}
+
 export default function AdminTokensPage() {
-  const [tokens, setTokens] = useState<Token[]>([])
+  const [stock, setStock] = useState<Record<Provider, StockInfo>>({
+    roboneo: { total: 0, available: 0, sold: 0, price: 0 },
+    framia: { total: 0, available: 0, sold: 0, price: 0 },
+    weavy: { total: 0, available: 0, sold: 0, price: 0 },
+  })
   const [activeTab, setActiveTab] = useState<Provider>('roboneo')
   const [isLoading, setIsLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [bulkTokens, setBulkTokens] = useState('')
   const [price, setPrice] = useState('')
-  const [actionLoading, setActionLoading] = useState<number | null>(null)
   const [uploading, setUploading] = useState(false)
   const token = useAuthStore((state) => state.token)
   const addToast = useToastStore((s) => s.addToast)
 
-  const fetchTokens = useCallback(async () => {
+  const fetchStock = useCallback(async () => {
     if (!token) return
     setIsLoading(true)
     try {
-      const response = await fetch(`/api/admin/tokens?provider=${activeTab}`, {
+      const response = await fetch('/api/admin/tokens', {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       if (response.ok) {
         const data = await response.json()
-        setTokens(data.tokens)
+        const s: Record<Provider, StockInfo> = {
+          roboneo: { total: 0, available: 0, sold: 0, price: 0 },
+          framia: { total: 0, available: 0, sold: 0, price: 0 },
+          weavy: { total: 0, available: 0, sold: 0, price: 0 },
+        }
+        for (const t of data.tokens) {
+          s[t.provider as Provider].total++
+          if (t.status === 'available') {
+            s[t.provider as Provider].available++
+            s[t.provider as Provider].price = t.price
+          }
+          if (t.status === 'sold') s[t.provider as Provider].sold++
+        }
+        setStock(s)
       }
     } catch {
-      addToast('Gagal memuat token', 'error')
+      addToast('Gagal memuat stok', 'error')
     } finally {
       setIsLoading(false)
     }
-  }, [token, activeTab, addToast])
+  }, [token, addToast])
 
   useEffect(() => {
-    fetchTokens()
-  }, [fetchTokens])
+    fetchStock()
+  }, [fetchStock])
 
   const handleSubmitBulk = async () => {
     if (!bulkTokens.trim() || !price) {
@@ -71,7 +94,7 @@ export default function AdminTokensPage() {
 
     setUploading(true)
     const bulkPayload = lines.map((tokenValue, i) => ({
-      name: `${PROVIDERS.find(p => p.key === activeTab)?.label} #${tokens.length + i + 1}`,
+      name: `${PROVIDERS.find(p => p.key === activeTab)?.label} #${stock[activeTab].total + i + 1}`,
       token_value: tokenValue,
     }))
 
@@ -84,10 +107,10 @@ export default function AdminTokensPage() {
       if (response.ok) {
         const data = await response.json()
         addToast(`${data.count || lines.length} token berhasil diupload`, 'success')
-        fetchTokens()
+        fetchStock()
       } else {
         const data = await response.json()
-        addToast(data.error || 'Gagal upload token', 'error')
+        addToast(data.error || 'Gagal upload', 'error')
       }
     } catch {
       addToast('Gagal upload token', 'error')
@@ -97,25 +120,6 @@ export default function AdminTokensPage() {
     setBulkTokens('')
     setPrice('')
     setShowForm(false)
-  }
-
-  const handleDelete = async (id: number) => {
-    if (!confirm('Hapus token ini?')) return
-    setActionLoading(id)
-    try {
-      const response = await fetch(`/api/admin/tokens?id=${id}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (response.ok) {
-        addToast('Token dihapus', 'success')
-        fetchTokens()
-      }
-    } catch {
-      addToast('Gagal menghapus', 'error')
-    } finally {
-      setActionLoading(null)
-    }
   }
 
   const tokenCount = bulkTokens.split('\n').map(l => l.trim()).filter(l => l.length > 0).length
@@ -128,47 +132,64 @@ export default function AdminTokensPage() {
         icon={<Key className="h-6 w-6" />}
       />
       <PageContent>
-        <div className="flex gap-2 mb-5">
-          {PROVIDERS.map((p) => (
-            <button
-              key={p.key}
-              onClick={() => { setActiveTab(p.key); setShowForm(false); setBulkTokens(''); setPrice('') }}
-              className={`px-4 py-2 text-sm rounded-xl transition-colors font-medium ${
-                activeTab === p.key
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-secondary text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+          {PROVIDERS.map((p) => {
+            const s = stock[p.key]
+            const isActive = activeTab === p.key
+            return (
+              <button
+                key={p.key}
+                onClick={() => { setActiveTab(p.key); setShowForm(false); setBulkTokens(''); setPrice('') }}
+                className={`p-4 rounded-xl border text-left transition-all ${
+                  isActive
+                    ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
+                    : 'border-border bg-background/50 hover:bg-accent/30'
+                }`}
+              >
+                <div className="text-sm font-semibold mb-2">{p.label}</div>
+                <div className="flex gap-3 text-xs">
+                  <div>
+                    <div className="text-2xl font-bold gold-text">{s.available}</div>
+                    <div className="text-muted-foreground">tersedia</div>
+                  </div>
+                  <div className="ml-auto text-right">
+                    <div className="text-sm font-medium">{s.sold}</div>
+                    <div className="text-muted-foreground">terjual</div>
+                  </div>
+                </div>
+                {s.price > 0 && (
+                  <div className="text-xs text-muted-foreground mt-2">Rp {s.price.toLocaleString('id-ID')} / token</div>
+                )}
+              </button>
+            )
+          })}
         </div>
 
         <Section
-          title={`${PROVIDERS.find(p => p.key === activeTab)?.label} — Stok Token`}
-          description={`${tokens.length} token total, ${tokens.filter(t => t.status === 'available').length} tersedia`}
+          title={`${PROVIDERS.find(p => p.key === activeTab)?.label}`}
+          description={`Total: ${stock[activeTab].total} | Tersedia: ${stock[activeTab].available} | Terjual: ${stock[activeTab].sold}`}
           right={
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={fetchTokens} disabled={isLoading}>
+              <Button variant="outline" size="sm" onClick={fetchStock} disabled={isLoading}>
                 <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
               </Button>
               {!showForm && (
                 <Button size="sm" onClick={() => setShowForm(true)}>
-                  <Plus className="h-4 w-4" /> Upload Bulk
+                  <Plus className="h-4 w-4" /> Upload
                 </Button>
               )}
             </div>
           }
         >
           {showForm && (
-            <div className="mb-5 p-4 rounded-xl border border-border bg-background/50">
-              <div className="text-sm font-medium mb-3">Upload Bulk Token {PROVIDERS.find(p => p.key === activeTab)?.label}</div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+            <div className="mb-4 p-4 rounded-xl border border-border bg-background/50">
+              <div className="text-sm font-medium mb-3">Upload Bulk Token</div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className="md:col-span-2">
                   <Label>Token / API Key (satu per baris)</Label>
                   <Textarea
-                    placeholder={`temp_token_abc123\ntemp_token_def456\ntemp_token_ghi789`}
-                    rows={5}
+                    placeholder={`token_abc123\ntoken_def456\ntoken_ghi789`}
+                    rows={4}
                     value={bulkTokens}
                     onChange={(e) => setBulkTokens(e.target.value)}
                     className="font-mono text-xs"
@@ -177,8 +198,8 @@ export default function AdminTokensPage() {
                     <div className="text-xs text-muted-foreground mt-1">{tokenCount} token terdeteksi</div>
                   )}
                 </div>
-                <div>
-                  <Label>Harga per Token (Rp)</Label>
+                <div className="flex flex-col">
+                  <Label>Harga/Token (Rp)</Label>
                   <Input
                     type="number"
                     placeholder="50000"
@@ -187,12 +208,12 @@ export default function AdminTokensPage() {
                     className="text-lg font-semibold"
                   />
                   {price && tokenCount > 0 && (
-                    <div className="text-xs text-muted-foreground mt-2">
+                    <div className="text-xs text-muted-foreground mt-1">
                       Total: Rp {(Number(price) * tokenCount).toLocaleString('id-ID')}
                     </div>
                   )}
                   <Button
-                    className="w-full mt-4"
+                    className="w-full mt-auto"
                     onClick={handleSubmitBulk}
                     disabled={uploading || !bulkTokens.trim() || !price}
                     loading={uploading}
@@ -200,64 +221,11 @@ export default function AdminTokensPage() {
                     {uploading ? null : <Upload className="h-4 w-4" />}
                     {uploading ? 'Mengupload...' : `Upload ${tokenCount || ''} Token`}
                   </Button>
-                  <Button variant="outline" className="w-full mt-2" onClick={() => { setShowForm(false); setBulkTokens(''); setPrice('') }}>
-                    Batal
-                  </Button>
                 </div>
               </div>
-            </div>
-          )}
-
-          {isLoading ? (
-            <div className="text-center py-8 text-muted-foreground">Memuat token...</div>
-          ) : tokens.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">Belum ada token</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border">
-                    <th className="text-left py-3 px-4 font-medium text-muted-foreground">#</th>
-                    <th className="text-left py-3 px-4 font-medium text-muted-foreground">Token</th>
-                    <th className="text-left py-3 px-4 font-medium text-muted-foreground">Harga</th>
-                    <th className="text-left py-3 px-4 font-medium text-muted-foreground">Status</th>
-                    <th className="text-right py-3 px-4 font-medium text-muted-foreground">Aksi</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {tokens.map((t, i) => (
-                    <tr key={t.id} className="border-b border-border hover:bg-secondary/50">
-                      <td className="py-3 px-4 text-muted-foreground">{i + 1}</td>
-                      <td className="py-3 px-4">
-                        <code className="text-xs bg-secondary px-2 py-1 rounded-lg font-mono">
-                          {t.token_value.slice(0, 16)}...
-                        </code>
-                      </td>
-                      <td className="py-3 px-4">Rp {t.price.toLocaleString('id-ID')}</td>
-                      <td className="py-3 px-4">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                          t.status === 'available'
-                            ? 'bg-green-500/10 text-green-500'
-                            : 'bg-red-500/10 text-red-500'
-                        }`}>
-                          {t.status === 'available' ? 'Tersedia' : 'Terjual'}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDelete(t.id)}
-                          disabled={actionLoading === t.id}
-                          className="text-destructive hover:text-destructive"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <Button variant="outline" size="sm" className="mt-3" onClick={() => { setShowForm(false); setBulkTokens(''); setPrice('') }}>
+                Batal
+              </Button>
             </div>
           )}
         </Section>
