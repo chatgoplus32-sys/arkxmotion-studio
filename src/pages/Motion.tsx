@@ -196,6 +196,7 @@ export default function MotionPage() {
               videoUrl,
               prompt: prompt.trim() || undefined,
               quality: 'std',
+              orientation,
             })
             taskId = result.taskId
             roomId = result.roomId

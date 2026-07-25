@@ -24,14 +24,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   console.log(`[roboneo] path=${path} tokenLen=${String(token).length}`)
 
   try {
-    const roboneoRes = await fetch(GATEWAY_URL, {
+    const roboneoRes = await fetch(`${GATEWAY_URL}/${path}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'access-token': String(token),
         'client-id': '1189857684',
+        'Origin': 'https://www.roboneo.com',
+        'Referer': 'https://www.roboneo.com/',
       },
-      body: JSON.stringify({ path, parameter: parameter || {} }),
+      body: JSON.stringify(parameter || {}),
     })
 
     const text = await roboneoRes.text()

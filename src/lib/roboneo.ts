@@ -290,8 +290,9 @@ export async function submitMotionControl(params: {
   videoUrl: string
   prompt?: string
   quality?: string
+  orientation?: string
 }): Promise<{ taskId: string; roomId: string }> {
-  const { accessToken, imageUrl, videoUrl, prompt = '', quality = 'std' } = params
+  const { accessToken, imageUrl, videoUrl, prompt = '', quality = 'std', orientation = 'video' } = params
 
   const roomId = generateRoomId()
   const nodeId = uuid()
@@ -304,6 +305,8 @@ export async function submitMotionControl(params: {
       quality,
       image_url: imageUrl,
       video_url: videoUrl,
+      character_orientation: orientation,
+      orientation,
       prompt: prompt || '',
       random: `${Date.now()}-${Math.floor(1e7 + Math.random() * 89999999)}`,
     },
@@ -323,7 +326,6 @@ export async function submitMotionControl(params: {
 
   const result = await roboneoApiCall(accessToken, 'nodeexecute', parameter)
 
-  // Vercel x() returns data.parameter, so unwrap if nested
   const payload = result?.parameter ?? result
 
   const taskIds: string[] = payload?.task_ids?.length
@@ -393,57 +395,7 @@ export async function submitGoogleOmni(params: {
   return { taskId: taskIds[0], roomId }
 }
 
-function extractVideoUrl(data: any): string | null {
-  if (!data || typeof data !== 'object') return null
 
-  function findUrls(obj: any, depth = 0): string[] {
-    if (depth > 8 || !obj || typeof obj !== 'object') return []
-    const urls: string[] = []
-
-    if (Array.isArray(obj)) {
-      for (const item of obj) urls.push(...findUrls(item, depth + 1))
-      return urls
-    }
-
-    for (const [key, value] of Object.entries(obj)) {
-      if (typeof value === 'string' && /^https?:\/\//i.test(value)) {
-        urls.push(value)
-      }
-      if (typeof value === 'object' && value !== null) {
-        urls.push(...findUrls(value, depth + 1))
-      }
-    }
-    return urls
-  }
-
-  const allUrls = findUrls(data)
-  const videoExt = /\.(mp4|mov|webm|m4v|avi)(\?|#|$)/i
-  return allUrls.find((u) => videoExt.test(u)) || allUrls[0] || null
-}
-
-function extractProgress(data: any, depth = 0): number | null {
-  if (depth > 6 || !data || typeof data !== 'object') return null
-
-  const progressKeys = ['progress', 'percent', 'rate', 'schedule', 'process']
-
-  for (const [key, value] of Object.entries(data)) {
-    const k = key.toLowerCase()
-    if (progressKeys.some((pk) => k.includes(pk))) {
-      const num = typeof value === 'number' ? value : typeof value === 'string' && /^\d+(\.\d+)?$/.test(value) ? Number(value) : NaN
-      if (Number.isFinite(num)) {
-        const pct = num <= 1 ? num * 100 : num
-        if (pct >= 0 && pct <= 100) return pct
-      }
-    }
-  }
-
-  for (const value of Object.values(data)) {
-    const pct = extractProgress(value, depth + 1)
-    if (pct !== null) return pct
-  }
-
-  return null
-}
 
 export async function pollMotionControl(
   accessToken: string,
@@ -453,104 +405,121 @@ export async function pollMotionControl(
   timeoutMs = 1800000
 ): Promise<string> {
   const startTime = Date.now()
-  let pollCount = 0
+  let networkRetries = 0
+  const roomIdMap = new Map<string, string>()
+  roomIdMap.set(taskId, roomId)
+
+  function resolveUrls(obj: any, depth = 0): string[] {
+    if (depth > 6 || !obj || typeof obj !== 'object') return []
+    if (typeof obj === 'string') {
+      if (/^https?:\/\//i.test(obj)) return [obj]
+      const urls = (obj.match(/(?:https?:)?\/\/[^\s"'<>\\]+/gi) || []).map((u: string) =>
+        (u.startsWith('//') ? `https:${u}` : u).replace(/[),.;\]]+$/g, '')
+      )
+      return urls
+    }
+    const urls: string[] = []
+    const urlKeys = 'url,uri,src,href,last_image_url,lastImageUrl,media_url,mediaUrl,image_url,imageUrl,video_url,videoUrl,file_url,fileUrl,asset_url,assetUrl,origin_url,originUrl,original_url,originalUrl,preview_url,previewUrl,source_url,sourceUrl,output_url,outputUrl,download_url,downloadUrl,signed_url,signedUrl,play_url,playUrl,cover_url,coverUrl'
+    for (const key of urlKeys.split(',')) {
+      const val = obj[key]
+      if (typeof val === 'string' && /^https?:\/\//i.test(val)) urls.push(val)
+    }
+    for (const val of Object.values(obj)) urls.push(...resolveUrls(val, depth + 1))
+    return urls
+  }
+
+  function findVideoUrl(...sources: any[]): string | null {
+    const all = [...new Set(sources.flatMap((s) => resolveUrls(s)))]
+    return all.find((u) => /\.(mp4|mov|webm|m4v)(\?|#|$)/i.test(u)) ||
+      all.find((u) => /video|mp4|mov|webm|m4v|vod|tos|myqcloud|aliyun|oss/i.test(u)) ||
+      all[0] || null
+  }
+
+  function extractProgressLocal(obj: any, depth = 0): number | null {
+    if (depth > 6 || !obj || typeof obj !== 'object') return null
+    const keys = ['progress', 'percent', 'rate', 'schedule', 'process']
+    for (const [k, v] of Object.entries(obj)) {
+      const kl = k.toLowerCase()
+      if (keys.some((pk) => kl.includes(pk))) {
+        const num = typeof v === 'number' ? v : typeof v === 'string' && /^\d+(\.\d+)?$/.test(v) ? Number(v) : NaN
+        if (Number.isFinite(num)) {
+          const pct = num <= 1 ? num * 100 : num
+          if (pct >= 0 && pct <= 100) return pct
+        }
+      }
+    }
+    for (const val of Object.values(obj)) {
+      const p = extractProgressLocal(val, depth + 1)
+      if (p !== null) return p
+    }
+    return null
+  }
+
+  let lastLog = ''
 
   while (Date.now() - startTime < timeoutMs) {
-    pollCount++
-    const pollElapsedSec = Math.round((Date.now() - startTime) / 1000)
     await new Promise((r) => setTimeout(r, 4000))
 
     let result: any
     try {
-      const tracking = buildTrackingParams(accessToken, 'nodeexecutequery', roomId)
+      const storedRoomId = roomIdMap.get(taskId) || roomId
+      const tracking = buildTrackingParams(accessToken, 'nodeexecutequery', storedRoomId)
       const { _access_token, ...paramWithoutToken } = tracking
 
       result = await roboneoApiCall(accessToken, 'nodeexecutequery', {
         ...paramWithoutToken,
         task_ids: [taskId],
-        room_id: roomId,
+        room_id: storedRoomId,
       })
+      networkRetries = 0
     } catch (err: any) {
-      if (/HTTP (502|503|504|429)|upstream|network/i.test(err.message)) {
+      if (/HTTP (502|503|504|429)|upstream|connection|network/i.test(err.message)) {
+        networkRetries++
+        if (networkRetries >= 8) throw err
+        onProgress?.(`retrying (${networkRetries})`, 0)
         continue
       }
       throw err
     }
 
     const payload = result?.parameter ?? result
-    console.log(`[roboneo] poll #${pollCount} (${pollElapsedSec}s elapsed) — state: ${payload?.tasks?.[taskId]?.state || 'unknown'}`)
-
-    const tasks = payload?.tasks
-    let task: any = null
-    let foundTaskId = ''
-
-    if (tasks && typeof tasks === 'object') {
-      if (Array.isArray(tasks)) {
-        task = tasks.find((t: any) => t.task_id === taskId || t.id === taskId) || tasks[0]
-        foundTaskId = task?.task_id || task?.id || ''
-      } else {
-        task = tasks[taskId] || Object.values(tasks)[0]
-        foundTaskId = taskId
-      }
-    }
-    console.log(`[roboneo] poll task (${foundTaskId}):`, JSON.stringify(task).slice(0, 2000))
-
+    const task = payload?.tasks?.[taskId] || (typeof payload?.tasks === 'object' ? Object.values(payload?.tasks)?.[0] : null)
     const steps = Array.isArray(task?.steps) ? task.steps : []
-    const succeededStep = steps.find((s: any) =>
-      /success|succeeded|completed|done|finished/i.test(String(s.status || s.state || ''))
-    ) || steps[0]
-
+    const succeededStep = steps.find((s: any) => /success|succeeded|completed|done|finished/i.test(String(s.status || s.state || ''))) || steps[0]
     const status = String(task?.status || task?.state || succeededStep?.status || succeededStep?.state || '').toLowerCase()
-    const realPct = extractProgress(task) ?? extractProgress(payload)
+    const realPct = extractProgressLocal(task) ?? extractProgressLocal(payload)
     const elapsedMin = (Date.now() - startTime) / (8 * 60000)
-    const fallbackPct = Math.min(94, 1 - 1 / (1 + elapsedMin * 1.6))
+    const fallbackPct = Math.min(0.94, 1 - 1 / (1 + elapsedMin * 1.6))
     const pct = realPct === null ? Math.round(5 + fallbackPct * 89) : Math.round(realPct)
 
     onProgress?.(status || 'processing', pct)
 
-    const mediaInfo = task?.media_info_list?.[0] || payload?.media_info_list?.[0]
+    const logEntry = `poll #${Math.round((Date.now() - startTime) / 1000)}s state=${status} pct=${pct}`
+    if (logEntry !== lastLog) {
+      lastLog = logEntry
+      console.log(`[roboneo] ${logEntry}`)
+    }
+
     const isDone = ['success', 'succeeded', 'completed', 'done', 'finished'].includes(status)
+    const mediaInfo = task?.media_info_list?.[0] || payload?.media_info_list?.[0]
 
     if (isDone) {
-      const videoUrl =
-        extractVideoUrl(task?.last_image_url) ||
-        extractVideoUrl(task?.last_image_urls) ||
-        extractVideoUrl(task?.output?.video_url) ||
-        extractVideoUrl(task?.output?.url) ||
-        extractVideoUrl(task?.initial_transferred_urls) ||
-        extractVideoUrl(task?.media_meta) ||
-        extractVideoUrl(task?.result) ||
-        extractVideoUrl(mediaInfo?.url) ||
-        extractVideoUrl(mediaInfo?.media_url) ||
-        extractVideoUrl(steps.map((s: any) => s.output)) ||
-        extractVideoUrl(steps.map((s: any) => s.result)) ||
-        extractVideoUrl(payload?.output) ||
-        extractVideoUrl(payload?.result) ||
-        extractVideoUrl(payload)
-
-      console.log(`[roboneo] done extraction result: ${videoUrl}`)
+      const videoUrl = findVideoUrl(
+        task?.last_image_url, task?.last_image_urls,
+        task?.initial_transferred_urls, task?.media_meta,
+        mediaInfo?.url, mediaInfo?.media_url,
+        ...steps.map((s: any) => s.output),
+        ...steps.map((s: any) => s.result),
+        payload?.output, payload?.result, payload
+      )
 
       if (videoUrl) return videoUrl
 
-      const debugInfo = JSON.stringify({
-        state: task?.state,
-        total_duration_ms: task?.total_duration_ms,
-        steps_count: steps?.length || 0,
-        node_name: task?.node_name,
-        last_image_url: task?.last_image_url,
-        error_message: task?.error_message,
-      })
-      console.error(`[roboneo] task marked done but no output URL found:`, debugInfo)
-      throw new Error(`Roboneo: task selesai (${task?.state || 'unknown'}) tapi output kosong. Detail: ${debugInfo}`)
+      throw new Error(`Roboneo: task selesai (${status}) tapi output kosong`)
     }
 
     if (['fail', 'failed', 'error', 'cancelled', 'canceled'].includes(status)) {
-      const errMsg =
-        task.error_message ||
-        task.error_msg ||
-        succeededStep?.error_message ||
-        succeededStep?.error_msg ||
-        'unknown'
+      const errMsg = task?.error_message || task?.error_msg || succeededStep?.error_message || succeededStep?.error_msg || 'unknown'
       throw new Error(`Roboneo failed: ${errMsg}`)
     }
   }
