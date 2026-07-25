@@ -70,43 +70,40 @@ export default function AdminTokensPage() {
     }
 
     setUploading(true)
-    let successCount = 0
-    let failCount = 0
+    const bulkPayload = lines.map((tokenValue, i) => ({
+      name: `${PROVIDERS.find(p => p.key === activeTab)?.label} #${tokens.length + i + 1}`,
+      token_value: tokenValue,
+    }))
 
-    for (let i = 0; i < lines.length; i++) {
-      const tokenValue = lines[i]
-      const name = `${PROVIDERS.find(p => p.key === activeTab)?.label} #${tokens.length + i + 1}`
-      try {
-        const response = await fetch('/api/admin/tokens', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify({ provider: activeTab, name, token_value: tokenValue, price: Number(price) })
-        })
-        if (response.ok) successCount++
-        else failCount++
-      } catch {
-        failCount++
+    try {
+      const response = await fetch('/api/admin/tokens', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ provider: activeTab, price: Number(price), tokens: bulkPayload })
+      })
+      if (response.ok) {
+        const data = await response.json()
+        addToast(`${data.count || lines.length} token berhasil diupload`, 'success')
+        fetchTokens()
+      } else {
+        const data = await response.json()
+        addToast(data.error || 'Gagal upload token', 'error')
       }
+    } catch {
+      addToast('Gagal upload token', 'error')
     }
 
     setUploading(false)
     setBulkTokens('')
     setPrice('')
     setShowForm(false)
-    fetchTokens()
-
-    if (failCount === 0) {
-      addToast(`${successCount} token berhasil diupload`, 'success')
-    } else {
-      addToast(`${successCount} berhasil, ${failCount} gagal`, 'warning')
-    }
   }
 
   const handleDelete = async (id: number) => {
     if (!confirm('Hapus token ini?')) return
     setActionLoading(id)
     try {
-      const response = await fetch(`/api/admin/tokens/${id}`, {
+      const response = await fetch(`/api/admin/tokens?id=${id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       })

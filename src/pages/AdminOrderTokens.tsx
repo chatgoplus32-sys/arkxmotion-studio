@@ -94,10 +94,10 @@ export default function AdminOrderTokensPage() {
     if (!token) return
     setActionLoading(orderId)
     try {
-      const response = await fetch(`/api/admin/tokens/orders/${orderId}`, {
+      const response = await fetch('/api/admin/tokens/orders', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ status: 'confirmed' })
+        body: JSON.stringify({ id: orderId, status: 'confirmed' })
       })
       if (response.ok) {
         addToast('Order berhasil dikonfirmasi', 'success')
@@ -117,10 +117,10 @@ export default function AdminOrderTokensPage() {
     if (!token || !confirm('Tolak order ini?')) return
     setActionLoading(orderId)
     try {
-      const response = await fetch(`/api/admin/tokens/orders/${orderId}`, {
+      const response = await fetch('/api/admin/tokens/orders', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ status: 'rejected' })
+        body: JSON.stringify({ id: orderId, status: 'rejected' })
       })
       if (response.ok) {
         addToast('Order ditolak', 'success')

@@ -53,6 +53,27 @@ async function handleInit(_req: VercelRequest, res: VercelResponse) {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `
+    await sql`
+      CREATE TABLE IF NOT EXISTS tokens (
+        id SERIAL PRIMARY KEY,
+        provider TEXT NOT NULL,
+        name TEXT NOT NULL,
+        token_value TEXT NOT NULL,
+        price INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'available',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `
+    await sql`
+      CREATE TABLE IF NOT EXISTS token_orders (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        token_id INTEGER NOT NULL REFERENCES tokens(id),
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `
     return res.status(200).json({ message: 'Database initialized' })
   } catch (err: any) {
     console.error('Init error:', err)
@@ -172,6 +193,27 @@ async function handleSeed(_req: VercelRequest, res: VercelResponse) {
         approved INTEGER NOT NULL DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `
+    await sql`
+      CREATE TABLE IF NOT EXISTS tokens (
+        id SERIAL PRIMARY KEY,
+        provider TEXT NOT NULL,
+        name TEXT NOT NULL,
+        token_value TEXT NOT NULL,
+        price INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'available',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `
+    await sql`
+      CREATE TABLE IF NOT EXISTS token_orders (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        token_id INTEGER NOT NULL REFERENCES tokens(id),
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `
 

@@ -75,7 +75,7 @@ export default function SettingsPage() {
     if (!authStore.token) return
     setTokenLoading(true)
     try {
-      const response = await fetch(`/api/tokens/${activeTokenTab}`, {
+      const response = await fetch(`/api/tokens?provider=${activeTokenTab}`, {
         headers: { 'Authorization': `Bearer ${authStore.token}` }
       })
       if (response.ok) {
@@ -117,9 +117,10 @@ export default function SettingsPage() {
   const handleConfirmOrder = async () => {
     if (!selectedToken || !authStore.token) return
     try {
-      const response = await fetch(`/api/tokens/${selectedToken.id}/buy`, {
+      const response = await fetch('/api/tokens/buy', {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${authStore.token}` }
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authStore.token}` },
+        body: JSON.stringify({ token_id: selectedToken.id })
       })
       if (response.ok) {
         addToast('Order berhasil dibuat! Menunggu konfirmasi admin.', 'success')
