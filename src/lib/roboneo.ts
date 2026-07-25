@@ -29,7 +29,8 @@ function extractUid(token: string): string {
   try {
     let t = token.replace(/^_v\d+/, '')
     t += '='.repeat((4 - (t.length % 4)) % 4)
-    const payload = (typeof atob === 'function' ? atob(t) : Buffer.from(t, 'base64').toString('binary')).split('#')[2]
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const payload = (typeof atob === 'function' ? atob(t) : (globalThis as any).Buffer?.from(t, 'base64').toString('binary') ?? atob(t)).split('#')[2]
     if (payload && /^\d+$/.test(payload)) return payload
   } catch {}
   return '0'

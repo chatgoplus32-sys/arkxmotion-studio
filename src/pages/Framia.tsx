@@ -174,7 +174,7 @@ export default function FramiaPage() {
                     <div className="text-xs text-muted-foreground line-clamp-2">{item.description}</div>
                   )}
                   {'cost' in item && item.cost != null && (
-                    <div className="text-xs mt-1">Cost: <b>{item.cost}</b> credits</div>
+                    <div className="text-xs mt-1">Cost: <b>{String(item.cost)}</b> credits</div>
                   )}
                 </div>
               ))}
