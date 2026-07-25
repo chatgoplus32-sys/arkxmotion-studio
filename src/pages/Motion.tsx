@@ -85,6 +85,7 @@ export default function MotionPage() {
   const [keepSound, setKeepSound] = useState(true)
   const [slots, setSlots] = useState<Slot[]>([createSlot()])
   const [generating, setGenerating] = useState(() => getActiveTasks().filter((t) => t.page === 'motion').length > 0)
+  const [progress, setProgress] = useState(0)
   const [logs, setLogs] = useState<Array<{ time: string; msg: string; level: string }>>(() => getLogs())
   const [results, setResults] = useState<Array<{ id: string; url: string; prompt: string; date: string }>>(() => {
     return getResults().filter((r) => r.page === 'motion').map(({ page, ...r }) => r)
@@ -261,7 +262,7 @@ export default function MotionPage() {
                 roboneoToken,
                 taskId,
                 roomId,
-                (status, pct) => addLog(`Slot ${i + 1}: [3/3] ${status} — ${pct}%`)
+                (status, pct) => { addLog(`Slot ${i + 1}: [3/3] ${status} — ${pct}%`); setProgress(pct) }
               )
               break
             } catch (pollErr: any) {
@@ -488,6 +489,21 @@ export default function MotionPage() {
                   </>
                 )}
               </Button>
+
+              {generating && (
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>Progress</span>
+                    <span className="font-mono font-semibold text-foreground">{progress}%</span>
+                  </div>
+                  <div className="h-2.5 w-full rounded-full bg-muted overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-primary transition-all duration-500 ease-out"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
 
               <div className="text-center text-xs text-muted-foreground">
                 Total: <span className="text-foreground font-mono font-semibold">{totalCredits.toLocaleString()}</span> credits ({filledSlots} × {currentModel.cr})

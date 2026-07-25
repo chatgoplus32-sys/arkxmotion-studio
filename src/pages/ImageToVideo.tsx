@@ -413,7 +413,7 @@ export default function ImageToVideoPage() {
         addLog(`[3/3] Polling for result...`)
         const videoUrl = await pollMotionControl(
           apiKey, taskId, roomId,
-          (status, pct) => addLog(`[3/3] ${status} — ${pct}%`)
+          (status, pct) => { addLog(`[3/3] ${status} — ${pct}%`); setStatus((s) => ({ ...s, pct, text: `[Roboneo] ${status}` })) }
         )
         addLog(`[3/3] Done ✓ ${videoUrl.slice(0, 60)}...`, 'success')
 
