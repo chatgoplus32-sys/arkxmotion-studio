@@ -1,9 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
-const ROBONEO_ENDPOINTS = [
-  'https://webapi.roboneo.com',
-  'https://ai-engine-gateway-roboneo.meitu.com',
-]
+const GATEWAY_URL = 'https://ai-engine-gateway-roboneo.meitu.com/roboneo/sync/request'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -24,44 +21,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ ok: false, error: 'Missing path' })
   }
 
-  console.log(`[roboneo] ${path} (tokenLen=${String(token).length})`)
+  console.log(`[roboneo] path=${path} tokenLen=${String(token).length}`)
 
-  for (const base of ROBONEO_ENDPOINTS) {
-    try {
-      const url = `${base}/${path}`
-      console.log(`[roboneo] trying ${url}`)
+  try {
+    const roboneoRes = await fetch(GATEWAY_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'access-token': String(token),
+        'client-id': '1189857684',
+      },
+      body: JSON.stringify({ path, parameter: parameter || {} }),
+    })
 
-      const roboneoRes = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'access-token': String(token),
-          'client-id': '1189857684',
-        },
-        body: JSON.stringify(parameter || {}),
-      })
+    const text = await roboneoRes.text()
+    let data: any = null
+    try { data = JSON.parse(text) } catch {}
 
-      const text = await roboneoRes.text()
-      let data: any = null
-      try { data = JSON.parse(text) } catch {}
+    console.log(`[roboneo] gateway ${roboneoRes.status}:`, text.slice(0, 500))
 
-      console.log(`[roboneo] ${base} → ${roboneoRes.status}:`, text.slice(0, 300))
-
-      if (roboneoRes.ok && data && data.error_code === 0) {
-        return res.status(200).json({ ok: true, status: roboneoRes.status, data })
-      }
-
-      if (roboneoRes.status === 400 && base === ROBONEO_ENDPOINTS[0]) {
-        console.log(`[roboneo] webapi returned 400, trying gateway...`)
-        continue
-      }
-
-      return res.status(200).json({ ok: roboneoRes.ok, status: roboneoRes.status, data })
-    } catch (err: any) {
-      console.error(`[roboneo] ${base} error:`, err.message)
-      continue
+    if (!roboneoRes.ok) {
+      return res.status(200).json({ ok: false, status: roboneoRes.status, data, error: `HTTP ${roboneoRes.status}` })
     }
-  }
 
-  return res.status(502).json({ ok: false, error: 'All Roboneo endpoints failed' })
+    return res.status(200).json({ ok: true, status: roboneoRes.status, data })
+  } catch (err: any) {
+    console.error(`[roboneo] gateway error:`, err.message)
+    return res.status(502).json({ ok: false, error: err.message })
+  }
 }

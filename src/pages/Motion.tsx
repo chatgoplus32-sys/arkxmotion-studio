@@ -131,16 +131,14 @@ export default function MotionPage() {
       addLog('Checking Roboneo balance...')
       const balanceResult = await checkRoboneoBalance(roboneoToken)
       if (!balanceResult.ok) {
-        addLog(`Balance check failed: ${balanceResult.error}`, 'error')
-        addLog('Token mungkin expired. Ambil token baru dari roboneo.com.', 'error')
-        setGenerating(false)
-        return
-      }
-      addLog(`Balance: ${balanceResult.balance !== null ? balanceResult.balance : 'unknown'}`)
-      if (balanceResult.balance !== null && balanceResult.balance <= 0) {
-        addLog('Balance kosong! Tidak ada credit untuk generate.', 'error')
-        setGenerating(false)
-        return
+        addLog(`Balance check: ${balanceResult.error} (skipping check, continuing)`, 'warn')
+      } else {
+        addLog(`Balance: ${balanceResult.balance !== null ? balanceResult.balance : 'unknown'}`)
+        if (balanceResult.balance !== null && balanceResult.balance <= 0) {
+          addLog('Balance kosong! Tidak ada credit untuk generate.', 'error')
+          setGenerating(false)
+          return
+        }
       }
     }
 
