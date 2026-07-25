@@ -517,6 +517,17 @@ export async function pollMotionControl(
 
       if (videoUrl) return videoUrl
 
+      console.log(`[roboneo] task done but no url found. task keys:`, Object.keys(task || {}))
+      console.log(`[roboneo] task:`, JSON.stringify(task, null, 2).slice(0, 2000))
+      console.log(`[roboneo] payload keys:`, Object.keys(payload || {}))
+      if (mediaInfo) console.log(`[roboneo] mediaInfo:`, JSON.stringify(mediaInfo))
+
+      // Task says success but output not ready yet — keep polling
+      if (pct < 80) {
+        onProgress?.('waiting for output', pct)
+        continue
+      }
+
       throw new Error(`Roboneo: task selesai (${status}) tapi output kosong`)
     }
 
