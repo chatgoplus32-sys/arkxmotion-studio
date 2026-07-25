@@ -394,9 +394,22 @@ export default function SettingsPage() {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => window.open(`/api/tokens/note/${order.id}`, '_blank')}
+                        onClick={async () => {
+                          try {
+                            const res = await fetch(`/api/tokens/note/${order.id}`, {
+                              headers: { 'Authorization': `Bearer ${authStore.token}` }
+                            })
+                            const blob = await res.blob()
+                            const url = URL.createObjectURL(blob)
+                            const a = document.createElement('a')
+                            a.href = url
+                            a.download = `token-${order.provider}-${order.id}.txt`
+                            a.click()
+                            URL.revokeObjectURL(url)
+                          } catch {}
+                        }}
                       >
-                        <ExternalLink className="h-3.5 w-3.5" /> Lihat Token
+                        <ExternalLink className="h-3.5 w-3.5" /> Download Token
                       </Button>
                     )}
                     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
