@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Textarea, Select, Label, Badge, EmptyState } from '@/components/ui'
 import { useProviderManager } from '@/stores'
@@ -12,6 +12,8 @@ import {
   Search,
   Loader2,
   X,
+  Download,
+  Play,
 } from 'lucide-react'
 
 const PROVIDERS = {
@@ -276,6 +278,20 @@ export default function MotionPage() {
     setGenerating(false)
   }
 
+  const handleDownload = useCallback(async (url: string, id: string) => {
+    try {
+      const res = await fetch(url)
+      const blob = await res.blob()
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = `motion-${id}.mp4`
+      a.click()
+      URL.revokeObjectURL(a.href)
+    } catch {
+      window.open(url, '_blank')
+    }
+  }, [])
+
   const filteredResults = results.filter(
     (r) => !searchQuery || r.prompt.toLowerCase().includes(searchQuery.toLowerCase())
   )
@@ -486,13 +502,26 @@ export default function MotionPage() {
                   key={result.id}
                   className="rounded-xl overflow-hidden border border-border/60 bg-card/40 group"
                 >
-                  <div className="aspect-video bg-black/40 flex items-center justify-center">
-                    <Video className="h-8 w-8 text-muted-foreground" />
+                  <div className="aspect-video bg-black/40 relative">
+                    <video
+                      src={result.url}
+                      className="w-full h-full object-contain"
+                      controls
+                      muted
+                      playsInline
+                    />
                   </div>
                   <div className="p-2 text-[11px] text-muted-foreground flex items-center justify-between gap-2">
                     <span className="truncate flex-1" title={result.prompt}>
                       {result.prompt}
                     </span>
+                    <a
+                      onClick={(e) => { e.preventDefault(); handleDownload(result.url, result.id) }}
+                      href="#"
+                      className="inline-flex items-center gap-1 rounded-full border border-border bg-card/60 px-2 py-1 text-[11px] hover:text-primary hover:border-primary/50 transition"
+                    >
+                      <Download className="h-3 w-3" />
+                    </a>
                     <button
                       onClick={() => setResults(results.filter((r) => r.id !== result.id))}
                       className="inline-flex items-center gap-1 rounded-full border border-border bg-card/60 px-2 py-1 text-[11px] hover:text-destructive hover:border-destructive/50 transition"
