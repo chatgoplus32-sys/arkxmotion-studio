@@ -11,6 +11,9 @@ import {
   getResults,
   addResult,
   clearResults,
+  getLogs,
+  addBgLog,
+  clearLogs,
   startBackgroundPolling,
 } from '@/lib/backgroundTasks'
 import {
@@ -81,8 +84,8 @@ export default function MotionPage() {
   const [negativePrompt, setNegativePrompt] = useState('')
   const [keepSound, setKeepSound] = useState(true)
   const [slots, setSlots] = useState<Slot[]>([createSlot()])
-  const [generating, setGenerating] = useState(false)
-  const [logs, setLogs] = useState<Array<{ time: string; msg: string; level: string }>>([])
+  const [generating, setGenerating] = useState(() => getActiveTasks().filter((t) => t.page === 'motion').length > 0)
+  const [logs, setLogs] = useState<Array<{ time: string; msg: string; level: string }>>(() => getLogs())
   const [results, setResults] = useState<Array<{ id: string; url: string; prompt: string; date: string }>>(() => {
     return getResults().filter((r) => r.page === 'motion').map(({ page, ...r }) => r)
   })
@@ -92,23 +95,20 @@ export default function MotionPage() {
   const { keys } = useProviderManager()
 
   useEffect(() => {
-    const activeTasks = getActiveTasks().filter((t) => t.page === 'motion')
-    if (activeTasks.length > 0) {
-      setGenerating(true)
-      generatingRef.current = true
-      addLog(`Resuming ${activeTasks.length} background task(s)...`)
-      startBackgroundPolling(
-        (task, url) => {
-          setResults((prev) => [{ id: task.taskId, url, prompt: task.prompt, date: new Date().toISOString() }, ...prev])
-        },
-        (task, msg) => addLog(msg),
-        () => {
-          setGenerating(false)
-          generatingRef.current = false
-          addLog('All background tasks completed!', 'success')
-        },
-      )
+    startBackgroundPolling()
+
+    const sync = () => {
+      const bgLogs = getLogs()
+      setLogs(bgLogs)
+      const bgResults = getResults().filter((r) => r.page === 'motion').map(({ page, ...r }) => r)
+      setResults(bgResults)
+      const hasActive = getActiveTasks().filter((t) => t.page === 'motion').length > 0
+      setGenerating(hasActive)
+      generatingRef.current = hasActive
     }
+
+    window.addEventListener('arkxmotion-tasks-changed', sync)
+    return () => window.removeEventListener('arkxmotion-tasks-changed', sync)
   }, [])
 
   const currentProvider = PROVIDERS[provider as keyof typeof PROVIDERS]
@@ -145,7 +145,8 @@ export default function MotionPage() {
   }
 
   const addLog = (msg: string, level = 'info') => {
-    setLogs((prev) => [...prev, { time: new Date().toLocaleTimeString(), msg, level }].slice(-200))
+    addBgLog(msg, level)
+    setLogs(getLogs())
   }
 
   const handleGenerate = async () => {
@@ -526,7 +527,7 @@ export default function MotionPage() {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => { setResults([]); clearResults() }}
+                onClick={() => { setResults([]); clearResults(); setLogs([]); clearLogs() }}
                 disabled={results.length === 0}
               >
                 <Trash2 className="h-3.5 w-3.5" />

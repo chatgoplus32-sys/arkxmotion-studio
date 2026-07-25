@@ -1,7 +1,8 @@
 import { pollMotionControl } from '@/lib/roboneo'
 
-const STORAGE_KEY = 'arkxmotion_active_tasks'
+const ACTIVE_KEY = 'arkxmotion_active_tasks'
 const RESULTS_KEY = 'arkxmotion_results'
+const LOGS_KEY = 'arkxmotion_bg_logs'
 
 export interface ActiveTask {
   id: string
@@ -22,90 +23,92 @@ export interface CompletedResult {
   page: 'motion' | 'image-to-video'
 }
 
-export function getActiveTasks(): ActiveTask[] {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
-  } catch {
-    return []
-  }
+export interface LogEntry {
+  time: string
+  msg: string
+  level: string
 }
 
-export function saveActiveTasks(tasks: ActiveTask[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks))
+function readJson<T>(key: string, fallback: T): T {
+  try { return JSON.parse(localStorage.getItem(key) || 'null') ?? fallback }
+  catch { return fallback }
 }
+
+function writeJson(key: string, value: any) {
+  localStorage.setItem(key, JSON.stringify(value))
+}
+
+export function getActiveTasks(): ActiveTask[] { return readJson(ACTIVE_KEY, []) }
+function saveActiveTasks(t: ActiveTask[]) { writeJson(ACTIVE_KEY, t) }
 
 export function addActiveTask(task: ActiveTask) {
-  const tasks = getActiveTasks()
-  tasks.push(task)
-  saveActiveTasks(tasks)
+  const t = getActiveTasks(); t.push(task); saveActiveTasks(t)
 }
 
 export function removeActiveTask(taskId: string) {
-  const tasks = getActiveTasks().filter((t) => t.taskId !== taskId)
-  saveActiveTasks(tasks)
+  saveActiveTasks(getActiveTasks().filter((t) => t.taskId !== taskId))
 }
 
-export function getResults(): CompletedResult[] {
-  try {
-    return JSON.parse(localStorage.getItem(RESULTS_KEY) || '[]')
-  } catch {
-    return []
-  }
-}
-
-export function saveResults(results: CompletedResult[]) {
-  localStorage.setItem(RESULTS_KEY, JSON.stringify(results.slice(0, 50)))
-}
+export function getResults(): CompletedResult[] { return readJson(RESULTS_KEY, []) }
+function saveResults(r: CompletedResult[]) { writeJson(RESULTS_KEY, r.slice(0, 50)) }
 
 export function addResult(result: CompletedResult) {
-  const results = getResults()
-  results.unshift(result)
-  saveResults(results)
+  const r = getResults(); r.unshift(result); saveResults(r)
 }
 
-export function clearResults() {
-  localStorage.removeItem(RESULTS_KEY)
+export function clearResults() { localStorage.removeItem(RESULTS_KEY) }
+
+export function getLogs(): LogEntry[] { return readJson(LOGS_KEY, []) }
+
+export function addBgLog(msg: string, level = 'info') {
+  const logs = getLogs()
+  logs.push({ time: new Date().toLocaleTimeString(), msg, level })
+  writeJson(LOGS_KEY, logs.slice(-200))
 }
 
-let _pollingActive = new Set<string>()
+export function clearLogs() { localStorage.removeItem(LOGS_KEY) }
 
-export function startBackgroundPolling(
-  onResult: (task: ActiveTask, url: string) => void,
-  onLog: (task: ActiveTask, msg: string) => void,
-  onDone: () => void,
-) {
+const _controllers = new Map<string, AbortController>()
+const _active = new Set<string>()
+
+export function startBackgroundPolling() {
   const tasks = getActiveTasks()
-
-  if (tasks.length === 0) {
-    onDone()
-    return
-  }
+  if (tasks.length === 0) return
 
   for (const task of tasks) {
-    if (_pollingActive.has(task.taskId)) continue
-    _pollingActive.add(task.taskId)
+    if (_active.has(task.taskId)) continue
+    _active.add(task.taskId)
 
-    onLog(task, `Resuming background poll for task ${task.taskId.slice(0, 20)}...`)
+    const ctrl = new AbortController()
+    _controllers.set(task.taskId, ctrl)
+
+    addBgLog(`Resuming background poll: ${task.model} (${task.taskId.slice(0, 20)}...)`)
 
     pollMotionControl(
-      task.token,
-      task.taskId,
-      task.roomId,
-      (status, pct) => onLog(task, `[bg] ${task.model}: ${status} — ${pct}%`),
+      task.token, task.taskId, task.roomId,
+      (status, pct) => {
+        if (!ctrl.signal.aborted) {
+          addBgLog(`[bg] ${task.model}: ${status} — ${pct}%`)
+        }
+      },
       1800000,
     )
       .then((url) => {
-        onResult(task, url)
+        if (ctrl.signal.aborted) return
+        addResult({ id: task.taskId, url, prompt: task.prompt, date: new Date().toISOString(), page: task.page })
         removeActiveTask(task.taskId)
-        _pollingActive.delete(task.taskId)
-        onLog(task, `Background task completed ✓ ${url.slice(0, 60)}...`)
-        if (getActiveTasks().length === 0) onDone()
+        _active.delete(task.taskId)
+        _controllers.delete(task.taskId)
+        addBgLog(`✅ Background task done ✓ ${url.slice(0, 60)}...`, 'success')
+        window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
       })
       .catch((err) => {
-        onLog(task, `Background task error: ${err.message}`)
+        if (ctrl.signal.aborted) return
+        addBgLog(`❌ Background task error: ${err.message}`, 'error')
         removeActiveTask(task.taskId)
-        _pollingActive.delete(task.taskId)
-        if (getActiveTasks().length === 0) onDone()
+        _active.delete(task.taskId)
+        _controllers.delete(task.taskId)
+        window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
       })
   }
 }

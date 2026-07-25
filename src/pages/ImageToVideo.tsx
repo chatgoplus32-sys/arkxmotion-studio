@@ -8,6 +8,8 @@ import {
   getActiveTasks,
   addActiveTask,
   removeActiveTask,
+  getLogs,
+  addBgLog,
   startBackgroundPolling,
 } from '@/lib/backgroundTasks'
 
@@ -152,12 +154,13 @@ export default function ImageToVideoPage() {
     }
   })
   const [status, setStatus] = useState({ show: false, text: '', pct: 0, time: '' })
-  const [generating, setGenerating] = useState(false)
-  const [logs, setLogs] = useState<Array<{ time: string; msg: string; level: string }>>([])
+  const [generating, setGenerating] = useState(() => getActiveTasks().filter((t) => t.page === 'image-to-video').length > 0)
+  const [logs, setLogs] = useState<Array<{ time: string; msg: string; level: string }>>(() => getLogs())
   const generatingRef = useRef(false)
 
   const addLog = (msg: string, level = 'info') => {
-    setLogs((prev) => [...prev, { time: new Date().toLocaleTimeString(), msg, level }].slice(-200))
+    addBgLog(msg, level)
+    setLogs(getLogs())
   }
 
   const inputRef = useRef<HTMLInputElement>(null)
@@ -167,23 +170,14 @@ export default function ImageToVideoPage() {
   }, [results])
 
   useEffect(() => {
-    const activeTasks = getActiveTasks().filter((t) => t.page === 'image-to-video')
-    if (activeTasks.length > 0) {
-      setGenerating(true)
-      generatingRef.current = true
-      addLog(`Resuming ${activeTasks.length} background task(s)...`)
-      startBackgroundPolling(
-        (task, url) => {
-          setResults((prev) => [url, ...prev])
-        },
-        (task, msg) => addLog(msg),
-        () => {
-          setGenerating(false)
-          generatingRef.current = false
-          addLog('All background tasks completed!', 'success')
-        },
-      )
+    startBackgroundPolling()
+
+    const sync = () => {
+      setLogs(getLogs())
     }
+
+    window.addEventListener('arkxmotion-tasks-changed', sync)
+    return () => window.removeEventListener('arkxmotion-tasks-changed', sync)
   }, [])
 
   const handleDownload = useCallback(async (url: string, index: number) => {
