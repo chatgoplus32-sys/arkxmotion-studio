@@ -41,18 +41,10 @@ async function uploadToCatboxDirect(file: File): Promise<string> {
   formData.append('reqtype', 'fileupload')
   formData.append('fileToUpload', file, file.name || 'upload.bin')
 
-  const res = await fetch('/api/public/upload-catbox', {
-    method: 'POST',
-    body: formData,
-  })
-
+  const res = await fetch('/api/public/upload-catbox', { method: 'POST', body: formData })
   const json = await res.json().catch(() => null)
   const data = json?.data ?? json
-
-  if (!res.ok || !data?.url) {
-    throw new Error(data?.error || `Catbox error: ${json?.error || res.status}`)
-  }
-
+  if (!res.ok || !data?.url) throw new Error(data?.error || `Catbox: ${json?.error || res.status}`)
   return data.url
 }
 
@@ -60,28 +52,42 @@ async function uploadTo0x0(file: File): Promise<string> {
   const formData = new FormData()
   formData.append('file', file, file.name || 'upload.bin')
 
-  const res = await fetch('/api/public/upload-0x0', {
-    method: 'POST',
-    body: formData,
-  })
-
+  const res = await fetch('/api/public/upload-0x0', { method: 'POST', body: formData })
   const json = await res.json().catch(() => null)
   const data = json?.data ?? json
+  if (!res.ok || !data?.url) throw new Error(data?.error || `0x0: ${json?.error || res.status}`)
+  return data.url
+}
 
-  if (!res.ok || !data?.url) {
-    throw new Error(data?.error || `0x0.st error: ${json?.error || res.status}`)
-  }
+async function uploadToTmpfiles(file: File): Promise<string> {
+  const formData = new FormData()
+  formData.append('file', file, file.name || 'upload.bin')
 
+  const res = await fetch('/api/public/upload-tmpfiles', { method: 'POST', body: formData })
+  const json = await res.json().catch(() => null)
+  const data = json?.data ?? json
+  if (!res.ok || !data?.url) throw new Error(data?.error || `tmpfiles: ${json?.error || res.status}`)
   return data.url
 }
 
 export async function uploadToCatbox(file: File): Promise<string> {
-  try {
-    return await uploadToCatboxDirect(file)
-  } catch (e: any) {
-    console.log('[upload] catbox failed, trying 0x0.st:', e.message)
-    return await uploadTo0x0(file)
+  const services = [
+    { name: 'catbox', fn: uploadToCatboxDirect },
+    { name: '0x0.st', fn: uploadTo0x0 },
+    { name: 'tmpfiles', fn: uploadToTmpfiles },
+  ]
+  let lastError = ''
+  for (const svc of services) {
+    try {
+      const url = await svc.fn(file)
+      console.log(`[upload] success via ${svc.name}`)
+      return url
+    } catch (e: any) {
+      console.log(`[upload] ${svc.name} failed:`, e.message)
+      lastError = e.message
+    }
   }
+  throw new Error(`All upload services failed. Last: ${lastError}`)
 }
 
 function buildTrackingParams(accessToken: string, pathScene: string, roomId: string) {
