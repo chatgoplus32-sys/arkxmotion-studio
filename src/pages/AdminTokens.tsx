@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
-import { Section, Button, Input, Label } from '@/components/ui'
+import { Section, Button, Input, Label, Textarea } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
-import { Key, Plus, Trash2, RefreshCw, Edit2, Check, X } from 'lucide-react'
+import { Key, Plus, Trash2, RefreshCw, Upload } from 'lucide-react'
 
 interface Token {
   id: number
@@ -17,10 +17,10 @@ interface Token {
 
 type Provider = 'roboneo' | 'framia' | 'weavy'
 
-const PROVIDERS: { key: Provider; label: string; color: string }[] = [
-  { key: 'roboneo', label: 'Roboneo', color: 'text-blue-500' },
-  { key: 'framia', label: 'Framia', color: 'text-purple-500' },
-  { key: 'weavy', label: 'Weavy', color: 'text-green-500' },
+const PROVIDERS: { key: Provider; label: string }[] = [
+  { key: 'roboneo', label: 'Roboneo' },
+  { key: 'framia', label: 'Framia' },
+  { key: 'weavy', label: 'Weavy' },
 ]
 
 export default function AdminTokensPage() {
@@ -28,11 +28,12 @@ export default function AdminTokensPage() {
   const [activeTab, setActiveTab] = useState<Provider>('roboneo')
   const [isLoading, setIsLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
-  const [editingId, setEditingId] = useState<number | null>(null)
-  const [form, setForm] = useState({ name: '', token_value: '', price: '' })
+  const [bulkTokens, setBulkTokens] = useState('')
+  const [price, setPrice] = useState('')
   const [actionLoading, setActionLoading] = useState<number | null>(null)
+  const [uploading, setUploading] = useState(false)
   const token = useAuthStore((state) => state.token)
-  const addToast = useToastStore((state) => state.addToast)
+  const addToast = useToastStore((s) => s.addToast)
 
   const fetchTokens = useCallback(async () => {
     if (!token) return
@@ -56,44 +57,49 @@ export default function AdminTokensPage() {
     fetchTokens()
   }, [fetchTokens])
 
-  const handleSubmit = async () => {
-    if (!form.name || !form.token_value || !form.price) {
-      addToast('Semua field harus diisi', 'error')
+  const handleSubmitBulk = async () => {
+    if (!bulkTokens.trim() || !price) {
+      addToast('Isi token dan harga', 'error')
       return
     }
 
-    try {
-      const url = editingId ? `/api/admin/tokens/${editingId}` : '/api/admin/tokens'
-      const method = editingId ? 'PATCH' : 'POST'
-      const body = editingId
-        ? { name: form.name, token_value: form.token_value, price: Number(form.price) }
-        : { provider: activeTab, name: form.name, token_value: form.token_value, price: Number(form.price) }
-
-      const response = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify(body)
-      })
-
-      if (response.ok) {
-        addToast(editingId ? 'Token berhasil diupdate' : 'Token berhasil ditambahkan', 'success')
-        setForm({ name: '', token_value: '', price: '' })
-        setShowForm(false)
-        setEditingId(null)
-        fetchTokens()
-      } else {
-        const data = await response.json()
-        addToast(data.error || 'Gagal menyimpan token', 'error')
-      }
-    } catch {
-      addToast('Gagal menyimpan token', 'error')
+    const lines = bulkTokens.split('\n').map(l => l.trim()).filter(l => l.length > 0)
+    if (lines.length === 0) {
+      addToast('Tidak ada token yang diisi', 'error')
+      return
     }
-  }
 
-  const handleEdit = (t: Token) => {
-    setForm({ name: t.name, token_value: t.token_value, price: String(t.price) })
-    setEditingId(t.id)
-    setShowForm(true)
+    setUploading(true)
+    let successCount = 0
+    let failCount = 0
+
+    for (let i = 0; i < lines.length; i++) {
+      const tokenValue = lines[i]
+      const name = `${PROVIDERS.find(p => p.key === activeTab)?.label} #${tokens.length + i + 1}`
+      try {
+        const response = await fetch('/api/admin/tokens', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ provider: activeTab, name, token_value: tokenValue, price: Number(price) })
+        })
+        if (response.ok) successCount++
+        else failCount++
+      } catch {
+        failCount++
+      }
+    }
+
+    setUploading(false)
+    setBulkTokens('')
+    setPrice('')
+    setShowForm(false)
+    fetchTokens()
+
+    if (failCount === 0) {
+      addToast(`${successCount} token berhasil diupload`, 'success')
+    } else {
+      addToast(`${successCount} berhasil, ${failCount} gagal`, 'warning')
+    }
   }
 
   const handleDelete = async (id: number) => {
@@ -105,47 +111,23 @@ export default function AdminTokensPage() {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       if (response.ok) {
-        addToast('Token berhasil dihapus', 'success')
+        addToast('Token dihapus', 'success')
         fetchTokens()
       }
     } catch {
-      addToast('Gagal menghapus token', 'error')
+      addToast('Gagal menghapus', 'error')
     } finally {
       setActionLoading(null)
     }
   }
 
-  const handleToggleStatus = async (id: number, currentStatus: string) => {
-    const newStatus = currentStatus === 'available' ? 'sold' : 'available'
-    setActionLoading(id)
-    try {
-      const response = await fetch(`/api/admin/tokens/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ status: newStatus })
-      })
-      if (response.ok) {
-        addToast(`Status diubah ke ${newStatus}`, 'success')
-        fetchTokens()
-      }
-    } catch {
-      addToast('Gagal mengubah status', 'error')
-    } finally {
-      setActionLoading(null)
-    }
-  }
-
-  const cancelForm = () => {
-    setShowForm(false)
-    setEditingId(null)
-    setForm({ name: '', token_value: '', price: '' })
-  }
+  const tokenCount = bulkTokens.split('\n').map(l => l.trim()).filter(l => l.length > 0).length
 
   return (
     <div>
       <PageHeader
         title="Upload Token"
-        description="Kelola token untuk Roboneo, Framia, dan Weavy"
+        description="Upload stok token Roboneo, Framia, dan Weavy"
         icon={<Key className="h-6 w-6" />}
       />
       <PageContent>
@@ -153,7 +135,7 @@ export default function AdminTokensPage() {
           {PROVIDERS.map((p) => (
             <button
               key={p.key}
-              onClick={() => { setActiveTab(p.key); cancelForm() }}
+              onClick={() => { setActiveTab(p.key); setShowForm(false); setBulkTokens(''); setPrice('') }}
               className={`px-4 py-2 text-sm rounded-xl transition-colors font-medium ${
                 activeTab === p.key
                   ? 'bg-primary text-primary-foreground'
@@ -166,8 +148,8 @@ export default function AdminTokensPage() {
         </div>
 
         <Section
-          title={`Token ${PROVIDERS.find(p => p.key === activeTab)?.label}`}
-          description="Upload dan kelola token yang akan dijual"
+          title={`${PROVIDERS.find(p => p.key === activeTab)?.label} — Stok Token`}
+          description={`${tokens.length} token total, ${tokens.filter(t => t.status === 'available').length} tersedia`}
           right={
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={fetchTokens} disabled={isLoading}>
@@ -175,7 +157,7 @@ export default function AdminTokensPage() {
               </Button>
               {!showForm && (
                 <Button size="sm" onClick={() => setShowForm(true)}>
-                  <Plus className="h-4 w-4" /> Tambah Token
+                  <Plus className="h-4 w-4" /> Upload Bulk
                 </Button>
               )}
             </div>
@@ -183,41 +165,48 @@ export default function AdminTokensPage() {
         >
           {showForm && (
             <div className="mb-5 p-4 rounded-xl border border-border bg-background/50">
-              <div className="text-sm font-medium mb-3">{editingId ? 'Edit Token' : 'Tambah Token Baru'}</div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div>
-                  <Label>Nama Akun</Label>
-                  <Input
-                    placeholder="Nama akun"
-                    value={form.name}
-                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+              <div className="text-sm font-medium mb-3">Upload Bulk Token {PROVIDERS.find(p => p.key === activeTab)?.label}</div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                <div className="md:col-span-2">
+                  <Label>Token / API Key (satu per baris)</Label>
+                  <Textarea
+                    placeholder={`temp_token_abc123\ntemp_token_def456\ntemp_token_ghi789`}
+                    rows={5}
+                    value={bulkTokens}
+                    onChange={(e) => setBulkTokens(e.target.value)}
+                    className="font-mono text-xs"
                   />
+                  {bulkTokens.trim() && (
+                    <div className="text-xs text-muted-foreground mt-1">{tokenCount} token terdeteksi</div>
+                  )}
                 </div>
                 <div>
-                  <Label>Token / API Key</Label>
-                  <Input
-                    placeholder="Token atau API key"
-                    value={form.token_value}
-                    onChange={(e) => setForm({ ...form, token_value: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <Label>Harga (Rp)</Label>
+                  <Label>Harga per Token (Rp)</Label>
                   <Input
                     type="number"
                     placeholder="50000"
-                    value={form.price}
-                    onChange={(e) => setForm({ ...form, price: e.target.value })}
+                    value={price}
+                    onChange={(e) => setPrice(e.target.value)}
+                    className="text-lg font-semibold"
                   />
+                  {price && tokenCount > 0 && (
+                    <div className="text-xs text-muted-foreground mt-2">
+                      Total: Rp {(Number(price) * tokenCount).toLocaleString('id-ID')}
+                    </div>
+                  )}
+                  <Button
+                    className="w-full mt-4"
+                    onClick={handleSubmitBulk}
+                    disabled={uploading || !bulkTokens.trim() || !price}
+                    loading={uploading}
+                  >
+                    {uploading ? null : <Upload className="h-4 w-4" />}
+                    {uploading ? 'Mengupload...' : `Upload ${tokenCount || ''} Token`}
+                  </Button>
+                  <Button variant="outline" className="w-full mt-2" onClick={() => { setShowForm(false); setBulkTokens(''); setPrice('') }}>
+                    Batal
+                  </Button>
                 </div>
-              </div>
-              <div className="flex gap-2 mt-3">
-                <Button size="sm" onClick={handleSubmit}>
-                  <Check className="h-4 w-4" /> {editingId ? 'Update' : 'Simpan'}
-                </Button>
-                <Button variant="outline" size="sm" onClick={cancelForm}>
-                  <X className="h-4 w-4" /> Batal
-                </Button>
               </div>
             </div>
           )}
@@ -225,13 +214,13 @@ export default function AdminTokensPage() {
           {isLoading ? (
             <div className="text-center py-8 text-muted-foreground">Memuat token...</div>
           ) : tokens.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">Belum ada token {PROVIDERS.find(p => p.key === activeTab)?.label}</div>
+            <div className="text-center py-8 text-muted-foreground">Belum ada token</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border">
-                    <th className="text-left py-3 px-4 font-medium text-muted-foreground">Nama</th>
+                    <th className="text-left py-3 px-4 font-medium text-muted-foreground">#</th>
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground">Token</th>
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground">Harga</th>
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground">Status</th>
@@ -239,46 +228,34 @@ export default function AdminTokensPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {tokens.map((t) => (
+                  {tokens.map((t, i) => (
                     <tr key={t.id} className="border-b border-border hover:bg-secondary/50">
-                      <td className="py-3 px-4 font-medium">{t.name}</td>
+                      <td className="py-3 px-4 text-muted-foreground">{i + 1}</td>
                       <td className="py-3 px-4">
                         <code className="text-xs bg-secondary px-2 py-1 rounded-lg font-mono">
-                          {t.token_value.slice(0, 12)}...
+                          {t.token_value.slice(0, 16)}...
                         </code>
                       </td>
                       <td className="py-3 px-4">Rp {t.price.toLocaleString('id-ID')}</td>
                       <td className="py-3 px-4">
-                        <button
-                          onClick={() => handleToggleStatus(t.id, t.status)}
-                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer transition-colors ${
-                            t.status === 'available'
-                              ? 'bg-green-500/10 text-green-500 hover:bg-green-500/20'
-                              : 'bg-red-500/10 text-red-500 hover:bg-red-500/20'
-                          }`}
-                        >
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                          t.status === 'available'
+                            ? 'bg-green-500/10 text-green-500'
+                            : 'bg-red-500/10 text-red-500'
+                        }`}>
                           {t.status === 'available' ? 'Tersedia' : 'Terjual'}
-                        </button>
+                        </span>
                       </td>
                       <td className="py-3 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleEdit(t)}
-                          >
-                            <Edit2 className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDelete(t.id)}
-                            disabled={actionLoading === t.id}
-                            className="text-destructive hover:text-destructive"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDelete(t.id)}
+                          disabled={actionLoading === t.id}
+                          className="text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
                       </td>
                     </tr>
                   ))}
