@@ -1,6 +1,6 @@
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Label, Select } from '@/components/ui'
-import { Shield, Square, Trash2, AlertTriangle, Loader2, ShoppingCart, Key, Copy, ExternalLink, X } from 'lucide-react'
+import { Shield, Square, Trash2, AlertTriangle, Loader2, ShoppingCart, Copy, ExternalLink, X } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
 import { useAuthStore } from '@/stores/authStore'
 import {
@@ -63,7 +63,10 @@ export default function SettingsPage() {
   const [availableTokens, setAvailableTokens] = useState<TokenItem[]>([])
   const [myOrders, setMyOrders] = useState<OrderItem[]>([])
   const [tokenLoading, setTokenLoading] = useState(false)
-  const [selectedToken, setSelectedToken] = useState<TokenItem | null>(null)
+  const [buyQty, setBuyQty] = useState('')
+  const [selectedBuyQty, setSelectedBuyQty] = useState(0)
+  const [selectedBuyPrice, setSelectedBuyPrice] = useState(0)
+  const [selectedBuyProvider, setSelectedBuyProvider] = useState<Provider>('roboneo')
 
   const refresh = useCallback(() => {
     setActiveTasks(getActiveTasks())
@@ -114,27 +117,29 @@ export default function SettingsPage() {
     setSelectedToken(token)
   }
 
-  const handleConfirmOrder = async () => {
-    if (!selectedToken || !authStore.token) return
-    try {
-      const response = await fetch('/api/tokens/buy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authStore.token}` },
-        body: JSON.stringify({ token_id: selectedToken.id })
-      })
-      if (response.ok) {
-        addToast('Order berhasil dibuat! Menunggu konfirmasi admin.', 'success')
-        fetchTokens()
-        fetchMyOrders()
-      } else {
-        const data = await response.json()
-        addToast(data.error || 'Gagal membuat order', 'error')
-      }
-    } catch {
-      addToast('Gagal membuat order', 'error')
+  const handleConfirmBuy = async () => {
+    if (!authStore.token) return
+    const providerTokens = availableTokens.filter(t => t.provider === selectedBuyProvider && t.status === 'available')
+    const qty = selectedBuyQty
+    if (qty < 1 || qty > providerTokens.length) return
+
+    // Create orders for each token
+    for (let i = 0; i < qty; i++) {
+      try {
+        await fetch('/api/tokens/buy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authStore.token}` },
+          body: JSON.stringify({ token_id: providerTokens[i].id })
+        })
+      } catch {}
     }
+
+    addToast(`${qty} token ${PROVIDERS.find(p => p.key === selectedBuyProvider)?.label} berhasil dipesan!`, 'success')
+    fetchTokens()
+    fetchMyOrders()
+    setSelectedBuyQty(0)
+    setBuyQty('')
     window.open(WHATSAPP_LINK, '_blank')
-    setSelectedToken(null)
   }
 
   const handleCopyNumber = () => {
@@ -286,63 +291,92 @@ export default function SettingsPage() {
 
       <Section
         title="🛒 Beli Token"
-        sub="Beli token Roboneo, Framia, dan Weavy"
+        sub="Pilih provider, tentukan jumlah, lalu bayar"
         className="mt-5"
       >
-        <div className="flex gap-2 mb-4">
-          {PROVIDERS.map((p) => (
-            <button
-              key={p.key}
-              onClick={() => setActiveTokenTab(p.key)}
-              className={`px-3 py-1.5 text-sm rounded-lg transition-colors font-medium ${
-                activeTokenTab === p.key
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-secondary text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+          {PROVIDERS.map((p) => {
+            const providerTokens = availableTokens.filter(t => t.provider === p.key && t.status === 'available')
+            const stock = providerTokens.length
+            const price = providerTokens.length > 0 ? providerTokens[0].price : 0
+            const isActive = activeTokenTab === p.key
+            return (
+              <button
+                key={p.key}
+                onClick={() => setActiveTokenTab(p.key)}
+                className={`p-4 rounded-xl border text-left transition-all ${
+                  isActive
+                    ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
+                    : 'border-border bg-background/50 hover:bg-accent/30'
+                }`}
+              >
+                <div className="text-sm font-semibold mb-1">{p.label}</div>
+                <div className="text-2xl font-bold gold-text">{stock}</div>
+                <div className="text-xs text-muted-foreground">token tersedia</div>
+                {price > 0 && (
+                  <div className="text-sm font-semibold mt-2">Rp {price.toLocaleString('id-ID')} / token</div>
+                )}
+              </button>
+            )
+          })}
         </div>
 
         {tokenLoading ? (
-          <div className="text-center py-6 text-muted-foreground text-sm">Memuat token...</div>
-        ) : availableTokens.length === 0 ? (
-          <div className="text-center py-6 text-muted-foreground text-sm">
-            <ShoppingCart className="h-8 w-8 mx-auto mb-2 opacity-50" />
-            Belum ada token {PROVIDERS.find(p => p.key === activeTokenTab)?.label} tersedia
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {availableTokens.map((t) => (
-              <div
-                key={t.id}
-                className="p-4 rounded-xl border border-border bg-background/50 hover:bg-accent/30 transition-colors"
-              >
-                <div className="flex items-start justify-between mb-2">
-                  <div>
-                    <div className="text-sm font-medium">{t.name}</div>
-                    <div className="text-xs text-muted-foreground mt-0.5">
-                      {PROVIDERS.find(p => p.key === t.provider)?.label}
-                    </div>
-                  </div>
-                  <Key className="h-4 w-4 text-muted-foreground" />
-                </div>
-                <div className="text-lg font-bold gold-text mb-3">
-                  Rp {t.price.toLocaleString('id-ID')}
-                </div>
-                <Button
-                  size="sm"
-                  className="w-full"
-                  onClick={() => handleBuyToken(t)}
-                >
-                  <ShoppingCart className="h-3.5 w-3.5" />
-                  Beli Token
-                </Button>
+          <div className="text-center py-4 text-muted-foreground text-sm">Memuat stok...</div>
+        ) : (() => {
+          const providerTokens = availableTokens.filter(t => t.provider === activeTokenTab && t.status === 'available')
+          const stock = providerTokens.length
+          const price = providerTokens.length > 0 ? providerTokens[0].price : 0
+
+          if (stock === 0) {
+            return (
+              <div className="text-center py-6 text-muted-foreground text-sm">
+                <ShoppingCart className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                Stok {PROVIDERS.find(p => p.key === activeTokenTab)?.label} habis
               </div>
-            ))}
-          </div>
-        )}
+            )
+          }
+
+          return (
+            <div className="p-4 rounded-xl border border-border bg-background/50">
+              <div className="flex flex-col sm:flex-row sm:items-end gap-4">
+                <div className="flex-1">
+                  <Label>Jumlah Token {PROVIDERS.find(p => p.key === activeTokenTab)?.label}</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={stock}
+                    placeholder={`1 - ${stock}`}
+                    value={buyQty}
+                    onChange={(e) => setBuyQty(e.target.value)}
+                  />
+                  <div className="text-xs text-muted-foreground mt-1">Maks: {stock} token</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs text-muted-foreground mb-1">Total Bayar</div>
+                  <div className="text-xl font-bold gold-text">
+                    Rp {((Number(buyQty) || 0) * price).toLocaleString('id-ID')}
+                  </div>
+                  <div className="text-xs text-muted-foreground">{Number(buyQty) || 0} x Rp {price.toLocaleString('id-ID')}</div>
+                </div>
+              </div>
+              <Button
+                className="w-full mt-4"
+                disabled={!buyQty || Number(buyQty) < 1 || Number(buyQty) > stock}
+                onClick={() => {
+                  const qty = Number(buyQty)
+                  if (qty < 1 || qty > stock) return
+                  setSelectedBuyQty(qty)
+                  setSelectedBuyPrice(price)
+                  setSelectedBuyProvider(activeTokenTab)
+                }}
+              >
+                <ShoppingCart className="h-4 w-4" />
+                Beli {buyQty ? `${buyQty} Token` : ''}
+              </Button>
+            </div>
+          )
+        })()}
 
         {myOrders.length > 0 && (
           <div className="mt-5 pt-4 border-t border-border">
@@ -375,21 +409,24 @@ export default function SettingsPage() {
         )}
       </Section>
 
-      {selectedToken && (
+      {selectedBuyQty > 0 && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl">
             <div className="flex items-center justify-between mb-4">
-              <div className="text-lg font-semibold">Order Token {PROVIDERS.find(p => p.key === selectedToken.provider)?.label}</div>
-              <button onClick={() => setSelectedToken(null)} className="p-1 rounded-lg hover:bg-accent text-muted-foreground">
+              <div className="text-lg font-semibold">Order Token {PROVIDERS.find(p => p.key === selectedBuyProvider)?.label}</div>
+              <button onClick={() => { setSelectedBuyQty(0); setSelectedBuyProvider('roboneo') }} className="p-1 rounded-lg hover:bg-accent text-muted-foreground">
                 <X className="h-5 w-5" />
               </button>
             </div>
 
             <div className="space-y-4">
               <div className="p-4 rounded-xl bg-background/50 border border-border">
-                <div className="text-sm font-medium mb-1">Token yang dipilih</div>
-                <div className="text-sm text-muted-foreground">{selectedToken.name}</div>
-                <div className="text-xl font-bold gold-text mt-1">Rp {selectedToken.price.toLocaleString('id-ID')}</div>
+                <div className="flex justify-between items-center">
+                  <div>
+                    <div className="text-sm text-muted-foreground">{selectedBuyQty} token x Rp {selectedBuyPrice.toLocaleString('id-ID')}</div>
+                  </div>
+                  <div className="text-xl font-bold gold-text">Rp {(selectedBuyQty * selectedBuyPrice).toLocaleString('id-ID')}</div>
+                </div>
               </div>
 
               <div className="p-4 rounded-xl bg-background/50 border border-border">
@@ -403,30 +440,16 @@ export default function SettingsPage() {
                     </button>
                   </li>
                   <li>a.n <span className="font-semibold text-foreground">Yusuf Prihandoko</span></li>
-                  <li>Transfer sesuai harga token</li>
+                  <li>Transfer sesuai total bayar</li>
                 </ol>
               </div>
 
-              <div className="p-4 rounded-xl bg-green-500/5 border border-green-500/20">
-                <div className="text-sm font-medium mb-1">Konfirmasi ke WhatsApp</div>
-                <div className="text-xs text-muted-foreground mb-2">Klik tombol di bawah untuk membuka chat WhatsApp dan kirim bukti transfer</div>
-                <a
-                  href={WHATSAPP_LINK}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 text-sm font-medium text-green-500 hover:text-green-600"
-                >
-                  <ExternalLink className="h-4 w-4" />
-                  Buka WhatsApp Order Token
-                </a>
-              </div>
-
               <div className="flex gap-2 pt-2">
-                <Button className="flex-1" onClick={handleConfirmOrder}>
+                <Button className="flex-1" onClick={handleConfirmBuy}>
                   <ExternalLink className="h-4 w-4" />
-                  Konfirmasi & Buka WhatsApp
+                  Transfer & Konfirmasi WhatsApp
                 </Button>
-                <Button variant="outline" onClick={() => setSelectedToken(null)}>
+                <Button variant="outline" onClick={() => { setSelectedBuyQty(0); setSelectedBuyProvider('roboneo') }}>
                   Batal
                 </Button>
               </div>
