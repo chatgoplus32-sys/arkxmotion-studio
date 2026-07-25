@@ -457,7 +457,7 @@ export async function pollMotionControl(
 
   while (Date.now() - startTime < timeoutMs) {
     pollCount++
-    const elapsed = Math.round((Date.now() - startTime) / 1000)
+    const pollElapsedSec = Math.round((Date.now() - startTime) / 1000)
     await new Promise((r) => setTimeout(r, 4000))
 
     let result: any
@@ -478,7 +478,7 @@ export async function pollMotionControl(
     }
 
     const payload = result?.parameter ?? result
-    console.log(`[roboneo] poll #${pollCount} (${elapsed}s elapsed) — state: ${payload?.tasks?.[taskId]?.state || 'unknown'}`)
+    console.log(`[roboneo] poll #${pollCount} (${pollElapsedSec}s elapsed) — state: ${payload?.tasks?.[taskId]?.state || 'unknown'}`)
 
     const tasks = payload?.tasks
     let task: any = null
