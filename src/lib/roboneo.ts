@@ -499,8 +499,8 @@ export async function pollMotionControl(
 
     const status = String(task?.status || task?.state || succeededStep?.status || succeededStep?.state || '').toLowerCase()
     const realPct = extractProgress(task) ?? extractProgress(payload)
-    const elapsed = (Date.now() - startTime) / (8 * 60000)
-    const fallbackPct = Math.min(94, 1 - 1 / (1 + elapsed * 1.6))
+    const elapsedMin = (Date.now() - startTime) / (8 * 60000)
+    const fallbackPct = Math.min(94, 1 - 1 / (1 + elapsedMin * 1.6))
     const pct = realPct === null ? Math.round(5 + fallbackPct * 89) : Math.round(realPct)
 
     onProgress?.(status || 'processing', pct)
