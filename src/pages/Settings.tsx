@@ -78,7 +78,7 @@ export default function SettingsPage() {
     if (!authStore.token) return
     setTokenLoading(true)
     try {
-      const response = await fetch(`/api/tokens?provider=${activeTokenTab}`, {
+      const response = await fetch('/api/tokens', {
         headers: { 'Authorization': `Bearer ${authStore.token}` }
       })
       if (response.ok) {
@@ -90,7 +90,7 @@ export default function SettingsPage() {
     } finally {
       setTokenLoading(false)
     }
-  }, [authStore.token, activeTokenTab, addToast])
+  }, [authStore.token, addToast])
 
   const fetchMyOrders = useCallback(async () => {
     if (!authStore.token) return
