@@ -1,8 +1,18 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Textarea, Select, Label, Badge, EmptyState } from '@/components/ui'
 import { useProviderManager } from '@/stores'
 import { uploadToCatbox, submitMotionControl, submitGoogleOmni, pollMotionControl, isRoboneoTokenError, checkRoboneoBalance, compressVideo } from '@/lib/roboneo'
+import {
+  ActiveTask,
+  getActiveTasks,
+  addActiveTask,
+  removeActiveTask,
+  getResults,
+  addResult,
+  clearResults,
+  startBackgroundPolling,
+} from '@/lib/backgroundTasks'
 import {
   Video,
   Upload,
@@ -73,10 +83,33 @@ export default function MotionPage() {
   const [slots, setSlots] = useState<Slot[]>([createSlot()])
   const [generating, setGenerating] = useState(false)
   const [logs, setLogs] = useState<Array<{ time: string; msg: string; level: string }>>([])
-  const [results, setResults] = useState<Array<{ id: string; url: string; prompt: string; date: string }>>([])
+  const [results, setResults] = useState<Array<{ id: string; url: string; prompt: string; date: string }>>(() => {
+    return getResults().filter((r) => r.page === 'motion').map(({ page, ...r }) => r)
+  })
   const [searchQuery, setSearchQuery] = useState('')
+  const generatingRef = useRef(false)
 
   const { keys } = useProviderManager()
+
+  useEffect(() => {
+    const activeTasks = getActiveTasks().filter((t) => t.page === 'motion')
+    if (activeTasks.length > 0) {
+      setGenerating(true)
+      generatingRef.current = true
+      addLog(`Resuming ${activeTasks.length} background task(s)...`)
+      startBackgroundPolling(
+        (task, url) => {
+          setResults((prev) => [{ id: task.taskId, url, prompt: task.prompt, date: new Date().toISOString() }, ...prev])
+        },
+        (task, msg) => addLog(msg),
+        () => {
+          setGenerating(false)
+          generatingRef.current = false
+          addLog('All background tasks completed!', 'success')
+        },
+      )
+    }
+  }, [])
 
   const currentProvider = PROVIDERS[provider as keyof typeof PROVIDERS]
   const currentModel = currentProvider.models.find((m) => m.key === modelKey) || currentProvider.models[0]
@@ -134,6 +167,7 @@ export default function MotionPage() {
     const roboneoToken = isRoboneo ? rawKey : ''
 
     setGenerating(true)
+    generatingRef.current = true
     setLogs([])
 
     if (isRoboneo) {
@@ -205,6 +239,17 @@ export default function MotionPage() {
             addLog(`Slot ${i + 1}: [2b/3] Task created ✓ id=${taskId.slice(0, 20)}...`)
           }
 
+          addActiveTask({
+            id: taskId,
+            taskId,
+            roomId,
+            token: roboneoToken,
+            model: currentModel.label,
+            prompt: prompt.trim() || '(no prompt)',
+            startedAt: Date.now(),
+            page: 'motion',
+          })
+
           addLog(`Slot ${i + 1}: [3/3] Polling for result...`)
 
           let resultUrl: string | null = null
@@ -254,6 +299,14 @@ export default function MotionPage() {
 
           addLog(`Slot ${i + 1}: [3/3] Done ✓ ${resultUrl!.slice(0, 60)}...`, 'success')
 
+          removeActiveTask(taskId)
+          addResult({
+            id: taskId,
+            url: resultUrl!,
+            prompt: prompt.trim() || '(no prompt)',
+            date: new Date().toISOString(),
+            page: 'motion',
+          })
           setResults((prev) => [
             {
               id: taskId,
@@ -265,6 +318,7 @@ export default function MotionPage() {
           ])
         } catch (err: any) {
           addLog(`Slot ${i + 1}: Error: ${err.message}`, 'error')
+          removeActiveTask(taskId)
           if (isRoboneoTokenError(err.message)) {
             addLog('Token Roboneo expired atau tidak valid. Ambil token baru dari roboneo.com.', 'error')
           }
@@ -276,6 +330,7 @@ export default function MotionPage() {
 
     addLog('All generations completed!', 'success')
     setGenerating(false)
+    generatingRef.current = false
   }
 
   const handleDownload = useCallback(async (url: string, id: string) => {
@@ -471,7 +526,7 @@ export default function MotionPage() {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => setResults([])}
+                onClick={() => { setResults([]); clearResults() }}
                 disabled={results.length === 0}
               >
                 <Trash2 className="h-3.5 w-3.5" />

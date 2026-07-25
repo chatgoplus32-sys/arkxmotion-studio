@@ -4,6 +4,12 @@ import { Section, Button, Select, Label, Textarea, EmptyState, Badge } from '@/c
 import { Image, Upload, Rocket, Loader2, Trash2, Zap, Key, ExternalLink } from 'lucide-react'
 import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
 import { uploadToCatbox, submitGoogleOmni, pollMotionControl, compressVideo } from '@/lib/roboneo'
+import {
+  getActiveTasks,
+  addActiveTask,
+  removeActiveTask,
+  startBackgroundPolling,
+} from '@/lib/backgroundTasks'
 
 interface ModelOption {
   value: string
@@ -148,6 +154,7 @@ export default function ImageToVideoPage() {
   const [status, setStatus] = useState({ show: false, text: '', pct: 0, time: '' })
   const [generating, setGenerating] = useState(false)
   const [logs, setLogs] = useState<Array<{ time: string; msg: string; level: string }>>([])
+  const generatingRef = useRef(false)
 
   const addLog = (msg: string, level = 'info') => {
     setLogs((prev) => [...prev, { time: new Date().toLocaleTimeString(), msg, level }].slice(-200))
@@ -158,6 +165,26 @@ export default function ImageToVideoPage() {
   useEffect(() => {
     localStorage.setItem('createpulse.results', JSON.stringify(results))
   }, [results])
+
+  useEffect(() => {
+    const activeTasks = getActiveTasks().filter((t) => t.page === 'image-to-video')
+    if (activeTasks.length > 0) {
+      setGenerating(true)
+      generatingRef.current = true
+      addLog(`Resuming ${activeTasks.length} background task(s)...`)
+      startBackgroundPolling(
+        (task, url) => {
+          setResults((prev) => [url, ...prev])
+        },
+        (task, msg) => addLog(msg),
+        () => {
+          setGenerating(false)
+          generatingRef.current = false
+          addLog('All background tasks completed!', 'success')
+        },
+      )
+    }
+  }, [])
 
   const handleDownload = useCallback(async (url: string, index: number) => {
     try {
@@ -306,10 +333,13 @@ export default function ImageToVideoPage() {
     if (!hasActiveKey && provider !== 'roboneo') return
 
     setGenerating(true)
+    generatingRef.current = true
     setLogs([])
     setStatus({ show: true, text: 'Memulai...', pct: 5, time: '' })
     addLog(`Starting generation with ${provider} · ${currentModel?.label || model}`)
     addLog(`Ratio: ${ratio}, Quality: ${quality}`)
+
+    let activeTaskId: string | null = null
 
     const startTime = Date.now()
     const timer = setInterval(() => {
@@ -352,6 +382,18 @@ export default function ImageToVideoPage() {
         })
         addLog(`[2/3] Task created ✓ id=${taskId.slice(0, 20)}...`)
 
+        addActiveTask({
+          id: taskId,
+          taskId,
+          roomId,
+          token: apiKey,
+          model: currentModel?.label || model,
+          prompt: prompt.trim() || '(no prompt)',
+          startedAt: Date.now(),
+          page: 'image-to-video',
+        })
+        activeTaskId = taskId
+
         addLog(`[3/3] Polling for result...`)
         const videoUrl = await pollMotionControl(
           apiKey, taskId, roomId,
@@ -359,6 +401,7 @@ export default function ImageToVideoPage() {
         )
         addLog(`[3/3] Done ✓ ${videoUrl.slice(0, 60)}...`, 'success')
 
+        removeActiveTask(taskId)
         setResults((prev) => [videoUrl, ...prev])
         setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
       } else {
@@ -371,11 +414,13 @@ export default function ImageToVideoPage() {
         setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai' }))
       }
     } catch (err: any) {
+      if (activeTaskId) removeActiveTask(activeTaskId)
       addLog(`Error: ${err.message}`, 'error')
       setStatus((s) => ({ ...s, pct: 100, text: `❌ Error: ${err.message}` }))
     } finally {
       clearInterval(timer)
       setGenerating(false)
+      generatingRef.current = false
     }
   }
 
