@@ -150,6 +150,7 @@ export default function MotionPage() {
     }
 
     addLog(`Starting generation with ${currentProvider.name} · ${currentModel.label}`)
+    addLog(`Mode: ${isOmni ? 'Image → Video (Google Omni)' : 'Motion Control (Image + Video)'}`)
     addLog(`Processing ${validSlots.length} slot(s)...`)
 
     for (let i = 0; i < validSlots.length; i++) {
@@ -157,14 +158,15 @@ export default function MotionPage() {
 
       if (isRoboneo && slot.image) {
         try {
-          addLog(`Slot ${i + 1}: Uploading image to host...`)
+          addLog(`Slot ${i + 1}: [1/3] Uploading image to host...`)
           const imageUrl = await uploadToCatbox(slot.image)
-          addLog(`Slot ${i + 1}: Image uploaded → ${imageUrl.slice(0, 60)}...`)
+          addLog(`Slot ${i + 1}: [1/3] Image uploaded ✓ ${imageUrl.slice(0, 50)}...`)
 
           let taskId: string, roomId: string
 
           if (isOmni) {
-            addLog(`Slot ${i + 1}: Submitting Google Omni...`)
+            addLog(`Slot ${i + 1}: [2/3] Submitting to Google Omni (video_barley_i2v_omni_flash)...`)
+            addLog(`Slot ${i + 1}: → params: ratio=9:16, video_duration=10, prompt="${prompt.trim() || '(none)'}"`)
             const result = await submitGoogleOmni({
               accessToken: roboneoToken,
               imageUrl,
@@ -174,16 +176,18 @@ export default function MotionPage() {
             })
             taskId = result.taskId
             roomId = result.roomId
+            addLog(`Slot ${i + 1}: [2/3] Task created ✓ id=${taskId.slice(0, 20)}...`)
           } else {
             if (!slot.video) {
               addLog(`Slot ${i + 1}: Skipping (no video for motion control)`, 'warn')
               continue
             }
-            addLog(`Slot ${i + 1}: Uploading video to host...`)
+            addLog(`Slot ${i + 1}: [2a/3] Uploading video to host...`)
             const videoUrl = await uploadToCatbox(slot.video)
-            addLog(`Slot ${i + 1}: Video uploaded → ${videoUrl.slice(0, 60)}...`)
+            addLog(`Slot ${i + 1}: [2a/3] Video uploaded ✓ ${videoUrl.slice(0, 50)}...`)
 
-            addLog(`Slot ${i + 1}: Submitting motion control...`)
+            addLog(`Slot ${i + 1}: [2b/3] Submitting to Motion Control (video_bonbon_motioncontrol_v26)...`)
+            addLog(`Slot ${i + 1}: → params: quality=std, prompt="${prompt.trim() || '(none)'}"`)
             const result = await submitMotionControl({
               accessToken: roboneoToken,
               imageUrl,
@@ -193,18 +197,19 @@ export default function MotionPage() {
             })
             taskId = result.taskId
             roomId = result.roomId
+            addLog(`Slot ${i + 1}: [2b/3] Task created ✓ id=${taskId.slice(0, 20)}...`)
           }
 
-          addLog(`Slot ${i + 1}: Task ${taskId.slice(0, 12)}... (room: ${roomId.slice(0, 16)}...)`)
+          addLog(`Slot ${i + 1}: [3/3] Polling for result...`)
 
           const resultUrl = await pollMotionControl(
             roboneoToken,
             taskId,
             roomId,
-            (status, pct) => addLog(`Slot ${i + 1}: ${status} (${pct}%)`)
+            (status, pct) => addLog(`Slot ${i + 1}: [3/3] ${status} — ${pct}%`)
           )
 
-          addLog(`Slot ${i + 1}: Done!`, 'success')
+          addLog(`Slot ${i + 1}: [3/3] Done ✓ ${resultUrl.slice(0, 60)}...`, 'success')
 
           setResults((prev) => [
             {

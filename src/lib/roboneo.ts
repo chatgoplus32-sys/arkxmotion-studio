@@ -124,7 +124,8 @@ async function roboneoApiCall(
   for (let attempt = 1; attempt <= 5; attempt++) {
     try {
       const body = JSON.stringify({ path, parameter })
-      console.log(`[roboneo] POST /api/public/roboneo → path=${path} (attempt ${attempt})`)
+      console.log(`[roboneo] POST /api/public/roboneo → path=${path} (attempt ${attempt}/5)`)
+      console.log(`[roboneo] → body keys:`, Object.keys(parameter))
 
       const res = await fetch('/api/public/roboneo', {
         method: 'POST',
@@ -394,8 +395,11 @@ export async function pollMotionControl(
   timeoutMs = 1800000
 ): Promise<string> {
   const startTime = Date.now()
+  let pollCount = 0
 
   while (Date.now() - startTime < timeoutMs) {
+    pollCount++
+    const elapsed = Math.round((Date.now() - startTime) / 1000)
     await new Promise((r) => setTimeout(r, 4000))
 
     let result: any
@@ -416,8 +420,7 @@ export async function pollMotionControl(
     }
 
     const payload = result?.parameter ?? result
-    console.log(`[roboneo] poll FULL response:`, JSON.stringify(result).slice(0, 3000))
-    console.log(`[roboneo] poll payload keys:`, Object.keys(payload || {}))
+    console.log(`[roboneo] poll #${pollCount} (${elapsed}s elapsed) — state: ${payload?.tasks?.[taskId]?.state || 'unknown'}`)
 
     const tasks = payload?.tasks
     let task: any = null
@@ -471,9 +474,16 @@ export async function pollMotionControl(
 
       if (videoUrl) return videoUrl
 
-      console.log(`[roboneo] task full:`, JSON.stringify(task))
-      console.log(`[roboneo] payload full:`, JSON.stringify(payload).slice(0, 3000))
-      throw new Error('Roboneo: task selesai tapi URL output tidak ditemukan')
+      const debugInfo = JSON.stringify({
+        state: task?.state,
+        total_duration_ms: task?.total_duration_ms,
+        steps_count: steps?.length || 0,
+        node_name: task?.node_name,
+        last_image_url: task?.last_image_url,
+        error_message: task?.error_message,
+      })
+      console.error(`[roboneo] task marked done but no output URL found:`, debugInfo)
+      throw new Error(`Roboneo: task selesai (${task?.state || 'unknown'}) tapi output kosong. Detail: ${debugInfo}`)
     }
 
     if (['fail', 'failed', 'error', 'cancelled', 'canceled'].includes(status)) {
