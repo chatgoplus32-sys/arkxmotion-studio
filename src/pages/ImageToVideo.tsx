@@ -642,7 +642,7 @@ export default function ImageToVideoPage() {
             {results.map((url, index) => (
               <div key={index} className="rounded-xl overflow-hidden border border-border bg-black/40">
                 <video
-                  src={url}
+                  src={provider === 'createpulse' ? `/api/public/video-proxy?url=${encodeURIComponent(url)}` : url}
                   controls
                   playsInline
                   crossOrigin="anonymous"
@@ -653,7 +653,7 @@ export default function ImageToVideoPage() {
                   className="w-full aspect-[9/16] object-cover bg-black"
                 />
                 <div className="p-2 flex justify-between items-center">
-                  <a href={url} target="_blank" rel="noreferrer" className="text-[11px] text-primary hover:underline flex items-center gap-1">
+                  <a href={provider === 'createpulse' ? `/api/public/video-proxy?url=${encodeURIComponent(url)}` : url} target="_blank" rel="noreferrer" className="text-[11px] text-primary hover:underline flex items-center gap-1">
                     <ExternalLink className="h-3 w-3" /> Buka
                   </a>
                   <button
