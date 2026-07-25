@@ -238,13 +238,13 @@ export default function ImageToVideoPage() {
     addLog(`→ prompt: "${prompt.trim() || '(none)'}"`)
     setStatus((s) => ({ ...s, text: 'Submitting to CreatePulse...', pct: 20 }))
 
-    const submitRes = await fetch(`${CREATEPULSE_API}/generate`, {
+    const submitRes = await fetch(`${CREATEPULSE_API}?action=generate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-API-Key': apiKey,
       },
-      body: JSON.stringify({ action: 'generate', ...body }),
+      body: JSON.stringify(body),
     })
 
     if (!submitRes.ok) {
@@ -268,7 +268,7 @@ export default function ImageToVideoPage() {
     for (let i = 0; i < maxPolls; i++) {
       await new Promise((r) => setTimeout(r, 5000))
 
-      const pollRes = await fetch(`${CREATEPULSE_API}/status?action=status&batchId=${batchId}`, {
+      const pollRes = await fetch(`${CREATEPULSE_API}?action=status&batchId=${batchId}`, {
         headers: { 'X-API-Key': apiKey },
       })
 
