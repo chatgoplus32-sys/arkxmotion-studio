@@ -75,6 +75,9 @@ async function handleInit(_req: VercelRequest, res: VercelResponse) {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `
+    // Add bulk_id column if missing (for existing databases)
+    await sql`ALTER TABLE token_orders ADD COLUMN IF NOT EXISTS bulk_id TEXT NOT NULL DEFAULT ''`
+
     return res.status(200).json({ message: 'Database initialized' })
   } catch (err: any) {
     console.error('Init error:', err)
@@ -218,6 +221,7 @@ async function handleSeed(_req: VercelRequest, res: VercelResponse) {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `
+    await sql`ALTER TABLE token_orders ADD COLUMN IF NOT EXISTS bulk_id TEXT NOT NULL DEFAULT ''`
 
     const password = 'admin123'
     const hashedPassword = await bcrypt.hash(password, 10)
