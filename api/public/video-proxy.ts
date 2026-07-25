@@ -12,8 +12,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ ok: false, error: 'Missing or invalid url param' })
   }
 
+  let targetUrl = url
+  if (/^https?:\/\/localhost:\d+\/backend\/api\/video\//i.test(url)) {
+    targetUrl = url.replace(/^https?:\/\/localhost:\d+/, 'https://multi-agent-release.meitudata.com')
+  }
+
   try {
-    const upstream = await fetch(url, {
+    const upstream = await fetch(targetUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Referer': 'https://multi-agent-release.meitudata.com/',

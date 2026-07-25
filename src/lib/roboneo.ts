@@ -414,11 +414,21 @@ export async function pollMotionControl(
   function resolveUrls(obj: any, depth = 0): string[] {
     if (depth > 6 || !obj || typeof obj !== 'object') return []
     if (typeof obj === 'string') {
-      if (/^https?:\/\//i.test(obj)) return [obj]
-      const urls = (obj.match(/(?:https?:)?\/\/[^\s"'<>\\]+/gi) || []).map((u: string) =>
-        (u.startsWith('//') ? `https:${u}` : u).replace(/[),.;\]]+$/g, '')
-      )
-      return urls
+      let urls: string[] = []
+      if (/^https?:\/\//i.test(obj)) {
+        urls = [obj]
+      } else {
+        urls = (obj.match(/(?:https?:)?\/\/[^\s"'<>\\]+/gi) || []).map((u: string) =>
+          (u.startsWith('//') ? `https:${u}` : u).replace(/[),.;\]]+$/g, '')
+        )
+      }
+      return urls.map((u) => {
+        if (/^https?:\/\/localhost:\d+\/backend\/api\/video\//i.test(u)) {
+          const path = u.replace(/^https?:\/\/localhost:\d+/, '')
+          return `https://multi-agent-release.meitudata.com${path}`
+        }
+        return u
+      })
     }
     const urls: string[] = []
     const urlKeys = 'url,uri,src,href,last_image_url,lastImageUrl,media_url,mediaUrl,image_url,imageUrl,video_url,videoUrl,file_url,fileUrl,asset_url,assetUrl,origin_url,originUrl,original_url,originalUrl,preview_url,previewUrl,source_url,sourceUrl,output_url,outputUrl,download_url,downloadUrl,signed_url,signedUrl,play_url,playUrl,cover_url,coverUrl'
