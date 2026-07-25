@@ -265,9 +265,9 @@ export default function ImageToVideoPage() {
     setStatus((s) => ({ ...s, text: `Processing... (batch: ${batchId.slice(0, 8)}...)`, pct: 40 }))
 
     addLog(`[3/4] Polling for result...`)
-    const maxPolls = 120
+    const maxPolls = 300
     for (let i = 0; i < maxPolls; i++) {
-      await new Promise((r) => setTimeout(r, 5000))
+      await new Promise((r) => setTimeout(r, 4000))
 
       const pollRes = await fetch(`${CREATEPULSE_API}?action=status&batchId=${batchId}`, {
         headers: { 'X-API-Key': apiKey },
