@@ -12,14 +12,6 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/api/auth': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-      },
-      '/api/admin': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-      },
       '/catbox': {
         target: 'https://catbox.moe',
         changeOrigin: true,
