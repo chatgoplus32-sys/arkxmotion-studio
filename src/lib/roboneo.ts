@@ -38,7 +38,8 @@ function extractUid(token: string): string {
 
 export async function uploadToCatbox(file: File): Promise<string> {
   const formData = new FormData()
-  formData.append('file', file, file.name || 'upload.bin')
+  formData.append('reqtype', 'fileupload')
+  formData.append('fileToUpload', file, file.name || 'upload.bin')
 
   const res = await fetch('/api/public/upload-catbox', {
     method: 'POST',
