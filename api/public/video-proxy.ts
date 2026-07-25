@@ -3,7 +3,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Range')
+  res.setHeader('Access-Control-Allow-Headers', '*')
 
   if (req.method === 'OPTIONS') return res.status(200).end()
 
@@ -13,16 +13,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   let targetUrl = url
-  if (/^https?:\/\/localhost:\d+\/backend\/api\/video\//i.test(url)) {
-    targetUrl = url.replace(/^https?:\/\/localhost:\d+/, 'https://createpulse.online')
+  if (/^https?:\/\/localhost:\d+/i.test(url)) {
+    targetUrl = url.replace(/^https?:\/\/localhost:\d+/i, 'https://createpulse.online')
   }
 
   try {
     const upstream = await fetch(targetUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Referer': 'https://multi-agent-release.meitudata.com/',
       },
+      redirect: 'follow',
     })
 
     if (!upstream.ok) {
@@ -33,6 +33,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const contentLength = upstream.headers.get('content-length')
 
     res.setHeader('Content-Type', contentType)
+    res.setHeader('Access-Control-Allow-Origin', '*')
     if (contentLength) res.setHeader('Content-Length', contentLength)
     res.setHeader('Cache-Control', 'public, max-age=86400')
 

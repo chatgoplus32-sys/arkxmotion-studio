@@ -42,7 +42,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (/^https?:\/\/localhost:\d+\/backend\/api\/video\//i.test(fullUrl)) {
         fullUrl = fullUrl.replace(/^https?:\/\/localhost:\d+/, 'https://createpulse.online')
       }
-      const r = await fetch(fullUrl)
+      const r = await fetch(fullUrl, { redirect: 'follow' })
       if (!r.ok) {
         return res.status(r.status).json({ error: `Upstream returned ${r.status}` })
       }

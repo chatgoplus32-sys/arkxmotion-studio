@@ -706,7 +706,6 @@ export default function ImageToVideoPage() {
                   src={url.startsWith('http') ? `/api/public/video-proxy?url=${encodeURIComponent(url)}` : url}
                   controls
                   playsInline
-                  crossOrigin="anonymous"
                   onError={(e) => {
                     const target = e.target as HTMLVideoElement
                     target.poster = ''
