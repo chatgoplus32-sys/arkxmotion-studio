@@ -117,7 +117,7 @@ const TEMPLATES = [
   { name: 'Dynamic Action', body: 'Dynamic camera movement, fast paced, energetic motion' },
 ]
 
-const CREATEPULSE_API = 'https://createpulse.online/api'
+const CREATEPULSE_API = '/api/public/createpulse'
 
 export default function ImageToVideoPage() {
   const { keys, routing } = useProviderManager()
@@ -234,7 +234,7 @@ export default function ImageToVideoPage() {
         'Content-Type': 'application/json',
         'X-API-Key': apiKey,
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ action: 'generate', ...body }),
     })
 
     if (!submitRes.ok) {
@@ -253,7 +253,7 @@ export default function ImageToVideoPage() {
     for (let i = 0; i < maxPolls; i++) {
       await new Promise((r) => setTimeout(r, 5000))
 
-      const pollRes = await fetch(`${CREATEPULSE_API}/status?batchId=${batchId}`, {
+      const pollRes = await fetch(`${CREATEPULSE_API}/status?action=status&batchId=${batchId}`, {
         headers: { 'X-API-Key': apiKey },
       })
 
