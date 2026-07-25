@@ -389,15 +389,26 @@ export default function SettingsPage() {
                       {PROVIDERS.find(p => p.key === order.provider)?.label} - Rp {order.price.toLocaleString('id-ID')}
                     </div>
                   </div>
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                    order.status === 'confirmed'
-                      ? 'bg-green-500/10 text-green-500'
-                      : order.status === 'rejected'
-                        ? 'bg-red-500/10 text-red-500'
-                        : 'bg-yellow-500/10 text-yellow-500'
-                  }`}>
-                    {order.status === 'confirmed' ? 'Dikonfirmasi' : order.status === 'rejected' ? 'Ditolak' : 'Menunggu'}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {order.status === 'confirmed' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => window.open(`/api/tokens/note/${order.id}`, '_blank')}
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" /> Lihat Token
+                      </Button>
+                    )}
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                      order.status === 'confirmed'
+                        ? 'bg-green-500/10 text-green-500'
+                        : order.status === 'rejected'
+                          ? 'bg-red-500/10 text-red-500'
+                          : 'bg-yellow-500/10 text-yellow-500'
+                    }`}>
+                      {order.status === 'confirmed' ? 'Dikonfirmasi' : order.status === 'rejected' ? 'Ditolak' : 'Menunggu'}
+                    </span>
+                  </div>
                 </div>
               ))}
             </div>

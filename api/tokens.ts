@@ -81,6 +81,46 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ orders: rows })
     }
 
+    // GET /api/tokens/note/:orderId - get token note for confirmed order
+    if (req.method === 'GET' && segments.includes('note')) {
+      const orderId = segments[segments.length - 1]
+      if (!orderId || isNaN(Number(orderId))) {
+        return res.status(400).json({ error: 'Invalid order id' })
+      }
+
+      const rows = await sql`
+        SELECT o.*, t.provider, t.name as token_name, t.token_value, t.price, u.name as user_name
+        FROM token_orders o
+        JOIN tokens t ON o.token_id = t.id
+        JOIN users u ON o.user_id = u.id
+        WHERE o.id = ${Number(orderId)} AND o.user_id = ${user.id} AND o.status = 'confirmed'
+      `
+      const order = rows[0]
+      if (!order) return res.status(404).json({ error: 'Order not found or not confirmed' })
+
+      const note = `========================================
+  ARKXMotion Studio - Token Purchase Note
+========================================
+
+User     : ${order.user_name}
+Provider : ${order.provider.toUpperCase()}
+Token    : ${order.token_name}
+Token ID : ${order.token_value}
+Harga    : Rp ${order.price.toLocaleString('id-ID')}
+Status   : CONFIRMED
+Tanggal  : ${new Date(order.created_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}
+
+----------------------------------------
+Terima kasih telah membeli token!
+Gunakan token ini di menu Providers.
+========================================
+`
+
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+      res.setHeader('Content-Disposition', `attachment; filename="token-${order.provider}-${order.id}.txt"`)
+      return res.status(200).send(note)
+    }
+
     return res.status(404).json({ error: 'Not found' })
   } catch (err: any) {
     console.error('Tokens error:', err)
