@@ -3,7 +3,7 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Select, Label, Textarea, EmptyState, Badge } from '@/components/ui'
 import { Image, Upload, Rocket, Loader2, Trash2, Zap, Key, ExternalLink } from 'lucide-react'
 import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
-import { uploadToCatbox, submitGoogleOmni, pollMotionControl, compressVideo } from '@/lib/roboneo'
+import { uploadToCatbox, submitGoogleOmni, submitSeedancePro, pollMotionControl, compressVideo } from '@/lib/roboneo'
 import {
   getActiveTasks,
   addActiveTask,
@@ -357,7 +357,7 @@ export default function ImageToVideoPage() {
           throw new Error('No Roboneo API key')
         }
         if (!imgFile) {
-          addLog('Google Omni requires an image. Upload one first.', 'error')
+          addLog('Roboneo requires an image. Upload one first.', 'error')
           throw new Error('No image provided')
         }
 
@@ -365,15 +365,34 @@ export default function ImageToVideoPage() {
         const imageUrl = await uploadToCatbox(imgFile)
         addLog(`[1/3] Image uploaded ✓ ${imageUrl.slice(0, 60)}...`)
 
-        addLog(`[2/3] Submitting to Google Omni (video_barley_i2v_omni_flash)...`)
-        addLog(`→ ratio: ${ratio}, duration: ${quality}s, prompt: "${prompt.trim() || '(none)'}"`)
-        const { taskId, roomId } = await submitGoogleOmni({
-          accessToken: apiKey,
-          imageUrl,
-          prompt: prompt.trim() || undefined,
-          ratio,
-          videoDuration: parseInt(quality) || 10,
-        })
+        let taskId: string
+        let roomId: string
+
+        if (model === 'rn:seedance-pro') {
+          addLog(`[2/3] Submitting to Seedance Pro (api_v1_outsourcing_img_to_video)...`)
+          addLog(`→ resolution: ${quality}, duration: 12s, prompt: "${prompt.trim() || '(none)'}"`)
+          const result = await submitSeedancePro({
+            accessToken: apiKey,
+            imageUrl,
+            prompt: prompt.trim() || undefined,
+            videoDuration: 12,
+            resolution: quality === '1080p-5s' ? '1080p' : quality === '480p-5s' ? '480p' : '720p',
+          })
+          taskId = result.taskId
+          roomId = result.roomId
+        } else {
+          addLog(`[2/3] Submitting to Google Omni (video_barley_i2v_omni_flash)...`)
+          addLog(`→ ratio: ${ratio}, duration: ${quality}s, prompt: "${prompt.trim() || '(none)'}"`)
+          const result = await submitGoogleOmni({
+            accessToken: apiKey,
+            imageUrl,
+            prompt: prompt.trim() || undefined,
+            ratio,
+            videoDuration: parseInt(quality) || 10,
+          })
+          taskId = result.taskId
+          roomId = result.roomId
+        }
         addLog(`[2/3] Task created ✓ id=${taskId.slice(0, 20)}...`)
 
         addActiveTask({
@@ -681,7 +700,7 @@ export default function ImageToVideoPage() {
             {results.map((url, index) => (
               <div key={index} className="rounded-xl overflow-hidden border border-border bg-black/40">
                 <video
-                  src={provider === 'createpulse' ? `/api/public/video-proxy?url=${encodeURIComponent(url)}` : url}
+                  src={url.startsWith('http') ? `/api/public/video-proxy?url=${encodeURIComponent(url)}` : url}
                   controls
                   playsInline
                   crossOrigin="anonymous"
@@ -692,7 +711,7 @@ export default function ImageToVideoPage() {
                   className="w-full aspect-[9/16] object-cover bg-black"
                 />
                 <div className="p-2 flex justify-between items-center">
-                  <a href={provider === 'createpulse' ? `/api/public/video-proxy?url=${encodeURIComponent(url)}` : url} target="_blank" rel="noreferrer" className="text-[11px] text-primary hover:underline flex items-center gap-1">
+                  <a href={url.startsWith('http') ? `/api/public/video-proxy?url=${encodeURIComponent(url)}` : url} target="_blank" rel="noreferrer" className="text-[11px] text-primary hover:underline flex items-center gap-1">
                     <ExternalLink className="h-3 w-3" /> Buka
                   </a>
                   <button

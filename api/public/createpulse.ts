@@ -38,7 +38,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!videoUrl || typeof videoUrl !== 'string') {
         return res.status(400).json({ error: 'Missing url parameter' })
       }
-      const fullUrl = videoUrl.startsWith('http') ? videoUrl : `https://createpulse.online${videoUrl}`
+      let fullUrl = videoUrl.startsWith('http') ? videoUrl : `https://createpulse.online${videoUrl}`
+      if (/^https?:\/\/localhost:\d+\/backend\/api\/video\//i.test(fullUrl)) {
+        fullUrl = fullUrl.replace(/^https?:\/\/localhost:\d+/, 'https://multi-agent-release.meitudata.com')
+      }
       const r = await fetch(fullUrl)
       if (!r.ok) {
         return res.status(r.status).json({ error: `Upstream returned ${r.status}` })
