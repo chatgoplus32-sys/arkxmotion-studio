@@ -130,7 +130,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const total = rows.reduce((sum: number, r: any) => sum + r.price, 0)
       const date = new Date(rows[0].created_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })
 
-      let note = `========================================
+      let note = `akun_Token_${rows[0].provider}_${rows.length}_${new Date().toISOString().replace(/:/g, '-').slice(0, 19)}.txt
+========================================
   ARKXMotion Studio - Token Purchase Note
 ========================================
 
@@ -148,21 +149,19 @@ TOKEN YANG DIBELI:
 `
 
       for (let i = 0; i < rows.length; i++) {
-        note += `[${i + 1}] ${rows[i].token_name}
-     Token: ${rows[i].token_value}
-     Harga: Rp ${rows[i].price.toLocaleString('id-ID')}
-
+        note += `${rows[i].token_value}
 `
       }
 
-      note += `========================================
+      note += `
+========================================
 Terima kasih telah membeli token!
 Gunakan token ini di menu Providers.
 ========================================
 `
 
       res.setHeader('Content-Type', 'text/plain; charset=utf-8')
-      res.setHeader('Content-Disposition', `attachment; filename="token-${rows[0].provider}-${bulkId}.txt"`)
+      res.setHeader('Content-Disposition', `attachment; filename="akun_Token_${rows[0].provider}_${rows.length}_${new Date().toISOString().replace(/:/g, '-').slice(0, 19)}.txt"`)
       return res.status(200).send(note)
     }
 

@@ -409,7 +409,7 @@ export default function SettingsPage() {
                             const url = URL.createObjectURL(blob)
                             const a = document.createElement('a')
                             a.href = url
-                            a.download = `token-${order.provider}-${order.bulk_id}.txt`
+                            a.download = `akun_Token_${order.provider}_${order.count}_${new Date().toISOString().replace(/:/g, '-').slice(0, 19)}.txt`
                             a.click()
                             URL.revokeObjectURL(url)
                           } catch {}
