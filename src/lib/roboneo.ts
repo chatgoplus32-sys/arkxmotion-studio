@@ -117,22 +117,24 @@ async function uploadTo0x0(file: File): Promise<string> {
   return data.url
 }
 
-async function uploadToTmpfiles(file: File): Promise<string> {
+async function uploadToLitterbox(file: File): Promise<string> {
   const formData = new FormData()
-  formData.append('file', file, file.name || 'upload.bin')
+  formData.append('reqtype', 'fileupload')
+  formData.append('time', '72h')
+  formData.append('fileToUpload', file, file.name || 'upload.bin')
 
-  const res = await fetch('/api/public/upload-tmpfiles', { method: 'POST', body: formData })
+  const res = await fetch('/api/public/upload-litterbox', { method: 'POST', body: formData })
   const json = await res.json().catch(() => null)
   const data = json?.data ?? json
-  if (!res.ok || !data?.url) throw new Error(data?.error || `tmpfiles: ${json?.error || res.status}`)
+  if (!res.ok || !data?.url) throw new Error(data?.error || `litterbox: ${json?.error || res.status}`)
   return data.url
 }
 
 export async function uploadToCatbox(file: File): Promise<string> {
   const services = [
+    { name: 'litterbox', fn: uploadToLitterbox },
     { name: 'catbox', fn: uploadToCatboxDirect },
     { name: '0x0.st', fn: uploadTo0x0 },
-    { name: 'tmpfiles', fn: uploadToTmpfiles },
   ]
   let lastError = ''
   for (const svc of services) {
