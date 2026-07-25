@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Textarea, Select, Label, Badge, EmptyState } from '@/components/ui'
 import { useProviderManager } from '@/stores'
-import { uploadToCatbox, submitMotionControl, pollMotionControl, isRoboneoTokenError, checkRoboneoBalance } from '@/lib/roboneo'
+import { uploadToCatbox, submitMotionControl, submitGoogleOmni, pollMotionControl, isRoboneoTokenError, checkRoboneoBalance } from '@/lib/roboneo'
 import {
   Video,
   Upload,
@@ -34,7 +34,8 @@ const PROVIDERS = {
     { key: 'mag:kling-v2-6-motion-control-std', label: 'Kling V2.6 Standard', cr: 21 },
   ]},
   roboneo: { name: 'Roboneo', models: [
-    { key: 'rn:video_bonbon_motioncontrol_v26:std', label: 'Kling V2.6 Standard', cr: 0 },
+    { key: 'rn:video_bonbon_motioncontrol_v26:std', label: 'Kling V2.6 Standard (Motion Control)', cr: 0 },
+    { key: 'rn:google-omni', label: 'Google Omni (Image to Video)', cr: 0 },
   ]},
 }
 
@@ -77,7 +78,10 @@ export default function MotionPage() {
 
   const currentProvider = PROVIDERS[provider as keyof typeof PROVIDERS]
   const currentModel = currentProvider.models.find((m) => m.key === modelKey) || currentProvider.models[0]
-  const filledSlots = slots.filter((s) => s.image && s.video).length
+  const isOmni = modelKey === 'rn:google-omni'
+  const filledSlots = isOmni
+    ? slots.filter((s) => s.image).length
+    : slots.filter((s) => s.image && s.video).length
   const totalCredits = filledSlots * currentModel.cr
 
   const addSlot = () => {
@@ -111,7 +115,10 @@ export default function MotionPage() {
 
   const handleGenerate = async () => {
     if (generating) return
-    const validSlots = slots.filter((s) => s.image && s.video)
+    const isOmni = modelKey === 'rn:google-omni'
+    const validSlots = isOmni
+      ? slots.filter((s) => s.image)
+      : slots.filter((s) => s.image && s.video)
     if (validSlots.length === 0) return
 
     const isRoboneo = provider === 'roboneo'
@@ -148,24 +155,45 @@ export default function MotionPage() {
     for (let i = 0; i < validSlots.length; i++) {
       const slot = validSlots[i]
 
-      if (isRoboneo && slot.image && slot.video) {
+      if (isRoboneo && slot.image) {
         try {
-          addLog(`Slot ${i + 1}: Uploading image to catbox...`)
+          addLog(`Slot ${i + 1}: Uploading image to host...`)
           const imageUrl = await uploadToCatbox(slot.image)
           addLog(`Slot ${i + 1}: Image uploaded → ${imageUrl.slice(0, 60)}...`)
 
-          addLog(`Slot ${i + 1}: Uploading video to catbox...`)
-          const videoUrl = await uploadToCatbox(slot.video)
-          addLog(`Slot ${i + 1}: Video uploaded → ${videoUrl.slice(0, 60)}...`)
+          let taskId: string, roomId: string
 
-          addLog(`Slot ${i + 1}: Submitting motion control...`)
-          const { taskId, roomId } = await submitMotionControl({
-            accessToken: roboneoToken,
-            imageUrl,
-            videoUrl,
-            prompt: prompt.trim() || undefined,
-            quality: 'std',
-          })
+          if (isOmni) {
+            addLog(`Slot ${i + 1}: Submitting Google Omni...`)
+            const result = await submitGoogleOmni({
+              accessToken: roboneoToken,
+              imageUrl,
+              prompt: prompt.trim() || undefined,
+              ratio: '9:16',
+              videoDuration: 10,
+            })
+            taskId = result.taskId
+            roomId = result.roomId
+          } else {
+            if (!slot.video) {
+              addLog(`Slot ${i + 1}: Skipping (no video for motion control)`, 'warn')
+              continue
+            }
+            addLog(`Slot ${i + 1}: Uploading video to host...`)
+            const videoUrl = await uploadToCatbox(slot.video)
+            addLog(`Slot ${i + 1}: Video uploaded → ${videoUrl.slice(0, 60)}...`)
+
+            addLog(`Slot ${i + 1}: Submitting motion control...`)
+            const result = await submitMotionControl({
+              accessToken: roboneoToken,
+              imageUrl,
+              videoUrl,
+              prompt: prompt.trim() || undefined,
+              quality: 'std',
+            })
+            taskId = result.taskId
+            roomId = result.roomId
+          }
 
           addLog(`Slot ${i + 1}: Task ${taskId.slice(0, 12)}... (room: ${roomId.slice(0, 16)}...)`)
 

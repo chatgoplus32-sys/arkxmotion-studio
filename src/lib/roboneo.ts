@@ -280,6 +280,60 @@ export async function submitMotionControl(params: {
   return { taskId: taskIds[0], roomId }
 }
 
+export async function submitGoogleOmni(params: {
+  accessToken: string
+  imageUrl: string
+  prompt?: string
+  ratio?: string
+  videoDuration?: number
+}): Promise<{ taskId: string; roomId: string }> {
+  const { accessToken, imageUrl, prompt = '', ratio = '9:16', videoDuration = 10 } = params
+
+  const roomId = generateRoomId()
+  const nodeId = uuid()
+
+  const node = {
+    tool_abstract_name: { cn: 'Google Omni', en: 'Google Omni' },
+    node_id: nodeId,
+    name: 'video_barley_i2v_omni_flash',
+    parameters: {
+      image_url: imageUrl,
+      prompt: prompt || '',
+      ratio,
+      video_duration: videoDuration,
+      random: `${Date.now()}-${Math.floor(1e7 + Math.random() * 89999999)}`,
+    },
+  }
+
+  const tracking = buildTrackingParams(accessToken, 'nodeexecute', roomId)
+  const { _access_token, ...paramWithoutToken } = tracking
+
+  const parameter = {
+    ...paramWithoutToken,
+    room_id: roomId,
+    node_id: nodeId,
+    need_node_name: true,
+    workflow_version: 'v2',
+    node_list_array: [[node]],
+  }
+
+  const result = await roboneoApiCall(accessToken, 'nodeexecute', parameter)
+
+  const payload = result?.parameter ?? result
+
+  const taskIds: string[] = payload?.task_ids?.length
+    ? payload.task_ids
+    : Array.isArray(payload?.tasks)
+    ? payload.tasks.map((t: any) => t.task_id).filter(Boolean)
+    : Object.keys(payload?.tasks || {})
+
+  if (!taskIds.length) {
+    throw new Error('Roboneo Google Omni: task_id tidak ditemukan. Response: ' + JSON.stringify(payload).slice(0, 300))
+  }
+
+  return { taskId: taskIds[0], roomId }
+}
+
 function extractVideoUrl(data: any): string | null {
   if (!data || typeof data !== 'object') return null
 
