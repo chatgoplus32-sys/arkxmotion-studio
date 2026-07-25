@@ -100,17 +100,40 @@ export default function AdminOrderTokensPage() {
         body: JSON.stringify({ id: orderId, status: 'confirmed' })
       })
       if (response.ok) {
-        addToast('Order berhasil dikonfirmasi', 'success')
+        addToast('Order dikonfirmasi', 'success')
         fetchOrders()
         fetchStock()
       } else {
-        addToast('Gagal konfirmasi order', 'error')
+        addToast('Gagal konfirmasi', 'error')
       }
     } catch {
-      addToast('Gagal konfirmasi order', 'error')
+      addToast('Gagal konfirmasi', 'error')
     } finally {
       setActionLoading(null)
     }
+  }
+
+  const handleConfirmAll = async () => {
+    if (!token) return
+    const pendingOrders = orders.filter(o => o.status === 'pending')
+    if (pendingOrders.length === 0) return
+
+    setActionLoading(-1)
+    let success = 0
+    for (const order of pendingOrders) {
+      try {
+        const response = await fetch('/api/admin/tokens/orders', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ id: order.id, status: 'confirmed' })
+        })
+        if (response.ok) success++
+      } catch {}
+    }
+    setActionLoading(null)
+    addToast(`${success} order berhasil dikonfirmasi semua`, 'success')
+    fetchOrders()
+    fetchStock()
   }
 
   const handleReject = async (orderId: number) => {
@@ -127,10 +150,10 @@ export default function AdminOrderTokensPage() {
         fetchOrders()
         fetchStock()
       } else {
-        addToast('Gagal menolak order', 'error')
+        addToast('Gagal menolak', 'error')
       }
     } catch {
-      addToast('Gagal menolak order', 'error')
+      addToast('Gagal menolak', 'error')
     } finally {
       setActionLoading(null)
     }
@@ -194,6 +217,11 @@ export default function AdminOrderTokensPage() {
               <Button variant="outline" size="sm" onClick={() => { fetchOrders(); fetchStock() }} disabled={isLoading}>
                 <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
               </Button>
+              {orders.filter(o => o.status === 'pending').length > 0 && (
+                <Button size="sm" onClick={handleConfirmAll} disabled={actionLoading === -1} loading={actionLoading === -1}>
+                  <CheckCircle className="h-4 w-4" /> Konfirmasi Semua
+                </Button>
+              )}
             </div>
           }
         >
