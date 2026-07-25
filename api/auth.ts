@@ -3,7 +3,12 @@ import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { neon } from '@neondatabase/serverless'
 
-const sql = neon(process.env.DATABASE_URL!)
+function getSql() {
+  const url = process.env.DATABASE_URL
+  if (!url) throw new Error('DATABASE_URL is not set')
+  return neon(url)
+}
+
 const JWT_SECRET = process.env.JWT_SECRET || 'arkxmotion-studio-secret-key-2026'
 
 function cors(res: VercelResponse) {
@@ -16,20 +21,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   cors(res)
   if (req.method === 'OPTIONS') return res.status(200).end()
 
-  const rawPath = req.query.path
-  const path = Array.isArray(rawPath) ? rawPath[0] : (rawPath || '')
+  try {
+    const rawPath = req.query.path
+    const path = Array.isArray(rawPath) ? rawPath[0] : (rawPath || '')
 
-  if (path === 'init') return handleInit(req, res)
-  if (path === 'login') return handleLogin(req, res)
-  if (path === 'me') return handleMe(req, res)
-  if (path === 'register') return handleRegister(req, res)
-  if (path === 'seed') return handleSeed(req, res)
+    if (path === 'init') return handleInit(req, res)
+    if (path === 'login') return handleLogin(req, res)
+    if (path === 'me') return handleMe(req, res)
+    if (path === 'register') return handleRegister(req, res)
+    if (path === 'seed') return handleSeed(req, res)
 
-  return res.status(404).json({ error: 'Not found' })
+    return res.status(404).json({ error: 'Not found' })
+  } catch (err: any) {
+    console.error('Handler error:', err)
+    return res.status(500).json({ error: err.message || 'Internal server error' })
+  }
 }
 
-async function handleInit(req: VercelRequest, res: VercelResponse) {
+async function handleInit(_req: VercelRequest, res: VercelResponse) {
   try {
+    const sql = getSql()
     await sql`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -41,11 +52,6 @@ async function handleInit(req: VercelRequest, res: VercelResponse) {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
-    `
-    await sql`
-      INSERT INTO users (email, password, name, role, approved)
-      SELECT 'nuallakoko@gmail.com', '$2a$10$dummy', 'Admin', 'admin', 1
-      WHERE NOT EXISTS (SELECT 1 FROM users WHERE email = 'nuallakoko@gmail.com')
     `
     return res.status(200).json({ message: 'Database initialized' })
   } catch (err: any) {
@@ -63,6 +69,7 @@ async function handleLogin(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
+    const sql = getSql()
     const rows = await sql`SELECT * FROM users WHERE email = ${email}`
     const user = rows[0]
     if (!user) return res.status(401).json({ error: 'Invalid email or password' })
@@ -101,6 +108,7 @@ async function handleMe(req: VercelRequest, res: VercelResponse) {
   if (!token) return res.status(401).json({ error: 'Access token required' })
 
   try {
+    const sql = getSql()
     const decoded = jwt.verify(token, JWT_SECRET) as { id: number; email: string; role: string }
     const rows = await sql`
       SELECT id, email, name, role, approved, created_at
@@ -129,6 +137,7 @@ async function handleRegister(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
+    const sql = getSql()
     const existing = await sql`SELECT id FROM users WHERE email = ${email}`
     if (existing.length > 0) return res.status(409).json({ error: 'Email already registered' })
 
@@ -149,8 +158,23 @@ async function handleRegister(req: VercelRequest, res: VercelResponse) {
   }
 }
 
-async function handleSeed(req: VercelRequest, res: VercelResponse) {
+async function handleSeed(_req: VercelRequest, res: VercelResponse) {
   try {
+    const sql = getSql()
+
+    await sql`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        email TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL,
+        name TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'user',
+        approved INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `
+
     const password = 'admin123'
     const hashedPassword = await bcrypt.hash(password, 10)
 

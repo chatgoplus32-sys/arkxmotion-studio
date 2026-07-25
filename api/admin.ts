@@ -2,7 +2,12 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import jwt from 'jsonwebtoken'
 import { neon } from '@neondatabase/serverless'
 
-const sql = neon(process.env.DATABASE_URL!)
+function getSql() {
+  const url = process.env.DATABASE_URL
+  if (!url) throw new Error('DATABASE_URL is not set')
+  return neon(url)
+}
+
 const JWT_SECRET = process.env.JWT_SECRET || 'arkxmotion-studio-secret-key-2026'
 
 function cors(res: VercelResponse) {
@@ -28,34 +33,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (!verifyAdmin(req)) return res.status(403).json({ error: 'Admin access required' })
 
-  const rawSub = req.query.sub
-  const sub = Array.isArray(rawSub) ? rawSub[0] : rawSub
-  const rawId = req.query.id
-  const id = rawId ? Number(Array.isArray(rawId) ? rawId[0] : rawId) : undefined
-  const rawAction = req.query.action
-  const action = Array.isArray(rawAction) ? rawAction[0] : rawAction
+  try {
+    const rawSub = req.query.sub
+    const sub = Array.isArray(rawSub) ? rawSub[0] : rawSub
+    const rawId = req.query.id
+    const id = rawId ? Number(Array.isArray(rawId) ? rawId[0] : rawId) : undefined
+    const rawAction = req.query.action
+    const action = Array.isArray(rawAction) ? rawAction[0] : rawAction
 
-  if (sub === 'pending' || (!id && !sub && req.url?.includes('pending'))) {
-    if (req.method === 'GET') return handlePending(req, res)
+    if (sub === 'pending' || (!id && !sub && req.url?.includes('pending'))) {
+      if (req.method === 'GET') return handlePending(res)
+    }
+
+    if (id && action === 'approve' && req.method === 'POST') {
+      return handleApprove(res, id)
+    }
+
+    if (id && !action && req.method === 'DELETE') {
+      return handleDelete(res, id)
+    }
+
+    if (!id && !sub && req.method === 'GET') {
+      return handleList(res)
+    }
+
+    return res.status(404).json({ error: 'Not found' })
+  } catch (err: any) {
+    console.error('Admin handler error:', err)
+    return res.status(500).json({ error: err.message || 'Internal server error' })
   }
-
-  if (id && action === 'approve' && req.method === 'POST') {
-    return handleApprove(res, id)
-  }
-
-  if (id && !action && req.method === 'DELETE') {
-    return handleDelete(res, id)
-  }
-
-  if (!id && !sub && req.method === 'GET') {
-    return handleList(req, res)
-  }
-
-  return res.status(404).json({ error: 'Not found' })
 }
 
-async function handleList(req: VercelRequest, res: VercelResponse) {
+async function handleList(res: VercelResponse) {
   try {
+    const sql = getSql()
     const rows = await sql`
       SELECT id, email, name, role, approved, created_at, updated_at
       FROM users ORDER BY created_at DESC
@@ -67,8 +78,9 @@ async function handleList(req: VercelRequest, res: VercelResponse) {
   }
 }
 
-async function handlePending(req: VercelRequest, res: VercelResponse) {
+async function handlePending(res: VercelResponse) {
   try {
+    const sql = getSql()
     const rows = await sql`
       SELECT id, email, name, role, approved, created_at
       FROM users WHERE approved = 0 AND role != 'admin'
@@ -83,6 +95,7 @@ async function handlePending(req: VercelRequest, res: VercelResponse) {
 
 async function handleApprove(res: VercelResponse, id: number) {
   try {
+    const sql = getSql()
     const rows = await sql`SELECT id, email, name, role FROM users WHERE id = ${id}`
     const user = rows[0]
     if (!user) return res.status(404).json({ error: 'User not found' })
@@ -98,6 +111,7 @@ async function handleApprove(res: VercelResponse, id: number) {
 
 async function handleDelete(res: VercelResponse, id: number) {
   try {
+    const sql = getSql()
     const rows = await sql`SELECT id, email, role FROM users WHERE id = ${id}`
     const user = rows[0]
     if (!user) return res.status(404).json({ error: 'User not found' })
