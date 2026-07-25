@@ -4,11 +4,22 @@
   "framework": null,
   "installCommand": "npm install",
   "functions": {
-    "api/public/roboneo.ts": {
-      "regions": ["iad1"]
-    }
+    "api/auth/login.ts": { "maxDuration": 10 },
+    "api/auth/register.ts": { "maxDuration": 10 },
+    "api/auth/me.ts": { "maxDuration": 10 },
+    "api/auth/init.ts": { "maxDuration": 10 },
+    "api/admin/users.ts": { "maxDuration": 10 },
+    "api/admin/users-pending.ts": { "maxDuration": 10 },
+    "api/admin/users-approve.ts": { "maxDuration": 10 },
+    "api/admin/users-id.ts": { "maxDuration": 10 },
+    "api/public/roboneo.ts": { "regions": ["iad1"] }
   },
   "routes": [
+    { "src": "/api/auth/(.*)", "dest": "/api/auth/$1" },
+    { "src": "/api/admin/users/pending", "dest": "/api/admin/users-pending" },
+    { "src": "/api/admin/users/(.*)/approve", "dest": "/api/admin/users-approve?id=$1" },
+    { "src": "/api/admin/users/(.*)", "dest": "/api/admin/users-id?id=$1" },
+    { "src": "/api/admin/users", "dest": "/api/admin/users" },
     { "src": "/api/(.*)", "dest": "/api/$1" },
     { "handle": "filesystem" },
     { "src": "/(.*)", "dest": "/index.html" }

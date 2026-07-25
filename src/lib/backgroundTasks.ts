@@ -68,8 +68,52 @@ export function addBgLog(msg: string, level = 'info') {
 
 export function clearLogs() { localStorage.removeItem(LOGS_KEY) }
 
+export function clearAllTasks() {
+  localStorage.removeItem(ACTIVE_KEY)
+  localStorage.removeItem(RESULTS_KEY)
+  localStorage.removeItem(LOGS_KEY)
+}
+
 const _controllers = new Map<string, AbortController>()
 const _active = new Set<string>()
+
+export function forceStopTask(taskId: string): boolean {
+  const ctrl = _controllers.get(taskId)
+  if (ctrl) {
+    ctrl.abort()
+    _controllers.delete(taskId)
+    _active.delete(taskId)
+    removeActiveTask(taskId)
+    addBgLog(`⛔ Force stopped task: ${taskId.slice(0, 20)}...`, 'error')
+    window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
+    return true
+  }
+  removeActiveTask(taskId)
+  window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
+  return false
+}
+
+export function forceStopAllTasks(): number {
+  let count = 0
+  for (const [id, ctrl] of _controllers) {
+    ctrl.abort()
+    count++
+  }
+  _controllers.clear()
+  _active.clear()
+  const tasks = getActiveTasks()
+  for (const t of tasks) {
+    addBgLog(`⛔ Force stopped task: ${t.model} (${t.taskId.slice(0, 20)}...)`, 'error')
+  }
+  localStorage.removeItem(ACTIVE_KEY)
+  addBgLog(`⛔ All tasks force stopped (${count} active)`, 'error')
+  window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
+  return count
+}
+
+export function getActiveControllerCount(): number {
+  return _controllers.size
+}
 
 export function startBackgroundPolling() {
   const tasks = getActiveTasks()

@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button } from '@/components/ui'
+import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
-import { Users, CheckCircle, XCircle, Clock, Trash2 } from 'lucide-react'
+import { Users, CheckCircle, XCircle, Clock, Trash2, RefreshCw } from 'lucide-react'
 
 interface User {
   id: number
@@ -10,69 +11,117 @@ interface User {
   name: string
   role: string
   approved: boolean
-}
-
-const USERS_KEY = 'arkxmotion_users'
-
-function getUsers(): User[] {
-  const raw = localStorage.getItem(USERS_KEY)
-  if (!raw) return []
-  const stored: any[] = JSON.parse(raw)
-  return stored.map(({ password: _, ...rest }) => rest)
-}
-
-function saveUsers(users: any[]) {
-  localStorage.setItem(USERS_KEY, JSON.stringify(users))
+  created_at: string
 }
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<User[]>([])
   const [filter, setFilter] = useState<'all' | 'pending' | 'approved'>('all')
+  const [isLoading, setIsLoading] = useState(true)
+  const [actionLoading, setActionLoading] = useState<number | null>(null)
+  const token = useAuthStore((state) => state.token)
   const addToast = useToastStore((state) => state.addToast)
 
+  const fetchUsers = useCallback(async () => {
+    if (!token) return
+    setIsLoading(true)
+    try {
+      const endpoint = filter === 'pending' ? '/api/admin/users/pending' : '/api/admin/users'
+      const response = await fetch(endpoint, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setUsers(data.users)
+      }
+    } catch {
+      addToast('Failed to fetch users', 'error')
+    } finally {
+      setIsLoading(false)
+    }
+  }, [token, filter, addToast])
+
   useEffect(() => {
-    setUsers(getUsers())
-  }, [])
+    fetchUsers()
+  }, [fetchUsers])
 
-  const filtered = filter === 'all' ? users : users.filter(u => filter === 'pending' ? !u.approved : u.approved)
-  const pendingCount = users.filter(u => !u.approved && u.role !== 'admin').length
-
-  const handleApprove = (userId: number) => {
-    const all = JSON.parse(localStorage.getItem(USERS_KEY) || '[]')
-    const idx = all.findIndex((u: any) => u.id === userId)
-    if (idx >= 0) {
-      all[idx].approved = true
-      saveUsers(all)
-      setUsers(getUsers())
-      addToast('User approved', 'success')
+  const handleApprove = async (userId: number) => {
+    if (!token) return
+    setActionLoading(userId)
+    try {
+      const response = await fetch(`/api/admin/users/${userId}/approve`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (response.ok) {
+        addToast('User approved successfully', 'success')
+        fetchUsers()
+      } else {
+        addToast('Failed to approve user', 'error')
+      }
+    } catch {
+      addToast('Failed to approve user', 'error')
+    } finally {
+      setActionLoading(null)
     }
   }
 
-  const handleReject = (userId: number) => {
-    const all = JSON.parse(localStorage.getItem(USERS_KEY) || '[]')
-    const filtered = all.filter((u: any) => u.id !== userId)
-    saveUsers(filtered)
-    setUsers(getUsers())
-    addToast('User rejected and removed', 'success')
+  const handleReject = async (userId: number) => {
+    if (!token) return
+    if (!confirm('Are you sure you want to reject this user?')) return
+    setActionLoading(userId)
+    try {
+      const response = await fetch(`/api/admin/users/${userId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (response.ok) {
+        addToast('User rejected and removed', 'success')
+        fetchUsers()
+      } else {
+        addToast('Failed to reject user', 'error')
+      }
+    } catch {
+      addToast('Failed to reject user', 'error')
+    } finally {
+      setActionLoading(null)
+    }
   }
 
-  const handleDelete = (userId: number) => {
+  const handleDelete = async (userId: number) => {
+    if (!token) return
     if (!confirm('Are you sure you want to delete this user?')) return
-    const all = JSON.parse(localStorage.getItem(USERS_KEY) || '[]')
-    const filtered = all.filter((u: any) => u.id !== userId)
-    saveUsers(filtered)
-    setUsers(getUsers())
-    addToast('User deleted', 'success')
+    setActionLoading(userId)
+    try {
+      const response = await fetch(`/api/admin/users/${userId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (response.ok) {
+        addToast('User deleted successfully', 'success')
+        fetchUsers()
+      } else {
+        addToast('Failed to delete user', 'error')
+      }
+    } catch {
+      addToast('Failed to delete user', 'error')
+    } finally {
+      setActionLoading(null)
+    }
   }
+
+  const filtered = filter === 'all' ? users : users.filter(u => filter === 'pending' ? !u.approved : u.approved)
+  const pendingCount = users.filter(u => !u.approved && u.role !== 'admin').length
 
   return (
     <div>
       <PageHeader
         title="User Management"
-        desc="Manage user registrations and approvals"
+        description="Manage user registrations and approvals"
+        icon={<Users className="h-6 w-6" />}
       />
       <PageContent>
-        <Section title="Users" sub="View and manage all registered users">
+        <Section title="Users" description="View and manage all registered users">
           <div className="flex items-center gap-3 mb-4">
             <div className="flex gap-2">
               <button
@@ -108,9 +157,14 @@ export default function AdminUsersPage() {
                 Approved
               </button>
             </div>
+            <Button variant="outline" size="sm" onClick={fetchUsers} disabled={isLoading}>
+              <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+            </Button>
           </div>
 
-          {filtered.length === 0 ? (
+          {isLoading ? (
+            <div className="text-center py-8 text-muted-foreground">Loading users...</div>
+          ) : filtered.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">No users found</div>
           ) : (
             <div className="overflow-x-auto">
@@ -159,6 +213,7 @@ export default function AdminUsersPage() {
                                 variant="outline"
                                 size="sm"
                                 onClick={() => handleApprove(user.id)}
+                                disabled={actionLoading === user.id}
                                 className="text-green-500 hover:text-green-600 hover:bg-green-500/10"
                               >
                                 <CheckCircle className="h-4 w-4" />
@@ -169,6 +224,7 @@ export default function AdminUsersPage() {
                                 variant="outline"
                                 size="sm"
                                 onClick={() => handleReject(user.id)}
+                                disabled={actionLoading === user.id}
                                 className="text-yellow-500 hover:text-yellow-600 hover:bg-yellow-500/10"
                               >
                                 <XCircle className="h-4 w-4" />
@@ -178,6 +234,7 @@ export default function AdminUsersPage() {
                               variant="outline"
                               size="sm"
                               onClick={() => handleDelete(user.id)}
+                              disabled={actionLoading === user.id}
                               className="text-destructive hover:text-destructive hover:bg-destructive/10"
                             >
                               <Trash2 className="h-4 w-4" />
