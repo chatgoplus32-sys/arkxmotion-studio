@@ -114,7 +114,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ message: 'Token deleted' })
     }
 
-    // GET /api/admin/tokens/orders - list all orders
+    // GET /api/admin/tokens/orders - list all orders grouped by bulk_id
     if (req.method === 'GET' && segments.includes('orders')) {
       const rows = await sql`
         SELECT o.*, t.provider, t.name as token_name, t.token_value, t.price, u.email as user_email, u.name as user_name
@@ -123,29 +123,59 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         JOIN users u ON o.user_id = u.id
         ORDER BY o.created_at DESC
       `
-      return res.status(200).json({ orders: rows })
+
+      // Group by bulk_id
+      const bulkMap = new Map<string, any>()
+      for (const row of rows) {
+        const bid = row.bulk_id || `single_${row.id}`
+        if (!bulkMap.has(bid)) {
+          bulkMap.set(bid, {
+            bulk_id: bid,
+            user_name: row.user_name,
+            user_email: row.user_email,
+            provider: row.provider,
+            status: row.status,
+            created_at: row.created_at,
+            tokens: [],
+            total_price: 0,
+          })
+        }
+        const bulk = bulkMap.get(bid)!
+        bulk.tokens.push({ id: row.token_id, name: row.token_name, token_value: row.token_value, price: row.price })
+        bulk.total_price += row.price
+      }
+
+      return res.status(200).json({ orders: Array.from(bulkMap.values()) })
     }
 
-    // PATCH /api/admin/tokens/orders - confirm/reject order
+    // PATCH /api/admin/tokens/orders - confirm/reject order by bulk_id
     if (req.method === 'PATCH' && segments.includes('orders')) {
-      const { id, status } = req.body || {}
-      if (!id || !status || !['confirmed', 'rejected'].includes(status)) {
-        return res.status(400).json({ error: 'Invalid params' })
+      const { id, bulk_id, status } = req.body || {}
+      if (!status || !['confirmed', 'rejected'].includes(status)) {
+        return res.status(400).json({ error: 'Invalid status' })
       }
 
-      const rows = await sql`SELECT * FROM token_orders WHERE id = ${id}`
-      const order = rows[0]
-      if (!order) return res.status(404).json({ error: 'Order not found' })
+      const targetBulkId = bulk_id || ''
+      if (!targetBulkId) {
+        return res.status(400).json({ error: 'bulk_id is required' })
+      }
 
-      await sql`UPDATE token_orders SET status = ${status} WHERE id = ${id}`
+      const orders = await sql`SELECT * FROM token_orders WHERE bulk_id = ${targetBulkId}`
+      if (orders.length === 0) return res.status(404).json({ error: 'Orders not found' })
+
+      await sql`UPDATE token_orders SET status = ${status} WHERE bulk_id = ${targetBulkId}`
 
       if (status === 'confirmed') {
-        await sql`UPDATE tokens SET status = 'sold', updated_at = CURRENT_TIMESTAMP WHERE id = ${order.token_id}`
+        for (const o of orders) {
+          await sql`UPDATE tokens SET status = 'sold', updated_at = CURRENT_TIMESTAMP WHERE id = ${o.token_id}`
+        }
       } else if (status === 'rejected') {
-        await sql`UPDATE tokens SET status = 'available', updated_at = CURRENT_TIMESTAMP WHERE id = ${order.token_id}`
+        for (const o of orders) {
+          await sql`UPDATE tokens SET status = 'available', updated_at = CURRENT_TIMESTAMP WHERE id = ${o.token_id}`
+        }
       }
 
-      return res.status(200).json({ message: `Order ${status}` })
+      return res.status(200).json({ message: `Orders ${status}` })
     }
 
     return res.status(404).json({ error: 'Not found' })

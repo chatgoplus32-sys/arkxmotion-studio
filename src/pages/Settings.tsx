@@ -28,13 +28,13 @@ interface TokenItem {
 }
 
 interface OrderItem {
-  id: number
-  token_id: number
+  bulk_id: string
   provider: string
-  token_name: string
-  price: number
   status: string
   created_at: string
+  token_name: string
+  total_price: number
+  count: number
 }
 
 type Provider = 'roboneo' | 'framia' | 'weavy'
@@ -119,20 +119,26 @@ export default function SettingsPage() {
     const qty = selectedBuyQty
     if (qty < 1 || qty > providerTokens.length) return
 
-    // Create orders for each token
-    for (let i = 0; i < qty; i++) {
-      try {
-        await fetch('/api/tokens/buy', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authStore.token}` },
-          body: JSON.stringify({ token_id: providerTokens[i].id })
-        })
-      } catch {}
+    const tokenIds = providerTokens.slice(0, qty).map(t => t.id)
+
+    try {
+      const response = await fetch('/api/tokens/buy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authStore.token}` },
+        body: JSON.stringify({ token_ids: tokenIds })
+      })
+      if (response.ok) {
+        addToast(`${qty} token ${PROVIDERS.find(p => p.key === selectedBuyProvider)?.label} berhasil dipesan!`, 'success')
+        fetchTokens()
+        fetchMyOrders()
+      } else {
+        const data = await response.json()
+        addToast(data.error || 'Gagal memesan', 'error')
+      }
+    } catch {
+      addToast('Gagal memesan', 'error')
     }
 
-    addToast(`${qty} token ${PROVIDERS.find(p => p.key === selectedBuyProvider)?.label} berhasil dipesan!`, 'success')
-    fetchTokens()
-    fetchMyOrders()
     setSelectedBuyQty(0)
     setBuyQty('')
     window.open(WHATSAPP_LINK, '_blank')
@@ -380,13 +386,13 @@ export default function SettingsPage() {
             <div className="space-y-2">
               {myOrders.map((order) => (
                 <div
-                  key={order.id}
+                  key={order.bulk_id}
                   className="flex items-center justify-between gap-3 p-3 rounded-xl border border-border bg-background/50"
                 >
                   <div>
-                    <div className="text-sm font-medium">{order.token_name}</div>
+                    <div className="text-sm font-medium">{order.count} Token {PROVIDERS.find(p => p.key === order.provider)?.label}</div>
                     <div className="text-xs text-muted-foreground">
-                      {PROVIDERS.find(p => p.key === order.provider)?.label} - Rp {order.price.toLocaleString('id-ID')}
+                      Rp {order.total_price.toLocaleString('id-ID')}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -396,14 +402,14 @@ export default function SettingsPage() {
                         variant="outline"
                         onClick={async () => {
                           try {
-                            const res = await fetch(`/api/tokens/note/${order.id}`, {
+                            const res = await fetch(`/api/tokens/note/${order.bulk_id}`, {
                               headers: { 'Authorization': `Bearer ${authStore.token}` }
                             })
                             const blob = await res.blob()
                             const url = URL.createObjectURL(blob)
                             const a = document.createElement('a')
                             a.href = url
-                            a.download = `token-${order.provider}-${order.id}.txt`
+                            a.download = `token-${order.provider}-${order.bulk_id}.txt`
                             a.click()
                             URL.revokeObjectURL(url)
                           } catch {}

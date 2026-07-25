@@ -71,6 +71,7 @@ async function handleInit(_req: VercelRequest, res: VercelResponse) {
         user_id INTEGER NOT NULL REFERENCES users(id),
         token_id INTEGER NOT NULL REFERENCES tokens(id),
         status TEXT NOT NULL DEFAULT 'pending',
+        bulk_id TEXT NOT NULL DEFAULT '',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `
@@ -213,6 +214,7 @@ async function handleSeed(_req: VercelRequest, res: VercelResponse) {
         user_id INTEGER NOT NULL REFERENCES users(id),
         token_id INTEGER NOT NULL REFERENCES tokens(id),
         status TEXT NOT NULL DEFAULT 'pending',
+        bulk_id TEXT NOT NULL DEFAULT '',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `

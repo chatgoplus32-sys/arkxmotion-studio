@@ -50,26 +50,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ tokens: rows })
     }
 
-    // POST /api/tokens/buy - buy token
+    // POST /api/tokens/buy - buy multiple tokens at once
     if (req.method === 'POST' && segments.includes('buy')) {
-      const { token_id } = req.body || {}
-      if (!token_id) return res.status(400).json({ error: 'token_id is required' })
+      const { token_ids } = req.body || {}
+      if (!token_ids || !Array.isArray(token_ids) || token_ids.length === 0) {
+        return res.status(400).json({ error: 'token_ids array is required' })
+      }
 
-      const rows = await sql`SELECT * FROM tokens WHERE id = ${token_id}`
-      const token = rows[0]
-      if (!token) return res.status(404).json({ error: 'Token not found' })
-      if (token.status !== 'available') return res.status(400).json({ error: 'Token already sold' })
+      // Check all tokens are available
+      for (const tid of token_ids) {
+        const rows = await sql`SELECT id, status FROM tokens WHERE id = ${tid}`
+        if (!rows[0] || rows[0].status !== 'available') {
+          return res.status(400).json({ error: `Token ${tid} not available` })
+        }
+      }
 
-      const existing = await sql`SELECT id FROM token_orders WHERE user_id = ${user.id} AND token_id = ${token_id} AND status = 'pending'`
-      if (existing.length > 0) return res.status(400).json({ error: 'Pending order already exists' })
+      const bulkId = `bulk_${user.id}_${Date.now()}`
+      for (const tid of token_ids) {
+        await sql`UPDATE tokens SET status = 'sold', updated_at = CURRENT_TIMESTAMP WHERE id = ${tid}`
+        await sql`INSERT INTO token_orders (user_id, token_id, status, bulk_id) VALUES (${user.id}, ${tid}, 'pending', ${bulkId})`
+      }
 
-      await sql`UPDATE tokens SET status = 'sold', updated_at = CURRENT_TIMESTAMP WHERE id = ${token_id}`
-      const orderRows = await sql`INSERT INTO token_orders (user_id, token_id, status) VALUES (${user.id}, ${token_id}, 'pending') RETURNING *`
-
-      return res.status(201).json({ order: orderRows[0], message: 'Order created' })
+      return res.status(201).json({ bulk_id: bulkId, message: 'Order created' })
     }
 
-    // GET /api/tokens/orders/mine - user's order history
+    // GET /api/tokens/orders/mine - user's order history grouped by bulk_id
     if (req.method === 'GET' && segments.includes('mine')) {
       const rows = await sql`
         SELECT o.*, t.provider, t.name as token_name, t.price
@@ -78,14 +83,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         WHERE o.user_id = ${user.id}
         ORDER BY o.created_at DESC
       `
-      return res.status(200).json({ orders: rows })
+
+      // Group by bulk_id
+      const bulkMap = new Map<string, any>()
+      for (const row of rows) {
+        const bid = row.bulk_id || `single_${row.id}`
+        if (!bulkMap.has(bid)) {
+          bulkMap.set(bid, {
+            bulk_id: bid,
+            provider: row.provider,
+            status: row.status,
+            created_at: row.created_at,
+            token_name: row.token_name,
+            total_price: 0,
+            count: 0,
+          })
+        }
+        const bulk = bulkMap.get(bid)!
+        bulk.total_price += row.price
+        bulk.count++
+      }
+
+      return res.status(200).json({ orders: Array.from(bulkMap.values()) })
     }
 
-    // GET /api/tokens/note/:orderId - get token note for confirmed order
+    // GET /api/tokens/note/:bulkId - download token note for confirmed bulk order
     if (req.method === 'GET' && segments.includes('note')) {
-      const orderId = segments[segments.length - 1]
-      if (!orderId || isNaN(Number(orderId))) {
-        return res.status(400).json({ error: 'Invalid order id' })
+      const bulkId = segments[segments.length - 1]
+      if (!bulkId || bulkId === 'undefined') {
+        return res.status(400).json({ error: 'Invalid bulk id' })
       }
 
       const rows = await sql`
@@ -93,31 +119,50 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         FROM token_orders o
         JOIN tokens t ON o.token_id = t.id
         JOIN users u ON o.user_id = u.id
-        WHERE o.id = ${Number(orderId)} AND o.user_id = ${user.id} AND o.status = 'confirmed'
+        WHERE o.bulk_id = ${bulkId} AND o.user_id = ${user.id} AND o.status = 'confirmed'
+        ORDER BY t.id ASC
       `
-      const order = rows[0]
-      if (!order) return res.status(404).json({ error: 'Order not found or not confirmed' })
 
-      const note = `========================================
+      if (rows.length === 0) return res.status(404).json({ error: 'Order not found or not confirmed' })
+
+      const provider = rows[0].provider.toUpperCase()
+      const userName = rows[0].user_name
+      const total = rows.reduce((sum: number, r: any) => sum + r.price, 0)
+      const date = new Date(rows[0].created_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })
+
+      let note = `========================================
   ARKXMotion Studio - Token Purchase Note
 ========================================
 
-User     : ${order.user_name}
-Provider : ${order.provider.toUpperCase()}
-Token    : ${order.token_name}
-Token ID : ${order.token_value}
-Harga    : Rp ${order.price.toLocaleString('id-ID')}
-Status   : CONFIRMED
-Tanggal  : ${new Date(order.created_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}
+User      : ${userName}
+Provider  : ${provider}
+Jumlah    : ${rows.length} token
+Total     : Rp ${total.toLocaleString('id-ID')}
+Status    : CONFIRMED
+Tanggal   : ${date}
 
 ----------------------------------------
+TOKEN YANG DIBELI:
+----------------------------------------
+
+`
+
+      for (let i = 0; i < rows.length; i++) {
+        note += `[${i + 1}] ${rows[i].token_name}
+     Token: ${rows[i].token_value}
+     Harga: Rp ${rows[i].price.toLocaleString('id-ID')}
+
+`
+      }
+
+      note += `========================================
 Terima kasih telah membeli token!
 Gunakan token ini di menu Providers.
 ========================================
 `
 
       res.setHeader('Content-Type', 'text/plain; charset=utf-8')
-      res.setHeader('Content-Disposition', `attachment; filename="token-${order.provider}-${order.id}.txt"`)
+      res.setHeader('Content-Disposition', `attachment; filename="token-${rows[0].provider}-${bulkId}.txt"`)
       return res.status(200).send(note)
     }
 

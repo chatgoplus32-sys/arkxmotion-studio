@@ -3,27 +3,17 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
-import { ClipboardCheck, CheckCircle, XCircle, RefreshCw, Clock, ExternalLink } from 'lucide-react'
+import { ClipboardCheck, CheckCircle, XCircle, RefreshCw, Clock } from 'lucide-react'
 
-interface Order {
-  id: number
-  user_id: number
-  token_id: number
-  provider: string
-  token_name: string
-  token_value: string
-  price: number
-  status: string
-  user_email: string
+interface BulkOrder {
+  bulk_id: string
   user_name: string
-  created_at: string
-}
-
-interface StockInfo {
+  user_email: string
   provider: string
-  total: number
-  available: number
-  sold: number
+  status: string
+  created_at: string
+  tokens: { id: number; name: string; token_value: string; price: number }[]
+  total_price: number
 }
 
 type Provider = 'roboneo' | 'framia' | 'weavy'
@@ -34,14 +24,12 @@ const PROVIDERS: { key: Provider; label: string }[] = [
   { key: 'weavy', label: 'Weavy' },
 ]
 
-const WHATSAPP_LINK = 'https://wa.me/6285156207924?text=Halo%20saya%20ingin%20order%20token'
-
 export default function AdminOrderTokensPage() {
-  const [orders, setOrders] = useState<Order[]>([])
-  const [tokens, setTokens] = useState<{ provider: string; total: number; available: number; sold: number }[]>([])
+  const [orders, setOrders] = useState<BulkOrder[]>([])
+  const [stock, setStock] = useState<{ provider: string; total: number; available: number; sold: number }[]>([])
   const [activeTab, setActiveTab] = useState<'pending' | 'all'>('pending')
   const [isLoading, setIsLoading] = useState(true)
-  const [actionLoading, setActionLoading] = useState<number | null>(null)
+  const [actionLoading, setActionLoading] = useState<string | null>(null)
   const token = useAuthStore((state) => state.token)
   const addToast = useToastStore((state) => state.addToast)
 
@@ -71,7 +59,7 @@ export default function AdminOrderTokensPage() {
       })
       if (response.ok) {
         const data = await response.json()
-        const stock: StockInfo[] = PROVIDERS.map(p => {
+        const s = PROVIDERS.map(p => {
           const providerTokens = data.tokens.filter((t: { provider: string }) => t.provider === p.key)
           return {
             provider: p.key,
@@ -80,7 +68,7 @@ export default function AdminOrderTokensPage() {
             sold: providerTokens.filter((t: { status: string }) => t.status === 'sold').length,
           }
         })
-        setTokens(stock)
+        setStock(s)
       }
     } catch {}
   }, [token])
@@ -90,14 +78,14 @@ export default function AdminOrderTokensPage() {
     fetchStock()
   }, [fetchOrders, fetchStock])
 
-  const handleConfirm = async (orderId: number) => {
+  const handleConfirm = async (bulkId: string) => {
     if (!token) return
-    setActionLoading(orderId)
+    setActionLoading(bulkId)
     try {
       const response = await fetch('/api/admin/tokens/orders', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ id: orderId, status: 'confirmed' })
+        body: JSON.stringify({ bulk_id: bulkId, status: 'confirmed' })
       })
       if (response.ok) {
         addToast('Order dikonfirmasi', 'success')
@@ -118,14 +106,14 @@ export default function AdminOrderTokensPage() {
     const pendingOrders = orders.filter(o => o.status === 'pending')
     if (pendingOrders.length === 0) return
 
-    setActionLoading(-1)
+    setActionLoading('all')
     let success = 0
     for (const order of pendingOrders) {
       try {
         const response = await fetch('/api/admin/tokens/orders', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify({ id: order.id, status: 'confirmed' })
+          body: JSON.stringify({ bulk_id: order.bulk_id, status: 'confirmed' })
         })
         if (response.ok) success++
       } catch {}
@@ -136,14 +124,14 @@ export default function AdminOrderTokensPage() {
     fetchStock()
   }
 
-  const handleReject = async (orderId: number) => {
+  const handleReject = async (bulkId: string) => {
     if (!token || !confirm('Tolak order ini?')) return
-    setActionLoading(orderId)
+    setActionLoading(bulkId)
     try {
       const response = await fetch('/api/admin/tokens/orders', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ id: orderId, status: 'rejected' })
+        body: JSON.stringify({ bulk_id: bulkId, status: 'rejected' })
       })
       if (response.ok) {
         addToast('Order ditolak', 'success')
@@ -170,9 +158,9 @@ export default function AdminOrderTokensPage() {
         desc="Kelola order token dari user sesuai stok yang diupload"
       />
       <PageContent>
-        <Section title="Stok Token" sub="Jumlah stok token per provider yang telah diupload">
+        <Section title="Stok Token" sub="Jumlah stok token per provider">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {tokens.map((s) => (
+            {stock.map((s) => (
               <div key={s.provider} className="p-4 rounded-xl border border-border bg-background/50">
                 <div className="text-sm font-medium mb-2">{PROVIDERS.find(p => p.key === s.provider)?.label}</div>
                 <div className="flex gap-3 text-xs">
@@ -218,7 +206,7 @@ export default function AdminOrderTokensPage() {
                 <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
               </Button>
               {orders.filter(o => o.status === 'pending').length > 0 && (
-                <Button size="sm" onClick={handleConfirmAll} disabled={actionLoading === -1} loading={actionLoading === -1}>
+                <Button size="sm" onClick={handleConfirmAll} disabled={actionLoading === 'all'} loading={actionLoading === 'all'}>
                   <CheckCircle className="h-4 w-4" /> Konfirmasi Semua
                 </Button>
               )}
@@ -227,7 +215,7 @@ export default function AdminOrderTokensPage() {
         >
           <div className="p-3 rounded-xl bg-yellow-500/5 border border-yellow-500/20 mb-4">
             <div className="text-xs text-muted-foreground">
-              <span className="font-semibold text-foreground">Disclaimer:</span> Order hanya bisa dikonfirmasi jika stok token {PROVIDERS.map(p => p.label).join(', ')} masih tersedia. Jika stok habis, tolak order dan informasikan ke user via WhatsApp.
+              <span className="font-semibold text-foreground">Disclaimer:</span> Order hanya bisa dikonfirmasi jika stok token tersedia. Jika stok habis, tolak order.
             </div>
           </div>
 
@@ -239,84 +227,58 @@ export default function AdminOrderTokensPage() {
               {activeTab === 'pending' ? 'Tidak ada order pending' : 'Belum ada order'}
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border">
-                    <th className="text-left py-3 px-4 font-medium text-muted-foreground">User</th>
-                    <th className="text-left py-3 px-4 font-medium text-muted-foreground">Provider</th>
-                    <th className="text-left py-3 px-4 font-medium text-muted-foreground">Token</th>
-                    <th className="text-left py-3 px-4 font-medium text-muted-foreground">Harga</th>
-                    <th className="text-left py-3 px-4 font-medium text-muted-foreground">Status</th>
-                    <th className="text-left py-3 px-4 font-medium text-muted-foreground">Waktu</th>
-                    <th className="text-right py-3 px-4 font-medium text-muted-foreground">Aksi</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredOrders.map((o) => (
-                    <tr key={o.id} className="border-b border-border hover:bg-secondary/50">
-                      <td className="py-3 px-4">
-                        <div className="font-medium">{o.user_name}</div>
-                        <div className="text-xs text-muted-foreground">{o.user_email}</div>
-                      </td>
-                      <td className="py-3 px-4">
-                        <span className="text-sm">{PROVIDERS.find(p => p.key === o.provider)?.label}</span>
-                      </td>
-                      <td className="py-3 px-4">
-                        <code className="text-xs bg-secondary px-2 py-1 rounded-lg font-mono">{o.token_name}</code>
-                      </td>
-                      <td className="py-3 px-4">Rp {o.price.toLocaleString('id-ID')}</td>
-                      <td className="py-3 px-4">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                          o.status === 'confirmed'
-                            ? 'bg-green-500/10 text-green-500'
-                            : o.status === 'rejected'
-                              ? 'bg-red-500/10 text-red-500'
-                              : 'bg-yellow-500/10 text-yellow-500'
-                        }`}>
-                          {o.status === 'confirmed' ? 'Dikonfirmasi' : o.status === 'rejected' ? 'Ditolak' : 'Menunggu'}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-xs text-muted-foreground">
+            <div className="space-y-3">
+              {filteredOrders.map((o) => (
+                <div key={o.bulk_id} className="p-4 rounded-xl border border-border bg-background/50">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-sm font-semibold">{o.user_name}</span>
+                        <span className="text-xs text-muted-foreground">{o.user_email}</span>
+                      </div>
+                      <div className="text-sm text-muted-foreground mb-1">
+                        {o.tokens.length} Token {PROVIDERS.find(p => p.key === o.provider)?.label} — Rp {o.total_price.toLocaleString('id-ID')}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
                         {new Date(o.created_at).toLocaleString('id-ID')}
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        {o.status === 'pending' && (
-                          <div className="flex items-center justify-end gap-1">
-                            <a
-                              href={WHATSAPP_LINK}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="p-1.5 rounded-lg hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
-                              title="Chat WhatsApp"
-                            >
-                              <ExternalLink className="h-4 w-4" />
-                            </a>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleConfirm(o.id)}
-                              disabled={actionLoading === o.id}
-                              className="text-green-500 hover:text-green-600 hover:bg-green-500/10"
-                            >
-                              <CheckCircle className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleReject(o.id)}
-                              disabled={actionLoading === o.id}
-                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                            >
-                              <XCircle className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                        o.status === 'confirmed'
+                          ? 'bg-green-500/10 text-green-500'
+                          : o.status === 'rejected'
+                            ? 'bg-red-500/10 text-red-500'
+                            : 'bg-yellow-500/10 text-yellow-500'
+                      }`}>
+                        {o.status === 'confirmed' ? 'Dikonfirmasi' : o.status === 'rejected' ? 'Ditolak' : 'Menunggu'}
+                      </span>
+                      {o.status === 'pending' && (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleConfirm(o.bulk_id)}
+                            disabled={actionLoading === o.bulk_id}
+                            className="text-green-500 hover:text-green-600 hover:bg-green-500/10"
+                          >
+                            <CheckCircle className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleReject(o.bulk_id)}
+                            disabled={actionLoading === o.bulk_id}
+                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                          >
+                            <XCircle className="h-4 w-4" />
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </Section>

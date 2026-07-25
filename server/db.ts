@@ -53,11 +53,17 @@ db.exec(`
     user_id INTEGER NOT NULL,
     token_id INTEGER NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'confirmed', 'rejected')),
+    bulk_id TEXT NOT NULL DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id),
     FOREIGN KEY (token_id) REFERENCES tokens(id)
   )
 `)
+
+const orderColumns = db.prepare("PRAGMA table_info(token_orders)").all() as { name: string }[]
+if (!orderColumns.some(c => c.name === 'bulk_id')) {
+  db.exec("ALTER TABLE token_orders ADD COLUMN bulk_id TEXT NOT NULL DEFAULT ''")
+}
 
 const adminUser = db.prepare("SELECT id FROM users WHERE role = 'admin' AND email = 'nuallakoko@gmail.com'").get() as { id: number } | undefined
 if (adminUser) {
