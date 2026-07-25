@@ -36,6 +36,61 @@ function extractUid(token: string): string {
   return '0'
 }
 
+export async function compressVideo(file: File, maxMB = 20): Promise<File> {
+  if (file.size <= maxMB * 1024 * 1024) return file
+
+  console.log(`[upload] video ${(file.size / 1024 / 1024).toFixed(1)}MB > ${maxMB}MB, compressing...`)
+
+  return new Promise((resolve) => {
+    const video = document.createElement('video')
+    video.muted = true
+    video.preload = 'metadata'
+    video.src = URL.createObjectURL(file)
+
+    video.onloadedmetadata = () => {
+      const canvas = document.createElement('canvas')
+      canvas.width = video.videoWidth
+      canvas.height = video.videoHeight
+      const ctx = canvas.getContext('2d')!
+
+      const stream = canvas.captureStream(24)
+      const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+        ? 'video/webm;codecs=vp9'
+        : 'video/webm'
+      const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2_000_000 })
+      const chunks: Blob[] = []
+
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data) }
+      recorder.onstop = () => {
+        const blob = new Blob(chunks, { type: mimeType })
+        const compressed = new File([blob], file.name.replace(/\.[^.]+$/, '.webm'), { type: mimeType })
+        console.log(`[upload] compressed ${(file.size / 1024 / 1024).toFixed(1)}MB → ${(compressed.size / 1024 / 1024).toFixed(1)}MB`)
+        URL.revokeObjectURL(video.src)
+        resolve(compressed.size < file.size ? compressed : file)
+      }
+
+      recorder.start()
+      video.play()
+
+      const drawFrame = () => {
+        if (video.ended || video.paused) { recorder.stop(); return }
+        ctx.drawImage(video, 0, 0)
+        requestAnimationFrame(drawFrame)
+      }
+      drawFrame()
+    }
+
+    video.onerror = () => {
+      URL.revokeObjectURL(video.src)
+      resolve(file)
+    }
+
+    setTimeout(() => {
+      if (recorder.state === 'recording') recorder.stop()
+    }, (video.duration || 30) * 1000)
+  })
+}
+
 async function uploadToCatboxDirect(file: File): Promise<string> {
   const formData = new FormData()
   formData.append('reqtype', 'fileupload')

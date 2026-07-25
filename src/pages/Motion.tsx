@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Textarea, Select, Label, Badge, EmptyState } from '@/components/ui'
 import { useProviderManager } from '@/stores'
-import { uploadToCatbox, submitMotionControl, submitGoogleOmni, pollMotionControl, isRoboneoTokenError, checkRoboneoBalance } from '@/lib/roboneo'
+import { uploadToCatbox, submitMotionControl, submitGoogleOmni, pollMotionControl, isRoboneoTokenError, checkRoboneoBalance, compressVideo } from '@/lib/roboneo'
 import {
   Video,
   Upload,
@@ -182,8 +182,10 @@ export default function MotionPage() {
               addLog(`Slot ${i + 1}: Skipping (no video for motion control)`, 'warn')
               continue
             }
+            addLog(`Slot ${i + 1}: [2a/3] Compressing video if needed (${(slot.video.size / 1024 / 1024).toFixed(1)}MB)...`)
+            const videoFile = await compressVideo(slot.video, 20)
             addLog(`Slot ${i + 1}: [2a/3] Uploading video to host...`)
-            const videoUrl = await uploadToCatbox(slot.video)
+            const videoUrl = await uploadToCatbox(videoFile)
             addLog(`Slot ${i + 1}: [2a/3] Video uploaded ✓ ${videoUrl.slice(0, 50)}...`)
 
             addLog(`Slot ${i + 1}: [2b/3] Submitting to Motion Control (video_bonbon_motioncontrol_v26)...`)
