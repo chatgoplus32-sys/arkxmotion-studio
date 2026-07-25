@@ -99,7 +99,7 @@ async function uploadToCatboxDirect(file: File): Promise<string> {
   formData.append('reqtype', 'fileupload')
   formData.append('fileToUpload', file, file.name || 'upload.bin')
 
-  const res = await fetch('/api/public/upload-catbox', { method: 'POST', body: formData })
+  const res = await fetch('/api/public/uploads?provider=catbox', { method: 'POST', body: formData })
   const json = await res.json().catch(() => null)
   const data = json?.data ?? json
   if (!res.ok || !data?.url) throw new Error(data?.error || `Catbox: ${json?.error || res.status}`)
@@ -110,7 +110,7 @@ async function uploadTo0x0(file: File): Promise<string> {
   const formData = new FormData()
   formData.append('file', file, file.name || 'upload.bin')
 
-  const res = await fetch('/api/public/upload-0x0', { method: 'POST', body: formData })
+  const res = await fetch('/api/public/uploads?provider=0x0', { method: 'POST', body: formData })
   const json = await res.json().catch(() => null)
   const data = json?.data ?? json
   if (!res.ok || !data?.url) throw new Error(data?.error || `0x0: ${json?.error || res.status}`)
@@ -123,7 +123,7 @@ async function uploadToLitterbox(file: File): Promise<string> {
   formData.append('time', '72h')
   formData.append('fileToUpload', file, file.name || 'upload.bin')
 
-  const res = await fetch('/api/public/upload-litterbox', { method: 'POST', body: formData })
+  const res = await fetch('/api/public/uploads?provider=litterbox', { method: 'POST', body: formData })
   const json = await res.json().catch(() => null)
   const data = json?.data ?? json
   if (!res.ok || !data?.url) throw new Error(data?.error || `litterbox: ${json?.error || res.status}`)
