@@ -305,9 +305,12 @@ export default function ImageToVideoPage() {
       setStatus((s) => ({ ...s, text: `Status: ${pollData.status}...`, pct }))
 
       if (pollData.status === 'done' && pollData.url) {
-        const videoUrl = pollData.url.startsWith('http')
+        let videoUrl = pollData.url.startsWith('http')
           ? pollData.url
           : `https://createpulse.online${pollData.url}`
+        if (/^https?:\/\/localhost:\d+/i.test(videoUrl)) {
+          videoUrl = videoUrl.replace(/^https?:\/\/localhost:\d+/i, 'https://createpulse.online')
+        }
         addLog(`[4/4] Done ✓ ${videoUrl.slice(0, 60)}...`, 'success')
         return videoUrl
       }
