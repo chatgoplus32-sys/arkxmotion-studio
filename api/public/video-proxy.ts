@@ -14,7 +14,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   let targetUrl = url
   if (/^https?:\/\/localhost:\d+\/backend\/api\/video\//i.test(url)) {
-    targetUrl = url.replace(/^https?:\/\/localhost:\d+/, 'https://multi-agent-release.meitudata.com')
+    targetUrl = url.replace(/^https?:\/\/localhost:\d+/, 'https://createpulse.online')
   }
 
   try {

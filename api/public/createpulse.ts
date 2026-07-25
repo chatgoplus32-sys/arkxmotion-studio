@@ -40,7 +40,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       let fullUrl = videoUrl.startsWith('http') ? videoUrl : `https://createpulse.online${videoUrl}`
       if (/^https?:\/\/localhost:\d+\/backend\/api\/video\//i.test(fullUrl)) {
-        fullUrl = fullUrl.replace(/^https?:\/\/localhost:\d+/, 'https://multi-agent-release.meitudata.com')
+        fullUrl = fullUrl.replace(/^https?:\/\/localhost:\d+/, 'https://createpulse.online')
       }
       const r = await fetch(fullUrl)
       if (!r.ok) {
