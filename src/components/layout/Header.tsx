@@ -1,7 +1,7 @@
 import { ReactNode } from 'react'
-import { cn } from '@/lib/utils'
-import { Bell, PanelLeftClose, PanelLeft } from 'lucide-react'
+import { PanelLeftClose, PanelLeft } from 'lucide-react'
 import { Button } from '@/components/ui'
+import { NotificationPanel } from '@/components/ui/NotificationPanel'
 
 interface HeaderProps {
   title?: string
@@ -36,10 +36,7 @@ export function Header({ title, subtitle, actions, collapsed, onToggleSidebar }:
 
       <div className="flex items-center gap-2">
         {actions}
-        <Button variant="ghost" size="icon" className="relative">
-          <Bell className="h-4 w-4" />
-          <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-destructive" />
-        </Button>
+        <NotificationPanel />
       </div>
     </header>
   )

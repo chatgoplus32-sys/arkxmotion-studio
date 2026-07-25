@@ -1,4 +1,4 @@
-import { ReactNode } from 'react'
+import { ReactNode, useState, useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/authStore'
@@ -37,6 +37,7 @@ const generateNav: NavItem[] = [
   { label: 'Storyboard', href: '/generate/storyboard', icon: <Clapperboard className="h-4 w-4" /> },
   { label: 'Bulk Fashion', href: '/generate/bulk-fashion', icon: <ShoppingBag className="h-4 w-4" /> },
   { label: 'Image to Video', href: '/generate/image-to-video', icon: <Image className="h-4 w-4" /> },
+  { label: 'Framia', href: '/generate/framia', icon: <Video className="h-4 w-4" /> },
 ]
 
 const toolsNav: NavItem[] = [
@@ -47,10 +48,6 @@ const toolsNav: NavItem[] = [
   { label: 'Settings', href: '/settings', icon: <Settings className="h-4 w-4" /> },
 ]
 
-const adminNav: NavItem[] = [
-  { label: 'User Management', href: '/admin/users', icon: <Shield className="h-4 w-4" /> },
-]
-
 interface SidebarProps {
   collapsed?: boolean
 }
@@ -58,12 +55,28 @@ interface SidebarProps {
 export function Sidebar({ collapsed = false }: SidebarProps) {
   const location = useLocation()
   const navigate = useNavigate()
-  const { user, logout } = useAuthStore()
+  const { user, token, logout } = useAuthStore()
+  const [pendingCount, setPendingCount] = useState(0)
 
   const handleLogout = () => {
     logout()
     navigate('/login')
   }
+
+  useEffect(() => {
+    if (user?.role === 'admin' && token) {
+      fetch('/api/admin/users/pending', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+        .then(res => res.json())
+        .then(data => setPendingCount(data.users?.length || 0))
+        .catch(() => {})
+    }
+  }, [user, token])
+
+  const adminNav: NavItem[] = [
+    { label: 'User Management', href: '/admin/users', icon: <Shield className="h-4 w-4" />, badge: pendingCount > 0 ? String(pendingCount) : undefined },
+  ]
 
   const isActive = (href: string) => {
     if (href === '/') return location.pathname === '/'
@@ -92,7 +105,7 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
           {item.icon}
           {!collapsed && <span>{item.label}</span>}
           {item.badge && !collapsed && (
-            <span className="ml-auto text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full">
+            <span className="ml-auto text-[10px] bg-yellow-500/20 text-yellow-500 px-1.5 py-0.5 rounded-full font-medium">
               {item.badge}
             </span>
           )}

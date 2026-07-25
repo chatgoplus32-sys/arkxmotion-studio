@@ -1,19 +1,17 @@
 import { useState, useRef } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
-import { Section, Button, Input, Textarea, Select, Label, Badge, EmptyState } from '@/components/ui'
-import { useMotionStore, useProviderManager } from '@/stores'
-import { parseAccessToken, uploadToCatbox, submitMotionControlWorkflow, waitForWorkflow } from '@/lib/roboneo'
+import { Section, Button, Textarea, Select, Label, Badge, EmptyState } from '@/components/ui'
+import { useProviderManager } from '@/stores'
+import { uploadToCatbox, submitMotionControl, pollMotionControl, isRoboneoTokenError, checkRoboneoBalance } from '@/lib/roboneo'
 import {
   Video,
   Upload,
   Trash2,
   Plus,
-  Download,
   Rocket,
   Search,
   Loader2,
   X,
-  RefreshCw,
 } from 'lucide-react'
 
 const PROVIDERS = {
@@ -74,7 +72,6 @@ export default function MotionPage() {
   const [logs, setLogs] = useState<Array<{ time: string; msg: string; level: string }>>([])
   const [results, setResults] = useState<Array<{ id: string; url: string; prompt: string; date: string }>>([])
   const [searchQuery, setSearchQuery] = useState('')
-  const [roboneoRoomId, setRoboneoRoomId] = useState('')
 
   const { keys } = useProviderManager()
 
@@ -121,19 +118,31 @@ export default function MotionPage() {
     const rawKey = isRoboneo ? (keys.roboneo?.[0]?.key || '') : ''
 
     if (isRoboneo && !rawKey) {
-      addLog('❌ No Roboneo API key found. Add one in Providers page.', 'error')
+      addLog('No Roboneo API key found. Add one in Providers page.', 'error')
       return
     }
 
-    if (isRoboneo && !roboneoRoomId.trim()) {
-      addLog('❌ Masukkan Room ID dari Roboneo. Buka roboneo.com → New Canvas → copy room_id.', 'error')
-      return
-    }
-
-    const roboneoConfig = isRoboneo ? parseAccessToken(rawKey) : null
+    const roboneoToken = isRoboneo ? rawKey : ''
 
     setGenerating(true)
     setLogs([])
+
+    if (isRoboneo) {
+      addLog('Checking Roboneo balance...')
+      const balanceResult = await checkRoboneoBalance(roboneoToken)
+      if (!balanceResult.ok) {
+        addLog(`Balance check failed: ${balanceResult.error}`, 'error')
+        addLog('Token mungkin expired. Ambil token baru dari roboneo.com.', 'error')
+        setGenerating(false)
+        return
+      }
+      addLog(`Balance: ${balanceResult.balance !== null ? balanceResult.balance : 'unknown'}`)
+      if (balanceResult.balance !== null && balanceResult.balance <= 0) {
+        addLog('Balance kosong! Tidak ada credit untuk generate.', 'error')
+        setGenerating(false)
+        return
+      }
+    }
 
     addLog(`Starting generation with ${currentProvider.name} · ${currentModel.label}`)
     addLog(`Processing ${validSlots.length} slot(s)...`)
@@ -141,67 +150,53 @@ export default function MotionPage() {
     for (let i = 0; i < validSlots.length; i++) {
       const slot = validSlots[i]
 
-      if (isRoboneo && roboneoConfig && slot.image && slot.video) {
+      if (isRoboneo && slot.image && slot.video) {
         try {
           addLog(`Slot ${i + 1}: Uploading image to catbox...`)
           const imageUrl = await uploadToCatbox(slot.image)
-          addLog(`Slot ${i + 1}: Image uploaded → ${imageUrl.slice(0, 50)}...`)
+          addLog(`Slot ${i + 1}: Image uploaded → ${imageUrl.slice(0, 60)}...`)
 
           addLog(`Slot ${i + 1}: Uploading video to catbox...`)
           const videoUrl = await uploadToCatbox(slot.video)
-          addLog(`Slot ${i + 1}: Video uploaded → ${videoUrl.slice(0, 50)}...`)
+          addLog(`Slot ${i + 1}: Video uploaded → ${videoUrl.slice(0, 60)}...`)
 
-          addLog(`Slot ${i + 1}: Submitting workflow...`)
-          const { gnum } = await submitMotionControlWorkflow(roboneoConfig, {
+          addLog(`Slot ${i + 1}: Submitting motion control...`)
+          const { taskId, roomId } = await submitMotionControl({
+            accessToken: roboneoToken,
             imageUrl,
             videoUrl,
-            prompt,
-            apiName: currentModel.key.replace('rn:', ''),
+            prompt: prompt.trim() || undefined,
             quality: 'std',
-            roomId: roboneoRoomId.trim(),
           })
 
-          addLog(`Slot ${i + 1}: Processing (gnum: ${gnum.slice(0, 12)}...)`)
+          addLog(`Slot ${i + 1}: Task ${taskId.slice(0, 12)}... (room: ${roomId.slice(0, 16)}...)`)
 
-          const resultUrl = await waitForWorkflow(
-            roboneoConfig,
-            gnum,
-            roboneoRoomId.trim(),
-            (status, pct) => addLog(`Slot ${i + 1}: ${status} (${Math.round(pct)}%)`)
+          const resultUrl = await pollMotionControl(
+            roboneoToken,
+            taskId,
+            roomId,
+            (status, pct) => addLog(`Slot ${i + 1}: ${status} (${pct}%)`)
           )
 
           addLog(`Slot ${i + 1}: Done!`, 'success')
 
           setResults((prev) => [
             {
-              id: gnum,
+              id: taskId,
               url: resultUrl,
-              prompt: prompt || '(no prompt)',
+              prompt: prompt.trim() || '(no prompt)',
               date: new Date().toISOString(),
             },
             ...prev,
           ])
         } catch (err: any) {
-          addLog(`Slot ${i + 1}: ❌ Error: ${err.message}`, 'error')
+          addLog(`Slot ${i + 1}: Error: ${err.message}`, 'error')
+          if (isRoboneoTokenError(err.message)) {
+            addLog('Token Roboneo expired atau tidak valid. Ambil token baru dari roboneo.com.', 'error')
+          }
         }
       } else {
-        addLog(`Slot ${i + 1}: Uploading image...`)
-        await new Promise((r) => setTimeout(r, 1000))
-        addLog(`Slot ${i + 1}: Uploading video...`)
-        await new Promise((r) => setTimeout(r, 1000))
-        addLog(`Slot ${i + 1}: Processing motion control...`)
-        await new Promise((r) => setTimeout(r, 2000))
-        addLog(`Slot ${i + 1}: Done!`, 'success')
-
-        setResults((prev) => [
-          {
-            id: Math.random().toString(36).slice(2),
-            url: 'https://example.com/result.mp4',
-            prompt: prompt || '(no prompt)',
-            date: new Date().toISOString(),
-          },
-          ...prev,
-        ])
+        addLog(`Slot ${i + 1}: Skipping (no image/video)`, 'warn')
       }
     }
 
@@ -295,20 +290,6 @@ export default function MotionPage() {
                   ]}
                 />
               </div>
-
-              {provider === 'roboneo' && (
-                <div>
-                  <Label>Roboneo Room ID</Label>
-                  <Input
-                    value={roboneoRoomId}
-                    onChange={(e) => setRoboneoRoomId(e.target.value)}
-                    placeholder="Buka Roboneo → New Canvas → copy room_id dari URL"
-                  />
-                  <p className="text-[11px] text-muted-foreground mt-1">
-                    Buka roboneo.com/team_studio → buat canvas baru → copy room_id dari URL
-                  </p>
-                </div>
-              )}
 
               <div>
                 <Label>Prompt (opsional)</Label>

@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
-import { Users, CheckCircle, XCircle, Clock, Trash2, RefreshCw } from 'lucide-react'
+import { useToastStore } from '@/stores/toastStore'
+import { Users, CheckCircle, XCircle, Clock, Trash2, RefreshCw, Bell } from 'lucide-react'
 
 interface User {
   id: number
@@ -19,7 +20,9 @@ export default function AdminUsersPage() {
   const [filter, setFilter] = useState<'all' | 'pending' | 'approved'>('all')
   const [isLoading, setIsLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<number | null>(null)
+  const [hasNotifiedPending, setHasNotifiedPending] = useState(false)
   const token = useAuthStore((state) => state.token)
+  const addToast = useToastStore((state) => state.addToast)
 
   const fetchUsers = useCallback(async () => {
     if (!token) return
@@ -32,13 +35,21 @@ export default function AdminUsersPage() {
       if (response.ok) {
         const data = await response.json()
         setUsers(data.users)
+
+        if (!hasNotifiedPending) {
+          const pendingCount = data.users.filter((u: User) => !u.approved && u.role !== 'admin').length
+          if (pendingCount > 0) {
+            addToast(`You have ${pendingCount} user(s) waiting for approval`, 'warning')
+            setHasNotifiedPending(true)
+          }
+        }
       }
     } catch (error) {
       console.error('Failed to fetch users:', error)
     } finally {
       setIsLoading(false)
     }
-  }, [token, filter])
+  }, [token, filter, hasNotifiedPending, addToast])
 
   useEffect(() => {
     fetchUsers()
@@ -53,10 +64,14 @@ export default function AdminUsersPage() {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       if (response.ok) {
+        addToast('User approved successfully', 'success')
         fetchUsers()
+      } else {
+        addToast('Failed to approve user', 'error')
       }
     } catch (error) {
       console.error('Failed to approve user:', error)
+      addToast('Failed to approve user', 'error')
     } finally {
       setActionLoading(null)
     }
@@ -72,10 +87,14 @@ export default function AdminUsersPage() {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       if (response.ok) {
+        addToast('User rejected and removed', 'success')
         fetchUsers()
+      } else {
+        addToast('Failed to reject user', 'error')
       }
     } catch (error) {
       console.error('Failed to reject user:', error)
+      addToast('Failed to reject user', 'error')
     } finally {
       setActionLoading(null)
     }
@@ -91,10 +110,14 @@ export default function AdminUsersPage() {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       if (response.ok) {
+        addToast('User deleted successfully', 'success')
         fetchUsers()
+      } else {
+        addToast('Failed to delete user', 'error')
       }
     } catch (error) {
       console.error('Failed to delete user:', error)
+      addToast('Failed to delete user', 'error')
     } finally {
       setActionLoading(null)
     }

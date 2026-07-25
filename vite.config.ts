@@ -1,9 +1,10 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { roboneoProxyPlugin } from './vite-plugin-roboneo'
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), roboneoProxyPlugin()],
   resolve: {
     alias: {
       '@': '/src',
@@ -11,14 +12,13 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/api': {
+      '/api/auth': {
         target: 'http://localhost:3001',
         changeOrigin: true,
       },
-      '/roboneo': {
-        target: 'https://webapi.roboneo.com',
+      '/api/admin': {
+        target: 'http://localhost:3001',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/roboneo/, ''),
       },
       '/catbox': {
         target: 'https://catbox.moe',

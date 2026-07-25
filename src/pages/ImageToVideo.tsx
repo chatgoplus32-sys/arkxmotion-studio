@@ -43,6 +43,9 @@ const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'cp:dreamina-seedance-2.0', label: 'Dreamina Seedance 2.0', cr: 22, provider: 'createpulse', apiModel: 'dreamina-seedance-2.0' },
     { value: 'cp:bytedance-seedance-2.0', label: 'ByteDance Seedance 2.0', cr: 180, provider: 'createpulse', apiModel: 'bytedance-seedance-2.0' },
   ],
+  framia: [
+    { value: 'framia:workflow', label: 'Framia Workflow', cr: 0, provider: 'framia' },
+  ],
   elevenlabs: [],
   gemini: [],
   openai: [],
@@ -93,6 +96,11 @@ const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; 
     default: [
       { value: '10s', label: '10 detik', mult: 1, duration: 10 },
       { value: '15s', label: '15 detik', mult: 1.5, duration: 15 },
+    ],
+  },
+  framia: {
+    default: [
+      { value: 'std', label: 'Standard', mult: 1, duration: 10 },
     ],
   },
   elevenlabs: { default: [] },
@@ -310,7 +318,7 @@ export default function ImageToVideoPage() {
     }
   }
 
-  const PROVIDER_IDS: ProviderId[] = ['weavy', 'wavespeed', 'magnific', 'roboneo', 'createpulse']
+  const PROVIDER_IDS: ProviderId[] = ['weavy', 'wavespeed', 'magnific', 'roboneo', 'createpulse', 'framia']
 
   return (
     <PageContent>

@@ -20,7 +20,7 @@ import {
 } from 'lucide-react'
 import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
 
-const PROVIDER_IDS: ProviderId[] = ['weavy', 'wavespeed', 'magnific', 'roboneo', 'createpulse', 'elevenlabs', 'gemini', 'openai']
+const PROVIDER_IDS: ProviderId[] = ['weavy', 'wavespeed', 'magnific', 'roboneo', 'createpulse', 'framia', 'elevenlabs', 'gemini', 'openai']
 
 const WORKFLOW_ROUTES = [
   { id: 'motion', label: 'Motion Control' },
@@ -49,6 +49,7 @@ export default function ProvidersPage() {
     magnific: '',
     roboneo: '',
     createpulse: '',
+    framia: '',
     elevenlabs: '',
     gemini: '',
     openai: '',

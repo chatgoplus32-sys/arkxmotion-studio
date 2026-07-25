@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'createpulse' | 'elevenlabs' | 'gemini' | 'openai'
+export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'createpulse' | 'framia' | 'elevenlabs' | 'gemini' | 'openai'
 
 export interface ProviderKey {
   id: string
@@ -74,6 +74,16 @@ export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
     minCredits: 10,
     supportsBalance: true,
   },
+  framia: {
+    id: 'framia',
+    name: 'Framia',
+    icon: '🎬',
+    description: 'AI video and image generation via Converge AI workflows',
+    keyPlaceholder: 'Paste your Framia Bearer token...',
+    keyFormat: 'Bearer token (JWT)',
+    minCredits: 1,
+    supportsBalance: true,
+  },
   elevenlabs: {
     id: 'elevenlabs',
     name: 'ElevenLabs',
@@ -142,6 +152,7 @@ function loadKeysFromStorage(): Record<ProviderId, ProviderKey[]> {
     magnific: [],
     roboneo: [],
     createpulse: [],
+    framia: [],
     elevenlabs: [],
     gemini: [],
     openai: [],

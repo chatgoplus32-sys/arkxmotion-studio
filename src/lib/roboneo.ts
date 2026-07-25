@@ -1,9 +1,10 @@
 const ROBONEO_BASE = '/roboneo'
-const CATBOX_API = 'https://catbox.moe/user/api.php'
 
-export interface RoboneoConfig {
-  accessToken: string
-  clientId: string
+function uuid() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0
+    return (c === 'x' ? r : (r & 3) | 8).toString(16)
+  })
 }
 
 function randomHex(len = 16) {
@@ -19,295 +20,390 @@ function generateClientId() {
   return String(Math.floor(1000000000 + Math.random() * 9000000000))
 }
 
-function generateRoomId(clientId: string) {
-  const ts = Date.now()
-  const hex = randomHex(32)
-  const encId = btoa(clientId).replace(/=/g, '')
-  return `${encId}-${hex}-${ts}`
+function generateRoomId() {
+  const e = Math.floor(Math.random() * 1e10).toString()
+  return `${btoa(e).replace(/=/g, '')}-${Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}-${Date.now()}`
+}
+
+function extractUid(token: string): string {
+  try {
+    let t = token.replace(/^_v\d+/, '')
+    t += '='.repeat((4 - (t.length % 4)) % 4)
+    const payload = (typeof atob === 'function' ? atob(t) : Buffer.from(t, 'base64').toString('binary')).split('#')[2]
+    if (payload && /^\d+$/.test(payload)) return payload
+  } catch {}
+  return '0'
 }
 
 export async function uploadToCatbox(file: File): Promise<string> {
   const formData = new FormData()
-  formData.append('reqtype', 'fileupload')
-  formData.append('fileToUpload', file)
+  formData.append('file', file, file.name || 'upload.bin')
 
-  const res = await fetch('/catbox', {
+  const res = await fetch('/api/public/upload-catbox', {
     method: 'POST',
     body: formData,
   })
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    throw new Error(`Catbox upload failed (${res.status}): ${text.slice(0, 200)}`)
+  const json = await res.json().catch(() => null)
+  const data = json?.data ?? json
+
+  if (!res.ok || !data?.url) {
+    throw new Error(data?.error || `Upload gagal (${res.status})`)
   }
 
-  const url = (await res.text()).trim()
-  if (!url.startsWith('http')) {
-    throw new Error(`Catbox returned invalid URL: ${url}`)
-  }
-
-  return url
+  return data.url
 }
 
-function buildWorkflowCanvas(params: {
+function buildTrackingParams(accessToken: string, pathScene: string, roomId: string) {
+  return {
+    token: '45C30555F10E49629098A75F95828DA6',
+    gid: generateGnum(),
+    uid: extractUid(accessToken),
+    trace_id: uuid(),
+    client_id: '1189857684',
+    app_scene: 'roboneo',
+    area_code: 'ID',
+    lang: 'en',
+    time_zone: 'Asia/Jakarta',
+    tt_ttclid: '',
+    tt_ttp: '',
+    first_url: 'https://www.roboneo.com/home',
+    page_url: 'https://www.roboneo.com/ai_flow',
+    referrer: 'https://www.roboneo.com/home',
+    pixel_ready: 1,
+    extra: { big_data_patch: { position_type: '/ai_flow' } },
+    path_scene: pathScene,
+    room_id: roomId,
+    _access_token: accessToken,
+  }
+}
+
+async function roboneoApiCall(
+  accessToken: string,
+  path: string,
+  parameter: Record<string, any>
+): Promise<any> {
+  let lastError: Error | null = null
+
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      const body = JSON.stringify({ path, parameter })
+      console.log(`[roboneo] POST /api/public/roboneo → path=${path} (attempt ${attempt})`)
+
+      const res = await fetch('/api/public/roboneo', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Roboneo-Token': accessToken,
+        },
+        body,
+      })
+
+      const proxyResp = await res.json().catch(() => null)
+      console.log(`[roboneo] proxy response:`, JSON.stringify(proxyResp).slice(0, 500))
+
+      if (!proxyResp || proxyResp.ok === false) {
+        const errMsg = proxyResp?.error || `Proxy error`
+        if (attempt < 5) {
+          await new Promise((r) => setTimeout(r, 1500 * attempt))
+          continue
+        }
+        throw new Error(`Roboneo ${path}: ${errMsg}`)
+      }
+
+      const data = proxyResp.data
+      if (!data) {
+        if (attempt < 5) {
+          await new Promise((r) => setTimeout(r, 1500 * attempt))
+          continue
+        }
+        throw new Error(`Roboneo ${path}: empty response`)
+      }
+
+      if (data.error_code && data.error_code !== 0) {
+        throw new Error(`Roboneo ${path}: ${data.error_msg || 'error_code=' + data.error_code}`)
+      }
+
+      return data
+    } catch (err: any) {
+      lastError = err
+      if (/network|fetch|Failed to fetch/i.test(err.message) && attempt < 5) {
+        await new Promise((r) => setTimeout(r, 1500 * attempt))
+        continue
+      }
+      throw err
+    }
+  }
+
+  throw lastError || new Error(`Roboneo ${path}: max retries`)
+}
+
+export async function checkRoboneoBalance(accessToken: string): Promise<{ ok: boolean; balance?: number | null; error?: string }> {
+  try {
+    const tracking = buildTrackingParams(accessToken, 'vipshow', generateRoomId())
+    const { _access_token, ...paramWithoutToken } = tracking
+
+    const body = JSON.stringify({
+      path: 'vipshow',
+      parameter: {
+        ...paramWithoutToken,
+        features: '',
+        later_face: 0,
+      },
+    })
+
+    const res = await fetch('/api/public/roboneo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Roboneo-Token': accessToken },
+      body,
+    })
+
+    const proxyResp = await res.json().catch(() => null)
+    const data = proxyResp?.data
+    if (!data || data.error_code !== 0) {
+      return { ok: false, error: data?.error_msg || `error_code=${data?.error_code}` }
+    }
+
+    const param = data.parameter || data
+    const balanceKeys = ['credit', 'balance', 'remain', 'quota', 'point', 'coin', 'energy']
+    let balance: number | null = null
+
+    function findBalance(obj: any, depth = 0): number | null {
+      if (depth > 5 || !obj || typeof obj !== 'object') return null
+      for (const [k, v] of Object.entries(obj)) {
+        const kl = k.toLowerCase()
+        if (typeof v === 'number' && balanceKeys.some((bk) => kl.includes(bk))) return v
+        if (typeof v === 'string' && /^\d+(\.\d+)?$/.test(v) && balanceKeys.some((bk) => kl.includes(bk))) return Number(v)
+        if (typeof v === 'object' && v !== null) {
+          const found = findBalance(v, depth + 1)
+          if (found !== null) return found
+        }
+      }
+      return null
+    }
+
+    balance = findBalance(param)
+    return { ok: true, balance }
+  } catch (err: any) {
+    return { ok: false, error: err.message }
+  }
+}
+
+export async function submitMotionControl(params: {
+  accessToken: string
   imageUrl: string
   videoUrl: string
-  prompt: string
-  apiName: string
-  quality: string
-}) {
-  const { imageUrl, videoUrl, prompt, apiName, quality } = params
+  prompt?: string
+  quality?: string
+}): Promise<{ taskId: string; roomId: string }> {
+  const { accessToken, imageUrl, videoUrl, prompt = '', quality = 'std' } = params
 
-  const imageNodeId = randomHex(20)
-  const videoNodeId = randomHex(20)
-  const editNodeId = randomHex(20)
+  const roomId = generateRoomId()
+  const nodeId = uuid()
 
-  const defaultPrompt = prompt || 'Refer to the movements and facial expressions in the reference video to animate photos without changing the original background.'
-
-  const nodes = [
-    {
-      id: imageNodeId,
-      type: 'IMAGE_NODE',
-      meta: { position: { x: -240, y: 207 } },
-      data: {
-        name: 'Image 1',
-        title: 'Image',
-        isCustomer: true,
-        isRecommend: true,
-        status: 'loaded',
-        media_list: [{
-          url: imageUrl,
-          originUrl: imageUrl,
-          watermark_url: imageUrl,
-          width: 941,
-          height: 1672,
-          name: 'Image',
-          source: 'upload',
-        }],
-        mcpInfo: {
-          api_name: 'image_praline_create_v2',
-          model_id: 'mt_nano_pro',
-          node_model_id: 'txt2img',
-          parameters: {
-            count: 1,
-            prompt: '',
-            ratio: '16:9',
-            resolution: '2K',
-          },
-        },
-      },
+  const node = {
+    tool_abstract_name: { cn: 'Motion Control', en: 'Motion Control' },
+    node_id: nodeId,
+    name: 'video_bonbon_motioncontrol_v26',
+    parameters: {
+      quality,
+      image_url: imageUrl,
+      video_url: videoUrl,
+      prompt: prompt || '',
+      random: `${Date.now()}-${Math.floor(1e7 + Math.random() * 89999999)}`,
     },
-    {
-      id: videoNodeId,
-      type: 'VIDEO_NODE',
-      meta: { position: { x: -240, y: 487 } },
-      data: {
-        name: 'Video 2',
-        title: 'Video',
-        isCustomer: true,
-        isRecommend: true,
-        media_list: [{
-          url: videoUrl,
-          width: 1232,
-          height: 1680,
-          duration: 16,
-          cover_url: `${videoUrl}?vframe/jpg/offset/0`,
-          watermark_url: videoUrl,
-          watermark_cover_url: `${videoUrl}?vframe/jpg/offset/0`,
-        }],
-        mcpInfo: {
-          api_name: 'video_toffee_t2v_v20',
-          model_id: 'seedance_2.0',
-          node_model_id: 'txt2vid',
-          parameters: {
-            count: 1,
-            prompt: '',
-            ratio: '16:9',
-            resolution: '720p',
-            sound: 'true',
-            video_duration: 5,
-          },
-        },
-      },
-    },
-    {
-      id: editNodeId,
-      type: 'VIDEO_NODE',
-      meta: { position: { x: 120, y: 347 } },
-      data: {
-        media_list: [],
-        name: 'Video 1',
-        mcpInfo: {
-          api_name: apiName,
-          model_id: 'kling_2_6_motion',
-          node_model_id: 'video_edit',
-          parameters: {
-            count: 1,
-            prompt: `Refer to the movements and facial expressions in [@input_video:${videoNodeId}] to animate photos without changing the original background. ${defaultPrompt}`,
-            quality,
-          },
-        },
-        isCustomer: false,
-        isRecommend: false,
-        inputNodeId: {
-          textNodeIds: [],
-          imageNodeIds: [imageNodeId],
-          videoNodeIds: [videoNodeId],
-          audioNodeIds: [],
-        },
-      },
-    },
-  ]
-
-  const edges = [
-    {
-      sourceNodeID: imageNodeId,
-      targetNodeID: editNodeId,
-      sourcePortID: 'output',
-      targetPortID: 'input',
-    },
-    {
-      sourceNodeID: videoNodeId,
-      targetNodeID: editNodeId,
-      sourcePortID: 'output',
-      targetPortID: 'input',
-    },
-  ]
-
-  return { nodes, edges }
-}
-
-export async function submitMotionControlWorkflow(
-  config: RoboneoConfig,
-  params: {
-    imageUrl: string
-    videoUrl: string
-    prompt?: string
-    apiName?: string
-    quality?: string
-    roomId: string
   }
-): Promise<{ gnum: string; roomId: string }> {
-  const {
-    imageUrl,
-    videoUrl,
-    prompt = '',
-    apiName = 'video_bonbon_motioncontrol_v26',
-    quality = 'std',
-    roomId,
-  } = params
 
-  const gnum = generateGnum()
+  const tracking = buildTrackingParams(accessToken, 'nodeexecute', roomId)
+  const { _access_token, ...paramWithoutToken } = tracking
 
-  const canvas = buildWorkflowCanvas({
-    imageUrl,
-    videoUrl,
-    prompt,
-    apiName,
-    quality,
-  })
-
-  const body = {
-    gnum,
-    client_id: config.clientId,
-    client_language: 'en',
-    country_code: 'ID',
+  const parameter = {
+    ...paramWithoutToken,
     room_id: roomId,
-    data: JSON.stringify(canvas),
+    node_id: nodeId,
+    need_node_name: true,
+    workflow_version: 'v2',
+    node_list_array: [[node]],
   }
 
-  const res = await fetch(`${ROBONEO_BASE}/workflow/canvas/save.json`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'access-token': config.accessToken,
-      'client-id': config.clientId,
-      'Origin': 'https://www.roboneo.com',
-      'Referer': 'https://www.roboneo.com/',
-    },
-    body: JSON.stringify(body),
-  })
+  const result = await roboneoApiCall(accessToken, 'nodeexecute', parameter)
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    throw new Error(`Submit failed (${res.status}): ${text.slice(0, 500)}`)
+  // Vercel x() returns data.parameter, so unwrap if nested
+  const payload = result?.parameter ?? result
+
+  const taskIds: string[] = payload?.task_ids?.length
+    ? payload.task_ids
+    : Array.isArray(payload?.tasks)
+    ? payload.tasks.map((t: any) => t.task_id).filter(Boolean)
+    : Object.keys(payload?.tasks || {})
+
+  if (!taskIds.length) {
+    throw new Error('Roboneo: submit sukses tapi task_id tidak ditemukan. Response: ' + JSON.stringify(payload).slice(0, 300))
   }
 
-  const data = await res.json()
-  return { gnum, roomId }
+  return { taskId: taskIds[0], roomId }
 }
 
-export async function pollWorkflowStatus(
-  config: RoboneoConfig,
-  gnum: string,
-  roomId: string
-): Promise<{ status: string; url?: string }> {
-  const res = await fetch(
-    `${ROBONEO_BASE}/workflow/canvas/get.json?gnum=${encodeURIComponent(gnum)}&room_id=${encodeURIComponent(roomId)}`,
-    {
-      headers: {
-        'access-token': config.accessToken,
-        'client-id': config.clientId,
-        'Origin': 'https://www.roboneo.com',
-        'Referer': 'https://www.roboneo.com/',
-      },
+function extractVideoUrl(data: any): string | null {
+  if (!data || typeof data !== 'object') return null
+
+  function findUrls(obj: any, depth = 0): string[] {
+    if (depth > 8 || !obj || typeof obj !== 'object') return []
+    const urls: string[] = []
+
+    if (Array.isArray(obj)) {
+      for (const item of obj) urls.push(...findUrls(item, depth + 1))
+      return urls
     }
-  )
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    throw new Error(`Poll failed (${res.status}): ${text.slice(0, 500)}`)
+    for (const [key, value] of Object.entries(obj)) {
+      if (typeof value === 'string' && /^https?:\/\//i.test(value)) {
+        urls.push(value)
+      }
+      if (typeof value === 'object' && value !== null) {
+        urls.push(...findUrls(value, depth + 1))
+      }
+    }
+    return urls
   }
 
-  const data = await res.json()
-  const json = typeof data.data === 'string' ? JSON.parse(data.data) : data.data || data
-  const nodes = json?.nodes || []
-
-  const editNode = nodes.find((n: any) =>
-    n.type === 'VIDEO_NODE' && n.data?.mcpInfo?.api_name?.includes('motioncontrol')
-  )
-
-  const outputMedia = editNode?.data?.media_list
-  if (outputMedia?.length > 0 && outputMedia[0].url) {
-    return { status: 'completed', url: outputMedia[0].url }
-  }
-
-  if (editNode?.data?.mcpInfo?.parameters?.task_id) {
-    return { status: 'processing' }
-  }
-
-  return { status: 'processing' }
+  const allUrls = findUrls(data)
+  const videoExt = /\.(mp4|mov|webm|m4v|avi)(\?|#|$)/i
+  return allUrls.find((u) => videoExt.test(u)) || allUrls[0] || null
 }
 
-export async function waitForWorkflow(
-  config: RoboneoConfig,
-  gnum: string,
+function extractProgress(data: any, depth = 0): number | null {
+  if (depth > 6 || !data || typeof data !== 'object') return null
+
+  const progressKeys = ['progress', 'percent', 'rate', 'schedule', 'process']
+
+  for (const [key, value] of Object.entries(data)) {
+    const k = key.toLowerCase()
+    if (progressKeys.some((pk) => k.includes(pk))) {
+      const num = typeof value === 'number' ? value : typeof value === 'string' && /^\d+(\.\d+)?$/.test(value) ? Number(value) : NaN
+      if (Number.isFinite(num)) {
+        const pct = num <= 1 ? num * 100 : num
+        if (pct >= 0 && pct <= 100) return pct
+      }
+    }
+  }
+
+  for (const value of Object.values(data)) {
+    const pct = extractProgress(value, depth + 1)
+    if (pct !== null) return pct
+  }
+
+  return null
+}
+
+export async function pollMotionControl(
+  accessToken: string,
+  taskId: string,
   roomId: string,
   onProgress?: (status: string, pct: number) => void,
-  maxPolls = 120,
-  pollInterval = 5000
+  timeoutMs = 1800000
 ): Promise<string> {
-  for (let i = 0; i < maxPolls; i++) {
-    await new Promise((r) => setTimeout(r, pollInterval))
+  const startTime = Date.now()
 
-    const result = await pollWorkflowStatus(config, gnum, roomId)
-    const pct = Math.min(90, 10 + (i / maxPolls) * 80)
+  while (Date.now() - startTime < timeoutMs) {
+    await new Promise((r) => setTimeout(r, 4000))
 
-    onProgress?.(result.status, pct)
+    let result: any
+    try {
+      const tracking = buildTrackingParams(accessToken, 'nodeexecutequery', roomId)
+      const { _access_token, ...paramWithoutToken } = tracking
 
-    if (result.status === 'completed' && result.url) {
-      return result.url
+      result = await roboneoApiCall(accessToken, 'nodeexecutequery', {
+        ...paramWithoutToken,
+        task_ids: [taskId],
+        room_id: roomId,
+      })
+    } catch (err: any) {
+      if (/HTTP (502|503|504|429)|upstream|network/i.test(err.message)) {
+        continue
+      }
+      throw err
+    }
+
+    const payload = result?.parameter ?? result
+    console.log(`[roboneo] poll FULL response:`, JSON.stringify(result).slice(0, 3000))
+    console.log(`[roboneo] poll payload keys:`, Object.keys(payload || {}))
+
+    const tasks = payload?.tasks
+    let task: any = null
+    let foundTaskId = ''
+
+    if (tasks && typeof tasks === 'object') {
+      if (Array.isArray(tasks)) {
+        task = tasks.find((t: any) => t.task_id === taskId || t.id === taskId) || tasks[0]
+        foundTaskId = task?.task_id || task?.id || ''
+      } else {
+        task = tasks[taskId] || Object.values(tasks)[0]
+        foundTaskId = taskId
+      }
+    }
+    console.log(`[roboneo] poll task (${foundTaskId}):`, JSON.stringify(task).slice(0, 2000))
+
+    const steps = Array.isArray(task?.steps) ? task.steps : []
+    const succeededStep = steps.find((s: any) =>
+      /success|succeeded|completed|done|finished/i.test(String(s.status || s.state || ''))
+    ) || steps[0]
+
+    const status = String(task?.status || task?.state || succeededStep?.status || succeededStep?.state || '').toLowerCase()
+    const realPct = extractProgress(task) ?? extractProgress(payload)
+    const elapsed = (Date.now() - startTime) / (8 * 60000)
+    const fallbackPct = Math.min(94, 1 - 1 / (1 + elapsed * 1.6))
+    const pct = realPct === null ? Math.round(5 + fallbackPct * 89) : Math.round(realPct)
+
+    onProgress?.(status || 'processing', pct)
+
+    const mediaInfo = task?.media_info_list?.[0] || payload?.media_info_list?.[0]
+    const isDone = ['success', 'succeeded', 'completed', 'done', 'finished'].includes(status)
+
+    if (isDone) {
+      const videoUrl =
+        extractVideoUrl(task?.last_image_url) ||
+        extractVideoUrl(task?.last_image_urls) ||
+        extractVideoUrl(task?.output?.video_url) ||
+        extractVideoUrl(task?.output?.url) ||
+        extractVideoUrl(task?.initial_transferred_urls) ||
+        extractVideoUrl(task?.media_meta) ||
+        extractVideoUrl(task?.result) ||
+        extractVideoUrl(mediaInfo?.url) ||
+        extractVideoUrl(mediaInfo?.media_url) ||
+        extractVideoUrl(steps.map((s: any) => s.output)) ||
+        extractVideoUrl(steps.map((s: any) => s.result)) ||
+        extractVideoUrl(payload?.output) ||
+        extractVideoUrl(payload?.result) ||
+        extractVideoUrl(payload)
+
+      console.log(`[roboneo] done extraction result: ${videoUrl}`)
+
+      if (videoUrl) return videoUrl
+
+      console.log(`[roboneo] task full:`, JSON.stringify(task))
+      console.log(`[roboneo] payload full:`, JSON.stringify(payload).slice(0, 3000))
+      throw new Error('Roboneo: task selesai tapi URL output tidak ditemukan')
+    }
+
+    if (['fail', 'failed', 'error', 'cancelled', 'canceled'].includes(status)) {
+      const errMsg =
+        task.error_message ||
+        task.error_msg ||
+        succeededStep?.error_message ||
+        succeededStep?.error_msg ||
+        'unknown'
+      throw new Error(`Roboneo failed: ${errMsg}`)
     }
   }
 
-  throw new Error('Timeout: generation took too long')
+  throw new Error('Roboneo timeout')
 }
 
-export function parseAccessToken(raw: string): RoboneoConfig {
-  const token = raw.trim()
-  const clientIdMatch = token.match(/(\d{10,})/)
-  return {
-    accessToken: token,
-    clientId: clientIdMatch?.[1] || '1189857647',
-  }
+export function isRoboneoTokenError(msg: string): boolean {
+  return /token|auth|log\s*in|login|expired|unauth|401|403/i.test(msg)
+}
+
+export function parseAccessToken(raw: string): string {
+  return raw.trim()
 }
