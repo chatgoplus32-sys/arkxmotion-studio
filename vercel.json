@@ -23,6 +23,7 @@
     { "src": "/api/admin/users/(\\d+)", "dest": "/api/admin?id=$1" },
     { "src": "/api/admin/users", "dest": "/api/admin" },
     { "src": "/api/tokens/orders/mine", "dest": "/api/tokens" },
+    { "src": "/api/tokens/orders/clear", "dest": "/api/tokens" },
     { "src": "/api/tokens/note/(.*)", "dest": "/api/tokens" },
     { "src": "/api/tokens/buy", "dest": "/api/tokens" },
     { "src": "/api/tokens/(.*)", "dest": "/api/tokens" },

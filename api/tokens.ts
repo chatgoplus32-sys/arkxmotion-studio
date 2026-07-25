@@ -165,6 +165,12 @@ Gunakan token ini di menu Providers.
       return res.status(200).send(note)
     }
 
+    // DELETE /api/tokens/orders/clear - clear user's order history
+    if (req.method === 'DELETE' && segments.includes('clear')) {
+      await sql`DELETE FROM token_orders WHERE user_id = ${user.id}`
+      return res.status(200).json({ message: 'Order history cleared' })
+    }
+
     return res.status(404).json({ error: 'Not found' })
   } catch (err: any) {
     console.error('Tokens error:', err)

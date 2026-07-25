@@ -382,7 +382,55 @@ export default function SettingsPage() {
 
         {myOrders.length > 0 && (
           <div className="mt-5 pt-4 border-t border-border">
-            <div className="text-sm font-medium mb-3">Riwayat Pembelian</div>
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-sm font-medium">Riwayat Pembelian</div>
+              <div className="flex gap-2">
+                {myOrders.some(o => o.status === 'confirmed') && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={async () => {
+                      for (const order of myOrders.filter(o => o.status === 'confirmed')) {
+                        try {
+                          const res = await fetch(`/api/tokens/note/${order.bulk_id}`, {
+                            headers: { 'Authorization': `Bearer ${authStore.token}` }
+                          })
+                          const blob = await res.blob()
+                          const url = URL.createObjectURL(blob)
+                          const a = document.createElement('a')
+                          a.href = url
+                          a.download = `akun_Token_${order.provider}_${order.count}_${new Date().toISOString().replace(/:/g, '-').slice(0, 19)}.txt`
+                          a.click()
+                          URL.revokeObjectURL(url)
+                          await new Promise(r => setTimeout(r, 500))
+                        } catch {}
+                      }
+                    }}
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" /> Download Semua
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={async () => {
+                    if (!confirm('Hapus semua riwayat pembelian?')) return
+                    try {
+                      const res = await fetch('/api/tokens/orders/clear', {
+                        method: 'DELETE',
+                        headers: { 'Authorization': `Bearer ${authStore.token}` }
+                      })
+                      if (res.ok) {
+                        addToast('Riwayat pembelian dihapus', 'success')
+                        fetchMyOrders()
+                      }
+                    } catch {}
+                  }}
+                >
+                  <Trash2 className="h-3.5 w-3.5" /> Hapus Semua
+                </Button>
+              </div>
+            </div>
             <div className="space-y-2">
               {myOrders.map((order) => (
                 <div
