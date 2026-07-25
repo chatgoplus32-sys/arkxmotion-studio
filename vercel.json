@@ -9,6 +9,7 @@
     "api/public/roboneo.ts": { "regions": ["iad1"] },
     "api/public/uploads.ts": { "maxDuration": 30 },
     "api/public/createpulse.ts": { "maxDuration": 30 },
+    "api/public/framia.ts": { "maxDuration": 30 },
     "api/public/video-proxy.ts": { "maxDuration": 30 }
   },
   "routes": [

@@ -85,6 +85,55 @@ export function roboneoProxyPlugin(): Plugin {
         }
       })
 
+      server.middlewares.use('/api/public/framia', async (req, res) => {
+        if (req.method === 'OPTIONS') {
+          res.writeHead(200, {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+          })
+          res.end()
+          return
+        }
+
+        const urlObj = new URL(req.url || '', 'http://localhost')
+        const subpath = urlObj.searchParams.get('path') || ''
+        const auth = req.headers.authorization || ''
+
+        const chunks: Buffer[] = []
+        for await (const chunk of req) chunks.push(chunk)
+        const rawBody = Buffer.concat(chunks).toString()
+
+        console.log(`[framia-proxy] ${req.method} ${subpath} → ${VERCEL_ORIGIN}/api/public/framia`)
+
+        try {
+          const url = new URL(`${VERCEL_ORIGIN}/api/public/framia`)
+          url.searchParams.set('path', subpath)
+
+          const framiaRes = await fetch(url.toString(), {
+            method: req.method,
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: String(auth),
+            },
+            body: req.method === 'POST' ? rawBody : undefined,
+          })
+
+          const framiaText = await framiaRes.text()
+          console.log(`[framia-proxy] ${framiaRes.status}:`, framiaText.slice(0, 500))
+
+          res.writeHead(framiaRes.status, {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          })
+          res.end(framiaText)
+        } catch (err: any) {
+          console.error(`[framia-proxy] error:`, err.message)
+          res.writeHead(502, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: false, error: err.message }))
+        }
+      })
+
       server.middlewares.use('/api/public/roboneo', async (req, res) => {
         if (req.method !== 'POST') {
           res.writeHead(405)

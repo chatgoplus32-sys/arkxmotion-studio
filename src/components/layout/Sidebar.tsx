@@ -17,6 +17,7 @@ import {
   Sparkles,
   LogOut,
   Shield,
+  Key,
 } from 'lucide-react'
 
 interface NavItem {
@@ -76,6 +77,7 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
 
   const adminNav: NavItem[] = [
     { label: 'User Management', href: '/admin/users', icon: <Shield className="h-4 w-4" />, badge: pendingCount > 0 ? String(pendingCount) : undefined },
+    { label: 'Upload Token', href: '/admin/tokens', icon: <Key className="h-4 w-4" /> },
   ]
 
   const isActive = (href: string) => {

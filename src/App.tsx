@@ -19,6 +19,7 @@ import AssetsPage from '@/pages/Assets'
 import ProvidersPage from '@/pages/Providers'
 import SettingsPage from '@/pages/Settings'
 import AdminUsersPage from '@/pages/AdminUsers'
+import AdminTokensPage from '@/pages/AdminTokens'
 import LoginPage from '@/pages/Login'
 import RegisterPage from '@/pages/Register'
 
@@ -58,6 +59,7 @@ export default function App() {
                       <Route path="/providers" element={<ProvidersPage />} />
                       <Route path="/settings" element={<SettingsPage />} />
                       <Route path="/admin/users" element={<AdminUsersPage />} />
+                      <Route path="/admin/tokens" element={<AdminTokensPage />} />
                     </Routes>
                   </main>
                 </div>

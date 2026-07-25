@@ -1,7 +1,8 @@
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Label, Select } from '@/components/ui'
-import { Shield, Square, Trash2, AlertTriangle, Loader2 } from 'lucide-react'
+import { Shield, Square, Trash2, AlertTriangle, Loader2, ShoppingCart, Key } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
+import { useAuthStore } from '@/stores/authStore'
 import {
   getActiveTasks,
   forceStopTask,
@@ -17,6 +18,33 @@ import {
 } from '@/lib/backgroundTasks'
 import { useToastStore } from '@/stores/toastStore'
 
+interface TokenItem {
+  id: number
+  provider: string
+  name: string
+  price: number
+  status: string
+  created_at: string
+}
+
+interface OrderItem {
+  id: number
+  token_id: number
+  provider: string
+  token_name: string
+  price: number
+  status: string
+  created_at: string
+}
+
+type Provider = 'roboneo' | 'framia' | 'weavy'
+
+const PROVIDERS: { key: Provider; label: string; color: string }[] = [
+  { key: 'roboneo', label: 'Roboneo', color: 'text-blue-500' },
+  { key: 'framia', label: 'Framia', color: 'text-purple-500' },
+  { key: 'weavy', label: 'Weavy', color: 'text-green-500' },
+]
+
 export default function SettingsPage() {
   const [theme, setTheme] = useState('system')
   const [language, setLanguage] = useState('id')
@@ -27,12 +55,81 @@ export default function SettingsPage() {
   const [stopping, setStopping] = useState<string | null>(null)
   const [stoppingAll, setStoppingAll] = useState(false)
   const addToast = useToastStore((s) => s.addToast)
+  const authStore = useAuthStore()
+
+  const [activeTokenTab, setActiveTokenTab] = useState<Provider>('roboneo')
+  const [availableTokens, setAvailableTokens] = useState<TokenItem[]>([])
+  const [myOrders, setMyOrders] = useState<OrderItem[]>([])
+  const [tokenLoading, setTokenLoading] = useState(false)
+  const [buyingId, setBuyingId] = useState<number | null>(null)
 
   const refresh = useCallback(() => {
     setActiveTasks(getActiveTasks())
     setResults(getResults())
     setLogs(getLogs())
   }, [])
+
+  const fetchTokens = useCallback(async () => {
+    if (!authStore.token) return
+    setTokenLoading(true)
+    try {
+      const response = await fetch(`/api/tokens/${activeTokenTab}`, {
+        headers: { 'Authorization': `Bearer ${authStore.token}` }
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setAvailableTokens(data.tokens)
+      }
+    } catch {
+      addToast('Gagal memuat token', 'error')
+    } finally {
+      setTokenLoading(false)
+    }
+  }, [authStore.token, activeTokenTab, addToast])
+
+  const fetchMyOrders = useCallback(async () => {
+    if (!authStore.token) return
+    try {
+      const response = await fetch('/api/tokens/orders/mine', {
+        headers: { 'Authorization': `Bearer ${authStore.token}` }
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setMyOrders(data.orders)
+      }
+    } catch {}
+  }, [authStore.token])
+
+  useEffect(() => {
+    fetchTokens()
+  }, [fetchTokens])
+
+  useEffect(() => {
+    fetchMyOrders()
+  }, [fetchMyOrders])
+
+  const handleBuyToken = async (tokenId: number) => {
+    if (!authStore.token) return
+    setBuyingId(tokenId)
+    try {
+      const response = await fetch(`/api/tokens/${tokenId}/buy`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${authStore.token}` }
+      })
+      if (response.ok) {
+        addToast('Order berhasil dibuat! Menunggu konfirmasi admin.', 'success')
+        fetchTokens()
+        fetchMyOrders()
+      } else {
+        const data = await response.json()
+        addToast(data.error || 'Gagal membeli token', 'error')
+      }
+    } catch {
+      addToast('Gagal membeli token', 'error')
+    } finally {
+      setBuyingId(null)
+    }
+  }
 
   useEffect(() => {
     refresh()
@@ -175,6 +272,99 @@ export default function SettingsPage() {
           </div>
         </Section>
       </div>
+
+      <Section
+        title="🛒 Beli Token"
+        sub="Beli token Roboneo, Framia, dan Weavy"
+        className="mt-5"
+      >
+        <div className="flex gap-2 mb-4">
+          {PROVIDERS.map((p) => (
+            <button
+              key={p.key}
+              onClick={() => setActiveTokenTab(p.key)}
+              className={`px-3 py-1.5 text-sm rounded-lg transition-colors font-medium ${
+                activeTokenTab === p.key
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-secondary text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        {tokenLoading ? (
+          <div className="text-center py-6 text-muted-foreground text-sm">Memuat token...</div>
+        ) : availableTokens.length === 0 ? (
+          <div className="text-center py-6 text-muted-foreground text-sm">
+            <ShoppingCart className="h-8 w-8 mx-auto mb-2 opacity-50" />
+            Belum ada token {PROVIDERS.find(p => p.key === activeTokenTab)?.label} tersedia
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {availableTokens.map((t) => (
+              <div
+                key={t.id}
+                className="p-4 rounded-xl border border-border bg-background/50 hover:bg-accent/30 transition-colors"
+              >
+                <div className="flex items-start justify-between mb-2">
+                  <div>
+                    <div className="text-sm font-medium">{t.name}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      {PROVIDERS.find(p => p.key === t.provider)?.label}
+                    </div>
+                  </div>
+                  <Key className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <div className="text-lg font-bold gold-text mb-3">
+                  Rp {t.price.toLocaleString('id-ID')}
+                </div>
+                <Button
+                  size="sm"
+                  className="w-full"
+                  onClick={() => handleBuyToken(t.id)}
+                  disabled={buyingId === t.id}
+                  loading={buyingId === t.id}
+                >
+                  {buyingId !== t.id && <ShoppingCart className="h-3.5 w-3.5" />}
+                  Beli Token
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {myOrders.length > 0 && (
+          <div className="mt-5 pt-4 border-t border-border">
+            <div className="text-sm font-medium mb-3">Riwayat Pembelian</div>
+            <div className="space-y-2">
+              {myOrders.map((order) => (
+                <div
+                  key={order.id}
+                  className="flex items-center justify-between gap-3 p-3 rounded-xl border border-border bg-background/50"
+                >
+                  <div>
+                    <div className="text-sm font-medium">{order.token_name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {PROVIDERS.find(p => p.key === order.provider)?.label} - Rp {order.price.toLocaleString('id-ID')}
+                    </div>
+                  </div>
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                    order.status === 'confirmed'
+                      ? 'bg-green-500/10 text-green-500'
+                      : order.status === 'rejected'
+                        ? 'bg-red-500/10 text-red-500'
+                        : 'bg-yellow-500/10 text-yellow-500'
+                  }`}>
+                    {order.status === 'confirmed' ? 'Dikonfirmasi' : order.status === 'rejected' ? 'Ditolak' : 'Menunggu'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </Section>
 
       <Section
         title="🔧 Developer Tools — Task Manager"

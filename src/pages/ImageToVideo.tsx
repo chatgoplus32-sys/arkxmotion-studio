@@ -4,6 +4,7 @@ import { Section, Button, Select, Label, Textarea, EmptyState, Badge } from '@/c
 import { Image, Upload, Rocket, Loader2, Trash2, Zap, Key, ExternalLink } from 'lucide-react'
 import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
 import { uploadToCatbox, submitGoogleOmni, submitSeedancePro, pollMotionControl, compressVideo } from '@/lib/roboneo'
+import { generateWithFramia } from '@/lib/framia'
 import {
   getActiveTasks,
   addActiveTask,
@@ -53,7 +54,16 @@ const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'cp:bytedance-seedance-2.0', label: 'ByteDance Seedance 2.0', cr: 180, provider: 'createpulse', apiModel: 'bytedance-seedance-2.0' },
   ],
   framia: [
-    { value: 'framia:workflow', label: 'Framia Workflow', cr: 0, provider: 'framia' },
+    { value: 'framia:seedance-2.0', label: 'Seedance 2.0', cr: 45, provider: 'framia' },
+    { value: 'framia:seedance-2.0-fast', label: 'Seedance 2.0 Fast', cr: 30, provider: 'framia' },
+    { value: 'framia:kling-3.0-omni', label: 'Kling 3.0 Omni', cr: 60, provider: 'framia' },
+    { value: 'framia:kling-3.0', label: 'Kling 3.0', cr: 50, provider: 'framia' },
+    { value: 'framia:veo-3.1', label: 'Veo 3.1', cr: 90, provider: 'framia' },
+    { value: 'framia:veo-3.1-fast', label: 'Veo 3.1 Fast', cr: 65, provider: 'framia' },
+    { value: 'framia:wan-2.7', label: 'Wan 2.7', cr: 25, provider: 'framia' },
+    { value: 'framia:gemini-omni-flash', label: 'Gemini Omni Flash', cr: 20, provider: 'framia' },
+    { value: 'framia:happyhorse-1.1', label: 'HappyHorse 1.1', cr: 28, provider: 'framia' },
+    { value: 'framia:kling-avatar', label: 'Kling Avatar', cr: 40, provider: 'framia' },
   ],
   elevenlabs: [],
   gemini: [],
@@ -110,6 +120,7 @@ const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; 
   framia: {
     default: [
       { value: 'std', label: 'Standard', mult: 1, duration: 10 },
+      { value: 'long', label: 'Long 15s', mult: 1.5, duration: 15 },
     ],
   },
   elevenlabs: { default: [] },
@@ -418,6 +429,32 @@ export default function ImageToVideoPage() {
         addLog(`[3/3] Done ✓ ${videoUrl.slice(0, 60)}...`, 'success')
 
         removeActiveTask(taskId)
+        setResults((prev) => [videoUrl, ...prev])
+        setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+      } else if (provider === 'framia') {
+        if (!apiKey) {
+          addLog('No Framia API key found. Add one in Providers page.', 'error')
+          throw new Error('No Framia API key')
+        }
+
+        addLog(`[1/2] Preparing image...`)
+        let imageUrl: string | undefined
+        if (imgFile) {
+          imageUrl = await uploadToCatbox(imgFile)
+          addLog(`[1/2] Image uploaded ✓ ${imageUrl.slice(0, 60)}...`)
+        } else {
+          addLog(`[1/2] No image provided (text-to-video mode)`)
+        }
+
+        const videoUrl = await generateWithFramia({
+          apiKey,
+          imageUrl,
+          prompt: prompt.trim(),
+          skillId: model,
+          onLog: (msg, level) => addLog(msg, level),
+          onStatus: (text, pct) => setStatus((s) => ({ ...s, pct, text: `[Framia] ${text}` })),
+        })
+
         setResults((prev) => [videoUrl, ...prev])
         setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
       } else {
