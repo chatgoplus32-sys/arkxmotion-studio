@@ -3,6 +3,11 @@
   "outputDirectory": "dist",
   "framework": null,
   "installCommand": "npm install",
+  "functions": {
+    "api/public/roboneo.ts": {
+      "regions": ["iad1"]
+    }
+  },
   "routes": [
     { "src": "/api/(.*)", "dest": "/api/$1" },
     { "handle": "filesystem" },

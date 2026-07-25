@@ -172,19 +172,6 @@ function buildTrackingParams(accessToken: string, pathScene: string, roomId: str
   }
 }
 
-function extractClientIdFromToken(token: string): string {
-  try {
-    let t = token.replace(/^_v\d+/, '')
-    t += '='.repeat((4 - (t.length % 4)) % 4)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const decoded = (typeof atob === 'function' ? atob(t) : (globalThis as any).Buffer?.from(t, 'base64').toString('binary') ?? atob(t))
-    const parts = decoded.split('#')
-    const clientId = parts[parts.length - 1]
-    if (clientId && clientId.length >= 8) return clientId
-  } catch {}
-  return '1189857684'
-}
-
 async function roboneoApiCall(
   accessToken: string,
   path: string,
@@ -192,22 +179,17 @@ async function roboneoApiCall(
 ): Promise<any> {
   let lastError: Error | null = null
 
-  const clientId = extractClientIdFromToken(accessToken)
-  const uid = extractUid(accessToken)
-  const cookies = `__mt_web_access_token__=${encodeURIComponent(accessToken)}; __mt_web_client_id__=${clientId}; __mt_web_login__=${Date.now()}; __mt_uid__=${uid}`
-
   for (let attempt = 1; attempt <= 5; attempt++) {
     try {
       const body = JSON.stringify({ path, parameter })
-      console.log(`[roboneo] POST /api/public/roboneo → path=${path} clientId=${clientId} (attempt ${attempt}/5)`)
+      console.log(`[roboneo] POST /api/public/roboneo → path=${path} (attempt ${attempt}/5)`)
+      console.log(`[roboneo] → body keys:`, Object.keys(parameter))
 
       const res = await fetch('/api/public/roboneo', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-Roboneo-Token': accessToken,
-          'X-Roboneo-Cookies': cookies,
-          'X-Roboneo-Client-Id': clientId,
         },
         body,
       })
