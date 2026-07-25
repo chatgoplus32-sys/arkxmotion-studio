@@ -38,6 +38,7 @@ function extractUid(token: string): string {
 
 export async function compressVideo(file: File, maxMB = 20): Promise<File> {
   if (file.size <= maxMB * 1024 * 1024) return file
+  if (typeof MediaRecorder === 'undefined') return file
 
   console.log(`[upload] video ${(file.size / 1024 / 1024).toFixed(1)}MB > ${maxMB}MB, compressing...`)
 
@@ -46,6 +47,8 @@ export async function compressVideo(file: File, maxMB = 20): Promise<File> {
     video.muted = true
     video.preload = 'metadata'
     video.src = URL.createObjectURL(file)
+
+    let recorder: MediaRecorder | null = null
 
     video.onloadedmetadata = () => {
       const canvas = document.createElement('canvas')
@@ -57,7 +60,7 @@ export async function compressVideo(file: File, maxMB = 20): Promise<File> {
       const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
         ? 'video/webm;codecs=vp9'
         : 'video/webm'
-      const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2_000_000 })
+      recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2_000_000 })
       const chunks: Blob[] = []
 
       recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data) }
@@ -73,7 +76,7 @@ export async function compressVideo(file: File, maxMB = 20): Promise<File> {
       video.play()
 
       const drawFrame = () => {
-        if (video.ended || video.paused) { recorder.stop(); return }
+        if (video.ended || video.paused || !recorder || recorder.state !== 'recording') return
         ctx.drawImage(video, 0, 0)
         requestAnimationFrame(drawFrame)
       }
@@ -86,7 +89,7 @@ export async function compressVideo(file: File, maxMB = 20): Promise<File> {
     }
 
     setTimeout(() => {
-      if (recorder.state === 'recording') recorder.stop()
+      if (recorder && recorder.state === 'recording') recorder.stop()
     }, (video.duration || 30) * 1000)
   })
 }
