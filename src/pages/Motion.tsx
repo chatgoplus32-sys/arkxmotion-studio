@@ -183,7 +183,7 @@ export default function MotionPage() {
               continue
             }
             addLog(`Slot ${i + 1}: [2a/3] Compressing video if needed (${(slot.video.size / 1024 / 1024).toFixed(1)}MB)...`)
-            const videoFile = await compressVideo(slot.video, 20)
+            const videoFile = await compressVideo(slot.video, 5)
             addLog(`Slot ${i + 1}: [2a/3] Uploading video to host...`)
             const videoUrl = await uploadToCatbox(videoFile)
             addLog(`Slot ${i + 1}: [2a/3] Video uploaded ✓ ${videoUrl.slice(0, 50)}...`)
