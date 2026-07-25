@@ -1,6 +1,6 @@
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Label, Select } from '@/components/ui'
-import { Shield, Square, Trash2, AlertTriangle, Loader2, ShoppingCart, Key } from 'lucide-react'
+import { Shield, Square, Trash2, AlertTriangle, Loader2, ShoppingCart, Key, Copy, ExternalLink, X } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
 import { useAuthStore } from '@/stores/authStore'
 import {
@@ -45,6 +45,8 @@ const PROVIDERS: { key: Provider; label: string; color: string }[] = [
   { key: 'weavy', label: 'Weavy', color: 'text-green-500' },
 ]
 
+const WHATSAPP_LINK = 'https://wa.me/6285156207924?text=Halo%20saya%20ingin%20order%20token'
+
 export default function SettingsPage() {
   const [theme, setTheme] = useState('system')
   const [language, setLanguage] = useState('id')
@@ -61,7 +63,7 @@ export default function SettingsPage() {
   const [availableTokens, setAvailableTokens] = useState<TokenItem[]>([])
   const [myOrders, setMyOrders] = useState<OrderItem[]>([])
   const [tokenLoading, setTokenLoading] = useState(false)
-  const [buyingId, setBuyingId] = useState<number | null>(null)
+  const [selectedToken, setSelectedToken] = useState<TokenItem | null>(null)
 
   const refresh = useCallback(() => {
     setActiveTasks(getActiveTasks())
@@ -108,27 +110,19 @@ export default function SettingsPage() {
     fetchMyOrders()
   }, [fetchMyOrders])
 
-  const handleBuyToken = async (tokenId: number) => {
-    if (!authStore.token) return
-    setBuyingId(tokenId)
-    try {
-      const response = await fetch(`/api/tokens/${tokenId}/buy`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${authStore.token}` }
-      })
-      if (response.ok) {
-        addToast('Order berhasil dibuat! Menunggu konfirmasi admin.', 'success')
-        fetchTokens()
-        fetchMyOrders()
-      } else {
-        const data = await response.json()
-        addToast(data.error || 'Gagal membeli token', 'error')
-      }
-    } catch {
-      addToast('Gagal membeli token', 'error')
-    } finally {
-      setBuyingId(null)
-    }
+  const handleBuyToken = (token: TokenItem) => {
+    setSelectedToken(token)
+  }
+
+  const handleConfirmOrder = () => {
+    window.open(WHATSAPP_LINK, '_blank')
+    addToast('Link WhatsApp terbuka. Kirim pesan untuk konfirmasi order.', 'info')
+    setSelectedToken(null)
+  }
+
+  const handleCopyNumber = () => {
+    navigator.clipboard.writeText('082280204445')
+    addToast('Nomor Dana berhasil disalin', 'success')
   }
 
   useEffect(() => {
@@ -323,11 +317,9 @@ export default function SettingsPage() {
                 <Button
                   size="sm"
                   className="w-full"
-                  onClick={() => handleBuyToken(t.id)}
-                  disabled={buyingId === t.id}
-                  loading={buyingId === t.id}
+                  onClick={() => handleBuyToken(t)}
                 >
-                  {buyingId !== t.id && <ShoppingCart className="h-3.5 w-3.5" />}
+                  <ShoppingCart className="h-3.5 w-3.5" />
                   Beli Token
                 </Button>
               </div>
@@ -365,6 +357,66 @@ export default function SettingsPage() {
           </div>
         )}
       </Section>
+
+      {selectedToken && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <div className="text-lg font-semibold">Order Token {PROVIDERS.find(p => p.key === selectedToken.provider)?.label}</div>
+              <button onClick={() => setSelectedToken(null)} className="p-1 rounded-lg hover:bg-accent text-muted-foreground">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="p-4 rounded-xl bg-background/50 border border-border">
+                <div className="text-sm font-medium mb-1">Token yang dipilih</div>
+                <div className="text-sm text-muted-foreground">{selectedToken.name}</div>
+                <div className="text-xl font-bold gold-text mt-1">Rp {selectedToken.price.toLocaleString('id-ID')}</div>
+              </div>
+
+              <div className="p-4 rounded-xl bg-background/50 border border-border">
+                <div className="text-sm font-medium mb-2">Cara Pembayaran</div>
+                <ol className="text-sm text-muted-foreground space-y-1.5 list-decimal list-inside">
+                  <li>Transfer ke <span className="font-semibold text-foreground">Dana</span></li>
+                  <li className="flex items-center gap-2">
+                    Nomor: <span className="font-mono font-semibold text-foreground">082280204445</span>
+                    <button onClick={handleCopyNumber} className="p-1 rounded hover:bg-accent" title="Salin nomor">
+                      <Copy className="h-3.5 w-3.5" />
+                    </button>
+                  </li>
+                  <li>a.n <span className="font-semibold text-foreground">Yusuf Prihandoko</span></li>
+                  <li>Transfer sesuai harga token</li>
+                </ol>
+              </div>
+
+              <div className="p-4 rounded-xl bg-green-500/5 border border-green-500/20">
+                <div className="text-sm font-medium mb-1">Konfirmasi ke WhatsApp</div>
+                <div className="text-xs text-muted-foreground mb-2">Klik tombol di bawah untuk membuka chat WhatsApp dan kirim bukti transfer</div>
+                <a
+                  href={WHATSAPP_LINK}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 text-sm font-medium text-green-500 hover:text-green-600"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  Buka WhatsApp Order Token
+                </a>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <Button className="flex-1" onClick={handleConfirmOrder}>
+                  <ExternalLink className="h-4 w-4" />
+                  Konfirmasi & Buka WhatsApp
+                </Button>
+                <Button variant="outline" onClick={() => setSelectedToken(null)}>
+                  Batal
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <Section
         title="🔧 Developer Tools — Task Manager"
