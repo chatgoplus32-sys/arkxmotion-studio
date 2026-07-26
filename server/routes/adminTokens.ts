@@ -21,13 +21,9 @@ router.get('/', authenticateToken, requireAdmin, (req: AuthRequest, res: Respons
     let tokens: TokenRow[]
 
     if (provider && ['roboneo', 'framia', 'weavy'].includes(provider as string)) {
-      tokens = db.prepare(
-        'SELECT * FROM tokens WHERE provider = ? ORDER BY created_at DESC'
-      ).all(provider) as TokenRow[]
+      tokens = db.prepare('SELECT * FROM tokens WHERE provider = ? ORDER BY created_at DESC').all(provider) as TokenRow[]
     } else {
-      tokens = db.prepare(
-        'SELECT * FROM tokens ORDER BY created_at DESC'
-      ).all() as TokenRow[]
+      tokens = db.prepare('SELECT * FROM tokens ORDER BY created_at DESC').all() as TokenRow[]
     }
 
     res.json({ tokens })
@@ -39,22 +35,27 @@ router.get('/', authenticateToken, requireAdmin, (req: AuthRequest, res: Respons
 
 router.post('/', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
   try {
-    const { provider, name, token_value, price } = req.body
+    const { provider, name, token_value, price, tokens: bulkTokens } = req.body
+
+    if (bulkTokens && Array.isArray(bulkTokens)) {
+      let created = 0
+      for (const t of bulkTokens) {
+        try {
+          db.prepare('INSERT INTO tokens (provider, name, token_value, price) VALUES (?, ?, ?, ?)').run(provider, t.name, t.token_value, price)
+          created++
+        } catch {}
+      }
+      return res.status(201).json({ message: `${created} tokens uploaded`, count: created })
+    }
 
     if (!provider || !['roboneo', 'framia', 'weavy'].includes(provider)) {
-      return res.status(400).json({ error: 'Invalid provider. Must be roboneo, framia, or weavy' })
+      return res.status(400).json({ error: 'Invalid provider' })
     }
     if (!name || !token_value) {
       return res.status(400).json({ error: 'Name and token_value are required' })
     }
-    if (price === undefined || price < 0) {
-      return res.status(400).json({ error: 'Valid price is required' })
-    }
 
-    const result = db.prepare(
-      'INSERT INTO tokens (provider, name, token_value, price) VALUES (?, ?, ?, ?)'
-    ).run(provider, name, token_value, price)
-
+    const result = db.prepare('INSERT INTO tokens (provider, name, token_value, price) VALUES (?, ?, ?, ?)').run(provider, name, token_value, price || 0)
     const token = db.prepare('SELECT * FROM tokens WHERE id = ?').get(result.lastInsertRowid) as TokenRow
     res.status(201).json({ token })
   } catch (error) {
@@ -63,6 +64,76 @@ router.post('/', authenticateToken, requireAdmin, (req: AuthRequest, res: Respon
   }
 })
 
+// Orders routes BEFORE /:id to avoid conflict
+router.get('/orders', authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
+  try {
+    const rows = db.prepare(`
+      SELECT o.*, t.provider, t.name as token_name, t.token_value, t.price, u.email as user_email, u.name as user_name
+      FROM token_orders o
+      JOIN tokens t ON o.token_id = t.id
+      JOIN users u ON o.user_id = u.id
+      ORDER BY o.created_at DESC
+    `).all() as any[]
+
+    const bulkMap = new Map<string, any>()
+    for (const row of rows) {
+      const bid = row.bulk_id || `single_${row.id}`
+      if (!bulkMap.has(bid)) {
+        bulkMap.set(bid, {
+          bulk_id: bid,
+          user_name: row.user_name,
+          user_email: row.user_email,
+          provider: row.provider,
+          status: row.status,
+          created_at: row.created_at,
+          tokens: [],
+          total_price: 0,
+        })
+      }
+      const bulk = bulkMap.get(bid)!
+      bulk.tokens.push({ id: row.token_id, name: row.token_name, token_value: row.token_value, price: row.price })
+      bulk.total_price += row.price
+    }
+
+    res.json({ orders: Array.from(bulkMap.values()) })
+  } catch (error) {
+    console.error('List orders error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.patch('/orders', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
+  try {
+    const { bulk_id, status } = req.body
+    if (!bulk_id || !status || !['confirmed', 'rejected'].includes(status)) {
+      return res.status(400).json({ error: 'bulk_id and valid status required' })
+    }
+
+    const orders = db.prepare('SELECT * FROM token_orders WHERE bulk_id = ?').all(bulk_id) as { id: number; token_id: number }[]
+    if (orders.length === 0) return res.status(404).json({ error: 'Orders not found' })
+
+    db.prepare('UPDATE token_orders SET status = ? WHERE bulk_id = ?').run(status, bulk_id)
+
+    for (const o of orders) {
+      if (status === 'confirmed') {
+        db.prepare('UPDATE tokens SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('sold', o.token_id)
+      } else if (status === 'rejected') {
+        db.prepare('UPDATE tokens SET status = ?, updated_at = CURRENT_timestamp WHERE id = ?').run('available', o.token_id)
+      }
+    }
+
+    res.json({ message: `Orders ${status}` })
+  } catch (error) {
+    console.error('Update order error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.delete('/orders', authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
+  res.status(405).json({ error: 'Not supported' })
+})
+
+// Token CRUD routes
 router.patch('/:id', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params
@@ -78,7 +149,7 @@ router.patch('/:id', authenticateToken, requireAdmin, (req: AuthRequest, res: Re
 
     if (name !== undefined) { updates.push('name = ?'); values.push(name) }
     if (token_value !== undefined) { updates.push('token_value = ?'); values.push(token_value) }
-    if (price !== undefined) { updates.push('price = ?'); values.push(price) }
+    if (price !== undefined && price >= 0) { updates.push('price = ?'); values.push(price) }
     if (status !== undefined && ['available', 'sold'].includes(status)) {
       updates.push('status = ?'); values.push(status)
     }
@@ -115,50 +186,6 @@ router.delete('/:id', authenticateToken, requireAdmin, (req: AuthRequest, res: R
     res.json({ message: 'Token deleted successfully' })
   } catch (error) {
     console.error('Delete token error:', error)
-    res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-router.get('/orders', authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
-  try {
-    const orders = db.prepare(`
-      SELECT o.*, t.provider, t.name as token_name, t.token_value, t.price, u.email as user_email, u.name as user_name
-      FROM token_orders o
-      JOIN tokens t ON o.token_id = t.id
-      JOIN users u ON o.user_id = u.id
-      ORDER BY o.created_at DESC
-    `).all()
-
-    res.json({ orders })
-  } catch (error) {
-    console.error('List orders error:', error)
-    res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-router.patch('/orders/:id', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
-  try {
-    const { id } = req.params
-    const { status } = req.body
-
-    if (!status || !['confirmed', 'rejected'].includes(status)) {
-      return res.status(400).json({ error: 'Invalid status' })
-    }
-
-    const order = db.prepare('SELECT * FROM token_orders WHERE id = ?').get(id) as { id: number; token_id: number; status: string } | undefined
-    if (!order) {
-      return res.status(404).json({ error: 'Order not found' })
-    }
-
-    db.prepare('UPDATE token_orders SET status = ? WHERE id = ?').run(status, id)
-
-    if (status === 'confirmed') {
-      db.prepare('UPDATE tokens SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('sold', order.token_id)
-    }
-
-    res.json({ message: `Order ${status}` })
-  } catch (error) {
-    console.error('Update order error:', error)
     res.status(500).json({ error: 'Internal server error' })
   }
 })

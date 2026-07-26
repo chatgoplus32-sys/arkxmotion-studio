@@ -57,21 +57,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ error: 'token_ids array is required' })
       }
 
-      // Check all tokens are available
+      const bulkId = `bulk_${user.id}_${Date.now()}`
+      let successCount = 0
+
+      // Atomic: mark as sold only if still available
       for (const tid of token_ids) {
-        const rows = await sql`SELECT id, status FROM tokens WHERE id = ${tid}`
-        if (!rows[0] || rows[0].status !== 'available') {
-          return res.status(400).json({ error: `Token ${tid} not available` })
+        const result = await sql`UPDATE tokens SET status = 'sold', updated_at = CURRENT_TIMESTAMP WHERE id = ${tid} AND status = 'available'`
+        if (result.rowCount && result.rowCount > 0) {
+          await sql`INSERT INTO token_orders (user_id, token_id, status, bulk_id) VALUES (${user.id}, ${tid}, 'pending', ${bulkId})`
+          successCount++
         }
       }
 
-      const bulkId = `bulk_${user.id}_${Date.now()}`
-      for (const tid of token_ids) {
-        await sql`UPDATE tokens SET status = 'sold', updated_at = CURRENT_TIMESTAMP WHERE id = ${tid}`
-        await sql`INSERT INTO token_orders (user_id, token_id, status, bulk_id) VALUES (${user.id}, ${tid}, 'pending', ${bulkId})`
+      if (successCount === 0) {
+        return res.status(400).json({ error: 'No tokens available' })
       }
 
-      return res.status(201).json({ bulk_id: bulkId, message: 'Order created' })
+      return res.status(201).json({ bulk_id: bulkId, count: successCount, message: `${successCount} tokens ordered` })
     }
 
     // GET /api/tokens/orders/mine - user's order history grouped by bulk_id
@@ -167,6 +169,12 @@ Gunakan token ini di menu Providers.
 
     // DELETE /api/tokens/orders/clear - clear user's order history
     if (req.method === 'DELETE' && segments.includes('clear')) {
+      // Get token IDs from pending orders before deleting
+      const pendingOrders = await sql`SELECT token_id FROM token_orders WHERE user_id = ${user.id} AND status = 'pending'`
+      // Reset tokens back to available
+      for (const o of pendingOrders) {
+        await sql`UPDATE tokens SET status = 'available', updated_at = CURRENT_TIMESTAMP WHERE id = ${o.token_id}`
+      }
       await sql`DELETE FROM token_orders WHERE user_id = ${user.id}`
       return res.status(200).json({ message: 'Order history cleared' })
     }

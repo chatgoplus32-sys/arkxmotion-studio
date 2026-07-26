@@ -131,6 +131,7 @@ export default function SettingsPage() {
         addToast(`${qty} token ${PROVIDERS.find(p => p.key === selectedBuyProvider)?.label} berhasil dipesan!`, 'success')
         fetchTokens()
         fetchMyOrders()
+        window.open(WHATSAPP_LINK, '_blank')
       } else {
         const data = await response.json()
         addToast(data.error || 'Gagal memesan', 'error')
@@ -141,7 +142,6 @@ export default function SettingsPage() {
 
     setSelectedBuyQty(0)
     setBuyQty('')
-    window.open(WHATSAPP_LINK, '_blank')
   }
 
   const handleCopyNumber = () => {
