@@ -186,6 +186,8 @@ async function roboneoApiCall(
       const body = JSON.stringify({ path, parameter })
       console.log(`[roboneo] POST /api/public/roboneo → path=${path} (attempt ${attempt}/5)`)
       console.log(`[roboneo] → body keys:`, Object.keys(parameter))
+      console.log(`[roboneo] → token in body:`, parameter.token ? `${String(parameter.token).slice(0, 10)}...` : 'NONE')
+      console.log(`[roboneo] → access token:`, accessToken ? `${accessToken.slice(0, 10)}...` : 'NONE')
 
       const res = await fetch('/api/public/roboneo', {
         method: 'POST',

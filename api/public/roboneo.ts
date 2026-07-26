@@ -15,7 +15,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (!path) return res.status(400).json({ ok: false, error: 'Missing path' })
 
-  console.log(`[roboneo] path=${path} tokenLen=${String(token).length}`)
+  console.log(`[roboneo] path=${path} tokenLen=${String(token).length} tokenPrefix=${String(token).slice(0, 10)}...`)
 
   try {
     const roboneoRes = await fetch(`${GATEWAY_URL}/${path}`, {
