@@ -48,8 +48,6 @@ const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
   roboneo: [
     { value: 'rn:seedance-pro', label: 'Seedance Pro', cr: 0, provider: 'roboneo' },
     { value: 'rn:google-omni', label: 'Google Omni', cr: 0, provider: 'roboneo' },
-    { value: 'rn:kling-v30:pro', label: 'Kling 3.0 Pro', cr: 0, provider: 'roboneo' },
-    { value: 'rn:kling-v30:std', label: 'Kling 3.0 Standard', cr: 0, provider: 'roboneo' },
     { value: 'rn:kling-v26:std', label: 'Kling 2.6', cr: 0, provider: 'roboneo' },
     { value: 'rn:kling-v25', label: 'Kling 2.5', cr: 0, provider: 'roboneo' },
   ],
