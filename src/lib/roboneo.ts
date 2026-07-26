@@ -426,6 +426,7 @@ export async function submitSeedancePro(params: {
       video_duration: videoDuration,
       ratio: 'adaptive',
       resolution,
+      recipe_code: 'd56CL0CD7eVX',
       random: `${Date.now()}-${Math.floor(1e7 + Math.random() * 89999999)}`,
     },
   }
