@@ -363,7 +363,7 @@ export async function submitGoogleOmni(params: {
   const node = {
     tool_abstract_name: { cn: 'Google Omni', en: 'Google Omni' },
     node_id: nodeId,
-    name: 'video_bonbon_i2v_omni_flash',
+    name: 'video_barley_i2v_omni_flash',
     parameters: {
       mcpCategoriesId: '18',
       image_url: imageUrl,
@@ -418,7 +418,7 @@ export async function submitSeedancePro(params: {
   const node = {
     tool_abstract_name: { cn: 'Seedance Pro', en: 'Seedance Pro' },
     node_id: nodeId,
-    name: 'video_bonbon_seedance_pro',
+    name: 'api_v1_outsourcing_img_to_video',
     parameters: {
       mcpCategoriesId: '18',
       image_url: imageUrl,
