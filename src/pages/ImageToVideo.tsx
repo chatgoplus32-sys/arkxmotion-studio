@@ -503,6 +503,7 @@ export default function ImageToVideoPage() {
           {
             onKeySwitch: (from, to, attempt) => {
               addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn')
+              if (activeTaskId) removeActiveTask(activeTaskId)
               activeTaskId = null
             },
             onError: (err, key) => {

@@ -164,10 +164,13 @@ export default function MotionPage() {
     setGenerating(true)
     generatingRef.current = true
     setLogs([])
+    clearLogs()
 
     addLog(`Starting generation with ${currentProvider.name} · ${currentModel.label}`)
     addLog(`Mode: ${isOmni ? 'Image → Video (Google Omni)' : 'Motion Control (Image + Video)'}`)
     addLog(`Processing ${validSlots.length} slot(s)...`)
+
+    try {
 
     const rotation = await withTokenRotation<{ completedCount: number }>(
       provider,
@@ -198,6 +201,8 @@ export default function MotionPage() {
               const imageUrl = await uploadToCatbox(slot.image)
               addLog(`Slot ${i + 1}: [1/3] Image uploaded ✓ ${imageUrl.slice(0, 50)}...`)
 
+              let motionVideoUrl = ''
+
               if (isOmni) {
                 addLog(`Slot ${i + 1}: [2/3] Submitting to Google Omni...`)
                 const result = await submitGoogleOmni({
@@ -218,14 +223,14 @@ export default function MotionPage() {
                 addLog(`Slot ${i + 1}: [2a/3] Compressing video if needed...`)
                 const videoFile = await compressVideo(slot.video, 5)
                 addLog(`Slot ${i + 1}: [2a/3] Uploading video to host...`)
-                const videoUrl = await uploadToCatbox(videoFile)
-                addLog(`Slot ${i + 1}: [2a/3] Video uploaded ✓ ${videoUrl.slice(0, 50)}...`)
+                motionVideoUrl = await uploadToCatbox(videoFile)
+                addLog(`Slot ${i + 1}: [2a/3] Video uploaded ✓ ${motionVideoUrl.slice(0, 50)}...`)
 
                 addLog(`Slot ${i + 1}: [2b/3] Submitting to Motion Control...`)
                 const result = await submitMotionControl({
                   accessToken: token,
                   imageUrl,
-                  videoUrl,
+                  videoUrl: motionVideoUrl,
                   prompt: prompt.trim() || undefined,
                   quality: 'std',
                   orientation,
@@ -245,6 +250,7 @@ export default function MotionPage() {
                 startedAt: Date.now(),
                 page: 'motion',
               })
+              const originalTaskId = taskId
 
               addLog(`Slot ${i + 1}: [3/3] Polling for result...`)
 
@@ -278,7 +284,7 @@ export default function MotionPage() {
                       const retry = await submitMotionControl({
                         accessToken: token,
                         imageUrl,
-                        videoUrl: slot.videoUrl!,
+                        videoUrl: motionVideoUrl,
                         prompt: prompt.trim() || undefined,
                         quality: 'std',
                         orientation,
@@ -295,7 +301,7 @@ export default function MotionPage() {
 
               addLog(`Slot ${i + 1}: [3/3] Done ✓ ${resultUrl!.slice(0, 60)}...`, 'success')
 
-              removeActiveTask(taskId)
+              removeActiveTask(originalTaskId)
               addResult({
                 id: taskId,
                 url: resultUrl!,
@@ -362,8 +368,12 @@ export default function MotionPage() {
       } catch {}
     }
 
-    setGenerating(false)
-    generatingRef.current = false
+    } catch (genErr: any) {
+      addLog(`Generation error: ${genErr.message}`, 'error')
+    } finally {
+      setGenerating(false)
+      generatingRef.current = false
+    }
   }
 
   const handleDownload = useCallback(async (url: string, id: string) => {
