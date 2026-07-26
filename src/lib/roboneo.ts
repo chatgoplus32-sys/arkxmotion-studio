@@ -681,8 +681,9 @@ export async function pollMotionControl(
     const payload = result?.parameter ?? result
     const task = payload?.tasks?.[taskId] || (typeof payload?.tasks === 'object' ? Object.values(payload?.tasks)?.[0] : null)
     const steps = Array.isArray(task?.steps) ? task.steps : []
-    const succeededStep = steps.find((s: any) => /success|succeeded|completed|done|finished/i.test(String(s.status || s.state || ''))) || steps[0]
-    const status = String(task?.status || task?.state || succeededStep?.status || succeededStep?.state || '').toLowerCase()
+    const taskState = String(task?.state || task?.status || '').toLowerCase()
+    const allStepsDone = steps.length > 0 && steps.every((s: any) => /success|succeeded|completed|done|finished/i.test(String(s.status || s.state || '')))
+    const status = allStepsDone ? 'completed' : taskState || 'processing'
     const realPct = extractProgressLocal(task) ?? extractProgressLocal(payload)
     const elapsedMin = (Date.now() - startTime) / (8 * 60000)
     const fallbackPct = Math.min(0.94, 1 - 1 / (1 + elapsedMin * 1.6))
@@ -696,7 +697,7 @@ export async function pollMotionControl(
       console.log(`[roboneo] ${logEntry}`)
     }
 
-    const isDone = ['success', 'succeeded', 'completed', 'done', 'finished'].includes(status)
+    const isDone = ['success', 'succeeded', 'completed', 'done', 'finished'].includes(status) && (allStepsDone || pct >= 90)
     const mediaInfo = task?.media_info_list?.[0] || payload?.media_info_list?.[0]
 
     if (isDone) {
@@ -734,7 +735,8 @@ export async function pollMotionControl(
     }
 
     if (['fail', 'failed', 'error', 'cancelled', 'canceled'].includes(status)) {
-      const errMsg = task?.error_message || task?.error_msg || succeededStep?.error_message || succeededStep?.error_msg || 'unknown'
+      const failedStep = steps.find((s: any) => /fail|error/i.test(String(s.status || s.state || '')))
+      const errMsg = task?.error_message || task?.error_msg || failedStep?.error_message || failedStep?.error_msg || 'unknown'
       throw new Error(`Roboneo failed: ${errMsg}`)
     }
   }
