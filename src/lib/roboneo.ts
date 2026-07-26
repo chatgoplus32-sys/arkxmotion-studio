@@ -606,7 +606,7 @@ export async function pollMotionControl(
       })
     }
     const urls: string[] = []
-    const urlKeys = 'url,uri,src,href,last_image_url,lastImageUrl,media_url,mediaUrl,image_url,imageUrl,video_url,videoUrl,file_url,fileUrl,asset_url,assetUrl,origin_url,originUrl,original_url,originalUrl,preview_url,previewUrl,source_url,sourceUrl,output_url,outputUrl,download_url,downloadUrl,signed_url,signedUrl,play_url,playUrl,cover_url,coverUrl'
+    const urlKeys = 'url,uri,src,href,last_image_url,lastImageUrl,media_url,mediaUrl,image_url,imageUrl,video_url,videoUrl,file_url,fileUrl,asset_url,assetUrl,origin_url,originUrl,original_url,originalUrl,preview_url,previewUrl,source_url,sourceUrl,output_url,outputUrl,download_url,downloadUrl,signed_url,signedUrl,play_url,playUrl,cover_url,coverUrl,data_url,dataUrl,result_url,resultUrl,video,media,output'
     for (const key of urlKeys.split(',')) {
       const val = obj[key]
       if (typeof val === 'string' && /^https?:\/\//i.test(val)) urls.push(val)
@@ -697,7 +697,10 @@ export async function pollMotionControl(
         mediaInfo?.url, mediaInfo?.media_url,
         ...steps.map((s: any) => s.output),
         ...steps.map((s: any) => s.result),
-        payload?.output, payload?.result, payload
+        payload?.output, payload?.result, payload,
+        payload?.data, task?.data, task?.output_url, task?.download_url,
+        task?.result_url, task?.video, task?.video_url, task?.media,
+        payload?.video, payload?.video_url, payload?.media
       )
 
       if (videoUrl) return videoUrl
@@ -707,8 +710,8 @@ export async function pollMotionControl(
       console.log(`[roboneo] payload keys:`, Object.keys(payload || {}))
       if (mediaInfo) console.log(`[roboneo] mediaInfo:`, JSON.stringify(mediaInfo))
 
-      // Task says success but output not ready yet — keep polling
-      if (pct < 80) {
+      // Task says success but output not ready yet — keep polling up to 95%
+      if (pct < 95) {
         onProgress?.('waiting for output', pct)
         continue
       }
