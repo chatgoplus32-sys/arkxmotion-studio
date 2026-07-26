@@ -1,6 +1,6 @@
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Label, Select, Input } from '@/components/ui'
-import { Shield, Square, Trash2, AlertTriangle, Loader2, ShoppingCart, Copy, ExternalLink, X, Upload } from 'lucide-react'
+import { Shield, Square, Trash2, AlertTriangle, Loader2, ShoppingCart, Copy, ExternalLink, X, Upload, QrCode } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
 import { useAuthStore } from '@/stores/authStore'
 import { useProviderManager } from '@/stores/providerManager'
@@ -68,6 +68,7 @@ export default function SettingsPage() {
   const [selectedBuyQty, setSelectedBuyQty] = useState(0)
   const [selectedBuyPrice, setSelectedBuyPrice] = useState(0)
   const [selectedBuyProvider, setSelectedBuyProvider] = useState<Provider>('roboneo')
+  const [paymentMethod, setPaymentMethod] = useState<'dana' | 'qris'>('dana')
   const [oldPassword, setOldPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [changingPassword, setChangingPassword] = useState(false)
@@ -577,7 +578,7 @@ export default function SettingsPage() {
           <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl">
             <div className="flex items-center justify-between mb-4">
               <div className="text-lg font-semibold">Order Token {PROVIDERS.find(p => p.key === selectedBuyProvider)?.label}</div>
-              <button onClick={() => { setSelectedBuyQty(0); setSelectedBuyProvider('roboneo') }} className="p-1 rounded-lg hover:bg-accent text-muted-foreground">
+              <button onClick={() => { setSelectedBuyQty(0); setSelectedBuyProvider('roboneo'); setPaymentMethod('dana') }} className="p-1 rounded-lg hover:bg-accent text-muted-foreground">
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -592,27 +593,87 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              <div className="p-4 rounded-xl bg-background/50 border border-border">
-                <div className="text-sm font-medium mb-2">Cara Pembayaran</div>
-                <ol className="text-sm text-muted-foreground space-y-1.5 list-decimal list-inside">
-                  <li>Transfer ke <span className="font-semibold text-foreground">Dana</span></li>
-                  <li className="flex items-center gap-2">
-                    Nomor: <span className="font-mono font-semibold text-foreground">082280204445</span>
-                    <button onClick={handleCopyNumber} className="p-1 rounded hover:bg-accent" title="Salin nomor">
-                      <Copy className="h-3.5 w-3.5" />
-                    </button>
-                  </li>
-                  <li>a.n <span className="font-semibold text-foreground">Yusuf Prihandoko</span></li>
-                  <li>Transfer sesuai total bayar</li>
-                </ol>
+              {/* Payment Method Tabs */}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setPaymentMethod('dana')}
+                  className={`flex-1 p-2.5 rounded-lg border text-sm font-medium transition ${
+                    paymentMethod === 'dana'
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border text-muted-foreground hover:bg-accent/30'
+                  }`}
+                >
+                  Dana
+                </button>
+                <button
+                  onClick={() => setPaymentMethod('qris')}
+                  className={`flex-1 p-2.5 rounded-lg border text-sm font-medium transition ${
+                    paymentMethod === 'qris'
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border text-muted-foreground hover:bg-accent/30'
+                  }`}
+                >
+                  <QrCode className="h-4 w-4 inline mr-1" />
+                  QRIS
+                </button>
               </div>
+
+              {/* Dana Payment */}
+              {paymentMethod === 'dana' && (
+                <div className="p-4 rounded-xl bg-background/50 border border-border">
+                  <div className="text-sm font-medium mb-2">Cara Pembayaran</div>
+                  <ol className="text-sm text-muted-foreground space-y-1.5 list-decimal list-inside">
+                    <li>Transfer ke <span className="font-semibold text-foreground">Dana</span></li>
+                    <li className="flex items-center gap-2">
+                      Nomor: <span className="font-mono font-semibold text-foreground">082280204445</span>
+                      <button onClick={handleCopyNumber} className="p-1 rounded hover:bg-accent" title="Salin nomor">
+                        <Copy className="h-3.5 w-3.5" />
+                      </button>
+                    </li>
+                    <li>a.n <span className="font-semibold text-foreground">Yusuf Prihandoko</span></li>
+                    <li>Transfer sesuai total bayar</li>
+                  </ol>
+                </div>
+              )}
+
+              {/* QRIS Payment */}
+              {paymentMethod === 'qris' && (
+                <div className="p-4 rounded-xl bg-background/50 border border-border">
+                  <div className="text-sm font-medium mb-3">Scan QRIS untuk Bayar</div>
+                  <div className="flex justify-center mb-3">
+                    <img
+                      src="/qris-faezya.jpg"
+                      alt="QRIS Faezya Cell"
+                      className="w-64 h-auto rounded-lg border border-border"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement
+                        target.style.display = 'none'
+                        const fallback = target.nextElementSibling as HTMLElement
+                        if (fallback) fallback.style.display = 'flex'
+                      }}
+                    />
+                    <div className="hidden flex-col items-center justify-center w-64 h-64 rounded-lg border border-dashed border-border text-center p-4">
+                      <QrCode className="h-12 w-12 text-muted-foreground mb-2" />
+                      <div className="text-xs text-muted-foreground">
+                        QRIS image belum tersedia.
+                        <br />Simpan ke <code className="text-primary">public/qris-faezya.jpg</code>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-center text-sm text-muted-foreground space-y-1">
+                    <div className="font-semibold text-foreground">Faezya Cell</div>
+                    <div className="text-xs">NMID: ID1025464045240</div>
+                    <div className="text-xs">Scan menggunakan aplikasi bank/e-wallet Anda</div>
+                  </div>
+                </div>
+              )}
 
               <div className="flex gap-2 pt-2">
                 <Button className="flex-1" onClick={handleConfirmBuy}>
                   <ExternalLink className="h-4 w-4" />
-                  Transfer & Konfirmasi WhatsApp
+                  {paymentMethod === 'qris' ? 'Sudah Bayar & Konfirmasi WhatsApp' : 'Transfer & Konfirmasi WhatsApp'}
                 </Button>
-                <Button variant="outline" onClick={() => { setSelectedBuyQty(0); setSelectedBuyProvider('roboneo') }}>
+                <Button variant="outline" onClick={() => { setSelectedBuyQty(0); setSelectedBuyProvider('roboneo'); setPaymentMethod('dana') }}>
                   Batal
                 </Button>
               </div>
