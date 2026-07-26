@@ -152,7 +152,7 @@ export async function uploadToCatbox(file: File): Promise<string> {
 
 function buildTrackingParams(accessToken: string, pathScene: string, roomId: string) {
   return {
-    token: '45C30555F10E49629098A75F95828DA6',
+    token: accessToken,
     gid: generateGnum(),
     uid: extractUid(accessToken),
     trace_id: uuid(),
