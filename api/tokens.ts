@@ -62,10 +62,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       // Atomic: mark as sold only if still available
       for (const tid of token_ids) {
-        const result = await sql`UPDATE tokens SET status = 'sold', updated_at = CURRENT_TIMESTAMP WHERE id = ${tid} AND status = 'available'`
-        if (result.rowCount && result.rowCount > 0) {
-          await sql`INSERT INTO token_orders (user_id, token_id, status, bulk_id) VALUES (${user.id}, ${tid}, 'pending', ${bulkId})`
-          successCount++
+        // Check if token is available first
+        const tokenCheck = await sql`SELECT id, status FROM tokens WHERE id = ${tid}`
+        if (tokenCheck.length > 0 && tokenCheck[0].status === 'available') {
+          // Mark as sold
+          await sql`UPDATE tokens SET status = 'sold', updated_at = CURRENT_TIMESTAMP WHERE id = ${tid} AND status = 'available'`
+          // Verify it was updated
+          const verify = await sql`SELECT status FROM tokens WHERE id = ${tid}`
+          if (verify.length > 0 && verify[0].status === 'sold') {
+            await sql`INSERT INTO token_orders (user_id, token_id, status, bulk_id) VALUES (${user.id}, ${tid}, 'pending', ${bulkId})`
+            successCount++
+          }
         }
       }
 
