@@ -630,7 +630,7 @@ export async function pollMotionControl(
   taskId: string,
   roomId: string,
   onProgress?: (status: string, pct: number) => void,
-  timeoutMs = 1800000,
+  timeoutMs = 3600000,
   signal?: AbortSignal
 ): Promise<string> {
   const startTime = Date.now()
