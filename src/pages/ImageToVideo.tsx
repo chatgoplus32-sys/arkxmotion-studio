@@ -349,9 +349,8 @@ export default function ImageToVideoPage() {
     setGenerating(true)
     generatingRef.current = true
     setLogs([])
-    setStatus({ show: true, text: 'Memulai...', pct: 5, time: '' })
-    addLog(`Starting generation with ${provider} · ${currentModel?.label || model}`)
-    addLog(`Ratio: ${ratio}, Quality: ${quality}`)
+    setStatus({ show: true, text: 'Normalisasi image...', pct: 5, time: '' })
+    addLog(`🚀 Mulai generate video · ${provider} · ${model} · ${ratio} · ${quality}`)
 
     let activeTaskId: string | null = null
 
@@ -399,13 +398,17 @@ export default function ImageToVideoPage() {
         }
 
         addLog(`[1/3] Compressing image if needed...`)
+        setStatus((s) => ({ ...s, text: 'Upload image ke public host...', pct: 10 }))
         const imageUrl = await uploadToCatbox(imgFile)
         addLog(`[1/3] Image uploaded ✓ ${imageUrl.slice(0, 60)}...`)
 
         const rotation = await withTokenRotation<{ videoUrl: string; taskId: string; roomId: string }>(
           'roboneo',
           async (apiKey, keyInfo) => {
-            addLog(`Trying key: ${keyInfo.name || keyInfo.id}`)
+            const tokenIdx = keys.roboneo?.findIndex(k => k.key === apiKey) ?? 0
+            const totalTokens = keys.roboneo?.length || 0
+            addLog(`Trying key: ${keyInfo.name || keyInfo.id} (token ${tokenIdx + 1}/${totalTokens})`)
+            setStatus((s) => ({ ...s, text: `Submit Roboneo ${model} (token ${tokenIdx + 1}/${totalTokens})...`, pct: 15 }))
             let taskId: string
             let roomId: string
 
@@ -489,10 +492,13 @@ export default function ImageToVideoPage() {
             activeTaskId = taskId
 
             addLog(`[3/3] Polling for result...`)
+            setStatus((s) => ({ ...s, text: 'Processing...', pct: 25 }))
             const videoUrl = await pollMotionControl(
               apiKey, taskId, roomId,
-              (status, pct) => { addLog(`[3/3] ${status} — ${pct}%`); setStatus((s) => ({ ...s, pct, text: `[Roboneo] ${status}` })) }
+              (status, pct) => { addLog(`⏳ Roboneo ${status} (${pct}%)`); setStatus((s) => ({ ...s, pct, text: `Roboneo ${status} (${pct}%)` })) }
             )
+            setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+            addLog(`✅ Video selesai · ${videoUrl.slice(0, 60)}...`, 'success')
 
             removeActiveTask(taskId)
             activeTaskId = null
@@ -513,7 +519,6 @@ export default function ImageToVideoPage() {
         )
         if (rotation.ok && rotation.result) {
           setResults((prev) => [rotation.result!.videoUrl, ...prev])
-          setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
           if (rotation.triedKeys > 1) {
             addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success')
           }
