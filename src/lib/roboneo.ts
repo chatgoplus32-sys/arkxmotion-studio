@@ -747,6 +747,16 @@ export async function pollMotionControl(
     if (logEntry !== lastLog) {
       lastLog = logEntry
       console.log(`[roboneo] ${logEntry}`)
+      // Debug: log task details setiap 30 detik
+      if (Math.round((Date.now() - startTime) / 1000) % 30 === 0) {
+        console.log(`[roboneo] task keys:`, Object.keys(task || {}))
+        console.log(`[roboneo] task FULL:`, JSON.stringify(task, null, 2).slice(0, 3000))
+        console.log(`[roboneo] payload keys:`, Object.keys(payload || {}))
+        console.log(`[roboneo] steps count:`, steps.length)
+        if (steps.length > 0) {
+          console.log(`[roboneo] steps detail:`, JSON.stringify(steps, null, 2).slice(0, 2000))
+        }
+      }
     }
 
     const isDone = ['success', 'succeeded', 'completed', 'done', 'finished'].includes(status) && (allStepsDone || pct >= 90)
