@@ -194,7 +194,7 @@ async function roboneoApiCall(
           'Content-Type': 'application/json',
           'X-Roboneo-Token': accessToken,
         },
-        body: JSON.stringify({ path, parameter }),
+        body: JSON.stringify({ path, parameter: { parameter } }),
       })
 
       const data = await res.json().catch(() => null)

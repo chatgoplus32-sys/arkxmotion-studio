@@ -27,7 +27,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         'Origin': 'https://www.roboneo.com',
         'Referer': 'https://www.roboneo.com/',
       },
-      body: JSON.stringify(parameter || {}),
+      body: JSON.stringify({ parameter: parameter || {} }),
     })
 
     const text = await roboneoRes.text()
