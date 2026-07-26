@@ -20,6 +20,7 @@ import {
   Key,
   ClipboardCheck,
   Activity,
+  Lock,
 } from 'lucide-react'
 
 interface NavItem {
@@ -27,6 +28,7 @@ interface NavItem {
   href: string
   icon: ReactNode
   badge?: string
+  comingSoon?: boolean
 }
 
 const mainNav: NavItem[] = [
@@ -36,9 +38,9 @@ const mainNav: NavItem[] = [
 
 const generateNav: NavItem[] = [
   { label: 'Motion Control', href: '/generate/motion', icon: <Video className="h-4 w-4" /> },
-  { label: 'Naratif Video', href: '/generate/naratif', icon: <Film className="h-4 w-4" /> },
-  { label: 'Storyboard', href: '/generate/storyboard', icon: <Clapperboard className="h-4 w-4" /> },
-  { label: 'Bulk Fashion', href: '/generate/bulk-fashion', icon: <ShoppingBag className="h-4 w-4" /> },
+  { label: 'Naratif Video', href: '/generate/naratif', icon: <Film className="h-4 w-4" />, comingSoon: true },
+  { label: 'Storyboard', href: '/generate/storyboard', icon: <Clapperboard className="h-4 w-4" />, comingSoon: true },
+  { label: 'Bulk Fashion', href: '/generate/bulk-fashion', icon: <ShoppingBag className="h-4 w-4" />, comingSoon: true },
   { label: 'Image to Video', href: '/generate/image-to-video', icon: <Image className="h-4 w-4" /> },
   { label: 'Framia', href: '/generate/framia', icon: <Video className="h-4 w-4" /> },
 ]
@@ -97,25 +99,44 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
         </div>
       )}
       {items.map((item) => (
-        <Link
-          key={item.href}
-          to={item.href}
-          className={cn(
-            'flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition-all hover:bg-accent',
-            isActive(item.href)
-              ? 'bg-primary/10 text-primary font-medium glow-gold'
-              : 'text-muted-foreground hover:text-foreground'
-          )}
-          title={collapsed ? item.label : undefined}
-        >
-          {item.icon}
-          {!collapsed && <span>{item.label}</span>}
-          {item.badge && !collapsed && (
-            <span className="ml-auto text-[10px] bg-yellow-500/20 text-yellow-500 px-1.5 py-0.5 rounded-full font-medium">
-              {item.badge}
-            </span>
-          )}
-        </Link>
+        item.comingSoon ? (
+          <div
+            key={item.href}
+            className={cn(
+              'flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition-all cursor-not-allowed opacity-50',
+              'text-muted-foreground'
+            )}
+            title={collapsed ? `${item.label} (Coming Soon)` : `${item.label} - Coming Soon`}
+          >
+            {item.icon}
+            {!collapsed && <span className="line-through">{item.label}</span>}
+            {!collapsed && (
+              <span className="ml-auto text-[10px] bg-secondary text-muted-foreground px-1.5 py-0.5 rounded-full font-medium flex items-center gap-1">
+                <Lock className="h-2.5 w-2.5" /> Soon
+              </span>
+            )}
+          </div>
+        ) : (
+          <Link
+            key={item.href}
+            to={item.href}
+            className={cn(
+              'flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition-all hover:bg-accent',
+              isActive(item.href)
+                ? 'bg-primary/10 text-primary font-medium glow-gold'
+                : 'text-muted-foreground hover:text-foreground'
+            )}
+            title={collapsed ? item.label : undefined}
+          >
+            {item.icon}
+            {!collapsed && <span>{item.label}</span>}
+            {item.badge && !collapsed && (
+              <span className="ml-auto text-[10px] bg-yellow-500/20 text-yellow-500 px-1.5 py-0.5 rounded-full font-medium">
+                {item.badge}
+              </span>
+            )}
+          </Link>
+        )
       ))}
     </div>
   )
