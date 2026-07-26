@@ -152,17 +152,17 @@ export async function uploadToCatbox(file: File): Promise<string> {
 
 function buildTrackingParams(accessToken: string, pathScene: string, roomId: string) {
   return {
-    token: accessToken,
+    token: '45C30555F10E49629098A75F95828DA6',
     gid: generateGnum(),
     uid: extractUid(accessToken),
     trace_id: uuid(),
-    client_id: '1189857684',
+    client_id: '1189857647',
     app_scene: 'roboneo',
     area_code: 'ID',
     lang: 'en',
     time_zone: 'Asia/Jakarta',
     tt_ttclid: '',
-    tt_ttp: '',
+    tt_ttp: '01KY074F3A1BE6C8DAB25DJG3P_.tt.1',
     first_url: 'https://www.roboneo.com/home',
     page_url: 'https://www.roboneo.com/ai_flow',
     referrer: 'https://www.roboneo.com/home',
