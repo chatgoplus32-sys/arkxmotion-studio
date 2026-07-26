@@ -83,21 +83,21 @@ async function checkFramia(): Promise<ProviderStatus> {
     })
     const latency = Date.now() - start
 
-    if (res.ok) {
+    if (res.ok || res.status === 401 || res.status === 403 || res.status === 404) {
       return {
         name: 'Framia',
         status: latency > 5000 ? 'slow' : 'online',
         latency,
-        message: 'Server responds OK',
+        message: res.ok ? 'Server responds OK' : `HTTP ${res.status} (server aktif, butuh API key)`,
         lastCheck: new Date().toISOString(),
       }
     }
 
     return {
       name: 'Framia',
-      status: res.status === 401 || res.status === 403 ? 'online' : 'offline',
+      status: 'offline',
       latency,
-      message: `HTTP ${res.status}${res.status === 401 ? ' (auth required - normal)' : ''}`,
+      message: `HTTP ${res.status}`,
       lastCheck: new Date().toISOString(),
     }
   } catch (err: any) {
