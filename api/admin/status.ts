@@ -112,12 +112,39 @@ async function checkFramia(): Promise<ProviderStatus> {
 }
 
 async function checkWeavy(): Promise<ProviderStatus> {
-  return {
-    name: 'Weavy',
-    status: 'no_config',
-    latency: null,
-    message: 'Belum dikonfigurasi',
-    lastCheck: new Date().toISOString(),
+  const start = Date.now()
+  try {
+    const res = await fetch('https://app.weavy.ai', {
+      method: 'GET',
+      signal: AbortSignal.timeout(10000),
+    })
+    const latency = Date.now() - start
+
+    if (res.ok || res.status === 403 || res.status === 401) {
+      return {
+        name: 'Weavy',
+        status: latency > 5000 ? 'slow' : 'online',
+        latency,
+        message: res.ok ? 'Server OK' : `HTTP ${res.status} (server aktif, butuh login)`,
+        lastCheck: new Date().toISOString(),
+      }
+    }
+
+    return {
+      name: 'Weavy',
+      status: 'offline',
+      latency,
+      message: `HTTP ${res.status}`,
+      lastCheck: new Date().toISOString(),
+    }
+  } catch (err: any) {
+    return {
+      name: 'Weavy',
+      status: 'offline',
+      latency: Date.now() - start,
+      message: err.message || 'Connection failed',
+      lastCheck: new Date().toISOString(),
+    }
   }
 }
 
