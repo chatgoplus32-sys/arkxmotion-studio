@@ -561,6 +561,19 @@ export default function AdminTokensPage() {
                         Reset
                       </Button>
                     </div>
+                  ) : currentProvider.minCredits > 0 ? (
+                    <div className="mt-auto">
+                      <div className="text-xs text-amber-500 mb-2">
+                        Wajib validasi dulu sebelum upload
+                      </div>
+                      <Button
+                        className="w-full"
+                        disabled
+                      >
+                        <Upload className="h-4 w-4" />
+                        Upload {tokenCount || ''} Token
+                      </Button>
+                    </div>
                   ) : (
                     <Button
                       className="w-full mt-auto"
