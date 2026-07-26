@@ -3,6 +3,7 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Input, Label, Textarea } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
+import { checkRoboneoBalance } from '@/lib/roboneo'
 import { Key, Plus, RefreshCw, Upload, ShieldCheck, Loader2, CheckCircle2, XCircle, Filter, Trash2, AlertTriangle, Eye, EyeOff, RotateCcw } from 'lucide-react'
 
 interface Token {
@@ -36,56 +37,6 @@ interface ValidationResult {
   status: 'pending' | 'checking' | 'valid' | 'invalid' | 'error'
   balance?: number | null
   error?: string
-}
-
-async function checkRoboneoBalanceApi(accessToken: string): Promise<{ ok: boolean; balance?: number | null; error?: string }> {
-  try {
-    const res = await fetch('/api/public/roboneo', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Roboneo-Token': accessToken },
-      body: JSON.stringify({
-        path: 'vipshow',
-        parameter: {
-          token: '45C30555F10E49629098A75F95828DA6',
-          gid: Math.random().toString(36).slice(2),
-          uid: '0',
-          trace_id: crypto.randomUUID?.() || Math.random().toString(36).slice(2),
-          client_id: '1189857684',
-          app_scene: 'roboneo',
-          area_code: 'ID',
-          lang: 'en',
-          time_zone: 'Asia/Jakarta',
-          features: '',
-          later_face: 0,
-        },
-      }),
-    })
-    const proxyResp = await res.json().catch(() => null)
-    const data = proxyResp?.data
-    if (!data || data.error_code !== 0) {
-      return { ok: false, error: data?.error_msg || `error_code=${data?.error_code}` }
-    }
-    const param = data.parameter || data
-    const balanceKeys = ['credit', 'balance', 'remain', 'quota', 'point', 'coin', 'energy']
-    let balance: number | null = null
-    function findBalance(obj: any, depth = 0): number | null {
-      if (depth > 5 || !obj || typeof obj !== 'object') return null
-      for (const [k, v] of Object.entries(obj)) {
-        const kl = k.toLowerCase()
-        if (typeof v === 'number' && balanceKeys.some((bk) => kl.includes(bk))) return v
-        if (typeof v === 'string' && /^\d+(\.\d+)?$/.test(v) && balanceKeys.some((bk) => kl.includes(bk))) return Number(v)
-        if (typeof v === 'object' && v !== null) {
-          const found = findBalance(v, depth + 1)
-          if (found !== null) return found
-        }
-      }
-      return null
-    }
-    balance = findBalance(param)
-    return { ok: true, balance }
-  } catch (err: any) {
-    return { ok: false, error: err.message }
-  }
 }
 
 export default function AdminTokensPage() {
@@ -277,7 +228,7 @@ export default function AdminTokensPage() {
         results[i] = { ...results[i], status: 'checking' }
         setValidationResults([...results])
 
-        const check = await checkRoboneoBalanceApi(lines[i])
+        const check = await checkRoboneoBalance(lines[i])
 
         if (check.ok && check.balance !== null && check.balance !== undefined) {
           if (check.balance >= currentProvider.minCredits) {
