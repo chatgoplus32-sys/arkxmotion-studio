@@ -3,7 +3,7 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Select, Label, Textarea, EmptyState, Badge } from '@/components/ui'
 import { Image, Upload, Rocket, Loader2, Trash2, Zap, Key, ExternalLink } from 'lucide-react'
 import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
-import { uploadToCatbox, submitGoogleOmni, submitSeedancePro, pollMotionControl, compressVideo } from '@/lib/roboneo'
+import { uploadToCatbox, submitGoogleOmni, submitSeedancePro, submitKling26, submitKling25, pollMotionControl, compressVideo } from '@/lib/roboneo'
 import { generateWithFramia } from '@/lib/framia'
 import {
   getActiveTasks,
@@ -48,6 +48,7 @@ const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'rn:seedance-pro', label: 'Seedance Pro', cr: 0, provider: 'roboneo' },
     { value: 'rn:google-omni', label: 'Google Omni', cr: 0, provider: 'roboneo' },
     { value: 'rn:kling-v26:std', label: 'Kling 2.6', cr: 0, provider: 'roboneo' },
+    { value: 'rn:kling-v25', label: 'Kling 2.5', cr: 0, provider: 'roboneo' },
   ],
   createpulse: [
     { value: 'cp:dreamina-seedance-2.0', label: 'Dreamina Seedance 2.0', cr: 22, provider: 'createpulse', apiModel: 'dreamina-seedance-2.0' },
@@ -106,6 +107,10 @@ const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; 
       { value: '5s-on', label: '5s · Sound', mult: 1.3, duration: 5 },
       { value: '10s-off', label: '10s · No Sound', mult: 2, duration: 10 },
       { value: '10s-on', label: '10s · Sound', mult: 2.6, duration: 10 },
+    ],
+    'rn:kling-v25': [
+      { value: '5s', label: '5s', mult: 1, duration: 5 },
+      { value: '10s', label: '10s', mult: 2, duration: 10 },
     ],
     default: [
       { value: 'std', label: 'Standard 5s', mult: 1, duration: 5 },
@@ -391,6 +396,34 @@ export default function ImageToVideoPage() {
             prompt: prompt.trim() || undefined,
             videoDuration: 12,
             resolution: quality === '1080p-5s' ? '1080p' : quality === '480p-5s' ? '480p' : '720p',
+          })
+          taskId = result.taskId
+          roomId = result.roomId
+        } else if (model === 'rn:kling-v26:std') {
+          const soundEnabled = quality?.includes('on') ? 'on' : 'off'
+          const durationMatch = quality?.match(/(\d+)s/)
+          const videoDuration = durationMatch ? parseInt(durationMatch[1]) : 10
+          addLog(`[2/3] Submitting to Kling 2.6 (video_bonbon_img2vid_v26)...`)
+          addLog(`→ duration: ${videoDuration}s, sound: ${soundEnabled}, prompt: "${prompt.trim() || '(none)'}"`)
+          const result = await submitKling26({
+            accessToken: apiKey,
+            imageUrl,
+            prompt: prompt.trim() || undefined,
+            videoDuration,
+            sound: soundEnabled as 'on' | 'off',
+          })
+          taskId = result.taskId
+          roomId = result.roomId
+        } else if (model === 'rn:kling-v25') {
+          const durationMatch = quality?.match(/(\d+)s/)
+          const videoDuration = durationMatch ? parseInt(durationMatch[1]) : 10
+          addLog(`[2/3] Submitting to Kling 2.5 (video_bonbon_img2vid)...`)
+          addLog(`→ duration: ${videoDuration}s, prompt: "${prompt.trim() || '(none)'}"`)
+          const result = await submitKling25({
+            accessToken: apiKey,
+            imageUrl,
+            prompt: prompt.trim() || undefined,
+            videoDuration,
           })
           taskId = result.taskId
           roomId = result.roomId
