@@ -593,6 +593,7 @@ export async function submitKling25(params: {
       image_url: imageUrl,
       prompt: prompt || '',
       video_duration: videoDuration,
+      recipe_code: 'xd_pUp8JDcE0',
       random: `${Date.now()}-${Math.floor(1e7 + Math.random() * 89999999)}`,
     },
   }
