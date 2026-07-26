@@ -814,6 +814,15 @@ export default function ImageToVideoPage() {
                     style={{ width: `${status.pct}%` }}
                   />
                 </div>
+                {!generating && status.pct === 100 && results.length > 0 && (
+                  <Button
+                    size="sm"
+                    className="w-full mt-3"
+                    onClick={handleGenerate}
+                  >
+                    <Rocket className="h-4 w-4" /> Generate Lagi
+                  </Button>
+                )}
               </div>
             )}
           </Section>
