@@ -271,7 +271,7 @@ export async function checkRoboneoBalance(accessToken: string): Promise<{ ok: bo
     }
 
     const param = data.parameter || data
-    const balanceKeys = ['credit', 'balance', 'remain', 'quota', 'point', 'coin', 'energy']
+    const balanceKeys = ['credit', 'balance', 'remain', 'quota', 'point', 'coin', 'energy', 'total_amount', 'amount']
     let balance: number | null = null
 
     function findBalance(obj: any, depth = 0): number | null {
