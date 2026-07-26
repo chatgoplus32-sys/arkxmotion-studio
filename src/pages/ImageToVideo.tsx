@@ -49,7 +49,6 @@ const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'rn:seedance-pro', label: 'Seedance Pro', cr: 0, provider: 'roboneo' },
     { value: 'rn:google-omni', label: 'Google Omni', cr: 0, provider: 'roboneo' },
     { value: 'rn:kling-v26:std', label: 'Kling 2.6', cr: 0, provider: 'roboneo' },
-    { value: 'rn:kling-v25', label: 'Kling 2.5', cr: 0, provider: 'roboneo' },
   ],
   createpulse: [
     { value: 'cp:dreamina-seedance-2.0', label: 'Dreamina Seedance 2.0', cr: 22, provider: 'createpulse', apiModel: 'dreamina-seedance-2.0' },
