@@ -588,7 +588,7 @@ export async function pollMotionControl(
   roomIdMap.set(taskId, roomId)
 
   function resolveUrls(obj: any, depth = 0): string[] {
-    if (depth > 6 || !obj || typeof obj !== 'object') return []
+    if (depth > 8 || !obj || typeof obj !== 'object') return []
     if (typeof obj === 'string') {
       let urls: string[] = []
       if (/^https?:\/\//i.test(obj)) {
@@ -607,19 +607,25 @@ export async function pollMotionControl(
       })
     }
     const urls: string[] = []
-    const urlKeys = 'url,uri,src,href,last_image_url,lastImageUrl,media_url,mediaUrl,image_url,imageUrl,video_url,videoUrl,file_url,fileUrl,asset_url,assetUrl,origin_url,originUrl,original_url,originalUrl,preview_url,previewUrl,source_url,sourceUrl,output_url,outputUrl,download_url,downloadUrl,signed_url,signedUrl,play_url,playUrl,cover_url,coverUrl,data_url,dataUrl,result_url,resultUrl,video,media,output'
+    const urlKeys = 'url,uri,src,href,last_image_url,lastImageUrl,media_url,mediaUrl,image_url,imageUrl,video_url,videoUrl,file_url,fileUrl,asset_url,assetUrl,origin_url,originUrl,original_url,originalUrl,preview_url,previewUrl,source_url,sourceUrl,output_url,outputUrl,download_url,downloadUrl,signed_url,signedUrl,play_url,playUrl,cover_url,coverUrl,data_url,dataUrl,result_url,resultUrl,video,media,output,output_url,output,path,link,href,src'
     for (const key of urlKeys.split(',')) {
       const val = obj[key]
       if (typeof val === 'string' && /^https?:\/\//i.test(val)) urls.push(val)
     }
-    for (const val of Object.values(obj)) urls.push(...resolveUrls(val, depth + 1))
-    return urls
+    for (const val of Object.values(obj)) {
+      urls.push(...resolveUrls(val, depth + 1))
+    }
+    return [...new Set(urls)]
   }
 
   function findVideoUrl(...sources: any[]): string | null {
     const all = [...new Set(sources.flatMap((s) => resolveUrls(s)))]
+    if (all.length > 0) {
+      console.log(`[roboneo] findVideoUrl: found ${all.length} URLs:`, all.map(u => u.slice(0, 80)))
+    }
     return all.find((u) => /\.(mp4|mov|webm|m4v)(\?|#|$)/i.test(u)) ||
-      all.find((u) => /video|mp4|mov|webm|m4v|vod|tos|myqcloud|aliyun|oss/i.test(u)) ||
+      all.find((u) => /video|mp4|mov|webm|m4v|vod|tos|myqcloud|aliyun|oss|meitu|roboneo/i.test(u)) ||
+      all.find((u) => /\.(png|jpg|jpeg|gif|webp)(\?|#|$)/i.test(u)) ||
       all[0] || null
   }
 
@@ -696,14 +702,16 @@ export async function pollMotionControl(
     if (isDone) {
       const videoUrl = findVideoUrl(
         task?.last_image_url, task?.last_image_urls,
-        task?.initial_transferred_urls, task?.media_meta,
-        mediaInfo?.url, mediaInfo?.media_url,
+        task?.initial_transferred_urls, task?.media_meta, task?.media_metas,
+        task?.media_info_list, mediaInfo?.url, mediaInfo?.media_url,
         ...steps.map((s: any) => s.output),
         ...steps.map((s: any) => s.result),
+        ...steps.map((s: any) => s.data),
         payload?.output, payload?.result, payload,
         payload?.data, task?.data, task?.output_url, task?.download_url,
         task?.result_url, task?.video, task?.video_url, task?.media,
-        payload?.video, payload?.video_url, payload?.media
+        payload?.video, payload?.video_url, payload?.media,
+        task?.url, task?.src, task?.link, task?.href, task?.path
       )
 
       if (videoUrl) return videoUrl
