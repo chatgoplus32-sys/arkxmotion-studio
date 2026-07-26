@@ -123,6 +123,7 @@ interface ProviderState {
 
   setActiveProvider: (provider: ProviderId) => void
   addKey: (provider: ProviderId, key: string, name?: string) => void
+  importKeys: (provider: ProviderId, tokenValues: string[], namePrefix?: string) => number
   removeKey: (provider: ProviderId, keyId: string) => void
   updateKeyStatus: (provider: ProviderId, keyId: string, status: ProviderKey['status'], balance?: number | null) => void
   getActiveKey: (provider: ProviderId) => ProviderKey | null
@@ -202,6 +203,39 @@ export const useProviderManager = create<ProviderState>((set, get) => ({
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))
       return { keys: updated }
     })
+  },
+
+  importKeys: (provider, tokenValues, namePrefix) => {
+    const existingKeys = new Set(get().keys[provider].map((k) => k.key))
+    const prefix = namePrefix || `${provider.charAt(0).toUpperCase() + provider.slice(1)}`
+    let added = 0
+    const newKeys: ProviderKey[] = []
+
+    for (const tv of tokenValues) {
+      if (!existingKeys.has(tv)) {
+        newKeys.push({
+          id: generateId(),
+          key: tv,
+          name: `${prefix} #${get().keys[provider].length + added + 1}`,
+          status: 'unknown',
+        })
+        existingKeys.add(tv)
+        added++
+      }
+    }
+
+    if (added > 0) {
+      set((state) => {
+        const updated = {
+          ...state.keys,
+          [provider]: [...state.keys[provider], ...newKeys],
+        }
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))
+        return { keys: updated }
+      })
+    }
+
+    return added
   },
 
   removeKey: (provider, keyId) => {

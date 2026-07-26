@@ -1,8 +1,9 @@
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Label, Select, Input } from '@/components/ui'
-import { Shield, Square, Trash2, AlertTriangle, Loader2, ShoppingCart, Copy, ExternalLink, X } from 'lucide-react'
+import { Shield, Square, Trash2, AlertTriangle, Loader2, ShoppingCart, Copy, ExternalLink, X, Upload } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
 import { useAuthStore } from '@/stores/authStore'
+import { useProviderManager } from '@/stores/providerManager'
 import {
   getActiveTasks,
   forceStopTask,
@@ -502,26 +503,57 @@ export default function SettingsPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     {order.status === 'confirmed' && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={async () => {
-                          try {
-                            const res = await fetch(`/api/tokens/note/${order.bulk_id}`, {
-                              headers: { 'Authorization': `Bearer ${authStore.token}` }
-                            })
-                            const blob = await res.blob()
-                            const url = URL.createObjectURL(blob)
-                            const a = document.createElement('a')
-                            a.href = url
-                            a.download = `akun_Token_${order.provider}_${order.count}_${new Date().toISOString().replace(/:/g, '-').slice(0, 19)}.txt`
-                            a.click()
-                            URL.revokeObjectURL(url)
-                          } catch {}
-                        }}
-                      >
-                        <ExternalLink className="h-3.5 w-3.5" /> Download Token
-                      </Button>
+                      <>
+                        <Button
+                          size="sm"
+                          variant="default"
+                          onClick={async () => {
+                            try {
+                              const res = await fetch(`/api/tokens/note/${order.bulk_id}`, {
+                                headers: { 'Authorization': `Bearer ${authStore.token}` }
+                              })
+                              const text = await res.text()
+                              // Parse token values from note file (lines starting with _v2 or similar)
+                              const lines = text.split('\n').map(l => l.trim()).filter(l => l.startsWith('_v2') || l.length > 50)
+                              if (lines.length === 0) {
+                                addToast('Tidak ada token ditemukan', 'error')
+                                return
+                              }
+                              const importKeys = useProviderManager.getState().importKeys
+                              const count = importKeys(order.provider as any, lines, order.provider)
+                              if (count > 0) {
+                                addToast(`${count} token berhasil diimport ke Providers!`, 'success')
+                              } else {
+                                addToast('Semua token sudah ada di Providers', 'info')
+                              }
+                            } catch {
+                              addToast('Gagal import token', 'error')
+                            }
+                          }}
+                        >
+                          <Upload className="h-3.5 w-3.5" /> Import ke Providers
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={async () => {
+                            try {
+                              const res = await fetch(`/api/tokens/note/${order.bulk_id}`, {
+                                headers: { 'Authorization': `Bearer ${authStore.token}` }
+                              })
+                              const blob = await res.blob()
+                              const url = URL.createObjectURL(blob)
+                              const a = document.createElement('a')
+                              a.href = url
+                              a.download = `akun_Token_${order.provider}_${order.count}_${new Date().toISOString().replace(/:/g, '-').slice(0, 19)}.txt`
+                              a.click()
+                              URL.revokeObjectURL(url)
+                            } catch {}
+                          }}
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" /> Download
+                        </Button>
+                      </>
                     )}
                     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                       order.status === 'confirmed'
