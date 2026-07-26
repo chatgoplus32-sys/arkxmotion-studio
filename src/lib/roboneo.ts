@@ -181,10 +181,10 @@ async function roboneoApiCall(
 ): Promise<any> {
   let lastError: Error | null = null
 
-  // Proxy URLs: aacreative dulu (sudah proven berhasil), lalu Cloudflare Worker
+  // Proxy URLs: Cloudflare Worker dulu (gratis, sendiri), fallback ke aacreative
   const PROXY_URLS = [
-    'https://aacreative.vercel.app',
     'https://roboneo-proxy.chatgoplus32.workers.dev',
+    'https://aacreative.vercel.app',
   ]
 
   for (const proxyUrl of PROXY_URLS) {
