@@ -257,8 +257,17 @@ export async function checkRoboneoBalance(accessToken: string): Promise<{ ok: bo
 
     const proxyResp = await res.json().catch(() => null)
     const data = proxyResp?.data
+
+    console.log('[checkBalance] proxyResp:', JSON.stringify(proxyResp).slice(0, 500))
+    console.log('[checkBalance] data:', JSON.stringify(data).slice(0, 500))
+
+    if (proxyResp?.ok === false && proxyResp?.error) {
+      return { ok: false, error: proxyResp.error }
+    }
+
     if (!data || data.error_code !== 0) {
-      return { ok: false, error: data?.error_msg || `error_code=${data?.error_code}` }
+      const errMsg = data?.error_msg || data?.message || (data?.error_code !== undefined ? `error_code=${data?.error_code}` : 'Empty response')
+      return { ok: false, error: errMsg }
     }
 
     const param = data.parameter || data
@@ -280,8 +289,10 @@ export async function checkRoboneoBalance(accessToken: string): Promise<{ ok: bo
     }
 
     balance = findBalance(param)
+    console.log('[checkBalance] balance:', balance)
     return { ok: true, balance }
   } catch (err: any) {
+    console.error('[checkBalance] catch error:', err.message)
     return { ok: false, error: err.message }
   }
 }

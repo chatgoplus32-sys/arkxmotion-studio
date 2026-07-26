@@ -238,7 +238,7 @@ export default function AdminTokensPage() {
             results[i] = { ...results[i], status: 'invalid', balance: check.balance, error: `Credit ${check.balance} < ${currentProvider.minCredits} minimum` }
           }
         } else {
-          results[i] = { ...results[i], status: 'error', error: check.error || 'Token tidak valid' }
+          results[i] = { ...results[i], status: 'error', error: check.error || 'Unknown error' }
         }
         setValidationResults([...results])
 
