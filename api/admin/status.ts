@@ -148,19 +148,57 @@ async function checkWeavy(): Promise<ProviderStatus> {
   }
 }
 
+async function checkCreatePulse(): Promise<ProviderStatus> {
+  const start = Date.now()
+  try {
+    const res = await fetch('https://createpulse.online/api', {
+      method: 'GET',
+      signal: AbortSignal.timeout(10000),
+    })
+    const latency = Date.now() - start
+
+    if (res.ok || res.status === 401 || res.status === 403 || res.status === 404) {
+      return {
+        name: 'CreatePulse',
+        status: latency > 5000 ? 'slow' : 'online',
+        latency,
+        message: res.ok ? 'Server OK' : `HTTP ${res.status} (server aktif)`,
+        lastCheck: new Date().toISOString(),
+      }
+    }
+
+    return {
+      name: 'CreatePulse',
+      status: 'offline',
+      latency,
+      message: `HTTP ${res.status}`,
+      lastCheck: new Date().toISOString(),
+    }
+  } catch (err: any) {
+    return {
+      name: 'CreatePulse',
+      status: 'offline',
+      latency: Date.now() - start,
+      message: err.message || 'Connection failed',
+      lastCheck: new Date().toISOString(),
+    }
+  }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   cors(res)
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (!verifyAdmin(req)) return res.status(403).json({ error: 'Admin access required' })
 
   try {
-    const [roboneo, framia, weavy] = await Promise.all([
+    const [roboneo, framia, weavy, createpulse] = await Promise.all([
       checkRoboneo(),
       checkFramia(),
       checkWeavy(),
+      checkCreatePulse(),
     ])
 
-    const allStatuses = [roboneo, framia, weavy]
+    const allStatuses = [roboneo, framia, weavy, createpulse]
     const overallStatus = allStatuses.every(s => s.status === 'online')
       ? 'online'
       : allStatuses.some(s => s.status === 'offline')
