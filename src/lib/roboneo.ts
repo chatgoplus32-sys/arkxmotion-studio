@@ -590,7 +590,7 @@ export async function submitKling25(params: {
   const node = {
     tool_abstract_name: { cn: 'Kling 2.5', en: 'Kling 2.5' },
     node_id: nodeId,
-    name: 'video_bonbon_img2vid',
+    name: 'video_bonbon_img2vid_v25',
     parameters: {
       mcpCategoriesId: '18',
       image_url: imageUrl,
