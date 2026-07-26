@@ -644,6 +644,8 @@ export async function pollMotionControl(
   }
 
   let lastLog = ''
+  let successNoOutputCount = 0
+  const MAX_SUCCESS_NO_OUTPUT = 5
 
   while (Date.now() - startTime < timeoutMs) {
     await new Promise((r) => setTimeout(r, 4000))
@@ -711,13 +713,13 @@ export async function pollMotionControl(
       console.log(`[roboneo] payload keys:`, Object.keys(payload || {}))
       if (mediaInfo) console.log(`[roboneo] mediaInfo:`, JSON.stringify(mediaInfo))
 
-      // Task says success but output not ready yet — keep polling up to 95%
-      if (pct < 95) {
-        onProgress?.('waiting for output', pct)
-        continue
+      successNoOutputCount++
+      if (successNoOutputCount >= MAX_SUCCESS_NO_OUTPUT) {
+        throw new Error(`Roboneo: task selesai (${status}) tapi output kosong setelah ${MAX_SUCCESS_NO_OUTPUT}x percobaan`)
       }
 
-      throw new Error(`Roboneo: task selesai (${status}) tapi output kosong`)
+      onProgress?.(`waiting for output (${successNoOutputCount}/${MAX_SUCCESS_NO_OUTPUT})`, pct)
+      continue
     }
 
     if (['fail', 'failed', 'error', 'cancelled', 'canceled'].includes(status)) {
