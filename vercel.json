@@ -18,6 +18,7 @@
   "routes": [
     { "src": "/api/auth/(.*)", "dest": "/api/auth?path=$1" },
     { "src": "/api/admin/tokens/orders", "dest": "/api/admin/tokens" },
+    { "src": "/api/admin/tokens/bulk-delete", "dest": "/api/admin/tokens" },
     { "src": "/api/admin/status", "dest": "/api/admin/status" },
     { "src": "/api/admin/tokens", "dest": "/api/admin/tokens" },
     { "src": "/api/admin/users/pending", "dest": "/api/admin?sub=pending" },

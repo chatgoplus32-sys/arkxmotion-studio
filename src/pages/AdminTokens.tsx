@@ -3,7 +3,7 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Input, Label, Textarea } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
-import { Key, Plus, RefreshCw, Upload, ShieldCheck, ShieldAlert, Loader2, CheckCircle2, XCircle, Filter } from 'lucide-react'
+import { Key, Plus, RefreshCw, Upload, ShieldCheck, Loader2, CheckCircle2, XCircle, Filter, Trash2, AlertTriangle, Eye, EyeOff, RotateCcw } from 'lucide-react'
 
 interface Token {
   id: number
@@ -104,6 +104,15 @@ export default function AdminTokensPage() {
   const [validating, setValidating] = useState(false)
   const [validationDone, setValidationDone] = useState(false)
   const [validTokenCount, setValidTokenCount] = useState(0)
+
+  const [tokenList, setTokenList] = useState<Token[]>([])
+  const [loadingTokens, setLoadingTokens] = useState(false)
+  const [showTokenValues, setShowTokenValues] = useState<Record<number, boolean>>({})
+  const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [showDeleteAll, setShowDeleteAll] = useState(false)
+  const [deletingAll, setDeletingAll] = useState(false)
+  const [confirmDeleteAllText, setConfirmDeleteAllText] = useState('')
+
   const token = useAuthStore((state) => state.token)
   const addToast = useToastStore((s) => s.addToast)
 
@@ -140,9 +149,114 @@ export default function AdminTokensPage() {
     }
   }, [token, addToast])
 
+  const fetchTokenList = useCallback(async () => {
+    if (!token) return
+    setLoadingTokens(true)
+    try {
+      const res = await fetch(`/api/admin/tokens?provider=${activeTab}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setTokenList(data.tokens || [])
+      }
+    } catch {
+      // silent
+    } finally {
+      setLoadingTokens(false)
+    }
+  }, [token, activeTab])
+
   useEffect(() => {
     fetchStock()
   }, [fetchStock])
+
+  useEffect(() => {
+    fetchTokenList()
+  }, [fetchTokenList])
+
+  const handleDeleteToken = async (tokenId: number, tokenName: string) => {
+    if (!confirm(`Hapus token "${tokenName}"?`)) return
+    setDeletingId(tokenId)
+    try {
+      const res = await fetch(`/api/admin/tokens/${tokenId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (res.ok) {
+        addToast(`Token "${tokenName}" dihapus`, 'success')
+        fetchTokenList()
+        fetchStock()
+      } else {
+        const data = await res.json()
+        addToast(data.error || 'Gagal hapus', 'error')
+      }
+    } catch {
+      addToast('Gagal hapus token', 'error')
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  const handleDeleteAllAvailable = async () => {
+    if (confirmDeleteAllText !== 'HAPUS') {
+      addToast('Ketik "HAPUS" untuk konfirmasi', 'error')
+      return
+    }
+    setDeletingAll(true)
+    try {
+      const res = await fetch('/api/admin/tokens/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ provider: activeTab, status: 'available' })
+      })
+      if (res.ok) {
+        const data = await res.json()
+        addToast(`${data.count || 0} token available dihapus`, 'success')
+        fetchTokenList()
+        fetchStock()
+        setShowDeleteAll(false)
+        setConfirmDeleteAllText('')
+      } else {
+        const data = await res.json()
+        addToast(data.error || 'Gagal hapus', 'error')
+      }
+    } catch {
+      addToast('Gagal hapus token', 'error')
+    } finally {
+      setDeletingAll(false)
+    }
+  }
+
+  const handleDeleteAllByProvider = async () => {
+    if (confirmDeleteAllText !== 'HAPUS') {
+      addToast('Ketik "HAPUS" untuk konfirmasi', 'error')
+      return
+    }
+    setDeletingAll(true)
+    try {
+      const res = await fetch('/api/admin/tokens/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ provider: activeTab })
+      })
+      if (res.ok) {
+        const data = await res.json()
+        addToast(`${data.count || 0} token dihapus`, 'success')
+        fetchTokenList()
+        fetchStock()
+        setShowDeleteAll(false)
+        setConfirmDeleteAllText('')
+      } else {
+        const data = await res.json()
+        addToast(data.error || 'Gagal hapus', 'error')
+      }
+    } catch {
+      addToast('Gagal hapus token', 'error')
+    } finally {
+      setDeletingAll(false)
+    }
+  }
 
   const handleValidateTokens = async () => {
     const lines = bulkTokens.split('\n').map(l => l.trim()).filter(l => l.length > 0)
@@ -221,6 +335,7 @@ export default function AdminTokensPage() {
         const data = await response.json()
         addToast(`${data.count || lines.length} token berhasil diupload`, 'success')
         fetchStock()
+        fetchTokenList()
       } else {
         const data = await response.json()
         addToast(data.error || 'Gagal upload', 'error')
@@ -246,11 +361,14 @@ export default function AdminTokensPage() {
 
   const tokenCount = bulkTokens.split('\n').map(l => l.trim()).filter(l => l.length > 0).length
 
+  const availableTokens = tokenList.filter(t => t.status === 'available')
+  const soldTokens = tokenList.filter(t => t.status === 'sold')
+
   return (
     <div>
       <PageHeader
-        title="Upload Token"
-        desc="Upload stok token Roboneo, Framia, dan Weavy"
+        title="Kelola Token"
+        desc="Upload, lihat, dan hapus stok token Roboneo, Framia, dan Weavy"
       />
       <PageContent>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
@@ -260,7 +378,7 @@ export default function AdminTokensPage() {
             return (
               <button
                 key={p.key}
-                onClick={() => { setActiveTab(p.key); setShowForm(false); setBulkTokens(''); setPrice(''); setValidationResults([]); setValidationDone(false) }}
+                onClick={() => { setActiveTab(p.key); setShowForm(false); setBulkTokens(''); setPrice(''); setValidationResults([]); setValidationDone(false); setShowDeleteAll(false); setConfirmDeleteAllText('') }}
                 className={`p-4 rounded-xl border text-left transition-all ${
                   isActive
                     ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
@@ -294,17 +412,72 @@ export default function AdminTokensPage() {
           sub={`Total: ${stock[activeTab].total} | Tersedia: ${stock[activeTab].available} | Terjual: ${stock[activeTab].sold}`}
           right={
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={fetchStock} disabled={isLoading}>
-                <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+              <Button variant="outline" size="sm" onClick={() => { fetchStock(); fetchTokenList() }} disabled={isLoading || loadingTokens}>
+                <RefreshCw className={`h-4 w-4 ${(isLoading || loadingTokens) ? 'animate-spin' : ''}`} />
               </Button>
               {!showForm && (
                 <Button size="sm" onClick={() => setShowForm(true)}>
                   <Plus className="h-4 w-4" /> Upload
                 </Button>
               )}
+              {availableTokens.length > 0 && !showForm && (
+                <Button size="sm" variant="destructive" onClick={() => { setShowDeleteAll(!showDeleteAll); setConfirmDeleteAllText('') }}>
+                  <Trash2 className="h-4 w-4" /> Hapus Stok
+                </Button>
+              )}
             </div>
           }
         >
+          {/* Delete All Section */}
+          {showDeleteAll && (
+            <div className="mb-4 p-4 rounded-xl border border-red-500/30 bg-red-500/5">
+              <div className="text-sm font-medium text-red-500 mb-2 flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4" />
+                Hapus Stok Token {currentProvider.label}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                <button
+                  onClick={handleDeleteAllAvailable}
+                  disabled={deletingAll || confirmDeleteAllText !== 'HAPUS'}
+                  className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/5 text-left hover:bg-amber-500/10 transition disabled:opacity-50"
+                >
+                  <div className="text-xs font-medium text-amber-500">Hapus Semua Available</div>
+                  <div className="text-[11px] text-muted-foreground mt-1">{availableTokens.length} token akan dihapus (tidak termasuk yang sudah terjual)</div>
+                </button>
+                <button
+                  onClick={handleDeleteAllByProvider}
+                  disabled={deletingAll || confirmDeleteAllText !== 'HAPUS'}
+                  className="p-3 rounded-lg border border-red-500/30 bg-red-500/5 text-left hover:bg-red-500/10 transition disabled:opacity-50"
+                >
+                  <div className="text-xs font-medium text-red-500">Hapus SEMUA (Available + Sold)</div>
+                  <div className="text-[11px] text-muted-foreground mt-1">{stock[activeTab].total} token akan dihapus permanen</div>
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <Input
+                  placeholder='Ketik "HAPUS" untuk konfirmasi'
+                  value={confirmDeleteAllText}
+                  onChange={(e) => setConfirmDeleteAllText(e.target.value)}
+                  className="text-xs max-w-[200px]"
+                />
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={handleDeleteAllAvailable}
+                  disabled={deletingAll || confirmDeleteAllText !== 'HAPUS'}
+                  loading={deletingAll}
+                >
+                  {deletingAll ? null : <Trash2 className="h-3.5 w-3.5" />}
+                  {deletingAll ? 'Menghapus...' : 'Hapus'}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => { setShowDeleteAll(false); setConfirmDeleteAllText('') }}>
+                  Batal
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Upload Form */}
           {showForm && (
             <div className="mb-4 p-4 rounded-xl border border-border bg-background/50">
               <div className="text-sm font-medium mb-3">
@@ -329,7 +502,6 @@ export default function AdminTokensPage() {
                     <div className="text-xs text-muted-foreground mt-1">{tokenCount} token terdeteksi</div>
                   )}
 
-                  {/* Validation Button */}
                   {bulkTokens.trim() && !validationDone && !validating && (
                     <Button
                       size="sm"
@@ -344,7 +516,6 @@ export default function AdminTokensPage() {
                     </Button>
                   )}
 
-                  {/* Validation Progress */}
                   {validating && (
                     <div className="mt-2 space-y-2">
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -360,7 +531,6 @@ export default function AdminTokensPage() {
                     </div>
                   )}
 
-                  {/* Validation Results */}
                   {validationDone && validationResults.length > 0 && (
                     <div className="mt-3 space-y-2">
                       <div className="flex items-center gap-3 text-xs">
@@ -419,7 +589,6 @@ export default function AdminTokensPage() {
                     </div>
                   )}
 
-                  {/* Upload Buttons */}
                   {validationDone ? (
                     <div className="mt-auto space-y-2">
                       {validTokenCount > 0 && (
@@ -457,6 +626,80 @@ export default function AdminTokensPage() {
               <Button variant="outline" size="sm" className="mt-3" onClick={() => { setShowForm(false); setBulkTokens(''); setPrice(''); setValidationResults([]); setValidationDone(false) }}>
                 Batal
               </Button>
+            </div>
+          )}
+
+          {/* Token List */}
+          {!showForm && (
+            <div className="space-y-4">
+              {/* Available Tokens */}
+              {availableTokens.length > 0 && (
+                <div>
+                  <div className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                    Tersedia ({availableTokens.length})
+                  </div>
+                  <div className="rounded-lg border border-border overflow-hidden">
+                    {availableTokens.map((t) => (
+                      <div
+                        key={t.id}
+                        className="flex items-center gap-2 px-3 py-2 border-b border-border/50 last:border-0 hover:bg-accent/20 transition text-xs"
+                      >
+                        <span className="font-medium truncate w-28 shrink-0">{t.name}</span>
+                        <span className="font-mono text-muted-foreground truncate flex-1" title={showTokenValues[t.id] ? t.token_value : undefined}>
+                          {showTokenValues[t.id] ? t.token_value : t.token_value.slice(0, 20) + '••••'}
+                        </span>
+                        <span className="text-muted-foreground shrink-0">Rp {t.price.toLocaleString('id-ID')}</span>
+                        <button
+                          onClick={() => setShowTokenValues(prev => ({ ...prev, [t.id]: !prev[t.id] }))}
+                          className="text-muted-foreground hover:text-foreground transition shrink-0"
+                          title={showTokenValues[t.id] ? 'Sembunyikan' : 'Tampilkan'}
+                        >
+                          {showTokenValues[t.id] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                        </button>
+                        <button
+                          onClick={() => handleDeleteToken(t.id, t.name)}
+                          disabled={deletingId === t.id}
+                          className="text-muted-foreground hover:text-red-500 transition shrink-0 disabled:opacity-50"
+                          title="Hapus token"
+                        >
+                          {deletingId === t.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Sold Tokens */}
+              {soldTokens.length > 0 && (
+                <div>
+                  <div className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-amber-500" />
+                    Terjual ({soldTokens.length})
+                  </div>
+                  <div className="rounded-lg border border-border overflow-hidden">
+                    {soldTokens.map((t) => (
+                      <div
+                        key={t.id}
+                        className="flex items-center gap-2 px-3 py-2 border-b border-border/50 last:border-0 hover:bg-accent/20 transition text-xs opacity-60"
+                      >
+                        <span className="font-medium truncate w-28 shrink-0">{t.name}</span>
+                        <span className="font-mono text-muted-foreground truncate flex-1">
+                          {t.token_value.slice(0, 20)}••••
+                        </span>
+                        <span className="text-amber-500 text-[10px] shrink-0">TERJUAL</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {tokenList.length === 0 && !loadingTokens && (
+                <div className="text-center py-8 text-sm text-muted-foreground">
+                  Belum ada token. Klik "Upload" untuk menambah stok.
+                </div>
+              )}
             </div>
           )}
         </Section>

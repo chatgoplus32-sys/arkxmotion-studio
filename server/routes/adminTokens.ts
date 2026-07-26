@@ -133,6 +133,43 @@ router.delete('/orders', authenticateToken, requireAdmin, (_req: AuthRequest, re
   res.status(405).json({ error: 'Not supported' })
 })
 
+// Bulk delete tokens
+router.post('/bulk-delete', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
+  try {
+    const { ids, provider, status } = req.body
+
+    let whereClauses: string[] = []
+    let params: (string | number)[] = []
+
+    if (ids && Array.isArray(ids) && ids.length > 0) {
+      whereClauses.push(`id IN (${ids.map(() => '?').join(',')})`)
+      params.push(...ids)
+    } else if (provider) {
+      whereClauses.push('provider = ?')
+      params.push(provider)
+      if (status) {
+        whereClauses.push('status = ?')
+        params.push(status)
+      }
+    } else {
+      return res.status(400).json({ error: 'Provide ids array or provider (+ optional status)' })
+    }
+
+    const where = whereClauses.join(' AND ')
+    const tokens = db.prepare(`SELECT id FROM tokens WHERE ${where}`).all(...params) as { id: number }[]
+    if (tokens.length === 0) return res.status(404).json({ error: 'No tokens found' })
+
+    const tokenIds = tokens.map(t => t.id)
+    db.prepare(`DELETE FROM token_orders WHERE token_id IN (${tokenIds.map(() => '?').join(',')})`).run(...tokenIds)
+    const result = db.prepare(`DELETE FROM tokens WHERE id IN (${tokenIds.map(() => '?').join(',')})`).run(...tokenIds)
+
+    res.json({ message: `${result.changes} tokens deleted`, count: result.changes })
+  } catch (error) {
+    console.error('Bulk delete tokens error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
 // Token CRUD routes
 router.patch('/:id', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
   try {
