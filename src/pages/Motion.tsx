@@ -344,6 +344,22 @@ export default function MotionPage() {
       }
     } else {
       addLog(`Generation failed: ${rotation.error}`, 'error')
+      if (isRoboneo) {
+        addLog('⚠️ Credit mungkin sudah terpotong oleh server provider. Hubungi provider untuk refund jika gagal.', 'warn')
+      }
+    }
+
+    // Refresh balance after generation
+    if (isRoboneo) {
+      try {
+        const activeKey = useProviderManager.getState().getActiveKey('roboneo')
+        if (activeKey) {
+          const balanceResult = await checkRoboneoBalance(activeKey.key)
+          if (balanceResult.ok && balanceResult.balance !== null) {
+            addLog(`💰 Balance terakhir: ${balanceResult.balance}`, 'info')
+          }
+        }
+      } catch {}
     }
 
     setGenerating(false)

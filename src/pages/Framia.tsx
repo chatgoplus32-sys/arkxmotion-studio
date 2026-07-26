@@ -128,9 +128,27 @@ export default function FramiaPage() {
 
       if (rotation.ok && rotation.result) {
         setResults(prev => [rotation.result!, ...prev])
+        // Refresh credits after success
+        try {
+          const headers = { Authorization: `Bearer ${apiKey}` }
+          const creditsRes = await fetch(`${FRAMIA_API}/v1/user/credits`, { headers })
+          if (creditsRes.ok) {
+            const creditsData = await creditsRes.json()
+            setCredits(creditsData.credits ?? creditsData.balance ?? null)
+          }
+        } catch {}
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Run failed:', err)
+      // Refresh credits after failure
+      try {
+        const headers = { Authorization: `Bearer ${apiKey}` }
+        const creditsRes = await fetch(`${FRAMIA_API}/v1/user/credits`, { headers })
+        if (creditsRes.ok) {
+          const creditsData = await creditsRes.json()
+          setCredits(creditsData.credits ?? creditsData.balance ?? null)
+        }
+      } catch {}
     } finally {
       setGenerating(false)
     }

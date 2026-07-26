@@ -578,6 +578,9 @@ export default function ImageToVideoPage() {
     } catch (err: any) {
       if (activeTaskId) removeActiveTask(activeTaskId)
       addLog(`Error: ${err.message}`, 'error')
+      if (['roboneo', 'framia', 'createpulse'].includes(provider)) {
+        addLog('⚠️ Credit mungkin sudah terpotong oleh server provider. Hubungi provider untuk refund jika gagal.', 'warn')
+      }
       setStatus((s) => ({ ...s, pct: 100, text: `❌ Error: ${err.message}` }))
     } finally {
       clearInterval(timer)
