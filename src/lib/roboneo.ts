@@ -370,6 +370,7 @@ export async function submitGoogleOmni(params: {
       prompt: prompt || '',
       ratio,
       video_duration: videoDuration,
+      recipe_code: '2mXIxsFvbfXw',
       random: `${Date.now()}-${Math.floor(1e7 + Math.random() * 89999999)}`,
     },
   }
