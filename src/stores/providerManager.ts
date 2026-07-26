@@ -127,6 +127,8 @@ interface ProviderState {
   updateKeyStatus: (provider: ProviderId, keyId: string, status: ProviderKey['status'], balance?: number | null) => void
   getActiveKey: (provider: ProviderId) => ProviderKey | null
   getFirstValidKey: (provider: ProviderId) => ProviderKey | null
+  findKeyById: (provider: ProviderId, keyId: string) => ProviderKey | undefined
+  getNextKey: (provider: ProviderId, excludeKeyIds?: string[]) => ProviderKey | null
   setRouting: (workflow: string, provider: ProviderId) => void
   getRouting: (workflow: string) => ProviderId
   loadFromStorage: () => void
@@ -236,6 +238,20 @@ export const useProviderManager = create<ProviderState>((set, get) => ({
   getFirstValidKey: (provider) => {
     const keys = get().keys[provider]
     return keys.find((k) => k.status === 'active' || k.status === 'unknown') || null
+  },
+
+  findKeyById: (provider, keyId) => {
+    return get().keys[provider]?.find((k) => k.id === keyId)
+  },
+
+  getNextKey: (provider, excludeKeyIds = []) => {
+    const keys = get().keys[provider] || []
+    const exclude = new Set(excludeKeyIds)
+    return (
+      keys.find((k) => !exclude.has(k.id) && (k.status === 'active' || k.status === 'unknown')) ||
+      keys.find((k) => !exclude.has(k.id)) ||
+      null
+    )
   },
 
   setRouting: (workflow, provider) => {

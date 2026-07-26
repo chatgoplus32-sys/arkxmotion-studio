@@ -5,6 +5,7 @@ import { Image, Upload, Rocket, Loader2, Trash2, Zap, Key, ExternalLink } from '
 import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
 import { uploadToCatbox, submitGoogleOmni, submitSeedancePro, submitKling26, submitKling25, pollMotionControl, compressVideo } from '@/lib/roboneo'
 import { generateWithFramia } from '@/lib/framia'
+import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import {
   getActiveTasks,
   addActiveTask,
@@ -364,17 +365,34 @@ export default function ImageToVideoPage() {
     }, 1000)
 
     try {
-      const apiKey = keys[provider]?.[0]?.key || ''
-
       if (provider === 'createpulse') {
-        const videoUrl = await generateWithCreatePulse(apiKey)
-        setResults((prev) => [videoUrl, ...prev])
-        setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
-      } else if (provider === 'roboneo') {
-        if (!apiKey) {
-          addLog('No Roboneo API key found. Add one in Providers page.', 'error')
-          throw new Error('No Roboneo API key')
+        const rotation = await withTokenRotation<string>(
+          'createpulse',
+          async (apiKey, keyInfo) => {
+            addLog(`Trying key: ${keyInfo.name || keyInfo.id}`)
+            return await generateWithCreatePulse(apiKey)
+          },
+          {
+            onKeySwitch: (from, to, attempt) => {
+              addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn')
+            },
+            onError: (err, key) => {
+              if (detectTokenError('createpulse', err)) {
+                addLog(`Key "${key.name}" is invalid: ${err.message}`, 'warn')
+              }
+            },
+          }
+        )
+        if (rotation.ok && rotation.result) {
+          setResults((prev) => [rotation.result!, ...prev])
+          setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+          if (rotation.triedKeys > 1) {
+            addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success')
+          }
+        } else {
+          throw new Error(rotation.error || 'Generation failed')
         }
+      } else if (provider === 'roboneo') {
         if (!imgFile) {
           addLog('Roboneo requires an image. Upload one first.', 'error')
           throw new Error('No image provided')
@@ -384,92 +402,108 @@ export default function ImageToVideoPage() {
         const imageUrl = await uploadToCatbox(imgFile)
         addLog(`[1/3] Image uploaded ✓ ${imageUrl.slice(0, 60)}...`)
 
-        let taskId: string
-        let roomId: string
+        const rotation = await withTokenRotation<{ videoUrl: string; taskId: string; roomId: string }>(
+          'roboneo',
+          async (apiKey, keyInfo) => {
+            addLog(`Trying key: ${keyInfo.name || keyInfo.id}`)
+            let taskId: string
+            let roomId: string
 
-        if (model === 'rn:seedance-pro') {
-          addLog(`[2/3] Submitting to Seedance Pro (api_v1_outsourcing_img_to_video)...`)
-          addLog(`→ resolution: ${quality}, duration: 12s, prompt: "${prompt.trim() || '(none)'}"`)
-          const result = await submitSeedancePro({
-            accessToken: apiKey,
-            imageUrl,
-            prompt: prompt.trim() || undefined,
-            videoDuration: 12,
-            resolution: quality === '1080p-5s' ? '1080p' : quality === '480p-5s' ? '480p' : '720p',
-          })
-          taskId = result.taskId
-          roomId = result.roomId
-        } else if (model === 'rn:kling-v26:std') {
-          const soundEnabled = quality?.includes('on') ? 'on' : 'off'
-          const durationMatch = quality?.match(/(\d+)s/)
-          const videoDuration = durationMatch ? parseInt(durationMatch[1]) : 10
-          addLog(`[2/3] Submitting to Kling 2.6 (video_bonbon_img2vid_v26)...`)
-          addLog(`→ duration: ${videoDuration}s, sound: ${soundEnabled}, prompt: "${prompt.trim() || '(none)'}"`)
-          const result = await submitKling26({
-            accessToken: apiKey,
-            imageUrl,
-            prompt: prompt.trim() || undefined,
-            videoDuration,
-            sound: soundEnabled as 'on' | 'off',
-          })
-          taskId = result.taskId
-          roomId = result.roomId
-        } else if (model === 'rn:kling-v25') {
-          const durationMatch = quality?.match(/(\d+)s/)
-          const videoDuration = durationMatch ? parseInt(durationMatch[1]) : 10
-          addLog(`[2/3] Submitting to Kling 2.5 (video_bonbon_img2vid)...`)
-          addLog(`→ duration: ${videoDuration}s, prompt: "${prompt.trim() || '(none)'}"`)
-          const result = await submitKling25({
-            accessToken: apiKey,
-            imageUrl,
-            prompt: prompt.trim() || undefined,
-            videoDuration,
-          })
-          taskId = result.taskId
-          roomId = result.roomId
-        } else {
-          addLog(`[2/3] Submitting to Google Omni (video_barley_i2v_omni_flash)...`)
-          addLog(`→ ratio: ${ratio}, duration: ${quality}s, prompt: "${prompt.trim() || '(none)'}"`)
-          const result = await submitGoogleOmni({
-            accessToken: apiKey,
-            imageUrl,
-            prompt: prompt.trim() || undefined,
-            ratio,
-            videoDuration: parseInt(quality) || 10,
-          })
-          taskId = result.taskId
-          roomId = result.roomId
-        }
-        addLog(`[2/3] Task created ✓ id=${taskId.slice(0, 20)}...`)
+            if (model === 'rn:seedance-pro') {
+              addLog(`[2/3] Submitting to Seedance Pro...`)
+              const result = await submitSeedancePro({
+                accessToken: apiKey,
+                imageUrl,
+                prompt: prompt.trim() || undefined,
+                videoDuration: 12,
+                resolution: quality === '1080p-5s' ? '1080p' : quality === '480p-5s' ? '480p' : '720p',
+              })
+              taskId = result.taskId
+              roomId = result.roomId
+            } else if (model === 'rn:kling-v26:std') {
+              const soundEnabled = quality?.includes('on') ? 'on' : 'off'
+              const durationMatch = quality?.match(/(\d+)s/)
+              const videoDuration = durationMatch ? parseInt(durationMatch[1]) : 10
+              addLog(`[2/3] Submitting to Kling 2.6...`)
+              const result = await submitKling26({
+                accessToken: apiKey,
+                imageUrl,
+                prompt: prompt.trim() || undefined,
+                videoDuration,
+                sound: soundEnabled as 'on' | 'off',
+              })
+              taskId = result.taskId
+              roomId = result.roomId
+            } else if (model === 'rn:kling-v25') {
+              const durationMatch = quality?.match(/(\d+)s/)
+              const videoDuration = durationMatch ? parseInt(durationMatch[1]) : 10
+              addLog(`[2/3] Submitting to Kling 2.5...`)
+              const result = await submitKling25({
+                accessToken: apiKey,
+                imageUrl,
+                prompt: prompt.trim() || undefined,
+                videoDuration,
+              })
+              taskId = result.taskId
+              roomId = result.roomId
+            } else {
+              addLog(`[2/3] Submitting to Google Omni...`)
+              const result = await submitGoogleOmni({
+                accessToken: apiKey,
+                imageUrl,
+                prompt: prompt.trim() || undefined,
+                ratio,
+                videoDuration: parseInt(quality) || 10,
+              })
+              taskId = result.taskId
+              roomId = result.roomId
+            }
+            addLog(`[2/3] Task created ✓ id=${taskId.slice(0, 20)}...`)
 
-        addActiveTask({
-          id: taskId,
-          taskId,
-          roomId,
-          token: apiKey,
-          model: currentModel?.label || model,
-          prompt: prompt.trim() || '(no prompt)',
-          startedAt: Date.now(),
-          page: 'image-to-video',
-        })
-        activeTaskId = taskId
+            addActiveTask({
+              id: taskId,
+              taskId,
+              roomId,
+              token: apiKey,
+              model: currentModel?.label || model,
+              prompt: prompt.trim() || '(no prompt)',
+              startedAt: Date.now(),
+              page: 'image-to-video',
+            })
+            activeTaskId = taskId
 
-        addLog(`[3/3] Polling for result...`)
-        const videoUrl = await pollMotionControl(
-          apiKey, taskId, roomId,
-          (status, pct) => { addLog(`[3/3] ${status} — ${pct}%`); setStatus((s) => ({ ...s, pct, text: `[Roboneo] ${status}` })) }
+            addLog(`[3/3] Polling for result...`)
+            const videoUrl = await pollMotionControl(
+              apiKey, taskId, roomId,
+              (status, pct) => { addLog(`[3/3] ${status} — ${pct}%`); setStatus((s) => ({ ...s, pct, text: `[Roboneo] ${status}` })) }
+            )
+
+            removeActiveTask(taskId)
+            activeTaskId = null
+            return { videoUrl, taskId, roomId }
+          },
+          {
+            onKeySwitch: (from, to, attempt) => {
+              addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn')
+              activeTaskId = null
+            },
+            onError: (err, key) => {
+              if (detectTokenError('roboneo', err)) {
+                addLog(`Key "${key.name}" is invalid: ${err.message}`, 'warn')
+              }
+            },
+          }
         )
-        addLog(`[3/3] Done ✓ ${videoUrl.slice(0, 60)}...`, 'success')
-
-        removeActiveTask(taskId)
-        setResults((prev) => [videoUrl, ...prev])
-        setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
-      } else if (provider === 'framia') {
-        if (!apiKey) {
-          addLog('No Framia API key found. Add one in Providers page.', 'error')
-          throw new Error('No Framia API key')
+        if (rotation.ok && rotation.result) {
+          setResults((prev) => [rotation.result!.videoUrl, ...prev])
+          setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+          if (rotation.triedKeys > 1) {
+            addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success')
+          }
+        } else {
+          throw new Error(rotation.error || 'Generation failed')
         }
-
+      } else if (provider === 'framia') {
         addLog(`[1/2] Preparing image...`)
         let imageUrl: string | undefined
         if (imgFile) {
@@ -479,25 +513,67 @@ export default function ImageToVideoPage() {
           addLog(`[1/2] No image provided (text-to-video mode)`)
         }
 
-        const videoUrl = await generateWithFramia({
-          apiKey,
-          imageUrl,
-          prompt: prompt.trim(),
-          skillId: model,
-          onLog: (msg, level) => addLog(msg, level),
-          onStatus: (text, pct) => setStatus((s) => ({ ...s, pct, text: `[Framia] ${text}` })),
-        })
-
-        setResults((prev) => [videoUrl, ...prev])
-        setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
-      } else {
-        // Simulate for other providers
-        for (let i = 0; i <= 100; i += 10) {
-          await new Promise((r) => setTimeout(r, 500))
-          setStatus((s) => ({ ...s, pct: i, text: `Processing ${i}%...` }))
+        const rotation = await withTokenRotation<string>(
+          'framia',
+          async (apiKey, keyInfo) => {
+            addLog(`Trying key: ${keyInfo.name || keyInfo.id}`)
+            return await generateWithFramia({
+              apiKey,
+              imageUrl,
+              prompt: prompt.trim(),
+              skillId: model,
+              onLog: (msg, level) => addLog(msg, level),
+              onStatus: (text, pct) => setStatus((s) => ({ ...s, pct, text: `[Framia] ${text}` })),
+            })
+          },
+          {
+            onKeySwitch: (from, to, attempt) => {
+              addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn')
+            },
+            onError: (err, key) => {
+              if (detectTokenError('framia', err)) {
+                addLog(`Key "${key.name}" is invalid: ${err.message}`, 'warn')
+              }
+            },
+          }
+        )
+        if (rotation.ok && rotation.result) {
+          setResults((prev) => [rotation.result!, ...prev])
+          setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+          if (rotation.triedKeys > 1) {
+            addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success')
+          }
+        } else {
+          throw new Error(rotation.error || 'Generation failed')
         }
-        setResults((prev) => ['https://example.com/result.mp4', ...prev])
-        setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai' }))
+      } else {
+        const rotation = await withTokenRotation<string>(
+          provider,
+          async (apiKey, keyInfo) => {
+            addLog(`Trying key: ${keyInfo.name || keyInfo.id}`)
+            for (let i = 0; i <= 100; i += 10) {
+              await new Promise((r) => setTimeout(r, 500))
+              setStatus((s) => ({ ...s, pct: i, text: `Processing ${i}%...` }))
+            }
+            return 'https://example.com/result.mp4'
+          },
+          {
+            onKeySwitch: (from, to, attempt) => {
+              addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn')
+            },
+            onError: (err, key) => {
+              if (detectTokenError(provider, err)) {
+                addLog(`Key "${key.name}" is invalid: ${err.message}`, 'warn')
+              }
+            },
+          }
+        )
+        if (rotation.ok && rotation.result) {
+          setResults((prev) => [rotation.result!, ...prev])
+          setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai' }))
+        } else {
+          throw new Error(rotation.error || 'Generation failed')
+        }
       }
     } catch (err: any) {
       if (activeTaskId) removeActiveTask(activeTaskId)

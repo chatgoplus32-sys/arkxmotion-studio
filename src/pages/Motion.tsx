@@ -3,6 +3,7 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Textarea, Select, Label, Badge, EmptyState } from '@/components/ui'
 import { useProviderManager } from '@/stores'
 import { uploadToCatbox, submitMotionControl, submitGoogleOmni, pollMotionControl, isRoboneoTokenError, checkRoboneoBalance, compressVideo } from '@/lib/roboneo'
+import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import {
   ActiveTask,
   getActiveTasks,
@@ -159,178 +160,192 @@ export default function MotionPage() {
     if (validSlots.length === 0) return
 
     const isRoboneo = provider === 'roboneo'
-    const rawKey = isRoboneo ? (keys.roboneo?.[0]?.key || '') : ''
-
-    if (isRoboneo && !rawKey) {
-      addLog('No Roboneo API key found. Add one in Providers page.', 'error')
-      return
-    }
-
-    const roboneoToken = isRoboneo ? rawKey : ''
 
     setGenerating(true)
     generatingRef.current = true
     setLogs([])
 
-    if (isRoboneo) {
-      addLog('Checking Roboneo balance...')
-      const balanceResult = await checkRoboneoBalance(roboneoToken)
-      if (!balanceResult.ok) {
-        addLog(`Balance check: ${balanceResult.error} (skipping check, continuing)`, 'warn')
-      } else {
-        addLog(`Balance: ${balanceResult.balance !== null ? balanceResult.balance : 'unknown'}`)
-        if (balanceResult.balance !== null && balanceResult.balance <= 0) {
-          addLog('Balance kosong! Tidak ada credit untuk generate.', 'error')
-          setGenerating(false)
-          return
-        }
-      }
-    }
-
     addLog(`Starting generation with ${currentProvider.name} · ${currentModel.label}`)
     addLog(`Mode: ${isOmni ? 'Image → Video (Google Omni)' : 'Motion Control (Image + Video)'}`)
     addLog(`Processing ${validSlots.length} slot(s)...`)
 
-    for (let i = 0; i < validSlots.length; i++) {
-      const slot = validSlots[i]
-
-      if (isRoboneo && slot.image) {
-        let taskId: string = ''
-        let roomId: string = ''
-        try {
-          addLog(`Slot ${i + 1}: [1/3] Uploading image to host...`)
-          const imageUrl = await uploadToCatbox(slot.image)
-          addLog(`Slot ${i + 1}: [1/3] Image uploaded ✓ ${imageUrl.slice(0, 50)}...`)
-
-          if (isOmni) {
-            addLog(`Slot ${i + 1}: [2/3] Submitting to Google Omni (video_barley_i2v_omni_flash)...`)
-            addLog(`Slot ${i + 1}: → params: ratio=9:16, video_duration=10, prompt="${prompt.trim() || '(none)'}"`)
-            const result = await submitGoogleOmni({
-              accessToken: roboneoToken,
-              imageUrl,
-              prompt: prompt.trim() || undefined,
-              ratio: '9:16',
-              videoDuration: 10,
-            })
-            taskId = result.taskId
-            roomId = result.roomId
-            addLog(`Slot ${i + 1}: [2/3] Task created ✓ id=${taskId.slice(0, 20)}...`)
+    const rotation = await withTokenRotation<{ completedCount: number }>(
+      provider,
+      async (token) => {
+        if (isRoboneo) {
+          addLog('Checking Roboneo balance...')
+          const balanceResult = await checkRoboneoBalance(token)
+          if (!balanceResult.ok) {
+            addLog(`Balance check: ${balanceResult.error} (skipping check, continuing)`, 'warn')
           } else {
-            if (!slot.video) {
-              addLog(`Slot ${i + 1}: Skipping (no video for motion control)`, 'warn')
-              continue
+            addLog(`Balance: ${balanceResult.balance !== null ? balanceResult.balance : 'unknown'}`)
+            if (balanceResult.balance !== null && balanceResult.balance <= 0) {
+              throw new Error('Balance kosong! Tidak ada credit untuk generate.')
             }
-            addLog(`Slot ${i + 1}: [2a/3] Compressing video if needed (${(slot.video.size / 1024 / 1024).toFixed(1)}MB)...`)
-            const videoFile = await compressVideo(slot.video, 5)
-            addLog(`Slot ${i + 1}: [2a/3] Uploading video to host...`)
-            const videoUrl = await uploadToCatbox(videoFile)
-            addLog(`Slot ${i + 1}: [2a/3] Video uploaded ✓ ${videoUrl.slice(0, 50)}...`)
-
-            addLog(`Slot ${i + 1}: [2b/3] Submitting to Motion Control (video_bonbon_motioncontrol_v26)...`)
-            addLog(`Slot ${i + 1}: → params: quality=std, prompt="${prompt.trim() || '(none)'}"`)
-            const result = await submitMotionControl({
-              accessToken: roboneoToken,
-              imageUrl,
-              videoUrl,
-              prompt: prompt.trim() || undefined,
-              quality: 'std',
-              orientation,
-            })
-            taskId = result.taskId
-            roomId = result.roomId
-            addLog(`Slot ${i + 1}: [2b/3] Task created ✓ id=${taskId.slice(0, 20)}...`)
-          }
-
-          addActiveTask({
-            id: taskId,
-            taskId,
-            roomId,
-            token: roboneoToken,
-            model: currentModel.label,
-            prompt: prompt.trim() || '(no prompt)',
-            startedAt: Date.now(),
-            page: 'motion',
-          })
-
-          addLog(`Slot ${i + 1}: [3/3] Polling for result...`)
-
-          let resultUrl: string | null = null
-          const MAX_RESUBMIT = 3
-          for (let attempt = 1; attempt <= MAX_RESUBMIT; attempt++) {
-            try {
-              resultUrl = await pollMotionControl(
-                roboneoToken,
-                taskId,
-                roomId,
-                (status, pct) => { addLog(`Slot ${i + 1}: [3/3] ${status} — ${pct}%`); setProgress(pct) }
-              )
-              break
-            } catch (pollErr: any) {
-              const isBusy = /busy|sibuk|try again|later|overload|capacity|queue/i.test(pollErr.message)
-              if (isBusy && attempt < MAX_RESUBMIT) {
-                addLog(`Slot ${i + 1}: [3/3] Server sibuk, resubmit task baru... (attempt ${attempt + 1}/${MAX_RESUBMIT})`, 'warn')
-                await new Promise((r) => setTimeout(r, 5000))
-                if (isOmni) {
-                  const retry = await submitGoogleOmni({
-                    accessToken: roboneoToken,
-                    imageUrl,
-                    prompt: prompt.trim() || undefined,
-                    ratio: '9:16',
-                    videoDuration: 10,
-                  })
-                  taskId = retry.taskId
-                  roomId = retry.roomId
-                } else {
-                  const retry = await submitMotionControl({
-                    accessToken: roboneoToken,
-                    imageUrl,
-                    videoUrl: slot.videoUrl!,
-                    prompt: prompt.trim() || undefined,
-                    quality: 'std',
-                    orientation,
-                  })
-                  taskId = retry.taskId
-                  roomId = retry.roomId
-                }
-                addLog(`Slot ${i + 1}: [3/3] Task baru: ${taskId.slice(0, 20)}...`)
-                continue
-              }
-              throw pollErr
-            }
-          }
-
-          addLog(`Slot ${i + 1}: [3/3] Done ✓ ${resultUrl!.slice(0, 60)}...`, 'success')
-
-          removeActiveTask(taskId)
-          addResult({
-            id: taskId,
-            url: resultUrl!,
-            prompt: prompt.trim() || '(no prompt)',
-            date: new Date().toISOString(),
-            page: 'motion',
-          })
-          setResults((prev) => [
-            {
-              id: taskId,
-              url: resultUrl!,
-              prompt: prompt.trim() || '(no prompt)',
-              date: new Date().toISOString(),
-            },
-            ...prev,
-          ])
-        } catch (err: any) {
-          addLog(`Slot ${i + 1}: Error: ${err.message}`, 'error')
-          removeActiveTask(taskId)
-          if (isRoboneoTokenError(err.message)) {
-            addLog('Token Roboneo expired atau tidak valid. Ambil token baru dari roboneo.com.', 'error')
           }
         }
-      } else {
-        addLog(`Slot ${i + 1}: Skipping (no image/video)`, 'warn')
+
+        let completedCount = 0
+
+        for (let i = 0; i < validSlots.length; i++) {
+          const slot = validSlots[i]
+
+          if (isRoboneo && slot.image) {
+            let taskId: string = ''
+            let roomId: string = ''
+            try {
+              addLog(`Slot ${i + 1}: [1/3] Uploading image to host...`)
+              const imageUrl = await uploadToCatbox(slot.image)
+              addLog(`Slot ${i + 1}: [1/3] Image uploaded ✓ ${imageUrl.slice(0, 50)}...`)
+
+              if (isOmni) {
+                addLog(`Slot ${i + 1}: [2/3] Submitting to Google Omni...`)
+                const result = await submitGoogleOmni({
+                  accessToken: token,
+                  imageUrl,
+                  prompt: prompt.trim() || undefined,
+                  ratio: '9:16',
+                  videoDuration: 10,
+                })
+                taskId = result.taskId
+                roomId = result.roomId
+                addLog(`Slot ${i + 1}: [2/3] Task created ✓ id=${taskId.slice(0, 20)}...`)
+              } else {
+                if (!slot.video) {
+                  addLog(`Slot ${i + 1}: Skipping (no video for motion control)`, 'warn')
+                  continue
+                }
+                addLog(`Slot ${i + 1}: [2a/3] Compressing video if needed...`)
+                const videoFile = await compressVideo(slot.video, 5)
+                addLog(`Slot ${i + 1}: [2a/3] Uploading video to host...`)
+                const videoUrl = await uploadToCatbox(videoFile)
+                addLog(`Slot ${i + 1}: [2a/3] Video uploaded ✓ ${videoUrl.slice(0, 50)}...`)
+
+                addLog(`Slot ${i + 1}: [2b/3] Submitting to Motion Control...`)
+                const result = await submitMotionControl({
+                  accessToken: token,
+                  imageUrl,
+                  videoUrl,
+                  prompt: prompt.trim() || undefined,
+                  quality: 'std',
+                  orientation,
+                })
+                taskId = result.taskId
+                roomId = result.roomId
+                addLog(`Slot ${i + 1}: [2b/3] Task created ✓ id=${taskId.slice(0, 20)}...`)
+              }
+
+              addActiveTask({
+                id: taskId,
+                taskId,
+                roomId,
+                token,
+                model: currentModel.label,
+                prompt: prompt.trim() || '(no prompt)',
+                startedAt: Date.now(),
+                page: 'motion',
+              })
+
+              addLog(`Slot ${i + 1}: [3/3] Polling for result...`)
+
+              let resultUrl: string | null = null
+              const MAX_RESUBMIT = 3
+              for (let attempt = 1; attempt <= MAX_RESUBMIT; attempt++) {
+                try {
+                  resultUrl = await pollMotionControl(
+                    token,
+                    taskId,
+                    roomId,
+                    (status, pct) => { addLog(`Slot ${i + 1}: [3/3] ${status} — ${pct}%`); setProgress(pct) }
+                  )
+                  break
+                } catch (pollErr: any) {
+                  const isBusy = /busy|sibuk|try again|later|overload|capacity|queue/i.test(pollErr.message)
+                  if (isBusy && attempt < MAX_RESUBMIT) {
+                    addLog(`Slot ${i + 1}: [3/3] Server sibuk, resubmit task baru... (attempt ${attempt + 1}/${MAX_RESUBMIT})`, 'warn')
+                    await new Promise((r) => setTimeout(r, 5000))
+                    if (isOmni) {
+                      const retry = await submitGoogleOmni({
+                        accessToken: token,
+                        imageUrl,
+                        prompt: prompt.trim() || undefined,
+                        ratio: '9:16',
+                        videoDuration: 10,
+                      })
+                      taskId = retry.taskId
+                      roomId = retry.roomId
+                    } else {
+                      const retry = await submitMotionControl({
+                        accessToken: token,
+                        imageUrl,
+                        videoUrl: slot.videoUrl!,
+                        prompt: prompt.trim() || undefined,
+                        quality: 'std',
+                        orientation,
+                      })
+                      taskId = retry.taskId
+                      roomId = retry.roomId
+                    }
+                    addLog(`Slot ${i + 1}: [3/3] Task baru: ${taskId.slice(0, 20)}...`)
+                    continue
+                  }
+                  throw pollErr
+                }
+              }
+
+              addLog(`Slot ${i + 1}: [3/3] Done ✓ ${resultUrl!.slice(0, 60)}...`, 'success')
+
+              removeActiveTask(taskId)
+              addResult({
+                id: taskId,
+                url: resultUrl!,
+                prompt: prompt.trim() || '(no prompt)',
+                date: new Date().toISOString(),
+                page: 'motion',
+              })
+              setResults((prev) => [
+                {
+                  id: taskId,
+                  url: resultUrl!,
+                  prompt: prompt.trim() || '(no prompt)',
+                  date: new Date().toISOString(),
+                },
+                ...prev,
+              ])
+              completedCount++
+            } catch (err: any) {
+              addLog(`Slot ${i + 1}: Error: ${err.message}`, 'error')
+              removeActiveTask(taskId)
+              throw err
+            }
+          } else {
+            addLog(`Slot ${i + 1}: Skipping (no image/video)`, 'warn')
+          }
+        }
+
+        return { completedCount }
+      },
+      {
+        onKeySwitch: (from, to, attempt) => {
+          addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn')
+        },
+        onError: (err, key) => {
+          if (detectTokenError(provider, err)) {
+            addLog(`Key "${key.name}" is invalid: ${err.message}`, 'warn')
+          }
+        },
       }
+    )
+
+    if (rotation.ok) {
+      addLog(`All generations completed! (${rotation.result?.completedCount || 0} done)`, 'success')
+      if (rotation.triedKeys > 1) {
+        addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success')
+      }
+    } else {
+      addLog(`Generation failed: ${rotation.error}`, 'error')
     }
 
-    addLog('All generations completed!', 'success')
     setGenerating(false)
     generatingRef.current = false
   }

@@ -3,6 +3,7 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Input, Label, Badge, Textarea } from '@/components/ui'
 import { Video, Loader2, Play, Key } from 'lucide-react'
 import { useProviderManager, ProviderId } from '@/stores/providerManager'
+import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 
 interface FramiaSkill {
   id: string
@@ -79,47 +80,60 @@ export default function FramiaPage() {
     setGenerating(true)
     setSelectedSkill(skill)
     try {
-      const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }
-      const res = await fetch(`${FRAMIA_API}/workflows/runs`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ skill_id: skill.id, prompt }),
-      })
-      if (res.ok) {
-        const data = await res.json()
-        const runId = data.run_id || data.id
-        if (runId) {
-          pollRun(runId)
+      const rotation = await withTokenRotation<string>(
+        'framia',
+        async (token) => {
+          const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
+          const res = await fetch(`${FRAMIA_API}/workflows/runs`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ skill_id: skill.id, prompt }),
+          })
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}))
+            throw new Error(err.error || `HTTP ${res.status}`)
+          }
+          const data = await res.json()
+          const runId = data.run_id || data.id
+          if (!runId) throw new Error('No run ID returned')
+
+          const pollHeaders = { Authorization: `Bearer ${token}` }
+          for (let i = 0; i < 120; i++) {
+            await new Promise(r => setTimeout(r, 3000))
+            const pollRes = await fetch(`${FRAMIA_API}/workflows/runs/${runId}/nodes`, { headers: pollHeaders })
+            if (!pollRes.ok) continue
+            const pollData = await pollRes.json()
+            const nodes = pollData.nodes || []
+            const outputNode = nodes.find((n: any) => n.output_url || n.status === 'completed')
+            if (outputNode?.output_url) {
+              return outputNode.output_url
+            }
+            if (nodes.some((n: any) => n.status === 'failed')) {
+              throw new Error('Workflow run failed')
+            }
+          }
+          throw new Error('Timeout: generation took too long')
+        },
+        {
+          onKeySwitch: (from, to, attempt) => {
+            console.log(`[framia] Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`)
+          },
+          onError: (err, key) => {
+            if (detectTokenError('framia', err)) {
+              console.log(`[framia] Key "${key.name}" is invalid: ${err.message}`)
+            }
+          },
         }
+      )
+
+      if (rotation.ok && rotation.result) {
+        setResults(prev => [rotation.result!, ...prev])
       }
     } catch (err) {
       console.error('Run failed:', err)
+    } finally {
       setGenerating(false)
     }
-  }
-
-  const pollRun = async (runId: string) => {
-    const headers = { Authorization: `Bearer ${apiKey}` }
-    for (let i = 0; i < 120; i++) {
-      await new Promise(r => setTimeout(r, 3000))
-      try {
-        const res = await fetch(`${FRAMIA_API}/workflows/runs/${runId}/nodes`, { headers })
-        if (!res.ok) continue
-        const data = await res.json()
-        const nodes = data.nodes || []
-        const outputNode = nodes.find((n: any) => n.output_url || n.status === 'completed')
-        if (outputNode?.output_url) {
-          setResults(prev => [outputNode.output_url, ...prev])
-          setGenerating(false)
-          return
-        }
-        if (nodes.some((n: any) => n.status === 'failed')) {
-          setGenerating(false)
-          return
-        }
-      } catch {}
-    }
-    setGenerating(false)
   }
 
   return (
