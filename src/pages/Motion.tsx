@@ -161,18 +161,18 @@ export default function MotionPage() {
 
     const isRoboneo = provider === 'roboneo'
 
-    setGenerating(true)
+setGenerating(true)
     generatingRef.current = true
     setLogs([])
     clearLogs()
+    setProgress(0)
 
-    addLog(`Starting generation with ${currentProvider.name} · ${currentModel.label}`)
+    addLog(`🚀 Mulai generate video · ${currentProvider.name} · ${currentModel.label}`)
     addLog(`Mode: ${isOmni ? 'Image → Video (Google Omni)' : 'Motion Control (Image + Video)'}`)
     addLog(`Processing ${validSlots.length} slot(s)...`)
 
     try {
-
-    const rotation = await withTokenRotation<{ completedCount: number }>(
+      const rotation = await withTokenRotation<{ completedCount: number }>(
       provider,
       async (token) => {
         if (isRoboneo) {
@@ -262,13 +262,13 @@ export default function MotionPage() {
                     token,
                     taskId,
                     roomId,
-                    (status, pct) => { addLog(`Slot ${i + 1}: [3/3] ${status} — ${pct}%`); setProgress(pct) }
+                    (status, pct) => { addLog(`⏳ Roboneo ${status} (${pct}%)`); setProgress(pct) }
                   )
                   break
                 } catch (pollErr: any) {
                   const isBusy = /busy|sibuk|try again|later|overload|capacity|queue/i.test(pollErr.message)
                   if (isBusy && attempt < MAX_RESUBMIT) {
-                    addLog(`Slot ${i + 1}: [3/3] Server sibuk, resubmit task baru... (attempt ${attempt + 1}/${MAX_RESUBMIT})`, 'warn')
+                    addLog(`Server sibuk, resubmit task baru... (attempt ${attempt + 1}/${MAX_RESUBMIT})`, 'warn')
                     await new Promise((r) => setTimeout(r, 5000))
                     if (isOmni) {
                       const retry = await submitGoogleOmni({
@@ -292,14 +292,14 @@ export default function MotionPage() {
                       taskId = retry.taskId
                       roomId = retry.roomId
                     }
-                    addLog(`Slot ${i + 1}: [3/3] Task baru: ${taskId.slice(0, 20)}...`)
+                    addLog(`Task baru: ${taskId.slice(0, 20)}...`)
                     continue
                   }
                   throw pollErr
                 }
               }
 
-              addLog(`Slot ${i + 1}: [3/3] Done ✓ ${resultUrl!.slice(0, 60)}...`, 'success')
+              addLog(`✅ Video selesai · ${resultUrl!.slice(0, 60)}...`, 'success')
 
               removeActiveTask(originalTaskId)
               addResult({
