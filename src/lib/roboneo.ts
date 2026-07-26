@@ -203,11 +203,12 @@ async function roboneoApiCall(
 
       if (!proxyResp || proxyResp.ok === false) {
         const errMsg = proxyResp?.error || `Proxy error`
+        const debugInfo = proxyResp?.debug ? ` [debug: tokenLen=${proxyResp.debug.tokenLen}, prefix=${proxyResp.debug.tokenPrefix}]` : ''
         if (attempt < 5) {
           await new Promise((r) => setTimeout(r, 1500 * attempt))
           continue
         }
-        throw new Error(`Roboneo ${path}: ${errMsg}`)
+        throw new Error(`Roboneo ${path}: ${errMsg}${debugInfo}`)
       }
 
       const data = proxyResp.data

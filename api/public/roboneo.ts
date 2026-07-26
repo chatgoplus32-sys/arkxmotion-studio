@@ -38,7 +38,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Error 98 = token invalid atau IP blocked, return langsung ke client
     if (data?.error_code === 98) {
-      return res.status(200).json({ ok: false, error_code: 98, error: data?.error_msg || 'Token rejected by gateway', data })
+      return res.status(200).json({
+        ok: false,
+        error_code: 98,
+        error: data?.error_msg || 'Token rejected by gateway',
+        debug: {
+          tokenLen: String(token).length,
+          tokenPrefix: String(token).slice(0, 15),
+          gatewayStatus: roboneoRes.status,
+          bodyKeys: Object.keys(parameter || {}),
+        },
+        data
+      })
     }
 
     return res.status(200).json({ ok: data?.error_code === 0, status: roboneoRes.status, data })
