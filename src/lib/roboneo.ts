@@ -156,13 +156,13 @@ function buildTrackingParams(accessToken: string, pathScene: string, roomId: str
     gid: generateGnum(),
     uid: extractUid(accessToken),
     trace_id: uuid(),
-    client_id: '1189857647',
+    client_id: '1189857684',
     app_scene: 'roboneo',
     area_code: 'ID',
     lang: 'en',
     time_zone: 'Asia/Jakarta',
     tt_ttclid: '',
-    tt_ttp: '01KY074F3A1BE6C8DAB25DJG3P_.tt.1',
+    tt_ttp: '',
     first_url: 'https://www.roboneo.com/home',
     page_url: 'https://www.roboneo.com/ai_flow',
     referrer: 'https://www.roboneo.com/home',
@@ -181,31 +181,31 @@ async function roboneoApiCall(
 ): Promise<any> {
   let lastError: Error | null = null
 
-  // Cloudflare Worker proxy
-  const PROXY_URL = 'https://roboneo-proxy.chatgoplus32.workers.dev'
+  // Proxy URLs: aacreative dulu (sudah proven berhasil), lalu Cloudflare Worker
+  const PROXY_URLS = [
+    'https://aacreative.vercel.app',
+    'https://roboneo-proxy.chatgoplus32.workers.dev',
+  ]
 
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  for (const proxyUrl of PROXY_URLS) {
     try {
-      console.log(`[roboneo] path=${path} via Cloudflare Worker (attempt ${attempt})`)
+      console.log(`[roboneo] path=${path} via ${proxyUrl}`)
 
-      const res = await fetch(`${PROXY_URL}/api/public/roboneo`, {
+      const res = await fetch(`${proxyUrl}/api/public/roboneo`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-Roboneo-Token': accessToken,
         },
-        body: JSON.stringify({ path, parameter: { parameter } }),
+        body: JSON.stringify({ path, parameter }),
       })
 
       const data = await res.json().catch(() => null)
       console.log(`[roboneo] response:`, JSON.stringify(data).slice(0, 300))
 
-      if (data?.error_code === 98) {
+      if (data?.error_code === 98 || data?.data?.error_code === 98) {
         lastError = new Error(`Roboneo ${path}: token error`)
-        if (attempt < 3) {
-          await new Promise((r) => setTimeout(r, 2000 * attempt))
-          continue
-        }
+        continue
       }
 
       if (data?.ok === false && data?.error) {
@@ -219,15 +219,14 @@ async function roboneoApiCall(
 
       return result
     } catch (err: any) {
-      lastError = err
-      if (attempt < 3) {
-        await new Promise((r) => setTimeout(r, 2000 * attempt))
+      if (/Failed to fetch|NetworkError|CORS/i.test(err.message)) {
         continue
       }
+      throw err
     }
   }
 
-  throw lastError || new Error(`Roboneo: Cloudflare Worker gagal`)
+  throw lastError || new Error(`Roboneo: semua proxy gagal`)
 }
 
 export async function checkRoboneoBalance(accessToken: string): Promise<{ ok: boolean; balance?: number | null; error?: string }> {
