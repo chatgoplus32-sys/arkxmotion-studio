@@ -546,6 +546,16 @@ setGenerating(true)
                 </div>
               )}
 
+              {!generating && progress === 100 && results.length > 0 && (
+                <Button
+                  size="sm"
+                  className="w-full"
+                  onClick={handleGenerate}
+                >
+                  <Rocket className="h-4 w-4" /> Generate Lagi
+                </Button>
+              )}
+
               <div className="text-center text-xs text-muted-foreground">
                 Total: <span className="text-foreground font-mono font-semibold">{totalCredits.toLocaleString()}</span> credits ({filledSlots} × {currentModel.cr})
               </div>
