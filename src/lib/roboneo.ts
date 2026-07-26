@@ -371,6 +371,7 @@ export async function submitGoogleOmni(params: {
     node_id: nodeId,
     name: 'video_barley_i2v_omni_flash',
     parameters: {
+      mcpCategoriesId: '18',
       image_url: imageUrl,
       prompt: prompt || '',
       ratio,
