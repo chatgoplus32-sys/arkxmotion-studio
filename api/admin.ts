@@ -12,7 +12,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'arkxmotion-studio-secret-key-2026'
 
 function cors(res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS')
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, PATCH, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
 }
 
@@ -55,6 +55,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (!id && !sub && req.method === 'GET') {
       return handleList(res)
+    }
+
+    // PATCH /api/admin?id=X&action=reset-password
+    if (id && action === 'reset-password' && req.method === 'PATCH') {
+      return handleResetPassword(res, id, req.body)
     }
 
     return res.status(404).json({ error: 'Not found' })
@@ -121,6 +126,29 @@ async function handleDelete(res: VercelResponse, id: number) {
     return res.status(200).json({ message: `User ${user.email} deleted successfully` })
   } catch (err: any) {
     console.error('Delete user error:', err)
+    return res.status(500).json({ error: 'Internal server error' })
+  }
+}
+
+async function handleResetPassword(res: VercelResponse, id: number, body: any) {
+  try {
+    const { new_password } = body || {}
+    if (!new_password || new_password.length < 4) {
+      return res.status(400).json({ error: 'Password minimal 4 karakter' })
+    }
+
+    const sql = getSql()
+    const rows = await sql`SELECT id, email, role FROM users WHERE id = ${id}`
+    const user = rows[0]
+    if (!user) return res.status(404).json({ error: 'User not found' })
+
+    const bcrypt = await import('bcryptjs')
+    const hashedPassword = await bcrypt.hash(new_password, 10)
+    await sql`UPDATE users SET password = ${hashedPassword}, updated_at = CURRENT_TIMESTAMP WHERE id = ${id}`
+
+    return res.status(200).json({ message: `Password ${user.email} berhasil direset` })
+  } catch (err: any) {
+    console.error('Reset password error:', err)
     return res.status(500).json({ error: 'Internal server error' })
   }
 }

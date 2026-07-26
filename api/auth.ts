@@ -30,6 +30,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (path === 'me') return handleMe(req, res)
     if (path === 'register') return handleRegister(req, res)
     if (path === 'seed') return handleSeed(req, res)
+    if (path === 'change-password') return handleChangePassword(req, res)
 
     return res.status(404).json({ error: 'Not found' })
   } catch (err: any) {
@@ -255,5 +256,41 @@ async function handleSeed(_req: VercelRequest, res: VercelResponse) {
   } catch (err: any) {
     console.error('Seed error:', err)
     return res.status(500).json({ error: err.message })
+  }
+}
+
+async function handleChangePassword(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+
+  const authHeader = req.headers['authorization']
+  const token = authHeader && authHeader.split(' ')[1]
+  if (!token) return res.status(401).json({ error: 'Access token required' })
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as { id: number; email: string }
+    const { old_password, new_password } = req.body || {}
+
+    if (!old_password || !new_password) {
+      return res.status(400).json({ error: 'Password lama dan baru harus diisi' })
+    }
+    if (new_password.length < 4) {
+      return res.status(400).json({ error: 'Password baru minimal 4 karakter' })
+    }
+
+    const sql = getSql()
+    const rows = await sql`SELECT * FROM users WHERE id = ${decoded.id}`
+    const user = rows[0]
+    if (!user) return res.status(404).json({ error: 'User not found' })
+
+    const bcrypt = await import('bcryptjs')
+    const validPassword = await bcrypt.compare(old_password, user.password)
+    if (!validPassword) return res.status(401).json({ error: 'Password lama salah' })
+
+    const hashedPassword = await bcrypt.hash(new_password, 10)
+    await sql`UPDATE users SET password = ${hashedPassword}, updated_at = CURRENT_TIMESTAMP WHERE id = ${decoded.id}`
+
+    return res.status(200).json({ message: 'Password berhasil diubah' })
+  } catch {
+    return res.status(403).json({ error: 'Invalid or expired token' })
   }
 }

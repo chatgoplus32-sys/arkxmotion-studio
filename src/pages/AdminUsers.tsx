@@ -3,7 +3,7 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
-import { Users, CheckCircle, XCircle, Clock, Trash2, RefreshCw } from 'lucide-react'
+import { Users, CheckCircle, XCircle, Clock, Trash2, RefreshCw, Key } from 'lucide-react'
 
 interface User {
   id: number
@@ -105,6 +105,33 @@ export default function AdminUsersPage() {
       }
     } catch {
       addToast('Failed to delete user', 'error')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const handleResetPassword = async (userId: number, userName: string) => {
+    if (!token) return
+    const newPassword = prompt(`Reset password untuk ${userName}.\nMasukkan password baru (min 4 karakter):`)
+    if (!newPassword || newPassword.length < 4) {
+      if (newPassword !== null) addToast('Password minimal 4 karakter', 'error')
+      return
+    }
+    setActionLoading(userId)
+    try {
+      const response = await fetch(`/api/admin?id=${userId}&action=reset-password`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ new_password: newPassword })
+      })
+      if (response.ok) {
+        addToast('Password berhasil direset', 'success')
+      } else {
+        const data = await response.json()
+        addToast(data.error || 'Gagal reset password', 'error')
+      }
+    } catch {
+      addToast('Gagal reset password', 'error')
     } finally {
       setActionLoading(null)
     }
@@ -229,6 +256,15 @@ export default function AdminUsersPage() {
                                 <XCircle className="h-4 w-4" />
                               </Button>
                             )}
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleResetPassword(user.id, user.name)}
+                              disabled={actionLoading === user.id}
+                              className="text-blue-500 hover:text-blue-600 hover:bg-blue-500/10"
+                            >
+                              <Key className="h-4 w-4" />
+                            </Button>
                             <Button
                               variant="outline"
                               size="sm"

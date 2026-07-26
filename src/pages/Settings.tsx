@@ -67,6 +67,9 @@ export default function SettingsPage() {
   const [selectedBuyQty, setSelectedBuyQty] = useState(0)
   const [selectedBuyPrice, setSelectedBuyPrice] = useState(0)
   const [selectedBuyProvider, setSelectedBuyProvider] = useState<Provider>('roboneo')
+  const [oldPassword, setOldPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [changingPassword, setChangingPassword] = useState(false)
 
   const refresh = useCallback(() => {
     setActiveTasks(getActiveTasks())
@@ -147,6 +150,30 @@ export default function SettingsPage() {
   const handleCopyNumber = () => {
     navigator.clipboard.writeText('082280204445')
     addToast('Nomor Dana berhasil disalin', 'success')
+  }
+
+  const handleChangePassword = async () => {
+    if (!oldPassword || !newPassword || newPassword.length < 4) return
+    setChangingPassword(true)
+    try {
+      const response = await fetch('/api/auth?path=change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authStore.token}` },
+        body: JSON.stringify({ old_password: oldPassword, new_password: newPassword })
+      })
+      if (response.ok) {
+        addToast('Password berhasil diubah', 'success')
+        setOldPassword('')
+        setNewPassword('')
+      } else {
+        const data = await response.json()
+        addToast(data.error || 'Gagal mengubah password', 'error')
+      }
+    } catch {
+      addToast('Gagal mengubah password', 'error')
+    } finally {
+      setChangingPassword(false)
+    }
   }
 
   useEffect(() => {
@@ -269,6 +296,36 @@ export default function SettingsPage() {
             </div>
             <Button variant="outline" className="w-full">
               <Shield className="h-4 w-4" /> Export All Keys
+            </Button>
+          </div>
+        </Section>
+
+        <Section title="🔑 Ganti Password">
+          <div className="space-y-3">
+            <div>
+              <Label>Password Lama</Label>
+              <Input
+                type="password"
+                placeholder="Masukkan password lama"
+                value={oldPassword}
+                onChange={(e) => setOldPassword(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label>Password Baru</Label>
+              <Input
+                type="password"
+                placeholder="Masukkan password baru (min 4 karakter)"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+              />
+            </div>
+            <Button
+              onClick={handleChangePassword}
+              disabled={!oldPassword || !newPassword || newPassword.length < 4 || changingPassword}
+              loading={changingPassword}
+            >
+              <Shield className="h-4 w-4" /> Ganti Password
             </Button>
           </div>
         </Section>

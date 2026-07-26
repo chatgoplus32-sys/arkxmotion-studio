@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Textarea, Select, Label, Badge, EmptyState } from '@/components/ui'
-import { useProviderManager } from '@/stores'
+import { useProviderManager, type ProviderId } from '@/stores'
 import { uploadToCatbox, submitMotionControl, submitGoogleOmni, pollMotionControl, isRoboneoTokenError, checkRoboneoBalance, compressVideo } from '@/lib/roboneo'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import {
@@ -78,7 +78,7 @@ function createSlot(): Slot {
 }
 
 export default function MotionPage() {
-  const [provider, setProvider] = useState('weavy')
+  const [provider, setProvider] = useState<ProviderId>('weavy')
   const [modelKey, setModelKey] = useState(PROVIDERS.weavy.models[0].key)
   const [orientation, setOrientation] = useState<'video' | 'image'>('video')
   const [prompt, setPrompt] = useState('')
@@ -417,7 +417,7 @@ export default function MotionPage() {
                 <Select
                   value={provider}
                   onChange={(e) => {
-                    setProvider(e.target.value)
+                    setProvider(e.target.value as ProviderId)
                     const p = PROVIDERS[e.target.value as keyof typeof PROVIDERS]
                     setModelKey(p.models[0].key)
                   }}
