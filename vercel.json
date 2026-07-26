@@ -7,6 +7,7 @@
     "api/auth.ts": { "maxDuration": 10 },
     "api/admin.ts": { "maxDuration": 10 },
     "api/admin/tokens.ts": { "maxDuration": 30 },
+    "api/admin/status.ts": { "maxDuration": 30 },
     "api/tokens.ts": { "maxDuration": 30 },
     "api/public/roboneo.ts": { "regions": ["iad1"] },
     "api/public/uploads.ts": { "maxDuration": 30 },
@@ -17,6 +18,7 @@
   "routes": [
     { "src": "/api/auth/(.*)", "dest": "/api/auth?path=$1" },
     { "src": "/api/admin/tokens/orders", "dest": "/api/admin/tokens" },
+    { "src": "/api/admin/status", "dest": "/api/admin/status" },
     { "src": "/api/admin/tokens", "dest": "/api/admin/tokens" },
     { "src": "/api/admin/users/pending", "dest": "/api/admin?sub=pending" },
     { "src": "/api/admin/users/(\\d+)/approve", "dest": "/api/admin?id=$1&action=approve" },

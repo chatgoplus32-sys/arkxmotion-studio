@@ -19,6 +19,7 @@ import {
   Shield,
   Key,
   ClipboardCheck,
+  Activity,
 } from 'lucide-react'
 
 interface NavItem {
@@ -80,6 +81,7 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
     { label: 'User Management', href: '/admin/users', icon: <Shield className="h-4 w-4" />, badge: pendingCount > 0 ? String(pendingCount) : undefined },
     { label: 'Upload Token', href: '/admin/tokens', icon: <Key className="h-4 w-4" /> },
     { label: 'Order Token', href: '/admin/orders', icon: <ClipboardCheck className="h-4 w-4" /> },
+    { label: 'Server Status', href: '/admin/status', icon: <Activity className="h-4 w-4" /> },
   ]
 
   const isActive = (href: string) => {
