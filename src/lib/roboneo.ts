@@ -636,7 +636,8 @@ export async function pollMotionControl(
   taskId: string,
   roomId: string,
   onProgress?: (status: string, pct: number) => void,
-  timeoutMs = 1800000
+  timeoutMs = 1800000,
+  signal?: AbortSignal
 ): Promise<string> {
   const startTime = Date.now()
   let networkRetries = 0
@@ -710,6 +711,7 @@ export async function pollMotionControl(
   const MAX_SUCCESS_NO_OUTPUT = 15
 
   while (Date.now() - startTime < timeoutMs) {
+    if (signal?.aborted) throw new Error('Generation cancelled')
     await new Promise((r) => setTimeout(r, 4000))
 
     let result: any

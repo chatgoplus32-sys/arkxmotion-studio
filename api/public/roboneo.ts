@@ -1,7 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 const GATEWAY_URL = 'https://ai-engine-gateway-roboneo.meitu.com/roboneo/sync/request'
-const RELAY_URL = 'https://aacreative.vercel.app/api/public/roboneo'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -37,21 +36,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     console.log(`[roboneo] gateway ${roboneoRes.status}:`, text.slice(0, 500))
 
+    // Error 98 = token invalid atau IP blocked, return langsung ke client
     if (data?.error_code === 98) {
-      console.log(`[roboneo] direct gateway rejected (error 98), trying relay...`)
-      const relayRes = await fetch(RELAY_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Roboneo-Token': token,
-        },
-        body: JSON.stringify({ path, parameter }),
-      })
-      const relayText = await relayRes.text()
-      let relayData: any = null
-      try { relayData = JSON.parse(relayText) } catch {}
-      console.log(`[roboneo] relay response:`, relayText.slice(0, 500))
-      return res.status(200).json({ ok: relayData?.ok ?? false, status: relayData?.status ?? relayRes.status, data: relayData?.data ?? relayData })
+      return res.status(200).json({ ok: false, error_code: 98, error: data?.error_msg || 'Token rejected by gateway', data })
     }
 
     return res.status(200).json({ ok: data?.error_code === 0, status: roboneoRes.status, data })

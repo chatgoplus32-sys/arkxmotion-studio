@@ -136,6 +136,7 @@ export function startBackgroundPolling() {
         }
       },
       1800000,
+      ctrl.signal,
     )
       .then((url) => {
         if (ctrl.signal.aborted) return
