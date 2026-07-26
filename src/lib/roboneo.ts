@@ -181,17 +181,14 @@ async function roboneoApiCall(
 ): Promise<any> {
   let lastError: Error | null = null
 
-  // Proxy URLs: local proxy dulu, lalu fallback
-  const PROXY_URLS = [
-    'http://localhost:3002',  // Local proxy (dari komputer user)
-    '/api/public/roboneo',    // Vercel proxy
-  ]
+  // Cloudflare Worker proxy
+  const PROXY_URL = 'https://roboneo-proxy.chatgoplus32.workers.dev'
 
-  for (const proxyUrl of PROXY_URLS) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      console.log(`[roboneo] path=${path} via ${proxyUrl}`)
+      console.log(`[roboneo] path=${path} via Cloudflare Worker (attempt ${attempt})`)
 
-      const res = await fetch(`${proxyUrl}/api/public/roboneo`, {
+      const res = await fetch(`${PROXY_URL}/api/public/roboneo`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -205,7 +202,10 @@ async function roboneoApiCall(
 
       if (data?.error_code === 98) {
         lastError = new Error(`Roboneo ${path}: token error`)
-        continue
+        if (attempt < 3) {
+          await new Promise((r) => setTimeout(r, 2000 * attempt))
+          continue
+        }
       }
 
       if (data?.ok === false && data?.error) {
@@ -219,16 +219,15 @@ async function roboneoApiCall(
 
       return result
     } catch (err: any) {
-      if (/Failed to fetch|NetworkError|ECONNREFUSED/i.test(err.message)) {
-        console.log(`[roboneo] ${proxyUrl} unavailable, trying next...`)
-        lastError = err
+      lastError = err
+      if (attempt < 3) {
+        await new Promise((r) => setTimeout(r, 2000 * attempt))
         continue
       }
-      throw err
     }
   }
 
-  throw lastError || new Error(`Roboneo: semua proxy gagal. Jalankan proxy-server.js terlebih dahulu!`)
+  throw lastError || new Error(`Roboneo: Cloudflare Worker gagal`)
 }
 
 export async function checkRoboneoBalance(accessToken: string): Promise<{ ok: boolean; balance?: number | null; error?: string }> {
