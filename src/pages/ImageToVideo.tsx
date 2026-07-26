@@ -3,7 +3,7 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Select, Label, Textarea, EmptyState, Badge } from '@/components/ui'
 import { Image, Upload, Rocket, Loader2, Trash2, Zap, Key, ExternalLink } from 'lucide-react'
 import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
-import { uploadToCatbox, submitGoogleOmni, submitSeedancePro, submitKling26, submitKling25, pollMotionControl, compressVideo } from '@/lib/roboneo'
+import { uploadToCatbox, submitGoogleOmni, submitSeedancePro, submitKling26, submitKling25, submitKling30, pollMotionControl, compressVideo } from '@/lib/roboneo'
 import { generateWithFramia } from '@/lib/framia'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import {
@@ -48,6 +48,8 @@ const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
   roboneo: [
     { value: 'rn:seedance-pro', label: 'Seedance Pro', cr: 0, provider: 'roboneo' },
     { value: 'rn:google-omni', label: 'Google Omni', cr: 0, provider: 'roboneo' },
+    { value: 'rn:kling-v30:pro', label: 'Kling 3.0 Pro', cr: 0, provider: 'roboneo' },
+    { value: 'rn:kling-v30:std', label: 'Kling 3.0 Standard', cr: 0, provider: 'roboneo' },
     { value: 'rn:kling-v26:std', label: 'Kling 2.6', cr: 0, provider: 'roboneo' },
     { value: 'rn:kling-v25', label: 'Kling 2.5', cr: 0, provider: 'roboneo' },
   ],
@@ -443,6 +445,22 @@ export default function ImageToVideoPage() {
                 imageUrl,
                 prompt: prompt.trim() || undefined,
                 videoDuration,
+              })
+              taskId = result.taskId
+              roomId = result.roomId
+            } else if (model === 'rn:kling-v30:pro' || model === 'rn:kling-v30:std') {
+              const soundEnabled = quality?.includes('on') ? 'on' : 'off'
+              const durationMatch = quality?.match(/(\d+)s/)
+              const videoDuration = durationMatch ? parseInt(durationMatch[1]) : 10
+              const klingMode = model === 'rn:kling-v30:pro' ? 'pro' : 'std'
+              addLog(`[2/3] Submitting to Kling 3.0 ${klingMode === 'pro' ? 'Pro' : 'Standard'}...`)
+              const result = await submitKling30({
+                accessToken: apiKey,
+                imageUrl,
+                prompt: prompt.trim() || undefined,
+                videoDuration,
+                sound: soundEnabled as 'on' | 'off',
+                mode: klingMode,
               })
               taskId = result.taskId
               roomId = result.roomId

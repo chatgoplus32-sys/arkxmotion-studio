@@ -520,6 +520,62 @@ export async function submitKling26(params: {
   return { taskId: taskIds[0], roomId }
 }
 
+export async function submitKling30(params: {
+  accessToken: string
+  imageUrl: string
+  prompt?: string
+  videoDuration?: number
+  sound?: 'on' | 'off'
+  mode?: 'pro' | 'std'
+}): Promise<{ taskId: string; roomId: string }> {
+  const { accessToken, imageUrl, prompt = '', videoDuration = 10, sound = 'off', mode = 'pro' } = params
+
+  const roomId = generateRoomId()
+  const nodeId = uuid()
+
+  const node = {
+    tool_abstract_name: { cn: `Kling 3.0 ${mode === 'pro' ? 'Pro' : 'Standard'}`, en: `Kling 3.0 ${mode === 'pro' ? 'Pro' : 'Standard'}` },
+    node_id: nodeId,
+    name: mode === 'pro' ? 'video_bonbon_img2vid_v30_pro' : 'video_bonbon_img2vid_v30_std',
+    parameters: {
+      mcpCategoriesId: '18',
+      image_url: imageUrl,
+      prompt: prompt || '',
+      video_duration: videoDuration,
+      sound,
+      random: `${Date.now()}-${Math.floor(1e7 + Math.random() * 89999999)}`,
+    },
+  }
+
+  const tracking = buildTrackingParams(accessToken, 'nodeexecute', roomId)
+  const { _access_token, ...paramWithoutToken } = tracking
+
+  const parameter = {
+    ...paramWithoutToken,
+    room_id: roomId,
+    node_id: nodeId,
+    need_node_name: true,
+    workflow_version: 'v2',
+    node_list_array: [[node]],
+  }
+
+  const result = await roboneoApiCall(accessToken, 'nodeexecute', parameter)
+
+  const payload = result?.parameter ?? result
+
+  const taskIds: string[] = payload?.task_ids?.length
+    ? payload.task_ids
+    : Array.isArray(payload?.tasks)
+    ? payload.tasks.map((t: any) => t.task_id).filter(Boolean)
+    : Object.keys(payload?.tasks || {})
+
+  if (!taskIds.length) {
+    throw new Error('Roboneo Kling 3.0: task_id tidak ditemukan. Response: ' + JSON.stringify(payload).slice(0, 300))
+  }
+
+  return { taskId: taskIds[0], roomId }
+}
+
 export async function submitKling25(params: {
   accessToken: string
   imageUrl: string
