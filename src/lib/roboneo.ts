@@ -410,8 +410,9 @@ export async function submitSeedancePro(params: {
   prompt?: string
   videoDuration?: number
   resolution?: string
+  ratio?: string
 }): Promise<{ taskId: string; roomId: string }> {
-  const { accessToken, imageUrl, prompt = '', videoDuration = 12, resolution = '720p' } = params
+  const { accessToken, imageUrl, prompt = '', videoDuration = 12, resolution = '720p', ratio = '9:16' } = params
 
   const roomId = generateRoomId()
   const nodeId = uuid()
@@ -421,11 +422,10 @@ export async function submitSeedancePro(params: {
     node_id: nodeId,
     name: 'api_v1_outsourcing_img_to_video',
     parameters: {
-      mcpCategoriesId: '18',
       image_url: imageUrl,
       prompt: prompt || '',
       video_duration: videoDuration,
-      ratio: 'adaptive',
+      ratio: ratio,
       resolution,
       recipe_code: 'd56CL0CD7eVX',
       random: `${Date.now()}-${Math.floor(1e7 + Math.random() * 89999999)}`,

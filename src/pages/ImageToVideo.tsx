@@ -419,6 +419,7 @@ export default function ImageToVideoPage() {
                 prompt: prompt.trim() || undefined,
                 videoDuration: 12,
                 resolution: quality === '1080p-5s' ? '1080p' : quality === '480p-5s' ? '480p' : '720p',
+                ratio,
               })
               taskId = result.taskId
               roomId = result.roomId
