@@ -181,54 +181,63 @@ async function roboneoApiCall(
 ): Promise<any> {
   let lastError: Error | null = null
 
-  for (let attempt = 1; attempt <= 5; attempt++) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const body = JSON.stringify({ path, parameter })
-      console.log(`[roboneo] POST /api/public/roboneo → path=${path} (attempt ${attempt}/5)`)
-      console.log(`[roboneo] → body keys:`, Object.keys(parameter))
-      console.log(`[roboneo] → token in body:`, parameter.token ? `${String(parameter.token).slice(0, 10)}...` : 'NONE')
-      console.log(`[roboneo] → access token:`, accessToken ? `${accessToken.slice(0, 10)}...` : 'NONE')
+      console.log(`[roboneo] POST gateway → path=${path} (attempt ${attempt}/3)`)
 
-      const res = await fetch('/api/public/roboneo', {
+      // Langsung ke gateway dari browser (bypass Vercel proxy yang di-block)
+      const res = await fetch(`https://ai-engine-gateway-roboneo.meitu.com/roboneo/sync/request/${path}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Roboneo-Token': accessToken,
+          'access-token': accessToken,
+          'client-id': '1189857647',
+          'Origin': 'https://www.roboneo.com',
+          'Referer': 'https://www.roboneo.com/',
         },
-        body,
+        body: JSON.stringify(parameter),
       })
 
-      const proxyResp = await res.json().catch(() => null)
-      console.log(`[roboneo] proxy response:`, JSON.stringify(proxyResp).slice(0, 500))
+      const data = await res.json().catch(() => null)
+      console.log(`[roboneo] gateway response:`, JSON.stringify(data).slice(0, 500))
 
-      if (!proxyResp || proxyResp.ok === false) {
-        const errMsg = proxyResp?.error || `Proxy error`
-        const debugInfo = proxyResp?.debug ? ` [debug: tokenLen=${proxyResp.debug.tokenLen}, prefix=${proxyResp.debug.tokenPrefix}]` : ''
-        if (attempt < 5) {
-          await new Promise((r) => setTimeout(r, 1500 * attempt))
+      if (data?.error_code === 98) {
+        if (attempt < 3) {
+          await new Promise((r) => setTimeout(r, 2000 * attempt))
           continue
         }
-        throw new Error(`Roboneo ${path}: ${errMsg}${debugInfo}`)
+        throw new Error(`Roboneo ${path}: token error (gateway menolak)`)
       }
 
-      const data = proxyResp.data
-      if (!data) {
-        if (attempt < 5) {
-          await new Promise((r) => setTimeout(r, 1500 * attempt))
-          continue
-        }
-        throw new Error(`Roboneo ${path}: empty response`)
-      }
-
-      if (data.error_code && data.error_code !== 0) {
+      if (data?.error_code && data.error_code !== 0) {
         throw new Error(`Roboneo ${path}: ${data.error_msg || 'error_code=' + data.error_code}`)
       }
 
       return data
     } catch (err: any) {
       lastError = err
-      if (/network|fetch|Failed to fetch/i.test(err.message) && attempt < 5) {
-        await new Promise((r) => setTimeout(r, 1500 * attempt))
+      if (/CORS|network|fetch|Failed to fetch/i.test(err.message) && attempt < 3) {
+        // CORS blocked, fallback ke proxy Vercel
+        console.log(`[roboneo] direct failed, trying proxy...`)
+        try {
+          const proxyRes = await fetch('/api/public/roboneo', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Roboneo-Token': accessToken,
+            },
+            body: JSON.stringify({ path, parameter }),
+          })
+          const proxyData = await proxyRes.json().catch(() => null)
+          if (proxyData?.ok !== false && proxyData?.data) {
+            return proxyData.data
+          }
+          if (proxyData?.error_code === 98) {
+            throw new Error(`Roboneo ${path}: token error (gateway menolak)`)
+          }
+        } catch {}
+        await new Promise((r) => setTimeout(r, 2000 * attempt))
         continue
       }
       throw err
