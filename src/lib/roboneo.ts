@@ -645,7 +645,7 @@ export async function pollMotionControl(
 
   let lastLog = ''
   let successNoOutputCount = 0
-  const MAX_SUCCESS_NO_OUTPUT = 5
+  const MAX_SUCCESS_NO_OUTPUT = 15
 
   while (Date.now() - startTime < timeoutMs) {
     await new Promise((r) => setTimeout(r, 4000))
@@ -718,7 +718,10 @@ export async function pollMotionControl(
         throw new Error(`Roboneo: task selesai (${status}) tapi output kosong setelah ${MAX_SUCCESS_NO_OUTPUT}x percobaan`)
       }
 
+      // Smart wait: progress rendah = output masih diproses, tunggu lebih lama
+      const waitMs = pct < 20 ? 8000 : pct < 50 ? 6000 : 4000
       onProgress?.(`waiting for output (${successNoOutputCount}/${MAX_SUCCESS_NO_OUTPUT})`, pct)
+      await new Promise(r => setTimeout(r, waitMs))
       continue
     }
 
