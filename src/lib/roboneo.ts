@@ -181,78 +181,54 @@ async function roboneoApiCall(
 ): Promise<any> {
   let lastError: Error | null = null
 
+  // Proxy URLs: local proxy dulu, lalu fallback
   const PROXY_URLS = [
-    '/api/public/roboneo',
-    'https://corsproxy.io/?',
-    'https://api.allorigins.win/raw?url=',
+    'http://localhost:3002',  // Local proxy (dari komputer user)
+    '/api/public/roboneo',    // Vercel proxy
   ]
 
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    for (const proxyUrl of PROXY_URLS) {
-      try {
-        console.log(`[roboneo] path=${path} via ${proxyUrl.slice(0, 30)}... (attempt ${attempt})`)
+  for (const proxyUrl of PROXY_URLS) {
+    try {
+      console.log(`[roboneo] path=${path} via ${proxyUrl}`)
 
-        let res: Response
+      const res = await fetch(`${proxyUrl}/api/public/roboneo`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Roboneo-Token': accessToken,
+        },
+        body: JSON.stringify({ path, parameter }),
+      })
 
-        if (proxyUrl === '/api/public/roboneo') {
-          // Proxy Vercel
-          res = await fetch(proxyUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Roboneo-Token': accessToken,
-            },
-            body: JSON.stringify({ path, parameter }),
-          })
-        } else {
-          // CORS proxy public
-          const targetUrl = `https://ai-engine-gateway-roboneo.meitu.com/roboneo/sync/request/${path}`
-          const proxyFullUrl = proxyUrl === 'https://corsproxy.io/?'
-            ? `${proxyUrl}${encodeURIComponent(targetUrl)}`
-            : `${proxyUrl}?url=${encodeURIComponent(targetUrl)}`
+      const data = await res.json().catch(() => null)
+      console.log(`[roboneo] response:`, JSON.stringify(data).slice(0, 300))
 
-          res = await fetch(proxyFullUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'access-token': accessToken,
-              'client-id': '1189857647',
-              'Origin': 'https://www.roboneo.com',
-              'Referer': 'https://www.roboneo.com/',
-            },
-            body: JSON.stringify(parameter),
-          })
-        }
-
-        const data = await res.json().catch(() => null)
-        console.log(`[roboneo] response:`, JSON.stringify(data).slice(0, 300))
-
-        if (data?.error_code === 98) {
-          continue // Coba proxy berikutnya
-        }
-
-        if (data?.ok === false && data?.error) {
-          throw new Error(`Roboneo ${path}: ${data.error}`)
-        }
-
-        const result = data?.data || data
-        if (result?.error_code && result.error_code !== 0) {
-          throw new Error(`Roboneo ${path}: ${result.error_msg || 'error_code=' + result.error_code}`)
-        }
-
-        return result
-      } catch (err: any) {
-        if (/CORS|Failed to fetch/i.test(err.message)) {
-          continue // Coba proxy berikutnya
-        }
-        lastError = err
-        break
+      if (data?.error_code === 98) {
+        lastError = new Error(`Roboneo ${path}: token error`)
+        continue
       }
+
+      if (data?.ok === false && data?.error) {
+        throw new Error(`Roboneo ${path}: ${data.error}`)
+      }
+
+      const result = data?.data || data
+      if (result?.error_code && result.error_code !== 0) {
+        throw new Error(`Roboneo ${path}: ${result.error_msg || 'error_code=' + result.error_code}`)
+      }
+
+      return result
+    } catch (err: any) {
+      if (/Failed to fetch|NetworkError|ECONNREFUSED/i.test(err.message)) {
+        console.log(`[roboneo] ${proxyUrl} unavailable, trying next...`)
+        lastError = err
+        continue
+      }
+      throw err
     }
-    await new Promise((r) => setTimeout(r, 2000 * attempt))
   }
 
-  throw lastError || new Error(`Roboneo: semua proxy gagal`)
+  throw lastError || new Error(`Roboneo: semua proxy gagal. Jalankan proxy-server.js terlebih dahulu!`)
 }
 
 export async function checkRoboneoBalance(accessToken: string): Promise<{ ok: boolean; balance?: number | null; error?: string }> {
