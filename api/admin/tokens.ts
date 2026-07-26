@@ -104,14 +104,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ token: rows[0] })
     }
 
-    // DELETE /api/admin/tokens - delete token
-    if (req.method === 'DELETE' && segments[segments.length - 1] === 'tokens') {
-      const { id } = req.body || req.query
+    // DELETE /api/admin/tokens/:id - delete single token
+    if (req.method === 'DELETE' && segments.includes('tokens')) {
+      const idFromUrl = segments[segments.length - 1]
+      const idFromBody = req.body?.id || req.query?.id
+      const id = idFromBody || (idFromUrl && idFromUrl !== 'tokens' ? idFromUrl : null)
       if (!id) return res.status(400).json({ error: 'Token id is required' })
 
       await sql`DELETE FROM token_orders WHERE token_id = ${id}`
       await sql`DELETE FROM tokens WHERE id = ${id}`
       return res.status(200).json({ message: 'Token deleted' })
+    }
+
+    // POST /api/admin/tokens/bulk-delete - bulk delete tokens
+    if (req.method === 'POST' && segments.includes('bulk-delete')) {
+      const { ids, provider, status } = req.body || {}
+
+      let tokens: { id: number }[] = []
+
+      if (ids && Array.isArray(ids) && ids.length > 0) {
+        tokens = await sql`SELECT id FROM tokens WHERE id = ANY(${ids})`
+      } else if (provider) {
+        if (status) {
+          tokens = await sql`SELECT id FROM tokens WHERE provider = ${provider} AND status = ${status}`
+        } else {
+          tokens = await sql`SELECT id FROM tokens WHERE provider = ${provider}`
+        }
+      } else {
+        return res.status(400).json({ error: 'Provide ids array or provider (+ optional status)' })
+      }
+
+      if (tokens.length === 0) return res.status(404).json({ error: 'No tokens found' })
+
+      const tokenIds = tokens.map(t => t.id)
+      await sql`DELETE FROM token_orders WHERE token_id = ANY(${tokenIds})`
+      const result = await sql`DELETE FROM tokens WHERE id = ANY(${tokenIds})`
+
+      return res.status(200).json({ message: `${tokens.length} tokens deleted`, count: tokens.length })
     }
 
     // GET /api/admin/tokens/orders - list all orders grouped by bulk_id
