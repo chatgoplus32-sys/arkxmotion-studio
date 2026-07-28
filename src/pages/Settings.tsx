@@ -355,7 +355,7 @@ export default function SettingsPage() {
         sub="Pilih provider, tentukan jumlah, lalu bayar"
         className="mt-5"
       >
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-5">
           {PROVIDERS.map((p) => {
             const providerTokens = availableTokens.filter(t => t.provider === p.key && t.status === 'available')
             const stock = providerTokens.length

@@ -12,10 +12,7 @@ import NaratifPage from '@/pages/Naratif'
 import StoryboardPage from '@/pages/Storyboard'
 import BulkFashionPage from '@/pages/BulkFashion'
 import ImageToVideoPage from '@/pages/ImageToVideo'
-import FramiaPage from '@/pages/Framia'
-import ResearchPage from '@/pages/Research'
-import ProjectsPage from '@/pages/Projects'
-import AssetsPage from '@/pages/Assets'
+
 import ProvidersPage from '@/pages/Providers'
 import SettingsPage from '@/pages/Settings'
 import AdminUsersPage from '@/pages/AdminUsers'
@@ -54,10 +51,7 @@ export default function App() {
                       <Route path="/generate/storyboard" element={<StoryboardPage />} />
                       <Route path="/generate/bulk-fashion" element={<BulkFashionPage />} />
                       <Route path="/generate/image-to-video" element={<ImageToVideoPage />} />
-                      <Route path="/generate/framia" element={<FramiaPage />} />
-                      <Route path="/research" element={<ResearchPage />} />
-                      <Route path="/projects" element={<ProjectsPage />} />
-                      <Route path="/assets" element={<AssetsPage />} />
+
                       <Route path="/providers" element={<ProvidersPage />} />
                       <Route path="/settings" element={<SettingsPage />} />
                       <Route path="/admin/users" element={<AdminUsersPage />} />

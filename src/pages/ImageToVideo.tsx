@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Select, Label, Textarea, EmptyState, Badge } from '@/components/ui'
-import { Image, Upload, Rocket, Loader2, Trash2, Zap, Key, ExternalLink } from 'lucide-react'
+import { Image, Upload, Rocket, Loader2, Trash2, Zap, Key, ExternalLink, Download } from 'lucide-react'
 import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
-import { uploadToCatbox, submitGoogleOmni, submitSeedancePro, submitKling26, submitKling25, submitKling30, pollMotionControl, compressVideo } from '@/lib/roboneo'
+import { useToastStore } from '@/stores/toastStore'
+import { uploadToCatbox, submitGoogleOmni, submitRoboneoI2V, pollMotionControl, compressVideo, normalizeImage } from '@/lib/roboneo'
 import { generateWithFramia } from '@/lib/framia'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import {
@@ -46,9 +47,17 @@ const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'kling-motion', label: 'Kling Motion', cr: 45, provider: 'magnific' },
   ],
   roboneo: [
-    { value: 'rn:seedance-pro', label: 'Seedance Pro', cr: 0, provider: 'roboneo' },
-    { value: 'rn:google-omni', label: 'Google Omni', cr: 0, provider: 'roboneo' },
-    { value: 'rn:kling-v26:std', label: 'Kling 2.6', cr: 0, provider: 'roboneo' },
+    { value: 'rn:seedance-2.0', label: 'Seedance 2.0', cr: 143, provider: 'roboneo' },
+    { value: 'rn:seedance-2.0-mini', label: 'Seedance 2.0 Mini', cr: 140, provider: 'roboneo' },
+    { value: 'rn:seedance-2.0-fast', label: 'Seedance 2.0 Fast', cr: 90, provider: 'roboneo' },
+    { value: 'rn:happyhorse-1.1', label: 'HappyHorse 1.1', cr: 144, provider: 'roboneo' },
+    { value: 'rn:happyhorse-1.0', label: 'HappyHorse 1.0', cr: 120, provider: 'roboneo' },
+    { value: 'rn:kling-v3', label: 'Kling 3.0', cr: 130, provider: 'roboneo' },
+    { value: 'rn:kling-v3-turbo', label: 'Kling 3.0 Turbo', cr: 90, provider: 'roboneo' },
+    { value: 'rn:seedance-1.0', label: 'Seedance 1.0 / Pro', cr: 100, provider: 'roboneo' },
+    { value: 'rn:google-omni', label: 'Google Omni Flash', cr: 45, provider: 'roboneo' },
+    { value: 'rn:kling-v26:std', label: 'Kling 2.6', cr: 80, provider: 'roboneo' },
+    { value: 'rn:seedance-pro', label: 'Seedance Pro (legacy)', cr: 100, provider: 'roboneo' },
   ],
   createpulse: [
     { value: 'cp:dreamina-seedance-2.0', label: 'Dreamina Seedance 2.0', cr: 22, provider: 'createpulse', apiModel: 'dreamina-seedance-2.0' },
@@ -71,7 +80,7 @@ const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
   openai: [],
 }
 
-const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; label: string; mult: number; duration: number }>>> = {
+const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; label: string; mult: number; duration: number; cr?: number }>>> = {
   weavy: {
     default: [
       { value: 'std', label: 'Standard 5s', mult: 1, duration: 5 },
@@ -91,26 +100,63 @@ const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; 
     ],
   },
   roboneo: {
+    'rn:seedance-2.0': [
+      { value: '480p-10s-audio', label: '480p · 10s · audio', mult: 1, duration: 10, cr: 143 },
+      { value: '480p-10s', label: '480p · 10s', mult: 1, duration: 10, cr: 120 },
+      { value: '480p-5s-audio', label: '480p · 5s · audio', mult: 1, duration: 5, cr: 75 },
+      { value: '480p-5s', label: '480p · 5s', mult: 1, duration: 5, cr: 60 },
+    ],
+    'rn:seedance-2.0-mini': [
+      { value: '480p-12s-audio', label: '480p · 12s · audio', mult: 1, duration: 12, cr: 140 },
+      { value: '480p-10s-audio', label: '480p · 10s · audio', mult: 1, duration: 10, cr: 118 },
+      { value: '480p-5s-audio', label: '480p · 5s · audio', mult: 1, duration: 5, cr: 60 },
+      { value: '480p-5s', label: '480p · 5s', mult: 1, duration: 5, cr: 48 },
+    ],
+    'rn:seedance-2.0-fast': [
+      { value: '480p-10s', label: '480p · 10s', mult: 1, duration: 10, cr: 90 },
+      { value: '480p-5s', label: '480p · 5s', mult: 1, duration: 5, cr: 45 },
+      { value: '720p-5s', label: '720p · 5s', mult: 1, duration: 5, cr: 65 },
+    ],
+    'rn:happyhorse-1.1': [
+      { value: '720p-14s', label: '720p · 14s', mult: 1, duration: 14, cr: 144 },
+      { value: '720p-10s', label: '720p · 10s', mult: 1, duration: 10, cr: 100 },
+      { value: '720p-5s', label: '720p · 5s', mult: 1, duration: 5, cr: 50 },
+      { value: '480p-14s', label: '480p · 14s', mult: 1, duration: 14, cr: 100 },
+    ],
+    'rn:happyhorse-1.0': [
+      { value: '720p-10s', label: '720p · 10s', mult: 1, duration: 10, cr: 120 },
+      { value: '720p-5s', label: '720p · 5s', mult: 1, duration: 5, cr: 60 },
+    ],
+    'rn:kling-v3': [
+      { value: '10s-off', label: '10s · No Sound', mult: 1, duration: 10, cr: 130 },
+      { value: '5s-off', label: '5s · No Sound', mult: 1, duration: 5, cr: 65 },
+      { value: '5s-on', label: '5s · Sound', mult: 1, duration: 5, cr: 85 },
+    ],
+    'rn:kling-v3-turbo': [
+      { value: '10s-off', label: '10s · No Sound', mult: 1, duration: 10, cr: 90 },
+      { value: '5s-off', label: '5s · No Sound', mult: 1, duration: 5, cr: 45 },
+    ],
+    'rn:seedance-1.0': [
+      { value: '720p-5s', label: '720p · 5s', mult: 1, duration: 5, cr: 50 },
+      { value: '720p-10s', label: '720p · 10s', mult: 1, duration: 10, cr: 100 },
+      { value: '720p-12s', label: '720p · 12s', mult: 1, duration: 12, cr: 120 },
+      { value: '480p-5s', label: '480p · 5s', mult: 1, duration: 5, cr: 35 },
+    ],
     'rn:seedance-pro': [
-      { value: '720p-5s', label: '720p · 5s', mult: 1, duration: 5 },
-      { value: '720p-10s', label: '720p · 10s', mult: 2, duration: 10 },
-      { value: '720p-12s', label: '720p · 12s', mult: 2.4, duration: 12 },
-      { value: '480p-5s', label: '480p · 5s', mult: 0.7, duration: 5 },
-      { value: '1080p-5s', label: '1080p · 5s', mult: 1.5, duration: 5 },
+      { value: '720p-5s', label: '720p · 5s', mult: 1, duration: 5, cr: 50 },
+      { value: '720p-10s', label: '720p · 10s', mult: 1, duration: 10, cr: 100 },
+      { value: '720p-12s', label: '720p · 12s', mult: 1, duration: 12, cr: 120 },
+      { value: '480p-5s', label: '480p · 5s', mult: 1, duration: 5, cr: 35 },
     ],
     'rn:google-omni': [
-      { value: '5s', label: 'Durasi 5s', mult: 1, duration: 5 },
-      { value: '10s', label: 'Durasi 10s', mult: 2, duration: 10 },
+      { value: '5s', label: 'Durasi 5s', mult: 1, duration: 5, cr: 25 },
+      { value: '10s', label: 'Durasi 10s', mult: 1, duration: 10, cr: 45 },
     ],
     'rn:kling-v26:std': [
-      { value: '5s-off', label: '5s · No Sound', mult: 1, duration: 5 },
-      { value: '5s-on', label: '5s · Sound', mult: 1.3, duration: 5 },
-      { value: '10s-off', label: '10s · No Sound', mult: 2, duration: 10 },
-      { value: '10s-on', label: '10s · Sound', mult: 2.6, duration: 10 },
-    ],
-    'rn:kling-v25': [
-      { value: '5s', label: '5s', mult: 1, duration: 5 },
-      { value: '10s', label: '10s', mult: 2, duration: 10 },
+      { value: '5s-off', label: '5s · No Sound', mult: 1, duration: 5, cr: 40 },
+      { value: '5s-on', label: '5s · Sound', mult: 1, duration: 5, cr: 55 },
+      { value: '10s-off', label: '10s · No Sound', mult: 1, duration: 10, cr: 80 },
+      { value: '10s-on', label: '10s · Sound', mult: 1, duration: 10, cr: 105 },
     ],
     default: [
       { value: 'std', label: 'Standard 5s', mult: 1, duration: 5 },
@@ -123,9 +169,49 @@ const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; 
     ],
   },
   framia: {
+    'framia:gemini-omni-flash': [
+      { value: '720p-10s', label: '720p · 10s', mult: 2, duration: 10, cr: 45 },
+      { value: '720p-5s', label: '720p · 5s', mult: 1, duration: 5, cr: 25 },
+    ],
+    'framia:seedance-2.0': [
+      { value: '720p-5s', label: '720p · 5s', mult: 1, duration: 5, cr: 25 },
+      { value: '720p-10s', label: '720p · 10s', mult: 2, duration: 10, cr: 45 },
+    ],
+    'framia:seedance-2.0-fast': [
+      { value: '720p-5s', label: '720p · 5s', mult: 1, duration: 5, cr: 15 },
+      { value: '720p-10s', label: '720p · 10s', mult: 2, duration: 10, cr: 25 },
+    ],
+    'framia:kling-3.0-omni': [
+      { value: '5s', label: 'Durasi 5s', mult: 1, duration: 5, cr: 40 },
+      { value: '10s', label: 'Durasi 10s', mult: 2, duration: 10, cr: 80 },
+    ],
+    'framia:kling-3.0': [
+      { value: '5s', label: 'Durasi 5s', mult: 1, duration: 5, cr: 30 },
+      { value: '10s', label: 'Durasi 10s', mult: 2, duration: 10, cr: 60 },
+    ],
+    'framia:veo-3.1': [
+      { value: '5s', label: 'Durasi 5s', mult: 1, duration: 5, cr: 90 },
+      { value: '10s', label: 'Durasi 10s', mult: 2, duration: 10, cr: 180 },
+    ],
+    'framia:veo-3.1-fast': [
+      { value: '5s', label: 'Durasi 5s', mult: 1, duration: 5, cr: 65 },
+      { value: '10s', label: 'Durasi 10s', mult: 2, duration: 10, cr: 130 },
+    ],
+    'framia:wan-2.7': [
+      { value: '5s', label: 'Durasi 5s', mult: 1, duration: 5, cr: 20 },
+      { value: '10s', label: 'Durasi 10s', mult: 2, duration: 10, cr: 40 },
+    ],
+    'framia:happyhorse-1.1': [
+      { value: '5s', label: 'Durasi 5s', mult: 1, duration: 5, cr: 28 },
+      { value: '10s', label: 'Durasi 10s', mult: 2, duration: 10, cr: 56 },
+    ],
+    'framia:kling-avatar': [
+      { value: '5s', label: 'Durasi 5s', mult: 1, duration: 5, cr: 40 },
+      { value: '10s', label: 'Durasi 10s', mult: 2, duration: 10, cr: 80 },
+    ],
     default: [
-      { value: 'std', label: 'Standard', mult: 1, duration: 10 },
-      { value: 'long', label: 'Long 15s', mult: 1.5, duration: 15 },
+      { value: 'std', label: 'Standard', mult: 1, duration: 10, cr: 45 },
+      { value: 'long', label: 'Long 15s', mult: 1.5, duration: 15, cr: 68 },
     ],
   },
   elevenlabs: { default: [] },
@@ -133,7 +219,7 @@ const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; 
   openai: { default: [] },
 }
 
-const RATIOS = ['9:16', '16:9', '1:1', '4:3']
+const RATIOS = ['16:9', '9:16', '1:1', '4:5', '3:4']
 
 const TEMPLATES = [
   { name: 'Cinematic Slow Pan', body: 'Cinematic slow camera pan, natural lighting, subtle wind on hair, subject stays centered' },
@@ -145,7 +231,8 @@ const TEMPLATES = [
 const CREATEPULSE_API = '/api/public/createpulse'
 
 export default function ImageToVideoPage() {
-  const { keys, routing } = useProviderManager()
+  const { keys, routing, getActiveKey } = useProviderManager()
+  const addToast = useToastStore((s) => s.addToast)
 
   const [imgUrl, setImgUrl] = useState<string | null>(null)
   const [imgFile, setImgFile] = useState<File | null>(null)
@@ -173,6 +260,9 @@ export default function ImageToVideoPage() {
   const [generating, setGenerating] = useState(() => getActiveTasks().filter((t) => t.page === 'image-to-video').length > 0)
   const [logs, setLogs] = useState<Array<{ time: string; msg: string; level: string }>>(() => getLogs())
   const generatingRef = useRef(false)
+  const successRef = useRef(false)
+
+
 
   const addLog = (msg: string, level = 'info') => {
     addBgLog(msg, level)
@@ -221,7 +311,7 @@ export default function ImageToVideoPage() {
   const qualityOptions = providerQualities[model] || providerQualities.default || []
   const currentQuality = qualityOptions.find((q) => q.value === quality) || qualityOptions[0]
 
-  const totalCredits = currentModel ? Math.round(currentModel.cr * (currentQuality?.mult || 1)) : 0
+  const totalCredits = currentModel ? (currentQuality?.cr ?? Math.round(currentModel.cr * (currentQuality?.mult || 1))) : 0
 
   const providerKeyCount = keys[provider]?.length || 0
   const hasActiveKey = keys[provider]?.some((k) => k.status === 'active') || false
@@ -253,7 +343,7 @@ export default function ImageToVideoPage() {
     let initImageUrl = undefined
     if (imgFile) {
       setStatus((s) => ({ ...s, text: 'Uploading image...', pct: 10 }))
-      initImageUrl = imgUrl || undefined
+      initImageUrl = await uploadToCatbox(imgFile)
       addLog(`[1/4] Image URL: ${initImageUrl ? initImageUrl.slice(0, 60) + '...' : '(none)'}`)
     } else {
       addLog(`[1/4] No image provided (text-to-video mode)`)
@@ -346,6 +436,8 @@ export default function ImageToVideoPage() {
     if (!hasActiveKey && provider !== 'roboneo') return
 
     setGenerating(true)
+    successRef.current = false
+    addToast(`Generate dimulai: ${PROVIDER_CONFIGS[provider].icon} ${model} · ${currentQuality?.duration || 5}s`, 'info')
     generatingRef.current = true
     setLogs([])
     setStatus({ show: true, text: 'Normalisasi image...', pct: 5, time: '' })
@@ -383,6 +475,7 @@ export default function ImageToVideoPage() {
         )
         if (rotation.ok && rotation.result) {
           setResults((prev) => [rotation.result!, ...prev])
+          successRef.current = true
           setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
           if (rotation.triedKeys > 1) {
             addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success')
@@ -396,9 +489,11 @@ export default function ImageToVideoPage() {
           throw new Error('No image provided')
         }
 
-        addLog(`[1/3] Compressing image if needed...`)
-        setStatus((s) => ({ ...s, text: 'Upload image ke public host...', pct: 10 }))
-        const imageUrl = await uploadToCatbox(imgFile)
+        addLog(`[1/3] Normalizing image...`)
+        setStatus((s) => ({ ...s, text: 'Normalize & upload image...', pct: 10 }))
+        const normalizedFile = await normalizeImage(imgFile)
+        addLog(`[1/3] Uploading image...`)
+        const imageUrl = await uploadToCatbox(normalizedFile)
         addLog(`[1/3] Image uploaded ✓ ${imageUrl.slice(0, 60)}...`)
 
         const rotation = await withTokenRotation<{ videoUrl: string; taskId: string; roomId: string }>(
@@ -408,81 +503,31 @@ export default function ImageToVideoPage() {
             const totalTokens = keys.roboneo?.length || 0
             addLog(`Trying key: ${keyInfo.name || keyInfo.id} (token ${tokenIdx + 1}/${totalTokens})`)
             setStatus((s) => ({ ...s, text: `Submit Roboneo ${model} (token ${tokenIdx + 1}/${totalTokens})...`, pct: 15 }))
-            let taskId: string
-            let roomId: string
 
-            if (model === 'rn:seedance-pro') {
-              addLog(`[2/3] Submitting to Seedance Pro...`)
-              const result = await submitSeedancePro({
-                accessToken: apiKey,
-                imageUrl,
-                prompt: prompt.trim() || undefined,
-                videoDuration: 12,
-                resolution: quality === '1080p-5s' ? '1080p' : quality === '480p-5s' ? '480p' : '720p',
-                ratio,
-              })
-              taskId = result.taskId
-              roomId = result.roomId
-            } else if (model === 'rn:kling-v26:std') {
-              const soundEnabled = quality?.includes('on') ? 'on' : 'off'
-              const durationMatch = quality?.match(/(\d+)s/)
-              const videoDuration = durationMatch ? parseInt(durationMatch[1]) : 10
-              addLog(`[2/3] Submitting to Kling 2.6...`)
-              const result = await submitKling26({
-                accessToken: apiKey,
-                imageUrl,
-                prompt: prompt.trim() || undefined,
-                videoDuration,
-                sound: soundEnabled as 'on' | 'off',
-              })
-              taskId = result.taskId
-              roomId = result.roomId
-            } else if (model === 'rn:kling-v25') {
-              const durationMatch = quality?.match(/(\d+)s/)
-              const videoDuration = durationMatch ? parseInt(durationMatch[1]) : 10
-              addLog(`[2/3] Submitting to Kling 2.5...`)
-              const result = await submitKling25({
-                accessToken: apiKey,
-                imageUrl,
-                prompt: prompt.trim() || undefined,
-                videoDuration,
-              })
-              taskId = result.taskId
-              roomId = result.roomId
-            } else if (model === 'rn:kling-v30:pro' || model === 'rn:kling-v30:std') {
-              const soundEnabled = quality?.includes('on') ? 'on' : 'off'
-              const durationMatch = quality?.match(/(\d+)s/)
-              const videoDuration = durationMatch ? parseInt(durationMatch[1]) : 10
-              const klingMode = model === 'rn:kling-v30:pro' ? 'pro' : 'std'
-              addLog(`[2/3] Submitting to Kling 3.0 ${klingMode === 'pro' ? 'Pro' : 'Standard'}...`)
-              const result = await submitKling30({
-                accessToken: apiKey,
-                imageUrl,
-                prompt: prompt.trim() || undefined,
-                videoDuration,
-                sound: soundEnabled as 'on' | 'off',
-                mode: klingMode,
-              })
-              taskId = result.taskId
-              roomId = result.roomId
-            } else {
-              addLog(`[2/3] Submitting to Google Omni...`)
-              const result = await submitGoogleOmni({
-                accessToken: apiKey,
-                imageUrl,
-                prompt: prompt.trim() || undefined,
-                ratio,
-                videoDuration: parseInt(quality) || 10,
-              })
-              taskId = result.taskId
-              roomId = result.roomId
-            }
+            const resolution = quality?.match(/(\d+p)/)?.[1]
+            const soundEnabled = quality?.includes('on') || quality?.includes('audio') ? 'on' : 'off'
+            const durationMatch = quality?.match(/(\d+)s/)
+            const videoDuration = currentQuality?.duration || (durationMatch ? parseInt(durationMatch[1]) : 10)
+
+            addLog(`[2/3] Submitting to Roboneo ${model}...`)
+            const { taskId, roomId, nodeId } = await submitRoboneoI2V({
+              accessToken: apiKey,
+              imageUrl,
+              prompt: prompt.trim() || undefined,
+              modelKey: model,
+              ratio,
+              duration: videoDuration,
+              resolution,
+              sound: soundEnabled,
+              quality,
+            })
             addLog(`[2/3] Task created ✓ id=${taskId.slice(0, 20)}...`)
 
             addActiveTask({
               id: taskId,
               taskId,
               roomId,
+              nodeId,
               token: apiKey,
               model: currentModel?.label || model,
               prompt: prompt.trim() || '(no prompt)',
@@ -495,7 +540,10 @@ export default function ImageToVideoPage() {
             setStatus((s) => ({ ...s, text: 'Processing...', pct: 25 }))
             const videoUrl = await pollMotionControl(
               apiKey, taskId, roomId,
-              (status, pct) => { addLog(`⏳ Roboneo ${status} (${pct}%)`); setStatus((s) => ({ ...s, pct, text: `Roboneo ${status} (${pct}%)` })) }
+              (status, pct) => { addLog(`⏳ Roboneo ${status} (${pct}%)`); setStatus((s) => ({ ...s, pct, text: `Roboneo ${status} (${pct}%)` })) },
+              3600000,
+              undefined,
+              nodeId
             )
             setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
             addLog(`✅ Video selesai · ${videoUrl.slice(0, 60)}...`, 'success')
@@ -505,6 +553,7 @@ export default function ImageToVideoPage() {
             return { videoUrl, taskId, roomId }
           },
           {
+            requiredCredits: totalCredits,
             onKeySwitch: (from, to, attempt) => {
               addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn')
               if (activeTaskId) removeActiveTask(activeTaskId)
@@ -519,6 +568,7 @@ export default function ImageToVideoPage() {
         )
         if (rotation.ok && rotation.result) {
           setResults((prev) => [rotation.result!.videoUrl, ...prev])
+          successRef.current = true
           if (rotation.triedKeys > 1) {
             addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success')
           }
@@ -561,6 +611,7 @@ export default function ImageToVideoPage() {
         )
         if (rotation.ok && rotation.result) {
           setResults((prev) => [rotation.result!, ...prev])
+          successRef.current = true
           setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
           if (rotation.triedKeys > 1) {
             addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success')
@@ -600,14 +651,20 @@ export default function ImageToVideoPage() {
     } catch (err: any) {
       if (activeTaskId) removeActiveTask(activeTaskId)
       addLog(`Error: ${err.message}`, 'error')
+      addToast(`Generate gagal: ${err.message}`, 'error')
       if (['roboneo', 'framia', 'createpulse'].includes(provider)) {
         addLog('⚠️ Credit mungkin sudah terpotong oleh server provider. Hubungi provider untuk refund jika gagal.', 'warn')
       }
       setStatus((s) => ({ ...s, pct: 100, text: `❌ Error: ${err.message}` }))
     } finally {
       clearInterval(timer)
+      const wasGenerating = generatingRef.current
       setGenerating(false)
       generatingRef.current = false
+      if (wasGenerating && successRef.current) {
+        addToast(`Generate selesai: ${PROVIDER_CONFIGS[provider].icon} ${model}`, 'success')
+      }
+      setTimeout(() => setStatus((s) => ({ ...s, show: false })), 3000)
     }
   }
 
@@ -686,72 +743,66 @@ export default function ImageToVideoPage() {
       </Section>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Image Input */}
-        <Section title="🖼️ Gambar Input" sub="1 file (JPG / PNG / WEBP) — optional untuk text-to-video">
-          <input ref={inputRef} type="file" accept="image/*" hidden onChange={(e) => handleFileChange(e.target.files)} />
-          {imgUrl ? (
-            <div className="relative aspect-[9/16] rounded-2xl overflow-hidden border border-border">
-              <img src={imgUrl} alt="" className="w-full h-full object-cover" />
-              <button
-                onClick={() => inputRef.current?.click()}
-                className="absolute top-2 right-2 rounded-full px-2 md:px-2.5 py-1 text-xs bg-black/60 text-white flex items-center gap-1"
-              >
-                <Upload className="h-3 w-3" />
-                <span className="hidden md:inline">Ganti</span>
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => inputRef.current?.click()}
-              className="w-full aspect-[9/16] rounded-2xl border border-dashed border-border/80 bg-card/30 grid place-items-center hover:border-primary/60 transition text-center px-4"
-            >
-              <div>
-                <div className="text-3xl">🖼️</div>
-                <div className="text-sm mt-1">Tap atau tarik <b>gambar</b> (opsional)</div>
-                <div className="text-[11px] text-muted-foreground">JPG / PNG / WEBP</div>
-              </div>
-            </button>
-          )}
-        </Section>
+            {/* Default UI for other providers */}
+            <Section title="🖼️ Gambar Input" sub="1 file (JPG / PNG / WEBP) — optional untuk text-to-video">
+              <input ref={inputRef} type="file" accept="image/*" hidden onChange={(e) => handleFileChange(e.target.files)} />
+              {imgUrl ? (
+                <div className="relative aspect-[9/16] rounded-2xl overflow-hidden border border-border">
+                  <img src={imgUrl} alt="" className="w-full h-full object-cover" />
+                  <button onClick={() => inputRef.current?.click()} className="absolute top-2 right-2 rounded-full px-2 md:px-2.5 py-1 text-xs bg-black/60 text-white flex items-center gap-1">
+                    <Upload className="h-3 w-3" />
+                    <span className="hidden md:inline">Ganti</span>
+                  </button>
+                </div>
+              ) : (
+                <button onClick={() => inputRef.current?.click()} className="w-full aspect-[9/16] rounded-2xl border border-dashed border-border/80 bg-card/30 grid place-items-center hover:border-primary/60 transition text-center px-4">
+                  <div>
+                    <div className="text-3xl">🖼️</div>
+                    <div className="text-sm mt-1">Tap atau tarik <b>gambar</b> (opsional)</div>
+                    <div className="text-[11px] text-muted-foreground">JPG / PNG / WEBP</div>
+                  </div>
+                </button>
+              )}
+            </Section>
 
-        {/* Settings */}
-        <div className="lg:col-span-2">
-          <Section title="⚙️ Pengaturan">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <div>
-                <Label>Model AI ({PROVIDER_CONFIGS[provider].name})</Label>
-                <Select
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                  options={models.map((m) => ({
-                    value: m.value,
-                    label: `${m.label} — ${m.cr === 0 ? 'kuota' : '$' + (m.cr / 1000).toFixed(3)}`,
-                  }))}
-                />
-              </div>
-              <div>
-                <Label>Aspek Rasio</Label>
-                <Select
-                  value={ratio}
-                  onChange={(e) => setRatio(e.target.value)}
-                  options={RATIOS.map((r) => ({ value: r, label: r }))}
-                />
-              </div>
-              <div>
-                <Label>Durasi</Label>
-                <Select
-                  value={quality}
-                  onChange={(e) => setQuality(e.target.value)}
-                  options={qualityOptions.map((q) => ({ value: q.value, label: q.label }))}
-                />
-              </div>
-              <div>
-                <Label>Template Prompt</Label>
-                <div className="flex gap-2">
-                  <Select
-                    value={String(tplIdx)}
-                    onChange={(e) => {
-                      const idx = Number(e.target.value)
+            {/* Default Settings */}
+            <div className="lg:col-span-2">
+              <Section title="⚙️ Pengaturan">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <Label>Model AI ({PROVIDER_CONFIGS[provider].name})</Label>
+                    <Select
+                      value={model}
+                      onChange={(e) => setModel(e.target.value)}
+                      options={models.map((m) => ({
+                        value: m.value,
+                        label: `${m.label} — ${m.cr === 0 ? 'kuota' : '$' + (m.cr / 1000).toFixed(3)}`,
+                      }))}
+                    />
+                  </div>
+                  <div>
+                    <Label>Aspek Rasio</Label>
+                    <Select
+                      value={ratio}
+                      onChange={(e) => setRatio(e.target.value)}
+                      options={RATIOS.map((r) => ({ value: r, label: r }))}
+                    />
+                  </div>
+                  <div>
+                    <Label>Durasi</Label>
+                    <Select
+                      value={quality}
+                      onChange={(e) => setQuality(e.target.value)}
+                      options={qualityOptions.map((q) => ({ value: q.value, label: q.label }))}
+                    />
+                  </div>
+                  <div>
+                    <Label>Template Prompt</Label>
+                    <div className="flex gap-2">
+                      <Select
+                        value={String(tplIdx)}
+                        onChange={(e) => {
+                          const idx = Number(e.target.value)
                       setTplIdx(idx)
                       setPrompt(TEMPLATES[idx]?.body || '')
                     }}
@@ -790,7 +841,7 @@ export default function ImageToVideoPage() {
                 )}
               </Button>
               <div className="text-xs text-muted-foreground">
-                Est. Cost: <b className="text-foreground font-mono">${(totalCredits / 1000).toFixed(3)}</b>
+                Est. Cost: <b className="text-foreground font-mono">{totalCredits}</b> credits
               </div>
               {!hasActiveKey && (
                 <a
@@ -892,23 +943,25 @@ export default function ImageToVideoPage() {
                   }}
                   className="w-full aspect-[9/16] object-cover bg-black"
                 />
-                <div className="p-2 flex justify-between items-center">
-                  <a href={url.startsWith('http') ? `/api/public/video-proxy?url=${encodeURIComponent(url)}` : url} target="_blank" rel="noreferrer" className="text-[11px] text-primary hover:underline flex items-center gap-1">
-                    <ExternalLink className="h-3 w-3" /> Buka
-                  </a>
-                  <button
-                    onClick={() => handleDownload(url, index)}
-                    className="text-[11px] text-primary hover:underline"
-                  >
-                    Download
-                  </button>
-                  <button
-                    onClick={() => setResults(results.filter((_, i) => i !== index))}
-                    className="text-[11px] text-destructive hover:underline"
-                  >
-                    Hapus
-                  </button>
-                </div>
+                <div className="p-2 flex flex-col gap-1.5">
+                    <div className="flex items-center gap-1">
+                      <a href={url.startsWith('http') ? `/api/public/video-proxy?url=${encodeURIComponent(url)}` : url} target="_blank" rel="noreferrer" className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-primary/30 bg-primary/5 hover:bg-primary/10 px-3 py-2 text-xs font-medium text-primary transition">
+                        <ExternalLink className="h-3.5 w-3.5" /> Buka
+                      </a>
+                      <button
+                        onClick={() => handleDownload(url, index)}
+                        className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-500 transition"
+                      >
+                        <Download className="h-3.5 w-3.5" /> Download
+                      </button>
+                    </div>
+                    <button
+                      onClick={() => setResults(results.filter((_, i) => i !== index))}
+                      className="w-full inline-flex items-center justify-center gap-1 rounded-lg border border-destructive/30 bg-destructive/5 hover:bg-destructive/10 px-3 py-1.5 text-[11px] text-destructive transition"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" /> Hapus
+                    </button>
+                  </div>
               </div>
             ))}
           </div>

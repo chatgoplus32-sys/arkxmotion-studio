@@ -55,12 +55,12 @@ const workflows: WorkflowRoute[] = [
     description: 'Animasi gambar menjadi video',
   },
   {
-    id: 'research',
-    label: 'Research',
-    route: '/research',
+    id: 'providers',
+    label: 'Providers',
+    route: '/providers',
     icon: <Search className="h-5 w-5" />,
-    keywords: ['research', 'riset', 'trending', 'trend', 'idea', 'ide', 'analyze', 'analisis'],
-    description: 'Riset trending topics, ide konten, dan analisis',
+    keywords: ['provider', 'api', 'key', 'token', 'setup', 'config'],
+    description: 'Kelola API key dan provider AI',
   },
 ]
 

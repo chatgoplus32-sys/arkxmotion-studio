@@ -133,6 +133,29 @@ router.delete('/orders', authenticateToken, requireAdmin, (_req: AuthRequest, re
   res.status(405).json({ error: 'Not supported' })
 })
 
+// Bulk update price by provider
+router.post('/bulk-update-price', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
+  try {
+    const { provider, price, status } = req.body
+    if (!provider || price === undefined || price < 0) {
+      return res.status(400).json({ error: 'provider and valid price are required' })
+    }
+
+    let where = 'provider = ?'
+    const params: (string | number)[] = [provider]
+    if (status) {
+      where += ' AND status = ?'
+      params.push(status)
+    }
+
+    const result = db.prepare(`UPDATE tokens SET price = ?, updated_at = CURRENT_TIMESTAMP WHERE ${where}`).run(price, ...params)
+    res.json({ message: `${result.changes} tokens price updated`, count: result.changes })
+  } catch (error) {
+    console.error('Bulk update price error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
 // Bulk delete tokens
 router.post('/bulk-delete', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
   try {

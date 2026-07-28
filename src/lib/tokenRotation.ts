@@ -1,4 +1,5 @@
 import { useProviderManager, type ProviderId, type ProviderKey } from '@/stores/providerManager'
+import { checkRoboneoBalance } from '@/lib/roboneo'
 
 const TOKEN_ERROR_PATTERNS = [
   /token/i, /auth/i, /unauth/i, /forbidden/i,
@@ -25,7 +26,7 @@ export function isFramiaTokenError(error: any): boolean {
 export function isRoboneoTokenError(error: any): boolean {
   if (!error) return false
   const msg = typeof error === 'string' ? error : error?.message || ''
-  return /token|auth|log\s*in|login|expired|unauth|401|403/i.test(msg)
+  return /token|auth|log\s*in|login|expired|unauth|401|403|insufficient|balance|credit|quota|charge|CHARGE_FAILED|余额|URL output tidak ditemukan|output tidak ditemukan|no output URL/i.test(msg)
 }
 
 export function isCreatePulseTokenError(error: any): boolean {
@@ -56,6 +57,7 @@ export async function withTokenRotation<T>(
   fn: (apiKey: string, key: ProviderKey) => Promise<T>,
   opts?: {
     maxRetries?: number
+    requiredCredits?: number
     onKeySwitch?: (from: ProviderKey, to: ProviderKey, attempt: number) => void
     onError?: (error: any, key: ProviderKey) => void
   }
@@ -81,6 +83,40 @@ export async function withTokenRotation<T>(
 
     triedKeyIds.add(nextKey.id)
 
+    // Pre-check balance for Roboneo tokens before submitting
+    if (provider === 'roboneo') {
+      try {
+        const balanceCheck = await checkRoboneoBalance(nextKey.key)
+        if (!balanceCheck.ok) {
+          console.log(`[token-rotation] ${provider} key "${nextKey.name}" balance check failed (${balanceCheck.error}). Trying next...`)
+          useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'invalid')
+          lastError = new Error(`Token ${nextKey.name} balance check failed: ${balanceCheck.error}`)
+          opts?.onError?.(lastError, nextKey)
+          continue
+        }
+        const bal = balanceCheck.balance ?? 0
+        const required = opts?.requiredCredits ?? 0
+        if (bal <= 0) {
+          console.log(`[token-rotation] ${provider} key "${nextKey.name}" skipped (balance=${bal}). Trying next...`)
+          useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'empty', bal)
+          lastError = new Error(`Token ${nextKey.name} balance kosong (${bal})`)
+          opts?.onError?.(lastError, nextKey)
+          continue
+        }
+        if (required > 0 && bal < required) {
+          console.log(`[token-rotation] ${provider} key "${nextKey.name}" skipped (balance=${bal} < required=${required}). Trying next...`)
+          useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'empty', bal)
+          lastError = new Error(`Token ${nextKey.name} balance tidak cukup (${bal} < ${required})`)
+          opts?.onError?.(lastError, nextKey)
+          continue
+        }
+        console.log(`[token-rotation] ${provider} key "${nextKey.name}" balance=${bal} >= required=${required}, proceeding...`)
+        useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'active', bal)
+      } catch (err: any) {
+        console.log(`[token-rotation] ${provider} balance check failed for "${nextKey.name}": ${err.message}, proceeding anyway`)
+      }
+    }
+
     try {
       const result = await fn(nextKey.key, nextKey)
       return { ok: true, result, usedKey: nextKey, triedKeys: triedKeyIds.size }
@@ -89,8 +125,13 @@ export async function withTokenRotation<T>(
       opts?.onError?.(err, nextKey)
 
       if (detectTokenError(provider, err)) {
-        useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'invalid')
-        console.log(`[token-rotation] ${provider} key "${nextKey.name}" marked invalid (${err.message}). Trying next...`)
+        if (provider === 'roboneo') {
+          useProviderManager.getState().removeKey(provider, nextKey.id)
+          console.log(`[token-rotation] ${provider} key "${nextKey.name}" removed (${err.message}). Trying next...`)
+        } else {
+          useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'invalid')
+          console.log(`[token-rotation] ${provider} key "${nextKey.name}" marked invalid (${err.message}). Trying next...`)
+        }
 
         const nextValid = useProviderManager.getState().keys[provider]?.find(
           (k) => !triedKeyIds.has(k.id) && (k.status === 'active' || k.status === 'unknown')

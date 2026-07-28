@@ -143,13 +143,7 @@ function generateId(): string {
 }
 
 function loadKeysFromStorage(): Record<ProviderId, ProviderKey[]> {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY)
-    if (stored) {
-      return JSON.parse(stored)
-    }
-  } catch {}
-  return {
+  const defaults: Record<ProviderId, ProviderKey[]> = {
     weavy: [],
     wavespeed: [],
     magnific: [],
@@ -160,6 +154,14 @@ function loadKeysFromStorage(): Record<ProviderId, ProviderKey[]> {
     gemini: [],
     openai: [],
   }
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY)
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      return { ...defaults, ...parsed }
+    }
+  } catch {}
+  return defaults
 }
 
 function loadRoutingFromStorage(): Record<string, ProviderId> {

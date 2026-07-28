@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Input, Label, Textarea } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { checkRoboneoBalance } from '@/lib/roboneo'
-import { Key, Plus, RefreshCw, Upload, ShieldCheck, Loader2, CheckCircle2, XCircle, Filter, Trash2, AlertTriangle, Eye, EyeOff, RotateCcw } from 'lucide-react'
+import { Key, Plus, RefreshCw, Upload, ShieldCheck, Loader2, CheckCircle2, XCircle, Filter, Trash2, AlertTriangle, Eye, EyeOff, RotateCcw, Pencil } from 'lucide-react'
 
 interface Token {
   id: number
@@ -63,9 +63,14 @@ export default function AdminTokensPage() {
   const [showDeleteAll, setShowDeleteAll] = useState(false)
   const [deletingAll, setDeletingAll] = useState(false)
   const [confirmDeleteAllText, setConfirmDeleteAllText] = useState('')
+  const [showEditPrice, setShowEditPrice] = useState(false)
+  const [editPrice, setEditPrice] = useState('')
+  const [updatingPrice, setUpdatingPrice] = useState(false)
 
   const token = useAuthStore((state) => state.token)
   const addToast = useToastStore((s) => s.addToast)
+  const addToastRef = useRef(addToast)
+  addToastRef.current = addToast
 
   const currentProvider = PROVIDERS.find(p => p.key === activeTab)!
 
@@ -74,7 +79,8 @@ export default function AdminTokensPage() {
     setIsLoading(true)
     try {
       const response = await fetch('/api/admin/tokens', {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 'Authorization': `Bearer ${token}` },
+        cache: 'no-store'
       })
       if (response.ok) {
         const data = await response.json()
@@ -84,28 +90,31 @@ export default function AdminTokensPage() {
           weavy: { total: 0, available: 0, sold: 0, price: 0 },
         }
         for (const t of data.tokens) {
-          s[t.provider as Provider].total++
-          if (t.status === 'available') {
-            s[t.provider as Provider].available++
-            s[t.provider as Provider].price = t.price
+          if (s[t.provider as Provider]) {
+            s[t.provider as Provider].total++
+            if (t.status === 'available') {
+              s[t.provider as Provider].available++
+              s[t.provider as Provider].price = t.price
+            }
+            if (t.status === 'sold') s[t.provider as Provider].sold++
           }
-          if (t.status === 'sold') s[t.provider as Provider].sold++
         }
         setStock(s)
       }
     } catch {
-      addToast('Gagal memuat stok', 'error')
+      addToastRef.current('Gagal memuat stok', 'error')
     } finally {
       setIsLoading(false)
     }
-  }, [token, addToast])
+  }, [token])
 
   const fetchTokenList = useCallback(async () => {
     if (!token) return
     setLoadingTokens(true)
     try {
       const res = await fetch(`/api/admin/tokens?provider=${activeTab}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 'Authorization': `Bearer ${token}` },
+        cache: 'no-store'
       })
       if (res.ok) {
         const data = await res.json()
@@ -206,6 +215,33 @@ export default function AdminTokensPage() {
       addToast('Gagal hapus token', 'error')
     } finally {
       setDeletingAll(false)
+    }
+  }
+
+  const handleBulkUpdatePrice = async () => {
+    if (!editPrice) return
+    setUpdatingPrice(true)
+    try {
+      const res = await fetch('/api/admin/tokens/bulk-update-price', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ provider: activeTab, price: Number(editPrice) })
+      })
+      if (res.ok) {
+        const data = await res.json()
+        addToast(`Harga ${data.count || 0} token ${currentProvider.label} berhasil diupdate ke Rp ${Number(editPrice).toLocaleString('id-ID')}`, 'success')
+        setShowEditPrice(false)
+        setEditPrice('')
+        fetchTokenList()
+        fetchStock()
+      } else {
+        const data = await res.json()
+        addToast(data.error || 'Gagal update harga', 'error')
+      }
+    } catch {
+      addToast('Gagal update harga token', 'error')
+    } finally {
+      setUpdatingPrice(false)
     }
   }
 
@@ -322,7 +358,7 @@ export default function AdminTokensPage() {
         desc="Upload, lihat, dan hapus stok token Roboneo, Framia, dan Weavy"
       />
       <PageContent>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-5">
           {PROVIDERS.map((p) => {
             const s = stock[p.key]
             const isActive = activeTab === p.key
@@ -372,13 +408,70 @@ export default function AdminTokensPage() {
                 </Button>
               )}
               {availableTokens.length > 0 && !showForm && (
-                <Button size="sm" variant="destructive" onClick={() => { setShowDeleteAll(!showDeleteAll); setConfirmDeleteAllText('') }}>
-                  <Trash2 className="h-4 w-4" /> Hapus Stok
-                </Button>
+                <>
+                  <Button size="sm" variant="outline" onClick={() => { setShowEditPrice(!showEditPrice); setEditPrice(stock[activeTab].price.toString()); setShowDeleteAll(false); setConfirmDeleteAllText('') }}>
+                    <Pencil className="h-4 w-4" /> Edit Harga
+                  </Button>
+                  <Button size="sm" variant="destructive" onClick={() => { setShowDeleteAll(!showDeleteAll); setConfirmDeleteAllText(''); setShowEditPrice(false); setEditPrice('') }}>
+                    <Trash2 className="h-4 w-4" /> Hapus Stok
+                  </Button>
+                </>
               )}
             </div>
           }
         >
+          {/* Edit All Price Section */}
+          {showEditPrice && (
+            <div className="mb-4 p-4 rounded-xl border border-primary/30 bg-primary/5">
+              <div className="text-sm font-medium mb-3 flex items-center gap-2">
+                <Pencil className="h-4 w-4" />
+                Edit Harga Semua Token {currentProvider.label}
+                {stock[activeTab].available > 0 && (
+                  <span className="text-xs text-muted-foreground font-normal">({stock[activeTab].available} token tersedia)</span>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm">Rp</span>
+                    <Input
+                      type="number"
+                      placeholder="50000"
+                      value={editPrice}
+                      onChange={(e) => setEditPrice(e.target.value)}
+                      className="text-lg font-semibold max-w-[200px]"
+                    />
+                    <span className="text-xs text-muted-foreground">/ token</span>
+                  </div>
+                  {editPrice && stock[activeTab].available > 0 && (
+                    <div className="text-xs text-muted-foreground mt-1">
+                      Total: Rp {(Number(editPrice) * stock[activeTab].available).toLocaleString('id-ID')} untuk {stock[activeTab].available} token
+                    </div>
+                  )}
+                </div>
+                <div className="flex gap-2 mt-5">
+                  <Button
+                    size="sm"
+                    onClick={handleBulkUpdatePrice}
+                    disabled={updatingPrice || !editPrice || Number(editPrice) < 0}
+                    loading={updatingPrice}
+                  >
+                    {updatingPrice ? null : <CheckCircle2 className="h-4 w-4" />}
+                    {updatingPrice ? 'Menyimpan...' : 'Simpan Semua'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => { setShowEditPrice(false); setEditPrice('') }}
+                    disabled={updatingPrice}
+                  >
+                    Batal
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Delete All Section */}
           {showDeleteAll && (
             <div className="mb-4 p-4 rounded-xl border border-red-500/30 bg-red-500/5">

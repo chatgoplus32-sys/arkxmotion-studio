@@ -116,11 +116,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ message: 'Token deleted' })
     }
 
+    // POST /api/admin/tokens/bulk-update-price - bulk update price by provider
+    if (req.method === 'POST' && segments.includes('bulk-update-price')) {
+      const { provider, price, status } = req.body || {}
+      if (!provider || price === undefined || price < 0) {
+        return res.status(400).json({ error: 'provider and valid price are required' })
+      }
+
+      if (status) {
+        await sql`UPDATE tokens SET price = ${price}, updated_at = CURRENT_TIMESTAMP WHERE provider = ${provider} AND status = ${status}`
+      } else {
+        await sql`UPDATE tokens SET price = ${price}, updated_at = CURRENT_TIMESTAMP WHERE provider = ${provider}`
+      }
+
+      return res.status(200).json({ message: 'Tokens price updated' })
+    }
+
     // POST /api/admin/tokens/bulk-delete - bulk delete tokens
     if (req.method === 'POST' && segments.includes('bulk-delete')) {
       const { ids, provider, status } = req.body || {}
 
-      let tokens: { id: number }[] = []
+      let tokens: Record<string, any>[] = []
 
       if (ids && Array.isArray(ids) && ids.length > 0) {
         tokens = await sql`SELECT id FROM tokens WHERE id = ANY(${ids})`

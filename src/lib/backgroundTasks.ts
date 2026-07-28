@@ -8,6 +8,7 @@ export interface ActiveTask {
   id: string
   taskId: string
   roomId: string
+  nodeId?: string
   token: string
   model: string
   prompt: string
@@ -57,6 +58,11 @@ export function addResult(result: CompletedResult) {
 }
 
 export function clearResults() { localStorage.removeItem(RESULTS_KEY) }
+
+export function removeResult(id: string) {
+  const results = getResults().filter(r => r.id !== id)
+  saveResults(results)
+}
 
 export function getLogs(): LogEntry[] { return readJson(LOGS_KEY, []) }
 
@@ -137,6 +143,7 @@ export function startBackgroundPolling() {
       },
       1800000,
       ctrl.signal,
+      task.nodeId,
     )
       .then((url) => {
         if (ctrl.signal.aborted) return

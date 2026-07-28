@@ -76,7 +76,7 @@ export default function AdminProviderStatusPage() {
     <div>
       <PageHeader
         title="Cek Server Provider"
-        desc="Monitor status server Roboneo, Framia, dan Weavy"
+        desc="Monitor status server Roboneo, Framia, Weavy, dan CreatePulse"
       />
       <PageContent>
         <Section

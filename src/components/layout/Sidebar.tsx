@@ -9,10 +9,7 @@ import {
   Image,
   ShoppingBag,
   Clapperboard,
-  Search,
   Settings,
-  FolderKanban,
-  Database,
   Zap,
   Sparkles,
   LogOut,
@@ -39,16 +36,12 @@ const mainNav: NavItem[] = [
 const generateNav: NavItem[] = [
   { label: 'Motion Control', href: '/generate/motion', icon: <Video className="h-4 w-4" /> },
   { label: 'Image to Video', href: '/generate/image-to-video', icon: <Image className="h-4 w-4" /> },
-  { label: 'Framia', href: '/generate/framia', icon: <Video className="h-4 w-4" /> },
   { label: 'Naratif Video', href: '/generate/naratif', icon: <Film className="h-4 w-4" />, comingSoon: true },
   { label: 'Storyboard', href: '/generate/storyboard', icon: <Clapperboard className="h-4 w-4" />, comingSoon: true },
   { label: 'Bulk Fashion', href: '/generate/bulk-fashion', icon: <ShoppingBag className="h-4 w-4" />, comingSoon: true },
 ]
 
 const toolsNav: NavItem[] = [
-  { label: 'Research', href: '/research', icon: <Search className="h-4 w-4" /> },
-  { label: 'Projects', href: '/projects', icon: <FolderKanban className="h-4 w-4" /> },
-  { label: 'Assets', href: '/assets', icon: <Database className="h-4 w-4" /> },
   { label: 'Providers', href: '/providers', icon: <Zap className="h-4 w-4" /> },
   { label: 'Settings', href: '/settings', icon: <Settings className="h-4 w-4" /> },
 ]

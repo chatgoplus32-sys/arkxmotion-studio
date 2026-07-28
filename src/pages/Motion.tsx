@@ -2,21 +2,11 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Textarea, Select, Label, Badge, EmptyState } from '@/components/ui'
 import { useProviderManager, type ProviderId } from '@/stores'
-import { uploadToCatbox, submitMotionControl, submitGoogleOmni, pollMotionControl, isRoboneoTokenError, checkRoboneoBalance, compressVideo } from '@/lib/roboneo'
+import { useToastStore } from '@/stores/toastStore'
+import { uploadToCatbox, submitMotionControl, pollMotionControl, checkRoboneoBalance, compressVideo } from '@/lib/roboneo'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
-import {
-  ActiveTask,
-  getActiveTasks,
-  addActiveTask,
-  removeActiveTask,
-  getResults,
-  addResult,
-  clearResults,
-  getLogs,
-  addBgLog,
-  clearLogs,
-  startBackgroundPolling,
-} from '@/lib/backgroundTasks'
+import { removeResult } from '@/lib/backgroundTasks'
+import { startBackgroundPolling } from '@/lib/backgroundTasks'
 import {
   Video,
   Upload,
@@ -79,6 +69,7 @@ function createSlot(): Slot {
 
 export default function MotionPage() {
   const [provider, setProvider] = useState<ProviderId>('weavy')
+  const addToast = useToastStore((s) => s.addToast)
   const [modelKey, setModelKey] = useState(PROVIDERS.weavy.models[0].key)
   const [orientation, setOrientation] = useState<'video' | 'image'>('video')
   const [prompt, setPrompt] = useState('')
@@ -93,6 +84,7 @@ export default function MotionPage() {
   })
   const [searchQuery, setSearchQuery] = useState('')
   const generatingRef = useRef(false)
+  const successRef = useRef(false)
 
   const { keys } = useProviderManager()
 
@@ -162,6 +154,8 @@ export default function MotionPage() {
     const isRoboneo = provider === 'roboneo'
 
 setGenerating(true)
+    successRef.current = false
+    addToast(`Generate dimulai: ${currentProvider.name} · ${currentModel.label}`, 'info')
     generatingRef.current = true
     setLogs([])
     clearLogs()
@@ -332,6 +326,7 @@ setGenerating(true)
         return { completedCount }
       },
       {
+        requiredCredits: totalCredits,
         onKeySwitch: (from, to, attempt) => {
           addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn')
         },
@@ -344,6 +339,7 @@ setGenerating(true)
     )
 
     if (rotation.ok) {
+      successRef.current = true
       addLog(`All generations completed! (${rotation.result?.completedCount || 0} done)`, 'success')
       if (rotation.triedKeys > 1) {
         addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success')
@@ -370,7 +366,11 @@ setGenerating(true)
 
     } catch (genErr: any) {
       addLog(`Generation error: ${genErr.message}`, 'error')
+      addToast(`Generate gagal: ${genErr.message}`, 'error')
     } finally {
+      if (generatingRef.current && successRef.current) {
+        addToast(`Generate selesai: ${currentProvider.name} · ${currentModel.label}`, 'success')
+      }
       setGenerating(false)
       generatingRef.current = false
     }
@@ -585,23 +585,25 @@ setGenerating(true)
           )}
         </div>
 
-        {/* Gallery */}
-        <Section
-          title="Gallery"
-          sub="Video yang telah selesai dibuat"
-          right={
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => { setResults([]); clearResults(); setLogs([]); clearLogs() }}
-                disabled={results.length === 0}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Hapus All</span>
-              </Button>
-            </div>
-          }
+import { removeResult, clearResults } from '@/lib/backgroundTasks'
+
+      {/* Gallery */}
+      <Section
+        title="Gallery"
+        sub="Video yang telah selesai dibuat"
+        right={
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => { setResults([]); clearResults(); setLogs([]); clearLogs() }}
+              disabled={results.length === 0}
+              className="text-xs"
+            >
+              <Trash2 className="h-3.5 w-3.5 mr-1" /> Hapus Semua
+            </Button>
+          </div>
+        }
         >
           <div className="flex items-center gap-2 rounded-full border border-border bg-card/50 px-3 py-2 mb-4">
             <Search className="h-4 w-4 text-muted-foreground" />
@@ -635,28 +637,32 @@ setGenerating(true)
                       playsInline
                     />
                   </div>
-                  <div className="p-2 text-[11px] text-muted-foreground flex items-center justify-between gap-2">
-                    <span className="truncate flex-1" title={result.prompt}>
+                  <div className="p-2 flex flex-col gap-1.5">
+                    <span className="text-[11px] text-muted-foreground truncate" title={result.prompt}>
                       {result.prompt}
                     </span>
-                    <a
-                      onClick={(e) => { e.preventDefault(); handleDownload(result.url, result.id) }}
-                      href="#"
-                      className="inline-flex items-center gap-1 rounded-full border border-border bg-card/60 px-2 py-1 text-[11px] hover:text-primary hover:border-primary/50 transition"
-                    >
-                      <Download className="h-3 w-3" />
-                    </a>
-                    <button
-                      onClick={() => setResults(results.filter((r) => r.id !== result.id))}
-                      className="inline-flex items-center gap-1 rounded-full border border-border bg-card/60 px-2 py-1 text-[11px] hover:text-destructive hover:border-destructive/50 transition"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+                    <div className="flex items-center gap-1">
+          <a
+            onClick={(e) => { e.preventDefault(); handleDownload(result.url, result.id) }}
+            href="#"
+            className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-500 transition"
+          >
+            <Download className="h-3.5 w-3.5" /> Download
+          </a>
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              setResults(results.filter((r) => r.id !== result.id));
+              removeResult(result.id);
+            }}
+            className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-destructive/30 bg-destructive/5 hover:bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive transition"
+          >
+            <Trash2 className="h-3.5 w-3.5" /> Hapus
+          </button>
+        </div>
+      </div>
+    </div>
+  )}
         </Section>
       </div>
     </PageContent>
