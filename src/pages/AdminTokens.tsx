@@ -267,7 +267,9 @@ export default function AdminTokensPage() {
         const check = await checkRoboneoBalance(lines[i])
 
         if (check.ok && check.balance !== null && check.balance !== undefined) {
-          if (check.balance >= currentProvider.minCredits) {
+          if (check.isValidUser === false) {
+            results[i] = { ...results[i], status: 'invalid', balance: check.balance, error: `Token tidak valid (is_valid_user=false)` }
+          } else if (check.balance >= currentProvider.minCredits) {
             results[i] = { ...results[i], status: 'valid', balance: check.balance }
             validCount++
           } else {

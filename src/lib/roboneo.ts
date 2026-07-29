@@ -323,7 +323,7 @@ async function roboneoApiCall(
   throw new Error(`Roboneo ${path}: ${lastError || `HTTP ${lastStatus}`} gagal setelah semua proxy`)
 }
 
-export async function checkRoboneoBalance(accessToken: string): Promise<{ ok: boolean; balance?: number | null; error?: string }> {
+export async function checkRoboneoBalance(accessToken: string): Promise<{ ok: boolean; balance?: number | null; isValidUser?: boolean; error?: string }> {
   try {
     const tracking = buildTrackingParams(accessToken, 'vipshow', generateRoomId())
     const { _access_token, ...paramWithoutToken } = tracking
@@ -333,6 +333,9 @@ export async function checkRoboneoBalance(accessToken: string): Promise<{ ok: bo
       features: '',
       later_face: 0,
     })
+
+    const isValidUser = param?.is_valid_user !== false
+    console.log(`[checkBalance] is_valid_user=${param?.is_valid_user}, uid=${param?.uid}`)
 
     const balanceKeys = ['credit', 'balance', 'remain', 'quota', 'point', 'coin', 'energy', 'total_amount', 'amount']
     let balance: number | null = null
@@ -353,7 +356,12 @@ export async function checkRoboneoBalance(accessToken: string): Promise<{ ok: bo
 
     balance = findBalance(param)
     console.log('[checkBalance] balance:', balance)
-    return { ok: true, balance }
+
+    if (!isValidUser) {
+      return { ok: false, balance, isValidUser: false, error: `Token tidak valid (is_valid_user=false, uid=${param?.uid})` }
+    }
+
+    return { ok: true, balance, isValidUser: true }
   } catch (err: any) {
     console.error('[checkBalance] catch error:', err.message)
     return { ok: false, error: err.message }

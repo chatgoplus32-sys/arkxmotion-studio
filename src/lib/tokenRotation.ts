@@ -86,11 +86,18 @@ export async function withTokenRotation<T>(
     // Pre-check balance for Roboneo tokens before submitting
     if (provider === 'roboneo') {
       try {
-        const balanceCheck = await checkRoboneoBalance(nextKey.key, 'roboneo-proxy')
+        const balanceCheck = await checkRoboneoBalance(nextKey.key)
         if (!balanceCheck.ok) {
-          console.log(`[token-rotation] ${provider} key "${nextKey.name}" balance check failed (${balanceCheck.error}). Trying next...`)
+          console.log(`[token-rotation] ${provider} key "${nextKey.name}" check failed (${balanceCheck.error}). Trying next...`)
           useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'invalid')
-          lastError = new Error(`Token ${nextKey.name} balance check failed: ${balanceCheck.error}`)
+          lastError = new Error(`Token ${nextKey.name} check failed: ${balanceCheck.error}`)
+          opts?.onError?.(lastError, nextKey)
+          continue
+        }
+        if (balanceCheck.isValidUser === false) {
+          console.log(`[token-rotation] ${provider} key "${nextKey.name}" is_valid_user=false. Removing...`)
+          useProviderManager.getState().removeKey(provider, nextKey.id)
+          lastError = new Error(`Token ${nextKey.name} tidak valid (is_valid_user=false)`)
           opts?.onError?.(lastError, nextKey)
           continue
         }
@@ -110,7 +117,7 @@ export async function withTokenRotation<T>(
           opts?.onError?.(lastError, nextKey)
           continue
         }
-        console.log(`[token-rotation] ${provider} key "${nextKey.name}" balance=${bal} >= required=${required}, proceeding...`)
+        console.log(`[token-rotation] ${provider} key "${nextKey.name}" balance=${bal} >= required=${required}, is_valid_user=${balanceCheck.isValidUser}, proceeding...`)
         useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'active', bal)
       } catch (err: any) {
         console.log(`[token-rotation] ${provider} balance check failed for "${nextKey.name}": ${err.message}, proceeding anyway`)
