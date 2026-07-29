@@ -37,7 +37,7 @@ if (!columns.some(c => c.name === 'approved')) {
 db.exec(`
   CREATE TABLE IF NOT EXISTS tokens (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    provider TEXT NOT NULL CHECK(provider IN ('roboneo', 'framia', 'weavy')),
+    provider TEXT NOT NULL CHECK(provider IN ('roboneo', 'framia', 'weavy', 'createpulse')),
     name TEXT NOT NULL,
     token_value TEXT NOT NULL,
     price INTEGER NOT NULL DEFAULT 0,
@@ -69,5 +69,43 @@ const adminUser = db.prepare("SELECT id FROM users WHERE role = 'admin' AND emai
 if (adminUser) {
   db.prepare("UPDATE users SET approved = 1 WHERE id = ?").run(adminUser.id)
 }
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS createpulse_balance (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER UNIQUE NOT NULL,
+    balance INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`)
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS createpulse_topup (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    amount INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected')),
+    proof_note TEXT NOT NULL DEFAULT '',
+    admin_note TEXT NOT NULL DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`)
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS createpulse_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    model TEXT NOT NULL,
+    cost INTEGER NOT NULL,
+    batch_id TEXT,
+    status TEXT NOT NULL DEFAULT 'used' CHECK(status IN ('used', 'refunded')),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`)
 
 export default db

@@ -20,7 +20,7 @@ router.get('/', authenticateToken, requireAdmin, (req: AuthRequest, res: Respons
     const { provider } = req.query
     let tokens: TokenRow[]
 
-    if (provider && ['roboneo', 'framia', 'weavy'].includes(provider as string)) {
+    if (provider && ['roboneo', 'framia', 'weavy', 'createpulse'].includes(provider as string)) {
       tokens = db.prepare('SELECT * FROM tokens WHERE provider = ? ORDER BY created_at DESC').all(provider) as TokenRow[]
     } else {
       tokens = db.prepare('SELECT * FROM tokens ORDER BY created_at DESC').all() as TokenRow[]
@@ -48,7 +48,7 @@ router.post('/', authenticateToken, requireAdmin, (req: AuthRequest, res: Respon
       return res.status(201).json({ message: `${created} tokens uploaded`, count: created })
     }
 
-    if (!provider || !['roboneo', 'framia', 'weavy'].includes(provider)) {
+    if (!provider || !['roboneo', 'framia', 'weavy', 'createpulse'].includes(provider)) {
       return res.status(400).json({ error: 'Invalid provider' })
     }
     if (!name || !token_value) {

@@ -81,6 +81,40 @@ async function handleInit(_req: VercelRequest, res: VercelResponse) {
       await sql`ALTER TABLE token_orders ADD COLUMN bulk_id TEXT NOT NULL DEFAULT ''`
     } catch { /* column already exists */ }
 
+    // CreatePulse tables
+    await sql`
+      CREATE TABLE IF NOT EXISTS createpulse_balance (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER UNIQUE NOT NULL REFERENCES users(id),
+        balance INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `
+    await sql`
+      CREATE TABLE IF NOT EXISTS createpulse_topup (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        amount INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        proof_note TEXT NOT NULL DEFAULT '',
+        admin_note TEXT NOT NULL DEFAULT '',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `
+    await sql`
+      CREATE TABLE IF NOT EXISTS createpulse_usage (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        model TEXT NOT NULL,
+        cost INTEGER NOT NULL,
+        batch_id TEXT,
+        status TEXT NOT NULL DEFAULT 'used',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `
+
     return res.status(200).json({ message: 'Database initialized' })
   } catch (err: any) {
     console.error('Init error:', err)

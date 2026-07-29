@@ -5,6 +5,8 @@ import authRoutes from './routes/auth.js'
 import adminRoutes from './routes/admin.js'
 import adminTokenRoutes from './routes/adminTokens.js'
 import tokenRoutes from './routes/tokens.js'
+import createpulseRoutes from './routes/createpulse.js'
+import adminTopupRoutes from './routes/adminTopup.js'
 
 dotenv.config()
 
@@ -21,7 +23,9 @@ app.use(express.json())
 app.use('/api/auth', authRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/admin/tokens', adminTokenRoutes)
+app.use('/api/admin/topup', adminTopupRoutes)
 app.use('/api/tokens', tokenRoutes)
+app.use('/api/createpulse', createpulseRoutes)
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })

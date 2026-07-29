@@ -1,6 +1,6 @@
 import { PageHeader, PageContent } from '@/components/layout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui'
-import { Sparkles, TrendingUp, Video, Image, FolderKanban, Zap, Play } from 'lucide-react'
+import { Sparkles, Video, Image, Zap } from 'lucide-react'
 
 export default function DashboardPage() {
   return (
@@ -69,8 +69,6 @@ export default function DashboardPage() {
               {[
                 { icon: <Video className="h-4 w-4" />, label: 'Motion Control', desc: 'Transfer character motion from video', href: '/generate/motion' },
                 { icon: <Image className="h-4 w-4" />, label: 'Image to Video', desc: 'Animate any image with AI', href: '/generate/image-to-video' },
-                { icon: <TrendingUp className="h-4 w-4" />, label: 'Naratif Video', desc: 'Create narrative videos from articles', href: '/generate/naratif' },
-                { icon: <FolderKanban className="h-4 w-4" />, label: 'Storyboard', desc: 'Generate product storyboards', href: '/generate/storyboard' },
               ].map((item) => (
                 <a
                   key={item.href}

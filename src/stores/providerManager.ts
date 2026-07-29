@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'createpulse' | 'framia' | 'elevenlabs' | 'gemini' | 'openai'
+export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'createpulse' | 'framia' | 'firefly' | 'leonardo' | 'elevenlabs' | 'gemini' | 'openai'
 
 export interface ProviderKey {
   id: string
@@ -84,6 +84,26 @@ export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
     minCredits: 1,
     supportsBalance: true,
   },
+  firefly: {
+    id: 'firefly',
+    name: 'Firefly',
+    icon: '🔥',
+    description: 'Adobe Firefly video generation (Veo 3.1, Firefly Video)',
+    keyPlaceholder: 'Paste your Firefly Bearer token...',
+    keyFormat: 'Bearer token',
+    minCredits: 5,
+    supportsBalance: true,
+  },
+  leonardo: {
+    id: 'leonardo',
+    name: 'Leonardo',
+    icon: '🎨',
+    description: 'Leonardo AI video generation (Seedance, Kling, Veo, Wan)',
+    keyPlaceholder: 'Paste your Leonardo API key...',
+    keyFormat: 'API key',
+    minCredits: 10,
+    supportsBalance: true,
+  },
   elevenlabs: {
     id: 'elevenlabs',
     name: 'ElevenLabs',
@@ -150,6 +170,8 @@ function loadKeysFromStorage(): Record<ProviderId, ProviderKey[]> {
     roboneo: [],
     createpulse: [],
     framia: [],
+    firefly: [],
+    leonardo: [],
     elevenlabs: [],
     gemini: [],
     openai: [],

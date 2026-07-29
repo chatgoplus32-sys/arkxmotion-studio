@@ -182,6 +182,181 @@ export function roboneoProxyPlugin(): Plugin {
           res.end(JSON.stringify({ ok: false, error: err.message }))
         }
       })
+
+      server.middlewares.use('/api/public/createpulse', async (req, res) => {
+        const urlObj = new URL(req.url || '', 'http://localhost')
+        const action = urlObj.searchParams.get('action') || 'generate'
+        const batchId = urlObj.searchParams.get('batchId') || ''
+        const apiKey = req.headers['x-api-key'] || 'cp_26YvEv7Sgi039yiB50cZYwPRfikmClvj'
+
+        if (req.method === 'POST' && action === 'generate') {
+          const chunks: Buffer[] = []
+          for await (const chunk of req) chunks.push(chunk)
+          const rawBody = Buffer.concat(chunks).toString()
+
+          console.log(`[createpulse-proxy] POST /api/generate`)
+
+          try {
+            const cpRes = await fetch('https://createpulse.online/api/generate', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-API-Key': String(apiKey),
+              },
+              body: rawBody,
+            })
+
+            const cpText = await cpRes.text()
+            console.log(`[createpulse-proxy] generate ${cpRes.status}:`, cpText.slice(0, 300))
+
+            res.writeHead(cpRes.status, { 'Content-Type': 'application/json' })
+            res.end(cpText)
+          } catch (err: any) {
+            console.error(`[createpulse-proxy] generate error:`, err.message)
+            res.writeHead(502, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ ok: false, error: err.message }))
+          }
+        } else if (req.method === 'GET' && action === 'status' && batchId) {
+          console.log(`[createpulse-proxy] GET /api/status?batchId=${batchId}`)
+
+          try {
+            const cpRes = await fetch(`https://createpulse.online/api/status?batchId=${batchId}`, {
+              headers: { 'X-API-Key': String(apiKey) },
+            })
+
+            const cpText = await cpRes.text()
+            console.log(`[createpulse-proxy] status ${cpRes.status}:`, cpText.slice(0, 300))
+
+            res.writeHead(cpRes.status, { 'Content-Type': 'application/json' })
+            res.end(cpText)
+          } catch (err: any) {
+            console.error(`[createpulse-proxy] status error:`, err.message)
+            res.writeHead(502, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ ok: false, error: err.message }))
+          }
+        } else if (req.method === 'GET' && action === 'download' && urlObj.searchParams.get('url')) {
+          const targetUrl = urlObj.searchParams.get('url')!
+          console.log(`[createpulse-proxy] download: ${targetUrl.slice(0, 80)}`)
+
+          try {
+            const cpRes = await fetch(targetUrl)
+            const contentType = cpRes.headers.get('content-type') || 'video/mp4'
+            res.writeHead(cpRes.status, {
+              'Content-Type': contentType,
+              'Access-Control-Allow-Origin': '*',
+            })
+            if (cpRes.body) {
+              const reader = cpRes.body.getReader()
+              while (true) {
+                const { done, value } = await reader.read()
+                if (done) break
+                res.write(value)
+              }
+            }
+            res.end()
+          } catch (err: any) {
+            console.error(`[createpulse-proxy] download error:`, err.message)
+            res.writeHead(502)
+            res.end('Download error')
+          }
+        } else {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Invalid action or missing params' }))
+        }
+      })
+
+      server.middlewares.use('/api/public/leonardo', async (req, res) => {
+        if (req.method === 'OPTIONS') {
+          res.writeHead(200, {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+          })
+          res.end()
+          return
+        }
+
+        const chunks: Buffer[] = []
+        for await (const chunk of req) chunks.push(chunk)
+        const rawBody = Buffer.concat(chunks).toString()
+        const auth = req.headers.authorization || ''
+
+        console.log(`[leonardo-proxy] POST → ${VERCEL_ORIGIN}/api/public/leonardo`)
+
+        try {
+          const leoRes = await fetch(`${VERCEL_ORIGIN}/api/public/leonardo`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: String(auth),
+            },
+            body: rawBody,
+          })
+
+          const leoText = await leoRes.text()
+          console.log(`[leonardo-proxy] ${leoRes.status}:`, leoText.slice(0, 500))
+
+          res.writeHead(leoRes.status, {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          })
+          res.end(leoText)
+        } catch (err: any) {
+          console.error(`[leonardo-proxy] error:`, err.message)
+          res.writeHead(502, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: false, error: err.message }))
+        }
+      })
+
+      server.middlewares.use('/api/public/firefly', async (req, res) => {
+        if (req.method === 'OPTIONS') {
+          res.writeHead(200, {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Firefly-Token, X-Firefly-Api-Key, X-Firefly-Account, X-Firefly-Session',
+          })
+          res.end()
+          return
+        }
+
+        const chunks: Buffer[] = []
+        for await (const chunk of req) chunks.push(chunk)
+        const rawBody = Buffer.concat(chunks).toString()
+
+        const token = req.headers['x-firefly-token'] || ''
+        const apiKey = req.headers['x-firefly-api-key'] || 'SunbreakWebUI1'
+        const account = req.headers['x-firefly-account'] || ''
+        const session = req.headers['x-firefly-session'] || ''
+
+        console.log(`[firefly-proxy] POST → ${VERCEL_ORIGIN}/api/public/firefly`)
+
+        try {
+          const ffRes = await fetch(`${VERCEL_ORIGIN}/api/public/firefly`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Firefly-Token': String(token),
+              'X-Firefly-Api-Key': String(apiKey),
+              'X-Firefly-Account': String(account),
+              'X-Firefly-Session': String(session),
+            },
+            body: rawBody,
+          })
+
+          const ffText = await ffRes.text()
+          console.log(`[firefly-proxy] ${ffRes.status}:`, ffText.slice(0, 500))
+
+          res.writeHead(ffRes.status, {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          })
+          res.end(ffText)
+        } catch (err: any) {
+          console.error(`[firefly-proxy] error:`, err.message)
+          res.writeHead(502, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: false, error: err.message }))
+        }
+      })
     },
   }
 }

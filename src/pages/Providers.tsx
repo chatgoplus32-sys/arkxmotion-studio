@@ -1,6 +1,7 @@
-import { useState, useRef } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Input, Label, Badge, Select, Textarea } from '@/components/ui'
+import { useAuthStore } from '@/stores/authStore'
 import {
   Zap,
   Check,
@@ -11,26 +12,269 @@ import {
   Eye,
   EyeOff,
   RefreshCw,
- Key,
+  Key,
   ArrowRight,
   Settings,
   Save,
   Upload,
   Clipboard,
+  Loader2,
+  ShoppingCart,
+  FileText,
+  ChevronDown,
+  ExternalLink,
 } from 'lucide-react'
 import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
+import { checkRoboneoBalance } from '@/lib/roboneo'
 
-const PROVIDER_IDS: ProviderId[] = ['weavy', 'wavespeed', 'magnific', 'roboneo', 'createpulse', 'framia', 'elevenlabs', 'gemini', 'openai']
+const PROVIDER_COLORS: Record<string, string> = {
+  brain: '#f472b6',
+  weavy: '#22d3ee',
+  wavespeed: '#38bdf8',
+  magnific: '#a78bfa',
+  roboneo: '#34d399',
+  framia: '#fb923c',
+  leonardo: '#facc15',
+  firefly: '#f87171',
+  eleven: '#818cf8',
+  render: '#94a3b8',
+  createpulse: '#c084fc',
+}
 
-const WORKFLOW_ROUTES = [
-  { id: 'motion', label: 'Motion Control' },
-  { id: 'narrative-video', label: 'Naratif Video' },
-  { id: 'storyboard', label: 'Storyboard' },
-  { id: 'bulk-fashion', label: 'Bulk Fashion' },
-  { id: 'image-to-video', label: 'Image to Video' },
-]
+const PROVIDER_LIST = [
+  { key: 'brain', label: 'Brain (Gemini)', desc: 'Dipakai Produk Storyboard & Naratif Video Maker. Multi-key auto-rotate saat kena limit/429.' },
+  { key: 'weavy', label: 'Weavy', desc: 'Provider utama Kling Motion Control, Wan, Sora, Seedance.' },
+  { key: 'wavespeed', label: 'Wavespeed', desc: 'Provider alternatif — cek balance via api.wavespeed.ai/api/v3/balance.' },
+  { key: 'magnific', label: 'Magnific', desc: 'Hanya dipakai untuk Motion Control (Kling motion transfer).' },
+  { key: 'roboneo', label: 'Roboneo', desc: 'Motion Control via Roboneo (Meitu) — Kling 2.6 Standard.' },
+  { key: 'framia', label: 'Framia', desc: 'Canvas workflow (Converge AI) — semua node & recipe: image, video, avatar, garment, storyboard.' },
+  { key: 'leonardo', label: 'Leonardo.ai', desc: 'app.leonardo.ai via Cognito Bearer JWT — Text-to-Image (Phoenix, Diffusion XL, Kino, Anime, Vision).' },
+  { key: 'firefly', label: 'Adobe Firefly', desc: 'Firefly image (Image 3/4) & video (Veo) via session token firefly.adobe.com.' },
+  { key: 'eleven', label: 'ElevenLabs', desc: 'Voice-over untuk Naratif Video Maker.' },
+  { key: 'createpulse', label: 'CreatePulse', desc: 'Video generation (Seedance, Veo, Dreamina) via createpulse.online — pakai API key sendiri.' },
+  { key: 'render', label: 'Render (Shotstack/Creatomate)', desc: 'Fallback cloud render ketika video melebihi limit FFmpeg browser (≥ 400 MB).' },
+] as const
+
+const TOKEN_GUIDE: Record<string, {
+  url: string
+  urlLabel: string
+  prefix?: string
+  steps: Array<{ text: string; link?: { url: string; label: string }; code?: string }>
+  tip?: string
+}> = {
+  brain: {
+    url: 'https://aistudio.google.com/api-keys',
+    urlLabel: 'aistudio.google.com/api-keys',
+    prefix: 'AIza… / AQ…',
+    steps: [
+      { text: 'Buka Google AI Studio dan login pakai akun Google.' },
+      { text: 'Klik tombol "Create API key" (pojok kanan atas).' },
+      { text: 'Pilih project Google Cloud (atau "Create API key in new project").' },
+      { text: 'Copy key yang muncul — bisa diawali AIza… (legacy) atau AQ… (auth key baru).' },
+      { text: 'Paste ke textarea di sebelah. Boleh tambah banyak key sekaligus (1 per baris) untuk auto-rotate saat kena limit gratis.' },
+    ],
+    tip: 'Free tier Gemini: 15 request/menit, 1 juta token/hari untuk gemini-2.5-flash. Format AQ… adalah auth key baru Gemini dan tetap valid sebagai API key.',
+  },
+  weavy: {
+    url: 'https://drive.google.com/file/d/1xJEUv31VdzF8FVXPzfcpRcnq8ahV3_8w/view?usp=sharing',
+    urlLabel: 'Weavy Token Extractor',
+    steps: [
+      { text: 'Download Weavy Token Extractor (klik link di atas).' },
+      { text: 'Ekstrak / unzip file yang sudah di-download.' },
+      { text: 'Buka Manager Extension di browser (mis. chrome://extensions).' },
+      { text: 'Aktifkan Developer mode di pojok kanan atas Manager Extension.' },
+      { text: 'Klik tombol Load unpacked.' },
+      { text: 'Cari folder Weavy Token Extension yang sudah di-ekstrak tadi, lalu Select Folder.' },
+      { text: 'Pin Weavy Token Extension agar muncul di taskbar atas browser.' },
+      { text: 'Buka ', link: { url: 'https://app.weavy.ai', label: 'app.weavy.ai' } },
+      { text: 'Klik icon Weavy Token di taskbar → klik Extract Token, lalu klik Copy Token.' },
+      { text: 'Paste token ke Bulk Input di sebelah dan simpan. Ulangi untuk tiap akun Weavy — makin banyak, makin besar credit pool.' },
+    ],
+    tip: 'Refresh token Weavy berumur panjang. Bila expired, ulangi langkah Extract Token dari extension.',
+  },
+  wavespeed: {
+    url: 'https://wavespeed.ai/accesskey',
+    urlLabel: 'wavespeed.ai/accesskey',
+    prefix: 'wsk_live_…',
+    steps: [
+      { text: 'Register/login di wavespeed.ai.' },
+      { text: 'Buka menu Dashboard → API Keys.' },
+      { text: 'Klik "Create API Key", beri nama (mis. "aatools"), copy key wsk_live_…' },
+      { text: 'Top-up saldo minimal $5 di menu Billing (bayar per detik video, mulai $0.04/s).' },
+      { text: 'Paste key ke input di sebelah, klik Cek Saldo untuk verifikasi balance USD.' },
+    ],
+    tip: '1 klip 5 detik Kling v2.1 Standard ≈ $0.25. Saldo $5 = ±20 klip.',
+  },
+  roboneo: {
+    url: 'https://www.roboneo.com/cli/en',
+    urlLabel: 'roboneo.com/cli',
+    prefix: '_v2… (ROBONEO_ACCESS_KEY dari CLI — long-lived)',
+    steps: [
+      { text: 'REKOMENDASI: pakai access-key dari Roboneo CLI supaya token tetap hidup meski browser di-logout.' },
+      { text: 'Install CLI di terminal: `npm install -g roboneo-cli` lalu jalankan `roboneo login` (browser akan terbuka untuk otorisasi).', code: 'npm install -g roboneo-cli\nroboneo login' },
+      { text: 'Setelah login sukses, CLI menampilkan `export ROBONEO_ACCESS_KEY=_v2…` — copy string setelah `=` (tanpa tanda kutip).' },
+      { text: 'Paste ke input di sebelah. Key ini long-lived (bulan+), tidak mati saat kamu logout dari roboneo.com di browser.' },
+      { text: 'Simpan beberapa key sekaligus (multi-akun) → auto-rotate saat rate-limit / credit habis. Token tersimpan di akunmu, sinkron antar device, dan bisa di-transfer via Token Bank.' },
+      { text: 'Alternatif (session token, cepat expired): DevTools → Application → Local Storage → https://www.roboneo.com → copy value `access-token`.' },
+    ],
+    tip: 'Model yang didukung: Kling 2.6 Std (motion control + i2v), Seedance Pro, Google Omni. Panduan resmi: roboneo.com/cli/en.',
+  },
+  firefly: {
+    url: 'https://firefly.adobe.com/',
+    urlLabel: 'firefly.adobe.com',
+    prefix: 'eyJhbGci... (Adobe IMS Bearer token)',
+    steps: [
+      { text: 'Login di firefly.adobe.com dengan Adobe ID.' },
+      { text: 'Buka DevTools (F12) → tab Network → filter \'firefly.adobe.io\'.' },
+      { text: 'Klik salah satu request (mis. credits/balance) → Headers → copy value header `authorization` TANPA kata \'Bearer \'.' },
+      { text: 'Paste ke input di sebelah lalu simpan — sisa credit langsung dicek via /v1/credits/balance.' },
+      { text: 'Simpan beberapa token (multi-akun) → auto-rotate saat 401 / credit habis.' },
+    ],
+    tip: 'Firefly dipakai untuk Image (Firefly Image 3/4) dan Video (Veo 3.1 via Firefly). Token IMS berumur ±24 jam; kalau expired ulangi langkah copy token.',
+  },
+  framia: {
+    url: 'https://framia.converge.ai/',
+    urlLabel: 'framia.converge.ai',
+    prefix: 'eyJhbGci... (Auth0 Bearer JWT)',
+    steps: [
+      { text: 'Login di framia.converge.ai (Google / email — akun Converge AI).' },
+      { text: 'Buka DevTools (F12) → tab Network → filter \'api.framia.pro\'.' },
+      { text: 'Klik salah satu request (mis. /video/api/v1/user/credits) → Headers → Request Headers.' },
+      { text: 'Copy value header "authorization" — HANYA bagian setelah "Bearer " (dimulai dengan eyJ...).' },
+      { text: 'Paste ke input di sebelah. Token JWT berumur ~24 jam; setelah expired, ambil ulang dari Network tab.' },
+      { text: 'Multi-token akan auto-rotate saat quota / expiry habis. Token tersimpan permanen di akunmu dan sinkron antar device.' },
+    ],
+    tip: 'Framia = platform canvas Converge AI. Semua node (skills) dan recipe (templates) muncul otomatis di halaman Generate → Framia begitu token tersimpan.',
+  },
+  leonardo: {
+    url: 'https://app.leonardo.ai/',
+    urlLabel: 'app.leonardo.ai',
+    prefix: 'eyJ... (Cognito Bearer JWT, ~1 jam)',
+    steps: [
+      { text: 'Login di app.leonardo.ai (Google / email).' },
+      { text: 'Buka DevTools (F12) → tab Network → filter \'api.leonardo.ai\'.' },
+      { text: 'Klik salah satu request GraphQL → Headers → Request Headers.' },
+      { text: 'Copy value header "authorization" — HANYA bagian setelah "Bearer " (dimulai dengan eyJ...).' },
+      { text: 'Paste ke input di sebelah. Token Cognito berumur ~1 jam; setelah expired, ambil ulang dari Network tab (multi-token akan auto-rotate).' },
+    ],
+    tip: 'Model default: Phoenix, Leonardo Diffusion XL, Kino XL, Anime XL, Vision XL — semua otomatis muncul di halaman Generate → Leonardo.',
+  },
+  magnific: {
+    url: 'https://www.magnific.com/api',
+    urlLabel: 'magnific.com/api',
+    prefix: 'FPSX…',
+    steps: [
+      { text: 'Magnific sekarang bagian dari Freepik — daftar / login di freepik.com.' },
+      { text: 'Buka Freepik API dashboard (link di samping).' },
+      { text: 'Aktifkan API access, lalu klik "Generate API Key". Format key: FPSX-XXXX…' },
+      { text: 'Beli/aktifkan plan Freepik AI yang include Magnific credits (Motion Control butuh video credits).' },
+      { text: 'Paste key ke input di sebelah.' },
+    ],
+    tip: 'Motion Control (Kling motion transfer) ≈ 50 Freepik cr per klip 5 detik.',
+  },
+  eleven: {
+    url: 'https://elevenlabs.io/app/developers/api-keys',
+    urlLabel: 'elevenlabs.io/app/developers/api-keys',
+    prefix: 'sk_… (xi-api-key)',
+    steps: [
+      { text: 'Register/login di elevenlabs.io (free tier: 10.000 karakter/bulan).' },
+      { text: 'Buka menu Profile → API Keys (atau klik link di samping).' },
+      { text: 'Klik "Create API Key", beri nama, centang scope Text-to-Speech.' },
+      { text: 'Copy key sk_… — HANYA muncul sekali, simpan aman.' },
+      { text: 'Paste ke textarea di sebelah. Multi-key akan auto-rotate saat quota habis.' },
+    ],
+    tip: 'Model Multilingual v2 = 1 karakter / 1 credit. Turbo v2.5 = 0.5 credit / karakter (setengah biaya, latency rendah).',
+  },
+  createpulse: {
+    url: 'https://createpulse.online',
+    urlLabel: 'createpulse.online',
+    prefix: 'cp_… (API Key)',
+    steps: [
+      { text: 'Buka createpulse.online dan login (Google / email).' },
+      { text: 'Buka menu Profile → API Keys (atau Dashboard).' },
+      { text: 'Klik "Create API Key", beri nama.' },
+      { text: 'Copy key cp_… — paste ke input di sebelah.' },
+      { text: 'Top up saldo minimal Rp 15.000 di menu Top Up (biaya per generate ≈ Rp 1.500).' },
+      { text: 'Multi-key akan auto-rotate saat quota / balance habis.' },
+    ],
+    tip: 'Model: Dreamina Seedance 2.0 (Rp 2.200), Veo Omni 10s (Rp 3.300). Token tersimpan di akunmu, bisa dipakai dari mana saja.',
+  },
+  render: {
+    url: 'https://shotstack.io/dashboard/',
+    urlLabel: 'shotstack.io / creatomate.com',
+    prefix: 'shotstack: … | creatomate: …',
+    steps: [
+      { text: 'Default render pakai FFmpeg WASM di browser (gratis, tanpa key). Cloud render hanya perlu bila video > 400 MB.' },
+      { text: 'Shotstack: register di shotstack.io → Dashboard → API Keys. Free tier 20 menit/bulan.' },
+      { text: 'Creatomate: register di creatomate.com → Project Settings → API. Free tier 50 render/bulan.' },
+      { text: 'Paste key di panel Shotstack / Creatomate di sebelah. Bila kosong, dropdown Render engine akan disabled.' },
+    ],
+    tip: 'FFmpeg = default, gratis, di device kamu. Cloud = fallback untuk file besar / batch panjang.',
+  },
+}
+
+function getStorageKey(provider: string): string {
+  const map: Record<string, string> = {
+    brain: 'arkxmotion.brain.keys',
+    weavy: 'arkxmotion.weavy.keys',
+    wavespeed: 'arkxmotion.wavespeed.keys',
+    magnific: 'arkxmotion.magnific.keys',
+    roboneo: 'arkxmotion.roboneo.keys',
+    framia: 'arkxmotion.framia.keys',
+    leonardo: 'arkxmotion.leonardo.keys',
+    firefly: 'arkxmotion.firefly.keys',
+    eleven: 'arkxmotion.eleven.keys',
+    createpulse: 'arkxmotion.createpulse.keys',
+    shotstack: 'arkxmotion.shotstack.keys',
+    creatomate: 'arkxmotion.creatomate.keys',
+  }
+  return map[provider] || `arkxmotion.${provider}.keys`
+}
+
+function loadKeys(provider: string): string[] {
+  try {
+    const raw = localStorage.getItem(getStorageKey(provider))
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function saveKeys(provider: string, keys: string[]) {
+  localStorage.setItem(getStorageKey(provider), JSON.stringify(keys))
+}
+
+function maskKey(key: string): string {
+  if (key.length <= 12) return key
+  return `${key.slice(0, 6)}…${key.slice(-4)}`
+}
+
+function getStatusColor(status: string): string {
+  switch (status) {
+    case 'active': return 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30'
+    case 'limited': return 'text-amber-300 bg-amber-500/10 border-amber-500/30'
+    case 'invalid':
+    case 'failed': return 'text-rose-300 bg-rose-500/10 border-rose-500/30'
+    case 'checking': return 'text-sky-300 bg-sky-500/10 border-sky-500/30'
+    default: return 'text-muted-foreground bg-muted/30 border-border'
+  }
+}
+
+function getStatusLabel(status: string): string {
+  return {
+    active: 'Active',
+    limited: 'Rate-limited',
+    invalid: 'Invalid',
+    failed: 'Failed',
+    checking: 'Checking…',
+    unknown: '—',
+  }[status] || '—'
+}
 
 export default function ProvidersPage() {
+  const { user } = useAuthStore()
   const {
     keys,
     activeProvider,
@@ -42,468 +286,462 @@ export default function ProvidersPage() {
     setRouting,
   } = useProviderManager()
 
-  const [showKeys, setShowKeys] = useState<Record<string, boolean>>({})
-  const [newKeys, setNewKeys] = useState<Record<ProviderId, string>>({
-    weavy: '',
-    wavespeed: '',
-    magnific: '',
-    roboneo: '',
-    createpulse: '',
-    framia: '',
-    elevenlabs: '',
-    gemini: '',
-    openai: '',
-  })
-  const [validating, setValidating] = useState<Record<string, boolean>>({})
-  const [bulkMode, setBulkMode] = useState<Record<ProviderId, boolean>>({} as Record<ProviderId, boolean>)
-  const [bulkText, setBulkText] = useState<Record<ProviderId, string>>({} as Record<ProviderId, string>)
-  const [bulkResult, setBulkResult] = useState<Record<ProviderId, { added: number; skipped: number } | null>>({} as Record<ProviderId, { added: number; skipped: number } | null>)
-  const [checkingAll, setCheckingAll] = useState(false)
-  const [checkAllProgress, setCheckAllProgress] = useState<{ current: number; total: number; provider: string } | null>(null)
+  const [selectedProvider, setSelectedProvider] = useState('brain')
+  const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [inputValue, setInputValue] = useState('')
+  const [bulkMode, setBulkMode] = useState(false)
+  const [bulkText, setBulkText] = useState('')
+  const [statusMap, setStatusMap] = useState<Record<string, { state: string; detail?: string; balance?: number }>>({})
+  const [checking, setChecking] = useState(false)
+  const [progress, setProgress] = useState({ show: false, pct: 0, text: '' })
+  const [viewHidden, setViewHidden] = useState(false)
+  const [summaryPayload, setSummaryPayload] = useState<{ title: string; rows: Array<{ label: string; value: string | number; tone?: string }>; footer?: string } | null>(null)
+  const [tokenBankOpen, setTokenBankOpen] = useState(false)
 
-  const handleAddKey = (provider: ProviderId) => {
-    const key = newKeys[provider].trim()
-    if (!key) return
-    addKey(provider, key)
-    setNewKeys({ ...newKeys, [provider]: '' })
-  }
+  const currentConfig = PROVIDER_LIST.find(p => p.key === selectedProvider)
+  const currentColor = PROVIDER_COLORS[selectedProvider] || '#6366f1'
 
-  const handleBulkUpload = (provider: ProviderId) => {
-    const text = bulkText[provider] || ''
-    if (!text.trim()) return
+  const savedKeys = useMemo(
+    () => keys[selectedProvider as ProviderId]?.map(k => k.key) || [],
+    [selectedProvider, keys]
+  )
 
-    const lines = text
-      .split(/[\n\r]+/)
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0)
+  useEffect(() => {
+    setInputValue('')
+    setBulkText('')
+    setStatusMap({})
+  }, [selectedProvider])
 
-    const existingKeys = new Set(keys[provider].map((k) => k.key))
+  const handleAddKey = useCallback(() => {
+    const lines = inputValue.split(/[\n,]/).map(l => l.trim()).filter(Boolean)
+    if (lines.length === 0) return
+
+    const existing = new Set(savedKeys)
     let added = 0
     let skipped = 0
 
-    lines.forEach((line) => {
-      const cleanKey = line.replace(/^[•\-*\s]+|[•\-*\s]+$/g, '').trim()
-      if (!cleanKey) {
+    lines.forEach(line => {
+      if (existing.has(line)) {
         skipped++
         return
       }
-      if (existingKeys.has(cleanKey)) {
-        skipped++
-        return
-      }
-      addKey(provider, cleanKey)
-      existingKeys.add(cleanKey)
+      addKey(selectedProvider as ProviderId, line)
+      existing.add(line)
       added++
     })
 
-    setBulkResult({ ...bulkResult, [provider]: { added, skipped } })
-    setBulkText({ ...bulkText, [provider]: '' })
-
-    setTimeout(() => {
-      setBulkResult({ ...bulkResult, [provider]: null })
-    }, 3000)
-  }
-
-  const handlePasteFromClipboard = async (provider: ProviderId) => {
-    try {
-      const text = await navigator.clipboard.readText()
-      setBulkText({ ...bulkText, [provider]: text })
-    } catch {
-      // clipboard access denied
-    }
-  }
-
-  const handleDeleteAllKeys = (provider: ProviderId) => {
-    keys[provider].forEach((k) => removeKey(provider, k.id))
-  }
-
-  const handleCheckAll = async () => {
-    setCheckingAll(true)
-    const currentKeys = useProviderManager.getState().keys
-    const allKeys: { provider: ProviderId; keyId: string }[] = []
-
-    PROVIDER_IDS.forEach((id) => {
-      currentKeys[id].forEach((k) => {
-        allKeys.push({ provider: id, keyId: k.id })
+    setInputValue('')
+    if (added > 0) {
+      setSummaryPayload({
+        title: 'Ringkasan Tambah Key',
+        rows: [
+          { label: 'Total input', value: lines.length },
+          { label: 'Duplikat', value: skipped, tone: skipped ? 'warn' : 'muted' },
+          { label: 'Berhasil ditambahkan', value: added, tone: 'ok' },
+        ],
+        footer: `Total key tersimpan: ${existing.size}`,
       })
+    }
+  }, [inputValue, savedKeys, selectedProvider, addKey])
+
+  const handleBulkUpload = useCallback(() => {
+    const lines = bulkText.split(/[\n\r]+/).map(l => l.trim()).filter(Boolean)
+    if (lines.length === 0) return
+
+    const existing = new Set(savedKeys)
+    let added = 0
+    let skipped = 0
+
+    lines.forEach(line => {
+      const cleanKey = line.replace(/^[•\-*\s]+|[•\-*\s]+$/g, '').trim()
+      if (!cleanKey || existing.has(cleanKey)) {
+        skipped++
+        return
+      }
+      addKey(selectedProvider as ProviderId, cleanKey)
+      existing.add(cleanKey)
+      added++
     })
 
-    if (allKeys.length === 0) {
-      setCheckingAll(false)
-      return
+    setBulkText('')
+    setSummaryPayload({
+      title: 'Ringkasan Import Bulk',
+      rows: [
+        { label: 'Total input', value: lines.length },
+        { label: 'Duplikat / kosong', value: skipped, tone: skipped ? 'warn' : 'muted' },
+        { label: 'Berhasil ditambahkan', value: added, tone: 'ok' },
+      ],
+      footer: `Total key tersimpan: ${existing.size}`,
+    })
+  }, [bulkText, savedKeys, selectedProvider, addKey])
+
+  const handleDeleteAll = useCallback(() => {
+    savedKeys.forEach((_, i) => {
+      const keyObj = keys[selectedProvider as ProviderId]?.[i]
+      if (keyObj) removeKey(selectedProvider as ProviderId, keyObj.id)
+    })
+    setStatusMap({})
+  }, [savedKeys, keys, selectedProvider, removeKey])
+
+  const handleCheckKey = useCallback(async (key: string) => {
+    if (selectedProvider === 'roboneo') {
+      try {
+        const result = await checkRoboneoBalance(key)
+        if (result.ok && result.isValidUser !== false) {
+          return { state: 'active', balance: result.balance, detail: `Balance: ${result.balance}` }
+        } else if (result.isValidUser === false) {
+          return { state: 'invalid', detail: 'Token tidak valid' }
+        } else {
+          return { state: 'empty', balance: result.balance, detail: `Balance: ${result.balance}` }
+        }
+      } catch {
+        return { state: 'failed', detail: 'Error checking token' }
+      }
+    }
+    if (selectedProvider === 'createpulse') {
+      if (/^cp_/.test(key)) {
+        return { state: 'active', detail: 'Format API key valid' }
+      }
+      return { state: 'invalid', detail: 'Format key harus cp_...' }
+    }
+    return { state: 'unknown', detail: 'Cek limit belum tersedia untuk provider ini' }
+  }, [selectedProvider])
+
+  const handleCheckAll = useCallback(async () => {
+    if (savedKeys.length === 0) return
+    setChecking(true)
+    const newStatusMap: typeof statusMap = {}
+
+    for (let i = 0; i < savedKeys.length; i++) {
+      const key = savedKeys[i]
+      newStatusMap[key] = { state: 'checking' }
+      setStatusMap({ ...newStatusMap })
+
+      const result = await handleCheckKey(key)
+      newStatusMap[key] = result
+      setStatusMap({ ...newStatusMap })
+
+      setProgress({
+        show: true,
+        pct: Math.round(((i + 1) / savedKeys.length) * 100),
+        text: `Cek ${i + 1}/${savedKeys.length}`,
+      })
     }
 
-    for (let i = 0; i < allKeys.length; i++) {
-      const { provider, keyId } = allKeys[i]
-      const freshKeys = useProviderManager.getState().keys[provider]
-      const keyName = freshKeys.find((k) => k.id === keyId)?.name || keyId
-      setCheckAllProgress({ current: i + 1, total: allKeys.length, provider: keyName })
+    const activeCount = Object.values(newStatusMap).filter(s => s.state === 'active').length
+    const limitedCount = Object.values(newStatusMap).filter(s => s.state === 'limited').length
+    const invalidCount = Object.values(newStatusMap).filter(s => s.state === 'invalid' || s.state === 'failed').length
 
-      setValidating((prev) => ({ ...prev, [keyId]: true }))
-      await new Promise((r) => setTimeout(r, 1200))
+    setProgress({ show: false, pct: 0, text: '' })
+    setChecking(false)
 
-      const isValid = Math.random() > 0.2
-      updateKeyStatus(
-        provider,
-        keyId,
-        isValid ? 'active' : 'invalid',
-        isValid ? Math.floor(Math.random() * 1000) : undefined
-      )
-
-      setValidating((prev) => ({ ...prev, [keyId]: false }))
-    }
-
-    setCheckAllProgress(null)
-    setCheckingAll(false)
-  }
-
-  const handleValidateKey = async (provider: ProviderId, keyId: string) => {
-    setValidating((prev) => ({ ...prev, [keyId]: true }))
-    await new Promise((r) => setTimeout(r, 1500))
-    updateKeyStatus(provider, keyId, 'active', Math.floor(Math.random() * 1000))
-    setValidating((prev) => ({ ...prev, [keyId]: false }))
-  }
-
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'active':
-        return (
-          <Badge variant="success">
-            <Check className="h-3 w-3 mr-1" /> Active
-          </Badge>
-        )
-      case 'expired':
-        return (
-          <Badge variant="warning">
-            <AlertCircle className="h-3 w-3 mr-1" /> Expired
-          </Badge>
-        )
-      case 'invalid':
-        return (
-          <Badge variant="destructive">
-            <XCircle className="h-3 w-3 mr-1" /> Invalid
-          </Badge>
-        )
-      case 'empty':
-        return (
-          <Badge variant="warning">
-            <AlertCircle className="h-3 w-3 mr-1" /> Empty
-          </Badge>
-        )
-      default:
-        return <Badge variant="outline">Unknown</Badge>
-    }
-  }
-
-  const totalKeys = Object.values(keys).reduce((sum, k) => sum + k.length, 0)
-  const activeKeys = Object.values(keys).reduce(
-    (sum, k) => sum + k.filter((key) => key.status === 'active').length,
-    0
-  )
+    setSummaryPayload({
+      title: `Ringkasan Cek ${currentConfig?.label || selectedProvider}`,
+      rows: [
+        { label: 'Total key dicek', value: savedKeys.length },
+        { label: 'Aktif', value: activeCount, tone: 'ok' },
+        { label: 'Rate-limited', value: limitedCount, tone: limitedCount ? 'warn' : 'muted' },
+        { label: 'Invalid / ditolak', value: invalidCount, tone: invalidCount ? 'bad' : 'muted' },
+      ],
+    })
+  }, [savedKeys, selectedProvider, handleCheckKey, currentConfig])
 
   return (
     <PageContent>
       <PageHeader
-        eyebrow="Configuration"
-        title="Provider"
+        eyebrow="Manage"
+        title="Token / API"
         highlight="Manager"
-        desc="Manage AI provider API keys and configure workflow routing."
+        desc="Pusat kelola semua API key & token. Tersimpan terenkripsi di akun kamu — auto sync di semua perangkat."
       />
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="rounded-xl border border-border bg-card/50 p-4">
-          <div className="text-sm text-muted-foreground">Total Keys</div>
-          <div className="text-2xl font-bold mt-1">{totalKeys}</div>
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <div className="w-full lg:w-[calc(66.666%-0.5rem)] relative">
+          <button
+            type="button"
+            onClick={() => setDropdownOpen(!dropdownOpen)}
+            className="group relative w-full overflow-hidden rounded-xl p-[2px] text-left"
+            aria-haspopup="listbox"
+            aria-expanded={dropdownOpen}
+          >
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute left-1/2 top-1/2 h-[260%] w-[160%] -translate-x-1/2 -translate-y-1/2 animate-[spin_5s_linear_infinite] opacity-90"
+              style={{
+                background: `conic-gradient(from 0deg, transparent 0deg, transparent 200deg, #d4a017 280deg, #ffd700 315deg, #d4a017 340deg, transparent 360deg)`,
+              }}
+            />
+            <span
+              className="relative flex min-h-[84px] items-center justify-between gap-3 rounded-[10px] bg-[#0a0a0a] px-5 py-4 border border-[#2a2a2a]"
+              style={{ boxShadow: 'inset 0 0 40px rgba(212, 160, 23, 0.15)' }}
+            >
+              <span className="min-w-0">
+                <span
+                  className="block truncate font-display text-2xl md:text-3xl font-black tracking-wide gold-text"
+                >
+                  {currentConfig?.label || selectedProvider}
+                </span>
+              </span>
+              <ChevronDown className={`h-5 w-5 shrink-0 text-[#a0a0a0] transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
+            </span>
+          </button>
+
+          {dropdownOpen && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setDropdownOpen(false)} aria-hidden="true" />
+              <ul
+                role="listbox"
+                className="absolute left-0 right-0 top-full mt-2 z-40 grid grid-cols-1 md:grid-cols-2 gap-2 rounded-2xl border border-[#2a2a2a] bg-[#0a0a0a] p-2 shadow-2xl max-h-[60vh] overflow-y-auto"
+                style={{ boxShadow: '0 0 30px rgba(212, 160, 23, 0.1)' }}
+              >
+                {PROVIDER_LIST.map(p => {
+                  const isActive = p.key === selectedProvider
+                  const color = PROVIDER_COLORS[p.key]
+                  return (
+                    <li key={p.key}>
+                      <button
+                        type="button"
+                        onClick={() => { setSelectedProvider(p.key); setDropdownOpen(false) }}
+                        className="w-full text-left rounded-xl border px-4 py-3 transition hover:bg-[#1a1a1a]"
+                        style={{
+                          borderColor: isActive ? '#d4a017' : '#2a2a2a',
+                          boxShadow: isActive ? '0 0 18px rgba(212, 160, 23, 0.3)' : 'inset 0 0 0 1px rgba(212, 160, 23, 0.05)',
+                        }}
+                      >
+                        <span className="flex items-center gap-2">
+                          <span
+                            className="h-2.5 w-2.5 rounded-full shrink-0"
+                            style={{ 
+                              background: isActive ? '#d4a017' : color,
+                              boxShadow: isActive ? '0 0 10px rgba(212, 160, 23, 0.5)' : `0 0 6px ${color}66`
+                            }}
+                          />
+                          <span className="text-sm font-semibold text-[#f5f5f5]">{p.label}</span>
+                        </span>
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            </>
+          )}
         </div>
-        <div className="rounded-xl border border-border bg-card/50 p-4">
-          <div className="text-sm text-muted-foreground">Active Keys</div>
-          <div className="text-2xl font-bold mt-1 text-emerald-500">{activeKeys}</div>
-        </div>
-        <div className="rounded-xl border border-border bg-card/50 p-4">
-          <div className="text-sm text-muted-foreground">Active Provider</div>
-          <div className="text-2xl font-bold mt-1">
-            {PROVIDER_CONFIGS[activeProvider].icon} {PROVIDER_CONFIGS[activeProvider].name}
-          </div>
+
+        <div className="ml-auto flex items-center gap-2 w-full md:w-auto justify-end">
+          <button
+            onClick={() => setTokenBankOpen(true)}
+            className="relative inline-flex items-center gap-1.5 rounded-full border border-[#d4a017]/50 bg-gradient-to-r from-[#d4a017]/20 via-[#d4a017]/10 to-[#d4a017]/20 text-[#ffd700] px-3.5 py-2 text-xs md:text-sm font-semibold md:font-bold md:px-5 md:py-2.5 shadow-[0_0_14px_rgba(212,160,23,0.35)] md:shadow-[0_0_20px_rgba(212,160,23,0.55)] hover:shadow-[0_0_28px_rgba(212,160,23,0.75)] hover:scale-[1.02] transition-all"
+            title="Beli token dari Token Bank"
+          >
+            <ShoppingCart className="h-3.5 w-3.5 md:h-4 md:w-4" />
+            Beli Token
+          </button>
+          <button
+            onClick={() => setViewHidden(!viewHidden)}
+            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card/50 px-3 py-1.5 text-xs font-medium hover:bg-sidebar-accent/40"
+            title={viewHidden ? 'Tampilkan daftar key' : 'Sembunyikan daftar key'}
+          >
+            {viewHidden ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+            {viewHidden ? 'View' : 'Hide'}
+          </button>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* API Keys */}
-        <div className="lg:col-span-2 space-y-5">
-          {PROVIDER_IDS.map((providerId) => {
-            const config = PROVIDER_CONFIGS[providerId]
-            const providerKeys = keys[providerId]
-
-            return (
-              <Section
-                key={providerId}
-                title={`${config.icon} ${config.name}`}
-                sub={config.description}
-                right={
-                  <Button
-                    size="sm"
-                    variant={activeProvider === providerId ? 'default' : 'outline'}
-                    onClick={() => setActiveProvider(providerId)}
-                  >
-                    {activeProvider === providerId ? 'Active' : 'Set Active'}
-                  </Button>
-                }
+        <div className="lg:col-span-2 flex flex-col gap-4">
+          {viewHidden ? (
+            <div className="neumorph p-6 flex flex-col items-center text-center gap-3">
+              <div className="text-[10px] font-mono uppercase tracking-widest text-[#a0a0a0]">
+                {currentConfig?.label || selectedProvider}
+              </div>
+              <div className="font-display text-3xl gold-text">{savedKeys.length}</div>
+              <div className="text-xs text-[#a0a0a0]">key tersimpan (tersembunyi). Klik View untuk kelola / tambah key.</div>
+              <button
+                onClick={() => setViewHidden(false)}
+                className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold text-[#0a0a0a] gold-gradient"
               >
-                <div className="space-y-3">
-                  {/* Existing Keys */}
-                  {providerKeys.length === 0 ? (
-                    <div className="text-sm text-muted-foreground py-2 flex items-center gap-2">
-                      <Key className="h-4 w-4 opacity-50" />
-                      No API keys configured
-                    </div>
-                  ) : (
-                    <div className="max-h-[320px] overflow-y-auto space-y-2 pr-1">
-                      {providerKeys.map((key) => (
-                        <div
-                          key={key.id}
-                          className="flex items-center gap-2 p-3 rounded-lg border border-border bg-card/30"
-                        >
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium truncate">
-                                {key.name}
-                              </span>
-                              {getStatusBadge(key.status)}
-                            </div>
-                            <div className="text-xs text-muted-foreground font-mono mt-1">
-                              {showKeys[key.id]
-                                ? key.key
-                                : '••••••••••••••••••••••••••'}
-                            </div>
-                            {key.balance !== undefined && key.balance !== null && (
-                              <div className="text-xs mt-1">
-                                Balance:{' '}
-                                <span className="font-mono text-emerald-500">
-                                  {key.balance}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <button
-                              onClick={() =>
-                                setShowKeys({ ...showKeys, [key.id]: !showKeys[key.id] })
-                              }
-                              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition"
-                              title={showKeys[key.id] ? 'Hide key' : 'Show key'}
-                            >
-                              {showKeys[key.id] ? (
-                                <EyeOff className="h-4 w-4" />
-                              ) : (
-                                <Eye className="h-4 w-4" />
-                              )}
-                            </button>
-                            <button
-                              onClick={() => handleValidateKey(providerId, key.id)}
-                              disabled={validating[key.id]}
-                              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition disabled:opacity-50"
-                              title="Validate key"
-                            >
-                              <RefreshCw
-                                className={`h-4 w-4 ${validating[key.id] ? 'animate-spin' : ''}`}
-                              />
-                            </button>
-                            <button
-                              onClick={() => removeKey(providerId, key.id)}
-                              className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition"
-                              title="Remove key"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                <Eye className="h-3.5 w-3.5" />
+                View {savedKeys.length > 0 ? `(${savedKeys.length})` : ''}
+              </button>
+            </div>
+          ) : (
+            <div className="neumorph p-4 space-y-3">
+              <Textarea
+                rows={6}
+                value={bulkMode ? bulkText : inputValue}
+                onChange={e => bulkMode ? setBulkText(e.target.value) : setInputValue(e.target.value)}
+                placeholder={bulkMode
+                  ? `token 1\ntoken 2\ntoken 3`
+                  : `${TOKEN_GUIDE[selectedProvider as keyof typeof TOKEN_GUIDE]?.prefix || 'API key...'}`
+                }
+                className="font-mono text-xs bg-[#0a0a0a] border-[#2a2a2a] text-[#f5f5f5] placeholder-[#666666] focus:border-[#d4a017] focus:ring-[#d4a017]/30"
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={bulkMode ? handleBulkUpload : handleAddKey} disabled={bulkMode ? !bulkText.trim() : !inputValue.trim()} className="gold-gradient text-[#0a0a0a] hover:opacity-90">
+                  <Plus className="h-3.5 w-3.5" /> Tambah
+                </Button>
+                <Button variant="outline" onClick={() => setBulkMode(!bulkMode)} className="border-[#2a2a2a] bg-[#1a1a1a] text-[#f5f5f5] hover:bg-[#2a2a2a] hover:border-[#d4a017]/50">
+                  <Upload className="h-3.5 w-3.5" /> {bulkMode ? 'Single' : 'Bulk'}
+                </Button>
+                <Button variant="outline" onClick={handleCheckAll} disabled={checking || savedKeys.length === 0} className="border-[#2a2a2a] bg-[#1a1a1a] text-[#f5f5f5] hover:bg-[#2a2a2a] hover:border-[#d4a017]/50">
+                  {checking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                  Cek Limit & Status
+                </Button>
+                <Button variant="destructive" onClick={handleDeleteAll} disabled={savedKeys.length === 0}>
+                  <Trash2 className="h-3.5 w-3.5" /> Hapus Semua
+                </Button>
+              </div>
 
-                  {/* Add New Key */}
-                  <div className="flex gap-2">
-                    <Input
-                      value={newKeys[providerId]}
-                      onChange={(e) =>
-                        setNewKeys({ ...newKeys, [providerId]: e.target.value })
-                      }
-                      placeholder={config.keyPlaceholder}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleAddKey(providerId)
-                      }}
-                    />
-                    <Button
-                      size="sm"
-                      onClick={() => handleAddKey(providerId)}
-                      disabled={!newKeys[providerId].trim()}
-                    >
-                      <Plus className="h-3.5 w-3.5" /> Add
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={bulkMode[providerId] ? 'default' : 'outline'}
-                      onClick={() => setBulkMode({ ...bulkMode, [providerId]: !bulkMode[providerId] })}
-                      title="Bulk upload tokens"
-                    >
-                      <Upload className="h-3.5 w-3.5" />
-                    </Button>
-                    {keys[providerId].length > 0 && (
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        onClick={() => handleDeleteAllKeys(providerId)}
-                        title="Delete all keys for this provider"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" /> All
-                      </Button>
-                    )}
+              {progress.show && (
+                <div className="rounded-md border border-[#2a2a2a] bg-[#141414] p-2">
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#1a1a1a]">
+                    <div className="h-full gold-gradient transition-all" style={{ width: `${progress.pct}%` }} />
                   </div>
-
-                  {/* Bulk Upload */}
-                  {bulkMode[providerId] && (
-                    <div className="mt-3 p-3 rounded-lg border border-border bg-card/30 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label className="text-xs font-semibold">Bulk Upload Tokens</Label>
-                        <div className="flex gap-1">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handlePasteFromClipboard(providerId)}
-                            title="Paste from clipboard"
-                          >
-                            <Clipboard className="h-3.5 w-3.5 mr-1" /> Paste
-                          </Button>
-                        </div>
-                      </div>
-                      <Textarea
-                        value={bulkText[providerId] || ''}
-                        onChange={(e) => setBulkText({ ...bulkText, [providerId]: e.target.value })}
-                        placeholder={"Paste multiple tokens here...\nOne token per line:\ntoken1\ntoken2\ntoken3"}
-                        className="min-h-[80px] max-h-[240px] text-xs font-mono overflow-y-auto"
-                      />
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-muted-foreground">
-                          {(bulkText[providerId] || '').split(/[\n\r]+/).filter((l) => l.trim()).length} token(s) detected
-                        </span>
-                        <Button
-                          size="sm"
-                          onClick={() => handleBulkUpload(providerId)}
-                          disabled={!(bulkText[providerId] || '').trim()}
-                        >
-                          <Upload className="h-3.5 w-3.5 mr-1" /> Import All
-                        </Button>
-                      </div>
-                      {bulkResult[providerId] && (
-                        <div className={`text-xs p-2 rounded-md ${bulkResult[providerId]!.added > 0 ? 'bg-emerald-500/10 text-emerald-500' : 'bg-amber-500/10 text-amber-500'}`}>
-                          ✅ {bulkResult[providerId]!.added} added
-                          {bulkResult[providerId]!.skipped > 0 && ` · ⏭️ ${bulkResult[providerId]!.skipped} skipped (duplicate/empty)`}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  <div className="mt-1 text-[10px] text-[#a0a0a0]">{progress.text}</div>
                 </div>
-              </Section>
-            )
-          })}
+              )}
+
+              {savedKeys.length > 0 && (
+                <div className="mt-1 space-y-1.5">
+                  <div className="text-[10px] font-mono uppercase tracking-widest text-[#a0a0a0]">
+                    Key tersimpan ({savedKeys.length})
+                  </div>
+                  {savedKeys.map((key, i) => {
+                    const status = statusMap[key]
+                    const state = status?.state || 'unknown'
+                    return (
+                      <div key={i} className="flex items-center justify-between gap-2 rounded-md border border-[#2a2a2a] bg-[#141414] px-2.5 py-1.5">
+                        <code className="text-[11px] font-mono text-[#f5f5f5]/85 truncate">{maskKey(key)}</code>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {status?.detail && (
+                            <span className="text-[10px] text-[#a0a0a0] truncate max-w-[220px]">{status.detail}</span>
+                          )}
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full border ${getStatusColor(state)}`}>
+                            {getStatusLabel(state)}
+                          </span>
+                          <button
+                            onClick={() => {
+                              const keyObj = keys[selectedProvider as ProviderId]?.[i]
+                              if (keyObj) removeKey(selectedProvider as ProviderId, keyObj.id)
+                              setStatusMap(prev => {
+                                const next = { ...prev }
+                                delete next[key]
+                                return next
+                              })
+                            }}
+                            className="inline-flex items-center gap-1 rounded-full border border-[#2a2a2a] bg-[#1a1a1a] px-1.5 py-0.5 text-[10px] text-[#a0a0a0] hover:text-[#dc2626] hover:border-[#dc2626]/50 transition"
+                            title="Hapus key ini"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* Routing Configuration */}
-        <div className="space-y-5">
-          <Section title="🔄 Workflow Routing" sub="Pilih provider untuk setiap workflow">
-            <div className="space-y-4">
-              {WORKFLOW_ROUTES.map((workflow) => (
-                <div key={workflow.id}>
-                  <Label>{workflow.label}</Label>
-                  <Select
-                    value={routing[workflow.id] || 'weavy'}
-                    onChange={(e) => setRouting(workflow.id, e.target.value as ProviderId)}
-                    options={PROVIDER_IDS.map((id) => ({
-                      value: id,
-                      label: `${PROVIDER_CONFIGS[id].icon} ${PROVIDER_CONFIGS[id].name}`,
-                    }))}
-                  />
+        <div className="neumorph p-4 h-fit">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-[#a0a0a0]">Info</div>
+          <div className="mt-1 font-display text-base text-[#f5f5f5] gold-text">{currentConfig?.label}</div>
+          <p className="mt-2 text-xs text-[#a0a0a0] leading-relaxed">{currentConfig?.desc}</p>
+
+          <div className="mt-4 rounded-lg border border-[#2a2a2a] bg-[#141414] p-3 text-[11px] leading-relaxed text-[#a0a0a0]">
+            🔒 Key dienkripsi (AES-GCM) di database akunmu & cache browser dipisahkan per akun. Otomatis tersinkron ketika kamu login di perangkat lain.
+          </div>
+
+              {TOKEN_GUIDE[selectedProvider as keyof typeof TOKEN_GUIDE] && (
+            <div className="mt-4 rounded-lg border border-[#d4a017]/30 bg-[#d4a017]/5 p-3">
+              <div className="text-[10px] font-mono uppercase tracking-widest text-[#d4a017]/80">Cara Dapat Token</div>
+              <a
+                href={TOKEN_GUIDE[selectedProvider as keyof typeof TOKEN_GUIDE].url}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-1 inline-flex items-center gap-1.5 text-sm text-[#ffd700] hover:underline font-medium break-all"
+              >
+                <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                {TOKEN_GUIDE[selectedProvider as keyof typeof TOKEN_GUIDE].urlLabel}
+              </a>
+              {TOKEN_GUIDE[selectedProvider as keyof typeof TOKEN_GUIDE].prefix && (
+                <div className="mt-1 text-[10px] text-[#a0a0a0]">
+                  Format key: <code className="text-[#f5f5f5]/85">{TOKEN_GUIDE[selectedProvider as keyof typeof TOKEN_GUIDE].prefix}</code>
+                </div>
+              )}
+              <ol className="mt-2.5 list-decimal pl-4 space-y-1.5 text-[11px] text-[#a0a0a0] leading-relaxed">
+                {TOKEN_GUIDE[selectedProvider as keyof typeof TOKEN_GUIDE].steps.map((step, i) => (
+                  <li key={i}>
+                    {step.text}
+                    {step.link && (
+                      <a href={step.link.url} target="_blank" rel="noreferrer" className="text-[#ffd700] underline hover:text-[#d4a017]/80">
+                        {step.link.label}
+                      </a>
+                    )}
+                    {step.code && (
+                      <pre className="mt-1 rounded-md bg-[#050505] border border-[#2a2a2a] p-2 overflow-x-auto text-[9px] font-mono text-[#f5f5f5]/80 whitespace-pre-wrap break-all">
+                        {step.code}
+                      </pre>
+                    )}
+                  </li>
+                ))}
+              </ol>
+              {TOKEN_GUIDE[selectedProvider as keyof typeof TOKEN_GUIDE].tip && (
+                <div className="mt-2.5 rounded-md bg-[#d4a017]/10 border border-[#d4a017]/30 p-2 text-[10.5px] text-[#ffd700]/90 leading-relaxed">
+                  💡 {TOKEN_GUIDE[selectedProvider as keyof typeof TOKEN_GUIDE].tip}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {summaryPayload && (
+        <div className="fixed inset-0 z-[80] grid place-items-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-150" onClick={() => setSummaryPayload(null)}>
+          <div onClick={e => e.stopPropagation()} className="neumorph w-full max-w-md p-6 relative animate-in zoom-in-95 duration-200" style={{ background: '#0a0a0a' }}>
+            <div className="flex items-center gap-2.5 mb-4">
+              <div className="h-9 w-9 rounded-full grid place-items-center shrink-0 gold-gradient">
+                <Check className="h-5 w-5 text-[#0a0a0a]" />
+              </div>
+              <div className="font-display text-lg text-[#f5f5f5] gold-text">{summaryPayload.title}</div>
+            </div>
+            <div className="rounded-xl border border-[#2a2a2a] bg-[#141414] divide-y divide-[#2a2a2a]">
+              {summaryPayload.rows.map((row, i) => (
+                <div key={i} className="flex items-center justify-between gap-3 px-3.5 py-2 text-[12.5px]">
+                  <span className="text-[#a0a0a0]">{row.label}</span>
+                  <span className={`font-semibold font-mono tabular-nums ${row.tone === 'ok' ? 'text-emerald-400' : row.tone === 'warn' ? 'text-amber-300' : row.tone === 'bad' ? 'text-rose-400' : row.tone === 'muted' ? 'text-[#a0a0a0]' : 'text-[#f5f5f5]'}`}>
+                    {row.value}
+                  </span>
                 </div>
               ))}
             </div>
-          </Section>
-
-          <Section title="⚙️ Quick Actions">
-            <div className="space-y-2">
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                onClick={handleCheckAll}
-                disabled={checkingAll}
-              >
-                {checkingAll ? (
-                  <>
-                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                    Checking {checkAllProgress?.current}/{checkAllProgress?.total}...
-                  </>
-                ) : (
-                  <>
-                    <Check className="h-4 w-4 mr-2" /> Check all API keys
-                  </>
-                )}
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => {
-                  PROVIDER_IDS.forEach((id) => {
-                    const validKey = keys[id].find(
-                      (k) => k.status === 'active' || k.status === 'unknown'
-                    )
-                    if (validKey) {
-                      setActiveProvider(id)
-                    }
-                  })
-                }}
-              >
-                <Zap className="h-4 w-4 mr-2" /> Auto-detect best provider
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => {
-                  localStorage.removeItem('arkxmotion.providers')
-                  localStorage.removeItem('arkxmotion.routing')
-                  window.location.reload()
-                }}
-              >
-                <Trash2 className="h-4 w-4 mr-2" /> Reset all settings
-              </Button>
+            {summaryPayload.footer && (
+              <div className="mt-3 text-[11px] text-[#a0a0a0] text-center leading-relaxed">{summaryPayload.footer}</div>
+            )}
+            <div className="mt-5 flex justify-center">
+              <Button onClick={() => setSummaryPayload(null)} className="min-w-[120px] justify-center gold-gradient text-[#0a0a0a]">OK</Button>
             </div>
-          </Section>
-
-          <Section title="ℹ️ Provider Status">
-            <div className="space-y-2">
-              {PROVIDER_IDS.map((id) => {
-                const config = PROVIDER_CONFIGS[id]
-                const providerKeys = keys[id]
-                const hasActive = providerKeys.some((k) => k.status === 'active')
-
-                return (
-                  <div
-                    key={id}
-                    className="flex items-center justify-between p-2 rounded-lg border border-border"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span>{config.icon}</span>
-                      <span className="text-sm">{config.name}</span>
-                    </div>
-                    <Badge variant={hasActive ? 'success' : 'outline'}>
-                      {hasActive ? 'Ready' : 'No Key'}
-                    </Badge>
-                  </div>
-                )
-              })}
-            </div>
-          </Section>
+          </div>
         </div>
-      </div>
+      )}
+
+      {tokenBankOpen && (
+        <div className="fixed inset-0 z-[80] grid place-items-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-150" onClick={() => setTokenBankOpen(false)}>
+          <div onClick={e => e.stopPropagation()} className="neumorph w-full max-w-md p-6 relative animate-in zoom-in-95 duration-200" style={{ background: '#0a0a0a' }}>
+            <div className="flex items-center gap-2.5 mb-4">
+              <div className="h-9 w-9 rounded-full grid place-items-center shrink-0 gold-gradient">
+                <ShoppingCart className="h-5 w-5 text-[#0a0a0a]" />
+              </div>
+              <div className="font-display text-lg text-[#f5f5f5] gold-text">Token Bank</div>
+            </div>
+            <div className="rounded-xl border border-[#2a2a2a] bg-[#141414] p-4 text-center">
+              <p className="text-sm text-[#a0a0a0] mb-4">Beli token provider langsung dari dashboard ini.</p>
+              <Button onClick={() => setTokenBankOpen(false)} className="min-w-[120px] justify-center gold-gradient text-[#0a0a0a]">OK</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </PageContent>
   )
 }

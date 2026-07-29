@@ -19,6 +19,8 @@ import AdminUsersPage from '@/pages/AdminUsers'
 import AdminTokensPage from '@/pages/AdminTokens'
 import AdminOrderTokensPage from '@/pages/AdminOrderTokens'
 import AdminProviderStatusPage from '@/pages/AdminProviderStatus'
+import AdminTopupPage from '@/pages/AdminTopup'
+import CreatePulseTopupPage from '@/pages/CreatePulseTopup'
 import LoginPage from '@/pages/Login'
 import RegisterPage from '@/pages/Register'
 
@@ -54,10 +56,12 @@ export default function App() {
 
                       <Route path="/providers" element={<ProvidersPage />} />
                       <Route path="/settings" element={<SettingsPage />} />
+                      <Route path="/topup/createpulse" element={<CreatePulseTopupPage />} />
                       <Route path="/admin/users" element={<AdminUsersPage />} />
                       <Route path="/admin/tokens" element={<AdminTokensPage />} />
                       <Route path="/admin/orders" element={<AdminOrderTokensPage />} />
                       <Route path="/admin/status" element={<AdminProviderStatusPage />} />
+                      <Route path="/admin/topup" element={<AdminTopupPage />} />
                     </Routes>
                   </main>
                 </div>

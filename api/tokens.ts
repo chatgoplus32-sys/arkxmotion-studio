@@ -42,7 +42,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // GET /api/tokens?provider=roboneo - list available tokens
     if (req.method === 'GET' && segments[segments.length - 1] === 'tokens') {
       const provider = req.query.provider as string | undefined
-      if (provider && ['roboneo', 'framia', 'weavy'].includes(provider)) {
+      if (provider && ['roboneo', 'framia', 'weavy', 'createpulse'].includes(provider)) {
         const rows = await sql`SELECT id, provider, name, price, status, created_at FROM tokens WHERE provider = ${provider} AND status = 'available' ORDER BY created_at DESC`
         return res.status(200).json({ tokens: rows })
       }

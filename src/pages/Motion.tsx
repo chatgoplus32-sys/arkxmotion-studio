@@ -172,7 +172,7 @@ export default function MotionPage() {
     }
   }
 
-  const addLog = (msg: string, level = 'info') => {
+  const addLog = (msg: string, level: 'debug' | 'info' | 'warn' | 'error' | 'success' = 'info') => {
     addBgLog(msg, level)
     const entry = { time: new Date().toLocaleTimeString(), msg, level }
     setLogs((prev) => [...prev, entry].slice(-200))

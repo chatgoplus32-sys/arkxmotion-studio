@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Textarea, Badge } from '@/components/ui'
-import { Sparkles, ArrowRight, Loader2, Video, Film, Clapperboard, ShoppingBag, Image, Search } from 'lucide-react'
+import { Sparkles, ArrowRight, Loader2, Video, Image, Search } from 'lucide-react'
 
 interface WorkflowRoute {
   id: string
@@ -21,30 +21,6 @@ const workflows: WorkflowRoute[] = [
     icon: <Video className="h-5 w-5" />,
     keywords: ['motion', 'dance', 'gerakan', 'karakter', 'transfer', 'animasi', 'character', 'move'],
     description: 'Transfer gerakan karakter dari video/gambar referensi',
-  },
-  {
-    id: 'narrative-video',
-    label: 'Naratif Video',
-    route: '/generate/naratif',
-    icon: <Film className="h-5 w-5" />,
-    keywords: ['video', 'naratif', 'cerita', 'story', 'berita', 'news', 'artikel', 'article', 'narrative', 'education', 'what-if'],
-    description: 'Buat video naratif dari artikel/berita/blog',
-  },
-  {
-    id: 'storyboard',
-    label: 'Produk Storyboard',
-    route: '/generate/storyboard',
-    icon: <Clapperboard className="h-5 w-5" />,
-    keywords: ['storyboard', 'produk', 'product', 'iklan', 'ad', 'affiliate', 'commerce', 'multi-scene'],
-    description: 'Generate storyboard untuk produk/iklan',
-  },
-  {
-    id: 'bulk-fashion',
-    label: 'Bulk Fashion',
-    route: '/generate/bulk-fashion',
-    icon: <ShoppingBag className="h-5 w-5" />,
-    keywords: ['fashion', 'outfit', 'baju', 'pakaian', 'clothing', 'apparel', 'model', 'wear'],
-    description: 'Generate banyak foto fashion dari 1 karakter + banyak outfit',
   },
   {
     id: 'image-to-video',
@@ -305,9 +281,6 @@ export default function CommandPage() {
           <div className="flex flex-wrap gap-2">
             {[
               'Buat video dance dari gambar karakter',
-              'Buat video naratif dari artikel berita',
-              'Generate storyboard untuk produk skincare',
-              'Buat 10 foto fashion dengan outfit berbeda',
               'Animasi gambar pemandangan jadi video',
               'Riset trending topic untuk YouTube',
             ].map((example) => (

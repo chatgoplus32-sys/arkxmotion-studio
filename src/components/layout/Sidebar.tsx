@@ -5,10 +5,7 @@ import { useAuthStore } from '@/stores/authStore'
 import {
   LayoutDashboard,
   Video,
-  Film,
   Image,
-  ShoppingBag,
-  Clapperboard,
   Settings,
   Zap,
   Sparkles,
@@ -18,6 +15,7 @@ import {
   ClipboardCheck,
   Activity,
   Lock,
+  Wallet,
 } from 'lucide-react'
 
 interface NavItem {
@@ -36,13 +34,11 @@ const mainNav: NavItem[] = [
 const generateNav: NavItem[] = [
   { label: 'Motion Control', href: '/generate/motion', icon: <Video className="h-4 w-4" /> },
   { label: 'Image to Video', href: '/generate/image-to-video', icon: <Image className="h-4 w-4" /> },
-  { label: 'Naratif Video', href: '/generate/naratif', icon: <Film className="h-4 w-4" />, comingSoon: true },
-  { label: 'Storyboard', href: '/generate/storyboard', icon: <Clapperboard className="h-4 w-4" />, comingSoon: true },
-  { label: 'Bulk Fashion', href: '/generate/bulk-fashion', icon: <ShoppingBag className="h-4 w-4" />, comingSoon: true },
 ]
 
-const toolsNav: NavItem[] = [
+const toolsNavBase: NavItem[] = [
   { label: 'Providers', href: '/providers', icon: <Zap className="h-4 w-4" /> },
+  { label: 'Top Up CreatePulse', href: '/topup/createpulse', icon: <Wallet className="h-4 w-4" /> },
   { label: 'Settings', href: '/settings', icon: <Settings className="h-4 w-4" /> },
 ]
 
@@ -55,6 +51,11 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
   const navigate = useNavigate()
   const { user, token, logout } = useAuthStore()
   const [pendingCount, setPendingCount] = useState(0)
+
+  const toolsNav = toolsNavBase.filter((item) => {
+    if (item.href === '/topup/createpulse' && user?.role === 'admin') return false
+    return true
+  })
 
   const handleLogout = () => {
     logout()
@@ -76,6 +77,7 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
     { label: 'User Management', href: '/admin/users', icon: <Shield className="h-4 w-4" />, badge: pendingCount > 0 ? String(pendingCount) : undefined },
     { label: 'Upload Token', href: '/admin/tokens', icon: <Key className="h-4 w-4" /> },
     { label: 'Order Token', href: '/admin/orders', icon: <ClipboardCheck className="h-4 w-4" /> },
+    { label: 'Approval TopUp', href: '/admin/topup', icon: <Wallet className="h-4 w-4" /> },
     { label: 'Server Status', href: '/admin/status', icon: <Activity className="h-4 w-4" /> },
   ]
 

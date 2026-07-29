@@ -4,6 +4,8 @@ const ACTIVE_KEY = 'arkxmotion_active_tasks'
 const RESULTS_KEY = 'arkxmotion_results'
 const LOGS_KEY = 'arkxmotion_bg_logs'
 
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'success'
+
 export interface ActiveTask {
   id: string
   taskId: string
@@ -27,7 +29,9 @@ export interface CompletedResult {
 export interface LogEntry {
   time: string
   msg: string
-  level: string
+  level: LogLevel
+  provider?: string
+  step?: string
 }
 
 function readJson<T>(key: string, fallback: T): T {
@@ -66,10 +70,12 @@ export function removeResult(id: string) {
 
 export function getLogs(): LogEntry[] { return readJson(LOGS_KEY, []) }
 
-export function addBgLog(msg: string, level = 'info') {
+export function addBgLog(msg: string, level: LogLevel = 'info', provider?: string, step?: string) {
   const logs = getLogs()
-  logs.push({ time: new Date().toLocaleTimeString(), msg, level })
-  writeJson(LOGS_KEY, logs.slice(-200))
+  const now = new Date()
+  const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`
+  logs.push({ time, msg, level, provider, step })
+  writeJson(LOGS_KEY, logs.slice(-300))
 }
 
 export function clearLogs() { localStorage.removeItem(LOGS_KEY) }
@@ -82,6 +88,9 @@ export function clearAllTasks() {
 
 const _controllers = new Map<string, AbortController>()
 const _active = new Set<string>()
+const _pollTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
+
+const TASK_TIMEOUT_MS = 3600000
 
 export function forceStopTask(taskId: string): boolean {
   const ctrl = _controllers.get(taskId)
@@ -89,6 +98,8 @@ export function forceStopTask(taskId: string): boolean {
     ctrl.abort()
     _controllers.delete(taskId)
     _active.delete(taskId)
+    const timeout = _pollTimeouts.get(taskId)
+    if (timeout) { clearTimeout(timeout); _pollTimeouts.delete(taskId) }
     removeActiveTask(taskId)
     addBgLog(`⛔ Force stopped task: ${taskId.slice(0, 20)}...`, 'error')
     window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
@@ -101,12 +112,14 @@ export function forceStopTask(taskId: string): boolean {
 
 export function forceStopAllTasks(): number {
   let count = 0
-  for (const [id, ctrl] of _controllers) {
+  for (const [, ctrl] of _controllers) {
     ctrl.abort()
     count++
   }
   _controllers.clear()
   _active.clear()
+  for (const [, timeout] of _pollTimeouts) { clearTimeout(timeout) }
+  _pollTimeouts.clear()
   const tasks = getActiveTasks()
   for (const t of tasks) {
     addBgLog(`⛔ Force stopped task: ${t.model} (${t.taskId.slice(0, 20)}...)`, 'error')
@@ -132,21 +145,41 @@ export function startBackgroundPolling() {
     const ctrl = new AbortController()
     _controllers.set(task.taskId, ctrl)
 
-    addBgLog(`Resuming background poll: ${task.model} (${task.taskId.slice(0, 20)}...)`)
+    addBgLog(`🔄 Resuming background poll: ${task.model} (${task.taskId.slice(0, 20)}...)`, 'info')
+
+    const elapsed = Date.now() - task.startedAt
+    if (elapsed > TASK_TIMEOUT_MS) {
+      addBgLog(`⏰ Task timeout exceeded (${Math.floor(elapsed / 60000)}m). Stopping.`, 'error')
+      removeActiveTask(task.taskId)
+      _active.delete(task.taskId)
+      _controllers.delete(task.taskId)
+      window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
+      continue
+    }
+
+    const timeout = setTimeout(() => {
+      if (_active.has(task.taskId)) {
+        addBgLog(`⏰ Task timeout (${TASK_TIMEOUT_MS / 60000}m). Force stopping.`, 'error')
+        forceStopTask(task.taskId)
+      }
+    }, TASK_TIMEOUT_MS - elapsed)
+    _pollTimeouts.set(task.taskId, timeout)
 
     pollMotionControl(
       task.token, task.taskId, task.roomId,
       (status, pct) => {
         if (!ctrl.signal.aborted) {
-          addBgLog(`[bg] ${task.model}: ${status} — ${pct}%`)
+          addBgLog(`⏳ ${task.model}: ${status} — ${pct}%`)
         }
       },
-      1800000,
+      TASK_TIMEOUT_MS - elapsed,
       ctrl.signal,
       task.nodeId,
     )
       .then((url) => {
         if (ctrl.signal.aborted) return
+        const t = _pollTimeouts.get(task.taskId)
+        if (t) { clearTimeout(t); _pollTimeouts.delete(task.taskId) }
         addResult({ id: task.taskId, url, prompt: task.prompt, date: new Date().toISOString(), page: task.page })
         removeActiveTask(task.taskId)
         _active.delete(task.taskId)
@@ -156,6 +189,8 @@ export function startBackgroundPolling() {
       })
       .catch((err) => {
         if (ctrl.signal.aborted) return
+        const t = _pollTimeouts.get(task.taskId)
+        if (t) { clearTimeout(t); _pollTimeouts.delete(task.taskId) }
         addBgLog(`❌ Background task error: ${err.message}`, 'error')
         removeActiveTask(task.taskId)
         _active.delete(task.taskId)
