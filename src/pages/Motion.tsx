@@ -3,7 +3,7 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Textarea, Select, Label, EmptyState } from '@/components/ui'
 import { useProviderManager, type ProviderId } from '@/stores'
 import { useToastStore } from '@/stores/toastStore'
-import { uploadToCatbox, submitMotionControl, pollMotionControl, checkRoboneoBalance, compressVideo, submitGoogleOmni } from '@/lib/roboneo'
+import { uploadToCatbox, submitMotionControl, pollMotionControl, checkRoboneoBalance, compressVideo, submitGoogleOmni, normalizeImage } from '@/lib/roboneo'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { removeResult, clearResults, getActiveTasks, getLogs, getResults, addBgLog, addActiveTask, addResult, clearLogs } from '@/lib/backgroundTasks'
 import { startBackgroundPolling } from '@/lib/backgroundTasks'
@@ -244,7 +244,8 @@ export default function MotionPage() {
             try {
               updateSlotStatus(slot.id, 'uploading img...')
               addLog(`#${slotNum} Upload image...`)
-              const imageUrl = await uploadToCatbox(slot.image)
+              const normalizedImage = await normalizeImage(slot.image)
+              const imageUrl = await uploadToCatbox(normalizedImage)
               addLog(`#${slotNum} Image: ${imageUrl.slice(0, 60)}...`)
 
               let motionVideoUrl = ''
@@ -269,7 +270,7 @@ export default function MotionPage() {
                 }
                 updateSlotStatus(slot.id, 'uploading vid...')
                 addLog(`#${slotNum} Upload video...`)
-                const videoFile = await compressVideo(slot.video, 5)
+                const videoFile = await compressVideo(slot.video, 4)
                 motionVideoUrl = await uploadToCatbox(videoFile)
                 addLog(`#${slotNum} Video: ${motionVideoUrl.slice(0, 60)}...`)
 

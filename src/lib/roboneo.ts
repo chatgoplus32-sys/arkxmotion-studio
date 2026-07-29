@@ -89,7 +89,13 @@ export async function normalizeImage(file: File): Promise<File> {
   return file
 }
 
-  return new Promise<File>((resolve, reject) => {
+export async function compressVideo(file: File, maxMb = 4): Promise<File> {
+  if (file.size <= maxMb * 1024 * 1024) {
+    console.log(`[upload] video ${(file.size / 1024 / 1024).toFixed(1)}MB <= ${maxMb}MB, using original`)
+    return file
+  }
+  console.log(`[upload] video ${(file.size / 1024 / 1024).toFixed(1)}MB > ${maxMb}MB, re-encoding to mp4`)
+  return new Promise<File>((resolve) => {
     const video = document.createElement('video')
     video.muted = true
     video.preload = 'metadata'
@@ -98,114 +104,113 @@ export async function normalizeImage(file: File): Promise<File> {
       console.warn('[upload] video element error, using original file')
       resolve(file)
     }
-
     video.onloadedmetadata = () => {
-      if (video.duration === Infinity || isNaN(video.duration)) {
-        URL.revokeObjectURL(video.src)
-        video.remove()
-        console.warn('[upload] video duration is Infinity or invalid, using default 30s')
-        startRecording(30)
-        return
-      }
-      const duration = Math.max(30, Math.min(video.duration, 300))
-      startRecording(duration)
-    }
-
-    const startRecording = (duration: number) => {
+      const duration = Math.min(video.duration || 30, 60)
       const canvas = document.createElement('canvas')
-      canvas.width = video.videoWidth
-      canvas.height = video.videoHeight
+      canvas.width = Math.min(video.videoWidth, 1280)
+      canvas.height = Math.min(video.videoHeight, 720)
       const ctx = canvas.getContext('2d')!
-
       const stream = canvas.captureStream(24)
-      const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-        ? 'video/webm;codecs=vp9'
-        : 'video/webm'
-      const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2_000_000 })
+      const mimeType = 'video/webm;codecs=vp9'
+      const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 1_500_000 })
       const chunks: Blob[] = []
-
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunks.push(e.data)
-      }
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data) }
       recorder.onstop = () => {
         const blob = new Blob(chunks, { type: mimeType })
-        const compressed = new File([blob], file.name.replace(/\.[^.]+$/, '.webm'), { type: mimeType })
-        console.log(`[upload] compressed ${(file.size / 1024 / 1024).toFixed(1)}MB → ${(compressed.size / 1024 / 1024).toFixed(1)}MB`)
-        cleanup()
-        resolve(compressed.size < file.size ? compressed : file)
-      }
-      recorder.onerror = () => {
-        cleanup()
-        resolve(file)
-      }
-
-      const cleanup = () => {
+        const out = new File([blob], file.name.replace(/\.[^.]+$/, '.mp4'), { type: 'video/mp4' })
         URL.revokeObjectURL(video.src)
-        video.remove()
-        if (recorder.state === 'recording') {
-          recorder.stop()
-        }
+        console.log(`[upload] re-encoded ${(file.size / 1024 / 1024).toFixed(1)}MB → ${(out.size / 1024 / 1024).toFixed(1)}MB`)
+        resolve(out.size < file.size ? out : file)
       }
-
+      recorder.onerror = () => { URL.revokeObjectURL(video.src); resolve(file) }
       recorder.start()
       video.play()
-
-      const drawFrame = () => {
+      const draw = () => {
         if (video.ended || video.paused || recorder.state !== 'recording') return
-        ctx.drawImage(video, 0, 0)
-        requestAnimationFrame(drawFrame)
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+        requestAnimationFrame(draw)
       }
-      drawFrame()
-
-      const timeoutId = setTimeout(() => {
-        if (recorder.state === 'recording') {
-          recorder.stop()
-          cleanup()
-        }
-      }, duration * 1000)
-
-      recorder.onstop = () => {
-        clearTimeout(timeoutId)
-        const blob = new Blob(chunks, { type: mimeType })
-        const compressed = new File([blob], file.name.replace(/\.[^.]+$/, '.webm'), { type: mimeType })
-        console.log(`[upload] compressed ${(file.size / 1024 / 1024).toFixed(1)}MB → ${(compressed.size / 1024 / 1024).toFixed(1)}MB`)
-        cleanup()
-        resolve(compressed.size < file.size ? compressed : file)
-      }
+      draw()
+      setTimeout(() => { if (recorder.state === 'recording') recorder.stop() }, duration * 1000)
     }
-
     video.src = URL.createObjectURL(file)
   })
 }
 
-export async function uploadToCatbox(file: File): Promise<string> {
-  let lastError = ''
-  const uploadUrls = [
-    'https://aacreative.vercel.app/api/public/upload-catbox',
-    'https://roboneo-proxy.chatgoplus32.workers.dev/api/public/upload-catbox',
-  ]
-  for (const uploadUrl of uploadUrls) {
-    for (let attempt = 0; attempt <= 2; attempt++) {
-      try {
-        const formData = new FormData()
-        formData.append('file', new File([file], file.name || 'upload.jpg', { type: file.type || 'image/jpeg' }))
+async function uploadToService(file: File, name: string, uploader: (f: File) => Promise<string>): Promise<string> {
+  console.log(`[upload] trying ${name} (${(file.size / 1024 / 1024).toFixed(1)}MB)...`)
+  const url = await uploader(file)
+  console.log(`[upload] success via ${name}`)
+  return url
+}
 
-        const res = await fetch(uploadUrl, { method: 'POST', body: formData })
-        const data = await res.json().catch(() => ({}))
-        if (res.ok && data.url) {
-          console.log(`[upload] success via ${uploadUrl} (attempt ${attempt + 1})`)
-          return data.url
-        }
-        lastError = data.error || `HTTP ${res.status}`
-      } catch (e: any) {
-        lastError = e.message || 'network error'
-      }
-      if (attempt < 2) {
-        await new Promise(r => setTimeout(r, 1500 * (attempt + 1)))
-      }
+export async function uploadToCatbox(file: File): Promise<string> {
+  const uploaders: Array<[string, (f: File) => Promise<string>]> = [
+    ['Server', async (f) => {
+      const formData = new FormData()
+      formData.append('file', new File([f], f.name || 'upload.bin', { type: f.type || 'application/octet-stream' }))
+      formData.append('prefer', 'roboneo')
+      const res = await fetch('https://aacreative.vercel.app/api/public/upload-catbox', { method: 'POST', body: formData })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.url) throw Error(data.error || `HTTP ${res.status}`)
+      return data.url
+    }],
+    ['Uguu', async (f) => {
+      const fd = new FormData()
+      fd.append('files[]', f, f.name || 'upload.bin')
+      const res = await fetch('https://uguu.se/upload.php', { method: 'POST', body: fd })
+      const data = await res.json().catch(() => null)
+      const url = data?.files?.[0]?.url
+      if (!res.ok || !url || !/^https?:\/\//i.test(url)) throw Error(data?.error || `Uguu HTTP ${res.status}`)
+      return url
+    }],
+    ['Catbox', async (f) => {
+      const fd = new FormData()
+      fd.append('reqtype', 'fileupload')
+      fd.append('fileToUpload', f, f.name || 'upload.bin')
+      const res = await fetch('https://catbox.moe/user/api.php', { method: 'POST', body: fd })
+      const text = (await res.text()).trim()
+      if (!res.ok || !/^https?:\/\//i.test(text)) throw Error(text || `Catbox HTTP ${res.status}`)
+      return text
+    }],
+    ['Tmpfiles', async (f) => {
+      const fd = new FormData()
+      fd.append('file', f, f.name || 'upload.bin')
+      const res = await fetch('https://tmpfiles.org/api/v1/upload', { method: 'POST', body: fd })
+      const data = await res.json().catch(() => null)
+      let url = data?.data?.url
+      if (!res.ok || !url) throw Error(data?.error || `Tmpfiles HTTP ${res.status}`)
+      url = url.replace(/^(https?:\/\/tmpfiles\.org)\/(?!dl\/)/i, '$1/dl/')
+      return url
+    }],
+    ['Pixeldrain', async (f) => {
+      const fd = new FormData()
+      fd.append('file', f, f.name || 'upload.bin')
+      const res = await fetch('https://pixeldrain.com/api/file', { method: 'POST', body: fd })
+      const data = await res.json().catch(() => null)
+      if (!res.ok || !data?.id) throw Error(data?.message || `Pixeldrain HTTP ${res.status}`)
+      return `https://pixeldrain.com/api/file/${data.id}`
+    }],
+    ['0x0', async (f) => {
+      const fd = new FormData()
+      fd.append('file', f, f.name || 'upload.bin')
+      const res = await fetch('https://0x0.st', { method: 'POST', body: fd })
+      const text = (await res.text()).trim()
+      if (!res.ok || !/^https?:\/\//i.test(text)) throw Error(text || `0x0 HTTP ${res.status}`)
+      return text
+    }],
+  ]
+
+  const errors: string[] = []
+  for (const [name, uploader] of uploaders) {
+    try {
+      return await uploadToService(file, name, uploader)
+    } catch (e: any) {
+      errors.push(`${name}: ${e.message}`)
+      console.warn(`[upload] ${name} failed: ${e.message}`)
     }
   }
-  throw new Error(`Upload gagal: ${lastError}`)
+  throw new Error(`Upload gagal: ${errors.join(' | ')}`)
 }
 
 function buildTrackingParams(accessToken: string, pathScene: string, roomId: string) {
