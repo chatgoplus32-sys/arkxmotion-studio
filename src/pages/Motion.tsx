@@ -1,6 +1,6 @@
-import { useState, useRef, useCallback, useEffect, forwardRef } from 'react'
+import { useState, useRef, useCallback, useEffect, useMemo, forwardRef } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
-import { Section, Button, Textarea, Select, Label, Badge, EmptyState } from '@/components/ui'
+import { Section, Button, Textarea, Select, Label, EmptyState } from '@/components/ui'
 import { useProviderManager, type ProviderId } from '@/stores'
 import { useToastStore } from '@/stores/toastStore'
 import { uploadToCatbox, submitMotionControl, pollMotionControl, checkRoboneoBalance, compressVideo, submitGoogleOmni } from '@/lib/roboneo'
@@ -53,7 +53,10 @@ interface Slot {
   imageUrl: string | null
   video: File | null
   videoUrl: string | null
-  status: string
+  status: 'idle' | 'uploading img...' | 'uploading vid...' | 'processing' | 'done' | 'error'
+  statusText?: string
+  resultUrl?: string
+  error?: string
 }
 
 function createSlot(): Slot {
@@ -140,6 +143,26 @@ export default function MotionPage() {
     setSlots(slots.map((s) => (s.id === id ? { ...s, ...updates } : s)))
   }
 
+  const updateSlotStatus = (id: string, status: Slot['status'], statusText?: string) => {
+    setSlots((prev) => prev.map((s) => (s.id === id ? { ...s, status, statusText, error: status === 'error' ? statusText : s.error } : s)))
+  }
+
+  const slotProgress = useMemo(() => {
+    const filled = slots.filter((s) => s.image && s.video)
+    if (filled.length === 0) return 0
+    const pct = (s: Slot) => {
+      if (s.status === 'done' || s.status === 'error') return 100
+      if (s.status === 'processing') {
+        const m = /(\d+)%/.exec(s.statusText || '')
+        return m ? Math.max(60, Math.min(99, Number(m[1]))) : 70
+      }
+      if (s.status === 'uploading vid...') return 40
+      if (s.status === 'uploading img...') return 20
+      return generating ? 5 : 0
+    }
+    return Math.round(filled.reduce((a, s) => a + pct(s), 0) / filled.length)
+  }, [slots, generating])
+
   const handleFileChange = (id: string, type: 'image' | 'video', file: File | null) => {
     const url = file ? URL.createObjectURL(file) : null
     if (type === 'image') {
@@ -158,24 +181,33 @@ export default function MotionPage() {
   const handleGenerate = async () => {
     if (generating) return
     const isOmni = modelKey === 'rn:google-omni'
-    const validSlots = isOmni
+    const filledSlots = isOmni
       ? slots.filter((s) => s.image)
       : slots.filter((s) => s.image && s.video)
-    if (validSlots.length === 0) return
+    if (filledSlots.length === 0) return
 
     const isRoboneo = provider === 'roboneo'
 
-setGenerating(true)
+    setGenerating(true)
     successRef.current = false
-    addToast(`Generate dimulai: ${currentProvider.name} · ${currentModel.label}`, 'info')
     generatingRef.current = true
     setLogs([])
     clearLogs()
     setProgress(0)
 
+    // Reset slot statuses
+    setSlots((prev) => prev.map((s) =>
+      (isOmni ? s.image : s.image && s.video)
+        ? { ...s, status: 'idle' as const, statusText: undefined, error: undefined, resultUrl: undefined }
+        : s
+    ))
+
     addLog(`🚀 Mulai generate video · ${currentProvider.name} · ${currentModel.label}`)
     addLog(`Mode: ${isOmni ? 'Image → Video (Google Omni)' : 'Motion Control (Image + Video)'}`)
-    addLog(`Processing ${validSlots.length} slot(s)...`)
+    addLog(`Processing ${filledSlots.length} slot(s)...`)
+
+    let successCount = 0
+    let failCount = 0
 
     try {
       const rotation = await withTokenRotation<{ completedCount: number }>(
@@ -196,21 +228,30 @@ setGenerating(true)
 
         let completedCount = 0
 
-        for (let i = 0; i < validSlots.length; i++) {
-          const slot = validSlots[i]
+        for (let i = 0; i < filledSlots.length; i++) {
+          const slot = filledSlots[i]
+          const slotIdx = slots.findIndex((s) => s.id === slot.id)
+          const slotNum = i + 1
+
+          // Stagger delay between slots (1.5s)
+          if (i > 0) {
+            await new Promise((r) => setTimeout(r, 1500))
+          }
 
           if (isRoboneo && slot.image) {
             let taskId: string = ''
             let roomId: string = ''
             try {
-              addLog(`Slot ${i + 1}: [1/3] Uploading image to host...`)
+              updateSlotStatus(slot.id, 'uploading img...')
+              addLog(`#${slotNum} Upload image...`)
               const imageUrl = await uploadToCatbox(slot.image)
-              addLog(`Slot ${i + 1}: [1/3] Image uploaded ✓ ${imageUrl.slice(0, 50)}...`)
+              addLog(`#${slotNum} Image: ${imageUrl.slice(0, 60)}...`)
 
               let motionVideoUrl = ''
 
               if (isOmni) {
-                addLog(`Slot ${i + 1}: [2/3] Submitting to Google Omni...`)
+                updateSlotStatus(slot.id, 'processing', 'submitting...')
+                addLog(`#${slotNum} Submit to Google Omni...`)
                 const result = await submitGoogleOmni({
                   accessToken: token,
                   imageUrl,
@@ -220,19 +261,20 @@ setGenerating(true)
                 })
                 taskId = result.taskId
                 roomId = result.roomId
-                addLog(`Slot ${i + 1}: [2/3] Task created ✓ id=${taskId.slice(0, 20)}...`)
+                addLog(`#${slotNum} Task: ${taskId.slice(0, 20)}...`)
               } else {
                 if (!slot.video) {
-                  addLog(`Slot ${i + 1}: Skipping (no video for motion control)`, 'warn')
+                  addLog(`#${slotNum} Skipping (no video)`, 'warn')
                   continue
                 }
-                addLog(`Slot ${i + 1}: [2a/3] Compressing video if needed...`)
+                updateSlotStatus(slot.id, 'uploading vid...')
+                addLog(`#${slotNum} Upload video...`)
                 const videoFile = await compressVideo(slot.video, 5)
-                addLog(`Slot ${i + 1}: [2a/3] Uploading video to host...`)
                 motionVideoUrl = await uploadToCatbox(videoFile)
-                addLog(`Slot ${i + 1}: [2a/3] Video uploaded ✓ ${motionVideoUrl.slice(0, 50)}...`)
+                addLog(`#${slotNum} Video: ${motionVideoUrl.slice(0, 60)}...`)
 
-                addLog(`Slot ${i + 1}: [2b/3] Submitting to Motion Control...`)
+                updateSlotStatus(slot.id, 'processing', 'submitting...')
+                addLog(`#${slotNum} Submit motion-control...`)
                 const result = await submitMotionControl({
                   accessToken: token,
                   imageUrl,
@@ -243,7 +285,7 @@ setGenerating(true)
                 })
                 taskId = result.taskId
                 roomId = result.roomId
-                addLog(`Slot ${i + 1}: [2b/3] Task created ✓ id=${taskId.slice(0, 20)}...`)
+                addLog(`#${slotNum} Task: ${taskId.slice(0, 20)}...`)
               }
 
               addActiveTask({
@@ -258,7 +300,8 @@ setGenerating(true)
               })
               const originalTaskId = taskId
 
-              addLog(`Slot ${i + 1}: [3/3] Polling for result...`)
+              updateSlotStatus(slot.id, 'processing', 'polling...')
+              addLog(`#${slotNum} Polling for result...`)
 
               let resultUrl: string | null = null
               const MAX_RESUBMIT = 3
@@ -268,13 +311,17 @@ setGenerating(true)
                     token,
                     taskId,
                     roomId,
-                    (status, pct) => { addLog(`⏳ Roboneo ${status} (${pct}%)`); setProgress(pct) }
+                    (status, pct) => {
+                      updateSlotStatus(slot.id, 'processing', `${status} ${pct}%`)
+                      addLog(`#${slotNum} ${status} ${pct}%`)
+                      setProgress(pct)
+                    }
                   )
                   break
                 } catch (pollErr: any) {
                   const isBusy = /busy|sibuk|try again|later|overload|capacity|queue/i.test(pollErr.message)
                   if (isBusy && attempt < MAX_RESUBMIT) {
-                    addLog(`Server sibuk, resubmit task baru... (attempt ${attempt + 1}/${MAX_RESUBMIT})`, 'warn')
+                    addLog(`#${slotNum} Server sibuk, retry ${attempt + 1}/${MAX_RESUBMIT}...`, 'warn')
                     await new Promise((r) => setTimeout(r, 5000))
                     if (isOmni) {
                       const retry = await submitGoogleOmni({
@@ -298,14 +345,15 @@ setGenerating(true)
                       taskId = retry.taskId
                       roomId = retry.roomId
                     }
-                    addLog(`Task baru: ${taskId.slice(0, 20)}...`)
+                    addLog(`#${slotNum} New task: ${taskId.slice(0, 20)}...`)
                     continue
                   }
                   throw pollErr
                 }
               }
 
-              addLog(`✅ Video selesai · ${resultUrl!.slice(0, 60)}...`, 'success')
+              updateSlotStatus(slot.id, 'done')
+              addLog(`#${slotNum} Done: ${resultUrl!.slice(0, 60)}...`, 'success')
 
               removeActiveTask(originalTaskId)
               addResult({
@@ -325,13 +373,15 @@ setGenerating(true)
                 ...prev,
               ])
               completedCount++
+              successCount++
             } catch (err: any) {
-              addLog(`Slot ${i + 1}: Error: ${err.message}`, 'error')
+              updateSlotStatus(slot.id, 'error', err.message)
+              addLog(`#${slotNum} Error: ${err.message}`, 'error')
               removeActiveTask(taskId)
-              throw err
+              failCount++
             }
           } else {
-            addLog(`Slot ${i + 1}: Skipping (no image/video)`, 'warn')
+            addLog(`#${slotNum} Skipping (no image/video)`, 'warn')
           }
         }
 
@@ -352,14 +402,20 @@ setGenerating(true)
 
     if (rotation.ok) {
       successRef.current = true
-      addLog(`All generations completed! (${rotation.result?.completedCount || 0} done)`, 'success')
       if (rotation.triedKeys > 1) {
         addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success')
+      }
+      if (failCount > 0 && successCount > 0) {
+        addLog(`Selesai — ${successCount} sukses · ${failCount} gagal`, 'warn')
+      } else if (failCount > 0) {
+        addLog(`Semua slot gagal (${failCount})`, 'error')
+      } else {
+        addLog(`Selesai — ${successCount} video`, 'success')
       }
     } else {
       addLog(`Generation failed: ${rotation.error}`, 'error')
       if (isRoboneo) {
-        addLog('⚠️ Credit mungkin sudah terpotong oleh server provider. Hubungi provider untuk refund jika gagal.', 'warn')
+        addLog('⚠️ Credit mungkin sudah terpotong oleh server provider.', 'warn')
       }
     }
 
@@ -547,12 +603,12 @@ setGenerating(true)
                 <div className="space-y-1.5">
                   <div className="flex justify-between text-xs text-muted-foreground">
                     <span>Progress</span>
-                    <span className="font-mono font-semibold text-foreground">{progress}%</span>
+                    <span className="font-mono font-semibold text-foreground">{slotProgress}%</span>
                   </div>
                   <div className="h-2.5 w-full rounded-full bg-muted overflow-hidden">
                     <div
                       className="h-full rounded-full bg-primary transition-all duration-500 ease-out"
-                      style={{ width: `${progress}%` }}
+                      style={{ width: `${slotProgress}%` }}
                     />
                   </div>
                 </div>
@@ -575,17 +631,30 @@ setGenerating(true)
           </Section>
 
           {/* Logs */}
-          {logs.length > 0 && (
-            <Section title={`Log (${logs.length})`}>
-              <div className="max-h-40 overflow-y-auto overflow-x-hidden text-[11px] font-mono space-y-0.5">
-                {logs.map((log, i) => (
+          {(generating || logs.length > 0) && (
+            <div className="rounded-xl border border-border/70 bg-black/40 p-3">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+                  Log Proses {generating && <Loader2 className="inline h-3 w-3 animate-spin ml-1" />}
+                </div>
+                <button
+                  onClick={() => { setLogs([]); clearLogs() }}
+                  className="text-[10px] text-muted-foreground hover:text-destructive"
+                >
+                  Clear
+                </button>
+              </div>
+              <div className="max-h-40 overflow-y-auto overflow-x-hidden font-mono text-[10px] leading-relaxed min-w-0">
+                {logs.slice().reverse().map((log, i) => (
                   <div
                     key={i}
-                    className={`break-all ${
+                    className={`whitespace-pre-wrap break-all min-w-0 ${
                       log.level === 'error'
-                        ? 'text-red-500'
+                        ? 'text-red-400'
+                        : log.level === 'warn'
+                        ? 'text-amber-400'
                         : log.level === 'success'
-                        ? 'text-emerald-500'
+                        ? 'text-emerald-400'
                         : 'text-muted-foreground'
                     }`}
                   >
@@ -593,7 +662,7 @@ setGenerating(true)
                   </div>
                 ))}
               </div>
-            </Section>
+            </div>
           )}
         </div>
 
@@ -699,17 +768,22 @@ function SlotCard({
   const imageRef = useRef<HTMLInputElement>(null)
   const videoRef = useRef<HTMLInputElement>(null)
 
+  const statusColor = slot.status === 'done' ? 'text-emerald-400 border-emerald-500/40'
+    : slot.status === 'error' ? 'text-red-400 border-red-500/40'
+    : slot.status === 'idle' ? 'text-muted-foreground border-border'
+    : 'text-amber-400 border-amber-500/40'
+
   return (
-    <div className="rounded-2xl border border-border bg-card/30 p-4">
+    <div className="rounded-2xl border border-border/70 bg-card/30 p-4">
       <div className="flex items-center justify-between mb-3 gap-2">
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <div className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground shrink-0">
             Referensi #{index + 1}
           </div>
           {slot.status !== 'idle' && (
-            <Badge variant={slot.status === 'done' ? 'success' : slot.status === 'error' ? 'destructive' : 'warning'}>
-              {slot.status}
-            </Badge>
+            <div className={`text-[10px] px-2 py-0.5 rounded-full border bg-black/30 truncate ${statusColor}`}>
+              {slot.statusText || slot.status}{slot.error ? ` — ${slot.error}` : ''}
+            </div>
           )}
         </div>
         {canRemove && (
