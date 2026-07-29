@@ -150,6 +150,15 @@ export async function uploadToCatbox(file: File): Promise<string> {
       const formData = new FormData()
       formData.append('file', new File([f], f.name || 'upload.bin', { type: f.type || 'application/octet-stream' }))
       formData.append('prefer', 'roboneo')
+      const res = await fetch('https://roboneo-proxy.chatgoplus32.workers.dev/api/public/upload-catbox', { method: 'POST', body: formData })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.url) throw Error(data.error || `HTTP ${res.status}`)
+      return data.url
+    }],
+    ['AA Creative', async (f) => {
+      const formData = new FormData()
+      formData.append('file', new File([f], f.name || 'upload.bin', { type: f.type || 'application/octet-stream' }))
+      formData.append('prefer', 'roboneo')
       const res = await fetch('https://aacreative.vercel.app/api/public/upload-catbox', { method: 'POST', body: formData })
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data.url) throw Error(data.error || `HTTP ${res.status}`)
@@ -242,10 +251,10 @@ async function roboneoApiCall(
   path: string,
   parameter: Record<string, any>
 ): Promise<any> {
-  // Primary: aacreative (match reference site), fallback: Cloudflare Worker
+  // Primary: roboneo-proxy, fallback: aacreative
   const PROXY_URLS = [
-    'https://aacreative.vercel.app',
     'https://roboneo-proxy.chatgoplus32.workers.dev',
+    'https://aacreative.vercel.app',
   ]
 
   let lastError: string = ''

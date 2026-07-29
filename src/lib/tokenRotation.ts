@@ -86,7 +86,7 @@ export async function withTokenRotation<T>(
     // Pre-check balance for Roboneo tokens before submitting
     if (provider === 'roboneo') {
       try {
-        const balanceCheck = await checkRoboneoBalance(nextKey.key)
+        const balanceCheck = await checkRoboneoBalance(nextKey.key, 'roboneo-proxy')
         if (!balanceCheck.ok) {
           console.log(`[token-rotation] ${provider} key "${nextKey.name}" balance check failed (${balanceCheck.error}). Trying next...`)
           useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'invalid')
