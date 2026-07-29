@@ -325,43 +325,141 @@ async function roboneoApiCall(
 
 export async function checkRoboneoBalance(accessToken: string): Promise<{ ok: boolean; balance?: number | null; isValidUser?: boolean; error?: string }> {
   try {
-    const tracking = buildTrackingParams(accessToken, 'vipshow', generateRoomId())
-    const { _access_token, ...paramWithoutToken } = tracking
+    const PROXY_URLS = [
+      'https://roboneo-proxy.chatgoplus32.workers.dev',
+      'https://aacreative.vercel.app',
+    ]
 
-    const param = await roboneoApiCall(accessToken, 'vipshow', {
-      ...paramWithoutToken,
-      features: '',
-      later_face: 0,
-    })
+    let lastError = ''
 
-    const isValidUser = param?.is_valid_user !== false
-    console.log(`[checkBalance] is_valid_user=${param?.is_valid_user}, uid=${param?.uid}`)
+    for (const proxyUrl of PROXY_URLS) {
+      try {
+        const res = await fetch(`${proxyUrl}/api/public/roboneo-membership`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Roboneo-Token': accessToken,
+          },
+        })
 
-    const balanceKeys = ['credit', 'balance', 'remain', 'quota', 'point', 'coin', 'energy', 'total_amount', 'amount']
-    let balance: number | null = null
+        const data = await res.json().catch(() => null)
 
-    function findBalance(obj: any, depth = 0): number | null {
-      if (depth > 5 || !obj || typeof obj !== 'object') return null
-      for (const [k, v] of Object.entries(obj)) {
-        const kl = k.toLowerCase()
-        if (typeof v === 'number' && balanceKeys.some((bk) => kl.includes(bk))) return v
-        if (typeof v === 'string' && /^\d+(\.\d+)?$/.test(v) && balanceKeys.some((bk) => kl.includes(bk))) return Number(v)
-        if (typeof v === 'object' && v !== null) {
-          const found = findBalance(v, depth + 1)
-          if (found !== null) return found
+        if (!data?.ok) {
+          lastError = data?.message || `HTTP ${data?.status ?? res.status}`
+          continue
         }
+
+        const membershipData = data?.data ?? {}
+        const errorCode = membershipData.error_code ?? membershipData.code
+        if (errorCode && errorCode !== 0) {
+          lastError = membershipData.error_msg || membershipData.message || `error_code=${errorCode}`
+          continue
+        }
+
+        const resultData = membershipData.data ?? membershipData.result ?? membershipData
+
+        // Extract balance from nested structures
+        function findInDetailList(data: any, pattern: RegExp): number | null {
+          if (!data || typeof data !== 'object') return null
+          const detailList = data.detail_list
+          if (Array.isArray(detailList)) {
+            for (const item of detailList) {
+              if (!item || typeof item !== 'object') continue
+              const title = String(item.title ?? '')
+              if (!pattern.test(title)) continue
+              const balanceList = item.meiye_balance_list
+              if (Array.isArray(balanceList)) {
+                for (const bal of balanceList) {
+                  if (!bal || typeof bal !== 'object') continue
+                  const leftInfo = bal.left_info
+                  if (typeof leftInfo === 'number') return leftInfo
+                  if (typeof leftInfo === 'string') {
+                    const cleaned = leftInfo.replace(/,/g, '').trim()
+                    if (/^-?\d+(\.\d+)?$/.test(cleaned)) return Number(cleaned)
+                  }
+                }
+              }
+            }
+          }
+          return null
+        }
+
+        function findValueByKey(obj: any, keys: string[]): number | null {
+          if (!obj || typeof obj !== 'object') return null
+          for (const [k, v] of Object.entries(obj)) {
+            const kl = k.toLowerCase()
+            if (keys.some((target) => kl === target || kl.includes(target))) {
+              if (typeof v === 'number') return v
+              if (typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v)) return Number(v)
+            }
+          }
+          for (const v of Object.values(obj)) {
+            if (v && typeof v === 'object') {
+              const found = findValueByKey(v, keys)
+              if (found !== null) return found
+            }
+          }
+          return null
+        }
+
+        const cyberBalance = findInDetailList(resultData, /cyber|carrot/i)
+        const dailyBalance = findInDetailList(resultData, /daily|free/i)
+        const freeCredit = findValueByKey(resultData, ['free_credit', 'free_amount', 'daily_free', 'free']) ?? dailyBalance
+        const vipCredit = findValueByKey(resultData, ['vip_credit', 'vip_amount', 'vip'])
+        const totalCredit = findValueByKey(resultData, ['total_amount', 'total_credit', 'credit_balance', 'balance', 'credit', 'remain', 'point', 'coin', 'energy', 'quota']) ?? cyberBalance ?? ((freeCredit ?? 0) + (vipCredit ?? 0) || null)
+
+        console.log(`[checkBalance] membership OK: balance=${totalCredit}, free=${freeCredit}, vip=${vipCredit}`)
+
+        return { ok: true, balance: totalCredit, isValidUser: true }
+      } catch (err: any) {
+        lastError = `network: ${err.message}`
+        continue
       }
-      return null
     }
 
-    balance = findBalance(param)
-    console.log('[checkBalance] balance:', balance)
+    // Fallback: try vipshow endpoint
+    try {
+      const tracking = buildTrackingParams(accessToken, 'vipshow', generateRoomId())
+      const { _access_token, ...paramWithoutToken } = tracking
 
-    if (!isValidUser) {
-      return { ok: false, balance, isValidUser: false, error: `Token tidak valid (is_valid_user=false, uid=${param?.uid})` }
+      const param = await roboneoApiCall(accessToken, 'vipshow', {
+        ...paramWithoutToken,
+        features: '',
+        later_face: 0,
+      })
+
+      const isValidUser = param?.is_valid_user !== false
+      console.log(`[checkBalance] vipshow fallback: is_valid_user=${param?.is_valid_user}, uid=${param?.uid}`)
+
+      const balanceKeys = ['credit', 'balance', 'remain', 'quota', 'point', 'coin', 'energy', 'total_amount', 'amount']
+      let balance: number | null = null
+
+      function findBalance(obj: any, depth = 0): number | null {
+        if (depth > 5 || !obj || typeof obj !== 'object') return null
+        for (const [k, v] of Object.entries(obj)) {
+          const kl = k.toLowerCase()
+          if (typeof v === 'number' && balanceKeys.some((bk) => kl.includes(bk))) return v
+          if (typeof v === 'string' && /^\d+(\.\d+)?$/.test(v) && balanceKeys.some((bk) => kl.includes(bk))) return Number(v)
+          if (typeof v === 'object' && v !== null) {
+            const found = findBalance(v, depth + 1)
+            if (found !== null) return found
+          }
+        }
+        return null
+      }
+
+      balance = findBalance(param)
+      console.log('[checkBalance] vipshow balance:', balance)
+
+      if (!isValidUser) {
+        return { ok: false, balance, isValidUser: false, error: `Token tidak valid (is_valid_user=false, uid=${param?.uid})` }
+      }
+
+      return { ok: true, balance, isValidUser: true }
+    } catch (err: any) {
+      console.error('[checkBalance] all methods failed:', lastError, err.message)
+      return { ok: false, error: lastError || err.message }
     }
-
-    return { ok: true, balance, isValidUser: true }
   } catch (err: any) {
     console.error('[checkBalance] catch error:', err.message)
     return { ok: false, error: err.message }

@@ -40,6 +40,8 @@ export function detectTokenError(provider: ProviderId, error: any): boolean {
     case 'framia': return isFramiaTokenError(error)
     case 'roboneo': return isRoboneoTokenError(error)
     case 'createpulse': return isCreatePulseTokenError(error)
+    case 'firefly': return /401|403|expired|unauthorized|invalid.*token/i.test(String(error?.message || error))
+    case 'leonardo': return /401|403|expired|unauthorized|invalid.*key|graphql/i.test(String(error?.message || error))
     default: return isTokenError(error)
   }
 }
@@ -88,37 +90,50 @@ export async function withTokenRotation<T>(
       try {
         const balanceCheck = await checkRoboneoBalance(nextKey.key)
         if (!balanceCheck.ok) {
-          console.log(`[token-rotation] ${provider} key "${nextKey.name}" check failed (${balanceCheck.error}). Trying next...`)
-          useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'invalid')
-          lastError = new Error(`Token ${nextKey.name} check failed: ${balanceCheck.error}`)
-          opts?.onError?.(lastError, nextKey)
-          continue
+          // Like aacreative: if balance check fails, still try the token (it might work)
+          console.log(`[token-rotation] ${provider} key "${nextKey.name}" check failed (${balanceCheck.error}). Proceeding anyway...`)
+          useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'unknown')
+        } else {
+          const bal = balanceCheck.balance ?? 0
+          const required = opts?.requiredCredits ?? 0
+
+          if (balanceCheck.isValidUser === false) {
+            if (bal !== null && bal <= 0) {
+              console.log(`[token-rotation] ${provider} key "${nextKey.name}" is_valid_user=false & balance=0. Skipping...`)
+              useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'invalid')
+              lastError = new Error(`Token ${nextKey.name} tidak valid & balance kosong`)
+              opts?.onError?.(lastError, nextKey)
+              continue
+            }
+            // Like aacreative: if balance is unknown or has balance, proceed anyway
+            console.log(`[token-rotation] ${provider} key "${nextKey.name}" is_valid_user=false BUT balance=${bal}. Proceeding anyway...`)
+            if (required > 0 && bal !== null && bal < required) {
+              console.log(`[token-rotation] ${provider} key "${nextKey.name}" skipped (balance=${bal} < required=${required}). Trying next...`)
+              useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'empty', bal)
+              lastError = new Error(`Token ${nextKey.name} balance tidak cukup (${bal} < ${required})`)
+              opts?.onError?.(lastError, nextKey)
+              continue
+            }
+            useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'active', bal)
+          } else {
+            if (bal !== null && bal <= 0) {
+              console.log(`[token-rotation] ${provider} key "${nextKey.name}" skipped (balance=${bal}). Trying next...`)
+              useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'empty', bal)
+              lastError = new Error(`Token ${nextKey.name} balance kosong (${bal})`)
+              opts?.onError?.(lastError, nextKey)
+              continue
+            }
+            if (required > 0 && bal !== null && bal < required) {
+              console.log(`[token-rotation] ${provider} key "${nextKey.name}" skipped (balance=${bal} < required=${required}). Trying next...`)
+              useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'empty', bal)
+              lastError = new Error(`Token ${nextKey.name} balance tidak cukup (${bal} < ${required})`)
+              opts?.onError?.(lastError, nextKey)
+              continue
+            }
+            console.log(`[token-rotation] ${provider} key "${nextKey.name}" balance=${bal} >= required=${required}, is_valid_user=${balanceCheck.isValidUser}, proceeding...`)
+            useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'active', bal)
+          }
         }
-        if (balanceCheck.isValidUser === false) {
-          console.log(`[token-rotation] ${provider} key "${nextKey.name}" is_valid_user=false. Removing...`)
-          useProviderManager.getState().removeKey(provider, nextKey.id)
-          lastError = new Error(`Token ${nextKey.name} tidak valid (is_valid_user=false)`)
-          opts?.onError?.(lastError, nextKey)
-          continue
-        }
-        const bal = balanceCheck.balance ?? 0
-        const required = opts?.requiredCredits ?? 0
-        if (bal <= 0) {
-          console.log(`[token-rotation] ${provider} key "${nextKey.name}" skipped (balance=${bal}). Trying next...`)
-          useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'empty', bal)
-          lastError = new Error(`Token ${nextKey.name} balance kosong (${bal})`)
-          opts?.onError?.(lastError, nextKey)
-          continue
-        }
-        if (required > 0 && bal < required) {
-          console.log(`[token-rotation] ${provider} key "${nextKey.name}" skipped (balance=${bal} < required=${required}). Trying next...`)
-          useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'empty', bal)
-          lastError = new Error(`Token ${nextKey.name} balance tidak cukup (${bal} < ${required})`)
-          opts?.onError?.(lastError, nextKey)
-          continue
-        }
-        console.log(`[token-rotation] ${provider} key "${nextKey.name}" balance=${bal} >= required=${required}, is_valid_user=${balanceCheck.isValidUser}, proceeding...`)
-        useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'active', bal)
       } catch (err: any) {
         console.log(`[token-rotation] ${provider} balance check failed for "${nextKey.name}": ${err.message}, proceeding anyway`)
       }
