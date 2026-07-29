@@ -21,11 +21,13 @@ function generateRoomId() {
 
 function extractUid(token: string): string {
   try {
-    let t = token.replace(/^_v\\d+/, '')
+    let t = token.replace(/^_v\d+/, '')
+    t = t.replace(/[^A-Za-z0-9+/=]/g, '')
     t += '='.repeat((4 - (t.length % 4)) % 4)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const payload = (typeof atob === 'function' ? atob(t) : (globalThis as any).Buffer?.from(t, 'base64').toString('binary') ?? (() => { throw new Error('atob and Buffer both unavailable') })()).split('#')[2]
-    if (payload && /^\\d+$/.test(payload)) return payload
+    const decoded = (typeof atob === 'function' ? atob(t) : (globalThis as any).Buffer?.from(t, 'base64').toString('binary') ?? (() => { throw new Error('atob and Buffer both unavailable') })())
+    const payload = decoded.split('#')[2]
+    if (payload && /^\d+$/.test(payload)) return payload
   } catch (e: any) {
     console.warn('[extractUid] fallback:', e.message)
   }
@@ -151,7 +153,9 @@ export async function uploadToCatbox(file: File): Promise<string> {
       formData.append('file', new File([f], f.name || 'upload.bin', { type: f.type || 'application/octet-stream' }))
       formData.append('prefer', 'roboneo')
       const res = await fetch('https://roboneo-proxy.chatgoplus32.workers.dev/api/public/upload-catbox', { method: 'POST', body: formData })
-      const data = await res.json().catch(() => ({}))
+      const text = await res.text().catch(() => '')
+      let data: any = {}
+      try { data = JSON.parse(text) } catch { throw Error(`Proxy returned non-JSON (${res.status}): ${text.slice(0, 200)}`) }
       if (!res.ok || !data.url) throw Error(data.error || `HTTP ${res.status}`)
       return data.url
     }],
@@ -160,7 +164,9 @@ export async function uploadToCatbox(file: File): Promise<string> {
       formData.append('file', new File([f], f.name || 'upload.bin', { type: f.type || 'application/octet-stream' }))
       formData.append('prefer', 'roboneo')
       const res = await fetch('https://aacreative.vercel.app/api/public/upload-catbox', { method: 'POST', body: formData })
-      const data = await res.json().catch(() => ({}))
+      const text = await res.text().catch(() => '')
+      let data: any = {}
+      try { data = JSON.parse(text) } catch { throw Error(`AA Creative returned non-JSON (${res.status}): ${text.slice(0, 200)}`) }
       if (!res.ok || !data.url) throw Error(data.error || `HTTP ${res.status}`)
       return data.url
     }],
