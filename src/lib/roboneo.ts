@@ -927,8 +927,12 @@ export async function pollMotionControl(
 
     if (isFailed) {
       const failedStep = steps.find((s: any) => /fail|error/i.test(String(s.status || s.state || '')))
-      const errMsg = task?.error_message || task?.error_msg || failedStep?.error_message || failedStep?.error_msg || 'unknown'
-      throw new Error(`Roboneo failed: ${errMsg}`)
+      const stepOutput = failedStep?.output
+      const errMsg = task?.error_message || task?.error_msg || failedStep?.error_message || failedStep?.error_msg ||
+        (typeof stepOutput?.error_message === 'string' ? stepOutput.error_message : undefined) ||
+        (typeof stepOutput?.error_msg === 'string' ? stepOutput.error_msg : undefined) || 'unknown'
+      const detail = JSON.stringify({ status, taskErrorCode: task?.error_code, failCode: failedStep?.fail_code, stepStatus: failedStep?.status || failedStep?.state, output: stepOutput }).slice(0, 500)
+      throw new Error(`Roboneo failed: ${errMsg}${detail ? ` · detail=${detail}` : ''}`)
     }
   }
 
@@ -936,7 +940,7 @@ export async function pollMotionControl(
 }
 
 export function isRoboneoTokenError(msg: string): boolean {
-  return /token|auth|log\s*in|login|expired|unauth|401|403|insufficient|balance|credit|quota|charge|CHARGE_FAILED|余额|URL output tidak ditemukan|output tidak ditemukan|no output URL/i.test(msg)
+  return /token|auth|log\s*in|login|expired|unauth|401|403|insufficient|balance|credit|quota|URL output tidak ditemukan|output tidak ditemukan|no output URL|CHARGE_FAILED|charge.?failed|payment.?required|余额不足|余额不够|积分不足|账户余额|欠费|VIP|会员/i.test(msg)
 }
 
 export function parseAccessToken(raw: string): string {
