@@ -746,12 +746,40 @@ export async function pollMotionControl(
   function findVideoUrl(...sources: any[]): string | null {
     const all = [...new Set(sources.flatMap((s) => resolveUrls(s)))]
     if (all.length > 0) {
-      console.log(`[roboneo] findVideoUrl: found ${all.length} URLs:`, all.map(u => u.slice(0, 80)))
+      console.log(`[roboneo] findVideoUrl: found ${all.length} URLs:`, all.map(u => u.slice(0, 120)))
     }
-    return all.find((u) => /\.(mp4|mov|webm|m4v)(\?|#|$)/i.test(u)) ||
-      all.find((u) => /video|mp4|mov|webm|m4v|vod|tos|myqcloud|aliyun|oss|meitu|roboneo/i.test(u)) ||
-      all.find((u) => /\.(png|jpg|jpeg|gif|webp)(\?|#|$)/i.test(u)) ||
-      all[0] || null
+    // Priority 1: Direct video file URLs
+    const directVideo = all.find((u) => /\.(mp4|mov|webm|m4v)(\?|#|$)/i.test(u))
+    if (directVideo) return directVideo
+
+    // Priority 2: Known video CDN paths (must have video-like path segments)
+    const cdnVideo = all.find((u) => {
+      if (/\.(png|jpg|jpeg|gif|webp)(\?|#|$)/i.test(u)) return false
+      if (/\/backend\/api\/video\//i.test(u)) return true
+      if (/tos\/.*\/video/i.test(u)) return true
+      if (/vod\/.*\.mp4/i.test(u)) return true
+      if (/roboneo\.com\/.*video/i.test(u)) return true
+      if (/multi-agent-release\.meitudata\.com\/.*\.(mp4|mov|webm|m4v)/i.test(u)) return true
+      return false
+    })
+    if (cdnVideo) return cdnVideo
+
+    // Priority 3: Any URL with video-related domain/path (excluding image-only URLs)
+    const anyVideo = all.find((u) => {
+      if (/\.(png|jpg|jpeg|gif|webp)(\?|#|$)/i.test(u)) return false
+      return /video|mp4|mov|webm|m4v|vod|tos|myqcloud|aliyun|oss|roboneo/i.test(u)
+    })
+    if (anyVideo) return anyVideo
+
+    // Priority 4: Image URLs (might be frame thumbnails)
+    const imageUrl = all.find((u) => /\.(png|jpg|jpeg|gif|webp)(\?|#|$)/i.test(u))
+    if (imageUrl) return imageUrl
+
+    // Fallback: first URL (might be wrong, but log it)
+    if (all.length > 0) {
+      console.log(`[roboneo] findVideoUrl: no video pattern match, using first URL: ${all[0]}`)
+    }
+    return all[0] || null
   }
 
   function searchAllUrls(obj: any): string[] {
@@ -876,7 +904,7 @@ export async function pollMotionControl(
 
       const allUrls = searchAllUrls({ task, payload, response: result })
       const fromAll = allUrls.find((u) => /\.(mp4|mov|webm|m4v)(\?|#|$)/i.test(u)) ||
-        allUrls.find((u) => /video|mp4|mov|webm|m4v|vod|tos|myqcloud|aliyun|oss|roboneo/i.test(u)) ||
+        allUrls.find((u) => /video|mp4|mov|webm|m4v|vod|tos|myqcloud|aliyun|oss|roboneo/i.test(u) && !/\.(png|jpg|jpeg|gif|webp)(\?|#|$)/i.test(u)) ||
         allUrls.find((u) => /\.(png|jpg|jpeg|gif|webp)(\?|#|$)/i.test(u)) ||
         allUrls[0] || null
 
