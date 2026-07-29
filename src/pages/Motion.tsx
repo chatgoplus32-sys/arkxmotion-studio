@@ -1,5 +1,4 @@
 import { useState, useRef, useCallback, useEffect, forwardRef } from 'react'
-import { flushSync } from 'react-dom'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Textarea, Select, Label, Badge, EmptyState } from '@/components/ui'
 import { useProviderManager, type ProviderId } from '@/stores'
@@ -152,9 +151,8 @@ export default function MotionPage() {
 
   const addLog = (msg: string, level = 'info') => {
     addBgLog(msg, level)
-    flushSync(() => {
-      setLogs(getLogs())
-    })
+    const entry = { time: new Date().toLocaleTimeString(), msg, level }
+    setLogs((prev) => [...prev, entry].slice(-200))
   }
 
   const handleGenerate = async () => {
