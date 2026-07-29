@@ -1,11 +1,12 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback, useEffect, forwardRef } from 'react'
+import { flushSync } from 'react-dom'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Textarea, Select, Label, Badge, EmptyState } from '@/components/ui'
 import { useProviderManager, type ProviderId } from '@/stores'
 import { useToastStore } from '@/stores/toastStore'
-import { uploadToCatbox, submitMotionControl, pollMotionControl, checkRoboneoBalance, compressVideo } from '@/lib/roboneo'
+import { uploadToCatbox, submitMotionControl, pollMotionControl, checkRoboneoBalance, compressVideo, submitGoogleOmni } from '@/lib/roboneo'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
-import { removeResult } from '@/lib/backgroundTasks'
+import { removeResult, clearResults, getActiveTasks, getLogs, getResults, addBgLog, addActiveTask, addResult } from '@/lib/backgroundTasks'
 import { startBackgroundPolling } from '@/lib/backgroundTasks'
 import {
   Video,
@@ -89,6 +90,17 @@ export default function MotionPage() {
   const { keys } = useProviderManager()
 
   useEffect(() => {
+    const activeTasks = getActiveTasks().filter((t) => t.page === 'motion')
+    const staleThreshold = 30 * 60 * 1000
+    const staleTasks = activeTasks.filter((t) => Date.now() - t.startedAt > staleThreshold)
+    if (staleTasks.length > 0) {
+      for (const task of staleTasks) {
+        removeActiveTask(task.taskId)
+      }
+      setGenerating(false)
+      generatingRef.current = false
+    }
+
     startBackgroundPolling()
 
     const sync = () => {
@@ -140,7 +152,9 @@ export default function MotionPage() {
 
   const addLog = (msg: string, level = 'info') => {
     addBgLog(msg, level)
-    setLogs(getLogs())
+    flushSync(() => {
+      setLogs(getLogs())
+    })
   }
 
   const handleGenerate = async () => {
@@ -585,8 +599,6 @@ setGenerating(true)
           )}
         </div>
 
-import { removeResult, clearResults } from '@/lib/backgroundTasks'
-
       {/* Gallery */}
       <Section
         title="Gallery"
@@ -642,27 +654,29 @@ import { removeResult, clearResults } from '@/lib/backgroundTasks'
                       {result.prompt}
                     </span>
                     <div className="flex items-center gap-1">
-          <a
-            onClick={(e) => { e.preventDefault(); handleDownload(result.url, result.id) }}
-            href="#"
-            className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-500 transition"
-          >
-            <Download className="h-3.5 w-3.5" /> Download
-          </a>
-          <button
-            onClick={(e) => {
-              e.preventDefault();
-              setResults(results.filter((r) => r.id !== result.id));
-              removeResult(result.id);
-            }}
-            className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-destructive/30 bg-destructive/5 hover:bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive transition"
-          >
-            <Trash2 className="h-3.5 w-3.5" /> Hapus
-          </button>
-        </div>
-      </div>
-    </div>
-  )}
+                      <a
+                        onClick={(e) => { e.preventDefault(); handleDownload(result.url, result.id) }}
+                        href="#"
+                        className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-500 transition"
+                      >
+                        <Download className="h-3.5 w-3.5" /> Download
+                      </a>
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setResults(results.filter((r) => r.id !== result.id));
+                          removeResult(result.id);
+                        }}
+                        className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-destructive/30 bg-destructive/5 hover:bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive transition"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" /> Hapus
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </Section>
       </div>
     </PageContent>
@@ -735,8 +749,6 @@ function SlotCard({
     </div>
   )
 }
-
-import { forwardRef } from 'react'
 
 interface FileUploadProps {
   kind: 'image' | 'video'
