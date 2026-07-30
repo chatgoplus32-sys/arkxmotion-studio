@@ -41,7 +41,7 @@ export async function fetchLeonardoBalance(apiKey: string): Promise<LeonardoBala
   }
 }
 
-export async function leonardoGenerate(opts: LeonardoGenerateOptions): Promise<{ generationId: string }> {
+export async function leonardoGenerate(opts: LeonardoGenerateOptions): Promise<{ generationId: string; diags?: string[] }> {
   const { apiKey, slug, prompt, width, height, duration, imageUrl } = opts
 
   const res = await fetch(LEONARDO_PROXY, {
@@ -60,7 +60,7 @@ export async function leonardoGenerate(opts: LeonardoGenerateOptions): Promise<{
 
   const data = await res.json()
   if (!data.generationId) throw new Error('Leonardo: no generationId')
-  return { generationId: data.generationId }
+  return { generationId: data.generationId, diags: data.diags }
 }
 
 export async function leonardoPollStatus(
@@ -118,7 +118,10 @@ export async function generateWithLeonardo(opts: LeonardoGenerateOptions & {
   onLog?.(`Submitting to Leonardo... model=${slug}`)
   onStatus?.('Submitting to Leonardo...', 10)
 
-  const { generationId } = await leonardoGenerate({ apiKey, slug, prompt, width, height, duration, imageUrl })
+  const { generationId, diags } = await leonardoGenerate({ apiKey, slug, prompt, width, height, duration, imageUrl })
+  if (diags) {
+    for (const d of diags) onLog?.(`[upload] ${d}`, 'debug')
+  }
   onLog?.(`Generation ${generationId.slice(0, 8)}... ✓`)
   onStatus?.('Rendering...', 40)
 

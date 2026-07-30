@@ -42,6 +42,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (action === 'generate') {
       const { slug, prompt, width, height, duration, imageUrl } = req.body
       const token = auth.replace(/^Bearer\s+/i, '')
+      const diags: string[] = []
 
       const body: any = {
         model: slug,
@@ -56,34 +57,65 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       if (imageUrl) {
+        diags.push(`fetching image from ${imageUrl.slice(0, 80)}`)
         const imgRes = await fetch(imageUrl)
-        const imgBlob = await imgRes.blob()
-        const ext = imageUrl.includes('.webp') ? 'webp' : imageUrl.includes('.png') ? 'png' : 'jpg'
+        if (!imgRes.ok) {
+          diags.push(`image fetch FAILED: ${imgRes.status}`)
+        } else {
+          const imgBlob = await imgRes.blob()
+          const ext = imageUrl.includes('.webp') ? 'webp' : imageUrl.includes('.png') ? 'png' : 'jpg'
+          diags.push(`image fetched: ${imgBlob.size} bytes, ext=${ext}`)
 
-        const initRes = await fetch(`${LEONARDO_API}/api/rest/v1/init-image`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ extension: ext }),
-        })
-        const initData = await initRes.json()
-        const initImage = initData?.uploadInitImage
+          const arrayBuf = await imgBlob.arrayBuffer()
+          const bytes = new Uint8Array(arrayBuf)
+          let binary = ''
+          const chunk = 32768
+          for (let i = 0; i < bytes.length; i += chunk) {
+            binary += String.fromCharCode(...bytes.subarray(i, i + chunk))
+          }
+          const b64 = btoa(binary)
 
-        if (initImage?.url) {
-          const putRes = await fetch(initImage.url, {
-            method: 'PUT',
-            headers: { 'Content-Type': `image/${ext === 'jpg' ? 'jpeg' : ext}` },
-            body: imgBlob,
+          const initRes = await fetch(`${LEONARDO_API}/api/rest/v1/init-image`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ extension: ext }),
           })
-          if (putRes.ok && initImage.id) {
-            body.parameters.guidances = {
-              image_reference: [{ image: { id: initImage.id, type: 'UPLOADED' }, strength: 'MID' }],
+          const initData = await initRes.json()
+          diags.push(`init-image response: ${JSON.stringify(initData).slice(0, 500)}`)
+
+          const initImage = initData?.uploadInitImage || initData?.upload_init_image || initData
+          const presignedUrl = initImage?.url
+          const imageId = initImage?.id
+
+          if (presignedUrl && imageId) {
+            const mime = ext === 'jpg' ? 'image/jpeg' : `image/${ext}`
+            const putRes = await fetch(presignedUrl, {
+              method: 'PUT',
+              headers: { 'Content-Type': mime },
+              body: imgBlob,
+            })
+            diags.push(`PUT to S3: ${putRes.status} ${putRes.statusText}`)
+
+            if (putRes.ok) {
+              body.parameters.guidances = {
+                image_reference: [{ image: { id: imageId, type: 'UPLOADED' }, strength: 'MID' }],
+              }
+              diags.push(`guidances SET with imageId=${imageId}`)
+            } else {
+              const errText = await putRes.text().catch(() => '')
+              diags.push(`PUT FAILED: ${errText.slice(0, 200)}`)
             }
+          } else {
+            diags.push(`no presigned URL or imageId. Keys: ${Object.keys(initData || {})}`)
           }
         }
       }
+
+      const hasGuidances = !!body.parameters.guidances
+      diags.push(`submitting to GraphQL. hasGuidances=${hasGuidances}`)
 
       const genRes = await fetch(`${LEONARDO_API}/v1/graphql`, {
         method: 'POST',
@@ -102,14 +134,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const genData = await genRes.json()
       const generationId = genData?.data?.generate?.generationId ||
-        genData?.data?.generate?.generation_id ||
-        genData?.errors?.[0]?.message
+        genData?.data?.generate?.generation_id
 
       if (!generationId) {
-        return res.status(400).json({ error: 'No generationId', data: genData })
+        const errMsg = genData?.errors?.[0]?.message || JSON.stringify(genData).slice(0, 300)
+        return res.status(400).json({ error: 'No generationId', detail: errMsg, diags })
       }
 
-      return res.json({ generationId })
+      return res.json({ generationId, hasGuidances, diags })
     }
 
     if (action === 'status') {
