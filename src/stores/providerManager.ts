@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'createpulse' | 'framia' | 'firefly' | 'leonardo' | 'elevenlabs' | 'gemini' | 'openai'
+export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'createpulse' | 'framia' | 'firefly' | 'leonardo' | 'elevenlabs' | 'gemini' | 'openai' | 'shotstack' | 'creatomate'
 
 export interface ProviderKey {
   id: string
@@ -134,6 +134,26 @@ export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
     minCredits: 0,
     supportsBalance: false,
   },
+  shotstack: {
+    id: 'shotstack',
+    name: 'Shotstack',
+    icon: '🎬',
+    description: 'Cloud video rendering API — fallback for large files (≥400MB)',
+    keyPlaceholder: 'Paste your Shotstack API key...',
+    keyFormat: 'API key',
+    minCredits: 0,
+    supportsBalance: true,
+  },
+  creatomate: {
+    id: 'creatomate',
+    name: 'Creatomate',
+    icon: '🎥',
+    description: 'Cloud video rendering — template-based, batch rendering support',
+    keyPlaceholder: 'Paste your Creatomate API key...',
+    keyFormat: 'API key',
+    minCredits: 0,
+    supportsBalance: true,
+  },
 }
 
 interface ProviderState {
@@ -175,6 +195,8 @@ function loadKeysFromStorage(): Record<ProviderId, ProviderKey[]> {
     elevenlabs: [],
     gemini: [],
     openai: [],
+    shotstack: [],
+    creatomate: [],
   }
   try {
     const stored = localStorage.getItem(STORAGE_KEY)
@@ -199,6 +221,10 @@ function loadRoutingFromStorage(): Record<string, ProviderId> {
     storyboard: 'weavy',
     'bulk-fashion': 'weavy',
     'image-to-video': 'weavy',
+    'text-to-video': 'weavy',
+    upscaler: 'magnific',
+    dubbing: 'elevenlabs',
+    'ai-influencer': 'gemini',
   }
 }
 

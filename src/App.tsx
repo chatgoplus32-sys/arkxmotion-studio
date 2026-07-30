@@ -12,6 +12,9 @@ import NaratifPage from '@/pages/Naratif'
 import StoryboardPage from '@/pages/Storyboard'
 import BulkFashionPage from '@/pages/BulkFashion'
 import ImageToVideoPage from '@/pages/ImageToVideo'
+import TextToVideoPage from '@/pages/TextToVideo'
+import UpscalerPage from '@/pages/Upscaler'
+import DubbingPage from '@/pages/Dubbing'
 
 import ProvidersPage from '@/pages/Providers'
 import SettingsPage from '@/pages/Settings'
@@ -53,6 +56,9 @@ export default function App() {
                       <Route path="/generate/storyboard" element={<StoryboardPage />} />
                       <Route path="/generate/bulk-fashion" element={<BulkFashionPage />} />
                       <Route path="/generate/image-to-video" element={<ImageToVideoPage />} />
+                      <Route path="/generate/text-to-video" element={<TextToVideoPage />} />
+                      <Route path="/generate/upscaler" element={<UpscalerPage />} />
+                      <Route path="/mixing/dubbing" element={<DubbingPage />} />
 
                       <Route path="/providers" element={<ProvidersPage />} />
                       <Route path="/settings" element={<SettingsPage />} />

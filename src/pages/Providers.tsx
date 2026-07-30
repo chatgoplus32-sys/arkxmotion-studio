@@ -39,6 +39,8 @@ const PROVIDER_COLORS: Record<string, string> = {
   eleven: '#818cf8',
   render: '#94a3b8',
   createpulse: '#c084fc',
+  shotstack: '#06b6d4',
+  creatomate: '#8b5cf6',
 }
 
 const PROVIDER_LIST = [
@@ -52,7 +54,8 @@ const PROVIDER_LIST = [
   { key: 'firefly', label: 'Adobe Firefly', desc: 'Firefly image (Image 3/4) & video (Veo) via session token firefly.adobe.com.' },
   { key: 'eleven', label: 'ElevenLabs', desc: 'Voice-over untuk Naratif Video Maker.' },
   { key: 'createpulse', label: 'CreatePulse', desc: 'Video generation (Seedance, Veo, Dreamina) via createpulse.online — pakai API key sendiri.' },
-  { key: 'render', label: 'Render (Shotstack/Creatomate)', desc: 'Fallback cloud render ketika video melebihi limit FFmpeg browser (≥ 400 MB).' },
+  { key: 'shotstack', label: 'Shotstack', desc: 'Cloud video rendering API — fallback untuk file besar (≥400 MB) atau batch rendering.' },
+  { key: 'creatomate', label: 'Creatomate', desc: 'Cloud video rendering template-based — batch render, output MP4/WebM/MOV.' },
 ] as const
 
 const TOKEN_GUIDE: Record<string, {
@@ -210,6 +213,32 @@ const TOKEN_GUIDE: Record<string, {
       { text: 'Paste key di panel Shotstack / Creatomate di sebelah. Bila kosong, dropdown Render engine akan disabled.' },
     ],
     tip: 'FFmpeg = default, gratis, di device kamu. Cloud = fallback untuk file besar / batch panjang.',
+  },
+  shotstack: {
+    url: 'https://shotstack.io/dashboard/',
+    urlLabel: 'shotstack.io/dashboard',
+    prefix: 'sk-… (Shotstack API Key)',
+    steps: [
+      { text: 'Register/login di shotstack.io.' },
+      { text: 'Buka Dashboard → API Keys.' },
+      { text: 'Klik "Create API Key", beri nama.' },
+      { text: 'Copy key sk-… — paste ke input di sebelah.' },
+      { text: 'Free tier: 20 menit render/bulan. Paid mulai $0.02/menit.' },
+    ],
+    tip: 'Shotstack cocok untuk render video panjang atau batch. Mendukung MP4, WebM, MOV.',
+  },
+  creatomate: {
+    url: 'https://creatomate.com/',
+    urlLabel: 'creatomate.com',
+    prefix: 'cm_… (Creatomate API Key)',
+    steps: [
+      { text: 'Register/login di creatomate.com.' },
+      { text: 'Buka Project Settings → API.' },
+      { text: 'Klik "Create API Key", beri nama.' },
+      { text: 'Copy key cm_… — paste ke input di sebelah.' },
+      { text: 'Free tier: 50 render/bulan. Paid mulai $0.10/render.' },
+    ],
+    tip: 'Creatomate mendukung template-based rendering. Upload template JSON, lalu render batch dengan data dinamis.',
   },
 }
 

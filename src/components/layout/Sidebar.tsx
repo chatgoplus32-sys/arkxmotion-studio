@@ -16,6 +16,9 @@ import {
   Activity,
   Lock,
   Wallet,
+  Wand2,
+  PlayCircle,
+  Mic,
 } from 'lucide-react'
 
 interface NavItem {
@@ -34,10 +37,13 @@ const mainNav: NavItem[] = [
 const generateNav: NavItem[] = [
   { label: 'Motion Control', href: '/generate/motion', icon: <Video className="h-4 w-4" /> },
   { label: 'Image to Video', href: '/generate/image-to-video', icon: <Image className="h-4 w-4" /> },
+  { label: 'Text to Video', href: '/generate/text-to-video', icon: <PlayCircle className="h-4 w-4" /> },
+  { label: 'Upscaler', href: '/generate/upscaler', icon: <Wand2 className="h-4 w-4" /> },
 ]
 
 const toolsNavBase: NavItem[] = [
   { label: 'Providers', href: '/providers', icon: <Zap className="h-4 w-4" /> },
+  { label: 'Dubbing', href: '/mixing/dubbing', icon: <Mic className="h-4 w-4" /> },
   { label: 'Top Up CreatePulse', href: '/topup/createpulse', icon: <Wallet className="h-4 w-4" /> },
   { label: 'Settings', href: '/settings', icon: <Settings className="h-4 w-4" /> },
 ]

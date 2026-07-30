@@ -96,6 +96,8 @@ const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
   elevenlabs: [],
   gemini: [],
   openai: [],
+  shotstack: [],
+  creatomate: [],
 }
 
 const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; label: string; mult: number; duration: number; cr?: number; resolution?: string; sound?: string; sizeTier?: string }>>> = {
@@ -323,6 +325,8 @@ const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; 
   elevenlabs: { default: [] },
   gemini: { default: [] },
   openai: { default: [] },
+  shotstack: { default: [] },
+  creatomate: { default: [] },
 }
 
 const RATIOS = ['16:9', '9:16', '1:1', '4:5', '3:4']
