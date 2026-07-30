@@ -436,7 +436,7 @@ export default function ImageToVideoPage() {
   const totalCredits = currentModel ? (currentQuality?.cr ?? Math.round(currentModel.cr * (currentQuality?.mult || 1))) : 0
 
   const providerKeyCount = keys[provider]?.length || 0
-  const hasActiveKey = keys[provider]?.some((k) => k.status === 'active') || false
+  const hasActiveKey = keys[provider]?.some((k) => k.status === 'active' || k.status === 'unknown') || false
 
   useEffect(() => {
     if (models.length > 0 && !models.find((m) => m.value === model)) {

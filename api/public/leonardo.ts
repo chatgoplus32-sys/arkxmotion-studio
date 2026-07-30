@@ -25,7 +25,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       const balData = await balRes.json()
       const user = balData?.user_details?.[0] || balData?.userDetails?.[0] || balData
-      const credits = user?.paidTokens ?? user?.subscriptionTokens ?? user?.apiPaidTokens ?? 0
+      const credits = user?.paidTokens || user?.subscriptionTokens || user?.apiPaidTokens || 0
       return res.json({
         credits,
         subscription: user?.subscription?.plan ?? user?.tier ?? null,
