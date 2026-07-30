@@ -19,6 +19,7 @@ import {
   Wand2,
   PlayCircle,
   Mic,
+  ShoppingCart,
 } from 'lucide-react'
 
 interface NavItem {
@@ -46,6 +47,7 @@ const toolsNavBase: NavItem[] = [
   { label: 'Dubbing', href: '/mixing/dubbing', icon: <Mic className="h-4 w-4" /> },
   { label: 'Top Up CreatePulse', href: '/topup/createpulse', icon: <Wallet className="h-4 w-4" /> },
   { label: 'Settings', href: '/settings', icon: <Settings className="h-4 w-4" /> },
+  { label: 'Beli Token', href: '/beli-token', icon: <ShoppingCart className="h-4 w-4" /> },
 ]
 
 interface SidebarProps {
