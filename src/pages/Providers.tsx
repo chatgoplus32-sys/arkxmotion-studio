@@ -26,6 +26,7 @@ import {
 } from 'lucide-react'
 import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
 import { checkRoboneoBalance } from '@/lib/roboneo'
+import { fetchLeonardoBalance } from '@/lib/leonardo'
 
 const PROVIDER_COLORS: Record<string, string> = {
   brain: '#f472b6',
@@ -432,6 +433,25 @@ export default function ProvidersPage() {
         return { state: 'active', detail: 'Format API key valid' }
       }
       return { state: 'invalid', detail: 'Format key harus cp_...' }
+    }
+    if (selectedProvider === 'leonardo') {
+      try {
+        const result = await fetchLeonardoBalance(key)
+        if (result.ok) {
+          if (result.credits != null && result.credits > 0) {
+            return { state: 'active', balance: result.credits, detail: `Credits: ${result.credits}${result.subscription ? ` (${result.subscription})` : ''}` }
+          } else if (result.credits === 0) {
+            return { state: 'empty', balance: 0, detail: 'Credits: 0 — habis' }
+          }
+          return { state: 'active', detail: result.subscription ? `Plan: ${result.subscription}` : 'Token valid' }
+        }
+        if (result.error?.includes('401') || result.error?.includes('403') || result.error?.includes('expired')) {
+          return { state: 'invalid', detail: 'Token expired / tidak valid' }
+        }
+        return { state: 'failed', detail: result.error || 'Gagal cek token' }
+      } catch {
+        return { state: 'failed', detail: 'Error checking token' }
+      }
     }
     return { state: 'unknown', detail: 'Cek limit belum tersedia untuk provider ini' }
   }, [selectedProvider])

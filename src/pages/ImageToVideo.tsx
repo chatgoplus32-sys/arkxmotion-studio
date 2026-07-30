@@ -7,6 +7,7 @@ import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { uploadToCatbox, submitGoogleOmni, submitRoboneoI2V, pollMotionControl, compressVideo, normalizeImage } from '@/lib/roboneo'
 import { generateWithFramia } from '@/lib/framia'
+import { generateWithLeonardo } from '@/lib/leonardo'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import {
   getActiveTasks,
@@ -987,96 +988,43 @@ export default function ImageToVideoPage() {
         addLog(`[1/2] 🎨 Preparing image for Leonardo...`, 'info', 'leonardo')
         setStatus((s) => ({ ...s, text: 'Preparing...', pct: 5 }))
 
+        const sizeTier = currentQuality?.sizeTier || 'hd'
+        const sizeMap: Record<string, { width: number; height: number }> = {
+          standard: ratio === '16:9' ? { width: 864, height: 496 } : ratio === '1:1' ? { width: 496, height: 496 } : { width: 496, height: 864 },
+          hd: ratio === '16:9' ? { width: 1280, height: 720 } : ratio === '1:1' ? { width: 720, height: 720 } : { width: 720, height: 1280 },
+          quality: ratio === '16:9' ? { width: 1280, height: 720 } : ratio === '1:1' ? { width: 720, height: 720 } : { width: 720, height: 1280 },
+          fullHd: ratio === '16:9' ? { width: 1920, height: 1080 } : ratio === '1:1' ? { width: 1080, height: 1080 } : { width: 1080, height: 1920 },
+        }
+        const dims = sizeMap[sizeTier] || sizeMap.hd
+        const slug = model.replace('leo-vid:', '')
+
+        const formData = new FormData()
+        formData.append('file', imgFile)
+        const uploadRes = await fetch('/api/public/upload-catbox', { method: 'POST', body: formData })
+        const uploadData = await uploadRes.json().catch(() => ({}))
+        const imageUrl = uploadData.url
+        if (!imageUrl) throw new Error('Leonardo: image upload failed')
+        addLog(`   ✅ Image uploaded ✓`, 'success', 'leonardo')
+
+        addLog(`[2/2] 🚀 Submitting to Leonardo...`, 'info', 'leonardo')
+        addLog(`   → model: ${slug} | size: ${dims.width}x${dims.height} (${sizeTier}) | duration: ${currentQuality?.duration || 5}s`, 'debug', 'leonardo')
+
         const rotation = await withTokenRotation<string>(
           'leonardo',
           async (apiKey, keyInfo) => {
-            addLog(`🔑 Trying key: ${keyInfo.name || keyInfo.id}`, 'info', 'leonardo')
-            setStatus((s) => ({ ...s, text: `Submit Leonardo ${model}...`, pct: 15 }))
-
-            const sizeTier = currentQuality?.sizeTier || 'hd'
-            const sizeMap: Record<string, { width: number; height: number }> = {
-              standard: ratio === '16:9' ? { width: 864, height: 496 } : ratio === '1:1' ? { width: 496, height: 496 } : { width: 496, height: 864 },
-              hd: ratio === '16:9' ? { width: 1280, height: 720 } : ratio === '1:1' ? { width: 720, height: 720 } : { width: 720, height: 1280 },
-              quality: ratio === '16:9' ? { width: 1280, height: 720 } : ratio === '1:1' ? { width: 720, height: 720 } : { width: 720, height: 1280 },
-              fullHd: ratio === '16:9' ? { width: 1920, height: 1080 } : ratio === '1:1' ? { width: 1080, height: 1080 } : { width: 1080, height: 1920 },
-            }
-            const dims = sizeMap[sizeTier] || sizeMap.hd
-
-            addLog(`[2/2] 🚀 Submitting to Leonardo...`, 'info', 'leonardo')
-            addLog(`   → model: ${model}`, 'debug', 'leonardo')
-            addLog(`   → size: ${dims.width}x${dims.height} (${sizeTier}) | duration: ${currentQuality?.duration || 5}s`, 'debug', 'leonardo')
-
-            const imageBlob = imgFile
-            const formData = new FormData()
-            formData.append('file', imageBlob)
-
-            const uploadRes = await fetch('/api/public/upload-catbox', { method: 'POST', body: formData })
-            const uploadData = await uploadRes.json().catch(() => ({}))
-            const imageUrl = uploadData.url
-            if (!imageUrl) throw new Error('Leonardo: image upload failed')
-            addLog(`   ✅ Image uploaded ✓`, 'success', 'leonardo')
-
-            const slug = model.replace('leo-vid:', '')
-            const tokenIdx = keys.leonardo?.findIndex(k => k.key === apiKey) ?? 0
-            const totalTokens = keys.leonardo?.length || 0
-            addLog(`🔑 Key ${tokenIdx + 1}/${totalTokens}: ${keyInfo.name || keyInfo.id}`, 'info', 'leonardo')
-
-            const genRes = await fetch('/api/public/leonardo', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`,
-              },
-              body: JSON.stringify({
-                action: 'generate',
-                slug,
-                prompt: prompt.trim(),
-                width: dims.width,
-                height: dims.height,
-                duration: currentQuality?.duration || 5,
-                imageUrl,
-              }),
+            addLog(`🔑 Key: ${keyInfo.name || keyInfo.id}`, 'info', 'leonardo')
+            const videoUrl = await generateWithLeonardo({
+              apiKey,
+              slug,
+              prompt: prompt.trim(),
+              width: dims.width,
+              height: dims.height,
+              duration: currentQuality?.duration || 5,
+              imageUrl,
+              onLog: (msg, level) => addLog(msg, (level as 'debug' | 'info' | 'warn' | 'error' | 'success') || 'info', 'leonardo'),
+              onStatus: (text, pct) => setStatus((s) => ({ ...s, text, pct })),
             })
-
-            if (!genRes.ok) {
-              const err = await genRes.json().catch(() => ({}))
-              throw new Error(err.error || `Leonardo HTTP ${genRes.status}`)
-            }
-
-            const genData = await genRes.json()
-            const generationId = genData.generationId
-            if (!generationId) throw new Error('Leonardo: no generationId')
-            addLog(`[2/2] ✅ Generation ${generationId.slice(0, 8)}... ✓`, 'success', 'leonardo')
-            setStatus((s) => ({ ...s, text: 'Rendering...', pct: 40 }))
-
-            addLog(`⏳ Polling for result...`, 'info', 'leonardo')
-            const maxPolls = 96
-            for (let i = 0; i < maxPolls; i++) {
-              await new Promise((r) => setTimeout(r, 5000))
-              const pollRes = await fetch('/api/public/leonardo', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${apiKey}`,
-                },
-                body: JSON.stringify({ action: 'status', generationId }),
-              })
-              if (!pollRes.ok) continue
-              const pollData = await pollRes.json()
-              const status = pollData.status
-              const pct = Math.min(95, 40 + (i / maxPolls) * 55)
-              addLog(`Poll #${i + 1}: ${status || 'processing'}`, 'debug', 'leonardo')
-              setStatus((s) => ({ ...s, text: `Leonardo ${status}...`, pct }))
-
-              if (status === 'COMPLETE') {
-                const videoUrl = pollData.motionMP4URL || pollData.generated_images?.[0]?.motionMP4URL || pollData.generated_images?.[0]?.videoUrl
-                if (!videoUrl) throw new Error('Leonardo: URL not found in COMPLETE response')
-                addLog(`✅ Done ✓`, 'success', 'leonardo')
-                return videoUrl
-              }
-              if (status === 'FAILED') throw new Error('Leonardo: generation FAILED')
-            }
-            throw new Error('Leonardo: timeout')
+            return videoUrl
           },
           {
             onKeySwitch: (from, to, attempt) => {

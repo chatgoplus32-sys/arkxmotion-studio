@@ -13,6 +13,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { action } = req.body || {}
 
   try {
+    if (action === 'balance') {
+      const token = auth.replace(/^Bearer\s+/i, '')
+      const balRes = await fetch(`${LEONARDO_API}/api/rest/v1/credits/me`, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!balRes.ok) {
+        const err = await balRes.json().catch(() => ({}))
+        return res.status(balRes.status).json({ error: err.message || `HTTP ${balRes.status}` })
+      }
+      const balData = await balRes.json()
+      return res.json({
+        credits: balData.credits ?? balData.subscription?.credits_current ?? null,
+        subscription: balData.subscription?.plan ?? null,
+      })
+    }
+
     if (action === 'generate') {
       const { slug, prompt, width, height, duration, imageUrl } = req.body
       const token = auth.replace(/^Bearer\s+/i, '')
