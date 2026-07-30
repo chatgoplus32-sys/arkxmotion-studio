@@ -151,22 +151,16 @@ export async function uploadToCatbox(file: File): Promise<string> {
     ['Server', async (f) => {
       const formData = new FormData()
       formData.append('file', new File([f], f.name || 'upload.bin', { type: f.type || 'application/octet-stream' }))
-      formData.append('prefer', 'roboneo')
-      const res = await fetch('https://roboneo-proxy.chatgoplus32.workers.dev/api/public/upload-catbox', { method: 'POST', body: formData })
-      const text = await res.text().catch(() => '')
-      let data: any = {}
-      try { data = JSON.parse(text) } catch { throw Error(`Proxy returned non-JSON (${res.status}): ${text.slice(0, 200)}`) }
+      const res = await fetch('/api/public/uploads?provider=tmpfiles', { method: 'POST', body: formData })
+      const data = await res.json().catch(() => ({})) as any
       if (!res.ok || !data.url) throw Error(data.error || `HTTP ${res.status}`)
       return data.url
     }],
     ['AA Creative', async (f) => {
       const formData = new FormData()
       formData.append('file', new File([f], f.name || 'upload.bin', { type: f.type || 'application/octet-stream' }))
-      formData.append('prefer', 'roboneo')
-      const res = await fetch('https://aacreative.vercel.app/api/public/upload-catbox', { method: 'POST', body: formData })
-      const text = await res.text().catch(() => '')
-      let data: any = {}
-      try { data = JSON.parse(text) } catch { throw Error(`AA Creative returned non-JSON (${res.status}): ${text.slice(0, 200)}`) }
+      const res = await fetch('https://aacreative.vercel.app/api/public/uploads?provider=tmpfiles', { method: 'POST', body: formData })
+      const data = await res.json().catch(() => ({})) as any
       if (!res.ok || !data.url) throw Error(data.error || `HTTP ${res.status}`)
       return data.url
     }],

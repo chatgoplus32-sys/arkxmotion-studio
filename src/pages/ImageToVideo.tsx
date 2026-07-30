@@ -1000,7 +1000,7 @@ export default function ImageToVideoPage() {
 
         const formData = new FormData()
         formData.append('file', imgFile)
-        const uploadRes = await fetch('/api/public/uploads?provider=catbox', { method: 'POST', body: formData })
+        const uploadRes = await fetch('/api/public/uploads?provider=tmpfiles', { method: 'POST', body: formData })
         const uploadData = await uploadRes.json().catch(() => ({}))
         const imageUrl = uploadData.url
         if (!imageUrl) throw new Error('Leonardo: image upload failed')
