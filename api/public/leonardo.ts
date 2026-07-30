@@ -24,9 +24,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(balRes.status).json({ error: err.message || `HTTP ${balRes.status}` })
       }
       const balData = await balRes.json()
-      const user = balData?.userDetails?.[0] || balData?.user_details?.[0] || balData
+      const user = balData?.user_details?.[0] || balData?.userDetails?.[0] || balData
+      const credits = user?.paidTokens ?? user?.subscriptionTokens ?? user?.apiPaidTokens ?? 0
       return res.json({
-        credits: user?.apiPaidTokens ?? user?.subscriptionTokens ?? null,
+        credits,
         subscription: user?.subscription?.plan ?? user?.tier ?? null,
       })
     }
