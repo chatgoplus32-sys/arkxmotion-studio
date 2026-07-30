@@ -84,32 +84,48 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             body: JSON.stringify({ extension: ext }),
           })
           const initData = await initRes.json()
-          diags.push(`init-image response: ${JSON.stringify(initData).slice(0, 500)}`)
+          diags.push(`init-image: ${JSON.stringify(initData).slice(0, 500)}`)
 
           const initImage = initData?.uploadInitImage || initData?.upload_init_image || initData
           const presignedUrl = initImage?.url
           const imageId = initImage?.id
+          const fields = initImage?.fields
 
           if (presignedUrl && imageId) {
             const mime = ext === 'jpg' ? 'image/jpeg' : `image/${ext}`
-            const putRes = await fetch(presignedUrl, {
-              method: 'PUT',
-              headers: { 'Content-Type': mime },
-              body: imgBlob,
-            })
-            diags.push(`PUT to S3: ${putRes.status} ${putRes.statusText}`)
+            let uploadOk = false
 
-            if (putRes.ok) {
+            if (fields && typeof fields === 'object') {
+              const fd = new FormData()
+              for (const [k, v] of Object.entries(fields)) {
+                fd.append(k, String(v))
+              }
+              fd.append('file', imgBlob, `image.${ext}`)
+              const postRes = await fetch(presignedUrl, { method: 'POST', body: fd })
+              diags.push(`POST+FormData to S3: ${postRes.status}`)
+              uploadOk = postRes.ok
+            }
+
+            if (!uploadOk) {
+              const putRes = await fetch(presignedUrl, {
+                method: 'PUT',
+                headers: { 'Content-Type': mime },
+                body: imgBlob,
+              })
+              diags.push(`PUT to S3: ${putRes.status}`)
+              uploadOk = putRes.ok
+            }
+
+            if (uploadOk) {
               body.parameters.guidances = {
                 image_reference: [{ image: { id: imageId, type: 'UPLOADED' }, strength: 'MID' }],
               }
-              diags.push(`guidances SET with imageId=${imageId}`)
+              diags.push(`guidances SET imageId=${imageId}`)
             } else {
-              const errText = await putRes.text().catch(() => '')
-              diags.push(`PUT FAILED: ${errText.slice(0, 200)}`)
+              diags.push(`S3 upload FAILED both methods`)
             }
           } else {
-            diags.push(`no presigned URL or imageId. Keys: ${Object.keys(initData || {})}`)
+            diags.push(`no presigned URL or imageId. keys=${Object.keys(initData || {})}`)
           }
         }
       }
