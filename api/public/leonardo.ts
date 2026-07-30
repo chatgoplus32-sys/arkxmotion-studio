@@ -84,35 +84,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             body: JSON.stringify({ extension: ext }),
           })
           const initData = await initRes.json()
-          diags.push(`init-image: ${JSON.stringify(initData).slice(0, 500)}`)
+          diags.push(`init-image: id=${initData?.uploadInitImage?.id}`)
 
           const initImage = initData?.uploadInitImage || initData?.upload_init_image || initData
           const presignedUrl = initImage?.url
           const imageId = initImage?.id
-          const fields = initImage?.fields
+          let fields: Record<string, string> = {}
+          try {
+            const raw = initImage?.fields
+            fields = typeof raw === 'string' ? JSON.parse(raw) : (raw || {})
+          } catch { fields = {} }
 
           if (presignedUrl && imageId) {
             const mime = ext === 'jpg' ? 'image/jpeg' : `image/${ext}`
             let uploadOk = false
 
-            if (fields && typeof fields === 'object') {
+            if (Object.keys(fields).length > 0) {
               const fd = new FormData()
               for (const [k, v] of Object.entries(fields)) {
                 fd.append(k, String(v))
               }
               fd.append('file', imgBlob, `image.${ext}`)
+              diags.push(`POST+FormData to S3 (${Object.keys(fields).length} fields)...`)
               const postRes = await fetch(presignedUrl, { method: 'POST', body: fd })
-              diags.push(`POST+FormData to S3: ${postRes.status}`)
+              diags.push(`POST+FormData: ${postRes.status}`)
               uploadOk = postRes.ok
-            }
-
-            if (!uploadOk) {
+              if (!postRes.ok) {
+                const errBody = await postRes.text().catch(() => '')
+                diags.push(`POST err: ${errBody.slice(0, 300)}`)
+              }
+            } else {
+              diags.push(`no fields in init-image response, trying PUT...`)
               const putRes = await fetch(presignedUrl, {
                 method: 'PUT',
                 headers: { 'Content-Type': mime },
                 body: imgBlob,
               })
-              diags.push(`PUT to S3: ${putRes.status}`)
+              diags.push(`PUT: ${putRes.status}`)
               uploadOk = putRes.ok
             }
 
@@ -122,7 +130,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               }
               diags.push(`guidances SET imageId=${imageId}`)
             } else {
-              diags.push(`S3 upload FAILED both methods`)
+              diags.push(`S3 upload FAILED`)
             }
           } else {
             diags.push(`no presigned URL or imageId. keys=${Object.keys(initData || {})}`)
