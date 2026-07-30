@@ -47,7 +47,7 @@ export function detectTokenError(provider: ProviderId, error: any): boolean {
     case 'roboneo': return isRoboneoTokenError(error)
     case 'createpulse': return isCreatePulseTokenError(error)
     case 'firefly': return /401|403|expired|unauthorized|invalid.*token/i.test(String(error?.message || error))
-    case 'leonardo': return /401|403|expired|unauthorized|invalid.*key|graphql/i.test(String(error?.message || error))
+    case 'leonardo': return /credit|insufficient|not enough|out of|balance|quota|exhaust|limit|too many|rate.?limit|402|401|403|unauthor|forbidden|expired|invalid.*token|token.*invalid|500|502|503|504|server error|network|fetch|timeout|graphql/i.test(String(error?.message || error))
     default: return isTokenError(error)
   }
 }

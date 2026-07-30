@@ -7,7 +7,8 @@ import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { uploadToCatbox, submitGoogleOmni, submitRoboneoI2V, pollMotionControl, compressVideo, normalizeImage } from '@/lib/roboneo'
 import { generateWithFramia } from '@/lib/framia'
-import { generateWithLeonardo } from '@/lib/leonardo'
+import { runLeonardoVideo } from '@/lib/leonardo'
+import { LEONARDO_VIDEO_MODELS, leonardoVideoQualityOptions } from '@/lib/leonardo-video'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import {
   getActiveTasks,
@@ -82,18 +83,12 @@ const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'ff:veo:3.1-generate', label: 'Veo 3.1 (Firefly)', cr: 40, provider: 'firefly' },
     { value: 'ff:firefly:video-1', label: 'Firefly Video Model 1', cr: 10, provider: 'firefly' },
   ],
-  leonardo: [
-    { value: 'leo-vid:gemini-omni-flash', label: 'Gemini Omni Flash (Leonardo · ~100 cr/s @ HD 720x1280)', cr: 500, provider: 'leonardo' },
-    { value: 'leo-vid:seedance-2.0-mini', label: 'Seedance 2.0 Mini (Leonardo · ~74 cr/s @ Standard 496x864)', cr: 372, provider: 'leonardo' },
-    { value: 'leo-vid:grok-imagine-1.5', label: 'Grok Imagine 1.5 (Leonardo · ~53 cr/s @ Standard 400x736)', cr: 263, provider: 'leonardo' },
-    { value: 'leo-vid:wan-2.6', label: 'Wan 2.6 (Leonardo · ~35 cr/s @ HD 720x1280)', cr: 175, provider: 'leonardo' },
-    { value: 'leo-vid:veo-3.1-lite', label: 'Veo 3.1 Lite (Leonardo · ~50 cr/s @ Quality 720x1280)', cr: 400, provider: 'leonardo' },
-    { value: 'leo-vid:veo-3.1-fast', label: 'Veo 3.1 Fast (Leonardo · ~150 cr/s @ HD 720x1280)', cr: 1200, provider: 'leonardo' },
-    { value: 'leo-vid:seedance-2.0', label: 'Seedance 2.0 (Leonardo · ~141 cr/s @ Standard 496x864)', cr: 2109, provider: 'leonardo' },
-    { value: 'leo-vid:seedance-2.0-fast', label: 'Seedance 2.0 Fast (Leonardo · ~113 cr/s @ Standard 496x864)', cr: 1687, provider: 'leonardo' },
-    { value: 'leo-vid:kling-o3-omni', label: 'Kling Video O3 Omni (Leonardo · ~224 cr/s @ HD 720x1280)', cr: 3360, provider: 'leonardo' },
-    { value: 'leo-vid:kling-2.6', label: 'Kling 2.6 (Leonardo · ~140 cr/s @ Full HD 1080x1920)', cr: 1400, provider: 'leonardo' },
-  ],
+  leonardo: LEONARDO_VIDEO_MODELS.map((m) => ({
+    value: m.id,
+    label: `${m.label} (Leonardo · ~${m.crPerSecond} cr/s)`,
+    cr: m.crExamples[0]?.cr ?? Math.round(m.crPerSecond * 5),
+    provider: 'leonardo' as ProviderId,
+  })),
   elevenlabs: [],
   gemini: [],
   openai: [],
@@ -256,73 +251,7 @@ const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; 
       { value: '5s', label: '5 detik', mult: 1, duration: 5, cr: 10 },
     ],
   },
-  leonardo: {
-    'leo-vid:gemini-omni-flash': [
-      { value: 'hd-5s', label: 'HD 720×1280 - 5s', mult: 1, duration: 5, sizeTier: 'hd', cr: 500 },
-      { value: 'hd-8s', label: 'HD 720×1280 - 8s', mult: 1.6, duration: 8, sizeTier: 'hd', cr: 800 },
-      { value: 'hd-10s', label: 'HD 720×1280 - 10s', mult: 2, duration: 10, sizeTier: 'hd', cr: 1000 },
-    ],
-    'leo-vid:seedance-2.0-mini': [
-      { value: 'standard-5s', label: 'Standard 496×864 - 5s', mult: 1, duration: 5, sizeTier: 'standard', cr: 186 },
-      { value: 'standard-10s', label: 'Standard 496×864 - 10s', mult: 2, duration: 10, sizeTier: 'standard', cr: 744 },
-      { value: 'standard-15s', label: 'Standard 496×864 - 15s', mult: 3, duration: 15, sizeTier: 'standard', cr: 1116 },
-      { value: 'hd-5s', label: 'HD 720×1280 - 5s', mult: 1, duration: 5, sizeTier: 'hd', cr: 868 },
-      { value: 'hd-10s', label: 'HD 720×1280 - 10s', mult: 2, duration: 10, sizeTier: 'hd', cr: 1736 },
-      { value: 'hd-15s', label: 'HD 720×1280 - 15s', mult: 3, duration: 15, sizeTier: 'hd', cr: 2604 },
-    ],
-    'leo-vid:grok-imagine-1.5': [
-      { value: 'standard-5s', label: 'Standard 400×736 - 5s', mult: 1, duration: 5, sizeTier: 'standard', cr: 132 },
-      { value: 'standard-10s', label: 'Standard 400×736 - 10s', mult: 2, duration: 10, sizeTier: 'standard', cr: 264 },
-      { value: 'standard-15s', label: 'Standard 400×736 - 15s', mult: 3, duration: 15, sizeTier: 'standard', cr: 396 },
-      { value: 'hd-5s', label: 'HD 720×1280 - 5s', mult: 1, duration: 5, sizeTier: 'hd', cr: 263 },
-      { value: 'hd-10s', label: 'HD 720×1280 - 10s', mult: 2, duration: 10, sizeTier: 'hd', cr: 526 },
-      { value: 'hd-15s', label: 'HD 720×1280 - 15s', mult: 3, duration: 15, sizeTier: 'hd', cr: 789 },
-    ],
-    'leo-vid:wan-2.6': [
-      { value: 'hd-5s', label: 'HD 720×1280 - 5s', mult: 1, duration: 5, sizeTier: 'hd', cr: 175 },
-      { value: 'hd-10s', label: 'HD 720×1280 - 10s', mult: 2, duration: 10, sizeTier: 'hd', cr: 350 },
-      { value: 'hd-15s', label: 'HD 720×1280 - 15s', mult: 3, duration: 15, sizeTier: 'hd', cr: 525 },
-      { value: 'fullHd-5s', label: 'Full HD 1080×1920 - 5s', mult: 1, duration: 5, sizeTier: 'fullHd', cr: 394 },
-      { value: 'fullHd-10s', label: 'Full HD 1080×1920 - 10s', mult: 2, duration: 10, sizeTier: 'fullHd', cr: 788 },
-      { value: 'fullHd-15s', label: 'Full HD 1080×1920 - 15s', mult: 3, duration: 15, sizeTier: 'fullHd', cr: 1182 },
-    ],
-    'leo-vid:veo-3.1-lite': [
-      { value: 'quality-4s', label: 'Quality 720×1280 - 4s', mult: 1, duration: 4, sizeTier: 'quality', cr: 200 },
-      { value: 'quality-6s', label: 'Quality 720×1280 - 6s', mult: 1.5, duration: 6, sizeTier: 'quality', cr: 300 },
-      { value: 'quality-8s', label: 'Quality 720×1280 - 8s', mult: 2, duration: 8, sizeTier: 'quality', cr: 400 },
-    ],
-    'leo-vid:veo-3.1-fast': [
-      { value: 'hd-4s', label: 'HD 720×1280 - 4s', mult: 1, duration: 4, sizeTier: 'hd', cr: 600 },
-      { value: 'hd-6s', label: 'HD 720×1280 - 6s', mult: 1.5, duration: 6, sizeTier: 'hd', cr: 900 },
-      { value: 'hd-8s', label: 'HD 720×1280 - 8s', mult: 2, duration: 8, sizeTier: 'hd', cr: 1200 },
-      { value: 'fullHd-4s', label: 'Full HD 1080×1920 - 4s', mult: 1, duration: 4, sizeTier: 'fullHd', cr: 1350 },
-      { value: 'fullHd-6s', label: 'Full HD 1080×1920 - 6s', mult: 1.5, duration: 6, sizeTier: 'fullHd', cr: 2025 },
-      { value: 'fullHd-8s', label: 'Full HD 1080×1920 - 8s', mult: 2, duration: 8, sizeTier: 'fullHd', cr: 2700 },
-    ],
-    'leo-vid:seedance-2.0': [
-      { value: 'standard-5s', label: 'Standard 496×864 - 5s', mult: 1, duration: 5, sizeTier: 'standard', cr: 705 },
-      { value: 'standard-10s', label: 'Standard 496×864 - 10s', mult: 2, duration: 10, sizeTier: 'standard', cr: 1410 },
-      { value: 'standard-15s', label: 'Standard 496×864 - 15s', mult: 3, duration: 15, sizeTier: 'standard', cr: 2109 },
-    ],
-    'leo-vid:seedance-2.0-fast': [
-      { value: 'standard-5s', label: 'Standard 496×864 - 5s', mult: 1, duration: 5, sizeTier: 'standard', cr: 563 },
-      { value: 'standard-10s', label: 'Standard 496×864 - 10s', mult: 2, duration: 10, sizeTier: 'standard', cr: 1126 },
-      { value: 'standard-15s', label: 'Standard 496×864 - 15s', mult: 3, duration: 15, sizeTier: 'standard', cr: 1687 },
-    ],
-    'leo-vid:kling-o3-omni': [
-      { value: 'hd-5s', label: 'HD 720×1280 - 5s', mult: 1, duration: 5, sizeTier: 'hd', cr: 1120 },
-      { value: 'hd-10s', label: 'HD 720×1280 - 10s', mult: 2, duration: 10, sizeTier: 'hd', cr: 2240 },
-      { value: 'hd-15s', label: 'HD 720×1280 - 15s', mult: 3, duration: 15, sizeTier: 'hd', cr: 3360 },
-    ],
-    'leo-vid:kling-2.6': [
-      { value: 'fullHd-5s', label: 'Full HD 1080×1920 - 5s', mult: 1, duration: 5, sizeTier: 'fullHd', cr: 700 },
-      { value: 'fullHd-10s', label: 'Full HD 1080×1920 - 10s', mult: 2, duration: 10, sizeTier: 'fullHd', cr: 1400 },
-    ],
-    default: [
-      { value: 'hd-5s', label: 'HD 720×1280 - 5s', mult: 1, duration: 5, sizeTier: 'hd', cr: 500 },
-      { value: 'hd-10s', label: 'HD 720×1280 - 10s', mult: 2, duration: 10, sizeTier: 'hd', cr: 1000 },
-    ],
-  },
+  leonardo: {},
   elevenlabs: { default: [] },
   gemini: { default: [] },
   openai: { default: [] },
@@ -430,7 +359,19 @@ export default function ImageToVideoPage() {
   const currentModel = models.find((m) => m.value === model) || models[0]
 
   const providerQualities = QUALITY_OPTIONS[provider] || QUALITY_OPTIONS.weavy
-  const qualityOptions = providerQualities[model] || providerQualities.default || []
+  const leonardoDynamicOptions = provider === 'leonardo' && model ? leonardoVideoQualityOptions(model, ratio) : []
+  const qualityOptions = provider === 'leonardo'
+    ? leonardoDynamicOptions.map((opt) => ({
+        value: opt.value,
+        label: opt.label,
+        mult: 1,
+        duration: opt.seconds,
+        cr: opt.cr,
+        sizeTier: opt.tierId as string,
+        resolution: undefined as string | undefined,
+        sound: opt.audio ? 'on' : undefined,
+      }))
+    : (providerQualities[model] || providerQualities.default || [])
   const currentQuality = qualityOptions.find((q) => q.value === quality) || qualityOptions[0]
 
   const totalCredits = currentModel ? (currentQuality?.cr ?? Math.round(currentModel.cr * (currentQuality?.mult || 1))) : 0
@@ -985,44 +926,27 @@ export default function ImageToVideoPage() {
           addLog('❌ Leonardo membutuhkan gambar input', 'error', 'leonardo')
           throw new Error('No image provided')
         }
-        addLog(`[1/2] 🎨 Preparing image for Leonardo...`, 'info', 'leonardo')
-        setStatus((s) => ({ ...s, text: 'Preparing...', pct: 5 }))
-
-        const sizeTier = currentQuality?.sizeTier || 'hd'
-        const sizeMap: Record<string, { width: number; height: number }> = {
-          standard: ratio === '16:9' ? { width: 864, height: 496 } : ratio === '1:1' ? { width: 496, height: 496 } : { width: 496, height: 864 },
-          hd: ratio === '16:9' ? { width: 1280, height: 720 } : ratio === '1:1' ? { width: 720, height: 720 } : { width: 720, height: 1280 },
-          quality: ratio === '16:9' ? { width: 1280, height: 720 } : ratio === '1:1' ? { width: 720, height: 720 } : { width: 720, height: 1280 },
-          fullHd: ratio === '16:9' ? { width: 1920, height: 1080 } : ratio === '1:1' ? { width: 1080, height: 1080 } : { width: 1080, height: 1920 },
-        }
-        const dims = sizeMap[sizeTier] || sizeMap.hd
-        const slug = model.replace('leo-vid:', '')
-
-        const formData = new FormData()
-        formData.append('file', imgFile)
-        const uploadRes = await fetch('/api/public/uploads?provider=tmpfiles', { method: 'POST', body: formData })
-        const uploadData = await uploadRes.json().catch(() => ({}))
-        const imageUrl = uploadData.url
-        if (!imageUrl) throw new Error('Leonardo: image upload failed')
-        addLog(`   ✅ Image uploaded ✓`, 'success', 'leonardo')
-
-        addLog(`[2/2] 🚀 Submitting to Leonardo...`, 'info', 'leonardo')
-        addLog(`   → model: ${slug} | size: ${dims.width}x${dims.height} (${sizeTier}) | duration: ${currentQuality?.duration || 5}s`, 'debug', 'leonardo')
+        addLog(`[1/1] 🎨 Submitting to Leonardo...`, 'info', 'leonardo')
+        setStatus((s) => ({ ...s, text: 'Submitting...', pct: 5 }))
 
         const rotation = await withTokenRotation<string>(
           'leonardo',
           async (apiKey, keyInfo) => {
             addLog(`🔑 Key: ${keyInfo.name || keyInfo.id}`, 'info', 'leonardo')
-            const videoUrl = await generateWithLeonardo({
-              apiKey,
-              slug,
+            const videoUrl = await runLeonardoVideo({
+              modelKey: model,
               prompt: prompt.trim(),
-              width: dims.width,
-              height: dims.height,
+              aspectRatio: ratio,
+              sizeTier: currentQuality?.sizeTier,
               duration: currentQuality?.duration || 5,
-              imageUrl,
-              onLog: (msg, level) => addLog(msg, (level as 'debug' | 'info' | 'warn' | 'error' | 'success') || 'info', 'leonardo'),
-              onStatus: (text, pct) => setStatus((s) => ({ ...s, text, pct })),
+              imageFile: imgFile || undefined,
+              onProgress: (text, pct) => {
+                addLog(text, 'info', 'leonardo')
+                if (pct !== undefined) setStatus((s) => ({ ...s, text, pct }))
+              },
+              onRotate: (idx, total, reason) => {
+                addLog(`🔄 Token #${idx}/${total} — ${reason}`, 'warn', 'leonardo')
+              },
             })
             return videoUrl
           },

@@ -36,20 +36,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       body: JSON.stringify({ extension }),
     })
     const initData = await initRes.json()
-    const initImage = initData?.uploadInitImage
+    const initImage = initData?.uploadInitImage || initData?.upload_init_image || initData
 
     if (!initImage?.url || !initImage?.id) {
       return res.status(200).json({ ok: false, error: 'No presigned URL from Leonardo', data: initData })
     }
 
-    const putRes = await fetch(initImage.url, {
-      method: 'PUT',
-      headers: { 'Content-Type': mimeType },
-      body: blob,
-    })
+    const presignedUrl: string = initImage.url
+    const fields = initImage.fields
+    let uploadOk = false
 
-    if (!putRes.ok) {
-      return res.status(200).json({ ok: false, error: `S3 upload failed: ${putRes.status}` })
+    if (fields && typeof fields === 'object') {
+      const fd = new FormData()
+      for (const [k, v] of Object.entries(fields)) {
+        fd.append(k, String(v))
+      }
+      fd.append('file', blob, `image.${extension}`)
+      try {
+        const postRes = await fetch(presignedUrl, { method: 'POST', body: fd })
+        uploadOk = postRes.ok
+      } catch { /* fallback to PUT */ }
+    }
+
+    if (!uploadOk) {
+      const putRes = await fetch(presignedUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': mimeType },
+        body: blob,
+      })
+      uploadOk = putRes.ok
+    }
+
+    if (!uploadOk) {
+      return res.status(200).json({ ok: false, error: 'S3 upload failed both methods' })
     }
 
     return res.json({ ok: true, id: initImage.id })
