@@ -14,6 +14,7 @@
     "api/public/framia.ts": { "maxDuration": 30 },
     "api/public/video-proxy.ts": { "maxDuration": 30 },
     "api/public/leonardo.ts": { "maxDuration": 60 },
+    "api/public/leonardo-upload.ts": { "maxDuration": 30 },
     "api/public/upload-catbox.ts": { "maxDuration": 30 },
     "api/public/firefly.ts": { "maxDuration": 60 },
     "api/public/shotstack.ts": { "maxDuration": 60 },

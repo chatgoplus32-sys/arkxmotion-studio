@@ -57,20 +57,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       if (imageUrl) {
         const imgRes = await fetch(imageUrl)
-        const blob = await imgRes.blob()
-        const formData = new FormData()
-        formData.append('file', new File([blob], 'image.jpg', { type: 'image/jpeg' }))
+        const imgBlob = await imgRes.blob()
+        const ext = imageUrl.includes('.webp') ? 'webp' : imageUrl.includes('.png') ? 'png' : 'jpg'
 
-        const uploadRes = await fetch(`${LEONARDO_API}/api/rest/v1/images`, {
+        const initRes = await fetch(`${LEONARDO_API}/api/rest/v1/init-image`, {
           method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-          body: formData,
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ extension: ext }),
         })
-        const uploadData = await uploadRes.json()
-        const imageId = uploadData?.images?.[0]?.id
-        if (imageId) {
-          body.parameters.guidances = {
-            image_reference: [{ image: { id: imageId, type: 'UPLOADED' }, strength: 'MID' }],
+        const initData = await initRes.json()
+        const initImage = initData?.uploadInitImage
+
+        if (initImage?.url) {
+          const putRes = await fetch(initImage.url, {
+            method: 'PUT',
+            headers: { 'Content-Type': `image/${ext === 'jpg' ? 'jpeg' : ext}` },
+            body: imgBlob,
+          })
+          if (putRes.ok && initImage.id) {
+            body.parameters.guidances = {
+              image_reference: [{ image: { id: initImage.id, type: 'UPLOADED' }, strength: 'MID' }],
+            }
           }
         }
       }
