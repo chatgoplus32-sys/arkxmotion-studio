@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npx vite build",
+  "buildCommand": "tsc -b && vite build",
   "outputDirectory": "dist",
   "framework": null,
   "installCommand": "npm install",
@@ -14,7 +14,9 @@
     "api/public/framia.ts": { "maxDuration": 30 },
     "api/public/video-proxy.ts": { "maxDuration": 30 },
     "api/public/leonardo.ts": { "maxDuration": 60 },
-    "api/public/firefly.ts": { "maxDuration": 60 }
+    "api/public/firefly.ts": { "maxDuration": 60 },
+    "api/public/shotstack.ts": { "maxDuration": 60 },
+    "api/public/creatomate.ts": { "maxDuration": 60 }
   },
   "routes": [
     { "src": "/api/auth/(.*)", "dest": "/api/auth?path=$1" },
