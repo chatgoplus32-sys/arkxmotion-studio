@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Textarea, Select, Badge } from '@/components/ui'
-import { PlayCircle, Loader2, Download } from 'lucide-react'
+import { PlayCircle, Loader2 } from 'lucide-react'
 import { useProviderManager, ProviderId } from '@/stores/providerManager'
 import { useToastStore } from '@/stores/toastStore'
 
@@ -28,7 +28,6 @@ export default function TextToVideoPage() {
   const [model, setModel] = useState(T2V_MODELS[0].value)
   const [duration, setDuration] = useState('5s')
   const [loading, setLoading] = useState(false)
-  const [resultUrl, setResultUrl] = useState<string | null>(null)
 
   const selectedModel = T2V_MODELS.find(m => m.value === model) || T2V_MODELS[0]
   const hasKey = keys[selectedModel.provider]?.some(k => k.status === 'active' || k.status === 'unknown')
@@ -40,7 +39,6 @@ export default function TextToVideoPage() {
       return
     }
     setLoading(true)
-    setResultUrl(null)
     try {
       await new Promise(r => setTimeout(r, 2000))
       addToast('Generate submitted — model akan diproses via provider.', 'success')
@@ -111,16 +109,7 @@ export default function TextToVideoPage() {
             )}
           </div>
 
-          {resultUrl && (
-            <div className="mt-4 rounded-xl border border-border overflow-hidden">
-              <video src={resultUrl} controls className="w-full" />
-              <div className="p-3 flex justify-end">
-                <a href={resultUrl} download className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline">
-                  <Download className="h-3 w-3" /> Download
-                </a>
-              </div>
-            </div>
-          )}
+
         </Section>
       </div>
     </PageContent>

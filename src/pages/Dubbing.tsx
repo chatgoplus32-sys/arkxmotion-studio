@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Textarea, Select, Badge } from '@/components/ui'
-import { Mic, Loader2, Download } from 'lucide-react'
+import { Mic, Loader2 } from 'lucide-react'
 import { useProviderManager, ProviderId } from '@/stores/providerManager'
 import { useToastStore } from '@/stores/toastStore'
 
@@ -30,7 +30,6 @@ export default function DubbingPage() {
   const [voice, setVoice] = useState(DUBBING_VOICES[0].value)
   const [targetLang, setTargetLang] = useState('id')
   const [loading, setLoading] = useState(false)
-  const [resultUrl, setResultUrl] = useState<string | null>(null)
 
   const selectedVoice = DUBBING_VOICES.find(v => v.value === voice) || DUBBING_VOICES[0]
   const hasKey = keys[selectedVoice.provider]?.some(k => k.status === 'active' || k.status === 'unknown')
@@ -38,7 +37,6 @@ export default function DubbingPage() {
   const handleDub = async () => {
     if (!text.trim()) return
     setLoading(true)
-    setResultUrl(null)
     try {
       await new Promise(r => setTimeout(r, 2000))
       addToast('Voice generation submitted.', 'success')
@@ -108,17 +106,6 @@ export default function DubbingPage() {
               <span className="text-xs text-destructive">Tambah {selectedVoice.provider} key di Providers</span>
             )}
           </div>
-
-          {resultUrl && (
-            <div className="mt-4 rounded-xl border border-border overflow-hidden p-4">
-              <audio src={resultUrl} controls className="w-full" />
-              <div className="mt-2 flex justify-end">
-                <a href={resultUrl} download className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline">
-                  <Download className="h-3 w-3" /> Download
-                </a>
-              </div>
-            </div>
-          )}
         </Section>
       </div>
     </PageContent>

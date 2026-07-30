@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Select, Badge } from '@/components/ui'
-import { Wand2, Loader2, Download, Upload } from 'lucide-react'
-import { useProviderManager, ProviderId } from '@/stores/providerManager'
+import { Wand2, Loader2, Upload } from 'lucide-react'
+import type { ProviderId } from '@/stores/providerManager'
 import { useToastStore } from '@/stores/toastStore'
 
 const UPSCALE_MODELS = [
@@ -12,12 +12,10 @@ const UPSCALE_MODELS = [
 ]
 
 export default function UpscalerPage() {
-  const { keys } = useProviderManager()
   const addToast = useToastStore((s) => s.addToast)
   const [imgUrl, setImgUrl] = useState<string | null>(null)
   const [model, setModel] = useState(UPSCALE_MODELS[0].value)
   const [loading, setLoading] = useState(false)
-  const [resultUrl, setResultUrl] = useState<string | null>(null)
 
   const selectedModel = UPSCALE_MODELS.find(m => m.value === model) || UPSCALE_MODELS[0]
 
@@ -33,7 +31,6 @@ export default function UpscalerPage() {
   const handleUpscale = async () => {
     if (!imgUrl) return
     setLoading(true)
-    setResultUrl(null)
     try {
       await new Promise(r => setTimeout(r, 2000))
       addToast('Image upscale submitted.', 'success')
@@ -98,17 +95,6 @@ export default function UpscalerPage() {
               {loading ? 'Upscaling...' : 'Upscale Image'}
             </Button>
           </div>
-
-          {resultUrl && (
-            <div className="mt-4 rounded-xl border border-border overflow-hidden">
-              <img src={resultUrl} alt="Result" className="w-full" />
-              <div className="p-3 flex justify-end">
-                <a href={resultUrl} download className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline">
-                  <Download className="h-3 w-3" /> Download
-                </a>
-              </div>
-            </div>
-          )}
         </Section>
       </div>
     </PageContent>
