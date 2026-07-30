@@ -438,17 +438,18 @@ export default function ProvidersPage() {
       try {
         const result = await fetchLeonardoBalance(key)
         if (result.ok) {
-          if (result.credits != null && result.credits > 0) {
-            return { state: 'active', balance: result.credits, detail: `Credits: ${result.credits}${result.subscription ? ` (${result.subscription})` : ''}` }
-          } else if (result.credits === 0) {
-            return { state: 'empty', balance: 0, detail: 'Credits: 0 — habis' }
+          const bal = result.balance ?? 0
+          if (bal > 0) {
+            return { state: 'active', balance: bal, detail: `Balance: ${bal}${result.email ? ` (${result.email})` : ''}` }
+          } else if (bal === 0) {
+            return { state: 'empty', balance: 0, detail: 'Balance: 0 — habis' }
           }
-          return { state: 'active', detail: result.subscription ? `Plan: ${result.subscription}` : 'Token valid' }
+          return { state: 'active', detail: result.email ? `Email: ${result.email}` : 'Token valid' }
         }
-        if (result.error?.includes('expired') || result.error?.includes('401') || result.error?.includes('403') || result.error?.includes('400')) {
+        if (result.message?.includes('expired') || result.message?.includes('401') || result.message?.includes('403')) {
           return { state: 'invalid', detail: 'Token expired — ambil baru dari browser (F12 → Network → api.leonardo.ai → Authorization)' }
         }
-        return { state: 'failed', detail: result.error || 'Gagal cek token' }
+        return { state: 'failed', detail: result.message || 'Gagal cek token' }
       } catch {
         return { state: 'failed', detail: 'Error checking token' }
       }

@@ -20,7 +20,11 @@ function decodeJwt(token: string): Record<string, any> | null {
     if (parts.length < 2) return null
     const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/')
     const padded = payload + '='.repeat((4 - payload.length % 4) % 4)
-    const decoded = typeof atob === 'function' ? atob(padded) : Buffer.from(padded, 'base64').toString('binary')
+    if (typeof atob === 'function') {
+      return JSON.parse(atob(padded))
+    }
+    const bytes = Uint8Array.from(padded, (c) => c.charCodeAt(0))
+    const decoded = new TextDecoder().decode(bytes)
     return JSON.parse(decoded)
   } catch {
     return null
