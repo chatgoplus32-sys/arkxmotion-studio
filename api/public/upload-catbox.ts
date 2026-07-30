@@ -1,42 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
-const CF_WORKER_URL = 'https://upload-catbox.WORKER_SUBDOMAIN.workers.dev'
-
-async function tryUploadCF(body: Buffer, contentType: string): Promise<string> {
-  const res = await fetch(CF_WORKER_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': contentType },
-    body,
-  })
-  const data = await res.json().catch(() => ({})) as any
-  if (!res.ok || !data.url) throw new Error(data.error || `CF Worker ${res.status}`)
-  return data.url
-}
-
-async function tryUploadDirect(provider: string, body: Buffer, contentType: string): Promise<string> {
-  const endpoints: Record<string, string> = {
-    catbox: 'https://catbox.moe/user/api.php',
-    litterbox: 'https://litterbox.catbox.moe/resources/internals/api.php',
-    '0x0': 'https://0x0.st',
-  }
-  const upstream = endpoints[provider]
-  if (!upstream) throw new Error(`Unknown: ${provider}`)
-
-  const res = await fetch(upstream, {
-    method: 'POST',
-    headers: {
-      'Content-Type': contentType,
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-    },
-    body,
-  })
-  const text = await res.text()
-  console.log(`[upload:${provider}] upstream ${res.status}:`, text.slice(0, 300))
-  const url = text.trim()
-  if (!url.startsWith('http')) throw new Error(`${provider}: ${text.slice(0, 200)}`)
-  return url
-}
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
@@ -53,26 +16,59 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const rawBody = Buffer.concat(chunks)
     const contentType = req.headers['content-type'] || 'multipart/form-data'
 
+    // 1. Try tmpfiles.org (works from Vercel)
     try {
-      const url = await tryUploadCF(rawBody, contentType)
-      return res.status(200).json({ ok: true, url })
-    } catch (cfErr: any) {
-      console.log(`[upload] CF Worker failed: ${cfErr.message}, trying direct...`)
-    }
-
-    const directOrder = ['catbox', 'litterbox', '0x0']
-    let lastError = ''
-    for (const provider of directOrder) {
-      try {
-        const url = await tryUploadDirect(provider, rawBody, contentType)
-        return res.status(200).json({ ok: true, url })
-      } catch (err: any) {
-        lastError = err.message
-        console.log(`[upload] ${provider} failed: ${err.message}`)
+      const res = await fetch('https://tmpfiles.org/api/v1/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': contentType },
+        body: rawBody,
+      })
+      const data = await res.json().catch(() => ({})) as any
+      if (data?.data?.url) {
+        const directUrl = data.data.url.replace('tmpfiles.org/', 'tmpfiles.org/dl/')
+        return res.status(200).json({ ok: true, url: directUrl })
       }
+    } catch (e: any) {
+      console.log('[upload] tmpfiles failed:', e.message)
     }
 
-    return res.status(502).json({ ok: false, error: `All failed: ${lastError}` })
+    // 2. Try catbox
+    try {
+      const res = await fetch('https://catbox.moe/user/api.php', {
+        method: 'POST',
+        headers: {
+          'Content-Type': contentType,
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        },
+        body: rawBody,
+      })
+      const text = await res.text()
+      if (text.trim().startsWith('http')) {
+        return res.status(200).json({ ok: true, url: text.trim() })
+      }
+    } catch (e: any) {
+      console.log('[upload] catbox failed:', e.message)
+    }
+
+    // 3. Try litterbox
+    try {
+      const res = await fetch('https://litterbox.catbox.moe/resources/internals/api.php', {
+        method: 'POST',
+        headers: {
+          'Content-Type': contentType,
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        },
+        body: rawBody,
+      })
+      const text = await res.text()
+      if (text.trim().startsWith('http')) {
+        return res.status(200).json({ ok: true, url: text.trim() })
+      }
+    } catch (e: any) {
+      console.log('[upload] litterbox failed:', e.message)
+    }
+
+    return res.status(502).json({ ok: false, error: 'All upload providers failed' })
   } catch (err: any) {
     console.error('[upload] error:', err.message)
     return res.status(502).json({ ok: false, error: err.message })
