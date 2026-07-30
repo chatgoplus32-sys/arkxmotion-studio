@@ -320,6 +320,7 @@ export function extractVideoUrl(gen: any): string | null {
 }
 
 export interface LeonardoVideoRunOptions {
+  token?: string
   modelKey: string
   prompt: string
   aspectRatio?: string
@@ -336,7 +337,7 @@ export interface LeonardoVideoRunOptions {
 }
 
 export async function runLeonardoVideo(opts: LeonardoVideoRunOptions): Promise<string> {
-  return withLeonardoTokens(async (token) => {
+  const execute = async (token: string) => {
     const { getLeonardoVideoModel, resolveLeonardoSize } = await import('./leonardo-video')
     const model = getLeonardoVideoModel(opts.modelKey)
     if (!model) throw Error(`Leonardo video: model tidak dikenal (${opts.modelKey})`)
@@ -396,7 +397,10 @@ export async function runLeonardoVideo(opts: LeonardoVideoRunOptions): Promise<s
       opts.onProgress?.(`Leonardo: rendering… (${elapsed}s)`, Math.min(90, 30 + elapsed))
     }
     throw Error('Leonardo video: timeout')
-  }, { skipExpired: true, onRotate: opts.onRotate })
+  }
+
+  if (opts.token) return execute(opts.token)
+  return withLeonardoTokens(execute, { skipExpired: true, onRotate: opts.onRotate })
 }
 
 function resolveDimensions(aspectRatio: string, tier: { short: number; long: number }): { width: number; height: number } {

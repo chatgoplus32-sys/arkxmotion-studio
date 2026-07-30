@@ -934,6 +934,7 @@ export default function ImageToVideoPage() {
           async (apiKey, keyInfo) => {
             addLog(`🔑 Key: ${keyInfo.name || keyInfo.id}`, 'info', 'leonardo')
             const videoUrl = await runLeonardoVideo({
+              token: apiKey,
               modelKey: model,
               prompt: prompt.trim(),
               aspectRatio: ratio,
