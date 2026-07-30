@@ -20,8 +20,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (!balRes.ok) {
-        const err = await balRes.json().catch(() => ({}))
-        return res.status(balRes.status).json({ error: err.message || `HTTP ${balRes.status}` })
+        const errText = await balRes.text().catch(() => '')
+        const status = balRes.status
+        if (status === 401 || status === 403) {
+          return res.status(200).json({ ok: false, error: 'Token expired / tidak valid', expired: true })
+        }
+        if (status === 400) {
+          return res.status(200).json({ ok: false, error: 'Token expired atau format tidak valid', expired: true })
+        }
+        return res.status(200).json({ ok: false, error: `Leonardo API ${status}: ${errText.slice(0, 100)}` })
       }
       const balData = await balRes.json()
       const user = balData?.user_details?.[0] || balData?.userDetails?.[0] || balData

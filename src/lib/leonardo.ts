@@ -27,11 +27,10 @@ export async function fetchLeonardoBalance(apiKey: string): Promise<LeonardoBala
       },
       body: JSON.stringify({ action: 'balance' }),
     })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      return { ok: false, error: err.error || `HTTP ${res.status}` }
+    const data = await res.json().catch(() => ({})) as any
+    if (data.error) {
+      return { ok: false, error: data.error }
     }
-    const data = await res.json()
     return {
       ok: true,
       credits: data.credits,

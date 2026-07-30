@@ -445,8 +445,8 @@ export default function ProvidersPage() {
           }
           return { state: 'active', detail: result.subscription ? `Plan: ${result.subscription}` : 'Token valid' }
         }
-        if (result.error?.includes('401') || result.error?.includes('403') || result.error?.includes('expired')) {
-          return { state: 'invalid', detail: 'Token expired / tidak valid' }
+        if (result.error?.includes('expired') || result.error?.includes('401') || result.error?.includes('403') || result.error?.includes('400')) {
+          return { state: 'invalid', detail: 'Token expired — ambil baru dari browser (F12 → Network → api.leonardo.ai → Authorization)' }
         }
         return { state: 'failed', detail: result.error || 'Gagal cek token' }
       } catch {
