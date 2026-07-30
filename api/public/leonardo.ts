@@ -15,7 +15,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     if (action === 'balance') {
       const token = auth.replace(/^Bearer\s+/i, '')
-      const balRes = await fetch(`${LEONARDO_API}/api/rest/v1/credits/me`, {
+      const balRes = await fetch(`${LEONARDO_API}/api/rest/v1/me`, {
         method: 'GET',
         headers: { Authorization: `Bearer ${token}` },
       })
@@ -24,9 +24,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(balRes.status).json({ error: err.message || `HTTP ${balRes.status}` })
       }
       const balData = await balRes.json()
+      const user = balData?.userDetails?.[0] || balData?.user_details?.[0] || balData
       return res.json({
-        credits: balData.credits ?? balData.subscription?.credits_current ?? null,
-        subscription: balData.subscription?.plan ?? null,
+        credits: user?.apiPaidTokens ?? user?.subscriptionTokens ?? null,
+        subscription: user?.subscription?.plan ?? user?.tier ?? null,
       })
     }
 
