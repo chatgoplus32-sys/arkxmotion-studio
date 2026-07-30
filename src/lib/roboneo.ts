@@ -894,7 +894,28 @@ export async function pollMotionControl(
         task?.url, task?.src, task?.link, task?.href, task?.path
       )
 
-      if (videoUrl) return videoUrl
+      if (videoUrl) {
+        if (/meitudata\.com/i.test(videoUrl)) {
+          try {
+            onProgress?.('Re-uploading to permanent storage...', 98)
+            const videoRes = await fetch(videoUrl)
+            if (videoRes.ok) {
+              const blob = await videoRes.blob()
+              const fd = new FormData()
+              fd.append('file', new File([blob], 'video.mp4', { type: 'video/mp4' }))
+              const uploadRes = await fetch('/api/public/uploads?provider=tmpfiles', { method: 'POST', body: fd })
+              const uploadData = await uploadRes.json().catch(() => ({})) as any
+              if (uploadData?.url) {
+                console.log(`[roboneo] re-uploaded to permanent: ${uploadData.url}`)
+                return uploadData.url
+              }
+            }
+          } catch (reErr: any) {
+            console.log(`[roboneo] re-upload failed: ${reErr.message}, using original URL`)
+          }
+        }
+        return videoUrl
+      }
 
       const allUrls = searchAllUrls({ task, payload, response: result })
       const fromAll = allUrls.find((u) => /\.(mp4|mov|webm|m4v)(\?|#|$)/i.test(u)) ||
@@ -902,7 +923,28 @@ export async function pollMotionControl(
         allUrls.find((u) => /\.(png|jpg|jpeg|gif|webp)(\?|#|$)/i.test(u)) ||
         allUrls[0] || null
 
-      if (fromAll) return fromAll
+      if (fromAll) {
+        if (/meitudata\.com/i.test(fromAll)) {
+          try {
+            onProgress?.('Re-uploading to permanent storage...', 98)
+            const videoRes = await fetch(fromAll)
+            if (videoRes.ok) {
+              const blob = await videoRes.blob()
+              const fd = new FormData()
+              fd.append('file', new File([blob], 'video.mp4', { type: 'video/mp4' }))
+              const uploadRes = await fetch('/api/public/uploads?provider=tmpfiles', { method: 'POST', body: fd })
+              const uploadData = await uploadRes.json().catch(() => ({})) as any
+              if (uploadData?.url) {
+                console.log(`[roboneo] re-uploaded to permanent: ${uploadData.url}`)
+                return uploadData.url
+              }
+            }
+          } catch (reErr: any) {
+            console.log(`[roboneo] re-upload failed: ${reErr.message}, using original URL`)
+          }
+        }
+        return fromAll
+      }
 
       console.log(`[roboneo] task done but no url found. task keys:`, Object.keys(task || {}))
       console.log(`[roboneo] task:`, JSON.stringify(task, null, 2).slice(0, 2000))

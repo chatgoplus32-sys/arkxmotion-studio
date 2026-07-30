@@ -70,7 +70,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const imageId = uploadData?.images?.[0]?.id
         if (imageId) {
           body.parameters.guidances = {
-            image_reference: [{ image: { id: imageId, type: 'UPLOADED' }, strength: 'HIGH' }],
+            image_reference: [{ image: { id: imageId, type: 'UPLOADED' }, strength: 'MID' }],
           }
         }
       }
@@ -122,6 +122,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         status: gen.status,
         motionMP4URL: gen.motionMP4URL,
         generated_images: gen.generated_images,
+        ...gen,
       })
     }
 

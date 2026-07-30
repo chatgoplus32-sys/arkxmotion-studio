@@ -94,7 +94,12 @@ export async function leonardoPollStatus(
     onStatus?.(`Leonardo ${status}...`, pct)
 
     if (status === 'COMPLETE') {
-      const videoUrl = data.motionMP4URL || data.generated_images?.[0]?.motionMP4URL || data.generated_images?.[0]?.videoUrl
+      const gen = data.generated_images?.[0]
+      const videoUrl = data.motionMP4URL
+        || gen?.motionMP4URL
+        || gen?.videoUrl
+        || gen?.url
+        || data.generated_images?.find((g: any) => /\.(mp4|webm|mov)(\?|$)/i.test(g?.url || ''))?.url
       if (!videoUrl) throw new Error('Leonardo: URL not found in COMPLETE response')
       return videoUrl
     }
