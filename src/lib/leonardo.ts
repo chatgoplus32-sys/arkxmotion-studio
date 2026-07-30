@@ -55,7 +55,9 @@ export async function leonardoGenerate(opts: LeonardoGenerateOptions): Promise<{
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error(err.error || `Leonardo HTTP ${res.status}`)
+    const detail = err.detail ? ` detail=${err.detail}` : ''
+    const diags = err.diags ? ` diags=[${err.diags.join(' | ')}]` : ''
+    throw new Error(err.error || `Leonardo HTTP ${res.status}${detail}${diags}`)
   }
 
   const data = await res.json()
