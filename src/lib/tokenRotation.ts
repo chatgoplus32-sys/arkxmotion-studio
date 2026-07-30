@@ -29,6 +29,12 @@ export function isRoboneoTokenError(error: any): boolean {
   return /token|auth|log\s*in|login|expired|unauth|401|403|insufficient|balance|credit|quota|charge|CHARGE_FAILED|余额|URL output tidak ditemukan|output tidak ditemukan|no output URL/i.test(msg)
 }
 
+export function isRoboneoCreditError(error: any): boolean {
+  if (!error) return false
+  const msg = typeof error === 'string' ? error : error?.message || ''
+  return /insufficient|balance|credit|quota|charge|CHARGE_FAILED|余额不足|余额不够|积分不足|账户余额|欠费|payment.?required|charge.?failed|no output URL|output tidak ditemukan|URL output tidak ditemukan|credit\/quota habis/i.test(msg)
+}
+
 export function isCreatePulseTokenError(error: any): boolean {
   if (!error) return false
   const msg = typeof error === 'string' ? error : error?.message || ''
@@ -148,8 +154,13 @@ export async function withTokenRotation<T>(
 
       if (detectTokenError(provider, err)) {
         if (provider === 'roboneo') {
-          useProviderManager.getState().removeKey(provider, nextKey.id)
-          console.log(`[token-rotation] ${provider} key "${nextKey.name}" removed (${err.message}). Trying next...`)
+          if (isRoboneoCreditError(err)) {
+            useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'empty')
+            console.log(`[token-rotation] ${provider} key "${nextKey.name}" credit/quota habis (${err.message}). Marking empty, trying next...`)
+          } else {
+            useProviderManager.getState().removeKey(provider, nextKey.id)
+            console.log(`[token-rotation] ${provider} key "${nextKey.name}" removed - auth error (${err.message}). Trying next...`)
+          }
         } else {
           useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'invalid')
           console.log(`[token-rotation] ${provider} key "${nextKey.name}" marked invalid (${err.message}). Trying next...`)
@@ -157,6 +168,8 @@ export async function withTokenRotation<T>(
 
         const nextValid = useProviderManager.getState().keys[provider]?.find(
           (k) => !triedKeyIds.has(k.id) && (k.status === 'active' || k.status === 'unknown')
+        ) || useProviderManager.getState().keys[provider]?.find(
+          (k) => !triedKeyIds.has(k.id)
         )
         if (nextValid) {
           opts?.onKeySwitch?.(nextKey, nextValid, attempt + 1)
