@@ -1,5 +1,5 @@
 {
-  "buildCommand": "tsc -b && vite build",
+  "buildCommand": "vite build",
   "outputDirectory": "dist",
   "framework": null,
   "installCommand": "npm install",
