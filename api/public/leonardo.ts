@@ -36,6 +36,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const apiRes = await fetch(url, fetchOpts)
     const data = await apiRes.json().catch(() => null)
 
+    console.log(`[leonardo-proxy] ${method || 'GET'} ${path} → ${apiRes.status}`)
+
     if (!apiRes.ok) {
       return res.status(200).json({
         ok: false,
@@ -43,6 +45,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         error: data?.error || data?.message || data?.detail || JSON.stringify(data).slice(0, 300),
         data,
       })
+    }
+
+    if (data && typeof data === 'object' && Array.isArray((data as any).errors)) {
+      console.error(`[leonardo-proxy] GraphQL errors:`, JSON.stringify((data as any).errors).slice(0, 500))
     }
 
     return res.json({ ok: true, data })

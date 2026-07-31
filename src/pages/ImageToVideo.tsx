@@ -1486,7 +1486,7 @@ export default function ImageToVideoPage() {
           </Button>
         }
       >
-        {results.length === 0 ? (
+            {results.length === 0 ? (
           <EmptyState
             icon={<Image className="h-8 w-8" />}
             title="Belum ada video"
@@ -1500,6 +1500,7 @@ export default function ImageToVideoPage() {
                   src={url.startsWith('http') ? `/api/public/video-proxy?url=${encodeURIComponent(url)}` : url}
                   controls
                   playsInline
+                  preload="metadata"
                   onError={(e) => {
                     const target = e.target as HTMLVideoElement
                     target.poster = ''

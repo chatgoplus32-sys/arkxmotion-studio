@@ -47,12 +47,19 @@ export function isWeavyTokenError(error: any): boolean {
   return /token|auth|log\s*in|login|expired|unauth|401|403|invalid.*token|token.*invalid|insufficient|balance|credit|quota|no output URL|output tidak ditemukan/i.test(msg)
 }
 
+export function isMagnificTokenError(error: any): boolean {
+  if (!error) return false
+  const msg = typeof error === 'string' ? error : error?.message || ''
+  return /api.?key|unauthorized|forbidden|invalid.*key|key.*invalid|expired|401|403|auth/i.test(msg)
+}
+
 export function detectTokenError(provider: ProviderId, error: any): boolean {
   switch (provider) {
     case 'framia': return isFramiaTokenError(error)
     case 'roboneo': return isRoboneoTokenError(error)
     case 'createpulse': return isCreatePulseTokenError(error)
     case 'weavy': return isWeavyTokenError(error)
+    case 'magnific': return isMagnificTokenError(error)
     case 'firefly': return /401|403|expired|unauthorized|invalid.*token/i.test(String(error?.message || error))
     case 'leonardo': return /credit|insufficient|not enough|out of|balance|quota|exhaust|limit|too many|rate.?limit|402|401|403|unauthor|forbidden|expired|invalid.*token|token.*invalid|500|502|503|504|server error|network|fetch|timeout|graphql/i.test(String(error?.message || error))
     default: return isTokenError(error)

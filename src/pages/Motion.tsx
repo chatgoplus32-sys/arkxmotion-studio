@@ -719,6 +719,7 @@ export default function MotionPage() {
                       controls
                       muted
                       playsInline
+                      preload="metadata"
                     />
                   </div>
                   <div className="p-2 flex flex-col gap-1.5">

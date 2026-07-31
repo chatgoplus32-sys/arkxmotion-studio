@@ -9,6 +9,7 @@
     "api/tokens.ts": { "maxDuration": 30 },
     "api/createpulse.ts": { "maxDuration": 30 },
     "api/public/roboneo.ts": { "regions": ["iad1"] },
+    "api/public/roboneo-membership.ts": { "regions": ["iad1"], "maxDuration": 30 },
     "api/public/uploads.ts": { "maxDuration": 30 },
     "api/public/createpulse.ts": { "maxDuration": 30 },
     "api/public/framia.ts": { "maxDuration": 30 },
@@ -18,7 +19,8 @@
     "api/public/upload-catbox.ts": { "maxDuration": 30 },
     "api/public/firefly.ts": { "maxDuration": 60 },
     "api/public/shotstack.ts": { "maxDuration": 60 },
-    "api/public/creatomate.ts": { "maxDuration": 60 }
+    "api/public/creatomate.ts": { "maxDuration": 60 },
+    "api/public/magnific.ts": { "maxDuration": 60 }
   },
   "routes": [
     { "src": "/api/auth/(.*)", "dest": "/api/auth?path=$1" },

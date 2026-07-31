@@ -280,16 +280,21 @@ export async function leonardoGenerateVideo(token: string, opts: {
     }
   }
 
+  const requestBody = {
+    operationName: 'Generate',
+    variables: { request: { model: opts.slug, public: true, parameters } },
+    query: GENERATE_MUTATION,
+  }
+
+  console.log(`[leonardo-video] imagePromptIds:`, imagePromptIds.map(id => id?.slice(0, 8)))
+  console.log(`[leonardo-video] requestBody:`, JSON.stringify(requestBody).slice(0, 500))
+
   const data = await leonardoApi({
     token,
     base: 'api',
     path: '/v1/graphql',
     method: 'POST',
-    body: {
-      operationName: 'Generate',
-      variables: { request: { model: opts.slug, public: true, parameters } },
-      query: GENERATE_MUTATION,
-    },
+    body: requestBody,
   })
 
   const generationId = extractGenerationId(data)

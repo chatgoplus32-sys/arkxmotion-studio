@@ -151,36 +151,10 @@ export async function uploadToCatbox(file: File): Promise<string> {
     ['Server', async (f) => {
       const formData = new FormData()
       formData.append('file', new File([f], f.name || 'upload.bin', { type: f.type || 'application/octet-stream' }))
-      const res = await fetch('/api/public/uploads?provider=tmpfiles', { method: 'POST', body: formData })
+      const res = await fetch('/api/public/upload-catbox', { method: 'POST', body: formData })
       const data = await res.json().catch(() => ({})) as any
       if (!res.ok || !data.url) throw Error(data.error || `HTTP ${res.status}`)
       return data.url
-    }],
-    ['AA Creative', async (f) => {
-      const formData = new FormData()
-      formData.append('file', new File([f], f.name || 'upload.bin', { type: f.type || 'application/octet-stream' }))
-      const res = await fetch('https://aacreative.vercel.app/api/public/uploads?provider=tmpfiles', { method: 'POST', body: formData })
-      const data = await res.json().catch(() => ({})) as any
-      if (!res.ok || !data.url) throw Error(data.error || `HTTP ${res.status}`)
-      return data.url
-    }],
-    ['Uguu', async (f) => {
-      const fd = new FormData()
-      fd.append('files[]', f, f.name || 'upload.bin')
-      const res = await fetch('https://uguu.se/upload.php', { method: 'POST', body: fd })
-      const data = await res.json().catch(() => null)
-      const url = data?.files?.[0]?.url
-      if (!res.ok || !url || !/^https?:\/\//i.test(url)) throw Error(data?.error || `Uguu HTTP ${res.status}`)
-      return url
-    }],
-    ['Catbox', async (f) => {
-      const fd = new FormData()
-      fd.append('reqtype', 'fileupload')
-      fd.append('fileToUpload', f, f.name || 'upload.bin')
-      const res = await fetch('https://catbox.moe/user/api.php', { method: 'POST', body: fd })
-      const text = (await res.text()).trim()
-      if (!res.ok || !/^https?:\/\//i.test(text)) throw Error(text || `Catbox HTTP ${res.status}`)
-      return text
     }],
     ['Tmpfiles', async (f) => {
       const fd = new FormData()
@@ -251,212 +225,158 @@ async function roboneoApiCall(
   path: string,
   parameter: Record<string, any>
 ): Promise<any> {
-  // Primary: roboneo-proxy, fallback: aacreative
-  const PROXY_URLS = [
-    'https://roboneo-proxy.chatgoplus32.workers.dev',
-    'https://aacreative.vercel.app',
-  ]
-
-  let lastError: string = ''
+  let lastError = ''
   let lastStatus = 0
+  let rawResponse = ''
 
-  for (const proxyUrl of PROXY_URLS) {
-    for (let attempt = 1; attempt <= 5; attempt++) {
-      let res: Response | null = null
-      try {
-        console.log(`[roboneo] path=${path} via ${proxyUrl} attempt=${attempt}`)
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    let res: Response | null = null
+    try {
+      console.log(`[roboneo] path=${path} attempt=${attempt}`)
 
-        res = await fetch(`${proxyUrl}/api/public/roboneo`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Roboneo-Token': accessToken,
-          },
-          body: JSON.stringify({ path, parameter }),
-        })
-      } catch (err: any) {
-        lastError = `network: ${err.message}`
-        lastStatus = 0
-        if (attempt < 5) {
-          await new Promise(r => setTimeout(r, 1500 * attempt))
-          continue
-        }
-        break
-      }
-
-      const data = await res.json().catch(() => null)
-      const status = data?.status ?? res.status
-      const innerData = data?.data ?? {}
-      lastStatus = status
-
-      console.log(`[roboneo] response:`, JSON.stringify(data).slice(0, 300))
-
-      // Retry on HTTP 502/503/504/429
-      if (!data?.ok && (status === 502 || status === 503 || status === 504 || status === 429 || status === 0) && attempt < 5) {
-        lastError = `HTTP ${status}`
+      res = await fetch(`/api/public/roboneo`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Roboneo-Token': accessToken,
+        },
+        body: JSON.stringify({ path, parameter }),
+      })
+    } catch (err: any) {
+      lastError = `network: ${err.message}`
+      lastStatus = 0
+      if (attempt < 5) {
         await new Promise(r => setTimeout(r, 1500 * attempt))
         continue
       }
-
-      // Token error (error_code 98) → try next proxy
-      if (innerData.error_code === 98 || data?.error_code === 98) {
-        lastError = `token error`
-        break
-      }
-
-      // Other errors
-      if (!data?.ok || (innerData.error_code && innerData.error_code !== 0)) {
-        const errMsg = innerData.error_msg || `HTTP ${status}`
-        throw new Error(`Roboneo ${path}: ${errMsg}${innerData.error_code ? ` (error_code=${innerData.error_code})` : ''}`)
-      }
-
-      return innerData.parameter
+      break
     }
+
+    const data = await res.json().catch(() => null)
+    const status = data?.status ?? res.status
+    const innerData = data?.data ?? {}
+    lastStatus = status
+    rawResponse = data?.raw || ''
+
+    console.log(`[roboneo] response:`, JSON.stringify(data).slice(0, 300))
+
+    // Retry on HTTP 502/503/504/429
+    if (!data?.ok && (status === 502 || status === 503 || status === 504 || status === 429 || status === 0) && attempt < 5) {
+      lastError = `HTTP ${status}`
+      await new Promise(r => setTimeout(r, 1500 * attempt))
+      continue
+    }
+
+    // Other errors
+    if (!data?.ok || (innerData.error_code && innerData.error_code !== 0)) {
+      const errMsg = innerData.error_msg || `HTTP ${status}`
+      const rawHint = rawResponse ? ` — ${rawResponse.slice(0, 200)}` : ''
+      const loginHint = errMsg === 'Please log in first' ? ' — access-token Roboneo perlu login ulang' : ''
+      throw new Error(`Roboneo ${path}: ${errMsg}${innerData.error_code ? ` (error_code=${innerData.error_code})` : ''}${loginHint}${rawHint}`)
+    }
+
+    return innerData.parameter
   }
 
-  throw new Error(`Roboneo ${path}: ${lastError || `HTTP ${lastStatus}`} gagal setelah semua proxy`)
+  const rawHint = rawResponse ? ` — ${rawResponse.slice(0, 200)}` : ''
+  throw new Error(`Roboneo ${path}: ${lastError || `HTTP ${lastStatus}`} setelah 5 percobaan${rawHint}`)
 }
 
 export async function checkRoboneoBalance(accessToken: string): Promise<{ ok: boolean; balance?: number | null; isValidUser?: boolean; error?: string }> {
   try {
-    const PROXY_URLS = [
-      'https://roboneo-proxy.chatgoplus32.workers.dev',
-      'https://aacreative.vercel.app',
-    ]
+    const res = await fetch(`/api/public/roboneo-membership`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Roboneo-Token': accessToken,
+      },
+    })
 
-    let lastError = ''
+    const data = await res.json().catch(() => null)
 
-    for (const proxyUrl of PROXY_URLS) {
-      try {
-        const res = await fetch(`${proxyUrl}/api/public/roboneo-membership`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Roboneo-Token': accessToken,
-          },
-        })
+    console.log(`[checkBalance] raw response:`, JSON.stringify(data).slice(0, 600))
 
-        const data = await res.json().catch(() => null)
+    if (!data?.ok) {
+      const errMsg = data?.message || data?.error || `HTTP ${data?.status ?? res.status}`
+      const rawHint = data?.raw ? ` — ${data.raw.slice(0, 200)}` : ''
+      return { ok: false, balance: null, error: `${errMsg}${rawHint}` }
+    }
 
-        if (!data?.ok) {
-          lastError = data?.message || `HTTP ${data?.status ?? res.status}`
-          continue
-        }
+    // data.data contains the full gateway response
+    const gatewayData = data?.data
+    const innerData = gatewayData?.data ?? gatewayData?.result ?? gatewayData
 
-        const membershipData = data?.data ?? {}
-        const errorCode = membershipData.error_code ?? membershipData.code
-        if (errorCode && errorCode !== 0) {
-          lastError = membershipData.error_msg || membershipData.message || `error_code=${errorCode}`
-          continue
-        }
+    // Check error_code from gateway
+    const errorCode = gatewayData?.error_code ?? innerData?.error_code ?? innerData?.code
+    if (errorCode && errorCode !== 0) {
+      const errMsg = gatewayData?.error_msg || innerData?.error_msg || innerData?.message || `error_code=${errorCode}`
+      return { ok: false, balance: null, error: errMsg }
+    }
 
-        const resultData = membershipData.data ?? membershipData.result ?? membershipData
+    // Check is_valid_user
+    const isValidUser = innerData?.is_valid_user !== false
+    if (!isValidUser) {
+      console.log(`[checkBalance] is_valid_user=false`)
+      return { ok: false, balance: null, isValidUser: false, error: 'Token tidak valid (is_valid_user=false)' }
+    }
 
-        // Extract balance from nested structures
-        function findInDetailList(data: any, pattern: RegExp): number | null {
-          if (!data || typeof data !== 'object') return null
-          const detailList = data.detail_list
-          if (Array.isArray(detailList)) {
-            for (const item of detailList) {
-              if (!item || typeof item !== 'object') continue
-              const title = String(item.title ?? '')
-              if (!pattern.test(title)) continue
-              const balanceList = item.meiye_balance_list
-              if (Array.isArray(balanceList)) {
-                for (const bal of balanceList) {
-                  if (!bal || typeof bal !== 'object') continue
-                  const leftInfo = bal.left_info
-                  if (typeof leftInfo === 'number') return leftInfo
-                  if (typeof leftInfo === 'string') {
-                    const cleaned = leftInfo.replace(/,/g, '').trim()
-                    if (/^-?\d+(\.\d+)?$/.test(cleaned)) return Number(cleaned)
-                  }
-                }
+    // Parse balance from nested structures
+    function findInDetailList(obj: any, pattern: RegExp): number | null {
+      if (!obj || typeof obj !== 'object') return null
+      const detailList = obj.detail_list
+      if (Array.isArray(detailList)) {
+        for (const item of detailList) {
+          if (!item || typeof item !== 'object') continue
+          const title = String(item.title ?? '')
+          if (!pattern.test(title)) continue
+          const balanceList = item.meiye_balance_list
+          if (Array.isArray(balanceList)) {
+            for (const bal of balanceList) {
+              if (!bal || typeof bal !== 'object') continue
+              const leftInfo = bal.left_info
+              if (typeof leftInfo === 'number') return leftInfo
+              if (typeof leftInfo === 'string') {
+                const cleaned = leftInfo.replace(/,/g, '').trim()
+                if (/^-?\d+(\.\d+)?$/.test(cleaned)) return Number(cleaned)
               }
             }
           }
-          return null
         }
-
-        function findValueByKey(obj: any, keys: string[]): number | null {
-          if (!obj || typeof obj !== 'object') return null
-          for (const [k, v] of Object.entries(obj)) {
-            const kl = k.toLowerCase()
-            if (keys.some((target) => kl === target || kl.includes(target))) {
-              if (typeof v === 'number') return v
-              if (typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v)) return Number(v)
-            }
-          }
-          for (const v of Object.values(obj)) {
-            if (v && typeof v === 'object') {
-              const found = findValueByKey(v, keys)
-              if (found !== null) return found
-            }
-          }
-          return null
-        }
-
-        const cyberBalance = findInDetailList(resultData, /cyber|carrot/i)
-        const dailyBalance = findInDetailList(resultData, /daily|free/i)
-        const freeCredit = findValueByKey(resultData, ['free_credit', 'free_amount', 'daily_free', 'free']) ?? dailyBalance
-        const vipCredit = findValueByKey(resultData, ['vip_credit', 'vip_amount', 'vip'])
-        const totalCredit = findValueByKey(resultData, ['total_amount', 'total_credit', 'credit_balance', 'balance', 'credit', 'remain', 'point', 'coin', 'energy', 'quota']) ?? cyberBalance ?? ((freeCredit ?? 0) + (vipCredit ?? 0) || null)
-
-        console.log(`[checkBalance] membership OK: balance=${totalCredit}, free=${freeCredit}, vip=${vipCredit}`)
-
-        return { ok: true, balance: totalCredit, isValidUser: true }
-      } catch (err: any) {
-        lastError = `network: ${err.message}`
-        continue
       }
+      return null
     }
 
-    // Fallback: try vipshow endpoint
-    try {
-      const tracking = buildTrackingParams(accessToken, 'vipshow', generateRoomId())
-      const { _access_token, ...paramWithoutToken } = tracking
-
-      const param = await roboneoApiCall(accessToken, 'vipshow', {
-        ...paramWithoutToken,
-        features: '',
-        later_face: 0,
-      })
-
-      const isValidUser = param?.is_valid_user !== false
-      console.log(`[checkBalance] vipshow fallback: is_valid_user=${param?.is_valid_user}, uid=${param?.uid}`)
-
-      const balanceKeys = ['credit', 'balance', 'remain', 'quota', 'point', 'coin', 'energy', 'total_amount', 'amount']
-      let balance: number | null = null
-
-      function findBalance(obj: any, depth = 0): number | null {
-        if (depth > 5 || !obj || typeof obj !== 'object') return null
-        for (const [k, v] of Object.entries(obj)) {
-          const kl = k.toLowerCase()
-          if (typeof v === 'number' && balanceKeys.some((bk) => kl.includes(bk))) return v
-          if (typeof v === 'string' && /^\d+(\.\d+)?$/.test(v) && balanceKeys.some((bk) => kl.includes(bk))) return Number(v)
-          if (typeof v === 'object' && v !== null) {
-            const found = findBalance(v, depth + 1)
-            if (found !== null) return found
-          }
+    function findValueByKey(obj: any, keys: string[]): number | null {
+      if (!obj || typeof obj !== 'object') return null
+      for (const [k, v] of Object.entries(obj)) {
+        const kl = k.toLowerCase()
+        if (keys.some((target) => kl === target || kl.includes(target))) {
+          if (typeof v === 'number') return v
+          if (typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v)) return Number(v)
         }
-        return null
       }
-
-      balance = findBalance(param)
-      console.log('[checkBalance] vipshow balance:', balance)
-
-      if (!isValidUser) {
-        return { ok: false, balance, isValidUser: false, error: `Token tidak valid (is_valid_user=false, uid=${param?.uid})` }
+      for (const v of Object.values(obj)) {
+        if (v && typeof v === 'object') {
+          const found = findValueByKey(v, keys)
+          if (found !== null) return found
+        }
       }
-
-      return { ok: true, balance, isValidUser: true }
-    } catch (err: any) {
-      console.error('[checkBalance] all methods failed:', lastError, err.message)
-      return { ok: false, error: lastError || err.message }
+      return null
     }
+
+    const resultData = innerData
+    const cyberBalance = findInDetailList(resultData, /cyber|carrot/i)
+    const dailyBalance = findInDetailList(resultData, /daily|free/i)
+    const freeCredit = findValueByKey(resultData, ['free_credit', 'free_amount', 'daily_free', 'free']) ?? dailyBalance
+    const vipCredit = findValueByKey(resultData, ['vip_credit', 'vip_amount', 'vip'])
+    const totalCredit = findValueByKey(resultData, ['total_amount', 'total_credit', 'credit_balance', 'balance', 'credit', 'remain', 'point', 'coin', 'energy', 'quota']) ?? cyberBalance ?? ((freeCredit ?? 0) + (vipCredit ?? 0) || null)
+
+    console.log(`[checkBalance] OK: balance=${totalCredit}, free=${freeCredit}, vip=${vipCredit}, isValidUser=${isValidUser}`)
+
+    return { ok: true, balance: totalCredit, isValidUser: true }
   } catch (err: any) {
     console.error('[checkBalance] catch error:', err.message)
-    return { ok: false, error: err.message }
+    return { ok: false, balance: null, error: err.message }
   }
 }
 
@@ -586,6 +506,7 @@ export async function submitRoboneoI2V(params: {
       parameters.video_duration = duration
       break
     case 'kling26':
+      parameters.ratio = ratio
       parameters.sound = sound || 'off'
       parameters.video_duration = duration
       break
@@ -653,7 +574,6 @@ export async function submitGoogleOmni(params: {
     node_id: nodeId,
     name: 'video_barley_i2v_omni_flash',
     parameters: {
-      mcpCategoriesId: '18',
       image_url: imageUrl,
       prompt: prompt || '',
       ratio,
@@ -703,8 +623,18 @@ export async function pollMotionControl(
 ): Promise<string> {
   const startTime = Date.now()
   let networkRetries = 0
-  const roomIdMap = new Map<string, { roomId: string; nodeId?: string }>()
-  roomIdMap.set(taskId, { roomId, nodeId })
+  let successNoOutputCount = 0
+  const MAX_SUCCESS_NO_OUTPUT = 5
+
+  function cleanUrl(u: string): string {
+    return u.replace(/\\\//g, '/').replace(/\\u002F/gi, '/').replace(/&amp;/g, '&')
+  }
+
+  function extractUrlsFromString(str: string): string[] {
+    const cleaned = cleanUrl(str)
+    const matches = cleaned.match(/(?:https?:)?\/\/[^\s"'<>\\]+/gi) || []
+    return matches.map((u) => (u.startsWith('//') ? `https:${u}` : u).replace(/[),.;\]]+$/g, ''))
+  }
 
   function resolveUrls(obj: any, depth = 0): string[] {
     if (depth > 8 || !obj || typeof obj !== 'object') return []
@@ -713,23 +643,17 @@ export async function pollMotionControl(
       if (/^https?:\/\//i.test(obj)) {
         urls = [obj]
       } else {
-        urls = (obj.match(/(?:https?:)?\/\/[^\s"'<>\\]+/gi) || []).map((u: string) =>
-          (u.startsWith('//') ? `https:${u}` : u).replace(/[),.;\]]+$/g, '')
-        )
+        urls = extractUrlsFromString(obj)
       }
-      return urls.map((u) => {
-        if (/^https?:\/\/localhost:\d+\/backend\/api\/video\//i.test(u)) {
-          const path = u.replace(/^https?:\/\/localhost:\d+/, '')
-          return `https://createpulse.online${path}`
-        }
-        return u
-      })
+      return urls
     }
     const urls: string[] = []
-    const urlKeys = 'url,uri,src,href,last_image_url,lastImageUrl,media_url,mediaUrl,image_url,imageUrl,video_url,videoUrl,file_url,fileUrl,asset_url,assetUrl,origin_url,originUrl,original_url,originalUrl,preview_url,previewUrl,source_url,sourceUrl,output_url,outputUrl,download_url,downloadUrl,signed_url,signedUrl,play_url,playUrl,cover_url,coverUrl,data_url,dataUrl,result_url,resultUrl,video,media,output,output_url,output,path,link,href,src'
+    const urlKeys = 'url,uri,src,href,last_image_url,lastImageUrl,media_url,mediaUrl,image_url,imageUrl,video_url,videoUrl,file_url,fileUrl,asset_url,assetUrl,origin_url,originUrl,original_url,originalUrl,preview_url,previewUrl,source_url,sourceUrl,output_url,outputUrl,download_url,downloadUrl,signed_url,signedUrl,play_url,playUrl,cover_url,coverUrl'
     for (const key of urlKeys.split(',')) {
       const val = obj[key]
       if (typeof val === 'string' && /^https?:\/\//i.test(val)) urls.push(val)
+      else if (typeof val === 'string' && /^\/\//.test(val)) urls.push(`https:${val}`)
+      else if (typeof val === 'string') urls.push(...extractUrlsFromString(val))
     }
     for (const val of Object.values(obj)) {
       urls.push(...resolveUrls(val, depth + 1))
@@ -742,58 +666,9 @@ export async function pollMotionControl(
     if (all.length > 0) {
       console.log(`[roboneo] findVideoUrl: found ${all.length} URLs:`, all.map(u => u.slice(0, 120)))
     }
-    // Priority 1: Direct video file URLs
-    const directVideo = all.find((u) => /\.(mp4|mov|webm|m4v)(\?|#|$)/i.test(u))
-    if (directVideo) return directVideo
-
-    // Priority 2: Known video CDN paths (must have video-like path segments)
-    const cdnVideo = all.find((u) => {
-      if (/\.(png|jpg|jpeg|gif|webp)(\?|#|$)/i.test(u)) return false
-      if (/\/backend\/api\/video\//i.test(u)) return true
-      if (/tos\/.*\/video/i.test(u)) return true
-      if (/vod\/.*\.mp4/i.test(u)) return true
-      if (/roboneo\.com\/.*video/i.test(u)) return true
-      if (/multi-agent-release\.meitudata\.com\/.*\.(mp4|mov|webm|m4v)/i.test(u)) return true
-      return false
-    })
-    if (cdnVideo) return cdnVideo
-
-    // Priority 3: Any URL with video-related domain/path (excluding image-only URLs)
-    const anyVideo = all.find((u) => {
-      if (/\.(png|jpg|jpeg|gif|webp)(\?|#|$)/i.test(u)) return false
-      return /video|mp4|mov|webm|m4v|vod|tos|myqcloud|aliyun|oss|roboneo/i.test(u)
-    })
-    if (anyVideo) return anyVideo
-
-    // Priority 4: Image URLs (might be frame thumbnails)
-    const imageUrl = all.find((u) => /\.(png|jpg|jpeg|gif|webp)(\?|#|$)/i.test(u))
-    if (imageUrl) return imageUrl
-
-    // Fallback: first URL (might be wrong, but log it)
-    if (all.length > 0) {
-      console.log(`[roboneo] findVideoUrl: no video pattern match, using first URL: ${all[0]}`)
-    }
-    return all[0] || null
-  }
-
-  function searchAllUrls(obj: any): string[] {
-    if (!obj || typeof obj !== 'object') return []
-    const urls: string[] = []
-    function walk(o: any, depth = 0) {
-      if (depth > 10 || !o || typeof o !== 'object') return
-      if (typeof o === 'string') {
-        if (/^https?:\/\//i.test(o)) urls.push(o)
-        else {
-          const found = o.match(/(?:https?:)?\/\/[^\s"'<>\\]+/gi) || []
-          for (const u of found) urls.push((u.startsWith('//') ? `https:${u}` : u).replace(/[),.;\]]+$/g, ''))
-        }
-        return
-      }
-      if (Array.isArray(o)) { for (const v of o) walk(v, depth + 1); return }
-      for (const v of Object.values(o)) walk(v, depth + 1)
-    }
-    walk(obj)
-    return [...new Set(urls)]
+    return all.find((u) => /\.(mp4|mov|webm|m4v)(\?|#|$)/i.test(u)) ||
+      all.find((u) => /video|mp4|mov|webm|m4v|vod|tos|myqcloud|aliyun|oss|roboneo/i.test(u)) ||
+      all[0] || null
   }
 
   function extractProgressLocal(obj: any, depth = 0): number | null {
@@ -817,8 +692,6 @@ export async function pollMotionControl(
   }
 
   let lastLog = ''
-  let successNoOutputCount = 0
-  const MAX_SUCCESS_NO_OUTPUT = 5
 
   while (Date.now() - startTime < timeoutMs) {
     if (signal?.aborted) throw new Error('Generation cancelled')
@@ -826,15 +699,14 @@ export async function pollMotionControl(
 
     let result: any
     try {
-      const stored = roomIdMap.get(taskId) || { roomId }
-      const tracking = buildTrackingParams(accessToken, 'nodeexecutequery', stored.roomId)
+      const tracking = buildTrackingParams(accessToken, 'nodeexecutequery', roomId)
       const { _access_token, ...paramWithoutToken } = tracking
 
       result = await roboneoApiCall(accessToken, 'nodeexecutequery', {
         ...paramWithoutToken,
         task_ids: [taskId],
-        room_id: stored.roomId,
-        ...(stored.nodeId ? { node_id: stored.nodeId, workflow_version: 'v2' } : {}),
+        room_id: roomId,
+        ...(nodeId ? { node_id: nodeId, workflow_version: 'v2' } : {}),
       })
       networkRetries = 0
     } catch (err: any) {
@@ -863,34 +735,19 @@ export async function pollMotionControl(
     if (logEntry !== lastLog) {
       lastLog = logEntry
       console.log(`[roboneo] ${logEntry}`)
-      // Debug: log task details setiap 30 detik
-      if (Math.round((Date.now() - startTime) / 1000) % 30 === 0) {
-        console.log(`[roboneo] task keys:`, Object.keys(task || {}))
-        console.log(`[roboneo] task FULL:`, JSON.stringify(task, null, 2).slice(0, 3000))
-        console.log(`[roboneo] payload keys:`, Object.keys(payload || {}))
-        console.log(`[roboneo] steps count:`, steps.length)
-        if (steps.length > 0) {
-          console.log(`[roboneo] steps detail:`, JSON.stringify(steps, null, 2).slice(0, 2000))
-        }
-      }
     }
 
     const isSuccess = ['success', 'succeeded', 'completed', 'done', 'finished'].includes(status)
     const isFailed = ['fail', 'failed', 'error', 'cancelled', 'canceled'].includes(status)
-    const mediaInfo = task?.media_info_list?.[0] || payload?.media_info_list?.[0]
 
     if (isSuccess) {
       const videoUrl = findVideoUrl(
         task?.last_image_url, task?.last_image_urls,
         task?.initial_transferred_urls, task?.media_meta, task?.media_metas,
-        task?.media_info_list, mediaInfo?.url, mediaInfo?.media_url,
-        ...steps.map((s: any) => s.output),
-        ...steps.map((s: any) => s.result),
-        ...steps.map((s: any) => s.data),
+        task?.media_info_list, ...steps.map((s: any) => s.output), ...steps.map((s: any) => s.result),
         payload?.output, payload?.result, payload,
         payload?.data, task?.data, task?.output_url, task?.download_url,
         task?.result_url, task?.video, task?.video_url, task?.media,
-        payload?.video, payload?.video_url, payload?.media,
         task?.url, task?.src, task?.link, task?.href, task?.path
       )
 
@@ -898,12 +755,13 @@ export async function pollMotionControl(
         if (/meitudata\.com/i.test(videoUrl)) {
           try {
             onProgress?.('Re-uploading to permanent storage...', 98)
-            const videoRes = await fetch(videoUrl)
+            const proxyUrl = `/api/public/video-proxy?url=${encodeURIComponent(videoUrl)}`
+            const videoRes = await fetch(proxyUrl)
             if (videoRes.ok) {
               const blob = await videoRes.blob()
               const fd = new FormData()
               fd.append('file', new File([blob], 'video.mp4', { type: 'video/mp4' }))
-              const uploadRes = await fetch('/api/public/uploads?provider=tmpfiles', { method: 'POST', body: fd })
+              const uploadRes = await fetch('/api/public/upload-catbox', { method: 'POST', body: fd })
               const uploadData = await uploadRes.json().catch(() => ({})) as any
               if (uploadData?.url) {
                 console.log(`[roboneo] re-uploaded to permanent: ${uploadData.url}`)
@@ -917,43 +775,13 @@ export async function pollMotionControl(
         return videoUrl
       }
 
-      const allUrls = searchAllUrls({ task, payload, response: result })
-      const fromAll = allUrls.find((u) => /\.(mp4|mov|webm|m4v)(\?|#|$)/i.test(u)) ||
-        allUrls.find((u) => /video|mp4|mov|webm|m4v|vod|tos|myqcloud|aliyun|oss|roboneo/i.test(u) && !/\.(png|jpg|jpeg|gif|webp)(\?|#|$)/i.test(u)) ||
-        allUrls.find((u) => /\.(png|jpg|jpeg|gif|webp)(\?|#|$)/i.test(u)) ||
-        allUrls[0] || null
-
-      if (fromAll) {
-        if (/meitudata\.com/i.test(fromAll)) {
-          try {
-            onProgress?.('Re-uploading to permanent storage...', 98)
-            const videoRes = await fetch(fromAll)
-            if (videoRes.ok) {
-              const blob = await videoRes.blob()
-              const fd = new FormData()
-              fd.append('file', new File([blob], 'video.mp4', { type: 'video/mp4' }))
-              const uploadRes = await fetch('/api/public/uploads?provider=tmpfiles', { method: 'POST', body: fd })
-              const uploadData = await uploadRes.json().catch(() => ({})) as any
-              if (uploadData?.url) {
-                console.log(`[roboneo] re-uploaded to permanent: ${uploadData.url}`)
-                return uploadData.url
-              }
-            }
-          } catch (reErr: any) {
-            console.log(`[roboneo] re-upload failed: ${reErr.message}, using original URL`)
-          }
-        }
-        return fromAll
-      }
-
       console.log(`[roboneo] task done but no url found. task keys:`, Object.keys(task || {}))
       console.log(`[roboneo] task:`, JSON.stringify(task, null, 2).slice(0, 2000))
-      console.log(`[roboneo] payload keys:`, Object.keys(payload || {}))
-      if (mediaInfo) console.log(`[roboneo] mediaInfo:`, JSON.stringify(mediaInfo))
 
       successNoOutputCount++
       if (successNoOutputCount >= MAX_SUCCESS_NO_OUTPUT) {
-        throw new Error(`Roboneo credit/quota habis: task selesai (${status}) tapi output kosong setelah ${MAX_SUCCESS_NO_OUTPUT}x percobaan`)
+        const detail = JSON.stringify({ taskKeys: Object.keys(task || {}), stepKeys: steps.map((s: any) => Object.keys(s)), responseKeys: Object.keys(payload || {}) }).slice(0, 400)
+        throw new Error(`Roboneo credit/quota habis: task selesai (${status}) tapi URL output tidak ditemukan (${detail})`)
       }
 
       onProgress?.(`finalizing`, Math.max(pct, 96))

@@ -38,7 +38,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const initData = await initRes.json()
     const initImage = initData?.uploadInitImage || initData?.upload_init_image || initData
 
-    console.log(`[leonardo-upload] init-image response:`, JSON.stringify({ id: initImage?.id, url: initImage?.url?.slice(0, 80), fieldsType: typeof initImage?.fields, fieldsKeys: initImage?.fields ? Object.keys(typeof initImage.fields === 'string' ? JSON.parse(initImage.fields) : initImage.fields) : null }))
+    let parsedFieldsForLog: Record<string, string> | null = null
+    if (initImage?.fields) {
+      try {
+        parsedFieldsForLog = typeof initImage.fields === 'string' ? JSON.parse(initImage.fields) : initImage.fields
+      } catch { /* ignore */ }
+    }
+    console.log(`[leonardo-upload] init-image: id=${initImage?.id}, hasUrl=${!!initImage?.url}, fieldsType=${typeof initImage?.fields}, parsedFieldKeys=${parsedFieldsForLog ? Object.keys(parsedFieldsForLog).join(',') : 'none'}, initResStatus=${initRes.status}`)
 
     if (!initImage?.url || !initImage?.id) {
       return res.status(200).json({ ok: false, error: 'No presigned URL from Leonardo', data: initData })
@@ -63,15 +69,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         fd.append(k, String(v))
       }
       fd.append('file', blob, `image.${extension}`)
-      console.log(`[leonardo-upload] POST+FormData to S3 (${Object.keys(parsedFields).length} fields)...`)
+      console.log(`[leonardo-upload] POST+FormData to S3 (${Object.keys(parsedFields).length} fields: ${Object.keys(parsedFields).join(',')})...`)
       try {
         const postRes = await fetch(presignedUrl, { method: 'POST', body: fd })
-        console.log(`[leonardo-upload] POST+FormData: ${postRes.status}`)
+        const postBody = await postRes.text().catch(() => '')
+        console.log(`[leonardo-upload] POST+FormData: status=${postRes.status}, body=${postBody.slice(0, 200)}`)
         uploadOk = postRes.ok
-        if (!postRes.ok) {
-          const errBody = await postRes.text().catch(() => '')
-          console.error(`[leonardo-upload] S3 POST failed: ${postRes.status} ${errBody.slice(0, 300)}`)
-        }
       } catch (e: any) {
         console.error(`[leonardo-upload] S3 POST exception: ${e.message}`)
       }
@@ -80,13 +83,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (!uploadOk) {
-      console.log(`[leonardo-upload] Trying PUT fallback...`)
+      console.log(`[leonardo-upload] Trying PUT fallback with Content-Type: ${mimeType}, blobSize=${blob.size}...`)
       const putRes = await fetch(presignedUrl, {
         method: 'PUT',
         headers: { 'Content-Type': mimeType },
         body: blob,
       })
-      console.log(`[leonardo-upload] PUT: ${putRes.status}`)
+      const putBody = await putRes.text().catch(() => '')
+      console.log(`[leonardo-upload] PUT: status=${putRes.status}, body=${putBody.slice(0, 200)}`)
       uploadOk = putRes.ok
     }
 

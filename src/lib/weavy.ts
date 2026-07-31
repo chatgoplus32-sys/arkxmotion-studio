@@ -86,16 +86,15 @@ function resolveModel(modelKey: string): string {
 export async function submitWeavyVideo(params: WeavyGenerateParams): Promise<WeavyGenerateResult> {
   const { token, model, prompt, imageUrl, aspectRatio = '9:16', duration = 5, negativePrompt, quality } = params
 
-  const payload: Record<string, any> = {
+  const payload = {
     model: resolveModel(model),
     prompt: prompt.trim(),
-    aspect_ratio: resolveAspectRatio(aspectRatio),
+    imageUrl: imageUrl || null,
+    aspectRatio: resolveAspectRatio(aspectRatio),
     duration,
+    negativePrompt: negativePrompt?.trim() || null,
+    quality: quality || null,
   }
-
-  if (imageUrl) payload.image_url = imageUrl
-  if (negativePrompt) payload.negative_prompt = negativePrompt.trim()
-  if (quality) payload.quality = quality
 
   try {
     const res = await fetch(WEAVY_PROXY, {
@@ -114,12 +113,12 @@ export async function submitWeavyVideo(params: WeavyGenerateParams): Promise<Wea
       return { ok: false, error: errMsg, raw: data }
     }
 
-    const taskId = data?.data?.task_id || data?.data?.id || data?.data?.taskId
-    if (!taskId) {
-      return { ok: false, error: 'No task_id in response', raw: data }
+    const batchId = data?.data?.batchId || data?.data?.id
+    if (!batchId) {
+      return { ok: false, error: 'No batchId in response', raw: data }
     }
 
-    return { ok: true, taskId, raw: data }
+    return { ok: true, taskId: batchId, raw: data }
   } catch (err: any) {
     return { ok: false, error: err.message }
   }
@@ -127,49 +126,11 @@ export async function submitWeavyVideo(params: WeavyGenerateParams): Promise<Wea
 
 export async function pollWeavyStatus(
   token: string,
-  taskId: string,
+  batchId: string,
   onProgress?: (status: string, pct: number) => void,
   timeoutMs = 3600000
 ): Promise<string> {
   const startTime = Date.now()
-
-  function resolveUrls(obj: any, depth = 0): string[] {
-    if (depth > 8 || !obj || typeof obj !== 'object') return []
-    if (typeof obj === 'string') {
-      if (/^https?:\/\//i.test(obj)) return [obj]
-      return []
-    }
-    const urls: string[] = []
-    const urlKeys = 'url,video_url,videoUrl,output_url,outputUrl,download_url,downloadUrl,media_url,mediaUrl,src,href,signed_url,signedUrl,play_url,playUrl'
-    for (const key of urlKeys.split(',')) {
-      const val = obj[key]
-      if (typeof val === 'string' && /^https?:\/\//i.test(val)) urls.push(val)
-    }
-    for (const val of Object.values(obj)) {
-      urls.push(...resolveUrls(val, depth + 1))
-    }
-    return [...new Set(urls)]
-  }
-
-  function extractProgress(obj: any, depth = 0): number | null {
-    if (depth > 6 || !obj || typeof obj !== 'object') return null
-    const keys = ['progress', 'percent', 'rate', 'schedule', 'process']
-    for (const [k, v] of Object.entries(obj)) {
-      const kl = k.toLowerCase()
-      if (keys.some((pk) => kl.includes(pk))) {
-        const num = typeof v === 'number' ? v : typeof v === 'string' && /^\d+(\.\d+)?$/.test(v) ? Number(v) : NaN
-        if (Number.isFinite(num)) {
-          const pct = num <= 1 ? num * 100 : num
-          if (pct >= 0 && pct <= 100) return pct
-        }
-      }
-    }
-    for (const val of Object.values(obj)) {
-      const p = extractProgress(val, depth + 1)
-      if (p !== null) return p
-    }
-    return null
-  }
 
   let lastLog = ''
 
@@ -183,7 +144,7 @@ export async function pollWeavyStatus(
           'Content-Type': 'application/json',
           'X-Weavy-Token': token,
         },
-        body: JSON.stringify({ action: 'status', taskId }),
+        body: JSON.stringify({ action: 'status', batchId }),
       })
 
       const data = await res.json().catch(() => null)
@@ -194,11 +155,10 @@ export async function pollWeavyStatus(
       }
 
       const result = data?.data
-      const status = (result?.status || '').toLowerCase()
-      const realPct = extractProgress(result)
+      const status = (result?.status || result?.state || '').toLowerCase()
       const elapsedMin = (Date.now() - startTime) / (8 * 60000)
       const fallbackPct = Math.min(0.94, 1 - 1 / (1 + elapsedMin * 1.6))
-      const pct = realPct === null ? Math.round(5 + fallbackPct * 89) : Math.round(realPct)
+      const pct = Math.round(5 + fallbackPct * 89)
 
       onProgress?.(status || 'processing', pct)
 
@@ -209,20 +169,18 @@ export async function pollWeavyStatus(
       }
 
       if (['completed', 'success', 'done', 'finished'].includes(status)) {
-        const allUrls = resolveUrls(result)
-        const videoUrl = allUrls.find((u) => /\.(mp4|mov|webm|m4v)(\?|#|$)/i.test(u)) ||
-          allUrls.find((u) => /video|mp4|mov|webm|m4v|vod/i.test(u)) ||
-          allUrls[0]
+        const videoUrl = result?.output?.video_url || result?.output?.url || result?.video_url || result?.url ||
+          result?.recipeRuns?.[0]?.nodeRuns?.[0]?.result?.[0]?.url ||
+          result?.recipeRuns?.[0]?.nodeRuns?.[0]?.result?.[0]?.video_url
 
         if (videoUrl) return videoUrl
 
-        console.log(`[weavy] task done but no url. keys:`, Object.keys(result || {}))
-        console.log(`[weavy] result:`, JSON.stringify(result, null, 2).slice(0, 2000))
+        console.log(`[weavy] task done but no url:`, JSON.stringify(result, null, 2).slice(0, 2000))
         throw new Error('Weavy: task completed but no video URL found')
       }
 
       if (['failed', 'error', 'cancelled', 'canceled'].includes(status)) {
-        const errMsg = result?.error || result?.message || result?.error_message || 'Generation failed'
+        const errMsg = result?.error || result?.message || result?.recipeRuns?.[0]?.nodeRuns?.[0]?.error || 'Generation failed'
         throw new Error(`Weavy failed: ${errMsg}`)
       }
     } catch (err: any) {
