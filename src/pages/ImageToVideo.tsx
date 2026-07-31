@@ -1494,10 +1494,13 @@ export default function ImageToVideoPage() {
           />
         ) : (
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-            {results.map((url, index) => (
+            {results.map((url, index) => {
+              const needsProxy = /meitudata\.com|localhost/i.test(url)
+              const displayUrl = needsProxy ? `/api/public/video-proxy?url=${encodeURIComponent(url)}` : url
+              return (
               <div key={index} className="rounded-xl overflow-hidden border border-border bg-black/40">
                 <video
-                  src={url.startsWith('http') ? `/api/public/video-proxy?url=${encodeURIComponent(url)}` : url}
+                  src={displayUrl}
                   controls
                   playsInline
                   preload="metadata"
@@ -1509,7 +1512,7 @@ export default function ImageToVideoPage() {
                 />
                 <div className="p-2 flex flex-col gap-1.5">
                     <div className="flex items-center gap-1">
-                      <a href={url.startsWith('http') ? `/api/public/video-proxy?url=${encodeURIComponent(url)}` : url} target="_blank" rel="noreferrer" className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-primary/30 bg-primary/5 hover:bg-primary/10 px-3 py-2 text-xs font-medium text-primary transition">
+                      <a href={displayUrl} target="_blank" rel="noreferrer" className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-primary/30 bg-primary/5 hover:bg-primary/10 px-3 py-2 text-xs font-medium text-primary transition">
                         <ExternalLink className="h-3.5 w-3.5" /> Buka
                       </a>
                       <button
@@ -1527,7 +1530,8 @@ export default function ImageToVideoPage() {
                     </button>
                   </div>
               </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </Section>

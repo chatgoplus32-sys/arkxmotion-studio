@@ -434,14 +434,15 @@ export default function ProvidersPage() {
         const result = await checkWeavyBalance(key)
         if (result.ok) {
           const bal = result.balance
+          const email = result.email
           if (bal !== null && bal !== undefined) {
             if (bal > 0) {
-              return { state: 'active', balance: bal, detail: `Balance: ${bal} credits` }
+              return { state: 'active', balance: bal, detail: `Balance: ${bal} credits${email ? ` (${email})` : ''}` }
             } else if (bal === 0) {
-              return { state: 'empty', balance: 0, detail: 'Balance: 0 — habis' }
+              return { state: 'empty', balance: 0, detail: `Balance: 0 — habis${email ? ` (${email})` : ''}` }
             }
           }
-          return { state: 'active', detail: result.error || 'Token valid' }
+          return { state: 'active', detail: email ? `${email}` : result.error || 'Token valid' }
         }
         if (result.error?.includes('expired') || result.error?.includes('401') || result.error?.includes('403')) {
           return { state: 'invalid', detail: 'Token expired — ambil baru dari browser (F12 → Network → app.weavy.ai → Authorization)' }

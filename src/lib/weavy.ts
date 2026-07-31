@@ -27,7 +27,7 @@ export interface WeavyStatusResult {
   raw?: any
 }
 
-export async function checkWeavyBalance(token: string): Promise<{ ok: boolean; balance?: number | null; error?: string }> {
+export async function checkWeavyBalance(token: string): Promise<{ ok: boolean; balance?: number | null; email?: string; error?: string }> {
   try {
     const res = await fetch(`${WEAVY_PROXY}?action=balance`, {
       method: 'GET',
@@ -36,19 +36,13 @@ export async function checkWeavyBalance(token: string): Promise<{ ok: boolean; b
     const data = await res.json().catch(() => null)
 
     if (data?.ok) {
-      const credits = data?.data?.credits ?? data?.data?.balance ?? data?.data?.remaining ?? null
-      return { ok: true, balance: typeof credits === 'number' ? credits : null }
+      const credits = data?.data?.credits ?? null
+      const email = data?.data?.email ?? undefined
+      return { ok: true, balance: typeof credits === 'number' ? credits : null, email }
     }
 
-    if (!res.ok || !data?.ok) {
-      const errMsg = data?.data?.message || data?.error || `HTTP ${res.status}`
-      if (res.status === 401 || res.status === 403) {
-        return { ok: false, balance: null, error: errMsg }
-      }
-      return { ok: true, balance: null, error: errMsg }
-    }
-
-    return { ok: true, balance: null }
+    const errMsg = data?.data?.message || data?.error || `HTTP ${res.status}`
+    return { ok: false, balance: null, error: errMsg }
   } catch (err: any) {
     return { ok: true, balance: null, error: err.message }
   }

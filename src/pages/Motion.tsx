@@ -714,7 +714,7 @@ export default function MotionPage() {
                 >
                   <div className="aspect-video bg-black/40 relative">
                     <video
-                      src={`/api/public/video-proxy?url=${encodeURIComponent(result.url)}`}
+                      src={/meitudata\.com|localhost/i.test(result.url) ? `/api/public/video-proxy?url=${encodeURIComponent(result.url)}` : result.url}
                       className="w-full h-full object-contain"
                       controls
                       muted

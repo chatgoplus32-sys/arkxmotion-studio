@@ -1,6 +1,44 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 const WEAVY_API = 'https://api.weavy.ai/api'
+const FIREBASE_KEY = 'AIzaSyC-qLy3TFyXMogJPfMkZJ9H_q46hEu1sxI'
+
+async function refreshWeavyToken(refreshToken: string): Promise<{ accessToken: string; refreshToken: string; expiresIn: number } | null> {
+  try {
+    const r = await fetch(`https://securetoken.googleapis.com/v1/token?key=${FIREBASE_KEY}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `grant_type=refresh_token&refresh_token=${encodeURIComponent(refreshToken)}`,
+      signal: AbortSignal.timeout(10000),
+    })
+    if (!r.ok) return null
+    const data = await r.json()
+    return {
+      accessToken: data.id_token,
+      refreshToken: data.refresh_token || refreshToken,
+      expiresIn: Number(data.expires_in) || 3600,
+    }
+  } catch {
+    return null
+  }
+}
+
+function extractEmailFromJwt(token: string): string | null {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]))
+    return payload.email || payload.user_id || null
+  } catch {
+    return null
+  }
+}
+
+async function getValidAccessToken(token: string): Promise<{ accessToken: string; email?: string }> {
+  const refreshed = await refreshWeavyToken(token)
+  if (refreshed?.accessToken) {
+    return { accessToken: refreshed.accessToken, email: extractEmailFromJwt(refreshed.accessToken) || undefined }
+  }
+  return { accessToken: token, email: extractEmailFromJwt(token) || undefined }
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -16,12 +54,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ ok: false, error: 'Missing X-Weavy-Token header' })
   }
 
-  const authHeaders = {
-    Authorization: `Bearer ${token}`,
-    'Content-Type': 'application/json',
-  }
-
   try {
+    const { accessToken, email } = await getValidAccessToken(token)
+
+    const authHeaders = {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    }
+
     if (action === 'balance') {
       const endpoints = [
         `${WEAVY_API}/v1/credits`,
@@ -35,7 +75,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       for (const url of endpoints) {
         try {
           const r = await fetch(url, {
-            headers: { Authorization: `Bearer ${token}` },
+            headers: { Authorization: `Bearer ${accessToken}` },
             signal: AbortSignal.timeout(8000),
           })
 
@@ -47,7 +87,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const credits = data?.credits ?? data?.balance ?? data?.totalCredits ?? data?.creditsRemaining ?? data?.quota ?? data?.usage?.credits ?? data?.plan?.credits ?? data?.data?.credits ?? data?.user?.credits ?? null
 
           if (typeof credits === 'number') {
-            return res.status(200).json({ ok: true, data: { credits }, status: r.status })
+            return res.status(200).json({ ok: true, data: { credits, email }, status: r.status })
           }
         } catch (e: any) {
           continue
@@ -56,7 +96,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       try {
         const r = await fetch(`${WEAVY_API}/v1/workspaces`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { Authorization: `Bearer ${accessToken}` },
           signal: AbortSignal.timeout(8000),
         })
         if (r.ok) {
@@ -64,7 +104,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const workspaces = data?.workspaces || data
           const ws = Array.isArray(workspaces) ? workspaces[0] : workspaces
           if (typeof ws?.credits === 'number') {
-            return res.status(200).json({ ok: true, data: { credits: ws.credits }, status: r.status })
+            return res.status(200).json({ ok: true, data: { credits: ws.credits, email }, status: r.status })
           }
         }
       } catch (e: any) {
@@ -72,7 +112,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       console.log(`[weavy-proxy] balance → all endpoints failed`)
-      return res.status(200).json({ ok: true, data: { credits: null }, status: 200 })
+      return res.status(200).json({ ok: true, data: { credits: null, email }, status: 200 })
     }
 
     if (action === 'generate') {
@@ -97,7 +137,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const r = await fetch(`${WEAVY_API}/v1/batches/recipes/execute`, {
         method: 'POST',
-        headers: { ...authHeaders, Authorization: `Bearer ${token}` },
+        headers: authHeaders,
         body: JSON.stringify({ nodes, numberOfRuns: 1 }),
         signal: AbortSignal.timeout(30000),
       })
@@ -124,7 +164,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!batchId) return res.status(400).json({ ok: false, error: 'Missing batchId' })
 
       const r = await fetch(`${WEAVY_API}/v1/batches/${batchId}/status`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${accessToken}` },
         signal: AbortSignal.timeout(10000),
       })
 
