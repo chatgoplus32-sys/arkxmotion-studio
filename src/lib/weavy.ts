@@ -34,14 +34,23 @@ export async function checkWeavyBalance(token: string): Promise<{ ok: boolean; b
       headers: { 'X-Weavy-Token': token },
     })
     const data = await res.json().catch(() => null)
+
+    if (data?.ok) {
+      const credits = data?.data?.credits ?? data?.data?.balance ?? data?.data?.remaining ?? null
+      return { ok: true, balance: typeof credits === 'number' ? credits : null }
+    }
+
     if (!res.ok || !data?.ok) {
       const errMsg = data?.data?.message || data?.error || `HTTP ${res.status}`
-      return { ok: false, balance: null, error: errMsg }
+      if (res.status === 401 || res.status === 403) {
+        return { ok: false, balance: null, error: errMsg }
+      }
+      return { ok: true, balance: null, error: errMsg }
     }
-    const credits = data?.data?.credits ?? data?.data?.balance ?? data?.data?.remaining ?? null
-    return { ok: true, balance: typeof credits === 'number' ? credits : null }
+
+    return { ok: true, balance: null }
   } catch (err: any) {
-    return { ok: false, balance: null, error: err.message }
+    return { ok: true, balance: null, error: err.message }
   }
 }
 
