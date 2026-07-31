@@ -27,6 +27,7 @@ import {
 import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
 import { checkRoboneoBalance } from '@/lib/roboneo'
 import { fetchLeonardoBalance } from '@/lib/leonardo'
+import { checkWeavyBalance } from '@/lib/weavy'
 
 const PROVIDER_COLORS: Record<string, string> = {
   brain: '#f472b6',
@@ -424,6 +425,26 @@ export default function ProvidersPage() {
         } else {
           return { state: 'empty', balance: result.balance, detail: `Balance: ${result.balance}` }
         }
+      } catch {
+        return { state: 'failed', detail: 'Error checking token' }
+      }
+    }
+    if (selectedProvider === 'weavy') {
+      try {
+        const result = await checkWeavyBalance(key)
+        if (result.ok) {
+          const bal = result.balance ?? 0
+          if (bal > 0) {
+            return { state: 'active', balance: bal, detail: `Balance: ${bal} credits` }
+          } else if (bal === 0) {
+            return { state: 'empty', balance: 0, detail: 'Balance: 0 — habis' }
+          }
+          return { state: 'active', detail: 'Token valid' }
+        }
+        if (result.error?.includes('expired') || result.error?.includes('401') || result.error?.includes('403')) {
+          return { state: 'invalid', detail: 'Token expired — ambil baru dari browser (F12 → Network → app.weavy.ai → Authorization)' }
+        }
+        return { state: 'failed', detail: result.error || 'Gagal cek token' }
       } catch {
         return { state: 'failed', detail: 'Error checking token' }
       }

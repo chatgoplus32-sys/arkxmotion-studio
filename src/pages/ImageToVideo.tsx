@@ -9,6 +9,7 @@ import { uploadToCatbox, submitGoogleOmni, submitRoboneoI2V, pollMotionControl, 
 import { generateWithFramia } from '@/lib/framia'
 import { runLeonardoVideo } from '@/lib/leonardo'
 import { LEONARDO_VIDEO_MODELS, leonardoVideoQualityOptions } from '@/lib/leonardo-video'
+import { submitWeavyVideo, pollWeavyStatus, checkWeavyBalance } from '@/lib/weavy'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import {
   getActiveTasks,
@@ -968,6 +969,99 @@ export default function ImageToVideoPage() {
           setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
           if (rotation.triedKeys > 1) {
             addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success', 'leonardo')
+          }
+        } else {
+          throw new Error(rotation.error || 'Generation failed')
+        }
+      } else if (provider === 'weavy') {
+        addLog(`[1/3] 🖼️ Preparing image...`, 'info', 'weavy')
+        let imageUrl: string | undefined
+        if (imgFile) {
+          imageUrl = await uploadToCatbox(imgFile)
+          addLog(`[1/3] ✅ Image uploaded ✓`, 'success', 'weavy')
+        } else {
+          addLog(`[1/3] ℹ️ No image (text-to-video mode)`, 'info', 'weavy')
+        }
+
+        const rotation = await withTokenRotation<string>(
+          'weavy',
+          async (apiKey, keyInfo) => {
+            addLog(`🔑 Trying key: ${keyInfo.name || keyInfo.id}`, 'info', 'weavy')
+            setStatus((s) => ({ ...s, text: `Submit Weavy ${model}...`, pct: 15 }))
+
+            addLog(`[2/3] 🚀 Submitting to Weavy ${model}...`, 'info', 'weavy')
+            addLog(`   → model: ${model}`, 'debug', 'weavy')
+            addLog(`   → ratio: ${ratio} | duration: ${currentQuality?.duration || 5}s`, 'debug', 'weavy')
+
+            const submitResult = await submitWeavyVideo({
+              token: apiKey,
+              model,
+              prompt: prompt.trim(),
+              imageUrl,
+              aspectRatio: ratio,
+              duration: currentQuality?.duration || 5,
+              negativePrompt: undefined,
+              quality: quality || undefined,
+            })
+
+            if (!submitResult.ok) {
+              addLog(`[2/3] ❌ Submit failed: ${submitResult.error}`, 'error', 'weavy')
+              throw new Error(submitResult.error || 'Submit failed')
+            }
+
+            const taskId = submitResult.taskId!
+            addLog(`[2/3] ✅ Task created ✓ id=${taskId.slice(0, 20)}...`, 'success', 'weavy')
+
+            addActiveTask({
+              id: taskId,
+              taskId,
+              roomId: '',
+              token: apiKey,
+              model: currentModel?.label || model,
+              prompt: prompt.trim() || '(no prompt)',
+              startedAt: Date.now(),
+              page: 'image-to-video',
+            })
+            activeTaskId = taskId
+
+            addLog(`[3/3] ⏳ Polling for result...`, 'info', 'weavy')
+            setStatus((s) => ({ ...s, text: 'Processing...', pct: 25 }))
+            const videoUrl = await pollWeavyStatus(
+              apiKey,
+              taskId,
+              (status, pct) => {
+                addLog(`⏳ Weavy ${status} (${pct}%)`, 'debug', 'weavy')
+                setStatus((s) => ({ ...s, pct, text: `Weavy ${status} (${pct}%)` }))
+              },
+              3600000
+            )
+            setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+            addLog(`✅ Video selesai ✓`, 'success', 'weavy')
+
+            removeActiveTask(taskId)
+            activeTaskId = null
+            return videoUrl
+          },
+          {
+            requiredCredits: totalCredits,
+            onKeySwitch: (from, to, attempt) => {
+              addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn', 'weavy')
+              if (activeTaskId) removeActiveTask(activeTaskId)
+              activeTaskId = null
+            },
+            onError: (err, key) => {
+              if (detectTokenError('weavy', err)) {
+                addLog(`⚠️ Key "${key.name}" is invalid: ${err.message}`, 'warn', 'weavy')
+              }
+            },
+          }
+        )
+        if (rotation.ok && rotation.result) {
+          setResults((prev) => [rotation.result!, ...prev])
+          successRef.current = true
+          setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+          if (rotation.triedKeys > 1) {
+            addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success', 'weavy')
           }
         } else {
           throw new Error(rotation.error || 'Generation failed')
