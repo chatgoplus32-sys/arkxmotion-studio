@@ -11,15 +11,16 @@ async function refreshWeavyToken(refreshToken: string): Promise<{ accessToken: s
       body: `grant_type=refresh_token&refresh_token=${encodeURIComponent(refreshToken)}`,
       signal: AbortSignal.timeout(10000),
     })
-    if (!r.ok) return null
-    const data = await r.json()
-    if (!data.id_token) return null
+    const data = await r.json().catch(() => ({}))
+    console.log(`[weavy-proxy] firebase refresh → ${r.status}`, JSON.stringify(data).slice(0, 300))
+    if (!r.ok || !data.id_token) return null
     return {
       accessToken: data.id_token,
       refreshToken: data.refresh_token || refreshToken,
       expiresIn: Number(data.expires_in) || 3600,
     }
-  } catch {
+  } catch (e: any) {
+    console.log(`[weavy-proxy] firebase refresh error:`, e.message)
     return null
   }
 }
@@ -40,19 +41,26 @@ function isJwtToken(token: string): boolean {
 }
 
 async function resolveAccessToken(token: string): Promise<{ accessToken: string; refreshToken?: string; email?: string }> {
-  if (isJwtToken(token)) {
+  const isJwt = isJwtToken(token)
+  console.log(`[weavy-proxy] resolveAccessToken: isJwt=${isJwt} tokenLen=${token.length}`)
+
+  if (isJwt) {
     const email = extractEmailFromJwt(token)
     const refreshed = await refreshWeavyToken(token)
     if (refreshed?.accessToken) {
+      console.log(`[weavy-proxy] JWT → refreshed OK, email=${extractEmailFromJwt(refreshed.accessToken)}`)
       return { accessToken: refreshed.accessToken, refreshToken: refreshed.refreshToken, email: extractEmailFromJwt(refreshed.accessToken) || email || undefined }
     }
+    console.log(`[weavy-proxy] JWT → refresh FAILED, using raw token`)
     return { accessToken: token, email: email || undefined }
   }
 
   const refreshed = await refreshWeavyToken(token)
   if (refreshed?.accessToken) {
+    console.log(`[weavy-proxy] refreshToken → refreshed OK, email=${extractEmailFromJwt(refreshed.accessToken)}`)
     return { accessToken: refreshed.accessToken, refreshToken: refreshed.refreshToken, email: extractEmailFromJwt(refreshed.accessToken) || undefined }
   }
+  console.log(`[weavy-proxy] refreshToken → refresh FAILED, using raw token`)
   return { accessToken: token, email: extractEmailFromJwt(token) || undefined }
 }
 
@@ -72,8 +80,9 @@ async function fetchWeavyCredits(accessToken: string): Promise<number | null> {
         headers: { Authorization: `Bearer ${accessToken}` },
         signal: AbortSignal.timeout(8000),
       })
-      if (!r.ok) continue
       const data = await r.json().catch(() => null)
+      console.log(`[weavy-proxy] credits ${url} → ${r.status}`, JSON.stringify(data).slice(0, 200))
+      if (!r.ok) continue
       const credits = data?.credits ?? data?.balance ?? data?.totalCredits ?? data?.creditsRemaining ?? data?.quota ?? data?.usage?.credits ?? data?.plan?.credits ?? data?.data?.credits ?? data?.user?.credits ?? null
       if (typeof credits === 'number') return credits
     } catch {
@@ -86,8 +95,9 @@ async function fetchWeavyCredits(accessToken: string): Promise<number | null> {
       headers: { Authorization: `Bearer ${accessToken}` },
       signal: AbortSignal.timeout(8000),
     })
+    const data = await r.json().catch(() => null)
+    console.log(`[weavy-proxy] credits ${WEAVY_API}/v1/workspaces → ${r.status}`, JSON.stringify(data).slice(0, 200))
     if (r.ok) {
-      const data = await r.json().catch(() => null)
       const workspaces = data?.workspaces || data
       const ws = Array.isArray(workspaces) ? workspaces[0] : workspaces
       if (typeof ws?.credits === 'number') return ws.credits
