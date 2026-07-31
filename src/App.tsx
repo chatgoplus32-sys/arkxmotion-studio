@@ -17,6 +17,7 @@ import UpscalerPage from '@/pages/Upscaler'
 import DubbingPage from '@/pages/Dubbing'
 
 import ProvidersPage from '@/pages/Providers'
+import RoutingProviderPage from '@/pages/RoutingProvider'
 import SettingsPage from '@/pages/Settings'
 import AdminUsersPage from '@/pages/AdminUsers'
 import AdminTokensPage from '@/pages/AdminTokens'
@@ -62,6 +63,7 @@ export default function App() {
                       <Route path="/mixing/dubbing" element={<DubbingPage />} />
 
                       <Route path="/providers" element={<ProvidersPage />} />
+                      <Route path="/manage/routing" element={<RoutingProviderPage />} />
                       <Route path="/settings" element={<SettingsPage />} />
                       <Route path="/topup/createpulse" element={<CreatePulseTopupPage />} />
                       <Route path="/beli-token" element={<BeliTokenPage />} />
