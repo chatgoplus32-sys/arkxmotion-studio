@@ -1,3 +1,92 @@
+const WEAVY_API = 'https://api.weavy.ai/api'
+const FIREBASE_KEY = 'AIzaSyC-qLy3TFyXMogJPfMkZJ9H_q46hEu1sxI'
+
+async function refreshWeavyToken(refreshToken: string): Promise<{ accessToken: string; refreshToken: string; expiresIn: number } | null> {
+  try {
+    const r = await fetch(`https://securetoken.googleapis.com/v1/token?key=${FIREBASE_KEY}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `grant_type=refresh_token&refresh_token=${encodeURIComponent(refreshToken)}`,
+    })
+    if (!r.ok) return null
+    const data = await r.json()
+    if (!data.id_token) return null
+    return {
+      accessToken: data.id_token,
+      refreshToken: data.refresh_token || refreshToken,
+      expiresIn: Number(data.expires_in) || 3600,
+    }
+  } catch {
+    return null
+  }
+}
+
+function extractEmailFromJwt(token: string): string | null {
+  try {
+    const parts = token.split('.')
+    if (parts.length !== 3) return null
+    const payload = JSON.parse(atob(parts[1]))
+    return payload.email || payload.user_id || null
+  } catch {
+    return null
+  }
+}
+
+function isRefreshToken(token: string): boolean {
+  return !/^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token) && token.length > 40
+}
+
+async function fetchWeavyCreditsClient(accessToken: string): Promise<number | null> {
+  const endpoints = [
+    `${WEAVY_API}/v1/credits`,
+    `${WEAVY_API}/v1/user/credits`,
+    `${WEAVY_API}/v1/user/balance`,
+    `${WEAVY_API}/v1/user`,
+    `${WEAVY_API}/v1/account`,
+    `${WEAVY_API}/v1/subscription`,
+  ]
+
+  for (const url of endpoints) {
+    try {
+      const r = await fetch(url, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+      if (!r.ok) continue
+      const data = await r.json().catch(() => null)
+      const credits = data?.credits ?? data?.balance ?? data?.totalCredits ?? data?.creditsRemaining ?? data?.quota ?? data?.usage?.credits ?? data?.plan?.credits ?? data?.data?.credits ?? data?.user?.credits ?? null
+      if (typeof credits === 'number') return credits
+    } catch { continue }
+  }
+
+  try {
+    const r = await fetch(`${WEAVY_API}/v1/workspaces`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+    if (r.ok) {
+      const data = await r.json().catch(() => null)
+      const workspaces = data?.workspaces || data
+      const ws = Array.isArray(workspaces) ? workspaces[0] : workspaces
+      if (typeof ws?.credits === 'number') return ws.credits
+    }
+  } catch {}
+
+  return null
+}
+
+async function resolveAndFetchCredits(token: string): Promise<{ ok: boolean; credits: number | null; email?: string }> {
+  if (isRefreshToken(token)) {
+    const refreshed = await refreshWeavyToken(token)
+    if (refreshed?.accessToken) {
+      const email = extractEmailFromJwt(refreshed.accessToken) || undefined
+      const credits = await fetchWeavyCreditsClient(refreshed.accessToken)
+      return { ok: true, credits, email }
+    }
+  }
+  const email = extractEmailFromJwt(token) || undefined
+  const credits = await fetchWeavyCreditsClient(token)
+  return { ok: true, credits, email }
+}
+
 const WEAVY_PROXY = '/api/public/weavy'
 
 export interface WeavyGenerateParams {
@@ -29,20 +118,8 @@ export interface WeavyStatusResult {
 
 export async function checkWeavyBalance(token: string): Promise<{ ok: boolean; balance?: number | null; email?: string; error?: string }> {
   try {
-    const res = await fetch(`${WEAVY_PROXY}?action=balance`, {
-      method: 'GET',
-      headers: { 'X-Weavy-Token': token },
-    })
-    const data = await res.json().catch(() => null)
-
-    if (data?.ok) {
-      const credits = data?.data?.credits ?? null
-      const email = data?.data?.email ?? undefined
-      return { ok: true, balance: typeof credits === 'number' ? credits : null, email }
-    }
-
-    const errMsg = data?.data?.message || data?.error || `HTTP ${res.status}`
-    return { ok: false, balance: null, error: errMsg }
+    const result = await resolveAndFetchCredits(token)
+    return { ok: result.ok, balance: result.credits, email: result.email }
   } catch (err: any) {
     return { ok: true, balance: null, error: err.message }
   }
@@ -50,43 +127,8 @@ export async function checkWeavyBalance(token: string): Promise<{ ok: boolean; b
 
 export async function checkWeavyBalanceDirect(token: string): Promise<{ ok: boolean; balance?: number | null; email?: string; error?: string }> {
   try {
-    const isJwt = /^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token)
-    if (!isJwt) return { ok: false, balance: null, error: 'Not a JWT token' }
-
-    let email: string | undefined
-    try {
-      const payload = JSON.parse(atob(token.split('.')[1]))
-      email = payload.email || payload.user_id || undefined
-    } catch {}
-
-    const endpoints = [
-      'https://api.weavy.ai/api/v1/credits',
-      'https://api.weavy.ai/api/v1/user/credits',
-      'https://api.weavy.ai/api/v1/user/balance',
-      'https://api.weavy.ai/api/v1/user',
-      'https://api.weavy.ai/api/v1/account',
-      'https://api.weavy.ai/api/v1/subscription',
-      'https://api.weavy.ai/api/v1/workspaces',
-    ]
-
-    for (const url of endpoints) {
-      try {
-        const r = await fetch(url, {
-          headers: { Authorization: `Bearer ${token}` },
-          signal: AbortSignal.timeout(8000),
-        })
-        if (!r.ok) continue
-        const data = await r.json().catch(() => null)
-        let credits = data?.credits ?? data?.balance ?? data?.totalCredits ?? data?.creditsRemaining ?? data?.quota ?? data?.usage?.credits ?? data?.plan?.credits ?? data?.data?.credits ?? data?.user?.credits ?? null
-        if (credits === null) {
-          const workspaces = data?.workspaces || data
-          const ws = Array.isArray(workspaces) ? workspaces[0] : workspaces
-          if (typeof ws?.credits === 'number') credits = ws.credits
-        }
-        if (typeof credits === 'number') return { ok: true, balance: credits, email }
-      } catch { continue }
-    }
-    return { ok: false, balance: null, error: 'No credits endpoint responded', email }
+    const result = await resolveAndFetchCredits(token)
+    return { ok: result.ok, balance: result.credits, email: result.email }
   } catch (err: any) {
     return { ok: false, balance: null, error: err.message }
   }

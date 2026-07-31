@@ -221,7 +221,7 @@ function loadRoutingFromStorage(): Record<string, ProviderId> {
     storyboard: 'weavy',
     'bulk-fashion': 'weavy',
     'image-to-video': 'weavy',
-    'text-to-video': 'weavy',
+    'text-to-image': 'weavy',
     upscaler: 'magnific',
     dubbing: 'elevenlabs',
     'ai-influencer': 'gemini',

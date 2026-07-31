@@ -18,7 +18,7 @@ export default function ResearchPage() {
         { keyword: 'Motion Capture AI', volume: '8K', trend: '+32%' },
         { keyword: 'Faceless YouTube', volume: '15K', trend: '+28%' },
         { keyword: 'AI Content Creator', volume: '20K', trend: '+55%' },
-        { keyword: 'Text to Video', volume: '18K', trend: '+40%' },
+        { keyword: 'Text to Image', volume: '18K', trend: '+40%' },
       ],
       gaps: [
         'AI-powered video editing tutorials',
