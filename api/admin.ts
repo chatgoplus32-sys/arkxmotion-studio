@@ -56,6 +56,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return handleStatusRoutes(req, res)
     }
 
+    // /api/admin/maintenance
+    if (segments.includes('maintenance')) {
+      return handleMaintenanceRoutes(req, res)
+    }
+
     // /api/admin/* user management routes (existing)
     return handleUserRoutes(req, res, segments)
   } catch (err: any) {
@@ -625,6 +630,70 @@ async function handleStatusRoutes(_req: VercelRequest, res: VercelResponse) {
       checkedAt: new Date().toISOString(),
     })
   } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Internal server error' })
+  }
+}
+
+// ─── Maintenance Routes ────────────────────────────────────────────
+
+async function handleMaintenanceRoutes(req: VercelRequest, res: VercelResponse) {
+  try {
+    const sql = getSql()
+
+    // Ensure table exists
+    await sql`CREATE TABLE IF NOT EXISTS provider_maintenance (
+      id SERIAL PRIMARY KEY,
+      provider TEXT UNIQUE NOT NULL,
+      is_maintenance INTEGER NOT NULL DEFAULT 0,
+      message TEXT NOT NULL DEFAULT '',
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`
+
+    // Seed providers if not exist
+    const providers = ['weavy', 'wavespeed', 'magnific', 'roboneo', 'createpulse', 'framia', 'firefly', 'leonardo', 'elevenlabs', 'gemini', 'openai', 'shotstack', 'creatomate']
+    for (const p of providers) {
+      await sql`INSERT INTO provider_maintenance (provider, is_maintenance, message) VALUES (${p}, 0, '') ON CONFLICT (provider) DO NOTHING`
+    }
+
+    // GET /api/admin/maintenance - Get all maintenance statuses
+    if (req.method === 'GET') {
+      const rows = await sql`SELECT provider, is_maintenance, message, updated_at FROM provider_maintenance ORDER BY provider`
+      return res.status(200).json({
+        maintenance: rows.map(r => ({
+          provider: r.provider,
+          isMaintenance: !!r.is_maintenance,
+          message: r.message,
+          updatedAt: r.updated_at,
+        }))
+      })
+    }
+
+    // PATCH /api/admin/maintenance - Update maintenance status
+    if (req.method === 'PATCH') {
+      const { provider, isMaintenance, message } = req.body || {}
+      if (!provider) {
+        return res.status(400).json({ error: 'Provider is required' })
+      }
+
+      await sql`
+        UPDATE provider_maintenance
+        SET is_maintenance = ${isMaintenance ? 1 : 0},
+            message = ${message || ''},
+            updated_at = CURRENT_TIMESTAMP
+        WHERE provider = ${provider}
+      `
+
+      return res.status(200).json({
+        message: `Maintenance status updated for ${provider}`,
+        provider,
+        isMaintenance: !!isMaintenance,
+        maintenanceMessage: message || '',
+      })
+    }
+
+    return res.status(405).json({ error: 'Method not allowed' })
+  } catch (err: any) {
+    console.error('Maintenance error:', err)
     return res.status(500).json({ error: err.message || 'Internal server error' })
   }
 }

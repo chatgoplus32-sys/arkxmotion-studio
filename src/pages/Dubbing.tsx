@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Textarea, Select, Badge } from '@/components/ui'
+import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
 import { Mic, Loader2 } from 'lucide-react'
 import { useProviderManager, ProviderId } from '@/stores/providerManager'
 import { useToastStore } from '@/stores/toastStore'
@@ -24,7 +25,11 @@ const LANGUAGE_OPTIONS = [
 ]
 
 export default function DubbingPage() {
-  const { keys } = useProviderManager()
+  const { keys, fetchMaintenance } = useProviderManager()
+
+  useEffect(() => {
+    fetchMaintenance()
+  }, [fetchMaintenance])
   const addToast = useToastStore((s) => s.addToast)
   const [text, setText] = useState('')
   const [voice, setVoice] = useState(DUBBING_VOICES[0].value)
@@ -95,6 +100,8 @@ export default function DubbingPage() {
             </div>
           </div>
         </Section>
+
+        <MaintenanceBanner providerId={selectedVoice.provider} />
 
         <Section title="Generate">
           <div className="flex items-center gap-3">

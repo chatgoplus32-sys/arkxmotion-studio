@@ -1,11 +1,13 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Select, Label, Textarea, EmptyState, Badge } from '@/components/ui'
+import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
 import { Wand2, Loader2, Upload, Trash2, Key, ExternalLink, Download, ImageIcon, Search, X, Settings2, ChevronDown, ChevronUp, CheckCircle2, AlertCircle } from 'lucide-react'
 import { useProviderManager, PROVIDER_CONFIGS } from '@/stores/providerManager'
 import { useToastStore } from '@/stores/toastStore'
 import { runMagnificUpscale, getMagnificApiKey, type MagnificEngine, type MagnificOptimizedFor, type MagnificSettings } from '@/lib/magnific'
 import { runLeonardoUpscale, type LeonardoUpscaleSettings } from '@/lib/leonardo-upscale'
+import { runTopazUpscale, type TopazUpscaleSettings } from '@/lib/weavy'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 
 const MAX_IMAGES = 50
@@ -116,7 +118,7 @@ async function compressImage(file: File, maxDim = 1280, quality = 0.8): Promise<
 
 export default function UpscalerPage() {
   const addToast = useToastStore((s) => s.addToast)
-  const { keys } = useProviderManager()
+  const { keys, fetchMaintenance } = useProviderManager()
 
   const [provider, setProvider] = useState<'topaz' | 'magnific' | 'leonardo'>('topaz')
   const [mode, setMode] = useState<'upscale' | 'enhance'>('upscale')
@@ -152,8 +154,10 @@ export default function UpscalerPage() {
   const magnificKey = getMagnificApiKey()
   const leonardoKeys = keys.leonardo || []
   const hasLeonardoKey = leonardoKeys.some(k => k.status === 'active' || k.status === 'unknown')
+  const weavyKeys = keys.weavy || []
+  const hasWeavyKey = weavyKeys.some(k => k.status === 'active' || k.status === 'unknown')
   const canRun = rows.length > 0 && !running &&
-    (provider === 'topaz' || (provider === 'magnific' && !!magnificKey) || (provider === 'leonardo' && hasLeonardoKey))
+    ((provider === 'topaz' && hasWeavyKey) || (provider === 'magnific' && !!magnificKey) || (provider === 'leonardo' && hasLeonardoKey))
 
   const addLog = useCallback((msg: string, level: LogEntry['level'] = 'info') => {
     const time = new Date().toLocaleTimeString()
@@ -164,6 +168,10 @@ export default function UpscalerPage() {
     gallery.filter(e => !gallerySearch || e.sourceName.toLowerCase().includes(gallerySearch.toLowerCase())),
     [gallery, gallerySearch]
   )
+
+  useEffect(() => {
+    fetchMaintenance()
+  }, [fetchMaintenance])
 
   useEffect(() => {
     const handoff = getHandoffImages()
@@ -243,8 +251,12 @@ export default function UpscalerPage() {
 
         let url: string
         if (provider === 'topaz') {
-          log('Topaz via Weavy belum tersedia di versi ini. Gunakan Magnific atau Leonardo.', 'error')
-          throw Error('Topaz not supported yet')
+          url = await runTopazUpscale(item.file, {
+            model: topazModel as any,
+            upscale_factor: topazFactor,
+            output_format: topazFormat as 'jpeg' | 'png',
+            crop_to_fill: topazCrop,
+          }, (msg) => log(msg))
         } else if (provider === 'magnific') {
           url = await runMagnificUpscale(item.file, mode, {
             scale_factor: magScale,
@@ -385,9 +397,25 @@ export default function UpscalerPage() {
                   disabled={running}
                   options={[
                     { value: 'topaz', label: 'Topaz Upscale (Weavy node)' },
+                    { value: 'magnific', label: 'Magnific Upscale (Weavy node)' },
                     { value: 'leonardo', label: 'Aurora (Leonardo)' },
                   ]}
                 />
+
+                <MaintenanceBanner providerId={provider === 'topaz' ? 'weavy' : provider} />
+
+                {provider === 'topaz' && !hasWeavyKey && (
+                  <div className="flex items-center gap-2 text-xs text-amber-400 bg-amber-500/10 rounded-lg p-2 border border-amber-500/20">
+                    <Key className="h-4 w-4" />
+                    <span>Topaz via Weavy butuh token. Tambahkan di <b>Kelola Token</b> → provider <b>Weavy</b>.</span>
+                  </div>
+                )}
+                {provider === 'magnific' && !magnificKey && (
+                  <div className="flex items-center gap-2 text-xs text-amber-400 bg-amber-500/10 rounded-lg p-2 border border-amber-500/20">
+                    <Key className="h-4 w-4" />
+                    <span>Magnific butuh API key. Tambahkan di <b>Kelola Token</b> → provider <b>Magnific</b>.</span>
+                  </div>
+                )}
 
                 <Label>Mode</Label>
                 <Select

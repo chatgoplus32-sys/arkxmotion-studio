@@ -31,6 +31,29 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })
 })
 
+interface MaintenanceRow {
+  provider: string
+  is_maintenance: number
+  message: string
+}
+
+app.get('/api/admin/public/maintenance', (_req, res) => {
+  try {
+    const rows = db.prepare('SELECT provider, is_maintenance, message FROM provider_maintenance WHERE is_maintenance = 1').all() as MaintenanceRow[]
+    const result: Record<string, { isMaintenance: boolean; message: string }> = {}
+    for (const row of rows) {
+      result[row.provider] = {
+        isMaintenance: true,
+        message: row.message,
+      }
+    }
+    res.json({ maintenance: result })
+  } catch (error) {
+    console.error('Public maintenance error:', error)
+    res.json({ maintenance: {} })
+  }
+})
+
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`)
 })

@@ -20,7 +20,8 @@
     "api/public/firefly.ts": { "maxDuration": 60 },
     "api/public/shotstack.ts": { "maxDuration": 60 },
     "api/public/creatomate.ts": { "maxDuration": 60 },
-    "api/public/magnific.ts": { "maxDuration": 60 }
+    "api/public/magnific.ts": { "maxDuration": 60 },
+    "api/public/maintenance.ts": { "maxDuration": 10 }
   },
   "routes": [
     { "src": "/api/auth/(.*)", "dest": "/api/auth?path=$1" },
@@ -34,6 +35,7 @@
     { "src": "/api/admin/tokens/bulk-delete", "dest": "/api/admin" },
     { "src": "/api/admin/tokens/(\\d+)", "dest": "/api/admin" },
     { "src": "/api/admin/status", "dest": "/api/admin" },
+    { "src": "/api/admin/maintenance", "dest": "/api/admin" },
     { "src": "/api/admin/tokens", "dest": "/api/admin" },
     { "src": "/api/admin/users/pending", "dest": "/api/admin?sub=pending" },
     { "src": "/api/admin/users/(\\d+)/approve", "dest": "/api/admin?id=$1&action=approve" },
@@ -50,6 +52,7 @@
     { "src": "/api/tokens/buy", "dest": "/api/tokens" },
     { "src": "/api/tokens/(.*)", "dest": "/api/tokens" },
     { "src": "/api/public/uploads", "dest": "/api/public/uploads" },
+    { "src": "/api/public/maintenance", "dest": "/api/public/maintenance" },
     { "src": "/api/(.*)", "dest": "/api/$1" },
     { "handle": "filesystem" },
     { "src": "/(.*)", "dest": "/index.html" }

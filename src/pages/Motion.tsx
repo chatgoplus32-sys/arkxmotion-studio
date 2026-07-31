@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect, useMemo, forwardRef } from 'r
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Textarea, Select, Label, EmptyState } from '@/components/ui'
 import { useProviderManager, type ProviderId } from '@/stores'
+import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
 import { useToastStore } from '@/stores/toastStore'
 import { uploadToCatbox, submitMotionControl, pollMotionControl, checkRoboneoBalance, compressVideo, submitGoogleOmni, normalizeImage } from '@/lib/roboneo'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
@@ -83,7 +84,11 @@ export default function MotionPage() {
   const generatingRef = useRef(false)
   const successRef = useRef(false)
 
-  const { keys } = useProviderManager()
+  const { keys, fetchMaintenance } = useProviderManager()
+
+  useEffect(() => {
+    fetchMaintenance()
+  }, [fetchMaintenance])
 
   useEffect(() => {
     const activeTasks = getActiveTasks().filter((t) => t.page === 'motion')
@@ -431,9 +436,9 @@ export default function MotionPage() {
       } catch {}
     }
 
-    } catch (genErr: any) {
-      addLog(`Generation error: ${genErr.message}`, 'error')
-      addToast(`Generate gagal: ${genErr.message}`, 'error')
+     } catch (genErr: any) {
+       addLog(`Generation error: ${genErr.message}`, 'error')
+       addToast(`Generate gagal: ${genErr.message}`, 'error')
     } finally {
       if (generatingRef.current && successRef.current) {
         addToast(`Generate selesai: ${currentProvider.name} · ${currentModel.label}`, 'success')
@@ -507,22 +512,24 @@ export default function MotionPage() {
             <div className="flex flex-col gap-4">
               <div>
                 <Label>Provider</Label>
-                <Select
-                  value={provider}
-                  onChange={(e) => {
-                    setProvider(e.target.value as ProviderId)
-                    const p = PROVIDERS[e.target.value as keyof typeof PROVIDERS]
-                    setModelKey(p.models[0].key)
-                  }}
-                  options={Object.entries(PROVIDERS).map(([key, val]) => ({
-                    value: key,
-                    label: val.name,
-                  }))}
-                />
-              </div>
+                  <Select
+                    value={provider}
+                    onChange={(e) => {
+                      setProvider(e.target.value as ProviderId)
+                      const p = PROVIDERS[e.target.value as keyof typeof PROVIDERS]
+                      setModelKey(p.models[0].key)
+                    }}
+                    options={Object.entries(PROVIDERS).map(([key, val]) => ({
+                      value: key,
+                      label: val.name,
+                    }))}
+                  />
+                </div>
 
-              <div>
-                <Label>Model</Label>
+                <MaintenanceBanner providerId={provider} />
+
+                <div>
+                  <Label>Model</Label>
                 <Select
                   value={modelKey}
                   onChange={(e) => setModelKey(e.target.value)}

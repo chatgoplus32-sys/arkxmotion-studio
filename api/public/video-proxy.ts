@@ -1,5 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
+export const config = { maxDuration: 60 }
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS')
@@ -19,6 +21,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const isMeitu = /meitudata\.com/i.test(targetUrl)
+  const isCatbox = /catbox\.moe|litter\.box|files\.catbox/i.test(targetUrl)
 
   try {
     const upstreamHeaders: Record<string, string> = {
@@ -31,25 +34,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       upstreamHeaders['Origin'] = 'https://www.roboneo.com'
     }
 
+    if (isCatbox) {
+      upstreamHeaders['Accept'] = '*/*'
+    }
+
     const rangeHeader = req.headers.range
     if (rangeHeader) {
       upstreamHeaders['Range'] = rangeHeader
     }
 
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 55000)
+
     const upstream = await fetch(targetUrl, {
       headers: upstreamHeaders,
       redirect: 'follow',
+      signal: controller.signal,
     })
 
+    clearTimeout(timeout)
+
     if (!upstream.ok && upstream.status !== 206) {
-      return res.status(upstream.status).json({ ok: false, error: `Upstream: ${upstream.status}` })
+      const errText = await upstream.text().catch(() => `Upstream: ${upstream.status}`)
+      return res.status(upstream.status).json({ ok: false, error: errText.slice(0, 500) })
     }
 
-    const contentType = upstream.headers.get('content-type') || 'video/mp4'
+    const contentType = upstream.headers.get('content-type') || ''
     const contentLength = upstream.headers.get('content-length')
     const contentRange = upstream.headers.get('content-range')
 
-    res.setHeader('Content-Type', contentType)
+    const resolvedType = contentType.includes('video') ? contentType
+      : contentType.includes('octet-stream') ? 'video/mp4'
+      : 'video/mp4'
+
+    res.setHeader('Content-Type', resolvedType)
     if (contentLength) res.setHeader('Content-Length', contentLength)
     if (contentRange) res.setHeader('Content-Range', contentRange)
     res.setHeader('Accept-Ranges', 'bytes')
@@ -65,18 +83,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const reader = body.getReader()
-    const pump = async (): Promise<void> => {
-      const { done, value } = await reader.read()
-      if (done) {
-        res.end()
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        const ok = res.write(value)
+        if (!ok) {
+          await new Promise<void>((resolve) => res.once('drain', () => resolve()))
+        }
+      }
+    } catch (streamErr: any) {
+      if (streamErr?.name === 'AbortError' || streamErr?.message?.includes('abort')) {
         return
       }
-      res.write(value)
-      return pump()
+      console.error('[video-proxy] stream error:', streamErr.message)
     }
-    await pump()
+
+    res.end()
   } catch (err: any) {
+    if (err?.name === 'AbortError' || err?.message?.includes('abort')) {
+      if (!res.headersSent) {
+        return res.status(504).json({ ok: false, error: 'Upstream timeout' })
+      }
+      return
+    }
     console.error('[video-proxy] error:', err.message)
-    return res.status(502).json({ ok: false, error: err.message })
+    if (!res.headersSent) {
+      return res.status(502).json({ ok: false, error: err.message?.slice(0, 500) || 'Proxy error' })
+    }
   }
 }

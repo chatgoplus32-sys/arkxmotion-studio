@@ -1,5 +1,6 @@
 import { useProviderManager, type ProviderId, type ProviderKey } from '@/stores/providerManager'
 import { checkRoboneoBalance } from '@/lib/roboneo'
+import { fetchWeavyCreditsClient } from '@/lib/weavy'
 
 const TOKEN_ERROR_PATTERNS = [
   /token/i, /auth/i, /unauth/i, /forbidden/i,
@@ -153,6 +154,24 @@ export async function withTokenRotation<T>(
             console.log(`[token-rotation] ${provider} key "${nextKey.name}" balance=${bal} >= required=${required}, is_valid_user=${balanceCheck.isValidUser}, proceeding...`)
             useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'active', bal)
           }
+        }
+      } catch (err: any) {
+        console.log(`[token-rotation] ${provider} balance check failed for "${nextKey.name}": ${err.message}, proceeding anyway`)
+      }
+    } else if (provider === 'weavy') {
+      try {
+        const balance = await fetchWeavyCreditsClient(nextKey.key)
+        const required = opts?.requiredCredits ?? 0
+        if (balance !== null) {
+          if (balance < required) {
+            console.log(`[token-rotation] ${provider} key "${nextKey.name}" skipped (balance=${balance} < required=${required}). Trying next...`)
+            useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'empty', balance)
+            lastError = new Error(`Token ${nextKey.name} balance tidak cukup (${balance} < ${required})`)
+            opts?.onError?.(lastError, nextKey)
+            continue
+          }
+          console.log(`[token-rotation] ${provider} key "${nextKey.name}" balance=${balance} >= required=${required}, proceeding...`)
+          useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'active', balance)
         }
       } catch (err: any) {
         console.log(`[token-rotation] ${provider} balance check failed for "${nextKey.name}": ${err.message}, proceeding anyway`)

@@ -108,4 +108,22 @@ db.exec(`
   )
 `)
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS provider_maintenance (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider TEXT UNIQUE NOT NULL,
+    is_maintenance INTEGER NOT NULL DEFAULT 0,
+    message TEXT NOT NULL DEFAULT '',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`)
+
+const providers = ['weavy', 'wavespeed', 'magnific', 'roboneo', 'createpulse', 'framia', 'firefly', 'leonardo', 'elevenlabs', 'gemini', 'openai', 'shotstack', 'creatomate']
+for (const p of providers) {
+  const exists = db.prepare('SELECT id FROM provider_maintenance WHERE provider = ?').get(p)
+  if (!exists) {
+    db.prepare('INSERT INTO provider_maintenance (provider, is_maintenance, message) VALUES (?, 0, '')').run(p)
+  }
+}
+
 export default db

@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Button, Badge } from '@/components/ui'
 import {
@@ -27,6 +27,7 @@ import {
   CheckCircle2,
   ArrowUpDown,
   Layers,
+  Wrench,
 } from 'lucide-react'
 
 interface WorkflowConfig {
@@ -208,7 +209,7 @@ const PROVIDER_COLORS: Record<string, string> = {
 }
 
 export default function RoutingProviderPage() {
-  const { keys, routing, setRouting } = useProviderManager()
+  const { keys, routing, setRouting, fetchMaintenance, isProviderMaintenance } = useProviderManager()
 
   const [expandedCategory, setExpandedCategory] = useState<string | null>('image')
   const [editingWorkflow, setEditingWorkflow] = useState<string | null>(null)
@@ -216,6 +217,10 @@ export default function RoutingProviderPage() {
   const [showSaveConfirm, setShowSaveConfirm] = useState(false)
   const [showResetConfirm, setShowResetConfirm] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
+
+  useEffect(() => {
+    fetchMaintenance()
+  }, [fetchMaintenance])
 
   const currentRouting = useMemo(() => {
     const r = { ...routing }
@@ -435,7 +440,6 @@ export default function RoutingProviderPage() {
                     const activeProviderId = currentRouting[workflow.id] || workflow.defaultProvider
                     const activeProvider = PROVIDER_CONFIGS[activeProviderId]
                     const providerStatus = getProviderStatus(activeProviderId)
-                    const keyCount = getProviderKeyCount(activeProviderId)
                     const isEditing = editingWorkflow === workflow.id
                     const isChanged = tempRouting[workflow.id] !== undefined
 
@@ -494,6 +498,7 @@ export default function RoutingProviderPage() {
                               const status = getProviderStatus(pid)
                               const pkCount = getProviderKeyCount(pid)
                               const isSelected = pid === activeProviderId
+                              const isMaint = isProviderMaintenance(pid)
 
                               return (
                                 <button
@@ -501,8 +506,12 @@ export default function RoutingProviderPage() {
                                   onClick={() => handleProviderChange(workflow.id, pid)}
                                   className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-all ${
                                     isSelected
-                                      ? 'border-[#d4a017] bg-[#d4a017]/10 shadow-[0_0_12px_rgba(212,160,23,0.2)]'
-                                      : 'border-[#2a2a2a] bg-[#141414] hover:border-[#444]'
+                                      ? isMaint
+                                        ? 'border-orange-500/50 bg-orange-500/10 shadow-[0_0_12px_rgba(249,115,22,0.2)]'
+                                        : 'border-[#d4a017] bg-[#d4a017]/10 shadow-[0_0_12px_rgba(212,160,23,0.2)]'
+                                      : isMaint
+                                        ? 'border-orange-500/30 bg-orange-500/5 hover:border-orange-500/50'
+                                        : 'border-[#2a2a2a] bg-[#141414] hover:border-[#444]'
                                   }`}
                                 >
                                   <span className="text-lg">{PROVIDER_ICONS[pid]}</span>
@@ -510,17 +519,23 @@ export default function RoutingProviderPage() {
                                     <div className="flex items-center gap-1.5">
                                       <span
                                         className="text-xs font-semibold"
-                                        style={{ color: PROVIDER_COLORS[pid] }}
+                                        style={{ color: isMaint ? '#f97316' : PROVIDER_COLORS[pid] }}
                                       >
                                         {config.name}
                                       </span>
-                                      {isSelected && <Check className="h-3 w-3 text-[#d4a017]" />}
+                                      {isSelected && !isMaint && <Check className="h-3 w-3 text-[#d4a017]" />}
+                                      {isMaint && (
+                                        <span className="inline-flex items-center gap-0.5 text-[8px] font-medium px-1 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30">
+                                          <Wrench className="h-2 w-2" />
+                                          MAINT
+                                        </span>
+                                      )}
                                     </div>
                                     <div className="flex items-center gap-2 mt-0.5">
                                       <span className="text-[10px] text-[#a0a0a0]">
                                         {pkCount} key{pkCount !== 1 ? 's' : ''}
                                       </span>
-                                      {status === 'active' && (
+                                      {status === 'active' && !isMaint && (
                                         <span className="text-[9px] text-emerald-400">● active</span>
                                       )}
                                       {status === 'no-keys' && (
@@ -528,6 +543,9 @@ export default function RoutingProviderPage() {
                                       )}
                                       {status === 'limited' && (
                                         <span className="text-[9px] text-amber-400">● limited</span>
+                                      )}
+                                      {isMaint && (
+                                        <span className="text-[9px] text-orange-400">● maintenance</span>
                                       )}
                                     </div>
                                   </div>
@@ -544,8 +562,13 @@ export default function RoutingProviderPage() {
                             <span>Fallback:</span>
                             {workflow.fallbackProviders.map((fp, i) => (
                               <span key={fp}>
-                                <span style={{ color: PROVIDER_COLORS[fp] }}>
+                                <span style={{ color: isProviderMaintenance(fp) ? '#f97316' : PROVIDER_COLORS[fp] }}>
                                   {PROVIDER_ICONS[fp]} {PROVIDER_CONFIGS[fp].name}
+                                  {isProviderMaintenance(fp) && (
+                                    <span className="ml-1 inline-flex items-center gap-0.5 text-[8px] text-orange-400">
+                                      <Wrench className="h-2 w-2" />
+                                    </span>
+                                  )}
                                 </span>
                                 {i < (workflow.fallbackProviders?.length || 0) - 1 && (
                                   <span className="mx-1">→</span>
@@ -578,15 +601,25 @@ export default function RoutingProviderPage() {
             if (usageCount === 0) return null
             const status = getProviderStatus(pid as ProviderId)
             const pkCount = getProviderKeyCount(pid as ProviderId)
+            const isMaint = isProviderMaintenance(pid as ProviderId)
 
             return (
               <div
                 key={pid}
-                className="flex items-center gap-2 rounded-lg border border-[#2a2a2a] bg-[#141414] p-2"
+                className={`flex items-center gap-2 rounded-lg border p-2 ${
+                  isMaint
+                    ? 'border-orange-500/30 bg-orange-500/5'
+                    : 'border-[#2a2a2a] bg-[#141414]'
+                }`}
               >
                 <span className="text-sm">{PROVIDER_ICONS[pid]}</span>
                 <div className="flex-1 min-w-0">
-                  <div className="text-[11px] font-medium text-[#f5f5f5] truncate">{config.name}</div>
+                  <div className="flex items-center gap-1">
+                    <div className="text-[11px] font-medium text-[#f5f5f5] truncate">{config.name}</div>
+                    {isMaint && (
+                      <Wrench className="h-2.5 w-2.5 text-orange-400 shrink-0" />
+                    )}
+                  </div>
                   <div className="flex items-center gap-1.5">
                     <span className="text-[10px] text-[#a0a0a0]">
                       {usageCount} workflow{usageCount !== 1 ? 's' : ''}
@@ -597,8 +630,9 @@ export default function RoutingProviderPage() {
                     </span>
                   </div>
                 </div>
-                {status === 'active' && <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0" />}
-                {status === 'no-keys' && <span className="h-1.5 w-1.5 rounded-full bg-rose-400 shrink-0" />}
+                {isMaint && <span className="h-1.5 w-1.5 rounded-full bg-orange-400 shrink-0" />}
+                {!isMaint && status === 'active' && <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0" />}
+                {!isMaint && status === 'no-keys' && <span className="h-1.5 w-1.5 rounded-full bg-rose-400 shrink-0" />}
               </div>
             )
           })}

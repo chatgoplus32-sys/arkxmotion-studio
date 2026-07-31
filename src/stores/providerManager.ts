@@ -23,6 +23,11 @@ export interface ProviderConfig {
   supportsBalance: boolean
 }
 
+export interface MaintenanceInfo {
+  isMaintenance: boolean
+  message: string
+}
+
 export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
   weavy: {
     id: 'weavy',
@@ -160,6 +165,7 @@ interface ProviderState {
   keys: Record<ProviderId, ProviderKey[]>
   activeProvider: ProviderId
   routing: Record<string, ProviderId>
+  maintenance: Record<ProviderId, MaintenanceInfo>
 
   setActiveProvider: (provider: ProviderId) => void
   addKey: (provider: ProviderId, key: string, name?: string) => void
@@ -172,6 +178,9 @@ interface ProviderState {
   getNextKey: (provider: ProviderId, excludeKeyIds?: string[]) => ProviderKey | null
   setRouting: (workflow: string, provider: ProviderId) => void
   getRouting: (workflow: string) => ProviderId
+  fetchMaintenance: () => Promise<void>
+  isProviderMaintenance: (provider: ProviderId) => boolean
+  getMaintenanceMessage: (provider: ProviderId) => string
   loadFromStorage: () => void
   saveToStorage: () => void
 }
@@ -228,10 +237,29 @@ function loadRoutingFromStorage(): Record<string, ProviderId> {
   }
 }
 
+function getDefaultMaintenance(): Record<ProviderId, MaintenanceInfo> {
+  return {
+    weavy: { isMaintenance: false, message: '' },
+    wavespeed: { isMaintenance: false, message: '' },
+    magnific: { isMaintenance: false, message: '' },
+    roboneo: { isMaintenance: false, message: '' },
+    createpulse: { isMaintenance: false, message: '' },
+    framia: { isMaintenance: false, message: '' },
+    firefly: { isMaintenance: false, message: '' },
+    leonardo: { isMaintenance: false, message: '' },
+    elevenlabs: { isMaintenance: false, message: '' },
+    gemini: { isMaintenance: false, message: '' },
+    openai: { isMaintenance: false, message: '' },
+    shotstack: { isMaintenance: false, message: '' },
+    creatomate: { isMaintenance: false, message: '' },
+  }
+}
+
 export const useProviderManager = create<ProviderState>((set, get) => ({
   keys: loadKeysFromStorage(),
   activeProvider: 'weavy',
   routing: loadRoutingFromStorage(),
+  maintenance: getDefaultMaintenance(),
 
   setActiveProvider: (provider) => {
     set({ activeProvider: provider })
@@ -348,6 +376,30 @@ export const useProviderManager = create<ProviderState>((set, get) => ({
 
   getRouting: (workflow) => {
     return get().routing[workflow] || 'weavy'
+  },
+
+  fetchMaintenance: async () => {
+    try {
+      const response = await fetch('/api/admin/public/maintenance')
+      if (response.ok) {
+        const data = await response.json()
+        const maintenance = getDefaultMaintenance()
+        for (const [provider, info] of Object.entries(data.maintenance)) {
+          if (provider in maintenance) {
+            maintenance[provider as ProviderId] = info as MaintenanceInfo
+          }
+        }
+        set({ maintenance })
+      }
+    } catch {}
+  },
+
+  isProviderMaintenance: (provider) => {
+    return get().maintenance[provider]?.isMaintenance || false
+  },
+
+  getMaintenanceMessage: (provider) => {
+    return get().maintenance[provider]?.message || ''
   },
 
   loadFromStorage: () => {

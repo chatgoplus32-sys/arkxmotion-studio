@@ -420,4 +420,193 @@ function resolveDimensions(aspectRatio: string, tier: { short: number; long: num
   }
 }
 
+const GENERATE_IMAGE_MUTATION = `mutation CreateGeneration($input: CreateGenerationInput!) {
+  createGeneration(input: $input) {
+    sdGenerationJob {
+      generationId
+      generatedImages { id url }
+      __typename
+    }
+    __typename
+  }
+}`
+
+const GENERATE_IMAGE_REST = '/api/rest/v1/generations'
+
+export async function leonardoGenerateImage(token: string, opts: {
+  modelId: string
+  prompt: string
+  width: number
+  height: number
+  negativePrompt?: string
+  numImages?: number
+  quality?: string
+  promptEnhance?: string
+  guidanceScale?: number
+  seed?: number
+}): Promise<{ generationId: string }> {
+  const restBody: any = {
+    prompt: opts.prompt,
+    modelId: opts.modelId,
+    width: opts.width,
+    height: opts.height,
+    num_images: opts.numImages ?? 1,
+    ...(opts.negativePrompt ? { negative_prompt: opts.negativePrompt } : {}),
+    ...(opts.guidanceScale != null ? { guidance_scale: opts.guidanceScale } : {}),
+    ...(opts.seed != null ? { seed: opts.seed } : {}),
+    ...(opts.quality ? { quality: opts.quality.toLowerCase() } : {}),
+    ...(opts.promptEnhance === 'AUTO' ? { enhance_prompt: true } : {}),
+    public: true,
+  }
+
+  let data: any
+  try {
+    data = await leonardoApi({
+      token,
+      base: 'api',
+      path: GENERATE_IMAGE_REST,
+      method: 'POST',
+      body: restBody,
+    })
+  } catch (restErr) {
+    const requestBody = {
+      operationName: 'CreateGeneration',
+      variables: {
+        input: restBody,
+      },
+      query: GENERATE_IMAGE_MUTATION,
+    }
+    data = await leonardoApi({
+      token,
+      base: 'api',
+      path: '/v1/graphql',
+      method: 'POST',
+      body: requestBody,
+    })
+  }
+
+  const generationId = extractGenerationId(data)
+  if (!generationId) throw Error(`Leonardo image: tidak ada generationId. ${JSON.stringify(data).slice(0, 800)}`)
+  return { generationId }
+}
+
+export function extractImageUrl(gen: any): string | null {
+  if (!gen || typeof gen !== 'object') return null
+  if (typeof gen.url === 'string' && gen.url.trim() && !/\.(mp4|webm|mov)(\?|$)/i.test(gen.url)) return gen.url
+  for (const img of gen.generated_images ?? []) {
+    if (typeof img.url === 'string' && img.url.trim() && !/\.(mp4|webm|mov)(\?|$)/i.test(img.url)) return img.url
+    if (typeof img.image === 'string' && img.image.trim()) return img.image
+  }
+  return null
+}
+
+export async function runLeonardoImage(opts: {
+  token?: string
+  modelId: string
+  prompt: string
+  aspectRatio?: string
+  sizeId?: string
+  sizeShort?: number
+  negativePrompt?: string
+  quality?: string
+  promptEnhance?: string
+  numImages?: number
+  timeoutMs?: number
+  pollIntervalMs?: number
+  onProgress?: (text: string, pct?: number) => void
+  onRotate?: (index: number, total: number, reason: string) => void
+}): Promise<string> {
+  const execute = async (token: string) => {
+    const ar = opts.aspectRatio || '1:1'
+    let w: number, h: number
+
+    if (opts.sizeShort) {
+      // Use sizeShort (aacreative style: base dimension + ratio calculation)
+      const ratio = (() => {
+        switch (ar) {
+          case '1:1': return 1
+          case '16:9': return 16 / 9
+          case '9:16': return 9 / 16
+          case '4:3': return 4 / 3
+          case '3:4': return 3 / 4
+          case '2:3': return 2 / 3
+          case '3:2': return 3 / 2
+          default: return 1
+        }
+      })()
+      const short = opts.sizeShort
+      if (ratio >= 1) {
+        w = Math.ceil(short * ratio / 16) * 16
+        h = Math.ceil(short / 16) * 16
+      } else {
+        w = Math.ceil(short / 16) * 16
+        h = Math.ceil(short / ratio / 16) * 16
+      }
+    } else {
+      const sizeMap: Record<string, { w: number; h: number }> = {
+        '1024': { w: 1024, h: 1024 },
+        '1536': { w: 1536, h: 1024 },
+        '2048': { w: 2048, h: 2048 },
+        'small': { w: 1024, h: 1024 },
+        'medium': { w: 1536, h: 1536 },
+        'large': { w: 2048, h: 2048 },
+      }
+      let dims = sizeMap[opts.sizeId || '1024'] || sizeMap['1024']
+      w = dims.w
+      h = dims.h
+      if (ar === '16:9') { w = Math.round(w * 16 / 9); h = Math.round(h * 9 / 16) }
+      else if (ar === '9:16') { w = Math.round(w * 9 / 16); h = Math.round(h * 16 / 9) }
+      else if (ar === '4:3') { w = Math.round(w * 4 / 3) }
+      else if (ar === '3:4') { h = Math.round(h * 4 / 3) }
+    }
+
+    opts.onProgress?.(`Leonardo: submit image (${w}×${h})…`, 15)
+
+    const { generationId } = await leonardoGenerateImage(token, {
+      modelId: opts.modelId,
+      prompt: opts.prompt,
+      width: w,
+      height: h,
+      negativePrompt: opts.negativePrompt,
+      numImages: opts.numImages,
+      quality: opts.quality,
+      promptEnhance: opts.promptEnhance,
+    })
+
+    opts.onProgress?.(`Leonardo: generation ${generationId.slice(0, 8)}…`, 30)
+
+    const timeout = opts.timeoutMs ?? 180_000
+    const pollInterval = opts.pollIntervalMs ?? 4_000
+    const start = Date.now()
+    let lastStatus = ''
+
+    while (Date.now() - start < timeout) {
+      await new Promise((r) => setTimeout(r, pollInterval))
+      const gen = await leonardoPollStatus(token, generationId)
+      if (!gen) continue
+
+      if (gen.status !== lastStatus) {
+        lastStatus = gen.status
+        opts.onProgress?.(`Leonardo: ${gen.status}`, gen.status === 'COMPLETE' ? 95 : 50)
+      }
+
+      if (gen.status === 'COMPLETE') {
+        const url = extractImageUrl(gen)
+        if (!url) throw Error(`Leonardo image: COMPLETE tapi URL tidak ditemukan. ${JSON.stringify(gen).slice(0, 400)}`)
+        opts.onProgress?.(`Leonardo: selesai`, 100)
+        return url
+      }
+
+      if (gen.status === 'FAILED') throw Error('Leonardo image: generation FAILED')
+
+      const elapsed = Math.round((Date.now() - start) / 1000)
+      opts.onProgress?.(`Leonardo: rendering… (${elapsed}s)`, Math.min(90, 30 + elapsed))
+    }
+    throw Error('Leonardo image: timeout')
+  }
+
+  if (opts.token) return execute(opts.token)
+  return withLeonardoTokens(execute, { skipExpired: true, onRotate: opts.onRotate })
+}
+
 export { isTokenExpired, isLeonardoJwtFormat, decodeJwt, isLeonardoRetryableError }

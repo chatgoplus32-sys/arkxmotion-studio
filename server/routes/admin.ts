@@ -106,4 +106,71 @@ router.delete('/users/:id', authenticateToken, requireAdmin, (req: AuthRequest, 
   }
 })
 
+// ─── Maintenance Routes ────────────────────────────────────────────
+
+interface MaintenanceRow {
+  id: number
+  provider: string
+  is_maintenance: number
+  message: string
+  updated_at: string
+}
+
+router.get('/maintenance', authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
+  try {
+    const rows = db.prepare('SELECT provider, is_maintenance, message, updated_at FROM provider_maintenance ORDER BY provider').all() as MaintenanceRow[]
+    res.json({
+      maintenance: rows.map(r => ({
+        provider: r.provider,
+        isMaintenance: !!r.is_maintenance,
+        message: r.message,
+        updatedAt: r.updated_at,
+      }))
+    })
+  } catch (error) {
+    console.error('Get maintenance error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.patch('/maintenance', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
+  try {
+    const { provider, isMaintenance, message } = req.body || {}
+    if (!provider) {
+      return res.status(400).json({ error: 'Provider is required' })
+    }
+
+    db.prepare('UPDATE provider_maintenance SET is_maintenance = ?, message = ?, updated_at = CURRENT_TIMESTAMP WHERE provider = ?')
+      .run(isMaintenance ? 1 : 0, message || '', provider)
+
+    res.json({
+      message: `Maintenance status updated for ${provider}`,
+      provider,
+      isMaintenance: !!isMaintenance,
+      maintenanceMessage: message || '',
+    })
+  } catch (error) {
+    console.error('Update maintenance error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// Public maintenance endpoint (no auth)
+router.get('/public/maintenance', (_req: AuthRequest, res: Response) => {
+  try {
+    const rows = db.prepare('SELECT provider, is_maintenance, message FROM provider_maintenance WHERE is_maintenance = 1').all() as MaintenanceRow[]
+    const result: Record<string, { isMaintenance: boolean; message: string }> = {}
+    for (const row of rows) {
+      result[row.provider] = {
+        isMaintenance: true,
+        message: row.message,
+      }
+    }
+    res.json({ maintenance: result })
+  } catch (error) {
+    console.error('Public maintenance error:', error)
+    res.json({ maintenance: {} })
+  }
+})
+
 export default router

@@ -136,6 +136,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const { accessToken, refreshToken, email } = await resolveAccessToken(token)
+    console.log(`[weavy-proxy] resolved token: email=${email} tokenLen=${accessToken?.length}`)
 
     const authHeaders = {
       Authorization: `Bearer ${accessToken}`,
@@ -156,19 +157,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const payload = req.body?.payload || req.body
       const { model, prompt, imageUrl, aspectRatio, duration, negativePrompt, quality } = payload || {}
 
+      const nodeData: any = {
+        model: model || 'kling-2.1',
+        prompt: prompt || '',
+        image_url: imageUrl || null,
+        aspect_ratio: aspectRatio || '9:16',
+        negative_prompt: negativePrompt || null,
+        quality: quality || null,
+      }
+
+      // Only include duration for video models (not null/undefined)
+      if (duration != null) {
+        nodeData.duration = duration
+      }
+
       const nodes = [
         {
           id: 'input',
           type: 'input',
-          data: {
-            model: model || 'kling-2.1',
-            prompt: prompt || '',
-            image_url: imageUrl || null,
-            aspect_ratio: aspectRatio || '9:16',
-            duration: duration || 5,
-            negative_prompt: negativePrompt || null,
-            quality: quality || null,
-          },
+          data: nodeData,
         },
       ]
 

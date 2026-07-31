@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Select, Label, Textarea, EmptyState, Badge } from '@/components/ui'
+import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
 import { Image, Upload, Rocket, Loader2, Trash2, Zap, Key, ExternalLink, Download } from 'lucide-react'
 import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
 import { useToastStore } from '@/stores/toastStore'
@@ -16,6 +17,7 @@ import {
   addActiveTask,
   removeActiveTask,
   getLogs,
+  getResults,
   addBgLog,
   startBackgroundPolling,
 } from '@/lib/backgroundTasks'
@@ -239,8 +241,46 @@ const TEMPLATES = [
 
 const CREATEPULSE_API = '/api/public/createpulse'
 
+function VideoPlayer({ directUrl, proxyFallback, rawUrl }: { directUrl: string; proxyFallback: string; rawUrl: string }) {
+  const [src, setSrc] = useState(directUrl)
+  const [triedProxy, setTriedProxy] = useState(false)
+  const [failed, setFailed] = useState(false)
+
+  const handleError = () => {
+    if (!triedProxy && directUrl !== proxyFallback) {
+      setSrc(proxyFallback)
+      setTriedProxy(true)
+    } else {
+      setFailed(true)
+    }
+  }
+
+  return (
+    <div className="relative">
+      {!failed ? (
+        <video
+          key={src}
+          src={src}
+          controls
+          playsInline
+          preload="metadata"
+          onError={handleError}
+          className="w-full aspect-[9/16] object-cover bg-black"
+        />
+      ) : (
+        <div className="w-full aspect-[9/16] bg-black flex items-center justify-center">
+          <div className="text-center p-4">
+            <p className="text-red-400 text-xs mb-2">Gagal memuat video</p>
+            <a href={rawUrl} target="_blank" rel="noreferrer" className="text-primary text-xs underline">Coba buka langsung</a>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function ImageToVideoPage() {
-  const { keys, routing, getActiveKey } = useProviderManager()
+  const { keys, routing, getActiveKey, fetchMaintenance } = useProviderManager()
   const addToast = useToastStore((s) => s.addToast)
   const { token: authToken, user } = useAuthStore()
   const [cpBalance, setCpBalance] = useState(0)
@@ -292,6 +332,10 @@ export default function ImageToVideoPage() {
   const refInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
+    fetchMaintenance()
+  }, [fetchMaintenance])
+
+  useEffect(() => {
     localStorage.setItem('createpulse.results', JSON.stringify(results))
   }, [results])
 
@@ -300,6 +344,14 @@ export default function ImageToVideoPage() {
 
     const sync = () => {
       setLogs(getLogs())
+      const bgResults = getResults()
+      if (bgResults.length > 0) {
+        setResults((prev) => {
+          const existing = new Set(prev)
+          const newUrls = bgResults.map((r) => r.url).filter((u) => !existing.has(u))
+          return newUrls.length > 0 ? [...newUrls, ...prev] : prev
+        })
+      }
     }
 
     window.addEventListener('arkxmotion-tasks-changed', sync)
@@ -308,13 +360,14 @@ export default function ImageToVideoPage() {
 
   const handleDownload = useCallback(async (url: string, index: number) => {
     try {
-      const proxyUrl = `/api/public/createpulse?action=download&url=${encodeURIComponent(url)}`
-      const res = await fetch(proxyUrl)
+      const isExternal = /^https?:\/\//i.test(url) && !url.includes(window.location.origin)
+      const fetchUrl = isExternal ? `/api/public/video-proxy?url=${encodeURIComponent(url)}` : url
+      const res = await fetch(fetchUrl)
       const blob = await res.blob()
       const blobUrl = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = blobUrl
-      a.download = `createpulse-${Date.now()}-${index}.mp4`
+      a.download = `video-${Date.now()}-${index}.mp4`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
@@ -1065,14 +1118,14 @@ export default function ImageToVideoPage() {
           throw new Error(rotation.error || 'Generation failed')
         }
       }
-    } catch (err: any) {
-      if (activeTaskId) removeActiveTask(activeTaskId)
-      addLog(`❌ Error: ${err.message}`, 'error', provider)
-      addToast(`Generate gagal: ${err.message}`, 'error')
-      if (['roboneo', 'framia', 'createpulse'].includes(provider)) {
-        addLog('⚠️ Credit mungkin sudah terpotong oleh server provider. Hubungi provider untuk refund jika gagal.', 'warn', provider)
-      }
-      setStatus((s) => ({ ...s, pct: 100, text: `❌ Error: ${err.message}` }))
+     } catch (err: any) {
+       if (activeTaskId) removeActiveTask(activeTaskId)
+       addLog(`❌ Error: ${err.message}`, 'error', provider)
+       addToast(`Generate gagal: ${err.message}`, 'error')
+       if (['roboneo', 'framia', 'createpulse'].includes(provider)) {
+         addLog('⚠️ Credit mungkin sudah terpotong oleh server provider. Hubungi provider untuk refund jika gagal.', 'warn', provider)
+       }
+       setStatus((s) => ({ ...s, pct: 100, text: `❌ Error: ${err.message}` }))
     } finally {
       clearInterval(timer)
       const wasGenerating = generatingRef.current
@@ -1131,6 +1184,8 @@ export default function ImageToVideoPage() {
             )
           })}
         </div>
+
+        <MaintenanceBanner providerId={provider} />
 
         {/* Provider Info */}
         <div className="mt-3 flex flex-wrap gap-4 text-xs text-muted-foreground">
@@ -1462,25 +1517,21 @@ export default function ImageToVideoPage() {
           />
         ) : (
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-            {results.map((url, index) => {
-              const needsProxy = /meitudata\.com|localhost/i.test(url)
-              const displayUrl = needsProxy ? `/api/public/video-proxy?url=${encodeURIComponent(url)}` : url
+              {results.map((url, index) => {
+              const alreadyProxied = url.includes('/api/public/video-proxy')
+              const needsProxy = alreadyProxied ? false : /meitudata\.com|localhost/i.test(url)
+              const directUrl = needsProxy ? `/api/public/video-proxy?url=${encodeURIComponent(url)}` : url
+              const proxyFallback = alreadyProxied ? url : `/api/public/video-proxy?url=${encodeURIComponent(url)}`
               return (
-              <div key={index} className="rounded-xl overflow-hidden border border-border bg-black/40">
-                <video
-                  src={displayUrl}
-                  controls
-                  playsInline
-                  preload="metadata"
-                  onError={(e) => {
-                    const target = e.target as HTMLVideoElement
-                    target.poster = ''
-                  }}
-                  className="w-full aspect-[9/16] object-cover bg-black"
+              <div key={index} className="relative rounded-xl overflow-hidden border border-border bg-black/40">
+                <VideoPlayer
+                  directUrl={directUrl}
+                  proxyFallback={proxyFallback}
+                  rawUrl={url}
                 />
                 <div className="p-2 flex flex-col gap-1.5">
                     <div className="flex items-center gap-1">
-                      <a href={displayUrl} target="_blank" rel="noreferrer" className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-primary/30 bg-primary/5 hover:bg-primary/10 px-3 py-2 text-xs font-medium text-primary transition">
+                      <a href={directUrl} target="_blank" rel="noreferrer" className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-primary/30 bg-primary/5 hover:bg-primary/10 px-3 py-2 text-xs font-medium text-primary transition">
                         <ExternalLink className="h-3.5 w-3.5" /> Buka
                       </a>
                       <button

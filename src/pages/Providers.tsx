@@ -23,6 +23,7 @@ import {
   FileText,
   ChevronDown,
   ExternalLink,
+  Wrench,
 } from 'lucide-react'
 import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
 import { checkRoboneoBalance } from '@/lib/roboneo'
@@ -249,11 +250,15 @@ export default function ProvidersPage() {
     keys,
     activeProvider,
     routing,
+    maintenance,
     setActiveProvider,
     addKey,
     removeKey,
     updateKeyStatus,
     setRouting,
+    fetchMaintenance,
+    isProviderMaintenance,
+    getMaintenanceMessage,
   } = useProviderManager()
 
   const [selectedProvider, setSelectedProvider] = useState('brain')
@@ -275,6 +280,41 @@ export default function ProvidersPage() {
     () => keys[selectedProvider as ProviderId]?.map(k => k.key) || [],
     [selectedProvider, keys]
   )
+
+  // Check if current selected provider is in maintenance
+  const isCurrentMaintenance = useMemo(() => {
+    const providerMap: Record<string, ProviderId> = {
+      brain: 'gemini',
+      weavy: 'weavy',
+      wavespeed: 'wavespeed',
+      roboneo: 'roboneo',
+      framia: 'framia',
+      leonardo: 'leonardo',
+      eleven: 'elevenlabs',
+      createpulse: 'createpulse',
+    }
+    const providerId = providerMap[selectedProvider]
+    return providerId ? isProviderMaintenance(providerId) : false
+  }, [selectedProvider, isProviderMaintenance])
+
+  const currentMaintenanceMessage = useMemo(() => {
+    const providerMap: Record<string, ProviderId> = {
+      brain: 'gemini',
+      weavy: 'weavy',
+      wavespeed: 'wavespeed',
+      roboneo: 'roboneo',
+      framia: 'framia',
+      leonardo: 'leonardo',
+      eleven: 'elevenlabs',
+      createpulse: 'createpulse',
+    }
+    const providerId = providerMap[selectedProvider]
+    return providerId ? getMaintenanceMessage(providerId) : ''
+  }, [selectedProvider, getMaintenanceMessage])
+
+  useEffect(() => {
+    fetchMaintenance()
+  }, [fetchMaintenance])
 
   useEffect(() => {
     setInputValue('')
@@ -510,6 +550,18 @@ export default function ProvidersPage() {
                 {PROVIDER_LIST.map(p => {
                   const isActive = p.key === selectedProvider
                   const color = PROVIDER_COLORS[p.key]
+                  const providerMap: Record<string, ProviderId> = {
+                    brain: 'gemini',
+                    weavy: 'weavy',
+                    wavespeed: 'wavespeed',
+                    roboneo: 'roboneo',
+                    framia: 'framia',
+                    leonardo: 'leonardo',
+                    eleven: 'elevenlabs',
+                    createpulse: 'createpulse',
+                  }
+                  const providerId = providerMap[p.key]
+                  const isMaint = providerId ? isProviderMaintenance(providerId) : false
                   return (
                     <li key={p.key}>
                       <button
@@ -517,19 +569,25 @@ export default function ProvidersPage() {
                         onClick={() => { setSelectedProvider(p.key); setDropdownOpen(false) }}
                         className="w-full text-left rounded-xl border px-4 py-3 transition hover:bg-[#1a1a1a]"
                         style={{
-                          borderColor: isActive ? '#d4a017' : '#2a2a2a',
-                          boxShadow: isActive ? '0 0 18px rgba(212, 160, 23, 0.3)' : 'inset 0 0 0 1px rgba(212, 160, 23, 0.05)',
+                          borderColor: isActive ? '#d4a017' : isMaint ? '#f97316' : '#2a2a2a',
+                          boxShadow: isActive ? '0 0 18px rgba(212, 160, 23, 0.3)' : isMaint ? '0 0 12px rgba(249, 115, 22, 0.2)' : 'inset 0 0 0 1px rgba(212, 160, 23, 0.05)',
                         }}
                       >
                         <span className="flex items-center gap-2">
                           <span
                             className="h-2.5 w-2.5 rounded-full shrink-0"
                             style={{ 
-                              background: isActive ? '#d4a017' : color,
-                              boxShadow: isActive ? '0 0 10px rgba(212, 160, 23, 0.5)' : `0 0 6px ${color}66`
+                              background: isMaint ? '#f97316' : isActive ? '#d4a017' : color,
+                              boxShadow: isMaint ? '0 0 10px rgba(249, 115, 22, 0.5)' : isActive ? '0 0 10px rgba(212, 160, 23, 0.5)' : `0 0 6px ${color}66`
                             }}
                           />
                           <span className="text-sm font-semibold text-[#f5f5f5]">{p.label}</span>
+                          {isMaint && (
+                            <span className="ml-auto inline-flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30">
+                              <Wrench className="h-2.5 w-2.5" />
+                              MAINTENANCE
+                            </span>
+                          )}
                         </span>
                       </button>
                     </li>
@@ -559,6 +617,31 @@ export default function ProvidersPage() {
           </button>
         </div>
       </div>
+
+      {/* Maintenance Banner */}
+      {isCurrentMaintenance && (
+        <div className="mb-4 p-4 rounded-xl border border-orange-500/50 bg-orange-500/10">
+          <div className="flex items-start gap-3">
+            <div className="h-8 w-8 rounded-lg bg-orange-500/20 flex items-center justify-center shrink-0">
+              <Wrench className="h-4 w-4 text-orange-400" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-orange-300">
+                {currentConfig?.label || selectedProvider} sedang dalam Maintenance
+              </div>
+              {currentMaintenanceMessage ? (
+                <div className="text-xs text-orange-200/70 mt-1 leading-relaxed">
+                  {currentMaintenanceMessage}
+                </div>
+              ) : (
+                <div className="text-xs text-orange-200/70 mt-1">
+                  Provider ini sedang dalam pemeliharaan. Beberapa fitur mungkin tidak tersedia sementara.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 flex flex-col gap-4">
