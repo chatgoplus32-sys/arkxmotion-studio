@@ -47,9 +47,6 @@ const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'seedance', label: 'Seedance', cr: 30, provider: 'wavespeed' },
     { value: 'wan-i2v', label: 'Wan i2v', cr: 18, provider: 'wavespeed' },
   ],
-  magnific: [
-    { value: 'kling-motion', label: 'Kling Motion', cr: 45, provider: 'magnific' },
-  ],
   roboneo: [
     { value: 'rn:seedance-2.0', label: 'Seedance 2.0 (Roboneo)', cr: 143, provider: 'roboneo' },
     { value: 'rn:seedance-2.0-mini', label: 'Seedance 2.0 Mini (Roboneo)', cr: 140, provider: 'roboneo' },
@@ -79,11 +76,6 @@ const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'framia:happyhorse-1.1', label: 'HappyHorse 1.1 (Framia)', cr: 28, provider: 'framia' },
     { value: 'framia:kling-avatar', label: 'Kling Avatar (Framia)', cr: 40, provider: 'framia' },
   ],
-  firefly: [
-    { value: 'ff:veo:3.1-fast-generate', label: 'Veo 3.1 Fast (Firefly)', cr: 20, provider: 'firefly' },
-    { value: 'ff:veo:3.1-generate', label: 'Veo 3.1 (Firefly)', cr: 40, provider: 'firefly' },
-    { value: 'ff:firefly:video-1', label: 'Firefly Video Model 1', cr: 10, provider: 'firefly' },
-  ],
   leonardo: LEONARDO_VIDEO_MODELS.map((m) => ({
     value: m.id,
     label: `${m.label} (Leonardo · ~${m.crPerSecond} cr/s)`,
@@ -108,12 +100,6 @@ const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; 
     default: [
       { value: 'std', label: 'Standard 5s', mult: 1, duration: 5 },
       { value: 'long', label: 'Long 10s', mult: 2, duration: 10 },
-    ],
-  },
-  magnific: {
-    default: [
-      { value: '720p', label: '720p · 5s', mult: 1, duration: 5 },
-      { value: '1080p', label: '1080p · 5s', mult: 1.5, duration: 5 },
     ],
   },
   roboneo: {
@@ -232,24 +218,6 @@ const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; 
     default: [
       { value: 'std', label: 'Standard', mult: 1, duration: 10, cr: 45 },
       { value: 'long', label: 'Long 15s', mult: 1.5, duration: 15, cr: 68 },
-    ],
-  },
-  firefly: {
-    'ff:veo:3.1-fast-generate': [
-      { value: '4s', label: '4 detik', mult: 1, duration: 4, cr: 20 },
-      { value: '6s', label: '6 detik', mult: 1.5, duration: 6, cr: 25 },
-      { value: '8s', label: '8 detik', mult: 2, duration: 8, cr: 30 },
-    ],
-    'ff:veo:3.1-generate': [
-      { value: '4s', label: '4 detik', mult: 1, duration: 4, cr: 40 },
-      { value: '6s', label: '6 detik', mult: 1.5, duration: 6, cr: 50 },
-      { value: '8s', label: '8 detik', mult: 2, duration: 8, cr: 60 },
-    ],
-    'ff:firefly:video-1': [
-      { value: '5s', label: '5 detik', mult: 1, duration: 5, cr: 10 },
-    ],
-    default: [
-      { value: '5s', label: '5 detik', mult: 1, duration: 5, cr: 10 },
     ],
   },
   leonardo: {},
@@ -1117,7 +1085,7 @@ export default function ImageToVideoPage() {
     }
   }
 
-  const PROVIDER_IDS: ProviderId[] = ['weavy', 'wavespeed', 'magnific', 'roboneo', 'createpulse', 'framia', 'firefly', 'leonardo']
+  const PROVIDER_IDS: ProviderId[] = ['weavy', 'wavespeed', 'roboneo', 'createpulse', 'framia', 'leonardo']
 
   return (
     <PageContent>

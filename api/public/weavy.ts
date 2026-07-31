@@ -80,11 +80,19 @@ async function fetchWeavyCredits(accessToken: string): Promise<number | null> {
         headers: { Authorization: `Bearer ${accessToken}` },
         signal: AbortSignal.timeout(8000),
       })
-      const data = await r.json().catch(() => null)
-      console.log(`[weavy-proxy] credits ${url} → ${r.status}`, JSON.stringify(data).slice(0, 200))
+      const text = await r.text().catch(() => '')
+      console.log(`[weavy-proxy] credits ${url} → ${r.status} body=${text.slice(0, 400)}`)
       if (!r.ok) continue
+      let data: any
+      try { data = JSON.parse(text) } catch { continue }
+
       const credits = data?.credits ?? data?.balance ?? data?.totalCredits ?? data?.creditsRemaining ?? data?.quota ?? data?.usage?.credits ?? data?.plan?.credits ?? data?.data?.credits ?? data?.user?.credits ?? null
       if (typeof credits === 'number') return credits
+
+      if (data && typeof data === 'object') {
+        const flatKeys = Object.keys(data).filter(k => typeof data[k] === 'number')
+        console.log(`[weavy-proxy] credits ${url} → numeric keys:`, flatKeys)
+      }
     } catch {
       continue
     }
@@ -95,12 +103,17 @@ async function fetchWeavyCredits(accessToken: string): Promise<number | null> {
       headers: { Authorization: `Bearer ${accessToken}` },
       signal: AbortSignal.timeout(8000),
     })
-    const data = await r.json().catch(() => null)
-    console.log(`[weavy-proxy] credits ${WEAVY_API}/v1/workspaces → ${r.status}`, JSON.stringify(data).slice(0, 200))
+    const text = await r.text().catch(() => '')
+    console.log(`[weavy-proxy] credits ${WEAVY_API}/v1/workspaces → ${r.status} body=${text.slice(0, 400)}`)
     if (r.ok) {
+      let data: any
+      try { data = JSON.parse(text) } catch { return null }
       const workspaces = data?.workspaces || data
       const ws = Array.isArray(workspaces) ? workspaces[0] : workspaces
       if (typeof ws?.credits === 'number') return ws.credits
+      if (ws && typeof ws === 'object') {
+        console.log(`[weavy-proxy] workspaces[0] keys:`, Object.keys(ws))
+      }
     }
   } catch {}
 

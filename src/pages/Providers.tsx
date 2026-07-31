@@ -33,31 +33,23 @@ const PROVIDER_COLORS: Record<string, string> = {
   brain: '#f472b6',
   weavy: '#22d3ee',
   wavespeed: '#38bdf8',
-  magnific: '#a78bfa',
   roboneo: '#34d399',
   framia: '#fb923c',
   leonardo: '#facc15',
-  firefly: '#f87171',
   eleven: '#818cf8',
   render: '#94a3b8',
   createpulse: '#c084fc',
-  shotstack: '#06b6d4',
-  creatomate: '#8b5cf6',
 }
 
 const PROVIDER_LIST = [
   { key: 'brain', label: 'Brain (Gemini)', desc: 'Dipakai Produk Storyboard & Naratif Video Maker. Multi-key auto-rotate saat kena limit/429.' },
   { key: 'weavy', label: 'Weavy', desc: 'Provider utama Kling Motion Control, Wan, Sora, Seedance.' },
   { key: 'wavespeed', label: 'Wavespeed', desc: 'Provider alternatif — cek balance via api.wavespeed.ai/api/v3/balance.' },
-  { key: 'magnific', label: 'Magnific', desc: 'Hanya dipakai untuk Motion Control (Kling motion transfer).' },
   { key: 'roboneo', label: 'Roboneo', desc: 'Motion Control via Roboneo (Meitu) — Kling 2.6 Standard.' },
   { key: 'framia', label: 'Framia', desc: 'Canvas workflow (Converge AI) — semua node & recipe: image, video, avatar, garment, storyboard.' },
   { key: 'leonardo', label: 'Leonardo.ai', desc: 'app.leonardo.ai via Cognito Bearer JWT — Text-to-Image (Phoenix, Diffusion XL, Kino, Anime, Vision).' },
-  { key: 'firefly', label: 'Adobe Firefly', desc: 'Firefly image (Image 3/4) & video (Veo) via session token firefly.adobe.com.' },
   { key: 'eleven', label: 'ElevenLabs', desc: 'Voice-over untuk Naratif Video Maker.' },
   { key: 'createpulse', label: 'CreatePulse', desc: 'Video generation (Seedance, Veo, Dreamina) via createpulse.online — pakai API key sendiri.' },
-  { key: 'shotstack', label: 'Shotstack', desc: 'Cloud video rendering API — fallback untuk file besar (≥400 MB) atau batch rendering.' },
-  { key: 'creatomate', label: 'Creatomate', desc: 'Cloud video rendering template-based — batch render, output MP4/WebM/MOV.' },
 ] as const
 
 const TOKEN_GUIDE: Record<string, {
@@ -124,19 +116,7 @@ const TOKEN_GUIDE: Record<string, {
     ],
     tip: 'Model yang didukung: Kling 2.6 Std (motion control + i2v), Seedance Pro, Google Omni. Panduan resmi: roboneo.com/cli/en.',
   },
-  firefly: {
-    url: 'https://firefly.adobe.com/',
-    urlLabel: 'firefly.adobe.com',
-    prefix: 'eyJhbGci... (Adobe IMS Bearer token)',
-    steps: [
-      { text: 'Login di firefly.adobe.com dengan Adobe ID.' },
-      { text: 'Buka DevTools (F12) → tab Network → filter \'firefly.adobe.io\'.' },
-      { text: 'Klik salah satu request (mis. credits/balance) → Headers → copy value header `authorization` TANPA kata \'Bearer \'.' },
-      { text: 'Paste ke input di sebelah lalu simpan — sisa credit langsung dicek via /v1/credits/balance.' },
-      { text: 'Simpan beberapa token (multi-akun) → auto-rotate saat 401 / credit habis.' },
-    ],
-    tip: 'Firefly dipakai untuk Image (Firefly Image 3/4) dan Video (Veo 3.1 via Firefly). Token IMS berumur ±24 jam; kalau expired ulangi langkah copy token.',
-  },
+
   framia: {
     url: 'https://framia.converge.ai/',
     urlLabel: 'framia.converge.ai',
@@ -164,19 +144,7 @@ const TOKEN_GUIDE: Record<string, {
     ],
     tip: 'Model default: Phoenix, Leonardo Diffusion XL, Kino XL, Anime XL, Vision XL — semua otomatis muncul di halaman Generate → Leonardo.',
   },
-  magnific: {
-    url: 'https://www.magnific.com/api',
-    urlLabel: 'magnific.com/api',
-    prefix: 'FPSX…',
-    steps: [
-      { text: 'Magnific sekarang bagian dari Freepik — daftar / login di freepik.com.' },
-      { text: 'Buka Freepik API dashboard (link di samping).' },
-      { text: 'Aktifkan API access, lalu klik "Generate API Key". Format key: FPSX-XXXX…' },
-      { text: 'Beli/aktifkan plan Freepik AI yang include Magnific credits (Motion Control butuh video credits).' },
-      { text: 'Paste key ke input di sebelah.' },
-    ],
-    tip: 'Motion Control (Kling motion transfer) ≈ 50 Freepik cr per klip 5 detik.',
-  },
+
   eleven: {
     url: 'https://elevenlabs.io/app/developers/api-keys',
     urlLabel: 'elevenlabs.io/app/developers/api-keys',
@@ -216,32 +184,7 @@ const TOKEN_GUIDE: Record<string, {
     ],
     tip: 'FFmpeg = default, gratis, di device kamu. Cloud = fallback untuk file besar / batch panjang.',
   },
-  shotstack: {
-    url: 'https://shotstack.io/dashboard/',
-    urlLabel: 'shotstack.io/dashboard',
-    prefix: 'sk-… (Shotstack API Key)',
-    steps: [
-      { text: 'Register/login di shotstack.io.' },
-      { text: 'Buka Dashboard → API Keys.' },
-      { text: 'Klik "Create API Key", beri nama.' },
-      { text: 'Copy key sk-… — paste ke input di sebelah.' },
-      { text: 'Free tier: 20 menit render/bulan. Paid mulai $0.02/menit.' },
-    ],
-    tip: 'Shotstack cocok untuk render video panjang atau batch. Mendukung MP4, WebM, MOV.',
-  },
-  creatomate: {
-    url: 'https://creatomate.com/',
-    urlLabel: 'creatomate.com',
-    prefix: 'cm_… (Creatomate API Key)',
-    steps: [
-      { text: 'Register/login di creatomate.com.' },
-      { text: 'Buka Project Settings → API.' },
-      { text: 'Klik "Create API Key", beri nama.' },
-      { text: 'Copy key cm_… — paste ke input di sebelah.' },
-      { text: 'Free tier: 50 render/bulan. Paid mulai $0.10/render.' },
-    ],
-    tip: 'Creatomate mendukung template-based rendering. Upload template JSON, lalu render batch dengan data dinamis.',
-  },
+
 }
 
 function getStorageKey(provider: string): string {
@@ -249,15 +192,11 @@ function getStorageKey(provider: string): string {
     brain: 'arkxmotion.brain.keys',
     weavy: 'arkxmotion.weavy.keys',
     wavespeed: 'arkxmotion.wavespeed.keys',
-    magnific: 'arkxmotion.magnific.keys',
     roboneo: 'arkxmotion.roboneo.keys',
     framia: 'arkxmotion.framia.keys',
     leonardo: 'arkxmotion.leonardo.keys',
-    firefly: 'arkxmotion.firefly.keys',
     eleven: 'arkxmotion.eleven.keys',
     createpulse: 'arkxmotion.createpulse.keys',
-    shotstack: 'arkxmotion.shotstack.keys',
-    creatomate: 'arkxmotion.creatomate.keys',
   }
   return map[provider] || `arkxmotion.${provider}.keys`
 }

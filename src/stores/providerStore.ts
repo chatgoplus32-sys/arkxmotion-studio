@@ -39,13 +39,6 @@ const defaultProviders: Record<string, Provider> = {
     keys: [],
     status: 'no-key',
   },
-  magnific: {
-    id: 'magnific',
-    name: 'Magnific',
-    icon: '✨',
-    keys: [],
-    status: 'no-key',
-  },
   roboneo: {
     id: 'roboneo',
     name: 'Roboneo',

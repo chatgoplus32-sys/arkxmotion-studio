@@ -33,12 +33,6 @@ const PROVIDERS = {
     { key: 'ws:kwaivgi/kling-v2.6-pro/motion-control', label: 'Kling V2.6 Pro', cr: 56 },
     { key: 'ws:kwaivgi/kling-v2.6-std/motion-control', label: 'Kling V2.6 Standard', cr: 21 },
   ]},
-  magnific: { name: 'Magnific', models: [
-    { key: 'mag:kling-v3-motion-control-pro', label: 'Kling V3.0 Pro', cr: 84 },
-    { key: 'mag:kling-v3-motion-control-std', label: 'Kling V3.0 Standard', cr: 63 },
-    { key: 'mag:kling-v2-6-motion-control-pro', label: 'Kling V2.6 Pro', cr: 56 },
-    { key: 'mag:kling-v2-6-motion-control-std', label: 'Kling V2.6 Standard', cr: 21 },
-  ]},
   roboneo: { name: 'Roboneo', models: [
     { key: 'rn:video_bonbon_motioncontrol_v26:std', label: 'Kling V2.6 Standard (Motion Control)', cr: 0 },
     { key: 'rn:google-omni', label: 'Google Omni (Image to Video)', cr: 0 },

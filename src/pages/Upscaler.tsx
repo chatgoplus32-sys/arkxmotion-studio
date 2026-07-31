@@ -118,7 +118,7 @@ export default function UpscalerPage() {
   const addToast = useToastStore((s) => s.addToast)
   const { keys } = useProviderManager()
 
-  const [provider, setProvider] = useState<'topaz' | 'magnific' | 'leonardo'>('magnific')
+  const [provider, setProvider] = useState<'topaz' | 'magnific' | 'leonardo'>('topaz')
   const [mode, setMode] = useState<'upscale' | 'enhance'>('upscale')
   const [rows, setRows] = useState<ImageRow[]>([])
   const [running, setRunning] = useState(false)
@@ -385,7 +385,6 @@ export default function UpscalerPage() {
                   disabled={running}
                   options={[
                     { value: 'topaz', label: 'Topaz Upscale (Weavy node)' },
-                    { value: 'magnific', label: 'Magnific Upscale (Weavy node)' },
                     { value: 'leonardo', label: 'Aurora (Leonardo)' },
                   ]}
                 />
