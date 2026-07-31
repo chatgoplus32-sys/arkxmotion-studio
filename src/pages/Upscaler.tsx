@@ -1,70 +1,115 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Select, Label, Textarea, EmptyState, Badge } from '@/components/ui'
-import { Wand2, Loader2, Upload, Trash2, Key, ExternalLink, Download, Image, Settings2, ChevronDown, ChevronUp } from 'lucide-react'
+import { Wand2, Loader2, Upload, Trash2, Key, ExternalLink, Download, ImageIcon, Search, X, Settings2, ChevronDown, ChevronUp, CheckCircle2, AlertCircle } from 'lucide-react'
 import { useProviderManager, PROVIDER_CONFIGS } from '@/stores/providerManager'
 import { useToastStore } from '@/stores/toastStore'
+import { runMagnificUpscale, getMagnificApiKey, type MagnificEngine, type MagnificOptimizedFor, type MagnificSettings } from '@/lib/magnific'
+import { runLeonardoUpscale, type LeonardoUpscaleSettings } from '@/lib/leonardo-upscale'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
-import { submitMagnificUpscale, pollMagnificTask, isMagnificTokenError } from '@/lib/magnific'
-import type { MagnificEngine, MagnificOptimizedFor, MagnificFlavor } from '@/lib/magnific'
-import {
-  addActiveTask,
-  removeActiveTask,
-  getResults,
-  addResult,
-  removeResult,
-  getLogs,
-  addBgLog,
-  startBackgroundPolling,
-} from '@/lib/backgroundTasks'
+
+const MAX_IMAGES = 50
+
+const TOPAZ_MODELS = [
+  'Standard V2', 'Low Resolution V2', 'CGI', 'High Fidelity V2',
+  'Text Refine', 'Recovery', 'Redefine', 'Recovery V2',
+  'Standard MAX', 'Wonder', 'Wonder 3',
+]
+
+const MAGNIFIC_ENGINES: { value: MagnificEngine; label: string }[] = [
+  { value: 'automatic', label: 'automatic' },
+  { value: 'magnific_illusio', label: 'magnific_illusio' },
+  { value: 'magnific_sharpy', label: 'magnific_sharpy' },
+  { value: 'magnific_sparkle', label: 'magnific_sparkle' },
+]
+
+const MAGNIFIC_OPTIMIZED: { value: MagnificOptimizedFor; label: string }[] = [
+  { value: 'standard', label: 'standard' },
+  { value: 'soft_portraits', label: 'soft_portraits' },
+  { value: 'hard_portraits', label: 'hard_portraits' },
+  { value: 'art_n_illustration', label: 'art_n_illustration' },
+  { value: 'videogame_assets', label: 'videogame_assets' },
+  { value: 'nature_n_landscapes', label: 'nature_n_landscapes' },
+  { value: 'films_n_photography', label: 'films_n_photography' },
+  { value: '3d_renders', label: '3d_renders' },
+  { value: 'science_fiction_n_horror', label: 'science_fiction_n_horror' },
+]
+
+interface ImageRow {
+  id: string
+  file: File
+  preview: string
+  ratio: number
+  status: 'queued' | 'processing' | 'done' | 'error'
+  url?: string
+  error?: string
+}
 
 interface LogEntry {
   time: string
   msg: string
-  level: 'debug' | 'info' | 'warn' | 'error' | 'success'
-  provider?: string
+  level: 'info' | 'warn' | 'error' | 'success' | 'debug'
 }
 
-const SCALE_OPTIONS = [
-  { value: '2x', label: '2x (2x width & height)', credits: '~€0.10' },
-  { value: '4x', label: '4x (4x width & height)', credits: '~€0.20-0.40' },
-  { value: '8x', label: '8x (8x width & height)', credits: '~€0.50+' },
-  { value: '16x', label: '16x (16x width & height)', credits: '~€1.00+' },
-]
+interface GalleryItem {
+  id: string
+  url: string
+  sourceName: string
+  provider: string
+  mode: string
+  createdAt: string
+}
 
-const CREATIVE_ENGINES: { value: MagnificEngine; label: string }[] = [
-  { value: 'automatic', label: 'Automatic' },
-  { value: 'magnific_sparkle', label: 'Sparkle — Creative detail' },
-  { value: 'magnific_illusio', label: 'Illusio — Artistic' },
-  { value: 'magnific_sharpy', label: 'Sharpy — Sharp & clean' },
-]
+const GALLERY_KEY = 'arkxmotion.upscaler.gallery'
 
-const OPTIMIZED_FOR: { value: MagnificOptimizedFor; label: string }[] = [
-  { value: 'standard', label: 'Standard' },
-  { value: 'soft_portraits', label: 'Soft Portraits' },
-  { value: 'hard_portraits', label: 'Hard Portraits' },
-  { value: 'art_n_illustration', label: 'Art & Illustration' },
-  { value: 'videogame_assets', label: 'Videogame Assets' },
-  { value: 'nature_n_landscapes', label: 'Nature & Landscapes' },
-  { value: 'films_n_photography', label: 'Films & Photography' },
-  { value: '3d_renders', label: '3D Renders' },
-  { value: 'science_fiction_n_horror', label: 'Sci-Fi & Horror' },
-]
+function loadGallery(): GalleryItem[] {
+  try { return JSON.parse(localStorage.getItem(GALLERY_KEY) || '[]') } catch { return [] }
+}
+function saveGallery(items: GalleryItem[]) {
+  localStorage.setItem(GALLERY_KEY, JSON.stringify(items.slice(0, 200)))
+}
 
-const PRECISION_FLAVORS: { value: MagnificFlavor; label: string }[] = [
-  { value: 'sublime', label: 'Sublime — Artistic & smooth' },
-  { value: 'photo', label: 'Photo — Natural & realistic' },
-  { value: 'photo_denoiser', label: 'Photo Denoiser — Noise reduction' },
-]
+const HANDOFF_KEY = 'upscaler:handoff'
+function getHandoffImages(): { url: string; name?: string }[] {
+  try {
+    const raw = sessionStorage.getItem(HANDOFF_KEY)
+    sessionStorage.removeItem(HANDOFF_KEY)
+    if (!raw) return []
+    const arr = JSON.parse(raw)
+    return Array.isArray(arr) ? arr.filter((e: any) => e && typeof e.url === 'string') : []
+  } catch { return [] }
+}
 
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
+async function urlToFile(url: string, name?: string): Promise<File | null> {
+  try {
+    const res = await fetch(url)
+    if (!res.ok) return null
+    const blob = await res.blob()
+    const ext = (blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg')
+    const fileName = name || `upscale-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`
+    return new File([blob], fileName, { type: blob.type || 'image/jpeg' })
+  } catch { return null }
+}
+
+async function compressImage(file: File, maxDim = 1280, quality = 0.8): Promise<File> {
+  return new Promise((resolve) => {
     const reader = new FileReader()
     reader.onload = () => {
-      const result = reader.result as string
-      resolve(result)
+      const img = new Image()
+      img.onload = () => {
+        let w = img.width, h = img.height
+        if (w > maxDim) { h = h * maxDim / w; w = maxDim }
+        const canvas = document.createElement('canvas')
+        canvas.width = w; canvas.height = h
+        canvas.getContext('2d')!.drawImage(img, 0, 0, w, h)
+        canvas.toBlob(
+          (blob) => resolve(blob ? new File([blob], file.name, { type: 'image/jpeg' }) : file),
+          'image/jpeg', quality
+        )
+      }
+      img.onerror = () => resolve(file)
+      img.src = String(reader.result || '')
     }
-    reader.onerror = reject
     reader.readAsDataURL(file)
   })
 }
@@ -73,631 +118,555 @@ export default function UpscalerPage() {
   const addToast = useToastStore((s) => s.addToast)
   const { keys } = useProviderManager()
 
-  const [imgFile, setImgFile] = useState<File | null>(null)
-  const [imgUrl, setImgUrl] = useState<string | null>(null)
-  const [mode, setMode] = useState<'creative' | 'precision'>('creative')
-  const [scale, setScale] = useState('2x')
-  const [generating, setGenerating] = useState(false)
-  const generatingRef = useRef(false)
-  const successRef = useRef(false)
-  const activeTaskIdRef = useRef<string | null>(null)
-
-  const [prompt, setPrompt] = useState('')
-  const [creativity, setCreativity] = useState(0)
-  const [hdr, setHdr] = useState(0)
-  const [resemblance, setResemblance] = useState(0)
-  const [fractality, setFractality] = useState(0)
-  const [engine, setEngine] = useState<MagnificEngine>('automatic')
-  const [optimizedFor, setOptimizedFor] = useState<MagnificOptimizedFor>('standard')
-  const [sharpen, setSharpen] = useState(7)
-  const [smartGrain, setSmartGrain] = useState(7)
-  const [ultraDetail, setUltraDetail] = useState(30)
-  const [flavor, setFlavor] = useState<MagnificFlavor>('sublime')
-  const [filterNsfw, setFilterNsfw] = useState(false)
-  const [showAdvanced, setShowAdvanced] = useState(false)
-
-  const [results, setResults] = useState<string[]>([])
+  const [provider, setProvider] = useState<'topaz' | 'magnific' | 'leonardo'>('magnific')
+  const [mode, setMode] = useState<'upscale' | 'enhance'>('upscale')
+  const [rows, setRows] = useState<ImageRow[]>([])
+  const [running, setRunning] = useState(false)
   const [logs, setLogs] = useState<LogEntry[]>([])
-  const [status, setStatus] = useState({ show: false, text: '', pct: 0, time: '0:00' })
+  const [progress, setProgress] = useState({ done: 0, total: 0 })
+  const [gallerySearch, setGallerySearch] = useState('')
+  const [gallery, setGallery] = useState<GalleryItem[]>(() => loadGallery())
 
-  const inputRef = useRef<HTMLInputElement>(null)
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const startTimeRef = useRef(0)
+  const [topazModel, setTopazModel] = useState('Standard V2')
+  const [topazFactor, setTopazFactor] = useState(2)
+  const [topazFormat, setTopazFormat] = useState('jpeg')
+  const [topazCrop, setTopazCrop] = useState(false)
 
-  const magnificKeys = keys.magnific || []
-  const hasActiveKey = magnificKeys.some((k) => k.status === 'active' || k.status === 'unknown')
+  const [magScale, setMagScale] = useState('2x')
+  const [magEngine, setMagEngine] = useState<MagnificEngine>('automatic')
+  const [magOptimized, setMagOptimized] = useState<MagnificOptimizedFor>('standard')
+  const [magCreativity, setMagCreativity] = useState(2)
+  const [magHdr, setMagHdr] = useState(3)
+  const [magResemblance, setMagResemblance] = useState(50)
+  const [magFractality, setMagFractality] = useState(2)
+  const [magPrompt, setMagPrompt] = useState('')
+
+  const [leoUpscaler, setLeoUpscaler] = useState<'legacy' | 'ultra' | 'pro'>('pro')
+  const [leoProType, setLeoProType] = useState<'precise' | 'creative'>('precise')
+  const [leoFactor, setLeoFactor] = useState(2)
+  const [leoFixArtifacts, setLeoFixArtifacts] = useState(true)
+
+  const filePickerRef = useRef<HTMLInputElement | null>(null)
+  const runningRef = useRef(false)
+
+  const magnificKey = getMagnificApiKey()
+  const leonardoKeys = keys.leonardo || []
+  const hasLeonardoKey = leonardoKeys.some(k => k.status === 'active' || k.status === 'unknown')
+  const canRun = rows.length > 0 && !running &&
+    (provider === 'topaz' || (provider === 'magnific' && !!magnificKey) || (provider === 'leonardo' && hasLeonardoKey))
+
+  const addLog = useCallback((msg: string, level: LogEntry['level'] = 'info') => {
+    const time = new Date().toLocaleTimeString()
+    setLogs(prev => [...prev, { time, msg, level }].slice(-300))
+  }, [])
+
+  const filteredGallery = useMemo(() =>
+    gallery.filter(e => !gallerySearch || e.sourceName.toLowerCase().includes(gallerySearch.toLowerCase())),
+    [gallery, gallerySearch]
+  )
 
   useEffect(() => {
-    startBackgroundPolling()
-    const stored = getResults().filter((r) => r.page === 'upscaler').map((r) => r.url)
-    if (stored.length) setResults(stored)
-    const storedLogs = getLogs().filter((l) => l.provider === 'magnific')
-    if (storedLogs.length) {
-      setLogs(storedLogs.map((l) => ({ time: l.time, msg: l.msg, level: l.level, provider: l.provider })))
+    const handoff = getHandoffImages()
+    if (handoff.length > 0) {
+      (async () => {
+        const files: File[] = []
+        for (const h of handoff) {
+          const f = await urlToFile(h.url, h.name)
+          if (f) files.push(f)
+        }
+        if (files.length) {
+          addImages(files)
+          addLog(`📥 ${files.length} gambar diterima dari menu lain, siap di-upscale.`)
+        }
+      })()
     }
-    const handler = () => {
-      const r = getResults().filter((res) => res.page === 'upscaler').map((res) => res.url)
-      setResults(r)
-    }
-    window.addEventListener('arkxmotion-tasks-changed', handler)
-    return () => window.removeEventListener('arkxmotion-tasks-changed', handler)
   }, [])
 
-  const addLog = useCallback((msg: string, level: LogEntry['level'] = 'info', provider = 'magnific') => {
-    const now = new Date()
-    const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`
-    setLogs((prev) => [...prev, { time, msg, level, provider }])
-    addBgLog(msg, level, provider)
-  }, [])
-
-  const handleFileChange = useCallback((files: FileList | null) => {
-    if (!files?.[0]) return
-    const file = files[0]
-    if (!file.type.startsWith('image/')) {
-      addToast('File harus gambar (JPG/PNG/WEBP)', 'error')
-      return
-    }
-    setImgFile(file)
-    setImgUrl(URL.createObjectURL(file))
-  }, [addToast])
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    handleFileChange(e.dataTransfer.files)
-  }, [handleFileChange])
-
-  const formatTime = (seconds: number) => {
-    const m = Math.floor(seconds / 60)
-    const s = seconds % 60
-    return `${m}:${String(s).padStart(2, '0')}`
+  function addImages(files: File[]) {
+    const remaining = MAX_IMAGES - rows.length
+    const toAdd = Array.from(files).filter(f => f.type.startsWith('image/')).slice(0, Math.max(0, remaining))
+    toAdd.forEach(file => {
+      const preview = URL.createObjectURL(file)
+      const img = new Image()
+      img.onload = () => {
+        setRows(prev => [...prev, {
+          id: Math.random().toString(36).slice(2),
+          file, preview,
+          ratio: img.naturalWidth / Math.max(1, img.naturalHeight),
+          status: 'queued',
+        }])
+      }
+      img.onerror = () => {
+        setRows(prev => [...prev, {
+          id: Math.random().toString(36).slice(2),
+          file, preview, ratio: 1,
+          status: 'queued',
+        }])
+      }
+      img.src = preview
+    })
   }
 
-  const handleUpscale = async () => {
-    if (!imgFile || generating) return
+  function removeImage(id: string) {
+    setRows(prev => {
+      const row = prev.find(r => r.id === id)
+      if (row) URL.revokeObjectURL(row.preview)
+      return prev.filter(r => r.id !== id)
+    })
+  }
 
-    setGenerating(true)
-    generatingRef.current = false
-    successRef.current = false
-    activeTaskIdRef.current = null
-    startTimeRef.current = Date.now()
-    setStatus({ show: true, text: 'Preparing...', pct: 0, time: '0:00' })
+  function clearAll() {
+    rows.forEach(r => URL.revokeObjectURL(r.preview))
+    setRows([])
+  }
 
-    timerRef.current = setInterval(() => {
-      const elapsed = Math.round((Date.now() - startTimeRef.current) / 1000)
-      setStatus((s) => ({ ...s, time: formatTime(elapsed) }))
-    }, 1000)
+  async function handleRun() {
+    if (rows.length === 0 || running) return
+    setRunning(true)
+    runningRef.current = true
+    setLogs([])
+    setProgress({ done: 0, total: rows.length })
+    setRows(prev => prev.map(r => ({ ...r, status: 'queued' as const, url: undefined, error: undefined })))
 
-    try {
-      addLog(`[1/3] Preparing image...`, 'info')
-      setStatus((s) => ({ ...s, text: 'Converting image...', pct: 5 }))
+    const Concurrency = 2
+    const queue = rows.map((r, i) => ({ index: i, file: r.file }))
+    let completed = 0
 
-      const imageBase64 = await fileToBase64(imgFile)
-      addLog(`[1/3] Image ready (${(imgFile.size / 1024).toFixed(0)}KB)`, 'success')
-      setStatus((s) => ({ ...s, text: 'Submitting...', pct: 15 }))
+    async function processOne(item: { index: number; file: File }) {
+      const log = (msg: string, lvl?: LogEntry['level']) => {
+        addLog(`#${item.index + 1}: ${msg}`, lvl || 'info')
+        setRows(prev => prev.map((r, i) => i === item.index ? { ...r, status: 'processing' } : r))
+      }
 
-      const rotation = await withTokenRotation<string>(
-        'magnific',
-        async (apiKey, keyInfo) => {
-          addLog(`[2/3] Submitting to Magnific ${mode}...`, 'info')
-          addLog(`   → scale: ${scale} | mode: ${mode}`, 'debug')
-          if (mode === 'creative') {
-            addLog(`   → engine: ${engine} | optimized_for: ${optimizedFor}`, 'debug')
-          } else {
-            addLog(`   → flavor: ${flavor} | sharpen: ${sharpen}`, 'debug')
-          }
+      try {
+        log('mulai...')
 
-          const submitResult = await submitMagnificUpscale(apiKey, {
-            imageBase64,
-            scaleFactor: scale as any,
-            mode,
-            prompt: mode === 'creative' ? prompt : undefined,
-            creativity: mode === 'creative' ? creativity : undefined,
-            hdr: mode === 'creative' ? hdr : undefined,
-            resemblance: mode === 'creative' ? resemblance : undefined,
-            fractality: mode === 'creative' ? fractality : undefined,
-            engine: mode === 'creative' ? engine : undefined,
-            optimizedFor: mode === 'creative' ? optimizedFor : undefined,
-            sharpen: mode === 'precision' ? sharpen : undefined,
-            smartGrain: mode === 'precision' ? smartGrain : undefined,
-            ultraDetail: mode === 'precision' ? ultraDetail : undefined,
-            flavor: mode === 'precision' ? flavor : undefined,
-            filterNsfw,
-          })
-
-          if (!submitResult.ok) {
-            addLog(`[2/3] Submit failed: ${submitResult.error}`, 'error')
-            throw new Error(submitResult.error || 'Submit failed')
-          }
-
-          const taskId = submitResult.taskId!
-          addLog(`[2/3] Task created ✓ id=${taskId.slice(0, 20)}...`, 'success')
-
-          addActiveTask({
-            id: taskId,
-            taskId,
-            roomId: '',
-            token: apiKey,
-            model: `Magnific ${mode} ${scale}`,
-            prompt: prompt.trim() || '(upscale)',
-            startedAt: Date.now(),
-            page: 'upscaler',
-          })
-          activeTaskIdRef.current = taskId
-
-          addLog(`[3/3] Polling for result...`, 'info')
-          setStatus((s) => ({ ...s, text: 'Processing...', pct: 30 }))
-
-          const imageUrl = await pollMagnificTask(apiKey, taskId, mode, (taskStatus, pct) => {
-            addLog(`Poll: ${taskStatus} (${pct}%)`, 'debug')
-            setStatus((s) => ({ ...s, pct, text: `Magnific ${taskStatus} (${pct}%)` }))
-          }, 3600000)
-
-          setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
-          addLog(`✅ Image upscaled ✓`, 'success')
-
-          removeActiveTask(taskId)
-          activeTaskIdRef.current = null
-          return imageUrl
-        },
-        {
-          onKeySwitch: (from, to, attempt) => {
-            addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn')
-          },
-          onError: (err, key) => {
-            if (detectTokenError('magnific', err)) {
-              addLog(`⚠️ Key "${key.name}" is invalid: ${err.message}`, 'warn')
+        let url: string
+        if (provider === 'topaz') {
+          log('Topaz via Weavy belum tersedia di versi ini. Gunakan Magnific atau Leonardo.', 'error')
+          throw Error('Topaz not supported yet')
+        } else if (provider === 'magnific') {
+          url = await runMagnificUpscale(item.file, mode, {
+            scale_factor: magScale,
+            engine: magEngine,
+            optimized_for: magOptimized,
+            creativity: magCreativity,
+            hdr: magHdr,
+            resemblance: magResemblance,
+            fractality: magFractality,
+            prompt: magPrompt || undefined,
+          }, (msg) => log(msg))
+        } else {
+          const rotation = await withTokenRotation<string>(
+            'leonardo',
+            async (token) => {
+              return runLeonardoUpscale(token, item.file, {
+                upscaler: leoUpscaler,
+                pro_type: leoProType,
+                upscale_factor: leoFactor,
+                fix_artifacts: leoFixArtifacts,
+              }, (msg) => log(msg))
+            },
+            {
+              onKeySwitch: (from, to, attempt) => {
+                log(`↻ rotate token Leonardo #${attempt}: ${from.name} → ${to.name}`, 'warn')
+              },
             }
-          },
+          )
+          if (!rotation.ok) throw new Error(rotation.error || 'Leonardo failed')
+          url = rotation.result!
         }
-      )
 
-      if (rotation.ok && rotation.result) {
-        setResults((prev) => [rotation.result!, ...prev])
-        addResult({
-          id: Date.now().toString(),
-          url: rotation.result!,
-          prompt: prompt.trim() || `(upscale ${scale})`,
-          date: new Date().toISOString(),
-          page: 'upscaler',
-        })
-        successRef.current = true
-        setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
-        if (rotation.triedKeys > 1) {
-          addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success')
+        setRows(prev => prev.map((r, i) => i === item.index ? { ...r, status: 'done', url } : r))
+        completed++
+        setProgress({ done: completed, total: rows.length })
+        log('done', 'success')
+
+        const newItem: GalleryItem = {
+          id: Math.random().toString(36).slice(2),
+          url,
+          sourceName: item.file.name,
+          provider,
+          mode,
+          createdAt: new Date().toISOString(),
         }
-      } else {
-        throw new Error(rotation.error || 'Upscale failed')
+        setGallery(prev => {
+          const updated = [newItem, ...prev]
+          saveGallery(updated)
+          return updated
+        })
+      } catch (err: any) {
+        const msg = err instanceof Error ? err.message : String(err)
+        setRows(prev => prev.map((r, i) => i === item.index ? { ...r, status: 'error', error: msg } : r))
+        completed++
+        setProgress({ done: completed, total: rows.length })
+        log(msg, 'error')
       }
+    }
+
+    try {
+      const workers = Array.from({ length: Math.min(Concurrency, queue.length) }, async () => {
+        while (queue.length > 0) {
+          const item = queue.shift()
+          if (item) await processOne(item)
+        }
+      })
+      await Promise.all(workers)
+      addLog(`Selesai: ${completed}/${rows.length}`, 'success')
     } catch (err: any) {
-      if (activeTaskIdRef.current) removeActiveTask(activeTaskIdRef.current)
-      addLog(`❌ Error: ${err.message}`, 'error')
-      addToast(`Upscale gagal: ${err.message}`, 'error')
-      setStatus((s) => ({ ...s, pct: 100, text: `❌ Error: ${err.message}` }))
+      addLog(`Fatal: ${err.message}`, 'error')
     } finally {
-      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
-      const wasGenerating = generatingRef.current
-      setGenerating(false)
-      generatingRef.current = false
-      if (wasGenerating && successRef.current) {
-        addToast(`Upscale selesai: ${scale} ${mode}`, 'success')
-      }
-      setTimeout(() => setStatus((s) => ({ ...s, show: false })), 3000)
+      setRunning(false)
+      runningRef.current = false
     }
   }
 
-  const handleDownload = async (url: string, index: number) => {
+  async function downloadItem(item: GalleryItem) {
     try {
-      const res = await fetch(url)
-      const blob = await res.blob()
-      const ext = url.match(/\.(png|jpg|jpeg|webp)(\?|$)/i)?.[1] || 'png'
+      let blob: Blob | null = null
+      try {
+        const res = await fetch(item.url, { mode: 'cors' })
+        if (res.ok) blob = await res.blob()
+      } catch {}
+      if (!blob) {
+        const res = await fetch(`/api/public/proxy-image?url=${encodeURIComponent(item.url)}`)
+        if (res.ok) blob = await res.blob()
+      }
+      if (!blob) throw Error('Download gagal')
+      const ext = /\.(png|jpe?g|webp)(\?|$)/i.exec(item.url)?.[1]?.toLowerCase() || 'jpg'
       const a = document.createElement('a')
       a.href = URL.createObjectURL(blob)
-      a.download = `upscaled_${scale}_${Date.now()}.${ext}`
+      a.download = `upscale-${item.id}.${ext}`
+      document.body.appendChild(a)
       a.click()
-      URL.revokeObjectURL(a.href)
-    } catch {
-      window.open(url, '_blank')
+      document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000)
+    } catch (err: any) {
+      addLog(`Download error: ${err.message}`, 'error')
     }
   }
+
+  function removeGalleryItem(id: string) {
+    setGallery(prev => {
+      const updated = prev.filter(e => e.id !== id)
+      saveGallery(updated)
+      return updated
+    })
+  }
+
+  function clearGallery() {
+    if (gallery.length === 0) return
+    if (!confirm(`Hapus semua ${gallery.length} hasil dari gallery?`)) return
+    setGallery([])
+    saveGallery([])
+  }
+
+  const pct = progress.total ? Math.round(progress.done / progress.total * 100) : 0
 
   return (
     <PageContent>
       <PageHeader
         eyebrow="Generate"
-        title="Image"
-        highlight="Upscaler"
-        desc="Tingkatkan resolusi dan kualitas gambar menggunakan AI Magnific."
+        title="AI Upscaler &"
+        highlight="Enhancer"
+        desc={`Provider Topaz (via Weavy) atau Magnific. Bulk maksimum ${MAX_IMAGES} gambar sekaligus.`}
       />
 
-      {/* Provider Info */}
-      <Section title="Provider" sub="Magnific AI — Image Upscaling">
-        <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
-          <div>
-            Provider: <b className="text-foreground">{PROVIDER_CONFIGS.magnific.icon} {PROVIDER_CONFIGS.magnific.name}</b>
-          </div>
-          <div>
-            API Keys: <b className={hasActiveKey ? 'text-emerald-500' : 'text-destructive'}>{magnificKeys.length}</b> tersedia
-          </div>
-          <div>
-            Status: <b className={hasActiveKey ? 'text-emerald-500' : 'text-amber-500'}>{hasActiveKey ? 'Ready' : 'No Key'}</b>
-          </div>
-          {!hasActiveKey && (
-            <a href="/providers" className="text-primary hover:underline flex items-center gap-1">
-              <Key className="h-3 w-3" /> Tambah API key
-            </a>
-          )}
-        </div>
-      </Section>
+      <div className="flex flex-col gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+          {/* Config Panel */}
+          <div className="lg:col-span-1 space-y-5">
+            <Section title="Konfigurasi" sub="Pilih model AI & parameter">
+              <div className="space-y-4">
+                <Label>Model AI</Label>
+                <Select
+                  value={provider}
+                  onChange={e => setProvider(e.target.value as any)}
+                  disabled={running}
+                  options={[
+                    { value: 'topaz', label: 'Topaz Upscale (Weavy node)' },
+                    { value: 'magnific', label: 'Magnific Upscale (Weavy node)' },
+                    { value: 'leonardo', label: 'Aurora (Leonardo)' },
+                  ]}
+                />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Left Column: Image Input + Settings */}
-        <div className="lg:col-span-2 space-y-5">
-          {/* Image Upload */}
-          <Section title="Upload Image" sub="Drag & drop atau klik untuk upload">
-            <input ref={inputRef} type="file" accept="image/*" hidden onChange={(e) => handleFileChange(e.target.files)} />
-            {imgUrl ? (
-              <div className="relative rounded-2xl overflow-hidden border border-border">
-                <img src={imgUrl} alt="Input" className="w-full max-h-96 object-contain bg-black/20" />
-                <div className="absolute top-2 right-2 flex gap-2">
-                  <button
-                    onClick={() => inputRef.current?.click()}
-                    className="rounded-full px-2.5 py-1 text-xs bg-black/60 text-white flex items-center gap-1 hover:bg-black/80 transition"
-                  >
-                    <Upload className="h-3 w-3" /> Ganti
-                  </button>
-                  <button
-                    onClick={() => { setImgFile(null); setImgUrl(null) }}
-                    className="rounded-full px-2.5 py-1 text-xs bg-black/60 text-white flex items-center gap-1 hover:bg-red-600/80 transition"
-                  >
-                    <Trash2 className="h-3 w-3" /> Hapus
-                  </button>
-                </div>
-                {imgFile && (
-                  <div className="absolute bottom-2 left-2 text-[10px] text-white/70 bg-black/40 rounded px-2 py-0.5">
-                    {imgFile.name} — {(imgFile.size / 1024).toFixed(0)}KB
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div
-                onDrop={handleDrop}
-                onDragOver={(e) => e.preventDefault()}
-                onClick={() => inputRef.current?.click()}
-                className="border-2 border-dashed border-border rounded-2xl p-12 text-center hover:border-primary/50 transition cursor-pointer"
-              >
-                <Upload className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
-                <p className="text-sm text-muted-foreground">Drag & drop image di sini</p>
-                <p className="text-xs text-muted-foreground/60 mt-1">JPG, PNG, WEBP — Max 25.3MP output</p>
-              </div>
-            )}
-          </Section>
-
-          {/* Settings */}
-          <Section title="Settings" sub="Pengaturan upscaling">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
                 <Label>Mode</Label>
                 <Select
                   value={mode}
-                  onChange={(e) => setMode(e.target.value as any)}
-                  disabled={generating}
+                  onChange={e => setMode(e.target.value as any)}
+                  disabled={running}
                   options={[
-                    { value: 'creative', label: '✨ Creative — Add detail' },
-                    { value: 'precision', label: '🎯 Precision — Faithful' },
+                    { value: 'upscale', label: 'Upscale (resolusi lebih besar)' },
+                    { value: 'enhance', label: 'Enhance (detil / precision)' },
                   ]}
                 />
-              </div>
-              <div>
-                <Label>Scale Factor</Label>
-                <Select
-                  value={scale}
-                  onChange={(e) => setScale(e.target.value)}
-                  disabled={generating}
-                  options={SCALE_OPTIONS.map((s) => ({ value: s.value, label: `${s.label}` }))}
-                />
-              </div>
-              <div>
-                <Label>NSFW Filter</Label>
-                <div className="flex items-center h-10 px-3 rounded-xl border border-border bg-muted/30">
-                  <label className="flex items-center gap-2 cursor-pointer text-sm">
-                    <input
-                      type="checkbox"
-                      checked={filterNsfw}
-                      onChange={(e) => setFilterNsfw(e.target.checked)}
-                      disabled={generating}
-                      className="rounded"
-                    />
-                    Enable
-                  </label>
-                </div>
-              </div>
-            </div>
 
-            {/* Advanced Settings Toggle */}
-            <button
-              onClick={() => setShowAdvanced(!showAdvanced)}
-              className="flex items-center gap-2 mt-4 text-xs text-muted-foreground hover:text-foreground transition"
-            >
-              <Settings2 className="h-3.5 w-3.5" />
-              Advanced Settings
-              {showAdvanced ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-            </button>
-
-            {showAdvanced && (
-              <div className="mt-3 p-3 rounded-xl border border-border bg-card/30 space-y-4">
-                {mode === 'creative' ? (
+                {/* Topaz Settings */}
+                {provider === 'topaz' && (
                   <>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <Label>Engine</Label>
-                        <Select
-                          value={engine}
-                          onChange={(e) => setEngine(e.target.value as MagnificEngine)}
-                          disabled={generating}
-                          options={CREATIVE_ENGINES}
-                        />
-                      </div>
-                      <div>
-                        <Label>Optimized For</Label>
-                        <Select
-                          value={optimizedFor}
-                          onChange={(e) => setOptimizedFor(e.target.value as MagnificOptimizedFor)}
-                          disabled={generating}
-                          options={OPTIMIZED_FOR}
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <Label>Prompt (opsional — guide upscale)</Label>
-                      <Textarea
-                        rows={2}
-                        placeholder="Describe the desired output quality and style..."
-                        value={prompt}
-                        onChange={(e) => setPrompt(e.target.value)}
-                        disabled={generating}
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      {[
-                        { label: 'Creativity', value: creativity, set: setCreativity, min: -10, max: 10 },
-                        { label: 'HDR', value: hdr, set: setHdr, min: -10, max: 10 },
-                        { label: 'Resemblance', value: resemblance, set: setResemblance, min: -10, max: 10 },
-                        { label: 'Fractality', value: fractality, set: setFractality, min: -10, max: 10 },
-                      ].map((s) => (
-                        <div key={s.label}>
-                          <Label className="text-[11px]">{s.label}: {s.value}</Label>
-                          <input
-                            type="range"
-                            min={s.min}
-                            max={s.max}
-                            value={s.value}
-                            onChange={(e) => s.set(Number(e.target.value))}
-                            disabled={generating}
-                            className="w-full mt-1"
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div>
-                      <Label>Flavor</Label>
-                      <Select
-                        value={flavor}
-                        onChange={(e) => setFlavor(e.target.value as MagnificFlavor)}
-                        disabled={generating}
-                        options={PRECISION_FLAVORS}
-                      />
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      {[
-                        { label: 'Sharpen', value: sharpen, set: setSharpen, min: 0, max: 100, default: 7 },
-                        { label: 'Smart Grain', value: smartGrain, set: setSmartGrain, min: 0, max: 100, default: 7 },
-                        { label: 'Ultra Detail', value: ultraDetail, set: setUltraDetail, min: 0, max: 100, default: 30 },
-                      ].map((s) => (
-                        <div key={s.label}>
-                          <Label className="text-[11px]">{s.label}: {s.value}</Label>
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="range"
-                              min={s.min}
-                              max={s.max}
-                              value={s.value}
-                              onChange={(e) => s.set(Number(e.target.value))}
-                              disabled={generating}
-                              className="flex-1 mt-1"
-                            />
-                            <button
-                              onClick={() => s.set(s.default)}
-                              disabled={generating}
-                              className="text-[10px] text-muted-foreground hover:text-foreground shrink-0"
-                            >
-                              Reset
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                    <Label>Model Topaz</Label>
+                    <Select value={topazModel} onChange={e => setTopazModel(e.target.value)} disabled={running}
+                      options={TOPAZ_MODELS.map(m => ({ value: m, label: m }))} />
+                    <Label>Upscale factor</Label>
+                    <Select value={String(topazFactor)} onChange={e => setTopazFactor(Number(e.target.value))} disabled={running}
+                      options={[{ value: '1', label: '1x' }, { value: '2', label: '2x' }, { value: '3', label: '3x' }, { value: '4', label: '4x' }]} />
+                    <Label>Output format</Label>
+                    <Select value={topazFormat} onChange={e => setTopazFormat(e.target.value)} disabled={running}
+                      options={[{ value: 'jpeg', label: 'JPEG' }, { value: 'png', label: 'PNG' }]} />
+                    <label className="flex items-center gap-2 text-sm text-foreground/90">
+                      <input type="checkbox" checked={topazCrop} onChange={e => setTopazCrop(e.target.checked)} disabled={running} />
+                      Crop to fill
+                    </label>
                   </>
                 )}
-              </div>
-            )}
-          </Section>
 
-          {/* Generate Button */}
-          <Section title="Upscale">
-            <div className="flex items-center gap-3 flex-wrap">
-              <Button onClick={handleUpscale} loading={generating} disabled={!imgFile}>
-                {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-                {generating ? 'Upscaling...' : `Upscale Image ${scale}`}
-              </Button>
-              {generating && (
-                <div className="text-xs text-muted-foreground">
-                  Mode: <b className="text-foreground">{mode}</b> | Scale: <b className="text-foreground">{scale}</b>
+                {/* Magnific Settings */}
+                {provider === 'magnific' && (
+                  <>
+                    <Label>Scale factor</Label>
+                    <Select value={magScale} onChange={e => setMagScale(e.target.value)} disabled={running}
+                      options={[{ value: '2x', label: '2x' }, { value: '4x', label: '4x' }, { value: '8x', label: '8x' }, { value: '16x', label: '16x' }]} />
+                    <Label>Engine</Label>
+                    <Select value={magEngine} onChange={e => setMagEngine(e.target.value as MagnificEngine)} disabled={running}
+                      options={MAGNIFIC_ENGINES} />
+                    <Label>Optimized for</Label>
+                    <Select value={magOptimized} onChange={e => setMagOptimized(e.target.value as MagnificOptimizedFor)} disabled={running}
+                      options={MAGNIFIC_OPTIMIZED} />
+                    <div className="grid grid-cols-2 gap-3">
+                      <Label>Creativity ({magCreativity})</Label>
+                      <input type="number" min={-10} max={10} value={magCreativity} onChange={e => setMagCreativity(Number(e.target.value))} disabled={running}
+                        className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm" />
+                      <Label>HDR ({magHdr})</Label>
+                      <input type="number" min={-10} max={10} value={magHdr} onChange={e => setMagHdr(Number(e.target.value))} disabled={running}
+                        className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm" />
+                      <Label>Resemblance ({magResemblance})</Label>
+                      <input type="number" min={0} max={100} value={magResemblance} onChange={e => setMagResemblance(Number(e.target.value))} disabled={running}
+                        className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm" />
+                      <Label>Fractality ({magFractality})</Label>
+                      <input type="number" min={0} max={10} value={magFractality} onChange={e => setMagFractality(Number(e.target.value))} disabled={running}
+                        className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm" />
+                    </div>
+                    <Label>Prompt (opsional)</Label>
+                    <Textarea rows={2} value={magPrompt} onChange={e => setMagPrompt(e.target.value)} disabled={running}
+                      placeholder="Deskripsi tambahan..." />
+                  </>
+                )}
+
+                {/* Leonardo Settings */}
+                {provider === 'leonardo' && (
+                  <>
+                    <Label>Upscaler</Label>
+                    <Select value={leoUpscaler} onChange={e => setLeoUpscaler(e.target.value as any)} disabled={running}
+                      options={[{ value: 'legacy', label: 'Legacy' }, { value: 'ultra', label: 'Ultra' }, { value: 'pro', label: 'Pro (New)' }]} />
+                    {leoUpscaler === 'pro' && (
+                      <>
+                        <Label>Type</Label>
+                        <Select value={leoProType} onChange={e => setLeoProType(e.target.value as any)} disabled={running}
+                          options={[{ value: 'precise', label: 'Precise' }, { value: 'creative', label: 'Creative' }]} />
+                      </>
+                    )}
+                    <Label>Upscale Multiplier ({leoFactor}x)</Label>
+                    <input type="range" min={2} max={8} step={1} value={leoFactor}
+                      onChange={e => { const v = Number(e.target.value); setLeoFactor(v === 7 ? 8 : v) }}
+                      disabled={running} className="w-full accent-primary" />
+                    <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
+                      <span>2x</span><span>3x</span><span>4x</span><span>5x</span><span>6x</span><span>8x</span>
+                    </div>
+                    <label className="flex items-center gap-2 text-sm text-foreground/90">
+                      <input type="checkbox" checked={leoFixArtifacts} onChange={e => setLeoFixArtifacts(e.target.checked)} disabled={running} />
+                      Fix AI Image Artifacts
+                    </label>
+                    <p className="text-[11px] text-muted-foreground">
+                      Multiplier Leonardo: 2, 3, 4, 5, 6, atau 8x. Jika hasil melewati limit Aurora ±105MP, sistem otomatis menurunkan multiplier supaya job tidak gagal.
+                    </p>
+                  </>
+                )}
+
+                <div className="flex gap-2 pt-2">
+                  <Button onClick={handleRun} disabled={!canRun}>
+                    {running ? 'Memproses...' : `Jalankan (${rows.length})`}
+                  </Button>
+                  <Button variant="outline" onClick={clearAll} disabled={running || rows.length === 0}>
+                    Bersihkan
+                  </Button>
+                </div>
+              </div>
+            </Section>
+          </div>
+
+          {/* Image Grid */}
+          <div className="lg:col-span-2 space-y-5">
+            <Section
+              title={`Gambar (${rows.length}/${MAX_IMAGES})`}
+              sub="Drop / pilih gambar, satuan atau banyak sekaligus"
+              right={
+                <>
+                  <button
+                    onClick={() => filePickerRef.current?.click()}
+                    className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold border border-border cursor-pointer hover:bg-accent/40"
+                  >
+                    <Upload className="h-4 w-4" /> Tambah
+                  </button>
+                  <input ref={filePickerRef} type="file" accept="image/*" multiple hidden
+                    onChange={e => { if (e.target.files) addImages(Array.from(e.target.files)); e.target.value = '' }} />
+                </>
+              }
+            >
+              {rows.length === 0 ? (
+                <div className="text-sm text-muted-foreground p-8 text-center border border-dashed border-border rounded-xl">
+                  Belum ada gambar. Klik <b>Tambah</b> untuk memilih file (maks {MAX_IMAGES}).
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+                  {rows.map((row, idx) => (
+                    <div key={row.id} className="relative rounded-xl overflow-hidden border border-border bg-background/40">
+                      <div className="relative bg-black/40" style={{ aspectRatio: row.ratio || 1 }}>
+                        <img src={row.preview} alt="" className="absolute inset-0 w-full h-full object-contain" />
+                        {!running && (
+                          <button onClick={() => removeImage(row.id)}
+                            className="absolute top-1 right-1 h-6 w-6 grid place-items-center rounded-full bg-black/70 text-white hover:bg-black/90">
+                            <X className="h-3 w-3" />
+                          </button>
+                        )}
+                        {row.status === 'processing' && (
+                          <div className="absolute inset-0 bg-black/40 grid place-items-center">
+                            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                          </div>
+                        )}
+                        {row.status === 'done' && (
+                          <div className="absolute inset-0 bg-black/20 grid place-items-center">
+                            <CheckCircle2 className="h-6 w-6 text-emerald-400" />
+                          </div>
+                        )}
+                        {row.status === 'error' && (
+                          <div className="absolute inset-0 bg-black/20 grid place-items-center">
+                            <AlertCircle className="h-6 w-6 text-red-400" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="p-1.5 text-[10px] leading-tight">
+                        <div className="truncate text-foreground/90">#{idx + 1} {row.file.name}</div>
+                        {row.error ? (
+                          <div className="truncate text-destructive">{row.error}</div>
+                        ) : row.status === 'done' ? (
+                          <div className="truncate text-emerald-400">done</div>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
-            </div>
-
-            {/* Progress Bar */}
-            {status.show && (
-              <div className="mt-4 rounded-xl border border-border/70 bg-card/40 p-3">
-                <div className="flex justify-between items-center text-xs mb-1">
-                  <span>{status.text}</span>
-                  <span className="font-mono text-muted-foreground">{status.time}</span>
-                </div>
-                <div className="h-1.5 rounded-full bg-border overflow-hidden">
-                  <div
-                    className="h-full transition-all bg-primary rounded-full"
-                    style={{ width: `${status.pct}%` }}
-                  />
-                </div>
-                {!generating && status.pct === 100 && results.length > 0 && (
-                  <Button size="sm" className="w-full mt-3" onClick={handleUpscale}>
-                    <Wand2 className="h-4 w-4" /> Upscale Lagi
-                  </Button>
-                )}
-              </div>
-            )}
-          </Section>
+            </Section>
+          </div>
         </div>
 
-        {/* Right Column: Info */}
-        <div className="space-y-5">
-          <Section title="Info" sub="Tentang Magnific Upscaler">
-            <div className="text-xs text-muted-foreground space-y-2">
-              <p>
-                <b className="text-foreground">Creative mode</b> menambahkan detail baru yang dipandu prompt. Cocok untuk concept art, ilustrasi, dan visual kreatif.
-              </p>
-              <p>
-                <b className="text-foreground">Precision mode</b> meningkatkan resolusi tanpa mengubah konten. Cocok untuk logo, UI, teks, dan foto produk.
-              </p>
-              <div className="pt-2 border-t border-border">
-                <p className="font-medium text-foreground mb-1">Scale Factor:</p>
-                <ul className="space-y-0.5">
-                  <li>• <b>2x</b> — Double dimensions (4x pixels)</li>
-                  <li>• <b>4x</b> — Quadruple dimensions (16x pixels)</li>
-                  <li>• <b>8x</b> — 8x dimensions (64x pixels)</li>
-                  <li>• <b>16x</b> — 16x dimensions (256x pixels)</li>
-                </ul>
+        {/* Log Panel */}
+        <Section title="Log Info & Progress" sub={`Total ${logs.length} entri`}>
+          {(running || progress.total > 0) && (
+            <div className="mb-3">
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-1">
+                <span>{running ? 'Memproses...' : 'Selesai'}</span>
+                <span className="font-mono">{progress.done}/{progress.total} · {pct}%</span>
               </div>
-              <div className="pt-2 border-t border-border">
-                <p className="font-medium text-foreground mb-1">Pricing:</p>
-                <p>Based on output image area. Larger output = higher cost.</p>
+              <div className="h-2 rounded-full bg-card/60 border border-border overflow-hidden">
+                <div className="h-full transition-all" style={{ width: `${pct}%`, background: 'var(--gradient-neon, linear-gradient(90deg, #6366f1, #a855f7))' }} />
               </div>
             </div>
-          </Section>
-        </div>
-      </div>
-
-      {/* Logs */}
-      {logs.length > 0 && (
-        <Section
-          title={`Log (${logs.length})`}
-          right={
-            <button
-              onClick={() => setLogs([])}
-              className="text-[11px] text-destructive hover:text-destructive/80 transition"
-            >
-              Clear
-            </button>
-          }
-        >
-          <div className="max-h-52 overflow-y-auto overflow-x-hidden text-[11px] font-mono space-y-0.5 rounded-xl bg-black/20 p-2">
-            {logs.map((log, i) => (
-              <div
-                key={i}
-                className={`break-all leading-relaxed ${
-                  log.level === 'error'
-                    ? 'text-red-400'
-                    : log.level === 'success'
-                    ? 'text-emerald-400'
-                    : log.level === 'warn'
-                    ? 'text-amber-400'
-                    : log.level === 'debug'
-                    ? 'text-slate-500'
-                    : 'text-slate-400'
-                }`}
-              >
-                <span className="text-slate-600">[{log.time}]</span>{' '}
-                {log.level === 'error' && '❌ '}
-                {log.level === 'success' && '✅ '}
-                {log.level === 'warn' && '⚠️ '}
-                {log.msg}
+          )}
+          <div className="rounded-xl border border-border/60 bg-black/40 p-2 max-h-64 overflow-y-auto overflow-x-hidden text-[11px] font-mono min-w-0">
+            {logs.length === 0 ? (
+              <div className="text-muted-foreground px-1 py-2">Belum ada log. Jalankan proses untuk melihat aktivitas.</div>
+            ) : logs.map((log, i) => (
+              <div key={i} className={`break-all min-w-0 ${
+                log.level === 'error' ? 'text-red-400' :
+                log.level === 'warn' ? 'text-amber-400' :
+                log.level === 'success' ? 'text-emerald-400' :
+                'text-muted-foreground'
+              }`}>
+                [{log.time}] {log.msg}
               </div>
             ))}
           </div>
         </Section>
-      )}
 
-      {/* Results */}
-      <Section
-        title={`Hasil Upscale (${results.length})`}
-        right={
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              setResults([])
-              const r = getResults().filter((res) => res.page !== 'upscaler')
-              localStorage.setItem('arkxmotion_results', JSON.stringify(r.slice(0, 50)))
-            }}
-            disabled={results.length === 0}
-            className="text-destructive hover:text-destructive"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Clear</span>
-          </Button>
-        }
-      >
-        {results.length === 0 ? (
-          <EmptyState
-            icon={<Image className="h-8 w-8" />}
-            title="Belum ada hasil"
-            description="Upload gambar dan klik Upscale untuk meningkatkan resolusi"
-          />
-        ) : (
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-            {results.map((url, index) => (
-              <div key={index} className="rounded-xl overflow-hidden border border-border bg-black/40">
-                <img
-                  src={url}
-                  alt={`Upscaled ${index + 1}`}
-                  className="w-full aspect-square object-cover bg-black"
-                  loading="lazy"
-                />
-                <div className="p-2 flex flex-col gap-1.5">
-                  <div className="flex items-center gap-1">
-                    <a
-                      href={url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-primary/30 bg-primary/5 hover:bg-primary/10 px-3 py-2 text-xs font-medium text-primary transition"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" /> Buka
-                    </a>
-                    <button
-                      onClick={() => handleDownload(url, index)}
-                      className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-500 transition"
-                    >
-                      <Download className="h-3.5 w-3.5" /> Download
+        {/* Gallery */}
+        <Section
+          title="Gallery Hasil"
+          sub="Gambar hasil upscale / enhance"
+          right={
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" disabled={filteredGallery.length === 0}
+                onClick={async () => {
+                  if (filteredGallery.length === 0) return
+                  try {
+                    const { default: JSZip } = await import('jszip')
+                    const zip = new JSZip()
+                    for (let i = 0; i < filteredGallery.length; i++) {
+                      const item = filteredGallery[i]
+                      try {
+                        const res = await fetch(item.url)
+                        const blob = await res.blob()
+                        const ext = /\.(png|jpe?g|webp)(\?|$)/i.exec(item.url)?.[1] || 'jpg'
+                        zip.file(`upscale-${String(i + 1).padStart(2, '0')}-${item.id}.${ext}`, blob)
+                      } catch {}
+                    }
+                    const content = await zip.generateAsync({ type: 'blob' })
+                    const a = document.createElement('a')
+                    a.href = URL.createObjectURL(content)
+                    a.download = `upscaler-gallery-${new Date().toISOString().slice(0, 10)}.zip`
+                    a.click()
+                    URL.revokeObjectURL(a.href)
+                  } catch (err: any) {
+                    addLog(`ZIP error: ${err.message}`, 'error')
+                  }
+                }}>
+                <Download className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Export ZIP</span>
+              </Button>
+              <Button variant="outline" size="sm" className="text-destructive hover:text-destructive"
+                disabled={gallery.length === 0} onClick={clearGallery}>
+                <Trash2 className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Hapus Semua</span>
+              </Button>
+            </div>
+          }
+        >
+          <div className="flex items-center gap-2 rounded-full border border-border bg-card/50 px-3 py-2 mb-4">
+            <Search className="h-4 w-4 text-muted-foreground" />
+            <input
+              value={gallerySearch}
+              onChange={e => setGallerySearch(e.target.value)}
+              placeholder="Search nama file…"
+              className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            />
+          </div>
+
+          {filteredGallery.length === 0 ? (
+            <EmptyState icon={<ImageIcon className="h-8 w-8" />} title="Belum ada hasil" description="Gambar hasil upscale akan muncul di sini" />
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+              {filteredGallery.map(item => (
+                <div key={item.id} className="rounded-xl overflow-hidden border border-border/60 bg-card/40 group">
+                  <a href={item.url} target="_blank" rel="noreferrer" className="block relative bg-black/40">
+                    <img src={item.url} alt="" className="w-full h-auto object-contain" loading="lazy" />
+                  </a>
+                  <div className="p-2 text-[11px] text-muted-foreground flex items-center justify-between gap-1">
+                    <span className="truncate flex-1" title={item.sourceName}>{item.sourceName}</span>
+                    <button onClick={() => downloadItem(item)}
+                      className="inline-flex items-center gap-1 rounded-full border border-border bg-card/60 px-2 py-1 hover:text-foreground hover:border-primary/50 transition" title="Download">
+                      <Download className="h-3.5 w-3.5" />
+                    </button>
+                    <button onClick={() => removeGalleryItem(item.id)}
+                      className="inline-flex items-center gap-1 rounded-full border border-border bg-card/60 px-2 py-1 hover:text-destructive hover:border-destructive/50 transition" title="Hapus">
+                      <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
-                  <button
-                    onClick={() => {
-                      setResults(results.filter((_, i) => i !== index))
-                      removeResult(url)
-                    }}
-                    className="w-full inline-flex items-center justify-center gap-1 rounded-lg border border-destructive/30 bg-destructive/5 hover:bg-destructive/10 px-3 py-1.5 text-[11px] text-destructive transition"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" /> Hapus
-                  </button>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </Section>
+              ))}
+            </div>
+          )}
+        </Section>
+      </div>
     </PageContent>
   )
 }

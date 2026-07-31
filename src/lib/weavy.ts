@@ -48,6 +48,50 @@ export async function checkWeavyBalance(token: string): Promise<{ ok: boolean; b
   }
 }
 
+export async function checkWeavyBalanceDirect(token: string): Promise<{ ok: boolean; balance?: number | null; email?: string; error?: string }> {
+  try {
+    const isJwt = /^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token)
+    if (!isJwt) return { ok: false, balance: null, error: 'Not a JWT token' }
+
+    let email: string | undefined
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]))
+      email = payload.email || payload.user_id || undefined
+    } catch {}
+
+    const endpoints = [
+      'https://api.weavy.ai/api/v1/credits',
+      'https://api.weavy.ai/api/v1/user/credits',
+      'https://api.weavy.ai/api/v1/user/balance',
+      'https://api.weavy.ai/api/v1/user',
+      'https://api.weavy.ai/api/v1/account',
+      'https://api.weavy.ai/api/v1/subscription',
+      'https://api.weavy.ai/api/v1/workspaces',
+    ]
+
+    for (const url of endpoints) {
+      try {
+        const r = await fetch(url, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: AbortSignal.timeout(8000),
+        })
+        if (!r.ok) continue
+        const data = await r.json().catch(() => null)
+        let credits = data?.credits ?? data?.balance ?? data?.totalCredits ?? data?.creditsRemaining ?? data?.quota ?? data?.usage?.credits ?? data?.plan?.credits ?? data?.data?.credits ?? data?.user?.credits ?? null
+        if (credits === null) {
+          const workspaces = data?.workspaces || data
+          const ws = Array.isArray(workspaces) ? workspaces[0] : workspaces
+          if (typeof ws?.credits === 'number') credits = ws.credits
+        }
+        if (typeof credits === 'number') return { ok: true, balance: credits, email }
+      } catch { continue }
+    }
+    return { ok: false, balance: null, error: 'No credits endpoint responded', email }
+  } catch (err: any) {
+    return { ok: false, balance: null, error: err.message }
+  }
+}
+
 function resolveAspectRatio(ratio: string): string {
   const map: Record<string, string> = {
     '9:16': '9:16',

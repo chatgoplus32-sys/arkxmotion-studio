@@ -27,7 +27,7 @@ import {
 import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
 import { checkRoboneoBalance } from '@/lib/roboneo'
 import { fetchLeonardoBalance } from '@/lib/leonardo'
-import { checkWeavyBalance } from '@/lib/weavy'
+import { checkWeavyBalance, checkWeavyBalanceDirect } from '@/lib/weavy'
 
 const PROVIDER_COLORS: Record<string, string> = {
   brain: '#f472b6',
@@ -442,7 +442,17 @@ export default function ProvidersPage() {
               return { state: 'empty', balance: 0, detail: `Balance: 0 — habis${email ? ` (${email})` : ''}` }
             }
           }
-          return { state: 'active', detail: email ? `${email}` : result.error || 'Token valid' }
+          const direct = await checkWeavyBalanceDirect(key)
+          if (direct.ok && direct.balance !== null && direct.balance !== undefined) {
+            if (direct.balance > 0) return { state: 'active', balance: direct.balance, detail: `Balance: ${direct.balance} credits${direct.email ? ` (${direct.email})` : ''}` }
+            if (direct.balance === 0) return { state: 'empty', balance: 0, detail: `Balance: 0 — habis${direct.email ? ` (${direct.email})` : ''}` }
+          }
+          return { state: 'active', detail: email || direct.email || result.error || 'Token valid' }
+        }
+        const direct = await checkWeavyBalanceDirect(key)
+        if (direct.ok && direct.balance !== null && direct.balance !== undefined) {
+          if (direct.balance > 0) return { state: 'active', balance: direct.balance, detail: `Balance: ${direct.balance} credits${direct.email ? ` (${direct.email})` : ''}` }
+          if (direct.balance === 0) return { state: 'empty', balance: 0, detail: `Balance: 0 — habis${direct.email ? ` (${direct.email})` : ''}` }
         }
         if (result.error?.includes('expired') || result.error?.includes('401') || result.error?.includes('403')) {
           return { state: 'invalid', detail: 'Token expired — ambil baru dari browser (F12 → Network → app.weavy.ai → Authorization)' }

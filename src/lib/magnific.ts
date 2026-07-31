@@ -11,173 +11,145 @@ export type MagnificOptimizedFor =
   | 'films_n_photography'
   | '3d_renders'
   | 'science_fiction_n_horror'
-export type MagnificFlavor = 'sublime' | 'photo' | 'photo_denoiser'
 
-export interface MagnificUpscaleParams {
-  imageBase64: string
-  scaleFactor: '2x' | '4x' | '8x' | '16x'
-  mode: 'creative' | 'precision'
-  prompt?: string
-  creativity?: number
-  hdr?: number
-  resemblance?: number
-  fractality?: number
-  engine?: MagnificEngine
-  optimizedFor?: MagnificOptimizedFor
-  filterNsfw?: boolean
-  sharpen?: number
-  smartGrain?: number
-  ultraDetail?: number
-  flavor?: MagnificFlavor
-}
-
-export interface MagnificSubmitResult {
-  ok: boolean
-  taskId?: string
-  error?: string
-  raw?: any
-}
-
-export async function submitMagnificUpscale(
-  apiKey: string,
-  params: MagnificUpscaleParams
-): Promise<MagnificSubmitResult> {
-  const {
-    imageBase64,
-    scaleFactor,
-    mode,
-    prompt,
-    creativity,
-    hdr,
-    resemblance,
-    fractality,
-    engine,
-    optimizedFor,
-    filterNsfw,
-    sharpen,
-    smartGrain,
-    ultraDetail,
-    flavor,
-  } = params
-
-  const apiEndpoint = mode === 'creative'
-    ? '/v1/ai/image-upscaler'
-    : '/v1/ai/image-upscaler-precision-v2'
-
-  const body: Record<string, any> = {
-    image: imageBase64,
-    scale_factor: scaleFactor,
-  }
-
-  if (mode === 'creative') {
-    if (prompt) body.prompt = prompt
-    if (creativity !== undefined) body.creativity = creativity
-    if (hdr !== undefined) body.hdr = hdr
-    if (resemblance !== undefined) body.resemblance = resemblance
-    if (fractality !== undefined) body.fractality = fractality
-    if (engine) body.engine = engine
-    if (optimizedFor) body.optimized_for = optimizedFor
-  } else {
-    if (sharpen !== undefined) body.sharpen = sharpen
-    if (smartGrain !== undefined) body.smart_grain = smartGrain
-    if (ultraDetail !== undefined) body.ultra_detail = ultraDetail
-    if (flavor) body.flavor = flavor
-  }
-
-  if (filterNsfw !== undefined) body.filter_nsfw = filterNsfw
-
+function getStoredMagnificKey(): string | null {
+  if (typeof window === 'undefined') return null
   try {
-    const res = await fetch(MAGNIFIC_PROXY, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Magnific-Api-Key': apiKey,
-      },
-      body: JSON.stringify({ endpoint: apiEndpoint, body }),
-    })
-
-    const data = await res.json().catch(() => null)
-    console.log(`[magnific] upscale → ${res.status}`, JSON.stringify(data).slice(0, 500))
-
-    if (!data?.ok || !data?.data?.data?.task_id) {
-      const errMsg = data?.data?.message || data?.data?.error || data?.error || `HTTP ${res.status}`
-      return { ok: false, error: errMsg, raw: data }
-    }
-
-    return { ok: true, taskId: data.data.data.task_id, raw: data }
-  } catch (err: any) {
-    console.error(`[magnific] submit error:`, err.message)
-    return { ok: false, error: err.message }
-  }
+    const raw = localStorage.getItem('aatools.magnific.keys')
+    return raw && JSON.parse(raw)?.[0]?.key || null
+  } catch { return null }
 }
 
-export async function pollMagnificTask(
-  apiKey: string,
-  taskId: string,
-  mode: 'creative' | 'precision',
-  onProgress?: (status: string, pct: number) => void,
-  timeoutMs = 3600000
+function getStoredProviderKey(provider: string): string | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = localStorage.getItem('arkxmotion.providers')
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    const keys = parsed[provider] || []
+    const active = keys.find((k: any) => k.status === 'active' || k.status === 'unknown')
+    return active?.key || keys[0]?.key || null
+  } catch { return null }
+}
+
+export function getMagnificApiKey(): string | null {
+  return getStoredMagnificKey() || getStoredProviderKey('magnific')
+}
+
+async function compressImage(file: File, maxDim = 2048, quality = 0.9): Promise<File> {
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const img = new Image()
+      img.onload = () => {
+        let w = img.width
+        let h = img.height
+        if (w > maxDim) { h = h * maxDim / w; w = maxDim }
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        canvas.getContext('2d')!.drawImage(img, 0, 0, w, h)
+        canvas.toBlob(
+          (blob) => resolve(blob ? new File([blob], file.name, { type: 'image/jpeg' }) : file),
+          'image/jpeg',
+          quality
+        )
+      }
+      img.onerror = () => resolve(file)
+      img.src = String(reader.result || '')
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
+async function fileToBase64(file: File): Promise<string> {
+  const buf = await (file.size > 6 * 1024 * 1024 ? await compressImage(file, 2048, 0.9) : file).arrayBuffer()
+  const bytes = new Uint8Array(buf)
+  let binary = ''
+  const chunk = 32768
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk))
+  }
+  return btoa(binary)
+}
+
+async function magnificApi(action: string, params: Record<string, any>): Promise<any> {
+  const res = await fetch(MAGNIFIC_PROXY, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, ...params }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw Error(data?.error || `Magnific ${res.status}`)
+  return data
+}
+
+export interface MagnificSettings {
+  scale_factor: string
+  engine: MagnificEngine
+  optimized_for: MagnificOptimizedFor
+  creativity: number
+  hdr: number
+  resemblance: number
+  fractality: number
+  prompt?: string
+}
+
+export async function runMagnificUpscale(
+  file: File,
+  mode: 'upscale' | 'enhance',
+  settings: MagnificSettings,
+  onLog?: (msg: string) => void
 ): Promise<string> {
+  const apiKey = getMagnificApiKey()
+  if (!apiKey) throw Error('Belum ada Magnific API key di Kelola Token')
+
+  const modelKey = mode === 'enhance' ? 'mag:image-upscaler-precision-v2' : 'mag:image-upscaler-creative'
+
+  onLog?.('Encode base64...')
+  const payload: Record<string, any> = {
+    image: await fileToBase64(file),
+    scale_factor: settings.scale_factor,
+    optimized_for: settings.optimized_for,
+    engine: settings.engine,
+    creativity: settings.creativity,
+    hdr: settings.hdr,
+    resemblance: settings.resemblance,
+    fractality: settings.fractality,
+  }
+  if (settings.prompt) payload.prompt = settings.prompt
+
+  onLog?.(`Submit ke Magnific (${mode})...`)
+  const submitRes = await magnificApi('submit', { apiKey, modelKey, payload })
+  const taskData = submitRes.data ?? submitRes
+  const taskId = taskData.task_id || taskData.id || taskData.taskId
+  if (!taskId) throw Error('Magnific: task id tidak ditemukan')
+
   const startTime = Date.now()
-  const apiEndpoint = mode === 'creative'
-    ? `/v1/ai/image-upscaler/${taskId}`
-    : `/v1/ai/image-upscaler-precision-v2/${taskId}`
+  for (; Date.now() - startTime < 900000;) {
+    await new Promise(r => setTimeout(r, 5000))
+    const statusRes = await magnificApi('status', { apiKey, modelKey, taskId })
+    const statusData = statusRes.data ?? statusRes
+    const status = String(statusData.status || statusData.state || '').toUpperCase()
 
-  let lastLog = ''
+    onLog?.(`Poll: ${status || 'unknown'}`)
 
-  while (Date.now() - startTime < timeoutMs) {
-    await new Promise((r) => setTimeout(r, 5000))
-
-    try {
-      const res = await fetch(`${MAGNIFIC_PROXY}?endpoint=${encodeURIComponent(apiEndpoint)}`, {
-        method: 'GET',
-        headers: {
-          'X-Magnific-Api-Key': apiKey,
-        },
-      })
-
-      const data = await res.json().catch(() => null)
-
-      if (!data?.ok || !data?.data?.data) {
-        console.log(`[magnific] poll error:`, data?.error || data?.data?.message || `HTTP ${res.status}`)
-        continue
+    if (['COMPLETED', 'SUCCESS', 'SUCCEEDED', 'DONE', 'FINISHED'].includes(status)) {
+      const generated = statusData.generated
+      if (Array.isArray(generated) && generated.length > 0 && typeof generated[0] === 'string') {
+        return generated[0]
       }
+      const url = statusData.image_url || statusData.output_url || statusData.result?.url
+      if (url) return url
+      throw Error('Magnific: URL hasil tidak ditemukan')
+    }
 
-      const task = data.data.data
-      const status = (task.status || '').toUpperCase()
-      const elapsedSec = Math.round((Date.now() - startTime) / 1000)
-      const elapsedMin = elapsedSec / 60
-      const fallbackPct = Math.min(0.94, 1 - 1 / (1 + elapsedMin * 1.6))
-      const pct = Math.round(5 + fallbackPct * 89)
-
-      onProgress?.(status || 'IN_PROGRESS', status === 'COMPLETED' ? 95 : pct)
-
-      const logEntry = `poll #${elapsedSec}s status=${status}`
-      if (logEntry !== lastLog) {
-        lastLog = logEntry
-        console.log(`[magnific] ${logEntry}`)
-      }
-
-      if (status === 'COMPLETED') {
-        const generated = task.generated || []
-        const imageUrl = generated.find((url: string) => typeof url === 'string' && url.startsWith('http'))
-        if (imageUrl) return imageUrl
-        throw new Error('Magnific: task completed but no image URL found')
-      }
-
-      if (status === 'FAILED') {
-        throw new Error('Magnific: upscaling task failed')
-      }
-    } catch (err: any) {
-      if (/timeout|fetch|network/i.test(err.message)) {
-        console.log(`[magnific] network error, retrying:`, err.message)
-        continue
-      }
-      throw err
+    if (['FAILED', 'ERROR', 'CANCELED', 'CANCELLED'].includes(status)) {
+      throw Error('Magnific: task gagal — ' + (statusData.error || statusData.message || 'unknown'))
     }
   }
 
-  throw new Error('Magnific: timeout')
+  throw Error('Magnific: timeout menunggu hasil')
 }
 
 export function isMagnificTokenError(msg: string): boolean {

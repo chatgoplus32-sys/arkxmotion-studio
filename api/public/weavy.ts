@@ -13,6 +13,7 @@ async function refreshWeavyToken(refreshToken: string): Promise<{ accessToken: s
     })
     if (!r.ok) return null
     const data = await r.json()
+    if (!data.id_token) return null
     return {
       accessToken: data.id_token,
       refreshToken: data.refresh_token || refreshToken,
@@ -25,19 +26,75 @@ async function refreshWeavyToken(refreshToken: string): Promise<{ accessToken: s
 
 function extractEmailFromJwt(token: string): string | null {
   try {
-    const payload = JSON.parse(atob(token.split('.')[1]))
+    const parts = token.split('.')
+    if (parts.length !== 3) return null
+    const payload = JSON.parse(atob(parts[1]))
     return payload.email || payload.user_id || null
   } catch {
     return null
   }
 }
 
-async function getValidAccessToken(token: string): Promise<{ accessToken: string; email?: string }> {
+function isJwtToken(token: string): boolean {
+  return /^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token)
+}
+
+async function resolveAccessToken(token: string): Promise<{ accessToken: string; refreshToken?: string; email?: string }> {
+  if (isJwtToken(token)) {
+    const email = extractEmailFromJwt(token)
+    const refreshed = await refreshWeavyToken(token)
+    if (refreshed?.accessToken) {
+      return { accessToken: refreshed.accessToken, refreshToken: refreshed.refreshToken, email: extractEmailFromJwt(refreshed.accessToken) || email || undefined }
+    }
+    return { accessToken: token, email: email || undefined }
+  }
+
   const refreshed = await refreshWeavyToken(token)
   if (refreshed?.accessToken) {
-    return { accessToken: refreshed.accessToken, email: extractEmailFromJwt(refreshed.accessToken) || undefined }
+    return { accessToken: refreshed.accessToken, refreshToken: refreshed.refreshToken, email: extractEmailFromJwt(refreshed.accessToken) || undefined }
   }
   return { accessToken: token, email: extractEmailFromJwt(token) || undefined }
+}
+
+async function fetchWeavyCredits(accessToken: string): Promise<number | null> {
+  const endpoints = [
+    `${WEAVY_API}/v1/credits`,
+    `${WEAVY_API}/v1/user/credits`,
+    `${WEAVY_API}/v1/user/balance`,
+    `${WEAVY_API}/v1/user`,
+    `${WEAVY_API}/v1/account`,
+    `${WEAVY_API}/v1/subscription`,
+  ]
+
+  for (const url of endpoints) {
+    try {
+      const r = await fetch(url, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        signal: AbortSignal.timeout(8000),
+      })
+      if (!r.ok) continue
+      const data = await r.json().catch(() => null)
+      const credits = data?.credits ?? data?.balance ?? data?.totalCredits ?? data?.creditsRemaining ?? data?.quota ?? data?.usage?.credits ?? data?.plan?.credits ?? data?.data?.credits ?? data?.user?.credits ?? null
+      if (typeof credits === 'number') return credits
+    } catch {
+      continue
+    }
+  }
+
+  try {
+    const r = await fetch(`${WEAVY_API}/v1/workspaces`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(8000),
+    })
+    if (r.ok) {
+      const data = await r.json().catch(() => null)
+      const workspaces = data?.workspaces || data
+      const ws = Array.isArray(workspaces) ? workspaces[0] : workspaces
+      if (typeof ws?.credits === 'number') return ws.credits
+    }
+  } catch {}
+
+  return null
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -55,7 +112,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { accessToken, email } = await getValidAccessToken(token)
+    const { accessToken, refreshToken, email } = await resolveAccessToken(token)
 
     const authHeaders = {
       Authorization: `Bearer ${accessToken}`,
@@ -63,56 +120,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (action === 'balance') {
-      const endpoints = [
-        `${WEAVY_API}/v1/credits`,
-        `${WEAVY_API}/v1/user/credits`,
-        `${WEAVY_API}/v1/user/balance`,
-        `${WEAVY_API}/v1/user`,
-        `${WEAVY_API}/v1/account`,
-        `${WEAVY_API}/v1/subscription`,
-      ]
-
-      for (const url of endpoints) {
-        try {
-          const r = await fetch(url, {
-            headers: { Authorization: `Bearer ${accessToken}` },
-            signal: AbortSignal.timeout(8000),
-          })
-
-          if (!r.ok) continue
-
-          const data = await r.json().catch(() => null)
-          console.log(`[weavy-proxy] balance ${url} → ${r.status}`, JSON.stringify(data).slice(0, 300))
-
-          const credits = data?.credits ?? data?.balance ?? data?.totalCredits ?? data?.creditsRemaining ?? data?.quota ?? data?.usage?.credits ?? data?.plan?.credits ?? data?.data?.credits ?? data?.user?.credits ?? null
-
-          if (typeof credits === 'number') {
-            return res.status(200).json({ ok: true, data: { credits, email }, status: r.status })
-          }
-        } catch (e: any) {
-          continue
-        }
-      }
-
-      try {
-        const r = await fetch(`${WEAVY_API}/v1/workspaces`, {
-          headers: { Authorization: `Bearer ${accessToken}` },
-          signal: AbortSignal.timeout(8000),
-        })
-        if (r.ok) {
-          const data = await r.json().catch(() => null)
-          const workspaces = data?.workspaces || data
-          const ws = Array.isArray(workspaces) ? workspaces[0] : workspaces
-          if (typeof ws?.credits === 'number') {
-            return res.status(200).json({ ok: true, data: { credits: ws.credits, email }, status: r.status })
-          }
-        }
-      } catch (e: any) {
-        // continue
-      }
-
-      console.log(`[weavy-proxy] balance → all endpoints failed`)
-      return res.status(200).json({ ok: true, data: { credits: null, email }, status: 200 })
+      const credits = await fetchWeavyCredits(accessToken)
+      console.log(`[weavy-proxy] balance → credits=${credits} email=${email}`)
+      return res.status(200).json({
+        ok: true,
+        data: { credits, email },
+        refreshToken: refreshToken || undefined,
+      })
     }
 
     if (action === 'generate') {

@@ -5,51 +5,59 @@ const MAGNIFIC_API = 'https://api.magnific.com'
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Magnific-Api-Key')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
 
   if (req.method === 'OPTIONS') return res.status(200).end()
-
-  const apiKey = (req.headers['x-magnific-api-key'] as string) || ''
-  if (!apiKey) {
-    return res.status(400).json({ ok: false, error: 'Missing X-Magnific-Api-Key header' })
-  }
+  if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'Method not allowed' })
 
   try {
-    if (req.method === 'POST') {
-      const { endpoint, body } = req.body || {}
-      if (!endpoint) {
-        return res.status(400).json({ ok: false, error: 'Missing endpoint in body' })
+    const { action, apiKey, modelKey, payload, taskId } = req.body || {}
+
+    if (!apiKey) {
+      return res.status(400).json({ ok: false, error: 'Missing apiKey' })
+    }
+
+    if (action === 'submit') {
+      if (!modelKey || !payload) {
+        return res.status(400).json({ ok: false, error: 'Missing modelKey or payload' })
       }
 
-      const url = `${MAGNIFIC_API}${endpoint}`
-      console.log(`[magnific-proxy] POST ${endpoint}`)
+      const endpoint = modelKey === 'mag:image-upscaler-precision-v2'
+        ? '/v1/ai/image-upscaler-precision-v2'
+        : '/v1/ai/image-upscaler'
 
-      const apiRes = await fetch(url, {
+      console.log(`[magnific-proxy] submit → ${endpoint}`)
+
+      const apiRes = await fetch(`${MAGNIFIC_API}${endpoint}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'x-magnific-api-key': apiKey,
         },
-        body: JSON.stringify(body || {}),
+        body: JSON.stringify(payload),
         signal: AbortSignal.timeout(60000),
       })
 
       const data = await apiRes.json().catch(() => null)
-      console.log(`[magnific-proxy] POST ${endpoint} → ${apiRes.status}`)
+      console.log(`[magnific-proxy] submit → ${apiRes.status}`, JSON.stringify(data).slice(0, 300))
 
-      return res.status(apiRes.status).json({ ok: apiRes.ok, data, status: apiRes.status })
-    }
-
-    if (req.method === 'GET') {
-      const { endpoint } = req.query
-      if (!endpoint || typeof endpoint !== 'string') {
-        return res.status(400).json({ ok: false, error: 'Missing endpoint query param' })
+      if (!apiRes.ok) {
+        return res.status(200).json({ ok: false, error: data?.message || data?.error || `HTTP ${apiRes.status}`, data })
       }
 
-      const url = `${MAGNIFIC_API}${endpoint}`
-      console.log(`[magnific-proxy] GET ${endpoint}`)
+      return res.json({ ok: true, data: data?.data || data })
+    }
 
-      const apiRes = await fetch(url, {
+    if (action === 'status') {
+      if (!modelKey || !taskId) {
+        return res.status(400).json({ ok: false, error: 'Missing modelKey or taskId' })
+      }
+
+      const endpoint = modelKey === 'mag:image-upscaler-precision-v2'
+        ? `/v1/ai/image-upscaler-precision-v2/${taskId}`
+        : `/v1/ai/image-upscaler/${taskId}`
+
+      const apiRes = await fetch(`${MAGNIFIC_API}${endpoint}`, {
         method: 'GET',
         headers: {
           'x-magnific-api-key': apiKey,
@@ -58,12 +66,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       })
 
       const data = await apiRes.json().catch(() => null)
-      console.log(`[magnific-proxy] GET ${endpoint} → ${apiRes.status}`)
 
-      return res.status(apiRes.status).json({ ok: apiRes.ok, data, status: apiRes.status })
+      if (!apiRes.ok) {
+        return res.status(200).json({ ok: false, error: data?.message || `HTTP ${apiRes.status}`, data })
+      }
+
+      return res.json({ ok: true, data: data?.data || data })
     }
 
-    return res.status(405).json({ ok: false, error: 'Method not allowed' })
+    return res.status(400).json({ ok: false, error: `Unknown action: ${action}` })
   } catch (err: any) {
     console.error(`[magnific-proxy] error:`, err.message)
     return res.status(502).json({ ok: false, error: err.message })

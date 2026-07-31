@@ -506,13 +506,12 @@ export async function submitRoboneoI2V(params: {
       parameters.video_duration = duration
       break
     case 'kling26':
-      parameters.ratio = ratio
       parameters.sound = sound || 'off'
       parameters.video_duration = duration
       break
     default:
       parameters.ratio = ratio
-      parameters.video_duration = duration
+      parameters.duration = duration
       parameters.quality = quality || 'std'
       break
   }
