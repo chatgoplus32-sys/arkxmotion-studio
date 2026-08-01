@@ -517,6 +517,10 @@ export default function MotionPage() {
     }
   }, [])
 
+  const filteredResults = results.filter(
+    (r) => !searchQuery || r.prompt.toLowerCase().includes(searchQuery.toLowerCase())
+  )
+
   const [zipping, setZipping] = useState(false)
 
   const handleExportZip = useCallback(async () => {
@@ -562,10 +566,6 @@ export default function MotionPage() {
       setZipping(false)
     }
   }, [filteredResults, zipping, addToast])
-
-  const filteredResults = results.filter(
-    (r) => !searchQuery || r.prompt.toLowerCase().includes(searchQuery.toLowerCase())
-  )
 
   return (
     <PageContent>
