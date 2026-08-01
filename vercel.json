@@ -21,7 +21,8 @@
     "api/public/shotstack.ts": { "maxDuration": 60 },
     "api/public/creatomate.ts": { "maxDuration": 60 },
     "api/public/magnific.ts": { "maxDuration": 60 },
-    "api/public/maintenance.ts": { "maxDuration": 10 }
+    "api/public/maintenance.ts": { "maxDuration": 10 },
+    "api/public/weavy.ts": { "maxDuration": 60 }
   },
   "routes": [
     { "src": "/api/auth/(.*)", "dest": "/api/auth?path=$1" },

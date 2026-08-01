@@ -42,19 +42,21 @@ function isJwtToken(token: string): boolean {
 
 async function resolveAccessToken(token: string): Promise<{ accessToken: string; refreshToken?: string; email?: string }> {
   const isJwt = isJwtToken(token)
-  console.log(`[weavy-proxy] resolveAccessToken: isJwt=${isJwt} tokenLen=${token.length}`)
+  console.log(`[weavy-proxy] resolveAccessToken: isJwt=${isJwt} tokenLen=${token.length} tokenStart=${token.slice(0, 20)}`)
 
   if (isJwt) {
     const email = extractEmailFromJwt(token)
+    console.log(`[weavy-proxy] JWT detected, email=${email}, trying refresh...`)
     const refreshed = await refreshWeavyToken(token)
     if (refreshed?.accessToken) {
-      console.log(`[weavy-proxy] JWT → refreshed OK, email=${extractEmailFromJwt(refreshed.accessToken)}`)
+      console.log(`[weavy-proxy] JWT → refreshed OK, newEmail=${extractEmailFromJwt(refreshed.accessToken)}`)
       return { accessToken: refreshed.accessToken, refreshToken: refreshed.refreshToken, email: extractEmailFromJwt(refreshed.accessToken) || email || undefined }
     }
-    console.log(`[weavy-proxy] JWT → refresh FAILED, using raw token`)
+    console.log(`[weavy-proxy] JWT → refresh FAILED, using raw JWT token (may be expired)`)
     return { accessToken: token, email: email || undefined }
   }
 
+  console.log(`[weavy-proxy] RefreshToken detected, trying refresh...`)
   const refreshed = await refreshWeavyToken(token)
   if (refreshed?.accessToken) {
     console.log(`[weavy-proxy] refreshToken → refreshed OK, email=${extractEmailFromJwt(refreshed.accessToken)}`)
@@ -269,6 +271,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (action === 'image-execute') {
       const { recipeId, nodes, edges, numberOfRuns } = req.body || {}
       if (!recipeId) return res.status(400).json({ ok: false, error: 'Missing recipeId' })
+      console.log(`[weavy-proxy] image-execute: recipeId=${recipeId} nodes=${nodes?.length} edges=${edges?.length}`)
       const r = await fetch(`${WEAVY_API}/v1/batches/recipes/${recipeId}/execute`, {
         method: 'POST',
         headers: authHeaders,
@@ -278,7 +281,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const text = await r.text()
       let data: any; try { data = JSON.parse(text) } catch { data = null }
       console.log(`[weavy-proxy] image-execute → ${r.status}`, text.slice(0, 500))
-      if (!r.ok || !data) return res.status(r.status || 500).json({ ok: false, error: data?.error || text.slice(0, 200) || `HTTP ${r.status}` })
+      if (!r.ok || !data) return res.status(r.status || 500).json({ ok: false, error: data?.error || text.slice(0, 500) || `HTTP ${r.status}` })
       const batchId = data?.batchId || data?.id
       if (!batchId) return res.status(500).json({ ok: false, error: 'No batchId returned', data })
       return res.status(200).json({ ok: true, data: { batchId, ...data } })
