@@ -6,7 +6,7 @@ import { Image, Upload, Rocket, Loader2, Trash2, Zap, Key, ExternalLink, Downloa
 import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
 import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
-import { uploadToCatbox, submitGoogleOmni, submitRoboneoI2V, pollMotionControl, compressVideo, normalizeImage } from '@/lib/roboneo'
+import { uploadToCatbox, submitGoogleOmni, submitRoboneoI2V, pollMotionControl, compressVideo, normalizeImage, checkRoboneoBalance } from '@/lib/roboneo'
 import { generateWithFramia } from '@/lib/framia'
 import { runLeonardoVideo } from '@/lib/leonardo'
 import { LEONARDO_VIDEO_MODELS, leonardoVideoQualityOptions } from '@/lib/leonardo-video'
@@ -314,6 +314,7 @@ export default function ImageToVideoPage() {
     }
   })
   const [status, setStatus] = useState({ show: false, text: '', pct: 0, time: '' })
+  const [compressDialog, setCompressDialog] = useState<{ msg: string; pct?: number } | null>(null)
   const [generating, setGenerating] = useState(() => getActiveTasks().filter((t) => t.page === 'image-to-video').length > 0)
   const [logs, setLogs] = useState<Array<{ time: string; msg: string; level: string }>>(() => getLogs())
   const generatingRef = useRef(false)
@@ -694,46 +695,67 @@ export default function ImageToVideoPage() {
         } else {
           throw new Error(rotation.error || 'Generation failed')
         }
-      } else if (provider === 'roboneo') {
-        if (!imgFile) {
-          addLog('❌ Roboneo membutuhkan gambar input', 'error', 'roboneo')
-          throw new Error('No image provided')
-        }
+       } else if (provider === 'roboneo') {
+         if (!imgFile) {
+           addLog('❌ Roboneo membutuhkan gambar input', 'error', 'roboneo')
+           throw new Error('No image provided')
+         }
 
-        addLog(`[1/3] 🖼️ Normalizing image...`, 'info', 'roboneo')
-        setStatus((s) => ({ ...s, text: 'Normalize & upload image...', pct: 10 }))
-        const normalizedFile = await normalizeImage(imgFile)
-        addLog(`[1/3] 📤 Uploading image...`, 'info', 'roboneo')
-        const imageUrl = await uploadToCatbox(normalizedFile)
-        addLog(`[1/3] ✅ Image uploaded ✓`, 'success', 'roboneo')
+         addLog(`[1/3] 🖼️ Normalizing image...`, 'info', 'roboneo')
+         setStatus((s) => ({ ...s, text: 'Normalize & upload image...', pct: 10 }))
+         const normalizedFile = await normalizeImage(imgFile, (msg, pct) => {
+           if (pct !== undefined) {
+             setCompressDialog({ msg, pct })
+           }
+         })
+         setCompressDialog(null)
+         addLog(`[1/3] 📤 Uploading image...`, 'info', 'roboneo')
+         const imageUrl = await uploadToCatbox(normalizedFile)
+         addLog(`[1/3] ✅ Image uploaded ✓`, 'success', 'roboneo')
 
-        const rotation = await withTokenRotation<{ videoUrl: string; taskId: string; roomId: string }>(
-          'roboneo',
-          async (apiKey, keyInfo) => {
-            const tokenIdx = keys.roboneo?.findIndex(k => k.key === apiKey) ?? 0
-            const totalTokens = keys.roboneo?.length || 0
-            addLog(`🔑 Trying key: ${keyInfo.name || keyInfo.id} (${tokenIdx + 1}/${totalTokens})`, 'info', 'roboneo')
-            setStatus((s) => ({ ...s, text: `Submit Roboneo ${model} (token ${tokenIdx + 1}/${totalTokens})...`, pct: 15 }))
+         const rotation = await withTokenRotation<{ videoUrl: string; taskId: string; roomId: string }>(
+           'roboneo',
+           async (apiKey, keyInfo) => {
+             const tokenIdx = keys.roboneo?.findIndex(k => k.key === apiKey) ?? 0
+             const totalTokens = keys.roboneo?.length || 0
+             addLog(`🔑 Trying key: ${keyInfo.name || keyInfo.id} (${tokenIdx + 1}/${totalTokens})`, 'info', 'roboneo')
+             setStatus((s) => ({ ...s, text: `Submit Roboneo ${model} (token ${tokenIdx + 1}/${totalTokens})...`, pct: 15 }))
 
-            const resolution = currentQuality?.resolution || quality?.match(/(\d+p)/)?.[1]
-            const soundEnabled = currentQuality?.sound || (quality?.includes('on') || quality?.includes('audio') ? 'on' : 'off')
-            const videoDuration = currentQuality?.duration || 10
+             const balanceResult = await checkRoboneoBalance(apiKey)
+             if (!balanceResult.ok) {
+               addLog(`Balance check: ${balanceResult.error}`, 'warn', 'roboneo')
+               throw new Error(`Token Roboneo tidak valid: ${balanceResult.error}`)
+             }
+             if (balanceResult.isValidUser === false) {
+               throw new Error('Token Roboneo tidak valid (is_valid_user=false). Silakan update token.')
+             }
+             if (balanceResult.balance !== null && balanceResult.balance <= 0) {
+               throw new Error('Balance kosong! Tidak ada credit untuk generate.')
+             }
+             if (balanceResult.balance !== null && balanceResult.balance < totalCredits) {
+               throw new Error(`Balance tidak cukup! Butuh ${totalCredits} credit, hanya ada ${balanceResult.balance}.`)
+             }
+             addLog(`💰 Balance: ${balanceResult.balance ?? 'unknown'} credits`, 'info', 'roboneo')
 
-            addLog(`[2/3] 🚀 Submitting to Roboneo ${model}...`, 'info', 'roboneo')
-            addLog(`   → resolution: ${resolution || 'default'}`, 'debug', 'roboneo')
-            addLog(`   → sound: ${soundEnabled} | duration: ${videoDuration}s`, 'debug', 'roboneo')
-            const { taskId, roomId, nodeId } = await submitRoboneoI2V({
-              accessToken: apiKey,
-              imageUrl,
-              prompt: prompt.trim() || undefined,
-              modelKey: model,
-              ratio,
-              duration: videoDuration,
-              resolution,
-              sound: soundEnabled,
-              quality,
-            })
-            addLog(`[2/3] ✅ Task created ✓ id=${taskId.slice(0, 20)}...`, 'success', 'roboneo')
+             const resolution = currentQuality?.resolution || quality?.match(/(\d+p)/)?.[1]
+             const soundEnabled = currentQuality?.sound || (quality?.includes('on') || quality?.includes('audio') ? 'on' : 'off')
+             const videoDuration = currentQuality?.duration || 10
+
+             addLog(`[2/3] 🚀 Submitting to Roboneo ${model}...`, 'info', 'roboneo')
+             addLog(`   → resolution: ${resolution || 'default'}`, 'debug', 'roboneo')
+             addLog(`   → sound: ${soundEnabled} | duration: ${videoDuration}s`, 'debug', 'roboneo')
+             const { taskId, roomId, nodeId } = await submitRoboneoI2V({
+               accessToken: apiKey,
+               imageUrl,
+               prompt: prompt.trim() || undefined,
+               modelKey: model,
+               ratio,
+               duration: videoDuration,
+               resolution,
+               sound: soundEnabled,
+               quality,
+             })
+             addLog(`[2/3] ✅ Task created ✓ id=${taskId.slice(0, 20)}...`, 'success', 'roboneo')
 
             addActiveTask({
               id: taskId,
@@ -1128,6 +1150,7 @@ export default function ImageToVideoPage() {
        setStatus((s) => ({ ...s, pct: 100, text: `❌ Error: ${err.message}` }))
     } finally {
       clearInterval(timer)
+      setCompressDialog(null)
       const wasGenerating = generatingRef.current
       setGenerating(false)
       generatingRef.current = false
@@ -1424,31 +1447,50 @@ export default function ImageToVideoPage() {
             </div>
 
             {status.show && (
-              <div className="mt-4 rounded-xl border border-border/70 bg-card/40 p-3">
-                <div className="flex justify-between items-center text-xs mb-1">
-                  <span>{status.text}</span>
-                  <span className="font-mono text-muted-foreground">{status.time}</span>
-                </div>
-                <div className="h-1 rounded-full bg-border overflow-hidden">
-                  <div
-                    className="h-full transition-all bg-primary"
-                    style={{ width: `${status.pct}%` }}
-                  />
-                </div>
-                {!generating && status.pct === 100 && results.length > 0 && (
-                  <Button
-                    size="sm"
-                    className="w-full mt-3"
-                    onClick={handleGenerate}
-                  >
-                    <Rocket className="h-4 w-4" /> Generate Lagi
-                  </Button>
-                )}
-              </div>
-            )}
-          </Section>
-        </div>
-      </div>
+               <div className="mt-4 rounded-xl border border-border/70 bg-card/40 p-3">
+                 <div className="flex justify-between items-center text-xs mb-1">
+                   <span>{status.text}</span>
+                   <span className="font-mono text-muted-foreground">{status.time}</span>
+                 </div>
+                 <div className="h-1 rounded-full bg-border overflow-hidden">
+                   <div
+                     className="h-full transition-all bg-primary"
+                     style={{ width: `${status.pct}%` }}
+                   />
+                 </div>
+                 {!generating && status.pct === 100 && results.length > 0 && (
+                   <Button
+                     size="sm"
+                     className="w-full mt-3"
+                     onClick={handleGenerate}
+                   >
+                     <Rocket className="h-4 w-4" /> Generate Lagi
+                   </Button>
+                 )}
+               </div>
+             )}
+ 
+             {compressDialog && (
+               <div role="dialog" aria-modal="true" aria-live="polite" className="absolute inset-0 z-30 flex items-center justify-center rounded-2xl bg-background/70 backdrop-blur-sm">
+                 <div className="w-[min(360px,90%)] rounded-2xl border border-primary/40 bg-card/95 p-5 shadow-2xl shadow-primary/20">
+                   <div className="flex items-center gap-3">
+                     <Loader2 className="h-5 w-5 shrink-0 animate-spin text-primary" />
+                     <div className="font-display text-sm text-foreground">Mengompres file.</div>
+                   </div>
+                   <div className="mt-3 text-xs text-muted-foreground break-words">{compressDialog.msg}</div>
+                   <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                     <div
+                       className={`h-full bg-primary transition-all ${typeof compressDialog.pct === 'number' ? '' : 'animate-pulse'}`}
+                       style={{ width: typeof compressDialog.pct === 'number' ? `${Math.max(0, Math.min(100, compressDialog.pct))}%` : '100%' }}
+                     />
+                   </div>
+                   <div className="mt-3 text-[10px] uppercase tracking-widest text-muted-foreground text-center">Mohon tunggu sampai proses selesai</div>
+                 </div>
+               </div>
+             )}
+           </Section>
+         </div>
+       </div>
 
       {/* Logs */}
       {logs.length > 0 && (
