@@ -37,6 +37,12 @@ export function isRoboneoCreditError(error: any): boolean {
   return /insufficient|balance|credit|quota|charge|CHARGE_FAILED|余额不足|余额不够|积分不足|账户余额|欠费|payment.?required|charge.?failed|no output URL|output tidak ditemukan|URL output tidak ditemukan|credit\/quota habis/i.test(msg)
 }
 
+export function isLeonardoCreditError(error: any): boolean {
+  if (!error) return false
+  const msg = typeof error === 'string' ? error : error?.message || ''
+  return /insufficient|not enough|out of|balance|quota|exhaust|credit|payment|charge|402|apiCreditCost/i.test(msg)
+}
+
 export function isCreatePulseTokenError(error: any): boolean {
   if (!error) return false
   const msg = typeof error === 'string' ? error : error?.message || ''
@@ -63,7 +69,7 @@ export function detectTokenError(provider: ProviderId, error: any): boolean {
     case 'weavy': return isWeavyTokenError(error)
     case 'magnific': return isMagnificTokenError(error)
     case 'firefly': return /401|403|expired|unauthorized|invalid.*token/i.test(String(error?.message || error))
-    case 'leonardo': return /credit|insufficient|not enough|out of|balance|quota|exhaust|limit|too many|rate.?limit|402|401|403|unauthor|forbidden|expired|invalid.*token|token.*invalid|500|502|503|504|server error|network|fetch|timeout|graphql/i.test(String(error?.message || error))
+    case 'leonardo': return /insufficient|not enough|out of|balance|quota|exhaust|limit|too many|rate.?limit|402|401|403|unauthor|forbidden|expired|invalid.*token|token.*invalid|500|502|503|504|server error|network|fetch|timeout|graphql/i.test(String(error?.message || error))
     default: return isTokenError(error)
   }
 }
@@ -218,6 +224,14 @@ export async function withTokenRotation<T>(
       if (detectTokenError(provider, err)) {
         if (provider === 'roboneo') {
           if (isRoboneoCreditError(err)) {
+            useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'empty')
+            console.log(`[token-rotation] ${provider} key "${nextKey.name}" credit/quota habis (${err.message}). Marking empty, trying next...`)
+          } else {
+            useProviderManager.getState().removeKey(provider, nextKey.id)
+            console.log(`[token-rotation] ${provider} key "${nextKey.name}" removed - auth error (${err.message}). Trying next...`)
+          }
+        } else if (provider === 'leonardo') {
+          if (isLeonardoCreditError(err)) {
             useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'empty')
             console.log(`[token-rotation] ${provider} key "${nextKey.name}" credit/quota habis (${err.message}). Marking empty, trying next...`)
           } else {
