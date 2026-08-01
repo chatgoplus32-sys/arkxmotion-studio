@@ -314,7 +314,10 @@ export default function MotionPage() {
                 }
                 updateSlotStatus(slot.id, 'uploading vid...')
                 addLog(`#${slotNum} Upload video...`)
-                const videoFile = await compressVideo(slot.video, 4)
+                const videoFile = await compressVideo(slot.video, 4, (msg, pct) => {
+                  updateSlotStatus(slot.id, 'uploading vid...', msg)
+                  addLog(`#${slotNum} ${msg}`)
+                })
                 motionVideoUrl = await uploadToCatbox(videoFile, 'video')
                 addLog(`#${slotNum} Video: ${motionVideoUrl.slice(0, 60)}...`)
 
@@ -492,18 +495,73 @@ export default function MotionPage() {
 
   const handleDownload = useCallback(async (url: string, id: string) => {
     try {
-      const proxyUrl = `/api/public/video-proxy?url=${encodeURIComponent(url)}`
-      const res = await fetch(proxyUrl)
-      const blob = await res.blob()
+      let blob: Blob | null = null
+      try {
+        const res = await fetch(url, { mode: 'cors' })
+        if (res.ok) blob = await res.blob()
+      } catch {}
+      if (!blob) {
+        const res = await fetch(`/api/public/video-proxy?url=${encodeURIComponent(url)}`)
+        if (res.ok) blob = await res.blob()
+      }
+      if (!blob) throw Error('Download gagal')
       const a = document.createElement('a')
       a.href = URL.createObjectURL(blob)
       a.download = `motion-${id}.mp4`
+      document.body.appendChild(a)
       a.click()
-      URL.revokeObjectURL(a.href)
+      document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000)
     } catch {
       window.open(url, '_blank')
     }
   }, [])
+
+  const [zipping, setZipping] = useState(false)
+
+  const handleExportZip = useCallback(async () => {
+    if (filteredResults.length === 0 || zipping) return
+    setZipping(true)
+    try {
+      const JSZip = (await import('jszip')).default
+      const zip = new JSZip()
+      let count = 0
+      for (const result of filteredResults) {
+        count++
+        try {
+          let blob: Blob | null = null
+          try {
+            const res = await fetch(result.url, { mode: 'cors' })
+            if (res.ok) blob = await res.blob()
+          } catch {}
+          if (!blob) {
+            const res = await fetch(`/api/public/proxy-image?url=${encodeURIComponent(result.url)}`)
+            if (res.ok) blob = await res.blob()
+          }
+          if (blob) {
+            const name = `motion-${String(count).padStart(2, '0')}-${result.id}.mp4`
+            zip.file(name, blob)
+          }
+        } catch {}
+      }
+      if (Object.keys(zip.files).length === 0) {
+        addToast('Gagal download video untuk ZIP', 'error')
+        return
+      }
+      const content = await zip.generateAsync({ type: 'blob' })
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(content)
+      a.download = `motion-gallery-${new Date().toISOString().slice(0, 10)}.zip`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000)
+    } catch (err: any) {
+      addToast(`ZIP error: ${err.message}`, 'error')
+    } finally {
+      setZipping(false)
+    }
+  }, [filteredResults, zipping, addToast])
 
   const filteredResults = results.filter(
     (r) => !searchQuery || r.prompt.toLowerCase().includes(searchQuery.toLowerCase())
@@ -723,6 +781,16 @@ export default function MotionPage() {
             <Button
               size="sm"
               variant="outline"
+              onClick={handleExportZip}
+              disabled={results.length === 0 || zipping}
+              className="text-xs"
+            >
+              {zipping ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Download className="h-3.5 w-3.5 mr-1" />}
+              {zipping ? 'Zipping…' : 'Export ZIP'}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
               onClick={() => { setResults([]); clearResults(); setLogs([]); clearLogs() }}
               disabled={results.length === 0}
               className="text-xs"
@@ -757,7 +825,8 @@ export default function MotionPage() {
                 >
                   <div className="aspect-video bg-black/40 relative">
                     <video
-                      src={/meitudata\.com|localhost/i.test(result.url) ? `/api/public/video-proxy?url=${encodeURIComponent(result.url)}` : result.url}
+                      src={result.url}
+                      crossOrigin="anonymous"
                       className="w-full h-full object-contain"
                       controls
                       muted

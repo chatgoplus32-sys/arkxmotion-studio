@@ -91,12 +91,24 @@ export async function normalizeImage(file: File): Promise<File> {
   return file
 }
 
-export async function compressVideo(file: File, maxMb = 4): Promise<File> {
+export async function compressVideo(file: File, maxMb = 4, onProgress?: (msg: string, pct?: number) => void): Promise<File> {
   if (file.size <= maxMb * 1024 * 1024) {
     console.log(`[upload] video ${(file.size / 1024 / 1024).toFixed(1)}MB <= ${maxMb}MB, using original`)
     return file
   }
-  console.log(`[upload] video ${(file.size / 1024 / 1024).toFixed(1)}MB > ${maxMb}MB, re-encoding to mp4`)
+  console.log(`[upload] video ${(file.size / 1024 / 1024).toFixed(1)}MB > ${maxMb}MB, compressing with FFmpeg...`)
+  try {
+    const { compressVideoFFmpeg } = await import('./ffmpeg-compress')
+    const result = await compressVideoFFmpeg(file, maxMb * 1024 * 1024, onProgress)
+    console.log(`[upload] compressed ${(file.size / 1024 / 1024).toFixed(1)}MB → ${(result.size / 1024 / 1024).toFixed(1)}MB`)
+    return result.size < file.size ? result : file
+  } catch (err: any) {
+    console.warn(`[upload] FFmpeg compression failed: ${err.message}, using MediaRecorder fallback`)
+    return compressVideoFallback(file, maxMb)
+  }
+}
+
+function compressVideoFallback(file: File, maxMb: number): Promise<File> {
   return new Promise<File>((resolve) => {
     const video = document.createElement('video')
     video.muted = true
@@ -121,7 +133,7 @@ export async function compressVideo(file: File, maxMb = 4): Promise<File> {
         const blob = new Blob(chunks, { type: mimeType })
         const out = new File([blob], file.name.replace(/\.[^.]+$/, '.mp4'), { type: 'video/mp4' })
         URL.revokeObjectURL(video.src)
-        console.log(`[upload] re-encoded ${(file.size / 1024 / 1024).toFixed(1)}MB → ${(out.size / 1024 / 1024).toFixed(1)}MB`)
+        console.log(`[upload] fallback re-encoded ${(file.size / 1024 / 1024).toFixed(1)}MB → ${(out.size / 1024 / 1024).toFixed(1)}MB`)
         resolve(out.size < file.size ? out : file)
       }
       recorder.onerror = () => { URL.revokeObjectURL(video.src); resolve(file) }
