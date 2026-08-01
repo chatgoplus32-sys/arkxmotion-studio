@@ -328,7 +328,7 @@ export default function MotionPage() {
                   imageUrl,
                   videoUrl: motionVideoUrl,
                   prompt: prompt.trim() || undefined,
-                  quality: 'std',
+                  quality: modelKey.split(':')[2] || 'std',
                   orientation,
                 })
                 taskId = result.taskId
@@ -388,7 +388,7 @@ export default function MotionPage() {
                         imageUrl,
                         videoUrl: motionVideoUrl,
                         prompt: prompt.trim() || undefined,
-                        quality: 'std',
+                        quality: modelKey.split(':')[2] || 'std',
                         orientation,
                       })
                       taskId = retry.taskId
