@@ -295,6 +295,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ ok: true, data: { batchId, ...data } })
     }
 
+    // Direct execute without recipe creation (bypass Cloudflare on /recipes/create)
+    if (action === 'image-direct-execute') {
+      const { nodes, edges, numberOfRuns } = req.body || {}
+      console.log(`[weavy-proxy] image-direct-execute: nodes=${nodes?.length} edges=${edges?.length}`)
+      const r = await fetch(`${WEAVY_API}/v1/batches/recipes/execute`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ nodes: nodes || [], edges: edges || [], numberOfRuns: numberOfRuns || 1 }),
+        signal: AbortSignal.timeout(60000),
+      })
+      const text = await r.text()
+      let data: any; try { data = JSON.parse(text) } catch { data = null }
+      console.log(`[weavy-proxy] image-direct-execute → ${r.status}`, text.slice(0, 500))
+      if (!r.ok || !data) return res.status(r.status || 500).json({ ok: false, error: data?.error || text.slice(0, 500) || `HTTP ${r.status}` })
+      const batchId = data?.batchId || data?.id
+      if (!batchId) return res.status(500).json({ ok: false, error: 'No batchId returned', data })
+      return res.status(200).json({ ok: true, data: { batchId, ...data } })
+    }
+
     if (action === 'image-status') {
       const { recipeId, batchId } = req.body || {}
       if (!recipeId || !batchId) return res.status(400).json({ ok: false, error: 'Missing recipeId or batchId' })

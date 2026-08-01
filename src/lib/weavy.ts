@@ -387,7 +387,7 @@ export async function submitWeavyImage(params: WeavyImageGenerateParams): Promis
 
 export async function pollWeavyImageStatus(token: string, taskId: string, onProgress?: (status: string, pct: number) => void, timeoutMs = 600000): Promise<string> {
   const startTime = Date.now(); let lastLog = ''
-  const [recipeId, batchId] = taskId.split(':')
+  const batchId = taskId.includes(':') ? taskId.split(':')[1] : taskId
   let attempt = 0
   const maxAttempts = Math.ceil(timeoutMs / 5000)
 
@@ -396,7 +396,7 @@ export async function pollWeavyImageStatus(token: string, taskId: string, onProg
     const pollInterval = attempt < 30 ? 8000 : attempt < 60 ? 10000 : 15000
     await new Promise((r) => setTimeout(r, pollInterval))
     try {
-      const res = await fetch(WEAVY_PROXY, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Weavy-Token': token }, body: JSON.stringify({ action: 'image-status', recipeId, batchId }) })
+      const res = await fetch(WEAVY_PROXY, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Weavy-Token': token }, body: JSON.stringify({ action: 'status', batchId }) })
       const data = await res.json().catch(() => null)
       if (!res.ok || !data?.ok) { console.log(`[weavy-image] poll error:`, data?.error || `HTTP ${res.status}`); continue }
       const result = data?.data
@@ -629,13 +629,6 @@ async function submitWeavyBulkOne(token: string, params: WeavyBulkOneParams): Pr
     const charDataUrl = await fileToDataUrl(params.charFile)
     const outfitDataUrl = await fileToDataUrl(params.outfitFile)
 
-    const createRes = await fetch(WEAVY_PROXY, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Weavy-Token': token }, body: JSON.stringify({ action: 'image-create-recipe' }) })
-    const createData = await createRes.json().catch(() => null)
-    if (!createRes.ok || !createData?.ok) return { ok: false, error: createData?.error || `Create recipe failed (${createRes.status})`, raw: createData }
-    const recipeId = createData?.data?.recipeId
-    const v3 = createData?.data?.v3
-    if (!recipeId) return { ok: false, error: 'No recipeId returned', raw: createData }
-
     const nodes = buildBulkFashionNodes(params.modelKey, params.prompt, params.quality, params.ratio, charDataUrl, outfitDataUrl)
     const extraNodes = nodes._extraNodes || []
     const extraEdges = nodes._extraEdges || []
@@ -643,19 +636,12 @@ async function submitWeavyBulkOne(token: string, params: WeavyBulkOneParams): Pr
     const modelNode = { id: nodes.id, type: nodes.type, data: nodes.data, position: { x: 600, y: 300 }, width: 460, height: 500 }
     const allNodes = [...extraNodes, modelNode]
 
-    const saveRes = await fetch(WEAVY_PROXY, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Weavy-Token': token }, body: JSON.stringify({ action: 'image-save-recipe', recipeId, nodes: allNodes, edges, v3 }) })
-    const saveData = await saveRes.json().catch(() => null)
-    if (!saveRes.ok || !saveData?.ok) return { ok: false, error: saveData?.error || `Save recipe failed (${saveRes.status})`, raw: saveData }
-
-    const modelName = nodes.data?.model?.name || params.modelKey
-    await fetch(WEAVY_PROXY, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Weavy-Token': token }, body: JSON.stringify({ action: 'image-approve-model', modelId: modelName }) })
-
-    const execRes = await fetch(WEAVY_PROXY, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Weavy-Token': token }, body: JSON.stringify({ action: 'image-execute', recipeId, nodes: allNodes, edges, numberOfRuns: 1 }) })
+    const execRes = await fetch(WEAVY_PROXY, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Weavy-Token': token }, body: JSON.stringify({ action: 'image-direct-execute', nodes: allNodes, edges, numberOfRuns: 1 }) })
     const execData = await execRes.json().catch(() => null)
     if (!execRes.ok || !execData?.ok) return { ok: false, error: execData?.error || `Execute failed (${execRes.status})`, raw: execData }
     const batchId = execData?.data?.batchId || execData?.data?.id
     if (!batchId) return { ok: false, error: 'No batchId in response', raw: execData }
-    return { ok: true, taskId: `${recipeId}:${batchId}`, raw: execData }
+    return { ok: true, taskId: batchId, raw: execData }
   } catch (err: any) { return { ok: false, error: err.message } }
 }
 
