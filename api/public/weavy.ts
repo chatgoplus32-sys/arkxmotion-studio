@@ -67,6 +67,11 @@ async function resolveAccessToken(token: string): Promise<{ accessToken: string;
 }
 
 async function fetchWeavyCredits(accessToken: string): Promise<number | null> {
+  const headers = {
+    Authorization: `Bearer ${accessToken}`,
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    'Accept': 'application/json, text/plain, */*',
+  }
   const endpoints = [
     `${WEAVY_API}/v1/credits`,
     `${WEAVY_API}/v1/user/credits`,
@@ -79,7 +84,7 @@ async function fetchWeavyCredits(accessToken: string): Promise<number | null> {
   for (const url of endpoints) {
     try {
       const r = await fetch(url, {
-        headers: { Authorization: `Bearer ${accessToken}` },
+        headers,
         signal: AbortSignal.timeout(8000),
       })
       const text = await r.text().catch(() => '')
@@ -102,7 +107,7 @@ async function fetchWeavyCredits(accessToken: string): Promise<number | null> {
 
   try {
     const r = await fetch(`${WEAVY_API}/v1/workspaces`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers,
       signal: AbortSignal.timeout(8000),
     })
     const text = await r.text().catch(() => '')
@@ -143,6 +148,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const authHeaders = {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      'Accept': 'application/json, text/plain, */*',
+      'Accept-Language': 'en-US,en;q=0.9',
     }
 
     if (action === 'balance') {
