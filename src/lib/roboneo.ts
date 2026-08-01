@@ -380,6 +380,102 @@ export async function checkRoboneoBalance(accessToken: string): Promise<{ ok: bo
   }
 }
 
+export async function checkRoboneoTokensBatch(tokens: string[]): Promise<
+  Array<{ token: string; balance: number | null; isValidUser: boolean; error?: string; ok: boolean }>
+> {
+  const results = await Promise.all(
+    tokens.map(async (token) => {
+      try {
+        const res = await fetch(`/api/public/roboneo-membership`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Roboneo-Token': token,
+          },
+        })
+
+        const data = await res.json().catch(() => null)
+
+        if (!data?.ok) {
+          const errMsg = data?.message || data?.error || `HTTP ${data?.status ?? res.status}`
+          const rawHint = data?.raw ? ` — ${data.raw.slice(0, 200)}` : ''
+          return { token, ok: false, balance: null, isValidUser: false, error: `${errMsg}${rawHint}` }
+        }
+
+        const gatewayData = data?.data
+        const innerData = gatewayData?.data ?? gatewayData?.result ?? gatewayData
+
+        const errorCode = gatewayData?.error_code ?? innerData?.error_code ?? innerData?.code
+        if (errorCode && errorCode !== 0) {
+          const errMsg = gatewayData?.error_msg || innerData?.error_msg || innerData?.message || `error_code=${errorCode}`
+          return { token, ok: false, balance: null, isValidUser: false, error: errMsg }
+        }
+
+        const isValidUser = innerData?.is_valid_user !== false
+        if (!isValidUser) {
+          return { token, ok: false, balance: null, isValidUser: false, error: 'Token tidak valid (is_valid_user=false)' }
+        }
+
+        function findInDetailList(obj: any, pattern: RegExp): number | null {
+          if (!obj || typeof obj !== 'object') return null
+          const detailList = obj.detail_list
+          if (Array.isArray(detailList)) {
+            for (const item of detailList) {
+              if (!item || typeof item !== 'object') continue
+              const title = String(item.title ?? '')
+              if (!pattern.test(title)) continue
+              const balanceList = item.meiye_balance_list
+              if (Array.isArray(balanceList)) {
+                for (const bal of balanceList) {
+                  if (!bal || typeof bal !== 'object') continue
+                  const leftInfo = bal.left_info
+                  if (typeof leftInfo === 'number') return leftInfo
+                  if (typeof leftInfo === 'string') {
+                    const cleaned = leftInfo.replace(/,/g, '').trim()
+                    if (/^-?\d+(\.\d+)?$/.test(cleaned)) return Number(cleaned)
+                  }
+                }
+              }
+            }
+          }
+          return null
+        }
+
+        function findValueByKey(obj: any, keys: string[]): number | null {
+          if (!obj || typeof obj !== 'object') return null
+          for (const [k, v] of Object.entries(obj)) {
+            const kl = k.toLowerCase()
+            if (keys.some((target) => kl === target || kl.includes(target))) {
+              if (typeof v === 'number') return v
+              if (typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v)) return Number(v)
+            }
+          }
+          for (const v of Object.values(obj)) {
+            if (v && typeof v === 'object') {
+              const found = findValueByKey(v, keys)
+              if (found !== null) return found
+            }
+          }
+          return null
+        }
+
+        const resultData = innerData
+        const cyberBalance = findInDetailList(resultData, /cyber|carrot/i)
+        const dailyBalance = findInDetailList(resultData, /daily|free/i)
+        const freeCredit = findValueByKey(resultData, ['free_credit', 'free_amount', 'daily_free', 'free']) ?? dailyBalance
+        const vipCredit = findValueByKey(resultData, ['vip_credit', 'vip_amount', 'vip'])
+        const totalCredit = findValueByKey(resultData, ['total_amount', 'total_credit', 'credit_balance', 'balance', 'credit', 'remain', 'point', 'coin', 'energy', 'quota']) ?? cyberBalance ?? ((freeCredit ?? 0) + (vipCredit ?? 0) || null)
+
+        return { token, ok: true, balance: totalCredit, isValidUser: true }
+      } catch (err: any) {
+        return { token, ok: false, balance: null, isValidUser: false, error: err.message }
+      }
+    })
+  )
+
+  return results
+}
+
 export async function submitMotionControl(params: {
   accessToken: string
   imageUrl: string

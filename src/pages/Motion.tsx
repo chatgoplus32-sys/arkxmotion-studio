@@ -187,6 +187,45 @@ export default function MotionPage() {
 
     const isRoboneo = provider === 'roboneo'
 
+    // Validate all slots comprehensively before generating
+    const validationErrors: string[] = []
+    const slotValidations: Array<{ id: string; index: number; error?: string }> = []
+    
+    for (let i = 0; i < slots.length; i++) {
+      const slot = slots[i]
+      const slotNum = i + 1
+      
+      // Check slot requirements based on model
+      if (isOmni) {
+        if (!slot.image) {
+          validationErrors.push(`#${slotNum} - Referensi #${slotNum}: Harap upload gambar untuk Google Omni`)
+          slotValidations.push({ id: slot.id, index: i, error: 'Harap upload gambar' })
+        }
+      } else {
+        if (!slot.image) {
+          validationErrors.push(`#${slotNum} - Referensi #${slotNum}: Harap upload gambar (motion control)`)
+          slotValidations.push({ id: slot.id, index: i, error: 'Harap upload gambar' })
+        }
+        if (!slot.video) {
+          validationErrors.push(`#${slotNum} - Referensi #${slotNum}: Harap upload video referensi`
+            + (slot.image ? '' : ', dan gambar'))
+          slotValidations.push({ id: slot.id, index: i, error: 'Harap upload video referensi' })
+        }
+      }
+      
+      // Update slot validation status
+      if (slotValidations.some(v => v.id === slot.id)) {
+        updateSlotStatus(slot.id, 'error', slotValidations.find(v => v.id === slot.id)?.error)
+      }
+    }
+    
+    if (validationErrors.length > 0) {
+      addLog(`❌ Validasi gagal: ${validationErrors.length} slot perlu diperbaiki`, 'error')
+      validationErrors.forEach(err => addLog(err, 'error'))
+      addToast('Harap perbaiki slot yang ditandai error terlebih dahulu', 'error')
+      return
+    }
+
     setGenerating(true)
     successRef.current = false
     generatingRef.current = true
@@ -437,8 +476,8 @@ export default function MotionPage() {
     }
 
      } catch (genErr: any) {
-       addLog(`Generation error: ${genErr.message}`, 'error')
-       addToast(`Generate gagal: ${genErr.message}`, 'error')
+      addLog(`Generation error: ${genErr.message}`, 'error')
+      addToast(`Generate gagal: ${genErr.message}`, 'error')
     } finally {
       if (generatingRef.current && successRef.current) {
         addToast(`Generate selesai: ${currentProvider.name} · ${currentModel.label}`, 'success')
