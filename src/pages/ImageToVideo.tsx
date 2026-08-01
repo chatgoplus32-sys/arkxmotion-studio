@@ -8,7 +8,7 @@ import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { uploadToCatbox, submitGoogleOmni, submitRoboneoI2V, pollMotionControl, compressVideo, normalizeImage, checkRoboneoBalance } from '@/lib/roboneo'
 import { generateWithFramia } from '@/lib/framia'
-import { runLeonardoVideo, fetchLeonardoBalance } from '@/lib/leonardo'
+import { runLeonardoVideo } from '@/lib/leonardo'
 import { LEONARDO_VIDEO_MODELS, leonardoVideoQualityOptions } from '@/lib/leonardo-video'
 import { submitWeavyVideo, pollWeavyStatus, checkWeavyBalance } from '@/lib/weavy'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
@@ -973,52 +973,40 @@ export default function ImageToVideoPage() {
          addLog(`[1/1] 🎨 Submitting to Leonardo...`, 'info', 'leonardo')
          setStatus((s) => ({ ...s, text: 'Submitting...', pct: 5 }))
 
-         const rotation = await withTokenRotation<string>(
-           'leonardo',
-           async (apiKey, keyInfo) => {
-             addLog(`🔑 Key: ${keyInfo.name || keyInfo.id}`, 'info', 'leonardo')
+        const rotation = await withTokenRotation<string>(
+          'leonardo',
+          async (apiKey, keyInfo) => {
+            addLog(`🔑 Key: ${keyInfo.name || keyInfo.id}`, 'info', 'leonardo')
 
-             const balanceResult = await fetchLeonardoBalance(apiKey)
-             if (!balanceResult.ok) {
-               addLog(`Balance check: ${balanceResult.message}`, 'warn', 'leonardo')
-               throw new Error(`Token Leonardo tidak valid: ${balanceResult.message}`)
+            const videoUrl = await runLeonardoVideo({
+             token: apiKey,
+             modelKey: model,
+             prompt: prompt.trim(),
+             aspectRatio: ratio,
+             sizeTier: currentQuality?.sizeTier,
+             duration: currentQuality?.duration || 5,
+             imageFile: imgFile || undefined,
+             onProgress: (text, pct) => {
+               addLog(text, 'info', 'leonardo')
+               if (pct !== undefined) setStatus((s) => ({ ...s, text, pct }))
+             },
+             onRotate: (idx, total, reason) => {
+               addLog(`🔄 Token #${idx}/${total} — ${reason}`, 'warn', 'leonardo')
+             },
+           })
+           return videoUrl
+         },
+         {
+           requiredCredits: totalCredits,
+           onKeySwitch: (from, to, attempt) => {
+             addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn', 'leonardo')
+           },
+           onError: (err, key) => {
+             if (detectTokenError('leonardo', err)) {
+               addLog(`⚠️ Key "${key.name}" is invalid: ${err.message}`, 'warn', 'leonardo')
              }
-             if (balanceResult.balance !== null && balanceResult.balance <= 0) {
-               throw new Error('Balance kosong! Tidak ada credit untuk generate.')
-             }
-             if (balanceResult.balance !== null && balanceResult.balance < totalCredits) {
-               throw new Error(`Balance tidak cukup! Butuh ${totalCredits} credit, hanya ada ${balanceResult.balance}.`)
-             }
-             addLog(`💰 Balance: ${balanceResult.balance ?? 'unknown'} credits`, 'info', 'leonardo')
-
-             const videoUrl = await runLeonardoVideo({
-              token: apiKey,
-              modelKey: model,
-              prompt: prompt.trim(),
-              aspectRatio: ratio,
-              sizeTier: currentQuality?.sizeTier,
-              duration: currentQuality?.duration || 5,
-              imageFile: imgFile || undefined,
-              onProgress: (text, pct) => {
-                addLog(text, 'info', 'leonardo')
-                if (pct !== undefined) setStatus((s) => ({ ...s, text, pct }))
-              },
-              onRotate: (idx, total, reason) => {
-                addLog(`🔄 Token #${idx}/${total} — ${reason}`, 'warn', 'leonardo')
-              },
-            })
-            return videoUrl
-          },
-          {
-            onKeySwitch: (from, to, attempt) => {
-              addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn', 'leonardo')
-            },
-            onError: (err, key) => {
-              if (detectTokenError('leonardo', err)) {
-                addLog(`⚠️ Key "${key.name}" is invalid: ${err.message}`, 'warn', 'leonardo')
-              }
-            },
-          }
+           },
+         }
         )
         if (rotation.ok && rotation.result) {
           setResults((prev) => [rotation.result!, ...prev])
