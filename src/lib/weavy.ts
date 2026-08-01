@@ -466,15 +466,6 @@ export interface WeavyBulkOneParams {
   outfitFile: File
 }
 
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = reject
-    reader.readAsDataURL(file)
-  })
-}
-
 function buildBulkFashionNodes(modelKey: string, prompt: string, quality: string, ratio: string, charUrl: string, outfitUrl: string): any {
   const { model: modelName, service } = resolveImageModel(modelKey)
   const nodeId = 'n_' + Date.now() + '_model'
@@ -626,10 +617,14 @@ function buildBulkFashionNodes(modelKey: string, prompt: string, quality: string
 
 async function submitWeavyBulkOne(token: string, params: WeavyBulkOneParams): Promise<WeavyImageGenerateResult> {
   try {
-    const charDataUrl = await fileToDataUrl(params.charFile)
-    const outfitDataUrl = await fileToDataUrl(params.outfitFile)
+    // Upload images from client side to get small public URLs
+    const { uploadToCatbox } = await import('@/lib/roboneo')
+    const [charUrl, outfitUrl] = await Promise.all([
+      uploadToCatbox(params.charFile, 'char'),
+      uploadToCatbox(params.outfitFile, 'outfit'),
+    ])
 
-    const nodes = buildBulkFashionNodes(params.modelKey, params.prompt, params.quality, params.ratio, charDataUrl, outfitDataUrl)
+    const nodes = buildBulkFashionNodes(params.modelKey, params.prompt, params.quality, params.ratio, charUrl, outfitUrl)
     const extraNodes = nodes._extraNodes || []
     const extraEdges = nodes._extraEdges || []
     const edges = [...extraEdges]
