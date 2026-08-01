@@ -457,6 +457,222 @@ export async function runWeavyImage(opts: { model: string; prompt: string; aspec
   throw Error(rotation.error || 'Weavy: semua token gagal')
 }
 
+export interface WeavyBulkOneParams {
+  modelKey: string
+  prompt: string
+  quality: string
+  ratio: string
+  charFile: File
+  outfitFile: File
+}
+
+function buildBulkFashionNodes(modelKey: string, prompt: string, quality: string, ratio: string, charUrl: string, outfitUrl: string): any {
+  const { model: modelName, service } = resolveImageModel(modelKey)
+  const nodeId = 'n_' + Date.now() + '_model'
+  const now = Date.now()
+
+  if (modelKey === 'gptimage2' || modelKey === 'gpt-image-2') {
+    const sizeMap: Record<string, { width: number; height: number }> = {
+      'low@1K': { width: 1024, height: 1024 }, 'medium@1K': { width: 1024, height: 1024 },
+      'high@1K': { width: 1024, height: 1024 }, 'low@2K': { width: 2048, height: 2048 },
+      'medium@2K': { width: 2048, height: 2048 }, 'high@2K': { width: 2048, height: 2048 },
+      'low@4K': { width: 4096, height: 4096 }, 'medium@4K': { width: 4096, height: 4096 },
+      'high@4K': { width: 4096, height: 4096 },
+    }
+    const parsed = quality.includes('@') ? quality : 'medium@1K'
+    const size = sizeMap[parsed] || { width: 1024, height: 1024 }
+    const q = parsed.split('@')[0] || 'medium'
+
+    const charNodeId = 'n_' + now + '_char'
+    const outfitNodeId = 'n_' + now + '_outfit'
+
+    const params: any = { prompt, image_urls: [charUrl, outfitUrl], image_size: size, quality: q, num_images: 1, output_format: 'png' }
+    const handles: any = {
+      input: {
+        prompt: { id: 'input-prompt', type: 'text', label: 'prompt', format: 'text', required: true },
+        image: { id: 'input-image', type: 'image', label: 'image', format: 'text', required: false },
+        image2: { id: 'input-image2', type: 'image', label: 'image2', format: 'text', required: false },
+      },
+      output: { result: { id: 'output-result', type: 'image', label: 'result', order: 0, format: 'uri' } },
+    }
+
+    const charNode = {
+      id: charNodeId, type: 'import', dragHandle: '.node-header', owner: null, visibility: null, isModel: false,
+      data: {
+        handles: { output: { file: { type: 'any', label: 'File', order: 0, format: 'uri' } } },
+        name: 'File', color: 'Yambo_Blue',
+        files: [{ type: 'image', url: charUrl, publicId: 'uploads/' + randId(), id: charNodeId + '_file', name: 'char.jpg', insertionOrder: 0 }],
+        result: { type: 'image', url: charUrl, publicId: 'uploads/' + randId(), id: charNodeId + '_result', name: 'char.jpg', insertionOrder: 0 },
+        output: { file: { type: 'image', url: charUrl, publicId: 'uploads/' + randId(), id: charNodeId + '_output', name: 'char.jpg', insertionOrder: 0 } },
+        version: 3,
+      },
+      position: { x: 80, y: 200 }, width: 460, height: 400,
+    }
+    const outfitNode = {
+      id: outfitNodeId, type: 'import', dragHandle: '.node-header', owner: null, visibility: null, isModel: false,
+      data: {
+        handles: { output: { file: { type: 'any', label: 'File', order: 0, format: 'uri' } } },
+        name: 'File', color: 'Yambo_Blue',
+        files: [{ type: 'image', url: outfitUrl, publicId: 'uploads/' + randId(), id: outfitNodeId + '_file', name: 'outfit.jpg', insertionOrder: 0 }],
+        result: { type: 'image', url: outfitUrl, publicId: 'uploads/' + randId(), id: outfitNodeId + '_result', name: 'outfit.jpg', insertionOrder: 0 },
+        output: { file: { type: 'image', url: outfitUrl, publicId: 'uploads/' + randId(), id: outfitNodeId + '_output', name: 'outfit.jpg', insertionOrder: 0 } },
+        version: 3,
+      },
+      position: { x: 80, y: 400 }, width: 460, height: 400,
+    }
+
+    const charEdge = {
+      id: 'e-' + randId(), source: charNodeId, target: nodeId,
+      sourceHandle: `${charNodeId}-output-file`, targetHandle: `${nodeId}-input-image`,
+      type: 'custom', data: { sourceColor: 'Yambo_Blue', targetColor: 'Red', sourceHandleType: 'any', targetHandleType: 'image' },
+    }
+    const outfitEdge = {
+      id: 'e-' + randId(), source: outfitNodeId, target: nodeId,
+      sourceHandle: `${outfitNodeId}-output-file`, targetHandle: `${nodeId}-input-image2`,
+      type: 'custom', data: { sourceColor: 'Yambo_Blue', targetColor: 'Red', sourceHandleType: 'any', targetHandleType: 'image' },
+    }
+
+    const mainNode = {
+      id: nodeId, type: 'custommodelV2', dragHandle: '.node-header', owner: null, visibility: 'private', isModel: true,
+      data: {
+        handles, name: 'ChatGPT Images 2.0', color: 'Red',
+        model: { name: modelName, service }, params,
+        version: 3, kind: { type: 'wildcard', model: { type: 'predefined', name: modelName, version: modelName, service }, inputs: handles.input ? Object.values(handles.input).map((h: any) => h.id) : [], parameters: [], outputs: handles.output ? Object.values(handles.output).map((h: any) => h.id) : [] },
+        outputs: [{ id: 'result', title: 'result', dataType: 'image' }],
+        generations: [], selectedIndex: 0, cameraLocked: false, result: [], output: {}, selectedOutput: 0,
+      },
+      position: { x: 600, y: 300 }, width: 460, height: 500,
+    }
+
+    return { id: nodeId, type: 'custommodelV2', data: mainNode.data, _extraNodes: [charNode, outfitNode], _extraEdges: [charEdge, outfitEdge] }
+  }
+
+  // nanobanana2 / seedream / default — 2 image inputs
+  const resolutionMap: Record<string, string> = { '0.5K': '512', '1K': '1024', '2K': '2048', '4K': '4096' }
+  const resolution = resolutionMap[quality] || '1024'
+  const aspectRatio = ratio || '9:16'
+
+  const charNodeId = 'n_' + now + '_char'
+  const outfitNodeId = 'n_' + now + '_outfit'
+
+  const charNode = {
+    id: charNodeId, type: 'import', dragHandle: '.node-header', owner: null, visibility: null, isModel: false,
+    data: {
+      handles: { output: { file: { type: 'any', label: 'File', order: 0, format: 'uri' } } },
+      name: 'File', color: 'Yambo_Blue',
+      files: [{ type: 'image', url: charUrl, publicId: 'uploads/' + randId(), id: charNodeId + '_file', name: 'char.jpg', insertionOrder: 0 }],
+      result: { type: 'image', url: charUrl, publicId: 'uploads/' + randId(), id: charNodeId + '_result', name: 'char.jpg', insertionOrder: 0 },
+      output: { file: { type: 'image', url: charUrl, publicId: 'uploads/' + randId(), id: charNodeId + '_output', name: 'char.jpg', insertionOrder: 0 } },
+      version: 3,
+    },
+    position: { x: 80, y: 200 }, width: 460, height: 400,
+  }
+  const outfitNode = {
+    id: outfitNodeId, type: 'import', dragHandle: '.node-header', owner: null, visibility: null, isModel: false,
+    data: {
+      handles: { output: { file: { type: 'any', label: 'File', order: 0, format: 'uri' } } },
+      name: 'File', color: 'Yambo_Blue',
+      files: [{ type: 'image', url: outfitUrl, publicId: 'uploads/' + randId(), id: outfitNodeId + '_file', name: 'outfit.jpg', insertionOrder: 0 }],
+      result: { type: 'image', url: outfitUrl, publicId: 'uploads/' + randId(), id: outfitNodeId + '_result', name: 'outfit.jpg', insertionOrder: 0 },
+      output: { file: { type: 'image', url: outfitUrl, publicId: 'uploads/' + randId(), id: outfitNodeId + '_output', name: 'outfit.jpg', insertionOrder: 0 } },
+      version: 3,
+    },
+    position: { x: 80, y: 400 }, width: 460, height: 400,
+  }
+
+  const mainNode = {
+    id: nodeId, type: 'custommodelV2', dragHandle: '.node-header', owner: null, visibility: 'private', isModel: true,
+    data: {
+      handles: {
+        input: {
+          prompt: { id: 'input-prompt', type: 'text', label: 'prompt', format: 'text', required: true },
+          image: { id: 'input-image', type: 'image', label: 'image', format: 'text', required: true },
+          image2: { id: 'input-image2', type: 'image', label: 'image2', format: 'text', required: true },
+        },
+        output: { result: { id: 'output-result', type: 'image', label: 'result', order: 0, format: 'uri' } },
+      },
+      name: 'Gemini 3.1 Flash (Nano Banana 2)', color: 'Yellow',
+      model: { name: modelName, service },
+      params: { image_urls: [charUrl, outfitUrl], prompt, aspect_ratio: aspectRatio, resolution, num_images: 1, output_format: 'png', safety_tolerance: '4', limit_generations: false, enable_web_search: false },
+      version: 3, kind: { type: 'wildcard', model: { type: 'predefined', name: modelName, version: modelName, service } },
+      outputs: [{ id: 'result', title: 'result', dataType: 'image' }],
+      generations: [], selectedIndex: 0, cameraLocked: false, result: [], output: {}, selectedOutput: 0,
+    },
+    position: { x: 600, y: 300 }, width: 460, height: 500,
+  }
+
+  const charEdge = {
+    id: 'e-' + randId(), source: charNodeId, target: nodeId,
+    sourceHandle: `${charNodeId}-output-file`, targetHandle: `${nodeId}-input-image`,
+    type: 'custom', data: { sourceColor: 'Yambo_Blue', targetColor: 'Yellow', sourceHandleType: 'any', targetHandleType: 'image' },
+  }
+  const outfitEdge = {
+    id: 'e-' + randId(), source: outfitNodeId, target: nodeId,
+    sourceHandle: `${outfitNodeId}-output-file`, targetHandle: `${nodeId}-input-image2`,
+    type: 'custom', data: { sourceColor: 'Yambo_Blue', targetColor: 'Yellow', sourceHandleType: 'any', targetHandleType: 'image' },
+  }
+
+  return { id: nodeId, type: 'custommodelV2', data: mainNode.data, _extraNodes: [charNode, outfitNode], _extraEdges: [charEdge, outfitEdge] }
+}
+
+async function submitWeavyBulkOne(token: string, params: WeavyBulkOneParams): Promise<WeavyImageGenerateResult> {
+  try {
+    const charCompressed = params.charFile.size > 8 * 1024 * 1024 ? await compressImageIfNeeded(params.charFile) : params.charFile
+    const outfitCompressed = params.outfitFile.size > 8 * 1024 * 1024 ? await compressImageIfNeeded(params.outfitFile) : params.outfitFile
+
+    const [charUpload, outfitUpload] = await Promise.all([
+      uploadWeavyAssetWithRetry(charCompressed, token),
+      uploadWeavyAssetWithRetry(outfitCompressed, token),
+    ])
+    const charUrl = resolveWeavyAssetUrl(charUpload, 'image')
+    const outfitUrl = resolveWeavyAssetUrl(outfitUpload, 'image')
+
+    const createRes = await fetch(WEAVY_PROXY, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Weavy-Token': token }, body: JSON.stringify({ action: 'image-create-recipe' }) })
+    const createData = await createRes.json().catch(() => null)
+    if (!createRes.ok || !createData?.ok) return { ok: false, error: createData?.error || `Create recipe failed (${createRes.status})`, raw: createData }
+    const recipeId = createData?.data?.recipeId
+    const v3 = createData?.data?.v3
+    if (!recipeId) return { ok: false, error: 'No recipeId returned', raw: createData }
+
+    const nodes = buildBulkFashionNodes(params.modelKey, params.prompt, params.quality, params.ratio, charUrl, outfitUrl)
+    const extraNodes = nodes._extraNodes || []
+    const extraEdges = nodes._extraEdges || []
+    const edges = [...extraEdges]
+    const modelNode = { id: nodes.id, type: nodes.type, data: nodes.data, position: { x: 600, y: 300 }, width: 460, height: 500 }
+    const allNodes = [...extraNodes, modelNode]
+
+    const saveRes = await fetch(WEAVY_PROXY, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Weavy-Token': token }, body: JSON.stringify({ action: 'image-save-recipe', recipeId, nodes: allNodes, edges, v3 }) })
+    const saveData = await saveRes.json().catch(() => null)
+    if (!saveRes.ok || !saveData?.ok) return { ok: false, error: saveData?.error || `Save recipe failed (${saveRes.status})`, raw: saveData }
+
+    const modelName = nodes.data?.model?.name || params.modelKey
+    await fetch(WEAVY_PROXY, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Weavy-Token': token }, body: JSON.stringify({ action: 'image-approve-model', modelId: modelName }) })
+
+    const execRes = await fetch(WEAVY_PROXY, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Weavy-Token': token }, body: JSON.stringify({ action: 'image-execute', recipeId, nodes: allNodes, edges, numberOfRuns: 1 }) })
+    const execData = await execRes.json().catch(() => null)
+    if (!execRes.ok || !execData?.ok) return { ok: false, error: execData?.error || `Execute failed (${execRes.status})`, raw: execData }
+    const batchId = execData?.data?.batchId || execData?.data?.id
+    if (!batchId) return { ok: false, error: 'No batchId in response', raw: execData }
+    return { ok: true, taskId: `${recipeId}:${batchId}`, raw: execData }
+  } catch (err: any) { return { ok: false, error: err.message } }
+}
+
+export async function generateWeavyBulkOne(params: WeavyBulkOneParams): Promise<string> {
+  const quality = params.quality || '1K'
+  const { withTokenRotation } = await import('@/lib/tokenRotation')
+  const rotation = await withTokenRotation<string>('weavy', async (apiKey) => {
+    const submitResult = await submitWeavyBulkOne(apiKey, params)
+    if (!submitResult.ok || !submitResult.taskId) throw Error(submitResult.error || 'Submit failed')
+    const imageUrl = await pollWeavyImageStatus(apiKey, submitResult.taskId)
+    return imageUrl
+  }, {
+    requiredCredits: 6,
+    onKeySwitch: (from, to, attempt) => { console.log(`[weavy-bulk] rotate #${attempt}: ${from.name} → ${to.name}`) },
+  })
+  if (rotation.ok && rotation.result) return rotation.result
+  throw Error(rotation.error || 'Weavy bulk: semua token gagal')
+}
+
 function randId(): string {
   return Math.random().toString(36).substring(2, 10)
 }

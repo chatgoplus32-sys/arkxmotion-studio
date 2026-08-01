@@ -1,5 +1,5 @@
 import { useProviderManager } from '@/stores/providerManager'
-import { runWeavyImage } from '@/lib/weavy'
+import { generateWeavyBulkOne } from '@/lib/weavy'
 import { submitFramiaRun, pollFramiaRun } from '@/lib/framia'
 import { leonardoApi, withLeonardoTokens } from '@/lib/leonardo'
 
@@ -205,13 +205,13 @@ async function generateWeavyBulk(opts: BulkFashionOptions): Promise<string[]> {
     try {
       opts.onProgress?.(idx, `Generate outfit #${idx + 1}...`)
       const prompt = buildPrompt(opts.promptTemplate, opts.productType, idx)
-      const imageUrl = await runWeavyImage({
-        model: opts.modelKey,
+      const imageUrl = await generateWeavyBulkOne({
+        modelKey: opts.modelKey,
         prompt,
-        aspectRatio: opts.ratio,
         quality: opts.quality,
-        imageUrl: undefined,
-        onProgress: (text) => opts.onProgress?.(idx, text),
+        ratio: opts.ratio,
+        charFile: opts.charFile,
+        outfitFile: outfitFile,
       })
       if (!opts.signal?.aborted) {
         results[idx] = imageUrl
