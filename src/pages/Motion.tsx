@@ -81,6 +81,8 @@ export default function MotionPage() {
     return getResults().filter((r) => r.page === 'motion').map(({ page, ...r }) => r)
   })
   const [searchQuery, setSearchQuery] = useState('')
+  const [elapsed, setElapsed] = useState('0:00')
+  const elapsedRef = useRef<number | null>(null)
   const generatingRef = useRef(false)
   const successRef = useRef(false)
 
@@ -117,6 +119,20 @@ export default function MotionPage() {
     window.addEventListener('arkxmotion-tasks-changed', sync)
     return () => window.removeEventListener('arkxmotion-tasks-changed', sync)
   }, [])
+
+  useEffect(() => {
+    if (!generating) {
+      if (elapsedRef.current) { clearInterval(elapsedRef.current); elapsedRef.current = null }
+      return
+    }
+    const start = Date.now()
+    setElapsed('0:00')
+    elapsedRef.current = window.setInterval(() => {
+      const sec = Math.floor((Date.now() - start) / 1000)
+      setElapsed(`${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`)
+    }, 1000)
+    return () => { if (elapsedRef.current) clearInterval(elapsedRef.current) }
+  }, [generating])
 
   const currentProvider = PROVIDERS[provider as keyof typeof PROVIDERS]
   const currentModel = currentProvider.models.find((m) => m.key === modelKey) || currentProvider.models[0]
@@ -731,7 +747,7 @@ export default function MotionPage() {
                 <div className="space-y-1.5">
                   <div className="flex justify-between text-xs text-muted-foreground">
                     <span>Progress</span>
-                    <span className="font-mono font-semibold text-foreground">{slotProgress}%</span>
+                    <span className="font-mono font-semibold text-foreground">{slotProgress}% <span className="text-muted-foreground font-normal">· {elapsed}</span></span>
                   </div>
                   <div className="h-2.5 w-full rounded-full bg-muted overflow-hidden">
                     <div
