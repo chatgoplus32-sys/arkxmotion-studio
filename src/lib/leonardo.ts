@@ -14,6 +14,22 @@ function getStoredKeys(): string[] {
   }
 }
 
+function removeStoredLeonardoKey(tokenToRemove: string) {
+  try {
+    const raw = localStorage.getItem('arkxmotion.leonardo.keys')
+    if (!raw) return
+    const parsed = JSON.parse(raw)
+    const arr = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.keys) ? parsed.keys : []
+    const filtered = arr.filter((k: any) => k?.key !== tokenToRemove)
+    localStorage.setItem('arkxmotion.leonardo.keys', JSON.stringify(filtered))
+  } catch {}
+}
+
+function isLeonardoAuthError(message: string): boolean {
+  const lower = (message || '').toLowerCase()
+  return /401|403|unauthor|forbidden|expired|invalid.*token|token.*invalid/.test(lower)
+}
+
 function decodeJwt(token: string): Record<string, any> | null {
   try {
     const parts = token.split('.')
@@ -70,7 +86,7 @@ export async function leonardoApi<T = any>(opts: LeonardoApiOptions): Promise<T>
 
 export async function withLeonardoTokens<T>(
   fn: (token: string) => Promise<T>,
-  opts?: { skipExpired?: boolean; onRotate?: (index: number, total: number, reason: string) => void }
+  opts?: { skipExpired?: boolean; requiredCredits?: number; onRotate?: (index: number, total: number, reason: string) => void }
 ): Promise<T> {
   const keys = getStoredKeys()
   if (keys.length === 0) throw Error('Belum ada token Leonardo. Buka Manage → Tokens → Leonardo dan tambahkan Bearer JWT.')
@@ -83,11 +99,42 @@ export async function withLeonardoTokens<T>(
       opts?.onRotate?.(i + 1, keys.length, 'token expired')
       continue
     }
+
+    // Preflight balance check
+    if (opts?.requiredCredits && opts.requiredCredits > 0) {
+      try {
+        const balanceResult = await fetchLeonardoBalance(token)
+        if (balanceResult.ok) {
+          const bal = balanceResult.balance ?? 0
+          if (bal <= 0) {
+            lastError = Error(`Token #${i + 1} balance kosong (${bal})`)
+            opts?.onRotate?.(i + 1, keys.length, 'balance kosong')
+            continue
+          }
+          if (bal < opts.requiredCredits) {
+            lastError = Error(`Token #${i + 1} balance tidak cukup (${bal} < ${opts.requiredCredits})`)
+            opts?.onRotate?.(i + 1, keys.length, 'balance kurang')
+            continue
+          }
+        }
+      } catch {
+        // Balance check failed, proceed anyway
+      }
+    }
+
     try {
       return await fn(token)
     } catch (err) {
       const e = err instanceof Error ? err : Error(String(err))
       lastError = e
+
+      // Auth error → remove key dari localStorage
+      if (isLeonardoAuthError(e.message)) {
+        removeStoredLeonardoKey(token)
+        opts?.onRotate?.(i + 1, keys.length, `auth error — key dihapus: ${e.message}`)
+        continue
+      }
+
       if (!isLeonardoRetryableError(e.message) || i === keys.length - 1) throw e
       opts?.onRotate?.(i + 1, keys.length, e.message)
     }
@@ -339,6 +386,7 @@ export interface LeonardoVideoRunOptions {
   quantity?: number
   imageUrl?: string
   imageFile?: File
+  requiredCredits?: number
   timeoutMs?: number
   pollIntervalMs?: number
   onProgress?: (text: string, pct?: number) => void
@@ -409,7 +457,7 @@ export async function runLeonardoVideo(opts: LeonardoVideoRunOptions): Promise<s
   }
 
   if (opts.token) return execute(opts.token)
-  return withLeonardoTokens(execute, { skipExpired: true, onRotate: opts.onRotate })
+  return withLeonardoTokens(execute, { skipExpired: true, requiredCredits: opts.requiredCredits, onRotate: opts.onRotate })
 }
 
 function resolveDimensions(aspectRatio: string, tier: { short: number; long: number }): { width: number; height: number } {
@@ -534,6 +582,7 @@ export async function runLeonardoImage(opts: {
   pollIntervalMs?: number
   onProgress?: (text: string, pct?: number) => void
   onRotate?: (index: number, total: number, reason: string) => void
+  requiredCredits?: number
 }): Promise<string> {
   const execute = async (token: string) => {
     const ar = opts.aspectRatio || '1:1'
@@ -626,7 +675,7 @@ export async function runLeonardoImage(opts: {
   }
 
   if (opts.token) return execute(opts.token)
-  return withLeonardoTokens(execute, { skipExpired: true, onRotate: opts.onRotate })
+  return withLeonardoTokens(execute, { skipExpired: true, requiredCredits: opts.requiredCredits, onRotate: opts.onRotate })
 }
 
 export { isTokenExpired, isLeonardoJwtFormat, decodeJwt, isLeonardoRetryableError }
