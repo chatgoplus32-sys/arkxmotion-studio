@@ -38,6 +38,9 @@ function isRefreshToken(token: string): boolean {
 }
 
 export async function fetchWeavyCreditsClient(accessToken: string): Promise<number | null> {
+  const controller = new AbortController()
+  const timeout = AbortSignal.timeout(10000)
+
   const endpoints = [
     `${WEAVY_API}/v1/credits`,
     `${WEAVY_API}/v1/user/credits`,
@@ -48,7 +51,11 @@ export async function fetchWeavyCreditsClient(accessToken: string): Promise<numb
   ]
   for (const url of endpoints) {
     try {
-      const r = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } })
+      const r = await fetch(url, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        signal: AbortSignal.any([controller.signal, timeout]),
+      })
+      if (r.status === 401 || r.status === 403) return null
       if (!r.ok) continue
       const data = await r.json().catch(() => null)
       const credits = data?.credits ?? data?.balance ?? data?.totalCredits ?? data?.creditsRemaining ?? data?.quota ?? data?.usage?.credits ?? data?.plan?.credits ?? data?.data?.credits ?? data?.user?.credits ?? null
@@ -56,7 +63,10 @@ export async function fetchWeavyCreditsClient(accessToken: string): Promise<numb
     } catch { continue }
   }
   try {
-    const r = await fetch(`${WEAVY_API}/v1/workspaces`, { headers: { Authorization: `Bearer ${accessToken}` } })
+    const r = await fetch(`${WEAVY_API}/v1/workspaces`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.any([controller.signal, timeout]),
+    })
     if (r.ok) {
       const data = await r.json().catch(() => null)
       const ws = Array.isArray(data?.workspaces) ? data.workspaces[0] : data
@@ -106,15 +116,22 @@ export interface WeavyStatusResult {
 export async function checkWeavyBalance(token: string): Promise<{ ok: boolean; balance?: number | null; email?: string; error?: string }> {
   try {
     const result = await resolveAndFetchCredits(token)
+    if (result.credits === null && result.email) {
+      return { ok: true, balance: null, email: result.email, error: 'Token tidak valid atau expired' }
+    }
     return { ok: result.ok, balance: result.credits, email: result.email }
   } catch (err: any) {
-    return { ok: true, balance: null, error: err.message }
+    return { ok: false, balance: null, error: err.message }
   }
 }
 
 export async function checkWeavyBalanceDirect(token: string): Promise<{ ok: boolean; balance?: number | null; email?: string; error?: string }> {
   try {
     const result = await resolveAndFetchCredits(token)
+    if (result.credits === null && result.email) {
+      return { ok: true, balance: null, email: result.email, error: 'Token tidak valid atau expired' }
+    }
+    return { ok: result.ok, balance: result.credits, email: result.email }
     return { ok: result.ok, balance: result.credits, email: result.email }
   } catch (err: any) {
     return { ok: false, balance: null, error: err.message }

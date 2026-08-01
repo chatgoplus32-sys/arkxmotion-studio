@@ -169,17 +169,22 @@ export async function withTokenRotation<T>(
       try {
         const balance = await fetchWeavyCreditsClient(nextKey.key)
         const required = opts?.requiredCredits ?? 0
-        if (balance !== null) {
-          if (balance < required) {
-            console.log(`[token-rotation] ${provider} key "${nextKey.name}" skipped (balance=${balance} < required=${required}). Trying next...`)
-            useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'empty', balance)
-            lastError = new Error(`Token ${nextKey.name} balance tidak cukup (${balance} < ${required})`)
-            opts?.onError?.(lastError, nextKey)
-            continue
-          }
-          console.log(`[token-rotation] ${provider} key "${nextKey.name}" balance=${balance} >= required=${required}, proceeding...`)
-          useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'active', balance)
+        if (balance === null) {
+          console.log(`[token-rotation] ${provider} key "${nextKey.name}" balance check returned null (token invalid/expired). Trying next...`)
+          useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'invalid')
+          lastError = new Error(`Token ${nextKey.name} tidak valid atau expired`)
+          opts?.onError?.(lastError, nextKey)
+          continue
         }
+        if (balance < required) {
+          console.log(`[token-rotation] ${provider} key "${nextKey.name}" skipped (balance=${balance} < required=${required}). Trying next...`)
+          useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'empty', balance)
+          lastError = new Error(`Token ${nextKey.name} balance tidak cukup (${balance} < ${required})`)
+          opts?.onError?.(lastError, nextKey)
+          continue
+        }
+        console.log(`[token-rotation] ${provider} key "${nextKey.name}" balance=${balance} >= required=${required}, proceeding...`)
+        useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'active', balance)
        } catch (err: any) {
          console.log(`[token-rotation] ${provider} balance check failed for "${nextKey.name}": ${err.message}, proceeding anyway`)
        }
