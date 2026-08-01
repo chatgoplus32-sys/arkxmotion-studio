@@ -161,11 +161,6 @@ export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
   },
 }
 
-export interface MaintenanceInfo {
-  isMaintenance: boolean
-  message: string
-}
-
 function getDefaultMaintenance(): Record<ProviderId, MaintenanceInfo> {
   return {
     weavy: { isMaintenance: false, message: '' },
@@ -185,7 +180,7 @@ function getDefaultMaintenance(): Record<ProviderId, MaintenanceInfo> {
 }
 
 function isValidLeonardoJwt(token: string): boolean {
-  return /^eyJ[A-Za-z0-9_-]+\\.eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$/.test(token.trim()) &&
+  return /^eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token.trim()) &&
          !isTokenExpired(token)
 }
 
