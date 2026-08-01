@@ -232,6 +232,10 @@ function extractGenerationId(data: any): string | null {
     data.data?.generationId,
     data.data?.generation_id,
     data.data?.id,
+    data.data?.generate?.generationId,
+    data.data?.generate?.generation_id,
+    data.data?.sdGenerationJob?.generationId,
+    data.data?.sdGenerationJob?.generation_id,
   ]
   for (const c of candidates) {
     if (typeof c === 'string' && c.trim()) return c
