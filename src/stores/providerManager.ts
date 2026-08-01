@@ -161,28 +161,62 @@ export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
   },
 }
 
-interface ProviderState {
+export interface MaintenanceInfo {
+  isMaintenance: boolean
+  message: string
+}
+
+function getDefaultMaintenance(): Record<ProviderId, MaintenanceInfo> {
+  return {
+    weavy: { isMaintenance: false, message: '' },
+    wavespeed: { isMaintenance: false, message: '' },
+    magnific: { isMaintenance: false, message: '' },
+    roboneo: { isMaintenance: false, message: '' },
+    createpulse: { isMaintenance: false, message: '' },
+    framia: { isMaintenance: false, message: '' },
+    firefly: { isMaintenance: false, message: '' },
+    leonardo: { isMaintenance: false, message: '' },
+    elevenlabs: { isMaintenance: false, message: '' },
+    gemini: { isMaintenance: false, message: '' },
+    openai: { isMaintenance: false, message: '' },
+    shotstack: { isMaintenance: false, message: '' },
+    creatomate: { isMaintenance: false, message: '' },
+  }
+}
+
+function isValidLeonardoJwt(token: string): boolean {
+  return /^eyJ[A-Za-z0-9_-]+\\.eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$/.test(token.trim()) &&
+         !isTokenExpired(token)
+}
+
+function isTokenExpired(token: string): boolean {
+  const payload = decodeJwt(token)
+  if (!payload?.exp) return false
+  return Date.now() > payload.exp * 1000
+}
+
+function decodeJwt(token: string): Record<string, any> | null {
+  try {
+    const parts = token.split('.')
+    if (parts.length < 2) return null
+    const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+    const padded = payload + '='.repeat((4 - payload.length % 4) % 4)
+    if (typeof atob === 'function') {
+      return JSON.parse(atob(padded))
+    }
+    const bytes = Uint8Array.from(padded, (c) => c.charCodeAt(0))
+    const decoded = new TextDecoder().decode(bytes)
+    return JSON.parse(decoded)
+  } catch {
+    return null
+  }
+}
+
+export type ProviderState = {
   keys: Record<ProviderId, ProviderKey[]>
   activeProvider: ProviderId
   routing: Record<string, ProviderId>
   maintenance: Record<ProviderId, MaintenanceInfo>
-
-  setActiveProvider: (provider: ProviderId) => void
-  addKey: (provider: ProviderId, key: string, name?: string) => void
-  importKeys: (provider: ProviderId, tokenValues: string[], namePrefix?: string) => number
-  removeKey: (provider: ProviderId, keyId: string) => void
-  updateKeyStatus: (provider: ProviderId, keyId: string, status: ProviderKey['status'], balance?: number | null) => void
-  getActiveKey: (provider: ProviderId) => ProviderKey | null
-  getFirstValidKey: (provider: ProviderId) => ProviderKey | null
-  findKeyById: (provider: ProviderId, keyId: string) => ProviderKey | undefined
-  getNextKey: (provider: ProviderId, excludeKeyIds?: string[]) => ProviderKey | null
-  setRouting: (workflow: string, provider: ProviderId) => void
-  getRouting: (workflow: string) => ProviderId
-  fetchMaintenance: () => Promise<void>
-  isProviderMaintenance: (provider: ProviderId) => boolean
-  getMaintenanceMessage: (provider: ProviderId) => string
-  loadFromStorage: () => void
-  saveToStorage: () => void
 }
 
 const STORAGE_KEY = 'arkxmotion.providers'
@@ -236,24 +270,6 @@ function loadRoutingFromStorage(): Record<string, ProviderId> {
   }
 }
 
-function getDefaultMaintenance(): Record<ProviderId, MaintenanceInfo> {
-  return {
-    weavy: { isMaintenance: false, message: '' },
-    wavespeed: { isMaintenance: false, message: '' },
-    magnific: { isMaintenance: false, message: '' },
-    roboneo: { isMaintenance: false, message: '' },
-    createpulse: { isMaintenance: false, message: '' },
-    framia: { isMaintenance: false, message: '' },
-    firefly: { isMaintenance: false, message: '' },
-    leonardo: { isMaintenance: false, message: '' },
-    elevenlabs: { isMaintenance: false, message: '' },
-    gemini: { isMaintenance: false, message: '' },
-    openai: { isMaintenance: false, message: '' },
-    shotstack: { isMaintenance: false, message: '' },
-    creatomate: { isMaintenance: false, message: '' },
-  }
-}
-
 export const useProviderManager = create<ProviderState>((set, get) => ({
   keys: loadKeysFromStorage(),
   activeProvider: 'weavy',
@@ -272,6 +288,19 @@ export const useProviderManager = create<ProviderState>((set, get) => ({
       name: name || `Key ${get().keys[provider].length + 1}`,
       status: 'unknown',
     }
+    
+    // ✨ VALIDASI SAAT PENAMBAHAN: Validasi dan sesuaikan status
+    if (provider === 'leonardo') {
+      const isValid = isValidLeonardoJwt(newKey.key)
+      newKey.status = isValid ? 'active' : 'invalid'
+      
+      if (!isValid) {
+        console.warn(`[providerManager] Kunci Leonardo baru invalid: ${newKey.name}`)
+      } else {
+        console.log(`[providerManager] Kunci Leonardo baru valid: ${newKey.name}`)
+      }
+    }
+    
     set((state) => {
       const updated = {
         ...state.keys,
