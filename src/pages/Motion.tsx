@@ -178,6 +178,23 @@ export default function MotionPage() {
     return Math.round(filled.reduce((a, s) => a + pct(s), 0) / filled.length)
   }, [slots, generating])
 
+  const statusSummary = useMemo(() => {
+    const filled = slots.filter((s) => s.image && s.video)
+    if (filled.length === 0) return 'Idle'
+    const doneCount = filled.filter((s) => s.status === 'done').length
+    const errorCount = filled.filter((s) => s.status === 'error').length
+    if (!generating && doneCount + errorCount === filled.length && doneCount + errorCount > 0) {
+      return errorCount > 0
+        ? `Selesai — ${doneCount} sukses · ${errorCount} gagal`
+        : `Selesai — ${doneCount} video`
+    }
+    if (generating) {
+      const active = filled.find((s) => s.status !== 'done' && s.status !== 'error' && s.status !== 'idle')
+      return active ? `Slot #${filled.indexOf(active) + 1}: ${active.statusText || active.status}` : 'Memproses…'
+    }
+    return 'Idle'
+  }, [slots, generating])
+
   const handleFileChange = (id: string, type: 'image' | 'video', file: File | null) => {
     const url = file ? URL.createObjectURL(file) : null
     if (type === 'image') {
@@ -743,18 +760,20 @@ export default function MotionPage() {
                 )}
               </Button>
 
-              {generating && (
+              {(generating || statusSummary !== 'Idle') && (
                 <div className="space-y-1.5">
                   <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>Progress</span>
-                    <span className="font-mono font-semibold text-foreground">{slotProgress}% <span className="text-muted-foreground font-normal">· {elapsed}</span></span>
+                    <span className="truncate pr-2">{statusSummary}</span>
+                    {generating && <span className="font-mono font-semibold text-foreground shrink-0">{slotProgress}% <span className="text-muted-foreground font-normal">· {elapsed}</span></span>}
                   </div>
-                  <div className="h-2.5 w-full rounded-full bg-muted overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-primary transition-all duration-500 ease-out"
-                      style={{ width: `${slotProgress}%` }}
-                    />
-                  </div>
+                  {generating && (
+                    <div className="h-2.5 w-full rounded-full bg-muted overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-primary transition-all duration-500 ease-out"
+                        style={{ width: `${slotProgress}%` }}
+                      />
+                    </div>
+                  )}
                 </div>
               )}
 
