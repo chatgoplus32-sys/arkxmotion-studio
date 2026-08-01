@@ -74,6 +74,7 @@ export default function MotionPage() {
   const [keepSound, setKeepSound] = useState(true)
   const [slots, setSlots] = useState<Slot[]>([createSlot()])
   const [generating, setGenerating] = useState(() => getActiveTasks().filter((t) => t.page === 'motion').length > 0)
+  const [compressDialog, setCompressDialog] = useState<{ msg: string; pct?: number } | null>(null)
   const [progress, setProgress] = useState(0)
   const [logs, setLogs] = useState<Array<{ time: string; msg: string; level: string }>>(() => getLogs())
   const [results, setResults] = useState<Array<{ id: string; url: string; prompt: string; date: string }>>(() => {
@@ -315,9 +316,11 @@ export default function MotionPage() {
                 updateSlotStatus(slot.id, 'uploading vid...')
                 addLog(`#${slotNum} Upload video...`)
                 const videoFile = await compressVideo(slot.video, 4, (msg, pct) => {
+                  setCompressDialog({ msg, pct })
                   updateSlotStatus(slot.id, 'uploading vid...', msg)
                   addLog(`#${slotNum} ${msg}`)
                 })
+                setCompressDialog(null)
                 motionVideoUrl = await uploadToCatbox(videoFile, 'video')
                 addLog(`#${slotNum} Video: ${motionVideoUrl.slice(0, 60)}...`)
 
@@ -424,6 +427,7 @@ export default function MotionPage() {
               completedCount++
               successCount++
             } catch (err: any) {
+              setCompressDialog(null)
               updateSlotStatus(slot.id, 'error', err.message)
               addLog(`#${slotNum} Error: ${err.message}`, 'error')
               removeActiveTask(taskId)
@@ -587,7 +591,7 @@ export default function MotionPage() {
             </Button>
           }
         >
-          <div className={`grid gap-3 ${
+          <div className={`relative grid gap-3 ${
             slots.length === 1 ? 'grid-cols-1' :
             slots.length === 2 ? 'grid-cols-1 lg:grid-cols-2' :
             'grid-cols-1 lg:grid-cols-2 xl:grid-cols-3'
@@ -603,6 +607,24 @@ export default function MotionPage() {
                 canRemove={slots.length > 1}
               />
             ))}
+            {compressDialog && (
+              <div role="dialog" aria-modal="true" aria-live="polite" className="absolute inset-0 z-30 flex items-center justify-center rounded-2xl bg-background/70 backdrop-blur-sm">
+                <div className="w-[min(360px,90%)] rounded-2xl border border-primary/40 bg-card/95 p-5 shadow-2xl shadow-primary/20">
+                  <div className="flex items-center gap-3">
+                    <Loader2 className="h-5 w-5 shrink-0 animate-spin text-primary" />
+                    <div className="font-display text-sm text-foreground">Mengompres file…</div>
+                  </div>
+                  <div className="mt-3 text-xs text-muted-foreground break-words">{compressDialog.msg}</div>
+                  <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                    <div
+                      className={`h-full bg-primary transition-all ${typeof compressDialog.pct === 'number' ? '' : 'animate-pulse'}`}
+                      style={{ width: typeof compressDialog.pct === 'number' ? `${Math.max(0, Math.min(100, compressDialog.pct))}%` : '100%' }}
+                    />
+                  </div>
+                  <div className="mt-3 text-[10px] uppercase tracking-widest text-muted-foreground text-center">Mohon tunggu sampai proses selesai</div>
+                </div>
+              </div>
+            )}
           </div>
         </Section>
 
