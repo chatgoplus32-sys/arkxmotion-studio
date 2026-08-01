@@ -39,8 +39,6 @@ const mainNav: NavItem[] = [
 const generateNav: NavItem[] = [
   { label: 'Motion Control', href: '/generate/motion', icon: <Video className="h-4 w-4" /> },
   { label: 'Image to Video', href: '/generate/image-to-video', icon: <Image className="h-4 w-4" /> },
-  { label: 'Text to Image', href: '/generate/text-to-image', icon: <Image className="h-4 w-4" /> },
-  { label: 'Upscaler', href: '/generate/upscaler', icon: <Wand2 className="h-4 w-4" /> },
 ]
 
 const toolsNavBase: NavItem[] = [
