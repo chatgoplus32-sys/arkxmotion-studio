@@ -8,7 +8,7 @@ import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { uploadToCatbox, submitGoogleOmni, submitRoboneoI2V, pollMotionControl, compressVideo, normalizeImage, checkRoboneoBalance } from '@/lib/roboneo'
 import { generateWithFramia } from '@/lib/framia'
-import { runLeonardoVideo } from '@/lib/leonardo'
+import { runLeonardoVideo, fetchLeonardoBalance } from '@/lib/leonardo'
 import { LEONARDO_VIDEO_MODELS, leonardoVideoQualityOptions } from '@/lib/leonardo-video'
 import { submitWeavyVideo, pollWeavyStatus, checkWeavyBalance } from '@/lib/weavy'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
@@ -965,19 +965,33 @@ export default function ImageToVideoPage() {
         } else {
           throw new Error(rotation.error || 'Generation failed')
         }
-      } else if (provider === 'leonardo') {
-        if (!imgFile) {
-          addLog('❌ Leonardo membutuhkan gambar input', 'error', 'leonardo')
-          throw new Error('No image provided')
-        }
-        addLog(`[1/1] 🎨 Submitting to Leonardo...`, 'info', 'leonardo')
-        setStatus((s) => ({ ...s, text: 'Submitting...', pct: 5 }))
+       } else if (provider === 'leonardo') {
+         if (!imgFile) {
+           addLog('❌ Leonardo membutuhkan gambar input', 'error', 'leonardo')
+           throw new Error('No image provided')
+         }
+         addLog(`[1/1] 🎨 Submitting to Leonardo...`, 'info', 'leonardo')
+         setStatus((s) => ({ ...s, text: 'Submitting...', pct: 5 }))
 
-        const rotation = await withTokenRotation<string>(
-          'leonardo',
-          async (apiKey, keyInfo) => {
-            addLog(`🔑 Key: ${keyInfo.name || keyInfo.id}`, 'info', 'leonardo')
-            const videoUrl = await runLeonardoVideo({
+         const rotation = await withTokenRotation<string>(
+           'leonardo',
+           async (apiKey, keyInfo) => {
+             addLog(`🔑 Key: ${keyInfo.name || keyInfo.id}`, 'info', 'leonardo')
+
+             const balanceResult = await fetchLeonardoBalance(apiKey)
+             if (!balanceResult.ok) {
+               addLog(`Balance check: ${balanceResult.message}`, 'warn', 'leonardo')
+               throw new Error(`Token Leonardo tidak valid: ${balanceResult.message}`)
+             }
+             if (balanceResult.balance !== null && balanceResult.balance <= 0) {
+               throw new Error('Balance kosong! Tidak ada credit untuk generate.')
+             }
+             if (balanceResult.balance !== null && balanceResult.balance < totalCredits) {
+               throw new Error(`Balance tidak cukup! Butuh ${totalCredits} credit, hanya ada ${balanceResult.balance}.`)
+             }
+             addLog(`💰 Balance: ${balanceResult.balance ?? 'unknown'} credits`, 'info', 'leonardo')
+
+             const videoUrl = await runLeonardoVideo({
               token: apiKey,
               modelKey: model,
               prompt: prompt.trim(),
