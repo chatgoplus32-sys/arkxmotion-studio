@@ -848,7 +848,10 @@ export default function MotionPage() {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => { setResults([]); clearResults(); setLogs([]); clearLogs() }}
+              onClick={() => {
+                if (!window.confirm(`Hapus semua ${results.length} video dari gallery?`)) return
+                setResults([]); clearResults(); setLogs([]); clearLogs()
+              }}
               disabled={results.length === 0}
               className="text-xs"
             >
