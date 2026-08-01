@@ -165,37 +165,58 @@ export function startBackgroundPolling() {
     }, TASK_TIMEOUT_MS - elapsed)
     _pollTimeouts.set(task.taskId, timeout)
 
-    pollMotionControl(
-      task.token, task.taskId, task.roomId,
-      (status, pct) => {
-        if (!ctrl.signal.aborted) {
-          addBgLog(`⏳ ${task.model}: ${status} — ${pct}%`)
-        }
-      },
-      TASK_TIMEOUT_MS - elapsed,
-      ctrl.signal,
-      task.nodeId,
-    )
-      .then((url) => {
-        if (ctrl.signal.aborted) return
-        const t = _pollTimeouts.get(task.taskId)
-        if (t) { clearTimeout(t); _pollTimeouts.delete(task.taskId) }
-        addResult({ id: task.taskId, url, prompt: task.prompt, date: new Date().toISOString(), page: task.page })
-        removeActiveTask(task.taskId)
-        _active.delete(task.taskId)
-        _controllers.delete(task.taskId)
-        addBgLog(`✅ Background task done ✓ ${url.slice(0, 60)}...`, 'success')
-        window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
-      })
-      .catch((err) => {
-        if (ctrl.signal.aborted) return
-        const t = _pollTimeouts.get(task.taskId)
-        if (t) { clearTimeout(t); _pollTimeouts.delete(task.taskId) }
-        addBgLog(`❌ Background task error: ${err.message}`, 'error')
-        removeActiveTask(task.taskId)
-        _active.delete(task.taskId)
-        _controllers.delete(task.taskId)
-        window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
-      })
+    pollWithRetry(task, ctrl, 0)
   }
+}
+
+const MAX_BG_RETRIES = 3
+
+function pollWithRetry(task: ActiveTask, ctrl: AbortController, attempt: number) {
+  if (ctrl.signal.aborted) return
+
+  pollMotionControl(
+    task.token, task.taskId, task.roomId,
+    (status, pct) => {
+      if (!ctrl.signal.aborted) {
+        addBgLog(`⏳ ${task.model}: ${status} — ${pct}%`)
+      }
+    },
+    TASK_TIMEOUT_MS - (Date.now() - task.startedAt),
+    ctrl.signal,
+    task.nodeId,
+  )
+    .then((url) => {
+      if (ctrl.signal.aborted) return
+      const t = _pollTimeouts.get(task.taskId)
+      if (t) { clearTimeout(t); _pollTimeouts.delete(task.taskId) }
+      addResult({ id: task.taskId, url, prompt: task.prompt, date: new Date().toISOString(), page: task.page })
+      removeActiveTask(task.taskId)
+      _active.delete(task.taskId)
+      _controllers.delete(task.taskId)
+      addBgLog(`✅ Background task done ✓ ${url.slice(0, 60)}...`, 'success')
+      window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
+    })
+    .catch((err) => {
+      if (ctrl.signal.aborted) return
+
+      const isBusy = /busy|sibuk|try again|later|overload|capacity|queue|结果接口获取失败|error_code.*6/i.test(err.message)
+      if (isBusy && attempt < MAX_BG_RETRIES) {
+        const waitSec = 10 + attempt * 10
+        addBgLog(`⚠️ ${task.model}: server sibuk, retry ${attempt + 1}/${MAX_BG_RETRIES} dalam ${waitSec}s...`, 'warn')
+        setTimeout(() => {
+          if (!ctrl.signal.aborted) {
+            pollWithRetry(task, ctrl, attempt + 1)
+          }
+        }, waitSec * 1000)
+        return
+      }
+
+      const t = _pollTimeouts.get(task.taskId)
+      if (t) { clearTimeout(t); _pollTimeouts.delete(task.taskId) }
+      addBgLog(`❌ Background task error: ${err.message}`, 'error')
+      removeActiveTask(task.taskId)
+      _active.delete(task.taskId)
+      _controllers.delete(task.taskId)
+      window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
+    })
 }

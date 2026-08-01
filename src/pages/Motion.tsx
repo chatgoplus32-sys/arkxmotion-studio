@@ -347,7 +347,7 @@ export default function MotionPage() {
               addLog(`#${slotNum} Polling for result...`)
 
               let resultUrl: string | null = null
-              const MAX_RESUBMIT = 3
+              const MAX_RESUBMIT = 5
               for (let attempt = 1; attempt <= MAX_RESUBMIT; attempt++) {
                 try {
                   resultUrl = await pollMotionControl(
@@ -362,10 +362,11 @@ export default function MotionPage() {
                   )
                   break
                 } catch (pollErr: any) {
-                  const isBusy = /busy|sibuk|try again|later|overload|capacity|queue/i.test(pollErr.message)
+                  const isBusy = /busy|sibuk|try again|later|overload|capacity|queue|结果接口获取失败|error_code.*6/i.test(pollErr.message)
                   if (isBusy && attempt < MAX_RESUBMIT) {
-                    addLog(`#${slotNum} Server sibuk, retry ${attempt + 1}/${MAX_RESUBMIT}...`, 'warn')
-                    await new Promise((r) => setTimeout(r, 5000))
+                    const waitSec = 10 + attempt * 5
+                    addLog(`#${slotNum} Server sibuk, retry ${attempt + 1}/${MAX_RESUBMIT} (${waitSec}s)...`, 'warn')
+                    await new Promise((r) => setTimeout(r, waitSec * 1000))
                     if (isOmni) {
                       const retry = await submitGoogleOmni({
                         accessToken: token,

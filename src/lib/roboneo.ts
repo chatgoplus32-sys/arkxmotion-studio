@@ -718,8 +718,10 @@ export async function pollMotionControl(
 ): Promise<string> {
   const startTime = Date.now()
   let networkRetries = 0
+  let busyRetries = 0
   let successNoOutputCount = 0
   const MAX_SUCCESS_NO_OUTPUT = 5
+  const MAX_BUSY_RETRIES = 15
 
   function cleanUrl(u: string): string {
     return u.replace(/\\\//g, '/').replace(/\\u002F/gi, '/').replace(/&amp;/g, '&')
@@ -890,9 +892,23 @@ export async function pollMotionControl(
       const errMsg = task?.error_message || task?.error_msg || failedStep?.error_message || failedStep?.error_msg ||
         (typeof stepOutput?.error_message === 'string' ? stepOutput.error_message : undefined) ||
         (typeof stepOutput?.error_msg === 'string' ? stepOutput.error_msg : undefined) || 'unknown'
-      const detail = JSON.stringify({ status, taskErrorCode: task?.error_code, failCode: failedStep?.fail_code, stepStatus: failedStep?.status || failedStep?.state, output: stepOutput }).slice(0, 500)
+      const taskErrorCode = task?.error_code ?? failedStep?.fail_code ?? stepOutput?.error_code ?? stepOutput?.code
+      const detail = JSON.stringify({ status, taskErrorCode, failCode: failedStep?.fail_code, stepStatus: failedStep?.status || failedStep?.state, output: stepOutput }).slice(0, 500)
+
+      const isBusy = taskErrorCode === 6 || /busy|sibuk|try again|later|overload|capacity|queue|结果接口获取失败/i.test(errMsg)
+      if (isBusy && busyRetries < MAX_BUSY_RETRIES) {
+        busyRetries++
+        const waitSec = Math.min(5 + busyRetries * 2, 20)
+        console.log(`[roboneo] busy (code=${taskErrorCode}), retry ${busyRetries}/${MAX_BUSY_RETRIES}, waiting ${waitSec}s...`)
+        onProgress?.(`server sibuk, retry ${busyRetries}/${MAX_BUSY_RETRIES}`, pct)
+        await new Promise(r => setTimeout(r, waitSec * 1000))
+        continue
+      }
+
       throw new Error(`Roboneo failed: ${errMsg}${detail ? ` · detail=${detail}` : ''}`)
     }
+
+    busyRetries = 0
   }
 
   throw new Error('Roboneo timeout')
