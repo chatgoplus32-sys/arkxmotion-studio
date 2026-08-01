@@ -617,12 +617,36 @@ function buildBulkFashionNodes(modelKey: string, prompt: string, quality: string
 
 async function submitWeavyBulkOne(token: string, params: WeavyBulkOneParams): Promise<WeavyImageGenerateResult> {
   try {
-    // Upload images from client side to get small public URLs
-    const { uploadToCatbox } = await import('@/lib/roboneo')
-    const [charUrl, outfitUrl] = await Promise.all([
-      uploadToCatbox(params.charFile, 'char'),
-      uploadToCatbox(params.outfitFile, 'outfit'),
+    // Upload images via server proxy (bypass browser CORS)
+    const toBase64 = (file: File): Promise<string> =>
+      new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => {
+          const dataUrl = reader.result as string
+          resolve(dataUrl.split(',')[1]) // strip data:image/...;base64,
+        }
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
+
+    const [charB64, outfitB64] = await Promise.all([
+      toBase64(params.charFile),
+      toBase64(params.outfitFile),
     ])
+
+    const uploadRes = await fetch('/api/public/upload-images', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        files: [
+          { name: 'char.jpg', type: params.charFile.type || 'image/jpeg', data: charB64 },
+          { name: 'outfit.jpg', type: params.outfitFile.type || 'image/jpeg', data: outfitB64 },
+        ],
+      }),
+    })
+    const uploadData = await uploadRes.json().catch(() => null)
+    if (!uploadRes.ok || !uploadData?.ok) throw Error(uploadData?.error || `Upload failed (${uploadRes.status})`)
+    const [charUrl, outfitUrl] = uploadData.urls
 
     const nodes = buildBulkFashionNodes(params.modelKey, params.prompt, params.quality, params.ratio, charUrl, outfitUrl)
     const extraNodes = nodes._extraNodes || []
