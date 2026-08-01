@@ -40,7 +40,7 @@ function isJwtToken(token: string): boolean {
   return /^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token)
 }
 
-async function resolveAccessToken(token: string): Promise<{ accessToken: string; refreshToken?: string; email?: string }> {
+async function resolveAccessToken(token: string): Promise<{ accessToken: string; refreshToken?: string; email?: string; refreshed: boolean }> {
   const isJwt = isJwtToken(token)
   console.log(`[weavy-proxy] resolveAccessToken: isJwt=${isJwt} tokenLen=${token.length} tokenStart=${token.slice(0, 20)}`)
 
@@ -50,20 +50,20 @@ async function resolveAccessToken(token: string): Promise<{ accessToken: string;
     const refreshed = await refreshWeavyToken(token)
     if (refreshed?.accessToken) {
       console.log(`[weavy-proxy] JWT → refreshed OK, newEmail=${extractEmailFromJwt(refreshed.accessToken)}`)
-      return { accessToken: refreshed.accessToken, refreshToken: refreshed.refreshToken, email: extractEmailFromJwt(refreshed.accessToken) || email || undefined }
+      return { accessToken: refreshed.accessToken, refreshToken: refreshed.refreshToken, email: extractEmailFromJwt(refreshed.accessToken) || email || undefined, refreshed: true }
     }
-    console.log(`[weavy-proxy] JWT → refresh FAILED, using raw JWT token (may be expired)`)
-    return { accessToken: token, email: email || undefined }
+    console.log(`[weavy-proxy] JWT → refresh FAILED, raw JWT may be expired`)
+    return { accessToken: token, email: email || undefined, refreshed: false }
   }
 
-  console.log(`[weavy-proxy] RefreshToken detected, trying refresh...`)
+  console.log(`[weavy-proxy] RefreshToken detected (len=${token.length}), trying refresh...`)
   const refreshed = await refreshWeavyToken(token)
   if (refreshed?.accessToken) {
     console.log(`[weavy-proxy] refreshToken → refreshed OK, email=${extractEmailFromJwt(refreshed.accessToken)}`)
-    return { accessToken: refreshed.accessToken, refreshToken: refreshed.refreshToken, email: extractEmailFromJwt(refreshed.accessToken) || undefined }
+    return { accessToken: refreshed.accessToken, refreshToken: refreshed.refreshToken, email: extractEmailFromJwt(refreshed.accessToken) || undefined, refreshed: true }
   }
-  console.log(`[weavy-proxy] refreshToken → refresh FAILED, using raw token`)
-  return { accessToken: token, email: extractEmailFromJwt(token) || undefined }
+  console.log(`[weavy-proxy] refreshToken → refresh FAILED, cannot proceed with raw refresh token`)
+  return { accessToken: token, email: extractEmailFromJwt(token) || undefined, refreshed: false }
 }
 
 async function fetchWeavyCredits(accessToken: string): Promise<number | null> {
@@ -142,8 +142,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { accessToken, refreshToken, email } = await resolveAccessToken(token)
-    console.log(`[weavy-proxy] resolved token: email=${email} tokenLen=${accessToken?.length}`)
+    const { accessToken, refreshToken, email, refreshed } = await resolveAccessToken(token)
+    console.log(`[weavy-proxy] resolved token: email=${email} refreshed=${refreshed} tokenLen=${accessToken?.length}`)
+
+    if (!refreshed && !isJwtToken(token)) {
+      // Raw refresh token sent without successful refresh — invalid for API calls
+      console.log(`[weavy-proxy] REJECT: refresh token could not be refreshed, raw refresh token is not a valid Bearer token`)
+      return res.status(401).json({ ok: false, error: 'Token expired or invalid. Please update your Weavy token in Providers.' })
+    }
 
     const authHeaders = {
       Authorization: `Bearer ${accessToken}`,
