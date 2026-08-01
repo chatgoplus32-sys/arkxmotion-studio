@@ -146,25 +146,51 @@ async function uploadToService(file: File, name: string, uploader: (f: File) => 
   return url
 }
 
-export async function uploadToCatbox(file: File): Promise<string> {
+export async function validateMedia(url: string, kind: string): Promise<string> {
+  const res = await fetch('/api/public/validate-media', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url, kind }),
+  })
+  const data = await res.json().catch(() => ({})) as any
+  if (!res.ok || !data.ok) {
+    const parts = [data.error, data.contentType ? `content-type=${data.contentType}` : null, data.finalUrl ? `final=${data.finalUrl}` : null].filter(Boolean).join(' · ')
+    throw Error(`${kind}: ${parts || `validasi media gagal (${res.status})`}`)
+  }
+  return url
+}
+
+export async function uploadToCatbox(file: File, kind?: string): Promise<string> {
+  const sizeStr = file.size >= 1024 * 1024 ? `${(file.size / 1024 / 1024).toFixed(1)}MB` : file.size >= 1024 ? `${(file.size / 1024).toFixed(1)}KB` : `${file.size}B`
+  const MAX_SERVER_PROXY = 4 * 1024 * 1024
+
   const uploaders: Array<[string, (f: File) => Promise<string>]> = [
     ['Server', async (f) => {
       const formData = new FormData()
       formData.append('file', new File([f], f.name || 'upload.bin', { type: f.type || 'application/octet-stream' }))
+      formData.append('prefer', 'roboneo')
       const res = await fetch('/api/public/upload-catbox', { method: 'POST', body: formData })
       const data = await res.json().catch(() => ({})) as any
       if (!res.ok || !data.url) throw Error(data.error || `HTTP ${res.status}`)
       return data.url
     }],
-    ['Tmpfiles', async (f) => {
+    ['Uguu', async (f) => {
       const fd = new FormData()
-      fd.append('file', f, f.name || 'upload.bin')
-      const res = await fetch('https://tmpfiles.org/api/v1/upload', { method: 'POST', body: fd })
-      const data = await res.json().catch(() => null)
-      let url = data?.data?.url
-      if (!res.ok || !url) throw Error(data?.error || `Tmpfiles HTTP ${res.status}`)
-      url = url.replace(/^(https?:\/\/tmpfiles\.org)\/(?!dl\/)/i, '$1/dl/')
-      return url
+      fd.append('files[]', f, f.name || 'upload.bin')
+      const res = await fetch('https://uguu.se/upload.php', { method: 'POST', body: fd })
+      const data = await res.json().catch(() => null) as any
+      const url = data?.files?.[0]?.url
+      if (!res.ok || !url || !/^https?:\/\//i.test(url)) throw Error(data?.error || `Uguu HTTP ${res.status}`)
+      return url.replace(/\\\//g, '/')
+    }],
+    ['Catbox', async (f) => {
+      const fd = new FormData()
+      fd.append('reqtype', 'fileupload')
+      fd.append('fileToUpload', f, f.name || 'upload.bin')
+      const res = await fetch('https://catbox.moe/user/api.php', { method: 'POST', body: fd })
+      const text = (await res.text()).trim()
+      if (!res.ok || !/^https?:\/\//i.test(text)) throw Error(text || `Catbox HTTP ${res.status}`)
+      return text
     }],
     ['Pixeldrain', async (f) => {
       const fd = new FormData()
@@ -182,17 +208,39 @@ export async function uploadToCatbox(file: File): Promise<string> {
       if (!res.ok || !/^https?:\/\//i.test(text)) throw Error(text || `0x0 HTTP ${res.status}`)
       return text
     }],
+    ['Tmpfiles', async (f) => {
+      const fd = new FormData()
+      fd.append('file', f, f.name || 'upload.bin')
+      const res = await fetch('https://tmpfiles.org/api/v1/upload', { method: 'POST', body: fd })
+      const data = await res.json().catch(() => null)
+      let url = data?.data?.url
+      if (!res.ok || !url) throw Error(data?.error || `Tmpfiles HTTP ${res.status}`)
+      url = url.replace(/^(https?:\/\/tmpfiles\.org)\/(?!dl\/)/i, '$1/dl/')
+      return url
+    }],
   ]
 
+  const isSmall = file.size <= MAX_SERVER_PROXY
+  const ordered = isSmall ? uploaders : uploaders.filter(([n]) => n !== 'Server')
+
   const errors: string[] = []
-  for (const [name, uploader] of uploaders) {
+  for (const [name, uploader] of ordered) {
     try {
-      return await uploadToService(file, name, uploader)
+      console.log(`[upload] trying ${name} (${sizeStr}, kind=${kind || 'unknown'})...`)
+      const url = await uploader(file)
+      console.log(`[upload] success via ${name}`)
+      if (kind) {
+        try { await validateMedia(url, kind) } catch (ve: any) {
+          console.warn(`[upload] ${name} validation failed: ${ve.message}, using anyway`)
+        }
+      }
+      return url
     } catch (e: any) {
       errors.push(`${name}: ${e.message}`)
       console.warn(`[upload] ${name} failed: ${e.message}`)
     }
   }
+  if (!isSmall) errors.unshift(`skip server proxy (${sizeStr} > ${MAX_SERVER_PROXY / 1024 / 1024}MB)`)
   throw new Error(`Upload gagal: ${errors.join(' | ')}`)
 }
 
@@ -788,6 +836,27 @@ export async function pollMotionControl(
     return null
   }
 
+  function findDeepError(obj: any, depth = 0): string | null {
+    if (depth > 8 || !obj || typeof obj !== 'object') return null
+    if (typeof obj === 'string') return null
+    for (const key of ['task_status_msg', 'error_message', 'error_msg', 'message', 'msg', 'reason', 'fail_reason', 'fail_msg', 'tips', 'fail_code']) {
+      const val = obj[key]
+      if (typeof val === 'string' && val.trim()) return val.trim()
+    }
+    if (Array.isArray(obj)) {
+      for (const item of obj) {
+        const found = findDeepError(item, depth + 1)
+        if (found) return found
+      }
+      return null
+    }
+    for (const val of Object.values(obj)) {
+      const found = findDeepError(val, depth + 1)
+      if (found) return found
+    }
+    return null
+  }
+
   let lastLog = ''
 
   while (Date.now() - startTime < timeoutMs) {
@@ -838,10 +907,12 @@ export async function pollMotionControl(
     const isFailed = ['fail', 'failed', 'error', 'cancelled', 'canceled'].includes(status)
 
     if (isSuccess) {
+      const mediaInfo = task?.media_info_list?.[0] || payload?.media_info_list?.[0]
       const videoUrl = findVideoUrl(
         task?.last_image_url, task?.last_image_urls,
         task?.initial_transferred_urls, task?.media_meta, task?.media_metas,
-        task?.media_info_list, ...steps.map((s: any) => s.output), ...steps.map((s: any) => s.result),
+        mediaInfo?.url, mediaInfo?.media_url,
+        ...steps.map((s: any) => s.output), ...steps.map((s: any) => s.result),
         payload?.output, payload?.result, payload,
         payload?.data, task?.data, task?.output_url, task?.download_url,
         task?.result_url, task?.video, task?.video_url, task?.media,
@@ -872,12 +943,18 @@ export async function pollMotionControl(
         return videoUrl
       }
 
+      const stepError = steps.find((s: any) => /fail|error/i.test(String(s.status || s.state || '')))
+      if (stepError) {
+        const stepErr = stepError.error_message || stepError.error_msg || stepError.fail_code || 'step error'
+        throw new Error(`Roboneo failed (quota/step): ${stepErr}`)
+      }
+
       console.log(`[roboneo] task done but no url found. task keys:`, Object.keys(task || {}))
       console.log(`[roboneo] task:`, JSON.stringify(task, null, 2).slice(0, 2000))
 
       successNoOutputCount++
       if (successNoOutputCount >= MAX_SUCCESS_NO_OUTPUT) {
-        const detail = JSON.stringify({ taskKeys: Object.keys(task || {}), stepKeys: steps.map((s: any) => Object.keys(s)), responseKeys: Object.keys(payload || {}) }).slice(0, 400)
+        const detail = JSON.stringify({ taskKeys: Object.keys(task || {}), stepKeys: steps.map((s: any) => Object.keys(s)), responseKeys: Object.keys(payload || {}), urlCount: resolveUrls({ task, output: steps.map((s: any) => s.output), response: payload }).length }).slice(0, 400)
         throw new Error(`Roboneo credit/quota habis: task selesai (${status}) tapi URL output tidak ditemukan (${detail})`)
       }
 
@@ -891,7 +968,9 @@ export async function pollMotionControl(
       const stepOutput = failedStep?.output
       const errMsg = task?.error_message || task?.error_msg || failedStep?.error_message || failedStep?.error_msg ||
         (typeof stepOutput?.error_message === 'string' ? stepOutput.error_message : undefined) ||
-        (typeof stepOutput?.error_msg === 'string' ? stepOutput.error_msg : undefined) || 'unknown'
+        (typeof stepOutput?.error_msg === 'string' ? stepOutput.error_msg : undefined) ||
+        findDeepError(task) || findDeepError(payload) || findDeepError(stepOutput) ||
+        failedStep?.fail_code || 'unknown'
       const taskErrorCode = task?.error_code ?? failedStep?.fail_code ?? stepOutput?.error_code ?? stepOutput?.code
       const detail = JSON.stringify({ status, taskErrorCode, failCode: failedStep?.fail_code, stepStatus: failedStep?.status || failedStep?.state, output: stepOutput }).slice(0, 500)
 

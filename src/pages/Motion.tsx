@@ -289,7 +289,7 @@ export default function MotionPage() {
               updateSlotStatus(slot.id, 'uploading img...')
               addLog(`#${slotNum} Upload image...`)
               const normalizedImage = await normalizeImage(slot.image)
-              const imageUrl = await uploadToCatbox(normalizedImage)
+              const imageUrl = await uploadToCatbox(normalizedImage, 'image')
               addLog(`#${slotNum} Image: ${imageUrl.slice(0, 60)}...`)
 
               let motionVideoUrl = ''
@@ -315,7 +315,7 @@ export default function MotionPage() {
                 updateSlotStatus(slot.id, 'uploading vid...')
                 addLog(`#${slotNum} Upload video...`)
                 const videoFile = await compressVideo(slot.video, 4)
-                motionVideoUrl = await uploadToCatbox(videoFile)
+                motionVideoUrl = await uploadToCatbox(videoFile, 'video')
                 addLog(`#${slotNum} Video: ${motionVideoUrl.slice(0, 60)}...`)
 
                 updateSlotStatus(slot.id, 'processing', 'submitting...')
