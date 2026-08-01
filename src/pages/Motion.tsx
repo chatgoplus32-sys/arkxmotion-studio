@@ -35,8 +35,7 @@ const PROVIDERS = {
     { key: 'ws:kwaivgi/kling-v2.6-std/motion-control', label: 'Kling V2.6 Standard', cr: 21 },
   ]},
   roboneo: { name: 'Roboneo', models: [
-    { key: 'rn:video_bonbon_motioncontrol_v26:std', label: 'Kling V2.6 Standard (Motion Control)', cr: 50 },
-    { key: 'rn:google-omni', label: 'Google Omni (Image to Video)', cr: 80 },
+    { key: 'rn:video_bonbon_motioncontrol_v26:std', label: 'Kling V2.6 Standard (Roboneo)', cr: 0 },
   ]},
 }
 
