@@ -444,6 +444,7 @@ export async function leonardoGenerateImage(token: string, opts: {
   promptEnhance?: string
   guidanceScale?: number
   seed?: number
+  imageUrl?: string
 }): Promise<{ generationId: string }> {
   const restBody: any = {
     prompt: opts.prompt,
@@ -456,6 +457,7 @@ export async function leonardoGenerateImage(token: string, opts: {
     ...(opts.seed != null ? { seed: opts.seed } : {}),
     ...(opts.quality ? { quality: opts.quality.toLowerCase() } : {}),
     ...(opts.promptEnhance === 'AUTO' ? { enhance_prompt: true } : {}),
+    ...(opts.imageUrl ? { init_image: opts.imageUrl } : {}),
     public: true,
   }
 
@@ -469,6 +471,7 @@ export async function leonardoGenerateImage(token: string, opts: {
       body: restBody,
     })
   } catch (restErr) {
+    const restErrMsg = restErr instanceof Error ? restErr.message : String(restErr)
     const requestBody = {
       operationName: 'CreateGeneration',
       variables: {
@@ -476,13 +479,24 @@ export async function leonardoGenerateImage(token: string, opts: {
       },
       query: GENERATE_IMAGE_MUTATION,
     }
-    data = await leonardoApi({
-      token,
-      base: 'api',
-      path: '/v1/graphql',
-      method: 'POST',
-      body: requestBody,
-    })
+    try {
+      data = await leonardoApi({
+        token,
+        base: 'api',
+        path: '/v1/graphql',
+        method: 'POST',
+        body: requestBody,
+      })
+    } catch (gqlErr) {
+      const gqlErrMsg = gqlErr instanceof Error ? gqlErr.message : String(gqlErr)
+      const combinedErr = `Leonardo ${restErrMsg} | GraphQL: ${gqlErrMsg}`
+      if (/does not support|cannot read|model.*not.*found|photo/i.test(combinedErr)) {
+        throw Error(`Leonardo: model (UUID ${opts.modelId}) tidak didukung untuk generasi gambar. ` +
+          `Model mungkin sudah tidak tersedia. Coba pilih model lain atau refresh halaman. ` +
+          `Detail: ${gqlErrMsg}`)
+      }
+      throw Error(`Leonardo image generate gagal: ${restErrMsg}; GraphQL: ${gqlErrMsg}`)
+    }
   }
 
   const generationId = extractGenerationId(data)
@@ -511,6 +525,7 @@ export async function runLeonardoImage(opts: {
   quality?: string
   promptEnhance?: string
   numImages?: number
+  imageUrl?: string
   timeoutMs?: number
   pollIntervalMs?: number
   onProgress?: (text: string, pct?: number) => void
@@ -571,6 +586,7 @@ export async function runLeonardoImage(opts: {
       numImages: opts.numImages,
       quality: opts.quality,
       promptEnhance: opts.promptEnhance,
+      imageUrl: opts.imageUrl,
     })
 
     opts.onProgress?.(`Leonardo: generation ${generationId.slice(0, 8)}…`, 30)

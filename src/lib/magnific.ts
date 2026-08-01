@@ -155,3 +155,95 @@ export async function runMagnificUpscale(
 export function isMagnificTokenError(msg: string): boolean {
   return /api.?key|unauthorized|forbidden|invalid.*key|key.*invalid|expired|401|403|auth/i.test(msg)
 }
+
+export type MagnificMotionModel = 'kling-v3-motion-control-pro' | 'kling-v3-motion-control-std' | 'kling-v2-6-motion-control-pro' | 'kling-v2-6-motion-control-std'
+
+const MAGNIFIC_MOTION_ENDPOINTS: Record<MagnificMotionModel, string> = {
+  'kling-v3-motion-control-pro': '/v1/ai/video/kling-v3-motion-control-pro',
+  'kling-v3-motion-control-std': '/v1/ai/video/kling-v3-motion-control-std',
+  'kling-v2-6-motion-control-pro': '/v1/ai/video/kling-v2-6-motion-control-pro',
+  'kling-v2-6-motion-control-std': '/v1/ai/video/kling-v2-6-motion-control-std',
+}
+
+const MAGNIFIC_MOTION_POLL_ENDPOINTS: Record<MagnificMotionModel, string> = {
+  'kling-v3-motion-control-pro': '/v1/ai/video/kling-v3-motion-control-pro',
+  'kling-v3-motion-control-std': '/v1/ai/video/kling-v3-motion-control-std',
+  'kling-v2-6-motion-control-pro': '/v1/ai/video/kling-v2-6-motion-control-pro',
+  'kling-v2-6-motion-control-std': '/v1/ai/video/kling-v2-6-motion-control-std',
+}
+
+export interface MagnificMotionOptions {
+  apiKey: string
+  model: MagnificMotionModel
+  imageUrl: string
+  videoUrl: string
+  prompt?: string
+  orientation?: 'video' | 'image'
+  cfgScale?: number
+  onProgress?: (msg: string, pct?: number) => void
+}
+
+export async function submitMagnificMotion(opts: MagnificMotionOptions): Promise<string> {
+  const endpoint = MAGNIFIC_MOTION_ENDPOINTS[opts.model]
+  if (!endpoint) throw Error(`Magnific: model tidak dikenal (${opts.model})`)
+
+  opts.onProgress?.('Submit ke Magnific...', 10)
+  const res = await magnificApi('submit-motion', {
+    apiKey: opts.apiKey,
+    endpoint,
+    payload: {
+      image_url: opts.imageUrl,
+      video_url: opts.videoUrl,
+      ...(opts.prompt ? { prompt: opts.prompt } : {}),
+      character_orientation: opts.orientation || 'video',
+      cfg_scale: opts.cfgScale ?? 0.5,
+    },
+  })
+
+  const taskData = res.data ?? res
+  const taskId = taskData.id || taskData.task_id || taskData.taskId
+  if (!taskId) throw Error('Magnific: task id tidak ditemukan — ' + JSON.stringify(taskData).slice(0, 200))
+
+  return taskId
+}
+
+export async function pollMagnificMotion(
+  apiKey: string,
+  model: MagnificMotionModel,
+  taskId: string,
+  onProgress?: (msg: string, pct?: number) => void
+): Promise<string> {
+  const endpoint = MAGNIFIC_MOTION_POLL_ENDPOINTS[model]
+  if (!endpoint) throw Error(`Magnific: model tidak dikenal (${model})`)
+
+  const startTime = Date.now()
+  const MAX_WAIT = 10 * 60 * 1000
+
+  for (; Date.now() - startTime < MAX_WAIT;) {
+    await new Promise(r => setTimeout(r, 5000))
+
+    const res = await magnificApi('poll-motion', { apiKey, endpoint, taskId })
+    const data = res.data ?? res
+    const status = String(data.status || data.state || '').toUpperCase()
+
+    const elapsed = Math.round((Date.now() - startTime) / 1000)
+    onProgress?.(`Magnific: ${status || 'checking'}... (${elapsed}s)`, status === 'COMPLETED' ? 95 : Math.min(90, 30 + elapsed))
+
+    if (['COMPLETED', 'SUCCESS', 'SUCCEEDED', 'DONE', 'FINISHED'].includes(status)) {
+      const videoUrl = data.video_url || data.output_url || data.result?.url || data.output?.video_url
+      if (videoUrl) {
+        onProgress?.('Selesai', 100)
+        return videoUrl
+      }
+      const generated = data.generated
+      if (Array.isArray(generated) && generated.length > 0) return generated[0]
+      throw Error('Magnific: status COMPLETED tapi URL tidak ditemukan')
+    }
+
+    if (['FAILED', 'ERROR', 'CANCELED', 'CANCELLED'].includes(status)) {
+      throw Error('Magnific: task gagal — ' + (data.error || data.message || 'unknown'))
+    }
+  }
+
+  throw Error('Magnific: timeout menunggu hasil')
+}

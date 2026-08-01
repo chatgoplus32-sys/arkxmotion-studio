@@ -5,6 +5,8 @@ import { useProviderManager, type ProviderId } from '@/stores'
 import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
 import { useToastStore } from '@/stores/toastStore'
 import { uploadToCatbox, submitMotionControl, pollMotionControl, checkRoboneoBalance, compressVideo, submitGoogleOmni, normalizeImage } from '@/lib/roboneo'
+import { getMagnificApiKey, submitMagnificMotion, pollMagnificMotion, type MagnificMotionModel } from '@/lib/magnific'
+import { useLocalStorage } from '@/lib/useLocalStorage'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { removeResult, clearResults, getActiveTasks, getLogs, getResults, addBgLog, addActiveTask, addResult, clearLogs, removeActiveTask } from '@/lib/backgroundTasks'
 import { startBackgroundPolling } from '@/lib/backgroundTasks'
@@ -37,6 +39,16 @@ const PROVIDERS = {
   roboneo: { name: 'Roboneo', models: [
     { key: 'rn:video_bonbon_motioncontrol_v26:std', label: 'Kling V2.6 Standard (Roboneo)', cr: 0 },
   ]},
+  magnific: { name: 'Magnific', models: [
+    { key: 'mag:kling-v3-motion-control-pro', label: 'Kling V3.0 Pro (Magnific)', cr: 84 },
+    { key: 'mag:kling-v3-motion-control-std', label: 'Kling V3.0 Standard (Magnific)', cr: 63 },
+    { key: 'mag:kling-v2-6-motion-control-pro', label: 'Kling V2.6 Pro (Magnific)', cr: 56 },
+    { key: 'mag:kling-v2-6-motion-control-std', label: 'Kling V2.6 Standard (Magnific)', cr: 21 },
+  ]},
+  framia: { name: 'Framia', models: [
+    { key: 'framia:kling-v2.1-motion', label: 'Kling V2.1 Motion Control (Framia)', cr: 40 },
+    { key: 'framia:kling-v2.6-motion', label: 'Kling V2.6 Motion Control (Framia)', cr: 35 },
+  ]},
 }
 
 const MAX_SLOTS = 12
@@ -65,13 +77,13 @@ function createSlot(): Slot {
 }
 
 export default function MotionPage() {
-  const [provider, setProvider] = useState<ProviderId>('weavy')
+  const [provider, setProvider] = useLocalStorage<ProviderId>('motion.provider', 'weavy')
   const addToast = useToastStore((s) => s.addToast)
-  const [modelKey, setModelKey] = useState(PROVIDERS.weavy.models[0].key)
-  const [orientation, setOrientation] = useState<'video' | 'image'>('video')
-  const [prompt, setPrompt] = useState('')
-  const [negativePrompt, setNegativePrompt] = useState('')
-  const [keepSound, setKeepSound] = useState(true)
+  const [modelKey, setModelKey] = useLocalStorage('motion.modelKey', PROVIDERS.weavy.models[0].key)
+  const [orientation, setOrientation] = useLocalStorage<'video' | 'image'>('motion.orientation', 'video')
+  const [prompt, setPrompt] = useLocalStorage('motion.prompt', '')
+  const [negativePrompt, setNegativePrompt] = useLocalStorage('motion.negativePrompt', '')
+  const [keepSound, setKeepSound] = useLocalStorage('motion.keepSound', true)
   const [slots, setSlots] = useState<Slot[]>([createSlot()])
   const [generating, setGenerating] = useState(() => getActiveTasks().filter((t) => t.page === 'motion').length > 0)
   const [compressDialog, setCompressDialog] = useState<{ msg: string; pct?: number } | null>(null)
@@ -195,8 +207,53 @@ export default function MotionPage() {
     return 'Idle'
   }, [slots, generating])
 
-  const handleFileChange = (id: string, type: 'image' | 'video', file: File | null) => {
-    const url = file ? URL.createObjectURL(file) : null
+  const handleFileChange = async (id: string, type: 'image' | 'video', file: File | null) => {
+    if (!file) {
+      const url = null
+      if (type === 'image') {
+        updateSlot(id, { image: null, imageUrl: null })
+      } else {
+        updateSlot(id, { video: null, videoUrl: null })
+      }
+      return
+    }
+
+    const sizeLimit = 4 * 1024 * 1024
+
+    if (provider === 'roboneo' && file.size > sizeLimit) {
+      const label = type === 'image' ? 'gambar' : 'video'
+      const sizeMB = (file.size / (1024 * 1024)).toFixed(1)
+      const shouldCompress = window.confirm(
+        `File ${label} berukuran ${sizeMB}MB. Roboneo membatasi upload maksimal 4MB.\n\nKlik OK untuk mengompres file otomatis.`
+      )
+      if (shouldCompress) {
+        setCompressDialog({ msg: `Mengompres ${label}...` })
+        try {
+          let compressed: File
+          if (type === 'image') {
+            compressed = await normalizeImage(file)
+          } else {
+            compressed = await compressVideo(file, 4, (msg, pct) => {
+              setCompressDialog({ msg, pct })
+            })
+          }
+          setCompressDialog(null)
+          const url = URL.createObjectURL(compressed)
+          if (type === 'image') {
+            updateSlot(id, { image: compressed, imageUrl: url })
+          } else {
+            updateSlot(id, { video: compressed, videoUrl: url })
+          }
+          addLog(`#${id.slice(0, 4)} ${label} dikompres: ${(file.size / (1024 * 1024)).toFixed(1)}MB → ${(compressed.size / (1024 * 1024)).toFixed(1)}MB`, 'success')
+        } catch (err: any) {
+          setCompressDialog(null)
+          addLog(`Kompresi gagal: ${err.message}`, 'error')
+        }
+        return
+      }
+    }
+
+    const url = URL.createObjectURL(file)
     if (type === 'image') {
       updateSlot(id, { image: file, imageUrl: url })
     } else {
@@ -219,6 +276,8 @@ export default function MotionPage() {
     if (filledSlots.length === 0) return
 
     const isRoboneo = provider === 'roboneo'
+    const isMagnific = provider === 'magnific'
+    const isFramia = provider === 'framia'
 
     // Validate all slots comprehensively before generating
     const validationErrors: string[] = []
@@ -322,7 +381,12 @@ export default function MotionPage() {
             try {
               updateSlotStatus(slot.id, 'uploading img...')
               addLog(`#${slotNum} Upload image...`)
-              const normalizedImage = await normalizeImage(slot.image)
+              const normalizedImage = await normalizeImage(slot.image, (msg, pct) => {
+                setCompressDialog({ msg, pct })
+                updateSlotStatus(slot.id, 'uploading img...', msg)
+                addLog(`#${slotNum} ${msg}`)
+              })
+              setCompressDialog(null)
               const imageUrl = await uploadToCatbox(normalizedImage, 'image')
               addLog(`#${slotNum} Image: ${imageUrl.slice(0, 60)}...`)
 
@@ -466,6 +530,85 @@ export default function MotionPage() {
               removeActiveTask(taskId)
               failCount++
             }
+          } else if (isMagnific && slot.image && slot.video) {
+            try {
+              updateSlotStatus(slot.id, 'uploading img...')
+              addLog(`#${slotNum} Upload image...`)
+              const normalizedImage = await normalizeImage(slot.image, (msg, pct) => {
+                setCompressDialog({ msg, pct })
+                updateSlotStatus(slot.id, 'uploading img...', msg)
+                addLog(`#${slotNum} ${msg}`)
+              })
+              setCompressDialog(null)
+              const imageUrl = await uploadToCatbox(normalizedImage, 'image')
+              addLog(`#${slotNum} Image: ${imageUrl.slice(0, 60)}...`)
+
+              updateSlotStatus(slot.id, 'uploading vid...')
+              addLog(`#${slotNum} Upload video...`)
+              const videoFile = await compressVideo(slot.video, 4, (msg, pct) => {
+                setCompressDialog({ msg, pct })
+                updateSlotStatus(slot.id, 'uploading vid...', msg)
+                addLog(`#${slotNum} ${msg}`)
+              })
+              setCompressDialog(null)
+              const videoUrl = await uploadToCatbox(videoFile, 'video')
+              addLog(`#${slotNum} Video: ${videoUrl.slice(0, 60)}...`)
+
+              const magnificKey = getMagnificApiKey()
+              if (!magnificKey) throw Error('Belum ada Magnific API key')
+
+              const modelSlug = modelKey.replace('mag:', '') as MagnificMotionModel
+              updateSlotStatus(slot.id, 'processing', 'submitting...')
+              addLog(`#${slotNum} Submit ke Magnific (${modelSlug})...`)
+
+              const taskId = await submitMagnificMotion({
+                apiKey: magnificKey,
+                model: modelSlug,
+                imageUrl,
+                videoUrl,
+                prompt: prompt.trim() || undefined,
+                orientation,
+              })
+              addLog(`#${slotNum} Task: ${taskId.slice(0, 20)}...`)
+
+              updateSlotStatus(slot.id, 'processing', 'polling...')
+              addLog(`#${slotNum} Polling for result...`)
+
+              const resultUrl = await pollMagnificMotion(magnificKey, modelSlug, taskId, (msg, pct) => {
+                updateSlotStatus(slot.id, 'processing', msg)
+                addLog(`#${slotNum} ${msg}`)
+                if (pct) setProgress(pct)
+              })
+
+              updateSlotStatus(slot.id, 'done')
+              addLog(`#${slotNum} Done: ${resultUrl.slice(0, 60)}...`, 'success')
+
+              addResult({
+                id: taskId,
+                url: resultUrl,
+                prompt: prompt.trim() || '(no prompt)',
+                date: new Date().toISOString(),
+                page: 'motion',
+              })
+              setResults((prev) => [
+                {
+                  id: taskId,
+                  url: resultUrl,
+                  prompt: prompt.trim() || '(no prompt)',
+                  date: new Date().toISOString(),
+                },
+                ...prev,
+              ])
+              completedCount++
+              successCount++
+            } catch (err: any) {
+              setCompressDialog(null)
+              updateSlotStatus(slot.id, 'error', err.message)
+              addLog(`#${slotNum} Error: ${err.message}`, 'error')
+              failCount++
+            }
+          } else if (isFramia) {
+            throw new Error('Provider aktif Framia. Gunakan Generate → Framia untuk menjalankan node/canvas Framia secara langsung.')
           } else {
             addLog(`#${slotNum} Skipping (no image/video)`, 'warn')
           }

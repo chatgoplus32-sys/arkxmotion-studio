@@ -149,8 +149,8 @@ function resolveImageModel(modelKey: string): { model: string; service: string }
   return map[modelKey] || { model: modelKey, service: 'fal_imported' }
 }
 
-function buildImageNode(modelKey: string, prompt: string, quality: string, ratio: string): any {
-  const { model, service } = resolveImageModel(modelKey)
+function buildImageNode(modelKey: string, prompt: string, quality: string, ratio: string, imageUrl?: string, maskUrl?: string): any {
+  const { model: modelName, service } = resolveImageModel(modelKey)
   const nodeId = 'n_' + Date.now() + '_model'
   const now = Date.now()
 
@@ -167,19 +167,77 @@ function buildImageNode(modelKey: string, prompt: string, quality: string, ratio
     const parsed = quality.includes('@') ? quality : 'high@1024x1024'
     const size = sizeMap[parsed] || { width: 1024, height: 1024 }
     const q = parsed.split('@')[0] || 'high'
-    return {
-      id: nodeId, type: 'custommodelV2',
+
+    const params: any = { prompt, image_size: size, quality: q, num_images: 1, output_format: 'png' }
+    const handles: any = { input: { prompt: { id: 'input-prompt', type: 'text', label: 'prompt', format: 'text', required: true } }, output: { result: { id: 'output-result', type: 'image', label: 'result', order: 0, format: 'uri' } } }
+    let extraNodes: any[] = []
+    let extraEdges: any[] = []
+
+    if (imageUrl) {
+      const imgNodeId = 'n_' + now + '_img'
+      params.image_urls = [imageUrl]
+      handles.input.image = { id: 'input-image', type: 'image', label: 'image', format: 'text', required: false }
+
+      const imgNode = {
+        id: imgNodeId, type: 'import', dragHandle: '.node-header', owner: null, visibility: null, isModel: false,
+        data: {
+          handles: { output: { file: { type: 'any', label: 'File', order: 0, format: 'uri' } } },
+          name: 'File', color: 'Yambo_Blue',
+          files: [{ type: 'image', url: imageUrl, publicId: 'uploads/' + randId(), id: imgNodeId + '_file', name: 'input.jpg', insertionOrder: 0 }],
+          result: { type: 'image', url: imageUrl, publicId: 'uploads/' + randId(), id: imgNodeId + '_result', name: 'input.jpg', insertionOrder: 0 },
+          output: { file: { type: 'image', url: imageUrl, publicId: 'uploads/' + randId(), id: imgNodeId + '_output', name: 'input.jpg', insertionOrder: 0 } },
+          version: 3,
+        },
+        position: { x: 80, y: 200 }, width: 460, height: 400,
+      }
+      extraNodes.push(imgNode)
+      extraEdges.push({
+        id: 'e-' + randId(), source: imgNodeId, target: nodeId,
+        sourceHandle: `${imgNodeId}-output-file`, targetHandle: `${nodeId}-input-image`,
+        type: 'custom', data: { sourceColor: 'Yambo_Blue', targetColor: 'Red', sourceHandleType: 'any', targetHandleType: 'image' },
+      })
+
+      if (maskUrl) {
+        const maskNodeId = 'n_' + now + '_mask'
+        params.mask_url = maskUrl
+        handles.input.mask = { id: 'input-mask', type: 'image', label: 'mask', format: 'text', required: false }
+        const maskNode = {
+          id: maskNodeId, type: 'import', dragHandle: '.node-header', owner: null, visibility: null, isModel: false,
+          data: {
+            handles: { output: { file: { type: 'any', label: 'File', order: 0, format: 'uri' } } },
+            name: 'File', color: 'Yambo_Blue',
+            files: [{ type: 'image', url: maskUrl, publicId: 'uploads/' + randId(), id: maskNodeId + '_file', name: 'mask.png', insertionOrder: 0 }],
+            result: { type: 'image', url: maskUrl, publicId: 'uploads/' + randId(), id: maskNodeId + '_result', name: 'mask.png', insertionOrder: 0 },
+            output: { file: { type: 'image', url: maskUrl, publicId: 'uploads/' + randId(), id: maskNodeId + '_output', name: 'mask.png', insertionOrder: 0 } },
+            version: 3,
+          },
+          position: { x: 80, y: 350 }, width: 460, height: 400,
+        }
+        extraNodes.push(maskNode)
+        extraEdges.push({
+          id: 'e-' + randId(), source: maskNodeId, target: nodeId,
+          sourceHandle: `${maskNodeId}-output-file`, targetHandle: `${nodeId}-input-mask`,
+          type: 'custom', data: { sourceColor: 'Yambo_Blue', targetColor: 'Red', sourceHandleType: 'any', targetHandleType: 'image' },
+        })
+      }
+    }
+
+    const mainNode = {
+      id: nodeId, type: 'custommodelV2', dragHandle: '.node-header', owner: null, visibility: 'private', isModel: true,
       data: {
-        handles: { input: { prompt: { id: 'input-prompt', type: 'text', label: 'prompt', format: 'text', required: true } }, output: { result: { id: 'output-result', type: 'image', label: 'result', order: 0, format: 'uri' } } },
-        name: 'ChatGPT Images 2.0', color: 'Red',
-        model: { name, service },
-        params: { prompt, image_size: size, quality: q, num_images: 1, output_format: 'png' },
-        version: 3, kind: { type: 'wildcard', model: { type: 'predefined', name, version: model, service } },
+        handles, name: 'ChatGPT Images 2.0', color: 'Red',
+        model: { name: modelName, service }, params,
+        version: 3, kind: { type: 'wildcard', model: { type: 'predefined', name: modelName, version: modelName, service }, inputs: handles.input ? Object.values(handles.input).map((h: any) => h.id) : [], parameters: [], outputs: handles.output ? Object.values(handles.output).map((h: any) => h.id) : [] },
         outputs: [{ id: 'result', title: 'result', dataType: 'image' }],
         generations: [], selectedIndex: 0, cameraLocked: false, result: [], output: {}, selectedOutput: 0,
       },
       position: { x: 600, y: 300 }, width: 460, height: 500,
     }
+
+    if (extraNodes.length > 0) {
+      return { id: nodeId, type: 'custommodelV2', data: mainNode.data, _dummyNode: extraNodes[0], _extraNodes: extraNodes, _edge: extraEdges[0], _extraEdges: extraEdges }
+    }
+    return mainNode
   }
 
   if (modelKey === 'nanobanana2' || modelKey === 'gemini-nano-banana-2') {
@@ -203,9 +261,9 @@ function buildImageNode(modelKey: string, prompt: string, quality: string, ratio
       data: {
         handles: { input: { prompt: { id: 'input-prompt', type: 'text', label: 'prompt', format: 'text', required: true }, image: { id: 'input-image', type: 'image', label: 'image', format: 'text', required: true } }, output: { result: { id: 'output-result', type: 'image', label: 'result', order: 0, format: 'uri' } } },
         name: 'Gemini 3.1 Flash (Nano Banana 2)', color: 'Yellow',
-        model: { name, service },
+        model: { name: modelName, service },
         params: { image_urls: ['data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='], prompt, aspect_ratio: aspectRatio, resolution, num_images: 1, output_format: 'png', safety_tolerance: '4', limit_generations: false, enable_web_search: false },
-        version: 3, kind: { type: 'wildcard', model: { type: 'predefined', name, version: model, service } },
+        version: 3, kind: { type: 'wildcard', model: { type: 'predefined', name: modelName, version: modelName, service } },
         outputs: [{ id: 'result', title: 'result', dataType: 'image' }],
         generations: [], selectedIndex: 0, cameraLocked: false, result: [], output: {}, selectedOutput: 0,
       },
@@ -220,9 +278,9 @@ function buildImageNode(modelKey: string, prompt: string, quality: string, ratio
     id: nodeId, type: 'custommodelV2',
     data: {
       handles: { input: { prompt: { id: 'input-prompt', type: 'text', label: 'prompt', format: 'text', required: true } }, output: { result: { id: 'output-result', type: 'image', label: 'result', order: 0, format: 'uri' } } },
-      name: model, color: 'Red', model: { name, service },
+      name: modelName, color: 'Red', model: { name: modelName, service },
       params: { prompt, num_images: 1, output_format: 'png' },
-      version: 3, kind: { type: 'wildcard', model: { type: 'predefined', name, version: model, service } },
+      version: 3, kind: { type: 'wildcard', model: { type: 'predefined', name: modelName, version: modelName, service } },
       outputs: [{ id: 'result', title: 'result', dataType: 'image' }],
       generations: [], selectedIndex: 0, cameraLocked: false, result: [], output: {}, selectedOutput: 0,
     },
@@ -272,59 +330,64 @@ export function isWeavyTokenError(msg: string): boolean {
   return /token|auth|log\s*in|login|expired|unauth|401|403|invalid.*token|token.*invalid|insufficient|balance|credit|quota|no output URL|output tidak ditemukan/i.test(msg)
 }
 
-export interface WeavyImageGenerateParams { token: string; model: string; prompt: string; aspectRatio?: string; negativePrompt?: string; quality?: string }
+export interface WeavyImageGenerateParams { token: string; model: string; prompt: string; aspectRatio?: string; negativePrompt?: string; quality?: string; imageUrl?: string; maskUrl?: string }
 export interface WeavyImageGenerateResult { ok: boolean; taskId?: string; error?: string; raw?: any }
 
-async function createWeavyRecipe(accessToken: string): Promise<{ id: string; v3?: string }> {
-  const res = await fetch(`${WEAVY_API}/v1/recipes/create`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ scope: 'PERSONAL' }) })
-  if (!res.ok) throw Error(`Create recipe failed (${res.status})`)
-  const data = await res.json()
-  return { id: data?.id || data?.recipeId, v3: data?.v3 }
-}
-
-async function saveWeavyRecipe(recipeId: string, body: any, accessToken: string): Promise<void> {
-  const res = await fetch(`${WEAVY_API}/v1/recipes/${recipeId}/save`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ ...body, v3: body.v3 || '', lastUpdatedAt: new Date().toISOString() }) })
-  if (!res.ok) { const text = await res.text().catch(() => ''); throw Error(`Save recipe failed (${res.status}): ${text.slice(0, 200)}`) }
-}
-
-async function approveWeavyModel(modelId: string, accessToken: string): Promise<void> {
-  try { await fetch(`${WEAVY_API}/v1/workspaces/models/approve`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ modelIds: [modelId] }) }) } catch {}
-}
-
 export async function submitWeavyImage(params: WeavyImageGenerateParams): Promise<WeavyImageGenerateResult> {
-  const { token, model, prompt, aspectRatio = '1:1', negativePrompt, quality } = params
-  let accessToken = token
-  if (isRefreshToken(token)) { const refreshed = await refreshWeavyToken(token); if (refreshed?.accessToken) accessToken = refreshed.accessToken }
+  const { token, model, prompt, aspectRatio = '1:1', quality, imageUrl, maskUrl } = params
   try {
-    const { id: recipeId, v3 } = await createWeavyRecipe(accessToken)
-    const nodes = buildImageNode(model, prompt.trim(), quality || 'high', aspectRatio || '1:1')
-    const edges = nodes._edge ? [nodes._edge] : []
-    const mainNode = nodes._dummyNode ? nodes : nodes
-    await saveWeavyRecipe(recipeId, { nodes: [mainNode], edges, v3 }, accessToken)
-    await approveWeavyModel(mainNode.data.model.name, accessToken)
-    const execBody: any = { nodes: [mainNode], edges, numberOfRuns: 1 }
-    execBody.model = mainNode.data.model.name
-    const execRes = await fetch(`${WEAVY_API}/v1/batches/recipes/${recipeId}/execute`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` }, body: JSON.stringify(execBody) })
-    const text = await execRes.text(); let data: any; try { data = JSON.parse(text) } catch { data = null }
-    if (!execRes.ok || !data) return { ok: false, error: data?.error || data?.message || text.slice(0, 200) || `HTTP ${execRes.status}`, raw: data }
-    const batchId = data?.batchId || data?.id
-    if (!batchId) return { ok: false, error: 'No batchId in response', raw: data }
-    return { ok: true, taskId: `${recipeId}:${batchId}`, raw: data }
+    // Step 1: Create recipe via proxy
+    const createRes = await fetch(WEAVY_PROXY, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Weavy-Token': token }, body: JSON.stringify({ action: 'image-create-recipe' }) })
+    const createData = await createRes.json().catch(() => null)
+    if (!createRes.ok || !createData?.ok) return { ok: false, error: createData?.error || `Create recipe failed (${createRes.status})`, raw: createData }
+    const recipeId = createData?.data?.recipeId
+    const v3 = createData?.data?.v3
+    if (!recipeId) return { ok: false, error: 'No recipeId returned', raw: createData }
+
+    // Step 2: Build nodes + edges
+    const nodes = buildImageNode(model, prompt.trim(), quality || 'high', aspectRatio || '1:1', imageUrl, maskUrl)
+    const extraNodes = nodes._extraNodes || []
+    const extraEdges = nodes._extraEdges || []
+    const edges = nodes._edge ? [nodes._edge, ...extraEdges] : extraEdges
+    const modelNode = { id: nodes.id, type: nodes.type, data: nodes.data, position: { x: 600, y: 300 }, width: 460, height: 500 }
+    const allNodes = nodes._dummyNode
+      ? [nodes._dummyNode, ...extraNodes, modelNode]
+      : [nodes]
+
+    // Step 3: Save recipe via proxy
+    const saveRes = await fetch(WEAVY_PROXY, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Weavy-Token': token }, body: JSON.stringify({ action: 'image-save-recipe', recipeId, nodes: allNodes, edges, v3 }) })
+    const saveData = await saveRes.json().catch(() => null)
+    if (!saveRes.ok || !saveData?.ok) return { ok: false, error: saveData?.error || `Save recipe failed (${saveRes.status})`, raw: saveData }
+
+    // Step 4: Approve model via proxy
+    const modelName = nodes.data?.model?.name || model
+    await fetch(WEAVY_PROXY, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Weavy-Token': token }, body: JSON.stringify({ action: 'image-approve-model', modelId: modelName }) })
+
+    // Step 5: Execute via proxy
+    const execRes = await fetch(WEAVY_PROXY, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Weavy-Token': token }, body: JSON.stringify({ action: 'image-execute', recipeId, nodes: allNodes, edges, numberOfRuns: 1 }) })
+    const execData = await execRes.json().catch(() => null)
+    if (!execRes.ok || !execData?.ok) return { ok: false, error: execData?.error || `Execute failed (${execRes.status})`, raw: execData }
+    const batchId = execData?.data?.batchId || execData?.data?.id
+    if (!batchId) return { ok: false, error: 'No batchId in response', raw: execData }
+    return { ok: true, taskId: `${recipeId}:${batchId}`, raw: execData }
   } catch (err: any) { return { ok: false, error: err.message } }
 }
 
 export async function pollWeavyImageStatus(token: string, taskId: string, onProgress?: (status: string, pct: number) => void, timeoutMs = 600000): Promise<string> {
   const startTime = Date.now(); let lastLog = ''
   const [recipeId, batchId] = taskId.split(':')
-  let accessToken = token
-  if (isRefreshToken(token)) { const refreshed = await refreshWeavyToken(token); if (refreshed?.accessToken) accessToken = refreshed.accessToken }
-  while (Date.now() - startTime < timeoutMs) {
-    await new Promise((r) => setTimeout(r, 4000))
+  let attempt = 0
+  const maxAttempts = Math.ceil(timeoutMs / 5000)
+
+  while (Date.now() - startTime < timeoutMs && attempt < maxAttempts) {
+    attempt++
+    const pollInterval = attempt < 30 ? 8000 : attempt < 60 ? 10000 : 15000
+    await new Promise((r) => setTimeout(r, pollInterval))
     try {
-      let result: any = null
-      if (recipeId && batchId) { const res = await fetch(`${WEAVY_API}/v1/batches/recipes/${recipeId}/batches/${batchId}/status`, { headers: { Authorization: `Bearer ${accessToken}` } }); if (res.ok) result = await res.json().catch(() => null) }
-      if (!result) { const res = await fetch(`${WEAVY_API}/v1/batches/${batchId}/status`, { headers: { Authorization: `Bearer ${accessToken}` } }); if (res.ok) result = await res.json().catch(() => null) }
-      if (!result) continue
+      const res = await fetch(WEAVY_PROXY, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Weavy-Token': token }, body: JSON.stringify({ action: 'image-status', recipeId, batchId }) })
+      const data = await res.json().catch(() => null)
+      if (!res.ok || !data?.ok) { console.log(`[weavy-image] poll error:`, data?.error || `HTTP ${res.status}`); continue }
+      const result = data?.data
       const status = (result?.status || result?.state || '').toLowerCase()
       const elapsedMin = (Date.now() - startTime) / (6 * 60000); const fallbackPct = Math.min(0.94, 1 - 1 / (1 + elapsedMin * 1.6)); const pct = Math.round(5 + fallbackPct * 89)
       onProgress?.(status || 'processing', pct)
@@ -342,9 +405,9 @@ export async function pollWeavyImageStatus(token: string, taskId: string, onProg
   throw new Error('Weavy image: timeout')
 }
 
-export async function runWeavyImage(opts: { model: string; prompt: string; aspectRatio?: string; quality?: string; negativePrompt?: string; onProgress?: (text: string, pct?: number) => void; onRotate?: (index: number, total: number, reason: string) => void }): Promise<string> {
+export async function runWeavyImage(opts: { model: string; prompt: string; aspectRatio?: string; quality?: string; negativePrompt?: string; imageUrl?: string; maskUrl?: string; onProgress?: (text: string, pct?: number) => void; onRotate?: (index: number, total: number, reason: string) => void }): Promise<string> {
   const modelKey = opts.model
-  const quality = opts.quality || '1024'
+  const quality = opts.quality || 'high@1024x1024'
 
   function getRequiredCredits(modelKey: string, quality: string): number {
     if (modelKey.startsWith('seedream-') || modelKey === 'seedream-v50-pro') return 12
@@ -368,7 +431,7 @@ export async function runWeavyImage(opts: { model: string; prompt: string; aspec
   const { withTokenRotation } = await import('@/lib/tokenRotation')
   const rotation = await withTokenRotation<string>('weavy', async (apiKey) => {
     opts.onProgress?.(`Weavy: submit ${modelKey}… (butuh ${requiredCredits} cr)`, 10)
-    const submitResult = await submitWeavyImage({ token: apiKey, model: modelKey, prompt: opts.prompt, aspectRatio: opts.aspectRatio, negativePrompt: opts.negativePrompt, quality: opts.quality })
+    const submitResult = await submitWeavyImage({ token: apiKey, model: modelKey, prompt: opts.prompt, aspectRatio: opts.aspectRatio, negativePrompt: opts.negativePrompt, quality: opts.quality, imageUrl: opts.imageUrl, maskUrl: opts.maskUrl })
     if (!submitResult.ok || !submitResult.taskId) throw Error(submitResult.error || 'Submit failed')
     opts.onProgress?.(`Weavy: batch ${submitResult.taskId.slice(0, 8)}… polling`, 20)
     const imageUrl = await pollWeavyImageStatus(apiKey, submitResult.taskId, opts.onProgress)

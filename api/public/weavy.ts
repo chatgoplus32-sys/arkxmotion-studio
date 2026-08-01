@@ -221,6 +221,85 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ ok: true, data, status: r.status })
     }
 
+    // === Image Generation Actions (recipe-based) ===
+
+    if (action === 'image-create-recipe') {
+      const r = await fetch(`${WEAVY_API}/v1/recipes/create`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ scope: 'PERSONAL' }),
+        signal: AbortSignal.timeout(15000),
+      })
+      const text = await r.text()
+      let data: any; try { data = JSON.parse(text) } catch { data = null }
+      console.log(`[weavy-proxy] image-create-recipe → ${r.status}`, text.slice(0, 300))
+      if (!r.ok || !data) return res.status(r.status || 500).json({ ok: false, error: data?.error || text.slice(0, 200) || `HTTP ${r.status}` })
+      return res.status(200).json({ ok: true, data: { recipeId: data?.id || data?.recipeId, v3: data?.v3 } })
+    }
+
+    if (action === 'image-save-recipe') {
+      const { recipeId, nodes, edges, v3 } = req.body || {}
+      if (!recipeId) return res.status(400).json({ ok: false, error: 'Missing recipeId' })
+      const r = await fetch(`${WEAVY_API}/v1/recipes/${recipeId}/save`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ nodes: nodes || [], edges: edges || [], v3: v3 || '', lastUpdatedAt: new Date().toISOString() }),
+        signal: AbortSignal.timeout(15000),
+      })
+      const text = await r.text()
+      console.log(`[weavy-proxy] image-save-recipe → ${r.status}`, text.slice(0, 300))
+      if (!r.ok) return res.status(r.status).json({ ok: false, error: text.slice(0, 200) || `HTTP ${r.status}` })
+      return res.status(200).json({ ok: true })
+    }
+
+    if (action === 'image-approve-model') {
+      const { modelId } = req.body || {}
+      if (!modelId) return res.status(400).json({ ok: false, error: 'Missing modelId' })
+      try {
+        await fetch(`${WEAVY_API}/v1/workspaces/models/approve`, {
+          method: 'POST',
+          headers: authHeaders,
+          body: JSON.stringify({ modelIds: [modelId] }),
+          signal: AbortSignal.timeout(10000),
+        })
+      } catch {}
+      return res.status(200).json({ ok: true })
+    }
+
+    if (action === 'image-execute') {
+      const { recipeId, nodes, edges, numberOfRuns } = req.body || {}
+      if (!recipeId) return res.status(400).json({ ok: false, error: 'Missing recipeId' })
+      const r = await fetch(`${WEAVY_API}/v1/batches/recipes/${recipeId}/execute`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ nodes: nodes || [], edges: edges || [], numberOfRuns: numberOfRuns || 1 }),
+        signal: AbortSignal.timeout(30000),
+      })
+      const text = await r.text()
+      let data: any; try { data = JSON.parse(text) } catch { data = null }
+      console.log(`[weavy-proxy] image-execute → ${r.status}`, text.slice(0, 500))
+      if (!r.ok || !data) return res.status(r.status || 500).json({ ok: false, error: data?.error || text.slice(0, 200) || `HTTP ${r.status}` })
+      const batchId = data?.batchId || data?.id
+      if (!batchId) return res.status(500).json({ ok: false, error: 'No batchId returned', data })
+      return res.status(200).json({ ok: true, data: { batchId, ...data } })
+    }
+
+    if (action === 'image-status') {
+      const { recipeId, batchId } = req.body || {}
+      if (!recipeId || !batchId) return res.status(400).json({ ok: false, error: 'Missing recipeId or batchId' })
+      const r = await fetch(`${WEAVY_API}/v1/batches/recipes/${recipeId}/batches/${batchId}/status`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        signal: AbortSignal.timeout(10000),
+      })
+      if (!r.ok) {
+        const text = await r.text().catch(() => '')
+        return res.status(r.status).json({ ok: false, error: `Status check failed (${r.status}): ${text.slice(0, 200)}` })
+      }
+      const data = await r.json()
+      console.log(`[weavy-proxy] image-status → ${r.status}`, JSON.stringify(data).slice(0, 500))
+      return res.status(200).json({ ok: true, data })
+    }
+
     return res.status(400).json({ ok: false, error: `Unknown action: ${action}` })
   } catch (err: any) {
     console.error(`[weavy-proxy] error:`, err.message)

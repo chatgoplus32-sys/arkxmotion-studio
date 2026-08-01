@@ -80,13 +80,20 @@ function compressImage(file: File, maxDim: number, quality: number): Promise<Fil
   })
 }
 
-export async function normalizeImage(file: File): Promise<File> {
+export async function normalizeImage(file: File, onProgress?: (msg: string, pct?: number) => void): Promise<File> {
   if (/heic|heif/i.test(file.type) || /\.hei[cf]$/i.test(file.name)) {
+    onProgress?.('Mengkonversi HEIC ke JPEG...')
     try { return await compressImage(file, 1600, 0.85) } catch {}
   }
   if (file.type.startsWith('image/')) {
-    if (file.size > 8 * 1024 * 1024) return await compressImage(file, 1280, 0.75)
-    if (file.size > 4 * 1024 * 1024) return await compressImage(file, 1600, 0.85)
+    if (file.size > 8 * 1024 * 1024) {
+      onProgress?.('Mengompres gambar...')
+      return await compressImage(file, 1280, 0.75)
+    }
+    if (file.size > 4 * 1024 * 1024) {
+      onProgress?.('Mengompres gambar...')
+      return await compressImage(file, 1600, 0.85)
+    }
   }
   return file
 }
