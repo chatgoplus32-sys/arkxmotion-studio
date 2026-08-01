@@ -466,6 +466,15 @@ export interface WeavyBulkOneParams {
   outfitFile: File
 }
 
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
+
 function buildBulkFashionNodes(modelKey: string, prompt: string, quality: string, ratio: string, charUrl: string, outfitUrl: string): any {
   const { model: modelName, service } = resolveImageModel(modelKey)
   const nodeId = 'n_' + Date.now() + '_model'
@@ -617,15 +626,8 @@ function buildBulkFashionNodes(modelKey: string, prompt: string, quality: string
 
 async function submitWeavyBulkOne(token: string, params: WeavyBulkOneParams): Promise<WeavyImageGenerateResult> {
   try {
-    const charCompressed = params.charFile.size > 8 * 1024 * 1024 ? await compressImageIfNeeded(params.charFile) : params.charFile
-    const outfitCompressed = params.outfitFile.size > 8 * 1024 * 1024 ? await compressImageIfNeeded(params.outfitFile) : params.outfitFile
-
-    const [charUpload, outfitUpload] = await Promise.all([
-      uploadWeavyAssetWithRetry(charCompressed, token),
-      uploadWeavyAssetWithRetry(outfitCompressed, token),
-    ])
-    const charUrl = resolveWeavyAssetUrl(charUpload, 'image')
-    const outfitUrl = resolveWeavyAssetUrl(outfitUpload, 'image')
+    const charDataUrl = await fileToDataUrl(params.charFile)
+    const outfitDataUrl = await fileToDataUrl(params.outfitFile)
 
     const createRes = await fetch(WEAVY_PROXY, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Weavy-Token': token }, body: JSON.stringify({ action: 'image-create-recipe' }) })
     const createData = await createRes.json().catch(() => null)
@@ -634,7 +636,7 @@ async function submitWeavyBulkOne(token: string, params: WeavyBulkOneParams): Pr
     const v3 = createData?.data?.v3
     if (!recipeId) return { ok: false, error: 'No recipeId returned', raw: createData }
 
-    const nodes = buildBulkFashionNodes(params.modelKey, params.prompt, params.quality, params.ratio, charUrl, outfitUrl)
+    const nodes = buildBulkFashionNodes(params.modelKey, params.prompt, params.quality, params.ratio, charDataUrl, outfitDataUrl)
     const extraNodes = nodes._extraNodes || []
     const extraEdges = nodes._extraEdges || []
     const edges = [...extraEdges]
