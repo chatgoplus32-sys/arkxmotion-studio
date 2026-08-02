@@ -1,5 +1,5 @@
 import { useProviderManager, type ProviderId, type ProviderKey } from '@/stores/providerManager'
-import { checkRoboneoBalance } from '@/lib/roboneo'
+import { checkRoboneoBalance, isRoboneoCredentialError, isRoboneoBalanceError } from '@/lib/roboneo'
 import { fetchWeavyCreditsClient } from '@/lib/weavy'
 import { fetchLeonardoBalance } from '@/lib/leonardo'
 
@@ -28,13 +28,13 @@ export function isFramiaTokenError(error: any): boolean {
 export function isRoboneoTokenError(error: any): boolean {
   if (!error) return false
   const msg = typeof error === 'string' ? error : error?.message || ''
-  return /token|auth|log\s*in|login|expired|unauth|401|403|insufficient|balance|credit|quota|charge|CHARGE_FAILED|余额|URL output tidak ditemukan|output tidak ditemukan|no output URL/i.test(msg)
+  return isRoboneoCredentialError(msg) || isRoboneoBalanceError(msg)
 }
 
 export function isRoboneoCreditError(error: any): boolean {
   if (!error) return false
   const msg = typeof error === 'string' ? error : error?.message || ''
-  return /insufficient|balance|credit|quota|charge|CHARGE_FAILED|余额不足|余额不够|积分不足|账户余额|欠费|payment.?required|charge.?failed|no output URL|output tidak ditemukan|URL output tidak ditemukan|credit\/quota habis/i.test(msg)
+  return isRoboneoBalanceError(msg)
 }
 
 export function isLeonardoCreditError(error: any): boolean {

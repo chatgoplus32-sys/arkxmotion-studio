@@ -34,65 +34,59 @@ function extractUid(token: string): string {
   return '0'
 }
 
-function compressImage(file: File, maxDim: number, quality: number): Promise<File> {
-  return new Promise((resolve) => {
+function loadImage(file: File): Promise<{ width: number; height: number; draw: CanvasImageSource; cleanup: () => void }> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file)
     const img = new Image()
-    const cleanCanvas = () => {
-      const canvas = document.createElement('canvas')
-      let { width, height } = img
-      if (width > maxDim || height > maxDim) {
-        const ratio = Math.min(maxDim / width, maxDim / height)
-        width = Math.round(width * ratio)
-        height = Math.round(height * ratio)
-      }
-      canvas.width = width
-      canvas.height = height
-      const ctx = canvas.getContext('2d')!
-      ctx.drawImage(img, 0, 0, width, height)
-      canvas.toBlob(
-        (blob) => {
-          if (!blob) {
-            cleanCanvas()
-            resolve(file)
-            return
-          }
-          const compressed = new File([blob], file.name, { type: file.type || 'image/jpeg' })
-          cleanCanvas()
-          URL.revokeObjectURL(img.src)
-          resolve(compressed.size < file.size ? compressed : file)
-        },
-        file.type || 'image/jpeg',
-        quality
-      )
-    }
-
-    img.onload = () => {
-      cleanCanvas()
-    }
-
-    img.onerror = () => {
-      cleanCanvas()
-      URL.revokeObjectURL(img.src)
-      resolve(file)
-    }
-
-    img.src = URL.createObjectURL(file)
+    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight, draw: img, cleanup: () => URL.revokeObjectURL(url) })
+    img.onerror = () => { URL.revokeObjectURL(url); reject(Error('Gagal membaca gambar')) }
+    img.src = url
   })
+}
+
+function encodeCanvas(canvas: HTMLCanvasElement, type: string, quality: number): Promise<Blob> {
+  return new Promise((resolve, reject) => canvas.toBlob((b) => b ? resolve(b) : reject(Error('Gagal encode gambar')), type, quality))
+}
+
+async function compressImageMultiPass(file: File, maxBytes: number, onProgress?: (msg: string, pct?: number) => void): Promise<File> {
+  if (file.size <= maxBytes) return file
+  const { width, height, draw, cleanup } = await loadImage(file)
+  try {
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')!
+    let scale = Math.min(1, 2560 / Math.max(width, height))
+    for (let pass = 0; pass < 8; pass++) {
+      const w = Math.max(320, Math.round(width * scale))
+      const h = Math.max(320, Math.round(height * scale))
+      canvas.width = w
+      canvas.height = h
+      ctx.clearRect(0, 0, w, h)
+      ctx.drawImage(draw, 0, 0, w, h)
+      for (const q of [0.9, 0.8, 0.7, 0.6]) {
+        onProgress?.(`Kompres gambar ${w}×${h} q=${q}`)
+        const blob = await encodeCanvas(canvas, 'image/jpeg', q)
+        if (blob.size <= maxBytes) {
+          const ext = file.name.replace(/.*\./, '') || 'jpg'
+          return new File([blob], file.name.replace(/\.[^.]+$/, '') + '.' + ext, { type: 'image/jpeg' })
+        }
+      }
+      scale *= 0.75
+    }
+    throw Error('Gambar tetap di atas batas setelah kompresi maksimum')
+  } finally {
+    cleanup()
+  }
 }
 
 export async function normalizeImage(file: File, onProgress?: (msg: string, pct?: number) => void): Promise<File> {
   if (/heic|heif/i.test(file.type) || /\.hei[cf]$/i.test(file.name)) {
     onProgress?.('Mengkonversi HEIC ke JPEG...')
-    try { return await compressImage(file, 1600, 0.85) } catch {}
+    try { return await compressImageMultiPass(file, 4 * 1024 * 1024, onProgress) } catch {}
   }
   if (file.type.startsWith('image/')) {
-    if (file.size > 8 * 1024 * 1024) {
-      onProgress?.('Mengompres gambar...')
-      return await compressImage(file, 1280, 0.75)
-    }
     if (file.size > 4 * 1024 * 1024) {
       onProgress?.('Mengompres gambar...')
-      return await compressImage(file, 1600, 0.85)
+      return await compressImageMultiPass(file, 4 * 1024 * 1024, onProgress)
     }
   }
   return file
@@ -329,6 +323,8 @@ export async function uploadToCatbox(file: File, kind?: string, onProgress?: (ms
   if (!isSmall) errors.unshift(`skip server proxy (${sizeStr} > ${MAX_SERVER_PROXY / 1024 / 1024}MB)`)
   throw new Error(`Upload gagal: ${errors.join(' | ')}`)
 }
+
+const taskMetaMap = new Map<string, { roomId: string; nodeId: string }>()
 
 function buildTrackingParams(accessToken: string, pathScene: string, roomId: string) {
   return {
@@ -666,6 +662,7 @@ export async function submitMotionControl(params: {
     throw new Error('Roboneo: submit sukses tapi task_id tidak ditemukan. Response: ' + JSON.stringify(payload).slice(0, 300))
   }
 
+  taskMetaMap.set(taskIds[0], { roomId, nodeId })
   return { taskId: taskIds[0], roomId }
 }
 
@@ -852,6 +849,9 @@ export async function pollMotionControl(
   signal?: AbortSignal,
   nodeId?: string
 ): Promise<string> {
+  const meta = taskMetaMap.get(taskId)
+  const resolvedRoomId = roomId || meta?.roomId || ''
+  const resolvedNodeId = nodeId || meta?.nodeId || ''
   const startTime = Date.now()
   let networkRetries = 0
   let busyRetries = 0
@@ -953,14 +953,14 @@ export async function pollMotionControl(
 
     let result: any
     try {
-      const tracking = buildTrackingParams(accessToken, 'nodeexecutequery', roomId)
+      const tracking = buildTrackingParams(accessToken, 'nodeexecutequery', resolvedRoomId)
       const { _access_token, ...paramWithoutToken } = tracking
 
       result = await roboneoApiCall(accessToken, 'nodeexecutequery', {
         ...paramWithoutToken,
         task_ids: [taskId],
-        room_id: roomId,
-        ...(nodeId ? { node_id: nodeId, workflow_version: 'v2' } : {}),
+        room_id: resolvedRoomId,
+        ...(resolvedNodeId ? { node_id: resolvedNodeId, workflow_version: 'v2' } : {}),
       })
       networkRetries = 0
     } catch (err: any) {
@@ -1028,12 +1028,14 @@ export async function pollMotionControl(
             console.log(`[roboneo] re-upload failed: ${reErr.message}, using original URL`)
           }
         }
+        taskMetaMap.delete(taskId)
         return videoUrl
       }
 
       const stepError = steps.find((s: any) => /fail|error/i.test(String(s.status || s.state || '')))
       if (stepError) {
         const stepErr = stepError.error_message || stepError.error_msg || stepError.fail_code || 'step error'
+        taskMetaMap.delete(taskId)
         throw new Error(`Roboneo failed (quota/step): ${stepErr}`)
       }
 
@@ -1072,6 +1074,7 @@ export async function pollMotionControl(
         continue
       }
 
+      taskMetaMap.delete(taskId)
       throw new Error(`Roboneo failed: ${errMsg}${detail ? ` · detail=${detail}` : ''}`)
     }
 
@@ -1081,8 +1084,20 @@ export async function pollMotionControl(
   throw new Error('Roboneo timeout')
 }
 
+export function isRoboneoSafetyError(msg: string): boolean {
+  return /safety review|risk control|risk con|content review|moderation|原图审核不过|审核不通过|审核不过|code["'=:\s]+10025|error_code["'=:\s]+10025/i.test(msg)
+}
+
+export function isRoboneoCredentialError(msg: string): boolean {
+  return !isRoboneoSafetyError(msg) && /token error|invalid token|access-token.*(?:expired|invalid)|auth(?:entication)? failed|please log in|not logged in|unauth(?:orized)?|\b401\b|\b403\b/i.test(msg)
+}
+
+export function isRoboneoBalanceError(msg: string): boolean {
+  return !isRoboneoSafetyError(msg) && /insufficient|credit\/quota habis|credit.*(?:empty|exhausted|habis)|balance.*(?:low|empty|insufficient|habis)|CHARGE_FAILED|charge.?failed|payment.?required|余额不足|余额不够|积分不足|账户余额|欠费/i.test(msg)
+}
+
 export function isRoboneoTokenError(msg: string): boolean {
-  return /token|auth|log\s*in|login|expired|unauth|401|403|insufficient|balance|credit|quota|URL output tidak ditemukan|output tidak ditemukan|no output URL|CHARGE_FAILED|charge.?failed|payment.?required|余额不足|余额不够|积分不足|账户余额|欠费|VIP|会员/i.test(msg)
+  return isRoboneoCredentialError(msg) || isRoboneoBalanceError(msg)
 }
 
 export function parseAccessToken(raw: string): string {

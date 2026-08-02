@@ -85,7 +85,18 @@ export default function MotionPage() {
   const [prompt, setPrompt] = useLocalStorage('motion.prompt', '')
   const [negativePrompt, setNegativePrompt] = useLocalStorage('motion.negativePrompt', '')
   const [keepSound, setKeepSound] = useLocalStorage('motion.keepSound', true)
-  const [slots, setSlots] = useState<Slot[]>([createSlot()])
+  const [slots, setSlots] = useState<Slot[]>(() => {
+    try {
+      const raw = localStorage.getItem('motion.slots')
+      if (raw) {
+        const parsed = JSON.parse(raw) as Array<Omit<Slot, 'image' | 'video' | 'imageUrl' | 'videoUrl'>>
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((s) => ({ ...s, image: null, imageUrl: null, video: null, videoUrl: null }))
+        }
+      }
+    } catch {}
+    return [createSlot()]
+  })
   const [generating, setGenerating] = useState(() => getActiveTasks().filter((t) => t.page === 'motion').length > 0)
   const [compressDialog, setCompressDialog] = useState<{ msg: string; pct?: number } | null>(null)
   const [progress, setProgress] = useState(0)
@@ -99,6 +110,7 @@ export default function MotionPage() {
   const generatingRef = useRef(false)
   const successRef = useRef(false)
   const [showRoutingDialog, setShowRoutingDialog] = useState(false)
+  const [confirmDialog, setConfirmDialog] = useState<{ title: string; message: string; onConfirm: () => void; tone?: 'default' | 'danger' } | null>(null)
 
   const { keys, fetchMaintenance } = useProviderManager()
 
@@ -123,6 +135,11 @@ export default function MotionPage() {
       window.removeEventListener('focus', sync)
     }
   }, [])
+
+  useEffect(() => {
+    const metadata = slots.map(({ image, imageUrl, video, videoUrl, ...rest }) => rest)
+    try { localStorage.setItem('motion.slots', JSON.stringify(metadata)) } catch {}
+  }, [slots])
 
   useEffect(() => {
     const activeTasks = getActiveTasks().filter((t) => t.page === 'motion')
@@ -243,10 +260,10 @@ export default function MotionPage() {
     if (provider === 'roboneo' && file.size > sizeLimit) {
       const label = type === 'image' ? 'gambar' : 'video'
       const sizeMB = (file.size / (1024 * 1024)).toFixed(1)
-      const shouldCompress = window.confirm(
+      const doCompress = window.confirm(
         `File ${label} berukuran ${sizeMB}MB. Roboneo membatasi upload maksimal 4MB.\n\nKlik OK untuk mengompres file otomatis.`
       )
-      if (shouldCompress) {
+      if (doCompress) {
         setCompressDialog({ msg: `Mengompres ${label}...` })
         try {
           let compressed: File
@@ -1111,6 +1128,23 @@ export default function MotionPage() {
             setModelKey(p.models[0].key)
           }}
         />
+      )}
+
+      {confirmDialog && (
+        <div className="fixed inset-0 z-[9999] grid place-items-center bg-background/80 backdrop-blur-sm p-4" onClick={() => setConfirmDialog(null)}>
+          <div className="relative w-full max-w-md rounded-2xl border border-border bg-card shadow-2xl p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="font-display text-lg text-foreground mb-2">{confirmDialog.title}</div>
+            <p className="text-sm text-muted-foreground mb-5">{confirmDialog.message}</p>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setConfirmDialog(null)} className="rounded-full px-4 py-1.5 text-xs font-semibold border border-border bg-card hover:bg-card/80 transition">
+                Batal
+              </button>
+              <button onClick={confirmDialog.onConfirm} className="rounded-full px-4 py-1.5 text-xs font-semibold text-primary-foreground" style={{ background: 'var(--gradient-neon)' }}>
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </PageContent>
   )
