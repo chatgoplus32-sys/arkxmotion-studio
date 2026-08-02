@@ -92,13 +92,14 @@ export default function AdminTokensPage() {
     addToast('Mulai refresh credit groups...', 'info')
 
     try {
-      const tokensToRefresh = tokenList.filter(t => t.status === 'available' && !t.credits)
+      const tokensToRefresh = tokenList.filter(t => t.status === 'available' && (!t.credits || !t.credit_group))
       if (tokensToRefresh.length === 0) {
-        addToast('Tidak ada token yang perlu di-refresh', 'info')
+        addToast('Semua token sudah punya credit group', 'info')
         setRefreshingCredits(false)
         return
       }
 
+      addToast(`Memvalidasi ${tokensToRefresh.length} token...`, 'info')
       let updated = 0
       for (const t of tokensToRefresh) {
         const check = await checkRoboneoBalance(t.token_value)
@@ -114,7 +115,7 @@ export default function AdminTokensPage() {
         await new Promise(r => setTimeout(r, 500))
       }
 
-      addToast(`${updated} token berhasil di-refresh credit groupnya`, 'success')
+      addToast(`${updated}/${tokensToRefresh.length} token berhasil di-update credit groupnya`, 'success')
       fetchTokenList()
       fetchStock()
     } catch (err: any) {
