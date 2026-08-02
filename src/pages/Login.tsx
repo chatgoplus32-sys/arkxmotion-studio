@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
+import { logAudit } from '@/lib/auditLog'
 import { LogIn, Mail, Lock, AlertCircle } from 'lucide-react'
 
 export default function LoginPage() {
@@ -28,6 +29,7 @@ export default function LoginPage() {
     }
 
     addToast('Welcome back!', 'success')
+    logAudit('LOGIN', `User logged in: ${email}`, 'success', email)
     navigate('/')
   }
 

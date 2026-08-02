@@ -18,6 +18,7 @@ import {
   type LogEntry,
 } from '@/lib/backgroundTasks'
 import { useToastStore } from '@/stores/toastStore'
+import { logAudit } from '@/lib/auditLog'
 
 export default function SettingsPage() {
   const [theme, setTheme] = useState('system')
@@ -54,6 +55,7 @@ export default function SettingsPage() {
       })
       if (response.ok) {
         addToast('Password berhasil diubah', 'success')
+        logAudit('CHANGE_PASSWORD', 'Password changed successfully', 'success')
         setOldPassword('')
         setNewPassword('')
       } else {
@@ -132,6 +134,7 @@ export default function SettingsPage() {
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
     addToast('Provider keys berhasil di-export', 'success')
+    logAudit('EXPORT_KEYS', 'Provider keys exported to JSON', 'success')
   }
 
   const handleImportKeys = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -154,6 +157,7 @@ export default function SettingsPage() {
         })
       }
       addToast(`Provider keys berhasil di-import`, 'success')
+      logAudit('IMPORT_KEYS', 'Provider keys imported from JSON', 'success')
     } catch (err: any) {
       addToast(`Import gagal: ${err.message}`, 'error')
     }
@@ -403,6 +407,47 @@ export default function SettingsPage() {
             </div>
           )}
         </div>
+      </Section>
+
+      {/* Audit Log */}
+      <Section
+        title="📋 Audit Log"
+        sub="Riwayat aktivitas penting"
+        className="mt-5"
+        right={
+          <Button variant="outline" size="sm" onClick={() => { clearAuditLog(); addToast('Audit log dihapus', 'info') }}>
+            <Trash2 className="h-3.5 w-3.5" /> Clear
+          </Button>
+        }
+      >
+        {(() => {
+          const auditLog = getAuditLog()
+          if (auditLog.length === 0) {
+            return (
+              <div className="text-center py-6 text-muted-foreground text-sm">
+                <div className="text-2xl mb-2">📋</div>
+                Belum ada audit log
+              </div>
+            )
+          }
+          return (
+            <div className="max-h-64 overflow-y-auto rounded-lg bg-background/50 border border-border p-2 space-y-1">
+              {auditLog.slice(0, 50).map((entry) => (
+                <div key={entry.id} className="flex items-center gap-2 text-[11px] font-mono py-1 border-b border-border/30 last:border-0">
+                  <span className={`shrink-0 w-1.5 h-1.5 rounded-full ${
+                    entry.level === 'success' ? 'bg-green-500' :
+                    entry.level === 'error' ? 'bg-red-500' :
+                    entry.level === 'warn' ? 'bg-yellow-500' :
+                    'bg-blue-500'
+                  }`} />
+                  <span className="text-muted-foreground shrink-0 w-20">{new Date(entry.timestamp).toLocaleString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                  <span className="shrink-0 font-semibold text-foreground/80 w-24 truncate">{entry.action}</span>
+                  <span className="text-muted-foreground truncate flex-1">{entry.detail}</span>
+                </div>
+              ))}
+            </div>
+          )
+        })()}
       </Section>
     </PageContent>
   )

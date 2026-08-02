@@ -4,6 +4,7 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Select, Label, Textarea, EmptyState, Input } from '@/components/ui'
 import { useBulkFashionStore } from '@/stores/bulkFashionStore'
 import { useToastStore } from '@/stores/toastStore'
+import { logAudit } from '@/lib/auditLog'
 import {
   BULK_FASHION_PROVIDERS,
   calculateBulkCost,
@@ -322,6 +323,9 @@ export default function BulkFashionPage() {
 
         // Toast notification
         addToast(`Bulk Fashion selesai: ${resultUrls.length}/${outfitFiles.length} gambar`, 'success')
+
+        // Audit log
+        logAudit('BULK_FASHION', `${resultUrls.length}/${outfitFiles.length} gambar di-generate (${activeProvider}/${model})`, 'success')
       }
     } catch (err: any) {
       if (!controller.signal.aborted) {
