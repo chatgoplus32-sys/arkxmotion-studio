@@ -792,8 +792,8 @@ export async function generateWeavyBulkOne(params: WeavyBulkOneParams): Promise<
         console.log(`[weavy-bulk] Poll #${attempt}: status ${res.status}`)
         if (!res.ok) continue
         const data = await res.json().catch(() => null)
-        const status = (data?.status || data?.state || '').toLowerCase()
-        console.log(`[weavy-bulk] Poll #${attempt}: batchStatus=${status}`)
+        const status = (data?.status || data?.state || data?.data?.status || data?.data?.state || '').toLowerCase()
+        console.log(`[weavy-bulk] Poll #${attempt}: raw=${JSON.stringify(data).slice(0, 500)}`)
         if (attempt % 5 === 0) console.log(`[weavy-bulk] Poll #${attempt}: still processing... (${Math.round((Date.now() - startTime) / 1000)}s elapsed)`)
 
         if (['completed', 'success', 'done', 'finished'].includes(status)) {
