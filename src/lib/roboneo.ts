@@ -499,9 +499,15 @@ export async function checkRoboneoBalance(accessToken: string): Promise<{ ok: bo
     const dailyBalance = findInDetailList(resultData, /daily|free/i)
     const freeCredit = findValueByKey(resultData, ['free_credit', 'free_amount', 'daily_free', 'free']) ?? dailyBalance
     const vipCredit = findValueByKey(resultData, ['vip_credit', 'vip_amount', 'vip'])
-    const totalCredit = findValueByKey(resultData, ['total_amount', 'total_credit', 'credit_balance', 'balance', 'credit', 'remain', 'point', 'coin', 'energy', 'quota']) ?? cyberBalance ?? ((freeCredit ?? 0) + (vipCredit ?? 0) || null)
 
-    console.log(`[checkBalance] OK: balance=${totalCredit}, free=${freeCredit}, vip=${vipCredit}, isValidUser=${isValidUser}`)
+    // Prioritize balance_carrots (actual carrots) over credit_balance (cents, needs /100)
+    const balanceCarrots = findValueByKey(resultData, ['balance_carrots', 'balanceCarrots'])
+    const creditBalanceRaw = findValueByKey(resultData, ['credit_balance', 'creditBalance', 'total_amount', 'total_credit', 'balance', 'credit', 'remain', 'point', 'coin', 'energy', 'quota'])
+    // If credit_balance looks like cents (>1000), divide by 100
+    const creditBalance = creditBalanceRaw !== null && creditBalanceRaw > 1000 ? Math.round(creditBalanceRaw / 100) : creditBalanceRaw
+    const totalCredit = balanceCarrots ?? creditBalance ?? cyberBalance ?? ((freeCredit ?? 0) + (vipCredit ?? 0) || null)
+
+    console.log(`[checkBalance] OK: balance_carrots=${balanceCarrots}, credit_balance_raw=${creditBalanceRaw}, creditBalance=${creditBalance}, cyber=${cyberBalance}, free=${freeCredit}, vip=${vipCredit}, total=${totalCredit}, isValidUser=${isValidUser}`)
 
     return { ok: true, balance: totalCredit, isValidUser: true }
   } catch (err: any) {
@@ -623,10 +629,9 @@ export async function submitMotionControl(params: {
   const node = {
     tool_abstract_name: { cn: 'Motion Control', en: 'Motion Control' },
     node_id: nodeId,
-    name: 'video_bonbon_motioncontrol_v30',
+    name: 'video_bonbon_motioncontrol_v26',
     parameters: {
       quality,
-      model_version: '3.0',
       image_url: imageUrl,
       video_url: videoUrl,
       character_orientation: orientation,
