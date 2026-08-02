@@ -11,6 +11,8 @@ interface TokenItem {
   provider: string
   name: string
   price: number
+  credits?: number | null
+  credit_group?: string | null
   status: string
   created_at: string
 }
@@ -87,6 +89,12 @@ export default function BeliTokenPage() {
   useEffect(() => {
     fetchMyOrders()
   }, [fetchMyOrders])
+
+  const handleBuyTokens = (tokenIds: number[], totalPrice: number) => {
+    setSelectedBuyQty(tokenIds.length)
+    setSelectedBuyPrice(totalPrice / tokenIds.length)
+    setSelectedBuyProvider(activeTokenTab)
+  }
 
   const handleConfirmBuy = async () => {
     if (!authStore.token) return
@@ -168,10 +176,8 @@ export default function BeliTokenPage() {
           <div className="text-center py-4 text-muted-foreground text-sm">Memuat stok...</div>
         ) : (() => {
           const providerTokens = availableTokens.filter(t => t.provider === activeTokenTab && t.status === 'available')
-          const stock = providerTokens.length
-          const price = providerTokens.length > 0 ? providerTokens[0].price : 0
 
-          if (stock === 0) {
+          if (providerTokens.length === 0) {
             return (
               <div className="text-center py-6 text-muted-foreground text-sm">
                 <ShoppingCart className="h-8 w-8 mx-auto mb-2 opacity-50" />
@@ -179,6 +185,80 @@ export default function BeliTokenPage() {
               </div>
             )
           }
+
+          // Group by credit_group for Roboneo
+          if (activeTokenTab === 'roboneo') {
+            const groups: Record<string, TokenItem[]> = {}
+            providerTokens.forEach(t => {
+              const group = t.credit_group || 'lainnya'
+              if (!groups[group]) groups[group] = []
+              groups[group].push(t)
+            })
+
+            const sortedGroups = Object.entries(groups).sort((a, b) => {
+              const order: Record<string, number> = { '100+': 0, '90-100': 1, '80-90': 2, '70-80': 3, '<70': 4, 'lainnya': 5 }
+              return (order[a[0]] ?? 5) - (order[b[0]] ?? 5)
+            })
+
+            return (
+              <div className="space-y-3">
+                {sortedGroups.map(([group, tokens]) => {
+                  const price = tokens[0].price
+                  const stock = tokens.length
+                  return (
+                    <div key={group} className="p-4 rounded-xl border border-border bg-background/50">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20 text-xs font-mono text-primary font-semibold">{group} cr</span>
+                            <span className="text-sm font-medium">{stock} token tersedia</span>
+                          </div>
+                          <div className="text-lg font-bold gold-text mt-1">Rp {price.toLocaleString('id-ID')} / token</div>
+                        </div>
+                      </div>
+                      <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+                        <div className="flex-1">
+                          <Label className="text-xs">Jumlah</Label>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={stock}
+                            placeholder={`1 - ${stock}`}
+                            value={selectedBuyProvider === activeTokenTab && selectedBuyPrice === price ? buyQty : ''}
+                            onChange={(e) => {
+                              setBuyQty(e.target.value)
+                              setSelectedBuyProvider(activeTokenTab)
+                              setSelectedBuyPrice(price)
+                            }}
+                          />
+                        </div>
+                        <div className="text-right">
+                          <div className="text-xs text-muted-foreground">Total</div>
+                          <div className="text-lg font-bold gold-text">
+                            Rp {((Number(buyQty) || 0) * price).toLocaleString('id-ID')}
+                          </div>
+                        </div>
+                        <Button
+                          onClick={() => {
+                            if (!buyQty || Number(buyQty) < 1) return
+                            const tokenIds = tokens.slice(0, Number(buyQty)).map(t => t.id)
+                            handleBuyTokens(tokenIds, price * Number(buyQty))
+                          }}
+                          disabled={!buyQty || Number(buyQty) < 1 || Number(buyQty) > stock}
+                        >
+                          <ShoppingCart className="h-4 w-4" /> Beli {group}
+                        </Button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          }
+
+          // Non-Roboneo: simple display
+          const stock = providerTokens.length
+          const price = providerTokens[0].price
 
           return (
             <div className="p-4 rounded-xl border border-border bg-background/50">
