@@ -205,6 +205,13 @@ export default function BulkFashionPage() {
     }
   }, [])
 
+  // ─── Request notification permission ─────────────────────────────────────
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission()
+    }
+  }, [])
+
   // ─── Provider / Model / Quality resolution ──────────────────────────────
   const providerConfig = useMemo(() => BULK_FASHION_PROVIDERS.find((p) => p.id === activeProvider) || BULK_FASHION_PROVIDERS[0], [activeProvider])
   const models = providerConfig.models
@@ -248,9 +255,20 @@ export default function BulkFashionPage() {
     setStatus({ show: true, text: `Memproses ${outfitFiles.length} outfit…`, pct: 5, time: '0:00' })
 
     const startTime = Date.now()
+    const completedCount = { value: 0 }
+
     const timer = setInterval(() => {
       const elapsed = Math.floor((Date.now() - startTime) / 1000)
-      setStatus({ time: `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}` })
+      const elapsedStr = `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}`
+
+      let etaStr = ''
+      if (completedCount.value > 0 && completedCount.value < outfitFiles.length) {
+        const avgTime = elapsed / completedCount.value
+        const remaining = Math.ceil(avgTime * (outfitFiles.length - completedCount.value))
+        etaStr = ` — ETA ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, '0')}`
+      }
+
+      setStatus({ time: `${elapsedStr}${etaStr}` })
     }, 1000)
 
     const controller = new AbortController()
@@ -269,22 +287,35 @@ export default function BulkFashionPage() {
         signal: controller.signal,
         onProgress: (idx, statusText, resultUrl, error) => {
           if (resultUrl) {
+            completedCount.value++
             addResult({ url: resultUrl, status: 'done' })
           } else if (error) {
+            completedCount.value++
             addResult({ url: '', status: 'error', error })
           }
+          const pct = Math.min(95, (completedCount.value / outfitFiles.length) * 100)
           setStatus({
             text: error ? `#${idx + 1}: error — ${error}` : `#${idx + 1}: ${statusText}`,
-            pct: Math.min(95, ((idx + 1) / outfitFiles.length) * 100),
+            pct,
           })
         },
       })
 
       if (!controller.signal.aborted) {
+        clearInterval(timer)
+        const elapsed = Math.floor((Date.now() - startTime) / 1000)
         setStatus({
           pct: 100,
-          text: `✅ Selesai — ${resultUrls.length}/${outfitFiles.length} sukses`,
+          text: `✅ Selesai — ${resultUrls.length}/${outfitFiles.length} sukses (${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')})`,
         })
+
+        // Browser notification
+        if (Notification.permission === 'granted') {
+          new Notification('Bulk Fashion Selesai', {
+            body: `${resultUrls.length}/${outfitFiles.length} gambar berhasil di-generate`,
+            icon: '/favicon.svg',
+          })
+        }
       }
     } catch (err: any) {
       if (!controller.signal.aborted) {
@@ -336,15 +367,18 @@ export default function BulkFashionPage() {
   }
 
   // ─── Download ZIP ───────────────────────────────────────────────────────
-  const handleDownloadZip = async () => {
-    if (doneResults.length === 0) return
+  const handleDownloadZip = async (selectedOnly = false) => {
+    const items = selectedOnly
+      ? doneResults.filter((_, i) => selectedIds.includes(String(i)))
+      : doneResults
+    if (items.length === 0) return
     try {
       await downloadFilesAsZip(
-        doneResults.map((r, i) => ({
+        items.map((r, i) => ({
           url: r.url,
           filename: `outfit_${String(i + 1).padStart(3, '0')}.${getExtensionFromUrl(r.url)}`,
         })),
-        `bulk-fashion-${Date.now()}.zip`
+        `bulk-fashion-${selectedOnly ? 'selected' : Date.now()}.zip`
       )
     } catch (err: any) {
       setStatus({ text: `❌ ZIP error: ${err.message}`, pct: 100 })
@@ -586,14 +620,19 @@ export default function BulkFashionPage() {
               </Button>
             )}
             {selectedIds.length > 0 && (
-              <Button size="sm" variant="outline" onClick={handleUpscaleHandoff} title="Kirim ke Upscaler">
-                Upscale ({selectedIds.length})
-              </Button>
+              <>
+                <Button size="sm" variant="outline" onClick={handleUpscaleHandoff} title="Kirim ke Upscaler">
+                  Upscale ({selectedIds.length})
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => handleDownloadZip(true)} title="Download yang dipilih">
+                  <Download className="h-3.5 w-3.5" /> Selected ({selectedIds.length})
+                </Button>
+              </>
             )}
             <Button
               size="sm"
               variant="outline"
-              onClick={handleDownloadZip}
+              onClick={() => handleDownloadZip(false)}
               disabled={doneResults.length === 0}
               title="Download semua sebagai ZIP"
             >
