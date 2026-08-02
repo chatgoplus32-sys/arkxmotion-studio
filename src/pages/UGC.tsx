@@ -59,6 +59,7 @@ export default function UGCPage() {
   const [modelFile, setModelFile] = useState<File | null>(null)
   const [modelPreview, setModelPreview] = useState<string | null>(null)
   const [products, setProducts] = useState<ProductImage[]>([])
+  const [provider, setProvider] = useState('weavy')
   const [productType, setProductType] = useState(PRODUCT_TYPES[0])
   const [modelStyle, setModelStyle] = useState('female-casual')
   const [background, setBackground] = useState('studio')
@@ -297,6 +298,12 @@ export default function UGCPage() {
         <div className="lg:col-span-2 space-y-5">
           <Section title="⚙️ Pengaturan">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <Label>Provider AI</Label>
+                <Select value={provider} onChange={(e) => setProvider(e.target.value)} options={[
+                  { value: 'weavy', label: 'Weavy (Nano Banana 2)' },
+                ]} />
+              </div>
               <div>
                 <Label>Jenis Produk</Label>
                 <Input value={productType} onChange={(e) => setProductType(e.target.value)} placeholder="Contoh: Tas selempang, Jam tangan, Sepatu sneakers..." />
