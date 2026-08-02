@@ -78,11 +78,13 @@ export default function AdminTokensPage() {
 
   const currentProvider = PROVIDERS.find(p => p.key === activeTab)!
 
-  function getCreditGroup(credits: number): string {
-    if (credits >= 100) return '100+'
-    if (credits >= 90) return '90-100'
-    if (credits >= 80) return '80-90'
-    if (credits >= 70) return '70-80'
+  function getCreditGroup(credits: number | string): string {
+    const b = Number(credits)
+    if (isNaN(b)) return '<70'
+    if (b >= 100) return '100+'
+    if (b >= 90) return '90-100'
+    if (b >= 80) return '80-90'
+    if (b >= 70) return '70-80'
     return '<70'
   }
 
