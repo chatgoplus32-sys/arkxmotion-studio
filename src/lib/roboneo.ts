@@ -653,7 +653,9 @@ export async function submitMotionControl(params: {
 
   const { roomId } = await createRoboneoRoom(accessToken)
 
-  const motionPrompt = prompt || 'Make this image move according to the video'
+  const nodeId = uuid()
+  const videoNodeId = uuid()
+  const motionPrompt = prompt || `Refer to the movements and facial expressions in the video to animate the photo without changing the original background.`
   const fullPrompt = negativePrompt
     ? `${motionPrompt}\n\nNegative: ${negativePrompt}`
     : motionPrompt
@@ -677,11 +679,37 @@ export async function submitMotionControl(params: {
     select_option_ids: [],
     used_model: {
       image_model: '',
-      video_model: '',
+      video_model: 'kling_2_6_motion',
       model_pattern: 'high',
       thinking_mode: 'deep_thinking',
     },
-    extra: {},
+    extra: {
+      nodes: [
+        {
+          id: nodeId,
+          type: 'VIDEO_NODE',
+          data: {
+            name: 'Motion Control',
+            mcpInfo: {
+              api_name: 'video_bonbon_motioncontrol_v26',
+              model_id: 'kling_2_6_motion',
+              node_model_id: 'video_edit',
+              parameters: {
+                count: 1,
+                prompt: fullPrompt,
+                quality: 'std',
+              },
+            },
+            inputNodeId: {
+              textNodeIds: [],
+              imageNodeIds: [nodeId],
+              videoNodeIds: [videoNodeId],
+              audioNodeIds: [],
+            },
+          },
+        },
+      ],
+    },
     uid: '',
     answer_message: fullPrompt,
   }
