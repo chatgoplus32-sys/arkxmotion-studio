@@ -44,8 +44,6 @@ const TOOLS = [
   { icon: <Image className="h-5 w-5" />, label: 'Image to Video', desc: 'Animate gambar dengan AI', href: '/generate/image-to-video', color: 'silver' },
   { icon: <Wand2 className="h-5 w-5" />, label: 'AI Upscaler', desc: 'Upscale & enhance gambar', href: '/generate/upscaler', color: 'silver' },
   { icon: <Mic className="h-5 w-5" />, label: 'Dubbing', desc: 'AI voice dubbing', href: '/mixing/dubbing', color: 'silver' },
-  { icon: <Film className="h-5 w-5" />, label: 'Naratif', desc: 'Narrative video maker', href: '/generate/naratif', color: 'silver' },
-  { icon: <Layers className="h-5 w-5" />, label: 'Storyboard', desc: 'Generate storyboard', href: '/generate/storyboard', color: 'silver' },
   { icon: <Zap className="h-5 w-5" />, label: 'Providers', desc: 'Kelola API keys & tokens', href: '/providers', color: 'gold' },
 ]
 

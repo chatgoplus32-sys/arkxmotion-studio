@@ -8,8 +8,6 @@ import { ToastContainer } from '@/components/ui/Toast'
 import DashboardPage from '@/pages/Dashboard'
 import CommandPage from '@/pages/Command'
 import MotionPage from '@/pages/Motion'
-import NaratifPage from '@/pages/Naratif'
-import StoryboardPage from '@/pages/Storyboard'
 import BulkFashionPage from '@/pages/BulkFashion'
 import ImageToVideoPage from '@/pages/ImageToVideo'
 import UpscalerPage from '@/pages/Upscaler'
@@ -54,8 +52,6 @@ export default function App() {
                       <Route path="/" element={<DashboardPage />} />
                       <Route path="/command" element={<CommandPage />} />
                       <Route path="/generate/motion" element={<MotionPage />} />
-                      <Route path="/generate/naratif" element={<NaratifPage />} />
-                      <Route path="/generate/storyboard" element={<StoryboardPage />} />
                       <Route path="/generate/bulk-fashion" element={<BulkFashionPage />} />
                       <Route path="/generate/upscaler" element={<UpscalerPage />} />
                       <Route path="/generate/image-to-video" element={<ImageToVideoPage />} />
