@@ -617,9 +617,33 @@ function buildBulkFashionNodes(modelKey: string, prompt: string, quality: string
 
 async function submitWeavyBulkOne(token: string, params: WeavyBulkOneParams): Promise<WeavyImageGenerateResult> {
   try {
-    // Compress + base64 images client-side, upload via server proxy
+    // Always compress to 1024px max, then base64
     const compressAndBase64 = async (file: File): Promise<string> => {
-      const compressed = await compressImageIfNeeded(file, 1024, 0.85)
+      const compressed = await new Promise<File>((resolve) => {
+        const reader = new FileReader()
+        reader.onload = () => {
+          const img = new Image()
+          img.onload = () => {
+            let w = img.width, h = img.height
+            if (w > 1024 || h > 1024) {
+              const scale = 1024 / Math.max(w, h)
+              w = Math.round(w * scale)
+              h = Math.round(h * scale)
+            }
+            const canvas = document.createElement('canvas')
+            canvas.width = w
+            canvas.height = h
+            canvas.getContext('2d')!.drawImage(img, 0, 0, w, h)
+            canvas.toBlob(
+              (blob) => resolve(blob ? new File([blob], file.name, { type: 'image/jpeg' }) : file),
+              'image/jpeg', 0.85
+            )
+          }
+          img.onerror = () => resolve(file)
+          img.src = reader.result as string
+        }
+        reader.readAsDataURL(file)
+      })
       return new Promise((resolve, reject) => {
         const reader = new FileReader()
         reader.onload = () => resolve((reader.result as string).split(',')[1])
