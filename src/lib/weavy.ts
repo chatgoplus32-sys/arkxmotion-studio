@@ -759,7 +759,7 @@ async function submitWeavyBulkOne(token: string, params: WeavyBulkOneParams): Pr
     if (!batchId) throw Error('No batchId returned')
     console.log(`[weavy-bulk] Step 7: OK, batchId=${batchId}`)
 
-    return { ok: true, taskId: `${recipeId}:${batchId}`, raw: execData }
+    return { ok: true, taskId: `${recipeId}:${batchId}`, raw: execData, charUrl, outfitUrl }
   } catch (err: any) { return { ok: false, error: err.message } }
 }
 
@@ -773,6 +773,7 @@ export async function generateWeavyBulkOne(params: WeavyBulkOneParams): Promise<
     if (!submitResult.ok || !submitResult.taskId) throw Error(submitResult.error || 'Submit failed')
 
     const [recipeId, batchId] = submitResult.taskId.split(':')
+    const inputUrls = [submitResult.charUrl, submitResult.outfitUrl]
     console.log(`[weavy-bulk] Polling: recipeId=${recipeId} batchId=${batchId}`)
 
     // Poll with access token directly
@@ -794,38 +795,38 @@ export async function generateWeavyBulkOne(params: WeavyBulkOneParams): Promise<
         const data = await res.json().catch(() => null)
         const recipeRun = data?.recipeRuns?.[0]
         const batchStatus = (recipeRun?.status || '').toLowerCase()
-        const nodeRuns = recipeRun?.nodeRuns || []
-        console.log(`[weavy-bulk] Poll #${attempt}: recipeStatus=${batchStatus} nodes=${nodeRuns.length}`)
+          const nodeRuns = recipeRun?.nodeRuns || []
+          console.log(`[weavy-bulk] Poll #${attempt}: recipeStatus=${batchStatus} nodes=${nodeRuns.length}`)
 
-        if (batchStatus === 'completed' || batchStatus === 'done' || batchStatus === 'success') {
-          // Extract image URL from node runs
-          for (let i = nodeRuns.length - 1; i >= 0; i--) {
-            const nodeResult = nodeRuns[i]?.result
-            const urls = Array.isArray(nodeResult)
-              ? nodeResult.map((r: any) => r?.url || r?.image_url).filter(Boolean)
-              : []
-            if (urls.length > 0) {
-              // Filter out input URLs (char + outfit)
-              const inputUrls = [charUrl, outfitUrl]
-              const resultUrl = urls.find((u: string) => !inputUrls.some((iu) => u.includes(iu.split('/').pop() || '___')))
-              if (resultUrl) {
-                console.log(`[weavy-bulk] ✅ DONE! imageUrl=${resultUrl.slice(0, 100)}`)
-                return resultUrl
+          if (batchStatus === 'completed' || batchStatus === 'done' || batchStatus === 'success') {
+            // Extract image URL from node runs
+            for (let i = nodeRuns.length - 1; i >= 0; i--) {
+              const nodeResult = nodeRuns[i]?.result
+              const urls = Array.isArray(nodeResult)
+                ? nodeResult.map((r: any) => r?.url || r?.image_url).filter(Boolean)
+                : []
+              if (urls.length > 0) {
+                // Filter out input URLs (char + outfit)
+                const inputIds = inputUrls.map((u: string) => u.split('/').pop()).filter(Boolean)
+                const resultUrl = urls.find((u: string) => !inputIds.some((id: string) => u.includes(id)))
+                if (resultUrl) {
+                  console.log(`[weavy-bulk] ✅ DONE! imageUrl=${resultUrl.slice(0, 100)}`)
+                  return resultUrl
+                }
+                // If all URLs are inputs, return the last one (likely the result)
+                console.log(`[weavy-bulk] ✅ DONE! imageUrl=${urls[urls.length - 1].slice(0, 100)}`)
+                return urls[urls.length - 1]
               }
-              // If all URLs are inputs, return the last one (likely the result)
-              console.log(`[weavy-bulk] ✅ DONE! imageUrl=${urls[urls.length - 1].slice(0, 100)}`)
-              return urls[urls.length - 1]
             }
+            // Check direct output
+            const directUrl = data?.output?.image_url || data?.output?.url || data?.image_url || data?.url
+            if (directUrl) {
+              console.log(`[weavy-bulk] ✅ DONE! directUrl=${directUrl.slice(0, 100)}`)
+              return directUrl
+            }
+            console.log(`[weavy-bulk] Task COMPLETED but no URL found:`, JSON.stringify(nodeRuns.map((n: any) => ({ id: n.nodeId, status: n.status, hasResult: !!n.result }))))
+            throw Error('Task completed but no image URL found')
           }
-          // Check direct output
-          const directUrl = data?.output?.image_url || data?.output?.url || data?.image_url || data?.url
-          if (directUrl) {
-            console.log(`[weavy-bulk] ✅ DONE! directUrl=${directUrl.slice(0, 100)}`)
-            return directUrl
-          }
-          console.log(`[weavy-bulk] Task COMPLETED but no URL found:`, JSON.stringify(nodeRuns.map((n: any) => ({ id: n.nodeId, status: n.status, hasResult: !!n.result }))))
-          throw Error('Task completed but no image URL found')
-        }
 
         if (batchStatus === 'failed' || batchStatus === 'error' || batchStatus === 'cancelled') {
           throw Error(`Weavy failed: ${recipeRun?.error || 'Generation failed'}`)
