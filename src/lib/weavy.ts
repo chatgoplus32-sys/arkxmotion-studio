@@ -617,21 +617,20 @@ function buildBulkFashionNodes(modelKey: string, prompt: string, quality: string
 
 async function submitWeavyBulkOne(token: string, params: WeavyBulkOneParams): Promise<WeavyImageGenerateResult> {
   try {
-    // Upload images via server proxy (bypass browser CORS)
-    const toBase64 = (file: File): Promise<string> =>
-      new Promise((resolve, reject) => {
+    // Compress + base64 images client-side, upload via server proxy
+    const compressAndBase64 = async (file: File): Promise<string> => {
+      const compressed = await compressImageIfNeeded(file, 1024, 0.85)
+      return new Promise((resolve, reject) => {
         const reader = new FileReader()
-        reader.onload = () => {
-          const dataUrl = reader.result as string
-          resolve(dataUrl.split(',')[1]) // strip data:image/...;base64,
-        }
+        reader.onload = () => resolve((reader.result as string).split(',')[1])
         reader.onerror = reject
-        reader.readAsDataURL(file)
+        reader.readAsDataURL(compressed)
       })
+    }
 
     const [charB64, outfitB64] = await Promise.all([
-      toBase64(params.charFile),
-      toBase64(params.outfitFile),
+      compressAndBase64(params.charFile),
+      compressAndBase64(params.outfitFile),
     ])
 
     const uploadRes = await fetch('/api/public/upload-images', {
@@ -639,8 +638,8 @@ async function submitWeavyBulkOne(token: string, params: WeavyBulkOneParams): Pr
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         files: [
-          { name: 'char.jpg', type: params.charFile.type || 'image/jpeg', data: charB64 },
-          { name: 'outfit.jpg', type: params.outfitFile.type || 'image/jpeg', data: outfitB64 },
+          { name: 'char.jpg', type: 'image/jpeg', data: charB64 },
+          { name: 'outfit.jpg', type: 'image/jpeg', data: outfitB64 },
         ],
       }),
     })
