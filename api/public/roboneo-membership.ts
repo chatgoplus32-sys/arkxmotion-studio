@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
-const GATEWAY_URL = 'https://ai-engine-gateway-roboneo.meitu.com/roboneo/sync/request'
+const GATEWAY_URL = 'ai-engine-gateway-roboneo.meitu.com/roboneo/sync/request'
+const PROXY_URL = 'https://roboneo-proxy.chatgoplus32.workers.dev'
 const TRACKING_TOKEN = '45C30555F10E49629098A75F95828DA6'
 const CLIENT_ID = '1189857647'
 
@@ -76,16 +77,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { _access_token, ...paramWithoutToken } = tracking
 
   try {
-    const roboneoRes = await fetch(`${GATEWAY_URL}/vipshow`, {
+    const proxyRes = await fetch(PROXY_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'access-token': String(token),
-        'client-id': CLIENT_ID,
-        'Origin': 'https://www.roboneo.com',
-        'Referer': 'https://www.roboneo.com/',
+        'X-Roboneo-Token': String(token),
       },
       body: JSON.stringify({
+        path: 'vipshow',
         parameter: {
           ...paramWithoutToken,
           features: '',
@@ -94,28 +93,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }),
     })
 
-    const text = await roboneoRes.text()
+    const text = await proxyRes.text()
     let data: any = null
     try { data = JSON.parse(text) } catch {}
 
-    console.log(`[roboneo-membership] gateway ${roboneoRes.status}:`, text.slice(0, 800))
+    console.log(`[roboneo-membership] proxy ${proxyRes.status}:`, text.slice(0, 800))
 
-    if (data?.error_code === 98) {
+    if (data?.data?.error_code === 98) {
       return res.status(200).json({
         ok: false,
         error_code: 98,
-        error: data?.error_msg || 'Token rejected by gateway',
+        error: data?.data?.error_msg || 'Token rejected by gateway',
         raw: text.slice(0, 500),
-        data
+        data: data?.data
       })
     }
 
     // Return full response for client-side parsing
     return res.status(200).json({
-      ok: data?.error_code === 0,
-      status: roboneoRes.status,
+      ok: data?.ok,
+      status: proxyRes.status,
       raw: text.slice(0, 500),
-      data: data
+      data: data?.data
     })
   } catch (err: any) {
     console.error(`[roboneo-membership] gateway error:`, err.message)

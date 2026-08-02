@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
-const GATEWAY_URL = 'https://ai-engine-gateway-roboneo.meitu.com/roboneo/sync/request'
+const PROXY_URL = 'https://roboneo-proxy.chatgoplus32.workers.dev'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -18,42 +18,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   console.log(`[roboneo] path=${path} tokenLen=${String(token).length} tokenPrefix=${String(token).slice(0, 10)}...`)
 
   try {
-    const roboneoRes = await fetch(`${GATEWAY_URL}/${path}`, {
+    const proxyRes = await fetch(PROXY_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'access-token': String(token),
-        'client-id': '1189857647',
-        'Origin': 'https://www.roboneo.com',
-        'Referer': 'https://www.roboneo.com/',
+        'X-Roboneo-Token': String(token),
       },
-      body: JSON.stringify({ parameter: parameter || {} }),
+      body: JSON.stringify({ path, parameter: parameter || {} }),
     })
 
-    const text = await roboneoRes.text()
-    let data: any = null
-    try { data = JSON.parse(text) } catch {}
+    const data = await proxyRes.json().catch(() => null)
 
-    console.log(`[roboneo] gateway ${roboneoRes.status}:`, text.slice(0, 500))
+    console.log(`[roboneo] proxy ${proxyRes.status}:`, JSON.stringify(data).slice(0, 500))
 
-    if (data?.error_code === 98) {
+    if (data?.data?.error_code === 98) {
       return res.status(200).json({
         ok: false,
         error_code: 98,
-        error: data?.error_msg || 'Token rejected by gateway',
+        error: data?.data?.error_msg || 'Token rejected by gateway',
         debug: {
           tokenLen: String(token).length,
-          tokenPrefix: String(token).slice(0, 15),
-          gatewayStatus: roboneoRes.status,
-          bodyKeys: Object.keys(parameter || {}),
+          gatewayStatus: proxyRes.status,
         },
-        data
+        data: data?.data
       })
     }
 
-    return res.status(200).json({ ok: data?.error_code === 0, status: roboneoRes.status, data })
+    return res.status(200).json(data)
   } catch (err: any) {
-    console.error(`[roboneo] gateway error:`, err.message)
+    console.error(`[roboneo] proxy error:`, err.message)
     return res.status(502).json({ ok: false, error: err.message })
   }
 }
