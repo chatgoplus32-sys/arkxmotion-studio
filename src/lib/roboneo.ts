@@ -1066,10 +1066,11 @@ export async function pollMotionControl(
       })
       networkRetries = 0
     } catch (err: any) {
-      if (/HTTP (502|503|504|429)|upstream|connection|network/i.test(err.message)) {
+      if (/HTTP (502|503|504|429)|upstream|connection|network|timeout|TIMEOUT|parse|Failed to/i.test(err.message)) {
         networkRetries++
-        if (networkRetries >= 8) throw err
-        onProgress?.(`retrying (${networkRetries})`, 0)
+        if (networkRetries >= 15) throw err
+        console.log(`[roboneo] poll retry ${networkRetries}: ${err.message.slice(0, 100)}`)
+        onProgress?.(`retrying (${networkRetries})`, Math.round(5 + (Date.now() - startTime) / 6000))
         continue
       }
       throw err
