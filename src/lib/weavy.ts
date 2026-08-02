@@ -1084,11 +1084,7 @@ export interface WeavyUpscaleResult {
 
 export async function submitWeavyUpscale(params: { token: string; settings: TopazUpscaleSettings; imageUrl: string }): Promise<WeavyUpscaleResult> {
   const { token, settings, imageUrl } = params
-  let accessToken = token
-  if (isRefreshToken(token)) {
-    const refreshed = await refreshWeavyToken(token)
-    if (refreshed?.accessToken) accessToken = refreshed.accessToken
-  }
+  const accessToken = await getWeavyAccessToken(token)
   try {
     const { id: recipeId, v3 } = await createWeavyRecipe(accessToken)
     const { nodes, edges, model } = buildTopazUpscaleNodes(imageUrl, settings)
@@ -1112,6 +1108,39 @@ export async function submitWeavyUpscale(params: { token: string; settings: Topa
   }
 }
 
+async function createWeavyRecipe(accessToken: string): Promise<{ id: string; v3?: string }> {
+  const res = await fetch(`${WEAVY_API}/v1/recipes/create`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ scope: 'PERSONAL' }),
+    signal: AbortSignal.timeout(15000),
+  })
+  if (!res.ok) throw Error(`Create recipe failed (${res.status})`)
+  const data = await res.json()
+  return { id: data?.id || data?.recipeId, v3: data?.v3 }
+}
+
+async function saveWeavyRecipe(recipeId: string, recipeData: { nodes: any[]; edges: any[]; v3?: string }, accessToken: string): Promise<void> {
+  const res = await fetch(`${WEAVY_API}/v1/recipes/${recipeId}/save`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ nodes: recipeData.nodes, edges: recipeData.edges, v3: recipeData.v3 || '', lastUpdatedAt: new Date().toISOString() }),
+    signal: AbortSignal.timeout(15000),
+  })
+  if (!res.ok) throw Error(`Save recipe failed (${res.status})`)
+}
+
+async function approveWeavyModel(modelId: string, accessToken: string): Promise<void> {
+  try {
+    await fetch(`${WEAVY_API}/v1/workspaces/models/approve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ modelIds: [modelId] }),
+      signal: AbortSignal.timeout(10000),
+    })
+  } catch {}
+}
+
 export async function pollWeavyUpscaleStatus(
   token: string,
   taskId: string,
@@ -1122,11 +1151,7 @@ export async function pollWeavyUpscaleStatus(
   const startTime = Date.now()
   let lastLog = ''
   const [recipeId, batchId] = taskId.split(':')
-  let accessToken = token
-  if (isRefreshToken(token)) {
-    const refreshed = await refreshWeavyToken(token)
-    if (refreshed?.accessToken) accessToken = refreshed.accessToken
-  }
+  const accessToken = await getWeavyAccessToken(token)
 
   const maxAttempts = Math.ceil(timeoutMs / 5000)
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
