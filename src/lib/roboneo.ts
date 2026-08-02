@@ -1019,11 +1019,12 @@ export async function pollMotionControl(
 
     let result: any
     try {
-      const tracking = buildTrackingParams(accessToken, 'history-detail', resolvedRoomId)
+      const tracking = buildTrackingParams(accessToken, 'nodeexecutequery', resolvedRoomId)
       const { _access_token, ...paramWithoutToken } = tracking
 
-      result = await roboneoApiCall(accessToken, 'history-detail', {
+      result = await roboneoApiCall(accessToken, 'nodeexecutequery', {
         ...paramWithoutToken,
+        task_ids: [taskId],
         room_id: resolvedRoomId,
       })
       networkRetries = 0
@@ -1038,56 +1039,23 @@ export async function pollMotionControl(
     }
 
     const payload = result
-    const nextAction = payload?.next_action
-    const action = String(nextAction?.action || 'poll').toLowerCase()
-    const artifacts = Array.isArray(payload?.artifacts) ? payload.artifacts : []
-    const items = Array.isArray(payload?.items) ? payload.items : []
+    const task = payload?.tasks?.[taskId] || (typeof payload?.tasks === 'object' ? Object.values(payload?.tasks)?.[0] : null)
+    const steps = Array.isArray(task?.steps) ? task.steps : []
+    const nextAction = payload?.next_action || task?.next_action
+    const action = String(nextAction?.action || task?.state || task?.status || '').toLowerCase()
 
     const elapsedMin = (Date.now() - startTime) / (8 * 60000)
     const fallbackPct = Math.min(0.94, 1 - 1 / (1 + elapsedMin * 1.6))
-    let pct = Math.round(5 + fallbackPct * 89)
+    let realPct = extractProgressLocal(task) ?? extractProgressLocal(payload)
+    let pct = realPct === null ? Math.round(5 + fallbackPct * 89) : Math.round(realPct)
 
-    for (const item of items) {
-      const p = extractProgressLocal(item)
-      if (p !== null) { pct = p; break }
-    }
+    const status = action || 'processing'
+    onProgress?.(status, pct)
 
-    onProgress?.(action === 'poll' ? 'processing' : action, pct)
-
-    const logEntry = `poll #${Math.round((Date.now() - startTime) / 1000)}s action=${action} artifacts=${artifacts.length}`
+    const logEntry = `poll #${Math.round((Date.now() - startTime) / 1000)}s state=${status} pct=${pct}`
     if (logEntry !== lastLog) {
       lastLog = logEntry
       console.log(`[roboneo] ${logEntry}`)
-    }
-
-    if (action === 'done' || action === 'completed') {
-      for (const art of artifacts) {
-        const videoUrl = findVideoUrl(art)
-        if (videoUrl) {
-          taskMetaMap.delete(taskId)
-          return videoUrl
-        }
-      }
-      for (const item of items) {
-        const videoUrl = findVideoUrl(item)
-        if (videoUrl) {
-          taskMetaMap.delete(taskId)
-          return videoUrl
-        }
-      }
-      const videoUrl = findVideoUrl(payload)
-      if (videoUrl) {
-        taskMetaMap.delete(taskId)
-        return videoUrl
-      }
-
-      successNoOutputCount++
-      if (successNoOutputCount >= MAX_SUCCESS_NO_OUTPUT) {
-        throw new Error(`Roboneo: task selesai tapi URL output tidak ditemukan. artifacts=${artifacts.length} items=${items.length}`)
-      }
-      onProgress?.('finalizing', Math.max(pct, 96))
-      await new Promise(r => setTimeout(r, 4000))
-      continue
     }
 
     if (action === 'recharge') {
@@ -1096,8 +1064,77 @@ export async function pollMotionControl(
       throw new Error(`Roboneo: ${rechargeContent}`)
     }
 
-    if (action === 'fail' || action === 'error') {
-      const errMsg = findDeepError(payload) || findDeepError(nextAction) || nextAction?.items?.[0]?.content || 'unknown error'
+    const isSuccess = ['success', 'succeeded', 'completed', 'done', 'finished'].includes(status)
+    const isFailed = ['fail', 'failed', 'error', 'cancelled', 'canceled'].includes(status)
+
+    if (isSuccess) {
+      const mediaInfo = task?.media_info_list?.[0] || payload?.media_info_list?.[0]
+      const videoUrl = findVideoUrl(
+        task?.last_image_url, task?.last_image_urls,
+        task?.initial_transferred_urls, task?.media_meta, task?.media_metas,
+        mediaInfo?.url, mediaInfo?.media_url,
+        ...steps.map((s: any) => s.output), ...steps.map((s: any) => s.result),
+        payload?.output, payload?.result, payload,
+        payload?.data, task?.data, task?.output_url, task?.download_url,
+        task?.result_url, task?.video, task?.video_url, task?.media,
+        task?.url, task?.src, task?.link, task?.href, task?.path
+      )
+
+      if (videoUrl) {
+        if (/meitudata\.com/i.test(videoUrl)) {
+          try {
+            onProgress?.('Re-uploading to permanent storage...', 98)
+            const proxyUrl = `/api/public/video-proxy?url=${encodeURIComponent(videoUrl)}`
+            const videoRes = await fetch(proxyUrl)
+            if (videoRes.ok) {
+              const blob = await videoRes.blob()
+              const fd = new FormData()
+              fd.append('file', new File([blob], 'video.mp4', { type: 'video/mp4' }))
+              const uploadRes = await fetch('/api/public/upload-catbox', { method: 'POST', body: fd })
+              const uploadData = await uploadRes.json().catch(() => ({})) as any
+              if (uploadData?.url) {
+                console.log(`[roboneo] re-uploaded to permanent: ${uploadData.url}`)
+                taskMetaMap.delete(taskId)
+                return uploadData.url
+              }
+            }
+          } catch (reErr: any) {
+            console.log(`[roboneo] re-upload failed: ${reErr.message}, using original URL`)
+          }
+        }
+        taskMetaMap.delete(taskId)
+        return videoUrl
+      }
+
+      successNoOutputCount++
+      if (successNoOutputCount >= MAX_SUCCESS_NO_OUTPUT) {
+        throw new Error(`Roboneo: task selesai tapi URL output tidak ditemukan`)
+      }
+      onProgress?.('finalizing', Math.max(pct, 96))
+      await new Promise(r => setTimeout(r, 4000))
+      continue
+    }
+
+    if (isFailed) {
+      const failedStep = steps.find((s: any) => /fail|error/i.test(String(s.status || s.state || '')))
+      const errMsg = task?.error_message || task?.error_msg || failedStep?.error_message || failedStep?.error_msg ||
+        findDeepError(task) || findDeepError(payload) || failedStep?.fail_code || 'unknown error'
+
+      const isBusy = /busy|sibuk|try again|later|overload|capacity|queue|结果接口获取失败/i.test(errMsg)
+      const isChargeFailed = /CHARGE_FAILED|charge.?failed|余额不足|余额不够|积分不足|账户余额|欠费/i.test(errMsg)
+      if (isBusy && busyRetries < MAX_BUSY_RETRIES) {
+        busyRetries++
+        const waitSec = Math.min(5 + busyRetries * 2, 20)
+        onProgress?.(`server sibuk, retry ${busyRetries}/${MAX_BUSY_RETRIES}`, pct)
+        await new Promise(r => setTimeout(r, waitSec * 1000))
+        continue
+      }
+
+      if (isChargeFailed) {
+        taskMetaMap.delete(taskId)
+        throw new Error(`Roboneo: saldo tidak cukup (CHARGE_FAILED)`)
+      }
+
       taskMetaMap.delete(taskId)
       throw new Error(`Roboneo failed: ${errMsg}`)
     }
