@@ -18,7 +18,7 @@ import {
   type LogEntry,
 } from '@/lib/backgroundTasks'
 import { useToastStore } from '@/stores/toastStore'
-import { logAudit } from '@/lib/auditLog'
+import { logAudit, getAuditLog, clearAuditLog } from '@/lib/auditLog'
 
 export default function SettingsPage() {
   const [theme, setTheme] = useState('system')
