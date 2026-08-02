@@ -660,9 +660,7 @@ export async function submitMotionControl(params: {
 
   const { roomId } = await createRoboneoRoom(accessToken)
 
-  const nodeId = uuid()
-  const videoNodeId = uuid()
-  const motionPrompt = prompt || `Refer to the movements and facial expressions in the video to animate the photo without changing the original background.`
+  const motionPrompt = prompt || `Please perform motion control: take the uploaded image as the character, and apply the body movements, gestures, and facial expressions from the uploaded video reference to animate the image. Do NOT use the video as-is. Use the image as the main subject and make it move like the video.`
   const fullPrompt = negativePrompt
     ? `${motionPrompt}\n\nNegative: ${negativePrompt}`
     : motionPrompt
@@ -686,37 +684,11 @@ export async function submitMotionControl(params: {
     select_option_ids: [],
     used_model: {
       image_model: '',
-      video_model: 'kling_2_6_motion',
+      video_model: '',
       model_pattern: 'high',
       thinking_mode: 'deep_thinking',
     },
-    extra: {
-      nodes: [
-        {
-          id: nodeId,
-          type: 'VIDEO_NODE',
-          data: {
-            name: 'Motion Control',
-            mcpInfo: {
-              api_name: 'video_bonbon_motioncontrol_v26',
-              model_id: 'kling_2_6_motion',
-              node_model_id: 'video_edit',
-              parameters: {
-                count: 1,
-                prompt: fullPrompt,
-                quality: 'std',
-              },
-            },
-            inputNodeId: {
-              textNodeIds: [],
-              imageNodeIds: [nodeId],
-              videoNodeIds: [videoNodeId],
-              audioNodeIds: [],
-            },
-          },
-        },
-      ],
-    },
+    extra: {},
     uid: '',
     answer_message: fullPrompt,
   }
