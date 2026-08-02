@@ -110,8 +110,8 @@ export default function UGCPage() {
     abortRef.current = controller
 
     try {
-      // Use Weavy image generation for UGC
-      const { runWeavyImage } = await import('@/lib/weavy')
+      // Use Weavy image generation for UGC (client-side token refresh)
+      const { generateWeavyBulkOne } = await import('@/lib/weavy')
 
       for (let i = 0; i < products.length; i++) {
         if (controller.signal.aborted) break
@@ -120,11 +120,14 @@ export default function UGCPage() {
 
         try {
           const prompt = buildPrompt(product.name, i)
-          const imageUrl = await runWeavyImage({
-            model: 'nanobanana2',
+          // Create a dummy outfit file (same as product for UGC)
+          const imageUrl = await generateWeavyBulkOne({
+            modelKey: 'nanobanana2',
             prompt,
-            aspectRatio: ratio,
             quality: '1K',
+            ratio,
+            charFile: product.file,
+            outfitFile: product.file,
           })
 
           if (!controller.signal.aborted) {
