@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 const GATEWAY_URL = 'https://ai-engine-gateway-roboneo.meitu.com/roboneo/sync/request'
+const PROXY_URL = 'https://roboneo-proxy.chatgoplus32.workers.dev'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -17,8 +18,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   console.log(`[roboneo] path=${path} tokenLen=${String(token).length} tokenPrefix=${String(token).slice(0, 10)}...`)
 
+  const targetUrl = `${GATEWAY_URL}/${path}`
+  const proxyUrl = `${PROXY_URL}/${targetUrl}`
+
   try {
-    const roboneoRes = await fetch(`${GATEWAY_URL}/${path}`, {
+    console.log(`[roboneo] proxy → ${proxyUrl.slice(0, 120)}...`)
+    const roboneoRes = await fetch(proxyUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
