@@ -1,7 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 const GATEWAY_URL = 'https://ai-engine-gateway-roboneo.meitu.com/roboneo/sync/request'
-const PROXY_URL = 'https://roboneo-proxy.chatgoplus32.workers.dev'
 const TRACKING_TOKEN = '45C30555F10E49629098A75F95828DA6'
 const CLIENT_ID = '1189857647'
 
@@ -77,32 +76,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { _access_token, ...paramWithoutToken } = tracking
 
   try {
-    const proxyRes = await fetch(PROXY_URL, {
+    const roboneoRes = await fetch(`${GATEWAY_URL}/vipshow`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'access-token': String(token),
+        'client-id': CLIENT_ID,
+        'Origin': 'https://www.roboneo.com',
+        'Referer': 'https://www.roboneo.com/',
+      },
       body: JSON.stringify({
-        path: `${GATEWAY_URL}/vipshow`,
-        headers: {
-          'access-token': String(token),
-          'client-id': CLIENT_ID,
-          'Origin': 'https://www.roboneo.com',
-          'Referer': 'https://www.roboneo.com/',
-        },
-        body: {
-          parameter: {
-            ...paramWithoutToken,
-            features: '',
-            later_face: 0,
-          }
-        },
+        parameter: {
+          ...paramWithoutToken,
+          features: '',
+          later_face: 0,
+        }
       }),
     })
 
-    const text = await proxyRes.text()
+    const text = await roboneoRes.text()
     let data: any = null
     try { data = JSON.parse(text) } catch {}
 
-    console.log(`[roboneo-membership] proxy ${proxyRes.status}:`, text.slice(0, 800))
+    console.log(`[roboneo-membership] gateway ${roboneoRes.status}:`, text.slice(0, 800))
 
     if (data?.error_code === 98) {
       return res.status(200).json({
@@ -117,7 +113,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Return full response for client-side parsing
     return res.status(200).json({
       ok: data?.error_code === 0,
-      status: proxyRes.status,
+      status: roboneoRes.status,
       raw: text.slice(0, 500),
       data: data
     })
