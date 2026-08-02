@@ -322,11 +322,15 @@ export default function BulkFashionPage() {
         })
 
         // Browser notification
-        if (Notification.permission === 'granted') {
-          new Notification('Bulk Fashion Selesai', {
-            body: `${resultUrls.length}/${outfitFiles.length} gambar berhasil di-generate`,
-            icon: '/favicon.svg',
-          })
+        try {
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('Bulk Fashion Selesai', {
+              body: `${resultUrls.length}/${outfitFiles.length} gambar berhasil di-generate`,
+              icon: '/favicon.svg',
+            })
+          }
+        } catch {
+          // ServiceWorker-only environment — silently ignore
         }
 
         // Toast notification
