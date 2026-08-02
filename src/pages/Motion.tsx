@@ -394,8 +394,9 @@ export default function MotionPage() {
             if (balanceResult.balance !== null && balanceResult.balance <= 0) {
               throw new Error('Balance kosong! Tidak ada credit untuk generate.')
             }
-            if (balanceResult.balance !== null && balanceResult.balance < totalCredits) {
-              throw new Error(`Balance tidak cukup! Butuh ${totalCredits} credit, hanya ada ${balanceResult.balance}.`)
+            const balanceBuffer = Math.ceil(totalCredits * 1.5)
+            if (balanceResult.balance !== null && balanceResult.balance < balanceBuffer) {
+              throw new Error(`Balance tidak cukup! Butuh ~${balanceBuffer} credit (termasuk buffer), hanya ada ${balanceResult.balance}. Biaya motion: ${totalCredits} credit.`)
             }
           }
         }
@@ -668,7 +669,7 @@ export default function MotionPage() {
         return { completedCount }
       },
       {
-        requiredCredits: totalCredits,
+        requiredCredits: isRoboneo ? Math.ceil(totalCredits * 1.5) : totalCredits,
         onKeySwitch: (from, to, attempt) => {
           addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn')
         },
