@@ -18,11 +18,9 @@ async function refreshWeavyAccessToken(refreshToken: string): Promise<string | n
 
 async function getWeavyAccessToken(token: string): Promise<string> {
   const isJwt = /^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token)
-  console.log(`[weavy-bulk] getAccessToken: isJwt=${isJwt} tokenLen=${token.length}`)
   if (isJwt) return token
   const refreshed = await refreshWeavyAccessToken(token)
   if (refreshed) {
-    console.log(`[weavy-bulk] Firebase refresh OK, accessTokenLen=${refreshed.length}`)
     return refreshed
   }
   throw Error('Token Weavy expired. Silakan update token di Providers.')
@@ -644,12 +642,9 @@ function buildBulkFashionNodes(modelKey: string, prompt: string, quality: string
 async function submitWeavyBulkOne(token: string, params: WeavyBulkOneParams): Promise<WeavyImageGenerateResult> {
   try {
     // Step 0: Get valid access token (refresh if needed) — client-side
-    console.log(`[weavy-bulk] Step 0: getting access token...`)
     const accessToken = await getWeavyAccessToken(token)
-    console.log(`[weavy-bulk] Step 0: OK, tokenLen=${accessToken.length}`)
 
     // Step 1: Upload character image to Weavy directly
-    console.log(`[weavy-bulk] Step 1: uploading char image (${params.charFile.size} bytes)...`)
     const charFormData = new FormData()
     charFormData.append('file', params.charFile, `char_${Date.now()}.jpg`)
     const charUploadRes = await fetch(`${WEAVY_API}/v1/assets/upload`, {
@@ -658,17 +653,14 @@ async function submitWeavyBulkOne(token: string, params: WeavyBulkOneParams): Pr
       body: charFormData,
       signal: AbortSignal.timeout(30000),
     })
-    console.log(`[weavy-bulk] Step 1: upload response ${charUploadRes.status}`)
     if (!charUploadRes.ok) {
       const errText = await charUploadRes.text().catch(() => '')
       throw Error(`Upload char failed (${charUploadRes.status}): ${errText.slice(0, 200)}`)
     }
     const charAsset = await charUploadRes.json()
     const charUrl = charAsset?.url || charAsset?.download || `https://media.weavy.ai/image/upload/uploads/${charAsset?.publicId || charAsset?.id}.jpg`
-    console.log(`[weavy-bulk] Step 1: OK, charUrl=${charUrl.slice(0, 80)}`)
 
     // Step 2: Upload outfit image to Weavy directly
-    console.log(`[weavy-bulk] Step 2: uploading outfit image (${params.outfitFile.size} bytes)...`)
     const outfitFormData = new FormData()
     outfitFormData.append('file', params.outfitFile, `outfit_${Date.now()}.jpg`)
     const outfitUploadRes = await fetch(`${WEAVY_API}/v1/assets/upload`, {
@@ -677,34 +669,28 @@ async function submitWeavyBulkOne(token: string, params: WeavyBulkOneParams): Pr
       body: outfitFormData,
       signal: AbortSignal.timeout(30000),
     })
-    console.log(`[weavy-bulk] Step 2: upload response ${outfitUploadRes.status}`)
     if (!outfitUploadRes.ok) {
       const errText = await outfitUploadRes.text().catch(() => '')
       throw Error(`Upload outfit failed (${outfitUploadRes.status}): ${errText.slice(0, 200)}`)
     }
     const outfitAsset = await outfitUploadRes.json()
     const outfitUrl = outfitAsset?.url || outfitAsset?.download || `https://media.weavy.ai/image/upload/uploads/${outfitAsset?.publicId || outfitAsset?.id}.jpg`
-    console.log(`[weavy-bulk] Step 2: OK, outfitUrl=${outfitUrl.slice(0, 80)}`)
 
     // Step 3: Build node graph
-    console.log(`[weavy-bulk] Step 3: building node graph...`)
     const nodes = buildBulkFashionNodes(params.modelKey, params.prompt, params.quality, params.ratio, charUrl, outfitUrl)
     const extraNodes = nodes._extraNodes || []
     const extraEdges = nodes._extraEdges || []
     const edges = [...extraEdges]
     const modelNode = { id: nodes.id, type: nodes.type, data: nodes.data, position: { x: 600, y: 300 }, width: 460, height: 500 }
     const allNodes = [...extraNodes, modelNode]
-    console.log(`[weavy-bulk] Step 3: OK, nodes=${allNodes.length} edges=${edges.length}`)
 
     // Step 4: Create recipe
-    console.log(`[weavy-bulk] Step 4: creating recipe...`)
     const createRes = await fetch(`${WEAVY_API}/v1/recipes/create`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
       body: JSON.stringify({ scope: 'PERSONAL' }),
       signal: AbortSignal.timeout(15000),
     })
-    console.log(`[weavy-bulk] Step 4: response ${createRes.status}`)
     if (!createRes.ok) {
       const errText = await createRes.text().catch(() => '')
       throw Error(`Create recipe failed (${createRes.status}): ${errText.slice(0, 200)}`)
@@ -713,26 +699,20 @@ async function submitWeavyBulkOne(token: string, params: WeavyBulkOneParams): Pr
     const recipeId = createData?.id || createData?.recipeId
     const v3 = createData?.v3
     if (!recipeId) throw Error('No recipeId returned')
-    console.log(`[weavy-bulk] Step 4: OK, recipeId=${recipeId}`)
 
     // Step 5: Save recipe
-    console.log(`[weavy-bulk] Step 5: saving recipe...`)
     const saveRes = await fetch(`${WEAVY_API}/v1/recipes/${recipeId}/save`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
       body: JSON.stringify({ nodes: allNodes, edges, v3: v3 || '', lastUpdatedAt: new Date().toISOString() }),
       signal: AbortSignal.timeout(15000),
     })
-    console.log(`[weavy-bulk] Step 5: response ${saveRes.status}`)
     if (!saveRes.ok) {
       const errText = await saveRes.text().catch(() => '')
       throw Error(`Save recipe failed (${saveRes.status}): ${errText.slice(0, 200)}`)
     }
-    console.log(`[weavy-bulk] Step 5: OK`)
-
     // Step 6: Approve model
     const modelName = nodes.data?.model?.name || params.modelKey
-    console.log(`[weavy-bulk] Step 6: approving model ${modelName}...`)
     try {
       await fetch(`${WEAVY_API}/v1/workspaces/models/approve`, {
         method: 'POST',
@@ -741,10 +721,7 @@ async function submitWeavyBulkOne(token: string, params: WeavyBulkOneParams): Pr
         signal: AbortSignal.timeout(10000),
       })
     } catch {}
-    console.log(`[weavy-bulk] Step 6: OK`)
-
     // Step 7: Execute batch
-    console.log(`[weavy-bulk] Step 7: executing batch...`)
     const execRes = await fetch(`${WEAVY_API}/v1/batches/recipes/${recipeId}/execute`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
@@ -753,11 +730,9 @@ async function submitWeavyBulkOne(token: string, params: WeavyBulkOneParams): Pr
     })
     const execText = await execRes.text()
     let execData: any; try { execData = JSON.parse(execText) } catch { execData = null }
-    console.log(`[weavy-bulk] Step 7: response ${execRes.status}`, execText.slice(0, 300))
     if (!execRes.ok || !execData) throw Error(execData?.error || `Execute failed (${execRes.status}): ${execText.slice(0, 200)}`)
     const batchId = execData?.batchId || execData?.id
     if (!batchId) throw Error('No batchId returned')
-    console.log(`[weavy-bulk] Step 7: OK, batchId=${batchId}`)
 
     return { ok: true, taskId: `${recipeId}:${batchId}`, raw: execData, charUrl, outfitUrl }
   } catch (err: any) { return { ok: false, error: err.message } }
@@ -774,7 +749,6 @@ export async function generateWeavyBulkOne(params: WeavyBulkOneParams): Promise<
 
     const [recipeId, batchId] = submitResult.taskId.split(':')
     const inputUrls = [submitResult.charUrl, submitResult.outfitUrl]
-    console.log(`[weavy-bulk] Polling: recipeId=${recipeId} batchId=${batchId}`)
 
     // Poll with access token directly
     const startTime = Date.now()
@@ -790,14 +764,11 @@ export async function generateWeavyBulkOne(params: WeavyBulkOneParams): Promise<
           headers: { Authorization: `Bearer ${accessToken}` },
           signal: AbortSignal.timeout(10000),
         })
-        console.log(`[weavy-bulk] Poll #${attempt}: status ${res.status}`)
         if (!res.ok) continue
         const data = await res.json().catch(() => null)
         const recipeRun = data?.recipeRuns?.[0]
         const batchStatus = (recipeRun?.status || '').toLowerCase()
           const nodeRuns = recipeRun?.nodeRuns || []
-          console.log(`[weavy-bulk] Poll #${attempt}: recipeStatus=${batchStatus} nodes=${nodeRuns.length}`)
-
           if (batchStatus === 'completed' || batchStatus === 'done' || batchStatus === 'success') {
             // Extract image URL from node runs
             for (let i = nodeRuns.length - 1; i >= 0; i--) {
@@ -810,21 +781,17 @@ export async function generateWeavyBulkOne(params: WeavyBulkOneParams): Promise<
                 const inputIds = inputUrls.map((u: string) => u.split('/').pop()).filter(Boolean)
                 const resultUrl = urls.find((u: string) => !inputIds.some((id: string) => u.includes(id)))
                 if (resultUrl) {
-                  console.log(`[weavy-bulk] ✅ DONE! imageUrl=${resultUrl.slice(0, 100)}`)
                   return resultUrl
                 }
                 // If all URLs are inputs, return the last one (likely the result)
-                console.log(`[weavy-bulk] ✅ DONE! imageUrl=${urls[urls.length - 1].slice(0, 100)}`)
                 return urls[urls.length - 1]
               }
             }
             // Check direct output
             const directUrl = data?.output?.image_url || data?.output?.url || data?.image_url || data?.url
             if (directUrl) {
-              console.log(`[weavy-bulk] ✅ DONE! directUrl=${directUrl.slice(0, 100)}`)
               return directUrl
             }
-            console.log(`[weavy-bulk] Task COMPLETED but no URL found:`, JSON.stringify(nodeRuns.map((n: any) => ({ id: n.nodeId, status: n.status, hasResult: !!n.result }))))
             throw Error('Task completed but no image URL found')
           }
 
@@ -838,16 +805,13 @@ export async function generateWeavyBulkOne(params: WeavyBulkOneParams): Promise<
             const nodeResult = nodeRuns[i]?.result
             const urls = Array.isArray(nodeResult) ? nodeResult.map((r: any) => r?.url || r?.image_url).filter(Boolean) : []
             if (urls.length > 0) {
-              console.log(`[weavy-bulk] ✅ DONE! imageUrl=${urls[0].slice(0, 100)}`)
               return urls[0]
             }
           }
           const directUrl = data?.output?.image_url || data?.output?.url || data?.image_url || data?.url
           if (directUrl) {
-            console.log(`[weavy-bulk] ✅ DONE! directUrl=${directUrl.slice(0, 100)}`)
             return directUrl
           }
-          console.log(`[weavy-bulk] Task done but no URL found:`, JSON.stringify(data).slice(0, 500))
           throw Error('Task completed but no image URL found')
         }
         if (['failed', 'error', 'cancelled'].includes(status)) {
@@ -861,7 +825,7 @@ export async function generateWeavyBulkOne(params: WeavyBulkOneParams): Promise<
     throw Error('Weavy timeout')
   }, {
     requiredCredits: 6,
-    onKeySwitch: (from, to, attempt) => { console.log(`[weavy-bulk] rotate #${attempt}: ${from.name} → ${to.name}`) },
+    onKeySwitch: (from, to, attempt) => {},
   })
   if (rotation.ok && rotation.result) return rotation.result
   throw Error(rotation.error || 'Weavy bulk: semua token gagal')
