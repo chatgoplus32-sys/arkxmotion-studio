@@ -299,7 +299,7 @@ export default function UGCPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label>Jenis Produk</Label>
-                <Select value={productType} onChange={(e) => setProductType(e.target.value)} options={PRODUCT_TYPES.map((t) => ({ value: t, label: t }))} />
+                <Input value={productType} onChange={(e) => setProductType(e.target.value)} placeholder="Contoh: Tas selempang, Jam tangan, Sepatu sneakers..." />
               </div>
               <div>
                 <Label>Model Style</Label>
@@ -307,7 +307,7 @@ export default function UGCPage() {
               </div>
               <div>
                 <Label>Background</Label>
-                <Select value={background} onChange={(e) => setBackground(e.target.value)} options={BACKGROUNDS} />
+                <Input value={background} onChange={(e) => setBackground(e.target.value)} placeholder="Contoh: Cafe aesthetic, Pantai sunset, Kantor modern..." />
               </div>
               <div>
                 <Label>Aspek Rasio</Label>
