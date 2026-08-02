@@ -793,16 +793,25 @@ export async function generateWeavyBulkOne(params: WeavyBulkOneParams): Promise<
         if (!res.ok) continue
         const data = await res.json().catch(() => null)
         const status = (data?.status || data?.state || '').toLowerCase()
+        console.log(`[weavy-bulk] Poll #${attempt}: batchStatus=${status}`)
+        if (attempt % 5 === 0) console.log(`[weavy-bulk] Poll #${attempt}: still processing... (${Math.round((Date.now() - startTime) / 1000)}s elapsed)`)
 
         if (['completed', 'success', 'done', 'finished'].includes(status)) {
           const nodeRuns = data?.recipeRuns?.[0]?.nodeRuns || []
           for (let i = nodeRuns.length - 1; i >= 0; i--) {
             const nodeResult = nodeRuns[i]?.result
             const urls = Array.isArray(nodeResult) ? nodeResult.map((r: any) => r?.url || r?.image_url).filter(Boolean) : []
-            if (urls.length > 0) return urls[0]
+            if (urls.length > 0) {
+              console.log(`[weavy-bulk] ✅ DONE! imageUrl=${urls[0].slice(0, 100)}`)
+              return urls[0]
+            }
           }
           const directUrl = data?.output?.image_url || data?.output?.url || data?.image_url || data?.url
-          if (directUrl) return directUrl
+          if (directUrl) {
+            console.log(`[weavy-bulk] ✅ DONE! directUrl=${directUrl.slice(0, 100)}`)
+            return directUrl
+          }
+          console.log(`[weavy-bulk] Task done but no URL found:`, JSON.stringify(data).slice(0, 500))
           throw Error('Task completed but no image URL found')
         }
         if (['failed', 'error', 'cancelled'].includes(status)) {
