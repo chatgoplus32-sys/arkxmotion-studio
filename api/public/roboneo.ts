@@ -1,7 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 const GATEWAY_URL = 'https://ai-engine-gateway-roboneo.meitu.com/roboneo/sync/request'
-const PROXY_URL = 'https://roboneo-proxy.chatgoplus32.workers.dev'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -18,12 +17,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   console.log(`[roboneo] path=${path} tokenLen=${String(token).length} tokenPrefix=${String(token).slice(0, 10)}...`)
 
-  const targetUrl = `${GATEWAY_URL}/${path}`
-  const proxyUrl = `${PROXY_URL}/${targetUrl}`
-
   try {
-    console.log(`[roboneo] proxy → ${proxyUrl.slice(0, 120)}...`)
-    const roboneoRes = await fetch(proxyUrl, {
+    const roboneoRes = await fetch(`${GATEWAY_URL}/${path}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -41,7 +36,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     console.log(`[roboneo] gateway ${roboneoRes.status}:`, text.slice(0, 500))
 
-    // Error 98 = token invalid atau IP blocked, return langsung ke client
     if (data?.error_code === 98) {
       return res.status(200).json({
         ok: false,
