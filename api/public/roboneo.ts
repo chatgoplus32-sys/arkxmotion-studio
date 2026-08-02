@@ -44,7 +44,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       })
     }
 
-    return res.status(200).json(data)
+    const innerData = data?.data || {}
+    const hasError = innerData.error_code && innerData.error_code !== 0
+    const hasUsefulData = innerData.room_id || innerData.task_id || innerData.next_action || innerData.artifacts || innerData.parameter
+    const fixedOk = hasError ? false : (data?.ok || !!hasUsefulData)
+
+    return res.status(200).json({ ok: fixedOk, data: innerData })
   } catch (err: any) {
     console.error(`[roboneo] proxy error:`, err.message)
     return res.status(502).json({ ok: false, error: err.message })
