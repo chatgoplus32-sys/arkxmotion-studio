@@ -12,6 +12,7 @@ import MotionPage from '@/pages/Motion'
 import BulkFashionPage from '@/pages/BulkFashion'
 import ImageToVideoPage from '@/pages/ImageToVideo'
 import UpscalerPage from '@/pages/Upscaler'
+import UGCPage from '@/pages/UGC'
 
 import DubbingPage from '@/pages/Dubbing'
 
@@ -67,6 +68,7 @@ export default function App() {
                       <Route path="/command" element={<CommandPage />} />
                       <Route path="/generate/motion" element={<MotionPage />} />
                       <Route path="/generate/bulk-fashion" element={<BulkFashionPage />} />
+                      <Route path="/generate/ugc" element={<UGCPage />} />
                       <Route path="/generate/upscaler" element={<UpscalerPage />} />
                       <Route path="/generate/image-to-video" element={<ImageToVideoPage />} />
 
