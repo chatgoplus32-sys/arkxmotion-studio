@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Select, Label, Textarea, EmptyState, Input } from '@/components/ui'
 import { useBulkFashionStore } from '@/stores/bulkFashionStore'
+import { useToastStore } from '@/stores/toastStore'
 import {
   BULK_FASHION_PROVIDERS,
   calculateBulkCost,
@@ -176,6 +177,8 @@ export default function BulkFashionPage() {
     setTplIdx, setStatus, setGenerating, addResult, clearResults, removeResult,
   } = store
 
+  const addToast = useToastStore((s) => s.addToast)
+
   const [templates, setTemplates] = useState(() => {
     try {
       const raw = localStorage.getItem('arkxmotion.bf.templates')
@@ -316,6 +319,9 @@ export default function BulkFashionPage() {
             icon: '/favicon.svg',
           })
         }
+
+        // Toast notification
+        addToast(`Bulk Fashion selesai: ${resultUrls.length}/${outfitFiles.length} gambar`, 'success')
       }
     } catch (err: any) {
       if (!controller.signal.aborted) {

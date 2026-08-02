@@ -325,6 +325,7 @@ export default function UpscalerPage() {
       })
       await Promise.all(workers)
       addLog(`Selesai: ${completed}/${rows.length}`, 'success')
+      addToast(`Upscale selesai: ${completed}/${rows.length} gambar`, 'success')
     } catch (err: any) {
       addLog(`Fatal: ${err.message}`, 'error')
     } finally {
