@@ -385,7 +385,12 @@ async function roboneoApiCall(
     lastStatus = status
     rawResponse = data?.raw || ''
 
-    console.log(`[roboneo] response:`, JSON.stringify(data).slice(0, 300))
+    console.log(`[roboneo] response ok=${data?.ok} keys=`, Object.keys(innerData || {}).join(','))
+
+    // If response has useful data (task_id, room_id), treat as success
+    if (innerData.task_id || innerData.room_id) {
+      return innerData.parameter ?? innerData
+    }
 
     // Retry on HTTP 502/503/504/429
     if (!data?.ok && (status === 502 || status === 503 || status === 504 || status === 429 || status === 0) && attempt < 5) {
