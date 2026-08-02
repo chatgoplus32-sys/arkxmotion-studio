@@ -66,6 +66,7 @@ export default function AdminTokensPage() {
   const [showEditPrice, setShowEditPrice] = useState(false)
   const [editPrice, setEditPrice] = useState('')
   const [updatingPrice, setUpdatingPrice] = useState(false)
+  const [creditFilter, setCreditFilter] = useState('all')
 
   const token = useAuthStore((state) => state.token)
   const addToast = useToastStore((s) => s.addToast)
@@ -579,7 +580,7 @@ export default function AdminTokensPage() {
 
                   {validationDone && validationResults.length > 0 && (
                     <div className="mt-3 space-y-2">
-                      <div className="flex items-center gap-3 text-xs">
+                      <div className="flex items-center gap-3 text-xs flex-wrap">
                         <div className="flex items-center gap-1 text-emerald-500">
                           <CheckCircle2 className="h-3.5 w-3.5" />
                           {validationResults.filter(r => r.status === 'valid').length} valid
@@ -594,10 +595,36 @@ export default function AdminTokensPage() {
                             Min. {currentProvider.minCredits} cr
                           </div>
                         )}
+                        {activeTab === 'roboneo' && (
+                          <select
+                            value={creditFilter}
+                            onChange={(e) => setCreditFilter(e.target.value)}
+                            className="rounded-lg border border-border bg-background px-2 py-1 text-[11px]"
+                          >
+                            <option value="all">Semua Credit</option>
+                            <option value="70-80">70–80 cr</option>
+                            <option value="80-90">80–90 cr</option>
+                            <option value="90-100">90–100 cr</option>
+                            <option value="100+">100+ cr</option>
+                            <option value="0-70">{'< 70 cr'}</option>
+                          </select>
+                        )}
                       </div>
 
                       <div className="max-h-48 overflow-y-auto rounded-lg border border-border bg-background/80 text-[11px] font-mono">
-                        {validationResults.map((r, i) => (
+                        {validationResults
+                          .filter(r => {
+                            if (creditFilter === 'all') return true
+                            if (activeTab !== 'roboneo') return true
+                            const b = r.balance ?? 0
+                            if (creditFilter === '70-80') return b >= 70 && b <= 80
+                            if (creditFilter === '80-90') return b >= 80 && b <= 90
+                            if (creditFilter === '90-100') return b >= 90 && b <= 100
+                            if (creditFilter === '100+') return b >= 100
+                            if (creditFilter === '0-70') return b < 70
+                            return true
+                          })
+                          .map((r, i) => (
                           <div
                             key={i}
                             className={`flex items-center gap-2 px-2.5 py-1.5 border-b border-border/50 last:border-0 ${
@@ -648,10 +675,36 @@ export default function AdminTokensPage() {
                           {uploading ? 'Mengupload...' : `Upload ${validTokenCount} Token Valid`}
                         </Button>
                       )}
+                      {activeTab === 'roboneo' && creditFilter !== 'all' && validTokenCount > 0 && (
+                        <Button
+                          className="w-full"
+                          variant="outline"
+                          onClick={() => {
+                            const filtered = validationResults
+                              .filter(r => {
+                                if (r.status !== 'valid') return false
+                                const b = r.balance ?? 0
+                                if (creditFilter === '70-80') return b >= 70 && b <= 80
+                                if (creditFilter === '80-90') return b >= 80 && b <= 90
+                                if (creditFilter === '90-100') return b >= 90 && b <= 100
+                                if (creditFilter === '100+') return b >= 100
+                                if (creditFilter === '0-70') return b < 70
+                                return true
+                              })
+                              .map(r => r.token)
+                            handleSubmitBulk(filtered)
+                          }}
+                          disabled={uploading || !price}
+                          loading={uploading}
+                        >
+                          {uploading ? null : <Upload className="h-4 w-4" />}
+                          {uploading ? 'Mengupload...' : `Upload Filter (${creditFilter})`}
+                        </Button>
+                      )}
                       <Button
                         variant="outline"
                         className="w-full"
-                        onClick={() => { setValidationResults([]); setValidationDone(false); setBulkTokens(''); setPrice('') }}
+                        onClick={() => { setValidationResults([]); setValidationDone(false); setBulkTokens(''); setPrice(''); setCreditFilter('all') }}
                       >
                         Reset
                       </Button>
