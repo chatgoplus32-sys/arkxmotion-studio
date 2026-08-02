@@ -332,7 +332,7 @@ function buildTrackingParams(accessToken: string, pathScene: string, roomId: str
     gid: generateGnum(),
     uid: extractUid(accessToken),
     trace_id: uuid(),
-    client_id: '1189857684',
+    client_id: '1189857647',
     app_scene: 'roboneo',
     area_code: 'ID',
     lang: 'en',
