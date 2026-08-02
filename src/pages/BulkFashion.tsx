@@ -198,6 +198,7 @@ export default function BulkFashionPage() {
 
   // ─── Routing state ──────────────────────────────────────────────────────
   const [activeProvider, setActiveProvider] = useState(() => getActiveProviderForCap('bulk-fashion'))
+  const [outfitProgress, setOutfitProgress] = useState<Array<{ index: number; status: 'queued' | 'processing' | 'done' | 'error'; message?: string }>>([])
 
   useEffect(() => {
     const handler = () => setActiveProvider(getActiveProviderForCap('bulk-fashion'))
@@ -258,6 +259,9 @@ export default function BulkFashionPage() {
     clearResults()
     setStatus({ show: true, text: `Memproses ${outfitFiles.length} outfit…`, pct: 5, time: '0:00' })
 
+    // Initialize per-outfit progress
+    setOutfitProgress(outfitFiles.map((_, i) => ({ index: i, status: 'queued' as const })))
+
     const startTime = Date.now()
     const completedCount = { value: 0 }
 
@@ -293,9 +297,13 @@ export default function BulkFashionPage() {
           if (resultUrl) {
             completedCount.value++
             addResult({ url: resultUrl, status: 'done' })
+            setOutfitProgress((prev) => prev.map((p) => p.index === idx ? { ...p, status: 'done', message: 'Selesai' } : p))
           } else if (error) {
             completedCount.value++
             addResult({ url: '', status: 'error', error })
+            setOutfitProgress((prev) => prev.map((p) => p.index === idx ? { ...p, status: 'error', message: error } : p))
+          } else {
+            setOutfitProgress((prev) => prev.map((p) => p.index === idx ? { ...p, status: 'processing', message: statusText } : p))
           }
           const pct = Math.min(95, (completedCount.value / outfitFiles.length) * 100)
           setStatus({
@@ -617,6 +625,41 @@ export default function BulkFashionPage() {
           </div>
         )}
       </Section>
+
+      {/* Per-Outfit Progress */}
+      {outfitProgress.length > 0 && (
+        <Section title={`📊 Progress per Outfit`} sub={`${outfitProgress.filter((p) => p.status === 'done').length}/${outfitProgress.length} selesai`}>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+            {outfitProgress.map((p) => (
+              <div
+                key={p.index}
+                className={`p-2 rounded-lg border text-[11px] transition-all ${
+                  p.status === 'done' ? 'border-emerald-500/30 bg-emerald-500/5' :
+                  p.status === 'error' ? 'border-red-500/30 bg-red-500/5' :
+                  p.status === 'processing' ? 'border-primary/30 bg-primary/5 animate-pulse-gold' :
+                  'border-border bg-background/30'
+                }`}
+              >
+                <div className="flex items-center gap-1.5 mb-1">
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${
+                    p.status === 'done' ? 'bg-emerald-400' :
+                    p.status === 'error' ? 'bg-red-400' :
+                    p.status === 'processing' ? 'bg-primary' :
+                    'bg-muted'
+                  }`} />
+                  <span className="font-medium">#{p.index + 1}</span>
+                </div>
+                <div className="text-muted-foreground truncate">
+                  {p.status === 'done' ? '✅ Selesai' :
+                   p.status === 'error' ? `❌ ${(p.message || 'Error').slice(0, 30)}` :
+                   p.status === 'processing' ? `⏳ ${p.message || 'Processing...'}` :
+                   '⏸️ Queued'}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
 
       {/* Results */}
       <Section
