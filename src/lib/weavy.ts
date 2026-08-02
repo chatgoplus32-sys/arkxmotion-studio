@@ -1215,14 +1215,28 @@ export async function runTopazUpscale(
   const { withTokenRotation, detectTokenError } = await import('@/lib/tokenRotation')
 
   const rotation = await withTokenRotation<string>('weavy', async (apiKey) => {
+    // Refresh token client-side first
+    const accessToken = await getWeavyAccessToken(apiKey)
+
     onProgress?.(`Compress + upload ke Weavy...`, 5)
     const compressed = file.size > 8 * 1024 * 1024 ? await compressImageIfNeeded(file, 2048, 0.9) : file
-    const uploadResult = await uploadWeavyAssetWithRetry(compressed, apiKey, (msg) => onProgress?.(msg, 10))
-    const imageUrl = resolveWeavyAssetUrl(uploadResult, 'image')
-    onProgress?.(`Upload OK, image: ${imageUrl}`, 15)
+
+    // Upload with access token
+    const formData = new FormData()
+    formData.append('file', compressed, `upscale_${Date.now()}.jpg`)
+    const uploadRes = await fetch(`${WEAVY_API}/v1/assets/upload`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: formData,
+      signal: AbortSignal.timeout(30000),
+    })
+    if (!uploadRes.ok) throw Error(`Weavy upload failed (${uploadRes.status})`)
+    const uploadData = await uploadRes.json()
+    const imageUrl = uploadData?.url || uploadData?.download || `https://media.weavy.ai/image/upload/uploads/${uploadData?.publicId || uploadData?.id}.jpg`
+    onProgress?.(`Upload OK`, 15)
 
     onProgress?.(`Create recipe Topaz...`, 20)
-    const submitResult = await submitWeavyUpscale({ token: apiKey, settings, imageUrl })
+    const submitResult = await submitWeavyUpscale({ token: accessToken, settings, imageUrl })
     if (!submitResult.ok || !submitResult.taskId) {
       throw Error(submitResult.error || 'Weavy upscale submit failed')
     }
