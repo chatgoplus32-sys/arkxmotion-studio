@@ -41,11 +41,21 @@ db.exec(`
     name TEXT NOT NULL,
     token_value TEXT NOT NULL,
     price INTEGER NOT NULL DEFAULT 0,
+    credits INTEGER DEFAULT NULL,
+    credit_group TEXT DEFAULT NULL,
     status TEXT NOT NULL DEFAULT 'available' CHECK(status IN ('available', 'sold')),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )
 `)
+
+const tokenColumns = db.prepare("PRAGMA table_info(tokens)").all() as { name: string }[]
+if (!tokenColumns.some(c => c.name === 'credits')) {
+  db.exec("ALTER TABLE tokens ADD COLUMN credits INTEGER DEFAULT NULL")
+}
+if (!tokenColumns.some(c => c.name === 'credit_group')) {
+  db.exec("ALTER TABLE tokens ADD COLUMN credit_group TEXT DEFAULT NULL")
+}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS token_orders (

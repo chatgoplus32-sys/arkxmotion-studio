@@ -75,6 +75,14 @@ export default function AdminTokensPage() {
 
   const currentProvider = PROVIDERS.find(p => p.key === activeTab)!
 
+  function getCreditGroup(credits: number): string {
+    if (credits >= 100) return '100+'
+    if (credits >= 90) return '90-100'
+    if (credits >= 80) return '80-90'
+    if (credits >= 70) return '70-80'
+    return '<70'
+  }
+
   const fetchStock = useCallback(async () => {
     if (!token) return
     setIsLoading(true)
@@ -298,8 +306,8 @@ export default function AdminTokensPage() {
     setValidating(false)
   }
 
-  const handleSubmitBulk = async (filteredTokens?: string[]) => {
-    const lines = filteredTokens || bulkTokens.split('\n').map(l => l.trim()).filter(l => l.length > 0)
+  const handleSubmitBulk = async (filteredTokens?: Array<{ token: string; credits?: number | null }>) => {
+    const lines = filteredTokens || bulkTokens.split('\n').map(l => l.trim()).filter(l => l.length > 0).map(t => ({ token: t }))
     if (lines.length === 0) {
       addToast('Tidak ada token valid untuk diupload', 'error')
       return
@@ -310,9 +318,11 @@ export default function AdminTokensPage() {
     }
 
     setUploading(true)
-    const bulkPayload = lines.map((tokenValue, i) => ({
+    const bulkPayload = lines.map((item, i) => ({
       name: `${currentProvider.label} #${stock[activeTab].total + i + 1}`,
-      token_value: tokenValue,
+      token_value: item.token,
+      credits: item.credits ?? null,
+      credit_group: item.credits != null ? getCreditGroup(item.credits) : null,
     }))
 
     try {
@@ -345,8 +355,24 @@ export default function AdminTokensPage() {
   const handleUploadValidOnly = () => {
     const validTokens = validationResults
       .filter(r => r.status === 'valid')
-      .map(r => r.token)
+      .map(r => ({ token: r.token, credits: r.balance }))
     handleSubmitBulk(validTokens)
+  }
+
+  const handleUploadFiltered = () => {
+    const filtered = validationResults
+      .filter(r => {
+        if (r.status !== 'valid') return false
+        const b = r.balance ?? 0
+        if (creditFilter === '70-80') return b >= 70 && b <= 80
+        if (creditFilter === '80-90') return b >= 80 && b <= 90
+        if (creditFilter === '90-100') return b >= 90 && b <= 100
+        if (creditFilter === '100+') return b >= 100
+        if (creditFilter === '0-70') return b < 70
+        return true
+      })
+      .map(r => ({ token: r.token, credits: r.balance }))
+    handleSubmitBulk(filtered)
   }
 
   const tokenCount = bulkTokens.split('\n').map(l => l.trim()).filter(l => l.length > 0).length
@@ -679,21 +705,7 @@ export default function AdminTokensPage() {
                         <Button
                           className="w-full"
                           variant="outline"
-                          onClick={() => {
-                            const filtered = validationResults
-                              .filter(r => {
-                                if (r.status !== 'valid') return false
-                                const b = r.balance ?? 0
-                                if (creditFilter === '70-80') return b >= 70 && b <= 80
-                                if (creditFilter === '80-90') return b >= 80 && b <= 90
-                                if (creditFilter === '90-100') return b >= 90 && b <= 100
-                                if (creditFilter === '100+') return b >= 100
-                                if (creditFilter === '0-70') return b < 70
-                                return true
-                              })
-                              .map(r => r.token)
-                            handleSubmitBulk(filtered)
-                          }}
+                          onClick={handleUploadFiltered}
                           disabled={uploading || !price}
                           loading={uploading}
                         >
@@ -747,6 +759,28 @@ export default function AdminTokensPage() {
               {/* Available Tokens */}
               {availableTokens.length > 0 && (
                 <div>
+                  {/* Credit Group Summary */}
+                  {activeTab === 'roboneo' && (
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {['100+', '90-100', '80-90', '70-80', '<70'].map((group) => {
+                        const count = availableTokens.filter(t => {
+                          const b = (t as any).credits ?? 0
+                          if (group === '100+') return b >= 100
+                          if (group === '90-100') return b >= 90 && b < 100
+                          if (group === '80-90') return b >= 80 && b < 90
+                          if (group === '70-80') return b >= 70 && b < 80
+                          return b < 70
+                        }).length
+                        if (count === 0) return null
+                        return (
+                          <div key={group} className="px-2.5 py-1 rounded-full bg-primary/10 border border-primary/20 text-[10px] font-mono text-primary">
+                            {group} cr: {count} token
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+
                   <div className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-emerald-500" />
                     Tersedia ({availableTokens.length})
@@ -758,6 +792,11 @@ export default function AdminTokensPage() {
                         className="flex items-center gap-2 px-3 py-2 border-b border-border/50 last:border-0 hover:bg-accent/20 transition text-xs"
                       >
                         <span className="font-medium truncate w-28 shrink-0">{t.name}</span>
+                        {(t as any).credits != null && (
+                          <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[9px] font-mono shrink-0">
+                            {(t as any).credits} cr
+                          </span>
+                        )}
                         <span className="font-mono text-muted-foreground truncate flex-1" title={showTokenValues[t.id] ? t.token_value : undefined}>
                           {showTokenValues[t.id] ? t.token_value : t.token_value.slice(0, 20) + '••••'}
                         </span>

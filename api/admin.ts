@@ -268,13 +268,13 @@ async function handleTokenRoutes(req: VercelRequest, res: VercelResponse, segmen
 
     // POST /api/admin/tokens - create single or bulk
     if (req.method === 'POST' && last === 'tokens') {
-      const { provider, name, token_value, price, tokens: bulkTokens } = req.body || {}
+      const { provider, name, token_value, price, credits, credit_group, tokens: bulkTokens } = req.body || {}
 
       if (bulkTokens && Array.isArray(bulkTokens)) {
         let created = 0
         for (const t of bulkTokens) {
           try {
-            await sql`INSERT INTO tokens (provider, name, token_value, price) VALUES (${provider}, ${t.name}, ${t.token_value}, ${price})`
+            await sql`INSERT INTO tokens (provider, name, token_value, price, credits, credit_group) VALUES (${provider}, ${t.name}, ${t.token_value}, ${price}, ${t.credits ?? null}, ${t.credit_group ?? null})`
             created++
           } catch {}
         }
@@ -291,8 +291,8 @@ async function handleTokenRoutes(req: VercelRequest, res: VercelResponse, segmen
         return res.status(400).json({ error: 'Valid price is required' })
       }
 
-      const rows = await sql`INSERT INTO tokens (provider, name, token_value, price) VALUES (${provider}, ${name}, ${token_value}, ${price}) RETURNING *`
-      return res.status(201).json({ token: rows[0] })
+      const rows = await sql`INSERT INTO tokens (provider, name, token_value, price, credits, credit_group) VALUES (${provider}, ${name}, ${token_value}, ${price}, ${credits ?? null}, ${credit_group ?? null}) RETURNING *`
+      return res.status(201).json({ token: rows[0])
     }
 
     // PATCH /api/admin/tokens - update token
