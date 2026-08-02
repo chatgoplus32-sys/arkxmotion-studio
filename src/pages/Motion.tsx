@@ -394,7 +394,7 @@ export default function MotionPage() {
             if (balanceResult.balance !== null && balanceResult.balance <= 0) {
               throw new Error('Balance kosong! Tidak ada credit untuk generate.')
             }
-            const balanceBuffer = Math.ceil(totalCredits * 1.5)
+            const balanceBuffer = Math.ceil(totalCredits * 2)
             if (balanceResult.balance !== null && balanceResult.balance < balanceBuffer) {
               throw new Error(`Balance tidak cukup! Butuh ~${balanceBuffer} credit (termasuk buffer), hanya ada ${balanceResult.balance}. Biaya motion: ${totalCredits} credit.`)
             }

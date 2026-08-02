@@ -1065,6 +1065,7 @@ export async function pollMotionControl(
       const detail = JSON.stringify({ status, taskErrorCode, failCode: failedStep?.fail_code, stepStatus: failedStep?.status || failedStep?.state, output: stepOutput }).slice(0, 500)
 
       const isBusy = taskErrorCode === 6 || /busy|sibuk|try again|later|overload|capacity|queue|结果接口获取失败/i.test(errMsg)
+      const isChargeFailed = /CHARGE_FAILED|charge.?failed|余额不足|余额不够|积分不足|账户余额|欠费/i.test(errMsg) || taskErrorCode === 'CHARGE_FAILED'
       if (isBusy && busyRetries < MAX_BUSY_RETRIES) {
         busyRetries++
         const waitSec = Math.min(5 + busyRetries * 2, 20)
@@ -1072,6 +1073,11 @@ export async function pollMotionControl(
         onProgress?.(`server sibuk, retry ${busyRetries}/${MAX_BUSY_RETRIES}`, pct)
         await new Promise(r => setTimeout(r, waitSec * 1000))
         continue
+      }
+
+      if (isChargeFailed) {
+        taskMetaMap.delete(taskId)
+        throw new Error(`Roboneo: saldo tidak cukup untuk biaya ini (CHARGE_FAILED). Balance mungkin termasuk credit non-deductible.`)
       }
 
       taskMetaMap.delete(taskId)
