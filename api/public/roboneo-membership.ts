@@ -76,29 +76,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { _access_token, ...paramWithoutToken } = tracking
 
   try {
-    const roboneoRes = await fetch(`${GATEWAY_URL}/vipshow`, {
+    const proxyRes = await fetch(PROXY_URL, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'access-token': String(token),
-        'client-id': CLIENT_ID,
-        'Origin': 'https://www.roboneo.com',
-        'Referer': 'https://www.roboneo.com/',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        parameter: {
-          ...paramWithoutToken,
-          features: '',
-          later_face: 0,
-        }
+        path: `${GATEWAY_URL}/vipshow`,
+        headers: {
+          'access-token': String(token),
+          'client-id': CLIENT_ID,
+          'Origin': 'https://www.roboneo.com',
+          'Referer': 'https://www.roboneo.com/',
+        },
+        body: {
+          parameter: {
+            ...paramWithoutToken,
+            features: '',
+            later_face: 0,
+          }
+        },
       }),
     })
 
-    const text = await roboneoRes.text()
+    const text = await proxyRes.text()
     let data: any = null
     try { data = JSON.parse(text) } catch {}
 
-    console.log(`[roboneo-membership] gateway ${roboneoRes.status}:`, text.slice(0, 800))
+    console.log(`[roboneo-membership] proxy ${proxyRes.status}:`, text.slice(0, 800))
 
     if (data?.error_code === 98) {
       return res.status(200).json({
@@ -113,7 +116,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Return full response for client-side parsing
     return res.status(200).json({
       ok: data?.error_code === 0,
-      status: roboneoRes.status,
+      status: proxyRes.status,
       raw: text.slice(0, 500),
       data: data
     })
