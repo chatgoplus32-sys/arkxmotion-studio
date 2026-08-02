@@ -19,7 +19,7 @@ interface Token {
 type Provider = 'roboneo' | 'framia' | 'weavy'
 
 const PROVIDERS: { key: Provider; label: string; minCredits: number }[] = [
-  { key: 'roboneo', label: 'Roboneo', minCredits: 150 },
+  { key: 'roboneo', label: 'Roboneo', minCredits: 0 },
   { key: 'framia', label: 'Framia', minCredits: 0 },
   { key: 'weavy', label: 'Weavy', minCredits: 0 },
 ]
