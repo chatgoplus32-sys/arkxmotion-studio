@@ -385,11 +385,21 @@ async function roboneoApiCall(
     lastStatus = status
     rawResponse = data?.raw || ''
 
-    console.log(`[roboneo] response ok=${data?.ok} keys=`, Object.keys(innerData || {}).join(','))
+    console.log(`[roboneo] response ok=${data?.ok} path=${path} keys=`, Object.keys(innerData || {}).join(','))
 
-    // If response has useful data (task_id, room_id), treat as success
+    // If response has useful data, treat as success
     if (innerData.task_id || innerData.room_id) {
       return innerData.parameter ?? innerData
+    }
+
+    // If proxy failed to parse but raw contains task_id, parse it manually
+    if (rawResponse && rawResponse.includes('task_id')) {
+      try {
+        const manuallyParsed = JSON.parse(rawResponse.replace(/^data:\s*/, ''))
+        if (manuallyParsed.task_id || manuallyParsed.room_id) {
+          return manuallyParsed
+        }
+      } catch {}
     }
 
     // Retry on HTTP 502/503/504/429
@@ -400,11 +410,10 @@ async function roboneoApiCall(
     }
 
     // Other errors
-    if (!data?.ok || (innerData.error_code && innerData.error_code !== 0)) {
-      const errMsg = innerData.error_msg || `HTTP ${status}`
-      const rawHint = rawResponse ? ` — ${rawResponse.slice(0, 200)}` : ''
-      const loginHint = errMsg === 'Please log in first' ? ' — access-token Roboneo perlu login ulang' : ''
-      throw new Error(`Roboneo ${path}: ${errMsg}${innerData.error_code ? ` (error_code=${innerData.error_code})` : ''}${loginHint}${rawHint}`)
+    if (!data?.ok && !(innerData.task_id || innerData.room_id)) {
+      const errMsg = innerData.error_msg || data?.error || `HTTP ${status}`
+      const rawHint = rawResponse ? ` — raw: ${rawResponse.slice(0, 200)}` : ''
+      throw new Error(`Roboneo ${path}: ${errMsg}${rawHint}`)
     }
 
     return innerData.parameter ?? innerData
