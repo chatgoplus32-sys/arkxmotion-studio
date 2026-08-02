@@ -6,7 +6,7 @@ import { Image, Upload, Rocket, Loader2, Trash2, Zap, Key, ExternalLink, Downloa
 import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
 import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
-import { uploadToCatbox, submitGoogleOmni, submitRoboneoI2V, pollMotionControl, compressVideo, normalizeImage, checkRoboneoBalance } from '@/lib/roboneo'
+import { uploadToCatbox, submitGoogleOmni, submitRoboneoI2V, pollRoboneoI2V, compressVideo, normalizeImage, checkRoboneoBalance } from '@/lib/roboneo'
 import { generateWithFramia } from '@/lib/framia'
 import { runLeonardoVideo } from '@/lib/leonardo'
 import { LEONARDO_VIDEO_MODELS, leonardoVideoQualityOptions } from '@/lib/leonardo-video'
@@ -60,6 +60,7 @@ const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'rn:seedance-1.0', label: 'Seedance 1.0 / Pro (Roboneo)', cr: 100, provider: 'roboneo' },
     { value: 'rn:google-omni', label: 'Google Omni Flash (Roboneo)', cr: 45, provider: 'roboneo' },
     { value: 'rn:kling-v26:std', label: 'Kling 2.6 (Roboneo)', cr: 80, provider: 'roboneo' },
+    { value: 'rn:kling-v21:std', label: 'Kling 2.1 (Roboneo)', cr: 65, provider: 'roboneo' },
     { value: 'rn:seedance-pro', label: 'Seedance Pro — legacy alias (Roboneo)', cr: 100, provider: 'roboneo' },
   ],
   createpulse: [
@@ -162,6 +163,12 @@ const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; 
       { value: '5s-on', label: '5s · Sound', mult: 1, duration: 5, sound: 'on', cr: 55 },
       { value: '10s-off', label: '10s · No Sound', mult: 1, duration: 10, sound: 'off', cr: 80 },
       { value: '10s-on', label: '10s · Sound', mult: 1, duration: 10, sound: 'on', cr: 105 },
+    ],
+    'rn:kling-v21:std': [
+      { value: '5s-off', label: '5s · No Sound', mult: 1, duration: 5, sound: 'off', cr: 30 },
+      { value: '5s-on', label: '5s · Sound', mult: 1, duration: 5, sound: 'on', cr: 45 },
+      { value: '10s-off', label: '10s · No Sound', mult: 1, duration: 10, sound: 'off', cr: 65 },
+      { value: '10s-on', label: '10s · Sound', mult: 1, duration: 10, sound: 'on', cr: 85 },
     ],
     default: [
       { value: 'std', label: 'Standard 5s', mult: 1, duration: 5 },
@@ -741,20 +748,23 @@ export default function ImageToVideoPage() {
              const soundEnabled = currentQuality?.sound || (quality?.includes('on') || quality?.includes('audio') ? 'on' : 'off')
              const videoDuration = currentQuality?.duration || 10
 
-             addLog(`[2/3] 🚀 Submitting to Roboneo ${model}...`, 'info', 'roboneo')
-             addLog(`   → resolution: ${resolution || 'default'}`, 'debug', 'roboneo')
-             addLog(`   → sound: ${soundEnabled} | duration: ${videoDuration}s`, 'debug', 'roboneo')
-             const { taskId, roomId, nodeId } = await submitRoboneoI2V({
-               accessToken: apiKey,
-               imageUrl,
-               prompt: prompt.trim() || undefined,
-               modelKey: model,
-               ratio,
-               duration: videoDuration,
-               resolution,
-               sound: soundEnabled,
-               quality,
-             })
+              addLog(`[2/3] 🚀 Submitting to Roboneo ${model}...`, 'info', 'roboneo')
+              addLog(`   → resolution: ${resolution || 'default'}`, 'debug', 'roboneo')
+              addLog(`   → sound: ${soundEnabled} | duration: ${videoDuration}s`, 'debug', 'roboneo')
+              const modelParts = model.split(':')
+              const modelVersion = modelParts[1]?.includes('v21') ? 'v21' : 'v26'
+              const { taskId, roomId, nodeId } = await submitRoboneoI2V({
+                accessToken: apiKey,
+                imageUrl,
+                prompt: prompt.trim() || undefined,
+                modelKey: model,
+                modelVersion,
+                ratio,
+                duration: videoDuration,
+                resolution,
+                sound: soundEnabled,
+                quality,
+              })
              addLog(`[2/3] ✅ Task created ✓ id=${taskId.slice(0, 20)}...`, 'success', 'roboneo')
 
             addActiveTask({
@@ -772,7 +782,7 @@ export default function ImageToVideoPage() {
 
             addLog(`[3/3] ⏳ Polling for result...`, 'info', 'roboneo')
             setStatus((s) => ({ ...s, text: 'Processing...', pct: 25 }))
-            const videoUrl = await pollMotionControl(
+            const videoUrl = await pollRoboneoI2V(
               apiKey, taskId, roomId,
               (status, pct) => {
                 addLog(`⏳ Roboneo ${status} (${pct}%)`, 'debug', 'roboneo')
@@ -1563,7 +1573,7 @@ export default function ImageToVideoPage() {
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
               {results.map((url, index) => {
               const alreadyProxied = url.includes('/api/public/video-proxy')
-              const needsProxy = alreadyProxied ? false : /meitudata\.com|localhost/i.test(url)
+              const needsProxy = alreadyProxied ? false : /meitudata\.com|localhost|cloud\.leonardo\.ai/i.test(url)
               const directUrl = needsProxy ? `/api/public/video-proxy?url=${encodeURIComponent(url)}` : url
               const proxyFallback = alreadyProxied ? url : `/api/public/video-proxy?url=${encodeURIComponent(url)}`
               return (

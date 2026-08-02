@@ -65,7 +65,7 @@ export default function DashboardPage() {
   }, [])
 
   const stats = useMemo(() => {
-    const providers = ['weavy', 'wavespeed', 'magnific', 'framia', 'leonardo'] as const
+    const providers = ['weavy', 'wavespeed', 'magnific', 'framia', 'leonardo', 'roboneo'] as const
     let activeKeys = 0
     let totalKeys = 0
     providers.forEach((p) => {
@@ -223,7 +223,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {(['weavy', 'wavespeed', 'magnific', 'framia', 'leonardo'] as const).map((provider) => {
+              {(['weavy', 'wavespeed', 'magnific', 'framia', 'leonardo', 'roboneo'] as const).map((provider) => {
                 const k = keys[provider] || []
                 const active = k.filter((k) => k.status === 'active' || k.status === 'unknown').length
                 const total = k.length
