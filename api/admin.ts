@@ -302,7 +302,7 @@ async function handleTokenRoutes(req: VercelRequest, res: VercelResponse, segmen
 
     // PATCH /api/admin/tokens - update token
     if (req.method === 'PATCH' && last === 'tokens') {
-      const { id, name, token_value, price, status } = req.body || {}
+      const { id, name, token_value, price, status, credits, credit_group } = req.body || {}
       if (!id) return res.status(400).json({ error: 'Token id is required' })
 
       if (status && ['available', 'sold'].includes(status)) {
@@ -316,6 +316,12 @@ async function handleTokenRoutes(req: VercelRequest, res: VercelResponse, segmen
       }
       if (price !== undefined) {
         await sql`UPDATE tokens SET price = ${price}, updated_at = CURRENT_TIMESTAMP WHERE id = ${id}`
+      }
+      if (credits !== undefined) {
+        await sql`UPDATE tokens SET credits = ${credits}, updated_at = CURRENT_TIMESTAMP WHERE id = ${id}`
+      }
+      if (credit_group !== undefined) {
+        await sql`UPDATE tokens SET credit_group = ${credit_group}, updated_at = CURRENT_TIMESTAMP WHERE id = ${id}`
       }
 
       const rows = await sql`SELECT * FROM tokens WHERE id = ${id}`

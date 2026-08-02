@@ -69,6 +69,7 @@ export default function AdminTokensPage() {
   const [editPrice, setEditPrice] = useState('')
   const [updatingPrice, setUpdatingPrice] = useState(false)
   const [creditFilter, setCreditFilter] = useState('all')
+  const [refreshingCredits, setRefreshingCredits] = useState(false)
 
   const token = useAuthStore((state) => state.token)
   const addToast = useToastStore((s) => s.addToast)
@@ -83,6 +84,44 @@ export default function AdminTokensPage() {
     if (credits >= 80) return '80-90'
     if (credits >= 70) return '70-80'
     return '<70'
+  }
+
+  const handleRefreshCreditGroups = async () => {
+    if (activeTab !== 'roboneo') return
+    setRefreshingCredits(true)
+    addToast('Mulai refresh credit groups...', 'info')
+
+    try {
+      const tokensToRefresh = tokenList.filter(t => t.status === 'available' && !t.credits)
+      if (tokensToRefresh.length === 0) {
+        addToast('Tidak ada token yang perlu di-refresh', 'info')
+        setRefreshingCredits(false)
+        return
+      }
+
+      let updated = 0
+      for (const t of tokensToRefresh) {
+        const check = await checkRoboneoBalance(t.token_value)
+        if (check.ok && check.balance !== null && check.balance !== undefined) {
+          const group = getCreditGroup(check.balance)
+          await fetch('/api/admin/tokens', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ id: t.id, credits: check.balance, credit_group: group })
+          })
+          updated++
+        }
+        await new Promise(r => setTimeout(r, 500))
+      }
+
+      addToast(`${updated} token berhasil di-refresh credit groupnya`, 'success')
+      fetchTokenList()
+      fetchStock()
+    } catch (err: any) {
+      addToast(`Error: ${err.message}`, 'error')
+    } finally {
+      setRefreshingCredits(false)
+    }
   }
 
   const fetchStock = useCallback(async () => {
@@ -435,6 +474,12 @@ export default function AdminTokensPage() {
               <Button variant="outline" size="sm" onClick={() => { fetchStock(); fetchTokenList() }} disabled={isLoading || loadingTokens}>
                 <RefreshCw className={`h-4 w-4 ${(isLoading || loadingTokens) ? 'animate-spin' : ''}`} />
               </Button>
+              {activeTab === 'roboneo' && availableTokens.length > 0 && (
+                <Button size="sm" variant="outline" onClick={handleRefreshCreditGroups} disabled={refreshingCredits}>
+                  {refreshingCredits ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                  Refresh CR
+                </Button>
+              )}
               {!showForm && (
                 <Button size="sm" onClick={() => setShowForm(true)}>
                   <Plus className="h-4 w-4" /> Upload
