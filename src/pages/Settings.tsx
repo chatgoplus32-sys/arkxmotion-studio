@@ -1,8 +1,9 @@
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Label, Select, Input } from '@/components/ui'
-import { Shield, Square, Trash2, AlertTriangle, Loader2 } from 'lucide-react'
-import { useState, useEffect, useCallback } from 'react'
+import { Shield, Square, Trash2, AlertTriangle, Loader2, Download, Upload } from 'lucide-react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuthStore } from '@/stores/authStore'
+import { useProviderManager } from '@/stores/providerManager'
 import {
   getActiveTasks,
   forceStopTask,
@@ -33,6 +34,8 @@ export default function SettingsPage() {
   const [oldPassword, setOldPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [changingPassword, setChangingPassword] = useState(false)
+  const importRef = useRef<HTMLInputElement>(null)
+  const providerManager = useProviderManager()
 
   const refresh = useCallback(() => {
     setActiveTasks(getActiveTasks())
@@ -112,6 +115,51 @@ export default function SettingsPage() {
     refresh()
   }
 
+  const handleExportKeys = () => {
+    const data = {
+      keys: providerManager.keys,
+      routing: providerManager.routing,
+      exportedAt: new Date().toISOString(),
+      version: '1.0.0',
+    }
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `arkxmotion-keys-${new Date().toISOString().slice(0, 10)}.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    addToast('Provider keys berhasil di-export', 'success')
+  }
+
+  const handleImportKeys = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      const text = await file.text()
+      const data = JSON.parse(text)
+      if (data.keys) {
+        Object.entries(data.keys).forEach(([provider, keys]) => {
+          const keyArray = keys as Array<{ key: string; name?: string; status?: string }>
+          keyArray.forEach((k) => {
+            providerManager.addKey(provider as any, k.key, k.name)
+          })
+        })
+      }
+      if (data.routing) {
+        Object.entries(data.routing).forEach(([workflow, provider]) => {
+          providerManager.setRouting(workflow, provider as any)
+        })
+      }
+      addToast(`Provider keys berhasil di-import`, 'success')
+    } catch (err: any) {
+      addToast(`Import gagal: ${err.message}`, 'error')
+    }
+    if (importRef.current) importRef.current.value = ''
+  }
+
   const formatElapsed = (startedAt: number) => {
     const diff = Date.now() - startedAt
     const min = Math.floor(diff / 60000)
@@ -182,9 +230,18 @@ export default function SettingsPage() {
                 Keys are stored locally in your browser. Never shared with third parties.
               </p>
             </div>
-            <Button variant="outline" className="w-full">
-              <Shield className="h-4 w-4" /> Export All Keys
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={handleExportKeys}>
+                <Download className="h-4 w-4" /> Export Keys
+              </Button>
+              <Button variant="outline" className="flex-1" onClick={() => importRef.current?.click()}>
+                <Upload className="h-4 w-4" /> Import Keys
+              </Button>
+              <input ref={importRef} type="file" accept=".json" hidden onChange={handleImportKeys} />
+            </div>
+            <p className="text-[10px] text-muted-foreground">
+              Export: Semua provider keys & routing settings → JSON file
+            </p>
           </div>
         </Section>
 
