@@ -39,6 +39,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!verifyAdmin(req)) return res.status(403).json({ error: 'Admin access required' })
 
   try {
+    // Ensure new columns exist
+    const sql = getSql()
+    try { await sql`ALTER TABLE tokens ADD COLUMN IF NOT EXISTS credits INTEGER DEFAULT NULL` } catch {}
+    try { await sql`ALTER TABLE tokens ADD COLUMN IF NOT EXISTS credit_group TEXT DEFAULT NULL` } catch {}
+
     const segments = getSegments(req)
 
     // /api/admin/topup/* routes
