@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
-const PROXY_URL = 'https://roboneo-proxy.chatgoplus32.workers.dev'
+const GATEWAY_URL = 'https://ai-engine-gateway-roboneo.meitu.com/roboneo/sync/request'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -15,43 +15,42 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (!path) return res.status(400).json({ ok: false, error: 'Missing path' })
 
-  console.log(`[roboneo] path=${path} tokenLen=${String(token).length} tokenPrefix=${String(token).slice(0, 10)}...`)
+  console.log(`[roboneo] path=${path} tokenLen=${String(token).length}`)
 
   try {
-    const proxyRes = await fetch(PROXY_URL, {
+    const gatewayRes = await fetch(`${GATEWAY_URL}/${path}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Roboneo-Token': String(token),
+        'access-token': String(token),
+        'client-id': '1189857684',
+        'Origin': 'https://www.roboneo.com',
+        'Referer': 'https://www.roboneo.com/',
       },
-      body: JSON.stringify({ path, parameter: parameter || {} }),
+      body: JSON.stringify({ parameter: parameter || {} }),
     })
 
-    const data = await proxyRes.json().catch(() => null)
+    const rawText = await gatewayRes.text()
+    let data: any
+    try { data = JSON.parse(rawText) } catch { data = null }
 
-    console.log(`[roboneo] proxy ${proxyRes.status}:`, JSON.stringify(data).slice(0, 500))
+    console.log(`[roboneo] gateway ${gatewayRes.status} path=${path}:`, rawText.slice(0, 500))
 
-    if (data?.data?.error_code === 98) {
-      return res.status(200).json({
-        ok: false,
-        error_code: 98,
-        error: data?.data?.error_msg || 'Token rejected by gateway',
-        debug: {
-          tokenLen: String(token).length,
-          gatewayStatus: proxyRes.status,
-        },
-        data: data?.data
-      })
+    if (!data) {
+      return res.status(200).json({ ok: false, error: 'Invalid JSON from gateway', raw: rawText.slice(0, 200) })
     }
 
-    const innerData = data?.data || {}
-    const hasError = innerData.error_code && innerData.error_code !== 0
-    const hasUsefulData = innerData.room_id || innerData.task_id || innerData.next_action || innerData.artifacts || innerData.parameter
-    const fixedOk = hasError ? false : (data?.ok || !!hasUsefulData)
+    if (data.error_code === 98) {
+      return res.status(200).json({ ok: false, error_code: 98, error: data.error_msg || 'Token rejected', data })
+    }
 
-    return res.status(200).json({ ok: fixedOk, data: innerData })
+    const hasError = data.error_code && data.error_code !== 0
+    const innerData = data.parameter || data
+    const ok = !hasError && gatewayRes.ok
+
+    return res.status(200).json({ ok, data: innerData })
   } catch (err: any) {
-    console.error(`[roboneo] proxy error:`, err.message)
+    console.error(`[roboneo] error:`, err.message)
     return res.status(502).json({ ok: false, error: err.message })
   }
 }
