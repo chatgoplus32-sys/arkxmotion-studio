@@ -2,6 +2,28 @@ const WEAVY_API = 'https://api.weavy.ai/api'
 const FIREBASE_KEY = 'AIzaSyC-qLy3TFyXMogJPfMkZJ9H_q46hEu1sxI'
 const WEAVY_PROXY = '/api/public/weavy'
 
+async function refreshWeavyAccessToken(refreshToken: string): Promise<string | null> {
+  try {
+    const r = await fetch(`https://securetoken.googleapis.com/v1/token?key=${FIREBASE_KEY}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `grant_type=refresh_token&refresh_token=${encodeURIComponent(refreshToken)}`,
+      signal: AbortSignal.timeout(10000),
+    })
+    const data = await r.json().catch(() => ({}))
+    if (!r.ok || !data.id_token) return null
+    return data.id_token
+  } catch { return null }
+}
+
+async function getWeavyAccessToken(token: string): Promise<string> {
+  const isJwt = /^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token)
+  if (isJwt) return token
+  const refreshed = await refreshWeavyAccessToken(token)
+  if (refreshed) return refreshed
+  throw Error('Token Weavy expired. Silakan update token di Providers.')
+}
+
 async function refreshWeavyToken(refreshToken: string): Promise<{ accessToken: string; refreshToken: string; expiresIn: number } | null> {
   try {
     const r = await fetch(`https://securetoken.googleapis.com/v1/token?key=${FIREBASE_KEY}`, {
@@ -617,60 +639,36 @@ function buildBulkFashionNodes(modelKey: string, prompt: string, quality: string
 
 async function submitWeavyBulkOne(token: string, params: WeavyBulkOneParams): Promise<WeavyImageGenerateResult> {
   try {
-    // Always compress to 1024px max, then base64
-    const compressAndBase64 = async (file: File): Promise<string> => {
-      const compressed = await new Promise<File>((resolve) => {
-        const reader = new FileReader()
-        reader.onload = () => {
-          const img = new Image()
-          img.onload = () => {
-            let w = img.width, h = img.height
-            if (w > 1024 || h > 1024) {
-              const scale = 1024 / Math.max(w, h)
-              w = Math.round(w * scale)
-              h = Math.round(h * scale)
-            }
-            const canvas = document.createElement('canvas')
-            canvas.width = w
-            canvas.height = h
-            canvas.getContext('2d')!.drawImage(img, 0, 0, w, h)
-            canvas.toBlob(
-              (blob) => resolve(blob ? new File([blob], file.name, { type: 'image/jpeg' }) : file),
-              'image/jpeg', 0.85
-            )
-          }
-          img.onerror = () => resolve(file)
-          img.src = reader.result as string
-        }
-        reader.readAsDataURL(file)
-      })
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = () => resolve((reader.result as string).split(',')[1])
-        reader.onerror = reject
-        reader.readAsDataURL(compressed)
-      })
-    }
+    // Step 0: Get valid access token (refresh if needed) — client-side
+    const accessToken = await getWeavyAccessToken(token)
 
-    const [charB64, outfitB64] = await Promise.all([
-      compressAndBase64(params.charFile),
-      compressAndBase64(params.outfitFile),
-    ])
-
-    const uploadRes = await fetch('/api/public/upload-images', {
+    // Step 1: Upload character image to Weavy directly
+    const charFormData = new FormData()
+    charFormData.append('file', params.charFile, `char_${Date.now()}.jpg`)
+    const charUploadRes = await fetch(`${WEAVY_API}/v1/assets/upload`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        files: [
-          { name: 'char.jpg', type: 'image/jpeg', data: charB64 },
-          { name: 'outfit.jpg', type: 'image/jpeg', data: outfitB64 },
-        ],
-      }),
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: charFormData,
+      signal: AbortSignal.timeout(30000),
     })
-    const uploadData = await uploadRes.json().catch(() => null)
-    if (!uploadRes.ok || !uploadData?.ok) throw Error(uploadData?.error || `Upload failed (${uploadRes.status})`)
-    const [charUrl, outfitUrl] = uploadData.urls
+    if (!charUploadRes.ok) throw Error(`Upload char failed (${charUploadRes.status})`)
+    const charAsset = await charUploadRes.json()
+    const charUrl = charAsset?.url || charAsset?.download || `https://media.weavy.ai/image/upload/uploads/${charAsset?.publicId || charAsset?.id}.jpg`
 
+    // Step 2: Upload outfit image to Weavy directly
+    const outfitFormData = new FormData()
+    outfitFormData.append('file', params.outfitFile, `outfit_${Date.now()}.jpg`)
+    const outfitUploadRes = await fetch(`${WEAVY_API}/v1/assets/upload`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: outfitFormData,
+      signal: AbortSignal.timeout(30000),
+    })
+    if (!outfitUploadRes.ok) throw Error(`Upload outfit failed (${outfitUploadRes.status})`)
+    const outfitAsset = await outfitUploadRes.json()
+    const outfitUrl = outfitAsset?.url || outfitAsset?.download || `https://media.weavy.ai/image/upload/uploads/${outfitAsset?.publicId || outfitAsset?.id}.jpg`
+
+    // Step 3: Build node graph (3 nodes: char-import, outfit-import, model)
     const nodes = buildBulkFashionNodes(params.modelKey, params.prompt, params.quality, params.ratio, charUrl, outfitUrl)
     const extraNodes = nodes._extraNodes || []
     const extraEdges = nodes._extraEdges || []
@@ -678,23 +676,105 @@ async function submitWeavyBulkOne(token: string, params: WeavyBulkOneParams): Pr
     const modelNode = { id: nodes.id, type: nodes.type, data: nodes.data, position: { x: 600, y: 300 }, width: 460, height: 500 }
     const allNodes = [...extraNodes, modelNode]
 
-    const execRes = await fetch(WEAVY_PROXY, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Weavy-Token': token }, body: JSON.stringify({ action: 'image-direct-execute', nodes: allNodes, edges, numberOfRuns: 1 }) })
-    const execData = await execRes.json().catch(() => null)
-    if (!execRes.ok || !execData?.ok) return { ok: false, error: execData?.error || `Execute failed (${execRes.status})`, raw: execData }
-    const batchId = execData?.data?.batchId || execData?.data?.id
-    if (!batchId) return { ok: false, error: 'No batchId in response', raw: execData }
-    return { ok: true, taskId: batchId, raw: execData }
+    // Step 4: Create recipe
+    const createRes = await fetch(`${WEAVY_API}/v1/recipes/create`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ scope: 'PERSONAL' }),
+      signal: AbortSignal.timeout(15000),
+    })
+    if (!createRes.ok) throw Error(`Create recipe failed (${createRes.status})`)
+    const createData = await createRes.json()
+    const recipeId = createData?.id || createData?.recipeId
+    const v3 = createData?.v3
+    if (!recipeId) throw Error('No recipeId returned')
+
+    // Step 5: Save recipe
+    const saveRes = await fetch(`${WEAVY_API}/v1/recipes/${recipeId}/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ nodes: allNodes, edges, v3: v3 || '', lastUpdatedAt: new Date().toISOString() }),
+      signal: AbortSignal.timeout(15000),
+    })
+    if (!saveRes.ok) throw Error(`Save recipe failed (${saveRes.status})`)
+
+    // Step 6: Approve model
+    const modelName = nodes.data?.model?.name || params.modelKey
+    try {
+      await fetch(`${WEAVY_API}/v1/workspaces/models/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ modelIds: [modelName] }),
+        signal: AbortSignal.timeout(10000),
+      })
+    } catch {}
+
+    // Step 7: Execute batch
+    const execRes = await fetch(`${WEAVY_API}/v1/batches/recipes/${recipeId}/execute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ nodes: allNodes, edges, numberOfRuns: 1 }),
+      signal: AbortSignal.timeout(30000),
+    })
+    const execText = await execRes.text()
+    let execData: any; try { execData = JSON.parse(execText) } catch { execData = null }
+    if (!execRes.ok || !execData) throw Error(execData?.error || `Execute failed (${execRes.status}): ${execText.slice(0, 200)}`)
+    const batchId = execData?.batchId || execData?.id
+    if (!batchId) throw Error('No batchId returned')
+
+    return { ok: true, taskId: `${recipeId}:${batchId}`, raw: execData }
   } catch (err: any) { return { ok: false, error: err.message } }
 }
 
 export async function generateWeavyBulkOne(params: WeavyBulkOneParams): Promise<string> {
-  const quality = params.quality || '1K'
   const { withTokenRotation } = await import('@/lib/tokenRotation')
   const rotation = await withTokenRotation<string>('weavy', async (apiKey) => {
+    // Get access token (refresh if needed)
+    const accessToken = await getWeavyAccessToken(apiKey)
+
     const submitResult = await submitWeavyBulkOne(apiKey, params)
     if (!submitResult.ok || !submitResult.taskId) throw Error(submitResult.error || 'Submit failed')
-    const imageUrl = await pollWeavyImageStatus(apiKey, submitResult.taskId)
-    return imageUrl
+
+    const [recipeId, batchId] = submitResult.taskId.split(':')
+
+    // Poll with access token directly
+    const startTime = Date.now()
+    const timeoutMs = 600000
+    let attempt = 0
+    while (Date.now() - startTime < timeoutMs) {
+      attempt++
+      const interval = attempt < 20 ? 5000 : attempt < 40 ? 8000 : 12000
+      await new Promise((r) => setTimeout(r, interval))
+
+      try {
+        const res = await fetch(`${WEAVY_API}/v1/batches/recipes/${recipeId}/batches/${batchId}/status`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+          signal: AbortSignal.timeout(10000),
+        })
+        if (!res.ok) continue
+        const data = await res.json().catch(() => null)
+        const status = (data?.status || data?.state || '').toLowerCase()
+
+        if (['completed', 'success', 'done', 'finished'].includes(status)) {
+          const nodeRuns = data?.recipeRuns?.[0]?.nodeRuns || []
+          for (let i = nodeRuns.length - 1; i >= 0; i--) {
+            const nodeResult = nodeRuns[i]?.result
+            const urls = Array.isArray(nodeResult) ? nodeResult.map((r: any) => r?.url || r?.image_url).filter(Boolean) : []
+            if (urls.length > 0) return urls[0]
+          }
+          const directUrl = data?.output?.image_url || data?.output?.url || data?.image_url || data?.url
+          if (directUrl) return directUrl
+          throw Error('Task completed but no image URL found')
+        }
+        if (['failed', 'error', 'cancelled'].includes(status)) {
+          throw Error(`Weavy failed: ${data?.error || data?.message || 'Generation failed'}`)
+        }
+      } catch (err: any) {
+        if (/timeout|fetch|network/i.test(err.message)) continue
+        throw err
+      }
+    }
+    throw Error('Weavy timeout')
   }, {
     requiredCredits: 6,
     onKeySwitch: (from, to, attempt) => { console.log(`[weavy-bulk] rotate #${attempt}: ${from.name} → ${to.name}`) },
