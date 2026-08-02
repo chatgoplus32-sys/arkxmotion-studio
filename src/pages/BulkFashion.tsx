@@ -388,6 +388,25 @@ export default function BulkFashionPage() {
     setSelectedIds(allSelected ? [] : doneResults.map((_, i) => String(i)))
   }
 
+  // ─── Download single file ───────────────────────────────────────────────
+  const handleDownloadSingle = async (url: string, filename: string) => {
+    try {
+      const res = await fetch(url)
+      const blob = await res.blob()
+      const blobUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = blobUrl
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 4000)
+    } catch {
+      // Fallback: open in new tab
+      window.open(url, '_blank')
+    }
+  }
+
   // ─── Download ZIP ───────────────────────────────────────────────────────
   const handleDownloadZip = async (selectedOnly = false) => {
     const items = selectedOnly
@@ -748,7 +767,12 @@ export default function BulkFashionPage() {
                         <img src={result.url} alt="" className="w-full h-full object-cover" />
                       </button>
                       <div className="p-2 flex justify-between">
-                        <a href={result.url} download className="text-[11px] text-primary hover:underline">Download</a>
+                        <button
+                          onClick={() => handleDownloadSingle(result.url, `outfit_${index + 1}.${getExtensionFromUrl(result.url)}`)}
+                          className="text-[11px] text-primary hover:underline"
+                        >
+                          Download
+                        </button>
                         <button
                           onClick={() => removeResult(index)}
                           className="text-[11px] text-destructive hover:underline"
