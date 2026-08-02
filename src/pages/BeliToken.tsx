@@ -149,8 +149,19 @@ export default function BeliTokenPage() {
           {PROVIDERS.map((p) => {
             const providerTokens = availableTokens.filter(t => t.provider === p.key && t.status === 'available')
             const stock = providerTokens.length
-            const price = providerTokens.length > 0 ? providerTokens[0].price : 0
             const isActive = activeTokenTab === p.key
+
+            // For Roboneo, show price range
+            let priceDisplay = ''
+            if (p.key === 'roboneo' && stock > 0) {
+              const prices = [...new Set(providerTokens.map(t => t.price))].sort((a, b) => a - b)
+              priceDisplay = prices.length > 1
+                ? `Rp ${prices[0].toLocaleString('id-ID')} – ${prices[prices.length - 1].toLocaleString('id-ID')}`
+                : `Rp ${prices[0].toLocaleString('id-ID')}`
+            } else if (stock > 0) {
+              priceDisplay = `Rp ${providerTokens[0].price.toLocaleString('id-ID')}`
+            }
+
             return (
               <button
                 key={p.key}
@@ -164,8 +175,8 @@ export default function BeliTokenPage() {
                 <div className="text-sm font-semibold mb-1">{p.label}</div>
                 <div className="text-2xl font-bold gold-text">{stock}</div>
                 <div className="text-xs text-muted-foreground">token tersedia</div>
-                {price > 0 && (
-                  <div className="text-sm font-semibold mt-2">Rp {price.toLocaleString('id-ID')} / token</div>
+                {priceDisplay && (
+                  <div className="text-sm font-semibold mt-2">{priceDisplay} / token</div>
                 )}
               </button>
             )
