@@ -179,63 +179,127 @@ export async function validateMedia(url: string, kind: string): Promise<string> 
   return url
 }
 
-export async function uploadToCatbox(file: File, kind?: string): Promise<string> {
+export async function uploadToCatbox(file: File, kind?: string, onProgress?: (msg: string, pct?: number) => void): Promise<string> {
   const sizeStr = file.size >= 1024 * 1024 ? `${(file.size / 1024 / 1024).toFixed(1)}MB` : file.size >= 1024 ? `${(file.size / 1024).toFixed(1)}KB` : `${file.size}B`
   const MAX_SERVER_PROXY = 4 * 1024 * 1024
 
+  function xhrUpload(name: string, url: string, formData: FormData, extractUrl: (res: string, status: number) => string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      let lastProgress = 0
+      let stallTimer: ReturnType<typeof setTimeout> | null = null
+
+      const clearStall = () => {
+        if (stallTimer) { clearTimeout(stallTimer); stallTimer = null }
+      }
+
+      const startStallTimer = () => {
+        clearStall()
+        stallTimer = setTimeout(() => {
+          xhr.abort()
+          reject(Error(`${name}: upload tidak bergerak > 45 detik`))
+        }, 45000)
+      }
+
+      xhr.open('POST', url)
+      xhr.timeout = 480000
+
+      xhr.upload.onloadstart = () => startStallTimer()
+
+      xhr.upload.onprogress = (e) => {
+        startStallTimer()
+        if (e.lengthComputable && e.total > 0) {
+          const pct = Math.max(0, Math.min(99, Math.round((e.loaded / e.total) * 100)))
+          if (pct !== lastProgress) {
+            lastProgress = pct
+            onProgress?.(`${name} ${pct}%`, pct)
+          }
+        } else {
+          const loaded = e.loaded >= 1024 * 1024 ? `${(e.loaded / 1024 / 1024).toFixed(1)}MB` : `${(e.loaded / 1024).toFixed(1)}KB`
+          onProgress?.(`${name} ${loaded}`)
+        }
+      }
+
+      xhr.upload.onload = () => {
+        clearStall()
+        onProgress?.(`${name} selesai, menunggu URL...`)
+      }
+
+      xhr.onload = () => {
+        clearStall()
+        try {
+          const text = typeof xhr.responseText === 'string' ? xhr.responseText.trim() : ''
+          resolve(extractUrl(text, xhr.status))
+        } catch (e: any) {
+          reject(e)
+        }
+      }
+
+      xhr.onerror = () => { clearStall(); reject(Error(`${name}: network/CORS gagal`)) }
+      xhr.ontimeout = () => { clearStall(); reject(Error(`${name}: timeout upload`)) }
+      xhr.onabort = () => { clearStall(); reject(Error(`${name}: upload dibatalkan`)) }
+
+      startStallTimer()
+      xhr.send(formData)
+    })
+  }
+
   const uploaders: Array<[string, (f: File) => Promise<string>]> = [
     ['Server', async (f) => {
-      const formData = new FormData()
-      formData.append('file', new File([f], f.name || 'upload.bin', { type: f.type || 'application/octet-stream' }))
-      formData.append('prefer', 'roboneo')
-      const res = await fetch('/api/public/upload-catbox', { method: 'POST', body: formData })
-      const data = await res.json().catch(() => ({})) as any
-      if (!res.ok || !data.url) throw Error(data.error || `HTTP ${res.status}`)
-      return data.url
+      const fd = new FormData()
+      fd.append('file', new File([f], f.name || 'upload.bin', { type: f.type || 'application/octet-stream' }))
+      fd.append('prefer', 'roboneo')
+      return xhrUpload('Server', '/api/public/upload-catbox', fd, (text, status) => {
+        const data = JSON.parse(text || 'null')
+        if (status >= 200 && status < 300 && data?.url) return data.url
+        throw Error(data?.error || `Server HTTP ${status}`)
+      })
     }],
     ['Uguu', async (f) => {
       const fd = new FormData()
       fd.append('files[]', f, f.name || 'upload.bin')
-      const res = await fetch('https://uguu.se/upload.php', { method: 'POST', body: fd })
-      const data = await res.json().catch(() => null) as any
-      const url = data?.files?.[0]?.url
-      if (!res.ok || !url || !/^https?:\/\//i.test(url)) throw Error(data?.error || `Uguu HTTP ${res.status}`)
-      return url.replace(/\\\//g, '/')
+      return xhrUpload('Uguu', 'https://uguu.se/upload.php', fd, (text, status) => {
+        const data = JSON.parse(text || 'null')
+        const url = data?.files?.[0]?.url
+        if (status >= 200 && status < 300 && url && /^https?:\/\//i.test(url)) return url.replace(/\\\//g, '/')
+        throw Error(data?.error || `Uguu HTTP ${status}`)
+      })
     }],
     ['Catbox', async (f) => {
       const fd = new FormData()
       fd.append('reqtype', 'fileupload')
       fd.append('fileToUpload', f, f.name || 'upload.bin')
-      const res = await fetch('https://catbox.moe/user/api.php', { method: 'POST', body: fd })
-      const text = (await res.text()).trim()
-      if (!res.ok || !/^https?:\/\//i.test(text)) throw Error(text || `Catbox HTTP ${res.status}`)
-      return text
+      return xhrUpload('Catbox', 'https://catbox.moe/user/api.php', fd, (text, status) => {
+        if (status >= 200 && status < 300 && /^https?:\/\//i.test(text)) return text
+        throw Error(text || `Catbox HTTP ${status}`)
+      })
     }],
     ['Pixeldrain', async (f) => {
       const fd = new FormData()
       fd.append('file', f, f.name || 'upload.bin')
-      const res = await fetch('https://pixeldrain.com/api/file', { method: 'POST', body: fd })
-      const data = await res.json().catch(() => null)
-      if (!res.ok || !data?.id) throw Error(data?.message || `Pixeldrain HTTP ${res.status}`)
-      return `https://pixeldrain.com/api/file/${data.id}`
+      return xhrUpload('Pixeldrain', 'https://pixeldrain.com/api/file', fd, (text, status) => {
+        const data = JSON.parse(text || 'null')
+        if (status >= 200 && status < 300 && data?.id) return `https://pixeldrain.com/api/file/${data.id}`
+        throw Error(data?.message || `Pixeldrain HTTP ${status}`)
+      })
     }],
     ['0x0', async (f) => {
       const fd = new FormData()
       fd.append('file', f, f.name || 'upload.bin')
-      const res = await fetch('https://0x0.st', { method: 'POST', body: fd })
-      const text = (await res.text()).trim()
-      if (!res.ok || !/^https?:\/\//i.test(text)) throw Error(text || `0x0 HTTP ${res.status}`)
-      return text
+      return xhrUpload('0x0', 'https://0x0.st', fd, (text, status) => {
+        if (status >= 200 && status < 300 && /^https?:\/\//i.test(text)) return text
+        throw Error(text || `0x0 HTTP ${status}`)
+      })
     }],
     ['Tmpfiles', async (f) => {
       const fd = new FormData()
       fd.append('file', f, f.name || 'upload.bin')
-      const res = await fetch('https://tmpfiles.org/api/v1/upload', { method: 'POST', body: fd })
-      const data = await res.json().catch(() => null)
-      let url = data?.data?.url
-      if (!res.ok || !url) throw Error(data?.error || `Tmpfiles HTTP ${res.status}`)
-      url = url.replace(/^(https?:\/\/tmpfiles\.org)\/(?!dl\/)/i, '$1/dl/')
-      return url
+      return xhrUpload('Tmpfiles', 'https://tmpfiles.org/api/v1/upload', fd, (text, status) => {
+        const data = JSON.parse(text || 'null')
+        const url = data?.data?.url
+        if (status >= 200 && status < 300 && url) return url.replace(/^(https?:\/\/tmpfiles\.org)\/(?!dl\/)/i, '$1/dl/')
+        throw Error(data?.error || `Tmpfiles HTTP ${status}`)
+      })
     }],
   ]
 
@@ -246,8 +310,10 @@ export async function uploadToCatbox(file: File, kind?: string): Promise<string>
   for (const [name, uploader] of ordered) {
     try {
       console.log(`[upload] trying ${name} (${sizeStr}, kind=${kind || 'unknown'})...`)
+      onProgress?.(`Upload via ${name} (${sizeStr})...`)
       const url = await uploader(file)
       console.log(`[upload] success via ${name}`)
+      onProgress?.(`Upload selesai via ${name}`)
       if (kind) {
         try { await validateMedia(url, kind) } catch (ve: any) {
           console.warn(`[upload] ${name} validation failed: ${ve.message}, using anyway`)
@@ -257,6 +323,7 @@ export async function uploadToCatbox(file: File, kind?: string): Promise<string>
     } catch (e: any) {
       errors.push(`${name}: ${e.message}`)
       console.warn(`[upload] ${name} failed: ${e.message}`)
+      onProgress?.(`${name} gagal: ${e.message}`)
     }
   }
   if (!isSmall) errors.unshift(`skip server proxy (${sizeStr} > ${MAX_SERVER_PROXY / 1024 / 1024}MB)`)
@@ -548,10 +615,11 @@ export async function submitMotionControl(params: {
   imageUrl: string
   videoUrl: string
   prompt?: string
+  negativePrompt?: string
   quality?: string
   orientation?: string
 }): Promise<{ taskId: string; roomId: string }> {
-  const { accessToken, imageUrl, videoUrl, prompt = '', quality = 'std', orientation = 'video' } = params
+  const { accessToken, imageUrl, videoUrl, prompt = '', negativePrompt, quality = 'std', orientation = 'video' } = params
 
   const roomId = generateRoomId()
   const nodeId = uuid()
@@ -567,6 +635,7 @@ export async function submitMotionControl(params: {
       character_orientation: orientation,
       orientation,
       prompt: prompt || '',
+      negative_prompt: negativePrompt || '',
       random: `${Date.now()}-${Math.floor(1e7 + Math.random() * 89999999)}`,
     },
   }

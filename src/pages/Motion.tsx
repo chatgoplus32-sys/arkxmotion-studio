@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useMemo, forwardRef } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
-import { Section, Button, Textarea, Select, Label, EmptyState } from '@/components/ui'
+import { Section, Button, Textarea, Select, Label, EmptyState, QuickRoutingDialog, getActiveProviderForCap } from '@/components/ui'
 import { useProviderManager, type ProviderId } from '@/stores'
 import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
 import { useToastStore } from '@/stores/toastStore'
@@ -21,6 +21,7 @@ import {
   X,
   Download,
   Play,
+  Repeat,
 } from 'lucide-react'
 
 const PROVIDERS = {
@@ -37,7 +38,7 @@ const PROVIDERS = {
     { key: 'ws:kwaivgi/kling-v2.6-std/motion-control', label: 'Kling V2.6 Standard', cr: 21 },
   ]},
   roboneo: { name: 'Roboneo', models: [
-    { key: 'rn:video_bonbon_motioncontrol_v26:std', label: 'Kling V2.6 Standard (Roboneo)', cr: 50 },
+    { key: 'rn:video_bonbon_motioncontrol_v26:std', label: 'Kling V2.6 Standard (Roboneo)', cr: 72 },
   ]},
   magnific: { name: 'Magnific', models: [
     { key: 'mag:kling-v3-motion-control-pro', label: 'Kling V3.0 Pro (Magnific)', cr: 84 },
@@ -97,12 +98,31 @@ export default function MotionPage() {
   const elapsedRef = useRef<number | null>(null)
   const generatingRef = useRef(false)
   const successRef = useRef(false)
+  const [showRoutingDialog, setShowRoutingDialog] = useState(false)
 
   const { keys, fetchMaintenance } = useProviderManager()
 
   useEffect(() => {
     fetchMaintenance()
   }, [fetchMaintenance])
+
+  useEffect(() => {
+    const sync = () => {
+      const cap = getActiveProviderForCap('motion')
+      if (cap && cap !== provider && PROVIDERS[cap as keyof typeof PROVIDERS]) {
+        setProvider(cap as ProviderId)
+        const p = PROVIDERS[cap as keyof typeof PROVIDERS]
+        setModelKey(p.models[0].key)
+      }
+    }
+    sync()
+    window.addEventListener('aatools:routing-changed', sync)
+    window.addEventListener('focus', sync)
+    return () => {
+      window.removeEventListener('aatools:routing-changed', sync)
+      window.removeEventListener('focus', sync)
+    }
+  }, [])
 
   useEffect(() => {
     const activeTasks = getActiveTasks().filter((t) => t.page === 'motion')
@@ -387,7 +407,10 @@ export default function MotionPage() {
                 addLog(`#${slotNum} ${msg}`)
               })
               setCompressDialog(null)
-              const imageUrl = await uploadToCatbox(normalizedImage, 'image')
+              const imageUrl = await uploadToCatbox(normalizedImage, 'image', (msg, pct) => {
+                updateSlotStatus(slot.id, 'uploading img...', msg)
+                addLog(`#${slotNum} ${msg}`)
+              })
               addLog(`#${slotNum} Image: ${imageUrl.slice(0, 60)}...`)
 
               let motionVideoUrl = ''
@@ -418,7 +441,10 @@ export default function MotionPage() {
                   addLog(`#${slotNum} ${msg}`)
                 })
                 setCompressDialog(null)
-                motionVideoUrl = await uploadToCatbox(videoFile, 'video')
+                motionVideoUrl = await uploadToCatbox(videoFile, 'video', (msg, pct) => {
+                  updateSlotStatus(slot.id, 'uploading vid...', msg)
+                  addLog(`#${slotNum} ${msg}`)
+                })
                 addLog(`#${slotNum} Video: ${motionVideoUrl.slice(0, 60)}...`)
 
                 updateSlotStatus(slot.id, 'processing', 'submitting...')
@@ -428,6 +454,7 @@ export default function MotionPage() {
                   imageUrl,
                   videoUrl: motionVideoUrl,
                   prompt: prompt.trim() || undefined,
+                  negativePrompt: negativePrompt.trim() || undefined,
                   quality: modelKey.split(':')[2] || 'std',
                   orientation,
                 })
@@ -488,6 +515,7 @@ export default function MotionPage() {
                         imageUrl,
                         videoUrl: motionVideoUrl,
                         prompt: prompt.trim() || undefined,
+                        negativePrompt: negativePrompt.trim() || undefined,
                         quality: modelKey.split(':')[2] || 'std',
                         orientation,
                       })
@@ -540,7 +568,10 @@ export default function MotionPage() {
                 addLog(`#${slotNum} ${msg}`)
               })
               setCompressDialog(null)
-              const imageUrl = await uploadToCatbox(normalizedImage, 'image')
+              const imageUrl = await uploadToCatbox(normalizedImage, 'image', (msg, pct) => {
+                updateSlotStatus(slot.id, 'uploading img...', msg)
+                addLog(`#${slotNum} ${msg}`)
+              })
               addLog(`#${slotNum} Image: ${imageUrl.slice(0, 60)}...`)
 
               updateSlotStatus(slot.id, 'uploading vid...')
@@ -551,7 +582,10 @@ export default function MotionPage() {
                 addLog(`#${slotNum} ${msg}`)
               })
               setCompressDialog(null)
-              const videoUrl = await uploadToCatbox(videoFile, 'video')
+              const videoUrl = await uploadToCatbox(videoFile, 'video', (msg, pct) => {
+                updateSlotStatus(slot.id, 'uploading vid...', msg)
+                addLog(`#${slotNum} ${msg}`)
+              })
               addLog(`#${slotNum} Video: ${videoUrl.slice(0, 60)}...`)
 
               const magnificKey = getMagnificApiKey()
@@ -809,25 +843,17 @@ export default function MotionPage() {
           <Section title="Pengaturan" sub={`Provider aktif: ${currentProvider.name}`}>
             <div className="flex flex-col gap-4">
               <div>
-                <Label>Provider</Label>
-                  <Select
-                    value={provider}
-                    onChange={(e) => {
-                      setProvider(e.target.value as ProviderId)
-                      const p = PROVIDERS[e.target.value as keyof typeof PROVIDERS]
-                      setModelKey(p.models[0].key)
-                    }}
-                    options={Object.entries(PROVIDERS).map(([key, val]) => ({
-                      value: key,
-                      label: val.name,
-                    }))}
-                  />
+                <div className="flex items-center justify-between">
+                  <Label>Model AI</Label>
+                  <button
+                    onClick={() => setShowRoutingDialog(true)}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card/60 px-2.5 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:border-primary/50 transition"
+                    title="Ganti provider"
+                  >
+                    <Repeat className="h-3 w-3" />
+                    {currentProvider.name}
+                  </button>
                 </div>
-
-                <MaintenanceBanner providerId={provider} />
-
-                <div>
-                  <Label>Model</Label>
                 <Select
                   value={modelKey}
                   onChange={(e) => setModelKey(e.target.value)}
@@ -837,6 +863,8 @@ export default function MotionPage() {
                   }))}
                 />
               </div>
+
+              <MaintenanceBanner providerId={provider} />
 
               <div>
                 <Label>Character Orientation</Label>
@@ -1067,6 +1095,23 @@ export default function MotionPage() {
           )}
         </Section>
       </div>
+
+      {showRoutingDialog && (
+        <QuickRoutingDialog
+          cap="motion"
+          providers={Object.entries(PROVIDERS).map(([key, val]) => ({
+            id: key,
+            name: val.name,
+            models: val.models,
+          }))}
+          onClose={() => setShowRoutingDialog(false)}
+          onSelect={(id) => {
+            setProvider(id as ProviderId)
+            const p = PROVIDERS[id as keyof typeof PROVIDERS]
+            setModelKey(p.models[0].key)
+          }}
+        />
+      )}
     </PageContent>
   )
 }
