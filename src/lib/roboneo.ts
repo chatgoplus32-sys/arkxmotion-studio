@@ -660,10 +660,14 @@ export async function submitMotionControl(params: {
 
   const { roomId } = await createRoboneoRoom(accessToken)
 
-  const motionPrompt = prompt || `Please perform motion control: take the uploaded image as the character, and apply the body movements, gestures, and facial expressions from the uploaded video reference to animate the image. Do NOT use the video as-is. Use the image as the main subject and make it move like the video.`
+  const motionPrompt = prompt || `Motion: Please use motion control to make this image move based on the video.`
   const fullPrompt = negativePrompt
     ? `${motionPrompt}\n\nNegative: ${negativePrompt}`
     : motionPrompt
+
+  const imgNodeId = `img_${uuid()}`
+  const vidNodeId = `vid_${uuid()}`
+  const motionNodeId = `mc_${uuid()}`
 
   const tracking = buildTrackingParams(accessToken, 'roboneo', roomId)
   const { _access_token, ...paramWithoutToken } = tracking
@@ -688,7 +692,58 @@ export async function submitMotionControl(params: {
       model_pattern: 'high',
       thinking_mode: 'deep_thinking',
     },
-    extra: {},
+    extra: {
+      workflow: {
+        nodes: [
+          {
+            id: imgNodeId,
+            type: 'IMAGE_NODE',
+            data: {
+              name: 'Image 1',
+              media_list: [{ url: imageUrl }],
+              mcpInfo: { api_name: 'image_praline_create_v2', model_id: 'mt_nano_pro', node_model_id: 'txt2img', parameters: { count: 1, prompt: '', ratio: '16:9', resolution: '2K' } },
+            },
+          },
+          {
+            id: vidNodeId,
+            type: 'VIDEO_NODE',
+            data: {
+              name: 'Video 1',
+              media_list: [{ url: videoUrl }],
+              mcpInfo: { api_name: 'video_toffee_t2v_v20', model_id: 'seedance_2.0', node_model_id: 'txt2vid', parameters: { count: 1, prompt: '', ratio: '16:9', resolution: '720p', sound: 'true', video_duration: 5 } },
+            },
+          },
+          {
+            id: motionNodeId,
+            type: 'VIDEO_NODE',
+            data: {
+              name: 'Motion Control',
+              media_list: [],
+              mcpInfo: {
+                api_name: 'video_bonbon_motioncontrol_v26',
+                model_id: 'kling_2_6_motion',
+                node_model_id: 'video_edit',
+                parameters: {
+                  count: 1,
+                  prompt: `Refer to the movements and facial expressions in the video to animate photos without changing the original background.`,
+                  quality: 'std',
+                },
+              },
+              inputNodeId: {
+                textNodeIds: [],
+                imageNodeIds: [imgNodeId],
+                videoNodeIds: [vidNodeId],
+                audioNodeIds: [],
+              },
+            },
+          },
+        ],
+        edges: [
+          { sourceNodeID: imgNodeId, targetNodeID: motionNodeId, sourcePortID: 'output', targetPortID: 'input' },
+          { sourceNodeID: vidNodeId, targetNodeID: motionNodeId, sourcePortID: 'output', targetPortID: 'input' },
+        ],
+      },
+    },
     uid: '',
     answer_message: fullPrompt,
   }
@@ -1044,7 +1099,7 @@ export async function pollMotionControl(
       console.log(`[roboneo] ${logEntry}`)
     }
 
-    if (isComplete || action === 'done' || action === 'completed') {
+    if (action === 'done' || action === 'completed') {
       for (const art of artifacts) {
         const videoUrl = findVideoUrl(art)
         if (videoUrl) {
