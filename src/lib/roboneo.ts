@@ -632,7 +632,6 @@ export async function submitMotionControl(params: {
     name: 'video_bonbon_motioncontrol_v26',
     parameters: {
       quality,
-      recipe_code: 'xd_pUp8JDcE0',
       image_url: imageUrl,
       video_url: videoUrl,
       character_orientation: orientation,
@@ -1063,6 +1062,7 @@ export async function pollMotionControl(
     if (isFailed) {
       const failedStep = steps.find((s: any) => /fail|error/i.test(String(s.status || s.state || '')))
       const stepOutput = failedStep?.output
+      console.log(`[roboneo] FAILED task:`, JSON.stringify({ state: taskState, steps: steps.map((s: any) => ({ name: s.name, status: s.status || s.state, output: s.output, error_message: s.error_message, fail_code: s.fail_code })) }).slice(0, 2000))
       const errMsg = task?.error_message || task?.error_msg || failedStep?.error_message || failedStep?.error_msg ||
         (typeof stepOutput?.error_message === 'string' ? stepOutput.error_message : undefined) ||
         (typeof stepOutput?.error_msg === 'string' ? stepOutput.error_msg : undefined) ||
