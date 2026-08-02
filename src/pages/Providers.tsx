@@ -261,11 +261,11 @@ export default function ProvidersPage() {
     getMaintenanceMessage,
   } = useProviderManager()
 
-  const [selectedProvider, setSelectedProvider] = useState('brain')
+  const [selectedProvider, setSelectedProvider] = useState(() => localStorage.getItem('arkxmotion.providers.selected') || 'brain')
   const [dropdownOpen, setDropdownOpen] = useState(false)
-  const [inputValue, setInputValue] = useState('')
+  const [inputValue, setInputValue] = useState(() => localStorage.getItem(`arkxmotion.providers.draft.${localStorage.getItem('arkxmotion.providers.selected') || 'brain'}`) || '')
   const [bulkMode, setBulkMode] = useState(false)
-  const [bulkText, setBulkText] = useState('')
+  const [bulkText, setBulkText] = useState(() => localStorage.getItem(`arkxmotion.providers.bulk.${localStorage.getItem('arkxmotion.providers.selected') || 'brain'}`) || '')
   const [statusMap, setStatusMap] = useState<Record<string, { state: string; detail?: string; balance?: number }>>({})
   const [checking, setChecking] = useState(false)
   const [progress, setProgress] = useState({ show: false, pct: 0, text: '' })
@@ -317,10 +317,19 @@ export default function ProvidersPage() {
   }, [fetchMaintenance])
 
   useEffect(() => {
-    setInputValue('')
-    setBulkText('')
+    localStorage.setItem('arkxmotion.providers.selected', selectedProvider)
+    setInputValue(localStorage.getItem(`arkxmotion.providers.draft.${selectedProvider}`) || '')
+    setBulkText(localStorage.getItem(`arkxmotion.providers.bulk.${selectedProvider}`) || '')
     setStatusMap({})
   }, [selectedProvider])
+
+  useEffect(() => {
+    localStorage.setItem(`arkxmotion.providers.draft.${selectedProvider}`, inputValue)
+  }, [inputValue, selectedProvider])
+
+  useEffect(() => {
+    localStorage.setItem(`arkxmotion.providers.bulk.${selectedProvider}`, bulkText)
+  }, [bulkText, selectedProvider])
 
   const handleAddKey = useCallback(() => {
     const lines = inputValue.split(/[\n,]/).map(l => l.trim()).filter(Boolean)
@@ -340,7 +349,6 @@ export default function ProvidersPage() {
       added++
     })
 
-    setInputValue('')
     if (added > 0) {
       setSummaryPayload({
         title: 'Ringkasan Tambah Key',
@@ -373,7 +381,6 @@ export default function ProvidersPage() {
       added++
     })
 
-    setBulkText('')
     setSummaryPayload({
       title: 'Ringkasan Import Bulk',
       rows: [
