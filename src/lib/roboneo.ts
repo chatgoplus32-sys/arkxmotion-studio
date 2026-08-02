@@ -632,6 +632,7 @@ export async function submitMotionControl(params: {
     name: 'video_bonbon_motioncontrol_v26',
     parameters: {
       quality,
+      recipe_code: 'xd_pUp8JDcE0',
       image_url: imageUrl,
       video_url: videoUrl,
       character_orientation: orientation,
