@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 const GATEWAY_URL = 'https://ai-engine-gateway-roboneo.meitu.com/roboneo/sync/request'
+const PROXY_URL = 'https://roboneo-proxy.chatgoplus32.workers.dev'
 const TRACKING_TOKEN = '45C30555F10E49629098A75F95828DA6'
 const CLIENT_ID = '1189857647'
 
