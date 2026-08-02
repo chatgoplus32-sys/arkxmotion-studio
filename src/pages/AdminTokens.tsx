@@ -333,17 +333,18 @@ export default function AdminTokensPage() {
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ provider: activeTab, price: Number(price), tokens: bulkPayload })
       })
+      const data = await response.json()
       if (response.ok) {
-        const data = await response.json()
         addToast(`${data.count || lines.length} token berhasil diupload`, 'success')
         fetchStock()
         fetchTokenList()
       } else {
-        const data = await response.json()
         addToast(data.error || 'Gagal upload', 'error')
+        console.error('[admin-tokens] upload error:', data)
       }
-    } catch {
+    } catch (err: any) {
       addToast('Gagal upload token', 'error')
+      console.error('[admin-tokens] upload exception:', err)
     }
 
     setUploading(false)
