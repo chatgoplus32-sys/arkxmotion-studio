@@ -623,9 +623,10 @@ export async function submitMotionControl(params: {
   const node = {
     tool_abstract_name: { cn: 'Motion Control', en: 'Motion Control' },
     node_id: nodeId,
-    name: 'video_bonbon_motioncontrol_v26',
+    name: 'video_bonbon_motioncontrol_v30',
     parameters: {
       quality,
+      model_version: '3.0',
       image_url: imageUrl,
       video_url: videoUrl,
       character_orientation: orientation,
