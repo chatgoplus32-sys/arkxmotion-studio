@@ -2,6 +2,7 @@ import { ReactNode } from 'react'
 import { PanelLeftClose, PanelLeft } from 'lucide-react'
 import { Button } from '@/components/ui'
 import { NotificationPanel } from '@/components/ui/NotificationPanel'
+import { ThemeToggle } from '@/components/ui/ThemeToggle'
 
 interface HeaderProps {
   title?: string
@@ -36,6 +37,7 @@ export function Header({ title, subtitle, actions, collapsed, onToggleSidebar }:
 
       <div className="flex items-center gap-2">
         {actions}
+        <ThemeToggle />
         <NotificationPanel />
       </div>
     </header>

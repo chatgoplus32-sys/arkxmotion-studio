@@ -88,7 +88,7 @@ export default function DashboardPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card variant="bordered" className="hover:glow-gold transition-all">
+        <Card variant="bordered" className="hover:glow-gold transition-all animate-fade-in" style={{ animationDelay: '0ms' }}>
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-lg gold-gradient flex items-center justify-center">
@@ -101,7 +101,7 @@ export default function DashboardPage() {
             </div>
           </CardContent>
         </Card>
-        <Card variant="bordered" className="hover:glow-gold transition-all">
+        <Card variant="bordered" className="hover:glow-gold transition-all animate-fade-in" style={{ animationDelay: '50ms' }}>
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-lg silver-gradient flex items-center justify-center">
@@ -114,7 +114,7 @@ export default function DashboardPage() {
             </div>
           </CardContent>
         </Card>
-        <Card variant="bordered" className="hover:glow-gold transition-all">
+        <Card variant="bordered" className="hover:glow-gold transition-all animate-fade-in" style={{ animationDelay: '100ms' }}>
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-lg gold-gradient flex items-center justify-center">
@@ -127,7 +127,7 @@ export default function DashboardPage() {
             </div>
           </CardContent>
         </Card>
-        <Card variant="bordered" className="hover:glow-gold transition-all">
+        <Card variant="bordered" className="hover:glow-gold transition-all animate-fade-in" style={{ animationDelay: '150ms' }}>
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-lg silver-gradient flex items-center justify-center">
@@ -143,7 +143,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Tools Grid */}
-      <Card variant="bordered">
+      <Card variant="bordered" className="animate-fade-in" style={{ animationDelay: '200ms' }}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <div className="h-8 w-8 rounded-lg gold-gradient flex items-center justify-center">
@@ -176,7 +176,7 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Recent Activity */}
-        <Card variant="bordered">
+        <Card variant="bordered" className="animate-fade-in" style={{ animationDelay: '300ms' }}>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <div className="h-8 w-8 rounded-lg silver-gradient flex items-center justify-center">
@@ -212,7 +212,7 @@ export default function DashboardPage() {
         </Card>
 
         {/* Provider Status */}
-        <Card variant="bordered">
+        <Card variant="bordered" className="animate-fade-in" style={{ animationDelay: '350ms' }}>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <div className="h-8 w-8 rounded-lg gold-gradient flex items-center justify-center">

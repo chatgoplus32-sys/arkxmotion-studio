@@ -25,17 +25,87 @@
 }
 
 * {
-  border-color: #2a2a2a;
+  border-color: var(--color-border);
 }
 
 body {
-  background-color: #0a0a0a;
-  color: #f5f5f5;
+  background-color: var(--color-background);
+  color: var(--color-foreground);
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   margin: 0;
   padding: 0;
+  transition: background-color 0.3s, color 0.3s;
+}
+
+/* Light theme */
+.light {
+  --color-background: #f8f9fa;
+  --color-foreground: #1a1a1a;
+  --color-card: #ffffff;
+  --color-card-foreground: #1a1a1a;
+  --color-primary: #b8860b;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #f0f0f0;
+  --color-secondary-foreground: #1a1a1a;
+  --color-muted: #f0f0f0;
+  --color-muted-foreground: #666666;
+  --color-accent: #f0f0f0;
+  --color-accent-foreground: #1a1a1a;
+  --color-border: #e0e0e0;
+  --color-input: #e0e0e0;
+}
+
+.light * {
+  border-color: #e0e0e0;
+}
+
+.light .neumorph {
+  background: #ffffff;
+  border-color: #e0e0e0;
+  box-shadow:
+    inset 0 1px 1px rgba(0, 0, 0, 0.03),
+    0 4px 20px rgba(0, 0, 0, 0.08),
+    0 0 40px rgba(212, 160, 23, 0.03);
+}
+
+.light .neumorph:hover {
+  border-color: rgba(212, 160, 23, 0.3);
+  box-shadow:
+    inset 0 1px 1px rgba(0, 0, 0, 0.03),
+    0 4px 20px rgba(0, 0, 0, 0.08),
+    0 0 50px rgba(212, 160, 23, 0.06);
+}
+
+.light .gold-text {
+  background: linear-gradient(135deg, #b8860b, #d4a017, #8b6914);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.light .silver-text {
+  background: linear-gradient(135deg, #666666, #888888, #555555);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.light .glow-gold {
+  box-shadow: 0 0 20px rgba(212, 160, 23, 0.15);
+}
+
+.light ::-webkit-scrollbar-track {
+  background: #f0f0f0;
+}
+
+.light ::-webkit-scrollbar-thumb {
+  background: #ccc;
+}
+
+.light ::-webkit-scrollbar-thumb:hover {
+  background: #aaa;
 }
 
 .gold-text {
@@ -91,7 +161,7 @@ body {
   background: #141414;
   border: 1px solid #2a2a2a;
   border-radius: 0.75rem;
-  box-shadow: 
+  box-shadow:
     inset 0 1px 1px rgba(255, 255, 255, 0.03),
     0 4px 20px rgba(0, 0, 0, 0.4),
     0 0 40px rgba(212, 160, 23, 0.05);
@@ -99,8 +169,36 @@ body {
 
 .neumorph:hover {
   border-color: rgba(212, 160, 23, 0.2);
-  box-shadow: 
+  box-shadow:
     inset 0 1px 1px rgba(255, 255, 255, 0.03),
     0 4px 20px rgba(0, 0, 0, 0.4),
     0 0 50px rgba(212, 160, 23, 0.08);
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes pulse-gold {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(212, 160, 23, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(212, 160, 23, 0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.animate-slide-in {
+  animation: slideIn 0.3s ease-out;
+}
+
+.animate-pulse-gold {
+  animation: pulse-gold 2s infinite;
 }
