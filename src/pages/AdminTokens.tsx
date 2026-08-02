@@ -12,6 +12,8 @@ interface Token {
   name: string
   token_value: string
   price: number
+  credits?: number | null
+  credit_group?: string | null
   status: string
   created_at: string
 }
