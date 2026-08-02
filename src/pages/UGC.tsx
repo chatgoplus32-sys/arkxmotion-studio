@@ -4,7 +4,7 @@ import { Section, Button, Select, Label, Textarea, EmptyState, Input } from '@/c
 import { useToastStore } from '@/stores/toastStore'
 import { logAudit } from '@/lib/auditLog'
 import {
-  ShoppingBag, Upload, Rocket, Trash2, Download, X, Plus, Check, Loader2, Image,
+  ShoppingBag, Upload, Rocket, Trash2, Download, X, Plus, Check, Loader2, Image, Square,
 } from 'lucide-react'
 
 const PRODUCT_TYPES = [
