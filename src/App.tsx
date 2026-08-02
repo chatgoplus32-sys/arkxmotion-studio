@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import { Sidebar, Header } from '@/components/layout'
 import { useAppStore } from '@/stores'
+import { cn } from '@/lib/utils'
 import ProtectedRoute from '@/components/auth/ProtectedRoute'
 import { ToastContainer } from '@/components/ui/Toast'
 
@@ -41,7 +42,20 @@ export default function App() {
           element={
             <ProtectedRoute>
               <div className="flex min-h-screen bg-background">
-                <Sidebar collapsed={sidebarCollapsed} />
+                {/* Mobile overlay when sidebar open */}
+                {!sidebarCollapsed && (
+                  <div
+                    className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+                    onClick={toggleSidebar}
+                  />
+                )}
+                {/* Sidebar — hidden on mobile unless toggled */}
+                <div className={cn(
+                  'fixed lg:sticky top-0 z-50 h-screen transition-transform duration-300 lg:translate-x-0',
+                  sidebarCollapsed ? '-translate-x-full' : 'translate-x-0'
+                )}>
+                  <Sidebar collapsed={false} />
+                </div>
                 <div className="flex-1 flex flex-col min-w-0">
                   <Header
                     collapsed={sidebarCollapsed}
