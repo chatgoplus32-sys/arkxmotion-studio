@@ -6,6 +6,50 @@ export function roboneoProxyPlugin(): Plugin {
   return {
     name: 'roboneo-proxy',
     configureServer(server) {
+      server.middlewares.use('/api/public/tiktok-download', async (req, res) => {
+        if (req.method === 'OPTIONS') {
+          res.writeHead(200, {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type',
+          })
+          res.end()
+          return
+        }
+        if (req.method !== 'POST') {
+          res.writeHead(405)
+          res.end('Method not allowed')
+          return
+        }
+
+        try {
+          const chunks: Buffer[] = []
+          for await (const chunk of req) chunks.push(chunk)
+          const rawBody = Buffer.concat(chunks).toString()
+
+          console.log(`[tiktok-proxy] POST → ${VERCEL_ORIGIN}/api/public/tiktok-download`)
+
+          const tiktokRes = await fetch(`${VERCEL_ORIGIN}/api/public/tiktok-download`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: rawBody,
+          })
+
+          const tiktokText = await tiktokRes.text()
+          console.log(`[tiktok-proxy] ${tiktokRes.status}:`, tiktokText.slice(0, 300))
+
+          res.writeHead(tiktokRes.status, {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          })
+          res.end(tiktokText)
+        } catch (err: any) {
+          console.error(`[tiktok-proxy] error:`, err.message)
+          res.writeHead(502, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: false, error: err.message }))
+        }
+      })
+
       server.middlewares.use('/api/public/upload-catbox', async (req, res) => {
         if (req.method !== 'POST') {
           res.writeHead(405)

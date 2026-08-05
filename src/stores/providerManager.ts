@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'createpulse' | 'framia' | 'firefly' | 'leonardo' | 'elevenlabs' | 'gemini' | 'openai' | 'shotstack' | 'creatomate'
+export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'runninghub' | 'createpulse' | 'framia' | 'firefly' | 'leonardo' | 'elevenlabs' | 'gemini' | 'openai' | 'shotstack' | 'creatomate'
 
 export interface ProviderKey {
   id: string
@@ -68,6 +68,16 @@ export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
     keyFormat: 'Access token (_v2...)',
     minCredits: 1,
     supportsBalance: true,
+  },
+  runninghub: {
+    id: 'runninghub',
+    name: 'Motion Control HD (Markasflow-V2)',
+    icon: '🚀',
+    description: 'RunningHub AI video generation via Markasflow-V2',
+    keyPlaceholder: 'Paste your RunningHub API key...',
+    keyFormat: 'API key (32 chars)',
+    minCredits: 0,
+    supportsBalance: false,
   },
   createpulse: {
     id: 'createpulse',
@@ -167,6 +177,7 @@ function getDefaultMaintenance(): Record<ProviderId, MaintenanceInfo> {
     wavespeed: { isMaintenance: false, message: '' },
     magnific: { isMaintenance: false, message: '' },
     roboneo: { isMaintenance: false, message: '' },
+    runninghub: { isMaintenance: false, message: '' },
     createpulse: { isMaintenance: false, message: '' },
     framia: { isMaintenance: false, message: '' },
     firefly: { isMaintenance: false, message: '' },
@@ -212,6 +223,23 @@ export type ProviderState = {
   activeProvider: ProviderId
   routing: Record<string, ProviderId>
   maintenance: Record<ProviderId, MaintenanceInfo>
+
+  setActiveProvider: (provider: ProviderId) => void
+  addKey: (provider: ProviderId, key: string, name?: string) => void
+  importKeys: (provider: ProviderId, tokenValues: string[], namePrefix?: string) => number
+  removeKey: (provider: ProviderId, keyId: string) => void
+  updateKeyStatus: (provider: ProviderId, keyId: string, status: ProviderKey['status'], balance?: number) => void
+  getActiveKey: (provider: ProviderId) => ProviderKey | null
+  getFirstValidKey: (provider: ProviderId) => ProviderKey | null
+  findKeyById: (provider: ProviderId, keyId: string) => ProviderKey | undefined
+  getNextKey: (provider: ProviderId, excludeKeyIds?: string[]) => ProviderKey | null
+  setRouting: (workflow: string, provider: ProviderId) => void
+  getRouting: (workflow: string) => ProviderId
+  fetchMaintenance: () => Promise<void>
+  isProviderMaintenance: (provider: ProviderId) => boolean
+  getMaintenanceMessage: (provider: ProviderId) => string
+  loadFromStorage: () => void
+  saveToStorage: () => void
 }
 
 const STORAGE_KEY = 'arkxmotion.providers'
@@ -226,6 +254,7 @@ function loadKeysFromStorage(): Record<ProviderId, ProviderKey[]> {
     wavespeed: [],
     magnific: [],
     roboneo: [],
+    runninghub: [],
     createpulse: [],
     framia: [],
     firefly: [],

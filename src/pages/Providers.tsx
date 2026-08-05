@@ -29,12 +29,14 @@ import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/provi
 import { checkRoboneoBalance } from '@/lib/roboneo'
 import { fetchLeonardoBalance } from '@/lib/leonardo'
 import { checkWeavyBalance } from '@/lib/weavy'
+import { checkRunningHubBalance } from '@/lib/runninghub'
 
 const PROVIDER_COLORS: Record<string, string> = {
   brain: '#f472b6',
   weavy: '#22d3ee',
   wavespeed: '#38bdf8',
   roboneo: '#34d399',
+  runninghub: '#f97316',
   framia: '#fb923c',
   leonardo: '#facc15',
   eleven: '#818cf8',
@@ -47,6 +49,7 @@ const PROVIDER_LIST = [
   { key: 'weavy', label: 'Weavy', desc: 'Provider utama Kling Motion Control, Wan, Sora, Seedance.' },
   { key: 'wavespeed', label: 'Wavespeed', desc: 'Provider alternatif — cek balance via api.wavespeed.ai/api/v3/balance.' },
   { key: 'roboneo', label: 'Roboneo', desc: 'Motion Control via Roboneo (Meitu) — Kling 2.6 Standard.' },
+  { key: 'runninghub', label: 'Motion Control HD (Markasflow-V2)', desc: 'RunningHub AI video generation via Markasflow-V2 — Kling 3.0 Pro/Standard.' },
   { key: 'framia', label: 'Framia', desc: 'Canvas workflow (Converge AI) — semua node & recipe: image, video, avatar, garment, storyboard.' },
   { key: 'leonardo', label: 'Leonardo.ai', desc: 'app.leonardo.ai via Cognito Bearer JWT — Text-to-Image (Phoenix, Diffusion XL, Kino, Anime, Vision).' },
   { key: 'eleven', label: 'ElevenLabs', desc: 'Voice-over untuk Naratif Video Maker.' },
@@ -173,6 +176,19 @@ const TOKEN_GUIDE: Record<string, {
     ],
     tip: 'Model: Dreamina Seedance 2.0 (Rp 2.200), Veo Omni 10s (Rp 3.300). Token tersimpan di akunmu, bisa dipakai dari mana saja.',
   },
+  runninghub: {
+    url: 'https://www.runninghub.cn/enterprise-api/consumerApi',
+    urlLabel: 'runninghub.cn/enterprise-api/consumerApi',
+    prefix: 'API key 32 karakter',
+    steps: [
+      { text: 'Buka runninghub.cn dan login.' },
+      { text: 'Buka menu Profile → API Keys (atau klik link di atas).' },
+      { text: 'Klik "Create API Key", beri nama (mis. "arkxmotion").' },
+      { text: 'Copy API key (string 32 karakter) — paste ke input di sebelah.' },
+      { text: 'Workflow ID sudah default ke Markasflow-V2. Kosongkan saja atau ganti jika ingin workflow custom.' },
+    ],
+    tip: 'Model: Kling 3.0 Pro/Standard, Kling 2.6 Pro/Standard via ComfyUI di RunningHub cloud. API key tersimpan di browser.',
+  },
   render: {
     url: 'https://shotstack.io/dashboard/',
     urlLabel: 'shotstack.io / creatomate.com',
@@ -266,6 +282,7 @@ export default function ProvidersPage() {
   const [inputValue, setInputValue] = useState(() => localStorage.getItem(`arkxmotion.providers.draft.${localStorage.getItem('arkxmotion.providers.selected') || 'brain'}`) || '')
   const [bulkMode, setBulkMode] = useState(false)
   const [bulkText, setBulkText] = useState(() => localStorage.getItem(`arkxmotion.providers.bulk.${localStorage.getItem('arkxmotion.providers.selected') || 'brain'}`) || '')
+  const [workflowId, setWorkflowId] = useState(() => localStorage.getItem('runninghub.workflowId') || '')
   const [statusMap, setStatusMap] = useState<Record<string, { state: string; detail?: string; balance?: number }>>({})
   const [checking, setChecking] = useState(false)
   const [progress, setProgress] = useState({ show: false, pct: 0, text: '' })
@@ -288,6 +305,7 @@ export default function ProvidersPage() {
       weavy: 'weavy',
       wavespeed: 'wavespeed',
       roboneo: 'roboneo',
+      runninghub: 'runninghub',
       framia: 'framia',
       leonardo: 'leonardo',
       eleven: 'elevenlabs',
@@ -303,6 +321,7 @@ export default function ProvidersPage() {
       weavy: 'weavy',
       wavespeed: 'wavespeed',
       roboneo: 'roboneo',
+      runninghub: 'runninghub',
       framia: 'framia',
       leonardo: 'leonardo',
       eleven: 'elevenlabs',
@@ -330,6 +349,12 @@ export default function ProvidersPage() {
   useEffect(() => {
     localStorage.setItem(`arkxmotion.providers.bulk.${selectedProvider}`, bulkText)
   }, [bulkText, selectedProvider])
+
+  useEffect(() => {
+    if (workflowId) {
+      localStorage.setItem('runninghub.workflowId', workflowId)
+    }
+  }, [workflowId])
 
   const handleAddKey = useCallback(() => {
     const lines = inputValue.split(/[\n,]/).map(l => l.trim()).filter(Boolean)
@@ -443,6 +468,18 @@ export default function ProvidersPage() {
         return { state: 'active', detail: 'Format API key valid' }
       }
       return { state: 'invalid', detail: 'Format key harus cp_...' }
+    }
+    if (selectedProvider === 'runninghub') {
+      try {
+        const result = await checkRunningHubBalance(key)
+        if (result.ok && result.isValidUser) {
+          return { state: 'active', balance: result.balance, detail: `Balance: ${result.balance} RH coins` }
+        } else {
+          return { state: 'invalid', detail: result.error || 'Token tidak valid' }
+        }
+      } catch {
+        return { state: 'failed', detail: 'Error checking token' }
+      }
     }
     if (selectedProvider === 'leonardo') {
       try {
@@ -694,6 +731,23 @@ export default function ProvidersPage() {
                   <Trash2 className="h-3.5 w-3.5" /> Hapus Semua
                 </Button>
               </div>
+
+              {selectedProvider === 'runninghub' && (
+                <div className="neumorph p-3 space-y-2">
+                  <label className="text-[10px] font-mono uppercase tracking-widest text-[#a0a0a0]">
+                    Workflow ID (Opsional — default: Markasflow-V2 bawaan)
+                  </label>
+                  <Input
+                    value={workflowId}
+                    onChange={e => setWorkflowId(e.target.value)}
+                    placeholder="Default: 2084995158336192513"
+                    className="font-mono text-xs bg-[#0a0a0a] border-[#2a2a2a] text-[#f5f5f5] placeholder-[#666666] focus:border-[#d4a017] focus:ring-[#d4a017]/30"
+                  />
+                  <p className="text-[10px] text-[#666666]">
+                    Kosongkan untuk pakai workflow bawaan. Isi hanya jika ingin pakai workflow custom dari RunningHub.
+                  </p>
+                </div>
+              )}
 
               {progress.show && (
                 <div className="rounded-md border border-[#2a2a2a] bg-[#141414] p-2">

@@ -4,7 +4,9 @@ import { Section, Button, Textarea, Select, Label, EmptyState, QuickRoutingDialo
 import { useProviderManager, type ProviderId } from '@/stores'
 import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
 import { useToastStore } from '@/stores/toastStore'
-import { uploadToCatbox, submitMotionControl, pollMotionControl, checkRoboneoBalance, compressVideo, submitGoogleOmni, normalizeImage } from '@/lib/roboneo'
+import { uploadToCatbox, submitMotionControl, pollRoboneoI2V, checkRoboneoBalance, compressVideo, submitGoogleOmni, normalizeImage } from '@/lib/roboneo'
+import { getRunningHubApiKey, submitRunningHubMotionControl, pollRunningHubTask } from '@/lib/runninghub'
+import { trimVideoFFmpeg } from '@/lib/ffmpeg-compress'
 import { getMagnificApiKey, submitMagnificMotion, pollMagnificMotion, type MagnificMotionModel } from '@/lib/magnific'
 import { useLocalStorage } from '@/lib/useLocalStorage'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
@@ -37,8 +39,8 @@ const PROVIDERS = {
     { key: 'ws:kwaivgi/kling-v2.6-pro/motion-control', label: 'Kling V2.6 Pro', cr: 56 },
     { key: 'ws:kwaivgi/kling-v2.6-std/motion-control', label: 'Kling V2.6 Standard', cr: 21 },
   ]},
-  roboneo: { name: 'Roboneo', models: [
-    { key: 'rn:video_bonbon_motioncontrol_v26:std', label: 'Kling V2.6 Standard (Roboneo)', cr: 72 },
+  roboneo: { name: 'RoboNeo (Meitu)', models: [
+    { key: 'rn:video_bonbon_motioncontrol_v30:std', label: 'Kling V3.0 Standard (RoboNeo · Meitu)', cr: 80 },
   ]},
   magnific: { name: 'Magnific', models: [
     { key: 'mag:kling-v3-motion-control-pro', label: 'Kling V3.0 Pro (Magnific)', cr: 84 },
@@ -49,6 +51,12 @@ const PROVIDERS = {
   framia: { name: 'Framia', models: [
     { key: 'framia:kling-v2.1-motion', label: 'Kling V2.1 Motion Control (Framia)', cr: 40 },
     { key: 'framia:kling-v2.6-motion', label: 'Kling V2.6 Motion Control (Framia)', cr: 35 },
+  ]},
+  runninghub: { name: 'Motion Control HD (Markasflow-V2)', models: [
+    { key: 'rh:pro:2.6', label: 'Kling 2.6 Pro (Markasflow-V2)', cr: 80 },
+    { key: 'rh:std:2.6', label: 'Kling 2.6 Standard (Markasflow-V2)', cr: 50 },
+    { key: 'rh:pro:2.1', label: 'Kling 2.1 Pro (Markasflow-V2)', cr: 60 },
+    { key: 'rh:std:2.1', label: 'Kling 2.1 Standard (Markasflow-V2)', cr: 35 },
   ]},
 }
 
@@ -85,6 +93,9 @@ export default function MotionPage() {
   const [prompt, setPrompt] = useLocalStorage('motion.prompt', '')
   const [negativePrompt, setNegativePrompt] = useLocalStorage('motion.negativePrompt', '')
   const [keepSound, setKeepSound] = useLocalStorage('motion.keepSound', true)
+  const [autoTrim, setAutoTrim] = useLocalStorage('motion.autoTrim', true)
+  const [tiktokUrl, setTiktokUrl] = useState('')
+  const [tiktokLoading, setTiktokLoading] = useState(false)
   const [slots, setSlots] = useState<Slot[]>(() => {
     try {
       const raw = localStorage.getItem('motion.slots')
@@ -304,6 +315,38 @@ export default function MotionPage() {
     setLogs((prev) => [...prev, entry].slice(-200))
   }
 
+  const handleTiktokImport = async () => {
+    if (!tiktokUrl.trim()) return
+    setTiktokLoading(true)
+    addLog('Fetching TikTok video...')
+    try {
+      const res = await fetch('/api/public/tiktok-download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: tiktokUrl.trim() }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.url) throw new Error(data.error || `HTTP ${res.status}`)
+      
+      addLog(`TikTok video found, downloading...`)
+      const videoRes = await fetch(data.url)
+      if (!videoRes.ok) throw new Error('Failed to download video')
+      const blob = await videoRes.blob()
+      const file = new File([blob], `tiktok_${Date.now()}.mp4`, { type: 'video/mp4' })
+      
+      const targetSlot = slots.find(s => !s.video) || slots[slots.length - 1]
+      const url = URL.createObjectURL(file)
+      updateSlot(targetSlot.id, { video: file, videoUrl: url })
+      addLog(`TikTok video loaded: ${(file.size / 1024 / 1024).toFixed(1)}MB`, 'success')
+      setTiktokUrl('')
+    } catch (err: any) {
+      addLog(`TikTok import failed: ${err.message}`, 'error')
+      addToast(`Gagal import TikTok: ${err.message}`, 'error')
+    } finally {
+      setTiktokLoading(false)
+    }
+  }
+
   const handleGenerate = async () => {
     if (generating) return
     const isOmni = modelKey === 'rn:google-omni'
@@ -412,6 +455,7 @@ export default function MotionPage() {
           if (isRoboneo && slot.image) {
             let taskId: string = ''
             let roomId: string = ''
+            let nodeId: string = ''
             try {
               updateSlotStatus(slot.id, 'uploading img...')
               addLog(`#${slotNum} Upload image...`)
@@ -448,8 +492,22 @@ export default function MotionPage() {
                   continue
                 }
                 updateSlotStatus(slot.id, 'uploading vid...')
+
+                // Auto-trim to 9 seconds for RoboNeo (like Markas Tools)
+                let videoToUpload = slot.video
+                if (autoTrim && isRoboneo) {
+                  addLog(`#${slotNum} Auto-trimming video to 9s...`)
+                  updateSlotStatus(slot.id, 'uploading vid...', 'Trimming to 9s...')
+                  videoToUpload = await trimVideoFFmpeg(slot.video, 9, (msg, pct) => {
+                    setCompressDialog({ msg, pct })
+                    updateSlotStatus(slot.id, 'uploading vid...', msg)
+                    addLog(`#${slotNum} ${msg}`)
+                  })
+                  setCompressDialog(null)
+                }
+
                 addLog(`#${slotNum} Upload video...`)
-                const videoFile = await compressVideo(slot.video, 4, (msg, pct) => {
+                const videoFile = await compressVideo(videoToUpload, 4, (msg, pct) => {
                   setCompressDialog({ msg, pct })
                   updateSlotStatus(slot.id, 'uploading vid...', msg)
                   addLog(`#${slotNum} ${msg}`)
@@ -469,11 +527,12 @@ export default function MotionPage() {
                   videoUrl: motionVideoUrl,
                   prompt: prompt.trim() || undefined,
                   negativePrompt: negativePrompt.trim() || undefined,
-                  quality: modelKey.split(':')[2] || 'std',
                   orientation,
+                  keepSound,
                 })
                 taskId = result.taskId
                 roomId = result.roomId
+                nodeId = result.nodeId
                 addLog(`#${slotNum} Task: ${taskId.slice(0, 20)}...`)
               }
 
@@ -481,6 +540,7 @@ export default function MotionPage() {
                 id: taskId,
                 taskId,
                 roomId,
+                nodeId,
                 token,
                 model: currentModel.label,
                 prompt: prompt.trim() || '(no prompt)',
@@ -496,7 +556,7 @@ export default function MotionPage() {
               const MAX_RESUBMIT = 5
               for (let attempt = 1; attempt <= MAX_RESUBMIT; attempt++) {
                 try {
-                  resultUrl = await pollMotionControl(
+                  resultUrl = await pollRoboneoI2V(
                     token,
                     taskId,
                     roomId,
@@ -504,7 +564,10 @@ export default function MotionPage() {
                       updateSlotStatus(slot.id, 'processing', `${status} ${pct}%`)
                       addLog(`#${slotNum} ${status} ${pct}%`)
                       setProgress(pct)
-                    }
+                    },
+                    3600000,
+                    undefined,
+                    nodeId
                   )
                   break
                 } catch (pollErr: any) {
@@ -530,11 +593,12 @@ export default function MotionPage() {
                         videoUrl: motionVideoUrl,
                         prompt: prompt.trim() || undefined,
                         negativePrompt: negativePrompt.trim() || undefined,
-                        quality: modelKey.split(':')[2] || 'std',
                         orientation,
+                        keepSound,
                       })
                       taskId = retry.taskId
                       roomId = retry.roomId
+                      nodeId = retry.nodeId
                     }
                     addLog(`#${slotNum} New task: ${taskId.slice(0, 20)}...`)
                     continue
@@ -657,6 +721,110 @@ export default function MotionPage() {
             }
           } else if (isFramia) {
             throw new Error('Provider aktif Framia. Gunakan Generate → Framia untuk menjalankan node/canvas Framia secara langsung.')
+          } else if (provider === 'runninghub' && slot.image && slot.video) {
+            try {
+              const runninghubKey = getRunningHubApiKey()
+              if (!runninghubKey) throw Error('Belum ada RunningHub API key. Silakan tambahkan di Settings.')
+
+              let mode = 'pro'
+              let modelVersion = '2.6'
+              if (modelKey.startsWith('rh:')) {
+                const parts = modelKey.split(':')
+                if (parts.length >= 3) {
+                  mode = parts[1] || 'pro'
+                  modelVersion = parts[2] || '2.6'
+                } else if (parts.length === 2) {
+                  const modelPart = parts[1]
+                  if (modelPart.includes('pro')) mode = 'pro'
+                  else if (modelPart.includes('std')) mode = 'std'
+                  if (modelPart.includes('3.0') || modelPart.includes('v3')) modelVersion = '3.0'
+                  else if (modelPart.includes('2.1')) modelVersion = '2.1'
+                  else modelVersion = '2.6'
+                }
+              }
+
+              updateSlotStatus(slot.id, 'uploading img...')
+              addLog(`#${slotNum} Compress image...`)
+              const normalizedImage = await normalizeImage(slot.image, (msg, pct) => {
+                setCompressDialog({ msg, pct })
+                updateSlotStatus(slot.id, 'uploading img...', msg)
+                addLog(`#${slotNum} ${msg}`)
+              })
+              setCompressDialog(null)
+              addLog(`#${slotNum} Image: ${normalizedImage.name || 'ready'}`)
+
+              updateSlotStatus(slot.id, 'uploading vid...')
+              addLog(`#${slotNum} Compress video...`)
+              const videoFile = await compressVideo(slot.video, 4, (msg, pct) => {
+                setCompressDialog({ msg, pct })
+                updateSlotStatus(slot.id, 'uploading vid...', msg)
+                addLog(`#${slotNum} ${msg}`)
+              })
+              setCompressDialog(null)
+              addLog(`#${slotNum} Video: ${videoFile.name || 'ready'}`)
+
+              updateSlotStatus(slot.id, 'processing', 'submitting...')
+              addLog(`#${slotNum} Upload & Submit ke RunningHub (${mode} ${modelVersion})...`)
+
+              const result = await submitRunningHubMotionControl({
+                imageFile: normalizedImage,
+                videoFile,
+                prompt: prompt.trim() || undefined,
+                negativePrompt: negativePrompt.trim() || undefined,
+                keepOriginalSound: keepSound,
+              })
+              const taskId = result.taskId
+              addLog(`#${slotNum} Task: ${taskId.slice(0, 20)}...`)
+
+              addActiveTask({
+                id: taskId,
+                taskId,
+                roomId: '',
+                nodeId: '',
+                token: runninghubKey,
+                model: currentModel.label,
+                prompt: prompt.trim() || '(no prompt)',
+                startedAt: Date.now(),
+                page: 'motion',
+              })
+
+              updateSlotStatus(slot.id, 'processing', 'polling...')
+              addLog(`#${slotNum} Polling for result...`)
+
+              const resultUrl = await pollRunningHubTask(taskId, (status, pct) => {
+                updateSlotStatus(slot.id, 'processing', `${status} ${pct}%`)
+                addLog(`#${slotNum} ${status} ${pct}%`)
+                setProgress(pct)
+              })
+
+              updateSlotStatus(slot.id, 'done')
+              addLog(`#${slotNum} Done: ${resultUrl.slice(0, 60)}...`, 'success')
+
+              removeActiveTask(taskId)
+              addResult({
+                id: taskId,
+                url: resultUrl,
+                prompt: prompt.trim() || '(no prompt)',
+                date: new Date().toISOString(),
+                page: 'motion',
+              })
+              setResults((prev) => [
+                {
+                  id: taskId,
+                  url: resultUrl,
+                  prompt: prompt.trim() || '(no prompt)',
+                  date: new Date().toISOString(),
+                },
+                ...prev,
+              ])
+              completedCount++
+              successCount++
+            } catch (err: any) {
+              setCompressDialog(null)
+              updateSlotStatus(slot.id, 'error', err.message)
+              addLog(`#${slotNum} Error: ${err.message}`, 'error')
+              failCount++
+            }
           } else {
             addLog(`#${slotNum} Skipping (no image/video)`, 'warn')
           }
@@ -856,6 +1024,16 @@ export default function MotionPage() {
         <div className="flex flex-col gap-5">
           <Section title="Pengaturan" sub={`Provider aktif: ${currentProvider.name}`}>
             <div className="flex flex-col gap-4">
+              {/* Provider Info Panel (Markas Tools style) */}
+              {provider === 'roboneo' && (
+                <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 text-xs text-muted-foreground leading-relaxed">
+                  <div className="font-semibold text-foreground mb-1">Provider RoboNeo (Meitu)</div>
+                  Motion Control (berbasis Kling) — animasikan gambar karakter dengan gerakan dari video penggerak.
+                  Pakai akun RoboNeo (access key dari roboneo.com → avatar → CLI Settings).
+                  Sesi berlaku terbatas & perlu ditempel ulang. Biaya ~100 🥕/generate.
+                </div>
+              )}
+
               <div>
                 <div className="flex items-center justify-between">
                   <Label>Model AI</Label>
@@ -926,6 +1104,50 @@ export default function MotionPage() {
                 </span>
                 <span className="text-sm text-foreground/90">Keep Original Sound</span>
               </label>
+
+              {/* Auto-trim to 9 seconds (Markas Tools style) */}
+              {provider === 'roboneo' && (
+                <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={autoTrim}
+                    onChange={(e) => setAutoTrim(e.target.checked)}
+                    className="peer sr-only"
+                  />
+                  <span className="h-5 w-5 rounded-md border border-input bg-background grid place-items-center peer-checked:bg-primary peer-checked:border-primary transition">
+                    <svg viewBox="0 0 24 24" className="h-3 w-3 text-primary-foreground opacity-0 peer-checked:opacity-100" fill="none" stroke="currentColor" strokeWidth="3">
+                      <path d="M5 12l5 5L20 7" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </span>
+                  <div className="flex flex-col">
+                    <span className="text-sm text-foreground/90">Potong otomatis ke 9 detik (hemat — biaya tetap ±65 🥕)</span>
+                    <span className="text-[11px] text-muted-foreground">Video referensi dipotong ke 9 detik pertama, jadi biayanya pasti.</span>
+                  </div>
+                </label>
+              )}
+
+              {/* TikTok Link Import (Markas Tools style) */}
+              {provider === 'roboneo' && (
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={tiktokUrl}
+                    onChange={(e) => setTiktokUrl(e.target.value)}
+                    placeholder="Paste link TikTok..."
+                    className="flex-1 rounded-xl border border-border bg-card/50 px-3 py-2 text-sm outline-none focus:border-primary/50 transition"
+                    onKeyDown={(e) => e.key === 'Enter' && handleTiktokImport()}
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleTiktokImport}
+                    disabled={!tiktokUrl.trim() || tiktokLoading}
+                  >
+                    {tiktokLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Video className="h-3.5 w-3.5" />}
+                    Dari Link TikTok
+                  </Button>
+                </div>
+              )}
 
               <Button
                 onClick={handleGenerate}

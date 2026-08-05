@@ -129,7 +129,7 @@ export default function UGCPage() {
     const startTime = Date.now()
     const timer = setInterval(() => {
       const elapsed = Math.floor((Date.now() - startTime) / 1000)
-      setStatus({ time: `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}` })
+      setStatus((prev) => ({ ...prev, time: `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}` }))
     }, 1000)
 
     const controller = new AbortController()
@@ -141,7 +141,7 @@ export default function UGCPage() {
       for (let i = 0; i < products.length; i++) {
         if (controller.signal.aborted) break
         const product = products[i]
-        setStatus({ text: `#${i + 1}: ${product.name}…`, pct: ((i + 1) / products.length) * 100 })
+        setStatus((prev) => ({ ...prev, text: `#${i + 1}: ${product.name}…`, pct: ((i + 1) / products.length) * 100 }))
         addLog(`#${i + 1}: Generate ${product.name}...`, 'info')
 
         try {
@@ -172,14 +172,14 @@ export default function UGCPage() {
 
       if (!controller.signal.aborted) {
         const doneCount = results.filter((r) => r.status === 'done').length + 1
-        setStatus({ pct: 100, text: `✅ Selesai — ${doneCount}/${products.length} sukses` })
+        setStatus((prev) => ({ ...prev, pct: 100, text: `✅ Selesai — ${doneCount}/${products.length} sukses` }))
         addLog(`Selesai: ${doneCount}/${products.length}`, 'success')
         addToast('UGC generation selesai', 'success')
         logAudit('UGC_GENERATE', `${products.length} produk di-generate`, 'success')
       }
     } catch (err: any) {
       if (!controller.signal.aborted) {
-        setStatus({ pct: 100, text: `❌ ${err.message}` })
+        setStatus((prev) => ({ ...prev, pct: 100, text: `❌ ${err.message}` }))
         addLog(`Fatal: ${err.message}`, 'error')
       }
     } finally {
@@ -192,7 +192,7 @@ export default function UGCPage() {
   const handleStop = () => {
     abortRef.current?.abort()
     setGenerating(false)
-    setStatus({ text: '⏹️ Dihentikan', pct: 100 })
+    setStatus((prev) => ({ ...prev, text: '⏹️ Dihentikan', pct: 100 }))
     addLog('Dihentikan oleh user', 'warn')
   }
 

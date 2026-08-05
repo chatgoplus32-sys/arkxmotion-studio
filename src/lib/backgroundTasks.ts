@@ -1,4 +1,4 @@
-import { pollMotionControl, pollRoboneoI2V } from '@/lib/roboneo'
+import { pollRoboneoI2V } from '@/lib/roboneo'
 
 const ACTIVE_KEY = 'arkxmotion_active_tasks'
 const RESULTS_KEY = 'arkxmotion_results'
@@ -174,7 +174,7 @@ const MAX_BG_RETRIES = 3
 function pollWithRetry(task: ActiveTask, ctrl: AbortController, attempt: number) {
   if (ctrl.signal.aborted) return
 
-  const pollFn = task.page === 'image-to-video' ? pollRoboneoI2V : pollMotionControl
+  const pollFn = pollRoboneoI2V
   pollFn(
     task.token, task.taskId, task.roomId,
     (status, pct) => {

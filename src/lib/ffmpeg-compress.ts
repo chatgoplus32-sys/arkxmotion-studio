@@ -20,6 +20,49 @@ function formatSize(bytes: number): string {
   return `${mb.toFixed(1)} MB`
 }
 
+export async function trimVideoFFmpeg(
+  file: File,
+  maxDuration: number,
+  onProgress?: (msg: string, pct?: number) => void
+): Promise<File> {
+  onProgress?.('Loading FFmpeg for trim...')
+  const ffmpeg = await getFFmpeg()
+
+  const ext = (file.name.split('.').pop() || 'mp4').toLowerCase()
+  const inputFile = `trim_in_${Date.now()}.${ext}`
+  const outputFile = `trim_out_${Date.now()}.mp4`
+  const inputData = await fetchFile(file)
+  await ffmpeg.writeFile(inputFile, inputData)
+
+  try {
+    onProgress?.(`Trimming to ${maxDuration}s...`, 30)
+    await ffmpeg.exec([
+      '-i', inputFile,
+      '-t', String(maxDuration),
+      '-c:v', 'libx264',
+      '-preset', 'veryfast',
+      '-crf', '23',
+      '-c:a', 'aac',
+      '-b:a', '128k',
+      '-movflags', '+faststart',
+      outputFile,
+    ])
+
+    const data = await ffmpeg.readFile(outputFile)
+    await ffmpeg.deleteFile(outputFile).catch(() => {})
+    const dataBytes = typeof data === 'string' ? new TextEncoder().encode(data) : data
+    const byteLength = dataBytes.byteLength
+
+    onProgress?.(`Trimmed — ${formatSize(byteLength)}`, 100)
+    const buf = new ArrayBuffer(byteLength)
+    new Uint8Array(buf).set(dataBytes)
+    const outName = file.name.replace(/\.[^.]+$/, '_trimmed.mp4')
+    return new File([buf], outName, { type: 'video/mp4' })
+  } finally {
+    await ffmpeg.deleteFile(inputFile).catch(() => {})
+  }
+}
+
 export async function compressVideoFFmpeg(
   file: File,
   maxBytes: number = 4 * 1024 * 1024,
@@ -68,13 +111,14 @@ export async function compressVideoFFmpeg(
       const data = await ffmpeg.readFile(outputFile)
       await ffmpeg.deleteFile(outputFile).catch(() => {})
 
-      const byteLength = data.byteLength
+      const dataBytes = typeof data === 'string' ? new TextEncoder().encode(data) : data
+      const byteLength = dataBytes.byteLength
       console.log(`[ffmpeg] pass ${i + 1}: ${p.height}p crf=${p.crf} → ${formatSize(byteLength)}`)
 
       if (byteLength <= maxBytes) {
         onProgress?.(`Done — ${formatSize(byteLength)}`, 100)
         const buf = new ArrayBuffer(byteLength)
-        new Uint8Array(buf).set(data)
+        new Uint8Array(buf).set(dataBytes)
         const outName = file.name.replace(/\.[^.]+$/, '.mp4')
         return new File([buf], outName, { type: 'video/mp4' })
       }

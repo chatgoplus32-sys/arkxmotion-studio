@@ -653,110 +653,65 @@ export async function submitMotionControl(params: {
   videoUrl: string
   prompt?: string
   negativePrompt?: string
-  quality?: string
   orientation?: string
-}): Promise<{ taskId: string; roomId: string }> {
-  const { accessToken, imageUrl, videoUrl, prompt = '', negativePrompt } = params
+  keepSound?: boolean
+}): Promise<{ taskId: string; roomId: string; nodeId: string }> {
+  const { accessToken, imageUrl, videoUrl, prompt = '', negativePrompt, orientation = 'video', keepSound = true } = params
 
-  const { roomId } = await createRoboneoRoom(accessToken)
+  const roomId = generateRoomId()
+  const nodeId = uuid()
 
-  const motionPrompt = prompt || `Motion: Please use motion control to make this image move based on the video.`
+  const motionPrompt = prompt || `Refer to the movements and facial expressions in the video to animate photos without changing the original background.`
   const fullPrompt = negativePrompt
     ? `${motionPrompt}\n\nNegative: ${negativePrompt}`
     : motionPrompt
 
-  const imgNodeId = `img_${uuid()}`
-  const vidNodeId = `vid_${uuid()}`
-  const motionNodeId = `mc_${uuid()}`
+  const parameters: Record<string, any> = {
+    image_url: imageUrl,
+    video_url: videoUrl,
+    prompt: fullPrompt,
+    character_orientation: orientation || 'video',
+    cfg_scale: 0.5,
+    random: `${Date.now()}-${Math.floor(1e7 + Math.random() * 89999999)}`,
+  }
 
-  const tracking = buildTrackingParams(accessToken, 'roboneo', roomId)
+  const node = {
+    tool_abstract_name: { cn: 'Kling 3.0', en: 'Kling 3.0' },
+    node_id: nodeId,
+    name: 'video_bonbon_motioncontrol_v30',
+    parameters,
+  }
+
+  const tracking = buildTrackingParams(accessToken, 'nodeexecute', roomId)
   const { _access_token, ...paramWithoutToken } = tracking
 
   const parameter = {
     ...paramWithoutToken,
     room_id: roomId,
-    path_scene: 'roboneo',
-    image_urls: [imageUrl],
-    video_urls: [videoUrl],
-    file_urls: [],
-    message: fullPrompt,
-    body: '',
-    features: '',
-    later_face: 0,
-    last_request_id: '',
-    needThinking: true,
-    select_option_ids: [],
-    used_model: {
-      image_model: '',
-      video_model: '',
-      model_pattern: 'high',
-      thinking_mode: 'deep_thinking',
-    },
-    extra: {
-      workflow: {
-        nodes: [
-          {
-            id: imgNodeId,
-            type: 'IMAGE_NODE',
-            data: {
-              name: 'Image 1',
-              media_list: [{ url: imageUrl }],
-              mcpInfo: { api_name: 'image_praline_create_v2', model_id: 'mt_nano_pro', node_model_id: 'txt2img', parameters: { count: 1, prompt: '', ratio: '16:9', resolution: '2K' } },
-            },
-          },
-          {
-            id: vidNodeId,
-            type: 'VIDEO_NODE',
-            data: {
-              name: 'Video 1',
-              media_list: [{ url: videoUrl }],
-              mcpInfo: { api_name: 'video_toffee_t2v_v20', model_id: 'seedance_2.0', node_model_id: 'txt2vid', parameters: { count: 1, prompt: '', ratio: '16:9', resolution: '720p', sound: 'true', video_duration: 5 } },
-            },
-          },
-          {
-            id: motionNodeId,
-            type: 'VIDEO_NODE',
-            data: {
-              name: 'Motion Control',
-              media_list: [],
-              mcpInfo: {
-                api_name: 'video_bonbon_motioncontrol_v26',
-                model_id: 'kling_2_6_motion',
-                node_model_id: 'video_edit',
-                parameters: {
-                  count: 1,
-                  prompt: `Refer to the movements and facial expressions in the video to animate photos without changing the original background.`,
-                  quality: 'std',
-                },
-              },
-              inputNodeId: {
-                textNodeIds: [],
-                imageNodeIds: [imgNodeId],
-                videoNodeIds: [vidNodeId],
-                audioNodeIds: [],
-              },
-            },
-          },
-        ],
-        edges: [
-          { sourceNodeID: imgNodeId, targetNodeID: motionNodeId, sourcePortID: 'output', targetPortID: 'input' },
-          { sourceNodeID: vidNodeId, targetNodeID: motionNodeId, sourcePortID: 'output', targetPortID: 'input' },
-        ],
-      },
-    },
-    uid: '',
-    answer_message: fullPrompt,
+    node_id: nodeId,
+    need_node_name: true,
+    workflow_version: 'v2',
+    node_list_array: [[node]],
   }
 
-  const result = await roboneoApiCall(accessToken, 'stream', parameter)
+  const result = await roboneoApiCall(accessToken, 'nodeexecute', parameter)
 
-  const taskId = result?.task_id
-  if (!taskId) {
-    throw new Error('Roboneo stream: task_id tidak ditemukan. Response: ' + JSON.stringify(result).slice(0, 300))
+  const payload = result
+
+  const taskIds: string[] = payload?.task_ids?.length
+    ? payload.task_ids
+    : Array.isArray(payload?.tasks)
+    ? payload.tasks.map((t: any) => t.task_id).filter(Boolean)
+    : payload?.task_id
+    ? [payload.task_id]
+    : Object.keys(payload?.tasks || {})
+
+  if (!taskIds.length) {
+    throw new Error('Roboneo Motion Control: task_id tidak ditemukan. Response: ' + JSON.stringify(payload).slice(0, 300))
   }
 
-  taskMetaMap.set(taskId, { roomId, nodeId: '' })
-  return { taskId, roomId }
+  taskMetaMap.set(taskIds[0], { roomId, nodeId })
+  return { taskId: taskIds[0], roomId, nodeId }
 }
 
 const ROBONEO_I2V_MODELS: Record<string, { apiName: string; recipeCode?: string; toolLabel: string; family: string }> = {
@@ -1394,7 +1349,7 @@ export async function pollRoboneoI2V(
 
       if (isChargeFailed) {
         taskMetaMap.delete(taskId)
-        throw new Error(`Roboneo: saldo tidak cukup untuk biaya ini (CHARGE_FAILED). Balance mungkin termasuk credit non-deductible.`)
+        throw new Error(`Roboneo: saldo tidak cukup untuk biaya ini (CHARGE_FAILED). Detail: ${detail}`)
       }
 
       taskMetaMap.delete(taskId)

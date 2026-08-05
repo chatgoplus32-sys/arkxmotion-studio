@@ -79,6 +79,10 @@ const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'framia:happyhorse-1.1', label: 'HappyHorse 1.1 (Framia)', cr: 28, provider: 'framia' },
     { value: 'framia:kling-avatar', label: 'Kling Avatar (Framia)', cr: 40, provider: 'framia' },
   ],
+  magnific: [
+    { value: 'magnific:kling-v3-pro', label: 'Kling V3 Pro (Magnific)', cr: 84, provider: 'magnific' },
+    { value: 'magnific:kling-v3-std', label: 'Kling V3 Standard (Magnific)', cr: 63, provider: 'magnific' },
+  ],
   leonardo: LEONARDO_VIDEO_MODELS.map((m) => ({
     value: m.id,
     label: `${m.label} (Leonardo · ~${m.crPerSecond} cr/s)`,
@@ -90,6 +94,15 @@ const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
   openai: [],
   shotstack: [],
   creatomate: [],
+  firefly: [
+    { value: 'firefly:kling-v3', label: 'Kling 3.0 (Firefly)', cr: 130, provider: 'firefly' },
+  ],
+  runninghub: [
+    { value: 'rh:pro:2.6', label: 'Kling 2.6 Pro (Markasflow-V2)', cr: 80, provider: 'runninghub' },
+    { value: 'rh:std:2.6', label: 'Kling 2.6 Standard (Markasflow-V2)', cr: 50, provider: 'runninghub' },
+    { value: 'rh:pro:2.1', label: 'Kling 2.1 Pro (Markasflow-V2)', cr: 60, provider: 'runninghub' },
+    { value: 'rh:std:2.1', label: 'Kling 2.1 Standard (Markasflow-V2)', cr: 35, provider: 'runninghub' },
+  ],
 }
 
 const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; label: string; mult: number; duration: number; cr?: number; resolution?: string; sound?: string; sizeTier?: string }>>> = {
@@ -229,12 +242,28 @@ const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; 
       { value: 'long', label: 'Long 15s', mult: 1.5, duration: 15, cr: 68 },
     ],
   },
+  magnific: {
+    default: [
+      { value: 'std', label: 'Standard 5s', mult: 1, duration: 5 },
+    ],
+  },
   leonardo: {},
   elevenlabs: { default: [] },
   gemini: { default: [] },
   openai: { default: [] },
   shotstack: { default: [] },
   creatomate: { default: [] },
+  firefly: {
+    default: [
+      { value: 'std', label: 'Standard 5s', mult: 1, duration: 5 },
+    ],
+  },
+  runninghub: {
+    default: [
+      { value: 'std', label: 'Standard 5s', mult: 1, duration: 5 },
+      { value: 'long', label: 'Long 10s', mult: 2, duration: 10 },
+    ],
+  },
 }
 
 const RATIOS = ['16:9', '9:16', '1:1', '4:5', '3:4']

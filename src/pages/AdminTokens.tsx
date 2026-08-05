@@ -351,7 +351,7 @@ export default function AdminTokensPage() {
   }
 
   const handleSubmitBulk = async (filteredTokens?: Array<{ token: string; credits?: number | null }>) => {
-    const lines = filteredTokens || bulkTokens.split('\n').map(l => l.trim()).filter(l => l.length > 0).map(t => ({ token: t }))
+    const lines = filteredTokens || bulkTokens.split('\n').map(l => l.trim()).filter(l => l.length > 0).map(t => ({ token: t, credits: undefined as number | null | undefined }))
     console.log('[admin-tokens] handleSubmitBulk called:', { lines: lines.length, price, filteredTokens: !!filteredTokens })
     if (lines.length === 0) {
       addToast('Tidak ada token valid untuk diupload', 'error')

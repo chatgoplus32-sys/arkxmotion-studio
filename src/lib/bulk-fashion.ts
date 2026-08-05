@@ -353,12 +353,7 @@ export async function generateBulkFashion(opts: BulkFashionOptions): Promise<str
     if (opts.provider === 'leonardo') return await generateLeonardoBulk(opts)
     throw Error(`Provider "${opts.provider}" belum support bulk fashion`)
   } finally {
-    if (['weavy', 'framia', 'leonardo'].includes(opts.provider)) {
-      try {
-        const { refreshProviderKeys } = await import('@/lib/tokenRotation')
-        refreshProviderKeys?.(opts.provider as any)
-      } catch {}
-    }
+    // Key refresh handled by token rotation
   }
 }
 
