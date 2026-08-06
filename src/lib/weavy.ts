@@ -2,7 +2,82 @@ const WEAVY_API = 'https://api.weavy.ai/api'
 const FIREBASE_KEY = 'AIzaSyC-qLy3TFyXMogJPfMkZJ9H_q46hEu1sxI'
 const WEAVY_PROXY = '/api/public/weavy'
 
-async function refreshWeavyAccessToken(refreshToken: string): Promise<string | null> {
+// ── Token Management (synced with providerManager store) ──
+
+interface ProviderManagerStore {
+  keys: Record<string, Array<{ id: string; key: string; name?: string; status: string; balance?: number | null; email?: string; lastChecked?: number }>>
+  routing?: Record<string, string>
+}
+
+const LS_PROVIDERS = 'arkxmotion.providers'
+const LS_ROUTING = 'arkxmotion.routing'
+const LS_ACTIVE_PROVIDER = 'arkxmotion.activeProvider'
+
+function loadProviderStore(): ProviderManagerStore {
+  if (typeof window === 'undefined') return { keys: {} }
+  try {
+    const raw = localStorage.getItem(LS_PROVIDERS)
+    if (!raw) return { keys: {} }
+    const parsed = JSON.parse(raw)
+    // Direct format from providerManager: { weavy: [...], wavespeed: [...], ... }
+    if (Array.isArray(parsed?.weavy)) return { keys: parsed }
+    // Zustand persist wrap: { state: { weavy: [...] } }
+    if (Array.isArray(parsed?.state?.weavy)) return { keys: parsed.state }
+    return { keys: {} }
+  } catch { return { keys: {} } }
+}
+
+function saveProviderStore(store: ProviderManagerStore) {
+  if (typeof window === 'undefined') return
+  try {
+    const raw = localStorage.getItem(LS_PROVIDERS)
+    if (raw) {
+      const data = JSON.parse(raw)
+      // Zustand persist wrap: { state: { keys: {...} } }
+      if (data?.state?.keys) { data.state.keys = store.keys; localStorage.setItem(LS_PROVIDERS, JSON.stringify(data)); return }
+    }
+    // Direct format: just write { weavy: [...], wavespeed: [...] }
+    localStorage.setItem(LS_PROVIDERS, JSON.stringify(store.keys))
+  } catch {}
+}
+
+function getWeavyKeys(): Array<{ id: string; key: string; name?: string; status: string; balance?: number | null; email?: string }> {
+  const store = loadProviderStore()
+  return store.keys?.weavy || []
+}
+
+function updateWeavyKey(update: { id: string } & Partial<{ key: string; status: string; balance: number | null; email: string; lastChecked: number }>) {
+  const store = loadProviderStore()
+  const keys = store.keys?.weavy || []
+  const idx = keys.findIndex(k => k.id === update.id)
+  if (idx >= 0) { Object.assign(keys[idx], update) }
+  else { keys.push(update as any) }
+  store.keys.weavy = keys
+  saveProviderStore(store)
+}
+
+function removeWeavyKey(id: string) {
+  const store = loadProviderStore()
+  if (store.keys?.weavy) {
+    store.keys.weavy = store.keys.weavy.filter(k => k.id !== id)
+    saveProviderStore(store)
+  }
+}
+
+function getActiveWeavyId(): string | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const routing = localStorage.getItem(LS_ROUTING)
+    if (routing) {
+      const data = JSON.parse(routing)
+      const active = data?.motion || data?.['image-to-video']
+      if (active === 'weavy') return null // Don't use routing-based active ID for weavy token selection
+    }
+  } catch {}
+  return null
+}
+
+async function refreshWeavyAccessToken(refreshToken: string): Promise<{ accessToken: string; refreshToken: string; expiresIn: number; uid?: string } | null> {
   try {
     const r = await fetch(`https://securetoken.googleapis.com/v1/token?key=${FIREBASE_KEY}`, {
       method: 'POST',
@@ -10,40 +85,84 @@ async function refreshWeavyAccessToken(refreshToken: string): Promise<string | n
       body: `grant_type=refresh_token&refresh_token=${encodeURIComponent(refreshToken)}`,
       signal: AbortSignal.timeout(10000),
     })
-    const data = await r.json().catch(() => ({}))
-    if (!r.ok || !data.id_token) return null
-    return data.id_token
-  } catch { return null }
-}
-
-async function getWeavyAccessToken(token: string): Promise<string> {
-  const isJwt = /^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token)
-  if (isJwt) return token
-  const refreshed = await refreshWeavyAccessToken(token)
-  if (refreshed) {
-    return refreshed
-  }
-  throw Error('Token Weavy expired. Silakan update token di Providers.')
-}
-
-async function refreshWeavyToken(refreshToken: string): Promise<{ accessToken: string; refreshToken: string; expiresIn: number } | null> {
-  try {
-    const r = await fetch(`https://securetoken.googleapis.com/v1/token?key=${FIREBASE_KEY}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `grant_type=refresh_token&refresh_token=${encodeURIComponent(refreshToken)}`,
-    })
     if (!r.ok) return null
-    const data = await r.json()
+    const data = await r.json().catch(() => ({}))
     if (!data.id_token) return null
     return {
       accessToken: data.id_token,
       refreshToken: data.refresh_token || refreshToken,
       expiresIn: Number(data.expires_in) || 3600,
+      uid: data.user_id,
     }
-  } catch {
-    return null
+  } catch { return null }
+}
+
+function isRefreshToken(token: string): boolean {
+  return !/^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token) && token.length > 40
+}
+
+function isTokenValid(key: { status?: string }): boolean {
+  return key.status !== 'invalid' && key.status !== 'expired' && key.status !== 'empty'
+}
+
+async function resolveWeavyAccessToken(refreshToken: string): Promise<string> {
+  const isJwt = /^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(refreshToken)
+  if (isJwt) return refreshToken
+  const refreshed = await refreshWeavyAccessToken(refreshToken)
+  if (refreshed) return refreshed.accessToken
+  throw Error('Token Weavy expired. Silakan update token di Providers.')
+}
+
+export async function getActiveWeavyAccessToken(): Promise<{ id: string; accessToken: string } | null> {
+  if (typeof window === 'undefined') return null
+  const keys = getWeavyKeys()
+  if (keys.length === 0) return null
+
+  // Sort: valid tokens first, then by balance descending
+  const sorted = [...keys].filter(isTokenValid).sort((a, b) => (b.balance ?? 0) - (a.balance ?? 0))
+
+  for (const entry of sorted) {
+    try {
+      const accessToken = await resolveWeavyAccessToken(entry.key)
+      return { id: entry.id, accessToken }
+    } catch { continue }
   }
+  return null
+}
+
+export async function selectWeavyTokenForCredits(minCredits: number, skipIds = new Set<string>()): Promise<{ token: { id: string; key: string; balance?: number | null }; accessToken: string } | null> {
+  if (typeof window === 'undefined') return null
+  const keys = getWeavyKeys()
+  const sorted = [...keys].filter(k => isTokenValid(k) && !skipIds.has(k.id)).sort((a, b) => (b.balance ?? 0) - (a.balance ?? 0))
+
+  for (const entry of sorted) {
+    try {
+      const accessToken = await resolveWeavyAccessToken(entry.key)
+      // Check balance
+      const credits = await fetchWeavyCreditsClient(accessToken)
+      updateWeavyKey({ id: entry.id, balance: credits, email: extractEmailFromJwt(accessToken) || undefined, lastChecked: Date.now(), status: credits !== null && credits <= 0 ? 'empty' : 'active' })
+      if (credits === null) continue
+      if (credits < minCredits) continue
+      return { token: entry, accessToken }
+    } catch { continue }
+  }
+  return null
+}
+
+export async function rotateWeavyToken(currentId: string): Promise<{ id: string; accessToken: string } | null> {
+  updateWeavyKey({ id: currentId, status: 'empty', balance: 0 })
+
+  const keys = getWeavyKeys().filter(k => k.id !== currentId && isTokenValid(k))
+  for (const entry of keys) {
+    try {
+      const accessToken = await resolveWeavyAccessToken(entry.key)
+      const credits = await fetchWeavyCreditsClient(accessToken)
+      updateWeavyKey({ id: entry.id, balance: credits, status: credits !== null && credits <= 0 ? 'empty' : 'active' })
+      if (credits !== null && credits <= 0) continue
+      return { id: entry.id, accessToken }
+    } catch { continue }
+  }
+  return null
 }
 
 function extractEmailFromJwt(token: string): string | null {
@@ -52,13 +171,76 @@ function extractEmailFromJwt(token: string): string | null {
     if (parts.length !== 3) return null
     const payload = JSON.parse(atob(parts[1]))
     return payload.email || payload.user_id || null
-  } catch {
-    return null
-  }
+  } catch { return null }
 }
 
-function isRefreshToken(token: string): boolean {
-  return !/^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token) && token.length > 40
+// Backward-compatible token resolver (for old-style callers)
+async function getWeavyAccessToken(token: string): Promise<string> {
+  return resolveWeavyAccessToken(token)
+}
+
+// ── Upload (matching production) ──
+
+export function compressImageForWeavy(file: File, maxDim = 1280, quality = 0.8): Promise<File> {
+  return new Promise(resolve => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const img = new Image()
+      img.onload = () => {
+        let w = img.width, h = img.height
+        if (w > maxDim) { h = h * maxDim / w; w = maxDim }
+        const canvas = document.createElement('canvas')
+        canvas.width = w; canvas.height = h
+        canvas.getContext('2d')!.drawImage(img, 0, 0, w, h)
+        canvas.toBlob(
+          blob => resolve(blob ? new File([blob], file.name, { type: 'image/jpeg' }) : file),
+          'image/jpeg', quality
+        )
+      }
+      img.onerror = () => resolve(file)
+      img.src = String(reader.result || '')
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
+export async function uploadWeavyAsset(file: File, filename: string, accessToken: string): Promise<any> {
+  const formData = new FormData()
+  formData.append('file', file, filename)
+  if (file.type) formData.append('type', file.type)
+  const res = await fetch(`${WEAVY_API}/v1/assets/upload`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: formData,
+    signal: AbortSignal.timeout(60000),
+  })
+  if (!res.ok) throw Error(`Weavy upload failed (${res.status})`)
+  return await res.json()
+}
+
+export async function uploadWeavyAssetWithRetry(file: File, filename: string, accessToken: string, maxRetries = 2): Promise<any> {
+  let currentFile = file
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await uploadWeavyAsset(currentFile, filename, accessToken)
+    } catch (err: any) {
+      if (attempt >= maxRetries) throw err
+      if (err.message?.includes('413') && currentFile.type.startsWith('image/')) {
+        currentFile = await compressImageForWeavy(currentFile, 800, 0.5)
+      }
+      await new Promise(r => setTimeout(r, 1500))
+    }
+  }
+  throw Error('Upload retries exhausted')
+}
+
+export function resolveWeavyAssetUrl(asset: any, type: 'image' | 'video' = 'image'): string {
+  if (typeof asset === 'string') return asset
+  if (asset?.url) return asset.url
+  if (asset?.download) return asset.download
+  if (asset?.id) return `https://media.weavy.ai/${type}/upload/uploads/${asset.id}.${type === 'video' ? 'mp4' : 'jpg'}`
+  if (asset?.raw?.url) return asset.raw.url
+  throw Error('Weavy: cannot resolve asset URL')
 }
 
 export async function fetchWeavyCreditsClient(accessToken: string): Promise<number | null> {
@@ -104,7 +286,7 @@ export async function fetchWeavyCreditsClient(accessToken: string): Promise<numb
 
 async function resolveAndFetchCredits(token: string): Promise<{ ok: boolean; credits: number | null; email?: string }> {
   if (isRefreshToken(token)) {
-    const refreshed = await refreshWeavyToken(token)
+    const refreshed = await refreshWeavyAccessToken(token)
     if (refreshed?.accessToken) {
       return { ok: true, credits: await fetchWeavyCreditsClient(refreshed.accessToken), email: extractEmailFromJwt(refreshed.accessToken) || undefined }
     }
@@ -117,6 +299,7 @@ export interface WeavyGenerateParams {
   model: string
   prompt: string
   imageUrl?: string
+  videoUrl?: string
   aspectRatio?: string
   duration?: number
   negativePrompt?: string
@@ -325,8 +508,8 @@ function buildImageNode(modelKey: string, prompt: string, quality: string, ratio
 }
 
 export async function submitWeavyVideo(params: WeavyGenerateParams): Promise<WeavyGenerateResult> {
-  const { token, model, prompt, imageUrl, aspectRatio = '9:16', duration = 5, negativePrompt, quality } = params
-  const payload = { model: resolveModel(model), prompt: prompt.trim(), imageUrl: imageUrl || null, aspectRatio: resolveAspectRatio(aspectRatio), duration, negativePrompt: negativePrompt?.trim() || null, quality: quality || null }
+  const { token, model, prompt, imageUrl, videoUrl, aspectRatio = '9:16', duration = 5, negativePrompt, quality } = params
+  const payload = { model: resolveModel(model), prompt: prompt.trim(), imageUrl: imageUrl || null, videoUrl: videoUrl || null, aspectRatio: resolveAspectRatio(aspectRatio), duration, negativePrompt: negativePrompt?.trim() || null, quality: quality || null }
   try {
     const res = await fetch(WEAVY_PROXY, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Weavy-Token': token }, body: JSON.stringify({ action: 'generate', payload }) })
     const data = await res.json().catch(() => null)
@@ -859,49 +1042,295 @@ async function compressImageIfNeeded(file: File, maxDim = 2048, quality = 0.9): 
   })
 }
 
-async function uploadWeavyAsset(file: File, accessToken: string, onLog?: (msg: string) => void): Promise<any> {
-  const formData = new FormData()
-  formData.append('file', file)
-  formData.append('type', file.type || 'image/jpeg')
-  onLog?.(`Upload ke Weavy...`)
-  const res = await fetch(`${WEAVY_API}/v1/assets/upload`, {
+export interface WeavyMotionControlParams {
+  modelKey: string
+  imageUrl: string
+  videoUrl: string
+  orientation?: 'video' | 'image'
+  keepSound?: boolean
+  prompt?: string
+  accessToken?: string
+  onProgress?: (status: string, pct?: number) => void
+}
+
+export interface WeavyMotionControlResult {
+  ok: boolean
+  videoUrl?: string
+  error?: string
+}
+
+function buildWeavyMotionNodes(params: {
+  imageUrl: string
+  videoUrl: string
+  orientation: string
+  keepSound: boolean
+  modelKey: string
+  prompt?: string
+}): { nodes: any[]; edges: any[]; modelId: string } {
+  const isPro = /\/pro\//i.test(params.modelKey)
+  const isV3 = /v3/i.test(params.modelKey)
+  const model = isPro ? 'Pro' : 'Standard'
+  const version = isV3 ? 'V3' : 'V2.6'
+  const modelId = 'fal-ai/kling-Video/v2.6/standard/motion-control'
+
+  const now = Date.now()
+  const uid = () => Math.random().toString(36).substring(2, 8)
+  const imgNodeId = `n_${now}_img`
+  const vidNodeId = `n_${now}_vid`
+  const modelNodeId = `n_${now}_mdl`
+
+  const imgNode = {
+    id: imgNodeId, type: 'import', dragHandle: '.node-header', owner: null, visibility: null, isModel: false,
+    data: {
+      handles: { output: { file: { type: 'any', label: 'File', order: 0, format: 'uri', description: 'The uploaded file' } } },
+      name: 'File', description: null, color: 'Yambo_Blue', dark_color: 'Yambo_Blue_Dark', border_color: 'Yambo_Blue_Stroke',
+      files: [{ type: 'image', url: params.imageUrl, publicId: 'uploads/' + uid(), id: uid(), name: 'image.jpg', insertionOrder: 0 }],
+      cameraLocked: false, selectedIndex: 0,
+      result: { type: 'image', url: params.imageUrl, publicId: 'uploads/' + uid(), id: uid(), name: 'image.jpg', insertionOrder: 0 },
+      output: { file: { type: 'image', url: params.imageUrl, publicId: 'uploads/' + uid(), id: uid(), name: 'image.jpg', insertionOrder: 0 } },
+      version: 3,
+    },
+    position: { x: 80, y: 200 }, width: 460, height: 400,
+  }
+
+  const vidNode = {
+    id: vidNodeId, type: 'import', dragHandle: '.node-header', owner: null, visibility: null, isModel: false,
+    data: {
+      handles: { output: { file: { type: 'any', label: 'File', order: 0, format: 'uri', description: 'The uploaded file' } } },
+      name: 'File', description: null, color: 'Yambo_Blue', dark_color: 'Yambo_Blue_Dark', border_color: 'Yambo_Blue_Stroke',
+      files: [{ type: 'video', url: params.videoUrl, publicId: 'uploads/' + uid(), id: uid(), name: 'video.mp4', insertionOrder: 0 }],
+      cameraLocked: false, selectedIndex: 0,
+      result: { type: 'video', url: params.videoUrl, publicId: 'uploads/' + uid(), id: uid(), name: 'video.mp4', insertionOrder: 0 },
+      output: { file: { type: 'video', url: params.videoUrl, publicId: 'uploads/' + uid(), id: uid(), name: 'video.mp4', insertionOrder: 0 } },
+      version: 3,
+    },
+    position: { x: 80, y: 650 }, width: 460, height: 400,
+  }
+
+  const modelParams: any = { model, version, keep_original_sound: params.keepSound, character_orientation: params.orientation }
+  if (params.prompt) modelParams.prompt = params.prompt
+
+  const modelNode = {
+    id: modelNodeId, type: 'custommodelV2', dragHandle: '.node-header', owner: null, visibility: 'private', isModel: true,
+    data: {
+      handles: {
+        input: {
+          prompt: { id: 'input-prompt', type: 'text', label: 'prompt', format: 'text', required: false },
+          image_url: { id: 'input-image_url', type: 'image', label: 'image', format: 'text', required: true },
+          video_url: { id: 'input-video_url', type: 'any', label: 'video', format: 'text', required: true },
+        },
+        output: { result: { id: 'output-result', type: 'video', label: 'result', order: 0, format: 'uri' } },
+      },
+      name: 'Kling Motion Control', description: 'Transfer movements from a reference video to any character image.',
+      color: 'Red',
+      menu: { icon: 'EmojiObjectsIcon', isModel: true, displayName: 'Kling Motion Control' },
+      model: { name: modelId, service: 'fal_imported', version: modelId },
+      params: modelParams,
+      schema: {
+        model: { type: 'enum', order: 0, title: 'Model', default: 'Pro', options: ['Pro', 'Standard'] },
+        prompt: { type: 'string', title: 'Prompt', required: false },
+        version: { type: 'enum', order: -1, title: 'Version', default: 'V2.6', options: ['V2.6', 'V3'] },
+        keep_original_sound: { type: 'boolean', title: 'Keep Original Sound', default: true, required: false },
+        character_orientation: { type: 'enum', title: 'Character Orientation', options: ['image', 'video'], required: true },
+      },
+      version: 3,
+      kind: {
+        type: 'wildcard',
+        model: { type: 'predefined', name: modelId, version: modelId, service: 'fal_imported', description: 'Transfer movements from a reference video to any character image.' },
+        inputs: [
+          [{ id: 'prompt', title: 'Prompt', validTypes: ['text'], required: false }, null],
+          [{ id: 'image_url', title: 'image', validTypes: ['image'], required: true }, { nodeId: imgNodeId, outputId: 'file' }],
+          [{ id: 'video_url', title: 'video', validTypes: ['image', 'video', 'audio', '3D', 'text', 'number', 'boolean', 'seed', 'array', 'lora', 'kling-element', 'runway-aleph2-keyframe'], required: true }, { nodeId: vidNodeId, outputId: 'file' }],
+        ],
+        parameters: [
+          [{ id: 'version', title: 'Version', description: 'Kling Motion Control version', constraint: { type: 'enum', options: ['V2.6', 'V3'] }, defaultValue: { type: 'string', value: 'V2.6' } }, { type: 'value', data: { type: 'string', value: version } }],
+          [{ id: 'model', title: 'Model', description: 'Kling Motion Control type', constraint: { type: 'enum', options: ['Pro', 'Standard'] }, defaultValue: { type: 'string', value: 'Pro' } }, { type: 'value', data: { type: 'string', value: model } }],
+          [{ id: 'keep_original_sound', title: 'Keep Original Sound', description: 'Whether to keep the original sound from the reference video.', constraint: { type: 'boolean' }, defaultValue: { type: 'boolean', value: true } }, { type: 'value', data: { type: 'boolean', value: params.keepSound } }],
+          [{ id: 'character_orientation', title: 'Character Orientation', description: "Controls whether the output character's orientation matches the reference image or video.", constraint: { type: 'enum', options: ['image', 'video'] }, defaultValue: { type: 'string', value: 'image' } }, { type: 'value', data: { type: 'string', value: params.orientation } }],
+        ],
+        outputs: [{ id: 'result', title: 'result', description: 'Result video' }],
+      },
+      generations: [], selectedIndex: 0, cameraLocked: false, result: [], output: {}, selectedOutput: 0,
+    },
+    position: { x: 600, y: 400 }, width: 460, height: 560,
+  }
+
+  const edges = [
+    {
+      id: 'e-' + uid(), source: imgNodeId, target: modelNodeId,
+      sourceHandle: `${imgNodeId}-output-file`, targetHandle: `${modelNodeId}-input-image_url`,
+      type: 'custom', data: { sourceColor: 'Yambo_Blue', targetColor: 'Red', sourceHandleType: 'any', targetHandleType: 'image' },
+    },
+    {
+      id: 'e-' + uid(), source: vidNodeId, target: modelNodeId,
+      sourceHandle: `${vidNodeId}-output-file`, targetHandle: `${modelNodeId}-input-video_url`,
+      type: 'custom', data: { sourceColor: 'Yambo_Blue', targetColor: 'Red', sourceHandleType: 'any', targetHandleType: 'video' },
+    },
+  ]
+
+  return { nodes: [imgNode, vidNode, modelNode], edges, modelId }
+}
+
+async function createWeavyRecipe(accessToken: string): Promise<{ id: string; v3?: string }> {
+  const res = await fetch(`${WEAVY_API}/v1/recipes/create`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${accessToken}` },
-    body: formData,
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ scope: 'PERSONAL' }),
+    signal: AbortSignal.timeout(15000),
+  })
+  if (!res.ok) throw Error(`Create recipe failed (${res.status})`)
+  const data = await res.json()
+  return { id: data?.id || data?.recipeId, v3: data?.v3 }
+}
+
+async function saveWeavyRecipe(recipeId: string, nodes: any[], edges: any[], v3: string, accessToken: string): Promise<void> {
+  const res = await fetch(`${WEAVY_API}/v1/recipes/${recipeId}/save`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ nodes, edges, v3: v3 || '', lastUpdatedAt: new Date().toISOString() }),
+    signal: AbortSignal.timeout(15000),
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw Error(`Save recipe failed (${res.status}): ${text.substring(0, 200)}`)
+  }
+}
+
+async function approveWeavyModel(modelId: string, accessToken: string): Promise<void> {
+  try {
+    await fetch(`${WEAVY_API}/v1/workspaces/models/approve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ modelIds: [modelId] }),
+      signal: AbortSignal.timeout(10000),
+    })
+  } catch {}
+}
+
+async function executeWeavyBatch(recipeId: string, nodes: any[], edges: any[], accessToken: string, model?: string): Promise<{ batchId: string }> {
+  const body: any = { numberOfRuns: 1, nodes, edges }
+  if (model) body.model = model
+  const res = await fetch(`${WEAVY_API}/v1/batches/recipes/${recipeId}/execute`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(body),
     signal: AbortSignal.timeout(30000),
   })
-  if (!res.ok) throw Error(`Weavy upload failed (${res.status})`)
-  return res.json()
+  const text = await res.text()
+  if (!res.ok) throw Error(`Execute failed (${res.status}): ${text.substring(0, 200)}`)
+  const data = JSON.parse(text)
+  const batchId = data?.batchId || data?.id
+  if (!batchId) throw Error('No batchId returned')
+  return { batchId }
 }
 
-function resolveWeavyAssetUrl(asset: any, type: 'image' | 'video' = 'image'): string {
-  if (!asset) throw Error('Weavy upload: no asset returned')
-  if (typeof asset === 'string') return asset
-  if (asset.url) return asset.url
-  if (asset.download) return asset.download
-  if (asset.id) {
-    return `https://media.weavy.ai/${type}/upload/uploads/${asset.publicId || asset.id}.${type === 'video' ? 'mp4' : 'jpg'}`
-  }
-  throw Error('Weavy: cannot resolve asset URL')
-}
-
-async function uploadWeavyAssetWithRetry(file: File, accessToken: string, onLog?: (msg: string) => void, maxRetries = 2): Promise<any> {
-  let currentFile = file
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+async function pollWeavyBatchVideo(recipeId: string, batchId: string, accessToken: string, opts?: {
+  inputVideoUrl?: string
+  onProgress?: (info: { attempt: number; status: string }) => void
+  maxAttempts?: number
+}): Promise<string | null> {
+  const maxAttempts = opts?.maxAttempts ?? 180
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const waitMs = attempt < 30 ? 8000 : attempt < 60 ? 10000 : 15000
+    await new Promise(r => setTimeout(r, waitMs))
     try {
-      return await uploadWeavyAsset(currentFile, accessToken, onLog)
-    } catch (err: any) {
-      onLog?.(`Upload error (attempt ${attempt + 1}): ${err.message}`)
-      if (attempt >= maxRetries) throw err
-      const msg = err.message
-      if (msg.includes('413') && currentFile.type.startsWith('image/')) {
-        currentFile = await compressImageIfNeeded(currentFile, 800, 0.5)
-        onLog?.(`Retry with compressed image...`)
+      const res = await fetch(`${WEAVY_API}/v1/batches/recipes/${recipeId}/batches/${batchId}/status`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        signal: AbortSignal.timeout(15000),
+      })
+      if (!res.ok) continue
+      const data = await res.json().catch(() => ({}))
+      const recipeRun = data?.recipeRuns?.[0]
+      const status = String(recipeRun?.status || data?.status || data?.state || 'unknown')
+
+      opts?.onProgress?.({ attempt: attempt + 1, status })
+
+      if (['completed', 'COMPLETED', 'done', 'success'].includes(status)) {
+        // Extract from nodeRuns (matching production exactly)
+        if (recipeRun?.nodeRuns) {
+          for (let i = recipeRun.nodeRuns.length - 1; i >= 0; i--) {
+            const nodeRun = recipeRun.nodeRuns[i]
+            const result = nodeRun.result
+            const results = Array.isArray(result) ? result : [result]
+            const urls = results
+              .map((r: any) => [r?.url, r?.video_url, nodeRun.output?.file?.url, nodeRun.output?.video_url, nodeRun.output?.url, ...(nodeRun.generations || []).map((g: any) => g.url || g.video_url)].filter(Boolean))
+              .flat()
+              .filter((u: string) => typeof u === 'string' && u.includes('.mp4') && !u.includes('/video/upload/v1781970233/') && u !== opts?.inputVideoUrl)
+            if (urls.length > 0) return urls[0]
+          }
+        }
+        // Fallback to direct output
+        return data?.output?.video_url || data?.output?.url || data?.video_url || data?.url || null
       }
-      await new Promise((r) => setTimeout(r, 1500))
+
+      if (['failed', 'FAILED', 'error', 'ERROR'].includes(status)) {
+        const nodeErrors = (recipeRun?.nodeRuns || []).map((nr: any) => nr.error || nr.errorMessage).filter(Boolean).join(' | ')
+        throw Error((data?.error || data?.message || 'Weavy generation failed') + (nodeErrors ? ` | ${nodeErrors}` : ''))
+      }
+    } catch (err: any) {
+      if (err.message?.includes('Weavy generation failed') || err.message?.includes('failed |') || attempt > 10) throw err
     }
   }
-  throw Error('Upload retries exhausted')
+  throw Error('Weavy timeout: generation took too long')
+}
+
+export async function submitWeavyMotionControl(params: WeavyMotionControlParams): Promise<WeavyMotionControlResult> {
+  const { modelKey, imageUrl, videoUrl, orientation = 'video', keepSound = true, prompt, accessToken: providedToken, onProgress } = params
+
+  // Use provided token or resolve from providerManager store
+  let currentAccessToken = providedToken || ''
+  let currentTokenId = ''
+  if (!providedToken) {
+    const tokenInfo = await selectWeavyTokenForCredits(0)
+    if (!tokenInfo) throw Error('Tidak ada Weavy token aktif. Tambahkan token di Providers.')
+    currentAccessToken = tokenInfo.accessToken
+    currentTokenId = tokenInfo.token.id
+  }
+
+  const MAX_ATTEMPTS = 8
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      onProgress?.(`Building recipe (attempt ${attempt})...`)
+
+      const { nodes, edges, modelId } = buildWeavyMotionNodes({ imageUrl, videoUrl, orientation, keepSound, modelKey, prompt })
+
+      // Step 1: Create recipe
+      const recipe = await createWeavyRecipe(currentAccessToken)
+      onProgress?.(`Recipe created: ${recipe.id}`)
+
+      // Step 2: Save recipe
+      await saveWeavyRecipe(recipe.id, nodes, edges, recipe.v3 || '', currentAccessToken)
+
+      // Step 3: Approve model
+      await approveWeavyModel(modelId, currentAccessToken)
+
+      // Step 4: Execute batch
+      const { batchId } = await executeWeavyBatch(recipe.id, nodes, edges, currentAccessToken)
+      onProgress?.(`Batch started: ${batchId}`)
+
+      // Step 5: Poll for result
+      const resultUrl = await pollWeavyBatchVideo(recipe.id, batchId, currentAccessToken, {
+        inputVideoUrl: videoUrl,
+        onProgress: (info) => onProgress?.(`Poll #${info.attempt}: ${info.status}`),
+      })
+
+      if (!resultUrl) throw Error('Weavy: no output URL after polling')
+      return { ok: true, videoUrl: resultUrl }
+    } catch (err: any) {
+      const msg = err.message || String(err)
+      if (/credit|balance|402|403|unauth/i.test(msg)) {
+        const rotated = await rotateWeavyToken(currentTokenId)
+        if (rotated) {
+          currentAccessToken = rotated.accessToken
+          currentTokenId = rotated.id
+          continue
+        }
+      }
+      if (attempt >= MAX_ATTEMPTS) return { ok: false, error: msg }
+      await new Promise(r => setTimeout(r, 2000 * attempt))
+    }
+  }
+  return { ok: false, error: 'Weavy: max attempts exhausted' }
 }
 
 function buildTopazUpscaleNodes(imageUrl: string, settings: TopazUpscaleSettings): { model: string; nodes: any[]; edges: any[] } {
@@ -1088,7 +1517,7 @@ export async function submitWeavyUpscale(params: { token: string; settings: Topa
   try {
     const { id: recipeId, v3 } = await createWeavyRecipe(accessToken)
     const { nodes, edges, model } = buildTopazUpscaleNodes(imageUrl, settings)
-    await saveWeavyRecipe(recipeId, { nodes, edges, v3 }, accessToken)
+    await saveWeavyRecipe(recipeId, nodes, edges, v3 || '', accessToken)
     await approveWeavyModel(model, accessToken)
     const execRes = await fetch(`${WEAVY_API}/v1/batches/recipes/${recipeId}/execute`, {
       method: 'POST',
@@ -1106,39 +1535,6 @@ export async function submitWeavyUpscale(params: { token: string; settings: Topa
   } catch (err: any) {
     return { ok: false, error: err.message }
   }
-}
-
-async function createWeavyRecipe(accessToken: string): Promise<{ id: string; v3?: string }> {
-  const res = await fetch(`${WEAVY_API}/v1/recipes/create`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
-    body: JSON.stringify({ scope: 'PERSONAL' }),
-    signal: AbortSignal.timeout(15000),
-  })
-  if (!res.ok) throw Error(`Create recipe failed (${res.status})`)
-  const data = await res.json()
-  return { id: data?.id || data?.recipeId, v3: data?.v3 }
-}
-
-async function saveWeavyRecipe(recipeId: string, recipeData: { nodes: any[]; edges: any[]; v3?: string }, accessToken: string): Promise<void> {
-  const res = await fetch(`${WEAVY_API}/v1/recipes/${recipeId}/save`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
-    body: JSON.stringify({ nodes: recipeData.nodes, edges: recipeData.edges, v3: recipeData.v3 || '', lastUpdatedAt: new Date().toISOString() }),
-    signal: AbortSignal.timeout(15000),
-  })
-  if (!res.ok) throw Error(`Save recipe failed (${res.status})`)
-}
-
-async function approveWeavyModel(modelId: string, accessToken: string): Promise<void> {
-  try {
-    await fetch(`${WEAVY_API}/v1/workspaces/models/approve`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
-      body: JSON.stringify({ modelIds: [modelId] }),
-      signal: AbortSignal.timeout(10000),
-    })
-  } catch {}
 }
 
 export async function pollWeavyUpscaleStatus(

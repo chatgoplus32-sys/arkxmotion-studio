@@ -171,12 +171,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (action === 'generate') {
       const payload = req.body?.payload || req.body
-      const { model, prompt, imageUrl, aspectRatio, duration, negativePrompt, quality } = payload || {}
+      const { model, prompt, imageUrl, videoUrl, aspectRatio, duration, negativePrompt, quality } = payload || {}
 
       const nodeData: any = {
         model: model || 'kling-2.1',
         prompt: prompt || '',
         image_url: imageUrl || null,
+        video_url: videoUrl || null,
         aspect_ratio: aspectRatio || '9:16',
         negative_prompt: negativePrompt || null,
         quality: quality || null,

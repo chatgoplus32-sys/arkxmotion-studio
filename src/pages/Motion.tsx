@@ -5,6 +5,7 @@ import { useProviderManager, type ProviderId } from '@/stores'
 import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
 import { useToastStore } from '@/stores/toastStore'
 import { uploadToCatbox, submitMotionControl, pollRoboneoI2V, checkRoboneoBalance, compressVideo, submitGoogleOmni, normalizeImage } from '@/lib/roboneo'
+import { submitWeavyMotionControl, uploadWeavyAssetWithRetry, resolveWeavyAssetUrl, getActiveWeavyAccessToken, compressImageForWeavy } from '@/lib/weavy'
 import { getRunningHubApiKey, submitRunningHubMotionControl, pollRunningHubTask } from '@/lib/runninghub'
 import { trimVideoFFmpeg } from '@/lib/ffmpeg-compress'
 import { getMagnificApiKey, submitMagnificMotion, pollMagnificMotion, type MagnificMotionModel } from '@/lib/magnific'
@@ -721,6 +722,89 @@ export default function MotionPage() {
             }
           } else if (isFramia) {
             throw new Error('Provider aktif Framia. Gunakan Generate → Framia untuk menjalankan node/canvas Framia secara langsung.')
+          } else if (provider === 'weavy' && slot.image && slot.video) {
+            try {
+              // Get fresh Weavy access token
+              const tokenInfo = await getActiveWeavyAccessToken()
+              if (!tokenInfo) throw Error('Tidak ada Weavy token aktif. Tambahkan token di Providers.')
+              const weavyToken = tokenInfo.accessToken
+
+              // Compress image if >8MB
+              let imageFile = slot.image
+              if (imageFile.size > 8 * 1024 * 1024) {
+                addLog(`#${slotNum} Compressing image...`)
+                updateSlotStatus(slot.id, 'uploading img...', 'Compressing...')
+                const compressed = await compressImageForWeavy(imageFile, 1280, 0.8)
+                imageFile = compressed
+              }
+
+              // Upload image directly to Weavy API
+              updateSlotStatus(slot.id, 'uploading img...')
+              addLog(`#${slotNum} Upload image to Weavy...`)
+              const imgAsset = await uploadWeavyAssetWithRetry(
+                imageFile,
+                `ref_img_${slotNum}_${Date.now()}.jpg`,
+                weavyToken
+              )
+              const imageUrl = resolveWeavyAssetUrl(imgAsset, 'image')
+              addLog(`#${slotNum} Image: ${imageUrl.slice(0, 60)}...`)
+
+              // Upload video directly to Weavy API
+              updateSlotStatus(slot.id, 'uploading vid...')
+              addLog(`#${slotNum} Upload video to Weavy...`)
+              const vidAsset = await uploadWeavyAssetWithRetry(
+                slot.video,
+                `ref_vid_${slotNum}_${Date.now()}.mp4`,
+                weavyToken
+              )
+              const videoUrl = resolveWeavyAssetUrl(vidAsset, 'video')
+              addLog(`#${slotNum} Video: ${videoUrl.slice(0, 60)}...`)
+
+              updateSlotStatus(slot.id, 'processing', 'submitting...')
+              addLog(`#${slotNum} Submit ke Weavy (${currentModel.label}) — recipe mode...`)
+
+              const result = await submitWeavyMotionControl({
+                modelKey,
+                imageUrl,
+                videoUrl,
+                orientation,
+                keepSound,
+                prompt: prompt.trim() || undefined,
+                onProgress: (status, pct) => {
+                  updateSlotStatus(slot.id, 'processing', pct ? `${status} ${pct}%` : status)
+                  addLog(`#${slotNum} ${status}`)
+                },
+              })
+              if (!result.ok || !result.videoUrl) throw Error(result.error || 'Submit failed')
+              const resultUrl = result.videoUrl
+
+              updateSlotStatus(slot.id, 'done')
+              addLog(`#${slotNum} Done: ${resultUrl.slice(0, 60)}...`, 'success')
+
+              addResult({
+                id: `weavy-${Date.now().toString(36)}`,
+                url: resultUrl,
+                prompt: prompt.trim() || '(no prompt)',
+                date: new Date().toISOString(),
+                page: 'motion',
+              })
+              setResults((prev) => [
+                {
+                  id: `weavy-${Date.now().toString(36)}`,
+                  url: resultUrl,
+                  prompt: prompt.trim() || '(no prompt)',
+                  date: new Date().toISOString(),
+                },
+                ...prev,
+              ])
+              completedCount++
+              successCount++
+            } catch (err: any) {
+              setCompressDialog(null)
+              updateSlotStatus(slot.id, 'error', err.message)
+              addLog(`#${slotNum} Error: ${err.message}`, 'error')
+              failCount++
+            }
           } else if (provider === 'runninghub' && slot.image && slot.video) {
             try {
               const runninghubKey = getRunningHubApiKey()
