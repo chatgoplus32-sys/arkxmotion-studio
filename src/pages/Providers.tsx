@@ -508,6 +508,7 @@ export default function ProvidersPage() {
     if (savedKeys.length === 0) return
     setChecking(true)
     const newStatusMap: typeof statusMap = {}
+    const providerKeys = keys[selectedProvider as ProviderId] || []
 
     for (let i = 0; i < savedKeys.length; i++) {
       const key = savedKeys[i]
@@ -517,6 +518,17 @@ export default function ProvidersPage() {
       const result = await handleCheckKey(key)
       newStatusMap[key] = result
       setStatusMap({ ...newStatusMap })
+
+      // Persist balance/status to provider store
+      const keyObj = providerKeys.find(k => k.key === key)
+      if (keyObj) {
+        const newStatus = result.state === 'active' ? 'active'
+          : result.state === 'empty' ? 'empty'
+          : result.state === 'invalid' ? 'invalid'
+          : result.state === 'limited' ? 'rate-limited'
+          : 'unknown'
+        updateKeyStatus(selectedProvider as ProviderId, keyObj.id, newStatus as any, result.balance)
+      }
 
       setProgress({
         show: true,
@@ -541,7 +553,7 @@ export default function ProvidersPage() {
         { label: 'Invalid / ditolak', value: invalidCount, tone: invalidCount ? 'bad' : 'muted' },
       ],
     })
-  }, [savedKeys, selectedProvider, handleCheckKey, currentConfig])
+  }, [savedKeys, selectedProvider, handleCheckKey, currentConfig, keys, updateKeyStatus])
 
   return (
     <PageContent>
