@@ -241,6 +241,18 @@ export async function withTokenRotation<T>(
             useProviderManager.getState().removeKey(provider, nextKey.id)
             console.log(`[token-rotation] ${provider} key "${nextKey.name}" removed - auth error (${err.message}). Trying next...`)
           }
+        } else if (provider === 'weavy') {
+          const errMsg = (err.message || '').toLowerCase()
+          if (errMsg.includes('insufficient') || errMsg.includes('credit')) {
+            useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'empty', 0)
+            console.log(`[token-rotation] ${provider} key "${nextKey.name}" credits habis (${err.message}). Marking empty, trying next...`)
+          } else if (errMsg.includes('unauthorized') || errMsg.includes('401') || errMsg.includes('invalid')) {
+            useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'invalid')
+            console.log(`[token-rotation] ${provider} key "${nextKey.name}" marked invalid (${err.message}). Trying next...`)
+          } else {
+            useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'invalid')
+            console.log(`[token-rotation] ${provider} key "${nextKey.name}" marked invalid (${err.message}). Trying next...`)
+          }
         } else {
           useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'invalid')
           console.log(`[token-rotation] ${provider} key "${nextKey.name}" marked invalid (${err.message}). Trying next...`)

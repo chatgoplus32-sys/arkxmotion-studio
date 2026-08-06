@@ -336,8 +336,19 @@ export interface WeavyStatusResult {
 
 export async function checkWeavyBalance(token: string): Promise<{ ok: boolean; balance?: number | null; email?: string; subscriptionType?: string; error?: string }> {
   try {
-    const result = await resolveAndFetchCredits(token)
-    return { ok: result.ok, balance: result.credits, email: result.email, subscriptionType: result.subscriptionType }
+    const res = await fetch(WEAVY_PROXY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Weavy-Token': token },
+      body: JSON.stringify({ action: 'balance' }),
+      signal: AbortSignal.timeout(15000),
+    })
+    const data = await res.json().catch(() => null)
+    if (!res.ok || !data?.ok) {
+      return { ok: false, balance: null, error: data?.error || `HTTP ${res.status}` }
+    }
+    const credits = data?.data?.credits
+    const email = data?.data?.email
+    return { ok: true, balance: credits ?? null, email: email || undefined, subscriptionType: undefined }
   } catch (err: any) {
     return { ok: false, balance: null, error: err.message }
   }
@@ -359,24 +370,16 @@ function resolveAspectRatio(ratio: string): string {
 
 function resolveModel(modelKey: string): string {
   const map: Record<string, string> = {
-    'kling-2.1': 'kling-2.1', 'kling-1.6-standard': 'kling-1.6-standard', 'kling-1.6-pro': 'kling-1.6-pro',
-    'kling-3-pro': 'kling-3-pro', 'sora-2': 'fal-ai/sora-2/image-to-video/pro', 'veo-3': 'veo-3', 'veo-3.1': 'veo-3.1',
-    'seedance': 'seedance', 'seedance-2': 'seedance-2', 'wan-i2v': 'wan-i2v', 'wan-t2v': 'wan-t2v',
-    'hailuo-02-pro': 'hailuo-02-pro',
+    'sora-2': 'fal-ai/sora-2/image-to-video/pro',
+    'grok-video': 'xai/grok-imagine-video/image-to-video',
+    'gemini-omni': 'google/gemini-omni-flash',
+    'seedance-mini': 'bytedance/seedance-2.0/mini/image-to-video',
   }
   return map[modelKey] || modelKey
 }
 
 function resolveImageModel(modelKey: string): { model: string; service: string } {
-  const map: Record<string, { model: string; service: string }> = {
-    'nanobanana2': { model: 'fal-ai/nano-banana-2/edit', service: 'fal_imported' },
-    'gptimage2': { model: 'openai/gpt-image-2', service: 'fal_imported' },
-    'seedream-v50-pro': { model: 'seedream-v50-pro', service: 'fal_imported' },
-    'seedream-5.0-pro': { model: 'seedream-v50-pro', service: 'fal_imported' },
-    'seedream5': { model: 'seedream-v50-pro', service: 'fal_imported' },
-    'gpt-image-2': { model: 'openai/gpt-image-2', service: 'fal_imported' },
-    'gemini-nano-banana-2': { model: 'fal-ai/nano-banana-2/edit', service: 'fal_imported' },
-  }
+  const map: Record<string, { model: string; service: string }> = {}
   return map[modelKey] || { model: modelKey, service: 'fal_imported' }
 }
 
@@ -559,6 +562,1175 @@ export async function pollWeavyStatus(token: string, batchId: string, onProgress
 
 export function isWeavyTokenError(msg: string): boolean {
   return /token|auth|log\s*in|login|expired|unauth|401|403|invalid.*token|token.*invalid|insufficient|balance|credit|quota|no output URL|output tidak ditemukan/i.test(msg)
+}
+
+// ── Sora 2 Pro (recipe-based workflow) ──
+
+export async function uploadToWeavy(token: string, file: File): Promise<string> {
+  const WEAVY_API = 'https://api.weavy.ai/api'
+  const fd = new FormData()
+  fd.append('file', file, file.name)
+  if (file.type) fd.append('type', file.type)
+
+  // Try direct browser upload first (bypasses Cloudflare proxy issues)
+  try {
+    const directRes = await fetch(`${WEAVY_API}/v1/assets/upload`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: fd,
+      signal: AbortSignal.timeout(60000),
+    })
+    const directText = await directRes.text()
+    let directData: any; try { directData = JSON.parse(directText) } catch { directData = null }
+    console.log(`[weavy] direct upload → ${directRes.status}`, directText.slice(0, 300))
+    if (directRes.ok && directData) {
+      const r = directData.result || directData
+      if (r?.download) return r.download
+      if (r?.url) return r.url
+      if (r?.id) return `https://media.weavy.ai/image/upload/uploads/${r.id}.jpg`
+    }
+  } catch (e: any) {
+    console.log(`[weavy] direct upload failed, trying proxy:`, e.message)
+  }
+
+  // Fallback: proxy upload
+  const res = await fetch(`${WEAVY_PROXY}?action=upload`, {
+    method: 'POST',
+    headers: { 'X-Weavy-Token': token },
+    body: fd,
+  })
+  const data = await res.json().catch(() => null)
+  if (!res.ok || !data?.ok) throw new Error(data?.error || `Upload failed HTTP ${res.status}`)
+  const result = data?.data?.result || data?.data
+  if (typeof result === 'string') return result
+  if (result?.url) return result.url
+  if (result?.download) return result.download
+  if (result?.id) return `https://media.weavy.ai/image/upload/uploads/${result.id}.jpg`
+  throw new Error('No upload URL returned')
+}
+
+export interface WeavySoraParams {
+  token: string
+  imageUrl: string
+  imageFile?: File
+  prompt?: string
+  duration?: number
+  resolution?: string
+  aspectRatio?: string
+}
+
+export interface WeavySoraResult {
+  ok: boolean
+  recipeId?: string
+  batchId?: string
+  error?: string
+  raw?: any
+}
+
+export async function submitWeavySora(params: WeavySoraParams): Promise<WeavySoraResult> {
+  const { token: refreshToken, imageUrl: fallbackUrl, imageFile, prompt, duration = 16, resolution = '720p', aspectRatio = '16:9' } = params
+  const model = 'fal-ai/sora-2/image-to-video/pro'
+  const mkId = () => Math.random().toString(36).substring(2, 8)
+  const n1 = 'n_' + Date.now() + '_img'
+  const n2 = 'n_' + Date.now() + '_model'
+
+  // Refresh token to get access token
+  const refreshed = await refreshWeavyAccessToken(refreshToken)
+  const at = refreshed?.accessToken || refreshToken
+
+  // Try uploading directly to Weavy from browser (like reference site)
+  let imageUrl = fallbackUrl
+  if (imageFile && at) {
+    try {
+      // Compress if needed (like reference site)
+      let uploadFile = imageFile
+      if (imageFile.size > 8 * 1024 * 1024) {
+        uploadFile = await compressImageForWeavy(imageFile, 1280, 0.7)
+        console.log(`[sora] compressed image (>8MB)`)
+      } else if (imageFile.size > 4 * 1024 * 1024) {
+        uploadFile = await compressImageForWeavy(imageFile, 1280, 0.85)
+        console.log(`[sora] compressed image (>4MB)`)
+      }
+      const fd = new FormData()
+      fd.append('file', uploadFile, uploadFile.name || 'image.jpg')
+      if (uploadFile.type) fd.append('type', uploadFile.type)
+      const uploadRes = await fetch(`${WEAVY_API}/v1/assets/upload`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${at}` },
+        body: fd,
+      })
+      const uploadText = await uploadRes.text()
+      let uploadData: any; try { uploadData = JSON.parse(uploadText) } catch { uploadData = null }
+      console.log(`[sora] direct upload → ${uploadRes.status}`, uploadText.slice(0, 300))
+      if (uploadRes.ok && uploadData) {
+        // Extract URL from Weavy upload response
+        const result = uploadData.result || uploadData
+        if (typeof result === 'string') imageUrl = result
+        else if (result.url) imageUrl = result.url
+        else if (result.download) imageUrl = result.download
+        else if (result.id) imageUrl = `https://media.weavy.ai/image/upload/uploads/${result.id}.jpg`
+        console.log(`[sora] Weavy upload URL:`, imageUrl)
+      } else {
+        console.warn(`[sora] Weavy upload failed (${uploadRes.status}), using fallback URL`)
+      }
+    } catch (e: any) {
+      console.warn(`[sora] Weavy upload error:`, e.message, 'using fallback URL')
+    }
+  }
+
+  const imgNode = {
+    id: n1, type: 'import', dragHandle: '.node-header', owner: null, visibility: null, isModel: false,
+    data: {
+      handles: { output: { file: { type: 'any', label: 'File', order: 0, format: 'uri' } } },
+      name: 'File', color: 'Yambo_Blue', dark_color: 'Yambo_Blue_Dark', border_color: 'Yambo_Blue_Stroke',
+      files: [{ type: 'image', url: imageUrl, publicId: 'uploads/' + mkId(), id: mkId(), name: 'image.jpg', insertionOrder: 0 }],
+      result: { type: 'image', url: imageUrl, publicId: 'uploads/' + mkId(), id: mkId(), name: 'image.jpg', insertionOrder: 0 },
+      output: { file: { type: 'image', url: imageUrl, publicId: 'uploads/' + mkId(), id: mkId(), name: 'image.jpg', insertionOrder: 0 } },
+      version: 3
+    },
+    position: { x: 80, y: 200 }, width: 460, height: 400
+  }
+
+  const params_: any = { duration: parseInt(String(duration)) || 16, resolution: resolution || '720p', aspect_ratio: aspectRatio || '16:9', delete_video: false }
+  if (prompt) params_.prompt = prompt
+
+  const modelNode = {
+    id: n2, type: 'custommodelV2', dragHandle: '.node-header', owner: null, visibility: 'private', isModel: true,
+    data: {
+      handles: {
+        input: { image_url: { id: 'input-image_url', type: 'image', label: 'image', format: 'text', required: true } },
+        output: { result: { id: 'output-result', type: 'video', label: 'result', order: 0, format: 'uri' } }
+      },
+      name: 'Sora 2 Pro',
+      color: 'Red', menu: { icon: 'EmojiObjectsIcon', isModel: true, displayName: 'Sora 2 Pro' },
+      model: { name: model, service: 'fal_imported', version: model },
+      params: params_,
+      version: 3,
+      kind: {
+        type: 'wildcard',
+        model: { type: 'predefined', name: model, version: model, service: 'fal_imported' },
+        inputs: [
+          [{ id: 'image_url', title: 'image', validTypes: ['image'], required: true }, { nodeId: n1, outputId: 'file' }]
+        ],
+        parameters: [],
+        outputs: [{ id: 'result', title: 'result', dataType: 'video' }]
+      },
+      generations: [], selectedIndex: 0, cameraLocked: false, result: [], output: {}, selectedOutput: 0
+    },
+    position: { x: 600, y: 300 }, width: 460, height: 500
+  }
+
+  const nodes = [imgNode, modelNode]
+  const edges = [{
+    id: 'e-' + mkId(), source: n1, target: n2,
+    sourceHandle: `${n1}-output-file`, targetHandle: `${n2}-input-image_url`,
+    type: 'custom', data: { sourceColor: 'Yambo_Blue', targetColor: 'Red' }
+  }]
+  const recipeData = { nodes, edges, model }
+
+  const hdrs = { Authorization: `Bearer ${at}`, 'Content-Type': 'application/json' } as any
+
+  const retryFetch = async (url: string, opts: any, retries = 3): Promise<Response> => {
+    for (let i = 0; i <= retries; i++) {
+      try {
+        const r = await fetch(url, opts)
+        if (r.ok || r.status < 500) return r
+        if (i < retries) await new Promise(r => setTimeout(r, 2000 * (i + 1)))
+      } catch (e: any) {
+        if (i >= retries) throw e
+        await new Promise(r => setTimeout(r, 2000 * (i + 1)))
+      }
+    }
+    throw new Error('retry exhausted')
+  }
+
+  try {
+    const cr = await retryFetch(`${WEAVY_API}/v1/recipes/create`, {
+      method: 'POST', headers: hdrs, body: JSON.stringify({ scope: 'PERSONAL' })
+    })
+    const crText = await cr.text()
+    let crData: any; try { crData = JSON.parse(crText) } catch { crData = null }
+    console.log(`[sora] create recipe → ${cr.status}`, crText.slice(0, 300))
+    if (!cr.ok || !crData) throw new Error(`Create recipe failed (${cr.status}): ${crText.slice(0, 200)}`)
+    const rid = crData.id || crData.recipeId
+
+    const sr = await retryFetch(`${WEAVY_API}/v1/recipes/${rid}/save`, {
+      method: 'POST', headers: hdrs,
+      body: JSON.stringify({ ...recipeData, v3: crData.v3 || '', lastUpdatedAt: new Date().toISOString() })
+    })
+    const srText = await sr.text()
+    console.log(`[sora] save recipe → ${sr.status}`, srText.slice(0, 200))
+    if (!sr.ok) throw new Error(`Save recipe failed (${sr.status}): ${srText.slice(0, 200)}`)
+
+    try {
+      await fetch(`${WEAVY_API}/v1/workspaces/models/approve`, {
+        method: 'POST', headers: hdrs, body: JSON.stringify({ modelIds: [model] })
+      })
+    } catch {}
+
+    const er = await retryFetch(`${WEAVY_API}/v1/batches/recipes/${rid}/execute`, {
+      method: 'POST', headers: hdrs,
+      body: JSON.stringify({ numberOfRuns: 1, ...recipeData })
+    })
+    const et = await er.text()
+    let erData: any; try { erData = JSON.parse(et) } catch { erData = null }
+    console.log(`[sora] execute → ${er.status}`, et.slice(0, 500))
+    if (!er.ok || !erData) throw new Error(`Execute failed (${er.status}): ${et.slice(0, 300)}`)
+    const bid = erData.batchId || erData.id
+    if (!bid) throw new Error('No batchId: ' + et.slice(0, 200))
+
+    return { ok: true, recipeId: rid, batchId: bid, raw: erData }
+  } catch (err: any) {
+    return { ok: false, error: err.message }
+  }
+}
+
+function extractSoraVideoUrl(data: any, inputImageUrl?: string): string | null {
+  // Check recipeRuns[0].nodeRuns for video URL
+  if (data?.recipeRuns?.[0]?.nodeRuns) {
+    const nodeRuns = data.recipeRuns[0].nodeRuns
+    for (let i = nodeRuns.length - 1; i >= 0; i--) {
+      const nr = nodeRuns[i]
+      let ro = nr.result
+      if (Array.isArray(ro) && ro.length > 0) ro = ro[0]
+      const urls = [
+        ro?.url, ro?.video_url,
+        nr.output?.file?.url, nr.output?.video_url, nr.output?.url,
+        ...(nr.generations || []).map((g: any) => g.url || g.video_url)
+      ].filter((u: any) => u && typeof u === 'string' && u.includes('.mp4') && u !== inputImageUrl)
+      if (urls.length > 0) return urls[0]
+    }
+  }
+  // Fallback
+  return data?.output?.video_url || data?.output?.url || data?.video_url || data?.url || null
+}
+
+export async function pollWeavySoraStatus(
+  token: string,
+  recipeId: string,
+  batchId: string,
+  onProgress?: (status: string, pct: number) => void,
+  timeoutMs = 3600000,
+  inputImageUrl?: string,
+): Promise<string> {
+  const startTime = Date.now()
+  let lastLog = ''
+  let pollCount = 0
+
+  // Refresh token to get access token
+  const refreshed = await refreshWeavyAccessToken(token)
+  let at = refreshed?.accessToken || token
+
+  while (Date.now() - startTime < timeoutMs) {
+    const delay = pollCount < 30 ? 8000 : pollCount < 60 ? 10000 : 15000
+    await new Promise((r) => setTimeout(r, delay))
+    pollCount++
+
+    try {
+      if (pollCount > 0 && pollCount % 10 === 0) {
+        try {
+          const r2 = await refreshWeavyAccessToken(token)
+          if (r2?.accessToken) at = r2.accessToken
+        } catch {}
+      }
+
+      const res = await fetch(`${WEAVY_API}/v1/batches/recipes/${recipeId}/batches/${batchId}/status`, {
+        headers: { Authorization: `Bearer ${at}` },
+      })
+      if (!res.ok) continue
+      const d = await res.json().catch(() => null)
+      if (!d) continue
+
+      const st = (d.recipeRuns?.[0]?.status || d.status || d.state || '').toLowerCase()
+      const elapsedSec = Math.round((Date.now() - startTime) / 1000)
+      const pct = Math.min(95, Math.round((pollCount / 120) * 95))
+      onProgress?.(st || 'processing', pct)
+
+      const logEntry = `poll #${pollCount} (${elapsedSec}s) status=${st} pct=${pct}`
+      if (logEntry !== lastLog) { lastLog = logEntry; console.log(`[weavy-sora] ${logEntry}`) }
+
+      if (st === 'completed' || st === 'COMPLETED' || st === 'done' || st === 'success') {
+        const videoUrl = extractSoraVideoUrl(d, inputImageUrl)
+        if (videoUrl) return videoUrl
+        console.log(`[weavy-sora] task done but no url:`, JSON.stringify(d, null, 2).slice(0, 2000))
+        throw new Error('Sora: task completed but no video URL found')
+      }
+
+      if (st === 'failed' || st === 'FAILED' || st === 'error') {
+        const fullResp = JSON.stringify(d).slice(0, 1200)
+        console.log(`[weavy-sora] FULL FAILED RESPONSE:`, fullResp)
+        const ne = d.recipeRuns?.[0]?.nodeRuns?.map((nr: any) => `${nr.status || '?'}:${JSON.stringify(nr.error || nr.output || nr.result || {}).slice(0, 300)}`).join(' | ') || ''
+        throw new Error((d.error || d.message || 'Generation failed') + (ne ? ' | ' + ne : ''))
+      }
+    } catch (err: any) {
+      if (/timeout|fetch|network/i.test(err.message)) { console.log(`[weavy-sora] network error, retrying:`, err.message); continue }
+      if (/failed|insufficient|error/i.test(err.message)) throw err
+      if (pollCount > 10) throw err
+    }
+  }
+  throw new Error('Sora timeout')
+}
+
+export interface WeavyGrokVideoParams {
+  token: string
+  imageUrl: string
+  imageFile?: File
+  prompt?: string
+  duration?: number
+  resolution?: string
+  aspectRatio?: string
+}
+
+export interface WeavyGrokVideoResult {
+  ok: boolean
+  recipeId?: string
+  batchId?: string
+  error?: string
+  raw?: any
+}
+
+export async function submitWeavyGrokVideo(params: WeavyGrokVideoParams): Promise<WeavyGrokVideoResult> {
+  const { token: refreshToken, imageUrl: fallbackUrl, imageFile, prompt, duration = 10, resolution = '720p', aspectRatio = '16:9' } = params
+  const model = 'xai/grok-imagine-video/image-to-video'
+  const mkId = () => Math.random().toString(36).substring(2, 8)
+  const n1 = 'n_' + Date.now() + '_img'
+  const n2 = 'n_' + Date.now() + '_model'
+
+  const refreshed = await refreshWeavyAccessToken(refreshToken)
+  const at = refreshed?.accessToken || refreshToken
+
+  let imageUrl = fallbackUrl
+  if (imageFile && at) {
+    try {
+      let uploadFile = imageFile
+      if (imageFile.size > 8 * 1024 * 1024) {
+        uploadFile = await compressImageForWeavy(imageFile, 1280, 0.7)
+      } else if (imageFile.size > 4 * 1024 * 1024) {
+        uploadFile = await compressImageForWeavy(imageFile, 1280, 0.85)
+      }
+      const fd = new FormData()
+      fd.append('file', uploadFile, uploadFile.name || 'image.jpg')
+      if (uploadFile.type) fd.append('type', uploadFile.type)
+      const uploadRes = await fetch(`${WEAVY_API}/v1/assets/upload`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${at}` },
+        body: fd,
+      })
+      const uploadText = await uploadRes.text()
+      let uploadData: any; try { uploadData = JSON.parse(uploadText) } catch { uploadData = null }
+      console.log(`[grokvid] direct upload → ${uploadRes.status}`, uploadText.slice(0, 300))
+      if (uploadRes.ok && uploadData) {
+        const result = uploadData.result || uploadData
+        if (typeof result === 'string') imageUrl = result
+        else if (result.url) imageUrl = result.url
+        else if (result.download) imageUrl = result.download
+        else if (result.id) imageUrl = `https://media.weavy.ai/image/upload/uploads/${result.id}.jpg`
+        console.log(`[grokvid] Weavy upload URL:`, imageUrl)
+      }
+    } catch (e: any) {
+      console.warn(`[grokvid] Weavy upload error:`, e.message)
+    }
+  }
+
+  const imgNode = {
+    id: n1, type: 'import', dragHandle: '.node-header', owner: null, visibility: null, isModel: false,
+    data: {
+      handles: { output: { file: { type: 'any', label: 'File', order: 0, format: 'uri' } } },
+      name: 'File', color: 'Yambo_Blue', dark_color: 'Yambo_Blue_Dark', border_color: 'Yambo_Blue_Stroke',
+      files: [{ type: 'image', url: imageUrl, publicId: 'uploads/' + mkId(), id: mkId(), name: 'image.jpg', insertionOrder: 0 }],
+      result: { type: 'image', url: imageUrl, publicId: 'uploads/' + mkId(), id: mkId(), name: 'image.jpg', insertionOrder: 0 },
+      output: { file: { type: 'image', url: imageUrl, publicId: 'uploads/' + mkId(), id: mkId(), name: 'image.jpg', insertionOrder: 0 } },
+      version: 3
+    },
+    position: { x: 80, y: 200 }, width: 460, height: 400
+  }
+
+  const params_: any = { duration: parseInt(String(duration)) || 10, resolution: resolution || '720p', aspect_ratio: aspectRatio || '16:9' }
+  if (prompt) params_.prompt = prompt
+
+  const modelNode = {
+    id: n2, type: 'custommodelV2', dragHandle: '.node-header', owner: null, visibility: 'private', isModel: true,
+    data: {
+      handles: {
+        input: {
+          image_url: { id: 'input-image_url', type: 'image', label: 'image', format: 'text', required: true },
+          prompt: { id: 'input-prompt', type: 'text', label: 'prompt', format: 'text', required: true }
+        },
+        output: { result: { id: 'output-result', type: 'video', label: 'result', order: 0, format: 'uri' } }
+      },
+      name: 'Grok Imagine Video v1.5 I2V',
+      color: 'Red', menu: { icon: 'EmojiObjectsIcon', isModel: true, displayName: 'Grok Imagine Video v1.5 I2V' },
+      model: { name: model, service: 'fal_imported', version: model },
+      params: params_,
+      version: 3,
+      kind: {
+        type: 'wildcard',
+        model: { type: 'predefined', name: model, version: model, service: 'fal_imported' },
+        inputs: [
+          [{ id: 'image_url', title: 'image', validTypes: ['image'], required: true }, { nodeId: n1, outputId: 'file' }],
+          [{ id: 'prompt', title: 'prompt', validTypes: ['text'], required: true }, null]
+        ],
+        parameters: [],
+        outputs: [{ id: 'result', title: 'result', dataType: 'video' }]
+      },
+      generations: [], selectedIndex: 0, cameraLocked: false, result: [], output: {}, selectedOutput: 0
+    },
+    position: { x: 600, y: 300 }, width: 460, height: 500
+  }
+
+  const nodes = [imgNode, modelNode]
+  const edges = [{
+    id: 'e-' + mkId(), source: n1, target: n2,
+    sourceHandle: `${n1}-output-file`, targetHandle: `${n2}-input-image_url`,
+    type: 'custom', data: { sourceColor: 'Yambo_Blue', targetColor: 'Red' }
+  }]
+  const recipeData = { nodes, edges, model }
+
+  const hdrs = { Authorization: `Bearer ${at}`, 'Content-Type': 'application/json' } as any
+
+  const retryFetch = async (url: string, opts: any, retries = 3): Promise<Response> => {
+    for (let i = 0; i <= retries; i++) {
+      try {
+        const r = await fetch(url, opts)
+        if (r.ok || r.status < 500) return r
+        if (i < retries) await new Promise(r => setTimeout(r, 2000 * (i + 1)))
+      } catch (e: any) {
+        if (i >= retries) throw e
+        await new Promise(r => setTimeout(r, 2000 * (i + 1)))
+      }
+    }
+    throw new Error('retry exhausted')
+  }
+
+  try {
+    const cr = await retryFetch(`${WEAVY_API}/v1/recipes/create`, {
+      method: 'POST', headers: hdrs, body: JSON.stringify({ scope: 'PERSONAL' })
+    })
+    const crText = await cr.text()
+    let crData: any; try { crData = JSON.parse(crText) } catch { crData = null }
+    console.log(`[grokvid] create recipe → ${cr.status}`, crText.slice(0, 300))
+    if (!cr.ok || !crData) throw new Error(`Create recipe failed (${cr.status}): ${crText.slice(0, 200)}`)
+    const rid = crData.id || crData.recipeId
+
+    const sr = await retryFetch(`${WEAVY_API}/v1/recipes/${rid}/save`, {
+      method: 'POST', headers: hdrs,
+      body: JSON.stringify({ ...recipeData, v3: crData.v3 || '', lastUpdatedAt: new Date().toISOString() })
+    })
+    const srText = await sr.text()
+    console.log(`[grokvid] save recipe → ${sr.status}`, srText.slice(0, 200))
+    if (!sr.ok) throw new Error(`Save recipe failed (${sr.status}): ${srText.slice(0, 200)}`)
+
+    try {
+      await fetch(`${WEAVY_API}/v1/workspaces/models/approve`, {
+        method: 'POST', headers: hdrs, body: JSON.stringify({ modelIds: [model] })
+      })
+    } catch {}
+
+    const er = await retryFetch(`${WEAVY_API}/v1/batches/recipes/${rid}/execute`, {
+      method: 'POST', headers: hdrs,
+      body: JSON.stringify({ numberOfRuns: 1, ...recipeData })
+    })
+    const et = await er.text()
+    let erData: any; try { erData = JSON.parse(et) } catch { erData = null }
+    console.log(`[grokvid] execute → ${er.status}`, et.slice(0, 500))
+    if (!er.ok || !erData) throw new Error(`Execute failed (${er.status}): ${et.slice(0, 300)}`)
+    const bid = erData.batchId || erData.id
+    if (!bid) throw new Error('No batchId: ' + et.slice(0, 200))
+
+    return { ok: true, recipeId: rid, batchId: bid, raw: erData }
+  } catch (err: any) {
+    return { ok: false, error: err.message }
+  }
+}
+
+export async function pollWeavyGrokVideoStatus(
+  token: string,
+  recipeId: string,
+  batchId: string,
+  onProgress?: (status: string, pct: number) => void,
+  timeoutMs = 3600000,
+  inputImageUrl?: string,
+): Promise<string> {
+  const startTime = Date.now()
+  let lastLog = ''
+  let pollCount = 0
+
+  const refreshed = await refreshWeavyAccessToken(token)
+  let at = refreshed?.accessToken || token
+
+  while (Date.now() - startTime < timeoutMs) {
+    const delay = pollCount < 30 ? 8000 : pollCount < 60 ? 10000 : 15000
+    await new Promise((r) => setTimeout(r, delay))
+    pollCount++
+
+    try {
+      if (pollCount > 0 && pollCount % 10 === 0) {
+        try {
+          const r2 = await refreshWeavyAccessToken(token)
+          if (r2?.accessToken) at = r2.accessToken
+        } catch {}
+      }
+
+      const res = await fetch(`${WEAVY_API}/v1/batches/recipes/${recipeId}/batches/${batchId}/status`, {
+        headers: { Authorization: `Bearer ${at}` },
+      })
+      if (!res.ok) continue
+      const d = await res.json().catch(() => null)
+      if (!d) continue
+
+      const st = (d.recipeRuns?.[0]?.status || d.status || d.state || '').toLowerCase()
+      const elapsedSec = Math.round((Date.now() - startTime) / 1000)
+      const pct = Math.min(95, Math.round((pollCount / 120) * 95))
+      onProgress?.(st || 'processing', pct)
+
+      const logEntry = `poll #${pollCount} (${elapsedSec}s) status=${st} pct=${pct}`
+      if (logEntry !== lastLog) { lastLog = logEntry; console.log(`[weavy-grokvid] ${logEntry}`) }
+
+      if (st === 'completed' || st === 'COMPLETED' || st === 'done' || st === 'success') {
+        const videoUrl = extractSoraVideoUrl(d, inputImageUrl)
+        if (videoUrl) return videoUrl
+        console.log(`[weavy-grokvid] task done but no url:`, JSON.stringify(d, null, 2).slice(0, 2000))
+        throw new Error('GrokVideo: task completed but no video URL found')
+      }
+
+      if (st === 'failed' || st === 'FAILED' || st === 'error') {
+        const fullResp = JSON.stringify(d).slice(0, 1200)
+        console.log(`[weavy-grokvid] FULL FAILED RESPONSE:`, fullResp)
+        const ne = d.recipeRuns?.[0]?.nodeRuns?.map((nr: any) => `${nr.status || '?'}:${JSON.stringify(nr.error || nr.output || nr.result || {}).slice(0, 300)}`).join(' | ') || ''
+        throw new Error((d.error || d.message || 'Generation failed') + (ne ? ' | ' + ne : ''))
+      }
+    } catch (err: any) {
+      if (/timeout|fetch|network/i.test(err.message)) { console.log(`[weavy-grokvid] network error, retrying:`, err.message); continue }
+      if (/failed|insufficient|error/i.test(err.message)) throw err
+      if (pollCount > 10) throw err
+    }
+  }
+  throw new Error('GrokVideo timeout')
+}
+
+export interface WeavyOmniParams {
+  token: string
+  imageUrl?: string
+  imageFile?: File
+  prompt: string
+  duration?: number
+  aspectRatio?: string
+}
+
+export interface WeavyOmniResult {
+  ok: boolean
+  recipeId?: string
+  batchId?: string
+  error?: string
+  raw?: any
+}
+
+export async function submitWeavyOmni(params: WeavyOmniParams): Promise<WeavyOmniResult> {
+  const { token: refreshToken, imageUrl: fallbackUrl, imageFile, prompt, duration = 8, aspectRatio = '16:9' } = params
+  const model = 'google/gemini-omni-flash'
+  const mkId = () => Math.random().toString(36).substring(2, 8)
+  const n1 = 'n_' + Date.now() + '_prompt'
+  const n2 = 'n_' + Date.now() + '_model'
+  const n3 = 'n_' + Date.now() + '_img'
+
+  const refreshed = await refreshWeavyAccessToken(refreshToken)
+  const at = refreshed?.accessToken || refreshToken
+
+  let imageUrl = fallbackUrl || ''
+  if (imageFile && at) {
+    try {
+      let uploadFile = imageFile
+      if (imageFile.size > 8 * 1024 * 1024) {
+        uploadFile = await compressImageForWeavy(imageFile, 1280, 0.7)
+      } else if (imageFile.size > 4 * 1024 * 1024) {
+        uploadFile = await compressImageForWeavy(imageFile, 1280, 0.85)
+      }
+      const fd = new FormData()
+      fd.append('file', uploadFile, uploadFile.name || 'image.jpg')
+      if (uploadFile.type) fd.append('type', uploadFile.type)
+      const uploadRes = await fetch(`${WEAVY_API}/v1/assets/upload`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${at}` },
+        body: fd,
+      })
+      const uploadText = await uploadRes.text()
+      let uploadData: any; try { uploadData = JSON.parse(uploadText) } catch { uploadData = null }
+      console.log(`[omni] direct upload → ${uploadRes.status}`, uploadText.slice(0, 300))
+      if (uploadRes.ok && uploadData) {
+        const result = uploadData.result || uploadData
+        if (typeof result === 'string') imageUrl = result
+        else if (result.url) imageUrl = result.url
+        else if (result.download) imageUrl = result.download
+        else if (result.id) imageUrl = `https://media.weavy.ai/image/upload/uploads/${result.id}.jpg`
+        console.log(`[omni] Weavy upload URL:`, imageUrl)
+      }
+    } catch (e: any) {
+      console.warn(`[omni] Weavy upload error:`, e.message)
+    }
+  }
+
+  // Prompt node
+  const promptNode = {
+    id: n1, type: 'promptV3', dragHandle: '.node-header', owner: null, visibility: null, isModel: false,
+    data: {
+      handles: { input: [], output: { prompt: { type: 'text', order: 0, format: 'text', description: 'Text prompt' } } },
+      name: 'Prompt', color: 'Yambo_Green', dark_color: 'Yambo_Green_Dark', border_color: 'Yambo_Green_Stroke',
+      params: null, schema: null, version: 3,
+      prompt: prompt, result: { prompt },
+      displayMode: 'source-value', output: { type: 'text', prompt },
+      inputNodes: [], height: 263
+    },
+    position: { x: 80, y: 200 }, width: 460, height: 263
+  }
+
+  // Model node
+  const params_: any = { prompt: '', duration: parseInt(String(duration)) || 8, aspect_ratio: aspectRatio || '16:9' }
+
+  const modelNode: any = {
+    id: n2, type: 'custommodelV2', dragHandle: '.node-header', owner: null, visibility: 'private', isModel: true,
+    data: {
+      handles: {
+        input: {
+          prompt: { id: 'prompt', type: 'text', label: 'prompt', order: 0, format: 'text', required: true },
+          image_url: { id: 'image_url', type: 'image', label: 'image', order: 1, format: 'uri', required: false }
+        },
+        output: { result: { id: 'result', type: 'video', label: 'result', order: 0, format: 'uri' } }
+      },
+      name: 'Gemini Omni Flash',
+      color: 'Red', menu: { icon: 'EmojiObjectsIcon', isModel: true, displayName: 'Gemini Omni Flash' },
+      model: { name: model, service: 'fal_imported', version: model },
+      params: params_,
+      version: 3,
+      kind: {
+        type: 'wildcard',
+        model: { type: 'predefined', name: model, version: model, service: 'fal_imported' },
+        inputs: [
+          [{ id: 'prompt', title: 'prompt', validTypes: ['text'], required: true }, { nodeId: n1, outputId: 'prompt', string: '' }],
+          [{ id: 'image_url', title: 'image', validTypes: ['image'], required: false }, imageUrl ? { nodeId: n3, outputId: 'file' } : null]
+        ],
+        parameters: [],
+        outputs: [{ id: 'result', title: 'result', dataType: 'video' }]
+      },
+      generations: [], selectedIndex: 0, cameraLocked: false, result: [], output: {}, selectedOutput: 0
+    },
+    position: { x: 600, y: 100 }, width: 460, height: 560
+  }
+
+  const nodes: any[] = [promptNode, modelNode]
+  const edges: any[] = [{
+    id: 'e-' + mkId(), source: n1, target: n2,
+    sourceHandle: `${n1}-output-prompt`, targetHandle: `${n2}-input-prompt`,
+    type: 'custom', data: { sourceColor: 'Yambo_Green', targetColor: null, sourceHandleType: 'text', targetHandleType: 'text' }
+  }]
+
+  // Image node (optional)
+  if (imageUrl) {
+    const imgNode = {
+      id: n3, type: 'import', dragHandle: '.node-header', owner: null, visibility: null, isModel: false,
+      data: {
+        handles: { output: { file: { type: 'any', label: 'File', order: 0, format: 'uri', description: 'The uploaded file' } } },
+        name: 'File', color: 'Yambo_Blue', dark_color: 'Yambo_Blue_Dark', border_color: 'Yambo_Blue_Stroke',
+        files: [{ type: 'image', url: imageUrl, publicId: 'uploads/' + mkId(), id: mkId(), name: 'image.jpg', insertionOrder: 0 }],
+        result: { type: 'image', url: imageUrl, publicId: 'uploads/' + mkId(), id: mkId(), name: 'image.jpg', insertionOrder: 0 },
+        output: { file: { type: 'image', url: imageUrl, publicId: 'uploads/' + mkId(), id: mkId(), name: 'image.jpg', insertionOrder: 0 } },
+        version: 3, cameraLocked: false, width: 1024, height: 1024, selectedIndex: 0
+      },
+      position: { x: 80, y: 500 }, width: 460, height: 556
+    }
+    nodes.push(imgNode)
+    edges.push({
+      id: 'e-' + mkId(), source: n3, target: n2,
+      sourceHandle: `${n3}-output-file`, targetHandle: `${n2}-input-image_url`,
+      type: 'custom', data: { sourceColor: 'Yambo_Blue', targetColor: null, sourceHandleType: 'any', targetHandleType: 'image' }
+    })
+  }
+
+  const recipeData = { nodes, edges, model }
+
+  const hdrs = { Authorization: `Bearer ${at}`, 'Content-Type': 'application/json' } as any
+
+  const retryFetch = async (url: string, opts: any, retries = 3): Promise<Response> => {
+    for (let i = 0; i <= retries; i++) {
+      try {
+        const r = await fetch(url, opts)
+        if (r.ok || r.status < 500) return r
+        if (i < retries) await new Promise(r => setTimeout(r, 2000 * (i + 1)))
+      } catch (e: any) {
+        if (i >= retries) throw e
+        await new Promise(r => setTimeout(r, 2000 * (i + 1)))
+      }
+    }
+    throw new Error('retry exhausted')
+  }
+
+  try {
+    const cr = await retryFetch(`${WEAVY_API}/v1/recipes/create`, {
+      method: 'POST', headers: hdrs, body: JSON.stringify({ scope: 'PERSONAL' })
+    })
+    const crText = await cr.text()
+    let crData: any; try { crData = JSON.parse(crText) } catch { crData = null }
+    console.log(`[omni] create recipe → ${cr.status}`, crText.slice(0, 300))
+    if (!cr.ok || !crData) throw new Error(`Create recipe failed (${cr.status}): ${crText.slice(0, 200)}`)
+    const rid = crData.id || crData.recipeId
+
+    const sr = await retryFetch(`${WEAVY_API}/v1/recipes/${rid}/save`, {
+      method: 'POST', headers: hdrs,
+      body: JSON.stringify({ ...recipeData, v3: crData.v3 || '', lastUpdatedAt: new Date().toISOString() })
+    })
+    const srText = await sr.text()
+    console.log(`[omni] save recipe → ${sr.status}`, srText.slice(0, 200))
+    if (!sr.ok) throw new Error(`Save recipe failed (${sr.status}): ${srText.slice(0, 200)}`)
+
+    try {
+      await fetch(`${WEAVY_API}/v1/workspaces/models/approve`, {
+        method: 'POST', headers: hdrs, body: JSON.stringify({ modelIds: [model] })
+      })
+    } catch {}
+
+    const er = await retryFetch(`${WEAVY_API}/v1/batches/recipes/${rid}/execute`, {
+      method: 'POST', headers: hdrs,
+      body: JSON.stringify({ numberOfRuns: 1, ...recipeData })
+    })
+    const et = await er.text()
+    let erData: any; try { erData = JSON.parse(et) } catch { erData = null }
+    console.log(`[omni] execute → ${er.status}`, et.slice(0, 500))
+    if (!er.ok || !erData) throw new Error(`Execute failed (${er.status}): ${et.slice(0, 300)}`)
+    const bid = erData.batchId || erData.id
+    if (!bid) throw new Error('No batchId: ' + et.slice(0, 200))
+
+    return { ok: true, recipeId: rid, batchId: bid, raw: erData }
+  } catch (err: any) {
+    return { ok: false, error: err.message }
+  }
+}
+
+export async function pollWeavyOmniStatus(
+  token: string,
+  recipeId: string,
+  batchId: string,
+  onProgress?: (status: string, pct: number) => void,
+  timeoutMs = 3600000,
+  inputImageUrl?: string,
+): Promise<string> {
+  const startTime = Date.now()
+  let lastLog = ''
+  let pollCount = 0
+
+  const refreshed = await refreshWeavyAccessToken(token)
+  let at = refreshed?.accessToken || token
+
+  while (Date.now() - startTime < timeoutMs) {
+    const delay = pollCount < 30 ? 8000 : pollCount < 60 ? 10000 : 15000
+    await new Promise((r) => setTimeout(r, delay))
+    pollCount++
+
+    try {
+      if (pollCount > 0 && pollCount % 10 === 0) {
+        try {
+          const r2 = await refreshWeavyAccessToken(token)
+          if (r2?.accessToken) at = r2.accessToken
+        } catch {}
+      }
+
+      const res = await fetch(`${WEAVY_API}/v1/batches/recipes/${recipeId}/batches/${batchId}/status`, {
+        headers: { Authorization: `Bearer ${at}` },
+      })
+      if (!res.ok) continue
+      const d = await res.json().catch(() => null)
+      if (!d) continue
+
+      const st = (d.recipeRuns?.[0]?.status || d.status || d.state || '').toLowerCase()
+      const elapsedSec = Math.round((Date.now() - startTime) / 1000)
+      const pct = Math.min(95, Math.round((pollCount / 120) * 95))
+      onProgress?.(st || 'processing', pct)
+
+      const logEntry = `poll #${pollCount} (${elapsedSec}s) status=${st} pct=${pct}`
+      if (logEntry !== lastLog) { lastLog = logEntry; console.log(`[weavy-omni] ${logEntry}`) }
+
+      if (st === 'completed' || st === 'COMPLETED' || st === 'done' || st === 'success') {
+        const videoUrl = extractSoraVideoUrl(d, inputImageUrl)
+        if (videoUrl) return videoUrl
+        console.log(`[weavy-omni] task done but no url:`, JSON.stringify(d, null, 2).slice(0, 2000))
+        throw new Error('Omni: task completed but no video URL found')
+      }
+
+      if (st === 'failed' || st === 'FAILED' || st === 'error') {
+        const fullResp = JSON.stringify(d).slice(0, 1200)
+        console.log(`[weavy-omni] FULL FAILED RESPONSE:`, fullResp)
+        const ne = d.recipeRuns?.[0]?.nodeRuns?.map((nr: any) => `${nr.status || '?'}:${JSON.stringify(nr.error || nr.output || nr.result || {}).slice(0, 300)}`).join(' | ') || ''
+        throw new Error((d.error || d.message || 'Generation failed') + (ne ? ' | ' + ne : ''))
+      }
+    } catch (err: any) {
+      if (/timeout|fetch|network/i.test(err.message)) { console.log(`[weavy-omni] network error, retrying:`, err.message); continue }
+      if (/failed|insufficient|error/i.test(err.message)) throw err
+      if (pollCount > 10) throw err
+    }
+  }
+  throw new Error('Omni timeout')
+}
+
+export interface WeavySeedanceMiniParams {
+  token: string
+  imageUrl?: string
+  endImageUrl?: string
+  imageFile?: File
+  endImageFile?: File
+  refImageUrls?: string[]
+  prompt: string
+  duration?: number
+  resolution?: string
+  aspectRatio?: string
+  generateAudio?: boolean
+}
+
+export interface WeavySeedanceMiniResult {
+  ok: boolean
+  recipeId?: string
+  batchId?: string
+  error?: string
+  raw?: any
+}
+
+export async function submitWeavySeedanceMini(params: WeavySeedanceMiniParams): Promise<WeavySeedanceMiniResult> {
+  const { token: refreshToken, imageUrl: fallbackUrl, endImageUrl, imageFile, endImageFile, refImageUrls, prompt, duration = 10, resolution = '720p', aspectRatio = 'auto', generateAudio = true } = params
+  const model = 'bytedance/seedance-2.0/mini/image-to-video'
+  const mkId = () => Math.random().toString(36).substring(2, 8)
+  const n1 = 'n_' + Date.now() + '_prompt'
+  const n2 = 'n_' + Date.now() + '_model'
+  const n3 = 'n_' + Date.now() + '_img'
+  const n4 = 'n_' + Date.now() + '_endimg'
+  const n5 = 'n_' + Date.now() + '_refimg'
+
+  const refreshed = await refreshWeavyAccessToken(refreshToken)
+  const at = refreshed?.accessToken || refreshToken
+
+  let imageUrl = fallbackUrl || ''
+  if (imageFile && at) {
+    try {
+      let uploadFile = imageFile
+      if (imageFile.size > 8 * 1024 * 1024) {
+        uploadFile = await compressImageForWeavy(imageFile, 1280, 0.7)
+      } else if (imageFile.size > 4 * 1024 * 1024) {
+        uploadFile = await compressImageForWeavy(imageFile, 1280, 0.85)
+      }
+      const fd = new FormData()
+      fd.append('file', uploadFile, uploadFile.name || 'image.jpg')
+      if (uploadFile.type) fd.append('type', uploadFile.type)
+      const uploadRes = await fetch(`${WEAVY_API}/v1/assets/upload`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${at}` },
+        body: fd,
+      })
+      const uploadText = await uploadRes.text()
+      let uploadData: any; try { uploadData = JSON.parse(uploadText) } catch { uploadData = null }
+      console.log(`[seedance] direct upload → ${uploadRes.status}`, uploadText.slice(0, 300))
+      if (uploadRes.ok && uploadData) {
+        const result = uploadData.result || uploadData
+        if (typeof result === 'string') imageUrl = result
+        else if (result.url) imageUrl = result.url
+        else if (result.download) imageUrl = result.download
+        else if (result.id) imageUrl = `https://media.weavy.ai/image/upload/uploads/${result.id}.jpg`
+        console.log(`[seedance] Weavy upload URL:`, imageUrl)
+      }
+    } catch (e: any) {
+      console.warn(`[seedance] Weavy upload error:`, e.message)
+    }
+  }
+
+  // End image upload
+  let finalEndImageUrl = endImageUrl || ''
+  if (endImageFile && at) {
+    try {
+      let uploadFile = endImageFile
+      if (endImageFile.size > 8 * 1024 * 1024) {
+        uploadFile = await compressImageForWeavy(endImageFile, 1280, 0.7)
+      } else if (endImageFile.size > 4 * 1024 * 1024) {
+        uploadFile = await compressImageForWeavy(endImageFile, 1280, 0.85)
+      }
+      const fd = new FormData()
+      fd.append('file', uploadFile, uploadFile.name || 'image.jpg')
+      if (uploadFile.type) fd.append('type', uploadFile.type)
+      const uploadRes = await fetch(`${WEAVY_API}/v1/assets/upload`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${at}` },
+        body: fd,
+      })
+      const uploadText = await uploadRes.text()
+      let uploadData: any; try { uploadData = JSON.parse(uploadText) } catch { uploadData = null }
+      console.log(`[seedance] end image upload → ${uploadRes.status}`, uploadText.slice(0, 300))
+      if (uploadRes.ok && uploadData) {
+        const result = uploadData.result || uploadData
+        if (typeof result === 'string') finalEndImageUrl = result
+        else if (result.url) finalEndImageUrl = result.url
+        else if (result.download) finalEndImageUrl = result.download
+        else if (result.id) finalEndImageUrl = `https://media.weavy.ai/image/upload/uploads/${result.id}.jpg`
+        console.log(`[seedance] Weavy end image URL:`, finalEndImageUrl)
+      }
+    } catch (e: any) {
+      console.warn(`[seedance] Weavy end image upload error:`, e.message)
+    }
+  }
+
+  // Prompt node
+  const promptNode = {
+    id: n1, type: 'promptV3', dragHandle: '.node-header', owner: null, visibility: null, isModel: false,
+    data: {
+      handles: { input: [], output: { prompt: { type: 'text', order: 0, format: 'text', description: 'Text prompt' } } },
+      name: 'Prompt', color: 'Yambo_Green', dark_color: 'Yambo_Green_Dark', border_color: 'Yambo_Green_Stroke',
+      params: null, schema: null, version: 3,
+      prompt: prompt, result: { prompt },
+      displayMode: 'source-value', output: { type: 'text', prompt },
+      inputNodes: []
+    },
+    position: { x: 80, y: 200 }, width: 460, height: 407
+  }
+
+  // Model node
+  const params_: any = {
+    prompt: '', duration: parseInt(String(duration)) || 10,
+    resolution: resolution || '720p', aspect_ratio: aspectRatio || 'auto',
+    generate_audio: generateAudio
+  }
+
+  const modelNode: any = {
+    id: n2, type: 'custommodelV2', dragHandle: '.node-header', owner: null, visibility: 'private', isModel: true,
+    data: {
+      handles: {
+        input: {
+          prompt: { id: 'prompt', type: 'text', label: 'Prompt', order: 0, format: 'text', required: true },
+          image_url: { id: 'image_url', type: 'image', label: 'Image', order: 1, format: 'uri', required: false },
+          end_image_url: { id: 'end_image_url', type: 'image', label: 'End Image', order: 2, format: 'uri', required: false },
+          reference_image_url: { id: 'reference_image_url', type: 'image', label: 'Reference Image', order: 3, format: 'uri', required: false }
+        },
+        output: { result: { id: 'result', type: 'video', label: 'result', order: 0, format: 'uri' } }
+      },
+      name: 'Seedance 2.0 Mini',
+      color: 'Red', menu: { icon: 'EmojiObjectsIcon', isModel: true, displayName: 'Seedance 2.0 Mini' },
+      model: { name: model, service: 'fal_imported', version: model },
+      params: params_,
+      version: 3,
+      kind: {
+        type: 'wildcard',
+        model: { type: 'predefined', name: model, version: model, service: 'fal_imported' },
+        inputs: [
+          [{ id: 'prompt', title: 'Prompt', validTypes: ['text'], required: true }, { nodeId: n1, outputId: 'prompt', string: '' }],
+          [{ id: 'image_url', title: 'Image', validTypes: ['image'], required: false }, imageUrl ? { nodeId: n3, outputId: 'file' } : null],
+          [{ id: 'end_image_url', title: 'End Image', validTypes: ['image'], required: false }, finalEndImageUrl ? { nodeId: n4, outputId: 'file' } : null],
+          [{ id: 'reference_image_url', title: 'Reference Image', validTypes: ['image'], required: false }, null]
+        ],
+        parameters: [],
+        outputs: [{ id: 'result', title: 'result', dataType: 'video' }]
+      },
+      generations: [], selectedIndex: 0, cameraLocked: false, result: [], output: {}, selectedOutput: 0
+    },
+    position: { x: 600, y: 100 }, width: 460, height: 560
+  }
+
+  const nodes: any[] = [promptNode, modelNode]
+  const edges: any[] = [{
+    id: 'e-' + mkId(), source: n1, target: n2,
+    sourceHandle: `${n1}-output-prompt`, targetHandle: `${n2}-input-prompt`,
+    type: 'custom', data: { sourceColor: 'Yambo_Green', targetColor: 'Bytedance_Black', sourceHandleType: 'text', targetHandleType: 'text' }
+  }]
+
+  // Start image node (optional)
+  if (imageUrl) {
+    const imgNode = {
+      id: n3, type: 'import', dragHandle: '.node-header', owner: null, visibility: null, isModel: false,
+      data: {
+        handles: { output: { file: { type: 'any', label: 'File', order: 0, format: 'uri', description: 'The uploaded file' } } },
+        name: 'File', color: 'Yambo_Blue', dark_color: 'Yambo_Blue_Dark', border_color: 'Yambo_Blue_Stroke',
+        files: [{ type: 'image', url: imageUrl, publicId: 'uploads/' + mkId(), id: mkId(), name: 'image.jpg', insertionOrder: 0 }],
+        result: { type: 'image', url: imageUrl, publicId: 'uploads/' + mkId(), id: mkId(), name: 'image.jpg', insertionOrder: 0 },
+        output: { file: { type: 'image', url: imageUrl, publicId: 'uploads/' + mkId(), id: mkId(), name: 'image.jpg', insertionOrder: 0 } },
+        version: 3, cameraLocked: false, width: 1024, height: 1024, selectedIndex: 0
+      },
+      position: { x: 80, y: 500 }, width: 460, height: 556
+    }
+    nodes.push(imgNode)
+    edges.push({
+      id: 'e-' + mkId(), source: n3, target: n2,
+      sourceHandle: `${n3}-output-file`, targetHandle: `${n2}-input-image_url`,
+      type: 'custom', data: { sourceColor: 'Yambo_Blue', targetColor: 'Bytedance_Black', sourceHandleType: 'any', targetHandleType: 'image' }
+    })
+  }
+
+  // End image node (optional)
+  if (finalEndImageUrl) {
+    const endImgNode = {
+      id: n4, type: 'import', dragHandle: '.node-header', owner: null, visibility: null, isModel: false,
+      data: {
+        handles: { output: { file: { type: 'any', label: 'File', order: 0, format: 'uri', description: 'The uploaded file' } } },
+        name: 'File', color: 'Yambo_Blue', dark_color: 'Yambo_Blue_Dark', border_color: 'Yambo_Blue_Stroke',
+        files: [{ type: 'image', url: finalEndImageUrl, publicId: 'uploads/' + mkId(), id: mkId(), name: 'end_image.jpg', insertionOrder: 0 }],
+        result: { type: 'image', url: finalEndImageUrl, publicId: 'uploads/' + mkId(), id: mkId(), name: 'end_image.jpg', insertionOrder: 0 },
+        output: { file: { type: 'image', url: finalEndImageUrl, publicId: 'uploads/' + mkId(), id: mkId(), name: 'end_image.jpg', insertionOrder: 0 } },
+        version: 3, cameraLocked: false, width: 1024, height: 1024, selectedIndex: 0
+      },
+      position: { x: 80, y: 1100 }, width: 460, height: 556
+    }
+    nodes.push(endImgNode)
+    edges.push({
+      id: 'e-' + mkId(), source: n4, target: n2,
+      sourceHandle: `${n4}-output-file`, targetHandle: `${n2}-input-end_image_url`,
+      type: 'custom', data: { sourceColor: 'Yambo_Blue', targetColor: 'Bytedance_Black', sourceHandleType: 'any', targetHandleType: 'image' }
+    })
+  }
+
+  // Reference image nodes (optional)
+  const refUrls = refImageUrls || []
+  for (let i = 0; i < refUrls.length; i++) {
+    const refUrl = refUrls[i]
+    if (!refUrl) continue
+    const refNodeId = n5 + '_' + i
+    const refImgNode = {
+      id: refNodeId, type: 'import', dragHandle: '.node-header', owner: null, visibility: null, isModel: false,
+      data: {
+        handles: { output: { file: { type: 'any', label: 'File', order: 0, format: 'uri', description: 'The uploaded file' } } },
+        name: 'File', color: 'Yambo_Blue', dark_color: 'Yambo_Blue_Dark', border_color: 'Yambo_Blue_Stroke',
+        files: [{ type: 'image', url: refUrl, publicId: 'uploads/' + mkId(), id: mkId(), name: 'ref_image.jpg', insertionOrder: 0 }],
+        result: { type: 'image', url: refUrl, publicId: 'uploads/' + mkId(), id: mkId(), name: 'ref_image.jpg', insertionOrder: 0 },
+        output: { file: { type: 'image', url: refUrl, publicId: 'uploads/' + mkId(), id: mkId(), name: 'ref_image.jpg', insertionOrder: 0 } },
+        version: 3, cameraLocked: false, width: 1024, height: 1024, selectedIndex: 0
+      },
+      position: { x: 80, y: 1700 + (i * 600) }, width: 460, height: 556
+    }
+    nodes.push(refImgNode)
+    // Update the first reference_image_url input to connect to this node
+    const refInput = modelNode.data.kind.inputs[3]
+    if (refInput && Array.isArray(refInput) && !refInput[1]) {
+      refInput[1] = { nodeId: refNodeId, outputId: 'file' }
+    }
+    // For additional refs, connect to model as well
+    edges.push({
+      id: 'e-' + mkId(), source: refNodeId, target: n2,
+      sourceHandle: `${refNodeId}-output-file`, targetHandle: `${n2}-input-reference_image_url`,
+      type: 'custom', data: { sourceColor: 'Yambo_Blue', targetColor: 'Bytedance_Black', sourceHandleType: 'any', targetHandleType: 'image' }
+    })
+  }
+
+  const recipeData = { nodes, edges, model }
+
+  const hdrs = { Authorization: `Bearer ${at}`, 'Content-Type': 'application/json' } as any
+
+  const retryFetch = async (url: string, opts: any, retries = 3): Promise<Response> => {
+    for (let i = 0; i <= retries; i++) {
+      try {
+        const r = await fetch(url, opts)
+        if (r.ok || r.status < 500) return r
+        if (i < retries) await new Promise(r => setTimeout(r, 2000 * (i + 1)))
+      } catch (e: any) {
+        if (i >= retries) throw e
+        await new Promise(r => setTimeout(r, 2000 * (i + 1)))
+      }
+    }
+    throw new Error('retry exhausted')
+  }
+
+  try {
+    const cr = await retryFetch(`${WEAVY_API}/v1/recipes/create`, {
+      method: 'POST', headers: hdrs, body: JSON.stringify({ scope: 'PERSONAL' })
+    })
+    const crText = await cr.text()
+    let crData: any; try { crData = JSON.parse(crText) } catch { crData = null }
+    console.log(`[seedance] create recipe → ${cr.status}`, crText.slice(0, 300))
+    if (!cr.ok || !crData) throw new Error(`Create recipe failed (${cr.status}): ${crText.slice(0, 200)}`)
+    const rid = crData.id || crData.recipeId
+
+    const sr = await retryFetch(`${WEAVY_API}/v1/recipes/${rid}/save`, {
+      method: 'POST', headers: hdrs,
+      body: JSON.stringify({ ...recipeData, v3: crData.v3 || '', lastUpdatedAt: new Date().toISOString() })
+    })
+    const srText = await sr.text()
+    console.log(`[seedance] save recipe → ${sr.status}`, srText.slice(0, 200))
+    if (!sr.ok) throw new Error(`Save recipe failed (${sr.status}): ${srText.slice(0, 200)}`)
+
+    try {
+      await fetch(`${WEAVY_API}/v1/workspaces/models/approve`, {
+        method: 'POST', headers: hdrs, body: JSON.stringify({ modelIds: [model] })
+      })
+    } catch {}
+
+    const er = await retryFetch(`${WEAVY_API}/v1/batches/recipes/${rid}/execute`, {
+      method: 'POST', headers: hdrs,
+      body: JSON.stringify({ numberOfRuns: 1, ...recipeData })
+    })
+    const et = await er.text()
+    let erData: any; try { erData = JSON.parse(et) } catch { erData = null }
+    console.log(`[seedance] execute → ${er.status}`, et.slice(0, 500))
+    if (!er.ok || !erData) throw new Error(`Execute failed (${er.status}): ${et.slice(0, 300)}`)
+    const bid = erData.batchId || erData.id
+    if (!bid) throw new Error('No batchId: ' + et.slice(0, 200))
+
+    return { ok: true, recipeId: rid, batchId: bid, raw: erData }
+  } catch (err: any) {
+    return { ok: false, error: err.message }
+  }
+}
+
+export async function pollWeavySeedanceMiniStatus(
+  token: string,
+  recipeId: string,
+  batchId: string,
+  onProgress?: (status: string, pct: number) => void,
+  timeoutMs = 3600000,
+  inputImageUrl?: string,
+): Promise<string> {
+  const startTime = Date.now()
+  let lastLog = ''
+  let pollCount = 0
+
+  const refreshed = await refreshWeavyAccessToken(token)
+  let at = refreshed?.accessToken || token
+
+  while (Date.now() - startTime < timeoutMs) {
+    const delay = pollCount < 30 ? 8000 : pollCount < 60 ? 10000 : 15000
+    await new Promise((r) => setTimeout(r, delay))
+    pollCount++
+
+    try {
+      if (pollCount > 0 && pollCount % 10 === 0) {
+        try {
+          const r2 = await refreshWeavyAccessToken(token)
+          if (r2?.accessToken) at = r2.accessToken
+        } catch {}
+      }
+
+      const res = await fetch(`${WEAVY_API}/v1/batches/recipes/${recipeId}/batches/${batchId}/status`, {
+        headers: { Authorization: `Bearer ${at}` },
+      })
+      if (!res.ok) continue
+      const d = await res.json().catch(() => null)
+      if (!d) continue
+
+      const st = (d.recipeRuns?.[0]?.status || d.status || d.state || '').toLowerCase()
+      const elapsedSec = Math.round((Date.now() - startTime) / 1000)
+      const pct = Math.min(95, Math.round((pollCount / 120) * 95))
+      onProgress?.(st || 'processing', pct)
+
+      const logEntry = `poll #${pollCount} (${elapsedSec}s) status=${st} pct=${pct}`
+      if (logEntry !== lastLog) { lastLog = logEntry; console.log(`[weavy-seedance] ${logEntry}`) }
+
+      if (st === 'completed' || st === 'COMPLETED' || st === 'done' || st === 'success') {
+        const videoUrl = extractSoraVideoUrl(d, inputImageUrl)
+        if (videoUrl) return videoUrl
+        console.log(`[weavy-seedance] task done but no url:`, JSON.stringify(d, null, 2).slice(0, 2000))
+        throw new Error('SeedanceMini: task completed but no video URL found')
+      }
+
+      if (st === 'failed' || st === 'FAILED' || st === 'error') {
+        const fullResp = JSON.stringify(d).slice(0, 1200)
+        console.log(`[weavy-seedance] FULL FAILED RESPONSE:`, fullResp)
+        const ne = d.recipeRuns?.[0]?.nodeRuns?.map((nr: any) => `${nr.status || '?'}:${JSON.stringify(nr.error || nr.output || nr.result || {}).slice(0, 300)}`).join(' | ') || ''
+        throw new Error((d.error || d.message || 'Generation failed') + (ne ? ' | ' + ne : ''))
+      }
+    } catch (err: any) {
+      if (/timeout|fetch|network/i.test(err.message)) { console.log(`[weavy-seedance] network error, retrying:`, err.message); continue }
+      if (/failed|insufficient|error/i.test(err.message)) throw err
+      if (pollCount > 10) throw err
+    }
+  }
+  throw new Error('SeedanceMini timeout')
 }
 
 export interface WeavyImageGenerateParams { token: string; model: string; prompt: string; aspectRatio?: string; negativePrompt?: string; quality?: string; imageUrl?: string; maskUrl?: string }

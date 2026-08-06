@@ -37,7 +37,7 @@ export default function DubbingPage() {
   const [loading, setLoading] = useState(false)
 
   const selectedVoice = DUBBING_VOICES.find(v => v.value === voice) || DUBBING_VOICES[0]
-  const hasKey = keys[selectedVoice.provider]?.some(k => k.status === 'active' || k.status === 'unknown')
+  const hasKey = keys[selectedVoice.provider]?.some(k => k.status !== 'invalid' && k.status !== 'expired')
 
   const handleDub = async () => {
     if (!text.trim()) return

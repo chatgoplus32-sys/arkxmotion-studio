@@ -10,7 +10,7 @@ import { uploadToCatbox, submitGoogleOmni, submitRoboneoI2V, pollRoboneoI2V, com
 import { generateWithFramia } from '@/lib/framia'
 import { runLeonardoVideo } from '@/lib/leonardo'
 import { LEONARDO_VIDEO_MODELS, leonardoVideoQualityOptions } from '@/lib/leonardo-video'
-import { submitWeavyVideo, pollWeavyStatus, checkWeavyBalance } from '@/lib/weavy'
+import { submitWeavyVideo, pollWeavyStatus, checkWeavyBalance, submitWeavySora, pollWeavySoraStatus, submitWeavyGrokVideo, pollWeavyGrokVideoStatus, submitWeavyOmni, pollWeavyOmniStatus, submitWeavySeedanceMini, pollWeavySeedanceMiniStatus, uploadToWeavy, compressImageForWeavy } from '@/lib/weavy'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import {
   getActiveTasks,
@@ -33,17 +33,10 @@ interface ModelOption {
 
 const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
   weavy: [
-    { value: 'kling-2.1', label: 'Kling V2.1', cr: 30, provider: 'weavy' },
-    { value: 'kling-1.6-standard', label: 'Kling V1.6 Standard', cr: 25, provider: 'weavy' },
-    { value: 'kling-1.6-pro', label: 'Kling V1.6 Pro', cr: 40, provider: 'weavy' },
-    { value: 'kling-3-pro', label: 'Kling V3 Pro', cr: 70, provider: 'weavy' },
     { value: 'sora-2', label: 'Sora 2 Pro', cr: 36, provider: 'weavy' },
-    { value: 'veo-3', label: 'Veo 3 Fast', cr: 65, provider: 'weavy' },
-    { value: 'veo-3.1', label: 'Veo 3.1', cr: 90, provider: 'weavy' },
-    { value: 'seedance', label: 'Seedance V1 Pro', cr: 36, provider: 'weavy' },
-    { value: 'seedance-2', label: 'Seedance 2.0', cr: 45, provider: 'weavy' },
-    { value: 'wan-i2v', label: 'Wan 2.2 Turbo', cr: 20, provider: 'weavy' },
-    { value: 'hailuo-02-pro', label: 'Hailuo 02 Pro', cr: 40, provider: 'weavy' },
+    { value: 'grok-video', label: 'Grok Imagine Video v1.5', cr: 90, provider: 'weavy' },
+    { value: 'gemini-omni', label: 'Gemini Omni Flash', cr: 100, provider: 'weavy' },
+    { value: 'seedance-mini', label: 'Seedance 2.0 Mini', cr: 130, provider: 'weavy' },
   ],
   wavespeed: [
     { value: 'kling-2.1', label: 'Kling V2.1', cr: 26, provider: 'wavespeed' },
@@ -114,13 +107,29 @@ const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
 const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; label: string; mult: number; duration: number; cr?: number; resolution?: string; sound?: string; sizeTier?: string }>>> = {
   weavy: {
     'sora-2': [
-      { value: '16s', label: '16 detik', mult: 1, duration: 16, cr: 36 },
-      { value: '10s', label: '10 detik', mult: 1, duration: 10, cr: 22 },
-      { value: '5s', label: '5 detik', mult: 1, duration: 5, cr: 11 },
+      { value: '16s-720p', label: '16 detik · 720p', mult: 1, duration: 16, cr: 36, resolution: '720p' },
+      { value: '16s-1080p', label: '16 detik · 1080p', mult: 1, duration: 16, cr: 36, resolution: '1080p' },
+      { value: '16s-true1080p', label: '16 detik · True 1080p', mult: 1, duration: 16, cr: 36, resolution: 'true_1080p' },
+      { value: '12s-720p', label: '12 detik · 720p', mult: 1, duration: 12, cr: 36, resolution: '720p' },
+      { value: '12s-1080p', label: '12 detik · 1080p', mult: 1, duration: 12, cr: 36, resolution: '1080p' },
+      { value: '8s-720p', label: '8 detik · 720p', mult: 1, duration: 8, cr: 36, resolution: '720p' },
+      { value: '8s-1080p', label: '8 detik · 1080p', mult: 1, duration: 8, cr: 36, resolution: '1080p' },
+      { value: '4s-720p', label: '4 detik · 720p', mult: 1, duration: 4, cr: 36, resolution: '720p' },
+      { value: '4s-1080p', label: '4 detik · 1080p', mult: 1, duration: 4, cr: 36, resolution: '1080p' },
     ],
-    default: [
-      { value: 'std', label: 'Standard 5s', mult: 1, duration: 5 },
-      { value: 'long', label: 'Long 10s', mult: 2, duration: 10 },
+    'grok-video': [
+      { value: '10s-720p', label: '10 detik · 720p', mult: 1, duration: 10, cr: 90, resolution: '720p' },
+      { value: '5s-720p', label: '5 detik · 720p', mult: 1, duration: 5, cr: 90, resolution: '720p' },
+    ],
+    'gemini-omni': [
+      { value: '10s', label: '10 detik', mult: 1, duration: 10, cr: 125, resolution: '720p' },
+      { value: '8s', label: '8 detik', mult: 1, duration: 8, cr: 100, resolution: '720p' },
+    ],
+    'seedance-mini': [
+      { value: '10s-720p', label: '10 detik · 720p', mult: 1, duration: 10, cr: 130, resolution: '720p' },
+      { value: '10s-480p', label: '10 detik · 480p', mult: 1, duration: 10, cr: 130, resolution: '480p' },
+      { value: '5s-720p', label: '5 detik · 720p', mult: 1, duration: 5, cr: 130, resolution: '720p' },
+      { value: '5s-480p', label: '5 detik · 480p', mult: 1, duration: 5, cr: 130, resolution: '480p' },
     ],
   },
   wavespeed: {
@@ -493,7 +502,7 @@ export default function ImageToVideoPage() {
   const totalCredits = currentModel ? (currentQuality?.cr ?? Math.round(currentModel.cr * (currentQuality?.mult || 1))) : 0
 
   const providerKeyCount = keys[provider]?.length || 0
-  const hasActiveKey = keys[provider]?.some((k) => k.status === 'active' || k.status === 'unknown') || false
+  const hasActiveKey = keys[provider]?.some((k) => k.status !== 'invalid' && k.status !== 'expired') || false
 
   useEffect(() => {
     if (models.length > 0 && !models.find((m) => m.value === model)) {
@@ -1123,11 +1132,26 @@ export default function ImageToVideoPage() {
           throw new Error(rotation.error || 'Generation failed')
         }
       } else if (provider === 'weavy') {
+        const isSora = model === 'sora-2'
+        const isGrokVideo = model === 'grok-video'
+        const isOmni = model === 'gemini-omni'
+        const isSeedanceMini = model === 'seedance-mini'
         addLog(`[1/3] 🖼️ Preparing image...`, 'info', 'weavy')
         let imageUrl: string | undefined
-        if (imgFile) {
-          imageUrl = await uploadToCatbox(imgFile)
-          addLog(`[1/3] ✅ Image uploaded ✓`, 'success', 'weavy')
+        // For Seedance Mini, image is in startFrameFile (Frames & References UI)
+        const effectiveImgFile = isSeedanceMini ? (startFrameFile || imgFile) : imgFile
+        if (effectiveImgFile) {
+          if (isSora || isGrokVideo || isOmni || isSeedanceMini) {
+            // Sora/Grok/Omni: upload to Catbox (fallback if direct Weavy upload fails)
+            addLog(`[1/3] 🖼️ Uploading image to Catbox...`, 'info', 'weavy')
+            imageUrl = await uploadToCatbox(effectiveImgFile)
+            addLog(`[1/3] ✅ Image uploaded to Catbox ✓`, 'success', 'weavy')
+          } else {
+            imageUrl = await uploadToCatbox(effectiveImgFile)
+            addLog(`[1/3] ✅ Image uploaded ✓`, 'success', 'weavy')
+          }
+        } else if (isSora) {
+          throw new Error('Sora 2 Pro membutuhkan gambar input')
         } else {
           addLog(`[1/3] ℹ️ No image (text-to-video mode)`, 'info', 'weavy')
         }
@@ -1138,58 +1162,284 @@ export default function ImageToVideoPage() {
             addLog(`🔑 Trying key: ${keyInfo.name || keyInfo.id}`, 'info', 'weavy')
             setStatus((s) => ({ ...s, text: `Submit Weavy ${model}...`, pct: 15 }))
 
-            addLog(`[2/3] 🚀 Submitting to Weavy ${model}...`, 'info', 'weavy')
-            addLog(`   → model: ${model}`, 'debug', 'weavy')
-            addLog(`   → ratio: ${ratio} | duration: ${currentQuality?.duration || 5}s`, 'debug', 'weavy')
+            if (isSora) {
+              // Sora 2 Pro: recipe-based workflow
+              addLog(`[2/3] 🚀 Submitting Sora 2 Pro (recipe workflow)...`, 'info', 'weavy')
+              addLog(`   → duration: ${currentQuality?.duration || 16}s | resolution: ${currentQuality?.resolution || '720p'}`, 'debug', 'weavy')
+              addLog(`   → ratio: ${ratio}`, 'debug', 'weavy')
 
-            const submitResult = await submitWeavyVideo({
-              token: apiKey,
-              model,
-              prompt: prompt.trim(),
-              imageUrl,
-              aspectRatio: ratio,
-              duration: currentQuality?.duration || 5,
-              negativePrompt: undefined,
-              quality: quality || undefined,
-            })
+              const submitResult = await submitWeavySora({
+                token: apiKey,
+                imageUrl: imageUrl!,
+                imageFile: imgFile || undefined,
+                prompt: prompt.trim() || undefined,
+                duration: currentQuality?.duration || 16,
+                resolution: currentQuality?.resolution || '720p',
+                aspectRatio: ratio,
+              })
 
-            if (!submitResult.ok) {
-              addLog(`[2/3] ❌ Submit failed: ${submitResult.error}`, 'error', 'weavy')
-              throw new Error(submitResult.error || 'Submit failed')
+              if (!submitResult.ok) {
+                addLog(`[2/3] ❌ Submit failed: ${submitResult.error}`, 'error', 'weavy')
+                throw new Error(submitResult.error || 'Submit failed')
+              }
+
+              const taskId = `${submitResult.recipeId}:${submitResult.batchId}`
+              addLog(`[2/3] ✅ Task created ✓ recipe=${submitResult.recipeId?.slice(0, 15)}...`, 'success', 'weavy')
+
+              addActiveTask({
+                id: taskId,
+                taskId,
+                roomId: '',
+                token: apiKey,
+                model: 'Sora 2 Pro',
+                prompt: prompt.trim() || '(no prompt)',
+                startedAt: Date.now(),
+                page: 'image-to-video',
+              })
+              activeTaskId = taskId
+
+              addLog(`[3/3] ⏳ Polling for result...`, 'info', 'weavy')
+              setStatus((s) => ({ ...s, text: 'Processing...', pct: 25 }))
+              const videoUrl = await pollWeavySoraStatus(
+                apiKey,
+                submitResult.recipeId!,
+                submitResult.batchId!,
+                (status, pct) => {
+                  addLog(`⏳ Sora ${status} (${pct}%)`, 'debug', 'weavy')
+                  setStatus((s) => ({ ...s, pct, text: `Sora ${status} (${pct}%)` }))
+                },
+                3600000,
+                imageUrl,
+              )
+              setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+              addLog(`✅ Video selesai ✓`, 'success', 'weavy')
+
+              removeActiveTask(taskId)
+              activeTaskId = null
+              return videoUrl
+            } else if (isGrokVideo) {
+              // Grok Imagine Video v1.5: recipe-based workflow
+              addLog(`[2/3] 🚀 Submitting Grok Imagine Video v1.5 (recipe workflow)...`, 'info', 'weavy')
+              addLog(`   → duration: ${currentQuality?.duration || 10}s | resolution: ${currentQuality?.resolution || '720p'}`, 'debug', 'weavy')
+              addLog(`   → ratio: ${ratio}`, 'debug', 'weavy')
+
+              const submitResult = await submitWeavyGrokVideo({
+                token: apiKey,
+                imageUrl: imageUrl!,
+                imageFile: imgFile || undefined,
+                prompt: prompt.trim() || undefined,
+                duration: currentQuality?.duration || 10,
+                resolution: currentQuality?.resolution || '720p',
+                aspectRatio: ratio,
+              })
+
+              if (!submitResult.ok) {
+                addLog(`[2/3] ❌ Submit failed: ${submitResult.error}`, 'error', 'weavy')
+                throw new Error(submitResult.error || 'Submit failed')
+              }
+
+              const taskId = `${submitResult.recipeId}:${submitResult.batchId}`
+              addLog(`[2/3] ✅ Task created ✓ recipe=${submitResult.recipeId?.slice(0, 15)}...`, 'success', 'weavy')
+
+              addActiveTask({
+                id: taskId,
+                taskId,
+                roomId: '',
+                token: apiKey,
+                model: 'Grok Imagine Video v1.5',
+                prompt: prompt.trim() || '(no prompt)',
+                startedAt: Date.now(),
+                page: 'image-to-video',
+              })
+              activeTaskId = taskId
+
+              addLog(`[3/3] ⏳ Polling for result...`, 'info', 'weavy')
+              setStatus((s) => ({ ...s, text: 'Processing...', pct: 25 }))
+              const videoUrl = await pollWeavyGrokVideoStatus(
+                apiKey,
+                submitResult.recipeId!,
+                submitResult.batchId!,
+                (status, pct) => {
+                  addLog(`⏳ GrokVideo ${status} (${pct}%)`, 'debug', 'weavy')
+                  setStatus((s) => ({ ...s, pct, text: `GrokVideo ${status} (${pct}%)` }))
+                },
+                3600000,
+                imageUrl,
+              )
+              setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+              addLog(`✅ Video selesai ✓`, 'success', 'weavy')
+
+              removeActiveTask(taskId)
+              activeTaskId = null
+              return videoUrl
+            } else if (isOmni) {
+              // Gemini Omni Flash: recipe-based workflow with prompt node
+              addLog(`[2/3] 🚀 Submitting Gemini Omni Flash (recipe workflow)...`, 'info', 'weavy')
+              addLog(`   → duration: ${currentQuality?.duration || 8}s`, 'debug', 'weavy')
+              addLog(`   → ratio: ${ratio}`, 'debug', 'weavy')
+
+              const submitResult = await submitWeavyOmni({
+                token: apiKey,
+                imageUrl: imageUrl || undefined,
+                imageFile: imgFile || undefined,
+                prompt: prompt.trim(),
+                duration: currentQuality?.duration || 8,
+                aspectRatio: ratio,
+              })
+
+              if (!submitResult.ok) {
+                addLog(`[2/3] ❌ Submit failed: ${submitResult.error}`, 'error', 'weavy')
+                throw new Error(submitResult.error || 'Submit failed')
+              }
+
+              const taskId = `${submitResult.recipeId}:${submitResult.batchId}`
+              addLog(`[2/3] ✅ Task created ✓ recipe=${submitResult.recipeId?.slice(0, 15)}...`, 'success', 'weavy')
+
+              addActiveTask({
+                id: taskId,
+                taskId,
+                roomId: '',
+                token: apiKey,
+                model: 'Gemini Omni Flash',
+                prompt: prompt.trim() || '(no prompt)',
+                startedAt: Date.now(),
+                page: 'image-to-video',
+              })
+              activeTaskId = taskId
+
+              addLog(`[3/3] ⏳ Polling for result...`, 'info', 'weavy')
+              setStatus((s) => ({ ...s, text: 'Processing...', pct: 25 }))
+              const videoUrl = await pollWeavyOmniStatus(
+                apiKey,
+                submitResult.recipeId!,
+                submitResult.batchId!,
+                (status, pct) => {
+                  addLog(`⏳ Omni ${status} (${pct}%)`, 'debug', 'weavy')
+                  setStatus((s) => ({ ...s, pct, text: `Omni ${status} (${pct}%)` }))
+                },
+                3600000,
+                imageUrl,
+              )
+              setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+              addLog(`✅ Video selesai ✓`, 'success', 'weavy')
+
+              removeActiveTask(taskId)
+              activeTaskId = null
+              return videoUrl
+            } else if (isSeedanceMini) {
+              // Seedance 2.0 Mini: recipe-based workflow with prompt + start/end image nodes
+              addLog(`[2/3] 🚀 Submitting Seedance 2.0 Mini (recipe workflow)...`, 'info', 'weavy')
+              addLog(`   → duration: ${currentQuality?.duration || 10}s | resolution: ${currentQuality?.resolution || '720p'}`, 'debug', 'weavy')
+              addLog(`   → ratio: ${ratio}`, 'debug', 'weavy')
+
+              const submitResult = await submitWeavySeedanceMini({
+                token: apiKey,
+                imageUrl: imageUrl || undefined,
+                imageFile: startFrameFile || imgFile || undefined,
+                endImageUrl: endFrameUrl || undefined,
+                endImageFile: endFrameFile || undefined,
+                refImageUrls: refFiles.length > 0 ? await Promise.all(refFiles.map(async f => await uploadToCatbox(f))) : undefined,
+                prompt: prompt.trim(),
+                duration: currentQuality?.duration || 10,
+                resolution: currentQuality?.resolution || '720p',
+                aspectRatio: ratio,
+                generateAudio: true,
+              })
+
+              if (!submitResult.ok) {
+                addLog(`[2/3] ❌ Submit failed: ${submitResult.error}`, 'error', 'weavy')
+                throw new Error(submitResult.error || 'Submit failed')
+              }
+
+              const taskId = `${submitResult.recipeId}:${submitResult.batchId}`
+              addLog(`[2/3] ✅ Task created ✓ recipe=${submitResult.recipeId?.slice(0, 15)}...`, 'success', 'weavy')
+
+              addActiveTask({
+                id: taskId,
+                taskId,
+                roomId: '',
+                token: apiKey,
+                model: 'Seedance 2.0 Mini',
+                prompt: prompt.trim() || '(no prompt)',
+                startedAt: Date.now(),
+                page: 'image-to-video',
+              })
+              activeTaskId = taskId
+
+              addLog(`[3/3] ⏳ Polling for result...`, 'info', 'weavy')
+              setStatus((s) => ({ ...s, text: 'Processing...', pct: 25 }))
+              const videoUrl = await pollWeavySeedanceMiniStatus(
+                apiKey,
+                submitResult.recipeId!,
+                submitResult.batchId!,
+                (status, pct) => {
+                  addLog(`⏳ Seedance ${status} (${pct}%)`, 'debug', 'weavy')
+                  setStatus((s) => ({ ...s, pct, text: `Seedance ${status} (${pct}%)` }))
+                },
+                3600000,
+                imageUrl,
+              )
+              setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+              addLog(`✅ Video selesai ✓`, 'success', 'weavy')
+
+              removeActiveTask(taskId)
+              activeTaskId = null
+              return videoUrl
+            } else {
+              // Other Weavy models: simple workflow
+              addLog(`[2/3] 🚀 Submitting to Weavy ${model}...`, 'info', 'weavy')
+              addLog(`   → model: ${model}`, 'debug', 'weavy')
+              addLog(`   → ratio: ${ratio} | duration: ${currentQuality?.duration || 5}s`, 'debug', 'weavy')
+
+              const submitResult = await submitWeavyVideo({
+                token: apiKey,
+                model,
+                prompt: prompt.trim(),
+                imageUrl,
+                aspectRatio: ratio,
+                duration: currentQuality?.duration || 5,
+                negativePrompt: undefined,
+                quality: quality || undefined,
+              })
+
+              if (!submitResult.ok) {
+                addLog(`[2/3] ❌ Submit failed: ${submitResult.error}`, 'error', 'weavy')
+                throw new Error(submitResult.error || 'Submit failed')
+              }
+
+              const taskId = submitResult.taskId!
+              addLog(`[2/3] ✅ Task created ✓ id=${taskId.slice(0, 20)}...`, 'success', 'weavy')
+
+              addActiveTask({
+                id: taskId,
+                taskId,
+                roomId: '',
+                token: apiKey,
+                model: currentModel?.label || model,
+                prompt: prompt.trim() || '(no prompt)',
+                startedAt: Date.now(),
+                page: 'image-to-video',
+              })
+              activeTaskId = taskId
+
+              addLog(`[3/3] ⏳ Polling for result...`, 'info', 'weavy')
+              setStatus((s) => ({ ...s, text: 'Processing...', pct: 25 }))
+              const videoUrl = await pollWeavyStatus(
+                apiKey,
+                taskId,
+                (status, pct) => {
+                  addLog(`⏳ Weavy ${status} (${pct}%)`, 'debug', 'weavy')
+                  setStatus((s) => ({ ...s, pct, text: `Weavy ${status} (${pct}%)` }))
+                },
+                3600000
+              )
+              setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+              addLog(`✅ Video selesai ✓`, 'success', 'weavy')
+
+              removeActiveTask(taskId)
+              activeTaskId = null
+              return videoUrl
             }
-
-            const taskId = submitResult.taskId!
-            addLog(`[2/3] ✅ Task created ✓ id=${taskId.slice(0, 20)}...`, 'success', 'weavy')
-
-            addActiveTask({
-              id: taskId,
-              taskId,
-              roomId: '',
-              token: apiKey,
-              model: currentModel?.label || model,
-              prompt: prompt.trim() || '(no prompt)',
-              startedAt: Date.now(),
-              page: 'image-to-video',
-            })
-            activeTaskId = taskId
-
-            addLog(`[3/3] ⏳ Polling for result...`, 'info', 'weavy')
-            setStatus((s) => ({ ...s, text: 'Processing...', pct: 25 }))
-            const videoUrl = await pollWeavyStatus(
-              apiKey,
-              taskId,
-              (status, pct) => {
-                addLog(`⏳ Weavy ${status} (${pct}%)`, 'debug', 'weavy')
-                setStatus((s) => ({ ...s, pct, text: `Weavy ${status} (${pct}%)` }))
-              },
-              3600000
-            )
-            setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
-            addLog(`✅ Video selesai ✓`, 'success', 'weavy')
-
-            removeActiveTask(taskId)
-            activeTaskId = null
-            return videoUrl
           },
           {
             requiredCredits: totalCredits,
@@ -1365,8 +1615,8 @@ export default function ImageToVideoPage() {
       </Section>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-            {provider === 'createpulse' ? (
-              /* CreatePulse: Frames & References */
+            {(provider === 'createpulse' || model === 'seedance-mini') ? (
+              /* CreatePulse / Seedance Mini: Frames & References */
               <Section title="Frames & References" sub="Start frame, end frame, dan referensi gambar (opsional)">
                 <input ref={startFrameRef} type="file" accept="image/*" hidden onChange={(e) => handleStartFrameChange(e.target.files)} />
                 <input ref={endFrameRef} type="file" accept="image/*" hidden onChange={(e) => handleEndFrameChange(e.target.files)} />

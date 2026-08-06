@@ -89,9 +89,9 @@ function createSlot(): Slot {
 }
 
 export default function MotionPage() {
-  const [provider, setProvider] = useLocalStorage<ProviderId>('motion.provider', 'weavy')
+  const [provider, setProvider] = useLocalStorage<ProviderId>('motion.provider', 'wavespeed')
   const addToast = useToastStore((s) => s.addToast)
-  const [modelKey, setModelKey] = useLocalStorage('motion.modelKey', PROVIDERS.weavy.models[0].key)
+  const [modelKey, setModelKey] = useLocalStorage('motion.modelKey', PROVIDERS.wavespeed.models[0]?.key || '')
   const [orientation, setOrientation] = useLocalStorage<'video' | 'image'>('motion.orientation', 'video')
   const [prompt, setPrompt] = useLocalStorage('motion.prompt', '')
   const [negativePrompt, setNegativePrompt] = useLocalStorage('motion.negativePrompt', '')
@@ -130,6 +130,13 @@ export default function MotionPage() {
 
   useEffect(() => {
     fetchMaintenance()
+    // Auto-correct provider if it has no models (e.g. 'weavy')
+    const p = PROVIDERS[provider as keyof typeof PROVIDERS]
+    if (!p || p.models.length === 0) {
+      setProvider('wavespeed')
+      const wp = PROVIDERS.wavespeed
+      if (wp.models.length > 0) setModelKey(wp.models[0].key)
+    }
   }, [fetchMaintenance])
 
   useEffect(() => {
@@ -138,7 +145,7 @@ export default function MotionPage() {
       if (cap && cap !== provider && PROVIDERS[cap as keyof typeof PROVIDERS]) {
         setProvider(cap as ProviderId)
         const p = PROVIDERS[cap as keyof typeof PROVIDERS]
-        setModelKey(p.models[0].key)
+        if (p.models.length > 0) setModelKey(p.models[0].key)
       }
     }
     sync()
@@ -197,13 +204,13 @@ export default function MotionPage() {
     return () => { if (elapsedRef.current) clearInterval(elapsedRef.current) }
   }, [generating])
 
-  const currentProvider = PROVIDERS[provider as keyof typeof PROVIDERS]
+  const currentProvider = PROVIDERS[provider as keyof typeof PROVIDERS] || PROVIDERS.wavespeed
   const currentModel = currentProvider.models.find((m) => m.key === modelKey) || currentProvider.models[0]
   const isOmni = modelKey === 'rn:google-omni'
   const filledSlots = isOmni
     ? slots.filter((s) => s.image).length
     : slots.filter((s) => s.image && s.video).length
-  const totalCredits = filledSlots * currentModel.cr
+  const totalCredits = filledSlots * (currentModel?.cr || 0)
 
   const addSlot = () => {
     if (slots.length < MAX_SLOTS) {
@@ -1051,6 +1058,20 @@ export default function MotionPage() {
     }
   }, [filteredResults, zipping, addToast])
 
+  if (!currentModel) {
+    return (
+      <PageContent>
+        <PageHeader
+          eyebrow="Generate"
+          title="Motion"
+          highlight="Control"
+          desc="Kling Motion Control — transfer gerakan karakter dari video / gambar referensi."
+        />
+        <EmptyState icon={<Video className="h-10 w-10" />} title="Pilih provider motion control" description="Tidak ada model yang tersedia untuk provider ini." />
+      </PageContent>
+    )
+  }
+
   return (
     <PageContent>
       <PageHeader
@@ -1544,7 +1565,7 @@ const FileUpload = forwardRef<HTMLInputElement, FileUploadProps>(
     const hasFile = !!file && !!previewUrl
     const fileSize = file ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` : ''
 
-    return (
+  return (
       <div className="flex flex-col gap-1.5">
         <label className="text-[11px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
           {label}

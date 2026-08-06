@@ -456,12 +456,12 @@ export default function ProvidersPage() {
           }
           return { state: 'active', detail: `${sub ? `[${sub}] ` : ''}${email || 'Token valid'}` }
         }
-        if (result.error?.includes('expired') || result.error?.includes('401') || result.error?.includes('403')) {
+        if (result.error?.includes('expired') && !result.error?.includes('403')) {
           return { state: 'invalid', detail: 'Token expired — ambil baru dari browser (F12 → Network → app.weavy.ai → Authorization)' }
         }
-        return { state: 'failed', detail: result.error || 'Gagal cek token' }
+        return { state: 'unknown', detail: result.error || 'Gagal cek token — coba lagi nanti' }
       } catch {
-        return { state: 'failed', detail: 'Error checking token' }
+        return { state: 'unknown', detail: 'Error checking token' }
       }
     }
     if (selectedProvider === 'createpulse') {

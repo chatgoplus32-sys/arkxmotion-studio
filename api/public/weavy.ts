@@ -146,9 +146,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     console.log(`[weavy-proxy] resolved token: email=${email} refreshed=${refreshed} tokenLen=${accessToken?.length}`)
 
     if (!refreshed && !isJwtToken(token)) {
-      // Raw refresh token sent without successful refresh — invalid for API calls
-      console.log(`[weavy-proxy] REJECT: refresh token could not be refreshed, raw refresh token is not a valid Bearer token`)
-      return res.status(401).json({ ok: false, error: 'Token expired or invalid. Please update your Weavy token in Providers.' })
+      // Raw refresh token that couldn't be refreshed — still try balance check, API will reject if truly invalid
+      console.log(`[weavy-proxy] WARN: refresh token could not be refreshed, attempting balance check anyway`)
     }
 
     const authHeaders = {
@@ -167,6 +166,42 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         data: { credits, email },
         refreshToken: refreshToken || undefined,
       })
+    }
+
+    if (action === 'upload') {
+      // Forward multipart file upload to Weavy assets endpoint
+      const contentType = req.headers['content-type'] || ''
+      if (!contentType.includes('multipart/form-data')) {
+        return res.status(400).json({ ok: false, error: 'Expected multipart/form-data' })
+      }
+      try {
+        // Collect raw body buffer from the incoming request
+        const chunks: Buffer[] = []
+        for await (const chunk of req) { chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk) }
+        const bodyBuffer = Buffer.concat(chunks)
+
+        const r = await fetch(`${WEAVY_API}/v1/assets/upload`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': contentType,
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Origin': 'https://app.weavy.ai',
+            'Referer': 'https://app.weavy.ai/',
+          },
+          body: bodyBuffer,
+          signal: AbortSignal.timeout(60000),
+        })
+        const text = await r.text()
+        let data: any; try { data = JSON.parse(text) } catch { data = null }
+        console.log(`[weavy-proxy] upload → ${r.status}`, text.slice(0, 500))
+        if (!r.ok || !data) return res.status(r.status || 500).json({ ok: false, error: data?.error || text.slice(0, 300) || `HTTP ${r.status}` })
+        return res.status(200).json({ ok: true, data })
+      } catch (err: any) {
+        return res.status(500).json({ ok: false, error: err.message })
+      }
     }
 
     if (action === 'generate') {
@@ -335,6 +370,140 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const data = await r.json()
       console.log(`[weavy-proxy] image-status → ${r.status}`, JSON.stringify(data).slice(0, 500))
       return res.status(200).json({ ok: true, data })
+    }
+
+    // === Sora 2 Pro recipe-based workflow ===
+    if (action === 'sora-generate') {
+      const payload = req.body?.payload || req.body
+      const { imageUrl, prompt, duration, resolution, aspectRatio } = payload || {}
+      const model = 'fal-ai/sora-2/image-to-video/pro'
+      const mkId = () => Math.random().toString(36).substring(2, 8)
+      const n1 = 'n_' + Date.now() + '_img'
+      const n2 = 'n_' + Date.now() + '_model'
+
+      // Build image import node
+      const imgNode = {
+        id: n1, type: 'import', dragHandle: '.node-header', owner: null, visibility: null, isModel: false,
+        data: {
+          handles: { output: { file: { type: 'any', label: 'File', order: 0, format: 'uri' } } },
+          name: 'File', color: 'Yambo_Blue', dark_color: 'Yambo_Blue_Dark', border_color: 'Yambo_Blue_Stroke',
+          files: [{ type: 'image', url: imageUrl, publicId: 'uploads/' + mkId(), id: mkId(), name: 'image.jpg', insertionOrder: 0 }],
+          result: { type: 'image', url: imageUrl, publicId: 'uploads/' + mkId(), id: mkId(), name: 'image.jpg', insertionOrder: 0 },
+          output: { file: { type: 'image', url: imageUrl, publicId: 'uploads/' + mkId(), id: mkId(), name: 'image.jpg', insertionOrder: 0 } },
+          version: 3
+        },
+        position: { x: 80, y: 200 }, width: 460, height: 400
+      }
+
+      // Build model node
+      const params: any = { duration: parseInt(duration) || 16, resolution: resolution || '720p', aspect_ratio: aspectRatio || '16:9', delete_video: false }
+      if (prompt) params.prompt = prompt
+
+      const modelNode = {
+        id: n2, type: 'custommodelV2', dragHandle: '.node-header', owner: null, visibility: 'private', isModel: true,
+        data: {
+          handles: {
+            input: { image_url: { id: 'input-image_url', type: 'image', label: 'image', format: 'text', required: true } },
+            output: { result: { id: 'output-result', type: 'video', label: 'result', order: 0, format: 'uri' } }
+          },
+          name: 'Sora 2 Pro',
+          color: 'Red', menu: { icon: 'EmojiObjectsIcon', isModel: true, displayName: 'Sora 2 Pro' },
+          model: { name: model, service: 'fal_imported', version: model },
+          params,
+          version: 3,
+          kind: {
+            type: 'wildcard',
+            model: { type: 'predefined', name: model, version: model, service: 'fal_imported' },
+            inputs: [
+              [{ id: 'image_url', title: 'image', validTypes: ['image'], required: true }, { nodeId: n1, outputId: 'file' }]
+            ],
+            parameters: [],
+            outputs: [{ id: 'result', title: 'result', dataType: 'video' }]
+          },
+          generations: [], selectedIndex: 0, cameraLocked: false, result: [], output: {}, selectedOutput: 0
+        },
+        position: { x: 600, y: 300 }, width: 460, height: 500
+      }
+
+      const nodes = [imgNode, modelNode]
+      const edges = [{
+        id: 'e-' + mkId(), source: n1, target: n2,
+        sourceHandle: `${n1}-output-file`, targetHandle: `${n2}-input-image_url`,
+        type: 'custom', data: { sourceColor: 'Yambo_Blue', targetColor: 'Red' }
+      }]
+
+      const recipeData = { nodes, edges, model }
+
+      try {
+        // Step 1: Create recipe
+        const cr = await fetch(`${WEAVY_API}/v1/recipes/create`, {
+          method: 'POST', headers: authHeaders,
+          body: JSON.stringify({ scope: 'PERSONAL' }),
+          signal: AbortSignal.timeout(15000),
+        })
+        const crText = await cr.text()
+        let crData: any; try { crData = JSON.parse(crText) } catch { crData = null }
+        console.log(`[weavy-proxy] sora create-recipe → ${cr.status}`, crText.slice(0, 300))
+        if (!cr.ok || !crData) return res.status(cr.status || 500).json({ ok: false, error: `Create recipe failed: ${crText.slice(0, 200)}` })
+        const rid = crData.id || crData.recipeId
+
+        // Step 2: Save recipe
+        const sr = await fetch(`${WEAVY_API}/v1/recipes/${rid}/save`, {
+          method: 'POST', headers: authHeaders,
+          body: JSON.stringify({ ...recipeData, v3: crData.v3 || '', lastUpdatedAt: new Date().toISOString() }),
+          signal: AbortSignal.timeout(15000),
+        })
+        const srText = await sr.text()
+        console.log(`[weavy-proxy] sora save-recipe → ${sr.status}`, srText.slice(0, 300))
+        if (!sr.ok) return res.status(sr.status).json({ ok: false, error: `Save recipe failed: ${srText.slice(0, 200)}` })
+
+        // Step 3: Approve model
+        try {
+          await fetch(`${WEAVY_API}/v1/workspaces/models/approve`, {
+            method: 'POST', headers: authHeaders,
+            body: JSON.stringify({ modelIds: [model] }),
+            signal: AbortSignal.timeout(10000),
+          })
+        } catch {}
+
+        // Step 4: Execute
+        const er = await fetch(`${WEAVY_API}/v1/batches/recipes/${rid}/execute`, {
+          method: 'POST', headers: authHeaders,
+          body: JSON.stringify({ numberOfRuns: 1, ...recipeData }),
+          signal: AbortSignal.timeout(30000),
+        })
+        const erText = await er.text()
+        let erData: any; try { erData = JSON.parse(erText) } catch { erData = null }
+        console.log(`[weavy-proxy] sora execute → ${er.status}`, erText.slice(0, 500))
+        if (!er.ok || !erData) return res.status(er.status || 500).json({ ok: false, error: `Execute failed: ${erText.slice(0, 300)}` })
+        const batchId = erData.batchId || erData.id
+        if (!batchId) return res.status(500).json({ ok: false, error: 'No batchId returned', data: erData })
+
+        return res.status(200).json({ ok: true, data: { recipeId: rid, batchId, ...erData } })
+      } catch (err: any) {
+        console.log(`[weavy-proxy] sora-generate error:`, err.message)
+        return res.status(500).json({ ok: false, error: err.message })
+      }
+    }
+
+    if (action === 'sora-status') {
+      const { recipeId, batchId } = req.body || {}
+      if (!recipeId || !batchId) return res.status(400).json({ ok: false, error: 'Missing recipeId or batchId' })
+      try {
+        const r = await fetch(`${WEAVY_API}/v1/batches/recipes/${recipeId}/batches/${batchId}/status`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+          signal: AbortSignal.timeout(10000),
+        })
+        if (!r.ok) {
+          const text = await r.text().catch(() => '')
+          return res.status(r.status).json({ ok: false, error: `Status check failed (${r.status}): ${text.slice(0, 200)}` })
+        }
+        const data = await r.json()
+        console.log(`[weavy-proxy] sora-status → ${r.status}`, JSON.stringify(data).slice(0, 500))
+        return res.status(200).json({ ok: true, data })
+      } catch (err: any) {
+        return res.status(500).json({ ok: false, error: err.message })
+      }
     }
 
     return res.status(400).json({ ok: false, error: `Unknown action: ${action}` })

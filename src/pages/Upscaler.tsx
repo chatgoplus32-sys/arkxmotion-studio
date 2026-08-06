@@ -153,9 +153,9 @@ export default function UpscalerPage() {
 
   const magnificKey = getMagnificApiKey()
   const leonardoKeys = keys.leonardo || []
-  const hasLeonardoKey = leonardoKeys.some(k => k.status === 'active' || k.status === 'unknown')
+  const hasLeonardoKey = leonardoKeys.some(k => k.status !== 'invalid' && k.status !== 'expired')
   const weavyKeys = keys.weavy || []
-  const hasWeavyKey = weavyKeys.some(k => k.status === 'active' || k.status === 'unknown')
+  const hasWeavyKey = weavyKeys.some(k => k.status !== 'invalid' && k.status !== 'expired')
   const canRun = rows.length > 0 && !running &&
     ((provider === 'topaz' && hasWeavyKey) || (provider === 'magnific' && !!magnificKey) || (provider === 'leonardo' && hasLeonardoKey))
 

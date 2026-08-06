@@ -226,8 +226,8 @@ export default function RoutingProviderPage() {
     (providerId: ProviderId): 'active' | 'limited' | 'no-keys' | 'unknown' => {
       const providerKeys = keys[providerId] || []
       if (providerKeys.length === 0) return 'no-keys'
-      const activeKey = providerKeys.find((k) => k.status === 'active')
-      if (activeKey) return 'active'
+      const hasValid = providerKeys.some((k) => k.status !== 'invalid' && k.status !== 'expired')
+      if (hasValid) return 'active'
       const emptyKey = providerKeys.find((k) => k.status === 'empty')
       if (emptyKey) return 'limited'
       return 'unknown'

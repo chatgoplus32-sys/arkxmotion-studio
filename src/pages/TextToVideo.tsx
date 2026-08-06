@@ -33,44 +33,7 @@ interface ImageModel {
 }
 
 const PROVIDER_MODELS: Record<string, ImageModel[]> = {
-  weavy: [
-    {
-      id: 'nanobanana2',
-      apiId: 'nanobanana2',
-      label: 'Gemini Nano Banana 2 (Weavy)',
-      provider: 'weavy',
-      group: 'Featured',
-      aspectRatios: ['1:1', '16:9', '9:16', '4:3', '3:4'],
-      sizes: [{ id: '1024', label: '1024×1024', width: 1024, height: 1024 }],
-      cr: 4,
-      supportsNegativePrompt: true,
-    },
-    {
-      id: 'gptimage2',
-      apiId: 'gptimage2',
-      label: 'ChatGPT Images 2.0 (Weavy)',
-      provider: 'weavy',
-      group: 'Featured',
-      aspectRatios: ['1:1', '16:9', '9:16', '4:3', '3:4'],
-      sizes: [
-        { id: '1024', label: '1024×1024', width: 1024, height: 1024 },
-        { id: '1536', label: '1536×1024', width: 1536, height: 1024 },
-      ],
-      cr: 8,
-      supportsNegativePrompt: false,
-    },
-    {
-      id: 'seedream-v50-pro',
-      apiId: 'seedream-v50-pro',
-      label: 'Seedream V5.0 Pro (Weavy)',
-      provider: 'weavy',
-      group: 'Other',
-      aspectRatios: ['1:1', '16:9', '9:16', '4:3', '3:4'],
-      sizes: [{ id: '1024', label: '1024×1024', width: 1024, height: 1024 }],
-      cr: 12,
-      supportsNegativePrompt: false,
-    },
-  ],
+  weavy: [],
   leonardo: [
     {
       id: 'gpt-image-2',
@@ -302,7 +265,7 @@ export default function TextToImagePage() {
     return availableModels.find(m => m.id === modelId) || availableModels[0]
   }, [availableModels, modelId])
 
-  const hasKey = keys[provider]?.some(k => k.status === 'active' || k.status === 'unknown')
+  const hasKey = keys[provider]?.some(k => k.status !== 'invalid' && k.status !== 'expired')
 
   // Auto-select first model when provider changes
   useMemo(() => {
