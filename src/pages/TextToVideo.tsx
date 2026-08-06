@@ -7,6 +7,7 @@ import { useProviderManager, ProviderId } from '@/stores/providerManager'
 import { useToastStore } from '@/stores/toastStore'
 import { runLeonardoImage } from '@/lib/leonardo'
 import { runWeavyImage } from '@/lib/weavy'
+import { submitRoboneoImage, pollRoboneoImage, checkRoboneoBalance } from '@/lib/roboneo'
 
 interface ImageSize {
   id: string
@@ -203,6 +204,39 @@ const PROVIDER_MODELS: Record<string, ImageModel[]> = {
       cr: 4,
       supportsNegativePrompt: true,
     },
+    {
+      id: 'rn:gemini-3.1',
+      apiId: 'gemini-3-1-image',
+      label: 'Gemini 3.1',
+      provider: 'roboneo',
+      group: 'Featured',
+      aspectRatios: ['1:1', '16:9', '9:16'],
+      sizes: [{ id: '1024', label: '1024×1024', width: 1024, height: 1024 }],
+      cr: 5,
+      supportsNegativePrompt: true,
+    },
+    {
+      id: 'rn:flux-kontext',
+      apiId: 'flux-kontext-image',
+      label: 'Flux Kontext',
+      provider: 'roboneo',
+      group: 'Other',
+      aspectRatios: ['1:1', '16:9', '9:16'],
+      sizes: [{ id: '1024', label: '1024×1024', width: 1024, height: 1024 }],
+      cr: 6,
+      supportsNegativePrompt: true,
+    },
+    {
+      id: 'rn:gpt-image-2',
+      apiId: 'gpt-image-2',
+      label: 'GPT Image 2',
+      provider: 'roboneo',
+      group: 'Featured',
+      aspectRatios: ['1:1', '16:9', '9:16'],
+      sizes: [{ id: '1024', label: '1024×1024', width: 1024, height: 1024 }],
+      cr: 8,
+      supportsNegativePrompt: false,
+    },
   ],
   magnific: [
     {
@@ -332,6 +366,27 @@ export default function TextToImagePage() {
           negativePrompt: negativePrompt.trim() || undefined,
           onProgress,
         })
+      } else if (provider === 'roboneo') {
+        const { keys } = useProviderManager.getState()
+        const roboneoKeys = keys.roboneo || []
+        const activeKey = roboneoKeys.find((k: any) => k.status === 'active' || k.status === 'unknown')?.key
+        if (!activeKey) throw Error('Roboneo: tidak ada token aktif. Tambahkan token di Provider Settings.')
+
+        addLog(`Roboneo: check balance…`)
+        const balance = await checkRoboneoBalance(activeKey)
+        addLog(`Roboneo balance: ${balance}`)
+
+        addLog(`Roboneo: submit ${selectedModel.label}…`)
+        const { taskId, roomId, nodeId } = await submitRoboneoImage({
+          accessToken: activeKey,
+          prompt: prompt.trim(),
+          modelKey: selectedModel.id,
+          aspectRatio,
+          negativePrompt: negativePrompt.trim() || undefined,
+        })
+        addLog(`Roboneo task: ${taskId.slice(0, 20)}…`)
+
+        imageUrl = await pollRoboneoImage(activeKey, taskId, roomId, onProgress, 3600000, undefined, nodeId)
       } else {
         throw Error(`Provider "${provider}" belum support text-to-image. Gunakan Weavy atau Leonardo.`)
       }

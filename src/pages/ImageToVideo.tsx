@@ -19,6 +19,7 @@ import {
   getLogs,
   getResults,
   addBgLog,
+  addResult,
   startBackgroundPolling,
 } from '@/lib/backgroundTasks'
 
@@ -36,7 +37,7 @@ const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'kling-1.6-standard', label: 'Kling V1.6 Standard', cr: 25, provider: 'weavy' },
     { value: 'kling-1.6-pro', label: 'Kling V1.6 Pro', cr: 40, provider: 'weavy' },
     { value: 'kling-3-pro', label: 'Kling V3 Pro', cr: 70, provider: 'weavy' },
-    { value: 'sora-2', label: 'Sora 2', cr: 50, provider: 'weavy' },
+    { value: 'sora-2', label: 'Sora 2 Pro', cr: 36, provider: 'weavy' },
     { value: 'veo-3', label: 'Veo 3 Fast', cr: 65, provider: 'weavy' },
     { value: 'veo-3.1', label: 'Veo 3.1', cr: 90, provider: 'weavy' },
     { value: 'seedance', label: 'Seedance V1 Pro', cr: 36, provider: 'weavy' },
@@ -62,6 +63,11 @@ const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'rn:kling-v26:std', label: 'Kling 2.6 (Roboneo)', cr: 80, provider: 'roboneo' },
     { value: 'rn:kling-v21:std', label: 'Kling 2.1 (Roboneo)', cr: 65, provider: 'roboneo' },
     { value: 'rn:seedance-pro', label: 'Seedance Pro — legacy alias (Roboneo)', cr: 100, provider: 'roboneo' },
+    { value: 'rn:wan-26', label: 'Wan 2.6 (Roboneo)', cr: 75, provider: 'roboneo' },
+    { value: 'rn:wan-26-std', label: 'Wan 2.6 Standard (Roboneo)', cr: 55, provider: 'roboneo' },
+    { value: 'rn:sora-2', label: 'Sora 2 (Roboneo)', cr: 150, provider: 'roboneo' },
+    { value: 'rn:veo-3', label: 'VEO 3.0 (Roboneo)', cr: 160, provider: 'roboneo' },
+    { value: 'rn:veo-3-fast', label: 'VEO 3.0 Fast (Roboneo)', cr: 100, provider: 'roboneo' },
   ],
   createpulse: [
     { value: 'cp:dreamina-seedance-2.0', label: 'Dreamina Seedance 2.0', cr: 22, provider: 'createpulse', apiModel: 'dreamina-seedance-2.0' },
@@ -107,6 +113,11 @@ const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
 
 const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; label: string; mult: number; duration: number; cr?: number; resolution?: string; sound?: string; sizeTier?: string }>>> = {
   weavy: {
+    'sora-2': [
+      { value: '16s', label: '16 detik', mult: 1, duration: 16, cr: 36 },
+      { value: '10s', label: '10 detik', mult: 1, duration: 10, cr: 22 },
+      { value: '5s', label: '5 detik', mult: 1, duration: 5, cr: 11 },
+    ],
     default: [
       { value: 'std', label: 'Standard 5s', mult: 1, duration: 5 },
       { value: 'long', label: 'Long 10s', mult: 2, duration: 10 },
@@ -182,6 +193,45 @@ const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; 
       { value: '5s-on', label: '5s · Sound', mult: 1, duration: 5, sound: 'on', cr: 45 },
       { value: '10s-off', label: '10s · No Sound', mult: 1, duration: 10, sound: 'off', cr: 65 },
       { value: '10s-on', label: '10s · Sound', mult: 1, duration: 10, sound: 'on', cr: 85 },
+    ],
+    'rn:kling-v26': [
+      { value: '5s-off', label: '5s · No Sound', mult: 1, duration: 5, sound: 'off', cr: 45 },
+      { value: '5s-on', label: '5s · Sound', mult: 1, duration: 5, sound: 'on', cr: 60 },
+      { value: '10s-off', label: '10s · No Sound', mult: 1, duration: 10, sound: 'off', cr: 90 },
+      { value: '10s-on', label: '10s · Sound', mult: 1, duration: 10, sound: 'on', cr: 115 },
+    ],
+    'rn:kling-v21': [
+      { value: '5s-off', label: '5s · No Sound', mult: 1, duration: 5, sound: 'off', cr: 35 },
+      { value: '5s-on', label: '5s · Sound', mult: 1, duration: 5, sound: 'on', cr: 50 },
+      { value: '10s-off', label: '10s · No Sound', mult: 1, duration: 10, sound: 'off', cr: 70 },
+      { value: '10s-on', label: '10s · Sound', mult: 1, duration: 10, sound: 'on', cr: 90 },
+    ],
+    'rn:wan-26': [
+      { value: '720p-10s-audio', label: '720p · 10s · audio', mult: 1, duration: 10, resolution: '720p', sound: 'on', cr: 75 },
+      { value: '720p-5s-audio', label: '720p · 5s · audio', mult: 1, duration: 5, resolution: '720p', sound: 'on', cr: 40 },
+      { value: '480p-10s', label: '480p · 10s', mult: 1, duration: 10, resolution: '480p', sound: 'off', cr: 55 },
+      { value: '480p-5s', label: '480p · 5s', mult: 1, duration: 5, resolution: '480p', sound: 'off', cr: 30 },
+    ],
+    'rn:wan-26-std': [
+      { value: '720p-10s', label: '720p · 10s', mult: 1, duration: 10, resolution: '720p', sound: 'off', cr: 55 },
+      { value: '720p-5s', label: '720p · 5s', mult: 1, duration: 5, resolution: '720p', sound: 'off', cr: 30 },
+      { value: '480p-10s', label: '480p · 10s', mult: 1, duration: 10, resolution: '480p', sound: 'off', cr: 40 },
+      { value: '480p-5s', label: '480p · 5s', mult: 1, duration: 5, resolution: '480p', sound: 'off', cr: 22 },
+    ],
+    'rn:sora-2': [
+      { value: '720p-10s', label: '720p · 10s', mult: 1, duration: 10, resolution: '720p', cr: 150 },
+      { value: '720p-5s', label: '720p · 5s', mult: 1, duration: 5, resolution: '720p', cr: 80 },
+      { value: '480p-10s', label: '480p · 10s', mult: 1, duration: 10, resolution: '480p', cr: 100 },
+    ],
+    'rn:veo-3': [
+      { value: '720p-10s', label: '720p · 10s', mult: 1, duration: 10, resolution: '720p', cr: 160 },
+      { value: '720p-5s', label: '720p · 5s', mult: 1, duration: 5, resolution: '720p', cr: 85 },
+      { value: '480p-10s', label: '480p · 10s', mult: 1, duration: 10, resolution: '480p', cr: 110 },
+    ],
+    'rn:veo-3-fast': [
+      { value: '720p-10s', label: '720p · 10s', mult: 1, duration: 10, resolution: '720p', cr: 100 },
+      { value: '720p-5s', label: '720p · 5s', mult: 1, duration: 5, resolution: '720p', cr: 55 },
+      { value: '480p-10s', label: '480p · 10s', mult: 1, duration: 10, resolution: '480p', cr: 70 },
     ],
     default: [
       { value: 'std', label: 'Standard 5s', mult: 1, duration: 5 },
@@ -282,6 +332,12 @@ function VideoPlayer({ directUrl, proxyFallback, rawUrl }: { directUrl: string; 
   const [triedProxy, setTriedProxy] = useState(false)
   const [failed, setFailed] = useState(false)
 
+  useEffect(() => {
+    setSrc(directUrl)
+    setTriedProxy(false)
+    setFailed(false)
+  }, [directUrl])
+
   const handleError = () => {
     if (!triedProxy && directUrl !== proxyFallback) {
       setSrc(proxyFallback)
@@ -367,6 +423,7 @@ export default function ImageToVideoPage() {
   const startFrameRef = useRef<HTMLInputElement>(null)
   const endFrameRef = useRef<HTMLInputElement>(null)
   const refInputRef = useRef<HTMLInputElement>(null)
+  const resultsRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     fetchMaintenance()
@@ -844,6 +901,14 @@ export default function ImageToVideoPage() {
         )
         if (rotation.ok && rotation.result) {
           setResults((prev) => [rotation.result!.videoUrl, ...prev])
+          addResult({
+            id: `roboneo-${Date.now()}`,
+            url: rotation.result!.videoUrl,
+            prompt: prompt.trim() || '(no prompt)',
+            date: new Date().toISOString(),
+            page: 'image-to-video',
+          })
+          window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
           successRef.current = true
           if (rotation.triedKeys > 1) {
             addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success', 'roboneo')
@@ -1197,6 +1262,7 @@ export default function ImageToVideoPage() {
       generatingRef.current = false
       if (wasGenerating && successRef.current) {
         addToast(`Generate selesai: ${PROVIDER_CONFIGS[provider].icon} ${model}`, 'success')
+        setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 200)
       }
       setTimeout(() => setStatus((s) => ({ ...s, show: false })), 3000)
     }
@@ -1574,6 +1640,7 @@ export default function ImageToVideoPage() {
       )}
 
       {/* Results */}
+      <div ref={resultsRef}>
       <Section
         title={`🎬 Hasil Image To Video (${results.length})`}
         right={
@@ -1637,6 +1704,7 @@ export default function ImageToVideoPage() {
           </div>
         )}
       </Section>
+      </div>
     </PageContent>
   )
 }

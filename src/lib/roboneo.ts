@@ -83,6 +83,22 @@ export async function normalizeImage(file: File, onProgress?: (msg: string, pct?
     onProgress?.('Mengkonversi HEIC ke JPEG...')
     try { return await compressImageMultiPass(file, 4 * 1024 * 1024, onProgress) } catch {}
   }
+  if (file.type.startsWith('image/') && file.type !== 'image/jpeg' && file.type !== 'image/jpg') {
+    onProgress?.('Mengkonversi ke JPEG...')
+    try {
+      const { width, height, draw, cleanup } = await loadImage(file)
+      try {
+        const canvas = document.createElement('canvas')
+        const ctx = canvas.getContext('2d')!
+        canvas.width = width
+        canvas.height = height
+        ctx.drawImage(draw, 0, 0, width, height)
+        const blob = await encodeCanvas(canvas, 'image/jpeg', 0.92)
+        const newName = file.name.replace(/\.[^.]+$/, '') + '.jpg'
+        return new File([blob], newName, { type: 'image/jpeg' })
+      } finally { cleanup() }
+    } catch {}
+  }
   if (file.type.startsWith('image/')) {
     if (file.size > 8 * 1024 * 1024) {
       onProgress?.('Kompres gambar agresif (>8MB)...')
@@ -655,8 +671,9 @@ export async function submitMotionControl(params: {
   negativePrompt?: string
   orientation?: string
   keepSound?: boolean
+  modelKey?: string
 }): Promise<{ taskId: string; roomId: string; nodeId: string }> {
-  const { accessToken, imageUrl, videoUrl, prompt = '', negativePrompt, orientation = 'video', keepSound = true } = params
+  const { accessToken, imageUrl, videoUrl, prompt = '', negativePrompt, orientation = 'video', keepSound = true, modelKey } = params
 
   const roomId = generateRoomId()
   const nodeId = uuid()
@@ -665,6 +682,14 @@ export async function submitMotionControl(params: {
   const fullPrompt = negativePrompt
     ? `${motionPrompt}\n\nNegative: ${negativePrompt}`
     : motionPrompt
+
+  const motionNodeMap: Record<string, { name: string; label: string }> = {
+    'rn:video_bonbon_motioncontrol_v30:std': { name: 'video_bonbon_motioncontrol_v30', label: 'Kling 3.0 Standard' },
+    'rn:video_bonbon_motioncontrol_v30:pro': { name: 'video_bonbon_motioncontrol_v30', label: 'Kling 3.0 Pro' },
+    'rn:video_wan_motioncontrol_v26': { name: 'video_wan_motioncontrol_v26', label: 'Wan 2.6 Motion Control' },
+  }
+
+  const motionConfig = motionNodeMap[modelKey || ''] || { name: 'video_bonbon_motioncontrol_v30', label: 'Kling 3.0' }
 
   const parameters: Record<string, any> = {
     image_url: imageUrl,
@@ -676,9 +701,9 @@ export async function submitMotionControl(params: {
   }
 
   const node = {
-    tool_abstract_name: { cn: 'Kling 3.0', en: 'Kling 3.0' },
+    tool_abstract_name: { cn: motionConfig.label, en: motionConfig.label },
     node_id: nodeId,
-    name: 'video_bonbon_motioncontrol_v30',
+    name: motionConfig.name,
     parameters,
   }
 
@@ -729,6 +754,11 @@ const ROBONEO_I2V_MODELS: Record<string, { apiName: string; recipeCode?: string;
   'rn:kling-v26': { apiName: 'video_bonbon_img2vid_v26', recipeCode: 'xd_pUp8JDcE0', toolLabel: 'Kling 2.6', family: 'kling26' },
   'rn:kling-v21': { apiName: 'video_bonbon_kling_v21', toolLabel: 'Kling 2.1', family: 'legacy21' },
   'rn:kling-v21:std': { apiName: 'video_bonbon_kling_v21', toolLabel: 'Kling 2.1', family: 'legacy21' },
+  'rn:wan-26': { apiName: 'video_wan_i2v_v26', toolLabel: 'Wan 2.6', family: 'wan' },
+  'rn:wan-26-std': { apiName: 'video_wan_i2v_v26', toolLabel: 'Wan 2.6 Standard', family: 'wan' },
+  'rn:sora-2': { apiName: 'video_sora_i2v_v2', toolLabel: 'Sora 2', family: 'sora' },
+  'rn:veo-3': { apiName: 'video_veo_i2v_v3', toolLabel: 'VEO 3.0', family: 'veo' },
+  'rn:veo-3-fast': { apiName: 'video_veo_i2v_v3_fast', toolLabel: 'VEO 3.0 Fast', family: 'veo' },
 }
 
 export async function submitRoboneoI2V(params: {
@@ -785,6 +815,22 @@ export async function submitRoboneoI2V(params: {
       parameters.sound = sound || 'off'
       parameters.video_duration = duration
       break
+    case 'wan':
+      parameters.ratio = ratio
+      parameters.video_duration = duration
+      parameters.resolution = resolution || '720p'
+      parameters.sound = sound || 'off'
+      break
+    case 'sora':
+      parameters.ratio = ratio
+      parameters.video_duration = duration
+      parameters.resolution = resolution || '720p'
+      break
+    case 'veo':
+      parameters.ratio = ratio
+      parameters.video_duration = duration
+      parameters.resolution = resolution || '720p'
+      break
     default:
       parameters.ratio = ratio
       parameters.duration = duration
@@ -823,6 +869,8 @@ export async function submitRoboneoI2V(params: {
     ? payload.task_ids
     : Array.isArray(payload?.tasks)
     ? payload.tasks.map((t: any) => t.task_id).filter(Boolean)
+    : payload?.task_id
+    ? [payload.task_id]
     : Object.keys(payload?.tasks || {})
 
   if (!taskIds.length) {
@@ -839,7 +887,7 @@ export async function submitGoogleOmni(params: {
   prompt?: string
   ratio?: string
   videoDuration?: number
-}): Promise<{ taskId: string; roomId: string }> {
+}): Promise<{ taskId: string; roomId: string; nodeId: string }> {
   const { accessToken, imageUrl, prompt = '', ratio = '9:16', videoDuration = 10 } = params
 
   const roomId = generateRoomId()
@@ -879,13 +927,204 @@ export async function submitGoogleOmni(params: {
     ? payload.task_ids
     : Array.isArray(payload?.tasks)
     ? payload.tasks.map((t: any) => t.task_id).filter(Boolean)
+    : payload?.task_id
+    ? [payload.task_id]
     : Object.keys(payload?.tasks || {})
 
   if (!taskIds.length) {
     throw new Error('Roboneo Google Omni: task_id tidak ditemukan. Response: ' + JSON.stringify(payload).slice(0, 300))
   }
 
-  return { taskId: taskIds[0], roomId }
+  taskMetaMap.set(taskIds[0], { roomId, nodeId })
+  return { taskId: taskIds[0], roomId, nodeId }
+}
+
+export async function submitRoboneoImage(params: {
+  accessToken: string
+  prompt: string
+  modelKey: string
+  aspectRatio?: string
+  negativePrompt?: string
+  width?: number
+  height?: number
+}): Promise<{ taskId: string; roomId: string; nodeId: string }> {
+  const { accessToken, prompt, modelKey, aspectRatio = '1:1', negativePrompt, width = 1024, height = 1024 } = params
+
+  const modelLower = modelKey.toLowerCase()
+  const modelConfig: Record<string, { apiName: string; toolLabel: string; family: string }> = {
+    'rn:nano-banana-2': { apiName: 'gemini-nano-banana-2', toolLabel: 'Gemini Nano Banana 2', family: 'nano-banana' },
+    'rn:gemini-3.1': { apiName: 'gemini-3-1-image', toolLabel: 'Gemini 3.1', family: 'gemini' },
+    'rn:flux-kontext': { apiName: 'flux-kontext-image', toolLabel: 'Flux Kontext', family: 'flux' },
+    'rn:gpt-image-2': { apiName: 'gpt-image-2', toolLabel: 'GPT Image 2', family: 'gpt' },
+  }
+  const config = modelConfig[modelLower] || modelConfig['rn:nano-banana-2']
+
+  const roomId = generateRoomId()
+  const nodeId = uuid()
+
+  const parameters: Record<string, any> = {
+    prompt: prompt || '',
+    negative_prompt: negativePrompt || '',
+    width,
+    height,
+    aspect_ratio: aspectRatio,
+    random: `${Date.now()}-${Math.floor(1e7 + Math.random() * 89999999)}`,
+  }
+
+  const node = {
+    tool_abstract_name: { cn: config.toolLabel, en: config.toolLabel },
+    node_id: nodeId,
+    name: config.apiName,
+    parameters,
+  }
+
+  const tracking = buildTrackingParams(accessToken, 'nodeexecute', roomId)
+  const { _access_token, ...paramWithoutToken } = tracking
+
+  const parameter = {
+    ...paramWithoutToken,
+    room_id: roomId,
+    node_id: nodeId,
+    need_node_name: true,
+    workflow_version: 'v2',
+    node_list_array: [[node]],
+  }
+
+  const result = await roboneoApiCall(accessToken, 'nodeexecute', parameter)
+
+  const payload = result
+
+  const taskIds: string[] = payload?.task_ids?.length
+    ? payload.task_ids
+    : Array.isArray(payload?.tasks)
+    ? payload.tasks.map((t: any) => t.task_id).filter(Boolean)
+    : payload?.task_id
+    ? [payload.task_id]
+    : Object.keys(payload?.tasks || {})
+
+  if (!taskIds.length) {
+    throw new Error(`Roboneo ${config.toolLabel}: task_id tidak ditemukan. Response: ` + JSON.stringify(payload).slice(0, 300))
+  }
+
+  taskMetaMap.set(taskIds[0], { roomId, nodeId })
+  return { taskId: taskIds[0], roomId, nodeId }
+}
+
+export async function submitRoboneoT2V(params: {
+  accessToken: string
+  prompt: string
+  modelKey: string
+  ratio?: string
+  duration?: number
+  resolution?: string
+  sound?: string
+}): Promise<{ taskId: string; roomId: string; nodeId: string }> {
+  const { accessToken, prompt, modelKey, ratio = '9:16', duration = 5, resolution, sound } = params
+
+  const modelLower = modelKey.toLowerCase()
+  const modelConfig = ROBONEO_I2V_MODELS[modelLower] || { apiName: 'video_toffee_i2v_v20', toolLabel: 'Seedance 2.0', family: 'seedance' }
+
+  const roomId = generateRoomId()
+  const nodeId = uuid()
+
+  const parameters: Record<string, any> = {
+    prompt: prompt || '',
+    random: `${Date.now()}-${Math.floor(1e7 + Math.random() * 89999999)}`,
+  }
+
+  switch (modelConfig.family) {
+    case 'seedance':
+      parameters.ratio = ratio
+      parameters.resolution = resolution || '720p'
+      parameters.video_duration = duration
+      parameters.sound = sound || 'off'
+      break
+    case 'wan':
+      parameters.ratio = ratio
+      parameters.video_duration = duration
+      parameters.resolution = resolution || '720p'
+      parameters.sound = sound || 'off'
+      break
+    case 'sora':
+      parameters.ratio = ratio
+      parameters.video_duration = duration
+      parameters.resolution = resolution || '720p'
+      break
+    case 'veo':
+      parameters.ratio = ratio
+      parameters.video_duration = duration
+      parameters.resolution = resolution || '720p'
+      break
+    case 'happyhorse':
+      parameters.ratio = ratio
+      parameters.resolution = resolution || '720p'
+      parameters.video_duration = duration
+      break
+    case 'kling3':
+      parameters.ratio = ratio
+      parameters.video_duration = duration
+      parameters.sound = sound || 'off'
+      break
+    case 'kling26':
+      parameters.sound = sound || 'off'
+      parameters.video_duration = duration
+      break
+    case 'legacy21':
+      parameters.ratio = ratio
+      parameters.video_duration = duration
+      parameters.sound = sound || 'off'
+      break
+    case 'omni':
+      parameters.ratio = ratio
+      parameters.video_duration = duration
+      break
+    default:
+      parameters.ratio = ratio
+      parameters.duration = duration
+      break
+  }
+
+  if (modelConfig.recipeCode) {
+    parameters.recipe_code = modelConfig.recipeCode
+  }
+
+  const node = {
+    tool_abstract_name: { cn: modelConfig.toolLabel, en: modelConfig.toolLabel },
+    node_id: nodeId,
+    name: modelConfig.apiName,
+    parameters,
+  }
+
+  const tracking = buildTrackingParams(accessToken, 'nodeexecute', roomId)
+  const { _access_token, ...paramWithoutToken } = tracking
+
+  const parameter = {
+    ...paramWithoutToken,
+    room_id: roomId,
+    node_id: nodeId,
+    need_node_name: true,
+    workflow_version: 'v2',
+    node_list_array: [[node]],
+  }
+
+  const result = await roboneoApiCall(accessToken, 'nodeexecute', parameter)
+
+  const payload = result
+
+  const taskIds: string[] = payload?.task_ids?.length
+    ? payload.task_ids
+    : Array.isArray(payload?.tasks)
+    ? payload.tasks.map((t: any) => t.task_id).filter(Boolean)
+    : payload?.task_id
+    ? [payload.task_id]
+    : Object.keys(payload?.tasks || {})
+
+  if (!taskIds.length) {
+    throw new Error(`Roboneo ${modelConfig.toolLabel}: task_id tidak ditemukan. Response: ` + JSON.stringify(payload).slice(0, 300))
+  }
+
+  taskMetaMap.set(taskIds[0], { roomId, nodeId })
+  return { taskId: taskIds[0], roomId, nodeId }
 }
 
 export async function pollMotionControl(
@@ -1360,6 +1599,247 @@ export async function pollRoboneoI2V(
   }
 
   throw new Error('Roboneo timeout')
+}
+
+export async function pollRoboneoImage(
+  accessToken: string,
+  taskId: string,
+  roomId: string,
+  onProgress?: (status: string, pct: number) => void,
+  timeoutMs = 3600000,
+  signal?: AbortSignal,
+  nodeId?: string
+): Promise<string> {
+  const meta = taskMetaMap.get(taskId)
+  const resolvedRoomId = roomId || meta?.roomId || ''
+  const resolvedNodeId = nodeId || meta?.nodeId || ''
+  const startTime = Date.now()
+  let networkRetries = 0
+  let busyRetries = 0
+  let successNoOutputCount = 0
+  const MAX_SUCCESS_NO_OUTPUT = 5
+  const MAX_BUSY_RETRIES = 15
+
+  function tryParseJson(str: any): any {
+    if (typeof str !== 'string') return str
+    const t = str.trim()
+    if (!t || (!t.startsWith('{') && !t.startsWith('[') && !t.startsWith('"'))) return str
+    try {
+      const parsed = JSON.parse(t)
+      return typeof parsed === 'string' && parsed !== str ? tryParseJson(parsed) : parsed
+    } catch { return str }
+  }
+
+  function cleanUrl(u: string): string {
+    return u.replace(/\\\//g, '/').replace(/\\u002F/gi, '/').replace(/&amp;/g, '&')
+  }
+
+  function extractUrlsFromString(str: string): string[] {
+    const cleaned = cleanUrl(str)
+    const matches = cleaned.match(/(?:https?:)?\/\/[^\s"'<>\\]+/gi) || []
+    return matches.map((u) => (u.startsWith('//') ? `https:${u}` : u).replace(/[),.;\]]+$/g, ''))
+  }
+
+  function resolveUrls(obj: any, depth = 0): string[] {
+    if (depth > 8 || !obj || typeof obj !== 'object') return []
+    obj = tryParseJson(obj)
+    if (typeof obj === 'string') {
+      let urls: string[] = []
+      if (/^https?:\/\//i.test(obj)) {
+        urls = [obj]
+      } else {
+        urls = extractUrlsFromString(obj)
+      }
+      return urls
+    }
+    const urls: string[] = []
+    const urlKeys = 'url,uri,src,href,last_image_url,lastImageUrl,media_url,mediaUrl,image_url,imageUrl,video_url,videoUrl,file_url,fileUrl,asset_url,assetUrl,origin_url,originUrl,original_url,originalUrl,preview_url,previewUrl,source_url,sourceUrl,output_url,outputUrl,download_url,downloadUrl,signed_url,signedUrl,play_url,playUrl,cover_url,coverUrl'
+    for (const key of urlKeys.split(',')) {
+      const val = obj[key]
+      if (typeof val === 'string' && /^https?:\/\//i.test(val)) urls.push(val)
+      else if (typeof val === 'string' && /^\/\//.test(val)) urls.push(`https:${val}`)
+      else if (typeof val === 'string') urls.push(...extractUrlsFromString(val))
+    }
+    for (const val of Object.values(obj)) {
+      urls.push(...resolveUrls(val, depth + 1))
+    }
+    return [...new Set(urls)]
+  }
+
+  function findImageUrl(...sources: any[]): string | null {
+    const all = [...new Set(sources.flatMap((s) => resolveUrls(s)))]
+    return all.find((u) => /\.(jpg|jpeg|png|webp|gif)(\?|#|$)/i.test(u)) ||
+      all.find((u) => /image|img|photo|picture|generation|output/i.test(u)) ||
+      all[0] || null
+  }
+
+  function extractProgressLocal(obj: any, depth = 0): number | null {
+    if (depth > 6 || !obj || typeof obj !== 'object') return null
+    const keys = ['progress', 'percent', 'rate', 'schedule', 'process']
+    for (const [k, v] of Object.entries(obj)) {
+      const kl = k.toLowerCase()
+      if (keys.some((pk) => kl.includes(pk))) {
+        const num = typeof v === 'number' ? v : typeof v === 'string' && /^\d+(\.\d+)?$/.test(v) ? Number(v) : NaN
+        if (Number.isFinite(num)) {
+          const pct = num <= 1 ? num * 100 : num
+          if (pct >= 0 && pct <= 100) return pct
+        }
+      }
+    }
+    for (const val of Object.values(obj)) {
+      const p = extractProgressLocal(val, depth + 1)
+      if (p !== null) return p
+    }
+    return null
+  }
+
+  function findDeepError(obj: any, depth = 0): string | null {
+    if (depth > 8 || !obj || typeof obj !== 'object') return null
+    if (typeof obj === 'string') return null
+    for (const key of ['task_status_msg', 'error_message', 'error_msg', 'message', 'msg', 'reason', 'fail_reason', 'fail_msg', 'tips', 'fail_code']) {
+      const val = obj[key]
+      if (typeof val === 'string' && val.trim()) return val.trim()
+    }
+    if (Array.isArray(obj)) {
+      for (const item of obj) {
+        const found = findDeepError(item, depth + 1)
+        if (found) return found
+      }
+      return null
+    }
+    for (const val of Object.values(obj)) {
+      const found = findDeepError(val, depth + 1)
+      if (found) return found
+    }
+    return null
+  }
+
+  let lastLog = ''
+
+  while (Date.now() - startTime < timeoutMs) {
+    if (signal?.aborted) throw new Error('Generation cancelled')
+    await new Promise((r) => setTimeout(r, 4000))
+
+    let result: any
+    try {
+      const tracking = buildTrackingParams(accessToken, 'nodeexecutequery', resolvedRoomId)
+      const { _access_token, ...paramWithoutToken } = tracking
+
+      result = await roboneoApiCall(accessToken, 'nodeexecutequery', {
+        ...paramWithoutToken,
+        task_ids: [taskId],
+        ...(resolvedRoomId ? { room_id: resolvedRoomId } : {}),
+        ...(resolvedNodeId ? { node_id: resolvedNodeId, workflow_version: 'v2' } : {}),
+      })
+      networkRetries = 0
+    } catch (err: any) {
+      if (/HTTP (502|503|504|429)|upstream|connection|network/i.test(err.message)) {
+        networkRetries++
+        if (networkRetries >= 8) throw err
+        onProgress?.(`retrying (${networkRetries})`, 0)
+        continue
+      }
+      throw err
+    }
+
+    const payload = result
+    const task = payload?.tasks?.[taskId] || (typeof payload?.tasks === 'object' ? Object.values(payload?.tasks)?.[0] : null)
+    const steps = Array.isArray(task?.steps) ? task.steps : []
+    const successfulStep = steps.find((s: any) => /success|succeeded|completed|done|finished/i.test(String(s.status || s.state || ''))) || steps[0]
+    const stepOutputs = steps.map((s: any) => tryParseJson(s.output))
+    const successfulOutput = tryParseJson(successfulStep?.output)
+    const taskState = String(task?.state || task?.status || successfulStep?.status || successfulStep?.state || '').toLowerCase()
+    const status = taskState || 'processing'
+    const realPct = extractProgressLocal(task) ?? extractProgressLocal(successfulOutput) ?? extractProgressLocal(payload)
+    const elapsedMin = (Date.now() - startTime) / (8 * 60000)
+    const fallbackPct = Math.min(0.94, 1 - 1 / (1 + elapsedMin * 1.6))
+    const pct = realPct === null ? Math.round(5 + fallbackPct * 89) : Math.round(realPct)
+
+    onProgress?.(status || 'processing', pct)
+
+    const logEntry = `poll-image #${Math.round((Date.now() - startTime) / 1000)}s state=${status} pct=${pct}`
+    if (logEntry !== lastLog) {
+      lastLog = logEntry
+      console.log(`[roboneo] ${logEntry}`)
+    }
+
+    const isSuccess = ['success', 'succeeded', 'completed', 'done', 'finished'].includes(status)
+    const isFailed = ['fail', 'failed', 'error', 'cancelled', 'canceled'].includes(status)
+
+    if (isSuccess) {
+      const mediaInfo = task?.media_info_list?.[0] || payload?.media_info_list?.[0]
+      const imageUrl = findImageUrl(
+        task?.last_image_url, task?.last_image_urls,
+        task?.initial_transferred_urls, task?.media_meta, task?.media_metas,
+        mediaInfo?.url, mediaInfo?.media_url,
+        ...stepOutputs, successfulOutput,
+        payload?.output, payload?.result, payload,
+        payload?.data, task?.data, task?.output_url, task?.download_url,
+        task?.result_url, task?.image, task?.image_url, task?.media,
+        task?.url, task?.src, task?.link, task?.href, task?.path
+      )
+
+      if (imageUrl) {
+        taskMetaMap.delete(taskId)
+        return imageUrl
+      }
+
+      successNoOutputCount++
+      if (successNoOutputCount >= MAX_SUCCESS_NO_OUTPUT) {
+        throw new Error(`Roboneo credit/quota habis: task selesai (${status}) tapi URL output tidak ditemukan`)
+      }
+
+      onProgress?.(`finalizing`, Math.max(pct, 96))
+      await new Promise(r => setTimeout(r, 4000))
+      continue
+    }
+
+    if (isFailed) {
+      const failedStep = steps.find((s: any) => /fail|error/i.test(String(s.status || s.state || '')))
+      const stepOutput = failedStep?.output
+      const errMsg = task?.error_message || task?.error_msg || failedStep?.error_message || failedStep?.error_msg ||
+        (typeof stepOutput?.error_message === 'string' ? stepOutput.error_message : undefined) ||
+        (typeof stepOutput?.error_msg === 'string' ? stepOutput.error_msg : undefined) ||
+        findDeepError(task) || findDeepError(payload) || findDeepError(stepOutput) ||
+        failedStep?.fail_code || 'unknown'
+      const taskErrorCode = task?.error_code ?? failedStep?.fail_code ?? stepOutput?.error_code ?? stepOutput?.code
+
+      const isBusy = taskErrorCode === 6 || /busy|sibuk|try again|later|overload|capacity|queue|结果接口获取失败/i.test(errMsg)
+      const isChargeFailed = /CHARGE_FAILED|charge.?failed|余额不足|余额不够|积分不足|账户余额|欠费/i.test(errMsg) || taskErrorCode === 'CHARGE_FAILED'
+      if (isBusy && busyRetries < MAX_BUSY_RETRIES) {
+        busyRetries++
+        const waitSec = Math.min(5 + busyRetries * 2, 20)
+        console.log(`[roboneo] image busy (code=${taskErrorCode}), retry ${busyRetries}/${MAX_BUSY_RETRIES}, waiting ${waitSec}s...`)
+        onProgress?.(`server sibuk, retry ${busyRetries}/${MAX_BUSY_RETRIES}`, pct)
+        await new Promise(r => setTimeout(r, waitSec * 1000))
+        continue
+      }
+
+      if (isChargeFailed) {
+        taskMetaMap.delete(taskId)
+        throw new Error(`Roboneo: saldo tidak cukup untuk biaya ini (CHARGE_FAILED). Detail: ${errMsg}`)
+      }
+
+      taskMetaMap.delete(taskId)
+      throw new Error(`Roboneo failed: ${errMsg}`)
+    }
+
+    busyRetries = 0
+  }
+
+  throw new Error('Roboneo timeout')
+}
+
+export async function pollRoboneoT2V(
+  accessToken: string,
+  taskId: string,
+  roomId: string,
+  onProgress?: (status: string, pct: number) => void,
+  timeoutMs = 3600000,
+  signal?: AbortSignal,
+  nodeId?: string
+): Promise<string> {
+  return pollRoboneoI2V(accessToken, taskId, roomId, onProgress, timeoutMs, signal, nodeId)
 }
 
 export function isRoboneoSafetyError(msg: string): boolean {

@@ -42,6 +42,8 @@ const PROVIDERS = {
   ]},
   roboneo: { name: 'RoboNeo (Meitu)', models: [
     { key: 'rn:video_bonbon_motioncontrol_v30:std', label: 'Kling V3.0 Standard (RoboNeo · Meitu)', cr: 80 },
+    { key: 'rn:video_bonbon_motioncontrol_v30:pro', label: 'Kling V3.0 Pro (RoboNeo · Meitu)', cr: 120 },
+    { key: 'rn:video_wan_motioncontrol_v26', label: 'Wan 2.6 Motion Control (RoboNeo · Meitu)', cr: 65 },
   ]},
   magnific: { name: 'Magnific', models: [
     { key: 'mag:kling-v3-motion-control-pro', label: 'Kling V3.0 Pro (Magnific)', cr: 84 },
@@ -530,6 +532,7 @@ export default function MotionPage() {
                   negativePrompt: negativePrompt.trim() || undefined,
                   orientation,
                   keepSound,
+                  modelKey: currentModel.key,
                 })
                 taskId = result.taskId
                 roomId = result.roomId
@@ -596,6 +599,7 @@ export default function MotionPage() {
                         negativePrompt: negativePrompt.trim() || undefined,
                         orientation,
                         keepSound,
+                        modelKey: currentModel.key,
                       })
                       taskId = retry.taskId
                       roomId = retry.roomId

@@ -360,7 +360,7 @@ function resolveAspectRatio(ratio: string): string {
 function resolveModel(modelKey: string): string {
   const map: Record<string, string> = {
     'kling-2.1': 'kling-2.1', 'kling-1.6-standard': 'kling-1.6-standard', 'kling-1.6-pro': 'kling-1.6-pro',
-    'kling-3-pro': 'kling-3-pro', 'sora-2': 'sora-2', 'veo-3': 'veo-3', 'veo-3.1': 'veo-3.1',
+    'kling-3-pro': 'kling-3-pro', 'sora-2': 'fal-ai/sora-2/image-to-video/pro', 'veo-3': 'veo-3', 'veo-3.1': 'veo-3.1',
     'seedance': 'seedance', 'seedance-2': 'seedance-2', 'wan-i2v': 'wan-i2v', 'wan-t2v': 'wan-t2v',
     'hailuo-02-pro': 'hailuo-02-pro',
   }

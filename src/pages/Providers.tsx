@@ -48,7 +48,7 @@ const PROVIDER_LIST = [
   { key: 'brain', label: 'Brain (Gemini)', desc: 'Dipakai Produk Storyboard & Naratif Video Maker. Multi-key auto-rotate saat kena limit/429.' },
   { key: 'weavy', label: 'Weavy', desc: 'Provider utama Kling Motion Control, Wan, Sora, Seedance.' },
   { key: 'wavespeed', label: 'Wavespeed', desc: 'Provider alternatif — cek balance via api.wavespeed.ai/api/v3/balance.' },
-  { key: 'roboneo', label: 'Roboneo', desc: 'Motion Control via Roboneo (Meitu) — Kling 2.6 Standard.' },
+  { key: 'roboneo', label: 'Roboneo', desc: 'AI video generation via Roboneo (Meitu) — Seedance 2.0, Kling 3.0, Wan 2.6, Sora 2, VEO 3.0, Happy Horse, Google Omni.' },
   { key: 'runninghub', label: 'Motion Control HD (Markasflow-V2)', desc: 'RunningHub AI video generation via Markasflow-V2 — Kling 3.0 Pro/Standard.' },
   { key: 'framia', label: 'Framia', desc: 'Canvas workflow (Converge AI) — semua node & recipe: image, video, avatar, garment, storyboard.' },
   { key: 'leonardo', label: 'Leonardo.ai', desc: 'app.leonardo.ai via Cognito Bearer JWT — Text-to-Image (Phoenix, Diffusion XL, Kino, Anime, Vision).' },
@@ -118,7 +118,7 @@ const TOKEN_GUIDE: Record<string, {
       { text: 'Simpan beberapa key sekaligus (multi-akun) → auto-rotate saat rate-limit / credit habis. Token tersimpan di akunmu, sinkron antar device, dan bisa di-transfer via Token Bank.' },
       { text: 'Alternatif (session token, cepat expired): DevTools → Application → Local Storage → https://www.roboneo.com → copy value `access-token`.' },
     ],
-    tip: 'Model yang didukung: Kling 2.6 Std (motion control + i2v), Seedance Pro, Google Omni. Panduan resmi: roboneo.com/cli/en.',
+    tip: 'Model yang didukung: Seedance 2.0, Kling 3.0, Wan 2.6, Sora 2, VEO 3.0, Happy Horse, Google Omni, Gemini Nano Banana 2. Panduan resmi: roboneo.com/cli/en.',
   },
 
   framia: {
