@@ -776,21 +776,23 @@ export default function ProvidersPage() {
                     Key tersimpan ({savedKeys.length})
                   </div>
                   {savedKeys.map((key, i) => {
+                    const keyObj = keys[selectedProvider as ProviderId]?.[i]
                     const status = statusMap[key]
-                    const state = status?.state || 'unknown'
+                    const state = status?.state || keyObj?.status || 'unknown'
+                    const balance = status?.balance ?? keyObj?.balance
+                    const detail = status?.detail || (balance != null ? `Balance: ${balance}` : undefined)
                     return (
                       <div key={i} className="flex items-center justify-between gap-2 rounded-md border border-[#2a2a2a] bg-[#141414] px-2.5 py-1.5">
                         <code className="text-[11px] font-mono text-[#f5f5f5]/85 truncate">{maskKey(key)}</code>
                         <div className="flex items-center gap-2 shrink-0">
-                          {status?.detail && (
-                            <span className="text-[10px] text-[#a0a0a0] truncate max-w-[220px]">{status.detail}</span>
+                          {detail && (
+                            <span className="text-[10px] text-[#a0a0a0] truncate max-w-[220px]">{detail}</span>
                           )}
                           <span className={`text-[10px] px-2 py-0.5 rounded-full border ${getStatusColor(state)}`}>
                             {getStatusLabel(state)}
                           </span>
                           <button
                             onClick={() => {
-                              const keyObj = keys[selectedProvider as ProviderId]?.[i]
                               if (keyObj) removeKey(selectedProvider as ProviderId, keyObj.id)
                               setStatusMap(prev => {
                                 const next = { ...prev }
@@ -821,6 +823,25 @@ export default function ProvidersPage() {
           <div className="mt-4 rounded-lg border border-[#2a2a2a] bg-[#141414] p-3 text-[11px] leading-relaxed text-[#a0a0a0]">
             🔒 Key dienkripsi (AES-GCM) di database akunmu & cache browser dipisahkan per akun. Otomatis tersinkron ketika kamu login di perangkat lain.
           </div>
+
+          {(() => {
+            const providerKeys = keys[selectedProvider as ProviderId] || []
+            const totalBalance = providerKeys.reduce((sum, k) => sum + (k.balance ?? 0), 0)
+            const activeCount = providerKeys.filter(k => k.status === 'active').length
+            if (providerKeys.length === 0) return null
+            return (
+              <div className="mt-3 rounded-lg border border-[#d4a017]/30 bg-[#d4a017]/5 p-3">
+                <div className="text-[10px] font-mono uppercase tracking-widest text-[#d4a017]/80">Pool Summary</div>
+                <div className="mt-2 flex items-baseline gap-2">
+                  <span className="font-display text-2xl font-black gold-text">{totalBalance.toLocaleString()}</span>
+                  <span className="text-[11px] text-[#a0a0a0]">credits total</span>
+                </div>
+                <div className="mt-1 text-[11px] text-[#a0a0a0]">
+                  {activeCount} active / {providerKeys.length} keys
+                </div>
+              </div>
+            )
+          })()}
 
               {TOKEN_GUIDE[selectedProvider as keyof typeof TOKEN_GUIDE] && (
             <div className="mt-4 rounded-lg border border-[#d4a017]/30 bg-[#d4a017]/5 p-3">
