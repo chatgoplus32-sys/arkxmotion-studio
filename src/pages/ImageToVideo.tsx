@@ -22,6 +22,7 @@ import {
   addResult,
   startBackgroundPolling,
 } from '@/lib/backgroundTasks'
+import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
 
 interface ModelOption {
   value: string
@@ -754,6 +755,16 @@ export default function ImageToVideoPage() {
     addLog(`   Model: ${currentModel?.label || model}`, 'debug', provider)
     addLog(`   Rasio: ${ratio} | Durasi: ${currentQuality?.duration || 5}s`, 'debug', provider)
     addLog(`   Prompt: "${prompt.trim().slice(0, 80)}${prompt.trim().length > 80 ? '...' : ''}"`, 'debug', provider)
+
+    const currentUser = useAuthStore.getState().user
+    const logId = currentUser ? await logGenerationStart({
+      page: 'image-to-video',
+      provider,
+      model: currentModel?.label || model,
+      prompt: prompt.slice(0, 500),
+      credits: currentModel?.cr || 0,
+      slot_count: 1,
+    }) : null
 
     let activeTaskId: string | null = null
 
@@ -1490,6 +1501,7 @@ export default function ImageToVideoPage() {
           setResults((prev) => [rotation.result!, ...prev])
           setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai' }))
           addLog(`✅ Video selesai ✓`, 'success', provider)
+          if (logId) logGenerationComplete(logId, { status: 'completed', result_url: rotation.result, duration_ms: Date.now() - startTime })
         } else {
           throw new Error(rotation.error || 'Generation failed')
         }
@@ -1498,6 +1510,7 @@ export default function ImageToVideoPage() {
        if (activeTaskId) removeActiveTask(activeTaskId)
        addLog(`❌ Error: ${err.message}`, 'error', provider)
        addToast(`Generate gagal: ${err.message}`, 'error')
+       if (logId) logGenerationFailed(logId, err.message, Date.now() - startTime)
        if (['roboneo', 'framia', 'createpulse'].includes(provider)) {
          addLog('⚠️ Credit mungkin sudah terpotong oleh server provider. Hubungi provider untuk refund jika gagal.', 'warn', provider)
        }

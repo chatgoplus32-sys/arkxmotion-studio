@@ -7,6 +7,7 @@ import adminTokenRoutes from './routes/adminTokens.js'
 import tokenRoutes from './routes/tokens.js'
 import createpulseRoutes from './routes/createpulse.js'
 import adminTopupRoutes from './routes/adminTopup.js'
+import generationLogRoutes from './routes/generationLogs.js'
 
 dotenv.config()
 
@@ -26,6 +27,7 @@ app.use('/api/admin/tokens', adminTokenRoutes)
 app.use('/api/admin/topup', adminTopupRoutes)
 app.use('/api/tokens', tokenRoutes)
 app.use('/api/createpulse', createpulseRoutes)
+app.use('/api/logs/generation', generationLogRoutes)
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })

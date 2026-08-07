@@ -2,7 +2,9 @@ import { useState, useRef, useMemo } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Select, Label, Textarea, EmptyState, Input } from '@/components/ui'
 import { useToastStore } from '@/stores/toastStore'
+import { useAuthStore } from '@/stores/authStore'
 import { logAudit } from '@/lib/auditLog'
+import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
 import {
   ShoppingBag, Upload, Rocket, Trash2, Download, X, Plus, Square, Image, User,
 } from 'lucide-react'
@@ -126,6 +128,16 @@ export default function UGCPage() {
     setStatus({ show: true, text: `Memproses ${products.length} produk…`, pct: 5, time: '0:00' })
     addLog(`Mulai generate ${products.length} produk...`, 'info')
 
+    const currentUser = useAuthStore.getState().user
+    const logId = currentUser ? await logGenerationStart({
+      page: 'ugc',
+      provider: 'weavy',
+      model: 'nanobanana2',
+      prompt: `UGC ${products.length} produk`,
+      credits: 50 * products.length,
+      slot_count: products.length,
+    }) : null
+
     const startTime = Date.now()
     const timer = setInterval(() => {
       const elapsed = Math.floor((Date.now() - startTime) / 1000)
@@ -176,11 +188,13 @@ export default function UGCPage() {
         addLog(`Selesai: ${doneCount}/${products.length}`, 'success')
         addToast('UGC generation selesai', 'success')
         logAudit('UGC_GENERATE', `${products.length} produk di-generate`, 'success')
+        if (logId) logGenerationComplete(logId, { status: 'completed', duration_ms: Date.now() - startTime })
       }
     } catch (err: any) {
       if (!controller.signal.aborted) {
         setStatus((prev) => ({ ...prev, pct: 100, text: `❌ ${err.message}` }))
         addLog(`Fatal: ${err.message}`, 'error')
+        if (logId) logGenerationFailed(logId, err.message, Date.now() - startTime)
       }
     } finally {
       clearInterval(timer)

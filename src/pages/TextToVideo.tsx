@@ -5,9 +5,11 @@ import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
 import { Image, Loader2, Settings2, AlertCircle, ExternalLink, Download, Trash2 } from 'lucide-react'
 import { useProviderManager, ProviderId } from '@/stores/providerManager'
 import { useToastStore } from '@/stores/toastStore'
+import { useAuthStore } from '@/stores/authStore'
 import { runLeonardoImage } from '@/lib/leonardo'
 import { runWeavyImage } from '@/lib/weavy'
 import { submitRoboneoImage, pollRoboneoImage, checkRoboneoBalance } from '@/lib/roboneo'
+import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
 
 interface ImageSize {
   id: string
@@ -298,6 +300,18 @@ export default function TextToImagePage() {
     setProgress({ show: true, text: 'Starting…', pct: 5 })
     setLogs([])
 
+    const currentUser = useAuthStore.getState().user
+    const logId = currentUser ? await logGenerationStart({
+      page: 'text-to-video',
+      provider,
+      model: selectedModel?.label || '',
+      prompt: prompt.slice(0, 500),
+      credits: 0,
+      slot_count: 1,
+    }) : null
+
+    const startTime = Date.now()
+
     const onProgress = (text: string, pct?: number) => {
       addLog(text)
       setProgress(prev => ({ ...prev, text, pct: pct ?? prev.pct }))
@@ -368,12 +382,14 @@ export default function TextToImagePage() {
       setProgress({ show: true, text: '✅ Selesai', pct: 100 })
       addLog(`✅ Gambar berhasil dibuat`, 'success')
       addToast('Gambar berhasil dibuat!', 'success')
+      if (logId) logGenerationComplete(logId, { status: 'completed', result_url: imageUrl, duration_ms: Date.now() - startTime })
     } catch (err: any) {
       if (abortRef.current) return
       const errMsg = err.message || 'Unknown error'
       setProgress({ show: true, text: `❌ ${errMsg}`, pct: 100 })
       addLog(`❌ ${errMsg}`, 'error')
       addToast(errMsg, 'error')
+      if (logId) logGenerationFailed(logId, errMsg, Date.now() - startTime)
     } finally {
       setLoading(false)
     }

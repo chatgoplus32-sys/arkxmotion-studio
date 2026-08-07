@@ -13,6 +13,8 @@ import { useLocalStorage } from '@/lib/useLocalStorage'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { removeResult, clearResults, getActiveTasks, getLogs, getResults, addBgLog, addActiveTask, addResult, clearLogs, removeActiveTask } from '@/lib/backgroundTasks'
 import { startBackgroundPolling } from '@/lib/backgroundTasks'
+import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
+import { useAuthStore } from '@/stores/authStore'
 import {
   Video,
   Upload,
@@ -425,6 +427,17 @@ export default function MotionPage() {
     addLog(`🚀 Mulai generate video · ${currentProvider.name} · ${currentModel.label}`)
     addLog(`Mode: ${isOmni ? 'Image → Video (Google Omni)' : 'Motion Control (Image + Video)'}`)
     addLog(`Processing ${filledSlots.length} slot(s)...`)
+
+    const startTime = Date.now()
+    const currentUser = useAuthStore.getState().user
+    const logId = currentUser ? await logGenerationStart({
+      page: 'motion',
+      provider,
+      model: currentModel.label,
+      prompt: prompt.slice(0, 500),
+      credits: currentModel.cr * filledSlots.length,
+      slot_count: filledSlots.length,
+    }) : null
 
     let successCount = 0
     let failCount = 0
@@ -952,8 +965,10 @@ export default function MotionPage() {
       } else {
         addLog(`Selesai — ${successCount} video`, 'success')
       }
+      if (logId) logGenerationComplete(logId, { status: 'completed', duration_ms: Date.now() - startTime })
     } else {
       addLog(`Generation failed: ${rotation.error}`, 'error')
+      if (logId) logGenerationFailed(logId, rotation.error || 'Unknown error', Date.now() - startTime)
       if (isRoboneo) {
         addLog('⚠️ Credit mungkin sudah terpotong oleh server provider.', 'warn')
       }
@@ -975,6 +990,7 @@ export default function MotionPage() {
      } catch (genErr: any) {
       addLog(`Generation error: ${genErr.message}`, 'error')
       addToast(`Generate gagal: ${genErr.message}`, 'error')
+      if (logId) logGenerationFailed(logId, genErr.message, Date.now() - startTime)
     } finally {
       if (generatingRef.current && successRef.current) {
         addToast(`Generate selesai: ${currentProvider.name} · ${currentModel.label}`, 'success')

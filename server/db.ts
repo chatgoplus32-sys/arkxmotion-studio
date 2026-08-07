@@ -128,6 +128,28 @@ db.exec(`
   )
 `)
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS generation_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    page TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    prompt TEXT NOT NULL DEFAULT '',
+    credits INTEGER DEFAULT 0,
+    slot_count INTEGER DEFAULT 1,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'completed', 'failed')),
+    result_url TEXT DEFAULT NULL,
+    error TEXT DEFAULT NULL,
+    duration_ms INTEGER DEFAULT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`)
+
+db.exec(`CREATE INDEX IF NOT EXISTS idx_generation_logs_user_id ON generation_logs(user_id)`)
+db.exec(`CREATE INDEX IF NOT EXISTS idx_generation_logs_created_at ON generation_logs(created_at)`)
+
 const providers = ['weavy', 'wavespeed', 'magnific', 'roboneo', 'createpulse', 'framia', 'firefly', 'leonardo', 'gemini', 'openai', 'shotstack', 'creatomate']
 for (const p of providers) {
   const exists = db.prepare('SELECT id FROM provider_maintenance WHERE provider = ?').get(p)

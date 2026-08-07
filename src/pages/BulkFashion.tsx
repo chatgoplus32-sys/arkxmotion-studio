@@ -4,7 +4,9 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Select, Label, Textarea, EmptyState, Input } from '@/components/ui'
 import { useBulkFashionStore } from '@/stores/bulkFashionStore'
 import { useToastStore } from '@/stores/toastStore'
+import { useAuthStore } from '@/stores/authStore'
 import { logAudit } from '@/lib/auditLog'
+import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
 import {
   BULK_FASHION_PROVIDERS,
   calculateBulkCost,
@@ -262,6 +264,16 @@ export default function BulkFashionPage() {
     // Initialize per-outfit progress
     setOutfitProgress(outfitFiles.map((_, i) => ({ index: i, status: 'queued' as const })))
 
+    const currentUser = useAuthStore.getState().user
+    const logId = currentUser ? await logGenerationStart({
+      page: 'bulk-fashion',
+      provider: activeProvider,
+      model,
+      prompt: `Bulk fashion ${outfitFiles.length} outfit`,
+      credits: outfitFiles.length * 50,
+      slot_count: outfitFiles.length,
+    }) : null
+
     const startTime = Date.now()
     const completedCount = { value: 0 }
 
@@ -338,10 +350,12 @@ export default function BulkFashionPage() {
 
         // Audit log
         logAudit('BULK_FASHION', `${resultUrls.length}/${outfitFiles.length} gambar di-generate (${activeProvider}/${model})`, 'success')
+        if (logId) logGenerationComplete(logId, { status: 'completed', duration_ms: Date.now() - startTime })
       }
     } catch (err: any) {
       if (!controller.signal.aborted) {
         setStatus({ pct: 100, text: `❌ ${err.message || String(err)}` })
+        if (logId) logGenerationFailed(logId, err.message || 'Unknown error', Date.now() - startTime)
       }
     } finally {
       clearInterval(timer)
