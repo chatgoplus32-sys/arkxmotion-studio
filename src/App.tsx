@@ -13,6 +13,7 @@ import BulkFashionPage from '@/pages/BulkFashion'
 import ImageToVideoPage from '@/pages/ImageToVideo'
 import UpscalerPage from '@/pages/Upscaler'
 import UGCPage from '@/pages/UGC'
+import TextToVideoPage from '@/pages/TextToVideo'
 
 
 import ProvidersPage from '@/pages/Providers'
@@ -70,6 +71,7 @@ export default function App() {
                       <Route path="/generate/ugc" element={<UGCPage />} />
                       <Route path="/generate/upscaler" element={<UpscalerPage />} />
                       <Route path="/generate/image-to-video" element={<ImageToVideoPage />} />
+                      <Route path="/generate/image" element={<TextToVideoPage />} />
 
 
                       <Route path="/providers" element={<ProvidersPage />} />

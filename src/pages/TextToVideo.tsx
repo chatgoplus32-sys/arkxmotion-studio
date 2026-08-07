@@ -35,7 +35,48 @@ interface ImageModel {
 }
 
 const PROVIDER_MODELS: Record<string, ImageModel[]> = {
-  weavy: [],
+  weavy: [
+    {
+      id: 'nano-banana-2',
+      apiId: 'nano-banana-2',
+      label: 'Nano Banana Pro',
+      provider: 'weavy',
+      group: 'Featured',
+      aspectRatios: ['1:1', '16:9', '9:16'],
+      sizes: [{ id: 'auto', label: 'Auto', width: 1024, height: 1024 }],
+      cr: 5,
+      supportsNegativePrompt: false,
+    },
+    {
+      id: 'gptimage2',
+      apiId: 'gptimage2',
+      label: 'GPT Image 2',
+      provider: 'weavy',
+      group: 'Featured',
+      aspectRatios: ['1:1', '16:9', '9:16'],
+      sizes: [
+        { id: 'medium@1024x1024', label: 'Medium 1024×1024', width: 1024, height: 1024 },
+        { id: 'medium@1536x1024', label: 'Medium 1536×1024', width: 1536, height: 1024 },
+        { id: 'medium@1024x1536', label: 'Medium 1024×1536', width: 1024, height: 1536 },
+        { id: 'high@1024x1024', label: 'High 1024×1024', width: 1024, height: 1024 },
+        { id: 'high@1536x1024', label: 'High 1536×1024', width: 1536, height: 1024 },
+        { id: 'high@1024x1536', label: 'High 1024×1536', width: 1024, height: 1536 },
+      ],
+      cr: 5,
+      supportsNegativePrompt: false,
+    },
+    {
+      id: 'seedream',
+      apiId: 'seedream',
+      label: 'Seedream V5',
+      provider: 'weavy',
+      group: 'Featured',
+      aspectRatios: ['1:1', '16:9', '9:16'],
+      sizes: [{ id: 'auto', label: 'Auto', width: 1024, height: 1024 }],
+      cr: 5,
+      supportsNegativePrompt: false,
+    },
+  ],
   leonardo: [
     {
       id: 'gpt-image-2',
@@ -239,10 +280,7 @@ export default function TextToImagePage() {
   const { keys, routing, fetchMaintenance } = useProviderManager()
   const addToast = useToastStore((s) => s.addToast)
 
-  const [provider, setProvider] = useState<ProviderId>(() => {
-    const saved = routing['text-to-image']
-    return (saved as ProviderId) || 'weavy'
-  })
+  const [provider] = useState<ProviderId>('weavy')
   const [modelId, setModelId] = useState('')
   const [prompt, setPrompt] = useState('')
   const [negativePrompt, setNegativePrompt] = useState('')
@@ -340,6 +378,7 @@ export default function TextToImagePage() {
           model: selectedModel.apiId,
           prompt: prompt.trim(),
           aspectRatio,
+          quality: sizeId,
           negativePrompt: negativePrompt.trim() || undefined,
           onProgress,
         })
@@ -429,9 +468,9 @@ export default function TextToImagePage() {
     <PageContent>
       <PageHeader
         eyebrow="Generate"
-        title="Text to"
-        highlight="Image"
-        desc="Buat gambar dari teks/prompt menggunakan AI. Pilih provider, model, dan pengaturan yang diinginkan."
+        title="Image"
+        highlight="Gallery"
+        desc="Buat gambar dari teks/prompt menggunakan AI Weavy. Pilih model dan pengaturan yang diinginkan."
       />
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px] mt-4">
@@ -490,14 +529,14 @@ export default function TextToImagePage() {
               />
             </div>
           <div>
-            <Label>Size ({selectedModel?.sizes.find(s => s.id === sizeId)?.width || 1024}A-{selectedModel?.sizes.find(s => s.id === sizeId)?.height || 1024})</Label>
+            <Label>Size / Quality</Label>
             <Select
               value={sizeId}
               onChange={e => setSizeId(e.target.value)}
               disabled={loading}
               options={selectedModel?.sizes.map(s => ({
                 value: s.id,
-                label: `${s.label} (${s.width} A-${s.height})`,
+                label: s.label,
               })) || []}
             />
           </div>
@@ -562,7 +601,7 @@ export default function TextToImagePage() {
           {!hasKey && (
             <div className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
               <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-              <span>Tambahkan <b>{providerLabel(provider)}</b> key di halaman Providers</span>
+              <span>Tambahkan <b>Weavy</b> key di halaman Providers</span>
             </div>
           )}
         </div>
@@ -595,15 +634,7 @@ export default function TextToImagePage() {
 
           <div>
             <Label>Provider</Label>
-            <Select
-              value={provider}
-              onChange={e => setProvider(e.target.value as ProviderId)}
-              disabled={loading}
-              options={ACTIVE_PROVIDERS.map(p => ({
-                value: p,
-                label: providerLabel(p),
-              }))}
-            />
+            <div className="text-sm font-medium text-foreground py-2">Weavy</div>
           </div>
 
           <MaintenanceBanner providerId={provider} />
@@ -616,9 +647,10 @@ export default function TextToImagePage() {
               <b>{selectedModel?.label || '—'}</b>
             </div>
             <div className="text-[11px] text-muted-foreground space-y-1">
-              <div>Provider: <span className="text-foreground">{providerLabel(provider)}</span></div>
+              <div>Provider: <span className="text-foreground">Weavy</span></div>
+              <div>Model: <span className="text-foreground">{selectedModel?.label || '—'}</span></div>
               <div>Aspect Ratio: <span className="text-foreground">{aspectRatio}</span></div>
-              <div>Resolusi: <span className="text-foreground">{selectedModel?.sizes.find(s => s.id === sizeId)?.label || '—'}</span></div>
+              <div>Size: <span className="text-foreground">{selectedModel?.sizes.find(s => s.id === sizeId)?.label || '—'}</span></div>
               <div>Cost: <span className="text-primary font-mono">{selectedModel?.cr || 0} credits</span></div>
             </div>
           </div>

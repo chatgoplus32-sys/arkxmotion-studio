@@ -39,6 +39,7 @@ function getRecentActivity(): RecentActivity[] {
 }
 
 const TOOLS = [
+  { icon: <Image className="h-5 w-5" />, label: 'Generate Image', desc: 'Buat gambar dari teks dengan AI Weavy', href: '/generate/image', color: 'gold' },
   { icon: <Video className="h-5 w-5" />, label: 'Motion Control', desc: 'Transfer motion dari video ke karakter', href: '/generate/motion', color: 'gold' },
   { icon: <ShoppingBag className="h-5 w-5" />, label: 'Bulk Fashion', desc: '1 karakter + banyak outfit → generate parallel', href: '/generate/bulk-fashion', color: 'gold' },
   { icon: <Image className="h-5 w-5" />, label: 'Image to Video', desc: 'Animate gambar dengan AI', href: '/generate/image-to-video', color: 'silver' },
