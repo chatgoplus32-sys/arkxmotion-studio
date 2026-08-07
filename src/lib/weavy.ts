@@ -281,14 +281,19 @@ export async function fetchWeavyCreditsClient(accessToken: string): Promise<numb
     })
     if (r.ok) {
       const d = await r.json().catch(() => null)
+      console.log('[weavy] workspaces response:', JSON.stringify(d).slice(0, 500))
       // Top-level credits (reference site: const c = d.credits)
       if (d?.credits != null && typeof d.credits === 'number') return d.credits
       // Nested workspace credits
       const ws = d?.workspaces?.[0] || d?.[0] || d
       if (ws?.credits != null && typeof ws.credits === 'number') return ws.credits
       if (ws?.balance != null && typeof ws.balance === 'number') return ws.balance
+    } else {
+      console.log('[weavy] workspaces error:', r.status, await r.text().catch(() => ''))
     }
-  } catch {}
+  } catch (e: any) {
+    console.log('[weavy] workspaces catch:', e.message)
+  }
 
   return null
 }
