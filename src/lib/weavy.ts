@@ -253,9 +253,7 @@ export function resolveWeavyAssetUrl(asset: any, type: 'image' | 'video' = 'imag
 }
 
 export async function fetchWeavyCreditsClient(accessToken: string): Promise<number | null> {
-  const timeout = AbortSignal.timeout(10000)
-
-  // Try multiple endpoints like reference site
+  // Try multiple endpoints like reference site (arkxmotionv2)
   const endpoints = [
     `${WEAVY_API}/v1/credits`,
     `${WEAVY_API}/v1/user/credits`,
@@ -268,28 +266,27 @@ export async function fetchWeavyCreditsClient(accessToken: string): Promise<numb
     try {
       const r = await fetch(url, {
         headers: { Authorization: `Bearer ${accessToken}` },
-        signal: timeout,
       })
-      if (r.status === 401 || r.status === 403) continue
-      if (r.status === 404) break
       if (!r.ok) continue
-      const data = await r.json().catch(() => null)
-      const credits = data?.credits ?? data?.balance ?? data?.totalCredits ?? data?.creditsRemaining ?? data?.quota ?? data?.usage?.credits ?? data?.plan?.credits ?? data?.data?.credits ?? data?.user?.credits ?? null
-      if (typeof credits === 'number') return credits
+      const d = await r.json().catch(() => null)
+      const c = d?.credits ?? d?.balance ?? d?.totalCredits ?? d?.creditsRemaining ?? d?.quota ?? d?.usage?.credits ?? d?.plan?.credits ?? d?.data?.credits ?? d?.user?.credits ?? null
+      if (c !== null && typeof c === 'number') return c
     } catch { continue }
   }
 
-  // Fallback: workspaces endpoint
+  // Primary: workspaces endpoint (reference site uses d.credits top-level)
   try {
     const r = await fetch(`${WEAVY_API}/v1/workspaces`, {
       headers: { Authorization: `Bearer ${accessToken}` },
-      signal: timeout,
     })
     if (r.ok) {
-      const data = await r.json().catch(() => null)
-      const ws = Array.isArray(data?.workspaces) ? data.workspaces[0] : data?.workspaces?.[0] || data?.[0] || data
-      if (typeof ws?.credits === 'number') return ws.credits
-      if (typeof ws?.balance === 'number') return ws.balance
+      const d = await r.json().catch(() => null)
+      // Top-level credits (reference site: const c = d.credits)
+      if (d?.credits != null && typeof d.credits === 'number') return d.credits
+      // Nested workspace credits
+      const ws = d?.workspaces?.[0] || d?.[0] || d
+      if (ws?.credits != null && typeof ws.credits === 'number') return ws.credits
+      if (ws?.balance != null && typeof ws.balance === 'number') return ws.balance
     }
   } catch {}
 
