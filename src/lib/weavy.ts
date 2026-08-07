@@ -415,7 +415,15 @@ function resolveModel(modelKey: string): string {
 }
 
 function resolveImageModel(modelKey: string): { model: string; service: string } {
-  const map: Record<string, { model: string; service: string }> = {}
+  const map: Record<string, { model: string; service: string }> = {
+    'gptimage2': { model: 'openai/gpt-image-2', service: 'fal_imported' },
+    'gpt-image-2': { model: 'openai/gpt-image-2', service: 'fal_imported' },
+    'nano-banana-2': { model: 'fal-ai/nano-banana/pro', service: 'fal_imported' },
+    'nano-banana': { model: 'fal-ai/nano-banana/pro', service: 'fal_imported' },
+    'nanobanana2': { model: 'fal-ai/nano-banana/pro', service: 'fal_imported' },
+    'seedream': { model: 'fal-ai/seedream/v5', service: 'fal_imported' },
+    'seedream-v5': { model: 'fal-ai/seedream/v5', service: 'fal_imported' },
+  }
   return map[modelKey] || { model: modelKey, service: 'fal_imported' }
 }
 
@@ -1849,18 +1857,56 @@ export async function pollWeavyImageStatus(token: string, taskId: string, onProg
       })
       const data = await res.json().catch(() => null)
       if (!res.ok || !data) { console.log(`[weavy-image] poll error:`, data?.error || `HTTP ${res.status}`); continue }
-      const status = (data?.status || data?.state || '').toLowerCase()
+      
+      // Check status like reference site: recipeRuns[0].status first, then top-level
+      const status = (data?.recipeRuns?.[0]?.status || data?.status || data?.state || '').toLowerCase()
       const elapsedMin = (Date.now() - startTime) / (6 * 60000); const fallbackPct = Math.min(0.94, 1 - 1 / (1 + elapsedMin * 1.6)); const pct = Math.round(5 + fallbackPct * 89)
       onProgress?.(status || 'processing', pct)
       const logEntry = `poll #${Math.round((Date.now() - startTime) / 1000)}s status=${status} pct=${pct}`
       if (logEntry !== lastLog) { lastLog = logEntry; console.log(`[weavy-image] ${logEntry}`) }
+      
       if (['completed', 'success', 'done', 'finished'].includes(status)) {
-        const imageUrl = data?.output?.image_url || data?.output?.url || data?.image_url || data?.url || data?.recipeRuns?.[0]?.nodeRuns?.[0]?.result?.[0]?.url || data?.recipeRuns?.[0]?.nodeRuns?.[0]?.result?.[0]?.image_url
-        if (imageUrl) return imageUrl
+        // Extract image URL like reference site: check nodeRuns.result, then output, then top-level
+        if (data?.recipeRuns?.[0]?.nodeRuns) {
+          for (let i = data.recipeRuns[0].nodeRuns.length - 1; i >= 0; i--) {
+            const nr = data.recipeRuns[0].nodeRuns[i]
+            let ro = nr.result
+            if (Array.isArray(ro) && ro.length > 0) ro = ro[0]
+            
+            // Check result array for image URLs
+            if (Array.isArray(nr.result)) {
+              for (const item of nr.result) {
+                if (item.url && (item.url.includes('.png') || item.url.includes('.jpg') || item.url.includes('media.weavy.ai'))) {
+                  return item.url
+                }
+              }
+            }
+            
+            // Check various URL locations
+            const urls = [
+              ro?.url,
+              nr.output?.file?.url,
+              nr.output?.url,
+              ...(nr.generations || []).map((g: any) => g.url || '')
+            ].filter((u: any) => u && typeof u === 'string' && (u.includes('.png') || u.includes('.jpg') || u.includes('media.weavy.ai')))
+            if (urls.length > 0) return urls[0]
+          }
+        }
+        
+        // Fallback output paths
+        if (data?.output?.url) return data.output.url
+        if (data?.output?.images?.[0]?.url) return data.output.images[0].url
+        if (data?.image_url) return data.image_url
+        if (data?.url) return data.url
+        
         console.log(`[weavy-image] task done but no url:`, JSON.stringify(data, null, 2).slice(0, 2000))
         throw new Error('Weavy: task completed but no image URL found')
       }
-      if (['failed', 'error', 'cancelled', 'canceled'].includes(status)) { const errMsg = data?.error || data?.message || data?.recipeRuns?.[0]?.nodeRuns?.[0]?.error || 'Generation failed'; throw new Error(`Weavy failed: ${errMsg}`) }
+      
+      if (['failed', 'error', 'cancelled', 'canceled'].includes(status)) {
+        const ne = data?.recipeRuns?.[0]?.nodeRuns?.map((nr: any) => nr.error).filter(Boolean).join(' | ') || ''
+        const errMsg = (data?.error || data?.message || 'Generation failed') + (ne ? ' | ' + ne : '')
+        throw new Error(`Weavy failed: ${errMsg}`) }
     } catch (err: any) { if (/timeout|fetch|network/i.test(err.message)) { console.log(`[weavy-image] network error, retrying:`, err.message); continue }; throw err }
   }
   throw new Error('Weavy image: timeout')
