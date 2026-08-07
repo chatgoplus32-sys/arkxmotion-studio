@@ -4,7 +4,7 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui'
 import { useProviderManager } from '@/stores/providerManager'
 import {
-  Sparkles, Video, Image, Zap, ShoppingBag, Wand2, Mic, Film,
+  Sparkles, Video, Image, Zap, ShoppingBag, Wand2, Film,
   Settings, Route, Key, Shield, Activity, Clock, ArrowRight,
   TrendingUp, Layers, Download, AlertTriangle,
 } from 'lucide-react'
@@ -43,7 +43,7 @@ const TOOLS = [
   { icon: <ShoppingBag className="h-5 w-5" />, label: 'Bulk Fashion', desc: '1 karakter + banyak outfit → generate parallel', href: '/generate/bulk-fashion', color: 'gold' },
   { icon: <Image className="h-5 w-5" />, label: 'Image to Video', desc: 'Animate gambar dengan AI', href: '/generate/image-to-video', color: 'silver' },
   { icon: <Wand2 className="h-5 w-5" />, label: 'AI Upscaler', desc: 'Upscale & enhance gambar', href: '/generate/upscaler', color: 'silver' },
-  { icon: <Mic className="h-5 w-5" />, label: 'Dubbing', desc: 'AI voice dubbing', href: '/mixing/dubbing', color: 'silver' },
+
   { icon: <Zap className="h-5 w-5" />, label: 'Providers', desc: 'Kelola API keys & tokens', href: '/providers', color: 'gold' },
 ]
 

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'runninghub' | 'createpulse' | 'framia' | 'firefly' | 'leonardo' | 'elevenlabs' | 'gemini' | 'openai' | 'shotstack' | 'creatomate'
+export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'runninghub' | 'createpulse' | 'framia' | 'firefly' | 'leonardo' | 'gemini' | 'openai' | 'shotstack' | 'creatomate'
 
 export interface ProviderKey {
   id: string
@@ -119,16 +119,6 @@ export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
     minCredits: 10,
     supportsBalance: true,
   },
-  elevenlabs: {
-    id: 'elevenlabs',
-    name: 'ElevenLabs',
-    icon: '🎙️',
-    description: 'AI voice generation and text-to-speech',
-    keyPlaceholder: 'Paste your ElevenLabs API key...',
-    keyFormat: 'API key',
-    minCredits: 50,
-    supportsBalance: true,
-  },
   gemini: {
     id: 'gemini',
     name: 'Gemini',
@@ -182,7 +172,6 @@ function getDefaultMaintenance(): Record<ProviderId, MaintenanceInfo> {
     framia: { isMaintenance: false, message: '' },
     firefly: { isMaintenance: false, message: '' },
     leonardo: { isMaintenance: false, message: '' },
-    elevenlabs: { isMaintenance: false, message: '' },
     gemini: { isMaintenance: false, message: '' },
     openai: { isMaintenance: false, message: '' },
     shotstack: { isMaintenance: false, message: '' },
@@ -259,7 +248,6 @@ function loadKeysFromStorage(): Record<ProviderId, ProviderKey[]> {
     framia: [],
     firefly: [],
     leonardo: [],
-    elevenlabs: [],
     gemini: [],
     openai: [],
     shotstack: [],
@@ -289,7 +277,6 @@ function loadRoutingFromStorage(): Record<string, ProviderId> {
     'bulk-fashion': 'weavy',
     'image-to-video': 'weavy',
     upscaler: 'magnific',
-    dubbing: 'elevenlabs',
     'ai-influencer': 'gemini',
   }
 }

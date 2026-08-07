@@ -27,7 +27,7 @@ interface ProviderStatus {
 
 const ALL_PROVIDERS: ProviderId[] = [
   'weavy', 'wavespeed', 'magnific', 'roboneo', 'createpulse',
-  'framia', 'firefly', 'leonardo', 'elevenlabs', 'gemini',
+  'framia', 'firefly', 'leonardo', 'gemini',
   'openai', 'shotstack', 'creatomate',
 ]
 

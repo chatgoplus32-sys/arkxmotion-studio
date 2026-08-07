@@ -38,7 +38,7 @@ Sidebar Navigation Groups:
 - **8 AI Providers Supported:**
   - Weavy, Wavespeed, Magnific, Roboneo (Video/AI)
   - CreatePulse (Video creation) 
-  - ElevenLabs, Gemini, OpenAI (Voice/Text)
+  - Gemini, OpenAI (Voice/Text)
 
 - **API Key Management:**
   - Add/Edit/Delete keys with validation
@@ -75,7 +75,7 @@ Sidebar Navigation Groups:
 #### Provider Types:
 ```typescript
 type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 
-                 'createpulse' | 'elevenlabs' | 'gemini' | 'openai';
+                 'createpulse' | 'gemini' | 'openai';
 ```
 
 #### Data Structure:
@@ -191,7 +191,7 @@ npm run lint    # OXLint linting
 ```typescript
 const PROVIDER_IDS: ProviderId[] = [
   'weavy', 'wavespeed', 'magnific', 'roboneo',
-  'createpulse', 'elevenlabs', 'gemini', 'openai'
+  'createpulse', 'gemini', 'openai'
 ];
 
 const WORKFLOW_ROUTES = [

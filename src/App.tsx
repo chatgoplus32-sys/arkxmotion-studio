@@ -14,7 +14,6 @@ import ImageToVideoPage from '@/pages/ImageToVideo'
 import UpscalerPage from '@/pages/Upscaler'
 import UGCPage from '@/pages/UGC'
 
-import DubbingPage from '@/pages/Dubbing'
 
 import ProvidersPage from '@/pages/Providers'
 import RoutingProviderPage from '@/pages/RoutingProvider'
@@ -72,7 +71,6 @@ export default function App() {
                       <Route path="/generate/upscaler" element={<UpscalerPage />} />
                       <Route path="/generate/image-to-video" element={<ImageToVideoPage />} />
 
-                      <Route path="/mixing/dubbing" element={<DubbingPage />} />
 
                       <Route path="/providers" element={<ProvidersPage />} />
                       <Route path="/manage/routing" element={<RoutingProviderPage />} />

@@ -1,6 +1,6 @@
 import { useProviderManager, type ProviderId, type ProviderKey } from '@/stores/providerManager'
 import { checkRoboneoBalance, isRoboneoCredentialError, isRoboneoBalanceError } from '@/lib/roboneo'
-import { fetchWeavyCreditsClient } from '@/lib/weavy'
+import { checkWeavyBalance } from '@/lib/weavy'
 import { fetchLeonardoBalance } from '@/lib/leonardo'
 
 const TOKEN_ERROR_PATTERNS = [
@@ -105,9 +105,13 @@ export async function withTokenRotation<T>(
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     const currentKeys = useProviderManager.getState().keys[provider] || []
-    const nextKey = currentKeys.find(
+    // Sort by balance descending for weavy (prefer higher balance tokens)
+    const sortedKeys = provider === 'weavy'
+      ? [...currentKeys].sort((a, b) => (b.balance ?? 0) - (a.balance ?? 0))
+      : currentKeys
+    const nextKey = sortedKeys.find(
       (k) => !triedKeyIds.has(k.id) && (k.status === 'active' || k.status === 'unknown')
-    ) || currentKeys.find((k) => !triedKeyIds.has(k.id))
+    ) || sortedKeys.find((k) => !triedKeyIds.has(k.id))
 
     if (!nextKey) break
 
@@ -167,20 +171,26 @@ export async function withTokenRotation<T>(
       }
     } else if (provider === 'weavy') {
       try {
-        const balance = await fetchWeavyCreditsClient(nextKey.key)
+        const result = await checkWeavyBalance(nextKey.key)
         const required = opts?.requiredCredits ?? 0
-        if (balance !== null) {
-          if (balance < required) {
-            console.log(`[token-rotation] ${provider} key "${nextKey.name}" skipped (balance=${balance} < required=${required}). Trying next...`)
-            useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'empty', balance)
-            lastError = new Error(`Token ${nextKey.name} balance tidak cukup (${balance} < ${required})`)
-            opts?.onError?.(lastError, nextKey)
-            continue
+        if (result.ok) {
+          const balance = result.balance
+          if (balance !== null && balance !== undefined) {
+            if (balance < required) {
+              console.log(`[token-rotation] ${provider} key "${nextKey.name}" skipped (balance=${balance} < required=${required}). Trying next...`)
+              useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'empty', balance)
+              lastError = new Error(`Token ${nextKey.name} balance tidak cukup (${balance} < ${required})`)
+              opts?.onError?.(lastError, nextKey)
+              continue
+            }
+            console.log(`[token-rotation] ${provider} key "${nextKey.name}" balance=${balance} >= required=${required}, proceeding...`)
+            useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'active', balance)
+          } else {
+            console.log(`[token-rotation] ${provider} key "${nextKey.name}" balance unknown, proceeding anyway...`)
+            useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'active')
           }
-          console.log(`[token-rotation] ${provider} key "${nextKey.name}" balance=${balance} >= required=${required}, proceeding...`)
-          useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'active', balance)
         } else {
-          console.log(`[token-rotation] ${provider} key "${nextKey.name}" balance unknown (endpoint 404), proceeding anyway...`)
+          console.log(`[token-rotation] ${provider} key "${nextKey.name}" token check failed (${result.error}), proceeding anyway...`)
           useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'active')
         }
        } catch (err: any) {

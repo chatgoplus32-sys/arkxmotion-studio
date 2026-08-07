@@ -128,7 +128,7 @@ db.exec(`
   )
 `)
 
-const providers = ['weavy', 'wavespeed', 'magnific', 'roboneo', 'createpulse', 'framia', 'firefly', 'leonardo', 'elevenlabs', 'gemini', 'openai', 'shotstack', 'creatomate']
+const providers = ['weavy', 'wavespeed', 'magnific', 'roboneo', 'createpulse', 'framia', 'firefly', 'leonardo', 'gemini', 'openai', 'shotstack', 'creatomate']
 for (const p of providers) {
   const exists = db.prepare('SELECT id FROM provider_maintenance WHERE provider = ?').get(p)
   if (!exists) {

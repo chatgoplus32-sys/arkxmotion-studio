@@ -661,7 +661,7 @@ async function handleMaintenanceRoutes(req: VercelRequest, res: VercelResponse) 
     )`
 
     // Seed providers if not exist
-    const providers = ['weavy', 'wavespeed', 'magnific', 'roboneo', 'createpulse', 'framia', 'firefly', 'leonardo', 'elevenlabs', 'gemini', 'openai', 'shotstack', 'creatomate']
+    const providers = ['weavy', 'wavespeed', 'magnific', 'roboneo', 'createpulse', 'framia', 'firefly', 'leonardo', 'gemini', 'openai', 'shotstack', 'creatomate']
     for (const p of providers) {
       await sql`INSERT INTO provider_maintenance (provider, is_maintenance, message) VALUES (${p}, 0, '') ON CONFLICT (provider) DO NOTHING`
     }

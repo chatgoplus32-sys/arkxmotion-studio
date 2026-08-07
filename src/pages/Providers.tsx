@@ -39,7 +39,6 @@ const PROVIDER_COLORS: Record<string, string> = {
   runninghub: '#f97316',
   framia: '#fb923c',
   leonardo: '#facc15',
-  eleven: '#818cf8',
   render: '#94a3b8',
   createpulse: '#c084fc',
 }
@@ -52,7 +51,6 @@ const PROVIDER_LIST = [
   { key: 'runninghub', label: 'Motion Control HD (Markasflow-V2)', desc: 'RunningHub AI video generation via Markasflow-V2 — Kling 3.0 Pro/Standard.' },
   { key: 'framia', label: 'Framia', desc: 'Canvas workflow (Converge AI) — semua node & recipe: image, video, avatar, garment, storyboard.' },
   { key: 'leonardo', label: 'Leonardo.ai', desc: 'app.leonardo.ai via Cognito Bearer JWT — Text-to-Image (Phoenix, Diffusion XL, Kino, Anime, Vision).' },
-  { key: 'eleven', label: 'ElevenLabs', desc: 'Voice-over untuk Naratif Video Maker.' },
   { key: 'createpulse', label: 'CreatePulse', desc: 'Video generation (Seedance, Veo, Dreamina) via createpulse.online — pakai API key sendiri.' },
 ] as const
 
@@ -149,19 +147,6 @@ const TOKEN_GUIDE: Record<string, {
     tip: 'Model default: Phoenix, Leonardo Diffusion XL, Kino XL, Anime XL, Vision XL — semua otomatis muncul di halaman Generate → Leonardo.',
   },
 
-  eleven: {
-    url: 'https://elevenlabs.io/app/developers/api-keys',
-    urlLabel: 'elevenlabs.io/app/developers/api-keys',
-    prefix: 'sk_… (xi-api-key)',
-    steps: [
-      { text: 'Register/login di elevenlabs.io (free tier: 10.000 karakter/bulan).' },
-      { text: 'Buka menu Profile → API Keys (atau klik link di samping).' },
-      { text: 'Klik "Create API Key", beri nama, centang scope Text-to-Speech.' },
-      { text: 'Copy key sk_… — HANYA muncul sekali, simpan aman.' },
-      { text: 'Paste ke textarea di sebelah. Multi-key akan auto-rotate saat quota habis.' },
-    ],
-    tip: 'Model Multilingual v2 = 1 karakter / 1 credit. Turbo v2.5 = 0.5 credit / karakter (setengah biaya, latency rendah).',
-  },
   createpulse: {
     url: 'https://createpulse.online',
     urlLabel: 'createpulse.online',
@@ -212,7 +197,6 @@ function getStorageKey(provider: string): string {
     roboneo: 'arkxmotion.roboneo.keys',
     framia: 'arkxmotion.framia.keys',
     leonardo: 'arkxmotion.leonardo.keys',
-    eleven: 'arkxmotion.eleven.keys',
     createpulse: 'arkxmotion.createpulse.keys',
   }
   return map[provider] || `arkxmotion.${provider}.keys`
@@ -308,7 +292,6 @@ export default function ProvidersPage() {
       runninghub: 'runninghub',
       framia: 'framia',
       leonardo: 'leonardo',
-      eleven: 'elevenlabs',
       createpulse: 'createpulse',
     }
     const providerId = providerMap[selectedProvider]
@@ -324,7 +307,6 @@ export default function ProvidersPage() {
       runninghub: 'runninghub',
       framia: 'framia',
       leonardo: 'leonardo',
-      eleven: 'elevenlabs',
       createpulse: 'createpulse',
     }
     const providerId = providerMap[selectedProvider]
@@ -510,31 +492,46 @@ export default function ProvidersPage() {
     setChecking(true)
     const newStatusMap: typeof statusMap = {}
     const providerKeys = keys[selectedProvider as ProviderId] || []
+    const concurrency = 5
 
-    for (let i = 0; i < savedKeys.length; i++) {
-      const key = savedKeys[i]
+    // Mark all as checking first
+    for (const key of savedKeys) {
       newStatusMap[key] = { state: 'checking' }
-      setStatusMap({ ...newStatusMap })
+    }
+    setStatusMap({ ...newStatusMap })
 
-      const result = await handleCheckKey(key)
-      newStatusMap[key] = result
-      setStatusMap({ ...newStatusMap })
-
-      // Persist balance/status to provider store
-      const keyObj = providerKeys.find(k => k.key === key)
-      if (keyObj) {
-        const newStatus = result.state === 'active' ? 'active'
-          : result.state === 'empty' ? 'empty'
-          : result.state === 'invalid' ? 'invalid'
-          : result.state === 'limited' ? 'rate-limited'
-          : 'unknown'
-        updateKeyStatus(selectedProvider as ProviderId, keyObj.id, newStatus as any, result.balance)
+    // Run checks in parallel batches
+    let completed = 0
+    for (let i = 0; i < savedKeys.length; i += concurrency) {
+      const batch = savedKeys.slice(i, i + concurrency)
+      const results = await Promise.allSettled(
+        batch.map(async (key) => {
+          const result = await handleCheckKey(key)
+          return { key, result }
+        })
+      )
+      for (const r of results) {
+        if (r.status === 'fulfilled') {
+          newStatusMap[r.value.key] = r.value.result
+          // Persist balance/status to provider store
+          const keyObj = providerKeys.find(k => k.key === r.value.key)
+          if (keyObj) {
+            const res = r.value.result
+            const newStatus = res.state === 'active' ? 'active'
+              : res.state === 'empty' ? 'empty'
+              : res.state === 'invalid' ? 'invalid'
+              : res.state === 'limited' ? 'rate-limited'
+              : 'unknown'
+            updateKeyStatus(selectedProvider as ProviderId, keyObj.id, newStatus as any, res.balance)
+          }
+        }
+        completed++
       }
-
+      setStatusMap({ ...newStatusMap })
       setProgress({
         show: true,
-        pct: Math.round(((i + 1) / savedKeys.length) * 100),
-        text: `Cek ${i + 1}/${savedKeys.length}`,
+        pct: Math.round((completed / savedKeys.length) * 100),
+        text: `Cek ${completed}/${savedKeys.length}`,
       })
     }
 
@@ -613,9 +610,8 @@ export default function ProvidersPage() {
                     wavespeed: 'wavespeed',
                     roboneo: 'roboneo',
                     framia: 'framia',
-                    leonardo: 'leonardo',
-                    eleven: 'elevenlabs',
-                    createpulse: 'createpulse',
+      leonardo: 'leonardo',
+      createpulse: 'createpulse',
                   }
                   const providerId = providerMap[p.key]
                   const isMaint = providerId ? isProviderMaintenance(providerId) : false

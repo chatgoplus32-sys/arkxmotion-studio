@@ -18,7 +18,7 @@ import {
   Wallet,
   Wand2,
   PlayCircle,
-  Mic,
+
   ShoppingCart,
   Route,
   ShoppingBag,
@@ -48,7 +48,7 @@ const generateNav: NavItem[] = [
 const toolsNavBase: NavItem[] = [
   { label: 'Providers', href: '/providers', icon: <Zap className="h-4 w-4" /> },
   { label: 'Routing Provider', href: '/manage/routing', icon: <Route className="h-4 w-4" /> },
-  { label: 'Dubbing', href: '/mixing/dubbing', icon: <Mic className="h-4 w-4" /> },
+
   { label: 'Top Up CreatePulse', href: '/topup/createpulse', icon: <Wallet className="h-4 w-4" /> },
   { label: 'Settings', href: '/settings', icon: <Settings className="h-4 w-4" /> },
   { label: 'Beli Token', href: '/beli-token', icon: <ShoppingCart className="h-4 w-4" /> },
