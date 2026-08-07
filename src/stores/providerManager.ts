@@ -217,7 +217,7 @@ export type ProviderState = {
   addKey: (provider: ProviderId, key: string, name?: string) => void
   importKeys: (provider: ProviderId, tokenValues: string[], namePrefix?: string) => number
   removeKey: (provider: ProviderId, keyId: string) => void
-  updateKeyStatus: (provider: ProviderId, keyId: string, status: ProviderKey['status'], balance?: number) => void
+  updateKeyStatus: (provider: ProviderId, keyId: string, status: ProviderKey['status'], balance?: number, email?: string) => void
   getActiveKey: (provider: ProviderId) => ProviderKey | null
   getFirstValidKey: (provider: ProviderId) => ProviderKey | null
   findKeyById: (provider: ProviderId, keyId: string) => ProviderKey | undefined
@@ -366,13 +366,13 @@ export const useProviderManager = create<ProviderState>((set, get) => ({
     })
   },
 
-  updateKeyStatus: (provider, keyId, status, balance) => {
+  updateKeyStatus: (provider, keyId, status, balance, email?) => {
     set((state) => {
       const updated = {
         ...state.keys,
         [provider]: state.keys[provider].map((k) =>
           k.id === keyId
-            ? { ...k, status, balance: balance ?? k.balance, lastChecked: Date.now() }
+            ? { ...k, status, balance: balance ?? k.balance, email: email ?? k.email, lastChecked: Date.now() }
             : k
         ),
       }

@@ -431,14 +431,15 @@ export default function ProvidersPage() {
           const bal = result.balance
           const email = result.email
           const sub = result.subscriptionType
+          const subLabel = sub === 'free' ? 'Free' : sub === 'pro' ? 'Pro' : sub || ''
           if (bal !== null && bal !== undefined) {
             if (bal > 0) {
-              return { state: 'active', balance: bal, detail: `Balance: ${bal} credits${sub ? ` (${sub})` : ''}${email ? ` · ${email}` : ''}` }
+              return { state: 'active', balance: bal, email, detail: `${email || ''}${subLabel ? ` · ${subLabel}` : ''} · Balance: ${bal} cr` }
             } else if (bal === 0) {
-              return { state: 'empty', balance: 0, detail: `Balance: 0 — habis${sub ? ` (${sub})` : ''}${email ? ` · ${email}` : ''}` }
+              return { state: 'empty', balance: 0, email, detail: `${email || ''}${subLabel ? ` · ${subLabel}` : ''} · Balance: 0 — habis` }
             }
           }
-          return { state: 'active', detail: `${sub ? `[${sub}] ` : ''}${email || 'Token valid'}` }
+          return { state: 'active', email, detail: `${email || 'Token valid'}${subLabel ? ` · ${subLabel}` : ''}` }
         }
         if (result.error?.includes('expired') && !result.error?.includes('403')) {
           return { state: 'invalid', detail: 'Token expired — ambil baru dari browser (F12 → Network → app.weavy.ai → Authorization)' }
@@ -524,7 +525,7 @@ export default function ProvidersPage() {
               : res.state === 'invalid' ? 'invalid'
               : res.state === 'limited' ? 'rate-limited'
               : 'unknown'
-            updateKeyStatus(selectedProvider as ProviderId, keyObj.id, newStatus as any, res.balance)
+            updateKeyStatus(selectedProvider as ProviderId, keyObj.id, newStatus as any, res.balance, res.email)
           }
         }
         completed++
@@ -779,75 +780,90 @@ export default function ProvidersPage() {
                     const status = statusMap[key]
                     const state = status?.state || keyObj?.status || 'unknown'
                     const balance = status?.balance ?? keyObj?.balance
-                    const detail = status?.detail || (balance != null ? `Balance: ${balance}` : undefined)
+                    const detail = status?.detail
                     const isWeavy = selectedProvider === 'weavy'
                     const isEditing = editingBalanceIdx === i
+                    const isActive = state === 'active'
+                    const isEmpty = state === 'empty' || (isWeavy && balance === 0)
+                    const dotColor = isEmpty ? 'bg-red-500' : isActive ? 'bg-green-500' : state === 'checking' ? 'bg-yellow-500 animate-pulse' : 'bg-gray-500'
                     return (
-                      <div key={i} className="flex items-center justify-between gap-2 rounded-md border border-[#2a2a2a] bg-[#141414] px-2.5 py-1.5">
-                        <code className="text-[11px] font-mono text-[#f5f5f5]/85 truncate">{maskKey(key)}</code>
-                        <div className="flex items-center gap-2 shrink-0">
-                          {/* Balance display / edit */}
-                          {isWeavy && balance == null && !isEditing && (
-                            <button
-                              onClick={() => {
-                                setEditingBalanceIdx(i)
-                                setEditingBalanceVal('')
-                              }}
-                              className="text-[10px] text-[#d4a017] hover:text-[#f5f5f5] underline underline-offset-2 transition cursor-pointer"
-                              title="Input manual balance"
-                            >
-                              + Input Balance
-                            </button>
-                          )}
-                          {isWeavy && isEditing && (
-                            <div className="flex items-center gap-1">
-                              <input
-                                type="number"
-                                value={editingBalanceVal}
-                                onChange={e => setEditingBalanceVal(e.target.value)}
-                                onKeyDown={e => {
-                                  if (e.key === 'Enter') {
-                                    const val = parseInt(editingBalanceVal)
-                                    if (!isNaN(val) && val >= 0 && keyObj) {
-                                      updateKeyStatus(selectedProvider as ProviderId, keyObj.id, keyObj.status || 'active', val)
-                                    }
-                                    setEditingBalanceIdx(null)
-                                  }
-                                  if (e.key === 'Escape') setEditingBalanceIdx(null)
-                                }}
-                                placeholder="0"
-                                autoFocus
-                                className="w-20 text-[10px] font-mono bg-[#0a0a0a] border border-[#d4a017] text-[#f5f5f5] px-1.5 py-0.5 rounded focus:outline-none focus:border-[#f5f5f5]"
-                              />
-                              <button
-                                onClick={() => {
-                                  const val = parseInt(editingBalanceVal)
-                                  if (!isNaN(val) && val >= 0 && keyObj) {
-                                    updateKeyStatus(selectedProvider as ProviderId, keyObj.id, keyObj.status || 'active', val)
-                                  }
-                                  setEditingBalanceIdx(null)
-                                }}
-                                className="text-[10px] text-[#22c55e] hover:text-[#4ade80] transition"
-                                title="Simpan"
-                              >
-                                <Check className="h-3 w-3" />
-                              </button>
-                              <button
-                                onClick={() => setEditingBalanceIdx(null)}
-                                className="text-[10px] text-[#a0a0a0] hover:text-[#f5f5f5] transition"
-                                title="Batal"
-                              >
-                                <XCircle className="h-3 w-3" />
-                              </button>
+                      <div key={i} className={`flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 ${isActive ? 'border-green-500/30 bg-green-500/5' : isEmpty ? 'border-red-500/20 bg-red-500/5' : 'border-[#2a2a2a] bg-[#141414]'}`}>
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} />
+                          {isWeavy ? (
+                            <div className="min-w-0 flex-1">
+                              <div className="text-[11px] font-mono text-[#f5f5f5]/85 truncate" title={key}>{maskKey(key)}</div>
+                              {detail && (
+                                <div className="text-[10px] text-[#a0a0a0] truncate mt-0.5">{detail}</div>
+                              )}
                             </div>
+                          ) : (
+                            <code className="text-[11px] font-mono text-[#f5f5f5]/85 truncate">{maskKey(key)}</code>
                           )}
-                          {isWeavy && balance != null && !isEditing && (
-                            <span className="text-[10px] text-[#22c55e] font-mono cursor-pointer hover:underline" onClick={() => {
-                              setEditingBalanceIdx(i)
-                              setEditingBalanceVal(String(balance))
-                            }} title="Klik untuk edit balance">
-                              Balance: {balance.toLocaleString()}
-                            </span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {isWeavy && (
+                            <>
+                              {balance != null ? (
+                                <span
+                                  className={`text-[11px] font-mono font-bold cursor-pointer hover:underline ${balance > 0 ? 'text-green-400' : 'text-red-400'}`}
+                                  onClick={() => { setEditingBalanceIdx(i); setEditingBalanceVal(String(balance)) }}
+                                  title="Klik untuk edit balance"
+                                >
+                                  {balance.toLocaleString()} cr
+                                </span>
+                              ) : !isEditing ? (
+                                <button
+                                  onClick={() => { setEditingBalanceIdx(i); setEditingBalanceVal('') }}
+                                  className="text-[10px] text-[#d4a017] hover:text-[#f5f5f5] underline underline-offset-2 transition cursor-pointer"
+                                  title="Input manual balance"
+                                >
+                                  ??? cr
+                                </button>
+                              ) : null}
+                              {isEditing && (
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="number"
+                                    value={editingBalanceVal}
+                                    onChange={e => setEditingBalanceVal(e.target.value)}
+                                    onKeyDown={e => {
+                                      if (e.key === 'Enter') {
+                                        const val = parseInt(editingBalanceVal)
+                                        if (!isNaN(val) && val >= 0 && keyObj) {
+                                          updateKeyStatus(selectedProvider as ProviderId, keyObj.id, keyObj.status || 'active', val)
+                                        }
+                                        setEditingBalanceIdx(null)
+                                      }
+                                      if (e.key === 'Escape') setEditingBalanceIdx(null)
+                                    }}
+                                    placeholder="0"
+                                    autoFocus
+                                    className="w-20 text-[10px] font-mono bg-[#0a0a0a] border border-[#d4a017] text-[#f5f5f5] px-1.5 py-0.5 rounded focus:outline-none focus:border-[#f5f5f5]"
+                                  />
+                                  <button
+                                    onClick={() => {
+                                      const val = parseInt(editingBalanceVal)
+                                      if (!isNaN(val) && val >= 0 && keyObj) {
+                                        updateKeyStatus(selectedProvider as ProviderId, keyObj.id, keyObj.status || 'active', val)
+                                      }
+                                      setEditingBalanceIdx(null)
+                                    }}
+                                    className="text-[10px] text-[#22c55e] hover:text-[#4ade80] transition"
+                                    title="Simpan"
+                                  >
+                                    <Check className="h-3 w-3" />
+                                  </button>
+                                  <button
+                                    onClick={() => setEditingBalanceIdx(null)}
+                                    className="text-[10px] text-[#a0a0a0] hover:text-[#f5f5f5] transition"
+                                    title="Batal"
+                                  >
+                                    <XCircle className="h-3 w-3" />
+                                  </button>
+                                </div>
+                              )}
+                            </>
                           )}
                           {!isWeavy && detail && (
                             <span className="text-[10px] text-[#a0a0a0] truncate max-w-[220px]">{detail}</span>
@@ -895,16 +911,22 @@ export default function ProvidersPage() {
             const providerKeys = keys[selectedProvider as ProviderId] || []
             const totalBalance = providerKeys.reduce((sum, k) => sum + (k.balance ?? 0), 0)
             const activeCount = providerKeys.filter(k => k.status === 'active').length
+            const isWeavyPool = selectedProvider === 'weavy'
             if (providerKeys.length === 0) return null
             return (
               <div className="mt-3 rounded-lg border border-[#d4a017]/30 bg-[#d4a017]/5 p-3">
                 <div className="text-[10px] font-mono uppercase tracking-widest text-[#d4a017]/80">Pool Summary</div>
                 <div className="mt-2 flex items-baseline gap-2">
-                  <span className="font-display text-2xl font-black gold-text">{totalBalance.toLocaleString()}</span>
+                  <span className="font-display text-2xl font-black gold-text">
+                    {isWeavyPool && totalBalance === 0 ? '???' : totalBalance.toLocaleString()}
+                  </span>
                   <span className="text-[11px] text-[#a0a0a0]">credits total</span>
                 </div>
                 <div className="mt-1 text-[11px] text-[#a0a0a0]">
                   {activeCount} active / {providerKeys.length} keys
+                  {isWeavyPool && totalBalance === 0 && (
+                    <span className="ml-2 text-[#d4a017]">· Balance tidak tersedia untuk Free tier</span>
+                  )}
                 </div>
               </div>
             )
