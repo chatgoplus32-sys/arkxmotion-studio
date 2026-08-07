@@ -317,6 +317,31 @@ export async function fetchWeavyCreditsClient(accessToken: string): Promise<numb
 }
 
 async function resolveAndFetchCredits(token: string): Promise<{ ok: boolean; credits: number | null; email?: string; subscriptionType?: string }> {
+  // Call proxy with raw token (refresh or JWT) — proxy handles refresh internally
+  try {
+    const r = await fetch(`${WEAVY_PROXY}?action=balance`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Weavy-Token': token,
+      },
+      body: JSON.stringify({}),
+      signal: AbortSignal.timeout(15000),
+    })
+    if (r.ok) {
+      const data = await r.json().catch(() => null)
+      if (data?.ok) {
+        const credits = data?.data?.credits
+        const email = data?.data?.email || extractEmailFromJwt(token)
+        // Extract subscription from refreshed token if available
+        const newToken = data?.refreshToken
+        const subscriptionType = newToken ? extractSubscriptionType(newToken) : extractSubscriptionType(token)
+        return { ok: true, credits: typeof credits === 'number' ? credits : null, email: email || undefined, subscriptionType: subscriptionType || undefined }
+      }
+    }
+  } catch {}
+
+  // Fallback: client-side approach
   if (isRefreshToken(token)) {
     const refreshed = await refreshWeavyAccessToken(token)
     if (refreshed?.accessToken) {
