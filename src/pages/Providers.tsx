@@ -267,7 +267,7 @@ export default function ProvidersPage() {
   const [bulkMode, setBulkMode] = useState(false)
   const [bulkText, setBulkText] = useState(() => localStorage.getItem(`arkxmotion.providers.bulk.${localStorage.getItem('arkxmotion.providers.selected') || 'brain'}`) || '')
   const [workflowId, setWorkflowId] = useState(() => localStorage.getItem('runninghub.workflowId') || '')
-  const [statusMap, setStatusMap] = useState<Record<string, { state: string; detail?: string; balance?: number }>>({})
+  const [statusMap, setStatusMap] = useState<Record<string, { state: string; detail?: string; balance?: number; email?: string }>>({})
   const [checking, setChecking] = useState(false)
   const [progress, setProgress] = useState({ show: false, pct: 0, text: '' })
   const [viewHidden, setViewHidden] = useState(false)
@@ -780,7 +780,8 @@ export default function ProvidersPage() {
                     const status = statusMap[key]
                     const state = status?.state || keyObj?.status || 'unknown'
                     const balance = status?.balance ?? keyObj?.balance
-                    const detail = status?.detail
+                    const email = status?.email ?? keyObj?.email
+                    const detail = status?.detail || (email ? `${email}${keyObj?.balance != null ? ` · ${keyObj.balance} cr` : ''}` : null)
                     const isWeavy = selectedProvider === 'weavy'
                     const isEditing = editingBalanceIdx === i
                     const isActive = state === 'active'
