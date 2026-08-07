@@ -1743,8 +1743,6 @@ export async function pollWeavySeedanceMiniStatus(
 export interface WeavyImageGenerateParams { token: string; model: string; prompt: string; aspectRatio?: string; negativePrompt?: string; quality?: string; imageUrl?: string; imageUrls?: string[]; maskUrl?: string }
 export interface WeavyImageGenerateResult { ok: boolean; taskId?: string; error?: string; raw?: any; charUrl?: string; outfitUrl?: string }
 
-const WEAVY_API = 'https://api.weavy.ai/api'
-
 export async function submitWeavyImage(params: WeavyImageGenerateParams): Promise<WeavyImageGenerateResult> {
   const { token, model, prompt, aspectRatio = '1:1', quality, imageUrl, imageUrls, maskUrl } = params
   try {
