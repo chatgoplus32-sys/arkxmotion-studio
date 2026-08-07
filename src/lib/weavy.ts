@@ -416,13 +416,13 @@ function resolveModel(modelKey: string): string {
 
 function resolveImageModel(modelKey: string): { model: string; service: string } {
   const map: Record<string, { model: string; service: string }> = {
-    'gptimage2': { model: 'openai/gpt-image-2', service: 'fal_imported' },
-    'gpt-image-2': { model: 'openai/gpt-image-2', service: 'fal_imported' },
-    'nano-banana-2': { model: 'fal-ai/nano-banana/pro', service: 'fal_imported' },
-    'nano-banana': { model: 'fal-ai/nano-banana/pro', service: 'fal_imported' },
-    'nanobanana2': { model: 'fal-ai/nano-banana/pro', service: 'fal_imported' },
-    'seedream': { model: 'fal-ai/seedream/v5', service: 'fal_imported' },
-    'seedream-v5': { model: 'fal-ai/seedream/v5', service: 'fal_imported' },
+    'gptimage2': { model: 'gptimage2', service: 'fal_imported' },
+    'gpt-image-2': { model: 'gptimage2', service: 'fal_imported' },
+    'nano-banana-2': { model: 'nanobanana2', service: 'fal_imported' },
+    'nano-banana': { model: 'nanobanana2', service: 'fal_imported' },
+    'nanobanana2': { model: 'nanobanana2', service: 'fal_imported' },
+    'seedream': { model: 'seedream', service: 'fal_imported' },
+    'seedream-v5': { model: 'seedream', service: 'fal_imported' },
   }
   return map[modelKey] || { model: modelKey, service: 'fal_imported' }
 }
