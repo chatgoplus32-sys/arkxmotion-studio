@@ -425,8 +425,10 @@ export default function ProvidersPage() {
       }
     }
     if (selectedProvider === 'weavy') {
+      console.log('[Providers] handleCheckKey weavy, key:', key.slice(0, 20) + '...')
       try {
         const result = await checkWeavyBalance(key)
+        console.log('[Providers] checkWeavyBalance result:', result)
         if (result.ok) {
           const bal = result.balance
           const email = result.email

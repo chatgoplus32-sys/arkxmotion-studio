@@ -371,19 +371,8 @@ export interface WeavyStatusResult {
 
 export async function checkWeavyBalance(token: string): Promise<{ ok: boolean; balance?: number | null; email?: string; subscriptionType?: string; error?: string }> {
   try {
-    const res = await fetch(WEAVY_PROXY, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Weavy-Token': token },
-      body: JSON.stringify({ action: 'balance' }),
-      signal: AbortSignal.timeout(15000),
-    })
-    const data = await res.json().catch(() => null)
-    if (!res.ok || !data?.ok) {
-      return { ok: false, balance: null, error: data?.error || `HTTP ${res.status}` }
-    }
-    const credits = data?.data?.credits
-    const email = data?.data?.email
-    return { ok: true, balance: credits ?? null, email: email || undefined, subscriptionType: undefined }
+    const result = await resolveAndFetchCredits(token)
+    return { ok: result.ok, balance: result.credits, email: result.email, subscriptionType: result.subscriptionType }
   } catch (err: any) {
     return { ok: false, balance: null, error: err.message }
   }
