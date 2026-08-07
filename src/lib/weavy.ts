@@ -298,6 +298,14 @@ export async function fetchWeavyCreditsClient(accessToken: string): Promise<numb
   return null
 }
 
+async function resolveAccessToken(token: string): Promise<string> {
+  if (isRefreshToken(token)) {
+    const refreshed = await refreshWeavyAccessToken(token)
+    if (refreshed?.accessToken) return refreshed.accessToken
+  }
+  return token
+}
+
 async function resolveAndFetchCredits(token: string): Promise<{ ok: boolean; credits: number | null; email?: string; subscriptionType?: string }> {
   console.log('[weavy] resolveAndFetchCredits called, token starts:', token.slice(0, 20) + '...')
 
@@ -583,45 +591,28 @@ export function isWeavyTokenError(msg: string): boolean {
 // ── Sora 2 Pro (recipe-based workflow) ──
 
 export async function uploadToWeavy(token: string, file: File): Promise<string> {
-  const WEAVY_API = 'https://api.weavy.ai/api'
   const fd = new FormData()
   fd.append('file', file, file.name)
   if (file.type) fd.append('type', file.type)
 
-  // Try direct browser upload first (bypasses Cloudflare proxy issues)
-  try {
-    const directRes = await fetch(`${WEAVY_API}/v1/assets/upload`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-      body: fd,
-      signal: AbortSignal.timeout(60000),
-    })
-    const directText = await directRes.text()
-    let directData: any; try { directData = JSON.parse(directText) } catch { directData = null }
-    console.log(`[weavy] direct upload → ${directRes.status}`, directText.slice(0, 300))
-    if (directRes.ok && directData) {
-      const r = directData.result || directData
-      if (r?.download) return r.download
-      if (r?.url) return r.url
-      if (r?.id) return `https://media.weavy.ai/image/upload/uploads/${r.id}.jpg`
-    }
-  } catch (e: any) {
-    console.log(`[weavy] direct upload failed, trying proxy:`, e.message)
-  }
+  // Resolve access token
+  const accessToken = await resolveAccessToken(token)
 
-  // Fallback: proxy upload
-  const res = await fetch(`${WEAVY_PROXY}?action=upload`, {
+  // Direct browser upload to Weavy API
+  const res = await fetch(`${WEAVY_API}/v1/assets/upload`, {
     method: 'POST',
-    headers: { 'X-Weavy-Token': token },
+    headers: { Authorization: `Bearer ${accessToken}` },
     body: fd,
   })
-  const data = await res.json().catch(() => null)
-  if (!res.ok || !data?.ok) throw new Error(data?.error || `Upload failed HTTP ${res.status}`)
-  const result = data?.data?.result || data?.data
-  if (typeof result === 'string') return result
-  if (result?.url) return result.url
-  if (result?.download) return result.download
-  if (result?.id) return `https://media.weavy.ai/image/upload/uploads/${result.id}.jpg`
+  const text = await res.text()
+  let data: any; try { data = JSON.parse(text) } catch { data = null }
+  console.log(`[weavy] upload → ${res.status}`, text.slice(0, 300))
+  if (!res.ok || !data) throw new Error(data?.error || `Upload failed (${res.status}): ${text.slice(0, 200)}`)
+  
+  const r = data?.result || data
+  if (r?.download) return r.download
+  if (r?.url) return r.url
+  if (r?.id) return `https://media.weavy.ai/image/upload/uploads/${r.id}.jpg`
   throw new Error('No upload URL returned')
 }
 
@@ -1752,15 +1743,34 @@ export async function pollWeavySeedanceMiniStatus(
 export interface WeavyImageGenerateParams { token: string; model: string; prompt: string; aspectRatio?: string; negativePrompt?: string; quality?: string; imageUrl?: string; imageUrls?: string[]; maskUrl?: string }
 export interface WeavyImageGenerateResult { ok: boolean; taskId?: string; error?: string; raw?: any; charUrl?: string; outfitUrl?: string }
 
+const WEAVY_API = 'https://api.weavy.ai/api'
+
 export async function submitWeavyImage(params: WeavyImageGenerateParams): Promise<WeavyImageGenerateResult> {
   const { token, model, prompt, aspectRatio = '1:1', quality, imageUrl, imageUrls, maskUrl } = params
   try {
-    // Step 1: Create recipe via proxy
-    const createRes = await fetch(WEAVY_PROXY, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Weavy-Token': token }, body: JSON.stringify({ action: 'image-create-recipe' }) })
-    const createData = await createRes.json().catch(() => null)
-    if (!createRes.ok || !createData?.ok) return { ok: false, error: createData?.error || `Create recipe failed (${createRes.status})`, raw: createData }
-    const recipeId = createData?.data?.recipeId
-    const v3 = createData?.data?.v3
+    // Step 0: Resolve access token (refresh via Firebase if needed)
+    const accessToken = await resolveAccessToken(token)
+
+    const authHeaders = {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      'Accept': 'application/json, text/plain, */*',
+      'Accept-Language': 'en-US,en;q=0.9',
+    }
+
+    // Step 1: Create recipe (direct browser call)
+    const createRes = await fetch(`${WEAVY_API}/v1/recipes/create`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({ scope: 'PERSONAL' }),
+    })
+    const createText = await createRes.text()
+    let createData: any; try { createData = JSON.parse(createText) } catch { createData = null }
+    console.log(`[weavy] image-create-recipe → ${createRes.status}`, createText.slice(0, 300))
+    if (!createRes.ok || !createData) return { ok: false, error: `Create recipe failed (${createRes.status}): ${createText.slice(0, 200)}`, raw: createData }
+    const recipeId = createData?.id || createData?.recipeId
+    const v3 = createData?.v3
     if (!recipeId) return { ok: false, error: 'No recipeId returned', raw: createData }
 
     // Step 2: Build nodes + edges
@@ -1773,20 +1783,35 @@ export async function submitWeavyImage(params: WeavyImageGenerateParams): Promis
       ? [nodes._dummyNode, ...extraNodes, modelNode]
       : [nodes]
 
-    // Step 3: Save recipe via proxy
-    const saveRes = await fetch(WEAVY_PROXY, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Weavy-Token': token }, body: JSON.stringify({ action: 'image-save-recipe', recipeId, nodes: allNodes, edges, v3 }) })
-    const saveData = await saveRes.json().catch(() => null)
-    if (!saveRes.ok || !saveData?.ok) return { ok: false, error: saveData?.error || `Save recipe failed (${saveRes.status})`, raw: saveData }
+    // Step 3: Save recipe (direct browser call)
+    const saveRes = await fetch(`${WEAVY_API}/v1/recipes/${recipeId}/save`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({ nodes: allNodes, edges, v3: v3 || '', lastUpdatedAt: new Date().toISOString() }),
+    })
+    const saveText = await saveRes.text()
+    console.log(`[weavy] image-save-recipe → ${saveRes.status}`, saveText.slice(0, 300))
+    if (!saveRes.ok) return { ok: false, error: `Save recipe failed (${saveRes.status}): ${saveText.slice(0, 200)}` }
 
-    // Step 4: Approve model via proxy
+    // Step 4: Approve model (direct browser call, fire-and-forget)
     const modelName = nodes.data?.model?.name || model
-    await fetch(WEAVY_PROXY, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Weavy-Token': token }, body: JSON.stringify({ action: 'image-approve-model', modelId: modelName }) })
+    fetch(`${WEAVY_API}/v1/workspaces/models/approve`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({ modelIds: [modelName] }),
+    }).catch(() => {})
 
-    // Step 5: Execute via proxy
-    const execRes = await fetch(WEAVY_PROXY, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Weavy-Token': token }, body: JSON.stringify({ action: 'image-execute', recipeId, nodes: allNodes, edges, numberOfRuns: 1 }) })
-    const execData = await execRes.json().catch(() => null)
-    if (!execRes.ok || !execData?.ok) return { ok: false, error: execData?.error || `Execute failed (${execRes.status})`, raw: execData }
-    const batchId = execData?.data?.batchId || execData?.data?.id
+    // Step 5: Execute (direct browser call)
+    const execRes = await fetch(`${WEAVY_API}/v1/batches/recipes/${recipeId}/execute`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({ nodes: allNodes, edges, numberOfRuns: 1 }),
+    })
+    const execText = await execRes.text()
+    let execData: any; try { execData = JSON.parse(execText) } catch { execData = null }
+    console.log(`[weavy] image-execute → ${execRes.status}`, execText.slice(0, 500))
+    if (!execRes.ok || !execData) return { ok: false, error: `Execute failed (${execRes.status}): ${execText.slice(0, 300)}`, raw: execData }
+    const batchId = execData?.batchId || execData?.id
     if (!batchId) return { ok: false, error: 'No batchId in response', raw: execData }
     return { ok: true, taskId: `${recipeId}:${batchId}`, raw: execData }
   } catch (err: any) { return { ok: false, error: err.message } }
@@ -1803,22 +1828,25 @@ export async function pollWeavyImageStatus(token: string, taskId: string, onProg
     const pollInterval = attempt < 30 ? 8000 : attempt < 60 ? 10000 : 15000
     await new Promise((r) => setTimeout(r, pollInterval))
     try {
-      const res = await fetch(WEAVY_PROXY, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Weavy-Token': token }, body: JSON.stringify({ action: 'status', batchId }) })
+      // Direct browser call for status check
+      const accessToken = await resolveAccessToken(token)
+      const res = await fetch(`${WEAVY_API}/v1/batches/${batchId}/status`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
       const data = await res.json().catch(() => null)
-      if (!res.ok || !data?.ok) { console.log(`[weavy-image] poll error:`, data?.error || `HTTP ${res.status}`); continue }
-      const result = data?.data
-      const status = (result?.status || result?.state || '').toLowerCase()
+      if (!res.ok || !data) { console.log(`[weavy-image] poll error:`, data?.error || `HTTP ${res.status}`); continue }
+      const status = (data?.status || data?.state || '').toLowerCase()
       const elapsedMin = (Date.now() - startTime) / (6 * 60000); const fallbackPct = Math.min(0.94, 1 - 1 / (1 + elapsedMin * 1.6)); const pct = Math.round(5 + fallbackPct * 89)
       onProgress?.(status || 'processing', pct)
       const logEntry = `poll #${Math.round((Date.now() - startTime) / 1000)}s status=${status} pct=${pct}`
       if (logEntry !== lastLog) { lastLog = logEntry; console.log(`[weavy-image] ${logEntry}`) }
       if (['completed', 'success', 'done', 'finished'].includes(status)) {
-        const imageUrl = result?.output?.image_url || result?.output?.url || result?.image_url || result?.url || result?.recipeRuns?.[0]?.nodeRuns?.[0]?.result?.[0]?.url || result?.recipeRuns?.[0]?.nodeRuns?.[0]?.result?.[0]?.image_url
+        const imageUrl = data?.output?.image_url || data?.output?.url || data?.image_url || data?.url || data?.recipeRuns?.[0]?.nodeRuns?.[0]?.result?.[0]?.url || data?.recipeRuns?.[0]?.nodeRuns?.[0]?.result?.[0]?.image_url
         if (imageUrl) return imageUrl
-        console.log(`[weavy-image] task done but no url:`, JSON.stringify(result, null, 2).slice(0, 2000))
+        console.log(`[weavy-image] task done but no url:`, JSON.stringify(data, null, 2).slice(0, 2000))
         throw new Error('Weavy: task completed but no image URL found')
       }
-      if (['failed', 'error', 'cancelled', 'canceled'].includes(status)) { const errMsg = result?.error || result?.message || result?.recipeRuns?.[0]?.nodeRuns?.[0]?.error || 'Generation failed'; throw new Error(`Weavy failed: ${errMsg}`) }
+      if (['failed', 'error', 'cancelled', 'canceled'].includes(status)) { const errMsg = data?.error || data?.message || data?.recipeRuns?.[0]?.nodeRuns?.[0]?.error || 'Generation failed'; throw new Error(`Weavy failed: ${errMsg}`) }
     } catch (err: any) { if (/timeout|fetch|network/i.test(err.message)) { console.log(`[weavy-image] network error, retrying:`, err.message); continue }; throw err }
   }
   throw new Error('Weavy image: timeout')
