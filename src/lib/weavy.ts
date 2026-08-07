@@ -255,27 +255,7 @@ export function resolveWeavyAssetUrl(asset: any, type: 'image' | 'video' = 'imag
 export async function fetchWeavyCreditsClient(accessToken: string): Promise<number | null> {
   const timeout = AbortSignal.timeout(10000)
 
-  // First try via proxy (bypasses Cloudflare, different IP)
-  try {
-    const r = await fetch(`${WEAVY_PROXY}?action=balance`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Weavy-Token': accessToken,
-      },
-      body: JSON.stringify({}),
-      signal: timeout,
-    })
-    if (r.ok) {
-      const data = await r.json().catch(() => null)
-      const credits = data?.data?.credits
-      if (typeof credits === 'number') return credits
-      // If proxy returned ok but credits is null, token might be free-tier
-      if (data?.ok && credits === null) return null
-    }
-  } catch {}
-
-  // Fallback: direct API call (may be blocked by Cloudflare)
+  // Try multiple endpoints like reference site
   const endpoints = [
     `${WEAVY_API}/v1/credits`,
     `${WEAVY_API}/v1/user/credits`,
@@ -317,38 +297,30 @@ export async function fetchWeavyCreditsClient(accessToken: string): Promise<numb
 }
 
 async function resolveAndFetchCredits(token: string): Promise<{ ok: boolean; credits: number | null; email?: string; subscriptionType?: string }> {
-  // Call proxy with raw token (refresh or JWT) — proxy handles refresh internally
-  try {
-    const r = await fetch(`${WEAVY_PROXY}?action=balance`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Weavy-Token': token,
-      },
-      body: JSON.stringify({}),
-      signal: AbortSignal.timeout(15000),
-    })
-    if (r.ok) {
-      const data = await r.json().catch(() => null)
-      if (data?.ok) {
-        const credits = data?.data?.credits
-        const email = data?.data?.email || extractEmailFromJwt(token)
-        // Extract subscription from refreshed token if available
-        const newToken = data?.refreshToken
-        const subscriptionType = newToken ? extractSubscriptionType(newToken) : extractSubscriptionType(token)
-        return { ok: true, credits: typeof credits === 'number' ? credits : null, email: email || undefined, subscriptionType: subscriptionType || undefined }
-      }
-    }
-  } catch {}
-
-  // Fallback: client-side approach
+  // Step 1: Get access token (refresh if needed)
+  let accessToken = token
+  let newRefreshToken: string | undefined
   if (isRefreshToken(token)) {
     const refreshed = await refreshWeavyAccessToken(token)
     if (refreshed?.accessToken) {
-      return { ok: true, credits: await fetchWeavyCreditsClient(refreshed.accessToken), email: extractEmailFromJwt(refreshed.accessToken) || undefined, subscriptionType: extractSubscriptionType(refreshed.accessToken) || undefined }
+      accessToken = refreshed.accessToken
+      newRefreshToken = refreshed.refreshToken
     }
   }
-  return { ok: true, credits: await fetchWeavyCreditsClient(token), email: extractEmailFromJwt(token) || undefined, subscriptionType: extractSubscriptionType(token) || undefined }
+
+  // Step 2: Extract email & subscription from JWT
+  const email = extractEmailFromJwt(accessToken) || undefined
+  const subscriptionType = extractSubscriptionType(accessToken) || undefined
+
+  // Step 3: Call Weavy API directly from browser (like reference site)
+  const credits = await fetchWeavyCreditsClient(accessToken)
+
+  return {
+    ok: true,
+    credits,
+    email,
+    subscriptionType,
+  }
 }
 
 export interface WeavyGenerateParams {
