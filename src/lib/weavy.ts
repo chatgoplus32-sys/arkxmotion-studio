@@ -299,45 +299,32 @@ export async function fetchWeavyCreditsClient(accessToken: string): Promise<numb
 }
 
 async function resolveAndFetchCredits(token: string): Promise<{ ok: boolean; credits: number | null; email?: string; subscriptionType?: string }> {
-  // Step 1: Get access token (refresh if needed)
+  console.log('[weavy] resolveAndFetchCredits called, token starts:', token.slice(0, 20) + '...')
+
+  // Step 1: Refresh token → get access token (exactly like reference site)
   let accessToken = token
   if (isRefreshToken(token)) {
+    console.log('[weavy] refreshing token via securetoken.googleapis.com...')
     const refreshed = await refreshWeavyAccessToken(token)
     if (refreshed?.accessToken) {
       accessToken = refreshed.accessToken
+      console.log('[weavy] token refreshed OK, accessToken starts:', accessToken.slice(0, 30) + '...')
+    } else {
+      console.log('[weavy] token refresh FAILED')
     }
+  } else {
+    console.log('[weavy] token is JWT, using directly')
   }
 
-  // Step 2: Extract email & subscription from JWT
+  // Step 2: Extract email & subscription from JWT (like reference site)
   const email = extractEmailFromJwt(accessToken) || undefined
   const subscriptionType = extractSubscriptionType(accessToken) || undefined
+  console.log('[weavy] email:', email, 'subscription:', subscriptionType)
 
-  // Step 3a: Try proxy first (server-side, different IP)
-  try {
-    const r = await fetch(`${WEAVY_PROXY}?action=balance`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Weavy-Token': token,
-      },
-      body: JSON.stringify({}),
-    })
-    if (r.ok) {
-      const data = await r.json().catch(() => null)
-      console.log('[weavy] proxy balance result:', data)
-      if (data?.ok) {
-        const credits = data?.data?.credits
-        const proxyEmail = data?.data?.email || email
-        return { ok: true, credits: typeof credits === 'number' ? credits : null, email: proxyEmail, subscriptionType }
-      }
-    }
-  } catch (e: any) {
-    console.log('[weavy] proxy balance error:', e.message)
-  }
-
-  // Step 3b: Fallback — direct browser call
-  console.log('[weavy] proxy failed, trying direct browser call...')
+  // Step3: Call Weavy API directly from browser (exactly like reference site)
   const credits = await fetchWeavyCreditsClient(accessToken)
+  console.log('[weavy] final credits:', credits)
+
   return { ok: true, credits, email, subscriptionType }
 }
 
