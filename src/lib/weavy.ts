@@ -1858,6 +1858,9 @@ export async function pollWeavyImageStatus(token: string, taskId: string, onProg
       const data = await res.json().catch(() => null)
       if (!res.ok || !data) { console.log(`[weavy-image] poll error:`, data?.error || `HTTP ${res.status}`); continue }
       
+      // Log first poll response to debug
+      if (attempt <= 2) console.log(`[weavy-image] poll response:`, JSON.stringify(data).slice(0, 500))
+      
       // Check status like reference site: recipeRuns[0].status first, then top-level
       const status = (data?.recipeRuns?.[0]?.status || data?.status || data?.state || '').toLowerCase()
       const elapsedMin = (Date.now() - startTime) / (6 * 60000); const fallbackPct = Math.min(0.94, 1 - 1 / (1 + elapsedMin * 1.6)); const pct = Math.round(5 + fallbackPct * 89)
