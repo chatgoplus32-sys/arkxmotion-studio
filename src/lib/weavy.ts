@@ -1831,7 +1831,9 @@ export async function submitWeavyImage(params: WeavyImageGenerateParams): Promis
 
 export async function pollWeavyImageStatus(token: string, taskId: string, onProgress?: (status: string, pct: number) => void, timeoutMs = 600000): Promise<string> {
   const startTime = Date.now(); let lastLog = ''
-  const batchId = taskId.includes(':') ? taskId.split(':')[1] : taskId
+  const parts = taskId.split(':')
+  const recipeId = parts[0] || ''
+  const batchId = parts[1] || parts[0] || ''
   let attempt = 0
   const maxAttempts = Math.ceil(timeoutMs / 5000)
 
@@ -1840,9 +1842,9 @@ export async function pollWeavyImageStatus(token: string, taskId: string, onProg
     const pollInterval = attempt < 30 ? 8000 : attempt < 60 ? 10000 : 15000
     await new Promise((r) => setTimeout(r, pollInterval))
     try {
-      // Direct browser call for status check
+      // Direct browser call for status check - use correct URL format
       const accessToken = await resolveAccessToken(token)
-      const res = await fetch(`${WEAVY_API}/v1/batches/${batchId}/status`, {
+      const res = await fetch(`${WEAVY_API}/v1/batches/recipes/${recipeId}/batches/${batchId}/status`, {
         headers: { Authorization: `Bearer ${accessToken}` },
       })
       const data = await res.json().catch(() => null)
