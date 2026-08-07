@@ -2,6 +2,13 @@ const WEAVY_API = 'https://api.weavy.ai/api'
 const FIREBASE_KEY = 'AIzaSyC-qLy3TFyXMogJPfMkZJ9H_q46hEu1sxI'
 const WEAVY_PROXY = '/api/public/weavy'
 
+// ── Token Cache (in-memory) ──
+const tokenCache = new Map<string, { accessToken: string; expiry: number }>()
+
+function isRefreshToken(token: string): boolean {
+  return /^AMf-vB/.test(token) || token.length > 200
+}
+
 // ── Token Management (synced with providerManager store) ──
 
 interface ProviderManagerStore {
@@ -95,10 +102,6 @@ async function refreshWeavyAccessToken(refreshToken: string): Promise<{ accessTo
       uid: data.user_id,
     }
   } catch { return null }
-}
-
-function isRefreshToken(token: string): boolean {
-  return !/^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token) && token.length > 40
 }
 
 function isTokenValid(key: { status?: string }): boolean {
@@ -299,9 +302,23 @@ export async function fetchWeavyCreditsClient(accessToken: string): Promise<numb
 }
 
 async function resolveAccessToken(token: string): Promise<string> {
-  if (isRefreshToken(token)) {
-    const refreshed = await refreshWeavyAccessToken(token)
-    if (refreshed?.accessToken) return refreshed.accessToken
+  // Check cache first (with 30s safety margin like reference site)
+  const cached = tokenCache.get(token)
+  if (cached && Date.now() < cached.expiry - 30000) {
+    return cached.accessToken
+  }
+
+  // JWT tokens don't need refresh
+  if (!isRefreshToken(token)) {
+    tokenCache.set(token, { accessToken: token, expiry: Date.now() + 3600000 })
+    return token
+  }
+
+  // Refresh token via Firebase
+  const refreshed = await refreshWeavyAccessToken(token)
+  if (refreshed?.accessToken) {
+    tokenCache.set(token, { accessToken: refreshed.accessToken, expiry: Date.now() + (refreshed.expiresIn || 3600) * 1000 })
+    return refreshed.accessToken
   }
   return token
 }
@@ -1752,9 +1769,6 @@ export async function submitWeavyImage(params: WeavyImageGenerateParams): Promis
     const authHeaders = {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-      'Accept': 'application/json, text/plain, */*',
-      'Accept-Language': 'en-US,en;q=0.9',
     }
 
     // Step 1: Create recipe (direct browser call)
