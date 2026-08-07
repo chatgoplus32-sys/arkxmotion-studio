@@ -15,14 +15,6 @@ interface WorkflowRoute {
 
 const workflows: WorkflowRoute[] = [
   {
-    id: 'generate-image',
-    label: 'Generate Image',
-    route: '/generate/image',
-    icon: <Image className="h-5 w-5" />,
-    keywords: ['image', 'gambar', 'generate', 'buat', 'nano', 'banana', 'gpt', 'seedream', 'text-to-image', 'weavy'],
-    description: 'Buat gambar dari teks dengan AI Weavy',
-  },
-  {
     id: 'motion',
     label: 'Motion Control',
     route: '/generate/motion',

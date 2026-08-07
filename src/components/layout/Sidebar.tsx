@@ -38,7 +38,6 @@ const mainNav: NavItem[] = [
 ]
 
 const generateNav: NavItem[] = [
-  { label: 'Generate Image', href: '/generate/image', icon: <Image className="h-4 w-4" /> },
   { label: 'Motion Control', href: '/generate/motion', icon: <Video className="h-4 w-4" /> },
   { label: 'Image to Video', href: '/generate/image-to-video', icon: <Image className="h-4 w-4" /> },
   { label: 'Bulk Fashion', href: '/generate/bulk-fashion', icon: <ShoppingBag className="h-4 w-4" /> },
