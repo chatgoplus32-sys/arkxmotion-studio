@@ -394,7 +394,7 @@ function resolveImageModel(modelKey: string): { model: string; service: string }
   return map[modelKey] || { model: modelKey, service: 'fal_imported' }
 }
 
-function buildImageNode(modelKey: string, prompt: string, quality: string, ratio: string, imageUrl?: string, maskUrl?: string): any {
+function buildImageNode(modelKey: string, prompt: string, quality: string, ratio: string, imageUrl?: string, maskUrl?: string, imageUrls?: string[]): any {
   const { model: modelName, service } = resolveImageModel(modelKey)
   const nodeId = 'n_' + Date.now() + '_model'
   const now = Date.now()
@@ -418,28 +418,33 @@ function buildImageNode(modelKey: string, prompt: string, quality: string, ratio
     let extraNodes: any[] = []
     let extraEdges: any[] = []
 
-    if (imageUrl) {
-      const imgNodeId = 'n_' + now + '_img'
-      params.image_urls = [imageUrl]
-      handles.input.image = { id: 'input-image', type: 'image', label: 'image', format: 'text', required: false }
+    // Handle multiple images or single image
+    const allImageUrls = imageUrls?.length ? imageUrls : (imageUrl ? [imageUrl] : [])
+    if (allImageUrls.length > 0) {
+      params.image_urls = allImageUrls
+      
+      allImageUrls.forEach((url, idx) => {
+        const imgNodeId = 'n_' + now + '_img' + (idx > 0 ? idx : '')
+        handles.input[idx === 0 ? 'image' : `image${idx + 1}`] = { id: `input-image${idx > 0 ? idx : ''}`, type: 'image', label: `image${idx > 0 ? idx : ''}`, format: 'text', required: false }
 
-      const imgNode = {
-        id: imgNodeId, type: 'import', dragHandle: '.node-header', owner: null, visibility: null, isModel: false,
-        data: {
-          handles: { output: { file: { type: 'any', label: 'File', order: 0, format: 'uri' } } },
-          name: 'File', color: 'Yambo_Blue',
-          files: [{ type: 'image', url: imageUrl, publicId: 'uploads/' + randId(), id: imgNodeId + '_file', name: 'input.jpg', insertionOrder: 0 }],
-          result: { type: 'image', url: imageUrl, publicId: 'uploads/' + randId(), id: imgNodeId + '_result', name: 'input.jpg', insertionOrder: 0 },
-          output: { file: { type: 'image', url: imageUrl, publicId: 'uploads/' + randId(), id: imgNodeId + '_output', name: 'input.jpg', insertionOrder: 0 } },
-          version: 3,
-        },
-        position: { x: 80, y: 200 }, width: 460, height: 400,
-      }
-      extraNodes.push(imgNode)
-      extraEdges.push({
-        id: 'e-' + randId(), source: imgNodeId, target: nodeId,
-        sourceHandle: `${imgNodeId}-output-file`, targetHandle: `${nodeId}-input-image`,
-        type: 'custom', data: { sourceColor: 'Yambo_Blue', targetColor: 'Red', sourceHandleType: 'any', targetHandleType: 'image' },
+        const imgNode = {
+          id: imgNodeId, type: 'import', dragHandle: '.node-header', owner: null, visibility: null, isModel: false,
+          data: {
+            handles: { output: { file: { type: 'any', label: 'File', order: 0, format: 'uri' } } },
+            name: 'File', color: 'Yambo_Blue',
+            files: [{ type: 'image', url, publicId: 'uploads/' + randId(), id: imgNodeId + '_file', name: `input${idx}.jpg`, insertionOrder: idx }],
+            result: { type: 'image', url, publicId: 'uploads/' + randId(), id: imgNodeId + '_result', name: `input${idx}.jpg`, insertionOrder: idx },
+            output: { file: { type: 'image', url, publicId: 'uploads/' + randId(), id: imgNodeId + '_output', name: `input${idx}.jpg`, insertionOrder: idx } },
+            version: 3,
+          },
+          position: { x: 80, y: 200 + idx * 150 }, width: 460, height: 400,
+        }
+        extraNodes.push(imgNode)
+        extraEdges.push({
+          id: 'e-' + randId(), source: imgNodeId, target: nodeId,
+          sourceHandle: `${imgNodeId}-output-file`, targetHandle: `${nodeId}-input-image${idx > 0 ? idx : ''}`,
+          type: 'custom', data: { sourceColor: 'Yambo_Blue', targetColor: 'Red', sourceHandleType: 'any', targetHandleType: 'image' },
+        })
       })
 
       if (maskUrl) {
@@ -1744,11 +1749,11 @@ export async function pollWeavySeedanceMiniStatus(
   throw new Error('SeedanceMini timeout')
 }
 
-export interface WeavyImageGenerateParams { token: string; model: string; prompt: string; aspectRatio?: string; negativePrompt?: string; quality?: string; imageUrl?: string; maskUrl?: string }
+export interface WeavyImageGenerateParams { token: string; model: string; prompt: string; aspectRatio?: string; negativePrompt?: string; quality?: string; imageUrl?: string; imageUrls?: string[]; maskUrl?: string }
 export interface WeavyImageGenerateResult { ok: boolean; taskId?: string; error?: string; raw?: any; charUrl?: string; outfitUrl?: string }
 
 export async function submitWeavyImage(params: WeavyImageGenerateParams): Promise<WeavyImageGenerateResult> {
-  const { token, model, prompt, aspectRatio = '1:1', quality, imageUrl, maskUrl } = params
+  const { token, model, prompt, aspectRatio = '1:1', quality, imageUrl, imageUrls, maskUrl } = params
   try {
     // Step 1: Create recipe via proxy
     const createRes = await fetch(WEAVY_PROXY, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Weavy-Token': token }, body: JSON.stringify({ action: 'image-create-recipe' }) })
@@ -1759,7 +1764,7 @@ export async function submitWeavyImage(params: WeavyImageGenerateParams): Promis
     if (!recipeId) return { ok: false, error: 'No recipeId returned', raw: createData }
 
     // Step 2: Build nodes + edges
-    const nodes = buildImageNode(model, prompt.trim(), quality || 'high', aspectRatio || '1:1', imageUrl, maskUrl)
+    const nodes = buildImageNode(model, prompt.trim(), quality || 'high', aspectRatio || '1:1', imageUrl, maskUrl, imageUrls)
     const extraNodes = nodes._extraNodes || []
     const extraEdges = nodes._extraEdges || []
     const edges = nodes._edge ? [nodes._edge, ...extraEdges] : extraEdges
@@ -1819,7 +1824,7 @@ export async function pollWeavyImageStatus(token: string, taskId: string, onProg
   throw new Error('Weavy image: timeout')
 }
 
-export async function runWeavyImage(opts: { model: string; prompt: string; aspectRatio?: string; quality?: string; negativePrompt?: string; imageUrl?: string; maskUrl?: string; onProgress?: (text: string, pct?: number) => void; onRotate?: (index: number, total: number, reason: string) => void }): Promise<string> {
+export async function runWeavyImage(opts: { model: string; prompt: string; aspectRatio?: string; quality?: string; negativePrompt?: string; imageUrl?: string; imageUrls?: string[]; maskUrl?: string; onProgress?: (text: string, pct?: number) => void; onRotate?: (index: number, total: number, reason: string) => void }): Promise<string> {
   const modelKey = opts.model
   const quality = opts.quality || 'high@1024x1024'
 
@@ -1845,7 +1850,7 @@ export async function runWeavyImage(opts: { model: string; prompt: string; aspec
   const { withTokenRotation } = await import('@/lib/tokenRotation')
   const rotation = await withTokenRotation<string>('weavy', async (apiKey) => {
     opts.onProgress?.(`Weavy: submit ${modelKey}… (butuh ${requiredCredits} cr)`, 10)
-    const submitResult = await submitWeavyImage({ token: apiKey, model: modelKey, prompt: opts.prompt, aspectRatio: opts.aspectRatio, negativePrompt: opts.negativePrompt, quality: opts.quality, imageUrl: opts.imageUrl, maskUrl: opts.maskUrl })
+    const submitResult = await submitWeavyImage({ token: apiKey, model: modelKey, prompt: opts.prompt, aspectRatio: opts.aspectRatio, negativePrompt: opts.negativePrompt, quality: opts.quality, imageUrl: opts.imageUrl, imageUrls: opts.imageUrls, maskUrl: opts.maskUrl })
     if (!submitResult.ok || !submitResult.taskId) throw Error(submitResult.error || 'Submit failed')
     opts.onProgress?.(`Weavy: batch ${submitResult.taskId.slice(0, 8)}… polling`, 20)
     const imageUrl = await pollWeavyImageStatus(apiKey, submitResult.taskId, opts.onProgress)

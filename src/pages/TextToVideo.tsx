@@ -7,7 +7,7 @@ import { useProviderManager, ProviderId } from '@/stores/providerManager'
 import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { runLeonardoImage } from '@/lib/leonardo'
-import { runWeavyImage } from '@/lib/weavy'
+import { runWeavyImage, uploadToWeavy } from '@/lib/weavy'
 import { submitRoboneoImage, pollRoboneoImage, checkRoboneoBalance } from '@/lib/roboneo'
 import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
 
@@ -293,7 +293,9 @@ export default function TextToImagePage() {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [progress, setProgress] = useState({ show: false, text: '', pct: 0 })
   const [results, setResults] = useState<GeneratedResult[]>([])
+  const [referenceImages, setReferenceImages] = useState<{ file: File; preview: string; uploaded: string | null }[]>([])
   const abortRef = useRef(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     fetchMaintenance()
@@ -329,6 +331,27 @@ export default function TextToImagePage() {
   const addLog = (msg: string, level: LogEntry['level'] = 'info') => {
     const time = new Date().toLocaleTimeString()
     setLogs(prev => [{ time, msg, level }, ...prev].slice(0, 50))
+  }
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    const remaining = 6 - referenceImages.length
+    const newFiles = files.slice(0, remaining)
+    
+    newFiles.forEach(file => {
+      const preview = URL.createObjectURL(file)
+      setReferenceImages(prev => [...prev, { file, preview, uploaded: null }])
+    })
+    
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  const removeReferenceImage = (index: number) => {
+    setReferenceImages(prev => {
+      const removed = prev[index]
+      if (removed?.preview) URL.revokeObjectURL(removed.preview)
+      return prev.filter((_, i) => i !== index)
+    })
   }
 
   const handleGenerate = async () => {
@@ -374,12 +397,36 @@ export default function TextToImagePage() {
         })
       } else if (provider === 'weavy') {
         addLog(`Weavy: submit ${selectedModel.label}…`)
+        
+        // Upload reference images if any
+        let imageUrls: string[] = []
+        if (referenceImages.length > 0) {
+          addLog(`Weavy: upload ${referenceImages.length} gambar referensi…`)
+          const { keys } = useProviderManager.getState()
+          const weavyKeys = keys.weavy || []
+          const activeKey = weavyKeys.find((k: any) => k.status === 'active' || k.status === 'unknown')?.key
+          if (!activeKey) throw Error('Weavy: tidak ada token aktif')
+          
+          for (let i = 0; i < referenceImages.length; i++) {
+            const img = referenceImages[i]
+            if (!img.uploaded) {
+              const url = await uploadToWeavy(activeKey, img.file)
+              imageUrls.push(url)
+              setReferenceImages(prev => prev.map((item, idx) => idx === i ? { ...item, uploaded: url } : item))
+            } else {
+              imageUrls.push(img.uploaded)
+            }
+          }
+          addLog(`Weavy: ${imageUrls.length} gambar berhasil di-upload`)
+        }
+        
         imageUrl = await runWeavyImage({
           model: selectedModel.apiId,
           prompt: prompt.trim(),
           aspectRatio,
           quality: sizeId,
           negativePrompt: negativePrompt.trim() || undefined,
+          imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
           onProgress,
         })
       } else if (provider === 'roboneo') {
@@ -485,6 +532,47 @@ export default function TextToImagePage() {
               placeholder="Contoh: A majestic astronaut floating in deep space with Earth in the background, cinematic lighting, highly detailed, 8k resolution..."
               disabled={loading}
             />
+          </div>
+
+          {/* Reference Images Upload */}
+          <div>
+            <Label>Gambar Referensi (opsional, max 6)</Label>
+            <div className="flex flex-wrap gap-2 mt-2">
+              {referenceImages.map((img, idx) => (
+                <div key={idx} className="relative group">
+                  <img
+                    src={img.preview}
+                    alt={`Ref ${idx + 1}`}
+                    className="w-20 h-20 object-cover rounded-lg border border-border"
+                  />
+                  <button
+                    onClick={() => removeReferenceImage(idx)}
+                    className="absolute -top-1 -right-1 w-5 h-5 bg-destructive text-white rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              {referenceImages.length < 6 && (
+                <label className="w-20 h-20 flex flex-col items-center justify-center rounded-lg border border-dashed border-border hover:border-primary cursor-pointer transition-colors">
+                  <Image className="h-6 w-6 text-muted-foreground" />
+                  <span className="text-[10px] text-muted-foreground mt-1">Tambah</span>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handleImageUpload}
+                    className="hidden"
+                  />
+                </label>
+              )}
+            </div>
+            {referenceImages.length > 0 && (
+              <p className="text-[11px] text-muted-foreground mt-1">
+                {referenceImages.length}/6 gambar dipilih
+              </p>
+            )}
           </div>
 
           {selectedModel?.supportsNegativePrompt && (
