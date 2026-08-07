@@ -301,12 +301,10 @@ export async function fetchWeavyCreditsClient(accessToken: string): Promise<numb
 async function resolveAndFetchCredits(token: string): Promise<{ ok: boolean; credits: number | null; email?: string; subscriptionType?: string }> {
   // Step 1: Get access token (refresh if needed)
   let accessToken = token
-  let newRefreshToken: string | undefined
   if (isRefreshToken(token)) {
     const refreshed = await refreshWeavyAccessToken(token)
     if (refreshed?.accessToken) {
       accessToken = refreshed.accessToken
-      newRefreshToken = refreshed.refreshToken
     }
   }
 
@@ -314,15 +312,33 @@ async function resolveAndFetchCredits(token: string): Promise<{ ok: boolean; cre
   const email = extractEmailFromJwt(accessToken) || undefined
   const subscriptionType = extractSubscriptionType(accessToken) || undefined
 
-  // Step 3: Call Weavy API directly from browser (like reference site)
-  const credits = await fetchWeavyCreditsClient(accessToken)
-
-  return {
-    ok: true,
-    credits,
-    email,
-    subscriptionType,
+  // Step 3a: Try proxy first (server-side, different IP)
+  try {
+    const r = await fetch(`${WEAVY_PROXY}?action=balance`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Weavy-Token': token,
+      },
+      body: JSON.stringify({}),
+    })
+    if (r.ok) {
+      const data = await r.json().catch(() => null)
+      console.log('[weavy] proxy balance result:', data)
+      if (data?.ok) {
+        const credits = data?.data?.credits
+        const proxyEmail = data?.data?.email || email
+        return { ok: true, credits: typeof credits === 'number' ? credits : null, email: proxyEmail, subscriptionType }
+      }
+    }
+  } catch (e: any) {
+    console.log('[weavy] proxy balance error:', e.message)
   }
+
+  // Step 3b: Fallback — direct browser call
+  console.log('[weavy] proxy failed, trying direct browser call...')
+  const credits = await fetchWeavyCreditsClient(accessToken)
+  return { ok: true, credits, email, subscriptionType }
 }
 
 export interface WeavyGenerateParams {

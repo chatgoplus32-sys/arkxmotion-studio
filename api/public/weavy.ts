@@ -67,62 +67,40 @@ async function resolveAccessToken(token: string): Promise<{ accessToken: string;
 }
 
 async function fetchWeavyCredits(accessToken: string): Promise<number | null> {
+  // Single request to /v1/workspaces — matches reference site exactly
+  // Reference site: const c = d.credits from /v1/workspaces
   const headers = {
     Authorization: `Bearer ${accessToken}`,
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
     'Accept': 'application/json, text/plain, */*',
-  }
-  const endpoints = [
-    `${WEAVY_API}/v1/credits`,
-    `${WEAVY_API}/v1/user/credits`,
-    `${WEAVY_API}/v1/user/balance`,
-    `${WEAVY_API}/v1/user`,
-    `${WEAVY_API}/v1/account`,
-    `${WEAVY_API}/v1/subscription`,
-  ]
-
-  for (const url of endpoints) {
-    try {
-      const r = await fetch(url, {
-        headers,
-        signal: AbortSignal.timeout(8000),
-      })
-      const text = await r.text().catch(() => '')
-      console.log(`[weavy-proxy] credits ${url} → ${r.status} body=${text.slice(0, 400)}`)
-      if (!r.ok) continue
-      let data: any
-      try { data = JSON.parse(text) } catch { continue }
-
-      const credits = data?.credits ?? data?.balance ?? data?.totalCredits ?? data?.creditsRemaining ?? data?.quota ?? data?.usage?.credits ?? data?.plan?.credits ?? data?.data?.credits ?? data?.user?.credits ?? null
-      if (typeof credits === 'number') return credits
-
-      if (data && typeof data === 'object') {
-        const flatKeys = Object.keys(data).filter(k => typeof data[k] === 'number')
-        console.log(`[weavy-proxy] credits ${url} → numeric keys:`, flatKeys)
-      }
-    } catch {
-      continue
-    }
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Origin': 'https://app.weavy.ai',
+    'Referer': 'https://app.weavy.ai/',
   }
 
   try {
     const r = await fetch(`${WEAVY_API}/v1/workspaces`, {
       headers,
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(15000),
     })
     const text = await r.text().catch(() => '')
-    console.log(`[weavy-proxy] credits ${WEAVY_API}/v1/workspaces → ${r.status} body=${text.slice(0, 400)}`)
-    if (r.ok) {
-      let data: any
-      try { data = JSON.parse(text) } catch { return null }
-      const workspaces = data?.workspaces || data
-      const ws = Array.isArray(workspaces) ? workspaces[0] : workspaces
-      if (typeof ws?.credits === 'number') return ws.credits
-      if (ws && typeof ws === 'object') {
-        console.log(`[weavy-proxy] workspaces[0] keys:`, Object.keys(ws))
-      }
-    }
-  } catch {}
+    console.log(`[weavy-proxy] /v1/workspaces → ${r.status} body=${text.slice(0, 500)}`)
+    if (!r.ok) return null
+
+    let data: any
+    try { data = JSON.parse(text) } catch { return null }
+
+    // Top-level credits (reference site: const c = d.credits)
+    if (data?.credits != null && typeof data.credits === 'number') return data.credits
+
+    // Nested workspace credits
+    const workspaces = data?.workspaces || data
+    const ws = Array.isArray(workspaces) ? workspaces[0] : workspaces
+    if (typeof ws?.credits === 'number') return ws.credits
+    if (typeof ws?.balance === 'number') return ws.balance
+  } catch (e: any) {
+    console.log(`[weavy-proxy] /v1/workspaces error:`, e.message)
+  }
 
   return null
 }
