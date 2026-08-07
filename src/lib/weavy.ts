@@ -255,7 +255,27 @@ export function resolveWeavyAssetUrl(asset: any, type: 'image' | 'video' = 'imag
 export async function fetchWeavyCreditsClient(accessToken: string): Promise<number | null> {
   const timeout = AbortSignal.timeout(10000)
 
-  // Try common credit endpoints first (reference site order)
+  // First try via proxy (bypasses Cloudflare, different IP)
+  try {
+    const r = await fetch(`${WEAVY_PROXY}?action=balance`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Weavy-Token': accessToken,
+      },
+      body: JSON.stringify({}),
+      signal: timeout,
+    })
+    if (r.ok) {
+      const data = await r.json().catch(() => null)
+      const credits = data?.data?.credits
+      if (typeof credits === 'number') return credits
+      // If proxy returned ok but credits is null, token might be free-tier
+      if (data?.ok && credits === null) return null
+    }
+  } catch {}
+
+  // Fallback: direct API call (may be blocked by Cloudflare)
   const endpoints = [
     `${WEAVY_API}/v1/credits`,
     `${WEAVY_API}/v1/user/credits`,
