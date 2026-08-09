@@ -127,7 +127,7 @@ export default function CreatePulseTopupPage() {
         eyebrow="CreatePulse"
         title="Top Up"
         highlight="Saldo"
-        desc="Isi saldo khusus provider CreatePulse. Harga: Rp 1.500/generate"
+        desc="Isi saldo khusus provider CreatePulse. Harga: Rp 1.500-2.250/generate"
       />
 
       {/* Balance */}

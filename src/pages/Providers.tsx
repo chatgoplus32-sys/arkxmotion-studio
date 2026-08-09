@@ -51,7 +51,7 @@ const PROVIDER_LIST = [
   { key: 'runninghub', label: 'Motion Control HD (Markasflow-V2)', desc: 'RunningHub AI video generation via Markasflow-V2 — Kling 3.0 Pro/Standard.' },
   { key: 'framia', label: 'Framia', desc: 'Canvas workflow (Converge AI) — semua node & recipe: image, video, avatar, garment, storyboard.' },
   { key: 'leonardo', label: 'Leonardo.ai', desc: 'app.leonardo.ai via Cognito Bearer JWT — Text-to-Image (Phoenix, Diffusion XL, Kino, Anime, Vision).' },
-  { key: 'createpulse', label: 'CreatePulse', desc: 'Video generation (Seedance, Veo, Dreamina) via createpulse.online — pakai API key sendiri.' },
+  { key: 'createpulse', label: 'CreatePulse', desc: 'Video generation (Seedance 2.0/2.5, Veo Omni) via createpulse.online — pakai API key sendiri.' },
 ] as const
 
 const TOKEN_GUIDE: Record<string, {
@@ -156,10 +156,10 @@ const TOKEN_GUIDE: Record<string, {
       { text: 'Buka menu Profile → API Keys (atau Dashboard).' },
       { text: 'Klik "Create API Key", beri nama.' },
       { text: 'Copy key cp_… — paste ke input di sebelah.' },
-      { text: 'Top up saldo minimal Rp 15.000 di menu Top Up (biaya per generate ≈ Rp 1.500).' },
+      { text: 'Top up saldo minimal Rp 15.000 di menu Top Up (biaya per generate ≈ Rp 1.500-2.250).' },
       { text: 'Multi-key akan auto-rotate saat quota / balance habis.' },
     ],
-    tip: 'Model: Dreamina Seedance 2.0 (Rp 2.200), Veo Omni 10s (Rp 3.300). Token tersimpan di akunmu, bisa dipakai dari mana saja.',
+    tip: 'Model: Seedance 2.0/2.5 (Rp 1.500), Seedance 2.0 15s/Veo Omni (Rp 2.250). Token tersimpan di akunmu, bisa dipakai dari mana saja.',
   },
   runninghub: {
     url: 'https://www.runninghub.cn/enterprise-api/consumerApi',

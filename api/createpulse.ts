@@ -68,7 +68,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // POST deduct
     if (sub === 'deduct' || url.includes('/deduct')) {
       const { model, batch_id } = req.body || {}
-      const cost = 1500
+      const cost = (model === 'dreamina-seedance-2.0-15s' || model === 'veo-omni') ? 2250 : 1500
 
       const balRows = await sql`SELECT balance FROM createpulse_balance WHERE user_id = ${user.id}`
       let balance = balRows.length > 0 ? balRows[0].balance : 0

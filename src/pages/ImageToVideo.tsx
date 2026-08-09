@@ -64,8 +64,10 @@ const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'rn:veo-3-fast', label: 'VEO 3.0 Fast (Roboneo)', cr: 100, provider: 'roboneo' },
   ],
   createpulse: [
-    { value: 'cp:dreamina-seedance-2.0', label: 'Dreamina Seedance 2.0', cr: 22, provider: 'createpulse', apiModel: 'dreamina-seedance-2.0' },
-    { value: 'cp:veo-omni-10s', label: 'Veo Omni 10s', cr: 33, provider: 'createpulse', apiModel: 'veo-omni-10s' },
+    { value: 'cp:dreamina-seedance-2.0', label: 'Seedance 2.0 (FAST)', cr: 22, provider: 'createpulse', apiModel: 'dreamina-seedance-2.0' },
+    { value: 'cp:dreamina-seedance-2.5', label: 'Seedance 2.5 (BEST)', cr: 22, provider: 'createpulse', apiModel: 'dreamina-seedance-2.5' },
+    { value: 'cp:dreamina-seedance-2.0-15s', label: 'Seedance 2.0 Extended (15s)', cr: 33, provider: 'createpulse', apiModel: 'dreamina-seedance-2.0-15s' },
+    { value: 'cp:veo-omni', label: 'Veo Omni (CINEMATIC)', cr: 33, provider: 'createpulse', apiModel: 'veo-omni' },
   ],
   framia: [
     { value: 'framia:gemini-omni-flash', label: 'Gemini Omni Flash (Framia)', cr: 20, provider: 'framia' },
@@ -566,7 +568,7 @@ export default function ImageToVideoPage() {
 
   const generateWithCreatePulse = async (apiKey: string) => {
     const duration = currentQuality?.duration || 10
-    const cost = 1500
+    const cost = (currentModel?.apiModel === 'dreamina-seedance-2.0-15s' || currentModel?.apiModel === 'veo-omni') ? 2250 : 1500
     const isAdmin = user?.role === 'admin'
 
     if (!isAdmin) {
@@ -732,7 +734,7 @@ export default function ImageToVideoPage() {
   const validateGenerate = (): string | null => {
     if (!prompt.trim()) return 'Prompt harus diisi'
     if (!hasActiveKey && provider !== 'roboneo' && provider !== 'createpulse') return `Tidak ada API key aktif untuk ${PROVIDER_CONFIGS[provider].name}`
-    if (provider === 'createpulse' && user?.role !== 'admin' && cpBalance < 1500) return 'Saldo CreatePulse tidak cukup. Top up minimal Rp 10.000'
+    if (provider === 'createpulse' && user?.role !== 'admin' && cpBalance < ((currentModel?.apiModel === 'dreamina-seedance-2.0-15s' || currentModel?.apiModel === 'veo-omni') ? 2250 : 1500)) return 'Saldo CreatePulse tidak cukup. Top up minimal Rp 10.000'
     if (provider === 'roboneo' && !imgFile) return 'Roboneo membutuhkan gambar input'
     return null
   }
@@ -1602,19 +1604,20 @@ export default function ImageToVideoPage() {
               <div className="text-xs font-medium text-primary">💜 CreatePulse {user?.role === 'admin' && '(Admin — Free)'}</div>
               {user?.role !== 'admin' && (
                 <div className="text-xs">
-                  Saldo: <b className={`font-bold ${cpBalance >= 1500 ? 'text-emerald-500' : 'text-destructive'}`}>
+                  Saldo: <b className={`font-bold ${cpBalance >= ((currentModel?.apiModel === 'dreamina-seedance-2.0-15s' || currentModel?.apiModel === 'veo-omni') ? 2250 : 1500) ? 'text-emerald-500' : 'text-destructive'}`}>
                     Rp {cpBalance.toLocaleString('id-ID')}
                   </b>
                 </div>
               )}
             </div>
             <div className="grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
-              <div>Dreamina Seedance 2.0: <b className="text-foreground">{user?.role === 'admin' ? 'GRATIS' : 'Rp 1.500'}</b> / generate</div>
-              <div>Veo Omni 10s: <b className="text-foreground">{user?.role === 'admin' ? 'GRATIS' : 'Rp 1.500'}</b> / generate</div>
-              <div>Durasi: <b className="text-foreground">10s / 15s</b></div>
+              <div>Seedance 2.0 (10s): <b className="text-foreground">{user?.role === 'admin' ? 'GRATIS' : 'Rp 1.500'}</b></div>
+              <div>Seedance 2.5 (10s): <b className="text-foreground">{user?.role === 'admin' ? 'GRATIS' : 'Rp 1.500'}</b></div>
+              <div>Seedance 2.0 (15s): <b className="text-foreground">{user?.role === 'admin' ? 'GRATIS' : 'Rp 2.250'}</b></div>
+              <div>Veo Omni (10s): <b className="text-foreground">{user?.role === 'admin' ? 'GRATIS' : 'Rp 2.250'}</b></div>
               {user?.role !== 'admin' && <div>Failed generations: <b className="text-emerald-500">auto-refunded</b></div>}
             </div>
-            {user?.role !== 'admin' && cpBalance < 1500 && (
+            {user?.role !== 'admin' && cpBalance < ((currentModel?.apiModel === 'dreamina-seedance-2.0-15s' || currentModel?.apiModel === 'veo-omni') ? 2250 : 1500) && (
               <div className="mt-2 text-[11px]">
                 <a href="/topup/createpulse" className="text-primary hover:underline font-medium">
                   Top Up Saldo →
@@ -1802,7 +1805,7 @@ export default function ImageToVideoPage() {
                 )}
               </Button>
               <div className="text-xs text-muted-foreground">
-                Est. Cost: <b className="text-foreground font-mono">{provider === 'createpulse' ? 'Rp 1.500' : `${totalCredits} credits`}</b>
+                Est. Cost: <b className="text-foreground font-mono">{provider === 'createpulse' ? `Rp ${((currentModel?.apiModel === 'dreamina-seedance-2.0-15s' || currentModel?.apiModel === 'veo-omni') ? 2250 : 1500).toLocaleString('id-ID')}` : `${totalCredits} credits`}</b>
               </div>
               {!hasActiveKey && provider !== 'createpulse' && (
                 <a
