@@ -256,47 +256,19 @@ export function resolveWeavyAssetUrl(asset: any, type: 'image' | 'video' = 'imag
 }
 
 export async function fetchWeavyCreditsClient(accessToken: string): Promise<number | null> {
-  // Try multiple endpoints like reference site (arkxmotionv2)
-  const endpoints = [
-    `${WEAVY_API}/v1/credits`,
-    `${WEAVY_API}/v1/user/credits`,
-    `${WEAVY_API}/v1/user/balance`,
-    `${WEAVY_API}/v1/user`,
-    `${WEAVY_API}/v1/account`,
-    `${WEAVY_API}/v1/subscription`,
-  ]
-  for (const url of endpoints) {
-    try {
-      const r = await fetch(url, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      })
-      if (!r.ok) continue
-      const d = await r.json().catch(() => null)
-      const c = d?.credits ?? d?.balance ?? d?.totalCredits ?? d?.creditsRemaining ?? d?.quota ?? d?.usage?.credits ?? d?.plan?.credits ?? d?.data?.credits ?? d?.user?.credits ?? null
-      if (c !== null && typeof c === 'number') return c
-    } catch { continue }
-  }
-
-  // Primary: workspaces endpoint (reference site uses d.credits top-level)
+  // Workspaces endpoint returns credits directly (reference site pattern)
   try {
     const r = await fetch(`${WEAVY_API}/v1/workspaces`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
     if (r.ok) {
       const d = await r.json().catch(() => null)
-      console.log('[weavy] workspaces response:', JSON.stringify(d).slice(0, 500))
-      // Top-level credits (reference site: const c = d.credits)
       if (d?.credits != null && typeof d.credits === 'number') return d.credits
-      // Nested workspace credits
       const ws = d?.workspaces?.[0] || d?.[0] || d
       if (ws?.credits != null && typeof ws.credits === 'number') return ws.credits
       if (ws?.balance != null && typeof ws.balance === 'number') return ws.balance
-    } else {
-      console.log('[weavy] workspaces error:', r.status, await r.text().catch(() => ''))
     }
-  } catch (e: any) {
-    console.log('[weavy] workspaces catch:', e.message)
-  }
+  } catch {}
 
   return null
 }
