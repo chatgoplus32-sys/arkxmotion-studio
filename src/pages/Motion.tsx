@@ -439,11 +439,8 @@ export default function MotionPage() {
       slot_count: filledSlots.length,
     }) : null
 
-    let successCount = 0
-    let failCount = 0
-
     try {
-      const rotation = await withTokenRotation<{ completedCount: number }>(
+      const rotation = await withTokenRotation<{ completedCount: number; failCount: number }>(
       provider,
       async (token) => {
         if (isRoboneo) {
@@ -463,18 +460,7 @@ export default function MotionPage() {
           }
         }
 
-        let completedCount = 0
-
-        for (let i = 0; i < filledSlots.length; i++) {
-          const slot = filledSlots[i]
-          const slotIdx = slots.findIndex((s) => s.id === slot.id)
-          const slotNum = i + 1
-
-          // Stagger delay between slots (1.5s)
-          if (i > 0) {
-            await new Promise((r) => setTimeout(r, 1500))
-          }
-
+        const processSlot = async (slot: Slot, slotNum: number, token: string): Promise<boolean> => {
           if (isRoboneo && slot.image) {
             let taskId: string = ''
             let roomId: string = ''
@@ -512,7 +498,7 @@ export default function MotionPage() {
               } else {
                 if (!slot.video) {
                   addLog(`#${slotNum} Skipping (no video)`, 'warn')
-                  continue
+                  return false
                 }
                 updateSlotStatus(slot.id, 'uploading vid...')
 
@@ -652,14 +638,13 @@ export default function MotionPage() {
                 },
                 ...prev,
               ])
-              completedCount++
-              successCount++
+              return true
             } catch (err: any) {
               setCompressDialog(null)
               updateSlotStatus(slot.id, 'error', err.message)
               addLog(`#${slotNum} Error: ${err.message}`, 'error')
               removeActiveTask(taskId)
-              failCount++
+              return false
             }
           } else if (isMagnific && slot.image && slot.video) {
             try {
@@ -736,13 +721,12 @@ export default function MotionPage() {
                 },
                 ...prev,
               ])
-              completedCount++
-              successCount++
+              return true
             } catch (err: any) {
               setCompressDialog(null)
               updateSlotStatus(slot.id, 'error', err.message)
               addLog(`#${slotNum} Error: ${err.message}`, 'error')
-              failCount++
+              return false
             }
           } else if (isFramia) {
             throw new Error('Provider aktif Framia. Gunakan Generate → Framia untuk menjalankan node/canvas Framia secara langsung.')
@@ -821,13 +805,12 @@ export default function MotionPage() {
                 },
                 ...prev,
               ])
-              completedCount++
-              successCount++
+              return true
             } catch (err: any) {
               setCompressDialog(null)
               updateSlotStatus(slot.id, 'error', err.message)
               addLog(`#${slotNum} Error: ${err.message}`, 'error')
-              failCount++
+              return false
             }
           } else if (provider === 'runninghub' && slot.image && slot.video) {
             try {
@@ -925,20 +908,34 @@ export default function MotionPage() {
                 },
                 ...prev,
               ])
-              completedCount++
-              successCount++
+              return true
             } catch (err: any) {
               setCompressDialog(null)
               updateSlotStatus(slot.id, 'error', err.message)
               addLog(`#${slotNum} Error: ${err.message}`, 'error')
-              failCount++
+              return false
             }
           } else {
             addLog(`#${slotNum} Skipping (no image/video)`, 'warn')
+            return false
           }
+          return false
         }
 
-        return { completedCount }
+        addLog(`🚀 Running ${filledSlots.length} slot(s) in parallel...`)
+
+        const slotResults = await Promise.allSettled(
+          filledSlots.map((slot, i) => processSlot(slot, i + 1, token))
+        )
+
+        let successCount = 0
+        let failCount = 0
+        for (const r of slotResults) {
+          if (r.status === 'fulfilled' && r.value) successCount++
+          else failCount++
+        }
+
+        return { completedCount: successCount, failCount }
       },
       {
         requiredCredits: totalCredits,
@@ -955,6 +952,8 @@ export default function MotionPage() {
 
     if (rotation.ok) {
       successRef.current = true
+      const successCount = rotation.result?.completedCount ?? 0
+      const failCount = rotation.result?.failCount ?? 0
       if (rotation.triedKeys > 1) {
         addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success')
       }
