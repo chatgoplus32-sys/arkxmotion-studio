@@ -760,6 +760,18 @@ export default function MotionPage() {
               let imageUrl = slot.imageUrl || ''
               let videoUrl = slot.videoUrl || ''
 
+              // Clear blob URLs - they can't be accessed by Weavy server
+              if (imageUrl.startsWith('blob:')) {
+                addLog(`#${slotNum} Clearing invalid blob URL for image, re-uploading...`, 'warn')
+                imageUrl = ''
+                updateSlot(slot.id, { imageUrl: null })
+              }
+              if (videoUrl.startsWith('blob:')) {
+                addLog(`#${slotNum} Clearing invalid blob URL for video, re-uploading...`, 'warn')
+                videoUrl = ''
+                updateSlot(slot.id, { videoUrl: null })
+              }
+
               if (!imageUrl || !videoUrl) {
                 const tokenInfo = await getActiveWeavyAccessToken()
                 if (!tokenInfo) throw Error('Tidak ada Weavy token aktif. Tambahkan token di Providers.')
