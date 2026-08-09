@@ -2334,8 +2334,7 @@ function buildWeavyMotionNodes(params: {
   const isV3 = /v3/i.test(params.modelKey)
   const model = isPro ? 'Pro' : 'Standard'
   const version = isV3 ? 'V3' : 'V2.6'
-  // Use the actual modelKey to derive the correct modelId
-  const modelId = params.modelKey || `fal-ai/kling-video/${isV3 ? 'v3' : 'v2.6'}/${isPro ? 'pro' : 'standard'}/motion-control`
+  const modelId = 'fal-ai/kling-Video/v2.6/standard/motion-control'
 
   const now = Date.now()
   const uid = () => Math.random().toString(36).substring(2, 8)

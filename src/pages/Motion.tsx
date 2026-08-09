@@ -31,9 +31,9 @@ import {
 
 const PROVIDERS = {
   weavy: { name: 'Weavy', models: [
-    { key: 'fal-ai/kling-video/v3/pro/motion-control', label: 'Kling V3.0 Pro', cr: 50 },
-    { key: 'fal-ai/kling-video/v3/standard/motion-control', label: 'Kling V3.0 Standard', cr: 50 },
-    { key: 'fal-ai/kling-video/v2.6/pro/motion-control', label: 'Kling V2.6 Pro', cr: 50 },
+    { key: 'fal-ai/kling-video/v3/pro/motion-control', label: 'Kling V3.0 Pro', cr: 240 },
+    { key: 'fal-ai/kling-video/v3/standard/motion-control', label: 'Kling V3.0 Standard', cr: 150 },
+    { key: 'fal-ai/kling-video/v2.6/pro/motion-control', label: 'Kling V2.6 Pro', cr: 80 },
     { key: 'fal-ai/kling-video/v2.6/standard/motion-control', label: 'Kling V2.6 Standard', cr: 50 },
   ]},
   wavespeed: { name: 'Wavespeed', models: [
@@ -460,7 +460,10 @@ export default function MotionPage() {
           }
         }
 
-        const processSlot = async (slot: Slot, slotNum: number, token: string): Promise<boolean> => {
+        const processSlot = async (slot: Slot, slotNum: number, token: string, staggerMs: number = 0): Promise<boolean> => {
+          // Stagger start to prevent overwhelming the server
+          if (staggerMs > 0) await new Promise(r => setTimeout(r, staggerMs))
+
           if (isRoboneo && slot.image) {
             let taskId: string = ''
             let roomId: string = ''
@@ -959,7 +962,7 @@ export default function MotionPage() {
         addLog(`🚀 Running ${filledSlots.length} slot(s) in parallel...`)
 
         const slotResults = await Promise.allSettled(
-          filledSlots.map((slot, i) => processSlot(slot, i + 1, token))
+          filledSlots.map((slot, i) => processSlot(slot, i + 1, token, i * 1500))
         )
 
         let successCount = 0
