@@ -105,9 +105,9 @@ export default function MotionPage() {
     try {
       const raw = localStorage.getItem('motion.slots')
       if (raw) {
-        const parsed = JSON.parse(raw) as Array<Omit<Slot, 'image' | 'video' | 'imageUrl' | 'videoUrl'>>
+        const parsed = JSON.parse(raw) as Array<Omit<Slot, 'image' | 'video'>>
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.map((s) => ({ ...s, image: null, imageUrl: null, video: null, videoUrl: null }))
+          return parsed.map((s) => ({ ...s, image: null, video: null }))
         }
       }
     } catch {}
@@ -160,7 +160,7 @@ export default function MotionPage() {
   }, [])
 
   useEffect(() => {
-    const metadata = slots.map(({ image, imageUrl, video, videoUrl, ...rest }) => rest)
+    const metadata = slots.map(({ image, video, ...rest }) => rest)
     try { localStorage.setItem('motion.slots', JSON.stringify(metadata)) } catch {}
   }, [slots])
 
@@ -466,21 +466,27 @@ export default function MotionPage() {
             let roomId: string = ''
             let nodeId: string = ''
             try {
-              updateSlotStatus(slot.id, 'uploading img...')
-              addLog(`#${slotNum} Upload image...`)
-              const normalizedImage = await normalizeImage(slot.image, (msg, pct) => {
-                setCompressDialog({ msg, pct })
-                updateSlotStatus(slot.id, 'uploading img...', msg)
-                addLog(`#${slotNum} ${msg}`)
-              })
-              setCompressDialog(null)
-              const imageUrl = await uploadToCatbox(normalizedImage, 'image', (msg, pct) => {
-                updateSlotStatus(slot.id, 'uploading img...', msg)
-                addLog(`#${slotNum} ${msg}`)
-              })
-              addLog(`#${slotNum} Image: ${imageUrl.slice(0, 60)}...`)
+              let imageUrl = slot.imageUrl || ''
+              if (!imageUrl) {
+                updateSlotStatus(slot.id, 'uploading img...')
+                addLog(`#${slotNum} Upload image...`)
+                const normalizedImage = await normalizeImage(slot.image, (msg, pct) => {
+                  setCompressDialog({ msg, pct })
+                  updateSlotStatus(slot.id, 'uploading img...', msg)
+                  addLog(`#${slotNum} ${msg}`)
+                })
+                setCompressDialog(null)
+                imageUrl = await uploadToCatbox(normalizedImage, 'image', (msg, pct) => {
+                  updateSlotStatus(slot.id, 'uploading img...', msg)
+                  addLog(`#${slotNum} ${msg}`)
+                })
+                updateSlot(slot.id, { imageUrl })
+                addLog(`#${slotNum} Image: ${imageUrl.slice(0, 60)}...`)
+              } else {
+                addLog(`#${slotNum} Using cached image URL`)
+              }
 
-              let motionVideoUrl = ''
+              let motionVideoUrl = slot.videoUrl || ''
 
               if (isOmni) {
                 updateSlotStatus(slot.id, 'processing', 'submitting...')
@@ -496,37 +502,41 @@ export default function MotionPage() {
                 roomId = result.roomId
                 addLog(`#${slotNum} Task: ${taskId.slice(0, 20)}...`)
               } else {
-                if (!slot.video) {
+                if (!slot.video && !motionVideoUrl) {
                   addLog(`#${slotNum} Skipping (no video)`, 'warn')
                   return false
                 }
-                updateSlotStatus(slot.id, 'uploading vid...')
+                if (!motionVideoUrl) {
+                  updateSlotStatus(slot.id, 'uploading vid...')
 
-                // Auto-trim to 9 seconds for RoboNeo (like Markas Tools)
-                let videoToUpload = slot.video
-                if (autoTrim && isRoboneo) {
-                  addLog(`#${slotNum} Auto-trimming video to 9s...`)
-                  updateSlotStatus(slot.id, 'uploading vid...', 'Trimming to 9s...')
-                  videoToUpload = await trimVideoFFmpeg(slot.video, 9, (msg, pct) => {
+                  let videoToUpload = slot.video!
+                  if (autoTrim && isRoboneo) {
+                    addLog(`#${slotNum} Auto-trimming video to 9s...`)
+                    updateSlotStatus(slot.id, 'uploading vid...', 'Trimming to 9s...')
+                    videoToUpload = await trimVideoFFmpeg(slot.video!, 9, (msg, pct) => {
+                      setCompressDialog({ msg, pct })
+                      updateSlotStatus(slot.id, 'uploading vid...', msg)
+                      addLog(`#${slotNum} ${msg}`)
+                    })
+                    setCompressDialog(null)
+                  }
+
+                  addLog(`#${slotNum} Upload video...`)
+                  const videoFile = await compressVideo(videoToUpload, 4, (msg, pct) => {
                     setCompressDialog({ msg, pct })
                     updateSlotStatus(slot.id, 'uploading vid...', msg)
                     addLog(`#${slotNum} ${msg}`)
                   })
                   setCompressDialog(null)
+                  motionVideoUrl = await uploadToCatbox(videoFile, 'video', (msg, pct) => {
+                    updateSlotStatus(slot.id, 'uploading vid...', msg)
+                    addLog(`#${slotNum} ${msg}`)
+                  })
+                  updateSlot(slot.id, { videoUrl: motionVideoUrl })
+                  addLog(`#${slotNum} Video: ${motionVideoUrl.slice(0, 60)}...`)
+                } else {
+                  addLog(`#${slotNum} Using cached video URL`)
                 }
-
-                addLog(`#${slotNum} Upload video...`)
-                const videoFile = await compressVideo(videoToUpload, 4, (msg, pct) => {
-                  setCompressDialog({ msg, pct })
-                  updateSlotStatus(slot.id, 'uploading vid...', msg)
-                  addLog(`#${slotNum} ${msg}`)
-                })
-                setCompressDialog(null)
-                motionVideoUrl = await uploadToCatbox(videoFile, 'video', (msg, pct) => {
-                  updateSlotStatus(slot.id, 'uploading vid...', msg)
-                  addLog(`#${slotNum} ${msg}`)
-                })
-                addLog(`#${slotNum} Video: ${motionVideoUrl.slice(0, 60)}...`)
 
                 updateSlotStatus(slot.id, 'processing', 'submitting...')
                 addLog(`#${slotNum} Submit motion-control...`)
@@ -648,33 +658,45 @@ export default function MotionPage() {
             }
           } else if (isMagnific && slot.image && slot.video) {
             try {
-              updateSlotStatus(slot.id, 'uploading img...')
-              addLog(`#${slotNum} Upload image...`)
-              const normalizedImage = await normalizeImage(slot.image, (msg, pct) => {
-                setCompressDialog({ msg, pct })
-                updateSlotStatus(slot.id, 'uploading img...', msg)
-                addLog(`#${slotNum} ${msg}`)
-              })
-              setCompressDialog(null)
-              const imageUrl = await uploadToCatbox(normalizedImage, 'image', (msg, pct) => {
-                updateSlotStatus(slot.id, 'uploading img...', msg)
-                addLog(`#${slotNum} ${msg}`)
-              })
-              addLog(`#${slotNum} Image: ${imageUrl.slice(0, 60)}...`)
+              let imageUrl = slot.imageUrl || ''
+              if (!imageUrl) {
+                updateSlotStatus(slot.id, 'uploading img...')
+                addLog(`#${slotNum} Upload image...`)
+                const normalizedImage = await normalizeImage(slot.image, (msg, pct) => {
+                  setCompressDialog({ msg, pct })
+                  updateSlotStatus(slot.id, 'uploading img...', msg)
+                  addLog(`#${slotNum} ${msg}`)
+                })
+                setCompressDialog(null)
+                imageUrl = await uploadToCatbox(normalizedImage, 'image', (msg, pct) => {
+                  updateSlotStatus(slot.id, 'uploading img...', msg)
+                  addLog(`#${slotNum} ${msg}`)
+                })
+                updateSlot(slot.id, { imageUrl })
+                addLog(`#${slotNum} Image: ${imageUrl.slice(0, 60)}...`)
+              } else {
+                addLog(`#${slotNum} Using cached image URL`)
+              }
 
-              updateSlotStatus(slot.id, 'uploading vid...')
-              addLog(`#${slotNum} Upload video...`)
-              const videoFile = await compressVideo(slot.video, 4, (msg, pct) => {
-                setCompressDialog({ msg, pct })
-                updateSlotStatus(slot.id, 'uploading vid...', msg)
-                addLog(`#${slotNum} ${msg}`)
-              })
-              setCompressDialog(null)
-              const videoUrl = await uploadToCatbox(videoFile, 'video', (msg, pct) => {
-                updateSlotStatus(slot.id, 'uploading vid...', msg)
-                addLog(`#${slotNum} ${msg}`)
-              })
-              addLog(`#${slotNum} Video: ${videoUrl.slice(0, 60)}...`)
+              let videoUrl = slot.videoUrl || ''
+              if (!videoUrl) {
+                updateSlotStatus(slot.id, 'uploading vid...')
+                addLog(`#${slotNum} Upload video...`)
+                const videoFile = await compressVideo(slot.video, 4, (msg, pct) => {
+                  setCompressDialog({ msg, pct })
+                  updateSlotStatus(slot.id, 'uploading vid...', msg)
+                  addLog(`#${slotNum} ${msg}`)
+                })
+                setCompressDialog(null)
+                videoUrl = await uploadToCatbox(videoFile, 'video', (msg, pct) => {
+                  updateSlotStatus(slot.id, 'uploading vid...', msg)
+                  addLog(`#${slotNum} ${msg}`)
+                })
+                updateSlot(slot.id, { videoUrl })
+                addLog(`#${slotNum} Video: ${videoUrl.slice(0, 60)}...`)
+              } else {
+                addLog(`#${slotNum} Using cached video URL`)
+              }
 
               const magnificKey = getMagnificApiKey()
               if (!magnificKey) throw Error('Belum ada Magnific API key')
@@ -732,41 +754,53 @@ export default function MotionPage() {
             throw new Error('Provider aktif Framia. Gunakan Generate → Framia untuk menjalankan node/canvas Framia secara langsung.')
           } else if (provider === 'weavy' && slot.image && slot.video) {
             try {
-              // Get fresh Weavy access token
-              const tokenInfo = await getActiveWeavyAccessToken()
-              if (!tokenInfo) throw Error('Tidak ada Weavy token aktif. Tambahkan token di Providers.')
-              const weavyToken = tokenInfo.accessToken
+              let imageUrl = slot.imageUrl || ''
+              let videoUrl = slot.videoUrl || ''
 
-              // Compress image if >8MB
-              let imageFile = slot.image
-              if (imageFile.size > 8 * 1024 * 1024) {
-                addLog(`#${slotNum} Compressing image...`)
-                updateSlotStatus(slot.id, 'uploading img...', 'Compressing...')
-                const compressed = await compressImageForWeavy(imageFile, 1280, 0.8)
-                imageFile = compressed
+              if (!imageUrl || !videoUrl) {
+                const tokenInfo = await getActiveWeavyAccessToken()
+                if (!tokenInfo) throw Error('Tidak ada Weavy token aktif. Tambahkan token di Providers.')
+                const weavyToken = tokenInfo.accessToken
+
+                if (!imageUrl) {
+                  let imageFile = slot.image
+                  if (imageFile.size > 8 * 1024 * 1024) {
+                    addLog(`#${slotNum} Compressing image...`)
+                    updateSlotStatus(slot.id, 'uploading img...', 'Compressing...')
+                    const compressed = await compressImageForWeavy(imageFile, 1280, 0.8)
+                    imageFile = compressed
+                  }
+                  updateSlotStatus(slot.id, 'uploading img...')
+                  addLog(`#${slotNum} Upload image to Weavy...`)
+                  const imgAsset = await uploadWeavyAssetWithRetry(
+                    imageFile,
+                    `ref_img_${slotNum}_${Date.now()}.jpg`,
+                    weavyToken
+                  )
+                  imageUrl = resolveWeavyAssetUrl(imgAsset, 'image')
+                  updateSlot(slot.id, { imageUrl })
+                  addLog(`#${slotNum} Image: ${imageUrl.slice(0, 60)}...`)
+                } else {
+                  addLog(`#${slotNum} Using cached image URL`)
+                }
+
+                if (!videoUrl) {
+                  updateSlotStatus(slot.id, 'uploading vid...')
+                  addLog(`#${slotNum} Upload video to Weavy...`)
+                  const vidAsset = await uploadWeavyAssetWithRetry(
+                    slot.video,
+                    `ref_vid_${slotNum}_${Date.now()}.mp4`,
+                    weavyToken
+                  )
+                  videoUrl = resolveWeavyAssetUrl(vidAsset, 'video')
+                  updateSlot(slot.id, { videoUrl })
+                  addLog(`#${slotNum} Video: ${videoUrl.slice(0, 60)}...`)
+                } else {
+                  addLog(`#${slotNum} Using cached video URL`)
+                }
+              } else {
+                addLog(`#${slotNum} Using cached image & video URLs`)
               }
-
-              // Upload image directly to Weavy API
-              updateSlotStatus(slot.id, 'uploading img...')
-              addLog(`#${slotNum} Upload image to Weavy...`)
-              const imgAsset = await uploadWeavyAssetWithRetry(
-                imageFile,
-                `ref_img_${slotNum}_${Date.now()}.jpg`,
-                weavyToken
-              )
-              const imageUrl = resolveWeavyAssetUrl(imgAsset, 'image')
-              addLog(`#${slotNum} Image: ${imageUrl.slice(0, 60)}...`)
-
-              // Upload video directly to Weavy API
-              updateSlotStatus(slot.id, 'uploading vid...')
-              addLog(`#${slotNum} Upload video to Weavy...`)
-              const vidAsset = await uploadWeavyAssetWithRetry(
-                slot.video,
-                `ref_vid_${slotNum}_${Date.now()}.mp4`,
-                weavyToken
-              )
-              const videoUrl = resolveWeavyAssetUrl(vidAsset, 'video')
-              addLog(`#${slotNum} Video: ${videoUrl.slice(0, 60)}...`)
 
               updateSlotStatus(slot.id, 'processing', 'submitting...')
               addLog(`#${slotNum} Submit ke Weavy (${currentModel.label}) — recipe mode...`)
