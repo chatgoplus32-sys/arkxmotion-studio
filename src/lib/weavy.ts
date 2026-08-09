@@ -2581,6 +2581,10 @@ export async function submitWeavyMotionControl(params: WeavyMotionControlParams)
       return { ok: true, videoUrl: resultUrl }
     } catch (err: any) {
       const msg = err.message || String(err)
+      // Don't retry content validation errors - they'll fail again
+      if (/input was rejected|no complete upper body|content.*moderat|violat|nsfw|inappropriate|unsafe/i.test(msg)) {
+        return { ok: false, error: msg }
+      }
       if (/credit|balance|402|403|unauth/i.test(msg)) {
         const rotated = await rotateWeavyToken(currentTokenId)
         if (rotated) {

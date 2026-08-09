@@ -249,12 +249,20 @@ const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; 
     ],
   },
   createpulse: {
-    'cp:veo-omni-10s': [
+    'cp:dreamina-seedance-2.0': [
+      { value: '10s', label: '10 detik', mult: 1, duration: 10 },
+    ],
+    'cp:dreamina-seedance-2.5': [
+      { value: '10s', label: '10 detik', mult: 1, duration: 10 },
+    ],
+    'cp:dreamina-seedance-2.0-15s': [
+      { value: '15s', label: '15 detik', mult: 1, duration: 15 },
+    ],
+    'cp:veo-omni': [
       { value: '10s', label: '10 detik', mult: 1, duration: 10 },
     ],
     default: [
       { value: '10s', label: '10 detik', mult: 1, duration: 10 },
-      { value: '15s', label: '15 detik', mult: 1.5, duration: 15 },
     ],
   },
   framia: {
