@@ -192,16 +192,17 @@ const TOKEN_GUIDE: Record<string, {
   galleri5: {
     url: '/plugins',
     urlLabel: 'AA Plug-IN → AA Grabber Galery5',
-    prefix: 'AMf-... (Firebase refresh token, auto-refresh)',
+    prefix: 'AMf-... (refresh token) atau eyJ... (ID token) atau JSON headers',
     steps: [
       { text: 'Cara cepat: buka menu AA Plug-IN → install "AA Grabber — Galery5", login di tab Akun, buka aistudio.galleri5.com, klik Ambil Token → otomatis masuk Token Manager.' },
       { text: 'Cara manual: login di aistudio.galleri5.com (Google / email).' },
       { text: 'Buka DevTools (F12) → Application → IndexedDB → firebaseLocalStorageDb → firebaseLocalStorage.' },
-      { text: 'Buka entry firebase:authUser:... → stsTokenManager → copy value refreshToken (diawali AMf-...).' },
+      { text: 'Buka entry firebase:authUser:... → stsTokenManager.' },
+      { text: 'Copy value refreshToken (diawali AMf-...) — atau copy idToken (diawali eyJ...) jika ingin pakai ID token langsung.' },
       { text: 'Paste ke input di sebelah. Bisa banyak token (1 per baris) untuk auto-rotate.' },
       { text: 'Refresh token tahan lama — app menukarnya otomatis ke ID token tiap ~1 jam, jadi sisa credit tetap terbaca tanpa ambil ulang.' },
     ],
-    tip: 'Galery5 dipakai khusus Motion Control (Kling V3 Standard 100 cr, V2.6 Pro 120 cr, V2.6 Standard 60 cr).',
+    tip: 'Galery5 dipakai khusus Motion Control (Kling V3 Standard 100 cr, V2.6 Pro 120 cr, V2.6 Standard 60 cr). Format: refresh token (AMf-...) recommended, ID token (eyJ...) juga bisa.',
   },
 
 }
@@ -510,11 +511,46 @@ export default function ProvidersPage() {
     }
     if (selectedProvider === 'galleri5') {
       try {
+        const trimmed = key.trim()
+
+        // Detect token format
+        const isJwt = /^eyJ[\w-]*\.[\w-]+\.[\w-]+$/.test(trimmed)
+        const isRefreshToken = !trimmed.includes('.') && /^[\w-]{60,}$/.test(trimmed)
+        let isJsonHeaders = false
         let authHeaders: Record<string, string> | null = null
-        try { authHeaders = JSON.parse(key) } catch { authHeaders = null }
-        if (!authHeaders || typeof authHeaders !== 'object' || Object.keys(authHeaders).length === 0) {
-          return { state: 'invalid', detail: 'Format key harus JSON auth headers dari Chrome Extension (bukan token mentah).' }
+        try {
+          const parsed = JSON.parse(trimmed)
+          if (typeof parsed === 'object' && parsed !== null && Object.keys(parsed).length > 0) {
+            authHeaders = parsed
+            isJsonHeaders = true
+          }
+        } catch {}
+
+        if (!isJwt && !isRefreshToken && !isJsonHeaders) {
+          return { state: 'invalid', detail: 'Format tidak dikenal. Harus: (1) refresh token AMf-..., (2) ID token eyJ..., atau (3) JSON auth headers.' }
         }
+
+        // Build auth headers from whatever format
+        if (isRefreshToken) {
+          // Refresh token — resolve to access token first
+          try {
+            const { default: galleri5 } = await import('@/lib/galleri5')
+            const resolved = await galleri5.getGalleri5AuthHeaders()
+            if (!resolved) return { state: 'invalid', detail: 'Refresh token tidak bisa di-resolve. Pastikan token benar (AMf-... dari aistudio.galleri5.com).' }
+            authHeaders = resolved
+          } catch {
+            return { state: 'invalid', detail: 'Gagal resolve refresh token. Pastikan token dari aistudio.galleri5.com.' }
+          }
+        } else if (isJwt) {
+          // JWT ID token — wrap as auth header
+          authHeaders = { Accept: '*/*', Authorization: `Bearer ${trimmed}` }
+        }
+        // else: authHeaders already parsed from JSON
+
+        if (!authHeaders) {
+          return { state: 'invalid', detail: 'Gagal memproses token.' }
+        }
+
         const result = await checkGalleri5Balance(authHeaders)
         if (result.ok) {
           const bal = result.balance
