@@ -52,7 +52,7 @@ const PROVIDER_LIST = [
   { key: 'framia', label: 'Framia', desc: 'Canvas workflow (Converge AI) — semua node & recipe: image, video, avatar, garment, storyboard.' },
   { key: 'leonardo', label: 'Leonardo.ai', desc: 'app.leonardo.ai via Cognito Bearer JWT — Text-to-Image (Phoenix, Diffusion XL, Kino, Anime, Vision).' },
   { key: 'createpulse', label: 'CreatePulse', desc: 'Video generation (Seedance 2.0/2.5, Veo Omni) via createpulse.online — pakai API key sendiri.' },
-  { key: 'galleri5', label: 'G5 AI Studio', desc: 'Galleri5 AI Studio — Kling V2.6 Motion Control via unit_session_id. Ambil dari URL atau browser cookie.' },
+  { key: 'galleri5', label: 'G5 AI Studio', desc: 'Galleri5 AI Studio — Kling V2.6 Motion Control via Chrome Extension auth capture. Install G5 Auth Helper extension, submit di G5, lalu paste headers.' },
 ] as const
 
 const TOKEN_GUIDE: Record<string, {
