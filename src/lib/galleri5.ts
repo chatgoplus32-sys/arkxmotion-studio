@@ -408,22 +408,69 @@ export async function estimateGalleri5Credits(
   }
 }
 
-// ─── Public: Submit Motion Control ──────────────────────────────────
+// ─── SSE Stream Helpers ───────────────────────────────────────────
+
+function tryParseJson(s: string): any {
+  try { return JSON.parse(s) } catch { return null }
+}
+
+function extractVideoUrl(data: any, depth = 0): string | null {
+  if (depth > 8 || data == null) return null
+  if (typeof data === 'string') return /^https?:\/\/\S+\.(mp4|mov|webm|m4v)(\?|$)/i.test(data.trim()) ? data.trim() : null
+  if (Array.isArray(data)) {
+    for (const item of data) {
+      const url = extractVideoUrl(item, depth + 1)
+      if (url) return url
+    }
+    return null
+  }
+  if (typeof data === 'object') {
+    for (const val of Object.values(data)) {
+      const url = extractVideoUrl(val, depth + 1)
+      if (url) return url
+    }
+  }
+  return null
+}
+
+function extractError(data: any, depth = 0): string | null {
+  if (depth > 6 || typeof data !== 'object' || !data) return null
+  for (const key of ['error', 'error_message', 'detail', 'message']) {
+    const val = data[key]
+    if (typeof val === 'string' && val.trim() && !/^(ok|success|completed)$/i.test(val.trim())) {
+      return val.trim()
+    }
+  }
+  for (const val of Object.values(data)) {
+    const err = extractError(val, depth + 1)
+    if (err) return err
+  }
+  return null
+}
+
+function extractSseStatus(data: any): string {
+  if (typeof data === 'object' && data !== null) {
+    const val = data.status ?? data.event
+    return typeof val === 'string' ? val : ''
+  }
+  return ''
+}
+
+// ─── Public: Submit + Stream SSE ───────────────────────────────────
 
 export async function submitGalleri5MotionControl(
   opts: Galleri5MotionControlOptions
-): Promise<string> {
+): Promise<{ taskId: string; sessionId: string; orgId: string | null }> {
   const authHeaders = opts.authHeaders
   if (!authHeaders || Object.keys(authHeaders).length === 0) {
     throw Error(
-      'Galleri5: auth headers belum diatur. Jalankan Chrome Extension di G5 AI Studio, lalu paste headers ke Providers.'
+      'Galleri5: auth headers belum diatur.'
     )
   }
 
   const model = resolveModel(opts.modelKey)
   const onProgress = opts.onProgress
 
-  // Resolve access token from stored keys
   const keys = getStoredKeys()
   const active = keys.find((k) => k.status === 'active' || k.status === 'unknown')
   if (!active?.key) throw Error('Galery5: tidak ada token aktif')
@@ -465,7 +512,7 @@ export async function submitGalleri5MotionControl(
       session_id: sessionId,
       ...(orgId ? { organization_id: orgId } : {}),
     },
-  }).catch(() => {})
+  })
 
   onProgress?.('link session...')
   const filteredIds = [imgUploadId, vidUploadId].filter(Boolean)
@@ -500,12 +547,16 @@ export async function submitGalleri5MotionControl(
     onProgress?.(`estimasi ${estCredits} credit`)
   }
 
-  onProgress?.('processing')
+  onProgress?.('submit...')
 
-  const submitData = await g5DirectFetch(accessToken, '/model-garden/submit-form-stream', {
+  // Submit with SSE streaming — read response as stream
+  const headers = await g5DirectHeaders(accessToken, orgId)
+  headers['Content-Type'] = 'application/json'
+
+  const submitRes = await fetch(`${GALLERI5_BASE}/model-garden/submit-form-stream`, {
     method: 'POST',
-    orgId,
-    body: {
+    headers,
+    body: JSON.stringify({
       model_path: model.modelPath,
       form_fields: formFields,
       session_id: sessionId,
@@ -514,57 +565,111 @@ export async function submitGalleri5MotionControl(
         context: 'interactive',
         max_retries: 3,
       },
-    },
+    }),
   })
 
-  if (submitData.success === false) {
-    throw Error('Galleri5: submit gagal — ' + (submitData.message || 'unknown'))
+  if (!submitRes.ok) {
+    const errText = await submitRes.text().catch(() => '')
+    let errDetail = errText.slice(0, 200)
+    try { const p = JSON.parse(errText); errDetail = p.detail || p.message || errDetail } catch {}
+    throw Error(`G5 submit HTTP ${submitRes.status}: ${errDetail}`)
   }
 
-  const taskId =
-    submitData.prediction_id ||
-    submitData.jobrouter_job_id ||
-    submitData.task_id ||
-    submitData.id
-  if (!taskId) {
-    throw Error(
-      'Galleri5: prediction_id tidak ditemukan — ' + JSON.stringify(submitData).slice(0, 200)
-    )
+  // If no streaming body, try parse as JSON text → extract URL or fallback to poll
+  if (!submitRes.body) {
+    const text = await submitRes.text()
+    const parsed = tryParseJson(text)
+    const url = extractVideoUrl(parsed) || extractVideoUrl(text)
+    if (url) return { taskId: url, sessionId, orgId }
+    // Fallback: poll using sessionId
+    onProgress?.('polling...')
+    const pollUrl = await pollGalleri5Result(accessToken, sessionId, orgId, onProgress)
+    return { taskId: pollUrl, sessionId, orgId }
   }
 
-  return taskId
+  // Read SSE stream line by line
+  const reader = submitRes.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let lastError: string | null = null
+  let lastStatus = ''
+
+  const processLine = (line: string): string | null => {
+    const parsed = tryParseJson(line.startsWith('data:') ? line.slice(5).trim() : line)
+    const status = extractSseStatus(parsed)
+    if (status && status !== lastStatus) {
+      lastStatus = status
+      onProgress?.(status)
+    }
+    const url = extractVideoUrl(parsed) || extractVideoUrl(line)
+    if (url) return url
+    const err = extractError(parsed)
+    if (err) lastError = err
+    return null
+  }
+
+  for (; ;) {
+    const { done, value } = await reader.read()
+    if (value) {
+      buffer += decoder.decode(value, { stream: true })
+      let idx = buffer.indexOf('\n')
+      while (idx >= 0) {
+        const line = buffer.slice(0, idx).trim()
+        buffer = buffer.slice(idx + 1)
+        if (line) {
+          const url = processLine(line)
+          if (url) {
+            try { await reader.cancel() } catch {}
+            return { taskId: url, sessionId, orgId }
+          }
+        }
+        idx = buffer.indexOf('\n')
+      }
+    }
+    if (done) break
+  }
+
+  // Process remaining buffer
+  const remaining = buffer.trim()
+  if (remaining) {
+    const url = processLine(remaining.startsWith('data:') ? remaining.slice(5).trim() : remaining)
+    if (url) return { taskId: url, sessionId, orgId }
+  }
+
+  // Stream ended without URL → fallback to polling
+  onProgress?.('queued')
+  const pollUrl = await pollGalleri5Result(accessToken, sessionId, orgId, onProgress)
+  return { taskId: pollUrl, sessionId, orgId }
 }
 
-// ─── Public: Poll Result ────────────────────────────────────────────
+// ─── Public: Poll Result (using sessionId) ─────────────────────────
 
-export async function pollGalleri5MotionControl(
-  authHeaders: Record<string, string>,
-  taskId: string,
-  onProgress?: (msg: string, pct?: number) => void
+async function pollGalleri5Result(
+  accessToken: string,
+  sessionId: string,
+  orgId: string | null,
+  onProgress?: (msg: string, pct?: number) => void,
+  timeoutMs = 15 * 60 * 1000
 ): Promise<string> {
-  // Extract access token from authHeaders
-  const authVal = authHeaders['Authorization'] || authHeaders['authorization'] || ''
-  const accessToken = authVal.replace(/^Bearer\s+/i, '').trim()
-  if (!accessToken) throw Error('Galery5: access token tidak ditemukan di authHeaders')
-
   const startTime = Date.now()
-  const MAX_WAIT = 15 * 60 * 1000
 
-  for (; Date.now() - startTime < MAX_WAIT; ) {
+  for (; Date.now() - startTime < timeoutMs; ) {
     await new Promise((r) => setTimeout(r, 5000))
 
-    const data = await g5DirectFetch(accessToken, `/unit-sessions/${encodeURIComponent(taskId)}`)
+    let data: any = null
+    try {
+      data = await g5DirectFetch(accessToken, `/unit-sessions/${encodeURIComponent(sessionId)}`, { orgId })
+    } catch (e: any) {
+      onProgress?.(`retry: ${e.message}`)
+      continue
+    }
+
     const inference = data?.latest_inference ?? data
     const status = String(inference.status || '').toLowerCase()
-
+    const errorMsg = inference.error_message || inference.error || null
     const elapsed = Math.round((Date.now() - startTime) / 1000)
-    const isSuccess = /^(succeeded|success|completed|complete|done|finished)$/i.test(status)
-    const isFailed = /^(failed|error|cancelled|canceled|rejected)$/i.test(status)
 
-    onProgress?.(
-      `G5: ${status || 'checking'}... (${elapsed}s)`,
-      isSuccess ? 95 : Math.min(90, 30 + elapsed)
-    )
+    onProgress?.(`G5: ${status || 'checking'}... (${elapsed}s)`, Math.min(90, 30 + elapsed))
 
     const videoUrl =
       inference.result_url ||
@@ -580,19 +685,40 @@ export async function pollGalleri5MotionControl(
       return videoUrl
     }
 
-    if (isFailed) {
-      throw Error('Galleri5: task gagal — ' + (inference.error || inference.message || 'unknown'))
+    if (/^(failed|error|cancelled|canceled|rejected)$/i.test(status)) {
+      throw Error('Galleri5: task gagal — ' + (errorMsg || 'unknown'))
     }
 
-    if (isSuccess && Date.now() - startTime > 60000) {
-      throw Error(
-        'Galleri5: job selesai tapi URL hasil tidak ditemukan' +
-          (inference.error ? ` (${inference.error})` : '')
-      )
+    if (/^(succeeded|success|completed|complete|done|finished)$/i.test(status)) {
+      if (Date.now() - startTime > 60000) {
+        throw Error('Galleri5: job selesai tapi URL hasil tidak ditemukan' + (errorMsg ? ` (${errorMsg})` : ''))
+      }
     }
   }
 
   throw Error('Galleri5: timeout menunggu hasil (15 menit)')
+}
+
+// ─── Public: Poll Result (legacy interface) ────────────────────────
+
+export async function pollGalleri5MotionControl(
+  authHeaders: Record<string, string>,
+  taskId: string,
+  onProgress?: (msg: string, pct?: number) => void,
+  orgId?: string | null
+): Promise<string> {
+  const authVal = authHeaders['Authorization'] || authHeaders['authorization'] || ''
+  const accessToken = authVal.replace(/^Bearer\s+/i, '').trim()
+  if (!accessToken) throw Error('Galery5: access token tidak ditemukan di authHeaders')
+
+  // If taskId is a URL (video URL extracted from SSE), return directly
+  if (/^https?:\/\/\S+\.(mp4|mov|webm|m4v)(\?|$)/i.test(taskId)) {
+    onProgress?.('Selesai', 100)
+    return taskId
+  }
+
+  // Otherwise use as sessionId for polling
+  return pollGalleri5Result(accessToken, taskId, orgId ?? null, onProgress)
 }
 
 // ─── Public: Error Detection ────────────────────────────────────────

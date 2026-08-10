@@ -1050,7 +1050,7 @@ export default function MotionPage() {
               updateSlotStatus(slot.id, 'processing', 'submitting...')
               addLog(`#${slotNum} Submit ke G5 AI Studio (${g5Model.modelPath})...`)
 
-              const taskId = await submitGalleri5MotionControl({
+              const submitResult = await submitGalleri5MotionControl({
                 authHeaders,
                 modelKey,
                 imageUrl,
@@ -1063,11 +1063,12 @@ export default function MotionPage() {
                   addLog(`#${slotNum} ${msg}`)
                 },
               })
-              addLog(`#${slotNum} Task: ${taskId.slice(0, 20)}...`)
+              const taskId = submitResult.taskId
+              addLog(`#${slotNum} Task: ${taskId.slice(0, 60)}...`)
 
               addActiveTask({
-                id: taskId,
-                taskId,
+                id: submitResult.sessionId,
+                taskId: submitResult.sessionId,
                 roomId: '',
                 nodeId: '',
                 token: JSON.stringify(authHeaders).slice(0, 50),
@@ -1077,21 +1078,25 @@ export default function MotionPage() {
                 page: 'motion',
               })
 
-              updateSlotStatus(slot.id, 'processing', 'polling...')
-              addLog(`#${slotNum} Polling for result...`)
-
-              const resultUrl = await pollGalleri5MotionControl(authHeaders, taskId, (msg, pct) => {
-                updateSlotStatus(slot.id, 'processing', `${msg} ${pct}%`)
-                addLog(`#${slotNum} ${msg} ${pct}%`)
-                setProgress(pct)
-              })
+              let resultUrl = taskId
+              // If taskId is a URL, submit already returned the result (from SSE stream)
+              if (!/^https?:\/\//i.test(taskId)) {
+                // taskId is a sessionId — need to poll
+                updateSlotStatus(slot.id, 'processing', 'polling...')
+                addLog(`#${slotNum} Polling for result...`)
+                resultUrl = await pollGalleri5MotionControl(authHeaders, submitResult.sessionId, (msg, pct) => {
+                  updateSlotStatus(slot.id, 'processing', `${msg} ${pct}%`)
+                  addLog(`#${slotNum} ${msg} ${pct}%`)
+                  setProgress(pct)
+                }, submitResult.orgId)
+              }
 
               updateSlotStatus(slot.id, 'done')
               addLog(`#${slotNum} Done: ${resultUrl.slice(0, 60)}...`, 'success')
 
-              removeActiveTask(taskId)
+              removeActiveTask(submitResult.sessionId)
               addResult({
-                id: taskId,
+                id: submitResult.sessionId,
                 url: resultUrl,
                 prompt: prompt.trim() || '(no prompt)',
                 date: new Date().toISOString(),
@@ -1099,7 +1104,7 @@ export default function MotionPage() {
               })
               setResults((prev) => [
                 {
-                  id: taskId,
+                  id: submitResult.sessionId,
                   url: resultUrl,
                   prompt: prompt.trim() || '(no prompt)',
                   date: new Date().toISOString(),
