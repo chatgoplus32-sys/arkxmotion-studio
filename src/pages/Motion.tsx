@@ -7,6 +7,7 @@ import { useToastStore } from '@/stores/toastStore'
 import { uploadToCatbox, submitMotionControl, pollRoboneoI2V, checkRoboneoBalance, compressVideo, submitGoogleOmni, normalizeImage } from '@/lib/roboneo'
 import { submitWeavyMotionControl, uploadWeavyAssetWithRetry, resolveWeavyAssetUrl, getActiveWeavyAccessToken, compressImageForWeavy } from '@/lib/weavy'
 import { getRunningHubApiKey, submitRunningHubMotionControl, pollRunningHubTask } from '@/lib/runninghub'
+import { getGalleri5SessionId, submitGalleri5MotionControl, pollGalleri5MotionControl } from '@/lib/galleri5'
 import { trimVideoFFmpeg } from '@/lib/ffmpeg-compress'
 import { getMagnificApiKey, submitMagnificMotion, pollMagnificMotion, type MagnificMotionModel } from '@/lib/magnific'
 import { useLocalStorage } from '@/lib/useLocalStorage'
@@ -30,10 +31,39 @@ import {
 } from 'lucide-react'
 
 const PROVIDERS = {
+  weavy: { name: 'Weavy', models: [
+    { key: 'fal-ai/kling-video/v3/pro/motion-control', label: 'Kling V3.0 Pro', cr: 50 },
+    { key: 'fal-ai/kling-video/v3/standard/motion-control', label: 'Kling V3.0 Standard', cr: 50 },
+    { key: 'fal-ai/kling-video/v2.6/pro/motion-control', label: 'Kling V2.6 Pro', cr: 50 },
+    { key: 'fal-ai/kling-video/v2.6/standard/motion-control', label: 'Kling V2.6 Standard', cr: 50 },
+  ]},
+  wavespeed: { name: 'Wavespeed', models: [
+    { key: 'ws:kwaivgi/kling-v3.0-pro/motion-control', label: 'Kling V3.0 Pro', cr: 84 },
+    { key: 'ws:kwaivgi/kling-v3.0-std/motion-control', label: 'Kling V3.0 Standard', cr: 63 },
+    { key: 'ws:kwaivgi/kling-v2.6-pro/motion-control', label: 'Kling V2.6 Pro', cr: 56 },
+    { key: 'ws:kwaivgi/kling-v2.6-std/motion-control', label: 'Kling V2.6 Standard', cr: 21 },
+  ]},
   roboneo: { name: 'RoboNeo (Meitu)', models: [
     { key: 'rn:video_bonbon_motioncontrol_v30:std', label: 'Kling V3.0 Standard (RoboNeo · Meitu)', cr: 80 },
-    { key: 'rn:video_bonbon_motioncontrol_v30:pro', label: 'Kling V3.0 Pro (RoboNeo · Meitu)', cr: 120 },
-    { key: 'rn:video_wan_motioncontrol_v26', label: 'Wan 2.6 Motion Control (RoboNeo · Meitu)', cr: 65 },
+  ]},
+  magnific: { name: 'Magnific', models: [
+    { key: 'mag:kling-v3-motion-control-pro', label: 'Kling V3.0 Pro (Magnific)', cr: 84 },
+    { key: 'mag:kling-v3-motion-control-std', label: 'Kling V3.0 Standard (Magnific)', cr: 63 },
+    { key: 'mag:kling-v2-6-motion-control-pro', label: 'Kling V2.6 Pro (Magnific)', cr: 56 },
+    { key: 'mag:kling-v2-6-motion-control-std', label: 'Kling V2.6 Standard (Magnific)', cr: 21 },
+  ]},
+  framia: { name: 'Framia', models: [
+    { key: 'framia:kling-v2.1-motion', label: 'Kling V2.1 Motion Control (Framia)', cr: 40 },
+    { key: 'framia:kling-v2.6-motion', label: 'Kling V2.6 Motion Control (Framia)', cr: 35 },
+  ]},
+  runninghub: { name: 'Motion Control HD (Markasflow-V2)', models: [
+    { key: 'rh:pro:2.6', label: 'Kling 2.6 Pro (Markasflow-V2)', cr: 80 },
+    { key: 'rh:std:2.6', label: 'Kling 2.6 Standard (Markasflow-V2)', cr: 50 },
+    { key: 'rh:pro:2.1', label: 'Kling 2.1 Pro (Markasflow-V2)', cr: 60 },
+    { key: 'rh:std:2.1', label: 'Kling 2.1 Standard (Markasflow-V2)', cr: 35 },
+  ]},
+  galleri5: { name: 'G5 AI Studio', models: [
+    { key: 'g5:kling-v2.6-std', label: 'Kling V2.6 Standard (G5 AI Studio)', cr: 0 },
   ]},
 }
 
@@ -63,9 +93,9 @@ function createSlot(): Slot {
 }
 
 export default function MotionPage() {
-  const [provider, setProvider] = useLocalStorage<ProviderId>('motion.provider', 'roboneo')
+  const [provider, setProvider] = useLocalStorage<ProviderId>('motion.provider', 'wavespeed')
   const addToast = useToastStore((s) => s.addToast)
-  const [modelKey, setModelKey] = useLocalStorage('motion.modelKey', PROVIDERS.roboneo.models[0]?.key || '')
+  const [modelKey, setModelKey] = useLocalStorage('motion.modelKey', PROVIDERS.wavespeed.models[0]?.key || '')
   const [orientation, setOrientation] = useLocalStorage<'video' | 'image'>('motion.orientation', 'video')
   const [prompt, setPrompt] = useLocalStorage('motion.prompt', '')
   const [negativePrompt, setNegativePrompt] = useLocalStorage('motion.negativePrompt', '')
@@ -442,6 +472,14 @@ export default function MotionPage() {
             let nodeId: string = ''
             try {
               let imageUrl = slot.imageUrl || ''
+              
+              // Force re-upload if cached URL is blob URL (not accessible by RoboNeo)
+              if (imageUrl && imageUrl.startsWith('blob:')) {
+                addLog(`#${slotNum} ⚠ Cached image adalah blob URL, re-upload...`)
+                imageUrl = ''
+                updateSlot(slot.id, { imageUrl: null })
+              }
+              
               if (!imageUrl) {
                 updateSlotStatus(slot.id, 'uploading img...')
                 addLog(`#${slotNum} Upload image...`)
@@ -462,6 +500,20 @@ export default function MotionPage() {
               }
 
               let motionVideoUrl = slot.videoUrl || ''
+              
+              // Force re-upload if cached URL is blob URL
+              if (motionVideoUrl && motionVideoUrl.startsWith('blob:')) {
+                addLog(`#${slotNum} ⚠ Cached video adalah blob URL, re-upload...`)
+                motionVideoUrl = ''
+                updateSlot(slot.id, { videoUrl: null })
+              }
+
+              // Force re-upload if autoTrim is enabled
+              if (autoTrim && isRoboneo && motionVideoUrl && slot.video) {
+                addLog(`#${slotNum} Auto-trim aktif, re-upload video...`)
+                motionVideoUrl = ''
+                updateSlot(slot.id, { videoUrl: null })
+              }
 
               if (isOmni) {
                 updateSlotStatus(slot.id, 'processing', 'submitting...')
@@ -485,15 +537,10 @@ export default function MotionPage() {
                   updateSlotStatus(slot.id, 'uploading vid...')
 
                   let videoToUpload = slot.video!
+                  // FFmpeg WASM tidak work di semua browser, skip trim untuk sekarang
+                  // Video akan dikirim as-is ke RoboNeo (biaya mengikuti durasi)
                   if (autoTrim && isRoboneo) {
-                    addLog(`#${slotNum} Auto-trimming video to 9s...`)
-                    updateSlotStatus(slot.id, 'uploading vid...', 'Trimming to 9s...')
-                    videoToUpload = await trimVideoFFmpeg(slot.video!, 9, (msg, pct) => {
-                      setCompressDialog({ msg, pct })
-                      updateSlotStatus(slot.id, 'uploading vid...', msg)
-                      addLog(`#${slotNum} ${msg}`)
-                    })
-                    setCompressDialog(null)
+                    addLog(`#${slotNum} ℹ Auto-trim aktif tapi FFmpeg WASM tidak tersedia. Video dikirim as-is.`, 'warn')
                   }
 
                   addLog(`#${slotNum} Upload video...`)
@@ -524,6 +571,7 @@ export default function MotionPage() {
                   orientation,
                   keepSound,
                   modelKey: currentModel.key,
+                  autoTrim,
                 })
                 taskId = result.taskId
                 roomId = result.roomId
@@ -591,6 +639,7 @@ export default function MotionPage() {
                         orientation,
                         keepSound,
                         modelKey: currentModel.key,
+                        autoTrim,
                       })
                       taskId = retry.taskId
                       roomId = retry.roomId
@@ -906,6 +955,115 @@ export default function MotionPage() {
               const resultUrl = await pollRunningHubTask(taskId, (status, pct) => {
                 updateSlotStatus(slot.id, 'processing', `${status} ${pct}%`)
                 addLog(`#${slotNum} ${status} ${pct}%`)
+                setProgress(pct)
+              })
+
+              updateSlotStatus(slot.id, 'done')
+              addLog(`#${slotNum} Done: ${resultUrl.slice(0, 60)}...`, 'success')
+
+              removeActiveTask(taskId)
+              addResult({
+                id: taskId,
+                url: resultUrl,
+                prompt: prompt.trim() || '(no prompt)',
+                date: new Date().toISOString(),
+                page: 'motion',
+              })
+              setResults((prev) => [
+                {
+                  id: taskId,
+                  url: resultUrl,
+                  prompt: prompt.trim() || '(no prompt)',
+                  date: new Date().toISOString(),
+                },
+                ...prev,
+              ])
+              return true
+            } catch (err: any) {
+              setCompressDialog(null)
+              updateSlotStatus(slot.id, 'error', err.message)
+              addLog(`#${slotNum} Error: ${err.message}`, 'error')
+              return false
+            }
+          } else if (provider === 'galleri5' && slot.image && slot.video) {
+            try {
+              const sessionId = getGalleri5SessionId()
+              if (!sessionId) throw Error('Belum ada G5 session_id. Silakan tambahkan di Providers.')
+
+              let imageUrl = slot.imageUrl || ''
+              if (!imageUrl) {
+                updateSlotStatus(slot.id, 'uploading img...')
+                addLog(`#${slotNum} Upload image...`)
+                const normalizedImage = await normalizeImage(slot.image, (msg, pct) => {
+                  setCompressDialog({ msg, pct })
+                  updateSlotStatus(slot.id, 'uploading img...', msg)
+                  addLog(`#${slotNum} ${msg}`)
+                })
+                setCompressDialog(null)
+                imageUrl = await uploadToCatbox(normalizedImage, 'image', (msg, pct) => {
+                  updateSlotStatus(slot.id, 'uploading img...', msg)
+                  addLog(`#${slotNum} ${msg}`)
+                })
+                updateSlot(slot.id, { imageUrl })
+                addLog(`#${slotNum} Image: ${imageUrl.slice(0, 60)}...`)
+              } else {
+                addLog(`#${slotNum} Using cached image URL`)
+              }
+
+              let motionVideoUrl = slot.videoUrl || ''
+              if (!motionVideoUrl) {
+                updateSlotStatus(slot.id, 'uploading vid...')
+                addLog(`#${slotNum} Upload video...`)
+                const videoFile = await compressVideo(slot.video, 4, (msg, pct) => {
+                  setCompressDialog({ msg, pct })
+                  updateSlotStatus(slot.id, 'uploading vid...', msg)
+                  addLog(`#${slotNum} ${msg}`)
+                })
+                setCompressDialog(null)
+                motionVideoUrl = await uploadToCatbox(videoFile, 'video', (msg, pct) => {
+                  updateSlotStatus(slot.id, 'uploading vid...', msg)
+                  addLog(`#${slotNum} ${msg}`)
+                })
+                updateSlot(slot.id, { videoUrl: motionVideoUrl })
+                addLog(`#${slotNum} Video: ${motionVideoUrl.slice(0, 60)}...`)
+              } else {
+                addLog(`#${slotNum} Using cached video URL`)
+              }
+
+              updateSlotStatus(slot.id, 'processing', 'submitting...')
+              addLog(`#${slotNum} Submit ke G5 AI Studio...`)
+
+              const taskId = await submitGalleri5MotionControl({
+                sessionId,
+                imageUrl,
+                videoUrl: motionVideoUrl,
+                keepOriginalSound: keepSound,
+                orientation,
+                onProgress: (msg, pct) => {
+                  updateSlotStatus(slot.id, 'processing', pct ? `${msg} ${pct}%` : msg)
+                  addLog(`#${slotNum} ${msg}`)
+                },
+              })
+              addLog(`#${slotNum} Task: ${taskId.slice(0, 20)}...`)
+
+              addActiveTask({
+                id: taskId,
+                taskId,
+                roomId: '',
+                nodeId: '',
+                token: sessionId,
+                model: currentModel.label,
+                prompt: prompt.trim() || '(no prompt)',
+                startedAt: Date.now(),
+                page: 'motion',
+              })
+
+              updateSlotStatus(slot.id, 'processing', 'polling...')
+              addLog(`#${slotNum} Polling for result...`)
+
+              const resultUrl = await pollGalleri5MotionControl(sessionId, taskId, (msg, pct) => {
+                updateSlotStatus(slot.id, 'processing', `${msg} ${pct}%`)
+                addLog(`#${slotNum} ${msg} ${pct}%`)
                 setProgress(pct)
               })
 

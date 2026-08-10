@@ -52,6 +52,7 @@ const PROVIDER_LIST = [
   { key: 'framia', label: 'Framia', desc: 'Canvas workflow (Converge AI) — semua node & recipe: image, video, avatar, garment, storyboard.' },
   { key: 'leonardo', label: 'Leonardo.ai', desc: 'app.leonardo.ai via Cognito Bearer JWT — Text-to-Image (Phoenix, Diffusion XL, Kino, Anime, Vision).' },
   { key: 'createpulse', label: 'CreatePulse', desc: 'Video generation (Seedance 2.0/2.5, Veo Omni) via createpulse.online — pakai API key sendiri.' },
+  { key: 'galleri5', label: 'G5 AI Studio', desc: 'Galleri5 AI Studio — Kling V2.6 Motion Control via unit_session_id. Ambil dari URL atau browser cookie.' },
 ] as const
 
 const TOKEN_GUIDE: Record<string, {
@@ -186,6 +187,19 @@ const TOKEN_GUIDE: Record<string, {
     ],
     tip: 'FFmpeg = default, gratis, di device kamu. Cloud = fallback untuk file besar / batch panjang.',
   },
+  galleri5: {
+    url: 'https://aistudio.galleri5.com/model-garden/kling-video-v2.6-standard-motion-control',
+    urlLabel: 'aistudio.galleri5.com',
+    prefix: 'unit_session_id dari URL',
+    steps: [
+      { text: 'Buka G5 AI Studio dan login ke akun kamu.' },
+      { text: 'Buka halaman Model Garden → Kling Video V2.6 Standard Motion Control.' },
+      { text: 'Copy parameter unit_session_id dari URL (contoh: F2UKFTQGvviHs1wyqZaPi4GyVXMLUuMk04eUZbp-ubc).' },
+      { text: 'Paste session ID tersebut ke textarea di sebelah.' },
+      { text: 'Session ID bisa expire setelah logout atau timeout. Jika error 401/403, dapatkan session ID baru dari URL.' },
+    ],
+    tip: 'Unit session ID ada di URL halaman G5 AI Studio. Format: string alfanumerik panjang. Bisa berubah setiap login.',
+  },
 
 }
 
@@ -295,6 +309,7 @@ export default function ProvidersPage() {
       framia: 'framia',
       leonardo: 'leonardo',
       createpulse: 'createpulse',
+      galleri5: 'galleri5',
     }
     const providerId = providerMap[selectedProvider]
     return providerId ? isProviderMaintenance(providerId) : false
@@ -310,6 +325,7 @@ export default function ProvidersPage() {
       framia: 'framia',
       leonardo: 'leonardo',
       createpulse: 'createpulse',
+      galleri5: 'galleri5',
     }
     const providerId = providerMap[selectedProvider]
     return providerId ? getMaintenanceMessage(providerId) : ''
@@ -614,9 +630,11 @@ export default function ProvidersPage() {
                     weavy: 'weavy',
                     wavespeed: 'wavespeed',
                     roboneo: 'roboneo',
+                    runninghub: 'runninghub',
                     framia: 'framia',
-      leonardo: 'leonardo',
-      createpulse: 'createpulse',
+                    leonardo: 'leonardo',
+                    createpulse: 'createpulse',
+                    galleri5: 'galleri5',
                   }
                   const providerId = providerMap[p.key]
                   const isMaint = providerId ? isProviderMaintenance(providerId) : false

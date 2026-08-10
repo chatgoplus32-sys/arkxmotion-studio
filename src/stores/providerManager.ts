@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'runninghub' | 'createpulse' | 'framia' | 'firefly' | 'leonardo' | 'gemini' | 'openai' | 'shotstack' | 'creatomate'
+export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'runninghub' | 'createpulse' | 'framia' | 'firefly' | 'leonardo' | 'gemini' | 'openai' | 'shotstack' | 'creatomate' | 'galleri5'
 
 export interface ProviderKey {
   id: string
@@ -159,6 +159,16 @@ export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
     minCredits: 0,
     supportsBalance: true,
   },
+  galleri5: {
+    id: 'galleri5',
+    name: 'G5 AI Studio',
+    icon: '🎬',
+    description: 'Galleri5 AI Studio — Kling motion control via session-based auth',
+    keyPlaceholder: 'Paste your G5 session_id...',
+    keyFormat: 'Session ID (from browser cookie)',
+    minCredits: 0,
+    supportsBalance: false,
+  },
 }
 
 function getDefaultMaintenance(): Record<ProviderId, MaintenanceInfo> {
@@ -176,6 +186,7 @@ function getDefaultMaintenance(): Record<ProviderId, MaintenanceInfo> {
     openai: { isMaintenance: false, message: '' },
     shotstack: { isMaintenance: false, message: '' },
     creatomate: { isMaintenance: false, message: '' },
+    galleri5: { isMaintenance: false, message: '' },
   }
 }
 
@@ -252,6 +263,7 @@ function loadKeysFromStorage(): Record<ProviderId, ProviderKey[]> {
     openai: [],
     shotstack: [],
     creatomate: [],
+    galleri5: [],
   }
   try {
     const stored = localStorage.getItem(STORAGE_KEY)
