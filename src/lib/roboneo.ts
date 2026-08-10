@@ -1,3 +1,23 @@
+export function getVideoDurationFromFile(file: File): Promise<number> {
+  return new Promise((resolve) => {
+    try {
+      const url = URL.createObjectURL(file)
+      const video = document.createElement('video')
+      video.preload = 'metadata'
+      const cleanup = () => { try { URL.revokeObjectURL(url) } catch {} }
+      const timeout = setTimeout(() => { cleanup(); resolve(10) }, 5000)
+      video.onloadedmetadata = () => {
+        clearTimeout(timeout)
+        const dur = Number.isFinite(video.duration) ? video.duration : 10
+        cleanup()
+        resolve(Math.round(dur))
+      }
+      video.onerror = () => { clearTimeout(timeout); cleanup(); resolve(10) }
+      video.src = url
+    } catch { resolve(10) }
+  })
+}
+
 function uuid() {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0
