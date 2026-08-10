@@ -20,8 +20,15 @@ async function g5Fetch(
   const text = await res.text()
   let data: any = null
   try { data = JSON.parse(text) } catch { data = text }
+  console.log(`[g5Fetch] ${method} ${path} → ${res.status}`, text.slice(0, 500))
   if (!res.ok) {
-    const detail = (typeof data === 'object' && data !== null) ? (data.detail || data.message || text.slice(0, 200)) : String(data).slice(0, 200)
+    let detail: string
+    if (typeof data === 'object' && data !== null) {
+      const raw = data.detail || data.message || data.error || ''
+      detail = typeof raw === 'object' ? JSON.stringify(raw) : String(raw)
+    } else {
+      detail = String(data).slice(0, 200)
+    }
     throw new Error(`G5 HTTP ${res.status}: ${detail || 'request gagal'}`)
   }
   return data
@@ -37,10 +44,10 @@ function parseAuthHeaders(raw: any): Record<string, string> {
 }
 
 function buildHeaders(authHeaders: Record<string, string>, orgId?: string | null): Record<string, string> {
-  const h: Record<string, string> = { Accept: '*/*', ...authHeaders }
-  if (!h['Authorization'] && !h['authorization']) {
-    // authHeaders sudah include Authorization dari client
-  }
+  // Extract only Authorization from authHeaders — ignore extra headers from client
+  const auth = authHeaders['Authorization'] || authHeaders['authorization'] || ''
+  const h: Record<string, string> = { Accept: '*/*' }
+  if (auth) h['Authorization'] = auth
   if (orgId) h['x-organization-id'] = orgId
   return h
 }
@@ -65,7 +72,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (action === 'info') {
       const authHeaders = parseAuthHeaders(body.authHeaders)
       console.log(`[galleri5-proxy] info`)
-      const data = await g5Fetch('/api/v1/auth/me/info', buildHeaders(authHeaders), {
+      const headers = buildHeaders(authHeaders)
+      headers['Content-Type'] = 'application/json'
+      const data = await g5Fetch('/api/v1/auth/me/info', headers, {
         method: 'POST',
         body: {},
         timeout: 15000,
