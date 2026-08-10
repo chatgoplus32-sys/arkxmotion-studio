@@ -1,4 +1,5 @@
 const GALLERI5_PROXY = '/api/public/galleri5'
+const GALLERI5_BASE = 'https://aistudio-backend.calmdesert-ca599847.centralindia.azurecontainerapps.io/api/v1'
 const FIREBASE_API_KEY = 'AIzaSyBejuWIKZ7yQT9bdG_jnb4RrkW3DoFCNNo'
 const FIREBASE_TOKEN_URL = `https://securetoken.googleapis.com/v1/token?key=${FIREBASE_API_KEY}`
 
@@ -192,6 +193,59 @@ async function galleri5Api(action: string, params: Record<string, any>): Promise
   return data
 }
 
+// ─── Direct G5 Backend API (client → G5, no proxy) ─────────────────
+
+async function g5DirectHeaders(accessToken: string, orgId?: string | null): Promise<Record<string, string>> {
+  const h: Record<string, string> = { Accept: '*/*', Authorization: `Bearer ${accessToken}` }
+  if (orgId) h['x-organization-id'] = orgId
+  return h
+}
+
+async function g5DirectFetch(accessToken: string, path: string, opts: { method?: string; body?: any; orgId?: string | null } = {}): Promise<any> {
+  const { method = 'GET', body, orgId } = opts
+  const headers = await g5DirectHeaders(accessToken, orgId)
+  if (method !== 'GET') headers['Content-Type'] = 'application/json'
+  const res = await fetch(`${GALLERI5_BASE}${path}`, {
+    method,
+    headers,
+    body: method === 'GET' ? undefined : JSON.stringify(body ?? {}),
+  })
+  const text = await res.text()
+  let data: any = null
+  try { data = JSON.parse(text) } catch { data = text }
+  if (!res.ok) {
+    const detail = (typeof data === 'object' && data !== null) ? (data.detail || data.message || '') : String(data).slice(0, 200)
+    throw Error(`G5 HTTP ${res.status}: ${detail || 'request gagal'}`)
+  }
+  return data
+}
+
+async function g5UploadFile(accessToken: string, file: File, orgId?: string | null): Promise<{ fileUrl: string; uploadId: string | null }> {
+  const headers = await g5DirectHeaders(accessToken, orgId)
+  const formData = new FormData()
+  formData.append('file', file, file.name || 'upload.bin')
+  const res = await fetch(`${GALLERI5_BASE}/file-upload`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  })
+  const text = await res.text()
+  let data: any = null
+  try { data = JSON.parse(text) } catch { data = text }
+  if (!res.ok || !(data?.file_url || data?.url)) {
+    throw Error(`G5 upload gagal (${res.status}): ${data?.detail || text.slice(0, 160)}`)
+  }
+  return { fileUrl: data.file_url || data.url, uploadId: data.upload_id ?? null }
+}
+
+async function g5UploadUrl(accessToken: string, url: string, fileName: string, orgId?: string | null): Promise<{ fileUrl: string; uploadId: string | null }> {
+  const fileRes = await fetch(url, { signal: AbortSignal.timeout(60000) })
+  if (!fileRes.ok) throw Error(`Download gagal: HTTP ${fileRes.status}`)
+  const blob = await fileRes.blob()
+  const file = new File([blob], fileName, { type: blob.type || 'application/octet-stream' })
+  return g5UploadFile(accessToken, file, orgId)
+}
+
 function resolveModel(modelKey: string): Galleri5MotionModel {
   return (
     GALLERI5_MOTION_MODELS.find((m) => m.key === modelKey) ||
@@ -369,10 +423,15 @@ export async function submitGalleri5MotionControl(
   const model = resolveModel(opts.modelKey)
   const onProgress = opts.onProgress
 
+  // Resolve access token from stored keys
+  const keys = getStoredKeys()
+  const active = keys.find((k) => k.status === 'active' || k.status === 'unknown')
+  if (!active?.key) throw Error('Galery5: tidak ada token aktif')
+  const accessToken = await resolveAccessToken(active.key)
+
   onProgress?.('cek akun...')
 
-  const infoRes = await galleri5Api('info', { authHeaders })
-  const infoData = infoRes.data ?? infoRes
+  const infoData = await g5DirectFetch(accessToken, '/auth/me/info', { method: 'POST', body: {} })
   const orgId = infoData.organization_id || infoData.primary_organization_id || null
   const balance = typeof infoData.available_credits === 'number' ? infoData.available_credits : null
 
@@ -385,36 +444,38 @@ export async function submitGalleri5MotionControl(
   const sessionId = generateSessionId()
 
   onProgress?.('upload image...')
-  const imgUpload = await galleri5Api('upload', {
-    authHeaders,
-    orgId,
-    fileUrl: opts.imageUrl,
-    fileName: `ref_img_${Date.now()}.jpg`,
-    contentType: 'image/jpeg',
-  })
-  const imgData = imgUpload.data ?? imgUpload
-  const imgFileUrl = imgData.file_url || imgData.url
-  const imgUploadId = imgData.upload_id ?? null
+  const imgResult = await g5UploadUrl(accessToken, opts.imageUrl, `ref_img_${Date.now()}.jpg`, orgId)
+  const imgFileUrl = imgResult.fileUrl
+  const imgUploadId = imgResult.uploadId
 
   onProgress?.('upload video...')
-  const vidUpload = await galleri5Api('upload', {
-    authHeaders,
-    orgId,
-    fileUrl: opts.videoUrl,
-    fileName: `ref_vid_${Date.now()}.mp4`,
-    contentType: 'video/mp4',
-  })
-  const vidData = vidUpload.data ?? vidUpload
-  const vidFileUrl = vidData.file_url || vidData.url
-  const vidUploadId = vidData.upload_id ?? null
+  const vidResult = await g5UploadUrl(accessToken, opts.videoUrl, `ref_vid_${Date.now()}.mp4`, orgId)
+  const vidFileUrl = vidResult.fileUrl
+  const vidUploadId = vidResult.uploadId
 
   onProgress?.('create session...')
-  await createGalleri5Session(authHeaders, model.modelPath, orgId, sessionId, model.sessionName).catch(
-    () => {}
-  )
+  await g5DirectFetch(accessToken, '/unit-sessions', {
+    method: 'POST',
+    orgId,
+    body: {
+      unit_type: 'model_garden',
+      session_type: 'generation',
+      name: model.sessionName,
+      state: { model_path: model.modelPath },
+      session_id: sessionId,
+      ...(orgId ? { organization_id: orgId } : {}),
+    },
+  }).catch(() => {})
 
   onProgress?.('link session...')
-  await linkGalleri5Uploads(authHeaders, [imgUploadId, vidUploadId], sessionId, orgId).catch(() => {})
+  const filteredIds = [imgUploadId, vidUploadId].filter(Boolean)
+  if (filteredIds.length > 0) {
+    await g5DirectFetch(accessToken, '/uploads/link-session', {
+      method: 'PATCH',
+      orgId,
+      body: { upload_ids: filteredIds, session_id: sessionId },
+    }).catch(() => {})
+  }
 
   const formFields: Record<string, any> = {
     keep_original_sound: !!opts.keepSound,
@@ -428,17 +489,23 @@ export async function submitGalleri5MotionControl(
     formFields.prompt = opts.prompt.trim()
   }
 
-  const estCredits = await estimateGalleri5Credits(authHeaders, model.modelPath, formFields, orgId)
+  onProgress?.('estimate...')
+  const estData = await g5DirectFetch(accessToken, '/model-garden/estimate-credits', {
+    method: 'POST',
+    orgId,
+    body: { model_path: model.modelPath, form_fields: formFields },
+  }).catch(() => null)
+  const estCredits = estData?.credits ?? null
   if (estCredits !== null) {
     onProgress?.(`estimasi ${estCredits} credit`)
   }
 
   onProgress?.('processing')
 
-  const submitRes = await galleri5Api('submit', {
-    authHeaders,
+  const submitData = await g5DirectFetch(accessToken, '/model-garden/submit-form-stream', {
+    method: 'POST',
     orgId,
-    payload: {
+    body: {
       model_path: model.modelPath,
       form_fields: formFields,
       session_id: sessionId,
@@ -449,8 +516,6 @@ export async function submitGalleri5MotionControl(
       },
     },
   })
-
-  const submitData = submitRes.data ?? submitRes
 
   if (submitData.success === false) {
     throw Error('Galleri5: submit gagal — ' + (submitData.message || 'unknown'))
@@ -477,15 +542,20 @@ export async function pollGalleri5MotionControl(
   taskId: string,
   onProgress?: (msg: string, pct?: number) => void
 ): Promise<string> {
+  // Extract access token from authHeaders
+  const authVal = authHeaders['Authorization'] || authHeaders['authorization'] || ''
+  const accessToken = authVal.replace(/^Bearer\s+/i, '').trim()
+  if (!accessToken) throw Error('Galery5: access token tidak ditemukan di authHeaders')
+
   const startTime = Date.now()
   const MAX_WAIT = 15 * 60 * 1000
 
   for (; Date.now() - startTime < MAX_WAIT; ) {
     await new Promise((r) => setTimeout(r, 5000))
 
-    const res = await galleri5Api('status', { authHeaders, taskId })
-    const data = res.data ?? res
-    const status = String(data.status || '').toLowerCase()
+    const data = await g5DirectFetch(accessToken, `/unit-sessions/${encodeURIComponent(taskId)}`)
+    const inference = data?.latest_inference ?? data
+    const status = String(inference.status || '').toLowerCase()
 
     const elapsed = Math.round((Date.now() - startTime) / 1000)
     const isSuccess = /^(succeeded|success|completed|complete|done|finished)$/i.test(status)
@@ -497,13 +567,13 @@ export async function pollGalleri5MotionControl(
     )
 
     const videoUrl =
-      data.result_url ||
-      data.asset_url ||
-      data.output_url ||
-      data.video_url ||
-      data.result?.url ||
-      (Array.isArray(data.result_urls) ? data.result_urls[0] : null) ||
-      (Array.isArray(data.s3_urls) ? data.s3_urls[0] : null)
+      inference.result_url ||
+      inference.asset_url ||
+      inference.output_url ||
+      inference.video_url ||
+      inference.result?.url ||
+      (Array.isArray(inference.result_urls) ? inference.result_urls[0] : null) ||
+      (Array.isArray(inference.s3_urls) ? inference.s3_urls[0] : null)
 
     if (videoUrl) {
       onProgress?.('Selesai', 100)
@@ -511,13 +581,13 @@ export async function pollGalleri5MotionControl(
     }
 
     if (isFailed) {
-      throw Error('Galleri5: task gagal — ' + (data.error || data.message || 'unknown'))
+      throw Error('Galleri5: task gagal — ' + (inference.error || inference.message || 'unknown'))
     }
 
     if (isSuccess && Date.now() - startTime > 60000) {
       throw Error(
         'Galleri5: job selesai tapi URL hasil tidak ditemukan' +
-          (data.error ? ` (${data.error})` : '')
+          (inference.error ? ` (${inference.error})` : '')
       )
     }
   }
