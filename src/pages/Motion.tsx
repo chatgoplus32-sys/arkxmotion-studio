@@ -7,7 +7,7 @@ import { useToastStore } from '@/stores/toastStore'
 import { uploadToCatbox, submitMotionControl, pollRoboneoI2V, checkRoboneoBalance, compressVideo, submitGoogleOmni, normalizeImage } from '@/lib/roboneo'
 import { submitWeavyMotionControl, uploadWeavyAssetWithRetry, resolveWeavyAssetUrl, getActiveWeavyAccessToken, compressImageForWeavy } from '@/lib/weavy'
 import { getRunningHubApiKey, submitRunningHubMotionControl, pollRunningHubTask } from '@/lib/runninghub'
-import { getGalleri5SessionId, submitGalleri5MotionControl, pollGalleri5MotionControl } from '@/lib/galleri5'
+import { getGalleri5Headers, submitGalleri5MotionControl, pollGalleri5MotionControl } from '@/lib/galleri5'
 import { trimVideoFFmpeg } from '@/lib/ffmpeg-compress'
 import { getMagnificApiKey, submitMagnificMotion, pollMagnificMotion, type MagnificMotionModel } from '@/lib/magnific'
 import { useLocalStorage } from '@/lib/useLocalStorage'
@@ -987,8 +987,8 @@ export default function MotionPage() {
             }
           } else if (provider === 'galleri5' && slot.image && slot.video) {
             try {
-              const sessionId = getGalleri5SessionId()
-              if (!sessionId) throw Error('Belum ada G5 session_id. Silakan tambahkan di Providers.')
+              const authHeaders = getGalleri5Headers()
+              if (!authHeaders) throw Error('Belum ada auth headers. Jalankan Chrome Extension G5 Auth Helper di G5 AI Studio, lalu paste headers ke Providers.')
 
               let imageUrl = slot.imageUrl || ''
               if (!imageUrl) {
@@ -1034,7 +1034,7 @@ export default function MotionPage() {
               addLog(`#${slotNum} Submit ke G5 AI Studio...`)
 
               const taskId = await submitGalleri5MotionControl({
-                sessionId,
+                authHeaders,
                 imageUrl,
                 videoUrl: motionVideoUrl,
                 keepOriginalSound: keepSound,
@@ -1051,7 +1051,7 @@ export default function MotionPage() {
                 taskId,
                 roomId: '',
                 nodeId: '',
-                token: sessionId,
+                token: JSON.stringify(authHeaders).slice(0, 50),
                 model: currentModel.label,
                 prompt: prompt.trim() || '(no prompt)',
                 startedAt: Date.now(),
@@ -1061,7 +1061,7 @@ export default function MotionPage() {
               updateSlotStatus(slot.id, 'processing', 'polling...')
               addLog(`#${slotNum} Polling for result...`)
 
-              const resultUrl = await pollGalleri5MotionControl(sessionId, taskId, (msg, pct) => {
+              const resultUrl = await pollGalleri5MotionControl(authHeaders, taskId, (msg, pct) => {
                 updateSlotStatus(slot.id, 'processing', `${msg} ${pct}%`)
                 addLog(`#${slotNum} ${msg} ${pct}%`)
                 setProgress(pct)

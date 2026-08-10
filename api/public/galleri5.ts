@@ -1,7 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 const G5_BACKEND = 'https://aistudio-backend.calmdesert-ca599847.centralindia.azurecontainerapps.io'
-const FIRESTORE_BASE = 'https://firestore.googleapis.com/v1/projects/anacron-334611/databases/(default)/documents'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -12,11 +11,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'Method not allowed' })
 
   try {
-    const { action, sessionId, payload, taskId } = req.body || {}
+    const { action, authHeaders, payload, taskId } = req.body || {}
 
-    if (!sessionId) {
-      return res.status(400).json({ ok: false, error: 'Missing sessionId' })
+    if (!authHeaders) {
+      return res.status(400).json({ ok: false, error: 'Missing authHeaders' })
     }
+
+    const headers = typeof authHeaders === 'string' ? JSON.parse(authHeaders) : authHeaders
 
     if (action === 'submit') {
       if (!payload) {
@@ -28,9 +29,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const apiRes = await fetch(`${G5_BACKEND}/api/v1/model-garden/submit-form-stream`, {
         method: 'POST',
         headers: {
+          ...headers,
           'Content-Type': 'application/json',
-          'x-unit-session-id': sessionId,
-          'Cookie': `unit_session_id=${sessionId}`,
         },
         body: JSON.stringify(payload),
         signal: AbortSignal.timeout(120000),
@@ -53,47 +53,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       console.log(`[galleri5-proxy] status → ${taskId.slice(0, 20)}...`)
 
-      // Try Firestore job document
-      const docPath = `jobs/${taskId}`
-      const firestoreRes = await fetch(`${FIRESTORE_BASE}/${docPath}`, {
+      const apiRes = await fetch(`${G5_BACKEND}/api/v1/model-garden/prediction/${taskId}`, {
         method: 'GET',
+        headers: {
+          ...headers,
+          'Content-Type': 'application/json',
+        },
         signal: AbortSignal.timeout(15000),
       })
 
-      if (firestoreRes.ok) {
-        const doc = await firestoreRes.json().catch(() => null)
-        if (doc) {
-          // Parse Firestore document format
-          const fields = doc.fields || {}
-          const status = fields.status?.stringValue || ''
-          const outputUrl = fields.output_url?.stringValue || fields.result_url?.stringValue || ''
-          const resultUrls = fields.result_urls?.arrayValue?.values?.map((v: any) => v.stringValue) || []
+      const data = await apiRes.json().catch(() => null)
 
-          console.log(`[galleri5-proxy] firestore status: ${status}`)
-
-          return res.json({
-            ok: true,
-            data: {
-              status,
-              output_url: outputUrl,
-              result_url: outputUrl,
-              result_urls: resultUrls,
-              job_id: taskId,
-              raw: fields,
-            },
-          })
-        }
+      if (!apiRes.ok) {
+        return res.status(200).json({ ok: false, error: data?.message || `HTTP ${apiRes.status}`, data })
       }
 
-      // Fallback: try G5 backend status endpoint
-      console.log(`[galleri5-proxy] firestore miss, trying backend...`)
-      const backendRes = await fetch(`${G5_BACKEND}/api/v1/model-garden/prediction/${taskId}`, {
-        method: 'GET',
-        signal: AbortSignal.timeout(15000),
-      })
-
-      const backendData = await backendRes.json().catch(() => null)
-      return res.json({ ok: true, data: backendData })
+      return res.json({ ok: true, data })
     }
 
     return res.status(400).json({ ok: false, error: `Unknown action: ${action}` })

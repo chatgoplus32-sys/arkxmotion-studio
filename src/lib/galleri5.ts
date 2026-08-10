@@ -1,7 +1,7 @@
 const GALLERI5_PROXY = '/api/public/galleri5'
 
 export interface Galleri5MotionControlOptions {
-  sessionId: string
+  authHeaders: Record<string, string>
   imageUrl: string
   videoUrl: string
   keepOriginalSound?: boolean
@@ -21,7 +21,7 @@ async function galleri5Api(action: string, params: Record<string, any>): Promise
   return data
 }
 
-function getStoredGalleri5SessionId(): string | null {
+function getStoredGalleri5Headers(): Record<string, string> | null {
   if (typeof window === 'undefined') return null
   try {
     const raw = localStorage.getItem('arkxmotion.providers')
@@ -29,22 +29,25 @@ function getStoredGalleri5SessionId(): string | null {
     const parsed = JSON.parse(raw)
     const keys = parsed['galleri5'] || []
     const active = keys.find((k: any) => k.status === 'active' || k.status === 'unknown')
-    return active?.key || keys[0]?.key || null
+    if (!active?.key) return null
+    return JSON.parse(active.key)
   } catch { return null }
 }
 
-export function getGalleri5SessionId(): string | null {
-  return getStoredGalleri5SessionId()
+export function getGalleri5Headers(): Record<string, string> | null {
+  return getStoredGalleri5Headers()
 }
 
 export async function submitGalleri5MotionControl(opts: Galleri5MotionControlOptions): Promise<string> {
-  const sessionId = opts.sessionId
-  if (!sessionId) throw Error('Galleri5: session_id belum diatur. Tambahkan session_id di Providers.')
+  const authHeaders = opts.authHeaders
+  if (!authHeaders || Object.keys(authHeaders).length === 0) {
+    throw Error('Galleri5: auth headers belum diatur. Jalankan Chrome Extension di G5 AI Studio, lalu paste headers ke Providers.')
+  }
 
   opts.onProgress?.('Submit ke G5 AI Studio...')
 
   const res = await galleri5Api('submit', {
-    sessionId,
+    authHeaders,
     payload: {
       model_path: 'fal-ai/kling-video-v2.6-standard-motion-control',
       form_fields: {
@@ -75,7 +78,7 @@ export async function submitGalleri5MotionControl(opts: Galleri5MotionControlOpt
 }
 
 export async function pollGalleri5MotionControl(
-  sessionId: string,
+  authHeaders: Record<string, string>,
   taskId: string,
   onProgress?: (msg: string, pct?: number) => void
 ): Promise<string> {
@@ -85,7 +88,7 @@ export async function pollGalleri5MotionControl(
   for (; Date.now() - startTime < MAX_WAIT;) {
     await new Promise(r => setTimeout(r, 5000))
 
-    const res = await galleri5Api('status', { sessionId, taskId })
+    const res = await galleri5Api('status', { authHeaders, taskId })
     const data = res.data ?? res
     const status = String(data.status || '').toUpperCase()
 
@@ -110,5 +113,5 @@ export async function pollGalleri5MotionControl(
 }
 
 export function isGalleri5TokenError(msg: string): boolean {
-  return /session.?id|unauthorized|forbidden|invalid.*session|expired|401|403|auth/i.test(msg)
+  return /unauthorized|forbidden|invalid.*token|expired|401|403|auth/i.test(msg)
 }

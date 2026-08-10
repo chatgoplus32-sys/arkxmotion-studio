@@ -188,17 +188,17 @@ const TOKEN_GUIDE: Record<string, {
     tip: 'FFmpeg = default, gratis, di device kamu. Cloud = fallback untuk file besar / batch panjang.',
   },
   galleri5: {
-    url: 'https://aistudio.galleri5.com/model-garden/kling-video-v2.6-standard-motion-control',
-    urlLabel: 'aistudio.galleri5.com',
-    prefix: 'unit_session_id dari URL',
+    url: 'chrome://extensions',
+    urlLabel: 'Install G5 Auth Helper Extension',
+    prefix: 'JSON headers from extension',
     steps: [
+      { text: 'Install Chrome Extension "G5 Auth Helper" dari folder g5-auth-helper.' },
       { text: 'Buka G5 AI Studio dan login ke akun kamu.' },
-      { text: 'Buka halaman Model Garden → Kling Video V2.6 Standard Motion Control.' },
-      { text: 'Copy parameter unit_session_id dari URL (contoh: F2UKFTQGvviHs1wyqZaPi4GyVXMLUuMk04eUZbp-ubc).' },
-      { text: 'Paste session ID tersebut ke textarea di sebelah.' },
-      { text: 'Session ID bisa expire setelah logout atau timeout. Jika error 401/403, dapatkan session ID baru dari URL.' },
+      { text: 'Klik icon extension → "Submit Headers" → akan capture auth headers saat kamu submit motion control.' },
+      { text: 'Submit motion control di G5 AI Studio (image + video).' },
+      { text: 'Klik icon extension lagi → "Copy to Clipboard" → paste ke textarea di sebelah.' },
     ],
-    tip: 'Unit session ID ada di URL halaman G5 AI Studio. Format: string alfanumerik panjang. Bisa berubah setiap login.',
+    tip: 'Auth headers expire setelah session timeout. Jika error 401, capture headers baru dari extension.',
   },
 
 }
