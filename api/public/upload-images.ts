@@ -1,4 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import formidable from 'formidable'
+import type { IncomingMessage } from 'http'
+import fs from 'fs'
+
+export const config = { api: { bodyParser: false } }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -9,46 +14,44 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'Method not allowed' })
 
   try {
-    // Accept multipart/form-data
-    const contentType = req.headers['content-type'] || ''
+    const files = await parseMultipart(req)
+    if (files.length === 0) return res.status(400).json({ ok: false, error: 'No files received' })
 
-    if (contentType.includes('multipart/form-data')) {
-      // Parse multipart - files come as individual parts
-      const busboy = (await import('busboy')).default
-      const bb = busboy({ headers: req.headers, limits: { fileSize: 5 * 1024 * 1024, files: 10 } })
-
-      const files: Array<{ filename: string; mimeType: string; buffer: Buffer }> = []
-
-      await new Promise<void>((resolve, reject) => {
-        bb.on('file', (name: string, stream: any, info: { filename: string; mimeType: string }) => {
-          const chunks: Buffer[] = []
-          stream.on('data', (chunk: Buffer) => chunks.push(chunk))
-          stream.on('end', () => {
-            files.push({ filename: info.filename || name, mimeType: info.mimeType || 'image/jpeg', buffer: Buffer.concat(chunks) })
-          })
-        })
-        bb.on('error', reject)
-        bb.on('finish', resolve)
-        req.pipe(bb)
-      })
-
-      if (files.length === 0) return res.status(400).json({ ok: false, error: 'No files received' })
-
-      const urls = await uploadFilesToCatbox(files)
-      return res.status(200).json({ ok: true, urls })
-    }
-
-    return res.status(400).json({ ok: false, error: 'Expected multipart/form-data' })
+    const urls = await uploadFilesToCatbox(files)
+    return res.status(200).json({ ok: true, urls })
   } catch (err: any) {
     console.error('[upload-images] error:', err.message)
     return res.status(500).json({ ok: false, error: err.message })
   }
 }
 
+function parseMultipart(req: IncomingMessage): Promise<Array<{ filename: string; mimeType: string; buffer: Buffer }>> {
+  return new Promise((resolve, reject) => {
+    const form = formidable({ maxFileSize: 5 * 1024 * 1024, maxFiles: 10, keepExtensions: true })
+    const result: Array<{ filename: string; mimeType: string; buffer: Buffer }> = []
+
+    form.parse(req, (err, _fields, files) => {
+      if (err) return reject(err)
+      const fileEntries = Object.values(files).flat()
+      for (const f of fileEntries) {
+        if (!f?.filepath) continue
+        const buffer = fs.readFileSync(f.filepath)
+        result.push({
+          filename: f.originalFilename || f.newFilename || 'upload',
+          mimeType: f.mimetype || 'image/jpeg',
+          buffer,
+        })
+        fs.unlink(f.filepath, () => {})
+      }
+      resolve(result)
+    })
+  })
+}
+
 async function uploadFilesToCatbox(files: Array<{ filename: string; mimeType: string; buffer: Buffer }>): Promise<string[]> {
   return Promise.all(
     files.map(async (file) => {
-      const blob = new Blob([file.buffer], { type: file.mimeType })
+      const blob = new Blob([new Uint8Array(file.buffer)], { type: file.mimeType })
       const fd = new FormData()
       fd.append('reqtype', 'fileupload')
       fd.append('fileToUpload', blob, file.filename)

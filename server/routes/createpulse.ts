@@ -64,7 +64,7 @@ router.post('/deduct', authenticateToken, (req: AuthRequest, res: Response) => {
     if (!userId) return res.status(401).json({ error: 'Unauthorized' })
 
     const { model, batch_id } = req.body
-    const cost = (model === 'dreamina-seedance-2.0-15s' || model === 'veo-omni') ? 2250 : 1500
+    const cost = (model === 'dreamina-seedance-2.0-15s' || model === 'veo-omni-10s') ? 2250 : 1500
 
     let row = db.prepare('SELECT balance FROM createpulse_balance WHERE user_id = ?').get(userId) as { balance: number } | undefined
     if (!row) {

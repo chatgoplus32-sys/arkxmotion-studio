@@ -297,7 +297,7 @@ async function handleTokenRoutes(req: VercelRequest, res: VercelResponse, segmen
       }
 
       const rows = await sql`INSERT INTO tokens (provider, name, token_value, price, credits, credit_group) VALUES (${provider}, ${name}, ${token_value}, ${price}, ${credits ?? null}, ${credit_group ?? null}) RETURNING *`
-      return res.status(201).json({ token: rows[0])
+      return res.status(201).json({ token: rows[0] })
     }
 
     // PATCH /api/admin/tokens - update token

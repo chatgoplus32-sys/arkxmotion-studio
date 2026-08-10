@@ -3,10 +3,12 @@ import { useNavigate } from 'react-router-dom'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui'
 import { useProviderManager } from '@/stores/providerManager'
+import { calculateStats, DashboardStats } from '@/lib/stats'
 import {
   Sparkles, Video, Image, Zap, ShoppingBag, Wand2, Film,
   Settings, Route, Key, Shield, Activity, Clock, ArrowRight,
-  TrendingUp, Layers, Download, AlertTriangle,
+  TrendingUp, Layers, Download, AlertTriangle, BarChart3,
+  Target, Clock3, Trophy, Coins,
 } from 'lucide-react'
 
 interface RecentActivity {
@@ -56,11 +58,16 @@ export default function DashboardPage() {
   const navigate = useNavigate()
   const { keys, routing, fetchMaintenance } = useProviderManager()
   const [activity, setActivity] = useState<RecentActivity[]>([])
+  const [genStats, setGenStats] = useState<DashboardStats | null>(null)
 
   useEffect(() => {
     fetchMaintenance()
     setActivity(getRecentActivity())
-    const interval = setInterval(() => setActivity(getRecentActivity()), 30000)
+    setGenStats(calculateStats())
+    const interval = setInterval(() => {
+      setActivity(getRecentActivity())
+      setGenStats(calculateStats())
+    }, 30000)
     return () => clearInterval(interval)
   }, [])
 
@@ -141,6 +148,64 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Generation Stats */}
+      {genStats && genStats.totalGenerates > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <Card variant="bordered" className="hover:glow-gold transition-all animate-fade-in" style={{ animationDelay: '50ms' }}>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-lg gold-gradient flex items-center justify-center">
+                  <BarChart3 className="h-5 w-5 text-black" />
+                </div>
+                <div>
+                  <div className="text-2xl font-bold gold-text">{genStats.totalGenerates}</div>
+                  <div className="text-[11px] text-muted-foreground">Total Generates</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card variant="bordered" className="hover:glow-gold transition-all animate-fade-in" style={{ animationDelay: '100ms' }}>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-lg silver-gradient flex items-center justify-center">
+                  <Coins className="h-5 w-5 text-black" />
+                </div>
+                <div>
+                  <div className="text-2xl font-bold silver-text">{genStats.totalCredits.toLocaleString('id-ID')}</div>
+                  <div className="text-[11px] text-muted-foreground">Credits Used</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card variant="bordered" className="hover:glow-gold transition-all animate-fade-in" style={{ animationDelay: '150ms' }}>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-lg gold-gradient flex items-center justify-center">
+                  <Target className="h-5 w-5 text-black" />
+                </div>
+                <div>
+                  <div className="text-2xl font-bold gold-text">{genStats.successRate}%</div>
+                  <div className="text-[11px] text-muted-foreground">Success Rate</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card variant="bordered" className="hover:glow-gold transition-all animate-fade-in" style={{ animationDelay: '200ms' }}>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-lg silver-gradient flex items-center justify-center">
+                  <Clock3 className="h-5 w-5 text-black" />
+                </div>
+                <div>
+                  <div className="text-2xl font-bold silver-text">{genStats.avgDurationSec}s</div>
+                  <div className="text-[11px] text-muted-foreground">Avg Duration</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Tools Grid */}
       <Card variant="bordered" className="animate-fade-in" style={{ animationDelay: '200ms' }}>
@@ -242,9 +307,85 @@ export default function DashboardPage() {
                 )
               })}
             </div>
-          </CardContent>
+           </CardContent>
         </Card>
       </div>
+
+      {/* Top Models & Providers */}
+      {genStats && genStats.totalGenerates > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <Card variant="bordered" className="animate-fade-in" style={{ animationDelay: '400ms' }}>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <div className="h-8 w-8 rounded-lg gold-gradient flex items-center justify-center">
+                  <Trophy className="h-4 w-4 text-black" />
+                </div>
+                <span className="gold-text">Top Models</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {genStats.topModels.length === 0 ? (
+                <div className="text-center py-6 text-muted-foreground">
+                  <Trophy className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">Belum ada data model</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {genStats.topModels.map((m, i) => (
+                    <div key={m.model} className="flex items-center gap-3 p-2 rounded-lg hover:bg-accent/30 transition">
+                      <div className={`h-7 w-7 rounded-lg flex items-center justify-center text-xs font-bold ${i === 0 ? 'gold-gradient text-black' : i === 1 ? 'silver-gradient text-black' : 'bg-muted text-muted-foreground'}`}>
+                        {i + 1}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium truncate">{m.model}</div>
+                        <div className="text-[11px] text-muted-foreground">{m.provider}</div>
+                      </div>
+                      <div className="text-sm font-mono font-medium">{m.count}x</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card variant="bordered" className="animate-fade-in" style={{ animationDelay: '450ms' }}>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <div className="h-8 w-8 rounded-lg silver-gradient flex items-center justify-center">
+                  <TrendingUp className="h-4 w-4 text-black" />
+                </div>
+                <span className="silver-text">Provider Usage</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {genStats.topProviders.length === 0 ? (
+                <div className="text-center py-6 text-muted-foreground">
+                  <TrendingUp className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">Belum ada data provider</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {genStats.topProviders.map((p) => {
+                    const maxCount = genStats.topProviders[0]?.count || 1
+                    const pct = Math.round((p.count / maxCount) * 100)
+                    return (
+                      <div key={p.provider} className="p-2 rounded-lg hover:bg-accent/30 transition">
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="text-sm font-medium capitalize">{p.provider}</div>
+                          <div className="text-xs text-muted-foreground">{p.count} generates · {p.credits.toLocaleString('id-ID')} cr</div>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div className="h-full bg-primary/70 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </PageContent>
   )
 }

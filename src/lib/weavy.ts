@@ -378,10 +378,12 @@ function resolveAspectRatio(ratio: string): string {
 
 function resolveModel(modelKey: string): string {
   const map: Record<string, string> = {
-    'sora-2': 'fal-ai/sora-2/image-to-video/pro',
+    'sora-2': 'sora',
     'grok-video': 'xai/grok-imagine-video/image-to-video',
     'gemini-omni': 'google/gemini-omni-flash',
     'seedance-mini': 'bytedance/seedance-2.0/mini/image-to-video',
+    'kling-3-turbo': 'kling-3-turbo',
+    'kling-video': 'kling',
   }
   return map[modelKey] || modelKey
 }
@@ -633,10 +635,11 @@ export interface WeavySoraResult {
 
 export async function submitWeavySora(params: WeavySoraParams): Promise<WeavySoraResult> {
   const { token: refreshToken, imageUrl: fallbackUrl, imageFile, prompt, duration = 16, resolution = '720p', aspectRatio = '16:9' } = params
-  const model = 'fal-ai/sora-2/image-to-video/pro'
+  const model = 'sora'
   const mkId = () => Math.random().toString(36).substring(2, 8)
-  const n1 = 'n_' + Date.now() + '_img'
+  const n1 = 'n_' + Date.now() + '_prompt'
   const n2 = 'n_' + Date.now() + '_model'
+  const n3 = 'n_' + Date.now() + '_img'
 
   // Refresh token to get access token
   const refreshed = await refreshWeavyAccessToken(refreshToken)
@@ -682,54 +685,101 @@ export async function submitWeavySora(params: WeavySoraParams): Promise<WeavySor
     }
   }
 
-  const imgNode = {
-    id: n1, type: 'import', dragHandle: '.node-header', owner: null, visibility: null, isModel: false,
+  // Prompt node
+  const promptNode = {
+    id: n1, type: 'promptV3', dragHandle: '.node-header', owner: null, visibility: null, isModel: false,
     data: {
-      handles: { output: { file: { type: 'any', label: 'File', order: 0, format: 'uri' } } },
+      handles: { input: [], output: { prompt: { type: 'text', order: 0, format: 'text', description: 'Text prompt' } } },
+      name: 'Prompt', color: 'Yambo_Green', dark_color: 'Yambo_Green_Dark', border_color: 'Yambo_Green_Stroke',
+      params: null, schema: null, version: 3,
+      prompt: prompt || '', result: { prompt: prompt || '' },
+      displayMode: 'source-value', output: { type: 'text', prompt: prompt || '' },
+      inputNodes: []
+    },
+    position: { x: 1540, y: -1050 }, width: 460, height: 407
+  }
+
+  // Image node (optional)
+  const imgNode = {
+    id: n3, type: 'import', dragHandle: '.node-header', owner: null, visibility: null, isModel: false,
+    data: {
+      handles: { output: { file: { type: 'any', label: 'File', order: 0, format: 'uri', description: 'The uploaded file' } } },
       name: 'File', color: 'Yambo_Blue', dark_color: 'Yambo_Blue_Dark', border_color: 'Yambo_Blue_Stroke',
       files: [{ type: 'image', url: imageUrl, publicId: 'uploads/' + mkId(), id: mkId(), name: 'image.jpg', insertionOrder: 0 }],
       result: { type: 'image', url: imageUrl, publicId: 'uploads/' + mkId(), id: mkId(), name: 'image.jpg', insertionOrder: 0 },
       output: { file: { type: 'image', url: imageUrl, publicId: 'uploads/' + mkId(), id: mkId(), name: 'image.jpg', insertionOrder: 0 } },
-      version: 3
+      version: 3, cameraLocked: false, width: 1024, height: 1024, selectedIndex: 0
     },
-    position: { x: 80, y: 200 }, width: 460, height: 400
+    position: { x: 1560, y: -410 }, width: 460, height: 880
   }
 
-  const params_: any = { duration: parseInt(String(duration)) || 16, resolution: resolution || '720p', aspect_ratio: aspectRatio || '16:9', delete_video: false }
-  if (prompt) params_.prompt = prompt
+  // Map resolution to size format
+  const sizeMap: Record<string, string> = {
+    '720p': '1280x720',
+    '1080p': '1920x1080',
+    'true_1080p': '1920x1080',
+  }
+  const size = sizeMap[resolution || '720p'] || '1280x720'
+
+  // 1080p resolutions require sora-2-pro
+  const is1080p = resolution === '1080p' || resolution === 'true_1080p'
+  const modelVersion = is1080p ? 'sora-2-pro' : 'sora-2'
+
+  const params_: any = {
+    model: modelVersion,
+    seconds: String(parseInt(String(duration)) || 16),
+    size: size
+  }
 
   const modelNode = {
     id: n2, type: 'custommodelV2', dragHandle: '.node-header', owner: null, visibility: 'private', isModel: true,
     data: {
       handles: {
-        input: { image_url: { id: 'input-image_url', type: 'image', label: 'image', format: 'text', required: true } },
-        output: { result: { id: 'output-result', type: 'video', label: 'result', order: 0, format: 'uri' } }
+        input: {
+          prompt: { id: 'prompt', type: 'text', label: 'prompt', order: 0, format: 'text', required: true, description: 'Text prompt for video generation' },
+          input_reference: { id: 'input_reference', type: 'image', label: 'first_frame', order: 1, format: 'uri', required: false, description: 'Image to use for the first frame of the video' }
+        },
+        output: { video: { id: 'video', type: 'video', label: 'Video', order: 0, format: 'uri' } }
       },
-      name: 'Sora 2 Pro',
-      color: 'Red', menu: { icon: 'EmojiObjectsIcon', isModel: true, displayName: 'Sora 2 Pro' },
-      model: { name: model, service: 'fal_imported', version: model },
+      name: 'Sora 2',
+      description: 'video generation model is more physically accurate, realistic, and more controllable than prior systems. It also features synchronized dialogue and sound effects.',
+      color: 'Red', dark_color: 'Red_Dark', border_color: 'Red_Stroke',
+      menu: { icon: 'EmojiObjectsIcon', isModel: true, displayName: 'Sora 2' },
+      model: { name: model },
       params: params_,
       version: 3,
       kind: {
         type: 'wildcard',
-        model: { type: 'predefined', name: model, version: model, service: 'fal_imported' },
+        model: { type: 'predefined', name: model, description: 'video generation model is more physically accurate, realistic, and more controllable than prior systems. It also features synchronized dialogue and sound effects.' },
         inputs: [
-          [{ id: 'image_url', title: 'image', validTypes: ['image'], required: true }, { nodeId: n1, outputId: 'file' }]
+          [{ id: 'prompt', title: 'prompt', description: 'Text prompt for video generation', validTypes: ['text'], required: true }, { nodeId: n1, outputId: 'prompt', string: '' }],
+          [{ id: 'input_reference', title: 'first_frame', description: 'Image to use for the first frame of the video', validTypes: ['image'], required: false }, imageUrl ? { nodeId: n3, outputId: 'file' } : null]
         ],
-        parameters: [],
-        outputs: [{ id: 'result', title: 'result', dataType: 'video' }]
+        parameters: [
+          [{ id: 'model', title: 'Model', description: 'Model to run', constraint: { type: 'enum', options: ['sora-2', 'sora-2-pro'] }, defaultValue: { type: 'string', value: 'sora-2' } }, { type: 'value', data: { type: 'string', value: modelVersion } }],
+          [{ id: 'seconds', title: 'Duration', description: 'Duration of the video in seconds.', constraint: { type: 'enum', options: ['4', '8', '12', '16', '20'] }, defaultValue: { type: 'string', value: '8' } }, { type: 'value', data: { type: 'string', value: String(parseInt(String(duration)) || 16) } }],
+          [{ id: 'size', title: 'Resolution', description: 'Resolution of the generated video.', constraint: { type: 'enum', options: ['720x1280', '1280x720', '1024x1792 (sora-2-pro only)', '1792x1024 (sora-2-pro only)', '1080x1920 (sora-2-pro only)', '1920x1080 (sora-2-pro only)'] }, defaultValue: { type: 'string', value: '1280x720' } }, { type: 'value', data: { type: 'string', value: size } }]
+        ],
+        outputs: [{ id: 'video', title: 'Video', dataType: 'video' }]
       },
       generations: [], selectedIndex: 0, cameraLocked: false, result: [], output: {}, selectedOutput: 0
     },
-    position: { x: 600, y: 300 }, width: 460, height: 500
+    position: { x: 2420, y: -750 }, width: 460, height: 560
   }
 
-  const nodes = [imgNode, modelNode]
-  const edges = [{
-    id: 'e-' + mkId(), source: n1, target: n2,
-    sourceHandle: `${n1}-output-file`, targetHandle: `${n2}-input-image_url`,
-    type: 'custom', data: { sourceColor: 'Yambo_Blue', targetColor: 'Red' }
-  }]
+  const nodes: any[] = [promptNode, imgNode, modelNode]
+  const edges: any[] = [
+    {
+      id: 'e-' + mkId(), source: n1, target: n2,
+      sourceHandle: `${n1}-output-prompt`, targetHandle: `${n2}-input-prompt`,
+      type: 'custom', data: { sourceColor: 'Yambo_Green', targetColor: 'Red', sourceHandleType: 'text', targetHandleType: 'text' }
+    },
+    {
+      id: 'e-' + mkId(), source: n3, target: n2,
+      sourceHandle: `${n3}-output-file`, targetHandle: `${n2}-input-input_reference`,
+      type: 'custom', data: { sourceColor: 'Yambo_Blue', targetColor: 'Red', sourceHandleType: 'any', targetHandleType: 'image' }
+    }
+  ]
   const recipeData = { nodes, edges, model }
 
   const hdrs = { Authorization: `Bearer ${at}`, 'Content-Type': 'application/json' } as any
@@ -1735,6 +1785,553 @@ export async function pollWeavySeedanceMiniStatus(
     }
   }
   throw new Error('SeedanceMini timeout')
+}
+
+// ── Kling 3.0 Turbo (recipe-based workflow) ──
+
+export interface WeavyKlingTurboParams {
+  token: string
+  imageUrl?: string
+  imageFile?: File
+  prompt: string
+  duration?: number
+  aspectRatio?: string
+}
+
+export interface WeavyKlingTurboResult {
+  ok: boolean
+  recipeId?: string
+  batchId?: string
+  error?: string
+  raw?: any
+}
+
+export async function submitWeavyKlingTurbo(params: WeavyKlingTurboParams): Promise<WeavyKlingTurboResult> {
+  const { token: refreshToken, imageUrl: fallbackUrl, imageFile, prompt, duration = 15, aspectRatio = '9:16' } = params
+  const model = 'kling-3-turbo'
+  const mkId = () => Math.random().toString(36).substring(2, 8)
+  const n1 = 'n_' + Date.now() + '_prompt'
+  const n2 = 'n_' + Date.now() + '_model'
+  const n3 = 'n_' + Date.now() + '_img'
+
+  const refreshed = await refreshWeavyAccessToken(refreshToken)
+  const at = refreshed?.accessToken || refreshToken
+
+  let imageUrl = fallbackUrl || ''
+  if (imageFile && at) {
+    try {
+      let uploadFile = imageFile
+      if (imageFile.size > 8 * 1024 * 1024) {
+        uploadFile = await compressImageForWeavy(imageFile, 1280, 0.7)
+      } else if (imageFile.size > 4 * 1024 * 1024) {
+        uploadFile = await compressImageForWeavy(imageFile, 1280, 0.85)
+      }
+      const fd = new FormData()
+      fd.append('file', uploadFile, uploadFile.name || 'image.jpg')
+      if (uploadFile.type) fd.append('type', uploadFile.type)
+      const uploadRes = await fetch(`${WEAVY_API}/v1/assets/upload`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${at}` },
+        body: fd,
+      })
+      const uploadText = await uploadRes.text()
+      let uploadData: any; try { uploadData = JSON.parse(uploadText) } catch { uploadData = null }
+      console.log(`[kling-turbo] direct upload → ${uploadRes.status}`, uploadText.slice(0, 300))
+      if (uploadRes.ok && uploadData) {
+        const result = uploadData.result || uploadData
+        if (typeof result === 'string') imageUrl = result
+        else if (result.url) imageUrl = result.url
+        else if (result.download) imageUrl = result.download
+        else if (result.id) imageUrl = `https://media.weavy.ai/image/upload/uploads/${result.id}.jpg`
+        console.log(`[kling-turbo] Weavy upload URL:`, imageUrl)
+      }
+    } catch (e: any) {
+      console.warn(`[kling-turbo] Weavy upload error:`, e.message)
+    }
+  }
+
+  // Prompt node
+  const promptNode = {
+    id: n1, type: 'promptV3', dragHandle: '.node-header', owner: null, visibility: null, isModel: false,
+    data: {
+      handles: { input: [], output: { prompt: { type: 'text', order: 0, format: 'text', description: 'Text prompt' } } },
+      name: 'Prompt', color: 'Yambo_Green', dark_color: 'Yambo_Green_Dark', border_color: 'Yambo_Green_Stroke',
+      params: null, schema: null, version: 3,
+      prompt: prompt, result: { prompt },
+      displayMode: 'source-value', output: { type: 'text', prompt },
+      inputNodes: []
+    },
+    position: { x: 790, y: -780 }, width: 460, height: 407
+  }
+
+  // Model node - Kling 3.0 Turbo Standard
+  const params_: any = {
+    model: '3.0 Turbo Standard',
+    ratio: aspectRatio || '9:16',
+    duration: parseInt(String(duration)) || 15
+  }
+
+  const modelNode: any = {
+    id: n2, type: 'custommodelV2', dragHandle: '.node-header', owner: null, visibility: 'private', isModel: true,
+    data: {
+      handles: {
+        input: {
+          prompt: { id: 'prompt', type: 'text', label: 'prompt', order: 0, format: 'text', required: true, description: 'Use a prompt to describe the camera style and movement speed.' },
+          image: { id: 'image', type: 'image', label: 'first_frame', order: 1, format: 'uri', required: false, description: 'The first frame of the generation' }
+        },
+        output: { video: { id: 'video', type: 'video', label: 'video', order: 0, format: 'uri', description: 'The video result' } }
+      },
+      name: 'Kling 3.0 Turbo',
+      description: 'Generate video from an image and a prompt',
+      color: 'Yambo_Purple', dark_color: 'Yambo_Purple_Dark', border_color: 'Yambo_Purple_Stroke',
+      menu: null,
+      model: { name: model },
+      params: params_,
+      version: 3,
+      kind: {
+        type: 'wildcard',
+        model: { type: 'predefined', name: model, description: 'Generate video from an image and a prompt' },
+        inputs: [
+          [{ id: 'prompt', title: 'prompt', description: 'Use a prompt to describe the camera style and movement speed.', validTypes: ['text'], required: true }, { nodeId: n1, outputId: 'prompt', string: '' }],
+          [{ id: 'image', title: 'first_frame', description: 'The first frame of the generation', validTypes: ['image'], required: false }, imageUrl ? { nodeId: n3, outputId: 'file' } : null]
+        ],
+        parameters: [
+          [{ id: 'model', title: 'Model', description: 'Kling 3.0 Turbo tier', constraint: { type: 'enum', options: ['3.0 Turbo Pro', '3.0 Turbo Standard'] }, defaultValue: { type: 'string', value: '3.0 Turbo Standard' } }, { type: 'value', data: { type: 'string', value: '3.0 Turbo Standard' } }],
+          [{ id: 'duration', title: 'Duration', description: 'The duration of the generated video in seconds', constraint: { type: 'integer_with_limits', min: 3, max: 15 }, defaultValue: { type: 'integer', value: 5 } }, { type: 'value', data: { type: 'integer', value: parseInt(String(duration)) || 15 } }],
+          [{ id: 'ratio', title: 'Aspect Ratio', description: 'The aspect ratio of the output video.', constraint: { type: 'enum', options: ['16:9', '9:16', '1:1'] }, defaultValue: { type: 'string', value: '1:1' } }, { type: 'value', data: { type: 'string', value: aspectRatio || '9:16' } }]
+        ],
+        outputs: [{ id: 'video', title: 'video', description: 'The video result', dataType: 'video' }]
+      },
+      generations: [], selectedIndex: 0, cameraLocked: false, result: [], output: {}, selectedOutput: 0
+    },
+    position: { x: 1760, y: -520 }, width: 460, height: 560
+  }
+
+  const nodes: any[] = [promptNode, modelNode]
+  const edges: any[] = [{
+    id: 'e-' + mkId(), source: n1, target: n2,
+    sourceHandle: `${n1}-output-prompt`, targetHandle: `${n2}-input-prompt`,
+    type: 'custom', data: { sourceColor: 'Yambo_Green', targetColor: 'Yambo_Purple', sourceHandleType: 'text', targetHandleType: 'text' }
+  }]
+
+  // Image node (optional - first frame)
+  if (imageUrl) {
+    const imgNode = {
+      id: n3, type: 'import', dragHandle: '.node-header', owner: null, visibility: null, isModel: false,
+      data: {
+        handles: { output: { file: { type: 'any', label: 'File', order: 0, format: 'uri', description: 'The uploaded file' } } },
+        name: 'File', color: 'Yambo_Blue', dark_color: 'Yambo_Blue_Dark', border_color: 'Yambo_Blue_Stroke',
+        files: [{ type: 'image', url: imageUrl, publicId: 'uploads/' + mkId(), id: mkId(), name: 'image.jpg', insertionOrder: 0 }],
+        result: { type: 'image', url: imageUrl, publicId: 'uploads/' + mkId(), id: mkId(), name: 'image.jpg', insertionOrder: 0 },
+        output: { file: { type: 'image', url: imageUrl, publicId: 'uploads/' + mkId(), id: mkId(), name: 'image.jpg', insertionOrder: 0 } },
+        version: 3, cameraLocked: false, width: 1024, height: 1024, selectedIndex: 0
+      },
+      position: { x: 780, y: -300 }, width: 460, height: 880
+    }
+    nodes.push(imgNode)
+    edges.push({
+      id: 'e-' + mkId(), source: n3, target: n2,
+      sourceHandle: `${n3}-output-file`, targetHandle: `${n2}-input-image`,
+      type: 'custom', data: { sourceColor: 'Yambo_Blue', targetColor: 'Yambo_Purple', sourceHandleType: 'any', targetHandleType: 'image' }
+    })
+  }
+
+  const recipeData = { nodes, edges, model }
+
+  const hdrs = { Authorization: `Bearer ${at}`, 'Content-Type': 'application/json' } as any
+
+  const retryFetch = async (url: string, opts: any, retries = 3): Promise<Response> => {
+    for (let i = 0; i <= retries; i++) {
+      try {
+        const r = await fetch(url, opts)
+        if (r.ok || r.status < 500) return r
+        if (i < retries) await new Promise(r => setTimeout(r, 2000 * (i + 1)))
+      } catch (e: any) {
+        if (i >= retries) throw e
+        await new Promise(r => setTimeout(r, 2000 * (i + 1)))
+      }
+    }
+    throw new Error('retry exhausted')
+  }
+
+  try {
+    const cr = await retryFetch(`${WEAVY_API}/v1/recipes/create`, {
+      method: 'POST', headers: hdrs, body: JSON.stringify({ scope: 'PERSONAL' })
+    })
+    const crText = await cr.text()
+    let crData: any; try { crData = JSON.parse(crText) } catch { crData = null }
+    console.log(`[kling-turbo] create recipe → ${cr.status}`, crText.slice(0, 300))
+    if (!cr.ok || !crData) throw new Error(`Create recipe failed (${cr.status}): ${crText.slice(0, 200)}`)
+    const rid = crData.id || crData.recipeId
+
+    const sr = await retryFetch(`${WEAVY_API}/v1/recipes/${rid}/save`, {
+      method: 'POST', headers: hdrs,
+      body: JSON.stringify({ ...recipeData, v3: crData.v3 || '', lastUpdatedAt: new Date().toISOString() })
+    })
+    const srText = await sr.text()
+    console.log(`[kling-turbo] save recipe → ${sr.status}`, srText.slice(0, 200))
+    if (!sr.ok) throw new Error(`Save recipe failed (${sr.status}): ${srText.slice(0, 200)}`)
+
+    try {
+      await fetch(`${WEAVY_API}/v1/workspaces/models/approve`, {
+        method: 'POST', headers: hdrs, body: JSON.stringify({ modelIds: [model] })
+      })
+    } catch {}
+
+    const er = await retryFetch(`${WEAVY_API}/v1/batches/recipes/${rid}/execute`, {
+      method: 'POST', headers: hdrs,
+      body: JSON.stringify({ numberOfRuns: 1, ...recipeData })
+    })
+    const et = await er.text()
+    let erData: any; try { erData = JSON.parse(et) } catch { erData = null }
+    console.log(`[kling-turbo] execute → ${er.status}`, et.slice(0, 500))
+    if (!er.ok || !erData) throw new Error(`Execute failed (${er.status}): ${et.slice(0, 300)}`)
+    const bid = erData.batchId || erData.id
+    if (!bid) throw new Error('No batchId: ' + et.slice(0, 200))
+
+    return { ok: true, recipeId: rid, batchId: bid, raw: erData }
+  } catch (err: any) {
+    return { ok: false, error: err.message }
+  }
+}
+
+export async function pollWeavyKlingTurboStatus(
+  token: string,
+  recipeId: string,
+  batchId: string,
+  onProgress?: (status: string, pct: number) => void,
+  timeoutMs = 3600000,
+  inputImageUrl?: string,
+): Promise<string> {
+  const startTime = Date.now()
+  let lastLog = ''
+  let pollCount = 0
+
+  const refreshed = await refreshWeavyAccessToken(token)
+  let at = refreshed?.accessToken || token
+
+  while (Date.now() - startTime < timeoutMs) {
+    const delay = pollCount < 30 ? 8000 : pollCount < 60 ? 10000 : 15000
+    await new Promise((r) => setTimeout(r, delay))
+    pollCount++
+
+    try {
+      if (pollCount > 0 && pollCount % 10 === 0) {
+        try {
+          const r2 = await refreshWeavyAccessToken(token)
+          if (r2?.accessToken) at = r2.accessToken
+        } catch {}
+      }
+
+      const res = await fetch(`${WEAVY_API}/v1/batches/recipes/${recipeId}/batches/${batchId}/status`, {
+        headers: { Authorization: `Bearer ${at}` },
+      })
+      if (!res.ok) continue
+      const d = await res.json().catch(() => null)
+      if (!d) continue
+
+      const st = (d.recipeRuns?.[0]?.status || d.status || d.state || '').toLowerCase()
+      const elapsedSec = Math.round((Date.now() - startTime) / 1000)
+      const pct = Math.min(95, Math.round((pollCount / 120) * 95))
+      onProgress?.(st || 'processing', pct)
+
+      const logEntry = `poll #${pollCount} (${elapsedSec}s) status=${st} pct=${pct}`
+      if (logEntry !== lastLog) { lastLog = logEntry; console.log(`[weavy-kling-turbo] ${logEntry}`) }
+
+      if (st === 'completed' || st === 'COMPLETED' || st === 'done' || st === 'success') {
+        const videoUrl = extractSoraVideoUrl(d, inputImageUrl)
+        if (videoUrl) return videoUrl
+        console.log(`[weavy-kling-turbo] task done but no url:`, JSON.stringify(d, null, 2).slice(0, 2000))
+        throw new Error('Kling Turbo: task completed but no video URL found')
+      }
+
+      if (st === 'failed' || st === 'FAILED' || st === 'error') {
+        const fullResp = JSON.stringify(d).slice(0, 1200)
+        console.log(`[weavy-kling-turbo] FULL FAILED RESPONSE:`, fullResp)
+        const ne = d.recipeRuns?.[0]?.nodeRuns?.map((nr: any) => `${nr.status || '?'}:${JSON.stringify(nr.error || nr.output || nr.result || {}).slice(0, 300)}`).join(' | ') || ''
+        throw new Error((d.error || d.message || 'Generation failed') + (ne ? ' | ' + ne : ''))
+      }
+    } catch (err: any) {
+      if (/timeout|fetch|network/i.test(err.message)) { console.log(`[weavy-kling-turbo] network error, retrying:`, err.message); continue }
+      if (/failed|insufficient|error/i.test(err.message)) throw err
+      if (pollCount > 10) throw err
+    }
+  }
+  throw new Error('Kling Turbo timeout')
+}
+
+// ── Kling Video 2.1 Pro (recipe-based workflow) ──
+
+export interface WeavyKlingVideoParams {
+  token: string
+  imageUrl?: string
+  imageFile?: File
+  prompt: string
+  duration?: number
+  aspectRatio?: string
+  modelTier?: string
+}
+
+export interface WeavyKlingVideoResult {
+  ok: boolean
+  recipeId?: string
+  batchId?: string
+  error?: string
+  raw?: any
+}
+
+export async function submitWeavyKlingVideo(params: WeavyKlingVideoParams): Promise<WeavyKlingVideoResult> {
+  const { token: refreshToken, imageUrl: fallbackUrl, imageFile, prompt, duration = 10, aspectRatio = '1:1', modelTier = '2.1 Pro' } = params
+  const model = 'kling'
+  const mkId = () => Math.random().toString(36).substring(2, 8)
+  const n1 = 'n_' + Date.now() + '_prompt'
+  const n2 = 'n_' + Date.now() + '_model'
+  const n3 = 'n_' + Date.now() + '_img'
+
+  const refreshed = await refreshWeavyAccessToken(refreshToken)
+  const at = refreshed?.accessToken || refreshToken
+
+  let imageUrl = fallbackUrl || ''
+  if (imageFile && at) {
+    try {
+      let uploadFile = imageFile
+      if (imageFile.size > 8 * 1024 * 1024) {
+        uploadFile = await compressImageForWeavy(imageFile, 1280, 0.7)
+      } else if (imageFile.size > 4 * 1024 * 1024) {
+        uploadFile = await compressImageForWeavy(imageFile, 1280, 0.85)
+      }
+      const fd = new FormData()
+      fd.append('file', uploadFile, uploadFile.name || 'image.jpg')
+      if (uploadFile.type) fd.append('type', uploadFile.type)
+      const uploadRes = await fetch(`${WEAVY_API}/v1/assets/upload`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${at}` },
+        body: fd,
+      })
+      const uploadText = await uploadRes.text()
+      let uploadData: any; try { uploadData = JSON.parse(uploadText) } catch { uploadData = null }
+      console.log(`[kling-video] direct upload → ${uploadRes.status}`, uploadText.slice(0, 300))
+      if (uploadRes.ok && uploadData) {
+        const result = uploadData.result || uploadData
+        if (typeof result === 'string') imageUrl = result
+        else if (result.url) imageUrl = result.url
+        else if (result.download) imageUrl = result.download
+        else if (result.id) imageUrl = `https://media.weavy.ai/image/upload/uploads/${result.id}.jpg`
+        console.log(`[kling-video] Weavy upload URL:`, imageUrl)
+      }
+    } catch (e: any) {
+      console.warn(`[kling-video] Weavy upload error:`, e.message)
+    }
+  }
+
+  // Prompt node
+  const promptNode = {
+    id: n1, type: 'promptV3', dragHandle: '.node-header', owner: null, visibility: null, isModel: false,
+    data: {
+      handles: { input: [], output: { prompt: { type: 'text', order: 0, format: 'text', description: 'Text prompt' } } },
+      name: 'Prompt', color: 'Yambo_Green', dark_color: 'Yambo_Green_Dark', border_color: 'Yambo_Green_Stroke',
+      params: null, schema: null, version: 3,
+      prompt: prompt, result: { prompt },
+      displayMode: 'source-value', output: { type: 'text', prompt },
+      inputNodes: []
+    },
+    position: { x: 790, y: -780 }, width: 460, height: 407
+  }
+
+  // Model node - Kling Video 2.1 Pro
+  const params_: any = {
+    model: modelTier,
+    ratio: aspectRatio || '1:1',
+    duration: parseInt(String(duration)) || 10
+  }
+
+  const modelNode: any = {
+    id: n2, type: 'custommodelV2', dragHandle: '.node-header', owner: null, visibility: 'private', isModel: true,
+    data: {
+      handles: {
+        input: {
+          prompt: { id: 'prompt', type: 'text', label: 'prompt', order: 0, format: 'text', required: true, description: 'Use a prompt to describe the camera style and movement speed.' },
+          image: { id: 'image', type: 'image', label: 'first_frame', order: 1, format: 'uri', required: false, description: 'The first frame of the generation' }
+        },
+        output: { video: { id: 'video', type: 'video', label: 'video', order: 0, format: 'uri', description: 'The video result' } }
+      },
+      name: 'Kling Video',
+      description: 'Generate video from an image and a prompt',
+      color: 'Yambo_Purple', dark_color: 'Yambo_Purple_Dark', border_color: 'Yambo_Purple_Stroke',
+      menu: null,
+      model: { name: model },
+      params: params_,
+      version: 3,
+      kind: {
+        type: 'wildcard',
+        model: { type: 'predefined', name: model, description: 'Generate video from an image and a prompt' },
+        inputs: [
+          [{ id: 'prompt', title: 'prompt', description: 'Use a prompt to describe the camera style and movement speed.', validTypes: ['text'], required: true }, { nodeId: n1, outputId: 'prompt', string: '' }],
+          [{ id: 'image', title: 'first_frame', description: 'The first frame of the generation', validTypes: ['image'], required: false }, imageUrl ? { nodeId: n3, outputId: 'file' } : null]
+        ],
+        parameters: [
+          [{ id: 'model', title: 'Model', description: 'Kling model version', constraint: { type: 'enum', options: ['2.1 Standard', '2.1 Pro', '2.1 Master', '2.5 Turbo Pro', '2.6 Pro'] }, defaultValue: { type: 'string', value: '2.1 Standard' } }, { type: 'value', data: { type: 'string', value: modelTier } }],
+          [{ id: 'duration', title: 'Duration', description: 'Length of the video - 5 or 10 seconds.', constraint: { type: 'integer_selector', options: [5, 10] }, defaultValue: { type: 'integer', value: 5 } }, { type: 'value', data: { type: 'integer', value: parseInt(String(duration)) || 10 } }],
+          [{ id: 'ratio', title: 'Aspect Ratio', description: 'The aspect ratio of the output video.', constraint: { type: 'enum', options: ['16:9', '9:16', '1:1'] }, defaultValue: { type: 'string', value: '1:1' } }, { type: 'value', data: { type: 'string', value: aspectRatio || '1:1' } }]
+        ],
+        outputs: [{ id: 'video', title: 'video', description: 'The video result', dataType: 'video' }]
+      },
+      generations: [], selectedIndex: 0, cameraLocked: false, result: [], output: {}, selectedOutput: 0
+    },
+    position: { x: 1650, y: -640 }, width: 460, height: 560
+  }
+
+  const nodes: any[] = [promptNode, modelNode]
+  const edges: any[] = [{
+    id: 'e-' + mkId(), source: n1, target: n2,
+    sourceHandle: `${n1}-output-prompt`, targetHandle: `${n2}-input-prompt`,
+    type: 'custom', data: { sourceColor: 'Yambo_Green', targetColor: 'Yambo_Purple', sourceHandleType: 'text', targetHandleType: 'text' }
+  }]
+
+  // Image node (optional - first frame)
+  if (imageUrl) {
+    const imgNode = {
+      id: n3, type: 'import', dragHandle: '.node-header', owner: null, visibility: null, isModel: false,
+      data: {
+        handles: { output: { file: { type: 'any', label: 'File', order: 0, format: 'uri', description: 'The uploaded file' } } },
+        name: 'File', color: 'Yambo_Blue', dark_color: 'Yambo_Blue_Dark', border_color: 'Yambo_Blue_Stroke',
+        files: [{ type: 'image', url: imageUrl, publicId: 'uploads/' + mkId(), id: mkId(), name: 'image.jpg', insertionOrder: 0 }],
+        result: { type: 'image', url: imageUrl, publicId: 'uploads/' + mkId(), id: mkId(), name: 'image.jpg', insertionOrder: 0 },
+        output: { file: { type: 'image', url: imageUrl, publicId: 'uploads/' + mkId(), id: mkId(), name: 'image.jpg', insertionOrder: 0 } },
+        version: 3, cameraLocked: false, width: 1024, height: 1024, selectedIndex: 0
+      },
+      position: { x: 780, y: -300 }, width: 460, height: 880
+    }
+    nodes.push(imgNode)
+    edges.push({
+      id: 'e-' + mkId(), source: n3, target: n2,
+      sourceHandle: `${n3}-output-file`, targetHandle: `${n2}-input-image`,
+      type: 'custom', data: { sourceColor: 'Yambo_Blue', targetColor: 'Yambo_Purple', sourceHandleType: 'any', targetHandleType: 'image' }
+    })
+  }
+
+  const recipeData = { nodes, edges, model }
+
+  const hdrs = { Authorization: `Bearer ${at}`, 'Content-Type': 'application/json' } as any
+
+  const retryFetch = async (url: string, opts: any, retries = 3): Promise<Response> => {
+    for (let i = 0; i <= retries; i++) {
+      try {
+        const r = await fetch(url, opts)
+        if (r.ok || r.status < 500) return r
+        if (i < retries) await new Promise(r => setTimeout(r, 2000 * (i + 1)))
+      } catch (e: any) {
+        if (i >= retries) throw e
+        await new Promise(r => setTimeout(r, 2000 * (i + 1)))
+      }
+    }
+    throw new Error('retry exhausted')
+  }
+
+  try {
+    const cr = await retryFetch(`${WEAVY_API}/v1/recipes/create`, {
+      method: 'POST', headers: hdrs, body: JSON.stringify({ scope: 'PERSONAL' })
+    })
+    const crText = await cr.text()
+    let crData: any; try { crData = JSON.parse(crText) } catch { crData = null }
+    console.log(`[kling-video] create recipe → ${cr.status}`, crText.slice(0, 300))
+    if (!cr.ok || !crData) throw new Error(`Create recipe failed (${cr.status}): ${crText.slice(0, 200)}`)
+    const rid = crData.id || crData.recipeId
+
+    const sr = await retryFetch(`${WEAVY_API}/v1/recipes/${rid}/save`, {
+      method: 'POST', headers: hdrs,
+      body: JSON.stringify({ ...recipeData, v3: crData.v3 || '', lastUpdatedAt: new Date().toISOString() })
+    })
+    const srText = await sr.text()
+    console.log(`[kling-video] save recipe → ${sr.status}`, srText.slice(0, 200))
+    if (!sr.ok) throw new Error(`Save recipe failed (${sr.status}): ${srText.slice(0, 200)}`)
+
+    try {
+      await fetch(`${WEAVY_API}/v1/workspaces/models/approve`, {
+        method: 'POST', headers: hdrs, body: JSON.stringify({ modelIds: [model] })
+      })
+    } catch {}
+
+    const er = await retryFetch(`${WEAVY_API}/v1/batches/recipes/${rid}/execute`, {
+      method: 'POST', headers: hdrs,
+      body: JSON.stringify({ numberOfRuns: 1, ...recipeData })
+    })
+    const et = await er.text()
+    let erData: any; try { erData = JSON.parse(et) } catch { erData = null }
+    console.log(`[kling-video] execute → ${er.status}`, et.slice(0, 500))
+    if (!er.ok || !erData) throw new Error(`Execute failed (${er.status}): ${et.slice(0, 300)}`)
+    const bid = erData.batchId || erData.id
+    if (!bid) throw new Error('No batchId: ' + et.slice(0, 200))
+
+    return { ok: true, recipeId: rid, batchId: bid, raw: erData }
+  } catch (err: any) {
+    return { ok: false, error: err.message }
+  }
+}
+
+export async function pollWeavyKlingVideoStatus(
+  token: string,
+  recipeId: string,
+  batchId: string,
+  onProgress?: (status: string, pct: number) => void,
+  timeoutMs = 3600000,
+  inputImageUrl?: string,
+): Promise<string> {
+  const startTime = Date.now()
+  let lastLog = ''
+  let pollCount = 0
+
+  const refreshed = await refreshWeavyAccessToken(token)
+  let at = refreshed?.accessToken || token
+
+  while (Date.now() - startTime < timeoutMs) {
+    const delay = pollCount < 30 ? 8000 : pollCount < 60 ? 10000 : 15000
+    await new Promise((r) => setTimeout(r, delay))
+    pollCount++
+
+    try {
+      if (pollCount > 0 && pollCount % 10 === 0) {
+        try {
+          const r2 = await refreshWeavyAccessToken(token)
+          if (r2?.accessToken) at = r2.accessToken
+        } catch {}
+      }
+
+      const res = await fetch(`${WEAVY_API}/v1/batches/recipes/${recipeId}/batches/${batchId}/status`, {
+        headers: { Authorization: `Bearer ${at}` },
+      })
+      if (!res.ok) continue
+      const d = await res.json().catch(() => null)
+      if (!d) continue
+
+      const st = (d.recipeRuns?.[0]?.status || d.status || d.state || '').toLowerCase()
+      const elapsedSec = Math.round((Date.now() - startTime) / 1000)
+      const pct = Math.min(95, Math.round((pollCount / 120) * 95))
+      onProgress?.(st || 'processing', pct)
+
+      const logEntry = `poll #${pollCount} (${elapsedSec}s) status=${st} pct=${pct}`
+      if (logEntry !== lastLog) { lastLog = logEntry; console.log(`[weavy-kling-video] ${logEntry}`) }
+
+      if (st === 'completed' || st === 'COMPLETED' || st === 'done' || st === 'success') {
+        const videoUrl = extractSoraVideoUrl(d, inputImageUrl)
+        if (videoUrl) return videoUrl
+        console.log(`[weavy-kling-video] task done but no url:`, JSON.stringify(d, null, 2).slice(0, 2000))
+        throw new Error('Kling Video: task completed but no video URL found')
+      }
+
+      if (st === 'failed' || st === 'FAILED' || st === 'error') {
+        const fullResp = JSON.stringify(d).slice(0, 1200)
+        console.log(`[weavy-kling-video] FULL FAILED RESPONSE:`, fullResp)
+        const ne = d.recipeRuns?.[0]?.nodeRuns?.map((nr: any) => `${nr.status || '?'}:${JSON.stringify(nr.error || nr.output || nr.result || {}).slice(0, 300)}`).join(' | ') || ''
+        throw new Error((d.error || d.message || 'Generation failed') + (ne ? ' | ' + ne : ''))
+      }
+    } catch (err: any) {
+      if (/timeout|fetch|network/i.test(err.message)) { console.log(`[weavy-kling-video] network error, retrying:`, err.message); continue }
+      if (/failed|insufficient|error/i.test(err.message)) throw err
+      if (pollCount > 10) throw err
+    }
+  }
+  throw new Error('Kling Video timeout')
 }
 
 export interface WeavyImageGenerateParams { token: string; model: string; prompt: string; aspectRatio?: string; negativePrompt?: string; quality?: string; imageUrl?: string; imageUrls?: string[]; maskUrl?: string }

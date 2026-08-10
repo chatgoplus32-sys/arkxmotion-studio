@@ -24,6 +24,12 @@ export interface CompletedResult {
   prompt: string
   date: string
   page: 'motion' | 'image-to-video' | 'upscaler'
+  provider?: string
+  model?: string
+  ratio?: string
+  duration?: number
+  credits?: number
+  inputImageUrl?: string
 }
 
 export interface LogEntry {

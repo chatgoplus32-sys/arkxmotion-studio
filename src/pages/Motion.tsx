@@ -30,38 +30,10 @@ import {
 } from 'lucide-react'
 
 const PROVIDERS = {
-  weavy: { name: 'Weavy', models: [
-    { key: 'fal-ai/kling-video/v3/pro/motion-control', label: 'Kling V3.0 Pro', cr: 50 },
-    { key: 'fal-ai/kling-video/v3/standard/motion-control', label: 'Kling V3.0 Standard', cr: 50 },
-    { key: 'fal-ai/kling-video/v2.6/pro/motion-control', label: 'Kling V2.6 Pro', cr: 50 },
-    { key: 'fal-ai/kling-video/v2.6/standard/motion-control', label: 'Kling V2.6 Standard', cr: 50 },
-  ]},
-  wavespeed: { name: 'Wavespeed', models: [
-    { key: 'ws:kwaivgi/kling-v3.0-pro/motion-control', label: 'Kling V3.0 Pro', cr: 84 },
-    { key: 'ws:kwaivgi/kling-v3.0-std/motion-control', label: 'Kling V3.0 Standard', cr: 63 },
-    { key: 'ws:kwaivgi/kling-v2.6-pro/motion-control', label: 'Kling V2.6 Pro', cr: 56 },
-    { key: 'ws:kwaivgi/kling-v2.6-std/motion-control', label: 'Kling V2.6 Standard', cr: 21 },
-  ]},
   roboneo: { name: 'RoboNeo (Meitu)', models: [
     { key: 'rn:video_bonbon_motioncontrol_v30:std', label: 'Kling V3.0 Standard (RoboNeo · Meitu)', cr: 80 },
     { key: 'rn:video_bonbon_motioncontrol_v30:pro', label: 'Kling V3.0 Pro (RoboNeo · Meitu)', cr: 120 },
     { key: 'rn:video_wan_motioncontrol_v26', label: 'Wan 2.6 Motion Control (RoboNeo · Meitu)', cr: 65 },
-  ]},
-  magnific: { name: 'Magnific', models: [
-    { key: 'mag:kling-v3-motion-control-pro', label: 'Kling V3.0 Pro (Magnific)', cr: 84 },
-    { key: 'mag:kling-v3-motion-control-std', label: 'Kling V3.0 Standard (Magnific)', cr: 63 },
-    { key: 'mag:kling-v2-6-motion-control-pro', label: 'Kling V2.6 Pro (Magnific)', cr: 56 },
-    { key: 'mag:kling-v2-6-motion-control-std', label: 'Kling V2.6 Standard (Magnific)', cr: 21 },
-  ]},
-  framia: { name: 'Framia', models: [
-    { key: 'framia:kling-v2.1-motion', label: 'Kling V2.1 Motion Control (Framia)', cr: 40 },
-    { key: 'framia:kling-v2.6-motion', label: 'Kling V2.6 Motion Control (Framia)', cr: 35 },
-  ]},
-  runninghub: { name: 'Motion Control HD (Markasflow-V2)', models: [
-    { key: 'rh:pro:2.6', label: 'Kling 2.6 Pro (Markasflow-V2)', cr: 80 },
-    { key: 'rh:std:2.6', label: 'Kling 2.6 Standard (Markasflow-V2)', cr: 50 },
-    { key: 'rh:pro:2.1', label: 'Kling 2.1 Pro (Markasflow-V2)', cr: 60 },
-    { key: 'rh:std:2.1', label: 'Kling 2.1 Standard (Markasflow-V2)', cr: 35 },
   ]},
 }
 
@@ -91,9 +63,9 @@ function createSlot(): Slot {
 }
 
 export default function MotionPage() {
-  const [provider, setProvider] = useLocalStorage<ProviderId>('motion.provider', 'wavespeed')
+  const [provider, setProvider] = useLocalStorage<ProviderId>('motion.provider', 'roboneo')
   const addToast = useToastStore((s) => s.addToast)
-  const [modelKey, setModelKey] = useLocalStorage('motion.modelKey', PROVIDERS.wavespeed.models[0]?.key || '')
+  const [modelKey, setModelKey] = useLocalStorage('motion.modelKey', PROVIDERS.roboneo.models[0]?.key || '')
   const [orientation, setOrientation] = useLocalStorage<'video' | 'image'>('motion.orientation', 'video')
   const [prompt, setPrompt] = useLocalStorage('motion.prompt', '')
   const [negativePrompt, setNegativePrompt] = useLocalStorage('motion.negativePrompt', '')
