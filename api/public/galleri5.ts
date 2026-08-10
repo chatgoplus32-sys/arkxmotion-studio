@@ -2,6 +2,49 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 const G5_BACKEND = 'https://aistudio-backend.calmdesert-ca599847.centralindia.azurecontainerapps.io'
 
+async function g5Fetch(
+  path: string,
+  headers: Record<string, string>,
+  options: { method?: string; body?: any; timeout?: number } = {}
+): Promise<any> {
+  const { method = 'GET', body, timeout = 30000 } = options
+  const fetchOpts: RequestInit = {
+    method,
+    headers: { ...headers },
+    signal: AbortSignal.timeout(timeout),
+  }
+  if (body && method !== 'GET') {
+    fetchOpts.body = JSON.stringify(body)
+  }
+  const res = await fetch(`${G5_BACKEND}${path}`, fetchOpts)
+  const text = await res.text()
+  let data: any = null
+  try { data = JSON.parse(text) } catch { data = text }
+  if (!res.ok) {
+    const detail = (typeof data === 'object' && data !== null) ? (data.detail || data.message || text.slice(0, 200)) : String(data).slice(0, 200)
+    throw new Error(`G5 HTTP ${res.status}: ${detail || 'request gagal'}`)
+  }
+  return data
+}
+
+function parseAuthHeaders(raw: any): Record<string, string> {
+  if (!raw) throw new Error('Missing authHeaders')
+  if (typeof raw === 'string') {
+    try { return JSON.parse(raw) } catch { throw new Error('authHeaders: JSON parse gagal') }
+  }
+  if (typeof raw === 'object') return raw
+  throw new Error('authHeaders: format tidak dikenal')
+}
+
+function buildHeaders(authHeaders: Record<string, string>, orgId?: string | null): Record<string, string> {
+  const h: Record<string, string> = { Accept: '*/*', ...authHeaders }
+  if (!h['Authorization'] && !h['authorization']) {
+    // authHeaders sudah include Authorization dari client
+  }
+  if (orgId) h['x-organization-id'] = orgId
+  return h
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
@@ -11,64 +54,166 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'Method not allowed' })
 
   try {
-    const { action, authHeaders, payload, taskId } = req.body || {}
+    const body = req.body || {}
+    const { action } = body
 
-    if (!authHeaders) {
-      return res.status(400).json({ ok: false, error: 'Missing authHeaders' })
+    if (!action) {
+      return res.status(400).json({ ok: false, error: 'Missing action' })
     }
 
-    const headers = typeof authHeaders === 'string' ? JSON.parse(authHeaders) : authHeaders
+    // ─── INFO (cek akun / balance) ───────────────────────────────────
+    if (action === 'info') {
+      const authHeaders = parseAuthHeaders(body.authHeaders)
+      console.log(`[galleri5-proxy] info`)
+      const data = await g5Fetch('/api/v1/auth/me/info', buildHeaders(authHeaders), {
+        method: 'POST',
+        body: {},
+        timeout: 15000,
+      })
+      return res.json({ ok: true, data })
+    }
 
+    // ─── SUBMIT (kirim task generate) ────────────────────────────────
     if (action === 'submit') {
-      if (!payload) {
-        return res.status(400).json({ ok: false, error: 'Missing payload' })
-      }
+      const authHeaders = parseAuthHeaders(body.authHeaders)
+      const { payload, orgId } = body
+      if (!payload) return res.status(400).json({ ok: false, error: 'Missing payload' })
 
       console.log(`[galleri5-proxy] submit → ${payload.model_path}`)
+      const headers = buildHeaders(authHeaders, orgId)
+      headers['Content-Type'] = 'application/json'
 
-      const apiRes = await fetch(`${G5_BACKEND}/api/v1/model-garden/submit-form-stream`, {
+      const data = await g5Fetch('/api/v1/model-garden/submit-form-stream', headers, {
         method: 'POST',
-        headers: {
-          ...headers,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
+        body: payload,
+        timeout: 120000,
+      })
+      console.log(`[galleri5-proxy] submit → done`, JSON.stringify(data).slice(0, 300))
+      return res.json({ ok: true, data })
+    }
+
+    // ─── STATUS (poll hasil) ─────────────────────────────────────────
+    if (action === 'status') {
+      const authHeaders = parseAuthHeaders(body.authHeaders)
+      const { taskId, orgId } = body
+      if (!taskId) return res.status(400).json({ ok: false, error: 'Missing taskId' })
+
+      console.log(`[galleri5-proxy] status → ${String(taskId).slice(0, 20)}...`)
+      const data = await g5Fetch(
+        `/api/v1/unit-sessions/${encodeURIComponent(taskId)}`,
+        buildHeaders(authHeaders, orgId),
+        { timeout: 15000 }
+      )
+      // latest_inference berisi status & result
+      const inference = data?.latest_inference ?? data
+      return res.json({ ok: true, data: inference })
+    }
+
+    // ─── SESSION CREATE ──────────────────────────────────────────────
+    if (action === 'session-create') {
+      const authHeaders = parseAuthHeaders(body.authHeaders)
+      const { payload, orgId } = body
+      if (!payload) return res.status(400).json({ ok: false, error: 'Missing payload' })
+
+      console.log(`[galleri5-proxy] session-create → ${payload.name || 'unnamed'}`)
+      const headers = buildHeaders(authHeaders, orgId)
+      headers['Content-Type'] = 'application/json'
+
+      const data = await g5Fetch('/api/v1/unit-sessions', headers, {
+        method: 'POST',
+        body: payload,
+        timeout: 30000,
+      })
+      return res.json({ ok: true, data })
+    }
+
+    // ─── SESSION LINK (hubungkan upload ke session) ──────────────────
+    if (action === 'session-link') {
+      const authHeaders = parseAuthHeaders(body.authHeaders)
+      const { uploadIds, sessionId, orgId } = body
+      if (!uploadIds || !sessionId) {
+        return res.status(400).json({ ok: false, error: 'Missing uploadIds or sessionId' })
+      }
+
+      console.log(`[galleri5-proxy] session-link → ${uploadIds.length} uploads`)
+      const headers = buildHeaders(authHeaders, orgId)
+      headers['Content-Type'] = 'application/json'
+
+      const data = await g5Fetch('/api/v1/uploads/link-session', headers, {
+        method: 'PATCH',
+        body: { upload_ids: uploadIds, session_id: sessionId },
+        timeout: 30000,
+      })
+      return res.json({ ok: true, data })
+    }
+
+    // ─── ESTIMATE ( perkiraan credit ) ───────────────────────────────
+    if (action === 'estimate') {
+      const authHeaders = parseAuthHeaders(body.authHeaders)
+      const { modelPath, formFields, orgId } = body
+      if (!modelPath) return res.status(400).json({ ok: false, error: 'Missing modelPath' })
+
+      console.log(`[galleri5-proxy] estimate → ${modelPath}`)
+      const headers = buildHeaders(authHeaders, orgId)
+      headers['Content-Type'] = 'application/json'
+
+      const data = await g5Fetch('/api/v1/model-garden/estimate-credits', headers, {
+        method: 'POST',
+        body: { model_path: modelPath, form_fields: formFields || {} },
+        timeout: 15000,
+      })
+      return res.json({ ok: true, data })
+    }
+
+    // ─── UPLOAD (upload file ke G5 backend) ──────────────────────────
+    if (action === 'upload') {
+      const authHeaders = parseAuthHeaders(body.authHeaders)
+      const { fileUrl, fileName, contentType, orgId } = body
+      if (!fileUrl) return res.status(400).json({ ok: false, error: 'Missing fileUrl' })
+
+      console.log(`[galleri5-proxy] upload → ${fileName || 'file'}`)
+
+      // Download file dari URL lalu upload ke G5
+      const fileRes = await fetch(fileUrl, { signal: AbortSignal.timeout(60000) })
+      if (!fileRes.ok) {
+        return res.status(200).json({ ok: false, error: `Download gagal: HTTP ${fileRes.status}` })
+      }
+      const fileBlob = await fileRes.blob()
+
+      const headers = buildHeaders(authHeaders, orgId)
+      delete headers['Content-Type'] // biar FormData yang set
+
+      const formData = new FormData()
+      formData.append('file', fileBlob, fileName || 'upload.bin')
+
+      const uploadRes = await fetch(`${G5_BACKEND}/api/v1/file-upload`, {
+        method: 'POST',
+        headers,
+        body: formData,
         signal: AbortSignal.timeout(120000),
       })
 
-      const data = await apiRes.json().catch(() => null)
-      console.log(`[galleri5-proxy] submit → ${apiRes.status}`, JSON.stringify(data).slice(0, 300))
+      const text = await uploadRes.text()
+      let data: any = null
+      try { data = JSON.parse(text) } catch { data = text }
 
-      if (!apiRes.ok) {
-        return res.status(200).json({ ok: false, error: data?.message || data?.error || `HTTP ${apiRes.status}` })
+      if (!uploadRes.ok) {
+        const detail = (typeof data === 'object' && data !== null) ? (data.detail || data.message || text.slice(0, 160)) : String(data).slice(0, 160)
+        return res.status(200).json({ ok: false, error: `Upload gagal (${uploadRes.status}): ${detail}` })
       }
 
-      return res.json({ ok: true, data })
-    }
-
-    if (action === 'status') {
-      if (!taskId) {
-        return res.status(400).json({ ok: false, error: 'Missing taskId' })
+      const fileUrl2 = data?.file_url || data?.url
+      if (!fileUrl2) {
+        return res.status(200).json({ ok: false, error: `Upload gagal: file_url tidak ditemukan` })
       }
 
-      console.log(`[galleri5-proxy] status → ${taskId.slice(0, 20)}...`)
-
-      const apiRes = await fetch(`${G5_BACKEND}/api/v1/model-garden/prediction/${taskId}`, {
-        method: 'GET',
-        headers: {
-          ...headers,
-          'Content-Type': 'application/json',
+      return res.json({
+        ok: true,
+        data: {
+          file_url: fileUrl2,
+          upload_id: data?.upload_id ?? null,
         },
-        signal: AbortSignal.timeout(15000),
       })
-
-      const data = await apiRes.json().catch(() => null)
-
-      if (!apiRes.ok) {
-        return res.status(200).json({ ok: false, error: data?.message || `HTTP ${apiRes.status}`, data })
-      }
-
-      return res.json({ ok: true, data })
     }
 
     return res.status(400).json({ ok: false, error: `Unknown action: ${action}` })

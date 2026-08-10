@@ -1,7 +1,8 @@
 const GALLERI5_PROXY = '/api/public/galleri5'
 
 export interface Galleri5MotionControlOptions {
-  authHeaders: Record<string, string>
+  firebaseToken: string
+  orgId?: string
   imageUrl: string
   videoUrl: string
   keepOriginalSound?: boolean
@@ -21,7 +22,7 @@ async function galleri5Api(action: string, params: Record<string, any>): Promise
   return data
 }
 
-function getStoredGalleri5Headers(): Record<string, string> | null {
+function getStoredGalleri5Credentials(): { firebaseToken: string; orgId?: string } | null {
   if (typeof window === 'undefined') return null
   try {
     const raw = localStorage.getItem('arkxmotion.providers')
@@ -30,24 +31,27 @@ function getStoredGalleri5Headers(): Record<string, string> | null {
     const keys = parsed['galleri5'] || []
     const active = keys.find((k: any) => k.status === 'active' || k.status === 'unknown')
     if (!active?.key) return null
-    return JSON.parse(active.key)
+    const creds = JSON.parse(active.key)
+    if (creds.firebaseToken) return creds
+    return null
   } catch { return null }
 }
 
-export function getGalleri5Headers(): Record<string, string> | null {
-  return getStoredGalleri5Headers()
+export function getGalleri5Credentials(): { firebaseToken: string; orgId?: string } | null {
+  return getStoredGalleri5Credentials()
 }
 
 export async function submitGalleri5MotionControl(opts: Galleri5MotionControlOptions): Promise<string> {
-  const authHeaders = opts.authHeaders
-  if (!authHeaders || Object.keys(authHeaders).length === 0) {
-    throw Error('Galleri5: auth headers belum diatur. Jalankan Chrome Extension di G5 AI Studio, lalu paste headers ke Providers.')
+  const firebaseToken = opts.firebaseToken
+  if (!firebaseToken) {
+    throw Error('Galleri5: Firebase token belum diatur. Dapatkan dari G5 AI Studio → Providers → G5 AI Studio.')
   }
 
   opts.onProgress?.('Submit ke G5 AI Studio...')
 
   const res = await galleri5Api('submit', {
-    authHeaders,
+    firebaseToken,
+    orgId: opts.orgId,
     payload: {
       model_path: 'fal-ai/kling-video-v2.6-standard-motion-control',
       form_fields: {
@@ -78,7 +82,8 @@ export async function submitGalleri5MotionControl(opts: Galleri5MotionControlOpt
 }
 
 export async function pollGalleri5MotionControl(
-  authHeaders: Record<string, string>,
+  firebaseToken: string,
+  orgId: string | undefined,
   taskId: string,
   onProgress?: (msg: string, pct?: number) => void
 ): Promise<string> {
@@ -88,7 +93,7 @@ export async function pollGalleri5MotionControl(
   for (; Date.now() - startTime < MAX_WAIT;) {
     await new Promise(r => setTimeout(r, 5000))
 
-    const res = await galleri5Api('status', { authHeaders, taskId })
+    const res = await galleri5Api('status', { firebaseToken, orgId, taskId })
     const data = res.data ?? res
     const status = String(data.status || '').toUpperCase()
 

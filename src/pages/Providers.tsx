@@ -52,7 +52,7 @@ const PROVIDER_LIST = [
   { key: 'framia', label: 'Framia', desc: 'Canvas workflow (Converge AI) — semua node & recipe: image, video, avatar, garment, storyboard.' },
   { key: 'leonardo', label: 'Leonardo.ai', desc: 'app.leonardo.ai via Cognito Bearer JWT — Text-to-Image (Phoenix, Diffusion XL, Kino, Anime, Vision).' },
   { key: 'createpulse', label: 'CreatePulse', desc: 'Video generation (Seedance 2.0/2.5, Veo Omni) via createpulse.online — pakai API key sendiri.' },
-  { key: 'galleri5', label: 'G5 AI Studio', desc: 'Galleri5 AI Studio — Kling V2.6 Motion Control via Chrome Extension auth capture. Install G5 Auth Helper extension, submit di G5, lalu paste headers.' },
+  { key: 'galleri5', label: 'G5 AI Studio', desc: 'Galleri5 AI Studio — Kling V2.6 Motion Control via Firebase JWT token. Dapatkan dari Console G5 AI Studio.' },
 ] as const
 
 const TOKEN_GUIDE: Record<string, {
@@ -188,17 +188,17 @@ const TOKEN_GUIDE: Record<string, {
     tip: 'FFmpeg = default, gratis, di device kamu. Cloud = fallback untuk file besar / batch panjang.',
   },
   galleri5: {
-    url: 'chrome://extensions',
-    urlLabel: 'Install G5 Auth Helper Extension',
-    prefix: 'JSON headers from extension',
+    url: 'https://aistudio.galleri5.com',
+    urlLabel: 'aistudio.galleri5.com',
+    prefix: 'eyJ... (Firebase JWT token)',
     steps: [
-      { text: 'Install Chrome Extension "G5 Auth Helper" dari folder g5-auth-helper.' },
-      { text: 'Buka G5 AI Studio dan login ke akun kamu.' },
-      { text: 'Klik icon extension → "Submit Headers" → akan capture auth headers saat kamu submit motion control.' },
-      { text: 'Submit motion control di G5 AI Studio (image + video).' },
-      { text: 'Klik icon extension lagi → "Copy to Clipboard" → paste ke textarea di sebelah.' },
+      { text: 'Buka G5 AI Studio dan login.' },
+      { text: 'Buka Console (F12 → Console tab).' },
+      { text: 'Paste: firebase.auth().currentUser.getIdToken().then(t => copy(t))' },
+      { text: 'Token otomatis ter-copy. Paste ke textarea di sebelah.' },
+      { text: 'Jika expired, ulangi langkah 2-4 untuk token baru.' },
     ],
-    tip: 'Auth headers expire setelah session timeout. Jika error 401, capture headers baru dari extension.',
+    tip: 'Firebase JWT expire ~1 jam. Jika error 401, dapatkan token baru dari Console.',
   },
 
 }

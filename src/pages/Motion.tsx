@@ -4,10 +4,10 @@ import { Section, Button, Textarea, Select, Label, EmptyState, QuickRoutingDialo
 import { useProviderManager, type ProviderId } from '@/stores'
 import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
 import { useToastStore } from '@/stores/toastStore'
-import { uploadToCatbox, submitMotionControl, pollRoboneoI2V, checkRoboneoBalance, compressVideo, submitGoogleOmni, normalizeImage } from '@/lib/roboneo'
+import { uploadToCatbox, submitMotionControl, pollRoboneoI2V, checkRoboneoBalance, compressVideo, submitGoogleOmni, normalizeImage, getVideoDurationFromFile } from '@/lib/roboneo'
 import { submitWeavyMotionControl, uploadWeavyAssetWithRetry, resolveWeavyAssetUrl, getActiveWeavyAccessToken, compressImageForWeavy } from '@/lib/weavy'
 import { getRunningHubApiKey, submitRunningHubMotionControl, pollRunningHubTask } from '@/lib/runninghub'
-import { getGalleri5Headers, submitGalleri5MotionControl, pollGalleri5MotionControl } from '@/lib/galleri5'
+import { getGalleri5Credentials, submitGalleri5MotionControl, pollGalleri5MotionControl, isGalleri5TokenError } from '@/lib/galleri5'
 import { trimVideoFFmpeg } from '@/lib/ffmpeg-compress'
 import { getMagnificApiKey, submitMagnificMotion, pollMagnificMotion, type MagnificMotionModel } from '@/lib/magnific'
 import { useLocalStorage } from '@/lib/useLocalStorage'
@@ -63,7 +63,9 @@ const PROVIDERS = {
     { key: 'rh:std:2.1', label: 'Kling 2.1 Standard (Markasflow-V2)', cr: 35 },
   ]},
   galleri5: { name: 'G5 AI Studio', models: [
-    { key: 'g5:kling-v2.6-std', label: 'Kling V2.6 Standard (G5 AI Studio)', cr: 0 },
+    { key: 'g5:kling-v3-std-motion-control', label: 'Kling V3.0 Standard (Galery5)', cr: 100 },
+    { key: 'g5:kling-v2.6-pro-motion-control', label: 'Kling V2.6 Pro (Galery5)', cr: 120 },
+    { key: 'g5:kling-v2.6-std-motion-control', label: 'Kling V2.6 Standard (Galery5)', cr: 60 },
   ]},
 }
 
@@ -562,6 +564,14 @@ export default function MotionPage() {
 
                 updateSlotStatus(slot.id, 'processing', 'submitting...')
                 addLog(`#${slotNum} Submit motion-control...`)
+
+                // Detect video duration for billing
+                let videoDurationSec = 10
+                if (slot.video) {
+                  videoDurationSec = await getVideoDurationFromFile(slot.video)
+                  addLog(`#${slotNum} Video duration: ${videoDurationSec}s`)
+                }
+
                 const result = await submitMotionControl({
                   accessToken: token,
                   imageUrl,
@@ -572,6 +582,8 @@ export default function MotionPage() {
                   keepSound,
                   modelKey: currentModel.key,
                   autoTrim,
+                  ratio: '9:16',
+                  videoDuration: videoDurationSec,
                 })
                 taskId = result.taskId
                 roomId = result.roomId
@@ -640,6 +652,8 @@ export default function MotionPage() {
                         keepSound,
                         modelKey: currentModel.key,
                         autoTrim,
+                        ratio: '9:16',
+                        videoDuration: videoDurationSec,
                       })
                       taskId = retry.taskId
                       roomId = retry.roomId
@@ -990,6 +1004,9 @@ export default function MotionPage() {
               const authHeaders = getGalleri5Headers()
               if (!authHeaders) throw Error('Belum ada auth headers. Jalankan Chrome Extension G5 Auth Helper di G5 AI Studio, lalu paste headers ke Providers.')
 
+              const g5Model = GALLERI5_MOTION_MODELS.find((m) => m.key === modelKey) || GALLERI5_MOTION_MODELS[GALLERI5_MOTION_MODELS.length - 1]
+              addLog(`#${slotNum} Model: ${g5Model.label} (±${g5Model.cr} cr)`)
+
               let imageUrl = slot.imageUrl || ''
               if (!imageUrl) {
                 updateSlotStatus(slot.id, 'uploading img...')
@@ -1031,14 +1048,16 @@ export default function MotionPage() {
               }
 
               updateSlotStatus(slot.id, 'processing', 'submitting...')
-              addLog(`#${slotNum} Submit ke G5 AI Studio...`)
+              addLog(`#${slotNum} Submit ke G5 AI Studio (${g5Model.modelPath})...`)
 
               const taskId = await submitGalleri5MotionControl({
                 authHeaders,
+                modelKey,
                 imageUrl,
                 videoUrl: motionVideoUrl,
                 keepOriginalSound: keepSound,
                 orientation,
+                prompt: prompt.trim() || undefined,
                 onProgress: (msg, pct) => {
                   updateSlotStatus(slot.id, 'processing', pct ? `${msg} ${pct}%` : msg)
                   addLog(`#${slotNum} ${msg}`)
