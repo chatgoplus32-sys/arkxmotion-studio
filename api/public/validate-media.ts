@@ -33,10 +33,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(upstream.status).json({ ok: false, error: `HTTP ${upstream.status}`, contentType })
     }
 
-    if (kind === 'image' && !contentType.includes('image') && !contentType.includes('octet-stream')) {
+    if (kind === 'image' && !contentType.includes('image') && !contentType.includes('octet-stream') && !contentType.includes('binary')) {
       return res.status(400).json({ ok: false, error: `Expected image, got ${contentType}`, contentType })
     }
-    if (kind === 'video' && !contentType.includes('video') && !contentType.includes('octet-stream')) {
+    if (kind === 'video' && !contentType.includes('video') && !contentType.includes('octet-stream') && !contentType.includes('binary')) {
       return res.status(400).json({ ok: false, error: `Expected video, got ${contentType}`, contentType })
     }
 

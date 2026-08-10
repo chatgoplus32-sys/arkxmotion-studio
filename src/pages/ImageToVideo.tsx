@@ -2,15 +2,16 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Select, Label, Textarea, EmptyState, Badge } from '@/components/ui'
 import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
-import { Image, Upload, Rocket, Loader2, Trash2, Zap, Key, ExternalLink, Download } from 'lucide-react'
+import { Image, Upload, Rocket, Loader2, Trash2, Zap, Key, ExternalLink, Download, X } from 'lucide-react'
+import { Swipeable } from '@/components/Swipeable'
 import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
 import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
-import { uploadToCatbox, submitGoogleOmni, submitRoboneoI2V, pollRoboneoI2V, compressVideo, normalizeImage, checkRoboneoBalance } from '@/lib/roboneo'
+import { uploadToCatbox, submitGoogleOmni, submitRoboneoI2V, pollRoboneoI2V, compressVideo, normalizeImage, checkRoboneoBalance, uploadImageForRoboneo, isRoboneoFormatError } from '@/lib/roboneo'
 import { generateWithFramia } from '@/lib/framia'
 import { runLeonardoVideo } from '@/lib/leonardo'
 import { LEONARDO_VIDEO_MODELS, leonardoVideoQualityOptions } from '@/lib/leonardo-video'
-import { submitWeavyVideo, pollWeavyStatus, checkWeavyBalance, submitWeavySora, pollWeavySoraStatus, submitWeavyGrokVideo, pollWeavyGrokVideoStatus, submitWeavyOmni, pollWeavyOmniStatus, submitWeavySeedanceMini, pollWeavySeedanceMiniStatus, uploadToWeavy, compressImageForWeavy } from '@/lib/weavy'
+import { submitWeavyVideo, pollWeavyStatus, checkWeavyBalance, submitWeavySora, pollWeavySoraStatus, submitWeavyGrokVideo, pollWeavyGrokVideoStatus, submitWeavyOmni, pollWeavyOmniStatus, submitWeavySeedanceMini, pollWeavySeedanceMiniStatus, submitWeavyKlingTurbo, pollWeavyKlingTurboStatus, submitWeavyKlingVideo, pollWeavyKlingVideoStatus, uploadToWeavy, compressImageForWeavy } from '@/lib/weavy'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import {
   getActiveTasks,
@@ -21,8 +22,13 @@ import {
   addBgLog,
   addResult,
   startBackgroundPolling,
+  removeResult,
 } from '@/lib/backgroundTasks'
+import type { CompletedResult } from '@/lib/backgroundTasks'
 import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
+import { isNotificationsEnabled, setNotificationsEnabled, requestNotificationPermission, notifyGenerationComplete } from '@/lib/notify'
+import { uploadToCdn } from '@/lib/cdn'
+import { generatePrompt, generateVariations, STYLES, GeneratedPrompt } from '@/lib/aiPrompt'
 
 interface ModelOption {
   value: string
@@ -34,10 +40,12 @@ interface ModelOption {
 
 const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
   weavy: [
-    { value: 'sora-2', label: 'Sora 2 Pro', cr: 36, provider: 'weavy' },
+    { value: 'sora-2', label: 'Sora 2 Pro', cr: 96, provider: 'weavy' },
     { value: 'grok-video', label: 'Grok Imagine Video v1.5', cr: 90, provider: 'weavy' },
     { value: 'gemini-omni', label: 'Gemini Omni Flash', cr: 100, provider: 'weavy' },
     { value: 'seedance-mini', label: 'Seedance 2.0 Mini', cr: 130, provider: 'weavy' },
+    { value: 'kling-3-turbo', label: 'Kling 3.0 Turbo Standard', cr: 135, provider: 'weavy' },
+    { value: 'kling-video', label: 'Kling Video 2.1 Pro', cr: 90, provider: 'weavy' },
   ],
   wavespeed: [
     { value: 'kling-2.1', label: 'Kling V2.1', cr: 26, provider: 'wavespeed' },
@@ -67,7 +75,7 @@ const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'cp:dreamina-seedance-2.0', label: 'Seedance 2.0 (FAST)', cr: 22, provider: 'createpulse', apiModel: 'dreamina-seedance-2.0' },
     { value: 'cp:dreamina-seedance-2.5', label: 'Seedance 2.5 (BEST)', cr: 22, provider: 'createpulse', apiModel: 'dreamina-seedance-2.5' },
     { value: 'cp:dreamina-seedance-2.0-15s', label: 'Seedance 2.0 Extended (15s)', cr: 33, provider: 'createpulse', apiModel: 'dreamina-seedance-2.0-15s' },
-    { value: 'cp:veo-omni', label: 'Veo Omni (CINEMATIC)', cr: 33, provider: 'createpulse', apiModel: 'veo-omni' },
+    { value: 'cp:veo-omni-10s', label: 'Veo Omni (CINEMATIC)', cr: 33, provider: 'createpulse', apiModel: 'veo-omni-10s' },
   ],
   framia: [
     { value: 'framia:gemini-omni-flash', label: 'Gemini Omni Flash (Framia)', cr: 20, provider: 'framia' },
@@ -109,17 +117,13 @@ const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
 const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; label: string; mult: number; duration: number; cr?: number; resolution?: string; sound?: string; sizeTier?: string }>>> = {
   weavy: {
     'sora-2': [
-      { value: '16s-720p', label: '16 detik · 720p', mult: 1, duration: 16, cr: 36, resolution: '720p' },
-      { value: '16s-1080p', label: '16 detik · 1080p', mult: 1, duration: 16, cr: 36, resolution: '1080p' },
-      { value: '16s-true1080p', label: '16 detik · True 1080p', mult: 1, duration: 16, cr: 36, resolution: 'true_1080p' },
-      { value: '12s-720p', label: '12 detik · 720p', mult: 1, duration: 12, cr: 36, resolution: '720p' },
-      { value: '12s-1080p', label: '12 detik · 1080p', mult: 1, duration: 12, cr: 36, resolution: '1080p' },
-      { value: '8s-720p', label: '8 detik · 720p', mult: 1, duration: 8, cr: 36, resolution: '720p' },
-      { value: '8s-1080p', label: '8 detik · 1080p', mult: 1, duration: 8, cr: 36, resolution: '1080p' },
-      { value: '4s-720p', label: '4 detik · 720p', mult: 1, duration: 4, cr: 36, resolution: '720p' },
-      { value: '4s-1080p', label: '4 detik · 1080p', mult: 1, duration: 4, cr: 36, resolution: '1080p' },
+      { value: '16s-720p', label: '16 detik · 720p', mult: 1, duration: 16, cr: 96, resolution: '720p' },
+      { value: '12s-720p', label: '12 detik · 720p', mult: 1, duration: 12, cr: 96, resolution: '720p' },
+      { value: '8s-720p', label: '8 detik · 720p', mult: 1, duration: 8, cr: 96, resolution: '720p' },
+      { value: '4s-720p', label: '4 detik · 720p', mult: 1, duration: 4, cr: 96, resolution: '720p' },
     ],
     'grok-video': [
+      { value: '15s-720p', label: '15 detik · 720p', mult: 1, duration: 15, cr: 90, resolution: '720p' },
       { value: '10s-720p', label: '10 detik · 720p', mult: 1, duration: 10, cr: 90, resolution: '720p' },
       { value: '5s-720p', label: '5 detik · 720p', mult: 1, duration: 5, cr: 90, resolution: '720p' },
     ],
@@ -132,6 +136,15 @@ const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; 
       { value: '10s-480p', label: '10 detik · 480p', mult: 1, duration: 10, cr: 130, resolution: '480p' },
       { value: '5s-720p', label: '5 detik · 720p', mult: 1, duration: 5, cr: 130, resolution: '720p' },
       { value: '5s-480p', label: '5 detik · 480p', mult: 1, duration: 5, cr: 130, resolution: '480p' },
+    ],
+    'kling-3-turbo': [
+      { value: '15s', label: '15 detik', mult: 1, duration: 15, cr: 135, resolution: '720p' },
+      { value: '10s', label: '10 detik', mult: 1, duration: 10, cr: 135, resolution: '720p' },
+      { value: '5s', label: '5 detik', mult: 1, duration: 5, cr: 135, resolution: '720p' },
+    ],
+    'kling-video': [
+      { value: '10s', label: '10 detik', mult: 1, duration: 10, cr: 90, resolution: '720p' },
+      { value: '5s', label: '5 detik', mult: 1, duration: 5, cr: 90, resolution: '720p' },
     ],
   },
   wavespeed: {
@@ -258,7 +271,7 @@ const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; 
     'cp:dreamina-seedance-2.0-15s': [
       { value: '15s', label: '15 detik', mult: 1, duration: 15 },
     ],
-    'cp:veo-omni': [
+    'cp:veo-omni-10s': [
       { value: '10s', label: '10 detik', mult: 1, duration: 10 },
     ],
     default: [
@@ -423,14 +436,22 @@ export default function ImageToVideoPage() {
       return []
     }
   })
+  const [galleryItems, setGalleryItems] = useState<CompletedResult[]>(() => {
+    try {
+      return getResults().filter((r) => r.page === 'image-to-video')
+    } catch {
+      return []
+    }
+  })
+  const [galleryFilter, setGalleryFilter] = useState<string>('all')
+  const [gallerySearch, setGallerySearch] = useState('')
+  const [showPreview, setShowPreview] = useState(false)
   const [status, setStatus] = useState({ show: false, text: '', pct: 0, time: '' })
   const [compressDialog, setCompressDialog] = useState<{ msg: string; pct?: number } | null>(null)
   const [generating, setGenerating] = useState(() => getActiveTasks().filter((t) => t.page === 'image-to-video').length > 0)
   const [logs, setLogs] = useState<Array<{ time: string; msg: string; level: string }>>(() => getLogs())
   const generatingRef = useRef(false)
   const successRef = useRef(false)
-
-
 
   const addLog = (msg: string, level: 'debug' | 'info' | 'warn' | 'error' | 'success' = 'info', provider?: string) => {
     addBgLog(msg, level, provider)
@@ -442,6 +463,54 @@ export default function ImageToVideoPage() {
   const endFrameRef = useRef<HTMLInputElement>(null)
   const refInputRef = useRef<HTMLInputElement>(null)
   const resultsRef = useRef<HTMLDivElement>(null)
+
+  const [notifEnabled, setNotifEnabled] = useState(() => isNotificationsEnabled())
+
+  const toggleNotifications = async () => {
+    if (!notifEnabled) {
+      const granted = await requestNotificationPermission()
+      if (granted) {
+        setNotificationsEnabled(true)
+        setNotifEnabled(true)
+        addToast('Notifikasi diaktifkan', 'success')
+      } else {
+        addToast('Izin notifikasi ditolak', 'error')
+      }
+    } else {
+      setNotificationsEnabled(false)
+      setNotifEnabled(false)
+      addToast('Notifikasi dimatikan', 'info')
+    }
+  }
+
+  const [cdnUploading, setCdnUploading] = useState<Record<string, boolean>>({})
+  const [cdnUrls, setCdnUrls] = useState<Record<string, string>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('arkxmotion_cdn_urls') || '{}')
+    } catch { return {} }
+  })
+
+  const handleCdnUpload = async (itemId: string, videoUrl: string) => {
+    setCdnUploading((prev) => ({ ...prev, [itemId]: true }))
+    const result = await uploadToCdn(videoUrl)
+    setCdnUploading((prev) => ({ ...prev, [itemId]: false }))
+
+    if (result.ok && result.url) {
+      setCdnUrls((prev) => {
+        const next = { ...prev, [itemId]: result.url! }
+        localStorage.setItem('arkxmotion_cdn_urls', JSON.stringify(next))
+        return next
+      })
+      addToast('Video di-upload ke CDN ✓', 'success')
+    } else {
+      addToast(`Gagal upload ke CDN: ${result.error}`, 'error')
+    }
+  }
+
+  const handleCopyCdnUrl = (url: string) => {
+    navigator.clipboard.writeText(url)
+    addToast('Link CDN disalin!', 'success')
+  }
 
   useEffect(() => {
     fetchMaintenance()
@@ -574,9 +643,44 @@ export default function ImageToVideoPage() {
     setRefUrls((prev) => prev.filter((_, i) => i !== index))
   }
 
+  const refreshGallery = () => {
+    setGalleryItems(getResults().filter((r) => r.page === 'image-to-video'))
+  }
+
+  const removeGalleryItem = (id: string) => {
+    removeResult(id)
+    refreshGallery()
+  }
+
+  const saveGalleryItem = (url: string) => {
+    const item: CompletedResult = {
+      id: `result-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      url,
+      prompt: prompt.trim() || '(no prompt)',
+      date: new Date().toISOString(),
+      page: 'image-to-video',
+      provider,
+      model: currentModel?.label || model,
+      ratio,
+      duration: currentQuality?.duration,
+      credits: totalCredits,
+      inputImageUrl: imgUrl || undefined,
+    }
+    addResult(item)
+    refreshGallery()
+  }
+
+  const filteredGallery = galleryItems.filter((item) => {
+    if (galleryFilter !== 'all' && item.provider !== galleryFilter) return false
+    if (gallerySearch && !item.prompt.toLowerCase().includes(gallerySearch.toLowerCase()) && !(item.model || '').toLowerCase().includes(gallerySearch.toLowerCase())) return false
+    return true
+  })
+
+  const galleryProviders = Array.from(new Set(galleryItems.map((i) => i.provider).filter(Boolean)))
+
   const generateWithCreatePulse = async (apiKey: string) => {
     const duration = currentQuality?.duration || 10
-    const cost = (currentModel?.apiModel === 'dreamina-seedance-2.0-15s' || currentModel?.apiModel === 'veo-omni') ? 2250 : 1500
+    const cost = (currentModel?.apiModel === 'dreamina-seedance-2.0-15s' || currentModel?.apiModel === 'veo-omni-10s') ? 2250 : 1500
     const isAdmin = user?.role === 'admin'
 
     if (!isAdmin) {
@@ -742,7 +846,7 @@ export default function ImageToVideoPage() {
   const validateGenerate = (): string | null => {
     if (!prompt.trim()) return 'Prompt harus diisi'
     if (!hasActiveKey && provider !== 'roboneo' && provider !== 'createpulse') return `Tidak ada API key aktif untuk ${PROVIDER_CONFIGS[provider].name}`
-    if (provider === 'createpulse' && user?.role !== 'admin' && cpBalance < ((currentModel?.apiModel === 'dreamina-seedance-2.0-15s' || currentModel?.apiModel === 'veo-omni') ? 2250 : 1500)) return 'Saldo CreatePulse tidak cukup. Top up minimal Rp 10.000'
+    if (provider === 'createpulse' && user?.role !== 'admin' && cpBalance < ((currentModel?.apiModel === 'dreamina-seedance-2.0-15s' || currentModel?.apiModel === 'veo-omni-10s') ? 2250 : 1500)) return 'Saldo CreatePulse tidak cukup. Top up minimal Rp 10.000'
     if (provider === 'roboneo' && !imgFile) return 'Roboneo membutuhkan gambar input'
     return null
   }
@@ -808,8 +912,10 @@ export default function ImageToVideoPage() {
         )
         if (rotation.ok && rotation.result) {
           setResults((prev) => [rotation.result!, ...prev])
+          saveGalleryItem(rotation.result!)
           successRef.current = true
           setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+          notifyGenerationComplete(currentModel?.label || model, PROVIDER_CONFIGS[provider].name)
           if (rotation.triedKeys > 1) {
             addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success')
           }
@@ -822,111 +928,140 @@ export default function ImageToVideoPage() {
            throw new Error('No image provided')
          }
 
-         addLog(`[1/3] 🖼️ Normalizing image...`, 'info', 'roboneo')
-         setStatus((s) => ({ ...s, text: 'Normalize & upload image...', pct: 10 }))
-         const normalizedFile = await normalizeImage(imgFile, (msg, pct) => {
-           if (pct !== undefined) {
-             setCompressDialog({ msg, pct })
+         const uploadWithRetry = async (retryCount = 0): Promise<string> => {
+           addLog(`[1/3] 🖼️ Normalizing & uploading image...${retryCount > 0 ? ` (retry ${retryCount})` : ''}`, 'info', 'roboneo')
+           setStatus((s) => ({ ...s, text: `Normalize & upload image${retryCount > 0 ? ` (retry ${retryCount})` : ''}...`, pct: 10 }))
+           setCompressDialog({ msg: 'Normalisasi gambar...', pct: 0 })
+           try {
+             const url = await uploadImageForRoboneo(imgFile, (msg, pct) => {
+               if (pct !== undefined) setCompressDialog({ msg, pct })
+             })
+             setCompressDialog(null)
+             addLog(`[1/3] ✅ Image uploaded ✓`, 'success', 'roboneo')
+             return url
+           } catch (e: any) {
+             setCompressDialog(null)
+             addLog(`[1/3] ❌ Upload gagal: ${e.message}`, 'error', 'roboneo')
+             throw e
            }
-         })
-         setCompressDialog(null)
-         addLog(`[1/3] 📤 Uploading image...`, 'info', 'roboneo')
-         const imageUrl = await uploadToCatbox(normalizedFile)
-         addLog(`[1/3] ✅ Image uploaded ✓`, 'success', 'roboneo')
+         }
+
+         let imageUrl = await uploadWithRetry(0)
+
+         const MAX_FORMAT_RETRIES = 2
+         let formatRetries = 0
+         let lastFormatError = ''
+
+         const submitAndPoll = async (currentImageUrl: string, apiKey: string, keyInfo: any) => {
+              const tokenIdx = keys.roboneo?.findIndex(k => k.key === apiKey) ?? 0
+              const totalTokens = keys.roboneo?.length || 0
+              addLog(`🔑 Trying key: ${keyInfo.name || keyInfo.id} (${tokenIdx + 1}/${totalTokens})`, 'info', 'roboneo')
+              setStatus((s) => ({ ...s, text: `Submit Roboneo ${model} (token ${tokenIdx + 1}/${totalTokens})...`, pct: 15 }))
+
+              const balanceResult = await checkRoboneoBalance(apiKey)
+              if (!balanceResult.ok) {
+                addLog(`Balance check: ${balanceResult.error}`, 'warn', 'roboneo')
+                throw new Error(`Token Roboneo tidak valid: ${balanceResult.error}`)
+              }
+              if (balanceResult.isValidUser === false) {
+                throw new Error('Token Roboneo tidak valid (is_valid_user=false). Silakan update token.')
+              }
+              if (balanceResult.balance !== null && balanceResult.balance <= 0) {
+                throw new Error('Balance kosong! Tidak ada credit untuk generate.')
+              }
+              if (balanceResult.balance !== null && balanceResult.balance < totalCredits) {
+                throw new Error(`Balance tidak cukup! Butuh ${totalCredits} credit, hanya ada ${balanceResult.balance}.`)
+              }
+              addLog(`💰 Balance: ${balanceResult.balance ?? 'unknown'} credits`, 'info', 'roboneo')
+
+              const resolution = currentQuality?.resolution || quality?.match(/(\d+p)/)?.[1]
+              const soundEnabled = currentQuality?.sound || (quality?.includes('on') || quality?.includes('audio') ? 'on' : 'off')
+              const videoDuration = currentQuality?.duration || 10
+
+               addLog(`[2/3] 🚀 Submitting to Roboneo ${model}...`, 'info', 'roboneo')
+               addLog(`   → resolution: ${resolution || 'default'}`, 'debug', 'roboneo')
+               addLog(`   → sound: ${soundEnabled} | duration: ${videoDuration}s`, 'debug', 'roboneo')
+               const modelParts = model.split(':')
+               const modelVersion = modelParts[1]?.includes('v21') ? 'v21' : 'v26'
+               const { taskId, roomId, nodeId } = await submitRoboneoI2V({
+                 accessToken: apiKey,
+                 imageUrl: currentImageUrl,
+                 prompt: prompt.trim() || undefined,
+                 modelKey: model,
+                 modelVersion,
+                 ratio,
+                 duration: videoDuration,
+                 resolution,
+                 sound: soundEnabled,
+                 quality,
+               })
+              addLog(`[2/3] ✅ Task created ✓ id=${taskId.slice(0, 20)}...`, 'success', 'roboneo')
+
+             addActiveTask({
+               id: taskId,
+               taskId,
+               roomId,
+               nodeId,
+               token: apiKey,
+               model: currentModel?.label || model,
+               prompt: prompt.trim() || '(no prompt)',
+               startedAt: Date.now(),
+               page: 'image-to-video',
+             })
+             activeTaskId = taskId
+
+             addLog(`[3/3] ⏳ Polling for result...`, 'info', 'roboneo')
+             setStatus((s) => ({ ...s, text: 'Processing...', pct: 25 }))
+             const videoUrl = await pollRoboneoI2V(
+               apiKey, taskId, roomId,
+               (status, pct) => {
+                 addLog(`⏳ Roboneo ${status} (${pct}%)`, 'debug', 'roboneo')
+                 setStatus((s) => ({ ...s, pct, text: `Roboneo ${status} (${pct}%)` }))
+               },
+               3600000,
+               undefined,
+               nodeId
+             )
+             setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+             addLog(`✅ Video selesai ✓`, 'success', 'roboneo')
+
+             removeActiveTask(taskId)
+             activeTaskId = null
+             return { videoUrl, taskId, roomId }
+         }
 
          const rotation = await withTokenRotation<{ videoUrl: string; taskId: string; roomId: string }>(
            'roboneo',
            async (apiKey, keyInfo) => {
-             const tokenIdx = keys.roboneo?.findIndex(k => k.key === apiKey) ?? 0
-             const totalTokens = keys.roboneo?.length || 0
-             addLog(`🔑 Trying key: ${keyInfo.name || keyInfo.id} (${tokenIdx + 1}/${totalTokens})`, 'info', 'roboneo')
-             setStatus((s) => ({ ...s, text: `Submit Roboneo ${model} (token ${tokenIdx + 1}/${totalTokens})...`, pct: 15 }))
-
-             const balanceResult = await checkRoboneoBalance(apiKey)
-             if (!balanceResult.ok) {
-               addLog(`Balance check: ${balanceResult.error}`, 'warn', 'roboneo')
-               throw new Error(`Token Roboneo tidak valid: ${balanceResult.error}`)
+             try {
+               return await submitAndPoll(imageUrl, apiKey, keyInfo)
+             } catch (err: any) {
+               if (isRoboneoFormatError(err.message) && formatRetries < MAX_FORMAT_RETRIES) {
+                 formatRetries++
+                 lastFormatError = err.message
+                 addLog(`⚠️ Format error detected (retry ${formatRetries}/${MAX_FORMAT_RETRIES}): re-uploading image...`, 'warn', 'roboneo')
+                 setStatus((s) => ({ ...s, text: `Re-uploading image (retry ${formatRetries})...`, pct: 10 }))
+                 imageUrl = await uploadWithRetry(formatRetries)
+                 addLog(`✅ Re-uploaded ✓ new URL: ${imageUrl.slice(0, 80)}...`, 'success', 'roboneo')
+                 return await submitAndPoll(imageUrl, apiKey, keyInfo)
+               }
+               throw err
              }
-             if (balanceResult.isValidUser === false) {
-               throw new Error('Token Roboneo tidak valid (is_valid_user=false). Silakan update token.')
-             }
-             if (balanceResult.balance !== null && balanceResult.balance <= 0) {
-               throw new Error('Balance kosong! Tidak ada credit untuk generate.')
-             }
-             if (balanceResult.balance !== null && balanceResult.balance < totalCredits) {
-               throw new Error(`Balance tidak cukup! Butuh ${totalCredits} credit, hanya ada ${balanceResult.balance}.`)
-             }
-             addLog(`💰 Balance: ${balanceResult.balance ?? 'unknown'} credits`, 'info', 'roboneo')
-
-             const resolution = currentQuality?.resolution || quality?.match(/(\d+p)/)?.[1]
-             const soundEnabled = currentQuality?.sound || (quality?.includes('on') || quality?.includes('audio') ? 'on' : 'off')
-             const videoDuration = currentQuality?.duration || 10
-
-              addLog(`[2/3] 🚀 Submitting to Roboneo ${model}...`, 'info', 'roboneo')
-              addLog(`   → resolution: ${resolution || 'default'}`, 'debug', 'roboneo')
-              addLog(`   → sound: ${soundEnabled} | duration: ${videoDuration}s`, 'debug', 'roboneo')
-              const modelParts = model.split(':')
-              const modelVersion = modelParts[1]?.includes('v21') ? 'v21' : 'v26'
-              const { taskId, roomId, nodeId } = await submitRoboneoI2V({
-                accessToken: apiKey,
-                imageUrl,
-                prompt: prompt.trim() || undefined,
-                modelKey: model,
-                modelVersion,
-                ratio,
-                duration: videoDuration,
-                resolution,
-                sound: soundEnabled,
-                quality,
-              })
-             addLog(`[2/3] ✅ Task created ✓ id=${taskId.slice(0, 20)}...`, 'success', 'roboneo')
-
-            addActiveTask({
-              id: taskId,
-              taskId,
-              roomId,
-              nodeId,
-              token: apiKey,
-              model: currentModel?.label || model,
-              prompt: prompt.trim() || '(no prompt)',
-              startedAt: Date.now(),
-              page: 'image-to-video',
-            })
-            activeTaskId = taskId
-
-            addLog(`[3/3] ⏳ Polling for result...`, 'info', 'roboneo')
-            setStatus((s) => ({ ...s, text: 'Processing...', pct: 25 }))
-            const videoUrl = await pollRoboneoI2V(
-              apiKey, taskId, roomId,
-              (status, pct) => {
-                addLog(`⏳ Roboneo ${status} (${pct}%)`, 'debug', 'roboneo')
-                setStatus((s) => ({ ...s, pct, text: `Roboneo ${status} (${pct}%)` }))
-              },
-              3600000,
-              undefined,
-              nodeId
-            )
-            setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
-            addLog(`✅ Video selesai ✓`, 'success', 'roboneo')
-
-            removeActiveTask(taskId)
-            activeTaskId = null
-            return { videoUrl, taskId, roomId }
-          },
-          {
-            requiredCredits: totalCredits,
-            onKeySwitch: (from, to, attempt) => {
-              addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn', 'roboneo')
-              if (activeTaskId) removeActiveTask(activeTaskId)
-              activeTaskId = null
-            },
-            onError: (err, key) => {
-              if (detectTokenError('roboneo', err)) {
-                addLog(`⚠️ Key "${key.name}" is invalid: ${err.message}`, 'warn', 'roboneo')
-              }
-            },
-          }
-        )
+           },
+           {
+             requiredCredits: totalCredits,
+             onKeySwitch: (from, to, attempt) => {
+               addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn', 'roboneo')
+               if (activeTaskId) removeActiveTask(activeTaskId)
+               activeTaskId = null
+             },
+             onError: (err, key) => {
+               if (detectTokenError('roboneo', err)) {
+                 addLog(`⚠️ Key "${key.name}" is invalid: ${err.message}`, 'warn', 'roboneo')
+               }
+             },
+           }
+         )
         if (rotation.ok && rotation.result) {
           setResults((prev) => [rotation.result!.videoUrl, ...prev])
           addResult({
@@ -935,9 +1070,17 @@ export default function ImageToVideoPage() {
             prompt: prompt.trim() || '(no prompt)',
             date: new Date().toISOString(),
             page: 'image-to-video',
+            provider,
+            model: currentModel?.label || model,
+            ratio,
+            duration: currentQuality?.duration,
+            credits: totalCredits,
+            inputImageUrl: imgUrl || undefined,
           })
+          refreshGallery()
           window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
           successRef.current = true
+          notifyGenerationComplete(currentModel?.label || model, 'Roboneo')
           if (rotation.triedKeys > 1) {
             addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success', 'roboneo')
           }
@@ -982,6 +1125,7 @@ export default function ImageToVideoPage() {
           setResults((prev) => [rotation.result!, ...prev])
           successRef.current = true
           setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+          notifyGenerationComplete(currentModel?.label || model, 'Framia')
           if (rotation.triedKeys > 1) {
             addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success', 'framia')
           }
@@ -1155,13 +1299,15 @@ export default function ImageToVideoPage() {
         const isGrokVideo = model === 'grok-video'
         const isOmni = model === 'gemini-omni'
         const isSeedanceMini = model === 'seedance-mini'
+        const isKlingTurbo = model === 'kling-3-turbo'
+        const isKlingVideo = model === 'kling-video'
         addLog(`[1/3] 🖼️ Preparing image...`, 'info', 'weavy')
         let imageUrl: string | undefined
-        // For Seedance Mini, image is in startFrameFile (Frames & References UI)
-        const effectiveImgFile = isSeedanceMini ? (startFrameFile || imgFile) : imgFile
+        // For Seedance Mini/Kling, image is in startFrameFile (Frames & References UI)
+        const effectiveImgFile = (isSeedanceMini || isKlingTurbo || isKlingVideo) ? (startFrameFile || imgFile) : imgFile
         if (effectiveImgFile) {
-          if (isSora || isGrokVideo || isOmni || isSeedanceMini) {
-            // Sora/Grok/Omni: upload to Catbox (fallback if direct Weavy upload fails)
+          if (isSora || isGrokVideo || isOmni || isSeedanceMini || isKlingTurbo || isKlingVideo) {
+            // Sora/Grok/Omni/Kling: upload to Catbox (fallback if direct Weavy upload fails)
             addLog(`[1/3] 🖼️ Uploading image to Catbox...`, 'info', 'weavy')
             imageUrl = await uploadToCatbox(effectiveImgFile)
             addLog(`[1/3] ✅ Image uploaded to Catbox ✓`, 'success', 'weavy')
@@ -1404,6 +1550,115 @@ export default function ImageToVideoPage() {
               removeActiveTask(taskId)
               activeTaskId = null
               return videoUrl
+            } else if (isKlingTurbo) {
+              // Kling 3.0 Turbo: recipe-based workflow with prompt + image nodes
+              addLog(`[2/3] 🚀 Submitting Kling 3.0 Turbo (recipe workflow)...`, 'info', 'weavy')
+              addLog(`   → duration: ${currentQuality?.duration || 15}s`, 'debug', 'weavy')
+              addLog(`   → ratio: ${ratio}`, 'debug', 'weavy')
+
+              const submitResult = await submitWeavyKlingTurbo({
+                token: apiKey,
+                imageUrl: imageUrl || undefined,
+                imageFile: startFrameFile || imgFile || undefined,
+                prompt: prompt.trim(),
+                duration: currentQuality?.duration || 15,
+                aspectRatio: ratio,
+              })
+
+              if (!submitResult.ok) {
+                addLog(`[2/3] ❌ Submit failed: ${submitResult.error}`, 'error', 'weavy')
+                throw new Error(submitResult.error || 'Submit failed')
+              }
+
+              const taskId = `${submitResult.recipeId}:${submitResult.batchId}`
+              addLog(`[2/3] ✅ Task created ✓ recipe=${submitResult.recipeId?.slice(0, 15)}...`, 'success', 'weavy')
+
+              addActiveTask({
+                id: taskId,
+                taskId,
+                roomId: '',
+                token: apiKey,
+                model: 'Kling 3.0 Turbo',
+                prompt: prompt.trim() || '(no prompt)',
+                startedAt: Date.now(),
+                page: 'image-to-video',
+              })
+              activeTaskId = taskId
+
+              addLog(`[3/3] ⏳ Polling for result...`, 'info', 'weavy')
+              setStatus((s) => ({ ...s, text: 'Processing...', pct: 25 }))
+              const videoUrl = await pollWeavyKlingTurboStatus(
+                apiKey,
+                submitResult.recipeId!,
+                submitResult.batchId!,
+                (status, pct) => {
+                  addLog(`⏳ Kling Turbo ${status} (${pct}%)`, 'debug', 'weavy')
+                  setStatus((s) => ({ ...s, pct, text: `Kling Turbo ${status} (${pct}%)` }))
+                },
+                3600000,
+                imageUrl,
+              )
+              setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+              addLog(`✅ Video selesai ✓`, 'success', 'weavy')
+
+              removeActiveTask(taskId)
+              activeTaskId = null
+              return videoUrl
+            } else if (isKlingVideo) {
+              // Kling Video 2.1 Pro: recipe-based workflow with prompt + image nodes
+              addLog(`[2/3] 🚀 Submitting Kling Video 2.1 Pro (recipe workflow)...`, 'info', 'weavy')
+              addLog(`   → duration: ${currentQuality?.duration || 10}s`, 'debug', 'weavy')
+              addLog(`   → ratio: ${ratio}`, 'debug', 'weavy')
+
+              const submitResult = await submitWeavyKlingVideo({
+                token: apiKey,
+                imageUrl: imageUrl || undefined,
+                imageFile: startFrameFile || imgFile || undefined,
+                prompt: prompt.trim(),
+                duration: currentQuality?.duration || 10,
+                aspectRatio: ratio,
+                modelTier: '2.1 Pro',
+              })
+
+              if (!submitResult.ok) {
+                addLog(`[2/3] ❌ Submit failed: ${submitResult.error}`, 'error', 'weavy')
+                throw new Error(submitResult.error || 'Submit failed')
+              }
+
+              const taskId = `${submitResult.recipeId}:${submitResult.batchId}`
+              addLog(`[2/3] ✅ Task created ✓ recipe=${submitResult.recipeId?.slice(0, 15)}...`, 'success', 'weavy')
+
+              addActiveTask({
+                id: taskId,
+                taskId,
+                roomId: '',
+                token: apiKey,
+                model: 'Kling Video 2.1 Pro',
+                prompt: prompt.trim() || '(no prompt)',
+                startedAt: Date.now(),
+                page: 'image-to-video',
+              })
+              activeTaskId = taskId
+
+              addLog(`[3/3] ⏳ Polling for result...`, 'info', 'weavy')
+              setStatus((s) => ({ ...s, text: 'Processing...', pct: 25 }))
+              const videoUrl = await pollWeavyKlingVideoStatus(
+                apiKey,
+                submitResult.recipeId!,
+                submitResult.batchId!,
+                (status, pct) => {
+                  addLog(`⏳ Kling Video ${status} (${pct}%)`, 'debug', 'weavy')
+                  setStatus((s) => ({ ...s, pct, text: `Kling Video ${status} (${pct}%)` }))
+                },
+                3600000,
+                imageUrl,
+              )
+              setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+              addLog(`✅ Video selesai ✓`, 'success', 'weavy')
+
+              removeActiveTask(taskId)
+              activeTaskId = null
+              return videoUrl
             } else {
               // Other Weavy models: simple workflow
               addLog(`[2/3] 🚀 Submitting to Weavy ${model}...`, 'info', 'weavy')
@@ -1476,8 +1731,10 @@ export default function ImageToVideoPage() {
         )
         if (rotation.ok && rotation.result) {
           setResults((prev) => [rotation.result!, ...prev])
+          saveGalleryItem(rotation.result!)
           successRef.current = true
           setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+          notifyGenerationComplete(currentModel?.label || model, 'Weavy')
           if (rotation.triedKeys > 1) {
             addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success', 'weavy')
           }
@@ -1509,8 +1766,10 @@ export default function ImageToVideoPage() {
         )
         if (rotation.ok && rotation.result) {
           setResults((prev) => [rotation.result!, ...prev])
+          saveGalleryItem(rotation.result!)
           setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai' }))
           addLog(`✅ Video selesai ✓`, 'success', provider)
+          notifyGenerationComplete(currentModel?.label || model, PROVIDER_CONFIGS[provider].name)
           if (logId) logGenerationComplete(logId, { status: 'completed', result_url: rotation.result, duration_ms: Date.now() - startTime })
         } else {
           throw new Error(rotation.error || 'Generation failed')
@@ -1552,7 +1811,7 @@ export default function ImageToVideoPage() {
 
       {/* Provider Selection */}
       <Section title="📡 Pilih Provider" sub="Pilih provider AI untuk generate video">
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2 sm:gap-3">
           {PROVIDER_IDS.map((pid) => {
             const config = PROVIDER_CONFIGS[pid]
             const providerModels = PROVIDER_MODELS[pid] || []
@@ -1563,21 +1822,21 @@ export default function ImageToVideoPage() {
               <button
                 key={pid}
                 onClick={() => setProvider(pid)}
-                className={`p-3 rounded-xl border-2 transition-all text-left ${
+                className={`p-2 sm:p-3 rounded-xl border-2 transition-all text-left ${
                   isActive
                     ? 'border-primary bg-primary/5 shadow-sm'
                     : 'border-border hover:border-primary/30 bg-card/30'
                 }`}
               >
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-lg">{config.icon}</span>
-                  <span className="text-sm font-medium">{config.name}</span>
+                <div className="flex items-center gap-1.5 sm:gap-2 mb-1">
+                  <span className="text-base sm:text-lg">{config.icon}</span>
+                  <span className="text-xs sm:text-sm font-medium truncate">{config.name}</span>
                 </div>
-                <div className="text-[10px] text-muted-foreground">
+                <div className="text-[9px] sm:text-[10px] text-muted-foreground">
                   {providerModels.length} models · {keyCount} keys
                 </div>
                 {isActive && (
-                  <Badge variant="default" className="mt-2 text-[10px]">
+                  <Badge variant="default" className="mt-1 sm:mt-2 text-[9px] sm:text-[10px]">
                     Active
                   </Badge>
                 )}
@@ -1603,6 +1862,16 @@ export default function ImageToVideoPage() {
           <div>
             Status: <b className={provider === 'createpulse' || hasActiveKey ? 'text-emerald-500' : 'text-amber-500'}>{provider === 'createpulse' || hasActiveKey ? 'Ready' : 'No Key'}</b>
           </div>
+          <button
+            onClick={toggleNotifications}
+            className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[11px] transition ${
+              notifEnabled
+                ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-500'
+                : 'border-border text-muted-foreground hover:border-primary/30'
+            }`}
+          >
+            🔔 {notifEnabled ? 'Notifikasi ON' : 'Notifikasi OFF'}
+          </button>
         </div>
 
         {/* CreatePulse Pricing Info */}
@@ -1612,7 +1881,7 @@ export default function ImageToVideoPage() {
               <div className="text-xs font-medium text-primary">💜 CreatePulse {user?.role === 'admin' && '(Admin — Free)'}</div>
               {user?.role !== 'admin' && (
                 <div className="text-xs">
-                  Saldo: <b className={`font-bold ${cpBalance >= ((currentModel?.apiModel === 'dreamina-seedance-2.0-15s' || currentModel?.apiModel === 'veo-omni') ? 2250 : 1500) ? 'text-emerald-500' : 'text-destructive'}`}>
+                  Saldo: <b className={`font-bold ${cpBalance >= ((currentModel?.apiModel === 'dreamina-seedance-2.0-15s' || currentModel?.apiModel === 'veo-omni-10s') ? 2250 : 1500) ? 'text-emerald-500' : 'text-destructive'}`}>
                     Rp {cpBalance.toLocaleString('id-ID')}
                   </b>
                 </div>
@@ -1625,7 +1894,7 @@ export default function ImageToVideoPage() {
               <div>Veo Omni (10s): <b className="text-foreground">{user?.role === 'admin' ? 'GRATIS' : 'Rp 2.250'}</b></div>
               {user?.role !== 'admin' && <div>Failed generations: <b className="text-emerald-500">auto-refunded</b></div>}
             </div>
-            {user?.role !== 'admin' && cpBalance < ((currentModel?.apiModel === 'dreamina-seedance-2.0-15s' || currentModel?.apiModel === 'veo-omni') ? 2250 : 1500) && (
+            {user?.role !== 'admin' && cpBalance < ((currentModel?.apiModel === 'dreamina-seedance-2.0-15s' || currentModel?.apiModel === 'veo-omni-10s') ? 2250 : 1500) && (
               <div className="mt-2 text-[11px]">
                 <a href="/topup/createpulse" className="text-primary hover:underline font-medium">
                   Top Up Saldo →
@@ -1636,7 +1905,7 @@ export default function ImageToVideoPage() {
         )}
       </Section>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-5">
             {(provider === 'createpulse' || model === 'seedance-mini') ? (
               /* CreatePulse / Seedance Mini: Frames & References */
               <Section title="Frames & References" sub="Start frame, end frame, dan referensi gambar (opsional)">
@@ -1797,7 +2066,7 @@ export default function ImageToVideoPage() {
 
             <div className="flex items-center gap-3 mt-4 flex-wrap">
               <Button
-                onClick={handleGenerate}
+                onClick={() => setShowPreview(true)}
                 disabled={!prompt.trim() || generating}
               >
                 {generating ? (
@@ -1813,7 +2082,7 @@ export default function ImageToVideoPage() {
                 )}
               </Button>
               <div className="text-xs text-muted-foreground">
-                Est. Cost: <b className="text-foreground font-mono">{provider === 'createpulse' ? `Rp ${((currentModel?.apiModel === 'dreamina-seedance-2.0-15s' || currentModel?.apiModel === 'veo-omni') ? 2250 : 1500).toLocaleString('id-ID')}` : `${totalCredits} credits`}</b>
+                Est. Cost: <b className="text-foreground font-mono">{provider === 'createpulse' ? `Rp ${((currentModel?.apiModel === 'dreamina-seedance-2.0-15s' || currentModel?.apiModel === 'veo-omni-10s') ? 2250 : 1500).toLocaleString('id-ID')}` : `${totalCredits} credits`}</b>
               </div>
               {!hasActiveKey && provider !== 'createpulse' && (
                 <a
@@ -1849,26 +2118,86 @@ export default function ImageToVideoPage() {
                </div>
              )}
  
-             {compressDialog && (
-               <div role="dialog" aria-modal="true" aria-live="polite" className="absolute inset-0 z-30 flex items-center justify-center rounded-2xl bg-background/70 backdrop-blur-sm">
-                 <div className="w-[min(360px,90%)] rounded-2xl border border-primary/40 bg-card/95 p-5 shadow-2xl shadow-primary/20">
-                   <div className="flex items-center gap-3">
-                     <Loader2 className="h-5 w-5 shrink-0 animate-spin text-primary" />
-                     <div className="font-display text-sm text-foreground">Mengompres file.</div>
-                   </div>
-                   <div className="mt-3 text-xs text-muted-foreground break-words">{compressDialog.msg}</div>
-                   <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-                     <div
-                       className={`h-full bg-primary transition-all ${typeof compressDialog.pct === 'number' ? '' : 'animate-pulse'}`}
-                       style={{ width: typeof compressDialog.pct === 'number' ? `${Math.max(0, Math.min(100, compressDialog.pct))}%` : '100%' }}
-                     />
-                   </div>
-                   <div className="mt-3 text-[10px] uppercase tracking-widest text-muted-foreground text-center">Mohon tunggu sampai proses selesai</div>
-                 </div>
-               </div>
-             )}
-           </Section>
-         </div>
+              {compressDialog && (
+                <div role="dialog" aria-modal="true" aria-live="polite" className="absolute inset-0 z-30 flex items-center justify-center rounded-2xl bg-background/70 backdrop-blur-sm">
+                  <div className="w-[min(360px,90%)] rounded-2xl border border-primary/40 bg-card/95 p-5 shadow-2xl shadow-primary/20">
+                    <div className="flex items-center gap-3">
+                      <Loader2 className="h-5 w-5 shrink-0 animate-spin text-primary" />
+                      <div className="font-display text-sm text-foreground">Mengompres file.</div>
+                    </div>
+                    <div className="mt-3 text-xs text-muted-foreground break-words">{compressDialog.msg}</div>
+                    <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                      <div
+                        className={`h-full bg-primary transition-all ${typeof compressDialog.pct === 'number' ? '' : 'animate-pulse'}`}
+                        style={{ width: typeof compressDialog.pct === 'number' ? `${Math.max(0, Math.min(100, compressDialog.pct))}%` : '100%' }}
+                      />
+                    </div>
+                    <div className="mt-3 text-[10px] uppercase tracking-widest text-muted-foreground text-center">Mohon tunggu sampai proses selesai</div>
+                  </div>
+                </div>
+              )}
+            </Section>
+          </div>
+
+      {/* Preview Dialog */}
+      {showPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm" onClick={() => setShowPreview(false)}>
+          <div className="w-[min(480px,92%)] rounded-2xl border border-border bg-card shadow-2xl p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-display text-base font-semibold">🚀 Konfirmasi Generate</h3>
+              <button onClick={() => setShowPreview(false)} className="p-1 rounded-lg hover:bg-muted transition">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-sm">
+              {imgUrl && (
+                <div className="flex items-center gap-3">
+                  <img src={imgUrl} alt="Input" className="w-16 h-16 rounded-lg object-cover border border-border" />
+                  <div className="text-xs text-muted-foreground">Input image</div>
+                </div>
+              )}
+
+              <div className="rounded-xl border border-border bg-background/50 p-3 space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Provider</span>
+                  <span className="font-medium">{PROVIDER_CONFIGS[provider].icon} {PROVIDER_CONFIGS[provider].name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Model</span>
+                  <span className="font-medium">{currentModel?.label || model}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Rasio</span>
+                  <span className="font-medium">{ratio}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Durasi</span>
+                  <span className="font-medium">{currentQuality?.duration || '?'}s</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Est. Cost</span>
+                  <span className="font-medium text-primary">{provider === 'createpulse' ? `Rp ${((currentModel?.apiModel === 'dreamina-seedance-2.0-15s' || currentModel?.apiModel === 'veo-omni-10s') ? 2250 : 1500).toLocaleString('id-ID')}` : `${totalCredits} credits`}</span>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-border bg-background/50 p-3">
+                <div className="text-xs text-muted-foreground mb-1">Prompt</div>
+                <div className="text-sm break-words max-h-24 overflow-y-auto">{prompt.trim()}</div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-5">
+              <Button variant="outline" className="flex-1" onClick={() => setShowPreview(false)}>
+                Batal
+              </Button>
+              <Button className="flex-1" onClick={() => { setShowPreview(false); handleGenerate() }}>
+                <Rocket className="h-4 w-4" /> Generate Sekarang
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
        </div>
 
       {/* Logs */}
@@ -1911,72 +2240,123 @@ export default function ImageToVideoPage() {
         </Section>
       )}
 
-      {/* Results */}
-      <div ref={resultsRef}>
+      {/* Gallery / History */}
       <Section
-        title={`🎬 Hasil Image To Video (${results.length})`}
+        title={`🖼️ Galeri Hasil (${filteredGallery.length})`}
+        sub="Riwayat semua video yang sudah di-generate"
         right={
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              setResults([])
-              localStorage.removeItem('createpulse.results')
-            }}
-            disabled={results.length === 0}
-            className="text-destructive hover:text-destructive"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Clear</span>
-          </Button>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              placeholder="Cari..."
+              value={gallerySearch}
+              onChange={(e) => setGallerySearch(e.target.value)}
+              className="px-2 py-1 rounded-lg border border-border bg-card text-xs w-24 sm:w-48"
+            />
+            <select
+              value={galleryFilter}
+              onChange={(e) => setGalleryFilter(e.target.value)}
+              className="px-2 py-1 rounded-lg border border-border bg-card text-xs max-w-[100px] sm:max-w-none"
+            >
+              <option value="all">Semua</option>
+              {galleryProviders.map((p) => (
+                <option key={p} value={p}>{PROVIDER_CONFIGS[p as ProviderId]?.icon} {PROVIDER_CONFIGS[p as ProviderId]?.name || p}</option>
+              ))}
+            </select>
+          </div>
         }
       >
-            {results.length === 0 ? (
+        {filteredGallery.length === 0 ? (
           <EmptyState
             icon={<Image className="h-8 w-8" />}
-            title="Belum ada video"
-            description="Generate video dari gambar atau text prompt"
+            title="Belum ada galeri"
+            description="Hasil generate akan muncul di sini"
           />
         ) : (
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-              {results.map((url, index) => {
-              const alreadyProxied = url.includes('/api/public/video-proxy')
-              const needsProxy = alreadyProxied ? false : /meitudata\.com|localhost|cloud\.leonardo\.ai/i.test(url)
-              const directUrl = needsProxy ? `/api/public/video-proxy?url=${encodeURIComponent(url)}` : url
-              const proxyFallback = alreadyProxied ? url : `/api/public/video-proxy?url=${encodeURIComponent(url)}`
+          <>
+            <div className="sm:hidden text-[10px] text-muted-foreground text-center mb-2">
+              💡 Swipe kanan = Download, Swipe kiri = Hapus
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {filteredGallery.map((item) => {
+              const alreadyProxied = item.url.includes('/api/public/video-proxy')
+              const needsProxy = alreadyProxied ? false : /meitudata\.com|localhost|cloud\.leonardo\.ai/i.test(item.url)
+              const directUrl = needsProxy ? `/api/public/video-proxy?url=${encodeURIComponent(item.url)}` : item.url
+              const proxyFallback = alreadyProxied ? item.url : `/api/public/video-proxy?url=${encodeURIComponent(item.url)}`
               return (
-              <div key={index} className="relative rounded-xl overflow-hidden border border-border bg-black/40">
-                <VideoPlayer
-                  directUrl={directUrl}
-                  proxyFallback={proxyFallback}
-                  rawUrl={url}
-                />
-                <div className="p-2 flex flex-col gap-1.5">
-                    <div className="flex items-center gap-1">
-                      <a href={directUrl} target="_blank" rel="noreferrer" className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-primary/30 bg-primary/5 hover:bg-primary/10 px-3 py-2 text-xs font-medium text-primary transition">
-                        <ExternalLink className="h-3.5 w-3.5" /> Buka
-                      </a>
-                      <button
-                        onClick={() => handleDownload(url, index)}
-                        className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-500 transition"
-                      >
-                        <Download className="h-3.5 w-3.5" /> Download
-                      </button>
+                <Swipeable
+                  key={item.id}
+                  onSwipeLeft={() => removeGalleryItem(item.id)}
+                  onSwipeRight={() => handleDownload(item.url, 0)}
+                  leftAction={{ icon: <Trash2 className="h-4 w-4" />, label: 'Hapus', color: 'destructive' }}
+                  rightAction={{ icon: <Download className="h-4 w-4" />, label: 'Download', color: 'emerald' }}
+                >
+                  <div className="relative rounded-xl border border-border bg-black/40">
+                    <VideoPlayer directUrl={directUrl} proxyFallback={proxyFallback} rawUrl={item.url} />
+                    <div className="p-2 flex flex-col gap-1.5">
+                      {item.inputImageUrl && (
+                        <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                          <img src={item.inputImageUrl} alt="" className="w-6 h-6 rounded object-cover" />
+                          <span className="truncate flex-1">Input: {item.prompt.slice(0, 40)}...</span>
+                        </div>
+                      )}
+                      <div className="text-xs font-medium truncate">{item.prompt.slice(0, 60)}{item.prompt.length > 60 ? '...' : ''}</div>
+                      <div className="flex flex-wrap gap-1 text-[10px] text-muted-foreground">
+                        {item.provider && <Badge variant="outline" className="text-[9px]">{PROVIDER_CONFIGS[item.provider as ProviderId]?.icon} {PROVIDER_CONFIGS[item.provider as ProviderId]?.name || item.provider}</Badge>}
+                        {item.model && <Badge variant="outline" className="text-[9px]">{item.model}</Badge>}
+                        {item.ratio && <Badge variant="outline" className="text-[9px]">{item.ratio}</Badge>}
+                        {item.duration && <Badge variant="outline" className="text-[9px]">{item.duration}s</Badge>}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">{new Date(item.date).toLocaleString('id-ID')}</div>
+                       <div className="flex items-center gap-1">
+                        <a href={directUrl} target="_blank" rel="noreferrer" className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-primary/30 bg-primary/5 hover:bg-primary/10 px-3 py-2 text-xs font-medium text-primary transition">
+                          <ExternalLink className="h-3.5 w-3.5" /> Buka
+                        </a>
+                        <button
+                          onClick={() => handleDownload(item.url, 0)}
+                          className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-500 transition"
+                        >
+                          <Download className="h-3.5 w-3.5" /> Download
+                        </button>
+                        <button
+                          onClick={() => removeGalleryItem(item.id)}
+                          className="p-2 rounded-lg border border-destructive/30 bg-destructive/5 hover:bg-destructive/10 text-destructive transition"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      <div className="mt-1.5">
+                        {cdnUrls[item.id] ? (
+                          <button
+                            onClick={() => handleCopyCdnUrl(cdnUrls[item.id])}
+                            className="w-full inline-flex items-center justify-center gap-1 rounded-lg border border-blue-500/30 bg-blue-500/5 hover:bg-blue-500/10 px-3 py-1.5 text-[11px] font-medium text-blue-500 transition"
+                          >
+                            🔗 Copy CDN Link
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleCdnUpload(item.id, item.url)}
+                            disabled={cdnUploading[item.id]}
+                            className="w-full inline-flex items-center justify-center gap-1 rounded-lg border border-border hover:border-primary/30 hover:bg-primary/5 px-3 py-1.5 text-[11px] text-muted-foreground transition"
+                          >
+                            {cdnUploading[item.id] ? (
+                              <><Loader2 className="h-3 w-3 animate-spin" /> Uploading...</>
+                            ) : (
+                              <>☁️ Upload to CDN</>
+                            )}
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <button
-                      onClick={() => setResults(results.filter((_, i) => i !== index))}
-                      className="w-full inline-flex items-center justify-center gap-1 rounded-lg border border-destructive/30 bg-destructive/5 hover:bg-destructive/10 px-3 py-1.5 text-[11px] text-destructive transition"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" /> Hapus
-                    </button>
                   </div>
-              </div>
+                </Swipeable>
               )
             })}
           </div>
+          </>
         )}
       </Section>
-      </div>
+
     </PageContent>
   )
 }

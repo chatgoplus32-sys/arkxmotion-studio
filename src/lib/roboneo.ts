@@ -79,11 +79,21 @@ async function compressImageMultiPass(file: File, maxBytes: number, onProgress?:
 }
 
 export async function normalizeImage(file: File, onProgress?: (msg: string, pct?: number) => void): Promise<File> {
+  console.log(`[normalize] input: ${file.name} type=${file.type} size=${(file.size / 1024).toFixed(1)}KB`)
+
   if (/heic|heif/i.test(file.type) || /\.hei[cf]$/i.test(file.name)) {
     onProgress?.('Mengkonversi HEIC ke JPEG...')
-    try { return await compressImageMultiPass(file, 4 * 1024 * 1024, onProgress) } catch {}
+    try {
+      const result = await compressImageMultiPass(file, 4 * 1024 * 1024, onProgress)
+      console.log(`[normalize] HEIC→JPEG: ${result.name} type=${result.type} size=${(result.size / 1024).toFixed(1)}KB`)
+      return result
+    } catch (e: any) {
+      console.warn(`[normalize] HEIC conversion failed: ${e.message}, trying canvas fallback`)
+    }
   }
-  if (file.type.startsWith('image/') && file.type !== 'image/jpeg' && file.type !== 'image/jpg') {
+
+  const needsConversion = file.type.startsWith('image/') && file.type !== 'image/jpeg' && file.type !== 'image/jpg'
+  if (needsConversion) {
     onProgress?.('Mengkonversi ke JPEG...')
     try {
       const { width, height, draw, cleanup } = await loadImage(file)
@@ -95,20 +105,38 @@ export async function normalizeImage(file: File, onProgress?: (msg: string, pct?
         ctx.drawImage(draw, 0, 0, width, height)
         const blob = await encodeCanvas(canvas, 'image/jpeg', 0.92)
         const newName = file.name.replace(/\.[^.]+$/, '') + '.jpg'
-        return new File([blob], newName, { type: 'image/jpeg' })
+        const result = new File([blob], newName, { type: 'image/jpeg' })
+        console.log(`[normalize] canvas→JPEG: ${width}×${height} → ${result.name} size=${(result.size / 1024).toFixed(1)}KB`)
+        return result
       } finally { cleanup() }
-    } catch {}
+    } catch (e: any) {
+      console.warn(`[normalize] Canvas conversion failed: ${e.message}, trying compressImageMultiPass fallback`)
+      try {
+        const result = await compressImageMultiPass(file, 4 * 1024 * 1024, onProgress)
+        console.log(`[normalize] fallback compress: ${result.name} type=${result.type} size=${(result.size / 1024).toFixed(1)}KB`)
+        return result
+      } catch (e2: any) {
+        console.warn(`[normalize] Fallback compression also failed: ${e2.message}, using original`)
+      }
+    }
   }
+
   if (file.type.startsWith('image/')) {
     if (file.size > 8 * 1024 * 1024) {
       onProgress?.('Kompres gambar agresif (>8MB)...')
-      return await compressImageMultiPass(file, 2 * 1024 * 1024, onProgress)
+      const result = await compressImageMultiPass(file, 2 * 1024 * 1024, onProgress)
+      console.log(`[normalize] compressed >8MB: ${result.name} size=${(result.size / 1024).toFixed(1)}KB`)
+      return result
     }
     if (file.size > 4 * 1024 * 1024) {
       onProgress?.('Mengompres gambar (>4MB)...')
-      return await compressImageMultiPass(file, 3 * 1024 * 1024, onProgress)
+      const result = await compressImageMultiPass(file, 3 * 1024 * 1024, onProgress)
+      console.log(`[normalize] compressed >4MB: ${result.name} size=${(result.size / 1024).toFixed(1)}KB`)
+      return result
     }
   }
+
+  console.log(`[normalize] output: ${file.name} type=${file.type} (unchanged)`)
   return file
 }
 
@@ -1577,6 +1605,7 @@ export async function pollRoboneoI2V(
 
       const isBusy = taskErrorCode === 6 || /busy|sibuk|try again|later|overload|capacity|queue|结果接口获取失败/i.test(errMsg)
       const isChargeFailed = /CHARGE_FAILED|charge.?failed|余额不足|余额不够|积分不足|账户余额|欠费/i.test(errMsg) || taskErrorCode === 'CHARGE_FAILED'
+      const isFormatError = isRoboneoFormatError(errMsg)
       if (isBusy && busyRetries < MAX_BUSY_RETRIES) {
         busyRetries++
         const waitSec = Math.min(5 + busyRetries * 2, 20)
@@ -1589,6 +1618,11 @@ export async function pollRoboneoI2V(
       if (isChargeFailed) {
         taskMetaMap.delete(taskId)
         throw new Error(`Roboneo: saldo tidak cukup untuk biaya ini (CHARGE_FAILED). Detail: ${detail}`)
+      }
+
+      if (isFormatError) {
+        taskMetaMap.delete(taskId)
+        throw new Error(`Roboneo format error: Gambar tidak dapat dibaca oleh server. Coba upload ulang gambar atau format berbeda. Detail: ${errMsg} ${detail}`)
       }
 
       taskMetaMap.delete(taskId)
@@ -1856,6 +1890,23 @@ export function isRoboneoBalanceError(msg: string): boolean {
 
 export function isRoboneoTokenError(msg: string): boolean {
   return isRoboneoCredentialError(msg) || isRoboneoBalanceError(msg)
+}
+
+export function isRoboneoFormatError(msg: string): boolean {
+  return /FormatUnsupported|Unsupported media format|format.*unsupported|unsupported.*format|invalid.*parameter.*format|参数错误.*format|tos:.*request error|get image info/i.test(msg)
+}
+
+export function isRoboneoImageError(msg: string): boolean {
+  return isRoboneoFormatError(msg) || /image.*error|image.*fail|image.*invalid|gambar.*gagal|image_url.*error/i.test(msg)
+}
+
+export async function uploadImageForRoboneo(file: File, onProgress?: (msg: string, pct?: number) => void): Promise<string> {
+  onProgress?.('Normalisasi gambar...')
+  const normalizedFile = await normalizeImage(file, onProgress)
+  onProgress?.('Upload gambar...')
+  const imageUrl = await uploadToCatbox(normalizedFile, 'image', onProgress)
+  console.log(`[uploadImageForRoboneo] URL: ${imageUrl}`)
+  return imageUrl
 }
 
 export function parseAccessToken(raw: string): string {
