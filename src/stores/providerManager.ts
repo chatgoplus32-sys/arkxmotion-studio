@@ -163,11 +163,11 @@ export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
     id: 'galleri5',
     name: 'G5 AI Studio',
     icon: '🎬',
-    description: 'Galleri5 AI Studio — Kling motion control via Firebase JWT token',
-    keyPlaceholder: 'Paste Firebase JWT token (eyJ...)...',
-    keyFormat: 'Firebase JWT from Console',
-    minCredits: 0,
-    supportsBalance: false,
+    description: 'Galleri5 AI Studio — Kling V3 & V2.6 motion control via Firebase refresh token (auto-refresh).',
+    keyPlaceholder: 'Paste Firebase refresh token (AMf-...) atau JSON auth headers...',
+    keyFormat: 'Firebase refresh token / auth headers JSON',
+    minCredits: 60,
+    supportsBalance: true,
   },
 }
 

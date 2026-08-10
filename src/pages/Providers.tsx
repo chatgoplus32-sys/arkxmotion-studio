@@ -30,6 +30,7 @@ import { checkRoboneoBalance } from '@/lib/roboneo'
 import { fetchLeonardoBalance } from '@/lib/leonardo'
 import { checkWeavyBalance } from '@/lib/weavy'
 import { checkRunningHubBalance } from '@/lib/runninghub'
+import { checkGalleri5Balance, isGalleri5TokenError } from '@/lib/galleri5'
 
 const PROVIDER_COLORS: Record<string, string> = {
   brain: '#f472b6',
@@ -38,6 +39,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   roboneo: '#34d399',
   runninghub: '#f97316',
   framia: '#fb923c',
+  galleri5: '#e879f9',
   leonardo: '#facc15',
   render: '#94a3b8',
   createpulse: '#c084fc',
@@ -52,7 +54,7 @@ const PROVIDER_LIST = [
   { key: 'framia', label: 'Framia', desc: 'Canvas workflow (Converge AI) — semua node & recipe: image, video, avatar, garment, storyboard.' },
   { key: 'leonardo', label: 'Leonardo.ai', desc: 'app.leonardo.ai via Cognito Bearer JWT — Text-to-Image (Phoenix, Diffusion XL, Kino, Anime, Vision).' },
   { key: 'createpulse', label: 'CreatePulse', desc: 'Video generation (Seedance 2.0/2.5, Veo Omni) via createpulse.online — pakai API key sendiri.' },
-  { key: 'galleri5', label: 'G5 AI Studio', desc: 'Galleri5 AI Studio — Kling V2.6 Motion Control via Firebase JWT token. Dapatkan dari Console G5 AI Studio.' },
+  { key: 'galleri5', label: 'G5 AI Studio', desc: 'Motion Control (Kling V3 & V2.6 motion transfer) via aistudio.galleri5.com — Firebase refresh token (auto-refresh).' },
 ] as const
 
 const TOKEN_GUIDE: Record<string, {
@@ -188,17 +190,18 @@ const TOKEN_GUIDE: Record<string, {
     tip: 'FFmpeg = default, gratis, di device kamu. Cloud = fallback untuk file besar / batch panjang.',
   },
   galleri5: {
-    url: 'https://aistudio.galleri5.com',
-    urlLabel: 'aistudio.galleri5.com',
-    prefix: 'eyJ... (Firebase JWT token)',
+    url: '/plugins',
+    urlLabel: 'AA Plug-IN → AA Grabber Galery5',
+    prefix: 'AMf-... (Firebase refresh token, auto-refresh)',
     steps: [
-      { text: 'Buka G5 AI Studio dan login.' },
-      { text: 'Buka Console (F12 → Console tab).' },
-      { text: 'Paste: firebase.auth().currentUser.getIdToken().then(t => copy(t))' },
-      { text: 'Token otomatis ter-copy. Paste ke textarea di sebelah.' },
-      { text: 'Jika expired, ulangi langkah 2-4 untuk token baru.' },
+      { text: 'Cara cepat: buka menu AA Plug-IN → install "AA Grabber — Galery5", login di tab Akun, buka aistudio.galleri5.com, klik Ambil Token → otomatis masuk Token Manager.' },
+      { text: 'Cara manual: login di aistudio.galleri5.com (Google / email).' },
+      { text: 'Buka DevTools (F12) → Application → IndexedDB → firebaseLocalStorageDb → firebaseLocalStorage.' },
+      { text: 'Buka entry firebase:authUser:... → stsTokenManager → copy value refreshToken (diawali AMf-...).' },
+      { text: 'Paste ke input di sebelah. Bisa banyak token (1 per baris) untuk auto-rotate.' },
+      { text: 'Refresh token tahan lama — app menukarnya otomatis ke ID token tiap ~1 jam, jadi sisa credit tetap terbaca tanpa ambil ulang.' },
     ],
-    tip: 'Firebase JWT expire ~1 jam. Jika error 401, dapatkan token baru dari Console.',
+    tip: 'Galery5 dipakai khusus Motion Control (Kling V3 Standard 100 cr, V2.6 Pro 120 cr, V2.6 Standard 60 cr).',
   },
 
 }
@@ -501,6 +504,33 @@ export default function ProvidersPage() {
           return { state: 'invalid', detail: 'Token expired — ambil baru dari browser (F12 → Network → api.leonardo.ai → Authorization)' }
         }
         return { state: 'failed', detail: result.message || 'Gagal cek token' }
+      } catch {
+        return { state: 'failed', detail: 'Error checking token' }
+      }
+    }
+    if (selectedProvider === 'galleri5') {
+      try {
+        let authHeaders: Record<string, string> | null = null
+        try { authHeaders = JSON.parse(key) } catch { authHeaders = null }
+        if (!authHeaders || typeof authHeaders !== 'object' || Object.keys(authHeaders).length === 0) {
+          return { state: 'invalid', detail: 'Format key harus JSON auth headers dari Chrome Extension (bukan token mentah).' }
+        }
+        const result = await checkGalleri5Balance(authHeaders)
+        if (result.ok) {
+          const bal = result.balance
+          if (bal !== null && bal !== undefined) {
+            if (bal > 0) {
+              return { state: 'active', balance: bal, detail: `${result.email || ''} · ${result.plan || ''} · Balance: ${bal} cr` }
+            } else if (bal === 0) {
+              return { state: 'empty', balance: 0, detail: `${result.email || ''} · Balance: 0 — habis` }
+            }
+          }
+          return { state: 'active', detail: `${result.email || 'Token valid'} · ${result.plan || ''}` }
+        }
+        if (isGalleri5TokenError(result.error || '')) {
+          return { state: 'invalid', detail: result.error || 'Token expired / tidak valid' }
+        }
+        return { state: 'failed', detail: result.error || 'Gagal cek token' }
       } catch {
         return { state: 'failed', detail: 'Error checking token' }
       }

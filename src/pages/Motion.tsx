@@ -7,7 +7,7 @@ import { useToastStore } from '@/stores/toastStore'
 import { uploadToCatbox, submitMotionControl, pollRoboneoI2V, checkRoboneoBalance, compressVideo, submitGoogleOmni, normalizeImage, getVideoDurationFromFile } from '@/lib/roboneo'
 import { submitWeavyMotionControl, uploadWeavyAssetWithRetry, resolveWeavyAssetUrl, getActiveWeavyAccessToken, compressImageForWeavy } from '@/lib/weavy'
 import { getRunningHubApiKey, submitRunningHubMotionControl, pollRunningHubTask } from '@/lib/runninghub'
-import { getGalleri5Credentials, submitGalleri5MotionControl, pollGalleri5MotionControl, isGalleri5TokenError } from '@/lib/galleri5'
+import { getGalleri5Headers, getGalleri5AuthHeaders, submitGalleri5MotionControl, pollGalleri5MotionControl, checkGalleri5Balance, isGalleri5TokenError, GALLERI5_MOTION_MODELS } from '@/lib/galleri5'
 import { trimVideoFFmpeg } from '@/lib/ffmpeg-compress'
 import { getMagnificApiKey, submitMagnificMotion, pollMagnificMotion, type MagnificMotionModel } from '@/lib/magnific'
 import { useLocalStorage } from '@/lib/useLocalStorage'
@@ -1001,8 +1001,8 @@ export default function MotionPage() {
             }
           } else if (provider === 'galleri5' && slot.image && slot.video) {
             try {
-              const authHeaders = getGalleri5Headers()
-              if (!authHeaders) throw Error('Belum ada auth headers. Jalankan Chrome Extension G5 Auth Helper di G5 AI Studio, lalu paste headers ke Providers.')
+              const authHeaders = await getGalleri5AuthHeaders()
+              if (!authHeaders) throw Error('Belum ada auth headers. Buka Manage → Tokens → G5 AI Studio, tambahkan Firebase refresh token (AMf-...) lalu klik Cek Limit & Status.')
 
               const g5Model = GALLERI5_MOTION_MODELS.find((m) => m.key === modelKey) || GALLERI5_MOTION_MODELS[GALLERI5_MOTION_MODELS.length - 1]
               addLog(`#${slotNum} Model: ${g5Model.label} (±${g5Model.cr} cr)`)
