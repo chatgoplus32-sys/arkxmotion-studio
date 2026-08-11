@@ -534,7 +534,7 @@ export default function ProvidersPage() {
         if (isRefreshToken) {
           // Refresh token — resolve to access token first
           try {
-            const { default: galleri5 } = await import('@/lib/galleri5')
+            const galleri5 = await import('@/lib/galleri5')
             const resolved = await galleri5.getGalleri5AuthHeaders()
             if (!resolved) return { state: 'invalid', detail: 'Refresh token tidak bisa di-resolve. Pastikan token benar (AMf-... dari aistudio.galleri5.com).' }
             authHeaders = resolved

@@ -7,7 +7,7 @@ import { useToastStore } from '@/stores/toastStore'
 import { uploadToCatbox, submitMotionControl, pollRoboneoI2V, checkRoboneoBalance, compressVideo, submitGoogleOmni, normalizeImage, getVideoDurationFromFile } from '@/lib/roboneo'
 import { submitWeavyMotionControl, uploadWeavyAssetWithRetry, resolveWeavyAssetUrl, getActiveWeavyAccessToken, compressImageForWeavy } from '@/lib/weavy'
 import { getRunningHubApiKey, submitRunningHubMotionControl, pollRunningHubTask } from '@/lib/runninghub'
-import { getGalleri5Headers, getGalleri5AuthHeaders, submitGalleri5MotionControl, pollGalleri5MotionControl, checkGalleri5Balance, isGalleri5TokenError, GALLERI5_MOTION_MODELS } from '@/lib/galleri5'
+import { getGalleri5Headers, getGalleri5AuthHeaders, submitGalleri5MotionControl, pollGalleri5MotionControl, checkGalleri5Balance, isGalleri5TokenError, GALLERI5_MOTION_MODELS, runGalleri5WithRotation } from '@/lib/galleri5'
 import { trimVideoFFmpeg } from '@/lib/ffmpeg-compress'
 import { getMagnificApiKey, submitMagnificMotion, pollMagnificMotion, type MagnificMotionModel } from '@/lib/magnific'
 import { useLocalStorage } from '@/lib/useLocalStorage'
@@ -573,18 +573,15 @@ export default function MotionPage() {
                 }
 
                 const result = await submitMotionControl({
-                  accessToken: token,
-                  imageUrl,
-                  videoUrl: motionVideoUrl,
-                  prompt: prompt.trim() || undefined,
-                  negativePrompt: negativePrompt.trim() || undefined,
-                  orientation,
-                  keepSound,
-                  modelKey: currentModel.key,
-                  autoTrim,
-                  ratio: '9:16',
-                  videoDuration: videoDurationSec,
-                })
+                accessToken: token,
+                imageUrl,
+                videoUrl: motionVideoUrl,
+                prompt: prompt.trim() || undefined,
+                negativePrompt: negativePrompt.trim() || undefined,
+                orientation,
+                keepSound,
+                modelKey: currentModel.key,
+              })
                 taskId = result.taskId
                 roomId = result.roomId
                 nodeId = result.nodeId
@@ -651,9 +648,6 @@ export default function MotionPage() {
                         orientation,
                         keepSound,
                         modelKey: currentModel.key,
-                        autoTrim,
-                        ratio: '9:16',
-                        videoDuration: videoDurationSec,
                       })
                       taskId = retry.taskId
                       roomId = retry.roomId
@@ -1001,9 +995,6 @@ export default function MotionPage() {
             }
           } else if (provider === 'galleri5' && slot.image && slot.video) {
             try {
-              const authHeaders = await getGalleri5AuthHeaders()
-              if (!authHeaders) throw Error('Belum ada auth headers. Buka Manage → Tokens → G5 AI Studio, tambahkan Firebase refresh token (AMf-...) lalu klik Cek Limit & Status.')
-
               const g5Model = GALLERI5_MOTION_MODELS.find((m) => m.key === modelKey) || GALLERI5_MOTION_MODELS[GALLERI5_MOTION_MODELS.length - 1]
               addLog(`#${slotNum} Model: ${g5Model.label} (±${g5Model.cr} cr)`)
 
@@ -1050,67 +1041,80 @@ export default function MotionPage() {
               updateSlotStatus(slot.id, 'processing', 'submitting...')
               addLog(`#${slotNum} Submit ke G5 AI Studio (${g5Model.modelPath})...`)
 
-              const submitResult = await submitGalleri5MotionControl({
-                authHeaders,
-                modelKey,
-                imageUrl,
-                videoUrl: motionVideoUrl,
-                keepOriginalSound: keepSound,
-                orientation,
-                prompt: prompt.trim() || undefined,
-                onProgress: (msg, pct) => {
-                  updateSlotStatus(slot.id, 'processing', pct ? `${msg} ${pct}%` : msg)
-                  addLog(`#${slotNum} ${msg}`)
+              const resultUrl = await runGalleri5WithRotation(
+                async (token: string) => {
+                  const headers = await getGalleri5AuthHeaders(token)
+                  if (!headers) throw Error('Belum ada auth headers. Buka Manage → Tokens → G5 AI Studio, tambahkan Firebase refresh token (AMf-...) lalu klik Cek Limit & Status.')
+
+                  const submitResult = await submitGalleri5MotionControl({
+                    authHeaders: headers,
+                    modelKey,
+                    imageUrl,
+                    videoUrl: motionVideoUrl,
+                    keepOriginalSound: keepSound,
+                    orientation,
+                    prompt: prompt.trim() || undefined,
+                    onProgress: (msg, pct) => {
+                      updateSlotStatus(slot.id, 'processing', pct ? `${msg} ${pct}%` : msg)
+                      addLog(`#${slotNum} ${msg}`)
+                    },
+                  })
+                  const taskId = submitResult.taskId
+                  addLog(`#${slotNum} Task: ${taskId.slice(0, 60)}...`)
+
+                  addActiveTask({
+                    id: submitResult.sessionId,
+                    taskId: submitResult.sessionId,
+                    roomId: '',
+                    nodeId: '',
+                    token: JSON.stringify(headers).slice(0, 50),
+                    model: currentModel.label,
+                    prompt: prompt.trim() || '(no prompt)',
+                    startedAt: Date.now(),
+                    page: 'motion',
+                  })
+
+                  let url = taskId
+                  // If taskId is a URL, submit already returned the result (from SSE stream)
+                  if (!/^https?:\/\//i.test(taskId)) {
+                    // taskId is a sessionId — need to poll
+                    updateSlotStatus(slot.id, 'processing', 'polling...')
+                    addLog(`#${slotNum} Polling for result...`)
+                    url = await pollGalleri5MotionControl(headers, submitResult.sessionId, (msg, pct) => {
+                      updateSlotStatus(slot.id, 'processing', `${msg} ${pct}%`)
+                      addLog(`#${slotNum} ${msg} ${pct}%`)
+                      setProgress(pct)
+                    }, submitResult.orgId)
+                  }
+
+                  updateSlotStatus(slot.id, 'done')
+                  addLog(`#${slotNum} Done: ${url.slice(0, 60)}...`, 'success')
+
+                  removeActiveTask(submitResult.sessionId)
+                  addResult({
+                    id: submitResult.sessionId,
+                    url,
+                    prompt: prompt.trim() || '(no prompt)',
+                    date: new Date().toISOString(),
+                    page: 'motion',
+                  })
+                  setResults((prev) => [
+                    {
+                      id: submitResult.sessionId,
+                      url,
+                      prompt: prompt.trim() || '(no prompt)',
+                      date: new Date().toISOString(),
+                    },
+                    ...prev,
+                  ])
+                  return url
                 },
-              })
-              const taskId = submitResult.taskId
-              addLog(`#${slotNum} Task: ${taskId.slice(0, 60)}...`)
-
-              addActiveTask({
-                id: submitResult.sessionId,
-                taskId: submitResult.sessionId,
-                roomId: '',
-                nodeId: '',
-                token: JSON.stringify(authHeaders).slice(0, 50),
-                model: currentModel.label,
-                prompt: prompt.trim() || '(no prompt)',
-                startedAt: Date.now(),
-                page: 'motion',
-              })
-
-              let resultUrl = taskId
-              // If taskId is a URL, submit already returned the result (from SSE stream)
-              if (!/^https?:\/\//i.test(taskId)) {
-                // taskId is a sessionId — need to poll
-                updateSlotStatus(slot.id, 'processing', 'polling...')
-                addLog(`#${slotNum} Polling for result...`)
-                resultUrl = await pollGalleri5MotionControl(authHeaders, submitResult.sessionId, (msg, pct) => {
-                  updateSlotStatus(slot.id, 'processing', `${msg} ${pct}%`)
-                  addLog(`#${slotNum} ${msg} ${pct}%`)
-                  setProgress(pct)
-                }, submitResult.orgId)
-              }
-
-              updateSlotStatus(slot.id, 'done')
-              addLog(`#${slotNum} Done: ${resultUrl.slice(0, 60)}...`, 'success')
-
-              removeActiveTask(submitResult.sessionId)
-              addResult({
-                id: submitResult.sessionId,
-                url: resultUrl,
-                prompt: prompt.trim() || '(no prompt)',
-                date: new Date().toISOString(),
-                page: 'motion',
-              })
-              setResults((prev) => [
                 {
-                  id: submitResult.sessionId,
-                  url: resultUrl,
-                  prompt: prompt.trim() || '(no prompt)',
-                  date: new Date().toISOString(),
-                },
-                ...prev,
-              ])
+                  onRotate: (idx, total, reason) => {
+                    addLog(`#${slotNum} ↻ rotate token #${idx}/${total}: ${reason}`, 'warn')
+                  },
+                }
+              )
               return true
             } catch (err: any) {
               setCompressDialog(null)

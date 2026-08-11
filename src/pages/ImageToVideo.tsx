@@ -112,6 +112,7 @@ const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'rh:pro:2.1', label: 'Kling 2.1 Pro (Markasflow-V2)', cr: 60, provider: 'runninghub' },
     { value: 'rh:std:2.1', label: 'Kling 2.1 Standard (Markasflow-V2)', cr: 35, provider: 'runninghub' },
   ],
+  galleri5: [],
 }
 
 const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; label: string; mult: number; duration: number; cr?: number; resolution?: string; sound?: string; sizeTier?: string }>>> = {
@@ -345,6 +346,7 @@ const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; 
       { value: 'long', label: 'Long 10s', mult: 2, duration: 10 },
     ],
   },
+  galleri5: {},
 }
 
 const RATIOS = ['16:9', '9:16', '1:1', '4:5', '3:4']

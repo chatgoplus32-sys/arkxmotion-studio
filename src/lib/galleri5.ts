@@ -268,9 +268,11 @@ function generateSessionId(): string {
 
 // ─── Public: Get Auth Headers ───────────────────────────────────────
 
-export async function getGalleri5AuthHeaders(): Promise<Record<string, string> | null> {
+export async function getGalleri5AuthHeaders(tokenKey?: string): Promise<Record<string, string> | null> {
   const keys = getStoredKeys()
-  const active = keys.find((k) => k.status === 'active' || k.status === 'unknown')
+  const active = tokenKey
+    ? keys.find((k) => k.key === tokenKey || k.key === tokenKey)
+    : keys.find((k) => k.status === 'active' || k.status === 'unknown')
   if (!active?.key) return null
 
   try {
@@ -525,12 +527,10 @@ export async function submitGalleri5MotionControl(
   }
 
   const formFields: Record<string, any> = {
-    keep_original_sound: !!opts.keepSound,
+    keep_original_sound: !!opts.keepOriginalSound,
     image_url: imgFileUrl,
     video_url: vidFileUrl,
     character_orientation: opts.orientation || 'video',
-    has_video_input: true,
-    input_duration: 0,
   }
   if (opts.prompt && opts.prompt.trim()) {
     formFields.prompt = opts.prompt.trim()
@@ -540,7 +540,7 @@ export async function submitGalleri5MotionControl(
   const estData = await g5DirectFetch(accessToken, '/model-garden/estimate-credits', {
     method: 'POST',
     orgId,
-    body: { model_path: model.modelPath, form_fields: formFields },
+    body: { model_path: model.modelPath, form_fields: { ...formFields, has_video_input: true, input_duration: 0 } },
   }).catch(() => null)
   const estCredits = estData?.credits ?? null
   if (estCredits !== null) {
@@ -728,4 +728,39 @@ export function isGalleri5TokenError(msg: string): boolean {
   return /credit|insufficient|not enough|out of|balance|quota|exhaust|limit|too many|rate.?limit|401|402|403|unauthor|forbidden|expired|invalid.*token|token.*invalid|5\d\d|server error|internal|network|fetch|timeout|timed out|failed|gagal/.test(
     t
   )
+}
+
+// ─── Public: With Token Rotation ────────────────────────────────────
+
+export interface Galleri5RunOptions extends Omit<Galleri5MotionControlOptions, 'authHeaders'> {
+  onRotate?: (index: number, total: number, reason: string) => void
+}
+
+export async function runGalleri5WithRotation(
+  execute: (token: string) => Promise<string>,
+  opts?: {
+    onRotate?: (index: number, total: number, reason: string) => void
+  }
+): Promise<string> {
+  const allKeys = getAllStoredKeys()
+  if (allKeys.length === 0) {
+    throw Error('Belum ada token Galery5. Buka Manage → Tokens → Galery5 dan tambahkan Firebase refresh token (AMf-...).')
+  }
+
+  let lastError: Error | null = null
+  for (let i = 0; i < allKeys.length; i++) {
+    const token = allKeys[i]
+    try {
+      return await execute(token)
+    } catch (err: any) {
+      const msg = err.message || String(err)
+      lastError = err
+      if (i < allKeys.length - 1 && isGalleri5TokenError(msg)) {
+        opts?.onRotate?.(i + 2, allKeys.length, msg)
+      } else {
+        throw err
+      }
+    }
+  }
+  throw lastError ?? Error('Galleri5: semua token gagal')
 }
