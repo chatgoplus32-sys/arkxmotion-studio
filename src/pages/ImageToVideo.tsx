@@ -1897,7 +1897,7 @@ export default function ImageToVideoPage() {
     }
   }
 
-  const PROVIDER_IDS: ProviderId[] = ['weavy', 'wavespeed', 'roboneo', 'createpulse', 'framia', 'leonardo']
+  const PROVIDER_IDS: ProviderId[] = ['weavy', 'wavespeed', 'roboneo', 'createpulse', 'framia', 'leonardo', 'galleri5']
 
   return (
     <PageContent>
