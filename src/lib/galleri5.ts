@@ -656,7 +656,7 @@ async function pollGalleri5Result(
   sessionId: string,
   orgId: string | null,
   onProgress?: (msg: string, pct?: number) => void,
-  timeoutMs = 15 * 60 * 1000
+  timeoutMs = 30 * 60 * 1000
 ): Promise<string> {
   const startTime = Date.now()
 
@@ -676,7 +676,13 @@ async function pollGalleri5Result(
     const errorMsg = inference.error_message || inference.error || null
     const elapsed = Math.round((Date.now() - startTime) / 1000)
 
-    onProgress?.(`G5: ${status || 'checking'}... (${elapsed}s)`, Math.min(90, 30 + elapsed))
+    // Log response keys for debugging (first 3 times)
+    if (elapsed < 20) {
+      const keys = Object.keys(inference).join(',')
+      onProgress?.(`G5: ${status || 'checking'}... (${elapsed}s) keys=[${keys}]`, Math.min(95, 30 + elapsed))
+    } else {
+      onProgress?.(`G5: ${status || 'checking'}... (${elapsed}s)`, Math.min(95, 30 + elapsed))
+    }
 
     const videoUrl =
       inference.result_url ||
@@ -703,7 +709,7 @@ async function pollGalleri5Result(
     }
   }
 
-  throw Error('Galleri5: timeout menunggu hasil (15 menit)')
+  throw Error('Galleri5: timeout menunggu hasil (30 menit)')
 }
 
 // ─── Public: Poll Result (legacy interface) ────────────────────────

@@ -350,8 +350,12 @@ const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; 
   },
   galleri5: {
     'g5:wan-2.7-i2v': [
-      { value: '5s', label: '5 detik · 720p', mult: 1, duration: 5, cr: 200, resolution: '720p' },
-      { value: '10s', label: '10 detik · 720p', mult: 1, duration: 10, cr: 200, resolution: '720p' },
+      { value: '15s-1080p', label: '15 detik · 1080p', mult: 1, duration: 15, cr: 200, resolution: '1080p' },
+      { value: '15s-720p', label: '15 detik · 720p', mult: 1, duration: 15, cr: 200, resolution: '720p' },
+      { value: '10s-1080p', label: '10 detik · 1080p', mult: 1, duration: 10, cr: 200, resolution: '1080p' },
+      { value: '10s-720p', label: '10 detik · 720p', mult: 1, duration: 10, cr: 200, resolution: '720p' },
+      { value: '5s-1080p', label: '5 detik · 1080p', mult: 1, duration: 5, cr: 200, resolution: '1080p' },
+      { value: '5s-720p', label: '5 detik · 720p', mult: 1, duration: 5, cr: 200, resolution: '720p' },
     ],
   },
 }
@@ -1295,8 +1299,24 @@ export default function ImageToVideoPage() {
         )
         if (rotation.ok && rotation.result) {
           setResults((prev) => [rotation.result!, ...prev])
+          addResult({
+            id: `leonardo-${Date.now()}`,
+            url: rotation.result!,
+            prompt: prompt.trim() || '(no prompt)',
+            date: new Date().toISOString(),
+            page: 'image-to-video',
+            provider,
+            model: currentModel?.label || model,
+            ratio,
+            duration: currentQuality?.duration,
+            credits: totalCredits,
+            inputImageUrl: imgUrl || undefined,
+          })
+          refreshGallery()
+          window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
           successRef.current = true
           setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+          notifyGenerationComplete(currentModel?.label || model, 'Leonardo')
           if (rotation.triedKeys > 1) {
             addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success', 'leonardo')
           }
@@ -2379,7 +2399,7 @@ export default function ImageToVideoPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {filteredGallery.map((item) => {
               const alreadyProxied = item.url.includes('/api/public/video-proxy')
-              const needsProxy = alreadyProxied ? false : /meitudata\.com|localhost|cloud\.leonardo\.ai/i.test(item.url)
+              const needsProxy = alreadyProxied ? false : /meitudata\.com|localhost/i.test(item.url)
               const directUrl = needsProxy ? `/api/public/video-proxy?url=${encodeURIComponent(item.url)}` : item.url
               const proxyFallback = alreadyProxied ? item.url : `/api/public/video-proxy?url=${encodeURIComponent(item.url)}`
               return (
