@@ -112,7 +112,9 @@ const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'rh:pro:2.1', label: 'Kling 2.1 Pro (Markasflow-V2)', cr: 60, provider: 'runninghub' },
     { value: 'rh:std:2.1', label: 'Kling 2.1 Standard (Markasflow-V2)', cr: 35, provider: 'runninghub' },
   ],
-  galleri5: [],
+  galleri5: [
+    { value: 'g5:wan-2.7-i2v', label: 'Wan 2.7 Image to Video (Galery5)', cr: 200, provider: 'galleri5' },
+  ],
 }
 
 const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; label: string; mult: number; duration: number; cr?: number; resolution?: string; sound?: string; sizeTier?: string }>>> = {
@@ -346,7 +348,12 @@ const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; 
       { value: 'long', label: 'Long 10s', mult: 2, duration: 10 },
     ],
   },
-  galleri5: {},
+  galleri5: {
+    'g5:wan-2.7-i2v': [
+      { value: '5s', label: '5 detik · 720p', mult: 1, duration: 5, cr: 200, resolution: '720p' },
+      { value: '10s', label: '10 detik · 720p', mult: 1, duration: 10, cr: 200, resolution: '720p' },
+    ],
+  },
 }
 
 const RATIOS = ['16:9', '9:16', '1:1', '4:5', '3:4']
@@ -1739,6 +1746,96 @@ export default function ImageToVideoPage() {
           notifyGenerationComplete(currentModel?.label || model, 'Weavy')
           if (rotation.triedKeys > 1) {
             addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success', 'weavy')
+          }
+        } else {
+          throw new Error(rotation.error || 'Generation failed')
+        }
+      } else if (provider === 'galleri5') {
+        addLog(`[1/3] 🖼️ Preparing image...`, 'info', 'galleri5')
+        if (!imgFile) throw new Error('G5 I2V membutuhkan gambar input')
+
+        addLog(`[1/3] 🖼️ Uploading image to Catbox...`, 'info', 'galleri5')
+        const imageUrl = await uploadToCatbox(imgFile)
+        addLog(`[1/3] ✅ Image uploaded ✓`, 'success', 'galleri5')
+
+        const rotation = await withTokenRotation<string>(
+          'galleri5',
+          async (token) => {
+            addLog(`🔑 Trying G5 token...`, 'info', 'galleri5')
+            setStatus((s) => ({ ...s, text: 'Submit G5 I2V...', pct: 15 }))
+
+            const { submitGalleri5I2V, pollGalleri5MotionControl, getGalleri5AuthHeaders } = await import('@/lib/galleri5')
+            const authHeaders = await getGalleri5AuthHeaders(token)
+            if (!authHeaders) throw new Error('G5: auth headers tidak valid')
+
+            const submitResult = await submitGalleri5I2V({
+              authHeaders,
+              modelKey: model,
+              imageUrl,
+              prompt: prompt.trim() || undefined,
+              onProgress: (msg, pct) => {
+                addLog(`⏳ G5 ${msg}`, 'debug', 'galleri5')
+                setStatus((s) => ({ ...s, pct: Math.min(pct || 0, 90), text: `G5 ${msg}` }))
+              },
+            })
+
+            const taskId = submitResult.taskId
+            addLog(`[2/3] ✅ Task created ✓ task=${taskId.slice(0, 20)}...`, 'success', 'galleri5')
+
+            addActiveTask({
+              id: taskId,
+              taskId,
+              roomId: '',
+              token: token.slice(0, 50),
+              model: currentModel?.label || model,
+              prompt: prompt.trim() || '(no prompt)',
+              startedAt: Date.now(),
+              page: 'image-to-video',
+            })
+            activeTaskId = taskId
+
+            addLog(`[3/3] ⏳ Polling for result...`, 'info', 'galleri5')
+            setStatus((s) => ({ ...s, text: 'Processing...', pct: 25 }))
+
+            let videoUrl: string
+            if (/^https?:\/\//i.test(taskId)) {
+              videoUrl = taskId
+            } else {
+              videoUrl = await pollGalleri5MotionControl(authHeaders, submitResult.sessionId, (msg, pct) => {
+                addLog(`⏳ G5 ${msg}`, 'debug', 'galleri5')
+                setStatus((s) => ({ ...s, pct: Math.min(pct || 0, 95), text: `G5 ${msg}` }))
+              }, submitResult.orgId)
+            }
+
+            setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+            addLog(`✅ Video selesai ✓`, 'success', 'galleri5')
+
+            removeActiveTask(taskId)
+            activeTaskId = null
+            return videoUrl
+          },
+          {
+            requiredCredits: totalCredits,
+            onKeySwitch: (from, to, attempt) => {
+              addLog(`🔄 Token invalid! Switching key #${attempt}`, 'warn', 'galleri5')
+              if (activeTaskId) removeActiveTask(activeTaskId)
+              activeTaskId = null
+            },
+            onError: (err, key) => {
+              if (detectTokenError('galleri5', err)) {
+                addLog(`⚠️ Key is invalid: ${err.message}`, 'warn', 'galleri5')
+              }
+            },
+          }
+        )
+        if (rotation.ok && rotation.result) {
+          setResults((prev) => [rotation.result!, ...prev])
+          saveGalleryItem(rotation.result!)
+          successRef.current = true
+          setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+          notifyGenerationComplete(currentModel?.label || model, 'Galery5')
+          if (rotation.triedKeys > 1) {
+            addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success', 'galleri5')
           }
         } else {
           throw new Error(rotation.error || 'Generation failed')
