@@ -22,6 +22,13 @@ export const GALLERI5_MOTION_MODELS: Galleri5MotionModel[] = [
     cr: 100,
   },
   {
+    key: 'g5:kling-v3-pro-motion-control',
+    modelPath: 'fal-ai/kling-video-v3-pro-motion-control',
+    label: 'Kling V3.0 Pro (Galery5)',
+    sessionName: 'Kling Video v3 Motion Control [Pro]',
+    cr: 200,
+  },
+  {
     key: 'g5:kling-v2.6-pro-motion-control',
     modelPath: 'fal-ai/kling-video-v2.6-pro-motion-control',
     label: 'Kling V2.6 Pro (Galery5)',

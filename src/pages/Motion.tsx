@@ -64,6 +64,7 @@ const PROVIDERS = {
   ]},
   galleri5: { name: 'G5 AI Studio', models: [
     { key: 'g5:kling-v3-std-motion-control', label: 'Kling V3.0 Standard (Galery5)', cr: 100 },
+    { key: 'g5:kling-v3-pro-motion-control', label: 'Kling V3.0 Pro (Galery5)', cr: 200 },
     { key: 'g5:kling-v2.6-pro-motion-control', label: 'Kling V2.6 Pro (Galery5)', cr: 120 },
     { key: 'g5:kling-v2.6-std-motion-control', label: 'Kling V2.6 Standard (Galery5)', cr: 60 },
   ]},
