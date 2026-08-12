@@ -1,6 +1,7 @@
 const RUNNINGHUB_PROXY = '/api/public/runninghub'
 
 const RUNNINGHUB_DEFAULT_WORKFLOW_ID = '2084995158336192513'
+const RUNNINGHUB_KLING26_MOTION_CONTROL_WORKFLOW_ID = 'ccc86b67-f1f9-4c14-9bee-99654d3ab55c'
 
 function getStoredProviderKey(provider: string): string | null {
   if (typeof window === 'undefined') return null
@@ -105,7 +106,10 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 export async function submitRunningHubMotionControl(params: MotionControlParams): Promise<MotionControlResult> {
-  const workflowId = getRunningHubWorkflowId()
+  const customWorkflowId = getRunningHubWorkflowId()
+  const workflowId = customWorkflowId === RUNNINGHUB_DEFAULT_WORKFLOW_ID 
+    ? RUNNINGHUB_KLING26_MOTION_CONTROL_WORKFLOW_ID 
+    : customWorkflowId
 
   const [imageBase64, videoBase64] = await Promise.all([
     fileToBase64(params.imageFile),
