@@ -79,12 +79,20 @@ export interface MotionControlParams {
   keepOriginalSound?: boolean
 }
 
+export interface MotionControlV26StdParams {
+  imageUrl: string
+  videoUrl: string
+  characterOrientation?: 'image' | 'video'
+  prompt?: string
+  keepOriginalSound?: 'yes' | 'no'
+}
+
 export interface MotionControlResult {
   id: string
   taskId: string
   status: string
   provider: string
-  workflowId: string
+  workflowId?: string
 }
 
 function fileToBase64(file: File): Promise<string> {
@@ -123,6 +131,23 @@ export async function submitRunningHubMotionControl(params: MotionControlParams)
     status: result.status || 'QUEUED',
     provider: result.provider || 'markasflow-v2',
     workflowId: result.workflowId || workflowId,
+  }
+}
+
+export async function submitRunningHubMotionControlV26Std(params: MotionControlV26StdParams): Promise<MotionControlResult> {
+  const result = await runninghubProxy('motion-control-v2.6-std', {
+    imageUrl: params.imageUrl,
+    videoUrl: params.videoUrl,
+    characterOrientation: params.characterOrientation || 'video',
+    prompt: params.prompt || '',
+    keepOriginalSound: params.keepOriginalSound || 'yes',
+  })
+
+  return {
+    id: result.id || result.taskId,
+    taskId: result.taskId || result.id,
+    status: result.status || 'QUEUED',
+    provider: result.provider || 'markasflow-v2',
   }
 }
 

@@ -6,7 +6,7 @@ import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
 import { useToastStore } from '@/stores/toastStore'
 import { uploadToCatbox, submitMotionControl, pollRoboneoI2V, checkRoboneoBalance, compressVideo, submitGoogleOmni, normalizeImage, getVideoDurationFromFile } from '@/lib/roboneo'
 import { submitWeavyMotionControl, uploadWeavyAssetWithRetry, resolveWeavyAssetUrl, getActiveWeavyAccessToken, compressImageForWeavy } from '@/lib/weavy'
-import { getRunningHubApiKey, submitRunningHubMotionControl, pollRunningHubTask } from '@/lib/runninghub'
+import { getRunningHubApiKey, submitRunningHubMotionControl, submitRunningHubMotionControlV26Std, pollRunningHubTask } from '@/lib/runninghub'
 import { getGalleri5Headers, getGalleri5AuthHeaders, submitGalleri5MotionControl, pollGalleri5MotionControl, checkGalleri5Balance, isGalleri5TokenError, GALLERI5_MOTION_MODELS, runGalleri5WithRotation } from '@/lib/galleri5'
 import { trimVideoFFmpeg } from '@/lib/ffmpeg-compress'
 import { getMagnificApiKey, submitMagnificMotion, pollMagnificMotion, type MagnificMotionModel } from '@/lib/magnific'
@@ -57,6 +57,7 @@ const PROVIDERS = {
     { key: 'framia:kling-v2.6-motion', label: 'Kling V2.6 Motion Control (Framia)', cr: 35 },
   ]},
   runninghub: { name: 'Motion Control HD (Markasflow-V2)', models: [
+    { key: 'rh:std:2.6:direct', label: 'Kling 2.6 Standard (Direct API)', cr: 50 },
     { key: 'rh:pro:2.6', label: 'Kling 2.6 Pro (Markasflow-V2)', cr: 80 },
     { key: 'rh:std:2.6', label: 'Kling 2.6 Standard (Markasflow-V2)', cr: 50 },
     { key: 'rh:pro:2.1', label: 'Kling 2.1 Pro (Markasflow-V2)', cr: 60 },
@@ -898,9 +899,14 @@ export default function MotionPage() {
 
               let mode = 'pro'
               let modelVersion = '2.6'
+              let isDirect = false
               if (modelKey.startsWith('rh:')) {
                 const parts = modelKey.split(':')
-                if (parts.length >= 3) {
+                if (parts.length >= 4 && parts[3] === 'direct') {
+                  isDirect = true
+                  mode = parts[1] || 'std'
+                  modelVersion = parts[2] || '2.6'
+                } else if (parts.length >= 3) {
                   mode = parts[1] || 'pro'
                   modelVersion = parts[2] || '2.6'
                 } else if (parts.length === 2) {
@@ -913,81 +919,161 @@ export default function MotionPage() {
                 }
               }
 
-              updateSlotStatus(slot.id, 'uploading img...')
-              addLog(`#${slotNum} Compress image...`)
-              const normalizedImage = await normalizeImage(slot.image, (msg, pct) => {
-                setCompressDialog({ msg, pct })
-                updateSlotStatus(slot.id, 'uploading img...', msg)
-                addLog(`#${slotNum} ${msg}`)
-              })
-              setCompressDialog(null)
-              addLog(`#${slotNum} Image: ${normalizedImage.name || 'ready'}`)
+              if (isDirect && modelVersion === '2.6' && mode === 'std') {
+                updateSlotStatus(slot.id, 'uploading img...')
+                addLog(`#${slotNum} Upload image to Catbox...`)
+                const normalizedImage = await normalizeImage(slot.image, (msg, pct) => {
+                  setCompressDialog({ msg, pct })
+                  updateSlotStatus(slot.id, 'uploading img...', msg)
+                  addLog(`#${slotNum} ${msg}`)
+                })
+                setCompressDialog(null)
+                const imageUrl = await uploadToCatbox(normalizedImage, 'image', (msg, pct) => {
+                  updateSlotStatus(slot.id, 'uploading img...', msg)
+                  addLog(`#${slotNum} ${msg}`)
+                })
+                addLog(`#${slotNum} Image: ${imageUrl.slice(0, 60)}...`)
 
-              updateSlotStatus(slot.id, 'uploading vid...')
-              addLog(`#${slotNum} Compress video...`)
-              const videoFile = await compressVideo(slot.video, 4, (msg, pct) => {
-                setCompressDialog({ msg, pct })
-                updateSlotStatus(slot.id, 'uploading vid...', msg)
-                addLog(`#${slotNum} ${msg}`)
-              })
-              setCompressDialog(null)
-              addLog(`#${slotNum} Video: ${videoFile.name || 'ready'}`)
+                updateSlotStatus(slot.id, 'uploading vid...')
+                addLog(`#${slotNum} Upload video to Catbox...`)
+                const videoUrl = await uploadToCatbox(slot.video, 'video', (msg, pct) => {
+                  updateSlotStatus(slot.id, 'uploading vid...', msg)
+                  addLog(`#${slotNum} ${msg}`)
+                })
+                addLog(`#${slotNum} Video: ${videoUrl.slice(0, 60)}...`)
 
-              updateSlotStatus(slot.id, 'processing', 'submitting...')
-              addLog(`#${slotNum} Upload & Submit ke RunningHub (${mode} ${modelVersion})...`)
+                updateSlotStatus(slot.id, 'processing', 'submitting...')
+                addLog(`#${slotNum} Submit to RunningHub Direct API (Kling v2.6 Std)...`)
 
-              const result = await submitRunningHubMotionControl({
-                imageFile: normalizedImage,
-                videoFile,
-                prompt: prompt.trim() || undefined,
-                negativePrompt: negativePrompt.trim() || undefined,
-                keepOriginalSound: keepSound,
-              })
-              const taskId = result.taskId
-              addLog(`#${slotNum} Task: ${taskId.slice(0, 20)}...`)
+                const result = await submitRunningHubMotionControlV26Std({
+                  imageUrl,
+                  videoUrl,
+                  characterOrientation: orientation === 'image-oriented' ? 'image' : 'video',
+                  prompt: prompt.trim() || undefined,
+                  keepOriginalSound: keepSound ? 'yes' : 'no',
+                })
+                const taskId = result.taskId
+                addLog(`#${slotNum} Task: ${taskId.slice(0, 20)}...`)
 
-              addActiveTask({
-                id: taskId,
-                taskId,
-                roomId: '',
-                nodeId: '',
-                token: runninghubKey,
-                model: currentModel.label,
-                prompt: prompt.trim() || '(no prompt)',
-                startedAt: Date.now(),
-                page: 'motion',
-              })
+                addActiveTask({
+                  id: taskId,
+                  taskId,
+                  roomId: '',
+                  nodeId: '',
+                  token: runninghubKey,
+                  model: currentModel.label,
+                  prompt: prompt.trim() || '(no prompt)',
+                  startedAt: Date.now(),
+                  page: 'motion',
+                })
 
-              updateSlotStatus(slot.id, 'processing', 'polling...')
-              addLog(`#${slotNum} Polling for result...`)
+                updateSlotStatus(slot.id, 'processing', 'polling...')
+                addLog(`#${slotNum} Polling for result...`)
 
-              const resultUrl = await pollRunningHubTask(taskId, (status, pct) => {
-                updateSlotStatus(slot.id, 'processing', `${status} ${pct}%`)
-                addLog(`#${slotNum} ${status} ${pct}%`)
-                setProgress(pct)
-              })
+                const resultUrl = await pollRunningHubTask(taskId, (status, pct) => {
+                  updateSlotStatus(slot.id, 'processing', `${status} ${pct}%`)
+                  addLog(`#${slotNum} ${status} ${pct}%`)
+                  setProgress(pct)
+                })
 
-              updateSlotStatus(slot.id, 'done')
-              addLog(`#${slotNum} Done: ${resultUrl.slice(0, 60)}...`, 'success')
+                updateSlotStatus(slot.id, 'done')
+                addLog(`#${slotNum} Done: ${resultUrl.slice(0, 60)}...`, 'success')
 
-              removeActiveTask(taskId)
-              addResult({
-                id: taskId,
-                url: resultUrl,
-                prompt: prompt.trim() || '(no prompt)',
-                date: new Date().toISOString(),
-                page: 'motion',
-              })
-              setResults((prev) => [
-                {
+                removeActiveTask(taskId)
+                addResult({
                   id: taskId,
                   url: resultUrl,
                   prompt: prompt.trim() || '(no prompt)',
                   date: new Date().toISOString(),
-                },
-                ...prev,
-              ])
-              return true
+                  page: 'motion',
+                })
+                setResults((prev) => [
+                  {
+                    id: taskId,
+                    url: resultUrl,
+                    prompt: prompt.trim() || '(no prompt)',
+                    date: new Date().toISOString(),
+                  },
+                  ...prev,
+                ])
+                return true
+              } else {
+                updateSlotStatus(slot.id, 'uploading img...')
+                addLog(`#${slotNum} Compress image...`)
+                const normalizedImage = await normalizeImage(slot.image, (msg, pct) => {
+                  setCompressDialog({ msg, pct })
+                  updateSlotStatus(slot.id, 'uploading img...', msg)
+                  addLog(`#${slotNum} ${msg}`)
+                })
+                setCompressDialog(null)
+                addLog(`#${slotNum} Image: ${normalizedImage.name || 'ready'}`)
+
+                updateSlotStatus(slot.id, 'uploading vid...')
+                addLog(`#${slotNum} Compress video...`)
+                const videoFile = await compressVideo(slot.video, 4, (msg, pct) => {
+                  setCompressDialog({ msg, pct })
+                  updateSlotStatus(slot.id, 'uploading vid...', msg)
+                  addLog(`#${slotNum} ${msg}`)
+                })
+                setCompressDialog(null)
+                addLog(`#${slotNum} Video: ${videoFile.name || 'ready'}`)
+
+                updateSlotStatus(slot.id, 'processing', 'submitting...')
+                addLog(`#${slotNum} Upload & Submit ke RunningHub (${mode} ${modelVersion})...`)
+
+                const result = await submitRunningHubMotionControl({
+                  imageFile: normalizedImage,
+                  videoFile,
+                  prompt: prompt.trim() || undefined,
+                  negativePrompt: negativePrompt.trim() || undefined,
+                  keepOriginalSound: keepSound,
+                })
+                const taskId = result.taskId
+                addLog(`#${slotNum} Task: ${taskId.slice(0, 20)}...`)
+
+                addActiveTask({
+                  id: taskId,
+                  taskId,
+                  roomId: '',
+                  nodeId: '',
+                  token: runninghubKey,
+                  model: currentModel.label,
+                  prompt: prompt.trim() || '(no prompt)',
+                  startedAt: Date.now(),
+                  page: 'motion',
+                })
+
+                updateSlotStatus(slot.id, 'processing', 'polling...')
+                addLog(`#${slotNum} Polling for result...`)
+
+                const resultUrl = await pollRunningHubTask(taskId, (status, pct) => {
+                  updateSlotStatus(slot.id, 'processing', `${status} ${pct}%`)
+                  addLog(`#${slotNum} ${status} ${pct}%`)
+                  setProgress(pct)
+                })
+
+                updateSlotStatus(slot.id, 'done')
+                addLog(`#${slotNum} Done: ${resultUrl.slice(0, 60)}...`, 'success')
+
+                removeActiveTask(taskId)
+                addResult({
+                  id: taskId,
+                  url: resultUrl,
+                  prompt: prompt.trim() || '(no prompt)',
+                  date: new Date().toISOString(),
+                  page: 'motion',
+                })
+                setResults((prev) => [
+                  {
+                    id: taskId,
+                    url: resultUrl,
+                    prompt: prompt.trim() || '(no prompt)',
+                    date: new Date().toISOString(),
+                  },
+                  ...prev,
+                ])
+                return true
+              }
             } catch (err: any) {
               setCompressDialog(null)
               updateSlotStatus(slot.id, 'error', err.message)

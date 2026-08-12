@@ -22,6 +22,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (action === 'motion-control') {
       return await handleMotionControl(apiKey, params, res)
     }
+    if (action === 'motion-control-v2.6-std') {
+      return await handleMotionControlV26Std(apiKey, params, res)
+    }
     if (action === 'query') {
       return await handleQuery(apiKey, params.taskId, res)
     }
@@ -69,6 +72,74 @@ async function rhUpload(apiKey: string, fileBase64: string, fileName: string, mi
   return uploadedFileName
 }
 
+async function handleMotionControlV26Std(apiKey: string, params: any, res: VercelResponse) {
+  const {
+    imageUrl,
+    videoUrl,
+    characterOrientation = 'video',
+    prompt = '',
+    keepOriginalSound = 'yes',
+  } = params
+
+  if (!imageUrl) return res.status(200).json({ ok: false, error: 'Missing imageUrl' })
+  if (!videoUrl) return res.status(200).json({ ok: false, error: 'Missing videoUrl' })
+
+  const body = {
+    imageUrl,
+    videoUrl,
+    characterOrientation,
+    prompt,
+    keepOriginalSound,
+  }
+
+  const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/kling-v2.6-std/motion-control`
+  console.log(`[runninghub] POST ${endpoint}`)
+  console.log(`[runninghub] body:`, JSON.stringify(body).slice(0, 1000))
+
+  const apiRes = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(body),
+  })
+
+  const rawText = await apiRes.text()
+  console.log(`[runninghub] motion-control-v2.6-std ${apiRes.status}:`, rawText.slice(0, 1000))
+
+  let data: any
+  try { data = JSON.parse(rawText) } catch { data = { raw: rawText } }
+
+  if (apiRes.status === 429) {
+    return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data, retryable: true })
+  }
+
+  if (!apiRes.ok) {
+    const errorMsg = data.errorMessage || data.msg || data.message || data.error || `HTTP ${apiRes.status}`
+    return res.status(200).json({ ok: false, error: errorMsg, data })
+  }
+
+  if (data.status === 'FAILED') {
+    return res.status(200).json({ ok: false, error: data.errorMessage || data.failedReason || 'Task failed', data })
+  }
+
+  const taskId = data.taskId || data.data?.taskId || data.id
+  if (!taskId) {
+    return res.status(200).json({ ok: false, error: 'No taskId returned', raw: rawText.slice(0, 500) })
+  }
+
+  return res.status(200).json({
+    ok: true,
+    data: {
+      id: taskId,
+      taskId,
+      status: data.status || 'QUEUED',
+      provider: 'markasflow-v2',
+    },
+  })
+}
+
 async function handleMotionControl(apiKey: string, params: any, res: VercelResponse) {
   const {
     workflow_id,
@@ -97,8 +168,6 @@ async function handleMotionControl(apiKey: string, params: any, res: VercelRespo
   console.log(`[runninghub] Video uploaded: ${videoFileNameUploaded}`)
 
   const nodeInfoList: any[] = []
-  // TODO: find correct nodeId/fieldName for this workflow
-  // Empty nodeInfoList uses workflow defaults and works
 
   const body = {
     nodeInfoList,
