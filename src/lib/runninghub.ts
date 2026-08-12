@@ -106,10 +106,7 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 export async function submitRunningHubMotionControl(params: MotionControlParams): Promise<MotionControlResult> {
-  const customWorkflowId = getRunningHubWorkflowId()
-  const workflowId = customWorkflowId === RUNNINGHUB_DEFAULT_WORKFLOW_ID 
-    ? RUNNINGHUB_KLING26_MOTION_CONTROL_WORKFLOW_ID 
-    : customWorkflowId
+  const workflowId = getRunningHubWorkflowId()
 
   const [imageBase64, videoBase64] = await Promise.all([
     fileToBase64(params.imageFile),
