@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Firebase Token Manager</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="header">
+    <div class="logo">FB</div>
+    <div>
+      <h1>Firebase Token Manager</h1>
+      <div class="subtitle">Galleri5 / ARKx Motion Studio</div>
+    </div>
+  </div>
+
+  <div class="tab-bar">
+    <button class="tab active" data-tab="tokens">Tokens</button>
+    <button class="tab" data-tab="add">+ Add</button>
+    <button class="tab" data-tab="refresh">Refresh</button>
+  </div>
+
+  <!-- Tab: Tokens -->
+  <div class="tab-content active" id="tab-tokens">
+    <div class="status-bar">
+      <div class="status-dot" id="statusDot"></div>
+      <span id="statusText">Loading...</span>
+    </div>
+    <div id="tokenList" class="token-list">
+      <div class="empty">No tokens yet</div>
+    </div>
+  </div>
+
+  <!-- Tab: Add Token -->
+  <div class="tab-content" id="tab-add">
+    <div class="form-group">
+      <label>Paste token (JWT, refresh token, atau JSON):</label>
+      <textarea id="addInput" rows="6" placeholder="eyJhbGci... atau AMf-... atau {&quot;Authorization&quot;:&quot;Bearer eyJ...&quot;}"></textarea>
+    </div>
+    <button class="btn btn-primary btn-full" id="addBtn">+ Add Token</button>
+  </div>
+
+  <!-- Tab: Refresh -->
+  <div class="tab-content" id="tab-refresh">
+    <div class="form-group">
+      <label>Refresh Token (AMf-...):</label>
+      <input type="text" id="refreshInput" placeholder="AMf-xxxxxxxxxx">
+    </div>
+    <button class="btn btn-primary btn-full" id="doRefreshBtn">🔄 Refresh</button>
+    <div id="refreshResult" class="result-box" style="display:none"></div>
+  </div>
+
+  <div class="footer">
+    <button class="btn btn-secondary btn-sm" id="clearBtn">🗑️ Clear All</button>
+    <span class="version">v1.0.0</span>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <script src="popup.js"></script>
+</body>
+</html>

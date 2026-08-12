@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "Firebase Token Manager",
+  "description": "Auto-capture & manage Firebase tokens for Galleri5 / ARKx Motion Studio",
+  "version": "1.0.0",
+  "minimum_chrome_version": "88",
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://securetoken.googleapis.com/*",
+    "https://aistudio-backend.calmdesert-ca599847.centralindia.azurecontainerapps.io/*",
+    "https://aistudio.galleri5.com/*",
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": "icon.png"
+  },
+  "icons": {
+    "16": "icon.png",
+    "48": "icon.png",
+    "128": "icon.png"
+  }
+}

@@ -22,6 +22,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const isMeitu = /meitudata\.com/i.test(targetUrl)
   const isCatbox = /catbox\.moe|litter\.box|files\.catbox/i.test(targetUrl)
+  const isLeonardo = /cdn\.leonardo\.ai|cloud\.leonardo\.ai/i.test(targetUrl)
 
   try {
     const upstreamHeaders: Record<string, string> = {
@@ -36,6 +37,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (isCatbox) {
       upstreamHeaders['Accept'] = '*/*'
+    }
+
+    if (isLeonardo) {
+      upstreamHeaders['Referer'] = 'https://app.leonardo.ai/'
+      upstreamHeaders['Origin'] = 'https://app.leonardo.ai'
     }
 
     const rangeHeader = req.headers.range
@@ -62,6 +68,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const contentType = upstream.headers.get('content-type') || ''
     const contentLength = upstream.headers.get('content-length')
     const contentRange = upstream.headers.get('content-range')
+    const upstreamStatus = upstream.status
 
     const resolvedType = contentType.includes('video') ? contentType
       : contentType.includes('octet-stream') ? 'video/mp4'
@@ -70,6 +77,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.setHeader('Content-Type', resolvedType)
     if (contentLength) res.setHeader('Content-Length', contentLength)
     if (contentRange) res.setHeader('Content-Range', contentRange)
+    if (upstreamStatus === 206) res.setHeader('Content-Range', contentRange || `bytes 0-/${contentLength || '?'}`)
     res.setHeader('Accept-Ranges', 'bytes')
     res.setHeader('Cache-Control', 'public, max-age=300, no-transform')
 
@@ -82,11 +90,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(502).json({ ok: false, error: 'No body from upstream' })
     }
 
+    const sendStatus = upstreamStatus === 206 ? 206 : 200
     const reader = body.getReader()
     try {
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
+        if (!res.headersSent) {
+          res.statusCode = sendStatus
+        }
         const ok = res.write(value)
         if (!ok) {
           await new Promise<void>((resolve) => res.once('drain', () => resolve()))

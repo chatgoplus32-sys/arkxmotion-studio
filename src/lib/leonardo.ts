@@ -319,16 +319,27 @@ export async function leonardoGenerateVideo(token: string, opts: {
     width: opts.width,
     height: opts.height,
     duration: opts.duration,
-    quantity,
   }
 
   if (imagePromptIds.length > 0) {
-    parameters.guidances = {
-      image_reference: imagePromptIds.slice(0, 4).map((id) => ({
-        image: { id, type: 'UPLOADED' },
-        strength: 'MID',
-      })),
+    const newModels = ['wan-2.6', 'seedance-2.0', 'seedance-2.0-mini', 'seedance-2.0-fast', 'veo-3.1-lite', 'veo-3.1-fast', 'kling-o3-omni', 'kling-2.6', 'gemini-omni-flash', 'grok-imagine-1.5']
+    if (newModels.includes(opts.slug)) {
+      parameters.guidances = {
+        start_frame: imagePromptIds.slice(0, 1).map((id) => ({
+          image: { id, type: 'UPLOADED' },
+        })),
+      }
+    } else {
+      parameters.quantity = quantity
+      parameters.guidances = {
+        image_reference: imagePromptIds.slice(0, 4).map((id) => ({
+          image: { id, type: 'UPLOADED' },
+          strength: 'MID',
+        })),
+      }
     }
+  } else {
+    parameters.quantity = quantity
   }
 
   const requestBody = {
@@ -369,6 +380,7 @@ export function extractVideoUrl(gen: any): string | null {
   const topFields = [
     'motionMP4URL', 'motion_video_url', 'videoUrl', 'video_url',
     'mp4URL', 'mp4_url', 'output_url', 'outputUrl',
+    'url', 'video', 'videoFileUrl',
   ]
   for (const f of topFields) {
     const v = gen[f]
@@ -378,9 +390,13 @@ export function extractVideoUrl(gen: any): string | null {
     }
   }
 
-  const videos = gen.videos ?? gen.output?.videos ?? []
+  const videos = gen.videos ?? gen.output?.videos ?? gen.results ?? []
   for (const vid of videos) {
-    const v = vid?.url ?? vid?.videoUrl ?? vid?.mp4URL
+    if (typeof vid === 'string' && vid.trim()) {
+      console.log(`[extractVideoUrl] found string in videos array:`, vid.slice(0, 120))
+      return vid
+    }
+    const v = vid?.url ?? vid?.videoUrl ?? vid?.mp4URL ?? vid?.video_url ?? vid?.mp4_url
     if (typeof v === 'string' && v.trim()) {
       console.log(`[extractVideoUrl] found in videos array:`, v.slice(0, 120))
       return v
@@ -388,7 +404,7 @@ export function extractVideoUrl(gen: any): string | null {
   }
 
   for (const img of gen.generated_images ?? []) {
-    for (const f of ['motionMP4URL', 'motion_video_url', 'videoUrl', 'video_url', 'mp4URL']) {
+    for (const f of ['motionMP4URL', 'motion_video_url', 'videoUrl', 'video_url', 'mp4URL', 'mp4_url', 'url']) {
       const v = img[f]
       if (typeof v === 'string' && v.trim()) {
         console.log(`[extractVideoUrl] found in generated_images[].${f}:`, v.slice(0, 120))
@@ -408,6 +424,25 @@ export function extractVideoUrl(gen: any): string | null {
       if (typeof v === 'string' && v.trim()) {
         console.log(`[extractVideoUrl] fallback to generated_images[0].${f}:`, v.slice(0, 120))
         return v
+      }
+    }
+  }
+
+  for (const f of ['composable_video', 'composableVideo', 'variation', 'variations']) {
+    const v = gen[f]
+    if (typeof v === 'string' && v.trim()) {
+      console.log(`[extractVideoUrl] found "${f}":`, v.slice(0, 120))
+      return v
+    }
+    if (Array.isArray(v) && v.length > 0) {
+      const first = v[0]
+      if (typeof first === 'string' && first.trim()) {
+        console.log(`[extractVideoUrl] found string in ${f}[0]:`, first.slice(0, 120))
+        return first
+      }
+      if (first?.url) {
+        console.log(`[extractVideoUrl] found ${f}[0].url:`, first.url.slice(0, 120))
+        return first.url
       }
     }
   }
@@ -482,15 +517,15 @@ export async function runLeonardoVideo(opts: LeonardoVideoRunOptions): Promise<s
         opts.onProgress?.(`Leonardo: ${gen.status}`, gen.status === 'COMPLETE' ? 95 : 50)
       }
 
-      if (gen.status === 'COMPLETE') {
+      if (gen.status === 'COMPLETE' || gen.status === 'COMPLETED' || gen.status === 'SUCCESS' || gen.status === 'SUCCEEDED') {
         const url = extractVideoUrl(gen)
-        if (!url) throw Error(`Leonardo video: status COMPLETE tapi URL tidak ditemukan. ${JSON.stringify(gen).slice(0, 400)}`)
+        if (!url) throw Error(`Leonardo video: status ${gen.status} tapi URL tidak ditemukan. ${JSON.stringify(gen).slice(0, 400)}`)
         console.log('[runLeonardoVideo] URL extracted:', url.slice(0, 150))
         opts.onProgress?.(`Leonardo: selesai ✓`, 100)
         return url
       }
 
-      if (gen.status === 'FAILED') throw Error('Leonardo video: generation FAILED')
+      if (gen.status === 'FAILED' || gen.status === 'ERROR') throw Error(`Leonardo video: generation ${gen.status}`)
 
       const elapsed = Math.round((Date.now() - start) / 1000)
       opts.onProgress?.(`Leonardo: rendering… (${elapsed}s)`, Math.min(90, 30 + elapsed))
