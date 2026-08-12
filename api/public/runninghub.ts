@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 const RUNNINGHUB_BASE = 'https://www.runninghub.ai'
 const RUNNINGHUB_DEFAULT_WORKFLOW_ID = '2084995158336192513'
-const RUNNINGHUB_KLING26_MOTION_CONTROL_WORKFLOW_ID = '46c8e4b6-7f51-41a5-b47f-bbcb97fa44cd'
+const RUNNINGHUB_KLING26_MOTION_CONTROL_WORKFLOW_ID = '2054007288427499522'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*')
