@@ -162,28 +162,44 @@ export async function pollRunningHubTask(
 ): Promise<string> {
   const startTime = Date.now()
   const POLL_INTERVAL = 5000
+  const MAX_RETRIES = 3
 
   const poll = async (): Promise<string> => {
+    let consecutiveErrors = 0
+    
     while (Date.now() - startTime < timeoutMs) {
-      const result = await runninghubProxy('query', { taskId })
+      try {
+        const result = await runninghubProxy('query', { taskId })
 
-      const status = (result.status || '').toUpperCase() as RunningHubTaskStatus
-      const progress = result.progress || 0
+        consecutiveErrors = 0
 
-      if (status === 'COMPLETED') {
-        if (result.videoUrl) {
-          onProgress?.('COMPLETED', 100)
-          return result.videoUrl
+        const status = (result.status || '').toUpperCase() as RunningHubTaskStatus
+        const progress = result.progress || 0
+
+        if (status === 'COMPLETED') {
+          if (result.videoUrl) {
+            onProgress?.('COMPLETED', 100)
+            return result.videoUrl
+          }
+          throw new Error('Task completed but no video URL found')
         }
-        throw new Error('Task completed but no video URL found')
-      }
 
-      if (status === 'FAILED') {
-        throw new Error(result.error || 'Task failed')
-      }
+        if (status === 'FAILED') {
+          throw new Error(result.error || 'Task failed')
+        }
 
-      onProgress?.(status || 'RUNNING', Math.min(progress, 99))
-      await new Promise((r) => setTimeout(r, POLL_INTERVAL))
+        onProgress?.(status || 'RUNNING', Math.min(progress, 99))
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL))
+      } catch (err: any) {
+        consecutiveErrors++
+        console.warn(`[runninghub] Poll error (${consecutiveErrors}/${MAX_RETRIES}):`, err.message)
+        
+        if (consecutiveErrors >= MAX_RETRIES) {
+          throw new Error(`Polling failed after ${MAX_RETRIES} retries: ${err.message}`)
+        }
+        
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL))
+      }
     }
 
     throw new Error('Timeout: Task took too long')
