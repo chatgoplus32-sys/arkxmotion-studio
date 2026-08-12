@@ -106,7 +106,7 @@ async function handleMotionControlV26Std(apiKey: string, params: any, res: Verce
   })
 
   const rawText = await apiRes.text()
-  console.log(`[runninghub] motion-control-v2.6-std ${apiRes.status}:`, rawText.slice(0, 1000))
+  console.log(`[runninghub] motion-control-v2.6-std ${apiRes.status}:`, rawText)
 
   let data: any
   try { data = JSON.parse(rawText) } catch { data = { raw: rawText } }
@@ -124,9 +124,10 @@ async function handleMotionControlV26Std(apiKey: string, params: any, res: Verce
     return res.status(200).json({ ok: false, error: data.errorMessage || data.failedReason || 'Task failed', data })
   }
 
-  const taskId = data.taskId || data.data?.taskId || data.id
+  const taskId = data.taskId || data.data?.taskId || data.id || data.task_id
   if (!taskId) {
-    return res.status(200).json({ ok: false, error: 'No taskId returned', raw: rawText.slice(0, 500) })
+    console.error(`[runninghub] No taskId found in response:`, JSON.stringify(data))
+    return res.status(200).json({ ok: false, error: 'No taskId returned', raw: rawText, fullData: data })
   }
 
   return res.status(200).json({
@@ -134,7 +135,7 @@ async function handleMotionControlV26Std(apiKey: string, params: any, res: Verce
     data: {
       id: taskId,
       taskId,
-      status: data.status || 'QUEUED',
+      status: data.status || data.data?.status || 'QUEUED',
       provider: 'markasflow-v2',
     },
   })
