@@ -1,7 +1,7 @@
 const RUNNINGHUB_PROXY = '/api/public/runninghub'
 
-const RUNNINGHUB_DEFAULT_WORKFLOW_ID = '2084995158336192513'
-const RUNNINGHUB_KLING26_MOTION_CONTROL_WORKFLOW_ID = '2054007288427499522'
+const RUNNINGHUB_DEFAULT_WORKFLOW_ID = '2087539655340654593'
+const RUNNINGHUB_KLING26_MOTION_CONTROL_WORKFLOW_ID = '2087539655340654593'
 
 function getStoredProviderKey(provider: string): string | null {
   if (typeof window === 'undefined') return null

@@ -1,8 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 const RUNNINGHUB_BASE = 'https://www.runninghub.ai'
-const RUNNINGHUB_DEFAULT_WORKFLOW_ID = '2084995158336192513'
-const RUNNINGHUB_KLING26_MOTION_CONTROL_WORKFLOW_ID = '2054007288427499522'
+const RUNNINGHUB_DEFAULT_WORKFLOW_ID = '2087539655340654593'
+const RUNNINGHUB_KLING26_MOTION_CONTROL_WORKFLOW_ID = '2087539655340654593'
+
+function rhAuthHeaders(apiKey: string) {
+  return { 'Content-Type': 'application/json', 'User-Agent': 'ArkxMotion/1.0' }
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -172,22 +176,18 @@ async function handleMotionControl(apiKey: string, params: any, res: VercelRespo
   const nodeInfoList: any[] = []
 
   const body = {
+    workflowId: effectiveWorkflowId,
+    apiKey,
     nodeInfoList,
-    instanceType: 'plus',
-    usePersonalQueue: 'false',
-    addMetadata: true,
   }
 
-  const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/workflow/${effectiveWorkflowId}`
+  const endpoint = `${RUNNINGHUB_BASE}/task/openapi/create`
   console.log(`[runninghub] POST ${endpoint}`)
   console.log(`[runninghub] body:`, JSON.stringify(body).slice(0, 1000))
 
   const apiRes = await fetch(endpoint, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
+    headers: rhAuthHeaders(apiKey),
     body: JSON.stringify(body),
   })
 
@@ -197,34 +197,32 @@ async function handleMotionControl(apiKey: string, params: any, res: VercelRespo
   let data: any
   try { data = JSON.parse(rawText) } catch { data = { raw: rawText } }
 
-  if (apiRes.status === 429) {
+  const SUCCESS_CODE = 0
+  const errorMsg = (data as any)?.msg || (data as any)?.errorMessage || (data as any)?.message || (data as any)?.error
+
+  if (apiRes.status === 429 || data.code === 429) {
     return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data, retryable: true })
   }
 
-  if (!apiRes.ok) {
-    const errorMsg = data.errorMessage || data.msg || data.message || data.error || `HTTP ${apiRes.status}`
-    return res.status(200).json({ ok: false, error: errorMsg, data })
+  if (data.code !== undefined && data.code !== SUCCESS_CODE) {
+    const friendly = translateRhError(String(data.code), errorMsg)
+    return res.status(200).json({ ok: false, error: friendly, code: data.code, data })
   }
 
-  if (data.code && data.code !== 0 && data.code !== '0') {
-    return res.status(200).json({ ok: false, error: data.message || data.msg || `Error code: ${data.code}`, data })
-  }
-
-  if (data.status === 'FAILED') {
-    return res.status(200).json({ ok: false, error: data.errorMessage || data.failedReason || 'Task failed', data })
-  }
-
-  const taskId = data.data?.taskId || data.taskId || data.id
+  const taskData = data.data || {}
+  const taskId = taskData.taskId || data.taskId || taskData.id || data.id
   if (!taskId) {
     return res.status(200).json({ ok: false, error: 'No taskId returned', raw: rawText.slice(0, 500) })
   }
 
+  const netWssUrl = taskData.netWssUrl
   return res.status(200).json({
     ok: true,
     data: {
       id: taskId,
       taskId,
-      status: data.data?.status || data.status || 'QUEUED',
+      status: taskData.status || 'QUEUED',
+      netWssUrl,
       provider: 'markasflow-v2',
       workflowId: effectiveWorkflowId,
     },
@@ -234,15 +232,12 @@ async function handleMotionControl(apiKey: string, params: any, res: VercelRespo
 async function handleQuery(apiKey: string, taskId: string, res: VercelResponse) {
   if (!taskId) return res.status(200).json({ ok: false, error: 'Missing taskId' })
 
-  const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/query`
+  const endpoint = `${RUNNINGHUB_BASE}/task/openapi/query`
 
   const apiRes = await fetch(endpoint, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({ taskId }),
+    headers: rhAuthHeaders(apiKey),
+    body: JSON.stringify({ apiKey, taskId }),
   })
 
   const rawText = await apiRes.text()
@@ -251,39 +246,39 @@ async function handleQuery(apiKey: string, taskId: string, res: VercelResponse) 
   let data: any
   try { data = JSON.parse(rawText) } catch { data = { raw: rawText } }
 
-  if (apiRes.status === 429) {
+  const errorMsg = (data as any)?.msg || (data as any)?.errorMessage
+  if (apiRes.status === 429 || data.code === 429) {
     return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data, retryable: true })
   }
 
-  if (!apiRes.ok) {
-    return res.status(200).json({ ok: false, error: data.errorMessage || data.msg || `HTTP ${apiRes.status}`, data })
+  if (data.code !== undefined && data.code !== 0) {
+    return res.status(200).json({ ok: false, error: translateRhError(String(data.code), errorMsg) || errorMsg || `Error code: ${data.code}`, data })
   }
 
   const taskData = data.data || data
   const status = (taskData.status || data.status || '').toUpperCase()
 
   let mappedStatus = 'RUNNING'
-  if (status === 'COMPLETED' || status === 'SUCCESS') mappedStatus = 'COMPLETED'
+  if (status === 'COMPLETED' || status === 'SUCCESS' || status === 'FINISHED') mappedStatus = 'COMPLETED'
   else if (status === 'FAILED') mappedStatus = 'FAILED'
   else if (status === 'QUEUED') mappedStatus = 'QUEUED'
 
   let videoUrl: string | null = null
   if (mappedStatus === 'COMPLETED') {
-    const results = taskData.results || taskData.output || data.results
+    const results = taskData.results || taskData.output || data.results || taskData.outputs || data.outputs
     if (Array.isArray(results) && results.length > 0) {
       for (const r of results) {
-        if (r.url && (r.outputType === 'mp4' || r.url.endsWith('.mp4'))) {
-          videoUrl = r.url
+        const url = r.url || r.uri || r.download_url || (typeof r === 'string' ? r : null)
+        if (url && ((r.outputType && r.outputType !== 'text') || /\.(mp4|webm|mov)$/i.test(url))) {
+          videoUrl = url
           break
         }
       }
-      if (!videoUrl && results[0]?.url) {
-        videoUrl = results[0].url
+      if (!videoUrl && typeof results[0] === 'object' && (results[0]?.url || results[0]?.uri)) {
+        videoUrl = results[0].url || results[0].uri
       }
     } else if (typeof results === 'string') {
       videoUrl = results
-    } else if (results && typeof results === 'object' && results.url) {
-      videoUrl = results.url
     }
   }
 
@@ -295,51 +290,70 @@ async function handleQuery(apiKey: string, taskId: string, res: VercelResponse) 
       status: mappedStatus,
       progress: taskData.progress || data.progress || 0,
       videoUrl,
-      error: mappedStatus === 'FAILED' ? (taskData.errorMessage || taskData.failedReason || data.errorMessage || 'Task failed') : null,
+      error: mappedStatus === 'FAILED' ? (taskData.errorMessage || taskData.failedReason || taskData.msg || errorMsg || 'Task failed') : null,
       provider: 'markasflow-v2',
     },
   })
 }
 
+function translateRhError(code: string, msg?: string): string {
+  const map: Record<string, string> = {
+    '414': 'Saldo/kuota kerja (power) tidak cukup untuk menjalankan task ini. Silakan top up RH coins di akun RunningHub.',
+    '404': 'Workflow tidak ditemukan atau tidak dapat diakses API key ini.',
+    '403': 'Akses ditolak. API key tidak berhak mengakses workflow ini.',
+    '1002': 'API key tidak valid.',
+    '1003': 'API key tidak valid atau telah kedaluwarsa.',
+    '1004': 'Workflow tidak ditemukan.',
+    '5101': 'Gagal membuat task, coba lagi.',
+  }
+  if (msg && /NOT_ENOUGH_POWER|balance|insufficient|coin/i.test(msg)) {
+    return 'Saldo/kuota kerja tidak cukup. Silakan top up RH coins di akun RunningHub.'
+  }
+  return map[code] || msg || `Error RunningHub (${code})`
+}
+
 async function handleCheckBalance(apiKey: string, res: VercelResponse) {
   try {
-    const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/workflow/test`
-    const testRes = await fetch(endpoint, {
+    const endpoint = `${RUNNINGHUB_BASE}/uc/openapi/accountStatus`
+
+    const apiRes = await fetch(endpoint, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({ nodeInfoList: [], instanceType: 'default', usePersonalQueue: 'false', addMetadata: true }),
+      headers: rhAuthHeaders(apiKey),
+      body: JSON.stringify({ apiKey }),
     })
 
-    const rawText = await testRes.text()
-    console.log(`[runninghub] check-balance ${testRes.status}:`, rawText.slice(0, 300))
+    const rawText = await apiRes.text()
+    console.log(`[runninghub] check-balance ${apiRes.status}:`, rawText.slice(0, 500))
 
     let data: any
     try { data = JSON.parse(rawText) } catch { data = { raw: rawText } }
 
-    if (testRes.status === 401 || testRes.status === 403) {
+    if (data.code !== undefined && data.code !== 0) {
       return res.status(200).json({
         ok: false,
-        error: 'API key tidak valid',
+        error: translateRhError(String(data.code), data.msg) || data.msg || 'Gagal cek saldo',
         balance: null,
         isValidUser: false,
       })
     }
 
+    const info = data.data || {}
+    const balance = info.remainCoins !== undefined && info.remainCoins !== null ? parseFloat(info.remainCoins) : null
+
     return res.status(200).json({
       ok: true,
-      balance: 1100,
+      balance,
       isValidUser: true,
+      apiType: info.apiType || null,
       message: 'API key valid',
     })
   } catch (err: any) {
     return res.status(200).json({
-      ok: true,
-      balance: 1100,
-      isValidUser: true,
-      message: 'API key valid (network check)',
+      ok: false,
+      error: err.message,
+      balance: null,
+      isValidUser: false,
+      message: 'Gagal terhubung ke RunningHub',
     })
   }
 }
