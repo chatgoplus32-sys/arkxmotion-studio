@@ -15,13 +15,6 @@ export interface Galleri5MotionModel {
 
 export const GALLERI5_MOTION_MODELS: Galleri5MotionModel[] = [
   {
-    key: 'g5:kling-v3-std-motion-control',
-    modelPath: 'fal-ai/kling-video-v3-standard-motion-control',
-    label: 'Kling V3.0 Standard (Galery5)',
-    sessionName: 'Kling Video v3 Motion Control [Standard]',
-    cr: 100,
-  },
-  {
     key: 'g5:kling-v3-pro-motion-control',
     modelPath: 'fal-ai/kling-video-v3-pro-motion-control',
     label: 'Kling V3.0 Pro (Galery5)',
