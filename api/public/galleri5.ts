@@ -180,20 +180,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const { fileUrl, fileName, contentType, orgId } = body
       if (!fileUrl) return res.status(400).json({ ok: false, error: 'Missing fileUrl' })
 
-      console.log(`[galleri5-proxy] upload → ${fileName || 'file'}`)
+      console.log(`[galleri5-proxy] upload → ${fileName || 'file'} (content-type: ${contentType || 'auto'})`)
 
       // Download file dari URL lalu upload ke G5
       const fileRes = await fetch(fileUrl, { signal: AbortSignal.timeout(60000) })
       if (!fileRes.ok) {
         return res.status(200).json({ ok: false, error: `Download gagal: HTTP ${fileRes.status}` })
       }
-      const fileBlob = await fileRes.blob()
-
+      const fileBuffer = Buffer.from(await fileRes.arrayBuffer())
+      
+      // Determine content type
+      const detectedType = contentType || fileRes.headers.get('content-type') || 'image/jpeg'
+      const ext = fileName?.split('.').pop() || 'jpg'
+      
       const headers = buildHeaders(authHeaders, orgId)
       delete headers['Content-Type'] // biar FormData yang set
 
       const formData = new FormData()
-      formData.append('file', fileBlob, fileName || 'upload.bin')
+      const blob = new Blob([fileBuffer], { type: detectedType })
+      formData.append('file', blob, fileName || `upload.${ext}`)
 
       const uploadRes = await fetch(`${G5_BACKEND}/api/v1/file-upload`, {
         method: 'POST',

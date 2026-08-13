@@ -70,6 +70,7 @@ export function detectTokenError(provider: ProviderId, error: any): boolean {
     case 'magnific': return isMagnificTokenError(error)
     case 'firefly': return /401|403|expired|unauthorized|invalid.*token/i.test(String(error?.message || error))
     case 'leonardo': return /insufficient|not enough|out of|balance|quota|exhaust|limit|too many|rate.?limit|402|401|403|unauthor|forbidden|expired|invalid.*token|token.*invalid|500|502|503|504|server error|network|fetch|timeout|graphql/i.test(String(error?.message || error))
+    case 'galleri5': return /credit tidak cukup|insufficient|balance|401|403|expired|unauthorized|invalid.*token|token.*invalid|500|502|503|504|server error|network|fetch|timeout/i.test(String(error?.message || error))
     default: return isTokenError(error)
   }
 }
@@ -257,6 +258,18 @@ export async function withTokenRotation<T>(
             useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'empty', 0)
             console.log(`[token-rotation] ${provider} key "${nextKey.name}" credits habis (${err.message}). Marking empty, trying next...`)
           } else if (errMsg.includes('unauthorized') || errMsg.includes('401') || errMsg.includes('invalid')) {
+            useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'invalid')
+            console.log(`[token-rotation] ${provider} key "${nextKey.name}" marked invalid (${err.message}). Trying next...`)
+          } else {
+            useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'invalid')
+            console.log(`[token-rotation] ${provider} key "${nextKey.name}" marked invalid (${err.message}). Trying next...`)
+          }
+        } else if (provider === 'galleri5') {
+          const errMsg = (err.message || '').toLowerCase()
+          if (errMsg.includes('credit tidak cukup') || errMsg.includes('insufficient') || errMsg.includes('balance')) {
+            useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'empty', 0)
+            console.log(`[token-rotation] ${provider} key "${nextKey.name}" credit habis (${err.message}). Marking empty, trying next...`)
+          } else if (errMsg.includes('401') || errMsg.includes('unauthorized') || errMsg.includes('invalid') || errMsg.includes('expired')) {
             useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'invalid')
             console.log(`[token-rotation] ${provider} key "${nextKey.name}" marked invalid (${err.message}). Trying next...`)
           } else {

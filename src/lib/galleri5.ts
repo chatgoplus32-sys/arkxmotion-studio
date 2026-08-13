@@ -264,11 +264,26 @@ async function g5UploadUrl(accessToken: string, url: string, fileName: string, o
   // Use proxy API to avoid CORS issues
   const authHeaders = await g5DirectHeaders(accessToken, orgId)
   
+  // Detect content type from file extension
+  const ext = fileName.split('.').pop()?.toLowerCase() || 'jpg'
+  const contentTypeMap: Record<string, string> = {
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'png': 'image/png',
+    'gif': 'image/gif',
+    'webp': 'image/webp',
+    'mp4': 'video/mp4',
+    'mov': 'video/quicktime',
+    'avi': 'video/x-msvideo',
+  }
+  const contentType = contentTypeMap[ext] || 'image/jpeg'
+  
   try {
     const res = await galleri5Api('upload', {
       authHeaders: JSON.stringify(authHeaders),
       fileUrl: url,
       fileName,
+      contentType,
       orgId,
     })
     
@@ -498,6 +513,15 @@ function extractVideoUrl(data: any, depth = 0): string | null {
   return null
 }
 
+function extractTaskId(data: any): string | null {
+  if (!data || typeof data !== 'object') return null
+  for (const key of ['task_id', 'taskId', 'id', 'session_id', 'sessionId', 'request_id']) {
+    const val = data[key]
+    if (typeof val === 'string' && val.trim()) return val.trim()
+  }
+  return null
+}
+
 function extractError(data: any, depth = 0): string | null {
   if (depth > 6 || typeof data !== 'object' || !data) return null
   for (const key of ['error', 'error_message', 'detail', 'message']) {
@@ -536,13 +560,10 @@ export async function submitGalleri5MotionControl(
   const model = resolveModel(opts.modelKey)
   const onProgress = opts.onProgress
 
-  const keys = getValidKeysWithBalance(model.cr)
-  if (keys.length === 0) {
-    throw Error(`Galery5: tidak ada token dengan balance cukup (min ${model.cr} cr untuk ${model.label})`)
-  }
-  
-  const active = keys[0]
-  const accessToken = await resolveAccessToken(active.key)
+  // Resolve access token from auth headers
+  const authVal = authHeaders['Authorization'] || authHeaders['authorization'] || ''
+  const accessToken = authVal.replace(/^Bearer\s+/i, '').trim()
+  if (!accessToken) throw Error('Galery5: access token tidak ditemukan di authHeaders')
 
   onProgress?.('cek akun...')
 
@@ -800,13 +821,14 @@ export interface Galleri5I2VOptions {
   modelKey: string
   imageUrl: string
   prompt?: string
+  duration?: number
   onProgress?: (msg: string, pct?: number) => void
 }
 
 export const GALLERI5_I2V_MODELS: Galleri5MotionModel[] = [
   {
     key: 'g5:gemini-omni-flash-i2v',
-    modelPath: 'fal-ai/google/gemini-omni-flash/image-to-video',
+    modelPath: 'fal-ai/gemini-omni-flash-image-to-video',
     label: 'Gemini Omni Flash I2V (Galery5)',
     sessionName: 'Gemini Omni Flash Image to Video',
     cr: 134,
@@ -831,13 +853,10 @@ export async function submitGalleri5I2V(
   const model = GALLERI5_I2V_MODELS.find((m) => m.key === opts.modelKey) || GALLERI5_I2V_MODELS[0]
   const onProgress = opts.onProgress
 
-  const keys = getValidKeysWithBalance(model.cr)
-  if (keys.length === 0) {
-    throw Error(`Galery5: tidak ada token dengan balance cukup (min ${model.cr} cr untuk ${model.label})`)
-  }
-  
-  const active = keys[0]
-  const accessToken = await resolveAccessToken(active.key)
+  // Resolve access token from auth headers
+  const authVal = authHeaders['Authorization'] || authHeaders['authorization'] || ''
+  const accessToken = authVal.replace(/^Bearer\s+/i, '').trim()
+  if (!accessToken) throw Error('Galery5: access token tidak ditemukan di authHeaders')
 
   onProgress?.('cek akun...')
 
@@ -857,26 +876,34 @@ export async function submitGalleri5I2V(
   const imgUploadId = imgResult.uploadId
 
   onProgress?.('create session...')
-  await g5DirectFetch(accessToken, '/unit-sessions', {
-    method: 'POST',
-    orgId,
-    body: {
-      unit_type: 'model_garden',
-      session_type: 'generation',
-      name: model.sessionName,
-      state: { model_path: model.modelPath },
-      session_id: sessionId,
-      ...(orgId ? { organization_id: orgId } : {}),
-    },
-  }).catch(() => {})
+  try {
+    await g5DirectFetch(accessToken, '/unit-sessions', {
+      method: 'POST',
+      orgId,
+      body: {
+        unit_type: 'model_garden',
+        session_type: 'generation',
+        name: model.sessionName,
+        state: { model_path: model.modelPath },
+        session_id: sessionId,
+        ...(orgId ? { organization_id: orgId } : {}),
+      },
+    })
+  } catch (e: any) {
+    onProgress?.(`create session warning: ${e.message}`)
+  }
 
   onProgress?.('link session...')
   if (imgUploadId) {
-    await g5DirectFetch(accessToken, '/uploads/link-session', {
-      method: 'PATCH',
-      orgId,
-      body: { upload_ids: [imgUploadId], session_id: sessionId },
-    }).catch(() => {})
+    try {
+      await g5DirectFetch(accessToken, '/uploads/link-session', {
+        method: 'PATCH',
+        orgId,
+        body: { upload_ids: [imgUploadId], session_id: sessionId },
+      })
+    } catch (e: any) {
+      onProgress?.(`link session warning: ${e.message}`)
+    }
   }
 
   const formFields: Record<string, any> = {
@@ -884,6 +911,9 @@ export async function submitGalleri5I2V(
   }
   if (opts.prompt && opts.prompt.trim()) {
     formFields.prompt = opts.prompt.trim()
+  }
+  if (opts.duration && opts.duration > 0) {
+    formFields.duration = opts.duration
   }
 
   onProgress?.('estimate...')
@@ -937,6 +967,7 @@ export async function submitGalleri5I2V(
   let buffer = ''
   let lastStatus = ''
   let lastError: string | null = null
+  let extractedTaskId: string | null = null
 
   for (;;) {
     const { done, value } = await reader.read()
@@ -963,6 +994,11 @@ export async function submitGalleri5I2V(
         lastStatus = sts
         onProgress?.(sts)
       }
+      const tid = extractTaskId(parsed)
+      if (tid && tid !== sessionId) {
+        extractedTaskId = tid
+        onProgress?.(`task id: ${tid}`)
+      }
     }
     if (done) break
   }
@@ -975,7 +1011,8 @@ export async function submitGalleri5I2V(
   }
 
   onProgress?.('queued')
-  return { taskId: sessionId, sessionId, orgId }
+  const finalTaskId = extractedTaskId || sessionId
+  return { taskId: finalTaskId, sessionId: finalTaskId, orgId }
 }
 
 export async function runGalleri5I2V(

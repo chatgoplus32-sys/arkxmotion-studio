@@ -1823,6 +1823,7 @@ export default function ImageToVideoPage() {
               modelKey: model,
               imageUrl,
               prompt: prompt.trim() || undefined,
+              duration: currentQuality?.duration || 10,
               onProgress: (msg, pct) => {
                 addLog(`⏳ G5 ${msg}`, 'debug', 'galleri5')
                 setStatus((s) => ({ ...s, pct: Math.min(pct || 0, 90), text: `G5 ${msg}` }))
@@ -1875,11 +1876,16 @@ export default function ImageToVideoPage() {
               if (detectTokenError('galleri5', err)) {
                 addLog(`⚠️ Key is invalid: ${err.message}`, 'warn', 'galleri5')
               }
-              // If model restricted or insufficient balance, stop rotation and throw error
-              if (isGalleri5ModelRestricted(err.message) || isGalleri5InsufficientBalance(err.message)) {
+              // If model restricted, stop rotation and throw error
+              if (isGalleri5ModelRestricted(err.message)) {
                 const errorMsg = getGalleri5ErrorMessage(err)
                 addLog(`❌ ${errorMsg}`, 'error', 'galleri5')
                 throw new Error(errorMsg)
+              }
+              // If insufficient balance, log warning and let rotation continue to next token
+              if (isGalleri5InsufficientBalance(err.message)) {
+                addLog(`⚠️ ${err.message} - trying next token...`, 'warn', 'galleri5')
+                return // Don't throw, let rotation continue
               }
             },
           }
