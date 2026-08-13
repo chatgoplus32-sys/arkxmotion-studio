@@ -4,10 +4,10 @@ import { Section, Button, Textarea, Select, Label, EmptyState, QuickRoutingDialo
 import { useProviderManager, HIDDEN_PROVIDERS, type ProviderId } from '@/stores'
 import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
 import { useToastStore } from '@/stores/toastStore'
-import { uploadToCatbox, submitMotionControl, pollRoboneoI2V, checkRoboneoBalance, compressVideo, submitGoogleOmni, normalizeImage, getVideoDurationFromFile } from '@/lib/roboneo'
+import { uploadToCatbox, submitMotionControl, pollRoboneoI2V, checkRoboneoBalance, compressVideo, submitGoogleOmni, normalizeImage, getVideoDurationFromFile, noteRoboneoMotionChargeFailure, isRoboneoBalanceError } from '@/lib/roboneo'
 import { submitWeavyMotionControl, uploadWeavyAssetWithRetry, resolveWeavyAssetUrl, getActiveWeavyAccessToken, compressImageForWeavy } from '@/lib/weavy'
 import { getRunningHubApiKey, submitRunningHubMotionControl, pollRunningHubTask } from '@/lib/runninghub'
-import { getGalleri5Headers, getGalleri5AuthHeaders, submitGalleri5MotionControl, pollGalleri5MotionControl, checkGalleri5Balance, isGalleri5TokenError, GALLERI5_MOTION_MODELS, runGalleri5WithRotation } from '@/lib/galleri5'
+import { getGalleri5Headers, getGalleri5AuthHeaders, submitGalleri5MotionControl, pollGalleri5MotionControl, checkGalleri5Balance, isGalleri5TokenError, isGalleri5ModelRestricted, getGalleri5ErrorMessage, GALLERI5_MOTION_MODELS, runGalleri5WithRotation } from '@/lib/galleri5'
 import { trimVideoFFmpeg } from '@/lib/ffmpeg-compress'
 import { getMagnificApiKey, submitMagnificMotion, pollMagnificMotion, type MagnificMotionModel } from '@/lib/magnific'
 import { useLocalStorage } from '@/lib/useLocalStorage'
@@ -696,6 +696,18 @@ export default function MotionPage() {
               updateSlotStatus(slot.id, 'error', err.message)
               addLog(`#${slotNum} Error: ${err.message}`, 'error')
               removeActiveTask(taskId)
+              
+              if (isRoboneo && isRoboneoBalanceError(err.message)) {
+                try {
+                  const activeKey = useProviderManager.getState().getActiveKey('roboneo')
+                  if (activeKey?.balance !== undefined && activeKey.balance !== null) {
+                    const newMin = noteRoboneoMotionChargeFailure(activeKey.balance)
+                    addLog(`⚠️ Motion min credits updated to ${newMin} (balance was ${activeKey.balance})`, 'warn')
+                  }
+                } catch (trackErr) {
+                  console.error('[motion] Failed to track charge failure:', trackErr)
+                }
+              }
               return false
             }
           } else if (isMagnific && slot.image && slot.video) {
@@ -1128,8 +1140,15 @@ export default function MotionPage() {
               return true
             } catch (err: any) {
               setCompressDialog(null)
-              updateSlotStatus(slot.id, 'error', err.message)
-              addLog(`#${slotNum} Error: ${err.message}`, 'error')
+              const errorMsg = provider === 'galleri5' ? getGalleri5ErrorMessage(err) : err.message
+              updateSlotStatus(slot.id, 'error', errorMsg)
+              addLog(`#${slotNum} Error: ${errorMsg}`, 'error')
+              
+              // If model restricted, don't retry with other tokens
+              if (provider === 'galleri5' && isGalleri5ModelRestricted(err.message)) {
+                throw new Error(errorMsg)
+              }
+              
               return false
             }
           } else {

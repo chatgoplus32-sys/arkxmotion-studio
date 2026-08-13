@@ -1912,6 +1912,40 @@ export function isRoboneoTokenError(msg: string): boolean {
   return isRoboneoCredentialError(msg) || isRoboneoBalanceError(msg)
 }
 
+export function isRoboneoRotatableError(msg: string): boolean {
+  return isRoboneoCredentialError(msg) || isRoboneoBalanceError(msg)
+}
+
+const ROBONEO_MOTION_MIN_CREDITS_KEY = 'arkxmotion.roboneo.motionMinCredits'
+const DEFAULT_MOTION_MIN_CREDITS = 151
+
+export function getRoboneoMotionMinCredits(): number {
+  if (typeof window === 'undefined') return DEFAULT_MOTION_MIN_CREDITS
+  try {
+    const stored = localStorage.getItem(ROBONEO_MOTION_MIN_CREDITS_KEY)
+    const value = stored ? Number(stored) : NaN
+    if (Number.isFinite(value) && value > 0) {
+      return Math.max(value, DEFAULT_MOTION_MIN_CREDITS)
+    }
+  } catch {}
+  return DEFAULT_MOTION_MIN_CREDITS
+}
+
+export function noteRoboneoMotionChargeFailure(creditBalance: number | null): number {
+  const currentMin = getRoboneoMotionMinCredits()
+  if (creditBalance === null || !Number.isFinite(creditBalance)) {
+    return currentMin
+  }
+  const newMin = Math.max(currentMin, Math.floor(creditBalance) + 1)
+  if (newMin !== currentMin && typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(ROBONEO_MOTION_MIN_CREDITS_KEY, String(newMin))
+      console.log(`[roboneo] Motion min credits updated: ${currentMin} → ${newMin}`)
+    } catch {}
+  }
+  return newMin
+}
+
 export function isRoboneoFormatError(msg: string): boolean {
   return /FormatUnsupported|Unsupported media format|format.*unsupported|unsupported.*format|invalid.*parameter.*format|参数错误.*format|tos:.*request error|get image info/i.test(msg)
 }
@@ -1931,4 +1965,72 @@ export async function uploadImageForRoboneo(file: File, onProgress?: (msg: strin
 
 export function parseAccessToken(raw: string): string {
   return raw.trim()
+}
+
+const ROBONEO_SYNC_STORAGE_KEY = 'arkxmotion.roboneo.keys'
+
+export function syncRoboneoTokensToStorage(tokens: Array<{ key: string; name?: string; balance?: number | null; status?: string }>) {
+  if (typeof window === 'undefined') return
+  try {
+    const serialized = JSON.stringify(tokens)
+    localStorage.setItem(ROBONEO_SYNC_STORAGE_KEY, serialized)
+    window.dispatchEvent(new CustomEvent('aatools:tokens-synced', {
+      detail: { provider: 'roboneo', action: 'updated' }
+    }))
+    window.dispatchEvent(new Event('storage'))
+    console.log(`[roboneo] Synced ${tokens.length} tokens to storage`)
+  } catch (err) {
+    console.error('[roboneo] Failed to sync tokens:', err)
+  }
+}
+
+export function removeRoboneoKeyFromManager(accessToken: string, reason?: string): { removed: boolean; remaining: number } {
+  if (typeof window === 'undefined') return { removed: false, remaining: 0 }
+  try {
+    const stored = localStorage.getItem(ROBONEO_SYNC_STORAGE_KEY)
+    const allKeys = stored ? JSON.parse(stored) : []
+    const filtered = allKeys.filter((t: any) => t?.key !== accessToken)
+    
+    if (filtered.length === allKeys.length) {
+      return { removed: false, remaining: filtered.length }
+    }
+    
+    const serialized = JSON.stringify(filtered)
+    localStorage.setItem(ROBONEO_SYNC_STORAGE_KEY, serialized)
+    
+    window.dispatchEvent(new CustomEvent('aatools:tokens-synced', {
+      detail: { provider: 'roboneo', action: 'removed', reason: reason || 'invalid' }
+    }))
+    window.dispatchEvent(new Event('storage'))
+    
+    console.log(`[roboneo] Removed invalid token (reason: ${reason || 'invalid'}), remaining: ${filtered.length}`)
+    return { removed: true, remaining: filtered.length }
+  } catch (err) {
+    console.warn('[roboneo] Failed to remove token:', err)
+    return { removed: false, remaining: 0 }
+  }
+}
+
+export function updateRoboneoKeyBalance(accessToken: string, balance: number | null) {
+  if (typeof window === 'undefined') return
+  try {
+    const stored = localStorage.getItem(ROBONEO_SYNC_STORAGE_KEY)
+    const allKeys = stored ? JSON.parse(stored) : []
+    const updated = allKeys.map((t: any) =>
+      t?.key === accessToken
+        ? { ...t, balance, status: balance !== null && balance > 0 ? 'active' : 'empty' }
+        : t
+    )
+    
+    const serialized = JSON.stringify(updated)
+    localStorage.setItem(ROBONEO_SYNC_STORAGE_KEY, serialized)
+    
+    window.dispatchEvent(new CustomEvent('aatools:tokens-synced', {
+      detail: { provider: 'roboneo', action: 'balance' }
+    }))
+    
+    console.log(`[roboneo] Updated token balance: ${balance}`)
+  } catch (err) {
+    console.warn('[roboneo] Failed to update balance:', err)
+  }
 }

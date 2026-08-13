@@ -1,5 +1,5 @@
 import { useProviderManager, type ProviderId, type ProviderKey } from '@/stores/providerManager'
-import { checkRoboneoBalance, isRoboneoCredentialError, isRoboneoBalanceError } from '@/lib/roboneo'
+import { checkRoboneoBalance, isRoboneoCredentialError, isRoboneoBalanceError, isRoboneoSafetyError, isRoboneoRotatableError } from '@/lib/roboneo'
 import { checkWeavyBalance } from '@/lib/weavy'
 import { fetchLeonardoBalance } from '@/lib/leonardo'
 
@@ -28,7 +28,7 @@ export function isFramiaTokenError(error: any): boolean {
 export function isRoboneoTokenError(error: any): boolean {
   if (!error) return false
   const msg = typeof error === 'string' ? error : error?.message || ''
-  return isRoboneoCredentialError(msg) || isRoboneoBalanceError(msg)
+  return isRoboneoRotatableError(msg)
 }
 
 export function isRoboneoCreditError(error: any): boolean {

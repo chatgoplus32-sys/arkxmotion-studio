@@ -989,11 +989,35 @@ export async function runGalleri5I2V(
 
 // ─── Public: Error Detection ────────────────────────────────────────
 
+export function isGalleri5ModelRestricted(msg: string): boolean {
+  return /model.*restricted|restricted.*model|contact.*admin.*enable/i.test(msg || '')
+}
+
 export function isGalleri5TokenError(msg: string): boolean {
   const t = (msg || '').toLowerCase()
-  return /credit|insufficient|not enough|out of|balance|quota|exhaust|limit|too many|rate.?limit|401|402|403|unauthor|forbidden|expired|invalid.*token|token.*invalid|5\d\d|server error|internal|network|fetch|timeout|timed out|failed|gagal/.test(
+  
+  // Model restriction is NOT a token error - don't rotate
+  if (isGalleri5ModelRestricted(msg)) {
+    return false
+  }
+  
+  return /credit|insufficient|not enough|out of|balance|quota|exhaust|limit|too many|rate.?limit|401|402|unauthor|forbidden|expired|invalid.*token|token.*invalid|5\d\d|server error|internal|network|fetch|timeout|timed out/.test(
     t
   )
+}
+
+export function getGalleri5ErrorMessage(error: any): string {
+  const msg = error?.message || String(error)
+  
+  if (isGalleri5ModelRestricted(msg)) {
+    // Extract model name if available
+    const modelMatch = msg.match(/Model '([^']+)'/i)
+    const modelName = modelMatch ? modelMatch[1] : 'ini'
+    
+    return `Model ${modelName} tidak tersedia di akun G5 Anda. Coba model lain (Kling V2.6 Standard biasanya tersedia untuk semua akun) atau upgrade subscription di aistudio.galleri5.com`
+  }
+  
+  return msg
 }
 
 // ─── Public: With Token Rotation ────────────────────────────────────

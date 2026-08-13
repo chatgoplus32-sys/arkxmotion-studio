@@ -154,7 +154,7 @@ const providers = ['weavy', 'wavespeed', 'magnific', 'roboneo', 'createpulse', '
 for (const p of providers) {
   const exists = db.prepare('SELECT id FROM provider_maintenance WHERE provider = ?').get(p)
   if (!exists) {
-    db.prepare('INSERT INTO provider_maintenance (provider, is_maintenance, message) VALUES (?, 0, '')').run(p)
+    db.prepare('INSERT INTO provider_maintenance (provider, is_maintenance, message) VALUES (?, 0, \'\')').run(p)
   }
 }
 
