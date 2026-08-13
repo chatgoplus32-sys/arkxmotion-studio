@@ -237,26 +237,52 @@ async function g5UploadFile(accessToken: string, file: File, orgId?: string | nu
   const headers = await g5DirectHeaders(accessToken, orgId)
   const formData = new FormData()
   formData.append('file', file, file.name || 'upload.bin')
-  const res = await fetch(`${GALLERI5_BASE}/file-upload`, {
-    method: 'POST',
-    headers,
-    body: formData,
-  })
-  const text = await res.text()
-  let data: any = null
-  try { data = JSON.parse(text) } catch { data = text }
-  if (!res.ok || !(data?.file_url || data?.url)) {
-    throw Error(`G5 upload gagal (${res.status}): ${data?.detail || text.slice(0, 160)}`)
+  
+  try {
+    const res = await fetch(`${GALLERI5_BASE}/file-upload`, {
+      method: 'POST',
+      headers,
+      body: formData,
+      signal: AbortSignal.timeout(120000),
+    })
+    const text = await res.text()
+    let data: any = null
+    try { data = JSON.parse(text) } catch { data = text }
+    if (!res.ok || !(data?.file_url || data?.url)) {
+      throw Error(`G5 upload gagal (${res.status}): ${data?.detail || text.slice(0, 160)}`)
+    }
+    return { fileUrl: data.file_url || data.url, uploadId: data.upload_id ?? null }
+  } catch (err: any) {
+    if (err.name === 'TimeoutError' || err.message?.includes('timeout')) {
+      throw Error(`G5 upload timeout (>120s). Coba gambar yang lebih kecil atau koneksi lebih stabil.`)
+    }
+    throw err
   }
-  return { fileUrl: data.file_url || data.url, uploadId: data.upload_id ?? null }
 }
 
 async function g5UploadUrl(accessToken: string, url: string, fileName: string, orgId?: string | null): Promise<{ fileUrl: string; uploadId: string | null }> {
-  const fileRes = await fetch(url, { signal: AbortSignal.timeout(60000) })
-  if (!fileRes.ok) throw Error(`Download gagal: HTTP ${fileRes.status}`)
-  const blob = await fileRes.blob()
-  const file = new File([blob], fileName, { type: blob.type || 'application/octet-stream' })
-  return g5UploadFile(accessToken, file, orgId)
+  // Use proxy API to avoid CORS issues
+  const authHeaders = await g5DirectHeaders(accessToken, orgId)
+  
+  try {
+    const res = await galleri5Api('upload', {
+      authHeaders: JSON.stringify(authHeaders),
+      fileUrl: url,
+      fileName,
+      orgId,
+    })
+    
+    if (!res.ok || !res.data?.file_url) {
+      throw Error(res.error || 'Upload gagal via proxy')
+    }
+    
+    return {
+      fileUrl: res.data.file_url,
+      uploadId: res.data.upload_id ?? null,
+    }
+  } catch (err: any) {
+    throw Error(`G5 upload via proxy gagal: ${err.message}`)
+  }
 }
 
 function resolveModel(modelKey: string): Galleri5MotionModel {
