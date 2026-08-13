@@ -363,6 +363,7 @@ const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; 
   },
   galleri5: {
     'g5:gemini-omni-flash-i2v': [
+      { value: '10s-720p', label: '10 detik · 720p', mult: 1, duration: 10, cr: 134, resolution: '720p' },
       { value: '8s-720p', label: '8 detik · 720p', mult: 1, duration: 8, cr: 134, resolution: '720p' },
       { value: '5s-720p', label: '5 detik · 720p', mult: 1, duration: 5, cr: 134, resolution: '720p' },
     ],
