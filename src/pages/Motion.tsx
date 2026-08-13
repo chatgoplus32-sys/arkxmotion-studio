@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo, forwardRef } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Textarea, Select, Label, EmptyState, QuickRoutingDialog, getActiveProviderForCap } from '@/components/ui'
-import { useProviderManager, type ProviderId } from '@/stores'
+import { useProviderManager, HIDDEN_PROVIDERS, type ProviderId } from '@/stores'
 import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
 import { useToastStore } from '@/stores/toastStore'
 import { uploadToCatbox, submitMotionControl, pollRoboneoI2V, checkRoboneoBalance, compressVideo, submitGoogleOmni, normalizeImage, getVideoDurationFromFile } from '@/lib/roboneo'
@@ -69,6 +69,10 @@ const PROVIDERS = {
     { key: 'g5:kling-v2.6-std-motion-control', label: 'Kling V2.6 Standard (Galery5)', cr: 60 },
   ]},
 }
+
+const VISIBLE_PROVIDERS = Object.fromEntries(
+  Object.entries(PROVIDERS).filter(([key]) => !(HIDDEN_PROVIDERS as readonly string[]).includes(key))
+) as typeof PROVIDERS
 
 const MAX_SLOTS = 12
 
@@ -149,7 +153,12 @@ export default function MotionPage() {
   useEffect(() => {
     const sync = () => {
       const cap = getActiveProviderForCap('motion')
-      if (cap && cap !== provider && PROVIDERS[cap as keyof typeof PROVIDERS]) {
+      if (
+        cap &&
+        cap !== provider &&
+        !(HIDDEN_PROVIDERS as readonly string[]).includes(cap) &&
+        PROVIDERS[cap as keyof typeof PROVIDERS]
+      ) {
         setProvider(cap as ProviderId)
         const p = PROVIDERS[cap as keyof typeof PROVIDERS]
         if (p.models.length > 0) setModelKey(p.models[0].key)
@@ -1667,7 +1676,7 @@ export default function MotionPage() {
       {showRoutingDialog && (
         <QuickRoutingDialog
           cap="motion"
-          providers={Object.entries(PROVIDERS).map(([key, val]) => ({
+          providers={Object.entries(VISIBLE_PROVIDERS).map(([key, val]) => ({
             id: key,
             name: val.name,
             models: val.models,

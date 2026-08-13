@@ -25,7 +25,7 @@ import {
   ExternalLink,
   Wrench,
 } from 'lucide-react'
-import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
+import { useProviderManager, PROVIDER_CONFIGS, ProviderId, HIDDEN_PROVIDERS } from '@/stores/providerManager'
 import { checkRoboneoBalance } from '@/lib/roboneo'
 import { fetchLeonardoBalance } from '@/lib/leonardo'
 import { checkWeavyBalance } from '@/lib/weavy'
@@ -56,6 +56,8 @@ const PROVIDER_LIST = [
   { key: 'createpulse', label: 'CreatePulse', desc: 'Video generation (Seedance 2.0/2.5, Veo Omni) via createpulse.online — pakai API key sendiri.' },
   { key: 'galleri5', label: 'G5 AI Studio', desc: 'Motion Control (Kling V3 & V2.6 motion transfer) via aistudio.galleri5.com — Firebase refresh token (auto-refresh).' },
 ] as const
+
+const VISIBLE_PROVIDER_LIST = PROVIDER_LIST.filter(p => !(HIDDEN_PROVIDERS as readonly string[]).includes(p.key))
 
 const TOKEN_GUIDE: Record<string, {
   url: string
@@ -535,11 +537,11 @@ export default function ProvidersPage() {
           // Refresh token — resolve to access token first
           try {
             const galleri5 = await import('@/lib/galleri5')
-            const resolved = await galleri5.getGalleri5AuthHeaders()
-            if (!resolved) return { state: 'invalid', detail: 'Refresh token tidak bisa di-resolve. Pastikan token benar (AMf-... dari aistudio.galleri5.com).' }
-            authHeaders = resolved
-          } catch {
-            return { state: 'invalid', detail: 'Gagal resolve refresh token. Pastikan token dari aistudio.galleri5.com.' }
+            const accessToken = await galleri5.resolveAccessTokenFromKey(trimmed)
+            if (!accessToken) return { state: 'invalid', detail: 'Refresh token tidak bisa di-resolve. Pastikan token benar (AMf-... dari aistudio.galleri5.com).' }
+            authHeaders = { Accept: '*/*', Authorization: `Bearer ${accessToken}` }
+          } catch (err: any) {
+            return { state: 'invalid', detail: err.message || 'Gagal resolve refresh token. Pastikan token dari aistudio.galleri5.com.' }
           }
         } else if (isJwt) {
           // JWT ID token — wrap as auth header
@@ -554,14 +556,20 @@ export default function ProvidersPage() {
         const result = await checkGalleri5Balance(authHeaders)
         if (result.ok) {
           const bal = result.balance
+          const emailPart = result.email || ''
+          const planPart = result.plan || ''
+          const prefix = [emailPart, planPart].filter(Boolean).join(' · ')
+          
           if (bal !== null && bal !== undefined) {
-            if (bal > 0) {
-              return { state: 'active', balance: bal, detail: `${result.email || ''} · ${result.plan || ''} · Balance: ${bal} cr` }
-            } else if (bal === 0) {
-              return { state: 'empty', balance: 0, detail: `${result.email || ''} · Balance: 0 — habis` }
+            if (bal >= 60) {
+              return { state: 'active', balance: bal, email: result.email, detail: `${prefix}${prefix ? ' · ' : ''}Balance: ${bal} cr` }
+            } else if (bal > 0) {
+              return { state: 'active', balance: bal, email: result.email, detail: `${prefix}${prefix ? ' · ' : ''}Balance: ${bal} cr (rendah, min 60 cr)` }
+            } else {
+              return { state: 'empty', balance: 0, email: result.email, detail: `${prefix}${prefix ? ' · ' : ''}Balance: ${bal} cr — habis` }
             }
           }
-          return { state: 'active', detail: `${result.email || 'Token valid'} · ${result.plan || ''}` }
+          return { state: 'active', detail: `${result.email || 'Token valid'}${planPart ? ' · ' + planPart : ''}` }
         }
         if (isGalleri5TokenError(result.error || '')) {
           return { state: 'invalid', detail: result.error || 'Token expired / tidak valid' }
@@ -688,7 +696,7 @@ export default function ProvidersPage() {
                 className="absolute left-0 right-0 top-full mt-2 z-40 grid grid-cols-1 md:grid-cols-2 gap-2 rounded-2xl border border-[#2a2a2a] bg-[#0a0a0a] p-2 shadow-2xl max-h-[60vh] overflow-y-auto"
                 style={{ boxShadow: '0 0 30px rgba(212, 160, 23, 0.1)' }}
               >
-                {PROVIDER_LIST.map(p => {
+                {VISIBLE_PROVIDER_LIST.map(p => {
                   const isActive = p.key === selectedProvider
                   const color = PROVIDER_COLORS[p.key]
                   const providerMap: Record<string, ProviderId> = {

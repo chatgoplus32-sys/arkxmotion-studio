@@ -187,6 +187,19 @@ function getAllStoredKeys(): string[] {
   return getStoredKeys().map((k) => k.key).filter(Boolean)
 }
 
+function getValidKeysWithBalance(minCredits: number): StoredGalleri5Key[] {
+  const keys = getStoredKeys()
+  return keys.filter((k) => {
+    if (k.status === 'invalid' || k.status === 'expired') return false
+    if (k.balance !== null && k.balance !== undefined && k.balance < minCredits) return false
+    return true
+  })
+}
+
+function getValidKeyStringsWithBalance(minCredits: number): string[] {
+  return getValidKeysWithBalance(minCredits).map((k) => k.key).filter(Boolean)
+}
+
 // ─── API Helpers ────────────────────────────────────────────────────
 
 async function galleri5Api(action: string, params: Record<string, any>): Promise<any> {
@@ -273,13 +286,37 @@ function generateSessionId(): string {
   return btoa(b64).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
+// ─── Public: Resolve Access Token from Key ─────────────────────────
+
+export async function resolveAccessTokenFromKey(key: string): Promise<string | null> {
+  try {
+    return await resolveAccessToken(key)
+  } catch {
+    return null
+  }
+}
+
 // ─── Public: Get Auth Headers ───────────────────────────────────────
 
-export async function getGalleri5AuthHeaders(tokenKey?: string): Promise<Record<string, string> | null> {
+export async function getGalleri5AuthHeaders(tokenKey?: string, minCredits?: number): Promise<Record<string, string> | null> {
   const keys = getStoredKeys()
-  const active = tokenKey
-    ? keys.find((k) => k.key === tokenKey || k.key === tokenKey)
-    : keys.find((k) => k.status === 'active' || k.status === 'unknown')
+  let active: StoredGalleri5Key | undefined
+  
+  if (tokenKey) {
+    active = keys.find((k) => k.key === tokenKey)
+  } else {
+    if (minCredits && minCredits > 0) {
+      active = keys.find((k) => 
+        (k.status === 'active' || k.status === 'unknown') && 
+        k.balance !== null && k.balance !== undefined && 
+        k.balance >= minCredits
+      )
+    }
+    if (!active) {
+      active = keys.find((k) => k.status === 'active' || k.status === 'unknown')
+    }
+  }
+  
   if (!active?.key) return null
 
   try {
@@ -480,9 +517,12 @@ export async function submitGalleri5MotionControl(
   const model = resolveModel(opts.modelKey)
   const onProgress = opts.onProgress
 
-  const keys = getStoredKeys()
-  const active = keys.find((k) => k.status === 'active' || k.status === 'unknown')
-  if (!active?.key) throw Error('Galery5: tidak ada token aktif')
+  const keys = getValidKeysWithBalance(model.cr)
+  if (keys.length === 0) {
+    throw Error(`Galery5: tidak ada token dengan balance cukup (min ${model.cr} cr untuk ${model.label})`)
+  }
+  
+  const active = keys[0]
   const accessToken = await resolveAccessToken(active.key)
 
   onProgress?.('cek akun...')
@@ -765,9 +805,12 @@ export async function submitGalleri5I2V(
   const model = GALLERI5_I2V_MODELS.find((m) => m.key === opts.modelKey) || GALLERI5_I2V_MODELS[0]
   const onProgress = opts.onProgress
 
-  const keys = getStoredKeys()
-  const active = keys.find((k) => k.status === 'active' || k.status === 'unknown')
-  if (!active?.key) throw Error('Galery5: tidak ada token aktif')
+  const keys = getValidKeysWithBalance(model.cr)
+  if (keys.length === 0) {
+    throw Error(`Galery5: tidak ada token dengan balance cukup (min ${model.cr} cr untuk ${model.label})`)
+  }
+  
+  const active = keys[0]
   const accessToken = await resolveAccessToken(active.key)
 
   onProgress?.('cek akun...')
@@ -912,12 +955,18 @@ export async function submitGalleri5I2V(
 export async function runGalleri5I2V(
   execute: (token: string) => Promise<string>,
   opts?: {
+    minCredits?: number
     onRotate?: (index: number, total: number, reason: string) => void
   }
 ): Promise<string> {
-  const allKeys = getAllStoredKeys()
+  const minCr = opts?.minCredits || 200
+  let allKeys = getValidKeyStringsWithBalance(minCr)
+  
   if (allKeys.length === 0) {
-    throw Error('Belum ada token Galery5. Buka Manage → Tokens → Galery5 dan tambahkan Firebase refresh token.')
+    allKeys = getAllStoredKeys()
+    if (allKeys.length === 0) {
+      throw Error('Belum ada token Galery5. Buka Manage → Tokens → Galery5 dan tambahkan Firebase refresh token.')
+    }
   }
 
   let lastError: Error | null = null
@@ -956,12 +1005,18 @@ export interface Galleri5RunOptions extends Omit<Galleri5MotionControlOptions, '
 export async function runGalleri5WithRotation(
   execute: (token: string) => Promise<string>,
   opts?: {
+    minCredits?: number
     onRotate?: (index: number, total: number, reason: string) => void
   }
 ): Promise<string> {
-  const allKeys = getAllStoredKeys()
+  const minCr = opts?.minCredits || 60
+  let allKeys = getValidKeyStringsWithBalance(minCr)
+  
   if (allKeys.length === 0) {
-    throw Error('Belum ada token Galery5. Buka Manage → Tokens → Galery5 dan tambahkan Firebase refresh token (AMf-...).')
+    allKeys = getAllStoredKeys()
+    if (allKeys.length === 0) {
+      throw Error('Belum ada token Galery5. Buka Manage → Tokens → Galery5 dan tambahkan Firebase refresh token (AMf-...).')
+    }
   }
 
   let lastError: Error | null = null

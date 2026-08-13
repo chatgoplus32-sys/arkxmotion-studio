@@ -2,6 +2,8 @@ import { create } from 'zustand'
 
 export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'runninghub' | 'createpulse' | 'framia' | 'firefly' | 'leonardo' | 'gemini' | 'openai' | 'shotstack' | 'creatomate' | 'galleri5'
 
+export const HIDDEN_PROVIDERS: ProviderId[] = ['runninghub']
+
 export interface ProviderKey {
   id: string
   key: string
@@ -395,11 +397,31 @@ export const useProviderManager = create<ProviderState>((set, get) => ({
 
   getActiveKey: (provider) => {
     const keys = get().keys[provider]
+    const config = PROVIDER_CONFIGS[provider]
+    const minCredits = config?.minCredits || 0
+    
+    if (config?.supportsBalance && minCredits > 0) {
+      const validKey = keys.find((k) => k.status === 'active' && k.balance !== null && k.balance !== undefined && k.balance >= minCredits)
+      if (validKey) return validKey
+    }
+    
     return keys.find((k) => k.status === 'active') || keys[0] || null
   },
 
   getFirstValidKey: (provider) => {
     const keys = get().keys[provider]
+    const config = PROVIDER_CONFIGS[provider]
+    const minCredits = config?.minCredits || 0
+    
+    if (config?.supportsBalance && minCredits > 0) {
+      const validKey = keys.find((k) => 
+        (k.status === 'active' || k.status === 'unknown') && 
+        k.balance !== null && k.balance !== undefined && 
+        k.balance >= minCredits
+      )
+      if (validKey) return validKey
+    }
+    
     return keys.find((k) => k.status === 'active' || k.status === 'unknown') || null
   },
 
@@ -410,6 +432,19 @@ export const useProviderManager = create<ProviderState>((set, get) => ({
   getNextKey: (provider, excludeKeyIds = []) => {
     const keys = get().keys[provider] || []
     const exclude = new Set(excludeKeyIds)
+    const config = PROVIDER_CONFIGS[provider]
+    const minCredits = config?.minCredits || 0
+    
+    if (config?.supportsBalance && minCredits > 0) {
+      const validKey = keys.find((k) => 
+        !exclude.has(k.id) && 
+        (k.status === 'active' || k.status === 'unknown') &&
+        k.balance !== null && k.balance !== undefined && 
+        k.balance >= minCredits
+      )
+      if (validKey) return validKey
+    }
+    
     return (
       keys.find((k) => !exclude.has(k.id) && (k.status === 'active' || k.status === 'unknown')) ||
       keys.find((k) => !exclude.has(k.id)) ||

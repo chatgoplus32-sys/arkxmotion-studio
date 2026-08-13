@@ -3,6 +3,7 @@ export { useProviderStore, type Provider, type ProviderKey } from './providerSto
 export {
   useProviderManager,
   PROVIDER_CONFIGS,
+  HIDDEN_PROVIDERS,
   type ProviderId,
   type ProviderKey as ManagerProviderKey,
   type ProviderConfig,

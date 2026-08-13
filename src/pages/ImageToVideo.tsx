@@ -75,6 +75,9 @@ const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'cp:dreamina-seedance-2.0', label: 'Seedance 2.0 (FAST)', cr: 22, provider: 'createpulse', apiModel: 'dreamina-seedance-2.0' },
     { value: 'cp:dreamina-seedance-2.5', label: 'Seedance 2.5 (BEST)', cr: 22, provider: 'createpulse', apiModel: 'dreamina-seedance-2.5' },
     { value: 'cp:dreamina-seedance-2.0-15s', label: 'Seedance 2.0 Extended (15s)', cr: 33, provider: 'createpulse', apiModel: 'dreamina-seedance-2.0-15s' },
+    { value: 'cp:dreamina-seedance-2.5-15s', label: 'Seedance 2.5 · 15 Second', cr: 33, provider: 'createpulse', apiModel: 'dreamina-seedance-2.5-15s' },
+    { value: 'cp:dreamina-seedance-2.5-20s', label: 'Seedance 2.5 · 20 Second', cr: 33, provider: 'createpulse', apiModel: 'dreamina-seedance-2.5-20s' },
+    { value: 'cp:dreamina-seedance-2.5-30s', label: 'Seedance 2.5 · 30 Second — longest', cr: 33, provider: 'createpulse', apiModel: 'dreamina-seedance-2.5-30s' },
     { value: 'cp:veo-omni-10s', label: 'Veo Omni (CINEMATIC)', cr: 33, provider: 'createpulse', apiModel: 'veo-omni-10s' },
   ],
   framia: [
@@ -274,6 +277,15 @@ const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; 
     'cp:dreamina-seedance-2.0-15s': [
       { value: '15s', label: '15 detik', mult: 1, duration: 15 },
     ],
+    'cp:dreamina-seedance-2.5-15s': [
+      { value: '15s', label: '15 detik', mult: 1, duration: 15 },
+    ],
+    'cp:dreamina-seedance-2.5-20s': [
+      { value: '20s', label: '20 detik', mult: 1, duration: 20 },
+    ],
+    'cp:dreamina-seedance-2.5-30s': [
+      { value: '30s', label: '30 detik', mult: 1, duration: 30 },
+    ],
     'cp:veo-omni-10s': [
       { value: '10s', label: '10 detik', mult: 1, duration: 10 },
     ],
@@ -359,6 +371,17 @@ const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; 
     ],
   },
 }
+
+const CP_PRICES: Record<string, number> = {
+  'dreamina-seedance-2.0': 1500,
+  'dreamina-seedance-2.5': 1500,
+  'dreamina-seedance-2.0-15s': 2250,
+  'dreamina-seedance-2.5-15s': 2500,
+  'dreamina-seedance-2.5-20s': 3000,
+  'dreamina-seedance-2.5-30s': 4500,
+  'veo-omni-10s': 2250,
+}
+const getCreatepulseCost = (apiModel?: string) => apiModel ? (CP_PRICES[apiModel] ?? 1500) : 1500
 
 const RATIOS = ['16:9', '9:16', '1:1', '4:5', '3:4']
 
@@ -693,7 +716,7 @@ export default function ImageToVideoPage() {
 
   const generateWithCreatePulse = async (apiKey: string) => {
     const duration = currentQuality?.duration || 10
-    const cost = (currentModel?.apiModel === 'dreamina-seedance-2.0-15s' || currentModel?.apiModel === 'veo-omni-10s') ? 2250 : 1500
+    const cost = getCreatepulseCost(currentModel?.apiModel)
     const isAdmin = user?.role === 'admin'
 
     if (!isAdmin) {
@@ -859,7 +882,7 @@ export default function ImageToVideoPage() {
   const validateGenerate = (): string | null => {
     if (!prompt.trim()) return 'Prompt harus diisi'
     if (!hasActiveKey && provider !== 'roboneo' && provider !== 'createpulse') return `Tidak ada API key aktif untuk ${PROVIDER_CONFIGS[provider].name}`
-    if (provider === 'createpulse' && user?.role !== 'admin' && cpBalance < ((currentModel?.apiModel === 'dreamina-seedance-2.0-15s' || currentModel?.apiModel === 'veo-omni-10s') ? 2250 : 1500)) return 'Saldo CreatePulse tidak cukup. Top up minimal Rp 10.000'
+    if (provider === 'createpulse' && user?.role !== 'admin' && cpBalance < getCreatepulseCost(currentModel?.apiModel)) return 'Saldo CreatePulse tidak cukup. Top up minimal Rp 10.000'
     if (provider === 'roboneo' && !imgFile) return 'Roboneo membutuhkan gambar input'
     return null
   }
@@ -2000,7 +2023,7 @@ export default function ImageToVideoPage() {
               <div className="text-xs font-medium text-primary">💜 CreatePulse {user?.role === 'admin' && '(Admin — Free)'}</div>
               {user?.role !== 'admin' && (
                 <div className="text-xs">
-                  Saldo: <b className={`font-bold ${cpBalance >= ((currentModel?.apiModel === 'dreamina-seedance-2.0-15s' || currentModel?.apiModel === 'veo-omni-10s') ? 2250 : 1500) ? 'text-emerald-500' : 'text-destructive'}`}>
+                  Saldo: <b className={`font-bold ${cpBalance >= getCreatepulseCost(currentModel?.apiModel) ? 'text-emerald-500' : 'text-destructive'}`}>
                     Rp {cpBalance.toLocaleString('id-ID')}
                   </b>
                 </div>
@@ -2013,7 +2036,7 @@ export default function ImageToVideoPage() {
               <div>Veo Omni (10s): <b className="text-foreground">{user?.role === 'admin' ? 'GRATIS' : 'Rp 2.250'}</b></div>
               {user?.role !== 'admin' && <div>Failed generations: <b className="text-emerald-500">auto-refunded</b></div>}
             </div>
-            {user?.role !== 'admin' && cpBalance < ((currentModel?.apiModel === 'dreamina-seedance-2.0-15s' || currentModel?.apiModel === 'veo-omni-10s') ? 2250 : 1500) && (
+            {user?.role !== 'admin' && cpBalance < getCreatepulseCost(currentModel?.apiModel) && (
               <div className="mt-2 text-[11px]">
                 <a href="/topup/createpulse" className="text-primary hover:underline font-medium">
                   Top Up Saldo →
@@ -2201,7 +2224,7 @@ export default function ImageToVideoPage() {
                 )}
               </Button>
               <div className="text-xs text-muted-foreground">
-                Est. Cost: <b className="text-foreground font-mono">{provider === 'createpulse' ? `Rp ${((currentModel?.apiModel === 'dreamina-seedance-2.0-15s' || currentModel?.apiModel === 'veo-omni-10s') ? 2250 : 1500).toLocaleString('id-ID')}` : `${totalCredits} credits`}</b>
+                Est. Cost: <b className="text-foreground font-mono">{provider === 'createpulse' ? `Rp ${getCreatepulseCost(currentModel?.apiModel).toLocaleString('id-ID')}` : `${totalCredits} credits`}</b>
               </div>
               {!hasActiveKey && provider !== 'createpulse' && (
                 <a
@@ -2296,7 +2319,7 @@ export default function ImageToVideoPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Est. Cost</span>
-                  <span className="font-medium text-primary">{provider === 'createpulse' ? `Rp ${((currentModel?.apiModel === 'dreamina-seedance-2.0-15s' || currentModel?.apiModel === 'veo-omni-10s') ? 2250 : 1500).toLocaleString('id-ID')}` : `${totalCredits} credits`}</span>
+                  <span className="font-medium text-primary">{provider === 'createpulse' ? `Rp ${getCreatepulseCost(currentModel?.apiModel).toLocaleString('id-ID')}` : `${totalCredits} credits`}</span>
                 </div>
               </div>
 
