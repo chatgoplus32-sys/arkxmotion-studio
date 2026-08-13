@@ -116,6 +116,7 @@ const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'rh:std:2.1', label: 'Kling 2.1 Standard (Markasflow-V2)', cr: 35, provider: 'runninghub' },
   ],
   galleri5: [
+    { value: 'g5:gemini-omni-flash-i2v', label: 'Gemini Omni Flash I2V (Galery5)', cr: 50, provider: 'galleri5' },
     { value: 'g5:wan-2.7-i2v', label: 'Wan 2.7 Image to Video (Galery5)', cr: 200, provider: 'galleri5' },
   ],
 }
@@ -361,6 +362,10 @@ const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; 
     ],
   },
   galleri5: {
+    'g5:gemini-omni-flash-i2v': [
+      { value: '8s-720p', label: '8 detik · 720p', mult: 1, duration: 8, cr: 50, resolution: '720p' },
+      { value: '5s-720p', label: '5 detik · 720p', mult: 1, duration: 5, cr: 50, resolution: '720p' },
+    ],
     'g5:wan-2.7-i2v': [
       { value: '15s-1080p', label: '15 detik · 1080p', mult: 1, duration: 15, cr: 200, resolution: '1080p' },
       { value: '15s-720p', label: '15 detik · 720p', mult: 1, duration: 15, cr: 200, resolution: '720p' },

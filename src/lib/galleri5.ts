@@ -779,6 +779,13 @@ export interface Galleri5I2VOptions {
 
 export const GALLERI5_I2V_MODELS: Galleri5MotionModel[] = [
   {
+    key: 'g5:gemini-omni-flash-i2v',
+    modelPath: 'gemini-omni-flash-image-to-video',
+    label: 'Gemini Omni Flash I2V (Galery5)',
+    sessionName: 'Gemini Omni Flash Image to Video',
+    cr: 50,
+  },
+  {
     key: 'g5:wan-2.7-i2v',
     modelPath: 'fal-ai/wan-v2.7-i2v',
     label: 'Wan 2.7 Image to Video (Galery5)',
