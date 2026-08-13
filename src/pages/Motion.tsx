@@ -7,7 +7,7 @@ import { useToastStore } from '@/stores/toastStore'
 import { uploadToCatbox, submitMotionControl, pollRoboneoI2V, checkRoboneoBalance, compressVideo, submitGoogleOmni, normalizeImage, getVideoDurationFromFile, noteRoboneoMotionChargeFailure, isRoboneoBalanceError } from '@/lib/roboneo'
 import { submitWeavyMotionControl, uploadWeavyAssetWithRetry, resolveWeavyAssetUrl, getActiveWeavyAccessToken, compressImageForWeavy } from '@/lib/weavy'
 import { getRunningHubApiKey, submitRunningHubMotionControl, pollRunningHubTask } from '@/lib/runninghub'
-import { getGalleri5Headers, getGalleri5AuthHeaders, submitGalleri5MotionControl, pollGalleri5MotionControl, checkGalleri5Balance, isGalleri5TokenError, isGalleri5ModelRestricted, getGalleri5ErrorMessage, GALLERI5_MOTION_MODELS, runGalleri5WithRotation } from '@/lib/galleri5'
+import { getGalleri5Headers, getGalleri5AuthHeaders, submitGalleri5MotionControl, pollGalleri5MotionControl, checkGalleri5Balance, isGalleri5TokenError, isGalleri5ModelRestricted, isGalleri5InsufficientBalance, getGalleri5ErrorMessage, GALLERI5_MOTION_MODELS, runGalleri5WithRotation } from '@/lib/galleri5'
 import { trimVideoFFmpeg } from '@/lib/ffmpeg-compress'
 import { getMagnificApiKey, submitMagnificMotion, pollMagnificMotion, type MagnificMotionModel } from '@/lib/magnific'
 import { useLocalStorage } from '@/lib/useLocalStorage'
@@ -1143,8 +1143,8 @@ export default function MotionPage() {
               updateSlotStatus(slot.id, 'error', errorMsg)
               addLog(`#${slotNum} Error: ${errorMsg}`, 'error')
               
-              // If model restricted, don't retry with other tokens
-              if (provider === 'galleri5' && isGalleri5ModelRestricted(err.message)) {
+              // If model restricted or insufficient balance, don't retry with other tokens
+              if (provider === 'galleri5' && (isGalleri5ModelRestricted(err.message) || isGalleri5InsufficientBalance(err.message))) {
                 throw new Error(errorMsg)
               }
               

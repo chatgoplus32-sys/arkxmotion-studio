@@ -986,11 +986,20 @@ export function isGalleri5ModelRestricted(msg: string): boolean {
   return /model.*restricted|restricted.*model|contact.*admin.*enable/i.test(msg || '')
 }
 
+export function isGalleri5InsufficientBalance(msg: string): boolean {
+  return /credit tidak cukup|sisa.*butuh|insufficient.*credit|not enough.*credit/i.test(msg || '')
+}
+
 export function isGalleri5TokenError(msg: string): boolean {
   const t = (msg || '').toLowerCase()
   
   // Model restriction is NOT a token error - don't rotate
   if (isGalleri5ModelRestricted(msg)) {
+    return false
+  }
+  
+  // Insufficient balance is NOT a token error if all tokens have same issue - don't rotate
+  if (isGalleri5InsufficientBalance(msg)) {
     return false
   }
   
@@ -1008,6 +1017,10 @@ export function getGalleri5ErrorMessage(error: any): string {
     const modelName = modelMatch ? modelMatch[1] : 'ini'
     
     return `Model ${modelName} tidak tersedia di akun G5 Anda. Coba model lain (Kling V2.6 Standard biasanya tersedia untuk semua akun) atau upgrade subscription di aistudio.galleri5.com`
+  }
+  
+  if (isGalleri5InsufficientBalance(msg)) {
+    return `${msg}. Gunakan model yang lebih murah (Kling V2.6 Standard = 60 cr) atau isi ulang credit di aistudio.galleri5.com`
   }
   
   return msg

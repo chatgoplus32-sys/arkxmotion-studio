@@ -1801,7 +1801,7 @@ export default function ImageToVideoPage() {
         const imageUrl = await uploadToCatbox(imgFile)
         addLog(`[1/3] ✅ Image uploaded ✓`, 'success', 'galleri5')
 
-        const { submitGalleri5I2V, pollGalleri5MotionControl, getGalleri5AuthHeaders, isGalleri5ModelRestricted, getGalleri5ErrorMessage } = await import('@/lib/galleri5')
+        const { submitGalleri5I2V, pollGalleri5MotionControl, getGalleri5AuthHeaders, isGalleri5ModelRestricted, isGalleri5InsufficientBalance, getGalleri5ErrorMessage } = await import('@/lib/galleri5')
 
         const rotation = await withTokenRotation<string>(
           'galleri5',
@@ -1869,8 +1869,8 @@ export default function ImageToVideoPage() {
               if (detectTokenError('galleri5', err)) {
                 addLog(`⚠️ Key is invalid: ${err.message}`, 'warn', 'galleri5')
               }
-              // If model restricted, stop rotation and throw error
-              if (isGalleri5ModelRestricted(err.message)) {
+              // If model restricted or insufficient balance, stop rotation and throw error
+              if (isGalleri5ModelRestricted(err.message) || isGalleri5InsufficientBalance(err.message)) {
                 const errorMsg = getGalleri5ErrorMessage(err)
                 addLog(`❌ ${errorMsg}`, 'error', 'galleri5')
                 throw new Error(errorMsg)
