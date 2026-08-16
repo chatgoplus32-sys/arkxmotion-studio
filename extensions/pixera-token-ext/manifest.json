@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Pixera Token Extractor",
+  "description": "Auto-capture & manage Pixera (dorax) refresh tokens for ARKx Motion Studio",
+  "version": "1.0.1",
+  "minimum_chrome_version": "88",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://pixera.id/*",
+    "https://api-dorax.doraai.id/*",
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://pixera.id/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
