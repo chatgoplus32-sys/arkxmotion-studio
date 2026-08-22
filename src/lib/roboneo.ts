@@ -770,87 +770,11 @@ export async function createRoboneoRoom(accessToken: string): Promise<{ roomId: 
   return { roomId }
 }
 
-export async function submitMotionControl(params: {
-  accessToken: string
-  imageUrl: string
-  videoUrl: string
-  prompt?: string
-  negativePrompt?: string
-  orientation?: string
-  keepSound?: boolean
-  modelKey?: string
-}): Promise<{ taskId: string; roomId: string; nodeId: string }> {
-  const { accessToken, imageUrl, videoUrl, prompt = '', negativePrompt, orientation = 'video', modelKey } = params
-
-  const roomId = generateRoomId()
-  const nodeId = uuid()
-
-  const motionPrompt = prompt || `Refer to the movements and facial expressions in the video to animate photos without changing the original background.`
-  const fullPrompt = negativePrompt
-    ? `${motionPrompt}\n\nNegative: ${negativePrompt}`
-    : motionPrompt
-
-  // Matches Roboneo website clipboard data exactly:
-  // { mcpCategoriesId: '93', apiName: 'video_bonbon_motioncontrol_v26', parameters: { quality: 'std' } }
-  const motionNodeMap: Record<string, { name: string; label: string; mcpCategoriesId: string }> = {
-    'rn:video_bonbon_motioncontrol_v26:std': { name: 'video_bonbon_motioncontrol_v26', label: 'Kling 2.6 Standard', mcpCategoriesId: '93' },
-    'rn:video_bonbon_motioncontrol_v26:pro': { name: 'video_bonbon_motioncontrol_v26', label: 'Kling 2.6 Pro', mcpCategoriesId: '93' },
-    'rn:video_bonbon_motioncontrol_v30:std': { name: 'video_bonbon_motioncontrol_v30', label: 'Kling 3.0 Standard', mcpCategoriesId: '101' },
-    'rn:video_bonbon_motioncontrol_v30:pro': { name: 'video_bonbon_motioncontrol_v30', label: 'Kling 3.0 Pro', mcpCategoriesId: '101' },
-    'rn:video_wan_motioncontrol_v26': { name: 'video_wan_motioncontrol_v26', label: 'Wan 2.6 Motion Control', mcpCategoriesId: '93' },
-  }
-
-  const motionConfig = motionNodeMap[modelKey || ''] || { name: 'video_bonbon_motioncontrol_v30', label: 'Kling 3.0', mcpCategoriesId: '101' }
-
-  // Match the official Roboneo web flow: only quality is a node parameter
-  const quality = modelKey?.endsWith(':pro') ? 'pro' : 'std'
-
-  // Match website clipboard for core params + random (Omni works with random)
-  const parameters: Record<string, any> = {
-    image_url: imageUrl,
-    video_url: videoUrl,
-    prompt: fullPrompt,
-    quality,
-    random: `${Date.now()}-${Math.floor(1e7 + Math.random() * 89999999)}`,
-  }
-
-  const node = {
-    tool_abstract_name: { cn: motionConfig.label, en: motionConfig.label },
-    node_id: nodeId,
-    name: motionConfig.name,
-    parameters,
-  }
-
-  const tracking = buildTrackingParams(accessToken, 'nodeexecute', roomId)
-  const { _access_token, ...paramWithoutToken } = tracking
-
-  const parameter = {
-    ...paramWithoutToken,
-    room_id: roomId,
-    node_id: nodeId,
-    need_node_name: true,
-    workflow_version: 'v2',
-    node_list_array: [[node]],
-  }
-
-  const result = await roboneoApiCall(accessToken, 'nodeexecute', parameter)
-
-  const payload = result
-
-  const taskIds: string[] = payload?.task_ids?.length
-    ? payload.task_ids
-    : Array.isArray(payload?.tasks)
-    ? payload.tasks.map((t: any) => t.task_id).filter(Boolean)
-    : payload?.task_id
-    ? [payload.task_id]
-    : Object.keys(payload?.tasks || {})
-
-  if (!taskIds.length) {
-    throw new Error('Roboneo Motion Control: task_id tidak ditemukan. Response: ' + JSON.stringify(payload).slice(0, 300))
-  }
-
-  taskMetaMap.set(taskIds[0], { roomId, nodeId })
-  return { taskId: taskIds[0], roomId, nodeId }
+// submitMotionControl removed — motion control not supported yet
+// To rebuild: submit to nodeexecute with node name 'video_bonbon_motioncontrol_v26'
+// Parameters: { image_url, video_url, prompt, quality, random }
+export async function submitMotionControl(_params: any): Promise<any> {
+  throw new Error('Motion control is not supported yet')
 }
 
 const ROBONEO_I2V_MODELS: Record<string, { apiName: string; recipeCode?: string; toolLabel: string; family: string }> = {

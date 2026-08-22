@@ -109,7 +109,10 @@ const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
   shotstack: [],
   creatomate: [],
   firefly: [
-    { value: 'firefly:kling-v3', label: 'Kling 3.0 (Firefly)', cr: 130, provider: 'firefly' },
+    { value: 'firefly:veo-3.1-fast', label: 'Veo 3.1 Fast (Firefly)', cr: 100, provider: 'firefly' },
+    { value: 'firefly:veo-3.1', label: 'Veo 3.1 (Firefly)', cr: 130, provider: 'firefly' },
+    { value: 'firefly:gemini-omni-flash', label: 'Gemini Omni Flash (Firefly)', cr: 80, provider: 'firefly' },
+    { value: 'firefly:seedance-fast', label: 'Seedance Fast (Firefly)', cr: 60, provider: 'firefly' },
   ],
   runninghub: [
     { value: 'rh:pro:2.6', label: 'Kling 2.6 Pro (Markasflow-V2)', cr: 80, provider: 'runninghub' },
@@ -360,7 +363,24 @@ const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; 
   creatomate: { default: [] },
   firefly: {
     default: [
-      { value: 'std', label: 'Standard 5s', mult: 1, duration: 5 },
+      { value: '5s', label: '5 detik', mult: 1, duration: 5 },
+      { value: '10s', label: '10 detik', mult: 2, duration: 10 },
+    ],
+    'firefly:veo-3.1-fast': [
+      { value: '5s', label: '5 detik', mult: 1, duration: 5 },
+    ],
+    'firefly:veo-3.1': [
+      { value: '5s', label: '5 detik', mult: 1, duration: 5 },
+      { value: '8s', label: '8 detik', mult: 1.5, duration: 8 },
+    ],
+    'firefly:gemini-omni-flash': [
+      { value: '5s', label: '5 detik', mult: 1, duration: 5 },
+      { value: '10s', label: '10 detik', mult: 2, duration: 10 },
+    ],
+    'firefly:seedance-fast': [
+      { value: '5s', label: '5 detik', mult: 1, duration: 5 },
+      { value: '10s', label: '10 detik', mult: 2, duration: 10 },
+      { value: '15s', label: '15 detik', mult: 3, duration: 15 },
     ],
   },
   runninghub: {
@@ -442,15 +462,17 @@ const TEMPLATES = [
 
 const CREATEPULSE_API = '/api/public/createpulse'
 
-function VideoPlayer({ directUrl, proxyFallback, rawUrl }: { directUrl: string; proxyFallback: string; rawUrl: string }) {
+function VideoPlayer({ directUrl, proxyFallback, rawUrl, ratio }: { directUrl: string; proxyFallback: string; rawUrl: string; ratio?: string }) {
   const [src, setSrc] = useState(directUrl)
   const [triedProxy, setTriedProxy] = useState(false)
   const [failed, setFailed] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     setSrc(directUrl)
     setTriedProxy(false)
     setFailed(false)
+    setLoading(true)
   }, [directUrl])
 
   const handleError = () => {
@@ -459,23 +481,35 @@ function VideoPlayer({ directUrl, proxyFallback, rawUrl }: { directUrl: string; 
       setTriedProxy(true)
     } else {
       setFailed(true)
+      setLoading(false)
     }
   }
+
+  const aspectClass = ratio === '1:1' ? 'aspect-square' : ratio === '16:9' ? 'aspect-video' : 'aspect-[9/16]'
 
   return (
     <div className="relative">
       {!failed ? (
-        <video
-          key={src}
-          src={src}
-          controls
-          playsInline
-          preload="metadata"
-          onError={handleError}
-          className="w-full aspect-[9/16] object-cover bg-black"
-        />
+        <>
+          {loading && (
+            <div className={`absolute inset-0 ${aspectClass} bg-black flex items-center justify-center z-10`}>
+              <Loader2 className="h-6 w-6 text-white animate-spin" />
+            </div>
+          )}
+          <video
+            key={src}
+            src={src}
+            controls
+            playsInline
+            preload="metadata"
+            onError={handleError}
+            onLoadedData={() => setLoading(false)}
+            onCanPlay={() => setLoading(false)}
+            className={`w-full ${aspectClass} object-cover bg-black`}
+          />
+        </>
       ) : (
-        <div className="w-full aspect-[9/16] bg-black flex items-center justify-center">
+        <div className={`w-full ${aspectClass} bg-black flex items-center justify-center`}>
           <div className="text-center p-4">
             <p className="text-red-400 text-xs mb-2">Gagal memuat video</p>
             <a href={rawUrl} target="_blank" rel="noreferrer" className="text-primary text-xs underline">Coba buka langsung</a>
@@ -623,22 +657,77 @@ export default function ImageToVideoPage() {
     return () => window.removeEventListener('arkxmotion-tasks-changed', sync)
   }, [])
 
-  const handleDownload = useCallback(async (url: string, index: number) => {
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
+
+  const handleDownload = useCallback(async (url: string, index: number, itemId?: string) => {
+    if (itemId) setDownloadingId(itemId)
     try {
+      // Detect extension from URL
+      let ext = 'mp4'
+      if (url.includes('.webm')) ext = 'webm'
+      else if (url.includes('.mov')) ext = 'mov'
+      else if (url.includes('.png')) ext = 'png'
+      else if (url.includes('.jpg') || url.includes('.jpeg')) ext = 'jpg'
+      const filename = `video-${Date.now()}-${index}.${ext}`
+
+      // Try direct download first (no proxy = no binary corruption)
       const isExternal = /^https?:\/\//i.test(url) && !url.includes(window.location.origin)
-      const fetchUrl = isExternal ? `/api/public/video-proxy?url=${encodeURIComponent(url)}` : url
-      const res = await fetch(fetchUrl)
-      const blob = await res.blob()
-      const blobUrl = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = blobUrl
-      a.download = `video-${Date.now()}-${index}.mp4`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(blobUrl)
-    } catch {
+      if (isExternal) {
+        // Use proxy to avoid CORS, but verify content is actual video
+        const proxyUrl = `/api/public/video-proxy?url=${encodeURIComponent(url)}`
+        const res = await fetch(proxyUrl)
+        const contentType = res.headers.get('content-type') || ''
+        console.log('[download] proxy content-type:', contentType, 'status:', res.status)
+
+        // If proxy returned non-video (error JSON, HTML, etc.), fall back to direct
+        if (!res.ok || (!contentType.includes('video') && !contentType.includes('octet-stream'))) {
+          console.log('[download] proxy returned non-video, falling back to direct')
+          const a = document.createElement('a')
+          a.href = url
+          a.download = filename
+          a.target = '_blank'
+          a.rel = 'noopener'
+          document.body.appendChild(a)
+          a.click()
+          document.body.removeChild(a)
+          return
+        }
+
+        const blob = await res.blob()
+        console.log('[download] blob size:', blob.size, 'type:', blob.type)
+
+        // Sanity check: video files should be > 1KB
+        if (blob.size < 1024) {
+          console.log('[download] blob too small, falling back to direct')
+          window.open(url, '_blank')
+          return
+        }
+
+        const blobUrl = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = blobUrl
+        a.download = filename
+        document.body.appendChild(a)
+        a.click()
+        // Delay revoke to ensure download starts
+        setTimeout(() => {
+          document.body.removeChild(a)
+          URL.revokeObjectURL(blobUrl)
+        }, 1000)
+      } else {
+        // Same-origin: download directly
+        const a = document.createElement('a')
+        a.href = url
+        a.download = filename
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+      }
+    } catch (err) {
+      console.error('[download] error:', err)
       window.open(url, '_blank')
+    } finally {
+      setDownloadingId(null)
     }
   }, [])
 
@@ -1248,34 +1337,127 @@ export default function ImageToVideoPage() {
             addLog(`   → model: ${model}`, 'debug', 'firefly')
             addLog(`   → ratio: ${ratio} | duration: ${currentQuality?.duration || 5}s`, 'debug', 'firefly')
 
-            const submitRes = await fetch('/api/public/firefly', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'X-Firefly-Token': apiKey,
-                'X-Firefly-Api-Key': 'SunbreakWebUI1',
-              },
-              body: JSON.stringify({
-                url: 'https://firefly-3p.ff.adobe.io/v2/3p-videos/generate-async',
-                method: 'POST',
-                body: {
-                  modelId: model.includes('veo') ? 'veo' : 'firefly',
-                  modelVersion: model.includes('3.1-fast') ? '3.1-fast-generate' : model.includes('3.1') ? '3.1-generate' : 'video-1',
-                  size: ratio === '9:16' ? { width: 720, height: 1280 } : ratio === '1:1' ? { width: 1024, height: 1024 } : { width: 1280, height: 720 },
-                  prompt: prompt.trim(),
-                  duration: currentQuality?.duration || 5,
-                  generateAudio: false,
-                },
-              }),
-            })
+            const seedVal = Math.floor(Date.now() % 999999)
+            const nonce = Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('')
+            const arpSessionId = btoa(JSON.stringify({ sid: crypto.randomUUID(), ftr: `${Date.now()}_dUAL43-mnts-ants-d4_31ck__tt` }))
 
-            if (!submitRes.ok) {
-              const err = await submitRes.json().catch(() => ({}))
-              addLog(`[2/2] ❌ Submit failed: HTTP ${submitRes.status}`, 'error', 'firefly')
-              throw new Error(err.error || `HTTP ${submitRes.status}`)
+            const isVeo = model.includes('veo')
+            const isKling = model.includes('kling')
+            const isSora = model.includes('sora')
+            const vidSize = ratio === '9:16' ? { width: 720, height: 1280 } : ratio === '1:1' ? { width: 1080, height: 1080 } : { width: 1280, height: 720 }
+            const durationSec = currentQuality?.duration || 5
+
+            let generateBody: Record<string, unknown> = {}
+            if (isVeo) {
+              generateBody = {
+                n: 1, seeds: [seedVal],
+                modelId: 'veo',
+                modelVersion: model.includes('3.1-fast') ? '3.1-fast-generate' : '3.1-generate',
+                output: { storeInputs: true },
+                prompt: prompt.trim(),
+                size: vidSize,
+                generateAudio: false,
+                referenceBlobs: [],
+                generationMetadata: { module: 'text2video' },
+                modelSpecificPayload: {
+                  parameters: { durationSeconds: durationSec, aspectRatio: ratio, addWaterMark: false },
+                },
+              }
+            } else if (isKling) {
+              generateBody = {
+                n: 1, seeds: [seedVal],
+                modelId: 'kling',
+                modelVersion: 'kling_v3_standard_i2v',
+                output: { storeInputs: true },
+                prompt: prompt.trim(),
+                size: vidSize,
+                duration: durationSec,
+                generationMetadata: { module: 'text2video' },
+                generationSettings: { aspectRatio: ratio },
+                referenceBlobs: [],
+              }
+            } else if (isSora) {
+              generateBody = {
+                n: 1, seeds: [seedVal],
+                modelId: 'sora',
+                modelVersion: 'sora-2',
+                size: vidSize,
+                duration: durationSec,
+                fps: 24,
+                prompt: JSON.stringify({ prompt: prompt.trim(), duration: durationSec }),
+                model: 'openai:firefly:colligo:sora2',
+                generationMetadata: { module: 'text2video' },
+                generateLoop: false,
+                transparentBackground: false,
+                seed: String(seedVal),
+                locale: 'en-US',
+                camera: { angle: 'none', shotSize: 'none', motion: null, promptStyle: null },
+                jobMode: 'standard',
+                referenceBlobs: [],
+                referenceFrames: [],
+                output: { storeInputs: true },
+              }
+            } else {
+              // gemini-omni-flash, seedance-fast — generic firefly video
+              generateBody = {
+                n: 1, seeds: [seedVal],
+                modelId: 'firefly',
+                modelVersion: 'video-1',
+                output: { storeInputs: true },
+                prompt: prompt.trim(),
+                size: vidSize,
+                generateAudio: false,
+                referenceBlobs: [],
+                generationMetadata: { module: 'text2video' },
+                modelSpecificPayload: {
+                  parameters: { durationSeconds: durationSec, aspectRatio: ratio, addWaterMark: false },
+                },
+              }
             }
 
-            const submitData = await submitRes.json()
+            let submitRes: Response | null = null
+            let submitData: any = null
+            const maxRetries = 5
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+              submitRes = await fetch('/api/public/firefly', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-Firefly-Token': apiKey,
+                  'X-Firefly-Api-Key': 'clio-playground-web',
+                  'X-Firefly-Nonce': nonce,
+                  'X-Firefly-Arp': arpSessionId,
+                },
+                body: JSON.stringify({
+                  url: 'https://firefly-3p.ff.adobe.io/v2/3p-videos/generate-async',
+                  method: 'POST',
+                  body: generateBody,
+                }),
+              })
+
+              if (submitRes.ok) {
+                submitData = await submitRes.json()
+                break
+              }
+
+              const errBody = await submitRes.json().catch(() => ({}))
+              const errMsg = errBody.error || errBody.message || `HTTP ${submitRes.status}`
+              const isRetryable = [408, 500, 502, 503, 504].includes(submitRes.status) || String(errMsg).includes('timeout') || String(errMsg).includes('under load') || String(errMsg).includes('busy')
+
+              if (isRetryable && attempt < maxRetries) {
+                const waitSec = Math.min(10 * Math.pow(2, attempt - 1), 120)
+                addLog(`[2/2] ⚠️ Firefly busy (${errMsg}), retry #${attempt + 1}/${maxRetries} dalam ${waitSec}s...`, 'warn', 'firefly')
+                setStatus((s) => ({ ...s, text: `Firefly busy, retry ${attempt + 1}/${maxRetries}...`, pct: 15 }))
+                await new Promise((r) => setTimeout(r, waitSec * 1000))
+                continue
+              }
+
+              addLog(`[2/2] ❌ Submit failed: HTTP ${submitRes.status} — ${errMsg}`, 'error', 'firefly')
+              throw new Error(errMsg)
+            }
+
+            if (!submitData) throw new Error('Firefly: no response')
+
             const statusUrl = submitData.data?.statusUrl || submitData.data?._links?.self?.href
             if (!statusUrl) throw new Error('Firefly: statusUrl not found')
 
@@ -1283,7 +1465,7 @@ export default function ImageToVideoPage() {
             setStatus((s) => ({ ...s, text: 'Processing...', pct: 40 }))
 
             addLog(`⏳ Polling for result...`, 'info', 'firefly')
-            const maxPolls = 225
+            const maxPolls = 300
             for (let i = 0; i < maxPolls; i++) {
               await new Promise((r) => setTimeout(r, 4000))
               const pollRes = await fetch('/api/public/firefly', {
@@ -1291,7 +1473,7 @@ export default function ImageToVideoPage() {
                 headers: {
                   'Content-Type': 'application/json',
                   'X-Firefly-Token': apiKey,
-                  'X-Firefly-Api-Key': 'SunbreakWebUI1',
+                  'X-Firefly-Api-Key': 'clio-playground-web',
                 },
                 body: JSON.stringify({ url: statusUrl, method: 'GET' }),
               })
@@ -2089,7 +2271,7 @@ export default function ImageToVideoPage() {
     }
   }
 
-  const PROVIDER_IDS: ProviderId[] = ['weavy', 'wavespeed', 'roboneo', 'createpulse', 'framia', 'leonardo', 'galleri5', 'oneover']
+  const PROVIDER_IDS: ProviderId[] = ['weavy', 'wavespeed', 'roboneo', 'createpulse', 'framia', 'leonardo', 'galleri5', 'oneover', 'firefly']
 
   return (
     <PageContent>
@@ -2599,7 +2781,7 @@ export default function ImageToVideoPage() {
                   rightAction={{ icon: <Download className="h-4 w-4" />, label: 'Download', color: 'emerald' }}
                 >
                   <div className="relative rounded-xl border border-border bg-black/40">
-                    <VideoPlayer directUrl={directUrl} proxyFallback={proxyFallback} rawUrl={item.url} />
+                    <VideoPlayer directUrl={directUrl} proxyFallback={proxyFallback} rawUrl={item.url} ratio={item.ratio} />
                     <div className="p-2 flex flex-col gap-1.5">
                       {item.inputImageUrl && (
                         <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
@@ -2620,10 +2802,15 @@ export default function ImageToVideoPage() {
                           <ExternalLink className="h-3.5 w-3.5" /> Buka
                         </a>
                         <button
-                          onClick={() => handleDownload(item.url, 0)}
-                          className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-500 transition"
+                          onClick={() => handleDownload(item.url, 0, item.id)}
+                          disabled={downloadingId === item.id}
+                          className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-500 transition disabled:opacity-50"
                         >
-                          <Download className="h-3.5 w-3.5" /> Download
+                          {downloadingId === item.id ? (
+                            <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading...</>
+                          ) : (
+                            <><Download className="h-3.5 w-3.5" /> Download</>
+                          )}
                         </button>
                         {item.taskUrl && (
                           <a href={item.taskUrl} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-1 rounded-lg border border-violet-500/30 bg-violet-500/5 hover:bg-violet-500/10 px-3 py-2 text-xs font-medium text-violet-500 transition" title="Buka di provider untuk download tanpa watermark">

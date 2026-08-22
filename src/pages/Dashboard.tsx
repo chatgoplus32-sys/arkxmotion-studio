@@ -123,59 +123,55 @@ export default function DashboardPage() {
       />
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card variant="bordered" className="hover:glow-gold transition-all animate-fade-in" style={{ animationDelay: '0ms' }}>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg gold-gradient flex items-center justify-center">
-                <Key className="h-5 w-5 text-black" />
-              </div>
-              <div>
-                <div className="text-2xl font-bold gold-text">{stats.activeKeys}</div>
-                <div className="text-[11px] text-muted-foreground">{stats.totalKeys} total keys</div>
-              </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="relative overflow-hidden rounded-2xl border border-amber-500/20 bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent p-4 hover:border-amber-500/40 transition-all animate-fade-in" style={{ animationDelay: '0ms' }}>
+          <div className="absolute top-3 right-3 opacity-10"><Key className="h-12 w-12" /></div>
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-amber-500/20 flex items-center justify-center">
+              <Key className="h-5 w-5 text-amber-400" />
             </div>
-          </CardContent>
-        </Card>
-        <Card variant="bordered" className="hover:glow-gold transition-all animate-fade-in" style={{ animationDelay: '50ms' }}>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg silver-gradient flex items-center justify-center">
-                <Route className="h-5 w-5 text-black" />
-              </div>
-              <div>
-                <div className="text-2xl font-bold silver-text">{stats.activeRoutes}</div>
-                <div className="text-[11px] text-muted-foreground">Active routes</div>
-              </div>
+            <div>
+              <div className="text-3xl font-bold text-amber-400">{stats.activeKeys}</div>
+              <div className="text-[11px] text-muted-foreground">{stats.totalKeys} total keys</div>
             </div>
-          </CardContent>
-        </Card>
-        <Card variant="bordered" className="hover:glow-gold transition-all animate-fade-in" style={{ animationDelay: '100ms' }}>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg gold-gradient flex items-center justify-center">
-                <Zap className="h-5 w-5 text-black" />
-              </div>
-              <div>
-                <div className="text-2xl font-bold gold-text">{stats.providers}</div>
-                <div className="text-[11px] text-muted-foreground">AI Providers</div>
-              </div>
+          </div>
+        </div>
+        <div className="relative overflow-hidden rounded-2xl border border-blue-500/20 bg-gradient-to-br from-blue-500/10 via-blue-500/5 to-transparent p-4 hover:border-blue-500/40 transition-all animate-fade-in" style={{ animationDelay: '50ms' }}>
+          <div className="absolute top-3 right-3 opacity-10"><Route className="h-12 w-12" /></div>
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-blue-500/20 flex items-center justify-center">
+              <Route className="h-5 w-5 text-blue-400" />
             </div>
-          </CardContent>
-        </Card>
-        <Card variant="bordered" className="hover:glow-gold transition-all animate-fade-in" style={{ animationDelay: '150ms' }}>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg silver-gradient flex items-center justify-center">
-                <Activity className="h-5 w-5 text-black" />
-              </div>
-              <div>
-                <div className="text-2xl font-bold silver-text">{activity.length}</div>
-                <div className="text-[11px] text-muted-foreground">Recent activities</div>
-              </div>
+            <div>
+              <div className="text-3xl font-bold text-blue-400">{stats.activeRoutes}</div>
+              <div className="text-[11px] text-muted-foreground">Active routes</div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
+        <div className="relative overflow-hidden rounded-2xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-transparent p-4 hover:border-emerald-500/40 transition-all animate-fade-in" style={{ animationDelay: '100ms' }}>
+          <div className="absolute top-3 right-3 opacity-10"><Zap className="h-12 w-12" /></div>
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-emerald-500/20 flex items-center justify-center">
+              <Zap className="h-5 w-5 text-emerald-400" />
+            </div>
+            <div>
+              <div className="text-3xl font-bold text-emerald-400">{stats.providers}</div>
+              <div className="text-[11px] text-muted-foreground">AI Providers</div>
+            </div>
+          </div>
+        </div>
+        <div className="relative overflow-hidden rounded-2xl border border-purple-500/20 bg-gradient-to-br from-purple-500/10 via-purple-500/5 to-transparent p-4 hover:border-purple-500/40 transition-all animate-fade-in" style={{ animationDelay: '150ms' }}>
+          <div className="absolute top-3 right-3 opacity-10"><Activity className="h-12 w-12" /></div>
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-purple-500/20 flex items-center justify-center">
+              <Activity className="h-5 w-5 text-purple-400" />
+            </div>
+            <div>
+              <div className="text-3xl font-bold text-purple-400">{activity.length}</div>
+              <div className="text-[11px] text-muted-foreground">Recent activities</div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Generation Stats */}

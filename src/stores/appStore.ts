@@ -7,7 +7,7 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set) => ({
-  sidebarCollapsed: false,
+  sidebarCollapsed: typeof window !== 'undefined' && window.innerWidth < 1024,
   toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
   setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
 }))

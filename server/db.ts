@@ -59,7 +59,7 @@ if (!columns.some(c => c.name === 'payment_token')) {
 db.exec(`
   CREATE TABLE IF NOT EXISTS tokens (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    provider TEXT NOT NULL CHECK(provider IN ('roboneo', 'framia', 'weavy', 'createpulse')),
+    provider TEXT NOT NULL CHECK(provider IN ('brain','weavy','wavespeed','roboneo','runninghub','framia','leonardo','createpulse','galleri5','oneover','firefly')),
     name TEXT NOT NULL,
     token_value TEXT NOT NULL,
     price INTEGER NOT NULL DEFAULT 0,

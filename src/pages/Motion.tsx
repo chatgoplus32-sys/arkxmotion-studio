@@ -4,7 +4,8 @@ import { Section, Button, Textarea, Select, Label, EmptyState, QuickRoutingDialo
 import { useProviderManager, HIDDEN_PROVIDERS, type ProviderId } from '@/stores'
 import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
 import { useToastStore } from '@/stores/toastStore'
-import { uploadToCatbox, submitMotionControl, pollRoboneoI2V, checkRoboneoBalance, compressVideo, submitGoogleOmni, normalizeImage, getVideoDurationFromFile, noteRoboneoMotionChargeFailure, isRoboneoBalanceError, isRoboneoBusyError } from '@/lib/roboneo'
+// @ts-ignore — motion control removed, imports kept for dead code paths
+import { uploadToCatbox, compressVideo, normalizeImage, getVideoDurationFromFile, submitMotionControl, pollRoboneoI2V, checkRoboneoBalance, noteRoboneoMotionChargeFailure, isRoboneoBalanceError, isRoboneoBusyError } from '@/lib/roboneo'
 import { trimVideoFFmpeg } from '@/lib/ffmpeg-compress'
 import { submitWeavyMotionControl, uploadWeavyAssetWithRetry, resolveWeavyAssetUrl, getActiveWeavyAccessToken, compressImageForWeavy } from '@/lib/weavy'
 import { getRunningHubApiKey, submitRunningHubMotionControl, pollRunningHubTask } from '@/lib/runninghub'
@@ -44,10 +45,7 @@ const PROVIDERS = {
     { key: 'ws:kwaivgi/kling-v2.6-pro/motion-control', label: 'Kling V2.6 Pro', cr: 56 },
     { key: 'ws:kwaivgi/kling-v2.6-std/motion-control', label: 'Kling V2.6 Standard', cr: 21 },
   ]},
-  roboneo: { name: 'RoboNeo (Meitu)', models: [
-    { key: 'rn:video_bonbon_motioncontrol_v26:std', label: 'Kling V2.6 Standard (RoboNeo · Meitu)', cr: 50 },
-    { key: 'rn:video_bonbon_motioncontrol_v30:std', label: 'Kling V3.0 Standard (RoboNeo · Meitu)', cr: 65 },
-  ]},
+
   magnific: { name: 'Magnific', models: [
     { key: 'mag:kling-v3-motion-control-pro', label: 'Kling V3.0 Pro (Magnific)', cr: 84 },
     { key: 'mag:kling-v3-motion-control-std', label: 'Kling V3.0 Standard (Magnific)', cr: 63 },
@@ -391,7 +389,7 @@ export default function MotionPage() {
       : slots.filter((s) => s.image && s.video)
     if (filledSlots.length === 0) return
 
-    const isRoboneo = provider === 'roboneo'
+    const isRoboneo = false // motion control removed
     const isMagnific = provider === 'magnific'
     const isFramia = provider === 'framia'
 
@@ -1489,23 +1487,37 @@ export default function MotionPage() {
 
   const handleDownload = useCallback(async (url: string, id: string) => {
     try {
-      let blob: Blob | null = null
-      try {
-        const res = await fetch(url, { mode: 'cors' })
-        if (res.ok) blob = await res.blob()
-      } catch {}
-      if (!blob) {
-        const res = await fetch(`/api/public/video-proxy?url=${encodeURIComponent(url)}`)
-        if (res.ok) blob = await res.blob()
+      const filename = `motion-${id}.mp4`
+      const isExternal = /^https?:\/\//i.test(url) && !url.includes(window.location.origin)
+
+      if (isExternal) {
+        // Try proxy first to avoid CORS issues
+        const proxyUrl = `/api/public/video-proxy?url=${encodeURIComponent(url)}`
+        const res = await fetch(proxyUrl)
+        const ct = res.headers.get('content-type') || ''
+        if (res.ok && (ct.includes('video') || ct.includes('octet-stream'))) {
+          const blob = await res.blob()
+          if (blob.size > 1024) {
+            const blobUrl = URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = blobUrl
+            a.download = filename
+            document.body.appendChild(a)
+            a.click()
+            setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(blobUrl) }, 1000)
+            return
+          }
+        }
+        // Fallback: direct link
+        window.open(url, '_blank')
+      } else {
+        const a = document.createElement('a')
+        a.href = url
+        a.download = filename
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
       }
-      if (!blob) throw Error('Download gagal')
-      const a = document.createElement('a')
-      a.href = URL.createObjectURL(blob)
-      a.download = `motion-${id}.mp4`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      setTimeout(() => URL.revokeObjectURL(a.href), 4000)
     } catch {
       window.open(url, '_blank')
     }
@@ -2147,7 +2159,7 @@ const FileUpload = forwardRef<HTMLInputElement, FileUploadProps>(
               ? 'border-primary/50 bg-card/50'
               : 'border-border/80 bg-card/30 hover:border-primary/60'
           }`}
-          style={{ aspectRatio: '16 / 10' }}
+          style={{ aspectRatio: '4 / 3', minHeight: '180px' }}
         >
           {hasFile ? (
             <>

@@ -25,6 +25,10 @@ import AdminTokensPage from '@/pages/AdminTokens'
 import AdminOrderTokensPage from '@/pages/AdminOrderTokens'
 import AdminProviderStatusPage from '@/pages/AdminProviderStatus'
 import AdminTopupPage from '@/pages/AdminTopup'
+import AdminAnalyticsPage from '@/pages/AdminAnalytics'
+import AdminActivityPage from '@/pages/AdminActivity'
+import AdminCreditManagementPage from '@/pages/AdminCreditManagement'
+import AdminSystemSettingsPage from '@/pages/AdminSystemSettings'
 import CreatePulseTopupPage from '@/pages/CreatePulseTopup'
 import BeliTokenPage from '@/pages/BeliToken'
 import LoginPage from '@/pages/Login'
@@ -94,6 +98,10 @@ export default function App() {
                       <Route path="/admin/orders" element={<AdminOrderTokensPage />} />
                       <Route path="/admin/status" element={<AdminProviderStatusPage />} />
                       <Route path="/admin/topup" element={<AdminTopupPage />} />
+                      <Route path="/admin/analytics" element={<AdminAnalyticsPage />} />
+                      <Route path="/admin/activity" element={<AdminActivityPage />} />
+                      <Route path="/admin/credits" element={<AdminCreditManagementPage />} />
+                      <Route path="/admin/settings" element={<AdminSystemSettingsPage />} />
                     </Routes>
                   </main>
                 </div>

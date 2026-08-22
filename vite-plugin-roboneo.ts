@@ -129,6 +129,38 @@ export function roboneoProxyPlugin(): Plugin {
         }
       })
 
+      // ─── Framia direct proxy (for /framia/video/api paths used by Framia.tsx) ──
+      server.middlewares.use('/framia/video/api', async (req, res) => {
+        const auth = req.headers.authorization || ''
+        const upstreamPath = req.url || '/'
+        const upstreamUrl = `https://api.framia.pro/video/api${upstreamPath}`
+        console.log(`[framia-direct] ${req.method} ${upstreamPath} → api.framia.pro`)
+        try {
+          const chunks: Buffer[] = []
+          for await (const chunk of req) chunks.push(chunk)
+          const rawBody = Buffer.concat(chunks).toString()
+          const framiaRes = await fetch(upstreamUrl, {
+            method: req.method,
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: String(auth),
+            },
+            body: req.method === 'POST' ? rawBody : undefined,
+          })
+          const text = await framiaRes.text()
+          console.log(`[framia-direct] ${framiaRes.status}:`, text.slice(0, 300))
+          res.writeHead(framiaRes.status, {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          })
+          res.end(text)
+        } catch (err: any) {
+          console.error(`[framia-direct] error:`, err.message)
+          res.writeHead(502, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: false, error: err.message }))
+        }
+      })
+
       server.middlewares.use('/api/public/framia', async (req, res) => {
         if (req.method === 'OPTIONS') {
           res.writeHead(200, {
@@ -148,13 +180,14 @@ export function roboneoProxyPlugin(): Plugin {
         for await (const chunk of req) chunks.push(chunk)
         const rawBody = Buffer.concat(chunks).toString()
 
-        console.log(`[framia-proxy] ${req.method} ${subpath} → ${VERCEL_ORIGIN}/api/public/framia`)
+        const authPreview = String(auth).slice(0, 40) + '...'
+        console.log(`[framia-proxy] ${req.method} ${subpath} → direct api.framia.pro | auth: ${authPreview}`)
 
+        const FRAMIA_DIRECT = 'https://api.framia.pro/video/api'
         try {
-          const url = new URL(`${VERCEL_ORIGIN}/api/public/framia`)
-          url.searchParams.set('path', subpath)
+          const upstreamUrl = `${FRAMIA_DIRECT}/${subpath}`
 
-          const framiaRes = await fetch(url.toString(), {
+          const framiaRes = await fetch(upstreamUrl, {
             method: req.method,
             headers: {
               'Content-Type': 'application/json',
@@ -466,7 +499,7 @@ export function roboneoProxyPlugin(): Plugin {
           res.writeHead(200, {
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Firefly-Token, X-Firefly-Api-Key, X-Firefly-Account, X-Firefly-Session',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Firefly-Token, X-Firefly-Api-Key, X-Firefly-Account, X-Firefly-Session, X-Firefly-Nonce, X-Firefly-Arp',
           })
           res.end()
           return
@@ -477,9 +510,11 @@ export function roboneoProxyPlugin(): Plugin {
         const rawBody = Buffer.concat(chunks).toString()
 
         const token = req.headers['x-firefly-token'] || ''
-        const apiKey = req.headers['x-firefly-api-key'] || 'SunbreakWebUI1'
+        const apiKey = req.headers['x-firefly-api-key'] || 'clio-playground-web'
         const account = req.headers['x-firefly-account'] || ''
         const session = req.headers['x-firefly-session'] || ''
+        const nonce = req.headers['x-firefly-nonce'] || ''
+        const arpSession = req.headers['x-firefly-arp'] || ''
 
         console.log(`[firefly-proxy] POST → ${VERCEL_ORIGIN}/api/public/firefly`)
 
@@ -492,6 +527,8 @@ export function roboneoProxyPlugin(): Plugin {
               'X-Firefly-Api-Key': String(apiKey),
               'X-Firefly-Account': String(account),
               'X-Firefly-Session': String(session),
+              ...(nonce ? { 'X-Firefly-Nonce': String(nonce) } : {}),
+              ...(arpSession ? { 'X-Firefly-Arp': String(arpSession) } : {}),
             },
             body: rawBody,
           })
@@ -604,8 +641,60 @@ export function roboneoProxyPlugin(): Plugin {
         }
       })
 
+      // ─── Video-proxy: stream binary langsung (bukan .text()) ────────────
+      server.middlewares.use('/api/public/video-proxy', async (req, res) => {
+        if (req.method === 'OPTIONS') {
+          res.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS', 'Access-Control-Allow-Headers': '*' })
+          res.end()
+          return
+        }
+        const urlParam = new URL(req.url || '/', 'http://localhost').searchParams.get('url')
+        if (!urlParam || !urlParam.startsWith('http')) {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: false, error: 'Missing or invalid url param' }))
+          return
+        }
+        console.log(`[video-proxy-local] GET ${urlParam.slice(0, 100)}`)
+        try {
+          const upstreamRes = await fetch(urlParam, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+              'Accept': '*/*',
+            },
+            redirect: 'follow',
+          })
+          if (!upstreamRes.ok && upstreamRes.status !== 206) {
+            res.writeHead(upstreamRes.status, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ ok: false, error: `Upstream: ${upstreamRes.status}` }))
+            return
+          }
+          const ct = upstreamRes.headers.get('content-type') || 'video/mp4'
+          const cl = upstreamRes.headers.get('content-length')
+          res.writeHead(upstreamRes.status, {
+            'Content-Type': ct,
+            'Access-Control-Allow-Origin': '*',
+            'Accept-Ranges': 'bytes',
+            'Cache-Control': 'public, max-age=300',
+            ...(cl ? { 'Content-Length': cl } : {}),
+          })
+          const reader = upstreamRes.body?.getReader()
+          if (reader) {
+            while (true) {
+              const { done, value } = await reader.read()
+              if (done) break
+              res.write(value)
+            }
+          }
+          res.end()
+        } catch (err: any) {
+          console.error(`[video-proxy-local] error:`, err.message)
+          res.writeHead(502, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: false, error: err.message }))
+        }
+      })
+
       // Catch-all untuk endpoint /api/public/* lain (galleri5, magnific,
-      // weavy, uploads, video-proxy, shotstack, creatomate, roboneo-membership, dsb)
+      // weavy, uploads, shotstack, creatomate, roboneo-membership, dsb)
       // → diteruskan ke deployment Vercel. Spesifik handler di atas menang duluan.
       server.middlewares.use('/api/public', async (req, res) => {
         if (req.method === 'OPTIONS') {

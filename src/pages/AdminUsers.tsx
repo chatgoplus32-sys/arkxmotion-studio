@@ -3,7 +3,7 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
-import { CheckCircle, XCircle, Clock, Trash2, RefreshCw, Key, Mail, BadgeCheck, Ban } from 'lucide-react'
+import { CheckCircle, XCircle, Clock, Trash2, RefreshCw, Key, Mail, BadgeCheck, Ban, Download, CheckSquare } from 'lucide-react'
 
 interface User {
   id: number
@@ -27,6 +27,8 @@ export default function AdminUsersPage() {
   const [filter, setFilter] = useState<'all' | 'pending' | 'approved'>('all')
   const [isLoading, setIsLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<number | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [bulkLoading, setBulkLoading] = useState(false)
   const token = useAuthStore((state) => state.token)
   const addToast = useToastStore((state) => state.addToast)
 
@@ -224,6 +226,54 @@ export default function AdminUsersPage() {
 
   const filtered = filter === 'all' ? users : users.filter(u => filter === 'pending' ? !u.approved : u.approved)
   const pendingCount = users.filter(u => !u.approved && u.role !== 'admin').length
+  const selectableUsers = filtered.filter(u => u.role !== 'admin')
+  const allSelected = selectableUsers.length > 0 && selectableUsers.every(u => selectedIds.has(u.id))
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(selectableUsers.map(u => u.id)))
+    }
+  }
+
+  const handleBulkAction = async (action: 'approve' | 'delete') => {
+    if (selectedIds.size === 0) return
+    const label = action === 'approve' ? 'Approve' : 'Delete'
+    if (!confirm(`${label} ${selectedIds.size} user(s)?`)) return
+    setBulkLoading(true)
+    try {
+      const res = await fetch('/api/admin/users/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ action, ids: Array.from(selectedIds) }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        addToast(data.message, 'success')
+        setSelectedIds(new Set())
+        fetchUsers()
+      } else {
+        addToast(data.error || 'Bulk action failed', 'error')
+      }
+    } catch {
+      addToast('Bulk action failed', 'error')
+    } finally {
+      setBulkLoading(false)
+    }
+  }
+
+  const handleExportCSV = () => {
+    window.open('/api/admin/export/users', '_blank')
+  }
 
   return (
     <div>
@@ -233,6 +283,20 @@ export default function AdminUsersPage() {
       />
       <PageContent>
         <Section title="Users" sub="View and manage all registered users">
+          {selectedIds.size > 0 && (
+            <div className="flex items-center gap-2 mb-3 p-2 rounded-lg bg-primary/5 border border-primary/20">
+              <span className="text-sm text-primary font-medium">{selectedIds.size} dipilih</span>
+              <Button variant="outline" size="sm" onClick={() => handleBulkAction('approve')} disabled={bulkLoading} className="text-green-500 hover:text-green-600 hover:bg-green-500/10">
+                <CheckCircle className="h-3.5 w-3.5 mr-1" /> Approve All
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => handleBulkAction('delete')} disabled={bulkLoading} className="text-destructive hover:bg-destructive/10">
+                <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete All
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
+                Batal
+              </Button>
+            </div>
+          )}
           <div className="flex items-center gap-3 mb-4">
             <div className="flex gap-2">
               <button
@@ -271,6 +335,9 @@ export default function AdminUsersPage() {
             <Button variant="outline" size="sm" onClick={fetchUsers} disabled={isLoading}>
               <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
             </Button>
+            <Button variant="outline" size="sm" onClick={handleExportCSV}>
+              <Download className="h-4 w-4 mr-1" /> Export CSV
+            </Button>
           </div>
 
           {isLoading ? (
@@ -282,6 +349,14 @@ export default function AdminUsersPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border">
+                    <th className="py-3 px-2 w-8">
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        onChange={toggleSelectAll}
+                        className="rounded border-border cursor-pointer"
+                      />
+                    </th>
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground">Name</th>
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground">Email</th>
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground">Role</th>
@@ -294,6 +369,16 @@ export default function AdminUsersPage() {
                 <tbody>
                   {filtered.map((user) => (
                     <tr key={user.id} className="border-b border-border hover:bg-secondary/50">
+                      <td className="py-3 px-2">
+                        {user.role !== 'admin' && (
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(user.id)}
+                            onChange={() => toggleSelect(user.id)}
+                            className="rounded border-border cursor-pointer"
+                          />
+                        )}
+                      </td>
                       <td className="py-3 px-4 font-medium">{user.name}</td>
                       <td className="py-3 px-4 text-muted-foreground">{user.email}</td>
                       <td className="py-3 px-4">

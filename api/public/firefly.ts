@@ -3,14 +3,16 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Firefly-Token, X-Firefly-Api-Key, X-Firefly-Account, X-Firefly-Session')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Firefly-Token, X-Firefly-Api-Key, X-Firefly-Account, X-Firefly-Session, X-Firefly-Nonce, X-Firefly-Arp')
 
   if (req.method === 'OPTIONS') return res.status(200).end()
 
   const token = req.headers['x-firefly-token'] as string || ''
-  const apiKey = req.headers['x-firefly-api-key'] as string || 'SunbreakWebUI1'
+  const apiKey = req.headers['x-firefly-api-key'] as string || 'clio-playground-web'
   const account = req.headers['x-firefly-account'] as string || ''
   const session = req.headers['x-firefly-session'] as string || ''
+  const nonce = req.headers['x-firefly-nonce'] as string || ''
+  const arpSession = req.headers['x-firefly-arp'] as string || ''
 
   const { url, method, body, headers: customHeaders } = req.body || {}
 
@@ -23,9 +25,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`,
       'x-api-key': apiKey,
+      'accept': '*/*',
+      'cache-control': 'no-cache',
+      'pragma': 'no-cache',
+      'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',
+      'origin': 'https://firefly.adobe.com',
+      'referer': 'https://firefly.adobe.com/',
+      'sec-fetch-site': 'cross-site',
+      'sec-fetch-mode': 'cors',
+      'sec-fetch-dest': 'empty',
     }
+    if (nonce) fetchHeaders['x-nonce'] = nonce
+    if (arpSession) fetchHeaders['x-arp-session-id'] = arpSession
     if (account) fetchHeaders['x-gw-ims-user-id'] = account
-    if (session) fetchHeaders['x-arp-session-id'] = session
+    if (session && !arpSession) fetchHeaders['x-arp-session-id'] = session
     if (customHeaders) Object.assign(fetchHeaders, customHeaders)
 
     const fetchOpts: RequestInit = {
@@ -44,7 +57,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try { data = JSON.parse(text) } catch { data = { raw: text } }
 
     if (!r.ok) {
-      return res.status(r.status).json({ ok: false, status: r.status, data, error: text.slice(0, 200) })
+      return res.status(r.status).json({ ok: false, status: r.status, data, error: text.slice(0, 300) })
     }
 
     return res.json({ ok: true, data })

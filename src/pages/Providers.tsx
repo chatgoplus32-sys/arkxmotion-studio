@@ -18,10 +18,12 @@ import {
   Wrench,
 } from 'lucide-react'
 import { useProviderManager, ProviderId, HIDDEN_PROVIDERS } from '@/stores/providerManager'
+import { useAuthStore } from '@/stores/authStore'
 import { checkRoboneoBalance } from '@/lib/roboneo'
 import { fetchLeonardoBalance } from '@/lib/leonardo'
 import { checkWeavyBalance } from '@/lib/weavy'
 import { checkRunningHubBalance } from '@/lib/runninghub'
+import { checkFireflyBalance } from '@/lib/firefly'
 import { checkGalleri5Balance, isGalleri5TokenError } from '@/lib/galleri5'
 
 const PROVIDER_COLORS: Record<string, string> = {
@@ -36,6 +38,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   render: '#94a3b8',
   createpulse: '#c084fc',
   oneover: '#a78bfa',
+  firefly: '#FF6A00',
 }
 
 const PROVIDER_LIST = [
@@ -49,6 +52,7 @@ const PROVIDER_LIST = [
   { key: 'createpulse', label: 'CreatePulse', desc: 'Video generation (Seedance 2.0/2.5, Veo Omni) via createpulse.online — pakai API key sendiri.' },
   { key: 'galleri5', label: 'G5 AI Studio', desc: 'Motion Control (Kling V3 & V2.6 motion transfer) via aistudio.galleri5.com — Firebase refresh token (auto-refresh).' },
   { key: 'oneover', label: 'OneOver', desc: 'Video generation (Grok, Seedance 2.0/2.5, Kling, LTX) via oneover.com — Supabase session token.' },
+  { key: 'firefly', label: 'Adobe Firefly', desc: 'Video generation (Veo 3.1, Firefly Video) via firefly.adobe.com — Adobe IMS Bearer token.' },
 ] as const
 
 const VISIBLE_PROVIDER_LIST = PROVIDER_LIST.filter(p => !(HIDDEN_PROVIDERS as readonly string[]).includes(p.key))
@@ -121,16 +125,16 @@ const TOKEN_GUIDE: Record<string, {
   framia: {
     url: 'https://framia.converge.ai/',
     urlLabel: 'framia.converge.ai',
-    prefix: 'eyJhbGci... (Auth0 Bearer JWT)',
+    prefix: 'eyJhbGci... (Auth0 access_token, BUKAN id_token eyJjdHki...)',
     steps: [
-      { text: 'Login di framia.converge.ai (Google / email — akun Converge AI).' },
-      { text: 'Buka DevTools (F12) → tab Network → filter \'api.framia.pro\'.' },
-      { text: 'Klik salah satu request (mis. /video/api/v1/user/credits) → Headers → Request Headers.' },
-      { text: 'Copy value header "authorization" — HANYA bagian setelah "Bearer " (dimulai dengan eyJ...).' },
-      { text: 'Paste ke input di sebelah. Token JWT berumur ~24 jam; setelah expired, ambil ulang dari Network tab.' },
-      { text: 'Multi-token akan auto-rotate saat quota / expiry habis. Token tersimpan permanen di akunmu dan sinkron antar device.' },
+      { text: 'Klik tombol "Grab Token dari framia.converge.ai" di bawah input → script copied ke clipboard.' },
+      { text: 'Buka ', link: { url: 'https://framia.converge.ai', label: 'framia.converge.ai' }, },
+      { text: 'Login dengan akun Google / email.' },
+      { text: 'Buka DevTools Console (F12 → Console), paste script & Enter.' },
+      { text: 'Access token (eyJhbGci...) otomatis copy ke clipboard.' },
+      { text: 'Paste ke input di sebelah.' },
     ],
-    tip: 'Framia = platform canvas Converge AI. Semua node (skills) dan recipe (templates) muncul otomatis di halaman Generate → Framia begitu token tersimpan.',
+    tip: '⚠️ Penting: Framia pakai Auth0. Token harus eyJhbGci... (access_token), BUKAN eyJjdHki... (id_token/JWE). Kalau token kamu dimulai eyJjdHki, itu salah — pakai Grab Token button.',
   },
   leonardo: {
     url: 'https://app.leonardo.ai/',
@@ -213,6 +217,20 @@ const TOKEN_GUIDE: Record<string, {
       { text: 'Paste ke input di sebelah — app akan auto-parse JSON & simpan refresh_token.' },
     ],
     tip: 'OneOver pakai Supabase auth. Refresh token berumur ~30 hari & auto-refresh access token. Bila generate gagal, ambil ulang token dari oneover.com.',
+  },
+  firefly: {
+    url: 'https://firefly.adobe.com/generate/video',
+    urlLabel: 'firefly.adobe.com',
+    prefix: 'JSON: { token, apiKey, account, session } atau token langsung',
+    steps: [
+      { text: 'Install extension "Firefly Auth Helper" dari folder firefly-auth-helper.' },
+      { text: 'Buka ', link: { url: 'https://firefly.adobe.com', label: 'firefly.adobe.com' }, },
+      { text: 'Login dengan akun Adobe yang berlangganan Firefly.' },
+      { text: 'Klik "Generate" pada video generation page.' },
+      { text: 'Klik icon Firefly Auth Helper → Grab Token.' },
+      { text: 'Copy JSON token → paste ke input di sebelah.' },
+    ],
+    tip: 'Firefly pakai Adobe IMS Bearer token. Token expire dalam ~1 jam. Bila generate gagal, ambil ulang token dari firefly.adobe.com.',
   },
 }
 
@@ -356,8 +374,18 @@ export default function ProvidersPage() {
       return line
     }
 
+    // Auto-parse Firefly JSON format: { token, apiKey, account, session }
+    const parseFireflyKey = (line: string): string => {
+      if (selectedProvider !== 'firefly') return line
+      try {
+        const parsed = JSON.parse(line)
+        if (parsed.token) return parsed.token
+      } catch {}
+      return line
+    }
+
     lines.forEach(line => {
-      const key = parseOneOverKey(line)
+      const key = parseFireflyKey(parseOneOverKey(line))
       if (existing.has(key)) {
         skipped++
         return
@@ -389,7 +417,22 @@ export default function ProvidersPage() {
     let skipped = 0
 
     lines.forEach(line => {
-      const cleanKey = line.replace(/^[•\-*\s]+|[•\-*\s]+$/g, '').trim()
+      let cleanKey = line.replace(/^[•\-*\s]+|[•\-*\s]+$/g, '').trim()
+      // Auto-parse Firefly JSON
+      if (selectedProvider === 'firefly') {
+        try {
+          const parsed = JSON.parse(cleanKey)
+          if (parsed.token) cleanKey = parsed.token
+        } catch {}
+      }
+      // Auto-parse OneOver JSON
+      if (selectedProvider === 'oneover') {
+        try {
+          const parsed = JSON.parse(cleanKey)
+          if (parsed.refresh_token) cleanKey = parsed.refresh_token
+          else if (parsed.access_token) cleanKey = parsed.access_token
+        } catch {}
+      }
       if (!cleanKey || existing.has(cleanKey)) {
         skipped++
         return
@@ -566,6 +609,25 @@ export default function ProvidersPage() {
         return { state: 'failed', detail: 'Error checking token' }
       }
     }
+    if (selectedProvider === 'firefly') {
+      try {
+        const result = await checkFireflyBalance(key)
+        if (result.ok && result.balance != null) {
+          const bal = result.balance
+          if (bal > 0) {
+            return { state: 'active', balance: bal, detail: `${result.plan || 'Firefly'} · Balance: ${bal} cr (used: ${result.used}/${result.total})` }
+          } else {
+            return { state: 'empty', balance: 0, detail: `${result.plan || 'Firefly'} · Balance: 0 — habis` }
+          }
+        }
+        if (result.ok) {
+          return { state: 'active', detail: 'Token valid' }
+        }
+        return { state: 'failed', detail: result.error || 'Gagal cek token' }
+      } catch (err: any) {
+        return { state: 'failed', detail: err.message || 'Error checking token' }
+      }
+    }
     if (selectedProvider === 'oneover') {
       try {
         const { resolveOneOverAccessToken, checkOneOverBalance, extractOneOverUserId } = await import('@/lib/oneover')
@@ -589,6 +651,22 @@ export default function ProvidersPage() {
           return { state: 'invalid', detail: 'Token expired — login ulang di oneover.com' }
         }
         return { state: 'failed', detail: err.message || 'Error checking token' }
+      }
+    }
+    if (selectedProvider === 'framia') {
+      try {
+        const { fetchFramiaCredits } = await import('@/lib/framia')
+        const credits = await fetchFramiaCredits(key)
+        if (credits && typeof credits === 'object' && 'raw' in credits) {
+          return { state: 'active', detail: credits.raw }
+        }
+        return { state: 'active', detail: 'Token valid' }
+      } catch (err: any) {
+        const msg = err?.message || ''
+        if (/invalid|unauthorized|401|403/i.test(msg)) {
+          return { state: 'invalid', detail: msg || 'Token tidak valid' }
+        }
+        return { state: 'failed', detail: msg || 'Error checking Framia token' }
       }
     }
     return { state: 'unknown', detail: 'Cek limit belum tersedia untuk provider ini' }
@@ -648,6 +726,32 @@ export default function ProvidersPage() {
 
     setProgress({ show: false, pct: 0, text: '' })
     setChecking(false)
+
+    // Auto-sync credits to database for Credit Management page
+    try {
+      const token = useAuthStore.getState().token
+      if (token) {
+        // Read balance from providerManager store (updated by updateKeyStatus)
+        const freshKeys = useProviderManager.getState().keys[selectedProvider as ProviderId] || []
+        const syncUpdates = freshKeys.map((k) => ({
+          credits: k.balance ?? 0,
+        }))
+        if (syncUpdates.length > 0) {
+          console.log(`[credits-sync] ${selectedProvider}: syncing ${syncUpdates.length} keys`, syncUpdates.map(u => u.credits))
+          fetch('/api/admin/credits/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ provider: selectedProvider, updates: syncUpdates }),
+          }).then(r => r.json()).then(d => {
+            console.log(`[credits-sync] result:`, d)
+          }).catch(err => {
+            console.error(`[credits-sync] error:`, err)
+          })
+        }
+      }
+    } catch (err) {
+      console.error('[credits-sync] exception:', err)
+    }
 
     setSummaryPayload({
       title: `Ringkasan Cek ${currentConfig?.label || selectedProvider}`,
@@ -861,6 +965,20 @@ export default function ProvidersPage() {
                     className="border-violet-500/50 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 hover:border-violet-500/70"
                   >
                     <Key className="h-3.5 w-3.5" /> Grab Token dari oneover.com
+                  </Button>
+                )}
+                {selectedProvider === 'framia' && (
+                  <Button
+                    variant="outline"
+                    onClick={async () => {
+                      const { getFramiaBookmarklet } = await import('@/lib/framia')
+                      const snippet = getFramiaBookmarklet()
+                      await navigator.clipboard.writeText(snippet)
+                      alert('📋 Script copied!\n\n1. Buka framia.converge.ai (login dulu)\n2. Buka DevTools Console (F12 → Console)\n3. Paste script & Enter\n4. Access token otomatis copy → paste di sini\n\n⚠️ Penting: Token harus dari Authorization header (eyJhbGci...), bukan id_token (eyJjdHki...)')
+                    }}
+                    className="border-orange-500/50 bg-orange-500/10 text-orange-300 hover:bg-orange-500/20 hover:border-orange-500/70"
+                  >
+                    <Key className="h-3.5 w-3.5" /> Grab Token dari framia.converge.ai
                   </Button>
                 )}
               </div>

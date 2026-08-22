@@ -19,6 +19,9 @@ import {
   Lock,
   Wallet,
   Wand2,
+  BarChart3,
+  Coins,
+  SlidersHorizontal,
 
   ShoppingCart,
   Route,
@@ -117,6 +120,10 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
     { label: 'Upload Token', href: '/admin/tokens', icon: <Key className="h-4 w-4" /> },
     { label: 'Order Token', href: '/admin/orders', icon: <ClipboardCheck className="h-4 w-4" /> },
     { label: 'Approval TopUp', href: '/admin/topup', icon: <Wallet className="h-4 w-4" /> },
+    { label: 'Usage Analytics', href: '/admin/analytics', icon: <BarChart3 className="h-4 w-4" /> },
+    { label: 'Activity Feed', href: '/admin/activity', icon: <Activity className="h-4 w-4" /> },
+    { label: 'Credit Management', href: '/admin/credits', icon: <Coins className="h-4 w-4" /> },
+    { label: 'System Settings', href: '/admin/settings', icon: <SlidersHorizontal className="h-4 w-4" /> },
     { label: 'Server Status', href: '/admin/status', icon: <Activity className="h-4 w-4" /> },
   ]
 

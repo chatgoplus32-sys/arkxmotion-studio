@@ -25,13 +25,28 @@ export async function fetchFramiaSkills(apiKey: string): Promise<FramiaSkill[]> 
   return data.skills || data.data || []
 }
 
-export async function fetchFramiaCredits(apiKey: string): Promise<number | null> {
-  const res = await fetch(`${FRAMIA_PROXY}?path=v1/user/credits`, {
+export async function fetchFramiaCredits(apiKey: string): Promise<number | { raw: string } | null> {
+  // Validate token via user info endpoint (requires auth)
+  const res = await fetch(`${FRAMIA_PROXY}?path=v1/user/me`, {
     headers: { Authorization: `Bearer ${apiKey}` },
   })
-  if (!res.ok) return null
-  const data = await res.json()
-  return data.credits ?? data.balance ?? null
+  const text = await res.text()
+  let data: any
+  try { data = JSON.parse(text) } catch { data = null }
+  console.log('[framia] validation response:', res.status, text.slice(0, 300))
+
+  if (res.ok && data) {
+    const credits = data.credits ?? data.balance ?? data.data?.credits ?? data.data?.balance ?? data.user?.credits ?? data.user?.balance ?? null
+    if (credits != null && typeof credits === 'number') return credits
+    return { raw: 'Token valid' }
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    const msg = data?.message || data?.error || `HTTP ${res.status}`
+    throw new Error(`Token invalid: ${msg}`)
+  }
+
+  return null
 }
 
 export async function submitFramiaRun(
@@ -110,4 +125,100 @@ export async function generateWithFramia(opts: FramiaRunOptions): Promise<string
   const videoUrl = await pollFramiaRun(apiKey, runId, onLog, onStatus)
   onStatus?.('Done!', 100)
   return videoUrl
+}
+
+/**
+ * Generate a bookmarklet that extracts the Auth0 access_token from framia.converge.ai.
+ * Framia uses Auth0 → getAccessTokenSilently() → Bearer token.
+ * The access_token is stored in localStorage under @@auth0spajs@@ keys.
+ */
+export function getFramiaBookmarklet(): string {
+  return `
+(function() {
+  try {
+    var accessToken = '';
+
+    // 1. Try Auth0 SDK localStorage (key pattern: @@auth0spajs@@::clientId::auth)
+    for (var i = 0; i < localStorage.length; i++) {
+      var key = localStorage.key(i) || '';
+      if (key.indexOf('@@auth0spajs@@') === 0) {
+        try {
+          var raw = localStorage.getItem(key);
+          var parsed = JSON.parse(raw || '{}');
+          // Auth0 stores: { body: { access_token: '...', ... }, ... }
+          var body = parsed.body || parsed;
+          if (body.access_token) {
+            accessToken = body.access_token;
+            break;
+          }
+        } catch {}
+      }
+    }
+
+    // 2. Fallback: scan ALL localStorage for JWTs starting with eyJhbGci
+    if (!accessToken) {
+      for (var j = 0; j < localStorage.length; j++) {
+        var val = localStorage.getItem(localStorage.key(j) || '') || '';
+        try {
+          var p2 = JSON.parse(val);
+          if (p2 && p2.access_token && p2.access_token.indexOf('eyJhbGci') === 0) {
+            accessToken = p2.access_token;
+            break;
+          }
+        } catch {}
+      }
+    }
+
+    // 3. Fallback: try window.__auth0 or similar global
+    if (!accessToken && window.__auth0Client) {
+      try {
+        accessToken = window.__auth0Client.getTokenSilently();
+      } catch {}
+    }
+
+    if (!accessToken) {
+      alert('Auth0 access_token not found.\n\nMake sure you are logged in to framia.converge.ai,\nthen navigate to any page that calls the API (e.g. open a workflow).\n\nThe access_token is different from the id_token (eyJjdHki...).');
+      return;
+    }
+
+    navigator.clipboard.writeText(accessToken).then(function() {
+      alert('✅ Access token copied!\n\n' + accessToken.slice(0, 40) + '...\n\nPaste into Freebuff → Providers → Framia.');
+    }, function() {
+      prompt('Copy this token:', accessToken);
+    });
+  } catch(e) { alert('Error: ' + e.message); }
+})();`.trim()
+}
+
+/**
+ * Diagnostic: scan localStorage and cookies for any Framia/Auth0 tokens.
+ */
+export function diagnoseFramiaTokens(): void {
+  console.log('=== Framia Token Diagnostic ===');
+
+  // Check Auth0 keys in localStorage
+  for (var i = 0; i < localStorage.length; i++) {
+    var key = localStorage.key(i) || '';
+    if (key.indexOf('@@auth0spajs@@') === 0 || key.indexOf('auth0') !== -1) {
+      try {
+        var raw = localStorage.getItem(key) || '';
+        var parsed = JSON.parse(raw);
+        var body = parsed.body || parsed;
+        console.log('Auth0 key:', key.slice(0, 60));
+        console.log('  access_token:', body.access_token ? body.access_token.slice(0, 50) + '...' : 'NONE');
+        console.log('  id_token:', body.id_token ? body.id_token.slice(0, 50) + '...' : 'NONE');
+        console.log('  expires_at:', body.expires_at || body.expiresAt || 'unknown');
+      } catch {}
+    }
+  }
+
+  // Check all localStorage for JWTs
+  console.log('\n--- All localStorage keys with eyJ ---');
+  for (var j = 0; j < localStorage.length; j++) {
+    var k = localStorage.key(j) || '';
+    var v = localStorage.getItem(k) || '';
+    if (v.indexOf('eyJ') === 0 && v.indexOf('.') !== -1) {
+      console.log(k.slice(0, 60) + ': ' + v.slice(0, 60) + '...');
+    }
+  }
 }

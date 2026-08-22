@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
-const FRAMIA_UPSTREAM = 'https://aacreative.vercel.app/framia/video/api'
+const FRAMIA_UPSTREAM = 'https://api.framia.pro/video/api'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*')
