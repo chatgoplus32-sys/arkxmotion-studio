@@ -3,7 +3,7 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
-import { Users, CheckCircle, XCircle, Clock, Trash2, RefreshCw, Key } from 'lucide-react'
+import { CheckCircle, XCircle, Clock, Trash2, RefreshCw, Key, Mail, BadgeCheck, Ban } from 'lucide-react'
 
 interface User {
   id: number
@@ -11,7 +11,15 @@ interface User {
   name: string
   role: string
   approved: boolean
+  email_verified: boolean
   created_at: string
+  payment?: {
+    id: number
+    amount: number
+    status: string
+    proofNote: string
+    adminNote: string
+  } | null
 }
 
 export default function AdminUsersPage() {
@@ -110,6 +118,83 @@ export default function AdminUsersPage() {
     }
   }
 
+  const handleApprovePayment = async (paymentId: number, userEmail: string) => {
+    if (!token) return
+    if (!confirm(`Setujui pembayaran ${userEmail}? Akun member akan langsung diaktifkan.`)) return
+    setActionLoading(paymentId)
+    try {
+      const response = await fetch(`/api/admin/membership/payments/${paymentId}/approve`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      const data = await response.json().catch(() => ({}))
+      if (response.ok) {
+        addToast(data.message || 'Pembayaran disetujui', 'success')
+        fetchUsers()
+      } else {
+        addToast(data.error || 'Gagal menyetujui pembayaran', 'error')
+      }
+    } catch {
+      addToast('Gagal menyetujui pembayaran', 'error')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const handleRejectPayment = async (paymentId: number, userEmail: string) => {
+    if (!token) return
+    const note = prompt(`Tolak pembayaran ${userEmail}? Alasan (opsional):`)
+    if (note === null) return
+    setActionLoading(paymentId)
+    try {
+      const response = await fetch(`/api/admin/membership/payments/${paymentId}/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ admin_note: note || '' })
+      })
+      const data = await response.json().catch(() => ({}))
+      if (response.ok) {
+        addToast(data.message || 'Pembayaran ditolak', 'success')
+        fetchUsers()
+      } else {
+        addToast(data.error || 'Gagal menolak pembayaran', 'error')
+      }
+    } catch {
+      addToast('Gagal menolak pembayaran', 'error')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const handleResendVerification = async (userId: number, userEmail: string) => {
+    if (!token) return
+    setActionLoading(userId)
+    try {
+      const response = await fetch(`/api/admin/users/${userId}/resend-verification`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      const data = await response.json().catch(() => ({}))
+      if (response.ok) {
+        addToast(`Link verifikasi dikirim ke ${userEmail}`, 'success')
+        if (data.devVerifyLink) {
+          try {
+            await navigator.clipboard.writeText(data.devVerifyLink)
+            addToast('Mode dev — link verifikasi disalin ke clipboard', 'warning')
+          } catch {
+            addToast(`Mode dev — link: ${data.devVerifyLink}`, 'warning')
+          }
+        }
+      } else {
+        addToast(data.error || 'Gagal kirim link verifikasi', 'error')
+      }
+    } catch {
+      addToast('Gagal kirim link verifikasi', 'error')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
   const handleResetPassword = async (userId: number, userName: string) => {
     if (!token) return
     const newPassword = prompt(`Reset password untuk ${userName}.\nMasukkan password baru (min 4 karakter):`)
@@ -201,6 +286,8 @@ export default function AdminUsersPage() {
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground">Email</th>
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground">Role</th>
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground">Status</th>
+                    <th className="text-left py-3 px-4 font-medium text-muted-foreground">Verified</th>
+                    <th className="text-left py-3 px-4 font-medium text-muted-foreground">Payment</th>
                     <th className="text-right py-3 px-4 font-medium text-muted-foreground">Actions</th>
                   </tr>
                 </thead>
@@ -231,6 +318,63 @@ export default function AdminUsersPage() {
                           )}
                         </span>
                       </td>
+                      <td className="py-3 px-4">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                          user.email_verified
+                            ? 'bg-emerald-500/10 text-emerald-500'
+                            : 'bg-yellow-500/10 text-yellow-500'
+                        }`}>
+                          {user.email_verified ? (
+                            <><CheckCircle className="h-3 w-3" /> Verified</>
+                          ) : (
+                            <><Clock className="h-3 w-3" /> Belum</>
+                          )}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4">
+                        {user.payment ? (
+                          <div className="flex flex-col items-start gap-1">
+                            <span className="text-xs font-mono">Rp {user.payment.amount.toLocaleString('id-ID')}</span>
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                              user.payment.status === 'approved'
+                                ? 'bg-emerald-500/10 text-emerald-500'
+                                : user.payment.status === 'rejected'
+                                  ? 'bg-red-500/10 text-red-500'
+                                  : 'bg-yellow-500/10 text-yellow-500'
+                            }`}>
+                              {user.payment.status === 'approved' ? (
+                                <><BadgeCheck className="h-3 w-3" /> Diterima</>
+                              ) : user.payment.status === 'rejected' ? (
+                                <><Ban className="h-3 w-3" /> Ditolak</>
+                              ) : (
+                                <><Clock className="h-3 w-3" /> Menunggu</>
+                              )}
+                            </span>
+                            {user.payment.status === 'pending' && (
+                              <div className="flex items-center gap-1 mt-0.5">
+                                <button
+                                  onClick={() => handleApprovePayment(user.payment!.id, user.email)}
+                                  disabled={actionLoading === user.payment.id}
+                                  title="Setujui pembayaran & aktifkan akun"
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 text-[10px] font-medium transition disabled:opacity-50"
+                                >
+                                  <BadgeCheck className="h-3 w-3" /> Approve
+                                </button>
+                                <button
+                                  onClick={() => handleRejectPayment(user.payment.id, user.email)}
+                                  disabled={actionLoading === user.payment.id}
+                                  title="Tolak pembayaran"
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-red-500/10 text-red-500 hover:bg-red-500/20 text-[10px] font-medium transition disabled:opacity-50"
+                                >
+                                  <Ban className="h-3 w-3" /> Tolak
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </td>
                       <td className="py-3 px-4 text-right">
                         {user.role !== 'admin' && (
                           <div className="flex items-center justify-end gap-2">
@@ -254,6 +398,18 @@ export default function AdminUsersPage() {
                                 className="text-yellow-500 hover:text-yellow-600 hover:bg-yellow-500/10"
                               >
                                 <XCircle className="h-4 w-4" />
+                              </Button>
+                            )}
+                            {!user.email_verified && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleResendVerification(user.id, user.email)}
+                                disabled={actionLoading === user.id}
+                                title="Kirim ulang link verifikasi email"
+                                className="text-yellow-500 hover:text-yellow-600 hover:bg-yellow-500/10"
+                              >
+                                <Mail className="h-4 w-4" />
                               </Button>
                             )}
                             <Button

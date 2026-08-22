@@ -1,7 +1,8 @@
 import { useProviderManager, type ProviderId, type ProviderKey } from '@/stores/providerManager'
-import { checkRoboneoBalance, isRoboneoCredentialError, isRoboneoBalanceError, isRoboneoSafetyError, isRoboneoRotatableError } from '@/lib/roboneo'
+import { checkRoboneoBalance, isRoboneoBalanceError, isRoboneoRotatableError, isRoboneoBusyError } from '@/lib/roboneo'
 import { checkWeavyBalance } from '@/lib/weavy'
 import { fetchLeonardoBalance } from '@/lib/leonardo'
+import { checkOneOverBalance, extractOneOverUserId, resolveOneOverAccessToken } from '@/lib/oneover'
 
 const TOKEN_ERROR_PATTERNS = [
   /token/i, /auth/i, /unauth/i, /forbidden/i,
@@ -64,13 +65,14 @@ export function isMagnificTokenError(error: any): boolean {
 export function detectTokenError(provider: ProviderId, error: any): boolean {
   switch (provider) {
     case 'framia': return isFramiaTokenError(error)
-    case 'roboneo': return isRoboneoTokenError(error)
+    case 'roboneo': return isRoboneoTokenError(error) || isRoboneoBusyError(String(error?.message || error))
     case 'createpulse': return isCreatePulseTokenError(error)
     case 'weavy': return isWeavyTokenError(error)
     case 'magnific': return isMagnificTokenError(error)
     case 'firefly': return /401|403|expired|unauthorized|invalid.*token/i.test(String(error?.message || error))
     case 'leonardo': return /insufficient|not enough|out of|balance|quota|exhaust|limit|too many|rate.?limit|402|401|403|unauthor|forbidden|expired|invalid.*token|token.*invalid|500|502|503|504|server error|network|fetch|timeout|graphql/i.test(String(error?.message || error))
-    case 'galleri5': return /credit tidak cukup|insufficient|balance|401|403|expired|unauthorized|invalid.*token|token.*invalid|500|502|503|504|server error|network|fetch|timeout/i.test(String(error?.message || error))
+    case 'galleri5': return /credit tidak cukup|insufficient|balance|401|403|expired|unauthorized|invalid.*token|token.*invalid|500|502|503|504|server error/i.test(String(error?.message || error))
+    case 'oneover': return /unauthorized|forbidden|invalid.*token|token.*invalid|expired|401|403|refresh.*token|login/i.test(String(error?.message || error))
     default: return isTokenError(error)
   }
 }
@@ -226,9 +228,40 @@ export async function withTokenRotation<T>(
        } catch (err: any) {
          console.log(`[token-rotation] ${provider} balance check failed for "${nextKey.name}": ${err.message}, proceeding anyway`)
        }
-     }
+      } else if (provider === 'oneover') {
+      try {
+        const accessToken = await resolveOneOverAccessToken(nextKey.key)
+        const userId = extractOneOverUserId(accessToken)
+        const balanceCheck = await checkOneOverBalance(accessToken, userId || undefined)
+        if (balanceCheck.ok && balanceCheck.balance !== undefined) {
+          const bal = balanceCheck.balance ?? 0
+          const required = opts?.requiredCredits ?? 0
+          if (bal <= 0) {
+            console.log(`[token-rotation] ${provider} key "${nextKey.name}" skipped (balance=${bal}). Trying next...`)
+            useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'empty', bal)
+            lastError = new Error(`Token ${nextKey.name} balance kosong (${bal})`)
+            opts?.onError?.(lastError, nextKey)
+            continue
+          }
+          if (required > 0 && bal < required) {
+            console.log(`[token-rotation] ${provider} key "${nextKey.name}" skipped (balance=${bal} < required=${required}). Trying next...`)
+            useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'empty', bal)
+            lastError = new Error(`Token ${nextKey.name} balance tidak cukup (${bal} < ${required})`)
+            opts?.onError?.(lastError, nextKey)
+            continue
+          }
+          console.log(`[token-rotation] ${provider} key "${nextKey.name}" balance=${bal} >= required=${required}, proceeding...`)
+          useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'active', bal)
+        } else {
+          console.log(`[token-rotation] ${provider} key "${nextKey.name}" balance check failed (${balanceCheck.error}), proceeding anyway...`)
+          useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'active')
+        }
+      } catch (err: any) {
+        console.log(`[token-rotation] ${provider} balance check failed for "${nextKey.name}": ${err.message}, proceeding anyway`)
+      }
+    }
 
-     try {
+    try {
       const result = await fn(nextKey.key, nextKey)
       return { ok: true, result, usedKey: nextKey, triedKeys: triedKeyIds.size }
     } catch (err: any) {
@@ -237,7 +270,11 @@ export async function withTokenRotation<T>(
 
       if (detectTokenError(provider, err)) {
         if (provider === 'roboneo') {
-          if (isRoboneoCreditError(err)) {
+          if (isRoboneoBusyError(err?.message || '')) {
+            // Busy bersifat sementara — jangan hapus key, tandai unknown & lanjut ke key berikutnya
+            useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'unknown')
+            console.log(`[token-rotation] ${provider} key "${nextKey.name}" busy (${err.message}). Trying next...`)
+          } else if (isRoboneoCreditError(err)) {
             useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'empty')
             console.log(`[token-rotation] ${provider} key "${nextKey.name}" credit/quota habis (${err.message}). Marking empty, trying next...`)
           } else {
@@ -269,9 +306,23 @@ export async function withTokenRotation<T>(
           if (errMsg.includes('credit tidak cukup') || errMsg.includes('insufficient') || errMsg.includes('balance')) {
             useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'empty', 0)
             console.log(`[token-rotation] ${provider} key "${nextKey.name}" credit habis (${err.message}). Marking empty, trying next...`)
-          } else if (errMsg.includes('401') || errMsg.includes('unauthorized') || errMsg.includes('invalid') || errMsg.includes('expired')) {
+          } else if (errMsg.includes('401') || errMsg.includes('unauthorized') || errMsg.includes('expired')) {
             useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'invalid')
             console.log(`[token-rotation] ${provider} key "${nextKey.name}" marked invalid (${err.message}). Trying next...`)
+          } else if (errMsg.includes('fetch failed') || errMsg.includes('network') || errMsg.includes('timeout') || errMsg.includes('econnrefused')) {
+            // Network errors - don't mark token as invalid, just retry
+            console.log(`[token-rotation] ${provider} key "${nextKey.name}" network error (${err.message}). Retrying...`)
+          } else {
+            useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'invalid')
+            console.log(`[token-rotation] ${provider} key "${nextKey.name}" marked invalid (${err.message}). Trying next...`)
+          }
+        } else if (provider === 'oneover') {
+          const errMsg = (err.message || '').toLowerCase()
+          if (errMsg.includes('refresh') || errMsg.includes('expired') || errMsg.includes('401') || errMsg.includes('unauthorized')) {
+            useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'invalid')
+            console.log(`[token-rotation] ${provider} key "${nextKey.name}" token expired/invalid (${err.message}). Trying next...`)
+          } else if (errMsg.includes('fetch failed') || errMsg.includes('network') || errMsg.includes('timeout')) {
+            console.log(`[token-rotation] ${provider} key "${nextKey.name}" network error (${err.message}). Retrying...`)
           } else {
             useProviderManager.getState().updateKeyStatus(provider, nextKey.id, 'invalid')
             console.log(`[token-rotation] ${provider} key "${nextKey.name}" marked invalid (${err.message}). Trying next...`)

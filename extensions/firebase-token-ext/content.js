@@ -13,7 +13,7 @@
     SENT[token.slice(0, 20)] = true
     try {
       chrome.runtime.sendMessage({ type: 'add_token', token: token, source: source || '' })
-    } catch (e) {}
+    } catch {}
   }
 
   function extractBearer(h) {
@@ -51,7 +51,7 @@
               var obj = JSON.parse(localStorage.getItem('_fb_rt') || '{}')
               obj[data.user_id || 'default'] = data.refresh_token
               localStorage.setItem('_fb_rt', JSON.stringify(obj))
-            } catch (e) {}
+            } catch {}
           }
         }).catch(function () {})
         return res
@@ -101,7 +101,7 @@
           }
         }
       }
-    } catch (e) {}
+    } catch {}
   }
 
   // ── Read from localStorage ───────────────────────────────────
@@ -131,7 +131,7 @@
             send(obj[k], 'localStorage:' + key + ':' + k)
           }
         }
-      } catch (e) {}
+      } catch {}
     }
   }
 
@@ -149,7 +149,7 @@
         if (obj && obj.stsTokenManager && obj.stsTokenManager.accessToken) {
           send(obj.stsTokenManager.accessToken, 'sessionStorage:' + key)
         }
-      } catch (e) {}
+      } catch {}
     }
   }
 

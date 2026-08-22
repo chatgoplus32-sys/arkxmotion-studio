@@ -1,7 +1,9 @@
-import { ReactNode, useState, useEffect } from 'react'
+import { ReactNode, useState, useEffect, useRef } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/authStore'
+import { useToastStore } from '@/stores/toastStore'
+import { sendNotification } from '@/lib/notify'
 import {
   LayoutDashboard,
   Video,
@@ -17,7 +19,6 @@ import {
   Lock,
   Wallet,
   Wand2,
-  PlayCircle,
 
   ShoppingCart,
   Route,
@@ -62,7 +63,10 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
   const location = useLocation()
   const navigate = useNavigate()
   const { user, token, logout } = useAuthStore()
+  const addToast = useToastStore((state) => state.addToast)
   const [pendingCount, setPendingCount] = useState(0)
+  const prevPendingRef = useRef<number | null>(null)
+  const lastNotifiedRef = useRef(0)
 
   const toolsNav = toolsNavBase.filter((item) => {
     if (item.href === '/topup/createpulse' && user?.role === 'admin') return false
@@ -75,18 +79,41 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
   }
 
   useEffect(() => {
-    if (user?.role === 'admin' && token) {
+    if (user?.role !== 'admin' || !token) return
+
+    const fetchPending = () => {
       fetch('/api/admin/users/pending', {
         headers: { 'Authorization': `Bearer ${token}` }
       })
         .then(res => res.json())
-        .then(data => setPendingCount(data.users?.length || 0))
+        .then(data => {
+          const count = data.users?.length || 0
+          const prev = prevPendingRef.current
+          prevPendingRef.current = count
+          setPendingCount(count)
+
+          // Pendaftaran baru terdeteksi → toast + notifikasi browser (maks 1×/60 detik)
+          const now = Date.now()
+          if (prev !== null && count > prev && now - lastNotifiedRef.current > 60000) {
+            lastNotifiedRef.current = now
+            const n = count - prev
+            addToast(`👤 ${n} pendaftaran baru menunggu persetujuan (${count} pending)`, 'warning')
+            sendNotification('👤 Pendaftaran Member Baru', {
+              body: `${n} pendaftaran baru menunggu persetujuan admin. Total ${count} pending.`,
+            })
+          }
+        })
         .catch(() => {})
     }
-  }, [user, token])
+
+    fetchPending()
+    const interval = setInterval(fetchPending, 30000)
+    return () => clearInterval(interval)
+  }, [user, token, addToast])
 
   const adminNav: NavItem[] = [
     { label: 'User Management', href: '/admin/users', icon: <Shield className="h-4 w-4" />, badge: pendingCount > 0 ? String(pendingCount) : undefined },
+    { label: 'Membership', href: '/admin/membership', icon: <Wallet className="h-4 w-4" /> },
     { label: 'Upload Token', href: '/admin/tokens', icon: <Key className="h-4 w-4" /> },
     { label: 'Order Token', href: '/admin/orders', icon: <ClipboardCheck className="h-4 w-4" /> },
     { label: 'Approval TopUp', href: '/admin/topup', icon: <Wallet className="h-4 w-4" /> },
@@ -157,18 +184,10 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
     >
       {/* Logo */}
       <div className="flex items-center gap-2.5 h-14 px-4 border-b border-border">
-        <div className="h-10 w-10 rounded-lg overflow-hidden flex items-center justify-center">
-          <img src="/favicon.svg" alt="ARKXMotion" className="w-full h-full object-contain" />
-        </div>
-        {!collapsed && (
-          <div className="flex flex-col">
-            <div className="font-display text-sm font-bold tracking-tight">
-              <span className="silver-text">ARK</span>
-              <span className="gold-text">X</span>
-              <span className="silver-text">Motion</span>
-            </div>
-            <div className="text-[10px] gold-text font-semibold tracking-[0.3em]">STUDIO</div>
-          </div>
+        {collapsed ? (
+          <img src="/arkx-dashboard-icon.svg" alt="ARKXMotion" className="w-8 h-8" />
+        ) : (
+          <img src="/arkx-sidebar-logo.svg" alt="ARKXMotion Studio" className="h-10" />
         )}
       </div>
 

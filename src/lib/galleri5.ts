@@ -35,6 +35,13 @@ export const GALLERI5_MOTION_MODELS: Galleri5MotionModel[] = [
     sessionName: 'Kling Video v2.6 Motion Control [Standard]',
     cr: 60,
   },
+  {
+    key: 'g5:wan-motion',
+    modelPath: 'fal-ai/wan-motion',
+    label: 'Wan Motion (Galery5)',
+    sessionName: 'Wan Motion',
+    cr: 30,
+  },
 ]
 
 export interface Galleri5MotionControlOptions {
@@ -42,7 +49,12 @@ export interface Galleri5MotionControlOptions {
   modelKey: string
   imageUrl: string
   videoUrl: string
+  imageFile?: File | Blob
+  videoFile?: File | Blob
   keepOriginalSound?: boolean
+  adaptMotion?: boolean
+  safetyChecker?: boolean
+  enhanceIdentity?: boolean
   orientation?: 'image' | 'video'
   prompt?: string
   onProgress?: (msg: string, pct?: number) => void
@@ -195,12 +207,52 @@ function getValidKeyStringsWithBalance(minCredits: number): string[] {
 
 // ─── API Helpers ────────────────────────────────────────────────────
 
+async function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms))
+}
+
+async function fetchWithRetry(
+  url: string,
+  opts: RequestInit,
+  retries = 2,
+  delayMs = 1500
+): Promise<Response> {
+  let lastErr: Error | null = null
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(url, opts)
+      return res
+    } catch (err: any) {
+      lastErr = err
+      const msg = (err.message || '').toLowerCase()
+      const isRetryable =
+        err.name === 'TypeError' || // fetch failed
+        err.name === 'AbortError' ||
+        msg.includes('fetch failed') ||
+        msg.includes('network') ||
+        msg.includes('econnreset') ||
+        msg.includes('econnrefused') ||
+        msg.includes('etimedout') ||
+        msg.includes('socket hang up') ||
+        msg.includes('enotfound') ||
+        msg.includes('timeout')
+      if (isRetryable && attempt < retries) {
+        console.log(`[galleri5] fetch retry ${attempt + 1}/${retries} after ${delayMs}ms: ${err.message}`)
+        await sleep(delayMs * (attempt + 1))
+        continue
+      }
+      throw err
+    }
+  }
+  throw lastErr ?? new Error('fetch gagal')
+}
+
 async function galleri5Api(action: string, params: Record<string, any>): Promise<any> {
-  const res = await fetch(GALLERI5_PROXY, {
+  const res = await fetchWithRetry(GALLERI5_PROXY, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action, ...params }),
-  })
+  }, 2, 1500)
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw Error(data?.error || `Galleri5 ${res.status}`)
   return data
@@ -233,38 +285,48 @@ async function g5DirectFetch(accessToken: string, path: string, opts: { method?:
   return data
 }
 
-async function g5UploadFile(accessToken: string, file: File, orgId?: string | null): Promise<{ fileUrl: string; uploadId: string | null }> {
+async function g5UploadFile(accessToken: string, file: File | Blob, fileName?: string, orgId?: string | null): Promise<{ fileUrl: string; uploadId: string | null }> {
   const headers = await g5DirectHeaders(accessToken, orgId)
   const formData = new FormData()
-  formData.append('file', file, file.name || 'upload.bin')
+  formData.append('file', file, fileName || (file instanceof File ? file.name : 'upload.bin'))
   
-  try {
-    const res = await fetch(`${GALLERI5_BASE}/file-upload`, {
-      method: 'POST',
-      headers,
-      body: formData,
-      signal: AbortSignal.timeout(120000),
-    })
-    const text = await res.text()
-    let data: any = null
-    try { data = JSON.parse(text) } catch { data = text }
-    if (!res.ok || !(data?.file_url || data?.url)) {
-      throw Error(`G5 upload gagal (${res.status}): ${data?.detail || text.slice(0, 160)}`)
+  let lastErr: Error | null = null
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(`${GALLERI5_BASE}/file-upload`, {
+        method: 'POST',
+        headers,
+        body: formData,
+        signal: AbortSignal.timeout(120000),
+      })
+      const text = await res.text()
+      let data: any = null
+      try { data = JSON.parse(text) } catch { data = text }
+      if (!res.ok || !(data?.file_url || data?.url)) {
+        throw Error(`G5 upload gagal (${res.status}): ${data?.detail || text.slice(0, 160)}`)
+      }
+      return { fileUrl: data.file_url || data.url, uploadId: data.upload_id ?? null }
+    } catch (err: any) {
+      lastErr = err
+      if (err.name === 'TimeoutError' || err.message?.includes('timeout')) {
+        throw Error(`G5 upload timeout (>120s). Coba gambar yang lebih kecil atau koneksi lebih stabil.`)
+      }
+      const msg = (err.message || '').toLowerCase()
+      const isRetryable = msg.includes('fetch failed') || msg.includes('network') || msg.includes('econnreset') || msg.includes('socket hang up')
+      if (isRetryable && attempt < 2) {
+        console.log(`[g5UploadFile] retry ${attempt + 1}/2: ${err.message}`)
+        await sleep(2000 * (attempt + 1))
+        continue
+      }
+      throw err
     }
-    return { fileUrl: data.file_url || data.url, uploadId: data.upload_id ?? null }
-  } catch (err: any) {
-    if (err.name === 'TimeoutError' || err.message?.includes('timeout')) {
-      throw Error(`G5 upload timeout (>120s). Coba gambar yang lebih kecil atau koneksi lebih stabil.`)
-    }
-    throw err
   }
+  throw lastErr ?? new Error('G5 upload gagal')
 }
 
 async function g5UploadUrl(accessToken: string, url: string, fileName: string, orgId?: string | null): Promise<{ fileUrl: string; uploadId: string | null }> {
-  // Use proxy API to avoid CORS issues
   const authHeaders = await g5DirectHeaders(accessToken, orgId)
-  
-  // Detect content type from file extension
+
   const ext = fileName.split('.').pop()?.toLowerCase() || 'jpg'
   const contentTypeMap: Record<string, string> = {
     'jpg': 'image/jpeg',
@@ -277,27 +339,45 @@ async function g5UploadUrl(accessToken: string, url: string, fileName: string, o
     'avi': 'video/x-msvideo',
   }
   const contentType = contentTypeMap[ext] || 'image/jpeg'
-  
-  try {
-    const res = await galleri5Api('upload', {
-      authHeaders: JSON.stringify(authHeaders),
-      fileUrl: url,
-      fileName,
-      contentType,
-      orgId,
-    })
-    
-    if (!res.ok || !res.data?.file_url) {
-      throw Error(res.error || 'Upload gagal via proxy')
+
+  let lastErr: Error | null = null
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await galleri5Api('upload', {
+        authHeaders: JSON.stringify(authHeaders),
+        fileUrl: url,
+        fileName,
+        contentType,
+        orgId,
+      })
+
+      if (!res.ok || !res.data?.file_url) {
+        throw Error(res.error || 'Upload gagal via proxy')
+      }
+
+      return {
+        fileUrl: res.data.file_url,
+        uploadId: res.data.upload_id ?? null,
+      }
+    } catch (err: any) {
+      lastErr = err
+      const msg = (err.message || '').toLowerCase()
+      const isRetryable =
+        msg.includes('fetch failed') ||
+        msg.includes('download gagal') ||
+        msg.includes('network') ||
+        msg.includes('timeout') ||
+        msg.includes('econnreset') ||
+        msg.includes('socket hang up')
+      if (isRetryable && attempt < 2) {
+        console.log(`[g5UploadUrl] retry ${attempt + 1}/2: ${err.message}`)
+        await sleep(2000 * (attempt + 1))
+        continue
+      }
+      throw err
     }
-    
-    return {
-      fileUrl: res.data.file_url,
-      uploadId: res.data.upload_id ?? null,
-    }
-  } catch (err: any) {
-    throw Error(`G5 upload via proxy gagal: ${err.message}`)
   }
+  throw lastErr ?? new Error('G5 upload via proxy gagal')
 }
 
 function resolveModel(modelKey: string): Galleri5MotionModel {
@@ -522,21 +602,6 @@ function extractTaskId(data: any): string | null {
   return null
 }
 
-function extractError(data: any, depth = 0): string | null {
-  if (depth > 6 || typeof data !== 'object' || !data) return null
-  for (const key of ['error', 'error_message', 'detail', 'message']) {
-    const val = data[key]
-    if (typeof val === 'string' && val.trim() && !/^(ok|success|completed)$/i.test(val.trim())) {
-      return val.trim()
-    }
-  }
-  for (const val of Object.values(data)) {
-    const err = extractError(val, depth + 1)
-    if (err) return err
-  }
-  return null
-}
-
 function extractSseStatus(data: any): string {
   if (typeof data === 'object' && data !== null) {
     const val = data.status ?? data.event
@@ -580,14 +645,38 @@ export async function submitGalleri5MotionControl(
   const sessionId = generateSessionId()
 
   onProgress?.('upload image...')
-  const imgResult = await g5UploadUrl(accessToken, opts.imageUrl, `ref_img_${Date.now()}.jpg`, orgId)
-  const imgFileUrl = imgResult.fileUrl
-  const imgUploadId = imgResult.uploadId
+  let imgFileUrl = opts.imageUrl
+  let imgUploadId: string | null = null
+  try {
+    let imgResult: { fileUrl: string; uploadId: string | null }
+    if (opts.imageFile) {
+      imgResult = await g5UploadFile(accessToken, opts.imageFile, `ref_img_${Date.now()}.jpg`, orgId)
+    } else {
+      imgResult = await g5UploadUrl(accessToken, opts.imageUrl, `ref_img_${Date.now()}.jpg`, orgId)
+    }
+    imgFileUrl = imgResult.fileUrl || opts.imageUrl
+    imgUploadId = imgResult.uploadId
+    onProgress?.('upload image done')
+  } catch (e: any) {
+    onProgress?.(`upload image skip: ${e.message}`)
+  }
 
   onProgress?.('upload video...')
-  const vidResult = await g5UploadUrl(accessToken, opts.videoUrl, `ref_vid_${Date.now()}.mp4`, orgId)
-  const vidFileUrl = vidResult.fileUrl
-  const vidUploadId = vidResult.uploadId
+  let vidFileUrl = opts.videoUrl
+  let vidUploadId: string | null = null
+  try {
+    let vidResult: { fileUrl: string; uploadId: string | null }
+    if (opts.videoFile) {
+      vidResult = await g5UploadFile(accessToken, opts.videoFile, `ref_vid_${Date.now()}.mp4`, orgId)
+    } else {
+      vidResult = await g5UploadUrl(accessToken, opts.videoUrl, `ref_vid_${Date.now()}.mp4`, orgId)
+    }
+    vidFileUrl = vidResult.fileUrl || opts.videoUrl
+    vidUploadId = vidResult.uploadId
+    onProgress?.('upload video done')
+  } catch (e: any) {
+    onProgress?.(`upload video skip: ${e.message}`)
+  }
 
   onProgress?.('create session...')
   await g5DirectFetch(accessToken, '/unit-sessions', {
@@ -621,6 +710,16 @@ export async function submitGalleri5MotionControl(
   }
   if (opts.prompt && opts.prompt.trim()) {
     formFields.prompt = opts.prompt.trim()
+  }
+  // Wan Motion specific options
+  if (opts.adaptMotion !== undefined) {
+    formFields.adapt_motion = opts.adaptMotion
+  }
+  if (opts.safetyChecker !== undefined) {
+    formFields.enable_safety_checker = opts.safetyChecker
+  }
+  if (opts.enhanceIdentity !== undefined) {
+    formFields.enhance_identity = opts.enhanceIdentity
   }
 
   onProgress?.('estimate...')
@@ -678,7 +777,6 @@ export async function submitGalleri5MotionControl(
   const reader = submitRes.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
-  let lastError: string | null = null
   let lastStatus = ''
 
   const processLine = (line: string): string | null => {
@@ -690,8 +788,6 @@ export async function submitGalleri5MotionControl(
     }
     const url = extractVideoUrl(parsed) || extractVideoUrl(line)
     if (url) return url
-    const err = extractError(parsed)
-    if (err) lastError = err
     return null
   }
 
@@ -820,6 +916,7 @@ export interface Galleri5I2VOptions {
   authHeaders: Record<string, string>
   modelKey: string
   imageUrl: string
+  imageFile?: File | Blob
   prompt?: string
   duration?: number
   onProgress?: (msg: string, pct?: number) => void
@@ -871,7 +968,12 @@ export async function submitGalleri5I2V(
   const sessionId = generateSessionId()
 
   onProgress?.('upload image...')
-  const imgResult = await g5UploadUrl(accessToken, opts.imageUrl, `i2v_img_${Date.now()}.jpg`, orgId)
+  let imgResult: { fileUrl: string; uploadId: string | null }
+  if (opts.imageFile) {
+    imgResult = await g5UploadFile(accessToken, opts.imageFile, `i2v_img_${Date.now()}.jpg`, orgId)
+  } else {
+    imgResult = await g5UploadUrl(accessToken, opts.imageUrl, `i2v_img_${Date.now()}.jpg`, orgId)
+  }
   const imgFileUrl = imgResult.fileUrl
   const imgUploadId = imgResult.uploadId
 
@@ -966,7 +1068,6 @@ export async function submitGalleri5I2V(
   const decoder = new TextDecoder()
   let buffer = ''
   let lastStatus = ''
-  let lastError: string | null = null
   let extractedTaskId: string | null = null
 
   for (;;) {
@@ -987,8 +1088,6 @@ export async function submitGalleri5I2V(
         try { await reader.cancel() } catch {}
         return { taskId: videoUrl, sessionId, orgId }
       }
-      const errStr = extractError(parsed)
-      if (errStr) lastError = errStr
       const sts = extractSseStatus(parsed)
       if (sts && sts !== lastStatus) {
         lastStatus = sts
@@ -1068,12 +1167,26 @@ export function isGalleri5TokenError(msg: string): boolean {
     return false
   }
   
-  // Insufficient balance is NOT a token error if all tokens have same issue - don't rotate
-  if (isGalleri5InsufficientBalance(msg)) {
+  // Network/fetch errors are NOT token errors - rotating won't help
+  if (
+    t.includes('fetch failed') ||
+    t.includes('network') ||
+    t.includes('econnreset') ||
+    t.includes('econnrefused') ||
+    t.includes('etimedout') ||
+    t.includes('socket hang up') ||
+    t.includes('enotfound') ||
+    t.includes('timeout') ||
+    t.includes('download gagal') ||
+    t.includes('upload via proxy gagal')
+  ) {
     return false
   }
   
-  return /credit|insufficient|not enough|out of|balance|quota|exhaust|limit|too many|rate.?limit|401|402|unauthor|forbidden|expired|invalid.*token|token.*invalid|5\d\d|server error|internal|network|fetch|timeout|timed out/.test(
+  // Insufficient balance IS a token error - rotate to try other tokens
+  // Different tokens may have different credit balances
+  
+  return /credit|insufficient|not enough|out of|balance|quota|exhaust|limit|too many|rate.?limit|401|402|unauthor|forbidden|expired|invalid.*token|token.*invalid|5\d\d|server error|internal/.test(
     t
   )
 }
@@ -1082,7 +1195,6 @@ export function getGalleri5ErrorMessage(error: any): string {
   const msg = error?.message || String(error)
   
   if (isGalleri5ModelRestricted(msg)) {
-    // Extract model name if available
     const modelMatch = msg.match(/Model '([^']+)'/i)
     const modelName = modelMatch ? modelMatch[1] : 'ini'
     
@@ -1091,6 +1203,11 @@ export function getGalleri5ErrorMessage(error: any): string {
   
   if (isGalleri5InsufficientBalance(msg)) {
     return `${msg}. Gunakan model yang lebih murah (Kling V2.6 Standard = 60 cr) atau isi ulang credit di aistudio.galleri5.com`
+  }
+  
+  const t = msg.toLowerCase()
+  if (t.includes('fetch failed') || t.includes('network') || t.includes('timeout') || t.includes('download gagal')) {
+    return `Koneksi ke G5 gagal: ${msg}. Coba lagi dalam beberapa saat atau gunakan gambar/video yang lebih kecil.`
   }
   
   return msg

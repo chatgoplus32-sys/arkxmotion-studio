@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Badge } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
@@ -32,28 +32,28 @@ export default function CreatePulseTopupPage() {
 
   const API = '/api/createpulse'
 
-  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
+  const headers = useMemo(() => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }), [token])
 
-  useEffect(() => {
-    fetchBalance()
-    fetchTopups()
-  }, [])
-
-  const fetchBalance = async () => {
+  const fetchBalance = useCallback(async () => {
     try {
       const res = await fetch(`${API}/balance`, { headers })
       const data = await res.json()
       setBalance(data.balance || 0)
     } catch {}
-  }
+  }, [headers])
 
-  const fetchTopups = async () => {
+  const fetchTopups = useCallback(async () => {
     try {
       const res = await fetch(`${API}/topups/mine`, { headers })
       const data = await res.json()
       setTopups(data.topups || [])
     } catch {}
-  }
+  }, [headers])
+
+  useEffect(() => {
+    fetchBalance()
+    fetchTopups()
+  }, [fetchBalance, fetchTopups])
 
   const handleTopup = async () => {
     const amount = customAmount ? parseInt(customAmount) : selectedAmount

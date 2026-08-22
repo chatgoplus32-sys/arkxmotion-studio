@@ -1,6 +1,6 @@
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Input, EmptyState } from '@/components/ui'
-import { Search, TrendingUp, Target, Users, Loader2 } from 'lucide-react'
+import { Search, Loader2 } from 'lucide-react'
 import { useState } from 'react'
 
 export default function ResearchPage() {

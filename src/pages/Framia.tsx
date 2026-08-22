@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
-import { Section, Button, Input, Label, Badge, Textarea } from '@/components/ui'
+import { Section, Button, Label, Textarea } from '@/components/ui'
 import { Video, Loader2, Play, Key } from 'lucide-react'
-import { useProviderManager, ProviderId } from '@/stores/providerManager'
+import { useProviderManager } from '@/stores/providerManager'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 
 interface FramiaSkill {
@@ -37,7 +37,7 @@ export default function FramiaPage() {
 
   const apiKey = keys.framia?.[0]?.key || ''
 
-  const loadFramiaData = async () => {
+  const loadFramiaData = useCallback(async () => {
     if (!apiKey) return
     setLoading(true)
     try {
@@ -69,11 +69,11 @@ export default function FramiaPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [apiKey])
 
   useEffect(() => {
     if (apiKey) loadFramiaData()
-  }, [apiKey])
+  }, [apiKey, loadFramiaData])
 
   const handleRunSkill = async (skill: FramiaSkill) => {
     if (!apiKey) return

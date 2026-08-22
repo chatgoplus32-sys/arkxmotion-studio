@@ -1,4 +1,4 @@
-import { HTMLAttributes, ReactNode, forwardRef } from 'react'
+import { HTMLAttributes, forwardRef } from 'react'
 import { cn } from '@/lib/utils'
 
 interface PageHeaderProps extends HTMLAttributes<HTMLDivElement> {

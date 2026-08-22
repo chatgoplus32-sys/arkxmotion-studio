@@ -1,6 +1,6 @@
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, EmptyState } from '@/components/ui'
-import { FolderKanban, Plus, Pin, Star, Clock } from 'lucide-react'
+import { FolderKanban, Plus, Pin } from 'lucide-react'
 
 export default function ProjectsPage() {
   return (

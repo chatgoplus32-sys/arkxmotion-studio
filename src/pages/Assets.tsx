@@ -1,6 +1,6 @@
 import { PageHeader, PageContent } from '@/components/layout'
-import { Section, Button, EmptyState, Badge } from '@/components/ui'
-import { Database, Image, Video, FileText, Mic, Download, Trash2 } from 'lucide-react'
+import { Section, EmptyState } from '@/components/ui'
+import { Database, Image, Video, FileText, Mic } from 'lucide-react'
 
 const CATEGORIES = [
   { id: 'all', label: 'All', icon: <Database className="h-4 w-4" /> },

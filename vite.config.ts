@@ -17,6 +17,12 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/catbox/, '/user/api.php'),
       },
+      // API Express lokal (auth, tokens, admin, dsb). /api/public/* tetap ditangani
+      // oleh roboneoProxyPlugin (proxy ke Vercel) karena middleware-nya berjalan lebih dulu.
+      '/api': {
+        target: 'http://localhost:6000',
+        changeOrigin: true,
+      },
     },
   },
 })

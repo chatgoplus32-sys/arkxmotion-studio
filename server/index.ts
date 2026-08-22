@@ -8,11 +8,12 @@ import tokenRoutes from './routes/tokens.js'
 import createpulseRoutes from './routes/createpulse.js'
 import adminTopupRoutes from './routes/adminTopup.js'
 import generationLogRoutes from './routes/generationLogs.js'
+import membershipRoutes from './routes/membership.js'
 
 dotenv.config()
 
 const app = express()
-const PORT = process.env.PORT || 6000
+const PORT = Number(process.env.PORT) || 6000
 
 app.use(cors({
   origin: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3000'],
@@ -28,6 +29,7 @@ app.use('/api/admin/topup', adminTopupRoutes)
 app.use('/api/tokens', tokenRoutes)
 app.use('/api/createpulse', createpulseRoutes)
 app.use('/api/logs/generation', generationLogRoutes)
+app.use('/api/membership', membershipRoutes)
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })

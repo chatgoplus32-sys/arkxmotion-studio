@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
-import { Section, Button, Input, Textarea, Select, Label, Badge, EmptyState } from '@/components/ui'
-import { Film, Upload, Rocket, Loader2, Mic, Play, Sparkles, Merge } from 'lucide-react'
+import { Section, Button, Input, Textarea, Select, Label } from '@/components/ui'
+import { Film, Upload, Rocket, Loader2, Mic, Sparkles, Merge } from 'lucide-react'
 
 export default function NaratifPage() {
   const [url, setUrl] = useState('')
@@ -12,8 +12,8 @@ export default function NaratifPage() {
   const [extra, setExtra] = useState('')
   const [scenes, setScenes] = useState<any[]>([])
   const [brainStatus, setBrainStatus] = useState('')
-  const [generating, setGenerating] = useState({ img: false, vo: false, vid: false, merge: false })
-  const [finalUrl, setFinalUrl] = useState<string | null>(null)
+  const [generating, _setGenerating] = useState({ img: false, vo: false, vid: false, merge: false })
+  const [finalUrl, _setFinalUrl] = useState<string | null>(null)
 
   const handleScrape = async () => {
     if (!url.trim()) return

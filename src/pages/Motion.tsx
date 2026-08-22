@@ -1,16 +1,17 @@
 import { useState, useRef, useCallback, useEffect, useMemo, forwardRef } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
-import { Section, Button, Textarea, Select, Label, EmptyState, QuickRoutingDialog, getActiveProviderForCap } from '@/components/ui'
+import { Section, Button, Textarea, Select, Label, EmptyState, QuickRoutingDialog, BalanceBadge, getActiveProviderForCap } from '@/components/ui'
 import { useProviderManager, HIDDEN_PROVIDERS, type ProviderId } from '@/stores'
 import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
 import { useToastStore } from '@/stores/toastStore'
-import { uploadToCatbox, submitMotionControl, pollRoboneoI2V, checkRoboneoBalance, compressVideo, submitGoogleOmni, normalizeImage, getVideoDurationFromFile, noteRoboneoMotionChargeFailure, isRoboneoBalanceError } from '@/lib/roboneo'
+import { uploadToCatbox, submitMotionControl, pollRoboneoI2V, checkRoboneoBalance, compressVideo, submitGoogleOmni, normalizeImage, getVideoDurationFromFile, noteRoboneoMotionChargeFailure, isRoboneoBalanceError, isRoboneoBusyError } from '@/lib/roboneo'
+import { trimVideoFFmpeg } from '@/lib/ffmpeg-compress'
 import { submitWeavyMotionControl, uploadWeavyAssetWithRetry, resolveWeavyAssetUrl, getActiveWeavyAccessToken, compressImageForWeavy } from '@/lib/weavy'
 import { getRunningHubApiKey, submitRunningHubMotionControl, pollRunningHubTask } from '@/lib/runninghub'
-import { getGalleri5Headers, getGalleri5AuthHeaders, submitGalleri5MotionControl, pollGalleri5MotionControl, checkGalleri5Balance, isGalleri5TokenError, isGalleri5ModelRestricted, isGalleri5InsufficientBalance, getGalleri5ErrorMessage, GALLERI5_MOTION_MODELS, runGalleri5WithRotation } from '@/lib/galleri5'
-import { trimVideoFFmpeg } from '@/lib/ffmpeg-compress'
+import { getGalleri5AuthHeaders, submitGalleri5MotionControl, pollGalleri5MotionControl, isGalleri5ModelRestricted, getGalleri5ErrorMessage, GALLERI5_MOTION_MODELS, runGalleri5WithRotation } from '@/lib/galleri5'
 import { getMagnificApiKey, submitMagnificMotion, pollMagnificMotion, type MagnificMotionModel } from '@/lib/magnific'
 import { useLocalStorage } from '@/lib/useLocalStorage'
+import { precheckProviderBalance } from '@/lib/balancePrecheck'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { removeResult, clearResults, getActiveTasks, getLogs, getResults, addBgLog, addActiveTask, addResult, clearLogs, removeActiveTask } from '@/lib/backgroundTasks'
 import { startBackgroundPolling } from '@/lib/backgroundTasks'
@@ -26,8 +27,8 @@ import {
   Loader2,
   X,
   Download,
-  Play,
   Repeat,
+  Globe,
 } from 'lucide-react'
 
 const PROVIDERS = {
@@ -44,7 +45,8 @@ const PROVIDERS = {
     { key: 'ws:kwaivgi/kling-v2.6-std/motion-control', label: 'Kling V2.6 Standard', cr: 21 },
   ]},
   roboneo: { name: 'RoboNeo (Meitu)', models: [
-    { key: 'rn:video_bonbon_motioncontrol_v30:std', label: 'Kling V3.0 Standard (RoboNeo · Meitu)', cr: 80 },
+    { key: 'rn:video_bonbon_motioncontrol_v26:std', label: 'Kling V2.6 Standard (RoboNeo · Meitu)', cr: 50 },
+    { key: 'rn:video_bonbon_motioncontrol_v30:std', label: 'Kling V3.0 Standard (RoboNeo · Meitu)', cr: 65 },
   ]},
   magnific: { name: 'Magnific', models: [
     { key: 'mag:kling-v3-motion-control-pro', label: 'Kling V3.0 Pro (Magnific)', cr: 84 },
@@ -66,6 +68,13 @@ const PROVIDERS = {
     { key: 'g5:kling-v3-pro-motion-control', label: 'Kling V3.0 Pro (Galery5)', cr: 200 },
     { key: 'g5:kling-v2.6-pro-motion-control', label: 'Kling V2.6 Pro (Galery5)', cr: 120 },
     { key: 'g5:kling-v2.6-std-motion-control', label: 'Kling V2.6 Standard (Galery5)', cr: 60 },
+    { key: 'g5:wan-motion', label: 'Wan Motion (Galery5)', cr: 30 },
+  ]},
+  oneover: { name: 'OneOver', models: [
+    { key: 'oo:gemini-omni-flash-preview', label: 'Gemini Omni Flash (OneOver)', cr: 200 },
+    { key: 'oo:grok-imagine-video', label: 'Grok Imagine Video (OneOver)', cr: 70 },
+    { key: 'oo:seedance-2.0', label: 'Seedance 2.0 (OneOver)', cr: 140 },
+    { key: 'oo:seedance-2.5', label: 'Seedance 2.5 (OneOver)', cr: 210 },
   ]},
 }
 
@@ -106,6 +115,9 @@ export default function MotionPage() {
   const [prompt, setPrompt] = useLocalStorage('motion.prompt', '')
   const [negativePrompt, setNegativePrompt] = useLocalStorage('motion.negativePrompt', '')
   const [keepSound, setKeepSound] = useLocalStorage('motion.keepSound', true)
+  const [adaptMotion, setAdaptMotion] = useLocalStorage('motion.adaptMotion', false)
+  const [safetyChecker, setSafetyChecker] = useLocalStorage('motion.safetyChecker', false)
+  const [enhanceIdentity, setEnhanceIdentity] = useLocalStorage('motion.enhanceIdentity', false)
   const [autoTrim, setAutoTrim] = useLocalStorage('motion.autoTrim', true)
   const [tiktokUrl, setTiktokUrl] = useState('')
   const [tiktokLoading, setTiktokLoading] = useState(false)
@@ -125,8 +137,8 @@ export default function MotionPage() {
   const [compressDialog, setCompressDialog] = useState<{ msg: string; pct?: number } | null>(null)
   const [progress, setProgress] = useState(0)
   const [logs, setLogs] = useState<Array<{ time: string; msg: string; level: string }>>(() => getLogs())
-  const [results, setResults] = useState<Array<{ id: string; url: string; prompt: string; date: string }>>(() => {
-    return getResults().filter((r) => r.page === 'motion').map(({ page, ...r }) => r)
+  const [results, setResults] = useState<Array<{ id: string; url: string; prompt: string; date: string; provider?: string; model?: string; taskUrl?: string }>>(() => {
+    return getResults().filter((r) => r.page === 'motion').map(({ page: _page, ...r }) => r)
   })
   const [searchQuery, setSearchQuery] = useState('')
   const [elapsed, setElapsed] = useState('0:00')
@@ -136,7 +148,7 @@ export default function MotionPage() {
   const [showRoutingDialog, setShowRoutingDialog] = useState(false)
   const [confirmDialog, setConfirmDialog] = useState<{ title: string; message: string; onConfirm: () => void; tone?: 'default' | 'danger' } | null>(null)
 
-  const { keys, fetchMaintenance } = useProviderManager()
+  const { fetchMaintenance } = useProviderManager()
 
   useEffect(() => {
     fetchMaintenance()
@@ -147,7 +159,7 @@ export default function MotionPage() {
       const wp = PROVIDERS.wavespeed
       if (wp.models.length > 0) setModelKey(wp.models[0].key)
     }
-  }, [fetchMaintenance])
+  }, [fetchMaintenance, provider, setProvider, setModelKey])
 
   useEffect(() => {
     const sync = () => {
@@ -170,10 +182,10 @@ export default function MotionPage() {
       window.removeEventListener('aatools:routing-changed', sync)
       window.removeEventListener('focus', sync)
     }
-  }, [])
+  }, [provider, setProvider, setModelKey])
 
   useEffect(() => {
-    const metadata = slots.map(({ image, video, ...rest }) => rest)
+    const metadata = slots.map(({ image: _image, video: _video, ...rest }) => rest)
     try { localStorage.setItem('motion.slots', JSON.stringify(metadata)) } catch {}
   }, [slots])
 
@@ -194,7 +206,7 @@ export default function MotionPage() {
     const sync = () => {
       const bgLogs = getLogs()
       setLogs(bgLogs)
-      const bgResults = getResults().filter((r) => r.page === 'motion').map(({ page, ...r }) => r)
+      const bgResults = getResults().filter((r) => r.page === 'motion').map(({ page: _page, ...r }) => r)
       setResults(bgResults)
       const hasActive = getActiveTasks().filter((t) => t.page === 'motion').length > 0
       setGenerating(hasActive)
@@ -282,7 +294,6 @@ export default function MotionPage() {
 
   const handleFileChange = async (id: string, type: 'image' | 'video', file: File | null) => {
     if (!file) {
-      const url = null
       if (type === 'image') {
         updateSlot(id, { image: null, imageUrl: null })
       } else {
@@ -423,6 +434,14 @@ export default function MotionPage() {
       return
     }
 
+    // Pre-check saldo vs estimasi biaya sebelum upload dimulai
+    const pre = await precheckProviderBalance(provider, totalCredits)
+    if (!pre.ok) {
+      addLog(`❌ ${pre.error}`, 'error')
+      addToast(pre.error || 'Saldo tidak cukup', 'error')
+      return
+    }
+
     setGenerating(true)
     successRef.current = false
     generatingRef.current = true
@@ -453,6 +472,108 @@ export default function MotionPage() {
     }) : null
 
     try {
+      // Failover ke G5 AI Studio untuk slot yang gagal — dipakai HANYA setelah semua token
+      // Roboneo dicoba dan tetap busy (rotasi token sudah jalan duluan di withTokenRotation).
+      const runG5FailoverForSlot = async (slot: Slot, slotNum: number): Promise<boolean> => {
+        const imageUrl = slot.imageUrl || ''
+        const videoUrl = slot.videoUrl || ''
+        if (!imageUrl || !videoUrl) {
+          addLog(`#${slotNum} G5 failover skip — URL tidak tersimpan`, 'warn')
+          return false
+        }
+        try {
+          const lower = modelKey.toLowerCase()
+          const g5Key = lower.includes('v30') || lower.includes('v3')
+            ? 'g5:kling-v3-pro-motion-control'
+            : lower.includes('pro')
+            ? 'g5:kling-v2.6-pro-motion-control'
+            : 'g5:kling-v2.6-std-motion-control'
+          const g5Model = GALLERI5_MOTION_MODELS.find((m) => m.key === g5Key) || GALLERI5_MOTION_MODELS[GALLERI5_MOTION_MODELS.length - 1]
+          addLog(`#${slotNum} Failover model: ${g5Model.label} (±${g5Model.cr} cr)`)
+
+          const url = await runGalleri5WithRotation(
+            async (g5Token: string) => {
+              const headers = await getGalleri5AuthHeaders(g5Token)
+              if (!headers) throw Error('Belum ada auth headers. Buka Manage → Tokens → G5 AI Studio, tambahkan Firebase refresh token (AMf-...) lalu klik Cek Limit & Status.')
+
+              const submitResult = await submitGalleri5MotionControl({
+                authHeaders: headers,
+                modelKey: g5Key,
+                imageUrl,
+                videoUrl,
+                keepOriginalSound: keepSound,
+                orientation,
+                prompt: prompt.trim() || undefined,
+                onProgress: (msg, pct) => {
+                  updateSlotStatus(slot.id, 'processing', pct ? `${msg} ${pct}%` : msg)
+                  addLog(`#${slotNum} ${msg}`)
+                },
+              })
+              const taskId = submitResult.taskId
+              addLog(`#${slotNum} Task (G5): ${taskId.slice(0, 60)}...`)
+
+              addActiveTask({
+                id: submitResult.sessionId,
+                taskId: submitResult.sessionId,
+                roomId: '',
+                nodeId: '',
+                token: JSON.stringify(headers).slice(0, 50),
+                model: currentModel.label,
+                prompt: prompt.trim() || '(no prompt)',
+                startedAt: Date.now(),
+                page: 'motion',
+              })
+
+              let url = taskId
+              // taskId URL = submit sudah mengembalikan hasil (dari SSE stream)
+              if (!/^https?:\/\//i.test(taskId)) {
+                updateSlotStatus(slot.id, 'processing', 'polling...')
+                addLog(`#${slotNum} Polling for result...`)
+                url = await pollGalleri5MotionControl(headers, submitResult.sessionId, (msg, pct) => {
+                  updateSlotStatus(slot.id, 'processing', `${msg} ${pct}%`)
+                  addLog(`#${slotNum} ${msg} ${pct}%`)
+                  setProgress(pct)
+                }, submitResult.orgId)
+              }
+
+              removeActiveTask(submitResult.sessionId)
+              return url
+            },
+            {
+              onRotate: (idx, total, reason) => {
+                addLog(`#${slotNum} ↻ rotate token #${idx}/${total}: ${reason}`, 'warn')
+              },
+            }
+          )
+
+          updateSlotStatus(slot.id, 'done')
+          addLog(`#${slotNum} Done (failover G5): ${url.slice(0, 60)}...`, 'success')
+          addResult({
+            id: `g5-failover-${Date.now()}`,
+            url,
+            prompt: prompt.trim() || '(no prompt)',
+            date: new Date().toISOString(),
+            page: 'motion',
+          })
+          setResults((prev) => [
+            {
+              id: `g5-failover-${Date.now()}`,
+              url,
+              prompt: prompt.trim() || '(no prompt)',
+              date: new Date().toISOString(),
+            },
+            ...prev,
+          ])
+          return true
+        } catch (err: any) {
+          setCompressDialog(null)
+          const g5Msg = getGalleri5ErrorMessage(err)
+          updateSlotStatus(slot.id, 'error', g5Msg)
+          addLog(`#${slotNum} Failover G5 gagal: ${g5Msg}`, 'error')
+          return false
+        }
+      }
+
       const rotation = await withTokenRotation<{ completedCount: number; failCount: number }>(
       provider,
       async (token) => {
@@ -469,6 +590,9 @@ export default function MotionPage() {
             }
             if (balanceResult.balance !== null && balanceResult.balance <= 0) {
               throw new Error('Balance kosong! Tidak ada credit untuk generate.')
+            }
+            if (balanceResult.balance !== null && currentModel.cr > 0 && balanceResult.balance < currentModel.cr) {
+              throw new Error(`Balance tidak cukup! ${currentModel.label} butuh ${currentModel.cr} kredit (balance kamu ${balanceResult.balance}). Pilih model lebih murah (Kling 2.6 Standard ±86) atau top up dulu.`)
             }
           }
         }
@@ -500,7 +624,7 @@ export default function MotionPage() {
                   addLog(`#${slotNum} ${msg}`)
                 })
                 setCompressDialog(null)
-                imageUrl = await uploadToCatbox(normalizedImage, 'image', (msg, pct) => {
+                imageUrl = await uploadToCatbox(normalizedImage, 'image', (msg, _pct) => {
                   updateSlotStatus(slot.id, 'uploading img...', msg)
                   addLog(`#${slotNum} ${msg}`)
                 })
@@ -544,14 +668,24 @@ export default function MotionPage() {
                   addLog(`#${slotNum} Skipping (no video)`, 'warn')
                   return false
                 }
+                let uploadedVideoFile: File | null = null
                 if (!motionVideoUrl) {
                   updateSlotStatus(slot.id, 'uploading vid...')
 
                   let videoToUpload = slot.video!
-                  // FFmpeg WASM tidak work di semua browser, skip trim untuk sekarang
-                  // Video akan dikirim as-is ke RoboNeo (biaya mengikuti durasi)
                   if (autoTrim && isRoboneo) {
-                    addLog(`#${slotNum} ℹ Auto-trim aktif tapi FFmpeg WASM tidak tersedia. Video dikirim as-is.`, 'warn')
+                    addLog(`#${slotNum} ✂️ Memotong video ke 9 detik (FFmpeg)...`)
+                    try {
+                      const trimmed = await trimVideoFFmpeg(slot.video, 9, (msg, pct) => {
+                        setCompressDialog({ msg, pct })
+                        updateSlotStatus(slot.id, 'uploading vid...', msg)
+                        addLog(`#${slotNum} ${msg}`)
+                      })
+                      videoToUpload = trimmed
+                      addLog(`#${slotNum} ✅ Video dipotong: ${(trimmed.size / 1024 / 1024).toFixed(1)}MB`)
+                    } catch (trimErr: any) {
+                      addLog(`#${slotNum} ⚠ Trim gagal (${(trimErr?.message || 'error').slice(0, 60)}), video dikirim as-is.`, 'warn')
+                    }
                   }
 
                   addLog(`#${slotNum} Upload video...`)
@@ -561,7 +695,8 @@ export default function MotionPage() {
                     addLog(`#${slotNum} ${msg}`)
                   })
                   setCompressDialog(null)
-                  motionVideoUrl = await uploadToCatbox(videoFile, 'video', (msg, pct) => {
+                  uploadedVideoFile = videoFile
+                  motionVideoUrl = await uploadToCatbox(videoFile, 'video', (msg, _pct) => {
                     updateSlotStatus(slot.id, 'uploading vid...', msg)
                     addLog(`#${slotNum} ${msg}`)
                   })
@@ -574,26 +709,54 @@ export default function MotionPage() {
                 updateSlotStatus(slot.id, 'processing', 'submitting...')
                 addLog(`#${slotNum} Submit motion-control...`)
 
-                // Detect video duration for billing
+                // Detect video duration for billing (use the file actually uploaded — may be trimmed)
                 let videoDurationSec = 10
-                if (slot.video) {
-                  videoDurationSec = await getVideoDurationFromFile(slot.video)
-                  addLog(`#${slotNum} Video duration: ${videoDurationSec}s`)
+                const durationSource = uploadedVideoFile || slot.video
+                if (durationSource) {
+                  videoDurationSec = await getVideoDurationFromFile(durationSource)
+                  addLog(`#${slotNum} Video duration (uploaded): ${videoDurationSec}s`)
                 }
 
-                const result = await submitMotionControl({
-                accessToken: token,
-                imageUrl,
-                videoUrl: motionVideoUrl,
-                prompt: prompt.trim() || undefined,
-                negativePrompt: negativePrompt.trim() || undefined,
-                orientation,
-                keepSound,
-                modelKey: currentModel.key,
-              })
-                taskId = result.taskId
-                roomId = result.roomId
-                nodeId = result.nodeId
+                // Roboneo nodeexecute bisa busy intermitten — coba lagi di luar retry internal
+                // (internal ±35s) dengan jeda lebih panjang supaya window busy pendek terlewati.
+                const SUBMIT_BUSY_RETRY = 3
+                let submitResult: Awaited<ReturnType<typeof submitMotionControl>> | null = null
+                let submitErr: any = null
+                for (let s = 0; s < SUBMIT_BUSY_RETRY; s++) {
+                  try {
+                    submitResult = await submitMotionControl({
+                      accessToken: token,
+                      imageUrl,
+                      videoUrl: motionVideoUrl,
+                      prompt: prompt.trim() || undefined,
+                      negativePrompt: negativePrompt.trim() || undefined,
+                      orientation,
+                      keepSound,
+                      modelKey: currentModel.key,
+                    })
+                    submitErr = null
+                    break
+                  } catch (e: any) {
+                    const isBusy = /busy|sibuk|try again|later|overload|capacity|queue|系统繁忙|请稍后|拥挤/i.test(e?.message || '')
+                    if (isBusy) {
+                      // Busy → langsung failover (roboneoApiCall internal sudah coba 5× ±35s)
+                      submitErr = e
+                      break
+                    }
+                    if (s < SUBMIT_BUSY_RETRY - 1) {
+                      const waitSec = 30 + s * 30
+                      addLog(`#${slotNum} Submit gagal (${(e?.message || '').slice(0, 60)}), coba lagi ${s + 2}/${SUBMIT_BUSY_RETRY} (${waitSec}s)...`, 'warn')
+                      await new Promise((r) => setTimeout(r, waitSec * 1000))
+                      continue
+                    }
+                    submitErr = e
+                    break
+                  }
+                }
+                if (submitErr) throw submitErr
+                taskId = submitResult!.taskId
+                roomId = submitResult!.roomId
+                nodeId = submitResult!.nodeId
                 addLog(`#${slotNum} Task: ${taskId.slice(0, 20)}...`)
               }
 
@@ -679,6 +842,9 @@ export default function MotionPage() {
                 prompt: prompt.trim() || '(no prompt)',
                 date: new Date().toISOString(),
                 page: 'motion',
+                provider: 'roboneo',
+                model: currentModel?.label || currentModel?.key || '',
+                taskUrl: roomId ? `https://www.roboneo.com/team_studio?room_id=${roomId}` : undefined,
               })
               setResults((prev) => [
                 {
@@ -707,6 +873,10 @@ export default function MotionPage() {
                   console.error('[motion] Failed to track charge failure:', trackErr)
                 }
               }
+              // Error yang bisa dirotasi (busy/kredit/auth) → lempar ke atas supaya token berikutnya dicoba
+              if (detectTokenError(provider, err)) {
+                throw err
+              }
               return false
             }
           } else if (isMagnific && slot.image && slot.video) {
@@ -721,7 +891,7 @@ export default function MotionPage() {
                   addLog(`#${slotNum} ${msg}`)
                 })
                 setCompressDialog(null)
-                imageUrl = await uploadToCatbox(normalizedImage, 'image', (msg, pct) => {
+                imageUrl = await uploadToCatbox(normalizedImage, 'image', (msg, _pct) => {
                   updateSlotStatus(slot.id, 'uploading img...', msg)
                   addLog(`#${slotNum} ${msg}`)
                 })
@@ -741,7 +911,7 @@ export default function MotionPage() {
                   addLog(`#${slotNum} ${msg}`)
                 })
                 setCompressDialog(null)
-                videoUrl = await uploadToCatbox(videoFile, 'video', (msg, pct) => {
+                videoUrl = await uploadToCatbox(videoFile, 'video', (msg, _pct) => {
                   updateSlotStatus(slot.id, 'uploading vid...', msg)
                   addLog(`#${slotNum} ${msg}`)
                 })
@@ -1019,50 +1189,41 @@ export default function MotionPage() {
               const g5Model = GALLERI5_MOTION_MODELS.find((m) => m.key === modelKey) || GALLERI5_MOTION_MODELS[GALLERI5_MOTION_MODELS.length - 1]
               addLog(`#${slotNum} Model: ${g5Model.label} (±${g5Model.cr} cr)`)
 
-              let imageUrl = slot.imageUrl || ''
-              if (!imageUrl) {
-                updateSlotStatus(slot.id, 'uploading img...')
-                addLog(`#${slotNum} Upload image...`)
-                const normalizedImage = await normalizeImage(slot.image, (msg, pct) => {
-                  setCompressDialog({ msg, pct })
-                  updateSlotStatus(slot.id, 'uploading img...', msg)
-                  addLog(`#${slotNum} ${msg}`)
-                })
-                setCompressDialog(null)
-                imageUrl = await uploadToCatbox(normalizedImage, 'image', (msg, pct) => {
-                  updateSlotStatus(slot.id, 'uploading img...', msg)
-                  addLog(`#${slotNum} ${msg}`)
-                })
-                updateSlot(slot.id, { imageUrl })
-                addLog(`#${slotNum} Image: ${imageUrl.slice(0, 60)}...`)
-              } else {
-                addLog(`#${slotNum} Using cached image URL`)
-              }
+              // Always re-upload to avoid expired cached URLs
+              updateSlotStatus(slot.id, 'uploading img...')
+              addLog(`#${slotNum} Upload image...`)
+              const normalizedImage = await normalizeImage(slot.image, (msg, pct) => {
+                setCompressDialog({ msg, pct })
+                updateSlotStatus(slot.id, 'uploading img...', msg)
+                addLog(`#${slotNum} ${msg}`)
+              })
+              setCompressDialog(null)
+              const imageUrl = await uploadToCatbox(normalizedImage, 'image', (msg, _pct) => {
+                updateSlotStatus(slot.id, 'uploading img...', msg)
+                addLog(`#${slotNum} ${msg}`)
+              })
+              updateSlot(slot.id, { imageUrl })
+              addLog(`#${slotNum} Image: ${imageUrl.slice(0, 60)}...`)
 
-              let motionVideoUrl = slot.videoUrl || ''
-              if (!motionVideoUrl) {
-                updateSlotStatus(slot.id, 'uploading vid...')
-                addLog(`#${slotNum} Upload video...`)
+              updateSlotStatus(slot.id, 'uploading vid...')
+              addLog(`#${slotNum} Upload video...`)
                 const videoFile = await compressVideo(slot.video, 4, (msg, pct) => {
                   setCompressDialog({ msg, pct })
                   updateSlotStatus(slot.id, 'uploading vid...', msg)
                   addLog(`#${slotNum} ${msg}`)
                 })
                 setCompressDialog(null)
-                motionVideoUrl = await uploadToCatbox(videoFile, 'video', (msg, pct) => {
+                const motionVideoUrl = await uploadToCatbox(videoFile, 'video', (msg, _pct) => {
                   updateSlotStatus(slot.id, 'uploading vid...', msg)
                   addLog(`#${slotNum} ${msg}`)
                 })
                 updateSlot(slot.id, { videoUrl: motionVideoUrl })
                 addLog(`#${slotNum} Video: ${motionVideoUrl.slice(0, 60)}...`)
-              } else {
-                addLog(`#${slotNum} Using cached video URL`)
-              }
 
               updateSlotStatus(slot.id, 'processing', 'submitting...')
               addLog(`#${slotNum} Submit ke G5 AI Studio (${g5Model.modelPath})...`)
 
-              const resultUrl = await runGalleri5WithRotation(
+              await runGalleri5WithRotation(
                 async (token: string) => {
                   const headers = await getGalleri5AuthHeaders(token)
                   if (!headers) throw Error('Belum ada auth headers. Buka Manage → Tokens → G5 AI Studio, tambahkan Firebase refresh token (AMf-...) lalu klik Cek Limit & Status.')
@@ -1072,7 +1233,12 @@ export default function MotionPage() {
                     modelKey,
                     imageUrl,
                     videoUrl: motionVideoUrl,
+                    imageFile: normalizedImage,
+                    videoFile: videoFile,
                     keepOriginalSound: keepSound,
+                    adaptMotion: modelKey === 'g5:wan-motion' ? adaptMotion : undefined,
+                    safetyChecker: modelKey === 'g5:wan-motion' ? safetyChecker : undefined,
+                    enhanceIdentity: modelKey === 'g5:wan-motion' ? enhanceIdentity : undefined,
                     orientation,
                     prompt: prompt.trim() || undefined,
                     onProgress: (msg, pct) => {
@@ -1143,18 +1309,79 @@ export default function MotionPage() {
               updateSlotStatus(slot.id, 'error', errorMsg)
               addLog(`#${slotNum} Error: ${errorMsg}`, 'error')
               
-              // If model restricted or insufficient balance, don't retry with other tokens
-              if (provider === 'galleri5' && (isGalleri5ModelRestricted(err.message) || isGalleri5InsufficientBalance(err.message))) {
+              // If model restricted, don't retry with other tokens (same model won't work)
+              if (provider === 'galleri5' && isGalleri5ModelRestricted(err.message)) {
                 throw new Error(errorMsg)
               }
               
+              return false
+            }
+          } else if (provider === 'oneover' && slot.image) {
+            // ─── OneOver: image-to-video via Grok / Seedance / Gemini ────
+            try {
+              let imageUrl = slot.imageUrl || ''
+              if (!imageUrl) {
+                updateSlotStatus(slot.id, 'uploading img...')
+                addLog(`#${slotNum} Upload image...`)
+                imageUrl = await uploadToCatbox(slot.image, 'image', (msg, _pct) => {
+                  updateSlotStatus(slot.id, 'uploading img...', msg)
+                  addLog(`#${slotNum} ${msg}`)
+                })
+                updateSlot(slot.id, { imageUrl })
+                addLog(`#${slotNum} Image: ${imageUrl.slice(0, 60)}...`)
+              } else {
+                addLog(`#${slotNum} Using cached image URL`)
+              }
+
+              // Convert image to base64 for OneOver API
+              const { fileToBase64 } = await import('@/lib/oneover')
+              const referenceImageBase64 = await fileToBase64(slot.image)
+
+              const apiModel = modelKey.replace('oo:', '')
+              updateSlotStatus(slot.id, 'processing', 'submitting...')
+              addLog(`#${slotNum} Submit ke OneOver (${apiModel})...`)
+
+              const { generateWithOneOver } = await import('@/lib/oneover')
+              const resultUrl = await generateWithOneOver({
+                apiKey: token,
+                prompt: prompt.trim() || 'animate this image',
+                model: apiModel,
+                duration: 5,
+                resolution: '720p',
+                aspectRatio: ratio || '9:16',
+                generateAudio: true,
+                referenceImageBase64,
+                omniTask: 'image_to_video',
+                onLog: (msg) => addLog(`#${slotNum} ${msg}`),
+                onStatus: (text, pct) => {
+                  updateSlotStatus(slot.id, 'processing', text)
+                  setProgress(pct)
+                },
+              })
+
+              updateSlotStatus(slot.id, 'done')
+              addLog(`#${slotNum} Done: ${resultUrl.slice(0, 60)}...`, 'success')
+
+              addResult({
+                id: `oneover-${Date.now()}`,
+                url: resultUrl,
+                prompt: prompt.trim() || '(no prompt)',
+                date: new Date().toISOString(),
+                page: 'motion',
+                provider: 'oneover',
+                model: currentModel.label,
+              })
+              return true
+            } catch (err: any) {
+              setCompressDialog(null)
+              updateSlotStatus(slot.id, 'error', err.message)
+              addLog(`#${slotNum} Error: ${err.message}`, 'error')
               return false
             }
           } else {
             addLog(`#${slotNum} Skipping (no image/video)`, 'warn')
             return false
           }
-          return false
         }
 
         addLog(`🚀 Running ${filledSlots.length} slot(s) in parallel...`)
@@ -1165,9 +1392,21 @@ export default function MotionPage() {
 
         let successCount = 0
         let failCount = 0
+        let rotatableErr: any = null
         for (const r of slotResults) {
           if (r.status === 'fulfilled' && r.value) successCount++
-          else failCount++
+          else {
+            failCount++
+            if (!rotatableErr && r.status === 'rejected' && detectTokenError(provider, r.reason)) {
+              rotatableErr = r.reason
+            }
+          }
+        }
+
+        // Semua slot gagal dengan error yang bisa dirotasi → lempar supaya token berikutnya dicoba
+        if (failCount > 0 && successCount === 0 && rotatableErr) {
+          addLog(`🔁 Semua slot gagal (${failCount}) — coba token berikutnya...`, 'warn')
+          throw rotatableErr
         }
 
         return { completedCount: successCount, failCount }
@@ -1203,6 +1442,20 @@ export default function MotionPage() {
     } else {
       addLog(`Generation failed: ${rotation.error}`, 'error')
       if (logId) logGenerationFailed(logId, rotation.error || 'Unknown error', Date.now() - startTime)
+      // Semua token Roboneo sudah dicoba & masih busy → failover terakhir ke G5 AI Studio
+      if (isRoboneo && isRoboneoBusyError(rotation.error || '')) {
+        const failedSlots = filledSlots.filter((s) => s.status === 'error')
+        if (failedSlots.length > 0) {
+          addLog(`🚨 Roboneo busy di semua key — failover ke G5 AI Studio untuk ${failedSlots.length} slot...`, 'warn')
+          const g5Results = await Promise.allSettled(failedSlots.map((s, i) => runG5FailoverForSlot(s, i + 1)))
+          const g5Ok = g5Results.filter((r) => r.status === 'fulfilled' && r.value).length
+          if (g5Ok > 0) {
+            successRef.current = true
+            addLog(`Selesai — ${g5Ok} video via G5 failover`, 'success')
+            if (logId) logGenerationComplete(logId, { status: 'completed', duration_ms: Date.now() - startTime })
+          }
+        }
+      }
       if (isRoboneo) {
         addLog('⚠️ Credit mungkin sudah terpotong oleh server provider.', 'warn')
       }
@@ -1389,7 +1642,7 @@ export default function MotionPage() {
                   <div className="font-semibold text-foreground mb-1">Provider RoboNeo (Meitu)</div>
                   Motion Control (berbasis Kling) — animasikan gambar karakter dengan gerakan dari video penggerak.
                   Pakai akun RoboNeo (access key dari roboneo.com → avatar → CLI Settings).
-                  Sesi berlaku terbatas & perlu ditempel ulang. Biaya ~100 🥕/generate.
+                  Sesi berlaku terbatas & perlu ditempel ulang. Biaya mengikuti model: Kling 2.6 Std ±86 🥕, Kling 3.0 Std ≥151 🥕.
                 </div>
               )}
 
@@ -1464,6 +1717,59 @@ export default function MotionPage() {
                 <span className="text-sm text-foreground/90">Keep Original Sound</span>
               </label>
 
+              {/* Wan Motion specific options */}
+              {modelKey === 'g5:wan-motion' && (
+                <>
+                  <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={adaptMotion}
+                      onChange={(e) => setAdaptMotion(e.target.checked)}
+                      className="peer sr-only"
+                    />
+                    <span className="h-5 w-5 rounded-md border border-input bg-background grid place-items-center peer-checked:bg-primary peer-checked:border-primary transition">
+                      <svg viewBox="0 0 24 24" className="h-3 w-3 text-primary-foreground opacity-0 peer-checked:opacity-100" fill="none" stroke="currentColor" strokeWidth="3">
+                        <path d="M5 12l5 5L20 7" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </span>
+                    <span className="text-sm text-foreground/90">Adapt Motion</span>
+                  </label>
+                  <p className="text-xs text-muted-foreground -mt-1 ml-8">Adapts driving video motion to match reference image body proportions</p>
+
+                  <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={enhanceIdentity}
+                      onChange={(e) => setEnhanceIdentity(e.target.checked)}
+                      className="peer sr-only"
+                    />
+                    <span className="h-5 w-5 rounded-md border border-input bg-background grid place-items-center peer-checked:bg-primary peer-checked:border-primary transition">
+                      <svg viewBox="0 0 24 24" className="h-3 w-3 text-primary-foreground opacity-0 peer-checked:opacity-100" fill="none" stroke="currentColor" strokeWidth="3">
+                        <path d="M5 12l5 5L20 7" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </span>
+                    <span className="text-sm text-foreground/90">Enhance Identity</span>
+                  </label>
+                  <p className="text-xs text-muted-foreground -mt-1 ml-8">Enhances face/appearance transfer via Flux Kontext Edit (slower)</p>
+
+                  <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={safetyChecker}
+                      onChange={(e) => setSafetyChecker(e.target.checked)}
+                      className="peer sr-only"
+                    />
+                    <span className="h-5 w-5 rounded-md border border-input bg-background grid place-items-center peer-checked:bg-primary peer-checked:border-primary transition">
+                      <svg viewBox="0 0 24 24" className="h-3 w-3 text-primary-foreground opacity-0 peer-checked:opacity-100" fill="none" stroke="currentColor" strokeWidth="3">
+                        <path d="M5 12l5 5L20 7" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </span>
+                    <span className="text-sm text-foreground/90">Safety Checker</span>
+                  </label>
+                  <p className="text-xs text-muted-foreground -mt-1 ml-8">Check input/output for safety content</p>
+                </>
+              )}
+
               {/* Auto-trim to 9 seconds (Markas Tools style) */}
               {provider === 'roboneo' && (
                 <label className="flex items-center gap-2.5 cursor-pointer select-none">
@@ -1479,8 +1785,8 @@ export default function MotionPage() {
                     </svg>
                   </span>
                   <div className="flex flex-col">
-                    <span className="text-sm text-foreground/90">Potong otomatis ke 9 detik (hemat — biaya tetap ±65 🥕)</span>
-                    <span className="text-[11px] text-muted-foreground">Video referensi dipotong ke 9 detik pertama, jadi biayanya pasti.</span>
+                    <span className="text-sm text-foreground/90">Potong otomatis ke 9 detik (kurangi durasi & biaya untuk video panjang)</span>
+                    <span className="text-[11px] text-muted-foreground">Video referensi dipotong ke 9 detik pertama. Catatan: biaya mengikuti durasi & model (2.6 Std ±86 🥕).</span>
                   </div>
                 </label>
               )}
@@ -1553,8 +1859,11 @@ export default function MotionPage() {
                 </Button>
               )}
 
-              <div className="text-center text-xs text-muted-foreground">
-                Total: <span className="text-foreground font-mono font-semibold">{totalCredits.toLocaleString()}</span> credits ({filledSlots} × {currentModel.cr})
+              <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                <span>
+                  Total: <span className="text-foreground font-mono font-semibold">{totalCredits.toLocaleString()}</span> credits ({filledSlots} × {currentModel.cr})
+                </span>
+                <BalanceBadge provider={provider} required={totalCredits} />
               </div>
             </div>
           </Section>
@@ -1672,6 +1981,17 @@ export default function MotionPage() {
                       >
                         <Download className="h-3.5 w-3.5" /> Download
                       </a>
+                      {result.taskUrl && (
+                        <a
+                          href={result.taskUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center justify-center gap-1 rounded-lg border border-violet-500/30 bg-violet-500/5 hover:bg-violet-500/10 px-3 py-2 text-xs font-medium text-violet-500 transition"
+                          title="Buka di provider untuk download tanpa watermark (pakai Video Download Helper extension)"
+                        >
+                          <Globe className="h-3.5 w-3.5" /> Open
+                        </a>
+                      )}
                       <button
                         onClick={(e) => {
                           e.preventDefault();

@@ -2,9 +2,8 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 const RUNNINGHUB_BASE = 'https://www.runninghub.ai'
 const RUNNINGHUB_DEFAULT_WORKFLOW_ID = '2087539655340654593'
-const RUNNINGHUB_KLING26_MOTION_CONTROL_WORKFLOW_ID = '2087539655340654593'
 
-function rhAuthHeaders(apiKey: string) {
+function rhAuthHeaders(_apiKey: string) {
   return { 'Content-Type': 'application/json', 'User-Agent': 'ArkxMotion/1.0' }
 }
 
@@ -155,9 +154,6 @@ async function handleMotionControl(apiKey: string, params: any, res: VercelRespo
     videoFileName = 'video.mp4',
     imageMimeType = 'image/jpeg',
     videoMimeType = 'video/mp4',
-    prompt = '',
-    negative_prompt = '',
-    keep_original_sound = false,
   } = params
 
   if (!imageBase64) return res.status(200).json({ ok: false, error: 'Missing imageBase64' })

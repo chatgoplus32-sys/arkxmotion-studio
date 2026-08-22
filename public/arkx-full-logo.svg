@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="200" viewBox="0 0 800 200">
+  <defs>
+    <linearGradient id="orangeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff6a00"/>
+      <stop offset="40%" stop-color="#ff8c00"/>
+      <stop offset="100%" stop-color="#ffb800"/>
+    </linearGradient>
+    <linearGradient id="orangeGrad2" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffb800"/>
+      <stop offset="100%" stop-color="#ff6a00"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Triangle (A shape) -->
+  <path d="M100 20 L170 170 L30 170 Z" 
+        fill="none" 
+        stroke="url(#orangeGrad)" 
+        stroke-width="14" 
+        stroke-linejoin="round"
+        stroke-linecap="round"
+        filter="url(#glow)"/>
+
+  <!-- X cross lines -->
+  <line x1="55" y1="90" x2="145" y2="140" 
+        stroke="url(#orangeGrad)" 
+        stroke-width="14" 
+        stroke-linecap="round"
+        filter="url(#glow)"/>
+  <line x1="145" y1="90" x2="55" y2="140" 
+        stroke="url(#orangeGrad2)" 
+        stroke-width="14" 
+        stroke-linecap="round"
+        filter="url(#glow)"/>
+
+  <!-- Node dots -->
+  <circle cx="55" cy="90" r="8" fill="url(#orangeGrad)" filter="url(#glow)"/>
+  <circle cx="145" cy="90" r="8" fill="url(#orangeGrad)" filter="url(#glow)"/>
+  <circle cx="55" cy="140" r="8" fill="url(#orangeGrad2)" filter="url(#glow)"/>
+  <circle cx="145" cy="140" r="8" fill="url(#orangeGrad2)" filter="url(#glow)"/>
+
+  <!-- Text: ARKXMotion Studio -->
+  <text x="210" y="128" 
+        font-family="Inter, system-ui, -apple-system, sans-serif" 
+        font-size="64" 
+        font-weight="700" 
+        fill="white" 
+        letter-spacing="-1">ARKXMotion Studio</text>
+</svg>

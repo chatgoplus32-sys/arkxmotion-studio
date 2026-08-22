@@ -28,7 +28,6 @@ function parseMultipartField(raw: Buffer, contentType: string): { fileBuffer: Bu
     const fileData = trailing > 0 ? body.subarray(0, trailing) : body
 
     if (headers.includes('filename=')) {
-      const nameMatch = headers.match(/name="([^"]+)"/)
       const fileMatch = headers.match(/filename="([^"]+)"/)
       const typeMatch = headers.match(/Content-Type:\s*(.+)/i)
       return {

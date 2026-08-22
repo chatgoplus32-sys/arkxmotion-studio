@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'runninghub' | 'createpulse' | 'framia' | 'firefly' | 'leonardo' | 'gemini' | 'openai' | 'shotstack' | 'creatomate' | 'galleri5'
+export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'runninghub' | 'createpulse' | 'framia' | 'firefly' | 'leonardo' | 'gemini' | 'openai' | 'shotstack' | 'creatomate' | 'galleri5' | 'oneover'
 
 export const HIDDEN_PROVIDERS: ProviderId[] = ['runninghub']
 
@@ -171,6 +171,16 @@ export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
     minCredits: 60,
     supportsBalance: true,
   },
+  oneover: {
+    id: 'oneover',
+    name: 'OneOver',
+    icon: '🔮',
+    description: 'OneOver AI — Grok Video, Seedance 2.0 & 2.5 (Supabase session token from oneover.com)',
+    keyPlaceholder: 'Paste your OneOver access token (Supabase JWT from oneover.com)',
+    keyFormat: 'Supabase JWT access_token (eyJ...)',
+    minCredits: 1,
+    supportsBalance: true,
+  },
 }
 
 function getDefaultMaintenance(): Record<ProviderId, MaintenanceInfo> {
@@ -189,6 +199,7 @@ function getDefaultMaintenance(): Record<ProviderId, MaintenanceInfo> {
     shotstack: { isMaintenance: false, message: '' },
     creatomate: { isMaintenance: false, message: '' },
     galleri5: { isMaintenance: false, message: '' },
+    oneover: { isMaintenance: false, message: '' },
   }
 }
 
@@ -266,25 +277,44 @@ function loadKeysFromStorage(): Record<ProviderId, ProviderKey[]> {
     shotstack: [],
     creatomate: [],
     galleri5: [],
+    oneover: [],
   }
+  const validIds = Object.keys(defaults) as string[]
+
+  const mergeKnown = (src: any, out: Record<ProviderId, ProviderKey[]>, stale: string[]) => {
+    if (!src || typeof src !== 'object') return
+    for (const k of Object.keys(src)) {
+      if (validIds.includes(k)) {
+        if (Array.isArray(src[k])) (out as any)[k] = src[k]
+      } else {
+        stale.push(k)
+      }
+    }
+  }
+
   try {
     const stored = localStorage.getItem(STORAGE_KEY)
     if (stored) {
       const parsed = JSON.parse(stored)
-      return { ...defaults, ...parsed }
+      const result: Record<ProviderId, ProviderKey[]> = { ...defaults }
+      const stale: string[] = []
+      mergeKnown(parsed, result, stale)
+      // Legacy wrapper {state:{keys:...}} dari lib lama yang sudah dihapus
+      if (parsed?.state && typeof parsed.state === 'object') {
+        mergeKnown(parsed.state.keys, result, stale)
+      }
+      if (stale.length > 0) {
+        // Migrasi: simpan versi bersih sekali, hapus provider yang sudah dihapus (mis. pixera)
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(result)) } catch {}
+      }
+      return result
     }
   } catch {}
   return defaults
 }
 
 function loadRoutingFromStorage(): Record<string, ProviderId> {
-  try {
-    const stored = localStorage.getItem('arkxmotion.routing')
-    if (stored) {
-      return JSON.parse(stored)
-    }
-  } catch {}
-  return {
+  const defaults: Record<string, ProviderId> = {
     motion: 'weavy',
     'narrative-video': 'weavy',
     storyboard: 'weavy',
@@ -293,6 +323,28 @@ function loadRoutingFromStorage(): Record<string, ProviderId> {
     upscaler: 'magnific',
     'ai-influencer': 'gemini',
   }
+  const validIds = Object.keys(PROVIDER_CONFIGS) as string[]
+  try {
+    const stored = localStorage.getItem('arkxmotion.routing')
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      const result: Record<string, ProviderId> = { ...defaults }
+      let changed = false
+      for (const [wf, p] of Object.entries(parsed)) {
+        if (typeof p === 'string' && validIds.includes(p)) {
+          result[wf] = p as ProviderId
+        } else {
+          // Nilai stale (mis. 'pixera') → pakai default & tandai untuk di-migrasi
+          changed = true
+        }
+      }
+      if (changed) {
+        try { localStorage.setItem('arkxmotion.routing', JSON.stringify(result)) } catch {}
+      }
+      return result
+    }
+  } catch {}
+  return defaults
 }
 
 export const useProviderManager = create<ProviderState>((set, get) => ({

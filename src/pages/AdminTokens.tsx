@@ -4,7 +4,7 @@ import { Section, Button, Input, Label, Textarea } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { checkRoboneoBalance } from '@/lib/roboneo'
-import { Key, Plus, RefreshCw, Upload, ShieldCheck, Loader2, CheckCircle2, XCircle, Filter, Trash2, AlertTriangle, Eye, EyeOff, RotateCcw, Pencil } from 'lucide-react'
+import { Plus, RefreshCw, Upload, ShieldCheck, Loader2, CheckCircle2, XCircle, Filter, Trash2, AlertTriangle, Eye, EyeOff, Pencil } from 'lucide-react'
 
 interface Token {
   id: number

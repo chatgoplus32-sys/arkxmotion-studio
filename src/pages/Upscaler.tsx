@@ -1,14 +1,14 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
-import { Section, Button, Select, Label, Textarea, EmptyState, Badge } from '@/components/ui'
+import { Section, Button, Select, Label, Textarea, EmptyState } from '@/components/ui'
 import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
-import { Wand2, Loader2, Upload, Trash2, Key, ExternalLink, Download, ImageIcon, Search, X, Settings2, ChevronDown, ChevronUp, CheckCircle2, AlertCircle } from 'lucide-react'
-import { useProviderManager, PROVIDER_CONFIGS } from '@/stores/providerManager'
+import { Loader2, Upload, Trash2, Key, Download, ImageIcon, Search, X, CheckCircle2, AlertCircle } from 'lucide-react'
+import { useProviderManager } from '@/stores/providerManager'
 import { useToastStore } from '@/stores/toastStore'
-import { runMagnificUpscale, getMagnificApiKey, type MagnificEngine, type MagnificOptimizedFor, type MagnificSettings } from '@/lib/magnific'
-import { runLeonardoUpscale, type LeonardoUpscaleSettings } from '@/lib/leonardo-upscale'
-import { runTopazUpscale, type TopazUpscaleSettings } from '@/lib/weavy'
-import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
+import { runMagnificUpscale, getMagnificApiKey, type MagnificEngine, type MagnificOptimizedFor } from '@/lib/magnific'
+import { runLeonardoUpscale } from '@/lib/leonardo-upscale'
+import { runTopazUpscale } from '@/lib/weavy'
+import { withTokenRotation } from '@/lib/tokenRotation'
 
 const MAX_IMAGES = 50
 
@@ -93,29 +93,6 @@ async function urlToFile(url: string, name?: string): Promise<File | null> {
   } catch { return null }
 }
 
-async function compressImage(file: File, maxDim = 1280, quality = 0.8): Promise<File> {
-  return new Promise((resolve) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      const img = new Image()
-      img.onload = () => {
-        let w = img.width, h = img.height
-        if (w > maxDim) { h = h * maxDim / w; w = maxDim }
-        const canvas = document.createElement('canvas')
-        canvas.width = w; canvas.height = h
-        canvas.getContext('2d')!.drawImage(img, 0, 0, w, h)
-        canvas.toBlob(
-          (blob) => resolve(blob ? new File([blob], file.name, { type: 'image/jpeg' }) : file),
-          'image/jpeg', quality
-        )
-      }
-      img.onerror = () => resolve(file)
-      img.src = String(reader.result || '')
-    }
-    reader.readAsDataURL(file)
-  })
-}
-
 export default function UpscalerPage() {
   const addToast = useToastStore((s) => s.addToast)
   const { keys, fetchMaintenance } = useProviderManager()
@@ -164,6 +141,31 @@ export default function UpscalerPage() {
     setLogs(prev => [...prev, { time, msg, level }].slice(-300))
   }, [])
 
+  const addImages = useCallback((files: File[]) => {
+    const remaining = MAX_IMAGES - rows.length
+    const toAdd = Array.from(files).filter(f => f.type.startsWith('image/')).slice(0, Math.max(0, remaining))
+    toAdd.forEach(file => {
+      const preview = URL.createObjectURL(file)
+      const img = new Image()
+      img.onload = () => {
+        setRows(prev => [...prev, {
+          id: Math.random().toString(36).slice(2),
+          file, preview,
+          ratio: img.naturalWidth / Math.max(1, img.naturalHeight),
+          status: 'queued',
+        }])
+      }
+      img.onerror = () => {
+        setRows(prev => [...prev, {
+          id: Math.random().toString(36).slice(2),
+          file, preview, ratio: 1,
+          status: 'queued',
+        }])
+      }
+      img.src = preview
+    })
+  }, [rows.length])
+
   const filteredGallery = useMemo(() =>
     gallery.filter(e => !gallerySearch || e.sourceName.toLowerCase().includes(gallerySearch.toLowerCase())),
     [gallery, gallerySearch]
@@ -188,32 +190,7 @@ export default function UpscalerPage() {
         }
       })()
     }
-  }, [])
-
-  function addImages(files: File[]) {
-    const remaining = MAX_IMAGES - rows.length
-    const toAdd = Array.from(files).filter(f => f.type.startsWith('image/')).slice(0, Math.max(0, remaining))
-    toAdd.forEach(file => {
-      const preview = URL.createObjectURL(file)
-      const img = new Image()
-      img.onload = () => {
-        setRows(prev => [...prev, {
-          id: Math.random().toString(36).slice(2),
-          file, preview,
-          ratio: img.naturalWidth / Math.max(1, img.naturalHeight),
-          status: 'queued',
-        }])
-      }
-      img.onerror = () => {
-        setRows(prev => [...prev, {
-          id: Math.random().toString(36).slice(2),
-          file, preview, ratio: 1,
-          status: 'queued',
-        }])
-      }
-      img.src = preview
-    })
-  }
+  }, [addImages, addLog])
 
   function removeImage(id: string) {
     setRows(prev => {

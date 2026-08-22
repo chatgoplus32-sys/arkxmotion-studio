@@ -1,5 +1,5 @@
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, _env: Env): Promise<Response> {
     const corsHeaders = {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'POST, OPTIONS',

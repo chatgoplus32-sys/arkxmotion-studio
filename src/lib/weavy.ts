@@ -17,8 +17,6 @@ interface ProviderManagerStore {
 }
 
 const LS_PROVIDERS = 'arkxmotion.providers'
-const LS_ROUTING = 'arkxmotion.routing'
-const LS_ACTIVE_PROVIDER = 'arkxmotion.activeProvider'
 
 function loadProviderStore(): ProviderManagerStore {
   if (typeof window === 'undefined') return { keys: {} }
@@ -61,27 +59,6 @@ function updateWeavyKey(update: { id: string } & Partial<{ key: string; status: 
   else { keys.push(update as any) }
   store.keys.weavy = keys
   saveProviderStore(store)
-}
-
-function removeWeavyKey(id: string) {
-  const store = loadProviderStore()
-  if (store.keys?.weavy) {
-    store.keys.weavy = store.keys.weavy.filter(k => k.id !== id)
-    saveProviderStore(store)
-  }
-}
-
-function getActiveWeavyId(): string | null {
-  if (typeof window === 'undefined') return null
-  try {
-    const routing = localStorage.getItem(LS_ROUTING)
-    if (routing) {
-      const data = JSON.parse(routing)
-      const active = data?.motion || data?.['image-to-video']
-      if (active === 'weavy') return null // Don't use routing-based active ID for weavy token selection
-    }
-  } catch {}
-  return null
 }
 
 async function refreshWeavyAccessToken(refreshToken: string): Promise<{ accessToken: string; refreshToken: string; expiresIn: number; uid?: string } | null> {
@@ -634,7 +611,7 @@ export interface WeavySoraResult {
 }
 
 export async function submitWeavySora(params: WeavySoraParams): Promise<WeavySoraResult> {
-  const { token: refreshToken, imageUrl: fallbackUrl, imageFile, prompt, duration = 16, resolution = '720p', aspectRatio = '16:9' } = params
+  const { token: refreshToken, imageUrl: fallbackUrl, imageFile, prompt, duration = 16, resolution = '720p' } = params
   const model = 'sora'
   const mkId = () => Math.random().toString(36).substring(2, 8)
   const n1 = 'n_' + Date.now() + '_prompt'
@@ -2868,7 +2845,7 @@ export async function generateWeavyBulkOne(params: WeavyBulkOneParams): Promise<
     throw Error('Weavy timeout')
   }, {
     requiredCredits: 6,
-    onKeySwitch: (from, to, attempt) => {},
+    onKeySwitch: (_from, _to, _attempt) => {},
   })
   if (rotation.ok && rotation.result) return rotation.result
   throw Error(rotation.error || 'Weavy bulk: semua token gagal')

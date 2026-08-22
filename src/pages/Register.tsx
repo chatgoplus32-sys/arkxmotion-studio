@@ -1,8 +1,9 @@
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+﻿import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
-import { UserPlus, Mail, Lock, User, AlertCircle, CheckCircle } from 'lucide-react'
+import { UserPlus, Mail, Lock, User, AlertCircle, CheckCircle, MessageCircle } from 'lucide-react'
+import { DEFAULT_MEMBERSHIP_FEE, QRIS_IMG, formatRp, buildWaPaymentUrl, getMembershipFee } from '@/lib/membership'
 
 export default function RegisterPage() {
   const [name, setName] = useState('')
@@ -11,10 +12,16 @@ export default function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
+  const [devVerifyLink, setDevVerifyLink] = useState<string | null>(null)
+  const [payNote, setPayNote] = useState('')
+  const [fee, setFee] = useState(DEFAULT_MEMBERSHIP_FEE)
   const [isLoading, setIsLoading] = useState(false)
   const register = useAuthStore((state) => state.register)
   const addToast = useToastStore((state) => state.addToast)
-  const navigate = useNavigate()
+
+  useEffect(() => {
+    getMembershipFee().then(setFee).catch(() => {})
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -41,8 +48,16 @@ export default function RegisterPage() {
     }
 
     setSuccess(true)
+    setDevVerifyLink(result.devVerifyLink || null)
     setIsLoading(false)
-    addToast('Registration successful! Please wait for admin approval.', 'success')
+    addToast('Registration successful! Cek email untuk verifikasi, lalu konfirmasi pembayaran.', 'success')
+  }
+
+  const handlePayConfirm = (e: React.FormEvent) => {
+    e.preventDefault()
+    const waUrl = buildWaPaymentUrl({ name, email, note: payNote, fee })
+    window.open(waUrl, '_blank')
+    addToast('Konfirmasi pembayaran dibuka di WhatsApp', 'success')
   }
 
   if (success) {
@@ -50,17 +65,9 @@ export default function RegisterPage() {
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
         <div className="w-full max-w-md">
           <div className="text-center mb-8">
-            <div className="flex items-center justify-center gap-2.5 mb-4">
-              <div className="h-12 w-12 rounded-lg overflow-hidden flex items-center justify-center">
-                <img src="/favicon.svg" alt="ARKXMotion" className="w-full h-full object-contain" />
-              </div>
+            <div className="flex items-center justify-center mb-4">
+              <img src="/arkx-full-logo.svg" alt="ARKXMotion Studio" className="h-16" />
             </div>
-            <h1 className="font-display text-2xl font-bold">
-              <span className="silver-text">ARK</span>
-              <span className="gold-text">X</span>
-              <span className="silver-text">Motion</span>
-            </h1>
-            <p className="text-muted-foreground text-sm mt-1">STUDIO</p>
           </div>
 
           <div className="bg-card border border-border rounded-xl p-6">
@@ -70,11 +77,66 @@ export default function RegisterPage() {
               </div>
               <h2 className="text-lg font-semibold mb-2">Registration Successful!</h2>
               <p className="text-muted-foreground text-sm mb-6">
-                Your account has been created. Please wait for admin approval before you can login.
+                Akun kamu sudah dibuat. Langkah berikutnya: <b>â‘  verifikasi email</b> â†’ <b>â‘¡ konfirmasi pembayaran</b> â†’ tunggu persetujuan admin.
               </p>
+
+              {/* Konfirmasi pembayaran member (QRIS â†’ WhatsApp) */}
+              <form onSubmit={handlePayConfirm} className="w-full mb-4 p-3 rounded-lg bg-secondary/50 border border-border text-left">
+                <div className="flex items-center gap-2 mb-2">
+                  <MessageCircle className="h-4 w-4 text-emerald-400" />
+                  <span className="text-sm font-medium">Konfirmasi Pembayaran (QRIS)</span>
+                </div>
+                <p className="text-[11px] text-muted-foreground mb-2">
+                  Bayar <b className="text-foreground">{formatRp(fee)}</b> via QRIS di bawah, lalu klik tombol konfirmasi via WhatsApp.
+                </p>
+                <div className="mb-3 rounded-lg overflow-hidden border border-border bg-white p-2">
+                  <img src={QRIS_IMG} alt="QRIS Faezya cell" className="w-full max-w-[220px] mx-auto rounded" />
+                  <p className="text-center text-[10px] text-muted-foreground mt-1">Scan QRIS â†’ Bayar {formatRp(fee)} â†’ Konfirmasi via WhatsApp</p>
+                </div>
+                <div className="mb-2 flex items-center justify-between rounded-lg bg-secondary border border-border px-3 py-2">
+                  <span className="text-xs text-muted-foreground">Biaya pendaftaran</span>
+                  <span className="text-sm font-bold text-primary">{formatRp(fee)}</span>
+                </div>
+                <div className="mb-3">
+                  <label className="block text-xs text-muted-foreground mb-1">Catatan (opsional)</label>
+                  <textarea
+                    value={payNote}
+                    onChange={(e) => setPayNote(e.target.value)}
+                    placeholder="mis. Pembayaran atas nama Koko, jam 14:30"
+                    rows={2}
+                    className="w-full px-3 py-2 bg-secondary border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary resize-none"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="w-full py-2 px-3 bg-emerald-500 text-white font-medium rounded-lg hover:bg-emerald-600 transition-colors text-sm inline-flex items-center justify-center gap-2"
+                >
+                  <MessageCircle className="h-4 w-4" />
+                  Konfirmasi via WhatsApp
+                </button>
+              </form>
+
+              {devVerifyLink && (
+                <div className="w-full mb-4 p-3 rounded-lg bg-secondary border border-border text-left">
+                  <p className="text-xs text-muted-foreground mb-1.5">Mode dev â€” SMTP belum dikonfigurasi, verifikasi manual:</p>
+                  <a
+                    href={devVerifyLink}
+                    className="text-xs text-primary break-all hover:underline"
+                  >
+                    {devVerifyLink}
+                  </a>
+                </div>
+              )}
+
+              <Link
+                to="/register-status"
+                className="block w-full py-2.5 px-4 bg-secondary text-foreground font-medium rounded-lg hover:bg-secondary/80 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-colors text-center mb-2"
+              >
+                Cek Status Pendaftaran
+              </Link>
               <Link
                 to="/login"
-                className="w-full py-2.5 px-4 bg-primary text-primary-foreground font-medium rounded-lg hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-offset-2 focus:ring-offset-background transition-colors text-center"
+                className="block w-full py-2.5 px-4 bg-primary text-primary-foreground font-medium rounded-lg hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-offset-2 focus:ring-offset-background transition-colors text-center"
               >
                 Go to Login
               </Link>
@@ -89,17 +151,9 @@ export default function RegisterPage() {
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="flex items-center justify-center gap-2.5 mb-4">
-            <div className="h-12 w-12 rounded-lg overflow-hidden flex items-center justify-center">
-              <img src="/favicon.svg" alt="ARKXMotion" className="w-full h-full object-contain" />
-            </div>
+          <div className="flex items-center justify-center mb-4">
+            <img src="/arkx-full-logo.svg" alt="ARKXMotion Studio" className="h-16" />
           </div>
-          <h1 className="font-display text-2xl font-bold">
-            <span className="silver-text">ARK</span>
-            <span className="gold-text">X</span>
-            <span className="silver-text">Motion</span>
-          </h1>
-          <p className="text-muted-foreground text-sm mt-1">STUDIO</p>
         </div>
 
         <div className="bg-card border border-border rounded-xl p-6">
@@ -163,7 +217,7 @@ export default function RegisterPage() {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
+                  placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
                   required
                   minLength={6}
                   className="w-full pl-10 pr-4 py-2.5 bg-secondary border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-colors"
@@ -182,7 +236,7 @@ export default function RegisterPage() {
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="••••••••"
+                  placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
                   required
                   minLength={6}
                   className="w-full pl-10 pr-4 py-2.5 bg-secondary border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-colors"
@@ -210,3 +264,4 @@ export default function RegisterPage() {
     </div>
   )
 }
+

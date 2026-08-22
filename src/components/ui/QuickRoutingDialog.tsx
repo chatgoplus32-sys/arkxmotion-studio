@@ -1,26 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Check, Repeat, X } from 'lucide-react'
-
-const ROUTING_KEY = 'arkxmotion.routing'
-
-function getRouting(): Record<string, string> {
-  try {
-    const raw = localStorage.getItem(ROUTING_KEY)
-    return raw ? JSON.parse(raw) : {}
-  } catch { return {} }
-}
-
-function setRoutingValue(cap: string, providerId: string) {
-  const routing = getRouting()
-  routing[cap] = providerId
-  localStorage.setItem(ROUTING_KEY, JSON.stringify(routing))
-  window.dispatchEvent(new Event('aatools:routing-changed'))
-}
-
-function getActiveProviderForCap(cap: string): string {
-  const routing = getRouting()
-  return routing[cap] || 'weavy'
-}
+import { getActiveProviderForCap, setRoutingValue } from '@/lib/routing'
 
 interface ProviderOption {
   id: string
@@ -118,5 +98,3 @@ export function QuickRoutingDialog({ cap, providers, onClose, onSelect }: QuickR
     </div>
   )
 }
-
-export { getActiveProviderForCap, setRoutingValue }

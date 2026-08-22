@@ -1,7 +1,7 @@
 import { useState, useRef, useMemo, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { PageHeader, PageContent } from '@/components/layout'
-import { Section, Button, Select, Label, Textarea, EmptyState, Input } from '@/components/ui'
+import { Section, Button, Select, Label, Textarea, EmptyState, Input, BalanceBadge } from '@/components/ui'
 import { useBulkFashionStore } from '@/stores/bulkFashionStore'
 import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
@@ -12,6 +12,7 @@ import {
   calculateBulkCost,
   generateBulkFashion,
 } from '@/lib/bulk-fashion'
+import { precheckProviderBalance } from '@/lib/balancePrecheck'
 import { downloadFilesAsZip, getExtensionFromUrl } from '@/lib/download-zip'
 import {
   ShoppingBag,
@@ -257,6 +258,15 @@ export default function BulkFashionPage() {
   // ─── Generate ───────────────────────────────────────────────────────────
   const handleGenerate = async () => {
     if (!charFile || outfitFiles.length === 0) return
+
+    // Pre-check saldo vs estimasi biaya sebelum generate dimulai
+    const pre = await precheckProviderBalance(activeProvider, costInfo.totalCr)
+    if (!pre.ok) {
+      addToast(pre.error || 'Saldo tidak cukup', 'error')
+      setStatus({ show: true, text: `❌ ${pre.error || 'Saldo tidak cukup'}`, pct: 100, time: '0:00' })
+      return
+    }
+
     setGenerating(true)
     clearResults()
     setStatus({ show: true, text: `Memproses ${outfitFiles.length} outfit…`, pct: 5, time: '0:00' })
@@ -642,8 +652,9 @@ export default function BulkFashionPage() {
               <Rocket className="h-4 w-4" /> Generate
             </Button>
           )}
-          <div className="text-xs text-muted-foreground">
-            Cost: <b className="text-foreground font-mono">{costInfo.totalCr}</b> credits ({outfitFiles.length} × {costInfo.crPerImage})
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span>Cost: <b className="text-foreground font-mono">{costInfo.totalCr}</b> credits ({outfitFiles.length} × {costInfo.crPerImage})</span>
+            <BalanceBadge provider={activeProvider} required={costInfo.totalCr} />
           </div>
         </div>
 

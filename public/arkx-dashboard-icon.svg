@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#e0e0e0"/>
+    </linearGradient>
+    <linearGradient id="orangeAccent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff6a00"/>
+      <stop offset="50%" stop-color="#ff8c00"/>
+      <stop offset="100%" stop-color="#ffb800"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Triangle (pointing right) -->
+  <path d="M60 30 L200 128 L60 226 Z" 
+        fill="none" 
+        stroke="url(#logoGrad)" 
+        stroke-width="12" 
+        stroke-linejoin="round"/>
+
+  <!-- X cross lines -->
+  <line x1="90" y1="80" x2="170" y2="176" 
+        stroke="url(#orangeAccent)" 
+        stroke-width="12" 
+        stroke-linecap="round"/>
+  <line x1="170" y1="80" x2="90" y2="176" 
+        stroke="url(#orangeAccent)" 
+        stroke-width="12" 
+        stroke-linecap="round"/>
+
+  <!-- Node dots with connecting lines -->
+  <!-- Top-left node -->
+  <circle cx="90" cy="80" r="10" fill="url(#orangeAccent)"/>
+  <!-- Top-right node -->
+  <circle cx="170" cy="80" r="10" fill="url(#orangeAccent)"/>
+  <!-- Bottom-left node -->
+  <circle cx="90" cy="176" r="10" fill="url(#orangeAccent)"/>
+  <!-- Bottom-right node -->
+  <circle cx="170" cy="176" r="10" fill="url(#orangeAccent)"/>
+  <!-- Center node -->
+  <circle cx="130" cy="128" r="10" fill="url(#orangeAccent)"/>
+
+  <!-- Connecting lines between nodes -->
+  <line x1="90" y1="80" x2="130" y2="128" stroke="url(#orangeAccent)" stroke-width="4" opacity="0.6"/>
+  <line x1="170" y1="80" x2="130" y2="128" stroke="url(#orangeAccent)" stroke-width="4" opacity="0.6"/>
+  <line x1="90" y1="176" x2="130" y2="128" stroke="url(#orangeAccent)" stroke-width="4" opacity="0.6"/>
+  <line x1="170" y1="176" x2="130" y2="128" stroke="url(#orangeAccent)" stroke-width="4" opacity="0.6"/>
+</svg>

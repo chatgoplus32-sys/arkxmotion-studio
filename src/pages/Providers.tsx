@@ -1,31 +1,23 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
-import { Section, Button, Input, Label, Badge, Select, Textarea } from '@/components/ui'
-import { useAuthStore } from '@/stores/authStore'
+import { Button, Input, Textarea } from '@/components/ui'
 import {
-  Zap,
   Check,
-  AlertCircle,
   XCircle,
   Plus,
   Trash2,
   Eye,
   EyeOff,
   RefreshCw,
-  Key,
-  ArrowRight,
-  Settings,
-  Save,
-  Upload,
-  Clipboard,
   Loader2,
+  Upload,
   ShoppingCart,
-  FileText,
   ChevronDown,
+  Key,
   ExternalLink,
   Wrench,
 } from 'lucide-react'
-import { useProviderManager, PROVIDER_CONFIGS, ProviderId, HIDDEN_PROVIDERS } from '@/stores/providerManager'
+import { useProviderManager, ProviderId, HIDDEN_PROVIDERS } from '@/stores/providerManager'
 import { checkRoboneoBalance } from '@/lib/roboneo'
 import { fetchLeonardoBalance } from '@/lib/leonardo'
 import { checkWeavyBalance } from '@/lib/weavy'
@@ -43,6 +35,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   leonardo: '#facc15',
   render: '#94a3b8',
   createpulse: '#c084fc',
+  oneover: '#a78bfa',
 }
 
 const PROVIDER_LIST = [
@@ -55,6 +48,7 @@ const PROVIDER_LIST = [
   { key: 'leonardo', label: 'Leonardo.ai', desc: 'app.leonardo.ai via Cognito Bearer JWT — Text-to-Image (Phoenix, Diffusion XL, Kino, Anime, Vision).' },
   { key: 'createpulse', label: 'CreatePulse', desc: 'Video generation (Seedance 2.0/2.5, Veo Omni) via createpulse.online — pakai API key sendiri.' },
   { key: 'galleri5', label: 'G5 AI Studio', desc: 'Motion Control (Kling V3 & V2.6 motion transfer) via aistudio.galleri5.com — Firebase refresh token (auto-refresh).' },
+  { key: 'oneover', label: 'OneOver', desc: 'Video generation (Grok, Seedance 2.0/2.5, Kling, LTX) via oneover.com — Supabase session token.' },
 ] as const
 
 const VISIBLE_PROVIDER_LIST = PROVIDER_LIST.filter(p => !(HIDDEN_PROVIDERS as readonly string[]).includes(p.key))
@@ -206,35 +200,20 @@ const TOKEN_GUIDE: Record<string, {
     ],
     tip: 'Galery5 dipakai khusus Motion Control (Kling V3 Standard 100 cr, V2.6 Pro 120 cr, V2.6 Standard 60 cr). Format: refresh token (AMf-...) recommended, ID token (eyJ...) juga bisa.',
   },
-
-}
-
-function getStorageKey(provider: string): string {
-  const map: Record<string, string> = {
-    brain: 'arkxmotion.brain.keys',
-    weavy: 'arkxmotion.weavy.keys',
-    wavespeed: 'arkxmotion.wavespeed.keys',
-    roboneo: 'arkxmotion.roboneo.keys',
-    framia: 'arkxmotion.framia.keys',
-    leonardo: 'arkxmotion.leonardo.keys',
-    createpulse: 'arkxmotion.createpulse.keys',
-  }
-  return map[provider] || `arkxmotion.${provider}.keys`
-}
-
-function loadKeys(provider: string): string[] {
-  try {
-    const raw = localStorage.getItem(getStorageKey(provider))
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
-}
-
-function saveKeys(provider: string, keys: string[]) {
-  localStorage.setItem(getStorageKey(provider), JSON.stringify(keys))
+  oneover: {
+    url: 'https://oneover.com/create/animate',
+    urlLabel: 'oneover.com',
+    prefix: 'JSON: { access_token, refresh_token } atau refresh_token langsung',
+    steps: [
+      { text: 'Buka ', link: { url: 'https://oneover.com', label: 'oneover.com' }, },
+      { text: 'Login dengan akun yang sudah berlangganan.' },
+      { text: 'Klik tombol "Grab Token dari oneover.com" di bawah input → script copied ke clipboard.' },
+      { text: 'Buka DevTools Console (F12 → Console) di oneover.com, paste script & Enter.' },
+      { text: 'Token JSON (access_token + refresh_token) otomatis copy ke clipboard.' },
+      { text: 'Paste ke input di sebelah — app akan auto-parse JSON & simpan refresh_token.' },
+    ],
+    tip: 'OneOver pakai Supabase auth. Refresh token berumur ~30 hari & auto-refresh access token. Bila generate gagal, ambil ulang token dari oneover.com.',
+  },
 }
 
 function maskKey(key: string): string {
@@ -265,17 +244,11 @@ function getStatusLabel(status: string): string {
 }
 
 export default function ProvidersPage() {
-  const { user } = useAuthStore()
   const {
     keys,
-    activeProvider,
-    routing,
-    maintenance,
-    setActiveProvider,
     addKey,
     removeKey,
     updateKeyStatus,
-    setRouting,
     fetchMaintenance,
     isProviderMaintenance,
     getMaintenanceMessage,
@@ -297,7 +270,6 @@ export default function ProvidersPage() {
   const [editingBalanceVal, setEditingBalanceVal] = useState('')
 
   const currentConfig = PROVIDER_LIST.find(p => p.key === selectedProvider)
-  const currentColor = PROVIDER_COLORS[selectedProvider] || '#6366f1'
 
   const savedKeys = useMemo(
     () => keys[selectedProvider as ProviderId]?.map(k => k.key) || [],
@@ -316,6 +288,7 @@ export default function ProvidersPage() {
       leonardo: 'leonardo',
       createpulse: 'createpulse',
       galleri5: 'galleri5',
+      oneover: 'oneover',
     }
     const providerId = providerMap[selectedProvider]
     return providerId ? isProviderMaintenance(providerId) : false
@@ -332,6 +305,7 @@ export default function ProvidersPage() {
       leonardo: 'leonardo',
       createpulse: 'createpulse',
       galleri5: 'galleri5',
+      oneover: 'oneover',
     }
     const providerId = providerMap[selectedProvider]
     return providerId ? getMaintenanceMessage(providerId) : ''
@@ -370,13 +344,26 @@ export default function ProvidersPage() {
     let added = 0
     let skipped = 0
 
+    // Auto-parse OneOver JSON format: { access_token, refresh_token }
+    const parseOneOverKey = (line: string): string => {
+      if (selectedProvider !== 'oneover') return line
+      try {
+        const parsed = JSON.parse(line)
+        // If it's a JSON with refresh_token, use that as the key
+        if (parsed.refresh_token) return parsed.refresh_token
+        if (parsed.access_token) return parsed.access_token
+      } catch {}
+      return line
+    }
+
     lines.forEach(line => {
-      if (existing.has(line)) {
+      const key = parseOneOverKey(line)
+      if (existing.has(key)) {
         skipped++
         return
       }
-      addKey(selectedProvider as ProviderId, line)
-      existing.add(line)
+      addKey(selectedProvider as ProviderId, key)
+      existing.add(key)
       added++
     })
 
@@ -579,6 +566,31 @@ export default function ProvidersPage() {
         return { state: 'failed', detail: 'Error checking token' }
       }
     }
+    if (selectedProvider === 'oneover') {
+      try {
+        const { resolveOneOverAccessToken, checkOneOverBalance, extractOneOverUserId } = await import('@/lib/oneover')
+        const accessToken = await resolveOneOverAccessToken(key)
+        const userId = extractOneOverUserId(accessToken)
+        const result = await checkOneOverBalance(accessToken, userId || undefined)
+        if (result.ok && result.balance != null) {
+          const bal = result.balance
+          if (bal > 0) {
+            return { state: 'active', balance: bal, detail: `Balance: ${bal} credits` }
+          } else {
+            return { state: 'empty', balance: 0, detail: 'Balance: 0 — habis' }
+          }
+        }
+        if (result.ok) {
+          return { state: 'active', detail: 'Token valid' }
+        }
+        return { state: 'failed', detail: result.error || 'Gagal cek token' }
+      } catch (err: any) {
+        if (err.message?.includes('expired') || err.message?.includes('refresh')) {
+          return { state: 'invalid', detail: 'Token expired — login ulang di oneover.com' }
+        }
+        return { state: 'failed', detail: err.message || 'Error checking token' }
+      }
+    }
     return { state: 'unknown', detail: 'Cek limit belum tersedia untuk provider ini' }
   }, [selectedProvider])
 
@@ -709,6 +721,7 @@ export default function ProvidersPage() {
                     leonardo: 'leonardo',
                     createpulse: 'createpulse',
                     galleri5: 'galleri5',
+                    oneover: 'oneover',
                   }
                   const providerId = providerMap[p.key]
                   const isMaint = providerId ? isProviderMaintenance(providerId) : false
@@ -836,6 +849,20 @@ export default function ProvidersPage() {
                 <Button variant="destructive" onClick={handleDeleteAll} disabled={savedKeys.length === 0}>
                   <Trash2 className="h-3.5 w-3.5" /> Hapus Semua
                 </Button>
+                {selectedProvider === 'oneover' && (
+                  <Button
+                    variant="outline"
+                    onClick={async () => {
+                      const { getOneOverBookmarklet } = await import('@/lib/oneover')
+                      const snippet = getOneOverBookmarklet()
+                      await navigator.clipboard.writeText(snippet)
+                      alert('📋 Script copied!\n\n1. Buka oneover.com (login dulu)\n2. Buka DevTools Console (F12 → Console)\n3. Paste script & Enter\n4. Token otomatis copy → paste di sini')
+                    }}
+                    className="border-violet-500/50 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 hover:border-violet-500/70"
+                  >
+                    <Key className="h-3.5 w-3.5" /> Grab Token dari oneover.com
+                  </Button>
+                )}
               </div>
 
               {selectedProvider === 'runninghub' && (

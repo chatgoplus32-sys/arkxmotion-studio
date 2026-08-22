@@ -84,7 +84,7 @@ function addToken() {
       var obj = JSON.parse(val)
       token = obj.Authorization || obj.authorization || obj.token || ''
       token = token.replace(/^Bearer\s+/i, '').trim()
-    } catch (e) {}
+    } catch {}
   }
 
   if (!token) return showToast('Invalid token format', false)
@@ -162,7 +162,7 @@ function copyText(text) {
     ta.style.cssText = 'position:fixed;left:-9999px'
     document.body.appendChild(ta)
     ta.select()
-    try { document.execCommand('copy'); showToast('Copied!') } catch (e) { showToast('Failed', false) }
+    try { document.execCommand('copy'); showToast('Copied!') } catch { showToast('Failed', false) }
     document.body.removeChild(ta)
   })
 }

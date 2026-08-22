@@ -40,7 +40,7 @@
         token: token,
         sourceUrl: source || 'content-script',
       })
-    } catch (e) {}
+    } catch {}
   }
 
   // ── Intercept fetch ──────────────────────────────────────────
@@ -122,9 +122,9 @@
               token = obj.stsTokenManager.accessToken
               break
             }
-          } catch (e) {}
+          } catch {}
         }
-      } catch (e) {}
+      } catch {}
 
       if (token) {
         navigator.clipboard.writeText(token).then(function () {

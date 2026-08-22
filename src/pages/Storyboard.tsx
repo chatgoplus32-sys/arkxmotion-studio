@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
-import { Section, Button, Input, Textarea, Select, Label, Badge, EmptyState } from '@/components/ui'
-import { Clapperboard, Upload, Rocket, Loader2, Download, Trash2, Search, Check, AlertCircle } from 'lucide-react'
+import { Section, Button, Input, Textarea, Select, Label, EmptyState } from '@/components/ui'
+import { Clapperboard, Rocket, Loader2, Download, Trash2, Search, Check, AlertCircle } from 'lucide-react'
 
 const FRAMING_OPTIONS = [
   { value: 'normal', label: 'Normal (full scene + model)' },

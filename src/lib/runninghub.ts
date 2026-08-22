@@ -1,7 +1,6 @@
 const RUNNINGHUB_PROXY = '/api/public/runninghub'
 
 const RUNNINGHUB_DEFAULT_WORKFLOW_ID = '2087539655340654593'
-const RUNNINGHUB_KLING26_MOTION_CONTROL_WORKFLOW_ID = '2087539655340654593'
 
 function getStoredProviderKey(provider: string): string | null {
   if (typeof window === 'undefined') return null
@@ -153,8 +152,6 @@ export async function submitRunningHubMotionControlV26Std(params: MotionControlV
 }
 
 export type RunningHubTaskStatus = 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED'
-
-const ACTIVE_STATUSES: RunningHubTaskStatus[] = ['QUEUED', 'RUNNING']
 
 export async function pollRunningHubTask(
   taskId: string,

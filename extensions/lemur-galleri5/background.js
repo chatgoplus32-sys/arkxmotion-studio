@@ -17,12 +17,12 @@ try {
             }
           }
         }
-      } catch (e) {}
+      } catch {}
     },
     { urls: [`${G5_BACKEND}/*`] },
     ['requestHeaders']
   )
-} catch (e) {}
+} catch {}
 
 // Save captured token to storage
 async function saveToken(token, sourceUrl) {
@@ -52,7 +52,7 @@ async function saveToken(token, sourceUrl) {
 
     chrome.action.setBadgeText({ text: String(filtered.length) })
     chrome.action.setBadgeBackgroundColor({ color: '#e879f9' })
-  } catch (e) {}
+  } catch {}
 }
 
 function decodeJwtPayload(token) {
@@ -67,10 +67,10 @@ function decodeJwtPayload(token) {
         .join('')
     )
     return JSON.parse(decoded)
-  } catch (e) {
+  } catch {
     try {
       return JSON.parse(atob(token.split('.')[1]))
-    } catch (e2) {
+    } catch {
       return null
     }
   }
@@ -128,7 +128,7 @@ async function refreshToken(refreshToken) {
       refreshToken: data.refresh_token || refreshToken,
       expiresIn: Number(data.expires_in) || 3600,
     }
-  } catch (e) {
+  } catch {
     return { ok: false, error: e.message }
   }
 }

@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="orangeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff6a00"/>
+      <stop offset="50%" stop-color="#ff8c00"/>
+      <stop offset="100%" stop-color="#ffb800"/>
+    </linearGradient>
+    <linearGradient id="darkBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#111111"/>
+      <stop offset="100%" stop-color="#1a1a1a"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="softGlow">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background rounded square -->
+  <rect width="512" height="512" rx="96" fill="url(#darkBg)"/>
+
+  <!-- Subtle inner shadow -->
+  <rect x="4" y="4" width="504" height="504" rx="94" fill="none" stroke="white" stroke-width="0.5" opacity="0.05"/>
+
+  <!-- Play button - large triangle -->
+  <path d="M170 130 L170 370 L380 250 Z" 
+        fill="url(#orangeGrad)" 
+        filter="url(#glow)"
+        opacity="0.95"/>
+
+  <!-- Play button highlight -->
+  <path d="M170 130 L170 250 L275 190 Z" 
+        fill="white" 
+        opacity="0.12"/>
+
+  <!-- Node connection line -->
+  <line x1="380" y1="250" x2="400" y2="310" 
+        stroke="url(#orangeGrad)" 
+        stroke-width="8" 
+        stroke-linecap="round"
+        opacity="0.9"/>
+
+  <!-- Node dot -->
+  <circle cx="400" cy="310" r="22" 
+          fill="url(#orangeGrad)" 
+          filter="url(#softGlow)"
+          opacity="0.95"/>
+
+  <!-- Node dot inner highlight -->
+  <circle cx="395" cy="305" r="8" 
+          fill="white" 
+          opacity="0.25"/>
+</svg>

@@ -1,15 +1,23 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui'
 import { useProviderManager } from '@/stores/providerManager'
 import { calculateStats, DashboardStats } from '@/lib/stats'
+import { checkAllProviderHealth, HEALTH_PROVIDERS, ProviderHealth } from '@/lib/providerHealth'
 import {
-  Sparkles, Video, Image, Zap, ShoppingBag, Wand2, Film,
-  Settings, Route, Key, Shield, Activity, Clock, ArrowRight,
-  TrendingUp, Layers, Download, AlertTriangle, BarChart3,
-  Target, Clock3, Trophy, Coins,
+  Sparkles, Video, Image, Zap, ShoppingBag, Wand2,
+  Route, Key, Activity, Clock, ArrowRight,
+  TrendingUp, BarChart3,
+  Target, Clock3, Trophy, Coins, RefreshCw, Loader2,
 } from 'lucide-react'
+
+const STATUS_META: Record<string, { dot: string; label: string; text: string }> = {
+  online: { dot: 'bg-emerald-400', label: 'Online', text: 'text-emerald-400' },
+  busy: { dot: 'bg-amber-400', label: 'Sibuk', text: 'text-amber-400' },
+  down: { dot: 'bg-red-400', label: 'Down', text: 'text-red-400' },
+  nokey: { dot: 'bg-muted', label: 'No key', text: 'text-muted-foreground' },
+}
 
 interface RecentActivity {
   id: string
@@ -59,6 +67,20 @@ export default function DashboardPage() {
   const { keys, routing, fetchMaintenance } = useProviderManager()
   const [activity, setActivity] = useState<RecentActivity[]>([])
   const [genStats, setGenStats] = useState<DashboardStats | null>(null)
+  const [health, setHealth] = useState<Record<string, ProviderHealth>>({})
+  const [healthLoading, setHealthLoading] = useState(true)
+  const [healthAt, setHealthAt] = useState<number | null>(null)
+
+  const runHealth = useCallback(async () => {
+    setHealthLoading(true)
+    try {
+      const h = await checkAllProviderHealth()
+      setHealth(h)
+      setHealthAt(Date.now())
+    } finally {
+      setHealthLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
     fetchMaintenance()
@@ -69,10 +91,17 @@ export default function DashboardPage() {
       setGenStats(calculateStats())
     }, 30000)
     return () => clearInterval(interval)
-  }, [])
+  }, [fetchMaintenance])
+
+  // Poll status provider live (probe read-only) setiap 60 detik
+  useEffect(() => {
+    runHealth()
+    const interval = setInterval(runHealth, 60000)
+    return () => clearInterval(interval)
+  }, [runHealth])
 
   const stats = useMemo(() => {
-    const providers = ['weavy', 'wavespeed', 'magnific', 'framia', 'leonardo', 'roboneo'] as const
+    const providers = ['weavy', 'wavespeed', 'magnific', 'framia', 'leonardo', 'roboneo', 'galleri5'] as const
     let activeKeys = 0
     let totalKeys = 0
     providers.forEach((p) => {
@@ -279,33 +308,79 @@ export default function DashboardPage() {
         {/* Provider Status */}
         <Card variant="bordered" className="animate-fade-in" style={{ animationDelay: '350ms' }}>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-lg gold-gradient flex items-center justify-center">
-                <Zap className="h-4 w-4 text-black" />
+            <CardTitle className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <div className="h-8 w-8 rounded-lg gold-gradient flex items-center justify-center">
+                  <Zap className="h-4 w-4 text-black" />
+                </div>
+                <span className="gold-text">Provider Status</span>
               </div>
-              <span className="gold-text">Provider Status</span>
+              <div className="flex items-center gap-2">
+                {healthAt && (
+                  <span className="text-[10px] text-muted-foreground">
+                    {new Date(healthAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={runHealth}
+                  disabled={healthLoading}
+                  title="Cek ulang status provider sekarang"
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-border text-muted-foreground transition hover:text-primary hover:border-primary/40 disabled:opacity-50"
+                >
+                  {healthLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                </button>
+              </div>
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {(['weavy', 'wavespeed', 'magnific', 'framia', 'leonardo', 'roboneo'] as const).map((provider) => {
-                const k = keys[provider] || []
+              {HEALTH_PROVIDERS.map((provider) => {
+                const h = health[provider]
+                const k = keys[provider as any] || []
                 const active = k.filter((k) => k.status === 'active' || k.status === 'unknown').length
-                const total = k.length
-                const route = routing[provider] || routing['bulk-fashion'] || 'weavy'
+                const meta = h ? STATUS_META[h.status] : STATUS_META.nokey
+                const keysTxt = k.length === 0 ? '' : ` · ${active}/${k.length} key`
+                const detail = h?.detail ? ` · ${h.detail}` : ''
                 return (
                   <div key={provider} className="flex items-center gap-3 p-2 rounded-lg hover:bg-accent/30 transition">
-                    <div className={`h-2 w-2 rounded-full shrink-0 ${active > 0 ? 'bg-emerald-400' : total > 0 ? 'bg-amber-400' : 'bg-muted'}`} />
+                    <div className={`h-2 w-2 rounded-full shrink-0 ${meta.dot} ${h ? '' : 'animate-pulse'}`} />
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium capitalize">{provider}</div>
-                      <div className="text-[11px] text-muted-foreground">
-                        {total === 0 ? 'No keys' : `${active}/${total} active`}
+                      <div className="text-[11px] text-muted-foreground truncate">
+                        {h ? (
+                          <>
+                            <span className={meta.text}>{meta.label}</span>
+                            {h.latencyMs != null && ` · ${h.latencyMs}ms`}
+                            {keysTxt}
+                            {detail}
+                          </>
+                        ) : (
+                          'mengecek…'
+                        )}
                       </div>
                     </div>
                     <a href="/providers" className="text-[11px] text-primary hover:underline">Kelola</a>
                   </div>
                 )
               })}
+              {/* wavespeed: belum ada probe live → tampilkan status key */}
+              {(() => {
+                const k = keys.wavespeed || []
+                const active = k.filter((k) => k.status === 'active' || k.status === 'unknown').length
+                return (
+                  <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-accent/30 transition">
+                    <div className={`h-2 w-2 rounded-full shrink-0 ${active > 0 ? 'bg-emerald-400' : k.length > 0 ? 'bg-amber-400' : 'bg-muted'}`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium capitalize">wavespeed</div>
+                      <div className="text-[11px] text-muted-foreground">
+                        {k.length === 0 ? 'No keys' : `${active}/${k.length} active`}
+                      </div>
+                    </div>
+                    <a href="/providers" className="text-[11px] text-primary hover:underline">Kelola</a>
+                  </div>
+                )
+              })()}
             </div>
            </CardContent>
         </Card>

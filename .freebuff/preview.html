@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ARKXMotion Studio — Preview</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #09090b;
+      color: #fafafa;
+      min-height: 100vh;
+    }
+    .hero {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      text-align: center;
+      padding: 2rem;
+    }
+    .logo { font-size: 4rem; margin-bottom: 1rem; }
+    h1 { font-size: 2.2rem; font-weight: 700; margin-bottom: 0.5rem; background: linear-gradient(135deg, #3b82f6, #8b5cf6, #ec4899); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .subtitle { color: #a1a1aa; font-size: 1.1rem; margin-bottom: 2rem; max-width: 500px; }
+    .status-badge {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      padding: 0.6rem 1.2rem; border-radius: 9999px;
+      background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.3);
+      color: #22c55e; font-size: 0.85rem; font-weight: 500;
+      margin-bottom: 2rem;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; animation: pulse 2s ease-in-out infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.8); } }
+    .open-btn {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      padding: 0.9rem 2.5rem; border-radius: 0.75rem;
+      background: linear-gradient(135deg, #3b82f6, #6366f1);
+      color: #fff; text-decoration: none;
+      font-weight: 600; font-size: 1rem;
+      transition: all 0.2s; border: none; cursor: pointer;
+      box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
+    }
+    .open-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(99, 102, 241, 0.5); }
+    .providers {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 0.75rem; margin-top: 3rem; max-width: 500px; width: 100%;
+    }
+    .provider-card {
+      padding: 0.8rem; border-radius: 0.6rem;
+      background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+      font-size: 0.8rem; text-align: center;
+      transition: border-color 0.2s;
+    }
+    .provider-card:hover { border-color: rgba(255,255,255,0.15); }
+    .provider-icon { font-size: 1.5rem; display: block; margin-bottom: 0.3rem; }
+    .provider-name { color: #d4d4d8; font-weight: 500; }
+    .features {
+      display: flex; gap: 1rem; margin-top: 2rem; flex-wrap: wrap;
+      justify-content: center; max-width: 500px;
+    }
+    .feature {
+      padding: 0.4rem 0.8rem; border-radius: 0.4rem;
+      background: rgba(255,255,255,0.04); font-size: 0.75rem; color: #a1a1aa;
+    }
+    .port-info {
+      margin-top: 2rem; padding: 0.5rem 1rem; border-radius: 0.5rem;
+      background: rgba(255,255,255,0.03); font-size: 0.75rem; color: #71717a;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+    }
+  </style>
+</head>
+<body>
+  <div class="hero">
+    <div class="logo">🎬</div>
+    <h1>ARKXMotion Studio</h1>
+    <p class="subtitle">AI Video Generation &amp; Editing Platform — Seedance, Kling, Sora, VEO, and more</p>
+
+    <div class="status-badge">
+      <span class="dot"></span>
+      Dev server running on port 5173
+    </div>
+
+    <a href="http://localhost:5173" target="_blank" class="open-btn">
+      Open Full App ↗
+    </a>
+
+    <div class="providers">
+      <div class="provider-card"><span class="provider-icon">🤖</span><span class="provider-name">Roboneo</span></div>
+      <div class="provider-card"><span class="provider-icon">🌊</span><span class="provider-name">Weavy</span></div>
+      <div class="provider-card"><span class="provider-icon">⚡</span><span class="provider-name">Wavespeed</span></div>
+      <div class="provider-card"><span class="provider-icon">✨</span><span class="provider-name">Magnific</span></div>
+      <div class="provider-card"><span class="provider-icon">💜</span><span class="provider-name">CreatePulse</span></div>
+      <div class="provider-card"><span class="provider-icon">🎬</span><span class="provider-name">Framia</span></div>
+    </div>
+
+    <div class="features">
+      <span class="feature">🎬 Image-to-Video</span>
+      <span class="feature">📝 Text-to-Video</span>
+      <span class="feature">🎨 Image Gen</span>
+      <span class="feature">🎥 Motion Control</span>
+      <span class="feature">🔑 Token Rotation</span>
+    </div>
+
+    <div class="port-info">http://localhost:5173 · PID 10928 · node.exe</div>
+  </div>
+</body>
+</html>

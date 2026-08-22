@@ -42,9 +42,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const oembedData = await oembedRes.json() as any
 
-    // Try to extract video URL from the thumbnail/HTML
-    const html = oembedData?.html || ''
-    
     // Method 1: Try cobalt.tools API (popular open-source video downloader)
     try {
       const cobaltRes = await fetch('https://api.cobalt.tools/api/json', {

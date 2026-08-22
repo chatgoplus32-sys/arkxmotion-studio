@@ -259,8 +259,6 @@ const PROVIDER_MODELS: Record<string, ImageModel[]> = {
   ],
 }
 
-const ACTIVE_PROVIDERS: ProviderId[] = ['weavy', 'leonardo', 'wavespeed', 'framia', 'roboneo', 'magnific']
-
 interface LogEntry {
   time: string
   msg: string
@@ -277,7 +275,7 @@ interface GeneratedResult {
 }
 
 export default function TextToImagePage() {
-  const { keys, routing, fetchMaintenance } = useProviderManager()
+  const { keys, fetchMaintenance } = useProviderManager()
   const addToast = useToastStore((s) => s.addToast)
 
   const [provider] = useState<ProviderId>('weavy')
@@ -493,23 +491,6 @@ export default function TextToImagePage() {
   const handleDeleteResult = (id: string) => {
     setResults(prev => prev.filter(r => r.id !== id))
   }
-
-  const providerLabel = (p: ProviderId) => {
-    const labels: Record<string, string> = {
-      weavy: 'Weavy',
-      wavespeed: 'Wavespeed',
-      leonardo: 'Leonardo',
-      framia: 'Framia',
-      roboneo: 'Roboneo',
-      magnific: 'Magnific',
-    }
-    return labels[p] || p
-  }
-
-  const statusColor = progress.text.startsWith('✅') ? 'text-emerald-400'
-    : progress.text.startsWith('❌') ? 'text-destructive'
-    : loading ? 'text-amber-300'
-    : 'text-muted-foreground'
 
   return (
     <PageContent>

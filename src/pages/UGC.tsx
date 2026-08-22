@@ -1,12 +1,13 @@
 import { useState, useRef, useMemo } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
-import { Section, Button, Select, Label, Textarea, EmptyState, Input } from '@/components/ui'
+import { Section, Button, Select, Label, Textarea, Input, BalanceBadge } from '@/components/ui'
 import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { logAudit } from '@/lib/auditLog'
 import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
+import { precheckProviderBalance } from '@/lib/balancePrecheck'
 import {
-  ShoppingBag, Upload, Rocket, Trash2, Download, X, Plus, Square, Image, User,
+  Rocket, X, Plus, Square,
 } from 'lucide-react'
 
 const PRODUCT_TYPES = [
@@ -120,8 +121,20 @@ export default function UGCPage() {
     return prompt
   }
 
+  const totalCredits = products.length * 6 // nanobanana2 · 1K (6 cr/gambar)
+
   const handleGenerate = async () => {
     if (products.length === 0) return
+
+    // Pre-check saldo Weavy sebelum generate dimulai
+    const pre = await precheckProviderBalance('weavy', totalCredits)
+    if (!pre.ok) {
+      addToast(pre.error || 'Saldo tidak cukup', 'error')
+      addLog(`❌ ${pre.error || 'Saldo tidak cukup'}`, 'error')
+      setStatus({ show: true, text: `❌ ${pre.error || 'Saldo tidak cukup'}`, pct: 100, time: '0:00' })
+      return
+    }
+
     setGenerating(true)
     setResults([])
     setLogs([])
@@ -349,6 +362,10 @@ export default function UGCPage() {
                   <Rocket className="h-4 w-4" /> Generate ({products.length})
                 </Button>
               )}
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span>Cost: <b className="text-foreground font-mono">{totalCredits}</b> credits ({products.length} × 6 cr)</span>
+                <BalanceBadge provider="weavy" required={totalCredits} />
+              </div>
             </div>
           </Section>
 

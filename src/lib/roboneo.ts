@@ -177,7 +177,7 @@ export async function compressVideo(file: File, maxMb = 4, onProgress?: (msg: st
   }
 }
 
-function compressVideoFallback(file: File, maxMb: number): Promise<File> {
+function compressVideoFallback(file: File, _maxMb: number): Promise<File> {
   return new Promise<File>((resolve) => {
     const video = document.createElement('video')
     video.muted = true
@@ -218,13 +218,6 @@ function compressVideoFallback(file: File, maxMb: number): Promise<File> {
     }
     video.src = URL.createObjectURL(file)
   })
-}
-
-async function uploadToService(file: File, name: string, uploader: (f: File) => Promise<string>): Promise<string> {
-  console.log(`[upload] trying ${name} (${(file.size / 1024 / 1024).toFixed(1)}MB)...`)
-  const url = await uploader(file)
-  console.log(`[upload] success via ${name}`)
-  return url
 }
 
 export async function validateMedia(url: string, kind: string): Promise<string> {
@@ -359,7 +352,7 @@ export async function uploadToCatbox(file: File, kind?: string, onProgress?: (ms
       return xhrUpload('Tmpfiles', 'https://tmpfiles.org/api/v1/upload', fd, (text, status) => {
         const data = JSON.parse(text || 'null')
         const url = data?.data?.url
-        if (status >= 200 && status < 300 && url) return url.replace(/^(https?:\/\/tmpfiles\.org)\/(?!dl\/)/i, '$1/dl/')
+        if (status >= 200 && status < 300 && url) return url
         throw Error(data?.error || `Tmpfiles HTTP ${status}`)
       })
     }],
@@ -400,16 +393,16 @@ function buildTrackingParams(accessToken: string, pathScene: string, roomId: str
     gid: generateGnum(),
     uid: extractUid(accessToken),
     trace_id: uuid(),
-    client_id: '1189857684',
+    client_id: '1189857647',
     app_scene: 'roboneo',
-    area_code: 'ID',
+    area_code: 'US',
     lang: 'en',
     time_zone: 'Asia/Jakarta',
     tt_ttclid: '',
-    tt_ttp: '',
-    first_url: 'https://www.roboneo.com/home',
-    page_url: 'https://www.roboneo.com/ai_flow',
-    referrer: 'https://www.roboneo.com/home',
+    tt_ttp: '01KY0BNV4XCDZ126QDN7SYJCVB_.tt.1',
+    first_url: `https://www.roboneo.com/team_studio?room_id=${roomId}`,
+    page_url: `https://www.roboneo.com/ai_flow?room_id=${roomId}`,
+    referrer: 'https://www.roboneo.com/flow_share',
     pixel_ready: 1,
     extra: { big_data_patch: { position_type: '/ai_flow' } },
     path_scene: pathScene,
@@ -461,6 +454,21 @@ async function roboneoApiCall(
     // If response has useful data, treat as success
     if (innerData.task_id || innerData.room_id) {
       return innerData.parameter ?? innerData
+    }
+
+    // Gateway may return ok=true but with an explicit error_code (e.g. 6003 busy)
+    const errorCode = innerData.error_code
+    const errorMsg = innerData.error_msg || innerData.err_msg
+    const isBusy = errorCode === 6003 || /busy|try again|later|overload|capacity|queue|sibuk/i.test(String(errorMsg || ''))
+    if (errorCode || errorMsg) {
+      if (isBusy && attempt < 5) {
+        lastError = `busy (${errorCode})`
+        const waitSec = 3 * attempt
+        console.log(`[roboneo] ${path} busy, retry ${attempt}/5 in ${waitSec}s (${errorMsg})`)
+        await new Promise(r => setTimeout(r, waitSec * 1000))
+        continue
+      }
+      throw new Error(`Roboneo ${path}: ${errorMsg || `error ${errorCode}`}`)
     }
 
     // If proxy failed to parse but raw contains task_id, parse it manually
@@ -518,6 +526,36 @@ export async function checkRoboneoBalance(accessToken: string): Promise<{ ok: bo
     const gatewayData = data?.data
     const innerData = gatewayData?.data ?? gatewayData?.result ?? gatewayData
 
+    // DEBUG: dump full structure for diagnosis
+    try {
+      const dump = (obj: any, prefix = '', depth = 0): string[] => {
+        if (depth > 4 || obj == null || typeof obj !== 'object') return []
+        const lines: string[] = []
+        for (const [k, v] of Object.entries(obj)) {
+          const path = prefix ? `${prefix}.${k}` : k
+          if (typeof v === 'number' || (typeof v === 'string' && /^-?\d+$/.test(String(v)))) {
+            lines.push(`  ${path} = ${v} (${typeof v})`)
+          } else if (typeof v === 'string' && v.length < 100) {
+            lines.push(`  ${path} = "${v}"`)
+          } else if (typeof v === 'boolean') {
+            lines.push(`  ${path} = ${v}`)
+          } else if (Array.isArray(v)) {
+            lines.push(`  ${path} = Array(${v.length})`)
+            if (v.length > 0 && v.length <= 5) {
+              for (let i = 0; i < v.length; i++) {
+                lines.push(...dump(v[i], `${path}[${i}]`, depth + 1))
+              }
+            }
+          } else if (typeof v === 'object') {
+            lines.push(...dump(v, path, depth + 1))
+          }
+        }
+        return lines
+      }
+      const structure = dump(innerData)
+      console.log(`[checkBalance] FULL STRUCTURE (${structure.length} fields):\n${structure.join('\n')}`)
+    } catch (e) { console.warn('[checkBalance] structure dump failed:', e) }
+
     // Check error_code from gateway
     const errorCode = gatewayData?.error_code ?? innerData?.error_code ?? innerData?.code
     if (errorCode && errorCode !== 0) {
@@ -525,12 +563,11 @@ export async function checkRoboneoBalance(accessToken: string): Promise<{ ok: bo
       return { ok: false, balance: null, error: errMsg }
     }
 
-    // Check is_valid_user
-    const isValidUser = innerData?.is_valid_user !== false
-    if (!isValidUser) {
-      console.log(`[checkBalance] is_valid_user=false`)
-      return { ok: false, balance: null, isValidUser: false, error: 'Token tidak valid (is_valid_user=false)' }
-    }
+    // is_valid_user at parameter.is_valid_user — false = non-VIP, NOT invalid token
+    // Tokens with is_valid_user=false can still generate if they have balance
+    const paramObj = innerData?.parameter ?? innerData
+    const isValidUser = true // Treat all tokens with balance as valid
+    console.log(`[checkBalance] parameter.is_valid_user=${paramObj?.is_valid_user}`)
 
     // Parse balance from nested structures
     function findInDetailList(obj: any, pattern: RegExp): number | null {
@@ -558,38 +595,53 @@ export async function checkRoboneoBalance(accessToken: string): Promise<{ ok: bo
       return null
     }
 
-    function findValueByKey(obj: any, keys: string[]): number | null {
-      if (!obj || typeof obj !== 'object') return null
+    // Strict key matching: exact > startsWith > includes (avoids false positives)
+    function matchKey(actualKey: string, targets: string[]): string | null {
+      const kl = actualKey.toLowerCase()
+      // Exact match first
+      for (const t of targets) { if (kl === t) return t }
+      // startsWith second
+      for (const t of targets) { if (kl.startsWith(t + '_') || kl.startsWith(t)) return t }
+      // includes last (very greedy — avoid)
+      return null
+    }
+
+    function findValueByKey(obj: any, keys: string[]): { value: number | null; matchedKey: string | null } {
+      if (!obj || typeof obj !== 'object') return { value: null, matchedKey: null }
       for (const [k, v] of Object.entries(obj)) {
-        const kl = k.toLowerCase()
-        if (keys.some((target) => kl === target || kl.includes(target))) {
-          if (typeof v === 'number') return v
-          if (typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v)) return Number(v)
+        const matched = matchKey(k, keys)
+        if (matched) {
+          if (typeof v === 'number' && v >= 0) return { value: v, matchedKey: k }
+          if (typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v)) return { value: Number(v), matchedKey: k }
         }
       }
       for (const v of Object.values(obj)) {
         if (v && typeof v === 'object') {
           const found = findValueByKey(v, keys)
-          if (found !== null) return found
+          if (found.value !== null) return found
         }
       }
-      return null
+      return { value: null, matchedKey: null }
     }
 
-    const resultData = innerData
+    const resultData = paramObj ?? innerData
     const cyberBalance = findInDetailList(resultData, /cyber|carrot/i)
     const dailyBalance = findInDetailList(resultData, /daily|free/i)
-    const freeCredit = findValueByKey(resultData, ['free_credit', 'free_amount', 'daily_free', 'free']) ?? dailyBalance
-    const vipCredit = findValueByKey(resultData, ['vip_credit', 'vip_amount', 'vip'])
+    const freeCreditResult = findValueByKey(resultData, ['free_credit', 'free_amount', 'daily_free'])
+    const freeCredit = freeCreditResult.value ?? dailyBalance
+    const vipCreditResult = findValueByKey(resultData, ['vip_credit', 'vip_amount'])
+    const vipCredit = vipCreditResult.value
 
     // Prioritize balance_carrots (actual carrots) over credit_balance (cents, needs /100)
-    const balanceCarrots = findValueByKey(resultData, ['balance_carrots', 'balanceCarrots'])
-    const creditBalanceRaw = findValueByKey(resultData, ['credit_balance', 'creditBalance', 'total_amount', 'total_credit', 'balance', 'credit', 'remain', 'point', 'coin', 'energy', 'quota'])
+    const balanceCarrotsResult = findValueByKey(resultData, ['balance_carrots', 'balanceCarrots'])
+    const balanceCarrots = balanceCarrotsResult.value
+    const creditBalanceRawResult = findValueByKey(resultData, ['credit_balance', 'creditBalance', 'total_amount', 'total_credit', 'remain', 'point', 'coin', 'energy', 'quota'])
+    const creditBalanceRaw = creditBalanceRawResult.value
     // If credit_balance looks like cents (>1000), divide by 100
     const creditBalance = creditBalanceRaw !== null && creditBalanceRaw > 1000 ? Math.round(creditBalanceRaw / 100) : creditBalanceRaw
     const totalCredit = balanceCarrots ?? creditBalance ?? cyberBalance ?? ((freeCredit ?? 0) + (vipCredit ?? 0) || null)
 
-    console.log(`[checkBalance] OK: balance_carrots=${balanceCarrots}, credit_balance_raw=${creditBalanceRaw}, creditBalance=${creditBalance}, cyber=${cyberBalance}, free=${freeCredit}, vip=${vipCredit}, total=${totalCredit}, isValidUser=${isValidUser}`)
+    console.log(`[checkBalance] OK: balance_carrots=${balanceCarrots} (key=${balanceCarrotsResult.matchedKey}), credit_balance_raw=${creditBalanceRaw} (key=${creditBalanceRawResult.matchedKey}), creditBalance=${creditBalance}, cyber=${cyberBalance}, free=${freeCredit} (key=${freeCreditResult.matchedKey}), vip=${vipCredit} (key=${vipCreditResult.matchedKey}), total=${totalCredit}, isValidUser=${isValidUser}`)
 
     return { ok: true, balance: totalCredit, isValidUser: true }
   } catch (err: any) {
@@ -659,30 +711,37 @@ export async function checkRoboneoTokensBatch(tokens: string[]): Promise<
           return null
         }
 
-        function findValueByKey(obj: any, keys: string[]): number | null {
-          if (!obj || typeof obj !== 'object') return null
+        function matchKey(actualKey: string, targets: string[]): string | null {
+          const kl = actualKey.toLowerCase()
+          for (const t of targets) { if (kl === t) return t }
+          for (const t of targets) { if (kl.startsWith(t + '_') || kl.startsWith(t)) return t }
+          return null
+        }
+
+        function findValueByKey(obj: any, keys: string[]): { value: number | null; matchedKey: string | null } {
+          if (!obj || typeof obj !== 'object') return { value: null, matchedKey: null }
           for (const [k, v] of Object.entries(obj)) {
-            const kl = k.toLowerCase()
-            if (keys.some((target) => kl === target || kl.includes(target))) {
-              if (typeof v === 'number') return v
-              if (typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v)) return Number(v)
+            const matched = matchKey(k, keys)
+            if (matched) {
+              if (typeof v === 'number' && v >= 0) return { value: v, matchedKey: k }
+              if (typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v)) return { value: Number(v), matchedKey: k }
             }
           }
           for (const v of Object.values(obj)) {
             if (v && typeof v === 'object') {
               const found = findValueByKey(v, keys)
-              if (found !== null) return found
+              if (found.value !== null) return found
             }
           }
-          return null
+          return { value: null, matchedKey: null }
         }
 
         const resultData = innerData
         const cyberBalance = findInDetailList(resultData, /cyber|carrot/i)
         const dailyBalance = findInDetailList(resultData, /daily|free/i)
-        const freeCredit = findValueByKey(resultData, ['free_credit', 'free_amount', 'daily_free', 'free']) ?? dailyBalance
-        const vipCredit = findValueByKey(resultData, ['vip_credit', 'vip_amount', 'vip'])
-        const totalCredit = findValueByKey(resultData, ['total_amount', 'total_credit', 'credit_balance', 'balance', 'credit', 'remain', 'point', 'coin', 'energy', 'quota']) ?? cyberBalance ?? ((freeCredit ?? 0) + (vipCredit ?? 0) || null)
+        const freeCredit = findValueByKey(resultData, ['free_credit', 'free_amount', 'daily_free']).value ?? dailyBalance
+        const vipCredit = findValueByKey(resultData, ['vip_credit', 'vip_amount']).value
+        const totalCredit = findValueByKey(resultData, ['balance_carrots', 'balanceCarrots', 'credit_balance', 'creditBalance', 'total_amount', 'total_credit', 'remain', 'point', 'coin', 'energy', 'quota']).value ?? cyberBalance ?? ((freeCredit ?? 0) + (vipCredit ?? 0) || null)
 
         return { token, ok: true, balance: totalCredit, isValidUser: true }
       } catch (err: any) {
@@ -721,7 +780,7 @@ export async function submitMotionControl(params: {
   keepSound?: boolean
   modelKey?: string
 }): Promise<{ taskId: string; roomId: string; nodeId: string }> {
-  const { accessToken, imageUrl, videoUrl, prompt = '', negativePrompt, orientation = 'video', keepSound = true, modelKey } = params
+  const { accessToken, imageUrl, videoUrl, prompt = '', negativePrompt, orientation = 'video', modelKey } = params
 
   const roomId = generateRoomId()
   const nodeId = uuid()
@@ -731,20 +790,27 @@ export async function submitMotionControl(params: {
     ? `${motionPrompt}\n\nNegative: ${negativePrompt}`
     : motionPrompt
 
-  const motionNodeMap: Record<string, { name: string; label: string }> = {
-    'rn:video_bonbon_motioncontrol_v30:std': { name: 'video_bonbon_motioncontrol_v30', label: 'Kling 3.0 Standard' },
-    'rn:video_bonbon_motioncontrol_v30:pro': { name: 'video_bonbon_motioncontrol_v30', label: 'Kling 3.0 Pro' },
-    'rn:video_wan_motioncontrol_v26': { name: 'video_wan_motioncontrol_v26', label: 'Wan 2.6 Motion Control' },
+  // Matches Roboneo website clipboard data exactly:
+  // { mcpCategoriesId: '93', apiName: 'video_bonbon_motioncontrol_v26', parameters: { quality: 'std' } }
+  const motionNodeMap: Record<string, { name: string; label: string; mcpCategoriesId: string }> = {
+    'rn:video_bonbon_motioncontrol_v26:std': { name: 'video_bonbon_motioncontrol_v26', label: 'Kling 2.6 Standard', mcpCategoriesId: '93' },
+    'rn:video_bonbon_motioncontrol_v26:pro': { name: 'video_bonbon_motioncontrol_v26', label: 'Kling 2.6 Pro', mcpCategoriesId: '93' },
+    'rn:video_bonbon_motioncontrol_v30:std': { name: 'video_bonbon_motioncontrol_v30', label: 'Kling 3.0 Standard', mcpCategoriesId: '101' },
+    'rn:video_bonbon_motioncontrol_v30:pro': { name: 'video_bonbon_motioncontrol_v30', label: 'Kling 3.0 Pro', mcpCategoriesId: '101' },
+    'rn:video_wan_motioncontrol_v26': { name: 'video_wan_motioncontrol_v26', label: 'Wan 2.6 Motion Control', mcpCategoriesId: '93' },
   }
 
-  const motionConfig = motionNodeMap[modelKey || ''] || { name: 'video_bonbon_motioncontrol_v30', label: 'Kling 3.0' }
+  const motionConfig = motionNodeMap[modelKey || ''] || { name: 'video_bonbon_motioncontrol_v30', label: 'Kling 3.0', mcpCategoriesId: '101' }
 
+  // Match the official Roboneo web flow: only quality is a node parameter
+  const quality = modelKey?.endsWith(':pro') ? 'pro' : 'std'
+
+  // Match website clipboard for core params + random (Omni works with random)
   const parameters: Record<string, any> = {
     image_url: imageUrl,
     video_url: videoUrl,
     prompt: fullPrompt,
-    character_orientation: orientation || 'video',
-    cfg_scale: 0.5,
+    quality,
     random: `${Date.now()}-${Math.floor(1e7 + Math.random() * 89999999)}`,
   }
 
@@ -1182,17 +1248,14 @@ export async function pollMotionControl(
   onProgress?: (status: string, pct: number) => void,
   timeoutMs = 3600000,
   signal?: AbortSignal,
-  nodeId?: string
+  _nodeId?: string
 ): Promise<string> {
   const meta = taskMetaMap.get(taskId)
   const resolvedRoomId = roomId || meta?.roomId || ''
-  const resolvedNodeId = nodeId || meta?.nodeId || ''
   const startTime = Date.now()
   let networkRetries = 0
-  let busyRetries = 0
   let successNoOutputCount = 0
   const MAX_SUCCESS_NO_OUTPUT = 5
-  const MAX_BUSY_RETRIES = 15
 
   function tryParseJson(str: any): any {
     if (typeof str !== 'string') return str
@@ -1383,8 +1446,6 @@ export async function pollMotionControl(
       taskMetaMap.delete(taskId)
       throw new Error(`Roboneo failed: ${errMsg}`)
     }
-
-    busyRetries = 0
   }
 
   throw new Error('Roboneo timeout')
@@ -1636,6 +1697,9 @@ export async function pollRoboneoI2V(
       }
 
       if (isChargeFailed) {
+        console.error(`[roboneo] CHARGE_FAILED full task:`, JSON.stringify(task).slice(0, 1000))
+        console.error(`[roboneo] CHARGE_FAILED failedStep:`, JSON.stringify(failedStep).slice(0, 1000))
+        console.error(`[roboneo] CHARGE_FAILED stepOutput:`, JSON.stringify(stepOutput).slice(0, 500))
         taskMetaMap.delete(taskId)
         throw new Error(`Roboneo: saldo tidak cukup untuk biaya ini (CHARGE_FAILED). Detail: ${detail}`)
       }
@@ -1905,7 +1969,7 @@ export function isRoboneoCredentialError(msg: string): boolean {
 }
 
 export function isRoboneoBalanceError(msg: string): boolean {
-  return !isRoboneoSafetyError(msg) && /insufficient|credit\/quota habis|credit.*(?:empty|exhausted|habis)|balance.*(?:low|empty|insufficient|habis)|CHARGE_FAILED|charge.?failed|payment.?required|余额不足|余额不够|积分不足|账户余额|欠费/i.test(msg)
+  return !isRoboneoSafetyError(msg) && /insufficient|credit\/quota habis|credit.*(?:empty|exhausted|habis)|balance.*(?:low|empty|insufficient|habis)|tidak cukup|tidak mencukupi|saldo.*kurang|kurang.*saldo|CHARGE_FAILED|charge.?failed|payment.?required|余额不足|余额不够|积分不足|账户余额|欠费/i.test(msg)
 }
 
 export function isRoboneoTokenError(msg: string): boolean {
@@ -1916,8 +1980,12 @@ export function isRoboneoRotatableError(msg: string): boolean {
   return isRoboneoCredentialError(msg) || isRoboneoBalanceError(msg)
 }
 
+export function isRoboneoBusyError(msg: string): boolean {
+  return /busy|sibuk|try again|later|overload|capacity|queue|系统繁忙|请稍后|拥挤/i.test(msg)
+}
+
 const ROBONEO_MOTION_MIN_CREDITS_KEY = 'arkxmotion.roboneo.motionMinCredits'
-const DEFAULT_MOTION_MIN_CREDITS = 151
+const DEFAULT_MOTION_MIN_CREDITS = 30
 
 export function getRoboneoMotionMinCredits(): number {
   if (typeof window === 'undefined') return DEFAULT_MOTION_MIN_CREDITS
@@ -1931,16 +1999,26 @@ export function getRoboneoMotionMinCredits(): number {
   return DEFAULT_MOTION_MIN_CREDITS
 }
 
+/**
+ * Called when Roboneo returns CHARGE_FAILED. Records the actual cost floor
+ * so we skip keys with insufficient balance next time.
+ * creditBalance = current balance at time of failure.
+ * The actual cost = creditBalance - remainingAfterCharge (unknown),
+ * so we conservatively set floor to creditBalance (they couldn't afford it).
+ */
 export function noteRoboneoMotionChargeFailure(creditBalance: number | null): number {
   const currentMin = getRoboneoMotionMinCredits()
   if (creditBalance === null || !Number.isFinite(creditBalance)) {
     return currentMin
   }
-  const newMin = Math.max(currentMin, Math.floor(creditBalance) + 1)
+  // The actual cost must be > creditBalance (charge failed).
+  // Set floor to current balance so we skip this key (it clearly can't afford it).
+  // Don't inflate beyond reason — next key with same balance will also fail.
+  const newMin = Math.max(currentMin, Math.floor(creditBalance))
   if (newMin !== currentMin && typeof window !== 'undefined') {
     try {
       localStorage.setItem(ROBONEO_MOTION_MIN_CREDITS_KEY, String(newMin))
-      console.log(`[roboneo] Motion min credits updated: ${currentMin} → ${newMin}`)
+      console.log(`[roboneo] Motion min credits updated: ${currentMin} → ${newMin} (balance was ${creditBalance}, charge failed)`)
     } catch {}
   }
   return newMin

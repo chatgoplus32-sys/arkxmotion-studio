@@ -45,8 +45,8 @@ function decodeJwt(token) {
       }).join('')
     )
     return JSON.parse(decoded)
-  } catch (e) {
-    try { return JSON.parse(atob(token.split('.')[1])) } catch (e2) { return null }
+  } catch {
+    try { return JSON.parse(atob(token.split('.')[1])) } catch { return null }
   }
 }
 

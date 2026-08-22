@@ -1,4 +1,4 @@
-import { leonardoApi, leonardoUploadImage, fetchImageAsBlob } from '@/lib/leonardo'
+import { leonardoApi, leonardoUploadImage } from '@/lib/leonardo'
 
 const GENERATE_MUTATION = `mutation Generate($request: CreateGenerationRequest!) {
   generate(request: $request) { apiCreditCost generationId __typename }
@@ -26,17 +26,6 @@ const UPSCALE_VARIATION_QUERY = `query GetLatestPendingUpscaleVariationForGenera
   }
 }`
 
-const VARIATION_QUERY = `query GetImageVariationGeneric($where: generated_image_variation_generic_bool_exp) {
-  generated_image_variation_generic(where: $where) {
-    id createdAt status url transformType
-    upscale_details {
-      id variationId upscaleMultiplier width height mode modelId optional_metadata
-      generated_image_variation_generic { id status url __typename }
-      __typename
-    }
-    __typename
-  }
-}`
 
 function getUpscalerModel(upscaler: string, proType: string): string {
   if (upscaler === 'legacy') return 'legacy-upscaler'
@@ -206,7 +195,7 @@ export async function runLeonardoUpscale(
         const gqlErr = JSON.stringify(gqlData?.errors || {}).slice(0, 400)
         throw Error(`Leonardo: generationId tidak ditemukan — REST: ${restErr}; GraphQL: ${gqlErr}`)
       }
-    } catch (innerErr) {
+    } catch {
       throw Error(`Leonardo upscale gagal: ${restErr}`)
     }
   }

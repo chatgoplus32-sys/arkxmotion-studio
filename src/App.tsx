@@ -20,6 +20,7 @@ import ProvidersPage from '@/pages/Providers'
 import RoutingProviderPage from '@/pages/RoutingProvider'
 import SettingsPage from '@/pages/Settings'
 import AdminUsersPage from '@/pages/AdminUsers'
+import AdminMembershipPage from '@/pages/AdminMembership'
 import AdminTokensPage from '@/pages/AdminTokens'
 import AdminOrderTokensPage from '@/pages/AdminOrderTokens'
 import AdminProviderStatusPage from '@/pages/AdminProviderStatus'
@@ -28,6 +29,10 @@ import CreatePulseTopupPage from '@/pages/CreatePulseTopup'
 import BeliTokenPage from '@/pages/BeliToken'
 import LoginPage from '@/pages/Login'
 import RegisterPage from '@/pages/Register'
+import RegisterStatusPage from '@/pages/RegisterStatus'
+import ForgotPasswordPage from '@/pages/ForgotPassword'
+import ResetPasswordPage from '@/pages/ResetPassword'
+import LandingPage from '@/pages/LandingPage'
 
 export default function App() {
   const { sidebarCollapsed, toggleSidebar } = useAppStore()
@@ -36,8 +41,12 @@ export default function App() {
     <Router>
       <ToastContainer />
       <Routes>
+        <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="/register-status" element={<RegisterStatusPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route
           path="/*"
           element={
@@ -64,7 +73,7 @@ export default function App() {
                   />
                   <main className="flex-1 p-4 lg:p-6 overflow-auto">
                     <Routes>
-                      <Route path="/" element={<DashboardPage />} />
+                      <Route path="/dashboard" element={<DashboardPage />} />
                       <Route path="/command" element={<CommandPage />} />
                       <Route path="/generate/motion" element={<MotionPage />} />
                       <Route path="/generate/bulk-fashion" element={<BulkFashionPage />} />
@@ -80,6 +89,7 @@ export default function App() {
                       <Route path="/topup/createpulse" element={<CreatePulseTopupPage />} />
                       <Route path="/beli-token" element={<BeliTokenPage />} />
                       <Route path="/admin/users" element={<AdminUsersPage />} />
+                      <Route path="/admin/membership" element={<AdminMembershipPage />} />
                       <Route path="/admin/tokens" element={<AdminTokensPage />} />
                       <Route path="/admin/orders" element={<AdminOrderTokensPage />} />
                       <Route path="/admin/status" element={<AdminProviderStatusPage />} />

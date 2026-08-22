@@ -34,6 +34,28 @@ if (!columns.some(c => c.name === 'approved')) {
   db.exec("ALTER TABLE users ADD COLUMN approved INTEGER NOT NULL DEFAULT 0")
 }
 
+// ── Email verification & password reset ──────────────────────────────────
+if (!columns.some(c => c.name === 'email_verified')) {
+  db.exec("ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0")
+  // Akun yang sudah ada sebelum fitur ini dianggap sudah terverifikasi
+  db.exec('UPDATE users SET email_verified = 1')
+}
+if (!columns.some(c => c.name === 'email_verify_token')) {
+  db.exec('ALTER TABLE users ADD COLUMN email_verify_token TEXT')
+}
+if (!columns.some(c => c.name === 'email_verify_expires')) {
+  db.exec('ALTER TABLE users ADD COLUMN email_verify_expires DATETIME')
+}
+if (!columns.some(c => c.name === 'reset_token')) {
+  db.exec('ALTER TABLE users ADD COLUMN reset_token TEXT')
+}
+if (!columns.some(c => c.name === 'reset_expires')) {
+  db.exec('ALTER TABLE users ADD COLUMN reset_expires DATETIME')
+}
+if (!columns.some(c => c.name === 'payment_token')) {
+  db.exec('ALTER TABLE users ADD COLUMN payment_token TEXT')
+}
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS tokens (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -149,6 +171,46 @@ db.exec(`
 
 db.exec(`CREATE INDEX IF NOT EXISTS idx_generation_logs_user_id ON generation_logs(user_id)`)
 db.exec(`CREATE INDEX IF NOT EXISTS idx_generation_logs_created_at ON generation_logs(created_at)`)
+
+// ── Anti-spam: catatan percobaan daftar per IP ───────────────────────────
+db.exec(`
+  CREATE TABLE IF NOT EXISTS register_attempts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ip TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`)
+db.exec('CREATE INDEX IF NOT EXISTS idx_register_attempts_ip_time ON register_attempts(ip, created_at)')
+
+// ── Konfirmasi pembayaran member baru ────────────────────────────────────
+db.exec(`
+  CREATE TABLE IF NOT EXISTS membership_payments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    amount INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected')),
+    proof_note TEXT NOT NULL DEFAULT '',
+    admin_note TEXT NOT NULL DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`)
+db.exec('CREATE INDEX IF NOT EXISTS idx_membership_payments_user ON membership_payments(user_id)')
+
+// ── Pengaturan app (key-value) ───────────────────────────────────────────
+db.exec(`
+  CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL DEFAULT '',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`)
+// Harga membership default Rp 150.000 (bisa diubah lewat halaman admin)
+const feeRow = db.prepare("SELECT value FROM app_settings WHERE key = 'membership_fee'").get() as { value: string } | undefined
+if (!feeRow) {
+  db.prepare("INSERT INTO app_settings (key, value) VALUES ('membership_fee', '150000')").run()
+}
 
 const providers = ['weavy', 'wavespeed', 'magnific', 'roboneo', 'createpulse', 'framia', 'firefly', 'leonardo', 'gemini', 'openai', 'shotstack', 'creatomate']
 for (const p of providers) {

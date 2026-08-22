@@ -43,10 +43,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === 'GET' && segments[segments.length - 1] === 'tokens') {
       const provider = req.query.provider as string | undefined
       if (provider && ['roboneo', 'framia', 'weavy', 'createpulse'].includes(provider)) {
-        const rows = await sql`SELECT id, provider, name, price, credits, credit_group, status, created_at FROM tokens WHERE provider = ${provider} AND status = 'available' ORDER BY created_at DESC`
+        const rows: Record<string, any>[] = await sql`SELECT id, provider, name, price, credits, credit_group, status, created_at FROM tokens WHERE provider = ${provider} AND status = 'available' ORDER BY created_at DESC`
         return res.status(200).json({ tokens: rows })
       }
-      const rows = await sql`SELECT id, provider, name, price, credits, credit_group, status, created_at FROM tokens WHERE status = 'available' ORDER BY created_at DESC`
+      const rows: Record<string, any>[] = await sql`SELECT id, provider, name, price, credits, credit_group, status, created_at FROM tokens WHERE status = 'available' ORDER BY created_at DESC`
       return res.status(200).json({ tokens: rows })
     }
 
@@ -63,12 +63,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Atomic: mark as sold only if still available
       for (const tid of token_ids) {
         // Check if token is available first
-        const tokenCheck = await sql`SELECT id, status FROM tokens WHERE id = ${tid}`
+        const tokenCheck: Record<string, any>[] = await sql`SELECT id, status FROM tokens WHERE id = ${tid}`
         if (tokenCheck.length > 0 && tokenCheck[0].status === 'available') {
           // Mark as sold
           await sql`UPDATE tokens SET status = 'sold', updated_at = CURRENT_TIMESTAMP WHERE id = ${tid} AND status = 'available'`
           // Verify it was updated
-          const verify = await sql`SELECT status FROM tokens WHERE id = ${tid}`
+          const verify: Record<string, any>[] = await sql`SELECT status FROM tokens WHERE id = ${tid}`
           if (verify.length > 0 && verify[0].status === 'sold') {
             await sql`INSERT INTO token_orders (user_id, token_id, status, bulk_id) VALUES (${user.id}, ${tid}, 'pending', ${bulkId})`
             successCount++
@@ -85,7 +85,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // GET /api/tokens/orders/mine - user's order history grouped by bulk_id
     if (req.method === 'GET' && segments.includes('mine')) {
-      const rows = await sql`
+      const rows: Record<string, any>[] = await sql`
         SELECT o.*, t.provider, t.name as token_name, t.price
         FROM token_orders o
         JOIN tokens t ON o.token_id = t.id
@@ -123,7 +123,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ error: 'Invalid bulk id' })
       }
 
-      const rows = await sql`
+      const rows: Record<string, any>[] = await sql`
         SELECT o.*, t.provider, t.name as token_name, t.token_value, t.price, u.name as user_name
         FROM token_orders o
         JOIN tokens t ON o.token_id = t.id
@@ -177,7 +177,7 @@ Gunakan token ini di menu Providers.
     // DELETE /api/tokens/orders/clear - clear user's order history
     if (req.method === 'DELETE' && segments.includes('clear')) {
       // Get token IDs from pending orders before deleting
-      const pendingOrders = await sql`SELECT token_id FROM token_orders WHERE user_id = ${user.id} AND status = 'pending'`
+      const pendingOrders: Record<string, any>[] = await sql`SELECT token_id FROM token_orders WHERE user_id = ${user.id} AND status = 'pending'`
       // Reset tokens back to available
       for (const o of pendingOrders) {
         await sql`UPDATE tokens SET status = 'available', updated_at = CURRENT_TIMESTAMP WHERE id = ${o.token_id}`

@@ -27,7 +27,7 @@ function loadTokens() {
       var tokens = (response && response.tokens) || []
       renderTokens(tokens)
     })
-  } catch (e) {
+  } catch {
     renderTokens([])
   }
 }
@@ -91,7 +91,7 @@ function copyToken(index) {
       try {
         document.execCommand('copy')
         showToast('Token copied!')
-      } catch (e) {
+      } catch {
         showToast('Failed to copy', false)
       }
       document.body.removeChild(ta)

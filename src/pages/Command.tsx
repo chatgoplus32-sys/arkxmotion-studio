@@ -69,7 +69,6 @@ export default function CommandPage() {
 
   const analyzePrompt = (text: string) => {
     const lower = text.toLowerCase()
-    const words = lower.split(/\s+/)
 
     let bestMatch = workflows[workflows.length - 1] // default to research
     let bestScore = 0

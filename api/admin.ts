@@ -1,6 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import jwt from 'jsonwebtoken'
+import crypto from 'crypto'
 import { neon } from '@neondatabase/serverless'
+import { sendEmail, appUrl } from './mailer.js'
 
 function getSql() {
   const url = process.env.DATABASE_URL
@@ -56,6 +58,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return handleTokenRoutes(req, res, segments)
     }
 
+    // /api/admin/membership/* (konfirmasi pembayaran member)
+    if (segments.includes('membership') || req.query.membership) {
+      return handleMembershipRoutes(req, res)
+    }
+
     // /api/admin/status
     if (segments.includes('status')) {
       return handleStatusRoutes(req, res)
@@ -102,17 +109,39 @@ async function handleUserRoutes(req: VercelRequest, res: VercelResponse, segment
     return handleResetPassword(res, id, req.body)
   }
 
+  if (id && action === 'resend-verification' && req.method === 'POST') {
+    return handleResendVerification(res, id)
+  }
+
   return res.status(404).json({ error: 'Not found' })
+}
+
+async function attachPayment(sql: any, users: any[]): Promise<any[]> {
+  const out: any[] = []
+  for (const u of users) {
+    let payment: any = null
+    try {
+      const pays = await sql`SELECT id, amount, status, proof_note, admin_note, created_at FROM membership_payments WHERE user_id = ${u.id} ORDER BY id DESC LIMIT 1`
+      if (pays[0]) {
+        payment = {
+          id: pays[0].id, amount: pays[0].amount, status: pays[0].status,
+          proofNote: pays[0].proof_note, adminNote: pays[0].admin_note, createdAt: pays[0].created_at,
+        }
+      }
+    } catch {}
+    out.push({ ...u, approved: !!u.approved, email_verified: !!u.email_verified, payment })
+  }
+  return out
 }
 
 async function handleList(res: VercelResponse) {
   try {
     const sql = getSql()
     const rows = await sql`
-      SELECT id, email, name, role, approved, created_at, updated_at
+      SELECT id, email, name, role, approved, email_verified, created_at, updated_at
       FROM users ORDER BY created_at DESC
     `
-    return res.status(200).json({ users: rows.map(u => ({ ...u, approved: !!u.approved })) })
+    return res.status(200).json({ users: await attachPayment(sql, rows) })
   } catch (err: any) {
     console.error('List users error:', err)
     return res.status(500).json({ error: 'Internal server error' })
@@ -123,11 +152,11 @@ async function handlePending(res: VercelResponse) {
   try {
     const sql = getSql()
     const rows = await sql`
-      SELECT id, email, name, role, approved, created_at
+      SELECT id, email, name, role, approved, email_verified, created_at
       FROM users WHERE approved = 0 AND role != 'admin'
       ORDER BY created_at DESC
     `
-    return res.status(200).json({ users: rows.map(u => ({ ...u, approved: !!u.approved })) })
+    return res.status(200).json({ users: await attachPayment(sql, rows) })
   } catch (err: any) {
     console.error('List pending users error:', err)
     return res.status(500).json({ error: 'Internal server error' })
@@ -705,6 +734,111 @@ async function handleMaintenanceRoutes(req: VercelRequest, res: VercelResponse) 
     return res.status(405).json({ error: 'Method not allowed' })
   } catch (err: any) {
     console.error('Maintenance error:', err)
+    return res.status(500).json({ error: err.message || 'Internal server error' })
+  }
+}
+
+// ─── Konfirmasi pembayaran member ──────────────────────────────────────
+async function handleMembershipRoutes(req: VercelRequest, res: VercelResponse) {
+  const action = String(req.query.membership || '')
+  const rawId = Number(req.query.id)
+
+  try {
+    // Konfigurasi harga membership
+    if (action === 'config') {
+      const sql = getSql()
+      try { await sql`CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)` } catch {}
+      if (req.method === 'GET') {
+        const rows = await sql`SELECT value FROM app_settings WHERE key = 'membership_fee'`
+        const fee = Number(rows[0]?.value)
+        return res.status(200).json({ ok: true, membershipFee: Number.isFinite(fee) && fee > 0 ? fee : 150000 })
+      }
+      if (req.method === 'PATCH') {
+        const fee = Number(req.body?.membershipFee)
+        if (!Number.isFinite(fee) || fee <= 0) {
+          return res.status(400).json({ error: 'Nominal harus angka lebih dari 0' })
+        }
+        await sql`INSERT INTO app_settings (key, value, updated_at) VALUES ('membership_fee', ${String(fee)}, CURRENT_TIMESTAMP)
+                  ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`
+        return res.status(200).json({ ok: true, message: `Harga membership diubah menjadi Rp ${fee.toLocaleString('id-ID')}`, membershipFee: fee })
+      }
+      return res.status(405).json({ error: 'Method not allowed' })
+    }
+
+    if (req.method === 'GET') {
+      const sql = getSql()
+      const rows = await sql`
+        SELECT mp.id, mp.user_id, mp.amount, mp.status, mp.proof_note, mp.admin_note, mp.created_at,
+               u.email, u.name, u.approved AS user_approved
+        FROM membership_payments mp
+        JOIN users u ON u.id = mp.user_id
+        ORDER BY CASE mp.status WHEN 'pending' THEN 0 ELSE 1 END, mp.created_at DESC
+      `
+      return res.status(200).json({
+        payments: rows.map((p: any) => ({
+          id: p.id, userId: p.user_id, amount: p.amount, status: p.status,
+          proofNote: p.proof_note, adminNote: p.admin_note, createdAt: p.created_at,
+          email: p.email, name: p.name, userApproved: !!p.user_approved,
+        })),
+      })
+    }
+
+    if (req.method === 'POST' && Number.isFinite(rawId)) {
+      const sql = getSql()
+      const pays = await sql`
+        SELECT mp.id, mp.user_id, mp.status, u.email FROM membership_payments mp
+        JOIN users u ON u.id = mp.user_id WHERE mp.id = ${rawId}
+      `
+      const payment = pays[0]
+      if (!payment) return res.status(404).json({ error: 'Pembayaran tidak ditemukan' })
+
+      if (action === 'approve') {
+        if (payment.status === 'approved') {
+          return res.status(400).json({ error: 'Pembayaran ini sudah disetujui' })
+        }
+        await sql`UPDATE membership_payments SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE id = ${rawId}`
+        await sql`UPDATE users SET approved = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ${payment.user_id}`
+        return res.status(200).json({ ok: true, message: `Pembayaran ${payment.email} disetujui & akun diaktifkan` })
+      }
+
+      if (action === 'reject') {
+        const adminNote = String(req.body?.admin_note || '').slice(0, 500)
+        await sql`UPDATE membership_payments SET status = 'rejected', admin_note = ${adminNote}, updated_at = CURRENT_TIMESTAMP WHERE id = ${rawId}`
+        return res.status(200).json({ ok: true, message: `Pembayaran ${payment.email} ditolak` })
+      }
+    }
+
+    return res.status(405).json({ error: 'Method not allowed' })
+  } catch (err: any) {
+    console.error('Membership routes error:', err)
+    return res.status(500).json({ error: err.message || 'Internal server error' })
+  }
+}
+
+// ─── Kirim ulang link verifikasi email ──────────────────────────────────
+async function handleResendVerification(res: VercelResponse, id: number) {
+  try {
+    const sql = getSql()
+    const rows = await sql`SELECT id, email, name, role, email_verified FROM users WHERE id = ${id}`
+    const user = rows[0]
+    if (!user) return res.status(404).json({ error: 'User not found' })
+    if (user.email_verified) return res.status(400).json({ error: 'Email user ini sudah terverifikasi' })
+
+    const token = crypto.randomBytes(32).toString('hex')
+    const expires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+    await sql`UPDATE users SET email_verify_token = ${token}, email_verify_expires = ${expires} WHERE id = ${id}`
+
+    const link = `${appUrl()}/api/auth/verify-email?token=${token}`
+    const { sent } = await sendEmail({
+      to: user.email,
+      subject: 'Verifikasi Email — ARKXMotion Studio',
+      text: `Halo ${user.name},\n\nKlik link berikut untuk memverifikasi email kamu:\n${link}\n\nLink berlaku 24 jam.\n— ARKXMotion Studio`,
+      html: `<p>Halo <b>${user.name}</b>,</p><p>Klik tombol di bawah untuk memverifikasi email kamu:</p><p><a href="${link}" style="background:#E5A93B;color:#000;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600">Verifikasi Email</a></p><p>Atau buka link ini: <a href="${link}">${link}</a></p><p>Link berlaku 24 jam.</p>`,
+    })
+
+    return res.status(200).json({ ok: true, message: `Link verifikasi dikirim ke ${user.email}`, devVerifyLink: sent ? null : link })
+  } catch (err: any) {
+    console.error('Resend verification error:', err)
     return res.status(500).json({ error: err.message || 'Internal server error' })
   }
 }

@@ -30,6 +30,7 @@ export interface CompletedResult {
   duration?: number
   credits?: number
   inputImageUrl?: string
+  taskUrl?: string  // Open on provider website (e.g. Roboneo task page for watermark-free download)
 }
 
 export interface LogEntry {

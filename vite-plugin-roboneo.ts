@@ -1,6 +1,6 @@
 import type { Plugin } from 'vite'
 
-const VERCEL_ORIGIN = 'https://aacreative.vercel.app'
+const VERCEL_ORIGIN = 'https://arkxmotion-studio.vercel.app'
 
 export function roboneoProxyPlugin(): Plugin {
   return {
@@ -194,34 +194,143 @@ export function roboneoProxyPlugin(): Plugin {
         try { parsed = JSON.parse(rawBody) } catch {}
         const apiPath = parsed?.path || 'unknown'
 
-        console.log(`[roboneo-proxy] ${apiPath} → ${VERCEL_ORIGIN}/api/public/roboneo (tokenLen=${String(token).length})`)
+        // Direct gateway call — bypass Vercel to avoid timeout/sleep issues
+        const GATEWAY_URL = 'https://ai-engine-gateway-roboneo.meitu.com/roboneo/sync/request'
+        console.log(`[roboneo-proxy] ${apiPath} → DIRECT gateway (tokenLen=${String(token).length})`)
 
         try {
-          const roboneoRes = await fetch(`${VERCEL_ORIGIN}/api/public/roboneo`, {
+          const roboneoRes = await fetch(`${GATEWAY_URL}/${apiPath}`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'X-Roboneo-Token': String(token),
+              'access-token': String(token),
+              'client-id': '1189857647',
+              'Origin': 'https://www.roboneo.com',
+              'Referer': 'https://www.roboneo.com/',
             },
-            body: rawBody,
+            body: JSON.stringify({ parameter: parsed?.parameter || {} }),
           })
 
           const roboneoText = await roboneoRes.text()
-          console.log(`[roboneo-proxy] ${roboneoRes.status}:`, roboneoText.slice(0, 500))
+          console.log(`[roboneo-proxy] gateway ${roboneoRes.status} ${apiPath}:`, roboneoText.slice(0, 1500))
 
+          // Gateway returns SSE text — parse like the Vercel handler does
           let roboneoData: any = null
-          try { roboneoData = JSON.parse(roboneoText) } catch {}
+          const lines = roboneoText.split('\n')
+          for (const line of lines) {
+            const trimmed = line.trim()
+            if (!trimmed.startsWith('data: ')) continue
+            const jsonStr = trimmed.slice(6)
+            try {
+              const obj = JSON.parse(jsonStr)
+              if (obj.type === 'resp' || obj.task_id || obj.room_id) {
+                roboneoData = obj
+                break
+              }
+            } catch {}
+          }
+          if (!roboneoData) {
+            try { roboneoData = JSON.parse(roboneoText) } catch {}
+          }
 
           const innerData = roboneoData?.data ?? roboneoData
 
           res.writeHead(200, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({
-            ok: roboneoRes.ok,
+            ok: roboneoRes.ok && !(innerData?.error_code && innerData.error_code !== 0),
             status: roboneoRes.status,
             data: innerData,
+            raw: roboneoText.slice(0, 500),
           }))
         } catch (err: any) {
           console.error(`[roboneo-proxy] error:`, err.message)
+          res.writeHead(502, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: false, error: err.message }))
+        }
+      })
+
+      // Direct roboneo-membership handler — bypass Vercel for balance checks
+      server.middlewares.use('/api/public/roboneo-membership', async (req, res) => {
+        if (req.method === 'OPTIONS') {
+          res.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, X-Roboneo-Token' })
+          res.end()
+          return
+        }
+        if (req.method !== 'POST') {
+          res.writeHead(405)
+          res.end('Method not allowed')
+          return
+        }
+
+        const chunks: Buffer[] = []
+        for await (const chunk of req) chunks.push(chunk)
+        const token = req.headers['x-roboneo-token'] || ''
+
+        if (!token) {
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: false, error: 'Missing token' }))
+          return
+        }
+
+        // Build vipshow request (same as Vercel handler)
+        const GATEWAY_URL = 'https://ai-engine-gateway-roboneo.meitu.com/roboneo/sync/request/vipshow'
+        const roomId = `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`
+        const uid = (() => { try { let t = String(token).replace(/^_v\d+/, ''); t += '='.repeat((4 - (t.length % 4)) % 4); const decoded = Buffer.from(t, 'base64').toString('binary'); const p = decoded.split('#')[2]; return p && /^\d+$/.test(p) ? p : '0'; } catch { return '0'; } })()
+        const gid = `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}-${Math.random().toString(16).slice(2)}`
+
+        const parameter = {
+          token: '45C30555F10E49629098A75F95828DA6',
+          gid,
+          uid,
+          trace_id: `${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`,
+          client_id: '1189857647',
+          app_scene: 'roboneo',
+          area_code: 'US',
+          lang: 'en',
+          time_zone: 'Asia/Jakarta',
+          tt_ttclid: '',
+          tt_ttp: '01KY0BNV4XCDZ126QDN7SYJCVB_.tt.1',
+          first_url: 'https://www.roboneo.com/home',
+          page_url: 'https://www.roboneo.com/ai_flow',
+          referrer: 'https://www.roboneo.com/home',
+          pixel_ready: 1,
+          extra: { big_data_patch: { position_type: '/ai_flow' } },
+          path_scene: 'vipshow',
+          room_id: roomId,
+          _access_token: token,
+          features: '',
+          later_face: 0,
+        }
+
+        console.log(`[roboneo-membership] → DIRECT gateway vipshow (tokenLen=${String(token).length})`)
+
+        try {
+          const proxyRes = await fetch(GATEWAY_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'access-token': String(token),
+              'client-id': '1189857647',
+              'Origin': 'https://www.roboneo.com',
+              'Referer': 'https://www.roboneo.com/',
+            },
+            body: JSON.stringify({ parameter }),
+          })
+          const text = await proxyRes.text()
+          console.log(`[roboneo-membership] gateway ${proxyRes.status}:`, text.slice(0, 300))
+
+          let data: any = null
+          try { data = JSON.parse(text) } catch {}
+
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({
+            ok: proxyRes.ok && !(data?.error_code && data.error_code !== 0),
+            status: proxyRes.status,
+            raw: text.slice(0, 500),
+            data: data,
+          }))
+        } catch (err: any) {
+          console.error(`[roboneo-membership] gateway error:`, err.message)
           res.writeHead(502, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ ok: false, error: err.message }))
         }
@@ -394,9 +503,153 @@ export function roboneoProxyPlugin(): Plugin {
             'Content-Type': 'application/json',
             'Access-Control-Allow-Origin': '*',
           })
-          res.end(ffText)
-        } catch (err: any) {
+          res.end(ffText)        } catch (err: any) {
           console.error(`[firefly-proxy] error:`, err.message)
+          res.writeHead(502, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: false, error: err.message }))
+        }
+      })
+
+      // ─── OneOver proxy (Supabase edge functions) ──────────────────────
+      const ONEOVER_SUPABASE_URL = 'https://mjuwtqkfhtpgavwjrual.supabase.co'
+      const ONEOVER_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1qdXd0cWtmaHRwZ2F2d2pydWFsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjcyMzcxODgsImV4cCI6MjA4MjgxMzE4OH0.h7PCq_fZJ7JfsQtxMuqLyhSvL4JMgOvBumsw2rBwJOc'
+
+      server.middlewares.use('/api/public/oneover', async (req, res) => {
+        if (req.method === 'OPTIONS') {
+          res.writeHead(200, {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+          })
+          res.end()
+          return
+        }
+
+        try {
+          const urlObj = new URL(req.url || '/', 'http://localhost')
+          const action = urlObj.searchParams.get('action') || ''
+
+          const auth = String(req.headers.authorization || '')
+          const accessToken = auth.replace(/^Bearer\s+/i, '').trim()
+
+          if (!accessToken) {
+            res.writeHead(401, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Missing access token' }))
+            return
+          }
+
+          const headers: Record<string, string> = {
+            Authorization: `Bearer ${accessToken}`,
+            apikey: ONEOVER_SUPABASE_ANON_KEY,
+            'Content-Type': 'application/json',
+          }
+
+          if (action === 'balance') {
+            const userId = urlObj.searchParams.get('user_id') || ''
+            const upstream = userId
+              ? `${ONEOVER_SUPABASE_URL}/functions/v1/get-credit-balance?user_id=${encodeURIComponent(userId)}`
+              : `${ONEOVER_SUPABASE_URL}/functions/v1/get-credit-balance`
+            console.log(`[oneover-proxy] GET balance userId=${userId}`)
+            const r = await fetch(upstream, { method: 'GET', headers })
+            const text = await r.text()
+            console.log(`[oneover-proxy] balance → ${r.status}: ${text.slice(0, 300)}`)
+            res.writeHead(r.status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
+            res.end(text)
+            return
+          }
+
+          if (action === 'generate') {
+            const chunks: Buffer[] = []
+            for await (const chunk of req) chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
+            const body = JSON.parse(Buffer.concat(chunks).toString())
+            const { accessToken: _, action: __, ...submitBody } = body
+            console.log(`[oneover-proxy] POST video-generate model=${submitBody.model}`)
+            const r = await fetch(`${ONEOVER_SUPABASE_URL}/functions/v1/video-generate`, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify(submitBody),
+            })
+            const text = await r.text()
+            console.log(`[oneover-proxy] generate → ${r.status}`)
+            res.writeHead(r.status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
+            res.end(text)
+            return
+          }
+
+          if (action === 'poll') {
+            const chunks: Buffer[] = []
+            for await (const chunk of req) chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
+            const body = JSON.parse(Buffer.concat(chunks).toString())
+            const { accessToken: _, action: __, pollBody, ...rest } = body
+            const pollData = pollBody || rest
+            console.log(`[oneover-proxy] POST video-poll`)
+            const r = await fetch(`${ONEOVER_SUPABASE_URL}/functions/v1/video-poll`, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify(pollData),
+            })
+            const text = await r.text()
+            console.log(`[oneover-proxy] poll → ${r.status}`)
+            res.writeHead(r.status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
+            res.end(text)
+            return
+          }
+
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Invalid action' }))
+        } catch (err: any) {
+          console.error(`[oneover-proxy] error:`, err.message)
+          res.writeHead(502, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: false, error: err.message }))
+        }
+      })
+
+      // Catch-all untuk endpoint /api/public/* lain (galleri5, magnific,
+      // weavy, uploads, video-proxy, shotstack, creatomate, roboneo-membership, dsb)
+      // → diteruskan ke deployment Vercel. Spesifik handler di atas menang duluan.
+      server.middlewares.use('/api/public', async (req, res) => {
+        if (req.method === 'OPTIONS') {
+          res.writeHead(200, {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Roboneo-Token, X-Firefly-Token, X-Firefly-Api-Key, X-Firefly-Account, X-Firefly-Session',
+          })
+          res.end()
+          return
+        }
+
+        try {
+          const chunks: Buffer[] = []
+          for await (const chunk of req) chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
+          const rawBody = Buffer.concat(chunks)
+
+          // Connect menghapus prefix mount ('/api/public') dari req.url, jadi tambahkan lagi
+          const url = new URL(`/api/public${req.url || '/'}`, VERCEL_ORIGIN)
+          const headers: Record<string, string> = {
+            'Content-Type': req.headers['content-type'] || 'application/json',
+          }
+          if (req.headers.authorization) headers['Authorization'] = String(req.headers.authorization)
+          for (const h of ['x-roboneo-token', 'x-firefly-token', 'x-firefly-api-key', 'x-firefly-account', 'x-firefly-session', 'x-api-key']) {
+            const v = req.headers[h]
+            if (v) headers[h] = String(v)
+          }
+
+          console.log(`[public-proxy] ${req.method} ${req.url} → ${VERCEL_ORIGIN}`)
+
+          const upstream = await fetch(url.toString(), {
+            method: req.method,
+            headers,
+            body: req.method === 'GET' ? undefined : rawBody,
+          })
+
+          const text = await upstream.text()
+          res.writeHead(upstream.status, {
+            'Content-Type': upstream.headers.get('content-type') || 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          })
+          res.end(text)
+        } catch (err: any) {
+          console.error(`[public-proxy] error:`, err.message)
           res.writeHead(502, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ ok: false, error: err.message }))
         }

@@ -1,17 +1,17 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
-import { Section, Button, Select, Label, Textarea, EmptyState, Badge } from '@/components/ui'
+import { Section, Button, Select, Label, Textarea, EmptyState, Badge, BalanceBadge } from '@/components/ui'
 import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
-import { Image, Upload, Rocket, Loader2, Trash2, Zap, Key, ExternalLink, Download, X } from 'lucide-react'
+import { Image, Upload, Rocket, Loader2, Trash2, Key, ExternalLink, Download, X } from 'lucide-react'
 import { Swipeable } from '@/components/Swipeable'
 import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
 import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
-import { uploadToCatbox, submitGoogleOmni, submitRoboneoI2V, pollRoboneoI2V, compressVideo, normalizeImage, checkRoboneoBalance, uploadImageForRoboneo, isRoboneoFormatError } from '@/lib/roboneo'
+import { uploadToCatbox, submitRoboneoI2V, pollRoboneoI2V, checkRoboneoBalance, uploadImageForRoboneo, isRoboneoFormatError } from '@/lib/roboneo'
 import { generateWithFramia } from '@/lib/framia'
 import { runLeonardoVideo } from '@/lib/leonardo'
 import { LEONARDO_VIDEO_MODELS, leonardoVideoQualityOptions } from '@/lib/leonardo-video'
-import { submitWeavyVideo, pollWeavyStatus, checkWeavyBalance, submitWeavySora, pollWeavySoraStatus, submitWeavyGrokVideo, pollWeavyGrokVideoStatus, submitWeavyOmni, pollWeavyOmniStatus, submitWeavySeedanceMini, pollWeavySeedanceMiniStatus, submitWeavyKlingTurbo, pollWeavyKlingTurboStatus, submitWeavyKlingVideo, pollWeavyKlingVideoStatus, uploadToWeavy, compressImageForWeavy } from '@/lib/weavy'
+import { submitWeavyVideo, pollWeavyStatus, submitWeavySora, pollWeavySoraStatus, submitWeavyGrokVideo, pollWeavyGrokVideoStatus, submitWeavyOmni, pollWeavyOmniStatus, submitWeavySeedanceMini, pollWeavySeedanceMiniStatus, submitWeavyKlingTurbo, pollWeavyKlingTurboStatus, submitWeavyKlingVideo, pollWeavyKlingVideoStatus } from '@/lib/weavy'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import {
   getActiveTasks,
@@ -23,12 +23,14 @@ import {
   addResult,
   startBackgroundPolling,
   removeResult,
+  clearLogs,
+  clearResults,
 } from '@/lib/backgroundTasks'
 import type { CompletedResult } from '@/lib/backgroundTasks'
 import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
 import { isNotificationsEnabled, setNotificationsEnabled, requestNotificationPermission, notifyGenerationComplete } from '@/lib/notify'
 import { uploadToCdn } from '@/lib/cdn'
-import { generatePrompt, generateVariations, STYLES, GeneratedPrompt } from '@/lib/aiPrompt'
+import { precheckProviderBalance } from '@/lib/balancePrecheck'
 
 interface ModelOption {
   value: string
@@ -118,6 +120,12 @@ const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
   galleri5: [
     { value: 'g5:gemini-omni-flash-i2v', label: 'Gemini Omni Flash I2V (Galery5)', cr: 134, provider: 'galleri5' },
     { value: 'g5:wan-2.7-i2v', label: 'Wan 2.7 Image to Video (Galery5)', cr: 200, provider: 'galleri5' },
+  ],
+  oneover: [
+    { value: 'oo:grok-imagine-video', label: 'Grok Imagine Video (OneOver)', cr: 70, provider: 'oneover', apiModel: 'grok-imagine-video' },
+    { value: 'oo:seedance-2.0', label: 'Seedance 2.0 (OneOver)', cr: 70, provider: 'oneover', apiModel: 'seedance-2.0' },
+    { value: 'oo:seedance-2.5', label: 'Seedance 2.5 (OneOver)', cr: 105, provider: 'oneover', apiModel: 'seedance-2.5' },
+    { value: 'oo:gemini-omni-flash-preview', label: 'Gemini Omni Flash (OneOver)', cr: 80, provider: 'oneover', apiModel: 'gemini-omni-flash-preview' },
   ],
 }
 
@@ -376,6 +384,40 @@ const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; 
       { value: '5s-720p', label: '5 detik · 720p', mult: 1, duration: 5, cr: 200, resolution: '720p' },
     ],
   },
+  oneover: {
+    'oo:grok-imagine-video': [
+      { value: '15s-720p', label: '15 detik · 720p', mult: 1, duration: 15, cr: 210, resolution: '720p' },
+      { value: '10s-720p', label: '10 detik · 720p', mult: 1, duration: 10, cr: 140, resolution: '720p' },
+      { value: '5s-720p', label: '5 detik · 720p', mult: 1, duration: 5, cr: 70, resolution: '720p' },
+      { value: '15s-480p', label: '15 detik · 480p', mult: 1, duration: 15, cr: 150, resolution: '480p' },
+      { value: '10s-480p', label: '10 detik · 480p', mult: 1, duration: 10, cr: 100, resolution: '480p' },
+      { value: '5s-480p', label: '5 detik · 480p', mult: 1, duration: 5, cr: 50, resolution: '480p' },
+    ],
+    'oo:seedance-2.0': [
+      { value: '10s-720p', label: '10 detik · 720p · 🔊 audio', mult: 1, duration: 10, cr: 140, resolution: '720p', sound: 'on' },
+      { value: '5s-720p', label: '5 detik · 720p · 🔊 audio', mult: 1, duration: 5, cr: 70, resolution: '720p', sound: 'on' },
+      { value: '10s-480p', label: '10 detik · 480p · 🔊 audio', mult: 1, duration: 10, cr: 140, resolution: '480p', sound: 'on' },
+      { value: '5s-480p', label: '5 detik · 480p · 🔊 audio', mult: 1, duration: 5, cr: 70, resolution: '480p', sound: 'on' },
+    ],
+    'oo:seedance-2.5': [
+      { value: '30s-480p', label: '30 detik · 480p · 🔊 audio', mult: 1, duration: 30, cr: 630, resolution: '480p', sound: 'on' },
+      { value: '20s-480p', label: '20 detik · 480p · 🔊 audio', mult: 1, duration: 20, cr: 420, resolution: '480p', sound: 'on' },
+      { value: '15s-480p', label: '15 detik · 480p · 🔊 audio', mult: 1, duration: 15, cr: 315, resolution: '480p', sound: 'on' },
+      { value: '10s-480p', label: '10 detik · 480p · 🔊 audio', mult: 1, duration: 10, cr: 210, resolution: '480p', sound: 'on' },
+      { value: '5s-480p', label: '5 detik · 480p · 🔊 audio', mult: 1, duration: 5, cr: 105, resolution: '480p', sound: 'on' },
+      { value: '10s-720p', label: '10 detik · 720p · 🔊 audio', mult: 1, duration: 10, cr: 470, resolution: '720p', sound: 'on' },
+    ],
+    'oo:gemini-omni-flash-preview': [
+      { value: '10s-720p', label: '10 detik · 720p · 🔊 audio', mult: 1, duration: 10, cr: 200, resolution: '720p', sound: 'on' },
+      { value: '8s-720p', label: '8 detik · 720p · 🔊 audio', mult: 1, duration: 8, cr: 160, resolution: '720p', sound: 'on' },
+      { value: '6s-720p', label: '6 detik · 720p · 🔊 audio', mult: 1, duration: 6, cr: 120, resolution: '720p', sound: 'on' },
+      { value: '4s-720p', label: '4 detik · 720p · 🔊 audio', mult: 1, duration: 4, cr: 80, resolution: '720p', sound: 'on' },
+    ],
+    default: [
+      { value: '10s', label: '10 detik', mult: 1, duration: 10 },
+      { value: '5s', label: '5 detik', mult: 1, duration: 5 },
+    ],
+  },
 }
 
 const CP_PRICES: Record<string, number> = {
@@ -445,7 +487,7 @@ function VideoPlayer({ directUrl, proxyFallback, rawUrl }: { directUrl: string; 
 }
 
 export default function ImageToVideoPage() {
-  const { keys, routing, getActiveKey, fetchMaintenance } = useProviderManager()
+  const { keys, routing, fetchMaintenance } = useProviderManager()
   const addToast = useToastStore((s) => s.addToast)
   const { token: authToken, user } = useAuthStore()
   const [cpBalance, setCpBalance] = useState(0)
@@ -600,23 +642,25 @@ export default function ImageToVideoPage() {
     }
   }, [])
 
-  const models = PROVIDER_MODELS[provider] || []
+  const models = useMemo(() => PROVIDER_MODELS[provider] || [], [provider])
   const currentModel = models.find((m) => m.value === model) || models[0]
 
-  const providerQualities = QUALITY_OPTIONS[provider] || QUALITY_OPTIONS.weavy
-  const leonardoDynamicOptions = provider === 'leonardo' && model ? leonardoVideoQualityOptions(model, ratio) : []
-  const qualityOptions = provider === 'leonardo'
-    ? leonardoDynamicOptions.map((opt) => ({
-        value: opt.value,
-        label: opt.label,
-        mult: 1,
-        duration: opt.seconds,
-        cr: opt.cr,
-        sizeTier: opt.tierId as string,
-        resolution: undefined as string | undefined,
-        sound: opt.audio ? 'on' : undefined,
-      }))
-    : (providerQualities[model] || providerQualities.default || [])
+  const qualityOptions = useMemo(() => {
+    const providerQualities = QUALITY_OPTIONS[provider] || QUALITY_OPTIONS.weavy
+    const leonardoDynamicOptions = provider === 'leonardo' && model ? leonardoVideoQualityOptions(model, ratio) : []
+    return provider === 'leonardo'
+      ? leonardoDynamicOptions.map((opt) => ({
+          value: opt.value,
+          label: opt.label,
+          mult: 1,
+          duration: opt.seconds,
+          cr: opt.cr,
+          sizeTier: opt.tierId as string,
+          resolution: undefined as string | undefined,
+          sound: opt.audio ? 'on' : undefined,
+        }))
+      : (providerQualities[model] || providerQualities.default || [])
+  }, [provider, model, ratio])
   const currentQuality = qualityOptions.find((q) => q.value === quality) || qualityOptions[0]
 
   const totalCredits = currentModel ? (currentQuality?.cr ?? Math.round(currentModel.cr * (currentQuality?.mult || 1))) : 0
@@ -628,13 +672,13 @@ export default function ImageToVideoPage() {
     if (models.length > 0 && !models.find((m) => m.value === model)) {
       setModel(models[0].value)
     }
-  }, [provider, models])
+  }, [provider, models, model])
 
   useEffect(() => {
     if (qualityOptions.length > 0 && !qualityOptions.find((q) => q.value === quality)) {
       setQuality(qualityOptions[0].value)
     }
-  }, [model, qualityOptions])
+  }, [model, qualityOptions, quality])
 
   useEffect(() => {
     if (provider === 'createpulse' && authToken) {
@@ -900,9 +944,20 @@ export default function ImageToVideoPage() {
       return
     }
 
+    // Pre-check saldo vs estimasi biaya sebelum upload dimulai
+    if (provider !== 'createpulse') {
+      const pre = await precheckProviderBalance(provider, totalCredits)
+      if (!pre.ok) {
+        addLog(`❌ ${pre.error}`, 'error', provider)
+        addToast(pre.error || 'Saldo tidak cukup', 'error')
+        return
+      }
+    }
+
     setGenerating(true)
     successRef.current = false
     generatingRef.current = true
+    clearLogs()
     setLogs([])
     setStatus({ show: true, text: 'Validasi...', pct: 2, time: '' })
 
@@ -992,7 +1047,6 @@ export default function ImageToVideoPage() {
 
          const MAX_FORMAT_RETRIES = 2
          let formatRetries = 0
-         let lastFormatError = ''
 
          const submitAndPoll = async (currentImageUrl: string, apiKey: string, keyInfo: any) => {
               const tokenIdx = keys.roboneo?.findIndex(k => k.key === apiKey) ?? 0
@@ -1077,10 +1131,9 @@ export default function ImageToVideoPage() {
            async (apiKey, keyInfo) => {
              try {
                return await submitAndPoll(imageUrl, apiKey, keyInfo)
-             } catch (err: any) {
-               if (isRoboneoFormatError(err.message) && formatRetries < MAX_FORMAT_RETRIES) {
-                 formatRetries++
-                 lastFormatError = err.message
+             } catch (err: any) {                if (isRoboneoFormatError(err.message) && formatRetries < MAX_FORMAT_RETRIES) {
+                  formatRetries++
+
                  addLog(`⚠️ Format error detected (retry ${formatRetries}/${MAX_FORMAT_RETRIES}): re-uploading image...`, 'warn', 'roboneo')
                  setStatus((s) => ({ ...s, text: `Re-uploading image (retry ${formatRetries})...`, pct: 10 }))
                  imageUrl = await uploadWithRetry(formatRetries)
@@ -1118,6 +1171,7 @@ export default function ImageToVideoPage() {
             duration: currentQuality?.duration,
             credits: totalCredits,
             inputImageUrl: imgUrl || undefined,
+            taskUrl: rotation.result!.roomId ? `https://www.roboneo.com/team_studio?room_id=${rotation.result!.roomId}` : undefined,
           })
           refreshGallery()
           window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
@@ -1177,9 +1231,8 @@ export default function ImageToVideoPage() {
       } else if (provider === 'firefly') {
         addLog(`[1/2] 🔥 Preparing image for Firefly...`, 'info', 'firefly')
         setStatus((s) => ({ ...s, text: 'Preparing...', pct: 5 }))
-        let imageUrl: string | undefined
         if (imgFile) {
-          imageUrl = await uploadToCatbox(imgFile)
+          await uploadToCatbox(imgFile)
           addLog(`[1/2] ✅ Image uploaded ✓`, 'success', 'firefly')
         } else {
           addLog(`[1/2] ℹ️ No image (text-to-video mode)`, 'info', 'firefly')
@@ -1822,6 +1875,7 @@ export default function ImageToVideoPage() {
               authHeaders,
               modelKey: model,
               imageUrl,
+              imageFile: imgFile,
               prompt: prompt.trim() || undefined,
               duration: currentQuality?.duration || 10,
               onProgress: (msg, pct) => {
@@ -1872,7 +1926,7 @@ export default function ImageToVideoPage() {
               if (activeTaskId) removeActiveTask(activeTaskId)
               activeTaskId = null
             },
-            onError: (err, key) => {
+            onError: (err, _key) => {
               if (detectTokenError('galleri5', err)) {
                 addLog(`⚠️ Key is invalid: ${err.message}`, 'warn', 'galleri5')
               }
@@ -1898,6 +1952,82 @@ export default function ImageToVideoPage() {
           notifyGenerationComplete(currentModel?.label || model, 'Galery5')
           if (rotation.triedKeys > 1) {
             addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success', 'galleri5')
+          }
+        } else {
+          throw new Error(rotation.error || 'Generation failed')
+        }
+      } else if (provider === 'oneover') {
+        // ─── OneOver: Grok Video, Seedance 2.0, Seedance 2.5 ────────
+        addLog(`[1/3] 🖼️ Preparing images...`, 'info', 'oneover')
+
+        // Upload reference image to base64 if available
+        let referenceImageBase64: string | undefined
+        if (imgFile) {
+          addLog(`[1/3] 🖼️ Converting image to base64...`, 'info', 'oneover')
+          setStatus((s) => ({ ...s, text: 'Converting image...', pct: 5 }))
+          const { fileToBase64 } = await import('@/lib/oneover')
+          referenceImageBase64 = await fileToBase64(imgFile)
+          addLog(`[1/3] ✅ Image ready ✓`, 'success', 'oneover')
+        } else if (startFrameFile) {
+          addLog(`[1/3] 🖼️ Converting start frame to base64...`, 'info', 'oneover')
+          setStatus((s) => ({ ...s, text: 'Converting image...', pct: 5 }))
+          const { fileToBase64 } = await import('@/lib/oneover')
+          referenceImageBase64 = await fileToBase64(startFrameFile)
+          addLog(`[1/3] ✅ Image ready ✓`, 'success', 'oneover')
+        } else {
+          addLog(`[1/3] ℹ️ Text-to-video mode (no image)`, 'info', 'oneover')
+        }
+
+        const rotation = await withTokenRotation<string>(
+          'oneover',
+          async (apiKey, keyInfo) => {
+            addLog(`🔑 Trying key: ${keyInfo.name || keyInfo.id}`, 'info', 'oneover')
+
+            const { generateWithOneOver } = await import('@/lib/oneover')
+
+            const apiModel = currentModel?.apiModel || model.replace('oo:', '')
+            addLog(`[2/3] 🚀 Submitting to OneOver ${apiModel}...`, 'info', 'oneover')
+            setStatus((s) => ({ ...s, text: `Submit OneOver ${apiModel}...`, pct: 10 }))
+
+            const videoUrl = await generateWithOneOver({
+              apiKey,
+              prompt: prompt.trim(),
+              model: apiModel,
+              duration: currentQuality?.duration || 10,
+              resolution: currentQuality?.resolution || undefined,
+              aspectRatio: ratio,
+              generateAudio: currentQuality?.sound === 'on',
+              referenceImageBase64,
+              omniTask: referenceImageBase64 ? 'image_to_video' : 'text_to_video',
+              onLog: (msg, level) => addLog(msg, level as any, 'oneover'),
+              onStatus: (text, pct) => setStatus((s) => ({ ...s, text, pct })),
+            })
+
+            setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+            addLog(`✅ Video selesai ✓`, 'success', 'oneover')
+
+            return videoUrl
+          },
+          {
+            requiredCredits: totalCredits,
+            onKeySwitch: (from, to, attempt) => {
+              addLog(`🔄 Key invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn', 'oneover')
+            },
+            onError: (err, key) => {
+              if (detectTokenError('oneover', err)) {
+                addLog(`⚠️ Key "${key.name}" is invalid: ${err.message}`, 'warn', 'oneover')
+              }
+            },
+          }
+        )
+        if (rotation.ok && rotation.result) {
+          setResults((prev) => [rotation.result!, ...prev])
+          saveGalleryItem(rotation.result!)
+          successRef.current = true
+          setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+          notifyGenerationComplete(currentModel?.label || model, 'OneOver')
+          if (rotation.triedKeys > 1) {
+            addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success', 'oneover')
           }
         } else {
           throw new Error(rotation.error || 'Generation failed')
@@ -1959,7 +2089,7 @@ export default function ImageToVideoPage() {
     }
   }
 
-  const PROVIDER_IDS: ProviderId[] = ['weavy', 'wavespeed', 'roboneo', 'createpulse', 'framia', 'leonardo', 'galleri5']
+  const PROVIDER_IDS: ProviderId[] = ['weavy', 'wavespeed', 'roboneo', 'createpulse', 'framia', 'leonardo', 'galleri5', 'oneover']
 
   return (
     <PageContent>
@@ -2244,6 +2374,7 @@ export default function ImageToVideoPage() {
               </Button>
               <div className="text-xs text-muted-foreground">
                 Est. Cost: <b className="text-foreground font-mono">{provider === 'createpulse' ? `Rp ${getCreatepulseCost(currentModel?.apiModel).toLocaleString('id-ID')}` : `${totalCredits} credits`}</b>
+                {provider !== 'createpulse' && <BalanceBadge provider={provider} required={totalCredits} />}
               </div>
               {!hasActiveKey && provider !== 'createpulse' && (
                 <a
@@ -2367,7 +2498,7 @@ export default function ImageToVideoPage() {
           title={`📋 Log (${logs.length})`}
           right={
             <button
-              onClick={() => { setLogs([]); }}
+              onClick={() => { clearLogs(); setLogs([]); }}
               className="text-[11px] text-destructive hover:text-destructive/80 transition"
             >
               Clear
@@ -2407,6 +2538,21 @@ export default function ImageToVideoPage() {
         sub="Riwayat semua video yang sudah di-generate"
         right={
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                if (window.confirm('Hapus semua log dan galeri? Tindakan ini tidak bisa dibatalkan.')) {
+                  clearLogs()
+                  clearResults()
+                  setLogs([])
+                  setGalleryItems([])
+                  setResults([])
+                  addToast('Semua log & galeri dihapus', 'success')
+                }
+              }}
+              className="text-[11px] text-destructive hover:text-destructive/80 transition font-medium"
+            >
+              🗑️ Hapus Total
+            </button>
             <input
               type="text"
               placeholder="Cari..."
@@ -2479,6 +2625,11 @@ export default function ImageToVideoPage() {
                         >
                           <Download className="h-3.5 w-3.5" /> Download
                         </button>
+                        {item.taskUrl && (
+                          <a href={item.taskUrl} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-1 rounded-lg border border-violet-500/30 bg-violet-500/5 hover:bg-violet-500/10 px-3 py-2 text-xs font-medium text-violet-500 transition" title="Buka di provider untuk download tanpa watermark">
+                            🌐 Open
+                          </a>
+                        )}
                         <button
                           onClick={() => removeGalleryItem(item.id)}
                           className="p-2 rounded-lg border border-destructive/30 bg-destructive/5 hover:bg-destructive/10 text-destructive transition"

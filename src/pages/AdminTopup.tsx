@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Badge } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
@@ -25,11 +25,9 @@ export default function AdminTopupPage() {
   const [actionLoading, setActionLoading] = useState<number | null>(null)
 
   const API = '/api/admin/topup'
-  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
+  const headers = useMemo(() => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }), [token])
 
-  useEffect(() => { fetchTopups() }, [])
-
-  const fetchTopups = async () => {
+  const fetchTopups = useCallback(async () => {
     setLoading(true)
     try {
       const res = await fetch(`${API}/pending`, { headers })
@@ -37,7 +35,9 @@ export default function AdminTopupPage() {
       setTopups(data.topups || [])
     } catch {}
     setLoading(false)
-  }
+  }, [headers])
+
+  useEffect(() => { fetchTopups() }, [fetchTopups])
 
   const fetchAll = async () => {
     setLoading(true)
@@ -98,7 +98,6 @@ export default function AdminTopupPage() {
   }
 
   const pending = topups.filter((t) => t.status === 'pending')
-  const others = topups.filter((t) => t.status !== 'pending')
 
   return (
     <PageContent>
