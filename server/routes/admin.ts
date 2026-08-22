@@ -1,4 +1,5 @@
 import { Router, Response } from 'express'
+
 import db from '../db.js'
 import { authenticateToken, requireAdmin, AuthRequest } from '../middleware/auth.js'
 import { sendVerificationEmail } from './auth.js'
@@ -628,6 +629,208 @@ router.put('/settings', authenticateToken, requireAdmin, (req: AuthRequest, res:
     res.json({ ok: true, message: 'Settings updated' })
   } catch (err: any) {
     console.error('[admin-settings-update] error:', err.message)
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// GET /api/admin/health — system health dashboard data (no Node builtins — uses process only)
+router.get('/health', authenticateToken, requireAdmin, async (_req: AuthRequest, res: Response) => {
+  try {
+    const osMod = await import('node:os')
+    const upSec = osMod.uptime()
+    const memTotal = osMod.totalmem()
+    const memFree = osMod.freemem()
+    const memUsed = memTotal - memFree
+    const memPct = Math.round((memUsed / memTotal) * 100)
+    const cpuList = osMod.cpus()
+    const loadAvg = osMod.loadavg()
+
+    // Database stats
+    const totalUsers = (db.prepare('SELECT COUNT(*) as c FROM users').get() as any).c
+    const totalTokens = (db.prepare('SELECT COUNT(*) as c FROM tokens').get() as any).c
+    const totalLogs = (db.prepare('SELECT COUNT(*) as c FROM generation_logs').get() as any).c
+    const recentLogs = (db.prepare(
+      `SELECT COUNT(*) as c FROM generation_logs WHERE created_at >= datetime('now', '-24 hours')`
+    ).get() as any).c
+    const pendingPayments = (db.prepare(
+      `SELECT COUNT(*) as c FROM membership_payments WHERE status = 'pending'`
+    ).get() as any).c
+    const pendingUsers = (db.prepare(
+      `SELECT COUNT(*) as c FROM users WHERE approved = 0 AND role != 'admin'`
+    ).get() as any).c
+
+    // Provider maintenance
+    const maintenance = db.prepare('SELECT provider, is_maintenance FROM provider_maintenance WHERE is_maintenance = 1').all() as any[]
+
+    // Disk usage (approximate via db file size)
+    const pathMod = await import('node:path')
+    const fsMod = await import('node:fs')
+    const dbPath = pathMod.join(process.cwd(), 'server', 'arkxmotion.db')
+    let dbSize = 0
+    try { dbSize = fsMod.statSync(dbPath).size } catch {}
+
+    res.json({
+      server: {
+        uptime: Math.round(upSec),
+        uptimeFormatted: `${Math.floor(upSec / 86400)}d ${Math.floor((upSec % 86400) / 3600)}h ${Math.floor((upSec % 3600) / 60)}m`,
+        pid: process.pid,
+        nodeVersion: process.version,
+        platform: osMod.platform(),
+        arch: osMod.arch(),
+      },
+      memory: {
+        total: memTotal,
+        used: memUsed,
+        free: memFree,
+        percentUsed: memPct,
+        totalFormatted: `${Math.round(memTotal / 1024 / 1024)} MB`,
+        usedFormatted: `${Math.round(memUsed / 1024 / 1024)} MB`,
+      },
+      cpu: {
+        model: cpuList[0]?.model || 'Unknown',
+        cores: cpuList.length,
+        loadAvg: loadAvg.map((l: number) => Math.round(l * 100) / 100),
+      },
+      database: {
+        size: dbSize,
+        sizeFormatted: dbSize > 1024 * 1024 ? `${(dbSize / 1024 / 1024).toFixed(1)} MB` : `${(dbSize / 1024).toFixed(1)} KB`,
+        totalUsers,
+        totalTokens,
+        totalLogs,
+        recentLogs24h: recentLogs,
+      },
+      queue: {
+        pendingPayments,
+        pendingUsers,
+        maintenanceProviders: maintenance.map((m: any) => m.provider),
+      },
+    })
+  } catch (err: any) {
+    console.error('[admin-health] error:', err.message)
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ─── Notifications ──────────────────────────────────────────────────────
+// GET /api/admin/notifications — list all notifications (admin)
+router.get('/notifications', authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
+  try {
+    const limit = Math.min(parseInt(_req.query.limit as string) || 50, 200)
+    const offset = parseInt(_req.query.offset as string) || 0
+    const rows = db.prepare(
+      'SELECT n.*, u.email as user_email FROM notifications n LEFT JOIN users u ON n.user_id = u.id ORDER BY n.created_at DESC LIMIT ? OFFSET ?'
+    ).all(limit, offset) as any[]
+    const total = (db.prepare('SELECT COUNT(*) as c FROM notifications').get() as any).c
+    res.json({ notifications: rows, total })
+  } catch (err: any) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// GET /api/admin/notifications/unread — count unread for current user
+router.get('/notifications/unread', authenticateToken, (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id
+    const isAdmin = req.user!.role === 'admin'
+    let count: number
+    if (isAdmin) {
+      count = (db.prepare(
+        `SELECT COUNT(*) as c FROM notifications WHERE read = 0 AND (target = 'all' OR target = 'admins')`
+      ).get() as any).c
+    } else {
+      count = (db.prepare(
+        `SELECT COUNT(*) as c FROM notifications WHERE read = 0 AND user_id = ? AND (target = 'all' OR target = 'users')`
+      ).get(userId) as any).c
+    }
+    res.json({ count })
+  } catch (err: any) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// GET /api/admin/notifications/mine — notifications for current user
+router.get('/notifications/mine', authenticateToken, (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id
+    const isAdmin = req.user!.role === 'admin'
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100)
+    let rows: any[]
+    if (isAdmin) {
+      rows = db.prepare(
+        `SELECT * FROM notifications WHERE (target = 'all' OR target = 'admins') ORDER BY created_at DESC LIMIT ?`
+      ).all(limit)
+    } else {
+      rows = db.prepare(
+        `SELECT * FROM notifications WHERE user_id = ? AND (target = 'all' OR target = 'users') ORDER BY created_at DESC LIMIT ?`
+      ).all(userId, limit)
+    }
+    const unread = (db.prepare(
+      'SELECT COUNT(*) as c FROM notifications WHERE read = 0 AND (user_id = ? OR user_id IS NULL) AND (target = ? OR target = ?)'
+    ).get(userId, isAdmin ? 'admins' : 'users', 'all') as any).c
+    res.json({ notifications: rows, unread })
+  } catch (err: any) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// POST /api/admin/notifications — send notification (admin)
+router.post('/notifications', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
+  try {
+    const { title, message, type = 'info', target = 'all', user_id = null } = req.body || {}
+    if (!title || !message) return res.status(400).json({ error: 'Title and message are required' })
+    const validTypes = ['info', 'warning', 'success', 'error', 'announcement']
+    const validTargets = ['all', 'users', 'admins']
+    if (!validTypes.includes(type)) return res.status(400).json({ error: 'Invalid notification type' })
+    if (!validTargets.includes(target)) return res.status(400).json({ error: 'Invalid target' })
+    const result = db.prepare(
+      'INSERT INTO notifications (title, message, type, target, user_id) VALUES (?, ?, ?, ?, ?)'
+    ).run(title.slice(0, 200), message.slice(0, 2000), type, target, user_id || null)
+    res.status(201).json({ id: result.lastInsertRowid, ok: true })
+  } catch (err: any) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// POST /api/admin/notifications/broadcast — broadcast to all users
+router.post('/notifications/broadcast', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
+  try {
+    const { title, message, type = 'announcement' } = req.body || {}
+    if (!title || !message) return res.status(400).json({ error: 'Title and message are required' })
+    const result = db.prepare(
+      'INSERT INTO notifications (title, message, type, target) VALUES (?, ?, ?, ?)'
+    ).run(title.slice(0, 200), message.slice(0, 2000), type, 'all')
+    res.status(201).json({ id: result.lastInsertRowid, ok: true })
+  } catch (err: any) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// PATCH /api/admin/notifications/:id/read — mark as read
+router.patch('/notifications/:id/read', authenticateToken, (req: AuthRequest, res: Response) => {
+  try {
+    db.prepare('UPDATE notifications SET read = 1 WHERE id = ?').run(req.params.id)
+    res.json({ ok: true })
+  } catch (err: any) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// DELETE /api/admin/notifications/:id — delete notification
+router.delete('/notifications/:id', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
+  try {
+    db.prepare('DELETE FROM notifications WHERE id = ?').run(req.params.id)
+    res.json({ ok: true })
+  } catch (err: any) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// POST /api/admin/notifications/clear-all — clear all notifications (admin)
+router.post('/notifications/clear-all', authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
+  try {
+    db.prepare('DELETE FROM notifications').run()
+    res.json({ ok: true })
+  } catch (err: any) {
     res.status(500).json({ error: err.message })
   }
 })

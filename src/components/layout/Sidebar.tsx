@@ -22,6 +22,7 @@ import {
   BarChart3,
   Coins,
   SlidersHorizontal,
+  Bell,
 
   ShoppingCart,
   Route,
@@ -124,7 +125,8 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
     { label: 'Activity Feed', href: '/admin/activity', icon: <Activity className="h-4 w-4" /> },
     { label: 'Credit Management', href: '/admin/credits', icon: <Coins className="h-4 w-4" /> },
     { label: 'System Settings', href: '/admin/settings', icon: <SlidersHorizontal className="h-4 w-4" /> },
-    { label: 'Server Status', href: '/admin/status', icon: <Activity className="h-4 w-4" /> },
+    { label: 'System Health', href: '/admin/health', icon: <Activity className="h-4 w-4" /> },
+    { label: 'Notifications', href: '/admin/notifications', icon: <Bell className="h-4 w-4" /> },
   ]
 
   const isActive = (href: string) => {

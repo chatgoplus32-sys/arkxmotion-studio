@@ -29,6 +29,8 @@ import AdminAnalyticsPage from '@/pages/AdminAnalytics'
 import AdminActivityPage from '@/pages/AdminActivity'
 import AdminCreditManagementPage from '@/pages/AdminCreditManagement'
 import AdminSystemSettingsPage from '@/pages/AdminSystemSettings'
+import AdminSystemHealthPage from '@/pages/AdminSystemHealth'
+import AdminNotificationsPage from '@/pages/AdminNotifications'
 import CreatePulseTopupPage from '@/pages/CreatePulseTopup'
 import BeliTokenPage from '@/pages/BeliToken'
 import LoginPage from '@/pages/Login'
@@ -102,6 +104,8 @@ export default function App() {
                       <Route path="/admin/activity" element={<AdminActivityPage />} />
                       <Route path="/admin/credits" element={<AdminCreditManagementPage />} />
                       <Route path="/admin/settings" element={<AdminSystemSettingsPage />} />
+                      <Route path="/admin/health" element={<AdminSystemHealthPage />} />
+                      <Route path="/admin/notifications" element={<AdminNotificationsPage />} />
                     </Routes>
                   </main>
                 </div>

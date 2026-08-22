@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { useProviderManager, ProviderId, HIDDEN_PROVIDERS } from '@/stores/providerManager'
 import { useAuthStore } from '@/stores/authStore'
+import ProviderStatusBar from '@/components/providers/ProviderStatusBar'
 import { checkRoboneoBalance } from '@/lib/roboneo'
 import { fetchLeonardoBalance } from '@/lib/leonardo'
 import { checkWeavyBalance } from '@/lib/weavy'
@@ -772,6 +773,8 @@ export default function ProvidersPage() {
         highlight="Manager"
         desc="Pusat kelola semua API key & token. Tersimpan terenkripsi di akun kamu — auto sync di semua perangkat."
       />
+
+      <ProviderStatusBar selectedProvider={selectedProvider} onSelect={setSelectedProvider} />
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <div className="w-full lg:w-[calc(66.666%-0.5rem)] relative">

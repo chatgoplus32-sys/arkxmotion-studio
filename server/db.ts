@@ -220,4 +220,22 @@ for (const p of providers) {
   }
 }
 
+// ── Notifications (admin → user broadcasts & system alerts) ─────────────
+db.exec(`
+  CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+    type TEXT NOT NULL DEFAULT 'info' CHECK(type IN ('info', 'warning', 'success', 'error', 'announcement')),
+    target TEXT NOT NULL DEFAULT 'all' CHECK(target IN ('all', 'users', 'admins')),
+    user_id INTEGER DEFAULT NULL,
+    read INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`)
+db.exec('CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id)')
+db.exec('CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(read)')
+db.exec('CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at)')
+
 export default db
