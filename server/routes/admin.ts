@@ -69,7 +69,8 @@ router.post('/users/:id/approve', authenticateToken, requireAdmin, (req: AuthReq
       return res.status(400).json({ error: 'Cannot approve admin users' })
     }
 
-    db.prepare('UPDATE users SET approved = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(id)
+    // Auto-verify email saat approve (admin trust = email valid)
+    db.prepare('UPDATE users SET approved = 1, email_verified = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(id)
 
     res.json({ message: `User ${user.email} approved successfully` })
   } catch (error) {
@@ -188,8 +189,8 @@ router.post('/membership/payments/:id/approve', authenticateToken, requireAdmin,
     if (payment.status === 'approved') return res.status(400).json({ error: 'Pembayaran ini sudah disetujui' })
 
     db.prepare("UPDATE membership_payments SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(id)
-    // Konfirmasi pembayaran = akun member aktif
-    db.prepare('UPDATE users SET approved = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(payment.user_id)
+    // Konfirmasi pembayaran = akun member aktif + auto-verify email
+    db.prepare('UPDATE users SET approved = 1, email_verified = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(payment.user_id)
 
     res.json({ ok: true, message: `Pembayaran ${payment.email} disetujui & akun diaktifkan` })
   } catch (error) {
@@ -395,7 +396,7 @@ router.post('/users/bulk', authenticateToken, requireAdmin, (req: AuthRequest, r
 
     const safePlaceholders = safeIds.map(() => '?').join(',')
     if (action === 'approve') {
-      db.prepare(`UPDATE users SET approved = 1, updated_at = CURRENT_TIMESTAMP WHERE id IN (${safePlaceholders})`).run(...safeIds)
+      db.prepare(`UPDATE users SET approved = 1, email_verified = 1, updated_at = CURRENT_TIMESTAMP WHERE id IN (${safePlaceholders})`).run(...safeIds)
       res.json({ message: `${safeIds.length} user(s) approved`, skipped: adminIds.size })
     } else {
       db.prepare(`DELETE FROM users WHERE id IN (${safePlaceholders})`).run(...safeIds)

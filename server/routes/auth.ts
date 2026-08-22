@@ -106,7 +106,7 @@ router.post('/register', async (req, res: Response) => {
     const paymentToken = generateToken()
 
     const result = db.prepare(
-      'INSERT INTO users (email, password, name, role, approved, email_verified, payment_token) VALUES (?, ?, ?, ?, 0, 0, ?)'
+      'INSERT INTO users (email, password, name, role, approved, email_verified, payment_token) VALUES (?, ?, ?, ?, 0, 1, ?)'
     ).run(email, hashedPassword, name, 'user', paymentToken)
 
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(result.lastInsertRowid) as UserRow
@@ -156,13 +156,8 @@ router.post('/login', async (req, res: Response) => {
       return res.status(401).json({ error: 'Invalid email or password' })
     }
 
-    if (user.role !== 'admin') {
-      if (!user.approved) {
-        return res.status(403).json({ error: 'Your account is pending admin approval' })
-      }
-      if (!user.email_verified) {
-        return res.status(403).json({ error: 'Email belum diverifikasi. Cek email kamu untuk link verifikasi.' })
-      }
+    if (user.role !== 'admin' && !user.approved) {
+      return res.status(403).json({ error: 'Your account is pending admin approval' })
     }
 
     const token = jwt.sign(

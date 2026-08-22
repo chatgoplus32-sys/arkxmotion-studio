@@ -192,13 +192,8 @@ async function handleLogin(req: VercelRequest, res: VercelResponse) {
     const validPassword = await bcrypt.compare(password, user.password)
     if (!validPassword) return res.status(401).json({ error: 'Invalid email or password' })
 
-    if (user.role !== 'admin') {
-      if (!user.approved) {
-        return res.status(403).json({ error: 'Your account is pending admin approval' })
-      }
-      if (!user.email_verified) {
-        return res.status(403).json({ error: 'Email belum diverifikasi. Cek email kamu untuk link verifikasi.' })
-      }
+    if (user.role !== 'admin' && !user.approved) {
+      return res.status(403).json({ error: 'Your account is pending admin approval' })
     }
 
     const token = jwt.sign(
