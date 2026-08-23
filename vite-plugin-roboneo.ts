@@ -605,6 +605,7 @@ export function roboneoProxyPlugin(): Plugin {
               method: 'POST',
               headers,
               body: JSON.stringify(submitBody),
+              signal: AbortSignal.timeout(45000),
             })
             const text = await r.text()
             console.log(`[oneover-proxy] generate → ${r.status}`)
@@ -624,6 +625,7 @@ export function roboneoProxyPlugin(): Plugin {
               method: 'POST',
               headers,
               body: JSON.stringify(pollData),
+              signal: AbortSignal.timeout(30000),
             })
             const text = await r.text()
             console.log(`[oneover-proxy] poll → ${r.status}`)

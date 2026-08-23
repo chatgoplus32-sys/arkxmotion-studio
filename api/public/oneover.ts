@@ -38,9 +38,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       try { data = JSON.parse(text) } catch { data = { error: text } }
       console.log(`[oneover-proxy] generate → ${r.status}`)
       return res.status(r.status).json(data)
-    }
-
-    if (action === 'poll') {
+    }      if (action === 'poll') {
       // POST /functions/v1/video-poll
       const { accessToken: _, action: __, pollBody, ...rest } = req.body || {}
       const body = pollBody || rest
@@ -48,6 +46,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(25000),
       })
       const text = await r.text()
       let data: any

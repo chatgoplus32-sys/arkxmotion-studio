@@ -35,18 +35,38 @@ function getSegments(req: VercelRequest): string[] {
   return urlPath.split('/').filter(Boolean)
 }
 
+function verifyUser(req: VercelRequest): { id: number; email: string; role: string } | null {
+  const authHeader = req.headers['authorization']
+  const token = authHeader && authHeader.split(' ')[1]
+  if (!token) return null
+  try {
+    return jwt.verify(token, JWT_SECRET) as { id: number; email: string; role: string }
+  } catch {
+    return null
+  }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   cors(res)
   if (req.method === 'OPTIONS') return res.status(200).end()
-  if (!verifyAdmin(req)) return res.status(403).json({ error: 'Admin access required' })
+
+  // Allow non-admin users for notification unread/mine endpoints
+  const segments = getSegments(req)
+  const isNotificationUserRoute = segments.includes('notifications') && (
+    segments.includes('unread') || segments.includes('mine')
+  )
+
+  if (isNotificationUserRoute) {
+    if (!verifyUser(req)) return res.status(401).json({ error: 'Authentication required' })
+  } else {
+    if (!verifyAdmin(req)) return res.status(403).json({ error: 'Admin access required' })
+  }
 
   try {
     // Ensure new columns exist
     const sql = getSql()
     try { await sql`ALTER TABLE tokens ADD COLUMN IF NOT EXISTS credits INTEGER DEFAULT NULL` } catch {}
     try { await sql`ALTER TABLE tokens ADD COLUMN IF NOT EXISTS credit_group TEXT DEFAULT NULL` } catch {}
-
-    const segments = getSegments(req)
 
     // /api/admin/topup/* routes
     if (segments.includes('topup') || segments.includes('topups')) {
@@ -71,6 +91,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // /api/admin/maintenance
     if (segments.includes('maintenance')) {
       return handleMaintenanceRoutes(req, res)
+    }
+
+    // /api/admin/analytics
+    if (segments.includes('analytics')) {
+      return handleAnalytics(req, res)
+    }
+
+    // /api/admin/activity
+    if (segments.includes('activity')) {
+      return handleActivity(req, res)
+    }
+
+    // /api/admin/credits/*
+    if (segments.includes('credits')) {
+      return handleCreditsRoutes(req, res, segments)
+    }
+
+    // /api/admin/settings
+    if (segments.includes('settings')) {
+      return handleSettingsRoutes(req, res)
+    }
+
+    // /api/admin/health
+    if (segments.includes('health')) {
+      return handleHealth(req, res)
+    }
+
+    // /api/admin/notifications/*
+    if (segments.includes('notifications')) {
+      return handleNotificationsRoutes(req, res, segments)
     }
 
     // /api/admin/* user management routes (existing)
@@ -840,5 +890,377 @@ async function handleResendVerification(res: VercelResponse, id: number) {
   } catch (err: any) {
     console.error('Resend verification error:', err)
     return res.status(500).json({ error: err.message || 'Internal server error' })
+  }
+}
+
+// ─── Analytics ─────────────────────────────────────────────────────
+
+async function handleAnalytics(_req: VercelRequest, res: VercelResponse) {
+  try {
+    const sql = getSql()
+    const [userCount, logCount, creditSum, completedCount, failedCount, pendingCount] = await Promise.all([
+      sql`SELECT COUNT(*) as c FROM users`,
+      sql`SELECT COUNT(*) as c FROM generation_logs`,
+      sql`SELECT COALESCE(SUM(credits),0) as c FROM generation_logs WHERE status = 'completed'`,
+      sql`SELECT COUNT(*) as c FROM generation_logs WHERE status = 'completed'`,
+      sql`SELECT COUNT(*) as c FROM generation_logs WHERE status = 'failed'`,
+      sql`SELECT COUNT(*) as c FROM generation_logs WHERE status = 'pending'`,
+    ])
+    const byProvider = await sql`SELECT provider, COUNT(*) as count, COALESCE(SUM(credits),0) as credits, COUNT(CASE WHEN status='completed' THEN 1 END) as completed FROM generation_logs GROUP BY provider ORDER BY count DESC`
+    const byModel = await sql`SELECT model, provider, COUNT(*) as count, COALESCE(SUM(credits),0) as credits FROM generation_logs GROUP BY model ORDER BY count DESC LIMIT 20`
+    const byDay = await sql`SELECT DATE(created_at) as day, COUNT(*) as count, COALESCE(SUM(credits),0) as credits FROM generation_logs GROUP BY DATE(created_at) ORDER BY day DESC LIMIT 30`
+    const topUsers = await sql`SELECT u.name, u.email, COUNT(g.id) as generations, COALESCE(SUM(g.credits),0) as credits FROM generation_logs g JOIN users u ON g.user_id = u.id GROUP BY g.user_id, u.name, u.email ORDER BY credits DESC LIMIT 10`
+
+    return res.status(200).json({
+      totalUsers: Number(userCount[0]?.c || 0),
+      totalLogs: Number(logCount[0]?.c || 0),
+      totalCredits: Number(creditSum[0]?.c || 0),
+      completedCount: Number(completedCount[0]?.c || 0),
+      failedCount: Number(failedCount[0]?.c || 0),
+      pendingCount: Number(pendingCount[0]?.c || 0),
+      byProvider, byModel, byDay, topUsers,
+    })
+  } catch (err: any) {
+    console.error('[admin-analytics] error:', err.message)
+    return res.status(500).json({ error: err.message })
+  }
+}
+
+// ─── Activity Feed ─────────────────────────────────────────────────
+
+async function handleActivity(req: VercelRequest, res: VercelResponse) {
+  try {
+    const sql = getSql()
+    const limit = Math.min(Number(req.query.limit) || 50, 200)
+    const provider = req.query.provider as string | undefined
+    const status = req.query.status as string | undefined
+    const userId = req.query.user_id as string | undefined
+
+    let logs: any[]
+    if (provider && status && userId) {
+      logs = await sql`SELECT g.*, u.name as user_name, u.email as user_email FROM generation_logs g LEFT JOIN users u ON g.user_id = u.id WHERE g.provider = ${provider} AND g.status = ${status} AND g.user_id = ${Number(userId)} ORDER BY g.created_at DESC LIMIT ${limit}`
+    } else if (provider && status) {
+      logs = await sql`SELECT g.*, u.name as user_name, u.email as user_email FROM generation_logs g LEFT JOIN users u ON g.user_id = u.id WHERE g.provider = ${provider} AND g.status = ${status} ORDER BY g.created_at DESC LIMIT ${limit}`
+    } else if (provider && userId) {
+      logs = await sql`SELECT g.*, u.name as user_name, u.email as user_email FROM generation_logs g LEFT JOIN users u ON g.user_id = u.id WHERE g.provider = ${provider} AND g.user_id = ${Number(userId)} ORDER BY g.created_at DESC LIMIT ${limit}`
+    } else if (status && userId) {
+      logs = await sql`SELECT g.*, u.name as user_name, u.email as user_email FROM generation_logs g LEFT JOIN users u ON g.user_id = u.id WHERE g.status = ${status} AND g.user_id = ${Number(userId)} ORDER BY g.created_at DESC LIMIT ${limit}`
+    } else if (provider) {
+      logs = await sql`SELECT g.*, u.name as user_name, u.email as user_email FROM generation_logs g LEFT JOIN users u ON g.user_id = u.id WHERE g.provider = ${provider} ORDER BY g.created_at DESC LIMIT ${limit}`
+    } else if (status) {
+      logs = await sql`SELECT g.*, u.name as user_name, u.email as user_email FROM generation_logs g LEFT JOIN users u ON g.user_id = u.id WHERE g.status = ${status} ORDER BY g.created_at DESC LIMIT ${limit}`
+    } else if (userId) {
+      logs = await sql`SELECT g.*, u.name as user_name, u.email as user_email FROM generation_logs g LEFT JOIN users u ON g.user_id = u.id WHERE g.user_id = ${Number(userId)} ORDER BY g.created_at DESC LIMIT ${limit}`
+    } else {
+      logs = await sql`SELECT g.*, u.name as user_name, u.email as user_email FROM generation_logs g LEFT JOIN users u ON g.user_id = u.id ORDER BY g.created_at DESC LIMIT ${limit}`
+    }
+    return res.status(200).json({ logs })
+  } catch (err: any) {
+    console.error('[admin-activity] error:', err.message)
+    return res.status(500).json({ error: err.message })
+  }
+}
+
+// ─── Credit Management Routes ──────────────────────────────────────
+
+async function handleCreditsRoutes(req: VercelRequest, res: VercelResponse, segments: string[]) {
+  try {
+    const sql = getSql()
+
+    // GET /api/admin/credits
+    if (req.method === 'GET' && segments[segments.length - 1] === 'credits') {
+      const tokens = await sql`SELECT id, provider, name, credits, credit_group, status, created_at, updated_at FROM tokens ORDER BY provider, name`
+      const summary = await sql`SELECT provider, COUNT(*) as total, SUM(CASE WHEN status='available' THEN 1 ELSE 0 END) as available, COALESCE(SUM(CASE WHEN credits IS NOT NULL THEN credits ELSE 0 END), 0) as total_credits FROM tokens GROUP BY provider ORDER BY provider`
+      return res.status(200).json({ tokens, summary })
+    }
+
+    // GET /api/admin/credits/export
+    if (req.method === 'GET' && segments.includes('export')) {
+      const tokens = await sql`SELECT id, provider, name, credits, credit_group, status, created_at FROM tokens ORDER BY provider, name`
+      const header = 'ID,Provider,Name,Credits,Credit Group,Status,Created At'
+      const rows = tokens.map((t: any) => `${t.id},${t.provider},"${t.name}",${t.credits ?? ''},${t.credit_group || ''},${t.status},${t.created_at}`)
+      res.setHeader('Content-Type', 'text/csv')
+      res.setHeader('Content-Disposition', `attachment; filename="credits-${new Date().toISOString().slice(0, 10)}.csv"`)
+      return res.status(200).send([header, ...rows].join('\n'))
+    }
+
+    // PATCH /api/admin/credits/:id
+    if (req.method === 'PATCH' && segments[segments.length - 1] !== 'credits') {
+      const tokenId = segments[segments.length - 1]
+      const { credits, credit_group } = req.body || {}
+      if (credits !== undefined) {
+        await sql`UPDATE tokens SET credits = ${credits}, updated_at = CURRENT_TIMESTAMP WHERE id = ${tokenId}`
+      }
+      if (credit_group !== undefined) {
+        await sql`UPDATE tokens SET credit_group = ${credit_group || null}, updated_at = CURRENT_TIMESTAMP WHERE id = ${tokenId}`
+      }
+      return res.status(200).json({ ok: true, message: 'Token updated' })
+    }
+
+    // POST /api/admin/credits/bulk
+    if (req.method === 'POST' && segments.includes('bulk')) {
+      const { ids, credits } = req.body || {}
+      if (!Array.isArray(ids) || ids.length === 0 || credits === undefined) {
+        return res.status(400).json({ error: 'Invalid ids or credits' })
+      }
+      for (const id of ids) {
+        await sql`UPDATE tokens SET credits = ${credits}, updated_at = CURRENT_TIMESTAMP WHERE id = ${id}`
+      }
+      return res.status(200).json({ ok: true, message: `${ids.length} token(s) credits set to ${credits}` })
+    }
+
+    // POST /api/admin/credits/sync
+    if (req.method === 'POST' && segments.includes('sync')) {
+      const { provider, updates } = req.body || {}
+      if (!provider || !Array.isArray(updates) || updates.length === 0) {
+        return res.status(400).json({ error: 'Missing provider or updates' })
+      }
+      const tokens = await sql`SELECT id FROM tokens WHERE provider = ${provider} ORDER BY id`
+      let synced = 0
+      for (let i = 0; i < updates.length && i < tokens.length; i++) {
+        if (typeof updates[i].credits === 'number') {
+          await sql`UPDATE tokens SET credits = ${updates[i].credits}, updated_at = CURRENT_TIMESTAMP WHERE id = ${tokens[i].id}`
+          synced++
+        }
+      }
+      return res.status(200).json({ ok: true, synced })
+    }
+
+    // POST /api/admin/credits/reset
+    if (req.method === 'POST' && segments.includes('reset')) {
+      await sql`UPDATE tokens SET credits = 0, updated_at = CURRENT_TIMESTAMP`
+      return res.status(200).json({ ok: true, message: 'All credits reset to 0' })
+    }
+
+    return res.status(404).json({ error: 'Credits route not found' })
+  } catch (err: any) {
+    console.error('[admin-credits] error:', err.message)
+    return res.status(500).json({ error: err.message })
+  }
+}
+
+// ─── System Settings Routes ────────────────────────────────────────
+
+async function handleSettingsRoutes(req: VercelRequest, res: VercelResponse) {
+  try {
+    const sql = getSql()
+
+    // Ensure tables exist
+    await sql`CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`
+    await sql`CREATE TABLE IF NOT EXISTS provider_maintenance (id SERIAL PRIMARY KEY, provider TEXT UNIQUE NOT NULL, is_maintenance INTEGER NOT NULL DEFAULT 0, message TEXT NOT NULL DEFAULT '', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`
+
+    // Seed providers
+    const providers = ['weavy', 'wavespeed', 'magnific', 'roboneo', 'createpulse', 'framia', 'firefly', 'leonardo', 'gemini', 'openai', 'shotstack', 'creatomate']
+    for (const p of providers) {
+      await sql`INSERT INTO provider_maintenance (provider, is_maintenance, message) VALUES (${p}, 0, '') ON CONFLICT (provider) DO NOTHING`
+    }
+
+    // GET /api/admin/settings
+    if (req.method === 'GET') {
+      const rows = await sql`SELECT key, value, updated_at FROM app_settings ORDER BY key`
+      const settings: Record<string, string> = {}
+      rows.forEach((r: any) => { settings[r.key] = r.value })
+      const maintenance = await sql`SELECT provider, is_maintenance, message FROM provider_maintenance ORDER BY provider`
+      return res.status(200).json({ settings, maintenance })
+    }
+
+    // PUT /api/admin/settings
+    if (req.method === 'PUT') {
+      const { settings, maintenance } = req.body || {}
+      if (settings) {
+        for (const [key, value] of Object.entries(settings)) {
+          await sql`INSERT INTO app_settings (key, value, updated_at) VALUES (${key}, ${String(value)}, CURRENT_TIMESTAMP) ON CONFLICT (key) DO UPDATE SET value = ${String(value)}, updated_at = CURRENT_TIMESTAMP`
+        }
+      }
+      if (maintenance && Array.isArray(maintenance)) {
+        for (const m of maintenance) {
+          await sql`UPDATE provider_maintenance SET is_maintenance = ${m.is_maintenance ? 1 : 0}, message = ${m.message || ''} WHERE provider = ${m.provider}`
+        }
+      }
+      return res.status(200).json({ ok: true, message: 'Settings updated' })
+    }
+
+    return res.status(405).json({ error: 'Method not allowed' })
+  } catch (err: any) {
+    console.error('[admin-settings] error:', err.message)
+    return res.status(500).json({ error: err.message })
+  }
+}
+
+// ─── System Health ─────────────────────────────────────────────────
+
+async function handleHealth(_req: VercelRequest, res: VercelResponse) {
+  try {
+    const sql = getSql()
+    const upSec = Math.round(process.uptime())
+    const memTotal = (process as any).memoryUsage?.() || { heapTotal: 0, heapUsed: 0, rss: 0 }
+    const rss = memTotal.rss || 0
+
+    const [totalUsers, totalTokens, totalLogs, recentLogs, pendingPayments, pendingUsers] = await Promise.all([
+      sql`SELECT COUNT(*) as c FROM users`,
+      sql`SELECT COUNT(*) as c FROM tokens`,
+      sql`SELECT COUNT(*) as c FROM generation_logs`,
+      sql`SELECT COUNT(*) as c FROM generation_logs WHERE created_at >= NOW() - INTERVAL '24 hours'`,
+      sql`SELECT COUNT(*) as c FROM membership_payments WHERE status = 'pending'`,
+      sql`SELECT COUNT(*) as c FROM users WHERE approved = 0 AND role != 'admin'`,
+    ])
+
+    let maintenanceProviders: string[] = []
+    try {
+      const maint = await sql`SELECT provider FROM provider_maintenance WHERE is_maintenance = 1`
+      maintenanceProviders = maint.map((m: any) => m.provider)
+    } catch {}
+
+    return res.status(200).json({
+      server: {
+        uptime: upSec,
+        uptimeFormatted: `${Math.floor(upSec / 86400)}d ${Math.floor((upSec % 86400) / 3600)}h ${Math.floor((upSec % 3600) / 60)}m`,
+        pid: process.pid,
+        nodeVersion: process.version,
+        platform: process.platform,
+        arch: process.arch,
+      },
+      memory: {
+        total: rss,
+        used: rss,
+        free: 0,
+        percentUsed: 0,
+        totalFormatted: `${Math.round(rss / 1024 / 1024)} MB (RSS)`,
+        usedFormatted: `${Math.round(rss / 1024 / 1024)} MB (RSS)`,
+      },
+      cpu: {
+        model: 'Serverless',
+        cores: 1,
+        loadAvg: [0, 0, 0],
+      },
+      database: {
+        size: 0,
+        sizeFormatted: 'Neon Postgres (serverless)',
+        totalUsers: Number(totalUsers[0]?.c || 0),
+        totalTokens: Number(totalTokens[0]?.c || 0),
+        totalLogs: Number(totalLogs[0]?.c || 0),
+        recentLogs24h: Number(recentLogs[0]?.c || 0),
+      },
+      queue: {
+        pendingPayments: Number(pendingPayments[0]?.c || 0),
+        pendingUsers: Number(pendingUsers[0]?.c || 0),
+        maintenanceProviders,
+      },
+    })
+  } catch (err: any) {
+    console.error('[admin-health] error:', err.message)
+    return res.status(500).json({ error: err.message })
+  }
+}
+
+// ─── Notifications Routes ──────────────────────────────────────────
+
+async function handleNotificationsRoutes(req: VercelRequest, res: VercelResponse, segments: string[]) {
+  try {
+    const sql = getSql()
+    const last = segments[segments.length - 1]
+
+    // Ensure table exists
+    await sql`CREATE TABLE IF NOT EXISTS notifications (
+      id SERIAL PRIMARY KEY,
+      title TEXT NOT NULL,
+      message TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'info',
+      target TEXT NOT NULL DEFAULT 'all',
+      user_id INTEGER DEFAULT NULL,
+      read INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`
+
+    // GET /api/admin/notifications/unread
+    if (req.method === 'GET' && last === 'unread') {
+      const authHeader = req.headers.authorization || ''
+      const token = authHeader.replace(/^Bearer\s+/i, '')
+      let userId = 0
+      let isAdmin = false
+      try {
+        const decoded = jwt.verify(token, JWT_SECRET) as any
+        userId = decoded.id
+        isAdmin = decoded.role === 'admin'
+      } catch {}
+      let count: any[]
+      if (isAdmin) {
+        count = await sql`SELECT COUNT(*) as c FROM notifications WHERE read = 0 AND (target = 'all' OR target = 'admins')`
+      } else {
+        count = await sql`SELECT COUNT(*) as c FROM notifications WHERE read = 0 AND user_id = ${userId} AND (target = 'all' OR target = 'users')`
+      }
+      return res.status(200).json({ count: Number(count[0]?.c || 0) })
+    }
+
+    // GET /api/admin/notifications/mine
+    if (req.method === 'GET' && last === 'mine') {
+      const authHeader = req.headers.authorization || ''
+      const token = authHeader.replace(/^Bearer\s+/i, '')
+      let userId = 0
+      let isAdmin = false
+      try {
+        const decoded = jwt.verify(token, JWT_SECRET) as any
+        userId = decoded.id
+        isAdmin = decoded.role === 'admin'
+      } catch {}
+      const limit = Math.min(Number(req.query.limit) || 20, 100)
+      let rows: any[]
+      if (isAdmin) {
+        rows = await sql`SELECT * FROM notifications WHERE (target = 'all' OR target = 'admins') ORDER BY created_at DESC LIMIT ${limit}`
+      } else {
+        rows = await sql`SELECT * FROM notifications WHERE user_id = ${userId} AND (target = 'all' OR target = 'users') ORDER BY created_at DESC LIMIT ${limit}`
+      }
+      const unread = await sql`SELECT COUNT(*) as c FROM notifications WHERE read = 0 AND (target = ${isAdmin ? 'admins' : 'users'} OR target = 'all')`
+      return res.status(200).json({ notifications: rows, unread: Number(unread[0]?.c || 0) })
+    }
+
+    // POST /api/admin/notifications/clear-all
+    if (req.method === 'POST' && last === 'clear-all') {
+      await sql`DELETE FROM notifications`
+      return res.status(200).json({ ok: true })
+    }
+
+    // POST /api/admin/notifications/broadcast
+    if (req.method === 'POST' && last === 'broadcast') {
+      const { title, message, type = 'announcement' } = req.body || {}
+      if (!title || !message) return res.status(400).json({ error: 'Title and message are required' })
+      const result = await sql`INSERT INTO notifications (title, message, type, target) VALUES (${title.slice(0, 200)}, ${message.slice(0, 2000)}, ${type}, 'all') RETURNING id`
+      return res.status(201).json({ id: result[0]?.id, ok: true })
+    }
+
+    // PATCH /api/admin/notifications/:id/read
+    if (req.method === 'PATCH' && last === 'read') {
+      const notifId = segments[segments.length - 2]
+      await sql`UPDATE notifications SET read = 1 WHERE id = ${notifId}`
+      return res.status(200).json({ ok: true })
+    }
+
+    // DELETE /api/admin/notifications/:id
+    if (req.method === 'DELETE' && last !== 'notifications' && last !== 'unread' && last !== 'mine' && last !== 'clear-all' && last !== 'broadcast') {
+      await sql`DELETE FROM notifications WHERE id = ${last}`
+      return res.status(200).json({ ok: true })
+    }
+
+    // GET /api/admin/notifications — list all
+    if (req.method === 'GET' && last === 'notifications') {
+      const limit = Math.min(Number(req.query.limit) || 50, 200)
+      const offset = Number(req.query.offset) || 0
+      const rows = await sql`SELECT n.*, u.email as user_email FROM notifications n LEFT JOIN users u ON n.user_id = u.id ORDER BY n.created_at DESC LIMIT ${limit} OFFSET ${offset}`
+      const total = await sql`SELECT COUNT(*) as c FROM notifications`
+      return res.status(200).json({ notifications: rows, total: Number(total[0]?.c || 0) })
+    }
+
+    // POST /api/admin/notifications — send
+    if (req.method === 'POST' && last === 'notifications') {
+      const { title, message, type = 'info', target = 'all', user_id = null } = req.body || {}
+      if (!title || !message) return res.status(400).json({ error: 'Title and message are required' })
+      const result = await sql`INSERT INTO notifications (title, message, type, target, user_id) VALUES (${title.slice(0, 200)}, ${message.slice(0, 2000)}, ${type}, ${target}, ${user_id || null}) RETURNING id`
+      return res.status(201).json({ id: result[0]?.id, ok: true })
+    }
+
+    return res.status(404).json({ error: 'Notification route not found' })
+  } catch (err: any) {
+    console.error('[admin-notifications] error:', err.message)
+    return res.status(500).json({ error: err.message })
   }
 }
