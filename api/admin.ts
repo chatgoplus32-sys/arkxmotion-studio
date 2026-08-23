@@ -911,7 +911,7 @@ async function handleAnalytics(_req: VercelRequest, res: VercelResponse) {
       sql`SELECT COUNT(*) as c FROM generation_logs WHERE status = 'pending'`,
     ])
     const byProvider = await sql`SELECT provider, COUNT(*) as count, COALESCE(SUM(credits),0) as credits, COUNT(CASE WHEN status='completed' THEN 1 END) as completed FROM generation_logs GROUP BY provider ORDER BY count DESC`
-    const byModel = await sql`SELECT model, provider, COUNT(*) as count, COALESCE(SUM(credits),0) as credits FROM generation_logs GROUP BY model ORDER BY count DESC LIMIT 20`
+    const byModel = await sql`SELECT model, provider, COUNT(*) as count, COALESCE(SUM(credits),0) as credits FROM generation_logs GROUP BY model, provider ORDER BY count DESC LIMIT 20`
     const byDay = await sql`SELECT DATE(created_at) as day, COUNT(*) as count, COALESCE(SUM(credits),0) as credits FROM generation_logs GROUP BY DATE(created_at) ORDER BY day DESC LIMIT 30`
     const topUsers = await sql`SELECT u.name, u.email, COUNT(g.id) as generations, COALESCE(SUM(g.credits),0) as credits FROM generation_logs g JOIN users u ON g.user_id = u.id GROUP BY g.user_id, u.name, u.email ORDER BY credits DESC LIMIT 10`
 
