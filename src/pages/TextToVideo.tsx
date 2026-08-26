@@ -537,7 +537,7 @@ export default function TextToImagePage() {
               {referenceImages.length < 6 && (
                 <label className="w-20 h-20 flex flex-col items-center justify-center rounded-lg border border-dashed border-border hover:border-primary cursor-pointer transition-colors">
                   <Image className="h-6 w-6 text-muted-foreground" />
-                  <span className="text-[10px] text-muted-foreground mt-1">Tambah</span>
+                  <span className="text-[12px] text-muted-foreground mt-1">Tambah</span>
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -696,7 +696,7 @@ export default function TextToImagePage() {
 
           <div className="flex items-center gap-2">
             <Settings2 className="h-4 w-4 text-primary" />
-            <div className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
+            <div className="text-[12px] font-mono uppercase tracking-widest text-muted-foreground">
               Pengaturan Provider
             </div>
           </div>
@@ -709,7 +709,7 @@ export default function TextToImagePage() {
           <MaintenanceBanner providerId={provider} />
 
           <div className="rounded-lg border border-border bg-black/40 p-3 space-y-2">
-            <div className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
+            <div className="text-[12px] font-mono uppercase tracking-widest text-muted-foreground">
               Info Model
             </div>
             <div className="text-xs text-foreground/90">
@@ -725,7 +725,7 @@ export default function TextToImagePage() {
           </div>
 
           {/* Log Panel */}
-          <div className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
+          <div className="text-[12px] font-mono uppercase tracking-widest text-muted-foreground">
             Log Proses
           </div>
           <div className="rounded-lg border border-border bg-black/40 p-2 h-48 overflow-auto font-mono text-[11px] leading-relaxed">
@@ -783,7 +783,7 @@ export default function TextToImagePage() {
                     <Trash2 className="h-3 w-3" />
                   </button>
                 </div>
-                <div className="px-2 pb-2 text-[10px] text-muted-foreground truncate">
+                <div className="px-2 pb-2 text-[12px] text-muted-foreground truncate">
                   {result.model} · {result.provider}
                 </div>
               </div>

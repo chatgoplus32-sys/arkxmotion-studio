@@ -474,7 +474,7 @@ export default function UpscalerPage() {
                     <input type="range" min={2} max={8} step={1} value={leoFactor}
                       onChange={e => { const v = Number(e.target.value); setLeoFactor(v === 7 ? 8 : v) }}
                       disabled={running} className="w-full accent-primary" />
-                    <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
+                    <div className="flex justify-between text-[12px] text-muted-foreground mt-1">
                       <span>2x</span><span>3x</span><span>4x</span><span>5x</span><span>6x</span><span>8x</span>
                     </div>
                     <label className="flex items-center gap-2 text-sm text-foreground/90">
@@ -549,7 +549,7 @@ export default function UpscalerPage() {
                           </div>
                         )}
                       </div>
-                      <div className="p-1.5 text-[10px] leading-tight">
+                      <div className="p-1.5 text-[12px] leading-tight">
                         <div className="truncate text-foreground/90">#{idx + 1} {row.file.name}</div>
                         {row.error ? (
                           <div className="truncate text-destructive">{row.error}</div>

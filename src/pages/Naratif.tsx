@@ -131,7 +131,7 @@ export default function NaratifPage() {
                 <div className="flex flex-col lg:flex-row gap-4">
                   <div className="md:w-56 shrink-0 flex flex-col gap-2">
                     <div className="flex items-center justify-between">
-                      <span className="rounded-full px-2 py-0.5 text-[10px] font-mono bg-primary/15 text-primary">
+                      <span className="rounded-full px-2 py-0.5 text-[12px] font-mono bg-primary/15 text-primary">
                         Scene #{scene.idx}
                       </span>
                       <span className="text-xs text-muted-foreground">

@@ -68,10 +68,13 @@ export async function compressVideoFFmpeg(
   maxBytes: number = 4 * 1024 * 1024,
   onProgress?: (msg: string, pct?: number) => void
 ): Promise<File> {
-  if (file.size <= maxBytes) {
-    console.log(`[ffmpeg] ${formatSize(file.size)} <= ${formatSize(maxBytes)}, skip`)
+  const SMART_FAST_TARGET = 900 * 1024
+  const effectiveMax = file.size > SMART_FAST_TARGET && file.size <= maxBytes ? SMART_FAST_TARGET : maxBytes
+  if (file.size <= effectiveMax) {
+    console.log(`[ffmpeg] ${formatSize(file.size)} <= ${formatSize(effectiveMax)}, skip`)
     return file
   }
+  if (effectiveMax !== maxBytes) console.log(`[ffmpeg] Smart fast target ${formatSize(effectiveMax)} (original ${formatSize(file.size)} >0.9MB) → compress 1.3MB→~500KB`)
 
   onProgress?.('Loading FFmpeg encoder...')
   const ffmpeg = await getFFmpeg()
@@ -93,7 +96,8 @@ export async function compressVideoFFmpeg(
     for (let i = 0; i < presets.length; i++) {
       const p = presets[i]
       const outputFile = `out_${i}.mp4`
-      onProgress?.(`Compressing (pass ${i + 1}/${presets.length}, ${p.height}p)...`, Math.round((i / presets.length) * 100))
+      const need = effectiveMax !== maxBytes ? ` → target ${formatSize(effectiveMax)}` : ''
+      onProgress?.(`Compressing (pass ${i + 1}/${presets.length}, ${p.height}p${need})...`, Math.round((i / presets.length) * 100))
 
       await ffmpeg.exec([
         '-i', inputFile,
@@ -115,7 +119,7 @@ export async function compressVideoFFmpeg(
       const byteLength = dataBytes.byteLength
       console.log(`[ffmpeg] pass ${i + 1}: ${p.height}p crf=${p.crf} → ${formatSize(byteLength)}`)
 
-      if (byteLength <= maxBytes) {
+      if (byteLength <= effectiveMax) {
         onProgress?.(`Done — ${formatSize(byteLength)}`, 100)
         const buf = new ArrayBuffer(byteLength)
         new Uint8Array(buf).set(dataBytes)
@@ -124,7 +128,7 @@ export async function compressVideoFFmpeg(
       }
     }
 
-    throw new Error(`Video still > ${formatSize(maxBytes)} after maximum compression. Try shortening the video.`)
+    throw new Error(`Video still > ${formatSize(effectiveMax)} after maximum compression. Try shortening the video.`)
   } finally {
     await ffmpeg.deleteFile(inputFile).catch(() => {})
   }

@@ -317,7 +317,7 @@ export default function RoutingProviderPage() {
           <Save className="h-3.5 w-3.5" />
           Simpan Perubahan
           {hasChanges && (
-            <Badge className="ml-1 bg-[#0a0a0a]/20 text-[#0a0a0a] text-[10px]">
+            <Badge className="ml-1 bg-[#0a0a0a]/20 text-[#0a0a0a] text-[12px]">
               {Object.keys(tempRouting).length}
             </Badge>
           )}
@@ -331,12 +331,12 @@ export default function RoutingProviderPage() {
           Reset Default
         </Button>
         <div className="ml-auto flex items-center gap-2">
-          <span className="text-[10px] text-[#a0a0a0]">Quick set all ke:</span>
+          <span className="text-[12px] text-[#a0a0a0]">Quick set all ke:</span>
           {['weavy', 'roboneo', 'framia', 'leonardo'].map((pid) => (
             <button
               key={pid}
               onClick={() => handleSetAllToProvider(pid as ProviderId)}
-              className="inline-flex items-center gap-1 rounded-full border border-[#2a2a2a] bg-[#141414] px-2 py-1 text-[10px] text-[#a0a0a0] hover:border-[#d4a017]/50 hover:text-[#f5f5f5] transition"
+              className="inline-flex items-center gap-1 rounded-full border border-[#2a2a2a] bg-[#141414] px-2 py-1 text-[12px] text-[#a0a0a0] hover:border-[#d4a017]/50 hover:text-[#f5f5f5] transition"
               title={`Set semua workflow ke ${PROVIDER_CONFIGS[pid as ProviderId].name}`}
             >
               <span>{PROVIDER_ICONS[pid]}</span>
@@ -380,7 +380,7 @@ export default function RoutingProviderPage() {
                   <div className="text-[11px] text-[#a0a0a0]">{categoryConfig.description}</div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Badge className="bg-[#1a1a1a] text-[#a0a0a0] border-[#2a2a2a] text-[10px]">
+                  <Badge className="bg-[#1a1a1a] text-[#a0a0a0] border-[#2a2a2a] text-[12px]">
                     {workflows.length} workflows
                   </Badge>
                   {isExpanded ? (
@@ -410,7 +410,7 @@ export default function RoutingProviderPage() {
                               <span className="text-[#f5f5f5]">{workflow.icon}</span>
                               <span className="text-sm font-medium text-[#f5f5f5]">{workflow.name}</span>
                               {isChanged && (
-                                <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/30 text-[9px]">
+                                <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/30 text-[11px]">
                                   changed
                                 </Badge>
                               )}
@@ -421,7 +421,7 @@ export default function RoutingProviderPage() {
                           {/* Current Provider */}
                           <div className="flex items-center gap-2">
                             <div className="text-right">
-                              <div className="text-[10px] text-[#a0a0a0]">Active Provider</div>
+                              <div className="text-[12px] text-[#a0a0a0]">Active Provider</div>
                               <div className="flex items-center gap-1.5">
                                 <span
                                   className="text-xs font-semibold"
@@ -490,20 +490,20 @@ export default function RoutingProviderPage() {
                                       )}
                                     </div>
                                     <div className="flex items-center gap-2 mt-0.5">
-                                      <span className="text-[10px] text-[#a0a0a0]">
+                                      <span className="text-[12px] text-[#a0a0a0]">
                                         {pkCount} key{pkCount !== 1 ? 's' : ''}
                                       </span>
                                       {status === 'active' && !isMaint && (
-                                        <span className="text-[9px] text-emerald-400">● active</span>
+                                        <span className="text-[11px] text-emerald-400">● active</span>
                                       )}
                                       {status === 'no-keys' && (
-                                        <span className="text-[9px] text-rose-400">● no keys</span>
+                                        <span className="text-[11px] text-rose-400">● no keys</span>
                                       )}
                                       {status === 'limited' && (
-                                        <span className="text-[9px] text-amber-400">● limited</span>
+                                        <span className="text-[11px] text-amber-400">● limited</span>
                                       )}
                                       {isMaint && (
-                                        <span className="text-[9px] text-orange-400">● maintenance</span>
+                                        <span className="text-[11px] text-orange-400">● maintenance</span>
                                       )}
                                     </div>
                                   </div>
@@ -515,7 +515,7 @@ export default function RoutingProviderPage() {
 
                         {/* Fallback Info */}
                         {workflow.fallbackProviders && workflow.fallbackProviders.length > 0 && !isEditing && (
-                          <div className="mt-2 ml-6 flex items-center gap-1.5 text-[10px] text-[#a0a0a0]">
+                          <div className="mt-2 ml-6 flex items-center gap-1.5 text-[12px] text-[#a0a0a0]">
                             <ArrowUpDown className="h-3 w-3" />
                             <span>Fallback:</span>
                             {workflow.fallbackProviders.map((fp, i) => (
@@ -579,11 +579,11 @@ export default function RoutingProviderPage() {
                     )}
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] text-[#a0a0a0]">
+                    <span className="text-[12px] text-[#a0a0a0]">
                       {usageCount} workflow{usageCount !== 1 ? 's' : ''}
                     </span>
-                    <span className="text-[10px] text-[#a0a0a0]">·</span>
-                    <span className="text-[10px] text-[#a0a0a0]">
+                    <span className="text-[12px] text-[#a0a0a0]">·</span>
+                    <span className="text-[12px] text-[#a0a0a0]">
                       {pkCount} key{pkCount !== 1 ? 's' : ''}
                     </span>
                   </div>

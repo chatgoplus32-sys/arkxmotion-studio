@@ -93,7 +93,7 @@ export default function AdminAnalyticsPage() {
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
           Refresh
         </Button>
-        {lastFetch && <span className="text-[10px] text-muted-foreground">Terakhir: {lastFetch}</span>}
+        {lastFetch && <span className="text-[12px] text-muted-foreground">Terakhir: {lastFetch}</span>}
       </div>
 
       {/* Overview Cards */}
@@ -116,7 +116,7 @@ export default function AdminAnalyticsPage() {
                   <span className="text-lg">{PROVIDER_ICONS[p.provider] || '🔹'}</span>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium capitalize">{p.provider}</div>
-                    <div className="text-[10px] text-muted-foreground">
+                    <div className="text-[12px] text-muted-foreground">
                       {p.completed}/{p.count} completed · {p.credits.toLocaleString()} credits
                     </div>
                   </div>
@@ -143,11 +143,11 @@ export default function AdminAnalyticsPage() {
                   <span className="text-xs font-mono text-muted-foreground w-5">{i + 1}</span>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium truncate">{m.model}</div>
-                    <div className="text-[10px] text-muted-foreground capitalize">{m.provider}</div>
+                    <div className="text-[12px] text-muted-foreground capitalize">{m.provider}</div>
                   </div>
                   <div className="text-right">
                     <div className="text-xs font-bold">{m.count}</div>
-                    <div className="text-[10px] text-muted-foreground">{m.credits} cr</div>
+                    <div className="text-[12px] text-muted-foreground">{m.credits} cr</div>
                   </div>
                 </div>
               ))}
@@ -171,7 +171,7 @@ export default function AdminAnalyticsPage() {
                     />
                   </div>
                   <span className="text-xs font-medium w-8 text-right">{d.count}</span>
-                  <span className="text-[10px] text-muted-foreground w-16 text-right">{d.credits} cr</span>
+                  <span className="text-[12px] text-muted-foreground w-16 text-right">{d.credits} cr</span>
                 </div>
               ))}
             </div>
@@ -189,11 +189,11 @@ export default function AdminAnalyticsPage() {
                   <span className="text-lg">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}</span>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium truncate">{u.name || u.email}</div>
-                    <div className="text-[10px] text-muted-foreground truncate">{u.email}</div>
+                    <div className="text-[12px] text-muted-foreground truncate">{u.email}</div>
                   </div>
                   <div className="text-right">
                     <div className="text-xs font-bold">{u.generations}</div>
-                    <div className="text-[10px] text-muted-foreground">{u.credits.toLocaleString()} cr</div>
+                    <div className="text-[12px] text-muted-foreground">{u.credits.toLocaleString()} cr</div>
                   </div>
                 </div>
               ))}

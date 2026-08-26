@@ -62,15 +62,15 @@ export default function ProviderStatusBar({ selectedProvider, onSelect }: Props)
     <div className="mb-4 p-3 rounded-xl border border-border/50 bg-card/30">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
-          <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">Provider Status</span>
+          <span className="text-[12px] font-mono uppercase tracking-widest text-muted-foreground">Provider Status</span>
           <button onClick={refresh} className="p-1 rounded-md hover:bg-accent transition" title="Refresh status">
             <RefreshCw className={`h-3 w-3 text-muted-foreground ${loading ? 'animate-spin' : ''}`} />
           </button>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-400" /><span className="text-[10px] text-muted-foreground">{online}</span></div>
-          <div className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-400" /><span className="text-[10px] text-muted-foreground">{busy}</span></div>
-          <div className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-400" /><span className="text-[10px] text-muted-foreground">{down}</span></div>
+          <div className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-400" /><span className="text-[12px] text-muted-foreground">{online}</span></div>
+          <div className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-400" /><span className="text-[12px] text-muted-foreground">{busy}</span></div>
+          <div className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-400" /><span className="text-[12px] text-muted-foreground">{down}</span></div>
         </div>
       </div>
       <div className="flex flex-wrap gap-1.5">
@@ -85,13 +85,13 @@ export default function ProviderStatusBar({ selectedProvider, onSelect }: Props)
             <button
               key={provider}
               onClick={() => onSelect(provider)}
-              className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-medium transition border ${isActive ? 'border-primary/50 bg-primary/10 text-primary' : 'border-border/50 hover:bg-accent/50 text-muted-foreground hover:text-foreground'}`}
+              className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[12px] font-medium transition border ${isActive ? 'border-primary/50 bg-primary/10 text-primary' : 'border-border/50 hover:bg-accent/50 text-muted-foreground hover:text-foreground'}`}
             >
               <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${dotColor}`} style={{ boxShadow: `0 0 4px ${color}66` }} />
               <span className="capitalize truncate">{provider}</span>
-              {latencyMs != null && <span className="text-[9px] opacity-60">{latencyMs}ms</span>}
-              {totalKeys > 0 && <span className="text-[9px] opacity-50">{activeKeys}/{totalKeys}</span>}
-              {totalCredits > 0 && <span className="text-[9px] text-emerald-400/70">{totalCredits}cr</span>}
+              {latencyMs != null && <span className="text-[11px] opacity-60">{latencyMs}ms</span>}
+              {totalKeys > 0 && <span className="text-[11px] opacity-50">{activeKeys}/{totalKeys}</span>}
+              {totalCredits > 0 && <span className="text-[11px] text-emerald-400/70">{totalCredits}cr</span>}
             </button>
           )
         })}

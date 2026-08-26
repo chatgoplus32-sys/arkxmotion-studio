@@ -1,11 +1,10 @@
 import { useState, useRef, useCallback, useEffect, useMemo, forwardRef } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
-import { Section, Button, Textarea, Select, Label, EmptyState, QuickRoutingDialog, BalanceBadge, getActiveProviderForCap } from '@/components/ui'
+import { Section, Button, Textarea, Select, Label, EmptyState, QuickRoutingDialog, BalanceBadge, getActiveProviderForCap, Checkbox } from '@/components/ui'
 import { useProviderManager, HIDDEN_PROVIDERS, type ProviderId } from '@/stores'
 import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
 import { useToastStore } from '@/stores/toastStore'
-// @ts-ignore — motion control removed, imports kept for dead code paths
-import { uploadToCatbox, compressVideo, normalizeImage, getVideoDurationFromFile, submitMotionControl, pollRoboneoI2V, checkRoboneoBalance, noteRoboneoMotionChargeFailure, isRoboneoBalanceError, isRoboneoBusyError } from '@/lib/roboneo'
+import { uploadToCatbox, compressVideo, normalizeImage, getVideoDurationFromFile, submitMotionControl, submitGoogleOmni, pollRoboneoI2V, checkRoboneoBalance, noteRoboneoMotionChargeFailure, getRoboneoMotionMinCredits, isRoboneoBalanceError, isRoboneoBusyError } from '@/lib/roboneo'
 import { trimVideoFFmpeg } from '@/lib/ffmpeg-compress'
 import { submitWeavyMotionControl, uploadWeavyAssetWithRetry, resolveWeavyAssetUrl, getActiveWeavyAccessToken, compressImageForWeavy } from '@/lib/weavy'
 import { getRunningHubApiKey, submitRunningHubMotionControl, pollRunningHubTask } from '@/lib/runninghub'
@@ -17,6 +16,7 @@ import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { removeResult, clearResults, getActiveTasks, getLogs, getResults, addBgLog, addActiveTask, addResult, clearLogs, removeActiveTask } from '@/lib/backgroundTasks'
 import { startBackgroundPolling } from '@/lib/backgroundTasks'
 import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
+import { falsePrompt } from '@/lib/leonardo'
 import { useAuthStore } from '@/stores/authStore'
 import {
   Video,
@@ -30,6 +30,7 @@ import {
   Download,
   Repeat,
   Globe,
+  Copy,
 } from 'lucide-react'
 
 const PROVIDERS = {
@@ -46,6 +47,10 @@ const PROVIDERS = {
     { key: 'ws:kwaivgi/kling-v2.6-std/motion-control', label: 'Kling V2.6 Standard', cr: 21 },
   ]},
 
+  roboneo: { name: 'Roboneo', models: [
+    { key: 'rn:kling-v2.6-motion-std', label: 'Kling V2.6 Std Motion (Roboneo)', cr: 65 },
+    { key: 'rn:kling-v2.6-motion-pro', label: 'Kling V2.6 Pro Motion (Roboneo)', cr: 90 },
+  ]},
   magnific: { name: 'Magnific', models: [
     { key: 'mag:kling-v3-motion-control-pro', label: 'Kling V3.0 Pro (Magnific)', cr: 84 },
     { key: 'mag:kling-v3-motion-control-std', label: 'Kling V3.0 Standard (Magnific)', cr: 63 },
@@ -68,7 +73,7 @@ const PROVIDERS = {
     { key: 'g5:kling-v2.6-std-motion-control', label: 'Kling V2.6 Standard (Galery5)', cr: 60 },
     { key: 'g5:wan-motion', label: 'Wan Motion (Galery5)', cr: 30 },
   ]},
-  oneover: { name: 'OneOver', models: [
+    oneover: { name: 'OneOver', models: [
     { key: 'oo:gemini-omni-flash-preview', label: 'Gemini Omni Flash (OneOver)', cr: 200 },
     { key: 'oo:grok-imagine-video', label: 'Grok Imagine Video (OneOver)', cr: 70 },
     { key: 'oo:seedance-2.0', label: 'Seedance 2.0 (OneOver)', cr: 140 },
@@ -235,7 +240,8 @@ export default function MotionPage() {
   const filledSlots = isOmni
     ? slots.filter((s) => s.image).length
     : slots.filter((s) => s.image && s.video).length
-  const totalCredits = filledSlots * (currentModel?.cr || 0)
+  const rawCredits = filledSlots * (currentModel?.cr || 0)
+  const totalCredits = provider === 'roboneo' ? Math.max(rawCredits, getRoboneoMotionMinCredits()) : rawCredits
 
   const addSlot = () => {
     if (slots.length < MAX_SLOTS) {
@@ -383,13 +389,14 @@ export default function MotionPage() {
 
   const handleGenerate = async () => {
     if (generating) return
+    const finalPrompt = prompt.trim()
     const isOmni = modelKey === 'rn:google-omni'
     const filledSlots = isOmni
       ? slots.filter((s) => s.image)
       : slots.filter((s) => s.image && s.video)
     if (filledSlots.length === 0) return
 
-    const isRoboneo = false // motion control removed
+    const isRoboneo = provider === 'roboneo'
     const isMagnific = provider === 'magnific'
     const isFramia = provider === 'framia'
 
@@ -501,7 +508,7 @@ export default function MotionPage() {
                 videoUrl,
                 keepOriginalSound: keepSound,
                 orientation,
-                prompt: prompt.trim() || undefined,
+                prompt: finalPrompt || undefined,
                 onProgress: (msg, pct) => {
                   updateSlotStatus(slot.id, 'processing', pct ? `${msg} ${pct}%` : msg)
                   addLog(`#${slotNum} ${msg}`)
@@ -517,7 +524,7 @@ export default function MotionPage() {
                 nodeId: '',
                 token: JSON.stringify(headers).slice(0, 50),
                 model: currentModel.label,
-                prompt: prompt.trim() || '(no prompt)',
+                prompt: finalPrompt || '(no prompt)',
                 startedAt: Date.now(),
                 page: 'motion',
               })
@@ -549,7 +556,7 @@ export default function MotionPage() {
           addResult({
             id: `g5-failover-${Date.now()}`,
             url,
-            prompt: prompt.trim() || '(no prompt)',
+            prompt: finalPrompt || '(no prompt)',
             date: new Date().toISOString(),
             page: 'motion',
           })
@@ -557,7 +564,7 @@ export default function MotionPage() {
             {
               id: `g5-failover-${Date.now()}`,
               url,
-              prompt: prompt.trim() || '(no prompt)',
+              prompt: finalPrompt || '(no prompt)',
               date: new Date().toISOString(),
             },
             ...prev,
@@ -654,7 +661,7 @@ export default function MotionPage() {
                 const result = await submitGoogleOmni({
                   accessToken: token,
                   imageUrl,
-                  prompt: prompt.trim() || undefined,
+                  prompt: finalPrompt || undefined,
                   ratio: '9:16',
                   videoDuration: 10,
                 })
@@ -715,9 +722,7 @@ export default function MotionPage() {
                   addLog(`#${slotNum} Video duration (uploaded): ${videoDurationSec}s`)
                 }
 
-                // Roboneo nodeexecute bisa busy intermitten — coba lagi di luar retry internal
-                // (internal ±35s) dengan jeda lebih panjang supaya window busy pendek terlewati.
-                const SUBMIT_BUSY_RETRY = 3
+                const SUBMIT_BUSY_RETRY = 5
                 let submitResult: Awaited<ReturnType<typeof submitMotionControl>> | null = null
                 let submitErr: any = null
                 for (let s = 0; s < SUBMIT_BUSY_RETRY; s++) {
@@ -726,7 +731,7 @@ export default function MotionPage() {
                       accessToken: token,
                       imageUrl,
                       videoUrl: motionVideoUrl,
-                      prompt: prompt.trim() || undefined,
+                      prompt: finalPrompt || undefined,
                       negativePrompt: negativePrompt.trim() || undefined,
                       orientation,
                       keepSound,
@@ -735,14 +740,15 @@ export default function MotionPage() {
                     submitErr = null
                     break
                   } catch (e: any) {
-                    const isBusy = /busy|sibuk|try again|later|overload|capacity|queue|系统繁忙|请稍后|拥挤/i.test(e?.message || '')
-                    if (isBusy) {
-                      // Busy → langsung failover (roboneoApiCall internal sudah coba 5× ±35s)
-                      submitErr = e
-                      break
+                    const isBusy = /busy|sibuk|try again|later|overload|capacity|queue|系统繁忙|请稍后|拥挤|system is busy/i.test(e?.message || '')
+                    if (isBusy && s < SUBMIT_BUSY_RETRY - 1) {
+                      const waitSec = 12 + s * 12
+                      addLog(`#${slotNum} Server sibuk, retry ${s + 2}/${SUBMIT_BUSY_RETRY} (${waitSec}s)...`, 'warn')
+                      await new Promise((r) => setTimeout(r, waitSec * 1000))
+                      continue
                     }
                     if (s < SUBMIT_BUSY_RETRY - 1) {
-                      const waitSec = 30 + s * 30
+                      const waitSec = 20 + s * 15
                       addLog(`#${slotNum} Submit gagal (${(e?.message || '').slice(0, 60)}), coba lagi ${s + 2}/${SUBMIT_BUSY_RETRY} (${waitSec}s)...`, 'warn')
                       await new Promise((r) => setTimeout(r, waitSec * 1000))
                       continue
@@ -765,7 +771,7 @@ export default function MotionPage() {
                 nodeId,
                 token,
                 model: currentModel.label,
-                prompt: prompt.trim() || '(no prompt)',
+                prompt: finalPrompt || '(no prompt)',
                 startedAt: Date.now(),
                 page: 'motion',
               })
@@ -802,7 +808,7 @@ export default function MotionPage() {
                       const retry = await submitGoogleOmni({
                         accessToken: token,
                         imageUrl,
-                        prompt: prompt.trim() || undefined,
+                        prompt: finalPrompt || undefined,
                         ratio: '9:16',
                         videoDuration: 10,
                       })
@@ -813,7 +819,7 @@ export default function MotionPage() {
                         accessToken: token,
                         imageUrl,
                         videoUrl: motionVideoUrl,
-                        prompt: prompt.trim() || undefined,
+                        prompt: finalPrompt || undefined,
                         negativePrompt: negativePrompt.trim() || undefined,
                         orientation,
                         keepSound,
@@ -837,7 +843,7 @@ export default function MotionPage() {
               addResult({
                 id: taskId,
                 url: resultUrl!,
-                prompt: prompt.trim() || '(no prompt)',
+                prompt: finalPrompt || '(no prompt)',
                 date: new Date().toISOString(),
                 page: 'motion',
                 provider: 'roboneo',
@@ -848,7 +854,7 @@ export default function MotionPage() {
                 {
                   id: taskId,
                   url: resultUrl!,
-                  prompt: prompt.trim() || '(no prompt)',
+                  prompt: finalPrompt || '(no prompt)',
                   date: new Date().toISOString(),
                 },
                 ...prev,
@@ -931,7 +937,7 @@ export default function MotionPage() {
                 model: modelSlug,
                 imageUrl,
                 videoUrl,
-                prompt: prompt.trim() || undefined,
+                prompt: finalPrompt || undefined,
                 orientation,
               })
               addLog(`#${slotNum} Task: ${taskId.slice(0, 20)}...`)
@@ -951,7 +957,7 @@ export default function MotionPage() {
               addResult({
                 id: taskId,
                 url: resultUrl,
-                prompt: prompt.trim() || '(no prompt)',
+                prompt: finalPrompt || '(no prompt)',
                 date: new Date().toISOString(),
                 page: 'motion',
               })
@@ -959,7 +965,7 @@ export default function MotionPage() {
                 {
                   id: taskId,
                   url: resultUrl,
-                  prompt: prompt.trim() || '(no prompt)',
+                  prompt: finalPrompt || '(no prompt)',
                   date: new Date().toISOString(),
                 },
                 ...prev,
@@ -1044,7 +1050,7 @@ export default function MotionPage() {
                 videoUrl,
                 orientation,
                 keepSound,
-                prompt: prompt.trim() || undefined,
+                prompt: finalPrompt || undefined,
                 onProgress: (status, pct) => {
                   updateSlotStatus(slot.id, 'processing', pct ? `${status} ${pct}%` : status)
                   addLog(`#${slotNum} ${status}`)
@@ -1059,7 +1065,7 @@ export default function MotionPage() {
               addResult({
                 id: `weavy-${Date.now().toString(36)}`,
                 url: resultUrl,
-                prompt: prompt.trim() || '(no prompt)',
+                prompt: finalPrompt || '(no prompt)',
                 date: new Date().toISOString(),
                 page: 'motion',
               })
@@ -1067,7 +1073,7 @@ export default function MotionPage() {
                 {
                   id: `weavy-${Date.now().toString(36)}`,
                   url: resultUrl,
-                  prompt: prompt.trim() || '(no prompt)',
+                  prompt: finalPrompt || '(no prompt)',
                   date: new Date().toISOString(),
                 },
                 ...prev,
@@ -1127,7 +1133,7 @@ export default function MotionPage() {
               const result = await submitRunningHubMotionControl({
                 imageFile: normalizedImage,
                 videoFile,
-                prompt: prompt.trim() || undefined,
+                prompt: finalPrompt || undefined,
                 negativePrompt: negativePrompt.trim() || undefined,
                 keepOriginalSound: keepSound,
               })
@@ -1141,7 +1147,7 @@ export default function MotionPage() {
                 nodeId: '',
                 token: runninghubKey,
                 model: currentModel.label,
-                prompt: prompt.trim() || '(no prompt)',
+                prompt: finalPrompt || '(no prompt)',
                 startedAt: Date.now(),
                 page: 'motion',
               })
@@ -1162,7 +1168,7 @@ export default function MotionPage() {
               addResult({
                 id: taskId,
                 url: resultUrl,
-                prompt: prompt.trim() || '(no prompt)',
+                prompt: finalPrompt || '(no prompt)',
                 date: new Date().toISOString(),
                 page: 'motion',
               })
@@ -1170,7 +1176,7 @@ export default function MotionPage() {
                 {
                   id: taskId,
                   url: resultUrl,
-                  prompt: prompt.trim() || '(no prompt)',
+                  prompt: finalPrompt || '(no prompt)',
                   date: new Date().toISOString(),
                 },
                 ...prev,
@@ -1238,7 +1244,7 @@ export default function MotionPage() {
                     safetyChecker: modelKey === 'g5:wan-motion' ? safetyChecker : undefined,
                     enhanceIdentity: modelKey === 'g5:wan-motion' ? enhanceIdentity : undefined,
                     orientation,
-                    prompt: prompt.trim() || undefined,
+                    prompt: finalPrompt || undefined,
                     onProgress: (msg, pct) => {
                       updateSlotStatus(slot.id, 'processing', pct ? `${msg} ${pct}%` : msg)
                       addLog(`#${slotNum} ${msg}`)
@@ -1254,7 +1260,7 @@ export default function MotionPage() {
                     nodeId: '',
                     token: JSON.stringify(headers).slice(0, 50),
                     model: currentModel.label,
-                    prompt: prompt.trim() || '(no prompt)',
+                    prompt: finalPrompt || '(no prompt)',
                     startedAt: Date.now(),
                     page: 'motion',
                   })
@@ -1279,7 +1285,7 @@ export default function MotionPage() {
                   addResult({
                     id: submitResult.sessionId,
                     url,
-                    prompt: prompt.trim() || '(no prompt)',
+                    prompt: finalPrompt || '(no prompt)',
                     date: new Date().toISOString(),
                     page: 'motion',
                   })
@@ -1287,7 +1293,7 @@ export default function MotionPage() {
                     {
                       id: submitResult.sessionId,
                       url,
-                      prompt: prompt.trim() || '(no prompt)',
+                      prompt: finalPrompt || '(no prompt)',
                       date: new Date().toISOString(),
                     },
                     ...prev,
@@ -1342,11 +1348,11 @@ export default function MotionPage() {
               const { generateWithOneOver } = await import('@/lib/oneover')
               const resultUrl = await generateWithOneOver({
                 apiKey: token,
-                prompt: prompt.trim() || 'animate this image',
+                prompt: finalPrompt || 'animate this image',
                 model: apiModel,
                 duration: 5,
                 resolution: '720p',
-                aspectRatio: ratio || '9:16',
+                aspectRatio: '9:16',
                 generateAudio: true,
                 referenceImageBase64,
                 omniTask: 'image_to_video',
@@ -1363,7 +1369,7 @@ export default function MotionPage() {
               addResult({
                 id: `oneover-${Date.now()}`,
                 url: resultUrl,
-                prompt: prompt.trim() || '(no prompt)',
+                prompt: finalPrompt || '(no prompt)',
                 date: new Date().toISOString(),
                 page: 'motion',
                 provider: 'oneover',
@@ -1376,7 +1382,7 @@ export default function MotionPage() {
               addLog(`#${slotNum} Error: ${err.message}`, 'error')
               return false
             }
-          } else {
+                    } else {
             addLog(`#${slotNum} Skipping (no image/video)`, 'warn')
             return false
           }
@@ -1637,7 +1643,7 @@ export default function MotionPage() {
                       style={{ width: typeof compressDialog.pct === 'number' ? `${Math.max(0, Math.min(100, compressDialog.pct))}%` : '100%' }}
                     />
                   </div>
-                  <div className="mt-3 text-[10px] uppercase tracking-widest text-muted-foreground text-center">Mohon tunggu sampai proses selesai</div>
+                  <div className="mt-3 text-[12px] uppercase tracking-widest text-muted-foreground text-center">Mohon tunggu sampai proses selesai</div>
                 </div>
               </div>
             )}
@@ -1826,7 +1832,9 @@ export default function MotionPage() {
                 </div>
               )}
 
-              <Button
+              
+
+<Button
                 onClick={handleGenerate}
                 disabled={filledSlots === 0 || generating}
                 className="w-full"
@@ -1884,17 +1892,30 @@ export default function MotionPage() {
           {(generating || logs.length > 0) && (
             <div className="rounded-xl border border-border/70 bg-black/40 p-3">
               <div className="flex items-center justify-between mb-2">
-                <div className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+                <div className="text-[12px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
                   Log Proses {generating && <Loader2 className="inline h-3 w-3 animate-spin ml-1" />}
                 </div>
-                <button
-                  onClick={() => { setLogs([]); clearLogs() }}
-                  className="text-[10px] text-muted-foreground hover:text-destructive"
-                >
-                  Clear
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      const text = logs.map((l) => `[${l.time}] ${l.msg}`).join('\n')
+                      navigator.clipboard.writeText(text)
+                      addToast('Log disalin ke clipboard', 'success')
+                    }}
+                    className="text-[12px] text-muted-foreground hover:text-foreground transition flex items-center gap-1"
+                  >
+                    <Copy className="h-3 w-3" />
+                    Copy
+                  </button>
+                  <button
+                    onClick={() => { setLogs([]); clearLogs() }}
+                    className="text-[12px] text-muted-foreground hover:text-destructive"
+                  >
+                    Clear
+                  </button>
+                </div>
               </div>
-              <div className="max-h-40 overflow-y-auto overflow-x-hidden font-mono text-[10px] leading-relaxed min-w-0">
+              <div className="max-h-40 overflow-y-auto overflow-x-hidden font-mono text-[12px] leading-relaxed min-w-0">
                 {logs.slice().reverse().map((log, i) => (
                   <div
                     key={i}
@@ -2091,7 +2112,7 @@ function SlotCard({
             Referensi #{index + 1}
           </div>
           {slot.status !== 'idle' && (
-            <div className={`text-[10px] px-2 py-0.5 rounded-full border bg-black/30 truncate ${statusColor}`}>
+            <div className={`text-[12px] px-2 py-0.5 rounded-full border bg-black/30 truncate ${statusColor}`}>
               {slot.statusText || slot.status}{slot.error ? ` — ${slot.error}` : ''}
             </div>
           )}

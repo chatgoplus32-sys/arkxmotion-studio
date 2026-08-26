@@ -227,9 +227,9 @@ export default function AdminSystemSettings() {
                   )}
                   <div className="mt-2 flex items-center gap-1">
                     {isMaint ? (
-                      <><AlertTriangle className="h-3 w-3 text-yellow-500" /><span className="text-[10px] text-yellow-500">Maintenance</span></>
+                      <><AlertTriangle className="h-3 w-3 text-yellow-500" /><span className="text-[12px] text-yellow-500">Maintenance</span></>
                     ) : (
-                      <><CheckCircle className="h-3 w-3 text-green-500" /><span className="text-[10px] text-green-500">Active</span></>
+                      <><CheckCircle className="h-3 w-3 text-green-500" /><span className="text-[12px] text-green-500">Active</span></>
                     )}
                   </div>
                 </div>

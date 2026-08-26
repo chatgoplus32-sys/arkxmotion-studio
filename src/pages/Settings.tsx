@@ -1,6 +1,6 @@
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Label, Select, Input } from '@/components/ui'
-import { Shield, Square, Trash2, AlertTriangle, Loader2, Download, Upload } from 'lucide-react'
+import { Shield, Square, Trash2, AlertTriangle, Loader2, Download, Upload, Video, Clock3, Zap, X } from 'lucide-react'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuthStore } from '@/stores/authStore'
 import { useProviderManager } from '@/stores/providerManager'
@@ -29,6 +29,9 @@ export default function SettingsPage() {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [stopping, setStopping] = useState<string | null>(null)
   const [stoppingAll, setStoppingAll] = useState(false)
+  const [confirmTask, setConfirmTask] = useState<ActiveTask | null>(null)
+  const [confirmAll, setConfirmAll] = useState(false)
+  const [now, setNow] = useState(Date.now())
   const addToast = useToastStore((s) => s.addToast)
   const authStore = useAuthStore()
 
@@ -74,9 +77,11 @@ export default function SettingsPage() {
     const handler = () => refresh()
     window.addEventListener('arkxmotion-tasks-changed', handler)
     const interval = setInterval(refresh, 3000)
+    const tick = setInterval(()=> setNow(Date.now()), 1000)
     return () => {
       window.removeEventListener('arkxmotion-tasks-changed', handler)
       clearInterval(interval)
+      clearInterval(tick)
     }
   }, [refresh])
 
@@ -165,11 +170,12 @@ export default function SettingsPage() {
   }
 
   const formatElapsed = (startedAt: number) => {
-    const diff = Date.now() - startedAt
+    const diff = now - startedAt
     const min = Math.floor(diff / 60000)
     const sec = Math.floor((diff % 60000) / 1000)
     return `${min}m ${sec}s`
   }
+  const pageIcon = (page: string) => page==='motion' ? <Video className="h-3.5 w-3.5" /> : page==='image-to-video' ? <Zap className="h-3.5 w-3.5" /> : <Clock3 className="h-3.5 w-3.5" />
 
   return (
     <PageContent>
@@ -243,7 +249,7 @@ export default function SettingsPage() {
               </Button>
               <input ref={importRef} type="file" accept=".json" hidden onChange={handleImportKeys} />
             </div>
-            <p className="text-[10px] text-muted-foreground">
+            <p className="text-[12px] text-muted-foreground">
               Export: Semua provider keys & routing settings → JSON file
             </p>
           </div>
@@ -299,18 +305,17 @@ export default function SettingsPage() {
 
       <Section
         title="🔧 Developer Tools — Task Manager"
-        sub="Paksa hentikan proses generasi yang macet/ngambang"
+        sub="Paksa hentikan proses generasi yang macet/ngambang — swipe, confirm, live timer"
         className="mt-5"
         right={
           <div className="flex gap-2">
             <Button
               variant="destructive"
               size="sm"
-              onClick={handleStopAll}
+              onClick={()=> setConfirmAll(true)}
               disabled={stoppingAll || activeTasks.length === 0}
-              loading={stoppingAll}
             >
-              {!stoppingAll && <Square className="h-3.5 w-3.5" />}
+              <Square className="h-3.5 w-3.5" />
               Stop All
             </Button>
             <Button
@@ -325,45 +330,48 @@ export default function SettingsPage() {
       >
         <div className="space-y-4">
           {activeTasks.length === 0 ? (
-            <div className="text-center py-6 text-muted-foreground text-sm">
-              <div className="text-2xl mb-2">✅</div>
-              Tidak ada proses yang sedang berjalan
+            <div className="text-center py-10">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 grid place-items-center mx-auto"><span className="text-emerald-400">✓</span></div>
+              <p className="text-sm font-medium mt-3">Tidak ada proses aktif</p>
+              <p className="text-xs text-muted-foreground mt-1">Semua task selesai atau dihentikan</p>
             </div>
           ) : (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-xs text-amber-500 font-medium mb-2">
-                <AlertTriangle className="h-3.5 w-3.5" />
-                {activeTasks.length} proses aktif
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs font-mono px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400">
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" /> {activeTasks.length} LIVE
+                </div>
+                <span className="text-[11px] text-muted-foreground">auto-refresh 3s • live timer 1s</span>
               </div>
               {activeTasks.map((task) => (
                 <div
                   key={task.taskId}
-                  className="flex items-center justify-between gap-3 p-3 rounded-xl border border-border bg-background/50 hover:bg-accent/30 transition-colors"
+                  className="group flex items-center justify-between gap-3 p-3.5 rounded-2xl border border-white/5 bg-gradient-to-br from-white/[0.04] to-white/[0.01] hover:border-amber-500/20 hover:from-amber-500/5 hover:to-transparent hover:-translate-y-0.5 transition-all"
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-500 shrink-0" />
-                      <span className="text-sm font-medium truncate">{task.model}</span>
-                      <span className="text-xs text-muted-foreground font-mono shrink-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="h-7 w-7 rounded-xl bg-amber-500/15 border border-amber-500/20 grid place-items-center text-amber-400"><Loader2 className="h-3.5 w-3.5 animate-spin" /></span>
+                      <span className="text-sm font-semibold truncate">{task.model}</span>
+                      <span className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-white/50">{pageIcon(task.page)} {task.page}</span>
+                      <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-white/40">
                         {formatElapsed(task.startedAt)} ago
                       </span>
                     </div>
-                    <div className="text-xs text-muted-foreground truncate mt-1">
-                      {task.prompt.slice(0, 80)}{task.prompt.length > 80 ? '...' : ''}
+                    <div className="text-xs text-white/40 truncate mt-1.5 pl-9">
+                      {task.prompt.slice(0, 90)}{task.prompt.length > 90 ? '...' : ''}
                     </div>
-                    <div className="text-[10px] text-muted-foreground font-mono mt-1 opacity-60">
-                      ID: {task.taskId.slice(0, 30)}...
+                    <div className="text-[11px] font-mono text-white/25 mt-1 pl-9 truncate">
+                      {task.taskId.slice(0, 36)}...
                     </div>
                   </div>
                   <Button
                     variant="destructive"
                     size="sm"
-                    onClick={() => handleStopTask(task.taskId, task.model)}
+                    onClick={() => setConfirmTask(task)}
                     disabled={stopping === task.taskId}
-                    loading={stopping === task.taskId}
-                    className="shrink-0"
+                    className="shrink-0 rounded-xl"
                   >
-                    {stopping !== task.taskId && <Square className="h-3.5 w-3.5" />}
+                    <Square className="h-3.5 w-3.5" />
                     End Task
                   </Button>
                 </div>
@@ -396,7 +404,7 @@ export default function SettingsPage() {
               </div>
               <div className="max-h-32 overflow-y-auto rounded-lg bg-background/50 border border-border p-2 space-y-0.5">
                 {logs.slice(-15).reverse().map((log, i) => (
-                  <div key={i} className="text-[10px] font-mono flex gap-2">
+                  <div key={i} className="text-[12px] font-mono flex gap-2">
                     <span className="text-muted-foreground shrink-0">{log.time}</span>
                     <span className={log.level === 'error' ? 'text-red-500' : log.level === 'success' ? 'text-green-500' : 'text-muted-foreground'}>
                       {log.msg}
@@ -408,6 +416,33 @@ export default function SettingsPage() {
           )}
         </div>
       </Section>
+
+      {confirmTask && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 backdrop-blur-sm p-4" onClick={()=>setConfirmTask(null)}>
+          <div onClick={e=>e.stopPropagation()} className="w-full max-w-sm rounded-2xl border border-white/10 bg-[#141414] p-5 shadow-[0_16px_48px_rgba(0,0,0,0.5)]">
+            <div className="w-10 h-10 rounded-xl bg-red-500/15 border border-red-500/20 grid place-items-center text-red-400 mx-auto"><AlertTriangle className="h-5 w-5" /></div>
+            <h3 className="text-center font-bold mt-3">Hentikan task?</h3>
+            <p className="text-center text-sm text-white/50 mt-1 truncate">{confirmTask.model} • {confirmTask.taskId.slice(0,28)}...</p>
+            <p className="text-center text-xs text-white/30 mt-1">Polling akan di-abort & task dihapus dari daftar.</p>
+            <div className="flex gap-2 mt-5">
+              <Button variant="outline" className="flex-1" onClick={()=>setConfirmTask(null)}><X className="h-4 w-4" /> Batal</Button>
+              <Button variant="destructive" className="flex-1" loading={stopping===confirmTask.taskId} onClick={async()=>{ const t=confirmTask; setConfirmTask(null); await handleStopTask(t.taskId, t.model)}}><Square className="h-4 w-4" /> End Task</Button>
+            </div>
+          </div>
+        </div>
+      )}
+      {confirmAll && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 backdrop-blur-sm p-4" onClick={()=>setConfirmAll(false)}>
+          <div onClick={e=>e.stopPropagation()} className="w-full max-w-sm rounded-2xl border border-white/10 bg-[#141414] p-5">
+            <h3 className="font-bold text-center">Hentikan semua {activeTasks.length} task?</h3>
+            <p className="text-center text-sm text-white/50 mt-1">Semua polling akan di-abort.</p>
+            <div className="flex gap-2 mt-5">
+              <Button variant="outline" className="flex-1" onClick={()=>setConfirmAll(false)}>Batal</Button>
+              <Button variant="destructive" className="flex-1" loading={stoppingAll} onClick={async()=>{ setConfirmAll(false); await handleStopAll()}}>Stop All</Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Audit Log */}
       <Section

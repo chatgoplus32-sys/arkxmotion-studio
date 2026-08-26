@@ -65,7 +65,7 @@ export function isMagnificTokenError(error: any): boolean {
 export function detectTokenError(provider: ProviderId, error: any): boolean {
   switch (provider) {
     case 'framia': return isFramiaTokenError(error)
-    case 'roboneo': return isRoboneoTokenError(error) || isRoboneoBusyError(String(error?.message || error))
+    case 'roboneo': return isRoboneoTokenError(error)
     case 'createpulse': return isCreatePulseTokenError(error)
     case 'weavy': return isWeavyTokenError(error)
     case 'magnific': return isMagnificTokenError(error)

@@ -135,7 +135,7 @@ export default function AdminSystemHealth() {
           ) : (
             <><CheckCircle className="h-4 w-4 text-green-500" /><span className="text-sm text-green-500 font-medium">All systems operational</span></>
           )}
-          {lastRefresh && <span className="ml-auto text-[10px] text-muted-foreground">Last: {lastRefresh}</span>}
+          {lastRefresh && <span className="ml-auto text-[12px] text-muted-foreground">Last: {lastRefresh}</span>}
         </div>
 
         {/* Server Info */}
@@ -153,7 +153,7 @@ export default function AdminSystemHealth() {
               <span className="text-xs text-muted-foreground">PID</span>
             </div>
             <div className="text-lg font-bold">{server.pid}</div>
-            <div className="text-[10px] text-muted-foreground">{server.nodeVersion} · {server.platform}</div>
+            <div className="text-[12px] text-muted-foreground">{server.nodeVersion} · {server.platform}</div>
           </div>
           <div className="rounded-xl border border-border bg-card p-4">
             <div className="flex items-center gap-2 mb-2">
@@ -161,7 +161,7 @@ export default function AdminSystemHealth() {
               <span className="text-xs text-muted-foreground">CPU Cores</span>
             </div>
             <div className="text-lg font-bold">{cpu.cores}</div>
-            <div className="text-[10px] text-muted-foreground truncate">{cpu.model}</div>
+            <div className="text-[12px] text-muted-foreground truncate">{cpu.model}</div>
           </div>
           <div className="rounded-xl border border-border bg-card p-4">
             <div className="flex items-center gap-2 mb-2">
@@ -251,7 +251,7 @@ export default function AdminSystemHealth() {
               </div>
               <div className="text-2xl font-bold">{queue.maintenanceProviders.length}</div>
               {queue.maintenanceProviders.length > 0 && (
-                <div className="text-[10px] text-red-500 mt-1">{queue.maintenanceProviders.join(', ')}</div>
+                <div className="text-[12px] text-red-500 mt-1">{queue.maintenanceProviders.join(', ')}</div>
               )}
             </div>
           </div>

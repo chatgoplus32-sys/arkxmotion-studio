@@ -459,12 +459,12 @@ async function roboneoApiCall(
     // Gateway may return ok=true but with an explicit error_code (e.g. 6003 busy)
     const errorCode = innerData.error_code
     const errorMsg = innerData.error_msg || innerData.err_msg
-    const isBusy = errorCode === 6003 || /busy|try again|later|overload|capacity|queue|sibuk/i.test(String(errorMsg || ''))
+    const isBusy = errorCode === 6003 || /busy|try again|later|overload|capacity|queue|sibuk|system is busy/i.test(String(errorMsg || ''))
     if (errorCode || errorMsg) {
-      if (isBusy && attempt < 5) {
+      if (isBusy && attempt < 8) {
         lastError = `busy (${errorCode})`
-        const waitSec = 3 * attempt
-        console.log(`[roboneo] ${path} busy, retry ${attempt}/5 in ${waitSec}s (${errorMsg})`)
+        const waitSec = Math.min(6 * attempt, 30)
+        console.log(`[roboneo] ${path} busy, retry ${attempt}/8 in ${waitSec}s (${errorMsg})`)
         await new Promise(r => setTimeout(r, waitSec * 1000))
         continue
       }
@@ -770,11 +770,59 @@ export async function createRoboneoRoom(accessToken: string): Promise<{ roomId: 
   return { roomId }
 }
 
-// submitMotionControl removed — motion control not supported yet
-// To rebuild: submit to nodeexecute with node name 'video_bonbon_motioncontrol_v26'
-// Parameters: { image_url, video_url, prompt, quality, random }
-export async function submitMotionControl(_params: any): Promise<any> {
-  throw new Error('Motion control is not supported yet')
+export async function submitMotionControl(params: {
+  accessToken: string
+  imageUrl: string
+  videoUrl: string
+  prompt?: string
+  negativePrompt?: string
+  orientation?: string
+  keepSound?: boolean
+  modelKey?: string
+  quality?: string
+}): Promise<{ taskId: string; roomId: string; nodeId: string }> {
+  const { accessToken, imageUrl, videoUrl, prompt, modelKey, quality } = params
+  const isPro = /pro/i.test(modelKey || '') || quality === 'pro'
+  const q = isPro ? 'pro' : 'std'
+  const finalPrompt = prompt?.trim() || 'Refer to the movements and facial expressions in the video to animate photos without changing the original background.'
+  const roomId = generateRoomId()
+  const nodeId = uuid()
+  const node = {
+    tool_abstract_name: { cn: 'Kling Motion', en: 'Kling Motion' },
+    node_id: nodeId,
+    name: 'video_bonbon_motioncontrol_v26',
+    parameters: {
+      image_url: imageUrl,
+      video_url: videoUrl,
+      prompt: finalPrompt,
+      quality: q,
+      random: `${Date.now()}-${Math.floor(1e7 + Math.random() * 89999999)}`,
+    },
+  }
+  const tracking = buildTrackingParams(accessToken, 'nodeexecute', roomId)
+  const { _access_token, ...paramWithoutToken } = tracking
+  const parameter = {
+    ...paramWithoutToken,
+    room_id: roomId,
+    node_id: nodeId,
+    need_node_name: true,
+    workflow_version: 'v2',
+    node_list_array: [[node]],
+  }
+  const result = await roboneoApiCall(accessToken, 'nodeexecute', parameter)
+  const payload = result
+  const taskIds: string[] = payload?.task_ids?.length
+    ? payload.task_ids
+    : Array.isArray(payload?.tasks)
+    ? payload.tasks.map((t: any) => t.task_id).filter(Boolean)
+    : payload?.task_id
+    ? [payload.task_id]
+    : Object.keys(payload?.tasks || {})
+  if (!taskIds.length) {
+    throw new Error(`Roboneo MotionControl: task_id tidak ditemukan. Response: ` + JSON.stringify(payload).slice(0, 300))
+  }
+  taskMetaMap.set(taskIds[0], { roomId, nodeId })
+  return { taskId: taskIds[0], roomId, nodeId }
 }
 
 const ROBONEO_I2V_MODELS: Record<string, { apiName: string; recipeCode?: string; toolLabel: string; family: string }> = {
@@ -1909,7 +1957,7 @@ export function isRoboneoBusyError(msg: string): boolean {
 }
 
 const ROBONEO_MOTION_MIN_CREDITS_KEY = 'arkxmotion.roboneo.motionMinCredits'
-const DEFAULT_MOTION_MIN_CREDITS = 30
+const DEFAULT_MOTION_MIN_CREDITS = 85
 
 export function getRoboneoMotionMinCredits(): number {
   if (typeof window === 'undefined') return DEFAULT_MOTION_MIN_CREDITS
@@ -1933,16 +1981,15 @@ export function getRoboneoMotionMinCredits(): number {
 export function noteRoboneoMotionChargeFailure(creditBalance: number | null): number {
   const currentMin = getRoboneoMotionMinCredits()
   if (creditBalance === null || !Number.isFinite(creditBalance)) {
-    return currentMin
+    const bumped = currentMin + 5
+    try { localStorage.setItem(ROBONEO_MOTION_MIN_CREDITS_KEY, String(bumped)) } catch {}
+    return bumped
   }
-  // The actual cost must be > creditBalance (charge failed).
-  // Set floor to current balance so we skip this key (it clearly can't afford it).
-  // Don't inflate beyond reason — next key with same balance will also fail.
-  const newMin = Math.max(currentMin, Math.floor(creditBalance))
+  const newMin = Math.max(currentMin, Math.floor(creditBalance) + 5)
   if (newMin !== currentMin && typeof window !== 'undefined') {
     try {
       localStorage.setItem(ROBONEO_MOTION_MIN_CREDITS_KEY, String(newMin))
-      console.log(`[roboneo] Motion min credits updated: ${currentMin} → ${newMin} (balance was ${creditBalance}, charge failed)`)
+      console.log(`[roboneo] Motion min credits updated: ${currentMin} → ${newMin} (balance was ${creditBalance}, charge failed → cost >${creditBalance})`)
     } catch {}
   }
   return newMin

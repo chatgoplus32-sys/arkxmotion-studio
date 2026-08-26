@@ -28,6 +28,9 @@
     "api/public/galleri5.ts": { "maxDuration": 120 },
     "api/public/oneover.ts": { "maxDuration": 60 }
   },
+  "crons": [
+    { "path": "/api/cron/daily-stats", "schedule": "0 2 * * *" }
+  ],
   "routes": [
     { "src": "/api/auth/(.*)", "dest": "/api/auth?path=$1" },
     { "src": "/api/auth/change-password", "dest": "/api/auth?path=change-password" },

@@ -9,6 +9,8 @@ import createpulseRoutes from './routes/createpulse.js'
 import adminTopupRoutes from './routes/adminTopup.js'
 import generationLogRoutes from './routes/generationLogs.js'
 import membershipRoutes from './routes/membership.js'
+import cronRoutes from './routes/cron.js'
+import syncTokensRoutes from './routes/syncTokens.js'
 
 dotenv.config()
 
@@ -30,6 +32,8 @@ app.use('/api/tokens', tokenRoutes)
 app.use('/api/createpulse', createpulseRoutes)
 app.use('/api/logs/generation', generationLogRoutes)
 app.use('/api/membership', membershipRoutes)
+app.use('/api/cron', cronRoutes)
+app.use('/api/sync-tokens', syncTokensRoutes)
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })

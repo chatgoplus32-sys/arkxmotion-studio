@@ -111,7 +111,7 @@ function RoutingDialog({ cap, onClose }: { cap: string; onClose: () => void }) {
             <Repeat className="h-5 w-5" />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">Routing Provider</div>
+            <div className="text-[12px] font-mono uppercase tracking-widest text-muted-foreground">Routing Provider</div>
             <div className="font-display text-lg text-foreground">Bulk Fashion</div>
             <div className="text-xs text-muted-foreground mt-0.5">Pilih provider untuk generate gambar fashion</div>
           </div>
@@ -136,7 +136,7 @@ function RoutingDialog({ cap, onClose }: { cap: string; onClose: () => void }) {
                 <div className="flex items-center gap-2">
                   <div className="font-display text-sm text-foreground flex-1 truncate">{provider.name}</div>
                   {isActive && (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider text-primary">
+                    <span className="inline-flex items-center gap-1 text-[12px] font-mono uppercase tracking-wider text-primary">
                       <Check className="h-3 w-3" /> aktif
                     </span>
                   )}
@@ -146,13 +146,13 @@ function RoutingDialog({ cap, onClose }: { cap: string; onClose: () => void }) {
                     <div key={model.key} className="flex items-start gap-2 text-[11px]">
                       <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary/60 shrink-0" />
                       <span className="text-foreground/80 flex-1 truncate">{model.label}</span>
-                      <span className="font-mono text-emerald-300/90 text-[10px] whitespace-nowrap">
+                      <span className="font-mono text-emerald-300/90 text-[12px] whitespace-nowrap">
                         ~{model.qualities[0]?.cr ?? 0} cr
                       </span>
                     </div>
                   ))}
                   {provider.models.length > 4 && (
-                    <div className="text-[10px] text-muted-foreground mt-0.5">+{provider.models.length - 4} model lainnya</div>
+                    <div className="text-[12px] text-muted-foreground mt-0.5">+{provider.models.length - 4} model lainnya</div>
                   )}
                 </div>
               </button>
@@ -537,11 +537,11 @@ export default function BulkFashionPage() {
                     <button
                       onClick={() => removeOutfit(index)}
                       title="Hapus outfit"
-                      className="absolute top-1 right-1 inline-flex items-center gap-1 rounded-full bg-black/70 text-white px-1.5 py-0.5 text-[10px] opacity-0 group-hover:opacity-100"
+                      className="absolute top-1 right-1 inline-flex items-center gap-1 rounded-full bg-black/70 text-white px-1.5 py-0.5 text-[12px] opacity-0 group-hover:opacity-100"
                     >
                       <Trash2 className="h-3 w-3" /> Hapus
                     </button>
-                    <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[10px] px-1">
+                    <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[12px] px-1">
                       #{index + 1}
                     </div>
                   </div>
@@ -635,7 +635,7 @@ export default function BulkFashionPage() {
           <div className="lg:col-span-2">
             <Label>Preview Prompt</Label>
             <Textarea rows={3} readOnly value={promptPreview} className="opacity-85" />
-            <div className="text-[10px] text-muted-foreground mt-1">Placeholder: {'{product_type}'}, {'{outfit_index}'}</div>
+            <div className="text-[12px] text-muted-foreground mt-1">Placeholder: {'{product_type}'}, {'{outfit_index}'}</div>
           </div>
         </div>
 

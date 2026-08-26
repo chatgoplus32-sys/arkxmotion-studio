@@ -282,7 +282,7 @@ export default function AdminNotificationsPage() {
                   className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:border-primary/50 resize-none"
                   maxLength={2000}
                 />
-                <div className="text-[10px] text-muted-foreground text-right mt-1">{sendMsg.length}/2000</div>
+                <div className="text-[12px] text-muted-foreground text-right mt-1">{sendMsg.length}/2000</div>
               </div>
 
               {/* Send Button */}
@@ -377,17 +377,17 @@ export default function AdminNotificationsPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <span className={`text-sm font-medium ${!n.read ? 'text-foreground' : 'text-muted-foreground'}`}>{n.title}</span>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium capitalize ${meta.bg} ${meta.color}`}>{n.type}</span>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground">{TARGET_LABELS[n.target] || n.target}</span>
+                        <span className={`text-[12px] px-1.5 py-0.5 rounded-full font-medium capitalize ${meta.bg} ${meta.color}`}>{n.type}</span>
+                        <span className="text-[12px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground">{TARGET_LABELS[n.target] || n.target}</span>
                         {!n.read && <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />}
                       </div>
                       <p className="text-sm text-muted-foreground line-clamp-2">{n.message}</p>
                       <div className="flex items-center gap-3 mt-1.5">
-                        <span className="text-[10px] text-muted-foreground">
+                        <span className="text-[12px] text-muted-foreground">
                           {new Date(n.created_at).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                         </span>
                         {n.user_email && (
-                          <span className="text-[10px] text-muted-foreground">→ {n.user_email}</span>
+                          <span className="text-[12px] text-muted-foreground">→ {n.user_email}</span>
                         )}
                       </div>
                     </div>

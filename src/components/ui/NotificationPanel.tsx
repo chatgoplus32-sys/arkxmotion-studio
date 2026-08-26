@@ -165,7 +165,7 @@ export function NotificationPanel() {
       >
         <Bell className="h-4 w-4" />
         {totalBadge > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 rounded-full bg-destructive text-[10px] font-bold text-white flex items-center justify-center px-1">
+          <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 rounded-full bg-destructive text-[12px] font-bold text-white flex items-center justify-center px-1">
             {totalBadge > 99 ? '99+' : totalBadge}
           </span>
         )}
@@ -205,7 +205,7 @@ export function NotificationPanel() {
             >
               Server
               {serverUnread > 0 && (
-                <span className="ml-1.5 inline-flex items-center justify-center h-4 min-w-[16px] px-1 rounded-full bg-destructive text-[9px] font-bold text-white">
+                <span className="ml-1.5 inline-flex items-center justify-center h-4 min-w-[16px] px-1 rounded-full bg-destructive text-[11px] font-bold text-white">
                   {serverUnread > 99 ? '99+' : serverUnread}
                 </span>
               )}
@@ -220,7 +220,7 @@ export function NotificationPanel() {
             >
               Aktivitas
               {localNotifs.length > 0 && (
-                <span className="ml-1.5 inline-flex items-center justify-center h-4 min-w-[16px] px-1 rounded-full bg-muted text-[9px] font-bold text-muted-foreground">
+                <span className="ml-1.5 inline-flex items-center justify-center h-4 min-w-[16px] px-1 rounded-full bg-muted text-[11px] font-bold text-muted-foreground">
                   {localNotifs.length}
                 </span>
               )}
@@ -259,7 +259,7 @@ export function NotificationPanel() {
                           {!n.read && <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />}
                         </div>
                         <p className="text-xs text-muted-foreground line-clamp-2">{n.message}</p>
-                        <p className="text-[10px] text-muted-foreground/60 mt-1">{formatTime(n.created_at)}</p>
+                        <p className="text-[12px] text-muted-foreground/60 mt-1">{formatTime(n.created_at)}</p>
                       </div>
                     </div>
                   ))}
@@ -274,7 +274,7 @@ export function NotificationPanel() {
               {/* Preferences */}
               <div className="px-4 py-2.5 border-b border-border/50 bg-accent/20">
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[10px] font-medium text-muted-foreground">Toast Notifications</span>
+                  <span className="text-[12px] font-medium text-muted-foreground">Toast Notifications</span>
                   <button
                     onClick={toggleNotifications}
                     className={cn(
@@ -297,7 +297,7 @@ export function NotificationPanel() {
                         key={type}
                         onClick={() => toggleNotificationType(type)}
                         className={cn(
-                          'flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium border transition',
+                          'flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[11px] font-medium border transition',
                           preferences[type] ? 'border-current opacity-100' : 'border-transparent opacity-40'
                         )}
                       >
@@ -318,8 +318,8 @@ export function NotificationPanel() {
                 ) : (
                   <>
                     <div className="flex items-center justify-between px-4 py-2">
-                      <span className="text-[10px] text-muted-foreground">{localNotifs.length} notifikasi</span>
-                      <button onClick={clearNotifications} className="text-[10px] text-destructive hover:underline">
+                      <span className="text-[12px] text-muted-foreground">{localNotifs.length} notifikasi</span>
+                      <button onClick={clearNotifications} className="text-[12px] text-destructive hover:underline">
                         Hapus semua
                       </button>
                     </div>
@@ -331,7 +331,7 @@ export function NotificationPanel() {
                           </span>
                           <div className="flex-1 min-w-0">
                             <p className="text-xs">{notif.message}</p>
-                            <p className="text-[10px] text-muted-foreground mt-0.5">
+                            <p className="text-[12px] text-muted-foreground mt-0.5">
                               {timeAgo(notif.timestamp)}
                             </p>
                           </div>

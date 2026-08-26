@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Button, Input, Textarea } from '@/components/ui'
 import {
@@ -16,6 +17,7 @@ import {
   Key,
   ExternalLink,
   Wrench,
+  Wallet,
 } from 'lucide-react'
 import { useProviderManager, ProviderId, HIDDEN_PROVIDERS } from '@/stores/providerManager'
 import { useAuthStore } from '@/stores/authStore'
@@ -280,6 +282,7 @@ export default function ProvidersPage() {
   const [bulkText, setBulkText] = useState(() => localStorage.getItem(`arkxmotion.providers.bulk.${localStorage.getItem('arkxmotion.providers.selected') || 'brain'}`) || '')
   const [workflowId, setWorkflowId] = useState(() => localStorage.getItem('runninghub.workflowId') || '')
   const [statusMap, setStatusMap] = useState<Record<string, { state: string; detail?: string; balance?: number; email?: string }>>({})
+  const navigate = useNavigate()
   const [checking, setChecking] = useState(false)
   const [progress, setProgress] = useState({ show: false, pct: 0, text: '' })
   const [viewHidden, setViewHidden] = useState(false)
@@ -853,7 +856,7 @@ export default function ProvidersPage() {
                           />
                           <span className="text-sm font-semibold text-[#f5f5f5]">{p.label}</span>
                           {isMaint && (
-                            <span className="ml-auto inline-flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30">
+                            <span className="ml-auto inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30">
                               <Wrench className="h-2.5 w-2.5" />
                               MAINTENANCE
                             </span>
@@ -870,12 +873,12 @@ export default function ProvidersPage() {
 
         <div className="ml-auto flex items-center gap-2 w-full md:w-auto justify-end">
           <button
-            onClick={() => setTokenBankOpen(true)}
+            onClick={() => navigate(selectedProvider === 'createpulse' ? '/topup/createpulse' : '/beli-token')}
             className="relative inline-flex items-center gap-1.5 rounded-full border border-[#d4a017]/50 bg-gradient-to-r from-[#d4a017]/20 via-[#d4a017]/10 to-[#d4a017]/20 text-[#ffd700] px-3.5 py-2 text-xs md:text-sm font-semibold md:font-bold md:px-5 md:py-2.5 shadow-[0_0_14px_rgba(212,160,23,0.35)] md:shadow-[0_0_20px_rgba(212,160,23,0.55)] hover:shadow-[0_0_28px_rgba(212,160,23,0.75)] hover:scale-[1.02] transition-all"
-            title="Beli token dari Token Bank"
+            title={selectedProvider === 'createpulse' ? 'Topup CreatePulse' : 'Beli token dari Token Bank'}
           >
-            <ShoppingCart className="h-3.5 w-3.5 md:h-4 md:w-4" />
-            Beli Token
+            {selectedProvider === 'createpulse' ? <Wallet className="h-3.5 w-3.5 md:h-4 md:w-4" /> : <ShoppingCart className="h-3.5 w-3.5 md:h-4 md:w-4" />}
+            {selectedProvider === 'createpulse' ? 'Topup CreatePulse' : 'Beli Token'}
           </button>
           <button
             onClick={() => setViewHidden(!viewHidden)}
@@ -917,7 +920,7 @@ export default function ProvidersPage() {
         <div className="lg:col-span-2 flex flex-col gap-4">
           {viewHidden ? (
             <div className="neumorph p-6 flex flex-col items-center text-center gap-3">
-              <div className="text-[10px] font-mono uppercase tracking-widest text-[#a0a0a0]">
+              <div className="text-[12px] font-mono uppercase tracking-widest text-[#a0a0a0]">
                 {currentConfig?.label || selectedProvider}
               </div>
               <div className="font-display text-3xl gold-text">{savedKeys.length}</div>
@@ -988,7 +991,7 @@ export default function ProvidersPage() {
 
               {selectedProvider === 'runninghub' && (
                 <div className="neumorph p-3 space-y-2">
-                  <label className="text-[10px] font-mono uppercase tracking-widest text-[#a0a0a0]">
+                  <label className="text-[12px] font-mono uppercase tracking-widest text-[#a0a0a0]">
                     Workflow ID (Opsional — default: Markasflow-V2 bawaan)
                   </label>
                   <Input
@@ -997,7 +1000,7 @@ export default function ProvidersPage() {
                     placeholder="Default: 2084995158336192513"
                     className="font-mono text-xs bg-[#0a0a0a] border-[#2a2a2a] text-[#f5f5f5] placeholder-[#666666] focus:border-[#d4a017] focus:ring-[#d4a017]/30"
                   />
-                  <p className="text-[10px] text-[#666666]">
+                  <p className="text-[12px] text-[#666666]">
                     Kosongkan untuk pakai workflow bawaan. Isi hanya jika ingin pakai workflow custom dari RunningHub.
                   </p>
                 </div>
@@ -1008,13 +1011,13 @@ export default function ProvidersPage() {
                   <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#1a1a1a]">
                     <div className="h-full gold-gradient transition-all" style={{ width: `${progress.pct}%` }} />
                   </div>
-                  <div className="mt-1 text-[10px] text-[#a0a0a0]">{progress.text}</div>
+                  <div className="mt-1 text-[12px] text-[#a0a0a0]">{progress.text}</div>
                 </div>
               )}
 
               {savedKeys.length > 0 && (
                 <div className="mt-1 space-y-1.5">
-                  <div className="text-[10px] font-mono uppercase tracking-widest text-[#a0a0a0]">
+                  <div className="text-[12px] font-mono uppercase tracking-widest text-[#a0a0a0]">
                     Key tersimpan ({savedKeys.length})
                   </div>
                   {savedKeys.map((key, i) => {
@@ -1037,7 +1040,7 @@ export default function ProvidersPage() {
                             <div className="min-w-0 flex-1">
                               <div className="text-[11px] font-mono text-[#f5f5f5]/85 truncate" title={key}>{maskKey(key)}</div>
                               {detail && (
-                                <div className="text-[10px] text-[#a0a0a0] truncate mt-0.5">{detail}</div>
+                                <div className="text-[12px] text-[#a0a0a0] truncate mt-0.5">{detail}</div>
                               )}
                             </div>
                           ) : (
@@ -1058,7 +1061,7 @@ export default function ProvidersPage() {
                               ) : !isEditing ? (
                                 <button
                                   onClick={() => { setEditingBalanceIdx(i); setEditingBalanceVal('') }}
-                                  className="text-[10px] text-[#d4a017] hover:text-[#f5f5f5] underline underline-offset-2 transition cursor-pointer"
+                                  className="text-[12px] text-[#d4a017] hover:text-[#f5f5f5] underline underline-offset-2 transition cursor-pointer"
                                   title="Input manual balance"
                                 >
                                   ??? cr
@@ -1082,7 +1085,7 @@ export default function ProvidersPage() {
                                     }}
                                     placeholder="0"
                                     autoFocus
-                                    className="w-20 text-[10px] font-mono bg-[#0a0a0a] border border-[#d4a017] text-[#f5f5f5] px-1.5 py-0.5 rounded focus:outline-none focus:border-[#f5f5f5]"
+                                    className="w-20 text-[12px] font-mono bg-[#0a0a0a] border border-[#d4a017] text-[#f5f5f5] px-1.5 py-0.5 rounded focus:outline-none focus:border-[#f5f5f5]"
                                   />
                                   <button
                                     onClick={() => {
@@ -1092,14 +1095,14 @@ export default function ProvidersPage() {
                                       }
                                       setEditingBalanceIdx(null)
                                     }}
-                                    className="text-[10px] text-[#22c55e] hover:text-[#4ade80] transition"
+                                    className="text-[12px] text-[#22c55e] hover:text-[#4ade80] transition"
                                     title="Simpan"
                                   >
                                     <Check className="h-3 w-3" />
                                   </button>
                                   <button
                                     onClick={() => setEditingBalanceIdx(null)}
-                                    className="text-[10px] text-[#a0a0a0] hover:text-[#f5f5f5] transition"
+                                    className="text-[12px] text-[#a0a0a0] hover:text-[#f5f5f5] transition"
                                     title="Batal"
                                   >
                                     <XCircle className="h-3 w-3" />
@@ -1109,12 +1112,12 @@ export default function ProvidersPage() {
                             </>
                           )}
                           {!isWeavy && detail && (
-                            <span className="text-[10px] text-[#a0a0a0] truncate max-w-[220px]">{detail}</span>
+                            <span className="text-[12px] text-[#a0a0a0] truncate max-w-[220px]">{detail}</span>
                           )}
                           {!isWeavy && !detail && (
-                            <span className="text-[10px] text-[#a0a0a0] truncate max-w-[220px]">—</span>
+                            <span className="text-[12px] text-[#a0a0a0] truncate max-w-[220px]">—</span>
                           )}
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full border ${getStatusColor(state)}`}>
+                          <span className={`text-[12px] px-2 py-0.5 rounded-full border ${getStatusColor(state)}`}>
                             {getStatusLabel(state)}
                           </span>
                           <button
@@ -1126,7 +1129,7 @@ export default function ProvidersPage() {
                                 return next
                               })
                             }}
-                            className="inline-flex items-center gap-1 rounded-full border border-[#2a2a2a] bg-[#1a1a1a] px-1.5 py-0.5 text-[10px] text-[#a0a0a0] hover:text-[#dc2626] hover:border-[#dc2626]/50 transition"
+                            className="inline-flex items-center gap-1 rounded-full border border-[#2a2a2a] bg-[#1a1a1a] px-1.5 py-0.5 text-[12px] text-[#a0a0a0] hover:text-[#dc2626] hover:border-[#dc2626]/50 transition"
                             title="Hapus key ini"
                           >
                             <Trash2 className="h-3 w-3" />
@@ -1142,7 +1145,7 @@ export default function ProvidersPage() {
         </div>
 
         <div className="neumorph p-4 h-fit">
-          <div className="text-[10px] font-mono uppercase tracking-widest text-[#a0a0a0]">Info</div>
+          <div className="text-[12px] font-mono uppercase tracking-widest text-[#a0a0a0]">Info</div>
           <div className="mt-1 font-display text-base text-[#f5f5f5] gold-text">{currentConfig?.label}</div>
           <p className="mt-2 text-xs text-[#a0a0a0] leading-relaxed">{currentConfig?.desc}</p>
 
@@ -1158,7 +1161,7 @@ export default function ProvidersPage() {
             if (providerKeys.length === 0) return null
             return (
               <div className="mt-3 rounded-lg border border-[#d4a017]/30 bg-[#d4a017]/5 p-3">
-                <div className="text-[10px] font-mono uppercase tracking-widest text-[#d4a017]/80">Pool Summary</div>
+                <div className="text-[12px] font-mono uppercase tracking-widest text-[#d4a017]/80">Pool Summary</div>
                 <div className="mt-2 flex items-baseline gap-2">
                   <span className="font-display text-2xl font-black gold-text">
                     {isWeavyPool && totalBalance === 0 ? '???' : totalBalance.toLocaleString()}
@@ -1177,7 +1180,7 @@ export default function ProvidersPage() {
 
               {TOKEN_GUIDE[selectedProvider as keyof typeof TOKEN_GUIDE] && (
             <div className="mt-4 rounded-lg border border-[#d4a017]/30 bg-[#d4a017]/5 p-3">
-              <div className="text-[10px] font-mono uppercase tracking-widest text-[#d4a017]/80">Cara Dapat Token</div>
+              <div className="text-[12px] font-mono uppercase tracking-widest text-[#d4a017]/80">Cara Dapat Token</div>
               <a
                 href={TOKEN_GUIDE[selectedProvider as keyof typeof TOKEN_GUIDE].url}
                 target="_blank"
@@ -1188,7 +1191,7 @@ export default function ProvidersPage() {
                 {TOKEN_GUIDE[selectedProvider as keyof typeof TOKEN_GUIDE].urlLabel}
               </a>
               {TOKEN_GUIDE[selectedProvider as keyof typeof TOKEN_GUIDE].prefix && (
-                <div className="mt-1 text-[10px] text-[#a0a0a0]">
+                <div className="mt-1 text-[12px] text-[#a0a0a0]">
                   Format key: <code className="text-[#f5f5f5]/85">{TOKEN_GUIDE[selectedProvider as keyof typeof TOKEN_GUIDE].prefix}</code>
                 </div>
               )}
@@ -1202,7 +1205,7 @@ export default function ProvidersPage() {
                       </a>
                     )}
                     {step.code && (
-                      <pre className="mt-1 rounded-md bg-[#050505] border border-[#2a2a2a] p-2 overflow-x-auto text-[9px] font-mono text-[#f5f5f5]/80 whitespace-pre-wrap break-all">
+                      <pre className="mt-1 rounded-md bg-[#050505] border border-[#2a2a2a] p-2 overflow-x-auto text-[11px] font-mono text-[#f5f5f5]/80 whitespace-pre-wrap break-all">
                         {step.code}
                       </pre>
                     )}

@@ -27,6 +27,7 @@ import {
   ShoppingCart,
   Route,
   ShoppingBag,
+  Puzzle,
 } from 'lucide-react'
 
 interface NavItem {
@@ -38,7 +39,7 @@ interface NavItem {
 }
 
 const mainNav: NavItem[] = [
-  { label: 'Dashboard', href: '/', icon: <LayoutDashboard className="h-4 w-4" /> },
+  { label: 'Dashboard', href: '/dashboard', icon: <LayoutDashboard className="h-4 w-4" /> },
   { label: 'Command Center', href: '/command', icon: <Sparkles className="h-4 w-4" /> },
 ]
 
@@ -57,6 +58,7 @@ const toolsNavBase: NavItem[] = [
   { label: 'Top Up CreatePulse', href: '/topup/createpulse', icon: <Wallet className="h-4 w-4" /> },
   { label: 'Settings', href: '/settings', icon: <Settings className="h-4 w-4" /> },
   { label: 'Beli Token', href: '/beli-token', icon: <ShoppingCart className="h-4 w-4" /> },
+  { label: 'Plugins', href: '/plugins', icon: <Puzzle className="h-4 w-4" /> },
 ]
 
 interface SidebarProps {
@@ -79,7 +81,8 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
 
   const handleLogout = () => {
     logout()
-    navigate('/login')
+    navigate('/', { replace: true })
+    setTimeout(() => { if (window.location.pathname !== '/') window.location.replace('/') }, 100)
   }
 
   useEffect(() => {
@@ -129,15 +132,12 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
     { label: 'Notifications', href: '/admin/notifications', icon: <Bell className="h-4 w-4" /> },
   ]
 
-  const isActive = (href: string) => {
-    if (href === '/') return location.pathname === '/'
-    return location.pathname.startsWith(href)
-  }
+  const isActive = (href: string) => location.pathname === href || location.pathname.startsWith(href + '/')
 
   const renderNavGroup = (items: NavItem[], label?: string) => (
     <div className="space-y-1">
       {label && !collapsed && (
-        <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <div className="px-3 py-1.5 text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">
           {label}
         </div>
       )}
@@ -154,7 +154,7 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
             {item.icon}
             {!collapsed && <span className="line-through">{item.label}</span>}
             {!collapsed && (
-              <span className="ml-auto text-[10px] bg-secondary text-muted-foreground px-1.5 py-0.5 rounded-full font-medium flex items-center gap-1">
+              <span className="ml-auto text-[12px] bg-secondary text-muted-foreground px-1.5 py-0.5 rounded-full font-medium flex items-center gap-1">
                 <Lock className="h-2.5 w-2.5" /> Soon
               </span>
             )}
@@ -174,7 +174,7 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
             {item.icon}
             {!collapsed && <span>{item.label}</span>}
             {item.badge && !collapsed && (
-              <span className="ml-auto text-[10px] bg-yellow-500/20 text-yellow-500 px-1.5 py-0.5 rounded-full font-medium">
+              <span className="ml-auto text-[12px] bg-yellow-500/20 text-yellow-500 px-1.5 py-0.5 rounded-full font-medium">
                 {item.badge}
               </span>
             )}
@@ -218,7 +218,7 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
           {!collapsed && (
             <div className="flex-1 min-w-0">
               <div className="text-sm font-medium truncate">{user?.name || 'User'}</div>
-              <div className="text-[10px] gold-text">{user?.role === 'admin' ? 'Admin' : 'Free Plan'}</div>
+              <div className="text-[12px] gold-text">{user?.role === 'admin' ? 'Admin' : 'Free Plan'}</div>
             </div>
           )}
           {!collapsed && (

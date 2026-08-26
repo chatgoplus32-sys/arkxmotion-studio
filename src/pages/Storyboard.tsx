@@ -231,7 +231,7 @@ export default function StoryboardPage() {
                   onChange={(e) => setFraming(e.target.value)}
                   options={FRAMING_OPTIONS}
                 />
-                <p className="text-[10px] text-muted-foreground mt-1 leading-relaxed">
+                <p className="text-[12px] text-muted-foreground mt-1 leading-relaxed">
                   Pilih "Tanpa kepala" / "Zoom produk" agar aman untuk model Image-to-Video.
                 </p>
               </div>
@@ -300,7 +300,7 @@ export default function StoryboardPage() {
             }
           >
             {logs.length > 0 && (
-              <div className="mb-4 rounded-xl border border-border/70 bg-black/40 p-3 max-h-40 overflow-y-auto overflow-x-hidden font-mono text-[10px] leading-relaxed text-muted-foreground min-w-0">
+              <div className="mb-4 rounded-xl border border-border/70 bg-black/40 p-3 max-h-40 overflow-y-auto overflow-x-hidden font-mono text-[12px] leading-relaxed text-muted-foreground min-w-0">
                 {logs.map((log, i) => (
                   <div key={i} className="whitespace-pre-wrap break-all min-w-0">{log}</div>
                 ))}
@@ -318,26 +318,26 @@ export default function StoryboardPage() {
                 {results.map((result) => (
                   <div key={result.id} className="rounded-2xl border border-border/70 bg-card/30 p-2.5 flex flex-col gap-2">
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground truncate flex-1">
+                      <span className="text-[12px] font-mono uppercase tracking-[0.18em] text-muted-foreground truncate flex-1">
                         {result.title}
                       </span>
                       {result.status === 'brain' && (
-                        <span className="inline-flex items-center gap-1 text-[10px] text-amber-500">
+                        <span className="inline-flex items-center gap-1 text-[12px] text-amber-500">
                           <Loader2 className="h-3 w-3 animate-spin" /> brain
                         </span>
                       )}
                       {result.status === 'image' && (
-                        <span className="inline-flex items-center gap-1 text-[10px] text-amber-500">
+                        <span className="inline-flex items-center gap-1 text-[12px] text-amber-500">
                           <Loader2 className="h-3 w-3 animate-spin" /> image
                         </span>
                       )}
                       {result.status === 'done' && (
-                        <span className="inline-flex items-center gap-1 text-[10px] text-emerald-500">
+                        <span className="inline-flex items-center gap-1 text-[12px] text-emerald-500">
                           <Check className="h-3 w-3" /> done
                         </span>
                       )}
                       {result.status === 'err' && (
-                        <span className="inline-flex items-center gap-1 text-[10px] text-destructive">
+                        <span className="inline-flex items-center gap-1 text-[12px] text-destructive">
                           <AlertCircle className="h-3 w-3" /> error
                         </span>
                       )}
@@ -399,16 +399,16 @@ function ProductRowCard({
   return (
     <div className="rounded-2xl border border-border/70 bg-card/30 p-3 flex flex-col gap-2 min-w-0">
       <div className="flex items-center gap-2">
-        <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+        <span className="text-[12px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
           #{index + 1}
         </span>
         {row.status === 'ok' && (
-          <span className="inline-flex items-center gap-1 text-[10px] text-emerald-500">
+          <span className="inline-flex items-center gap-1 text-[12px] text-emerald-500">
             <Check className="h-3 w-3" /> OK
           </span>
         )}
         {row.status === 'err' && (
-          <span className="inline-flex items-center gap-1 text-[10px] text-destructive" title={row.error}>
+          <span className="inline-flex items-center gap-1 text-[12px] text-destructive" title={row.error}>
             <AlertCircle className="h-3 w-3" /> error
           </span>
         )}

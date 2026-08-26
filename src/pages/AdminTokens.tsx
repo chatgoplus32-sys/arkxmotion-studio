@@ -462,7 +462,7 @@ export default function AdminTokensPage() {
                   <div className="text-xs text-muted-foreground mt-2">Rp {s.price.toLocaleString('id-ID')} / token</div>
                 )}
                 {p.minCredits > 0 && (
-                  <div className="text-[10px] text-amber-500 mt-1">Min. {p.minCredits} credits/token</div>
+                  <div className="text-[12px] text-amber-500 mt-1">Min. {p.minCredits} credits/token</div>
                 )}
               </button>
             )
@@ -825,7 +825,7 @@ export default function AdminTokensPage() {
                         }).length
                         if (count === 0) return null
                         return (
-                          <div key={group} className="px-2.5 py-1 rounded-full bg-primary/10 border border-primary/20 text-[10px] font-mono text-primary">
+                          <div key={group} className="px-2.5 py-1 rounded-full bg-primary/10 border border-primary/20 text-[12px] font-mono text-primary">
                             {group} cr: {count} token
                           </div>
                         )
@@ -845,7 +845,7 @@ export default function AdminTokensPage() {
                       >
                         <span className="font-medium truncate w-28 shrink-0">{t.name}</span>
                         {(t as any).credits != null && (
-                          <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[9px] font-mono shrink-0">
+                          <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[11px] font-mono shrink-0">
                             {(t as any).credits} cr
                           </span>
                         )}
@@ -891,7 +891,7 @@ export default function AdminTokensPage() {
                         <span className="font-mono text-muted-foreground truncate flex-1">
                           {t.token_value.slice(0, 20)}••••
                         </span>
-                        <span className="text-amber-500 text-[10px] shrink-0">TERJUAL</span>
+                        <span className="text-amber-500 text-[12px] shrink-0">TERJUAL</span>
                       </div>
                     ))}
                   </div>

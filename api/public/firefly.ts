@@ -8,37 +8,41 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') return res.status(200).end()
 
   const token = req.headers['x-firefly-token'] as string || ''
-  const apiKey = req.headers['x-firefly-api-key'] as string || 'clio-playground-web'
+  const apiKey = req.headers['x-firefly-api-key'] as string || ''
   const account = req.headers['x-firefly-account'] as string || ''
   const session = req.headers['x-firefly-session'] as string || ''
   const nonce = req.headers['x-firefly-nonce'] as string || ''
   const arpSession = req.headers['x-firefly-arp'] as string || ''
 
-  const { url, method, body, headers: customHeaders } = req.body || {}
+  const { url, method, body, headers: customHeaders, pollMode } = req.body || {}
 
   if (!url) {
     return res.status(400).json({ ok: false, error: 'Missing url' })
   }
 
   try {
+    const isPoll = pollMode === true
+
     const fetchHeaders: Record<string, string> = {
-      'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`,
-      'x-api-key': apiKey,
       'accept': '*/*',
       'cache-control': 'no-cache',
       'pragma': 'no-cache',
       'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',
       'origin': 'https://firefly.adobe.com',
       'referer': 'https://firefly.adobe.com/',
-      'sec-fetch-site': 'cross-site',
-      'sec-fetch-mode': 'cors',
-      'sec-fetch-dest': 'empty',
     }
-    if (nonce) fetchHeaders['x-nonce'] = nonce
-    if (arpSession) fetchHeaders['x-arp-session-id'] = arpSession
-    if (account) fetchHeaders['x-gw-ims-user-id'] = account
-    if (session && !arpSession) fetchHeaders['x-arp-session-id'] = session
+
+    if (!isPoll) {
+      if (apiKey) fetchHeaders['x-api-key'] = apiKey
+      if (nonce) fetchHeaders['x-nonce'] = nonce
+      if (arpSession) fetchHeaders['x-arp-session-id'] = arpSession
+      if (account) fetchHeaders['x-gw-ims-user-id'] = account
+      if (session && !arpSession) fetchHeaders['x-arp-session-id'] = session
+      fetchHeaders['sec-fetch-site'] = 'cross-site'
+      fetchHeaders['sec-fetch-mode'] = 'cors'
+      fetchHeaders['sec-fetch-dest'] = 'empty'
+    }
     if (customHeaders) Object.assign(fetchHeaders, customHeaders)
 
     const fetchOpts: RequestInit = {
@@ -46,15 +50,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       headers: fetchHeaders,
     }
     if (body && method !== 'GET') {
-      fetchOpts.body = JSON.stringify(body)
+      if (body.base64Body && body.binaryContentType) {
+        // Binary upload via base64 (e.g. image to Firefly storage)
+        const binaryStr = atob(body.base64Body)
+        const bytes = new Uint8Array(binaryStr.length)
+        for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i)
+        fetchOpts.body = bytes
+        fetchHeaders['content-type'] = body.binaryContentType
+      } else {
+        fetchHeaders['content-type'] = 'application/json'
+        fetchOpts.body = JSON.stringify(body)
+      }
     }
 
     const r = await fetch(url, fetchOpts)
     const text = await r.text()
-    console.log(`[firefly-proxy] ${method || 'POST'} ${url} → ${r.status}`)
+    console.log(`[firefly-proxy] ${isPoll ? 'POLL' : 'SUBMIT'} ${method || 'POST'} ${url} → ${r.status}`)
 
     let data: any
     try { data = JSON.parse(text) } catch { data = { raw: text } }
+
+    // Pass through x-task-status header for poll responses
+    if (isPoll) {
+      const taskStatus = r.headers.get('x-task-status') || ''
+      if (taskStatus) {
+        res.setHeader('X-Task-Status', taskStatus)
+      }
+      // Also pass through any other relevant headers
+      const accessError = r.headers.get('x-access-error') || ''
+      if (accessError) {
+        res.setHeader('X-Access-Error', accessError)
+      }
+    }
 
     if (!r.ok) {
       return res.status(r.status).json({ ok: false, status: r.status, data, error: text.slice(0, 300) })

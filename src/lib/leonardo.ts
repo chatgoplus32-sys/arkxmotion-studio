@@ -4,10 +4,20 @@ const LEONARDO_UPLOAD_PROXY = '/api/public/leonardo-upload'
 function getStoredKeys(): string[] {
   if (typeof window === 'undefined') return []
   try {
-    const raw = localStorage.getItem('arkxmotion.leonardo.keys')
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    const arr = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.keys) ? parsed.keys : []
+    // Try providerManager format first: arkxmotion.providers → { leonardo: [{key: ...}] }
+    const raw = localStorage.getItem('arkxmotion.providers')
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      const leonardoKeys = parsed?.leonardo
+      if (Array.isArray(leonardoKeys)) {
+        return leonardoKeys.map((k: any) => k?.key).filter((k: any) => !!k)
+      }
+    }
+    // Fallback: legacy arkxmotion.leonardo.keys format
+    const legacy = localStorage.getItem('arkxmotion.leonardo.keys')
+    if (!legacy) return []
+    const parsed2 = JSON.parse(legacy)
+    const arr = Array.isArray(parsed2) ? parsed2 : Array.isArray(parsed2?.keys) ? parsed2.keys : []
     return arr.map((k: any) => k?.key).filter((k: any) => !!k)
   } catch {
     return []
@@ -16,12 +26,13 @@ function getStoredKeys(): string[] {
 
 function removeStoredLeonardoKey(tokenToRemove: string) {
   try {
-    const raw = localStorage.getItem('arkxmotion.leonardo.keys')
+    const raw = localStorage.getItem('arkxmotion.providers')
     if (!raw) return
     const parsed = JSON.parse(raw)
-    const arr = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.keys) ? parsed.keys : []
-    const filtered = arr.filter((k: any) => k?.key !== tokenToRemove)
-    localStorage.setItem('arkxmotion.leonardo.keys', JSON.stringify(filtered))
+    if (Array.isArray(parsed?.leonardo)) {
+      parsed.leonardo = parsed.leonardo.filter((k: any) => k?.key !== tokenToRemove)
+      localStorage.setItem('arkxmotion.providers', JSON.stringify(parsed))
+    }
   } catch {}
 }
 
@@ -261,6 +272,10 @@ export async function fetchImageAsBlob(url: string): Promise<{ blob: Blob; ext: 
   return { blob, ext }
 }
 
+
+
+
+
 const GENERATE_MUTATION = `mutation Generate($request: CreateGenerationRequest!) {
   generate(request: $request) { apiCreditCost generationId __typename }
 }`
@@ -322,7 +337,7 @@ export async function leonardoGenerateVideo(token: string, opts: {
   }
 
   if (imagePromptIds.length > 0) {
-    const newModels = ['wan-2.6', 'seedance-2.0', 'seedance-2.0-mini', 'seedance-2.0-fast', 'veo-3.1-lite', 'veo-3.1-fast', 'kling-o3-omni', 'kling-2.6', 'gemini-omni-flash', 'grok-imagine-1.5']
+    const newModels = ['wan-2.6', 'alibaba/wan-3.0', 'wan-3.0', 'seedance-2.0', 'seedance-2.0-mini', 'seedance-2.0-fast', 'veo-3.1-lite', 'veo-3.1-fast', 'kling-o3-omni', 'kling-2.6', 'gemini-omni-flash', 'grok-imagine-1.5']
     if (newModels.includes(opts.slug)) {
       parameters.guidances = {
         start_frame: imagePromptIds.slice(0, 1).map((id) => ({
@@ -351,16 +366,57 @@ export async function leonardoGenerateVideo(token: string, opts: {
   console.log(`[leonardo-video] imagePromptIds:`, imagePromptIds.map(id => id?.slice(0, 8)))
   console.log(`[leonardo-video] requestBody:`, JSON.stringify(requestBody).slice(0, 500))
 
-  const data = await leonardoApi({
-    token,
-    base: 'api',
-    path: '/v1/graphql',
-    method: 'POST',
-    body: requestBody,
-  })
+  const retryWithoutGuidances = async () => {
+    const b = JSON.parse(JSON.stringify(requestBody))
+    delete b.variables.request.parameters.guidances
+    return leonardoApi({ token, base: 'api', path: '/v1/graphql', method: 'POST', body: b })
+  }
+  const retryWithImageRef = async () => {
+    const b = JSON.parse(JSON.stringify(requestBody))
+    const ids = imagePromptIds.slice(0, 4).map((id) => ({ image: { id, type: 'UPLOADED' }, strength: 'MID' }))
+    b.variables.request.parameters.guidances = { image_reference: ids }
+    return leonardoApi({ token, base: 'api', path: '/v1/graphql', method: 'POST', body: b })
+  }
+  let data: any
+  const isGuidanceError = (d: any) => JSON.stringify(d||'').includes('guidances must NOT have additional properties')
+  try {
+    data = await leonardoApi({ token, base: 'api', path: '/v1/graphql', method: 'POST', body: requestBody })
+    if (!extractGenerationId(data) && isGuidanceError(data)) throw new Error('guidances must NOT have additional properties')
+  } catch (e: any) {
+    const msg = e.message || ''
+    const guidanceFail = msg.includes('guidances must NOT have additional properties') || isGuidanceError((e as any).data)
+    if (guidanceFail) {
+      const isStartFrame = !!requestBody.variables.request.parameters.guidances?.start_frame
+      try {
+        if (isStartFrame) {
+          try { console.warn('[leonardo] start_frame fail → retry image_reference'); data = await retryWithImageRef(); if (!extractGenerationId(data) && isGuidanceError(data)) throw new Error('guidances must NOT have additional properties') }
+          catch (e2: any) {
+            if ((e2.message||'').includes('guidances must NOT have additional properties') || isGuidanceError(e2.data || data)) { console.warn('[leonardo] image_reference fail → retry without guidances'); data = await retryWithoutGuidances() }
+            else throw e2
+          }
+        } else {
+          console.warn('[leonardo] guidances fail → retry without guidances'); data = await retryWithoutGuidances()
+        }
+      } catch (e3: any) {
+        if ((e3.message||'').includes('guidances must NOT have additional properties') || isGuidanceError(e3.data)) { console.warn('[leonardo] retry without guidances fail → try minimal params'); data = await retryWithoutGuidances() }
+        else throw e3
+      }
+    } else throw e
+  }
 
   const generationId = extractGenerationId(data)
-  if (!generationId) throw Error(`Leonardo video: tidak ada generationId. ${JSON.stringify(data).slice(0, 800)}`)
+  if (!generationId) {
+    if (isGuidanceError(data)) {
+      console.warn('[leonardo] still guidance error → final retry minimal')
+      const b = JSON.parse(JSON.stringify(requestBody))
+      delete b.variables.request.parameters.guidances
+      delete b.variables.request.parameters.quantity
+      data = await leonardoApi({ token, base: 'api', path: '/v1/graphql', method: 'POST', body: b })
+      const gid2 = extractGenerationId(data)
+      if (gid2) return { generationId: gid2 }
+    }
+    throw Error(`Leonardo video: tidak ada generationId. ${JSON.stringify(data).slice(0, 800)}`)
+  }
   return { generationId }
 }
 

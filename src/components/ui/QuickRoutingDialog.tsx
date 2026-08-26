@@ -41,7 +41,7 @@ export function QuickRoutingDialog({ cap, providers, onClose, onSelect }: QuickR
             <Repeat className="h-5 w-5" />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">Routing Provider</div>
+            <div className="text-[12px] font-mono uppercase tracking-widest text-muted-foreground">Routing Provider</div>
             <div className="font-display text-lg text-foreground">Motion Control</div>
             <div className="text-xs text-muted-foreground mt-0.5">Pilih provider untuk generate motion control</div>
           </div>
@@ -66,7 +66,7 @@ export function QuickRoutingDialog({ cap, providers, onClose, onSelect }: QuickR
                 <div className="flex items-center gap-2">
                   <div className="font-display text-sm text-foreground flex-1 truncate">{provider.name}</div>
                   {isActive && (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider text-primary">
+                    <span className="inline-flex items-center gap-1 text-[12px] font-mono uppercase tracking-wider text-primary">
                       <Check className="h-3 w-3" /> aktif
                     </span>
                   )}
@@ -76,13 +76,13 @@ export function QuickRoutingDialog({ cap, providers, onClose, onSelect }: QuickR
                     <div key={model.key} className="flex items-start gap-2 text-[11px]">
                       <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary/60 shrink-0" />
                       <span className="text-foreground/80 flex-1 truncate">{model.label}</span>
-                      <span className="font-mono text-emerald-300/90 text-[10px] whitespace-nowrap">
+                      <span className="font-mono text-emerald-300/90 text-[12px] whitespace-nowrap">
                         ~{model.cr} cr
                       </span>
                     </div>
                   ))}
                   {provider.models.length > 4 && (
-                    <div className="text-[10px] text-muted-foreground mt-0.5">+{provider.models.length - 4} model lainnya</div>
+                    <div className="text-[12px] text-muted-foreground mt-0.5">+{provider.models.length - 4} model lainnya</div>
                   )}
                 </div>
               </button>

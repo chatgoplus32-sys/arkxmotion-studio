@@ -451,7 +451,7 @@ export function roboneoProxyPlugin(): Plugin {
         }
       })
 
-      server.middlewares.use('/api/public/leonardo', async (req, res) => {
+            server.middlewares.use('/api/public/leonardo', async (req, res) => {
         if (req.method === 'OPTIONS') {
           res.writeHead(200, {
             'Access-Control-Allow-Origin': '*',
@@ -703,7 +703,7 @@ export function roboneoProxyPlugin(): Plugin {
           res.writeHead(200, {
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Roboneo-Token, X-Firefly-Token, X-Firefly-Api-Key, X-Firefly-Account, X-Firefly-Session',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Roboneo-Token, X-Firefly-Token, X-Firefly-Api-Key, X-Firefly-Account, X-Firefly-Session, X-Leonardo-Token',
           })
           res.end()
           return

@@ -182,6 +182,24 @@ db.exec(`
 `)
 db.exec('CREATE INDEX IF NOT EXISTS idx_register_attempts_ip_time ON register_attempts(ip, created_at)')
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS login_attempts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ip TEXT NOT NULL,
+    email TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`)
+db.exec('CREATE INDEX IF NOT EXISTS idx_login_attempts_ip_email_time ON login_attempts(ip, email, created_at)')
+
+const userCols = db.prepare("PRAGMA table_info(users)").all() as { name: string }[]
+if (!userCols.some(c => c.name === 'refresh_token')) {
+  db.exec('ALTER TABLE users ADD COLUMN refresh_token TEXT')
+}
+if (!userCols.some(c => c.name === 'refresh_expires')) {
+  db.exec('ALTER TABLE users ADD COLUMN refresh_expires DATETIME')
+}
+
 // ── Konfirmasi pembayaran member baru ────────────────────────────────────
 db.exec(`
   CREATE TABLE IF NOT EXISTS membership_payments (

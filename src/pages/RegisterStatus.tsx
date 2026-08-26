@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { Search, Mail, Loader2, CheckCircle, Clock, XCircle, AlertCircle, MessageCircle } from 'lucide-react'
 import { DEFAULT_MEMBERSHIP_FEE, QRIS_IMG, formatRp, buildWaPaymentUrl, getMembershipFee } from '@/lib/membership'
@@ -13,7 +13,7 @@ interface PaymentInfo {
 
 type StatusResult =
   | { found: false }
-  | { found: true; approved: boolean; emailVerified: boolean; isAdmin: boolean; payment: PaymentInfo | null }
+  | { found: true; approved: boolean; isAdmin: boolean; payment: PaymentInfo | null }
 
 export default function RegisterStatusPage() {
   const [email, setEmail] = useState('')
@@ -146,7 +146,7 @@ export default function RegisterStatusPage() {
                     )}
                     <div>
                       <div className={`text-sm font-medium ${result.approved ? 'text-emerald-400' : 'text-yellow-400'}`}>
-                        {result.approved ? 'Akun disetujui â€” silakan login' : 'Menunggu persetujuan admin'}
+                        {result.approved ? 'Akun disetujui — silakan login' : 'Menunggu persetujuan admin'}
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">
                         {result.approved
@@ -155,24 +155,6 @@ export default function RegisterStatusPage() {
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-start gap-3">
-                    {result.emailVerified ? (
-                      <CheckCircle className="h-5 w-5 text-emerald-400 shrink-0 mt-0.5" />
-                    ) : (
-                      <Clock className="h-5 w-5 text-yellow-400 shrink-0 mt-0.5" />
-                    )}
-                    <div>
-                      <div className={`text-sm font-medium ${result.emailVerified ? 'text-emerald-400' : 'text-yellow-400'}`}>
-                        {result.emailVerified ? 'Email terverifikasi' : 'Email belum diverifikasi'}
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {result.emailVerified
-                          ? 'Email kamu sudah dikonfirmasi.'
-                          : 'Cek inbox email kamu untuk link verifikasi. Tanpa verifikasi, akun tidak bisa login.'}
-                      </p>
-                    </div>
-                  </div>
-
                   {/* Status pembayaran member */}
                   <div className="flex items-start gap-3">
                     {result.payment && result.payment.status === 'approved' ? (
@@ -224,7 +206,7 @@ export default function RegisterStatusPage() {
                   </p>
                   <div className="mb-3 rounded-lg overflow-hidden border border-border bg-white p-2">
                     <img src={QRIS_IMG} alt="QRIS Faezya cell" className="w-full max-w-[200px] mx-auto rounded" />
-                    <p className="text-center text-[10px] text-muted-foreground mt-1">Bayar {formatRp(fee)}</p>
+                    <p className="text-center text-[12px] text-muted-foreground mt-1">Bayar {formatRp(fee)}</p>
                   </div>
                   <div className="mb-3 flex items-center justify-between rounded-lg bg-secondary border border-border px-3 py-2">
                     <span className="text-xs text-muted-foreground">Biaya pendaftaran</span>

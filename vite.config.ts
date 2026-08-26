@@ -10,6 +10,9 @@ export default defineConfig({
       '@': '/src',
     },
   },
+  build: {
+    chunkSizeWarningLimit: 600,
+  },
   server: {
     proxy: {
       '/catbox': {
@@ -20,7 +23,7 @@ export default defineConfig({
       // API Express lokal (auth, tokens, admin, dsb). /api/public/* tetap ditangani
       // oleh roboneoProxyPlugin (proxy ke Vercel) karena middleware-nya berjalan lebih dulu.
       '/api': {
-        target: 'http://localhost:6000',
+        target: 'https://arkxmotion-studio.vercel.app',
         changeOrigin: true,
       },
     },

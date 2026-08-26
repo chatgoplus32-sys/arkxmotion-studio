@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
@@ -12,7 +12,6 @@ export default function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
-  const [devVerifyLink, setDevVerifyLink] = useState<string | null>(null)
   const [payNote, setPayNote] = useState('')
   const [fee, setFee] = useState(DEFAULT_MEMBERSHIP_FEE)
   const [isLoading, setIsLoading] = useState(false)
@@ -48,9 +47,8 @@ export default function RegisterPage() {
     }
 
     setSuccess(true)
-    setDevVerifyLink(result.devVerifyLink || null)
     setIsLoading(false)
-    addToast('Registration successful! Cek email untuk verifikasi, lalu konfirmasi pembayaran.', 'success')
+    addToast('Registrasi berhasil! Menunggu persetujuan admin.', 'success')
   }
 
   const handlePayConfirm = (e: React.FormEvent) => {
@@ -77,10 +75,10 @@ export default function RegisterPage() {
               </div>
               <h2 className="text-lg font-semibold mb-2">Registration Successful!</h2>
               <p className="text-muted-foreground text-sm mb-6">
-                Akun kamu sudah dibuat. Langkah berikutnya: <b>â‘  verifikasi email</b> â†’ <b>â‘¡ konfirmasi pembayaran</b> â†’ tunggu persetujuan admin.
+                Akun kamu sudah dibuat. Menunggu persetujuan admin — kamu akan bisa login setelah disetujui.
               </p>
 
-              {/* Konfirmasi pembayaran member (QRIS â†’ WhatsApp) */}
+              {/* Konfirmasi pembayaran member (QRIS → WhatsApp) */}
               <form onSubmit={handlePayConfirm} className="w-full mb-4 p-3 rounded-lg bg-secondary/50 border border-border text-left">
                 <div className="flex items-center gap-2 mb-2">
                   <MessageCircle className="h-4 w-4 text-emerald-400" />
@@ -91,7 +89,7 @@ export default function RegisterPage() {
                 </p>
                 <div className="mb-3 rounded-lg overflow-hidden border border-border bg-white p-2">
                   <img src={QRIS_IMG} alt="QRIS Faezya cell" className="w-full max-w-[220px] mx-auto rounded" />
-                  <p className="text-center text-[10px] text-muted-foreground mt-1">Scan QRIS â†’ Bayar {formatRp(fee)} â†’ Konfirmasi via WhatsApp</p>
+                  <p className="text-center text-[12px] text-muted-foreground mt-1">Scan QRIS → Bayar {formatRp(fee)} → Konfirmasi via WhatsApp</p>
                 </div>
                 <div className="mb-2 flex items-center justify-between rounded-lg bg-secondary border border-border px-3 py-2">
                   <span className="text-xs text-muted-foreground">Biaya pendaftaran</span>
@@ -115,18 +113,6 @@ export default function RegisterPage() {
                   Konfirmasi via WhatsApp
                 </button>
               </form>
-
-              {devVerifyLink && (
-                <div className="w-full mb-4 p-3 rounded-lg bg-secondary border border-border text-left">
-                  <p className="text-xs text-muted-foreground mb-1.5">Mode dev â€” SMTP belum dikonfigurasi, verifikasi manual:</p>
-                  <a
-                    href={devVerifyLink}
-                    className="text-xs text-primary break-all hover:underline"
-                  >
-                    {devVerifyLink}
-                  </a>
-                </div>
-              )}
 
               <Link
                 to="/register-status"
@@ -217,7 +203,7 @@ export default function RegisterPage() {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+                  placeholder="••••••••"
                   required
                   minLength={6}
                   className="w-full pl-10 pr-4 py-2.5 bg-secondary border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-colors"
@@ -236,7 +222,7 @@ export default function RegisterPage() {
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+                  placeholder="••••••••"
                   required
                   minLength={6}
                   className="w-full pl-10 pr-4 py-2.5 bg-secondary border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-colors"

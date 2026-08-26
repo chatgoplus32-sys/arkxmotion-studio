@@ -41,7 +41,7 @@ export const LEONARDO_VIDEO_MODELS: LeonardoVideoModel[] = [
     durations: [1, 10],
     durationMode: 'slider',
     sizeTiers: [SIZE_HD],
-    audio: false,
+    audio: true,
     supportsI2V: true,
     supportsT2V: true,
     crPerSecond: 100,
@@ -57,7 +57,7 @@ export const LEONARDO_VIDEO_MODELS: LeonardoVideoModel[] = [
     durations: [1, 15],
     durationMode: 'slider',
     sizeTiers: [SIZE_STANDARD, SIZE_HD],
-    audio: false,
+    audio: true,
     supportsI2V: true,
     supportsT2V: true,
     crPerSecond: 74.4,
@@ -137,7 +137,7 @@ export const LEONARDO_VIDEO_MODELS: LeonardoVideoModel[] = [
     durations: [1, 15],
     durationMode: 'slider',
     sizeTiers: [SIZE_STANDARD, SIZE_HD, SIZE_FULL_HD, SIZE_4K],
-    audio: false,
+    audio: true,
     supportsI2V: true,
     supportsT2V: true,
     crPerSecond: 140.6,
@@ -153,7 +153,7 @@ export const LEONARDO_VIDEO_MODELS: LeonardoVideoModel[] = [
     durations: [1, 15],
     durationMode: 'slider',
     sizeTiers: [SIZE_STANDARD, SIZE_HD],
-    audio: false,
+    audio: true,
     supportsI2V: true,
     supportsT2V: true,
     crPerSecond: 112.5,
@@ -192,11 +192,27 @@ export const LEONARDO_VIDEO_MODELS: LeonardoVideoModel[] = [
     crPerMpSecond: 67.5,
     crExamples: [{ tier: 'fullHd', seconds: 10, cr: 1400 }],
   },
+  {
+    id: 'leo-vid:wan-3.0',
+    slug: 'alibaba/wan-3.0',
+    label: 'Wan 3.0',
+    group: 'Featured',
+    aspectRatios: ['1:1', '16:9', '9:16', '3:4', '4:3'],
+    durations: [5, 10, 15, 30],
+    durationMode: 'buttons',
+    sizeTiers: [SIZE_HD, SIZE_FULL_HD],
+    audio: true,
+    supportsI2V: true,
+    supportsT2V: true,
+    crPerSecond: 38,
+    crPerMpSecond: 41.2,
+    crExamples: [{ tier: 'hd', seconds: 30, cr: 1140 }],
+  },
 ]
 
 export function getLeonardoVideoModel(key: string): LeonardoVideoModel | null {
-  const slug = key.replace(/^leo-vid:/, '')
-  return LEONARDO_VIDEO_MODELS.find((m) => m.slug === slug || m.id === key) ?? null
+  const slug = key.replace(/^leo-vid:/, '').replace(/^alibaba\//, '')
+  return LEONARDO_VIDEO_MODELS.find((m) => m.slug === slug || m.slug === key.replace(/^leo-vid:/, '') || m.id === key) ?? null
 }
 
 export function estimateLeonardoCost(model: LeonardoVideoModel, tierId: string, seconds: number): number {

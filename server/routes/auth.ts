@@ -2,12 +2,26 @@ import { Router, Response } from 'express'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import crypto from 'crypto'
+import { z } from 'zod'
 import db from '../db.js'
 import { authenticateToken, AuthRequest } from '../middleware/auth.js'
 import { sendEmail, appUrl } from '../mailer.js'
 
+const RegisterSchema = z.object({ email: z.string().email().max(254), password: z.string().min(6).max(128), name: z.string().min(1).max(80).trim() })
+const LoginSchema = z.object({ email: z.string().email().max(254), password: z.string().min(1).max(128) })
+
 const router = Router()
 const JWT_SECRET = process.env.JWT_SECRET || 'arkxmotion-studio-secret-key-2026'
+const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || JWT_SECRET + '-refresh'
+const ACCESS_EXPIRES = '15m'
+const REFRESH_EXPIRES = '7d'
+
+function signAccessToken(user: { id: number; email: string; role: string }) {
+  return jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: ACCESS_EXPIRES })
+}
+function signRefreshToken(user: { id: number; email: string; role: string }) {
+  return jwt.sign({ id: user.id, email: user.email, role: user.role, kind: 'refresh' }, REFRESH_SECRET, { expiresIn: REFRESH_EXPIRES })
+}
 
 interface UserRow {
   id: number
@@ -78,7 +92,9 @@ function clientIp(req: any): string {
 
 router.post('/register', async (req, res: Response) => {
   try {
-    const { email, password, name } = req.body
+    const parsed = RegisterSchema.safeParse(req.body)
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0].message })
+    const { email, password, name } = parsed.data
 
     // Anti-spam: maks 5 percobaan daftar per jam per IP
     const ip = clientIp(req)
@@ -111,18 +127,9 @@ router.post('/register', async (req, res: Response) => {
 
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(result.lastInsertRowid) as UserRow
 
-    // Kirim email verifikasi (link dikembalikan bila email tidak terkirim — mode dev)
-    let devLink: string | null = null
-    try {
-      devLink = await sendVerificationEmail(user)
-    } catch (err: any) {
-      console.error('Send verification email error:', err.message)
-    }
-
     res.status(201).json({
-      message: 'Registration successful. Please check your email to verify, then wait for admin approval.',
+      message: 'Registration successful. Waiting for admin approval.',
       needsApproval: true,
-      devVerifyLink: devLink,
       paymentToken,
       user: {
         id: user.id,
@@ -138,21 +145,38 @@ router.post('/register', async (req, res: Response) => {
   }
 })
 
+const LOGIN_LIMIT = 5
+const LOGIN_WINDOW_MIN = 15
+
 router.post('/login', async (req, res: Response) => {
   try {
-    const { email, password } = req.body
+    const parsed = LoginSchema.safeParse(req.body)
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0].message })
+    const { email, password } = parsed.data
 
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' })
     }
 
-    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as UserRow | undefined
+    const ip = clientIp(req)
+    const emailNorm = String(email).toLowerCase().trim()
+    db.prepare("DELETE FROM login_attempts WHERE created_at < datetime('now', '-15 minutes')").run()
+    const failRow = db.prepare(
+      "SELECT COUNT(*) AS c FROM login_attempts WHERE ip = ? AND email = ? AND created_at >= datetime('now', '-15 minutes')"
+    ).get(ip, emailNorm) as { c: number }
+    if (failRow.c >= LOGIN_LIMIT) {
+      return res.status(429).json({ error: `Terlalu banyak percobaan login (${LOGIN_LIMIT}/${LOGIN_WINDOW_MIN} menit). Coba lagi nanti.` })
+    }
+
+    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(emailNorm) as UserRow | undefined
     if (!user) {
+      db.prepare('INSERT INTO login_attempts (ip, email) VALUES (?, ?)').run(ip, emailNorm)
       return res.status(401).json({ error: 'Invalid email or password' })
     }
 
     const validPassword = await bcrypt.compare(password, user.password)
     if (!validPassword) {
+      db.prepare('INSERT INTO login_attempts (ip, email) VALUES (?, ?)').run(ip, emailNorm)
       return res.status(401).json({ error: 'Invalid email or password' })
     }
 
@@ -160,14 +184,14 @@ router.post('/login', async (req, res: Response) => {
       return res.status(403).json({ error: 'Your account is pending admin approval' })
     }
 
-    const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role },
-      JWT_SECRET,
-      { expiresIn: '7d' }
-    )
+    const token = signAccessToken(user as any)
+    const refreshToken = signRefreshToken(user as any)
+    const refreshExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+    db.prepare('UPDATE users SET refresh_token = ?, refresh_expires = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(refreshToken, refreshExpires, user.id)
 
     res.json({
       token,
+      refreshToken,
       user: {
         id: user.id,
         email: user.email,
@@ -180,6 +204,45 @@ router.post('/login', async (req, res: Response) => {
     console.error('Login error:', error)
     res.status(500).json({ error: 'Internal server error' })
   }
+})
+
+router.post('/refresh', (req, res: Response) => {
+  try {
+    const { refreshToken } = req.body || {}
+    if (!refreshToken) return res.status(400).json({ error: 'Refresh token required' })
+    let payload: any
+    try { payload = jwt.verify(refreshToken, REFRESH_SECRET) as any } catch { return res.status(401).json({ error: 'Refresh token invalid or expired' }) }
+    if (payload.kind !== 'refresh') return res.status(401).json({ error: 'Invalid refresh token' })
+    const row = db.prepare('SELECT id, email, role, refresh_token, refresh_expires FROM users WHERE id = ?').get(payload.id) as any
+    if (!row || row.refresh_token !== refreshToken) return res.status(401).json({ error: 'Refresh token mismatch' })
+    if (row.refresh_expires && new Date(row.refresh_expires).getTime() < Date.now()) return res.status(401).json({ error: 'Refresh token expired' })
+    const token = signAccessToken({ id: row.id, email: row.email, role: row.role })
+    res.json({ token })
+  } catch (error) {
+    console.error('Refresh error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.post('/logout', (req, res: Response) => {
+  try {
+    const auth = req.headers.authorization
+    const tok = auth?.split(' ')[1]
+    if (tok) {
+      try {
+        const p = jwt.verify(tok, JWT_SECRET) as any
+        db.prepare('UPDATE users SET refresh_token = NULL, refresh_expires = NULL WHERE id = ?').run(p.id)
+      } catch {}
+    }
+    const { refreshToken } = (req.body as any) || {}
+    if (refreshToken) {
+      try {
+        const p2 = jwt.verify(refreshToken, REFRESH_SECRET) as any
+        db.prepare('UPDATE users SET refresh_token = NULL, refresh_expires = NULL WHERE id = ?').run(p2.id)
+      } catch {}
+    }
+  } catch {}
+  res.json({ message: 'Logged out successfully' })
 })
 
 router.get('/me', authenticateToken, (req: AuthRequest, res: Response) => {
@@ -195,10 +258,6 @@ router.get('/me', authenticateToken, (req: AuthRequest, res: Response) => {
     console.error('Get me error:', error)
     res.status(500).json({ error: 'Internal server error' })
   }
-})
-
-router.post('/logout', (_req, res: Response) => {
-  res.json({ message: 'Logged out successfully' })
 })
 
 // ─── Status pendaftaran (tanpa login) ───────────────────────────────────

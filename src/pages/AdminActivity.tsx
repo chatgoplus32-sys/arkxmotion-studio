@@ -114,7 +114,7 @@ export default function AdminActivityPage() {
           <Download className="h-3.5 w-3.5" />
           Export CSV
         </Button>
-        {lastFetch && <span className="text-[10px] text-muted-foreground">Terakhir: {lastFetch}</span>}
+        {lastFetch && <span className="text-[12px] text-muted-foreground">Terakhir: {lastFetch}</span>}
 
         <select
           value={filterProvider}
@@ -152,15 +152,15 @@ export default function AdminActivityPage() {
       <div className="grid grid-cols-3 gap-3 mb-4">
         <div className="rounded-lg border border-border bg-card/50 p-3 text-center">
           <div className="text-lg font-bold text-green-400">{logs.filter(l => l.status === 'completed').length}</div>
-          <div className="text-[10px] text-muted-foreground">Completed</div>
+          <div className="text-[12px] text-muted-foreground">Completed</div>
         </div>
         <div className="rounded-lg border border-border bg-card/50 p-3 text-center">
           <div className="text-lg font-bold text-red-400">{logs.filter(l => l.status === 'failed').length}</div>
-          <div className="text-[10px] text-muted-foreground">Failed</div>
+          <div className="text-[12px] text-muted-foreground">Failed</div>
         </div>
         <div className="rounded-lg border border-border bg-card/50 p-3 text-center">
           <div className="text-lg font-bold text-yellow-400">{logs.filter(l => l.status === 'pending').length}</div>
-          <div className="text-[10px] text-muted-foreground">Pending</div>
+          <div className="text-[12px] text-muted-foreground">Pending</div>
         </div>
       </div>
 
@@ -184,7 +184,7 @@ export default function AdminActivityPage() {
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-sm">{PROVIDER_ICONS[log.provider] || '🔹'}</span>
                       <span className="text-xs font-medium capitalize">{log.provider}</span>
-                      <span className="text-[10px] text-muted-foreground">·</span>
+                      <span className="text-[12px] text-muted-foreground">·</span>
                       <span className="text-xs text-muted-foreground truncate">{log.model}</span>
                     </div>
 
@@ -192,7 +192,7 @@ export default function AdminActivityPage() {
                       <p className="text-[11px] text-muted-foreground truncate mb-1">"{log.prompt.slice(0, 80)}{log.prompt.length > 80 ? '...' : ''}"</p>
                     )}
 
-                    <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+                    <div className="flex items-center gap-3 text-[12px] text-muted-foreground">
                       <span>👤 {log.user_name || log.user_email || `User #${log.user_id}`}</span>
                       {log.credits > 0 && <span>⚡ {log.credits} cr</span>}
                       {log.duration_ms && <span>⏱ {log.duration_ms > 60000 ? `${Math.round(log.duration_ms / 60000)}m` : `${Math.round(log.duration_ms / 1000)}s`}</span>}
@@ -202,8 +202,8 @@ export default function AdminActivityPage() {
 
                   {/* Time */}
                   <div className="text-right shrink-0">
-                    <div className="text-[10px] text-muted-foreground">{timeAgo(log.created_at)}</div>
-                    <div className="text-[9px] text-muted-foreground/50">{log.created_at?.slice(11, 19)}</div>
+                    <div className="text-[12px] text-muted-foreground">{timeAgo(log.created_at)}</div>
+                    <div className="text-[11px] text-muted-foreground/50">{log.created_at?.slice(11, 19)}</div>
                   </div>
                 </div>
               )

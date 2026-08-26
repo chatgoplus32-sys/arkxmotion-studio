@@ -361,7 +361,6 @@ export default function AdminUsersPage() {
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground">Email</th>
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground">Role</th>
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground">Status</th>
-                    <th className="text-left py-3 px-4 font-medium text-muted-foreground">Verified</th>
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground">Payment</th>
                     <th className="text-right py-3 px-4 font-medium text-muted-foreground">Actions</th>
                   </tr>
@@ -404,23 +403,10 @@ export default function AdminUsersPage() {
                         </span>
                       </td>
                       <td className="py-3 px-4">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
-                          user.email_verified
-                            ? 'bg-emerald-500/10 text-emerald-500'
-                            : 'bg-yellow-500/10 text-yellow-500'
-                        }`}>
-                          {user.email_verified ? (
-                            <><CheckCircle className="h-3 w-3" /> Verified</>
-                          ) : (
-                            <><Clock className="h-3 w-3" /> Belum</>
-                          )}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4">
                         {user.payment ? (
                           <div className="flex flex-col items-start gap-1">
                             <span className="text-xs font-mono">Rp {user.payment.amount.toLocaleString('id-ID')}</span>
-                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[12px] font-medium ${
                               user.payment.status === 'approved'
                                 ? 'bg-emerald-500/10 text-emerald-500'
                                 : user.payment.status === 'rejected'
@@ -441,7 +427,7 @@ export default function AdminUsersPage() {
                                   onClick={() => handleApprovePayment(user.payment!.id, user.email)}
                                   disabled={actionLoading === user.payment.id}
                                   title="Setujui pembayaran & aktifkan akun"
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 text-[10px] font-medium transition disabled:opacity-50"
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 text-[12px] font-medium transition disabled:opacity-50"
                                 >
                                   <BadgeCheck className="h-3 w-3" /> Approve
                                 </button>
@@ -449,7 +435,7 @@ export default function AdminUsersPage() {
                                   onClick={() => handleRejectPayment(user.payment.id, user.email)}
                                   disabled={actionLoading === user.payment.id}
                                   title="Tolak pembayaran"
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-red-500/10 text-red-500 hover:bg-red-500/20 text-[10px] font-medium transition disabled:opacity-50"
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-red-500/10 text-red-500 hover:bg-red-500/20 text-[12px] font-medium transition disabled:opacity-50"
                                 >
                                   <Ban className="h-3 w-3" /> Tolak
                                 </button>
@@ -485,18 +471,7 @@ export default function AdminUsersPage() {
                                 <XCircle className="h-4 w-4" />
                               </Button>
                             )}
-                            {!user.email_verified && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleResendVerification(user.id, user.email)}
-                                disabled={actionLoading === user.id}
-                                title="Kirim ulang link verifikasi email"
-                                className="text-yellow-500 hover:text-yellow-600 hover:bg-yellow-500/10"
-                              >
-                                <Mail className="h-4 w-4" />
-                              </Button>
-                            )}
+
                             <Button
                               variant="outline"
                               size="sm"

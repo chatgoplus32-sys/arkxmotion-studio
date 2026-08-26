@@ -1,17 +1,15 @@
 import { useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { logAudit } from '@/lib/auditLog'
-import { LogIn, Mail, Lock, AlertCircle, CheckCircle, XCircle } from 'lucide-react'
+import { LogIn, Mail, Lock, AlertCircle } from 'lucide-react'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [searchParams] = useSearchParams()
-  const verified = searchParams.get('verified')
   const login = useAuthStore((state) => state.login)
   const addToast = useToastStore((state) => state.addToast)
   const navigate = useNavigate()
@@ -49,19 +47,6 @@ export default function LoginPage() {
             <LogIn className="h-5 w-5 text-primary" />
             <h2 className="text-lg font-semibold">Sign In</h2>
           </div>
-
-          {verified === '1' && (
-            <div className="flex items-center gap-2 p-3 mb-4 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-emerald-500 text-sm">
-              <CheckCircle className="h-4 w-4 flex-shrink-0" />
-              Email berhasil diverifikasi! Silakan login setelah akun disetujui admin.
-            </div>
-          )}
-          {verified === '0' && (
-            <div className="flex items-center gap-2 p-3 mb-4 bg-destructive/10 border border-destructive/20 rounded-lg text-destructive text-sm">
-              <XCircle className="h-4 w-4 flex-shrink-0" />
-              Link verifikasi tidak valid atau sudah kedaluwarsa.
-            </div>
-          )}
 
           {error && (
             <div className="flex items-center gap-2 p-3 mb-4 bg-destructive/10 border border-destructive/20 rounded-lg text-destructive text-sm">

@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
-import { Section, Button, Select, Label, Textarea, EmptyState, Badge, BalanceBadge } from '@/components/ui'
+import { Section, Button, Select, Label, Textarea, EmptyState, Badge, BalanceBadge, Checkbox } from '@/components/ui'
 import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
-import { Image, Upload, Rocket, Loader2, Trash2, Key, ExternalLink, Download, X } from 'lucide-react'
+import { Image, Upload, Rocket, Loader2, Trash2, Key, ExternalLink, Download, X, Copy } from 'lucide-react'
 import { Swipeable } from '@/components/Swipeable'
 import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
 import { useToastStore } from '@/stores/toastStore'
@@ -32,493 +32,10 @@ import { isNotificationsEnabled, setNotificationsEnabled, requestNotificationPer
 import { uploadToCdn } from '@/lib/cdn'
 import { precheckProviderBalance } from '@/lib/balancePrecheck'
 
-interface ModelOption {
-  value: string
-  label: string
-  cr: number
-  provider: ProviderId
-  apiModel?: string // model name for API
-}
+import { PROVIDER_MODELS, QUALITY_OPTIONS, CP_PRICES, getCreatepulseCost, RATIOS, TEMPLATES, CREATEPULSE_API } from './image-to-video/constants'
+import type { ModelOption } from './image-to-video/constants'
 
-const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
-  weavy: [
-    { value: 'sora-2', label: 'Sora 2 Pro', cr: 96, provider: 'weavy' },
-    { value: 'grok-video', label: 'Grok Imagine Video v1.5', cr: 90, provider: 'weavy' },
-    { value: 'gemini-omni', label: 'Gemini Omni Flash', cr: 100, provider: 'weavy' },
-    { value: 'seedance-mini', label: 'Seedance 2.0 Mini', cr: 130, provider: 'weavy' },
-    { value: 'kling-3-turbo', label: 'Kling 3.0 Turbo Standard', cr: 135, provider: 'weavy' },
-    { value: 'kling-video', label: 'Kling Video 2.1 Pro', cr: 90, provider: 'weavy' },
-  ],
-  wavespeed: [
-    { value: 'kling-2.1', label: 'Kling V2.1', cr: 26, provider: 'wavespeed' },
-    { value: 'seedance', label: 'Seedance', cr: 30, provider: 'wavespeed' },
-    { value: 'wan-i2v', label: 'Wan i2v', cr: 18, provider: 'wavespeed' },
-  ],
-  roboneo: [
-    { value: 'rn:seedance-2.0', label: 'Seedance 2.0 (Roboneo)', cr: 143, provider: 'roboneo' },
-    { value: 'rn:seedance-2.0-mini', label: 'Seedance 2.0 Mini (Roboneo)', cr: 140, provider: 'roboneo' },
-    { value: 'rn:seedance-2.0-fast', label: 'Seedance 2.0 Fast (Roboneo)', cr: 90, provider: 'roboneo' },
-    { value: 'rn:happyhorse-1.1', label: 'Happy Horse 1.1 (Roboneo)', cr: 144, provider: 'roboneo' },
-    { value: 'rn:happyhorse-1.0', label: 'Happy Horse 1.0 (Roboneo)', cr: 120, provider: 'roboneo' },
-    { value: 'rn:kling-v3', label: 'Kling 3.0 (Roboneo)', cr: 130, provider: 'roboneo' },
-    { value: 'rn:kling-v3-turbo', label: 'Kling 3.0 Turbo (Roboneo)', cr: 90, provider: 'roboneo' },
-    { value: 'rn:seedance-1.0', label: 'Seedance 1.0 / Pro (Roboneo)', cr: 100, provider: 'roboneo' },
-    { value: 'rn:google-omni', label: 'Google Omni Flash (Roboneo)', cr: 45, provider: 'roboneo' },
-    { value: 'rn:kling-v26:std', label: 'Kling 2.6 (Roboneo)', cr: 80, provider: 'roboneo' },
-    { value: 'rn:kling-v21:std', label: 'Kling 2.1 (Roboneo)', cr: 65, provider: 'roboneo' },
-    { value: 'rn:seedance-pro', label: 'Seedance Pro — legacy alias (Roboneo)', cr: 100, provider: 'roboneo' },
-    { value: 'rn:wan-26', label: 'Wan 2.6 (Roboneo)', cr: 75, provider: 'roboneo' },
-    { value: 'rn:wan-26-std', label: 'Wan 2.6 Standard (Roboneo)', cr: 55, provider: 'roboneo' },
-    { value: 'rn:sora-2', label: 'Sora 2 (Roboneo)', cr: 150, provider: 'roboneo' },
-    { value: 'rn:veo-3', label: 'VEO 3.0 (Roboneo)', cr: 160, provider: 'roboneo' },
-    { value: 'rn:veo-3-fast', label: 'VEO 3.0 Fast (Roboneo)', cr: 100, provider: 'roboneo' },
-  ],
-  createpulse: [
-    { value: 'cp:dreamina-seedance-2.0', label: 'Seedance 2.0 (FAST)', cr: 22, provider: 'createpulse', apiModel: 'dreamina-seedance-2.0' },
-    { value: 'cp:dreamina-seedance-2.5', label: 'Seedance 2.5 (BEST)', cr: 22, provider: 'createpulse', apiModel: 'dreamina-seedance-2.5' },
-    { value: 'cp:dreamina-seedance-2.0-15s', label: 'Seedance 2.0 Extended (15s)', cr: 33, provider: 'createpulse', apiModel: 'dreamina-seedance-2.0-15s' },
-    { value: 'cp:dreamina-seedance-2.5-15s', label: 'Seedance 2.5 · 15 Second', cr: 33, provider: 'createpulse', apiModel: 'dreamina-seedance-2.5-15s' },
-    { value: 'cp:dreamina-seedance-2.5-20s', label: 'Seedance 2.5 · 20 Second', cr: 33, provider: 'createpulse', apiModel: 'dreamina-seedance-2.5-20s' },
-    { value: 'cp:dreamina-seedance-2.5-30s', label: 'Seedance 2.5 · 30 Second — longest', cr: 33, provider: 'createpulse', apiModel: 'dreamina-seedance-2.5-30s' },
-    { value: 'cp:veo-omni-10s', label: 'Veo Omni (CINEMATIC)', cr: 33, provider: 'createpulse', apiModel: 'veo-omni-10s' },
-  ],
-  framia: [
-    { value: 'framia:gemini-omni-flash', label: 'Gemini Omni Flash (Framia)', cr: 20, provider: 'framia' },
-    { value: 'framia:seedance-2.0', label: 'Seedance 2.0 (Framia)', cr: 45, provider: 'framia' },
-    { value: 'framia:seedance-2.0-fast', label: 'Seedance 2.0 Fast (Framia)', cr: 30, provider: 'framia' },
-    { value: 'framia:kling-3.0-omni', label: 'Kling 3.0 Omni (Framia)', cr: 60, provider: 'framia' },
-    { value: 'framia:kling-3.0', label: 'Kling 3.0 (Framia)', cr: 50, provider: 'framia' },
-    { value: 'framia:veo-3.1', label: 'Veo 3.1 (Framia)', cr: 90, provider: 'framia' },
-    { value: 'framia:veo-3.1-fast', label: 'Veo 3.1 Fast (Framia)', cr: 65, provider: 'framia' },
-    { value: 'framia:wan-2.7', label: 'Wan 2.7 (Framia)', cr: 25, provider: 'framia' },
-    { value: 'framia:happyhorse-1.1', label: 'HappyHorse 1.1 (Framia)', cr: 28, provider: 'framia' },
-    { value: 'framia:kling-avatar', label: 'Kling Avatar (Framia)', cr: 40, provider: 'framia' },
-  ],
-  magnific: [
-    { value: 'magnific:kling-v3-pro', label: 'Kling V3 Pro (Magnific)', cr: 84, provider: 'magnific' },
-    { value: 'magnific:kling-v3-std', label: 'Kling V3 Standard (Magnific)', cr: 63, provider: 'magnific' },
-  ],
-  leonardo: LEONARDO_VIDEO_MODELS.map((m) => ({
-    value: m.id,
-    label: `${m.label} (Leonardo · ~${m.crPerSecond} cr/s)`,
-    cr: m.crExamples[0]?.cr ?? Math.round(m.crPerSecond * 5),
-    provider: 'leonardo' as ProviderId,
-  })),
-  gemini: [],
-  openai: [],
-  shotstack: [],
-  creatomate: [],
-  firefly: [
-    { value: 'firefly:veo-3.1-fast', label: 'Veo 3.1 Fast (Firefly)', cr: 100, provider: 'firefly' },
-    { value: 'firefly:veo-3.1', label: 'Veo 3.1 (Firefly)', cr: 130, provider: 'firefly' },
-    { value: 'firefly:gemini-omni-flash', label: 'Gemini Omni Flash (Firefly)', cr: 80, provider: 'firefly' },
-    { value: 'firefly:seedance-fast', label: 'Seedance Fast (Firefly)', cr: 60, provider: 'firefly' },
-  ],
-  runninghub: [
-    { value: 'rh:pro:2.6', label: 'Kling 2.6 Pro (Markasflow-V2)', cr: 80, provider: 'runninghub' },
-    { value: 'rh:std:2.6', label: 'Kling 2.6 Standard (Markasflow-V2)', cr: 50, provider: 'runninghub' },
-    { value: 'rh:pro:2.1', label: 'Kling 2.1 Pro (Markasflow-V2)', cr: 60, provider: 'runninghub' },
-    { value: 'rh:std:2.1', label: 'Kling 2.1 Standard (Markasflow-V2)', cr: 35, provider: 'runninghub' },
-  ],
-  galleri5: [
-    { value: 'g5:gemini-omni-flash-i2v', label: 'Gemini Omni Flash I2V (Galery5)', cr: 134, provider: 'galleri5' },
-    { value: 'g5:wan-2.7-i2v', label: 'Wan 2.7 Image to Video (Galery5)', cr: 200, provider: 'galleri5' },
-  ],
-  oneover: [
-    { value: 'oo:grok-imagine-video', label: 'Grok Imagine Video (OneOver)', cr: 70, provider: 'oneover', apiModel: 'grok-imagine-video' },
-    { value: 'oo:seedance-2.0', label: 'Seedance 2.0 (OneOver)', cr: 70, provider: 'oneover', apiModel: 'seedance-2.0' },
-    { value: 'oo:seedance-2.5', label: 'Seedance 2.5 (OneOver)', cr: 105, provider: 'oneover', apiModel: 'seedance-2.5' },
-    { value: 'oo:gemini-omni-flash-preview', label: 'Gemini Omni Flash (OneOver)', cr: 80, provider: 'oneover', apiModel: 'gemini-omni-flash-preview' },
-  ],
-}
-
-const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; label: string; mult: number; duration: number; cr?: number; resolution?: string; sound?: string; sizeTier?: string }>>> = {
-  weavy: {
-    'sora-2': [
-      { value: '16s-720p', label: '16 detik · 720p', mult: 1, duration: 16, cr: 96, resolution: '720p' },
-      { value: '12s-720p', label: '12 detik · 720p', mult: 1, duration: 12, cr: 96, resolution: '720p' },
-      { value: '8s-720p', label: '8 detik · 720p', mult: 1, duration: 8, cr: 96, resolution: '720p' },
-      { value: '4s-720p', label: '4 detik · 720p', mult: 1, duration: 4, cr: 96, resolution: '720p' },
-    ],
-    'grok-video': [
-      { value: '15s-720p', label: '15 detik · 720p', mult: 1, duration: 15, cr: 90, resolution: '720p' },
-      { value: '10s-720p', label: '10 detik · 720p', mult: 1, duration: 10, cr: 90, resolution: '720p' },
-      { value: '5s-720p', label: '5 detik · 720p', mult: 1, duration: 5, cr: 90, resolution: '720p' },
-    ],
-    'gemini-omni': [
-      { value: '10s', label: '10 detik', mult: 1, duration: 10, cr: 125, resolution: '720p' },
-      { value: '8s', label: '8 detik', mult: 1, duration: 8, cr: 100, resolution: '720p' },
-    ],
-    'seedance-mini': [
-      { value: '10s-720p', label: '10 detik · 720p', mult: 1, duration: 10, cr: 130, resolution: '720p' },
-      { value: '10s-480p', label: '10 detik · 480p', mult: 1, duration: 10, cr: 130, resolution: '480p' },
-      { value: '5s-720p', label: '5 detik · 720p', mult: 1, duration: 5, cr: 130, resolution: '720p' },
-      { value: '5s-480p', label: '5 detik · 480p', mult: 1, duration: 5, cr: 130, resolution: '480p' },
-    ],
-    'kling-3-turbo': [
-      { value: '15s', label: '15 detik', mult: 1, duration: 15, cr: 135, resolution: '720p' },
-      { value: '10s', label: '10 detik', mult: 1, duration: 10, cr: 135, resolution: '720p' },
-      { value: '5s', label: '5 detik', mult: 1, duration: 5, cr: 135, resolution: '720p' },
-    ],
-    'kling-video': [
-      { value: '10s', label: '10 detik', mult: 1, duration: 10, cr: 90, resolution: '720p' },
-      { value: '5s', label: '5 detik', mult: 1, duration: 5, cr: 90, resolution: '720p' },
-    ],
-  },
-  wavespeed: {
-    default: [
-      { value: 'std', label: 'Standard 5s', mult: 1, duration: 5 },
-      { value: 'long', label: 'Long 10s', mult: 2, duration: 10 },
-    ],
-  },
-  roboneo: {
-    'rn:seedance-2.0': [
-      { value: '480p-10s-audio', label: '480p · 10s · audio', mult: 1, duration: 10, resolution: '480p', sound: 'on', cr: 143 },
-      { value: '480p-10s', label: '480p · 10s', mult: 1, duration: 10, resolution: '480p', sound: 'off', cr: 120 },
-      { value: '480p-5s-audio', label: '480p · 5s · audio', mult: 1, duration: 5, resolution: '480p', sound: 'on', cr: 75 },
-      { value: '480p-5s', label: '480p · 5s', mult: 1, duration: 5, resolution: '480p', sound: 'off', cr: 60 },
-    ],
-    'rn:seedance-2.0-mini': [
-      { value: '480p-12s-audio', label: '480p · 12s · audio', mult: 1, duration: 12, resolution: '480p', sound: 'on', cr: 140 },
-      { value: '480p-10s-audio', label: '480p · 10s · audio', mult: 1, duration: 10, resolution: '480p', sound: 'on', cr: 118 },
-      { value: '480p-5s-audio', label: '480p · 5s · audio', mult: 1, duration: 5, resolution: '480p', sound: 'on', cr: 60 },
-      { value: '480p-5s', label: '480p · 5s', mult: 1, duration: 5, resolution: '480p', sound: 'off', cr: 48 },
-    ],
-    'rn:seedance-2.0-fast': [
-      { value: '480p-10s', label: '480p · 10s', mult: 1, duration: 10, resolution: '480p', sound: 'off', cr: 90 },
-      { value: '480p-5s', label: '480p · 5s', mult: 1, duration: 5, resolution: '480p', sound: 'off', cr: 45 },
-      { value: '720p-5s', label: '720p · 5s', mult: 1, duration: 5, resolution: '720p', sound: 'off', cr: 65 },
-    ],
-    'rn:happyhorse-1.1': [
-      { value: '720p-14s', label: '720p · 14s', mult: 1, duration: 14, resolution: '720p', cr: 144 },
-      { value: '720p-10s', label: '720p · 10s', mult: 1, duration: 10, resolution: '720p', cr: 100 },
-      { value: '720p-5s', label: '720p · 5s', mult: 1, duration: 5, resolution: '720p', cr: 50 },
-      { value: '480p-14s', label: '480p · 14s', mult: 1, duration: 14, resolution: '480p', cr: 100 },
-    ],
-    'rn:happyhorse-1.0': [
-      { value: '720p-10s', label: '720p · 10s', mult: 1, duration: 10, resolution: '720p', cr: 120 },
-      { value: '720p-5s', label: '720p · 5s', mult: 1, duration: 5, resolution: '720p', cr: 60 },
-    ],
-    'rn:kling-v3': [
-      { value: '10s-off', label: '10s · No Sound', mult: 1, duration: 10, sound: 'off', cr: 130 },
-      { value: '5s-off', label: '5s · No Sound', mult: 1, duration: 5, sound: 'off', cr: 65 },
-      { value: '5s-on', label: '5s · Sound', mult: 1, duration: 5, sound: 'on', cr: 85 },
-    ],
-    'rn:kling-v3-turbo': [
-      { value: '10s-off', label: '10s · No Sound', mult: 1, duration: 10, sound: 'off', cr: 90 },
-      { value: '5s-off', label: '5s · No Sound', mult: 1, duration: 5, sound: 'off', cr: 45 },
-    ],
-    'rn:seedance-1.0': [
-      { value: '720p-5s', label: '720p · 5s', mult: 1, duration: 5, resolution: '720p', cr: 50 },
-      { value: '720p-10s', label: '720p · 10s', mult: 1, duration: 10, resolution: '720p', cr: 100 },
-      { value: '720p-12s', label: '720p · 12s', mult: 1, duration: 12, resolution: '720p', cr: 120 },
-      { value: '480p-5s', label: '480p · 5s', mult: 1, duration: 5, resolution: '480p', cr: 35 },
-    ],
-    'rn:seedance-pro': [
-      { value: '720p-5s', label: '720p · 5s', mult: 1, duration: 5, resolution: '720p', cr: 50 },
-      { value: '720p-10s', label: '720p · 10s', mult: 1, duration: 10, resolution: '720p', cr: 100 },
-      { value: '720p-12s', label: '720p · 12s', mult: 1, duration: 12, resolution: '720p', cr: 120 },
-      { value: '480p-5s', label: '480p · 5s', mult: 1, duration: 5, resolution: '480p', cr: 35 },
-    ],
-    'rn:google-omni': [
-      { value: '5s', label: 'Durasi 5s', mult: 1, duration: 5, cr: 25 },
-      { value: '10s', label: 'Durasi 10s', mult: 1, duration: 10, cr: 45 },
-    ],
-    'rn:kling-v26:std': [
-      { value: '5s-off', label: '5s · No Sound', mult: 1, duration: 5, sound: 'off', cr: 40 },
-      { value: '5s-on', label: '5s · Sound', mult: 1, duration: 5, sound: 'on', cr: 55 },
-      { value: '10s-off', label: '10s · No Sound', mult: 1, duration: 10, sound: 'off', cr: 80 },
-      { value: '10s-on', label: '10s · Sound', mult: 1, duration: 10, sound: 'on', cr: 105 },
-    ],
-    'rn:kling-v21:std': [
-      { value: '5s-off', label: '5s · No Sound', mult: 1, duration: 5, sound: 'off', cr: 30 },
-      { value: '5s-on', label: '5s · Sound', mult: 1, duration: 5, sound: 'on', cr: 45 },
-      { value: '10s-off', label: '10s · No Sound', mult: 1, duration: 10, sound: 'off', cr: 65 },
-      { value: '10s-on', label: '10s · Sound', mult: 1, duration: 10, sound: 'on', cr: 85 },
-    ],
-    'rn:kling-v26': [
-      { value: '5s-off', label: '5s · No Sound', mult: 1, duration: 5, sound: 'off', cr: 45 },
-      { value: '5s-on', label: '5s · Sound', mult: 1, duration: 5, sound: 'on', cr: 60 },
-      { value: '10s-off', label: '10s · No Sound', mult: 1, duration: 10, sound: 'off', cr: 90 },
-      { value: '10s-on', label: '10s · Sound', mult: 1, duration: 10, sound: 'on', cr: 115 },
-    ],
-    'rn:kling-v21': [
-      { value: '5s-off', label: '5s · No Sound', mult: 1, duration: 5, sound: 'off', cr: 35 },
-      { value: '5s-on', label: '5s · Sound', mult: 1, duration: 5, sound: 'on', cr: 50 },
-      { value: '10s-off', label: '10s · No Sound', mult: 1, duration: 10, sound: 'off', cr: 70 },
-      { value: '10s-on', label: '10s · Sound', mult: 1, duration: 10, sound: 'on', cr: 90 },
-    ],
-    'rn:wan-26': [
-      { value: '720p-10s-audio', label: '720p · 10s · audio', mult: 1, duration: 10, resolution: '720p', sound: 'on', cr: 75 },
-      { value: '720p-5s-audio', label: '720p · 5s · audio', mult: 1, duration: 5, resolution: '720p', sound: 'on', cr: 40 },
-      { value: '480p-10s', label: '480p · 10s', mult: 1, duration: 10, resolution: '480p', sound: 'off', cr: 55 },
-      { value: '480p-5s', label: '480p · 5s', mult: 1, duration: 5, resolution: '480p', sound: 'off', cr: 30 },
-    ],
-    'rn:wan-26-std': [
-      { value: '720p-10s', label: '720p · 10s', mult: 1, duration: 10, resolution: '720p', sound: 'off', cr: 55 },
-      { value: '720p-5s', label: '720p · 5s', mult: 1, duration: 5, resolution: '720p', sound: 'off', cr: 30 },
-      { value: '480p-10s', label: '480p · 10s', mult: 1, duration: 10, resolution: '480p', sound: 'off', cr: 40 },
-      { value: '480p-5s', label: '480p · 5s', mult: 1, duration: 5, resolution: '480p', sound: 'off', cr: 22 },
-    ],
-    'rn:sora-2': [
-      { value: '720p-10s', label: '720p · 10s', mult: 1, duration: 10, resolution: '720p', cr: 150 },
-      { value: '720p-5s', label: '720p · 5s', mult: 1, duration: 5, resolution: '720p', cr: 80 },
-      { value: '480p-10s', label: '480p · 10s', mult: 1, duration: 10, resolution: '480p', cr: 100 },
-    ],
-    'rn:veo-3': [
-      { value: '720p-10s', label: '720p · 10s', mult: 1, duration: 10, resolution: '720p', cr: 160 },
-      { value: '720p-5s', label: '720p · 5s', mult: 1, duration: 5, resolution: '720p', cr: 85 },
-      { value: '480p-10s', label: '480p · 10s', mult: 1, duration: 10, resolution: '480p', cr: 110 },
-    ],
-    'rn:veo-3-fast': [
-      { value: '720p-10s', label: '720p · 10s', mult: 1, duration: 10, resolution: '720p', cr: 100 },
-      { value: '720p-5s', label: '720p · 5s', mult: 1, duration: 5, resolution: '720p', cr: 55 },
-      { value: '480p-10s', label: '480p · 10s', mult: 1, duration: 10, resolution: '480p', cr: 70 },
-    ],
-    default: [
-      { value: 'std', label: 'Standard 5s', mult: 1, duration: 5 },
-    ],
-  },
-  createpulse: {
-    'cp:dreamina-seedance-2.0': [
-      { value: '10s', label: '10 detik', mult: 1, duration: 10 },
-    ],
-    'cp:dreamina-seedance-2.5': [
-      { value: '10s', label: '10 detik', mult: 1, duration: 10 },
-    ],
-    'cp:dreamina-seedance-2.0-15s': [
-      { value: '15s', label: '15 detik', mult: 1, duration: 15 },
-    ],
-    'cp:dreamina-seedance-2.5-15s': [
-      { value: '15s', label: '15 detik', mult: 1, duration: 15 },
-    ],
-    'cp:dreamina-seedance-2.5-20s': [
-      { value: '20s', label: '20 detik', mult: 1, duration: 20 },
-    ],
-    'cp:dreamina-seedance-2.5-30s': [
-      { value: '30s', label: '30 detik', mult: 1, duration: 30 },
-    ],
-    'cp:veo-omni-10s': [
-      { value: '10s', label: '10 detik', mult: 1, duration: 10 },
-    ],
-    default: [
-      { value: '10s', label: '10 detik', mult: 1, duration: 10 },
-    ],
-  },
-  framia: {
-    'framia:gemini-omni-flash': [
-      { value: '720p-10s', label: '720p · 10s', mult: 2, duration: 10, resolution: '720p', cr: 45 },
-      { value: '720p-5s', label: '720p · 5s', mult: 1, duration: 5, resolution: '720p', cr: 25 },
-    ],
-    'framia:seedance-2.0': [
-      { value: '720p-5s', label: '720p · 5s', mult: 1, duration: 5, resolution: '720p', cr: 25 },
-      { value: '720p-10s', label: '720p · 10s', mult: 2, duration: 10, resolution: '720p', cr: 45 },
-    ],
-    'framia:seedance-2.0-fast': [
-      { value: '720p-5s', label: '720p · 5s', mult: 1, duration: 5, resolution: '720p', cr: 15 },
-      { value: '720p-10s', label: '720p · 10s', mult: 2, duration: 10, resolution: '720p', cr: 25 },
-    ],
-    'framia:kling-3.0-omni': [
-      { value: '5s', label: 'Durasi 5s', mult: 1, duration: 5, cr: 40 },
-      { value: '10s', label: 'Durasi 10s', mult: 2, duration: 10, cr: 80 },
-    ],
-    'framia:kling-3.0': [
-      { value: '5s', label: 'Durasi 5s', mult: 1, duration: 5, cr: 30 },
-      { value: '10s', label: 'Durasi 10s', mult: 2, duration: 10, cr: 60 },
-    ],
-    'framia:veo-3.1': [
-      { value: '5s', label: 'Durasi 5s', mult: 1, duration: 5, cr: 90 },
-      { value: '10s', label: 'Durasi 10s', mult: 2, duration: 10, cr: 180 },
-    ],
-    'framia:veo-3.1-fast': [
-      { value: '5s', label: 'Durasi 5s', mult: 1, duration: 5, cr: 65 },
-      { value: '10s', label: 'Durasi 10s', mult: 2, duration: 10, cr: 130 },
-    ],
-    'framia:wan-2.7': [
-      { value: '5s', label: 'Durasi 5s', mult: 1, duration: 5, cr: 20 },
-      { value: '10s', label: 'Durasi 10s', mult: 2, duration: 10, cr: 40 },
-    ],
-    'framia:happyhorse-1.1': [
-      { value: '5s', label: 'Durasi 5s', mult: 1, duration: 5, cr: 28 },
-      { value: '10s', label: 'Durasi 10s', mult: 2, duration: 10, cr: 56 },
-    ],
-    'framia:kling-avatar': [
-      { value: '5s', label: 'Durasi 5s', mult: 1, duration: 5, cr: 40 },
-      { value: '10s', label: 'Durasi 10s', mult: 2, duration: 10, cr: 80 },
-    ],
-    default: [
-      { value: 'std', label: 'Standard', mult: 1, duration: 10, cr: 45 },
-      { value: 'long', label: 'Long 15s', mult: 1.5, duration: 15, cr: 68 },
-    ],
-  },
-  magnific: {
-    default: [
-      { value: 'std', label: 'Standard 5s', mult: 1, duration: 5 },
-    ],
-  },
-  leonardo: {},
-  gemini: { default: [] },
-  openai: { default: [] },
-  shotstack: { default: [] },
-  creatomate: { default: [] },
-  firefly: {
-    default: [
-      { value: '5s', label: '5 detik', mult: 1, duration: 5 },
-      { value: '10s', label: '10 detik', mult: 2, duration: 10 },
-    ],
-    'firefly:veo-3.1-fast': [
-      { value: '5s', label: '5 detik', mult: 1, duration: 5 },
-    ],
-    'firefly:veo-3.1': [
-      { value: '5s', label: '5 detik', mult: 1, duration: 5 },
-      { value: '8s', label: '8 detik', mult: 1.5, duration: 8 },
-    ],
-    'firefly:gemini-omni-flash': [
-      { value: '5s', label: '5 detik', mult: 1, duration: 5 },
-      { value: '10s', label: '10 detik', mult: 2, duration: 10 },
-    ],
-    'firefly:seedance-fast': [
-      { value: '5s', label: '5 detik', mult: 1, duration: 5 },
-      { value: '10s', label: '10 detik', mult: 2, duration: 10 },
-      { value: '15s', label: '15 detik', mult: 3, duration: 15 },
-    ],
-  },
-  runninghub: {
-    default: [
-      { value: 'std', label: 'Standard 5s', mult: 1, duration: 5 },
-      { value: 'long', label: 'Long 10s', mult: 2, duration: 10 },
-    ],
-  },
-  galleri5: {
-    'g5:gemini-omni-flash-i2v': [
-      { value: '10s-720p', label: '10 detik · 720p', mult: 1, duration: 10, cr: 134, resolution: '720p' },
-      { value: '8s-720p', label: '8 detik · 720p', mult: 1, duration: 8, cr: 134, resolution: '720p' },
-      { value: '5s-720p', label: '5 detik · 720p', mult: 1, duration: 5, cr: 134, resolution: '720p' },
-    ],
-    'g5:wan-2.7-i2v': [
-      { value: '15s-1080p', label: '15 detik · 1080p', mult: 1, duration: 15, cr: 200, resolution: '1080p' },
-      { value: '15s-720p', label: '15 detik · 720p', mult: 1, duration: 15, cr: 200, resolution: '720p' },
-      { value: '10s-1080p', label: '10 detik · 1080p', mult: 1, duration: 10, cr: 200, resolution: '1080p' },
-      { value: '10s-720p', label: '10 detik · 720p', mult: 1, duration: 10, cr: 200, resolution: '720p' },
-      { value: '5s-1080p', label: '5 detik · 1080p', mult: 1, duration: 5, cr: 200, resolution: '1080p' },
-      { value: '5s-720p', label: '5 detik · 720p', mult: 1, duration: 5, cr: 200, resolution: '720p' },
-    ],
-  },
-  oneover: {
-    'oo:grok-imagine-video': [
-      { value: '15s-720p', label: '15 detik · 720p', mult: 1, duration: 15, cr: 210, resolution: '720p' },
-      { value: '10s-720p', label: '10 detik · 720p', mult: 1, duration: 10, cr: 140, resolution: '720p' },
-      { value: '5s-720p', label: '5 detik · 720p', mult: 1, duration: 5, cr: 70, resolution: '720p' },
-      { value: '15s-480p', label: '15 detik · 480p', mult: 1, duration: 15, cr: 150, resolution: '480p' },
-      { value: '10s-480p', label: '10 detik · 480p', mult: 1, duration: 10, cr: 100, resolution: '480p' },
-      { value: '5s-480p', label: '5 detik · 480p', mult: 1, duration: 5, cr: 50, resolution: '480p' },
-    ],
-    'oo:seedance-2.0': [
-      { value: '10s-720p', label: '10 detik · 720p · 🔊 audio', mult: 1, duration: 10, cr: 140, resolution: '720p', sound: 'on' },
-      { value: '5s-720p', label: '5 detik · 720p · 🔊 audio', mult: 1, duration: 5, cr: 70, resolution: '720p', sound: 'on' },
-      { value: '10s-480p', label: '10 detik · 480p · 🔊 audio', mult: 1, duration: 10, cr: 140, resolution: '480p', sound: 'on' },
-      { value: '5s-480p', label: '5 detik · 480p · 🔊 audio', mult: 1, duration: 5, cr: 70, resolution: '480p', sound: 'on' },
-    ],
-    'oo:seedance-2.5': [
-      { value: '30s-480p', label: '30 detik · 480p · 🔊 audio', mult: 1, duration: 30, cr: 630, resolution: '480p', sound: 'on' },
-      { value: '20s-480p', label: '20 detik · 480p · 🔊 audio', mult: 1, duration: 20, cr: 420, resolution: '480p', sound: 'on' },
-      { value: '15s-480p', label: '15 detik · 480p · 🔊 audio', mult: 1, duration: 15, cr: 315, resolution: '480p', sound: 'on' },
-      { value: '10s-480p', label: '10 detik · 480p · 🔊 audio', mult: 1, duration: 10, cr: 210, resolution: '480p', sound: 'on' },
-      { value: '5s-480p', label: '5 detik · 480p · 🔊 audio', mult: 1, duration: 5, cr: 105, resolution: '480p', sound: 'on' },
-      { value: '10s-720p', label: '10 detik · 720p · 🔊 audio', mult: 1, duration: 10, cr: 470, resolution: '720p', sound: 'on' },
-    ],
-    'oo:gemini-omni-flash-preview': [
-      { value: '10s-720p', label: '10 detik · 720p · 🔊 audio', mult: 1, duration: 10, cr: 200, resolution: '720p', sound: 'on' },
-      { value: '8s-720p', label: '8 detik · 720p · 🔊 audio', mult: 1, duration: 8, cr: 160, resolution: '720p', sound: 'on' },
-      { value: '6s-720p', label: '6 detik · 720p · 🔊 audio', mult: 1, duration: 6, cr: 120, resolution: '720p', sound: 'on' },
-      { value: '4s-720p', label: '4 detik · 720p · 🔊 audio', mult: 1, duration: 4, cr: 80, resolution: '720p', sound: 'on' },
-    ],
-    default: [
-      { value: '10s', label: '10 detik', mult: 1, duration: 10 },
-      { value: '5s', label: '5 detik', mult: 1, duration: 5 },
-    ],
-  },
-}
-
-const CP_PRICES: Record<string, number> = {
-  'dreamina-seedance-2.0': 1500,
-  'dreamina-seedance-2.5': 1500,
-  'dreamina-seedance-2.0-15s': 2250,
-  'dreamina-seedance-2.5-15s': 2500,
-  'dreamina-seedance-2.5-20s': 3000,
-  'dreamina-seedance-2.5-30s': 4500,
-  'veo-omni-10s': 2250,
-}
-const getCreatepulseCost = (apiModel?: string) => apiModel ? (CP_PRICES[apiModel] ?? 1500) : 1500
-
-const RATIOS = ['16:9', '9:16', '1:1', '4:5', '3:4']
-
-const TEMPLATES = [
-  { name: 'Cinematic Slow Pan', body: 'Cinematic slow camera pan, natural lighting, subtle wind on hair, subject stays centered' },
-  { name: 'Dolly Zoom', body: 'Slow dolly zoom in, subject sharp, background bokeh, moody' },
-  { name: 'Gentle Parallax', body: 'Gentle parallax movement, soft bokeh background, subject in focus' },
-  { name: 'Dynamic Action', body: 'Dynamic camera movement, fast paced, energetic motion' },
-]
-
-const CREATEPULSE_API = '/api/public/createpulse'
-
-function VideoPlayer({ directUrl, proxyFallback, rawUrl, ratio }: { directUrl: string; proxyFallback: string; rawUrl: string; ratio?: string }) {
-  const [src, setSrc] = useState(directUrl)
-  const [triedProxy, setTriedProxy] = useState(false)
-  const [failed, setFailed] = useState(false)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    setSrc(directUrl)
-    setTriedProxy(false)
-    setFailed(false)
-    setLoading(true)
-  }, [directUrl])
-
-  const handleError = () => {
-    if (!triedProxy && directUrl !== proxyFallback) {
-      setSrc(proxyFallback)
-      setTriedProxy(true)
-    } else {
-      setFailed(true)
-      setLoading(false)
-    }
-  }
-
-  const aspectClass = ratio === '1:1' ? 'aspect-square' : ratio === '16:9' ? 'aspect-video' : 'aspect-[9/16]'
-
-  return (
-    <div className="relative">
-      {!failed ? (
-        <>
-          {loading && (
-            <div className={`absolute inset-0 ${aspectClass} bg-black flex items-center justify-center z-10`}>
-              <Loader2 className="h-6 w-6 text-white animate-spin" />
-            </div>
-          )}
-          <video
-            key={src}
-            src={src}
-            controls
-            playsInline
-            preload="metadata"
-            onError={handleError}
-            onLoadedData={() => setLoading(false)}
-            onCanPlay={() => setLoading(false)}
-            className={`w-full ${aspectClass} object-cover bg-black`}
-          />
-        </>
-      ) : (
-        <div className={`w-full ${aspectClass} bg-black flex items-center justify-center`}>
-          <div className="text-center p-4">
-            <p className="text-red-400 text-xs mb-2">Gagal memuat video</p>
-            <a href={rawUrl} target="_blank" rel="noreferrer" className="text-primary text-xs underline">Coba buka langsung</a>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
+import VideoPlayer from './image-to-video/VideoPlayer'
 
 export default function ImageToVideoPage() {
   const { keys, routing, fetchMaintenance } = useProviderManager()
@@ -737,7 +254,7 @@ export default function ImageToVideoPage() {
   const qualityOptions = useMemo(() => {
     const providerQualities = QUALITY_OPTIONS[provider] || QUALITY_OPTIONS.weavy
     const leonardoDynamicOptions = provider === 'leonardo' && model ? leonardoVideoQualityOptions(model, ratio) : []
-    return provider === 'leonardo'
+    let opts = provider === 'leonardo'
       ? leonardoDynamicOptions.map((opt) => ({
           value: opt.value,
           label: opt.label,
@@ -749,7 +266,12 @@ export default function ImageToVideoPage() {
           sound: opt.audio ? 'on' : undefined,
         }))
       : (providerQualities[model] || providerQualities.default || [])
-  }, [provider, model, ratio])
+    // Veo I2V only supports 8 seconds
+    if (provider === 'firefly' && model.includes('veo') && imgFile) {
+      opts = opts.filter((q) => q.duration === 8)
+    }
+    return opts
+  }, [provider, model, ratio, !!imgFile])
   const currentQuality = qualityOptions.find((q) => q.value === quality) || qualityOptions[0]
 
   const totalCredits = currentModel ? (currentQuality?.cr ?? Math.round(currentModel.cr * (currentQuality?.mult || 1))) : 0
@@ -757,11 +279,17 @@ export default function ImageToVideoPage() {
   const providerKeyCount = keys[provider]?.length || 0
   const hasActiveKey = keys[provider]?.some((k) => k.status !== 'invalid' && k.status !== 'expired') || false
 
+  const isVeoI2V = provider === 'firefly' && model.includes('veo') && !!imgFile
+
   useEffect(() => {
     if (models.length > 0 && !models.find((m) => m.value === model)) {
       setModel(models[0].value)
     }
   }, [provider, models, model])
+
+  useEffect(() => {
+    if (isVeoI2V && ratio !== '16:9') setRatio('16:9')
+  }, [isVeoI2V, ratio])
 
   useEffect(() => {
     if (qualityOptions.length > 0 && !qualityOptions.find((q) => q.value === quality)) {
@@ -1320,12 +848,6 @@ export default function ImageToVideoPage() {
       } else if (provider === 'firefly') {
         addLog(`[1/2] 🔥 Preparing image for Firefly...`, 'info', 'firefly')
         setStatus((s) => ({ ...s, text: 'Preparing...', pct: 5 }))
-        if (imgFile) {
-          await uploadToCatbox(imgFile)
-          addLog(`[1/2] ✅ Image uploaded ✓`, 'success', 'firefly')
-        } else {
-          addLog(`[1/2] ℹ️ No image (text-to-video mode)`, 'info', 'firefly')
-        }
 
         const rotation = await withTokenRotation<string>(
           'firefly',
@@ -1334,86 +856,182 @@ export default function ImageToVideoPage() {
             setStatus((s) => ({ ...s, text: `Submit Firefly ${model}...`, pct: 15 }))
 
             addLog(`[2/2] 🚀 Submitting to Firefly...`, 'info', 'firefly')
-            addLog(`   → model: ${model}`, 'debug', 'firefly')
             addLog(`   → ratio: ${ratio} | duration: ${currentQuality?.duration || 5}s`, 'debug', 'firefly')
 
             const seedVal = Math.floor(Date.now() % 999999)
             const nonce = Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('')
             const arpSessionId = btoa(JSON.stringify({ sid: crypto.randomUUID(), ftr: `${Date.now()}_dUAL43-mnts-ants-d4_31ck__tt` }))
 
+            // Upload image to Firefly storage if we have one
+            let fireflyImageId = ''
+            if (imgFile) {
+              addLog(`[1/2] 📤 Uploading image to Firefly storage...`, 'info', 'firefly')
+              try {
+                const rawType = imgFile.type || 'image/png'
+                const isJpeg = rawType.includes('jpeg') || rawType.includes('jpg')
+                const contentType = isJpeg ? 'image/jpeg' : 'image/png'
+
+                // Convert to PNG if not JPEG (Firefly only accepts image/png or image/jpeg)
+                let uploadFile = imgFile
+                if (!isJpeg && rawType !== 'image/png') {
+                  addLog(`[1/2] 🔄 Converting ${rawType} → PNG...`, 'info', 'firefly')
+                  const canvas = document.createElement('canvas')
+                  const bmp = await createImageBitmap(imgFile)
+                  canvas.width = bmp.width
+                  canvas.height = bmp.height
+                  canvas.getContext('2d')!.drawImage(bmp, 0, 0)
+                  const blob = await new Promise<Blob>((resolve) => canvas.toBlob((b) => resolve(b!), 'image/png'))
+                  uploadFile = new File([blob], 'image.png', { type: 'image/png' })
+                }
+
+                const imgBuffer = await uploadFile.arrayBuffer()
+                addLog(`[1/2] 📦 Image: ${contentType} (${Math.round(imgBuffer.byteLength / 1024)}KB)`, 'debug', 'firefly')
+
+                // Upload directly to Firefly storage (bypass proxy for correct content-type)
+                const uploadRes = await fetch('https://firefly-3p.ff.adobe.io/v2/storage/image', {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'x-api-key': 'clio-playground-web',
+                    'x-nonce': nonce,
+                    'x-arp-session-id': arpSessionId,
+                    'content-type': contentType,
+                    'accept': '*/*',
+                    'origin': 'https://firefly.adobe.com',
+                    'referer': 'https://firefly.adobe.com/',
+                  },
+                  body: imgBuffer,
+                })
+                const uploadData = await uploadRes.json().catch(() => ({}))
+                addLog(`[1/2] 🔍 Upload response: status=${uploadRes.status} ${JSON.stringify(uploadData).slice(0, 300)}`, 'debug', 'firefly')
+                if (uploadRes.ok && uploadData) {
+                  fireflyImageId = uploadData.id || uploadData.storageId || uploadData.images?.[0]?.id || ''
+                  addLog(`[1/2] ✅ Image uploaded to Firefly ✓ (id: ${fireflyImageId.slice(0, 30)}...)`, 'success', 'firefly')
+                } else {
+                  addLog(`[1/2] ⚠️ Firefly upload failed: status=${uploadRes.status} ${JSON.stringify(uploadData).slice(0, 200)}`, 'warn', 'firefly')
+                }
+              } catch (e: any) {
+                addLog(`[1/2] ⚠️ Firefly upload error: ${e.message}`, 'warn', 'firefly')
+              }
+            } else {
+              addLog(`[1/2] ℹ️ No image (text-to-video mode)`, 'info', 'firefly')
+            }
+
             const isVeo = model.includes('veo')
             const isKling = model.includes('kling')
-            const isSora = model.includes('sora')
-            const vidSize = ratio === '9:16' ? { width: 720, height: 1280 } : ratio === '1:1' ? { width: 1080, height: 1080 } : { width: 1280, height: 720 }
-            const durationSec = currentQuality?.duration || 5
+            const isRunway = model.includes('runway')
+            const isLuma = model.includes('ray3')
+            const isGemini = model.includes('gemini')
+            addLog(`   → model: ${model}${isGemini ? ' (gemini-omni:omni-flash)' : ''}`, 'debug', 'firefly')
+            // Veo I2V only supports 16:9
+            const effectiveRatio = (isVeo && fireflyImageId) ? '16:9' : ratio
+            const vidSize = effectiveRatio === '9:16' ? { width: 720, height: 1280 } : effectiveRatio === '1:1' ? { width: 1080, height: 1080 } : { width: 1280, height: 720 }
+            // Veo I2V requires exactly 8 seconds
+            const durationSec = (isVeo && fireflyImageId) ? 8 : (currentQuality?.duration || 5)
 
             let generateBody: Record<string, unknown> = {}
+            const refBlobs = fireflyImageId
+              ? [{ id: fireflyImageId, usage: 'general', order: 1 }]
+              : []
+            const imgModule = fireflyImageId ? 'image2video' : 'text2video'
             if (isVeo) {
+              const isVeoRef = model.includes('ref')
+              const veoVersion = model.includes('3.1-fast') ? '3.1-fast-generate' : isVeoRef ? '3.1-generate' : '3.1-generate'
               generateBody = {
                 n: 1, seeds: [seedVal],
                 modelId: 'veo',
-                modelVersion: model.includes('3.1-fast') ? '3.1-fast-generate' : '3.1-generate',
+                modelVersion: veoVersion,
                 output: { storeInputs: true },
                 prompt: prompt.trim(),
                 size: vidSize,
-                generateAudio: false,
-                referenceBlobs: [],
-                generationMetadata: { module: 'text2video' },
+                generateAudio: true,
+                referenceBlobs: isVeoRef && fireflyImageId
+                  ? [{ id: fireflyImageId, usage: 'asset' }]
+                  : fireflyImageId ? refBlobs : [],
+                generationMetadata: { module: isVeoRef && fireflyImageId ? 'image2video' : imgModule },
                 modelSpecificPayload: {
-                  parameters: { durationSeconds: durationSec, aspectRatio: ratio, addWaterMark: false },
+                  parameters: { durationSeconds: durationSec, aspectRatio: effectiveRatio, addWaterMark: false },
                 },
               }
             } else if (isKling) {
+              const klingVersion = model.includes('pro') ? 'kling_v3_pro_i2v' : 'kling_v3_standard_i2v'
               generateBody = {
                 n: 1, seeds: [seedVal],
                 modelId: 'kling',
-                modelVersion: 'kling_v3_standard_i2v',
+                modelVersion: klingVersion,
                 output: { storeInputs: true },
                 prompt: prompt.trim(),
                 size: vidSize,
                 duration: durationSec,
-                generationMetadata: { module: 'text2video' },
-                generationSettings: { aspectRatio: ratio },
-                referenceBlobs: [],
+                generationMetadata: { module: imgModule },
+                generationSettings: { aspectRatio: effectiveRatio },
+                referenceBlobs: refBlobs.map(b => ({ ...b, usage: 'frame' })),
               }
-            } else if (isSora) {
+            } else if (isRunway) {
               generateBody = {
                 n: 1, seeds: [seedVal],
-                modelId: 'sora',
-                modelVersion: 'sora-2',
+                modelId: 'runway-gen4-turbo',
+                output: { storeInputs: true },
+                prompt: prompt.trim(),
                 size: vidSize,
                 duration: durationSec,
-                fps: 24,
-                prompt: JSON.stringify({ prompt: prompt.trim(), duration: durationSec }),
-                model: 'openai:firefly:colligo:sora2',
-                generationMetadata: { module: 'text2video' },
-                generateLoop: false,
-                transparentBackground: false,
-                seed: String(seedVal),
-                locale: 'en-US',
-                camera: { angle: 'none', shotSize: 'none', motion: null, promptStyle: null },
-                jobMode: 'standard',
-                referenceBlobs: [],
-                referenceFrames: [],
+                generateAudio: true,
+                referenceBlobs: refBlobs,
+                generationMetadata: { module: imgModule },
+                modelSpecificPayload: {
+                  parameters: { durationSeconds: durationSec, aspectRatio: effectiveRatio },
+                },
+              }
+            } else if (isLuma) {
+              generateBody = {
+                n: 1, seeds: [seedVal],
+                modelId: 'luma-ray3',
                 output: { storeInputs: true },
+                prompt: prompt.trim(),
+                size: vidSize,
+                duration: durationSec,
+                generateAudio: true,
+                referenceBlobs: refBlobs,
+                generationMetadata: { module: imgModule },
+                modelSpecificPayload: {
+                  parameters: { durationSeconds: durationSec, aspectRatio: effectiveRatio },
+                },
+              }
+            } else if (isGemini) {
+              generateBody = {
+                n: 1, seeds: [seedVal],
+                modelId: 'gemini-omni',
+                modelVersion: 'omni-flash',
+                output: { storeInputs: true },
+                prompt: prompt.trim(),
+                size: vidSize,
+                duration: durationSec,
+                generateAudio: true,
+                referenceBlobs: refBlobs.map(b => ({ ...b, usage: 'frame' })),
+                generationMetadata: { module: imgModule },
+                modelSpecificPayload: {
+                  parameters: { durationSeconds: durationSec, aspectRatio: effectiveRatio },
+                },
               }
             } else {
-              // gemini-omni-flash, seedance-fast — generic firefly video
+              // Default: firefly-video (Adobe Firefly native model)
               generateBody = {
                 n: 1, seeds: [seedVal],
-                modelId: 'firefly',
-                modelVersion: 'video-1',
+                modelId: 'firefly-video',
                 output: { storeInputs: true },
                 prompt: prompt.trim(),
                 size: vidSize,
-                generateAudio: false,
-                referenceBlobs: [],
-                generationMetadata: { module: 'text2video' },
+                generateAudio: true,
+                referenceBlobs: refBlobs,
+                generationMetadata: { module: imgModule },
                 modelSpecificPayload: {
-                  parameters: { durationSeconds: durationSec, aspectRatio: ratio, addWaterMark: false },
+                  parameters: { durationSeconds: durationSec, aspectRatio: effectiveRatio, addWaterMark: false },
                 },
               }
             }
+
+            addLog(`   → referenceBlobs: ${JSON.stringify((generateBody.referenceBlobs as any[])?.map((b: any) => ({ id: b.id?.slice(0, 20) + '...', usage: b.usage })))}`, 'debug', 'firefly')
+            addLog(`   → module: ${generateBody.generationMetadata?.module}`, 'debug', 'firefly')
 
             let submitRes: Response | null = null
             let submitData: any = null
@@ -1458,8 +1076,27 @@ export default function ImageToVideoPage() {
 
             if (!submitData) throw new Error('Firefly: no response')
 
-            const statusUrl = submitData.data?.statusUrl || submitData.data?._links?.self?.href
-            if (!statusUrl) throw new Error('Firefly: statusUrl not found')
+            addLog(`[2/2] 🔍 Response keys: ${JSON.stringify(Object.keys(submitData))}`, 'debug', 'firefly')
+            if (submitData.data) addLog(`[2/2] 🔍 data keys: ${JSON.stringify(Object.keys(submitData.data))}`, 'debug', 'firefly')
+            addLog(`[2/2] 🔍 Full response: ${JSON.stringify(submitData).slice(0, 800)}`, 'debug', 'firefly')
+
+            let statusUrl = submitData.data?.links?.result?.href || submitData.data?.links?.result || submitData.data?.statusUrl || submitData.data?._links?.self?.href || submitData.statusUrl || submitData._links?.self?.href
+            if (!statusUrl) throw new Error(`Firefly: statusUrl not found. Response: ${JSON.stringify(submitData).slice(0, 500)}`)
+
+            // Rewrite EPO URL → BKS URL (OmniRoute pattern)
+            try {
+              const parsedUrl = new URL(statusUrl)
+              if (parsedUrl.hostname.startsWith('firefly-epo')) {
+                const epoId = parsedUrl.hostname.slice('firefly-epo'.length).split('.')[0] || ''
+                const bksId = epoId.length > 4 ? epoId.slice(0, 4) : epoId
+                const pathParts = parsedUrl.pathname.split('/').filter(Boolean)
+                const jobId = pathParts[pathParts.length - 1] || ''
+                if (jobId) {
+                  statusUrl = `https://bks-epo${bksId}.adobe.io/v2/jobs/result/${jobId}?host=${parsedUrl.hostname}`
+                  addLog(`   → Rewritten poll URL: ${statusUrl}`, 'debug', 'firefly')
+                }
+              }
+            } catch { /* keep original */ }
 
             addLog(`[2/2] ✅ Job submitted ✓`, 'success', 'firefly')
             setStatus((s) => ({ ...s, text: 'Processing...', pct: 40 }))
@@ -1467,32 +1104,39 @@ export default function ImageToVideoPage() {
             addLog(`⏳ Polling for result...`, 'info', 'firefly')
             const maxPolls = 300
             for (let i = 0; i < maxPolls; i++) {
-              await new Promise((r) => setTimeout(r, 4000))
+              await new Promise((r) => setTimeout(r, 3000))
               const pollRes = await fetch('/api/public/firefly', {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
                   'X-Firefly-Token': apiKey,
-                  'X-Firefly-Api-Key': 'clio-playground-web',
                 },
-                body: JSON.stringify({ url: statusUrl, method: 'GET' }),
+                body: JSON.stringify({ url: statusUrl, method: 'GET', pollMode: true }),
               })
               if (!pollRes.ok) continue
               const pollData = await pollRes.json()
-              const status = (pollData.data?.status || '').toLowerCase()
-              const pct = Math.min(95, 40 + (i / maxPolls) * 55)
-              addLog(`Poll #${i + 1}: ${status || 'processing'}`, 'debug', 'firefly')
-              setStatus((s) => ({ ...s, text: `Firefly ${status}...`, pct }))
+              if (i < 3 || i % 50 === 0) addLog(`🔍 Poll #${i + 1} raw: ${JSON.stringify(pollData).slice(0, 600)}`, 'debug', 'firefly')
 
-              if (['succeeded', 'success', 'completed', 'done'].includes(status)) {
-                const outputs = pollData.data?.result?.outputs || pollData.data?.outputs || []
-                const videoUrl = outputs.find((o: any) => o?.video?.url || o?.url)?.video?.url || outputs[0]?.url
-                if (!videoUrl) throw new Error('Firefly: output URL not found')
-                addLog(`✅ Done ✓`, 'success', 'firefly')
+              // BKS response: status/outputs at top level OR wrapped in data
+              const pollPayload = pollData.data || pollData
+              const status = (pollPayload.status || '').toUpperCase()
+
+              // Check for presigned media URL (OmniRoute pattern)
+              const outputs = pollPayload.outputs || pollPayload.result?.outputs || []
+              const firstOutput = Array.isArray(outputs) ? outputs[0] : outputs
+              const videoUrl = firstOutput?.video?.presignedUrl || firstOutput?.video?.url || firstOutput?.presignedUrl || firstOutput?.url
+
+              if (videoUrl && videoUrl.startsWith('http')) {
+                addLog(`✅ Done ✓ → ${videoUrl.slice(0, 80)}...`, 'success', 'firefly')
                 return videoUrl
               }
-              if (['failed', 'error', 'cancelled', 'canceled'].includes(status)) {
-                throw new Error(pollData.data?.error?.message || 'Firefly: job failed')
+
+              const pct = Math.min(95, 40 + (i / maxPolls) * 55)
+              addLog(`Poll #${i + 1}: ${status || 'processing'}`, 'debug', 'firefly')
+              setStatus((s) => ({ ...s, text: `Firefly ${status || 'processing'}...`, pct }))
+
+              if (['FAILED', 'CANCELLED', 'CANCELED', 'ERROR'].includes(status)) {
+                throw new Error(pollPayload.error?.message || pollPayload.errorMessage || 'Firefly: job failed')
               }
             }
             throw new Error('Firefly: timeout')
@@ -1510,8 +1154,10 @@ export default function ImageToVideoPage() {
         )
         if (rotation.ok && rotation.result) {
           setResults((prev) => [rotation.result!, ...prev])
+          saveGalleryItem(rotation.result!)
           successRef.current = true
           setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+          notifyGenerationComplete(currentModel?.label || model, 'Firefly')
           if (rotation.triedKeys > 1) {
             addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success', 'firefly')
           }
@@ -2305,7 +1951,7 @@ export default function ImageToVideoPage() {
                   <span className="text-base sm:text-lg">{config.icon}</span>
                   <span className="text-xs sm:text-sm font-medium truncate">{config.name}</span>
                 </div>
-                <div className="text-[9px] sm:text-[10px] text-muted-foreground">
+                                                    <div className="text-[9px] sm:text-[10px] text-muted-foreground">
                   {providerModels.length} models · {keyCount} keys
                 </div>
                 {isActive && (
@@ -2495,11 +2141,12 @@ export default function ImageToVideoPage() {
                     />
                   </div>
                   <div>
-                    <Label>Aspek Rasio</Label>
+                    <Label>Aspek Rasio {isVeoI2V && <span className="text-[10px] text-amber-400 font-normal ml-1">(16:9 only)</span>}</Label>
                     <Select
                       value={ratio}
                       onChange={(e) => setRatio(e.target.value)}
                       options={RATIOS.map((r) => ({ value: r, label: r }))}
+                      disabled={isVeoI2V}
                     />
                   </div>
                   <div>
@@ -2679,12 +2326,25 @@ export default function ImageToVideoPage() {
         <Section
           title={`📋 Log (${logs.length})`}
           right={
-            <button
-              onClick={() => { clearLogs(); setLogs([]); }}
-              className="text-[11px] text-destructive hover:text-destructive/80 transition"
-            >
-              Clear
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  const text = logs.map((l) => `[${l.time}] ${l.msg}`).join('\n')
+                  navigator.clipboard.writeText(text)
+                  addToast('Log disalin ke clipboard', 'success')
+                }}
+                className="text-[11px] text-muted-foreground hover:text-foreground transition flex items-center gap-1"
+              >
+                <Copy className="h-3 w-3" />
+                Copy
+              </button>
+              <button
+                onClick={() => { clearLogs(); setLogs([]); }}
+                className="text-[11px] text-destructive hover:text-destructive/80 transition"
+              >
+                Clear
+              </button>
+            </div>
           }
         >
           <div className="max-h-52 overflow-y-auto overflow-x-hidden text-[11px] font-mono space-y-0.5 rounded-xl bg-black/20 p-2">

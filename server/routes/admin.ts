@@ -4,6 +4,7 @@ import db from '../db.js'
 import { authenticateToken, requireAdmin, AuthRequest } from '../middleware/auth.js'
 import { sendVerificationEmail } from './auth.js'
 import { getMembershipFee, setMembershipFee } from './membership.js'
+import { sendEmail, appUrl } from '../mailer.js'
 
 const router = Router()
 
@@ -57,7 +58,7 @@ router.get('/users/pending', authenticateToken, requireAdmin, (_req: AuthRequest
   }
 })
 
-router.post('/users/:id/approve', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
+router.post('/users/:id/approve', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params
 
@@ -70,8 +71,17 @@ router.post('/users/:id/approve', authenticateToken, requireAdmin, (req: AuthReq
       return res.status(400).json({ error: 'Cannot approve admin users' })
     }
 
-    // Auto-verify email saat approve (admin trust = email valid)
     db.prepare('UPDATE users SET approved = 1, email_verified = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(id)
+
+    try {
+      await sendEmail({
+        to: user.email,
+        subject: 'Akun Disetujui — ARKXMotion Studio ✅',
+        text: `Halo ${user.name},\n\nAkun kamu di ARKXMotion Studio telah disetujui admin. Silakan login di ${appUrl()}/login\n\nSelamat berkarya!\n— ARKXMotion Studio`,
+        html: `<p>Halo <b>${user.name}</b>,</p><p>Akun kamu di <b>ARKXMotion Studio</b> telah <b>disetujui</b>. Silakan login:</p><p><a href="${appUrl()}/login" style="background:#d4a017;color:#000;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:700">Login Sekarang</a></p><p>— ARKXMotion Studio</p>`,
+      })
+      db.prepare("INSERT INTO notifications (title, message, type, target, user_id) VALUES (?, ?, 'success', 'users', ?)").run('Akun Disetujui', 'Akun kamu telah disetujui admin. Silakan login.', Number(id))
+    } catch {}
 
     res.json({ message: `User ${user.email} approved successfully` })
   } catch (error) {
@@ -180,18 +190,26 @@ router.get('/membership/payments', authenticateToken, requireAdmin, (_req: AuthR
   }
 })
 
-router.post('/membership/payments/:id/approve', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
+router.post('/membership/payments/:id/approve', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params
     const payment = db.prepare(
-      "SELECT mp.id, mp.user_id, mp.status, u.email FROM membership_payments mp JOIN users u ON u.id = mp.user_id WHERE mp.id = ?"
-    ).get(id) as { id: number; user_id: number; status: string; email: string } | undefined
+      "SELECT mp.id, mp.user_id, mp.status, u.email, u.name FROM membership_payments mp JOIN users u ON u.id = mp.user_id WHERE mp.id = ?"
+    ).get(id) as { id: number; user_id: number; status: string; email: string; name: string } | undefined
     if (!payment) return res.status(404).json({ error: 'Pembayaran tidak ditemukan' })
     if (payment.status === 'approved') return res.status(400).json({ error: 'Pembayaran ini sudah disetujui' })
 
     db.prepare("UPDATE membership_payments SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(id)
-    // Konfirmasi pembayaran = akun member aktif + auto-verify email
     db.prepare('UPDATE users SET approved = 1, email_verified = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(payment.user_id)
+    try {
+      await sendEmail({
+        to: payment.email,
+        subject: 'Pembayaran Disetujui — ARKXMotion Studio ✅',
+        text: `Halo ${payment.name},\n\nPembayaran kamu telah disetujui & akun diaktifkan. Login di ${appUrl()}/login\n— ARKXMotion Studio`,
+        html: `<p>Halo <b>${payment.name}</b>,</p><p>Pembayaran kamu <b>disetujui</b> & akun telah diaktifkan. Silakan login:</p><p><a href="${appUrl()}/login" style="background:#d4a017;color:#000;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:700">Login Sekarang</a></p>`,
+      })
+      db.prepare("INSERT INTO notifications (title, message, type, target, user_id) VALUES (?, ?, 'success', 'users', ?)").run('Pembayaran Disetujui', 'Pembayaran kamu disetujui & akun diaktifkan.', payment.user_id)
+    } catch {}
 
     res.json({ ok: true, message: `Pembayaran ${payment.email} disetujui & akun diaktifkan` })
   } catch (error) {

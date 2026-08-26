@@ -286,7 +286,7 @@ export default function AdminProviderStatusPage() {
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-semibold">{config.name}</span>
                           {isMaintenance && (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30">
+                            <span className="inline-flex items-center gap-1 text-[12px] font-medium px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30">
                               <Wrench className="h-3 w-3" />
                               MAINTENANCE
                             </span>
@@ -330,7 +330,7 @@ export default function AdminProviderStatusPage() {
 
                   {isEditing && (
                     <div className="mt-3 pt-3 border-t border-border/50">
-                      <div className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground mb-2">
+                      <div className="text-[12px] font-mono uppercase tracking-widest text-muted-foreground mb-2">
                         Pesan Maintenance (ditampilkan ke user)
                       </div>
                       <Textarea
