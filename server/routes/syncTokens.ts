@@ -1,5 +1,4 @@
 import { Router, Response } from 'express'
-import { db } from '../db.js'
 
 const router = Router()
 
@@ -109,47 +108,6 @@ router.get('/all', (_req, res: Response) => {
     })
   } catch (error) {
     console.error('Get all sync tokens error:', error)
-    res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-/**
- * POST /api/sync-tokens/import
- * Import a specific token into the provider manager (called by frontend)
- */
-router.post('/import', (req, res: Response) => {
-  try {
-    const { provider, token, userId } = req.body
-
-    if (!provider || !token || !userId) {
-      res.status(400).json({ error: 'Missing provider, token, or userId' })
-      return
-    }
-
-    // Store token in database
-    const stmt = db.prepare(`
-      INSERT OR REPLACE INTO provider_keys (user_id, provider, key_name, key_value, is_active)
-      VALUES (?, ?, ?, ?, 1)
-    `)
-
-    const keyName = `Auto-synced ${new Date().toLocaleTimeString()}`
-    stmt.run(userId, provider, keyName, token)
-
-    // Remove from pending
-    const pending = pendingTokens.get(provider) || []
-    const idx = pending.findIndex(t => t.token === token)
-    if (idx !== -1) {
-      pending.splice(idx, 1)
-    }
-
-    console.log(`[Sync] Imported token for ${provider} to user ${userId}`)
-
-    res.json({
-      ok: true,
-      message: 'Token imported successfully',
-    })
-  } catch (error) {
-    console.error('Import token error:', error)
     res.status(500).json({ error: 'Internal server error' })
   }
 })
