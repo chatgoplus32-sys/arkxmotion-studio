@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useRef } from 'react'
+import { Suspense, useEffect, useRef } from 'react'
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import { Sidebar, Header } from '@/components/layout'
 import { useAppStore } from '@/stores'
@@ -6,6 +6,8 @@ import { cn } from '@/lib/utils'
 import ProtectedRoute from '@/components/auth/ProtectedRoute'
 import { ToastContainer } from '@/components/ui/Toast'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { lazyWithRetry } from '@/lib/lazyWithRetry'
+import { initChunkErrorInterceptor } from '@/lib/chunkInterceptor'
 
 import LandingPage from '@/pages/LandingPage'
 import LoginPage from '@/pages/Login'
@@ -14,36 +16,39 @@ import RegisterStatusPage from '@/pages/RegisterStatus'
 import ForgotPasswordPage from '@/pages/ForgotPassword'
 import ResetPasswordPage from '@/pages/ResetPassword'
 
-const DashboardPage = lazy(() => import('@/pages/Dashboard'))
-const CommandPage = lazy(() => import('@/pages/Command'))
-const MotionPage = lazy(() => import('@/pages/Motion'))
-const BulkFashionPage = lazy(() => import('@/pages/BulkFashion'))
-const ImageToVideoPage = lazy(() => import('@/pages/ImageToVideo'))
-const UpscalerPage = lazy(() => import('@/pages/Upscaler'))
-const UGCPage = lazy(() => import('@/pages/UGC'))
-const TextToVideoPage = lazy(() => import('@/pages/TextToVideo'))
-const ProvidersPage = lazy(() => import('@/pages/Providers'))
-const RoutingProviderPage = lazy(() => import('@/pages/RoutingProvider'))
-const SettingsPage = lazy(() => import('@/pages/Settings'))
-const AdminUsersPage = lazy(() => import('@/pages/AdminUsers'))
-const AdminMembershipPage = lazy(() => import('@/pages/AdminMembership'))
-const AdminTokensPage = lazy(() => import('@/pages/AdminTokens'))
-const AdminOrderTokensPage = lazy(() => import('@/pages/AdminOrderTokens'))
-const AdminProviderStatusPage = lazy(() => import('@/pages/AdminProviderStatus'))
-const AdminTopupPage = lazy(() => import('@/pages/AdminTopup'))
-const AdminAnalyticsPage = lazy(() => import('@/pages/AdminAnalytics'))
-const AdminActivityPage = lazy(() => import('@/pages/AdminActivity'))
-const AdminCreditManagementPage = lazy(() => import('@/pages/AdminCreditManagement'))
-const AdminSystemSettingsPage = lazy(() => import('@/pages/AdminSystemSettings'))
-const AdminSystemHealthPage = lazy(() => import('@/pages/AdminSystemHealth'))
-const AdminNotificationsPage = lazy(() => import('@/pages/AdminNotifications'))
-const CreatePulseTopupPage = lazy(() => import('@/pages/CreatePulseTopup'))
-const BeliTokenPage = lazy(() => import('@/pages/BeliToken'))
-const PluginsPage = lazy(() => import('@/pages/Plugins'))
+const DashboardPage = lazyWithRetry(() => import('@/pages/Dashboard'))
+const CommandPage = lazyWithRetry(() => import('@/pages/Command'))
+const MotionPage = lazyWithRetry(() => import('@/pages/Motion'))
+const BulkFashionPage = lazyWithRetry(() => import('@/pages/BulkFashion'))
+const ImageToVideoPage = lazyWithRetry(() => import('@/pages/ImageToVideo'))
+const UpscalerPage = lazyWithRetry(() => import('@/pages/Upscaler'))
+const UGCPage = lazyWithRetry(() => import('@/pages/UGC'))
+const TextToVideoPage = lazyWithRetry(() => import('@/pages/TextToVideo'))
+const ProvidersPage = lazyWithRetry(() => import('@/pages/Providers'))
+const RoutingProviderPage = lazyWithRetry(() => import('@/pages/RoutingProvider'))
+const SettingsPage = lazyWithRetry(() => import('@/pages/Settings'))
+const AdminUsersPage = lazyWithRetry(() => import('@/pages/AdminUsers'))
+const AdminMembershipPage = lazyWithRetry(() => import('@/pages/AdminMembership'))
+const AdminTokensPage = lazyWithRetry(() => import('@/pages/AdminTokens'))
+const AdminOrderTokensPage = lazyWithRetry(() => import('@/pages/AdminOrderTokens'))
+const AdminProviderStatusPage = lazyWithRetry(() => import('@/pages/AdminProviderStatus'))
+const AdminTopupPage = lazyWithRetry(() => import('@/pages/AdminTopup'))
+const AdminAnalyticsPage = lazyWithRetry(() => import('@/pages/AdminAnalytics'))
+const AdminActivityPage = lazyWithRetry(() => import('@/pages/AdminActivity'))
+const AdminCreditManagementPage = lazyWithRetry(() => import('@/pages/AdminCreditManagement'))
+const AdminSystemSettingsPage = lazyWithRetry(() => import('@/pages/AdminSystemSettings'))
+const AdminSystemHealthPage = lazyWithRetry(() => import('@/pages/AdminSystemHealth'))
+const AdminNotificationsPage = lazyWithRetry(() => import('@/pages/AdminNotifications'))
+const CreatePulseTopupPage = lazyWithRetry(() => import('@/pages/CreatePulseTopup'))
+const BeliTokenPage = lazyWithRetry(() => import('@/pages/BeliToken'))
+const PluginsPage = lazyWithRetry(() => import('@/pages/Plugins'))
 
 function PageLoader() {
   return <div className="flex items-center justify-center py-20"><div className="h-8 w-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin" /></div>
 }
+
+// Initialize chunk error interceptor immediately
+initChunkErrorInterceptor()
 
 export default function App() {
   const { sidebarCollapsed, toggleSidebar } = useAppStore()
