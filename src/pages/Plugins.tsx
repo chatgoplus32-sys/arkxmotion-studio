@@ -304,7 +304,7 @@ export default function PluginsPage() {
     <PageContent>
       <PageHeader
         title="Plugins & Extensions"
-        sub="Chrome extension untuk auto-grab token dari provider — tinggal download, install, dan pakai"
+        desc="Chrome extension untuk auto-grab token dari provider — tinggal download, install, dan pakai"
       />
 
       {/* Extension Cards */}

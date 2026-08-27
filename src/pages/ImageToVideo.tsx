@@ -1031,7 +1031,7 @@ export default function ImageToVideoPage() {
             }
 
             addLog(`   → referenceBlobs: ${JSON.stringify((generateBody.referenceBlobs as any[])?.map((b: any) => ({ id: b.id?.slice(0, 20) + '...', usage: b.usage })))}`, 'debug', 'firefly')
-            addLog(`   → module: ${generateBody.generationMetadata?.module}`, 'debug', 'firefly')
+            addLog(`   → module: ${(generateBody.generationMetadata as Record<string, unknown>)?.module}`, 'debug', 'firefly')
 
             let submitRes: Response | null = null
             let submitData: any = null

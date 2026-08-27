@@ -48,7 +48,7 @@ function triggerReload() {
     // Second failure: cache-bust reload
     console.warn('[ChunkInterceptor] Second failure, cache-bust reload...')
     const url = new URL(location.href)
-    url.search.set('_cb', String(Date.now()))
+    url.searchParams.set('_cb', String(Date.now()))
     setTimeout(() => location.replace(url.toString()), 200)
   }
 }

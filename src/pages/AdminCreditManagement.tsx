@@ -221,7 +221,7 @@ export default function AdminCreditManagement() {
           </div>
         )}
 
-        <Section title="Tokens" desc="View and manage credits for each API token">
+        <Section title="Tokens" sub="View and manage credits for each API token">
           {/* Bulk Actions */}
           {selectedIds.size > 0 && (
             <div className="flex items-center gap-2 mb-3 p-2 rounded-lg bg-primary/5 border border-primary/20">

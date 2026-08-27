@@ -125,7 +125,7 @@ export default function AdminSystemSettings() {
         )}
 
         {/* App Settings */}
-        <Section title="Application Settings" desc="General settings for the application">
+        <Section title="Application Settings" sub="General settings for the application">
           <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
@@ -194,7 +194,7 @@ export default function AdminSystemSettings() {
         </Section>
 
         {/* Provider Maintenance */}
-        <Section title="Provider Maintenance" desc="Toggle maintenance mode for individual providers">
+        <Section title="Provider Maintenance" sub="Toggle maintenance mode for individual providers">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {ALL_PROVIDERS.map(provider => {
               const m = maintenance.find(x => x.provider === provider)

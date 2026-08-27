@@ -47,7 +47,7 @@ export function lazyWithRetry(
             if (attempt + 1 >= maxRetries) {
               console.warn('[lazyWithRetry] All retries exhausted, forcing cache-bust reload')
               const url = new URL(location.href)
-              url.search.set('_cb', String(ts))
+              url.searchParams.set('_cb', String(ts))
               location.replace(url.toString())
             }
             throw error
