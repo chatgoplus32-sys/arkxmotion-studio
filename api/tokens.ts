@@ -60,25 +60,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const bulkId = `bulk_${user.id}_${Date.now()}`
 
-      // Wrap entire purchase in a transaction to prevent race conditions
-      const result = await sql.transaction(async (tx) => {
-        let successCount = 0
-        for (const tid of token_ids) {
-          // Atomic: UPDATE ... WHERE status = 'available' — only one concurrent request can win
-          const updated: Record<string, any>[] = await tx`UPDATE tokens SET status = 'sold', updated_at = CURRENT_TIMESTAMP WHERE id = ${tid} AND status = 'available' RETURNING id`
-          if (updated.length > 0) {
-            await tx`INSERT INTO token_orders (user_id, token_id, status, bulk_id) VALUES (${user.id}, ${tid}, 'pending', ${bulkId})`
-            successCount++
-          }
-        }
-        return successCount
-      })
+      // Phase 1: Atomically mark tokens as sold (single transaction)
+      // UPDATE ... WHERE status = 'available' RETURNING id ensures only one concurrent request wins per token
+      const updateQueries = token_ids.map((tid: number) =>
+        sql`UPDATE tokens SET status = 'sold', updated_at = CURRENT_TIMESTAMP WHERE id = ${tid} AND status = 'available' RETURNING id`
+      )
+      const updateResults = await sql.transaction(updateQueries)
 
-      if (result === 0) {
+      // Collect succeeded token IDs from RETURNING results
+      const soldTokenIds: number[] = []
+      for (let i = 0; i < token_ids.length; i++) {
+        const rows = updateResults[i] as Record<string, any>[]
+        if (rows && rows.length > 0) {
+          soldTokenIds.push(token_ids[i])
+        }
+      }
+
+      if (soldTokenIds.length === 0) {
         return res.status(400).json({ error: 'No tokens available' })
       }
 
-      return res.status(201).json({ bulk_id: bulkId, count: result, message: `${result} tokens ordered` })
+      // Phase 2: Create order records for sold tokens (single transaction)
+      const insertQueries = soldTokenIds.map((tid: number) =>
+        sql`INSERT INTO token_orders (user_id, token_id, status, bulk_id) VALUES (${user.id}, ${tid}, 'pending', ${bulkId})`
+      )
+      await sql.transaction(insertQueries)
+
+      return res.status(201).json({ bulk_id: bulkId, count: soldTokenIds.length, message: `${soldTokenIds.length} tokens ordered` })
     }
 
     // GET /api/tokens/orders/mine - user's order history grouped by bulk_id
