@@ -8,7 +8,8 @@ function getSql() {
   return neon(url)
 }
 
-const JWT_SECRET = process.env.JWT_SECRET || 'arkxmotion-studio-secret-key-2026'
+const JWT_SECRET = process.env.JWT_SECRET
+if (!JWT_SECRET) throw new Error('JWT_SECRET env var is required')
 
 function cors(res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*')

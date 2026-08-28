@@ -23,7 +23,7 @@ export function logAudit(action: string, detail: string, level: AuditEntry['leve
     }
     entries.unshift(entry)
     localStorage.setItem(AUDIT_KEY, JSON.stringify(entries.slice(0, MAX_ENTRIES)))
-  } catch {}
+  } catch (e) { console.warn('[auditLog] Failed to save audit entry:', e) }
 }
 
 export function getAuditLog(): AuditEntry[] {

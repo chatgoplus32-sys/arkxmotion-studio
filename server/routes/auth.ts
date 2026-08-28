@@ -7,11 +7,12 @@ import db from '../db.js'
 import { authenticateToken, AuthRequest } from '../middleware/auth.js'
 import { sendEmail, appUrl } from '../mailer.js'
 
-const RegisterSchema = z.object({ email: z.string().email().max(254), password: z.string().min(6).max(128), name: z.string().min(1).max(80).trim() })
+const RegisterSchema = z.object({ email: z.string().email().max(254), password: z.string().min(8).max(128), name: z.string().min(1).max(80).trim() })
 const LoginSchema = z.object({ email: z.string().email().max(254), password: z.string().min(1).max(128) })
 
 const router = Router()
-const JWT_SECRET = process.env.JWT_SECRET || 'arkxmotion-studio-secret-key-2026'
+const JWT_SECRET = process.env.JWT_SECRET
+if (!JWT_SECRET) throw new Error('JWT_SECRET env var is required')
 const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || JWT_SECRET + '-refresh'
 const ACCESS_EXPIRES = '15m'
 const REFRESH_EXPIRES = '7d'
@@ -232,16 +233,16 @@ router.post('/logout', (req, res: Response) => {
       try {
         const p = jwt.verify(tok, JWT_SECRET) as any
         db.prepare('UPDATE users SET refresh_token = NULL, refresh_expires = NULL WHERE id = ?').run(p.id)
-      } catch {}
+      } catch (e) { console.warn('[auth] Logout: invalid access token:', e.message) }
     }
     const { refreshToken } = (req.body as any) || {}
     if (refreshToken) {
       try {
         const p2 = jwt.verify(refreshToken, REFRESH_SECRET) as any
         db.prepare('UPDATE users SET refresh_token = NULL, refresh_expires = NULL WHERE id = ?').run(p2.id)
-      } catch {}
+      } catch (e) { console.warn('[auth] Logout: invalid refresh token:', e.message) }
     }
-  } catch {}
+  } catch (e) { console.warn('[auth] Logout error:', e) }
   res.json({ message: 'Logged out successfully' })
 })
 
@@ -329,8 +330,8 @@ router.post('/reset-password', async (req, res: Response) => {
     if (!token || !password) {
       return res.status(400).json({ error: 'Token and password are required' })
     }
-    if (password.length < 6) {
-      return res.status(400).json({ error: 'Password minimal 6 karakter' })
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'Password minimal 8 karakter' })
     }
 
     const user = db.prepare('SELECT * FROM users WHERE reset_token = ?').get(token) as UserRow | undefined

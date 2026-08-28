@@ -3,13 +3,10 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import {
-  Activity,
   RefreshCw,
   CheckCircle,
   XCircle,
   Clock,
-  Zap,
-  Filter,
   Search,
   Download,
 } from 'lucide-react'

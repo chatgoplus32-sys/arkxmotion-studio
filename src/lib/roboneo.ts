@@ -420,7 +420,7 @@ async function roboneoApiCall(
   let lastStatus = 0
   let rawResponse = ''
 
-  for (let attempt = 1; attempt <= 5; attempt++) {
+  for (let attempt = 1; attempt <= 8; attempt++) {
     let res: Response | null = null
     try {
       console.log(`[roboneo] path=${path} attempt=${attempt}`)
@@ -436,7 +436,7 @@ async function roboneoApiCall(
     } catch (err: any) {
       lastError = `network: ${err.message}`
       lastStatus = 0
-      if (attempt < 5) {
+      if (attempt < 8) {
         await new Promise(r => setTimeout(r, 1500 * attempt))
         continue
       }
@@ -463,7 +463,8 @@ async function roboneoApiCall(
     if (errorCode || errorMsg) {
       if (isBusy && attempt < 8) {
         lastError = `busy (${errorCode})`
-        const waitSec = Math.min(6 * attempt, 30)
+        // Exponential backoff: 8s, 14s, 22s, 32s, 44s, 58s, 74s (cap 80s)
+        const waitSec = Math.min(8 + attempt * 6 + Math.floor(attempt * attempt * 0.8), 80)
         console.log(`[roboneo] ${path} busy, retry ${attempt}/8 in ${waitSec}s (${errorMsg})`)
         await new Promise(r => setTimeout(r, waitSec * 1000))
         continue
@@ -477,8 +478,7 @@ async function roboneoApiCall(
         const manuallyParsed = JSON.parse(rawResponse.replace(/^data:\s*/, ''))
         if (manuallyParsed.task_id || manuallyParsed.room_id) {
           return manuallyParsed
-        }
-      } catch {}
+        }        } catch (e) { console.warn('[roboneo] Failed to parse SSE line:', e) }
     }
 
     // Retry on HTTP 502/503/504/429
@@ -775,27 +775,43 @@ export async function submitMotionControl(params: {
   imageUrl: string
   videoUrl: string
   prompt?: string
-  negativePrompt?: string
+  negativePrompt?: string // ignored — Kling motion control does not support negative_prompt
   orientation?: string
   keepSound?: boolean
   modelKey?: string
   quality?: string
 }): Promise<{ taskId: string; roomId: string; nodeId: string }> {
-  const { accessToken, imageUrl, videoUrl, prompt, modelKey, quality } = params
+  const { accessToken, imageUrl, videoUrl, prompt, orientation, keepSound, modelKey, quality } = params
   const isPro = /pro/i.test(modelKey || '') || quality === 'pro'
-  const q = isPro ? 'pro' : 'std'
+  const mode = isPro ? 'pro' : 'std'
   const finalPrompt = prompt?.trim() || 'Refer to the movements and facial expressions in the video to animate photos without changing the original background.'
   const roomId = generateRoomId()
   const nodeId = uuid()
+
+  // Determine which Roboneo node to use based on modelKey
+  // V3 motion control uses video_bonbon_motioncontrol_v30, V2.6 uses v26
+  const isV3 = /v3|kling.?3/i.test(modelKey || '')
+  const nodeName = isV3 ? 'video_bonbon_motioncontrol_v30' : 'video_bonbon_motioncontrol_v26'
+  const toolLabel = isV3 ? 'Kling V3 Motion' : 'Kling Motion'
+
+  // Map UI orientation to Kling API character_orientation
+  // orientation='video' → character_orientation='video', orientation='image' → character_orientation='image'
+  const characterOrientation = orientation === 'image' ? 'image' : 'video'
+
+  // Map UI keepSound to Kling API keep_audio
+  const keepAudio = keepSound !== false // default true
+
   const node = {
-    tool_abstract_name: { cn: 'Kling Motion', en: 'Kling Motion' },
+    tool_abstract_name: { cn: toolLabel, en: toolLabel },
     node_id: nodeId,
-    name: 'video_bonbon_motioncontrol_v26',
+    name: nodeName,
     parameters: {
       image_url: imageUrl,
       video_url: videoUrl,
       prompt: finalPrompt,
-      quality: q,
+      mode,
+      character_orientation: characterOrientation,
+      keep_audio: keepAudio,
       random: `${Date.now()}-${Math.floor(1e7 + Math.random() * 89999999)}`,
     },
   }
@@ -1967,7 +1983,7 @@ export function getRoboneoMotionMinCredits(): number {
     if (Number.isFinite(value) && value > 0) {
       return Math.max(value, DEFAULT_MOTION_MIN_CREDITS)
     }
-  } catch {}
+  } catch (e) { console.warn('[roboneo] Failed to read min credits from storage:', e) }
   return DEFAULT_MOTION_MIN_CREDITS
 }
 
@@ -1982,7 +1998,7 @@ export function noteRoboneoMotionChargeFailure(creditBalance: number | null): nu
   const currentMin = getRoboneoMotionMinCredits()
   if (creditBalance === null || !Number.isFinite(creditBalance)) {
     const bumped = currentMin + 5
-    try { localStorage.setItem(ROBONEO_MOTION_MIN_CREDITS_KEY, String(bumped)) } catch {}
+    try { localStorage.setItem(ROBONEO_MOTION_MIN_CREDITS_KEY, String(bumped)) } catch (e) { console.warn('[roboneo] Failed to save min credits:', e) }
     return bumped
   }
   const newMin = Math.max(currentMin, Math.floor(creditBalance) + 5)
@@ -1990,7 +2006,7 @@ export function noteRoboneoMotionChargeFailure(creditBalance: number | null): nu
     try {
       localStorage.setItem(ROBONEO_MOTION_MIN_CREDITS_KEY, String(newMin))
       console.log(`[roboneo] Motion min credits updated: ${currentMin} → ${newMin} (balance was ${creditBalance}, charge failed → cost >${creditBalance})`)
-    } catch {}
+    } catch (e) { console.warn('[roboneo] Failed to save min credits:', e) }
   }
   return newMin
 }

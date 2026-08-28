@@ -4,8 +4,8 @@ import { Section, Button, Badge } from '@/components/ui'
 import { useProviderManager, type ProviderId } from '@/stores/providerManager'
 import { useToastStore } from '@/stores/toastStore'
 import {
-  Download, Key, ExternalLink, Copy, Check, Puzzle,
-  Globe, Terminal, AlertTriangle, FileDown, Package
+  Download, ExternalLink, Copy, Check,
+  Terminal, AlertTriangle, Package
 } from 'lucide-react'
 
 // ─── Token grab scripts per provider ────────────────────────────────────────

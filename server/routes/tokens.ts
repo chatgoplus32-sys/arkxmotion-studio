@@ -153,15 +153,20 @@ router.post('/buy', authenticateToken, (req: AuthRequest, res: Response) => {
     }
 
     const bulkId = `bulk_${userId}_${Date.now()}`
-    let successCount = 0
 
-    for (const tid of token_ids) {
-      const result = db.prepare("UPDATE tokens SET status = 'sold', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'available'").run(tid)
-      if (result.changes > 0) {
-        db.prepare('INSERT INTO token_orders (user_id, token_id, status, bulk_id) VALUES (?, ?, ?, ?)').run(userId, tid, 'pending', bulkId)
-        successCount++
+    // Wrap entire purchase in a transaction to prevent race conditions
+    const successCount = db.transaction(() => {
+      let count = 0
+      for (const tid of token_ids) {
+        // Atomic: UPDATE ... WHERE status = 'available' — only one concurrent request can win
+        const result = db.prepare("UPDATE tokens SET status = 'sold', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'available'").run(tid)
+        if (result.changes > 0) {
+          db.prepare('INSERT INTO token_orders (user_id, token_id, status, bulk_id) VALUES (?, ?, ?, ?)').run(userId, tid, 'pending', bulkId)
+          count++
+        }
       }
-    }
+      return count
+    })()
 
     if (successCount === 0) return res.status(400).json({ error: 'No tokens available' })
     res.status(201).json({ bulk_id: bulkId, count: successCount, message: `${successCount} tokens ordered` })

@@ -48,7 +48,7 @@ export default function SettingsPage() {
   }, [])
 
   const handleChangePassword = async () => {
-    if (!oldPassword || !newPassword || newPassword.length < 4) return
+    if (!oldPassword || !newPassword || newPassword.length < 8) return
     setChangingPassword(true)
     try {
       const response = await fetch('/api/auth?path=change-password', {
@@ -270,14 +270,14 @@ export default function SettingsPage() {
               <Label>Password Baru</Label>
               <Input
                 type="password"
-                placeholder="Masukkan password baru (min 4 karakter)"
+                placeholder="Masukkan password baru (min 8 karakter)"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
               />
             </div>
             <Button
               onClick={handleChangePassword}
-              disabled={!oldPassword || !newPassword || newPassword.length < 4 || changingPassword}
+              disabled={!oldPassword || !newPassword || newPassword.length < 8 || changingPassword}
               loading={changingPassword}
             >
               <Shield className="h-4 w-4" /> Ganti Password

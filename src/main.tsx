@@ -8,7 +8,7 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').catch(()=>{})
     if (Notification && Notification.permission === 'default') Notification.requestPermission().catch(()=>{})
   })
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) { try { const { startBackgroundPolling } = require('@/lib/backgroundTasks'); startBackgroundPolling() } catch {} } })
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { try { const { startBackgroundPolling } = require('@/lib/backgroundTasks'); startBackgroundPolling() } catch (e) { console.warn('[main] Failed to start background polling:', e) } } })
 }
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

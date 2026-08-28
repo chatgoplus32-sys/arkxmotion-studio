@@ -22,7 +22,8 @@ function getClientIp(req: VercelRequest): string {
 
 const REGISTER_LIMIT_PER_HOUR = 5
 
-const JWT_SECRET = process.env.JWT_SECRET || 'arkxmotion-studio-secret-key-2026'
+const JWT_SECRET = process.env.JWT_SECRET
+if (!JWT_SECRET) throw new Error('JWT_SECRET env var is required')
 
 function cors(res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -78,14 +79,14 @@ async function handleInit(_req: VercelRequest, res: VercelResponse) {
       )
     `
     // Kolom email verification & reset (untuk database lama)
-    try { await sql`ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0` } catch {}
-    try { await sql`ALTER TABLE users ADD COLUMN email_verify_token TEXT` } catch {}
-    try { await sql`ALTER TABLE users ADD COLUMN email_verify_expires TIMESTAMP` } catch {}
-    try { await sql`ALTER TABLE users ADD COLUMN reset_token TEXT` } catch {}
-    try { await sql`ALTER TABLE users ADD COLUMN reset_expires TIMESTAMP` } catch {}
-    try { await sql`ALTER TABLE users ADD COLUMN payment_token TEXT` } catch {}
+    try { await sql`ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0` } catch { /* column already exists */ }
+    try { await sql`ALTER TABLE users ADD COLUMN email_verify_token TEXT` } catch { /* column already exists */ }
+    try { await sql`ALTER TABLE users ADD COLUMN email_verify_expires TIMESTAMP` } catch { /* column already exists */ }
+    try { await sql`ALTER TABLE users ADD COLUMN reset_token TEXT` } catch { /* column already exists */ }
+    try { await sql`ALTER TABLE users ADD COLUMN reset_expires TIMESTAMP` } catch { /* column already exists */ }
+    try { await sql`ALTER TABLE users ADD COLUMN payment_token TEXT` } catch { /* column already exists */ }
     // Akun yang sudah ada sebelum fitur ini dianggap sudah terverifikasi
-    try { await sql`UPDATE users SET email_verified = 1` } catch {}
+    try { await sql`UPDATE users SET email_verified = 1` } catch { /* no users to update */ }
     await sql`
       CREATE TABLE IF NOT EXISTS tokens (
         id SERIAL PRIMARY KEY,
@@ -153,7 +154,7 @@ async function handleInit(_req: VercelRequest, res: VercelResponse) {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `
-    try { await sql`CREATE INDEX IF NOT EXISTS idx_register_attempts_ip_time ON register_attempts(ip, created_at)` } catch {}
+    try { await sql`CREATE INDEX IF NOT EXISTS idx_register_attempts_ip_time ON register_attempts(ip, created_at)` } catch { /* index already exists */ }
     await sql`
       CREATE TABLE IF NOT EXISTS membership_payments (
         id SERIAL PRIMARY KEY,
@@ -166,7 +167,7 @@ async function handleInit(_req: VercelRequest, res: VercelResponse) {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `
-    try { await sql`CREATE INDEX IF NOT EXISTS idx_membership_payments_user ON membership_payments(user_id)` } catch {}
+    try { await sql`CREATE INDEX IF NOT EXISTS idx_membership_payments_user ON membership_payments(user_id)` } catch { /* index already exists */ }
 
     return res.status(200).json({ message: 'Database initialized' })
   } catch (err: any) {
@@ -322,14 +323,14 @@ async function handleSeed(_req: VercelRequest, res: VercelResponse) {
       )
     `
     // Kolom email verification & reset (untuk database lama)
-    try { await sql`ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0` } catch {}
-    try { await sql`ALTER TABLE users ADD COLUMN email_verify_token TEXT` } catch {}
-    try { await sql`ALTER TABLE users ADD COLUMN email_verify_expires TIMESTAMP` } catch {}
-    try { await sql`ALTER TABLE users ADD COLUMN reset_token TEXT` } catch {}
-    try { await sql`ALTER TABLE users ADD COLUMN reset_expires TIMESTAMP` } catch {}
-    try { await sql`ALTER TABLE users ADD COLUMN payment_token TEXT` } catch {}
+    try { await sql`ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0` } catch { /* column already exists */ }
+    try { await sql`ALTER TABLE users ADD COLUMN email_verify_token TEXT` } catch { /* column already exists */ }
+    try { await sql`ALTER TABLE users ADD COLUMN email_verify_expires TIMESTAMP` } catch { /* column already exists */ }
+    try { await sql`ALTER TABLE users ADD COLUMN reset_token TEXT` } catch { /* column already exists */ }
+    try { await sql`ALTER TABLE users ADD COLUMN reset_expires TIMESTAMP` } catch { /* column already exists */ }
+    try { await sql`ALTER TABLE users ADD COLUMN payment_token TEXT` } catch { /* column already exists */ }
     // Akun yang sudah ada sebelum fitur ini dianggap sudah terverifikasi
-    try { await sql`UPDATE users SET email_verified = 1` } catch {}
+    try { await sql`UPDATE users SET email_verified = 1` } catch { /* no users to update */ }
     await sql`
       CREATE TABLE IF NOT EXISTS tokens (
         id SERIAL PRIMARY KEY,
@@ -401,8 +402,8 @@ async function handleChangePassword(req: VercelRequest, res: VercelResponse) {
     if (!old_password || !new_password) {
       return res.status(400).json({ error: 'Password lama dan baru harus diisi' })
     }
-    if (new_password.length < 4) {
-      return res.status(400).json({ error: 'Password baru minimal 4 karakter' })
+    if (new_password.length < 8) {
+      return res.status(400).json({ error: 'Password baru minimal 8 karakter' })
     }
 
     const sql = getSql()
@@ -467,7 +468,7 @@ async function handleStatus(req: VercelRequest, res: VercelResponse) {
           createdAt: pays[0].created_at,
         }
       }
-    } catch {}
+    } catch (e) { console.warn('[auth] Failed to fetch payment status:', e) }
 
     return res.status(200).json({
       found: true,
@@ -521,7 +522,7 @@ async function handleResetPassword(req: VercelRequest, res: VercelResponse) {
 
   const { token, password } = req.body || {}
   if (!token || !password) return res.status(400).json({ error: 'Token and password are required' })
-  if (password.length < 6) return res.status(400).json({ error: 'Password minimal 6 karakter' })
+  if (password.length < 8) return res.status(400).json({ error: 'Password minimal 8 karakter' })
 
   try {
     const sql = getSql()

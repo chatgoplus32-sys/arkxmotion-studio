@@ -160,7 +160,7 @@ function updateStoredRefreshToken(oldToken: string, newToken: string, accessToke
     localStorage.setItem('arkxmotion.providers', JSON.stringify(parsed))
     tokenCache.set(newToken, { accessToken, expiry: accessExpiry })
     window.dispatchEvent(new Event('aatools:keys-changed'))
-  } catch {}
+  } catch (e) { console.warn('[galleri5] Failed to update token in storage:', e) }
 }
 
 // ─── Stored Keys ────────────────────────────────────────────────────

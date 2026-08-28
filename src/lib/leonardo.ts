@@ -33,7 +33,7 @@ function removeStoredLeonardoKey(tokenToRemove: string) {
       parsed.leonardo = parsed.leonardo.filter((k: any) => k?.key !== tokenToRemove)
       localStorage.setItem('arkxmotion.providers', JSON.stringify(parsed))
     }
-  } catch {}
+  } catch (e) { console.warn('[leonardo] Failed to remove key from storage:', e) }
 }
 
 function isLeonardoAuthError(message: string): boolean {

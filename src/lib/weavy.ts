@@ -43,7 +43,7 @@ function saveProviderStore(store: ProviderManagerStore) {
     }
     // Direct format: just write { weavy: [...], wavespeed: [...] }
     localStorage.setItem(LS_PROVIDERS, JSON.stringify(store.keys))
-  } catch {}
+  } catch (e) { console.warn('[weavy] Failed to save provider keys:', e) }
 }
 
 function getWeavyKeys(): Array<{ id: string; key: string; name?: string; status: string; balance?: number | null; email?: string }> {
@@ -245,7 +245,7 @@ export async function fetchWeavyCreditsClient(accessToken: string): Promise<numb
       if (ws?.credits != null && typeof ws.credits === 'number') return ws.credits
       if (ws?.balance != null && typeof ws.balance === 'number') return ws.balance
     }
-  } catch {}
+  } catch (e) { console.warn('[weavy] Failed to fetch credits:', e) }
 
   return null
 }
@@ -797,7 +797,7 @@ export async function submitWeavySora(params: WeavySoraParams): Promise<WeavySor
       await fetch(`${WEAVY_API}/v1/workspaces/models/approve`, {
         method: 'POST', headers: hdrs, body: JSON.stringify({ modelIds: [model] })
       })
-    } catch {}
+    } catch (e) { console.warn('[weavy] Model approve failed:', e) }
 
     const er = await retryFetch(`${WEAVY_API}/v1/batches/recipes/${rid}/execute`, {
       method: 'POST', headers: hdrs,
@@ -862,7 +862,7 @@ export async function pollWeavySoraStatus(
         try {
           const r2 = await refreshWeavyAccessToken(token)
           if (r2?.accessToken) at = r2.accessToken
-        } catch {}
+        } catch (e) { console.warn('[weavy] Token refresh failed:', e) }
       }
 
       const res = await fetch(`${WEAVY_API}/v1/batches/recipes/${recipeId}/batches/${batchId}/status`, {
@@ -1055,7 +1055,7 @@ export async function submitWeavyGrokVideo(params: WeavyGrokVideoParams): Promis
       await fetch(`${WEAVY_API}/v1/workspaces/models/approve`, {
         method: 'POST', headers: hdrs, body: JSON.stringify({ modelIds: [model] })
       })
-    } catch {}
+    } catch (e) { console.warn('[weavy] Model approve failed:', e) }
 
     const er = await retryFetch(`${WEAVY_API}/v1/batches/recipes/${rid}/execute`, {
       method: 'POST', headers: hdrs,
@@ -1099,7 +1099,7 @@ export async function pollWeavyGrokVideoStatus(
         try {
           const r2 = await refreshWeavyAccessToken(token)
           if (r2?.accessToken) at = r2.accessToken
-        } catch {}
+        } catch (e) { console.warn('[weavy] Token refresh failed:', e) }
       }
 
       const res = await fetch(`${WEAVY_API}/v1/batches/recipes/${recipeId}/batches/${batchId}/status`, {
@@ -1316,7 +1316,7 @@ export async function submitWeavyOmni(params: WeavyOmniParams): Promise<WeavyOmn
       await fetch(`${WEAVY_API}/v1/workspaces/models/approve`, {
         method: 'POST', headers: hdrs, body: JSON.stringify({ modelIds: [model] })
       })
-    } catch {}
+    } catch (e) { console.warn('[weavy] Model approve failed:', e) }
 
     const er = await retryFetch(`${WEAVY_API}/v1/batches/recipes/${rid}/execute`, {
       method: 'POST', headers: hdrs,
@@ -1360,7 +1360,7 @@ export async function pollWeavyOmniStatus(
         try {
           const r2 = await refreshWeavyAccessToken(token)
           if (r2?.accessToken) at = r2.accessToken
-        } catch {}
+        } catch (e) { console.warn('[weavy] Token refresh failed:', e) }
       }
 
       const res = await fetch(`${WEAVY_API}/v1/batches/recipes/${recipeId}/batches/${batchId}/status`, {
@@ -1680,7 +1680,7 @@ export async function submitWeavySeedanceMini(params: WeavySeedanceMiniParams): 
       await fetch(`${WEAVY_API}/v1/workspaces/models/approve`, {
         method: 'POST', headers: hdrs, body: JSON.stringify({ modelIds: [model] })
       })
-    } catch {}
+    } catch (e) { console.warn('[weavy] Model approve failed:', e) }
 
     const er = await retryFetch(`${WEAVY_API}/v1/batches/recipes/${rid}/execute`, {
       method: 'POST', headers: hdrs,
@@ -1724,7 +1724,7 @@ export async function pollWeavySeedanceMiniStatus(
         try {
           const r2 = await refreshWeavyAccessToken(token)
           if (r2?.accessToken) at = r2.accessToken
-        } catch {}
+        } catch (e) { console.warn('[weavy] Token refresh failed:', e) }
       }
 
       const res = await fetch(`${WEAVY_API}/v1/batches/recipes/${recipeId}/batches/${batchId}/status`, {
@@ -1953,7 +1953,7 @@ export async function submitWeavyKlingTurbo(params: WeavyKlingTurboParams): Prom
       await fetch(`${WEAVY_API}/v1/workspaces/models/approve`, {
         method: 'POST', headers: hdrs, body: JSON.stringify({ modelIds: [model] })
       })
-    } catch {}
+    } catch (e) { console.warn('[weavy] Model approve failed:', e) }
 
     const er = await retryFetch(`${WEAVY_API}/v1/batches/recipes/${rid}/execute`, {
       method: 'POST', headers: hdrs,
@@ -1997,7 +1997,7 @@ export async function pollWeavyKlingTurboStatus(
         try {
           const r2 = await refreshWeavyAccessToken(token)
           if (r2?.accessToken) at = r2.accessToken
-        } catch {}
+        } catch (e) { console.warn('[weavy] Token refresh failed:', e) }
       }
 
       const res = await fetch(`${WEAVY_API}/v1/batches/recipes/${recipeId}/batches/${batchId}/status`, {
@@ -2227,7 +2227,7 @@ export async function submitWeavyKlingVideo(params: WeavyKlingVideoParams): Prom
       await fetch(`${WEAVY_API}/v1/workspaces/models/approve`, {
         method: 'POST', headers: hdrs, body: JSON.stringify({ modelIds: [model] })
       })
-    } catch {}
+    } catch (e) { console.warn('[weavy] Model approve failed:', e) }
 
     const er = await retryFetch(`${WEAVY_API}/v1/batches/recipes/${rid}/execute`, {
       method: 'POST', headers: hdrs,
@@ -2271,7 +2271,7 @@ export async function pollWeavyKlingVideoStatus(
         try {
           const r2 = await refreshWeavyAccessToken(token)
           if (r2?.accessToken) at = r2.accessToken
-        } catch {}
+        } catch (e) { console.warn('[weavy] Token refresh failed:', e) }
       }
 
       const res = await fetch(`${WEAVY_API}/v1/batches/recipes/${recipeId}/batches/${batchId}/status`, {
@@ -2740,7 +2740,7 @@ async function submitWeavyBulkOne(token: string, params: WeavyBulkOneParams): Pr
         body: JSON.stringify({ modelIds: [modelName] }),
         signal: AbortSignal.timeout(10000),
       })
-    } catch {}
+    } catch (e) { console.warn('[weavy] Model approve failed:', e) }
     // Step 7: Execute batch
     const execRes = await fetch(`${WEAVY_API}/v1/batches/recipes/${recipeId}/execute`, {
       method: 'POST',
@@ -3041,7 +3041,7 @@ async function approveWeavyModel(modelId: string, accessToken: string): Promise<
       body: JSON.stringify({ modelIds: [modelId] }),
       signal: AbortSignal.timeout(10000),
     })
-  } catch {}
+  } catch (e) { console.warn('[weavy] Model approve failed:', e) }
 }
 
 async function executeWeavyBatch(recipeId: string, nodes: any[], edges: any[], accessToken: string, model?: string): Promise<{ batchId: string }> {

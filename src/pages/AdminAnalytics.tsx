@@ -8,9 +8,7 @@ import {
   Zap,
   CheckCircle,
   XCircle,
-  Clock,
   RefreshCw,
-  TrendingUp,
   Activity,
 } from 'lucide-react'
 

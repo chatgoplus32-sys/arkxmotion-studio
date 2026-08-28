@@ -8,13 +8,11 @@ import {
   RefreshCw,
   Server,
   Cpu,
-  HardDrive,
   Database,
   Users,
   Clock,
   AlertTriangle,
   CheckCircle,
-  MemoryStick,
 } from 'lucide-react'
 
 interface HealthData {

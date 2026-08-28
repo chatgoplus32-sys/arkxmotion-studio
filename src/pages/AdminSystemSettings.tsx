@@ -4,10 +4,8 @@ import { Section, Button } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import {
-  Settings,
   Save,
   RefreshCw,
-  Wrench,
   AlertTriangle,
   CheckCircle,
 } from 'lucide-react'

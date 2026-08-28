@@ -84,14 +84,14 @@ function getRecentActivity(): RecentActivity[] {
   try {
     const gallery = JSON.parse(localStorage.getItem('arkxmotion.upscaler.gallery') || '[]')
     gallery.slice(0, 5).forEach((g: any) => items.push({ id: g.id, type: 'upscaler', title: `Upscale: ${g.sourceName || 'image'}`, time: g.createdAt, status: 'done', url: g.url }))
-  } catch {}
+  } catch (e) { console.warn('[Dashboard] Failed to load upscaler gallery:', e) }
   try {
     const raw = localStorage.getItem('arkxmotion.bg_logs')
     if (raw) {
       const logs = JSON.parse(raw)
       logs.slice(-5).reverse().forEach((l: any) => items.push({ id: l.time + l.msg, type: 'background', title: l.msg, time: l.time, status: l.level === 'error' ? 'error' : 'done' }))
     }
-  } catch {}
+  } catch (e) { console.warn('[Dashboard] Failed to load background logs:', e) }
   return items.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).slice(0, 8)
 }
 

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useToastStore, ToastType } from '@/stores/toastStore'
-import { Bell, CheckCircle, XCircle, Info, AlertTriangle, Trash2, X, Megaphone, RefreshCw } from 'lucide-react'
+import { Bell, CheckCircle, XCircle, Info, AlertTriangle, X, Megaphone, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 /* ─── Server notification type ─────────────────────────── */

@@ -10,7 +10,8 @@ function getSql() {
   return neon(url)
 }
 
-const JWT_SECRET = process.env.JWT_SECRET || 'arkxmotion-studio-secret-key-2026'
+const JWT_SECRET = process.env.JWT_SECRET
+if (!JWT_SECRET) throw new Error('JWT_SECRET env var is required')
 
 function cors(res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -65,12 +66,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     // Ensure tables and columns exist (idempotent)
     const sql = getSql()
-    try { await sql`ALTER TABLE tokens ADD COLUMN IF NOT EXISTS credits INTEGER DEFAULT NULL` } catch {}
-    try { await sql`ALTER TABLE tokens ADD COLUMN IF NOT EXISTS credit_group TEXT DEFAULT NULL` } catch {}
-    try { await sql`CREATE TABLE IF NOT EXISTS generation_logs (id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL, page TEXT NOT NULL DEFAULT '', provider TEXT, model TEXT, status TEXT NOT NULL DEFAULT 'pending', credits INTEGER DEFAULT 0, error TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)` } catch {}
-    try { await sql`CREATE TABLE IF NOT EXISTS notifications (id SERIAL PRIMARY KEY, title TEXT NOT NULL, message TEXT NOT NULL, type TEXT NOT NULL DEFAULT 'info', target TEXT NOT NULL DEFAULT 'all', user_id INTEGER DEFAULT NULL, read INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)` } catch {}
-    try { await sql`CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)` } catch {}
-    try { await sql`CREATE TABLE IF NOT EXISTS provider_maintenance (id SERIAL PRIMARY KEY, provider TEXT UNIQUE NOT NULL, is_maintenance INTEGER NOT NULL DEFAULT 0, message TEXT NOT NULL DEFAULT '', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)` } catch {}
+    try { await sql`ALTER TABLE tokens ADD COLUMN IF NOT EXISTS credits INTEGER DEFAULT NULL` } catch { /* column already exists */ }
+    try { await sql`ALTER TABLE tokens ADD COLUMN IF NOT EXISTS credit_group TEXT DEFAULT NULL` } catch { /* column already exists */ }
+    try { await sql`CREATE TABLE IF NOT EXISTS generation_logs (id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL, page TEXT NOT NULL DEFAULT '', provider TEXT, model TEXT, status TEXT NOT NULL DEFAULT 'pending', credits INTEGER DEFAULT 0, error TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)` } catch { /* table already exists */ }
+    try { await sql`CREATE TABLE IF NOT EXISTS notifications (id SERIAL PRIMARY KEY, title TEXT NOT NULL, message TEXT NOT NULL, type TEXT NOT NULL DEFAULT 'info', target TEXT NOT NULL DEFAULT 'all', user_id INTEGER DEFAULT NULL, read INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)` } catch { /* table already exists */ }
+    try { await sql`CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)` } catch { /* table already exists */ }
+    try { await sql`CREATE TABLE IF NOT EXISTS provider_maintenance (id SERIAL PRIMARY KEY, provider TEXT UNIQUE NOT NULL, is_maintenance INTEGER NOT NULL DEFAULT 0, message TEXT NOT NULL DEFAULT '', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)` } catch { /* table already exists */ }
 
     // /api/admin/topup/* routes
     if (segments.includes('topup') || segments.includes('topups')) {
@@ -182,7 +183,7 @@ async function attachPayment(sql: any, users: any[]): Promise<any[]> {
           proofNote: pays[0].proof_note, adminNote: pays[0].admin_note, createdAt: pays[0].created_at,
         }
       }
-    } catch {}
+    } catch (e) { console.warn('[admin] Failed to attach payment for user:', e) }
     out.push({ ...u, approved: !!u.approved, email_verified: !!u.email_verified, payment })
   }
   return out
@@ -252,8 +253,8 @@ async function handleDelete(res: VercelResponse, id: number) {
 async function handleResetPassword(res: VercelResponse, id: number, body: any) {
   try {
     const { new_password } = body || {}
-    if (!new_password || new_password.length < 4) {
-      return res.status(400).json({ error: 'Password minimal 4 karakter' })
+    if (!new_password || new_password.length < 8) {
+      return res.status(400).json({ error: 'Password minimal 8 karakter' })
     }
 
     const sql = getSql()
@@ -364,7 +365,7 @@ async function handleTokenRoutes(req: VercelRequest, res: VercelResponse, segmen
           try {
             await sql`INSERT INTO tokens (provider, name, token_value, price, credits, credit_group) VALUES (${provider}, ${t.name}, ${t.token_value}, ${price}, ${t.credits ?? null}, ${t.credit_group ?? null})`
             created++
-          } catch {}
+          } catch (e) { console.warn('[admin] Failed to insert bulk token:', e) }
         }
         return res.status(201).json({ message: `${created} tokens uploaded`, count: created })
       }
@@ -801,7 +802,7 @@ async function handleMembershipRoutes(req: VercelRequest, res: VercelResponse) {
     // Konfigurasi harga membership
     if (action === 'config') {
       const sql = getSql()
-      try { await sql`CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)` } catch {}
+      try { await sql`CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)` } catch { /* table already exists */ }
       if (req.method === 'GET') {
         const rows = await sql`SELECT value FROM app_settings WHERE key = 'membership_fee'`
         const fee = Number(rows[0]?.value)
@@ -1113,7 +1114,7 @@ async function handleHealth(_req: VercelRequest, res: VercelResponse) {
     try {
       const maint = await sql`SELECT provider FROM provider_maintenance WHERE is_maintenance = 1`
       maintenanceProviders = maint.map((m: any) => m.provider)
-    } catch {}
+    } catch (e) { console.warn('[admin] Failed to fetch maintenance providers:', e) }
 
     return res.status(200).json({
       server: {
@@ -1186,7 +1187,7 @@ async function handleNotificationsRoutes(req: VercelRequest, res: VercelResponse
         const decoded = jwt.verify(token, JWT_SECRET) as any
         userId = decoded.id
         isAdmin = decoded.role === 'admin'
-      } catch {}
+      } catch (e) { console.warn('[admin] Failed to verify token for unread count:', e) }
       let count: any[]
       if (isAdmin) {
         count = await sql`SELECT COUNT(*) as c FROM notifications WHERE read = 0 AND (target = 'all' OR target = 'admins')`
@@ -1206,7 +1207,7 @@ async function handleNotificationsRoutes(req: VercelRequest, res: VercelResponse
         const decoded = jwt.verify(token, JWT_SECRET) as any
         userId = decoded.id
         isAdmin = decoded.role === 'admin'
-      } catch {}
+      } catch (e) { console.warn('[admin] Failed to verify token for mine notifications:', e) }
       const limit = Math.min(Number(req.query.limit) || 20, 100)
       let rows: any[]
       if (isAdmin) {

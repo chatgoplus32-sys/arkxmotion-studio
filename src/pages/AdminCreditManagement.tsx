@@ -4,13 +4,10 @@ import { Section, Button } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import {
-  Coins,
   RefreshCw,
   Save,
   Trash2,
   Download,
-  CheckSquare,
-  Filter,
   Edit3,
   X,
 } from 'lucide-react'

@@ -124,7 +124,7 @@ export function startOneOverAutoRefresh() {
       for (const k of keys) {
         if (k.status === 'invalid' || k.status === 'expired') continue
         try {
-          const newAccessToken = await resolveOneOverAccessToken(k.key)
+          await resolveOneOverAccessToken(k.key)
           // Update the access token in provider store for fast access
           useProviderManager.getState().updateKeyStatus('oneover', k.id, 'active', k.balance, k.email)
           console.log('[oneover] Auto-refreshed token for', k.name || k.id)
@@ -136,7 +136,7 @@ export function startOneOverAutoRefresh() {
           }
         }
       }
-    } catch {}
+    } catch (e) { console.warn('[oneover] Auto-refresh iteration failed:', e) }
   }, 30 * 60 * 1000) // every 30 minutes
 }
 
@@ -349,7 +349,7 @@ function updateStoredOneOverToken(
     localStorage.setItem('arkxmotion.providers', JSON.stringify(parsed))
     tokenCache.set(newRefreshToken, { accessToken, expiry: accessExpiry })
     window.dispatchEvent(new Event('aatools:keys-changed'))
-  } catch {}
+  } catch (e) { console.warn('[oneover] Failed to update token in storage:', e) }
 }
 
 // ─── Extract from Supabase Session Storage ───────────────────────────────
@@ -421,7 +421,7 @@ export function getOneOverBookmarklet(): string {
         var session = parsed.current_session || parsed;
         accessToken = (session && session.access_token) || '';
         refreshToken = (session && session.refresh_token) || '';
-      } catch {}
+      } catch (e) { console.warn('[oneover] Failed to parse session JSON:', e) }
     }
 
     // 2. Fallback to localStorage
@@ -434,7 +434,7 @@ export function getOneOverBookmarklet(): string {
           var session2 = parsed2.current_session || parsed2;
           accessToken = (session2 && session2.access_token) || '';
           refreshToken = (session2 && session2.refresh_token) || '';
-        } catch {}
+        } catch (e) { console.warn('[oneover] Failed to parse session2 JSON:', e) }
       }
     }
 

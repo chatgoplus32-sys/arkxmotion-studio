@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
-import { Section, Button, Select, Label, Textarea, EmptyState, Badge, BalanceBadge, Checkbox } from '@/components/ui'
+import { Section, Button, Select, Label, Textarea, EmptyState, Badge, BalanceBadge } from '@/components/ui'
 import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
 import { Image, Upload, Rocket, Loader2, Trash2, Key, ExternalLink, Download, X, Copy } from 'lucide-react'
 import { Swipeable } from '@/components/Swipeable'
@@ -10,7 +10,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { uploadToCatbox, submitRoboneoI2V, pollRoboneoI2V, checkRoboneoBalance, uploadImageForRoboneo, isRoboneoFormatError } from '@/lib/roboneo'
 import { generateWithFramia } from '@/lib/framia'
 import { runLeonardoVideo } from '@/lib/leonardo'
-import { LEONARDO_VIDEO_MODELS, leonardoVideoQualityOptions } from '@/lib/leonardo-video'
+import { leonardoVideoQualityOptions } from '@/lib/leonardo-video'
 import { submitWeavyVideo, pollWeavyStatus, submitWeavySora, pollWeavySoraStatus, submitWeavyGrokVideo, pollWeavyGrokVideoStatus, submitWeavyOmni, pollWeavyOmniStatus, submitWeavySeedanceMini, pollWeavySeedanceMiniStatus, submitWeavyKlingTurbo, pollWeavyKlingTurboStatus, submitWeavyKlingVideo, pollWeavyKlingVideoStatus } from '@/lib/weavy'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import {
@@ -32,8 +32,7 @@ import { isNotificationsEnabled, setNotificationsEnabled, requestNotificationPer
 import { uploadToCdn } from '@/lib/cdn'
 import { precheckProviderBalance } from '@/lib/balancePrecheck'
 
-import { PROVIDER_MODELS, QUALITY_OPTIONS, CP_PRICES, getCreatepulseCost, RATIOS, TEMPLATES, CREATEPULSE_API } from './image-to-video/constants'
-import type { ModelOption } from './image-to-video/constants'
+import { PROVIDER_MODELS, QUALITY_OPTIONS, getCreatepulseCost, RATIOS, TEMPLATES, CREATEPULSE_API } from './image-to-video/constants'
 
 import VideoPlayer from './image-to-video/VideoPlayer'
 
@@ -525,7 +524,7 @@ export default function ImageToVideoPage() {
               setCpBalance(rd.balance)
               addLog(`✅ Refund berhasil ✓ saldo Rp ${rd.balance.toLocaleString('id-ID')}`, 'success', 'createpulse')
             }
-          } catch {}
+          } catch (e) { console.warn('[ImageToVideo] Refund by ID failed:', e) }
         } else {
           addLog(`💸 Refunding Rp ${cost.toLocaleString('id-ID')} (by model)...`, 'warn', 'createpulse')
           try {
@@ -539,7 +538,7 @@ export default function ImageToVideoPage() {
               setCpBalance(rd.balance)
               addLog(`✅ Refund berhasil ✓ saldo Rp ${rd.balance.toLocaleString('id-ID')}`, 'success', 'createpulse')
             }
-          } catch {}
+          } catch (e) { console.warn('[ImageToVideo] Refund by model failed:', e) }
         }
       }
       throw err

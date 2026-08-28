@@ -81,7 +81,7 @@ router.post('/users/:id/approve', authenticateToken, requireAdmin, async (req: A
         html: `<p>Halo <b>${user.name}</b>,</p><p>Akun kamu di <b>ARKXMotion Studio</b> telah <b>disetujui</b>. Silakan login:</p><p><a href="${appUrl()}/login" style="background:#d4a017;color:#000;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:700">Login Sekarang</a></p><p>— ARKXMotion Studio</p>`,
       })
       db.prepare("INSERT INTO notifications (title, message, type, target, user_id) VALUES (?, ?, 'success', 'users', ?)").run('Akun Disetujui', 'Akun kamu telah disetujui admin. Silakan login.', Number(id))
-    } catch {}
+    } catch (e) { console.warn('[admin] Failed to send approval email/notification:', e) }
 
     res.json({ message: `User ${user.email} approved successfully` })
   } catch (error) {
@@ -209,7 +209,7 @@ router.post('/membership/payments/:id/approve', authenticateToken, requireAdmin,
         html: `<p>Halo <b>${payment.name}</b>,</p><p>Pembayaran kamu <b>disetujui</b> & akun telah diaktifkan. Silakan login:</p><p><a href="${appUrl()}/login" style="background:#d4a017;color:#000;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:700">Login Sekarang</a></p>`,
       })
       db.prepare("INSERT INTO notifications (title, message, type, target, user_id) VALUES (?, ?, 'success', 'users', ?)").run('Pembayaran Disetujui', 'Pembayaran kamu disetujui & akun diaktifkan.', payment.user_id)
-    } catch {}
+    } catch (e) { console.warn('[admin] Failed to send payment approval email/notification:', e) }
 
     res.json({ ok: true, message: `Pembayaran ${payment.email} disetujui & akun diaktifkan` })
   } catch (error) {

@@ -9,7 +9,7 @@
  * retry with a cache-busting query param. Max 2 retries to prevent loops.
  */
 
-import { ComponentType, LazyExoticComponent, ReactNode, createElement, lazy } from 'react'
+import { ComponentType, LazyExoticComponent, lazy } from 'react'
 
 interface LazyOptions {
   /** Max retries before giving up (default: 2) */

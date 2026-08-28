@@ -97,7 +97,34 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white overflow-x-hidden selection:bg-[#d4a017]/30">
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Inter:wght@400;500;600;700;800;900&display=swap');`}</style>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Inter:wght@400;500;600;700;800;900&display=swap');
+        @keyframes fadeInUp {
+          from { opacity: 0; transform: translateY(24px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes slideInRight {
+          from { opacity: 0; transform: translateX(30px); }
+          to { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes float {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-8px); }
+        }
+        @keyframes shimmer {
+          0% { background-position: -200% 0; }
+          100% { background-position: 200% 0; }
+        }
+        .animate-fade-in-up { animation: fadeInUp 0.7s ease-out both; }
+        .animate-fade-in { animation: fadeIn 0.6s ease-out both; }
+        .animate-slide-right { animation: slideInRight 0.7s ease-out both; }
+        .animate-float { animation: float 4s ease-in-out infinite; }
+        .animate-shimmer { animation: shimmer 3s linear infinite; background-size: 200% 100%; }
+      `}</style>
 
       <nav className="fixed top-0 w-full z-50 border-b border-white/[0.06] bg-[#0a0a0a]/70 backdrop-blur-2xl">
         <div className="max-w-[1180px] mx-auto px-6 h-[64px] flex items-center justify-between">
@@ -135,12 +162,13 @@ export default function LandingPage() {
       <section className="relative pt-28 pb-10 px-6 overflow-hidden">
         <div className="absolute inset-0 -z-10">
           <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.04)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.04)_1px,transparent_1px)] bg-[size:48px_48px] [mask-image:radial-gradient(ellipse_80%_50%_at_50%_0%,black_70%,transparent_110%)]" />
-          <div className="absolute top-[-120px] left-1/2 -translate-x-1/2 w-[1100px] h-[520px] bg-gradient-to-br from-[#d4a017]/20 via-[#ffd700]/10 to-transparent rounded-full blur-[80px] opacity-60" />
-          <div className="absolute top-[220px] right-[-80px] w-[420px] h-[420px] bg-violet-500/10 rounded-full blur-[90px]" />
+          <div className="absolute top-[-120px] left-1/2 -translate-x-1/2 w-[1100px] h-[520px] bg-gradient-to-br from-[#d4a017]/20 via-[#ffd700]/10 to-transparent rounded-full blur-[80px] opacity-60 animate-[pulse_6s_ease-in-out_infinite]" />
+          <div className="absolute top-[220px] right-[-80px] w-[420px] h-[420px] bg-violet-500/10 rounded-full blur-[90px] animate-[pulse_8s_ease-in-out_infinite_2s]" />
+          <div className="absolute bottom-[-60px] left-[-40px] w-[300px] h-[300px] bg-emerald-500/8 rounded-full blur-[70px] animate-[pulse_10s_ease-in-out_infinite_4s]" />
         </div>
 
-        <div className="max-w-[1180px] mx-auto grid lg:grid-cols-[1.05fr_0.95fr] gap-10 items-center">
-          <div>
+        <div className="max-w-[1180px] mx-auto grid lg:grid-cols-[1.05fr_0.95fr] gap-8 lg:gap-10 items-center">
+          <div className="animate-[fadeInUp_0.8s_ease-out]">
             <div className="inline-flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-white/[0.06] border border-white/10 backdrop-blur text-xs">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_10px_rgba(16,185,129,0.8)]" />
               <span className="text-white/70 font-mono text-[11px] tracking-widest uppercase">8 Providers • Smart Routing • Live</span>
@@ -148,21 +176,21 @@ export default function LandingPage() {
               <span className="hidden sm:inline text-amber-300 text-xs">99.9% uptime</span>
             </div>
 
-            <h1 className="mt-6 text-[42px] md:text-[58px] font-black leading-[0.95] tracking-[-0.03em]">
+            <h1 className="mt-6 text-[36px] sm:text-[42px] md:text-[58px] font-black leading-[0.95] tracking-[-0.03em]">
               <span className="bg-gradient-to-r from-[#d4a017] via-[#ffd700] to-[#ffec8b] bg-clip-text text-transparent">Create Motion</span>
               <br />
               <span className="text-white">With AI Power</span>
             </h1>
 
-            <p className="mt-5 text-[16px] md:text-[18px] leading-relaxed text-white/55 max-w-[560px]">
+            <p className="mt-5 text-[15px] md:text-[18px] leading-relaxed text-white/55 max-w-[560px]">
               Satu platform untuk semua kebutuhan video AI — motion control, image-to-video, bulk fashion, UGC & upscaler. Multi-provider, token rotation, balance check real-time.
             </p>
 
             <div className="mt-8 flex flex-wrap gap-3">
-              <Link to="/register" className="px-7 py-3.5 text-[15px] font-semibold bg-gradient-to-r from-[#d4a017] to-[#ffd700] text-black rounded-xl hover:shadow-[0_12px_30px_rgba(212,160,23,0.35)] hover:-translate-y-[1px] active:translate-y-0 transition-all">
+              <Link to="/register" className="px-6 sm:px-7 py-3 sm:py-3.5 text-[14px] sm:text-[15px] font-semibold bg-gradient-to-r from-[#d4a017] to-[#ffd700] text-black rounded-xl hover:shadow-[0_12px_30px_rgba(212,160,23,0.35)] hover:-translate-y-[1px] active:translate-y-0 transition-all">
                 Mulai Gratis — 5 Generate
               </Link>
-              <a href="#features" className="px-7 py-3.5 text-[15px] font-medium bg-white text-black rounded-xl hover:bg-white/90 transition flex items-center gap-2">
+              <a href="#features" className="px-6 sm:px-7 py-3 sm:py-3.5 text-[14px] sm:text-[15px] font-medium bg-white text-black rounded-xl hover:bg-white/90 transition flex items-center gap-2">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><circle cx="12" cy="12" r="10" /></svg>
                 Lihat Demo
               </a>
@@ -177,22 +205,22 @@ export default function LandingPage() {
               <span>Dipercaya 2,400+ creator • 48k video ter-generate</span>
             </div>
 
-            <div className="mt-8 grid grid-cols-3 gap-3 max-w-[520px]">
+            <div className="mt-8 grid grid-cols-3 gap-2 sm:gap-3 max-w-[520px]">
               {[
                 { k: '10k+', v: 'Video / minggu' },
                 { k: '< 45s', v: 'Avg generate' },
                 { k: '8+', v: 'AI Providers' },
               ].map((s) => (
-                <div key={s.k} className="rounded-2xl bg-white/[0.04] border border-white/[0.06] p-3 backdrop-blur">
-                  <div className="text-[18px] font-bold tracking-tight">{s.k}</div>
-                  <div className="text-[11px] text-white/45">{s.v}</div>
+                <div key={s.k} className="rounded-2xl bg-white/[0.04] border border-white/[0.06] p-3 backdrop-blur hover:border-[#d4a017]/20 transition-colors">
+                  <div className="text-[16px] sm:text-[18px] font-bold tracking-tight">{s.k}</div>
+                  <div className="text-[10px] sm:text-[11px] text-white/45">{s.v}</div>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="relative lg:h-[520px]">
-            <div className="absolute -inset-6 bg-gradient-to-br from-[#d4a017]/15 to-violet-500/10 rounded-[28px] blur-2xl" />
+          <div className="relative lg:h-[520px] mt-8 lg:mt-0 animate-[fadeInUp_0.8s_ease-out_0.2s_both]">
+            <div className="absolute -inset-6 bg-gradient-to-br from-[#d4a017]/15 to-violet-500/10 rounded-[28px] blur-2xl opacity-60" />
             <div className="relative rounded-[24px] overflow-hidden border border-white/10 bg-gradient-to-b from-white/[0.08] to-white/[0.02] backdrop-blur-2xl shadow-[0_20px_80px_rgba(0,0,0,0.5)]">
               <div className="h-11 flex items-center justify-between px-4 border-b border-white/5 bg-white/[0.03]">
                 <div className="flex items-center gap-1.5">
@@ -200,21 +228,21 @@ export default function LandingPage() {
                   <span className="w-3 h-3 rounded-full bg-yellow-400/80" />
                   <span className="w-3 h-3 rounded-full bg-green-400/80" />
                 </div>
-                <div className="text-xs font-mono text-white/40">arkxmotion.studio — Dashboard</div>
+                <div className="text-[11px] sm:text-xs font-mono text-white/40">arkxmotion.studio — Dashboard</div>
                 <div className="w-16" />
               </div>
 
-              <div className="p-4 grid gap-4">
+              <div className="p-3 sm:p-4 grid gap-3 sm:gap-4">
                 <div className="rounded-2xl overflow-hidden border border-white/5 bg-black/40 aspect-[16/9] relative">
                   <div className="absolute inset-0 bg-gradient-to-br from-amber-500/20 via-transparent to-violet-500/20" />
                   <div className="absolute inset-0 grid place-items-center">
-                    <div className="w-14 h-14 rounded-full bg-white text-black grid place-items-center shadow-xl">
+                    <div className="w-14 h-14 rounded-full bg-white text-black grid place-items-center shadow-xl hover:scale-110 transition-transform cursor-pointer">
                       <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.14v14l11-7z" /></svg>
                     </div>
                   </div>
                   <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
-                    <span className="text-[11px] font-mono px-2 py-1 rounded-full bg-black/60 border border-white/10 text-white/70">Kling V3 Pro • 5s • 720p</span>
-                    <span className="text-[11px] px-2 py-1 rounded-full bg-emerald-500 text-black font-semibold">● Generating 68%</span>
+                    <span className="text-[10px] sm:text-[11px] font-mono px-2 py-1 rounded-full bg-black/60 border border-white/10 text-white/70">Kling V3 Pro • 5s • 720p</span>
+                    <span className="text-[10px] sm:text-[11px] px-2 py-1 rounded-full bg-emerald-500 text-black font-semibold">● Generating 68%</span>
                   </div>
                 </div>
 
@@ -224,27 +252,27 @@ export default function LandingPage() {
                     { label: 'Success Rate', value: '96.4%', sub: 'Avg 38s', color: 'text-emerald-400' },
                     { label: 'Active Keys', value: '14/18', sub: '3 providers', color: 'text-violet-400' },
                   ].map((c) => (
-                    <div key={c.label} className="rounded-xl bg-white/[0.04] border border-white/5 p-3">
-                      <div className="text-[11px] text-white/40">{c.label}</div>
-                      <div className={`text-[16px] font-bold ${c.color}`}>{c.value}</div>
-                      <div className="text-[11px] text-white/30">{c.sub}</div>
+                    <div key={c.label} className="rounded-xl bg-white/[0.04] border border-white/5 p-2 sm:p-3">
+                      <div className="text-[10px] sm:text-[11px] text-white/40">{c.label}</div>
+                      <div className={`text-[14px] sm:text-[16px] font-bold ${c.color}`}>{c.value}</div>
+                      <div className="text-[10px] sm:text-[11px] text-white/30">{c.sub}</div>
                     </div>
                   ))}
                 </div>
 
-                <div className="grid grid-cols-5 gap-2">
+                <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
                   {providers.slice(0, 5).map((p) => (
-                    <div key={p.name} className="rounded-xl bg-white/[0.03] border border-white/5 p-2 text-center">
+                    <div key={p.name} className="rounded-xl bg-white/[0.03] border border-white/5 p-1.5 sm:p-2 text-center">
                       <div className="w-2 h-2 rounded-full mx-auto mb-1" style={{ background: p.dot }} />
-                      <div className="text-[11px] font-medium text-white/70">{p.name}</div>
-                      <div className="text-[10px] text-emerald-400">online</div>
+                      <div className="text-[10px] sm:text-[11px] font-medium text-white/70">{p.name}</div>
+                      <div className="text-[9px] sm:text-[10px] text-emerald-400">online</div>
                     </div>
                   ))}
                 </div>
               </div>
             </div>
 
-            <div className="absolute -bottom-4 -left-4 hidden md:flex items-center gap-3 rounded-2xl bg-[#141414] border border-white/10 px-4 py-3 shadow-[0_12px_40px_rgba(0,0,0,0.5)]">
+            <div className="absolute -bottom-4 -left-4 hidden md:flex items-center gap-3 rounded-2xl bg-[#141414] border border-white/10 px-4 py-3 shadow-[0_12px_40px_rgba(0,0,0,0.5)] animate-[fadeInUp_0.8s_ease-out_0.5s_both]">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-yellow-300 grid place-items-center text-black">⚡</div>
               <div>
                 <div className="text-sm font-semibold">Bulk 100 video — Done</div>
@@ -257,40 +285,38 @@ export default function LandingPage() {
 
       <section className="py-6 px-6 border-y border-white/[0.06] bg-white/[0.015]">
         <div className="max-w-[1180px] mx-auto">
-          <p className="text-center text-[11px] font-mono tracking-[0.2em] text-white/30 uppercase mb-5">Trusted Providers • Auto Rotation • Load Balanced</p>
-          <div className="flex flex-wrap justify-center gap-2 md:gap-3">
+          <p className="text-center text-[10px] sm:text-[11px] font-mono tracking-[0.15em] sm:tracking-[0.2em] text-white/30 uppercase mb-4 sm:mb-5">Trusted Providers • Auto Rotation • Load Balanced</p>
+          <div className="flex flex-wrap justify-center gap-1.5 sm:gap-2 md:gap-3">
             {providers.map((p) => (
-              <div key={p.name} className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/[0.04] border border-white/5 hover:border-[#d4a017]/30 hover:bg-[#d4a017]/10 transition">
-                <span className="w-2 h-2 rounded-full" style={{ background: p.dot }} />
-                <span className="text-sm font-medium text-white/80">{p.name}</span>
-                <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">● online</span>
+              <div key={p.name} className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full bg-white/[0.04] border border-white/5 hover:border-[#d4a017]/30 hover:bg-[#d4a017]/10 transition-all hover:scale-105">
+                <span className="w-1.5 sm:w-2 h-1.5 sm:h-2 rounded-full" style={{ background: p.dot }} />
+                <span className="text-xs sm:text-sm font-medium text-white/80">{p.name}</span>
+                <span className="hidden sm:inline text-[10px] sm:text-[11px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">● online</span>
               </div>
             ))}
           </div>
         </div>
-      </section>
-
-      <section id="features" className="py-20 px-6">
+      </section>      <section id="features" className="py-16 sm:py-20 px-6">
         <div className="max-w-[1180px] mx-auto">
           <div className="max-w-[640px]">
-            <div className="inline-flex items-center gap-2 text-[11px] font-mono tracking-widest uppercase text-amber-300/80">
+            <div className="inline-flex items-center gap-2 text-[10px] sm:text-[11px] font-mono tracking-widest uppercase text-amber-300/80">
               <span className="w-6 h-[1px] bg-amber-300/50" /> Fitur Lengkap
             </div>
-            <h2 className="mt-3 text-[32px] md:text-[42px] font-black tracking-[-0.02em] leading-none">
+            <h2 className="mt-3 text-[28px] sm:text-[32px] md:text-[42px] font-black tracking-[-0.02em] leading-none">
               Semua tools <span className="bg-gradient-to-r from-[#d4a017] to-[#ffd700] bg-clip-text text-transparent">video AI</span> dalam satu studio
             </h2>
-            <p className="mt-4 text-white/50 leading-relaxed">Dari motion transfer sampai bulk UGC — semua provider, satu billing, satu dashboard.</p>
+            <p className="mt-4 text-[14px] sm:text-[15px] text-white/50 leading-relaxed">Dari motion transfer sampai bulk UGC — semua provider, satu billing, satu dashboard.</p>
           </div>
 
-          <div className="mt-10 grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {features.map((f) => (
-              <div key={f.title} className="group relative rounded-[20px] border border-white/[0.06] bg-gradient-to-b from-white/[0.05] to-white/[0.015] p-6 hover:border-[#d4a017]/30 hover:from-[#d4a017]/[0.06] hover:to-transparent transition-all hover:-translate-y-1 hover:shadow-[0_12px_40px_rgba(212,160,23,0.12)]">
-                <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${f.gradient} border border-white/5 grid place-items-center group-hover:scale-105 transition`}>
-                  <svg className="w-6 h-6 text-amber-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}><path strokeLinecap="round" strokeLinejoin="round" d={f.icon} /></svg>
+          <div className="mt-8 sm:mt-10 grid sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+            {features.map((f, i) => (
+              <div key={f.title} className="group relative rounded-[20px] border border-white/[0.06] bg-gradient-to-b from-white/[0.05] to-white/[0.015] p-5 sm:p-6 hover:border-[#d4a017]/30 hover:from-[#d4a017]/[0.06] hover:to-transparent transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_12px_40px_rgba(212,160,23,0.12)]" style={{ animationDelay: `${i * 0.1}s` }}>
+                <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-gradient-to-br ${f.gradient} border border-white/5 grid place-items-center group-hover:scale-110 transition-transform duration-300`}>
+                  <svg className="w-5 h-5 sm:w-6 sm:h-6 text-amber-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}><path strokeLinecap="round" strokeLinejoin="round" d={f.icon} /></svg>
                 </div>
-                <h3 className="mt-4 text-[17px] font-semibold">{f.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-white/45 group-hover:text-white/60 transition">{f.desc}</p>
-                <div className="mt-4 inline-flex items-center gap-1.5 text-xs font-medium text-amber-300 opacity-0 group-hover:opacity-100 translate-y-1 group-hover:translate-y-0 transition-all">
+                <h3 className="mt-3 sm:mt-4 text-[15px] sm:text-[17px] font-semibold">{f.title}</h3>
+                <p className="mt-1.5 sm:mt-2 text-[13px] sm:text-sm leading-relaxed text-white/45 group-hover:text-white/60 transition">{f.desc}</p>
+                <div className="mt-3 sm:mt-4 inline-flex items-center gap-1.5 text-xs font-medium text-amber-300 opacity-0 group-hover:opacity-100 translate-y-1 group-hover:translate-y-0 transition-all duration-300">
                   Coba sekarang
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M9 18l6-6-6-6" /></svg>
                 </div>
@@ -300,144 +326,146 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section id="how" className="py-16 px-6">
-        <div className="max-w-[1180px] mx-auto rounded-[28px] border border-white/[0.06] bg-gradient-to-b from-white/[0.04] to-transparent p-8 md:p-10">
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+      <section id="how" className="py-12 sm:py-16 px-6">
+        <div className="max-w-[1180px] mx-auto rounded-[20px] sm:rounded-[28px] border border-white/[0.06] bg-gradient-to-b from-white/[0.04] to-transparent p-6 sm:p-8 md:p-10">
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 sm:gap-6">
             <div>
-              <div className="text-[11px] font-mono tracking-[0.2em] uppercase text-white/30">Cara Kerja</div>
-              <h2 className="mt-2 text-[26px] md:text-[34px] font-bold tracking-tight">3 langkah — jadi</h2>
+              <div className="text-[10px] sm:text-[11px] font-mono tracking-[0.2em] uppercase text-white/30">Cara Kerja</div>
+              <h2 className="mt-2 text-[22px] sm:text-[26px] md:text-[34px] font-bold tracking-tight">3 langkah — jadi</h2>
             </div>
-            <p className="text-sm text-white/45 max-w-[420px]">Upload, pilih model, generate. Background polling & notifikasi realtime, tinggal download.</p>
+            <p className="text-[13px] sm:text-sm text-white/45 max-w-[420px]">Upload, pilih model, generate. Background polling & notifikasi realtime, tinggal download.</p>
           </div>
-          <div className="mt-8 grid md:grid-cols-3 gap-4">
+          <div className="mt-6 sm:mt-8 grid sm:grid-cols-3 gap-3 sm:gap-4">
             {steps.map((s) => (
-              <div key={s.n} className="rounded-2xl bg-[#0f0f0f] border border-white/[0.06] p-6">
-                <div className="text-[12px] font-mono tracking-widest text-amber-300">{s.n}</div>
-                <div className="mt-2 text-[16px] font-semibold">{s.title}</div>
-                <div className="mt-1 text-sm text-white/45 leading-relaxed">{s.desc}</div>
+              <div key={s.n} className="rounded-2xl bg-[#0f0f0f] border border-white/[0.06] p-5 sm:p-6 hover:border-[#d4a017]/20 transition-colors">
+                <div className="text-[11px] sm:text-[12px] font-mono tracking-widest text-amber-300">{s.n}</div>
+                <div className="mt-2 text-[15px] sm:text-[16px] font-semibold">{s.title}</div>
+                <div className="mt-1 text-[13px] sm:text-sm text-white/45 leading-relaxed">{s.desc}</div>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      <section className="py-16 px-6">
-        <div className="max-w-[1180px] mx-auto grid lg:grid-cols-2 gap-6">
-          <div className="rounded-[24px] border border-white/5 bg-white/[0.02] p-6">
-            <div className="text-sm font-semibold flex items-center gap-2">
+      <section className="py-12 sm:py-16 px-6">
+        <div className="max-w-[1180px] mx-auto grid lg:grid-cols-2 gap-5 sm:gap-6">
+          <div className="rounded-[20px] sm:rounded-[24px] border border-white/5 bg-white/[0.02] p-5 sm:p-6">
+            <div className="text-[13px] sm:text-sm font-semibold flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" /> Live Generate Preview
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-3">
+            <div className="mt-3 sm:mt-4 grid grid-cols-2 gap-2 sm:gap-3">
               <div className="rounded-xl overflow-hidden bg-black border border-white/5 aspect-[3/4] relative">
                 <div className="absolute inset-0 bg-gradient-to-br from-amber-500/20 to-pink-500/20" />
-                <div className="absolute bottom-2 left-2 text-[11px] px-2 py-1 rounded-full bg-black/60 border border-white/10">Before • Foto</div>
+                <div className="absolute bottom-2 left-2 text-[10px] sm:text-[11px] px-2 py-1 rounded-full bg-black/60 border border-white/10">Before • Foto</div>
               </div>
               <div className="rounded-xl overflow-hidden bg-black border border-white/5 aspect-[3/4] relative">
                 <div className="absolute inset-0 bg-gradient-to-br from-violet-500/20 to-cyan-500/20" />
                 <div className="absolute inset-0 grid place-items-center">
-                  <div className="w-10 h-10 rounded-full bg-white text-black grid place-items-center">▶</div>
+                  <div className="w-10 h-10 rounded-full bg-white text-black grid place-items-center hover:scale-110 transition-transform cursor-pointer">▶</div>
                 </div>
-                <div className="absolute bottom-2 left-2 text-[11px] px-2 py-1 rounded-full bg-emerald-500 text-black font-bold">After • Video</div>
+                <div className="absolute bottom-2 left-2 text-[10px] sm:text-[11px] px-2 py-1 rounded-full bg-emerald-500 text-black font-bold">After • Video</div>
               </div>
             </div>
-            <div className="mt-3 text-xs text-white/40">Model: Wan 2.7 • 6s • 720p • Cost 42 credits</div>
+            <div className="mt-2 sm:mt-3 text-[11px] sm:text-xs text-white/40">Model: Wan 2.7 • 6s • 720p • Cost 42 credits</div>
           </div>
-          <div className="rounded-[24px] border border-amber-500/20 bg-gradient-to-br from-amber-500/10 to-transparent p-6 flex flex-col justify-center">
-            <h3 className="text-[22px] font-bold">Untuk creator yang butuh cepat — bukan ribet</h3>
-            <p className="mt-2 text-sm text-white/55 leading-relaxed">Template workflow siap pakai, history & gallery terpusat, ZIP download sekali klik. Fokus ke ide, biar sistem urus teknis.</p>
-            <ul className="mt-5 space-y-2.5 text-sm">
+          <div className="rounded-[20px] sm:rounded-[24px] border border-amber-500/20 bg-gradient-to-br from-amber-500/10 to-transparent p-5 sm:p-6 flex flex-col justify-center">
+            <h3 className="text-[18px] sm:text-[22px] font-bold">Untuk creator yang butuh cepat — bukan ribet</h3>
+            <p className="mt-2 text-[13px] sm:text-sm text-white/55 leading-relaxed">Template workflow siap pakai, history & gallery terpusat, ZIP download sekali klik. Fokus ke ide, biar sistem urus teknis.</p>
+            <ul className="mt-4 sm:mt-5 space-y-2 sm:space-y-2.5 text-[13px] sm:text-sm">
               {['Background polling — tutup tab tetap jalan', 'Auto retry & fallback provider', 'Gallery + logs + credits ter-track rapi'].map((t) => (
-                <li key={t} className="flex items-center gap-2.5 text-white/70"><span className="w-5 h-5 rounded-full bg-emerald-500/15 border border-emerald-500/20 grid place-items-center text-emerald-400">✓</span>{t}</li>
+                <li key={t} className="flex items-center gap-2 sm:gap-2.5 text-white/70"><span className="w-5 h-5 rounded-full bg-emerald-500/15 border border-emerald-500/20 grid place-items-center text-emerald-400 shrink-0">✓</span>{t}</li>
               ))}
             </ul>
-            <Link to="/register" className="mt-6 inline-flex w-fit px-6 py-3 rounded-xl bg-white text-black font-semibold hover:bg-white/90 transition">Coba Gratis Sekarang</Link>
+            <Link to="/register" className="mt-5 sm:mt-6 inline-flex w-fit px-5 sm:px-6 py-2.5 sm:py-3 rounded-xl bg-white text-black font-semibold hover:bg-white/90 transition-all hover:scale-[1.02] active:scale-[0.98]">Coba Gratis Sekarang</Link>
           </div>
         </div>
       </section>
 
-      <section id="pricing" className="py-20 px-6">
+      <section id="pricing" className="py-16 sm:py-20 px-6">
         <div className="max-w-[1180px] mx-auto">
           <div className="text-center max-w-[640px] mx-auto">
-            <h2 className="text-[30px] md:text-[40px] font-black tracking-tight">Pricing simpel — tanpa jebakan</h2>
-            <p className="mt-3 text-white/50">Mulai gratis. Upgrade kapan saja. Bayar via QRIS, konfirmasi WA.</p>
+            <h2 className="text-[26px] sm:text-[30px] md:text-[40px] font-black tracking-tight">Pricing simpel — tanpa jebakan</h2>
+            <p className="mt-3 text-[14px] sm:text-[15px] text-white/50">Mulai gratis. Upgrade kapan saja. Bayar via QRIS, konfirmasi WA.</p>
           </div>
-          <div className="mt-10 grid md:grid-cols-3 gap-4">
+          <div className="mt-8 sm:mt-10 grid md:grid-cols-3 gap-4 sm:gap-5">
             {pricing.map((p) => (
-              <div key={p.name} className={`relative rounded-[24px] border p-6 flex flex-col ${p.highlight ? 'bg-gradient-to-b from-amber-500/15 to-white/[0.03] border-amber-500/30 shadow-[0_16px_50px_rgba(212,160,23,0.18)] scale-[1.02]' : 'bg-white/[0.02] border-white/5'}`}>
-                {p.highlight && <div className="absolute -top-3 left-1/2 -translate-x-1/2 text-[11px] font-bold tracking-widest uppercase px-3 py-1 rounded-full bg-gradient-to-r from-[#d4a017] to-[#ffd700] text-black">Paling Populer</div>}
-                <div className="text-sm font-semibold">{p.name}</div>
-                <div className="mt-2 text-[32px] font-black tracking-tight">{p.price}</div>
-                <div className="text-xs text-white/45">{p.sub}</div>
-                <ul className="mt-5 space-y-2 text-sm flex-1">
+              <div key={p.name} className={`relative rounded-[20px] sm:rounded-[24px] border p-5 sm:p-6 flex flex-col transition-all duration-300 hover:-translate-y-1 ${p.highlight ? 'bg-gradient-to-b from-amber-500/15 to-white/[0.03] border-amber-500/30 shadow-[0_16px_50px_rgba(212,160,23,0.18)] md:scale-[1.02]' : 'bg-white/[0.02] border-white/5 hover:border-white/10'}`}>
+                {p.highlight && <div className="absolute -top-3 left-1/2 -translate-x-1/2 text-[10px] sm:text-[11px] font-bold tracking-widest uppercase px-3 py-1 rounded-full bg-gradient-to-r from-[#d4a017] to-[#ffd700] text-black">Paling Populer</div>}
+                <div className="text-[13px] sm:text-sm font-semibold">{p.name}</div>
+                <div className="mt-2 text-[28px] sm:text-[32px] font-black tracking-tight">{p.price}</div>
+                <div className="text-[11px] sm:text-xs text-white/45">{p.sub}</div>
+                <ul className="mt-4 sm:mt-5 space-y-2 text-[13px] sm:text-sm flex-1">
                   {p.features.map((f) => (
-                    <li key={f} className="flex items-center gap-2 text-white/70"><span className="w-5 h-5 rounded-full bg-emerald-500/15 border border-emerald-500/20 grid place-items-center text-emerald-400 text-xs">✓</span>{f}</li>
+                    <li key={f} className="flex items-center gap-2 text-white/70"><span className="w-5 h-5 rounded-full bg-emerald-500/15 border border-emerald-500/20 grid place-items-center text-emerald-400 text-xs shrink-0">✓</span>{f}</li>
                   ))}
                 </ul>
-                <Link to={p.name === 'Studio' ? '/register' : '/register'} className={`mt-6 w-full text-center px-5 py-3 rounded-xl font-semibold transition ${p.highlight ? 'bg-gradient-to-r from-[#d4a017] to-[#ffd700] text-black hover:shadow-[0_10px_24px_rgba(212,160,23,0.3)]' : 'bg-white text-black hover:bg-white/90'}`}>{p.cta}</Link>
+                <Link to="/register" className={`mt-5 sm:mt-6 w-full text-center px-5 py-3 rounded-xl font-semibold transition-all duration-300 ${p.highlight ? 'bg-gradient-to-r from-[#d4a017] to-[#ffd700] text-black hover:shadow-[0_10px_24px_rgba(212,160,23,0.3)] hover:scale-[1.02]' : 'bg-white text-black hover:bg-white/90 hover:scale-[1.02]'}`}>{p.cta}</Link>
               </div>
             ))}
           </div>
-          <p className="text-center text-xs text-white/30 mt-4">Butuh custom enterprise? <Link to="/register" className="text-amber-300 hover:underline">Chat admin di WhatsApp</Link> — respon &lt; 1 jam.</p>
+          <p className="text-center text-[11px] sm:text-xs text-white/30 mt-4">Butuh custom enterprise? <Link to="/register" className="text-amber-300 hover:underline">Chat admin di WhatsApp</Link> — respon &lt; 1 jam.</p>
         </div>
       </section>
 
-      <section className="py-12 px-6">
-        <div className="max-w-[1180px] mx-auto grid md:grid-cols-3 gap-4">
+      <section className="py-10 sm:py-12 px-6">
+        <div className="max-w-[1180px] mx-auto grid sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
           {[
             { name: 'Riko • Fashion Seller', text: 'Bulk Fashion ngebantu banget. 1 model jadi 80 video katalog dalam 5 menit. Laku keras di Tiktok Shop.', stars: 5 },
             { name: 'Sinta • UGC Creator', text: 'Image to Video Wan & Grok hasilnya sinematik. Client puas, revisi minim.', stars: 5 },
             { name: 'Faezya Cell • Agency', text: 'Smart routing hemat credits. Token rotation otomatis, nggak pernah down pas deadline.', stars: 5 },
           ].map((t) => (
-            <div key={t.name} className="rounded-2xl border border-white/5 bg-white/[0.02] p-5">
+            <div key={t.name} className="rounded-2xl border border-white/5 bg-white/[0.02] p-4 sm:p-5 hover:border-white/10 transition-colors">
               <div className="text-amber-300 text-sm">{'★'.repeat(t.stars)}</div>
-              <p className="mt-2 text-sm leading-relaxed text-white/70">“{t.text}”</p>
-              <div className="mt-3 text-xs font-medium text-white/50">{t.name}</div>
+              <p className="mt-2 text-[13px] sm:text-sm leading-relaxed text-white/70">“{t.text}”</p>
+              <div className="mt-2 sm:mt-3 text-[11px] sm:text-xs font-medium text-white/50">{t.name}</div>
             </div>
           ))}
         </div>
       </section>
 
-      <section id="faq" className="py-16 px-6">
+      <section id="faq" className="py-12 sm:py-16 px-6">
         <div className="max-w-[820px] mx-auto">
-          <h2 className="text-[24px] md:text-[32px] font-bold tracking-tight text-center">FAQ</h2>
-          <div className="mt-8 divide-y divide-white/5 rounded-2xl border border-white/5 bg-white/[0.02] overflow-hidden">
+          <h2 className="text-[22px] sm:text-[24px] md:text-[32px] font-bold tracking-tight text-center">FAQ</h2>
+          <div className="mt-6 sm:mt-8 divide-y divide-white/5 rounded-2xl border border-white/5 bg-white/[0.02] overflow-hidden">
             {faqs.map((f, i) => (
               <div key={f.q}>
-                <button onClick={() => setOpenFaq(openFaq === i ? null : i)} className="w-full text-left px-5 py-4 flex items-center justify-between gap-4 hover:bg-white/[0.02] transition">
-                  <span className="text-sm font-medium">{f.q}</span>
-                  <span className={`w-7 h-7 rounded-full border border-white/10 grid place-items-center shrink-0 transition ${openFaq === i ? 'bg-white text-black' : 'text-white/60'}`}>{openFaq === i ? '−' : '+'}</span>
+                <button onClick={() => setOpenFaq(openFaq === i ? null : i)} className="w-full text-left px-4 sm:px-5 py-3.5 sm:py-4 flex items-center justify-between gap-3 sm:gap-4 hover:bg-white/[0.02] transition">
+                  <span className="text-[13px] sm:text-sm font-medium">{f.q}</span>
+                  <span className={`w-6 h-6 sm:w-7 sm:h-7 rounded-full border border-white/10 grid place-items-center shrink-0 transition-all duration-300 ${openFaq === i ? 'bg-white text-black rotate-0' : 'text-white/60'}`}>{openFaq === i ? '−' : '+'}</span>
                 </button>
-                {openFaq === i && <div className="px-5 pb-5 text-sm leading-relaxed text-white/55">{f.a}</div>}
+                <div className={`overflow-hidden transition-all duration-300 ${openFaq === i ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}>
+                  <div className="px-4 sm:px-5 pb-4 sm:pb-5 text-[13px] sm:text-sm leading-relaxed text-white/55">{f.a}</div>
+                </div>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      <section className="py-16 px-6">
-        <div className="max-w-[900px] mx-auto rounded-[28px] border border-amber-500/20 bg-gradient-to-b from-amber-500/10 via-[#d4a017]/5 to-transparent p-8 md:p-10 text-center relative overflow-hidden">
+      <section className="py-12 sm:py-16 px-6">
+        <div className="max-w-[900px] mx-auto rounded-[20px] sm:rounded-[28px] border border-amber-500/20 bg-gradient-to-b from-amber-500/10 via-[#d4a017]/5 to-transparent p-6 sm:p-8 md:p-10 text-center relative overflow-hidden">
           <div className="absolute inset-0 bg-[radial-gradient(400px_200px_at_50%_0%,rgba(212,160,23,0.15),transparent)]" />
           <div className="relative">
-            <img src="/arkx-logo.svg" alt="ARKX" className="w-14 h-14 mx-auto rounded-2xl shadow-[0_8px_24px_rgba(212,160,23,0.3)]" />
-            <h2 className="mt-5 text-[28px] md:text-[36px] font-black tracking-tight">Siap berkreasi hari ini?</h2>
-            <p className="mt-3 text-white/50 max-w-[560px] mx-auto">Daftar gratis, dapat 5 generate. Tidak perlu kartu kredit. Upgrade kapan saja via QRIS.</p>
-            <div className="mt-7 flex flex-wrap justify-center gap-3">
-              <Link to="/register" className="px-8 py-3.5 rounded-xl bg-gradient-to-r from-[#d4a017] to-[#ffd700] text-black font-semibold hover:shadow-[0_12px_30px_rgba(212,160,23,0.35)] transition">Daftar Sekarang — Gratis</Link>
-              <Link to="/login" className="px-8 py-3.5 rounded-xl border border-white/10 bg-white/[0.04] font-medium hover:bg-white/[0.08] transition">Login</Link>
+            <img src="/arkx-logo.svg" alt="ARKX" className="w-12 h-12 sm:w-14 sm:h-14 mx-auto rounded-2xl shadow-[0_8px_24px_rgba(212,160,23,0.3)]" />
+            <h2 className="mt-4 sm:mt-5 text-[24px] sm:text-[28px] md:text-[36px] font-black tracking-tight">Siap berkreasi hari ini?</h2>
+            <p className="mt-2 sm:mt-3 text-[14px] sm:text-[15px] text-white/50 max-w-[560px] mx-auto">Daftar gratis, dapat 5 generate. Tidak perlu kartu kredit. Upgrade kapan saja via QRIS.</p>
+            <div className="mt-5 sm:mt-7 flex flex-wrap justify-center gap-3">
+              <Link to="/register" className="px-6 sm:px-8 py-3 sm:py-3.5 rounded-xl bg-gradient-to-r from-[#d4a017] to-[#ffd700] text-black font-semibold hover:shadow-[0_12px_30px_rgba(212,160,23,0.35)] transition-all hover:scale-[1.02] active:scale-[0.98]">Daftar Sekarang — Gratis</Link>
+              <Link to="/login" className="px-6 sm:px-8 py-3 sm:py-3.5 rounded-xl border border-white/10 bg-white/[0.04] font-medium hover:bg-white/[0.08] transition-all hover:scale-[1.02]">Login</Link>
             </div>
-            <p className="mt-3 text-xs text-white/30">✓ 2,400+ creator bergabung • ✓ Support WA 1 jam</p>
+            <p className="mt-3 text-[11px] sm:text-xs text-white/30">✓ 2,400+ creator bergabung • ✓ Support WA 1 jam</p>
           </div>
         </div>
       </section>
 
-      <footer className="py-10 px-6 border-t border-white/5">
-        <div className="max-w-[1180px] mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+      <footer className="py-8 sm:py-10 px-6 border-t border-white/5">
+        <div className="max-w-[1180px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <img src="/arkx-logo.svg" alt="ARKX" className="w-7 h-7 rounded-lg" />
             <span className="text-sm font-semibold">ARKXMotion Studio</span>
             <span className="text-xs text-white/30 hidden sm:inline">© 2026 • AI video generation platform</span>
           </div>
-          <div className="flex items-center gap-5 text-xs text-white/40">
+          <div className="flex items-center gap-4 sm:gap-5 text-[11px] sm:text-xs text-white/40">
             <a href="#features" className="hover:text-white transition">Features</a>
             <a href="#pricing" className="hover:text-white transition">Pricing</a>
             <a href="#faq" className="hover:text-white transition">FAQ</a>

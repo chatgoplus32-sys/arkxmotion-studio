@@ -23,7 +23,7 @@ export async function getMembershipFee(): Promise<number> {
       cachedFee = fee
       return fee
     }
-  } catch {}
+  } catch (e) { console.warn('[membership] Failed to fetch membership fee:', e) }
   return DEFAULT_MEMBERSHIP_FEE
 }
 

@@ -135,10 +135,10 @@ export default function FramiaPage() {
           if (creditsRes.ok) {
             const creditsData = await creditsRes.json()
             setCredits(creditsData.credits ?? creditsData.balance ?? null)
-          }
-        } catch {}
-      }
-    } catch (err: any) {
+        }
+      } catch (e) { console.warn('[Framia] Failed to refresh credits:', e) }
+    }
+  } catch (err: any) {
       console.error('Run failed:', err)
       // Refresh credits after failure
       try {
@@ -148,7 +148,7 @@ export default function FramiaPage() {
           const creditsData = await creditsRes.json()
           setCredits(creditsData.credits ?? creditsData.balance ?? null)
         }
-      } catch {}
+      } catch (e) { console.warn('[Framia] Failed to refresh credits after failure:', e) }
     } finally {
       setGenerating(false)
     }

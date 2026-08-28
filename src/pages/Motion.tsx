@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useMemo, forwardRef } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
-import { Section, Button, Textarea, Select, Label, EmptyState, QuickRoutingDialog, BalanceBadge, getActiveProviderForCap, Checkbox } from '@/components/ui'
+import { Section, Button, Textarea, Select, Label, EmptyState, QuickRoutingDialog, BalanceBadge, getActiveProviderForCap } from '@/components/ui'
 import { useProviderManager, HIDDEN_PROVIDERS, type ProviderId } from '@/stores'
 import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
 import { useToastStore } from '@/stores/toastStore'
@@ -60,11 +60,9 @@ const PROVIDERS = {
     { key: 'framia:kling-v2.1-motion', label: 'Kling V2.1 Motion Control (Framia)', cr: 40 },
     { key: 'framia:kling-v2.6-motion', label: 'Kling V2.6 Motion Control (Framia)', cr: 35 },
   ]},
-  runninghub: { name: 'Motion Control HD (Markasflow-V2)', models: [
-    { key: 'rh:pro:2.6', label: 'Kling 2.6 Pro (Markasflow-V2)', cr: 80 },
-    { key: 'rh:std:2.6', label: 'Kling 2.6 Standard (Markasflow-V2)', cr: 50 },
-    { key: 'rh:pro:2.1', label: 'Kling 2.1 Pro (Markasflow-V2)', cr: 60 },
-    { key: 'rh:std:2.1', label: 'Kling 2.1 Standard (Markasflow-V2)', cr: 35 },
+  runninghub: { name: 'Motion Control (RunningHub)', models: [
+    { key: 'rh:pro:2.6', label: 'Kling 2.6 Pro (RunningHub)', cr: 80 },
+    { key: 'rh:std:2.6', label: 'Kling 2.6 Standard (RunningHub)', cr: 50 },
   ]},
   galleri5: { name: 'G5 AI Studio', models: [
     { key: 'g5:kling-v3-pro-motion-control', label: 'Kling V3.0 Pro (Galery5)', cr: 200 },
@@ -132,7 +130,7 @@ export default function MotionPage() {
           return parsed.map((s) => ({ ...s, image: null, video: null }))
         }
       }
-    } catch {}
+    } catch (e) { console.warn('[Motion] Failed to load saved slots:', e) }
     return [createSlot()]
   })
   const [generating, setGenerating] = useState(() => getActiveTasks().filter((t) => t.page === 'motion').length > 0)
@@ -188,7 +186,7 @@ export default function MotionPage() {
 
   useEffect(() => {
     const metadata = slots.map(({ image: _image, video: _video, ...rest }) => rest)
-    try { localStorage.setItem('motion.slots', JSON.stringify(metadata)) } catch {}
+    try { localStorage.setItem('motion.slots', JSON.stringify(metadata)) } catch (e) { console.warn('[Motion] Failed to save slots:', e) }
   }, [slots])
 
   useEffect(() => {
@@ -721,7 +719,7 @@ export default function MotionPage() {
                   addLog(`#${slotNum} Video duration (uploaded): ${videoDurationSec}s`)
                 }
 
-                const SUBMIT_BUSY_RETRY = 5
+                const SUBMIT_BUSY_RETRY = 8
                 let submitResult: Awaited<ReturnType<typeof submitMotionControl>> | null = null
                 let submitErr: any = null
                 for (let s = 0; s < SUBMIT_BUSY_RETRY; s++) {
@@ -741,7 +739,8 @@ export default function MotionPage() {
                   } catch (e: any) {
                     const isBusy = /busy|sibuk|try again|later|overload|capacity|queue|系统繁忙|请稍后|拥挤|system is busy/i.test(e?.message || '')
                     if (isBusy && s < SUBMIT_BUSY_RETRY - 1) {
-                      const waitSec = 12 + s * 12
+                      // Exponential backoff: 15s, 25s, 38s, 54s, 73s, 95s, 120s
+                      const waitSec = Math.min(15 + s * 10 + Math.floor(s * s * 1.5), 120)
                       addLog(`#${slotNum} Server sibuk, retry ${s + 2}/${SUBMIT_BUSY_RETRY} (${waitSec}s)...`, 'warn')
                       await new Promise((r) => setTimeout(r, waitSec * 1000))
                       continue
@@ -1127,8 +1126,9 @@ export default function MotionPage() {
               addLog(`#${slotNum} Video: ${videoFile.name || 'ready'}`)
 
               updateSlotStatus(slot.id, 'processing', 'submitting...')
-              addLog(`#${slotNum} Upload & Submit ke RunningHub (${mode} ${modelVersion})...`)
+              addLog(`#${slotNum} Upload & Submit ke RunningHub (${modelVersion} ${mode})...`)
 
+              // Workflow API (Consumer-Member compatible) — base64 upload
               const result = await submitRunningHubMotionControl({
                 imageFile: normalizedImage,
                 videoFile,
@@ -1474,7 +1474,7 @@ export default function MotionPage() {
             addLog(`💰 Balance terakhir: ${balanceResult.balance}`, 'info')
           }
         }
-      } catch {}
+      } catch (e) { console.warn('[Motion] Failed to check balance:', e) }
     }
 
      } catch (genErr: any) {
@@ -1548,7 +1548,7 @@ export default function MotionPage() {
           try {
             const res = await fetch(result.url, { mode: 'cors' })
             if (res.ok) blob = await res.blob()
-          } catch {}
+          } catch (e) { console.warn('[Motion] Direct fetch failed, trying proxy:', e) }
           if (!blob) {
             const res = await fetch(`/api/public/proxy-image?url=${encodeURIComponent(result.url)}`)
             if (res.ok) blob = await res.blob()
@@ -1557,7 +1557,7 @@ export default function MotionPage() {
             const name = `motion-${String(count).padStart(2, '0')}-${result.id}.mp4`
             zip.file(name, blob)
           }
-        } catch {}
+        } catch (e) { console.warn('[Motion] Failed to add video to ZIP:', e) }
       }
       if (Object.keys(zip.files).length === 0) {
         addToast('Gagal download video untuk ZIP', 'error')

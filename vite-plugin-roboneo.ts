@@ -373,7 +373,7 @@ export function roboneoProxyPlugin(): Plugin {
         const urlObj = new URL(req.url || '', 'http://localhost')
         const action = urlObj.searchParams.get('action') || 'generate'
         const batchId = urlObj.searchParams.get('batchId') || ''
-        const apiKey = req.headers['x-api-key'] || 'cp_26YvEv7Sgi039yiB50cZYwPRfikmClvj'
+        const apiKey = req.headers['x-api-key'] || process.env.CREATEPULSE_API_KEY || ''
 
         if (req.method === 'POST' && action === 'generate') {
           const chunks: Buffer[] = []
@@ -690,6 +690,152 @@ export function roboneoProxyPlugin(): Plugin {
           res.end()
         } catch (err: any) {
           console.error(`[video-proxy-local] error:`, err.message)
+          res.writeHead(502, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: false, error: err.message }))
+        }
+      })
+
+      // ─── RunningHub direct proxy ──────────────────────────
+      server.middlewares.use('/api/public/runninghub', async (req, res) => {
+        if (req.method === 'OPTIONS') {
+          res.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' })
+          res.end()
+          return
+        }
+        if (req.method !== 'POST') {
+          res.writeHead(405)
+          res.end('Method not allowed')
+          return
+        }
+
+        const chunks: Buffer[] = []
+        for await (const chunk of req) chunks.push(chunk)
+        const rawBody = Buffer.concat(chunks).toString()
+        let parsed: any
+        try { parsed = JSON.parse(rawBody) } catch {}
+
+        const { action, apiKey, ...params } = parsed || {}
+        const RUNNINGHUB_BASE = 'https://www.runninghub.ai'
+
+        console.log(`[runninghub-proxy] action=${action}`)
+
+        try {
+          if (action === 'check-balance') {
+            const r = await fetch(`${RUNNINGHUB_BASE}/uc/openapi/accountStatus`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'User-Agent': 'ArkxMotion/1.0' },
+              body: JSON.stringify({ apiKey }),
+            })
+            const text = await r.text()
+            let data: any; try { data = JSON.parse(text) } catch { data = {} }
+            console.log(`[runninghub-proxy] check-balance ${r.status}:`, text.slice(0, 300))
+            if (data.code !== undefined && data.code !== 0) {
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: false, balance: null, isValidUser: false, error: data.msg || 'Token tidak valid' }))
+              return
+            }
+            const info = data?.data || {}
+            const balance = info?.remainCoins !== undefined && info?.remainCoins !== null ? parseFloat(info.remainCoins) : null
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ ok: true, balance, isValidUser: true }))
+            return
+          }
+
+          if (action === 'query') {
+            const { taskId } = params
+            const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/query`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+              body: JSON.stringify({ taskId }),
+            })
+            const text = await r.text()
+            let data: any; try { data = JSON.parse(text) } catch { data = {} }
+            const task = data?.data || data
+            const status = (task?.status || '').toUpperCase()
+            const videoUrl = task?.results?.[0]?.url || null
+            const progress = status === 'SUCCESS' ? 100 : status === 'RUNNING' ? (task?.progress || 50) : 0
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({
+              ok: true,
+              data: {
+                taskId,
+                status: status === 'SUCCESS' ? 'COMPLETED' : status === 'FAILED' ? 'FAILED' : 'RUNNING',
+                videoUrl,
+                progress,
+                error: task?.errorMessage || task?.failedReason || null,
+              }
+            }))
+            return
+          }
+
+          if (action === 'motion-control-v3') {
+            const { imageUrl, videoUrl, characterOrientation = 'video', prompt = '', negativePrompt = '', keepOriginalSound = true } = params
+            if (!imageUrl || !videoUrl) {
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: false, error: 'Missing imageUrl or videoUrl' }))
+              return
+            }
+            const body: any = { imageUrl, videoUrl, characterOrientation, prompt, keepOriginalSound }
+            if (negativePrompt) body.negativePrompt = negativePrompt
+
+            const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/kling-v3.0-pro/motion-control`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+              body: JSON.stringify(body),
+            })
+            const text = await r.text()
+            console.log(`[runninghub-proxy] V3 ${r.status}:`, text.slice(0, 500))
+            let data: any; try { data = JSON.parse(text) } catch { data = { raw: text } }
+
+            const taskId = data?.taskId || data?.data?.taskId || data?.id
+            if (!taskId) {
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: false, error: data?.errorMessage || data?.msg || 'No taskId', data }))
+              return
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ ok: true, data: { id: taskId, taskId, status: data?.status || 'QUEUED', provider: 'runninghub' } }))
+            return
+          }
+
+          if (action === 'motion-control-v2.6-std') {
+            const { imageUrl, videoUrl, characterOrientation = 'video', prompt = '', keepOriginalSound = 'yes' } = params
+            if (!imageUrl || !videoUrl) {
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: false, error: 'Missing imageUrl or videoUrl' }))
+              return
+            }
+            const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/kling-v2.6-std/motion-control`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+              body: JSON.stringify({ imageUrl, videoUrl, characterOrientation, prompt, keepOriginalSound }),
+            })
+            const text = await r.text()
+            console.log(`[runninghub-proxy] V2.6-std ${r.status}:`, text.slice(0, 500))
+            let data: any; try { data = JSON.parse(text) } catch { data = { raw: text } }
+
+            const taskId = data?.taskId || data?.data?.taskId || data?.id
+            if (!taskId) {
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: false, error: data?.errorMessage || 'No taskId', data }))
+              return
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ ok: true, data: { id: taskId, taskId, status: data?.status || 'QUEUED', provider: 'markasflow-v2' } }))
+            return
+          }
+
+          // Fallback: forward to Vercel
+          const upstream = await fetch(`${VERCEL_ORIGIN}/api/public/runninghub`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: rawBody,
+          })
+          const text = await upstream.text()
+          res.writeHead(upstream.status, { 'Content-Type': 'application/json' })
+          res.end(text)
+        } catch (err: any) {
+          console.error(`[runninghub-proxy] error:`, err.message)
           res.writeHead(502, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ ok: false, error: err.message }))
         }

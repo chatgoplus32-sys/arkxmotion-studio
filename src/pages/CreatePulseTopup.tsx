@@ -39,7 +39,7 @@ export default function CreatePulseTopupPage() {
       const res = await fetch(`${API}/balance`, { headers })
       const data = await res.json()
       setBalance(data.balance || 0)
-    } catch {}
+    } catch (e) { console.warn('[CreatePulseTopup] Failed to fetch balance:', e) }
   }, [headers])
 
   const fetchTopups = useCallback(async () => {
@@ -47,7 +47,7 @@ export default function CreatePulseTopupPage() {
       const res = await fetch(`${API}/topups/mine`, { headers })
       const data = await res.json()
       setTopups(data.topups || [])
-    } catch {}
+    } catch (e) { console.warn('[CreatePulseTopup] Failed to fetch topups:', e) }
   }, [headers])
 
   useEffect(() => {

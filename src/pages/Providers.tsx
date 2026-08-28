@@ -168,17 +168,15 @@ const TOKEN_GUIDE: Record<string, {
     tip: 'Model: Seedance 2.0/2.5 (Rp 1.500), Seedance 2.0 15s/Veo Omni (Rp 2.250). Token tersimpan di akunmu, bisa dipakai dari mana saja.',
   },
   runninghub: {
-    url: 'https://www.runninghub.cn/enterprise-api/consumerApi',
-    urlLabel: 'runninghub.cn/enterprise-api/consumerApi',
-    prefix: 'API key 32 karakter',
+    url: 'https://www.runninghub.ai/enterprise-api/consumerApi',
+    urlLabel: 'runninghub.ai/enterprise-api/consumerApi',
+    prefix: 'API key (Consumer-Member atau Enterprise-Shared)',
     steps: [
-      { text: 'Buka runninghub.cn dan login.' },
-      { text: 'Buka menu Profile → API Keys (atau klik link di atas).' },
-      { text: 'Klik "Create API Key", beri nama (mis. "arkxmotion").' },
-      { text: 'Copy API key (string 32 karakter) — paste ke input di sebelah.' },
-      { text: 'Workflow ID sudah default ke Markasflow-V2. Kosongkan saja atau ganti jika ingin workflow custom.' },
+      { text: 'Buka runninghub.ai dan login.' },
+      { text: 'Buka halaman API Key → klik "Create API Key".' },
+      { text: 'Copy API key → paste ke input di sebelah.' },
     ],
-    tip: 'Model: Kling 3.0 Pro/Standard, Kling 2.6 Pro/Standard via ComfyUI di RunningHub cloud. API key tersimpan di browser.',
+    tip: 'Model: Kling 2.6/2.1 via Workflow API (base64). Consumer-Member key sudah bisa dipakai. Untuk Kling V3, butuh Enterprise-Shared key.',
   },
   render: {
     url: 'https://shotstack.io/dashboard/',
@@ -374,7 +372,7 @@ export default function ProvidersPage() {
         // If it's a JSON with refresh_token, use that as the key
         if (parsed.refresh_token) return parsed.refresh_token
         if (parsed.access_token) return parsed.access_token
-      } catch {}
+      } catch (e) { console.warn('[Providers] Failed to parse OneOver JSON:', e) }
       return line
     }
 
@@ -384,7 +382,7 @@ export default function ProvidersPage() {
       try {
         const parsed = JSON.parse(line)
         if (parsed.token) return parsed.token
-      } catch {}
+      } catch (e) { console.warn('[Providers] Failed to parse Firefly JSON:', e) }
       return line
     }
 
@@ -427,7 +425,7 @@ export default function ProvidersPage() {
         try {
           const parsed = JSON.parse(cleanKey)
           if (parsed.token) cleanKey = parsed.token
-        } catch {}
+        } catch (e) { console.warn('[Providers] Failed to parse Firefly JSON:', e) }
       }
       // Auto-parse OneOver JSON
       if (selectedProvider === 'oneover') {
@@ -435,7 +433,7 @@ export default function ProvidersPage() {
           const parsed = JSON.parse(cleanKey)
           if (parsed.refresh_token) cleanKey = parsed.refresh_token
           else if (parsed.access_token) cleanKey = parsed.access_token
-        } catch {}
+        } catch (e) { console.warn('[Providers] Failed to parse OneOver JSON:', e) }
       }
       if (!cleanKey || existing.has(cleanKey)) {
         skipped++
@@ -560,7 +558,7 @@ export default function ProvidersPage() {
             authHeaders = parsed
             isJsonHeaders = true
           }
-        } catch {}
+        } catch (e) { console.warn('[Providers] Failed to parse Galleri5 JSON headers:', e) }
 
         if (!isJwt && !isRefreshToken && !isJsonHeaders) {
           return { state: 'invalid', detail: 'Format tidak dikenal. Harus: (1) refresh token AMf-..., (2) ID token eyJ..., atau (3) JSON auth headers.' }

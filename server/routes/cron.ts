@@ -14,7 +14,7 @@ router.get('/daily-stats', (req, res: Response) => {
     const pendingUsers = (db.prepare("SELECT COUNT(*) as c FROM users WHERE approved=0 AND role!='admin'").get() as any).c
     const totalLogs = (db.prepare('SELECT COUNT(*) as c FROM generation_logs').get() as any).c
     const todayLogs = (db.prepare("SELECT COUNT(*) as c FROM generation_logs WHERE DATE(created_at)=DATE('now')").get() as any).c
-    const totalCredits = (db.prepare('SELECT COALESCE(SUM(credits),0) as c FROM generation_logs WHERE status=\"completed\"').get() as any).c
+    const totalCredits = (db.prepare("SELECT COALESCE(SUM(credits),0) as c FROM generation_logs WHERE status='completed'").get() as any).c
     const byProvider = db.prepare('SELECT provider, COUNT(*) as count FROM generation_logs GROUP BY provider ORDER BY count DESC LIMIT 5').all()
 
     const payload = { date: new Date().toISOString().slice(0,10), totalUsers, pendingUsers, totalLogs, todayLogs, totalCredits, byProvider }
@@ -26,7 +26,6 @@ router.get('/daily-stats', (req, res: Response) => {
 })
 
 router.post('/daily-stats', (req, res: Response) => {
-  (req as any).query = req.query
   return (router as any).handle({ ...req, method: 'GET', url: '/daily-stats' }, res, () => {})
 })
 

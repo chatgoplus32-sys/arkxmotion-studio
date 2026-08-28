@@ -81,7 +81,7 @@ export default function AdminProviderStatusPage() {
         }
         setMaintenanceMap(map)
       }
-    } catch {}
+    } catch (e) { console.warn('[AdminProviderStatus] Failed to fetch maintenance:', e) }
   }, [token])
 
   useEffect(() => {

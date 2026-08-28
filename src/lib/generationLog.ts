@@ -45,7 +45,7 @@ export async function logGenerationComplete(logId: number, data: Partial<Generat
       method: 'PATCH',
       body: JSON.stringify(data),
     })
-  } catch {}
+  } catch (e) { console.error('[generationLog] Failed to log completion:', e) }
 }
 
 export async function logGenerationFailed(logId: number, error: string, duration_ms?: number): Promise<void> {
@@ -54,5 +54,5 @@ export async function logGenerationFailed(logId: number, error: string, duration
       method: 'PATCH',
       body: JSON.stringify({ status: 'failed', error, duration_ms }),
     })
-  } catch {}
+  } catch (e) { console.error('[generationLog] Failed to log failure:', e) }
 }

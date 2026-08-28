@@ -42,7 +42,7 @@ const loadPreferences = (): NotificationPreference => {
     if (stored) {
       return { ...defaultPreferences, ...JSON.parse(stored) }
     }
-  } catch {}
+  } catch (e) { console.warn('[toastStore] Failed to load notification preferences:', e) }
   return defaultPreferences
 }
 

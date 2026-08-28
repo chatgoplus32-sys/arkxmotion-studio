@@ -70,7 +70,7 @@ export default function AdminOrderTokensPage() {
         })
         setStock(s)
       }
-    } catch {}
+    } catch (e) { console.warn('[AdminOrderTokens] Failed to fetch stock:', e) }
   }, [token])
 
   useEffect(() => {
@@ -116,7 +116,7 @@ export default function AdminOrderTokensPage() {
           body: JSON.stringify({ bulk_id: order.bulk_id, status: 'confirmed' })
         })
         if (response.ok) success++
-      } catch {}
+      } catch (e) { console.error('[AdminOrderTokens] Failed to confirm order:', e) }
     }
     setActionLoading(null)
     addToast(`${success} order berhasil dikonfirmasi semua`, 'success')

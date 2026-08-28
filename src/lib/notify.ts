@@ -34,7 +34,7 @@ export function sendNotification(title: string, options?: NotificationOptions) {
       badge: '/favicon.ico',
       ...options,
     })
-  } catch {}
+  } catch (e) { console.warn('[notify] Notification failed:', e) }
 }
 
 export function notifyGenerationComplete(model: string, provider: string) {

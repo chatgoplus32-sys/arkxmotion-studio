@@ -2,7 +2,7 @@ import { create } from 'zustand'
 
 export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'runninghub' | 'createpulse' | 'framia' | 'firefly' | 'leonardo' | 'gemini' | 'openai' | 'shotstack' | 'creatomate' | 'galleri5' | 'oneover'
 
-export const HIDDEN_PROVIDERS: ProviderId[] = ['runninghub']
+export const HIDDEN_PROVIDERS: ProviderId[] = []
 
 export interface ProviderKey {
   id: string
@@ -305,11 +305,11 @@ function loadKeysFromStorage(): Record<ProviderId, ProviderKey[]> {
       }
       if (stale.length > 0) {
         // Migrasi: simpan versi bersih sekali, hapus provider yang sudah dihapus (mis. pixera)
-        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(result)) } catch {}
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(result)) } catch (e) { console.warn('[providerManager] Failed to save migrated keys:', e) }
       }
       return result
     }
-  } catch {}
+  } catch (e) { console.warn('[providerManager] Failed to load keys from storage:', e) }
   return defaults
 }
 
@@ -339,11 +339,11 @@ function loadRoutingFromStorage(): Record<string, ProviderId> {
         }
       }
       if (changed) {
-        try { localStorage.setItem('arkxmotion.routing', JSON.stringify(result)) } catch {}
+        try { localStorage.setItem('arkxmotion.routing', JSON.stringify(result)) } catch (e) { console.warn('[providerManager] Failed to save migrated routing:', e) }
       }
       return result
     }
-  } catch {}
+  } catch (e) { console.warn('[providerManager] Failed to load routing from storage:', e) }
   return defaults
 }
 
@@ -529,7 +529,7 @@ export const useProviderManager = create<ProviderState>((set, get) => ({
         }
         set({ maintenance })
       }
-    } catch {}
+    } catch (e) { console.warn('[providerManager] Failed to load maintenance:', e) }
   },
 
   isProviderMaintenance: (provider) => {

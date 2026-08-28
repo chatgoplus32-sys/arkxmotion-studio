@@ -15,6 +15,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ ok: false, error: 'Missing or invalid url param' })
   }
 
+  // SSRF protection: block requests to internal/private IPs
+  try {
+    const parsed = new URL(url)
+    const hostname = parsed.hostname.toLowerCase()
+    const isPrivate = [
+      /^localhost$/,
+      /^127\./,
+      /^10\./,
+      /^172\.(1[6-9]|2\d|3[01])\./,
+      /^192\.168\./,
+      /^169\.254\./,
+      /^0\./,
+      /^::1$/,
+      /^fc00:/i,
+      /^fe80:/i,
+      /^ff00:/i,
+    ].some(re => re.test(hostname))
+    // Also block non-standard ports to prevent port-scanning
+    if (isPrivate) {
+      return res.status(403).json({ ok: false, error: 'Requests to internal/private addresses are not allowed' })
+    }
+  } catch {
+    return res.status(400).json({ ok: false, error: 'Invalid URL format' })
+  }
+
   let targetUrl = url
   if (/^https?:\/\/localhost:\d+/i.test(url)) {
     targetUrl = url.replace(/^https?:\/\/localhost:\d+/i, 'https://createpulse.online')

@@ -3,7 +3,7 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
-import { CheckCircle, XCircle, Clock, Trash2, RefreshCw, Key, Mail, BadgeCheck, Ban, Download, CheckSquare } from 'lucide-react'
+import { CheckCircle, XCircle, Clock, Trash2, RefreshCw, Key, BadgeCheck, Ban, Download } from 'lucide-react'
 
 interface User {
   id: number
@@ -168,40 +168,11 @@ export default function AdminUsersPage() {
     }
   }
 
-  const handleResendVerification = async (userId: number, userEmail: string) => {
-    if (!token) return
-    setActionLoading(userId)
-    try {
-      const response = await fetch(`/api/admin/users/${userId}/resend-verification`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      const data = await response.json().catch(() => ({}))
-      if (response.ok) {
-        addToast(`Link verifikasi dikirim ke ${userEmail}`, 'success')
-        if (data.devVerifyLink) {
-          try {
-            await navigator.clipboard.writeText(data.devVerifyLink)
-            addToast('Mode dev — link verifikasi disalin ke clipboard', 'warning')
-          } catch {
-            addToast(`Mode dev — link: ${data.devVerifyLink}`, 'warning')
-          }
-        }
-      } else {
-        addToast(data.error || 'Gagal kirim link verifikasi', 'error')
-      }
-    } catch {
-      addToast('Gagal kirim link verifikasi', 'error')
-    } finally {
-      setActionLoading(null)
-    }
-  }
-
   const handleResetPassword = async (userId: number, userName: string) => {
     if (!token) return
-    const newPassword = prompt(`Reset password untuk ${userName}.\nMasukkan password baru (min 4 karakter):`)
-    if (!newPassword || newPassword.length < 4) {
-      if (newPassword !== null) addToast('Password minimal 4 karakter', 'error')
+    const newPassword = prompt(`Reset password untuk ${userName}.\nMasukkan password baru (min 8 karakter):`)
+    if (!newPassword || newPassword.length < 8) {
+      if (newPassword !== null) addToast('Password minimal 8 karakter', 'error')
       return
     }
     setActionLoading(userId)

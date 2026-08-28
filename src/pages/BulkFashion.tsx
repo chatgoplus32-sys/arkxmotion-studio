@@ -457,7 +457,7 @@ export default function BulkFashionPage() {
     try {
       sessionStorage.setItem('upscaler:handoff', JSON.stringify(selected.map((r) => ({ url: r.url }))))
       navigate('/generate/upscaler')
-    } catch {}
+    } catch (e) { console.warn('[BulkFashion] Failed to handoff to upscaler:', e) }
   }
 
   const promptPreview = useMemo(() => {

@@ -202,8 +202,8 @@ function pollWithRetry(task: ActiveTask, ctrl: AbortController, attempt: number)
       _active.delete(task.taskId)
       _controllers.delete(task.taskId)
       addBgLog(`✅ Background task done ✓ ${url.slice(0, 60)}...`, 'success')
-      try { if (Notification && Notification.permission==='granted') new Notification('✅ Video selesai', { body: `${task.model} ready`, icon: '/arkx-logo.svg' }) } catch {}
-      try { if (navigator.serviceWorker?.controller) navigator.serviceWorker.controller.postMessage({ type: 'TASK_DONE', url }) } catch {}
+      try { if (Notification && Notification.permission==='granted') new Notification('✅ Video selesai', { body: `${task.model} ready`, icon: '/arkx-logo.svg' }) } catch (e) { console.warn('[backgroundTasks] Notification failed:', e) }
+      try { if (navigator.serviceWorker?.controller) navigator.serviceWorker.controller.postMessage({ type: 'TASK_DONE', url }) } catch (e) { console.warn('[backgroundTasks] ServiceWorker postMessage failed:', e) }
       window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
     })
     .catch((err) => {

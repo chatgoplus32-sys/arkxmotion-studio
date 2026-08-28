@@ -33,7 +33,7 @@ export default function AdminTopupPage() {
       const res = await fetch(`${API}/pending`, { headers })
       const data = await res.json()
       setTopups(data.topups || [])
-    } catch {}
+    } catch (e) { console.error('[AdminTopup] Failed to fetch pending topups:', e) }
     setLoading(false)
   }, [headers])
 
@@ -45,7 +45,7 @@ export default function AdminTopupPage() {
       const res = await fetch(`${API}/all`, { headers })
       const data = await res.json()
       setTopups(data.topups || [])
-    } catch {}
+    } catch (e) { console.error('[AdminTopup] Failed to fetch all topups:', e) }
     setLoading(false)
   }
 

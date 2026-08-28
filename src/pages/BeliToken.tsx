@@ -79,7 +79,7 @@ export default function BeliTokenPage() {
         const data = await response.json()
         setMyOrders(data.orders)
       }
-    } catch {}
+    } catch (e) { console.warn('[BeliToken] Failed to fetch orders:', e) }
   }, [authStore.token])
 
   useEffect(() => {
@@ -335,7 +335,7 @@ export default function BeliTokenPage() {
                           a.click()
                           URL.revokeObjectURL(url)
                           await new Promise(r => setTimeout(r, 500))
-                        } catch {}
+                        } catch (e) { console.warn('[BeliToken] Failed to download token file:', e) }
                       }
                     }}
                   >
@@ -356,7 +356,7 @@ export default function BeliTokenPage() {
                         addToast('Riwayat pembelian dihapus', 'success')
                         fetchMyOrders()
                       }
-                    } catch {}
+                    } catch (e) { console.error('[BeliToken] Failed to clear order history:', e) }
                   }}
                 >
                   <Trash2 className="h-3.5 w-3.5" /> Hapus Semua

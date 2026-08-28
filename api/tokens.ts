@@ -8,7 +8,8 @@ function getSql() {
   return neon(url)
 }
 
-const JWT_SECRET = process.env.JWT_SECRET || 'arkxmotion-studio-secret-key-2026'
+const JWT_SECRET = process.env.JWT_SECRET
+if (!JWT_SECRET) throw new Error('JWT_SECRET env var is required')
 
 function cors(res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -58,29 +59,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       const bulkId = `bulk_${user.id}_${Date.now()}`
-      let successCount = 0
 
-      // Atomic: mark as sold only if still available
-      for (const tid of token_ids) {
-        // Check if token is available first
-        const tokenCheck: Record<string, any>[] = await sql`SELECT id, status FROM tokens WHERE id = ${tid}`
-        if (tokenCheck.length > 0 && tokenCheck[0].status === 'available') {
-          // Mark as sold
-          await sql`UPDATE tokens SET status = 'sold', updated_at = CURRENT_TIMESTAMP WHERE id = ${tid} AND status = 'available'`
-          // Verify it was updated
-          const verify: Record<string, any>[] = await sql`SELECT status FROM tokens WHERE id = ${tid}`
-          if (verify.length > 0 && verify[0].status === 'sold') {
-            await sql`INSERT INTO token_orders (user_id, token_id, status, bulk_id) VALUES (${user.id}, ${tid}, 'pending', ${bulkId})`
+      // Wrap entire purchase in a transaction to prevent race conditions
+      const result = await sql.transaction(async (tx) => {
+        let successCount = 0
+        for (const tid of token_ids) {
+          // Atomic: UPDATE ... WHERE status = 'available' — only one concurrent request can win
+          const updated: Record<string, any>[] = await tx`UPDATE tokens SET status = 'sold', updated_at = CURRENT_TIMESTAMP WHERE id = ${tid} AND status = 'available' RETURNING id`
+          if (updated.length > 0) {
+            await tx`INSERT INTO token_orders (user_id, token_id, status, bulk_id) VALUES (${user.id}, ${tid}, 'pending', ${bulkId})`
             successCount++
           }
         }
-      }
+        return successCount
+      })
 
-      if (successCount === 0) {
+      if (result === 0) {
         return res.status(400).json({ error: 'No tokens available' })
       }
 
-      return res.status(201).json({ bulk_id: bulkId, count: successCount, message: `${successCount} tokens ordered` })
+      return res.status(201).json({ bulk_id: bulkId, count: result, message: `${result} tokens ordered` })
     }
 
     // GET /api/tokens/orders/mine - user's order history grouped by bulk_id

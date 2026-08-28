@@ -317,7 +317,7 @@ export default function UpscalerPage() {
       try {
         const res = await fetch(item.url, { mode: 'cors' })
         if (res.ok) blob = await res.blob()
-      } catch {}
+      } catch (e) { console.warn('[Upscaler] Direct fetch failed:', e) }
       if (!blob) {
         const res = await fetch(`/api/public/proxy-image?url=${encodeURIComponent(item.url)}`)
         if (res.ok) blob = await res.blob()
@@ -613,7 +613,7 @@ export default function UpscalerPage() {
                         const blob = await res.blob()
                         const ext = /\.(png|jpe?g|webp)(\?|$)/i.exec(item.url)?.[1] || 'jpg'
                         zip.file(`upscale-${String(i + 1).padStart(2, '0')}-${item.id}.${ext}`, blob)
-                      } catch {}
+                      } catch (e) { console.warn('[Upscaler] Failed to add image to ZIP:', e) }
                     }
                     const content = await zip.generateAsync({ type: 'blob' })
                     const a = document.createElement('a')
