@@ -5,9 +5,10 @@ import { useProviderManager, HIDDEN_PROVIDERS, type ProviderId } from '@/stores'
 import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
 import { useToastStore } from '@/stores/toastStore'
 import { uploadToCatbox, compressVideo, normalizeImage, getVideoDurationFromFile, submitMotionControl, submitGoogleOmni, pollRoboneoI2V, checkRoboneoBalance, noteRoboneoMotionChargeFailure, getRoboneoMotionMinCredits, isRoboneoBalanceError, isRoboneoBusyError } from '@/lib/roboneo'
+import { submitGensparkVideo, extractGensparkVideoUrl, uploadToGenspark } from '@/lib/genspark'
 import { trimVideoFFmpeg } from '@/lib/ffmpeg-compress'
 import { submitWeavyMotionControl, uploadWeavyAssetWithRetry, resolveWeavyAssetUrl, getActiveWeavyAccessToken, compressImageForWeavy } from '@/lib/weavy'
-import { getRunningHubApiKey, submitRunningHubMotionControl, pollRunningHubTask } from '@/lib/runninghub'
+import { getRunningHubApiKey, submitRunningHubMotionControl, submitRunningHubMotionControlV26Std, submitRunningHubMotionControlV26Pro, submitRunningHubMotionControlV3, pollRunningHubTask } from '@/lib/runninghub'
 import { getGalleri5AuthHeaders, submitGalleri5MotionControl, pollGalleri5MotionControl, isGalleri5ModelRestricted, getGalleri5ErrorMessage, GALLERI5_MOTION_MODELS, runGalleri5WithRotation } from '@/lib/galleri5'
 import { getMagnificApiKey, submitMagnificMotion, pollMagnificMotion, type MagnificMotionModel } from '@/lib/magnific'
 import { useLocalStorage } from '@/lib/useLocalStorage'
@@ -75,6 +76,10 @@ const PROVIDERS = {
     { key: 'oo:grok-imagine-video', label: 'Grok Imagine Video (OneOver)', cr: 70 },
     { key: 'oo:seedance-2.0', label: 'Seedance 2.0 (OneOver)', cr: 140 },
     { key: 'oo:seedance-2.5', label: 'Seedance 2.5 (OneOver)', cr: 210 },
+  ]},
+  genspark: { name: 'Genspark AI', models: [
+    { key: 'gp:kling-v3-pro-motion', label: 'Kling V3 Pro Motion Control (Genspark)', cr: 80 },
+    { key: 'gp:kling-v3-std-motion', label: 'Kling V3 Standard Motion Control (Genspark)', cr: 60 },
   ]},
 }
 
@@ -1381,7 +1386,163 @@ export default function MotionPage() {
               addLog(`#${slotNum} Error: ${err.message}`, 'error')
               return false
             }
-                    } else {
+          } else if (provider === 'genspark' && slot.image && slot.video) {
+            // ─── Genspark: Kling V3 Motion Control ────
+            try {
+              const gensparkTier = modelKey.includes('pro') ? 'pro' : 'standard'
+              const gensparkModel = `kling/v3/motion-control`
+
+              addLog(`#${slotNum} Model: ${currentModel.label} [api: ${gensparkModel}] (Genspark)`)
+
+              // Upload image
+              updateSlotStatus(slot.id, 'uploading img...')
+              addLog(`#${slotNum} Compress image...`)
+              const normalizedImage = await normalizeImage(slot.image, (msg, pct) => {
+                setCompressDialog({ msg, pct })
+                updateSlotStatus(slot.id, 'uploading img...', msg)
+                addLog(`#${slotNum} ${msg}`)
+              })
+              setCompressDialog(null)
+
+              // Upload image to Genspark or use cached URL
+              let imageUrl = slot.imageUrl || ''
+              if (!imageUrl || imageUrl.startsWith('blob:')) {
+                addLog(`#${slotNum} Upload image to Genspark...`)
+                addLog(`#${slotNum} Image info: ${normalizedImage.type}, ${(normalizedImage.size/1024).toFixed(1)}KB`)
+                imageUrl = await uploadToGenspark(normalizedImage)
+                updateSlot(slot.id, { imageUrl })
+              }
+              addLog(`#${slotNum} Image: ${imageUrl.slice(0, 60)}...`)
+
+              // Upload video
+              updateSlotStatus(slot.id, 'uploading vid...')
+              addLog(`#${slotNum} Compress video...`)
+              const videoFile = await compressVideo(slot.video, 4, (msg, pct) => {
+                setCompressDialog({ msg, pct })
+                updateSlotStatus(slot.id, 'uploading vid...', msg)
+                addLog(`#${slotNum} ${msg}`)
+              })
+              setCompressDialog(null)
+
+              let videoUrl = slot.videoUrl || ''
+              if (!videoUrl || videoUrl.startsWith('blob:')) {
+                addLog(`#${slotNum} Upload video to Genspark...`)
+                addLog(`#${slotNum} Video info: ${videoFile.type}, ${(videoFile.size/(1024*1024)).toFixed(2)}MB`)
+                videoUrl = await uploadToGenspark(videoFile)
+                updateSlot(slot.id, { videoUrl })
+              }
+              addLog(`#${slotNum} Video: ${videoUrl.slice(0, 60)}...`)
+
+              // Get video duration for motion control
+              // character_orientation=image → max 10s; =video → max 30s
+              const maxDuration = orientation === 'video' ? 30 : 10
+              let motionDuration = 5
+              if (slot.video) {
+                try {
+                  const rawDuration = await getVideoDurationFromFile(slot.video)
+                  motionDuration = Math.min(rawDuration, maxDuration)
+                  addLog(`#${slotNum} Video duration: ${motionDuration}s (max ${maxDuration}s for ${orientation} orientation)`)
+                } catch {}
+              }
+
+              // Submit to Genspark
+              updateSlotStatus(slot.id, 'processing', 'submitting...')
+              addLog(`#${slotNum} 📋 Model: ${gensparkModel} (${gensparkTier}) | Orientation: ${orientation} | Duration: ${motionDuration}s`)
+              addLog(`#${slotNum} Submitting to Genspark API...`)
+
+              let result = await submitGensparkVideo({
+                prompt: finalPrompt || 'animate this character with the motion from the reference video',
+                model: gensparkModel,
+                imageUrl,
+                videoUrl,
+                duration: motionDuration,
+                aspectRatio: '9:16',
+                extraParams: {
+                  character_orientation: orientation,
+                  tier: gensparkTier,
+                  video_size: 'auto',
+                  ...(keepSound ? { audio_enable: false, keep_audio: true } : { audio_enable: true }),
+                },
+              })
+
+              // Check for FAILURE in initial response
+              let resultUrl: string | null = null
+              const gv0 = result?.data?.generated_videos?.[0] as any
+              const taskId0 = gv0?.task_id || result?.data?.task_id
+              if ((gv0?.status === 'FAILURE' || gv0?.status === 'FAILED') && taskId0) {
+                const reason = gv0.failure_reason || gv0.error_message || 'Unknown error'
+                const tryCount = gv0.try_count || 0
+                addLog(`#${slotNum} ⚠️ Kling FAILED (${tryCount}x): ${reason}`)
+                addLog(`#${slotNum} 💡 Kling server intermittent — retrying dengan backoff...`)
+
+                // Aggressive retry: try each duration up to 3 times with backoff
+                const retryDurations = [motionDuration, 9, 5].filter((d, i, arr) => arr.indexOf(d) === i && d <= motionDuration)
+                for (const retryDur of retryDurations) {
+                  for (let attempt = 1; attempt <= 3; attempt++) {
+                    const waitSec = attempt * 15 // 15s, 30s, 45s backoff
+                    addLog(`#${slotNum} 🔄 Retry ${retryDur}s (attempt ${attempt}/3, wait ${waitSec}s)...`)
+                    await new Promise(r => setTimeout(r, waitSec * 1000))
+                    try {
+                      const retryResult = await submitGensparkVideo({
+                        prompt: finalPrompt || 'animate this character with the motion from the reference video',
+                        model: gensparkModel,
+                        imageUrl,
+                        videoUrl,
+                        duration: retryDur,
+                        aspectRatio: '9:16',
+                        extraParams: {
+                          character_orientation: orientation,
+                          tier: gensparkTier,
+                          video_size: 'auto',
+                          ...(keepSound ? { audio_enable: false, keep_audio: true } : { audio_enable: true }),
+                        },
+                      })
+                      const rv = retryResult?.data?.generated_videos?.[0] as any
+                      if (rv?.status !== 'FAILURE' && rv?.status !== 'FAILED') {
+                        result = retryResult
+                        resultUrl = extractGensparkVideoUrl(retryResult, { imageUrl, videoUrl })
+                        if (resultUrl) break
+                      }
+                    } catch {}
+                  }
+                  if (resultUrl) break
+                }
+              } // end if FAILURE
+
+              // Extract video URL
+              if (!resultUrl) {
+                resultUrl = extractGensparkVideoUrl(result, { imageUrl, videoUrl })
+              }
+              if (!resultUrl) {
+                const finalStatus = (gv0?.status || '').toUpperCase()
+                if (finalStatus === 'FAILURE' || finalStatus === 'FAILED') {
+                  throw new Error(`Genspark/Kling server sedang down. Coba lagi beberapa menit, atau gunakan provider lain (Weavy/Wavespeed) yang lebih stabil.`)
+                }
+                throw new Error('No video URL returned from Genspark')
+              }
+
+              updateSlotStatus(slot.id, 'done')
+              addLog(`#${slotNum} Done: ${resultUrl.slice(0, 60)}...`, 'success')
+
+              addResult({
+                id: `genspark-${Date.now()}`,
+                url: resultUrl,
+                prompt: finalPrompt || '(no prompt)',
+                date: new Date().toISOString(),
+                page: 'motion',
+                provider: 'genspark',
+                model: currentModel.label,
+              })
+              window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
+              try { setResults(getResults()) } catch {}
+              return true
+            } catch (err: any) {
+              setCompressDialog(null)
+              updateSlotStatus(slot.id, 'error', err.message)
+              addLog(`#${slotNum} Error: ${err.message}`, 'error')
+              return false
+            }
+          } else {
             addLog(`#${slotNum} Skipping (no image/video)`, 'warn')
             return false
           }
@@ -1992,8 +2153,15 @@ export default function MotionPage() {
                 >
                   <div className="aspect-video bg-black/40 relative">
                     <video
-                      src={result.url}
-                      crossOrigin="anonymous"
+                      src={(() => {
+                        if (!/genspark\.ai/i.test(result.url)) return result.url
+                        // Strip old token (it's for the input file, not this output)
+                        const cleanUrl = result.url.split('?')[0]
+                        // Get API key from localStorage for auth
+                        let apiKey = ''
+                        try { const raw = localStorage.getItem('arkxmotion.providers'); const p = JSON.parse(raw || '{}'); const k = (p.genspark || [])[0]; apiKey = k?.key || '' } catch {}
+                        return `/api/public/video-proxy?url=${encodeURIComponent(cleanUrl)}${apiKey ? `&api_key=${encodeURIComponent(apiKey)}` : ''}`
+                      })()}
                       className="w-full h-full object-contain"
                       controls
                       muted

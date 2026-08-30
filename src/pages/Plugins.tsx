@@ -171,6 +171,62 @@ const TOKEN_SCRIPTS: Record<string, { script: string; instructions: string[]; ur
       'Token otomatis copy ke clipboard',
     ],
   },
+  genspark: {
+    url: 'https://www.genspark.ai/settings/api-keys',
+    script: `// ARKXMotion Token Grab — Genspark AI
+// Buka genspark.ai/settings/api-keys (login dulu)
+// PENTING: Klik Show/Reveal dulu sebelum jalankan script ini!
+(async () => {
+  let key = null;
+  // 1. Scan ALL text in page (fast)
+  const html = document.documentElement.outerHTML;
+  const m = html.match(/gsk[-_][a-zA-Z0-9_-]{16,}/);
+  if (m) key = m[0];
+  // 2. Scan localStorage/sessionStorage
+  if (!key) {
+    for (const s of [localStorage, sessionStorage]) {
+      for (let i = 0; i < s.length; i++) {
+        const v = s.getItem(s.key(i)) || '';
+        const m2 = v.match(/gsk[-_][a-zA-Z0-9_-]{16,}/);
+        if (m2) { key = m2[0]; break; }
+        try { const j = JSON.stringify(JSON.parse(v)); const m3 = j.match(/gsk[-_][a-zA-Z0-9_-]{16,}/); if (m3) { key = m3[0]; break; } } catch {}
+      }
+      if (key) break;
+    }
+  }
+  // 3. Scan input values
+  if (!key) {
+    document.querySelectorAll('input, textarea').forEach(el => {
+      const m4 = (el.value || '').match(/gsk[-_][a-zA-Z0-9_-]{16,}/);
+      if (m4 && !key) key = m4[0];
+    });
+  }
+  // 4. Auto-click show/reveal buttons, wait, then re-scan
+  if (!key) {
+    document.querySelectorAll('button, [role=button], span, div').forEach(b => {
+      const t = (b.textContent || '').toLowerCase();
+      if (t.includes('show') || t.includes('reveal') || t.includes('eye') || t.includes('view')) b.click();
+    });
+    await new Promise(r => setTimeout(r, 2000));
+    const m5 = document.documentElement.outerHTML.match(/gsk[-_][a-zA-Z0-9_-]{16,}/);
+    if (m5) key = m5[0];
+  }
+  // 5. Copy or alert with manual instructions
+  if (key) {
+    try { await navigator.clipboard.writeText(key); } catch {}
+    alert('API key found: ' + key.slice(0, 12) + '...\n\nCopied to clipboard! Paste in ARKXMotion → Providers → Genspark AI');
+  } else {
+    alert('Key not found automatically.\n\nManual steps:\n1. On this page, find your API key\n2. Click Show/Reveal/View eye icon next to it\n3. Select and copy the key (starts with gsk_)\n4. Paste in ARKXMotion → Providers → Genspark AI');
+  }
+})();`,
+    instructions: [
+      'Buka genspark.ai/settings/api-keys dan login',
+      'Klik "Create API Key" jika belum ada',
+      'Klik tombol Show/Reveal (icon mata) di samping key',
+      'Jalankan script di Console (F12 → Console)',
+      'Key otomatis copy, paste ke ARKXMotion Providers',
+    ],
+  },
 }
 
 // ─── Plugin info ─────────────────────────────────────────────────────────────
@@ -248,6 +304,17 @@ const PLUGINS: PluginInfo[] = [
     icon: '🤖',
     color: '#f97316',
     description: 'Auto-grab token dari Roboneo dashboard',
+    type: 'extension',
+    hasScript: true,
+    hasExtension: true,
+    status: 'available',
+  },
+  {
+    id: 'genspark',
+    name: 'Genspark AI',
+    icon: '⚡',
+    color: '#8b5cf6',
+    description: 'Auto-grab API key dari genspark.ai — Kling V3 Motion Control + 14 video models',
     type: 'extension',
     hasScript: true,
     hasExtension: true,

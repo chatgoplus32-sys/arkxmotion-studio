@@ -38,6 +38,8 @@ const AdminActivityPage = lazyWithRetry(() => import('@/pages/AdminActivity'))
 const AdminCreditManagementPage = lazyWithRetry(() => import('@/pages/AdminCreditManagement'))
 const AdminSystemSettingsPage = lazyWithRetry(() => import('@/pages/AdminSystemSettings'))
 const AdminSystemHealthPage = lazyWithRetry(() => import('@/pages/AdminSystemHealth'))
+const SecondBrainPage = lazyWithRetry(() => import('@/pages/SecondBrain'))
+const ClipGeniusPage = lazyWithRetry(() => import('@/pages/ClipGenius'))
 const AdminNotificationsPage = lazyWithRetry(() => import('@/pages/AdminNotifications'))
 const CreatePulseTopupPage = lazyWithRetry(() => import('@/pages/CreatePulseTopup'))
 const BeliTokenPage = lazyWithRetry(() => import('@/pages/BeliToken'))
@@ -117,6 +119,9 @@ export default function App() {
                         <Route path="/topup/createpulse" element={<CreatePulseTopupPage />} />
                         <Route path="/beli-token" element={<BeliTokenPage />} />
                         <Route path="/plugins" element={<PluginsPage />} />
+
+                        <Route path="/tools/second-brain" element={<SecondBrainPage />} />
+                        <Route path="/tools/clip-genius" element={<ClipGeniusPage />} />
                         <Route path="/admin/users" element={<AdminUsersPage />} />
                         <Route path="/admin/membership" element={<AdminMembershipPage />} />
                         <Route path="/admin/tokens" element={<AdminTokensPage />} />

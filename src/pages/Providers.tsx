@@ -56,6 +56,7 @@ const PROVIDER_LIST = [
   { key: 'galleri5', label: 'G5 AI Studio', desc: 'Motion Control (Kling V3 & V2.6 motion transfer) via aistudio.galleri5.com — Firebase refresh token (auto-refresh).' },
   { key: 'oneover', label: 'OneOver', desc: 'Video generation (Grok, Seedance 2.0/2.5, Kling, LTX) via oneover.com — Supabase session token.' },
   { key: 'firefly', label: 'Adobe Firefly', desc: 'Video generation (Veo 3.1, Firefly Video) via firefly.adobe.com — Adobe IMS Bearer token.' },
+  { key: 'genspark', label: 'Genspark AI', desc: 'Kling V3 Motion Control + 14 video models (Veo, Sora, Hailuo, PixVerse) via genspark.ai Tool API — API key (gsk-...).' },
 ] as const
 
 const VISIBLE_PROVIDER_LIST = PROVIDER_LIST.filter(p => !(HIDDEN_PROVIDERS as readonly string[]).includes(p.key))
@@ -233,6 +234,19 @@ const TOKEN_GUIDE: Record<string, {
     ],
     tip: 'Firefly pakai Adobe IMS Bearer token. Token expire dalam ~1 jam. Bila generate gagal, ambil ulang token dari firefly.adobe.com.',
   },
+  genspark: {
+    url: 'https://www.genspark.ai/settings/api-keys',
+    urlLabel: 'genspark.ai/settings/api-keys',
+    prefix: 'gsk-... atau gsk_...',
+    steps: [
+      { text: 'Buka genspark.ai dan login (bisa pakai Google/GitHub).' },
+      { text: 'Klik profile icon → Settings → API Keys.' },
+      { text: 'Klik "Create API Key", beri nama (mis. "arkxmotion").' },
+      { text: 'Klik tombol mata/eye (Show/Reveal) di samping key untuk menampilkan key.' },
+      { text: 'Copy API key yang muncul (format: gsk-... atau gsk_...) → paste ke input di sebelah.' },
+    ],
+    tip: 'Key tersembunyi (****) sampai kamu klik tombol mata/eye. Free tier: 100 credits/hari. Kling V3 Pro ≈ 80 cr.',
+  },
 }
 
 function maskKey(key: string): string {
@@ -262,12 +276,64 @@ function getStatusLabel(status: string): string {
   }[status] || '—'
 }
 
+// Genspark Session Cookies Input Component
+function GensparkCookiesInput({ providerKeys, setKeyCookies }: {
+  providerKeys: { id: string; key: string; cookies?: string }[]
+  setKeyCookies: (provider: string, keyId: string, cookies: string) => void
+}) {
+  const [input, setInput] = useState('')
+  const [saved, setSaved] = useState(false)
+
+  const handleSave = () => {
+    if (!input.trim() || providerKeys.length === 0) return
+    // Save cookies to the first active key
+    const key = providerKeys.find(k => k.status === 'active') || providerKeys[0]
+    if (key) {
+      setKeyCookies('genspark', key.id, input.trim())
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    }
+  }
+
+  return (
+    <div className="mt-3 rounded-md bg-blue-500/10 border border-blue-500/30 p-3">
+      <div className="text-[12px] font-semibold text-blue-400 mb-1.5">🍪 Session Cookies (untuk ask_proxy)</div>
+      <div className="text-[11px] text-[#a0a0a0] mb-2 leading-relaxed">
+        Buka <a href="https://www.genspark.ai" target="_blank" className="text-blue-400 underline">genspark.ai</a> (login), buka Console (F12), jalankan:
+        <code className="block mt-1 bg-black/40 rounded p-1.5 text-[10px] font-mono text-blue-300">document.cookie</code>
+        Copy hasilnya lalu paste di bawah ini.
+      </div>
+      <div className="flex gap-2">
+        <input
+          type="password"
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          placeholder="Paste session cookies dari browser..."
+          className="flex-1 text-[11px] font-mono bg-black/30 border border-blue-500/30 text-white px-2 py-1 rounded focus:outline-none focus:border-blue-400"
+        />
+        <button
+          onClick={handleSave}
+          className={`text-[11px] px-3 py-1 rounded font-medium transition ${saved ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:bg-blue-500/30'}`}
+        >
+          {saved ? '✓ Saved' : 'Save'}
+        </button>
+      </div>
+      {providerKeys[0]?.cookies && (
+        <div className="mt-1.5 text-[10px] text-green-400/70">
+          ✓ Cookies tersimpan ({providerKeys[0].cookies.length} chars)
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function ProvidersPage() {
   const {
     keys,
     addKey,
     removeKey,
     updateKeyStatus,
+    setKeyCookies,
     fetchMaintenance,
     isProviderMaintenance,
     getMaintenanceMessage,
@@ -669,6 +735,30 @@ export default function ProvidersPage() {
           return { state: 'invalid', detail: msg || 'Token tidak valid' }
         }
         return { state: 'failed', detail: msg || 'Error checking Framia token' }
+      }
+    }
+    if (selectedProvider === 'genspark') {
+      try {
+        const { checkGensparkBalance } = await import('@/lib/genspark')
+        const result = await checkGensparkBalance(key)
+        if (result.ok) {
+          const bal = result.balance
+          const email = result.email
+          const plan = result.plan
+          const parts = [email, plan].filter(Boolean)
+          if (bal !== null && bal !== undefined && bal > 0) {
+            return { state: 'active', balance: bal, email: email || undefined, detail: `${parts.join(' · ')}${parts.length ? ' · ' : ''}Credits: ${bal}` }
+          }
+          // No explicit balance — show email + plan info
+          const planLabel = plan || 'Free tier'
+          const detail = parts.length > 0
+            ? `${parts.join(' · ')} · ${planLabel} · 100 cr/day`
+            : `API key valid · ${planLabel} · 100 cr/day`
+          return { state: 'active', email: email || undefined, detail }
+        }
+        return { state: 'failed', detail: result.error || 'Gagal cek token' }
+      } catch (err: any) {
+        return { state: 'failed', detail: err.message || 'Error checking Genspark token' }
       }
     }
     return { state: 'unknown', detail: 'Cek limit belum tersedia untuk provider ini' }
@@ -1214,6 +1304,13 @@ export default function ProvidersPage() {
                 <div className="mt-2.5 rounded-md bg-[#d4a017]/10 border border-[#d4a017]/30 p-2 text-[10.5px] text-[#ffd700]/90 leading-relaxed">
                   💡 {TOKEN_GUIDE[selectedProvider as keyof typeof TOKEN_GUIDE].tip}
                 </div>
+              )}
+              {/* Genspark Session Cookies Input */}
+              {selectedProvider === 'genspark' && (
+                <GensparkCookiesInput
+                  providerKeys={keys['genspark'] || []}
+                  setKeyCookies={setKeyCookies}
+                />
               )}
             </div>
           )}

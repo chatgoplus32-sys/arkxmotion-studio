@@ -23,7 +23,7 @@ export default defineConfig({
       // API Express lokal (auth, tokens, admin, dsb). /api/public/* tetap ditangani
       // oleh roboneoProxyPlugin (proxy ke Vercel) karena middleware-nya berjalan lebih dulu.
       '/api': {
-        target: 'https://arkxmotion-studio.vercel.app',
+        target: 'http://localhost:6000',
         changeOrigin: true,
       },
     },

@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 const RUNNINGHUB_BASE = 'https://www.runninghub.ai'
-const RUNNINGHUB_DEFAULT_WORKFLOW_ID = '2087539655340654593'
+const RUNNINGHUB_DEFAULT_WORKFLOW_ID = '2016789374867873794'
 
 function rhAuthHeaders(_apiKey: string) {
   return { 'Content-Type': 'application/json', 'User-Agent': 'ArkxMotion/1.0' }
@@ -28,6 +28,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     if (action === 'motion-control-v2.6-std') {
       return await handleMotionControlV26Std(apiKey, params, res)
+    }
+    if (action === 'motion-control-v3') {
+      return await handleMotionControlV3(apiKey, params, res)
     }
     if (action === 'query') {
       return await handleQuery(apiKey, params.taskId, res)
@@ -141,6 +144,77 @@ async function handleMotionControlV26Std(apiKey: string, params: any, res: Verce
       taskId,
       status: data.status || data.data?.status || 'QUEUED',
       provider: 'markasflow-v2',
+    },
+  })
+}
+
+async function handleMotionControlV3(apiKey: string, params: any, res: VercelResponse) {
+  const {
+    imageUrl,
+    videoUrl,
+    characterOrientation = 'video',
+    prompt = '',
+    negativePrompt = '',
+    keepOriginalSound = true,
+  } = params
+
+  if (!imageUrl) return res.status(200).json({ ok: false, error: 'Missing imageUrl' })
+  if (!videoUrl) return res.status(200).json({ ok: false, error: 'Missing videoUrl' })
+
+  const body: any = {
+    imageUrl,
+    videoUrl,
+    characterOrientation,
+    prompt,
+    keepOriginalSound,
+  }
+  if (negativePrompt) body.negativePrompt = negativePrompt
+
+  const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/kling-v3.0-pro/motion-control`
+  console.log(`[runninghub] POST ${endpoint}`)
+  console.log(`[runninghub] body:`, JSON.stringify(body).slice(0, 1000))
+
+  const apiRes = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(body),
+  })
+
+  const rawText = await apiRes.text()
+  console.log(`[runninghub] motion-control-v3 ${apiRes.status}:`, rawText)
+
+  let data: any
+  try { data = JSON.parse(rawText) } catch { data = { raw: rawText } }
+
+  if (apiRes.status === 429) {
+    return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data, retryable: true })
+  }
+
+  if (!apiRes.ok) {
+    const errorMsg = data.errorMessage || data.msg || data.message || data.error || `HTTP ${apiRes.status}`
+    return res.status(200).json({ ok: false, error: errorMsg, data })
+  }
+
+  if (data.status === 'FAILED') {
+    return res.status(200).json({ ok: false, error: data.errorMessage || data.failedReason || 'Task failed', data })
+  }
+
+  const taskId = data.taskId || data.data?.taskId || data.id || data.task_id
+  if (!taskId) {
+    console.error(`[runninghub] No taskId found in V3 response:`, JSON.stringify(data))
+    return res.status(200).json({ ok: false, error: 'No taskId returned', raw: rawText, fullData: data })
+  }
+
+  return res.status(200).json({
+    ok: true,
+    data: {
+      id: taskId,
+      taskId,
+      status: data.status || data.data?.status || 'QUEUED',
+      provider: 'runninghub',
     },
   })
 }

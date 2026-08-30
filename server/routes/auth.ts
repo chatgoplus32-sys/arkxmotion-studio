@@ -11,14 +11,17 @@ const RegisterSchema = z.object({ email: z.string().email().max(254), password: 
 const LoginSchema = z.object({ email: z.string().email().max(254), password: z.string().min(1).max(128) })
 
 const router = Router()
-const JWT_SECRET = process.env.JWT_SECRET
-if (!JWT_SECRET) throw new Error('JWT_SECRET env var is required')
-const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || JWT_SECRET + '-refresh'
+function getJwtSecret(): string {
+  const secret = process.env.JWT_SECRET
+  if (!secret) throw new Error('JWT_SECRET env var is required')
+  return secret
+}
+const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || (process.env.JWT_SECRET || '') + '-refresh'
 const ACCESS_EXPIRES = '15m'
 const REFRESH_EXPIRES = '7d'
 
 function signAccessToken(user: { id: number; email: string; role: string }) {
-  return jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: ACCESS_EXPIRES })
+  return jwt.sign({ id: user.id, email: user.email, role: user.role }, getJwtSecret(), { expiresIn: ACCESS_EXPIRES })
 }
 function signRefreshToken(user: { id: number; email: string; role: string }) {
   return jwt.sign({ id: user.id, email: user.email, role: user.role, kind: 'refresh' }, REFRESH_SECRET, { expiresIn: REFRESH_EXPIRES })
@@ -231,7 +234,7 @@ router.post('/logout', (req, res: Response) => {
     const tok = auth?.split(' ')[1]
     if (tok) {
       try {
-        const p = jwt.verify(tok, JWT_SECRET) as any
+        const p = jwt.verify(tok, getJwtSecret()) as any
         db.prepare('UPDATE users SET refresh_token = NULL, refresh_expires = NULL WHERE id = ?').run(p.id)
       } catch (e) { console.warn('[auth] Logout: invalid access token:', e.message) }
     }

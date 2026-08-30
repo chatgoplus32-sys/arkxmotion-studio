@@ -1,8 +1,11 @@
 import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
 
-const JWT_SECRET = process.env.JWT_SECRET
-if (!JWT_SECRET) throw new Error('JWT_SECRET env var is required')
+function getJwtSecret(): string {
+  const secret = process.env.JWT_SECRET
+  if (!secret) throw new Error('JWT_SECRET env var is required')
+  return secret
+}
 
 export interface AuthRequest extends Request {
   user?: {
@@ -21,7 +24,7 @@ export const authenticateToken = (req: AuthRequest, res: Response, next: NextFun
   }
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { id: number; email: string; role: string }
+    const decoded = jwt.verify(token, getJwtSecret()) as { id: number; email: string; role: string }
     req.user = decoded
     next()
   } catch {

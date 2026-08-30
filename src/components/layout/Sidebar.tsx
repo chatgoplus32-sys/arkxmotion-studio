@@ -28,6 +28,8 @@ import {
   Route,
   ShoppingBag,
   Puzzle,
+  Scissors,
+  Brain,
 } from 'lucide-react'
 
 interface NavItem {
@@ -46,6 +48,7 @@ const mainNav: NavItem[] = [
 const generateNav: NavItem[] = [
   { label: 'Motion Control', href: '/generate/motion', icon: <Video className="h-4 w-4" /> },
   { label: 'Image to Video', href: '/generate/image-to-video', icon: <Image className="h-4 w-4" /> },
+
   { label: 'Bulk Fashion', href: '/generate/bulk-fashion', icon: <ShoppingBag className="h-4 w-4" /> },
   { label: 'Product UGC', href: '/generate/ugc', icon: <Image className="h-4 w-4" /> },
   { label: 'AI Upscaler', href: '/generate/upscaler', icon: <Wand2 className="h-4 w-4" /> },
@@ -54,7 +57,8 @@ const generateNav: NavItem[] = [
 const toolsNavBase: NavItem[] = [
   { label: 'Providers', href: '/providers', icon: <Zap className="h-4 w-4" /> },
   { label: 'Routing Provider', href: '/manage/routing', icon: <Route className="h-4 w-4" /> },
-
+  { label: 'Clip Genius', href: '/tools/clip-genius', icon: <Scissors className="h-4 w-4" /> },
+  { label: 'Second Brain', href: '/tools/second-brain', icon: <Brain className="h-4 w-4" /> },
   { label: 'Top Up CreatePulse', href: '/topup/createpulse', icon: <Wallet className="h-4 w-4" /> },
   { label: 'Settings', href: '/settings', icon: <Settings className="h-4 w-4" /> },
   { label: 'Beli Token', href: '/beli-token', icon: <ShoppingCart className="h-4 w-4" /> },

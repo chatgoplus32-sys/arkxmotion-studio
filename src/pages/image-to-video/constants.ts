@@ -101,6 +101,25 @@ export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'oo:seedance-2.5', label: 'Seedance 2.5 (OneOver)', cr: 105, provider: 'oneover', apiModel: 'seedance-2.5' },
     { value: 'oo:gemini-omni-flash-preview', label: 'Gemini Omni Flash (OneOver)', cr: 80, provider: 'oneover', apiModel: 'gemini-omni-flash-preview' },
   ],
+  genspark: [
+    { value: 'gp:kling/v3', label: 'Kling V3 (Genspark)', cr: 130, provider: 'genspark', apiModel: 'kling/v3' },
+    { value: 'gp:kling/o3', label: 'Kling O3 (Genspark)', cr: 150, provider: 'genspark', apiModel: 'kling/o3' },
+    { value: 'gp:gemini/veo3.1', label: 'Gemini Veo 3.1 (Genspark)', cr: 120, provider: 'genspark', apiModel: 'gemini/veo3.1' },
+    { value: 'gp:gemini/omni-flash', label: 'Gemini Omni Flash (Genspark)', cr: 100, provider: 'genspark', apiModel: 'gemini/omni-flash' },
+    { value: 'gp:minimax/h3', label: 'MiniMax H3 (Genspark)', cr: 100, provider: 'genspark', apiModel: 'minimax/h3' },
+    { value: 'gp:wan/v3.0', label: 'Wan 3.0 (Genspark) ⭐', cr: 70, provider: 'genspark', apiModel: 'wan/v3.0' },
+    { value: 'gp:wan/v2.7', label: 'Wan v2.7 (Genspark)', cr: 60, provider: 'genspark', apiModel: 'wan/v2.7' },
+    { value: 'gp:vidu/q3', label: 'Vidu Q3 (Genspark)', cr: 90, provider: 'genspark', apiModel: 'vidu/q3' },
+    { value: 'gp:runway/gen4_turbo', label: 'Runway Gen4 Turbo (Genspark)', cr: 80, provider: 'genspark', apiModel: 'runway/gen4_turbo' },
+    { value: 'gp:pixverse/v6', label: 'PixVerse V6 (Genspark)', cr: 70, provider: 'genspark', apiModel: 'pixverse/v6' },
+    { value: 'gp:pixverse/c1', label: 'PixVerse C1 (Genspark)', cr: 80, provider: 'genspark', apiModel: 'pixverse/c1' },
+    { value: 'gp:fal-ai/bytedance/seedance-2.0', label: 'Seedance 2.0 (Genspark)', cr: 100, provider: 'genspark', apiModel: 'fal-ai/bytedance/seedance-2.0' },
+    { value: 'gp:fal-ai/bytedance/seedance-2.5', label: 'Seedance 2.5 (Genspark) ⭐ 30s', cr: 110, provider: 'genspark', apiModel: 'fal-ai/bytedance/seedance-2.5' },
+    { value: 'gp:xai/grok-imagine-video', label: 'Grok Imagine Video (Genspark)', cr: 90, provider: 'genspark', apiModel: 'xai/grok-imagine-video' },
+    { value: 'gp:bfl/flux-3-preview-high', label: 'BFL FLUX 3 (Genspark) ⭐', cr: 100, provider: 'genspark', apiModel: 'bfl/flux-3-preview-high' },
+    { value: 'gp:alibaba/happy-horse', label: 'Alibaba Happy Horse (Genspark)', cr: 90, provider: 'genspark', apiModel: 'alibaba/happy-horse' },
+    { value: 'gp:alibaba/happy-horse/reference-to-video', label: 'Happy Horse Ref-to-Video (Genspark)', cr: 100, provider: 'genspark', apiModel: 'alibaba/happy-horse/reference-to-video' },
+  ],
 }
 
 export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; label: string; mult: number; duration: number; cr?: number; resolution?: string; sound?: string; sizeTier?: string }>>> = {
@@ -414,6 +433,75 @@ export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: s
       { value: '8s-720p', label: '8 detik · 720p · 🔊 audio', mult: 1, duration: 8, cr: 160, resolution: '720p', sound: 'on' },
       { value: '6s-720p', label: '6 detik · 720p · 🔊 audio', mult: 1, duration: 6, cr: 120, resolution: '720p', sound: 'on' },
       { value: '4s-720p', label: '4 detik · 720p · 🔊 audio', mult: 1, duration: 4, cr: 80, resolution: '720p', sound: 'on' },
+    ],
+    default: [
+      { value: '10s', label: '10 detik', mult: 1, duration: 10 },
+      { value: '5s', label: '5 detik', mult: 1, duration: 5 },
+    ],
+  },
+  genspark: {
+    'gp:kling/v3': [
+      { value: '10s', label: '10 detik · 720p', mult: 1, duration: 10, resolution: '720p' },
+      { value: '5s', label: '5 detik · 720p', mult: 1, duration: 5, resolution: '720p' },
+    ],
+    'gp:kling/o3': [
+      { value: '10s', label: '10 detik · 720p', mult: 1, duration: 10, resolution: '720p' },
+      { value: '5s', label: '5 detik · 720p', mult: 1, duration: 5, resolution: '720p' },
+    ],
+    'gp:gemini/veo3.1': [
+      { value: '8s-1080p', label: '8 detik · 1080p', mult: 1, duration: 8, resolution: '1080p' },
+      { value: '6s-1080p', label: '6 detik · 1080p', mult: 1, duration: 6, resolution: '1080p' },
+      { value: '4s-1080p', label: '4 detik · 1080p', mult: 1, duration: 4, resolution: '1080p' },
+      { value: '8s-720p', label: '8 detik · 720p', mult: 1, duration: 8, resolution: '720p' },
+      { value: '6s-720p', label: '6 detik · 720p', mult: 1, duration: 6, resolution: '720p' },
+      { value: '4s-720p', label: '4 detik · 720p', mult: 1, duration: 4, resolution: '720p' },
+    ],
+    'gp:minimax/h3': [
+      { value: '15s-2k', label: '15 detik · 2K', mult: 1, duration: 15, resolution: '2k' },
+      { value: '10s-2k', label: '10 detik · 2K', mult: 1, duration: 10, resolution: '2k' },
+      { value: '5s-2k', label: '5 detik · 2K', mult: 1, duration: 5, resolution: '2k' },
+    ],
+    'gp:wan/v2.7': [
+      { value: '5s-720p', label: '5 detik · 720p', mult: 1, duration: 5, resolution: '720p' },
+      { value: '5s-480p', label: '5 detik · 480p', mult: 1, duration: 5, resolution: '480p' },
+    ],
+    'gp:vidu/q3': [
+      { value: '16s-1080p', label: '16 detik · 1080p', mult: 1, duration: 16, resolution: '1080p' },
+      { value: '10s-1080p', label: '10 detik · 1080p', mult: 1, duration: 10, resolution: '1080p' },
+      { value: '5s-1080p', label: '5 detik · 1080p', mult: 1, duration: 5, resolution: '1080p' },
+      { value: '10s-720p', label: '10 detik · 720p', mult: 1, duration: 10, resolution: '720p' },
+      { value: '5s-720p', label: '5 detik · 720p', mult: 1, duration: 5, resolution: '720p' },
+    ],
+    'gp:runway/gen4_turbo': [
+      { value: '10s', label: '10 detik', mult: 1, duration: 10 },
+      { value: '5s', label: '5 detik', mult: 1, duration: 5 },
+    ],
+    'gp:pixverse/v6': [
+      { value: '8s-1080p', label: '8 detik · 1080p', mult: 1, duration: 8, resolution: '1080p' },
+      { value: '5s-1080p', label: '5 detik · 1080p', mult: 1, duration: 5, resolution: '1080p' },
+      { value: '8s-720p', label: '8 detik · 720p', mult: 1, duration: 8, resolution: '720p' },
+      { value: '5s-720p', label: '5 detik · 720p', mult: 1, duration: 5, resolution: '720p' },
+    ],
+    'gp:pixverse/c1': [
+      { value: '15s-1080p', label: '15 detik · 1080p · 🔊 audio', mult: 1, duration: 15, resolution: '1080p', sound: 'on' },
+      { value: '10s-1080p', label: '10 detik · 1080p · 🔊 audio', mult: 1, duration: 10, resolution: '1080p', sound: 'on' },
+      { value: '5s-1080p', label: '5 detik · 1080p · 🔊 audio', mult: 1, duration: 5, resolution: '1080p', sound: 'on' },
+      { value: '10s-720p', label: '10 detik · 720p · 🔊 audio', mult: 1, duration: 10, resolution: '720p', sound: 'on' },
+    ],
+    'gp:fal-ai/bytedance/seedance-2.0': [
+      { value: '10s-1080p', label: '10 detik · 1080p', mult: 1, duration: 10, resolution: '1080p' },
+      { value: '5s-1080p', label: '5 detik · 1080p', mult: 1, duration: 5, resolution: '1080p' },
+      { value: '10s-720p', label: '10 detik · 720p', mult: 1, duration: 10, resolution: '720p' },
+      { value: '5s-720p', label: '5 detik · 720p', mult: 1, duration: 5, resolution: '720p' },
+      { value: '10s-480p', label: '10 detik · 480p', mult: 1, duration: 10, resolution: '480p' },
+      { value: '5s-480p', label: '5 detik · 480p', mult: 1, duration: 5, resolution: '480p' },
+    ],
+    'gp:xai/grok-imagine-video': [
+      { value: '15s-1080p', label: '15 detik · 1080p', mult: 1, duration: 15, resolution: '1080p' },
+      { value: '10s-1080p', label: '10 detik · 1080p', mult: 1, duration: 10, resolution: '1080p' },
+      { value: '5s-1080p', label: '5 detik · 1080p', mult: 1, duration: 5, resolution: '1080p' },
+      { value: '10s-720p', label: '10 detik · 720p', mult: 1, duration: 10, resolution: '720p' },
+      { value: '5s-720p', label: '5 detik · 720p', mult: 1, duration: 5, resolution: '720p' },
     ],
     default: [
       { value: '10s', label: '10 detik', mult: 1, duration: 10 },

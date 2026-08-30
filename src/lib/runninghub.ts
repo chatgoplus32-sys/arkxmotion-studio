@@ -1,6 +1,6 @@
 const RUNNINGHUB_PROXY = '/api/public/runninghub'
 
-const RUNNINGHUB_DEFAULT_WORKFLOW_ID = '2087539655340654593'
+const RUNNINGHUB_DEFAULT_WORKFLOW_ID = '2016789374867873794'
 
 function getStoredProviderKey(provider: string): string | null {
   if (typeof window === 'undefined') return null
@@ -148,6 +148,50 @@ export async function submitRunningHubMotionControlV26Std(params: MotionControlV
     taskId: result.taskId || result.id,
     status: result.status || 'QUEUED',
     provider: result.provider || 'markasflow-v2',
+  }
+}
+
+export interface MotionControlV3Params {
+  imageUrl: string
+  videoUrl: string
+  characterOrientation?: 'image' | 'video'
+  prompt?: string
+  negativePrompt?: string
+  keepOriginalSound?: boolean
+}
+
+export async function submitRunningHubMotionControlV26Pro(params: MotionControlV26StdParams): Promise<MotionControlResult> {
+  const result = await runninghubProxy('motion-control-v2.6-pro', {
+    imageUrl: params.imageUrl,
+    videoUrl: params.videoUrl,
+    characterOrientation: params.characterOrientation || 'video',
+    prompt: params.prompt || '',
+    keepOriginalSound: params.keepOriginalSound || 'yes',
+  })
+
+  return {
+    id: result.id || result.taskId,
+    taskId: result.taskId || result.id,
+    status: result.status || 'QUEUED',
+    provider: result.provider || 'markasflow-v2',
+  }
+}
+
+export async function submitRunningHubMotionControlV3(params: MotionControlV3Params): Promise<MotionControlResult> {
+  const result = await runninghubProxy('motion-control-v3', {
+    imageUrl: params.imageUrl,
+    videoUrl: params.videoUrl,
+    characterOrientation: params.characterOrientation || 'video',
+    prompt: params.prompt || '',
+    negativePrompt: params.negativePrompt || '',
+    keepOriginalSound: params.keepOriginalSound ?? true,
+  })
+
+  return {
+    id: result.id || result.taskId,
+    taskId: result.taskId || result.id,
+    status: result.status || 'QUEUED',
+    provider: result.provider || 'runninghub',
   }
 }
 

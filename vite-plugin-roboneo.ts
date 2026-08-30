@@ -644,6 +644,9 @@ export function roboneoProxyPlugin(): Plugin {
       })
 
       // ─── Video-proxy: stream binary langsung (bukan .text()) ────────────
+      // Cache Genspark session cookies per API key
+      const gensparkSessionCache = new Map<string, { cookie: string; expires: number }>()
+
       server.middlewares.use('/api/public/video-proxy', async (req, res) => {
         if (req.method === 'OPTIONS') {
           res.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS', 'Access-Control-Allow-Headers': '*' })
@@ -658,13 +661,66 @@ export function roboneoProxyPlugin(): Plugin {
         }
         console.log(`[video-proxy-local] GET ${urlParam.slice(0, 100)}`)
         try {
-          const upstreamRes = await fetch(urlParam, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-              'Accept': '*/*',
-            },
+          // For Genspark URLs, fetch session cookie first for file access
+          const isGenspark = /genspark\.ai/i.test(urlParam)
+          const apiKeyParam = new URL(req.url || '/', 'http://localhost').searchParams.get('api_key') || ''
+          const headers: Record<string, string> = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Accept': '*/*',
+            'Referer': 'https://www.genspark.ai/',
+          }
+          if (isGenspark && apiKeyParam) {
+            // Fetch session cookie (cached 30 min)
+            try {
+              let cached = gensparkSessionCache.get(apiKeyParam)
+              if (!cached || cached.expires < Date.now()) {
+                const meRes = await fetch('https://www.genspark.ai/api/tool_cli/me', {
+                  headers: {
+                    'X-Api-Key': apiKeyParam,
+                    'X-GSK-CLI-Caps': 'video_generation',
+                    'X-GSK-CLI-Version': '1.7.1',
+                  },
+                })
+                const setCookies = meRes.headers.getSetCookie?.() || []
+                const cookies = setCookies.map(sc => sc.split(';')[0]).join('; ')
+                if (cookies) {
+                  gensparkSessionCache.set(apiKeyParam, { cookie: cookies, expires: Date.now() + 30 * 60 * 1000 })
+                  cached = gensparkSessionCache.get(apiKeyParam)
+                }
+              }
+              if (cached) {
+                headers['Cookie'] = cached.cookie
+              }
+            } catch (e) {
+              console.warn('[video-proxy] Failed to get session cookie:', e)
+            }
+          }
+          let upstreamRes = await fetch(urlParam, {
+            headers,
             redirect: 'follow',
           })
+          // If403 and is Genspark, clear cache and retry with fresh session
+          if (upstreamRes.status === 403 && isGenspark && apiKeyParam) {
+            gensparkSessionCache.delete(apiKeyParam)
+            // Re-fetch session
+            try {
+              const meRes = await fetch('https://www.genspark.ai/api/tool_cli/me', {
+                headers: {
+                  'X-Api-Key': apiKeyParam,
+                  'X-GSK-CLI-Caps': 'video_generation',
+                  'X-GSK-CLI-Version': '1.7.1',
+                },
+              })
+              const setCookies = meRes.headers.getSetCookie?.() || []
+              const cookies = setCookies.map(sc => sc.split(';')[0]).join('; ')
+              if (cookies) {
+                headers['Cookie'] = cookies
+                upstreamRes = await fetch(urlParam, { headers, redirect: 'follow' })
+              }
+            } catch (e) {
+              console.warn('[video-proxy] Retry with fresh session failed:', e)
+            }
+          }
           if (!upstreamRes.ok && upstreamRes.status !== 206) {
             res.writeHead(upstreamRes.status, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ ok: false, error: `Upstream: ${upstreamRes.status}` }))
@@ -798,6 +854,33 @@ export function roboneoProxyPlugin(): Plugin {
             return
           }
 
+          if (action === 'motion-control-v2.6-pro') {
+            const { imageUrl, videoUrl, characterOrientation = 'video', prompt = '', keepOriginalSound = 'yes' } = params
+            if (!imageUrl || !videoUrl) {
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: false, error: 'Missing imageUrl or videoUrl' }))
+              return
+            }
+            const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/kling-v2.6-pro/motion-control`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+              body: JSON.stringify({ imageUrl, videoUrl, characterOrientation, prompt, keepOriginalSound }),
+            })
+            const text = await r.text()
+            console.log(`[runninghub-proxy] V2.6-pro ${r.status}:`, text.slice(0, 500))
+            let data: any; try { data = JSON.parse(text) } catch { data = { raw: text } }
+
+            const taskId = data?.taskId || data?.data?.taskId || data?.id
+            if (!taskId) {
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: false, error: data?.errorMessage || 'No taskId', data }))
+              return
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ ok: true, data: { id: taskId, taskId, status: data?.status || 'QUEUED', provider: 'markasflow-v2' } }))
+            return
+          }
+
           if (action === 'motion-control-v2.6-std') {
             const { imageUrl, videoUrl, characterOrientation = 'video', prompt = '', keepOriginalSound = 'yes' } = params
             if (!imageUrl || !videoUrl) {
@@ -841,6 +924,249 @@ export function roboneoProxyPlugin(): Plugin {
         }
       })
 
+      // ─── Genspark AI Tool API ──────────────────────────
+      const GENSPARK_BASE = 'https://www.genspark.ai'
+
+      // IMPORTANT: genspark-upload MUST be registered BEFORE genspark
+      // because '/api/public/genspark' prefix matches '/api/public/genspark-upload'
+      // ─── Genspark Upload (server-side to avoid CORS) ──────────
+      server.middlewares.use('/api/public/genspark-upload', async (req, res) => {
+        if (req.method === 'OPTIONS') {
+          res.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, X-Api-Key' })
+          res.end()
+          return
+        }
+        if (req.method !== 'POST') {
+          res.writeHead(405, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Method not allowed' }))
+          return
+        }
+        try {
+          // Step 1: Read multipart form data
+          const chunks: Buffer[] = []
+          for await (const chunk of req) chunks.push(chunk)
+          const rawBody = Buffer.concat(chunks)
+          const contentType = req.headers['content-type'] || ''
+          const apiKey = req.headers['x-api-key'] as string
+          if (!apiKey) {
+            res.writeHead(401, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Missing X-Api-Key' }))
+            return
+          }
+          // Parse multipart to get file
+          const boundary = contentType.split('boundary=')[1]
+          if (!boundary) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'No boundary in content-type' }))
+            return
+          }
+          const parts = rawBody.toString('binary').split('--' + boundary)
+          let fileBuffer: Buffer | null = null
+          let fileName = 'upload.bin'
+          let fileType = 'application/octet-stream'
+          for (const part of parts) {
+            const headerEnd = part.indexOf('\r\n\r\n')
+            if (headerEnd === -1) continue
+            const header = part.substring(0, headerEnd)
+            const body = part.substring(headerEnd + 4)
+            if (header.includes('filename=')) {
+              const fnMatch = header.match(/filename="([^"]+)"/)
+              if (fnMatch) fileName = fnMatch[1]
+              const ctMatch = header.match(/Content-Type:\s*(.+)/i)
+              if (ctMatch) fileType = ctMatch[1].trim()
+              // Remove trailing --\r\n
+              const endMarker = body.lastIndexOf('\r\n')
+              fileBuffer = Buffer.from(body.substring(0, endMarker), 'binary')
+              break
+            }
+          }
+          if (!fileBuffer) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'No file in request' }))
+            return
+          }
+          console.log(`[genspark-upload] Got file: ${fileName} (${fileBuffer.length} bytes, ${fileType})`)
+          // Step 2: Get presigned upload URL from Genspark (API key auth)
+          const metaRes = await fetch(`${GENSPARK_BASE}/api/tool_cli/file/upload_url`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Api-Key': apiKey, 'X-GSK-CLI-Caps': 'video_generation', 'X-GSK-CLI-Version': '1.7.1' },
+            body: JSON.stringify({ content_type: fileType, name: fileName }),
+          })
+          if (!metaRes.ok) {
+            const errText = await metaRes.text().catch(() => '')
+            console.error(`[genspark-upload] Genspark API error: ${metaRes.status}: ${errText.slice(0, 200)}`)
+            res.writeHead(metaRes.status, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: `Genspark API error: ${metaRes.status}` }))
+            return
+          }
+          const meta = await metaRes.json()
+          console.log(`[genspark-upload] get_upload_url response:`, JSON.stringify(meta).slice(0, 400))
+          const data = meta?.data || meta
+          const uploadUrl = data?.upload_url
+          const fileWrapperUrl = data?.file_wrapper_url
+          if (!uploadUrl) {
+            res.writeHead(500, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'No upload URL from Genspark', data }))
+            return
+          }
+          console.log(`[genspark-upload] Got upload URL: ${uploadUrl.substring(0, 80)}...`)
+          // Step 3: Upload file to Azure Blob Storage
+          const putRes = await fetch(uploadUrl, {
+            method: 'PUT',
+            headers: { 'Content-Type': fileType, 'x-ms-blob-type': 'BlockBlob' },
+            body: fileBuffer,
+          })
+          if (!putRes.ok) {
+            const errText = await putRes.text().catch(() => '')
+            console.error(`[genspark-upload] Azure upload error: ${putRes.status}: ${errText.slice(0, 200)}`)
+            res.writeHead(502, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: `Azure upload failed: ${putRes.status}` }))
+            return
+          }
+          console.log(`[genspark-upload] Upload success → ${fileWrapperUrl || uploadUrl}`)
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
+          res.end(JSON.stringify({ ok: true, file_url: fileWrapperUrl || uploadUrl }))
+        } catch (err: any) {
+          console.error(`[genspark-upload] error:`, err.message)
+          res.writeHead(502, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: false, error: err.message }))
+        }
+      })
+
+      // ─── Genspark AI Tool API proxy ──────────────────────────
+      server.middlewares.use('/api/public/genspark', async (req, res) => {
+        if (req.method === 'OPTIONS') {
+          res.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, X-Api-Key, Authorization, Cookie, X-GSK-CLI-Caps, X-GSK-CLI-Version' })
+          res.end()
+          return
+        }
+
+        try {
+          const chunks: Buffer[] = []
+          for await (const chunk of req) chunks.push(chunk)
+          const rawBody = Buffer.concat(chunks)
+          const contentType = req.headers['content-type'] || ''
+          const apiKeyParam = (req.headers['x-api-key'] as string) || ''
+          const upstreamUrl = `${GENSPARK_BASE}${req.url || '/'}`
+
+          console.log(`[genspark-proxy] ${req.method} ${req.url} → ${upstreamUrl}`)
+
+          const headers: Record<string, string> = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Origin': 'https://www.genspark.ai',
+            'Referer': 'https://www.genspark.ai/',
+          }
+          if (contentType) headers['Content-Type'] = contentType
+          if (req.headers['authorization']) headers['Authorization'] = req.headers['authorization'] as string
+          if (req.headers['x-api-key']) headers['X-Api-Key'] = req.headers['x-api-key'] as string
+          if (req.headers['cookie']) headers['Cookie'] = req.headers['cookie'] as string
+          const caps = req.url?.includes('sb-brain') ? 'second_brain'
+            : req.url?.includes('image_generation') ? 'image_generation'
+            : req.url?.includes('analyze_media') ? 'video_generation'
+            : 'video_generation'
+          headers['X-GSK-CLI-Caps'] = caps
+          headers['X-GSK-CLI-Version'] = '1.7.1'
+
+          if ((req.url?.includes('/llm_proxy/') || req.url?.includes('/agent/ask_proxy')) && apiKeyParam) {
+            // Only fetch tool_cli/me cookies if client DIDN'T already send cookies
+            // Client cookies (from browser paste) take priority — they have cf_clearance
+            if (!headers['Cookie']) {
+              let cached = gensparkSessionCache.get(apiKeyParam)
+              if (!cached || cached.expires < Date.now()) {
+                try {
+                  const meRes = await fetch(`${GENSPARK_BASE}/api/tool_cli/me`, {
+                    headers: { 'X-Api-Key': apiKeyParam, 'X-GSK-CLI-Caps': 'video_generation', 'X-GSK-CLI-Version': '1.7.1' },
+                  })
+                  const setCookies = (meRes.headers as any).getSetCookie?.() || []
+                  const cookies = setCookies.join('; ')
+                  if (cookies) {
+                    gensparkSessionCache.set(apiKeyParam, { cookie: cookies, expires: Date.now() + 30 * 60 * 1000 })
+                    cached = gensparkSessionCache.get(apiKeyParam)
+                    console.log(`[genspark-proxy] Got session cookie from tool_cli/me (${cookies.length} chars)`)
+                  }
+                } catch (e: any) {
+                  console.warn('[genspark-proxy] Failed to get session cookie:', e.message)
+                }
+              }
+              if (cached) {
+                headers['Cookie'] = cached.cookie
+              }
+            } // end if (!headers['Cookie'])
+          }
+
+          let proxyRes = await fetch(upstreamUrl, {
+            method: req.method,
+            headers,
+            body: req.method !== 'GET' && req.method !== 'HEAD' ? rawBody : undefined,
+          })
+
+          if (proxyRes.status === 403 && apiKeyParam) {
+            gensparkSessionCache.delete(apiKeyParam)
+            try {
+              const meRes = await fetch(`${GENSPARK_BASE}/api/tool_cli/me`, {
+                headers: { 'X-Api-Key': apiKeyParam, 'X-GSK-CLI-Caps': 'video_generation', 'X-GSK-CLI-Version': '1.7.1' },
+              })
+              const setCookies = (meRes.headers as any).getSetCookie?.() || []
+              const cookies = setCookies.join('; ')
+              if (cookies) {
+                gensparkSessionCache.set(apiKeyParam, { cookie: cookies, expires: Date.now() + 30 * 60 * 1000 })
+                headers['Cookie'] = cookies
+                console.log(`[genspark-proxy] Retry with fresh session cookie`)
+                proxyRes = await fetch(upstreamUrl, {
+                  method: req.method,
+                  headers,
+                  body: req.method !== 'GET' && req.method !== 'HEAD' ? rawBody : undefined,
+                })
+              }
+            } catch (e: any) {
+              console.warn('[genspark-proxy] Retry with fresh session failed:', e.message)
+            }
+          }
+
+          const ct = proxyRes.headers.get('content-type') || 'application/json'
+
+          // SSE streaming: pipe response directly instead of buffering
+          if (ct.includes('text/event-stream') || req.url?.includes('ask_proxy') || req.url?.includes('vg_tasks_status')) {
+            console.log(`[genspark-proxy] SSE streaming: ${req.url}`)
+            res.writeHead(proxyRes.status, {
+              'Content-Type': ct,
+              'Access-Control-Allow-Origin': '*',
+              'Cache-Control': 'no-cache',
+              'Connection': 'keep-alive',
+            })
+            // Pipe the response body stream
+            if (proxyRes.body) {
+              const reader = proxyRes.body.getReader()
+              const pump = async () => {
+                while (true) {
+                  const { done, value } = await reader.read()
+                  if (done) { res.end(); break }
+                  res.write(value)
+                }
+              }
+              pump().catch((err) => { console.error('[genspark-proxy] SSE stream error:', err.message); res.end() })
+            } else {
+              const text = await proxyRes.text()
+              res.end(text)
+            }
+          } else {
+            const text = await proxyRes.text()
+            console.log(`[genspark-proxy] ${proxyRes.status}: ${text.slice(0, 300)}`)
+            res.writeHead(proxyRes.status, {
+              'Content-Type': ct,
+              'Access-Control-Allow-Origin': '*',
+            })
+            res.end(text)
+          }
+        } catch (err: any) {
+          console.error(`[genspark-proxy] error:`, err.message)
+          res.writeHead(502, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: false, error: err.message }))
+        }
+      })
+
       // Catch-all untuk endpoint /api/public/* lain (galleri5, magnific,
       // weavy, uploads, shotstack, creatomate, roboneo-membership, dsb)
       // → diteruskan ke deployment Vercel. Spesifik handler di atas menang duluan.
@@ -849,7 +1175,7 @@ export function roboneoProxyPlugin(): Plugin {
           res.writeHead(200, {
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Roboneo-Token, X-Firefly-Token, X-Firefly-Api-Key, X-Firefly-Account, X-Firefly-Session, X-Leonardo-Token',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Roboneo-Token, X-Firefly-Token, X-Firefly-Api-Key, X-Firefly-Account, X-Firefly-Session, X-Leonardo-Token, X-Leonardo-Account',
           })
           res.end()
           return
@@ -866,7 +1192,7 @@ export function roboneoProxyPlugin(): Plugin {
             'Content-Type': req.headers['content-type'] || 'application/json',
           }
           if (req.headers.authorization) headers['Authorization'] = String(req.headers.authorization)
-          for (const h of ['x-roboneo-token', 'x-firefly-token', 'x-firefly-api-key', 'x-firefly-account', 'x-firefly-session', 'x-api-key']) {
+          for (const h of ['x-roboneo-token', 'x-firefly-token', 'x-firefly-api-key', 'x-firefly-account', 'x-firefly-session', 'x-api-key', 'x-leonardo-token']) {
             const v = req.headers[h]
             if (v) headers[h] = String(v)
           }

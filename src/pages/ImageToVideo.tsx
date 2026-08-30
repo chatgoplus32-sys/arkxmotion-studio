@@ -1859,6 +1859,100 @@ export default function ImageToVideoPage() {
         } else {
           throw new Error(rotation.error || 'Generation failed')
         }
+      } else if (provider === 'genspark') {
+        // ─── Genspark: Image-to-Video (14+ models) ────────
+        const gensparkApiModel = currentModel?.apiModel || model.replace('gp:', '')
+        addLog(`[1/3] 🖼️ Preparing image...`, 'info', 'genspark')
+
+        let imageUrl: string | undefined
+        if (imgFile) {
+          addLog(`[1/3] 🖼️ Uploading image to Genspark...`, 'info', 'genspark')
+          setStatus((s) => ({ ...s, text: 'Upload image...', pct: 10 }))
+          const { uploadToGenspark } = await import('@/lib/genspark')
+          imageUrl = await uploadToGenspark(imgFile)
+          addLog(`[1/3] ✅ Image: ${imageUrl.slice(0, 60)}...`, 'success', 'genspark')
+        } else {
+          addLog(`[1/3] ℹ️ Text-to-video mode (no image)`, 'info', 'genspark')
+        }
+
+        const rotation = await withTokenRotation<string>(
+          'genspark',
+          async (apiKey, keyInfo) => {
+            addLog(`🔑 Trying key: ${keyInfo.name || keyInfo.id}`, 'info', 'genspark')
+
+            const { submitGensparkVideo, extractGensparkVideoUrl } = await import('@/lib/genspark')
+
+            const duration = currentQuality?.duration || 10
+            const aspectRatio = ratio
+
+            addLog(`[2/3] 🚀 Submitting to Genspark ${gensparkApiModel} (${duration}s)...`, 'info', 'genspark')
+            setStatus((s) => ({ ...s, text: `Submit Genspark ${gensparkApiModel}...`, pct: 20 }))
+
+            const result = await submitGensparkVideo({
+              prompt: prompt.trim() || undefined,
+              model: gensparkApiModel,
+              imageUrl,
+              duration,
+              aspectRatio,
+              extraParams: {
+                tier: quality === 'standard' ? 'standard' : quality === 'fast' ? 'fast' : 'standard',
+                ...(currentQuality?.resolution ? { video_size: 'auto' } : {}),
+              },
+            })
+
+            // Check for FAILURE in initial response
+            const gv0 = result?.data?.generated_videos?.[0] as any
+            if (gv0?.status === 'FAILURE' || gv0?.status === 'FAILED') {
+              const reason = gv0.failure_reason || gv0.error_message || 'Unknown error'
+              throw new Error(`Genspark gagal: ${reason}`)
+            }
+
+            let resultUrl = extractGensparkVideoUrl(result, { imageUrl })
+            if (!resultUrl) {
+              // Video still processing — poll for result
+              const taskId = gv0?.task_id || result?.data?.task_id
+              if (taskId) {
+                addLog(`[2/3] ⏳ Video sedang diproses, polling...`, 'info', 'genspark')
+                setStatus((s) => ({ ...s, text: 'Polling...', pct: 50 }))
+                const { pollGensparkVideo } = await import('@/lib/genspark')
+                resultUrl = await pollGensparkVideo(taskId, (msg) => {
+                  addLog(`[2/3] ${msg}`, 'info', 'genspark')
+                  setStatus((s) => ({ ...s, text: msg, pct: 70 }))
+                })
+              } else {
+                throw new Error('No video URL and no task_id returned from Genspark')
+              }
+            }
+
+            setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+            addLog(`[3/3] ✅ Video selesai ✓`, 'success', 'genspark')
+
+            return resultUrl
+          },
+          {
+            requiredCredits: totalCredits,
+            onKeySwitch: (from, to, attempt) => {
+              addLog(`🔄 Key invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn', 'genspark')
+            },
+            onError: (err, key) => {
+              if (detectTokenError('genspark', err)) {
+                addLog(`⚠️ Key "${key.name}" is invalid: ${err.message}`, 'warn', 'genspark')
+              }
+            },
+          }
+        )
+        if (rotation.ok && rotation.result) {
+          setResults((prev) => [rotation.result!, ...prev])
+          saveGalleryItem(rotation.result!)
+          successRef.current = true
+          setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+          notifyGenerationComplete(currentModel?.label || model, 'Genspark AI')
+          if (rotation.triedKeys > 1) {
+            addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success', 'genspark')
+          }
+        } else {
+          throw new Error(rotation.error || 'Generation failed')
+        }
       } else {
         addLog(`ℹ️ Using default provider flow for ${PROVIDER_CONFIGS[provider].name}`, 'info', provider)
         const rotation = await withTokenRotation<string>(
@@ -1916,7 +2010,7 @@ export default function ImageToVideoPage() {
     }
   }
 
-  const PROVIDER_IDS: ProviderId[] = ['weavy', 'wavespeed', 'roboneo', 'createpulse', 'framia', 'leonardo', 'galleri5', 'oneover', 'firefly']
+  const PROVIDER_IDS: ProviderId[] = ['weavy', 'wavespeed', 'roboneo', 'createpulse', 'framia', 'leonardo', 'galleri5', 'oneover', 'firefly', 'genspark']
 
   return (
     <PageContent>

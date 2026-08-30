@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'runninghub' | 'createpulse' | 'framia' | 'firefly' | 'leonardo' | 'gemini' | 'openai' | 'shotstack' | 'creatomate' | 'galleri5' | 'oneover'
+export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'runninghub' | 'createpulse' | 'framia' | 'firefly' | 'leonardo' | 'gemini' | 'openai' | 'shotstack' | 'creatomate' | 'galleri5' | 'oneover' | 'genspark'
 
 export const HIDDEN_PROVIDERS: ProviderId[] = []
 
@@ -12,6 +12,7 @@ export interface ProviderKey {
   balance?: number | null
   email?: string
   lastChecked?: number
+  cookies?: string  // Session cookies for Genspark ask_proxy
 }
 
 export interface ProviderConfig {
@@ -181,6 +182,16 @@ export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
     minCredits: 1,
     supportsBalance: true,
   },
+  genspark: {
+    id: 'genspark',
+    name: 'Genspark AI',
+    icon: '⚡',
+    description: 'Genspark Tool API — Kling V3 Motion Control, 14+ video models (Veo, Sora, Hailuo, PixVerse, etc.)',
+    keyPlaceholder: 'Paste your Genspark API key (gsk-...)',
+    keyFormat: 'API key (gsk-... atau gsk_...)',
+    minCredits: 0,
+    supportsBalance: false,
+  },
 }
 
 function getDefaultMaintenance(): Record<ProviderId, MaintenanceInfo> {
@@ -200,6 +211,7 @@ function getDefaultMaintenance(): Record<ProviderId, MaintenanceInfo> {
     creatomate: { isMaintenance: false, message: '' },
     galleri5: { isMaintenance: false, message: '' },
     oneover: { isMaintenance: false, message: '' },
+    genspark: { isMaintenance: false, message: '' },
   }
 }
 
@@ -242,6 +254,7 @@ export type ProviderState = {
   importKeys: (provider: ProviderId, tokenValues: string[], namePrefix?: string) => number
   removeKey: (provider: ProviderId, keyId: string) => void
   updateKeyStatus: (provider: ProviderId, keyId: string, status: ProviderKey['status'], balance?: number, email?: string) => void
+  setKeyCookies: (provider: ProviderId, keyId: string, cookies: string) => void
   getActiveKey: (provider: ProviderId) => ProviderKey | null
   getFirstValidKey: (provider: ProviderId) => ProviderKey | null
   findKeyById: (provider: ProviderId, keyId: string) => ProviderKey | undefined
@@ -278,6 +291,7 @@ function loadKeysFromStorage(): Record<ProviderId, ProviderKey[]> {
     creatomate: [],
     galleri5: [],
     oneover: [],
+    genspark: [],
   }
   const validIds = Object.keys(defaults) as string[]
 
@@ -447,6 +461,19 @@ export const useProviderManager = create<ProviderState>((set, get) => ({
     })
   },
 
+  setKeyCookies: (provider, keyId, cookies) => {
+    set((state) => {
+      const updated = {
+        ...state.keys,
+        [provider]: state.keys[provider].map((k) =>
+          k.id === keyId ? { ...k, cookies } : k
+        ),
+      }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))
+      return { keys: updated }
+    })
+  },
+
   getActiveKey: (provider) => {
     const keys = get().keys[provider]
     const config = PROVIDER_CONFIGS[provider]
@@ -458,17 +485,15 @@ export const useProviderManager = create<ProviderState>((set, get) => ({
     }
     
     return keys.find((k) => k.status === 'active') || keys[0] || null
-  },
-
-  getFirstValidKey: (provider) => {
-    const keys = get().keys[provider]
+  },  getFirstValidKey: (provider) => {
+    const keys = get().keys[provider] || []
     const config = PROVIDER_CONFIGS[provider]
     const minCredits = config?.minCredits || 0
     
     if (config?.supportsBalance && minCredits > 0) {
       const validKey = keys.find((k) => 
-        (k.status === 'active' || k.status === 'unknown') && 
-        k.balance !== null && k.balance !== undefined && 
+        (k.status === 'active' || k.status === 'unknown') &&
+        k.balance !== null && k.balance !== undefined &&
         k.balance >= minCredits
       )
       if (validKey) return validKey
@@ -518,7 +543,7 @@ export const useProviderManager = create<ProviderState>((set, get) => ({
 
   fetchMaintenance: async () => {
     try {
-      const response = await fetch('/api/admin/public/maintenance')
+      const response = await fetch('/api/public/maintenance')
       if (response.ok) {
         const data = await response.json()
         const maintenance = getDefaultMaintenance()

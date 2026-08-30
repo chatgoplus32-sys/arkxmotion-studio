@@ -26,7 +26,10 @@
     "api/public/upload-images.ts": { "maxDuration": 30 },
     "api/public/tiktok-download.ts": { "maxDuration": 30 },
     "api/public/galleri5.ts": { "maxDuration": 120 },
-    "api/public/oneover.ts": { "maxDuration": 60 }
+    "api/public/oneover.ts": { "maxDuration": 60 },
+    "api/public/genspark.ts": { "maxDuration": 300 },
+    "api/public/genspark-upload.ts": { "maxDuration": 60 },
+    "api/logs/generation.ts": { "maxDuration": 10 }
   },
   "crons": [
     { "path": "/api/cron/daily-stats", "schedule": "0 2 * * *" }
@@ -84,8 +87,14 @@
     { "src": "/api/tokens/note/(.*)", "dest": "/api/tokens" },
     { "src": "/api/tokens/buy", "dest": "/api/tokens" },
     { "src": "/api/tokens/(.*)", "dest": "/api/tokens" },
+    { "src": "/api/public/genspark/(.+)", "dest": "/api/public/genspark" },
+    { "src": "/api/public/genspark-upload/(.+)", "dest": "/api/public/genspark-upload" },
+    { "src": "/api/public/galleri5/(.+)", "dest": "/api/public/galleri5" },
+    { "src": "/api/public/oneover/(.+)", "dest": "/api/public/oneover" },
+    { "src": "/api/public/framia/(.+)", "dest": "/api/public/framia" },
     { "src": "/api/public/uploads", "dest": "/api/public/uploads" },
     { "src": "/api/public/maintenance", "dest": "/api/public/maintenance" },
+    { "src": "/api/logs/generation/(.+)", "dest": "/api/logs/generation" },
     { "src": "/api/(.*)", "dest": "/api/$1" },
     { "handle": "filesystem" },
     { "src": "/(.*)", "dest": "/index.html" }
