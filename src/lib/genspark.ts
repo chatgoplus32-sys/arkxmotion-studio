@@ -129,6 +129,13 @@ export interface GensparkVideoParams {
 export interface GensparkVideoResult {
   status: 'ok' | 'error' | string
   data?: {
+    task_id?: string
+    status?: string
+    message?: string
+    error_message?: string
+    // data.result can be a URL (done) OR a human-readable error string
+    // (e.g. "Your credits are insufficient") — check with typeof before use.
+    result?: unknown
     video_url?: string
     video_urls?: string[]
     generated_videos?: Array<{
@@ -144,6 +151,15 @@ export interface GensparkVideoResult {
       try_count?: number
       failure_reason?: string
       error_code?: string
+      error_message?: string
+      video?: string
+      url?: string
+      result_url?: string
+      output_url?: string
+      media_url?: string
+      render_url?: string
+      output_video?: string
+      generated_video_url?: string
     }>
   }
   message?: string
@@ -241,7 +257,7 @@ export async function submitGensparkVideo(params: GensparkVideoParams): Promise<
 // Uses session cookies + AI agent (Claude/GPT-4.1)
 // ═══════════════════════════════════════════════════════════════════
 
-async function submitViaAskProxy(params: GensparkVideoParams, apiKey: string): Promise<GensparkVideoResult> {
+async function submitViaAskProxy(params: GensparkVideoParams, _apiKey: string): Promise<GensparkVideoResult> {
   const cookies = getGensparkCookies()
   if (!cookies) throw new Error('No Genspark session cookies')
 
@@ -471,10 +487,9 @@ async function submitViaToolCli(params: GensparkVideoParams, apiKey: string): Pr
 
 export function extractGensparkVideoUrl(result: GensparkVideoResult, inputUrls?: { imageUrl?: string; videoUrl?: string }): string | null {
   if (result.status === 'error') return null
-  const d = result.data
-  if (!d) return null
+  const d = result.data as any
 
-  console.log('[genspark] extractGensparkVideoUrl data keys:', Object.keys(d), 'generated_videos:', d.generated_videos?.length ?? 0)
+  console.log('[genspark] extractGensparkVideoUrl data keys:', d ? Object.keys(d) : '(flat response)', 'generated_videos:', d?.generated_videos?.length ?? 0)
 
   const extractToken = (url?: string | null): string => {
     if (!url) return ''
@@ -498,9 +513,12 @@ export function extractGensparkVideoUrl(result: GensparkVideoResult, inputUrls?:
     return url
   }
 
-  if (d.generated_videos?.length) {
+  if (d && d.generated_videos?.length) {
     for (const v of d.generated_videos) {
-      const candidates = [...(v.source_video_uris || []), ...(v.video_urls || []), ...(v.poster_urls || []), ...(v.last_frame_urls || []), v.video_url, v.url, v.result_url].filter(Boolean) as string[]
+      const candidates = [
+        ...(v.source_video_uris || []), ...(v.video_urls || []), ...(v.poster_urls || []), ...(v.last_frame_urls || []),
+        v.video_url, v.url, v.result_url, v.video, v.output_url, v.media_url, v.render_url, v.output_video, v.generated_video_url,
+      ].filter(Boolean) as string[]
       for (const url of candidates) {
         if (url && !isInput(url) && !url.includes('/poster') && !url.includes('/last_frame')) return withToken(url)
       }
@@ -516,8 +534,44 @@ export function extractGensparkVideoUrl(result: GensparkVideoResult, inputUrls?:
     }
   }
 
-  const direct = d.video_url || d.result_url || d.url || d.output?.video_url || d.video_urls?.[0]
+  const direct = d && (d.video_url || d.result_url || d.url || d.output?.video_url || d.output?.url || d.video || d.videoUrl || d.media_url || d.video_uri || d.video_urls?.[0])
   if (direct && !isInput(direct)) return withToken(direct)
+
+  // ── Fallback: scan seluruh JSON untuk URL video (pola sama seperti SSE ask_proxy) ──
+  // Ini menangkap nama field baru yang belum dikenali di atas.
+  try {
+    const resultStr = JSON.stringify(result)
+    const seen = new Set<string>()
+    const found: string[] = []
+    for (const m of resultStr.matchAll(/https?:\/\/[^\s"'<>]+\.mp4[^\s"'<>]*/gi)) {
+      const url = m[0].replace(/\\u002F/gi, '/')
+      if (!isInput(url) && !url.includes('/poster') && !url.includes('/last_frame') && !seen.has(url)) {
+        seen.add(url); found.push(url)
+      }
+    }
+    if (found.length === 0) {
+      for (const m of resultStr.matchAll(/https?:\/\/www\.genspark\.ai\/api\/files\/s\/[^\s"'<>]+/gi)) {
+        const url = m[0].replace(/\\u002F/gi, '/')
+        if (!isInput(url) && !url.includes('/poster') && !url.includes('/last_frame') && !seen.has(url)) {
+          seen.add(url); found.push(url)
+        }
+      }
+    }
+    if (found.length === 0) {
+      for (const m of resultStr.matchAll(/https?:\/\/[^\s"'<>]+\.fal\.media\/[^\s"'<>]*/gi)) {
+        const url = m[0].replace(/\\u002F/gi, '/')
+        if (!isInput(url) && !url.includes('/poster') && !url.includes('/last_frame') && !seen.has(url)) {
+          seen.add(url); found.push(url)
+        }
+      }
+    }
+    if (found.length > 0) {
+      console.log('[genspark] extractGensparkVideoUrl regex fallback found:', found[0])
+      return withToken(found[found.length - 1])
+    }
+    // Diagnostik: kalau tetap gagal, catat struktur respons biar mudah di-debug
+    console.warn('[genspark] extractGensparkVideoUrl: no video URL found. Response keys:', Object.keys(result), 'data keys:', d ? Object.keys(d) : '(no data)', 'raw sample:', JSON.stringify(result).slice(0, 800))
+  } catch {}
   return null
 }
 
@@ -530,9 +584,9 @@ export async function pollGensparkVideo(taskId: string, onProgress?: (msg: strin
   const apiKey = getGensparkApiKey()
   if (!apiKey) throw new Error('No Genspark API key')
 
-  for (let i = 0; i < 60; i++) {
+  for (let i = 0; i < 90; i++) {
     await new Promise(r => setTimeout(r, 5000))
-    onProgress?.(`Polling Genspark ${i + 1}/60 (${(i + 1) * 5}s)...`)
+    onProgress?.(`Polling Genspark ${i + 1}/90 (${(i + 1) * 5}s)...`)
 
     try {
       const pollUrl = `${GENSPARK_BASE}/api/vg_tasks_status`
@@ -608,5 +662,5 @@ export async function pollGensparkVideo(taskId: string, onProgress?: (msg: strin
       console.warn(`[genspark] poll ${i + 1} error:`, e.message)
     }
   }
-  throw new Error('Genspark polling timeout 5min')
+  throw new Error('Genspark polling timeout 7.5min')
 }

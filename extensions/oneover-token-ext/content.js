@@ -97,7 +97,7 @@
       var parsed = JSON.parse(raw)
       var session = parsed && parsed.current_session ? parsed.current_session : parsed
       return session
-    } catch (e) {
+    } catch {
       return null
     }
   }

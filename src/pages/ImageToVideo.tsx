@@ -250,6 +250,7 @@ export default function ImageToVideoPage() {
   const models = useMemo(() => PROVIDER_MODELS[provider] || [], [provider])
   const currentModel = models.find((m) => m.value === model) || models[0]
 
+  const hasImgFile = !!imgFile
   const qualityOptions = useMemo(() => {
     const providerQualities = QUALITY_OPTIONS[provider] || QUALITY_OPTIONS.weavy
     const leonardoDynamicOptions = provider === 'leonardo' && model ? leonardoVideoQualityOptions(model, ratio) : []
@@ -266,11 +267,11 @@ export default function ImageToVideoPage() {
         }))
       : (providerQualities[model] || providerQualities.default || [])
     // Veo I2V only supports 8 seconds
-    if (provider === 'firefly' && model.includes('veo') && imgFile) {
+    if (provider === 'firefly' && model.includes('veo') && hasImgFile) {
       opts = opts.filter((q) => q.duration === 8)
     }
     return opts
-  }, [provider, model, ratio, !!imgFile])
+  }, [provider, model, ratio, hasImgFile])
   const currentQuality = qualityOptions.find((q) => q.value === quality) || qualityOptions[0]
 
   const totalCredits = currentModel ? (currentQuality?.cr ?? Math.round(currentModel.cr * (currentQuality?.mult || 1))) : 0

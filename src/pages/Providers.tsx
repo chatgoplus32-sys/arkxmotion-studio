@@ -278,7 +278,7 @@ function getStatusLabel(status: string): string {
 
 // Genspark Session Cookies Input Component
 function GensparkCookiesInput({ providerKeys, setKeyCookies }: {
-  providerKeys: { id: string; key: string; cookies?: string }[]
+  providerKeys: { id: string; key: string; status?: string; cookies?: string }[]
   setKeyCookies: (provider: string, keyId: string, cookies: string) => void
 }) {
   const [input, setInput] = useState('')

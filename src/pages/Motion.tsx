@@ -5,10 +5,10 @@ import { useProviderManager, HIDDEN_PROVIDERS, type ProviderId } from '@/stores'
 import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
 import { useToastStore } from '@/stores/toastStore'
 import { uploadToCatbox, compressVideo, normalizeImage, getVideoDurationFromFile, submitMotionControl, submitGoogleOmni, pollRoboneoI2V, checkRoboneoBalance, noteRoboneoMotionChargeFailure, getRoboneoMotionMinCredits, isRoboneoBalanceError, isRoboneoBusyError } from '@/lib/roboneo'
-import { submitGensparkVideo, extractGensparkVideoUrl, uploadToGenspark } from '@/lib/genspark'
+import { submitGensparkVideo, extractGensparkVideoUrl, uploadToGenspark, pollGensparkVideo } from '@/lib/genspark'
 import { trimVideoFFmpeg } from '@/lib/ffmpeg-compress'
 import { submitWeavyMotionControl, uploadWeavyAssetWithRetry, resolveWeavyAssetUrl, getActiveWeavyAccessToken, compressImageForWeavy } from '@/lib/weavy'
-import { getRunningHubApiKey, submitRunningHubMotionControl, submitRunningHubMotionControlV26Std, submitRunningHubMotionControlV26Pro, submitRunningHubMotionControlV3, pollRunningHubTask } from '@/lib/runninghub'
+import { getRunningHubApiKey, submitRunningHubMotionControl, pollRunningHubTask } from '@/lib/runninghub'
 import { getGalleri5AuthHeaders, submitGalleri5MotionControl, pollGalleri5MotionControl, isGalleri5ModelRestricted, getGalleri5ErrorMessage, GALLERI5_MOTION_MODELS, runGalleri5WithRotation } from '@/lib/galleri5'
 import { getMagnificApiKey, submitMagnificMotion, pollMagnificMotion, type MagnificMotionModel } from '@/lib/magnific'
 import { useLocalStorage } from '@/lib/useLocalStorage'
@@ -1433,15 +1433,14 @@ export default function MotionPage() {
               }
               addLog(`#${slotNum} Video: ${videoUrl.slice(0, 60)}...`)
 
-              // Get video duration for motion control
-              // character_orientation=image → max 10s; =video → max 30s
-              const maxDuration = orientation === 'video' ? 30 : 10
+              // Get video duration for motion control — output selalu di-cap 10 detik
+              const maxDuration = 10
               let motionDuration = 5
               if (slot.video) {
                 try {
                   const rawDuration = await getVideoDurationFromFile(slot.video)
                   motionDuration = Math.min(rawDuration, maxDuration)
-                  addLog(`#${slotNum} Video duration: ${motionDuration}s (max ${maxDuration}s for ${orientation} orientation)`)
+                  addLog(`#${slotNum} Video duration: ${motionDuration}s (max ${maxDuration}s)`)
                 } catch {}
               }
 
@@ -1476,7 +1475,8 @@ export default function MotionPage() {
                 addLog(`#${slotNum} 💡 Kling server intermittent — retrying dengan backoff...`)
 
                 // Aggressive retry: try each duration up to 3 times with backoff
-                const retryDurations = [motionDuration, 9, 5].filter((d, i, arr) => arr.indexOf(d) === i && d <= motionDuration)
+                // Kling V3 motion-control hanya menerima durasi valid (5/10 detik)
+                const retryDurations = [motionDuration, 5].filter((d, i, arr) => arr.indexOf(d) === i && d <= motionDuration)
                 for (const retryDur of retryDurations) {
                   for (let attempt = 1; attempt <= 3; attempt++) {
                     const waitSec = attempt * 15 // 15s, 30s, 45s backoff
@@ -1513,12 +1513,48 @@ export default function MotionPage() {
               if (!resultUrl) {
                 resultUrl = extractGensparkVideoUrl(result, { imageUrl, videoUrl })
               }
-              if (!resultUrl) {
-                const finalStatus = (gv0?.status || '').toUpperCase()
-                if (finalStatus === 'FAILURE' || finalStatus === 'FAILED') {
-                  throw new Error(`Genspark/Kling server sedang down. Coba lagi beberapa menit, atau gunakan provider lain (Weavy/Wavespeed) yang lebih stabil.`)
+
+              // Kalau belum ada URL tapi ada task_id → task masih diproses, polling
+              const gvLatest = result?.data?.generated_videos?.[0] as any
+              const taskIdLatest = gvLatest?.task_id || result?.data?.task_id || taskId0
+              const latestStatus = String(gvLatest?.status || gv0?.status || result?.status || 'pending').toUpperCase()
+              if (!resultUrl && taskIdLatest && !['FAILURE', 'FAILED', 'ERROR'].includes(latestStatus)) {
+                updateSlotStatus(slot.id, 'processing', 'polling...')
+                addLog(`#${slotNum} Task diterima (${latestStatus}), polling hasil...`)
+                addActiveTask({
+                  id: `genspark-${taskIdLatest}`,
+                  taskId: taskIdLatest,
+                  roomId: '',
+                  nodeId: '',
+                  token: token?.slice(0, 50) || '',
+                  model: currentModel.label,
+                  prompt: finalPrompt || '(no prompt)',
+                  startedAt: Date.now(),
+                  page: 'motion',
+                })
+                try {
+                  resultUrl = await pollGensparkVideo(taskIdLatest, (msg) => {
+                    updateSlotStatus(slot.id, 'processing', msg)
+                    addLog(`#${slotNum} ${msg}`)
+                  })
+                } finally {
+                  removeActiveTask(`genspark-${taskIdLatest}`)
                 }
-                throw new Error('No video URL returned from Genspark')
+              }
+
+              if (!resultUrl) {
+                const finalStatus = latestStatus || (gv0?.status || '').toUpperCase()
+                if (finalStatus === 'FAILURE' || finalStatus === 'FAILED' || finalStatus === 'ERROR') {
+                  const reason = gvLatest?.failure_reason || gvLatest?.error_message || gv0?.failure_reason || gv0?.error_message
+                  throw new Error(`Genspark/Kling gagal: ${reason || 'server sedang down'}. Coba lagi beberapa menit, atau gunakan provider lain (Weavy/Wavespeed) yang lebih stabil.`)
+                }
+                // Genspark membungkus error asli di data.result (mis. "Your credits are insufficient")
+                // sementara status/message-nya bilang "ok"/"success" — jangan percaya envelope itu.
+                const rawResult = (result as any)?.data?.result
+                const realMsg = typeof rawResult === 'string' && !/^https?:\/\//i.test(rawResult)
+                  ? rawResult
+                  : result?.message || result?.data?.message
+                throw new Error(realMsg && realMsg !== 'success' ? `Genspark: ${realMsg}` : 'Genspark: tidak ada URL video (kemungkinan credits tidak cukup atau task ditolak)')
               }
 
               updateSlotStatus(slot.id, 'done')

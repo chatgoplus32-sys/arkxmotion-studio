@@ -19,6 +19,12 @@ dist-ssr
 
 # Database
 data/
+server/*.db
+*.db-shm
+*.db-wal
+
+# Temp extension builds
+.tmp-extensions/
 
 # Editor directories and files
 .vscode/*

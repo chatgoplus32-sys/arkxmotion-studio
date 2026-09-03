@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Textarea, Input, Label, EmptyState } from '@/components/ui'
 import { useToastStore } from '@/stores/toastStore'
 import { getGensparkApiKey } from '@/lib/genspark'
-import { createTask, taskStatus, type CreateTaskParams } from '@/lib/genspark-tools'
-import { Film, Upload, Loader2, Play, Download, Scissors, Wand2, Sparkles } from 'lucide-react'
+import { createTask, taskStatus } from '@/lib/genspark-tools'
+import { Film, Loader2, Play, Wand2 } from 'lucide-react'
 
 const EDIT_TYPES = [
   { value: 'highlight', label: '🎯 Highlight Reel', description: 'Extract best moments from video' },
@@ -21,7 +21,7 @@ export default function ClipGeniusPage() {
   const [editType, setEditType] = useState('highlight')
   const [customPrompt, setCustomPrompt] = useState('')
   const [processing, setProcessing] = useState(false)
-  const [taskId, setTaskId] = useState<string | null>(null)
+  const [, setTaskId] = useState<string | null>(null)
   const [taskUrl, setTaskUrl] = useState<string | null>(null)
   const [result, setResult] = useState<any>(null)
   const [progress, setProgress] = useState(0)

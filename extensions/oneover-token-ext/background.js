@@ -94,7 +94,7 @@ function extractTokenFromCookies(cookies) {
           source: 'chunked-cookie'
         }
       }
-    } catch (e) {}
+    } catch {}
   }
 
   // 3. Look for raw JWT in any cookie
@@ -287,7 +287,7 @@ chrome.tabs.onUpdated.addListener(function (tabId, changeInfo, tab) {
 chrome.runtime.onInstalled.addListener(function () {
   // Try to capture tokens from currently open oneover.com tabs
   chrome.tabs.query({ url: '*://oneover.com/*' }, function (tabs) {
-    tabs.forEach(function (tab) {
+    tabs.forEach(function (_tab) {
       setTimeout(function () {
         findAllTokens(function (results) {
           results.forEach(function (t) {

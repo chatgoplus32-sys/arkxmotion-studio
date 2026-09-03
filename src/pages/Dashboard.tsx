@@ -22,9 +22,10 @@ const STATUS_META: Record<string, { dot: string; label: string; text: string }> 
 
 function AnimatedCounter({ value, duration = 600 }: { value: number; duration?: number }) {
   const [display, setDisplay] = useState(0)
+  const displayRef = useRef(0)
   const ref = useRef<number | null>(null)
   useEffect(() => {
-    const start = display
+    const start = displayRef.current
     const diff = value - start
     if (diff === 0) return
     const startTime = performance.now()
@@ -32,7 +33,9 @@ function AnimatedCounter({ value, duration = 600 }: { value: number; duration?: 
       const elapsed = now - startTime
       const progress = Math.min(elapsed / duration, 1)
       const eased = 1 - Math.pow(1 - progress, 3)
-      setDisplay(Math.round(start + diff * eased))
+      const next = Math.round(start + diff * eased)
+      displayRef.current = next
+      setDisplay(next)
       if (progress < 1) ref.current = requestAnimationFrame(animate)
     }
     ref.current = requestAnimationFrame(animate)

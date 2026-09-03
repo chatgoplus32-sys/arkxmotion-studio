@@ -999,7 +999,7 @@ export function roboneoProxyPlugin(): Plugin {
             res.end(JSON.stringify({ error: `Genspark API error: ${metaRes.status}` }))
             return
           }
-          const meta = await metaRes.json()
+          const meta: any = await metaRes.json()
           console.log(`[genspark-upload] get_upload_url response:`, JSON.stringify(meta).slice(0, 400))
           const data = meta?.data || meta
           const uploadUrl = data?.upload_url

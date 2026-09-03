@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
-import { Section, Button, Textarea, Input, Label, EmptyState } from '@/components/ui'
+import { Section, Button, Input, Label, EmptyState } from '@/components/ui'
 import { useToastStore } from '@/stores/toastStore'
 import { getGensparkApiKey } from '@/lib/genspark'
 import { secondBrainAction, type SecondBrainSource, type SecondBrainNote } from '@/lib/genspark-tools'
-import { Brain, Search, FileText, RefreshCw, Loader2, ChevronRight, Mail, BookOpen, Calendar, MessageSquare } from 'lucide-react'
+import { Brain, Search, FileText, RefreshCw, Loader2, ChevronRight, Mail, BookOpen, Calendar } from 'lucide-react'
 
 const SOURCE_ICONS: Record<string, any> = {
   memo: <FileText className="h-4 w-4" />,
@@ -29,11 +29,7 @@ export default function SecondBrainPage() {
 
   const hasApiKey = !!getGensparkApiKey()
 
-  useEffect(() => {
-    if (hasApiKey) loadSources()
-  }, [hasApiKey])
-
-  const loadSources = async () => {
+  const loadSources = useCallback(async () => {
     setLoadingSources(true)
     try {
       const result = await secondBrainAction('list-repos')
@@ -57,7 +53,11 @@ export default function SecondBrainPage() {
     } finally {
       setLoadingSources(false)
     }
-  }
+  }, [addToast])
+
+  useEffect(() => {
+    if (hasApiKey) loadSources()
+  }, [hasApiKey, loadSources])
 
   const handleSearch = async () => {
     if (!query.trim()) return
