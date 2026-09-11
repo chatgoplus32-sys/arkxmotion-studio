@@ -74,6 +74,11 @@ export function detectTokenError(provider: ProviderId, error: any): boolean {
     case 'galleri5': return /credit tidak cukup|insufficient|balance|401|403|expired|unauthorized|invalid.*token|token.*invalid|500|502|503|504|server error/i.test(String(error?.message || error))
     case 'oneover': return /unauthorized|forbidden|invalid.*token|token.*invalid|expired|401|403|refresh.*token|login/i.test(String(error?.message || error))
     case 'genspark': return /invalid.*key|expired|401|403|unauthorized|forbidden|api.*key/i.test(String(error?.message || error))
+    // Termasuk kegagalan cookie sesi (jalur Unlimited): error eksplisit dari
+    // submitNexabot, halaman login HTML dari upstream, atau cookie kedaluwarsa.
+    // Tanpa ini, key session yang mati hanya menggagalkan generate tanpa
+    // mencoba key/fallback berikutnya.
+    case 'nexabot': return /unauthorized|forbidden|invalid.*key|key.*invalid|expired|401|403|api.*key|cookie|session|kedaluwarsa|login|bukan JSON/i.test(String(error?.message || error))
     default: return isTokenError(error)
   }
 }
@@ -113,6 +118,10 @@ export async function withTokenRotation<T>(
     // Sort by balance descending for weavy (prefer higher balance tokens)
     const sortedKeys = provider === 'weavy'
       ? [...currentKeys].sort((a, b) => (b.balance ?? 0) - (a.balance ?? 0))
+      // NexaBot: key dengan cookie session (paket Unlimited) dicoba lebih dulu
+      // supaya generate lewat /api/v1/generate dan tidak dipotong kredit.
+      : provider === 'nexabot'
+      ? [...currentKeys].sort((a, b) => Number(!!b.cookies) - Number(!!a.cookies))
       : currentKeys
     const nextKey = sortedKeys.find(
       (k) => !triedKeyIds.has(k.id) && (k.status === 'active' || k.status === 'unknown')

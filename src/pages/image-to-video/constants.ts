@@ -120,6 +120,20 @@ export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'gp:alibaba/happy-horse', label: 'Alibaba Happy Horse (Genspark)', cr: 90, provider: 'genspark', apiModel: 'alibaba/happy-horse' },
     { value: 'gp:alibaba/happy-horse/reference-to-video', label: 'Happy Horse Ref-to-Video (Genspark)', cr: 100, provider: 'genspark', apiModel: 'alibaba/happy-horse/reference-to-video' },
   ],
+  riverside: [
+    { value: 'rs:veo-3.1', label: 'Veo 3.1 (Riverside)', cr: 26, provider: 'riverside', apiModel: 'veo-3.1' },
+    { value: 'rs:gemini-omni-flash', label: 'Gemini Omni Flash (Riverside)', cr: 9, provider: 'riverside', apiModel: 'gemini-omni-flash' },
+    { value: 'rs:gemini-omni-flash-edit', label: 'Gemini Omni Flash Edit (Riverside)', cr: 9, provider: 'riverside', apiModel: 'gemini-omni-flash-edit' },
+    { value: 'rs:hailuo-2.3-pro', label: 'Hailuo 2.3 Pro (Riverside)', cr: 7, provider: 'riverside', apiModel: 'hailuo-2.3-pro' },
+    { value: 'rs:happyhorse-1.1', label: 'HappyHorse 1.1 (Riverside)', cr: 12, provider: 'riverside', apiModel: 'happyhorse-1.1' },
+    { value: 'rs:kling-3.0-pro', label: 'Kling 3.0 Pro (Riverside)', cr: 13, provider: 'riverside', apiModel: 'kling-3.0-pro' },
+  ],
+  // NexaBot hanya menyediakan satu model: Google Omni. API-nya tidak punya parameter
+  // `model` (docs resmi hanya: mode, prompt, telegram_id, ratio), jadi mode spesifik
+  // (start frame / image / video reference) diturunkan otomatis dari media yang di-upload.
+  nexabot: [
+    { value: 'nb:omni', label: '✨ Google Omni (NexaBot)', cr: 0.25, provider: 'nexabot', apiModel: 't2v' },
+  ],
 }
 
 export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; label: string; mult: number; duration: number; cr?: number; resolution?: string; sound?: string; sizeTier?: string }>>> = {
@@ -506,6 +520,55 @@ export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: s
     default: [
       { value: '10s', label: '10 detik', mult: 1, duration: 10 },
       { value: '5s', label: '5 detik', mult: 1, duration: 5 },
+    ],
+  },
+  riverside: {
+    'rs:veo-3.1': [
+      { value: '10s-4k', label: '10 detik · 4K', mult: 1, duration: 10, cr: 260, resolution: '4k' },
+      { value: '8s-4k', label: '8 detik · 4K', mult: 1, duration: 8, cr: 208, resolution: '4k' },
+      { value: '8s-1080p', label: '8 detik · 1080p', mult: 1, duration: 8, cr: 208, resolution: '1080p' },
+      { value: '4s-1080p', label: '4 detik · 1080p', mult: 1, duration: 4, cr: 104, resolution: '1080p' },
+    ],
+    'rs:gemini-omni-flash': [
+      { value: '10s', label: '10 detik', mult: 1, duration: 10, cr: 90 },
+      { value: '8s', label: '8 detik', mult: 1, duration: 8, cr: 72 },
+      { value: '4s', label: '4 detik', mult: 1, duration: 4, cr: 36 },
+    ],
+    'rs:gemini-omni-flash-edit': [
+      { value: '10s', label: '10 detik', mult: 1, duration: 10, cr: 90 },
+      { value: '8s', label: '8 detik', mult: 1, duration: 8, cr: 72 },
+      { value: '4s', label: '4 detik', mult: 1, duration: 4, cr: 36 },
+    ],
+    'rs:hailuo-2.3-pro': [
+      { value: '10s-1080p', label: '10 detik · 1080p', mult: 1, duration: 10, cr: 70, resolution: '1080p' },
+      { value: '8s-1080p', label: '8 detik · 1080p', mult: 1, duration: 8, cr: 56, resolution: '1080p' },
+      { value: '8s-720p', label: '8 detik · 720p', mult: 1, duration: 8, cr: 56, resolution: '720p' },
+      { value: '4s-720p', label: '4 detik · 720p', mult: 1, duration: 4, cr: 28, resolution: '720p' },
+    ],
+    'rs:happyhorse-1.1': [
+      { value: '10s-1080p', label: '10 detik · 1080p', mult: 1, duration: 10, cr: 120, resolution: '1080p' },
+      { value: '8s-1080p', label: '8 detik · 1080p', mult: 1, duration: 8, cr: 96, resolution: '1080p' },
+      { value: '8s-720p', label: '8 detik · 720p', mult: 1, duration: 8, cr: 96, resolution: '720p' },
+      { value: '4s-720p', label: '4 detik · 720p', mult: 1, duration: 4, cr: 48, resolution: '720p' },
+    ],
+    'rs:kling-3.0-pro': [
+      { value: '10s-1080p', label: '10 detik · 1080p', mult: 1, duration: 10, cr: 130, resolution: '1080p' },
+      { value: '8s-1080p', label: '8 detik · 1080p', mult: 1, duration: 8, cr: 104, resolution: '1080p' },
+      { value: '8s-720p', label: '8 detik · 720p', mult: 1, duration: 8, cr: 104, resolution: '720p' },
+      { value: '4s-720p', label: '4 detik · 720p', mult: 1, duration: 4, cr: 52, resolution: '720p' },
+    ],
+    default: [
+      { value: '8s', label: '8 detik', mult: 1, duration: 8 },
+      { value: '4s', label: '4 detik', mult: 1, duration: 4 },
+    ],
+  },
+  nexabot: {
+    // Durasi tidak dikirim ke API NexaBot (tidak ada parameter durasi/max_seconds),
+    // jadi semua mode memakai daftar yang sama. `cr` wajib diisi eksplisit:
+    // totalCredits memakai Math.round(cr * mult), dan Math.round(0.25) = 0.
+    default: [
+      { value: '5s', label: '5 detik', mult: 1, duration: 5, cr: 0.25 },
+      { value: '10s', label: '10 detik', mult: 1, duration: 10, cr: 0.25 },
     ],
   },
 }

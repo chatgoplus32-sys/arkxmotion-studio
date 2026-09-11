@@ -6,10 +6,23 @@ interface SyncTokenRequest {
   provider: string
   token: string
   source?: string // 'extension' | 'bookmarklet' | 'manual'
+  /**
+   * 'token' (default) = JWT / API key untuk field `key`.
+   * 'cookie' = header Cookie session (NexaBot) → disimpan ke field `cookies`
+   * key oleh auto-sync poller, bukan menimpa `key`.
+   */
+  kind?: 'token' | 'cookie'
+}
+
+interface PendingToken {
+  token: string
+  kind: 'token' | 'cookie'
+  timestamp: number
+  source: string
 }
 
 // Store pending tokens from extensions (in-memory, resets on server restart)
-const pendingTokens: Map<string, { token: string; timestamp: number; source: string }[]> = new Map()
+const pendingTokens: Map<string, PendingToken[]> = new Map()
 
 /**
  * POST /api/sync-tokens
@@ -17,12 +30,13 @@ const pendingTokens: Map<string, { token: string; timestamp: number; source: str
  */
 router.post('/', (req, res: Response) => {
   try {
-    const { provider, token, source = 'extension' }: SyncTokenRequest = req.body
+    const { provider, token, source = 'extension', kind = 'token' }: SyncTokenRequest = req.body
 
     if (!provider || !token) {
       res.status(400).json({ error: 'Missing provider or token' })
       return
     }
+    const safeKind: 'token' | 'cookie' = kind === 'cookie' ? 'cookie' : 'token'
 
     // Store in memory
     if (!pendingTokens.has(provider)) {
@@ -36,6 +50,7 @@ router.post('/', (req, res: Response) => {
     if (!exists) {
       tokens.unshift({
         token,
+        kind: safeKind,
         timestamp: Date.now(),
         source,
       })
@@ -45,7 +60,7 @@ router.post('/', (req, res: Response) => {
         tokens.pop()
       }
 
-      console.log(`[Sync] New token for ${provider} from ${source}`)
+      console.log(`[Sync] New ${safeKind} for ${provider} from ${source}`)
     }
 
     res.json({
@@ -61,33 +76,10 @@ router.post('/', (req, res: Response) => {
 })
 
 /**
- * GET /api/sync-tokens/:provider
- * Get pending tokens for a provider
- */
-router.get('/:provider', (req, res: Response) => {
-  try {
-    const { provider } = req.params
-    const tokens = pendingTokens.get(provider) || []
-
-    res.json({
-      ok: true,
-      provider,
-      tokens: tokens.map(t => ({
-        token: t.token.slice(0, 20) + '...', // Mask token for security
-        timestamp: t.timestamp,
-        source: t.source,
-      })),
-      count: tokens.length,
-    })
-  } catch (error) {
-    console.error('Get sync tokens error:', error)
-    res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-/**
  * GET /api/sync-tokens/all
- * Get all pending tokens
+ * Get all pending tokens.
+ * HARUS didaftarkan sebelum `/:provider`, kalau tidak Express mencocokkan
+ * "/all" sebagai nama provider dan endpoint ini selalu balas kosong.
  */
 router.get('/all', (_req, res: Response) => {
   try {
@@ -96,6 +88,7 @@ router.get('/all', (_req, res: Response) => {
     for (const [provider, tokens] of pendingTokens.entries()) {
       allTokens[provider] = tokens.map(t => ({
         token: t.token.slice(0, 20) + '...',
+        kind: t.kind || 'token',
         timestamp: t.timestamp,
         source: t.source,
       }))
@@ -108,6 +101,70 @@ router.get('/all', (_req, res: Response) => {
     })
   } catch (error) {
     console.error('Get all sync tokens error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+/**
+ * GET /api/sync-tokens/:provider?full=1
+ * Get pending tokens for a provider.
+ * Tokens are masked by default; pass full=1 to receive full values
+ * (needed by the app's auto-sync poller to save the fresh JWT).
+ */
+router.get('/:provider', (req, res: Response) => {
+  try {
+    const { provider } = req.params
+    const full = req.query.full === '1'
+    const tokens = pendingTokens.get(provider) || []
+
+    res.json({
+      ok: true,
+      provider,
+      tokens: tokens.map(t => ({
+        token: full ? t.token : t.token.slice(0, 20) + '...',
+        kind: t.kind || 'token',
+        timestamp: t.timestamp,
+        source: t.source,
+      })),
+      count: tokens.length,
+    })
+  } catch (error) {
+    console.error('Get sync tokens error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+/**
+ * POST /api/sync-tokens/:provider/consume
+ * Remove a specific token from the queue after the app has saved it
+ */
+router.post('/:provider/consume', (req, res: Response) => {
+  try {
+    const { provider } = req.params
+    const { token } = req.body
+    if (!token) {
+      res.status(400).json({ error: 'Missing token' })
+      return
+    }
+
+    const tokens = pendingTokens.get(provider)
+    if (!tokens) {
+      res.json({ ok: true, removed: 0 })
+      return
+    }
+
+    const before = tokens.length
+    const remaining = tokens.filter(t => t.token !== token)
+    if (remaining.length === 0) {
+      pendingTokens.delete(provider)
+    } else {
+      pendingTokens.set(provider, remaining)
+    }
+
+    console.log(`[Sync] Consumed token for ${provider} (${before - remaining.length} removed)`)
+    res.json({ ok: true, removed: before - remaining.length, remaining: remaining.length })
+  } catch (error) {
+    console.error('Consume sync token error:', error)
     res.status(500).json({ error: 'Internal server error' })
   }
 })

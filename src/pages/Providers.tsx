@@ -22,11 +22,14 @@ import {
 import { useProviderManager, ProviderId, HIDDEN_PROVIDERS } from '@/stores/providerManager'
 import { useAuthStore } from '@/stores/authStore'
 import ProviderStatusBar from '@/components/providers/ProviderStatusBar'
+import TokenSyncHistory from '@/components/providers/TokenSyncHistory'
 import { checkRoboneoBalance } from '@/lib/roboneo'
 import { fetchLeonardoBalance } from '@/lib/leonardo'
 import { checkWeavyBalance } from '@/lib/weavy'
 import { checkRunningHubBalance } from '@/lib/runninghub'
 import { checkFireflyBalance } from '@/lib/firefly'
+import { parseNexabotCookieInput, parseNexabotApiKeyInput } from '@/lib/nexabot'
+import { refreshNexabotSessionMonitor } from '@/lib/nexabotSessionMonitor'
 import { checkGalleri5Balance, isGalleri5TokenError } from '@/lib/galleri5'
 
 const PROVIDER_COLORS: Record<string, string> = {
@@ -42,6 +45,8 @@ const PROVIDER_COLORS: Record<string, string> = {
   createpulse: '#c084fc',
   oneover: '#a78bfa',
   firefly: '#FF6A00',
+  riverside: '#FF6B6B',
+  nexabot: '#00D4AA',
 }
 
 const PROVIDER_LIST = [
@@ -57,6 +62,8 @@ const PROVIDER_LIST = [
   { key: 'oneover', label: 'OneOver', desc: 'Video generation (Grok, Seedance 2.0/2.5, Kling, LTX) via oneover.com — Supabase session token.' },
   { key: 'firefly', label: 'Adobe Firefly', desc: 'Video generation (Veo 3.1, Firefly Video) via firefly.adobe.com — Adobe IMS Bearer token.' },
   { key: 'genspark', label: 'Genspark AI', desc: 'Kling V3 Motion Control + 14 video models (Veo, Sora, Hailuo, PixVerse) via genspark.ai Tool API — API key (gsk-...).' },
+  { key: 'riverside', label: 'Riverside', desc: 'Riverside Business API — Professional video/audio recording, editing, and production platform.' },
+  { key: 'nexabot', label: 'NexaBot', desc: 'NexaBot AI via nexabot.id — Google Omni (text, image & video ref). Mode session cookie (Unlimited) atau API key (nxb_...).' },
 ] as const
 
 const VISIBLE_PROVIDER_LIST = PROVIDER_LIST.filter(p => !(HIDDEN_PROVIDERS as readonly string[]).includes(p.key))
@@ -247,11 +254,72 @@ const TOKEN_GUIDE: Record<string, {
     ],
     tip: 'Key tersembunyi (****) sampai kamu klik tombol mata/eye. Free tier: 100 credits/hari. Kling V3 Pro ≈ 80 cr.',
   },
+  riverside: {
+    url: 'https://riverside.com/dashboard',
+    urlLabel: 'riverside.com/dashboard',
+    prefix: 'eyJ… (session JWT) — ±10 menit, tapi AUTO-SYNC: extension mengirim token terbaru otomatis',
+    steps: [
+      { text: 'CARA PALING GAMPANG: install extension Riverside (halaman Plugins) — token terbaru ter-sync OTOMATIS ke app tiap ±4 menit, tanpa copy-paste. Buka tab riverside.com/dashboard biar keep-alive jalan.' },
+      { text: 'Alternatif manual: klik tombol "Grab Token dari riverside.com" di bawah input → script copied ke clipboard.' },
+      { text: 'Buka ', link: { url: 'https://riverside.com/dashboard', label: 'riverside.com/dashboard' }, },
+      { text: 'Login dengan akun Riverside (Google / email).' },
+      { text: 'Buka DevTools Console (F12 → Console), paste script & Enter → token copy ke clipboard.' },
+      { text: 'PASTIKAN token masih segar: session JWT Riverside cuma bertahan ±10 menit. Grab ulang kalau sudah lewat.' },
+      { text: 'Paste ke input di sebelah — app otomatis deteksi formatnya.' },
+      { text: 'Alternatif manual lain: F12 → Network → klik request API apa pun → Headers → salin value header "Authorization: Bearer ..." (tanpa awalan "Bearer ").' },
+    ],
+    tip: 'PENTING: session JWT Riverside (eyJ…) cuma bertahan ±10 menit by design. Dashboard menahan login lewat refresh endpoint cookie (/auth/refresh/reactive) yang cuma bisa dipanggil dari dalam browser yang sudah login — app ini tidak bisa me-refresh token kamu (cross-origin, tanpa cookie). Solusi paling awet: install extension Riverside v1.3+ (halaman Plugins) — dia jalan di dalam halaman dashboard, auto-refresh tiap 4 menit, lalu OTOMATIS mengirim JWT terbaru ke app lewat /api/sync-tokens. App polling tiap 30 detik dan langsung mengganti key yang expired — token kamu praktis tidak pernah mati selama tab dashboard kebuka. Token AMf-… (Firebase) TIDAK dipakai Riverside — itu punya Galleri5/layanan lain, jangan ditempel untuk Riverside.',
+  },
+  nexabot: {
+    url: 'https://nexabot.id',
+    urlLabel: 'nexabot.id',
+    prefix: 'nxb_...',
+    steps: [
+      { text: 'OPSI 1 — PAKET UNLIMITED (disarankan): login nexabot.id di browser, lalu isi panel “Session Login Unlimited (cookie)” di bawah (paste document.cookie). Generate otomatis lewat /api/v1/generate dan tidak dipotong kredit.' },
+      { text: 'OPSI 2 — API key (pay-as-you-go): buka nexabot.id → Dashboard → API Keys → Create API Key.' },
+      { text: 'Copy API key (format: nxb_...) → paste ke input di samping.' },
+      { text: 'Top up saldo minimal 0.25 credits di menu Top Up (hanya untuk mode API key).' },
+    ],
+    tip: 'NexaBot punya satu model: Google Omni — tipe video ditentukan otomatis dari input (teks / gambar / video referensi). ADA DUA JALUR: (a) SESSION COOKIE dari login web dikirim ke /api/v1/generate — kalau akun yang login punya paket Unlimited, generate TIDAK dipotong kredit; (b) API KEY (nxb_...) lewat /api/v1/api — selalu pay-as-you-go 0.25 cr/request walau Unlimited aktif. Kalau key punya cookie, app otomatis memakai jalur session. Cookie bisa kedaluwarsa: kalau muncul error session, login ulang di nexabot.id dan paste cookie baru.',
+  },
 }
 
 function maskKey(key: string): string {
   if (key.length <= 12) return key
   return `${key.slice(0, 6)}…${key.slice(-4)}`
+}
+
+/** "5 menit lalu" dari timestamp penyimpanan cookie sesi. */
+function formatAgo(ts: number): string {
+  const s = Math.max(0, Math.floor((Date.now() - ts) / 1000))
+  if (s < 60) return `${s} dtk lalu`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m} menit lalu`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h} jam lalu`
+  return `${Math.floor(h / 24)} hari lalu`
+}
+
+/** NexaBot: input berupa blob cURL/JSON (satu key), bukan daftar 1-key-per-baris. */
+function nexabotInputIsBlob(text: string): boolean {
+  return /(^|\s)curl\b/i.test(text)
+    || /x-api-key\s*[:=]/i.test(text)
+    || /"headers"\s*:/i.test(text)
+    || /\{\s*"cookie"/i.test(text)
+}
+
+/** "12 Sep 2026, 15.30 (6 jam 20 menit lagi)" untuk masa berlaku paket. */
+function formatUntil(ms: number): string {
+  const date = new Date(ms).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })
+  const diff = ms - Date.now()
+  if (diff <= 0) return `${date} (sudah berakhir)`
+  const mins = Math.floor(diff / 60000)
+  const left = mins >= 1440
+    ? `${Math.floor(mins / 1440)} hari ${Math.floor((mins % 1440) / 60)} jam`
+    : mins >= 60
+    ? `${Math.floor(mins / 60)} jam ${mins % 60} menit`
+    : `${Math.max(1, mins)} menit`
+  return `${date} (${left} lagi)`
 }
 
 function getStatusColor(status: string): string {
@@ -327,13 +395,244 @@ function GensparkCookiesInput({ providerKeys, setKeyCookies }: {
   )
 }
 
+// NexaBot Session Cookies Input — mode login web (cookie) supaya generate lewat
+// /api/v1/generate menghormati paket Unlimited (tidak dipotong 0.25 cr).
+function NexabotSessionInput({ providerKeys, addKey, setKeyCookies }: {
+  providerKeys: { id: string; key: string; name?: string; status?: string; cookies?: string; cookiesAt?: number }[]
+  addKey: (provider: string, key: string, name?: string) => void
+  setKeyCookies: (provider: string, keyId: string, cookies: string) => void
+}) {
+  const sessionKey = providerKeys.find(k => k.cookies)
+  const [input, setInput] = useState('')
+  const [saved, setSaved] = useState(false)
+  const [info, setInfo] = useState<import('@/lib/nexabot').NexabotSessionInfo | null>(null)
+  const [checking, setChecking] = useState(false)
+
+  useEffect(() => { setInput(sessionKey?.cookies || '') }, [sessionKey?.id, sessionKey?.cookies])
+
+  const runCheck = useCallback(async (cookies: string) => {
+    if (!cookies) { setInfo(null); return }
+    setChecking(true)
+    try {
+      const { checkNexabotSession } = await import('@/lib/nexabot')
+      setInfo(await checkNexabotSession(cookies))
+    } catch (e: any) {
+      setInfo({
+        ok: false, active: false, unlimited: false, plan: null,
+        until: null, untilMs: null, balance: null, telegramId: null, email: null,
+        error: e?.message || 'Gagal cek sesi',
+      })
+    }
+    setChecking(false)
+  }, [])
+
+  // Auto-cek saat cookie berubah supaya user tahu sesi masih aktif sebelum generate.
+  useEffect(() => {
+    const cookies = sessionKey?.cookies || ''
+    if (!cookies) { setInfo(null); return }
+    runCheck(cookies)
+  }, [sessionKey?.id, sessionKey?.cookies, runCheck])
+
+  const handlePaste = async () => {
+    try {
+      const text = await navigator.clipboard.readText()
+      if (text?.trim()) setInput(text.trim())
+    } catch {
+      alert('Tidak bisa baca clipboard otomatis (izin ditolak). Klik kolom input lalu tekan Ctrl+V, atau aktifkan izin clipboard di browser.')
+    }
+  }
+
+  const handleSave = () => {
+    // Terima cookie mentah, header `Cookie:`, hasil “Copy as cURL”, atau JSON.
+    const cookies = parseNexabotCookieInput(input)
+    if (!cookies) return
+    let keyId = sessionKey?.id
+    if (!keyId) {
+      // Belum ada key → buat satu key khusus session (tanpa API key).
+      addKey('nexabot', '', 'Session (cookie)')
+      keyId = useProviderManager.getState().keys.nexabot.slice(-1)[0]?.id
+    }
+    if (!keyId) return
+    setKeyCookies('nexabot', keyId, cookies)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+    // Cookie baru langsung dievaluasi pemantau: kalau sesi sehat, peringatan
+    // "sesi mendekati kedaluwarsa" yang lama ikut direset tanpa menunggu tick.
+    void refreshNexabotSessionMonitor()
+  }
+
+  return (
+    <div className="mt-3 rounded-md border border-[#00D4AA]/30 bg-[#00D4AA]/10 p-3">
+      <div className="text-[12px] font-semibold text-[#00D4AA] mb-1.5">🍪 Session Login Unlimited (cookie)</div>
+      <div className="text-[11px] text-[#a0a0a0] mb-2 leading-relaxed">
+        <b className="text-[#00D4AA]">Cara termudah:</b> install extension <b>NexaBot</b> di halaman <b>Plugins</b>, buka nexabot.id &amp; login — cookie sesi (termasuk <b>HttpOnly</b>) otomatis terkirim ke panel ini, tanpa copy-paste. Extension mengambil izin sync dari tab app yang sudah login, jadi di app yang dideploy cukup pastikan tab app ini tetap terbuka. Kasus manual: Login <a href="https://nexabot.id" target="_blank" className="text-[#00D4AA] underline">nexabot.id</a> (akun paket Unlimited) → DevTools (F12) → tab <b>Network</b> → klik request apa pun ke nexabot.id → klik kanan → <b>Copy → Copy as cURL (bash)</b>.
+        <code className="block mt-1 bg-black/40 rounded p-1.5 text-[10px] font-mono text-[#00D4AA] break-all">curl 'https://nexabot.id/api/v1/credits' -H 'cookie: …'</code>
+        Paste hasilnya di bawah — app mengambil header <span className="font-mono">Cookie</span> otomatis. Generate lalu lewat <span className="font-mono">/api/v1/generate</span> tanpa potong kredit.
+        <div className="mt-1 text-[10px] text-amber-300/85">⚠ <span className="font-mono">document.cookie</span> sering tidak cukup: cookie sesi biasanya <b>HttpOnly</b> sehingga tidak muncul di Console. Extension NexaBot membaca cookie itu lewat API <span className="font-mono">chrome.cookies</span>; kalau belum pakai extension, gunakan <b>Copy as cURL</b>.</div>
+      </div>
+      <div className="flex gap-2">
+        <input
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          placeholder="Paste cookie / header Cookie / Copy as cURL…"
+          className="flex-1 text-[11px] font-mono bg-black/30 border border-[#00D4AA]/30 text-white px-2 py-1 rounded focus:outline-none focus:border-[#00D4AA]"
+        />
+        <button
+          onClick={handlePaste}
+          className="text-[11px] px-3 py-1 rounded font-medium border border-[#00D4AA]/30 bg-black/20 text-[#00D4AA] hover:bg-[#00D4AA]/20"
+        >📋 Tempel</button>
+        <button
+          onClick={handleSave}
+          className={`text-[11px] px-3 py-1 rounded font-medium transition ${saved ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-[#00D4AA]/20 text-[#00D4AA] border border-[#00D4AA]/30 hover:bg-[#00D4AA]/30'}`}
+        >
+          {saved ? '✓ Saved' : 'Simpan Sesi'}
+        </button>
+      </div>
+      {sessionKey?.cookies && (
+        <div className="mt-2 rounded-md border border-[#2a2a2a] bg-black/20 p-2 space-y-1">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[10px] text-[#a0a0a0]">
+              Cookie tersimpan {sessionKey.cookies.length} chars{sessionKey.cookiesAt ? ` · ${formatAgo(sessionKey.cookiesAt)}` : ''}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => runCheck(sessionKey.cookies || '')}
+                disabled={checking}
+                className="text-[10px] text-[#00D4AA] hover:text-[#00D4AA]/80 disabled:opacity-50"
+              >{checking ? 'Cek…' : 'Cek ulang'}</button>
+              <button
+                onClick={() => { setKeyCookies('nexabot', sessionKey.id, ''); setInput(''); setInfo(null) }}
+                className="text-[10px] text-rose-300 hover:text-rose-200"
+              >Hapus</button>
+            </div>
+          </div>
+          {checking && !info && (
+            <div className="text-[10.5px] text-[#a0a0a0]">⏳ Mengecek status sesi…</div>
+          )}
+          {info?.ok && info.active && (
+            <div className="text-[10.5px] leading-relaxed">
+              {info.unlimited
+                ? <span className="text-emerald-400 font-semibold">✓ Paket UNLIMITED aktif — generate lewat /api/v1/generate tanpa potong kredit</span>
+                : <span className="text-amber-300">Sesi aktif, tapi paket Unlimited tidak terdeteksi — generate bisa tetap dipotong kredit</span>}
+              <div className="text-[10px] text-[#a0a0a0] mt-0.5">
+                {info.plan && <>Paket: <span className="font-mono">{info.plan}</span> · </>}
+                {info.untilMs && <>Berlaku sampai <span className="font-mono">{formatUntil(info.untilMs)}</span> · </>}
+                {info.balance != null && <>Saldo API: {info.balance} cr · </>}
+                {info.email || info.telegramId || 'akun sesi'}
+              </div>
+            </div>
+          )}
+          {info?.ok && !info.active && (
+            <div className="text-[10.5px] text-rose-300">
+              ⚠ Masa berlaku sesi/paket sudah berakhir — login ulang di nexabot.id lalu paste cookie baru.
+            </div>
+          )}
+          {info && !info.ok && (
+            <div className="text-[10.5px] text-rose-300">
+              ⚠ {info.error || 'Status sesi belum bisa dipastikan'}
+              <span className="text-[#a0a0a0]"> — coba “Cek ulang” atau generate langsung.</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// NexaBot Telegram ID Input — NexaBot menagihkan biaya API (`credit_cost`, 0.25 cr)
+// ke `telegram_id` yang dikirim saat submit (docs: "user id for credit billing").
+// Paket Unlimited (1 Hari/2 Hari/…) terikat ke akun Telegram, jadi kalau paket
+// ada di akun Telegram lain, ID-nya diisi di sini.
+function NexabotTelegramInput({ providerKeys, setKeyTelegramId }: {
+  providerKeys: { id: string; key: string; status?: string; telegramId?: string; cookies?: string }[]
+  setKeyTelegramId: (provider: string, keyId: string, telegramId: string) => void
+}) {
+  const key = providerKeys.find(k => k.status === 'active' || k.status === 'unknown') || providerKeys[0]
+  const [input, setInput] = useState('')
+  const [saved, setSaved] = useState(false)
+  const [checking, setChecking] = useState(false)
+  const [detected, setDetected] = useState<{ telegramId: string | null; registered: boolean; balance: number | null; error?: string } | null>(null)
+
+  useEffect(() => { setInput(key?.telegramId || '') }, [key?.id, key?.telegramId])
+
+  if (!key) return null
+
+  const handleSave = () => {
+    setKeyTelegramId('nexabot', key.id, input.trim())
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
+
+  const handleDetect = async () => {
+    setChecking(true)
+    setDetected(null)
+    try {
+      const { checkNexabotBalance } = await import('@/lib/nexabot')
+      const res = await checkNexabotBalance(key.key)
+      setDetected({
+        telegramId: res.telegramId ?? null,
+        registered: res.registered === true,
+        balance: res.balance,
+        error: res.ok ? undefined : res.error,
+      })
+    } catch (e: any) {
+      setDetected({ telegramId: null, registered: false, balance: null, error: e?.message || 'Gagal cek akun' })
+    }
+    setChecking(false)
+  }
+
+  return (
+    <div className="mt-3 rounded-md border border-[#2a2a2a] bg-[#141414] p-3 space-y-2">
+      <div className="text-[12px] font-mono uppercase tracking-widest text-[#a0a0a0]">Telegram ID pemilik paket (opsional)</div>
+      <div className="flex items-center gap-2">
+        <input
+          value={input}
+          onChange={e => setInput(e.target.value.replace(/[^0-9]/g, ''))}
+          placeholder="cth. 81334531"
+          className="flex-1 rounded-md border border-[#2a2a2a] bg-[#0a0a0a] px-2.5 py-1.5 text-[12px] font-mono text-[#f5f5f5] outline-none focus:border-[#d4a017]/60"
+        />
+        <button
+          onClick={handleSave}
+          className="rounded-md border border-[#d4a017]/40 bg-[#d4a017]/10 px-3 py-1.5 text-[11px] font-semibold text-[#ffd700] hover:bg-[#d4a017]/20"
+        >
+          {saved ? 'Tersimpan ✓' : 'Simpan'}
+        </button>
+        <button
+          onClick={handleDetect}
+          disabled={checking || !!key.cookies}
+          className="rounded-md border border-[#2a2a2a] px-3 py-1.5 text-[11px] text-[#a0a0a0] hover:text-[#f5f5f5] disabled:opacity-50"
+        >
+          {checking ? 'Cek…' : 'Cek akun key'}
+        </button>
+      </div>
+      {!!key.cookies && (
+        <div className="text-[10.5px] text-emerald-400/80">
+          Mode session aktif — cek saldo tidak berlaku (paket Unlimited lewat /api/v1/generate).
+        </div>
+      )}
+      {detected && (
+        <div className="text-[10.5px] text-[#a0a0a0]">
+          {detected.error
+            ? <>Gagal cek: <span className="text-rose-300">{detected.error}</span></>
+            : <>Key ini terikat ke Telegram ID <span className="font-mono text-[#ffd700]">{detected.telegramId || '—'}</span>{detected.registered ? ' (terdaftar)' : ' (belum terdaftar)'} · saldo {detected.balance ?? '—'} cr</>}
+        </div>
+      )}
+      <div className="text-[10.5px] text-[#a0a0a0] leading-relaxed">
+        NexaBot memotong <span className="text-[#ffd700]">0.25 cr/request</span> dari saldo akun Telegram pemilik API key ini — biaya ini dipotong oleh NexaBot, bukan oleh ARKXMotion. Kalau paket Unlimited kamu ada di akun Telegram lain, isi ID-nya di sini agar request ditagihkan ke akun itu.
+      </div>
+    </div>
+  )
+}
+
 export default function ProvidersPage() {
   const {
     keys,
     addKey,
     removeKey,
     updateKeyStatus,
+    replaceKey,
     setKeyCookies,
+    setKeyTelegramId,
     fetchMaintenance,
     isProviderMaintenance,
     getMaintenanceMessage,
@@ -375,6 +674,8 @@ export default function ProvidersPage() {
       createpulse: 'createpulse',
       galleri5: 'galleri5',
       oneover: 'oneover',
+      genspark: 'genspark',
+      riverside: 'riverside',
     }
     const providerId = providerMap[selectedProvider]
     return providerId ? isProviderMaintenance(providerId) : false
@@ -392,6 +693,8 @@ export default function ProvidersPage() {
       createpulse: 'createpulse',
       galleri5: 'galleri5',
       oneover: 'oneover',
+      genspark: 'genspark',
+      riverside: 'riverside',
     }
     const providerId = providerMap[selectedProvider]
     return providerId ? getMaintenanceMessage(providerId) : ''
@@ -423,8 +726,26 @@ export default function ProvidersPage() {
   }, [workflowId])
 
   const handleAddKey = useCallback(() => {
-    const lines = inputValue.split(/[\n,]/).map(l => l.trim()).filter(Boolean)
-    if (lines.length === 0) return
+    // NexaBot: hasil “Copy as cURL” multi-baris harus dibaca sebagai SATU key —
+    // jangan dipecah per baris (dulu pecah → header invalid & cek saldo hang).
+    // Bulk (1 key per baris) tetap didukung.
+    const nexabotBlob = selectedProvider === 'nexabot' && nexabotInputIsBlob(inputValue)
+    const rawLines = nexabotBlob
+      ? [inputValue]
+      : inputValue.split(/[\n,]/).map(l => l.trim()).filter(Boolean)
+    const lines = selectedProvider === 'nexabot'
+      ? rawLines.map(l => parseNexabotApiKeyInput(l)).filter(Boolean)
+      : rawLines
+    if (lines.length === 0) {
+      if (selectedProvider === 'nexabot') {
+        setSummaryPayload({
+          title: 'Key NexaBot tidak dikenali',
+          rows: [{ label: 'Status', value: 'Ditolak', tone: 'bad' }],
+          footer: 'Field ini untuk API key (nxb_…). Kalau yang kamu tempel adalah cURL berisi cookie, gunakan panel “Session Login Unlimited (cookie)” di bawah.',
+        })
+      }
+      return
+    }
 
     const existing = new Set(savedKeys)
     let added = 0
@@ -445,20 +766,39 @@ export default function ProvidersPage() {
     // Auto-parse Firefly JSON format: { token, apiKey, account, session }
     const parseFireflyKey = (line: string): string => {
       if (selectedProvider !== 'firefly') return line
-      try {
-        const parsed = JSON.parse(line)
-        if (parsed.token) return parsed.token
-      } catch (e) { console.warn('[Providers] Failed to parse Firefly JSON:', e) }
+      if (line.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(line)
+          if (parsed.token) return parsed.token
+        } catch (e) { console.warn('[Providers] Failed to parse Firefly JSON:', e) }
+      }
       return line
     }
 
+    // Auto-parse Riverside JSON format: { access_token, refresh_token }
+    // Plain JWT (eyJ…) is the normal input — only attempt JSON.parse when the
+    // line actually looks like JSON, so tokens don't spam warnings.
+    const parseRiversideKey = (line: string): { token: string; refreshToken?: string } => {
+      if (selectedProvider !== 'riverside') return { token: line }
+      if (line.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(line)
+          // PREFER refresh token (AMf-…) — tahan lama; JWT (eyJ…) hanya fallback
+          const refreshToken = parsed.refresh_token || parsed.refreshToken
+          const token = refreshToken || parsed.access_token || parsed.accessToken || parsed.token
+          if (token) return { token }
+        } catch (e) { console.warn('[Providers] Failed to parse Riverside JSON:', e) }
+      }
+      return { token: line }
+    }
+
     lines.forEach(line => {
-      const key = parseFireflyKey(parseOneOverKey(line))
+      const { token: key, refreshToken } = parseRiversideKey(parseFireflyKey(parseOneOverKey(line)))
       if (existing.has(key)) {
         skipped++
         return
       }
-      addKey(selectedProvider as ProviderId, key)
+      addKey(selectedProvider as ProviderId, key, undefined, refreshToken)
       existing.add(key)
       added++
     })
@@ -477,7 +817,10 @@ export default function ProvidersPage() {
   }, [inputValue, savedKeys, selectedProvider, addKey])
 
   const handleBulkUpload = useCallback(() => {
-    const lines = bulkText.split(/[\n\r]+/).map(l => l.trim()).filter(Boolean)
+    const nexabotBlob = selectedProvider === 'nexabot' && nexabotInputIsBlob(bulkText)
+    const lines = nexabotBlob
+      ? [bulkText]
+      : bulkText.split(/[\n\r]+/).map(l => l.trim()).filter(Boolean)
     if (lines.length === 0) return
 
     const existing = new Set(savedKeys)
@@ -486,26 +829,43 @@ export default function ProvidersPage() {
 
     lines.forEach(line => {
       let cleanKey = line.replace(/^[•\-*\s]+|[•\-*\s]+$/g, '').trim()
+      // NexaBot: ambil API key dari cURL/JSON & buang nilai kotor.
+      if (selectedProvider === 'nexabot') {
+        cleanKey = parseNexabotApiKeyInput(cleanKey)
+      }
       // Auto-parse Firefly JSON
-      if (selectedProvider === 'firefly') {
+      let refreshToken: string | undefined
+      if (selectedProvider === 'firefly' && cleanKey.startsWith('{')) {
         try {
           const parsed = JSON.parse(cleanKey)
           if (parsed.token) cleanKey = parsed.token
         } catch (e) { console.warn('[Providers] Failed to parse Firefly JSON:', e) }
       }
       // Auto-parse OneOver JSON
-      if (selectedProvider === 'oneover') {
+      if (selectedProvider === 'oneover' && cleanKey.startsWith('{')) {
         try {
           const parsed = JSON.parse(cleanKey)
           if (parsed.refresh_token) cleanKey = parsed.refresh_token
           else if (parsed.access_token) cleanKey = parsed.access_token
         } catch (e) { console.warn('[Providers] Failed to parse OneOver JSON:', e) }
       }
+      // Auto-parse Riverside JSON: { access_token, refresh_token }
+      if (selectedProvider === 'riverside' && cleanKey.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(cleanKey)
+          // PREFER refresh token (AMf-…) — tahan lama; JWT (eyJ…) hanya fallback
+          const tk = parsed.refresh_token || parsed.refreshToken || parsed.access_token || parsed.accessToken || parsed.token
+          if (tk) {
+            cleanKey = tk
+            refreshToken = undefined
+          }
+        } catch (e) { console.warn('[Providers] Failed to parse Riverside JSON:', e) }
+      }
       if (!cleanKey || existing.has(cleanKey)) {
         skipped++
         return
       }
-      addKey(selectedProvider as ProviderId, cleanKey)
+      addKey(selectedProvider as ProviderId, cleanKey, undefined, refreshToken)
       existing.add(cleanKey)
       added++
     })
@@ -761,8 +1121,114 @@ export default function ProvidersPage() {
         return { state: 'failed', detail: err.message || 'Error checking Genspark token' }
       }
     }
+    if (selectedProvider === 'riverside') {
+      try {
+        const { checkRiversideBalance, isRiversideJwtNearExpiry, refreshRiversideJwt } = await import('@/lib/riverside')
+        const result = await checkRiversideBalance(key)
+        if (!result.ok) {
+          return {
+            state: result.state === 'invalid' ? 'invalid' : 'failed',
+            detail: result.error || 'Gagal cek token',
+          }
+        }
+
+        // JWT mendekati expired → coba auto-refresh pakai refresh token tersimpan
+        if (isRiversideJwtNearExpiry(key)) {
+          const keyObj = keys.riverside?.find((k) => k.key === key)
+          if (keyObj?.refreshToken) {
+            const refreshed = await refreshRiversideJwt(key, keyObj.refreshToken)
+            if (refreshed.ok && refreshed.token) {
+              replaceKey('riverside', keyObj.id, refreshed.token, keyObj.refreshToken)
+              return {
+                state: 'active',
+                balance: null,
+                email: refreshed.email,
+                detail: `🔄 Token auto-refreshed ✓ (${refreshed.email || 'akun'})`,
+              }
+            }
+            return {
+              state: 'active',
+              balance: null,
+              email: result.email,
+              detail: `${result.detail || 'Token valid'} — auto-refresh gagal (${refreshed.error || 'endpoint tidak merespons'}), grab ulang dari dashboard`,
+            }
+          }
+          return {
+            state: 'active',
+            balance: null,
+            email: result.email,
+            detail: `${result.detail || 'Token valid'} — tidak ada refresh token tersimpan, grab ulang dari dashboard`,
+          }
+        }
+
+        return {
+          state: result.state,
+          balance: result.balance,
+          email: result.email,
+          detail: result.detail || 'Token valid',
+        }
+      } catch (err: any) {
+        return { state: 'failed', detail: err.message || 'Error checking Riverside token' }
+      }
+    }
+    if (selectedProvider === 'nexabot') {
+      // Cookie sesi SELALU menang atas API key (jalur Unlimited), termasuk kalau
+      // baris key ini juga menyimpan API key. Jangan panggil cek saldo di sini —
+      // endpoint /credit menggantung untuk key tak dikenal dan memicu timeout.
+      const keyRow = keys.nexabot?.find(k => k.key === key)
+      const sessionCookies = keyRow?.cookies
+        || (keyRow?.key ? undefined : keys.nexabot?.find(k => k.cookies)?.cookies)
+      if (sessionCookies) {
+        try {
+          const { checkNexabotSession } = await import('@/lib/nexabot')
+          const s = await checkNexabotSession(sessionCookies)
+          if (!s.ok) {
+            // 404 = endpoint belum ada di server (backend lama), bukan cookie invalid.
+            const notFound = /404|tidak ditemukan/i.test(s.error || '')
+            return {
+              state: notFound ? 'failed' : 'invalid',
+              detail: s.error || 'Cookie sesi ditolak — login ulang di nexabot.id lalu paste cookie baru',
+            }
+          }
+          if (!s.active) {
+            return { state: 'invalid', detail: 'Masa berlaku sesi/paket sudah berakhir — paste cookie baru' }
+          }
+          return {
+            state: 'active',
+            balance: s.balance ?? undefined,
+            detail: s.unlimited
+              ? `✓ Paket UNLIMITED aktif${s.plan ? ` · ${s.plan}` : ''} — tidak potong kredit`
+              : `Sesi aktif${s.plan ? ` · ${s.plan}` : ''} — paket Unlimited tidak terdeteksi`,
+          }
+        } catch {
+          return { state: 'active', detail: 'Session mode (cookie) — Unlimited via /api/v1/generate' }
+        }
+      }
+      if (!key) {
+        return { state: 'active', detail: 'Key session tanpa API key — siap generate' }
+      }
+      try {
+        const { checkNexabotBalance } = await import('@/lib/nexabot')
+        const result = await checkNexabotBalance(key)
+        if (!result.ok) {
+          if (/tidak valid|invalid|unauthorized|forbidden|401|403/i.test(result.error || '')) {
+            return { state: 'invalid', detail: result.error || 'API key NexaBot tidak valid' }
+          }
+          return { state: 'failed', detail: result.error || 'Gagal cek saldo NexaBot' }
+        }
+        const bal = result.balance
+        const cost = result.creditCost
+        const costPart = cost != null ? ` · ${cost} cr/request` : ''
+        if (bal != null && bal > 0) {
+          return { state: 'active', balance: bal, detail: `Credit: ${bal} cr${costPart}` }
+        }
+        return { state: 'empty', balance: 0, detail: `Credit: ${bal ?? 0} cr — habis` }
+      } catch (err: any) {
+        return { state: 'failed', detail: err.message || 'Error checking NexaBot API key' }
+      }
+    }
     return { state: 'unknown', detail: 'Cek limit belum tersedia untuk provider ini' }
-  }, [selectedProvider])
+  }, [selectedProvider, keys.riverside, keys.nexabot, replaceKey])
 
   const handleCheckAll = useCallback(async () => {
     if (savedKeys.length === 0) return
@@ -866,6 +1332,7 @@ export default function ProvidersPage() {
       />
 
       <ProviderStatusBar selectedProvider={selectedProvider} onSelect={setSelectedProvider} />
+      <TokenSyncHistory />
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <div className="w-full lg:w-[calc(66.666%-0.5rem)] relative">
@@ -920,6 +1387,8 @@ export default function ProvidersPage() {
                     createpulse: 'createpulse',
                     galleri5: 'galleri5',
                     oneover: 'oneover',
+                    genspark: 'genspark',
+                    riverside: 'riverside',
                   }
                   const providerId = providerMap[p.key]
                   const isMaint = providerId ? isProviderMaintenance(providerId) : false
@@ -1073,6 +1542,23 @@ export default function ProvidersPage() {
                     className="border-orange-500/50 bg-orange-500/10 text-orange-300 hover:bg-orange-500/20 hover:border-orange-500/70"
                   >
                     <Key className="h-3.5 w-3.5" /> Grab Token dari framia.converge.ai
+                  </Button>
+                )}
+                {selectedProvider === 'riverside' && (
+                  <Button
+                    variant="outline"
+                    onClick={async () => {
+                      const { getRiversideBookmarklet, detectRiversideTokenFormat } = await import('@/lib/riverside')
+                      const snippet = getRiversideBookmarklet()
+                      await navigator.clipboard.writeText(snippet)
+                      const first = keys.riverside?.[0]?.key
+                      const fmt = first ? detectRiversideTokenFormat(first) : null
+                      const fmtNote = fmt === 'jwt' ? ' (JWT — akan expired, ambil ulang ~1 jam)' : fmt === 'firebase-refresh' ? ' (Firebase refresh — tahan lama)' : fmt === 'opaque' ? ' (token panjang)' : ''
+                      alert(`📋 Script copied!\n\n1. Buka riverside.com/dashboard (login dulu)\n2. Buka DevTools Console (F12 → Console)\n3. Paste script & Enter\n4. Token session otomatis copy → paste di sini\n\nToken tersimpan kamu: ${keys.riverside?.length || 0}${fmt ? ' · format: ' + fmt + fmtNote : ''}`)
+                    }}
+                    className="border-red-500/50 bg-red-500/10 text-red-300 hover:bg-red-500/20 hover:border-red-500/70"
+                  >
+                    <Key className="h-3.5 w-3.5" /> Grab Token dari riverside.com
                   </Button>
                 )}
               </div>
@@ -1310,6 +1796,21 @@ export default function ProvidersPage() {
                 <GensparkCookiesInput
                   providerKeys={keys['genspark'] || []}
                   setKeyCookies={setKeyCookies}
+                />
+              )}
+              {/* NexaBot Session Cookies Input (mode Unlimited) */}
+              {selectedProvider === 'nexabot' && (
+                <NexabotSessionInput
+                  providerKeys={keys['nexabot'] || []}
+                  addKey={addKey}
+                  setKeyCookies={setKeyCookies}
+                />
+              )}
+              {/* NexaBot Telegram ID Input */}
+              {selectedProvider === 'nexabot' && (
+                <NexabotTelegramInput
+                  providerKeys={keys['nexabot'] || []}
+                  setKeyTelegramId={setKeyTelegramId}
                 />
               )}
             </div>

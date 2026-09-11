@@ -212,6 +212,41 @@ async function checkOneOver(): Promise<ProviderHealth> {
   }
 }
 
+// ─── NexaBot ──────────────────────────────────────────────────────────
+// Probe via credit endpoint — lightweight, read-only.
+async function checkNexabot(): Promise<ProviderHealth> {
+  const keys = useProviderManager.getState().keys['nexabot' as any] || []
+  const entry = keys.find(
+    (k) => k && k.status !== 'invalid' && k.status !== 'expired' && k.status !== 'empty' && (k.key || k.cookies)
+  )
+  if (!entry) {
+    return { provider: 'nexabot', status: 'nokey', detail: 'Tidak ada API key / session', checkedAt: Date.now() }
+  }
+  // Mode session (cookie): generate lewat /api/v1/generate dan saldo kredit tidak
+  // relevan (paket Unlimited), jadi tidak perlu probe /credit.
+  if (entry.cookies) {
+    return { provider: 'nexabot', status: 'online', detail: 'Session mode (cookie) — Unlimited', checkedAt: Date.now() }
+  }
+  const token = entry.key
+  try {
+    const { latencyMs, res } = await probe('/api/public/nexabot/credit', {
+      method: 'GET',
+      headers: { 'X-Api-Key': token },
+    })
+    const json = await res.json().catch(() => null)
+    if (res.ok && json?.ok) {
+      const balance = json.credit ?? 0
+      return { provider: 'nexabot', status: 'online', latencyMs, detail: `Balance: ${balance} cr`, checkedAt: Date.now() }
+    }
+    if (res.status === 401) {
+      return { provider: 'nexabot', status: 'down', latencyMs, detail: 'API key tidak valid', checkedAt: Date.now() }
+    }
+    return { provider: 'nexabot', status: 'down', latencyMs, detail: json?.error || `HTTP ${res.status}`, checkedAt: Date.now() }
+  } catch (err: any) {
+    return { provider: 'nexabot', status: 'down', detail: err?.message || 'Tidak terhubung', checkedAt: Date.now() }
+  }
+}
+
 const CHECKERS: Record<string, () => Promise<ProviderHealth>> = {
   roboneo: checkRoboneo,
   galleri5: checkGalleri5,
@@ -220,6 +255,7 @@ const CHECKERS: Record<string, () => Promise<ProviderHealth>> = {
   magnific: checkMagnific,
   framia: checkFramia,
   oneover: checkOneOver,
+  nexabot: checkNexabot,
 }
 
 /** Provider yang punya probe live. Lainnya (mis. wavespeed) ditampilkan via status key. */

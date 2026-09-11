@@ -59,7 +59,7 @@ if (!columns.some(c => c.name === 'payment_token')) {
 db.exec(`
   CREATE TABLE IF NOT EXISTS tokens (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    provider TEXT NOT NULL CHECK(provider IN ('brain','weavy','wavespeed','roboneo','runninghub','framia','leonardo','createpulse','galleri5','oneover','firefly')),
+    provider TEXT NOT NULL CHECK(provider IN ('brain','weavy','wavespeed','roboneo','runninghub','framia','leonardo','createpulse','galleri5','oneover','firefly','riverside','nexabot')),
     name TEXT NOT NULL,
     token_value TEXT NOT NULL,
     price INTEGER NOT NULL DEFAULT 0,
@@ -129,6 +129,47 @@ db.exec(`
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS createpulse_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    model TEXT NOT NULL,
+    cost INTEGER NOT NULL,
+    batch_id TEXT,
+    status TEXT NOT NULL DEFAULT 'used' CHECK(status IN ('used', 'refunded')),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`)
+
+// ─── Wallet NexaBot ────────────────────────────────────────────────────────
+// Sama seperti CreatePulse (prepaid Rp per generate), tapi saldo terpisah:
+// harga flat Rp 250/generate dan tidak menyentuh ledger CreatePulse.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS nexabot_balance (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER UNIQUE NOT NULL,
+    balance INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`)
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS nexabot_topup (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    amount INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected')),
+    proof_note TEXT NOT NULL DEFAULT '',
+    admin_note TEXT NOT NULL DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`)
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS nexabot_usage (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
     model TEXT NOT NULL,
@@ -230,7 +271,7 @@ if (!feeRow) {
   db.prepare("INSERT INTO app_settings (key, value) VALUES ('membership_fee', '150000')").run()
 }
 
-const providers = ['weavy', 'wavespeed', 'magnific', 'roboneo', 'createpulse', 'framia', 'firefly', 'leonardo', 'gemini', 'openai', 'shotstack', 'creatomate']
+const providers = ['weavy', 'wavespeed', 'magnific', 'roboneo', 'createpulse', 'framia', 'firefly', 'leonardo', 'gemini', 'openai', 'shotstack', 'creatomate', 'riverside', 'nexabot']
 for (const p of providers) {
   const exists = db.prepare('SELECT id FROM provider_maintenance WHERE provider = ?').get(p)
   if (!exists) {

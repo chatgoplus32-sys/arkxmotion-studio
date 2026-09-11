@@ -1,0 +1,7 @@
+name = "genspark-proxy"
+main = "genspark-proxy.js"
+compatibility_date = "2024-01-01"
+
+kv_namespaces = [
+  { binding = "GENSPARK_COOKIES", id = "eff2e281e53b401c8ac929127d3cf3f9" }
+]

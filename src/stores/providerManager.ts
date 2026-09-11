@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'runninghub' | 'createpulse' | 'framia' | 'firefly' | 'leonardo' | 'gemini' | 'openai' | 'shotstack' | 'creatomate' | 'galleri5' | 'oneover' | 'genspark'
+export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'runninghub' | 'createpulse' | 'framia' | 'firefly' | 'leonardo' | 'gemini' | 'openai' | 'shotstack' | 'creatomate' | 'galleri5' | 'oneover' | 'genspark' | 'riverside' | 'nexabot'
 
 export const HIDDEN_PROVIDERS: ProviderId[] = []
 
@@ -12,7 +12,10 @@ export interface ProviderKey {
   balance?: number | null
   email?: string
   lastChecked?: number
-  cookies?: string  // Session cookies for Genspark ask_proxy
+  cookies?: string  // Session cookies for Genspark ask_proxy / NexaBot session mode
+  cookiesAt?: number  // kapan cookie session disimpan (indikator masa berlaku)
+  refreshToken?: string  // Riverside: refresh token pendamping JWT session
+  telegramId?: string  // NexaBot: ID Telegram pemilik paket Unlimited (dikirim sebagai telegram_id saat submit)
 }
 
 export interface ProviderConfig {
@@ -192,6 +195,26 @@ export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
     minCredits: 0,
     supportsBalance: false,
   },
+  riverside: {
+    id: 'riverside',
+    name: 'Riverside',
+    icon: '🎙️',
+    description: 'Riverside AI — video/image generation & editing via riverside.com dashboard',
+    keyPlaceholder: 'Paste token session (eyJ… JWT) atau Firebase refresh (AMf-…)...',
+    keyFormat: 'JWT session / Firebase refresh token dari riverside.com (grab via script)',
+    minCredits: 0,
+    supportsBalance: false,
+  },
+  nexabot: {
+    id: 'nexabot',
+    name: 'NexaBot',
+    icon: '🤖',
+    description: 'NexaBot AI via nexabot.id — model Google Omni (text, image & video reference to video)',
+    keyPlaceholder: 'Paste your NexaBot API key (nxb_...)',
+    keyFormat: 'API key (nxb_...)',
+    minCredits: 0.25,
+    supportsBalance: true,
+  },
 }
 
 function getDefaultMaintenance(): Record<ProviderId, MaintenanceInfo> {
@@ -212,6 +235,8 @@ function getDefaultMaintenance(): Record<ProviderId, MaintenanceInfo> {
     galleri5: { isMaintenance: false, message: '' },
     oneover: { isMaintenance: false, message: '' },
     genspark: { isMaintenance: false, message: '' },
+    riverside: { isMaintenance: false, message: '' },
+    nexabot: { isMaintenance: false, message: '' },
   }
 }
 
@@ -250,11 +275,13 @@ export type ProviderState = {
   maintenance: Record<ProviderId, MaintenanceInfo>
 
   setActiveProvider: (provider: ProviderId) => void
-  addKey: (provider: ProviderId, key: string, name?: string) => void
+  addKey: (provider: ProviderId, key: string, name?: string, refreshToken?: string) => void
   importKeys: (provider: ProviderId, tokenValues: string[], namePrefix?: string) => number
   removeKey: (provider: ProviderId, keyId: string) => void
   updateKeyStatus: (provider: ProviderId, keyId: string, status: ProviderKey['status'], balance?: number, email?: string) => void
+  replaceKey: (provider: ProviderId, keyId: string, newKey: string, refreshToken?: string) => void
   setKeyCookies: (provider: ProviderId, keyId: string, cookies: string) => void
+  setKeyTelegramId: (provider: ProviderId, keyId: string, telegramId: string) => void
   getActiveKey: (provider: ProviderId) => ProviderKey | null
   getFirstValidKey: (provider: ProviderId) => ProviderKey | null
   findKeyById: (provider: ProviderId, keyId: string) => ProviderKey | undefined
@@ -292,6 +319,8 @@ function loadKeysFromStorage(): Record<ProviderId, ProviderKey[]> {
     galleri5: [],
     oneover: [],
     genspark: [],
+    riverside: [],
+    nexabot: [],
   }
   const validIds = Object.keys(defaults) as string[]
 
@@ -372,12 +401,13 @@ export const useProviderManager = create<ProviderState>((set, get) => ({
     localStorage.setItem('arkxmotion.activeProvider', provider)
   },
 
-  addKey: (provider, key, name) => {
+  addKey: (provider, key, name, refreshToken) => {
     const newKey: ProviderKey = {
       id: generateId(),
       key,
       name: name || `Key ${get().keys[provider].length + 1}`,
       status: 'unknown',
+      refreshToken,
     }
     
     // ✨ VALIDASI SAAT PENAMBAHAN: Validasi dan sesuaikan status
@@ -461,12 +491,42 @@ export const useProviderManager = create<ProviderState>((set, get) => ({
     })
   },
 
+  replaceKey: (provider, keyId, newKey, refreshToken) => {
+    set((state) => {
+      const updated = {
+        ...state.keys,
+        [provider]: state.keys[provider].map((k) =>
+          k.id === keyId
+            ? { ...k, key: newKey, refreshToken: refreshToken ?? k.refreshToken, status: 'active', lastChecked: Date.now() }
+            : k
+        ),
+      }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))
+      return { keys: updated }
+    })
+  },
+
   setKeyCookies: (provider, keyId, cookies) => {
     set((state) => {
       const updated = {
         ...state.keys,
         [provider]: state.keys[provider].map((k) =>
-          k.id === keyId ? { ...k, cookies } : k
+          k.id === keyId
+            ? { ...k, cookies, cookiesAt: cookies ? Date.now() : undefined }
+            : k
+        ),
+      }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))
+      return { keys: updated }
+    })
+  },
+
+  setKeyTelegramId: (provider, keyId, telegramId) => {
+    set((state) => {
+      const updated = {
+        ...state.keys,
+        [provider]: state.keys[provider].map((k) =>
+          k.id === keyId ? { ...k, telegramId } : k
         ),
       }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))

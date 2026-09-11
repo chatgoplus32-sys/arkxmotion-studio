@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
+import { useTokenSyncStore } from '@/stores/tokenSyncStore'
 import { sendNotification } from '@/lib/notify'
 import {
   LayoutDashboard,
@@ -23,6 +24,8 @@ import {
   Coins,
   SlidersHorizontal,
   Bell,
+  ImagePlus,
+  ExternalLink,
 
   ShoppingCart,
   Route,
@@ -48,6 +51,7 @@ const mainNav: NavItem[] = [
 const generateNav: NavItem[] = [
   { label: 'Motion Control', href: '/generate/motion', icon: <Video className="h-4 w-4" /> },
   { label: 'Image to Video', href: '/generate/image-to-video', icon: <Image className="h-4 w-4" /> },
+  { label: 'Edit Image', href: '/generate/edit-image', icon: <ImagePlus className="h-4 w-4" /> },
 
   { label: 'Bulk Fashion', href: '/generate/bulk-fashion', icon: <ShoppingBag className="h-4 w-4" /> },
   { label: 'Product UGC', href: '/generate/ugc', icon: <Image className="h-4 w-4" /> },
@@ -74,14 +78,23 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
   const navigate = useNavigate()
   const { user, token, logout } = useAuthStore()
   const addToast = useToastStore((state) => state.addToast)
+  const syncUnread = useTokenSyncStore((s) => s.unread)
   const [pendingCount, setPendingCount] = useState(0)
   const prevPendingRef = useRef<number | null>(null)
   const lastNotifiedRef = useRef(0)
 
-  const toolsNav = toolsNavBase.filter((item) => {
-    if (item.href === '/topup/createpulse' && user?.role === 'admin') return false
-    return true
-  })
+  const toolsNav = toolsNavBase
+    .filter((item) => {
+      if (item.href === '/topup/createpulse' && user?.role === 'admin') return false
+      return true
+    })
+    .map((item) => {
+      // Badge unread auto-sync token (Providers) — realtime, hilang saat dibuka
+      if (item.href === '/providers' && syncUnread > 0) {
+        return { ...item, badge: syncUnread > 99 ? '99+' : String(syncUnread) }
+      }
+      return item
+    })
 
   const handleLogout = () => {
     logout()
@@ -163,6 +176,24 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
               </span>
             )}
           </div>
+        ) : item.href.startsWith('http') ? (
+          <a
+            key={item.href}
+            href={item.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={cn(
+              'flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition-all hover:bg-accent',
+              'text-muted-foreground hover:text-foreground'
+            )}
+            title={collapsed ? item.label : undefined}
+          >
+            {item.icon}
+            {!collapsed && <span>{item.label}</span>}
+            {!collapsed && (
+              <ExternalLink className="ml-auto h-3.5 w-3.5 opacity-50" />
+            )}
+          </a>
         ) : (
           <Link
             key={item.href}

@@ -31,7 +31,7 @@ interface ActivityLog {
 const PROVIDER_ICONS: Record<string, string> = {
   weavy: '🌊', wavespeed: '⚡', magnific: '✨', roboneo: '🤖', createpulse: '💜',
   framia: '🎬', galleri5: '🎬', leonardo: '🎨', oneover: '🔮', firefly: '🔥',
-  gemini: '💎', openai: '🟢',
+  gemini: '💎', openai: '🟢', riverside: '🎙️',
 }
 
 const STATUS_CONFIG: Record<string, { icon: React.ReactNode; color: string; label: string }> = {

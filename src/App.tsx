@@ -8,6 +8,11 @@ import { ToastContainer } from '@/components/ui/Toast'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { lazyWithRetry } from '@/lib/lazyWithRetry'
 import { initChunkErrorInterceptor } from '@/lib/chunkInterceptor'
+import { useProviderManager } from '@/stores/providerManager'
+import { useToastStore } from '@/stores/toastStore'
+import { isRiversideJwtNearExpiry, refreshRiversideJwt } from '@/lib/riverside'
+import { pollAutoSyncQueues } from '@/lib/tokenAutoSync'
+import { startNexabotSessionMonitor } from '@/lib/nexabotSessionMonitor'
 
 import LandingPage from '@/pages/LandingPage'
 import LoginPage from '@/pages/Login'
@@ -24,6 +29,7 @@ const ImageToVideoPage = lazyWithRetry(() => import('@/pages/ImageToVideo'))
 const UpscalerPage = lazyWithRetry(() => import('@/pages/Upscaler'))
 const UGCPage = lazyWithRetry(() => import('@/pages/UGC'))
 const TextToVideoPage = lazyWithRetry(() => import('@/pages/TextToVideo'))
+const EditImagePage = lazyWithRetry(() => import('@/pages/EditImage'))
 const ProvidersPage = lazyWithRetry(() => import('@/pages/Providers'))
 const RoutingProviderPage = lazyWithRetry(() => import('@/pages/RoutingProvider'))
 const SettingsPage = lazyWithRetry(() => import('@/pages/Settings'))
@@ -54,7 +60,63 @@ initChunkErrorInterceptor()
 
 export default function App() {
   const { sidebarCollapsed, toggleSidebar } = useAppStore()
+  const addToast = useToastStore((s) => s.addToast)
   const startX = useRef(0)
+
+  // Riverside: auto-refresh JWT session yang mendekati expired (hanya untuk
+  // key bertipe refresh-token / AMf-; JWT session murni di-refresh oleh
+  // extension keep-alive lewat auto-sync di bawah, jadi di sini dilewati).
+  useEffect(() => {
+    const refreshExpiring = async () => {
+      const pm = useProviderManager.getState()
+      const keys = pm.keys.riverside || []
+      for (const k of keys) {
+        if (k.status === 'invalid' || k.status === 'expired') continue
+        if (!isRiversideJwtNearExpiry(k.key)) continue
+        // Tanpa refresh token tersimpan, serahkan ke auto-sync extension
+        // (token baru masuk antrian tiap ±4 menit) — jangan warn spam.
+        if (!k.refreshToken) continue
+        const result = await refreshRiversideJwt(k.key, k.refreshToken)
+        if (result.ok && result.token) {
+          pm.replaceKey('riverside', k.id, result.token, k.refreshToken)
+          addToast('🔄 Token Riverside auto-refresh berhasil', 'success')
+        } else {
+          pm.updateKeyStatus('riverside', k.id, 'expired')
+          addToast(`Token Riverside expired — grab ulang: ${result.error || ''}`, 'warning')
+        }
+      }
+    }
+    // Jalankan sekali saat app load, lalu tiap 30 detik (lebih cepat dari 60)
+    refreshExpiring()
+    const timer = setInterval(refreshExpiring, 30000)
+    return () => clearInterval(timer)
+  }, [addToast])
+
+  // Auto-sync extension→app untuk provider token pendek (Riverside, Roboneo,
+  // Weavy, Leonardo). Extension mengirim token terbaru ke /api/sync-tokens —
+  // app polling tiap 10 detik: token baru otomatis mengganti key yang expired,
+  // LALU LANGSUNG menjalankan Cek Limit & Status untuk key tsb (balance &
+  // pool summary segar), plus toast + badge sidebar + riwayat pergantian.
+  useEffect(() => {
+    let cancelled = false
+    const run = async () => {
+      if (cancelled) return
+      await pollAutoSyncQueues()
+    }
+    run()
+    const timer = setInterval(run, 10000)
+    return () => { cancelled = true; clearInterval(timer) }
+  }, [])
+
+  // NexaBot: pantau sesi cookie (paket Unlimited) di latar belakang supaya user
+  // diberi tahu SEBELUM generate kalau sesi sudah/mendekati kedaluwarsa — job
+  // NexaBot bisa berjalan menit-an, dan sesi yang mati di tengah job memaksa
+  // fallback ke API key pay-as-you-go (0.25 cr). Probe tiap 5 menit + langsung
+  // saat cookie baru masuk dari extension (`aatools:keys-changed`).
+  useEffect(() => {
+    const stop = startNexabotSessionMonitor()
+    return stop
+  }, [])
   useEffect(() => {
     const onStart = (e: TouchEvent) => { startX.current = e.touches[0].clientX }
     const onMove = (e: TouchEvent) => {
@@ -113,6 +175,7 @@ export default function App() {
                         <Route path="/generate/upscaler" element={<UpscalerPage />} />
                         <Route path="/generate/image-to-video" element={<ImageToVideoPage />} />
                         <Route path="/generate/image" element={<TextToVideoPage />} />
+                        <Route path="/generate/edit-image" element={<EditImagePage />} />
                         <Route path="/providers" element={<ProvidersPage />} />
                         <Route path="/manage/routing" element={<RoutingProviderPage />} />
                         <Route path="/settings" element={<SettingsPage />} />

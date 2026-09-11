@@ -4,31 +4,49 @@ import { authenticateToken, requireAdmin, AuthRequest } from '../middleware/auth
 
 const router = Router()
 
-router.get('/pending', authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
+/**
+ * Peta tabel wallet per provider. Nama tabel TIDAK pernah diambil mentah dari
+ * request — hanya dipilih dari daftar putih ini, jadi tidak ada jalan untuk
+ * menyuntik nama tabel lewat parameter `provider`.
+ */
+const WALLETS = {
+  createpulse: { topup: 'createpulse_topup', balance: 'createpulse_balance' },
+  nexabot: { topup: 'nexabot_topup', balance: 'nexabot_balance' },
+} as const
+type WalletKey = keyof typeof WALLETS
+
+function resolveWallet(value: unknown): (typeof WALLETS)[WalletKey] {
+  const key = String(value || 'createpulse')
+  return key in WALLETS ? WALLETS[key as WalletKey] : WALLETS.createpulse
+}
+
+router.get('/pending', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
   try {
+    const w = resolveWallet(req.query.provider)
     const topups = db.prepare(`
       SELECT t.*, u.email, u.name as user_name
-      FROM createpulse_topup t
+      FROM ${w.topup} t
       JOIN users u ON t.user_id = u.id
       WHERE t.status = 'pending'
       ORDER BY t.created_at ASC
     `).all()
-    res.json({ topups })
+    res.json({ topups, provider: req.query.provider || 'createpulse' })
   } catch (error) {
     console.error('List pending topups error:', error)
     res.status(500).json({ error: 'Internal server error' })
   }
 })
 
-router.get('/all', authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
+router.get('/all', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
   try {
+    const w = resolveWallet(req.query.provider)
     const topups = db.prepare(`
       SELECT t.*, u.email, u.name as user_name
-      FROM createpulse_topup t
+      FROM ${w.topup} t
       JOIN users u ON t.user_id = u.id
       ORDER BY t.created_at DESC
     `).all()
-    res.json({ topups })
+    res.json({ topups, provider: req.query.provider || 'createpulse' })
   } catch (error) {
     console.error('List all topups error:', error)
     res.status(500).json({ error: 'Internal server error' })
@@ -37,22 +55,23 @@ router.get('/all', authenticateToken, requireAdmin, (_req: AuthRequest, res: Res
 
 router.patch('/approve', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
   try {
+    const w = resolveWallet(req.body?.provider)
     const { id, admin_note } = req.body
     if (!id) return res.status(400).json({ error: 'Topup id required' })
 
-    const topup = db.prepare('SELECT * FROM createpulse_topup WHERE id = ? AND status = ?').get(id, 'pending') as any
+    const topup = db.prepare(`SELECT * FROM ${w.topup} WHERE id = ? AND status = ?`).get(id, 'pending') as any
     if (!topup) return res.status(404).json({ error: 'Pending topup not found' })
 
-    db.prepare("UPDATE createpulse_topup SET status = 'approved', admin_note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(admin_note || '', id)
+    db.prepare(`UPDATE ${w.topup} SET status = 'approved', admin_note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(admin_note || '', id)
 
-    let bal = db.prepare('SELECT balance FROM createpulse_balance WHERE user_id = ?').get(topup.user_id) as { balance: number } | undefined
+    let bal = db.prepare(`SELECT balance FROM ${w.balance} WHERE user_id = ?`).get(topup.user_id) as { balance: number } | undefined
     if (!bal) {
-      db.prepare('INSERT INTO createpulse_balance (user_id, balance) VALUES (?, ?)').run(topup.user_id, topup.amount)
+      db.prepare(`INSERT INTO ${w.balance} (user_id, balance) VALUES (?, ?)`).run(topup.user_id, topup.amount)
     } else {
-      db.prepare('UPDATE createpulse_balance SET balance = balance + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?').run(topup.amount, topup.user_id)
+      db.prepare(`UPDATE ${w.balance} SET balance = balance + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`).run(topup.amount, topup.user_id)
     }
 
-    const updated = db.prepare('SELECT balance FROM createpulse_balance WHERE user_id = ?').get(topup.user_id) as { balance: number }
+    const updated = db.prepare(`SELECT balance FROM ${w.balance} WHERE user_id = ?`).get(topup.user_id) as { balance: number }
     res.json({ message: 'Topup approved', balance: updated.balance })
   } catch (error) {
     console.error('Approve topup error:', error)
@@ -62,13 +81,14 @@ router.patch('/approve', authenticateToken, requireAdmin, (req: AuthRequest, res
 
 router.patch('/reject', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
   try {
+    const w = resolveWallet(req.body?.provider)
     const { id, admin_note } = req.body
     if (!id) return res.status(400).json({ error: 'Topup id required' })
 
-    const topup = db.prepare('SELECT * FROM createpulse_topup WHERE id = ? AND status = ?').get(id, 'pending') as any
+    const topup = db.prepare(`SELECT * FROM ${w.topup} WHERE id = ? AND status = ?`).get(id, 'pending') as any
     if (!topup) return res.status(404).json({ error: 'Pending topup not found' })
 
-    db.prepare("UPDATE createpulse_topup SET status = 'rejected', admin_note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(admin_note || '', id)
+    db.prepare(`UPDATE ${w.topup} SET status = 'rejected', admin_note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(admin_note || '', id)
 
     res.json({ message: 'Topup rejected' })
   } catch (error) {
@@ -79,8 +99,9 @@ router.patch('/reject', authenticateToken, requireAdmin, (req: AuthRequest, res:
 
 router.get('/balance/:userId', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
   try {
+    const w = resolveWallet(req.query.provider)
     const userId = parseInt(req.params.userId)
-    let bal = db.prepare('SELECT balance FROM createpulse_balance WHERE user_id = ?').get(userId) as { balance: number } | undefined
+    let bal = db.prepare(`SELECT balance FROM ${w.balance} WHERE user_id = ?`).get(userId) as { balance: number } | undefined
     if (!bal) bal = { balance: 0 }
     res.json({ balance: bal.balance })
   } catch (error) {

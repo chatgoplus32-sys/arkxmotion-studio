@@ -24,6 +24,7 @@ const TOKEN_SCRIPTS: Record<string, { script: string; instructions: string[]; ur
 })();`,
     instructions: [
       'Buka app.leonardo.ai dan login',
+      'Setelah halaman dashboard kebuka, extension auto-sync JWT terbaru tiap ±45 dtk — key expired di app diganti otomatis, tanpa copy-paste',
       'Buka DevTools (F12) → tab Network',
       'Filter: api.leonardo.ai',
       'Klik request pertama → Headers → Authorization',
@@ -95,6 +96,7 @@ const TOKEN_SCRIPTS: Record<string, { script: string; instructions: string[]; ur
 })();`,
     instructions: [
       'Buka app.weavy.ai dan login',
+      'Setelah halaman dashboard kebuka, extension auto-sync token terbaru tiap ±45 dtk — key expired di app diganti otomatis, tanpa copy-paste',
       'Buka DevTools Console (F12 → Console)',
       'Paste script di atas & Enter',
       'Token otomatis copy dari IndexedDB',
@@ -171,6 +173,66 @@ const TOKEN_SCRIPTS: Record<string, { script: string; instructions: string[]; ur
       'Token otomatis copy ke clipboard',
     ],
   },
+  riverside: {
+    url: 'https://riverside.com/dashboard',
+    script: `// ARKXMotion Token Grab — Riverside
+(async () => {
+  const grab = async () => {
+    const found = [];
+    const isToken = (v) => v && typeof v === 'string' && (v.startsWith('eyJ') || v.startsWith('AMf')) && v.length > 40;
+    // 1. localStorage / sessionStorage
+    for (const s of [localStorage, sessionStorage]) {
+      for (let i = 0; i < s.length; i++) {
+        const v = s.getItem(s.key(i)) || '';
+        if (isToken(v)) found.push(v);
+        try {
+          const j = JSON.parse(v);
+          if (j && typeof j === 'object') {
+            const c = j.access_token || j.idToken || j.refreshToken || j.refresh_token || j.token || j.id_token || (j.stsTokenManager && (j.stsTokenManager.refreshToken || j.stsTokenManager.accessToken));
+            if (isToken(c)) found.push(c);
+          }
+        } catch {}
+      }
+    }
+    // 2. Firebase IndexedDB
+    try {
+      const dbs = await indexedDB.databases();
+      for (const db of dbs) {
+        if (!db.name?.includes('firebase')) continue;
+        const idb = await new Promise((resolve) => { const req = indexedDB.open(db.name); req.onsuccess = () => resolve(req.result); });
+        for (const name of Array.from(idb.objectStoreNames)) {
+          const tx = idb.transaction(name, 'readonly');
+          const data = await new Promise((resolve) => { const req = tx.objectStore(name).getAll(); req.onsuccess = () => resolve(req.result); });
+          for (const item of data) {
+            const sts = item?.value?.stsTokenManager || item?.stsTokenManager;
+            if (sts && isToken(sts.refreshToken)) found.push(sts.refreshToken);
+            else if (sts && isToken(sts.accessToken)) found.push(sts.accessToken);
+          }
+        }
+      }
+    } catch {}
+    // 3. Cookies raw JWT
+    for (const c of document.cookie.split(';')) {
+      const v = decodeURIComponent(c.trim().split('=').slice(1).join('='));
+      if (v.startsWith('eyJ') && v.indexOf('.') !== -1) found.push(v);
+    }
+    // Prefer refresh token (AMf-), else JWT
+    const best = found.find((t) => t.startsWith('AMf')) || found[0];
+    return best || null;
+  };
+  const t = await grab();
+  if (t) { try { await navigator.clipboard.writeText(t); } catch {}
+    alert('✅ Riverside token copied! Format: ' + (t.startsWith('AMf') ? 'Firebase refresh (tahan lama)' : 'JWT (expired ~1 jam)') + '\n\n' + t.slice(0, 30) + '...\n\nPaste ke ARKXMotion → Providers → Riverside'); }
+  else { alert('❌ Token not found.\n\nPastikan sudah login di riverside.com/dashboard.\n\nAlternatif: F12 → Network → klik request API → Headers → salin value "Authorization: Bearer ..."'); }
+})();`,
+    instructions: [
+      'Buka riverside.com/dashboard dan login',
+      'Buka DevTools Console (F12 → Console)',
+      'Paste script di atas & Enter — script otomatis pilih token termuda',
+      'Session JWT Riverside cuma ±10 menit — grab ulang kalau expired',
+      'Paste di ARKXMotion → Providers → Riverside',
+    ],
+  },
   genspark: {
     url: 'https://www.genspark.ai/settings/api-keys',
     script: `// ARKXMotion Token Grab — Genspark AI
@@ -227,6 +289,33 @@ const TOKEN_SCRIPTS: Record<string, { script: string; instructions: string[]; ur
       'Key otomatis copy, paste ke ARKXMotion Providers',
     ],
   },
+  nexabot: {
+    url: 'https://nexabot.id',
+    // NexaBot memakai cookie session HttpOnly → Console TIDAK bisa membacanya.
+    // Script ini hanya alat diagnosa; sumber cookie yang andal adalah extension
+    // (chrome.cookies) di atas.
+    script: `// NexaBot Session Check — cookie sesi HttpOnly TIDAK terbaca dari Console.
+// Pakai extension "NexaBot Session Cookie Manager" (tombol Download ZIP di atas):
+// dia membaca cookie via chrome.cookies lalu auto-sync ke app.
+(async () => {
+  try {
+    const r = await fetch('https://nexabot.id/api/v1/credits', { credentials: 'include' });
+    alert('HTTP ' + r.status + '\n\n' + (r.ok
+      ? 'Sesi login aktif ✓ — ambil cookie-nya lewat extension (HttpOnly tidak bisa dari Console).'
+      : 'Sesi belum aktif / kedaluwarsa. Login ulang di nexabot.id lalu pakai extension.'));
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+})();`,
+    instructions: [
+      'Download & install extension "NexaBot Session Cookie Manager" di atas (Load unpacked)',
+      'Buka app ARKXMotion ini di tab lain dan login — extension mengambil izin sync (JWT akunmu) dari tab itu sendiri, jadi tidak ada token yang perlu di-paste',
+      'Buka nexabot.id dan login dengan akun yang punya paket Unlimited',
+      'Cookie HttpOnly langsung terbaca lewat chrome.cookies — popup extension harus menunjukkan "sesi terdeteksi ✓"',
+      'Cookie otomatis terkirim ke app (maks. 10 detik) — panel Providers → NexaBot → Session terisi sendiri. Tombol "Copy Cookie Session" + "Hubungkan ke app" tersedia kalau perlu manual',
+      'Buka panel Session di Providers, cek status paket, lalu generate seperti biasa',
+    ],
+  },
 }
 
 // ─── Plugin info ─────────────────────────────────────────────────────────────
@@ -248,7 +337,7 @@ const PLUGINS: PluginInfo[] = [
     name: 'Leonardo AI',
     icon: '🎨',
     color: '#facc15',
-    description: 'Auto-grab Bearer JWT dari app.leonardo.ai',
+    description: 'Auto-grab + AUTO-SYNC Bearer JWT dari app.leonardo.ai — token expired diganti otomatis',
     type: 'extension',
     hasScript: true,
     hasExtension: true,
@@ -281,7 +370,7 @@ const PLUGINS: PluginInfo[] = [
     name: 'Weavy',
     icon: '☁️',
     color: '#3b82f6',
-    description: 'Auto-grab token dari app.weavy.ai via IndexedDB',
+    description: 'Auto-grab + AUTO-SYNC token dari app.weavy.ai via IndexedDB — token expired diganti otomatis',
     type: 'extension',
     hasScript: true,
     hasExtension: true,
@@ -303,7 +392,7 @@ const PLUGINS: PluginInfo[] = [
     name: 'Roboneo',
     icon: '🤖',
     color: '#f97316',
-    description: 'Auto-grab token dari Roboneo dashboard',
+    description: 'Auto-grab + AUTO-SYNC token dari Roboneo dashboard — token expired diganti otomatis',
     type: 'extension',
     hasScript: true,
     hasExtension: true,
@@ -317,6 +406,30 @@ const PLUGINS: PluginInfo[] = [
     description: 'Auto-grab API key dari genspark.ai — Kling V3 Motion Control + 14 video models',
     type: 'extension',
     hasScript: true,
+    hasExtension: true,
+    status: 'available',
+  },
+  {
+    id: 'riverside',
+    name: 'Riverside',
+    icon: '🎙️',
+    color: '#ff6b6b',
+    description: 'Auto-grab + keep-alive + AUTO-SYNC JWT terbaru ke app (token tidak pernah mati, tanpa copy-paste)',
+    type: 'extension',
+    hasScript: true,
+    hasExtension: true,
+    status: 'available',
+  },
+  {
+    id: 'nexabot',
+    name: 'NexaBot',
+    icon: '🧠',
+    color: '#00D4AA',
+    description: 'Auto-grab cookie session nexabot.id (termasuk HttpOnly) + AUTO-SYNC ke panel Session — tanpa Copy as cURL',
+    type: 'extension',
+    // Cookie sesi HttpOnly tidak bisa dibaca dari Console, jadi tidak ada jalur
+    // bookmarklet yang jujur — pakai extension (chrome.cookies).
+    hasScript: false,
     hasExtension: true,
     status: 'available',
   },

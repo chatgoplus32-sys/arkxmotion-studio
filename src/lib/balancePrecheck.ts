@@ -35,6 +35,8 @@ export async function precheckProviderBalance(
       return precheckGalleri5Balance(minCredits)
     case 'oneover':
       return precheckOneOverBalance(minCredits)
+    case 'nexabot':
+      return precheckNexabotBalance(minCredits)
     case 'createpulse': {
       if (opts.isCpAdmin) return { ok: true }
       const balance = opts.cpBalance
@@ -174,6 +176,54 @@ export async function precheckGalleri5Balance(minCredits: number): Promise<Balan
 }
 
 /**
+ * Cek saldo NexaBot: probe balance via /api/v1/api/credit
+ */
+export async function precheckNexabotBalance(minCredits: number): Promise<BalancePrecheckResult> {
+  const store = useProviderManager.getState()
+  const keys = store.keys.nexabot || []
+  if (keys.length === 0) {
+    return { ok: false, error: 'Tidak ada API key / session NexaBot. Tambahkan di halaman Providers.' }
+  }
+
+  // Mode session (cookie login nexabot.id): generate lewat /api/v1/generate dan
+  // paket Unlimited tidak memotong saldo — jadi tidak perlu cek kredit.
+  const sessionKey = keys.find((k) => !!k.cookies && k.status !== 'invalid' && k.status !== 'expired')
+  if (sessionKey) return { ok: true }
+
+  // Check cached balances first
+  const cached = keys.find((k) => k.status === 'active' && k.balance != null && k.balance >= minCredits)
+  if (cached) return { ok: true, balance: cached.balance }
+
+  // Probe all valid keys
+  const candidates = [...keys]
+    .filter((k) => k.status !== 'invalid' && k.status !== 'expired')
+    .sort((a, b) => (b.balance ?? 0) - (a.balance ?? 0))
+
+  let bestBalance: number | null = null
+  for (const k of candidates) {
+    try {
+      const { checkNexabotBalance } = await import('@/lib/nexabot')
+      const res = await checkNexabotBalance(k.key)
+      if (!res.ok) continue
+      const bal = res.balance ?? 0
+      bestBalance = Math.max(bestBalance ?? 0, bal)
+      store.updateKeyStatus('nexabot', k.id, bal >= minCredits ? 'active' : bal > 0 ? 'active' : 'empty', bal)
+      if (bal >= minCredits) return { ok: true, balance: bal }
+    } catch {
+      // key error — try next
+    }
+  }
+
+  return {
+    ok: false,
+    balance: bestBalance,
+    error: bestBalance != null
+      ? `Saldo NexaBot tidak cukup: butuh ${minCredits} cr, saldo tertinggi ${bestBalance} cr. Top up atau pilih model lebih murah.`
+      : 'Saldo NexaBot tidak bisa dicek. Perbarui API key di Providers.',
+  }
+}
+
+/**
  * Refresh saldo dari API provider (bukan dari cache localStorage) dan tulis
  * hasilnya kembali ke storage arkxmotion.providers. Dipakai badge saldo
  * (klik untuk refresh) dan halaman Providers.
@@ -240,6 +290,40 @@ export async function refreshProviderBalance(
       return { ok: true, balance: bal, email: res.email }
     } catch (err: any) {
       return { ok: false, error: err.message || 'Gagal cek saldo G5 AI Studio' }
+    }
+  }
+
+  if (provider === 'nexabot') {
+    const keys = store.keys.nexabot || []
+    // Mode session (cookie) → probe status sesi, bukan saldo API key (endpoint
+    // /credit menggantung untuk key tak dikenal dan bikin timeout).
+    const sessionKey = keys.find((k) => !!k.cookies && k.status !== 'invalid' && k.status !== 'expired')
+    if (sessionKey?.cookies) {
+      try {
+        const { checkNexabotSession } = await import('@/lib/nexabot')
+        const s = await checkNexabotSession(sessionKey.cookies)
+        if (!s.ok) return { ok: false, error: s.error || 'Cookie sesi NexaBot ditolak — login ulang di nexabot.id' }
+        if (s.balance != null) store.updateKeyStatus('nexabot', sessionKey.id, 'active', s.balance)
+        window.dispatchEvent(new Event('aatools:keys-changed'))
+        return { ok: true, balance: s.balance ?? null, email: s.email || undefined }
+      } catch (err: any) {
+        return { ok: false, error: err.message || 'Gagal cek sesi NexaBot' }
+      }
+    }
+    const key = keys.find((k) => k.status !== 'invalid' && k.status !== 'expired') || keys[0]
+    if (!key) return { ok: false, error: 'Tidak ada API key NexaBot di Providers.' }
+    try {
+      const { checkNexabotBalance } = await import('@/lib/nexabot')
+      const res = await checkNexabotBalance(key.key)
+      if (!res.ok) return { ok: false, error: res.error || 'Gagal cek saldo NexaBot' }
+      const bal = res.balance
+      if (bal != null) {
+        store.updateKeyStatus('nexabot', key.id, bal > 0 ? 'active' : 'empty', bal)
+        window.dispatchEvent(new Event('aatools:keys-changed'))
+      }
+      return { ok: true, balance: bal }
+    } catch (err: any) {
+      return { ok: false, error: err.message || 'Gagal cek saldo NexaBot' }
     }
   }
 

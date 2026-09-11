@@ -15,7 +15,7 @@ export interface ActiveTask {
   model: string
   prompt: string
   startedAt: number
-  page: 'motion' | 'image-to-video' | 'upscaler'
+  page: 'motion' | 'image-to-video' | 'upscaler' | 'edit-image'
 }
 
 export interface CompletedResult {
@@ -23,7 +23,7 @@ export interface CompletedResult {
   url: string
   prompt: string
   date: string
-  page: 'motion' | 'image-to-video' | 'upscaler'
+  page: 'motion' | 'image-to-video' | 'upscaler' | 'edit-image'
   provider?: string
   model?: string
   ratio?: string

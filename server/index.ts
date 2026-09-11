@@ -1,6 +1,7 @@
 import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
+import db from './db.js'
 import authRoutes from './routes/auth.js'
 import adminRoutes from './routes/admin.js'
 import adminTokenRoutes from './routes/adminTokens.js'
@@ -11,6 +12,9 @@ import generationLogRoutes from './routes/generationLogs.js'
 import membershipRoutes from './routes/membership.js'
 import cronRoutes from './routes/cron.js'
 import syncTokensRoutes from './routes/syncTokens.js'
+import nexabotRoutes from './routes/nexabot.js'
+import nexabotWalletRoutes from './routes/nexabotWallet.js'
+import { backupOnStartup } from './backup.js'
 
 dotenv.config()
 
@@ -22,7 +26,7 @@ app.use(cors({
   credentials: true
 }))
 
-app.use(express.json())
+app.use(express.json({ limit: '10mb' }))
 
 app.use('/api/auth', authRoutes)
 app.use('/api/admin', adminRoutes)
@@ -34,6 +38,10 @@ app.use('/api/logs/generation', generationLogRoutes)
 app.use('/api/membership', membershipRoutes)
 app.use('/api/cron', cronRoutes)
 app.use('/api/sync-tokens', syncTokensRoutes)
+app.use('/api/public/nexabot', nexabotRoutes)
+// Wallet NexaBot (saldo Rp prepaid) — beda dari /api/public/nexabot yang
+// meneruskan generate ke upstream nexabot.id.
+app.use('/api/nexabot', nexabotWalletRoutes)
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })
@@ -61,6 +69,9 @@ app.get('/api/admin/public/maintenance', (_req, res) => {
     res.json({ maintenance: {} })
   }
 })
+
+// Backup database otomatis saat server start — fire-and-forget, tidak memblokir startup
+void backupOnStartup()
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`)

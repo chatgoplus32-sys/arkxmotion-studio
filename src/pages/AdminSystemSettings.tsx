@@ -22,7 +22,7 @@ interface Maintenance {
 
 const ALL_PROVIDERS = [
   'weavy', 'wavespeed', 'magnific', 'roboneo', 'createpulse',
-  'framia', 'firefly', 'leonardo', 'oneover', 'gemini',
+  'framia', 'firefly', 'leonardo', 'oneover', 'gemini', 'riverside',
 ]
 
 export default function AdminSystemSettings() {

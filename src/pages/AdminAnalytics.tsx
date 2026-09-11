@@ -28,7 +28,7 @@ interface AnalyticsData {
 const PROVIDER_ICONS: Record<string, string> = {
   weavy: '🌊', wavespeed: '⚡', magnific: '✨', roboneo: '🤖', createpulse: '💜',
   framia: '🎬', galleri5: '🎬', leonardo: '🎨', oneover: '🔮', firefly: '🔥',
-  gemini: '💎', openai: '🟢',
+  gemini: '💎', openai: '🟢', riverside: '🎙️',
 }
 
 function StatCard({ icon, label, value, color }: { icon: React.ReactNode; label: string; value: string | number; color: string }) {

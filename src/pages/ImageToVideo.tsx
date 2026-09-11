@@ -31,13 +31,49 @@ import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '
 import { isNotificationsEnabled, setNotificationsEnabled, requestNotificationPermission, notifyGenerationComplete } from '@/lib/notify'
 import { uploadToCdn } from '@/lib/cdn'
 import { precheckProviderBalance } from '@/lib/balancePrecheck'
+import type { NexabotSessionInfo } from '@/lib/nexabot'
 
 import { PROVIDER_MODELS, QUALITY_OPTIONS, getCreatepulseCost, RATIOS, TEMPLATES, CREATEPULSE_API } from './image-to-video/constants'
 
 import VideoPlayer from './image-to-video/VideoPlayer'
+import { nexabotPathPill } from './image-to-video/nexabotPathPill'
+import { runNexabotJobWithSessionFallback } from './image-to-video/nexabotSessionFallback'
+
+// Voice default untuk mode Voice Over NexaBot — salah satu nama dari daftar
+// voice resmi NexaBot (GET /api/v1/modes → voices).
+const NEXABOT_DEFAULT_VOICE = 'Kore'
 
 export default function ImageToVideoPage() {
   const { keys, routing, fetchMaintenance } = useProviderManager()
+
+  // ── NexaBot: session (Unlimited) vs API key (pay-as-you-go) ──
+  // Cookie bisa berubah kapan saja karena extension auto-sync, jadi status sesi
+  // di-probe ulang tiap nilai cookie berubah.
+  const nexabotCookies = keys.nexabot?.find((k) => !!k.cookies)?.cookies || ''
+  const [nexabotSession, setNexabotSession] = useState<NexabotSessionInfo | null>(null)
+  const [nexabotChecking, setNexabotChecking] = useState(false)
+
+  useEffect(() => {
+    if (!nexabotCookies) { setNexabotSession(null); setNexabotChecking(false); return }
+    let cancelled = false
+    setNexabotChecking(true)
+    ;(async () => {
+      try {
+        const { checkNexabotSession } = await import('@/lib/nexabot')
+        const info = await checkNexabotSession(nexabotCookies)
+        if (!cancelled) setNexabotSession(info)
+      } catch (e: any) {
+        if (!cancelled) setNexabotSession({
+          ok: false, active: false, unlimited: false, plan: null,
+          until: null, untilMs: null, balance: null, telegramId: null, email: null,
+          error: e?.message || 'Gagal cek sesi',
+        })
+      } finally {
+        if (!cancelled) setNexabotChecking(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [nexabotCookies])
   const addToast = useToastStore((s) => s.addToast)
   const { token: authToken, user } = useAuthStore()
   const [cpBalance, setCpBalance] = useState(0)
@@ -185,6 +221,18 @@ export default function ImageToVideoPage() {
       else if (url.includes('.png')) ext = 'png'
       else if (url.includes('.jpg') || url.includes('.jpeg')) ext = 'jpg'
       const filename = `video-${Date.now()}-${index}.${ext}`
+
+      // Blob URL: download directly (no proxy needed)
+      if (url.startsWith('blob:')) {
+        console.log('[download] blob URL detected, downloading directly')
+        const a = document.createElement('a')
+        a.href = url
+        a.download = filename
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        return
+      }
 
       // Try direct download first (no proxy = no binary corruption)
       const isExternal = /^https?:\/\//i.test(url) && !url.includes(window.location.origin)
@@ -551,6 +599,14 @@ export default function ImageToVideoPage() {
     if (!hasActiveKey && provider !== 'roboneo' && provider !== 'createpulse') return `Tidak ada API key aktif untuk ${PROVIDER_CONFIGS[provider].name}`
     if (provider === 'createpulse' && user?.role !== 'admin' && cpBalance < getCreatepulseCost(currentModel?.apiModel)) return 'Saldo CreatePulse tidak cukup. Top up minimal Rp 10.000'
     if (provider === 'roboneo' && !imgFile) return 'Roboneo membutuhkan gambar input'
+    if (provider === 'nexabot') {
+      const nbMode = currentModel?.apiModel
+      const nbImages = [imgFile, startFrameFile, ...refFiles].filter((f): f is File => !!f && f.type.startsWith('image/'))
+      const nbVideo = refFiles.find((f) => f.type.startsWith('video/'))
+      if (nbMode === 'sfv' && nbImages.length === 0) return 'Start Frame to Video butuh 1 gambar input'
+      if (nbMode === 'i2v' && nbImages.length === 0) return 'Ingredient Img to Video butuh 1-3 gambar input'
+      if (nbMode === 'r2v' && !nbVideo) return 'Video Reference to Video butuh 1 video referensi'
+    }
     return null
   }
 
@@ -1954,6 +2010,218 @@ export default function ImageToVideoPage() {
         } else {
           throw new Error(rotation.error || 'Generation failed')
         }
+      } else if (provider === 'riverside') {
+        // ─── Riverside: playground GraphQL (real generation) ─────────────
+        addLog(`[1/3] 🖼️ Menyiapkan generate Riverside...`, 'info', 'riverside')
+        setStatus((s) => ({ ...s, text: 'Menyiapkan...', pct: 5 }))
+
+        const rotation = await withTokenRotation<string>(
+          'riverside',
+          async (apiKey, keyInfo) => {
+            addLog(`🔑 Trying key: ${keyInfo.name || keyInfo.id}`, 'info', 'riverside')
+
+            const { generateRiversideVideo } = await import('@/lib/riverside')
+            const apiModel = currentModel?.apiModel || model.replace('rs:', '')
+            const duration = currentQuality?.duration || 8
+            const resolution = currentQuality?.resolution
+            const soundEnabled = currentQuality?.sound === 'on'
+
+            addLog(`[2/3] 🚀 Submitting to Riverside ${apiModel} (${duration}s)...`, 'info', 'riverside')
+            setStatus((s) => ({ ...s, text: `Submit Riverside ${apiModel}...`, pct: 15 }))
+
+            const result = await generateRiversideVideo({
+              token: apiKey,
+              modelId: apiModel,
+              prompt: prompt.trim(),
+              aspectRatio: ratio,
+              resolution,
+              durationSeconds: duration,
+              generateAudio: soundEnabled,
+              imageFile: imgFile || startFrameFile,
+              onLog: (msg, level = 'info') => {
+                addLog(msg, level as any, 'riverside')
+                setStatus((s) => ({ ...s, text: msg, pct: Math.min((s.pct || 0) + 5, 85) }))
+              },
+            })
+
+            if (!result.ok || !result.videoUrl) {
+              throw new Error(result.error || 'Riverside generation gagal')
+            }
+
+            setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+            addLog(`[3/3] ✅ Video selesai ✓ ${result.videoUrl.slice(0, 60)}...`, 'success', 'riverside')
+            return result.videoUrl
+          },
+          {
+            requiredCredits: totalCredits,
+            onKeySwitch: (from, to, attempt) => {
+              addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn', 'riverside')
+            },
+            onError: (err, key) => {
+              if (detectTokenError('riverside', err)) {
+                addLog(`⚠️ Key "${key.name}" is invalid: ${err.message}`, 'warn', 'riverside')
+              }
+            },
+          }
+        )
+        if (rotation.ok && rotation.result) {
+          setResults((prev) => [rotation.result!, ...prev])
+          saveGalleryItem(rotation.result!)
+          successRef.current = true
+          setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai' }))
+          notifyGenerationComplete(currentModel?.label || model, PROVIDER_CONFIGS['riverside'].name)
+          if (logId) logGenerationComplete(logId, { status: 'completed', result_url: rotation.result, duration_ms: Date.now() - startTime })
+        } else {
+          throw new Error(rotation.error || 'Generation failed')
+        }
+      } else if (provider === 'nexabot') {
+        // ─── NexaBot: REST API (satu model: Google Omni) ─────
+        addLog(`[1/3] 🚀 Menyiapkan generate NexaBot...`, 'info', 'nexabot')
+        setStatus((s) => ({ ...s, text: 'Menyiapkan...', pct: 5 }))
+
+        const rotation = await withTokenRotation<string>(
+          'nexabot',
+          async (apiKey, keyInfo) => {
+            // Mode session (cookie): generate lewat /api/v1/generate yang
+            // menghormati paket Unlimited. Key tanpa cookie langsung lewat API
+            // key (pay-as-you-go 0.25 cr). Key dengan cookie yang mati di tengah
+            // job ditangani runNexabotJobWithSessionFallback() di bawah.
+            const sessionMode = !!keyInfo?.cookies
+            addLog(sessionMode
+              ? `🍪 Trying session key: ${keyInfo.name || keyInfo.id} (Unlimited) → /api/v1/generate`
+              : `🔑 Trying key: ${keyInfo.name || keyInfo.id} (API key) → /api/v1/api`, 'info', 'nexabot')
+
+            const { submitNexabot, pollNexabotJob, downloadNexabotResult } = await import('@/lib/nexabot')
+            const { fileToBase64 } = await import('@/lib/oneover')
+            // NexaBot tidak punya parameter `model` di API-nya — yang menentukan hasil
+            // adalah MODE. Jadi dropdown sekarang berisi mode, bukan nama model palsu.
+            const apiModel = currentModel?.apiModel || 't2v'
+            // Mapping param sesuai API resmi NexaBot (/api/v1/modes):
+            //  • ratio (t2v/sfv/i2v): 1 = landscape, 2 = portrait
+            //  • aspect (img):        1 = 1:1, 2 = 16:9, 5 = 9:16
+            let ratioParam: number | undefined
+            let aspectParam: number | undefined
+            if (apiModel === 'img') {
+              if (ratio === '1:1') aspectParam = 1
+              else if (ratio === '16:9') aspectParam = 2
+              else if (ratio === '9:16') aspectParam = 5
+            } else if (apiModel === 't2v' || apiModel === 'sfv' || apiModel === 'i2v') {
+              if (ratio === '16:9') ratioParam = 1
+              else if (ratio === '9:16') ratioParam = 2
+            }
+
+            // Media input (base64 data URI) sesuai aturan tiap mode:
+            //  • sfv: 1 gambar start frame · i2v: 1-3 gambar ingredient
+            //  • r2v: 1 video referensi (+ opsional 1 gambar)
+            //  • NexaBot (t2v): kirim semua gambar/video sebagai media reference
+            const imageFiles = [imgFile, startFrameFile, ...refFiles]
+              .filter((f): f is File => !!f && f.type.startsWith('image/'))
+            const videoFile = refFiles.find((f) => f.type.startsWith('video/'))
+
+            // NexaBot hanya punya satu model (Google Omni), jadi mode diturunkan dari
+            // media yang di-upload: gambar → sfv (start frame), video → r2v (reference),
+            // tanpa media → t2v (text to video).
+            type NbMode = import('@/lib/nexabot').NexabotMode
+            const baseMode = (apiModel as NbMode) || 't2v'
+            let nbMode: NbMode = baseMode
+            if (baseMode === 't2v') {
+              // opsi tunggal: turunkan mode dari media
+              if (imageFiles.length > 0) nbMode = 'sfv'
+              else if (videoFile) nbMode = 'r2v'
+            } else if ((baseMode === 'sfv' || baseMode === 'i2v') && imageFiles.length === 0) {
+              nbMode = videoFile ? 'r2v' : 't2v'
+            } else if (baseMode === 'r2v' && !videoFile) {
+              nbMode = imageFiles.length > 0 ? 'sfv' : 't2v'
+            }
+
+            // Media (base64 data URI) dibatasi sesuai aturan tiap mode:
+            //   sfv = 1 gambar start frame · i2v = 1-3 gambar
+            //   r2v = 1 video referensi (+ opsional 1 gambar) · t2v = tanpa media
+            const media: string[] = []
+            {
+              // NexaBot: kompres agresif agar payload JSON < 1MB
+              // (normalizeImage terlalu longgar — bisa 4MB + base64 overhead = 413)
+              const { compressForApi } = await import('@/lib/nexabot')
+              if (nbMode === 'sfv') {
+                if (imageFiles[0]) media.push(await fileToBase64(await compressForApi(imageFiles[0])))
+              } else if (nbMode === 'i2v') {
+                for (const f of imageFiles.slice(0, 3)) {
+                  media.push(await fileToBase64(await compressForApi(f)))
+                }
+              } else if (nbMode === 'r2v') {
+                if (videoFile) media.push(await fileToBase64(videoFile))
+                else if (imageFiles[0]) media.push(await fileToBase64(await compressForApi(imageFiles[0])))
+              }
+            }
+            // Jalur session → API key dengan pemulihan otomatis: kalau cookie
+            // Unlimited kedaluwarsa di tengah job, helper mencoba ambil ulang
+            // cookie (extension / penyimpanan) lalu mengulang job; kalau tetap
+            // gagal, generate beralih ke API key pay-as-you-go milik key ini —
+            // lengkap dengan notifikasi toast + log.
+            return await runNexabotJobWithSessionFallback<string>(
+              async (auth, via) => {
+                addLog(`[2/3] 🚀 Submitting to NexaBot ${nbMode} via ${via}...`, 'info', 'nexabot')
+                setStatus((s) => ({ ...s, text: `Submit NexaBot ${nbMode}...`, pct: 15 }))
+
+                const submit = await submitNexabot({
+                  mode: nbMode,
+                  prompt: prompt.trim(),
+                  ratio: ratioParam,
+                  aspect: aspectParam,
+                  voice: apiModel === 'tts' ? NEXABOT_DEFAULT_VOICE : undefined,
+                  media: media.length > 0 ? media : undefined,
+                  // Billing NexaBot mengikuti telegram_id (kalau diisi di halaman Providers).
+                  // Di mode session field ini diabaikan — akun ditentukan oleh cookie.
+                  telegramId: keyInfo?.telegramId,
+                }, auth)
+                if (!submit.ok || !submit.jobId) throw new Error(submit.error || 'NexaBot submit gagal')
+
+                addLog(`✅ Task created ✓ id=${submit.jobId.slice(0, 20)}...`, 'success', 'nexabot')
+                setStatus((s) => ({ ...s, text: 'Memproses di NexaBot...', pct: 30 }))
+
+                await pollNexabotJob(submit.jobId, auth, (msg) => {
+                  addLog(msg, 'debug', 'nexabot')
+                  setStatus((s) => ({ ...s, text: msg, pct: Math.min((s.pct || 0) + 5, 85) }))
+                })
+
+                setStatus((s) => ({ ...s, pct: 90, text: 'Mengunduh hasil...' }))
+                const dl = await downloadNexabotResult(submit.jobId, auth)
+                if (!dl.ok || !dl.url) throw new Error(dl.error || 'NexaBot download gagal')
+
+                setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+                addLog(`[3/3] ✅ Selesai ✓ ${dl.url.slice(0, 60)}...`, 'success', 'nexabot')
+                return dl.url
+              },
+              {
+                sessionCookies: keyInfo?.cookies,
+                apiKey,
+                keyId: keyInfo.id,
+                hooks: { log: addLog, notify: addToast },
+              }
+            )
+          },
+          {
+            requiredCredits: totalCredits,
+            onKeySwitch: (from, to, attempt) => {
+              addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn', 'nexabot')
+            },
+            onError: (err, key) => {
+              if (detectTokenError('nexabot', err)) {
+                addLog(`⚠️ Key "${key.name}" is invalid: ${err.message}`, 'warn', 'nexabot')
+              }
+            },
+          }
+        )
+        if (rotation.ok && rotation.result) {
+          setResults((prev) => [rotation.result!, ...prev])
+          saveGalleryItem(rotation.result!)
+          successRef.current = true
+          setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai' }))
+          notifyGenerationComplete(currentModel?.label || model, PROVIDER_CONFIGS['nexabot'].name)
+          if (logId) logGenerationComplete(logId, { status: 'completed', result_url: rotation.result, duration_ms: Date.now() - startTime })
+        } else {
+          throw new Error(rotation.error || 'Generation failed')
+        }
       } else {
         addLog(`ℹ️ Using default provider flow for ${PROVIDER_CONFIGS[provider].name}`, 'info', provider)
         const rotation = await withTokenRotation<string>(
@@ -2011,7 +2279,10 @@ export default function ImageToVideoPage() {
     }
   }
 
-  const PROVIDER_IDS: ProviderId[] = ['weavy', 'wavespeed', 'roboneo', 'createpulse', 'framia', 'leonardo', 'galleri5', 'oneover', 'firefly', 'genspark']
+  // Ditampilkan di kartu provider NexaBot (lihat nexabotPathPill).
+  const nexabotPill = nexabotPathPill(keys.nexabot, nexabotSession, nexabotChecking)
+
+  const PROVIDER_IDS: ProviderId[] = ['weavy', 'wavespeed', 'roboneo', 'createpulse', 'framia', 'leonardo', 'galleri5', 'oneover', 'firefly', 'genspark', 'riverside', 'nexabot']
 
   return (
     <PageContent>
@@ -2047,6 +2318,9 @@ export default function ImageToVideoPage() {
                 </div>
                                                     <div className="text-[9px] sm:text-[10px] text-muted-foreground">
                   {providerModels.length} models · {keyCount} keys
+                  {pid === 'nexabot' && nexabotPill && (
+                    <span className={nexabotPill.className} title={nexabotPill.title}>{nexabotPill.text}</span>
+                  )}
                 </div>
                 {isActive && (
                   <Badge variant="default" className="mt-1 sm:mt-2 text-[9px] sm:text-[10px]">
@@ -2522,10 +2796,11 @@ export default function ImageToVideoPage() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {filteredGallery.map((item) => {
+              const isBlobUrl = item.url.startsWith('blob:')
               const alreadyProxied = item.url.includes('/api/public/video-proxy')
-              const needsProxy = alreadyProxied ? false : /meitudata\.com|localhost/i.test(item.url)
+              const needsProxy = isBlobUrl || alreadyProxied ? false : /meitudata\.com|localhost/i.test(item.url)
               const directUrl = needsProxy ? `/api/public/video-proxy?url=${encodeURIComponent(item.url)}` : item.url
-              const proxyFallback = alreadyProxied ? item.url : `/api/public/video-proxy?url=${encodeURIComponent(item.url)}`
+              const proxyFallback = isBlobUrl || alreadyProxied ? item.url : `/api/public/video-proxy?url=${encodeURIComponent(item.url)}`
               return (
                 <Swipeable
                   key={item.id}

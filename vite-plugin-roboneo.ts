@@ -1,4 +1,5 @@
 import type { Plugin } from 'vite'
+import http from 'http'
 
 const VERCEL_ORIGIN = 'https://arkxmotion-studio.vercel.app'
 
@@ -1170,7 +1171,30 @@ export function roboneoProxyPlugin(): Plugin {
       // Catch-all untuk endpoint /api/public/* lain (galleri5, magnific,
       // weavy, uploads, shotstack, creatomate, roboneo-membership, dsb)
       // → diteruskan ke deployment Vercel. Spesifik handler di atas menang duluan.
-      server.middlewares.use('/api/public', async (req, res) => {
+      // NexaBot: proxy langsung ke Express lokal (:6000) — jangan pakai fetch()
+      // karena port 6000 termasuk blocked-port WHATWG.
+      server.middlewares.use('/api/public/nexabot', (req, res) => {
+        const proxyReq = http.request({
+          hostname: '127.0.0.1',
+          port: 6000,
+          path: `/api/public/nexabot${req.url || '/'}`,
+          method: req.method,
+          headers: { ...req.headers, host: '127.0.0.1:6000' },
+        }, (proxyRes) => {
+          res.writeHead(proxyRes.statusCode || 502, proxyRes.headers)
+          proxyRes.pipe(res)
+        })
+        proxyReq.on('error', (err) => {
+          console.error(`[nexabot-proxy-local] error:`, err.message)
+          res.writeHead(502, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: false, error: err.message }))
+        })
+        req.pipe(proxyReq)
+      })
+
+      server.middlewares.use('/api/public', async (req, res, next) => {
+        if ((req.url || '').startsWith('/nexabot')) return next()
+
         if (req.method === 'OPTIONS') {
           res.writeHead(200, {
             'Access-Control-Allow-Origin': '*',

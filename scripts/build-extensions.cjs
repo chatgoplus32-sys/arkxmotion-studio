@@ -12,6 +12,11 @@ const JSZip = require('jszip');
 
 const OUTPUT_DIR = path.resolve(__dirname, '..', 'public', 'downloads');
 const ORIG_DIR = path.resolve(__dirname, '..', '..', 'jwt-extractor-extension');
+const NEXABOT_EXT_DIR = path.resolve(__dirname, '..', 'extensions', 'nexabot-token-ext');
+
+// Opsional: build satu provider saja, mis. `node scripts/build-extensions.cjs nexabot`
+const only = (process.argv[2] || '').trim().toLowerCase()
+const want = (id) => !only || only === id
 
 // ─── ARKXMotion sync config ──────────────────────────────────────────────────
 const ARKX_CONFIG = {
@@ -78,13 +83,38 @@ function buildMV3(id, name, icon, color, description, manifest, background, cont
   return zip;
 }
 
+// ─── Helper: zip extension dari folder extensions/<id>/ (kode original) ─────
+async function buildFromDir(targetId, sourceDir, manifestName, manifestDesc, iconColor, opts = {}) {
+  const zip = new JSZip()
+  const folder = zip.folder(targetId)
+  const files = ['manifest.json', 'background.js', 'content.js', 'popup.html', 'popup.js']
+  for (const file of files) {
+    const filePath = path.join(sourceDir, file)
+    if (!fs.existsSync(filePath)) continue
+    let content = fs.readFileSync(filePath, 'utf-8')
+    if (opts.transform) content = opts.transform(content)
+    if (file === 'manifest.json') {
+      const manifest = JSON.parse(content)
+      manifest.name = manifestName
+      if (manifestDesc) manifest.description = manifestDesc
+      content = JSON.stringify(manifest, null, 2)
+    }
+    folder.file(file, content)
+  }
+  const iconPath = path.join(sourceDir, 'icon.png')
+  folder.file('icon.png', fs.existsSync(iconPath) ? fs.readFileSync(iconPath) : generateIcon(128, iconColor))
+  const buf = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
+  fs.writeFileSync(path.join(OUTPUT_DIR, `${targetId}-extension.zip`), buf)
+  console.log(`  ✅ ${targetId}-extension.zip (${(buf.length / 1024).toFixed(1)} KB)${opts.label ? ` ${opts.label}` : ''}`)
+}
+
 // ─── Template: MV3 manifest ──────────────────────────────────────────────────
 function mv3Manifest(id, name, description, matches) {
   return {
     manifest_version: 3,
     name: `ARKXMotion — ${name}`,
     description,
-    version: '1.0.0',
+    version: '1.1.0',
     permissions: ['activeTab', 'storage', 'scripting', 'tabs'],
     host_permissions: [...matches, `${ARKX_CONFIG.API_URL}/*`],
     action: {
@@ -202,7 +232,7 @@ body{width:360px;min-height:200px;font-family:-apple-system,BlinkMacSystemFont,'
 <div id="sync" class="sync" style="display:none">✅ Auto-synced ke Token Manager</div>
 <button id="gb" class="btn bp">🔑 Grab Token dari Halaman Ini</button>
 <button id="ab" class="btn bs">🚀 Buka ARKXMotion</button>
-<div class="ft">ARKXMotion Token Extension v1.0.0</div>
+<div class="ft">ARKXMotion Token Extension v1.1.0</div>
 <script src="popup.js"></script>
 </body>
 </html>`;
@@ -252,25 +282,44 @@ function mv3PopupJS(id) {
 const LEO_MATCHES = ['*://app.leonardo.ai/*', '*://cloud.leonardo.ai/*'];
 const LEO_CONTENT = `(function() {
   'use strict';
+  var provider = 'leonardo';
+  var lastPosted = '';
+  function postIfChanged(t) {
+    if (!t || t === lastPosted || t.length < 20) return;
+    lastPosted = t;
+    window.postMessage({ type: 'ARKX_TOKEN', provider: provider, token: t }, '*');
+  }
   function checkStorage(storage) {
-    for (const key of Object.keys(storage)) {
-      const val = storage.getItem(key);
-      if (val && val.includes('eyJ')) return val;
+    for (var i = 0; i < storage.length; i++) {
+      var key = storage.key(i);
+      if (!key) continue;
+      var val = storage.getItem(key);
+      if (!val) continue;
+      if (val.indexOf('eyJ') !== -1) return val;
+      try {
+        var parsed = JSON.parse(val);
+        if (parsed && parsed.access_token) return parsed.access_token;
+      } catch(e) {}
     }
     return null;
   }
-  let token = checkStorage(localStorage) || checkStorage(sessionStorage);
-  if (token) window.postMessage({ type: 'ARKX_TOKEN', provider: 'leonardo', token: token }, '*');
-
-  fetch('/api/auth/session').then(r => r.json()).then(data => {
-    const t = data?.accessToken || data?.access_token;
-    if (t) window.postMessage({ type: 'ARKX_TOKEN', provider: 'leonardo', token: t }, '*');
-  }).catch(() => {});
-
-  window.addEventListener('message', (event) => {
+  function rescan() {
+    try {
+      postIfChanged(checkStorage(localStorage) || checkStorage(sessionStorage));
+    } catch(e) {}
+    try {
+      fetch('/api/auth/session').then(function(r) { return r.json(); }).then(function(data) {
+        postIfChanged(data && (data.accessToken || data.access_token));
+      }).catch(function() {});
+    } catch(e) {}
+  }
+  rescan();
+  setInterval(rescan, 45000);
+  document.addEventListener('visibilitychange', function() { if (!document.hidden) rescan(); });
+  window.addEventListener('message', function(event) {
     if (event.source !== window) return;
-    if (event.data?.type === 'ARKX_TOKEN' && event.data.provider === 'leonardo') {
-      chrome.runtime.sendMessage({ type: 'TOKEN_GRABBED', provider: 'leonardo', token: event.data.token });
+    if (event.data && event.data.type === 'ARKX_TOKEN' && event.data.provider === provider) {
+      chrome.runtime.sendMessage({ type: 'TOKEN_GRABBED', provider: provider, token: event.data.token });
     }
   });
 })();`;
@@ -281,6 +330,13 @@ const LEO_CONTENT = `(function() {
 const WEAVY_MATCHES = ['*://app.weavy.ai/*'];
 const WEAVY_CONTENT = `(function() {
   'use strict';
+  var provider = 'weavy';
+  var lastPosted = '';
+  function postIfChanged(t) {
+    if (!t || t === lastPosted || t.length < 20) return;
+    lastPosted = t;
+    window.postMessage({ type: 'ARKX_TOKEN', provider: provider, token: t }, '*');
+  }
   async function grabFromIndexedDB() {
     try {
       const dbs = await indexedDB.databases();
@@ -288,56 +344,59 @@ const WEAVY_CONTENT = `(function() {
         const idb = await new Promise((resolve) => {
           const req = indexedDB.open(db.name);
           req.onsuccess = () => resolve(req.result);
+          req.onerror = () => resolve(null);
         });
+        if (!idb) continue;
         for (const name of Array.from(idb.objectStoreNames)) {
           const tx = idb.transaction(name, 'readonly');
           const store = tx.objectStore(name);
           const data = await new Promise((resolve) => {
             const req = store.getAll();
-            req.onsuccess = () => resolve(req.result);
+            req.onsuccess = () => resolve(req.result || []);
           });
           for (const item of data) {
-            if (item?.access_token || item?.token) {
-              const token = item.access_token || item.token;
-              window.postMessage({ type: 'ARKX_TOKEN', provider: 'weavy', token: token }, '*');
-              return token;
+            if (item && (item.access_token || item.token)) {
+              postIfChanged(item.access_token || item.token);
+              idb.close();
+              return;
             }
           }
         }
+        idb.close();
       }
     } catch(e) {}
-    return null;
   }
-
-  // Also try localStorage
   function checkStorage() {
-    for (const key of Object.keys(localStorage)) {
-      const val = localStorage.getItem(key);
-      if (val && val.length > 50) {
-        try {
-          const parsed = JSON.parse(val);
-          if (parsed?.access_token) return parsed.access_token;
-        } catch(e) {
-          if (val.startsWith('eyJ')) return val;
-        }
+    for (var i = 0; i < localStorage.length; i++) {
+      var key = localStorage.key(i);
+      if (!key) continue;
+      var val = localStorage.getItem(key);
+      if (!val || val.length <= 50) continue;
+      try {
+        var parsed = JSON.parse(val);
+        if (parsed && parsed.access_token) return parsed.access_token;
+      } catch(e) {
+        if (val.indexOf('eyJ') === 0) return val;
       }
     }
     return null;
   }
-
-  // Try session API
-  fetch('/api/auth/session').then(r => r.json()).then(data => {
-    const t = data?.accessToken || data?.access_token || data?.session?.access_token;
-    if (t) window.postMessage({ type: 'ARKX_TOKEN', provider: 'weavy', token: t }, '*');
-  }).catch(() => {});
-
-  checkStorage() ? window.postMessage({ type: 'ARKX_TOKEN', provider: 'weavy', token: checkStorage() }, '*') : null;
-  grabFromIndexedDB();
-
-  window.addEventListener('message', (event) => {
+  function rescan() {
+    try { postIfChanged(checkStorage()); } catch(e) {}
+    grabFromIndexedDB();
+    try {
+      fetch('/api/auth/session').then(function(r) { return r.json(); }).then(function(data) {
+        postIfChanged(data && (data.accessToken || data.access_token || (data.session && data.session.access_token)));
+      }).catch(function() {});
+    } catch(e) {}
+  }
+  rescan();
+  setInterval(rescan, 45000);
+  document.addEventListener('visibilitychange', function() { if (!document.hidden) rescan(); });
+  window.addEventListener('message', function(event) {
     if (event.source !== window) return;
-    if (event.data?.type === 'ARKX_TOKEN' && event.data.provider === 'weavy') {
-      chrome.runtime.sendMessage({ type: 'TOKEN_GRABBED', provider: 'weavy', token: event.data.token });
+    if (event.data && event.data.type === 'ARKX_TOKEN' && event.data.provider === provider) {
+      chrome.runtime.sendMessage({ type: 'TOKEN_GRABBED', provider: provider, token: event.data.token });
     }
   });
 })();`;
@@ -353,29 +412,44 @@ const ONEOVER_EXT_DIR = path.resolve(__dirname, '..', '..', 'arkxmotion-studio',
 const ROBO_MATCHES = ['*://roboneo.com/*', '*://*.roboneo.com/*'];
 const ROBO_CONTENT = `(function() {
   'use strict';
+  var provider = 'roboneo';
+  var lastPosted = '';
+  function postIfChanged(t) {
+    if (!t || t === lastPosted || t.length < 20) return;
+    lastPosted = t;
+    window.postMessage({ type: 'ARKX_TOKEN', provider: provider, token: t }, '*');
+  }
   function checkStorage(storage) {
-    for (const key of Object.keys(storage)) {
-      const val = storage.getItem(key);
-      if (val && val.startsWith('eyJ')) return val;
+    for (var i = 0; i < storage.length; i++) {
+      var key = storage.key(i);
+      if (!key) continue;
+      var val = storage.getItem(key);
+      if (!val) continue;
+      if (val.indexOf('eyJ') === 0) return val;
       try {
-        const parsed = JSON.parse(val);
-        if (parsed?.access_token) return parsed.access_token;
+        var parsed = JSON.parse(val);
+        if (parsed && parsed.access_token) return parsed.access_token;
       } catch(e) {}
     }
     return null;
   }
-  let token = checkStorage(localStorage);
-  if (token) window.postMessage({ type: 'ARKX_TOKEN', provider: 'roboneo', token: token }, '*');
-
-  fetch('/api/auth/session').then(r => r.json()).then(data => {
-    const t = data?.accessToken || data?.access_token;
-    if (t) window.postMessage({ type: 'ARKX_TOKEN', provider: 'roboneo', token: t }, '*');
-  }).catch(() => {});
-
-  window.addEventListener('message', (event) => {
+  function rescan() {
+    try {
+      postIfChanged(checkStorage(localStorage) || checkStorage(sessionStorage));
+    } catch(e) {}
+    try {
+      fetch('/api/auth/session').then(function(r) { return r.json(); }).then(function(data) {
+        postIfChanged(data && (data.accessToken || data.access_token));
+      }).catch(function() {});
+    } catch(e) {}
+  }
+  rescan();
+  setInterval(rescan, 45000);
+  document.addEventListener('visibilitychange', function() { if (!document.hidden) rescan(); });
+  window.addEventListener('message', function(event) {
     if (event.source !== window) return;
-    if (event.data?.type === 'ARKX_TOKEN' && event.data.provider === 'roboneo') {
-      chrome.runtime.sendMessage({ type: 'TOKEN_GRABBED', provider: 'roboneo', token: event.data.token });
+    if (event.data && event.data.type === 'ARKX_TOKEN' && event.data.provider === provider) {
+      chrome.runtime.sendMessage({ type: 'TOKEN_GRABBED', provider: provider, token: event.data.token });
     }
   });
 })();`;
@@ -411,6 +485,7 @@ async function main() {
 
   // Build MV3 extensions
   for (const b of builds) {
+    if (!want(b.id)) continue
     console.log(`📦 ${b.name}...`);
     const manifest = mv3Manifest(b.id, b.name, b.desc, b.matches);
     const background = mv3Background(b.id, b.name, b.icon, b.matches);
@@ -423,63 +498,38 @@ async function main() {
   }
 
   // Build OneOver (original extension from extensions/oneover-token-ext/)
-  console.log('📦 OneOver...');
-  const ooZip = new JSZip();
-  const ooFolder = ooZip.folder('oneover');
-  const ooFiles = ['manifest.json', 'background.js', 'content.js', 'popup.html', 'popup.js'];
-  for (const file of ooFiles) {
-    const filePath = path.join(ONEOVER_EXT_DIR, file);
-    if (fs.existsSync(filePath)) {
-      let content = fs.readFileSync(filePath, 'utf-8');
-      // Update manifest name
-      if (file === 'manifest.json') {
-        const manifest = JSON.parse(content);
-        manifest.name = 'ARKXMotion — OneOver';
-        manifest.description = 'Auto-grab & sync Supabase JWT dari oneover.com';
-        content = JSON.stringify(manifest, null, 2);
-      }
-      ooFolder.file(file, content);
-    }
+  if (want('oneover')) {
+    console.log('📦 OneOver...');
+    await buildFromDir('oneover', ONEOVER_EXT_DIR, 'ARKXMotion — OneOver',
+      'Auto-grab & sync Supabase JWT dari oneover.com', '#06b6d4', { label: '[MV3 — original]' });
   }
-  // Copy icon if exists
-  const ooIconPath = path.join(ONEOVER_EXT_DIR, 'icon.png');
-  if (fs.existsSync(ooIconPath)) {
-    ooFolder.file('icon.png', fs.readFileSync(ooIconPath));
-  }
-  const ooBuf = await ooZip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
-  fs.writeFileSync(path.join(OUTPUT_DIR, 'oneover-extension.zip'), ooBuf);
-  console.log(`  ✅ oneover-extension.zip (${(ooBuf.length / 1024).toFixed(1)} KB) [MV3 — original]`);
 
   // Build Framia (MV2, original code with browser→chrome fix)
-  console.log('📦 Framia...');
-  const fraZip = new JSZip();
-  const fraFolder = fraZip.folder('framia');
-  const fraFiles = ['manifest.json', 'background.js', 'content.js', 'popup.html', 'popup.js'];
-  for (const file of fraFiles) {
-    const filePath = path.join(ORIG_DIR, file);
-    if (fs.existsSync(filePath)) {
-      let content = fs.readFileSync(filePath, 'utf-8');
-      // Convert browser → chrome for Chrome compatibility
-      content = content.replace(/\bbrowser\b\./g, 'chrome.');
-      if (file === 'manifest.json') {
-        const manifest = JSON.parse(content);
-        manifest.name = 'ARKXMotion — Framia';
-        manifest.description = 'Auto-grab & sync access token dari framia.converge.ai';
-        content = JSON.stringify(manifest, null, 2);
-      }
-      fraFolder.file(file, content);
-    }
+  if (want('framia')) {
+    console.log('📦 Framia...');
+    await buildFromDir('framia', ORIG_DIR, 'ARKXMotion — Framia',
+      'Auto-grab & sync access token dari framia.converge.ai', '#8b5cf6', {
+        label: '[MV2 — original]',
+        // Convert browser → chrome for Chrome compatibility
+        transform: (content) => content.replace(/\bbrowser\b\./g, 'chrome.'),
+      });
   }
-  const fraBuf = await fraZip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
-  fs.writeFileSync(path.join(OUTPUT_DIR, 'framia-extension.zip'), fraBuf);
-  console.log(`  ✅ framia-extension.zip (${(fraBuf.length / 1024).toFixed(1)} KB) [MV2 — original]`);
 
-  console.log(`\n✅ Built ${builds.length + 1} extensions in public/downloads/\n`);
+  // Build NexaBot (cookie session HttpOnly via chrome.cookies + auto-sync)
+  if (want('nexabot')) {
+    console.log('📦 NexaBot...');
+    await buildFromDir('nexabot', NEXABOT_EXT_DIR, 'ARKXMotion — NexaBot Session',
+      'Auto-grab cookie session nexabot.id (termasuk HttpOnly) + auto-sync ke panel Session — tanpa Copy as cURL',
+      '#00D4AA', { label: '[MV3 — cookie session]' });
+  }
+
+  console.log(`\n✅ Built ${only ? `only '${only}'` : `${builds.length + 3} extensions`} in public/downloads/\n`);
   console.log('  📄 leonardo-extension.zip  — MV3, auto-sync');
   console.log('  📄 weavy-extension.zip     — MV3, auto-sync');
   console.log('  📄 oneover-extension.zip   — MV3, auto-sync');
   console.log('  📄 roboneo-extension.zip   — MV3, auto-sync');
   console.log('  📄 framia-extension.zip    — MV2, original code');
+  console.log('  📄 nexabot-extension.zip   — MV3, cookie session (HttpOnly)');
   console.log(`\n  ⚙️  Sync URL: ${ARKX_CONFIG.API_URL}`);
 }
 

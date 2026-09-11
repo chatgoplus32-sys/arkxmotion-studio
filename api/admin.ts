@@ -275,38 +275,55 @@ async function handleResetPassword(res: VercelResponse, id: number, body: any) {
 
 // ─── Topup Management (merged from api/admin/topup.ts) ─────────────
 
+/**
+ * Wallet mana yang sedang di-approve. Nilainya hanya diambil dari daftar putih
+ * (`createpulse` default, `nexabot`), lalu query per provider ditulis eksplisit —
+ * tagged template Neon tidak menerima identifier tabel dinamis, dan cara ini
+ * sekaligus menutup celah injeksi lewat parameter `provider`.
+ */
+function resolveTopupProvider(req: VercelRequest): 'createpulse' | 'nexabot' {
+  const raw = String((req.query.provider as string) || req.body?.provider || 'createpulse')
+  return raw === 'nexabot' ? 'nexabot' : 'createpulse'
+}
+
 async function handleTopupRoutes(req: VercelRequest, res: VercelResponse, segments: string[]) {
   try {
     const sql = getSql()
     const last = segments[segments.length - 1]
+    const provider = resolveTopupProvider(req)
+    const isNexabot = provider === 'nexabot'
 
     // GET /api/admin/topup/pending
     if (req.method === 'GET' && last === 'pending') {
-      const rows = await sql`
-        SELECT t.*, u.email, u.name as user_name
-        FROM createpulse_topup t
-        JOIN users u ON t.user_id = u.id
-        WHERE t.status = 'pending'
-        ORDER BY t.created_at ASC
-      `
-      return res.status(200).json({ topups: rows })
+      const rows = isNexabot
+        ? await sql`SELECT t.*, u.email, u.name as user_name FROM nexabot_topup t JOIN users u ON t.user_id = u.id WHERE t.status = 'pending' ORDER BY t.created_at ASC`
+        : await sql`SELECT t.*, u.email, u.name as user_name FROM createpulse_topup t JOIN users u ON t.user_id = u.id WHERE t.status = 'pending' ORDER BY t.created_at ASC`
+      return res.status(200).json({ topups: rows, provider })
     }
 
     // GET /api/admin/topup/all
     if (req.method === 'GET' && last === 'all') {
-      const rows = await sql`
-        SELECT t.*, u.email, u.name as user_name
-        FROM createpulse_topup t
-        JOIN users u ON t.user_id = u.id
-        ORDER BY t.created_at DESC
-      `
-      return res.status(200).json({ topups: rows })
+      const rows = isNexabot
+        ? await sql`SELECT t.*, u.email, u.name as user_name FROM nexabot_topup t JOIN users u ON t.user_id = u.id ORDER BY t.created_at DESC`
+        : await sql`SELECT t.*, u.email, u.name as user_name FROM createpulse_topup t JOIN users u ON t.user_id = u.id ORDER BY t.created_at DESC`
+      return res.status(200).json({ topups: rows, provider })
     }
 
     // PATCH /api/admin/topup/approve
     if (req.method === 'PATCH' && last === 'approve') {
       const { id, admin_note } = req.body || {}
       if (!id) return res.status(400).json({ error: 'Topup id required' })
+
+      if (isNexabot) {
+        const topup = await sql`SELECT * FROM nexabot_topup WHERE id = ${id} AND status = 'pending'`
+        if (topup.length === 0) return res.status(404).json({ error: 'Pending topup not found' })
+
+        await sql`UPDATE nexabot_topup SET status = 'approved', admin_note = ${admin_note || ''}, updated_at = CURRENT_TIMESTAMP WHERE id = ${id}`
+        await sql`INSERT INTO nexabot_balance (user_id, balance) VALUES (${topup[0].user_id}, ${topup[0].amount}) ON CONFLICT (user_id) DO UPDATE SET balance = nexabot_balance.balance + ${topup[0].amount}, updated_at = CURRENT_TIMESTAMP`
+
+        const bal = await sql`SELECT balance FROM nexabot_balance WHERE user_id = ${topup[0].user_id}`
+        return res.status(200).json({ message: 'Topup approved', balance: bal[0]?.balance || 0 })
+      }
 
       const topup = await sql`SELECT * FROM createpulse_topup WHERE id = ${id} AND status = 'pending'`
       if (topup.length === 0) return res.status(404).json({ error: 'Pending topup not found' })
@@ -322,6 +339,14 @@ async function handleTopupRoutes(req: VercelRequest, res: VercelResponse, segmen
     if (req.method === 'PATCH' && last === 'reject') {
       const { id, admin_note } = req.body || {}
       if (!id) return res.status(400).json({ error: 'Topup id required' })
+
+      if (isNexabot) {
+        const topup = await sql`SELECT * FROM nexabot_topup WHERE id = ${id} AND status = 'pending'`
+        if (topup.length === 0) return res.status(404).json({ error: 'Pending topup not found' })
+
+        await sql`UPDATE nexabot_topup SET status = 'rejected', admin_note = ${admin_note || ''}, updated_at = CURRENT_TIMESTAMP WHERE id = ${id}`
+        return res.status(200).json({ message: 'Topup rejected' })
+      }
 
       const topup = await sql`SELECT * FROM createpulse_topup WHERE id = ${id} AND status = 'pending'`
       if (topup.length === 0) return res.status(404).json({ error: 'Pending topup not found' })
@@ -347,7 +372,7 @@ async function handleTokenRoutes(req: VercelRequest, res: VercelResponse, segmen
     // GET /api/admin/tokens or /api/admin/tokens?provider=roboneo
     if (req.method === 'GET' && last === 'tokens') {
       const provider = req.query.provider as string | undefined
-      if (provider && ['roboneo', 'framia', 'weavy', 'createpulse'].includes(provider)) {
+      if (provider && ['roboneo', 'framia', 'weavy', 'createpulse', 'riverside'].includes(provider)) {
         const rows = await sql`SELECT * FROM tokens WHERE provider = ${provider} ORDER BY created_at DESC`
         return res.status(200).json({ tokens: rows })
       }
@@ -370,7 +395,7 @@ async function handleTokenRoutes(req: VercelRequest, res: VercelResponse, segmen
         return res.status(201).json({ message: `${created} tokens uploaded`, count: created })
       }
 
-      if (!provider || !['roboneo', 'framia', 'weavy', 'createpulse'].includes(provider)) {
+      if (!provider || !['roboneo', 'framia', 'weavy', 'createpulse', 'riverside'].includes(provider)) {
         return res.status(400).json({ error: 'Invalid provider' })
       }
       if (!name || !token_value) {
@@ -745,7 +770,7 @@ async function handleMaintenanceRoutes(req: VercelRequest, res: VercelResponse) 
     )`
 
     // Seed providers if not exist
-    const providers = ['weavy', 'wavespeed', 'magnific', 'roboneo', 'createpulse', 'framia', 'firefly', 'leonardo', 'gemini', 'openai', 'shotstack', 'creatomate']
+    const providers = ['weavy', 'wavespeed', 'magnific', 'roboneo', 'createpulse', 'framia', 'firefly', 'leonardo', 'gemini', 'openai', 'shotstack', 'creatomate', 'riverside', 'nexabot']
     for (const p of providers) {
       await sql`INSERT INTO provider_maintenance (provider, is_maintenance, message) VALUES (${p}, 0, '') ON CONFLICT (provider) DO NOTHING`
     }
@@ -1055,7 +1080,7 @@ async function handleSettingsRoutes(req: VercelRequest, res: VercelResponse) {
     await sql`CREATE TABLE IF NOT EXISTS provider_maintenance (id SERIAL PRIMARY KEY, provider TEXT UNIQUE NOT NULL, is_maintenance INTEGER NOT NULL DEFAULT 0, message TEXT NOT NULL DEFAULT '', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`
 
     // Seed providers
-    const providers = ['weavy', 'wavespeed', 'magnific', 'roboneo', 'createpulse', 'framia', 'firefly', 'leonardo', 'gemini', 'openai', 'shotstack', 'creatomate']
+    const providers = ['weavy', 'wavespeed', 'magnific', 'roboneo', 'createpulse', 'framia', 'firefly', 'leonardo', 'gemini', 'openai', 'shotstack', 'creatomate', 'riverside', 'nexabot']
     for (const p of providers) {
       await sql`INSERT INTO provider_maintenance (provider, is_maintenance, message) VALUES (${p}, 0, '') ON CONFLICT (provider) DO NOTHING`
     }

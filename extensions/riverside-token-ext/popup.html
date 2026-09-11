@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Riverside Token Manager</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { width: 380px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0a0a; color: #f5f5f5; }
+    .header { display: flex; align-items: center; gap: 12px; padding: 16px; border-bottom: 1px solid #1a1a1a; }
+    .logo { width: 40px; height: 40px; border-radius: 10px; background: linear-gradient(135deg, #e04848, #ff6b6b); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; color: #fff; }
+    .header h1 { font-size: 15px; font-weight: 600; }
+    .header .subtitle { font-size: 11px; color: #888; margin-top: 2px; }
+    .tab-bar { display: flex; border-bottom: 1px solid #1a1a1a; }
+    .tab { flex: 1; padding: 10px; text-align: center; font-size: 11px; font-weight: 500; background: none; border: none; color: #888; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s; }
+    .tab:hover { color: #ccc; }
+    .tab.active { color: #ff6b6b; border-bottom-color: #ff6b6b; }
+    .tab-content { display: none; padding: 12px 16px; }
+    .tab-content.active { display: block; }
+    .status-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 12px; color: #888; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #333; }
+    .status-dot.active { background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,0.5); }
+    .token-card { background: #111; border: 1px solid #1a1a1a; border-radius: 10px; padding: 12px; margin-bottom: 8px; }
+    .token-card .email { font-size: 13px; font-weight: 600; color: #ff6b6b; margin-bottom: 4px; word-break: break-all; }
+    .token-card .meta { font-size: 11px; color: #666; margin-bottom: 6px; }
+    .token-card .preview { font-family: monospace; font-size: 10px; color: #555; background: #0a0a0a; padding: 6px 8px; border-radius: 6px; word-break: break-all; margin-bottom: 8px; }
+    .token-card .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .btn { padding: 6px 12px; border-radius: 6px; border: none; font-size: 11px; font-weight: 500; cursor: pointer; transition: all 0.15s; }
+    .btn-primary { background: #e04848; color: #fff; }
+    .btn-primary:hover { background: #c43c3c; }
+    .btn-secondary { background: #1a1a1a; color: #ccc; border: 1px solid #2a2a2a; }
+    .btn-secondary:hover { background: #222; }
+    .btn-success { background: #166534; color: #86efac; border: 1px solid #166534; }
+    .btn-success:hover { background: #15803d; }
+    .btn-full { width: 100%; padding: 10px; }
+    .btn-sm { padding: 4px 8px; font-size: 10px; }
+    .form-group { margin-bottom: 10px; }
+    .form-group label { display: block; font-size: 11px; color: #888; margin-bottom: 4px; }
+    .form-group input, .form-group textarea { width: 100%; padding: 8px 10px; background: #0a0a0a; border: 1px solid #2a2a2a; border-radius: 6px; color: #f5f5f5; font-size: 12px; font-family: monospace; resize: vertical; }
+    .form-group input:focus, .form-group textarea:focus { outline: none; border-color: #ff6b6b; }
+    .result-box { background: #0a0a0a; border: 1px solid #1a1a1a; border-radius: 6px; padding: 10px; font-size: 10px; font-family: monospace; white-space: pre-wrap; word-break: break-all; margin-top: 8px; max-height: 200px; overflow-y: auto; color: #aaa; }
+    .footer { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; border-top: 1px solid #1a1a1a; }
+    .version { font-size: 10px; color: #444; }
+    .empty { text-align: center; padding: 30px 10px; color: #555; font-size: 12px; line-height: 1.6; }
+    .expired { color: #ef4444; font-weight: 600; }
+    .valid { color: #22c55e; }
+    .refresh { color: #fbbf24; font-weight: 600; }
+    .toast { position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%); padding: 8px 16px; border-radius: 8px; font-size: 12px; font-weight: 500; color: #fff; opacity: 0; transition: opacity 0.2s; z-index: 999; pointer-events: none; }
+    .toast.show { opacity: 1; }
+    .alert { background: #ff6b6b20; border: 1px solid #ff6b6b50; border-radius: 8px; padding: 10px; font-size: 11px; color: #ffb4b4; margin-bottom: 10px; }
+    .alert a { color: #ffb4b4; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo">RS</div>
+    <div>
+      <h1>Riverside Token Manager</h1>
+      <div class="subtitle">Keep-alive session JWT · ARKx Motion Studio</div>
+    </div>
+  </div>
+
+  <div class="tab-bar">
+    <button class="tab active" data-tab="tokens">Tokens</button>
+    <button class="tab" data-tab="add">+ Add</button>
+    <button class="tab" data-tab="refresh">♻️ Refresh</button>
+  </div>
+
+  <!-- Tab: Tokens -->
+  <div class="tab-content active" id="tab-tokens">
+    <div class="alert">
+      Buka <b>riverside.com/dashboard</b> (login dulu) — token otomatis ter-capture.<br>
+      Session JWT Riverside cuma <b>±10 menit</b>; extension ini auto keep-alive via
+      <b>/auth/refresh/reactive</b> selama tab dashboard kebuka — token terbaru selalu siap di-copy.
+    </div>
+    <div class="status-bar">
+      <div class="status-dot" id="statusDot"></div>
+      <span id="statusText">Loading...</span>
+    </div>
+    <div class="form-group" style="margin-bottom:8px">
+      <label>Auto-sync ke app (server URL)</label>
+      <div style="display:flex;gap:6px">
+        <input id="appUrl" placeholder="http://localhost:6000" />
+        <button class="btn btn-secondary btn-sm" id="saveAppUrl" style="white-space:nowrap">Simpan</button>
+      </div>
+      <div id="syncStatus" style="font-size:10px;color:#666;margin-top:4px"></div>
+    </div>
+    <div id="tokenList" class="token-list">
+      <div class="empty">No tokens yet.<br>Login di riverside.com/dashboard lalu kembali ke sini.</div>
+    </div>
+  </div>
+
+  <!-- Tab: Add Manual -->
+  <div class="tab-content" id="tab-add">
+    <div class="form-group">
+      <label>Paste token langsung (AMf-... preferred / eyJ-...) atau JSON:</label>
+      <textarea id="addInput" rows="6" placeholder='eyJhbGci...  atau  {"access_token":"eyJ...","refresh_token":"..."}'></textarea>
+    </div>
+    <button class="btn btn-primary btn-full" id="addBtn">+ Add Token</button>
+  </div>
+
+  <!-- Tab: Refresh -->
+  <div class="tab-content" id="tab-refresh">
+    <div class="alert">Kalau token kamu format <b>Firebase refresh (AMf-...)</b>, bisa di-refresh otomatis jadi access token baru.</div>
+    <div class="form-group">
+      <label>Refresh token (AMf-...):</label>
+      <input id="refreshInput" placeholder="Paste refresh token..." />
+    </div>
+    <button class="btn btn-success btn-full" id="refreshBtn">♻️ Refresh Token</button>
+    <div id="refreshResult" class="result-box" style="display:none"></div>
+  </div>
+
+  <div class="footer">
+    <button class="btn btn-secondary btn-sm" id="clearBtn">🗑️ Clear All</button>
+    <span class="version">v1.3.0</span>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <script src="popup.js"></script>
+</body>
+</html>

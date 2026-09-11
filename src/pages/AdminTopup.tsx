@@ -23,6 +23,8 @@ export default function AdminTopupPage() {
   const [topups, setTopups] = useState<Topup[]>([])
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<number | null>(null)
+  // Wallet mana yang sedang dibuka: CreatePulse (Rp 1.500+) atau NexaBot (Rp 250).
+  const [provider, setProvider] = useState<'createpulse' | 'nexabot'>('createpulse')
 
   const API = '/api/admin/topup'
   const headers = useMemo(() => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }), [token])
@@ -30,19 +32,19 @@ export default function AdminTopupPage() {
   const fetchTopups = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch(`${API}/pending`, { headers })
+      const res = await fetch(`${API}/pending?provider=${provider}`, { headers })
       const data = await res.json()
       setTopups(data.topups || [])
     } catch (e) { console.error('[AdminTopup] Failed to fetch pending topups:', e) }
     setLoading(false)
-  }, [headers])
+  }, [headers, provider])
 
   useEffect(() => { fetchTopups() }, [fetchTopups])
 
   const fetchAll = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`${API}/all`, { headers })
+      const res = await fetch(`${API}/all?provider=${provider}`, { headers })
       const data = await res.json()
       setTopups(data.topups || [])
     } catch (e) { console.error('[AdminTopup] Failed to fetch all topups:', e) }
@@ -55,7 +57,7 @@ export default function AdminTopupPage() {
       const res = await fetch(`${API}/approve`, {
         method: 'PATCH',
         headers,
-        body: JSON.stringify({ id, admin_note: 'Approved' }),
+        body: JSON.stringify({ id, admin_note: 'Approved', provider }),
       })
       const data = await res.json()
       if (res.ok) {
@@ -74,7 +76,7 @@ export default function AdminTopupPage() {
       const res = await fetch(`${API}/reject`, {
         method: 'PATCH',
         headers,
-        body: JSON.stringify({ id, admin_note: 'Rejected' }),
+        body: JSON.stringify({ id, admin_note: 'Rejected', provider }),
       })
       if (res.ok) {
         addToast('Topup ditolak', 'info')
@@ -104,9 +106,26 @@ export default function AdminTopupPage() {
       <PageHeader
         eyebrow="Admin"
         title="Approval Top Up"
-        highlight="CreatePulse"
+        highlight={provider === 'nexabot' ? 'NexaBot' : 'CreatePulse'}
         desc="Setujui atau tolak topup saldo member"
       />
+
+      <div className="flex gap-2 mb-4">
+        <Button
+          size="sm"
+          variant={provider === 'createpulse' ? 'default' : 'outline'}
+          onClick={() => setProvider('createpulse')}
+        >
+          CreatePulse
+        </Button>
+        <Button
+          size="sm"
+          variant={provider === 'nexabot' ? 'default' : 'outline'}
+          onClick={() => setProvider('nexabot')}
+        >
+          NexaBot
+        </Button>
+      </div>
 
       <div className="flex gap-3 mb-5">
         <Button size="sm" variant="outline" onClick={fetchTopups}>
