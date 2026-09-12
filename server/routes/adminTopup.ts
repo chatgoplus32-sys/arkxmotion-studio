@@ -20,6 +20,14 @@ function resolveWallet(value: unknown): (typeof WALLETS)[WalletKey] {
   return key in WALLETS ? WALLETS[key as WalletKey] : WALLETS.createpulse
 }
 
+/** Sisa hari dari DATETIME SQLite (UTC yang disimpan tanpa penanda zona). */
+function remainingDays(expiresAt: string | null | undefined): number {
+  if (!expiresAt) return 0
+  const end = new Date(expiresAt.replace(' ', 'T') + 'Z').getTime()
+  if (!Number.isFinite(end)) return 0
+  return Math.max(0, Math.ceil((end - Date.now()) / 86400000))
+}
+
 router.get('/pending', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
   try {
     const w = resolveWallet(req.query.provider)
@@ -68,22 +76,33 @@ router.patch('/approve', authenticateToken, requireAdmin, (req: AuthRequest, res
     // kehilangan sisa hari.
     if (topup.kind === 'unlimited') {
       const days = Number(topup.days) || 7
+      // Base masa berlaku = expiry TERJAUH yang sudah disetujui untuk user ini,
+      // bukan expiry baris ini (saat pengajuan `expires_at` baris ini masih
+      // NULL). Tanpa ini, beli paket baru saat paket lama masih jalan akan
+      // menghanguskan sisa harinya, padahal UI menjanjikan ditumpuk.
+      const priorExpiry = (db.prepare(`
+        SELECT MAX(expires_at) AS expires_at FROM ${w.topup}
+        WHERE user_id = ? AND kind = 'unlimited' AND status = 'approved' AND id <> ?
+      `).get(topup.user_id, id) as { expires_at: string | null } | undefined)?.expires_at || null
+
       db.prepare(`
         UPDATE ${w.topup}
         SET status = 'approved',
             admin_note = ?,
             started_at = datetime('now'),
-            expires_at = datetime(MAX(COALESCE(expires_at, datetime('now')), datetime('now')), ?),
+            expires_at = datetime(MAX(COALESCE(?, datetime('now')), datetime('now')), ?),
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
-      `).run(admin_note || '', `+${days} days`, id)
+      `).run(admin_note || '', priorExpiry, `+${days} days`, id)
 
       const activated = db.prepare(`SELECT expires_at FROM ${w.topup} WHERE id = ?`).get(id) as { expires_at: string } | undefined
       const balance = db.prepare(`SELECT balance FROM ${w.balance} WHERE user_id = ?`).get(topup.user_id) as { balance: number } | undefined
       return res.json({
         message: `Paket Unlimited ${days} hari aktif sampai ${activated?.expires_at || '-'}`,
         balance: balance?.balance || 0,
-        unlimited: { active: true, expires_at: activated?.expires_at || null, days_left: days },
+        // days_left = sisa hari SETELAH penumpukan, bukan jumlah hari yang baru
+        // dibeli, supaya admin melihat masa berlaku yang sebenarnya.
+        unlimited: { active: true, expires_at: activated?.expires_at || null, days_left: remainingDays(activated?.expires_at) },
       })
     }
 
@@ -125,7 +144,7 @@ router.patch('/reject', authenticateToken, requireAdmin, (req: AuthRequest, res:
 router.get('/balance/:userId', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
   try {
     const w = resolveWallet(req.query.provider)
-    const userId = parseInt(req.params.userId)
+    const userId = parseInt(String(req.params.userId), 10)
     let bal = db.prepare(`SELECT balance FROM ${w.balance} WHERE user_id = ?`).get(userId) as { balance: number } | undefined
     if (!bal) bal = { balance: 0 }
     res.json({ balance: bal.balance })

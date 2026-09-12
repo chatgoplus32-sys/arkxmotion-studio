@@ -343,24 +343,39 @@ async function handleTopupRoutes(req: VercelRequest, res: VercelResponse, segmen
         if (topup.length === 0) return res.status(404).json({ error: 'Pending topup not found' })
 
         // Paket Unlimited: approve = aktifkan masa berlaku, BUKAN menambah saldo.
-        // Kalau paket lama masih jalan, expiry ditumpuk dari sisa hari yang ada.
+        // Paket lama yang masih jalan ditumpuk (lihat priorExpiry di bawah).
         if (topup[0].kind === 'unlimited') {
           const days = Number(topup[0].days) || 7
+          // Base masa berlaku = expiry TERJAUH yang sudah disetujui untuk user
+          // ini (baris yang sedang di-approve masih NULL), supaya beli paket
+          // baru saat paket lama jalan menumpuk sisa hari alih-alih
+          // menghanguskannya — sama seperti sisi Express.
+          const prior = await sql`
+            SELECT MAX(expires_at) AS expires_at FROM nexabot_topup
+            WHERE user_id = ${topup[0].user_id} AND kind = 'unlimited' AND status = 'approved' AND id <> ${id}
+          `
+          const priorExpiry = prior[0]?.expires_at || null
           await sql`
             UPDATE nexabot_topup
             SET status = 'approved',
                 admin_note = ${admin_note || ''},
                 started_at = NOW(),
-                expires_at = GREATEST(COALESCE(expires_at, NOW()), NOW()) + make_interval(days => ${days}),
+                expires_at = GREATEST(COALESCE(${priorExpiry}, NOW()), NOW()) + make_interval(days => ${days}),
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ${id}
           `
           const activated = await sql`SELECT expires_at FROM nexabot_topup WHERE id = ${id}`
           const bal = await sql`SELECT balance FROM nexabot_balance WHERE user_id = ${topup[0].user_id}`
+          const expiresAt = activated[0]?.expires_at || null
+          // days_left = sisa hari SETELAH penumpukan (bukan jumlah hari yang
+          // baru dibeli), supaya admin melihat masa berlaku yang sebenarnya.
+          const remaining = expiresAt
+            ? Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86400000))
+            : 0
           return res.status(200).json({
             message: `Paket Unlimited ${days} hari diaktifkan`,
             balance: bal[0]?.balance || 0,
-            unlimited: { active: true, expires_at: activated[0]?.expires_at || null, days_left: days },
+            unlimited: { active: true, expires_at: expiresAt, days_left: remaining },
           })
         }
 
