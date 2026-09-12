@@ -1,15 +1,43 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import {
+  NexabotUpstreamError,
+  fetchNexabotUpstream,
+  nexabotRelayHeaders,
+  type NexabotProxyAction,
+} from '../../shared/nexabotProxy.js'
 
 const NEXABOT_BASE = 'https://nexabot.id'
 
-// NexaBot kadang menggantung tanpa response — batasi durasi call upstream.
-const CREDIT_TIMEOUT_MS = 20_000
-// Submit bisa lambat saat NexaBot sedang ramai (pernah >2 menit), jadi longgar.
-const SUBMIT_TIMEOUT_MS = 180_000
-const JOB_TIMEOUT_MS = 20_000
-
 function isTimeout(err: any) {
   return err?.name === 'TimeoutError' || err?.name === 'AbortError'
+}
+
+/**
+ * Satu call upstream dengan timeout & retry sesuai jenis request (kebijakan
+ * bersama di shared/nexabotProxy.ts) lalu teruskan status + body apa adanya.
+ * Read-only diulang; submit/generate tidak (hindari job & kredit ganda).
+ */
+async function relayJson(
+  res: VercelResponse,
+  action: NexabotProxyAction,
+  url: string,
+  init: RequestInit,
+): Promise<void> {
+  const { response, attempts } = await fetchNexabotUpstream(url, init, {
+    action,
+    onRetry: ({ attempt, status, delayMs, message }) =>
+      console.warn(
+        `[nexabot-proxy] ${action} percobaan ${attempt} gagal (${message}${status ? ` HTTP ${status}` : ''}) — coba lagi dalam ${delayMs}ms`,
+      ),
+  })
+  const text = await response.text()
+  console.log(`[nexabot-proxy] ${action} ${response.status}${attempts > 1 ? ` (percobaan ke-${attempts})` : ''}: ${text.slice(0, 300)}`)
+  res.writeHead(response.status, {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*',
+    ...nexabotRelayHeaders(response),
+  })
+  res.end(text)
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -54,21 +82,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const missing = requireApiKey('Cek saldo')
       if (missing) return missing
       console.log(`[nexabot-proxy] GET /api/v1/api/credit`)
-      const upstreamRes = await fetch(`${NEXABOT_BASE}/api/v1/api/credit`, {
+      // /credit sering menggantung di sisi NexaBot — 30s × 3 percobaan dengan
+      // backoff jauh lebih jarang berakhir 504 daripada satu kali 20s.
+      await relayJson(res, 'credit', `${NEXABOT_BASE}/api/v1/api/credit`, {
         method: 'GET',
         headers: {
           'x-api-key': apiKey as string,
           'Accept': 'application/json',
         },
-        signal: AbortSignal.timeout(CREDIT_TIMEOUT_MS),
       })
-      const text = await upstreamRes.text()
-      console.log(`[nexabot-proxy] credit ${upstreamRes.status}: ${text.slice(0, 300)}`)
-      res.writeHead(upstreamRes.status, {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      })
-      res.end(text)
       return
     }
 
@@ -79,21 +101,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ ok: false, error: 'Cek sesi butuh X-Nexabot-Cookie header' })
       }
       console.log(`[nexabot-proxy] GET /api/v1/credits (session probe)`)
-      const upstreamRes = await fetch(`${NEXABOT_BASE}/api/v1/credits`, {
+      await relayJson(res, 'session', `${NEXABOT_BASE}/api/v1/credits`, {
         method: 'GET',
         headers: {
           ...sessionHeaders(),
           'Accept': 'application/json',
         },
-        signal: AbortSignal.timeout(CREDIT_TIMEOUT_MS),
       })
-      const text = await upstreamRes.text()
-      console.log(`[nexabot-proxy] session ${upstreamRes.status}: ${text.slice(0, 300)}`)
-      res.writeHead(upstreamRes.status, {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      })
-      res.end(text)
       return
     }
 
@@ -117,7 +131,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (body.media) upstreamBody.media = body.media
       if (body.telegram_id) upstreamBody.telegram_id = body.telegram_id
 
-      const upstreamRes = await fetch(`${NEXABOT_BASE}/api/v1/generate`, {
+      // Tanpa retry: kalau responsnya hilang, job bisa saja sudah terbentuk.
+      await relayJson(res, 'generate', `${NEXABOT_BASE}/api/v1/generate`, {
         method: 'POST',
         headers: {
           ...sessionHeaders(),
@@ -125,15 +140,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           'Accept': 'application/json',
         },
         body: JSON.stringify(upstreamBody),
-        signal: AbortSignal.timeout(SUBMIT_TIMEOUT_MS),
       })
-      const text = await upstreamRes.text()
-      console.log(`[nexabot-proxy] generate ${upstreamRes.status}: ${text.slice(0, 300)}`)
-      res.writeHead(upstreamRes.status, {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      })
-      res.end(text)
       return
     }
 
@@ -156,7 +163,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // akun mana yang ditagih 0.25 cr/request.
       if (body.telegram_id) upstreamBody.telegram_id = body.telegram_id
 
-      const upstreamRes = await fetch(`${NEXABOT_BASE}/api/v1/api`, {
+      // Tanpa retry: kredit 0.25 bisa terpotong dua kali kalau diulang.
+      await relayJson(res, 'submit', `${NEXABOT_BASE}/api/v1/api`, {
         method: 'POST',
         headers: {
           'x-api-key': apiKey as string,
@@ -164,15 +172,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           'Accept': 'application/json',
         },
         body: JSON.stringify(upstreamBody),
-        signal: AbortSignal.timeout(SUBMIT_TIMEOUT_MS),
       })
-      const text = await upstreamRes.text()
-      console.log(`[nexabot-proxy] submit ${upstreamRes.status}: ${text.slice(0, 300)}`)
-      res.writeHead(upstreamRes.status, {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      })
-      res.end(text)
       return
     }
 
@@ -183,21 +183,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ ok: false, error: 'Missing job id' })
       }
       console.log(`[nexabot-proxy] GET /api/v1/jobs/${jobId}`)
-      const upstreamRes = await fetch(`${NEXABOT_BASE}/api/v1/jobs/${jobId}`, {
+      // Read-only → aman diulang; hiccup gateway tidak langsung jadi 504.
+      await relayJson(res, 'job', `${NEXABOT_BASE}/api/v1/jobs/${jobId}`, {
         method: 'GET',
         headers: {
           ...authHeaders(),
           'Accept': 'application/json',
         },
-        signal: AbortSignal.timeout(JOB_TIMEOUT_MS),
       })
-      const text = await upstreamRes.text()
-      console.log(`[nexabot-proxy] job ${upstreamRes.status}: ${text.slice(0, 300)}`)
-      res.writeHead(upstreamRes.status, {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      })
-      res.end(text)
       return
     }
 
@@ -208,11 +201,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ ok: false, error: 'Missing job id' })
       }
       console.log(`[nexabot-proxy] GET /api/v1/jobs/${jobId}/download`)
-      const upstreamRes = await fetch(`${NEXABOT_BASE}/api/v1/jobs/${jobId}/download`, {
+      const { response: upstreamRes } = await fetchNexabotUpstream(`${NEXABOT_BASE}/api/v1/jobs/${jobId}/download`, {
         method: 'GET',
         headers: authHeaders(),
         redirect: 'follow',
-      })
+      }, { action: 'download' })
 
       if (!upstreamRes.ok) {
         const errText = await upstreamRes.text().catch(() => '')
@@ -273,11 +266,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const ct = req.headers['content-type']
     if (ct) headers['Content-Type'] = ct
 
-    const upstreamRes = await fetch(`${NEXABOT_BASE}${req.url || '/'}`, {
+    // Path yang tidak dikenali: tetap diberi timeout supaya tidak menggantung
+    // tanpa batas (tanpa retry karena isinya tidak diketahui).
+    const { response: upstreamRes } = await fetchNexabotUpstream(`${NEXABOT_BASE}${req.url || '/'}`, {
       method: req.method,
       headers,
       body: req.method !== 'GET' && req.method !== 'HEAD' ? rawBody : undefined,
-    })
+    }, { action: 'generic' })
 
     const text = await upstreamRes.text()
     console.log(`[nexabot-proxy] ${upstreamRes.status}: ${text.slice(0, 300)}`)
@@ -287,11 +282,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     })
     res.end(text)
   } catch (err: any) {
-    console.error(`[nexabot-proxy] error:`, err.message)
-    res.writeHead(isTimeout(err) ? 504 : 502, { 'Content-Type': 'application/json' })
+    const upstream = err instanceof NexabotUpstreamError ? err : null
+    console.error(`[nexabot-proxy] error:`, err?.message)
+    const timedOut = upstream ? upstream.timeout : isTimeout(err)
+    res.writeHead(timedOut ? 504 : 502, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({
       ok: false,
-      error: isTimeout(err) ? 'NexaBot timeout — server mereka tidak merespons' : err.message,
+      // Pesan NexabotUpstreamError sudah menyebut jenis request & jumlah
+      // percobaan, jadi user tahu ini upstream yang menggantung.
+      error: upstream
+        ? upstream.message
+        : (isTimeout(err) ? 'NexaBot timeout — server mereka tidak merespons' : err?.message),
     }))
   }
 }

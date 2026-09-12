@@ -1,17 +1,52 @@
 import { Router, Request, Response } from 'express'
+import {
+  NEXABOT_PROXY_POLICY,
+  NexabotUpstreamError,
+  fetchNexabotUpstream,
+  nexabotRelayHeaders,
+  type NexabotProxyAction,
+} from '../../shared/nexabotProxy.js'
 
 const router = Router()
 const NEXABOT_BASE = 'https://nexabot.id'
 
-// NexaBot kadang menggantung tanpa response (khususnya /credit & /api). Batasi
-// durasi tiap call upstream supaya request klien tidak nge-hang selamanya.
-const NEXABOT_CREDIT_TIMEOUT_MS = 20_000
-// Submit bisa lambat saat NexaBot sedang ramai (pernah >2 menit), jadi longgar.
-const NEXABOT_SUBMIT_TIMEOUT_MS = 180_000
-const NEXABOT_JOB_TIMEOUT_MS = 20_000
-
-function isTimeout(err: any) {
-  return err?.name === 'TimeoutError' || err?.name === 'AbortError'
+/**
+ * Satu call upstream ke NexaBot dengan timeout & retry sesuai jenis request
+ * (lihat shared/nexabotProxy.ts), lalu teruskan status + body apa adanya ke
+ * klien. Read-only (saldo/sesi/job/mode) boleh diulang; submit/generate tidak.
+ */
+async function relayUpstream(
+  res: Response,
+  action: NexabotProxyAction,
+  url: string,
+  init: RequestInit,
+): Promise<void> {
+  const { label } = NEXABOT_PROXY_POLICY[action]
+  try {
+    const { response, attempts } = await fetchNexabotUpstream(url, init, {
+      action,
+      onRetry: ({ attempt, status, delayMs, message }) =>
+        console.warn(
+          `[nexabot-local] ${action} percobaan ${attempt} gagal (${message}${status ? ` HTTP ${status}` : ''}) — coba lagi dalam ${delayMs}ms`,
+        ),
+    })
+    const text = await response.text()
+    console.log(`[nexabot-local] ${action} ${response.status}${attempts > 1 ? ` (percobaan ke-${attempts})` : ''}: ${text.slice(0, 300)}`)
+    res.writeHead(response.status, {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      // Teruskan Retry-After upstream supaya klien menunggu sesuai anjuran mereka.
+      ...nexabotRelayHeaders(response),
+    })
+    res.end(text)
+  } catch (err: any) {
+    const upstream = err instanceof NexabotUpstreamError ? err : null
+    console.error(`[nexabot-local] ${label} error:`, err?.message)
+    res.status(upstream?.timeout ? 504 : 502).json({
+      ok: false,
+      error: upstream ? `${upstream.message} — coba lagi` : err?.message || `Gagal ${label}`,
+    })
+  }
 }
 
 // Mode session: request ditandai dengan cookie login nexabot.id (dikirim klien
@@ -55,32 +90,16 @@ router.get('/credit', async (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: 'Missing X-Api-Key header' })
   }
 
-  try {
-    console.log(`[nexabot-local] GET /api/v1/api/credit`)
-    const upstreamRes = await fetch(`${NEXABOT_BASE}/api/v1/api/credit`, {
-      method: 'GET',
-      headers: {
-        'x-api-key': apiKey,
-        'Accept': 'application/json',
-      },
-      // NexaBot /credit kadang menggantung tanpa response — jangan biarkan
-      // request klien ikut nge-hang.
-      signal: AbortSignal.timeout(NEXABOT_CREDIT_TIMEOUT_MS),
-    })
-    const text = await upstreamRes.text()
-    console.log(`[nexabot-local] credit ${upstreamRes.status}: ${text.slice(0, 300)}`)
-    res.writeHead(upstreamRes.status, {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-    })
-    res.end(text)
-  } catch (err: any) {
-    console.error(`[nexabot-local] credit error:`, err.message)
-    res.status(504).json({
-      ok: false,
-      error: isTimeout(err) ? 'NexaBot timeout saat cek saldo (20s)' : err.message,
-    })
-  }
+  console.log(`[nexabot-local] GET /api/v1/api/credit`)
+  // /credit sering menggantung di sisi NexaBot — timeout 25s × 3 percobaan
+  // dengan backoff jauh lebih jarang berakhir 504 daripada sekali 20s.
+  await relayUpstream(res, 'credit', `${NEXABOT_BASE}/api/v1/api/credit`, {
+    method: 'GET',
+    headers: {
+      'x-api-key': apiKey,
+      'Accept': 'application/json',
+    },
+  })
 })
 
 // ── Session info (mode cookie) ──
@@ -91,30 +110,14 @@ router.get('/session', async (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: 'Missing X-Nexabot-Cookie header' })
   }
 
-  try {
-    console.log(`[nexabot-local] GET /api/v1/credits (session probe)`)
-    const upstreamRes = await fetch(`${NEXABOT_BASE}/api/v1/credits`, {
-      method: 'GET',
-      headers: {
-        ...sessionHeaders(cookies),
-        'Accept': 'application/json',
-      },
-      signal: AbortSignal.timeout(NEXABOT_CREDIT_TIMEOUT_MS),
-    })
-    const text = await upstreamRes.text()
-    console.log(`[nexabot-local] session ${upstreamRes.status}: ${text.slice(0, 300)}`)
-    res.writeHead(upstreamRes.status, {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-    })
-    res.end(text)
-  } catch (err: any) {
-    console.error(`[nexabot-local] session error:`, err.message)
-    res.status(504).json({
-      ok: false,
-      error: isTimeout(err) ? 'NexaBot timeout saat cek sesi (20s)' : err.message,
-    })
-  }
+  console.log(`[nexabot-local] GET /api/v1/credits (session probe)`)
+  await relayUpstream(res, 'session', `${NEXABOT_BASE}/api/v1/credits`, {
+    method: 'GET',
+    headers: {
+      ...sessionHeaders(cookies),
+      'Accept': 'application/json',
+    },
+  })
 })
 
 // ── Submit job ──
@@ -127,43 +130,29 @@ router.post('/submit', async (req: Request, res: Response) => {
   const body = req.body
   console.log(`[nexabot-local] POST /api/v1/api (mode: ${body.mode})`)
 
-  try {
-    const upstreamBody: Record<string, any> = {
-      mode: body.mode,
-      prompt: body.prompt,
-    }
-    if (body.ratio !== undefined) upstreamBody.ratio = body.ratio
-    if (body.aspect !== undefined) upstreamBody.aspect = body.aspect
-    if (body.voice) upstreamBody.voice = body.voice
-    if (body.media) upstreamBody.media = body.media
-    // telegram_id = "user id for credit billing" (docs NexaBot) — menentukan
-    // akun mana yang ditagih 0.25 cr/request.
-    if (body.telegram_id) upstreamBody.telegram_id = body.telegram_id
-
-    const upstreamRes = await fetch(`${NEXABOT_BASE}/api/v1/api`, {
-      method: 'POST',
-      headers: {
-        'x-api-key': apiKey,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: JSON.stringify(upstreamBody),
-      signal: AbortSignal.timeout(NEXABOT_SUBMIT_TIMEOUT_MS),
-    })
-    const text = await upstreamRes.text()
-    console.log(`[nexabot-local] submit ${upstreamRes.status}: ${text.slice(0, 300)}`)
-    res.writeHead(upstreamRes.status, {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-    })
-    res.end(text)
-  } catch (err: any) {
-    console.error(`[nexabot-local] submit error:`, err.message)
-    res.status(504).json({
-      ok: false,
-      error: isTimeout(err) ? 'NexaBot timeout saat submit (90s) — coba lagi' : err.message,
-    })
+  const upstreamBody: Record<string, any> = {
+    mode: body.mode,
+    prompt: body.prompt,
   }
+  if (body.ratio !== undefined) upstreamBody.ratio = body.ratio
+  if (body.aspect !== undefined) upstreamBody.aspect = body.aspect
+  if (body.voice) upstreamBody.voice = body.voice
+  if (body.media) upstreamBody.media = body.media
+  // telegram_id = "user id for credit billing" (docs NexaBot) — menentukan
+  // akun mana yang ditagih 0.25 cr/request.
+  if (body.telegram_id) upstreamBody.telegram_id = body.telegram_id
+
+  // Sengaja TANPA retry: kalau responsnya hilang, job bisa saja sudah terbentuk
+  // dan kredit 0.25 sudah terpotong.
+  await relayUpstream(res, 'submit', `${NEXABOT_BASE}/api/v1/api`, {
+    method: 'POST',
+    headers: {
+      'x-api-key': apiKey,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    },
+    body: JSON.stringify(upstreamBody),
+  })
 })
 
 // ── Submit job (mode session / cookie) ──
@@ -178,41 +167,26 @@ router.post('/generate', async (req: Request, res: Response) => {
   const body = req.body
   console.log(`[nexabot-local] POST /api/v1/generate (session, mode: ${body.mode})`)
 
-  try {
-    const upstreamBody: Record<string, any> = {
-      mode: body.mode,
-      prompt: body.prompt,
-    }
-    if (body.ratio !== undefined) upstreamBody.ratio = body.ratio
-    if (body.aspect !== undefined) upstreamBody.aspect = body.aspect
-    if (body.voice) upstreamBody.voice = body.voice
-    if (body.media) upstreamBody.media = body.media
-    if (body.telegram_id) upstreamBody.telegram_id = body.telegram_id
-
-    const upstreamRes = await fetch(`${NEXABOT_BASE}/api/v1/generate`, {
-      method: 'POST',
-      headers: {
-        ...sessionHeaders(cookies),
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: JSON.stringify(upstreamBody),
-      signal: AbortSignal.timeout(NEXABOT_SUBMIT_TIMEOUT_MS),
-    })
-    const text = await upstreamRes.text()
-    console.log(`[nexabot-local] generate ${upstreamRes.status}: ${text.slice(0, 300)}`)
-    res.writeHead(upstreamRes.status, {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-    })
-    res.end(text)
-  } catch (err: any) {
-    console.error(`[nexabot-local] generate error:`, err.message)
-    res.status(504).json({
-      ok: false,
-      error: isTimeout(err) ? 'NexaBot timeout saat generate via session (180s) — coba lagi' : err.message,
-    })
+  const upstreamBody: Record<string, any> = {
+    mode: body.mode,
+    prompt: body.prompt,
   }
+  if (body.ratio !== undefined) upstreamBody.ratio = body.ratio
+  if (body.aspect !== undefined) upstreamBody.aspect = body.aspect
+  if (body.voice) upstreamBody.voice = body.voice
+  if (body.media) upstreamBody.media = body.media
+  if (body.telegram_id) upstreamBody.telegram_id = body.telegram_id
+
+  // Tanpa retry, sama alasannya dengan /submit: hindari job & kredit ganda.
+  await relayUpstream(res, 'generate', `${NEXABOT_BASE}/api/v1/generate`, {
+    method: 'POST',
+    headers: {
+      ...sessionHeaders(cookies),
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    },
+    body: JSON.stringify(upstreamBody),
+  })
 })
 
 // ── Poll job status ──
@@ -226,27 +200,16 @@ router.get('/job/:id', async (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: 'Missing job id' })
   }
 
-  try {
-    console.log(`[nexabot-local] GET /api/v1/jobs/${jobId}`)
-    const upstreamRes = await fetch(`${NEXABOT_BASE}/api/v1/jobs/${jobId}`, {
-      method: 'GET',
-      headers: {
-        ...auth,
-        'Accept': 'application/json',
-      },
-      signal: AbortSignal.timeout(NEXABOT_JOB_TIMEOUT_MS),
-    })
-    const text = await upstreamRes.text()
-    console.log(`[nexabot-local] job ${upstreamRes.status}: ${text.slice(0, 300)}`)
-    res.writeHead(upstreamRes.status, {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-    })
-    res.end(text)
-  } catch (err: any) {
-    console.error(`[nexabot-local] job error:`, err.message)
-    res.status(502).json({ ok: false, error: err.message })
-  }
+  console.log(`[nexabot-local] GET /api/v1/jobs/${jobId}`)
+  // Poll status bersifat read-only → aman diulang; satu hiccup gateway tidak
+  // lagi terlihat oleh klien sebagai "job hilang".
+  await relayUpstream(res, 'job', `${NEXABOT_BASE}/api/v1/jobs/${jobId}`, {
+    method: 'GET',
+    headers: {
+      ...auth,
+      'Accept': 'application/json',
+    },
+  })
 })
 
 // ── Download result ──
@@ -262,11 +225,11 @@ router.get('/download/:id', async (req: Request, res: Response) => {
 
   try {
     console.log(`[nexabot-local] GET /api/v1/jobs/${jobId}/download`)
-    const upstreamRes = await fetch(`${NEXABOT_BASE}/api/v1/jobs/${jobId}/download`, {
+    const { response: upstreamRes } = await fetchNexabotUpstream(`${NEXABOT_BASE}/api/v1/jobs/${jobId}/download`, {
       method: 'GET',
       headers: auth,
       redirect: 'follow',
-    })
+    }, { action: 'download' })
 
     if (!upstreamRes.ok) {
       const errText = await upstreamRes.text().catch(() => '')
@@ -313,7 +276,8 @@ router.get('/download/:id', async (req: Request, res: Response) => {
     res.end()
   } catch (err: any) {
     console.error(`[nexabot-local] download error:`, err.message)
-    res.status(502).json({ ok: false, error: err.message })
+    const upstream = err instanceof NexabotUpstreamError ? err : null
+    res.status(upstream?.timeout ? 504 : 502).json({ ok: false, error: upstream ? `${upstream.message} — coba lagi` : err.message })
   }
 })
 
@@ -325,26 +289,14 @@ router.get('/modes', async (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: 'Missing X-Api-Key header' })
   }
 
-  try {
-    console.log(`[nexabot-local] GET /api/v1/modes`)
-    const upstreamRes = await fetch(`${NEXABOT_BASE}/api/v1/modes`, {
-      method: 'GET',
-      headers: {
-        'x-api-key': apiKey,
-        'Accept': 'application/json',
-      },
-    })
-    const text = await upstreamRes.text()
-    console.log(`[nexabot-local] modes ${upstreamRes.status}: ${text.slice(0, 300)}`)
-    res.writeHead(upstreamRes.status, {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-    })
-    res.end(text)
-  } catch (err: any) {
-    console.error(`[nexabot-local] modes error:`, err.message)
-    res.status(502).json({ ok: false, error: err.message })
-  }
+  console.log(`[nexabot-local] GET /api/v1/modes`)
+  await relayUpstream(res, 'modes', `${NEXABOT_BASE}/api/v1/modes`, {
+    method: 'GET',
+    headers: {
+      'x-api-key': apiKey,
+      'Accept': 'application/json',
+    },
+  })
 })
 
 export default router
