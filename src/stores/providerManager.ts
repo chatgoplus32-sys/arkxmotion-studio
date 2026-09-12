@@ -208,7 +208,7 @@ export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
   nexabot: {
     id: 'nexabot',
     name: 'NexaBot',
-    icon: '🤖',
+    icon: '🔮',
     description: 'NexaBot AI via nexabot.id — model Google Omni (text, image & video reference to video)',
     keyPlaceholder: 'Paste your NexaBot API key (nxb_...)',
     keyFormat: 'API key (nxb_...)',

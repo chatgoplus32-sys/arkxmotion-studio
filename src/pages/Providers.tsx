@@ -28,7 +28,7 @@ import { fetchLeonardoBalance } from '@/lib/leonardo'
 import { checkWeavyBalance } from '@/lib/weavy'
 import { checkRunningHubBalance } from '@/lib/runninghub'
 import { checkFireflyBalance } from '@/lib/firefly'
-import { parseNexabotCookieInput, parseNexabotApiKeyInput } from '@/lib/nexabot'
+import { parseNexabotCookieInput, parseNexabotApiKeyInput, NEXABOT_CHECK_TIMEOUT_MS } from '@/lib/nexabot'
 import { refreshNexabotSessionMonitor } from '@/lib/nexabotSessionMonitor'
 import { checkGalleri5Balance, isGalleri5TokenError } from '@/lib/galleri5'
 
@@ -201,7 +201,7 @@ const TOKEN_GUIDE: Record<string, {
   galleri5: {
     url: '/plugins',
     urlLabel: 'AA Plug-IN → AA Grabber Galery5',
-    prefix: 'AMf-... (refresh token) atau eyJ... (ID token) atau JSON headers',
+    prefix: 'AMf-... (refresh token) atau eyJ... (ID token) atau JSON headers — AUTO-SYNC: extension auth-helper mengirim token terbaru otomatis',
     steps: [
       { text: 'Cara cepat: buka menu AA Plug-IN → install "AA Grabber — Galery5", login di tab Akun, buka aistudio.galleri5.com, klik Ambil Token → otomatis masuk Token Manager.' },
       { text: 'Cara manual: login di aistudio.galleri5.com (Google / email).' },
@@ -216,7 +216,7 @@ const TOKEN_GUIDE: Record<string, {
   oneover: {
     url: 'https://oneover.com/create/animate',
     urlLabel: 'oneover.com',
-    prefix: 'JSON: { access_token, refresh_token } atau refresh_token langsung',
+    prefix: 'JSON: { access_token, refresh_token } atau refresh_token langsung — AUTO-SYNC: extension auth-helper mengirim token terbaru otomatis',
     steps: [
       { text: 'Buka ', link: { url: 'https://oneover.com', label: 'oneover.com' }, },
       { text: 'Login dengan akun yang sudah berlangganan.' },
@@ -230,7 +230,7 @@ const TOKEN_GUIDE: Record<string, {
   firefly: {
     url: 'https://firefly.adobe.com/generate/video',
     urlLabel: 'firefly.adobe.com',
-    prefix: 'JSON: { token, apiKey, account, session } atau token langsung',
+    prefix: 'JSON: { token, apiKey, account, session } atau token langsung — AUTO-SYNC: extension auth-helper mengirim token terbaru otomatis (IMS ~1 jam)',
     steps: [
       { text: 'Install ekstensi "ARKX Auth Helper" dari folder extensions/auth-helper (satu ekstensi untuk semua provider).' },
       { text: 'Buka ', link: { url: 'https://firefly.adobe.com', label: 'firefly.adobe.com' }, },
@@ -415,7 +415,7 @@ function NexabotSessionInput({ providerKeys, addKey, setKeyCookies }: {
     setChecking(true)
     try {
       const { checkNexabotSession } = await import('@/lib/nexabot')
-      setInfo(await checkNexabotSession(cookies))
+      setInfo(await checkNexabotSession(cookies, { timeoutMs: NEXABOT_CHECK_TIMEOUT_MS }))
     } catch (e: any) {
       setInfo({
         ok: false, active: false, unlimited: false, plan: null,
@@ -568,7 +568,7 @@ function NexabotTelegramInput({ providerKeys, setKeyTelegramId }: {
     setDetected(null)
     try {
       const { checkNexabotBalance } = await import('@/lib/nexabot')
-      const res = await checkNexabotBalance(key.key)
+      const res = await checkNexabotBalance(key.key, { timeoutMs: NEXABOT_CHECK_TIMEOUT_MS })
       setDetected({
         telegramId: res.telegramId ?? null,
         registered: res.registered === true,
@@ -676,6 +676,7 @@ export default function ProvidersPage() {
       oneover: 'oneover',
       genspark: 'genspark',
       riverside: 'riverside',
+      nexabot: 'nexabot',
     }
     const providerId = providerMap[selectedProvider]
     return providerId ? isProviderMaintenance(providerId) : false
@@ -695,6 +696,7 @@ export default function ProvidersPage() {
       oneover: 'oneover',
       genspark: 'genspark',
       riverside: 'riverside',
+      nexabot: 'nexabot',
     }
     const providerId = providerMap[selectedProvider]
     return providerId ? getMaintenanceMessage(providerId) : ''
@@ -1181,10 +1183,19 @@ export default function ProvidersPage() {
       if (sessionCookies) {
         try {
           const { checkNexabotSession } = await import('@/lib/nexabot')
-          const s = await checkNexabotSession(sessionCookies)
+          const s = await checkNexabotSession(sessionCookies, { timeoutMs: NEXABOT_CHECK_TIMEOUT_MS })
           if (!s.ok) {
             // 404 = endpoint belum ada di server (backend lama), bukan cookie invalid.
             const notFound = /404|tidak ditemukan/i.test(s.error || '')
+            // 429/504/timeout dari gateway NexaBot BUKAN tanda cookie mati. Dulu
+            // hiccup ini dicap 'invalid', jadi sesi Unlimited yang sehat ikut
+            // dicabut, user diminta login ulang, dan key-nya dilewati precheck.
+            if (s.transient) {
+              return {
+                state: 'limited',
+                detail: s.error || 'Server NexaBot tidak merespons (timeout gateway) — coba cek lagi sebentar lagi',
+              }
+            }
             return {
               state: notFound ? 'failed' : 'invalid',
               detail: s.error || 'Cookie sesi ditolak — login ulang di nexabot.id lalu paste cookie baru',
@@ -1209,8 +1220,13 @@ export default function ProvidersPage() {
       }
       try {
         const { checkNexabotBalance } = await import('@/lib/nexabot')
-        const result = await checkNexabotBalance(key)
+        const result = await checkNexabotBalance(key, { timeoutMs: NEXABOT_CHECK_TIMEOUT_MS })
         if (!result.ok) {
+          // Timeout/504 = NexaBot (atau jaringannya) yang lambat, bukan key-nya.
+          // Tandai rate-limited supaya key tidak dicap mati dan tetap dipakai.
+          if (result.transient) {
+            return { state: 'limited', detail: result.error || 'Server NexaBot tidak merespons (timeout gateway) — coba cek lagi sebentar lagi' }
+          }
           if (/tidak valid|invalid|unauthorized|forbidden|401|403/i.test(result.error || '')) {
             return { state: 'invalid', detail: result.error || 'API key NexaBot tidak valid' }
           }
@@ -1235,7 +1251,10 @@ export default function ProvidersPage() {
     setChecking(true)
     const newStatusMap: typeof statusMap = {}
     const providerKeys = keys[selectedProvider as ProviderId] || []
-    const concurrency = 5
+    // NexaBot /credit & /credits menggantung kalau ditembak paralel (log
+    // nexabot-local: 5 probe sekaligus semuanya timeout 3×30s). Fan-out-nya
+    // dikecilkan supaya tiap probe sempat dapat jawaban dari upstream.
+    const concurrency = selectedProvider === 'nexabot' ? 2 : 5
 
     // Mark all as checking first
     for (const key of savedKeys) {
@@ -1291,8 +1310,11 @@ export default function ProvidersPage() {
       if (token) {
         // Read balance from providerManager store (updated by updateKeyStatus)
         const freshKeys = useProviderManager.getState().keys[selectedProvider as ProviderId] || []
+        // credits null = saldo belum diketahui (cek timeout/504). Endpoint sync
+        // melewati entri non-number, jadi kredit lama di Credit Management tidak
+        // ditimpa 0 hanya karena upstream NexaBot menggantung.
         const syncUpdates = freshKeys.map((k) => ({
-          credits: k.balance ?? 0,
+          credits: k.balance ?? null,
         }))
         if (syncUpdates.length > 0) {
           console.log(`[credits-sync] ${selectedProvider}: syncing ${syncUpdates.length} keys`, syncUpdates.map(u => u.credits))
@@ -1389,6 +1411,7 @@ export default function ProvidersPage() {
                     oneover: 'oneover',
                     genspark: 'genspark',
                     riverside: 'riverside',
+                    nexabot: 'nexabot',
                   }
                   const providerId = providerMap[p.key]
                   const isMaint = providerId ? isProviderMaintenance(providerId) : false
