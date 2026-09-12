@@ -2202,7 +2202,13 @@ export default function ImageToVideoPage() {
                   // Billing NexaBot mengikuti telegram_id (kalau diisi di halaman Providers).
                   // Di mode session field ini diabaikan — akun ditentukan oleh cookie.
                   telegramId: keyInfo?.telegramId,
-                }, auth)
+                }, auth, {
+                  // 429 dari NexaBot diulang otomatis setelah jeda (upstream
+                  // menolak tanpa membuat job, jadi aman diulang).
+                  onRetry: ({ status, delayMs }) => {
+                    addLog(`⏳ NexaBot sibuk (HTTP ${status}) — submit diulang dalam ${Math.ceil(delayMs / 1000)}s...`, 'warn', 'nexabot')
+                  },
+                })
                 if (!submit.ok || !submit.jobId) throw new Error(submit.error || 'NexaBot submit gagal')
 
                 addLog(`✅ Task created ✓ id=${submit.jobId.slice(0, 20)}...`, 'success', 'nexabot')
@@ -2211,6 +2217,14 @@ export default function ImageToVideoPage() {
                 await pollNexabotJob(submit.jobId, auth, (msg) => {
                   addLog(msg, 'debug', 'nexabot')
                   setStatus((s) => ({ ...s, text: msg, pct: Math.min((s.pct || 0) + 5, 85) }))
+                }, {
+                  // Poll status itu read-only, jadi hiccup upstream (proxy 504
+                  // / rate limit) ditunggu dengan backoff, bukan menggagalkan job.
+                  onRetry: ({ status, delayMs, message }) => {
+                    const seconds = Math.ceil(delayMs / 1000)
+                    addLog(`⏳ NexaBot ${message}${status ? ` (HTTP ${status})` : ''} — coba lagi dalam ${seconds}s...`, 'warn', 'nexabot')
+                    setStatus((s) => ({ ...s, text: `NexaBot sibuk — menunggu ${seconds}s...` }))
+                  },
                 })
 
                 setStatus((s) => ({ ...s, pct: 90, text: 'Mengunduh hasil...' }))

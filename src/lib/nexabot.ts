@@ -1,4 +1,35 @@
+// Relatif + ekstensi .js: modul ini juga dimuat test Node (tsx) yang memakai
+// resolusi nodenext dan tidak tahu alias `@/`, sedangkan Vite memetakan
+// './x.js' ke './x.ts' saat build.
+import {
+  describeNexabotStatus,
+  nexabotHttpVerdict,
+  nexabotRetryDelayMs,
+  parseRetryAfterMs,
+  type NexabotBackoffOptions,
+} from './nexabotRetry.js'
+
 const NEXABOT_BASE = '/api/public/nexabot'
+
+/**
+ * Opsi ketahanan untuk submit/poll NexaBot. Nilai default = perilaku produksi;
+ * test mengecilkan jedanya supaya tidak menunggu detik-an.
+ */
+export interface NexabotRetryOptions extends NexabotBackoffOptions {
+  /** Total percobaan (1 = tanpa retry). */
+  maxAttempts?: number
+  /** Diberi tahu setiap kali kita menunggu sebelum mencoba lagi. */
+  onRetry?: (info: { attempt: number; status: number | null; delayMs: number; message: string }) => void
+}
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, ms)))
+
+/** Hint dari header `Retry-After` untuk pesan error, mis. " (tunggu ±30s)". */
+function retryAfterHint(res: Response): string {
+  const ms = parseRetryAfterMs(res.headers.get('retry-after'))
+  if (ms == null) return ''
+  return ` (disarankan tunggu ±${Math.max(1, Math.round(ms / 1000))}s)`
+}
 
 function getStoredProviderKey(provider: string): string | null {
   if (typeof window === 'undefined') return null
@@ -216,7 +247,9 @@ export async function checkNexabotBalance(apiKey: string): Promise<{
       if (res.status === 401) {
         return { ok: false, balance: null, creditCost: null, error: 'API key tidak valid' }
       }
-      return { ok: false, balance: null, creditCost: null, error: `HTTP ${res.status}` }
+      // 429/504 dari proxy artinya NexaBot yang bermasalah, bukan key-nya —
+      // jelaskan supaya user tidak buru-buru menghapus key.
+      return { ok: false, balance: null, creditCost: null, error: describeNexabotStatus(res.status) }
     }
     const data = await res.json()
     if (!data.ok) {
@@ -343,7 +376,10 @@ export async function checkNexabotSession(cookies: string): Promise<NexabotSessi
         ...EMPTY_SESSION,
         error: res.status === 404
           ? 'Endpoint cek sesi tidak ditemukan (404) — server backend masih versi lama. Restart `npm run dev:server` (atau deploy ulang API) lalu coba lagi.'
-          : `Cek sesi gagal: HTTP ${res.status}`,
+          : `Cek sesi gagal: ${describeNexabotStatus(res.status)}`,
+        // Catatan: 429/504 di sini = upstream sedang membatasi/menggantung,
+        // BUKAN berarti cookie-nya mati. Pesannya dibedakan supaya user tidak
+        // buru-buru login ulang hanya karena hiccup sesaat.
       }
     }
 
@@ -523,8 +559,10 @@ export interface NexabotSubmitResult {
 
 export async function submitNexabot(
   params: NexabotSubmitParams,
-  authOverride?: NexabotAuth | string
+  authOverride?: NexabotAuth | string,
+  opts: NexabotRetryOptions = {}
 ): Promise<NexabotSubmitResult> {
+  const { maxAttempts = 3, baseMs = 2000, maxMs = 15000, random, onRetry } = opts
   const auth = fillAuthFromStorage(normalizeAuth(authOverride))
   const { apiKey, cookies } = normalizeValues(auth)
   const session = !!cookies
@@ -552,41 +590,63 @@ export async function submitNexabot(
   const endpoint = session ? `${NEXABOT_BASE}/generate` : `${NEXABOT_BASE}/submit`
   console.log(`[nexabot] Submit ${params.mode} via ${session ? 'session(cookie)' : 'api-key'}: ${params.prompt.slice(0, 50)}...`)
 
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...authHeaders(auth),
-    },
-    body: JSON.stringify(body),
-  })
+  const attempts = Math.max(1, maxAttempts)
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(auth),
+      },
+      body: JSON.stringify(body),
+    })
 
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '')
-    if (res.status === 401 || res.status === 403) {
-      throw new Error(session
-        ? 'NexaBot: session cookie kedaluwarsa — login ulang di nexabot.id lalu paste cookie baru'
-        : 'NexaBot: API key tidak valid')
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '')
+      if (res.status === 401 || res.status === 403) {
+        throw new Error(session
+          ? 'NexaBot: session cookie kedaluwarsa — login ulang di nexabot.id lalu paste cookie baru'
+          : 'NexaBot: API key tidak valid')
+      }
+      if (res.status === 402) throw new Error('NexaBot: Kredit tidak cukup (perlu 0.25)')
+
+      // Retry HANYA untuk 429. Upstream menolak permintaan rate-limited tanpa
+      // membuat job, jadi mengulang tidak menghasilkan job/kredit ganda. Untuk
+      // 5xx & timeout kita sengaja TIDAK mengulang: job bisa saja sudah terbentuk
+      // di sana (kredit 0.25 hangus dua kali kalau asal ulang).
+      if (res.status === 429) {
+        const message = describeNexabotStatus(res.status)
+        if (attempt < attempts) {
+          const delayMs = nexabotRetryDelayMs({ attempt, retryAfterHeader: res.headers.get('retry-after'), opts: { baseMs, maxMs, random } })
+          onRetry?.({ attempt, status: res.status, delayMs, message })
+          console.warn(`[nexabot] Submit ${res.status} (${message}) — coba lagi dalam ${Math.round(delayMs / 1000)}s`)
+          await sleep(delayMs)
+          continue
+        }
+        throw new Error(`NexaBot: ${message} — tunggu sebentar lalu coba lagi${retryAfterHint(res)}`)
+      }
+
+      throw new Error(`NexaBot HTTP ${res.status}: ${errText.slice(0, 200)}`)
     }
-    if (res.status === 402) throw new Error('NexaBot: Kredit tidak cukup (perlu 0.25)')
-    if (res.status === 429) throw new Error('NexaBot: Rate limit')
-    throw new Error(`NexaBot HTTP ${res.status}: ${errText.slice(0, 200)}`)
+
+    const data = await res.json()
+    if (!data.ok) {
+      throw new Error(data.error || 'NexaBot: Submit gagal')
+    }
+
+    return {
+      ok: true,
+      jobId: data.job_id,
+      status: data.status,
+      downloadUrl: data.download_url,
+      creditCost: data.credit_cost,
+      creditBalance: data.credit_balance,
+      estSeconds: data.est_seconds,
+    }
   }
 
-  const data = await res.json()
-  if (!data.ok) {
-    throw new Error(data.error || 'NexaBot: Submit gagal')
-  }
-
-  return {
-    ok: true,
-    jobId: data.job_id,
-    status: data.status,
-    downloadUrl: data.download_url,
-    creditCost: data.credit_cost,
-    creditBalance: data.credit_balance,
-    estSeconds: data.est_seconds,
-  }
+  // Tidak tercapai untuk maxAttempts >= 1 (loop selalu return/throw), jaga-jaga.
+  throw new Error('NexaBot: Submit gagal setelah beberapa percobaan')
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -646,78 +706,147 @@ export function findNexabotResultUrls(value: unknown): { path: string; url: stri
   return out
 }
 
+/**
+ * Batas kegagalan TRANSIENT berturut-turut sebelum kita menyerah. Dengan jeda
+ * backoff (maks 15s) ini setara ~3 menit upstream tidak bisa dihubungi — cukup
+ * lama untuk melewati hiccup gateway, tapi tidak menggantung user selamanya.
+ */
+const MAX_CONSECUTIVE_TRANSIENT = 12
+
+/**
+ * Poll status job sampai selesai. Respons READ-ONLY, jadi aman diulang: satu
+ * poll yang meleset (proxy 504 karena upstream menggantung, atau 429 rate limit)
+ * TIDAK menggagalkan job yang masih `queued` di NexaBot — kita tunggu sebentar
+ * lalu tanya lagi, menghormati `Retry-After` kalau upstream mengirimnya.
+ *
+ * Yang tetap dianggap fatal: 4xx selain 429 (sesi mati / job hilang), halaman
+ * HTML (cookie kedaluwarsa — biar fallback session→API key jalan), dan
+ * `status: failed` dari upstream.
+ */
 export async function pollNexabotJob(
   jobId: string,
   authOverride: NexabotAuth | string,
-  onProgress?: (msg: string) => void
+  onProgress?: (msg: string) => void,
+  opts: NexabotRetryOptions & { maxTotalMs?: number } = {}
 ): Promise<NexabotJob> {
+  const { maxAttempts = 120, baseMs = 3000, maxMs = 15000, maxTotalMs = 20 * 60 * 1000, random, onRetry } = opts
   const auth = fillAuthFromStorage(normalizeAuth(authOverride))
   const { apiKey, cookies } = normalizeValues(auth)
   if (!apiKey && !cookies) throw new Error('NexaBot: tidak ada API key / cookie session yang valid')
-  for (let i = 0; i < 120; i++) {
-    await new Promise(r => setTimeout(r, 3000))
-    onProgress?.(`Polling Nexabot ${i + 1}/120 (${(i + 1) * 3}s)...`)
 
-    try {
-      const res = await fetch(`${NEXABOT_BASE}/job/${jobId}`, {
-        method: 'GET',
-        headers: authHeaders(auth),
-      })
+  const attempts = Math.max(1, maxAttempts)
+  const startedAt = Date.now()
+  let attempt = 0
+  let transientStreak = 0
+  let delayMs = baseMs
+  let lastStatus = ''
 
-      if (!res.ok) {
-        const errText = await res.text().catch(() => '')
-        console.warn(`[nexabot] Poll ${i + 1} HTTP ${res.status}:`, errText.slice(0, 200))
-        // If HTML error page returned (status 4xx/5xx), job likely failed
-        if (res.status >= 400) {
-          throw new Error(`NexaBot job tidak ditemukan atau gagal (HTTP ${res.status})`)
-        }
-        continue
-      }
+  /** Satu kegagalan transient: tunggu lalu lanjut, atau menyerah kalau kebanyakan. */
+  const retryLater = (info: { status: number | null; message: string; retryAfterHeader?: string | null }) => {
+    transientStreak++
+    delayMs = nexabotRetryDelayMs({
+      attempt: transientStreak,
+      retryAfterHeader: info.retryAfterHeader,
+      opts: { baseMs, maxMs, random },
+    })
+    onRetry?.({ attempt, status: info.status, delayMs, message: info.message })
+    console.warn(`[nexabot] Poll ${attempt} gagal (${info.message}) — coba lagi dalam ${Math.round(delayMs / 1000)}s`)
 
-      // Check if response is JSON or HTML
-      const contentType = res.headers.get('content-type') || ''
-      const text = await res.text()
-      console.log(`[nexabot] Poll ${i + 1} URL: ${NEXABOT_BASE}/job/${jobId}`)
-      console.log(`[nexabot] Poll ${i + 1} Content-Type: ${contentType}`)
-      console.log(`[nexabot] Poll ${i + 1} Response (first 500):`, text.slice(0, 500))
-      if (!contentType.includes('application/json') || text.trim().startsWith('<')) {
-        throw new Error(`NexaBot API mengembalikan error (bukan JSON). Response: ${text.slice(0, 200)}`)
-      }
-
-      const data = JSON.parse(text)
-      if (!data.ok) {
-        console.warn(`[nexabot] Poll ${i + 1} error:`, data.error)
-        continue
-      }
-
-      const job = data.job as NexabotJob
-      console.log(`[nexabot] Poll ${i + 1}: status=${job.status}`)
-
-      if (job.status === 'done') {
-        // Diagnostik sekali per job: laporkan URL hasil yang benar-benar tersedia
-        // di payload (`download_url` saja belum tentu satu-satunya varian).
-        // Berguna untuk memutuskan asset mana yang diunduh agar hasil bersih.
-        const assets = findNexabotResultUrls(data)
-        if (assets.length > 0) {
-          console.log(`[nexabot] Asset di payload job:`, assets.map((a) => `${a.path} → ${a.url.slice(0, 120)}`))
-        } else {
-          console.log(`[nexabot] Payload job selesai tanpa URL hasil — unduhan lewat /download/${jobId}`)
-        }
-        return job
-      }
-
-      if (job.status === 'failed') {
-        throw new Error(`NexaBot job gagal: ${job.error || 'Unknown error'}`)
-      }
-    } catch (err: any) {
-      if (err.message?.includes('job gagal') || err.message?.includes('tidak ditemukan') || err.message?.includes('bukan JSON')) {
-        throw err
-      }
-      console.warn(`[nexabot] Poll ${i + 1} error:`, err.message)
+    const elapsedMs = Date.now() - startedAt
+    if (transientStreak >= MAX_CONSECUTIVE_TRANSIENT) {
+      throw new Error(`NexaBot tidak merespons (${transientStreak} percobaan berturut-turut gagal) — cek status job ${jobId} di nexabot.id, lalu coba lagi.`)
+    }
+    if (elapsedMs > maxTotalMs) {
+      throw new Error(`NexaBot polling timeout (${Math.round(elapsedMs / 1000)}s) — cek status job ${jobId} di nexabot.id.`)
     }
   }
 
-  throw new Error('NexaBot polling timeout (6 menit)')
+  while (attempt < attempts) {
+    if (attempt > 0) {
+      onProgress?.(`Polling Nexabot ${attempt + 1}/${attempts} (${Math.round((Date.now() - startedAt) / 1000)}s)...`)
+      await sleep(delayMs)
+    }
+    attempt++
+
+    let res: Response
+    try {
+      res = await fetch(`${NEXABOT_BASE}/job/${jobId}`, {
+        method: 'GET',
+        headers: authHeaders(auth),
+      })
+    } catch (err: any) {
+      // Jaringan/proxy putus — bukan berarti job-nya gagal.
+      retryLater({ status: null, message: err?.message || 'koneksi terputus' })
+      continue
+    }
+
+    const verdict = nexabotHttpVerdict(res.status)
+
+    if (verdict === 'fatal') {
+      const errText = await res.text().catch(() => '')
+      if (res.status === 401 || res.status === 403) {
+        throw new Error('NexaBot: session cookie kedaluwarsa — login ulang di nexabot.id lalu paste cookie baru')
+      }
+      throw new Error(`NexaBot job tidak ditemukan atau gagal — ${describeNexabotStatus(res.status)}${errText ? `: ${errText.slice(0, 120)}` : ''}`)
+    }
+
+    if (verdict === 'retry') {
+      retryLater({
+        status: res.status,
+        message: describeNexabotStatus(res.status),
+        retryAfterHeader: res.headers.get('retry-after'),
+      })
+      continue
+    }
+
+    const contentType = res.headers.get('content-type') || ''
+    const text = await res.text()
+    // Halaman HTML = halaman login (cookie mati). Dibiarkan fatal supaya lapisan
+    // fallback session → API key bisa mengambil alih.
+    if (!contentType.includes('application/json') || text.trim().startsWith('<')) {
+      throw new Error(`NexaBot API mengembalikan error (bukan JSON). Response: ${text.slice(0, 200)}`)
+    }
+
+    let data: any
+    try {
+      data = JSON.parse(text)
+    } catch {
+      throw new Error(`NexaBot API mengembalikan error (bukan JSON). Response: ${text.slice(0, 200)}`)
+    }
+
+    if (!data.ok) {
+      retryLater({ status: res.status, message: data.error || 'respons belum ok' })
+      continue
+    }
+
+    const job = data.job as NexabotJob
+    transientStreak = 0
+    delayMs = nexabotRetryDelayMs({ attempt: 1, opts: { baseMs, maxMs, random } })
+
+    if (job.status !== lastStatus) {
+      lastStatus = job.status
+      console.log(`[nexabot] Poll ${attempt}: status=${job.status}${job.progress ? ` ${job.progress}` : ''}`)
+    }
+
+    if (job.status === 'done') {
+      // Diagnostik sekali per job: laporkan URL hasil yang benar-benar tersedia
+      // di payload (`download_url` saja belum tentu satu-satunya varian).
+      // Berguna untuk memutuskan asset mana yang diunduh agar hasil bersih.
+      const assets = findNexabotResultUrls(data)
+      if (assets.length > 0) {
+        console.log(`[nexabot] Asset di payload job:`, assets.map((a) => `${a.path} → ${a.url.slice(0, 120)}`))
+      } else {
+        console.log(`[nexabot] Payload job selesai tanpa URL hasil — unduhan lewat /download/${jobId}`)
+      }
+      return job
+    }
+
+    if (job.status === 'failed') {
+      throw new Error(`NexaBot job gagal: ${job.error || 'Unknown error'}`)
+    }
+  }
+
+  throw new Error(`NexaBot polling timeout (${Math.round((Date.now() - startedAt) / 1000)}s, ${attempt} percobaan)`)
 }
 
 // ═══════════════════════════════════════════════════════════════════

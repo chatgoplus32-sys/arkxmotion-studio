@@ -1,8 +1,8 @@
 {
-  "//": "Test jalan lewat tsx (runtime saja), jadi tsc di sini cuma memastikan tipe-nya benar. Hanya folder test yang di-include: TS ikut menarik modul yang di-import (shared/, server/, api/).",
+  "//": "Test jalan lewat tsx (runtime saja), jadi tsc di sini cuma memastikan tipe-nya benar. Hanya folder test yang di-include: TS ikut menarik modul yang di-import (shared/, server/, api/, dan src/lib yang dipakai test). Lib DOM ikut karena beberapa modul klien (nexabot.ts) memakai API browser.",
   "compilerOptions": {
     "target": "es2023",
-    "lib": ["ES2023"],
+    "lib": ["ES2023", "DOM"],
     "types": ["node"],
     "module": "nodenext",
     "moduleResolution": "nodenext",
