@@ -10,12 +10,24 @@ di-ignore di sini (lihat komentar di `.gitignore`).
 | Path | Isi |
 | --- | --- |
 | `arkxmotion-studio/` | Produk ARKXMotion Studio (Vite + React + Express). Repo terpisah: https://github.com/chatgoplus32-sys/arkxmotion-studio — jalankan perintah npm dari dalam folder itu, bukan dari sini. |
-| `firefly-auth-helper/` | Ekstensi browser MV3 untuk menangkap header auth Adobe Firefly. |
-| `g5-auth-helper/` | Ekstensi MV3 untuk Galleri5 AI Studio (header submit + refresh token). |
-| `oneover-auth-helper/` | Ekstensi MV3 untuk OneOver (inject + capture token). |
-| `jwt-extractor-extension/` | Ekstensi MV3 untuk menarik JWT dari sesi login. |
 | `recipe-endpoint-scraper/` | Scraper recipe/endpoint provider (Node `server.js` + `scraper.py`). `node_modules/` dan log-nya di-ignore. |
 | `scratch/` (di-ignore) | Sisa pekerjaan sekali pakai, lihat di bawah. |
+
+### Ekstensi token: sekarang satu, di repo produk
+
+Empat helper lama di workspace ini (`firefly-auth-helper`, `g5-auth-helper`,
+`oneover-auth-helper`, `jwt-extractor-extension`) sudah pensiun. Semuanya —
+plus `lemur-galleri5`, `oneover-token-ext`, dan `firebase-token-ext` dari repo
+produk — digabung menjadi **satu** ekstensi dengan registry provider:
+
+```
+arkxmotion-studio/extensions/auth-helper/
+```
+
+Isi ekstensi lama tetap bisa dibuka dari riwayat git masing-masing repo
+(`git show HEAD:g5-auth-helper/popup.js`, dan seterusnya). Hint provider di app
+sudah diarahkan ke ekstensi baru, jadi tidak ada lagi instruksi yang menunjuk
+folder yang sudah hilang.
 
 ## `scratch/` — silakan dihapus kapan saja
 
@@ -30,8 +42,7 @@ sebelumnya, dipindahkan keluar dari root supaya akar workspace bisa dibaca:
   `leonardo.js`), aset gambar, dan arsip `oneover-auth-helper.zip`.
 
 Tidak ada sub-proyek yang mengimpor apa pun dari `scratch/`, jadi menghapus
-folder itu tidak memutus build. Ekspor `dash*.html`/`leonardo.js` sengaja
-disimpan karena berisi UI mode Leonardo/Vigen lama yang bisa jadi acuan.
+folder itu tidak memutus build.
 
 ## Catatan
 
