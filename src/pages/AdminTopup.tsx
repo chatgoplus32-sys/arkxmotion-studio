@@ -4,6 +4,7 @@ import { Section, Button, Badge } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { CheckCircle, XCircle, Clock, Wallet, Sparkles } from 'lucide-react'
+import { nexabotPackageName } from '@/lib/nexabotWallet'
 
 interface Topup {
   id: number
@@ -13,6 +14,8 @@ interface Topup {
   /** 'unlimited' = pembelian Paket Unlimited (approve → aktifkan masa berlaku, bukan tambah saldo). */
   kind?: 'balance' | 'unlimited'
   days?: number
+  /** Varian paket NexaBot yang dibeli (mist. unlimited_monthly). */
+  package_slug?: string
   expires_at?: string | null
   proof_note: string
   admin_note: string
@@ -162,7 +165,7 @@ export default function AdminTopupPage() {
                         : <Wallet className="h-4 w-4 text-primary" />}
                       <span className="font-bold text-lg">{formatRp(t.amount)}</span>
                       {t.kind === 'unlimited' && (
-                        <Badge variant="default">Paket Unlimited {t.days || 7} hari</Badge>
+                        <Badge variant="default">Paket {nexabotPackageName(t.package_slug, t.days || 7)}</Badge>
                       )}
                     </div>
                     <div className="text-sm">{t.user_name} ({t.email})</div>

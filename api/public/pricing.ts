@@ -10,7 +10,7 @@ import {
   CREATEPULSE_MODEL_PRICES,
   NEXABOT_MIN_TOPUP,
   NEXABOT_UNLIMITED_SLUG,
-  NEXABOT_PRICING_DEFAULTS,
+  NEXABOT_PRICING_SETTING_KEYS,
   parseNexabotPricing,
   getCreatepulsePriceRange,
   type NexabotPricing,
@@ -18,16 +18,19 @@ import {
 
 async function readNexabotPricing(): Promise<NexabotPricing> {
   const url = process.env.DATABASE_URL
-  if (!url) return { ...NEXABOT_PRICING_DEFAULTS }
+  // Default lengkap (termasuk varian paket) supaya respons selalu punya bentuk
+  // yang sama walau DB belum diatur admin.
+  if (!url) return parseNexabotPricing({})
   try {
     const sql = neon(url)
-    const rows = await sql`SELECT key, value FROM app_settings WHERE key IN ('nexabot_price', 'nexabot_unlimited_price', 'nexabot_unlimited_days')`
+    // Semua kunci harga (per generate + tiap varian paket) dibaca sekali jalan.
+    const rows = await sql`SELECT key, value FROM app_settings WHERE key = ANY(${NEXABOT_PRICING_SETTING_KEYS})`
     const saved: Record<string, string> = {}
     for (const r of rows || []) saved[String(r.key)] = String(r.value)
     return parseNexabotPricing(saved)
   } catch (e) {
     console.warn('[public/pricing] pricing read failed, using defaults:', e)
-    return { ...NEXABOT_PRICING_DEFAULTS }
+    return parseNexabotPricing({})
   }
 }
 
@@ -53,12 +56,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           name: 'NexaBot',
           price_per_generate: nexabot.price,
           min_topup: NEXABOT_MIN_TOPUP,
+          // `package` = varian utama (kompatibilitas klien lama), `packages` =
+          // semua varian Unlimited yang bisa dipilih user.
           package: {
             slug: NEXABOT_UNLIMITED_SLUG,
             label: `Unlimited ${nexabot.unlimitedDays} hari`,
             price: nexabot.unlimitedPrice,
             days: nexabot.unlimitedDays,
           },
+          packages: nexabot.packages,
         },
         createpulse: {
           name: 'CreatePulse',

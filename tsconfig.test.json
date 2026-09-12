@@ -1,0 +1,19 @@
+{
+  "//": "Test jalan lewat tsx (runtime saja), jadi tsc di sini cuma memastikan tipe-nya benar. Hanya folder test yang di-include: TS ikut menarik modul yang di-import (shared/, server/, api/).",
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["ES2023"],
+    "types": ["node"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "allowImportingTsExtensions": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "strict": false,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["test"]
+}

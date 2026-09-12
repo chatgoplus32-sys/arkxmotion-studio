@@ -79,7 +79,8 @@ export default function ImageToVideoPage() {
   const addToast = useToastStore((s) => s.addToast)
   const { token: authToken, user } = useAuthStore()
   const [cpBalance, setCpBalance] = useState(0)
-  // Wallet NexaBot user (Rp 250/generate) + status Paket Unlimited 1 minggu.
+  // Wallet NexaBot user (harga/generate dari server) + status Paket Unlimited
+  // (varian Mingguan/Bulanan/Tahunan — mana pun yang sedang aktif).
   const [nbWallet, setNbWallet] = useState<NexabotWallet | null>(null)
   // usage_id pemotongan yang masih bisa di-refund kalau generate gagal.
   const nbChargeRef = useRef<number | null>(null)

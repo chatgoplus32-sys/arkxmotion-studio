@@ -11,11 +11,45 @@ import {
   Zap,
 } from 'lucide-react'
 
+interface NexabotPackage {
+  slug: string
+  label: string
+  price: number
+  days: number
+}
+
 interface NexabotPricing {
   price: number
   unlimitedPrice: number
   unlimitedDays: number
+  packages: NexabotPackage[]
 }
+
+interface NexabotPackageForm {
+  slug: string
+  label: string
+  price: string
+  days: string
+}
+
+/** Cermin katalog shared/pricing.ts — dipakai sebelum server menjawab. */
+const NB_PACKAGE_FALLBACKS: NexabotPackage[] = [
+  { slug: 'unlimited_weekly', label: 'Mingguan', price: 35000, days: 7 },
+  { slug: 'unlimited_monthly', label: 'Bulanan', price: 119000, days: 30 },
+  { slug: 'unlimited_yearly', label: 'Tahunan', price: 899000, days: 365 },
+]
+
+/** Paket dari server, atau katalog fallback kalau server belum mengirim. */
+const asPackages = (packages?: NexabotPackage[]): NexabotPackage[] =>
+  Array.isArray(packages) && packages.length > 0 ? packages : NB_PACKAGE_FALLBACKS
+
+const toPackageForm = (packages?: NexabotPackage[]): NexabotPackageForm[] =>
+  asPackages(packages).map((p) => ({
+    slug: p.slug,
+    label: p.label,
+    price: String(p.price),
+    days: String(p.days),
+  }))
 
 interface AppSettings {
   [key: string]: string
@@ -38,9 +72,16 @@ export default function AdminSystemSettings() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   // Harga NexaBot punya jalur sendiri (`/api/admin/nexabot/config`) karena
-  // nilainya dipakai langsung oleh perhitungan charge di server.
-  const [nbForm, setNbForm] = useState({ price: '', unlimitedPrice: '', unlimitedDays: '' })
-  const [nbDefaults, setNbDefaults] = useState<NexabotPricing>({ price: 250, unlimitedPrice: 35000, unlimitedDays: 7 })
+  // nilainya dipakai langsung oleh perhitungan charge di server. Tiap varian
+  // paket Unlimited (Mingguan/Bulanan/Tahunan) punya harga & durasi sendiri.
+  const [nbForm, setNbForm] = useState<{ price: string; packages: NexabotPackageForm[] }>({
+    price: '',
+    packages: toPackageForm(),
+  })
+  const [nbDefaults, setNbDefaults] = useState<{ price: number; packages: NexabotPackage[] }>({
+    price: 250,
+    packages: NB_PACKAGE_FALLBACKS,
+  })
   const [nbActive, setNbActive] = useState<NexabotPricing | null>(null)
   const [nbSaving, setNbSaving] = useState(false)
   const token = useAuthStore((state) => state.token)
@@ -75,13 +116,11 @@ export default function AdminSystemSettings() {
       const data = await res.json()
       const pricing: NexabotPricing = data.pricing
       setNbActive(pricing)
-      if (data.defaults) setNbDefaults(data.defaults)
+      if (data.defaults) {
+        setNbDefaults({ price: data.defaults.price, packages: asPackages(data.defaults.packages) })
+      }
       // Input diisi nilai efektif sekarang supaya admin lihat angka aslinya.
-      setNbForm({
-        price: String(pricing.price),
-        unlimitedPrice: String(pricing.unlimitedPrice),
-        unlimitedDays: String(pricing.unlimitedDays),
-      })
+      setNbForm({ price: String(pricing.price), packages: toPackageForm(pricing.packages) })
     } catch { /* biarkan nilai lama kalau request gagal */ }
   }, [token])
 
@@ -94,17 +133,19 @@ export default function AdminSystemSettings() {
       const res = await fetch('/api/admin/nexabot/config', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(nbForm),
+        // Field yang dikosongkan tidak ikut dikirim, jadi nilainya tetap.
+        body: JSON.stringify({
+          price: nbForm.price,
+          packages: Object.fromEntries(
+            nbForm.packages.map((p) => [p.slug, { price: p.price, days: p.days }]),
+          ),
+        }),
       })
       const data = await res.json()
       if (res.ok) {
         addToast(data.message || 'Harga NexaBot disimpan', 'success')
         setNbActive(data.pricing)
-        setNbForm({
-          price: String(data.pricing.price),
-          unlimitedPrice: String(data.pricing.unlimitedPrice),
-          unlimitedDays: String(data.pricing.unlimitedDays),
-        })
+        setNbForm({ price: String(data.pricing.price), packages: toPackageForm(data.pricing.packages) })
       } else {
         addToast(data.error || 'Gagal menyimpan harga NexaBot', 'error')
       }
@@ -255,53 +296,76 @@ export default function AdminSystemSettings() {
         {/* NexaBot Pricing */}
         <Section
           title="Harga NexaBot"
-          sub="Tarif per generate dan paket Unlimited — berlaku langsung tanpa deploy ulang"
+          sub="Tarif per generate dan tiap varian paket Unlimited — berlaku langsung tanpa deploy ulang"
         >
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-muted-foreground mb-1">
-                Harga per Generate (Rp)
-              </label>
-              <input
-                type="number"
-                value={nbForm.price}
-                onChange={e => setNbForm(prev => ({ ...prev, price: e.target.value }))}
-                className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm"
-                placeholder={String(nbDefaults.price)}
-              />
-              <div className="text-[11px] text-muted-foreground mt-1">
-                Dipotong dari saldo user tiap 1 generate (semua mode).
-              </div>
+          <div>
+            <label className="block text-sm font-medium text-muted-foreground mb-1">
+              Harga per Generate (Rp)
+            </label>
+            <input
+              type="number"
+              value={nbForm.price}
+              onChange={e => setNbForm(prev => ({ ...prev, price: e.target.value }))}
+              className="w-full sm:w-64 px-3 py-2 rounded-lg border border-border bg-card text-sm"
+              placeholder={String(nbDefaults.price)}
+            />
+            <div className="text-[11px] text-muted-foreground mt-1">
+              Dipotong dari saldo user tiap 1 generate (semua mode).
             </div>
-            <div>
-              <label className="block text-sm font-medium text-muted-foreground mb-1">
-                Harga Paket Unlimited (Rp)
-              </label>
-              <input
-                type="number"
-                value={nbForm.unlimitedPrice}
-                onChange={e => setNbForm(prev => ({ ...prev, unlimitedPrice: e.target.value }))}
-                className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm"
-                placeholder={String(nbDefaults.unlimitedPrice)}
-              />
-              <div className="text-[11px] text-muted-foreground mt-1">
-                Sekali bayar, generate gratis selama masa berlaku paket.
-              </div>
+          </div>
+
+          <div className="mt-5">
+            <div className="text-sm font-medium text-muted-foreground mb-2">Varian Paket Unlimited</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {nbForm.packages.map((p, idx) => {
+                const fallback = nbDefaults.packages.find(x => x.slug === p.slug)
+                const perDay = Number(p.price) > 0 && Number(p.days) > 0
+                  ? Math.round(Number(p.price) / Number(p.days))
+                  : null
+                return (
+                  <div key={p.slug} className="rounded-xl border border-border bg-card/40 p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="font-semibold text-sm">Paket {p.label}</span>
+                      <span className="text-[11px] text-muted-foreground font-mono">{p.slug}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] text-muted-foreground mb-1">Harga (Rp)</label>
+                        <input
+                          type="number"
+                          value={p.price}
+                          onChange={e => setNbForm(prev => ({
+                            ...prev,
+                            packages: prev.packages.map((x, i) => i === idx ? { ...x, price: e.target.value } : x),
+                          }))}
+                          className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm"
+                          placeholder={String(fallback?.price ?? '')}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-muted-foreground mb-1">Durasi (hari)</label>
+                        <input
+                          type="number"
+                          value={p.days}
+                          onChange={e => setNbForm(prev => ({
+                            ...prev,
+                            packages: prev.packages.map((x, i) => i === idx ? { ...x, days: e.target.value } : x),
+                          }))}
+                          className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm"
+                          placeholder={String(fallback?.days ?? '')}
+                        />
+                      </div>
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-2">
+                      {perDay ? `≈ Rp ${perDay.toLocaleString('id-ID')}/hari · ` : ''}
+                      masa berlaku ditumpuk kalau beli saat paket masih aktif.
+                    </div>
+                  </div>
+                )
+              })}
             </div>
-            <div>
-              <label className="block text-sm font-medium text-muted-foreground mb-1">
-                Masa Berlaku Paket (hari)
-              </label>
-              <input
-                type="number"
-                value={nbForm.unlimitedDays}
-                onChange={e => setNbForm(prev => ({ ...prev, unlimitedDays: e.target.value }))}
-                className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm"
-                placeholder={String(nbDefaults.unlimitedDays)}
-              />
-              <div className="text-[11px] text-muted-foreground mt-1">
-                1–365 hari. Beli lagi saat aktif → masa berlaku ditumpuk.
-              </div>
+            <div className="text-[11px] text-muted-foreground mt-2">
+              Harga 1–100.000.000 · durasi 1–365 hari. Kosongkan field yang tidak ingin diubah.
             </div>
           </div>
 
@@ -313,7 +377,9 @@ export default function AdminSystemSettings() {
             <span className="text-[11px] text-muted-foreground">
               Aktif sekarang:{' '}
               {nbActive
-                ? `Rp ${nbActive.price.toLocaleString('id-ID')}/generate · Paket Rp ${nbActive.unlimitedPrice.toLocaleString('id-ID')} / ${nbActive.unlimitedDays} hari`
+                ? `Rp ${nbActive.price.toLocaleString('id-ID')}/generate · ${asPackages(nbActive.packages)
+                    .map(p => `${p.label} Rp ${p.price.toLocaleString('id-ID')}/${p.days} hari`)
+                    .join(' · ')}`
                 : 'memuat...'}
             </span>
           </div>

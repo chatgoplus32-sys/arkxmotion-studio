@@ -5,7 +5,13 @@ import { authenticateToken, requireAdmin, AuthRequest } from '../middleware/auth
 import { sendVerificationEmail } from './auth.js'
 import { getMembershipFee, setMembershipFee } from './membership.js'
 import { getNexabotPricing, setNexabotPricing } from './nexabotWallet.js'
-import { NEXABOT_PRICING_DEFAULTS, NEXABOT_MIN_TOPUP } from '../../shared/pricing.js'
+import {
+  NEXABOT_PRICING_DEFAULTS,
+  NEXABOT_MIN_TOPUP,
+  describeNexabotPricing,
+  type NexabotPackagesPatch,
+  type NexabotPricingField,
+} from '../../shared/pricing.js'
 import { sendEmail, appUrl } from '../mailer.js'
 
 const router = Router()
@@ -181,21 +187,44 @@ router.get('/nexabot/config', authenticateToken, requireAdmin, (_req: AuthReques
 
 router.patch('/nexabot/config', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
   try {
-    const body = (req.body || {}) as { price?: number; unlimitedPrice?: number; unlimitedDays?: number }
+    const body = (req.body || {}) as {
+      price?: unknown
+      unlimitedPrice?: unknown
+      unlimitedDays?: unknown
+      packages?: Record<string, { price?: unknown; days?: unknown }>
+    }
     const num = (v: unknown) => (v === undefined || v === null || v === '' ? undefined : Number(v))
-    const patch = {
+
+    // Bentuk lama (field datar) tetap didukung supaya klien lama tidak rusak;
+    // bentuk baru mengirim harga & durasi per varian paket lewat `packages`.
+    const patch: Partial<Record<NexabotPricingField, number>> & { packages?: NexabotPackagesPatch } = {
       price: num(body.price),
       unlimitedPrice: num(body.unlimitedPrice),
       unlimitedDays: num(body.unlimitedDays),
     }
-    if (patch.price === undefined && patch.unlimitedPrice === undefined && patch.unlimitedDays === undefined) {
+
+    if (body.packages && typeof body.packages === 'object' && !Array.isArray(body.packages)) {
+      const packages: NexabotPackagesPatch = {}
+      for (const [slug, changes] of Object.entries(body.packages)) {
+        const entry: { price?: number; days?: number } = {}
+        const price = num(changes?.price)
+        const days = num(changes?.days)
+        if (price !== undefined) entry.price = price
+        if (days !== undefined) entry.days = days
+        if (Object.keys(entry).length > 0) packages[slug] = entry
+      }
+      if (Object.keys(packages).length > 0) patch.packages = packages
+    }
+
+    const hasFlat = patch.price !== undefined || patch.unlimitedPrice !== undefined || patch.unlimitedDays !== undefined
+    if (!hasFlat && !patch.packages) {
       return res.status(400).json({ error: 'Tidak ada harga yang dikirim' })
     }
 
     const pricing = setNexabotPricing(patch)
     res.json({
       ok: true,
-      message: `Harga NexaBot: Rp ${pricing.price.toLocaleString('id-ID')}/generate · Paket Unlimited Rp ${pricing.unlimitedPrice.toLocaleString('id-ID')} / ${pricing.unlimitedDays} hari`,
+      message: describeNexabotPricing(pricing),
       pricing,
     })
   } catch (error: any) {

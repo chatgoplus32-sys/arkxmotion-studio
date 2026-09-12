@@ -31,12 +31,15 @@ export function buildPublicPricing() {
         name: 'NexaBot',
         price_per_generate: nexabot.price,
         min_topup: NEXABOT_MIN_TOPUP,
+        // `package` = varian utama (kompatibilitas klien lama), `packages` =
+        // semua varian Unlimited yang bisa dipilih user.
         package: {
           slug: NEXABOT_UNLIMITED_SLUG,
           label: `Unlimited ${nexabot.unlimitedDays} hari`,
           price: nexabot.unlimitedPrice,
           days: nexabot.unlimitedDays,
         },
+        packages: nexabot.packages,
       },
       createpulse: {
         name: 'CreatePulse',

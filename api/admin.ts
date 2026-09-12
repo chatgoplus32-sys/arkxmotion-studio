@@ -4,11 +4,17 @@ import crypto from 'crypto'
 import { neon } from '@neondatabase/serverless'
 import { sendEmail, appUrl } from './mailer.js'
 import {
+  NEXABOT_PACKAGES,
   NEXABOT_PRICING_DEFAULTS,
   NEXABOT_PRICING_KEYS,
+  NEXABOT_PRICING_SETTING_KEYS,
+  describeNexabotPricing,
   parseNexabotPricing,
+  validateNexabotPackageValue,
   validateNexabotPricing,
+  type NexabotPackagesPatch,
   type NexabotPricing,
+  type NexabotPricingField,
 } from '../shared/pricing.js'
 
 function getSql() {
@@ -866,7 +872,7 @@ async function handleMaintenanceRoutes(req: VercelRequest, res: VercelResponse) 
 
 /** Baca harga efektif. Tanpa cache — halaman admin harus selalu lihat nilai asli. */
 async function readNexabotPricing(sql: any): Promise<NexabotPricing> {
-  const rows = await sql`SELECT key, value FROM app_settings WHERE key IN ('nexabot_price', 'nexabot_unlimited_price', 'nexabot_unlimited_days')`
+  const rows = await sql`SELECT key, value FROM app_settings WHERE key = ANY(${NEXABOT_PRICING_SETTING_KEYS})`
   const saved: Record<string, string> = {}
   for (const r of rows || []) saved[String(r.key)] = String(r.value)
   return parseNexabotPricing(saved)
@@ -888,8 +894,11 @@ async function handleNexabotConfigRoutes(req: VercelRequest, res: VercelResponse
 
     if (req.method === 'PATCH') {
       const body = (req.body || {}) as Record<string, unknown>
+
+      // Bentuk lama: field datar (varian pertama). Tetap didukung supaya tab
+      // admin yang belum di-reload tidak ikut rusak.
       const patch: Record<string, number> = {}
-      for (const key of Object.keys(NEXABOT_PRICING_DEFAULTS) as (keyof NexabotPricing)[]) {
+      for (const key of Object.keys(NEXABOT_PRICING_DEFAULTS) as NexabotPricingField[]) {
         const raw = body[key]
         if (raw === undefined || raw === null || raw === '') continue
         const n = Number(raw)
@@ -897,20 +906,53 @@ async function handleNexabotConfigRoutes(req: VercelRequest, res: VercelResponse
         if (error) return res.status(400).json({ error })
         patch[key] = Math.round(n)
       }
-      if (Object.keys(patch).length === 0) {
+
+      // Bentuk baru: harga & durasi per varian paket.
+      const packagesPatch: NexabotPackagesPatch = {}
+      const rawPackages = body.packages
+      if (rawPackages && typeof rawPackages === 'object' && !Array.isArray(rawPackages)) {
+        for (const [slug, changes] of Object.entries(rawPackages as Record<string, unknown>)) {
+          const plan = NEXABOT_PACKAGES.find((p) => p.slug === slug)
+          if (!plan) return res.status(400).json({ error: `Paket tidak dikenal: ${slug}` })
+          const source = (changes || {}) as Record<string, unknown>
+          const entry: { price?: number; days?: number } = {}
+          for (const field of ['price', 'days'] as const) {
+            const raw = source[field]
+            if (raw === undefined || raw === null || raw === '') continue
+            const n = Number(raw)
+            const error = validateNexabotPackageValue(field, n)
+            if (error) return res.status(400).json({ error: `${plan.label}: ${error}` })
+            entry[field] = Math.round(n)
+          }
+          if (Object.keys(entry).length > 0) packagesPatch[slug] = entry
+        }
+      }
+
+      if (Object.keys(patch).length === 0 && Object.keys(packagesPatch).length === 0) {
         return res.status(400).json({ error: 'Tidak ada harga yang dikirim' })
       }
 
-      for (const key of Object.keys(patch) as (keyof NexabotPricing)[]) {
+      for (const key of Object.keys(patch) as NexabotPricingField[]) {
         const value = patch[key]
         await sql`INSERT INTO app_settings (key, value, updated_at) VALUES (${NEXABOT_PRICING_KEYS[key]}, ${String(value)}, CURRENT_TIMESTAMP)
                   ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`
       }
 
+      for (const [slug, changes] of Object.entries(packagesPatch)) {
+        const plan = NEXABOT_PACKAGES.find((p) => p.slug === slug)!
+        for (const field of ['price', 'days'] as const) {
+          const value = changes[field]
+          if (value === undefined) continue
+          const key = field === 'price' ? plan.priceKey : plan.daysKey
+          await sql`INSERT INTO app_settings (key, value, updated_at) VALUES (${key}, ${String(value)}, CURRENT_TIMESTAMP)
+                    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`
+        }
+      }
+
       const pricing = await readNexabotPricing(sql)
       return res.status(200).json({
         ok: true,
-        message: `Harga NexaBot: Rp ${pricing.price.toLocaleString('id-ID')}/generate · Paket Unlimited Rp ${pricing.unlimitedPrice.toLocaleString('id-ID')} / ${pricing.unlimitedDays} hari`,
+        message: describeNexabotPricing(pricing),
         pricing,
       })
     }

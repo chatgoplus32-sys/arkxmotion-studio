@@ -4,22 +4,26 @@
 //
 // Sama seperti CreatePulse: saldo Rp per user, top up diajukan ke admin, dan
 // tiap generate memotong Rp 250 (flat). Saldo terpisah dari CreatePulse.
-// Tambahan: PAKET UNLIMITED 1 MINGGU (Rp 35.000) — selama paket aktif, /deduct
-// tidak memotong saldo (usage tetap dicatat dengan cost 0).
+// Tambahan: PAKET UNLIMITED dengan beberapa varian (Mingguan/Bulanan/Tahunan,
+// harga & durasi diatur admin) — selama paket aktif, /deduct tidak memotong
+// saldo (usage tetap dicatat dengan cost 0).
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import jwt from 'jsonwebtoken'
 import { neon } from '@neondatabase/serverless'
 import {
   NEXABOT_MIN_TOPUP,
   NEXABOT_UNLIMITED_SLUG,
-  NEXABOT_PRICING_DEFAULTS,
+  NEXABOT_PACKAGES,
+  NEXABOT_PRICING_SETTING_KEYS,
+  findNexabotPackage,
   parseNexabotPricing,
   type NexabotPricing,
 } from '../shared/pricing.js'
 
 /**
  * Harga NexaBot dibaca dari `app_settings` (diatur admin lewat System Settings),
- * jadi ubah tarif tidak perlu deploy ulang. Bentuk & validasinya ikut
+ * jadi ubah tarif tidak perlu deploy ulang — termasuk harga varian paket
+ * Unlimited (Mingguan/Bulanan/Tahunan). Bentuk & validasinya ikut
  * shared/pricing.ts supaya identik dengan sisi Express dan endpoint publik.
  *
  * Cache singkat: tiap generate tidak perlu menambah satu round-trip Neon.
@@ -32,9 +36,12 @@ let pricingCache: { at: number; value: NexabotPricing } | null = null
 async function getNexabotPricing(sql: any): Promise<NexabotPricing> {
   if (pricingCache && Date.now() - pricingCache.at < PRICING_TTL_MS) return pricingCache.value
 
-  let value: NexabotPricing = { ...NEXABOT_PRICING_DEFAULTS }
+  // Default lengkap (termasuk varian paket) supaya /deduct & /balance tidak
+  // pernah kehabisan daftar paket walau app_settings belum ada.
+  let value: NexabotPricing = parseNexabotPricing({})
   try {
-    const rows = await sql`SELECT key, value FROM app_settings WHERE key IN ('nexabot_price', 'nexabot_unlimited_price', 'nexabot_unlimited_days')`
+    // Semua kunci harga (per generate + tiap varian paket) dibaca sekali jalan.
+    const rows = await sql`SELECT key, value FROM app_settings WHERE key = ANY(${NEXABOT_PRICING_SETTING_KEYS})`
     const saved: Record<string, string> = {}
     for (const r of rows || []) saved[String(r.key)] = String(r.value)
     value = parseNexabotPricing(saved)
@@ -75,7 +82,7 @@ function verifyUser(req: VercelRequest): { id: number; email: string; role: stri
 async function ensureTables(sql: any) {
   try {
     await sql`CREATE TABLE IF NOT EXISTS nexabot_balance (id SERIAL PRIMARY KEY, user_id INTEGER UNIQUE NOT NULL, balance INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`
-    await sql`CREATE TABLE IF NOT EXISTS nexabot_topup (id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL, amount INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected')), kind TEXT NOT NULL DEFAULT 'balance', days INTEGER NOT NULL DEFAULT 0, started_at TIMESTAMP, expires_at TIMESTAMP, proof_note TEXT NOT NULL DEFAULT '', admin_note TEXT NOT NULL DEFAULT '', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`
+    await sql`CREATE TABLE IF NOT EXISTS nexabot_topup (id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL, amount INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected')), kind TEXT NOT NULL DEFAULT 'balance', days INTEGER NOT NULL DEFAULT 0, package_slug TEXT NOT NULL DEFAULT '', started_at TIMESTAMP, expires_at TIMESTAMP, proof_note TEXT NOT NULL DEFAULT '', admin_note TEXT NOT NULL DEFAULT '', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`
     await sql`CREATE TABLE IF NOT EXISTS nexabot_usage (id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL, model TEXT NOT NULL DEFAULT '', cost INTEGER NOT NULL, batch_id TEXT, status TEXT NOT NULL DEFAULT 'used' CHECK(status IN ('used', 'refunded')), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`
     // Harga NexaBot hidup di sini (diatur admin), jadi tabelnya harus ada
     // walau user membuka halaman top up sebelum admin pernah menyentuh settings.
@@ -84,6 +91,7 @@ async function ensureTables(sql: any) {
     // ditambahkan kalau belum ada. Idempoten, jadi aman dipanggil tiap request.
     await sql`ALTER TABLE nexabot_topup ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'balance'`
     await sql`ALTER TABLE nexabot_topup ADD COLUMN IF NOT EXISTS days INTEGER NOT NULL DEFAULT 0`
+    await sql`ALTER TABLE nexabot_topup ADD COLUMN IF NOT EXISTS package_slug TEXT NOT NULL DEFAULT ''`
     await sql`ALTER TABLE nexabot_topup ADD COLUMN IF NOT EXISTS started_at TIMESTAMP`
     await sql`ALTER TABLE nexabot_topup ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP`
   } catch (e) { console.warn('[nexabot-wallet] ensureTables:', e) }
@@ -142,7 +150,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         price: pricing.price,
         min_topup: NEXABOT_MIN_TOPUP,
         unlimited: unlimitedPayload(pkg),
-        package: { slug: NEXABOT_UNLIMITED_SLUG, price: pricing.unlimitedPrice, days: pricing.unlimitedDays },
+        // `package` = varian utama (kompatibilitas), `packages` = semua varian
+        // yang bisa dipilih user di halaman top up.
+        package: {
+          slug: NEXABOT_UNLIMITED_SLUG,
+          label: pricing.packages[0]?.label || 'Unlimited',
+          price: pricing.unlimitedPrice,
+          days: pricing.unlimitedDays,
+        },
+        packages: pricing.packages,
       })
     }
 
@@ -156,22 +172,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(201).json({ topup: rows[0], message: 'Topup request submitted, waiting admin approval' })
     }
 
-    // POST package — harga & durasi ditentukan server (klien tidak kirim amount).
+    // POST package — varian dipilih lewat `slug`, tapi harga & durasinya tetap
+    // ditentukan server (klien tidak mengirim amount). Tanpa slug (klien lama)
+    // → varian utama.
     if (sub === 'package' || url.includes('/package')) {
       const pending = await sql`SELECT id FROM nexabot_topup WHERE user_id = ${user.id} AND kind = 'unlimited' AND status = 'pending'`
       if (pending.length > 0) {
         return res.status(400).json({ error: 'Masih ada pembelian Paket Unlimited yang menunggu approval admin' })
       }
-      const { proof_note } = req.body || {}
+      const { proof_note, slug } = req.body || {}
+      const plan = findNexabotPackage(slug)
+      if (!plan) {
+        return res.status(400).json({
+          error: `Paket tidak dikenal. Pilihan: ${NEXABOT_PACKAGES.map((p) => p.slug).join(', ')}`,
+        })
+      }
+
       // Tarif dikunci saat pengajuan, jadi perubahan harga setelahnya tidak
       // mengubah nilai pengajuan yang sudah masuk antrian admin.
       const pricing = await getNexabotPricing(sql)
+      const tier = pricing.packages.find((p) => p.slug === plan.slug)
+      const price = tier?.price ?? plan.defaultPrice
+      const days = tier?.days ?? plan.days
       const rows = await sql`
-        INSERT INTO nexabot_topup (user_id, amount, kind, days, proof_note, status)
-        VALUES (${user.id}, ${pricing.unlimitedPrice}, 'unlimited', ${pricing.unlimitedDays}, ${String(proof_note || '').slice(0, 500)}, 'pending')
+        INSERT INTO nexabot_topup (user_id, amount, kind, days, package_slug, proof_note, status)
+        VALUES (${user.id}, ${price}, 'unlimited', ${days}, ${plan.slug}, ${String(proof_note || '').slice(0, 500)}, 'pending')
         RETURNING *
       `
-      return res.status(201).json({ package: rows[0], message: 'Pembelian paket dikirim, menunggu approval admin' })
+      return res.status(201).json({ package: rows[0], message: `Pembelian paket ${plan.label} dikirim, menunggu approval admin` })
     }
 
     // GET topups mine — riwayat gabungan top up saldo & paket.
@@ -181,7 +209,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ topups: rows, unlimited: unlimitedPayload(pkg) })
     }
 
-    // POST deduct — harga ditentukan server (flat Rp 250), bukan dari klien.
+    // POST deduct — harga ditentukan server (flat per generate), bukan dari klien.
     if (sub === 'deduct' || url.includes('/deduct')) {
       const { model, batch_id } = req.body || {}
 
@@ -198,10 +226,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const cost = pkg ? 0 : pricing.price
 
       if (balance < cost) {
+        // Varian termurah disebut supaya user punya jalan keluar paling ringan.
+        const entry = pricing.packages.reduce((a, b) => (b.price < a.price ? b : a), pricing.packages[0])
         return res.status(400).json({
-          error: `Saldo NexaBot tidak cukup (Rp ${balance.toLocaleString('id-ID')}). Butuh Rp ${cost.toLocaleString('id-ID')} — top up dulu atau ambil Paket Unlimited Rp ${pricing.unlimitedPrice.toLocaleString('id-ID')} / ${pricing.unlimitedDays} hari.`,
+          error: `Saldo NexaBot tidak cukup (Rp ${balance.toLocaleString('id-ID')}). Butuh Rp ${cost.toLocaleString('id-ID')} — top up dulu atau ambil Paket ${entry.label} Rp ${entry.price.toLocaleString('id-ID')} / ${entry.days} hari.`,
           balance,
           required: cost,
+          packages: pricing.packages,
         })
       }
 

@@ -134,9 +134,11 @@ interface ProviderKey {
 
 #### Scripts:
 ```bash
-npm run dev     # Vite dev server (port 5173)
-npm run build   # Production build
-npm run lint    # OXLint linting
+npm run dev       # Vite dev server (port 5173)
+npm run build     # Production build
+npm run test      # Test (node:test via tsx — lihat folder test/)
+npm run typecheck # tsc untuk app + test
+npm run lint      # OXLint linting
 ```
 
 #### Dependencies:

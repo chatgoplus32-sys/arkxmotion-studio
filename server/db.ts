@@ -3,10 +3,12 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const dbPath = path.join(__dirname, '..', 'data', 'arkxmotion.db')
+// Path DB bisa ditimpa lewat env supaya test memakai file sendiri dan tidak
+// menyentuh data dev (tanpa env, perilakunya sama seperti sebelumnya).
+const dbPath = process.env.ARKXMOTION_DB_PATH || path.join(__dirname, '..', 'data', 'arkxmotion.db')
 
 import fs from 'fs'
-const dataDir = path.join(__dirname, '..', 'data')
+const dataDir = path.dirname(dbPath)
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true })
 }
@@ -154,9 +156,11 @@ db.exec(`
   )
 `)
 
-// `kind` memisahkan top up saldo ('balance') dari pembelian paket Unlimited 1
-// minggu ('unlimited', Rp 35.000). Kolom `days` + `expires_at` hanya terisi
-// untuk paket, dan diisi saat admin approve — bukan saat user mengajukan.
+// `kind` memisahkan top up saldo ('balance') dari pembelian paket Unlimited
+// ('unlimited'). Kolom `days` + `expires_at` hanya terisi untuk paket, dan diisi
+// saat admin approve — bukan saat user mengajukan. `package_slug` menyimpan
+// varian yang dibeli (mist. unlimited_monthly) supaya riwayat & antrian admin
+// bisa menampilkan namanya, bukan cuma jumlah hari.
 db.exec(`
   CREATE TABLE IF NOT EXISTS nexabot_topup (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -165,6 +169,7 @@ db.exec(`
     status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected')),
     kind TEXT NOT NULL DEFAULT 'balance' CHECK(kind IN ('balance', 'unlimited')),
     days INTEGER NOT NULL DEFAULT 0,
+    package_slug TEXT NOT NULL DEFAULT '',
     started_at DATETIME,
     expires_at DATETIME,
     proof_note TEXT NOT NULL DEFAULT '',
@@ -188,6 +193,9 @@ if (!nexabotTopupColumns.some(c => c.name === 'started_at')) {
 }
 if (!nexabotTopupColumns.some(c => c.name === 'expires_at')) {
   db.exec('ALTER TABLE nexabot_topup ADD COLUMN expires_at DATETIME')
+}
+if (!nexabotTopupColumns.some(c => c.name === 'package_slug')) {
+  db.exec("ALTER TABLE nexabot_topup ADD COLUMN package_slug TEXT NOT NULL DEFAULT ''")
 }
 db.exec('CREATE INDEX IF NOT EXISTS idx_nexabot_topup_active ON nexabot_topup(user_id, kind, status)')
 

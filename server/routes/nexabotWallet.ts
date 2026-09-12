@@ -3,8 +3,10 @@
 // lalu tiap generate memotong saldo itu. Bedanya:
 //  - saldo terpisah (tabel nexabot_*), jadi ledger CreatePulse tidak tersentuh;
 //  - harga FLAT Rp 250/generate apa pun mode/model/panjang videonya;
-//  - ada PAKET UNLIMITED 1 MINGGU (Rp 35.000): selama paket aktif, /deduct
-//    tidak memotong saldo sama sekali (tetap dicatat sebagai usage Rp 0);
+//  - ada PAKET UNLIMITED dengan beberapa varian (Mingguan/Bulanan/Tahunan,
+//    harga & durasi diatur admin di shared/pricing.ts + app_settings): selama
+//    paket aktif, /deduct tidak memotong saldo sama sekali (tetap dicatat
+//    sebagai usage Rp 0);
 //  - /deduct mengembalikan `usage_id` sehingga refund saat generate gagal
 //    menunjuk catatan pemotongan yang tepat (CreatePulse hanya bisa "model
 //    terakhir" yang bisa salah kalau ada dua job jalan bersamaan).
@@ -21,11 +23,17 @@ import { authenticateToken, AuthRequest } from '../middleware/auth.js'
 import {
   NEXABOT_MIN_TOPUP,
   NEXABOT_UNLIMITED_SLUG,
+  NEXABOT_PACKAGES,
   NEXABOT_PRICING_DEFAULTS,
   NEXABOT_PRICING_KEYS,
+  NEXABOT_PRICING_SETTING_KEYS,
+  findNexabotPackage,
   parseNexabotPricing,
+  validateNexabotPackageValue,
   validateNexabotPricing,
+  type NexabotPackagesPatch,
   type NexabotPricing,
+  type NexabotPricingField,
 } from '../../shared/pricing.js'
 
 // Definisi harga tinggal di shared/pricing.ts supaya server, fungsi Vercel, dan
@@ -41,11 +49,10 @@ export type { NexabotPricing }
 const router = Router()
 
 function readPricingSettings(): Record<string, string> {
-  const rows = db.prepare('SELECT key, value FROM app_settings WHERE key IN (?, ?, ?)').all(
-    NEXABOT_PRICING_KEYS.price,
-    NEXABOT_PRICING_KEYS.unlimitedPrice,
-    NEXABOT_PRICING_KEYS.unlimitedDays,
-  ) as { key: string; value: string }[]
+  const keys = NEXABOT_PRICING_SETTING_KEYS
+  const rows = db.prepare(
+    `SELECT key, value FROM app_settings WHERE key IN (${keys.map(() => '?').join(', ')})`
+  ).all(...keys) as { key: string; value: string }[]
   const out: Record<string, string> = {}
   for (const row of rows) out[row.key] = row.value
   return out
@@ -64,15 +71,36 @@ const upsertSetting = db.prepare(
 /**
  * Simpan harga baru. Field yang tidak dikirim dibiarkan seperti sekarang, dan
  * nilai di luar batas wajar ditolak dengan pesan yang menyebut batasnya.
+ *
+ * Dua bentuk diterima supaya klien lama tetap jalan:
+ *  - field lama: `price`, `unlimitedPrice`, `unlimitedDays` (varian pertama);
+ *  - `packages`: harga & durasi per varian, contoh
+ *    `{ unlimited_monthly: { price: 99000, days: 30 } }`.
  */
-export function setNexabotPricing(patch: Partial<NexabotPricing>): NexabotPricing {
-  for (const key of Object.keys(NEXABOT_PRICING_DEFAULTS) as (keyof NexabotPricing)[]) {
+export function setNexabotPricing(
+  patch: Partial<Record<NexabotPricingField, number>> & { packages?: NexabotPackagesPatch },
+): NexabotPricing {
+  for (const key of Object.keys(NEXABOT_PRICING_DEFAULTS) as NexabotPricingField[]) {
     const value = patch[key]
     if (value === undefined) continue
     const error = validateNexabotPricing(key, value)
     if (error) throw new Error(error)
     upsertSetting.run(NEXABOT_PRICING_KEYS[key], String(Math.round(value)))
   }
+
+  for (const [slug, changes] of Object.entries(patch.packages || {})) {
+    // Sengaja pencarian ketat: slug tak dikenal = salah kirim, bukan paket utama.
+    const plan = NEXABOT_PACKAGES.find((p) => p.slug === slug)
+    if (!plan) throw new Error(`Paket tidak dikenal: ${slug}`)
+    for (const field of ['price', 'days'] as const) {
+      const value = (changes || {})[field]
+      if (value === undefined) continue
+      const error = validateNexabotPackageValue(field, value)
+      if (error) throw new Error(`${plan.label}: ${error}`)
+      upsertSetting.run(field === 'price' ? plan.priceKey : plan.daysKey, String(Math.round(value)))
+    }
+  }
+
   return getNexabotPricing()
 }
 
@@ -134,11 +162,15 @@ router.get('/balance', authenticateToken, (req: AuthRequest, res: Response) => {
       price: pricing.price,
       min_topup: NEXABOT_MIN_TOPUP,
       unlimited: unlimitedPayload(getActivePackage(userId)),
+      // `package` = varian utama (kompatibilitas), `packages` = semua varian
+      // yang bisa dipilih user di halaman top up.
       package: {
         slug: NEXABOT_UNLIMITED_SLUG,
+        label: pricing.packages[0]?.label || 'Unlimited',
         price: pricing.unlimitedPrice,
         days: pricing.unlimitedDays,
       },
+      packages: pricing.packages,
     })
   } catch (error) {
     console.error('NexaBot balance error:', error)
@@ -169,9 +201,10 @@ router.post('/topup', authenticateToken, (req: AuthRequest, res: Response) => {
 })
 
 /**
- * Ajukan pembelian Paket Unlimited 1 minggu. Harga & durasi ditentukan server
- * (klien tidak mengirim amount), jadi user tidak bisa "menawar" sendiri.
- * Paket aktif saat admin approve, bukan saat diajukan.
+ * Ajukan pembelian Paket Unlimited (varian dipilih lewat `slug`). Harga & durasi
+ * ditentukan server dari varian yang dipilih (klien tidak mengirim amount), jadi
+ * user tidak bisa "menawar" sendiri. Paket aktif saat admin approve, bukan saat
+ * diajukan. Tanpa `slug` (klien lama) → varian utama.
  */
 router.post('/package', authenticateToken, (req: AuthRequest, res: Response) => {
   try {
@@ -185,16 +218,27 @@ router.post('/package', authenticateToken, (req: AuthRequest, res: Response) => 
       return res.status(400).json({ error: 'Masih ada pembelian Paket Unlimited yang menunggu approval admin' })
     }
 
-    const { proof_note } = req.body || {}
+    const { proof_note, slug } = req.body || {}
+    const plan = findNexabotPackage(slug)
+    if (!plan) {
+      return res.status(400).json({
+        error: `Paket tidak dikenal. Pilihan: ${NEXABOT_PACKAGES.map((p) => p.slug).join(', ')}`,
+      })
+    }
+
     // Tarif dikunci saat pengajuan (disimpan di baris paket), jadi kalau admin
     // mengubah harga setelahnya, pengajuan lama tetap dihargai seperti saat itu.
     const pricing = getNexabotPricing()
+    const tier = pricing.packages.find((p) => p.slug === plan.slug)
+    const price = tier?.price ?? plan.defaultPrice
+    const days = tier?.days ?? plan.days
+
     const result = db.prepare(
-      "INSERT INTO nexabot_topup (user_id, amount, kind, days, proof_note, status) VALUES (?, ?, 'unlimited', ?, ?, 'pending')"
-    ).run(userId, pricing.unlimitedPrice, pricing.unlimitedDays, String(proof_note || '').slice(0, 500))
+      "INSERT INTO nexabot_topup (user_id, amount, kind, days, package_slug, proof_note, status) VALUES (?, ?, 'unlimited', ?, ?, ?, 'pending')"
+    ).run(userId, price, days, plan.slug, String(proof_note || '').slice(0, 500))
 
     const pkg = db.prepare('SELECT * FROM nexabot_topup WHERE id = ?').get(result.lastInsertRowid)
-    res.status(201).json({ package: pkg, message: 'Pembelian paket dikirim, menunggu approval admin' })
+    res.status(201).json({ package: pkg, message: `Pembelian paket ${plan.label} dikirim, menunggu approval admin` })
   } catch (error) {
     console.error('NexaBot package error:', error)
     res.status(500).json({ error: 'Internal server error' })
@@ -230,10 +274,14 @@ router.post('/deduct', authenticateToken, (req: AuthRequest, res: Response) => {
     const cost = pkg ? 0 : pricing.price
 
     if (balance < cost) {
+      // Varian termurah (biasanya Mingguan) disebut supaya user punya jalan
+      // keluar paling ringan; varian lain tersedia di halaman top up.
+      const entry = pricing.packages.reduce((a, b) => (b.price < a.price ? b : a), pricing.packages[0])
       return res.status(400).json({
-        error: `Saldo NexaBot tidak cukup (Rp ${balance.toLocaleString('id-ID')}). Butuh Rp ${cost.toLocaleString('id-ID')} — top up dulu atau ambil Paket Unlimited Rp ${pricing.unlimitedPrice.toLocaleString('id-ID')} / ${pricing.unlimitedDays} hari.`,
+        error: `Saldo NexaBot tidak cukup (Rp ${balance.toLocaleString('id-ID')}). Butuh Rp ${cost.toLocaleString('id-ID')} — top up dulu atau ambil Paket ${entry.label} Rp ${entry.price.toLocaleString('id-ID')} / ${entry.days} hari.`,
         balance,
         required: cost,
+        packages: pricing.packages,
       })
     }
 

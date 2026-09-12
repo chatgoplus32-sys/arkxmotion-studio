@@ -5,7 +5,12 @@ import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { Wallet, Clock, CheckCircle, XCircle, ExternalLink, Copy, Sparkles, Zap } from 'lucide-react'
 import { DANA_NUMBER, DANA_NAME, adminWhatsappLink, formatRp } from '@/lib/payment'
-import { fetchNexabotWallet, type NexabotWallet } from '@/lib/nexabotWallet'
+import {
+  fetchNexabotWallet,
+  nexabotPackageName,
+  NEXABOT_PACKAGE_FALLBACKS,
+  type NexabotWallet,
+} from '@/lib/nexabotWallet'
 
 const NOMINALS = [10000, 15000, 20000, 25000, 50000, 100000]
 
@@ -15,13 +20,13 @@ interface Topup {
   status: 'pending' | 'approved' | 'rejected'
   kind: 'balance' | 'unlimited'
   days: number
+  /** Varian paket yang dibeli (mist. unlimited_monthly) — kosong di data lama. */
+  package_slug?: string
   expires_at: string | null
   proof_note: string
   admin_note: string
   created_at: string
 }
-
-const PACKAGE_FALLBACK = { slug: 'unlimited_weekly', price: 35000, days: 7 }
 
 export default function NexaBotTopupPage() {
   const { token } = useAuthStore()
@@ -34,11 +39,14 @@ export default function NexaBotTopupPage() {
   const [topups, setTopups] = useState<Topup[]>([])
   const [mode, setMode] = useState<'balance' | 'package'>('balance')
   const [step, setStep] = useState<'select' | 'pay' | 'confirm'>('select')
+  // Varian paket yang sedang dipilih user (Mingguan/Bulanan/Tahunan).
+  const [selectedSlug, setSelectedSlug] = useState<string>(NEXABOT_PACKAGE_FALLBACKS[0].slug)
 
   const API = '/api/nexabot'
   const headers = useMemo(() => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }), [token])
 
-  const pkg = wallet?.package || PACKAGE_FALLBACK
+  const packages = wallet?.packages?.length ? wallet.packages : NEXABOT_PACKAGE_FALLBACKS
+  const pkg = packages.find((p) => p.slug === selectedSlug) || packages[0]
   const unlimited = wallet?.unlimited
   const amount = mode === 'package' ? pkg.price : customAmount ? parseInt(customAmount, 10) || 0 : selectedAmount
   const pendingPackage = topups.some((t) => t.kind === 'unlimited' && t.status === 'pending')
@@ -46,7 +54,11 @@ export default function NexaBotTopupPage() {
   const fetchBalance = useCallback(async () => {
     if (!token) return
     const data = await fetchNexabotWallet(token)
-    if (data) setWallet(data)
+    if (data) {
+      setWallet(data)
+      // Varian pilihan bisa hilang kalau admin mengganti katalog paket.
+      setSelectedSlug((prev) => (data.packages.some((p) => p.slug === prev) ? prev : data.packages[0]?.slug || prev))
+    }
   }, [token])
 
   const fetchTopups = useCallback(async () => {
@@ -73,13 +85,18 @@ export default function NexaBotTopupPage() {
         method: 'POST',
         headers,
         // Nominal paket ditentukan server, jadi klien tidak mengirim `amount`.
-        body: JSON.stringify(endpoint === 'package' ? { proof_note: proofNote } : { amount, proof_note: proofNote }),
+        // Nominal paket ditentukan server dari varian (slug) yang dipilih.
+        body: JSON.stringify(
+          endpoint === 'package'
+            ? { slug: pkg.slug, proof_note: proofNote }
+            : { amount, proof_note: proofNote },
+        ),
       })
       const data = await res.json()
       if (res.ok) {
         addToast(
           endpoint === 'package'
-            ? `Paket Unlimited ${pkg.days} hari diajukan — ${formatRp(pkg.price)}`
+            ? `Paket ${pkg.label} ${pkg.days} hari diajukan — ${formatRp(pkg.price)}`
             : `Topup ${formatRp(amount)} diajukan`,
           'success',
         )
@@ -95,7 +112,8 @@ export default function NexaBotTopupPage() {
     setLoading(false)
   }
 
-  const startPackage = () => {
+  const startPackage = (slug: string) => {
+    setSelectedSlug(slug)
     setMode('package')
     setProofNote('')
     setStep('pay')
@@ -124,7 +142,7 @@ export default function NexaBotTopupPage() {
 
   const waLink = adminWhatsappLink(
     mode === 'package'
-      ? `Halo admin, saya ingin beli Paket Unlimited NexaBot ${pkg.days} hari (${formatRp(pkg.price)})`
+      ? `Halo admin, saya ingin beli Paket Unlimited NexaBot ${pkg.label} ${pkg.days} hari (${formatRp(pkg.price)})`
       : `Halo admin, saya ingin top up saldo NexaBot ${formatRp(amount)}`,
   )
 
@@ -134,7 +152,7 @@ export default function NexaBotTopupPage() {
         eyebrow="NexaBot"
         title="Top Up &"
         highlight="Paket"
-        desc={`Saldo ${formatRp(wallet?.price ?? 250)}/generate, atau Paket Unlimited ${pkg.days} hari ${formatRp(pkg.price)}`}
+        desc={`Saldo ${formatRp(wallet?.price ?? 250)}/generate, atau Paket Unlimited mulai ${formatRp(packages[0].price)}`}
       />
 
       {/* Saldo + status paket */}
@@ -165,14 +183,42 @@ export default function NexaBotTopupPage() {
         )}
       </div>
 
-      {/* Paket Unlimited */}
-      <Section title="Paket Unlimited" sub={`Generate tanpa batas selama ${pkg.days} hari`}>
-        <div className="rounded-xl border-2 border-primary/40 bg-card/40 p-5">
+      {/* Paket Unlimited — semua varian dari server, bisa dipilih user */}
+      <Section title="Paket Unlimited" sub="Pilih masa berlaku — makin panjang, makin murah per harinya">
+        <div className="grid sm:grid-cols-3 gap-3">
+          {packages.map((p) => {
+            const selected = p.slug === pkg.slug
+            return (
+              <button
+                key={p.slug}
+                type="button"
+                onClick={() => setSelectedSlug(p.slug)}
+                className={`rounded-xl border-2 p-4 text-left transition-all ${
+                  selected ? 'border-primary bg-primary/5 shadow-sm' : 'border-border hover:border-primary/40'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-bold">{p.label}</span>
+                  <span className="text-[11px] text-muted-foreground">{p.days} hari</span>
+                </div>
+                <div className="mt-2 text-2xl font-bold text-primary">{formatRp(p.price)}</div>
+                <div className="text-[11px] text-muted-foreground">
+                  ≈ {formatRp(Math.round(p.price / Math.max(1, p.days)))}/hari
+                </div>
+                <div className={`mt-2 text-[11px] font-medium ${selected ? 'text-primary' : 'text-transparent'}`}>
+                  ✓ Dipilih
+                </div>
+              </button>
+            )
+          })}
+        </div>
+
+        <div className="mt-3 rounded-xl border-2 border-primary/40 bg-card/40 p-4 sm:p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <Sparkles className="h-5 w-5 text-primary" />
-                <span className="font-bold text-lg">Unlimited {pkg.days} Hari</span>
+                <span className="font-bold text-lg">Unlimited {pkg.label} · {pkg.days} Hari</span>
               </div>
               <div className="text-3xl font-bold text-primary">{formatRp(pkg.price)}</div>
               <ul className="mt-3 space-y-1 text-xs text-muted-foreground">
@@ -185,7 +231,9 @@ export default function NexaBotTopupPage() {
               {pendingPackage ? (
                 <Badge variant="warning"><Clock className="h-3 w-3 mr-1" /> Menunggu approval</Badge>
               ) : (
-                <Button onClick={startPackage}>{unlimited?.active ? 'Perpanjang Paket' : 'Beli Paket'}</Button>
+                <Button onClick={() => startPackage(pkg.slug)}>
+                  {unlimited?.active ? `Perpanjang ${pkg.label}` : `Beli Paket ${pkg.label}`}
+                </Button>
               )}
             </div>
           </div>
@@ -258,7 +306,7 @@ export default function NexaBotTopupPage() {
               </div>
               <div className="p-3 rounded-lg bg-background">
                 <div className="text-xs text-muted-foreground">
-                  Jumlah Transfer {mode === 'package' ? '(Paket Unlimited)' : ''}
+                  Jumlah Transfer {mode === 'package' ? `(Paket Unlimited ${pkg.label} · ${pkg.days} hari)` : ''}
                 </div>
                 <div className="font-bold text-primary text-lg">{formatRp(amount)}</div>
               </div>
@@ -308,7 +356,7 @@ export default function NexaBotTopupPage() {
             </div>
             <div className="text-sm text-muted-foreground mb-4">
               {mode === 'package'
-                ? `Paket ${pkg.days} hari aktif otomatis setelah admin menyetujui pembayaran.`
+                ? `Paket ${pkg.label} ${pkg.days} hari aktif otomatis setelah admin menyetujui pembayaran.`
                 : 'Saldo masuk otomatis setelah admin menyetujui pembayaran.'}
               <br />Hubungi admin jika sudah transfer.
             </div>
@@ -340,7 +388,9 @@ export default function NexaBotTopupPage() {
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium">{formatRp(t.amount)}</span>
                     {t.kind === 'unlimited' && (
-                      <Badge variant="default"><Sparkles className="h-3 w-3 mr-1" /> Paket {t.days || pkg.days} hari</Badge>
+                      <Badge variant="default">
+                        <Sparkles className="h-3 w-3 mr-1" /> Paket {nexabotPackageName(t.package_slug, t.days || pkg.days)}
+                      </Badge>
                     )}
                   </div>
                   <div className="text-[11px] text-muted-foreground">

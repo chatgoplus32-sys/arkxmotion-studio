@@ -1,7 +1,7 @@
 // ─── Klien wallet NexaBot ───────────────────────────────────────────────────
-// Saldo Rp per user (potong Rp 250/generate) + Paket Unlimited 1 minggu
-// (Rp 35.000). Semua angka otoritatif datang dari server lewat
-// /api/nexabot/*, jadi kalau harga berubah di server UI ikut sendiri.
+// Saldo Rp per user (potong Rp 250/generate) + Paket Unlimited dengan beberapa
+// varian (Mingguan/Bulanan/Tahunan). Semua angka otoritatif datang dari server
+// lewat /api/nexabot/*, jadi kalau admin mengubah harga, UI ikut sendiri.
 //
 // Dipakai halaman /topup/nexabot dan alur generate (Image to Video).
 const API = '/api/nexabot'
@@ -13,13 +13,41 @@ export interface NexabotUnlimited {
   package_id?: number | null
 }
 
+/** Satu varian Paket Unlimited (harga & durasi efektif versi server). */
+export interface NexabotPackage {
+  slug: string
+  label: string
+  price: number
+  days: number
+}
+
+/**
+ * Cermin katalog shared/pricing.ts untuk keadaan darurat: dipakai kalau
+ * /balance belum sempat dijawab server. Angka di sini hanya tampilan —
+ * yang benar-benar ditagih selalu harga dari server.
+ */
+export const NEXABOT_PACKAGE_FALLBACKS: NexabotPackage[] = [
+  { slug: 'unlimited_weekly', label: 'Mingguan', price: 35000, days: 7 },
+  { slug: 'unlimited_monthly', label: 'Bulanan', price: 119000, days: 30 },
+  { slug: 'unlimited_yearly', label: 'Tahunan', price: 899000, days: 365 },
+]
+
 export interface NexabotWallet {
   balance: number
   /** Harga per generate (Rp) versi server. */
   price: number
   min_topup: number
   unlimited: NexabotUnlimited
-  package: { slug: string; price: number; days: number }
+  /** Varian utama — dipertahankan supaya pemanggil lama tetap jalan. */
+  package: NexabotPackage
+  /** Semua varian paket yang bisa dipilih user. */
+  packages: NexabotPackage[]
+}
+
+/** Nama varian dari slug (aman walau slug kosong / dari data lama). */
+export function nexabotPackageName(slug: string | null | undefined, days: number): string {
+  const plan = NEXABOT_PACKAGE_FALLBACKS.find((p) => p.slug === slug)
+  return plan ? `${plan.label} ${days} hari` : `Unlimited ${days} hari`
 }
 
 export interface NexabotCharge {
@@ -43,12 +71,21 @@ export async function fetchNexabotWallet(token: string): Promise<NexabotWallet |
     const res = await fetch(`${API}/balance`, { headers: authHeaders(token) })
     if (!res.ok) return null
     const data = await res.json()
+    // Server baru mengirim `packages`; kalau tidak ada (build lama), pakai
+    // `package` tunggal atau katalog fallback supaya halaman tetap utuh.
+    const packages: NexabotPackage[] = Array.isArray(data.packages) && data.packages.length > 0
+      ? data.packages
+      : data.package
+        ? [{ slug: data.package.slug, label: data.package.label || 'Unlimited', price: data.package.price, days: data.package.days }]
+        : NEXABOT_PACKAGE_FALLBACKS
+
     return {
       balance: data.balance || 0,
       price: data.price ?? 250,
       min_topup: data.min_topup ?? 10000,
       unlimited: data.unlimited || EMPTY_UNLIMITED,
-      package: data.package || { slug: 'unlimited_weekly', price: 35000, days: 7 },
+      package: packages[0],
+      packages,
     }
   } catch {
     return null

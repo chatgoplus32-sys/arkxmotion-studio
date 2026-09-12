@@ -7,7 +7,10 @@ interface ProviderPrices {
     name: string
     price_per_generate: number
     min_topup: number
+    /** Varian utama (dipakai kalau server belum mengirim daftar paket). */
     package: { label: string; price: number; days: number }
+    /** Semua varian paket Unlimited: Mingguan, Bulanan, Tahunan. */
+    packages?: { slug: string; label: string; price: number; days: number }[]
   }
   createpulse?: {
     name: string
@@ -448,13 +451,18 @@ export default function LandingPage() {
                     <div className="text-[11px] text-white/40">Semua mode · min top up {rp(providerPrices.nexabot.min_topup)}</div>
                   </div>
                 )}
-                {providerPrices.nexabot?.package && (
-                  <div className="rounded-xl border border-amber-500/25 bg-amber-500/[0.07] p-3 sm:p-4">
-                    <div className="text-[12px] sm:text-[13px] font-semibold text-amber-200">Paket {providerPrices.nexabot.package.label}</div>
-                    <div className="mt-1 text-[16px] sm:text-[18px] font-black tracking-tight">{rp(providerPrices.nexabot.package.price)}</div>
-                    <div className="text-[11px] text-white/40">Generate tanpa batas selama {providerPrices.nexabot.package.days} hari</div>
+                {(providerPrices.nexabot?.packages?.length
+                  ? providerPrices.nexabot.packages
+                  : providerPrices.nexabot?.package
+                    ? [{ slug: 'unlimited_weekly', ...providerPrices.nexabot.package }]
+                    : []
+                ).map((pkg) => (
+                  <div key={pkg.slug} className="rounded-xl border border-amber-500/25 bg-amber-500/[0.07] p-3 sm:p-4">
+                    <div className="text-[12px] sm:text-[13px] font-semibold text-amber-200">Paket {pkg.label}</div>
+                    <div className="mt-1 text-[16px] sm:text-[18px] font-black tracking-tight">{rp(pkg.price)}</div>
+                    <div className="text-[11px] text-white/40">Generate tanpa batas selama {pkg.days} hari</div>
                   </div>
-                )}
+                ))}
                 {providerPrices.createpulse && (
                   <div className="rounded-xl border border-white/5 bg-black/20 p-3 sm:p-4">
                     <div className="text-[12px] sm:text-[13px] font-semibold text-white/80">{providerPrices.createpulse.name}</div>
