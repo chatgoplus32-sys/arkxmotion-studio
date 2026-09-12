@@ -1,0 +1,60 @@
+{
+  "manifest_version": 3,
+  "name": "ARKX Auth Helper",
+  "description": "Satu ekstensi untuk menangkap & mengelola token provider ARKXMotion Studio (Galleri5, OneOver, Adobe Firefly) plus JWT generik.",
+  "version": "2.0.0",
+  "minimum_chrome_version": "111",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "cookies"
+  ],
+  "host_permissions": [
+    "https://firefly.adobe.com/*",
+    "https://*.ff.adobe.io/*",
+    "https://*.adobe.io/*",
+    "https://aistudio.galleri5.com/*",
+    "https://aistudio-backend.calmdesert-ca599847.centralindia.azurecontainerapps.io/*",
+    "https://securetoken.googleapis.com/*",
+    "https://oneover.com/*",
+    "https://*.supabase.co/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://firefly.adobe.com/*",
+        "https://aistudio.galleri5.com/*",
+        "https://oneover.com/*",
+        "https://*.oneover.com/*"
+      ],
+      "js": [
+        "content/interceptor.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_start",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "https://firefly.adobe.com/*",
+        "https://aistudio.galleri5.com/*",
+        "https://oneover.com/*",
+        "https://*.oneover.com/*"
+      ],
+      "js": [
+        "content/bridge.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "ARKX Auth Helper"
+  }
+}

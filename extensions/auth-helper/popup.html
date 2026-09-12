@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <title>ARKX Auth Helper</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header class="header">
+      <div class="logo" id="logo">AH</div>
+      <div>
+        <h1 id="title">ARKX Auth Helper</h1>
+        <p class="subtitle" id="subtitle">Memuat…</p>
+      </div>
+    </header>
+
+    <!-- Tab provider dibuat dari registry, bukan ditulis manual di sini. -->
+    <nav class="tabs" id="tabs"></nav>
+
+    <main>
+      <p class="hint" id="hint"></p>
+
+      <div class="actions">
+        <button class="btn btn-primary" id="scanBtn">🔍 Scan</button>
+        <button class="btn btn-secondary" id="refreshBtn">♻️ Refresh</button>
+        <button class="btn btn-secondary" id="balanceBtn">💰 Cek saldo</button>
+        <button class="btn btn-secondary" id="diagBtn" hidden>🩺 Diagnostik</button>
+        <button class="btn btn-danger" data-action="clear">🗑️ Hapus semua</button>
+      </div>
+
+      <div class="result" id="result" hidden></div>
+
+      <section id="tokens"></section>
+
+      <details class="add">
+        <summary>Tambah token manual</summary>
+        <textarea
+          id="addInput"
+          rows="4"
+          placeholder='{"access_token":"eyJ…","refresh_token":"…"} atau token langsung (satu per baris)'
+        ></textarea>
+        <p style="margin-top: 8px">
+          <button class="btn btn-primary" id="addBtn">+ Simpan token</button>
+        </p>
+      </details>
+    </main>
+
+    <footer>
+      <label class="appurl">
+        App URL (untuk tombol Copy &amp; buka Providers)
+        <input id="appUrl" type="text" placeholder="https://arkxmotion-studio.vercel.app" />
+      </label>
+      <div class="footer-actions">
+        <button class="btn btn-primary" id="openProviders">Copy &amp; buka Providers</button>
+        <button class="btn btn-secondary" id="saveAppUrl">Simpan URL</button>
+      </div>
+    </footer>
+
+    <div class="toast" id="toast"></div>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>
