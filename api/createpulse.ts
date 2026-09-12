@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import jwt from 'jsonwebtoken'
 import { neon } from '@neondatabase/serverless'
+import { CREATEPULSE_MIN_TOPUP, getCreatepulseCharge } from '../shared/pricing.js'
 
 function getSql() {
   const url = process.env.DATABASE_URL
@@ -53,8 +54,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // POST topup
     if (sub === 'topup' || (url.includes('/topup') && !url.includes('/topups'))) {
       const { amount, proof_note } = req.body || {}
-      if (!amount || amount < 10000) {
-        return res.status(400).json({ error: 'Minimal topup Rp 10.000' })
+      if (!amount || amount < CREATEPULSE_MIN_TOPUP) {
+        return res.status(400).json({ error: `Minimal topup Rp ${CREATEPULSE_MIN_TOPUP.toLocaleString('id-ID')}` })
       }
       const rows = await sql`INSERT INTO createpulse_topup (user_id, amount, proof_note, status) VALUES (${user.id}, ${amount}, ${proof_note || ''}, 'pending') RETURNING *`
       return res.status(201).json({ topup: rows[0], message: 'Topup request submitted, waiting admin approval' })
@@ -69,7 +70,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // POST deduct
     if (sub === 'deduct' || url.includes('/deduct')) {
       const { model, batch_id } = req.body || {}
-      const cost = (model === 'dreamina-seedance-2.0-15s' || model === 'veo-omni-10s') ? 2250 : 1500
+      // Tarif per model dari shared/pricing.ts — sumber yang sama dengan endpoint
+      // publik /api/public/pricing, jadi harga tampil == harga yang dipotong.
+      const cost = getCreatepulseCharge(model)
 
       const balRows = await sql`SELECT balance FROM createpulse_balance WHERE user_id = ${user.id}`
       let balance = balRows.length > 0 ? balRows[0].balance : 0

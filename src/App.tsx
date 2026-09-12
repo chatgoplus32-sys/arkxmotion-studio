@@ -48,6 +48,7 @@ const SecondBrainPage = lazyWithRetry(() => import('@/pages/SecondBrain'))
 const ClipGeniusPage = lazyWithRetry(() => import('@/pages/ClipGenius'))
 const AdminNotificationsPage = lazyWithRetry(() => import('@/pages/AdminNotifications'))
 const CreatePulseTopupPage = lazyWithRetry(() => import('@/pages/CreatePulseTopup'))
+const NexaBotTopupPage = lazyWithRetry(() => import('@/pages/NexaBotTopup'))
 const BeliTokenPage = lazyWithRetry(() => import('@/pages/BeliToken'))
 const PluginsPage = lazyWithRetry(() => import('@/pages/Plugins'))
 
@@ -180,6 +181,7 @@ export default function App() {
                         <Route path="/manage/routing" element={<RoutingProviderPage />} />
                         <Route path="/settings" element={<SettingsPage />} />
                         <Route path="/topup/createpulse" element={<CreatePulseTopupPage />} />
+                        <Route path="/topup/nexabot" element={<NexaBotTopupPage />} />
                         <Route path="/beli-token" element={<BeliTokenPage />} />
                         <Route path="/plugins" element={<PluginsPage />} />
 

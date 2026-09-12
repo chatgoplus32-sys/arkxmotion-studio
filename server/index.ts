@@ -14,6 +14,7 @@ import cronRoutes from './routes/cron.js'
 import syncTokensRoutes from './routes/syncTokens.js'
 import nexabotRoutes from './routes/nexabot.js'
 import nexabotWalletRoutes from './routes/nexabotWallet.js'
+import publicPricingRoutes from './routes/publicPricing.js'
 import { backupOnStartup } from './backup.js'
 
 dotenv.config()
@@ -39,6 +40,8 @@ app.use('/api/membership', membershipRoutes)
 app.use('/api/cron', cronRoutes)
 app.use('/api/sync-tokens', syncTokensRoutes)
 app.use('/api/public/nexabot', nexabotRoutes)
+// Harga efektif provider (publik, read-only) — dipakai halaman landing & cek cepat.
+app.use('/api/public/pricing', publicPricingRoutes)
 // Wallet NexaBot (saldo Rp prepaid) — beda dari /api/public/nexabot yang
 // meneruskan generate ke upstream nexabot.id.
 app.use('/api/nexabot', nexabotWalletRoutes)

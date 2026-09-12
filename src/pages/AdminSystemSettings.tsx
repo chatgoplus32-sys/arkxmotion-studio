@@ -8,7 +8,14 @@ import {
   RefreshCw,
   AlertTriangle,
   CheckCircle,
+  Zap,
 } from 'lucide-react'
+
+interface NexabotPricing {
+  price: number
+  unlimitedPrice: number
+  unlimitedDays: number
+}
 
 interface AppSettings {
   [key: string]: string
@@ -30,6 +37,12 @@ export default function AdminSystemSettings() {
   const [maintenance, setMaintenance] = useState<Maintenance[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  // Harga NexaBot punya jalur sendiri (`/api/admin/nexabot/config`) karena
+  // nilainya dipakai langsung oleh perhitungan charge di server.
+  const [nbForm, setNbForm] = useState({ price: '', unlimitedPrice: '', unlimitedDays: '' })
+  const [nbDefaults, setNbDefaults] = useState<NexabotPricing>({ price: 250, unlimitedPrice: 35000, unlimitedDays: 7 })
+  const [nbActive, setNbActive] = useState<NexabotPricing | null>(null)
+  const [nbSaving, setNbSaving] = useState(false)
   const token = useAuthStore((state) => state.token)
   const addToast = useToastStore((state) => state.addToast)
 
@@ -53,6 +66,54 @@ export default function AdminSystemSettings() {
   }, [token, addToast])
 
   useEffect(() => { fetchData() }, [fetchData])
+
+  const fetchNexabotPricing = useCallback(async () => {
+    if (!token) return
+    try {
+      const res = await fetch('/api/admin/nexabot/config', { headers: { Authorization: `Bearer ${token}` } })
+      if (!res.ok) return
+      const data = await res.json()
+      const pricing: NexabotPricing = data.pricing
+      setNbActive(pricing)
+      if (data.defaults) setNbDefaults(data.defaults)
+      // Input diisi nilai efektif sekarang supaya admin lihat angka aslinya.
+      setNbForm({
+        price: String(pricing.price),
+        unlimitedPrice: String(pricing.unlimitedPrice),
+        unlimitedDays: String(pricing.unlimitedDays),
+      })
+    } catch { /* biarkan nilai lama kalau request gagal */ }
+  }, [token])
+
+  useEffect(() => { fetchNexabotPricing() }, [fetchNexabotPricing])
+
+  const handleSaveNexabotPricing = async () => {
+    if (!token) return
+    setNbSaving(true)
+    try {
+      const res = await fetch('/api/admin/nexabot/config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(nbForm),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        addToast(data.message || 'Harga NexaBot disimpan', 'success')
+        setNbActive(data.pricing)
+        setNbForm({
+          price: String(data.pricing.price),
+          unlimitedPrice: String(data.pricing.unlimitedPrice),
+          unlimitedDays: String(data.pricing.unlimitedDays),
+        })
+      } else {
+        addToast(data.error || 'Gagal menyimpan harga NexaBot', 'error')
+      }
+    } catch {
+      addToast('Gagal menyimpan harga NexaBot', 'error')
+    } finally {
+      setNbSaving(false)
+    }
+  }
 
   const handleSave = async () => {
     if (!token) return
@@ -188,6 +249,73 @@ export default function AdminSystemSettings() {
                 <span className="text-sm">Registration Open</span>
               </label>
             </div>
+          </div>
+        </Section>
+
+        {/* NexaBot Pricing */}
+        <Section
+          title="Harga NexaBot"
+          sub="Tarif per generate dan paket Unlimited — berlaku langsung tanpa deploy ulang"
+        >
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-muted-foreground mb-1">
+                Harga per Generate (Rp)
+              </label>
+              <input
+                type="number"
+                value={nbForm.price}
+                onChange={e => setNbForm(prev => ({ ...prev, price: e.target.value }))}
+                className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm"
+                placeholder={String(nbDefaults.price)}
+              />
+              <div className="text-[11px] text-muted-foreground mt-1">
+                Dipotong dari saldo user tiap 1 generate (semua mode).
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-muted-foreground mb-1">
+                Harga Paket Unlimited (Rp)
+              </label>
+              <input
+                type="number"
+                value={nbForm.unlimitedPrice}
+                onChange={e => setNbForm(prev => ({ ...prev, unlimitedPrice: e.target.value }))}
+                className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm"
+                placeholder={String(nbDefaults.unlimitedPrice)}
+              />
+              <div className="text-[11px] text-muted-foreground mt-1">
+                Sekali bayar, generate gratis selama masa berlaku paket.
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-muted-foreground mb-1">
+                Masa Berlaku Paket (hari)
+              </label>
+              <input
+                type="number"
+                value={nbForm.unlimitedDays}
+                onChange={e => setNbForm(prev => ({ ...prev, unlimitedDays: e.target.value }))}
+                className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm"
+                placeholder={String(nbDefaults.unlimitedDays)}
+              />
+              <div className="text-[11px] text-muted-foreground mt-1">
+                1–365 hari. Beli lagi saat aktif → masa berlaku ditumpuk.
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 mt-4">
+            <Button size="sm" onClick={handleSaveNexabotPricing} disabled={nbSaving}>
+              <Zap className={`h-4 w-4 mr-2 ${nbSaving ? 'animate-pulse' : ''}`} />
+              {nbSaving ? 'Menyimpan...' : 'Simpan Harga NexaBot'}
+            </Button>
+            <span className="text-[11px] text-muted-foreground">
+              Aktif sekarang:{' '}
+              {nbActive
+                ? `Rp ${nbActive.price.toLocaleString('id-ID')}/generate · Paket Rp ${nbActive.unlimitedPrice.toLocaleString('id-ID')} / ${nbActive.unlimitedDays} hari`
+                : 'memuat...'}
+            </span>
           </div>
         </Section>
 

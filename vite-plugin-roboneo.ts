@@ -1193,7 +1193,9 @@ export function roboneoProxyPlugin(): Plugin {
       })
 
       server.middlewares.use('/api/public', async (req, res, next) => {
-        if ((req.url || '').startsWith('/nexabot')) return next()
+        // Endpoint yang memang router Express lokal (bukan upstream provider)
+        // diteruskan ke proxy /api → localhost:6000, jangan ke Vercel.
+        if ((req.url || '').startsWith('/nexabot') || (req.url || '').startsWith('/pricing')) return next()
 
         if (req.method === 'OPTIONS') {
           res.writeHead(200, {

@@ -1,6 +1,7 @@
 import { Router, Response } from 'express'
 import db from '../db.js'
 import { authenticateToken, AuthRequest } from '../middleware/auth.js'
+import { CREATEPULSE_MIN_TOPUP, getCreatepulseCharge } from '../../shared/pricing.js'
 
 const router = Router()
 
@@ -27,8 +28,8 @@ router.post('/topup', authenticateToken, (req: AuthRequest, res: Response) => {
     if (!userId) return res.status(401).json({ error: 'Unauthorized' })
 
     const { amount, proof_note } = req.body
-    if (!amount || amount < 10000) {
-      return res.status(400).json({ error: 'Minimal topup Rp 10.000' })
+    if (!amount || amount < CREATEPULSE_MIN_TOPUP) {
+      return res.status(400).json({ error: `Minimal topup Rp ${CREATEPULSE_MIN_TOPUP.toLocaleString('id-ID')}` })
     }
 
     const result = db.prepare(
@@ -64,7 +65,10 @@ router.post('/deduct', authenticateToken, (req: AuthRequest, res: Response) => {
     if (!userId) return res.status(401).json({ error: 'Unauthorized' })
 
     const { model, batch_id } = req.body
-    const cost = (model === 'dreamina-seedance-2.0-15s' || model === 'veo-omni-10s') ? 2250 : 1500
+    // Tarif per model ada di shared/pricing.ts — sama dengan yang dipakai
+    // endpoint publik /api/public/pricing, jadi angka yang ditampilkan ke user
+    // tidak bisa berbeda dari yang benar-benar dipotong di sini.
+    const cost = getCreatepulseCharge(model)
 
     let row = db.prepare('SELECT balance FROM createpulse_balance WHERE user_id = ?').get(userId) as { balance: number } | undefined
     if (!row) {

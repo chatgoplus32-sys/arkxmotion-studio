@@ -62,6 +62,31 @@ router.patch('/approve', authenticateToken, requireAdmin, (req: AuthRequest, res
     const topup = db.prepare(`SELECT * FROM ${w.topup} WHERE id = ? AND status = ?`).get(id, 'pending') as any
     if (!topup) return res.status(404).json({ error: 'Pending topup not found' })
 
+    // Paket Unlimited NexaBot: approve = aktifkan masa berlaku, BUKAN menambah
+    // saldo. Kalau paket sebelumnya masih jalan, masa berlakunya ditumpuk
+    // (mulai dari expiry terlama, bukan dari sekarang) supaya user tidak
+    // kehilangan sisa hari.
+    if (topup.kind === 'unlimited') {
+      const days = Number(topup.days) || 7
+      db.prepare(`
+        UPDATE ${w.topup}
+        SET status = 'approved',
+            admin_note = ?,
+            started_at = datetime('now'),
+            expires_at = datetime(MAX(COALESCE(expires_at, datetime('now')), datetime('now')), ?),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(admin_note || '', `+${days} days`, id)
+
+      const activated = db.prepare(`SELECT expires_at FROM ${w.topup} WHERE id = ?`).get(id) as { expires_at: string } | undefined
+      const balance = db.prepare(`SELECT balance FROM ${w.balance} WHERE user_id = ?`).get(topup.user_id) as { balance: number } | undefined
+      return res.json({
+        message: `Paket Unlimited ${days} hari aktif sampai ${activated?.expires_at || '-'}`,
+        balance: balance?.balance || 0,
+        unlimited: { active: true, expires_at: activated?.expires_at || null, days_left: days },
+      })
+    }
+
     db.prepare(`UPDATE ${w.topup} SET status = 'approved', admin_note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(admin_note || '', id)
 
     let bal = db.prepare(`SELECT balance FROM ${w.balance} WHERE user_id = ?`).get(topup.user_id) as { balance: number } | undefined

@@ -1,5 +1,22 @@
-﻿import { useState } from 'react'
+﻿import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
+
+// Harga provider live dari /api/public/pricing (read-only, tanpa login).
+interface ProviderPrices {
+  nexabot?: {
+    name: string
+    price_per_generate: number
+    min_topup: number
+    package: { label: string; price: number; days: number }
+  }
+  createpulse?: {
+    name: string
+    min_topup: number
+    price_range: { min: number; max: number }
+  }
+}
+
+const rp = (n: number) => `Rp ${n.toLocaleString('id-ID')}`
 
 const providers = [
   { name: 'Weavy', dot: '#8b5cf6' },
@@ -94,6 +111,17 @@ const faqs = [
 export default function LandingPage() {
   const [openFaq, setOpenFaq] = useState<number | null>(0)
   const [mobileMenu, setMobileMenu] = useState(false)
+  // Kalau endpoint harga tidak bisa diakses, bagian ini cukup tidak tampil.
+  const [providerPrices, setProviderPrices] = useState<ProviderPrices | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    fetch('/api/public/pricing')
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (alive && d?.providers) setProviderPrices(d.providers as ProviderPrices) })
+      .catch(() => { /* opsional: biarkan kosong */ })
+    return () => { alive = false }
+  }, [])
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white overflow-x-hidden selection:bg-[#d4a017]/30">
@@ -403,6 +431,44 @@ export default function LandingPage() {
               </div>
             ))}
           </div>
+          {providerPrices && (
+            <div className="mt-8 sm:mt-10 rounded-[20px] border border-white/5 bg-white/[0.02] p-4 sm:p-5">
+              <div className="flex items-center gap-2 text-[11px] sm:text-xs text-white/45 mb-3">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                Harga provider — tarif aktif dari server
+              </div>
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {providerPrices.nexabot && (
+                  <div className="rounded-xl border border-white/5 bg-black/20 p-3 sm:p-4">
+                    <div className="text-[12px] sm:text-[13px] font-semibold text-white/80">{providerPrices.nexabot.name}</div>
+                    <div className="mt-1 text-[16px] sm:text-[18px] font-black tracking-tight">
+                      {rp(providerPrices.nexabot.price_per_generate)}
+                      <span className="text-[11px] font-normal text-white/40"> /generate</span>
+                    </div>
+                    <div className="text-[11px] text-white/40">Semua mode · min top up {rp(providerPrices.nexabot.min_topup)}</div>
+                  </div>
+                )}
+                {providerPrices.nexabot?.package && (
+                  <div className="rounded-xl border border-amber-500/25 bg-amber-500/[0.07] p-3 sm:p-4">
+                    <div className="text-[12px] sm:text-[13px] font-semibold text-amber-200">Paket {providerPrices.nexabot.package.label}</div>
+                    <div className="mt-1 text-[16px] sm:text-[18px] font-black tracking-tight">{rp(providerPrices.nexabot.package.price)}</div>
+                    <div className="text-[11px] text-white/40">Generate tanpa batas selama {providerPrices.nexabot.package.days} hari</div>
+                  </div>
+                )}
+                {providerPrices.createpulse && (
+                  <div className="rounded-xl border border-white/5 bg-black/20 p-3 sm:p-4">
+                    <div className="text-[12px] sm:text-[13px] font-semibold text-white/80">{providerPrices.createpulse.name}</div>
+                    <div className="mt-1 text-[16px] sm:text-[18px] font-black tracking-tight">
+                      {rp(providerPrices.createpulse.price_range.min)} – {rp(providerPrices.createpulse.price_range.max)}
+                      <span className="text-[11px] font-normal text-white/40"> /generate</span>
+                    </div>
+                    <div className="text-[11px] text-white/40">Tergantung model · min top up {rp(providerPrices.createpulse.min_topup)}</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           <p className="text-center text-[11px] sm:text-xs text-white/30 mt-4">Butuh custom enterprise? <Link to="/register" className="text-amber-300 hover:underline">Chat admin di WhatsApp</Link> — respon &lt; 1 jam.</p>
         </div>
       </section>

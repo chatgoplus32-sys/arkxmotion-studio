@@ -3,13 +3,17 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Badge } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
-import { CheckCircle, XCircle, Clock, Wallet } from 'lucide-react'
+import { CheckCircle, XCircle, Clock, Wallet, Sparkles } from 'lucide-react'
 
 interface Topup {
   id: number
   user_id: number
   amount: number
   status: 'pending' | 'approved' | 'rejected'
+  /** 'unlimited' = pembelian Paket Unlimited (approve → aktifkan masa berlaku, bukan tambah saldo). */
+  kind?: 'balance' | 'unlimited'
+  days?: number
+  expires_at?: string | null
   proof_note: string
   admin_note: string
   created_at: string
@@ -61,7 +65,12 @@ export default function AdminTopupPage() {
       })
       const data = await res.json()
       if (res.ok) {
-        addToast(`Topup approved — saldo ${data.balance?.toLocaleString('id-ID')}`, 'success')
+        addToast(
+          data.unlimited
+            ? (data.message || 'Paket Unlimited diaktifkan')
+            : `Topup approved — saldo ${data.balance?.toLocaleString('id-ID')}`,
+          'success',
+        )
         fetchTopups()
       } else {
         addToast(data.error || 'Gagal', 'error')
@@ -148,8 +157,13 @@ export default function AdminTopupPage() {
                 <div className="flex items-start justify-between mb-3">
                   <div>
                     <div className="flex items-center gap-2 mb-1">
-                      <Wallet className="h-4 w-4 text-primary" />
+                      {t.kind === 'unlimited'
+                        ? <Sparkles className="h-4 w-4 text-primary" />
+                        : <Wallet className="h-4 w-4 text-primary" />}
                       <span className="font-bold text-lg">{formatRp(t.amount)}</span>
+                      {t.kind === 'unlimited' && (
+                        <Badge variant="default">Paket Unlimited {t.days || 7} hari</Badge>
+                      )}
                     </div>
                     <div className="text-sm">{t.user_name} ({t.email})</div>
                     <div className="text-[11px] text-muted-foreground">

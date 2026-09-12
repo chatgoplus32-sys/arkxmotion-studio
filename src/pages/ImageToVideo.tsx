@@ -37,6 +37,8 @@ import { PROVIDER_MODELS, QUALITY_OPTIONS, getCreatepulseCost, RATIOS, TEMPLATES
 
 import VideoPlayer from './image-to-video/VideoPlayer'
 import { nexabotPathPill } from './image-to-video/nexabotPathPill'
+import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, type NexabotWallet } from '@/lib/nexabotWallet'
+import { formatRp } from '@/lib/payment'
 import { runNexabotJobWithSessionFallback } from './image-to-video/nexabotSessionFallback'
 
 // Voice default untuk mode Voice Over NexaBot — salah satu nama dari daftar
@@ -77,6 +79,10 @@ export default function ImageToVideoPage() {
   const addToast = useToastStore((s) => s.addToast)
   const { token: authToken, user } = useAuthStore()
   const [cpBalance, setCpBalance] = useState(0)
+  // Wallet NexaBot user (Rp 250/generate) + status Paket Unlimited 1 minggu.
+  const [nbWallet, setNbWallet] = useState<NexabotWallet | null>(null)
+  // usage_id pemotongan yang masih bisa di-refund kalau generate gagal.
+  const nbChargeRef = useRef<number | null>(null)
 
   const [imgUrl, setImgUrl] = useState<string | null>(null)
   const [imgFile, setImgFile] = useState<File | null>(null)
@@ -356,6 +362,11 @@ export default function ImageToVideoPage() {
     }
   }, [provider, authToken])
 
+  useEffect(() => {
+    if (provider !== 'nexabot' || !authToken) return
+    fetchNexabotWallet(authToken).then((w) => { if (w) setNbWallet(w) }).catch(() => {})
+  }, [provider, authToken])
+
   const handleFileChange = (files: FileList | null) => {
     const file = files?.[0]
     if (file) {
@@ -598,6 +609,9 @@ export default function ImageToVideoPage() {
     if (!prompt.trim()) return 'Prompt harus diisi'
     if (!hasActiveKey && provider !== 'roboneo' && provider !== 'createpulse') return `Tidak ada API key aktif untuk ${PROVIDER_CONFIGS[provider].name}`
     if (provider === 'createpulse' && user?.role !== 'admin' && cpBalance < getCreatepulseCost(currentModel?.apiModel)) return 'Saldo CreatePulse tidak cukup. Top up minimal Rp 10.000'
+    // NexaBot: paket Unlimited = gratis, jadi cek saldo hanya saat paket tidak aktif.
+    if (provider === 'nexabot' && user?.role !== 'admin' && !nbWallet?.unlimited.active && (nbWallet?.balance ?? 0) < (nbWallet?.price ?? 250))
+      return `Saldo NexaBot tidak cukup (${formatRp(nbWallet?.balance ?? 0)}). Top up atau ambil Paket Unlimited ${nbWallet?.package.days ?? 7} hari di halaman Top Up NexaBot.`
     if (provider === 'roboneo' && !imgFile) return 'Roboneo membutuhkan gambar input'
     if (provider === 'nexabot') {
       const nbMode = currentModel?.apiModel
@@ -2079,6 +2093,20 @@ export default function ImageToVideoPage() {
         addLog(`[1/3] 🚀 Menyiapkan generate NexaBot...`, 'info', 'nexabot')
         setStatus((s) => ({ ...s, text: 'Menyiapkan...', pct: 5 }))
 
+        // Billing user: 1 generate = Rp 250 (otomatis Rp 0 selama Paket Unlimited
+        // aktif, ditegakkan server). Admin bebas. `usage_id`-nya disimpan supaya
+        // pemotongan ini bisa di-refund tepat kalau generate gagal.
+        if (authToken && currentUser?.role !== 'admin') {
+          const charge = await chargeNexabotWallet(authToken, currentModel?.apiModel || 't2v')
+          nbChargeRef.current = charge.usageId
+          setNbWallet((w) => (w ? { ...w, balance: charge.balance } : w))
+          addLog(charge.unlimited
+            ? `[1/3] 🎟️ Paket Unlimited aktif — generate ini gratis`
+            : `[1/3] 💰 Saldo terpotong ${formatRp(charge.deducted)} ✓ sisa ${formatRp(charge.balance)}`, 'success', 'nexabot')
+        } else if (currentUser?.role === 'admin') {
+          addLog(`[1/3] ⚡ Admin mode — skip saldo`, 'info', 'nexabot')
+        }
+
         const rotation = await withTokenRotation<string>(
           'nexabot',
           async (apiKey, keyInfo) => {
@@ -2258,6 +2286,15 @@ export default function ImageToVideoPage() {
       }
      } catch (err: any) {
        if (activeTaskId) removeActiveTask(activeTaskId)
+       // NexaBot: kembalikan saldo yang sudah dipotong untuk generate ini.
+       if (provider === 'nexabot' && nbChargeRef.current && authToken) {
+         const refundedBalance = await refundNexabotWallet(authToken, nbChargeRef.current)
+         nbChargeRef.current = null
+         if (refundedBalance != null) {
+           addLog(`💸 Saldo NexaBot dikembalikan ✓ sisa ${formatRp(refundedBalance)}`, 'warn', 'nexabot')
+           setNbWallet((w) => (w ? { ...w, balance: refundedBalance } : w))
+         }
+       }
        addLog(`❌ Error: ${err.message}`, 'error', provider)
        addToast(`Generate gagal: ${err.message}`, 'error')
        if (logId) logGenerationFailed(logId, err.message, Date.now() - startTime)
@@ -2267,6 +2304,9 @@ export default function ImageToVideoPage() {
        setStatus((s) => ({ ...s, pct: 100, text: `❌ Error: ${err.message}` }))
     } finally {
       clearInterval(timer)
+      // Blok catch sudah menangani refund (kalau ada); sisanya dibuang supaya
+      // generate berikutnya tidak me-refund catatan lama.
+      nbChargeRef.current = null
       setCompressDialog(null)
       const wasGenerating = generatingRef.current
       setGenerating(false)
@@ -2385,6 +2425,42 @@ export default function ImageToVideoPage() {
               <div className="mt-2 text-[11px]">
                 <a href="/topup/createpulse" className="text-primary hover:underline font-medium">
                   Top Up Saldo →
+                </a>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* NexaBot Pricing Info — saldo Rp 250/generate atau Paket Unlimited */}
+        {provider === 'nexabot' && (
+          <div className="mt-3 p-3 rounded-xl border border-primary/20 bg-primary/5">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-xs font-medium text-primary">
+                ⚡ NexaBot {user?.role === 'admin' ? '(Admin — Free)' : `— ${formatRp(nbWallet?.price ?? 250)}/generate`}
+              </div>
+              {nbWallet?.unlimited.active && (
+                <Badge variant="success">
+                  Unlimited · sisa {nbWallet.unlimited.days_left} hari
+                </Badge>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
+              <div>
+                Saldo: <b className={`font-bold ${nbWallet?.unlimited.active || (nbWallet?.balance ?? 0) >= (nbWallet?.price ?? 250) ? 'text-emerald-500' : 'text-destructive'}`}>
+                  {formatRp(nbWallet?.balance ?? 0)}
+                </b>
+              </div>
+              <div>Paket Unlimited {nbWallet?.package.days ?? 7} hari: <b className="text-foreground">{formatRp(nbWallet?.package.price ?? 35000)}</b></div>
+              {nbWallet?.unlimited.active ? (
+                <div>Status: <b className="text-emerald-500">GRATIS sampai paket habis</b></div>
+              ) : (
+                <div>Failed generations: <b className="text-emerald-500">auto-refunded</b></div>
+              )}
+            </div>
+            {user?.role !== 'admin' && !nbWallet?.unlimited.active && (nbWallet?.balance ?? 0) < (nbWallet?.price ?? 250) && (
+              <div className="mt-2 text-[11px]">
+                <a href="/topup/nexabot" className="text-primary hover:underline font-medium">
+                  Top Up Saldo / Beli Paket Unlimited →
                 </a>
               </div>
             )}

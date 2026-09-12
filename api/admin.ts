@@ -3,6 +3,13 @@ import jwt from 'jsonwebtoken'
 import crypto from 'crypto'
 import { neon } from '@neondatabase/serverless'
 import { sendEmail, appUrl } from './mailer.js'
+import {
+  NEXABOT_PRICING_DEFAULTS,
+  NEXABOT_PRICING_KEYS,
+  parseNexabotPricing,
+  validateNexabotPricing,
+  type NexabotPricing,
+} from '../shared/pricing.js'
 
 function getSql() {
   const url = process.env.DATABASE_URL
@@ -72,6 +79,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try { await sql`CREATE TABLE IF NOT EXISTS notifications (id SERIAL PRIMARY KEY, title TEXT NOT NULL, message TEXT NOT NULL, type TEXT NOT NULL DEFAULT 'info', target TEXT NOT NULL DEFAULT 'all', user_id INTEGER DEFAULT NULL, read INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)` } catch { /* table already exists */ }
     try { await sql`CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)` } catch { /* table already exists */ }
     try { await sql`CREATE TABLE IF NOT EXISTS provider_maintenance (id SERIAL PRIMARY KEY, provider TEXT UNIQUE NOT NULL, is_maintenance INTEGER NOT NULL DEFAULT 0, message TEXT NOT NULL DEFAULT '', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)` } catch { /* table already exists */ }
+    // Kolom paket Unlimited NexaBot — supaya halaman approval admin tetap benar
+    // walau fungsi wallet-nya belum pernah dipanggil sejak deploy.
+    try { await sql`ALTER TABLE nexabot_topup ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'balance'` } catch { /* table/column not ready yet */ }
+    try { await sql`ALTER TABLE nexabot_topup ADD COLUMN IF NOT EXISTS days INTEGER NOT NULL DEFAULT 0` } catch { /* table/column not ready yet */ }
+    try { await sql`ALTER TABLE nexabot_topup ADD COLUMN IF NOT EXISTS started_at TIMESTAMP` } catch { /* table/column not ready yet */ }
+    try { await sql`ALTER TABLE nexabot_topup ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP` } catch { /* table/column not ready yet */ }
 
     // /api/admin/topup/* routes
     if (segments.includes('topup') || segments.includes('topups')) {
@@ -81,6 +94,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // /api/admin/tokens/* routes
     if (segments.includes('tokens')) {
       return handleTokenRoutes(req, res, segments)
+    }
+
+    // /api/admin/nexabot/* (konfigurasi harga NexaBot)
+    if (segments.includes('nexabot') || req.query.nexabot) {
+      return handleNexabotConfigRoutes(req, res)
     }
 
     // /api/admin/membership/* (konfirmasi pembayaran member)
@@ -317,6 +335,28 @@ async function handleTopupRoutes(req: VercelRequest, res: VercelResponse, segmen
       if (isNexabot) {
         const topup = await sql`SELECT * FROM nexabot_topup WHERE id = ${id} AND status = 'pending'`
         if (topup.length === 0) return res.status(404).json({ error: 'Pending topup not found' })
+
+        // Paket Unlimited: approve = aktifkan masa berlaku, BUKAN menambah saldo.
+        // Kalau paket lama masih jalan, expiry ditumpuk dari sisa hari yang ada.
+        if (topup[0].kind === 'unlimited') {
+          const days = Number(topup[0].days) || 7
+          await sql`
+            UPDATE nexabot_topup
+            SET status = 'approved',
+                admin_note = ${admin_note || ''},
+                started_at = NOW(),
+                expires_at = GREATEST(COALESCE(expires_at, NOW()), NOW()) + make_interval(days => ${days}),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ${id}
+          `
+          const activated = await sql`SELECT expires_at FROM nexabot_topup WHERE id = ${id}`
+          const bal = await sql`SELECT balance FROM nexabot_balance WHERE user_id = ${topup[0].user_id}`
+          return res.status(200).json({
+            message: `Paket Unlimited ${days} hari diaktifkan`,
+            balance: bal[0]?.balance || 0,
+            unlimited: { active: true, expires_at: activated[0]?.expires_at || null, days_left: days },
+          })
+        }
 
         await sql`UPDATE nexabot_topup SET status = 'approved', admin_note = ${admin_note || ''}, updated_at = CURRENT_TIMESTAMP WHERE id = ${id}`
         await sql`INSERT INTO nexabot_balance (user_id, balance) VALUES (${topup[0].user_id}, ${topup[0].amount}) ON CONFLICT (user_id) DO UPDATE SET balance = nexabot_balance.balance + ${topup[0].amount}, updated_at = CURRENT_TIMESTAMP`
@@ -814,6 +854,70 @@ async function handleMaintenanceRoutes(req: VercelRequest, res: VercelResponse) 
     return res.status(405).json({ error: 'Method not allowed' })
   } catch (err: any) {
     console.error('Maintenance error:', err)
+    return res.status(500).json({ error: err.message || 'Internal server error' })
+  }
+}
+
+// ─── Konfigurasi harga NexaBot (per generate & paket Unlimited) ────────
+// Harga hidup di `app_settings` dan dibaca oleh fungsi wallet (api/nexabot-wallet.ts)
+// pada setiap charge, jadi ubah tarif di sini langsung berlaku tanpa deploy ulang.
+// Bentuk, batas, dan validasinya ikut shared/pricing.ts supaya identik dengan
+// sisi Express dan endpoint publik /api/public/pricing.
+
+/** Baca harga efektif. Tanpa cache — halaman admin harus selalu lihat nilai asli. */
+async function readNexabotPricing(sql: any): Promise<NexabotPricing> {
+  const rows = await sql`SELECT key, value FROM app_settings WHERE key IN ('nexabot_price', 'nexabot_unlimited_price', 'nexabot_unlimited_days')`
+  const saved: Record<string, string> = {}
+  for (const r of rows || []) saved[String(r.key)] = String(r.value)
+  return parseNexabotPricing(saved)
+}
+
+async function handleNexabotConfigRoutes(req: VercelRequest, res: VercelResponse) {
+  try {
+    const sql = getSql()
+    try { await sql`CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)` } catch { /* table already exists */ }
+
+    if (req.method === 'GET') {
+      return res.status(200).json({
+        ok: true,
+        pricing: await readNexabotPricing(sql),
+        defaults: NEXABOT_PRICING_DEFAULTS,
+        min_topup: 10000,
+      })
+    }
+
+    if (req.method === 'PATCH') {
+      const body = (req.body || {}) as Record<string, unknown>
+      const patch: Record<string, number> = {}
+      for (const key of Object.keys(NEXABOT_PRICING_DEFAULTS) as (keyof NexabotPricing)[]) {
+        const raw = body[key]
+        if (raw === undefined || raw === null || raw === '') continue
+        const n = Number(raw)
+        const error = validateNexabotPricing(key, n)
+        if (error) return res.status(400).json({ error })
+        patch[key] = Math.round(n)
+      }
+      if (Object.keys(patch).length === 0) {
+        return res.status(400).json({ error: 'Tidak ada harga yang dikirim' })
+      }
+
+      for (const key of Object.keys(patch) as (keyof NexabotPricing)[]) {
+        const value = patch[key]
+        await sql`INSERT INTO app_settings (key, value, updated_at) VALUES (${NEXABOT_PRICING_KEYS[key]}, ${String(value)}, CURRENT_TIMESTAMP)
+                  ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`
+      }
+
+      const pricing = await readNexabotPricing(sql)
+      return res.status(200).json({
+        ok: true,
+        message: `Harga NexaBot: Rp ${pricing.price.toLocaleString('id-ID')}/generate · Paket Unlimited Rp ${pricing.unlimitedPrice.toLocaleString('id-ID')} / ${pricing.unlimitedDays} hari`,
+        pricing,
+      })
+    }
+
+    return res.status(405).json({ error: 'Method not allowed' })
+  } catch (err: any) {
+    console.error('NexaBot pricing error:', err)
     return res.status(500).json({ error: err.message || 'Internal server error' })
   }
 }

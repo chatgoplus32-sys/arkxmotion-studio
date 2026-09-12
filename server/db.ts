@@ -154,12 +154,19 @@ db.exec(`
   )
 `)
 
+// `kind` memisahkan top up saldo ('balance') dari pembelian paket Unlimited 1
+// minggu ('unlimited', Rp 35.000). Kolom `days` + `expires_at` hanya terisi
+// untuk paket, dan diisi saat admin approve — bukan saat user mengajukan.
 db.exec(`
   CREATE TABLE IF NOT EXISTS nexabot_topup (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
     amount INTEGER NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected')),
+    kind TEXT NOT NULL DEFAULT 'balance' CHECK(kind IN ('balance', 'unlimited')),
+    days INTEGER NOT NULL DEFAULT 0,
+    started_at DATETIME,
+    expires_at DATETIME,
     proof_note TEXT NOT NULL DEFAULT '',
     admin_note TEXT NOT NULL DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -167,6 +174,22 @@ db.exec(`
     FOREIGN KEY (user_id) REFERENCES users(id)
   )
 `)
+
+// Migrasi DB lama: kolom paket Unlimited ditambahkan kalau belum ada.
+const nexabotTopupColumns = db.prepare("PRAGMA table_info(nexabot_topup)").all() as { name: string }[]
+if (!nexabotTopupColumns.some(c => c.name === 'kind')) {
+  db.exec("ALTER TABLE nexabot_topup ADD COLUMN kind TEXT NOT NULL DEFAULT 'balance'")
+}
+if (!nexabotTopupColumns.some(c => c.name === 'days')) {
+  db.exec('ALTER TABLE nexabot_topup ADD COLUMN days INTEGER NOT NULL DEFAULT 0')
+}
+if (!nexabotTopupColumns.some(c => c.name === 'started_at')) {
+  db.exec('ALTER TABLE nexabot_topup ADD COLUMN started_at DATETIME')
+}
+if (!nexabotTopupColumns.some(c => c.name === 'expires_at')) {
+  db.exec('ALTER TABLE nexabot_topup ADD COLUMN expires_at DATETIME')
+}
+db.exec('CREATE INDEX IF NOT EXISTS idx_nexabot_topup_active ON nexabot_topup(user_id, kind, status)')
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS nexabot_usage (

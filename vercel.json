@@ -31,6 +31,7 @@
     "api/public/genspark.ts": { "maxDuration": 300 },
     "api/public/genspark-upload.ts": { "maxDuration": 60 },
     "api/public/nexabot.ts": { "maxDuration": 300 },
+    "api/public/pricing.ts": { "maxDuration": 10 },
     "api/logs/generation.ts": { "maxDuration": 10 }
   },
   "crons": [
@@ -51,6 +52,7 @@
     { "src": "/api/auth/change-password", "dest": "/api/auth?path=change-password" },
     { "src": "/api/membership/payment", "dest": "/api/membership" },
     { "src": "/api/membership/config", "dest": "/api/membership?action=config" },
+    { "src": "/api/admin/nexabot/config", "dest": "/api/admin?nexabot=config" },
     { "src": "/api/admin/membership/config", "dest": "/api/admin?membership=config" },
     { "src": "/api/admin/membership/payments/(\\d+)/approve", "dest": "/api/admin?membership=approve&id=$1" },
     { "src": "/api/admin/membership/payments/(\\d+)/reject", "dest": "/api/admin?membership=reject&id=$1" },
@@ -86,6 +88,7 @@
     { "src": "/api/createpulse/refund", "dest": "/api/createpulse?sub=refund" },
     { "src": "/api/nexabot/balance", "dest": "/api/nexabot-wallet?sub=balance" },
     { "src": "/api/nexabot/topup", "dest": "/api/nexabot-wallet?sub=topup" },
+    { "src": "/api/nexabot/package", "dest": "/api/nexabot-wallet?sub=package" },
     { "src": "/api/nexabot/topups/mine", "dest": "/api/nexabot-wallet?sub=topups-mine" },
     { "src": "/api/nexabot/deduct", "dest": "/api/nexabot-wallet?sub=deduct" },
     { "src": "/api/nexabot/refund", "dest": "/api/nexabot-wallet?sub=refund" },
@@ -104,6 +107,7 @@
     { "src": "/api/public/framia/(.+)", "dest": "/api/public/framia" },
     { "src": "/api/public/uploads", "dest": "/api/public/uploads" },
     { "src": "/api/public/maintenance", "dest": "/api/public/maintenance" },
+    { "src": "/api/public/pricing", "dest": "/api/public/pricing" },
     { "src": "/api/logs/generation/(.+)", "dest": "/api/logs/generation" },
     { "src": "/api/(.*)", "dest": "/api/$1" },
     { "handle": "filesystem" },

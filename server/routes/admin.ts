@@ -4,6 +4,8 @@ import db from '../db.js'
 import { authenticateToken, requireAdmin, AuthRequest } from '../middleware/auth.js'
 import { sendVerificationEmail } from './auth.js'
 import { getMembershipFee, setMembershipFee } from './membership.js'
+import { getNexabotPricing, setNexabotPricing } from './nexabotWallet.js'
+import { NEXABOT_PRICING_DEFAULTS, NEXABOT_MIN_TOPUP } from '../../shared/pricing.js'
 import { sendEmail, appUrl } from '../mailer.js'
 
 const router = Router()
@@ -156,6 +158,50 @@ router.patch('/membership/config', authenticateToken, requireAdmin, (req: AuthRe
   } catch (error) {
     console.error('Set membership config error:', error)
     res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// ─── Konfigurasi harga NexaBot (per generate & paket Unlimited) ─────
+// Harga hidup di app_settings lewat router wallet NexaBot, bukan di file ini,
+// supaya jalur charge dan jalur pengaturan tidak bisa berbeda nilai.
+
+router.get('/nexabot/config', authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
+  try {
+    res.json({
+      ok: true,
+      pricing: getNexabotPricing(),
+      defaults: NEXABOT_PRICING_DEFAULTS,
+      min_topup: NEXABOT_MIN_TOPUP,
+    })
+  } catch (error) {
+    console.error('Get NexaBot pricing error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.patch('/nexabot/config', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
+  try {
+    const body = (req.body || {}) as { price?: number; unlimitedPrice?: number; unlimitedDays?: number }
+    const num = (v: unknown) => (v === undefined || v === null || v === '' ? undefined : Number(v))
+    const patch = {
+      price: num(body.price),
+      unlimitedPrice: num(body.unlimitedPrice),
+      unlimitedDays: num(body.unlimitedDays),
+    }
+    if (patch.price === undefined && patch.unlimitedPrice === undefined && patch.unlimitedDays === undefined) {
+      return res.status(400).json({ error: 'Tidak ada harga yang dikirim' })
+    }
+
+    const pricing = setNexabotPricing(patch)
+    res.json({
+      ok: true,
+      message: `Harga NexaBot: Rp ${pricing.price.toLocaleString('id-ID')}/generate · Paket Unlimited Rp ${pricing.unlimitedPrice.toLocaleString('id-ID')} / ${pricing.unlimitedDays} hari`,
+      pricing,
+    })
+  } catch (error: any) {
+    console.error('Set NexaBot pricing error:', error)
+    // Pesan validasi ("price harus angka antara ...") memang untuk admin.
+    res.status(400).json({ error: error?.message || 'Internal server error' })
   }
 })
 

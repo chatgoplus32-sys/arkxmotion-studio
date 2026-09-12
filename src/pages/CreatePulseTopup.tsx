@@ -4,11 +4,10 @@ import { Section, Button, Badge } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { Wallet, Clock, CheckCircle, XCircle, ExternalLink, Copy } from 'lucide-react'
+import { DANA_NUMBER, DANA_NAME, adminWhatsappLink, formatRp } from '@/lib/payment'
 
 const NOMINALS = [10000, 15000, 20000, 25000, 50000, 100000]
-const DANA_NUMBER = '082280204445'
-const DANA_NAME = 'Yusuf Prihandoko'
-const WHATSAPP_LINK = 'https://wa.me/6285156207924?text=Halo%20saya%20ingin%20top%20up%20saldo'
+const WHATSAPP_LINK = adminWhatsappLink('Halo saya ingin top up saldo')
 
 interface Topup {
   id: number
@@ -110,8 +109,6 @@ export default function CreatePulseTopupPage() {
     navigator.clipboard.writeText(DANA_NUMBER)
     addToast('Nomor DANA disalin', 'info')
   }
-
-  const formatRp = (n: number) => `Rp ${n.toLocaleString('id-ID')}`
 
   const getStatusBadge = (status: string) => {
     switch (status) {
