@@ -1,0 +1,36 @@
+# ── Artefak agen & tooling lokal (bukan bagian proyek) ──
+.freebuff/
+.vercel/
+
+# ── Scratch: skrip sekali pakai, log deploy, dump respons, ekspor halaman lama ──
+# Isinya memang tidak dilacak — lihat README.md untuk alasan folder ini ada.
+# Aman dihapus kapan saja tanpa memengaruhi sub-proyek mana pun.
+scratch/
+
+# ── Dependensi ──
+node_modules/
+
+# ── Log & output runtime ──
+*.log
+*.log.err
+
+# ── Rahasia & sesi: JANGAN pernah di-commit ──
+# Hanya pola nama file yang ditulis di sini, bukan nilainya.
+.env
+.env.*
+!.env.example
+cookiejar.txt
+headers*.txt
+cred-*.json
+*.pem
+*.key
+
+# ── Produk utama punya repo & remote sendiri ──
+# Melacaknya dari sini hanya menghasilkan gitlink setengah jadi (tanpa
+# .gitmodules) yang isinya tidak ikut ter-commit. Kelola dari repo-nya sendiri.
+arkxmotion-studio/
+
+# ── OS / editor ──
+Thumbs.db
+desktop.ini
+.DS_Store

@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: 460px;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      padding: 16px;
+    }
+    h3 { text-align: center; margin-bottom: 12px; color: #00d2ff; font-size: 16px; }
+    .status { text-align: center; padding: 8px; border-radius: 6px; margin-bottom: 12px; font-size: 13px; }
+    .status.success { background: #0a3d2a; color: #4ade80; }
+    .status.error { background: #3d0a0a; color: #f87171; }
+    .status.info { background: #0a2a3d; color: #60a5fa; }
+    .status.warning { background: #3d2a0a; color: #facc15; }
+    .token-box { margin-bottom: 12px; }
+    label { display: block; font-size: 12px; color: #94a3b8; margin-bottom: 4px; }
+    textarea {
+      width: 100%; height: 70px; background: #0f0f23;
+      border: 1px solid #334155; border-radius: 6px;
+      color: #e2e8f0; font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 11px; padding: 8px; resize: vertical; word-break: break-all;
+    }
+    textarea:focus { outline: none; border-color: #00d2ff; }
+    .buttons { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+    button {
+      flex: 1; padding: 7px 10px; border: none; border-radius: 6px;
+      cursor: pointer; font-size: 12px; font-weight: 600; transition: opacity 0.2s;
+    }
+    button:hover { opacity: 0.85; }
+    .btn-refresh { background: #00d2ff; color: #000; }
+    .btn-copy { background: #4ade80; color: #000; }
+    .btn-decode { background: #facc15; color: #000; }
+    .btn-clear { background: #ef4444; color: #fff; }
+    .btn-copy-basic { background: #a78bfa; color: #000; }
+    .decoded-section { margin-top: 12px; display: none; }
+    .decoded-section.active { display: block; }
+    pre {
+      background: #0f0f23; border: 1px solid #334155;
+      border-radius: 6px; padding: 8px; font-size: 11px;
+      overflow-x: auto; max-height: 200px; overflow-y: auto; color: #a5f3fc;
+    }
+    .token-list { margin-top: 8px; display: none; }
+    .hint {
+      margin-top: 10px; padding: 8px; background: #0f172a;
+      border-radius: 6px; font-size: 11px; color: #94a3b8;
+      border-left: 3px solid #00d2ff;
+    }
+  </style>
+</head>
+<body>
+  <h3>JWT Token Extractor</h3>
+  <div class="status info" id="status">Click Refresh...</div>
+
+  <div class="token-box">
+    <label>JWT Token (Bearer)</label>
+    <textarea id="token" readonly placeholder="JWT token from Authorization header..."></textarea>
+  </div>
+
+  <div class="buttons">
+    <button class="btn-refresh" id="btnRefresh">Refresh</button>
+    <button class="btn-copy" id="btnCopy">Copy JWT</button>
+    <button class="btn-decode" id="btnDecode">Decode</button>
+    <button class="btn-clear" id="btnClear">Clear</button>
+  </div>
+
+  <div class="token-list" id="tokenList"></div>
+
+  <div class="token-box" style="margin-top:10px">
+    <label>Basic Auth Header (wk_prod_...)</label>
+    <textarea id="basicAuth" readonly placeholder="Basic auth from requests..." style="height:40px;color:#a78bfa;"></textarea>
+  </div>
+
+  <div class="buttons">
+    <button class="btn-copy-basic" id="btnCopyBasic">Copy Basic Auth</button>
+  </div>
+
+  <div class="decoded-section" id="decodedSection">
+    <label>Decoded JWT Payload</label>
+    <pre id="decoded"></pre>
+  </div>
+
+  <div class="hint">
+    <strong>Cara pakai:</strong><br>
+    1. Login ke framia.converge.ai<br>
+    2. Klik menu, buka project, navigate around (trigger API calls)<br>
+    3. Klik <b>Refresh</b> - token akan ter-capture dari Authorization header<br>
+    4. Basic Auth (<code>wk_prod_...</code>) juga akan ter-capture otomatis
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

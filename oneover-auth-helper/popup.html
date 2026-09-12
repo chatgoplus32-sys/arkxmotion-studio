@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: #e0e0e0; width: 440px; padding: 16px; }
+    h1 { font-size: 16px; color: #a78bfa; margin-bottom: 8px; }
+    h2 { font-size: 13px; color: #90a4ae; margin: 12px 0 6px; }
+    .btn { background: #a78bfa; color: #000; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px; margin: 4px; }
+    .btn:hover { background: #c4b5fd; }
+    .btn-secondary { background: #333; color: #e0e0e0; }
+    .btn-secondary:hover { background: #444; }
+    .btn-green { background: #66bb6a; color: #000; }
+    .btn-green:hover { background: #81c784; }
+    .status { font-size: 12px; color: #66bb6a; margin: 8px 0; padding: 6px; border-radius: 4px; }
+    .error { color: #ef5350; background: #3e1a1a; }
+    .success { color: #66bb6a; background: #1a3e1a; }
+    textarea { width: 100%; background: #111; color: #a5d6a7; border: 1px solid #333; border-radius: 4px; font-family: monospace; font-size: 10px; padding: 6px; resize: vertical; }
+    .hidden { display: none; }
+    .step { font-size: 11px; color: #b0bec5; margin: 3px 0; }
+    .step b { color: #a78bfa; }
+    .token-label { font-size: 11px; color: #90a4ae; margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <h1>OneOver Auth Helper v1.1</h1>
+
+  <div class="card" style="background:#222;border-radius:8px;padding:12px;margin:8px 0;border:1px solid #a78bfa">
+    <div class="step"><b>1.</b> Buka <b>oneover.com</b> → login</div>
+    <div class="step"><b>2.</b> Klik <b>Direct Grab</b> (recommended) atau <b>Grab Tokens</b></div>
+    <div class="step"><b>3.</b> Copy refresh_token → paste ke Providers → OneOver</div>
+  </div>
+
+  <div id="status" class="status hidden"></div>
+
+  <div style="display:flex;gap:4px;flex-wrap:wrap;margin:8px 0;">
+    <button class="btn btn-green" id="btnDirect">Direct Grab</button>
+    <button class="btn" id="btnGrab">Grab Tokens</button>
+    <button class="btn btn-secondary" id="btnInject">Re-inject</button>
+    <button class="btn btn-secondary" id="btnCopyRefresh">Copy Refresh</button>
+    <button class="btn btn-secondary" id="btnCopyAccess">Copy Access</button>
+    <button class="btn btn-secondary" id="btnCopyJSON">Copy JSON</button>
+    <button class="btn btn-secondary" id="btnClear">Clear</button>
+  </div>
+
+  <div id="tokenSection" class="hidden">
+    <div class="token-label">Refresh Token (paste ke Providers → OneOver):</div>
+    <textarea id="refreshArea" rows="2" readonly></textarea>
+    <div class="token-label">Access Token:</div>
+    <textarea id="accessArea" rows="2" readonly></textarea>
+  </div>
+
+  <div id="debugSection" class="hidden">
+    <h2>Debug Info</h2>
+    <textarea id="debugArea" rows="8" readonly style="color:#ffa726"></textarea>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

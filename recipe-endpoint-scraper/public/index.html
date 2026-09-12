@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Recipe & Endpoint Scraper</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap');
+    body { font-family: 'Inter', system-ui, sans-serif; }
+    code, .mono { font-family: 'JetBrains Mono', monospace; }
+    .fade-in { animation: fadeIn 0.3s ease-in; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #1e293b; }
+    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+    .cat-btn.active { background: linear-gradient(135deg, #0891b2, #2563eb); color: white; border-color: transparent; }
+  </style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+  <header class="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-50">
+    <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-white font-bold text-lg">R</div>
+        <div>
+          <h1 class="text-lg font-bold text-white">Recipe & Endpoint Scraper</h1>
+          <p class="text-xs text-gray-400">Extract recipe_code + API endpoints from AI platforms</p>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-4 py-8">
+    <!-- Site Cards -->
+    <section class="mb-6">
+      <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Select Site</h2>
+      <div id="sitesGrid" class="grid grid-cols-2 md:grid-cols-4 gap-3"></div>
+    </section>
+
+    <!-- Category Chips (shown when site selected) -->
+    <section id="categorySection" class="mb-6 hidden">
+      <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Select Category</h2>
+      <div id="categoryChips" class="flex flex-wrap gap-2"></div>
+    </section>
+
+    <!-- Scrape Form -->
+    <section class="mb-8">
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+        <div class="flex flex-col md:flex-row gap-4">
+          <div class="flex-1">
+            <label class="block text-sm text-gray-400 mb-1">Target URL or Domain</label>
+            <input id="targetInput" type="text" placeholder="weavy.ai / roboneo.com / https://framia.ai"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent mono text-sm" />
+          </div>
+          <div class="flex items-end gap-2">
+            <label class="flex items-center gap-2 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 cursor-pointer hover:bg-gray-750 transition-colors text-sm whitespace-nowrap">
+              <input type="checkbox" id="allPages" class="rounded border-gray-600 bg-gray-700 text-cyan-500 focus:ring-cyan-500" />
+              <span class="text-gray-300">All pages</span>
+            </label>
+            <label class="flex items-center gap-2 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 cursor-pointer hover:bg-gray-750 transition-colors text-sm whitespace-nowrap">
+              <input type="checkbox" id="jsBundles" class="rounded border-gray-600 bg-gray-700 text-cyan-500 focus:ring-cyan-500" />
+              <span class="text-gray-300">JS bundles</span>
+            </label>
+            <button id="scrapeBtn" onclick="doScrape()"
+              class="bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold px-6 py-2.5 rounded-lg transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap">
+              Scrape
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Loading -->
+    <div id="loading" class="hidden mb-8">
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center">
+        <div class="inline-block w-8 h-8 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin mb-3"></div>
+        <p id="loadingText" class="text-gray-400 text-sm">Scraping target site...</p>
+      </div>
+    </div>
+
+    <!-- Error -->
+    <div id="errorBox" class="hidden mb-8">
+      <div class="bg-red-950/50 border border-red-800 rounded-xl p-4">
+        <p class="text-red-400 text-sm" id="errorText"></p>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div id="results" class="hidden space-y-6">
+      <!-- Summary -->
+      <div id="summaryCard" class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <div class="w-2 h-2 rounded-full bg-green-400"></div>
+            <span id="resultSite" class="font-semibold text-white"></span>
+            <span id="resultUrl" class="text-xs text-gray-500 mono"></span>
+          </div>
+          <button onclick="exportJSON()" class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-400 px-3 py-1 rounded-lg transition-colors">Export JSON</button>
+        </div>
+        <div class="flex gap-4 text-sm">
+          <div><span class="text-gray-500">Models:</span> <span id="modelCount" class="text-purple-400 font-semibold"></span></div>
+          <div><span class="text-gray-500">Recipes:</span> <span id="recipeCount" class="text-cyan-400 font-semibold"></span></div>
+          <div><span class="text-gray-500">Endpoints:</span> <span id="endpointCount" class="text-blue-400 font-semibold"></span></div>
+        </div>
+      </div>
+
+      <!-- Models -->
+      <section id="modelsSection" class="hidden">
+        <div class="flex items-center gap-2 mb-3">
+          <div class="w-5 h-5 rounded bg-purple-500/20 flex items-center justify-center text-purple-400 text-xs font-bold">M</div>
+          <h3 class="text-sm font-semibold text-gray-300">Models & Tools</h3>
+          <span id="modelsBadge" class="text-xs bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded-full"></span>
+        </div>
+        <div id="modelsList" class="space-y-3"></div>
+      </section>
+
+      <!-- Recipes -->
+      <section id="recipesSection" class="hidden">
+        <div class="flex items-center gap-2 mb-3">
+          <div class="w-5 h-5 rounded bg-cyan-500/20 flex items-center justify-center text-cyan-400 text-xs font-bold">R</div>
+          <h3 class="text-sm font-semibold text-gray-300">Recipe Codes</h3>
+          <span id="recipesBadge" class="text-xs bg-cyan-500/20 text-cyan-400 px-2 py-0.5 rounded-full"></span>
+        </div>
+        <div id="recipesList" class="bg-gray-900 border border-gray-800 rounded-xl divide-y divide-gray-800"></div>
+      </section>
+
+      <!-- Endpoints -->
+      <section id="endpointsSection" class="hidden">
+        <div class="flex items-center gap-2 mb-3">
+          <div class="w-5 h-5 rounded bg-blue-500/20 flex items-center justify-center text-blue-400 text-xs font-bold">E</div>
+          <h3 class="text-sm font-semibold text-gray-300">API Endpoints</h3>
+          <span id="endpointsBadge" class="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded-full"></span>
+        </div>
+        <div id="endpointsList" class="bg-gray-900 border border-gray-800 rounded-xl divide-y divide-gray-800"></div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    let lastResults = null
+    let selectedSite = null
+    let selectedCategory = null
+    let sitesData = []
+
+    // Load sites on init
+    fetch('/api/sites')
+      .then(r => r.json())
+      .then(data => {
+        if (!data.ok) return
+        sitesData = data.sites
+        const grid = document.getElementById('sitesGrid')
+        grid.innerHTML = data.sites.map(s => `
+          <button onclick="selectSite('${s.domain}')"
+            class="site-card bg-gray-900 border border-gray-800 hover:border-cyan-600/50 rounded-xl p-4 text-left transition-all hover:bg-gray-800/50 group">
+            <div class="font-semibold text-white group-hover:text-cyan-400 text-sm">${s.name}</div>
+            <div class="text-xs text-gray-500 mono mt-1">${s.domain}</div>
+            <div class="flex gap-3 mt-2 text-xs text-gray-600">
+              <span>${s.recipePatterns} recipes</span>
+              <span>${s.endpointPatterns} endpoints</span>
+            </div>
+            ${s.categories.length > 0 ? `<div class="mt-2 text-xs text-cyan-600">${s.categories.length} categories</div>` : ''}
+          </button>
+        `).join('')
+      })
+
+    function selectSite(domain) {
+      selectedSite = domain
+      selectedCategory = null
+      document.getElementById('targetInput').value = domain
+
+      // Highlight selected card
+      document.querySelectorAll('.site-card').forEach(c => c.classList.remove('border-cyan-500'))
+      event.currentTarget.classList.add('border-cyan-500')
+
+      // Show categories
+      const site = sitesData.find(s => s.domain === domain)
+      const catSection = document.getElementById('categorySection')
+      const catChips = document.getElementById('categoryChips')
+
+      if (site && site.categories.length > 0) {
+        catChips.innerHTML = site.categories.map(c => `
+          <button onclick="selectCategory('${c.key}', this)"
+            class="cat-btn bg-gray-800 border border-gray-700 hover:border-cyan-600 text-gray-300 px-4 py-2 rounded-lg text-sm transition-all">
+            ${c.label}
+            <span class="text-xs text-gray-500 ml-1">(${c.pages.length})</span>
+          </button>
+        `).join('')
+        catSection.classList.remove('hidden')
+      } else {
+        catSection.classList.add('hidden')
+      }
+    }
+
+    function selectCategory(catKey, btn) {
+      selectedCategory = catKey
+      document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'))
+      btn.classList.add('active')
+    }
+
+    async function doScrape() {
+      const target = document.getElementById('targetInput').value.trim()
+      if (!target) return
+
+      const allPages = document.getElementById('allPages').checked
+      const jsBundles = document.getElementById('jsBundles').checked
+
+      document.getElementById('errorBox').classList.add('hidden')
+      document.getElementById('results').classList.add('hidden')
+      document.getElementById('loading').classList.remove('hidden')
+      document.getElementById('scrapeBtn').disabled = true
+
+      const loadingText = document.getElementById('loadingText')
+      loadingText.textContent = selectedCategory
+        ? `Scraping ${selectedCategory} from ${target}...`
+        : `Scraping ${target}...`
+
+      try {
+        const res = await fetch('/api/scrape', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ target, allPages, jsBundles, category: selectedCategory }),
+        })
+        const data = await res.json()
+        document.getElementById('loading').classList.add('hidden')
+
+        if (!data.ok) {
+          document.getElementById('errorText').textContent = data.error || 'Scrape failed'
+          document.getElementById('errorBox').classList.remove('hidden')
+          return
+        }
+
+        renderResults(data.results)
+      } catch (err) {
+        document.getElementById('loading').classList.add('hidden')
+        document.getElementById('errorText').textContent = err.message
+        document.getElementById('errorBox').classList.remove('hidden')
+      } finally {
+        document.getElementById('scrapeBtn').disabled = false
+      }
+    }
+
+    function renderResults(results) {
+      lastResults = results
+      if (!results || results.length === 0) {
+        document.getElementById('errorText').textContent = 'No results'
+        document.getElementById('errorBox').classList.remove('hidden')
+        return
+      }
+
+      // Merge all results
+      const allModels = results.flatMap(r => r.models || [])
+      const allRecipes = results.flatMap(r => r.recipes || [])
+      const allEndpoints = results.flatMap(r => r.endpoints || [])
+
+      document.getElementById('resultSite').textContent = results[0].site_name
+      document.getElementById('resultUrl').textContent = `${results.length} pages scraped`
+      document.getElementById('modelCount').textContent = allModels.length
+      document.getElementById('recipeCount').textContent = allRecipes.length
+      document.getElementById('endpointCount').textContent = allEndpoints.length
+
+      // Models
+      const modelsSection = document.getElementById('modelsSection')
+      const modelsList = document.getElementById('modelsList')
+      if (allModels.length > 0) {
+        document.getElementById('modelsBadge').textContent = allModels.length
+        modelsList.innerHTML = allModels.map(m => `
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 fade-in">
+            <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center gap-2">
+                <span class="text-xs bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded">${m.category}</span>
+                <span class="font-semibold text-white">${m.name}</span>
+              </div>
+              <a href="${m.url}" target="_blank" class="text-xs text-gray-500 hover:text-cyan-400 transition-colors">Visit</a>
+            </div>
+            ${m.description ? `<p class="text-xs text-gray-400 mb-2">${m.description}</p>` : ''}
+            ${m.features.length > 0 ? `
+              <div class="flex flex-wrap gap-1 mt-2">
+                ${m.features.slice(0, 5).map(f => `<span class="text-xs bg-gray-800 text-gray-500 px-2 py-0.5 rounded">${f}</span>`).join('')}
+              </div>
+            ` : ''}
+            ${m.endpoints.length > 0 ? `
+              <div class="mt-3 border-t border-gray-800 pt-2">
+                <div class="text-xs text-gray-500 mb-1">Endpoints (${m.endpoints.length}):</div>
+                ${m.endpoints.slice(0, 5).map(ep => `
+                  <div class="flex items-center gap-2 text-xs">
+                    <span class="mono ${ep.method === 'POST' ? 'text-yellow-400' : 'text-green-400'}">${ep.method}</span>
+                    <code class="text-gray-400 truncate">${ep.url}</code>
+                  </div>
+                `).join('')}
+              </div>
+            ` : ''}
+          </div>
+        `).join('')
+        modelsSection.classList.remove('hidden')
+      } else {
+        modelsSection.classList.add('hidden')
+      }
+
+      // Recipes
+      const recipesSection = document.getElementById('recipesSection')
+      const recipesList = document.getElementById('recipesList')
+      if (allRecipes.length > 0) {
+        document.getElementById('recipesBadge').textContent = allRecipes.length
+        recipesList.innerHTML = allRecipes.map(rc => `
+          <div class="px-4 py-3 flex items-center justify-between hover:bg-gray-800/50 fade-in">
+            <div class="flex-1 min-w-0">
+              <code class="text-cyan-400 text-sm mono">${rc.code}</code>
+              ${rc.url ? `<div class="text-xs text-gray-500 truncate mt-0.5">${rc.url}</div>` : ''}
+            </div>
+            <div class="flex items-center gap-2 ml-4">
+              <span class="text-xs bg-gray-800 text-gray-500 px-2 py-0.5 rounded">${rc.source}</span>
+              ${rc.url ? `<button onclick="copyText('${rc.url}')" class="text-gray-500 hover:text-cyan-400 text-xs transition-colors">Copy</button>` : ''}
+            </div>
+          </div>
+        `).join('')
+        recipesSection.classList.remove('hidden')
+      } else {
+        recipesSection.classList.add('hidden')
+      }
+
+      // Endpoints
+      const endpointsSection = document.getElementById('endpointsSection')
+      const endpointsList = document.getElementById('endpointsList')
+      if (allEndpoints.length > 0) {
+        document.getElementById('endpointsBadge').textContent = allEndpoints.length
+        const methodColors = { GET: 'text-green-400 bg-green-500/10', POST: 'text-yellow-400 bg-yellow-500/10', UNKNOWN: 'text-gray-400 bg-gray-700/50' }
+        endpointsList.innerHTML = allEndpoints.map(ep => `
+          <div class="px-4 py-3 flex items-center justify-between hover:bg-gray-800/50 fade-in">
+            <div class="flex items-center gap-3 flex-1 min-w-0">
+              <span class="text-xs font-bold mono px-2 py-0.5 rounded ${methodColors[ep.method] || methodColors.UNKNOWN}">${ep.method}</span>
+              <code class="text-sm text-gray-300 mono truncate">${ep.url}</code>
+            </div>
+            <div class="flex items-center gap-2 ml-4">
+              <span class="text-xs bg-gray-800 text-gray-500 px-2 py-0.5 rounded">${ep.source}</span>
+              <button onclick="copyText('${ep.url.replace(/'/g, "\\'")}')" class="text-gray-500 hover:text-cyan-400 text-xs transition-colors">Copy</button>
+            </div>
+          </div>
+        `).join('')
+        endpointsSection.classList.remove('hidden')
+      } else {
+        endpointsSection.classList.add('hidden')
+      }
+
+      document.getElementById('results').classList.remove('hidden')
+    }
+
+    function copyText(text) { navigator.clipboard.writeText(text) }
+
+    function exportJSON() {
+      if (!lastResults) return
+      const blob = new Blob([JSON.stringify(lastResults, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `scrape-${lastResults[0]?.domain || 'result'}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+    }
+
+    document.getElementById('targetInput').addEventListener('keydown', e => {
+      if (e.key === 'Enter') doScrape()
+    })
+  </script>
+</body>
+</html>

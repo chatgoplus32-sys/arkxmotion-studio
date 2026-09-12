@@ -1,0 +1,27 @@
+{
+  "manifest_version": 2,
+  "name": "JWT Token Extractor - Framia",
+  "version": "2.0",
+  "description": "Extract JWT token from framia.converge.ai via request interception",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "webRequest",
+    "<all_urls>"
+  ],
+  "browser_action": {
+    "default_popup": "popup.html",
+    "default_title": "JWT Token Extractor"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://framia.converge.ai/*", "*://*.converge.ai/*"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "background": {
+    "scripts": ["background.js"],
+    "persistent": true
+  }
+}

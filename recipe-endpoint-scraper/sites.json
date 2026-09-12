@@ -1,0 +1,182 @@
+{
+  "roboneo.com": {
+    "name": "RoboNeo",
+    "base_url": "https://www.roboneo.com",
+    "api_gateway": "https://ai-engine-gateway-roboneo.meitu.com/roboneo/sync/request",
+    "auth_type": "token",
+    "auth_header": "access-token",
+    "recipe_patterns": [],
+    "endpoint_patterns": [
+      "ai-engine-gateway-roboneo\\.meitu\\.com/roboneo/sync/request/([a-zA-Z0-9_/\\-]+)",
+      "/api/([a-zA-Z0-9_/-]+)"
+    ],
+    "known_endpoints": [
+      "ai-engine-gateway-roboneo.meitu.com/roboneo/sync/request"
+    ],
+    "js_bundle_search": ["_next/static/chunks", "main-", "app-"],
+    "extra_headers": {
+      "client-id": "1189857684",
+      "Origin": "https://www.roboneo.com"
+    },
+    "categories": {
+      "video_models": {
+        "label": "Video Models",
+        "pages": {
+          "Seedance 2.0": "/seedance2",
+          "Kling 3.0": "/kling-3",
+          "Sora 2": "/roboneo-sora2-video-generator",
+          "VEO 3.0": "/veo3-video-generator",
+          "Wan 2.6": "/wan-video-generator2"
+        }
+      },
+      "image_models": {
+        "label": "Image Models",
+        "pages": {
+          "Nano Banana 2": "/nano-banana-2",
+          "Gemini 3.1": "/gemini-3-0-image-video-understanding",
+          "Flux Knotext": "/flux-kontext-image-editing"
+        }
+      },
+      "video_tools": {
+        "label": "Video Tools",
+        "pages": {
+          "AI Video Generator": "/ai-video-generator",
+          "Text to Video": "/text-to-video",
+          "Image to Video": "/ai-video-generator",
+          "First & Last Frame": "/ai-video-morphing",
+          "Motion Control": "/motion-control",
+          "Reference Image to Video": "/reference-image-to-video",
+          "Video Editing": "/split-layer",
+          "Video Upscaling": "/ai-video-upscaling",
+          "Video Watermark Removal": "/video-watermark-removal",
+          "Smart Video Cover": "/ai-video-cover"
+        }
+      },
+      "image_tools": {
+        "label": "Image Tools",
+        "pages": {
+          "AI Image Generator": "/ai-image-generator",
+          "AI Image Editor": "/ai-image-editor",
+          "Remove Background": "/image-cutout",
+          "AI Image Quality Restoration": "/photo-restoration",
+          "AI Watermark Removal": "/remove-watermark",
+          "AI Object Remover": "/object-remover",
+          "AI Background Change": "/background-change",
+          "Product Image": "/product-photos",
+          "ID Photo": "/passport-photo",
+          "AI Image Extender": "/image-extender",
+          "Virtual Try-on": "/virtual-try-on",
+          "Portrait Retouching": "/photo-retouching"
+        }
+      },
+      "audio_tools": {
+        "label": "Audio Tools",
+        "pages": {
+          "AI Background Music": "/background-music-generator",
+          "AI Music Generator": "/AI-music-generator",
+          "AI Audio Denoise": "/ai-audio-denoise",
+          "Vocal Separation": "/vocal-separation",
+          "Audio To Text": "/audio-to-text",
+          "Voice Enhancement": "/voice-enhancement"
+        }
+      },
+      "ai_agents": {
+        "label": "AI Agents",
+        "pages": {
+          "AI Ad Video Generator": "/ai-advertising-generator",
+          "AI Anime Video Generator": "/ai-anime-generator",
+          "E-commerce AI Agent": "/ai-ecommerce-marketing-agent",
+          "AI Product Photography": "/ai-product-photography-agent",
+          "Creative Agent": "/ai-creative-generator",
+          "AI Image Editor Agent": "/ai-image-editor-agent",
+          "AI Brand Design": "/ai-brand-design-agent",
+          "AI Poster": "/ai-poster-generator",
+          "Portrait Retouching Agent": "/ai-portrait-retouching-agent"
+        }
+      }
+    },
+    "page_paths": [
+      "/",
+      "/seedance2",
+      "/kling-3",
+      "/roboneo-sora2-video-generator",
+      "/veo3-video-generator",
+      "/wan-video-generator2",
+      "/nano-banana-2",
+      "/gemini-3-0-image-video-understanding",
+      "/flux-kontext-image-editing",
+      "/ai-video-generator",
+      "/text-to-video",
+      "/ai-advertising-generator",
+      "/ai-anime-generator",
+      "/ai-image-generator",
+      "/ai-image-editor"
+    ]
+  },
+  "framia.ai": {
+    "name": "Framia",
+    "base_url": "https://framia.ai",
+    "api_gateway": "https://aacreative.vercel.app/framia/video/api",
+    "auth_type": "bearer",
+    "auth_header": "Authorization",
+    "recipe_patterns": [
+      "/recipe/([a-zA-Z0-9_-]+)",
+      "/flow/([a-zA-Z0-9_-]+)",
+      "/workflow/([a-zA-Z0-9_-]+)"
+    ],
+    "endpoint_patterns": [
+      "/api/([a-zA-Z0-9_/-]+)",
+      "framia/video/api/([a-zA-Z0-9_/-]+)",
+      "aacreative\\.vercel\\.app/([^\"'\\s]+)"
+    ],
+    "known_endpoints": [
+      "aacreative.vercel.app/framia/video/api"
+    ],
+    "js_bundle_search": ["_next/static/chunks", "main-", "app-"],
+    "extra_headers": {},
+    "page_paths": ["/", "/recipes", "/workflows"]
+  },
+  "weavy.ai": {
+    "name": "Weavy (Figma Weave)",
+    "base_url": "https://weavy.ai",
+    "app_url": "https://app.weavy.ai",
+    "api_gateway": "https://app.weavy.ai/api",
+    "auth_type": "bearer",
+    "auth_header": "Authorization",
+    "recipe_patterns": [
+      "/recipe/([a-zA-Z0-9_-]+)",
+      "/flow/([a-zA-Z0-9_-]+)",
+      "/workflow/([a-zA-Z0-9_-]+)"
+    ],
+    "endpoint_patterns": [
+      "app\\.weavy\\.ai/api/([^\"'\\s]+)",
+      "/api/([a-zA-Z0-9_/-]+)"
+    ],
+    "known_endpoints": [
+      "app.weavy.ai/api",
+      "app.weavy.ai/signin"
+    ],
+    "js_bundle_search": [],
+    "extra_headers": {},
+    "page_paths": ["/", "/pricing", "/collective", "/enterprise"]
+  },
+  "weave.figma.com": {
+    "name": "Figma Weave",
+    "base_url": "https://weave.figma.com",
+    "app_url": "https://app.weavy.ai",
+    "auth_type": "bearer",
+    "auth_header": "Authorization",
+    "recipe_patterns": [
+      "/recipe/([a-zA-Z0-9_-]+)",
+      "/flow/([a-zA-Z0-9_-]+)"
+    ],
+    "endpoint_patterns": [
+      "app\\.weavy\\.ai/api/([^\"'\\s]+)",
+      "/api/([a-zA-Z0-9_/-]+)"
+    ],
+    "known_endpoints": ["app.weavy.ai/api"],
+    "js_bundle_search": [],
+    "extra_headers": {},
+    "page_paths": ["/", "/pricing"]
+  }
+}

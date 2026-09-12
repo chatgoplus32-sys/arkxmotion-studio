@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: #e0e0e0; width: 480px; padding: 16px; }
+    h1 { font-size: 16px; color: #FF6A00; margin-bottom: 8px; }
+    h2 { font-size: 13px; color: #90a4ae; margin: 12px 0 6px; }
+    .btn { background: #FF6A00; color: #000; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px; margin: 4px; }
+    .btn:hover { background: #FF8C00; }
+    .btn-secondary { background: #333; color: #e0e0e0; }
+    .btn-secondary:hover { background: #444; }
+    .btn-danger { background: #c62828; color: #fff; }
+    .btn-danger:hover { background: #e53935; }
+    .card { background: #222; border-radius: 8px; padding: 12px; margin: 8px 0; border: 1px solid #333; }
+    .header-row { display: flex; gap: 8px; margin: 2px 0; }
+    .header-name { color: #FF6A00; font-weight: 600; min-width: 160px; font-size: 11px; }
+    .header-val { color: #a5d6a7; font-size: 11px; word-break: break-all; }
+    .status { font-size: 12px; color: #66bb6a; margin: 8px 0; padding: 6px; border-radius: 4px; }
+    .error { color: #ef5350; background: #3e1a1a; }
+    .warning { color: #ffa726; background: #3e2e1a; }
+    .success { color: #66bb6a; background: #1a3e1a; }
+    #tokenArea { width: 100%; height: 100px; background: #111; color: #a5d6a7; border: 1px solid #333; border-radius: 4px; font-family: monospace; font-size: 10px; padding: 6px; resize: vertical; }
+    .hidden { display: none; }
+    .step { font-size: 11px; color: #b0bec5; margin: 3px 0; }
+    .step b { color: #FF6A00; }
+    .req-item { background: #1a1a1a; border: 1px solid #333; border-radius: 4px; padding: 8px; margin: 4px 0; font-size: 10px; }
+    .req-url { color: #FF6A00; word-break: break-all; }
+    .req-time { color: #78909c; }
+    .req-method { color: #64b5f6; font-weight: bold; }
+    .req-headers { color: #a5d6a7; margin-top: 4px; }
+    .indicator { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
+    .indicator-active { background: #66bb6a; }
+    .indicator-inactive { background: #757575; }
+  </style>
+</head>
+<body>
+  <h1><span class="indicator indicator-inactive" id="dot"></span>Firefly Auth Helper v1.2</h1>
+
+  <div class="card" style="border-color:#FF6A00">
+    <div class="step"><b>1.</b> Buka tab <b>firefly.adobe.com</b> (sudah login)</div>
+    <div class="step"><b>2.</b> Klik <b>Start Capture</b> di bawah</div>
+    <div class="step"><b>3.</b> Generate video di Firefly (klik tombol Generate)</div>
+    <div class="step"><b>4.</b> Tunggu request muncul → klik <b>Grab Token</b></div>
+    <div class="step" style="color:#ef5350"><b>⚠</b> Chrome akan tanya "This extension can debug this tab" → klik <b>Allow</b></div>
+  </div>
+
+  <div id="status" class="status hidden"></div>
+
+  <div style="display:flex;gap:4px;flex-wrap:wrap;margin:8px 0;">
+    <button class="btn" id="btnStart">Start Capture</button>
+    <button class="btn btn-danger" id="btnStop" class="hidden">Stop</button>
+    <button class="btn" id="btnGrab">Grab Token</button>
+    <button class="btn btn-secondary" id="btnShow">Show Headers</button>
+    <button class="btn btn-secondary" id="btnAll">All Requests</button>
+    <button class="btn btn-secondary" id="btnClear">Clear</button>
+  </div>
+
+  <div id="tokenSection" class="hidden">
+    <h2>Token (paste ke Providers → Firefly)</h2>
+    <textarea id="tokenArea" readonly></textarea>
+    <button class="btn" id="btnCopy" style="margin-top:6px">Copy to Clipboard</button>
+  </div>
+
+  <div id="headersSection" class="hidden">
+    <h2>Captured Headers</h2>
+    <div id="headersList" class="card"></div>
+  </div>
+
+  <div id="allSection" class="hidden">
+    <h2>Recent Requests</h2>
+    <div id="allRequests"></div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

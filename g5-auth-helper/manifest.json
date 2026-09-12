@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "G5 Auth Helper",
+  "version": "1.5",
+  "description": "Capture G5 AI Studio auth headers",
+  "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": [
+    "https://aistudio.galleri5.com/*",
+    "https://aistudio-backend.calmdesert-ca599847.centralindia.azurecontainerapps.io/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://aistudio.galleri5.com/*"],
+      "js": ["inject.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "G5 Auth Helper"
+  }
+}

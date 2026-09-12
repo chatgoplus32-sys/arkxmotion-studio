@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Firefly Auth Helper",
+  "version": "1.2",
+  "description": "Capture Adobe Firefly auth headers for ARKXMotion Studio",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "debugger"
+  ],
+  "host_permissions": [
+    "https://*.adobe.com/*",
+    "https://*.ff.adobe.io/*",
+    "https://*.adobe.io/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Firefly Auth Helper"
+  }
+}
