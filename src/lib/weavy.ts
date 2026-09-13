@@ -233,15 +233,15 @@ export function resolveWeavyAssetUrl(asset: any, type: 'image' | 'video' = 'imag
 }
 
 export async function fetchWeavyCreditsClient(accessToken: string): Promise<number | null> {
-  // Route Weavy balance check through Vercel serverless proxy
-  // (VPS IP blocked by Cloudflare, browser direct blocked by CORS)
-  // aacs.web.id uses same pattern: browser → server proxy → Weavy API
-  const VERCEL_PROXY = 'https://arkxmotion-studio.vercel.app/api/public/weavy-proxy'
-  const endpoints = [
-    `${VERCEL_PROXY}?path=/v1/workspaces`,
-    `${VERCEL_PROXY}?path=/v1/credits`,
-    `${VERCEL_PROXY}?path=/v1/user/credits`,
-    `${VERCEL_PROXY}?path=/v1/user/balance`,
+  // Match aacs.web.id flow EXACTLY:
+  // 1. Try 4 proxy endpoints via Vercel passthrough
+  // 2. Fallback: POST /api/public/weavy-credits (server-side)
+  const VERCEL = 'https://arkxmotion-studio.vercel.app'
+  const proxyEndpoints = [
+    `${VERCEL}/api/public/weavy-proxy?path=/v1/workspaces`,
+    `${VERCEL}/api/public/weavy-proxy?path=/v1/credits`,
+    `${VERCEL}/api/public/weavy-proxy?path=/v1/user/credits`,
+    `${VERCEL}/api/public/weavy-proxy?path=/v1/user/balance`,
   ]
 
   const headers = {
@@ -249,7 +249,8 @@ export async function fetchWeavyCreditsClient(accessToken: string): Promise<numb
     'Accept': 'application/json, text/plain, */*',
   }
 
-  for (const url of endpoints) {
+  // Step 1: Try proxy endpoints
+  for (const url of proxyEndpoints) {
     try {
       const r = await fetch(url, { headers, signal: AbortSignal.timeout(10000) })
       if (!r.ok) continue
@@ -261,11 +262,28 @@ export async function fetchWeavyCreditsClient(accessToken: string): Promise<numb
         data.creditsRemaining ?? data.quota ?? data.usage?.credits ?? data.plan?.credits ??
         data.data?.credits ?? data.user?.credits ?? null
 
-      console.log(`[weavy] vercel-proxy ${url.split('path=')[1]} → credits=${credits}`)
+      console.log(`[weavy] proxy ${url.split('path=')[1]} → credits=${credits}`)
       if (typeof credits === 'number') return credits
     } catch (e: any) {
-      console.log(`[weavy] vercel-proxy ${url.split('path=')[1]} → ${e.message}`)
+      console.log(`[weavy] proxy ${url.split('path=')[1]} → ${e.message}`)
     }
+  }
+
+  // Step 2: Fallback to POST /api/public/weavy-credits (like aacs.web.id)
+  try {
+    const r = await fetch(`${VERCEL}/api/public/weavy-credits`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accessToken }),
+      signal: AbortSignal.timeout(15000),
+    })
+    if (r.ok) {
+      const d = await r.json().catch(() => null)
+      console.log('[weavy] POST /weavy-credits →', JSON.stringify(d).slice(0, 200))
+      if (typeof d?.credits === 'number') return d.credits
+    }
+  } catch (e: any) {
+    console.log('[weavy] POST /weavy-credits error:', e.message)
   }
 
   return null
@@ -296,27 +314,33 @@ async function resolveAccessToken(token: string): Promise<string> {
 async function resolveAndFetchCredits(token: string): Promise<{ ok: boolean; credits: number | null; email?: string; subscriptionType?: string }> {
   console.log('[weavy] resolveAndFetchCredits called, token starts:', token.slice(0, 20) + '...')
 
-  // Step 1: Refresh token → get access token (exactly like reference site)
+  // Step 1: Refresh token → get access token
   let accessToken = token
+  let refreshed = false
   if (isRefreshToken(token)) {
     console.log('[weavy] refreshing token via securetoken.googleapis.com...')
-    const refreshed = await refreshWeavyAccessToken(token)
-    if (refreshed?.accessToken) {
-      accessToken = refreshed.accessToken
+    const r = await refreshWeavyAccessToken(token)
+    if (r?.accessToken) {
+      accessToken = r.accessToken
+      refreshed = true
       console.log('[weavy] token refreshed OK, accessToken starts:', accessToken.slice(0, 30) + '...')
     } else {
-      console.log('[weavy] token refresh FAILED')
+      console.log('[weavy] token refresh FAILED — cannot fetch live credits, will try cached')
+      // Token refresh failed. We cannot call Weavy API with a refresh token.
+      // Return ok=true with credits=null so UI shows cached value from localStorage.
+      return { ok: true, credits: null, email: extractEmailFromJwt(token) || undefined, subscriptionType: extractSubscriptionType(token) || undefined }
     }
   } else {
     console.log('[weavy] token is JWT, using directly')
+    refreshed = true
   }
 
-  // Step 2: Extract email & subscription from JWT (like reference site)
+  // Step 2: Extract email & subscription from JWT
   const email = extractEmailFromJwt(accessToken) || undefined
   const subscriptionType = extractSubscriptionType(accessToken) || undefined
   console.log('[weavy] email:', email, 'subscription:', subscriptionType)
 
-  // Step3: Call Weavy API directly from browser (exactly like reference site)
+  // Step 3: Call Weavy API via Vercel proxy (only if we have a valid access token)
   const credits = await fetchWeavyCreditsClient(accessToken)
   console.log('[weavy] final credits:', credits)
 

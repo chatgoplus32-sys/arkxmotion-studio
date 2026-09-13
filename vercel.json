@@ -24,6 +24,7 @@
     "api/public/magnific.ts": { "maxDuration": 60 },
     "api/public/maintenance.ts": { "maxDuration": 10 },
     "api/public/weavy.ts": { "maxDuration": 60 },
+    "api/public/weavy-credits.ts": { "maxDuration": 30 },
     "api/public/upload-images.ts": { "maxDuration": 30 },
     "api/public/tiktok-download.ts": { "maxDuration": 30 },
     "api/public/galleri5.ts": { "maxDuration": 120 },
