@@ -214,8 +214,15 @@ export async function fetchLeonardoBalance(token: string) {
   const stream = typeof details.streamTokens === 'number' ? details.streamTokens : null
   const plan = typeof details.plan === 'string' ? details.plan : null
 
-  const coreParts = [fast, rollover, apiCredit].filter((v) => typeof v === 'number') as number[]
-  const totalBalance = coreParts.length ? coreParts.reduce((a, b) => a + b, 0) : null
+  let totalBalance: number | null = null
+  if (apiCredit !== null) totalBalance = apiCredit
+  else if (fast !== null || rollover !== null) {
+    const fr = [fast, rollover].filter((v) => typeof v === 'number') as number[]
+    totalBalance = fr.length ? fr.reduce((a, b) => a + b, 0) : null
+  } else if (model !== null) totalBalance = model
+  else if (apiSub !== null) totalBalance = apiSub
+  else if (paid !== null) totalBalance = paid
+  else if (stream !== null) totalBalance = stream
 
   return {
     ok: true as const,
