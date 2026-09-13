@@ -156,6 +156,7 @@ export async function withLeonardoTokens<T>(
 export async function fetchLeonardoUserDetails(token: string) {
   const payload = decodeJwt(token)
   const sub = payload?.sub
+  const email = payload?.email || payload?.['cognito:username'] || null
   if (sub) {
     try {
       const res = await leonardoApi({
@@ -176,8 +177,36 @@ export async function fetchLeonardoUserDetails(token: string) {
           variables: { sub },
         },
       })
-      return res?.data?.user_details?.[0] ?? null
-    } catch { /* fallback below */ }
+      const row = res?.data?.user_details?.[0] ?? null
+      if (row) { console.log('[leonardo] sub query OK, sub:', sub.slice(0, 8), 'email:', row.auth0Email, 'apiCredit:', row.apiCredit); return row }
+      console.warn('[leonardo] sub query empty, sub:', sub)
+    } catch (e) { console.warn('[leonardo] sub query failed:', (e as any)?.message) }
+  } else {
+    console.warn('[leonardo] no sub in JWT, payload:', payload)
+  }
+  if (email) {
+    try {
+      const res2 = await leonardoApi({
+        token,
+        base: 'api',
+        path: '/v1/graphql',
+        method: 'POST',
+        body: {
+          query: `query GetUserTokensByEmail($email: String) {
+            user_details(where: {auth0Email: {_eq: $email}}) {
+              id plan auth0Email tokenRenewalDate
+              streamTokens paidTokens subscriptionTokens rolloverTokens
+              subscriptionGptTokens subscriptionModelTokens apiCredit
+              apiSubscriptionTokens apiPaidTokens
+            }
+          }`,
+          operationName: 'GetUserTokensByEmail',
+          variables: { email },
+        },
+      })
+      const row2 = res2?.data?.user_details?.[0] ?? null
+      if (row2) { console.log('[leonardo] email query OK, email:', email, 'apiCredit:', row2.apiCredit); return row2 }
+    } catch (e) { console.warn('[leonardo] email query failed:', (e as any)?.message) }
   }
   const res = await leonardoApi({
     token,
@@ -196,7 +225,13 @@ export async function fetchLeonardoUserDetails(token: string) {
       operationName: 'GetUserDetails',
     },
   })
-  return res?.data?.user_details?.[0] ?? null
+  const rows = res?.data?.user_details ?? []
+  console.warn('[leonardo] fallback unfiltered, rows:', rows.length, 'first email:', rows[0]?.auth0Email)
+  if (email && rows.length > 1) {
+    const match = rows.find((r: any) => r.auth0Email === email)
+    if (match) { console.log('[leonardo] fallback matched by email:', email); return match }
+  }
+  return rows[0] ?? null
 }
 
 export async function fetchLeonardoBalance(token: string) {
