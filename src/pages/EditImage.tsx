@@ -148,9 +148,9 @@ export default function EditImagePage() {
       addLog(`   ✓ Gambar dikompresi (${(compressed.size / 1024).toFixed(0)}KB)`, 'debug')
     }
 
-    addLog(`[2/4] 📤 Submit job ke NexaBot (mode: ${imgFile ? 'i2v (edit)' : 't2v (text2img)'}...)`, 'info')
+    addLog(`[2/4] 📤 Submit job ke NexaBot (mode: ${imgFile ? 'edit gambar' : 'text to image'}...)`, 'info')
     const result = await submitNexabot({
-      mode: 'img',
+      mode: imgFile ? 'i2v' : 'img',
       prompt: prompt.trim(),
       media: mediaDataUris,
     })
