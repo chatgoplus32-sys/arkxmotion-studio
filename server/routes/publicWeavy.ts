@@ -77,33 +77,104 @@ async function fetchWeavyCredits(accessToken: string): Promise<number | null> {
     'Referer': 'https://app.weavy.ai/',
   }
 
+  function extractCredits(obj: any, depth = 0): number | null {
+    if (!obj || depth > 4) return null
+    if (typeof obj === 'number') return obj
+
+    // Direct fields
+    for (const key of ['credits', 'balance', 'remaining', 'credits_remaining', 'available_credits', 'quota']) {
+      const v = obj[key]
+      if (typeof v === 'number') return v
+    }
+
+    // Nested: user, workspace, plan, usage
+    for (const key of ['user', 'workspace', 'plan', 'usage', 'subscription', 'data', 'result']) {
+      const nested = obj[key]
+      if (nested && typeof nested === 'object') {
+        const found = extractCredits(nested, depth + 1)
+        if (found !== null) return found
+      }
+    }
+
+    // Array: check first element
+    if (Array.isArray(obj) && obj.length > 0) {
+      return extractCredits(obj[0], depth + 1)
+    }
+
+    return null
+  }
+
+  // Try /v1/workspaces first
   try {
     const r = await fetch(`${WEAVY_API}/v1/workspaces`, {
       headers,
       signal: AbortSignal.timeout(15000),
     })
     const text = await r.text().catch(() => '')
-    console.log(`[weavy-proxy] /v1/workspaces → ${r.status} body=${text.slice(0, 1000)}`)
-    if (!r.ok) return null
-
-    let data: any
-    try { data = JSON.parse(text) } catch { return null }
-
-    // Try all known response shapes
-    if (data?.credits != null && typeof data.credits === 'number') return data.credits
-
-    const workspaces = data?.workspaces || data
-    const ws = Array.isArray(workspaces) ? workspaces[0] : workspaces
-    if (typeof ws?.credits === 'number') return ws.credits
-    if (typeof ws?.balance === 'number') return ws.balance
-
-    // Log full structure when credits not found
-    console.log(`[weavy-proxy] credits not found. keys:`, Object.keys(data || {}))
-    if (ws) console.log(`[weavy-proxy] workspace keys:`, Object.keys(ws))
+    console.log(`[weavy-proxy] /v1/workspaces → ${r.status} body=${text.slice(0, 1500)}`)
+    if (r.ok) {
+      let data: any
+      try { data = JSON.parse(text) } catch { data = null }
+      if (data) {
+        const credits = extractCredits(data)
+        if (credits !== null) {
+          console.log(`[weavy-proxy] /v1/workspaces credits=${credits}`)
+          return credits
+        }
+        console.log(`[weavy-proxy] /v1/workspaces no credits found. keys:`, Object.keys(data))
+      }
+    }
   } catch (e: any) {
     console.log(`[weavy-proxy] /v1/workspaces error:`, e.message)
   }
 
+  // Fallback: try /v1/user
+  try {
+    const r = await fetch(`${WEAVY_API}/v1/user`, {
+      headers,
+      signal: AbortSignal.timeout(10000),
+    })
+    const text = await r.text().catch(() => '')
+    console.log(`[weavy-proxy] /v1/user → ${r.status} body=${text.slice(0, 1000)}`)
+    if (r.ok) {
+      let data: any
+      try { data = JSON.parse(text) } catch { data = null }
+      if (data) {
+        const credits = extractCredits(data)
+        if (credits !== null) {
+          console.log(`[weavy-proxy] /v1/user credits=${credits}`)
+          return credits
+        }
+      }
+    }
+  } catch (e: any) {
+    console.log(`[weavy-proxy] /v1/user error:`, e.message)
+  }
+
+  // Fallback: try /v1/me
+  try {
+    const r = await fetch(`${WEAVY_API}/v1/me`, {
+      headers,
+      signal: AbortSignal.timeout(10000),
+    })
+    const text = await r.text().catch(() => '')
+    console.log(`[weavy-proxy] /v1/me → ${r.status} body=${text.slice(0, 1000)}`)
+    if (r.ok) {
+      let data: any
+      try { data = JSON.parse(text) } catch { data = null }
+      if (data) {
+        const credits = extractCredits(data)
+        if (credits !== null) {
+          console.log(`[weavy-proxy] /v1/me credits=${credits}`)
+          return credits
+        }
+      }
+    }
+  } catch (e: any) {
+    console.log(`[weavy-proxy] /v1/me error:`, e.message)
+  }
+
+  console.log(`[weavy-proxy] all credit endpoints failed`)
   return null
 }
 

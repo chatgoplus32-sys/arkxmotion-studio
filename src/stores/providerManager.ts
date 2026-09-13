@@ -545,7 +545,8 @@ export const useProviderManager = create<ProviderState>((set, get) => ({
     }
     
     return keys.find((k) => k.status === 'active') || keys[0] || null
-  },  getFirstValidKey: (provider) => {
+  },
+  getFirstValidKey: (provider) => {
     const keys = get().keys[provider] || []
     const config = PROVIDER_CONFIGS[provider]
     const minCredits = config?.minCredits || 0

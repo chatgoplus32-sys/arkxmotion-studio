@@ -32,11 +32,11 @@
     "api/public/genspark-upload.ts": { "maxDuration": 60 },
     "api/public/nexabot.ts": { "maxDuration": 300 },
     "api/public/pricing.ts": { "maxDuration": 10 },
+    "api/public/runninghub.ts": { "maxDuration": 120 },
+    "api/public/r2-upload.ts": { "maxDuration": 60 },
+    "api/public/validate-media.ts": { "maxDuration": 30 },
     "api/logs/generation.ts": { "maxDuration": 10 }
   },
-  "crons": [
-    { "path": "/api/cron/daily-stats", "schedule": "0 2 * * *" }
-  ],
   "headers": [
     {
       "source": "/index.html",

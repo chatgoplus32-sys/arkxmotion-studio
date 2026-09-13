@@ -240,18 +240,7 @@ export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: s
       { value: '10s-off', label: '10s · No Sound', mult: 1, duration: 10, sound: 'off', cr: 65 },
       { value: '10s-on', label: '10s · Sound', mult: 1, duration: 10, sound: 'on', cr: 85 },
     ],
-    'rn:kling-v26': [
-      { value: '5s-off', label: '5s · No Sound', mult: 1, duration: 5, sound: 'off', cr: 45 },
-      { value: '5s-on', label: '5s · Sound', mult: 1, duration: 5, sound: 'on', cr: 60 },
-      { value: '10s-off', label: '10s · No Sound', mult: 1, duration: 10, sound: 'off', cr: 90 },
-      { value: '10s-on', label: '10s · Sound', mult: 1, duration: 10, sound: 'on', cr: 115 },
-    ],
-    'rn:kling-v21': [
-      { value: '5s-off', label: '5s · No Sound', mult: 1, duration: 5, sound: 'off', cr: 35 },
-      { value: '5s-on', label: '5s · Sound', mult: 1, duration: 5, sound: 'on', cr: 50 },
-      { value: '10s-off', label: '10s · No Sound', mult: 1, duration: 10, sound: 'off', cr: 70 },
-      { value: '10s-on', label: '10s · Sound', mult: 1, duration: 10, sound: 'on', cr: 90 },
-    ],
+
     'rn:wan-26': [
       { value: '720p-10s-audio', label: '720p · 10s · audio', mult: 1, duration: 10, resolution: '720p', sound: 'on', cr: 75 },
       { value: '720p-5s-audio', label: '720p · 5s · audio', mult: 1, duration: 5, resolution: '720p', sound: 'on', cr: 40 },
