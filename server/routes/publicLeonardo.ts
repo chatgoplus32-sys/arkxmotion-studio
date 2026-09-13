@@ -3,7 +3,7 @@ import { Router, Request, Response } from 'express'
 const router = Router()
 const LEONARDO_API = 'https://api.leonardo.ai'
 
-router.all('*', (req: Request, res: Response) => {
+router.all('/{*path}', (req: Request, res: Response) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Leonardo-Token')

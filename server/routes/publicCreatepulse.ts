@@ -4,7 +4,7 @@ const router = Router()
 const CP_API = 'https://createpulse.online/api'
 const ADMIN_CP_KEY = process.env.CREATEPULSE_API_KEY || ''
 
-router.all('*', (req: Request, res: Response) => {
+router.all('/{*path}', (req: Request, res: Response) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-API-Key')
