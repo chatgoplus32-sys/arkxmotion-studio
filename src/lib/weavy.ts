@@ -233,15 +233,15 @@ export function resolveWeavyAssetUrl(asset: any, type: 'image' | 'video' = 'imag
 }
 
 export async function fetchWeavyCreditsClient(accessToken: string): Promise<number | null> {
-  // Route ALL Weavy API calls through Vercel serverless proxy
-  // (avoids CORS in browser and Cloudflare block on VPS)
-  // Matches aacs.web.id architecture: browser → /api/public/weavy-proxy?path=... → Vercel server-side → Weavy API
-  const proxyBase = '/api/public/weavy-proxy'
+  // Route Weavy balance check through Vercel serverless proxy
+  // (VPS IP blocked by Cloudflare, browser direct blocked by CORS)
+  // aacs.web.id uses same pattern: browser → server proxy → Weavy API
+  const VERCEL_PROXY = 'https://arkxmotion-studio.vercel.app/api/public/weavy-proxy'
   const endpoints = [
-    `${proxyBase}?path=/v1/workspaces`,
-    `${proxyBase}?path=/v1/credits`,
-    `${proxyBase}?path=/v1/user/credits`,
-    `${proxyBase}?path=/v1/user/balance`,
+    `${VERCEL_PROXY}?path=/v1/workspaces`,
+    `${VERCEL_PROXY}?path=/v1/credits`,
+    `${VERCEL_PROXY}?path=/v1/user/credits`,
+    `${VERCEL_PROXY}?path=/v1/user/balance`,
   ]
 
   const headers = {
@@ -261,10 +261,10 @@ export async function fetchWeavyCreditsClient(accessToken: string): Promise<numb
         data.creditsRemaining ?? data.quota ?? data.usage?.credits ?? data.plan?.credits ??
         data.data?.credits ?? data.user?.credits ?? null
 
-      console.log(`[weavy] proxy ${url.split('path=')[1]} → credits=${credits}`)
+      console.log(`[weavy] vercel-proxy ${url.split('path=')[1]} → credits=${credits}`)
       if (typeof credits === 'number') return credits
     } catch (e: any) {
-      console.log(`[weavy] proxy ${url.split('path=')[1]} → ${e.message}`)
+      console.log(`[weavy] vercel-proxy ${url.split('path=')[1]} → ${e.message}`)
     }
   }
 
