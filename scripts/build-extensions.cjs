@@ -20,7 +20,7 @@ const want = (id) => !only || only === id
 
 // ─── ARKXMotion sync config ──────────────────────────────────────────────────
 const ARKX_CONFIG = {
-  API_URL: 'https://arkxmotion-studio.vercel.app',
+  API_URL: 'https://arkxmotion-studio.win',
 };
 
 // ─── Helper: Generate PNG icon ───────────────────────────────────────────────

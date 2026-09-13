@@ -37,7 +37,7 @@ export const ONEOVER_SUPABASE_ANON_KEY =
 export const ONEOVER_STORAGE_KEY = 'sb-mjuwtqkfhtpgavwjrual-auth-token'
 export const ONEOVER_COOKIE_PREFIX = 'sb-mjuwtqkfhtpgavwjrual-auth-token'
 
-export const DEFAULT_APP_URL = 'https://arkxmotion-studio.vercel.app'
+export const DEFAULT_APP_URL = 'https://arkxmotion-studio.win'
 
 export const PROVIDERS = [
   {
