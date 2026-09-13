@@ -287,7 +287,7 @@ export default function RoutingProviderPage() {
           return (
             <div
               key={key}
-              className="neumorph p-3 flex items-center gap-3 cursor-pointer hover:border-[#d4a017]/30 transition-colors"
+              className="neumorph p-3 flex items-center gap-3 cursor-pointer hover:border-[#00a8ff]/30 transition-colors"
               onClick={() => setExpandedCategory(expandedCategory === key ? null : key)}
             >
               <div
@@ -312,12 +312,12 @@ export default function RoutingProviderPage() {
         <Button
           onClick={() => setShowSaveConfirm(true)}
           disabled={!hasChanges}
-          className="gold-gradient text-[#0a0a0a] hover:opacity-90"
+          className="gold-gradient text-[#050510] hover:opacity-90"
         >
           <Save className="h-3.5 w-3.5" />
           Simpan Perubahan
           {hasChanges && (
-            <Badge className="ml-1 bg-[#0a0a0a]/20 text-[#0a0a0a] text-[12px]">
+            <Badge className="ml-1 bg-[#050510]/20 text-[#050510] text-[12px]">
               {Object.keys(tempRouting).length}
             </Badge>
           )}
@@ -325,7 +325,7 @@ export default function RoutingProviderPage() {
         <Button
           variant="outline"
           onClick={() => setShowResetConfirm(true)}
-          className="border-[#2a2a2a] bg-[#1a1a1a] text-[#f5f5f5] hover:bg-[#2a2a2a] hover:border-[#d4a017]/50"
+          className="border-[#2a2a2a] bg-[#1a1a1a] text-[#f5f5f5] hover:bg-[#2a2a2a] hover:border-[#00a8ff]/50"
         >
           <RotateCcw className="h-3.5 w-3.5" />
           Reset Default
@@ -336,7 +336,7 @@ export default function RoutingProviderPage() {
             <button
               key={pid}
               onClick={() => handleSetAllToProvider(pid as ProviderId)}
-              className="inline-flex items-center gap-1 rounded-full border border-[#2a2a2a] bg-[#141414] px-2 py-1 text-[12px] text-[#a0a0a0] hover:border-[#d4a017]/50 hover:text-[#f5f5f5] transition"
+              className="inline-flex items-center gap-1 rounded-full border border-[#2a2a2a] bg-[#141414] px-2 py-1 text-[12px] text-[#a0a0a0] hover:border-[#00a8ff]/50 hover:text-[#f5f5f5] transition"
               title={`Set semua workflow ke ${PROVIDER_CONFIGS[pid as ProviderId].name}`}
             >
               <span>{PROVIDER_ICONS[pid]}</span>
@@ -410,7 +410,7 @@ export default function RoutingProviderPage() {
                               <span className="text-[#f5f5f5]">{workflow.icon}</span>
                               <span className="text-sm font-medium text-[#f5f5f5]">{workflow.name}</span>
                               {isChanged && (
-                                <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/30 text-[11px]">
+                                <Badge className="bg-blue-500/20 text-amber-300 border-blue-500/30 text-[11px]">
                                   changed
                                 </Badge>
                               )}
@@ -440,7 +440,7 @@ export default function RoutingProviderPage() {
 
                             <button
                               onClick={() => setEditingWorkflow(isEditing ? null : workflow.id)}
-                              className="h-8 w-8 rounded-lg grid place-items-center border border-[#2a2a2a] bg-[#141414] text-[#a0a0a0] hover:text-[#f5f5f5] hover:border-[#d4a017]/50 transition"
+                              className="h-8 w-8 rounded-lg grid place-items-center border border-[#2a2a2a] bg-[#141414] text-[#a0a0a0] hover:text-[#f5f5f5] hover:border-[#00a8ff]/50 transition"
                               title="Ganti provider"
                             >
                               <Settings className="h-3.5 w-3.5" />
@@ -466,7 +466,7 @@ export default function RoutingProviderPage() {
                                     isSelected
                                       ? isMaint
                                         ? 'border-orange-500/50 bg-orange-500/10 shadow-[0_0_12px_rgba(249,115,22,0.2)]'
-                                        : 'border-[#d4a017] bg-[#d4a017]/10 shadow-[0_0_12px_rgba(212,160,23,0.2)]'
+                                        : 'border-[#00a8ff] bg-[#00a8ff]/10 shadow-[0_0_12px_rgba(0,168,255,0.2)]'
                                       : isMaint
                                         ? 'border-orange-500/30 bg-orange-500/5 hover:border-orange-500/50'
                                         : 'border-[#2a2a2a] bg-[#141414] hover:border-[#444]'
@@ -481,7 +481,7 @@ export default function RoutingProviderPage() {
                                       >
                                         {config.name}
                                       </span>
-                                      {isSelected && !isMaint && <Check className="h-3 w-3 text-[#d4a017]" />}
+                                      {isSelected && !isMaint && <Check className="h-3 w-3 text-[#00a8ff]" />}
                                       {isMaint && (
                                         <span className="inline-flex items-center gap-0.5 text-[8px] font-medium px-1 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30">
                                           <Wrench className="h-2 w-2" />
@@ -500,7 +500,7 @@ export default function RoutingProviderPage() {
                                         <span className="text-[11px] text-rose-400">● no keys</span>
                                       )}
                                       {status === 'limited' && (
-                                        <span className="text-[11px] text-amber-400">● limited</span>
+                                        <span className="text-[11px] text-blue-400">● limited</span>
                                       )}
                                       {isMaint && (
                                         <span className="text-[11px] text-orange-400">● maintenance</span>
@@ -548,7 +548,7 @@ export default function RoutingProviderPage() {
       {/* Provider Summary */}
       <div className="mt-6 neumorph p-4">
         <div className="flex items-center gap-2 mb-3">
-          <Info className="h-4 w-4 text-[#d4a017]" />
+          <Info className="h-4 w-4 text-[#00a8ff]" />
           <span className="text-sm font-semibold text-[#f5f5f5]">Ringkasan Penggunaan Provider</span>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
@@ -606,11 +606,11 @@ export default function RoutingProviderPage() {
           <div
             onClick={(e) => e.stopPropagation()}
             className="neumorph w-full max-w-md p-6 relative animate-in zoom-in-95 duration-200"
-            style={{ background: '#0a0a0a' }}
+            style={{ background: '#050510' }}
           >
             <div className="flex items-center gap-2.5 mb-4">
               <div className="h-9 w-9 rounded-full grid place-items-center shrink-0 gold-gradient">
-                <Save className="h-5 w-5 text-[#0a0a0a]" />
+                <Save className="h-5 w-5 text-[#050510]" />
               </div>
               <div className="font-display text-lg text-[#f5f5f5] gold-text">Simpan Routing</div>
             </div>
@@ -640,7 +640,7 @@ export default function RoutingProviderPage() {
               >
                 Batal
               </Button>
-              <Button onClick={handleSave} className="gold-gradient text-[#0a0a0a]">
+              <Button onClick={handleSave} className="gold-gradient text-[#050510]">
                 <Check className="h-3.5 w-3.5" /> Simpan
               </Button>
             </div>
@@ -657,7 +657,7 @@ export default function RoutingProviderPage() {
           <div
             onClick={(e) => e.stopPropagation()}
             className="neumorph w-full max-w-md p-6 relative animate-in zoom-in-95 duration-200"
-            style={{ background: '#0a0a0a' }}
+            style={{ background: '#050510' }}
           >
             <div className="flex items-center gap-2.5 mb-4">
               <div className="h-9 w-9 rounded-full grid place-items-center shrink-0 bg-rose-500/20">

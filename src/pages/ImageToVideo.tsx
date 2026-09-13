@@ -2411,7 +2411,7 @@ export default function ImageToVideoPage() {
             )}
           </div>
           <div>
-            Status: <b className={provider === 'createpulse' || hasActiveKey ? 'text-emerald-500' : 'text-amber-500'}>{provider === 'createpulse' || hasActiveKey ? 'Ready' : 'No Key'}</b>
+            Status: <b className={provider === 'createpulse' || hasActiveKey ? 'text-emerald-500' : 'text-blue-500'}>{provider === 'createpulse' || hasActiveKey ? 'Ready' : 'No Key'}</b>
           </div>
           <button
             onClick={toggleNotifications}
@@ -2609,7 +2609,7 @@ export default function ImageToVideoPage() {
                     />
                   </div>
                   <div>
-                    <Label>Aspek Rasio {isVeoI2V && <span className="text-[10px] text-amber-400 font-normal ml-1">(16:9 only)</span>}</Label>
+                    <Label>Aspek Rasio {isVeoI2V && <span className="text-[10px] text-blue-400 font-normal ml-1">(16:9 only)</span>}</Label>
                     <Select
                       value={ratio}
                       onChange={(e) => setRatio(e.target.value)}
@@ -2825,7 +2825,7 @@ export default function ImageToVideoPage() {
                     : log.level === 'success'
                     ? 'text-emerald-400'
                     : log.level === 'warn'
-                    ? 'text-amber-400'
+                    ? 'text-blue-400'
                     : log.level === 'debug'
                     ? 'text-slate-500'
                     : 'text-slate-400'

@@ -322,12 +322,12 @@ export default function StoryboardPage() {
                         {result.title}
                       </span>
                       {result.status === 'brain' && (
-                        <span className="inline-flex items-center gap-1 text-[12px] text-amber-500">
+                        <span className="inline-flex items-center gap-1 text-[12px] text-blue-500">
                           <Loader2 className="h-3 w-3 animate-spin" /> brain
                         </span>
                       )}
                       {result.status === 'image' && (
-                        <span className="inline-flex items-center gap-1 text-[12px] text-amber-500">
+                        <span className="inline-flex items-center gap-1 text-[12px] text-blue-500">
                           <Loader2 className="h-3 w-3 animate-spin" /> image
                         </span>
                       )}

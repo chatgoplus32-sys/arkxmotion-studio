@@ -462,7 +462,7 @@ export default function AdminTokensPage() {
                   <div className="text-xs text-muted-foreground mt-2">Rp {s.price.toLocaleString('id-ID')} / token</div>
                 )}
                 {p.minCredits > 0 && (
-                  <div className="text-[12px] text-amber-500 mt-1">Min. {p.minCredits} credits/token</div>
+                  <div className="text-[12px] text-blue-500 mt-1">Min. {p.minCredits} credits/token</div>
                 )}
               </button>
             )
@@ -564,9 +564,9 @@ export default function AdminTokensPage() {
                 <button
                   onClick={handleDeleteAllAvailable}
                   disabled={deletingAll || confirmDeleteAllText !== 'HAPUS'}
-                  className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/5 text-left hover:bg-amber-500/10 transition disabled:opacity-50"
+                  className="p-3 rounded-lg border border-blue-500/30 bg-blue-500/5 text-left hover:bg-blue-500/10 transition disabled:opacity-50"
                 >
-                  <div className="text-xs font-medium text-amber-500">Hapus Semua Available</div>
+                  <div className="text-xs font-medium text-blue-500">Hapus Semua Available</div>
                   <div className="text-[11px] text-muted-foreground mt-1">{availableTokens.length} token akan dihapus (tidak termasuk yang sudah terjual)</div>
                 </button>
                 <button
@@ -608,7 +608,7 @@ export default function AdminTokensPage() {
               <div className="text-sm font-medium mb-3">
                 Upload Bulk Token
                 {currentProvider.minCredits > 0 && (
-                  <span className="ml-2 text-xs text-amber-500 font-normal">
+                  <span className="ml-2 text-xs text-blue-500 font-normal">
                     (Wajib validasi — min. {currentProvider.minCredits} credits)
                   </span>
                 )}
@@ -668,7 +668,7 @@ export default function AdminTokensPage() {
                           {validationResults.filter(r => r.status === 'invalid' || r.status === 'error').length} ditolak
                         </div>
                         {currentProvider.minCredits > 0 && (
-                          <div className="flex items-center gap-1 text-amber-500">
+                          <div className="flex items-center gap-1 text-blue-500">
                             <Filter className="h-3.5 w-3.5" />
                             Min. {currentProvider.minCredits} cr
                           </div>
@@ -708,7 +708,7 @@ export default function AdminTokensPage() {
                             className={`flex items-center gap-2 px-2.5 py-1.5 border-b border-border/50 last:border-0 ${
                               r.status === 'valid' ? 'text-emerald-500' :
                               r.status === 'invalid' || r.status === 'error' ? 'text-red-500' :
-                              r.status === 'checking' ? 'text-amber-400' :
+                              r.status === 'checking' ? 'text-blue-400' :
                               'text-muted-foreground'
                             }`}
                           >
@@ -775,7 +775,7 @@ export default function AdminTokensPage() {
                     </div>
                   ) : currentProvider.minCredits > 0 ? (
                     <div className="mt-auto">
-                      <div className="text-xs text-amber-500 mb-2">
+                      <div className="text-xs text-blue-500 mb-2">
                         Wajib validasi dulu sebelum upload
                       </div>
                       <Button
@@ -878,7 +878,7 @@ export default function AdminTokensPage() {
               {soldTokens.length > 0 && (
                 <div>
                   <div className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-amber-500" />
+                    <span className="w-2 h-2 rounded-full bg-blue-500" />
                     Terjual ({soldTokens.length})
                   </div>
                   <div className="rounded-lg border border-border overflow-hidden">
@@ -891,7 +891,7 @@ export default function AdminTokensPage() {
                         <span className="font-mono text-muted-foreground truncate flex-1">
                           {t.token_value.slice(0, 20)}••••
                         </span>
-                        <span className="text-amber-500 text-[12px] shrink-0">TERJUAL</span>
+                        <span className="text-blue-500 text-[12px] shrink-0">TERJUAL</span>
                       </div>
                     ))}
                   </div>

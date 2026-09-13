@@ -326,7 +326,7 @@ function formatUntil(ms: number): string {
 function getStatusColor(status: string): string {
   switch (status) {
     case 'active': return 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30'
-    case 'limited': return 'text-amber-300 bg-amber-500/10 border-amber-500/30'
+    case 'limited': return 'text-amber-300 bg-blue-500/10 border-blue-500/30'
     case 'invalid':
     case 'failed': return 'text-rose-300 bg-rose-500/10 border-rose-500/30'
     case 'checking': return 'text-sky-300 bg-sky-500/10 border-sky-500/30'
@@ -590,11 +590,11 @@ function NexabotTelegramInput({ providerKeys, setKeyTelegramId }: {
           value={input}
           onChange={e => setInput(e.target.value.replace(/[^0-9]/g, ''))}
           placeholder="cth. 81334531"
-          className="flex-1 rounded-md border border-[#2a2a2a] bg-[#0a0a0a] px-2.5 py-1.5 text-[12px] font-mono text-[#f5f5f5] outline-none focus:border-[#d4a017]/60"
+          className="flex-1 rounded-md border border-[#2a2a2a] bg-[#0a0a0a] px-2.5 py-1.5 text-[12px] font-mono text-[#f5f5f5] outline-none focus:border-[#00a8ff]/60"
         />
         <button
           onClick={handleSave}
-          className="rounded-md border border-[#d4a017]/40 bg-[#d4a017]/10 px-3 py-1.5 text-[11px] font-semibold text-[#ffd700] hover:bg-[#d4a017]/20"
+          className="rounded-md border border-[#00a8ff]/40 bg-[#00a8ff]/10 px-3 py-1.5 text-[11px] font-semibold text-[#00d4ff] hover:bg-[#00a8ff]/20"
         >
           {saved ? 'Tersimpan ✓' : 'Simpan'}
         </button>
@@ -615,11 +615,11 @@ function NexabotTelegramInput({ providerKeys, setKeyTelegramId }: {
         <div className="text-[10.5px] text-[#a0a0a0]">
           {detected.error
             ? <>Gagal cek: <span className="text-rose-300">{detected.error}</span></>
-            : <>Key ini terikat ke Telegram ID <span className="font-mono text-[#ffd700]">{detected.telegramId || '—'}</span>{detected.registered ? ' (terdaftar)' : ' (belum terdaftar)'} · saldo {detected.balance ?? '—'} cr</>}
+            : <>Key ini terikat ke Telegram ID <span className="font-mono text-[#00d4ff]">{detected.telegramId || '—'}</span>{detected.registered ? ' (terdaftar)' : ' (belum terdaftar)'} · saldo {detected.balance ?? '—'} cr</>}
         </div>
       )}
       <div className="text-[10.5px] text-[#a0a0a0] leading-relaxed">
-        NexaBot memotong <span className="text-[#ffd700]">0.25 cr/request</span> dari saldo akun Telegram pemilik API key ini — biaya ini dipotong oleh NexaBot, bukan oleh ARKXMotion. Kalau paket Unlimited kamu ada di akun Telegram lain, isi ID-nya di sini agar request ditagihkan ke akun itu.
+        NexaBot memotong <span className="text-[#00d4ff]">0.25 cr/request</span> dari saldo akun Telegram pemilik API key ini — biaya ini dipotong oleh NexaBot, bukan oleh ARKXMotion. Kalau paket Unlimited kamu ada di akun Telegram lain, isi ID-nya di sini agar request ditagihkan ke akun itu.
       </div>
     </div>
   )
@@ -1370,12 +1370,12 @@ export default function ProvidersPage() {
               aria-hidden="true"
               className="pointer-events-none absolute left-1/2 top-1/2 h-[260%] w-[160%] -translate-x-1/2 -translate-y-1/2 animate-[spin_5s_linear_infinite] opacity-90"
               style={{
-                background: `conic-gradient(from 0deg, transparent 0deg, transparent 200deg, #d4a017 280deg, #ffd700 315deg, #d4a017 340deg, transparent 360deg)`,
+                background: `conic-gradient(from 0deg, transparent 0deg, transparent 200deg, #00a8ff 280deg, #00d4ff 315deg, #00a8ff 340deg, transparent 360deg)`,
               }}
             />
             <span
               className="relative flex min-h-[84px] items-center justify-between gap-3 rounded-[10px] bg-[#0a0a0a] px-5 py-4 border border-[#2a2a2a]"
-              style={{ boxShadow: 'inset 0 0 40px rgba(212, 160, 23, 0.15)' }}
+              style={{ boxShadow: 'inset 0 0 40px rgba(0, 168, 255, 0.15)' }}
             >
               <span className="min-w-0">
                 <span
@@ -1394,7 +1394,7 @@ export default function ProvidersPage() {
               <ul
                 role="listbox"
                 className="absolute left-0 right-0 top-full mt-2 z-40 grid grid-cols-1 md:grid-cols-2 gap-2 rounded-2xl border border-[#2a2a2a] bg-[#0a0a0a] p-2 shadow-2xl max-h-[60vh] overflow-y-auto"
-                style={{ boxShadow: '0 0 30px rgba(212, 160, 23, 0.1)' }}
+                style={{ boxShadow: '0 0 30px rgba(0, 168, 255, 0.1)' }}
               >
                 {VISIBLE_PROVIDER_LIST.map(p => {
                   const isActive = p.key === selectedProvider
@@ -1423,16 +1423,16 @@ export default function ProvidersPage() {
                         onClick={() => { setSelectedProvider(p.key); setDropdownOpen(false) }}
                         className="w-full text-left rounded-xl border px-4 py-3 transition hover:bg-[#1a1a1a]"
                         style={{
-                          borderColor: isActive ? '#d4a017' : isMaint ? '#f97316' : '#2a2a2a',
-                          boxShadow: isActive ? '0 0 18px rgba(212, 160, 23, 0.3)' : isMaint ? '0 0 12px rgba(249, 115, 22, 0.2)' : 'inset 0 0 0 1px rgba(212, 160, 23, 0.05)',
+                          borderColor: isActive ? '#00a8ff' : isMaint ? '#f97316' : '#2a2a2a',
+                          boxShadow: isActive ? '0 0 18px rgba(0, 168, 255, 0.3)' : isMaint ? '0 0 12px rgba(0, 168, 255, 0.2)' : 'inset 0 0 0 1px rgba(0, 168, 255, 0.05)',
                         }}
                       >
                         <span className="flex items-center gap-2">
                           <span
                             className="h-2.5 w-2.5 rounded-full shrink-0"
                             style={{ 
-                              background: isMaint ? '#f97316' : isActive ? '#d4a017' : color,
-                              boxShadow: isMaint ? '0 0 10px rgba(249, 115, 22, 0.5)' : isActive ? '0 0 10px rgba(212, 160, 23, 0.5)' : `0 0 6px ${color}66`
+                              background: isMaint ? '#f97316' : isActive ? '#00a8ff' : color,
+                              boxShadow: isMaint ? '0 0 10px rgba(0, 168, 255, 0.5)' : isActive ? '0 0 10px rgba(0, 168, 255, 0.5)' : `0 0 6px ${color}66`
                             }}
                           />
                           <span className="text-sm font-semibold text-[#f5f5f5]">{p.label}</span>
@@ -1455,7 +1455,7 @@ export default function ProvidersPage() {
         <div className="ml-auto flex items-center gap-2 w-full md:w-auto justify-end">
           <button
             onClick={() => navigate(selectedProvider === 'createpulse' ? '/topup/createpulse' : '/beli-token')}
-            className="relative inline-flex items-center gap-1.5 rounded-full border border-[#d4a017]/50 bg-gradient-to-r from-[#d4a017]/20 via-[#d4a017]/10 to-[#d4a017]/20 text-[#ffd700] px-3.5 py-2 text-xs md:text-sm font-semibold md:font-bold md:px-5 md:py-2.5 shadow-[0_0_14px_rgba(212,160,23,0.35)] md:shadow-[0_0_20px_rgba(212,160,23,0.55)] hover:shadow-[0_0_28px_rgba(212,160,23,0.75)] hover:scale-[1.02] transition-all"
+            className="relative inline-flex items-center gap-1.5 rounded-full border border-[#00a8ff]/50 bg-gradient-to-r from-[#00a8ff]/20 via-[#00a8ff]/10 to-[#00a8ff]/20 text-[#00d4ff] px-3.5 py-2 text-xs md:text-sm font-semibold md:font-bold md:px-5 md:py-2.5 shadow-[0_0_14px_rgba(0,168,255,0.35)] md:shadow-[0_0_20px_rgba(0,168,255,0.55)] hover:shadow-[0_0_28px_rgba(0,168,255,0.75)] hover:scale-[1.02] transition-all"
             title={selectedProvider === 'createpulse' ? 'Topup CreatePulse' : 'Beli token dari Token Bank'}
           >
             {selectedProvider === 'createpulse' ? <Wallet className="h-3.5 w-3.5 md:h-4 md:w-4" /> : <ShoppingCart className="h-3.5 w-3.5 md:h-4 md:w-4" />}
@@ -1524,16 +1524,16 @@ export default function ProvidersPage() {
                   ? `token 1\ntoken 2\ntoken 3`
                   : `${TOKEN_GUIDE[selectedProvider as keyof typeof TOKEN_GUIDE]?.prefix || 'API key...'}`
                 }
-                className="font-mono text-xs bg-[#0a0a0a] border-[#2a2a2a] text-[#f5f5f5] placeholder-[#666666] focus:border-[#d4a017] focus:ring-[#d4a017]/30"
+                className="font-mono text-xs bg-[#0a0a0a] border-[#2a2a2a] text-[#f5f5f5] placeholder-[#666666] focus:border-[#00a8ff] focus:ring-[#00a8ff]/30"
               />
               <div className="flex flex-wrap gap-2">
                 <Button onClick={bulkMode ? handleBulkUpload : handleAddKey} disabled={bulkMode ? !bulkText.trim() : !inputValue.trim()} className="gold-gradient text-[#0a0a0a] hover:opacity-90">
                   <Plus className="h-3.5 w-3.5" /> Tambah
                 </Button>
-                <Button variant="outline" onClick={() => setBulkMode(!bulkMode)} className="border-[#2a2a2a] bg-[#1a1a1a] text-[#f5f5f5] hover:bg-[#2a2a2a] hover:border-[#d4a017]/50">
+                <Button variant="outline" onClick={() => setBulkMode(!bulkMode)} className="border-[#2a2a2a] bg-[#1a1a1a] text-[#f5f5f5] hover:bg-[#2a2a2a] hover:border-[#00a8ff]/50">
                   <Upload className="h-3.5 w-3.5" /> {bulkMode ? 'Single' : 'Bulk'}
                 </Button>
-                <Button variant="outline" onClick={handleCheckAll} disabled={checking || savedKeys.length === 0} className="border-[#2a2a2a] bg-[#1a1a1a] text-[#f5f5f5] hover:bg-[#2a2a2a] hover:border-[#d4a017]/50">
+                <Button variant="outline" onClick={handleCheckAll} disabled={checking || savedKeys.length === 0} className="border-[#2a2a2a] bg-[#1a1a1a] text-[#f5f5f5] hover:bg-[#2a2a2a] hover:border-[#00a8ff]/50">
                   {checking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                   Cek Limit & Status
                 </Button>
@@ -1596,7 +1596,7 @@ export default function ProvidersPage() {
                     value={workflowId}
                     onChange={e => setWorkflowId(e.target.value)}
                     placeholder="Default: 2084995158336192513"
-                    className="font-mono text-xs bg-[#0a0a0a] border-[#2a2a2a] text-[#f5f5f5] placeholder-[#666666] focus:border-[#d4a017] focus:ring-[#d4a017]/30"
+                    className="font-mono text-xs bg-[#0a0a0a] border-[#2a2a2a] text-[#f5f5f5] placeholder-[#666666] focus:border-[#00a8ff] focus:ring-[#00a8ff]/30"
                   />
                   <p className="text-[12px] text-[#666666]">
                     Kosongkan untuk pakai workflow bawaan. Isi hanya jika ingin pakai workflow custom dari RunningHub.
@@ -1659,7 +1659,7 @@ export default function ProvidersPage() {
                               ) : !isEditing ? (
                                 <button
                                   onClick={() => { setEditingBalanceIdx(i); setEditingBalanceVal('') }}
-                                  className="text-[12px] text-[#d4a017] hover:text-[#f5f5f5] underline underline-offset-2 transition cursor-pointer"
+                                  className="text-[12px] text-[#00a8ff] hover:text-[#f5f5f5] underline underline-offset-2 transition cursor-pointer"
                                   title="Input manual balance"
                                 >
                                   ??? cr
@@ -1683,7 +1683,7 @@ export default function ProvidersPage() {
                                     }}
                                     placeholder="0"
                                     autoFocus
-                                    className="w-20 text-[12px] font-mono bg-[#0a0a0a] border border-[#d4a017] text-[#f5f5f5] px-1.5 py-0.5 rounded focus:outline-none focus:border-[#f5f5f5]"
+                                    className="w-20 text-[12px] font-mono bg-[#0a0a0a] border border-[#00a8ff] text-[#f5f5f5] px-1.5 py-0.5 rounded focus:outline-none focus:border-[#f5f5f5]"
                                   />
                                   <button
                                     onClick={() => {
@@ -1758,8 +1758,8 @@ export default function ProvidersPage() {
             const isWeavyPool = selectedProvider === 'weavy'
             if (providerKeys.length === 0) return null
             return (
-              <div className="mt-3 rounded-lg border border-[#d4a017]/30 bg-[#d4a017]/5 p-3">
-                <div className="text-[12px] font-mono uppercase tracking-widest text-[#d4a017]/80">Pool Summary</div>
+              <div className="mt-3 rounded-lg border border-[#00a8ff]/30 bg-[#00a8ff]/5 p-3">
+                <div className="text-[12px] font-mono uppercase tracking-widest text-[#00a8ff]/80">Pool Summary</div>
                 <div className="mt-2 flex items-baseline gap-2">
                   <span className="font-display text-2xl font-black gold-text">
                     {isWeavyPool && totalBalance === 0 ? '???' : totalBalance.toLocaleString()}
@@ -1769,7 +1769,7 @@ export default function ProvidersPage() {
                 <div className="mt-1 text-[11px] text-[#a0a0a0]">
                   {activeCount} active / {providerKeys.length} keys
                   {isWeavyPool && totalBalance === 0 && (
-                    <span className="ml-2 text-[#d4a017]">· Balance tidak tersedia untuk Free tier</span>
+                    <span className="ml-2 text-[#00a8ff]">· Balance tidak tersedia untuk Free tier</span>
                   )}
                 </div>
               </div>
@@ -1777,13 +1777,13 @@ export default function ProvidersPage() {
           })()}
 
               {TOKEN_GUIDE[selectedProvider as keyof typeof TOKEN_GUIDE] && (
-            <div className="mt-4 rounded-lg border border-[#d4a017]/30 bg-[#d4a017]/5 p-3">
-              <div className="text-[12px] font-mono uppercase tracking-widest text-[#d4a017]/80">Cara Dapat Token</div>
+            <div className="mt-4 rounded-lg border border-[#00a8ff]/30 bg-[#00a8ff]/5 p-3">
+              <div className="text-[12px] font-mono uppercase tracking-widest text-[#00a8ff]/80">Cara Dapat Token</div>
               <a
                 href={TOKEN_GUIDE[selectedProvider as keyof typeof TOKEN_GUIDE].url}
                 target="_blank"
                 rel="noreferrer"
-                className="mt-1 inline-flex items-center gap-1.5 text-sm text-[#ffd700] hover:underline font-medium break-all"
+                className="mt-1 inline-flex items-center gap-1.5 text-sm text-[#00d4ff] hover:underline font-medium break-all"
               >
                 <ExternalLink className="h-3.5 w-3.5 shrink-0" />
                 {TOKEN_GUIDE[selectedProvider as keyof typeof TOKEN_GUIDE].urlLabel}
@@ -1798,7 +1798,7 @@ export default function ProvidersPage() {
                   <li key={i}>
                     {step.text}
                     {step.link && (
-                      <a href={step.link.url} target="_blank" rel="noreferrer" className="text-[#ffd700] underline hover:text-[#d4a017]/80">
+                      <a href={step.link.url} target="_blank" rel="noreferrer" className="text-[#00d4ff] underline hover:text-[#00a8ff]/80">
                         {step.link.label}
                       </a>
                     )}
@@ -1811,7 +1811,7 @@ export default function ProvidersPage() {
                 ))}
               </ol>
               {TOKEN_GUIDE[selectedProvider as keyof typeof TOKEN_GUIDE].tip && (
-                <div className="mt-2.5 rounded-md bg-[#d4a017]/10 border border-[#d4a017]/30 p-2 text-[10.5px] text-[#ffd700]/90 leading-relaxed">
+                <div className="mt-2.5 rounded-md bg-[#00a8ff]/10 border border-[#00a8ff]/30 p-2 text-[10.5px] text-[#00d4ff]/90 leading-relaxed">
                   💡 {TOKEN_GUIDE[selectedProvider as keyof typeof TOKEN_GUIDE].tip}
                 </div>
               )}

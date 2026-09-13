@@ -398,7 +398,7 @@ export default function EditImagePage() {
                 </div>
 
                 {!hasActiveKey && (
-                  <div className="text-[11px] text-amber-400 bg-amber-500/10 rounded-lg p-2 border border-amber-500/20">
+                  <div className="text-[11px] text-blue-400 bg-blue-500/10 rounded-lg p-2 border border-blue-500/20">
                     Tambahkan API key <b>{provider === 'nexabot' ? 'NexaBot' : 'Riverside'}</b> di halaman <b>Providers</b> untuk bisa generate dari sini.
                   </div>
                 )}
@@ -495,7 +495,7 @@ export default function EditImagePage() {
                 ) : logs.map((log, i) => (
                   <div key={i} className={`break-all min-w-0 ${
                     log.level === 'error' ? 'text-red-400' :
-                    log.level === 'warn' ? 'text-amber-400' :
+                    log.level === 'warn' ? 'text-blue-400' :
                     log.level === 'success' ? 'text-emerald-400' :
                     'text-muted-foreground'
                   }`}>

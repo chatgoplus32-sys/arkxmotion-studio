@@ -37,7 +37,7 @@ const features = [
     title: 'Motion Control',
     desc: 'Transfer motion dari video referensi ke karakter AI. Support Kling V3 Pro, Wan Motion, RoboNeo.',
     icon: 'M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z',
-    gradient: 'from-amber-500/20 to-orange-500/10',
+    gradient: 'from-blue-500/20 to-cyan-500/10',
   },
   {
     title: 'Image to Video',
@@ -61,7 +61,7 @@ const features = [
     title: 'Smart Routing',
     desc: 'Auto pilih provider termurah & tercepat. Balance real-time, fallback otomatis.',
     icon: 'M13 10V3L4 14h7v7l9-11h-7z',
-    gradient: 'from-amber-500/20 to-yellow-500/10',
+    gradient: 'from-blue-500/20 to-yellow-500/10',
   },
   {
     title: 'UGC Studio',
@@ -127,7 +127,7 @@ export default function LandingPage() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white overflow-x-hidden selection:bg-[#d4a017]/30">
+    <div className="min-h-screen bg-[#050510] text-white overflow-x-hidden selection:bg-[#00a8ff]/30">
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Inter:wght@400;500;600;700;800;900&display=swap');
         @keyframes fadeInUp {
@@ -157,11 +157,11 @@ export default function LandingPage() {
         .animate-shimmer { animation: shimmer 3s linear infinite; background-size: 200% 100%; }
       `}</style>
 
-      <nav className="fixed top-0 w-full z-50 border-b border-white/[0.06] bg-[#0a0a0a]/70 backdrop-blur-2xl">
+      <nav className="fixed top-0 w-full z-50 border-b border-white/[0.06] bg-[#050510]/70 backdrop-blur-2xl">
         <div className="max-w-[1180px] mx-auto px-6 h-[64px] flex items-center justify-between">
           <div className="flex items-center gap-8">
             <Link to="/" className="flex items-center gap-3">
-              <img src="/arkx-logo.svg" alt="ARKX" className="w-9 h-9 rounded-xl shadow-[0_0_20px_rgba(212,160,23,0.25)]" />
+              <img src="/arkx-logo.svg" alt="ARKX" className="w-9 h-9 rounded-xl shadow-[0_0_20px_rgba(0,168,255,0.25)]" />
               <span className="text-[15px] font-bold tracking-tight">ARKXMotion Studio</span>
               <span className="hidden sm:inline text-[10px] font-mono tracking-widest px-2 py-1 rounded-full bg-white/[0.06] border border-white/10 text-white/60">BETA 2.0</span>
             </Link>
@@ -174,14 +174,14 @@ export default function LandingPage() {
           </div>
           <div className="flex items-center gap-2">
             <Link to="/login" className="hidden sm:inline px-4 py-2 text-sm text-white/70 hover:text-white transition">Login</Link>
-            <Link to="/register" className="px-5 py-2.5 text-sm font-semibold bg-gradient-to-r from-[#d4a017] to-[#ffd700] text-black rounded-xl hover:shadow-[0_8px_24px_rgba(212,160,23,0.35)] hover:scale-[1.02] active:scale-[0.98] transition-all">Get Started →</Link>
+            <Link to="/register" className="px-5 py-2.5 text-sm font-semibold bg-gradient-to-r from-[#00a8ff] to-[#00d4ff] text-black rounded-xl hover:shadow-[0_8px_24px_rgba(0,168,255,0.35)] hover:scale-[1.02] active:scale-[0.98] transition-all">Get Started →</Link>
             <button onClick={() => setMobileMenu(!mobileMenu)} className="lg:hidden w-9 h-9 grid place-items-center rounded-xl border border-white/10 ml-1">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d={mobileMenu ? "M6 18L18 6M6 6l12 12" : "M4 7h16M4 12h16M4 17h16"} /></svg>
             </button>
           </div>
         </div>
         {mobileMenu && (
-          <div className="lg:hidden border-t border-white/5 bg-[#0a0a0a] px-6 py-4 flex flex-col gap-1">
+          <div className="lg:hidden border-t border-white/5 bg-[#050510] px-6 py-4 flex flex-col gap-1">
             <a href="#features" onClick={() => setMobileMenu(false)} className="px-3 py-2.5 rounded-xl hover:bg-white/[0.04] text-white/80">Features</a>
             <a href="#how" onClick={() => setMobileMenu(false)} className="px-3 py-2.5 rounded-xl hover:bg-white/[0.04] text-white/80">Cara Kerja</a>
             <a href="#pricing" onClick={() => setMobileMenu(false)} className="px-3 py-2.5 rounded-xl hover:bg-white/[0.04] text-white/80">Pricing</a>
@@ -193,9 +193,9 @@ export default function LandingPage() {
       <section className="relative pt-28 pb-10 px-6 overflow-hidden">
         <div className="absolute inset-0 -z-10">
           <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.04)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.04)_1px,transparent_1px)] bg-[size:48px_48px] [mask-image:radial-gradient(ellipse_80%_50%_at_50%_0%,black_70%,transparent_110%)]" />
-          <div className="absolute top-[-120px] left-1/2 -translate-x-1/2 w-[1100px] h-[520px] bg-gradient-to-br from-[#d4a017]/20 via-[#ffd700]/10 to-transparent rounded-full blur-[80px] opacity-60 animate-[pulse_6s_ease-in-out_infinite]" />
-          <div className="absolute top-[220px] right-[-80px] w-[420px] h-[420px] bg-violet-500/10 rounded-full blur-[90px] animate-[pulse_8s_ease-in-out_infinite_2s]" />
-          <div className="absolute bottom-[-60px] left-[-40px] w-[300px] h-[300px] bg-emerald-500/8 rounded-full blur-[70px] animate-[pulse_10s_ease-in-out_infinite_4s]" />
+          <div className="absolute top-[-120px] left-1/2 -translate-x-1/2 w-[1100px] h-[520px] bg-gradient-to-br from-[#00a8ff]/20 via-[#00d4ff]/10 to-transparent rounded-full blur-[80px] opacity-60 animate-[pulse_6s_ease-in-out_infinite]" />
+          <div className="absolute top-[220px] right-[-80px] w-[420px] h-[420px] bg-blue-500/10 rounded-full blur-[90px] animate-[pulse_8s_ease-in-out_infinite_2s]" />
+          <div className="absolute bottom-[-60px] left-[-40px] w-[300px] h-[300px] bg-cyan-500/8 rounded-full blur-[70px] animate-[pulse_10s_ease-in-out_infinite_4s]" />
         </div>
 
         <div className="max-w-[1180px] mx-auto grid lg:grid-cols-[1.05fr_0.95fr] gap-8 lg:gap-10 items-center">
@@ -204,21 +204,32 @@ export default function LandingPage() {
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_10px_rgba(16,185,129,0.8)]" />
               <span className="text-white/70 font-mono text-[11px] tracking-widest uppercase">8 Providers • Smart Routing • Live</span>
               <span className="hidden sm:inline text-white/20">•</span>
-              <span className="hidden sm:inline text-amber-300 text-xs">99.9% uptime</span>
+              <span className="hidden sm:inline text-blue-400 text-xs">99.9% uptime</span>
             </div>
 
             <h1 className="mt-6 text-[36px] sm:text-[42px] md:text-[58px] font-black leading-[0.95] tracking-[-0.03em]">
-              <span className="bg-gradient-to-r from-[#d4a017] via-[#ffd700] to-[#ffec8b] bg-clip-text text-transparent">Create Motion</span>
-              <br />
-              <span className="text-white">With AI Power</span>
+              <span className="bg-gradient-to-r from-[#00a8ff] via-[#00d4ff] to-[#00f0ff] bg-clip-text text-transparent">ARKX</span>
+              <span className="text-white">Motion Studio</span>
             </h1>
+
+            <p className="mt-3 text-[13px] sm:text-[14px] font-mono tracking-[0.25em] text-blue-300/70 uppercase">Ideas Move Reality</p>
+
+            <div className="mt-4 flex flex-wrap gap-2 text-[11px] sm:text-xs font-mono tracking-wider text-white/40">
+              <span>VIDEO</span>
+              <span className="text-blue-400">•</span>
+              <span>ANIMATION</span>
+              <span className="text-blue-400">•</span>
+              <span>AI</span>
+              <span className="text-blue-400">•</span>
+              <span>CREATIVE SOLUTION</span>
+            </div>
 
             <p className="mt-5 text-[15px] md:text-[18px] leading-relaxed text-white/55 max-w-[560px]">
               Satu platform untuk semua kebutuhan video AI — motion control, image-to-video, bulk fashion, UGC & upscaler. Multi-provider, token rotation, balance check real-time.
             </p>
 
             <div className="mt-8 flex flex-wrap gap-3">
-              <Link to="/register" className="px-6 sm:px-7 py-3 sm:py-3.5 text-[14px] sm:text-[15px] font-semibold bg-gradient-to-r from-[#d4a017] to-[#ffd700] text-black rounded-xl hover:shadow-[0_12px_30px_rgba(212,160,23,0.35)] hover:-translate-y-[1px] active:translate-y-0 transition-all">
+              <Link to="/register" className="px-6 sm:px-7 py-3 sm:py-3.5 text-[14px] sm:text-[15px] font-semibold bg-gradient-to-r from-[#00a8ff] to-[#00d4ff] text-black rounded-xl hover:shadow-[0_12px_30px_rgba(0,168,255,0.35)] hover:-translate-y-[1px] active:translate-y-0 transition-all">
                 Mulai Gratis — 5 Generate
               </Link>
               <a href="#features" className="px-6 sm:px-7 py-3 sm:py-3.5 text-[14px] sm:text-[15px] font-medium bg-white text-black rounded-xl hover:bg-white/90 transition flex items-center gap-2">
@@ -229,9 +240,9 @@ export default function LandingPage() {
 
             <div className="mt-4 flex items-center gap-3 text-xs text-white/40">
               <span className="flex -space-x-2">
-                <span className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 border-2 border-[#0a0a0a] grid place-items-center text-[11px] font-bold text-black">A</span>
-                <span className="w-7 h-7 rounded-full bg-gradient-to-br from-violet-400 to-pink-500 border-2 border-[#0a0a0a] grid place-items-center text-[11px] font-bold">B</span>
-                <span className="w-7 h-7 rounded-full bg-gradient-to-br from-emerald-400 to-cyan-500 border-2 border-[#0a0a0a] grid place-items-center text-[11px] font-bold">C</span>
+                <span className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-400 to-cyan-500 border-2 border-[#050510] grid place-items-center text-[11px] font-bold text-black">A</span>
+                <span className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-400 to-cyan-500 border-2 border-[#050510] grid place-items-center text-[11px] font-bold">B</span>
+                <span className="w-7 h-7 rounded-full bg-gradient-to-br from-emerald-400 to-cyan-500 border-2 border-[#050510] grid place-items-center text-[11px] font-bold">C</span>
               </span>
               <span>Dipercaya 2,400+ creator • 48k video ter-generate</span>
             </div>
@@ -242,7 +253,7 @@ export default function LandingPage() {
                 { k: '< 45s', v: 'Avg generate' },
                 { k: '8+', v: 'AI Providers' },
               ].map((s) => (
-                <div key={s.k} className="rounded-2xl bg-white/[0.04] border border-white/[0.06] p-3 backdrop-blur hover:border-[#d4a017]/20 transition-colors">
+                <div key={s.k} className="rounded-2xl bg-white/[0.04] border border-white/[0.06] p-3 backdrop-blur hover:border-[#00a8ff]/20 transition-colors">
                   <div className="text-[16px] sm:text-[18px] font-bold tracking-tight">{s.k}</div>
                   <div className="text-[10px] sm:text-[11px] text-white/45">{s.v}</div>
                 </div>
@@ -251,7 +262,7 @@ export default function LandingPage() {
           </div>
 
           <div className="relative lg:h-[520px] mt-8 lg:mt-0 animate-[fadeInUp_0.8s_ease-out_0.2s_both]">
-            <div className="absolute -inset-6 bg-gradient-to-br from-[#d4a017]/15 to-violet-500/10 rounded-[28px] blur-2xl opacity-60" />
+            <div className="absolute -inset-6 bg-gradient-to-br from-[#00a8ff]/15 to-blue-500/10 rounded-[28px] blur-2xl opacity-60" />
             <div className="relative rounded-[24px] overflow-hidden border border-white/10 bg-gradient-to-b from-white/[0.08] to-white/[0.02] backdrop-blur-2xl shadow-[0_20px_80px_rgba(0,0,0,0.5)]">
               <div className="h-11 flex items-center justify-between px-4 border-b border-white/5 bg-white/[0.03]">
                 <div className="flex items-center gap-1.5">
@@ -265,7 +276,7 @@ export default function LandingPage() {
 
               <div className="p-3 sm:p-4 grid gap-3 sm:gap-4">
                 <div className="rounded-2xl overflow-hidden border border-white/5 bg-black/40 aspect-[16/9] relative">
-                  <div className="absolute inset-0 bg-gradient-to-br from-amber-500/20 via-transparent to-violet-500/20" />
+                  <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 via-transparent to-cyan-500/20" />
                   <div className="absolute inset-0 grid place-items-center">
                     <div className="w-14 h-14 rounded-full bg-white text-black grid place-items-center shadow-xl hover:scale-110 transition-transform cursor-pointer">
                       <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.14v14l11-7z" /></svg>
@@ -279,9 +290,9 @@ export default function LandingPage() {
 
                 <div className="grid grid-cols-3 gap-2">
                   {[
-                    { label: 'Total Generates', value: '48,291', sub: '+12% minggu ini', color: 'text-amber-400' },
+                    { label: 'Total Generates', value: '48,291', sub: '+12% minggu ini', color: 'text-blue-400' },
                     { label: 'Success Rate', value: '96.4%', sub: 'Avg 38s', color: 'text-emerald-400' },
-                    { label: 'Active Keys', value: '14/18', sub: '3 providers', color: 'text-violet-400' },
+                    { label: 'Active Keys', value: '14/18', sub: '3 providers', color: 'text-blue-400' },
                   ].map((c) => (
                     <div key={c.label} className="rounded-xl bg-white/[0.04] border border-white/5 p-2 sm:p-3">
                       <div className="text-[10px] sm:text-[11px] text-white/40">{c.label}</div>
@@ -303,8 +314,8 @@ export default function LandingPage() {
               </div>
             </div>
 
-            <div className="absolute -bottom-4 -left-4 hidden md:flex items-center gap-3 rounded-2xl bg-[#141414] border border-white/10 px-4 py-3 shadow-[0_12px_40px_rgba(0,0,0,0.5)] animate-[fadeInUp_0.8s_ease-out_0.5s_both]">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-yellow-300 grid place-items-center text-black">⚡</div>
+            <div className="absolute -bottom-4 -left-4 hidden md:flex items-center gap-3 rounded-2xl bg-[#0c0c1a] border border-white/10 px-4 py-3 shadow-[0_12px_40px_rgba(0,0,0,0.5)] animate-[fadeInUp_0.8s_ease-out_0.5s_both]">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-400 to-cyan-300 grid place-items-center text-black">⚡</div>
               <div>
                 <div className="text-sm font-semibold">Bulk 100 video — Done</div>
                 <div className="text-xs text-white/50">Selesai dalam 4m 12s • ZIP siap download</div>
@@ -319,7 +330,7 @@ export default function LandingPage() {
           <p className="text-center text-[10px] sm:text-[11px] font-mono tracking-[0.15em] sm:tracking-[0.2em] text-white/30 uppercase mb-4 sm:mb-5">Trusted Providers • Auto Rotation • Load Balanced</p>
           <div className="flex flex-wrap justify-center gap-1.5 sm:gap-2 md:gap-3">
             {providers.map((p) => (
-              <div key={p.name} className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full bg-white/[0.04] border border-white/5 hover:border-[#d4a017]/30 hover:bg-[#d4a017]/10 transition-all hover:scale-105">
+              <div key={p.name} className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full bg-white/[0.04] border border-white/5 hover:border-[#00a8ff]/30 hover:bg-[#00a8ff]/10 transition-all hover:scale-105">
                 <span className="w-1.5 sm:w-2 h-1.5 sm:h-2 rounded-full" style={{ background: p.dot }} />
                 <span className="text-xs sm:text-sm font-medium text-white/80">{p.name}</span>
                 <span className="hidden sm:inline text-[10px] sm:text-[11px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">● online</span>
@@ -330,24 +341,24 @@ export default function LandingPage() {
       </section>      <section id="features" className="py-16 sm:py-20 px-6">
         <div className="max-w-[1180px] mx-auto">
           <div className="max-w-[640px]">
-            <div className="inline-flex items-center gap-2 text-[10px] sm:text-[11px] font-mono tracking-widest uppercase text-amber-300/80">
-              <span className="w-6 h-[1px] bg-amber-300/50" /> Fitur Lengkap
+            <div className="inline-flex items-center gap-2 text-[10px] sm:text-[11px] font-mono tracking-widest uppercase text-blue-400/80">
+              <span className="w-6 h-[1px] bg-blue-300/50" /> Fitur Lengkap
             </div>
             <h2 className="mt-3 text-[28px] sm:text-[32px] md:text-[42px] font-black tracking-[-0.02em] leading-none">
-              Semua tools <span className="bg-gradient-to-r from-[#d4a017] to-[#ffd700] bg-clip-text text-transparent">video AI</span> dalam satu studio
+              Semua tools <span className="bg-gradient-to-r from-[#00a8ff] to-[#00d4ff] bg-clip-text text-transparent">video AI</span> dalam satu studio
             </h2>
             <p className="mt-4 text-[14px] sm:text-[15px] text-white/50 leading-relaxed">Dari motion transfer sampai bulk UGC — semua provider, satu billing, satu dashboard.</p>
           </div>
 
           <div className="mt-8 sm:mt-10 grid sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
             {features.map((f, i) => (
-              <div key={f.title} className="group relative rounded-[20px] border border-white/[0.06] bg-gradient-to-b from-white/[0.05] to-white/[0.015] p-5 sm:p-6 hover:border-[#d4a017]/30 hover:from-[#d4a017]/[0.06] hover:to-transparent transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_12px_40px_rgba(212,160,23,0.12)]" style={{ animationDelay: `${i * 0.1}s` }}>
+              <div key={f.title} className="group relative rounded-[20px] border border-white/[0.06] bg-gradient-to-b from-white/[0.05] to-white/[0.015] p-5 sm:p-6 hover:border-[#00a8ff]/30 hover:from-[#00a8ff]/[0.06] hover:to-transparent transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_12px_40px_rgba(0,168,255,0.12)]" style={{ animationDelay: `${i * 0.1}s` }}>
                 <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-gradient-to-br ${f.gradient} border border-white/5 grid place-items-center group-hover:scale-110 transition-transform duration-300`}>
-                  <svg className="w-5 h-5 sm:w-6 sm:h-6 text-amber-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}><path strokeLinecap="round" strokeLinejoin="round" d={f.icon} /></svg>
+                  <svg className="w-5 h-5 sm:w-6 sm:h-6 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}><path strokeLinecap="round" strokeLinejoin="round" d={f.icon} /></svg>
                 </div>
                 <h3 className="mt-3 sm:mt-4 text-[15px] sm:text-[17px] font-semibold">{f.title}</h3>
                 <p className="mt-1.5 sm:mt-2 text-[13px] sm:text-sm leading-relaxed text-white/45 group-hover:text-white/60 transition">{f.desc}</p>
-                <div className="mt-3 sm:mt-4 inline-flex items-center gap-1.5 text-xs font-medium text-amber-300 opacity-0 group-hover:opacity-100 translate-y-1 group-hover:translate-y-0 transition-all duration-300">
+                <div className="mt-3 sm:mt-4 inline-flex items-center gap-1.5 text-xs font-medium text-blue-400 opacity-0 group-hover:opacity-100 translate-y-1 group-hover:translate-y-0 transition-all duration-300">
                   Coba sekarang
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M9 18l6-6-6-6" /></svg>
                 </div>
@@ -368,8 +379,8 @@ export default function LandingPage() {
           </div>
           <div className="mt-6 sm:mt-8 grid sm:grid-cols-3 gap-3 sm:gap-4">
             {steps.map((s) => (
-              <div key={s.n} className="rounded-2xl bg-[#0f0f0f] border border-white/[0.06] p-5 sm:p-6 hover:border-[#d4a017]/20 transition-colors">
-                <div className="text-[11px] sm:text-[12px] font-mono tracking-widest text-amber-300">{s.n}</div>
+              <div key={s.n} className="rounded-2xl bg-[#080818] border border-white/[0.06] p-5 sm:p-6 hover:border-[#00a8ff]/20 transition-colors">
+                <div className="text-[11px] sm:text-[12px] font-mono tracking-widest text-blue-400">{s.n}</div>
                 <div className="mt-2 text-[15px] sm:text-[16px] font-semibold">{s.title}</div>
                 <div className="mt-1 text-[13px] sm:text-sm text-white/45 leading-relaxed">{s.desc}</div>
               </div>
@@ -386,11 +397,11 @@ export default function LandingPage() {
             </div>
             <div className="mt-3 sm:mt-4 grid grid-cols-2 gap-2 sm:gap-3">
               <div className="rounded-xl overflow-hidden bg-black border border-white/5 aspect-[3/4] relative">
-                <div className="absolute inset-0 bg-gradient-to-br from-amber-500/20 to-pink-500/20" />
+                <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-pink-500/20" />
                 <div className="absolute bottom-2 left-2 text-[10px] sm:text-[11px] px-2 py-1 rounded-full bg-black/60 border border-white/10">Before • Foto</div>
               </div>
               <div className="rounded-xl overflow-hidden bg-black border border-white/5 aspect-[3/4] relative">
-                <div className="absolute inset-0 bg-gradient-to-br from-violet-500/20 to-cyan-500/20" />
+                <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-cyan-500/20" />
                 <div className="absolute inset-0 grid place-items-center">
                   <div className="w-10 h-10 rounded-full bg-white text-black grid place-items-center hover:scale-110 transition-transform cursor-pointer">▶</div>
                 </div>
@@ -399,7 +410,7 @@ export default function LandingPage() {
             </div>
             <div className="mt-2 sm:mt-3 text-[11px] sm:text-xs text-white/40">Model: Wan 2.7 • 6s • 720p • Cost 42 credits</div>
           </div>
-          <div className="rounded-[20px] sm:rounded-[24px] border border-amber-500/20 bg-gradient-to-br from-amber-500/10 to-transparent p-5 sm:p-6 flex flex-col justify-center">
+          <div className="rounded-[20px] sm:rounded-[24px] border border-blue-500/20 bg-gradient-to-br from-blue-500/10 to-transparent p-5 sm:p-6 flex flex-col justify-center">
             <h3 className="text-[18px] sm:text-[22px] font-bold">Untuk creator yang butuh cepat — bukan ribet</h3>
             <p className="mt-2 text-[13px] sm:text-sm text-white/55 leading-relaxed">Template workflow siap pakai, history & gallery terpusat, ZIP download sekali klik. Fokus ke ide, biar sistem urus teknis.</p>
             <ul className="mt-4 sm:mt-5 space-y-2 sm:space-y-2.5 text-[13px] sm:text-sm">
@@ -420,8 +431,8 @@ export default function LandingPage() {
           </div>
           <div className="mt-8 sm:mt-10 grid md:grid-cols-3 gap-4 sm:gap-5">
             {pricing.map((p) => (
-              <div key={p.name} className={`relative rounded-[20px] sm:rounded-[24px] border p-5 sm:p-6 flex flex-col transition-all duration-300 hover:-translate-y-1 ${p.highlight ? 'bg-gradient-to-b from-amber-500/15 to-white/[0.03] border-amber-500/30 shadow-[0_16px_50px_rgba(212,160,23,0.18)] md:scale-[1.02]' : 'bg-white/[0.02] border-white/5 hover:border-white/10'}`}>
-                {p.highlight && <div className="absolute -top-3 left-1/2 -translate-x-1/2 text-[10px] sm:text-[11px] font-bold tracking-widest uppercase px-3 py-1 rounded-full bg-gradient-to-r from-[#d4a017] to-[#ffd700] text-black">Paling Populer</div>}
+              <div key={p.name} className={`relative rounded-[20px] sm:rounded-[24px] border p-5 sm:p-6 flex flex-col transition-all duration-300 hover:-translate-y-1 ${p.highlight ? 'bg-gradient-to-b from-blue-500/15 to-white/[0.03] border-blue-500/30 shadow-[0_16px_50px_rgba(0,168,255,0.18)] md:scale-[1.02]' : 'bg-white/[0.02] border-white/5 hover:border-white/10'}`}>
+                {p.highlight && <div className="absolute -top-3 left-1/2 -translate-x-1/2 text-[10px] sm:text-[11px] font-bold tracking-widest uppercase px-3 py-1 rounded-full bg-gradient-to-r from-[#00a8ff] to-[#00d4ff] text-black">Paling Populer</div>}
                 <div className="text-[13px] sm:text-sm font-semibold">{p.name}</div>
                 <div className="mt-2 text-[28px] sm:text-[32px] font-black tracking-tight">{p.price}</div>
                 <div className="text-[11px] sm:text-xs text-white/45">{p.sub}</div>
@@ -430,7 +441,7 @@ export default function LandingPage() {
                     <li key={f} className="flex items-center gap-2 text-white/70"><span className="w-5 h-5 rounded-full bg-emerald-500/15 border border-emerald-500/20 grid place-items-center text-emerald-400 text-xs shrink-0">✓</span>{f}</li>
                   ))}
                 </ul>
-                <Link to="/register" className={`mt-5 sm:mt-6 w-full text-center px-5 py-3 rounded-xl font-semibold transition-all duration-300 ${p.highlight ? 'bg-gradient-to-r from-[#d4a017] to-[#ffd700] text-black hover:shadow-[0_10px_24px_rgba(212,160,23,0.3)] hover:scale-[1.02]' : 'bg-white text-black hover:bg-white/90 hover:scale-[1.02]'}`}>{p.cta}</Link>
+                <Link to="/register" className={`mt-5 sm:mt-6 w-full text-center px-5 py-3 rounded-xl font-semibold transition-all duration-300 ${p.highlight ? 'bg-gradient-to-r from-[#00a8ff] to-[#00d4ff] text-black hover:shadow-[0_10px_24px_rgba(0,168,255,0.3)] hover:scale-[1.02]' : 'bg-white text-black hover:bg-white/90 hover:scale-[1.02]'}`}>{p.cta}</Link>
               </div>
             ))}
           </div>
@@ -457,8 +468,8 @@ export default function LandingPage() {
                     ? [{ slug: 'unlimited_weekly', ...providerPrices.nexabot.package }]
                     : []
                 ).map((pkg) => (
-                  <div key={pkg.slug} className="rounded-xl border border-amber-500/25 bg-amber-500/[0.07] p-3 sm:p-4">
-                    <div className="text-[12px] sm:text-[13px] font-semibold text-amber-200">Paket {pkg.label}</div>
+                  <div key={pkg.slug} className="rounded-xl border border-blue-500/25 bg-blue-500/[0.07] p-3 sm:p-4">
+                    <div className="text-[12px] sm:text-[13px] font-semibold text-blue-200">Paket {pkg.label}</div>
                     <div className="mt-1 text-[16px] sm:text-[18px] font-black tracking-tight">{rp(pkg.price)}</div>
                     <div className="text-[11px] text-white/40">Generate tanpa batas selama {pkg.days} hari</div>
                   </div>
@@ -477,7 +488,7 @@ export default function LandingPage() {
             </div>
           )}
 
-          <p className="text-center text-[11px] sm:text-xs text-white/30 mt-4">Butuh custom enterprise? <Link to="/register" className="text-amber-300 hover:underline">Chat admin di WhatsApp</Link> — respon &lt; 1 jam.</p>
+          <p className="text-center text-[11px] sm:text-xs text-white/30 mt-4">Butuh custom enterprise? <Link to="/register" className="text-blue-400 hover:underline">Chat admin di WhatsApp</Link> — respon &lt; 1 jam.</p>
         </div>
       </section>
 
@@ -489,7 +500,7 @@ export default function LandingPage() {
             { name: 'Faezya Cell • Agency', text: 'Smart routing hemat credits. Token rotation otomatis, nggak pernah down pas deadline.', stars: 5 },
           ].map((t) => (
             <div key={t.name} className="rounded-2xl border border-white/5 bg-white/[0.02] p-4 sm:p-5 hover:border-white/10 transition-colors">
-              <div className="text-amber-300 text-sm">{'★'.repeat(t.stars)}</div>
+              <div className="text-blue-400 text-sm">{'★'.repeat(t.stars)}</div>
               <p className="mt-2 text-[13px] sm:text-sm leading-relaxed text-white/70">“{t.text}”</p>
               <div className="mt-2 sm:mt-3 text-[11px] sm:text-xs font-medium text-white/50">{t.name}</div>
             </div>
@@ -517,14 +528,14 @@ export default function LandingPage() {
       </section>
 
       <section className="py-12 sm:py-16 px-6">
-        <div className="max-w-[900px] mx-auto rounded-[20px] sm:rounded-[28px] border border-amber-500/20 bg-gradient-to-b from-amber-500/10 via-[#d4a017]/5 to-transparent p-6 sm:p-8 md:p-10 text-center relative overflow-hidden">
-          <div className="absolute inset-0 bg-[radial-gradient(400px_200px_at_50%_0%,rgba(212,160,23,0.15),transparent)]" />
+        <div className="max-w-[900px] mx-auto rounded-[20px] sm:rounded-[28px] border border-blue-500/20 bg-gradient-to-b from-blue-500/10 via-[#00a8ff]/5 to-transparent p-6 sm:p-8 md:p-10 text-center relative overflow-hidden">
+          <div className="absolute inset-0 bg-[radial-gradient(400px_200px_at_50%_0%,rgba(0,168,255,0.15),transparent)]" />
           <div className="relative">
-            <img src="/arkx-logo.svg" alt="ARKX" className="w-12 h-12 sm:w-14 sm:h-14 mx-auto rounded-2xl shadow-[0_8px_24px_rgba(212,160,23,0.3)]" />
+            <img src="/arkx-logo.svg" alt="ARKX" className="w-12 h-12 sm:w-14 sm:h-14 mx-auto rounded-2xl shadow-[0_8px_24px_rgba(0,168,255,0.3)]" />
             <h2 className="mt-4 sm:mt-5 text-[24px] sm:text-[28px] md:text-[36px] font-black tracking-tight">Siap berkreasi hari ini?</h2>
             <p className="mt-2 sm:mt-3 text-[14px] sm:text-[15px] text-white/50 max-w-[560px] mx-auto">Daftar gratis, dapat 5 generate. Tidak perlu kartu kredit. Upgrade kapan saja via QRIS.</p>
             <div className="mt-5 sm:mt-7 flex flex-wrap justify-center gap-3">
-              <Link to="/register" className="px-6 sm:px-8 py-3 sm:py-3.5 rounded-xl bg-gradient-to-r from-[#d4a017] to-[#ffd700] text-black font-semibold hover:shadow-[0_12px_30px_rgba(212,160,23,0.35)] transition-all hover:scale-[1.02] active:scale-[0.98]">Daftar Sekarang — Gratis</Link>
+              <Link to="/register" className="px-6 sm:px-8 py-3 sm:py-3.5 rounded-xl bg-gradient-to-r from-[#00a8ff] to-[#00d4ff] text-black font-semibold hover:shadow-[0_12px_30px_rgba(0,168,255,0.35)] transition-all hover:scale-[1.02] active:scale-[0.98]">Daftar Sekarang — Gratis</Link>
               <Link to="/login" className="px-6 sm:px-8 py-3 sm:py-3.5 rounded-xl border border-white/10 bg-white/[0.04] font-medium hover:bg-white/[0.08] transition-all hover:scale-[1.02]">Login</Link>
             </div>
             <p className="mt-3 text-[11px] sm:text-xs text-white/30">✓ 2,400+ creator bergabung • ✓ Support WA 1 jam</p>

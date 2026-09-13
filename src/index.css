@@ -1,23 +1,23 @@
 @import "tailwindcss";
 
 @theme {
-  --color-background: #0a0a0a;
+  --color-background: #050510;
   --color-foreground: #f5f5f5;
-  --color-card: #141414;
+  --color-card: #0c0c1a;
   --color-card-foreground: #f5f5f5;
-  --color-primary: #d4a017;
-  --color-primary-foreground: #0a0a0a;
-  --color-secondary: #1a1a1a;
+  --color-primary: #00a8ff;
+  --color-primary-foreground: #050510;
+  --color-secondary: #0c0c1a;
   --color-secondary-foreground: #f5f5f5;
-  --color-muted: #1a1a1a;
+  --color-muted: #0c0c1a;
   --color-muted-foreground: #a0a0a0;
-  --color-accent: #1a1a1a;
+  --color-accent: #0c0c1a;
   --color-accent-foreground: #f5f5f5;
   --color-destructive: #dc2626;
   --color-destructive-foreground: #ffffff;
-  --color-border: #2a2a2a;
-  --color-input: #2a2a2a;
-  --color-ring: #d4a017;
+  --color-border: #1a1a2e;
+  --color-input: #1a1a2e;
+  --color-ring: #00a8ff;
   --radius-sm: 0.25rem;
   --radius-md: 0.375rem;
   --radius-lg: 0.5rem;
@@ -45,7 +45,7 @@ body {
   --color-foreground: #1a1a1a;
   --color-card: #ffffff;
   --color-card-foreground: #1a1a1a;
-  --color-primary: #b8860b;
+  --color-primary: #0080cc;
   --color-primary-foreground: #ffffff;
   --color-secondary: #f0f0f0;
   --color-secondary-foreground: #1a1a1a;
@@ -71,15 +71,15 @@ body {
 }
 
 .light .neumorph:hover {
-  border-color: rgba(212, 160, 23, 0.3);
+  border-color: rgba(0, 168, 255, 0.3);
   box-shadow:
     inset 0 1px 1px rgba(0, 0, 0, 0.03),
     0 4px 20px rgba(0, 0, 0, 0.08),
-    0 0 50px rgba(212, 160, 23, 0.06);
+    0 0 50px rgba(0, 168, 255, 0.06);
 }
 
 .light .gold-text {
-  background: linear-gradient(135deg, #b8860b, #d4a017, #8b6914);
+  background: linear-gradient(135deg, #0080cc, #00a8ff, #0066aa);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -93,7 +93,7 @@ body {
 }
 
 .light .glow-gold {
-  box-shadow: 0 0 20px rgba(212, 160, 23, 0.15);
+  box-shadow: 0 0 20px rgba(0, 168, 255, 0.15);
 }
 
 .light ::-webkit-scrollbar-track {
@@ -109,7 +109,7 @@ body {
 }
 
 .gold-text {
-  background: linear-gradient(135deg, #d4a017, #ffd700, #b8860b);
+  background: linear-gradient(135deg, #00a8ff, #00d4ff, #0080cc);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -123,11 +123,11 @@ body {
 }
 
 .glow-gold {
-  box-shadow: 0 0 20px rgba(212, 160, 23, 0.3);
+  box-shadow: 0 0 20px rgba(0, 168, 255, 0.3);
 }
 
 .gold-gradient {
-  background: linear-gradient(135deg, #d4a017, #ffd700, #b8860b);
+  background: linear-gradient(135deg, #00a8ff, #00d4ff, #0080cc);
 }
 
 .silver-gradient {
@@ -140,7 +140,7 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #1a1a1a;
+  background: #0a0a14;
 }
 
 ::-webkit-scrollbar-thumb {
@@ -158,21 +158,21 @@ body {
 }
 
 .neumorph {
-  background: #141414;
-  border: 1px solid #2a2a2a;
+  background: #0c0c1a;
+  border: 1px solid #1a1a2e;
   border-radius: 0.75rem;
   box-shadow:
     inset 0 1px 1px rgba(255, 255, 255, 0.03),
     0 4px 20px rgba(0, 0, 0, 0.4),
-    0 0 40px rgba(212, 160, 23, 0.05);
+    0 0 40px rgba(0, 168, 255, 0.05);
 }
 
 .neumorph:hover {
-  border-color: rgba(212, 160, 23, 0.2);
+  border-color: rgba(0, 168, 255, 0.2);
   box-shadow:
     inset 0 1px 1px rgba(255, 255, 255, 0.03),
     0 4px 20px rgba(0, 0, 0, 0.4),
-    0 0 50px rgba(212, 160, 23, 0.08);
+    0 0 50px rgba(0, 168, 255, 0.08);
 }
 
 /* Animations */
@@ -187,8 +187,8 @@ body {
 }
 
 @keyframes pulse-gold {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(212, 160, 23, 0.4); }
-  50% { box-shadow: 0 0 0 8px rgba(212, 160, 23, 0); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0, 168, 255, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(0, 168, 255, 0); }
 }
 
 .animate-fade-in {

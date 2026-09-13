@@ -1,23 +1,36 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
   <defs>
-    <linearGradient id="orangeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#ff6a00"/>
-      <stop offset="50%" stop-color="#ff8c00"/>
-      <stop offset="100%" stop-color="#ffb800"/>
+    <linearGradient id="blueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00a8ff"/>
+      <stop offset="50%" stop-color="#00d4ff"/>
+      <stop offset="100%" stop-color="#00f0ff"/>
+    </linearGradient>
+    <linearGradient id="metalGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#c0c0c0"/>
+      <stop offset="30%" stop-color="#e8e8e8"/>
+      <stop offset="60%" stop-color="#a0a0a0"/>
+      <stop offset="100%" stop-color="#808080"/>
     </linearGradient>
     <linearGradient id="darkBg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#111111"/>
-      <stop offset="100%" stop-color="#1a1a1a"/>
+      <stop offset="0%" stop-color="#050510"/>
+      <stop offset="100%" stop-color="#0c0c1a"/>
     </linearGradient>
     <filter id="glow">
-      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feGaussianBlur stdDeviation="10" result="blur"/>
       <feMerge>
         <feMergeNode in="blur"/>
         <feMergeNode in="SourceGraphic"/>
       </feMerge>
     </filter>
     <filter id="softGlow">
-      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="innerGlow">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
       <feMerge>
         <feMergeNode in="blur"/>
         <feMergeNode in="SourceGraphic"/>
@@ -28,35 +41,59 @@
   <!-- Background rounded square -->
   <rect width="512" height="512" rx="96" fill="url(#darkBg)"/>
 
-  <!-- Subtle inner shadow -->
-  <rect x="4" y="4" width="504" height="504" rx="94" fill="none" stroke="white" stroke-width="0.5" opacity="0.05"/>
+  <!-- Subtle border -->
+  <rect x="2" y="2" width="508" height="508" rx="95" fill="none" stroke="#00a8ff" stroke-width="0.8" opacity="0.15"/>
 
-  <!-- Play button - large triangle -->
-  <path d="M170 130 L170 370 L380 250 Z" 
-        fill="url(#orangeGrad)" 
-        filter="url(#glow)"
+  <!-- Outer glow ring -->
+  <circle cx="256" cy="240" r="140" fill="none" stroke="#00a8ff" stroke-width="1.5" opacity="0.12" filter="url(#glow)"/>
+
+  <!-- Geometric shuriken shape - 4 blades -->
+  <!-- Top blade -->
+  <path d="M256 100 L286 190 L256 170 L226 190 Z" 
+        fill="url(#metalGrad)" 
+        opacity="0.95"/>
+  <!-- Right blade -->
+  <path d="M400 240 L310 270 L330 240 L310 210 Z" 
+        fill="url(#metalGrad)" 
+        opacity="0.95"/>
+  <!-- Bottom blade -->
+  <path d="M256 380 L226 290 L256 310 L286 290 Z" 
+        fill="url(#metalGrad)" 
+        opacity="0.95"/>
+  <!-- Left blade -->
+  <path d="M112 240 L202 210 L182 240 L202 270 Z" 
+        fill="url(#metalGrad)" 
         opacity="0.95"/>
 
-  <!-- Play button highlight -->
-  <path d="M170 130 L170 250 L275 190 Z" 
-        fill="white" 
-        opacity="0.12"/>
+  <!-- Center diamond connector -->
+  <path d="M256 195 L295 240 L256 285 L217 240 Z" 
+        fill="url(#metalGrad)" 
+        opacity="0.98"/>
 
-  <!-- Node connection line -->
-  <line x1="380" y1="250" x2="400" y2="310" 
-        stroke="url(#orangeGrad)" 
-        stroke-width="8" 
-        stroke-linecap="round"
-        opacity="0.9"/>
+  <!-- Blue neon outline on geometric shape -->
+  <path d="M256 100 L286 190 L256 170 L226 190 Z" 
+        fill="none" stroke="#00a8ff" stroke-width="1.5" opacity="0.6" filter="url(#softGlow)"/>
+  <path d="M400 240 L310 270 L330 240 L310 210 Z" 
+        fill="none" stroke="#00a8ff" stroke-width="1.5" opacity="0.6" filter="url(#softGlow)"/>
+  <path d="M256 380 L226 290 L256 310 L286 290 Z" 
+        fill="none" stroke="#00a8ff" stroke-width="1.5" opacity="0.6" filter="url(#softGlow)"/>
+  <path d="M112 240 L202 210 L182 240 L202 270 Z" 
+        fill="none" stroke="#00a8ff" stroke-width="1.5" opacity="0.6" filter="url(#softGlow)"/>
 
-  <!-- Node dot -->
-  <circle cx="400" cy="310" r="22" 
-          fill="url(#orangeGrad)" 
-          filter="url(#softGlow)"
-          opacity="0.95"/>
+  <!-- Center blue glow circle -->
+  <circle cx="256" cy="240" r="28" fill="#00a8ff" filter="url(#glow)" opacity="0.9"/>
+  <circle cx="256" cy="240" r="20" fill="#00d4ff" opacity="0.95"/>
+  <circle cx="256" cy="240" r="10" fill="white" opacity="0.5"/>
 
-  <!-- Node dot inner highlight -->
-  <circle cx="395" cy="305" r="8" 
-          fill="white" 
-          opacity="0.25"/>
+  <!-- 4 corner node dots with blue glow -->
+  <circle cx="256" cy="190" r="10" fill="#00a8ff" filter="url(#innerGlow)" opacity="0.9"/>
+  <circle cx="310" cy="240" r="10" fill="#00a8ff" filter="url(#innerGlow)" opacity="0.9"/>
+  <circle cx="256" cy="290" r="10" fill="#00a8ff" filter="url(#innerGlow)" opacity="0.9"/>
+  <circle cx="202" cy="240" r="10" fill="#00a8ff" filter="url(#innerGlow)" opacity="0.9"/>
+
+  <!-- Connection lines between nodes -->
+  <line x1="256" y1="190" x2="310" y2="240" stroke="#00a8ff" stroke-width="3" opacity="0.5" filter="url(#softGlow)"/>
+  <line x1="310" y1="240" x2="256" y2="290" stroke="#00a8ff" stroke-width="3" opacity="0.5" filter="url(#softGlow)"/>
+  <line x1="256" y1="290" x2="202" y2="240" stroke="#00a8ff" stroke-width="3" opacity="0.5" filter="url(#softGlow)"/>
+  <line x1="202" y1="240" x2="256" y2="190" stroke="#00a8ff" stroke-width="3" opacity="0.5" filter="url(#softGlow)"/>
 </svg>

@@ -1,13 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="800" height="200" viewBox="0 0 800 200">
   <defs>
-    <linearGradient id="orangeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#ff6a00"/>
-      <stop offset="40%" stop-color="#ff8c00"/>
-      <stop offset="100%" stop-color="#ffb800"/>
+    <linearGradient id="blueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00a8ff"/>
+      <stop offset="40%" stop-color="#00d4ff"/>
+      <stop offset="100%" stop-color="#00f0ff"/>
     </linearGradient>
-    <linearGradient id="orangeGrad2" x1="100%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#ffb800"/>
-      <stop offset="100%" stop-color="#ff6a00"/>
+    <linearGradient id="metalGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e8e8e8"/>
+      <stop offset="50%" stop-color="#c0c0c0"/>
+      <stop offset="100%" stop-color="#a0a0a0"/>
     </linearGradient>
     <filter id="glow">
       <feGaussianBlur stdDeviation="3" result="blur"/>
@@ -18,35 +19,31 @@
     </filter>
   </defs>
 
-  <!-- Triangle (A shape) -->
-  <path d="M100 20 L170 170 L30 170 Z" 
-        fill="none" 
-        stroke="url(#orangeGrad)" 
-        stroke-width="14" 
-        stroke-linejoin="round"
-        stroke-linecap="round"
-        filter="url(#glow)"/>
+  <!-- Top blade -->
+  <path d="M100 20 L130 95 L100 80 L70 95 Z" fill="url(#metalGrad)" opacity="0.95"/>
+  <!-- Right blade -->
+  <path d="M170 100 L95 130 L105 100 L95 70 Z" fill="url(#metalGrad)" opacity="0.95"/>
+  <!-- Bottom blade -->
+  <path d="M100 180 L70 105 L100 115 L130 105 Z" fill="url(#metalGrad)" opacity="0.95"/>
+  <!-- Left blade -->
+  <path d="M30 100 L105 70 L95 100 L105 130 Z" fill="url(#metalGrad)" opacity="0.95"/>
 
-  <!-- X cross lines -->
-  <line x1="55" y1="90" x2="145" y2="140" 
-        stroke="url(#orangeGrad)" 
-        stroke-width="14" 
-        stroke-linecap="round"
-        filter="url(#glow)"/>
-  <line x1="145" y1="90" x2="55" y2="140" 
-        stroke="url(#orangeGrad2)" 
-        stroke-width="14" 
-        stroke-linecap="round"
-        filter="url(#glow)"/>
+  <!-- Center diamond -->
+  <path d="M100 70 L130 100 L100 130 L70 100 Z" fill="url(#metalGrad)" opacity="0.98"/>
 
-  <!-- Node dots -->
-  <circle cx="55" cy="90" r="8" fill="url(#orangeGrad)" filter="url(#glow)"/>
-  <circle cx="145" cy="90" r="8" fill="url(#orangeGrad)" filter="url(#glow)"/>
-  <circle cx="55" cy="140" r="8" fill="url(#orangeGrad2)" filter="url(#glow)"/>
-  <circle cx="145" cy="140" r="8" fill="url(#orangeGrad2)" filter="url(#glow)"/>
+  <!-- Blue glow outlines -->
+  <path d="M100 20 L130 95 L100 80 L70 95 Z" fill="none" stroke="#00a8ff" stroke-width="1.5" opacity="0.6" filter="url(#glow)"/>
+  <path d="M170 100 L95 130 L105 100 L95 70 Z" fill="none" stroke="#00a8ff" stroke-width="1.5" opacity="0.6" filter="url(#glow)"/>
+  <path d="M100 180 L70 105 L100 115 L130 105 Z" fill="none" stroke="#00a8ff" stroke-width="1.5" opacity="0.6" filter="url(#glow)"/>
+  <path d="M30 100 L105 70 L95 100 L105 130 Z" fill="none" stroke="#00a8ff" stroke-width="1.5" opacity="0.6" filter="url(#glow)"/>
+
+  <!-- Center glow -->
+  <circle cx="100" cy="100" r="14" fill="#00a8ff" filter="url(#glow)" opacity="0.9"/>
+  <circle cx="100" cy="100" r="10" fill="#00d4ff" opacity="0.95"/>
+  <circle cx="100" cy="100" r="5" fill="white" opacity="0.5"/>
 
   <!-- Text: ARKXMotion Studio -->
-  <text x="210" y="128" 
+  <text x="190" y="128" 
         font-family="Inter, system-ui, -apple-system, sans-serif" 
         font-size="64" 
         font-weight="700" 

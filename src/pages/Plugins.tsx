@@ -613,9 +613,9 @@ export default function PluginsPage() {
               </li>
             ))}
           </ol>
-          <div className="flex items-start gap-2 mt-3 p-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
-            <AlertTriangle className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
-            <p className="text-[11px] text-amber-400">
+          <div className="flex items-start gap-2 mt-3 p-2 rounded-lg bg-blue-500/10 border border-blue-500/20">
+            <AlertTriangle className="h-4 w-4 text-blue-400 mt-0.5 shrink-0" />
+            <p className="text-[11px] text-blue-400">
               <strong>Tip:</strong> Setelah install, buka website provider dan login. Extension akan otomatis grab token.
               Token tersimpan di Chrome storage — tidak perlu copy-paste manual lagi.
             </p>

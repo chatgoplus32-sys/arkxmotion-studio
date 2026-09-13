@@ -383,13 +383,13 @@ export default function UpscalerPage() {
                 <MaintenanceBanner providerId={provider === 'topaz' ? 'weavy' : provider} />
 
                 {provider === 'topaz' && !hasWeavyKey && (
-                  <div className="flex items-center gap-2 text-xs text-amber-400 bg-amber-500/10 rounded-lg p-2 border border-amber-500/20">
+                  <div className="flex items-center gap-2 text-xs text-blue-400 bg-blue-500/10 rounded-lg p-2 border border-blue-500/20">
                     <Key className="h-4 w-4" />
                     <span>Topaz via Weavy butuh token. Tambahkan di <b>Kelola Token</b> → provider <b>Weavy</b>.</span>
                   </div>
                 )}
                 {provider === 'magnific' && !magnificKey && (
-                  <div className="flex items-center gap-2 text-xs text-amber-400 bg-amber-500/10 rounded-lg p-2 border border-amber-500/20">
+                  <div className="flex items-center gap-2 text-xs text-blue-400 bg-blue-500/10 rounded-lg p-2 border border-blue-500/20">
                     <Key className="h-4 w-4" />
                     <span>Magnific butuh API key. Tambahkan di <b>Kelola Token</b> → provider <b>Magnific</b>.</span>
                   </div>
@@ -584,7 +584,7 @@ export default function UpscalerPage() {
             ) : logs.map((log, i) => (
               <div key={i} className={`break-all min-w-0 ${
                 log.level === 'error' ? 'text-red-400' :
-                log.level === 'warn' ? 'text-amber-400' :
+                log.level === 'warn' ? 'text-blue-400' :
                 log.level === 'success' ? 'text-emerald-400' :
                 'text-muted-foreground'
               }`}>

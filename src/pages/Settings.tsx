@@ -338,19 +338,19 @@ export default function SettingsPage() {
           ) : (
             <div className="space-y-2.5">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-xs font-mono px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400">
-                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" /> {activeTasks.length} LIVE
+                <div className="flex items-center gap-2 text-xs font-mono px-2.5 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400">
+                  <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" /> {activeTasks.length} LIVE
                 </div>
                 <span className="text-[11px] text-muted-foreground">auto-refresh 3s • live timer 1s</span>
               </div>
               {activeTasks.map((task) => (
                 <div
                   key={task.taskId}
-                  className="group flex items-center justify-between gap-3 p-3.5 rounded-2xl border border-white/5 bg-gradient-to-br from-white/[0.04] to-white/[0.01] hover:border-amber-500/20 hover:from-amber-500/5 hover:to-transparent hover:-translate-y-0.5 transition-all"
+                  className="group flex items-center justify-between gap-3 p-3.5 rounded-2xl border border-white/5 bg-gradient-to-br from-white/[0.04] to-white/[0.01] hover:border-blue-500/20 hover:from-blue-500/5 hover:to-transparent hover:-translate-y-0.5 transition-all"
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="h-7 w-7 rounded-xl bg-amber-500/15 border border-amber-500/20 grid place-items-center text-amber-400"><Loader2 className="h-3.5 w-3.5 animate-spin" /></span>
+                      <span className="h-7 w-7 rounded-xl bg-blue-500/15 border border-blue-500/20 grid place-items-center text-blue-400"><Loader2 className="h-3.5 w-3.5 animate-spin" /></span>
                       <span className="text-sm font-semibold truncate">{task.model}</span>
                       <span className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-white/50">{pageIcon(task.page)} {task.page}</span>
                       <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-white/40">

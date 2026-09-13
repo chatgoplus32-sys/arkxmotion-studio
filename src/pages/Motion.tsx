@@ -2119,7 +2119,7 @@ export default function MotionPage() {
                       log.level === 'error'
                         ? 'text-red-400'
                         : log.level === 'warn'
-                        ? 'text-amber-400'
+                        ? 'text-blue-400'
                         : log.level === 'success'
                         ? 'text-emerald-400'
                         : 'text-muted-foreground'
@@ -2305,7 +2305,7 @@ function SlotCard({
   const statusColor = slot.status === 'done' ? 'text-emerald-400 border-emerald-500/40'
     : slot.status === 'error' ? 'text-red-400 border-red-500/40'
     : slot.status === 'idle' ? 'text-muted-foreground border-border'
-    : 'text-amber-400 border-amber-500/40'
+    : 'text-blue-400 border-blue-500/40'
 
   return (
     <div className="rounded-2xl border border-border/70 bg-card/30 p-4">

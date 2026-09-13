@@ -21,7 +21,7 @@ interface Notification {
 
 const TYPE_META: Record<string, { icon: React.ReactNode; color: string; bg: string }> = {
   info: { icon: <Info className="h-4 w-4" />, color: 'text-blue-400', bg: 'bg-blue-400/10' },
-  warning: { icon: <AlertTriangle className="h-4 w-4" />, color: 'text-amber-400', bg: 'bg-amber-400/10' },
+  warning: { icon: <AlertTriangle className="h-4 w-4" />, color: 'text-blue-400', bg: 'bg-blue-400/10' },
   success: { icon: <CheckCircle className="h-4 w-4" />, color: 'text-emerald-400', bg: 'bg-emerald-400/10' },
   error: { icon: <XCircle className="h-4 w-4" />, color: 'text-red-400', bg: 'bg-red-400/10' },
   announcement: { icon: <Megaphone className="h-4 w-4" />, color: 'text-purple-400', bg: 'bg-purple-400/10' },
@@ -155,13 +155,13 @@ export default function AdminNotificationsPage() {
             </div>
           </div>
         </div>
-        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 animate-fade-in" style={{ animationDelay: '50ms' }}>
+        <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4 animate-fade-in" style={{ animationDelay: '50ms' }}>
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-amber-500/20 flex items-center justify-center">
-              <Bell className="h-5 w-5 text-amber-400" />
+            <div className="h-10 w-10 rounded-xl bg-blue-500/20 flex items-center justify-center">
+              <Bell className="h-5 w-5 text-blue-400" />
             </div>
             <div>
-              <div className="text-2xl font-bold text-amber-400">{unreadCount}</div>
+              <div className="text-2xl font-bold text-blue-400">{unreadCount}</div>
               <div className="text-[11px] text-muted-foreground">Belum Dibaca</div>
             </div>
           </div>
