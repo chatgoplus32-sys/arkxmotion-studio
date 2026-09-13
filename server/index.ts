@@ -15,6 +15,11 @@ import syncTokensRoutes from './routes/syncTokens.js'
 import nexabotRoutes from './routes/nexabot.js'
 import nexabotWalletRoutes from './routes/nexabotWallet.js'
 import publicPricingRoutes from './routes/publicPricing.js'
+import publicCreatepulseRoutes from './routes/publicCreatepulse.js'
+import publicMaintenanceRoutes from './routes/publicMaintenance.js'
+import publicUploadCatboxRoutes from './routes/publicUploadCatbox.js'
+import publicLeonardoRoutes from './routes/publicLeonardo.js'
+import publicMagnificRoutes from './routes/publicMagnific.js'
 import { backupOnStartup } from './backup.js'
 
 dotenv.config()
@@ -23,7 +28,7 @@ const app = express()
 const PORT = Number(process.env.PORT) || 6000
 
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3000'],
+  origin: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3000', 'https://arkxmotion-studio.win'],
   credentials: true
 }))
 
@@ -42,6 +47,12 @@ app.use('/api/sync-tokens', syncTokensRoutes)
 app.use('/api/public/nexabot', nexabotRoutes)
 // Harga efektif provider (publik, read-only) — dipakai halaman landing & cek cepat.
 app.use('/api/public/pricing', publicPricingRoutes)
+// Public API proxies (production needs these since Vite dev middleware doesn't run)
+app.use('/api/public/createpulse', publicCreatepulseRoutes)
+app.use('/api/public/maintenance', publicMaintenanceRoutes)
+app.use('/api/public/upload-catbox', publicUploadCatboxRoutes)
+app.use('/api/public/leonardo', publicLeonardoRoutes)
+app.use('/api/public/magnific', publicMagnificRoutes)
 // Wallet NexaBot (saldo Rp prepaid) — beda dari /api/public/nexabot yang
 // meneruskan generate ke upstream nexabot.id.
 app.use('/api/nexabot', nexabotWalletRoutes)
