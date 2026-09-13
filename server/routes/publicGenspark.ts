@@ -3,7 +3,7 @@ import { Router, Request, Response } from 'express'
 const router = Router()
 const GENSPARK_BASE = 'https://www.genspark.ai'
 
-router.all('*', async (req: Request, res: Response) => {
+router.all('/{*path}', async (req: Request, res: Response) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Api-Key, Authorization, Cookie')

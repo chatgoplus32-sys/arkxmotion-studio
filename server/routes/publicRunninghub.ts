@@ -17,17 +17,8 @@ router.all('/', async (req: Request, res: Response) => {
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'Method not allowed' })
 
-  let body: any = {}
-  try {
-    const chunks: Uint8Array[] = []
-    for await (const chunk of req) chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk as unknown as Uint8Array)
-    const rawBody = Buffer.concat(chunks).toString('utf-8')
-    body = rawBody ? JSON.parse(rawBody) : {}
-  } catch {
-    return res.status(200).json({ ok: false, error: 'Invalid JSON body' })
-  }
-
-  const { action, apiKey, ...params } = body || {}
+  const body = req.body || {}
+  const { action, apiKey, ...params } = body
 
   if (!action) return res.status(200).json({ ok: false, error: 'Missing action' })
   if (!apiKey) return res.status(200).json({ ok: false, error: 'Missing apiKey' })
