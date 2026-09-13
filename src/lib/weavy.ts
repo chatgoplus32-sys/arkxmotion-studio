@@ -233,7 +233,38 @@ export function resolveWeavyAssetUrl(asset: any, type: 'image' | 'video' = 'imag
 }
 
 export async function fetchWeavyCreditsClient(accessToken: string): Promise<number | null> {
-  // Always use proxy to avoid CORS issues on production VPS
+  const headers = {
+    Authorization: `Bearer ${accessToken}`,
+    'Accept': 'application/json, text/plain, */*',
+  }
+
+  const endpoints = [
+    'https://api.weavy.ai/api/v1/workspaces',
+    'https://api.weavy.ai/api/v1/credits',
+    'https://api.weavy.ai/api/v1/user/credits',
+    'https://api.weavy.ai/api/v1/user/balance',
+  ]
+
+  for (const url of endpoints) {
+    try {
+      const r = await fetch(url, { headers, signal: AbortSignal.timeout(10000) })
+      if (!r.ok) continue
+      const data = await r.json().catch(() => null)
+      if (!data) continue
+
+      const ws = Array.isArray(data) ? data[0] : (data.workspaces?.[0] ?? data)
+      const credits = ws?.credits ?? data.credits ?? data.balance ?? data.totalCredits ??
+        data.creditsRemaining ?? data.quota ?? data.usage?.credits ?? data.plan?.credits ??
+        data.data?.credits ?? data.user?.credits ?? null
+
+      console.log(`[weavy] direct ${url.split('ai')[1]} → credits=${credits}`)
+      if (typeof credits === 'number') return credits
+    } catch (e: any) {
+      console.log(`[weavy] direct ${url.split('ai')[1]} → ${e.message}`)
+    }
+  }
+
+  // Fallback: server proxy (may be Cloudflare blocked)
   try {
     const r = await fetch('/api/public/weavy?action=balance', {
       method: 'POST',
@@ -244,10 +275,9 @@ export async function fetchWeavyCreditsClient(accessToken: string): Promise<numb
       const d = await r.json().catch(() => null)
       console.log('[weavy] proxy balance response:', JSON.stringify(d).slice(0, 300))
       if (d?.ok && d?.data?.credits != null && typeof d.data.credits === 'number') return d.data.credits
-      // Proxy returned but credits null — still valid, just no balance info
       if (d?.ok) return null
     }
-  } catch (e) { console.warn('[weavy] Failed to fetch credits via proxy:', e) }
+  } catch (e) { console.warn('[weavy] proxy fallback failed:', e) }
 
   return null
 }

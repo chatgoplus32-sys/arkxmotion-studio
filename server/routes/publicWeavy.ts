@@ -68,40 +68,50 @@ async function resolveAccessToken(token: string): Promise<{ accessToken: string;
 }
 
 async function fetchWeavyCredits(accessToken: string): Promise<number | null> {
-  const headers = {
+  const headers: Record<string, string> = {
     Authorization: `Bearer ${accessToken}`,
+    'Accept': 'application/json, text/plain, */*',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
+    'Origin': 'https://app.weavy.ai',
+    'Referer': 'https://app.weavy.ai/',
+    'Sec-Ch-Ua': '"Chromium";v="136", "Google Chrome";v="136", "Not.A/Brand";v="99"',
+    'Sec-Ch-Ua-Mobile': '?0',
+    'Sec-Ch-Ua-Platform': '"Windows"',
+    'Sec-Fetch-Dest': 'empty',
+    'Sec-Fetch-Mode': 'cors',
+    'Sec-Fetch-Site': 'same-site',
   }
 
-  // Match aacs.web.id: try 4 endpoints, parse response exactly like their client
   const endpoints = [
-    `${WEAVY_API}/v1/workspaces`,
-    `${WEAVY_API}/v1/credits`,
-    `${WEAVY_API}/v1/user/credits`,
-    `${WEAVY_API}/v1/user/balance`,
-  ]
+    ['workspaces', `${WEAVY_API}/v1/workspaces`],
+    ['credits', `${WEAVY_API}/v1/credits`],
+    ['user-credits', `${WEAVY_API}/v1/user/credits`],
+    ['user-balance', `${WEAVY_API}/v1/user/balance`],
+  ] as const
 
-  for (const url of endpoints) {
+  for (const [name, url] of endpoints) {
     try {
       const r = await fetch(url, { headers, signal: AbortSignal.timeout(10000) })
+      console.log(`[weavy-proxy] /${name} → ${r.status}`)
       if (!r.ok) continue
       const data = await r.json().catch(() => null)
       if (!data) continue
 
-      // Exact same parsing as aacs.web.id reference implementation
       const ws = Array.isArray(data) ? data[0] : (data.workspaces?.[0] ?? data)
       const credits = ws?.credits ?? data.credits ?? data.balance ?? data.totalCredits ??
         data.creditsRemaining ?? data.quota ?? data.usage?.credits ?? data.plan?.credits ??
         data.data?.credits ?? data.user?.credits ?? null
 
-      console.log(`[weavy-proxy] ${url.split('/api')[1]} → credits=${credits}`)
+      console.log(`[weavy-proxy] /${name} → credits=${credits}`)
 
       if (typeof credits === 'number') return credits
     } catch (e: any) {
-      console.log(`[weavy-proxy] ${url.split('/api')[1]} error:`, e.message)
+      console.log(`[weavy-proxy] /${name} error:`, e.message)
     }
   }
 
-  console.log(`[weavy-proxy] all 4 credit endpoints returned null`)
+  console.log(`[weavy-proxy] all 4 endpoints returned null or blocked`)
   return null
 }
 
