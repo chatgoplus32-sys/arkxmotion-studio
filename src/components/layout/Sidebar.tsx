@@ -31,8 +31,6 @@ import {
   Route,
   ShoppingBag,
   Puzzle,
-  Scissors,
-  Brain,
 } from 'lucide-react'
 
 interface NavItem {
@@ -61,8 +59,6 @@ const generateNav: NavItem[] = [
 const toolsNavBase: NavItem[] = [
   { label: 'Providers', href: '/providers', icon: <Zap className="h-4 w-4" /> },
   { label: 'Routing Provider', href: '/manage/routing', icon: <Route className="h-4 w-4" /> },
-  { label: 'Clip Genius', href: '/tools/clip-genius', icon: <Scissors className="h-4 w-4" /> },
-  { label: 'Second Brain', href: '/tools/second-brain', icon: <Brain className="h-4 w-4" /> },
   { label: 'Top Up CreatePulse', href: '/topup/createpulse', icon: <Wallet className="h-4 w-4" /> },
   { label: 'Top Up NexaBot', href: '/topup/nexabot', icon: <Wallet className="h-4 w-4" /> },
   { label: 'Settings', href: '/settings', icon: <Settings className="h-4 w-4" /> },
