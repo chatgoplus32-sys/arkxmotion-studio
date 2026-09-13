@@ -232,60 +232,52 @@ export function resolveWeavyAssetUrl(asset: any, type: 'image' | 'video' = 'imag
   throw Error('Weavy: cannot resolve asset URL')
 }
 
-export async function fetchWeavyCreditsClient(accessToken: string): Promise<number | null> {
-  // Match aacs.web.id flow:
-  // 1. Try 4 proxy endpoints via Vercel serverless
-  // 2. Fallback: POST /api/public/weavy-credits (server-side)
-  const VERCEL = 'https://arkxmotion-studio.vercel.app'
-  const proxyEndpoints = [
-    `${VERCEL}/api/public/weavy?path=/v1/workspaces`,
-    `${VERCEL}/api/public/weavy?path=/v1/credits`,
-    `${VERCEL}/api/public/weavy?path=/v1/user/credits`,
-    `${VERCEL}/api/public/weavy?path=/v1/user/balance`,
+const WEAVY_API = '/api/public/weavy-proxy?path='
+
+// ── fetchWeavyCredits: exact copy of aacs.web.id ──
+const WEAVY_PROXY_BASE = '/api/public/weavy-proxy?path='
+
+async function fetchWeavyCreditsDirect(accessToken: string): Promise<number | null> {
+  const endpoints = [
+    `${WEAVY_PROXY_BASE}/v1/workspaces`,
+    `${WEAVY_PROXY_BASE}/v1/credits`,
+    `${WEAVY_PROXY_BASE}/v1/user/credits`,
+    `${WEAVY_PROXY_BASE}/v1/user/balance`,
   ]
-
-  const headers = {
-    Authorization: `Bearer ${accessToken}`,
-    'Accept': 'application/json, text/plain, */*',
-  }
-
-  // Step 1: Try proxy endpoints
-  for (const url of proxyEndpoints) {
+  for (const url of endpoints) {
     try {
-      const r = await fetch(url, { headers, signal: AbortSignal.timeout(10000) })
+      const r = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } })
       if (!r.ok) continue
-      const data = await r.json().catch(() => null)
-      if (!data) continue
-
-      const ws = Array.isArray(data) ? data[0] : (data.workspaces?.[0] ?? data)
+      const data = await r.json()
+      const ws = (Array.isArray(data) ? data[0] : data.workspaces?.[0] ?? data)
       const credits = ws?.credits ?? data.credits ?? data.balance ?? data.totalCredits ??
         data.creditsRemaining ?? data.quota ?? data.usage?.credits ?? data.plan?.credits ??
         data.data?.credits ?? data.user?.credits ?? null
-
-      console.log(`[weavy] proxy ${url.split('path=')[1]} → credits=${credits}`)
       if (typeof credits === 'number') return credits
-    } catch (e: any) {
-      console.log(`[weavy] proxy ${url.split('path=')[1]} → ${e.message}`)
-    }
+    } catch {}
   }
+  return null
+}
 
-  // Step 2: Fallback to POST /api/public/weavy-credits (like aacs.web.id)
+// ── fetchWeavyCreditsClient: main entry (matches aacs.web.id flow exactly) ──
+export async function fetchWeavyCreditsClient(accessToken: string): Promise<number | null> {
+  // Step 1: Try 4 proxy endpoints (server-side passthrough via Vercel)
+  const fromProxy = await fetchWeavyCreditsDirect(accessToken)
+  if (fromProxy !== null) return fromProxy
+
+  // Step 2: Fallback POST /api/public/weavy-credits (server-side with raw Weavy API)
   try {
-    const r = await fetch(`${VERCEL}/api/public/weavy-credits`, {
+    const r = await fetch('/api/public/weavy-credits', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ accessToken }),
-      signal: AbortSignal.timeout(15000),
     })
     if (r.ok) {
-      const d = await r.json().catch(() => null)
-      console.log('[weavy] POST /weavy-credits →', JSON.stringify(d).slice(0, 2000))
-      if (d?._raw) console.log('[weavy] raw API responses:', JSON.stringify(d._raw).slice(0, 3000))
+      const d = await r.json()
+      console.log('[weavy] POST /weavy-credits →', JSON.stringify(d).slice(0, 500))
       if (typeof d?.credits === 'number') return d.credits
     }
-  } catch (e: any) {
-    console.log('[weavy] POST /weavy-credits error:', e.message)
-  }
+  } catch {}
 
   return null
 }

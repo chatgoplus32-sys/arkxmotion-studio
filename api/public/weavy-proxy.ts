@@ -1,0 +1,41 @@
+import type { VercelRequest, VercelResponse } from '@vercel/node'
+
+const WEAVY_API = 'https://api.weavy.ai/api'
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With')
+
+  if (req.method === 'OPTIONS') return res.status(200).end()
+
+  const path = req.query.path as string | undefined
+  if (!path) return res.status(400).json({ error: 'Missing ?path= query param' })
+
+  const token = req.headers.authorization?.replace('Bearer ', '') || ''
+  if (!token) return res.status(401).json({ error: 'Missing Authorization header' })
+
+  try {
+    const url = `${WEAVY_API}${path}`
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/json, text/plain, */*',
+      'Content-Type': 'application/json',
+    }
+
+    const r = await fetch(url, {
+      method: req.method,
+      headers,
+      body: req.method !== 'GET' && req.method !== 'HEAD' ? JSON.stringify(req.body) : undefined,
+      signal: AbortSignal.timeout(15000),
+    })
+
+    const text = await r.text()
+    let data: any
+    try { data = JSON.parse(text) } catch { data = text }
+
+    return res.status(r.status).json(data)
+  } catch (err: any) {
+    return res.status(502).json({ error: err.message })
+  }
+}
