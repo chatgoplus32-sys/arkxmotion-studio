@@ -234,7 +234,7 @@ export function resolveWeavyAssetUrl(asset: any, type: 'image' | 'video' = 'imag
 
 // ── fetchWeavyCredits: exact copy of aacs.web.id + Worker fallback ──
 const WEAVY_PROXY_BASE = '/api/public/weavy-proxy?path='
-const WEAVY_WORKER_PROXY = 'https://weavy-proxy.chatgoplus32.workers.dev/?path='
+const WEAVY_WORKER_PROXY = 'https://weavy-proxy.testeraioke.workers.dev/?path='
 
 async function fetchWeavyCreditsDirect(accessToken: string): Promise<number | null> {
   const tryEndpoints = async (base: string) => {
