@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Select, Label, Textarea, EmptyState, Badge } from '@/components/ui'
 import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
-import { Loader2, Upload, Trash2, Download, X, ImagePlus, ExternalLink, Search } from 'lucide-react'
+import { Loader2, Upload, Trash2, Download, X, ImagePlus, ExternalLink, Search, Copy, ClipboardCheck } from 'lucide-react'
 import { useProviderManager, PROVIDER_CONFIGS } from '@/stores/providerManager'
 import { useToastStore } from '@/stores/toastStore'
 import { withTokenRotation } from '@/lib/tokenRotation'
@@ -66,6 +66,7 @@ export default function EditImagePage() {
   const [logs, setLogs] = useState<Array<{ time: string; msg: string; level: string }>>(() => getLogs())
   const [gallery, setGallery] = useState<GalleryItem[]>(() => loadGallery())
   const [gallerySearch, setGallerySearch] = useState('')
+  const [logCopied, setLogCopied] = useState(false)
   const filePickerRef = useRef<HTMLInputElement | null>(null)
 
   const currentModel = ALL_MODELS[provider].find((m) => m.value === model) || ALL_MODELS[provider][0]
@@ -289,6 +290,23 @@ export default function EditImagePage() {
     })
   }
 
+  const copyAllLogs = async () => {
+    const text = logs.map((l) => `[${l.time}] ${l.msg}`).join('\n')
+    try {
+      await navigator.clipboard.writeText(text)
+      setLogCopied(true)
+      addToast('Log disalin ke clipboard', 'success')
+      setTimeout(() => setLogCopied(false), 2000)
+    } catch {
+      addToast('Gagal copy log', 'error')
+    }
+  }
+
+  const clearLogs = () => {
+    setLogs([])
+    addToast('Log dihapus', 'info')
+  }
+
   const downloadItem = async (item: GalleryItem) => {
     try {
       const res = await fetch(item.url, { mode: 'cors' })
@@ -460,7 +478,32 @@ export default function EditImagePage() {
             </Section>
 
             {/* Log */}
-            <Section title="📋 Log" sub={`Total ${logs.length} entri`}>
+            <Section
+              title="📋 Log"
+              sub={`Total ${logs.length} entri`}
+              right={
+                logs.length > 0 ? (
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={copyAllLogs}
+                      className="inline-flex items-center gap-1 rounded-full border border-border bg-card/60 px-2.5 py-1 text-xs hover:text-foreground hover:border-primary/50 transition"
+                      title="Copy semua log"
+                    >
+                      {logCopied ? <ClipboardCheck className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                      {logCopied ? 'Copied!' : 'Copy'}
+                    </button>
+                    <button
+                      onClick={clearLogs}
+                      className="inline-flex items-center gap-1 rounded-full border border-border bg-card/60 px-2.5 py-1 text-xs hover:text-destructive hover:border-destructive/50 transition"
+                      title="Hapus semua log"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Hapus
+                    </button>
+                  </div>
+                ) : undefined
+              }
+            >
               <div className="rounded-xl border border-border/60 bg-black/40 p-2 max-h-52 overflow-y-auto overflow-x-hidden text-[11px] font-mono min-w-0">
                 {logs.length === 0 ? (
                   <div className="text-muted-foreground px-1 py-2">Belum ada log.</div>
