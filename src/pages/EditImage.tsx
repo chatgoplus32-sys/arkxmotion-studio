@@ -160,7 +160,7 @@ export default function EditImagePage() {
     }
 
     addLog(`   ✓ Job ID: ${result.jobId}`, 'success')
-    if (result.creditCost) addLog(`   💰 Biaya: ${result.creditCost} kredit`, 'debug')
+    if (result.creditCost) addLog(`   💰 Biaya: 0.1 kredit (image)`, 'debug')
 
     addLog(`[3/4] ⏳ Polling status...`, 'info')
     const job = await pollNexabotJob(result.jobId, undefined, (msg) => {
