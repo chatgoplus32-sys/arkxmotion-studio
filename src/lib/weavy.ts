@@ -232,28 +232,38 @@ export function resolveWeavyAssetUrl(asset: any, type: 'image' | 'video' = 'imag
   throw Error('Weavy: cannot resolve asset URL')
 }
 
-// ── fetchWeavyCredits: exact copy of aacs.web.id ──
+// ── fetchWeavyCredits: exact copy of aacs.web.id + Worker fallback ──
 const WEAVY_PROXY_BASE = '/api/public/weavy-proxy?path='
+const WEAVY_WORKER_PROXY = 'https://weavy-proxy.chatgoplus32.workers.dev/?path='
 
 async function fetchWeavyCreditsDirect(accessToken: string): Promise<number | null> {
-  const endpoints = [
-    `${WEAVY_PROXY_BASE}/v1/workspaces`,
-    `${WEAVY_PROXY_BASE}/v1/credits`,
-    `${WEAVY_PROXY_BASE}/v1/user/credits`,
-    `${WEAVY_PROXY_BASE}/v1/user/balance`,
-  ]
-  for (const url of endpoints) {
-    try {
-      const r = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } })
-      if (!r.ok) continue
-      const data = await r.json()
-      const ws = (Array.isArray(data) ? data[0] : data.workspaces?.[0] ?? data)
-      const credits = ws?.credits ?? data.credits ?? data.balance ?? data.totalCredits ??
-        data.creditsRemaining ?? data.quota ?? data.usage?.credits ?? data.plan?.credits ??
-        data.data?.credits ?? data.user?.credits ?? null
-      if (typeof credits === 'number') return credits
-    } catch {}
+  const tryEndpoints = async (base: string) => {
+    const endpoints = [
+      `${base}/v1/workspaces`,
+      `${base}/v1/credits`,
+      `${base}/v1/user/credits`,
+      `${base}/v1/user/balance`,
+    ]
+    for (const url of endpoints) {
+      try {
+        const r = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } })
+        if (!r.ok) continue
+        const data = await r.json()
+        const ws = (Array.isArray(data) ? data[0] : data.workspaces?.[0] ?? data)
+        const credits = ws?.credits ?? data.credits ?? data.balance ?? data.totalCredits ??
+          data.creditsRemaining ?? data.quota ?? data.usage?.credits ?? data.plan?.credits ??
+          data.data?.credits ?? data.user?.credits ?? null
+        if (typeof credits === 'number') return credits
+      } catch {}
+    }
+    return null
   }
+  const fromLocal = await tryEndpoints(WEAVY_PROXY_BASE)
+  if (fromLocal !== null) return fromLocal
+  console.log('[weavy] local proxy 403, trying Worker proxy...')
+  const fromWorker = await tryEndpoints(WEAVY_WORKER_PROXY)
+  if (fromWorker !== null) return fromWorker
+  console.log('[weavy] Worker proxy also failed')
   return null
 }
 
