@@ -114,7 +114,7 @@ export default function EditImagePage() {
     addLog(`🚀 Mulai generate gambar`, 'info')
     addLog(`   Provider: ${provider === 'nexabot' ? 'NexaBot (GPT Image)' : 'Riverside'}`, 'debug')
     addLog(`   Model: ${currentModel.label}`, 'debug')
-    addLog(`   Mode: ${imgFile ? 'Edit Gambar + Prompt' : 'Text to Image'}`, 'debug')
+    addLog(`   Mode: ${provider === 'nexabot' ? 'Text to Image' : (imgFile ? 'Edit Gambar + Prompt' : 'Text to Image')}`, 'debug')
     addLog(`   Prompt: "${prompt.trim().slice(0, 80)}${prompt.trim().length > 80 ? '...' : ''}"`, 'debug')
 
     try {
@@ -132,27 +132,12 @@ export default function EditImagePage() {
   }
 
   const handleGenerateNexabot = async () => {
-    const { submitNexabot, pollNexabotJob, downloadNexabotResult, compressForApi } = await import('@/lib/nexabot')
+    const { submitNexabot, pollNexabotJob, downloadNexabotResult } = await import('@/lib/nexabot')
 
-    let mediaDataUris: string[] | undefined
-    if (imgFile) {
-      addLog(`[1/4] 🖼️ Kompresi gambar...`, 'info')
-      const compressed = await compressForApi(imgFile, 768, 0.6)
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = () => resolve(reader.result as string)
-        reader.onerror = reject
-        reader.readAsDataURL(compressed)
-      })
-      mediaDataUris = [base64]
-      addLog(`   ✓ Gambar dikompresi (${(compressed.size / 1024).toFixed(0)}KB)`, 'debug')
-    }
-
-    addLog(`[2/4] 📤 Submit job ke NexaBot (mode: ${imgFile ? 'edit gambar' : 'text to image'}...)`, 'info')
+    addLog(`[1/3] 📤 Submit job ke NexaBot (text to image)...`, 'info')
     const result = await submitNexabot({
-      mode: imgFile ? 'i2v' : 'img',
+      mode: 'img',
       prompt: prompt.trim(),
-      media: mediaDataUris,
     })
 
     if (!result.ok || !result.jobId) {
@@ -162,7 +147,7 @@ export default function EditImagePage() {
     addLog(`   ✓ Job ID: ${result.jobId}`, 'success')
     if (result.creditCost) addLog(`   💰 Biaya: 0.1 kredit (image)`, 'debug')
 
-    addLog(`[3/4] ⏳ Polling status...`, 'info')
+    addLog(`[2/3] ⏳ Polling status...`, 'info')
     const job = await pollNexabotJob(result.jobId, undefined, (msg) => {
       addLog(`   ${msg}`, 'debug')
     })
@@ -172,7 +157,7 @@ export default function EditImagePage() {
     }
     addLog(`   ✓ Status: ${job.status}`, 'success')
 
-    addLog(`[4/4] 📥 Download hasil...`, 'info')
+    addLog(`[3/3] 📥 Download hasil...`, 'info')
     const dlResult = await downloadNexabotResult(result.jobId, undefined)
     if (!dlResult.ok || !dlResult.url) {
       throw new Error(dlResult.error || 'Download gagal')
@@ -383,7 +368,7 @@ export default function EditImagePage() {
                   onChange={(e) => setPrompt(e.target.value)}
                   disabled={generating}
                   placeholder={provider === 'nexabot'
-                    ? 'Deskripsikan gambar yang diinginkan — mis. "kucing berdiri di atas bulan", atau upload gambar + tulis edit yang diinginkan...'
+                    ? 'Deskripsikan gambar yang diinginkan — mis. "kucing berdiri di atas bulan", "potret wanita di taman bunga"...'
                     : 'Deskripsikan edit yang diinginkan — mis. "ubah latar jadi studio neon", "buat versi kartun", "tambah cahaya dramatis"...'
                   }
                 />
@@ -391,13 +376,13 @@ export default function EditImagePage() {
                 <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 text-xs text-muted-foreground space-y-1">
                   <div className="font-medium text-foreground">💡 NexaBot Image</div>
                   <div>• <b>Text to Image</b> — cukup tulis prompt</div>
-                  <div>• <b>Edit Gambar</b> — upload gambar + tulis edit</div>
                   <div>• 💰 0.1 kredit/gambar • ♾️ Gratis kalau Unlimited aktif</div>
+                  <div>• ⚠️ Untuk edit gambar, gunakan <b>Riverside</b></div>
                 </div>
 
                 <div className="flex flex-col gap-2 pt-2">
                   <Button onClick={handleGenerate} disabled={!canGenerate} loading={generating}>
-                    {generating ? 'Memproses...' : imgFile ? 'Edit Gambar' : 'Generate Gambar'}
+                    {generating ? 'Memproses...' : (provider === 'nexabot' ? 'Generate Gambar' : (imgFile ? 'Edit Gambar' : 'Generate Gambar'))}
                   </Button>
                   {provider === 'riverside' && (
                     <a
@@ -425,7 +410,7 @@ export default function EditImagePage() {
           <div className="lg:col-span-2 space-y-5">
             <Section
               title={provider === 'nexabot' ? '🖼️ Gambar (Opsional)' : '🖼️ Gambar Input'}
-              sub={provider === 'nexabot' ? 'Upload gambar untuk diedit, atau kosongkan untuk Text to Image' : 'Upload 1 gambar untuk diedit'}
+              sub={provider === 'nexabot' ? 'NexaBot hanya mendukung Text to Image — untuk edit gambar pakai Riverside' : 'Upload 1 gambar untuk diedit'}
               right={
                 <button
                   onClick={() => filePickerRef.current?.click()}
@@ -449,7 +434,7 @@ export default function EditImagePage() {
                 >
                   <ImagePlus className="h-8 w-8 mx-auto mb-2 opacity-60" />
                   {provider === 'nexabot'
-                    ? 'Tap atau tarik gambar untuk diedit (opsional — bisa langsung Text to Image)'
+                    ? 'NexaBot tidak mendukung edit gambar — gunakan Riverside untuk edit gambar'
                     : 'Tap atau tarik gambar untuk diedit'
                   }
                 </button>
