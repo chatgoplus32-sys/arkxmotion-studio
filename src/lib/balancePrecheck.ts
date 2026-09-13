@@ -292,7 +292,7 @@ export async function refreshProviderBalance(
       if (!res.ok) return { ok: false, error: res.error || 'Gagal cek saldo G5' }
       const bal = res.balance
       if (bal != null) {
-        store.updateKeyStatus('galleri5', key.id, bal >= 60 ? 'active' : bal > 0 ? 'active' : 'empty', bal, res.email || key.email)
+        store.updateKeyStatus('galleri5', key.id, bal > 0 ? 'active' : 'empty', bal, res.email || key.email)
         window.dispatchEvent(new Event('aatools:keys-changed'))
       }
       return { ok: true, balance: bal, email: res.email }

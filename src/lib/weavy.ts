@@ -233,7 +233,20 @@ export function resolveWeavyAssetUrl(asset: any, type: 'image' | 'video' = 'imag
 }
 
 export async function fetchWeavyCreditsClient(accessToken: string): Promise<number | null> {
-  // Workspaces endpoint returns credits directly (reference site pattern)
+  // Use proxy to avoid CORS issues on production VPS
+  try {
+    const r = await fetch('/api/public/weavy?action=balance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Weavy-Token': accessToken },
+      body: JSON.stringify({}),
+    })
+    if (r.ok) {
+      const d = await r.json().catch(() => null)
+      if (d?.ok && d?.data?.credits != null && typeof d.data.credits === 'number') return d.data.credits
+    }
+  } catch (e) { console.warn('[weavy] Failed to fetch credits via proxy:', e) }
+
+  // Fallback: direct call (works on Vercel/local)
   try {
     const r = await fetch(`${WEAVY_API}/v1/workspaces`, {
       headers: { Authorization: `Bearer ${accessToken}` },
@@ -245,7 +258,7 @@ export async function fetchWeavyCreditsClient(accessToken: string): Promise<numb
       if (ws?.credits != null && typeof ws.credits === 'number') return ws.credits
       if (ws?.balance != null && typeof ws.balance === 'number') return ws.balance
     }
-  } catch (e) { console.warn('[weavy] Failed to fetch credits:', e) }
+  } catch (e) { console.warn('[weavy] Failed to fetch credits directly:', e) }
 
   return null
 }
