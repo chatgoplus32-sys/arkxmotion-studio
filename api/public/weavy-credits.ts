@@ -22,10 +22,18 @@ async function refreshWeavyToken(refreshToken: string): Promise<{ accessToken: s
 }
 
 async function fetchWeavyCredits(accessToken: string): Promise<{ credits: number | null; raw: Record<string, any> }> {
-  const headers: Record<string, string> = {
+  const browserHeaders: Record<string, string> = {
     Authorization: `Bearer ${accessToken}`,
-    'Accept': 'application/json, text/plain, */*',
+    Accept: 'application/json, text/plain, */*',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Content-Type': 'application/json',
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
+    'Sec-Ch-Ua': '"Chromium";v="136", "Google Chrome";v="136", "Not.A/Brand";v="99"',
+    'Sec-Ch-Ua-Mobile': '?0',
+    'Sec-Ch-Ua-Platform': '"Windows"',
+    'Sec-Fetch-Dest': 'empty',
+    'Sec-Fetch-Mode': 'cors',
+    'Sec-Fetch-Site': 'same-site',
     'Origin': 'https://app.weavy.ai',
     'Referer': 'https://app.weavy.ai/',
   }
@@ -45,7 +53,7 @@ async function fetchWeavyCredits(accessToken: string): Promise<{ credits: number
 
   for (const [name, url] of endpoints) {
     try {
-      const r = await fetch(url, { headers, signal: AbortSignal.timeout(10000) })
+      const r = await fetch(url, { headers: browserHeaders, signal: AbortSignal.timeout(10000) })
       const text = await r.text().catch(() => '')
       let data: any; try { data = JSON.parse(text) } catch { data = text?.slice(0, 500) }
       raw[name] = { status: r.status, data }
