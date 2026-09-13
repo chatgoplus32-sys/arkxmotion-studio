@@ -25,7 +25,7 @@ const RIVERSIDE_IMAGE_MODELS = [
 ]
 
 const NEXABOT_IMAGE_MODELS = [
-  { value: 'nb:img', label: '✨ GPT Image (NexaBot)', cr: 0.1 },
+  { value: 'nb:img', label: '✨ GPT Image (NexaBot)', cr: 0.1, apiModel: 'img' },
 ]
 
 const ALL_MODELS: Record<EditProvider, typeof RIVERSIDE_IMAGE_MODELS> = {

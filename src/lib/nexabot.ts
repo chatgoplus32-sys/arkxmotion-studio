@@ -218,7 +218,8 @@ export function isNexabotSessionError(err: unknown): boolean {
 // BALANCE CHECK
 // ═══════════════════════════════════════════════════════════════════
 
-export { NEXABOT_CHECK_TIMEOUT_MS, NEXABOT_PROBE_TIMEOUT_MS } from './nexabot-constants.js'
+import { NEXABOT_CHECK_TIMEOUT_MS, NEXABOT_PROBE_TIMEOUT_MS } from './nexabot-constants.js'
+export { NEXABOT_CHECK_TIMEOUT_MS, NEXABOT_PROBE_TIMEOUT_MS }
 
 export interface NexabotProbeOptions {
   /** Timeout satu probe ke proxy (ms); default {@link NEXABOT_PROBE_TIMEOUT_MS}. */
