@@ -22,6 +22,19 @@ import publicLeonardoRoutes from './routes/publicLeonardo.js'
 import publicMagnificRoutes from './routes/publicMagnific.js'
 import publicGalleri5Routes from './routes/publicGalleri5.js'
 import publicValidateMediaRoutes from './routes/publicValidateMedia.js'
+import publicRoboneoRoutes from './routes/publicRoboneo.js'
+import publicRoboneoMembershipRoutes from './routes/publicRoboneoMembership.js'
+import publicLeonardoUploadRoutes from './routes/publicLeonardoUpload.js'
+import publicVideoProxyRoutes from './routes/publicVideoProxy.js'
+import publicFramiaRoutes from './routes/publicFramia.js'
+import publicShotstackRoutes from './routes/publicShotstack.js'
+import publicCreatomateRoutes from './routes/publicCreatomate.js'
+import publicOneoverRoutes from './routes/publicOneover.js'
+import publicGensparkRoutes from './routes/publicGenspark.js'
+import publicGensparkUploadRoutes from './routes/publicGensparkUpload.js'
+import publicRunninghubRoutes from './routes/publicRunninghub.js'
+import publicWeavyRoutes from './routes/publicWeavy.js'
+import publicR2UploadRoutes from './routes/publicR2Upload.js'
 import { backupOnStartup } from './backup.js'
 
 dotenv.config()
@@ -59,6 +72,19 @@ app.use('/api/public/leonardo', publicLeonardoRoutes)
 app.use('/api/public/magnific', publicMagnificRoutes)
 app.use('/api/public/galleri5', publicGalleri5Routes)
 app.use('/api/public/validate-media', publicValidateMediaRoutes)
+app.use('/api/public/roboneo', publicRoboneoRoutes)
+app.use('/api/public/roboneo-membership', publicRoboneoMembershipRoutes)
+app.use('/api/public/leonardo-upload', publicLeonardoUploadRoutes)
+app.use('/api/public/video-proxy', publicVideoProxyRoutes)
+app.use('/api/public/framia', publicFramiaRoutes)
+app.use('/api/public/shotstack', publicShotstackRoutes)
+app.use('/api/public/creatomate', publicCreatomateRoutes)
+app.use('/api/public/oneover', publicOneoverRoutes)
+app.use('/api/public/genspark', publicGensparkRoutes)
+app.use('/api/public/genspark-upload', publicGensparkUploadRoutes)
+app.use('/api/public/runninghub', publicRunninghubRoutes)
+app.use('/api/public/weavy', publicWeavyRoutes)
+app.use('/api/public/r2-upload', publicR2UploadRoutes)
 // Wallet NexaBot (saldo Rp prepaid) — beda dari /api/public/nexabot yang
 // meneruskan generate ke upstream nexabot.id.
 app.use('/api/nexabot', nexabotWalletRoutes)

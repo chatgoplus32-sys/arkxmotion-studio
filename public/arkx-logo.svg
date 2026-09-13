@@ -1,99 +1,137 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
   <defs>
-    <linearGradient id="blueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#00a8ff"/>
-      <stop offset="50%" stop-color="#00d4ff"/>
-      <stop offset="100%" stop-color="#00f0ff"/>
+    <linearGradient id="metalLight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e8e8e8"/>
+      <stop offset="25%" stop-color="#ffffff"/>
+      <stop offset="50%" stop-color="#d0d0d0"/>
+      <stop offset="75%" stop-color="#f0f0f0"/>
+      <stop offset="100%" stop-color="#b0b0b0"/>
     </linearGradient>
-    <linearGradient id="metalGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#c0c0c0"/>
-      <stop offset="30%" stop-color="#e8e8e8"/>
-      <stop offset="60%" stop-color="#a0a0a0"/>
-      <stop offset="100%" stop-color="#808080"/>
+    <linearGradient id="metalDark" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#808080"/>
+      <stop offset="30%" stop-color="#a0a0a0"/>
+      <stop offset="60%" stop-color="#707070"/>
+      <stop offset="100%" stop-color="#606060"/>
+    </linearGradient>
+    <linearGradient id="chromeDot" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e0e0e0"/>
+      <stop offset="30%" stop-color="#ffffff"/>
+      <stop offset="60%" stop-color="#c0c0c0"/>
+      <stop offset="100%" stop-color="#a0a0a0"/>
+    </linearGradient>
+    <linearGradient id="blueEdge" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0066cc"/>
+      <stop offset="50%" stop-color="#00a8ff"/>
+      <stop offset="100%" stop-color="#00ddff"/>
     </linearGradient>
     <linearGradient id="darkBg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#050510"/>
-      <stop offset="100%" stop-color="#0c0c1a"/>
+      <stop offset="0%" stop-color="#080818"/>
+      <stop offset="100%" stop-color="#0c0c20"/>
     </linearGradient>
     <filter id="glow">
-      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="blueGlow">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
       <feMerge>
         <feMergeNode in="blur"/>
         <feMergeNode in="SourceGraphic"/>
       </feMerge>
     </filter>
     <filter id="softGlow">
-      <feGaussianBlur stdDeviation="5" result="blur"/>
-      <feMerge>
-        <feMergeNode in="blur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-    <filter id="innerGlow">
       <feGaussianBlur stdDeviation="3" result="blur"/>
       <feMerge>
         <feMergeNode in="blur"/>
         <feMergeNode in="SourceGraphic"/>
       </feMerge>
     </filter>
+    <filter id="metalShadow">
+      <feDropShadow dx="2" dy="4" stdDeviation="6" flood-color="#000" flood-opacity="0.5"/>
+    </filter>
   </defs>
 
-  <!-- Background rounded square -->
-  <rect width="512" height="512" rx="96" fill="url(#darkBg)"/>
+  <!-- Background -->
+  <rect width="512" height="512" rx="80" fill="url(#darkBg)"/>
 
-  <!-- Subtle border -->
-  <rect x="2" y="2" width="508" height="508" rx="95" fill="none" stroke="#00a8ff" stroke-width="0.8" opacity="0.15"/>
+  <!-- === SHURIKEN BLADES (4 pointed, thick metallic) === -->
 
-  <!-- Outer glow ring -->
-  <circle cx="256" cy="240" r="140" fill="none" stroke="#00a8ff" stroke-width="1.5" opacity="0.12" filter="url(#glow)"/>
+  <!-- Top blade - pointing up-right -->
+  <path d="M256 80 L310 185 L280 195 L256 160 L232 195 L202 185 Z"
+        fill="url(#metalLight)" filter="url(#metalShadow)" opacity="0.95"/>
+  <!-- Top blade highlight -->
+  <path d="M256 80 L280 160 L256 145 L232 160 Z"
+        fill="white" opacity="0.15"/>
 
-  <!-- Geometric shuriken shape - 4 blades -->
-  <!-- Top blade -->
-  <path d="M256 100 L286 190 L256 170 L226 190 Z" 
-        fill="url(#metalGrad)" 
-        opacity="0.95"/>
-  <!-- Right blade -->
-  <path d="M400 240 L310 270 L330 240 L310 210 Z" 
-        fill="url(#metalGrad)" 
-        opacity="0.95"/>
-  <!-- Bottom blade -->
-  <path d="M256 380 L226 290 L256 310 L286 290 Z" 
-        fill="url(#metalGrad)" 
-        opacity="0.95"/>
-  <!-- Left blade -->
-  <path d="M112 240 L202 210 L182 240 L202 270 Z" 
-        fill="url(#metalGrad)" 
-        opacity="0.95"/>
+  <!-- Right blade - pointing right-down -->
+  <path d="M432 256 L327 202 L317 232 L352 256 L317 280 L327 310 Z"
+        fill="url(#metalLight)" filter="url(#metalShadow)" opacity="0.95"/>
+  <!-- Right blade highlight -->
+  <path d="M432 256 L352 232 L367 256 L352 280 Z"
+        fill="white" opacity="0.15"/>
 
-  <!-- Center diamond connector -->
-  <path d="M256 195 L295 240 L256 285 L217 240 Z" 
-        fill="url(#metalGrad)" 
-        opacity="0.98"/>
+  <!-- Bottom blade - pointing down-left -->
+  <path d="M256 432 L202 327 L232 317 L256 352 L280 317 L310 327 Z"
+        fill="url(#metalLight)" filter="url(#metalShadow)" opacity="0.95"/>
+  <!-- Bottom blade highlight -->
+  <path d="M256 432 L232 352 L256 367 L280 352 Z"
+        fill="white" opacity="0.15"/>
 
-  <!-- Blue neon outline on geometric shape -->
-  <path d="M256 100 L286 190 L256 170 L226 190 Z" 
-        fill="none" stroke="#00a8ff" stroke-width="1.5" opacity="0.6" filter="url(#softGlow)"/>
-  <path d="M400 240 L310 270 L330 240 L310 210 Z" 
-        fill="none" stroke="#00a8ff" stroke-width="1.5" opacity="0.6" filter="url(#softGlow)"/>
-  <path d="M256 380 L226 290 L256 310 L286 290 Z" 
-        fill="none" stroke="#00a8ff" stroke-width="1.5" opacity="0.6" filter="url(#softGlow)"/>
-  <path d="M112 240 L202 210 L182 240 L202 270 Z" 
-        fill="none" stroke="#00a8ff" stroke-width="1.5" opacity="0.6" filter="url(#softGlow)"/>
+  <!-- Left blade - pointing left-up -->
+  <path d="M80 256 L185 310 L195 280 L160 256 L195 232 L185 202 Z"
+        fill="url(#metalLight)" filter="url(#metalShadow)" opacity="0.95"/>
+  <!-- Left blade highlight -->
+  <path d="M80 256 L160 280 L145 256 L160 232 Z"
+        fill="white" opacity="0.15"/>
 
-  <!-- Center blue glow circle -->
-  <circle cx="256" cy="240" r="28" fill="#00a8ff" filter="url(#glow)" opacity="0.9"/>
-  <circle cx="256" cy="240" r="20" fill="#00d4ff" opacity="0.95"/>
-  <circle cx="256" cy="240" r="10" fill="white" opacity="0.5"/>
+  <!-- === BLUE NEON EDGE GLOW on each blade === -->
+  <path d="M256 80 L310 185 L280 195 L256 160 L232 195 L202 185 Z"
+        fill="none" stroke="url(#blueEdge)" stroke-width="2" opacity="0.7" filter="url(#blueGlow)"/>
+  <path d="M432 256 L327 202 L317 232 L352 256 L317 280 L327 310 Z"
+        fill="none" stroke="url(#blueEdge)" stroke-width="2" opacity="0.7" filter="url(#blueGlow)"/>
+  <path d="M256 432 L202 327 L232 317 L256 352 L280 317 L310 327 Z"
+        fill="none" stroke="url(#blueEdge)" stroke-width="2" opacity="0.7" filter="url(#blueGlow)"/>
+  <path d="M80 256 L185 310 L195 280 L160 256 L195 232 L185 202 Z"
+        fill="none" stroke="url(#blueEdge)" stroke-width="2" opacity="0.7" filter="url(#blueGlow)"/>
 
-  <!-- 4 corner node dots with blue glow -->
-  <circle cx="256" cy="190" r="10" fill="#00a8ff" filter="url(#innerGlow)" opacity="0.9"/>
-  <circle cx="310" cy="240" r="10" fill="#00a8ff" filter="url(#innerGlow)" opacity="0.9"/>
-  <circle cx="256" cy="290" r="10" fill="#00a8ff" filter="url(#innerGlow)" opacity="0.9"/>
-  <circle cx="202" cy="240" r="10" fill="#00a8ff" filter="url(#innerGlow)" opacity="0.9"/>
+  <!-- === CENTER DIAMOND (metallic) === -->
+  <path d="M256 195 L295 256 L256 317 L217 256 Z"
+        fill="url(#metalDark)" opacity="0.95"/>
+  <!-- Diamond highlight -->
+  <path d="M256 195 L275 256 L256 240 L237 256 Z"
+        fill="white" opacity="0.12"/>
 
-  <!-- Connection lines between nodes -->
-  <line x1="256" y1="190" x2="310" y2="240" stroke="#00a8ff" stroke-width="3" opacity="0.5" filter="url(#softGlow)"/>
-  <line x1="310" y1="240" x2="256" y2="290" stroke="#00a8ff" stroke-width="3" opacity="0.5" filter="url(#softGlow)"/>
-  <line x1="256" y1="290" x2="202" y2="240" stroke="#00a8ff" stroke-width="3" opacity="0.5" filter="url(#softGlow)"/>
-  <line x1="202" y1="240" x2="256" y2="190" stroke="#00a8ff" stroke-width="3" opacity="0.5" filter="url(#softGlow)"/>
+  <!-- === CONNECTION LINES (silver/chrome) === -->
+  <line x1="256" y1="195" x2="327" y2="256" stroke="url(#metalLight)" stroke-width="4" opacity="0.6"/>
+  <line x1="327" y1="256" x2="256" y2="317" stroke="url(#metalLight)" stroke-width="4" opacity="0.6"/>
+  <line x1="256" y1="317" x2="185" y2="256" stroke="url(#metalLight)" stroke-width="4" opacity="0.6"/>
+  <line x1="185" y1="256" x2="256" y2="195" stroke="url(#metalLight)" stroke-width="4" opacity="0.6"/>
+
+  <!-- === 4 CHROME/SILVER NODE DOTS (at blade tips) === -->
+  <!-- Top node -->
+  <circle cx="256" cy="145" r="14" fill="url(#chromeDot)" filter="url(#softGlow)"/>
+  <circle cx="252" cy="141" r="5" fill="white" opacity="0.4"/>
+
+  <!-- Right node -->
+  <circle cx="367" cy="256" r="14" fill="url(#chromeDot)" filter="url(#softGlow)"/>
+  <circle cx="363" cy="252" r="5" fill="white" opacity="0.4"/>
+
+  <!-- Bottom node -->
+  <circle cx="256" cy="367" r="14" fill="url(#chromeDot)" filter="url(#softGlow)"/>
+  <circle cx="252" cy="363" r="5" fill="white" opacity="0.4"/>
+
+  <!-- Left node -->
+  <circle cx="145" cy="256" r="14" fill="url(#chromeDot)" filter="url(#softGlow)"/>
+  <circle cx="141" cy="252" r="5" fill="white" opacity="0.4"/>
+
+  <!-- === CENTER GLOW (blue neon) === -->
+  <circle cx="256" cy="256" r="22" fill="#00a8ff" filter="url(#glow)" opacity="0.5"/>
+  <circle cx="256" cy="256" r="14" fill="#00d4ff" opacity="0.7"/>
+  <circle cx="256" cy="256" r="6" fill="white" opacity="0.6"/>
+
+  <!-- === SUBTLE BLUE REFLECTIONS on floor === -->
+  <ellipse cx="256" cy="480" rx="180" ry="20" fill="#00a8ff" opacity="0.08" filter="url(#glow)"/>
 </svg>

@@ -1,64 +1,72 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
   <defs>
-    <linearGradient id="metalGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#c0c0c0"/>
-      <stop offset="30%" stop-color="#e8e8e8"/>
-      <stop offset="50%" stop-color="#ffffff"/>
-      <stop offset="70%" stop-color="#e0e0e0"/>
+    <linearGradient id="metalLight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e0e0e0"/>
+      <stop offset="30%" stop-color="#ffffff"/>
+      <stop offset="60%" stop-color="#c0c0c0"/>
       <stop offset="100%" stop-color="#a0a0a0"/>
     </linearGradient>
-    <linearGradient id="blueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0080cc"/>
-      <stop offset="30%" stop-color="#00a8ff"/>
-      <stop offset="50%" stop-color="#00d4ff"/>
-      <stop offset="70%" stop-color="#00a8ff"/>
-      <stop offset="100%" stop-color="#0080cc"/>
+    <linearGradient id="metalDark" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#808080"/>
+      <stop offset="50%" stop-color="#a0a0a0"/>
+      <stop offset="100%" stop-color="#707070"/>
     </linearGradient>
-    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#050510"/>
-      <stop offset="100%" stop-color="#0c0c1a"/>
+    <linearGradient id="chromeDot" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e0e0e0"/>
+      <stop offset="40%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#b0b0b0"/>
+    </linearGradient>
+    <linearGradient id="blueEdge" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0066cc"/>
+      <stop offset="50%" stop-color="#00a8ff"/>
+      <stop offset="100%" stop-color="#00ddff"/>
+    </linearGradient>
+    <linearGradient id="darkBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#080818"/>
+      <stop offset="100%" stop-color="#0c0c20"/>
     </linearGradient>
     <filter id="glow">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="blueGlow">
       <feGaussianBlur stdDeviation="3" result="blur"/>
-      <feMerge>
-        <feMergeNode in="blur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="softGlow">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
   </defs>
-  
-  <!-- Background -->
-  <rect width="128" height="128" rx="16" fill="url(#bgGrad)"/>
-  
-  <!-- Outer glow ring -->
-  <circle cx="64" cy="52" r="45" fill="none" stroke="url(#blueGrad)" stroke-width="0.5" opacity="0.3"/>
-  
+
+  <rect width="128" height="128" rx="20" fill="url(#darkBg)"/>
+
   <!-- Top blade -->
-  <path d="M64 16 L84 72 L64 60 L44 72 Z" fill="url(#metalGrad)" opacity="0.95"/>
+  <path d="M64 16 L78 46 L72 48 L64 40 L56 48 L50 46 Z" fill="url(#metalLight)" opacity="0.95"/>
   <!-- Right blade -->
-  <path d="M108 52 L72 72 L78 52 L72 32 Z" fill="url(#metalGrad)" opacity="0.95"/>
+  <path d="M112 64 L82 50 L80 56 L88 64 L80 72 L82 78 Z" fill="url(#metalLight)" opacity="0.95"/>
   <!-- Bottom blade -->
-  <path d="M64 88 L44 52 L64 56 L84 52 Z" fill="url(#metalGrad)" opacity="0.95"/>
+  <path d="M64 112 L50 82 L56 80 L64 88 L72 80 L78 82 Z" fill="url(#metalLight)" opacity="0.95"/>
   <!-- Left blade -->
-  <path d="M20 52 L56 32 L50 52 L56 72 Z" fill="url(#metalGrad)" opacity="0.95"/>
-  
-  <!-- Center diamond -->
-  <path d="M64 36 L82 52 L64 68 L46 52 Z" fill="url(#metalGrad)" opacity="0.98"/>
-  
+  <path d="M16 64 L46 78 L48 72 L40 64 L48 56 L46 50 Z" fill="url(#metalLight)" opacity="0.95"/>
+
   <!-- Blue glow outlines -->
-  <path d="M64 16 L84 72 L64 60 L44 72 Z" fill="none" stroke="#00a8ff" stroke-width="1.5" opacity="0.6" filter="url(#glow)"/>
-  <path d="M108 52 L72 72 L78 52 L72 32 Z" fill="none" stroke="#00a8ff" stroke-width="1.5" opacity="0.6" filter="url(#glow)"/>
-  <path d="M64 88 L44 52 L64 56 L84 52 Z" fill="none" stroke="#00a8ff" stroke-width="1.5" opacity="0.6" filter="url(#glow)"/>
-  <path d="M20 52 L56 32 L50 52 L56 72 Z" fill="none" stroke="#00a8ff" stroke-width="1.5" opacity="0.6" filter="url(#glow)"/>
-  
-  <!-- Center glow circle -->
-  <circle cx="64" cy="52" r="10" fill="#00a8ff" filter="url(#glow)" opacity="0.9"/>
-  <circle cx="64" cy="52" r="7" fill="#00d4ff" opacity="0.95"/>
-  <circle cx="64" cy="52" r="3.5" fill="white" opacity="0.5"/>
-  
-  <!-- Node dots -->
-  <circle cx="64" cy="36" r="4" fill="#00a8ff" opacity="0.9"/>
-  <circle cx="82" cy="52" r="4" fill="#00a8ff" opacity="0.9"/>
-  <circle cx="64" cy="68" r="4" fill="#00a8ff" opacity="0.9"/>
-  <circle cx="46" cy="52" r="4" fill="#00a8ff" opacity="0.9"/>
+  <path d="M64 16 L78 46 L72 48 L64 40 L56 48 L50 46 Z" fill="none" stroke="url(#blueEdge)" stroke-width="1.5" opacity="0.7" filter="url(#blueGlow)"/>
+  <path d="M112 64 L82 50 L80 56 L88 64 L80 72 L82 78 Z" fill="none" stroke="url(#blueEdge)" stroke-width="1.5" opacity="0.7" filter="url(#blueGlow)"/>
+  <path d="M64 112 L50 82 L56 80 L64 88 L72 80 L78 82 Z" fill="none" stroke="url(#blueEdge)" stroke-width="1.5" opacity="0.7" filter="url(#blueGlow)"/>
+  <path d="M16 64 L46 78 L48 72 L40 64 L48 56 L46 50 Z" fill="none" stroke="url(#blueEdge)" stroke-width="1.5" opacity="0.7" filter="url(#blueGlow)"/>
+
+  <!-- Center diamond -->
+  <path d="M64 48 L80 64 L64 80 L48 64 Z" fill="url(#metalDark)" opacity="0.95"/>
+
+  <!-- Chrome nodes -->
+  <circle cx="64" cy="36" r="5" fill="url(#chromeDot)" filter="url(#softGlow)"/>
+  <circle cx="92" cy="64" r="5" fill="url(#chromeDot)" filter="url(#softGlow)"/>
+  <circle cx="64" cy="92" r="5" fill="url(#chromeDot)" filter="url(#softGlow)"/>
+  <circle cx="36" cy="64" r="5" fill="url(#chromeDot)" filter="url(#softGlow)"/>
+
+  <!-- Center glow -->
+  <circle cx="64" cy="64" r="8" fill="#00a8ff" filter="url(#glow)" opacity="0.5"/>
+  <circle cx="64" cy="64" r="5" fill="#00d4ff" opacity="0.7"/>
+  <circle cx="64" cy="64" r="2.5" fill="white" opacity="0.6"/>
 </svg>
