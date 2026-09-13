@@ -1,5 +1,6 @@
 import { Router, Response } from 'express'
 import db from '../db.js'
+import { backupOnStartup } from '../backup.js'
 
 const router = Router()
 
@@ -27,6 +28,19 @@ router.get('/daily-stats', (req, res: Response) => {
 
 router.post('/daily-stats', (req, res: Response) => {
   return (router as any).handle({ ...req, method: 'GET', url: '/daily-stats' }, res, () => {})
+})
+
+router.get('/backup', async (_req, res: Response) => {
+  try {
+    const file = await backupOnStartup()
+    res.json({ ok: true, file: file || null, message: file ? 'Backup created' : 'No data to backup' })
+  } catch (e: any) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+router.post('/backup', async (_req, res: Response) => {
+  return (router as any).handle({ ...req, method: 'GET', url: '/backup' }, res, () => {})
 })
 
 export default router

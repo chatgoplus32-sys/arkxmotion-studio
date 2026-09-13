@@ -7,7 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const backupDir = path.join(__dirname, '..', 'data', 'backups')
 
 /** Jumlah backup terbaru yang disimpan — yang lebih lama dihapus otomatis. */
-const MAX_BACKUPS = 10
+const MAX_BACKUPS = 30
 
 function timestamp(): string {
   const d = new Date()
