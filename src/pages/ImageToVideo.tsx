@@ -33,7 +33,7 @@ import { uploadToCdn } from '@/lib/cdn'
 import { precheckProviderBalance } from '@/lib/balancePrecheck'
 import type { NexabotSessionInfo } from '@/lib/nexabot'
 
-import { PROVIDER_MODELS, QUALITY_OPTIONS, getCreatepulseCost, RATIOS, TEMPLATES, CREATEPULSE_API } from './image-to-video/constants'
+import { PROVIDER_MODELS, QUALITY_OPTIONS, getCreatepulseCost, RATIOS, MODEL_RATIO_RESTRICTIONS, TEMPLATES, CREATEPULSE_API } from './image-to-video/constants'
 
 import VideoPlayer from './image-to-video/VideoPlayer'
 import { nexabotPathPill } from './image-to-video/nexabotPathPill'
@@ -342,9 +342,18 @@ export default function ImageToVideoPage() {
     }
   }, [provider, models, model])
 
+  const modelRestrictions = MODEL_RATIO_RESTRICTIONS[currentModel?.apiModel || '']
+  const availableRatios = modelRestrictions || RATIOS
+
   useEffect(() => {
     if (isVeoI2V && ratio !== '16:9') setRatio('16:9')
   }, [isVeoI2V, ratio])
+
+  useEffect(() => {
+    if (modelRestrictions && !modelRestrictions.includes(ratio)) {
+      setRatio(modelRestrictions[0])
+    }
+  }, [modelRestrictions, ratio])
 
   useEffect(() => {
     if (qualityOptions.length > 0 && !qualityOptions.find((q) => q.value === quality)) {
@@ -2604,7 +2613,7 @@ export default function ImageToVideoPage() {
                     <Select
                       value={ratio}
                       onChange={(e) => setRatio(e.target.value)}
-                      options={RATIOS.map((r) => ({ value: r, label: r }))}
+                      options={availableRatios.map((r) => ({ value: r, label: r }))}
                       disabled={isVeoI2V}
                     />
                   </div>

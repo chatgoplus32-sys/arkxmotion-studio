@@ -584,7 +584,12 @@ export const CP_PRICES: Record<string, number> = {
 }
 export const getCreatepulseCost = (apiModel?: string) => apiModel ? (CP_PRICES[apiModel] ?? 1500) : 1500
 
-export const RATIOS = ['16:9', '9:16', '1:1', '4:5', '3:4']
+export const RATIOS = ['16:9', '9:16', '1:1', '4:3']
+
+/** Model-specific ratio restrictions (empty = use all RATIOS). */
+export const MODEL_RATIO_RESTRICTIONS: Record<string, string[]> = {
+  'veo-omni-10s': ['9:16', '16:9'],
+}
 
 export const TEMPLATES = [
   { name: 'Cinematic Slow Pan', body: 'Cinematic slow camera pan, natural lighting, subtle wind on hair, subject stays centered' },

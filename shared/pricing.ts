@@ -205,6 +205,9 @@ export const CREATEPULSE_DEFAULT_PRICE = 1500
 /** Tarif khusus per apiModel. */
 export const CREATEPULSE_MODEL_PRICES: Record<string, number> = {
   'dreamina-seedance-2.0-15s': 2250,
+  'dreamina-seedance-2.5-15s': 2500,
+  'dreamina-seedance-2.5-20s': 3000,
+  'dreamina-seedance-2.5-30s': 4500,
   'veo-omni-10s': 2250,
 }
 
