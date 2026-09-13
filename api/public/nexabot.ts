@@ -2,6 +2,8 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import {
   NexabotUpstreamError,
   fetchNexabotUpstream,
+  nexabotErrorAdvice,
+  nexabotErrorCause,
   nexabotRelayHeaders,
   type NexabotProxyAction,
 } from '../../shared/nexabotProxy.js'
@@ -23,7 +25,7 @@ async function relayJson(
   url: string,
   init: RequestInit,
 ): Promise<void> {
-  const { response, attempts } = await fetchNexabotUpstream(url, init, {
+  const { response, attempts, shared } = await fetchNexabotUpstream(url, init, {
     action,
     onRetry: ({ attempt, status, delayMs, message }) =>
       console.warn(
@@ -31,7 +33,8 @@ async function relayJson(
       ),
   })
   const text = await response.text()
-  console.log(`[nexabot-proxy] ${action} ${response.status}${attempts > 1 ? ` (percobaan ke-${attempts})` : ''}: ${text.slice(0, 300)}`)
+  const sharedNote = shared ? ' (single-flight: respons dipakai bersama)' : ''
+  console.log(`[nexabot-proxy] ${action} ${response.status}${attempts > 1 ? ` (percobaan ke-${attempts})` : ''}${sharedNote}: ${text.slice(0, 300)}`)
   res.writeHead(response.status, {
     'Content-Type': 'application/json',
     'Access-Control-Allow-Origin': '*',
@@ -283,7 +286,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.end(text)
   } catch (err: any) {
     const upstream = err instanceof NexabotUpstreamError ? err : null
-    console.error(`[nexabot-proxy] error:`, err?.message)
+    // `cause` = alasan asli dari undici (ECONNRESET, UND_ERR_SOCKET, dst) yang
+    // tanpa ini hilang menjadi cuma "fetch failed".
+    const cause = nexabotErrorCause(err)
+    console.error(`[nexabot-proxy] error:`, err?.message, cause ? `(cause: ${cause})` : '')
+    // Jenis aksi dibaca ulang dari URL karena catch ini di luar blok tempat
+    // `action` dihitung — saran untuk submit/generate berbeda (job bisa ganda).
+    const failedAction = ((req.url || '').match(/\/(credit|submit|generate|session|job|download)(?:\/|$)/)?.[1]
+      || 'generic') as NexabotProxyAction
     const timedOut = upstream ? upstream.timeout : isTimeout(err)
     res.writeHead(timedOut ? 504 : 502, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({
@@ -291,8 +301,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Pesan NexabotUpstreamError sudah menyebut jenis request & jumlah
       // percobaan, jadi user tahu ini upstream yang menggantung.
       error: upstream
-        ? upstream.message
-        : (isTimeout(err) ? 'NexaBot timeout — server mereka tidak merespons' : err?.message),
+        ? `${upstream.message} — ${nexabotErrorAdvice(failedAction)}`
+        : (isTimeout(err)
+          ? 'NexaBot timeout — server mereka tidak merespons'
+          : [err?.message, cause && `(${cause})`].filter(Boolean).join(' ')),
     }))
   }
 }

@@ -84,6 +84,30 @@ function renderActions() {
   $('balanceBtn').disabled = !p.canBalance
   $('diagBtn').hidden = p.id !== 'oneover'
   $('scanBtn').textContent = p.hosts.length ? '🔍 Scan tab provider' : '🔍 Scan tab aktif'
+  $('syncNowBtn').disabled = !p.canSync
+  $('syncNowBtn').title = p.canSync
+    ? 'Kirim token terbaik provider ini ke app sekarang'
+    : p.label + ' belum punya jalur auto-sync'
+}
+
+/** Baris status auto-sync provider aktif: hasil percobaan terakhir + waktunya. */
+function renderSyncNote() {
+  const p = provider()
+  const el = $('syncNote')
+  if (!p || !p.canSync) {
+    el.textContent = 'Provider ini belum punya jalur auto-sync — token tetap disalin manual.'
+    el.className = 'syncnote'
+    return
+  }
+  const status = state.syncStatuses ? state.syncStatuses[p.id] : null
+  if (!status) {
+    el.textContent = 'Belum pernah dikirim. Buka tab app sambil login, token akan terkirim sendiri.'
+    el.className = 'syncnote'
+    return
+  }
+  const when = new Date(status.at).toLocaleTimeString('id-ID')
+  el.textContent = `${status.ok ? '✓' : '✗'} ${status.message} · ${when}${status.origin ? ' · ' + status.origin : ''}`
+  el.className = 'syncnote ' + (status.ok ? 'ok' : 'bad')
 }
 
 function cardActions(entry, index) {
@@ -178,6 +202,7 @@ function render() {
   renderTabs()
   renderHeader()
   renderActions()
+  renderSyncNote()
   renderTokens()
 }
 
@@ -208,6 +233,7 @@ async function load() {
     activeId = state.activeProviderId || state.providers[0].id
   }
   $('appUrl').value = state.appUrl || ''
+  $('syncToggle').checked = state.syncEnabled !== false
   render()
 }
 
@@ -253,6 +279,22 @@ async function runBalance() {
   }
 }
 
+/** Kirim token provider aktif ke app sekarang (dipakai tombol & saat sync dinyalakan). */
+async function runSyncNow(silent) {
+  const p = provider()
+  if (!p || !p.canSync) {
+    if (!silent) toast('Provider ini belum punya jalur auto-sync', true)
+    return
+  }
+  if (!silent) showResult([`Mengirim token ${p.label} ke app…`])
+  const result = await ask({ type: 'sync_now', providerId: p.id })
+  await load()
+  if (!silent || !result.ok) {
+    showResult([result.ok ? `Terkirim ke ${result.origin || 'app'}` : `Kirim gagal: ${result.error}`])
+  }
+  toast(result.ok ? `Token ${p.label} terkirim ke app` : 'Gagal: ' + result.error, !result.ok)
+}
+
 async function runDiagnostics() {
   showResult('Menjalankan diagnostik…')
   const result = await ask({ type: 'diagnostics', providerId: provider().id })
@@ -286,6 +328,22 @@ document.addEventListener('DOMContentLoaded', () => {
     await ask({ type: 'app_url', url: $('appUrl').value.trim() })
     toast('App URL disimpan')
   })
+
+  $('syncToggle').addEventListener('change', async (event) => {
+    const wanted = event.target.checked
+    const result = await ask({ type: 'set_sync_enabled', enabled: wanted })
+    if (!result.ok) {
+      event.target.checked = !wanted
+      toast('Gagal menyimpan pengaturan sync: ' + result.error, true)
+      return
+    }
+    state.syncEnabled = result.enabled
+    toast(result.enabled ? 'Auto-sync aktif' : 'Auto-sync dimatikan')
+    // Saat dinyalakan, langsung kirim yang tersimpan — user tidak perlu klik lagi.
+    if (result.enabled) await runSyncNow(true)
+  })
+
+  $('syncNowBtn').addEventListener('click', () => runSyncNow(false))
 
   $('openProviders').addEventListener('click', async () => {
     const p = provider()

@@ -31,6 +31,7 @@ import {
   type NexabotSessionWarning,
   type NexabotSessionWarningLevel,
 } from '@/lib/nexabot'
+import { NEXABOT_CHECK_TIMEOUT_MS } from '@/lib/nexabot-constants'
 import { sendNotification } from '@/lib/notify'
 
 /** Interval probe berkala. */
@@ -97,7 +98,9 @@ export async function checkNexabotSessionHealth(): Promise<NexabotSessionHealth 
   if (!cookies) return null
 
   const key = (useProviderManager.getState().keys.nexabot || []).find((k) => !!k.cookies)
-  const session = await checkNexabotSession(cookies)
+  // Probe latar (bukan jalur user menunggu) → pakai anggaran panjang supaya
+  // /credits yang lambat (~30s) tidak berakhir jadi peringatan palsu "sesi mati".
+  const session = await checkNexabotSession(cookies, { timeoutMs: NEXABOT_CHECK_TIMEOUT_MS })
   const warning = nexabotSessionWarning(session, { cookiesAt: key?.cookiesAt ?? null })
   const sig = signatureOf(warning?.level ?? 'ok', session, key?.cookiesAt ?? null)
 

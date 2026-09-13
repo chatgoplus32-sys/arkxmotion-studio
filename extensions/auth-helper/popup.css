@@ -105,6 +105,46 @@ main {
   margin-bottom: 10px;
 }
 
+.syncbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.switchline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #c9c9c9;
+  cursor: pointer;
+}
+
+.switchline input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--ink);
+}
+
+.syncnote {
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--muted);
+  margin-bottom: 10px;
+  min-height: 12px;
+}
+
+.syncnote.ok {
+  color: #4ade80;
+}
+
+.syncnote.bad {
+  color: #f87171;
+}
+
 .actions {
   display: flex;
   gap: 6px;

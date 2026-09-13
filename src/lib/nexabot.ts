@@ -3,6 +3,7 @@
 // './x.js' ke './x.ts' saat build.
 import {
   describeNexabotStatus,
+  isNexabotTransientStatus,
   nexabotHttpVerdict,
   nexabotRetryDelayMs,
   parseRetryAfterMs,
@@ -217,7 +218,14 @@ export function isNexabotSessionError(err: unknown): boolean {
 // BALANCE CHECK
 // ═══════════════════════════════════════════════════════════════════
 
-export async function checkNexabotBalance(apiKey: string): Promise<{
+export { NEXABOT_CHECK_TIMEOUT_MS, NEXABOT_PROBE_TIMEOUT_MS } from './nexabot-constants.js'
+
+export interface NexabotProbeOptions {
+  /** Timeout satu probe ke proxy (ms); default {@link NEXABOT_PROBE_TIMEOUT_MS}. */
+  timeoutMs?: number
+}
+
+export async function checkNexabotBalance(apiKey: string, opts: NexabotProbeOptions = {}): Promise<{
   ok: boolean
   balance: number | null
   creditCost: number | null
@@ -225,7 +233,16 @@ export async function checkNexabotBalance(apiKey: string): Promise<{
   telegramId?: string | null
   registered?: boolean
   error?: string
+  /**
+   * true kalau kegagalan datang dari gateway NexaBot (timeout / 429 / 5xx),
+   * BUKAN dari key-nya. Pemanggil memakainya supaya key/sesi tidak ditandai
+   * invalid hanya karena upstream sedang lambat (lihat Providers.tsx).
+   */
+  transient?: boolean
+  /** Status HTTP dari proxy, kalau ada (untuk log/UI). */
+  status?: number | null
 }> {
+  const timeoutMs = opts.timeoutMs ?? NEXABOT_PROBE_TIMEOUT_MS
   const key = parseNexabotApiKeyInput(apiKey)
   if (!key) {
     return {
@@ -241,15 +258,22 @@ export async function checkNexabotBalance(apiKey: string): Promise<{
       headers: { 'X-Api-Key': safeHeaderValue(key) },
       // NexaBot /credit menggantung TANPA response untuk key yang tidak dikenal,
       // jadi tanpa timeout cek saldo bisa nge-hang selamanya.
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(timeoutMs),
     })
     if (!res.ok) {
       if (res.status === 401) {
-        return { ok: false, balance: null, creditCost: null, error: 'API key tidak valid' }
+        return { ok: false, balance: null, creditCost: null, error: 'API key tidak valid', status: 401, transient: false }
       }
       // 429/504 dari proxy artinya NexaBot yang bermasalah, bukan key-nya —
       // jelaskan supaya user tidak buru-buru menghapus key.
-      return { ok: false, balance: null, creditCost: null, error: describeNexabotStatus(res.status) }
+      return {
+        ok: false,
+        balance: null,
+        creditCost: null,
+        error: describeNexabotStatus(res.status),
+        status: res.status,
+        transient: isNexabotTransientStatus(res.status),
+      }
     }
     const data = await res.json()
     if (!data.ok) {
@@ -261,6 +285,8 @@ export async function checkNexabotBalance(apiKey: string): Promise<{
       creditCost: data.credit_cost ?? null,
       telegramId: data.telegram_id ?? null,
       registered: data.registered === true,
+      transient: false,
+      status: res.status,
     }
   } catch (err: any) {
     const timedOut = err?.name === 'TimeoutError' || err?.name === 'AbortError'
@@ -268,8 +294,11 @@ export async function checkNexabotBalance(apiKey: string): Promise<{
       ok: false,
       balance: null,
       creditCost: null,
+      // Timeout / koneksi putus = masalah jaringan atau gateway, bukan key-nya.
+      transient: true,
+      status: null,
       error: timedOut
-        ? 'Timeout cek saldo NexaBot (15s) — NexaBot menggantung (biasanya key tidak dikenal). Kalau akun punya paket Unlimited, pakai mode Session (cookie): tidak perlu cek saldo.'
+        ? `Timeout cek saldo NexaBot (${Math.round(timeoutMs / 1000)}s) — NexaBot menggantung (biasanya key tidak dikenal). Kalau akun punya paket Unlimited, pakai mode Session (cookie): tidak perlu cek saldo.`
         : (err.message || 'Network error'),
     }
   }
@@ -292,11 +321,19 @@ export interface NexabotSessionInfo {
   telegramId: string | null
   email: string | null
   error?: string
+  /**
+   * true kalau probe gagal karena gateway NexaBot (timeout / 429 / 5xx) — sesi
+   * belum tentu mati, jadi jangan sampai cookie-nya dicap invalid.
+   */
+  transient?: boolean
+  /** Status HTTP respons proxy, kalau ada. */
+  status?: number | null
 }
 
 const EMPTY_SESSION: NexabotSessionInfo = {
   ok: false, active: false, unlimited: false, plan: null,
   until: null, untilMs: null, balance: null, telegramId: null, email: null,
+  transient: false, status: null,
 }
 
 /** Cari nilai pertama di objek bersarang yang key-nya cocok dengan regex. */
@@ -346,7 +383,8 @@ function pickBool(obj: any, re: RegExp): boolean | null {
  * kalau tidak ada field yang dikenali, `active` tetap true tapi `unlimited`
  * false supaya UI jujur menampilkan "belum terverifikasi".
  */
-export async function checkNexabotSession(cookies: string): Promise<NexabotSessionInfo> {
+export async function checkNexabotSession(cookies: string, opts: NexabotProbeOptions = {}): Promise<NexabotSessionInfo> {
+  const timeoutMs = opts.timeoutMs ?? NEXABOT_PROBE_TIMEOUT_MS
   const cookieHeader = safeHeaderValue(parseNexabotCookieInput(cookies))
   if (!cookieHeader) {
     return { ...EMPTY_SESSION, error: 'Cookie session kosong / format tidak dikenali — paste cookie atau hasil “Copy as cURL”.' }
@@ -355,14 +393,14 @@ export async function checkNexabotSession(cookies: string): Promise<NexabotSessi
     let res = await fetch(`${NEXABOT_BASE}/session`, {
       method: 'GET',
       headers: { 'X-Nexabot-Cookie': cookieHeader },
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(timeoutMs),
     })
     if (res.status === 404) {
       // Fallback: sebagian host/rewrite memangkas path — pakai bentuk query.
       res = await fetch(`${NEXABOT_BASE}?action=session`, {
         method: 'GET',
         headers: { 'X-Nexabot-Cookie': cookieHeader },
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(timeoutMs),
       })
     }
     if (res.status === 401 || res.status === 403) {
@@ -380,6 +418,8 @@ export async function checkNexabotSession(cookies: string): Promise<NexabotSessi
         // Catatan: 429/504 di sini = upstream sedang membatasi/menggantung,
         // BUKAN berarti cookie-nya mati. Pesannya dibedakan supaya user tidak
         // buru-buru login ulang hanya karena hiccup sesaat.
+        status: res.status,
+        transient: isNexabotTransientStatus(res.status),
       }
     }
 
@@ -420,12 +460,17 @@ export async function checkNexabotSession(cookies: string): Promise<NexabotSessi
       telegramId,
       email,
       error: expiredByDate ? 'Masa berlaku paket sudah berakhir' : undefined,
+      transient: false,
+      status: res.status,
     }
   } catch (err: any) {
     const timedOut = err?.name === 'TimeoutError' || err?.name === 'AbortError'
     return {
       ...EMPTY_SESSION,
-      error: timedOut ? 'Timeout cek sesi NexaBot (15s)' : (err?.message || 'Network error'),
+      // Timeout/koneksi putus bukan tanda cookie mati — tandai transient supaya
+      // pemanggil tidak mencabut status key sesi ini.
+      transient: true,
+      error: timedOut ? `Timeout cek sesi NexaBot (${Math.round(timeoutMs / 1000)}s)` : (err?.message || 'Network error'),
     }
   }
 }

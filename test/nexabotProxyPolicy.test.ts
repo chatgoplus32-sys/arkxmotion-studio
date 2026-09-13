@@ -10,7 +10,10 @@ import {
   NEXABOT_PROXY_RETRY,
   NexabotUpstreamError,
   fetchNexabotUpstream,
+  isNexabotNonIdempotentAction,
   isNexabotProxyTransientStatus,
+  nexabotErrorAdvice,
+  nexabotErrorCause,
   nexabotProxyDelayMs,
   nexabotProxyRetryConfig,
   nexabotRelayHeaders,
@@ -20,6 +23,15 @@ import {
 function timeoutError() {
   const err: any = new Error('The operation was aborted due to timeout')
   err.name = 'TimeoutError'
+  return err
+}
+
+/** Kegagalan jaringan seperti yang dilempar undici: TypeError + `cause` asli. */
+function fetchFailedError(code = 'ECONNRESET', message = 'socket hang up') {
+  const cause: any = new Error(message)
+  cause.code = code
+  const err: any = new TypeError('fetch failed')
+  err.cause = cause
   return err
 }
 
@@ -55,16 +67,20 @@ test('policy: read-only boleh diulang, submit/generate tidak', () => {
   }
   // Timeout dibedakan per jenis request: poll status jauh lebih pendek daripada submit.
   assert.ok(NEXABOT_PROXY_POLICY.job.timeoutMs < NEXABOT_PROXY_POLICY.submit.timeoutMs)
-  assert.ok(NEXABOT_PROXY_POLICY.credit.timeoutMs >= 30_000, 'probe saldo diberi ruang lebih dari 20s')
-  assert.ok(
-    NEXABOT_PROXY_POLICY.credit.timeoutMs > NEXABOT_PROXY_POLICY.job.timeoutMs,
-    'probe saldo/sesi menunggu lebih lama daripada satu poll status',
-  )
   assert.equal(NEXABOT_PROXY_POLICY.session.timeoutMs, NEXABOT_PROXY_POLICY.credit.timeoutMs)
-  assert.ok(
-    NEXABOT_PROXY_POLICY.credit.attempts > NEXABOT_PROXY_POLICY.job.attempts,
-    'probe diulang lebih banyak daripada poll status',
-  )
+
+  // Anggaran SATU probe saldo/sesi (semua percobaan + jeda retry terburuk)
+  // wajib muat di dalam kesabaran klien. Halaman Providers & pemantau sesi
+  // memakai NEXABOT_CHECK_TIMEOUT_MS = 55s (src/lib/nexabot.ts). Dulu 30s × 3
+  // (~92s) membuat 504 datang setelah klien menyerah di 8–15s — jawaban upstream
+  // yang sebenarnya ada (log: sukses di percobaan 2–3) tidak pernah terpakai.
+  const worstRetryDelayMs = NEXABOT_PROXY_RETRY.maxRetryAfterMs
+  for (const action of ['credit', 'session'] as const) {
+    const budgetMs = NEXABOT_PROXY_POLICY[action].timeoutMs * NEXABOT_PROXY_POLICY[action].attempts
+      + worstRetryDelayMs * Math.max(0, NEXABOT_PROXY_POLICY[action].attempts - 1)
+    assert.ok(budgetMs < 55_000, `anggaran ${action} ${budgetMs}ms harus < timeout klien 55s`)
+    assert.ok(budgetMs > NEXABOT_PROXY_POLICY[action].timeoutMs, `${action} harus punya ruang untuk satu retry`)
+  }
   for (const policy of Object.values(NEXABOT_PROXY_POLICY)) {
     assert.ok(policy.timeoutMs > 0 && policy.attempts >= 1 && policy.label.length > 0)
   }
@@ -151,11 +167,9 @@ test('429 diulang dan Retry-After upstream dihormati (dibatasi maxRetryAfterMs)'
 })
 
 test('5xx beruntun: diulang sampai percobaan habis lalu respons terakhir diteruskan', async () => {
-  const { fetchImpl, calls, remaining } = fakeFetch([
-    () => jsonResponse({ ok: false }, 503),
-    () => jsonResponse({ ok: false }, 503),
-    () => jsonResponse({ ok: false }, 503),
-  ])
+  const { fetchImpl, calls, remaining } = fakeFetch(
+    Array.from({ length: NEXABOT_PROXY_POLICY.session.attempts }, () => () => jsonResponse({ ok: false }, 503)),
+  )
   const sleeps: number[] = []
 
   const { response, attempts } = await fetchNexabotUpstream('https://nexabot.id/x', {}, {
@@ -205,23 +219,22 @@ test('submit tanpa retry: satu panggilan walau timeout', async () => {
 })
 
 test('semua percobaan gagal (bukan HTTP): error menyebut jumlah percobaan & timeout', async () => {
-  const { fetchImpl, calls } = fakeFetch([
-    () => { throw timeoutError() },
-    () => { throw timeoutError() },
-    () => { throw timeoutError() },
-  ])
+  const policy = NEXABOT_PROXY_POLICY.credit
+  const { fetchImpl, calls } = fakeFetch(
+    Array.from({ length: policy.attempts + 2 }, () => () => { throw timeoutError() }),
+  )
 
   await assert.rejects(
     () => fetchNexabotUpstream('https://nexabot.id/x', {}, { action: 'credit', fetchImpl, sleep: async () => {} }),
     (err: any) => {
       assert.equal(err.name, 'NexabotUpstreamError')
-      assert.equal(err.attempts, 3)
+      assert.equal(err.attempts, policy.attempts)
       assert.match(err.message, /cek saldo/)
-      assert.match(err.message, /3×30s/)
+      assert.match(err.message, new RegExp(`${policy.attempts}×${Math.round(policy.timeoutMs / 1000)}s`))
       return true
     },
   )
-  assert.equal(calls.length, 3)
+  assert.equal(calls.length, policy.attempts)
 })
 
 test('respons yang dibuang koneksinya ditutup (tidak menggantung)', async () => {
@@ -276,4 +289,45 @@ test('backoff berlipat dan dibatasi maxMs', () => {
   assert.equal(nexabotProxyDelayMs({ attempt: 2, config }), 1000)
   assert.equal(nexabotProxyDelayMs({ attempt: 3, config }), 2000)
   assert.equal(nexabotProxyDelayMs({ attempt: 9, config }), 4000)
+})
+
+// ─── Diagnosa kegagalan jaringan ────────────────────────────────────────────
+// Insiden nyata: submit menggantung ~61s lalu undici melempar "fetch failed".
+// Pesan itu saja tidak memberi tahu APA yang putus, jadi penyebab asli dari
+// `err.cause` harus ikut terbawa ke log & ke klien.
+
+test('kegagalan jaringan: penyebab asli (cause) ikut terbaca', () => {
+  assert.equal(nexabotErrorCause(fetchFailedError()), 'ECONNRESET: socket hang up')
+  assert.equal(nexabotErrorCause(fetchFailedError('UND_ERR_SOCKET', 'other side closed')), 'UND_ERR_SOCKET: other side closed')
+  // Tanpa cause (mis. abort) jangan menambah noise.
+  assert.equal(nexabotErrorCause(new TypeError('fetch failed')), '')
+  assert.equal(nexabotErrorCause(undefined), '')
+})
+
+test('error upstream menyertakan cause di pesan (bukan cuma "fetch failed")', async () => {
+  const { fetchImpl } = fakeFetch([() => { throw fetchFailedError() }])
+
+  await assert.rejects(
+    () => fetchNexabotUpstream('https://nexabot.id/x', {}, {
+      action: 'credit', fetchImpl, sleep: async () => {}, policy: { attempts: 1 },
+    }),
+    (err: any) => {
+      assert.match(err.message, /cek saldo/)
+      assert.match(err.message, /fetch failed/)
+      assert.match(err.message, /ECONNRESET/)
+      return true
+    },
+  )
+})
+
+test('saran error berbeda untuk aksi yang bisa membuat job', () => {
+  for (const action of ['submit', 'generate'] as const) {
+    assert.equal(isNexabotNonIdempotentAction(action), true, `${action} membuat job/kredit`)
+    assert.match(nexabotErrorAdvice(action), /MUNGKIN sudah terbentuk/)
+    assert.doesNotMatch(nexabotErrorAdvice(action), /^coba lagi$/)
+  }
+  for (const action of ['credit', 'session', 'job', 'download', 'modes', 'generic'] as const) {
+    assert.equal(isNexabotNonIdempotentAction(action), false)
+    assert.equal(nexabotErrorAdvice(action), 'coba lagi')
+  }
 })

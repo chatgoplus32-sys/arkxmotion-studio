@@ -28,6 +28,11 @@ export const AUTO_SYNC_PROVIDERS: AutoSyncDef[] = [
   { id: 'weavy', label: 'Weavy', icon: '🌊' },
   { id: 'leonardo', label: 'Leonardo', icon: '🎨' },
   { id: 'nexabot', label: 'NexaBot', icon: '🧠', kind: 'cookie' },
+  // Token yang dikirim extension auth-helper (G5/OneOver/Firefly) masuk ke field
+  // `key`, jadi key di halaman Providers ikut segar tanpa copy-paste.
+  { id: 'galleri5', label: 'G5 AI Studio', icon: '🎬' },
+  { id: 'oneover', label: 'OneOver', icon: '🔮' },
+  { id: 'firefly', label: 'Adobe Firefly', icon: '🔥' },
 ]
 
 // ── JWT identity (email/sub) — untuk mencocokkan key akun yang sama ────────
@@ -230,6 +235,52 @@ async function runProviderCheck(def: AutoSyncDef, key: string): Promise<CheckOut
       const msg = r.message || ''
       if (/expired|401|403/i.test(msg)) return { status: 'invalid', note: msg }
       return { status: undefined, note: msg || 'Gagal cek token' }
+    }
+    if (def.id === 'galleri5') {
+      // Extension mengirim refresh token (AMf-...) — app menukarnya ke ID token
+      // sendiri; kalau yang tersimpan sudah JWT, pakai apa adanya.
+      const galleri5 = await import('@/lib/galleri5')
+      const trimmed = key.trim()
+      const accessToken = /^eyJ/.test(trimmed) ? trimmed : await galleri5.resolveAccessTokenFromKey(trimmed)
+      if (!accessToken) {
+        return { status: 'invalid', note: 'Refresh token G5 tidak bisa di-resolve — login ulang di aistudio.galleri5.com' }
+      }
+      const r = await galleri5.checkGalleri5Balance({ Accept: '*/*', Authorization: `Bearer ${accessToken}` })
+      if (r.ok) {
+        const bal = r.balance
+        return {
+          status: bal != null && bal <= 0 ? 'empty' : 'active',
+          balance: bal,
+          email: r.email,
+          note: r.plan || undefined,
+        }
+      }
+      if (galleri5.isGalleri5TokenError(r.error || '')) return { status: 'invalid', note: r.error }
+      return { status: undefined, note: r.error || 'Gagal cek token' }
+    }
+    if (def.id === 'oneover') {
+      const oneover = await import('@/lib/oneover')
+      const accessToken = await oneover.resolveOneOverAccessToken(key)
+      const userId = oneover.extractOneOverUserId(accessToken)
+      const r = await oneover.checkOneOverBalance(accessToken, userId || undefined)
+      if (r.ok) {
+        const bal = r.balance ?? null
+        return { status: bal != null && bal <= 0 ? 'empty' : 'active', balance: bal }
+      }
+      if (/expired|refresh|401|403/i.test(r.error || '')) {
+        return { status: 'invalid', note: 'Token OneOver expired — login ulang di oneover.com' }
+      }
+      return { status: undefined, note: r.error || 'Gagal cek token' }
+    }
+    if (def.id === 'firefly') {
+      const { checkFireflyBalance } = await import('@/lib/firefly')
+      const r = await checkFireflyBalance(key)
+      if (r.ok) {
+        const bal = r.balance ?? null
+        return { status: bal != null && bal <= 0 ? 'empty' : 'active', balance: bal, note: r.plan || undefined }
+      }
+      if (/expired|401|403|jwt/i.test(r.error || '')) return { status: 'invalid', note: r.error }
+      return { status: undefined, note: r.error || 'Gagal cek token' }
     }
     return { status: undefined }
   } catch (err: any) {

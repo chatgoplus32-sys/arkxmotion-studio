@@ -200,11 +200,17 @@ export async function precheckNexabotBalance(minCredits: number): Promise<Balanc
     .sort((a, b) => (b.balance ?? 0) - (a.balance ?? 0))
 
   let bestBalance: number | null = null
+  let transientFailure = false
   for (const k of candidates) {
     try {
       const { checkNexabotBalance } = await import('@/lib/nexabot')
       const res = await checkNexabotBalance(k.key)
-      if (!res.ok) continue
+      if (!res.ok) {
+        // Timeout/5xx = upstream lambat, bukan key salah — catat supaya pesan
+        // akhirnya tidak menyuruh user membuang key yang sebenarnya sehat.
+        if (res.transient) transientFailure = true
+        continue
+      }
       const bal = res.balance ?? 0
       bestBalance = Math.max(bestBalance ?? 0, bal)
       store.updateKeyStatus('nexabot', k.id, bal >= minCredits ? 'active' : bal > 0 ? 'active' : 'empty', bal)
@@ -219,7 +225,9 @@ export async function precheckNexabotBalance(minCredits: number): Promise<Balanc
     balance: bestBalance,
     error: bestBalance != null
       ? `Saldo NexaBot tidak cukup: butuh ${minCredits} cr, saldo tertinggi ${bestBalance} cr. Top up atau pilih model lebih murah.`
-      : 'Saldo NexaBot tidak bisa dicek. Perbarui API key di Providers.',
+      : transientFailure
+        ? 'Cek saldo NexaBot timeout (server NexaBot lambat / tidak merespons) — coba lagi sebentar lagi; API key-nya belum tentu salah.'
+        : 'Saldo NexaBot tidak bisa dicek. Perbarui API key di Providers.',
   }
 }
 
@@ -302,7 +310,15 @@ export async function refreshProviderBalance(
       try {
         const { checkNexabotSession } = await import('@/lib/nexabot')
         const s = await checkNexabotSession(sessionKey.cookies)
-        if (!s.ok) return { ok: false, error: s.error || 'Cookie sesi NexaBot ditolak — login ulang di nexabot.id' }
+        if (!s.ok) {
+          // Gateway yang menggantung ≠ cookie mati → jangan suruh user login ulang.
+          return {
+            ok: false,
+            error: s.transient
+              ? (s.error || 'Server NexaBot tidak merespons (timeout gateway) — coba lagi sebentar lagi')
+              : (s.error || 'Cookie sesi NexaBot ditolak — login ulang di nexabot.id'),
+          }
+        }
         if (s.balance != null) store.updateKeyStatus('nexabot', sessionKey.id, 'active', s.balance)
         window.dispatchEvent(new Event('aatools:keys-changed'))
         return { ok: true, balance: s.balance ?? null, email: s.email || undefined }

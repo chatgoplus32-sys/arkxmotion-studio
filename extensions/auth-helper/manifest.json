@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ARKX Auth Helper",
-  "description": "Satu ekstensi untuk menangkap & mengelola token provider ARKXMotion Studio (Galleri5, OneOver, Adobe Firefly) plus JWT generik.",
-  "version": "2.0.0",
+  "description": "Satu ekstensi untuk menangkap & mengelola token provider ARKXMotion Studio (Galleri5, OneOver, Adobe Firefly) plus JWT generik — token dikirim otomatis ke app lewat /api/sync-tokens.",
+  "version": "2.1.0",
   "minimum_chrome_version": "111",
   "permissions": [
     "storage",
@@ -18,7 +18,10 @@
     "https://aistudio-backend.calmdesert-ca599847.centralindia.azurecontainerapps.io/*",
     "https://securetoken.googleapis.com/*",
     "https://oneover.com/*",
-    "https://*.supabase.co/*"
+    "https://*.supabase.co/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*",
+    "https://*.vercel.app/*"
   ],
   "background": {
     "service_worker": "background.js",

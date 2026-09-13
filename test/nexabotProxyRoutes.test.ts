@@ -11,6 +11,7 @@ import assert from 'node:assert/strict'
 import type { AddressInfo } from 'node:net'
 import express from 'express'
 import nexabotRoutes from '../server/routes/nexabot.js'
+import { NEXABOT_PROXY_POLICY } from '../shared/nexabotProxy.js'
 
 const originalFetch = globalThis.fetch
 
@@ -97,14 +98,17 @@ test('/credit: satu timeout lalu sukses → klien tidak pernah melihat 504', asy
 })
 
 test('/credit: upstream benar-benar mati → 504 dengan pesan yang menyebut jenis request & percobaan', async () => {
-  for (let i = 0; i < 8; i++) queue.push(() => { throw timeoutError() })
+  const policy = NEXABOT_PROXY_POLICY.credit
+  for (let i = 0; i < policy.attempts + 2; i++) queue.push(() => { throw timeoutError() })
 
   const res = await get('/api/public/nexabot/credit', { 'X-Api-Key': 'nxb_test' })
 
   assert.equal(res.status, 504)
   assert.match(res.body.error, /cek saldo/)
-  assert.match(res.body.error, /3×30s/)
-  assert.equal(calls.length, 3, 'berhenti setelah 3 percobaan')
+  // Angka di pesan mengikuti policy, bukan ditulis tangan: policy-nya memang
+  // perlu bisa disetel tanpa membuat test berbohong.
+  assert.match(res.body.error, new RegExp(`${policy.attempts}×${Math.round(policy.timeoutMs / 1000)}s`))
+  assert.equal(calls.length, policy.attempts, `berhenti setelah ${policy.attempts} percobaan`)
 })
 
 test('/credit: key salah (401) diteruskan tanpa diulang', async () => {
@@ -188,4 +192,23 @@ test('/modes: read-only, diulang saat upstream hiccup', async () => {
   assert.equal(res.status, 200)
   assert.deepEqual(res.body.modes, ['t2v', 'sfv'])
   assert.equal(calls.length, 2)
+})
+
+// Insiden nyata: submit menggantung ~61s lalu koneksi ke nexabot.id putus
+// (undici: TypeError "fetch failed"). Pesannya harus menyebut penyebab asli dan
+// TIDAK menyarankan mengulang begitu saja — job bisa sudah terbentuk di sana.
+test('/submit: koneksi upstream putus → 502 yang menjelaskan risikonya', async () => {
+  const cause: any = new Error('socket hang up')
+  cause.code = 'ECONNRESET'
+  const netError: any = new TypeError('fetch failed')
+  netError.cause = cause
+  queue.push(() => { throw netError })
+
+  const res = await post('/api/public/nexabot/submit', { mode: 'sfv', prompt: 'animasikan' }, { 'X-Api-Key': 'nxb_test' })
+
+  assert.equal(res.status, 502)
+  assert.equal(calls.length, 1, 'submit tetap sekali jalan (tidak pernah diulang)')
+  assert.match(res.body.error, /submit ke NexaBot/)
+  assert.match(res.body.error, /ECONNRESET/, 'penyebab asli ikut terbaca')
+  assert.match(res.body.error, /MUNGKIN sudah terbentuk/, 'jangan menyuruh retry buta')
 })

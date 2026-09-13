@@ -28,6 +28,15 @@ import {
   setAppUrl,
 } from './lib/store.js'
 import { cookieDiagnostics, readSupabaseCookies } from './lib/cookies.js'
+import {
+  APP_TAB_ORIGINS,
+  forgetAppToken,
+  getSyncEnabled,
+  getSyncStatuses,
+  pushToApp,
+  resetSyncHistory,
+  setSyncEnabled,
+} from './lib/appSync.js'
 
 const ONEOVER_COOKIE_DOMAINS = ['oneover.com', '.oneover.com', '.supabase.co']
 
@@ -36,6 +45,14 @@ const ONEOVER_COOKIE_DOMAINS = ['oneover.com', '.oneover.com', '.supabase.co']
 function hostOf(url) {
   try {
     return new URL(url).hostname
+  } catch {
+    return ''
+  }
+}
+
+function originOf(url) {
+  try {
+    return new URL(url).origin
   } catch {
     return ''
   }
@@ -79,7 +96,38 @@ async function storeRaw(provider, raws, source) {
     await putEntry(provider, entry)
     stored++
   }
+  if (stored) await autoSyncProvider(provider, source || 'capture')
   return stored
+}
+
+/**
+ * Kirim token terbaik provider ke app (hanya provider yang punya `sync`).
+ * Dipanggil setiap kali token baru tersimpan, jadi app selalu memakai token
+ * terbaru tanpa copy-paste — persis alur riverside-token-ext.
+ *
+ * Tidak pernah melempar: server app yang mati hanya jadi status "gagal" di
+ * popup, dan token tetap tersimpan lokal untuk dicoba lagi nanti.
+ */
+async function autoSyncProvider(provider, source) {
+  if (!provider.sync) return null
+  try {
+    const entry = bestEntry(await listTokens(provider.id))
+    if (!entry) return null
+    return await pushToApp(provider, entry, { source: `ext:${source}`, origins: await appOrigins() })
+  } catch (error) {
+    console.warn('[auth-helper] sync gagal:', error.message)
+    return null
+  }
+}
+
+/**
+ * Origin app yang boleh menerima credential: App URL pilihan user lebih dulu,
+ * lalu kandidat yang dikenal. Hanya origin app milik user sendiri yang masuk
+ * daftar ini — token provider tidak pernah dikirim ke host lain.
+ */
+async function appOrigins() {
+  const { appUrl } = await loadState()
+  return [appUrl, ...APP_TAB_ORIGINS]
 }
 
 /** Tangani payload dari content script (interceptor jaringan / pembaca storage). */
@@ -223,6 +271,7 @@ async function handleRefresh({ providerId, key, refreshToken } = {}) {
       source: `refresh:${provider.refresh}`,
     }),
   )
+  await autoSyncProvider(provider, 'refresh')
   return ok({ accessToken: result.accessToken, refreshToken: result.refreshToken, expiresIn: result.expiresIn })
 }
 
@@ -331,9 +380,12 @@ async function handleState() {
   const { tokens, appUrl } = await loadState()
   const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true })
   const activeProvider = activeTab ? providerForHost(hostOf(activeTab.url || '')) : null
+  const [syncEnabled, syncStatuses] = await Promise.all([getSyncEnabled(), getSyncStatuses()])
   return ok({
     appUrl: appUrl || DEFAULT_APP_URL,
     defaultAppUrl: DEFAULT_APP_URL,
+    syncEnabled,
+    syncStatuses,
     activeTabHost: activeTab ? hostOf(activeTab.url || '') : '',
     activeProviderId: activeProvider ? activeProvider.id : null,
     providers: PROVIDERS.map((p) => ({
@@ -348,6 +400,7 @@ async function handleState() {
       extras: p.extras,
       canRefresh: !!p.refresh,
       canBalance: !!p.balance,
+      canSync: !!p.sync,
       canScan: p.readers.length > 0 || p.capture.includes('cookies'),
       cookiePrefix: p.id === 'oneover' ? ONEOVER_COOKIE_PREFIX : '',
       count: (tokens[p.id] || []).length,
@@ -380,7 +433,30 @@ const HANDLERS = {
   },
   app_url: async ({ url }) => {
     await setAppUrl(url)
+    // Origin app berubah → JWT yang di-cache dari origin lama tidak berlaku lagi.
+    await forgetAppToken()
     return ok({ appUrl: url })
+  },
+  sync_settings: async () => ok({ enabled: await getSyncEnabled(), statuses: await getSyncStatuses() }),
+  set_sync_enabled: async ({ enabled }) => {
+    await setSyncEnabled(enabled)
+    return ok({ enabled: await getSyncEnabled() })
+  },
+  // Tombol "Kirim sekarang": abaikan sakelar & riwayat dedupe, supaya user bisa
+  // memaksa kirim ulang ketika app baru dibuka atau token dicurigai basi.
+  sync_now: async ({ providerId }) => {
+    const provider = providerById(providerId)
+    if (!provider) return fail('provider tidak dikenal')
+    if (!provider.sync) return fail(`${provider.label} belum punya jalur auto-sync`)
+    const entry = bestEntry(await listTokens(provider.id))
+    if (!entry) return fail('belum ada token tersimpan — klik Scan dulu')
+    await resetSyncHistory(provider.id)
+    const result = await pushToApp(provider, entry, {
+      source: 'ext:manual',
+      force: true,
+      origins: await appOrigins(),
+    })
+    return result.ok ? ok({ message: result.message, origin: result.origin }) : fail(result.message)
   },
   // Dipakai tombol mengambang di halaman: kirim isi clipboard yang sudah
   // diformat sesuai provider, supaya aturannya tetap satu tempat dengan popup.
@@ -430,6 +506,20 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     if (raws.length) await storeRaw(provider, raws, 'auto-scan')
   } catch (error) {
     console.warn('[auth-helper] auto-scan gagal:', error.message)
+  }
+})
+
+// Tab app selesai dimuat → token yang sebelumnya gagal terkirim (server mati,
+// app belum dibuka, JWT belum ada) dicoba lagi. Dedupe di appSync membuat ini
+// aman dipanggil sesering apa pun.
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (changeInfo.status !== 'complete' || !tab || !tab.url) return
+  const origin = originOf(tab.url)
+  if (!origin) return
+  const allowed = await appOrigins()
+  if (!allowed.some((candidate) => String(candidate || '').replace(/\/+$/, '') === origin)) return
+  for (const provider of PROVIDERS) {
+    if (provider.sync) await autoSyncProvider(provider, 'app-tab')
   }
 })
 

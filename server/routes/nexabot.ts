@@ -3,6 +3,8 @@ import {
   NEXABOT_PROXY_POLICY,
   NexabotUpstreamError,
   fetchNexabotUpstream,
+  nexabotErrorAdvice,
+  nexabotErrorCause,
   nexabotRelayHeaders,
   type NexabotProxyAction,
 } from '../../shared/nexabotProxy.js'
@@ -23,7 +25,7 @@ async function relayUpstream(
 ): Promise<void> {
   const { label } = NEXABOT_PROXY_POLICY[action]
   try {
-    const { response, attempts } = await fetchNexabotUpstream(url, init, {
+    const { response, attempts, shared } = await fetchNexabotUpstream(url, init, {
       action,
       onRetry: ({ attempt, status, delayMs, message }) =>
         console.warn(
@@ -31,7 +33,8 @@ async function relayUpstream(
         ),
     })
     const text = await response.text()
-    console.log(`[nexabot-local] ${action} ${response.status}${attempts > 1 ? ` (percobaan ke-${attempts})` : ''}: ${text.slice(0, 300)}`)
+    const sharedNote = shared ? ' (single-flight: respons dipakai bersama)' : ''
+    console.log(`[nexabot-local] ${action} ${response.status}${attempts > 1 ? ` (percobaan ke-${attempts})` : ''}${sharedNote}: ${text.slice(0, 300)}`)
     res.writeHead(response.status, {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
@@ -41,10 +44,15 @@ async function relayUpstream(
     res.end(text)
   } catch (err: any) {
     const upstream = err instanceof NexabotUpstreamError ? err : null
-    console.error(`[nexabot-local] ${label} error:`, err?.message)
+    // `cause` = alasan asli dari undici (ECONNRESET, UND_ERR_SOCKET, dst) yang
+    // tanpa ini hilang menjadi cuma "fetch failed".
+    const cause = nexabotErrorCause(err)
+    console.error(`[nexabot-local] ${label} error:`, err?.message, cause ? `(cause: ${cause})` : '')
     res.status(upstream?.timeout ? 504 : 502).json({
       ok: false,
-      error: upstream ? `${upstream.message} — coba lagi` : err?.message || `Gagal ${label}`,
+      error: upstream
+        ? `${upstream.message} — ${nexabotErrorAdvice(action)}`
+        : `${err?.message || `Gagal ${label}`}${cause ? ` (${cause})` : ''}`,
     })
   }
 }
@@ -275,9 +283,13 @@ router.get('/download/:id', async (req: Request, res: Response) => {
     }
     res.end()
   } catch (err: any) {
-    console.error(`[nexabot-local] download error:`, err.message)
+    const cause = nexabotErrorCause(err)
+    console.error(`[nexabot-local] download error:`, err.message, cause ? `(cause: ${cause})` : '')
     const upstream = err instanceof NexabotUpstreamError ? err : null
-    res.status(upstream?.timeout ? 504 : 502).json({ ok: false, error: upstream ? `${upstream.message} — coba lagi` : err.message })
+    res.status(upstream?.timeout ? 504 : 502).json({
+      ok: false,
+      error: upstream ? `${upstream.message} — ${nexabotErrorAdvice('download')}` : err.message,
+    })
   }
 })
 

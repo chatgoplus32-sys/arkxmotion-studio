@@ -18,6 +18,9 @@
 //   copy                    — format tombol Copy utama: 'raw' | 'access' | 'refresh' | 'json'
 //   extras                  — tombol copy tambahan
 //   appField                — nama field di halaman Providers app
+//   sync                    — { provider, prefer } → auto-push ke app lewat
+//                             /api/sync-tokens (lib/appSync.js). Provider tanpa
+//                             slot di app cukup tidak punya kunci ini.
 //   hint                    — instruksi singkat di popup
 
 // ── Konstanta provider ───────────────────────────────────────────────────────
@@ -43,6 +46,9 @@ export const PROVIDERS = [
     emoji: '🎬',
     ink: '#e879f9',
     appField: 'galleri5',
+    // App menukar refresh token (AMf-...) sendiri tiap jam, jadi refresh token
+    // yang paling tahan lama untuk dikirim otomatis.
+    sync: { provider: 'galleri5', prefer: 'refresh' },
     hosts: ['aistudio.galleri5.com'],
     max: 5,
     capture: ['network', 'reader'],
@@ -61,6 +67,8 @@ export const PROVIDERS = [
     emoji: '🔮',
     ink: '#a78bfa',
     appField: 'oneover',
+    // App menyimpan refresh_token dari JSON sesi, jadi itu yang dikirim.
+    sync: { provider: 'oneover', prefer: 'refresh' },
     hosts: ['oneover.com'],
     max: 5,
     capture: ['network', 'reader', 'cookies'],
@@ -79,6 +87,8 @@ export const PROVIDERS = [
     emoji: '🔥',
     ink: '#FF6A00',
     appField: 'firefly',
+    // Adobe IMS hanya punya access token (~1 jam) — tidak ada yang bisa di-refresh.
+    sync: { provider: 'firefly', prefer: 'token' },
     hosts: ['firefly.adobe.com'],
     max: 5,
     capture: ['network', 'reader'],
@@ -97,6 +107,8 @@ export const PROVIDERS = [
     emoji: '🔑',
     ink: '#64b5f6',
     appField: null,
+    // Tanpa `sync`: halaman Providers tidak punya slot untuk token generik,
+    // jadi jalurnya tetap copy-paste manual.
     // Tanpa host: provider ini tidak punya content script tetap, tab-nya
     // dipindai saat diminta (activeTab + scripting) supaya tidak perlu izin
     // <all_urls> seperti ekstensi lama.
