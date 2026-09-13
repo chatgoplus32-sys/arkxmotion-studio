@@ -70,111 +70,38 @@ async function resolveAccessToken(token: string): Promise<{ accessToken: string;
 async function fetchWeavyCredits(accessToken: string): Promise<number | null> {
   const headers = {
     Authorization: `Bearer ${accessToken}`,
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-    'Accept': 'application/json, text/plain, */*',
-    'Accept-Language': 'en-US,en;q=0.9',
-    'Origin': 'https://app.weavy.ai',
-    'Referer': 'https://app.weavy.ai/',
   }
 
-  function extractCredits(obj: any, depth = 0): number | null {
-    if (!obj || depth > 4) return null
-    if (typeof obj === 'number') return obj
+  // Match aacs.web.id: try 4 endpoints, parse response exactly like their client
+  const endpoints = [
+    `${WEAVY_API}/v1/workspaces`,
+    `${WEAVY_API}/v1/credits`,
+    `${WEAVY_API}/v1/user/credits`,
+    `${WEAVY_API}/v1/user/balance`,
+  ]
 
-    // Direct fields
-    for (const key of ['credits', 'balance', 'remaining', 'credits_remaining', 'available_credits', 'quota']) {
-      const v = obj[key]
-      if (typeof v === 'number') return v
+  for (const url of endpoints) {
+    try {
+      const r = await fetch(url, { headers, signal: AbortSignal.timeout(10000) })
+      if (!r.ok) continue
+      const data = await r.json().catch(() => null)
+      if (!data) continue
+
+      // Exact same parsing as aacs.web.id reference implementation
+      const ws = Array.isArray(data) ? data[0] : (data.workspaces?.[0] ?? data)
+      const credits = ws?.credits ?? data.credits ?? data.balance ?? data.totalCredits ??
+        data.creditsRemaining ?? data.quota ?? data.usage?.credits ?? data.plan?.credits ??
+        data.data?.credits ?? data.user?.credits ?? null
+
+      console.log(`[weavy-proxy] ${url.split('/api')[1]} → credits=${credits}`)
+
+      if (typeof credits === 'number') return credits
+    } catch (e: any) {
+      console.log(`[weavy-proxy] ${url.split('/api')[1]} error:`, e.message)
     }
-
-    // Nested: user, workspace, plan, usage
-    for (const key of ['user', 'workspace', 'plan', 'usage', 'subscription', 'data', 'result']) {
-      const nested = obj[key]
-      if (nested && typeof nested === 'object') {
-        const found = extractCredits(nested, depth + 1)
-        if (found !== null) return found
-      }
-    }
-
-    // Array: check first element
-    if (Array.isArray(obj) && obj.length > 0) {
-      return extractCredits(obj[0], depth + 1)
-    }
-
-    return null
   }
 
-  // Try /v1/workspaces first
-  try {
-    const r = await fetch(`${WEAVY_API}/v1/workspaces`, {
-      headers,
-      signal: AbortSignal.timeout(15000),
-    })
-    const text = await r.text().catch(() => '')
-    console.log(`[weavy-proxy] /v1/workspaces → ${r.status} body=${text.slice(0, 1500)}`)
-    if (r.ok) {
-      let data: any
-      try { data = JSON.parse(text) } catch { data = null }
-      if (data) {
-        const credits = extractCredits(data)
-        if (credits !== null) {
-          console.log(`[weavy-proxy] /v1/workspaces credits=${credits}`)
-          return credits
-        }
-        console.log(`[weavy-proxy] /v1/workspaces no credits found. keys:`, Object.keys(data))
-      }
-    }
-  } catch (e: any) {
-    console.log(`[weavy-proxy] /v1/workspaces error:`, e.message)
-  }
-
-  // Fallback: try /v1/user
-  try {
-    const r = await fetch(`${WEAVY_API}/v1/user`, {
-      headers,
-      signal: AbortSignal.timeout(10000),
-    })
-    const text = await r.text().catch(() => '')
-    console.log(`[weavy-proxy] /v1/user → ${r.status} body=${text.slice(0, 1000)}`)
-    if (r.ok) {
-      let data: any
-      try { data = JSON.parse(text) } catch { data = null }
-      if (data) {
-        const credits = extractCredits(data)
-        if (credits !== null) {
-          console.log(`[weavy-proxy] /v1/user credits=${credits}`)
-          return credits
-        }
-      }
-    }
-  } catch (e: any) {
-    console.log(`[weavy-proxy] /v1/user error:`, e.message)
-  }
-
-  // Fallback: try /v1/me
-  try {
-    const r = await fetch(`${WEAVY_API}/v1/me`, {
-      headers,
-      signal: AbortSignal.timeout(10000),
-    })
-    const text = await r.text().catch(() => '')
-    console.log(`[weavy-proxy] /v1/me → ${r.status} body=${text.slice(0, 1000)}`)
-    if (r.ok) {
-      let data: any
-      try { data = JSON.parse(text) } catch { data = null }
-      if (data) {
-        const credits = extractCredits(data)
-        if (credits !== null) {
-          console.log(`[weavy-proxy] /v1/me credits=${credits}`)
-          return credits
-        }
-      }
-    }
-  } catch (e: any) {
-    console.log(`[weavy-proxy] /v1/me error:`, e.message)
-  }
-
-  console.log(`[weavy-proxy] all credit endpoints failed`)
+  console.log(`[weavy-proxy] all 4 credit endpoints returned null`)
   return null
 }
 
@@ -213,44 +140,9 @@ router.all('/', (req: Request, res: Response) => {
         const credits = await fetchWeavyCredits(accessToken)
         console.log(`[weavy-proxy] balance → credits=${credits} email=${email}`)
 
-        // Also try to get workspace details for debugging
-        let workspaceInfo: any = null
-        try {
-          const wr = await fetch(`${WEAVY_API}/v1/workspaces`, {
-            headers: { Authorization: `Bearer ${accessToken}`, 'Accept': 'application/json', 'Origin': 'https://app.weavy.ai', 'Referer': 'https://app.weavy.ai/' },
-            signal: AbortSignal.timeout(10000),
-          })
-          const wText = await wr.text().catch(() => '')
-          let wData: any; try { wData = JSON.parse(wText) } catch { wData = null }
-          if (wData) {
-            const ws = Array.isArray(wData?.workspaces) ? wData.workspaces[0] : (wData?.workspaces || wData)
-            if (ws) {
-              workspaceInfo = {
-                id: ws.id, name: ws.name, slug: ws.slug,
-                plan: ws.plan, subscription: ws.subscription,
-                credits: ws.credits, balance: ws.balance,
-                usage: ws.usage, limits: ws.limits,
-                keys: Object.keys(ws),
-              }
-            } else {
-              workspaceInfo = { topKeys: Object.keys(wData), raw: JSON.stringify(wData).slice(0, 500) }
-            }
-          }
-        } catch {}
-
-        // Extract subscription type from JWT
-        let subscriptionType: string | null = null
-        try {
-          const parts = accessToken.split('.')
-          if (parts.length === 3) {
-            const payload = JSON.parse(atob(parts[1]))
-            subscriptionType = payload.subscription_type || payload.plan || null
-          }
-        } catch {}
-
         return res.status(200).json({
           ok: true,
-          data: { credits, email, subscription: subscriptionType, workspaceInfo },
+          data: { credits, email },
           refreshToken: refreshToken || undefined,
         })
       }
