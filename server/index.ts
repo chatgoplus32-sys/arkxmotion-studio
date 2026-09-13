@@ -35,6 +35,8 @@ import publicGensparkRoutes from './routes/publicGenspark.js'
 import publicGensparkUploadRoutes from './routes/publicGensparkUpload.js'
 import publicRunninghubRoutes from './routes/publicRunninghub.js'
 import publicWeavyRoutes from './routes/publicWeavy.js'
+import publicWeavyProxyRoutes from './routes/publicWeavyProxy.js'
+import publicWeavyCreditsRoutes from './routes/publicWeavyCredits.js'
 import publicR2UploadRoutes from './routes/publicR2Upload.js'
 import { backupOnStartup } from './backup.js'
 
@@ -88,6 +90,8 @@ app.use('/api/public/genspark', publicGensparkRoutes)
 app.use('/api/public/genspark-upload', publicGensparkUploadRoutes)
 app.use('/api/public/runninghub', publicRunninghubRoutes)
 app.use('/api/public/weavy', publicWeavyRoutes)
+app.use('/api/public/weavy-proxy', publicWeavyProxyRoutes)
+app.use('/api/public/weavy-credits', publicWeavyCreditsRoutes)
 app.use('/api/public/r2-upload', publicR2UploadRoutes)
 // Wallet NexaBot (saldo Rp prepaid) — beda dari /api/public/nexabot yang
 // meneruskan generate ke upstream nexabot.id.
