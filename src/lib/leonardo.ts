@@ -211,9 +211,11 @@ export async function fetchLeonardoBalance(token: string) {
   const apiCredit = typeof details.apiCredit === 'number' ? details.apiCredit : null
   const apiSub = typeof details.apiSubscriptionTokens === 'number' ? details.apiSubscriptionTokens : null
   const apiPaid = typeof details.apiPaidTokens === 'number' ? details.apiPaidTokens : null
+  const stream = typeof details.streamTokens === 'number' ? details.streamTokens : null
+  const plan = typeof details.plan === 'string' ? details.plan : null
 
-  const parts = [fast, rollover, model, gpt, apiCredit, paid, apiSub, apiPaid].filter((v) => typeof v === 'number') as number[]
-  const totalBalance = parts.length ? parts.reduce((a, b) => a + b, 0) : null
+  const coreParts = [fast, rollover, apiCredit].filter((v) => typeof v === 'number') as number[]
+  const totalBalance = coreParts.length ? coreParts.reduce((a, b) => a + b, 0) : null
 
   return {
     ok: true as const,
@@ -226,8 +228,11 @@ export async function fetchLeonardoBalance(token: string) {
     apiCredit,
     apiSubTokens: apiSub,
     apiPaidTokens: apiPaid,
+    streamTokens: stream,
+    plan,
     renewalDate: details.tokenRenewalDate,
     email: details.auth0Email || details.email,
+    _raw: details,
   }
 }
 

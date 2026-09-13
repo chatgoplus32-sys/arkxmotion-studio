@@ -954,15 +954,31 @@ export default function ProvidersPage() {
     }
     if (selectedProvider === 'leonardo') {
       try {
-        const result = await fetchLeonardoBalance(key)
+        const result = await fetchLeonardoBalance(key) as any
         if (result.ok) {
           const bal = result.balance ?? 0
+          const parts: string[] = []
+          if (result.fastTokens !== null) parts.push(`Fast:${result.fastTokens}`)
+          if (result.rolloverTokens !== null) parts.push(`Rollover:${result.rolloverTokens}`)
+          if (result.apiCredit !== null) parts.push(`API:${result.apiCredit}`)
+          if (result.streamTokens !== null) parts.push(`Stream:${result.streamTokens}`)
+          const core = parts.length ? ` [${parts.join(' | ')}]` : ''
+          const extra: string[] = []
+          if (result.modelTokens !== null) extra.push(`Model:${result.modelTokens}`)
+          if (result.gptTokens !== null) extra.push(`GPT:${result.gptTokens}`)
+          if (result.paidTokens !== null) extra.push(`Paid:${result.paidTokens}`)
+          if (result.apiSubTokens !== null) extra.push(`ApiSub:${result.apiSubTokens}`)
+          if (result.apiPaidTokens !== null) extra.push(`ApiPaid:${result.apiPaidTokens}`)
+          const extraStr = extra.length ? ` | ${extra.join(' | ')}` : ''
+          const planStr = result.plan ? ` | Plan:${result.plan}` : ''
+          const emailStr = result.email ? ` (${result.email})` : ''
+          console.log('[leonardo] raw:', result._raw)
           if (bal > 0) {
-            return { state: 'active', balance: bal, detail: `Balance: ${bal}${result.email ? ` (${result.email})` : ''}` }
+            return { state: 'active', balance: bal, detail: `Balance: ${bal} cr${core}${extraStr}${planStr}${emailStr}` }
           } else if (bal === 0) {
-            return { state: 'empty', balance: 0, detail: 'Balance: 0 — habis' }
+            return { state: 'empty', balance: 0, detail: `Balance: 0 — habis${core}${extraStr}${emailStr}` }
           }
-          return { state: 'active', detail: result.email ? `Email: ${result.email}` : 'Token valid' }
+          return { state: 'active', detail: `Token valid${core}${extraStr}${emailStr}` }
         }
         if (result.message?.includes('expired') || result.message?.includes('401') || result.message?.includes('403')) {
           return { state: 'invalid', detail: 'Token expired — ambil baru dari browser (F12 → Network → api.leonardo.ai → Authorization)' }
