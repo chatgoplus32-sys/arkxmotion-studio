@@ -20,6 +20,7 @@ import publicMaintenanceRoutes from './routes/publicMaintenance.js'
 import publicUploadCatboxRoutes from './routes/publicUploadCatbox.js'
 import publicLeonardoRoutes from './routes/publicLeonardo.js'
 import publicMagnificRoutes from './routes/publicMagnific.js'
+import publicGalleri5Routes from './routes/publicGalleri5.js'
 import { backupOnStartup } from './backup.js'
 
 dotenv.config()
@@ -31,6 +32,9 @@ app.use(cors({
   origin: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3000', 'https://arkxmotion-studio.win'],
   credentials: true
 }))
+
+// Upload route MUST be before express.json() to get raw multipart body
+app.use('/api/public/upload-catbox', publicUploadCatboxRoutes)
 
 app.use(express.json({ limit: '10mb' }))
 
@@ -50,9 +54,9 @@ app.use('/api/public/pricing', publicPricingRoutes)
 // Public API proxies (production needs these since Vite dev middleware doesn't run)
 app.use('/api/public/createpulse', publicCreatepulseRoutes)
 app.use('/api/public/maintenance', publicMaintenanceRoutes)
-app.use('/api/public/upload-catbox', publicUploadCatboxRoutes)
 app.use('/api/public/leonardo', publicLeonardoRoutes)
 app.use('/api/public/magnific', publicMagnificRoutes)
+app.use('/api/public/galleri5', publicGalleri5Routes)
 // Wallet NexaBot (saldo Rp prepaid) — beda dari /api/public/nexabot yang
 // meneruskan generate ke upstream nexabot.id.
 app.use('/api/nexabot', nexabotWalletRoutes)
