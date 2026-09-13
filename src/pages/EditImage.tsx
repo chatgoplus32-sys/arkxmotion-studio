@@ -25,7 +25,7 @@ const RIVERSIDE_IMAGE_MODELS = [
 ]
 
 const NEXABOT_IMAGE_MODELS = [
-  { value: 'nb:img', label: '✨ GPT Image (NexaBot)', cr: 0.1 },
+  { value: 'nb:img', label: '✨ GPT Image (NexaBot)', cr: 0.25 },
 ]
 
 const ALL_MODELS: Record<EditProvider, typeof RIVERSIDE_IMAGE_MODELS> = {
@@ -392,7 +392,7 @@ export default function EditImagePage() {
                   <div className="font-medium text-foreground">💡 NexaBot Image</div>
                   <div>• <b>Text to Image</b> — cukup tulis prompt</div>
                   <div>• <b>Edit Gambar</b> — upload gambar + tulis edit</div>
-                  <div>• 💰 $0.10/gambar • ♾️ Gratis kalau Unlimited aktif</div>
+                  <div>• 💰 0.25 kredit/gambar • ♾️ Gratis kalau Unlimited aktif</div>
                 </div>
 
                 <div className="flex flex-col gap-2 pt-2">
