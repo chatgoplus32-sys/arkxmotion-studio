@@ -212,9 +212,45 @@ router.all('/', (req: Request, res: Response) => {
       if (action === 'balance') {
         const credits = await fetchWeavyCredits(accessToken)
         console.log(`[weavy-proxy] balance → credits=${credits} email=${email}`)
+
+        // Also try to get workspace details for debugging
+        let workspaceInfo: any = null
+        try {
+          const wr = await fetch(`${WEAVY_API}/v1/workspaces`, {
+            headers: { Authorization: `Bearer ${accessToken}`, 'Accept': 'application/json', 'Origin': 'https://app.weavy.ai', 'Referer': 'https://app.weavy.ai/' },
+            signal: AbortSignal.timeout(10000),
+          })
+          const wText = await wr.text().catch(() => '')
+          let wData: any; try { wData = JSON.parse(wText) } catch { wData = null }
+          if (wData) {
+            const ws = Array.isArray(wData?.workspaces) ? wData.workspaces[0] : (wData?.workspaces || wData)
+            if (ws) {
+              workspaceInfo = {
+                id: ws.id, name: ws.name, slug: ws.slug,
+                plan: ws.plan, subscription: ws.subscription,
+                credits: ws.credits, balance: ws.balance,
+                usage: ws.usage, limits: ws.limits,
+                keys: Object.keys(ws),
+              }
+            } else {
+              workspaceInfo = { topKeys: Object.keys(wData), raw: JSON.stringify(wData).slice(0, 500) }
+            }
+          }
+        } catch {}
+
+        // Extract subscription type from JWT
+        let subscriptionType: string | null = null
+        try {
+          const parts = accessToken.split('.')
+          if (parts.length === 3) {
+            const payload = JSON.parse(atob(parts[1]))
+            subscriptionType = payload.subscription_type || payload.plan || null
+          }
+        } catch {}
+
         return res.status(200).json({
           ok: true,
-          data: { credits, email },
+          data: { credits, email, subscription: subscriptionType, workspaceInfo },
           refreshToken: refreshToken || undefined,
         })
       }
