@@ -83,18 +83,23 @@ async function fetchWeavyCredits(accessToken: string): Promise<number | null> {
       signal: AbortSignal.timeout(15000),
     })
     const text = await r.text().catch(() => '')
-    console.log(`[weavy-proxy] /v1/workspaces → ${r.status} body=${text.slice(0, 500)}`)
+    console.log(`[weavy-proxy] /v1/workspaces → ${r.status} body=${text.slice(0, 1000)}`)
     if (!r.ok) return null
 
     let data: any
     try { data = JSON.parse(text) } catch { return null }
 
+    // Try all known response shapes
     if (data?.credits != null && typeof data.credits === 'number') return data.credits
 
     const workspaces = data?.workspaces || data
     const ws = Array.isArray(workspaces) ? workspaces[0] : workspaces
     if (typeof ws?.credits === 'number') return ws.credits
     if (typeof ws?.balance === 'number') return ws.balance
+
+    // Log full structure when credits not found
+    console.log(`[weavy-proxy] credits not found. keys:`, Object.keys(data || {}))
+    if (ws) console.log(`[weavy-proxy] workspace keys:`, Object.keys(ws))
   } catch (e: any) {
     console.log(`[weavy-proxy] /v1/workspaces error:`, e.message)
   }
