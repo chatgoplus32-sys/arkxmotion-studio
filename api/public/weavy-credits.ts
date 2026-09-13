@@ -21,7 +21,7 @@ async function refreshWeavyToken(refreshToken: string): Promise<{ accessToken: s
   } catch { return null }
 }
 
-async function fetchWeavyCredits(accessToken: string): Promise<number | null> {
+async function fetchWeavyCredits(accessToken: string): Promise<{ credits: number | null; raw: Record<string, any> }> {
   const headers: Record<string, string> = {
     Authorization: `Bearer ${accessToken}`,
     'Accept': 'application/json, text/plain, */*',
@@ -35,15 +35,24 @@ async function fetchWeavyCredits(accessToken: string): Promise<number | null> {
     ['credits', `${WEAVY_API}/v1/credits`],
     ['user-credits', `${WEAVY_API}/v1/user/credits`],
     ['user-balance', `${WEAVY_API}/v1/user/balance`],
+    ['user', `${WEAVY_API}/v1/user`],
+    ['account', `${WEAVY_API}/v1/account`],
+    ['workspace', `${WEAVY_API}/v1/workspace`],
+    ['billing', `${WEAVY_API}/v1/billing`],
   ] as const
+
+  const raw: Record<string, any> = {}
 
   for (const [name, url] of endpoints) {
     try {
       const r = await fetch(url, { headers, signal: AbortSignal.timeout(10000) })
-      console.log(`[weavy-credits] /${name} → ${r.status}`)
+      const text = await r.text().catch(() => '')
+      let data: any; try { data = JSON.parse(text) } catch { data = text?.slice(0, 500) }
+      raw[name] = { status: r.status, data }
+      console.log(`[weavy-credits] /${name} → ${r.status}`, text?.slice(0, 300))
+
       if (!r.ok) continue
-      const data = await r.json().catch(() => null)
-      if (!data) continue
+      if (!data || typeof data === 'string') continue
 
       const ws = Array.isArray(data) ? data[0] : (data.workspaces?.[0] ?? data)
       const credits = ws?.credits ?? data.credits ?? data.balance ?? data.totalCredits ??
@@ -51,12 +60,13 @@ async function fetchWeavyCredits(accessToken: string): Promise<number | null> {
         data.data?.credits ?? data.user?.credits ?? null
 
       console.log(`[weavy-credits] /${name} → credits=${credits}`)
-      if (typeof credits === 'number') return credits
+      if (typeof credits === 'number') return { credits, raw }
     } catch (e: any) {
+      raw[name] = { error: e.message }
       console.log(`[weavy-credits] /${name} error:`, e.message)
     }
   }
-  return null
+  return { credits: null, raw }
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -84,10 +94,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    const credits = await fetchWeavyCredits(accessToken)
-    console.log(`[weavy-credits] final credits=${credits}`)
+    const result = await fetchWeavyCredits(accessToken)
+    console.log(`[weavy-credits] final credits=${result.credits}`)
 
-    return res.status(200).json({ credits })
+    return res.status(200).json({ credits: result.credits, _raw: result.raw })
   } catch (err: any) {
     console.error(`[weavy-credits] error:`, err.message)
     return res.status(500).json({ ok: false, error: err.message, credits: null })

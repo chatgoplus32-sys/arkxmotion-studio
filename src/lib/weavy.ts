@@ -233,15 +233,15 @@ export function resolveWeavyAssetUrl(asset: any, type: 'image' | 'video' = 'imag
 }
 
 export async function fetchWeavyCreditsClient(accessToken: string): Promise<number | null> {
-  // Match aacs.web.id flow EXACTLY:
-  // 1. Try 4 proxy endpoints via Vercel passthrough
+  // Match aacs.web.id flow:
+  // 1. Try 4 proxy endpoints via Vercel serverless
   // 2. Fallback: POST /api/public/weavy-credits (server-side)
   const VERCEL = 'https://arkxmotion-studio.vercel.app'
   const proxyEndpoints = [
-    `${VERCEL}/api/public/weavy-proxy?path=/v1/workspaces`,
-    `${VERCEL}/api/public/weavy-proxy?path=/v1/credits`,
-    `${VERCEL}/api/public/weavy-proxy?path=/v1/user/credits`,
-    `${VERCEL}/api/public/weavy-proxy?path=/v1/user/balance`,
+    `${VERCEL}/api/public/weavy?path=/v1/workspaces`,
+    `${VERCEL}/api/public/weavy?path=/v1/credits`,
+    `${VERCEL}/api/public/weavy?path=/v1/user/credits`,
+    `${VERCEL}/api/public/weavy?path=/v1/user/balance`,
   ]
 
   const headers = {
@@ -279,7 +279,8 @@ export async function fetchWeavyCreditsClient(accessToken: string): Promise<numb
     })
     if (r.ok) {
       const d = await r.json().catch(() => null)
-      console.log('[weavy] POST /weavy-credits →', JSON.stringify(d).slice(0, 200))
+      console.log('[weavy] POST /weavy-credits →', JSON.stringify(d).slice(0, 2000))
+      if (d?._raw) console.log('[weavy] raw API responses:', JSON.stringify(d._raw).slice(0, 3000))
       if (typeof d?.credits === 'number') return d.credits
     }
   } catch (e: any) {
