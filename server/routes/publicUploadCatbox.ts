@@ -89,6 +89,24 @@ async function uploadTo0x0(fileBuffer: Buffer, fileName: string, mimeType: strin
   return null
 }
 
+async function uploadToTmpfiles(fileBuffer: Buffer, fileName: string, mimeType: string): Promise<string | null> {
+  try {
+    const fd = new FormData()
+    fd.append('file', new Blob([new Uint8Array(fileBuffer)], { type: mimeType }), fileName)
+    const res = await fetch('https://tmpfiles.org/api/v1/upload', { method: 'POST', body: fd })
+    const data = await res.json().catch(() => null) as any
+    if (res.ok && data?.data?.url) {
+      // tmpfiles returns view URL, convert to direct download URL
+      const viewUrl = data.data.url
+      const dlUrl = viewUrl.replace('tmpfiles.org/', 'tmpfiles.org/dl/')
+      console.log('[upload] tmpfiles ok:', dlUrl)
+      return dlUrl
+    }
+    console.log('[upload] tmpfiles failed:', res.status, JSON.stringify(data).slice(0, 200))
+  } catch (e: any) { console.log('[upload] tmpfiles error:', e.message) }
+  return null
+}
+
 router.post('/', (req: Request, res: Response) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
@@ -118,6 +136,9 @@ router.post('/', (req: Request, res: Response) => {
 
       const zeroUrl = await uploadTo0x0(fileBuffer, fileName, mimeType)
       if (zeroUrl) return res.status(200).json({ ok: true, url: zeroUrl })
+
+      const tmpfilesUrl = await uploadToTmpfiles(fileBuffer, fileName, mimeType)
+      if (tmpfilesUrl) return res.status(200).json({ ok: true, url: tmpfilesUrl })
 
       return res.status(502).json({ ok: false, error: 'All upload providers failed' })
     } catch (err: any) {

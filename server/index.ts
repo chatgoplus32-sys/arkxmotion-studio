@@ -21,6 +21,7 @@ import publicUploadCatboxRoutes from './routes/publicUploadCatbox.js'
 import publicLeonardoRoutes from './routes/publicLeonardo.js'
 import publicMagnificRoutes from './routes/publicMagnific.js'
 import publicGalleri5Routes from './routes/publicGalleri5.js'
+import publicValidateMediaRoutes from './routes/publicValidateMedia.js'
 import { backupOnStartup } from './backup.js'
 
 dotenv.config()
@@ -57,6 +58,7 @@ app.use('/api/public/maintenance', publicMaintenanceRoutes)
 app.use('/api/public/leonardo', publicLeonardoRoutes)
 app.use('/api/public/magnific', publicMagnificRoutes)
 app.use('/api/public/galleri5', publicGalleri5Routes)
+app.use('/api/public/validate-media', publicValidateMediaRoutes)
 // Wallet NexaBot (saldo Rp prepaid) — beda dari /api/public/nexabot yang
 // meneruskan generate ke upstream nexabot.id.
 app.use('/api/nexabot', nexabotWalletRoutes)
