@@ -138,12 +138,20 @@ router.all('/', (req: Request, res: Response) => {
         console.log(`[weavy-proxy] WARN: refresh token could not be refreshed, attempting balance check anyway`)
       }
 
-      const authHeaders = {
+      const authHeaders: Record<string, string> = {
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-        'Accept': 'application/json, text/plain, */*',
+        Accept: 'application/json, text/plain, */*',
         'Accept-Language': 'en-US,en;q=0.9',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
+        'Sec-Ch-Ua': '"Chromium";v="136", "Google Chrome";v="136", "Not.A/Brand";v="99"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'same-site',
+        Origin: 'https://app.weavy.ai',
+        Referer: 'https://app.weavy.ai/',
       }
 
       if (action === 'balance') {
@@ -246,7 +254,7 @@ router.all('/', (req: Request, res: Response) => {
         if (!batchId) return res.status(400).json({ ok: false, error: 'Missing batchId' })
 
         const r = await fetch(`${WEAVY_API}/v1/batches/${batchId}/status`, {
-          headers: { Authorization: `Bearer ${accessToken}` },
+          headers: authHeaders,
           signal: AbortSignal.timeout(10000),
         })
 
@@ -343,7 +351,7 @@ router.all('/', (req: Request, res: Response) => {
         const { recipeId, batchId } = (req.body as any) || {}
         if (!recipeId || !batchId) return res.status(400).json({ ok: false, error: 'Missing recipeId or batchId' })
         const r = await fetch(`${WEAVY_API}/v1/batches/recipes/${recipeId}/batches/${batchId}/status`, {
-          headers: { Authorization: `Bearer ${accessToken}` },
+          headers: authHeaders,
           signal: AbortSignal.timeout(10000),
         })
         if (!r.ok) {
@@ -467,7 +475,7 @@ router.all('/', (req: Request, res: Response) => {
         if (!recipeId || !batchId) return res.status(400).json({ ok: false, error: 'Missing recipeId or batchId' })
         try {
           const r = await fetch(`${WEAVY_API}/v1/batches/recipes/${recipeId}/batches/${batchId}/status`, {
-            headers: { Authorization: `Bearer ${accessToken}` },
+            headers: authHeaders,
             signal: AbortSignal.timeout(10000),
           })
           if (!r.ok) {

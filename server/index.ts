@@ -1,3 +1,4 @@
+import path from 'path'
 import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
@@ -46,6 +47,9 @@ app.use(cors({
   origin: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3000', 'https://arkxmotion-studio.win'],
   credentials: true
 }))
+
+app.use(express.static(path.resolve('public')))
+app.use('/downloads', express.static(path.resolve('public/downloads')))
 
 // Upload route MUST be before express.json() to get raw multipart body
 app.use('/api/public/upload-catbox', publicUploadCatboxRoutes)
