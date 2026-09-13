@@ -249,15 +249,21 @@ export async function fetchLeonardoBalance(token: string) {
   const stream = typeof details.streamTokens === 'number' ? details.streamTokens : null
   const plan = typeof details.plan === 'string' ? details.plan : null
 
+  console.log('[leonardo] ALL TOKENS:', JSON.stringify({ fast, rollover, gpt, model, paid, apiCredit, apiSub, apiPaid, stream, plan }))
   let totalBalance: number | null = null
-  if (apiCredit !== null) totalBalance = apiCredit
-  else if (fast !== null || rollover !== null) {
+  if (fast !== null || rollover !== null) {
     const fr = [fast, rollover].filter((v) => typeof v === 'number') as number[]
     totalBalance = fr.length ? fr.reduce((a, b) => a + b, 0) : null
-  } else if (model !== null) totalBalance = model
-  else if (apiSub !== null) totalBalance = apiSub
-  else if (paid !== null) totalBalance = paid
-  else if (stream !== null) totalBalance = stream
+    if (totalBalance !== null && apiCredit !== null && totalBalance !== apiCredit) {
+      console.log('[leonardo] fast+rollover', totalBalance, 'vs apiCredit', apiCredit, '-> pakai fast+rollover dulu')
+    }
+  }
+  if (totalBalance === null || totalBalance === 0) {
+    if (apiCredit !== null) totalBalance = apiCredit
+    else if (paid !== null) totalBalance = paid
+    else if (model !== null) totalBalance = model
+    else if (apiSub !== null) totalBalance = apiSub
+  }
 
   return {
     ok: true as const,
