@@ -150,30 +150,10 @@ router.all('/', (req: Request, res: Response) => {
         const credits = await fetchWeavyCredits(accessToken)
         console.log(`[weavy-proxy] balance → credits=${credits} email=${email}`)
 
-        // DEBUG: return raw responses from all 4 endpoints so client can see
-        const debugResponses: Record<string, any> = {}
-        const debugEndpoints = [
-          ['workspaces', `${WEAVY_API}/v1/workspaces`],
-          ['credits', `${WEAVY_API}/v1/credits`],
-          ['user-credits', `${WEAVY_API}/v1/user/credits`],
-          ['user-balance', `${WEAVY_API}/v1/user/balance`],
-        ]
-        for (const [name, url] of debugEndpoints) {
-          try {
-            const dr = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(8000) })
-            const dt = await dr.text().catch(() => '')
-            let dd: any; try { dd = JSON.parse(dt) } catch { dd = dt.slice(0, 500) }
-            debugResponses[name] = { status: dr.status, data: dd }
-          } catch (e: any) {
-            debugResponses[name] = { error: e.message }
-          }
-        }
-
         return res.status(200).json({
           ok: true,
           data: { credits, email },
           refreshToken: refreshToken || undefined,
-          _debug: debugResponses,
         })
       }
 

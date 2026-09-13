@@ -112,6 +112,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method === 'OPTIONS') return res.status(200).end()
 
+  // ── Passthrough proxy mode (like aacs.web.id /api/public/weavy-proxy?path=...) ──
+  // When `path` query param is present, forward request directly to Weavy API
+  const pathParam = req.query.path as string | undefined
+  if (pathParam) {
+    const token = req.headers.authorization?.replace('Bearer ', '') || ''
+    if (!token) return res.status(401).json({ ok: false, error: 'Missing Authorization header' })
+
+    try {
+      const weavyUrl = `${WEAVY_API}${pathParam}`
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${token}`,
+        'Accept': 'application/json, text/plain, */*',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      }
+
+      const r = await fetch(weavyUrl, {
+        method: req.method,
+        headers,
+        body: req.method !== 'GET' && req.method !== 'HEAD' ? JSON.stringify(req.body) : undefined,
+        signal: AbortSignal.timeout(15000),
+      })
+
+      const text = await r.text()
+      let data: any; try { data = JSON.parse(text) } catch { data = text }
+
+      // CORS headers for browser access
+      res.setHeader('Access-Control-Allow-Origin', '*')
+      return res.status(r.status).json(data)
+    } catch (err: any) {
+      return res.status(502).json({ ok: false, error: err.message })
+    }
+  }
+
   const token = req.headers['x-weavy-token'] as string || ''
   const action = (req.query.action || req.body?.action || '') as string
 
