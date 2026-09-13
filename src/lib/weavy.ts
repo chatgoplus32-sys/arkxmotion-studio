@@ -232,8 +232,6 @@ export function resolveWeavyAssetUrl(asset: any, type: 'image' | 'video' = 'imag
   throw Error('Weavy: cannot resolve asset URL')
 }
 
-const WEAVY_API = '/api/public/weavy-proxy?path='
-
 // ── fetchWeavyCredits: exact copy of aacs.web.id ──
 const WEAVY_PROXY_BASE = '/api/public/weavy-proxy?path='
 
