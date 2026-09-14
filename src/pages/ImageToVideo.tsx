@@ -139,6 +139,7 @@ export default function ImageToVideoPage() {
   const startFrameRef = useRef<HTMLInputElement>(null)
   const endFrameRef = useRef<HTMLInputElement>(null)
   const refInputRef = useRef<HTMLInputElement>(null)
+  const videoRefInputRef = useRef<HTMLInputElement>(null)
   const resultsRef = useRef<HTMLDivElement>(null)
 
   const [notifEnabled, setNotifEnabled] = useState(() => isNotificationsEnabled())
@@ -304,6 +305,9 @@ export default function ImageToVideoPage() {
 
   const models = useMemo(() => PROVIDER_MODELS[provider] || [], [provider])
   const currentModel = models.find((m) => m.value === model) || models[0]
+  const isNbOmniFlash = provider === 'nexabot' && model === 'nb:omni-flash-1.1'
+  const nbVideoIdx = refFiles.findIndex((f) => f.type.startsWith('video/'))
+  const nbVideoUrl = nbVideoIdx >= 0 ? refUrls[nbVideoIdx] ?? null : null
 
   const hasImgFile = !!imgFile
   const qualityOptions = useMemo(() => {
@@ -413,6 +417,20 @@ export default function ImageToVideoPage() {
   const removeRef = (index: number) => {
     setRefFiles((prev) => prev.filter((_, i) => i !== index))
     setRefUrls((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  const handleVideoRefChange = (files: FileList | null) => {
+    const file = files?.[0]
+    if (!file) return
+    const url = URL.createObjectURL(file)
+    const idx = refFiles.findIndex((f) => f.type.startsWith('video/'))
+    if (idx >= 0) {
+      setRefFiles((prev) => prev.map((f, i) => (i === idx ? file : f)))
+      setRefUrls((prev) => prev.map((u, i) => (i === idx ? url : u)))
+    } else {
+      setRefFiles((prev) => [...prev, file].slice(0, 4))
+      setRefUrls((prev) => [...prev, url].slice(0, 4))
+    }
   }
 
   const refreshGallery = () => {
@@ -2573,7 +2591,7 @@ export default function ImageToVideoPage() {
               </Section>
             ) : (
               /* Default UI for other providers */
-              <Section title="🖼️ Gambar Input" sub="1 file (JPG / PNG / WEBP) — optional untuk text-to-video">
+              <Section title="🖼️ Gambar Input" sub={isNbOmniFlash ? "Gambar referensi (opsional) + video referensi (wajib) di bawah" : "1 file (JPG / PNG / WEBP) — optional untuk text-to-video"}>
                 <input ref={inputRef} type="file" accept="image/*" hidden onChange={(e) => handleFileChange(e.target.files)} />
                 {imgUrl ? (
                   <div className="relative aspect-[9/16] rounded-2xl overflow-hidden border border-border">
@@ -2591,6 +2609,26 @@ export default function ImageToVideoPage() {
                       <div className="text-[11px] text-muted-foreground">JPG / PNG / WEBP</div>
                     </div>
                   </button>
+                )}
+                {isNbOmniFlash && (
+                  <div className="mt-3">
+                    <input ref={videoRefInputRef} type="file" accept="video/*" hidden onChange={(e) => handleVideoRefChange(e.target.files)} />
+                    <div className="text-[11px] text-muted-foreground mb-1.5">🎬 Video Referensi (wajib)</div>
+                    {nbVideoUrl ? (
+                      <div className="relative aspect-video rounded-2xl overflow-hidden border border-border">
+                        <video src={nbVideoUrl} className="w-full h-full object-cover" controls />
+                        <button onClick={() => removeRef(nbVideoIdx)} className="absolute top-2 right-2 rounded-full w-6 h-6 bg-black/60 text-white text-xs grid place-items-center hover:bg-black/80">×</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => videoRefInputRef.current?.click()} className="w-full aspect-video rounded-2xl border border-dashed border-border/80 bg-card/30 grid place-items-center hover:border-primary/60 transition text-center px-4">
+                        <div>
+                          <div className="text-3xl">🎬</div>
+                          <div className="text-sm mt-1">Tap untuk upload <b>video referensi</b> (wajib)</div>
+                          <div className="text-[11px] text-muted-foreground">MP4 / WEBM / MOV</div>
+                        </div>
+                      </button>
+                    )}
+                  </div>
                 )}
               </Section>
             )}
