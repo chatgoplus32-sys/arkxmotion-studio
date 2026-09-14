@@ -1,4 +1,4 @@
-const WEAVY_API = 'https://api.weavy.ai/api'
+const WEAVY_API = 'https://weavy-proxy.testeraioke.workers.dev/?path='
 const FIREBASE_KEY = 'AIzaSyC-qLy3TFyXMogJPfMkZJ9H_q46hEu1sxI'
 const WEAVY_PROXY = '/api/public/weavy'
 

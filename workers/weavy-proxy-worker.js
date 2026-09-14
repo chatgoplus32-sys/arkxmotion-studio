@@ -15,7 +15,9 @@ export default {
     if (!auth) return new Response(JSON.stringify({ error: 'Missing Authorization' }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } })
 
     const target = `https://api.weavy.ai/api${path}`
-    const body = request.method !== 'GET' && request.method !== 'HEAD' ? await request.text() : undefined
+    const hasBody = request.method !== 'GET' && request.method !== 'HEAD'
+    const rawBody = hasBody ? await request.arrayBuffer() : undefined
+    const incomingCt = request.headers.get('Content-Type') || ''
 
     const r = await fetch(target, {
       method: request.method,
@@ -23,7 +25,7 @@ export default {
         Authorization: auth,
         Accept: 'application/json, text/plain, */*',
         'Accept-Language': 'en-US,en;q=0.9',
-        'Content-Type': 'application/json',
+        'Content-Type': incomingCt.includes('multipart/form-data') ? incomingCt : 'application/json',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
         'Sec-Ch-Ua': '"Chromium";v="136", "Google Chrome";v="136", "Not.A/Brand";v="99"',
         'Sec-Ch-Ua-Mobile': '?0',
@@ -34,7 +36,7 @@ export default {
         Origin: 'https://app.weavy.ai',
         Referer: 'https://app.weavy.ai/',
       },
-      body,
+      body: rawBody,
     })
 
     const text = await r.text()
