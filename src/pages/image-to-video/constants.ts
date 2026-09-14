@@ -133,6 +133,7 @@ export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
   // (start frame / image / video reference) diturunkan otomatis dari media yang di-upload.
   nexabot: [
     { value: 'nb:omni', label: '✨ Google Omni (NexaBot)', cr: 0.25, provider: 'nexabot', apiModel: 't2v' },
+    { value: 'nb:omni-flash-1.1', label: '⚡ Omni Flash 1.1 (NexaBot) — Img + Video Ref', cr: 0.25, provider: 'nexabot', apiModel: 'r2v' },
   ],
 }
 

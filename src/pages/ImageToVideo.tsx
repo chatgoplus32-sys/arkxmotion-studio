@@ -2150,7 +2150,7 @@ export default function ImageToVideoPage() {
 
             // Media input (base64 data URI) sesuai aturan tiap mode:
             //  • sfv: 1 gambar start frame · i2v: 1-3 gambar ingredient
-            //  • r2v: 1 video referensi (+ opsional 1 gambar)
+            //  • r2v: media[0]=video + 1 gambar opsional (Omni Flash 1.1)
             //  • NexaBot (t2v): kirim semua gambar/video sebagai media reference
             const imageFiles = [imgFile, startFrameFile, ...refFiles]
               .filter((f): f is File => !!f && f.type.startsWith('image/'))
@@ -2174,7 +2174,7 @@ export default function ImageToVideoPage() {
 
             // Media (base64 data URI) dibatasi sesuai aturan tiap mode:
             //   sfv = 1 gambar start frame · i2v = 1-3 gambar
-            //   r2v = 1 video referensi (+ opsional 1 gambar) · t2v = tanpa media
+            //   r2v = media[0]=video + 1 gambar opsional (Omni Flash 1.1) · t2v = tanpa media
             const media: string[] = []
             {
               // NexaBot: kompres agresif agar payload JSON < 1MB
@@ -2187,8 +2187,12 @@ export default function ImageToVideoPage() {
                   media.push(await fileToBase64(await compressForApi(f)))
                 }
               } else if (nbMode === 'r2v') {
+                // Omni Flash 1.1 r2v: media[0]=video + 1 image opsional
                 if (videoFile) media.push(await fileToBase64(videoFile))
-                else if (imageFiles[0]) media.push(await fileToBase64(await compressForApi(imageFiles[0])))
+                for (const f of imageFiles.slice(0, 1)) {
+                  media.push(await fileToBase64(await compressForApi(f)))
+                }
+                if (media.length === 0 && imageFiles[0]) media.push(await fileToBase64(await compressForApi(imageFiles[0])))
               }
             }
             // Jalur session → API key dengan pemulihan otomatis: kalau cookie
