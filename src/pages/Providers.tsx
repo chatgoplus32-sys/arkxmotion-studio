@@ -1260,6 +1260,48 @@ export default function ProvidersPage() {
         return { state: 'failed', detail: err.message || 'Error checking NexaBot API key' }
       }
     }
+    if (selectedProvider === 'magnific') {
+      try {
+        const { checkMagnificBalance } = await import('@/lib/magnific')
+        const result = await checkMagnificBalance(key)
+        if (result.ok) {
+          return { state: 'active', detail: 'API key valid' }
+        }
+        return { state: 'invalid', detail: result.error || 'API key tidak valid' }
+      } catch (err: any) {
+        return { state: 'failed', detail: err.message || 'Error checking Magnific API key' }
+      }
+    }
+    if (selectedProvider === 'shotstack') {
+      try {
+        const { checkShotstackBalance } = await import('@/lib/shotstack')
+        const result = await checkShotstackBalance(key)
+        if (result.ok) {
+          if (result.balance != null) {
+            return { state: 'active', balance: result.balance, detail: `Remaining: ${result.balance} menit` }
+          }
+          return { state: 'active', detail: 'API key valid' }
+        }
+        return { state: 'failed', detail: result.error || 'Gagal cek token' }
+      } catch (err: any) {
+        return { state: 'failed', detail: err.message || 'Error checking Shotstack API key' }
+      }
+    }
+    if (selectedProvider === 'creatomate') {
+      try {
+        const { checkCreatomateBalance } = await import('@/lib/creatomate')
+        const result = await checkCreatomateBalance(key)
+        if (result.ok) {
+          if (result.balance != null) {
+            return { state: 'active', balance: result.balance, detail: `Credits: ${result.balance}` }
+          }
+          return { state: 'active', detail: 'API key valid' }
+        }
+        return { state: 'failed', detail: result.error || 'Gagal cek token' }
+      } catch (err: any) {
+        return { state: 'failed', detail: err.message || 'Error checking Creatomate API key' }
+      }
+    }
     return { state: 'unknown', detail: 'Cek limit belum tersedia untuk provider ini' }
   }, [selectedProvider, keys.riverside, keys.nexabot, replaceKey])
 

@@ -156,6 +156,27 @@ export function isMagnificTokenError(msg: string): boolean {
   return /api.?key|unauthorized|forbidden|invalid.*key|key.*invalid|expired|401|403|auth/i.test(msg)
 }
 
+export async function checkMagnificBalance(apiKey: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await magnificApi('status', {
+      apiKey,
+      modelKey: 'mag:image-upscaler',
+      taskId: 'healthcheck',
+    })
+    if (res.ok === false && res.error) {
+      if (/api.?key|unauthorized|forbidden|invalid|401|403/i.test(res.error)) {
+        return { ok: false, error: 'API key tidak valid' }
+      }
+    }
+    return { ok: true }
+  } catch (err: any) {
+    if (/api.?key|unauthorized|forbidden|invalid|401|403/i.test(err.message || '')) {
+      return { ok: false, error: 'API key tidak valid' }
+    }
+    return { ok: true }
+  }
+}
+
 export type MagnificMotionModel = 'kling-v3-motion-control-pro' | 'kling-v3-motion-control-std' | 'kling-v2-6-motion-control-pro' | 'kling-v2-6-motion-control-std'
 
 const MAGNIFIC_MOTION_ENDPOINTS: Record<MagnificMotionModel, string> = {
