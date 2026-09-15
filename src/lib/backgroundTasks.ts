@@ -75,6 +75,26 @@ export function removeResult(id: string) {
   saveResults(results)
 }
 
+export function updateResult(id: string, updates: Partial<CompletedResult>) {
+  const results = getResults()
+  const idx = results.findIndex(r => r.id === id)
+  if (idx !== -1) {
+    results[idx] = { ...results[idx], ...updates }
+    saveResults(results)
+  }
+}
+
+export function persistResultToR2(id: string, url: string) {
+  if (!url || url.includes('r2.dev') || url.includes('catbox.moe') || url.startsWith('blob:')) return
+  import('@/lib/cdn').then(({ uploadToCdn }) => {
+    uploadToCdn(url, `persist-${id}.mp4`).then((res) => {
+      if (res.ok && res.url) {
+        updateResult(id, { url: res.url })
+      }
+    }).catch(() => {})
+  }).catch(() => {})
+}
+
 export function getLogs(): LogEntry[] { return readJson(LOGS_KEY, []) }
 
 export function addBgLog(msg: string, level: LogLevel = 'info', provider?: string, step?: string) {

@@ -6,7 +6,7 @@ import { Loader2, Upload, Trash2, Download, X, ImagePlus, ExternalLink, Search, 
 import { useProviderManager, PROVIDER_CONFIGS } from '@/stores/providerManager'
 import { useToastStore } from '@/stores/toastStore'
 import { withTokenRotation } from '@/lib/tokenRotation'
-import { addBgLog, getLogs, addResult, removeResult, startBackgroundPolling } from '@/lib/backgroundTasks'
+import { addBgLog, getLogs, addResult, removeResult, startBackgroundPolling, persistResultToR2 } from '@/lib/backgroundTasks'
 
 type EditProvider = 'riverside' | 'nexabot'
 
@@ -186,6 +186,7 @@ export default function EditImagePage() {
       provider: 'nexabot',
       model: item.model,
     })
+    persistResultToR2(item.id, item.url)
     window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
     addToast('Generate gambar selesai!', 'success')
   }
@@ -253,6 +254,7 @@ export default function EditImagePage() {
         provider: 'riverside',
         model: item.model,
       })
+      persistResultToR2(item.id, item.url)
       window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
       addToast('Edit gambar selesai!', 'success')
     } else {

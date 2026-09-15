@@ -14,7 +14,7 @@ import { getMagnificApiKey, submitMagnificMotion, pollMagnificMotion, type Magni
 import { useLocalStorage } from '@/lib/useLocalStorage'
 import { precheckProviderBalance } from '@/lib/balancePrecheck'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
-import { removeResult, clearResults, getActiveTasks, getLogs, getResults, addBgLog, addActiveTask, addResult, clearLogs, removeActiveTask } from '@/lib/backgroundTasks'
+import { removeResult, clearResults, getActiveTasks, getLogs, getResults, addBgLog, addActiveTask, addResult, clearLogs, removeActiveTask, persistResultToR2 } from '@/lib/backgroundTasks'
 import { startBackgroundPolling } from '@/lib/backgroundTasks'
 import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
 import { useAuthStore } from '@/stores/authStore'
@@ -562,6 +562,7 @@ export default function MotionPage() {
             date: new Date().toISOString(),
             page: 'motion',
           })
+          persistResultToR2(`g5-failover-${Date.now()}`, url)
           setResults((prev) => [
             {
               id: `g5-failover-${Date.now()}`,
@@ -853,6 +854,7 @@ export default function MotionPage() {
                 model: currentModel?.label || currentModel?.key || '',
                 taskUrl: roomId ? `https://www.roboneo.com/team_studio?room_id=${roomId}` : undefined,
               })
+              persistResultToR2(taskId, resultUrl!)
               setResults((prev) => [
                 {
                   id: taskId,
@@ -964,6 +966,7 @@ export default function MotionPage() {
                 date: new Date().toISOString(),
                 page: 'motion',
               })
+              persistResultToR2(taskId, resultUrl)
               setResults((prev) => [
                 {
                   id: taskId,
@@ -1072,6 +1075,7 @@ export default function MotionPage() {
                 date: new Date().toISOString(),
                 page: 'motion',
               })
+              persistResultToR2(`weavy-${Date.now().toString(36)}`, resultUrl)
               setResults((prev) => [
                 {
                   id: `weavy-${Date.now().toString(36)}`,
@@ -1176,6 +1180,7 @@ export default function MotionPage() {
                 date: new Date().toISOString(),
                 page: 'motion',
               })
+              persistResultToR2(taskId, resultUrl)
               setResults((prev) => [
                 {
                   id: taskId,
@@ -1293,6 +1298,7 @@ export default function MotionPage() {
                     date: new Date().toISOString(),
                     page: 'motion',
                   })
+                  persistResultToR2(submitResult.sessionId, url)
                   setResults((prev) => [
                     {
                       id: submitResult.sessionId,
@@ -1379,6 +1385,7 @@ export default function MotionPage() {
                 provider: 'oneover',
                 model: currentModel.label,
               })
+              persistResultToR2(`oneover-${Date.now()}`, resultUrl)
               return true
             } catch (err: any) {
               setCompressDialog(null)
@@ -1569,6 +1576,7 @@ export default function MotionPage() {
                 provider: 'genspark',
                 model: currentModel.label,
               })
+              persistResultToR2(`genspark-${Date.now()}`, resultUrl)
               window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
               try { setResults(getResults()) } catch {}
               return true

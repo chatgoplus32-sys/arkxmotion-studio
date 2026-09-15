@@ -21,6 +21,8 @@ import {
   getResults,
   addBgLog,
   addResult,
+  updateResult,
+  persistResultToR2,
   startBackgroundPolling,
   removeResult,
   clearLogs,
@@ -458,6 +460,7 @@ export default function ImageToVideoPage() {
     }
     addResult(item)
     refreshGallery()
+    persistResultToR2(item.id, url)
   }
 
   const filteredGallery = galleryItems.filter((item) => {
@@ -888,6 +891,7 @@ export default function ImageToVideoPage() {
             inputImageUrl: imgUrl || undefined,
             taskUrl: rotation.result!.roomId ? `https://www.roboneo.com/team_studio?room_id=${rotation.result!.roomId}` : undefined,
           })
+          persistResultToR2(`roboneo-${Date.now()}`, rotation.result!.videoUrl)
           refreshGallery()
           window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
           successRef.current = true
@@ -1320,6 +1324,7 @@ export default function ImageToVideoPage() {
             credits: totalCredits,
             inputImageUrl: imgUrl || undefined,
           })
+          persistResultToR2(`leonardo-${Date.now()}`, rotation.result!)
           refreshGallery()
           window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
           successRef.current = true
