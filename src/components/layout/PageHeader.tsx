@@ -1,4 +1,4 @@
-import { HTMLAttributes, forwardRef } from 'react'
+import { HTMLAttributes, ReactNode, forwardRef } from 'react'
 import { cn } from '@/lib/utils'
 
 interface PageHeaderProps extends HTMLAttributes<HTMLDivElement> {
@@ -6,22 +6,26 @@ interface PageHeaderProps extends HTMLAttributes<HTMLDivElement> {
   title: string
   highlight?: string
   desc?: string
+  actions?: ReactNode
 }
 
 const PageHeader = forwardRef<HTMLDivElement, PageHeaderProps>(
-  ({ className, eyebrow, title, highlight, desc, ...props }, ref) => {
+  ({ className, eyebrow, title, highlight, desc, actions, ...props }, ref) => {
     return (
-      <div ref={ref} className={cn('mb-6', className)} {...props}>
-        {eyebrow && (
-          <div className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">
-            {eyebrow}
-          </div>
-        )}
-        <h1 className="text-2xl md:text-3xl font-display font-bold">
-          {title}
-          {highlight && <span className="text-primary ml-2">{highlight}</span>}
-        </h1>
-        {desc && <p className="text-sm text-muted-foreground mt-1.5 max-w-2xl">{desc}</p>}
+      <div ref={ref} className={cn('mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4', className)} {...props}>
+        <div>
+          {eyebrow && (
+            <div className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">
+              {eyebrow}
+            </div>
+          )}
+          <h1 className="text-2xl md:text-3xl font-display font-bold">
+            {title}
+            {highlight && <span className="text-primary ml-2">{highlight}</span>}
+          </h1>
+          {desc && <p className="text-sm text-muted-foreground mt-1.5 max-w-2xl">{desc}</p>}
+        </div>
+        {actions && <div className="flex items-center gap-2 shrink-0">{actions}</div>}
       </div>
     )
   }
