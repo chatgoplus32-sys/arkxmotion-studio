@@ -1,25 +1,26 @@
-import { HTMLAttributes, forwardRef } from 'react'
+import { HTMLAttributes, ReactElement, ReactNode, forwardRef } from 'react'
 import { cn } from '@/lib/utils'
 
 interface CardProps extends HTMLAttributes<HTMLDivElement> {
   variant?: 'default' | 'bordered'
   hover?: boolean
+  render?: (props: Record<string, unknown>) => ReactElement
 }
 
 const Card = forwardRef<HTMLDivElement, CardProps>(
-  ({ className, variant = 'default', hover = false, ...props }, ref) => {
-    return (
-      <div
-        ref={ref}
-        className={cn(
-          'rounded-2xl bg-card text-card-foreground shadow-sm transition-all duration-200',
-          variant === 'bordered' && 'border border-border',
-          hover && 'hover:shadow-md hover:-translate-y-0.5 cursor-pointer',
-          className
-        )}
-        {...props}
-      />
+  ({ className, variant = 'default', hover = false, render, ...props }, ref) => {
+    const classes = cn(
+      'rounded-2xl bg-card text-card-foreground shadow-sm transition-all duration-200',
+      variant === 'bordered' && 'border border-border',
+      hover && 'hover:shadow-md hover:-translate-y-0.5 cursor-pointer',
+      className
     )
+
+    if (render) {
+      return render({ ref, className: classes, ...props })
+    }
+
+    return <div ref={ref} className={classes} {...props} />
   }
 )
 
