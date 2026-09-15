@@ -1395,7 +1395,7 @@ export default function ProvidersPage() {
             >
               <span className="min-w-0">
                 <span
-                  className="block truncate font-display text-2xl md:text-3xl font-black tracking-wide gold-text"
+                  className="block truncate font-display text-2xl md:text-3xl font-black tracking-wide brand-text"
                 >
                   {currentConfig?.label || selectedProvider}
                 </span>
@@ -1520,11 +1520,11 @@ export default function ProvidersPage() {
               <div className="text-[12px] font-mono uppercase tracking-widest text-[#a0a0a0]">
                 {currentConfig?.label || selectedProvider}
               </div>
-              <div className="font-display text-3xl gold-text">{savedKeys.length}</div>
+              <div className="font-display text-3xl brand-text">{savedKeys.length}</div>
               <div className="text-xs text-[#a0a0a0]">key tersimpan (tersembunyi). Klik View untuk kelola / tambah key.</div>
               <button
                 onClick={() => setViewHidden(false)}
-                className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold text-[#0a0a0a] gold-gradient"
+                className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold text-[#0a0a0a] brand-gradient"
               >
                 <Eye className="h-3.5 w-3.5" />
                 View {savedKeys.length > 0 ? `(${savedKeys.length})` : ''}
@@ -1543,7 +1543,7 @@ export default function ProvidersPage() {
                 className="font-mono text-xs bg-[#0a0a0a] border-[#2a2a2a] text-[#f5f5f5] placeholder-[#666666] focus:border-[#00a8ff] focus:ring-[#00a8ff]/30"
               />
               <div className="flex flex-wrap gap-2">
-                <Button onClick={bulkMode ? handleBulkUpload : handleAddKey} disabled={bulkMode ? !bulkText.trim() : !inputValue.trim()} className="gold-gradient text-[#0a0a0a] hover:opacity-90">
+                <Button onClick={bulkMode ? handleBulkUpload : handleAddKey} disabled={bulkMode ? !bulkText.trim() : !inputValue.trim()} className="brand-gradient text-[#0a0a0a] hover:opacity-90">
                   <Plus className="h-3.5 w-3.5" /> Tambah
                 </Button>
                 <Button variant="outline" onClick={() => setBulkMode(!bulkMode)} className="border-[#2a2a2a] bg-[#1a1a1a] text-[#f5f5f5] hover:bg-[#2a2a2a] hover:border-[#00a8ff]/50">
@@ -1623,7 +1623,7 @@ export default function ProvidersPage() {
               {progress.show && (
                 <div className="rounded-md border border-[#2a2a2a] bg-[#141414] p-2">
                   <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#1a1a1a]">
-                    <div className="h-full gold-gradient transition-all" style={{ width: `${progress.pct}%` }} />
+                    <div className="h-full brand-gradient transition-all" style={{ width: `${progress.pct}%` }} />
                   </div>
                   <div className="mt-1 text-[12px] text-[#a0a0a0]">{progress.text}</div>
                 </div>
@@ -1760,7 +1760,7 @@ export default function ProvidersPage() {
 
         <div className="neumorph p-4 h-fit">
           <div className="text-[12px] font-mono uppercase tracking-widest text-[#a0a0a0]">Info</div>
-          <div className="mt-1 font-display text-base text-[#f5f5f5] gold-text">{currentConfig?.label}</div>
+          <div className="mt-1 font-display text-base text-[#f5f5f5] brand-text">{currentConfig?.label}</div>
           <p className="mt-2 text-xs text-[#a0a0a0] leading-relaxed">{currentConfig?.desc}</p>
 
           <div className="mt-4 rounded-lg border border-[#2a2a2a] bg-[#141414] p-3 text-[11px] leading-relaxed text-[#a0a0a0]">
@@ -1777,7 +1777,7 @@ export default function ProvidersPage() {
               <div className="mt-3 rounded-lg border border-[#00a8ff]/30 bg-[#00a8ff]/5 p-3">
                 <div className="text-[12px] font-mono uppercase tracking-widest text-[#00a8ff]/80">Pool Summary</div>
                 <div className="mt-2 flex items-baseline gap-2">
-                  <span className="font-display text-2xl font-black gold-text">
+                  <span className="font-display text-2xl font-black brand-text">
                     {isWeavyPool && totalBalance === 0 ? '???' : totalBalance.toLocaleString()}
                   </span>
                   <span className="text-[11px] text-[#a0a0a0]">credits total</span>
@@ -1862,10 +1862,10 @@ export default function ProvidersPage() {
         <div className="fixed inset-0 z-[80] grid place-items-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-150" onClick={() => setSummaryPayload(null)}>
           <div onClick={e => e.stopPropagation()} className="neumorph w-full max-w-md p-6 relative animate-in zoom-in-95 duration-200" style={{ background: '#0a0a0a' }}>
             <div className="flex items-center gap-2.5 mb-4">
-              <div className="h-9 w-9 rounded-full grid place-items-center shrink-0 gold-gradient">
+              <div className="h-9 w-9 rounded-full grid place-items-center shrink-0 brand-gradient">
                 <Check className="h-5 w-5 text-[#0a0a0a]" />
               </div>
-              <div className="font-display text-lg text-[#f5f5f5] gold-text">{summaryPayload.title}</div>
+              <div className="font-display text-lg text-[#f5f5f5] brand-text">{summaryPayload.title}</div>
             </div>
             <div className="rounded-xl border border-[#2a2a2a] bg-[#141414] divide-y divide-[#2a2a2a]">
               {summaryPayload.rows.map((row, i) => (
@@ -1881,7 +1881,7 @@ export default function ProvidersPage() {
               <div className="mt-3 text-[11px] text-[#a0a0a0] text-center leading-relaxed">{summaryPayload.footer}</div>
             )}
             <div className="mt-5 flex justify-center">
-              <Button onClick={() => setSummaryPayload(null)} className="min-w-[120px] justify-center gold-gradient text-[#0a0a0a]">OK</Button>
+              <Button onClick={() => setSummaryPayload(null)} className="min-w-[120px] justify-center brand-gradient text-[#0a0a0a]">OK</Button>
             </div>
           </div>
         </div>
@@ -1891,14 +1891,14 @@ export default function ProvidersPage() {
         <div className="fixed inset-0 z-[80] grid place-items-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-150" onClick={() => setTokenBankOpen(false)}>
           <div onClick={e => e.stopPropagation()} className="neumorph w-full max-w-md p-6 relative animate-in zoom-in-95 duration-200" style={{ background: '#0a0a0a' }}>
             <div className="flex items-center gap-2.5 mb-4">
-              <div className="h-9 w-9 rounded-full grid place-items-center shrink-0 gold-gradient">
+              <div className="h-9 w-9 rounded-full grid place-items-center shrink-0 brand-gradient">
                 <ShoppingCart className="h-5 w-5 text-[#0a0a0a]" />
               </div>
-              <div className="font-display text-lg text-[#f5f5f5] gold-text">Token Bank</div>
+              <div className="font-display text-lg text-[#f5f5f5] brand-text">Token Bank</div>
             </div>
             <div className="rounded-xl border border-[#2a2a2a] bg-[#141414] p-4 text-center">
               <p className="text-sm text-[#a0a0a0] mb-4">Beli token provider langsung dari dashboard ini.</p>
-              <Button onClick={() => setTokenBankOpen(false)} className="min-w-[120px] justify-center gold-gradient text-[#0a0a0a]">OK</Button>
+              <Button onClick={() => setTokenBankOpen(false)} className="min-w-[120px] justify-center brand-gradient text-[#0a0a0a]">OK</Button>
             </div>
           </div>
         </div>

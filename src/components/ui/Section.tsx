@@ -15,7 +15,7 @@ const Section = forwardRef<HTMLDivElement, SectionProps>(
         className={cn('rounded-2xl border border-border bg-card/50 p-5', className)}
         {...props}
       >
-        {(title || right) && (
+        {(title || sub || right) && (
           <div className="flex items-start justify-between gap-3 mb-4">
             <div>
               {title && <h3 className="font-display text-base font-semibold">{title}</h3>}

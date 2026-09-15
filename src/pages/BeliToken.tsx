@@ -173,7 +173,7 @@ export default function BeliTokenPage() {
                 }`}
               >
                 <div className="text-sm font-semibold mb-1">{p.label}</div>
-                <div className="text-2xl font-bold gold-text">{stock}</div>
+                <div className="text-2xl font-bold brand-text">{stock}</div>
                 <div className="text-xs text-muted-foreground">token tersedia</div>
                 {priceDisplay && (
                   <div className="text-sm font-semibold mt-2">{priceDisplay} / token</div>
@@ -224,7 +224,7 @@ export default function BeliTokenPage() {
                             <span className="px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20 text-xs font-mono text-primary font-semibold">{group} cr</span>
                             <span className="text-sm font-medium">{stock} token tersedia</span>
                           </div>
-                          <div className="text-lg font-bold gold-text mt-1">Rp {price.toLocaleString('id-ID')} / token</div>
+                          <div className="text-lg font-bold brand-text mt-1">Rp {price.toLocaleString('id-ID')} / token</div>
                         </div>
                       </div>
                       <div className="flex flex-col sm:flex-row sm:items-end gap-3">
@@ -245,7 +245,7 @@ export default function BeliTokenPage() {
                         </div>
                         <div className="text-right">
                           <div className="text-xs text-muted-foreground">Total</div>
-                          <div className="text-lg font-bold gold-text">
+                          <div className="text-lg font-bold brand-text">
                             Rp {((Number(buyQty) || 0) * price).toLocaleString('id-ID')}
                           </div>
                         </div>
@@ -288,7 +288,7 @@ export default function BeliTokenPage() {
                 </div>
                 <div className="text-right">
                   <div className="text-xs text-muted-foreground mb-1">Total Bayar</div>
-                  <div className="text-xl font-bold gold-text">
+                  <div className="text-xl font-bold brand-text">
                     Rp {((Number(buyQty) || 0) * price).toLocaleString('id-ID')}
                   </div>
                   <div className="text-xs text-muted-foreground">{Number(buyQty) || 0} x Rp {price.toLocaleString('id-ID')}</div>
@@ -461,7 +461,7 @@ export default function BeliTokenPage() {
                   <div>
                     <div className="text-sm text-muted-foreground">{selectedBuyQty} token x Rp {selectedBuyPrice.toLocaleString('id-ID')}</div>
                   </div>
-                  <div className="text-xl font-bold gold-text">Rp {(selectedBuyQty * selectedBuyPrice).toLocaleString('id-ID')}</div>
+                  <div className="text-xl font-bold brand-text">Rp {(selectedBuyQty * selectedBuyPrice).toLocaleString('id-ID')}</div>
                 </div>
               </div>
 

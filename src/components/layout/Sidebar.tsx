@@ -198,7 +198,7 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
             className={cn(
               'flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition-all hover:bg-accent',
               isActive(item.href)
-                ? 'bg-primary/10 text-primary font-medium glow-gold'
+                ? 'bg-primary/10 text-primary font-medium brand-glow'
                 : 'text-muted-foreground hover:text-foreground'
             )}
             title={collapsed ? item.label : undefined}
@@ -250,7 +250,7 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
           {!collapsed && (
             <div className="flex-1 min-w-0">
               <div className="text-sm font-medium truncate">{user?.name || 'User'}</div>
-              <div className="text-[12px] gold-text">{user?.role === 'admin' ? 'Admin' : 'Free Plan'}</div>
+              <div className="text-[12px] brand-text">{user?.role === 'admin' ? 'Admin' : 'Free Plan'}</div>
             </div>
           )}
           {!collapsed && (

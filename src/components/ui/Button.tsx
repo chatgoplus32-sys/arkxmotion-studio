@@ -14,8 +14,9 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       <button
         ref={ref}
         disabled={disabled || loading}
+        aria-busy={loading || undefined}
         className={cn(
-          'inline-flex items-center justify-center gap-2 rounded-xl font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50',
+          'inline-flex items-center justify-center gap-2 rounded-xl font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98]',
           {
             'bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm': variant === 'default',
             'bg-secondary text-secondary-foreground hover:bg-secondary/80': variant === 'secondary',

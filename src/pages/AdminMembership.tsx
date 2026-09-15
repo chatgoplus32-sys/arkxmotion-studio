@@ -79,7 +79,7 @@ export default function AdminMembershipPage() {
         <Section title="Harga Membership" sub="Biaya pendaftaran member baru yang dibayar via QRIS">
           <div className="max-w-md">
             <div className="flex items-center gap-3 p-4 rounded-xl bg-secondary/50 border border-border mb-4">
-              <div className="h-10 w-10 rounded-lg gold-gradient flex items-center justify-center">
+              <div className="h-10 w-10 rounded-lg brand-gradient flex items-center justify-center">
                 <Wallet className="h-5 w-5 text-black" />
               </div>
               <div>
@@ -87,7 +87,7 @@ export default function AdminMembershipPage() {
                 {isLoading ? (
                   <div className="text-sm text-muted-foreground">Memuat...</div>
                 ) : (
-                  <div className="text-lg font-bold gold-text">{currentFee != null ? formatRp(currentFee) : '—'}</div>
+                  <div className="text-lg font-bold brand-text">{currentFee != null ? formatRp(currentFee) : '—'}</div>
                 )}
               </div>
             </div>

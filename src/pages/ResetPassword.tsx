@@ -101,7 +101,7 @@ export default function ResetPasswordPage() {
           </div>
           <h1 className="font-display text-2xl font-bold">
             <span className="silver-text">ARK</span>
-            <span className="gold-text">X</span>
+            <span className="brand-text">X</span>
             <span className="silver-text">Motion</span>
           </h1>
           <p className="text-muted-foreground text-sm mt-1">STUDIO</p>

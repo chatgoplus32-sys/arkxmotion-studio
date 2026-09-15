@@ -183,11 +183,11 @@ export default function AdminNotificationsPage() {
           style={{ animationDelay: '150ms' }}
         >
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl gold-gradient flex items-center justify-center">
+            <div className="h-10 w-10 rounded-xl brand-gradient flex items-center justify-center">
               <Send className="h-5 w-5 text-black" />
             </div>
             <div>
-              <div className="text-lg font-bold gold-text">Kirim</div>
+              <div className="text-lg font-bold brand-text">Kirim</div>
               <div className="text-[11px] text-muted-foreground">Notifikasi Baru</div>
             </div>
           </div>
@@ -289,7 +289,7 @@ export default function AdminNotificationsPage() {
               <button
                 onClick={handleSend}
                 disabled={sendLoading || !sendTitle.trim() || !sendMsg.trim()}
-                className="w-full py-2.5 rounded-lg gold-gradient text-black font-medium text-sm hover:opacity-90 transition disabled:opacity-50 flex items-center justify-center gap-2"
+                className="w-full py-2.5 rounded-lg brand-gradient text-black font-medium text-sm hover:opacity-90 transition disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {sendLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 {sendMode === 'broadcast' ? 'Broadcast ke Semua' : 'Kirim Notifikasi'}

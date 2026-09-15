@@ -15,6 +15,10 @@
   --color-accent-foreground: #f5f5f5;
   --color-destructive: #dc2626;
   --color-destructive-foreground: #ffffff;
+  --color-success: #10b981;
+  --color-success-foreground: #ffffff;
+  --color-warning: #f59e0b;
+  --color-warning-foreground: #ffffff;
   --color-border: #1a1a2e;
   --color-input: #1a1a2e;
   --color-ring: #00a8ff;
@@ -22,6 +26,7 @@
   --radius-md: 0.375rem;
   --radius-lg: 0.5rem;
   --radius-xl: 0.75rem;
+  --radius-2xl: 1rem;
 }
 
 * {
@@ -78,7 +83,7 @@ body {
     0 0 50px rgba(0, 168, 255, 0.06);
 }
 
-.light .gold-text {
+.light .brand-text {
   background: linear-gradient(135deg, #0080cc, #00a8ff, #0066aa);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -92,7 +97,7 @@ body {
   background-clip: text;
 }
 
-.light .glow-gold {
+.light .brand-glow {
   box-shadow: 0 0 20px rgba(0, 168, 255, 0.15);
 }
 
@@ -108,7 +113,7 @@ body {
   background: #aaa;
 }
 
-.gold-text {
+.brand-text {
   background: linear-gradient(135deg, #00a8ff, #00d4ff, #0080cc);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -122,11 +127,11 @@ body {
   background-clip: text;
 }
 
-.glow-gold {
+.brand-glow {
   box-shadow: 0 0 20px rgba(0, 168, 255, 0.3);
 }
 
-.gold-gradient {
+.brand-gradient {
   background: linear-gradient(135deg, #00a8ff, #00d4ff, #0080cc);
 }
 
@@ -186,7 +191,12 @@ body {
   to { opacity: 1; transform: translateX(0); }
 }
 
-@keyframes pulse-gold {
+@keyframes slideOut {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(8px); }
+}
+
+@keyframes pulse-brand {
   0%, 100% { box-shadow: 0 0 0 0 rgba(0, 168, 255, 0.4); }
   50% { box-shadow: 0 0 0 8px rgba(0, 168, 255, 0); }
 }
@@ -199,6 +209,18 @@ body {
   animation: slideIn 0.3s ease-out;
 }
 
-.animate-pulse-gold {
-  animation: pulse-gold 2s infinite;
+.animate-pulse-brand {
+  animation: pulse-brand 2s infinite;
+}
+
+.animate-slide-out {
+  animation: slideOut 0.2s ease-in forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

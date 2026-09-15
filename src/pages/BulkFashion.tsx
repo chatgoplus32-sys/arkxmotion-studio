@@ -684,7 +684,7 @@ export default function BulkFashionPage() {
                 className={`p-2 rounded-lg border text-[11px] transition-all ${
                   p.status === 'done' ? 'border-emerald-500/30 bg-emerald-500/5' :
                   p.status === 'error' ? 'border-red-500/30 bg-red-500/5' :
-                  p.status === 'processing' ? 'border-primary/30 bg-primary/5 animate-pulse-gold' :
+                  p.status === 'processing' ? 'border-primary/30 bg-primary/5 animate-pulse-brand' :
                   'border-border bg-background/30'
                 }`}
               >

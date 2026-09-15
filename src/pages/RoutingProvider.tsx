@@ -312,7 +312,7 @@ export default function RoutingProviderPage() {
         <Button
           onClick={() => setShowSaveConfirm(true)}
           disabled={!hasChanges}
-          className="gold-gradient text-[#050510] hover:opacity-90"
+          className="brand-gradient text-[#050510] hover:opacity-90"
         >
           <Save className="h-3.5 w-3.5" />
           Simpan Perubahan
@@ -609,10 +609,10 @@ export default function RoutingProviderPage() {
             style={{ background: '#050510' }}
           >
             <div className="flex items-center gap-2.5 mb-4">
-              <div className="h-9 w-9 rounded-full grid place-items-center shrink-0 gold-gradient">
+              <div className="h-9 w-9 rounded-full grid place-items-center shrink-0 brand-gradient">
                 <Save className="h-5 w-5 text-[#050510]" />
               </div>
-              <div className="font-display text-lg text-[#f5f5f5] gold-text">Simpan Routing</div>
+              <div className="font-display text-lg text-[#f5f5f5] brand-text">Simpan Routing</div>
             </div>
             <p className="text-sm text-[#a0a0a0] mb-4">
               Simpan {Object.keys(tempRouting).length} perubahan routing provider?
@@ -640,7 +640,7 @@ export default function RoutingProviderPage() {
               >
                 Batal
               </Button>
-              <Button onClick={handleSave} className="gold-gradient text-[#050510]">
+              <Button onClick={handleSave} className="brand-gradient text-[#050510]">
                 <Check className="h-3.5 w-3.5" /> Simpan
               </Button>
             </div>

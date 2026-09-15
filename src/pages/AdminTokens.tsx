@@ -450,7 +450,7 @@ export default function AdminTokensPage() {
                 <div className="text-sm font-semibold mb-2">{p.label}</div>
                 <div className="flex gap-3 text-xs">
                   <div>
-                    <div className="text-2xl font-bold gold-text">{s.available}</div>
+                    <div className="text-2xl font-bold brand-text">{s.available}</div>
                     <div className="text-muted-foreground">tersedia</div>
                   </div>
                   <div className="ml-auto text-right">
