@@ -470,20 +470,27 @@ async function handleSeedance25Multimodal(apiKey: string, params: any, res: Resp
   const nodeInfoList: any[] = []
 
   for (const img of imageUploads) {
-    nodeInfoList.push({ nodeId: img.nodeId, fieldName: 'image', fieldValue: img.fileName })
+    nodeInfoList.push({ nodeId: img.nodeId, fieldName: 'image', fieldValue: img.fileName, description: 'image' })
   }
 
   if (videoUpload) {
-    nodeInfoList.push({ nodeId: '7', fieldName: 'file', fieldValue: videoUpload.fileName })
+    nodeInfoList.push({ nodeId: '7', fieldName: 'file', fieldValue: videoUpload.fileName, description: 'video' })
   }
 
   if (audioUpload) {
-    nodeInfoList.push({ nodeId: '8', fieldName: 'audio', fieldValue: audioUpload.fileName })
+    nodeInfoList.push({ nodeId: '8', fieldName: 'audio', fieldValue: audioUpload.fileName, description: 'audio' })
   }
 
   if (prompt) {
-    nodeInfoList.push({ nodeId: '9', fieldName: 'text', fieldValue: prompt })
+    nodeInfoList.push({ nodeId: '9', fieldName: 'text', fieldValue: prompt, description: 'text' })
   }
+
+  // Config params for main node (node 1)
+  nodeInfoList.push({ nodeId: '1', fieldName: 'resolution', fieldValue: resolution || '720p', description: 'resolution' })
+  nodeInfoList.push({ nodeId: '1', fieldName: 'duration', fieldValue: duration || '5', description: 'duration' })
+  nodeInfoList.push({ nodeId: '1', fieldName: 'ratio', fieldValue: ratio || '16:9', description: 'ratio' })
+  nodeInfoList.push({ nodeId: '1', fieldName: 'bitrateMode', fieldValue: 'standard', description: 'bitrateMode' })
+  nodeInfoList.push({ nodeId: '1', fieldName: 'outputFormat', fieldValue: 'mp4', description: 'outputFormat' })
 
   const body = {
     nodeInfoList,
