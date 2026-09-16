@@ -80,6 +80,7 @@ export interface MotionControlParams {
   modelVersion?: string
   mode?: string
   apiKey?: string
+  workflowId?: string
 }
 
 export interface MotionControlV26StdParams {
@@ -108,7 +109,7 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 export async function submitRunningHubMotionControl(params: MotionControlParams): Promise<MotionControlResult> {
-  const workflowId = getRunningHubWorkflowId()
+  const workflowId = params.workflowId || getRunningHubWorkflowId()
 
   const [imageBase64, videoBase64] = await Promise.all([
     fileToBase64(params.imageFile),

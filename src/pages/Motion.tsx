@@ -65,6 +65,7 @@ const PROVIDERS = {
     { key: 'rh:pro:2.6', label: 'Kling 2.6 Pro (RunningHub)', cr: 80 },
     { key: 'rh:std:2.6', label: 'Kling 2.6 Standard (RunningHub)', cr: 50 },
     { key: 'rh:wf:2.9', label: 'Kling 2.9 Workflow (RunningHub)', cr: 80 },
+    { key: 'rh:wf:v3.0', label: 'Motion Control Std 3.0 (RunningHub)', cr: 80 },
   ]},
   galleri5: { name: 'G5 AI Studio', models: [
     { key: 'g5:kling-v3-pro-motion-control', label: 'Kling V3.0 Pro (Galery5)', cr: 200 },
@@ -1136,7 +1137,11 @@ export default function MotionPage() {
               addLog(`#${slotNum} Video: ${videoFile.name || 'ready'}`)
 
               updateSlotStatus(slot.id, 'processing', 'submitting...')
-              const workflowId = getRunningHubWorkflowId()
+              const WORKFLOW_IDS: Record<string, string> = {
+                'rh:wf:2.9': '2092795737699856386',
+                'rh:wf:v3.0': '2093040535905165313',
+              }
+              const workflowId = WORKFLOW_IDS[modelKey] || getRunningHubWorkflowId()
               addLog(`#${slotNum} Submit ke RunningHub (${modelVersion} ${mode}, workflow: ${workflowId.slice(0, 15)}...)`)
 
               let attemptTaskId: string | null = null
@@ -1154,6 +1159,7 @@ export default function MotionPage() {
                     modelVersion,
                     mode,
                     apiKey,
+                    workflowId,
                   })
                   const taskId = result.taskId
                   attemptTaskId = taskId
