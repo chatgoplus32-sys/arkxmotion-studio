@@ -8,7 +8,7 @@ import { uploadToCatbox, compressVideo, normalizeImage, getVideoDurationFromFile
 import { submitGensparkVideo, extractGensparkVideoUrl, uploadToGenspark, pollGensparkVideo } from '@/lib/genspark'
 import { trimVideoFFmpeg } from '@/lib/ffmpeg-compress'
 import { submitWeavyMotionControl, uploadWeavyAssetWithRetry, resolveWeavyAssetUrl, getActiveWeavyAccessToken, compressImageForWeavy } from '@/lib/weavy'
-import { getRunningHubApiKey, submitRunningHubMotionControlV26Std, submitRunningHubMotionControlV26Pro, pollRunningHubTask } from '@/lib/runninghub'
+import { getRunningHubApiKey, getRunningHubWorkflowId, submitRunningHubMotionControl, submitRunningHubMotionControlV26Std, submitRunningHubMotionControlV26Pro, pollRunningHubTask } from '@/lib/runninghub'
 import { getGalleri5AuthHeaders, submitGalleri5MotionControl, pollGalleri5MotionControl, isGalleri5ModelRestricted, getGalleri5ErrorMessage, GALLERI5_MOTION_MODELS, runGalleri5WithRotation } from '@/lib/galleri5'
 import { getMagnificApiKey, submitMagnificMotion, pollMagnificMotion, type MagnificMotionModel } from '@/lib/magnific'
 import { useLocalStorage } from '@/lib/useLocalStorage'
@@ -64,6 +64,7 @@ const PROVIDERS = {
   runninghub: { name: 'Motion Control (RunningHub)', models: [
     { key: 'rh:pro:2.6', label: 'Kling 2.6 Pro (RunningHub)', cr: 80 },
     { key: 'rh:std:2.6', label: 'Kling 2.6 Standard (RunningHub)', cr: 50 },
+    { key: 'rh:wf:2.9', label: 'Kling 2.9 Workflow (RunningHub)', cr: 80 },
   ]},
   galleri5: { name: 'G5 AI Studio', models: [
     { key: 'g5:kling-v3-pro-motion-control', label: 'Kling V3.0 Pro (Galery5)', cr: 200 },
@@ -1119,9 +1120,19 @@ export default function MotionPage() {
 
               updateSlotStatus(slot.id, 'processing', 'submitting...')
 
-              addLog(`#${slotNum} Submit ke RunningHub (${modelKey})...`)
               let result
-              if (modelKey === 'rh:pro:2.6') {
+              if (modelKey === 'rh:wf:2.9') {
+                const workflowId = getRunningHubWorkflowId()
+                addLog(`#${slotNum} Submit ke RunningHub (workflow: ${workflowId.slice(0, 15)}...)`)
+                result = await submitRunningHubMotionControl({
+                  imageFile: normalizedImage,
+                  videoFile,
+                  prompt: finalPrompt || undefined,
+                  negativePrompt: negativePrompt.trim() || undefined,
+                  keepOriginalSound: keepSound,
+                })
+              } else if (modelKey === 'rh:pro:2.6') {
+                addLog(`#${slotNum} Submit ke RunningHub (${modelKey})...`)
                 result = await submitRunningHubMotionControlV26Pro({
                   imageFile: normalizedImage,
                   videoFile,
@@ -1130,6 +1141,7 @@ export default function MotionPage() {
                   keepOriginalSound: keepSound ? 'yes' : 'no',
                 })
               } else {
+                addLog(`#${slotNum} Submit ke RunningHub (${modelKey})...`)
                 result = await submitRunningHubMotionControlV26Std({
                   imageFile: normalizedImage,
                   videoFile,
