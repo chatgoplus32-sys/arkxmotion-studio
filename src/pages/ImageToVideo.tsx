@@ -96,6 +96,15 @@ export default function ImageToVideoPage() {
   const [startFrameUrl, setStartFrameUrl] = useState<string | null>(null)
   const [endFrameUrl, setEndFrameUrl] = useState<string | null>(null)
   const [refUrls, setRefUrls] = useState<string[]>([])
+  const [seedance25Images, setSeedance25Images] = useState<File[]>([])
+  const [seedance25ImageUrls, setSeedance25ImageUrls] = useState<string[]>([])
+  const [seedance25Video, setSeedance25Video] = useState<File | null>(null)
+  const [seedance25VideoUrl, setSeedance25VideoUrl] = useState<string | null>(null)
+  const [seedance25Audio, setSeedance25Audio] = useState<File | null>(null)
+  const [seedance25AudioUrl, setSeedance25AudioUrl] = useState<string | null>(null)
+  const seedance25ImgInputRef = useRef<HTMLInputElement>(null)
+  const seedance25VidInputRef = useRef<HTMLInputElement>(null)
+  const seedance25AudInputRef = useRef<HTMLInputElement>(null)
   const [provider, setProvider] = useState<ProviderId>(routing['image-to-video'] || 'weavy')
   const [model, setModel] = useState('')
   const [ratio, setRatio] = useState('9:16')
@@ -422,6 +431,36 @@ export default function ImageToVideoPage() {
   const removeRef = (index: number) => {
     setRefFiles((prev) => prev.filter((_, i) => i !== index))
     setRefUrls((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  const handleSeedance25ImgChange = (files: FileList | null) => {
+    if (!files) return
+    const newFiles = Array.from(files).slice(0, 5 - seedance25Images.length)
+    if (newFiles.length > 0) {
+      setSeedance25Images((prev) => [...prev, ...newFiles].slice(0, 5))
+      setSeedance25ImageUrls((prev) => [...prev, ...newFiles.map((f) => URL.createObjectURL(f))].slice(0, 5))
+    }
+  }
+
+  const removeSeedance25Img = (index: number) => {
+    setSeedance25Images((prev) => prev.filter((_, i) => i !== index))
+    setSeedance25ImageUrls((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  const handleSeedance25VidChange = (files: FileList | null) => {
+    const file = files?.[0]
+    if (file) {
+      setSeedance25Video(file)
+      setSeedance25VideoUrl(URL.createObjectURL(file))
+    }
+  }
+
+  const handleSeedance25AudChange = (files: FileList | null) => {
+    const file = files?.[0]
+    if (file) {
+      setSeedance25Audio(file)
+      setSeedance25AudioUrl(URL.createObjectURL(file))
+    }
   }
 
   const handleVideoRefChange = (files: FileList | null) => {
@@ -2329,12 +2368,18 @@ export default function ImageToVideoPage() {
         })
         setCompressDialog(null)
         addLog(`#1 Image: ${normalizedImage.name || 'ready'}`, 'info', provider)
+        if (seedance25Images.length > 1) addLog(`#1 Total gambar: ${seedance25Images.length}`, 'info', provider)
+        if (seedance25Video) addLog(`#1 Video ref: ${seedance25Video.name}`, 'info', provider)
+        if (seedance25Audio) addLog(`#1 Audio: ${seedance25Audio.name}`, 'info', provider)
 
         setStatus((s) => ({ ...s, pct: 10, text: 'Submit ke RunningHub...' }))
         addLog(`#1 Submit ke RunningHub (Seedance 2.5 Multimodal)...`, 'info', provider)
 
+        const allImages = seedance25Images.length > 0 ? seedance25Images : [normalizedImage]
         const result = await submitSeedance25Multimodal({
-          imageFiles: [normalizedImage],
+          imageFiles: allImages,
+          videoFile: seedance25Video || undefined,
+          audioFile: seedance25Audio || undefined,
           prompt: prompt.trim() || undefined,
           resolution: '720p',
           duration: currentQuality?.duration?.toString() || '5',
@@ -2665,6 +2710,73 @@ export default function ImageToVideoPage() {
                       </button>
                     )}
                   </div>
+                </div>
+              </Section>
+            ) : model === 'rh:sd:2.5' ? (
+              /* Seedance 2.5 Multimodal UI */
+              <Section title="🖼️ Seedance 2.5 Multimodal" sub="Upload gambar (1-5), video referensi (opsional), audio (opsional)">
+                {/* Images */}
+                <div className="mb-3">
+                  <div className="text-[11px] text-muted-foreground mb-1.5">📷 Gambar (1-5)</div>
+                  <input ref={seedance25ImgInputRef} type="file" accept="image/*" multiple hidden onChange={(e) => handleSeedance25ImgChange(e.target.files)} />
+                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                    {seedance25ImageUrls.map((url, i) => (
+                      <div key={i} className="relative aspect-square rounded-xl overflow-hidden border border-border">
+                        <img src={url} alt={`Img ${i + 1}`} className="w-full h-full object-cover" />
+                        <button onClick={() => removeSeedance25Img(i)} className="absolute top-1 right-1 rounded-full w-5 h-5 bg-black/60 text-white text-[10px] grid place-items-center hover:bg-black/80">×</button>
+                        <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-[9px] text-center py-0.5 text-white">#{i + 1}</div>
+                      </div>
+                    ))}
+                    {seedance25Images.length < 5 && (
+                      <button onClick={() => seedance25ImgInputRef.current?.click()} className="aspect-square rounded-xl border border-dashed border-border/80 bg-card/30 grid place-items-center hover:border-primary/60 transition">
+                        <div className="text-center">
+                          <div className="text-lg">+</div>
+                          <div className="text-[9px] text-muted-foreground">Tambah</div>
+                        </div>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Video Reference */}
+                <div className="mb-3">
+                  <div className="text-[11px] text-muted-foreground mb-1.5">🎬 Video Referensi (opsional)</div>
+                  <input ref={seedance25VidInputRef} type="file" accept="video/*" hidden onChange={(e) => handleSeedance25VidChange(e.target.files)} />
+                  {seedance25VideoUrl ? (
+                    <div className="relative aspect-video rounded-xl overflow-hidden border border-border">
+                      <video src={seedance25VideoUrl} className="w-full h-full object-cover" controls />
+                      <button onClick={() => { setSeedance25Video(null); setSeedance25VideoUrl(null) }} className="absolute top-2 right-2 rounded-full w-6 h-6 bg-black/60 text-white text-xs grid place-items-center hover:bg-black/80">×</button>
+                    </div>
+                  ) : (
+                    <button onClick={() => seedance25VidInputRef.current?.click()} className="w-full aspect-video rounded-xl border border-dashed border-border/80 bg-card/30 grid place-items-center hover:border-primary/60 transition">
+                      <div className="text-center">
+                        <div className="text-2xl">🎬</div>
+                        <div className="text-xs mt-1">Tap untuk upload video referensi</div>
+                        <div className="text-[10px] text-muted-foreground">MP4 / WEBM</div>
+                      </div>
+                    </button>
+                  )}
+                </div>
+
+                {/* Audio */}
+                <div>
+                  <div className="text-[11px] text-muted-foreground mb-1.5">🔊 Audio (opsional)</div>
+                  <input ref={seedance25AudInputRef} type="file" accept="audio/*" hidden onChange={(e) => handleSeedance25AudChange(e.target.files)} />
+                  {seedance25AudioUrl ? (
+                    <div className="relative rounded-xl border border-border p-3 bg-card/50 flex items-center gap-3">
+                      <span className="text-lg">🎵</span>
+                      <span className="text-sm flex-1 truncate">{seedance25Audio?.name}</span>
+                      <button onClick={() => { setSeedance25Audio(null); setSeedance25AudioUrl(null) }} className="rounded-full w-5 h-5 bg-black/60 text-white text-[10px] grid place-items-center hover:bg-black/80">×</button>
+                    </div>
+                  ) : (
+                    <button onClick={() => seedance25AudInputRef.current?.click()} className="w-full rounded-xl border border-dashed border-border/80 bg-card/30 p-4 grid place-items-center hover:border-primary/60 transition">
+                      <div className="text-center">
+                        <div className="text-lg">🔊</div>
+                        <div className="text-xs mt-1">Tap untuk upload audio</div>
+                        <div className="text-[10px] text-muted-foreground">MP3 / WAV / M4A</div>
+                      </div>
+                    </button>
+                  )}
                 </div>
               </Section>
             ) : (
