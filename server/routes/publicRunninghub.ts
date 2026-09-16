@@ -390,7 +390,7 @@ async function handleMotionControl(apiKey: string, params: any, res: Response) {
       return res.status(200).json({ ok: false, error: 'Queue limit reached, coba lagi dalam beberapa menit', data, retryable: true })
     }
 
-    if (rhCode !== undefined && rhCode !== 0 && rhCode !== '0') {
+    if (rhCode !== undefined && rhCode !== 0 && rhCode !== '0' && rhCode !== '') {
       const errorMsg = translateRhError(String(rhCode), rhMsg) || rhMsg || `Error code: ${rhCode}`
       return res.status(200).json({ ok: false, error: errorMsg, code: rhCode, data })
     }
