@@ -36,3 +36,41 @@ export async function uploadToCdn(
 export function isCdnConfigured(): boolean {
   return true
 }
+
+export async function uploadBlobToCdn(
+  blob: Blob,
+  filename?: string,
+  onProgress?: (pct: number) => void,
+): Promise<CdnUploadResult> {
+  try {
+    const fd = new FormData()
+    fd.append('file', blob, filename || `video-${Date.now()}.mp4`)
+
+    const url = await new Promise<string>((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', '/api/public/r2-upload')
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && e.total > 0) {
+          onProgress?.(Math.max(0, Math.min(99, Math.round((e.loaded / e.total) * 100))))
+        }
+      }
+      xhr.onload = () => {
+        try {
+          const data = JSON.parse(xhr.responseText || 'null')
+          if (xhr.status >= 200 && xhr.status < 300 && data?.ok && data?.url) resolve(data.url)
+          else reject(new Error(data?.error || `HTTP ${xhr.status}`))
+        } catch (e: any) {
+          reject(e)
+        }
+      }
+      xhr.onerror = () => reject(new Error('network/CORS gagal'))
+      xhr.ontimeout = () => reject(new Error('timeout upload'))
+      xhr.timeout = 480000
+      xhr.send(fd)
+    })
+
+    return { ok: true, url }
+  } catch (err: any) {
+    return { ok: false, error: err.message }
+  }
+}

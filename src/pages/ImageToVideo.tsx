@@ -2284,9 +2284,29 @@ export default function ImageToVideoPage() {
                 const dl = await downloadNexabotResult(submit.jobId, auth)
                 if (!dl.ok || !dl.url) throw new Error(dl.error || 'NexaBot download gagal')
 
+                let finalUrl = dl.url
+                if (dl.url.startsWith('blob:')) {
+                  try {
+                    addLog(`[3/3] 📤 Menyimpan hasil permanen ke CDN...`, 'info', 'nexabot')
+                    const blobRes = await fetch(dl.url)
+                    const blob = await blobRes.blob()
+                    const { uploadBlobToCdn } = await import('@/lib/cdn')
+                    const up = await uploadBlobToCdn(blob, `nexabot-${submit.jobId}.mp4`, (pct) => {
+                      setStatus((s) => ({ ...s, text: `Upload CDN ${pct}%...`, pct: 90 + Math.round(pct / 10) }))
+                    })
+                    if (up.ok && up.url) {
+                      finalUrl = up.url
+                      addLog(`[3/3] 📤 Hasil tersimpan permanen ✓`, 'success', 'nexabot')
+                    } else {
+                      addLog(`[3/3] ⚠️ Simpan permanen gagal (${up.error}), pakai URL sementara`, 'warn', 'nexabot')
+                    }
+                  } catch (e: any) {
+                    addLog(`[3/3] ⚠️ Simpan permanen gagal (${e.message}), pakai URL sementara`, 'warn', 'nexabot')
+                  }
+                }
                 setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
-                addLog(`[3/3] ✅ Selesai ✓ ${dl.url.slice(0, 60)}...`, 'success', 'nexabot')
-                return dl.url
+                addLog(`[3/3] ✅ Selesai ✓ ${finalUrl.slice(0, 60)}...`, 'success', 'nexabot')
+                return finalUrl
               },
               {
                 sessionCookies: keyInfo?.cookies,
