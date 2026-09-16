@@ -374,11 +374,14 @@ async function handleMotionControl(apiKey: string, params: any, res: Response) {
     try { data = JSON.parse(lastRawText) } catch { data = { raw: lastRawText } }
     lastData = data
 
-    if (apiRes.status === 429 || data.code === 429) {
+    const rhCode = data.code ?? data.errorCode
+    const rhMsg = data.msg || data.errorMessage || data.message
+
+    if (apiRes.status === 429 || rhCode === 429) {
       return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data, retryable: true })
     }
 
-    if (data.code === 421) {
+    if (rhCode === 421 || rhCode === '421') {
       console.log(`[runninghub] Queue limit (421), retrying in ${RETRY_DELAY_MS / 1000}s... (${attempt}/${MAX_RETRIES})`)
       if (attempt < MAX_RETRIES) {
         await new Promise(r => setTimeout(r, RETRY_DELAY_MS))
@@ -387,9 +390,9 @@ async function handleMotionControl(apiKey: string, params: any, res: Response) {
       return res.status(200).json({ ok: false, error: 'Queue limit reached, coba lagi dalam beberapa menit', data, retryable: true })
     }
 
-    if (data.code !== undefined && data.code !== 0) {
-      const errorMsg = data.msg || data.errorMessage || data.message || data.error || `HTTP ${apiRes.status}`
-      return res.status(200).json({ ok: false, error: errorMsg, code: data.code, data })
+    if (rhCode !== undefined && rhCode !== 0 && rhCode !== '0') {
+      const errorMsg = translateRhError(String(rhCode), rhMsg) || rhMsg || `Error code: ${rhCode}`
+      return res.status(200).json({ ok: false, error: errorMsg, code: rhCode, data })
     }
 
     const taskId = data.data?.taskId || data.taskId || data.id || data.task_id
