@@ -308,8 +308,6 @@ async function handleMotionControl(apiKey: string, params: any, res: VercelRespo
     prompt = '',
     negative_prompt = '',
     keep_original_sound = false,
-    modelVersion = 'std',
-    mode = 'pro',
   } = params
 
   if (!imageBase64) return res.status(200).json({ ok: false, error: 'Missing imageBase64' })
@@ -325,28 +323,27 @@ async function handleMotionControl(apiKey: string, params: any, res: VercelRespo
   const videoUpload = await rhUpload(apiKey, videoBase64, videoFileName, videoMimeType)
   console.log(`[runninghub] Video uploaded: ${videoUpload.fileName}`)
 
-  const imageDownloadUrl = imageUpload.downloadUrl
-  const videoDownloadUrl = videoUpload.downloadUrl
+  // Workflow API: nodeInfoList uses node IDs from the workflow
+  const nodeInfoList: any[] = [
+    {
+      nodeId: '47',
+      fieldName: 'image',
+      fieldValue: imageUpload.fileName,
+    },
+    {
+      nodeId: '46',
+      fieldName: 'video',
+      fieldValue: videoUpload.fileName,
+    },
+  ]
 
-  if (!imageDownloadUrl || !videoDownloadUrl) {
-    return res.status(200).json({ ok: false, error: 'Upload failed: no download_url returned' })
+  const body = {
+    nodeInfoList,
+    instanceType: 'default',
+    usePersonalQueue: 'false',
   }
 
-  const body: any = {
-    imageUrl: imageDownloadUrl,
-    videoUrl: videoDownloadUrl,
-    prompt,
-    keepOriginalSound: keep_original_sound,
-  }
-  if (negative_prompt) body.negativePrompt = negative_prompt
-  if (mode) body.mode = mode
-
-  let endpoint: string
-  if (modelVersion === 'pro') {
-    endpoint = `${RUNNINGHUB_BASE}/openapi/v2/kling-v2.6-pro/motion-control`
-  } else {
-    endpoint = `${RUNNINGHUB_BASE}/openapi/v2/kling-v2.6-std/motion-control`
-  }
+  const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${effectiveWorkflowId}`
   console.log(`[runninghub] POST ${endpoint}`)
   console.log(`[runninghub] body:`, JSON.stringify(body).slice(0, 1000))
 

@@ -311,12 +311,12 @@ async function handleMotionControl(apiKey: string, params: any, res: Response) {
     prompt = '',
     negative_prompt = '',
     keep_original_sound = false,
-    model_version = '2.6',
-    mode = 'std',
   } = params
 
   if (!imageBase64) return res.status(200).json({ ok: false, error: 'Missing imageBase64' })
   if (!videoBase64) return res.status(200).json({ ok: false, error: 'Missing videoBase64' })
+
+  const effectiveWorkflowId = workflow_id || RUNNINGHUB_DEFAULT_WORKFLOW_ID
 
   console.log(`[runninghub] Uploading image...`)
   const imageUpload = await rhUpload(apiKey, imageBase64, imageFileName, imageMimeType)
@@ -326,36 +326,31 @@ async function handleMotionControl(apiKey: string, params: any, res: Response) {
   const videoUpload = await rhUpload(apiKey, videoBase64, videoFileName, videoMimeType)
   console.log(`[runninghub] Video uploaded: ${videoUpload.fileName}`)
 
-  const imageDownloadUrl = imageUpload.downloadUrl
-  const videoDownloadUrl = videoUpload.downloadUrl
+  // Workflow API: nodeInfoList uses node IDs from the workflow
+  const nodeInfoList: any[] = [
+    {
+      nodeId: '47',
+      fieldName: 'image',
+      fieldValue: imageUpload.fileName,
+    },
+    {
+      nodeId: '46',
+      fieldName: 'video',
+      fieldValue: videoUpload.fileName,
+    },
+  ]
 
-  if (!imageDownloadUrl || !videoDownloadUrl) {
-    return res.status(200).json({ ok: false, error: 'Upload failed: no download_url returned' })
+  const body = {
+    nodeInfoList,
+    instanceType: 'default',
+    usePersonalQueue: 'false',
   }
 
-  // Use direct API based on model version
-  let directEndpoint = ''
-  if (model_version === '3.0') {
-    directEndpoint = `${RUNNINGHUB_BASE}/openapi/v2/kling-v3.0-pro/motion-control`
-  } else if (mode === 'pro') {
-    directEndpoint = `${RUNNINGHUB_BASE}/openapi/v2/kling-v2.6-pro/motion-control`
-  } else {
-    directEndpoint = `${RUNNINGHUB_BASE}/openapi/v2/kling-v2.6-std/motion-control`
-  }
-
-  const body: any = {
-    imageUrl: imageDownloadUrl,
-    videoUrl: videoDownloadUrl,
-    characterOrientation: 'video',
-    prompt: prompt || '',
-    keepOriginalSound: 'yes',
-  }
-  if (negative_prompt) body.negativePrompt = negative_prompt
-
-  console.log(`[runninghub] POST ${directEndpoint}`)
+  const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${effectiveWorkflowId}`
+  console.log(`[runninghub] POST ${endpoint}`)
   console.log(`[runninghub] body:`, JSON.stringify(body).slice(0, 1000))
 
-  const apiRes = await fetch(directEndpoint, {
+  const apiRes = await fetch(endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -370,31 +365,29 @@ async function handleMotionControl(apiKey: string, params: any, res: Response) {
   let data: any
   try { data = JSON.parse(rawText) } catch { data = { raw: rawText } }
 
-  if (apiRes.status === 429) {
+  if (apiRes.status === 429 || data.code === 429) {
     return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data, retryable: true })
   }
 
-  if (!apiRes.ok) {
-    const errorMsg = data.errorMessage || data.msg || data.message || data.error || `HTTP ${apiRes.status}`
-    return res.status(200).json({ ok: false, error: errorMsg, data })
+  if (data.code !== undefined && data.code !== 0) {
+    const errorMsg = data.msg || data.errorMessage || data.message || data.error || `HTTP ${apiRes.status}`
+    return res.status(200).json({ ok: false, error: errorMsg, code: data.code, data })
   }
 
-  if (data.status === 'FAILED') {
-    return res.status(200).json({ ok: false, error: data.errorMessage || data.failedReason || 'Task failed', data })
-  }
-
-  const taskId = data.taskId || data.data?.taskId || data.id || data.task_id
+  const taskId = data.data?.taskId || data.taskId || data.id || data.task_id
   if (!taskId) {
-    console.error(`[runninghub] No taskId found:`, JSON.stringify(data))
-    return res.status(200).json({ ok: false, error: data.errorMessage || 'No taskId returned', raw: rawText.slice(0, 500) })
+    console.error(`[runninghub] No taskId found:`, JSON.stringify(data).slice(0, 500))
+    return res.status(200).json({ ok: false, error: 'No taskId returned', raw: rawText.slice(0, 500) })
   }
 
+  const netWssUrl = data.data?.netWssUrl
   return res.status(200).json({
     ok: true,
     data: {
       id: taskId,
       taskId,
-      status: data.status || data.data?.status || 'QUEUED',
+      status: data.data?.status || data.status || 'QUEUED',
+      netWssUrl,
       provider: 'runninghub',
     },
   })
