@@ -2059,56 +2059,6 @@ export default function ImageToVideoPage() {
         } else {
           throw new Error(rotation.error || 'Generation failed')
         }
-      } else if (provider === 'runninghub') {
-        addLog(`[1/3] 🖼️ Preparing image...`, 'info', 'runninghub')
-        if (!imgFile) throw new Error('RunningHub I2V membutuhkan gambar input')
-
-        const { submitRunningHubI2V, pollRunningHubTask, getRunningHubApiKey } = await import('@/lib/runninghub')
-        const rhKey = getRunningHubApiKey()
-        if (!rhKey) throw new Error('Belum ada RunningHub API key. Silakan tambahkan di Settings.')
-
-        addLog(`[2/3] 🚀 Submitting to RunningHub (${model})...`, 'info', 'runninghub')
-        setStatus((s) => ({ ...s, text: 'Submit RunningHub I2V...', pct: 15 }))
-
-        const rhSubmit = await submitRunningHubI2V({
-          model,
-          imageFile: imgFile,
-          prompt: prompt.trim() || undefined,
-          duration: String(currentQuality?.duration || 5),
-        })
-        const rhTaskId = rhSubmit.taskId
-        addLog(`[2/3] ✅ Task created ✓ task=${rhTaskId.slice(0, 20)}...`, 'success', 'runninghub')
-
-        addActiveTask({
-          id: rhTaskId,
-          taskId: rhTaskId,
-          roomId: '',
-          token: rhKey.slice(0, 50),
-          model: currentModel?.label || model,
-          prompt: prompt.trim() || '(no prompt)',
-          startedAt: Date.now(),
-          page: 'image-to-video',
-        })
-        activeTaskId = rhTaskId
-
-        addLog(`[3/3] ⏳ Polling for result...`, 'info', 'runninghub')
-        setStatus((s) => ({ ...s, text: 'Processing...', pct: 25 }))
-
-        const rhVideoUrl = await pollRunningHubTask(rhTaskId, (msg, pct) => {
-          addLog(`⏳ RunningHub ${msg}`, 'debug', 'runninghub')
-          setStatus((s) => ({ ...s, pct: Math.min(pct || 0, 95), text: `RunningHub ${msg}` }))
-        })
-
-        setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
-        addLog(`✅ Video selesai ✓`, 'success', 'runninghub')
-
-        removeActiveTask(rhTaskId)
-        activeTaskId = null
-        setResults((prev) => [rhVideoUrl, ...prev])
-        saveGalleryItem(rhVideoUrl)
-        successRef.current = true
-        setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
-        notifyGenerationComplete(currentModel?.label || model, 'RunningHub')
       } else if (provider === 'riverside') {
         // ─── Riverside: playground GraphQL (real generation) ─────────────
         addLog(`[1/3] 🖼️ Menyiapkan generate Riverside...`, 'info', 'riverside')
