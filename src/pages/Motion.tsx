@@ -1161,6 +1161,7 @@ export default function MotionPage() {
                 prompt: finalPrompt || '(no prompt)',
                 startedAt: Date.now(),
                 page: 'motion',
+                provider: 'runninghub',
               })
 
               updateSlotStatus(slot.id, 'processing', 'polling...')

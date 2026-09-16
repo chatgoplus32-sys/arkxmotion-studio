@@ -1,4 +1,5 @@
 import { pollRoboneoI2V } from '@/lib/roboneo'
+import { pollRunningHubTask } from '@/lib/runninghub'
 
 const ACTIVE_KEY = 'arkxmotion_active_tasks'
 const RESULTS_KEY = 'arkxmotion_results'
@@ -16,6 +17,7 @@ export interface ActiveTask {
   prompt: string
   startedAt: number
   page: 'motion' | 'image-to-video' | 'upscaler' | 'edit-image'
+  provider?: string
 }
 
 export interface CompletedResult {
@@ -201,18 +203,24 @@ const MAX_BG_RETRIES = 3
 function pollWithRetry(task: ActiveTask, ctrl: AbortController, attempt: number) {
   if (ctrl.signal.aborted) return
 
-  const pollFn = pollRoboneoI2V
-  pollFn(
-    task.token, task.taskId, task.roomId,
-    (status, pct) => {
-      if (!ctrl.signal.aborted) {
-        addBgLog(`⏳ ${task.model}: ${status} — ${pct}%`)
-      }
-    },
-    TASK_TIMEOUT_MS - (Date.now() - task.startedAt),
-    ctrl.signal,
-    task.nodeId,
-  )
+  const pollFn = task.provider === 'runninghub'
+    ? () => pollRunningHubTask(task.taskId, (status, pct) => {
+        if (!ctrl.signal.aborted) {
+          addBgLog(`⏳ ${task.model}: ${status} — ${pct}%`)
+        }
+      }, TASK_TIMEOUT_MS - (Date.now() - task.startedAt))
+    : () => pollRoboneoI2V(task.token, task.taskId, task.roomId,
+        (status, pct) => {
+          if (!ctrl.signal.aborted) {
+            addBgLog(`⏳ ${task.model}: ${status} — ${pct}%`)
+          }
+        },
+        TASK_TIMEOUT_MS - (Date.now() - task.startedAt),
+        ctrl.signal,
+        task.nodeId,
+      )
+
+  pollFn()
     .then((url) => {
       if (ctrl.signal.aborted) return
       const t = _pollTimeouts.get(task.taskId)
