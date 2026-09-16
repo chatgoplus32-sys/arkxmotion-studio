@@ -7,11 +7,12 @@ import { Swipeable } from '@/components/Swipeable'
 import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
 import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
-import { uploadToCatbox, submitRoboneoI2V, pollRoboneoI2V, checkRoboneoBalance, uploadImageForRoboneo, isRoboneoFormatError } from '@/lib/roboneo'
+import { uploadToCatbox, submitRoboneoI2V, pollRoboneoI2V, checkRoboneoBalance, uploadImageForRoboneo, isRoboneoFormatError, normalizeImage } from '@/lib/roboneo'
 import { generateWithFramia } from '@/lib/framia'
 import { runLeonardoVideo } from '@/lib/leonardo'
 import { leonardoVideoQualityOptions } from '@/lib/leonardo-video'
 import { submitWeavyVideo, pollWeavyStatus, submitWeavySora, pollWeavySoraStatus, submitWeavyGrokVideo, pollWeavyGrokVideoStatus, submitWeavyOmni, pollWeavyOmniStatus, submitWeavySeedanceMini, pollWeavySeedanceMiniStatus, submitWeavyKlingTurbo, pollWeavyKlingTurboStatus, submitWeavyKlingVideo, pollWeavyKlingVideoStatus } from '@/lib/weavy'
+import { submitSeedance25Multimodal, pollRunningHubTask, getRunningHubApiKey } from '@/lib/runninghub'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import {
   getActiveTasks,
@@ -2315,6 +2316,64 @@ export default function ImageToVideoPage() {
         } else {
           throw new Error(rotation.error || 'Generation failed')
         }
+      } else if (provider === 'runninghub' && model === 'rh:sd:2.5') {
+        addLog(`🚀 RunningHub Seedance 2.5 Multimodal I2V`, 'info', provider)
+        const runninghubKey = getRunningHubApiKey()
+        if (!runninghubKey) throw Error('Belum ada RunningHub API key. Silakan tambahkan di Settings.')
+
+        addLog(`#1 Compress image...`, 'info', provider)
+        const normalizedImage = await normalizeImage(imgFile, (msg, pct) => {
+          setCompressDialog({ msg, pct })
+          setStatus((s) => ({ ...s, pct: pct || 5, text: msg }))
+          addLog(`#1 ${msg}`, 'info', provider)
+        })
+        setCompressDialog(null)
+        addLog(`#1 Image: ${normalizedImage.name || 'ready'}`, 'info', provider)
+
+        setStatus((s) => ({ ...s, pct: 10, text: 'Submit ke RunningHub...' }))
+        addLog(`#1 Submit ke RunningHub (Seedance 2.5 Multimodal)...`, 'info', provider)
+
+        const result = await submitSeedance25Multimodal({
+          imageFiles: [normalizedImage],
+          prompt: prompt.trim() || undefined,
+          resolution: '720p',
+          duration: currentQuality?.duration?.toString() || '5',
+          ratio,
+        })
+        const taskId = result.taskId
+        addLog(`#1 Task: ${taskId.slice(0, 20)}...`, 'info', provider)
+
+        addActiveTask({
+          id: taskId,
+          taskId,
+          roomId: '',
+          nodeId: '',
+          token: runninghubKey,
+          model: currentModel?.label || model,
+          prompt: prompt.trim() || '(no prompt)',
+          startedAt: Date.now(),
+          page: 'image-to-video',
+          provider: 'runninghub',
+        })
+        activeTaskId = taskId
+
+        setStatus((s) => ({ ...s, pct: 15, text: 'Polling for result...' }))
+        addLog(`#1 Polling for result...`, 'info', provider)
+
+        const resultUrl = await pollRunningHubTask(taskId, (status, pct) => {
+          setStatus((s) => ({ ...s, pct: Math.max(15, Math.min(95, 15 + pct * 0.8)), text: `${status} ${pct}%` }))
+          addLog(`#1 ${status} ${pct}%`, 'info', provider)
+        })
+
+        removeActiveTask(taskId)
+        activeTaskId = null
+
+        saveGalleryItem(resultUrl)
+        successRef.current = true
+        setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+        addLog(`✅ Video selesai ✓`, 'success', provider)
+        notifyGenerationComplete(currentModel?.label || model, PROVIDER_CONFIGS[provider].name)
+        if (logId) logGenerationComplete(logId, { status: 'completed', result_url: resultUrl, duration_ms: Date.now() - startTime })
       } else {
         addLog(`ℹ️ Using default provider flow for ${PROVIDER_CONFIGS[provider].name}`, 'info', provider)
         const rotation = await withTokenRotation<string>(

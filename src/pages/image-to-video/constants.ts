@@ -86,6 +86,7 @@ export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'firefly:kling-v3-pro-i2v', label: 'Kling 3.0 Pro I2V (Firefly)', cr: 130, provider: 'firefly' },
   ],
   runninghub: [
+    { value: 'rh:sd:2.5', label: 'Seedance 2.5 Multimodal (RunningHub)', cr: 150, provider: 'runninghub' },
     { value: 'rh:pro:2.6', label: 'Kling 2.6 Pro (Markasflow-V2)', cr: 80, provider: 'runninghub' },
     { value: 'rh:std:2.6', label: 'Kling 2.6 Standard (Markasflow-V2)', cr: 50, provider: 'runninghub' },
     { value: 'rh:pro:2.1', label: 'Kling 2.1 Pro (Markasflow-V2)', cr: 60, provider: 'runninghub' },
