@@ -8,7 +8,7 @@ import { uploadToCatbox, compressVideo, normalizeImage, getVideoDurationFromFile
 import { submitGensparkVideo, extractGensparkVideoUrl, uploadToGenspark, pollGensparkVideo } from '@/lib/genspark'
 import { trimVideoFFmpeg } from '@/lib/ffmpeg-compress'
 import { submitWeavyMotionControl, uploadWeavyAssetWithRetry, resolveWeavyAssetUrl, getActiveWeavyAccessToken, compressImageForWeavy } from '@/lib/weavy'
-import { getRunningHubApiKey, getRunningHubWorkflowId, submitRunningHubMotionControl, pollRunningHubTask } from '@/lib/runninghub'
+import { getRunningHubApiKey, submitRunningHubMotionControlV26Std, submitRunningHubMotionControlV26Pro, pollRunningHubTask } from '@/lib/runninghub'
 import { getGalleri5AuthHeaders, submitGalleri5MotionControl, pollGalleri5MotionControl, isGalleri5ModelRestricted, getGalleri5ErrorMessage, GALLERI5_MOTION_MODELS, runGalleri5WithRotation } from '@/lib/galleri5'
 import { getMagnificApiKey, submitMagnificMotion, pollMagnificMotion, type MagnificMotionModel } from '@/lib/magnific'
 import { useLocalStorage } from '@/lib/useLocalStorage'
@@ -64,7 +64,6 @@ const PROVIDERS = {
   runninghub: { name: 'Motion Control (RunningHub)', models: [
     { key: 'rh:pro:2.6', label: 'Kling 2.6 Pro (RunningHub)', cr: 80 },
     { key: 'rh:std:2.6', label: 'Kling 2.6 Standard (RunningHub)', cr: 50 },
-    { key: 'rh:wf:2.9', label: 'Kling 2.9 Workflow (RunningHub)', cr: 80 },
   ]},
   galleri5: { name: 'G5 AI Studio', models: [
     { key: 'g5:kling-v3-pro-motion-control', label: 'Kling V3.0 Pro (Galery5)', cr: 200 },
@@ -1098,23 +1097,6 @@ export default function MotionPage() {
               const runninghubKey = getRunningHubApiKey()
               if (!runninghubKey) throw Error('Belum ada RunningHub API key. Silakan tambahkan di Settings.')
 
-              let mode = 'pro'
-              let modelVersion = '2.6'
-              if (modelKey.startsWith('rh:')) {
-                const parts = modelKey.split(':')
-                if (parts.length >= 3) {
-                  mode = parts[1] || 'pro'
-                  modelVersion = parts[2] || '2.6'
-                } else if (parts.length === 2) {
-                  const modelPart = parts[1]
-                  if (modelPart.includes('pro')) mode = 'pro'
-                  else if (modelPart.includes('std')) mode = 'std'
-                  if (modelPart.includes('3.0') || modelPart.includes('v3')) modelVersion = '3.0'
-                  else if (modelPart.includes('2.1')) modelVersion = '2.1'
-                  else modelVersion = '2.6'
-                }
-              }
-
               updateSlotStatus(slot.id, 'uploading img...')
               addLog(`#${slotNum} Compress image...`)
               const normalizedImage = await normalizeImage(slot.image, (msg, pct) => {
@@ -1136,18 +1118,40 @@ export default function MotionPage() {
               addLog(`#${slotNum} Video: ${videoFile.name || 'ready'}`)
 
               updateSlotStatus(slot.id, 'processing', 'submitting...')
-              const workflowId = getRunningHubWorkflowId()
-              addLog(`#${slotNum} Submit ke RunningHub (${modelVersion} ${mode}, workflow: ${workflowId.slice(0, 15)}...)`)
 
-              const result = await submitRunningHubMotionControl({
-                imageFile: normalizedImage,
-                videoFile,
-                prompt: finalPrompt || undefined,
-                negativePrompt: negativePrompt.trim() || undefined,
-                keepOriginalSound: keepSound,
-                modelVersion,
-                mode,
+              addLog(`#${slotNum} Upload image to Catbox...`)
+              const imageUrl = await uploadToCatbox(normalizedImage, 'image', (msg, _pct) => {
+                updateSlotStatus(slot.id, 'uploading img...', msg)
+                addLog(`#${slotNum} ${msg}`)
               })
+              addLog(`#${slotNum} Image URL: ${imageUrl.slice(0, 60)}...`)
+
+              addLog(`#${slotNum} Upload video to Catbox...`)
+              const videoUrl = await uploadToCatbox(videoFile, 'video', (msg, _pct) => {
+                updateSlotStatus(slot.id, 'uploading vid...', msg)
+                addLog(`#${slotNum} ${msg}`)
+              })
+              addLog(`#${slotNum} Video URL: ${videoUrl.slice(0, 60)}...`)
+
+              addLog(`#${slotNum} Submit ke RunningHub (${modelKey})...`)
+              let result
+              if (modelKey === 'rh:pro:2.6') {
+                result = await submitRunningHubMotionControlV26Pro({
+                  imageUrl,
+                  videoUrl,
+                  characterOrientation: orientation,
+                  prompt: finalPrompt || '',
+                  keepOriginalSound: keepSound ? 'yes' : 'no',
+                })
+              } else {
+                result = await submitRunningHubMotionControlV26Std({
+                  imageUrl,
+                  videoUrl,
+                  characterOrientation: orientation,
+                  prompt: finalPrompt || '',
+                  keepOriginalSound: keepSound ? 'yes' : 'no',
+                })
+              }
               const taskId = result.taskId
               addLog(`#${slotNum} Task: ${taskId.slice(0, 20)}...`)
 
