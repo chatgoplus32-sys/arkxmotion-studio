@@ -313,7 +313,7 @@ async function handleMotionControl(apiKey: string, params: any, res: VercelRespo
   if (!imageBase64) return res.status(200).json({ ok: false, error: 'Missing imageBase64' })
   if (!videoBase64) return res.status(200).json({ ok: false, error: 'Missing videoBase64' })
 
-  const effectiveWorkflowId = workflow_id || RUNNINGHUB_DEFAULT_WORKFLOW_ID
+  const effectiveWorkflowId = RUNNINGHUB_DEFAULT_WORKFLOW_ID
 
   console.log(`[runninghub] Uploading image...`)
   const imageUpload = await rhUpload(apiKey, imageBase64, imageFileName, imageMimeType)
