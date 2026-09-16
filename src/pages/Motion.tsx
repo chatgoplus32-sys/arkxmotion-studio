@@ -8,7 +8,7 @@ import { uploadToCatbox, compressVideo, normalizeImage, getVideoDurationFromFile
 import { submitGensparkVideo, extractGensparkVideoUrl, uploadToGenspark, pollGensparkVideo } from '@/lib/genspark'
 import { trimVideoFFmpeg } from '@/lib/ffmpeg-compress'
 import { submitWeavyMotionControl, uploadWeavyAssetWithRetry, resolveWeavyAssetUrl, getActiveWeavyAccessToken, compressImageForWeavy } from '@/lib/weavy'
-import { getRunningHubApiKey, submitRunningHubMotionControl, pollRunningHubTask } from '@/lib/runninghub'
+import { getRunningHubApiKey, submitRunningHubMotionControl, pollRunningHubTask, submitSeedance25Multimodal } from '@/lib/runninghub'
 import { getGalleri5AuthHeaders, submitGalleri5MotionControl, pollGalleri5MotionControl, isGalleri5ModelRestricted, getGalleri5ErrorMessage, GALLERI5_MOTION_MODELS, runGalleri5WithRotation } from '@/lib/galleri5'
 import { getMagnificApiKey, submitMagnificMotion, pollMagnificMotion, type MagnificMotionModel } from '@/lib/magnific'
 import { useLocalStorage } from '@/lib/useLocalStorage'
@@ -65,6 +65,7 @@ const PROVIDERS = {
     { key: 'rh:pro:2.6', label: 'Kling 2.6 Pro (RunningHub)', cr: 80 },
     { key: 'rh:std:2.6', label: 'Kling 2.6 Standard (RunningHub)', cr: 50 },
     { key: 'rh:wf:2.9', label: 'Kling 2.9 Workflow (RunningHub)', cr: 80 },
+    { key: 'rh:sd:2.5', label: 'Seedance 2.5 Multimodal (RunningHub)', cr: 150 },
   ]},
   galleri5: { name: 'G5 AI Studio', models: [
     { key: 'g5:kling-v3-pro-motion-control', label: 'Kling V3.0 Pro (Galery5)', cr: 200 },
@@ -1147,6 +1148,95 @@ export default function MotionPage() {
                 keepOriginalSound: keepSound,
                 modelVersion,
                 mode,
+              })
+              const taskId = result.taskId
+              addLog(`#${slotNum} Task: ${taskId.slice(0, 20)}...`)
+
+              addActiveTask({
+                id: taskId,
+                taskId,
+                roomId: '',
+                nodeId: '',
+                token: runninghubKey,
+                model: currentModel.label,
+                prompt: finalPrompt || '(no prompt)',
+                startedAt: Date.now(),
+                page: 'motion',
+                provider: 'runninghub',
+              })
+
+              updateSlotStatus(slot.id, 'processing', 'polling...')
+              addLog(`#${slotNum} Polling for result...`)
+
+              const resultUrl = await pollRunningHubTask(taskId, (status, pct) => {
+                updateSlotStatus(slot.id, 'processing', `${status} ${pct}%`)
+                addLog(`#${slotNum} ${status} ${pct}%`)
+                setProgress(pct)
+              })
+
+              updateSlotStatus(slot.id, 'done')
+              addLog(`#${slotNum} Done: ${resultUrl.slice(0, 60)}...`, 'success')
+
+              removeActiveTask(taskId)
+              addResult({
+                id: taskId,
+                url: resultUrl,
+                prompt: finalPrompt || '(no prompt)',
+                date: new Date().toISOString(),
+                page: 'motion',
+              })
+              persistResultToR2(taskId, resultUrl)
+              setResults((prev) => [
+                {
+                  id: taskId,
+                  url: resultUrl,
+                  prompt: finalPrompt || '(no prompt)',
+                  date: new Date().toISOString(),
+                },
+                ...prev,
+              ])
+              return true
+            } catch (err: any) {
+              setCompressDialog(null)
+              updateSlotStatus(slot.id, 'error', err.message)
+              addLog(`#${slotNum} Error: ${err.message}`, 'error')
+              return false
+            }
+          } else if (provider === 'runninghub' && modelKey === 'rh:sd:2.5' && slot.image && slot.video) {
+            try {
+              const runninghubKey = getRunningHubApiKey()
+              if (!runninghubKey) throw Error('Belum ada RunningHub API key. Silakan tambahkan di Settings.')
+
+              updateSlotStatus(slot.id, 'uploading img...')
+              addLog(`#${slotNum} Compress image...`)
+              const normalizedImage = await normalizeImage(slot.image, (msg, pct) => {
+                setCompressDialog({ msg, pct })
+                updateSlotStatus(slot.id, 'uploading img...', msg)
+                addLog(`#${slotNum} ${msg}`)
+              })
+              setCompressDialog(null)
+              addLog(`#${slotNum} Image: ${normalizedImage.name || 'ready'}`)
+
+              updateSlotStatus(slot.id, 'uploading vid...')
+              addLog(`#${slotNum} Compress video...`)
+              const videoFile = await compressVideo(slot.video, 4, (msg, pct) => {
+                setCompressDialog({ msg, pct })
+                updateSlotStatus(slot.id, 'uploading vid...', msg)
+                addLog(`#${slotNum} ${msg}`)
+              })
+              setCompressDialog(null)
+              addLog(`#${slotNum} Video: ${videoFile.name || 'ready'}`)
+
+              updateSlotStatus(slot.id, 'processing', 'submitting...')
+              addLog(`#${slotNum} Submit ke RunningHub (Seedance 2.5 Multimodal)...`)
+
+              const result = await submitSeedance25Multimodal({
+                imageFiles: [normalizedImage],
+                videoFile,
+                prompt: finalPrompt || undefined,
+                resolution: '720p',
+                duration: '5',
+                ratio: '16:9',
               })
               const taskId = result.taskId
               addLog(`#${slotNum} Task: ${taskId.slice(0, 20)}...`)

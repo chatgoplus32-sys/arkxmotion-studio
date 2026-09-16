@@ -199,6 +199,57 @@ export async function submitRunningHubMotionControlV3(params: MotionControlV3Par
   }
 }
 
+export interface Seedance25Params {
+  imageFiles?: File[]
+  videoFile?: File
+  audioFile?: File
+  prompt?: string
+  resolution?: string
+  duration?: string
+  ratio?: string
+  generateAudio?: boolean
+}
+
+export async function submitSeedance25Multimodal(params: Seedance25Params): Promise<MotionControlResult> {
+  const imageBase64s: { base64: string; fileName: string; mimeType: string }[] = []
+  if (params.imageFiles) {
+    for (const file of params.imageFiles) {
+      const base64 = await fileToBase64(file)
+      imageBase64s.push({ base64, fileName: file.name, mimeType: file.type || 'image/jpeg' })
+    }
+  }
+
+  let videoBase64: { base64: string; fileName: string; mimeType: string } | undefined
+  if (params.videoFile) {
+    const base64 = await fileToBase64(params.videoFile)
+    videoBase64 = { base64, fileName: params.videoFile.name, mimeType: params.videoFile.type || 'video/mp4' }
+  }
+
+  let audioBase64: { base64: string; fileName: string; mimeType: string } | undefined
+  if (params.audioFile) {
+    const base64 = await fileToBase64(params.audioFile)
+    audioBase64 = { base64, fileName: params.audioFile.name, mimeType: params.audioFile.type || 'audio/mpeg' }
+  }
+
+  const result = await runninghubProxy('seedance25-multimodal', {
+    imageBase64s,
+    videoBase64,
+    audioBase64,
+    prompt: params.prompt || '',
+    resolution: params.resolution || '720p',
+    duration: params.duration || '5',
+    ratio: params.ratio || '16:9',
+    generateAudio: params.generateAudio ?? false,
+  })
+
+  return {
+    id: result.id || result.taskId,
+    taskId: result.taskId || result.id,
+    status: result.status || 'QUEUED',
+    provider: result.provider || 'runninghub',
+  }
+}
+
 export type RunningHubTaskStatus = 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED'
 
 export async function pollRunningHubTask(
