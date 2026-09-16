@@ -429,13 +429,15 @@ async function handleQuery(apiKey: string, taskId: string, res: VercelResponse) 
   let data: any
   try { data = JSON.parse(rawText) } catch { data = { raw: rawText } }
 
+  const rhCode = data.code ?? data.errorCode
   const errorMsg = data.msg || data.errorMessage || data.message
-  if (apiRes.status === 429 || data.code === 429) {
+
+  if (apiRes.status === 429 || rhCode === 429) {
     return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data, retryable: true })
   }
 
-  if (data.code !== undefined && data.code !== 0) {
-    return res.status(200).json({ ok: false, error: translateRhError(String(data.code), errorMsg) || errorMsg || `Error code: ${data.code}`, data })
+  if (rhCode !== undefined && rhCode !== 0 && rhCode !== '0' && rhCode !== '') {
+    return res.status(200).json({ ok: false, error: translateRhError(String(rhCode), errorMsg) || errorMsg || `Error code: ${rhCode}`, data })
   }
 
   const taskData = data.data || data
