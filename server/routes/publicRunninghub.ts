@@ -85,9 +85,9 @@ async function rhUpload(apiKey: string, fileBase64: string, fileName: string, mi
     throw new Error('No fileName in upload response: ' + rawText.slice(0, 300))
   }
 
-  // download_url might be relative (just filename) — construct full URL
+  // download_url might be relative (just filename) or missing — construct full URL
   let fullDownloadUrl = downloadUrl || ''
-  if (fullDownloadUrl && !fullDownloadUrl.startsWith('http')) {
+  if (!fullDownloadUrl.startsWith('http')) {
     fullDownloadUrl = `https://rh-hk-images-switch.xiaoyaoyou.com/input/${uploadedFileName}`
   }
 
@@ -98,13 +98,33 @@ async function rhUpload(apiKey: string, fileBase64: string, fileName: string, mi
 }
 
 async function handleMotionControlV26Std(apiKey: string, params: any, res: Response) {
-  const {
+  let {
     imageUrl,
     videoUrl,
+    imageBase64,
+    videoBase64,
+    imageFileName = 'image.jpg',
+    videoFileName = 'video.mp4',
+    imageMimeType = 'image/jpeg',
+    videoMimeType = 'video/mp4',
     characterOrientation = 'video',
     prompt = '',
     keepOriginalSound = 'yes',
   } = params
+
+  // Native RunningHub upload: base64 -> RH CDN URL (no third-party host needed)
+  if (!imageUrl && imageBase64) {
+    console.log(`[runninghub] Uploading image to RH...`)
+    const up = await rhUpload(apiKey, imageBase64, imageFileName, imageMimeType)
+    imageUrl = up.downloadUrl
+    console.log(`[runninghub] Image RH URL: ${imageUrl.slice(0, 80)}`)
+  }
+  if (!videoUrl && videoBase64) {
+    console.log(`[runninghub] Uploading video to RH...`)
+    const up = await rhUpload(apiKey, videoBase64, videoFileName, videoMimeType)
+    videoUrl = up.downloadUrl
+    console.log(`[runninghub] Video RH URL: ${videoUrl.slice(0, 80)}`)
+  }
 
   if (!imageUrl) return res.status(200).json({ ok: false, error: 'Missing imageUrl' })
   if (!videoUrl) return res.status(200).json({ ok: false, error: 'Missing videoUrl' })
@@ -167,13 +187,33 @@ async function handleMotionControlV26Std(apiKey: string, params: any, res: Respo
 }
 
 async function handleMotionControlV26Pro(apiKey: string, params: any, res: Response) {
-  const {
+  let {
     imageUrl,
     videoUrl,
+    imageBase64,
+    videoBase64,
+    imageFileName = 'image.jpg',
+    videoFileName = 'video.mp4',
+    imageMimeType = 'image/jpeg',
+    videoMimeType = 'video/mp4',
     characterOrientation = 'video',
     prompt = '',
     keepOriginalSound = 'yes',
   } = params
+
+  // Native RunningHub upload: base64 -> RH CDN URL (no third-party host needed)
+  if (!imageUrl && imageBase64) {
+    console.log(`[runninghub] Uploading image to RH...`)
+    const up = await rhUpload(apiKey, imageBase64, imageFileName, imageMimeType)
+    imageUrl = up.downloadUrl
+    console.log(`[runninghub] Image RH URL: ${imageUrl.slice(0, 80)}`)
+  }
+  if (!videoUrl && videoBase64) {
+    console.log(`[runninghub] Uploading video to RH...`)
+    const up = await rhUpload(apiKey, videoBase64, videoFileName, videoMimeType)
+    videoUrl = up.downloadUrl
+    console.log(`[runninghub] Video RH URL: ${videoUrl.slice(0, 80)}`)
+  }
 
   if (!imageUrl) return res.status(200).json({ ok: false, error: 'Missing imageUrl' })
   if (!videoUrl) return res.status(200).json({ ok: false, error: 'Missing videoUrl' })

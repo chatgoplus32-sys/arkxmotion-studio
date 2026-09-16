@@ -87,8 +87,10 @@ export interface MotionControlParams {
 }
 
 export interface MotionControlV26StdParams {
-  imageUrl: string
-  videoUrl: string
+  imageUrl?: string
+  videoUrl?: string
+  imageFile?: File
+  videoFile?: File
   characterOrientation?: 'image' | 'video'
   prompt?: string
   keepOriginalSound?: 'yes' | 'no'
@@ -144,13 +146,26 @@ export async function submitRunningHubMotionControl(params: MotionControlParams)
 }
 
 export async function submitRunningHubMotionControlV26Std(params: MotionControlV26StdParams): Promise<MotionControlResult> {
-  const result = await runninghubProxy('motion-control-v2.6-std', {
-    imageUrl: params.imageUrl,
-    videoUrl: params.videoUrl,
+  const body: Record<string, any> = {
     characterOrientation: params.characterOrientation || 'video',
     prompt: params.prompt || '',
     keepOriginalSound: params.keepOriginalSound || 'yes',
-  })
+  }
+  if (params.imageFile) {
+    body.imageBase64 = await fileToBase64(params.imageFile)
+    body.imageFileName = params.imageFile.name || 'image.jpg'
+    body.imageMimeType = params.imageFile.type || 'image/jpeg'
+  } else {
+    body.imageUrl = params.imageUrl
+  }
+  if (params.videoFile) {
+    body.videoBase64 = await fileToBase64(params.videoFile)
+    body.videoFileName = params.videoFile.name || 'video.mp4'
+    body.videoMimeType = params.videoFile.type || 'video/mp4'
+  } else {
+    body.videoUrl = params.videoUrl
+  }
+  const result = await runninghubProxy('motion-control-v2.6-std', body)
 
   return {
     id: result.id || result.taskId,
@@ -170,13 +185,26 @@ export interface MotionControlV3Params {
 }
 
 export async function submitRunningHubMotionControlV26Pro(params: MotionControlV26StdParams): Promise<MotionControlResult> {
-  const result = await runninghubProxy('motion-control-v2.6-pro', {
-    imageUrl: params.imageUrl,
-    videoUrl: params.videoUrl,
+  const body: Record<string, any> = {
     characterOrientation: params.characterOrientation || 'video',
     prompt: params.prompt || '',
     keepOriginalSound: params.keepOriginalSound || 'yes',
-  })
+  }
+  if (params.imageFile) {
+    body.imageBase64 = await fileToBase64(params.imageFile)
+    body.imageFileName = params.imageFile.name || 'image.jpg'
+    body.imageMimeType = params.imageFile.type || 'image/jpeg'
+  } else {
+    body.imageUrl = params.imageUrl
+  }
+  if (params.videoFile) {
+    body.videoBase64 = await fileToBase64(params.videoFile)
+    body.videoFileName = params.videoFile.name || 'video.mp4'
+    body.videoMimeType = params.videoFile.type || 'video/mp4'
+  } else {
+    body.videoUrl = params.videoUrl
+  }
+  const result = await runninghubProxy('motion-control-v2.6-pro', body)
 
   return {
     id: result.id || result.taskId,
