@@ -8,7 +8,7 @@ import { uploadToCatbox, compressVideo, normalizeImage, getVideoDurationFromFile
 import { submitGensparkVideo, extractGensparkVideoUrl, uploadToGenspark, pollGensparkVideo } from '@/lib/genspark'
 import { trimVideoFFmpeg } from '@/lib/ffmpeg-compress'
 import { submitWeavyMotionControl, uploadWeavyAssetWithRetry, resolveWeavyAssetUrl, getActiveWeavyAccessToken, compressImageForWeavy } from '@/lib/weavy'
-import { getRunningHubApiKey, getRunningHubWorkflowId, submitRunningHubMotionControl, pollRunningHubTask } from '@/lib/runninghub'
+import { getRunningHubApiKey, submitRunningHubMotionControl, pollRunningHubTask } from '@/lib/runninghub'
 import { getGalleri5AuthHeaders, submitGalleri5MotionControl, pollGalleri5MotionControl, isGalleri5ModelRestricted, getGalleri5ErrorMessage, GALLERI5_MOTION_MODELS, runGalleri5WithRotation } from '@/lib/galleri5'
 import { getMagnificApiKey, submitMagnificMotion, pollMagnificMotion, type MagnificMotionModel } from '@/lib/magnific'
 import { useLocalStorage } from '@/lib/useLocalStorage'

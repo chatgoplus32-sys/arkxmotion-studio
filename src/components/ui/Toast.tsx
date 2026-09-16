@@ -17,7 +17,7 @@ const styles = {
   warning: 'bg-yellow-500/10 border-yellow-500/30 text-yellow-500',
 }
 
-function ToastItem({ toast, onRemove }: { toast: { id: number; type: keyof typeof icons; message: string }; onRemove: (id: number) => void }) {
+function ToastItem({ toast, onRemove }: { toast: { id: string; type: keyof typeof icons; message: string }; onRemove: (id: string) => void }) {
   const [exiting, setExiting] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 

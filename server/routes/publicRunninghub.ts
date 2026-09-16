@@ -4,7 +4,6 @@ const router = Router()
 
 const RUNNINGHUB_BASE = 'https://www.runninghub.ai'
 const RUNNINGHUB_DEFAULT_WORKFLOW_ID = '2092795737699856386'
-const RUNNINGHUB_SEEDANCE25_WORKFLOW_ID = '2085913383404068865'
 
 function rhAuthHeaders(_apiKey: string) {
   return { 'Content-Type': 'application/json', 'User-Agent': 'ArkxMotion/1.0' }
@@ -29,9 +28,6 @@ router.all('/', async (req: Request, res: Response) => {
   try {
     if (action === 'motion-control') {
       return await handleMotionControl(apiKey, params, res)
-    }
-    if (action === 'seedance25-multimodal') {
-      return await handleSeedance25Multimodal(apiKey, params, res)
     }
     if (action === 'motion-control-v2.6-std') {
       return await handleMotionControlV26Std(apiKey, params, res)
@@ -91,10 +87,7 @@ async function rhUpload(apiKey: string, fileBase64: string, fileName: string, mi
     fullDownloadUrl = `https://rh-hk-images-switch.xiaoyaoyou.com/input/${uploadedFileName}`
   }
 
-  // Strip "openapi/" prefix — RunningHub workflow API expects just the hash filename
-  const cleanFileName = uploadedFileName?.replace(/^openapi\//, '') || uploadedFileName
-
-  return { fileName: cleanFileName, downloadUrl: fullDownloadUrl }
+  return { fileName: uploadedFileName, downloadUrl: fullDownloadUrl }
 }
 
 async function handleMotionControlV26Std(apiKey: string, params: any, res: Response) {
@@ -416,153 +409,6 @@ async function handleMotionControl(apiKey: string, params: any, res: Response) {
         taskId,
         status: data.data?.status || data.status || 'QUEUED',
         netWssUrl,
-        provider: 'runninghub',
-      },
-    })
-  }
-
-  return res.status(200).json({ ok: false, error: 'Max retries exceeded', raw: lastRawText.slice(0, 500) })
-}
-
-async function handleSeedance25Multimodal(apiKey: string, params: any, res: Response) {
-  const {
-    imageBase64s = [],
-    videoBase64,
-    audioBase64,
-    prompt = '',
-    resolution = '720p',
-    duration = '5',
-    ratio = '16:9',
-    generateAudio = false,
-  } = params
-
-  if (!videoBase64 && imageBase64s.length === 0) {
-    return res.status(200).json({ ok: false, error: 'Minimal perlu 1 image atau 1 video' })
-  }
-
-  console.log(`[runninghub] Seedance 2.5 Multimodal: uploading ${imageBase64s.length} images, video=${!!videoBase64}, audio=${!!audioBase64}`)
-
-  // Upload images
-  const imageUploads: { nodeId: string; fileName: string }[] = []
-  const imageNodeIds = ['2', '3', '4', '5', '6']
-  for (let i = 0; i < Math.min(imageBase64s.length, 5); i++) {
-    const img = imageBase64s[i]
-    if (!img) continue
-    const upload = await rhUpload(apiKey, img.base64, img.fileName || `image${i + 1}.jpg`, img.mimeType || 'image/jpeg')
-    imageUploads.push({ nodeId: imageNodeIds[i], fileName: upload.fileName })
-    console.log(`[runninghub] Image${i + 1} uploaded: ${upload.fileName}`)
-  }
-
-  // Upload video
-  let videoUpload: { fileName: string } | null = null
-  if (videoBase64) {
-    const v = typeof videoBase64 === 'string' ? { base64: videoBase64, fileName: 'video.mp4', mimeType: 'video/mp4' } : videoBase64
-    videoUpload = await rhUpload(apiKey, v.base64, v.fileName || 'video.mp4', v.mimeType || 'video/mp4')
-    console.log(`[runninghub] Video uploaded: ${videoUpload.fileName}`)
-  }
-
-  // Upload audio
-  let audioUpload: { fileName: string } | null = null
-  if (audioBase64) {
-    const a = typeof audioBase64 === 'string' ? { base64: audioBase64, fileName: 'audio.mp3', mimeType: 'audio/mpeg' } : audioBase64
-    audioUpload = await rhUpload(apiKey, a.base64, a.fileName || 'audio.mp3', a.mimeType || 'audio/mpeg')
-    console.log(`[runninghub] Audio uploaded: ${audioUpload.fileName}`)
-  }
-
-  // Build nodeInfoList
-  const nodeInfoList: any[] = []
-
-  for (const img of imageUploads) {
-    nodeInfoList.push({ nodeId: img.nodeId, fieldName: 'image', fieldValue: img.fileName, description: 'image' })
-  }
-
-  if (videoUpload) {
-    nodeInfoList.push({ nodeId: '7', fieldName: 'file', fieldValue: videoUpload.fileName, description: 'video' })
-  }
-
-  if (audioUpload) {
-    nodeInfoList.push({ nodeId: '8', fieldName: 'audio', fieldValue: audioUpload.fileName, description: 'audio' })
-  }
-
-  if (prompt) {
-    nodeInfoList.push({ nodeId: '9', fieldName: 'text', fieldValue: prompt, description: 'text' })
-  }
-
-  // Config params for main node (node 1)
-  nodeInfoList.push({ nodeId: '1', fieldName: 'resolution', fieldValue: resolution || '720p', description: 'resolution' })
-  nodeInfoList.push({ nodeId: '1', fieldName: 'duration', fieldValue: duration || '5', description: 'duration' })
-  nodeInfoList.push({ nodeId: '1', fieldName: 'ratio', fieldValue: ratio || '16:9', description: 'ratio' })
-  nodeInfoList.push({ nodeId: '1', fieldName: 'bitrateMode', fieldValue: 'standard', description: 'bitrateMode' })
-  nodeInfoList.push({ nodeId: '1', fieldName: 'outputFormat', fieldValue: 'mp4', description: 'outputFormat' })
-
-  const body = {
-    nodeInfoList,
-    instanceType: 'default',
-    usePersonalQueue: 'false',
-  }
-
-  const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${RUNNINGHUB_SEEDANCE25_WORKFLOW_ID}`
-
-  console.log(`[runninghub] seedance25 nodeInfoList:`, JSON.stringify(nodeInfoList))
-
-  const MAX_RETRIES = 3
-  const RETRY_DELAY_MS = 10000
-  let lastRawText = ''
-  let lastData: any = null
-
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    console.log(`[runninghub] POST ${endpoint} (attempt ${attempt}/${MAX_RETRIES})`)
-
-    const apiRes = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(30000),
-    })
-
-    lastRawText = await apiRes.text()
-    console.log(`[runninghub] seedance25 ${apiRes.status}:`, lastRawText.slice(0, 500))
-
-    let data: any
-    try { data = JSON.parse(lastRawText) } catch { data = { raw: lastRawText } }
-    lastData = data
-
-    const rhCode = data.code ?? data.errorCode
-    const rhMsg = data.msg || data.errorMessage || data.message
-
-    if (apiRes.status === 429 || rhCode === 429) {
-      return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data, retryable: true })
-    }
-
-    if (rhCode === 421 || rhCode === '421') {
-      console.log(`[runninghub] Queue limit (421), retrying in ${RETRY_DELAY_MS / 1000}s...`)
-      if (attempt < MAX_RETRIES) {
-        await new Promise(r => setTimeout(r, RETRY_DELAY_MS))
-        continue
-      }
-      return res.status(200).json({ ok: false, error: 'Queue limit reached', data, retryable: true })
-    }
-
-    if (rhCode !== undefined && rhCode !== 0 && rhCode !== '0' && rhCode !== '') {
-      const errorMsg = translateRhError(String(rhCode), rhMsg) || rhMsg || `Error code: ${rhCode}`
-      return res.status(200).json({ ok: false, error: errorMsg, code: rhCode, data })
-    }
-
-    const taskId = data.data?.taskId || data.taskId || data.id || data.task_id
-    if (!taskId) {
-      console.error(`[runninghub] No taskId found:`, JSON.stringify(data).slice(0, 500))
-      return res.status(200).json({ ok: false, error: 'No taskId returned', raw: lastRawText.slice(0, 500) })
-    }
-
-    return res.status(200).json({
-      ok: true,
-      data: {
-        id: taskId,
-        taskId,
-        status: data.data?.status || data.status || 'QUEUED',
         provider: 'runninghub',
       },
     })
