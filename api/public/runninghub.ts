@@ -344,50 +344,70 @@ async function handleMotionControl(apiKey: string, params: any, res: VercelRespo
   }
 
   const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${effectiveWorkflowId}`
-  console.log(`[runninghub] POST ${endpoint}`)
-  console.log(`[runninghub] body:`, JSON.stringify(body).slice(0, 1000))
 
-  const apiRes = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(body),
-  })
+  const MAX_RETRIES = 3
+  const RETRY_DELAY_MS = 10000
+  let lastRawText = ''
+  let lastData: any = null
 
-  const rawText = await apiRes.text()
-  console.log(`[runninghub] motion-control ${apiRes.status}:`, rawText.slice(0, 1000))
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    console.log(`[runninghub] POST ${endpoint} (attempt ${attempt}/${MAX_RETRIES})`)
+    console.log(`[runninghub] body:`, JSON.stringify(body).slice(0, 1000))
 
-  let data: any
-  try { data = JSON.parse(rawText) } catch { data = { raw: rawText } }
+    const apiRes = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+    })
 
-  if (apiRes.status === 429 || data.code === 429) {
-    return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data, retryable: true })
+    lastRawText = await apiRes.text()
+    console.log(`[runninghub] motion-control ${apiRes.status}:`, lastRawText.slice(0, 1000))
+
+    let data: any
+    try { data = JSON.parse(lastRawText) } catch { data = { raw: lastRawText } }
+    lastData = data
+
+    if (apiRes.status === 429 || data.code === 429) {
+      return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data, retryable: true })
+    }
+
+    if (data.code === 421) {
+      console.log(`[runninghub] Queue limit (421), retrying in ${RETRY_DELAY_MS / 1000}s... (${attempt}/${MAX_RETRIES})`)
+      if (attempt < MAX_RETRIES) {
+        await new Promise(r => setTimeout(r, RETRY_DELAY_MS))
+        continue
+      }
+      return res.status(200).json({ ok: false, error: 'Queue limit reached, coba lagi dalam beberapa menit', data, retryable: true })
+    }
+
+    if (data.code !== undefined && data.code !== 0) {
+      const errorMsg = data.msg || data.errorMessage || data.message || data.error || `HTTP ${apiRes.status}`
+      return res.status(200).json({ ok: false, error: errorMsg, code: data.code, data })
+    }
+
+    const taskId = data.data?.taskId || data.taskId || data.id || data.task_id
+    if (!taskId) {
+      console.error(`[runninghub] No taskId found:`, JSON.stringify(data).slice(0, 500))
+      return res.status(200).json({ ok: false, error: 'No taskId returned', raw: lastRawText.slice(0, 500) })
+    }
+
+    const netWssUrl = data.data?.netWssUrl
+    return res.status(200).json({
+      ok: true,
+      data: {
+        id: taskId,
+        taskId,
+        status: data.data?.status || data.status || 'QUEUED',
+        netWssUrl,
+        provider: 'runninghub',
+      },
+    })
   }
 
-  if (data.code !== undefined && data.code !== 0) {
-    const errorMsg = data.msg || data.errorMessage || data.message || data.error || `HTTP ${apiRes.status}`
-    return res.status(200).json({ ok: false, error: errorMsg, code: data.code, data })
-  }
-
-  const taskId = data.data?.taskId || data.taskId || data.id || data.task_id
-  if (!taskId) {
-    console.error(`[runninghub] No taskId found:`, JSON.stringify(data).slice(0, 500))
-    return res.status(200).json({ ok: false, error: 'No taskId returned', raw: rawText.slice(0, 500) })
-  }
-
-  const netWssUrl = data.data?.netWssUrl
-  return res.status(200).json({
-    ok: true,
-    data: {
-      id: taskId,
-      taskId,
-      status: data.data?.status || data.status || 'QUEUED',
-      netWssUrl,
-      provider: 'runninghub',
-    },
-  })
+  return res.status(200).json({ ok: false, error: 'Max retries exceeded', raw: lastRawText.slice(0, 500) })
 }
 
 async function handleQuery(apiKey: string, taskId: string, res: VercelResponse) {
