@@ -234,7 +234,7 @@ export async function validateMedia(url: string, kind: string): Promise<string> 
   return url
 }
 
-export async function uploadToCatbox(file: File, kind?: string, onProgress?: (msg: string, pct?: number) => void, opts?: { strict?: boolean }): Promise<string> {
+export async function uploadToCatbox(file: File, kind?: string, onProgress?: (msg: string, pct?: number) => void): Promise<string> {
   const sizeStr = file.size >= 1024 * 1024 ? `${(file.size / 1024 / 1024).toFixed(1)}MB` : file.size >= 1024 ? `${(file.size / 1024).toFixed(1)}KB` : `${file.size}B`
   const MAX_SERVER_PROXY = 4 * 1024 * 1024
 
@@ -369,12 +369,8 @@ export async function uploadToCatbox(file: File, kind?: string, onProgress?: (ms
       const url = await uploader(file)
       console.log(`[upload] success via ${name}`)
       onProgress?.(`Upload selesai via ${name}`)
-      if (opts?.strict && /tmpfiles\.org/i.test(url)) {
-        throw Error(`${name}: tmpfiles returns HTML preview, trying next`)
-      }
       if (kind) {
         try { await validateMedia(url, kind) } catch (ve: any) {
-          if (opts?.strict) throw Error(`${name} validation failed: ${ve.message}`)
           console.warn(`[upload] ${name} validation failed: ${ve.message}, using anyway`)
         }
       }

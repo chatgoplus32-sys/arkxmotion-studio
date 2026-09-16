@@ -65,12 +65,7 @@ function runninghubProxy(action: string, params: Record<string, any>): Promise<a
   }).then(async (res) => {
     const data = await res.json()
     if (!res.ok || !data.ok) {
-      const detail = data.raw
-        ? ` · ${String(data.raw).slice(0, 300)}`
-        : data.data
-          ? ` · ${JSON.stringify(data.data).slice(0, 300)}`
-          : ''
-      throw new Error((data.error || `HTTP ${res.status}`) + detail)
+      throw new Error(data.error || `HTTP ${res.status}`)
     }
     return data.data || data
   })
@@ -87,10 +82,8 @@ export interface MotionControlParams {
 }
 
 export interface MotionControlV26StdParams {
-  imageUrl?: string
-  videoUrl?: string
-  imageFile?: File
-  videoFile?: File
+  imageUrl: string
+  videoUrl: string
   characterOrientation?: 'image' | 'video'
   prompt?: string
   keepOriginalSound?: 'yes' | 'no'
@@ -146,26 +139,13 @@ export async function submitRunningHubMotionControl(params: MotionControlParams)
 }
 
 export async function submitRunningHubMotionControlV26Std(params: MotionControlV26StdParams): Promise<MotionControlResult> {
-  const body: Record<string, any> = {
+  const result = await runninghubProxy('motion-control-v2.6-std', {
+    imageUrl: params.imageUrl,
+    videoUrl: params.videoUrl,
     characterOrientation: params.characterOrientation || 'video',
     prompt: params.prompt || '',
     keepOriginalSound: params.keepOriginalSound || 'yes',
-  }
-  if (params.imageFile) {
-    body.imageBase64 = await fileToBase64(params.imageFile)
-    body.imageFileName = params.imageFile.name || 'image.jpg'
-    body.imageMimeType = params.imageFile.type || 'image/jpeg'
-  } else {
-    body.imageUrl = params.imageUrl
-  }
-  if (params.videoFile) {
-    body.videoBase64 = await fileToBase64(params.videoFile)
-    body.videoFileName = params.videoFile.name || 'video.mp4'
-    body.videoMimeType = params.videoFile.type || 'video/mp4'
-  } else {
-    body.videoUrl = params.videoUrl
-  }
-  const result = await runninghubProxy('motion-control-v2.6-std', body)
+  })
 
   return {
     id: result.id || result.taskId,
@@ -185,26 +165,13 @@ export interface MotionControlV3Params {
 }
 
 export async function submitRunningHubMotionControlV26Pro(params: MotionControlV26StdParams): Promise<MotionControlResult> {
-  const body: Record<string, any> = {
+  const result = await runninghubProxy('motion-control-v2.6-pro', {
+    imageUrl: params.imageUrl,
+    videoUrl: params.videoUrl,
     characterOrientation: params.characterOrientation || 'video',
     prompt: params.prompt || '',
     keepOriginalSound: params.keepOriginalSound || 'yes',
-  }
-  if (params.imageFile) {
-    body.imageBase64 = await fileToBase64(params.imageFile)
-    body.imageFileName = params.imageFile.name || 'image.jpg'
-    body.imageMimeType = params.imageFile.type || 'image/jpeg'
-  } else {
-    body.imageUrl = params.imageUrl
-  }
-  if (params.videoFile) {
-    body.videoBase64 = await fileToBase64(params.videoFile)
-    body.videoFileName = params.videoFile.name || 'video.mp4'
-    body.videoMimeType = params.videoFile.type || 'video/mp4'
-  } else {
-    body.videoUrl = params.videoUrl
-  }
-  const result = await runninghubProxy('motion-control-v2.6-pro', body)
+  })
 
   return {
     id: result.id || result.taskId,
