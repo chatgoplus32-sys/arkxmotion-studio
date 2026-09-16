@@ -343,18 +343,20 @@ async function handleMotionControl(apiKey: string, params: any, res: Response) {
   }
 
   const body = {
-    workflowId: effectiveWorkflowId,
     apiKey,
     nodeInfoList,
   }
 
-  const endpoint = `${RUNNINGHUB_BASE}/task/openapi/create`
+  const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${effectiveWorkflowId}`
   console.log(`[runninghub] POST ${endpoint}`)
   console.log(`[runninghub] body:`, JSON.stringify(body).slice(0, 1000))
 
   const apiRes = await fetch(endpoint, {
     method: 'POST',
-    headers: rhAuthHeaders(apiKey),
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
     body: JSON.stringify(body),
   })
 
