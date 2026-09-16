@@ -500,6 +500,8 @@ async function handleSeedance25Multimodal(apiKey: string, params: any, res: Resp
 
   const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${RUNNINGHUB_SEEDANCE25_WORKFLOW_ID}`
 
+  console.log(`[runninghub] seedance25 nodeInfoList:`, JSON.stringify(nodeInfoList))
+
   const MAX_RETRIES = 3
   const RETRY_DELAY_MS = 10000
   let lastRawText = ''
