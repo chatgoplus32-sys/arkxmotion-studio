@@ -4,7 +4,7 @@ const router = Router()
 
 const RUNNINGHUB_BASE = 'https://www.runninghub.ai'
 const RUNNINGHUB_DEFAULT_WORKFLOW_ID = '2092795737699856386'
-const RUNNINGHUB_SEEDANCE25_WORKFLOW_ID = '2100267958831538177'
+const RUNNINGHUB_SEEDANCE25_WORKFLOW_ID = '2085913383404068865'
 
 function rhAuthHeaders(_apiKey: string) {
   return { 'Content-Type': 'application/json', 'User-Agent': 'ArkxMotion/1.0' }
