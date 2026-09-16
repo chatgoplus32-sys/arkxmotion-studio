@@ -307,7 +307,7 @@ export default function ImageToVideoPage() {
 
   const models = useMemo(() => PROVIDER_MODELS[provider] || [], [provider])
   const currentModel = models.find((m) => m.value === model) || models[0]
-  const isNbOmniFlash = provider === 'nexabot' && model === 'nb:omni-flash-1.1'
+  const isNbOmniFlash = provider === 'nexabot' && (model === 'nb:omni-flash-1.1' || model === 'nb:omni-r2v')
   const nbVideoIdx = refFiles.findIndex((f) => f.type.startsWith('video/'))
   const nbVideoUrl = nbVideoIdx >= 0 ? refUrls[nbVideoIdx] ?? null : null
 
@@ -336,6 +336,8 @@ export default function ImageToVideoPage() {
   const currentQuality = qualityOptions.find((q) => q.value === quality) || qualityOptions[0]
 
   const totalCredits = currentModel ? (currentQuality?.cr ?? Math.round(currentModel.cr * (currentQuality?.mult || 1))) : 0
+  // NexaBot: tampilkan kredit sebagai desimal (0.25 cr), bukan bulatkan ke 0
+  const displayCredits = provider === 'nexabot' ? (totalCredits || 0.25) : totalCredits
 
   const providerKeyCount = keys[provider]?.length || 0
   const hasActiveKey = keys[provider]?.some((k) => k.status !== 'invalid' && k.status !== 'expired') || false
@@ -648,9 +650,9 @@ export default function ImageToVideoPage() {
       const nbMode = currentModel?.apiModel
       const nbImages = [imgFile, startFrameFile, ...refFiles].filter((f): f is File => !!f && f.type.startsWith('image/'))
       const nbVideo = refFiles.find((f) => f.type.startsWith('video/'))
-      if (nbMode === 'sfv' && nbImages.length === 0) return 'Start Frame to Video butuh 1 gambar input'
-      if (nbMode === 'i2v' && nbImages.length === 0) return 'Ingredient Img to Video butuh 1-3 gambar input'
-      if (nbMode === 'r2v' && !nbVideo) return 'Video Reference to Video butuh 1 video referensi'
+      if (nbMode === 'sfv' && nbImages.length === 0) return 'Start Frame to Video butuh minimal 1 gambar input'
+      if (nbMode === 'i2v' && nbImages.length === 0) return 'Image to Video butuh minimal 1 gambar input'
+      if (nbMode === 'r2v' && !nbVideo) return 'Reference to Video butuh 1 video referensi'
     }
     return null
   }
@@ -2179,20 +2181,32 @@ export default function ImageToVideoPage() {
               .filter((f): f is File => !!f && f.type.startsWith('image/'))
             const videoFile = refFiles.find((f) => f.type.startsWith('video/'))
 
-            // NexaBot hanya punya satu model (Google Omni), jadi mode diturunkan dari
-            // media yang di-upload: gambar → sfv (start frame), video → r2v (reference),
-            // tanpa media → t2v (text to video).
+            // NexaBot: mode ditentukan oleh model yang dipilih user (apiModel),
+            // dengan fallback otomatis berdasarkan media yang tersedia.
+            //  - nb:omni        → t2v (default, bisa naik ke sfv/r2v kalau ada media)
+            //  - nb:omni-sfv    → sfv (start frame to video)
+            //  - nb:omni-i2v    → i2v (image to video, 1-3 gambar)
+            //  - nb:omni-r2v    → r2v (reference to video, wajib video)
+            //  - nb:omni-flash  → r2v (Omni Flash 1.1, wajib video)
             type NbMode = import('@/lib/nexabot').NexabotMode
             const baseMode = (apiModel as NbMode) || 't2v'
             let nbMode: NbMode = baseMode
             if (baseMode === 't2v') {
-              // opsi tunggal: turunkan mode dari media
-              if (imageFiles.length > 0) nbMode = 'sfv'
-              else if (videoFile) nbMode = 'r2v'
-            } else if ((baseMode === 'sfv' || baseMode === 'i2v') && imageFiles.length === 0) {
-              nbMode = videoFile ? 'r2v' : 't2v'
-            } else if (baseMode === 'r2v' && !videoFile) {
-              nbMode = imageFiles.length > 0 ? 'sfv' : 't2v'
+              // Mode default: naikkan otomatis berdasarkan media yang di-upload
+              if (videoFile) nbMode = 'r2v'
+              else if (imageFiles.length > 0) nbMode = 'sfv'
+            } else if (baseMode === 'sfv') {
+              // Start Frame: pastikan ada gambar, fallback ke t2v kalau kosong
+              if (imageFiles.length === 0) nbMode = videoFile ? 'r2v' : 't2v'
+            } else if (baseMode === 'i2v') {
+              // Image to Video: butuh minimal 1 gambar
+              if (imageFiles.length === 0) nbMode = videoFile ? 'r2v' : 't2v'
+            } else if (baseMode === 'r2v') {
+              // Reference to Video: butuh video referensi
+              if (!videoFile) {
+                // Fallback: kalau ada gambar tapi tidak ada video → sfv
+                nbMode = imageFiles.length > 0 ? 'sfv' : 't2v'
+              }
             }
 
             // Media (base64 data URI) dibatasi sesuai aturan tiap mode:
@@ -2596,7 +2610,7 @@ export default function ImageToVideoPage() {
               </Section>
             ) : (
               /* Default UI for other providers */
-              <Section title="🖼️ Gambar Input" sub={isNbOmniFlash ? "Gambar referensi (opsional) + video referensi (wajib) di bawah" : "1 file (JPG / PNG / WEBP) — optional untuk text-to-video"}>
+              <Section title="🖼️ Gambar / Video Input" sub={isNbOmniFlash ? "Gambar referensi (opsional) + video referensi (wajib) untuk Reference to Video" : "1 file (JPG / PNG / WEBP / MP4) — optional untuk text-to-video"}>
                 <input ref={inputRef} type="file" accept="image/*" hidden onChange={(e) => handleFileChange(e.target.files)} />
                 {imgUrl ? (
                   <div className="relative aspect-[9/16] rounded-2xl overflow-hidden border border-border">
@@ -2717,7 +2731,7 @@ export default function ImageToVideoPage() {
                 )}
               </Button>
               <div className="text-xs text-muted-foreground">
-                Est. Cost: <b className="text-foreground font-mono">{provider === 'createpulse' ? `Rp ${getCreatepulseCost(currentModel?.apiModel).toLocaleString('id-ID')}` : `${totalCredits} credits`}</b>
+                Est. Cost: <b className="text-foreground font-mono">{provider === 'createpulse' ? `Rp ${getCreatepulseCost(currentModel?.apiModel).toLocaleString('id-ID')}` : provider === 'nexabot' ? `${displayCredits} cr` : `${totalCredits} credits`}</b>
                 {provider !== 'createpulse' && <BalanceBadge provider={provider} required={totalCredits} />}
               </div>
               {!hasActiveKey && provider !== 'createpulse' && (
@@ -2813,7 +2827,7 @@ export default function ImageToVideoPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Est. Cost</span>
-                  <span className="font-medium text-primary">{provider === 'createpulse' ? `Rp ${getCreatepulseCost(currentModel?.apiModel).toLocaleString('id-ID')}` : `${totalCredits} credits`}</span>
+                  <span className="font-medium text-primary">{provider === 'createpulse' ? `Rp ${getCreatepulseCost(currentModel?.apiModel).toLocaleString('id-ID')}` : provider === 'nexabot' ? `${displayCredits} cr` : `${totalCredits} credits`}</span>
                 </div>
               </div>
 

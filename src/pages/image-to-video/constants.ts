@@ -128,12 +128,16 @@ export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'rs:happyhorse-1.1', label: 'HappyHorse 1.1 (Riverside)', cr: 12, provider: 'riverside', apiModel: 'happyhorse-1.1' },
     { value: 'rs:kling-3.0-pro', label: 'Kling 3.0 Pro (Riverside)', cr: 13, provider: 'riverside', apiModel: 'kling-3.0-pro' },
   ],
-  // NexaBot hanya menyediakan satu model: Google Omni. API-nya tidak punya parameter
-  // `model` (docs resmi hanya: mode, prompt, telegram_id, ratio), jadi mode spesifik
-  // (start frame / image / video reference) diturunkan otomatis dari media yang di-upload.
+  // NexaBot: Google Omni ( semua mode video ). API-nya tidak punya parameter
+  // `model` (docs resmi hanya: mode, prompt, telegram_id, ratio/media), jadi
+  // mode diturunkan dari media yang di-upload. Setiap model mencakup beberapa
+  // mode sekaligus — mode aktual dipilih otomatis oleh ImageToVideo.tsx.
   nexabot: [
-    { value: 'nb:omni', label: '✨ Google Omni (NexaBot)', cr: 0.25, provider: 'nexabot', apiModel: 't2v' },
-    { value: 'nb:omni-flash-1.1', label: '⚡ Omni Flash 1.1 (NexaBot) — Img + Video Ref', cr: 0.25, provider: 'nexabot', apiModel: 'r2v' },
+    { value: 'nb:omni', label: '✨ Google Omni — Text to Video (NexaBot)', cr: 0.25, provider: 'nexabot', apiModel: 't2v' },
+    { value: 'nb:omni-sfv', label: '🖼️ Google Omni — Start Frame to Video (NexaBot)', cr: 0.25, provider: 'nexabot', apiModel: 'sfv' },
+    { value: 'nb:omni-i2v', label: '🖼️ Google Omni — Image to Video (NexaBot)', cr: 0.25, provider: 'nexabot', apiModel: 'i2v' },
+    { value: 'nb:omni-r2v', label: '🎬 Google Omni — Reference to Video (NexaBot)', cr: 0.25, provider: 'nexabot', apiModel: 'r2v' },
+    { value: 'nb:omni-flash-1.1', label: '⚡ Omni Flash 1.1 — Reference to Video (NexaBot)', cr: 0.25, provider: 'nexabot', apiModel: 'r2v' },
   ],
 }
 
@@ -556,6 +560,26 @@ export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: s
     // Durasi tidak dikirim ke API NexaBot (tidak ada parameter durasi/max_seconds),
     // jadi semua mode memakai daftar yang sama. `cr` wajib diisi eksplisit:
     // totalCredits memakai Math.round(cr * mult), dan Math.round(0.25) = 0.
+    'nb:omni': [
+      { value: '5s', label: '5 detik — Text to Video', mult: 1, duration: 5, cr: 0.25 },
+      { value: '10s', label: '10 detik — Text to Video', mult: 1, duration: 10, cr: 0.25 },
+    ],
+    'nb:omni-sfv': [
+      { value: '5s', label: '5 detik — Start Frame', mult: 1, duration: 5, cr: 0.25 },
+      { value: '10s', label: '10 detik — Start Frame', mult: 1, duration: 10, cr: 0.25 },
+    ],
+    'nb:omni-i2v': [
+      { value: '5s', label: '5 detik — Image to Video', mult: 1, duration: 5, cr: 0.25 },
+      { value: '10s', label: '10 detik — Image to Video', mult: 1, duration: 10, cr: 0.25 },
+    ],
+    'nb:omni-r2v': [
+      { value: '5s', label: '5 detik — Reference to Video', mult: 1, duration: 5, cr: 0.25 },
+      { value: '10s', label: '10 detik — Reference to Video', mult: 1, duration: 10, cr: 0.25 },
+    ],
+    'nb:omni-flash-1.1': [
+      { value: '5s', label: '5 detik — Flash Ref to Video', mult: 1, duration: 5, cr: 0.25 },
+      { value: '10s', label: '10 detik — Flash Ref to Video', mult: 1, duration: 10, cr: 0.25 },
+    ],
     default: [
       { value: '5s', label: '5 detik', mult: 1, duration: 5, cr: 0.25 },
       { value: '10s', label: '10 detik', mult: 1, duration: 10, cr: 0.25 },
