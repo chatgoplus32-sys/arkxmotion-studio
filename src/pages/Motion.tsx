@@ -64,6 +64,7 @@ const PROVIDERS = {
   runninghub: { name: 'Motion Control (RunningHub)', models: [
     { key: 'rh:pro:2.6', label: 'Kling 2.6 Pro (RunningHub)', cr: 80 },
     { key: 'rh:std:2.6', label: 'Kling 2.6 Standard (RunningHub)', cr: 50 },
+    { key: 'rh:wf:2.9', label: 'Kling 2.9 Workflow (RunningHub)', cr: 80 },
   ]},
   galleri5: { name: 'G5 AI Studio', models: [
     { key: 'g5:kling-v3-pro-motion-control', label: 'Kling V3.0 Pro (Galery5)', cr: 200 },
@@ -1135,9 +1136,9 @@ export default function MotionPage() {
               addLog(`#${slotNum} Video: ${videoFile.name || 'ready'}`)
 
               updateSlotStatus(slot.id, 'processing', 'submitting...')
-              addLog(`#${slotNum} Upload & Submit ke RunningHub (${modelVersion} ${mode})...`)
+              const workflowId = getRunningHubWorkflowId()
+              addLog(`#${slotNum} Submit ke RunningHub (${modelVersion} ${mode}, workflow: ${workflowId.slice(0, 15)}...)`)
 
-              // Workflow API (Consumer-Member compatible) — base64 upload
               const result = await submitRunningHubMotionControl({
                 imageFile: normalizedImage,
                 videoFile,

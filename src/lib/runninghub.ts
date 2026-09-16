@@ -1,6 +1,6 @@
 const RUNNINGHUB_PROXY = '/api/public/runninghub'
 
-const RUNNINGHUB_DEFAULT_WORKFLOW_ID = '2016789374867873794'
+const RUNNINGHUB_DEFAULT_WORKFLOW_ID = '2092795737699856386'
 
 function getStoredProviderKey(provider: string): string | null {
   if (typeof window === 'undefined') return null

@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 const RUNNINGHUB_BASE = 'https://www.runninghub.ai'
-const RUNNINGHUB_DEFAULT_WORKFLOW_ID = '2016789374867873794'
+const RUNNINGHUB_DEFAULT_WORKFLOW_ID = '2092795737699856386'
 
 function rhAuthHeaders(_apiKey: string) {
   return { 'Content-Type': 'application/json', 'User-Agent': 'ArkxMotion/1.0' }
@@ -28,6 +28,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     if (action === 'motion-control-v2.6-std') {
       return await handleMotionControlV26Std(apiKey, params, res)
+    }
+    if (action === 'motion-control-v2.6-pro') {
+      return await handleMotionControlV26Pro(apiKey, params, res)
     }
     if (action === 'motion-control-v3') {
       return await handleMotionControlV3(apiKey, params, res)
@@ -148,6 +151,75 @@ async function handleMotionControlV26Std(apiKey: string, params: any, res: Verce
   })
 }
 
+async function handleMotionControlV26Pro(apiKey: string, params: any, res: VercelResponse) {
+  const {
+    imageUrl,
+    videoUrl,
+    characterOrientation = 'video',
+    prompt = '',
+    keepOriginalSound = 'yes',
+  } = params
+
+  if (!imageUrl) return res.status(200).json({ ok: false, error: 'Missing imageUrl' })
+  if (!videoUrl) return res.status(200).json({ ok: false, error: 'Missing videoUrl' })
+
+  const body = {
+    imageUrl,
+    videoUrl,
+    characterOrientation,
+    prompt,
+    keepOriginalSound,
+  }
+
+  const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/kling-v2.6-pro/motion-control`
+  console.log(`[runninghub] POST ${endpoint}`)
+  console.log(`[runninghub] body:`, JSON.stringify(body).slice(0, 1000))
+
+  const apiRes = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(body),
+  })
+
+  const rawText = await apiRes.text()
+  console.log(`[runninghub] motion-control-v2.6-pro ${apiRes.status}:`, rawText)
+
+  let data: any
+  try { data = JSON.parse(rawText) } catch { data = { raw: rawText } }
+
+  if (apiRes.status === 429) {
+    return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data, retryable: true })
+  }
+
+  if (!apiRes.ok) {
+    const errorMsg = data.errorMessage || data.msg || data.message || data.error || `HTTP ${apiRes.status}`
+    return res.status(200).json({ ok: false, error: errorMsg, data })
+  }
+
+  if (data.status === 'FAILED') {
+    return res.status(200).json({ ok: false, error: data.errorMessage || data.failedReason || 'Task failed', data })
+  }
+
+  const taskId = data.taskId || data.data?.taskId || data.id || data.task_id
+  if (!taskId) {
+    console.error(`[runninghub] No taskId found in V2.6 Pro response:`, JSON.stringify(data))
+    return res.status(200).json({ ok: false, error: 'No taskId returned', raw: rawText, fullData: data })
+  }
+
+  return res.status(200).json({
+    ok: true,
+    data: {
+      id: taskId,
+      taskId,
+      status: data.status || data.data?.status || 'QUEUED',
+      provider: 'markasflow-v2',
+    },
+  })
+}
+
 async function handleMotionControlV3(apiKey: string, params: any, res: VercelResponse) {
   const {
     imageUrl,
@@ -228,6 +300,9 @@ async function handleMotionControl(apiKey: string, params: any, res: VercelRespo
     videoFileName = 'video.mp4',
     imageMimeType = 'image/jpeg',
     videoMimeType = 'video/mp4',
+    prompt = '',
+    negative_prompt = '',
+    keep_original_sound = false,
   } = params
 
   if (!imageBase64) return res.status(200).json({ ok: false, error: 'Missing imageBase64' })
@@ -243,7 +318,26 @@ async function handleMotionControl(apiKey: string, params: any, res: VercelRespo
   const videoFileNameUploaded = await rhUpload(apiKey, videoBase64, videoFileName, videoMimeType)
   console.log(`[runninghub] Video uploaded: ${videoFileNameUploaded}`)
 
-  const nodeInfoList: any[] = []
+  const nodeInfoList: any[] = [
+    {
+      nodeId: 'LoadImage',
+      fieldName: 'image',
+      fieldValue: imageFileNameUploaded,
+    },
+    {
+      nodeId: 'LoadVideo',
+      fieldName: 'video',
+      fieldValue: videoFileNameUploaded,
+    },
+  ]
+
+  if (prompt) {
+    nodeInfoList.push({
+      nodeId: 'CLIPTextEncode',
+      fieldName: 'text',
+      fieldValue: prompt,
+    })
+  }
 
   const body = {
     workflowId: effectiveWorkflowId,
