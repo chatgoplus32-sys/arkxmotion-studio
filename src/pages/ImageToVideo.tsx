@@ -96,6 +96,9 @@ export default function ImageToVideoPage() {
   const [endFrameUrl, setEndFrameUrl] = useState<string | null>(null)
   const [refUrls, setRefUrls] = useState<string[]>([])
   const [provider, setProvider] = useState<ProviderId>(routing['image-to-video'] || 'weavy')
+  useEffect(() => {
+    if (provider === 'runninghub') setProvider('weavy')
+  }, [provider])
   const [model, setModel] = useState('')
   const [ratio, setRatio] = useState('9:16')
   const [quality, setQuality] = useState('std')
