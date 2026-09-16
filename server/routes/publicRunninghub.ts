@@ -51,7 +51,7 @@ router.all('/', async (req: Request, res: Response) => {
   }
 })
 
-async function rhUpload(apiKey: string, fileBase64: string, fileName: string, mimeType: string): Promise<string> {
+async function rhUpload(apiKey: string, fileBase64: string, fileName: string, mimeType: string): Promise<{ fileName: string; downloadUrl: string }> {
   const base64Data = fileBase64.includes(',') ? fileBase64.split(',')[1] : fileBase64
   const binaryData = Buffer.from(base64Data, 'base64')
 
@@ -75,14 +75,13 @@ async function rhUpload(apiKey: string, fileBase64: string, fileName: string, mi
     throw new Error(data.message || data.msg || `Upload failed: HTTP ${apiRes.status}`)
   }
 
-  // RunningHub returns "fileName" (not download_url)
-  // This returned fileName is used in nodeInfoList fieldValue for LoadImage/LoadVideo nodes
   const uploadedFileName = data.data?.fileName || data.fileName
+  const downloadUrl = data.data?.download_url || data.download_url
   if (!uploadedFileName) {
     throw new Error('No fileName in upload response: ' + rawText.slice(0, 300))
   }
 
-  return uploadedFileName
+  return { fileName: uploadedFileName, downloadUrl: downloadUrl || '' }
 }
 
 async function handleMotionControlV26Std(apiKey: string, params: any, res: Response) {
@@ -306,52 +305,51 @@ async function handleMotionControl(apiKey: string, params: any, res: Response) {
     prompt = '',
     negative_prompt = '',
     keep_original_sound = false,
+    model_version = '2.6',
+    mode = 'std',
   } = params
 
   if (!imageBase64) return res.status(200).json({ ok: false, error: 'Missing imageBase64' })
   if (!videoBase64) return res.status(200).json({ ok: false, error: 'Missing videoBase64' })
 
-  const effectiveWorkflowId = workflow_id || RUNNINGHUB_DEFAULT_WORKFLOW_ID
-
   console.log(`[runninghub] Uploading image...`)
-  const imageFileNameUploaded = await rhUpload(apiKey, imageBase64, imageFileName, imageMimeType)
-  console.log(`[runninghub] Image uploaded: ${imageFileNameUploaded}`)
+  const imageUpload = await rhUpload(apiKey, imageBase64, imageFileName, imageMimeType)
+  console.log(`[runninghub] Image uploaded: ${imageUpload.fileName}`)
 
   console.log(`[runninghub] Uploading video...`)
-  const videoFileNameUploaded = await rhUpload(apiKey, videoBase64, videoFileName, videoMimeType)
-  console.log(`[runninghub] Video uploaded: ${videoFileNameUploaded}`)
+  const videoUpload = await rhUpload(apiKey, videoBase64, videoFileName, videoMimeType)
+  console.log(`[runninghub] Video uploaded: ${videoUpload.fileName}`)
 
-  const nodeInfoList: any[] = [
-    {
-      nodeId: 'LoadImage',
-      fieldName: 'image',
-      fieldValue: imageFileNameUploaded,
-    },
-    {
-      nodeId: 'LoadVideo',
-      fieldName: 'video',
-      fieldValue: videoFileNameUploaded,
-    },
-  ]
+  const imageDownloadUrl = imageUpload.downloadUrl
+  const videoDownloadUrl = videoUpload.downloadUrl
 
-  if (prompt) {
-    nodeInfoList.push({
-      nodeId: 'CLIPTextEncode' ,
-      fieldName: 'text',
-      fieldValue: prompt,
-    })
+  if (!imageDownloadUrl || !videoDownloadUrl) {
+    return res.status(200).json({ ok: false, error: 'Upload failed: no download_url returned' })
   }
 
-  const body = {
-    apiKey,
-    nodeInfoList,
+  // Use direct API based on model version
+  let directEndpoint = ''
+  if (model_version === '3.0') {
+    directEndpoint = `${RUNNINGHUB_BASE}/openapi/v2/kling-v3.0-pro/motion-control`
+  } else if (mode === 'pro') {
+    directEndpoint = `${RUNNINGHUB_BASE}/openapi/v2/kling-v2.6-pro/motion-control`
+  } else {
+    directEndpoint = `${RUNNINGHUB_BASE}/openapi/v2/kling-v2.6-std/motion-control`
   }
 
-  const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${effectiveWorkflowId}`
-  console.log(`[runninghub] POST ${endpoint}`)
+  const body: any = {
+    imageUrl: imageDownloadUrl,
+    videoUrl: videoDownloadUrl,
+    characterOrientation: 'video',
+    prompt: prompt || '',
+    keepOriginalSound: 'yes',
+  }
+  if (negative_prompt) body.negativePrompt = negative_prompt
+
+  console.log(`[runninghub] POST ${directEndpoint}`)
   console.log(`[runninghub] body:`, JSON.stringify(body).slice(0, 1000))
 
-  const apiRes = await fetch(endpoint, {
+  const apiRes = await fetch(directEndpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -366,34 +364,32 @@ async function handleMotionControl(apiKey: string, params: any, res: Response) {
   let data: any
   try { data = JSON.parse(rawText) } catch { data = { raw: rawText } }
 
-  const SUCCESS_CODE = 0
-  const errorMsg = (data as any)?.msg || (data as any)?.errorMessage || (data as any)?.message || (data as any)?.error
-
-  if (apiRes.status === 429 || data.code === 429) {
+  if (apiRes.status === 429) {
     return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data, retryable: true })
   }
 
-  if (data.code !== undefined && data.code !== SUCCESS_CODE) {
-    const friendly = translateRhError(String(data.code), errorMsg)
-    return res.status(200).json({ ok: false, error: friendly, code: data.code, data })
+  if (!apiRes.ok) {
+    const errorMsg = data.errorMessage || data.msg || data.message || data.error || `HTTP ${apiRes.status}`
+    return res.status(200).json({ ok: false, error: errorMsg, data })
   }
 
-  const taskData = data.data || {}
-  const taskId = taskData.taskId || data.taskId || taskData.id || data.id
+  if (data.status === 'FAILED') {
+    return res.status(200).json({ ok: false, error: data.errorMessage || data.failedReason || 'Task failed', data })
+  }
+
+  const taskId = data.taskId || data.data?.taskId || data.id || data.task_id
   if (!taskId) {
-    return res.status(200).json({ ok: false, error: 'No taskId returned', raw: rawText.slice(0, 500) })
+    console.error(`[runninghub] No taskId found:`, JSON.stringify(data))
+    return res.status(200).json({ ok: false, error: data.errorMessage || 'No taskId returned', raw: rawText.slice(0, 500) })
   }
 
-  const netWssUrl = taskData.netWssUrl
   return res.status(200).json({
     ok: true,
     data: {
       id: taskId,
       taskId,
-      status: taskData.status || 'QUEUED',
-      netWssUrl,
-      provider: 'markasflow-v2',
-      workflowId: effectiveWorkflowId,
+      status: data.status || data.data?.status || 'QUEUED',
+      provider: 'runninghub',
     },
   })
 }

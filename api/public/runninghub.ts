@@ -48,7 +48,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 }
 
-async function rhUpload(apiKey: string, fileBase64: string, fileName: string, mimeType: string): Promise<string> {
+async function rhUpload(apiKey: string, fileBase64: string, fileName: string, mimeType: string): Promise<{ fileName: string; downloadUrl: string }> {
   const base64Data = fileBase64.includes(',') ? fileBase64.split(',')[1] : fileBase64
   const binaryData = Buffer.from(base64Data, 'base64')
 
@@ -72,14 +72,13 @@ async function rhUpload(apiKey: string, fileBase64: string, fileName: string, mi
     throw new Error(data.message || data.msg || `Upload failed: HTTP ${apiRes.status}`)
   }
 
-  // RunningHub returns "fileName" (not download_url)
-  // This returned fileName is used in nodeInfoList fieldValue for LoadImage/LoadVideo nodes
   const uploadedFileName = data.data?.fileName || data.fileName
+  const downloadUrl = data.data?.download_url || data.download_url
   if (!uploadedFileName) {
     throw new Error('No fileName in upload response: ' + rawText.slice(0, 300))
   }
 
-  return uploadedFileName
+  return { fileName: uploadedFileName, downloadUrl: downloadUrl || '' }
 }
 
 async function handleMotionControlV26Std(apiKey: string, params: any, res: VercelResponse) {
@@ -303,6 +302,8 @@ async function handleMotionControl(apiKey: string, params: any, res: VercelRespo
     prompt = '',
     negative_prompt = '',
     keep_original_sound = false,
+    modelVersion = 'std',
+    mode = 'pro',
   } = params
 
   if (!imageBase64) return res.status(200).json({ ok: false, error: 'Missing imageBase64' })
@@ -311,40 +312,35 @@ async function handleMotionControl(apiKey: string, params: any, res: VercelRespo
   const effectiveWorkflowId = workflow_id || RUNNINGHUB_DEFAULT_WORKFLOW_ID
 
   console.log(`[runninghub] Uploading image...`)
-  const imageFileNameUploaded = await rhUpload(apiKey, imageBase64, imageFileName, imageMimeType)
-  console.log(`[runninghub] Image uploaded: ${imageFileNameUploaded}`)
+  const imageUpload = await rhUpload(apiKey, imageBase64, imageFileName, imageMimeType)
+  console.log(`[runninghub] Image uploaded: ${imageUpload.fileName}`)
 
   console.log(`[runninghub] Uploading video...`)
-  const videoFileNameUploaded = await rhUpload(apiKey, videoBase64, videoFileName, videoMimeType)
-  console.log(`[runninghub] Video uploaded: ${videoFileNameUploaded}`)
+  const videoUpload = await rhUpload(apiKey, videoBase64, videoFileName, videoMimeType)
+  console.log(`[runninghub] Video uploaded: ${videoUpload.fileName}`)
 
-  const nodeInfoList: any[] = [
-    {
-      nodeId: 'LoadImage',
-      fieldName: 'image',
-      fieldValue: imageFileNameUploaded,
-    },
-    {
-      nodeId: 'LoadVideo',
-      fieldName: 'video',
-      fieldValue: videoFileNameUploaded,
-    },
-  ]
+  const imageDownloadUrl = imageUpload.downloadUrl
+  const videoDownloadUrl = videoUpload.downloadUrl
 
-  if (prompt) {
-    nodeInfoList.push({
-      nodeId: 'CLIPTextEncode',
-      fieldName: 'text',
-      fieldValue: prompt,
-    })
+  if (!imageDownloadUrl || !videoDownloadUrl) {
+    return res.status(200).json({ ok: false, error: 'Upload failed: no download_url returned' })
   }
 
-  const body = {
-    apiKey,
-    nodeInfoList,
+  const body: any = {
+    imageUrl: imageDownloadUrl,
+    videoUrl: videoDownloadUrl,
+    prompt,
+    keepOriginalSound: keep_original_sound,
   }
+  if (negative_prompt) body.negativePrompt = negative_prompt
+  if (mode) body.mode = mode
 
-  const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${effectiveWorkflowId}`
+  let endpoint: string
+  if (modelVersion === 'pro') {
+    endpoint = `${RUNNINGHUB_BASE}/openapi/v2/kling-v2.6-pro/motion-control`
+  } else {
+    endpoint = `${RUNNINGHUB_BASE}/openapi/v2/kling-v2.6-std/motion-control`
+  }
   console.log(`[runninghub] POST ${endpoint}`)
   console.log(`[runninghub] body:`, JSON.stringify(body).slice(0, 1000))
 
@@ -363,34 +359,30 @@ async function handleMotionControl(apiKey: string, params: any, res: VercelRespo
   let data: any
   try { data = JSON.parse(rawText) } catch { data = { raw: rawText } }
 
-  const SUCCESS_CODE = 0
-  const errorMsg = (data as any)?.msg || (data as any)?.errorMessage || (data as any)?.message || (data as any)?.error
-
   if (apiRes.status === 429 || data.code === 429) {
     return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data, retryable: true })
   }
 
-  if (data.code !== undefined && data.code !== SUCCESS_CODE) {
-    const friendly = translateRhError(String(data.code), errorMsg)
-    return res.status(200).json({ ok: false, error: friendly, code: data.code, data })
+  if (data.code !== undefined && data.code !== 0) {
+    const errorMsg = data.msg || data.errorMessage || data.message || data.error || `HTTP ${apiRes.status}`
+    return res.status(200).json({ ok: false, error: errorMsg, code: data.code, data })
   }
 
-  const taskData = data.data || {}
-  const taskId = taskData.taskId || data.taskId || taskData.id || data.id
+  const taskId = data.data?.taskId || data.taskId || data.id || data.task_id
   if (!taskId) {
+    console.error(`[runninghub] No taskId found:`, JSON.stringify(data).slice(0, 500))
     return res.status(200).json({ ok: false, error: 'No taskId returned', raw: rawText.slice(0, 500) })
   }
 
-  const netWssUrl = taskData.netWssUrl
+  const netWssUrl = data.data?.netWssUrl
   return res.status(200).json({
     ok: true,
     data: {
       id: taskId,
       taskId,
-      status: taskData.status || 'QUEUED',
+      status: data.data?.status || data.status || 'QUEUED',
       netWssUrl,
-      provider: 'markasflow-v2',
-      workflowId: effectiveWorkflowId,
+      provider: 'runninghub',
     },
   })
 }
