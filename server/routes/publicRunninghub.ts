@@ -429,6 +429,7 @@ async function handleQuery(apiKey: string, taskId: string, res: Response) {
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({ taskId }),
+    signal: AbortSignal.timeout(30000),
   })
 
   const rawText = await apiRes.text()

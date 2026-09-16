@@ -77,6 +77,8 @@ export interface MotionControlParams {
   prompt?: string
   negativePrompt?: string
   keepOriginalSound?: boolean
+  modelVersion?: string
+  mode?: string
 }
 
 export interface MotionControlV26StdParams {
@@ -123,6 +125,8 @@ export async function submitRunningHubMotionControl(params: MotionControlParams)
     prompt: params.prompt || '',
     negative_prompt: params.negativePrompt || '',
     keep_original_sound: params.keepOriginalSound ?? false,
+    model_version: params.modelVersion || '2.6',
+    mode: params.mode || 'std',
   })
 
   return {
@@ -204,7 +208,7 @@ export async function pollRunningHubTask(
 ): Promise<string> {
   const startTime = Date.now()
   const POLL_INTERVAL = 5000
-  const MAX_RETRIES = 3
+  const MAX_RETRIES = 10
 
   const poll = async (): Promise<string> => {
     let consecutiveErrors = 0
@@ -240,7 +244,7 @@ export async function pollRunningHubTask(
           throw new Error(`Polling failed after ${MAX_RETRIES} retries: ${err.message}`)
         }
         
-        await new Promise((r) => setTimeout(r, POLL_INTERVAL))
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL * Math.min(consecutiveErrors, 5)))
       }
     }
 

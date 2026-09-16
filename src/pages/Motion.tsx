@@ -1145,6 +1145,8 @@ export default function MotionPage() {
                 prompt: finalPrompt || undefined,
                 negativePrompt: negativePrompt.trim() || undefined,
                 keepOriginalSound: keepSound,
+                modelVersion,
+                mode,
               })
               const taskId = result.taskId
               addLog(`#${slotNum} Task: ${taskId.slice(0, 20)}...`)
