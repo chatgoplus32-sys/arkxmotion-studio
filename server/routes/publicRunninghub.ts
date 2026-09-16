@@ -91,7 +91,10 @@ async function rhUpload(apiKey: string, fileBase64: string, fileName: string, mi
     fullDownloadUrl = `https://rh-hk-images-switch.xiaoyaoyou.com/input/${uploadedFileName}`
   }
 
-  return { fileName: uploadedFileName, downloadUrl: fullDownloadUrl }
+  // Strip "openapi/" prefix — RunningHub workflow API expects just the hash filename
+  const cleanFileName = uploadedFileName?.replace(/^openapi\//, '') || uploadedFileName
+
+  return { fileName: cleanFileName, downloadUrl: fullDownloadUrl }
 }
 
 async function handleMotionControlV26Std(apiKey: string, params: any, res: Response) {
