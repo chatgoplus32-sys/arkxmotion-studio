@@ -208,7 +208,7 @@ function pollWithRetry(task: ActiveTask, ctrl: AbortController, attempt: number)
         if (!ctrl.signal.aborted) {
           addBgLog(`⏳ ${task.model}: ${status} — ${pct}%`)
         }
-      }, TASK_TIMEOUT_MS - (Date.now() - task.startedAt))
+      }, TASK_TIMEOUT_MS - (Date.now() - task.startedAt), task.token || undefined)
     : () => pollRoboneoI2V(task.token, task.taskId, task.roomId,
         (status, pct) => {
           if (!ctrl.signal.aborted) {

@@ -54,14 +54,14 @@ export function setRunningHubWorkflowId(workflowId: string) {
   localStorage.setItem('runninghub.workflowId', workflowId)
 }
 
-function runninghubProxy(action: string, params: Record<string, any>): Promise<any> {
-  const apiKey = getRunningHubApiKey()
-  if (!apiKey) throw new Error('Belum ada RunningHub API key. Silakan tambahkan di Settings.')
+function runninghubProxy(action: string, params: Record<string, any>, apiKey?: string): Promise<any> {
+  const key = apiKey || getRunningHubApiKey()
+  if (!key) throw new Error('Belum ada RunningHub API key. Silakan tambahkan di Settings.')
 
   return fetch(RUNNINGHUB_PROXY, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action, apiKey, ...params }),
+    body: JSON.stringify({ action, apiKey: key, ...params }),
   }).then(async (res) => {
     const data = await res.json()
     if (!res.ok || !data.ok) {
@@ -79,6 +79,7 @@ export interface MotionControlParams {
   keepOriginalSound?: boolean
   modelVersion?: string
   mode?: string
+  apiKey?: string
 }
 
 export interface MotionControlV26StdParams {
@@ -127,7 +128,7 @@ export async function submitRunningHubMotionControl(params: MotionControlParams)
     keep_original_sound: params.keepOriginalSound ?? false,
     model_version: params.modelVersion || '2.6',
     mode: params.mode || 'std',
-  })
+  }, params.apiKey)
 
   return {
     id: result.id || result.taskId,
@@ -205,6 +206,7 @@ export async function pollRunningHubTask(
   taskId: string,
   onProgress?: (status: string, progress: number) => void,
   timeoutMs = 3600000,
+  apiKey?: string,
 ): Promise<string> {
   const startTime = Date.now()
   const POLL_INTERVAL = 5000
@@ -215,7 +217,7 @@ export async function pollRunningHubTask(
     
     while (Date.now() - startTime < timeoutMs) {
       try {
-        const result = await runninghubProxy('query', { taskId })
+        const result = await runninghubProxy('query', { taskId }, apiKey)
 
         consecutiveErrors = 0
 

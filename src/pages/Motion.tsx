@@ -1139,55 +1139,88 @@ export default function MotionPage() {
               const workflowId = getRunningHubWorkflowId()
               addLog(`#${slotNum} Submit ke RunningHub (${modelVersion} ${mode}, workflow: ${workflowId.slice(0, 15)}...)`)
 
-              const result = await submitRunningHubMotionControl({
-                imageFile: normalizedImage,
-                videoFile,
-                prompt: finalPrompt || undefined,
-                negativePrompt: negativePrompt.trim() || undefined,
-                keepOriginalSound: keepSound,
-                modelVersion,
-                mode,
-              })
-              const taskId = result.taskId
-              addLog(`#${slotNum} Task: ${taskId.slice(0, 20)}...`)
+              let attemptTaskId: string | null = null
+              let lastTaskId: string | null = null
+              const rotation = await withTokenRotation<string>(
+                'runninghub',
+                async (apiKey, keyInfo) => {
+                  addLog(`#${slotNum} 🔑 Trying key: ${keyInfo.name || keyInfo.id}`, 'info')
+                  const result = await submitRunningHubMotionControl({
+                    imageFile: normalizedImage,
+                    videoFile,
+                    prompt: finalPrompt || undefined,
+                    negativePrompt: negativePrompt.trim() || undefined,
+                    keepOriginalSound: keepSound,
+                    modelVersion,
+                    mode,
+                    apiKey,
+                  })
+                  const taskId = result.taskId
+                  attemptTaskId = taskId
+                  lastTaskId = taskId
+                  addLog(`#${slotNum} Task: ${taskId.slice(0, 20)}...`)
 
-              addActiveTask({
-                id: taskId,
-                taskId,
-                roomId: '',
-                nodeId: '',
-                token: runninghubKey,
-                model: currentModel.label,
-                prompt: finalPrompt || '(no prompt)',
-                startedAt: Date.now(),
-                page: 'motion',
-                provider: 'runninghub',
-              })
+                  addActiveTask({
+                    id: taskId,
+                    taskId,
+                    roomId: '',
+                    nodeId: '',
+                    token: apiKey,
+                    model: currentModel.label,
+                    prompt: finalPrompt || '(no prompt)',
+                    startedAt: Date.now(),
+                    page: 'motion',
+                    provider: 'runninghub',
+                  })
 
-              updateSlotStatus(slot.id, 'processing', 'polling...')
-              addLog(`#${slotNum} Polling for result...`)
+                  updateSlotStatus(slot.id, 'processing', 'polling...')
+                  addLog(`#${slotNum} Polling for result...`)
 
-              const resultUrl = await pollRunningHubTask(taskId, (status, pct) => {
-                updateSlotStatus(slot.id, 'processing', `${status} ${pct}%`)
-                addLog(`#${slotNum} ${status} ${pct}%`)
-                setProgress(pct)
-              })
+                  const resultUrl = await pollRunningHubTask(taskId, (status, pct) => {
+                    updateSlotStatus(slot.id, 'processing', `${status} ${pct}%`)
+                    addLog(`#${slotNum} ${status} ${pct}%`)
+                    setProgress(pct)
+                  }, 3600000, apiKey)
+                  removeActiveTask(taskId)
+                  attemptTaskId = null
+                  return resultUrl
+                },
+                {
+                  onKeySwitch: (from, to, attempt) => {
+                    addLog(`#${slotNum} 🔄 Key "${from.name}" gagal, pindah ke key #${attempt}: "${to.name}"`, 'warn')
+                    if (attemptTaskId) removeActiveTask(attemptTaskId)
+                    attemptTaskId = null
+                  },
+                  onError: (err, key) => {
+                    if (detectTokenError('runninghub', err)) {
+                      addLog(`#${slotNum} ⚠️ Key "${key.name}" bermasalah: ${err.message}`, 'warn')
+                    }
+                  },
+                }
+              )
+              if (!rotation.ok || !rotation.result) {
+                throw new Error(rotation.error || 'Generation failed')
+              }
+              if (rotation.triedKeys > 1) {
+                addLog(`#${slotNum} ✅ Used key: ${rotation.usedKey?.name} (setelah ${rotation.triedKeys} key dicoba)`, 'success')
+              }
+              const resultUrl = rotation.result
+              const doneTaskId = lastTaskId || `rh-${Date.now()}`
 
               updateSlotStatus(slot.id, 'done')
               addLog(`#${slotNum} Done: ${resultUrl.slice(0, 60)}...`, 'success')
 
-              removeActiveTask(taskId)
               addResult({
-                id: taskId,
+                id: doneTaskId,
                 url: resultUrl,
                 prompt: finalPrompt || '(no prompt)',
                 date: new Date().toISOString(),
                 page: 'motion',
               })
-              persistResultToR2(taskId, resultUrl)
+              persistResultToR2(doneTaskId, resultUrl)
               setResults((prev) => [
                 {
-                  id: taskId,
+                  id: doneTaskId,
                   url: resultUrl,
                   prompt: finalPrompt || '(no prompt)',
                   date: new Date().toISOString(),

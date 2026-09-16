@@ -74,6 +74,7 @@ export function detectTokenError(provider: ProviderId, error: any): boolean {
     case 'galleri5': return /credit tidak cukup|insufficient|balance|401|403|expired|unauthorized|invalid.*token|token.*invalid|500|502|503|504|server error/i.test(String(error?.message || error))
     case 'oneover': return /unauthorized|forbidden|invalid.*token|token.*invalid|expired|401|403|refresh.*token|login/i.test(String(error?.message || error))
     case 'genspark': return /invalid.*key|expired|401|403|unauthorized|forbidden|api.*key/i.test(String(error?.message || error))
+    case 'runninghub': return /saldo|kuota|not_enough_power|insufficient|balance|power|coin|414|1002|1003|invalid.*key|key.*invalid|expired|401|403|unauthorized|forbidden|queue.limit|421|concurren|top up/i.test(String(error?.message || error))
     // Termasuk kegagalan cookie sesi (jalur Unlimited): error eksplisit dari
     // submitNexabot, halaman login HTML dari upstream, atau cookie kedaluwarsa.
     // Tanpa ini, key session yang mati hanya menggagalkan generate tanpa
@@ -323,6 +324,21 @@ export async function withTokenRotation<T>(
           } else if (errMsg.includes('fetch failed') || errMsg.includes('network') || errMsg.includes('timeout') || errMsg.includes('econnrefused')) {
             // Network errors - don't mark token as invalid, just retry
             console.log(`[token-rotation] ${provider} key "${nextKey.name}" network error (${err.message}). Retrying...`)
+          } else {
+            useProviderManager.getState().updateKeyStatus(resolvedProvider, nextKey.id, 'invalid')
+            console.log(`[token-rotation] ${provider} key "${nextKey.name}" marked invalid (${err.message}). Trying next...`)
+          }
+        } else if (provider === 'runninghub') {
+          const errMsg = (err.message || '').toLowerCase()
+          if (errMsg.includes('saldo') || errMsg.includes('kuota') || errMsg.includes('not_enough_power') || errMsg.includes('insufficient') || errMsg.includes('balance') || errMsg.includes('414') || errMsg.includes('top up')) {
+            useProviderManager.getState().updateKeyStatus(resolvedProvider, nextKey.id, 'empty', 0)
+            console.log(`[token-rotation] ${provider} key "${nextKey.name}" saldo habis (${err.message}). Marking empty, trying next...`)
+          } else if (errMsg.includes('421') || errMsg.includes('queue limit') || errMsg.includes('concurren')) {
+            useProviderManager.getState().updateKeyStatus(resolvedProvider, nextKey.id, 'unknown')
+            console.log(`[token-rotation] ${provider} key "${nextKey.name}" queue penuh (${err.message}). Trying next key...`)
+          } else if (errMsg.includes('1002') || errMsg.includes('1003') || errMsg.includes('invalid') || errMsg.includes('401') || errMsg.includes('403') || errMsg.includes('unauthorized') || errMsg.includes('expired')) {
+            useProviderManager.getState().updateKeyStatus(resolvedProvider, nextKey.id, 'invalid')
+            console.log(`[token-rotation] ${provider} key "${nextKey.name}" marked invalid (${err.message}). Trying next...`)
           } else {
             useProviderManager.getState().updateKeyStatus(resolvedProvider, nextKey.id, 'invalid')
             console.log(`[token-rotation] ${provider} key "${nextKey.name}" marked invalid (${err.message}). Trying next...`)
