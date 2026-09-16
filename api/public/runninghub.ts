@@ -419,8 +419,12 @@ async function handleQuery(apiKey: string, taskId: string, res: VercelResponse) 
   const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${taskId}/status`
 
   const apiRes = await fetch(endpoint, {
-    method: 'GET',
-    headers: { 'Authorization': `Bearer ${apiKey}` },
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({}),
   })
 
   const rawText = await apiRes.text()

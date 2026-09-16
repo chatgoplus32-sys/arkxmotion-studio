@@ -420,12 +420,16 @@ async function handleMotionControl(apiKey: string, params: any, res: Response) {
 async function handleQuery(apiKey: string, taskId: string, res: Response) {
   if (!taskId) return res.status(200).json({ ok: false, error: 'Missing taskId' })
 
-  // Workflow API query endpoint
+  // Workflow API query endpoint (POST, not GET)
   const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${taskId}/status`
 
   const apiRes = await fetch(endpoint, {
-    method: 'GET',
-    headers: { 'Authorization': `Bearer ${apiKey}` },
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({}),
   })
 
   const rawText = await apiRes.text()
