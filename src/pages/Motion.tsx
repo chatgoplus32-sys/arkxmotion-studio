@@ -1123,14 +1123,14 @@ export default function MotionPage() {
               const imageUrl = await uploadToCatbox(normalizedImage, 'image', (msg, _pct) => {
                 updateSlotStatus(slot.id, 'uploading img...', msg)
                 addLog(`#${slotNum} ${msg}`)
-              })
+              }, { strict: true })
               addLog(`#${slotNum} Image URL: ${imageUrl.slice(0, 60)}...`)
 
               addLog(`#${slotNum} Upload video to Catbox...`)
               const videoUrl = await uploadToCatbox(videoFile, 'video', (msg, _pct) => {
                 updateSlotStatus(slot.id, 'uploading vid...', msg)
                 addLog(`#${slotNum} ${msg}`)
-              })
+              }, { strict: true })
               addLog(`#${slotNum} Video URL: ${videoUrl.slice(0, 60)}...`)
 
               addLog(`#${slotNum} Submit ke RunningHub (${modelKey})...`)

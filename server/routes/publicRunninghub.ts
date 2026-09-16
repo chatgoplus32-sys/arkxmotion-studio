@@ -152,7 +152,7 @@ async function handleMotionControlV26Std(apiKey: string, params: any, res: Respo
   const taskId = data.taskId || data.data?.taskId || data.id || data.task_id
   if (!taskId) {
     console.error(`[runninghub] No taskId found in response:`, JSON.stringify(data))
-    return res.status(200).json({ ok: false, error: 'No taskId returned', raw: rawText, fullData: data })
+    return res.status(200).json({ ok: false, error: `No taskId returned: ${rawText.slice(0, 300)}`, raw: rawText, fullData: data })
   }
 
   return res.status(200).json({
@@ -221,7 +221,7 @@ async function handleMotionControlV26Pro(apiKey: string, params: any, res: Respo
   const taskId = data.taskId || data.data?.taskId || data.id || data.task_id
   if (!taskId) {
     console.error(`[runninghub] No taskId found in V2.6 Pro response:`, JSON.stringify(data))
-    return res.status(200).json({ ok: false, error: 'No taskId returned', raw: rawText, fullData: data })
+    return res.status(200).json({ ok: false, error: `No taskId returned: ${rawText.slice(0, 300)}`, raw: rawText, fullData: data })
   }
 
   return res.status(200).json({

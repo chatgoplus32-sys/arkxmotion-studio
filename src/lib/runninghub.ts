@@ -65,7 +65,12 @@ function runninghubProxy(action: string, params: Record<string, any>): Promise<a
   }).then(async (res) => {
     const data = await res.json()
     if (!res.ok || !data.ok) {
-      throw new Error(data.error || `HTTP ${res.status}`)
+      const detail = data.raw
+        ? ` · ${String(data.raw).slice(0, 300)}`
+        : data.data
+          ? ` · ${JSON.stringify(data.data).slice(0, 300)}`
+          : ''
+      throw new Error((data.error || `HTTP ${res.status}`) + detail)
     }
     return data.data || data
   })
