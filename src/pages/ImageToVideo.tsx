@@ -2446,7 +2446,7 @@ export default function ImageToVideoPage() {
   // Ditampilkan di kartu provider NexaBot (lihat nexabotPathPill).
   const nexabotPill = nexabotPathPill(keys.nexabot, nexabotSession, nexabotChecking)
 
-  const PROVIDER_IDS: ProviderId[] = ['weavy', 'wavespeed', 'roboneo', 'createpulse', 'framia', 'leonardo', 'galleri5', 'oneover', 'firefly', 'genspark', 'riverside', 'nexabot']
+  const PROVIDER_IDS: ProviderId[] = ['weavy', 'wavespeed', 'roboneo', 'createpulse', 'framia', 'leonardo', 'galleri5', 'oneover', 'firefly', 'genspark', 'riverside', 'nexabot', 'runninghub']
 
   return (
     <PageContent>
