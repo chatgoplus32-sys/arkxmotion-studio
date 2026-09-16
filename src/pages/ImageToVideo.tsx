@@ -7,7 +7,8 @@ import { Swipeable } from '@/components/Swipeable'
 import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
 import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
-import { uploadToCatbox, submitRoboneoI2V, pollRoboneoI2V, checkRoboneoBalance, uploadImageForRoboneo, isRoboneoFormatError } from '@/lib/roboneo'
+import { uploadToCatbox, submitRoboneoI2V, pollRoboneoI2V, checkRoboneoBalance, uploadImageForRoboneo,
+isRoboneoFormatError, compressVideo } from '@/lib/roboneo'
 import { generateWithFramia } from '@/lib/framia'
 import { runLeonardoVideo } from '@/lib/leonardo'
 import { leonardoVideoQualityOptions } from '@/lib/leonardo-video'
@@ -2228,7 +2229,18 @@ export default function ImageToVideoPage() {
                 }
               } else if (nbMode === 'r2v') {
                 // Omni Flash 1.1 r2v: media[0]=video + 1 image opsional
-                if (videoFile) media.push(await fileToBase64(videoFile))
+                // Video referensi wajib dikompresi dulu — file mentah dari HP
+                // (puluhan MB) meledak jadi base64 dan jebol limit body JSON.
+                if (videoFile) {
+                  addLog(`[2/3] 🎬 Menyiapkan video referensi (${(videoFile.size / 1024 / 1024).toFixed(1)}MB)...`, 'info', 'nexabot')
+                  const refVideo = await compressVideo(videoFile, 6, (msg, pct) => {
+                    setStatus((s) => ({ ...s, text: msg, pct: Math.min(pct || 0, 10) }))
+                  })
+                  if (refVideo.size > 6 * 1024 * 1024) {
+                    throw new Error(`Video referensi terlalu besar (${(refVideo.size / 1024 / 1024).toFixed(1)}MB setelah kompresi, maks 6MB). Potong durasinya lalu coba lagi.`)
+                  }
+                  media.push(await fileToBase64(refVideo))
+                }
                 for (const f of imageFiles.slice(0, 1)) {
                   media.push(await fileToBase64(await compressForApi(f)))
                 }
