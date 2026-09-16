@@ -469,18 +469,16 @@ async function handleSeedance25Multimodal(apiKey: string, params: any, res: Resp
   // Build nodeInfoList
   const nodeInfoList: any[] = []
 
-  const imageFieldNames = ['image1', 'image2', 'image3', 'image4', 'image5']
-  for (let i = 0; i < imageUploads.length; i++) {
-    const img = imageUploads[i]
-    nodeInfoList.push({ nodeId: img.nodeId, fieldName: imageFieldNames[i] || `image${i + 1}`, fieldValue: img.fileName })
+  for (const img of imageUploads) {
+    nodeInfoList.push({ nodeId: img.nodeId, fieldName: 'image', fieldValue: img.fileName })
   }
 
   if (videoUpload) {
-    nodeInfoList.push({ nodeId: '7', fieldName: 'video1', fieldValue: videoUpload.fileName })
+    nodeInfoList.push({ nodeId: '7', fieldName: 'file', fieldValue: videoUpload.fileName })
   }
 
   if (audioUpload) {
-    nodeInfoList.push({ nodeId: '8', fieldName: 'audio1', fieldValue: audioUpload.fileName })
+    nodeInfoList.push({ nodeId: '8', fieldName: 'audio', fieldValue: audioUpload.fileName })
   }
 
   if (prompt) {
