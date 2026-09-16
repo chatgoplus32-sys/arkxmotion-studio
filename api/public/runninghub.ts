@@ -393,12 +393,11 @@ async function handleMotionControl(apiKey: string, params: any, res: VercelRespo
 async function handleQuery(apiKey: string, taskId: string, res: VercelResponse) {
   if (!taskId) return res.status(200).json({ ok: false, error: 'Missing taskId' })
 
-  const endpoint = `${RUNNINGHUB_BASE}/task/openapi/query`
+  const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${taskId}/status`
 
   const apiRes = await fetch(endpoint, {
-    method: 'POST',
-    headers: rhAuthHeaders(apiKey),
-    body: JSON.stringify({ apiKey, taskId }),
+    method: 'GET',
+    headers: { 'Authorization': `Bearer ${apiKey}` },
   })
 
   const rawText = await apiRes.text()
@@ -407,7 +406,7 @@ async function handleQuery(apiKey: string, taskId: string, res: VercelResponse) 
   let data: any
   try { data = JSON.parse(rawText) } catch { data = { raw: rawText } }
 
-  const errorMsg = (data as any)?.msg || (data as any)?.errorMessage
+  const errorMsg = data.msg || data.errorMessage || data.message
   if (apiRes.status === 429 || data.code === 429) {
     return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data, retryable: true })
   }
@@ -452,7 +451,7 @@ async function handleQuery(apiKey: string, taskId: string, res: VercelResponse) 
       progress: taskData.progress || data.progress || 0,
       videoUrl,
       error: mappedStatus === 'FAILED' ? (taskData.errorMessage || taskData.failedReason || taskData.msg || errorMsg || 'Task failed') : null,
-      provider: 'markasflow-v2',
+      provider: 'runninghub',
     },
   })
 }
