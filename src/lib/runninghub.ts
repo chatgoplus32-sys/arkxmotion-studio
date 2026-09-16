@@ -199,6 +199,46 @@ export async function submitRunningHubMotionControlV3(params: MotionControlV3Par
   }
 }
 
+export interface RunningHubI2VParams {
+  model: string
+  imageFile?: File
+  imageUrl?: string
+  prompt?: string
+  duration?: string
+  sound?: boolean
+}
+
+const RUNNINGHUB_I2V_ACTIONS: Record<string, string> = {
+  'rh:pro:2.6': 'i2v-v2.6-pro',
+  'rh:std:2.6': 'i2v-v2.6-std',
+  'rh:pro:2.1': 'i2v-v2.1-pro',
+  'rh:std:2.1': 'i2v-v2.1-std',
+}
+
+export async function submitRunningHubI2V(params: RunningHubI2VParams): Promise<MotionControlResult> {
+  const action = RUNNINGHUB_I2V_ACTIONS[params.model] || 'i2v-v2.6-pro'
+  const body: Record<string, any> = {
+    prompt: params.prompt || '',
+    duration: params.duration || '5',
+    sound: params.sound ?? true,
+  }
+  if (params.imageFile) {
+    body.imageBase64 = await fileToBase64(params.imageFile)
+    body.imageFileName = params.imageFile.name || 'image.jpg'
+    body.imageMimeType = params.imageFile.type || 'image/jpeg'
+  } else {
+    body.imageUrl = params.imageUrl
+  }
+  const result = await runninghubProxy(action, body)
+
+  return {
+    id: result.id || result.taskId,
+    taskId: result.taskId || result.id,
+    status: result.status || 'QUEUED',
+    provider: result.provider || 'runninghub',
+  }
+}
+
 export type RunningHubTaskStatus = 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED'
 
 export async function pollRunningHubTask(

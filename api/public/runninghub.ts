@@ -35,6 +35,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (action === 'motion-control-v3') {
       return await handleMotionControlV3(apiKey, params, res)
     }
+    if (action === 'i2v-v2.6-pro') {
+      return await handleRunningHubI2V(apiKey, `${RUNNINGHUB_BASE}/openapi/v2/kling-v2.6-pro/image-to-video`, params, res)
+    }
+    if (action === 'i2v-v2.6-std') {
+      return await handleRunningHubI2V(apiKey, `${RUNNINGHUB_BASE}/openapi/v2/kling-v2.6-std/image-to-video`, params, res)
+    }
+    if (action === 'i2v-v2.1-pro') {
+      return await handleRunningHubI2V(apiKey, `${RUNNINGHUB_BASE}/openapi/v2/kling-v2.1-pro/image-to-video`, params, res)
+    }
+    if (action === 'i2v-v2.1-std') {
+      return await handleRunningHubI2V(apiKey, `${RUNNINGHUB_BASE}/openapi/v2/kling-v2.1-std/image-to-video`, params, res)
+    }
     if (action === 'query') {
       return await handleQuery(apiKey, params.taskId, res)
     }
@@ -85,6 +97,81 @@ async function rhUpload(apiKey: string, fileBase64: string, fileName: string, mi
   }
 
   return { fileName: uploadedFileName, downloadUrl: fullDownloadUrl }
+}
+
+async function handleRunningHubI2V(apiKey: string, endpoint: string, params: any, res: VercelResponse) {
+  let {
+    imageUrl,
+    imageBase64,
+    imageFileName = 'image.jpg',
+    imageMimeType = 'image/jpeg',
+    prompt = '',
+    duration = '5',
+    sound = true,
+  } = params
+
+  // Native RunningHub upload: base64 -> RH CDN URL (no third-party host needed)
+  if (!imageUrl && imageBase64) {
+    console.log(`[runninghub] Uploading I2V image to RH...`)
+    const up = await rhUpload(apiKey, imageBase64, imageFileName, imageMimeType)
+    imageUrl = up.downloadUrl || `https://rh-hk-images-switch.xiaoyaoyou.com/input/${up.fileName}`
+    console.log(`[runninghub] I2V image RH URL: ${String(imageUrl).slice(0, 80)}`)
+  }
+
+  if (!imageUrl) return res.status(200).json({ ok: false, error: 'Missing imageUrl' })
+
+  const body = {
+    prompt,
+    imageUrl,
+    sound: sound ? 'true' : 'false',
+    duration: String(duration),
+  }
+
+  console.log(`[runninghub] POST ${endpoint}`)
+
+  const apiRes = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(body),
+  })
+
+  const rawText = await apiRes.text()
+  console.log(`[runninghub] i2v ${apiRes.status}:`, rawText.slice(0, 500))
+
+  let data: any
+  try { data = JSON.parse(rawText) } catch { data = { raw: rawText } }
+
+  if (apiRes.status === 429) {
+    return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data, retryable: true })
+  }
+
+  if (!apiRes.ok) {
+    const errorMsg = data.errorMessage || data.msg || data.message || data.error || `HTTP ${apiRes.status}`
+    return res.status(200).json({ ok: false, error: `${errorMsg} · ${rawText.slice(0, 200)}`, data })
+  }
+
+  if (data.status === 'FAILED') {
+    return res.status(200).json({ ok: false, error: data.errorMessage || data.failedReason || 'Task failed', data })
+  }
+
+  const taskId = data.taskId || data.data?.taskId || data.id || data.task_id
+  if (!taskId) {
+    console.error(`[runninghub] No taskId found in I2V response:`, JSON.stringify(data).slice(0, 500))
+    return res.status(200).json({ ok: false, error: `No taskId returned: ${rawText.slice(0, 300)}`, raw: rawText, fullData: data })
+  }
+
+  return res.status(200).json({
+    ok: true,
+    data: {
+      id: taskId,
+      taskId,
+      status: data.status || data.data?.status || 'QUEUED',
+      provider: 'runninghub',
+    },
+  })
 }
 
 async function handleMotionControlV26Std(apiKey: string, params: any, res: VercelResponse) {
