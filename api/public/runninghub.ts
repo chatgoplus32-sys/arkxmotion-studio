@@ -78,7 +78,13 @@ async function rhUpload(apiKey: string, fileBase64: string, fileName: string, mi
     throw new Error('No fileName in upload response: ' + rawText.slice(0, 300))
   }
 
-  return { fileName: uploadedFileName, downloadUrl: downloadUrl || '' }
+  // download_url might be relative (just filename) — construct full URL
+  let fullDownloadUrl = downloadUrl || ''
+  if (fullDownloadUrl && !fullDownloadUrl.startsWith('http')) {
+    fullDownloadUrl = `https://rh-hk-images-switch.xiaoyaoyou.com/input/${uploadedFileName}`
+  }
+
+  return { fileName: uploadedFileName, downloadUrl: fullDownloadUrl }
 }
 
 async function handleMotionControlV26Std(apiKey: string, params: any, res: VercelResponse) {
