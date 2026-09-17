@@ -1,7 +1,10 @@
+import { fileURLToPath } from 'url'
 import path from 'path'
 import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
+import fs from 'fs'
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 import db from './db.js'
 import authRoutes from './routes/auth.js'
 import adminRoutes from './routes/admin.js'
@@ -44,20 +47,35 @@ dotenv.config()
 
 const app = express()
 const PORT = Number(process.env.PORT) || 6000
+const isProd = process.env.NODE_ENV === 'production'
+const FRONTEND_DIR = path.resolve(__dirname, '..', 'dist')
+
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://localhost:3000',
+  'http://localhost:6000',
+  'https://arkxmotion-studio.win',
+]
 
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3000', 'https://arkxmotion-studio.win'],
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, etc.)
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true)
+    } else {
+      callback(null, true) // In prod, allow all origins for API proxies
+    }
+  },
   credentials: true
 }))
-
-app.use(express.static(path.resolve('public')))
-app.use('/downloads', express.static(path.resolve('public/downloads')))
 
 // Upload route MUST be before express.json() to get raw multipart body
 app.use('/api/public/upload-catbox', publicUploadCatboxRoutes)
 
 app.use(express.json({ limit: '10mb' }))
 
+// --- API Routes ---
 app.use('/api/auth', authRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/admin/tokens', adminTokenRoutes)
@@ -69,9 +87,7 @@ app.use('/api/membership', membershipRoutes)
 app.use('/api/cron', cronRoutes)
 app.use('/api/sync-tokens', syncTokensRoutes)
 app.use('/api/public/nexabot', nexabotRoutes)
-// Harga efektif provider (publik, read-only) — dipakai halaman landing & cek cepat.
 app.use('/api/public/pricing', publicPricingRoutes)
-// Public API proxies (production needs these since Vite dev middleware doesn't run)
 app.use('/api/public/createpulse', publicCreatepulseRoutes)
 app.use('/api/public/maintenance', publicMaintenanceRoutes)
 app.use('/api/public/leonardo', publicLeonardoRoutes)
@@ -93,8 +109,6 @@ app.use('/api/public/weavy', publicWeavyRoutes)
 app.use('/api/public/weavy-proxy', publicWeavyProxyRoutes)
 app.use('/api/public/weavy-credits', publicWeavyCreditsRoutes)
 app.use('/api/public/r2-upload', publicR2UploadRoutes)
-// Wallet NexaBot (saldo Rp prepaid) — beda dari /api/public/nexabot yang
-// meneruskan generate ke upstream nexabot.id.
 app.use('/api/nexabot', nexabotWalletRoutes)
 
 app.get('/api/health', (_req, res) => {
@@ -124,9 +138,35 @@ app.get('/api/admin/public/maintenance', (_req, res) => {
   }
 })
 
-// Backup database otomatis saat server start — fire-and-forget, tidak memblokir startup
+// --- Production: serve built frontend ---
+if (isProd && fs.existsSync(FRONTEND_DIR)) {
+  // Static assets with long cache
+  app.use(express.static(FRONTEND_DIR, {
+    maxAge: '30d',
+    etag: true,
+    lastModified: true,
+  }))
+
+  // SPA fallback — non-API routes serve index.html
+  app.get('/{*splat}', (req, res) => {
+    // Skip API routes (shouldn't hit here, but safety)
+    if (req.path.startsWith('/api/')) {
+      return res.status(404).json({ error: 'API route not found' })
+    }
+    res.sendFile(path.join(FRONTEND_DIR, 'index.html'))
+  })
+} else {
+  // Dev mode — serve public/ only, rely on Vite dev server proxy
+  app.use(express.static(path.resolve('public')))
+  app.use('/downloads', express.static(path.resolve('public/downloads')))
+}
+
+// Backup database otomatis saat server start
 void backupOnStartup()
 
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`)
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`[${isProd ? 'PROD' : 'DEV'}] Server running on http://0.0.0.0:${PORT}`)
+  if (isProd) {
+    console.log(`[${isProd ? 'PROD' : 'DEV'}] Serving frontend from ${FRONTEND_DIR}`)
+  }
 })

@@ -159,6 +159,10 @@ export function forceStopAllTasks(): number {
   return count
 }
 
+/** Mark a task as actively polled so startBackgroundPolling() won't start a duplicate poll. */
+export function markTaskActivelyPolled(taskId: string) {
+  _active.add(taskId)
+}
 export function getActiveControllerCount(): number {
   return _controllers.size
 }

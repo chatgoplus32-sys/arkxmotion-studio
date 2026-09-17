@@ -14,7 +14,7 @@ import { getMagnificApiKey, submitMagnificMotion, pollMagnificMotion, type Magni
 import { useLocalStorage } from '@/lib/useLocalStorage'
 import { precheckProviderBalance } from '@/lib/balancePrecheck'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
-import { removeResult, clearResults, getActiveTasks, getLogs, getResults, addBgLog, addActiveTask, addResult, clearLogs, removeActiveTask, persistResultToR2 } from '@/lib/backgroundTasks'
+import { removeResult, clearResults, getActiveTasks, getLogs, getResults, addBgLog, addActiveTask, addResult, clearLogs, removeActiveTask, persistResultToR2, markTaskActivelyPolled } from '@/lib/backgroundTasks'
 import { startBackgroundPolling } from '@/lib/backgroundTasks'
 import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
 import { useAuthStore } from '@/stores/authStore'
@@ -782,6 +782,7 @@ export default function MotionPage() {
                 page: 'motion',
               })
               const originalTaskId = taskId
+              markTaskActivelyPolled(taskId)
 
               updateSlotStatus(slot.id, 'processing', 'polling...')
               addLog(`#${slotNum} Polling for result...`)
@@ -1095,6 +1096,8 @@ export default function MotionPage() {
               return false
             }
           } else if (provider === 'runninghub' && slot.image && slot.video) {
+              let attemptTaskId: string | null = null
+              let lastTaskId: string | null = null
             try {
               const runninghubKey = getRunningHubApiKey()
               if (!runninghubKey) throw Error('Belum ada RunningHub API key. Silakan tambahkan di Settings.')
@@ -1144,8 +1147,6 @@ export default function MotionPage() {
               const workflowId = WORKFLOW_IDS[modelKey] || getRunningHubWorkflowId()
               addLog(`#${slotNum} Submit ke RunningHub (${modelVersion} ${mode}, workflow: ${workflowId.slice(0, 15)}...)`)
 
-              let attemptTaskId: string | null = null
-              let lastTaskId: string | null = null
               const rotation = await withTokenRotation<string>(
                 'runninghub',
                 async (apiKey, keyInfo) => {
@@ -1180,6 +1181,7 @@ export default function MotionPage() {
                   })
 
                   updateSlotStatus(slot.id, 'processing', 'polling...')
+                  markTaskActivelyPolled(taskId)
                   addLog(`#${slotNum} Polling for result...`)
 
                   const resultUrl = await pollRunningHubTask(taskId, (status, pct) => {
