@@ -52,11 +52,8 @@ deploy, yang tidak punya `NODE_ENV`), bukan dengan membaca ulang berkas
 ecosystem-nya. Karena `AUTO_BACKUP` tidak diset, gerbang backup jatuh ke
 `isProd`; `isProd` bernilai false; `backupOnStartup()` tidak pernah dipanggil.
 
-Perbaikannya adalah me-restart lewat berkas yang mendeklarasikannya:
-
-```bash
-pm2 startOrReload ecosystem.config.cjs && pm2 save
-```
+Deploy sekarang menyalakan proses lewat berkas itu — dengan menghapus proses
+lama lebih dulu, bukan me-reload-nya. Alasannya ada di bagian berikutnya.
 
 Itu menjelaskan dua hal lain. `PORT` juga tidak sampai, tapi tidak ada yang
 sadar karena `Number(process.env.PORT) || 6000` kebetulan menghasilkan angka
@@ -76,6 +73,38 @@ Memeriksa tanpa deploy:
 ```bash
 bash scripts/check-prod-env.sh
 ```
+
+## Jebakan kedua: restart dari berkas tidak me-resolve `script`
+
+Percobaan pertama memperbaiki ini memakai `pm2 startOrReload
+ecosystem.config.cjs`. Hasilnya seluruh `/api` produksi 502, dan tidak pulih
+sendiri.
+
+Sebabnya pm2, bukan aplikasi. `script` relatif seperti `'tsx'` di-resolve
+**hanya di jalur start**, dan itu dikerjakan di sisi CLI:
+`path.resolve(cwd, 'tsx')` → `/opt/arkxmotion-studio/tsx` (tidak ada), lalu
+mencari `tsx` di `PATH` (tidak ada). Jalur restart/reload dari berkas
+mengirim konfigurasi **mentah** ke daemon, dan daemon mengulang resolusi yang
+sama lalu menolak menyalakan proses. Lebih buruk lagi, konfigurasi tersimpan
+ikut tercemar (`script` = `'tsx'`), sehingga `pm2 restart arkxmotion`
+berikutnya pun gagal dengan cara yang sama — itulah sebabnya produksi tidak
+pulih sendiri.
+
+Dua hal karena itu diubah. `script` di `ecosystem.config.cjs` kini path absolut
+(`path.join(__dirname, 'node_modules', '.bin', 'tsx')`), dan deploy menyalakan
+proses lewat jalur start:
+
+```bash
+pm2 delete arkxmotion && pm2 start ecosystem.config.cjs && pm2 save
+```
+
+Deploy juga tidak lagi meninggalkan produksi mati: kalau `/api/health` belum
+menjawab setelah itu, proses dinyalakan langsung dengan `NODE_ENV=production
+PORT=6000` sebagai jalur darurat.
+
+Aplikasinya sendiri tidak pernah bermasalah. Dijalankan lokal dengan
+`NODE_ENV=production`, ia melayani `/api/health` normal — jadi 502 itu murni
+soal manajemen proses pm2.
 
 ## Kalau gerbang gagal
 

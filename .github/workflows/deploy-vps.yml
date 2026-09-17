@@ -82,14 +82,26 @@ jobs:
 
             echo "🔄 Restart server..."
             RESTART_MARKER=$(date +%s)
-            # Restart lewat ecosystem.config.cjs — berkas itu satu-satunya sumber
-            # kebenaran untuk NODE_ENV dan PORT. Memakai nama proses di sini
-            # memang menyegarkan environment, tapi dari shell yang menjalankan
-            # perintah ini (sesi SSH deploy, tanpa NODE_ENV) — bukan dari berkas
-            # ecosystem-nya. Itulah yang membuat proses produksi berjalan mode
-            # dev dan backup otomatis mati.
-            pm2 startOrReload ecosystem.config.cjs
+            # Environment proses diambil dari ecosystem.config.cjs — satu sumber
+            # kebenaran untuk NODE_ENV dan PORT.
+            #
+            # Proses lama dihapus dulu, lalu dinyalakan lewat jalur "start".
+            # Jalur itu me-resolve script di sisi CLI; jalur restart/reload
+            # mengirim konfigurasi MENTAH ke daemon, dan daemon tidak bisa
+            # me-resolve script relatif di dalamnya — 17 Sep 2026 seluruh /api
+            # produksi 502 dan tidak pulih sendiri karena itu.
+            pm2 delete arkxmotion >/dev/null 2>&1 || true
+            pm2 start ecosystem.config.cjs
             pm2 save
+
+            # Jangan tinggalkan produksi mati: kalau setelah itu server tetap
+            # tidak menjawab, nyalakan langsung dengan environment eksplisit.
+            if ! curl -sf --max-time 10 "http://127.0.0.1:6000/api/health" >/dev/null; then
+              echo "⚠️  Server belum menjawab — mencoba jalur darurat (tsx langsung)..."
+              pm2 delete arkxmotion >/dev/null 2>&1 || true
+              NODE_ENV=production PORT=6000 pm2 start "$(pwd)/node_modules/.bin/tsx" --name arkxmotion -- server/index.ts
+              pm2 save
+            fi
 
             # github.event.inputs (bukan inputs.*) supaya ekspresinya sah juga
             # saat workflow dipicu push, bukan hanya lewat workflow_dispatch.

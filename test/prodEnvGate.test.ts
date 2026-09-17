@@ -150,20 +150,32 @@ function kode(rel: string): string {
     .join('\n')
 }
 
-test('ecosystem.config.cjs mendeklarasikan NODE_ENV production dan PORT', () => {
+test('ecosystem.config.cjs: NODE_ENV production, PORT, dan script berpath absolut', () => {
   const eco = kode('ecosystem.config.cjs')
   assert.match(eco, /NODE_ENV:\s*'production'/, 'NODE_ENV produksi hilang dari ecosystem.config.cjs')
   assert.match(eco, /PORT:\s*6000/)
+  // Path relatif seperti 'tsx' hanya di-resolve pm2 di jalur start, dan itu di
+  // sisi CLI. Jalur restart/reload dari berkas mengirim konfigurasi mentah ke
+  // daemon, yang gagal me-resolve-nya dan menolak menyalakan proses — produksi
+  // 502 pada 17 Sep 2026.
+  assert.match(eco, /script:\s*path\.join\(__dirname/, "script harus path absolut, bukan 'tsx'")
 })
 
-test('deploy me-restart lewat ecosystem.config.cjs, bukan pm2 restart <nama>', () => {
+test('deploy menyalakan proses lewat jalur start, bukan restart/reload dari berkas', () => {
   const wf = kode('.github/workflows/deploy-vps.yml')
-  assert.match(wf, /pm2 startOrReload ecosystem\.config\.cjs/, 'deploy harus menerapkan environment dari berkas ecosystem')
+  assert.match(wf, /^[ \t]*pm2 delete arkxmotion/m, 'proses lama harus dihapus dulu supaya konfigurasi tersimpan tidak tersisa')
+  assert.match(wf, /^[ \t]*pm2 start ecosystem\.config\.cjs[ \t]*$/m, 'deploy harus menyalakan dari berkas ecosystem')
   assert.doesNotMatch(
     wf,
-    /pm2\s+restart\s+arkxmotion/,
-    '`pm2 restart <nama>` menyegarkan environment dari shell sesi SSH, sehingga NODE_ENV tidak pernah sampai ke proses',
+    /pm2\s+(restart|startOrReload)\s+(arkxmotion|ecosystem)/,
+    'restart/reload dari nama atau berkas mengirim konfigurasi mentah ke daemon; script di dalamnya tidak bisa di-resolve dan proses gagal start',
   )
+})
+
+test('deploy punya jalur darurat kalau server tidak menjawab setelah start', () => {
+  const wf = kode('.github/workflows/deploy-vps.yml')
+  assert.match(wf, /if ! curl -sf --max-time \d+ "http:\/\/127\.0\.0\.1:6000\/api\/health"/, 'deploy harus memeriksa server benar-benar hidup')
+  assert.match(wf, /NODE_ENV=production PORT=6000 pm2 start/, 'jalur darurat harus menyalakan proses dengan environment eksplisit')
 })
 
 test('deploy benar-benar MEMANGGIL gerbang 3a, sebelum gerbang 3', () => {

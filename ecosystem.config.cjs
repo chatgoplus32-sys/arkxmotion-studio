@@ -1,15 +1,25 @@
 // Environment proses produksi — sumber kebenaran untuk NODE_ENV dan PORT.
 //
-// Deploy menerapkannya dengan `pm2 startOrReload ecosystem.config.cjs`.
-// Restart lewat nama proses (tanpa berkas ini) tidak membacanya, jadi NODE_ENV
-// tidak pernah sampai ke proses: isProd=false, backup otomatis dilewati, dan
-// gerbang 3 gagal di tiga deploy berturut-turut pada 17 Sep 2026.
+// Deploy menyalakannya lewat jalur "start": pm2 delete arkxmotion, lalu
+// pm2 start ecosystem.config.cjs. Restart lewat nama proses tidak membaca
+// environment di sini (NODE_ENV tidak pernah sampai ke proses: isProd=false,
+// backup otomatis dilewati, gerbang 3 merah tiga deploy berturut-turut).
+//
+// `script` WAJIB path absolut. pm2 me-resolve script relatif hanya di jalur
+// start, dan itu dikerjakan di sisi CLI; jalur restart/reload dari berkas
+// mengirim konfigurasi mentah ke daemon, yang mengulang
+// path.resolve(cwd, 'tsx') → /opt/arkxmotion-studio/tsx tidak ada, tsx tidak
+// ada di PATH → "Script not found" dan proses tidak pernah dinyalakan
+// (17 Sep 2026: seluruh /api produksi 502).
+//
 // Dijaga oleh scripts/check-prod-env.sh (gerbang 3a) dan test/prodEnvGate.test.ts.
+const path = require('path')
+
 module.exports = {
   apps: [
     {
       name: 'arkxmotion',
-      script: 'tsx',
+      script: path.join(__dirname, 'node_modules', '.bin', 'tsx'),
       args: 'server/index.ts',
       cwd: __dirname,
       interpreter: 'none',
