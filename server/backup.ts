@@ -15,12 +15,36 @@ function timestamp(): string {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`
 }
 
-function countRows(table: string): number {
+/**
+ * Jumlah baris sebuah tabel, atau `null` kalau tidak bisa dibaca.
+ *
+ * `null` dan `0` sengaja dibedakan: tabel yang belum dibuat (instalasi baru)
+ * memang berarti 0, tapi kegagalan membaca — database terkunci, skema rusak,
+ * koneksi bermasalah — BUKAN berarti kosong. Dulu keduanya jadi 0, sehingga
+ * snapshot saat boot bisa dilewati tanpa jejak yang jelas di log.
+ */
+export function countRows(table: string): number | null {
   try {
     return (db.prepare(`SELECT COUNT(*) AS c FROM ${table}`).get() as { c: number }).c
-  } catch {
-    return 0
+  } catch (err: any) {
+    const message = String(err?.message || err)
+    // Tabel yang belum ada bukan kegagalan — memang belum ada isinya.
+    if (/no such table/i.test(message)) return 0
+    console.warn(`[backup] ⚠️  Tidak bisa membaca tabel ${table}: ${message}`)
+    return null
   }
+}
+
+/**
+ * Apakah isi database layak diamankan.
+ *
+ * Backup dijalankan kalau ada tabel berisi data, ATAU kalau ada tabel yang
+ * tidak bisa dibaca: ketidaktahuan bukan alasan melewatkan snapshot. Hanya
+ * database yang terbaca jelas kosong (semua 0) yang dilewati.
+ */
+export function hasBackupableData(counts: Array<number | null>): boolean {
+  if (counts.some((c) => c === null)) return true
+  return counts.some((c) => (c ?? 0) > 0)
 }
 
 /** Hapus backup paling lama kalau jumlahnya melewati MAX_BACKUPS. */
@@ -50,9 +74,13 @@ export async function backupOnStartup(): Promise<string | null> {
   try {
     if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true })
 
-    const hasData =
-      countRows('users') > 0 || countRows('tokens') > 0 || countRows('generation_logs') > 0
-    if (!hasData) {
+    const counts = [countRows('users'), countRows('tokens'), countRows('generation_logs')]
+    if (counts.includes(null)) {
+      console.warn(
+        '[backup] ⚠️  Isi database tidak sepenuhnya terbaca — snapshot tetap dibuat daripada dilewati',
+      )
+    }
+    if (!hasBackupableData(counts)) {
       console.log('[backup] ⏭️  Dilewati — database masih kosong, tidak ada data untuk diamankan')
       return null
     }
