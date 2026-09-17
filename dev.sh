@@ -3,8 +3,9 @@
 # dev.sh — satu titik masuk untuk mengerjakan workspace ini:
 #
 #   1. rapikan log sesi dev/preview yang sudah mati (tidy-logs.sh),
-#   2. cek jebakan yang sudah pernah memakan waktu — PORT di `.env` tidak cocok
-#      dengan target proxy Vite, `node_modules` hilang, port sudah dipakai,
+#   2. verifikasi hal yang sudah pernah memakan waktu — port backend harus sama
+#      dengan target proxy Vite /api, `node_modules` jangan hilang, dan port
+#      tujuan jangan sudah terisi,
 #   3. jalankan `npm run dev:all` di `arkxmotion-studio/`, dengan seluruh output
 #      ikut tersimpan di `scratch/logs/dev-<stamp>.log`.
 #
@@ -20,9 +21,11 @@
 #   ./dev.sh --force          # lanjut walau port tujuan sudah dipakai
 #   ./dev.sh -- --host        # teruskan argumen setelah `--` ke npm
 #
-# Catatan: `--api-port` dijalankan dengan mengekspor `PORT` untuk proses anak.
-# `server/index.ts` memanggil `dotenv.config()` tanpa `override`, jadi nilai dari
-# shell menang atas `.env` — itulah cara skrip ini menutup selisih 3001 vs 6000.
+# Catatan: port backend diambil dari target proxy Vite dan diekspor sebagai
+# `PORT` untuk proses anak. `server/index.ts` memanggil `dotenv.config()` tanpa
+# `override`, jadi nilai dari shell menang atas `.env`. Cara itu dulu dipakai
+# untuk menambal selisih `.env` (3001) vs proxy (6000); sekarang `.env` sudah
+# 6000 dan fungsinya tinggal sebagai jaring pengaman kalau `.env` berubah lagi.
 
 set -u
 
@@ -73,6 +76,7 @@ fi
 # ── 2. Pemeriksaan awal ──────────────────────────────────────────────────────
 PROBLEMS=()
 NOTES=()
+OK_LINES=()
 
 if [ ! -d "$PRODUCT" ]; then
   echo "Folder produk tidak ada: $PRODUCT" >&2
@@ -90,28 +94,37 @@ if [ -f "$PRODUCT/.env" ]; then
   ENV_PORT="$(grep -E '^[[:space:]]*PORT=' "$PRODUCT/.env" | head -1 | grep -oE '[0-9]+')"
 fi
 
+# Port backend kalau tidak ada yang menimpa: PORT dari `.env`, atau default di
+# server/index.ts (`Number(process.env.PORT) || 6000`) kalau `.env` diam soal itu.
+SERVER_DEFAULT_PORT=6000
+ENV_EFFECTIVE_PORT="${ENV_PORT:-$SERVER_DEFAULT_PORT}"
+ENV_PORT_SOURCE="$([ -n "$ENV_PORT" ] && echo 'dari .env' || echo 'default server')"
+
+# Pemeriksaan intinya: port backend harus sama dengan target proxy Vite /api.
+# Kalau tidak sama, app terlihat jalan tapi setiap permintaan /api akan gagal
+# tersambung — persis jebakan yang dulu membuat `.env` disetel ke 6000.
 MISMATCH=0
-if [ -n "$ENV_PORT" ] && [ "$ENV_PORT" != "$PROXY_PORT" ]; then MISMATCH=1; fi
+[ "$ENV_EFFECTIVE_PORT" != "$PROXY_PORT" ] && MISMATCH=1
 
 if [ "$RESPECT_ENV" -eq 1 ]; then
-  WANT_PORT="$ENV_PORT"
+  WANT_PORT="$ENV_EFFECTIVE_PORT"
 else
   WANT_PORT="$PROXY_PORT"
 fi
 [ -n "$API_PORT" ] && WANT_PORT="$API_PORT"
-[ -z "${WANT_PORT:-}" ] && WANT_PORT="$PROXY_PORT"
 
 if [ "$MISMATCH" -eq 1 ]; then
+  PROBLEMS+=("Port backend tidak cocok dengan proxy Vite /api: $ENV_EFFECTIVE_PORT ($ENV_PORT_SOURCE) vs $PROXY_PORT (vite.config.ts).")
+  PROBLEMS+=("Perbaiki akarnya dengan menyetel PORT=$PROXY_PORT di arkxmotion-studio/.env, bukan lewat opsi skrip ini.")
   if [ "$RESPECT_ENV" -eq 1 ]; then
-    NOTES+=("--respect-env: backend memakai PORT=$ENV_PORT dari .env, padahal Vite mem-proxy /api ke $PROXY_PORT.")
-    PROBLEMS+=("Selisih port dibiarkan sesuai permintaan, jadi permintaan /api tidak akan sampai ke backend.")
+    PROBLEMS+=("--respect-env dipakai, jadi .env diikuti apa adanya dan permintaan /api tidak akan sampai ke backend.")
   else
-    NOTES+=(".env berisi PORT=$ENV_PORT sementara Vite mem-proxy /api ke $PROXY_PORT — dianggap sisa setelan lama.")
-    NOTES+=("Backend dijalankan dengan PORT=$PROXY_PORT — server memanggil dotenv tanpa override, jadi nilai dari shell yang menang. Pakai --respect-env untuk mengikuti .env.")
+    NOTES+=("Backend dijalankan dengan PORT=$WANT_PORT (nilai dari shell menang atas dotenv) supaya app tetap tersambung.")
   fi
-fi
-if [ -n "$API_PORT" ] && [ "$API_PORT" != "$PROXY_PORT" ]; then
-  NOTES+=("--api-port: backend dijalankan di PORT=$API_PORT, sedangkan proxy Vite menunjuk ke $PROXY_PORT.")
+elif [ -n "$API_PORT" ] && [ "$API_PORT" != "$PROXY_PORT" ]; then
+  NOTES+=("--api-port $API_PORT: backend sengaja dipindah, padahal proxy Vite menunjuk ke $PROXY_PORT.")
+else
+  OK_LINES+=("port backend cocok dengan proxy Vite /api: $PROXY_PORT ($ENV_PORT_SOURCE)")
 fi
 
 # Port yang dipakai Vite (tidak diatur di vite.config.ts → 5173).
@@ -157,6 +170,7 @@ fi
 
 # `${arr[@]+...}` dipakai supaya aman di `set -u` untuk array kosong, termasuk
 # di bash 3 (macOS) yang masih menganggapnya variabel tak terdefinisi.
+for o in ${OK_LINES[@]+"${OK_LINES[@]}"}; do echo "ok: $o"; done
 for n in ${NOTES[@]+"${NOTES[@]}"}; do echo "catatan: $n"; done
 for l in ${BUSY_LINES[@]+"${BUSY_LINES[@]}"}; do echo "$l"; done
 if [ "${#PROBLEMS[@]}" -gt 0 ]; then
@@ -171,7 +185,11 @@ if [ "$DRY_RUN" -eq 1 ]; then
   echo "  perintah : npm run dev:all${NPM_ARGS[*]:+ ${NPM_ARGS[*]}}"
   echo "  dry-run  : server tidak dijalankan, tidak ada port yang diubah"
   echo "  PORT     : $WANT_PORT   (proxy Vite /api -> $PROXY_PORT, .env -> ${ENV_PORT:-<tanpa PORT>})"
-  [ "$MISMATCH" -eq 1 ] && echo "             selisih .env vs proxy: $ENV_PORT vs $PROXY_PORT"
+  if [ "$MISMATCH" -eq 1 ]; then
+    echo "             .env vs proxy: TIDAK COCOK (backend $ENV_EFFECTIVE_PORT vs proxy $PROXY_PORT)"
+  else
+    echo "             .env vs proxy: cocok"
+  fi
   echo "  backend  : http://localhost:$WANT_PORT"
   echo "  app      : http://localhost:$APP_PORT"
   echo "  log      : $LOGDIR/dev-<tanggal>-<jam>.log"

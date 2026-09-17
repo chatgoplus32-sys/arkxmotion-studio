@@ -123,13 +123,15 @@ Satu perintah itu mengerjakan tiga hal berurutan:
 1. **Merapikan log lebih dulu** lewat `tidy-logs.sh`, jadi perapian tidak perlu
    diingat dan tidak ada sesi lama yang menumpuk di `.freebuff/` sebelum kerja
    berikutnya dimulai.
-2. **Memeriksa jebakan yang sudah pernah memakan waktu.** Yang paling penting:
-   `.env` berisi `PORT=3001` sementara Vite mem-proxy `/api` ke `6000`, jadi
-   backend dijalankan dengan `PORT=6000` supaya app benar-benar tersambung
-   (pakai `--respect-env` kalau ingin mengikuti `.env` apa adanya — server
-   memanggil dotenv tanpa override, jadi nilai dari shell yang menang). Selain
-   itu: `node_modules` yang hilang di-`npm install` otomatis, dan port yang
-   sudah terisi dilaporkan lengkap dengan PID-nya.
+2. **Memverifikasi bahwa port backend dan proxy Vite sepakat.** `.env` memakai
+   `PORT=6000` dan `vite.config.ts` mem-proxy `/api` ke `6000`; kalau keduanya
+   berbeda, app akan tampak jalan sementara setiap permintaan `/api` gagal
+   tersambung. Karena itu kesamaannya dicek lebih dulu dan dilaporkan sebagai
+   baris `ok:`, sedangkan selisihnya jadi `PERINGATAN` lengkap dengan cara
+   memperbaiki akarnya — di `.env`, bukan lewat opsi skrip (server memanggil
+   dotenv tanpa override, jadi nilai dari shell selalu bisa menimpa `.env`).
+   Selain itu: `node_modules` yang hilang di-`npm install` otomatis, dan port
+   yang sudah terisi dilaporkan lengkap dengan PID-nya.
 3. **Menjalankan `npm run dev:all`** dengan seluruh output disalin ke
    `scratch/logs/dev-<stamp>.log`, lalu merapikan sekali lagi saat berhenti.
    Exit code npm diteruskan apa adanya.
@@ -144,10 +146,11 @@ melewati pemeriksaan itu.
   `headers*.txt`, `cred-*.json`. Semuanya sudah di-ignore, tapi tetap: rotasi
   atau hapus sendiri kalau sudah tidak dipakai, karena isinya sesi/API key.
 - Menjalankan produk: `./dev.sh` (lihat "Menjalankan semuanya"). Kalau ingin
-  manual: `cd arkxmotion-studio && npm install && npm run dev:all` — tapi perlu
-  `PORT=6000 npm run dev:all`, karena `.env` berisi `PORT=3001` sementara Vite
-  mem-proxy `/api` ke `6000`. Catatan port dan jebakannya ada di
-  `arkxmotion-studio/.freebuff/run.md` —
-  file lokal yang di-ignore, jadi tidak ikut ter-commit. Ada dua `run.md`:
-  yang di repo produk untuk cara menjalankannya, yang di root `.freebuff/`
-  untuk hal-hal seputar workspace ini.
+  manual: `cd arkxmotion-studio && npm install && npm run dev:all` — sudah aman
+  karena `.env` dan `.env.example` sama-sama memakai `PORT=6000`, cocok dengan
+  target proxy `/api` di `vite.config.ts`. Sebelumnya `.env` berisi `3001`,
+  sehingga backend berdiri di port yang tidak ditunjuk siapa pun dan tidak ada
+  satu pun rujukan `3001` lain di seluruh repo produk. Catatan port ada di
+  `arkxmotion-studio/.freebuff/run.md` — file lokal yang di-ignore, jadi tidak
+  ikut ter-commit. Ada dua `run.md`: yang di repo produk untuk cara
+  menjalankannya, yang di root `.freebuff/` untuk hal-hal seputar workspace ini.
