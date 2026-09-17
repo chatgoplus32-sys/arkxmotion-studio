@@ -10,6 +10,11 @@
 #   2. smoke-test.sh        — benar-benar menjalankan server lalu memastikan
 #                             /api/health merespons (menangkap server yang
 #                             gagal boot, penyebab 502 di semua endpoint)
+#   3. check-boot-backup.sh — sesudah pm2 restart, memastikan proses yang BARU
+#                             start benar-benar meninggalkan snapshot backup.
+#                             Menangkap kondisi 17 Sep 2026: boot produksi
+#                             tidak menulis snapshot sama sekali, dan itu tidak
+#                             terlihat dari luar — deploy tetap dilaporkan sukses.
 #
 # Konteks: 42 file di repo ini (extensions/, workers/, cloudflare-worker/,
 # skrip root, public/sw.js, vite.config.ts, shared/) berada di luar semua
@@ -22,6 +27,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch: # izinkan trigger manual
+    inputs:
+      skip_backup_gate:
+        description: 'Lewati gerbang 3 (boot harus meninggalkan snapshot). Hanya untuk memulihkan deploy darurat.'
+        type: boolean
+        default: false
 
 jobs:
   deploy:
@@ -64,7 +74,23 @@ jobs:
             fi
 
             echo "🔄 Restart server..."
+            RESTART_MARKER=$(date +%s)
             pm2 restart arkxmotion --update-env
             pm2 save
+
+            # github.event.inputs (bukan inputs.*) supaya ekspresinya sah juga
+            # saat workflow dipicu push, bukan hanya lewat workflow_dispatch.
+            if [ "${{ github.event.inputs.skip_backup_gate }}" = "true" ]; then
+              echo "⚠️  GERBANG 3 DILEWATI atas permintaan manual (skip_backup_gate=true)."
+              echo "    Pastikan menyusul dengan: bash scripts/check-boot-backup.sh"
+            else
+              echo "🧪 Gerbang 3 — boot harus meninggalkan snapshot backup..."
+              if ! bash scripts/check-boot-backup.sh "$RESTART_MARKER"; then
+                echo "❌ Deploy DITANDAI GAGAL. Versi baru sudah berjalan, tapi boot-nya tidak"
+                echo "   meninggalkan snapshot backup. Diagnosis ada di keluaran di atas."
+                echo "   Proses lama TIDAK dikembalikan otomatis (restart sudah terjadi)."
+                exit 1
+              fi
+            fi
 
             echo "✅ Deploy selesai pada $(date)"
