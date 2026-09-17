@@ -329,4 +329,31 @@ db.exec('CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user
 db.exec('CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(read)')
 db.exec('CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at)')
 
+// ── Antrean credential dari extension (sync-tokens) ───────────────────
+// Dulu antrean ini hanya hidup di memori proses. Setiap deploy me-restart
+// server, dan cookie sesi nexabot yang baru dikirim extension tapi belum sempat
+// diambil poller app (interval 30 detik) ikut hilang — pengguna melihat sync
+// "berhasil" tapi login-nya tidak pernah masuk. Sekarang antrean ditulis ke DB,
+// jadi ia melewati restart. Versi Vercel (api/sync-tokens.ts) menyimpannya di
+// Postgres per user; tabel ini padanannya untuk server Express.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS sync_token_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    provider TEXT NOT NULL,
+    token TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'token',
+    source TEXT,
+    created_at INTEGER NOT NULL
+  )
+`)
+// user_id sengaja TANPA foreign key: antrean ini data sementara, dan baris milik
+// pengguna yang sudah dihapus cukup dipangkas oleh TTL. FK di sini akan mengubah
+// sync yang sah menjadi error 500 begitu ada baris users yang hilang.
+db.exec('CREATE INDEX IF NOT EXISTS idx_sync_queue_user_provider ON sync_token_queue(user_id, provider)')
+db.exec('CREATE INDEX IF NOT EXISTS idx_sync_queue_created ON sync_token_queue(created_at)')
+// Credential yang sama tidak perlu disimpan dua kali untuk user+provider yang
+// sama; router memakai INSERT OR IGNORE dan mengandalkan batasan unik ini.
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_sync_queue_unique ON sync_token_queue(user_id, provider, token)')
+
 export default db

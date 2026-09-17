@@ -19,9 +19,15 @@ import type { AddressInfo } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import express from 'express'
 import jwt from 'jsonwebtoken'
+import os from 'node:os'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.join(__dirname, '..')
+
+// DB terpisah: antrean sync sekarang persisten, jadi tanpa ini tes menulis ke
+// data dev dan mewarisi baris dari run sebelumnya (tes jadi tidak idempoten).
+const DB_PATH = path.join(os.tmpdir(), `arkxmotion-sync-auth-${process.pid}.db`)
+process.env.ARKXMOTION_DB_PATH = DB_PATH
 
 const JWT_SECRET = 'test-secret-sync-tokens'
 process.env.JWT_SECRET = JWT_SECRET
@@ -48,7 +54,14 @@ before(async () => {
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
 })
 
-after(() => server.close())
+after(() => {
+  server.close()
+  // Berkas DB sementara ikut dibersihkan; kalau gagal (masih terkunci), file
+  // itu hanya sisa di folder temp dan tidak memengaruhi apa pun.
+  for (const suffix of ['', '-wal', '-shm']) {
+    try { fs.unlinkSync(DB_PATH + suffix) } catch { /* belum ada / terkunci */ }
+  }
+})
 
 const auth = (t?: string) => (t ? { Authorization: `Bearer ${t}` } : {})
 
@@ -230,11 +243,49 @@ test('setiap route sync didaftarkan setelah authenticateToken', () => {
   }
 })
 
-test('antrean tidak lagi berkunci nama provider saja', () => {
+test('setiap query antrean ter-scope ke pengguna', () => {
   const src = baca('server/routes/syncTokens.ts')
-  // Bentuk lama: pendingTokens.get(provider) / set(provider, ...) — global.
-  assert.doesNotMatch(src, /pendingTokens\.(get|set|delete)\(provider/, 'masih ada akses antrean yang mengabaikan identitas pengguna')
-  assert.match(src, /queueKey\(userId, provider\)/)
+
+  // Invariant yang menentukan: kunci antrean sekarang (user_id, provider) di DB,
+  // jadi bukan lagi soal bentuk fungsi kunci — yang penting setiap pernyataan SQL
+  // yang menyentuh tabel ini memfilternya dengan `user_id`. Menghapus satu filter
+  // saja membuat satu pengguna bisa membaca atau menghapus credential pengguna
+  // lain, dan itu tidak terlihat dari bentuk fungsinya. Antrean di memori sudah
+  // tidak ada sama sekali: setiap deploy me-restart server dan isinya hilang.
+  assert.doesNotMatch(src, /pendingTokens/, 'antrean kembali disimpan di memori proses (hilang saat restart)')
+  assert.match(src, /sync_token_queue/, 'antrean tidak lagi disimpan di DB')
+
+  // Setiap pernyataan db.prepare(...) dipotong sampai penutup panggilannya.
+  // (Regex non-greedy berhenti di `)` pertama, yang di SQL ini justru bagian
+  // dari kondisi — jadi potongannya diambil sampai baris `)` penutup.)
+  const pernyataan = src.split('db.prepare(').slice(1).map((chunk) => {
+    const akhir = chunk.search(/\n\)/)
+    return akhir === -1 ? chunk : chunk.slice(0, akhir)
+  })
+  const antrean = pernyataan.filter((q) => q.includes('sync_token_queue'))
+  assert.ok(antrean.length >= 5, `query antrean tidak ditemukan (${antrean.length})`)
+
+  const tanpaUser = antrean.filter((q) => !q.includes('user_id'))
+  assert.equal(
+    tanpaUser.length,
+    1,
+    `ada ${tanpaUser.length} query antrean tanpa filter user_id, seharusnya hanya purge TTL:\n${tanpaUser.join('\n---\n')}`,
+  )
+
+  // Satu-satunya pengecualian yang sah: pemangkasan berdasarkan umur, yang
+  // memang berlaku untuk semua pengguna. Bentuknya dikunci ketat — begitu ia
+  // jadi SELECT, atau kehilangan syarat umur, penjaga ini gagal.
+  const purge = tanpaUser[0]
+  assert.match(purge, /DELETE FROM sync_token_queue/, 'pengecualian bukan pemangkasan antrean')
+  assert.match(purge, /created_at </, 'pengecualian tidak memangkas berdasarkan umur')
+  assert.doesNotMatch(purge, /SELECT/, 'pengecualian membaca isi antrean')
+})
+
+test('tabel antrean dideklarasikan di skema DB', () => {
+  // Tanpa tabel ini, seluruh rute sync gagal saat runtime — bukan saat build.
+  const skema = baca('server/db.ts')
+  assert.match(skema, /CREATE TABLE IF NOT EXISTS sync_token_queue/)
+  assert.match(skema, /CREATE UNIQUE INDEX IF NOT EXISTS idx_sync_queue_unique/)
 })
 
 test('semua extension yang POST ke /api/sync-tokens mengirim Authorization', () => {
