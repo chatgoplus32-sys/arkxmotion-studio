@@ -43,7 +43,7 @@ import publicWeavyRoutes from './routes/publicWeavy.js'
 import publicWeavyProxyRoutes from './routes/publicWeavyProxy.js'
 import publicWeavyCreditsRoutes from './routes/publicWeavyCredits.js'
 import publicR2UploadRoutes from './routes/publicR2Upload.js'
-import { backupOnStartup } from './backup.js'
+import { backupOnStartup, noteStartupBackupDisabled } from './backup.js'
 import { startBackupScheduler, getBackupStatus, runBackup } from './lib/backupR2.js'
 
 dotenv.config()
@@ -206,6 +206,15 @@ if (autoBackupEnabled) {
     startBackupScheduler()
   }
 } else {
+  // Dicatat supaya /api/backup/status bisa membedakan "dimatikan" dari
+  // "gagal" — tanpa ini, tidak ada snapshot selalu terlihat sama saja.
+  noteStartupBackupDisabled(
+    'gerbang AUTO_BACKUP tertutup: AUTO_BACKUP=' +
+      (process.env.AUTO_BACKUP ?? '(kosong)') +
+      ', NODE_ENV=' +
+      (process.env.NODE_ENV ?? '(tidak diset)') +
+      '. Set AUTO_BACKUP=1 untuk memaksa aktif.',
+  )
   console.log(
     `[${isProd ? 'PROD' : 'DEV'}] Backup otomatis dilewati. Set AUTO_BACKUP=1 kalau ingin snapshot database saat start.`,
   )

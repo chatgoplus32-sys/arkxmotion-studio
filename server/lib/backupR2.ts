@@ -20,6 +20,7 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import db from '../db.js'
+import { getStartupBackupStatus } from '../backup.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -234,6 +235,10 @@ export function getBackupStatus() {
       latest: localFiles.sort().pop() || null,
       totalSizeMB: Math.round(totalSize / 1024 / 1024 * 100) / 100,
     },
+    // Hasil snapshot saat start: dibuat / dilewati karena kosong / gagal /
+    // tidak dijalankan. Inilah yang membedakan keempatnya tanpa perlu masuk
+    // ke VPS — sebelum ini semuanya tampak sama saja: tidak ada snapshot.
+    startup: getStartupBackupStatus(),
     r2: {
       configured: !!(R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY && R2_BUCKET_NAME),
       bucket: R2_BUCKET_NAME || null,

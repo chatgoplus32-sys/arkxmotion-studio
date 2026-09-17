@@ -5,7 +5,8 @@ import { fileURLToPath } from 'url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // Path DB bisa ditimpa lewat env supaya test memakai file sendiri dan tidak
 // menyentuh data dev (tanpa env, perilakunya sama seperti sebelumnya).
-const dbPath = process.env.ARKXMOTION_DB_PATH || path.join(__dirname, '..', 'data', 'arkxmotion.db')
+export const dbPath =
+  process.env.ARKXMOTION_DB_PATH || path.join(__dirname, '..', 'data', 'arkxmotion.db')
 
 import fs from 'fs'
 const dataDir = path.dirname(dbPath)
