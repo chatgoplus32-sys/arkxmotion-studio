@@ -191,11 +191,24 @@ process.on("uncaughtException", (err) => {
   console.error("[server] Uncaught exception:", err)
 })
 
-// Backup database otomatis saat server start
-void backupOnStartup()
-// Start R2 backup scheduler
-if (process.env.R2_ACCOUNT_ID) {
-  startBackupScheduler()
+// Backup otomatis — snapshot saat start dan scheduler R2 — hanya kalau memang
+// diminta. Default: aktif hanya di production, sehingga sesi dev tidak menulis
+// (dan memangkas) isi data/backups/. Override: AUTO_BACKUP=1 paksa aktif,
+// AUTO_BACKUP=0 paksa mati.
+const autoBackupSetting = (process.env.AUTO_BACKUP ?? '').trim().toLowerCase()
+const autoBackupEnabled = autoBackupSetting
+  ? !['0', 'false', 'off', 'no'].includes(autoBackupSetting)
+  : isProd
+
+if (autoBackupEnabled) {
+  void backupOnStartup()
+  if (process.env.R2_ACCOUNT_ID) {
+    startBackupScheduler()
+  }
+} else {
+  console.log(
+    `[${isProd ? 'PROD' : 'DEV'}] Backup otomatis dilewati. Set AUTO_BACKUP=1 kalau ingin snapshot database saat start.`,
+  )
 }
 
 // Backup status + manual trigger
