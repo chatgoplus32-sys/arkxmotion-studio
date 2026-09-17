@@ -10,6 +10,11 @@ cd "$(dirname "$0")"
 echo "📦 Installing dependencies..."
 npm install --production=false
 
+# Cek identifier tak terdefinisi + API CommonJS di file ESM
+# (pernah menyebabkan outage produksi: server gagal boot / R2 tak pernah upload)
+echo "🔎 Memeriksa identifier tak terdefinisi..."
+node scripts/check-undefined.mjs
+
 # Build frontend
 echo "🔨 Building frontend..."
 npm run build

@@ -40,18 +40,18 @@ let PutObjectCommand: any = null
 let ListObjectsV2Command: any = null
 let DeleteObjectCommand: any = null
 
-function getR2Client() {
+async function getR2Client() {
   if (s3Client) return s3Client
   if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY || !R2_BUCKET_NAME) {
     console.warn('[backup-r2] ⚠️  R2 not configured — set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME')
     return null
   }
   try {
-    const { S3Client, PutObjectCommand: P, ListObjectsV2Command: L, DeleteObjectCommand: D } = require('@aws-sdk/client-s3')
-    PutObjectCommand = P
-    ListObjectsV2Command = L
-    DeleteObjectCommand = D
-    s3Client = new S3Client({
+    const mod: any = await import('@aws-sdk/client-s3')
+    PutObjectCommand = mod.PutObjectCommand
+    ListObjectsV2Command = mod.ListObjectsV2Command
+    DeleteObjectCommand = mod.DeleteObjectCommand
+    s3Client = new mod.S3Client({
       region: 'auto',
       endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
       credentials: { accessKeyId: R2_ACCESS_KEY_ID, secretAccessKey: R2_SECRET_ACCESS_KEY },
@@ -101,7 +101,7 @@ export async function runBackup(): Promise<{ ok: boolean; localPath?: string; r2
     console.log(`[backup-r2] ✅ Local backup: ${filename} (${sizeKb} KB)`)
 
     // 2. Upload to R2
-    const client = getR2Client()
+    const client = await getR2Client()
     if (!client) {
       console.log('[backup-r2] ⚠️  R2 not configured, local backup only')
       pruneLocalBackups()

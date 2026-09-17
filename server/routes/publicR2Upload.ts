@@ -7,17 +7,23 @@ const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || ''
 const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME || ''
 const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || ''
 
-function getR2Client(): any {
+async function getR2Client(): Promise<any> {
   if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY || !R2_BUCKET_NAME) return null
   try {
-    const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3')
+    // Dynamic import: file ini ESM (package.json "type":"module"), jadi `require`
+    // TIDAK ada saat runtime — memakainya melempar ReferenceError dan bikin route
+    // ini selalu balas "R2 not configured" walau env R2 sudah diisi.
+    const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3')
     const client = new S3Client({
       region: 'auto',
       endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
       credentials: { accessKeyId: R2_ACCESS_KEY_ID, secretAccessKey: R2_SECRET_ACCESS_KEY },
     })
     return { client, PutObjectCommand }
-  } catch { return null }
+  } catch (err: any) {
+    console.error('[r2-upload] gagal memuat @aws-sdk/client-s3:', err?.message || err)
+    return null
+  }
 }
 
 function generateKey(prefix: string, filename: string): string {
@@ -70,10 +76,10 @@ router.all('/', (req: Request, res: Response) => {
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'Method not allowed' })
 
-  const r2 = getR2Client()
-  if (!r2) return res.status(500).json({ ok: false, error: 'R2 not configured. Set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME env vars.' })
-
   ;(async () => {
+    const r2 = await getR2Client()
+    if (!r2) return res.status(500).json({ ok: false, error: 'R2 not configured. Set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME env vars.' })
+
     try {
       const contentTypeHeader = req.headers['content-type'] || ''
 
