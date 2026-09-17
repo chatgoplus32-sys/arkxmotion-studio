@@ -1,8 +1,9 @@
 # Gerbang 3 di deploy — boot harus meninggalkan snapshot
 
-Gerbang ini adalah langkah ketiga di `.github/workflows/deploy-vps.yml`,
-dijalankan **sesudah** `pm2 restart`, dan diwujudkan oleh
-`scripts/check-boot-backup.sh`.
+Gerbang ini dijalankan **sesudah** proses produksi diganti, dan diwujudkan oleh
+`scripts/check-boot-backup.sh`. Ia berpasangan dengan **gerbang 3a**
+(`scripts/check-prod-env.sh`), yang diperiksa lebih dulu: proses yang melayani
+harus benar-benar berjalan dengan `NODE_ENV=production`.
 
 ## Kenapa ada
 
@@ -31,6 +32,51 @@ yang longgar akan menghitungnya sebagai bukti boot. Pada kasus 17 Sep jaraknya
 sembilan detik. Snapshot itu **tidak** boleh lolos sebagai bukti boot, dan
 `test/bootBackupGate.test.ts` mengunci kasus ini secara eksplisit.
 
+## Gerbang 3a — sebab sebenarnya dari tiga deploy merah
+
+Gerbang 3 gagal tiga kali berturut-turut (17 Sep 11:42, `7faf8f0` 05:27,
+`55a4bfa` 05:31), selalu dengan tanda tangan yang sama: boot tidak menulis
+snapshot. Setelah `/api/backup/status` melaporkan hasil snapshot saat start,
+sebabnya terbaca tanpa masuk ke VPS:
+
+```json
+"startup": { "outcome": "not-run", "reason": "gerbang AUTO_BACKUP tertutup:
+            AUTO_BACKUP=(kosong), NODE_ENV=(tidak diset)" }
+```
+
+Backup-nya tidak rusak. `NODE_ENV` tidak pernah sampai ke proses produksi.
+`ecosystem.config.cjs` mendeklarasikan `NODE_ENV: 'production'`, tapi deploy
+me-restart dengan `pm2 restart arkxmotion --update-env` — dan flag itu
+menyegarkan environment dari **shell yang menjalankan perintah** (sesi SSH
+deploy, yang tidak punya `NODE_ENV`), bukan dengan membaca ulang berkas
+ecosystem-nya. Karena `AUTO_BACKUP` tidak diset, gerbang backup jatuh ke
+`isProd`; `isProd` bernilai false; `backupOnStartup()` tidak pernah dipanggil.
+
+Perbaikannya adalah me-restart lewat berkas yang mendeklarasikannya:
+
+```bash
+pm2 startOrReload ecosystem.config.cjs && pm2 save
+```
+
+Itu menjelaskan dua hal lain. `PORT` juga tidak sampai, tapi tidak ada yang
+sadar karena `Number(process.env.PORT) || 6000` kebetulan menghasilkan angka
+yang sama. Dan 30 snapshot yang selama ini dianggap "backup produksi" sebenarnya
+ditulis oleh smoke test gerbang 2 — server yang dinyalakan dengan
+`NODE_ENV=production` di port 6099 — sehingga isinya selalu muncul sekitar
+sepuluh detik sebelum setiap restart. Produksi tidak pernah mem-backup dirinya;
+ia hanya kebetulan dilewati oleh proses deploy.
+
+Gerbang 3a membaca environment proses dari sisi OS, `/proc/<pid>/environ`, yang
+berisi environment saat proses itu di-exec. Jadi ia tidak bisa lolos hanya karena
+aplikasi mengira dirinya production — dan kegagalannya menyebut nilai yang
+sebenarnya beserta perintah perbaikannya.
+
+Memeriksa tanpa deploy:
+
+```bash
+bash scripts/check-prod-env.sh
+```
+
 ## Kalau gerbang gagal
 
 Deploy ditandai gagal, dan gerbangnya mencetak diagnosis yang selama ini tidak
@@ -53,7 +99,7 @@ bash scripts/check-boot-backup.sh
 ## Keadaan darurat
 
 Jalankan workflow secara manual lalu centang `skip_backup_gate`. Gerbang 1 dan 2
-tetap berjalan, dan workflow mencatat bahwa gerbang 3 dilewati. Memakai ini
+tetap berjalan, gerbang 3a dan 3 dilewati, dan workflow mencatatnya. Memakai ini
 secara permanen akan mengembalikan kebutaan yang justru sedang dihilangkan.
 
 ## Satu pengecualian yang disengaja

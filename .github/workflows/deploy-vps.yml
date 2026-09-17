@@ -1,9 +1,10 @@
 # ============================================================
 # Deploy ke VPS produksi (idcloudhost) — /opt/arkxmotion-studio
 #
-# Dua gerbang dijalankan SEBELUM proses produksi diganti. Kalau salah satu
+# Gerbang 1 dan 2 berjalan SEBELUM proses produksi diganti: kalau salah satu
 # gagal, deploy dibatalkan dan versi lama tetap melayani user — jadi commit
-# yang merusak server tidak pernah sampai ke produksi.
+# yang merusak server tidak pernah sampai ke produksi. Gerbang 3a dan 3 berjalan
+# SESUDAH restart dan mengukur hasilnya.
 #
 #   1. check-undefined.mjs  — identifier tak terdefinisi (TS2304/TS2552) &
 #                             API CommonJS di file ESM
@@ -15,6 +16,12 @@
 #                             Menangkap kondisi 17 Sep 2026: boot produksi
 #                             tidak menulis snapshot sama sekali, dan itu tidak
 #                             terlihat dari luar — deploy tetap dilaporkan sukses.
+#   3a. check-prod-env.sh   — dijalankan SEBELUM gerbang 3: proses yang melayani
+#                             harus berjalan dengan NODE_ENV=production. Sebab
+#                             tiga gerbang 3 yang merah ternyata bukan backup:
+#                             restart lama menyegarkan environment dari shell
+#                             sesi SSH (tanpa NODE_ENV), sehingga proses produksi
+#                             berjalan mode dev dan backup otomatis dilewati.
 #
 # Konteks: 42 file di repo ini (extensions/, workers/, cloudflare-worker/,
 # skrip root, public/sw.js, vite.config.ts, shared/) berada di luar semua
@@ -29,7 +36,7 @@ on:
   workflow_dispatch: # izinkan trigger manual
     inputs:
       skip_backup_gate:
-        description: 'Lewati gerbang 3 (boot harus meninggalkan snapshot). Hanya untuk memulihkan deploy darurat.'
+        description: 'Lewati gerbang 3a dan 3 (mode produksi + snapshot boot). Hanya untuk memulihkan deploy darurat.'
         type: boolean
         default: false
 
@@ -75,15 +82,33 @@ jobs:
 
             echo "🔄 Restart server..."
             RESTART_MARKER=$(date +%s)
-            pm2 restart arkxmotion --update-env
+            # Restart lewat ecosystem.config.cjs — berkas itu satu-satunya sumber
+            # kebenaran untuk NODE_ENV dan PORT. Memakai nama proses di sini
+            # memang menyegarkan environment, tapi dari shell yang menjalankan
+            # perintah ini (sesi SSH deploy, tanpa NODE_ENV) — bukan dari berkas
+            # ecosystem-nya. Itulah yang membuat proses produksi berjalan mode
+            # dev dan backup otomatis mati.
+            pm2 startOrReload ecosystem.config.cjs
             pm2 save
 
             # github.event.inputs (bukan inputs.*) supaya ekspresinya sah juga
             # saat workflow dipicu push, bukan hanya lewat workflow_dispatch.
             if [ "${{ github.event.inputs.skip_backup_gate }}" = "true" ]; then
-              echo "⚠️  GERBANG 3 DILEWATI atas permintaan manual (skip_backup_gate=true)."
-              echo "    Pastikan menyusul dengan: bash scripts/check-boot-backup.sh"
+              echo "⚠️  GERBANG 3a dan 3 DILEWATI atas permintaan manual (skip_backup_gate=true)."
+              echo "    Pastikan menyusul dengan: bash scripts/check-prod-env.sh && bash scripts/check-boot-backup.sh"
             else
+              # Gerbang 3a lebih dulu: kalau prosesnya tidak berjalan sebagai
+              # production, backup otomatis memang tidak akan pernah jalan — dan
+              # sebabnya harus dinamai di sini, bukan muncul di gerbang 3
+              # sebagai masalah backup.
+              echo "🧪 Gerbang 3a — proses produksi harus berjalan dengan NODE_ENV=production..."
+              if ! bash scripts/check-prod-env.sh; then
+                echo "❌ Deploy DITANDAI GAGAL: proses yang baru restart tidak berjalan sebagai production."
+                echo "   Restart harus lewat ecosystem.config.cjs supaya NODE_ENV sampai ke proses;"
+                echo "   diagnosis lengkap ada di keluaran di atas."
+                exit 1
+              fi
+
               echo "🧪 Gerbang 3 — boot harus meninggalkan snapshot backup..."
               if ! bash scripts/check-boot-backup.sh "$RESTART_MARKER"; then
                 echo "❌ Deploy DITANDAI GAGAL. Versi baru sudah berjalan, tapi boot-nya tidak"
