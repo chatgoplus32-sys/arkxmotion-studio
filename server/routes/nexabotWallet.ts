@@ -19,7 +19,7 @@
 // dihitung satu generate.
 import { Router, Response } from 'express'
 import db from '../db.js'
-import { authenticateToken, AuthRequest } from '../middleware/auth.js'
+import { authenticateToken, requireAdmin, AuthRequest } from '../middleware/auth.js'
 import {
   NEXABOT_MIN_TOPUP,
   NEXABOT_UNLIMITED_SLUG,
@@ -334,6 +334,163 @@ router.post('/refund', authenticateToken, (req: AuthRequest, res: Response) => {
     res.json({ balance: updated.balance, refunded: usage.cost })
   } catch (error) {
     console.error('NexaBot refund error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// ─── Laporan biaya upstream: apakah paket Unlimited mensubsidi? ─────────────
+// GET /api/nexabot/admin/upstream-usage?days=30
+//
+// Menjawab pertanyaan yang tidak bisa dijawab pembukuan lokal: untuk setiap
+// member, berapa job yang memakai kuota upstream, dengan kredensial JENIS apa,
+// dan berapa yang benar-benar dilaporkan upstream sebagai biaya.
+//
+// Yang sengaja TIDAK dilakukan: menebak biaya. Kalau upstream tidak melaporkan
+// angka untuk sebuah job, nilainya NULL dan job itu masuk hitungan
+// `jobs_cost_unknown` — tidak diisi dengan harga lokal supaya angkanya terlihat
+// rapi. Justru harga lokal untuk member Unlimited adalah 0, dan itu sumber
+// subsidinya: `jobs_api_key` besar + `local_revenue` 0 berarti job member itu
+// dibayar oleh pemilik API key, bukan oleh member yang sudah bayar flat.
+router.get('/admin/upstream-usage', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
+  try {
+    const hari = Math.min(365, Math.max(1, Number(req.query.days) || 30))
+    const sejakMs = Date.now() - hari * 24 * 60 * 60 * 1000
+
+    const perUser = db.prepare(`
+      SELECT user_id,
+             COUNT(*) AS jobs,
+             SUM(CASE WHEN credential_kind = 'cookie'  THEN 1 ELSE 0 END) AS jobs_cookie,
+             SUM(CASE WHEN credential_kind = 'api-key' THEN 1 ELSE 0 END) AS jobs_api_key,
+             SUM(CASE WHEN cost_value IS NOT NULL THEN 1 ELSE 0 END) AS jobs_cost_known,
+             SUM(CASE WHEN cost_value IS NULL     THEN 1 ELSE 0 END) AS jobs_cost_unknown,
+             SUM(COALESCE(cost_value, 0)) AS cost_known_sum,
+             MAX(created_at) AS last_job_at
+      FROM nexabot_upstream_usage
+      WHERE created_at >= ?
+      GROUP BY user_id
+      ORDER BY jobs DESC
+    `).all(sejakMs) as Array<{
+      user_id: number | null
+      jobs: number
+      jobs_cookie: number
+      jobs_api_key: number
+      jobs_cost_known: number
+      jobs_cost_unknown: number
+      cost_known_sum: number
+      last_job_at: number
+    }>
+
+    // Kredensial per member: dua sidik jari berbeda = member memakai kredensial
+    // miliknya sendiri DAN kredensial lain (biasanya induk) di jendela yang sama.
+    const kredensial = db.prepare(`
+      SELECT user_id, credential_kind, credential_fingerprint, COUNT(*) AS jobs, MAX(created_at) AS last_job_at
+      FROM nexabot_upstream_usage
+      WHERE created_at >= ?
+      GROUP BY user_id, credential_kind, credential_fingerprint
+      ORDER BY jobs DESC
+    `).all(sejakMs) as Array<{
+      user_id: number | null
+      credential_kind: string
+      credential_fingerprint: string
+      jobs: number
+      last_job_at: number
+    }>
+
+    const aktif = db.prepare(`
+      SELECT user_id, MAX(expires_at) AS expires_at
+      FROM nexabot_topup
+      WHERE kind = 'unlimited' AND status = 'approved'
+        AND expires_at IS NOT NULL AND datetime(expires_at) > datetime('now')
+      GROUP BY user_id
+    `).all() as Array<{ user_id: number; expires_at: string }>
+
+    // Pemasukan lokal (harga yang benar-benar dipotong ke member) di jendela yang
+    // sama. Untuk member Unlimited angkanya 0 — memang itu yang dijanjikan.
+    const lokal = db.prepare(`
+      SELECT user_id, COUNT(*) AS generates, SUM(cost) AS revenue
+      FROM nexabot_usage
+      WHERE created_at >= datetime('now', ?)
+      GROUP BY user_id
+    `).all(`-${hari} days`) as Array<{ user_id: number; generates: number; revenue: number }>
+
+    const idTerpakai = perUser.map((r) => r.user_id).filter((v): v is number => typeof v === 'number')
+    const email = new Map<number, string>()
+    if (idTerpakai.length > 0) {
+      const tanda = idTerpakai.map(() => '?').join(',')
+      for (const u of db.prepare(`SELECT id, email FROM users WHERE id IN (${tanda})`).all(...idTerpakai) as Array<{ id: number; email: string }>) {
+        email.set(u.id, u.email)
+      }
+    }
+
+    const unlimitedByUser = new Map(aktif.map((r) => [r.user_id, r.expires_at]))
+    const lokalByUser = new Map(lokal.map((r) => [r.user_id, r]))
+
+    // Gabungan TIGA sumber: yang punya pemakaian upstream, yang punya pemakaian
+    // lokal, dan yang paketnya sedang aktif. Tanpa penggabungan ini, member yang
+    // membayar lokal tetapi job-nya tidak teratribusi (relay ini boleh dipanggil
+    // tanpa JWT app) hilang dari total — padahal justru itu sisi pemasukannya,
+    // dan menghilangkannya membuat subsidinya terlihat lebih besar dari fakta.
+    const semuaId = new Set<number | null>()
+    for (const r of perUser) semuaId.add(r.user_id)
+    for (const r of lokal) semuaId.add(r.user_id)
+    for (const r of aktif) semuaId.add(r.user_id)
+
+    const baris = [...semuaId]
+      .map((uid) => {
+        const up = perUser.find((r) => r.user_id === uid)
+        const kred = kredensial.filter((k) => k.user_id === uid)
+        const rev = uid === null ? undefined : lokalByUser.get(uid)
+        const cost = up?.cost_known_sum ?? 0
+        const pemasukan = rev?.revenue ?? 0
+        return {
+          user_id: uid,
+          email: uid === null ? null : email.get(uid) || null,
+          unlimited_active: uid === null ? false : unlimitedByUser.has(uid),
+          unlimited_expires_at: uid === null ? null : unlimitedByUser.get(uid) || null,
+          jobs: up?.jobs ?? 0,
+          jobs_cookie: up?.jobs_cookie ?? 0,
+          jobs_api_key: up?.jobs_api_key ?? 0,
+          jobs_cost_known: up?.jobs_cost_known ?? 0,
+          jobs_cost_unknown: up?.jobs_cost_unknown ?? 0,
+          cost_known_sum: Number(cost.toFixed(4)),
+          last_job_at: up?.last_job_at ?? null,
+          local_generates: rev?.generates ?? 0,
+          local_revenue: pemasukan,
+          // Hanya berarti saat ada job yang biayanya dilaporkan upstream.
+          subsidy_known: Number((cost - pemasukan).toFixed(4)),
+          credentials: kred.map((k) => ({
+            kind: k.credential_kind,
+            fingerprint: k.credential_fingerprint,
+            jobs: k.jobs,
+            last_job_at: k.last_job_at,
+          })),
+        }
+      })
+      .sort((a, b) => b.jobs - a.jobs || b.local_revenue - a.local_revenue)
+    const jumlah = (f: (r: (typeof baris)[number]) => number) => baris.reduce((a, r) => a + f(r), 0)
+
+    res.json({
+      window_days: hari,
+      since: sejakMs,
+      note:
+        'cost_known_sum hanya menjumlahkan job yang biayanya DILAPORKAN upstream; ' +
+        'jobs_cost_unknown adalah sisanya dan sengaja tidak ditaksir. ' +
+        'subsidy_known = biaya upstream yang diketahui − pemasukan lokal pada jendela ini. ' +
+        'jobs_api_key besar pada member yang unlimited_active menandakan job-nya dibayar kredensial API key, bukan paketnya.',
+      totals: {
+        jobs: jumlah((r) => r.jobs),
+        jobs_cookie: jumlah((r) => r.jobs_cookie),
+        jobs_api_key: jumlah((r) => r.jobs_api_key),
+        jobs_cost_known: jumlah((r) => r.jobs_cost_known),
+        jobs_cost_unknown: jumlah((r) => r.jobs_cost_unknown),
+        cost_known_sum: Number(jumlah((r) => r.cost_known_sum).toFixed(4)),
+        local_revenue: jumlah((r) => r.local_revenue),
+        subsidy_known: Number(jumlah((r) => r.subsidy_known).toFixed(4)),
+      },
+      users: baris,
+    })
+  } catch (error) {
+    console.error('NexaBot upstream usage report error:', error)
     res.status(500).json({ error: 'Internal server error' })
   }
 })

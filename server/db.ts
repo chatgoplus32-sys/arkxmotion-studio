@@ -329,6 +329,40 @@ db.exec('CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user
 db.exec('CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(read)')
 db.exec('CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at)')
 
+// ── Biaya upstream NexaBot per job ────────────────────────────────────
+// Pertanyaan yang tabel ini jawab: "paket Unlimited yang saya jual menutup biaya
+// atau saya yang mensubsidi?" Tanpa catatan ini, pemakaian member yang gratis
+// (biaya lokal 0) tidak meninggalkan jejak apa pun, padahal job-nya tetap
+// dibayar ke nexabot lewat kredensial yang dipakai.
+//
+// Dua hal yang dicatat dan dua hal yang SENGAJA tidak:
+//  - dicatat: jenis kredensial (cookie sesi vs API key) dan sidik jarinya, supaya
+//    terlihat job seorang member memakai kredensial siapa (kredensial miliknya
+//    atau kredensial induk) tanpa pernah menyimpan rahasianya;
+//  - dicatat: angka biaya HANYA kalau upstream melaporkannya. Kalau tidak,
+//    nilainya NULL dan jumlah job-nya yang jadi ukuran — bukan angka karangan;
+//  - tidak dicatat: isi kredensial (cookie/API key) dalam bentuk apa pun;
+//  - tidak dicatat: rute baca seperti poll job/health/credit, supaya tabelnya
+//    tidak tenggelam oleh poll tiap detik.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS nexabot_upstream_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    route TEXT NOT NULL,
+    credential_kind TEXT NOT NULL CHECK(credential_kind IN ('cookie', 'api-key')),
+    credential_fingerprint TEXT NOT NULL,
+    status_code INTEGER NOT NULL,
+    cost_field TEXT,
+    cost_value REAL,
+    evidence TEXT,
+    created_at INTEGER NOT NULL
+  )
+`)
+// user_id sengaja tanpa foreign key: baris boleh tidak teratribusi (relay ini
+// terbuka untuk pemanggil tanpa identitas), dan itu keadaan yang sah.
+db.exec('CREATE INDEX IF NOT EXISTS idx_nxb_usage_user ON nexabot_upstream_usage(user_id, created_at)')
+db.exec('CREATE INDEX IF NOT EXISTS idx_nxb_usage_created ON nexabot_upstream_usage(created_at)')
+
 // ── Antrean credential dari extension (sync-tokens) ───────────────────
 // Dulu antrean ini hanya hidup di memori proses. Setiap deploy me-restart
 // server, dan cookie sesi nexabot yang baru dikirim extension tapi belum sempat

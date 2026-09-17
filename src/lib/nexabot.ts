@@ -44,6 +44,24 @@ function getStoredProviderKey(provider: string): string | null {
   } catch { return null }
 }
 
+/**
+ * JWT login app, kalau ada. Dikirim ke relay /api/public/nexabot supaya
+ * pemakaian kuota upstream bisa diatribusikan ke member yang memicunya — tanpa
+ * itu, biaya job seorang member tidak bisa dibedakan dari pemakaian orang lain.
+ *
+ * Relay ini memang terbuka (klien boleh memakai kredensial nexabot-nya sendiri
+ * tanpa akun app), jadi ketiadaan token bukan error: yang hilang hanya
+ * atribusinya, dan biaya itu tetap tercatat tanpa user.
+ */
+function appAuthHeaders(): Record<string, string> {
+  if (typeof window === 'undefined') return {}
+  try {
+    const token = localStorage.getItem('arkxmotion_token')
+    return token ? { Authorization: `Bearer ${token}` } : {}
+  } catch {
+    return {}
+  }
+}
 export function getNexabotApiKey(): string | null {
   return getStoredProviderKey('nexabot')
 }
@@ -643,6 +661,7 @@ export async function submitNexabot(
       headers: {
         'Content-Type': 'application/json',
         ...authHeaders(auth),
+        ...appAuthHeaders(),
       },
       body: JSON.stringify(body),
     })

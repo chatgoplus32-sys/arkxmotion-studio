@@ -8,9 +8,12 @@ import {
   nexabotRelayHeaders,
   type NexabotProxyAction,
 } from '../../shared/nexabotProxy.js'
+import { recordUpstreamUsage } from '../lib/nexabotUpstreamUsage.js'
 
 const router = Router()
-const NEXABOT_BASE = 'https://nexabot.id'
+// Bisa diarahkan ke host lain: tes menembak upstream tiruan, dan operator bisa
+// memakainya untuk staging. Tanpa env, perilakunya sama seperti sebelumnya.
+const NEXABOT_BASE = (process.env.NEXABOT_BASE || 'https://nexabot.id').replace(/\/+$/, '')
 
 /**
  * Satu call upstream ke NexaBot dengan timeout & retry sesuai jenis request
@@ -22,7 +25,7 @@ async function relayUpstream(
   action: NexabotProxyAction,
   url: string,
   init: RequestInit,
-): Promise<void> {
+): Promise<{ status: number; text: string } | null> {
   const { label } = NEXABOT_PROXY_POLICY[action]
   try {
     const { response, attempts, shared } = await fetchNexabotUpstream(url, init, {
@@ -42,6 +45,9 @@ async function relayUpstream(
       ...nexabotRelayHeaders(response),
     })
     res.end(text)
+    // Dikembalikan supaya rute yang mengonsumsi kuota bisa mencatat biaya
+    // upstream-nya tanpa membaca body untuk kedua kalinya.
+    return { status: response.status, text }
   } catch (err: any) {
     const upstream = err instanceof NexabotUpstreamError ? err : null
     // `cause` = alasan asli dari undici (ECONNRESET, UND_ERR_SOCKET, dst) yang
@@ -55,6 +61,7 @@ async function relayUpstream(
         : `${err?.message || `Gagal ${label}`}${cause ? ` (${cause})` : ''}`,
     })
   }
+  return null
 }
 
 // Mode session: request ditandai dengan cookie login nexabot.id (dikirim klien
@@ -152,7 +159,7 @@ router.post('/submit', async (req: Request, res: Response) => {
 
   // Sengaja TANPA retry: kalau responsnya hilang, job bisa saja sudah terbentuk
   // dan kredit 0.25 sudah terpotong.
-  await relayUpstream(res, 'submit', `${NEXABOT_BASE}/api/v1/api`, {
+  const hasil = await relayUpstream(res, 'submit', `${NEXABOT_BASE}/api/v1/api`, {
     method: 'POST',
     headers: {
       'x-api-key': apiKey,
@@ -161,6 +168,10 @@ router.post('/submit', async (req: Request, res: Response) => {
     },
     body: JSON.stringify(upstreamBody),
   })
+  // Dicatat setelah respons upstream diterima: rute inilah yang memakai kuota.
+  if (hasil) {
+    recordUpstreamUsage({ req, route: 'submit', statusCode: hasil.status, bodyText: hasil.text })
+  }
 })
 
 // ── Submit job (mode session / cookie) ──
@@ -186,7 +197,7 @@ router.post('/generate', async (req: Request, res: Response) => {
   if (body.telegram_id) upstreamBody.telegram_id = body.telegram_id
 
   // Tanpa retry, sama alasannya dengan /submit: hindari job & kredit ganda.
-  await relayUpstream(res, 'generate', `${NEXABOT_BASE}/api/v1/generate`, {
+  const hasil = await relayUpstream(res, 'generate', `${NEXABOT_BASE}/api/v1/generate`, {
     method: 'POST',
     headers: {
       ...sessionHeaders(cookies),
@@ -195,6 +206,10 @@ router.post('/generate', async (req: Request, res: Response) => {
     },
     body: JSON.stringify(upstreamBody),
   })
+  // Dicatat setelah respons upstream diterima: rute inilah yang memakai kuota.
+  if (hasil) {
+    recordUpstreamUsage({ req, route: 'generate', statusCode: hasil.status, bodyText: hasil.text })
+  }
 })
 
 // ── Poll job status ──
