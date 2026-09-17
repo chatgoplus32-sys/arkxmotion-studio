@@ -37,6 +37,7 @@ import publicWeavyProxyRoutes from './routes/publicWeavyProxy.js'
 import publicWeavyCreditsRoutes from './routes/publicWeavyCredits.js'
 import publicR2UploadRoutes from './routes/publicR2Upload.js'
 import { backupOnStartup } from './backup.js'
+import { startBackupScheduler, getBackupStatus, runBackup } from './lib/backupR2.js'
 
 dotenv.config()
 
@@ -185,6 +186,20 @@ process.on("uncaughtException", (err) => {
 
 // Backup database otomatis saat server start
 void backupOnStartup()
+// Start R2 backup scheduler
+if (process.env.R2_ACCOUNT_ID) {
+  startBackupScheduler()
+}
+
+// Backup status + manual trigger
+app.get("/api/backup/status", (_req, res) => {
+  res.json(getBackupStatus())
+})
+
+app.post("/api/backup/run", async (_req, res) => {
+  const result = await runBackup()
+  res.json(result)
+})
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`[${isProd ? 'PROD' : 'DEV'}] Server running on http://0.0.0.0:${PORT}`)
