@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Arkx Admin — Nexabot Proxy</title>
+  <style>
+    :root { --bg:#0f1117; --surface:#1a1d27; --surface2:#242836; --border:#2e3348; --text:#e4e6f0; --muted:#8b8fa3; --accent:#6c5ce7; --accent-hover:#7f71ed; --green:#00b894; --yellow:#fdcb6e; --red:#e17055; --blue:#74b9ff; }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:var(--bg); color:var(--text); min-height:100vh; }
+
+    .header { background:var(--surface); border-bottom:1px solid var(--border); padding:16px 24px; display:flex; align-items:center; justify-content:space-between; }
+    .header h1 { font-size:20px; font-weight:700; }
+    .header h1 span { color:var(--accent); }
+    .header-right { display:flex; gap:12px; align-items:center; }
+    .admin-key-input { background:var(--surface2); border:1px solid var(--border); color:var(--text); padding:8px 12px; border-radius:6px; font-size:13px; width:200px; }
+
+    .btn { padding:8px 16px; border-radius:6px; border:none; font-size:13px; font-weight:600; cursor:pointer; transition:all .15s; }
+    .btn-primary { background:var(--accent); color:#fff; }
+    .btn-primary:hover { background:var(--accent-hover); }
+    .btn-green { background:var(--green); color:#fff; }
+    .btn-green:hover { opacity:.9; }
+    .btn-red { background:var(--red); color:#fff; }
+    .btn-red:hover { opacity:.9; }
+    .btn-yellow { background:var(--yellow); color:#000; }
+    .btn-yellow:hover { opacity:.9; }
+    .btn-sm { padding:5px 10px; font-size:12px; }
+    .btn-outline { background:transparent; border:1px solid var(--border); color:var(--muted); }
+    .btn-outline:hover { border-color:var(--accent); color:var(--accent); }
+
+    .stats-row { display:grid; grid-template-columns:repeat(5,1fr); gap:16px; padding:24px; }
+    .stat-card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:20px; }
+    .stat-card .label { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.5px; }
+    .stat-card .value { font-size:28px; font-weight:700; margin-top:4px; }
+    .stat-card .sub { color:var(--muted); font-size:12px; margin-top:4px; }
+
+    .tabs { display:flex; gap:0; padding:0 24px; border-bottom:1px solid var(--border); }
+    .tab { padding:12px 20px; cursor:pointer; font-size:14px; font-weight:500; color:var(--muted); border-bottom:2px solid transparent; transition:all .15s; }
+    .tab:hover { color:var(--text); }
+    .tab.active { color:var(--accent); border-bottom-color:var(--accent); }
+    .tab .count-badge { background:var(--red); color:#fff; font-size:10px; padding:2px 6px; border-radius:10px; margin-left:6px; font-weight:700; }
+
+    .table-container { padding:24px; }
+    table { width:100%; border-collapse:collapse; }
+    th { text-align:left; padding:12px 16px; font-size:12px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); border-bottom:1px solid var(--border); }
+    td { padding:12px 16px; border-bottom:1px solid var(--border); font-size:14px; }
+    tr:hover { background:var(--surface2); }
+
+    .badge { display:inline-block; padding:3px 8px; border-radius:4px; font-size:11px; font-weight:600; text-transform:uppercase; }
+    .badge-weekly { background:#6c5ce720; color:var(--accent); }
+    .badge-monthly { background:#00b89420; color:var(--green); }
+    .badge-topup { background:#74b9ff20; color:var(--blue); }
+    .badge-active,.badge-approved { background:#00b89420; color:var(--green); }
+    .badge-pending { background:#fdcb6e20; color:var(--yellow); }
+    .badge-suspended,.badge-expired { background:#e1705520; color:var(--red); }
+    .badge-warning { background:#fdcb6e20; color:var(--yellow); }
+
+    .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:100; justify-content:center; align-items:center; }
+    .modal-overlay.show { display:flex; }
+    .modal { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:24px; width:420px; max-width:90vw; }
+    .modal h3 { margin-bottom:16px; }
+    .modal label { display:block; font-size:13px; color:var(--muted); margin-bottom:4px; }
+    .modal input,.modal select { width:100%; padding:10px 12px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:14px; margin-bottom:12px; }
+    .modal-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:8px; }
+
+    .notif-panel { display:none; position:fixed; top:60px; right:24px; background:var(--surface); border:1px solid var(--border); border-radius:10px; width:360px; max-height:400px; overflow-y:auto; z-index:50; box-shadow:0 8px 32px rgba(0,0,0,.4); }
+    .notif-panel.show { display:block; }
+    .notif-header { padding:12px 16px; border-bottom:1px solid var(--border); font-weight:600; font-size:14px; display:flex; justify-content:space-between; align-items:center; }
+    .notif-item { padding:12px 16px; border-bottom:1px solid var(--border); font-size:13px; }
+    .notif-item:last-child { border-bottom:none; }
+    .notif-item.warning { border-left:3px solid var(--yellow); }
+    .notif-item.danger { border-left:3px solid var(--red); }
+    .notif-item .time { color:var(--muted); font-size:11px; margin-top:4px; }
+    .notif-empty { padding:24px; text-align:center; color:var(--muted); }
+
+    .bell-btn { position:relative; background:none; border:none; color:var(--text); font-size:20px; cursor:pointer; padding:4px; }
+    .bell-badge { position:absolute; top:-4px; right:-4px; background:var(--red); color:#fff; font-size:10px; width:16px; height:16px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; }
+    .bell-badge:empty { display:none; }
+
+    .toast { position:fixed; bottom:24px; right:24px; background:var(--green); color:#fff; padding:12px 20px; border-radius:8px; font-size:14px; font-weight:500; transform:translateY(100px); opacity:0; transition:all .3s; z-index:200; }
+    .toast.show { transform:translateY(0); opacity:1; }
+    .toast.error { background:var(--red); }
+
+    .empty-state { text-align:center; padding:48px; color:var(--muted); }
+    .empty-state .icon { font-size:48px; margin-bottom:12px; }
+
+    @media(max-width:768px) { .stats-row { grid-template-columns:repeat(2,1fr); } .header { flex-wrap:wrap; gap:8px; } }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h1>⚡ <span>Arkx</span> Admin</h1>
+  <div class="header-right">
+    <button class="bell-btn" onclick="toggleNotif()" title="Notifikasi">🔔 <span class="bell-badge" id="notifBadge"></span></button>
+    <input type="password" class="admin-key-input" id="adminKey" placeholder="Admin Key" value="change-me-admin-key">
+    <button class="btn btn-primary" onclick="loadData()">Load</button>
+  </div>
+</div>
+
+<div class="stats-row" id="statsRow">
+  <div class="stat-card"><div class="label">Total Member</div><div class="value" id="statTotal">-</div></div>
+  <div class="stat-card"><div class="label">Mingguan</div><div class="value" id="statWeekly" style="color:var(--accent)">-</div></div>
+  <div class="stat-card"><div class="label">Bulanan</div><div class="value" id="statMonthly" style="color:var(--green)">-</div></div>
+  <div class="stat-card"><div class="label">Topup</div><div class="value" id="statTopup" style="color:var(--blue)">-</div><div class="sub" id="statTopupSaldo">-</div></div>
+  <div class="stat-card"><div class="label">Menunggu Approve</div><div class="value" id="statPending" style="color:var(--yellow)">-</div></div>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('members',this)">👥 Semua Member</div>
+  <div class="tab" onclick="switchTab('pending',this)">⏳ Pending <span class="count-badge" id="pendingCount" style="display:none"></span></div>
+  <div class="tab" onclick="switchTab('topup',this)">💰 Topup</div>
+  <div class="tab" onclick="switchTab('log',this)">📋 Log</div>
+</div>
+
+<!-- All Members -->
+<div class="table-container" id="tabMembers">
+  <div style="display:flex;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <input type="text" class="admin-key-input" placeholder="Cari nama..." id="searchInput" oninput="filterMembers()" style="width:200px;">
+      <select class="admin-key-input" id="filterPlan" onchange="filterMembers()" style="width:120px;">
+        <option value="">Semua Plan</option>
+        <option value="weekly">Mingguan</option>
+        <option value="monthly">Bulanan</option>
+        <option value="topup">Topup</option>
+      </select>
+      <select class="admin-key-input" id="filterStatus" onchange="filterMembers()" style="width:120px;">
+        <option value="">Semua Status</option>
+        <option value="pending">Pending</option>
+        <option value="approved">Approved</option>
+        <option value="suspended">Suspended</option>
+      </select>
+    </div>
+    <button class="btn btn-green" onclick="showAddModal()">+ Tambah Member</button>
+  </div>
+  <table>
+    <thead>
+      <tr><th>ID</th><th>Nama</th><th>Plan</th><th>Saldo</th><th>Kadaluarsa</th><th>Sisa</th><th>Status</th><th>Aksi</th></tr>
+    </thead>
+    <tbody id="membersBody"></tbody>
+  </table>
+</div>
+
+<!-- Pending Tab -->
+<div class="table-container" id="tabPending" style="display:none">
+  <p style="color:var(--muted);margin-bottom:16px;">Member yang menunggu approval sebelum bisa generate.</p>
+  <table>
+    <thead><tr><th>ID</th><th>Nama</th><th>Plan</th><th>Saldo</th><th>Aksi</th></tr></thead>
+    <tbody id="pendingBody"></tbody>
+  </table>
+  <div class="empty-state" id="pendingEmpty" style="display:none"><div class="icon">✅</div>Tidak ada yang menunggu approve</div>
+</div>
+
+<!-- Topup Tab -->
+<div class="table-container" id="tabTopup" style="display:none">
+  <table>
+    <thead><tr><th>ID</th><th>Nama</th><th>Saldo</th><th>Sisa Generate</th><th>Aksi</th></tr></thead>
+    <tbody id="topupBody"></tbody>
+  </table>
+</div>
+
+<!-- Log Tab -->
+<div class="table-container" id="tabLog" style="display:none">
+  <div style="margin-bottom:16px;">
+    <select class="admin-key-input" id="logMemberId" style="width:240px;" onchange="loadLog()">
+      <option value="">Pilih member...</option>
+    </select>
+  </div>
+  <table>
+    <thead><tr><th>Waktu</th><th>Aksi</th><th>Biaya</th><th>Saldo</th></tr></thead>
+    <tbody id="logBody"></tbody>
+  </table>
+</div>
+
+<!-- Notifikasi -->
+<div class="notif-panel" id="notifPanel">
+  <div class="notif-header">🔔 Notifikasi <button class="btn btn-sm btn-outline" onclick="clearNotif()">Hapus</button></div>
+  <div id="notifList"></div>
+</div>
+
+<!-- Modal Tambah -->
+<div class="modal-overlay" id="addModal">
+  <div class="modal">
+    <h3>➕ Tambah Member</h3>
+    <label>Nama</label>
+    <input type="text" id="addName" placeholder="Nama member">
+    <label>Plan</label>
+    <select id="addPlan" onchange="toggleSaldoField()">
+      <option value="weekly">Mingguan (Unlimited)</option>
+      <option value="monthly">Bulanan (Unlimited)</option>
+      <option value="topup">Topup (Rp 250/generate)</option>
+    </select>
+    <div id="saldoField" style="display:none">
+      <label>Saldo Awal (Rp)</label>
+      <input type="number" id="addSaldo" placeholder="0" min="0">
+    </div>
+    <div style="background:var(--surface2);padding:10px;border-radius:6px;font-size:12px;color:var(--muted);margin-bottom:12px;">
+      ⚠️ Member baru status <strong>pending</strong>. Setelah bayar, klik <strong>Approve</strong> untuk mengaktifkan.
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('addModal')">Batal</button>
+      <button class="btn btn-green" onclick="addMember()">Tambah</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Topup -->
+<div class="modal-overlay" id="topupModal">
+  <div class="modal">
+    <h3>💰 Topup Saldo</h3>
+    <p style="color:var(--muted);margin-bottom:8px;">Member: <strong id="topupMemberName"></strong></p>
+    <p style="color:var(--muted);margin-bottom:12px;">Saldo: <strong id="topupCurrentSaldo"></strong></p>
+    <label>Jumlah Topup (Rp)</label>
+    <input type="number" id="topupAmount" placeholder="5000" min="250" step="250">
+    <div style="color:var(--muted);font-size:12px;margin-bottom:12px;">= <span id="topupGenEst">0</span> generate (Rp 250/pc)</div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('topupModal')">Batal</button>
+      <button class="btn btn-green" onclick="doTopup()">Topup</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Renew -->
+<div class="modal-overlay" id="renewModal">
+  <div class="modal">
+    <h3>🔄 Perpanjang</h3>
+    <p style="color:var(--muted);margin-bottom:12px;">Member: <strong id="renewMemberName"></strong></p>
+    <label>Perpanjang sebagai</label>
+    <select id="renewPlan">
+      <option value="weekly">Mingguan (+7 hari)</option>
+      <option value="monthly">Bulanan (+30 hari)</option>
+    </select>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('renewModal')">Batal</button>
+      <button class="btn btn-green" onclick="doRenew()">Perpanjang</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal API Key (hanya muncul saat tambah member) -->
+<div class="modal-overlay" id="keyModal">
+  <div class="modal">
+    <h3>🔑 API Key Member</h3>
+    <p style="color:var(--muted);margin-bottom:12px;">Simpan key ini! <strong>Hanya ditampilkan sekali</strong>.</p>
+    <div style="background:var(--surface2);padding:12px;border-radius:6px;font-family:monospace;font-size:12px;word-break:break-all;margin-bottom:12px;" id="keyValue"></div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="copyKey()">📋 Copy</button>
+      <button class="btn btn-green" onclick="closeModal('keyModal')">Tutup</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const COST = 250;
+let allMembers = [];
+let notifications = JSON.parse(localStorage.getItem('arkx_notifs') || '[]');
+let topupTarget = null, renewTarget = null;
+
+async function api(path, opts = {}) {
+  const key = document.getElementById('adminKey').value;
+  const res = await fetch(path, { ...opts, headers: { 'Content-Type': 'application/json', 'X-Admin-Key': key, ...(opts.headers||{}) } });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+async function loadData() {
+  try {
+    const [stats, members] = await Promise.all([api('/admin/stats'), api('/admin/members')]);
+    document.getElementById('statTotal').textContent = stats.total_members;
+    const plans = {}, statuses = {};
+    (stats.by_plan||[]).forEach(p => plans[p.plan] = p.count);
+    (stats.by_status||[]).forEach(s => statuses[s.status] = s.count);
+    document.getElementById('statWeekly').textContent = plans.weekly || 0;
+    document.getElementById('statMonthly').textContent = plans.monthly || 0;
+    document.getElementById('statTopup').textContent = plans.topup || 0;
+    document.getElementById('statTopupSaldo').textContent = `Total: Rp ${(stats.total_saldo||0).toLocaleString('id-ID')}`;
+    document.getElementById('statPending').textContent = statuses.pending || 0;
+
+    // Pending badge on tab
+    const pendBadge = document.getElementById('pendingCount');
+    const pendCount = statuses.pending || 0;
+    pendBadge.textContent = pendCount || '';
+    pendBadge.style.display = pendCount ? '' : 'none';
+
+    allMembers = members.members;
+    renderMembers(allMembers);
+    renderPending(allMembers);
+    renderTopup(allMembers);
+    populateLogSelect(allMembers);
+    checkNotifications(allMembers);
+    toast('Data dimuat');
+  } catch (e) { toast('Gagal: ' + e.message, true); }
+}
+
+function renderMembers(members) {
+  const tbody = document.getElementById('membersBody');
+  if (!members.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty-state"><div class="icon">👥</div>Belum ada member</td></tr>'; return; }
+  tbody.innerHTML = members.map(m => {
+    let sisa, statusBadge, statusClass;
+    const now = new Date();
+
+    if (m.plan === 'topup') {
+      sisa = `${Math.floor(m.saldo/COST)}x gen`;
+      if (m.saldo < COST) { statusBadge = 'Habis'; statusClass = 'suspended'; }
+      else if (m.saldo < COST*4) { statusBadge = 'Tipis'; statusClass = 'warning'; }
+      else { statusBadge = 'OK'; statusClass = 'approved'; }
+    } else {
+      sisa = `${m.sisa_hari} hari`;
+      if (m.expired) { statusBadge = 'Expired'; statusClass = 'expired'; }
+      else if (m.sisa_hari <= 2) { statusBadge = 'Hampir'; statusClass = 'warning'; }
+      else { statusBadge = 'OK'; statusClass = 'approved'; }
+    }
+
+    return `<tr>
+      <td>${m.id}</td>
+      <td><strong>${m.name}</strong></td>
+      <td><span class="badge badge-${m.plan}">${m.plan}</span></td>
+      <td>${m.plan==='topup'?'Rp '+m.saldo.toLocaleString('id-ID'):'-'}</td>
+      <td>${m.plan!=='topup'?new Date(m.expires_at).toLocaleDateString('id-ID'):'-'}</td>
+      <td>${sisa}</td>
+      <td><span class="badge badge-${m.status}">${m.status}</span></td>
+      <td style="white-space:nowrap;">
+        ${m.status==='pending'?`<button class="btn btn-sm btn-green" onclick="approve(${m.id})">✅ Approve</button>`:''}
+        ${m.status==='suspended'?`<button class="btn btn-sm btn-green" onclick="unsuspend(${m.id})">▶ Aktifkan</button>`:''}
+        ${m.status==='approved'?(m.plan==='topup'?`<button class="btn btn-sm btn-green" onclick="showTopupModal(${m.id},'${esc(m.name)}',${m.saldo})">+ Topup</button>`:`<button class="btn btn-sm btn-primary" onclick="showRenewModal(${m.id},'${esc(m.name)}')">🔄</button>`):''}
+        ${m.status==='approved'?`<button class="btn btn-sm btn-red" onclick="suspend(${m.id},'${esc(m.name)}')">⏸</button>`:''}
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function renderPending(members) {
+  const pending = members.filter(m => m.status === 'pending');
+  const tbody = document.getElementById('pendingBody');
+  const empty = document.getElementById('pendingEmpty');
+  if (!pending.length) { tbody.innerHTML = ''; empty.style.display = ''; return; }
+  empty.style.display = 'none';
+  tbody.innerHTML = pending.map(m => `<tr>
+    <td>${m.id}</td><td><strong>${m.name}</strong></td>
+    <td><span class="badge badge-${m.plan}">${m.plan}</span></td>
+    <td>${m.plan==='topup'?'Rp '+m.saldo.toLocaleString('id-ID'):'-'}</td>
+    <td>
+      <button class="btn btn-sm btn-green" onclick="approve(${m.id})">✅ Approve</button>
+      <button class="btn btn-sm btn-red" onclick="suspend(${m.id},'${esc(m.name)}')">❌ Tolak</button>
+    </td>
+  </tr>`).join('');
+}
+
+function renderTopup(members) {
+  const topup = members.filter(m => m.plan === 'topup');
+  document.getElementById('topupBody').innerHTML = topup.map(m => `<tr>
+    <td>${m.id}</td><td><strong>${m.name}</strong></td>
+    <td>Rp ${m.saldo.toLocaleString('id-ID')}</td><td>${Math.floor(m.saldo/COST)}x</td>
+    <td><button class="btn btn-sm btn-green" onclick="showTopupModal(${m.id},'${esc(m.name)}',${m.saldo})">+ Topup</button></td>
+  </tr>`).join('');
+}
+
+function filterMembers() {
+  const q = document.getElementById('searchInput').value.toLowerCase();
+  const plan = document.getElementById('filterPlan').value;
+  const status = document.getElementById('filterStatus').value;
+  let f = allMembers;
+  if (q) f = f.filter(m => m.name.toLowerCase().includes(q));
+  if (plan) f = f.filter(m => m.plan === plan);
+  if (status) f = f.filter(m => m.status === status);
+  renderMembers(f);
+}
+
+function switchTab(tab, el) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  ['Members','Pending','Topup','Log'].forEach(t => document.getElementById('tab'+t).style.display = 'none');
+  document.getElementById('tab' + tab.charAt(0).toUpperCase() + tab.slice(1)).style.display = '';
+}
+
+function esc(s) { return s.replace(/'/g,"\\'"); }
+function showAddModal() { document.getElementById('addModal').classList.add('show'); }
+function toggleSaldoField() { document.getElementById('saldoField').style.display = document.getElementById('addPlan').value==='topup'?'':'none'; }
+function showTopupModal(id,name,saldo) { topupTarget=id; document.getElementById('topupMemberName').textContent=name; document.getElementById('topupCurrentSaldo').textContent='Rp '+saldo.toLocaleString('id-ID'); document.getElementById('topupAmount').value=''; document.getElementById('topupGenEst').textContent='0'; document.getElementById('topupModal').classList.add('show'); }
+function showRenewModal(id,name) { renewTarget=id; document.getElementById('renewMemberName').textContent=name; document.getElementById('renewModal').classList.add('show'); }
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+document.getElementById('topupAmount').addEventListener('input',function(){ document.getElementById('topupGenEst').textContent=Math.floor((parseInt(this.value)||0)/COST); });
+
+// ── Actions ──
+async function addMember() {
+  try {
+    const data = { name:document.getElementById('addName').value, plan:document.getElementById('addPlan').value };
+    if (data.plan==='topup') data.saldo=parseInt(document.getElementById('addSaldo').value)||0;
+    const res = await api('/admin/members',{method:'POST',body:JSON.stringify(data)});
+    closeModal('addModal');
+    // Tampilkan API key sekali
+    document.getElementById('keyValue').textContent = res.api_key;
+    document.getElementById('keyModal').classList.add('show');
+    loadData();
+  } catch(e) { toast('Gagal: '+e.message,true); }
+}
+
+function copyKey() {
+  navigator.clipboard.writeText(document.getElementById('keyValue').textContent);
+  toast('API key dicopy!');
+}
+
+async function approve(id) {
+  try {
+    const res = await api(`/admin/members/${id}/approve`,{method:'POST'});
+    toast(res.message); loadData();
+  } catch(e) { toast('Gagal: '+e.message,true); }
+}
+
+async function suspend(id,name) {
+  if(!confirm(`Tangguhkan ${name}?`)) return;
+  try { await api(`/admin/members/${id}/suspend`,{method:'POST'}); toast(`${name} ditangguhkan`); loadData(); } catch(e){toast('Gagal: '+e.message,true);}
+}
+
+async function unsuspend(id) {
+  try { await api(`/admin/members/${id}/unsuspend`,{method:'POST'}); toast('Diaktifkan kembali'); loadData(); } catch(e){toast('Gagal: '+e.message,true);}
+}
+
+async function doTopup() {
+  try {
+    const amt=parseInt(document.getElementById('topupAmount').value);
+    await api(`/admin/members/${topupTarget}/topup`,{method:'POST',body:JSON.stringify({amount:amt})});
+    toast(`💰 +Rp ${amt.toLocaleString('id-ID')}`); closeModal('topupModal'); loadData();
+  } catch(e){toast('Gagal: '+e.message,true);}
+}
+
+async function doRenew() {
+  try {
+    const plan=document.getElementById('renewPlan').value;
+    await api(`/admin/members/${renewTarget}/renew`,{method:'POST',body:JSON.stringify({plan})});
+    toast('🔄 Diperpanjang!'); closeModal('renewModal'); loadData();
+  } catch(e){toast('Gagal: '+e.message,true);}
+}
+
+async function deactivate(id) {
+  if(!confirm('Nonaktifkan member ini?')) return;
+  try { await api(`/admin/members/${id}/deactivate`,{method:'POST'}); toast('Dinonaktifkan'); loadData(); } catch(e){toast('Gagal: '+e.message,true);}
+}
+
+// ── Log ──
+function populateLogSelect(m) {
+  document.getElementById('logMemberId').innerHTML='<option value="">Pilih member...</option>'+m.map(x=>`<option value="${x.id}">${x.name} (${x.plan})</option>`).join('');
+}
+async function loadLog() {
+  const id=document.getElementById('logMemberId').value; if(!id)return;
+  try {
+    const d=await api(`/admin/members/${id}/usage?limit=50`);
+    document.getElementById('logBody').innerHTML=d.logs.map(l=>`<tr>
+      <td>${new Date(l.created_at).toLocaleString('id-ID')}</td>
+      <td><span class="badge badge-${l.action==='generate'?'weekly':l.action==='topup'?'topup':'active'}">${l.action}</span></td>
+      <td>${l.cost>0?'Rp '+l.cost.toLocaleString('id-ID'):l.cost<0?'<span style="color:var(--green)">+Rp '+Math.abs(l.cost).toLocaleString('id-ID')+'</span>':'-'}</td>
+      <td>Rp ${(l.saldo_after||0).toLocaleString('id-ID')}</td>
+    </tr>`).join('');
+  } catch(e){toast('Gagal: '+e.message,true);}
+}
+
+// ── Notifications ──
+function checkNotifications(members) {
+  members.forEach(m => {
+    const key=`n_${m.id}`; if(localStorage.getItem(key))return;
+    let type,msg;
+    if(m.plan==='topup'){if(m.saldo<COST){type='danger';msg=`${m.name}: saldo habis!`;}else if(m.saldo<COST*4){type='warning';msg=`${m.name}: saldo Rp ${m.saldo.toLocaleString('id-ID')}`;}}
+    else if(m.expired){type='danger';msg=`${m.name}: langganan expired!`;}
+    else if(m.sisa_hari<=2){type='warning';msg=`${m.name}: sisa ${m.sisa_hari} hari`;}
+    if(m.status==='pending'){type='warning';msg=`${m.name}: menunggu approve (${m.plan})`;}
+    if(type){notifications.unshift({type,msg,time:new Date().toISOString()});localStorage.setItem(key,'1');}
+  });
+  localStorage.setItem('arkx_notifs',JSON.stringify(notifications));
+  document.getElementById('notifBadge').textContent=notifications.length||'';
+}
+function toggleNotif(){document.getElementById('notifPanel').classList.toggle('show');renderNotifList();}
+function renderNotifList(){const l=document.getElementById('notifList');if(!notifications.length){l.innerHTML='<div class="notif-empty">Tidak ada notifikasi 🎉</div>';return;}l.innerHTML=notifications.map(n=>`<div class="notif-item ${n.type}">${n.type==='danger'?'🚨':'⚠️'} ${n.msg}<div class="time">${new Date(n.time).toLocaleString('id-ID')}</div></div>`).join('');}
+function clearNotif(){notifications=[];localStorage.removeItem('arkx_notifs');Object.keys(localStorage).filter(k=>k.startsWith('n_')).forEach(k=>localStorage.removeItem(k));renderNotifList();document.getElementById('notifBadge').textContent='';}
+
+function toast(msg,err=false){const e=document.getElementById('toast');e.textContent=msg;e.className='toast show'+(err?' error':'');setTimeout(()=>e.classList.remove('show'),3000);}
+
+loadData(); setInterval(loadData,60000);
+document.querySelectorAll('.modal-overlay').forEach(el=>el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('show');}));
+</script>
+</body>
+</html>

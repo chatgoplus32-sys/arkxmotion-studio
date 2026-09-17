@@ -202,12 +202,18 @@ Tiga fase:
 Hook-nya cuma wrapper tipis: `.git/hooks/pre-commit` memanggil `check.sh --staged`,
 yang memilih fase menurut berkas yang di-stage — ada `*.sh` → jalankan tes; ada
 perubahan di `server/`, `api/`, `package.json`, atau `tsconfig*.json` repo produk
-→ jalankan typecheck; fase konfigurasi selalu jalan. Jadi commit dokumentasi
-selesai dalam sekejap, sementara perubahan skrip ikut diuji.
+→ jalankan typecheck; fase konfigurasi selalu jalan. Terpasang di **kedua** repo
+(workspace dan produk), dan keduanya menunjuk `check.sh` milik workspace — repo
+produk tidak menyimpan salinannya sendiri yang harus ikut dirawat. Hasilnya:
+commit dokumentasi ≈1 detik, perubahan `server/` ≈11 detik (konfigurasi +
+typecheck), perubahan skrip ≈95 detik (konfigurasi + seluruh suite).
 
 Hook yang sudah ada tidak pernah ditimpa: kalau `pre-commit` bukan buatan
 `check.sh`, pemasangan ditolak dan menyarankan `--force` (hook lama lalu
-disimpan sebagai `pre-commit.backup-<stamp>`).
+disimpan sebagai `pre-commit.backup-<stamp>`). Pengenalannya lewat penanda
+`penanda: check.sh-hook`, bukan sekadar nama berkasnya — hook orang lain yang
+kebetulan menyebut "check.sh" tidak diklaim sebagai milik sendiri. Hook versi
+lama yang belum berpenanda tetap dikenali dan di-upgrade tanpa `--force`.
 
 ## Catatan
 

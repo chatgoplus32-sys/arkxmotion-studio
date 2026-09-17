@@ -29,6 +29,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PRODUCT="$ROOT/arkxmotion-studio"
 SERVER_DEFAULT_PORT=6000
 
+# Penanda hook yang dipasang check.sh. Dipakai untuk mengenali hook sendiri —
+# mencocokkan nama "check.sh" saja tidak cukup, karena hook orang lain pun bisa
+# menyebut nama itu di komentarnya.
+HOOK_MARKER='penanda: check.sh-hook'
+
 RUN_CONFIG=1
 RUN_TESTS=1
 RUN_TYPECHECK=1
@@ -190,6 +195,13 @@ select_phases_for_staged() {
 # ── Pasang / lepas hook ─────────────────────────────────────────────────────
 hook_path() { printf '%s/.git/hooks/pre-commit' "$1"; }
 
+# Hook dianggap milik kita kalau punya penanda, atau memakai komentar versi lama
+# (sebelum penanda ada) — supaya hook lama bisa dikenali dan di-upgrade, bukan
+# ditolak sebagai hook asing.
+is_our_hook() {
+  grep -qE "penanda: check\.sh-hook|Dipasang oleh check\.sh" "$1" 2>/dev/null
+}
+
 install_hook() { # $1 = repo, $2 = label
   local repo="$1" label="$2"
   if [ ! -d "$repo/.git" ]; then
@@ -198,7 +210,7 @@ install_hook() { # $1 = repo, $2 = label
   fi
   local hook; hook="$(hook_path "$repo")"
   mkdir -p "$(dirname "$hook")"
-  if [ -e "$hook" ] && ! grep -q 'check\.sh' "$hook" 2>/dev/null; then
+  if [ -e "$hook" ] && ! is_our_hook "$hook"; then
     if [ "$FORCE" -eq 1 ]; then
       cp "$hook" "$hook.backup-$(date +%Y%m%d-%H%M%S)"
       note "$label: hook lama disimpan sebagai $(basename "$hook").backup-*"
@@ -207,10 +219,14 @@ install_hook() { # $1 = repo, $2 = label
       return 0
     fi
   fi
+  # Selalu menunjuk check.sh milik workspace ($ROOT), bukan milik repo yang
+  # dipasangi hook: check.sh hanya ada di root workspace, dan repo produk akan
+  # butuh salinan yang ikut dirawat kalau ditunjuk ke dirinya sendiri.
   cat > "$hook" <<EOF
 #!/usr/bin/env bash
-# Dipasang oleh check.sh — jalankan pemeriksaan yang relevan dengan berkas staged.
-exec "$repo/check.sh" --staged
+# $HOOK_MARKER — dipasang oleh check.sh ($ROOT)
+# Periksa hal yang relevan dengan berkas yang di-stage.
+exec "$ROOT/check.sh" --staged
 EOF
   chmod +x "$hook" 2>/dev/null
   ok "$label: pre-commit hook dipasang ($hook)"
@@ -223,7 +239,7 @@ uninstall_hook() { # $1 = repo, $2 = label
     note "$label: tidak ada hook untuk dilepas"
     return 0
   fi
-  if grep -q 'check\.sh' "$hook" 2>/dev/null; then
+  if is_our_hook "$hook"; then
     rm -f "$hook"
     ok "$label: hook dilepas"
   else

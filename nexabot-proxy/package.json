@@ -1,0 +1,17 @@
+{
+  "name": "nexabot-proxy",
+  "version": "1.0.0",
+  "description": "Proxy server untuk manajemen langganan member Arkx — 1 master key Nexabot, banyak member",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "init-db": "node init-db.js",
+    "seed": "node init-db.js --seed"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0",
+    "dotenv": "^16.4.0",
+    "express": "^4.21.0"
+  }
+}

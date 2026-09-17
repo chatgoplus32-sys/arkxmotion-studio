@@ -118,6 +118,12 @@ STUB
   chmod +x "$SANDBOX/bin/npm" "$SANDBOX/bin/netstat"
   reset_product
   reset_state
+
+  # Sandbox meniru keadaan nyata: root workspace dan folder produk sama-sama repo
+  # git, supaya pemasangan hook bisa diuji apa adanya. Dilakukan setelah
+  # `reset_product` karena folder produknya dibuat di sana.
+  git -C "$SANDBOX" init -q 2>/dev/null || true
+  git -C "$SANDBOX/arkxmotion-studio" init -q 2>/dev/null || true
 }
 
 # Tiap kasus berdiri sendiri: .freebuff dan scratch/logs dikosongkan dulu,
@@ -415,6 +421,62 @@ out="$(run_check --staged)"
 rc=$?
 check_eq 'exit 0' '0' "$rc"
 check_contains 'menandai mode staged' "$out" 'Mode staged'
+
+case_start '28. --install-hook menaruh hook yang menunjuk check.sh milik workspace'
+prepare_dev_case
+out="$(run_check --install-hook --product)"
+rc=$?
+hook="$SANDBOX/arkxmotion-studio/.git/hooks/pre-commit"
+check_eq 'exit 0' '0' "$rc"
+check_file 'hook produk terpasang' "$hook"
+check_contains 'menunjuk check.sh workspace, bukan salinan di repo produk' "$(cat "$hook" 2>/dev/null)" "exec \"$SANDBOX/check.sh\" --staged"
+check_contains 'laporan menyebut repo produk' "$out" 'repo produk: pre-commit hook dipasang'
+
+case_start '29. hook yang sudah ada tidak ditimpa tanpa --force'
+printf '#!/usr/bin/env bash\necho "hook lama milik orang lain"\n' \
+  > "$SANDBOX/arkxmotion-studio/.git/hooks/pre-commit"
+out="$(run_check --install-hook --product)"
+rc=$?
+check_eq 'exit 1' '1' "$rc"
+check_contains 'menolak dengan alasan yang jelas' "$out" 'sudah ada pre-commit hook lain'
+check_contains 'isi hook lama utuh' "$(cat "$SANDBOX/arkxmotion-studio/.git/hooks/pre-commit")" 'hook lama milik orang lain'
+check_contains 'menyarankan --force' "$out" '--force'
+
+case_start '30. --force mengganti hook lama berikut cadangannya'
+out="$(run_check --install-hook --product --force)"
+rc=$?
+check_eq 'exit 0' '0' "$rc"
+check_contains 'hook baru menunjuk check.sh workspace' \
+  "$(cat "$SANDBOX/arkxmotion-studio/.git/hooks/pre-commit")" "exec \"$SANDBOX/check.sh\" --staged"
+check_eq 'hook lama disimpan sebagai cadangan' '1' \
+  "$(ls "$SANDBOX/arkxmotion-studio/.git/hooks" | grep -c '^pre-commit\.backup-')"
+check_contains 'cadangan berisi isi hook lama' \
+  "$(cat "$SANDBOX/arkxmotion-studio/.git/hooks"/pre-commit.backup-* 2>/dev/null)" 'hook lama milik orang lain'
+
+case_start '31a. hook check.sh versi lama dikenali lalu di-upgrade tanpa --force'
+printf '#!/usr/bin/env bash\n# Dipasang oleh check.sh — versi lama tanpa penanda\nexec "%s/check.sh" --staged\n' "$SANDBOX" \
+  > "$SANDBOX/arkxmotion-studio/.git/hooks/pre-commit"
+backups_before="$(ls "$SANDBOX/arkxmotion-studio/.git/hooks" | grep -c '^pre-commit\.backup-')"
+out="$(run_check --install-hook --product)"
+rc=$?
+backups_after="$(ls "$SANDBOX/arkxmotion-studio/.git/hooks" | grep -c '^pre-commit\.backup-')"
+check_eq 'exit 0 tanpa perlu --force' '0' "$rc"
+check_contains 'hook versi lama di-upgrade ke format berpenanda' \
+  "$(cat "$SANDBOX/arkxmotion-studio/.git/hooks/pre-commit")" 'penanda: check.sh-hook'
+check_eq 'tidak ada cadangan baru untuk hook sendiri' "$backups_before" "$backups_after"
+
+case_start '31. hook asing yang menyebut nama check.sh tidak diklaim sebagai milik sendiri'
+# Sengaja menyebut "check.sh" supaya terbukti yang menentukan adalah penanda,
+# bukan sekadar nama berkasnya.
+printf '#!/usr/bin/env bash\necho "ini bukan hook check.sh milik kalian"\n' \
+  > "$SANDBOX/arkxmotion-studio/.git/hooks/pre-commit"
+out="$(run_check --uninstall-hook --product)"
+check_eq 'menolak melepas hook asing' '1' "$?"
+check_contains 'alasannya disebut' "$out" 'bukan buatan check.sh'
+check_file 'hook asing tetap ada' "$SANDBOX/arkxmotion-studio/.git/hooks/pre-commit"
+run_check --install-hook --product --force >/dev/null
+run_check --uninstall-hook --product >/dev/null
+check_no_file 'hook buatan check.sh terlepas' "$SANDBOX/arkxmotion-studio/.git/hooks/pre-commit"
 
 # ── Ringkasan ───────────────────────────────────────────────────────────────
 printf '\n────────────────────────────────────────\n'
