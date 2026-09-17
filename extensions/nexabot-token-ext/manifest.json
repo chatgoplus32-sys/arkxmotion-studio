@@ -2,14 +2,15 @@
   "manifest_version": 3,
   "name": "NexaBot Session Cookie Manager",
   "description": "Auto-capture cookie session nexabot.id (termasuk HttpOnly) — auto-sync ke app ARKx Motion Studio, tanpa Copy as cURL",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "minimum_chrome_version": "88",
   "permissions": [
     "storage",
     "activeTab",
     "cookies",
     "notifications",
-    "scripting"
+    "scripting",
+    "alarms"
   ],
   "host_permissions": [
     "https://nexabot.id/*",
@@ -25,7 +26,9 @@
         "https://nexabot.id/*",
         "https://*.nexabot.id/*"
       ],
-      "js": ["content.js"],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ],

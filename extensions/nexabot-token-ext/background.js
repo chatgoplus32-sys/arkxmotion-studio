@@ -10,7 +10,10 @@
 // extension ini yang mengambil cookie itu untuk user:
 //   1. auto-grab saat tab nexabot.id selesai load / cookie berubah,
 //   2. kirim ke app lewat POST /api/sync-tokens { provider:'nexabot', kind:'cookie' },
-//   3. sisakan tombol "Copy Cookie" satu klik sebagai cadangan manual.
+//   3. sisakan tombol "Copy Cookie" satu klik sebagai cadangan manual,
+//   4. kirim ULANG cookie tersimpan secara berkala, supaya sesi pulih sendiri
+//      kalau kiriman pertama tidak sampai (app belum dibuka, JWT app
+//      kedaluwarsa, server app baru restart) tanpa user menekan apa pun.
 //
 // Di app yang sudah dideploy, endpoint sync itu butuh JWT user (credential
 // disimpan per user, bukan queue publik). JWT-nya diambil otomatis dari tab app
@@ -21,6 +24,13 @@ const APP_URL_KEY = 'nxb_app_url'
 const APP_TOKEN_KEY = 'nxb_app_token'
 const APP_TOKEN_ORIGIN_KEY = 'nxb_app_token_origin'
 const SYNC_MSG_KEY = 'nxb_last_sync_msg'
+
+// Kirim ulang berkala (lihat resyncStoredSession di bawah).
+const RESYNC_ALARM = 'nxb-resync'
+const RESYNC_PERIOD_MINUTES = 15
+// Selaras dengan TTL cookie di server (24 jam): lebih tua dari ini pasti
+// dipangkas antrean, jadi mengirimnya ulang tidak ada gunanya.
+const RESYNC_MAX_AGE_MS = 24 * 60 * 60 * 1000
 
 const DEFAULT_APP_URL = 'http://localhost:6000'
 
@@ -161,6 +171,13 @@ async function syncToApp(cookies, source) {
   if (!base) return
 
   const token = await getAppToken()
+  // Tanpa JWT app, POST-nya pasti ditolak 401. Lebih baik tidak dikirim dan
+  // sebabnya disebutkan, daripada gagal dengan pesan yang tidak bisa ditindak.
+  if (!token) {
+    await setSyncStatus(false, 'Butuh login di app: buka tab app ARKXMotion, lalu coba lagi')
+    return
+  }
+
   try {
     const res = await fetch(base + '/api/sync-tokens', {
       method: 'POST',
@@ -192,6 +209,83 @@ async function syncToApp(cookies, source) {
     await setSyncStatus(false, 'Gagal sync: ' + e.message)
   }
 }
+
+// ── Kirim ulang cookie tersimpan secara berkala ─────────────────────────────
+// Extension dulu hanya mengirim cookie SAAT MENANGKAP (tab nexabot.id selesai
+// load atau cookie berubah). Kalau kiriman itu tidak sampai — app sedang tidak
+// dibuka, JWT app kedaluwarsa, atau server app baru saja restart — cookie yang
+// sudah susah payah diambil itu tidak pernah dikirim ulang, dan user harus
+// menekan sync manual atau membuka nexabot.id lagi. Padahal menekan tombol
+// adalah hal yang justru ingin dihindari user.
+//
+// Jadi cookie yang sudah tersimpan dikirim ulang secara berkala. Aman diulang:
+// server menyimpan antrean per user+provider dan mengabaikan credential yang
+// sama persis, jadi kiriman kedua tidak menggandakan apa pun. Kalau app sudah
+// menyimpannya, ini hanya mengisi ulang antrean dengan nilai yang sama.
+//
+// Batas umurnya sengaja ada: server memangkas credential jenis cookie setelah
+// 24 jam, jadi mengirim ulang cookie yang lebih tua dari itu hanya menghasilkan
+// baris yang pasti dibuang. Selebihnya extension TIDAK berpura-pura bisa
+// memperbaiki: cookie baru hanya bisa didapat dengan membuka nexabot.id, dan
+// statusnya mengatakan itu apa adanya.
+async function resyncStoredSession(reason) {
+  const data = await chrome.storage.local.get(STORAGE_KEY)
+  const session = data[STORAGE_KEY]
+  // Belum pernah menangkap apa pun: diam saja, jangan menimpa status terakhir
+  // dengan pesan yang tidak ada hubungannya dengan yang sedang dilihat user.
+  if (!session || !session.cookies) return { ok: false, error: 'no-session' }
+
+  const umur = Date.now() - Number(session.capturedAt || 0)
+  if (!(umur >= 0) || umur > RESYNC_MAX_AGE_MS) {
+    await setSyncStatus(
+      false,
+      'Cookie tersimpan sudah lebih dari 24 jam — buka nexabot.id supaya extension menangkap yang baru',
+    )
+    setBadge('!', '#ef4444')
+    return { ok: false, error: 'stale-session' }
+  }
+
+  return syncToApp(session.cookies, 'auto-resync:' + reason)
+}
+
+/**
+ * Pastikan alarm kirim-ulang terpasang.
+ *
+ * `alarms.get` dipakai lebih dulu, bukan langsung `create`: service worker MV3
+ * bangun-tidur berkali-kali, dan `create` dengan nama yang sama MENGGANTI
+ * jadwalnya — termasuk delay awalnya. Kalau dipanggil tiap kali worker bangun,
+ * pengiriman ulang akan terjadi jauh lebih sering daripada tiap 15 menit.
+ */
+async function ensureResyncAlarm() {
+  try {
+    const sudahAda = await chrome.alarms.get(RESYNC_ALARM)
+    if (sudahAda) return
+    chrome.alarms.create(RESYNC_ALARM, { delayInMinutes: 1, periodInMinutes: RESYNC_PERIOD_MINUTES })
+  } catch {
+    // Permission "alarms" tidak ada / API tidak tersedia. Penangkapan cookie
+    // tetap harus jalan, jadi kegagalan di sini tidak boleh menjatuhkan sisanya.
+    setBadge('!', '#ef4444')
+  }
+}
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (!alarm || alarm.name !== RESYNC_ALARM) return
+  resyncStoredSession('alarm')
+})
+
+// Browser dijalankan lagi (termasuk setelah komputer restart): kirim ulang
+// sekali di awal, jangan tunggu siklus 15 menit pertama.
+chrome.runtime.onStartup.addListener(() => {
+  ensureResyncAlarm()
+  resyncStoredSession('browser-startup')
+})
+
+chrome.runtime.onInstalled.addListener(() => {
+  ensureResyncAlarm()
+})
+
+// Worker juga bisa dimulai ulang tanpa event apa pun; alarm-nya dipastikan ada.
+ensureResyncAlarm()
 
 // ── Ambil cookie + simpan + auto-sync ───────────────────────────────────────
 let grabbing = null

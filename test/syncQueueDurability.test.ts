@@ -121,10 +121,36 @@ async function matikanServer(): Promise<void> {
     try {
       await fetch(`${baseLama}/api/health`)
     } catch {
-      return
+      break
     }
     await new Promise((r) => setTimeout(r, 500))
   }
+
+  // Port tertutup BELUM berarti prosesnya selesai membongkar diri: handle WAL-nya
+  // bisa masih dipegang, dan membuka database saat itu gagal dengan
+  // SQLITE_IOERR_TRUNCATE. Ini pernah membuat tes ini flaky — jadi langkah
+  // berikutnya yang menyentuh berkas DB menunggu sampai berkasnya bisa dibuka.
+  for (let i = 0; i < 25; i++) {
+    try {
+      const coba = new Database(DB_PATH)
+      coba.close()
+      return
+    } catch {
+      await new Promise((r) => setTimeout(r, 200))
+    }
+  }
+}
+
+/**
+ * Pastikan ada server yang hidup sebelum tes yang membutuhkannya.
+ *
+ * Cek cepat dulu: kalau prosesnya masih jalan, tidak perlu /api/health — endpoint
+ * itu memeriksa provider dan butuh ~2 detik, dan tes ini tidak sedang menguji itu.
+ */
+async function pastikanServerHidup(): Promise<void> {
+  if (anak && anak.exitCode === null) return
+  anak = null
+  await nyalakanServer()
 }
 
 async function kirim(id: number, body: unknown) {
@@ -152,21 +178,40 @@ async function consume(id: number, provider: string, token: string) {
   return { status: res.status, body: (await res.json().catch(() => null)) as any }
 }
 
-/** Baris yang benar-benar ada di DB — bukti fisik, tidak bergantung proses server. */
-function barisDiDb(userId: number): number {
-  const db = new Database(DB_PATH)
-  const row = db.prepare('SELECT COUNT(*) AS n FROM sync_token_queue WHERE user_id = ?').get(userId) as { n: number }
-  db.close()
-  return row.n
+/**
+ * Baris yang benar-benar ada di DB — bukti fisik, tidak bergantung pada proses
+ * server yang mana pun. Retry dipakai karena berkas ini sempat dipegang proses
+ * yang baru dibunuh.
+ */
+async function barisDiDb(userId: number): Promise<number> {
+  for (let i = 0; i < 25; i++) {
+    try {
+      const db = new Database(DB_PATH)
+      const row = db.prepare('SELECT COUNT(*) AS n FROM sync_token_queue WHERE user_id = ?').get(userId) as { n: number }
+      db.close()
+      return row.n
+    } catch {
+      await new Promise((r) => setTimeout(r, 200))
+    }
+  }
+  throw new Error('database tidak bisa dibuka setelah proses sebelumnya berhenti')
 }
 
 /** Sisipkan baris "kuno" langsung ke DB untuk menguji TTL tanpa menunggu. */
-function sisipkanKuno(userId: number, provider: string, token: string, kind: string, umurMs: number) {
-  const db = new Database(DB_PATH)
-  db.prepare(
-    'INSERT INTO sync_token_queue (user_id, provider, token, kind, source, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-  ).run(userId, provider, token, kind, 'test', Date.now() - umurMs)
-  db.close()
+async function sisipkanKuno(userId: number, provider: string, token: string, kind: string, umurMs: number) {
+  for (let i = 0; i < 25; i++) {
+    try {
+      const db = new Database(DB_PATH)
+      db.prepare(
+        'INSERT INTO sync_token_queue (user_id, provider, token, kind, source, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      ).run(userId, provider, token, kind, 'test', Date.now() - umurMs)
+      db.close()
+      return
+    } catch {
+      await new Promise((r) => setTimeout(r, 200))
+    }
+  }
+  throw new Error('database tidak bisa ditulis untuk menyiapkan data TTL')
 }
 
 after(async () => {
@@ -213,8 +258,8 @@ test('cookie bertahan saat server restart — inti perbaikannya', async () => {
   await matikanServer()
 
   // Bukti fisik dulu: barisnya memang ada di DB, bukan di memori proses lama.
-  assert.equal(barisDiDb(PENGGUNA.A), 1, 'cookie tidak tersimpan di DB sebelum restart')
-  assert.equal(barisDiDb(PENGGUNA.B), 1)
+  assert.equal(await barisDiDb(PENGGUNA.A), 1, 'cookie tidak tersimpan di DB sebelum restart')
+  assert.equal(await barisDiDb(PENGGUNA.B), 1)
 
   // Proses baru, port baru, database yang sama.
   await nyalakanServer()
@@ -233,6 +278,8 @@ test('cookie bertahan saat server restart — inti perbaikannya', async () => {
 })
 
 test('consume setelah restart hanya menghapus milik sendiri', async () => {
+  await pastikanServerHidup()
+
   const hapus = await consume(PENGGUNA.A, 'nexabot', COOKIE_A)
   assert.equal(hapus.body.removed, 1)
 
@@ -244,12 +291,14 @@ test('consume setelah restart hanya menghapus milik sendiri', async () => {
 })
 
 test('umur menentukan nasib: cookie 24 jam, token 1 jam', async () => {
+  await pastikanServerHidup()
+
   const DUA_JAM = 2 * 60 * 60 * 1000
   const DUA_PULUH_LIMA_JAM = 25 * 60 * 60 * 1000
 
-  sisipkanKuno(PENGGUNA.C, 'nexabot-lama', 'session=cookie-2-jam', 'cookie', DUA_JAM)
-  sisipkanKuno(PENGGUNA.C, 'nexabot-lama', 'session=cookie-25-jam', 'cookie', DUA_PULUH_LIMA_JAM)
-  sisipkanKuno(PENGGUNA.C, 'nexabot-lama', 'jwt-2-jam', 'token', DUA_JAM)
+  await sisipkanKuno(PENGGUNA.C, 'nexabot-lama', 'session=cookie-2-jam', 'cookie', DUA_JAM)
+  await sisipkanKuno(PENGGUNA.C, 'nexabot-lama', 'session=cookie-25-jam', 'cookie', DUA_PULUH_LIMA_JAM)
+  await sisipkanKuno(PENGGUNA.C, 'nexabot-lama', 'jwt-2-jam', 'token', DUA_JAM)
 
   const hasil = await ambil(PENGGUNA.C, 'nexabot-lama', { full: true })
   assert.equal(hasil.body.count, 1, 'cookie 2 jam seharusnya masih hidup (TTL cookie 24 jam)')
@@ -261,6 +310,8 @@ test('umur menentukan nasib: cookie 24 jam, token 1 jam', async () => {
 })
 
 test('credential yang sama tidak digandakan, dan hanya 10 terbaru disimpan', async () => {
+  await pastikanServerHidup()
+
   const ulang1 = await kirim(PENGGUNA.D, { provider: 'nexabot', token: 'session=d0', kind: 'cookie' })
   assert.equal(ulang1.body.tokenCount, 1)
 
