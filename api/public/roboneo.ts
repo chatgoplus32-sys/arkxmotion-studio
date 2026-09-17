@@ -33,7 +33,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   console.log(`[roboneo] path=${path} tokenLen=${String(token).length}`)
 
   try {
-    const gatewayRes = await fetch(`${GATEWAY_URL}/${path}`, {
+    const gatewayRes = await fetchWithTimeout(`${GATEWAY_URL}/${path}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

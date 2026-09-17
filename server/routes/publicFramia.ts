@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from '../lib/fetchTimeout'
 import { Router, Request, Response } from 'express'
 
 const router = Router()
@@ -19,7 +20,7 @@ router.all('/', async (req: Request, res: Response) => {
     const fetchOpts: RequestInit = { method: req.method, headers }
     if (req.method === 'POST' && req.body) fetchOpts.body = JSON.stringify(req.body)
 
-    const r = await fetch(`${FRAMIA_UPSTREAM}/${subpath}`, fetchOpts)
+    const r = await fetchWithTimeout(`${FRAMIA_UPSTREAM}/${subpath}`, fetchOpts)
     const text = await r.text()
     let data: any
     try { data = JSON.parse(text) } catch { data = text }

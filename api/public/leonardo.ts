@@ -33,7 +33,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       fetchOpts.body = JSON.stringify(body)
     }
 
-    const apiRes = await fetch(url, fetchOpts)
+    const apiRes = await fetchWithTimeout(url, fetchOpts)
     const data = await apiRes.json().catch(() => null)
 
     console.log(`[leonardo-proxy] ${method || 'GET'} ${path} → ${apiRes.status}`)

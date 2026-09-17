@@ -37,7 +37,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       headers['X-GSK-CLI-Version'] = '1.7.1'
     }
 
-    const proxyRes = await fetch(upstreamUrl, {
+    const proxyRes = await fetchWithTimeout(upstreamUrl, {
       method: req.method,
       headers,
       body: req.method !== 'GET' && req.method !== 'HEAD' ? rawBody : undefined,

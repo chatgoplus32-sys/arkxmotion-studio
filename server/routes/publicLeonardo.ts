@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from '../lib/fetchTimeout'
 import { Router, Request, Response } from 'express'
 
 const router = Router()
@@ -29,7 +30,7 @@ router.all('/{*path}', (req: Request, res: Response) => {
       const fetchOpts: RequestInit = { method: method || 'GET', headers }
       if (body && method !== 'GET') fetchOpts.body = JSON.stringify(body)
 
-      const apiRes = await fetch(url, fetchOpts)
+      const apiRes = await fetchWithTimeout(url, fetchOpts)
       const data = await apiRes.json().catch(() => null)
 
       console.log(`[leonardo-proxy] ${method || 'GET'} ${path} → ${apiRes.status}`)

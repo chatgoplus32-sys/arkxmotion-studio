@@ -16,7 +16,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     if (action === 'generate' && req.method === 'POST') {
       const { action: _, ...body } = req.body || {}
-      const r = await fetch(`${CP_API}/generate`, {
+      const r = await fetchWithTimeout(`${CP_API}/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-API-Key': String(apiKey) },
         body: JSON.stringify(body),
@@ -27,7 +27,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (action === 'status') {
       const batchId = req.query.batchId || req.body?.batchId
-      const r = await fetch(`${CP_API}/status?batchId=${batchId}`, {
+      const r = await fetchWithTimeout(`${CP_API}/status?batchId=${batchId}`, {
         headers: { 'X-API-Key': String(apiKey) },
       })
       const data = await r.json().catch(() => ({}))
@@ -43,7 +43,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (/^https?:\/\/localhost:\d+\/backend\/api\/video\//i.test(fullUrl)) {
         fullUrl = fullUrl.replace(/^https?:\/\/localhost:\d+/, 'https://createpulse.online')
       }
-      const r = await fetch(fullUrl, { redirect: 'follow' })
+      const r = await fetchWithTimeout(fullUrl, { redirect: 'follow' })
       if (!r.ok) {
         return res.status(r.status).json({ error: `Upstream returned ${r.status}` })
       }

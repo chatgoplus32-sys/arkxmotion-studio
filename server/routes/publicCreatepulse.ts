@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from '../lib/fetchTimeout'
 import { Router, Request, Response } from 'express'
 
 const router = Router()
@@ -18,7 +19,7 @@ router.all('/{*path}', (req: Request, res: Response) => {
     try {
       if (action === 'generate' && req.method === 'POST') {
         const { action: _, ...body } = req.body || {}
-        const r = await fetch(`${CP_API}/generate`, {
+        const r = await fetchWithTimeout(`${CP_API}/generate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-API-Key': String(apiKey) },
           body: JSON.stringify(body),
@@ -29,7 +30,7 @@ router.all('/{*path}', (req: Request, res: Response) => {
 
       if (action === 'status') {
         const batchId = req.query.batchId || req.body?.batchId
-        const r = await fetch(`${CP_API}/status?batchId=${batchId}`, {
+        const r = await fetchWithTimeout(`${CP_API}/status?batchId=${batchId}`, {
           headers: { 'X-API-Key': String(apiKey) },
         })
         const data = await r.json().catch(() => ({}))
@@ -42,7 +43,7 @@ router.all('/{*path}', (req: Request, res: Response) => {
           return res.status(400).json({ error: 'Missing url parameter' })
         }
         let fullUrl = videoUrl.startsWith('http') ? videoUrl : `https://createpulse.online${videoUrl}`
-        const r = await fetch(fullUrl, { redirect: 'follow' })
+        const r = await fetchWithTimeout(fullUrl, { redirect: 'follow' })
         if (!r.ok) return res.status(r.status).json({ error: `Upstream returned ${r.status}` })
         const contentType = r.headers.get('content-type') || 'video/mp4'
         const contentLength = r.headers.get('content-length')

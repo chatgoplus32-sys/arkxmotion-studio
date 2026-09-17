@@ -31,7 +31,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       fetchOpts.body = JSON.stringify(req.body)
     }
 
-    const r = await fetch(upstreamUrl, fetchOpts)
+    const r = await fetchWithTimeout(upstreamUrl, fetchOpts)
     const text = await r.text()
     console.log(`[shotstack-proxy] ${req.method} ${subpath} → ${r.status}`)
 
