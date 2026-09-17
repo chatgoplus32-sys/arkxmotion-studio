@@ -1,0 +1,3 @@
+# Skrip shell harus tetap LF walau core.autocrlf=true. Kalau tidak,
+# `./tidy-logs.sh` gagal dengan "bad interpreter: bash\r".
+*.sh text eol=lf
