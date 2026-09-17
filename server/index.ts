@@ -151,6 +151,22 @@ app.get('/api/admin/public/maintenance', (_req, res) => {
   }
 })
 
+// Status backup + pemicu manual.
+//
+// Didaftarkan SEBELUM blok frontend di bawah: di production blok itu memasang
+// catch-all '/{*splat}' yang menjawab setiap jalur /api/ dengan 404, dan Express
+// mencocokkan rute menurut urutan pendaftaran. Kalau urutannya terbalik, kedua
+// rute ini mati justru di lingkungan yang paling membutuhkannya — dan hanya di
+// production, karena di dev catch-all itu tidak dipasang.
+app.get("/api/backup/status", (_req, res) => {
+  res.json(getBackupStatus())
+})
+
+app.post("/api/backup/run", async (_req, res) => {
+  const result = await runBackup()
+  res.json(result)
+})
+
 // --- Production: serve built frontend ---
 if (isProd && fs.existsSync(FRONTEND_DIR)) {
   // Static assets with long cache
@@ -219,16 +235,6 @@ if (autoBackupEnabled) {
     `[${isProd ? 'PROD' : 'DEV'}] Backup otomatis dilewati. Set AUTO_BACKUP=1 kalau ingin snapshot database saat start.`,
   )
 }
-
-// Backup status + manual trigger
-app.get("/api/backup/status", (_req, res) => {
-  res.json(getBackupStatus())
-})
-
-app.post("/api/backup/run", async (_req, res) => {
-  const result = await runBackup()
-  res.json(result)
-})
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`[${isProd ? 'PROD' : 'DEV'}] Server running on http://0.0.0.0:${PORT}`)

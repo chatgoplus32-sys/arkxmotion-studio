@@ -192,3 +192,22 @@ test('deploy benar-benar MEMANGGIL gerbang 3a, sebelum gerbang 3', () => {
   const i3 = wf.search(panggil3)
   assert.ok(i3a < i3, 'gerbang 3a harus diperiksa sebelum gerbang 3, supaya sebabnya dinamai lebih dulu')
 })
+
+test('rute /api/backup/* didaftarkan sebelum catch-all frontend production', () => {
+  // Di production index.ts memasang app.get('/{*splat}') yang menjawab setiap
+  // jalur /api/ dengan 404. Express mencocokkan menurut urutan pendaftaran,
+  // jadi rute yang didaftarkan sesudahnya tidak pernah tercapai — dan itu hanya
+  // terlihat kalau proses benar-benar berjalan sebagai production.
+  const idx = kode('server/index.ts')
+  const catchAll = idx.indexOf("app.get('/{*splat}'")
+  assert.ok(catchAll > 0, "catch-all frontend production tidak ditemukan di server/index.ts")
+
+  for (const rute of ['"/api/backup/status"', '"/api/backup/run"']) {
+    const pos = idx.indexOf(rute)
+    assert.ok(pos > 0, `rute ${rute} tidak ditemukan`)
+    assert.ok(
+      pos < catchAll,
+      `rute ${rute} didaftarkan SETELAH catch-all frontend production, jadi selalu dijawab 404 saat isProd`,
+    )
+  }
+})
