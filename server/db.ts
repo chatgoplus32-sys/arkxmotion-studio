@@ -360,6 +360,19 @@ db.exec(`
 `)
 // user_id sengaja tanpa foreign key: baris boleh tidak teratribusi (relay ini
 // terbuka untuk pemanggil tanpa identitas), dan itu keadaan yang sah.
+// Kolom ini ditambahkan setelah tabelnya sempat dipakai, jadi migrasinya dicek
+// lewat PRAGMA (pola yang sama dengan kolom-kolom users di atas). Isinya:
+//   'own-key'     kunci yang dikirim member sendiri
+//   'own-cookie'  cookie sesi yang dikirim member sendiri
+//   'master'      kunci induk milik server (disuntikkan relay)
+//   'client-master' kunci induk yang MASIH dikirim klien — jejak kunci yang
+//                   beredar di browser, dan justru yang ingin dihabiskan
+const kolomUsage = db.prepare('PRAGMA table_info(nexabot_upstream_usage)').all() as { name: string }[]
+if (!kolomUsage.some((c) => c.name === 'credential_source')) {
+  db.exec("ALTER TABLE nexabot_upstream_usage ADD COLUMN credential_source TEXT NOT NULL DEFAULT ''")
+}
+db.exec('CREATE INDEX IF NOT EXISTS idx_nxb_usage_source ON nexabot_upstream_usage(credential_source, created_at)')
+
 db.exec('CREATE INDEX IF NOT EXISTS idx_nxb_usage_user ON nexabot_upstream_usage(user_id, created_at)')
 db.exec('CREATE INDEX IF NOT EXISTS idx_nxb_usage_created ON nexabot_upstream_usage(created_at)')
 

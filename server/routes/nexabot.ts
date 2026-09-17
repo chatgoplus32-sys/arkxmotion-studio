@@ -8,7 +8,8 @@ import {
   nexabotRelayHeaders,
   type NexabotProxyAction,
 } from '../../shared/nexabotProxy.js'
-import { recordUpstreamUsage } from '../lib/nexabotUpstreamUsage.js'
+import { isMasterKey, masterKey, memberMayUseMasterKey, underDailyCap } from '../lib/nexabotMasterKey.js'
+import { recordUpstreamUsage, userIdFromRequest, type ResolvedCredential } from '../lib/nexabotUpstreamUsage.js'
 
 const router = Router()
 // Bisa diarahkan ke host lain: tes menembak upstream tiruan, dan operator bisa
@@ -74,11 +75,88 @@ function sessionHeaders(cookies: string): Record<string, string> {
   }
 }
 
-function upstreamAuthHeaders(req: Request): Record<string, string> {
-  const cookies = req.headers['x-nexabot-cookie'] as string
-  const apiKey = req.headers['x-api-key'] as string
-  if (cookies) return sessionHeaders(cookies)
-  return apiKey ? { 'x-api-key': apiKey } : {}
+interface ResolvedUpstreamAuth {
+  headers: Record<string, string>
+  credential: ResolvedCredential | null
+  /** Pesan untuk klien kalau tidak ada kredensial yang bisa dipakai. */
+  error?: string
+}
+
+/** Boleh tidaknya member ini memakai kunci induk milik server. */
+function bolehPakaiKunciInduk(req: Request): { ok: boolean; reason: string } {
+  const userId = userIdFromRequest(req)
+  if (!userId) {
+    return {
+      ok: false,
+      reason:
+        'Kunci NexaBot milik server hanya untuk member yang login (Authorization: Bearer <token app>). ' +
+        'Tanpa itu, pakai kunci NexaBot Anda sendiri lewat header X-Api-Key.',
+    }
+  }
+  const izin = memberMayUseMasterKey(userId)
+  if (!izin.ok) return izin
+  return underDailyCap(userId)
+}
+
+/** Boleh tidaknya member ini memakai kunci induk untuk rute BACA. */
+function bolehBacaDenganKunciInduk(req: Request): { ok: boolean; reason: string } {
+  const userId = userIdFromRequest(req)
+  if (!userId) {
+    return {
+      ok: false,
+      reason:
+        'Kunci NexaBot milik server hanya untuk member yang login (Authorization: Bearer <token app>). ' +
+        'Tanpa itu, pakai kunci NexaBot Anda sendiri lewat header X-Api-Key.',
+    }
+  }
+  // Rute baca tidak memakai kredit, dan menolaknya bisa memutus polling job yang
+  // SUDAH berjalan sah — misalnya paket member habis di tengah job. Karena itu
+  // yang diwajibkan di sini hanya identitas, bukan kelayakan.
+  return { ok: true, reason: 'Rute baca: hanya butuh identitas' }
+}
+
+/** Kunci induk yang disuntikkan relay — klien tidak pernah melihatnya. */
+function kunciIndukAuth(req: Request, bacaSaja = false): ResolvedUpstreamAuth {
+  const kunci = masterKey()
+  if (!kunci) return { headers: {}, credential: null, error: 'Missing X-Api-Key header' }
+  const izin = bacaSaja ? bolehBacaDenganKunciInduk(req) : bolehPakaiKunciInduk(req)
+  if (!izin.ok) return { headers: {}, credential: null, error: izin.reason }
+  return { headers: { 'x-api-key': kunci }, credential: { kind: 'api-key', source: 'master', secret: kunci } }
+}
+
+/**
+ * Satu tempat resolusi kredensial ke upstream. Urutannya:
+ *   1. cookie sesi dari klien (jalur Unlimited — tidak pernah digantikan);
+ *   2. kunci yang dikirim klien;
+ *   3. kunci induk milik server, kalau membernya berhak.
+ *
+ * Kunci induk yang MASIH dikirim klien tidak diperlakukan sebagai kunci pribadi:
+ * artinya kunci itu beredar di browser, jadi ia tetap harus lolos kebijakan yang
+ * sama, dan sidik jarinya dicatat sebagai 'client-master' — jejak kunci yang
+ * perlu dihabiskan, bukan kunci yang dianggap aman.
+ */
+function resolveUpstreamAuth(req: Request, opts: { bacaSaja?: boolean } = {}): ResolvedUpstreamAuth {
+  const cookieMentah = req.headers['x-nexabot-cookie']
+  if (typeof cookieMentah === 'string' && cookieMentah.trim()) {
+    const cookies = cookieMentah.trim()
+    return {
+      headers: sessionHeaders(cookies),
+      credential: { kind: 'cookie', source: 'own-cookie', secret: cookies },
+    }
+  }
+
+  const kunciKlien = req.headers['x-api-key']
+  if (typeof kunciKlien === 'string' && kunciKlien.trim()) {
+    const kunci = kunciKlien.trim()
+    if (isMasterKey(kunci)) {
+      const izin = opts.bacaSaja ? bolehBacaDenganKunciInduk(req) : bolehPakaiKunciInduk(req)
+      if (!izin.ok) return { headers: {}, credential: null, error: izin.reason }
+      return { headers: { 'x-api-key': kunci }, credential: { kind: 'api-key', source: 'client-master', secret: kunci } }
+    }
+    return { headers: { 'x-api-key': kunci }, credential: { kind: 'api-key', source: 'own-key', secret: kunci } }
+  }
+
+  return kunciIndukAuth(req, !!opts.bacaSaja)
 }
 
 // Alias query → path: /api/public/nexabot?action=session (juga credit,
@@ -100,9 +178,9 @@ router.get('/health', (_req: Request, res: Response) => {
 
 // ── Credit check ──
 router.get('/credit', async (req: Request, res: Response) => {
-  const apiKey = req.headers['x-api-key'] as string
-  if (!apiKey) {
-    return res.status(400).json({ ok: false, error: 'Missing X-Api-Key header' })
+  const auth = resolveUpstreamAuth(req)
+  if (Object.keys(auth.headers).length === 0) {
+    return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key header' })
   }
 
   console.log(`[nexabot-local] GET /api/v1/api/credit`)
@@ -111,7 +189,7 @@ router.get('/credit', async (req: Request, res: Response) => {
   await relayUpstream(res, 'credit', `${NEXABOT_BASE}/api/v1/api/credit`, {
     method: 'GET',
     headers: {
-      'x-api-key': apiKey,
+      ...auth.headers,
       'Accept': 'application/json',
     },
   })
@@ -137,9 +215,9 @@ router.get('/session', async (req: Request, res: Response) => {
 
 // ── Submit job ──
 router.post('/submit', async (req: Request, res: Response) => {
-  const apiKey = req.headers['x-api-key'] as string
-  if (!apiKey) {
-    return res.status(400).json({ ok: false, error: 'Missing X-Api-Key header' })
+  const auth = resolveUpstreamAuth(req)
+  if (Object.keys(auth.headers).length === 0) {
+    return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key header' })
   }
 
   const body = req.body
@@ -162,7 +240,7 @@ router.post('/submit', async (req: Request, res: Response) => {
   const hasil = await relayUpstream(res, 'submit', `${NEXABOT_BASE}/api/v1/api`, {
     method: 'POST',
     headers: {
-      'x-api-key': apiKey,
+      ...auth.headers,
       'Content-Type': 'application/json',
       'Accept': 'application/json',
     },
@@ -170,7 +248,7 @@ router.post('/submit', async (req: Request, res: Response) => {
   })
   // Dicatat setelah respons upstream diterima: rute inilah yang memakai kuota.
   if (hasil) {
-    recordUpstreamUsage({ req, route: 'submit', statusCode: hasil.status, bodyText: hasil.text })
+    recordUpstreamUsage({ req, route: 'submit', statusCode: hasil.status, bodyText: hasil.text, credential: auth.credential })
   }
 })
 
@@ -208,16 +286,22 @@ router.post('/generate', async (req: Request, res: Response) => {
   })
   // Dicatat setelah respons upstream diterima: rute inilah yang memakai kuota.
   if (hasil) {
-    recordUpstreamUsage({ req, route: 'generate', statusCode: hasil.status, bodyText: hasil.text })
+    recordUpstreamUsage({
+      req,
+      route: 'generate',
+      statusCode: hasil.status,
+      bodyText: hasil.text,
+      credential: { kind: 'cookie', source: 'own-cookie', secret: cookies },
+    })
   }
 })
 
 // ── Poll job status ──
 router.get('/job/:id', async (req: Request, res: Response) => {
-  const auth = upstreamAuthHeaders(req)
+  const auth = resolveUpstreamAuth(req, { bacaSaja: true })
   const jobId = req.params.id
-  if (Object.keys(auth).length === 0) {
-    return res.status(400).json({ ok: false, error: 'Missing X-Api-Key / X-Nexabot-Cookie header' })
+  if (Object.keys(auth.headers).length === 0) {
+    return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key / X-Nexabot-Cookie header' })
   }
   if (!jobId) {
     return res.status(400).json({ ok: false, error: 'Missing job id' })
@@ -229,7 +313,7 @@ router.get('/job/:id', async (req: Request, res: Response) => {
   await relayUpstream(res, 'job', `${NEXABOT_BASE}/api/v1/jobs/${jobId}`, {
     method: 'GET',
     headers: {
-      ...auth,
+      ...auth.headers,
       'Accept': 'application/json',
     },
   })
@@ -237,10 +321,10 @@ router.get('/job/:id', async (req: Request, res: Response) => {
 
 // ── Download result ──
 router.get('/download/:id', async (req: Request, res: Response) => {
-  const auth = upstreamAuthHeaders(req)
+  const auth = resolveUpstreamAuth(req, { bacaSaja: true })
   const jobId = req.params.id
-  if (Object.keys(auth).length === 0) {
-    return res.status(400).json({ ok: false, error: 'Missing X-Api-Key / X-Nexabot-Cookie header' })
+  if (Object.keys(auth.headers).length === 0) {
+    return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key / X-Nexabot-Cookie header' })
   }
   if (!jobId) {
     return res.status(400).json({ ok: false, error: 'Missing job id' })
@@ -250,7 +334,7 @@ router.get('/download/:id', async (req: Request, res: Response) => {
     console.log(`[nexabot-local] GET /api/v1/jobs/${jobId}/download`)
     const { response: upstreamRes } = await fetchNexabotUpstream(`${NEXABOT_BASE}/api/v1/jobs/${jobId}/download`, {
       method: 'GET',
-      headers: auth,
+      headers: { ...auth.headers, 'Accept': 'application/json' },
       redirect: 'follow',
     }, { action: 'download' })
 
@@ -311,16 +395,16 @@ router.get('/download/:id', async (req: Request, res: Response) => {
 
 // ── Daftar mode/model yang tersedia ─────────────────────────────────────
 router.get('/modes', async (req: Request, res: Response) => {
-  const apiKey = req.headers['x-api-key'] as string
-  if (!apiKey) {
-    return res.status(400).json({ ok: false, error: 'Missing X-Api-Key header' })
+  const auth = resolveUpstreamAuth(req, { bacaSaja: true })
+  if (Object.keys(auth.headers).length === 0) {
+    return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key header' })
   }
 
   console.log(`[nexabot-local] GET /api/v1/modes`)
   await relayUpstream(res, 'modes', `${NEXABOT_BASE}/api/v1/modes`, {
     method: 'GET',
     headers: {
-      'x-api-key': apiKey,
+      ...auth.headers,
       'Accept': 'application/json',
     },
   })

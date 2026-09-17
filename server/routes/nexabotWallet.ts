@@ -364,6 +364,9 @@ router.get('/admin/upstream-usage', authenticateToken, requireAdmin, (req: AuthR
              SUM(CASE WHEN cost_value IS NOT NULL THEN 1 ELSE 0 END) AS jobs_cost_known,
              SUM(CASE WHEN cost_value IS NULL     THEN 1 ELSE 0 END) AS jobs_cost_unknown,
              SUM(COALESCE(cost_value, 0)) AS cost_known_sum,
+             SUM(CASE WHEN credential_source = 'master' THEN 1 ELSE 0 END) AS jobs_master,
+             SUM(CASE WHEN credential_source = 'client-master' THEN 1 ELSE 0 END) AS jobs_client_master,
+             SUM(CASE WHEN credential_source IN ('own-key', 'own-cookie') THEN 1 ELSE 0 END) AS jobs_own,
              MAX(created_at) AS last_job_at
       FROM nexabot_upstream_usage
       WHERE created_at >= ?
@@ -377,20 +380,25 @@ router.get('/admin/upstream-usage', authenticateToken, requireAdmin, (req: AuthR
       jobs_cost_known: number
       jobs_cost_unknown: number
       cost_known_sum: number
+      jobs_master: number
+      jobs_client_master: number
+      jobs_own: number
       last_job_at: number
     }>
 
     // Kredensial per member: dua sidik jari berbeda = member memakai kredensial
     // miliknya sendiri DAN kredensial lain (biasanya induk) di jendela yang sama.
     const kredensial = db.prepare(`
-      SELECT user_id, credential_kind, credential_fingerprint, COUNT(*) AS jobs, MAX(created_at) AS last_job_at
+      SELECT user_id, credential_kind, credential_source, credential_fingerprint,
+             COUNT(*) AS jobs, MAX(created_at) AS last_job_at
       FROM nexabot_upstream_usage
       WHERE created_at >= ?
-      GROUP BY user_id, credential_kind, credential_fingerprint
+      GROUP BY user_id, credential_kind, credential_source, credential_fingerprint
       ORDER BY jobs DESC
     `).all(sejakMs) as Array<{
       user_id: number | null
       credential_kind: string
+      credential_source: string
       credential_fingerprint: string
       jobs: number
       last_job_at: number
@@ -453,6 +461,13 @@ router.get('/admin/upstream-usage', authenticateToken, requireAdmin, (req: AuthR
           jobs_cost_known: up?.jobs_cost_known ?? 0,
           jobs_cost_unknown: up?.jobs_cost_unknown ?? 0,
           cost_known_sum: Number(cost.toFixed(4)),
+          // Sumber kredensial dipisah supaya pertanyaan "siapa jalan di kunci saya"
+          // bisa dijawab langsung: 'master' = relay menyuntikkan kunci server,
+          // 'client-master' = kunci induk MASIH dikirim klien (artinya ia beredar
+          // di browser dan perlu ditarik), 'own' = kunci/cookie member sendiri.
+          jobs_master: up?.jobs_master ?? 0,
+          jobs_client_master: up?.jobs_client_master ?? 0,
+          jobs_own: up?.jobs_own ?? 0,
           last_job_at: up?.last_job_at ?? null,
           local_generates: rev?.generates ?? 0,
           local_revenue: pemasukan,
@@ -460,6 +475,7 @@ router.get('/admin/upstream-usage', authenticateToken, requireAdmin, (req: AuthR
           subsidy_known: Number((cost - pemasukan).toFixed(4)),
           credentials: kred.map((k) => ({
             kind: k.credential_kind,
+            source: k.credential_source,
             fingerprint: k.credential_fingerprint,
             jobs: k.jobs,
             last_job_at: k.last_job_at,
@@ -476,7 +492,9 @@ router.get('/admin/upstream-usage', authenticateToken, requireAdmin, (req: AuthR
         'cost_known_sum hanya menjumlahkan job yang biayanya DILAPORKAN upstream; ' +
         'jobs_cost_unknown adalah sisanya dan sengaja tidak ditaksir. ' +
         'subsidy_known = biaya upstream yang diketahui − pemasukan lokal pada jendela ini. ' +
-        'jobs_api_key besar pada member yang unlimited_active menandakan job-nya dibayar kredensial API key, bukan paketnya.',
+        'jobs_api_key besar pada member yang unlimited_active menandakan job-nya dibayar kredensial API key, bukan paketnya. ' +
+        'jobs_master = job yang memakai kunci induk server (disuntikkan relay). ' +
+        'jobs_client_master = kunci induk yang MASIH dikirim klien — artinya kunci itu masih ada di browser member dan sebaiknya ditarik dari peredaran.',
       totals: {
         jobs: jumlah((r) => r.jobs),
         jobs_cookie: jumlah((r) => r.jobs_cookie),
@@ -486,6 +504,9 @@ router.get('/admin/upstream-usage', authenticateToken, requireAdmin, (req: AuthR
         cost_known_sum: Number(jumlah((r) => r.cost_known_sum).toFixed(4)),
         local_revenue: jumlah((r) => r.local_revenue),
         subsidy_known: Number(jumlah((r) => r.subsidy_known).toFixed(4)),
+        jobs_master: jumlah((r) => r.jobs_master),
+        jobs_client_master: jumlah((r) => r.jobs_client_master),
+        jobs_own: jumlah((r) => r.jobs_own),
       },
       users: baris,
     })

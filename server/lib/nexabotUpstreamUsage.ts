@@ -104,33 +104,60 @@ export function extractCost(bodyText: string): { field: string; value: number; e
   return { ...hit, evidence: bodyText.slice(0, EVIDENCE_MAX) }
 }
 
+/** Kredensial yang benar-benar dipakai ke upstream, sudah diresolusi relay. */
+export interface ResolvedCredential {
+  kind: 'cookie' | 'api-key'
+  /**
+   * Dari mana kredensial ini datang. 'master' berarti relay yang menyuntikkan
+   * kunci induk; 'client-master' berarti kunci induk MASIH dikirim klien —
+   * jejak kunci yang beredar di browser, dan itulah yang ingin dihabiskan.
+   */
+  source: 'own-key' | 'own-cookie' | 'master' | 'client-master'
+  secret: string
+}
+
 export interface UpstreamUsageInput {
   req: Request
   route: ConsumingRoute
   statusCode: number
   bodyText: string
+  /** Hasil resolusi relay; kalau tidak diberikan, diturunkan dari header. */
+  credential?: ResolvedCredential | null
 }
 
 /**
  * Catat satu pemakaian upstream. Aman dipanggil kapan saja: kegagalan di sini
  * tidak pernah dilempar ke pemanggil.
  */
-export function recordUpstreamUsage({ req, route, statusCode, bodyText }: UpstreamUsageInput): void {
+export function recordUpstreamUsage({ req, route, statusCode, bodyText, credential }: UpstreamUsageInput): void {
   try {
-    const kredensial = credentialKindOf(req)
+    // Relay menyerahkan kredensial yang benar-benar dipakai (termasuk saat ia
+    // menyuntikkan kunci induk). Fallback dari header tetap ada supaya pemanggil
+    // lama tidak diam-diam berhenti mencatat.
+    const kredensial: ResolvedCredential | null =
+      credential ?? (() => {
+        const dariHeader = credentialKindOf(req)
+        if (!dariHeader) return null
+        return {
+          kind: dariHeader.kind,
+          source: dariHeader.kind === 'cookie' ? 'own-cookie' : 'own-key',
+          secret: dariHeader.secret,
+        } as ResolvedCredential
+      })()
     if (!kredensial) return // tanpa kredensial tidak ada kuota upstream yang terpakai
 
     const biaya = extractCost(bodyText)
 
     db.prepare(
       `INSERT INTO nexabot_upstream_usage
-         (user_id, route, credential_kind, credential_fingerprint, status_code, cost_field, cost_value, evidence, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (user_id, route, credential_kind, credential_fingerprint, credential_source, status_code, cost_field, cost_value, evidence, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       userIdFromRequest(req),
       route,
       kredensial.kind,
       credentialFingerprint(kredensial.kind, kredensial.secret),
+      kredensial.source,
       statusCode,
       biaya?.field ?? null,
       biaya?.value ?? null,

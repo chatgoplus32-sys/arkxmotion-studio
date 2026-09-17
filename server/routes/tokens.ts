@@ -1,9 +1,21 @@
 import { Router, Response } from 'express'
 import db from '../db.js'
 import { authenticateToken, AuthRequest } from '../middleware/auth.js'
+import { isMasterKey, redactIfMasterKey } from '../lib/nexabotMasterKey.js'
 
 const router = Router()
 
+/**
+ * Kunci induk NexaBot TIDAK boleh keluar dari server dalam bentuk apa pun.
+ *
+ * Toko token ini memang tempat member mengambil kunci provider yang mereka beli —
+ * satu-satunya jalur yang menyerahkan nilainya adalah catatan pembelian di bawah.
+ * Kalau kunci induk NexaBot sampai masuk ke sini (mis. admin menambahkannya ke
+ * daftar), pembelinya memegang kunci itu di browser dan bisa memakainya langsung
+ * ke nexabot.id: di luar app, tidak tercatat, tidak dipotong saldo, tapi tetap
+ * ditagih ke akun kita. Jadi nilainya disensor di sisi penyajian, dan tokennya
+ * juga tidak dijual — bukan sekadar diharapkan tidak terjadi.
+ */
 interface TokenRow {
   id: number
   provider: string
@@ -124,7 +136,7 @@ router.get('/note/:bulkId', authenticateToken, (req: AuthRequest, res: Response)
     note += `----------------------------------------\n\n`
 
     for (const r of rows) {
-      note += `${r.token_value}\n`
+      note += `${redactIfMasterKey(r.token_value)}\n`
     }
 
     note += `\n========================================\n`
@@ -159,6 +171,16 @@ router.post('/buy', authenticateToken, (req: AuthRequest, res: Response) => {
       let count = 0
       for (const tid of token_ids) {
         // Atomic: UPDATE ... WHERE status = 'available' — only one concurrent request can win
+        // Kunci induk tidak boleh dijual: pembelinya akan memegang kunci server.
+        // Dilewati (tetap 'available'), dan pembelian kunci lain tetap lanjut.
+        const calon = db.prepare('SELECT token_value FROM tokens WHERE id = ?').get(tid) as
+          | { token_value: string }
+          | undefined
+        if (isMasterKey(calon?.token_value)) {
+          console.warn('[tokens] kunci induk NexaBot ada di daftar jual dan dilewati — keluarkan dari daftar token')
+          continue
+        }
+
         const result = db.prepare("UPDATE tokens SET status = 'sold', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'available'").run(tid)
         if (result.changes > 0) {
           db.prepare('INSERT INTO token_orders (user_id, token_id, status, bulk_id) VALUES (?, ?, ?, ?)').run(userId, tid, 'pending', bulkId)

@@ -1,6 +1,7 @@
 import { Router, Response } from 'express'
 import db from '../db.js'
 import { authenticateToken, requireAdmin, AuthRequest } from '../middleware/auth.js'
+import { redactIfMasterKey } from '../lib/nexabotMasterKey.js'
 
 const router = Router()
 
@@ -26,7 +27,9 @@ router.get('/', authenticateToken, requireAdmin, (req: AuthRequest, res: Respons
       tokens = db.prepare('SELECT * FROM tokens ORDER BY created_at DESC').all() as TokenRow[]
     }
 
-    res.json({ tokens })
+    // Kunci induk NexaBot tidak pernah dikirim ke browser, termasuk ke sini:
+    // admin melihatnya di .env, bukan di dashboard. Sisanya apa adanya.
+    res.json({ tokens: tokens.map((t) => ({ ...t, token_value: redactIfMasterKey(t.token_value) })) })
   } catch (error) {
     console.error('List tokens error:', error)
     res.status(500).json({ error: 'Internal server error' })
@@ -91,7 +94,12 @@ router.get('/orders', authenticateToken, requireAdmin, (_req: AuthRequest, res: 
         })
       }
       const bulk = bulkMap.get(bid)!
-      bulk.tokens.push({ id: row.token_id, name: row.token_name, token_value: row.token_value, price: row.price })
+      bulk.tokens.push({
+        id: row.token_id,
+        name: row.token_name,
+        token_value: redactIfMasterKey(row.token_value),
+        price: row.price,
+      })
       bulk.total_price += row.price
     }
 
