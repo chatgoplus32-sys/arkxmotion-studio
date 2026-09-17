@@ -43,7 +43,7 @@ router.post('/', authenticateToken, requireAdmin, (req: AuthRequest, res: Respon
         try {
           db.prepare('INSERT INTO tokens (provider, name, token_value, price) VALUES (?, ?, ?, ?)').run(provider, t.name, t.token_value, price)
           created++
-        } catch {}
+        } catch (e) { console.warn("[" + process.env.NODE_ENV + "] catch:", e?.message || e) }
       }
       return res.status(201).json({ message: `${created} tokens uploaded`, count: created })
     }

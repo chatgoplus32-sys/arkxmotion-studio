@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
-import { Section, Button, Select, Label, Textarea, EmptyState, Badge } from '@/components/ui'
+import { Section, Button, Select, Label, Textarea, EmptyState } from '@/components/ui'
 import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
 import { Loader2, Upload, Trash2, Download, X, ImagePlus, ExternalLink, Search, Copy, ClipboardCheck } from 'lucide-react'
 import { useProviderManager, PROVIDER_CONFIGS } from '@/stores/providerManager'

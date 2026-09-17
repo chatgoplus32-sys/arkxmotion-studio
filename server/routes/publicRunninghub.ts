@@ -95,7 +95,7 @@ async function handleMotionControlV26Std(apiKey: string, params: any, res: Respo
     imageUrl,
     videoUrl,
     characterOrientation = 'video',
-    prompt = '',
+    _prompt = '',
     keepOriginalSound = 'yes',
   } = params
 
@@ -164,7 +164,7 @@ async function handleMotionControlV26Pro(apiKey: string, params: any, res: Respo
     imageUrl,
     videoUrl,
     characterOrientation = 'video',
-    prompt = '',
+    _prompt = '',
     keepOriginalSound = 'yes',
   } = params
 
@@ -233,7 +233,7 @@ async function handleMotionControlV3(apiKey: string, params: any, res: Response)
     imageUrl,
     videoUrl,
     characterOrientation = 'video',
-    prompt = '',
+    _prompt = '',
     negativePrompt = '',
     keepOriginalSound = true,
   } = params
@@ -301,16 +301,16 @@ async function handleMotionControlV3(apiKey: string, params: any, res: Response)
 
 async function handleMotionControl(apiKey: string, params: any, res: Response) {
   const {
-    workflow_id,
+    _workflow_id,
     imageBase64,
     videoBase64,
     imageFileName = 'image.jpg',
     videoFileName = 'video.mp4',
     imageMimeType = 'image/jpeg',
     videoMimeType = 'video/mp4',
-    prompt = '',
-    negative_prompt = '',
-    keep_original_sound = false,
+    _prompt = '',
+    _negative_prompt = '',
+    _keep_original_sound = false,
   } = params
 
   if (!imageBase64) return res.status(200).json({ ok: false, error: 'Missing imageBase64' })
@@ -352,7 +352,7 @@ async function handleMotionControl(apiKey: string, params: any, res: Response) {
   const MAX_RETRIES = 3
   const RETRY_DELAY_MS = 10000
   let lastRawText = ''
-  let lastData: any = null
+  let _lastData: any = null
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     console.log(`[runninghub] POST ${endpoint} (attempt ${attempt}/${MAX_RETRIES})`)
@@ -372,7 +372,7 @@ async function handleMotionControl(apiKey: string, params: any, res: Response) {
 
     let data: any
     try { data = JSON.parse(lastRawText) } catch { data = { raw: lastRawText } }
-    lastData = data
+    _lastData = data
 
     const rhCode = data.code ?? data.errorCode
     const rhMsg = data.msg || data.errorMessage || data.message

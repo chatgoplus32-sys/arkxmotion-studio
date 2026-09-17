@@ -12,7 +12,7 @@ import { fingerprint, isJwt, isRefreshToken, jwtExpiryMs, jwtIdentity } from './
 export function buildEntry({ token = '', refreshToken = '', kind = '', source = '', extra = {} } = {}) {
   const access = String(token || '').trim().replace(/^Bearer\s+/i, '')
   const refresh = String(refreshToken || '').trim()
-  const primary = access || refresh
+  const _primary = access || refresh
   const identity = access ? jwtIdentity(access) : refresh ? jwtIdentity(refresh) : { email: '', sub: '' }
   return {
     token: access,

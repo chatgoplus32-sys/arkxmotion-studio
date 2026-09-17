@@ -161,6 +161,23 @@ if (isProd && fs.existsSync(FRONTEND_DIR)) {
   app.use('/downloads', express.static(path.resolve('public/downloads')))
 }
 
+// --- Global error handler ---
+app.use((err: any, _req: any, res: any, _next: any) => {
+  console.error("[server] Unhandled error:", err.stack || err)
+  if (!res.headersSent) {
+    res.status(err.status || 500).json({ error: "Internal server error" })
+  }
+})
+
+// --- Unhandled rejections ---
+process.on("unhandledRejection", (reason) => {
+  console.error("[server] Unhandled rejection:", reason)
+})
+
+process.on("uncaughtException", (err) => {
+  console.error("[server] Uncaught exception:", err)
+})
+
 // Backup database otomatis saat server start
 void backupOnStartup()
 

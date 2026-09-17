@@ -22,7 +22,6 @@ import {
   getResults,
   addBgLog,
   addResult,
-  updateResult,
   persistResultToR2,
   startBackgroundPolling,
   removeResult,

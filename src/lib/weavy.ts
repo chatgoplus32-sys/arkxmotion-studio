@@ -317,13 +317,11 @@ async function resolveAndFetchCredits(token: string): Promise<{ ok: boolean; cre
 
   // Step 1: Refresh token → get access token
   let accessToken = token
-  let refreshed = false
   if (isRefreshToken(token)) {
     console.log('[weavy] refreshing token via securetoken.googleapis.com...')
     const r = await refreshWeavyAccessToken(token)
     if (r?.accessToken) {
       accessToken = r.accessToken
-      refreshed = true
       console.log('[weavy] token refreshed OK, accessToken starts:', accessToken.slice(0, 30) + '...')
     } else {
       console.log('[weavy] token refresh FAILED — cannot fetch live credits, will try cached')
@@ -333,7 +331,6 @@ async function resolveAndFetchCredits(token: string): Promise<{ ok: boolean; cre
     }
   } else {
     console.log('[weavy] token is JWT, using directly')
-    refreshed = true
   }
 
   // Step 2: Extract email & subscription from JWT

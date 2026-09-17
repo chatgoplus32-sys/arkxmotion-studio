@@ -33,7 +33,7 @@ function extractUid(token: string): string {
     const decoded = Buffer.from(t, 'base64').toString('binary')
     const payload = decoded.split('#')[2]
     if (payload && /^\d+$/.test(payload)) return payload
-  } catch {}
+  } catch (e) { console.warn("[" + process.env.NODE_ENV + "] catch:", e?.message || e) }
   return '0'
 }
 
@@ -90,7 +90,7 @@ router.all('/', (req: Request, res: Response) => {
       })
       const text = await proxyRes.text()
       let data: any = null
-      try { data = JSON.parse(text) } catch {}
+      try { data = JSON.parse(text) } catch (e) { console.warn("[" + process.env.NODE_ENV + "] catch:", e?.message || e) }
       console.log(`[roboneo-membership] proxy ${proxyRes.status}:`, text.slice(0, 800))
       if (data?.data?.error_code === 98) {
         return res.status(200).json({ ok: false, error_code: 98, error: data?.data?.error_msg || 'Token rejected', raw: text.slice(0, 500), data: data?.data })

@@ -13,7 +13,7 @@
   if (window.__arkxAuthHelperInstalled) return
   window.__arkxAuthHelperInstalled = true
 
-  const HEADER_KEYS = [
+  const _HEADER_KEYS = [
     'authorization',
     'x-api-key',
     'x-gw-ims-user-id',
