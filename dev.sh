@@ -20,6 +20,12 @@
 #   ./dev.sh --respect-env    # pakai PORT dari `.env` apa adanya
 #   ./dev.sh --force          # lanjut walau port tujuan sudah dipakai
 #   ./dev.sh -- --host        # teruskan argumen setelah `--` ke npm
+#   AUTO_BACKUP=1 ./dev.sh    # biarkan backup database saat start ikut jalan
+#
+# Catatan: tanpa AUTO_BACKUP dari shell, skrip ini menyetel AUTO_BACKUP=0.
+# `server/index.ts` menjalankan backup otomatis hanya di production, tapi
+# `NODE_ENV=production` yang nyasar di shell akan menghidupkannya lagi — sesi dev
+# tidak perlu menulis (dan memangkas) isi `data/backups/`.
 #
 # Catatan: port backend diambil dari target proxy Vite dan diekspor sebagai
 # `PORT` untuk proses anak. `server/index.ts` memanggil `dotenv.config()` tanpa
@@ -41,7 +47,7 @@ API_PORT=""
 NPM_ARGS=()
 TIDY_LOG="$(mktemp 2>/dev/null || echo /tmp/tidy-logs.$$.log)"
 
-usage() { sed -n '3,25p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '3,31p' "$0" | sed 's/^# \{0,1\}//'; }
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -84,8 +90,11 @@ if [ ! -d "$PRODUCT" ]; then
 fi
 
 # Target proxy Vite untuk /api — inilah port yang benar-benar dipakai app.
+# Port diambil lewat `sed`, bukan `grep -oE '[0-9]+$'`: teks yang cocok diakhiri
+# tanda kutip atau koma, jadi pola berjangkar akhir itu selalu gagal diam-diam
+# dan nilainya cuma jatuh ke default — pemeriksaan cocok/tidaknya jadi palsu.
 PROXY_PORT="$(grep -oE "target: *'http://localhost:[0-9]+'" "$PRODUCT/vite.config.ts" 2>/dev/null \
-  | head -1 | grep -oE '[0-9]+$')"
+  | head -1 | sed -n 's/.*localhost:\([0-9]\{1,\}\).*/\1/p')"
 PROXY_PORT="${PROXY_PORT:-6000}"
 
 # PORT dari .env, kalau ada.
@@ -170,6 +179,22 @@ fi
 
 # `${arr[@]+...}` dipakai supaya aman di `set -u` untuk array kosong, termasuk
 # di bash 3 (macOS) yang masih menganggapnya variabel tak terdefinisi.
+# Sesi dev tidak perlu menyentuh `data/backups/`. server/index.ts hanya
+# menjalankan backup otomatis (snapshot saat start + scheduler R2) di
+# production, tapi kalau `NODE_ENV=production` nempel di shell, backup itu ikut
+# jalan lagi — jadi dimatikan eksplisit, kecuali sudah ditentukan sendiri.
+if [ -z "${AUTO_BACKUP:-}" ]; then
+  AUTO_BACKUP=0
+  export AUTO_BACKUP
+  NOTES+=("Backup otomatis dimatikan untuk sesi ini (AUTO_BACKUP=0). Set AUTO_BACKUP=1 kalau memang ingin snapshot database saat boot.")
+fi
+
+case "${AUTO_BACKUP:-}" in
+  0|false|off|no) BACKUP_NOTE="AUTO_BACKUP=$AUTO_BACKUP — tidak menyentuh data/backups/" ;;
+  '')             BACKUP_NOTE='tidak diatur — ikut default (hanya production)' ;;
+  *)              BACKUP_NOTE="AUTO_BACKUP=$AUTO_BACKUP" ;;
+esac
+
 for o in ${OK_LINES[@]+"${OK_LINES[@]}"}; do echo "ok: $o"; done
 for n in ${NOTES[@]+"${NOTES[@]}"}; do echo "catatan: $n"; done
 for l in ${BUSY_LINES[@]+"${BUSY_LINES[@]}"}; do echo "$l"; done
@@ -192,6 +217,7 @@ if [ "$DRY_RUN" -eq 1 ]; then
   fi
   echo "  backend  : http://localhost:$WANT_PORT"
   echo "  app      : http://localhost:$APP_PORT"
+  echo "  backup   : $BACKUP_NOTE"
   echo "  log      : $LOGDIR/dev-<tanggal>-<jam>.log"
   [ "$BUSY" -eq 1 ] && echo "  catatan  : port di atas terisi, jalankan tanpa --dry-run akan gagal di backend"
   exit 0
@@ -215,6 +241,7 @@ fi
 echo "── Menjalankan dev server ──"
 echo "  backend : http://localhost:$WANT_PORT"
 echo "  app     : http://localhost:$APP_PORT"
+echo "  backup  : $BACKUP_NOTE"
 echo "  log     : scratch/logs/$(basename "$LOG")"
 echo "  berhenti: Ctrl+C"
 echo
