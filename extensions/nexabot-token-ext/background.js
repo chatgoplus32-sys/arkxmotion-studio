@@ -27,14 +27,20 @@ const DEFAULT_APP_URL = 'http://localhost:6000'
 // App menyimpan JWT login di localStorage dengan key ini (src/stores/authStore.ts).
 const APP_TOKEN_STORAGE_KEY = 'arkxmotion_token'
 
-// Kandidat origin frontend app: dev server Vite + deployment Vercel. Dipakai
+// Kandidat origin frontend app: dev server Vite + domain produksi. Dipakai
 // untuk mencari tab yang sudah login (URL app di popup tetap dicoba lebih dulu).
+//
+// Domain produksi WAJIB ada di sini: sejak /api/sync-tokens membutuhkan JWT,
+// extension yang tidak bisa menemukan tab app yang login tidak bisa mengirim
+// apa pun (server menjawab 401). Host Vercel pernah ada di daftar ini, tapi
+// deployment-nya sudah dimatikan (402 DEPLOYMENT_DISABLED), jadi diganti dengan
+// domain yang benar-benar melayani.
 const APP_TAB_CANDIDATES = [
   'http://localhost:5173',
   'http://localhost:3000',
   'http://localhost:4173',
   'http://localhost:6000',
-  'https://arkxmotion-studio.vercel.app',
+  'https://arkxmotion-studio.win',
 ]
 
 // Bentuk query yang berbeda-beda supaya cookie host-only (www) ikut terbaca.

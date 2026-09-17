@@ -7,7 +7,8 @@
   "permissions": [
     "storage",
     "activeTab",
-    "cookies"
+    "cookies",
+    "scripting"
   ],
   "host_permissions": [
     "https://riverside.com/*",
@@ -24,7 +25,9 @@
         "https://riverside.com/*",
         "https://*.riverside.com/*"
       ],
-      "js": ["content.js"],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ],
