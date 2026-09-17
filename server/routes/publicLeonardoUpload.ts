@@ -32,7 +32,7 @@ router.all('/', (req: Request, res: Response) => {
         body: JSON.stringify({ extension }),
         signal: AbortSignal.timeout(30000),
       })
-      const initData = await initRes.json()
+      const initData: any = await initRes.json()
       const initImage = initData?.uploadInitImage || initData?.upload_init_image || initData
 
       if (!initImage?.url || !initImage?.id) {

@@ -2,6 +2,14 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 const GENSPARK_BASE = 'https://www.genspark.ai'
 
+
+const FETCH_TIMEOUT_MS = 30000
+async function fetchWithTimeout(url: string | URL, init?: RequestInit & { timeoutMs?: number }): Promise<Response> {
+  const timeoutMs = init?.timeoutMs ?? FETCH_TIMEOUT_MS
+  const ac = new AbortController()
+  const tid = setTimeout(() => ac.abort(), timeoutMs)
+  try { return await fetch(url, { ...init, signal: ac.signal }) } finally { clearTimeout(tid) }
+}
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')

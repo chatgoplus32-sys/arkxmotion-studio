@@ -38,7 +38,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         signal: AbortSignal.timeout(60000),
       })
 
-      const data = await apiRes.json().catch(() => null)
+      const data: any = await apiRes.json().catch(() => null)
       console.log(`[magnific-proxy] submit → ${apiRes.status}`, JSON.stringify(data).slice(0, 300))
 
       if (!apiRes.ok) {
@@ -65,7 +65,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         signal: AbortSignal.timeout(15000),
       })
 
-      const data = await apiRes.json().catch(() => null)
+      const data: any = await apiRes.json().catch(() => null)
 
       if (!apiRes.ok) {
         return res.status(200).json({ ok: false, error: data?.message || `HTTP ${apiRes.status}`, data })
@@ -92,7 +92,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         signal: AbortSignal.timeout(60000),
       })
 
-      const data = await apiRes.json().catch(() => null)
+      const data: any = await apiRes.json().catch(() => null)
       console.log(`[magnific-proxy] submit-motion → ${apiRes.status}`, JSON.stringify(data).slice(0, 300))
 
       if (!apiRes.ok) {
@@ -116,7 +116,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         signal: AbortSignal.timeout(15000),
       })
 
-      const data = await apiRes.json().catch(() => null)
+      const data: any = await apiRes.json().catch(() => null)
 
       if (!apiRes.ok) {
         return res.status(200).json({ ok: false, error: data?.message || `HTTP ${apiRes.status}`, data })

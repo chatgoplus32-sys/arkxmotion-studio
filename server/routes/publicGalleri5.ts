@@ -3,7 +3,7 @@ import { Router, Request, Response } from 'express'
 const router = Router()
 const G5_BACKEND = 'https://aistudio-backend.calmdesert-ca599847.centralindia.azurecontainerapps.io'
 
-async function fetchWithRetry(url: string, opts: RequestInit, retries = 2, delayMs = 1500): Promise<Response> {
+async function fetchWithRetry(url: string, opts: RequestInit, retries = 2, delayMs = 1500): Promise<globalThis.Response> {
   let lastErr: Error | null = null
   for (let attempt = 0; attempt <= retries; attempt++) {
     try { return await fetch(url, opts) } catch (e: any) {

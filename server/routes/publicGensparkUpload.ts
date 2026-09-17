@@ -49,7 +49,7 @@ router.all('/', (req: Request, res: Response) => {
         signal: AbortSignal.timeout(30000),
       })
       if (!metaRes.ok) return res.status(metaRes.status).json({ ok: false, error: `Genspark API error: ${metaRes.status}` })
-      const meta = await metaRes.json()
+      const meta: any = await metaRes.json()
       const data = meta?.data || meta
       const uploadUrl = data?.upload_url
       const fileWrapperUrl = data?.file_wrapper_url

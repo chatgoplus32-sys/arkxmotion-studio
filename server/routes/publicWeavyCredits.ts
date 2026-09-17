@@ -12,7 +12,7 @@ async function refreshWeavyToken(refreshToken: string): Promise<{ accessToken: s
       body: `grant_type=refresh_token&refresh_token=${encodeURIComponent(refreshToken)}`,
       signal: AbortSignal.timeout(10000),
     })
-    const data = await r.json().catch(() => ({}))
+    const data: any = await r.json().catch(() => ({}))
     if (!r.ok || !data.id_token) return null
     return { accessToken: data.id_token, refreshToken: data.refresh_token || refreshToken, expiresIn: Number(data.expires_in) || 3600 }
   } catch { return null }

@@ -35,7 +35,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     })
 
     if (provider === 'tmpfiles') {
-      const json = await upstreamRes.json().catch(() => null)
+      const json: any = await upstreamRes.json().catch(() => null)
       console.log(`[uploads:${provider}] ${upstreamRes.status}:`, JSON.stringify(json).slice(0, 300))
       if (!json?.data?.url) {
         return res.status(502).json({ ok: false, error: `tmpfiles: ${JSON.stringify(json).slice(0, 200)}` })

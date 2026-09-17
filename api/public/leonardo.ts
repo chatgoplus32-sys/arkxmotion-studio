@@ -2,6 +2,14 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 const LEONARDO_API = 'https://api.leonardo.ai'
 
+
+const FETCH_TIMEOUT_MS = 30000
+async function fetchWithTimeout(url: string | URL, init?: RequestInit & { timeoutMs?: number }): Promise<Response> {
+  const timeoutMs = init?.timeoutMs ?? FETCH_TIMEOUT_MS
+  const ac = new AbortController()
+  const tid = setTimeout(() => ac.abort(), timeoutMs)
+  try { return await fetch(url, { ...init, signal: ac.signal }) } finally { clearTimeout(tid) }
+}
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
@@ -34,7 +42,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const apiRes = await fetchWithTimeout(url, fetchOpts)
-    const data = await apiRes.json().catch(() => null)
+    const data: any = await apiRes.json().catch(() => null)
 
     console.log(`[leonardo-proxy] ${method || 'GET'} ${path} → ${apiRes.status}`)
 

@@ -31,7 +31,7 @@ router.all('/{*path}', (req: Request, res: Response) => {
       if (body && method !== 'GET') fetchOpts.body = JSON.stringify(body)
 
       const apiRes = await fetchWithTimeout(url, fetchOpts)
-      const data = await apiRes.json().catch(() => null)
+      const data: any = await apiRes.json().catch(() => null)
 
       console.log(`[leonardo-proxy] ${method || 'GET'} ${path} → ${apiRes.status}`)
 

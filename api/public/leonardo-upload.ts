@@ -35,7 +35,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       },
       body: JSON.stringify({ extension }),
     })
-    const initData = await initRes.json()
+    const initData: any = await initRes.json()
     const initImage = initData?.uploadInitImage || initData?.upload_init_image  || initData
 
     let parsedFieldsForLog: Record<string, string> | null = null

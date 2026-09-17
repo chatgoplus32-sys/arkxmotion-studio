@@ -179,7 +179,7 @@ router.post('/buy', authenticateToken, (req: AuthRequest, res: Response) => {
 // Parameterized routes LAST
 router.get('/:provider', authenticateToken, (req: AuthRequest, res: Response) => {
   try {
-    const { provider } = req.params
+    const provider = String(req.params.provider)
     if (!['roboneo', 'framia', 'weavy', 'createpulse', 'riverside'].includes(provider)) {
       return res.status(400).json({ error: 'Invalid provider' })
     }

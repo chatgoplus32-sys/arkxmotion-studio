@@ -11,7 +11,7 @@ async function refreshWeavyToken(refreshToken: string): Promise<{ accessToken: s
       body: `grant_type=refresh_token&refresh_token=${encodeURIComponent(refreshToken)}`,
       signal: AbortSignal.timeout(10000),
     })
-    const data = await r.json().catch(() => ({}))
+    const data: any = await r.json().catch(() => ({}))
     console.log(`[weavy-proxy] firebase refresh → ${r.status}`, JSON.stringify(data).slice(0, 300))
     if (!r.ok || !data.id_token) return null
     return {

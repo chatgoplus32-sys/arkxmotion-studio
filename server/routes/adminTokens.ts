@@ -196,7 +196,7 @@ router.post('/bulk-delete', authenticateToken, requireAdmin, (req: AuthRequest, 
 // Token CRUD routes
 router.patch('/:id', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
   try {
-    const { id } = req.params
+    const id = String(req.params.id)
     const { name, token_value, price, status } = req.body
 
     const existing = db.prepare('SELECT * FROM tokens WHERE id = ?').get(id) as TokenRow | undefined

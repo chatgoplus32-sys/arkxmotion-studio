@@ -647,7 +647,7 @@ async function checkRoboneo(): Promise<ProviderStatus> {
       signal: AbortSignal.timeout(10000),
     })
     const latency = Date.now() - start
-    const data = await res.json()
+    const data: any = await res.json()
 
     if (res.ok || data.error_code) {
       return {

@@ -26,7 +26,7 @@ router.post('/', (req: Request, res: Response) => {
           body: JSON.stringify(payload),
           signal: AbortSignal.timeout(60000),
         })
-        const data = await apiRes.json().catch(() => null)
+        const data: any = await apiRes.json().catch(() => null)
         if (!apiRes.ok) return res.status(200).json({ ok: false, error: data?.message || data?.error || `HTTP ${apiRes.status}`, data })
         return res.json({ ok: true, data: data?.data || data })
       }
@@ -39,7 +39,7 @@ router.post('/', (req: Request, res: Response) => {
           headers: { 'x-magnific-api-key': apiKey },
           signal: AbortSignal.timeout(15000),
         })
-        const data = await apiRes.json().catch(() => null)
+        const data: any = await apiRes.json().catch(() => null)
         if (!apiRes.ok) return res.status(200).json({ ok: false, error: data?.message || `HTTP ${apiRes.status}`, data })
         return res.json({ ok: true, data: data?.data || data })
       }
