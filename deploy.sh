@@ -23,6 +23,15 @@ if [ ! -f .env ] && [ -f ../.env ]; then
   cp ../.env .env
 fi
 
+# Smoke test — pastikan server benar-benar bisa boot SEBELUM menimpa proses
+# produksi yang sedang jalan. Kalau gagal, deploy dibatalkan dan versi lama
+# tetap melayani user (bukan malah ikut mati jadi 502).
+echo "🧪 Menjalankan smoke test..."
+if ! bash scripts/smoke-test.sh; then
+  echo "❌ Deploy DIBATALKAN — server baru gagal boot. Versi lama tetap jalan."
+  exit 1
+fi
+
 # Restart with PM2
 echo "🔄 Restarting server with PM2..."
 if pm2 describe arkxmotion-studio > /dev/null 2>&1; then

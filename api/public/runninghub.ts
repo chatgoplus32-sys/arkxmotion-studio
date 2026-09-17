@@ -92,7 +92,7 @@ async function handleMotionControlV26Std(apiKey: string, params: any, res: Verce
     imageUrl,
     videoUrl,
     characterOrientation = 'video',
-    _prompt = '',
+    prompt = '',
     keepOriginalSound = 'yes',
   } = params
 
@@ -161,7 +161,7 @@ async function handleMotionControlV26Pro(apiKey: string, params: any, res: Verce
     imageUrl,
     videoUrl,
     characterOrientation = 'video',
-    _prompt = '',
+    prompt = '',
     keepOriginalSound = 'yes',
   } = params
 
@@ -230,7 +230,7 @@ async function handleMotionControlV3(apiKey: string, params: any, res: VercelRes
     imageUrl,
     videoUrl,
     characterOrientation = 'video',
-    _prompt = '',
+    prompt = '',
     negativePrompt = '',
     keepOriginalSound = true,
   } = params

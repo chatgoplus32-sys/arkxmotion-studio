@@ -40,6 +40,12 @@ jobs:
             echo "🔨 Building frontend..."
             npm run build
 
+            echo "🧪 Smoke test (gate sebelum restart)..."
+            if ! bash scripts/smoke-test.sh; then
+              echo "❌ Server baru gagal boot — restart DIBATALKAN, versi lama tetap jalan."
+              exit 1
+            fi
+
             echo "🔄 Restarting server..."
             if pm2 describe arkxmotion-studio > /dev/null 2>&1; then
               pm2 restart arkxmotion-studio --update-env

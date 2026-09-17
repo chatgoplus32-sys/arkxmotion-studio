@@ -39,7 +39,7 @@ router.get('/backup', async (_req, res: Response) => {
   }
 })
 
-router.post('/backup', async (_req, res: Response) => {
+router.post('/backup', async (req, res: Response) => {
   return (router as any).handle({ ...req, method: 'GET', url: '/backup' }, res, () => {})
 })
 
