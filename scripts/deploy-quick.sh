@@ -28,8 +28,8 @@ fi
 
 # Restart PM2
 echo "🔄 Restarting server..."
-if pm2 describe arkxmotion-studio > /dev/null 2>&1; then
-  pm2 restart arkxmotion-studio --update-env
+if pm2 describe arkxmotion > /dev/null 2>&1; then
+  pm2 restart arkxmotion --update-env
 else
   pm2 start ecosystem.config.cjs
   pm2 save
@@ -43,4 +43,4 @@ echo ""
 echo "✅ Deploy complete!"
 echo "🌐 https://arkxmotion-studio.win"
 echo "📊 pm2 monit"
-echo "📋 pm2 logs arkxmotion-studio"
+echo "📋 pm2 logs arkxmotion"

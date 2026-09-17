@@ -1,24 +1,70 @@
+# ============================================================
+# Deploy ke VPS produksi (idcloudhost) — /opt/arkxmotion-studio
+#
+# Dua gerbang dijalankan SEBELUM proses produksi diganti. Kalau salah satu
+# gagal, deploy dibatalkan dan versi lama tetap melayani user — jadi commit
+# yang merusak server tidak pernah sampai ke produksi.
+#
+#   1. check-undefined.mjs  — identifier tak terdefinisi (TS2304/TS2552) &
+#                             API CommonJS di file ESM
+#   2. smoke-test.sh        — benar-benar menjalankan server lalu memastikan
+#                             /api/health merespons (menangkap server yang
+#                             gagal boot, penyebab 502 di semua endpoint)
+#
+# Konteks: 42 file di repo ini (extensions/, workers/, cloudflare-worker/,
+# skrip root, public/sw.js, vite.config.ts, shared/) berada di luar semua
+# tsconfig, dan `tsc -b` tidak memeriksa folder server/. Kedua gerbang di atas
+# menutup celah itu.
+# ============================================================
 name: Deploy to VPS
 
 on:
   push:
     branches: [main]
+  workflow_dispatch: # izinkan trigger manual
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+
     steps:
-      - name: Deploy via SSH
+      - name: Deploy ke VPS via SSH
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
+          command_timeout: 12m
           script: |
+            set -e
             cd /opt/arkxmotion-studio
-            git pull origin main
+
+            echo "🔄 Menarik perubahan terbaru..."
+            git fetch origin main
+            # `npm install` di VPS mengubah package-lock.json; kembalikan dulu
+            # supaya pull tidak gagal karena perubahan lokal itu.
+            git checkout -- package-lock.json 2>/dev/null || true
+            git pull --ff-only origin main
+            echo "   HEAD: $(git log --oneline -1)"
+
+            echo "📦 Memasang dependencies..."
             npm install
+
+            echo "🔎 Gerbang 1 — identifier tak terdefinisi..."
+            node scripts/check-undefined.mjs
+
+            echo "🔨 Membangun frontend..."
             npm run build
-            pm2 restart arkxmotion
+
+            echo "🧪 Gerbang 2 — smoke test (server harus benar-benar bisa boot)..."
+            if ! bash scripts/smoke-test.sh; then
+              echo "❌ Deploy DIBATALKAN — server baru gagal boot. Versi lama tetap jalan."
+              exit 1
+            fi
+
+            echo "🔄 Restart server..."
+            pm2 restart arkxmotion --update-env
             pm2 save
-            echo "=== Deploy done ==="
+
+            echo "✅ Deploy selesai pada $(date)"

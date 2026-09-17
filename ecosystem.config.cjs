@@ -1,7 +1,7 @@
 module.exports = {
   apps: [
     {
-      name: 'arkxmotion-studio',
+      name: 'arkxmotion',
       script: 'tsx',
       args: 'server/index.ts',
       cwd: __dirname,

@@ -6,7 +6,7 @@ set -e
 # Run this ONCE on your VPS after initial clone
 # ============================================================
 
-APP_DIR="/var/www/arkxmotion-studio/arkxmotion-studio"
+APP_DIR="/opt/arkxmotion-studio"
 
 echo "🪝 Setting up git auto-deploy hook..."
 
@@ -15,7 +15,7 @@ cat > "${APP_DIR}/.git/hooks/post-receive" << 'HOOK'
 #!/bin/bash
 set -e
 
-APP_DIR="/var/www/arkxmotion-studio/arkxmotion-studio"
+APP_DIR="/opt/arkxmotion-studio"
 DEPLOY_LOG="${APP_DIR}/logs/deploy.log"
 
 echo "$(date '+%Y-%m-%d %H:%M:%S') 🚀 Auto-deploy triggered" >> "$DEPLOY_LOG"
@@ -24,7 +24,7 @@ cd "$APP_DIR"
 
 # Pull latest
 echo "🔄 Pulling latest changes..."
-git --work-tree="$APP_DIR" --git-dir="/var/www/arkxmotion-studio/.git" checkout main --force
+git --work-tree="$APP_DIR" --git-dir="/opt/arkxmotion-studio/.git" checkout main --force
 
 # Install deps
 echo "📦 Installing dependencies..."
@@ -36,8 +36,8 @@ npm run build 2>&1 | tail -3
 
 # Restart PM2
 echo "🔄 Restarting server..."
-if pm2 describe arkxmotion-studio > /dev/null 2>&1; then
-  pm2 restart arkxmotion-studio --update-env
+if pm2 describe arkxmotion > /dev/null 2>&1; then
+  pm2 restart arkxmotion --update-env
 else
   pm2 start "${APP_DIR}/ecosystem.config.cjs"
   pm2 save
@@ -56,5 +56,5 @@ echo "✅ Hook installed!"
 echo ""
 echo "Sekarang setiap git push ke VPS akan otomatis deploy."
 echo "Cara pakai:"
-echo "  1. Tambah remote: git remote add vps ssh://root@your-vps-ip/var/www/arkxmotion-studio/.git"
+echo "  1. Tambah remote: git remote add vps ssh://root@your-vps-ip/opt/arkxmotion-studio/.git"
 echo "  2. Push: git push vps main"

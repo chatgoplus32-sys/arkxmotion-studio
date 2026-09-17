@@ -39,8 +39,8 @@ fi
 
 # Restart with PM2
 echo "🔄 Restarting server with PM2..."
-if pm2 describe arkxmotion-studio > /dev/null 2>&1; then
-  pm2 restart arkxmotion-studio --update-env
+if pm2 describe arkxmotion > /dev/null 2>&1; then
+  pm2 restart arkxmotion --update-env
 else
   pm2 start ecosystem.config.cjs
   pm2 save
@@ -49,4 +49,4 @@ fi
 echo "✅ Deploy complete!"
 echo "🌐 Server running on http://localhost:${PORT:-6000}"
 echo "📊 Monitor: pm2 monit"
-echo "📋 Logs: pm2 logs arkxmotion-studio"
+echo "📋 Logs: pm2 logs arkxmotion"

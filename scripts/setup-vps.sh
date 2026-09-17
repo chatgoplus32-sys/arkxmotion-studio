@@ -8,7 +8,7 @@ set -e
 
 DOMAIN="arkxmotion-studio.win"
 EMAIL="admin@${DOMAIN}"  # Change this to your email for SSL cert
-APP_DIR="/var/www/arkxmotion-studio"
+APP_DIR="/opt/arkxmotion-studio"
 
 echo "🚀 ARKXMotion Studio — VPS Setup"
 echo "================================"
@@ -119,9 +119,9 @@ echo "✅ Setup complete!"
 echo ""
 echo "🌐 Site: https://${DOMAIN}"
 echo "📊 PM2: pm2 monit"
-echo "📋 Logs: pm2 logs arkxmotion-studio"
-echo "🔄 Restart: pm2 restart arkxmotion-studio"
+echo "📋 Logs: pm2 logs arkxmotion"
+echo "🔄 Restart: pm2 restart arkxmotion"
 echo ""
 echo "📝 Don't forget to:"
 echo "   1. Edit ${APP_DIR}/.env with your secrets"
-echo "   2. Restart: pm2 restart arkxmotion-studio --update-env"
+echo "   2. Restart: pm2 restart arkxmotion --update-env"

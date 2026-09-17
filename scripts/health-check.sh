@@ -2,11 +2,11 @@
 # ============================================================
 # Health Check Cron Script
 # Run every 5 minutes via cron:
-#   */5 * * * * /var/www/arkxmotion-studio/arkxmotion-studio/scripts/health-check.sh
+#   */5 * * * * /opt/arkxmotion-studio/scripts/health-check.sh
 # ============================================================
 
 URL="${HEALTH_URL:-http://localhost:6000/api/health}"
-LOG="/var/www/arkxmotion-studio/arkxmotion-studio/logs/health.log"
+LOG="/opt/arkxmotion-studio/logs/health.log"
 ALERT_WEBHOOK="${ALERT_WEBHOOK_URL:-}"
 MAX_RETRIES=2
 TIMEOUT=10
@@ -54,7 +54,7 @@ fi
 # Auto-restart PM2 if server is down
 if [ "$STATUS" = "000" ]; then
   echo "[$TIMESTAMP] 🔄 Server unreachable, restarting PM2..." >> "$LOG"
-  pm2 restart arkxmotion-studio 2>/dev/null
+  pm2 restart arkxmotion 2>/dev/null
 fi
 
 # Keep log file small (last 1000 lines)

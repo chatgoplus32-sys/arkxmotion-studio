@@ -7,7 +7,7 @@
 
 PORT="${DEPLOY_WEBHOOK_PORT:-9000}"
 SECRET="${DEPLOY_WEBHOOK_SECRET:-}"
-APP_DIR="/var/www/arkxmotion-studio/arkxmotion-studio"
+APP_DIR="/opt/arkxmotion-studio"
 DEPLOY_LOCK="/tmp/arkxmotion-deploy.lock"
 
 echo "🎣 Deploy webhook listening on port ${PORT}..."
@@ -50,8 +50,8 @@ while true; do
       git pull origin main
       npm install --production=false
       npm run build
-      if pm2 describe arkxmotion-studio > /dev/null 2>&1; then
-        pm2 restart arkxmotion-studio --update-env
+      if pm2 describe arkxmotion > /dev/null 2>&1; then
+        pm2 restart arkxmotion --update-env
       else
         pm2 start ecosystem.config.cjs
         pm2 save
