@@ -5,13 +5,8 @@ import cors from 'cors'
 import dotenv from 'dotenv'
 import fs from 'fs'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-import db from './db.js'
-import authRoutes from './routes/auth.js'
-import adminRoutes from './routes/admin.js'
-import adminTokenRoutes from './routes/adminTokens.js'
-import tokenRoutes from './routes/tokens.js'
-import createpulseRoutes from './routes/createpulse.js'
-import adminTopupRoutes from './routes/adminTopup.js'
+import { monitorMiddleware, getMetrics } from './lib/monitor.js'
+import { checkHealth } from './lib/alerts.js'
 import generationLogRoutes from './routes/generationLogs.js'
 import membershipRoutes from './routes/membership.js'
 import cronRoutes from './routes/cron.js'
@@ -73,6 +68,7 @@ app.use(cors({
 // Upload route MUST be before express.json() to get raw multipart body
 app.use('/api/public/upload-catbox', publicUploadCatboxRoutes)
 
+app.use(monitorMiddleware)
 app.use(express.json({ limit: '10mb' }))
 
 // --- API Routes ---
@@ -111,8 +107,17 @@ app.use('/api/public/weavy-credits', publicWeavyCreditsRoutes)
 app.use('/api/public/r2-upload', publicR2UploadRoutes)
 app.use('/api/nexabot', nexabotWalletRoutes)
 
-app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() })
+app.get("/api/health", async (_req, res) => {
+  try {
+    const health = await checkHealth()
+    res.json(health)
+  } catch {
+    res.json({ status: "ok", timestamp: new Date().toISOString(), uptime: process.uptime() })
+  }
+})
+
+app.get("/api/metrics", (_req, res) => {
+  res.json(getMetrics())
 })
 
 interface MaintenanceRow {

@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ARKXMotion Studio — Status</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0a0a0a; color: #e0e0e0;
+      min-height: 100vh; padding: 2rem;
+    }
+    .container { max-width: 700px; margin: 0 auto; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    .subtitle { color: #888; font-size: 0.85rem; margin-bottom: 2rem; }
+    .status-badge {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      padding: 0.5rem 1rem; border-radius: 8px;
+      font-weight: 600; font-size: 0.9rem;
+    }
+    .status-ok { background: #0a2e1a; color: #4ade80; border: 1px solid #166534; }
+    .status-degraded { background: #2e2a0a; color: #facc15; border: 1px solid #854d0e; }
+    .status-error { background: #2e0a0a; color: #f87171; border: 1px solid #991b1b; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; }
+    .dot-ok { background: #4ade80; }
+    .dot-degraded { background: #facc15; }
+    .dot-error { background: #f87171; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.5rem 0; }
+    .card {
+      background: #141414; border: 1px solid #262626; border-radius: 10px;
+      padding: 1rem;
+    }
+    .card-title { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; color: #666; margin-bottom: 0.5rem; }
+    .card-value { font-size: 1.5rem; font-weight: 700; }
+    .card-sub { font-size: 0.8rem; color: #888; margin-top: 0.25rem; }
+    .checks { margin-top: 1.5rem; }
+    .check-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0.75rem 1rem; background: #141414; border: 1px solid #262626;
+      border-radius: 8px; margin-bottom: 0.5rem;
+    }
+    .check-name { font-weight: 500; }
+    .check-latency { font-size: 0.8rem; color: #888; }
+    .refresh-btn {
+      margin-top: 1.5rem; padding: 0.5rem 1.5rem; border-radius: 8px;
+      background: #2563eb; color: white; border: none; cursor: pointer;
+      font-size: 0.85rem; font-weight: 500;
+    }
+    .refresh-btn:hover { background: #1d4ed8; }
+    .loading { color: #666; font-style: italic; }
+    @media (max-width: 500px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🟢 ARKXMotion Studio</h1>
+    <p class="subtitle">System Status</p>
+    <div id="content"><p class="loading">Loading...</p></div>
+  </div>
+  <script>
+    async function load() {
+      try {
+        const [health, metrics] = await Promise.all([
+          fetch('/api/health').then(r => r.json()),
+          fetch('/api/metrics').then(r => r.json()),
+        ]);
+
+        const statusClass = health.status === 'ok' ? 'ok' : health.status === 'degraded' ? 'degraded' : 'error';
+        const statusLabel = health.status === 'ok' ? 'All Systems Operational' : health.status === 'degraded' ? 'Degraded Performance' : 'System Error';
+
+        let html = `
+          <div class="status-badge status-${statusClass}">
+            <span class="dot dot-${statusClass}"></span>
+            ${statusLabel}
+          </div>
+          <div class="grid">
+            <div class="card">
+              <div class="card-title">Uptime</div>
+              <div class="card-value">${metrics.uptime.uptimeHuman}</div>
+              <div class="card-sub">since ${new Date(metrics.uptime.startedAt).toLocaleDateString()}</div>
+            </div>
+            <div class="card">
+              <div class="card-title">Requests</div>
+              <div class="card-value">${metrics.requests.requestsPerMin}/min</div>
+              <div class="card-sub">${metrics.requests.total} total · ${metrics.requests.errorRate} errors</div>
+            </div>
+            <div class="card">
+              <div class="card-title">Avg Response</div>
+              <div class="card-value">${metrics.performance.avgDurationMs}ms</div>
+              <div class="card-sub">P95: ${metrics.performance.p95DurationMs}ms</div>
+            </div>
+            <div class="card">
+              <div class="card-title">Memory</div>
+              <div class="card-value">${metrics.memory.heapUsed}MB</div>
+              <div class="card-sub">RSS: ${metrics.memory.rss}MB · Heap: ${metrics.memory.heapTotal}MB</div>
+            </div>
+          </div>
+          <div class="checks">
+            <div class="card-title" style="margin-bottom:0.75rem">UPSTREAM CHECKS</div>
+        `;
+
+        for (const [name, check] of Object.entries(health.checks)) {
+          const icon = check.status === 'ok' ? '🟢' : check.status === 'degraded' ? '🟡' : '🔴';
+          const latency = check.latencyMs ? `${check.latencyMs}ms` : check.error || 'N/A';
+          html += `
+            <div class="check-row">
+              <span class="check-name">${icon} ${name}</span>
+              <span class="check-latency">${latency}</span>
+            </div>
+          `;
+        }
+
+        html += `
+          </div>
+          <button class="refresh-btn" onclick="load()">↻ Refresh</button>
+          <p style="color:#444;font-size:0.75rem;margin-top:1rem">Auto-refresh in 30s</p>
+        `;
+
+        document.getElementById('content').innerHTML = html;
+      } catch (err) {
+        document.getElementById('content').innerHTML = '<p style="color:#f87171">Failed to load status</p>';
+      }
+    }
+    load();
+    setInterval(load, 30000);
+  </script>
+</body>
+</html>
