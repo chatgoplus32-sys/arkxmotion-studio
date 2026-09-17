@@ -14,6 +14,7 @@ di-ignore di sini (lihat komentar di `.gitignore`).
 | `scratch/` (di-ignore) | Sisa pekerjaan sekali pakai, lihat di bawah. |
 | `.freebuff/` (di-ignore) | Artefak tooling lokal; sekarang hanya berisi catatan dan log sesi yang masih hidup, lihat di bawah. |
 | `tidy-logs.sh` | Perapi log: memindahkan log sesi dev/preview yang sudah mati dari `.freebuff/` ke `scratch/logs/`. Lihat "Menahan penumpukan log". |
+| `dev.sh` | Titik masuk kerja: rapikan log → cek jebakan port/`.env` → jalankan `npm run dev:all`. Lihat "Menjalankan semuanya". |
 
 ### Ekstensi token: sekarang satu, di repo produk
 
@@ -106,14 +107,47 @@ sudah dipindah ke `scratch/scripts/`, `scratch/artifacts/`, dan
 `scratch/logs/`. Tidak ada `package.json`, skrip, atau `run.md` yang menunjuk
 ke file-file itu — sudah dicek lewat grep — jadi tidak ada jalur yang putus.
 
+## Menjalankan semuanya
+
+```
+./dev.sh                  # perapian log + cek + nyalakan dev server
+./dev.sh --dry-run        # cek saja, server tidak dinyalakan
+./dev.sh --no-tidy        # lewati perapian log (awal dan akhir)
+./dev.sh --respect-env    # ikuti PORT dari `.env` (default: ikuti proxy Vite)
+./dev.sh --api-port 7000  # paksa port backend lain
+./dev.sh -- --host        # teruskan argumen setelah `--` ke npm
+```
+
+Satu perintah itu mengerjakan tiga hal berurutan:
+
+1. **Merapikan log lebih dulu** lewat `tidy-logs.sh`, jadi perapian tidak perlu
+   diingat dan tidak ada sesi lama yang menumpuk di `.freebuff/` sebelum kerja
+   berikutnya dimulai.
+2. **Memeriksa jebakan yang sudah pernah memakan waktu.** Yang paling penting:
+   `.env` berisi `PORT=3001` sementara Vite mem-proxy `/api` ke `6000`, jadi
+   backend dijalankan dengan `PORT=6000` supaya app benar-benar tersambung
+   (pakai `--respect-env` kalau ingin mengikuti `.env` apa adanya — server
+   memanggil dotenv tanpa override, jadi nilai dari shell yang menang). Selain
+   itu: `node_modules` yang hilang di-`npm install` otomatis, dan port yang
+   sudah terisi dilaporkan lengkap dengan PID-nya.
+3. **Menjalankan `npm run dev:all`** dengan seluruh output disalin ke
+   `scratch/logs/dev-<stamp>.log`, lalu merapikan sekali lagi saat berhenti.
+   Exit code npm diteruskan apa adanya.
+
+Kalau port sudah terisi, `dev.sh` berhenti **sebelum** menyalakan apa pun
+(daripada backend mati dengan `EADDRINUSE` di tengah tumpukan log). `--force`
+melewati pemeriksaan itu.
+
 ## Catatan
 
 - **File kredensial dibiarkan di root dan tidak disentuh** — `cookiejar.txt`,
   `headers*.txt`, `cred-*.json`. Semuanya sudah di-ignore, tapi tetap: rotasi
   atau hapus sendiri kalau sudah tidak dipakai, karena isinya sesi/API key.
-- Menjalankan produk: `cd arkxmotion-studio && npm install && npm run dev:all`.
-  Catatan port dan jebakannya (mis. `.env` berisi `PORT=3001` sementara Vite
-  mem-proxy `/api` ke `6000`) ada di `arkxmotion-studio/.freebuff/run.md` —
+- Menjalankan produk: `./dev.sh` (lihat "Menjalankan semuanya"). Kalau ingin
+  manual: `cd arkxmotion-studio && npm install && npm run dev:all` — tapi perlu
+  `PORT=6000 npm run dev:all`, karena `.env` berisi `PORT=3001` sementara Vite
+  mem-proxy `/api` ke `6000`. Catatan port dan jebakannya ada di
+  `arkxmotion-studio/.freebuff/run.md` —
   file lokal yang di-ignore, jadi tidak ikut ter-commit. Ada dua `run.md`:
   yang di repo produk untuk cara menjalankannya, yang di root `.freebuff/`
   untuk hal-hal seputar workspace ini.
