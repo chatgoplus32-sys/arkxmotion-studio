@@ -1235,6 +1235,7 @@ export default function MotionPage() {
               ])
               return true
             } catch (err: any) {
+              if (attemptTaskId) removeActiveTask(attemptTaskId)
               setCompressDialog(null)
               updateSlotStatus(slot.id, 'error', err.message)
               addLog(`#${slotNum} Error: ${err.message}`, 'error')
