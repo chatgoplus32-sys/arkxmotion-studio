@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Daftar Nexabot — Arkx Motion Studio</title>
+  <style>
+    :root { --bg:#0f1117; --surface:#1a1d27; --surface2:#242836; --border:#2e3348; --text:#e4e6f0; --muted:#8b8fa3; --accent:#6c5ce7; --accent-hover:#7f71ed; --green:#00b894; --yellow:#fdcb6e; --red:#e17055; --blue:#74b9ff; }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:var(--bg); color:var(--text); min-height:100vh; display:flex; justify-content:center; align-items:center; padding:20px; }
+
+    .register-card { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:32px; width:100%; max-width:480px; box-shadow:0 8px 32px rgba(0,0,0,.3); }
+    .logo { text-align:center; margin-bottom:24px; }
+    .logo h1 { font-size:24px; font-weight:700; }
+    .logo h1 span { color:var(--accent); }
+    .logo p { color:var(--muted); font-size:14px; margin-top:4px; }
+
+    .form-group { margin-bottom:20px; }
+    .form-group label { display:block; font-size:13px; color:var(--muted); margin-bottom:6px; font-weight:500; }
+    .form-group input, .form-group select { width:100%; padding:12px 14px; background:var(--surface2); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:15px; transition:border-color .15s; }
+    .form-group input:focus, .form-group select:focus { outline:none; border-color:var(--accent); }
+    .form-group input::placeholder { color:var(--muted); }
+
+    .plan-cards { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; margin-bottom:8px; }
+    .plan-card { background:var(--surface2); border:2px solid var(--border); border-radius:10px; padding:16px 12px; cursor:pointer; text-align:center; transition:all .15s; }
+    .plan-card:hover { border-color:var(--accent); }
+    .plan-card.selected { border-color:var(--accent); background:#6c5ce715; }
+    .plan-card .plan-icon { font-size:24px; margin-bottom:8px; }
+    .plan-card .plan-name { font-size:14px; font-weight:600; margin-bottom:4px; }
+    .plan-card .plan-price { font-size:12px; color:var(--muted); }
+    .plan-card .plan-desc { font-size:11px; color:var(--green); margin-top:6px; font-weight:500; }
+
+    .btn-register { width:100%; padding:14px; background:var(--accent); color:#fff; border:none; border-radius:8px; font-size:16px; font-weight:600; cursor:pointer; transition:all .15s; margin-top:8px; }
+    .btn-register:hover { background:var(--accent-hover); }
+    .btn-register:disabled { opacity:.5; cursor:not-allowed; }
+
+    .info-box { background:var(--surface2); border-radius:8px; padding:12px; font-size:12px; color:var(--muted); margin-top:16px; line-height:1.5; }
+    .info-box strong { color:var(--text); }
+
+    .success-box { display:none; text-align:center; padding:24px; }
+    .success-box .icon { font-size:64px; margin-bottom:16px; }
+    .success-box h2 { margin-bottom:8px; }
+    .success-box p { color:var(--muted); font-size:14px; margin-bottom:8px; }
+    .success-box .api-key-box { background:var(--surface2); padding:12px; border-radius:8px; font-family:monospace; font-size:13px; word-break:break-all; margin:16px 0; text-align:left; border:1px solid var(--green); }
+    .success-box .copy-btn { background:var(--green); color:#fff; border:none; padding:10px 20px; border-radius:6px; font-size:14px; font-weight:600; cursor:pointer; }
+    .success-box .copy-btn:hover { opacity:.9; }
+    .success-box .warning { color:var(--yellow); font-size:12px; margin-top:12px; }
+
+    .toast { position:fixed; bottom:24px; right:24px; background:var(--green); color:#fff; padding:12px 20px; border-radius:8px; font-size:14px; font-weight:500; transform:translateY(100px); opacity:0; transition:all .3s; z-index:200; }
+    .toast.show { transform:translateY(0); opacity:1; }
+    .toast.error { background:var(--red); }
+
+    @media(max-width:480px) { .plan-cards { grid-template-columns:1fr; } .register-card { padding:20px; } }
+  </style>
+</head>
+<body>
+
+<div class="register-card" id="registerCard">
+  <div class="logo">
+    <h1>⚡ <span>Arkx</span> Nexabot</h1>
+    <p>Daftar untuk akses AI Image Generation</p>
+  </div>
+
+  <form id="registerForm" onsubmit="return handleRegister(event)">
+    <div class="form-group">
+      <label>Nama Lengkap</label>
+      <input type="text" id="regName" placeholder="Masukkan nama Anda" required>
+    </div>
+
+    <div class="form-group">
+      <label>Pilih Paket</label>
+      <div class="plan-cards">
+        <div class="plan-card selected" onclick="selectPlan('weekly', this)" data-plan="weekly">
+          <div class="plan-icon">📅</div>
+          <div class="plan-name">Mingguan</div>
+          <div class="plan-price">Rp 15.000</div>
+          <div class="plan-desc">Unlimited 7 hari</div>
+        </div>
+        <div class="plan-card" onclick="selectPlan('monthly', this)" data-plan="monthly">
+          <div class="plan-icon">📆</div>
+          <div class="plan-name">Bulanan</div>
+          <div class="plan-price">Rp 45.000</div>
+          <div class="plan-desc">Unlimited 30 hari</div>
+        </div>
+        <div class="plan-card" onclick="selectPlan('topup', this)" data-plan="topup">
+          <div class="plan-icon">💰</div>
+          <div class="plan-name">Topup</div>
+          <div class="plan-price">Rp 250/generate</div>
+          <div class="plan-desc">Bayar pakai saldo</div>
+        </div>
+      </div>
+    </div>
+
+    <button type="submit" class="btn-register" id="btnRegister">🚀 Daftar Sekarang</button>
+  </form>
+
+  <div class="info-box">
+    <strong>ℹ️ Info:</strong> Setelah mendaftar, admin akan melakukan approve terlebih dahulu. Anda akan mendapatkan API key setelah disetujui.
+  </div>
+</div>
+
+<div class="register-card" id="successCard" style="display:none">
+  <div class="success-box">
+    <div class="icon">🎉</div>
+    <h2>Pendaftaran Berhasil!</h2>
+    <p>Terima kasih telah mendaftar, <strong id="successName"></strong>!</p>
+    <p>Anda memilih paket: <strong id="successPlan"></strong></p>
+    
+    <div class="api-key-box">
+      🔑 API Key Anda:<br>
+      <strong id="successApiKey"></strong>
+    </div>
+    
+    <button class="copy-btn" onclick="copyApiKey()">📋 Copy API Key</button>
+    
+    <div class="warning">
+      ⚠️ <strong>PENTING:</strong> Simpan API key ini baik-baik! Key hanya ditampilkan sekali.<br><br>
+      Status Anda: <strong style="color:var(--yellow)">⏳ Menunggu Approve</strong><br>
+      Admin akan mengaktifkan akun Anda segera.
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let selectedPlan = 'weekly';
+const BASE = location.pathname.replace(/\/register\/?$/, '');
+
+function selectPlan(plan, el) {
+  selectedPlan = plan;
+  document.querySelectorAll('.plan-card').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
+async function handleRegister(e) {
+  e.preventDefault();
+  const name = document.getElementById('regName').value.trim();
+  if (!name) { showToast('Masukkan nama Anda!', true); return false; }
+
+  const btn = document.getElementById('btnRegister');
+  btn.disabled = true;
+  btn.textContent = '⏳ Mendaftar...';
+
+  try {
+    const res = await fetch(BASE + '/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, plan: selectedPlan })
+    });
+    const data = await res.json();
+    
+    if (!res.ok) throw new Error(data.error || 'Gagal mendaftar');
+
+    // Show success
+    document.getElementById('registerCard').style.display = 'none';
+    document.getElementById('successCard').style.display = '';
+    document.getElementById('successName').textContent = name;
+    document.getElementById('successPlan').textContent = selectedPlan === 'weekly' ? 'Mingguan' : selectedPlan === 'monthly' ? 'Bulanan' : 'Topup';
+    document.getElementById('successApiKey').textContent = data.api_key;
+    
+  } catch (err) {
+    showToast('Gagal: ' + err.message, true);
+    btn.disabled = false;
+    btn.textContent = '🚀 Daftar Sekarang';
+  }
+  return false;
+}
+
+function copyApiKey() {
+  navigator.clipboard.writeText(document.getElementById('successApiKey').textContent);
+  showToast('API key dicopy!');
+}
+
+function showToast(msg, isError = false) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show' + (isError ? ' error' : '');
+  setTimeout(() => el.classList.remove('show'), 3000);
+}
+</script>
+</body>
+</html>

@@ -69,10 +69,45 @@ try { db.exec(`ALTER TABLE members ADD COLUMN status TEXT NOT NULL DEFAULT 'appr
 const app = express();
 app.use(express.json());
 
-// Serve dashboard
+// Serve dashboard & register page
 app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'dashboard.html')));
+app.get('/register', (req, res) => res.sendFile(path.join(__dirname, 'register.html')));
 
 app.get('/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PUBLIC: Register (member self-register)
+// ══════════════════════════════════════════════════════════════════════════════
+app.post('/register', (req, res) => {
+  const { name, plan } = req.body;
+  if (!name || !plan) return res.status(400).json({ error: 'name dan plan wajib diisi.' });
+  if (!['weekly', 'monthly', 'topup'].includes(plan)) return res.status(400).json({ error: 'Plan tidak valid.' });
+
+  const apiKey = `arkx-${crypto.randomBytes(24).toString('hex')}`;
+  const now = new Date();
+  let expiresAt;
+  let initialSaldo = 0;
+
+  if (plan === 'weekly') expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  else if (plan === 'monthly') expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  else { expiresAt = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000).toISOString(); }
+
+  const result = db.prepare(
+    `INSERT INTO members (name, api_key, plan, status, saldo, started_at, expires_at) VALUES (?, ?, ?, 'pending', ?, datetime('now'), ?)`
+  ).run(name, apiKey, plan, initialSaldo, expiresAt);
+
+  console.log(`[REGISTER] New member: ${name} (${plan}) — ID: ${result.lastInsertRowid}`);
+
+  // Broadcast real-time event ke admin panel
+  broadcastSSE({ type: 'new_member', id: result.lastInsertRowid, name, plan, time: new Date().toISOString() });
+
+  res.json({
+    message: 'Pendaftaran berhasil! Menunggu approve dari admin.',
+    id: result.lastInsertRowid, name, plan,
+    api_key: apiKey,
+    expires_at: expiresAt
+  });
+});
 
 // ══════════════════════════════════════════════════════════════════════════════
 // PROXY: validasi member lalu forward ke Nexabot
@@ -322,6 +357,37 @@ app.post('/admin/members/:id/deactivate', requireAdmin, (req, res) => {
   res.json({ message: `${member.name} dinonaktifkan.` });
 });
 
+// ── Delete member ────────────────────────────────────────────────────────
+app.delete('/admin/members/:id', requireAdmin, (req, res) => {
+  const { id } = req.params;
+  const member = db.prepare('SELECT * FROM members WHERE id = ?').get(id);
+  if (!member) return res.status(404).json({ error: 'Member tidak ditemukan.' });
+
+  db.prepare('DELETE FROM usage_log WHERE member_id = ?').run(id);
+  db.prepare('DELETE FROM members WHERE id = ?').run(id);
+
+  res.json({ message: `🗑️ ${member.name} (ID: ${id}) berhasil dihapus.` });
+});
+
+// ── Delete all seed members (bulk) ────────────────────────────────────────
+app.delete('/admin/members/seed/all', requireAdmin, (req, res) => {
+  const seedNames = [
+    'Budi Santoso', 'Rina Wati', 'Ahmad Fauzi', 'Siti Nurhaliza', 'Andi Pratama',
+    'Rizky Ramadhani', 'Putri Maharani', 'Fajar Nugroho', 'Dewi Lestari', 'Maya Anggraini'
+  ];
+  const placeholders = seedNames.map(() => '?').join(',');
+
+  const memberIds = db.prepare(`SELECT id FROM members WHERE name IN (${placeholders})`).all(...seedNames);
+  if (memberIds.length === 0) return res.json({ message: 'Tidak ada seed member yang ditemukan.' });
+
+  const ids = memberIds.map(m => m.id);
+  const idPlaceholders = ids.map(() => '?').join(',');
+  db.prepare(`DELETE FROM usage_log WHERE member_id IN (${idPlaceholders})`).run(...ids);
+  db.prepare(`DELETE FROM members WHERE id IN (${idPlaceholders})`).run(...ids);
+
+  res.json({ message: `🗑️ ${ids.length} seed member berhasil dihapus.`, deleted: ids });
+});
+
 // ── Regenerate API key ─────────────────────────────────────────────────────
 app.post('/admin/members/:id/regenerate-key', requireAdmin, (req, res) => {
   const member = db.prepare('SELECT * FROM members WHERE id = ?').get(req.params.id);
@@ -354,9 +420,154 @@ app.get('/admin/pending', requireAdmin, (req, res) => {
   res.json({ pending, count: pending.length });
 });
 
+// ══════════════════════════════════════════════════════════════════════════════
+// SYNC: Pull users from Arkx Motion Studio
+// ══════════════════════════════════════════════════════════════════════════════
+const ARKX_STUDIO_URL = process.env.ARKX_STUDIO_URL || 'https://arkxmotion-studio.win';
+const NEXABOT_SYNC_SECRET = process.env.NEXABOT_SYNC_SECRET || 'change-me-sync-secret';
+
+// Mapping package_slug ke plan nexabot proxy
+function mapPackageToPlan(pkg) {
+  if (!pkg.package_kind) return null;
+  if (pkg.package_kind === 'unlimited') {
+    if (pkg.package_slug?.includes('weekly')) return 'weekly';
+    if (pkg.package_slug?.includes('monthly')) return 'monthly';
+    return 'monthly'; // default
+  }
+  if (pkg.package_kind === 'balance') return 'topup';
+  return null;
+}
+
+// Sync users dari Arkx Studio → Nexabot Proxy
+app.get('/admin/sync', requireAdmin, async (req, res) => {
+  try {
+    const since = req.query.since || '';
+    const url = `${ARKX_STUDIO_URL}/api/nexabot-sync-users?secret=${encodeURIComponent(NEXABOT_SYNC_SECRET)}` + (since ? `&since=${encodeURIComponent(since)}` : '');
+    
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Arkx Studio API error: ${response.status}`);
+    
+    const data = await response.json();
+    const users = data.users || [];
+    
+    let created = 0, updated = 0, skipped = 0;
+    const results = [];
+    
+    for (const user of users) {
+      const plan = mapPackageToPlan(user);
+      if (!plan) { skipped++; continue; }
+      
+      // Cek apakah user sudah ada di members (berdasarkan name + email)
+      const existingMember = db.prepare(
+        'SELECT * FROM members WHERE name = ? OR (name = ? AND api_key LIKE ?)'
+      ).get(user.name, `${user.name} (${user.email})`, `arkx-arkxuser-${user.id}%`);
+      
+      if (existingMember) {
+        // Update status jika berubah
+        if (user.status === 'approved' && existingMember.status !== 'approved') {
+          db.prepare("UPDATE members SET status = 'approved', active = 1 WHERE id = ?").run(existingMember.id);
+          updated++;
+          results.push({ id: existingMember.id, name: user.name, action: 'updated' });
+        }
+      } else {
+        // Buat member baru
+        const apiKey = `arkx-arkxuser-${user.id}-${crypto.randomBytes(12).toString('hex')}`;
+        let expiresAt;
+        let initialSaldo = 0;
+        
+        if (plan === 'weekly') {
+          expiresAt = user.expires_at || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+        } else if (plan === 'monthly') {
+          expiresAt = user.expires_at || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+        } else {
+          expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+          initialSaldo = 5000; // Default saldo untuk topup
+        }
+        
+        const memberName = `${user.name}`;
+        const status = user.status === 'approved' ? 'approved' : 'pending';
+        
+        db.prepare(
+          `INSERT INTO members (name, api_key, plan, status, saldo, started_at, expires_at) VALUES (?, ?, ?, ?, ?, datetime('now'), ?)`
+        ).run(memberName, apiKey, plan, status, initialSaldo, expiresAt);
+        
+        created++;
+        results.push({ id: db.prepare('SELECT last_insert_rowid() as id').get().id, name: memberName, api_key: apiKey, action: 'created' });
+        
+        // Broadcast real-time event
+        broadcastSSE({ type: 'sync_new_member', name: memberName, plan, time: new Date().toISOString() });
+      }
+    }
+    
+    res.json({ message: `Sync selesai: ${created} baru, ${updated} diupdate, ${skipped} dilewati`, created, updated, skipped, results });
+  } catch (err) {
+    console.error('[SYNC ERROR]', err.message);
+    res.status(500).json({ error: 'Gagal sync: ' + err.message });
+  }
+});
+
+// Auto-sync endpoint (dipanggil dari webhook Arkx Studio)
+app.post('/webhook/arkx-sync', async (req, res) => {
+  const secret = req.headers['x-webhook-secret'];
+  if (secret !== NEXABOT_SYNC_SECRET) return res.status(403).json({ error: 'Invalid secret' });
+  
+  const { user_id, name, email, package_kind, package_slug, status } = req.body;
+  if (!user_id || !name) return res.status(400).json({ error: 'Missing required fields' });
+  
+  const plan = mapPackageToPlan({ package_kind, package_slug });
+  if (!plan) return res.status(400).json({ error: 'Invalid package' });
+  
+  // Cek duplikat
+  const existing = db.prepare('SELECT id FROM members WHERE api_key LIKE ?').get(`arkx-arkxuser-${user_id}%`);
+  if (existing) return res.json({ message: 'Member sudah ada', id: existing.id });
+  
+  // Buat member baru
+  const apiKey = `arkx-arkxuser-${user_id}-${crypto.randomBytes(12).toString('hex')}`;
+  let expiresAt;
+  let initialSaldo = 0;
+  
+  if (plan === 'weekly') expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  else if (plan === 'monthly') expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  else { expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(); initialSaldo = 5000; }
+  
+  const memberStatus = status === 'approved' ? 'approved' : 'pending';
+  const result = db.prepare(
+    `INSERT INTO members (name, api_key, plan, status, saldo, started_at, expires_at) VALUES (?, ?, ?, ?, ?, datetime('now'), ?)`
+  ).run(name, apiKey, plan, memberStatus, initialSaldo, expiresAt);
+  
+  console.log(`[WEBHOOK] New member from Arkx: ${name} (${plan}) — ID: ${result.lastInsertRowid}`);
+  broadcastSSE({ type: 'webhook_new_member', name, plan, time: new Date().toISOString() });
+  
+  res.json({ message: `Member ${name} ditambahkan`, id: result.lastInsertRowid, api_key: apiKey });
+});
+
+// ── SSE: Real-time updates for admin ────────────────────────────────────────
+const sseClients = new Set();
+
+app.get('/admin/events', (req, res) => {
+  const key = req.headers['x-admin-key'] || req.query.key;
+  if (key !== ADMIN_KEY) return res.status(403).json({ error: 'Admin key tidak valid.' });
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive'
+  });
+  res.write('data: {"type":"connected"}\n\n');
+
+  sseClients.add(res);
+  req.on('close', () => sseClients.delete(res));
+});
+
+function broadcastSSE(data) {
+  const msg = `data: ${JSON.stringify(data)}\n\n`;
+  sseClients.forEach(client => client.write(msg));
+}
+
 // ── Run ─────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`✅ Nexabot Proxy v3 — http://localhost:${PORT}`);
   console.log(`   Dashboard: http://localhost:${PORT}/admin`);
+  console.log(`   Register: http://localhost:${PORT}/register`);
   console.log(`   Biaya/generate: Rp ${COST_PER_GENERATE.toLocaleString('id-ID')}`);
 });

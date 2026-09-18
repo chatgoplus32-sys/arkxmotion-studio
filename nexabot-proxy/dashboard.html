@@ -95,6 +95,7 @@
     <button class="bell-btn" onclick="toggleNotif()" title="Notifikasi">🔔 <span class="bell-badge" id="notifBadge"></span></button>
     <input type="password" class="admin-key-input" id="adminKey" placeholder="Admin Key" value="change-me-admin-key">
     <button class="btn btn-primary" onclick="loadData()">Load</button>
+    <button class="btn btn-green" onclick="syncFromArkx()" title="Sync member dari Arkx Studio">🔄 Sync</button>
   </div>
 </div>
 
@@ -132,6 +133,7 @@
       </select>
     </div>
     <button class="btn btn-green" onclick="showAddModal()">+ Tambah Member</button>
+      <button class="btn btn-red btn-sm" onclick="deleteAllSeed()" title="Hapus semua member seed/sample">🗑️ Hapus Seed</button>
   </div>
   <table>
     <thead>
@@ -328,6 +330,7 @@ function renderMembers(members) {
         ${m.status==='suspended'?`<button class="btn btn-sm btn-green" onclick="unsuspend(${m.id})">▶ Aktifkan</button>`:''}
         ${m.status==='approved'?(m.plan==='topup'?`<button class="btn btn-sm btn-green" onclick="showTopupModal(${m.id},'${esc(m.name)}',${m.saldo})">+ Topup</button>`:`<button class="btn btn-sm btn-primary" onclick="showRenewModal(${m.id},'${esc(m.name)}')">🔄</button>`):''}
         ${m.status==='approved'?`<button class="btn btn-sm btn-red" onclick="suspend(${m.id},'${esc(m.name)}')">⏸</button>`:''}
+        <button class="btn btn-sm btn-red" onclick="deleteMember(${m.id},'${esc(m.name)}')" title="Hapus member">🗑️</button>
       </td>
     </tr>`;
   }).join('');
@@ -441,6 +444,25 @@ async function deactivate(id) {
   try { await api(`/admin/members/${id}/deactivate`,{method:'POST'}); toast('Dinonaktifkan'); loadData(); } catch(e){toast('Gagal: '+e.message,true);}
 }
 
+async function deleteMember(id,name) {
+  if(!confirm(`🗑️ Hapus ${name}?\n\nTindakan ini tidak bisa dibatalkan!`)) return;
+  try { await api(`/admin/members/${id}`,{method:'DELETE'}); toast(`🗑️ ${name} dihapus`); loadData(); } catch(e){toast('Gagal: '+e.message,true);}
+}
+
+async function deleteAllSeed() {
+  if(!confirm('🗑️ Hapus SEMUA member seed/sample?\n\nIni akan menghapus:\nBudi Santoso, Rina Wati, Ahmad Fauzi,\nSiti Nurhaliza, Andi Pratama, Rizky Ramadhani,\nPutri Maharani, Fajar Nugroho, Dewi Lestari, Maya Anggraini\n\nTindakan ini tidak bisa dibatalkan!')) return;
+  try { const res = await api('/admin/members/seed/all',{method:'DELETE'}); toast(res.message); loadData(); } catch(e){toast('Gagal: '+e.message,true);}
+}
+
+async function syncFromArkx() {
+  try {
+    toast('🔄 Syncing dari Arkx Studio...');
+    const res = await api('/admin/sync');
+    toast(res.message);
+    loadData();
+  } catch(e) { toast('Gagal sync: '+e.message, true); }
+}
+
 // ── Log ──
 function populateLogSelect(m) {
   document.getElementById('logMemberId').innerHTML='<option value="">Pilih member...</option>'+m.map(x=>`<option value="${x.id}">${x.name} (${x.plan})</option>`).join('');
@@ -480,6 +502,55 @@ function toast(msg,err=false){const e=document.getElementById('toast');e.textCon
 
 loadData(); setInterval(loadData,60000);
 document.querySelectorAll('.modal-overlay').forEach(el=>el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('show');}));
+
+// ── Real-time SSE connection ──
+let evtSource = null;
+function connectSSE() {
+  const key = document.getElementById('adminKey').value;
+  if (evtSource) evtSource.close();
+  evtSource = new EventSource(BASE + '/admin/events?key=' + encodeURIComponent(key));
+  evtSource.onmessage = function(e) {
+    try {
+      const data = JSON.parse(e.data);
+      if (data.type === 'new_member') {
+        // Tambah notifikasi
+        notifications.unshift({
+          type: 'warning',
+          msg: `🆕 ${data.name} mendaftar paket ${data.plan}!`,
+          time: data.time
+        });
+        localStorage.setItem('arkx_notifs', JSON.stringify(notifications));
+        document.getElementById('notifBadge').textContent = notifications.length || '';
+        renderNotifList();
+        // Reload data untuk update tabel
+        loadData();
+        // Tampilkan toast
+        toast(`🆕 Member baru: ${data.name} (${data.plan})`);
+      }
+    } catch(err) {}
+  };
+  evtSource.onerror = function() {
+    setTimeout(connectSSE, 3000);
+  };
+}
+connectSSE();
+
+// ── Auto-sync setiap 5 menit ──
+setInterval(async () => {
+  try {
+    const res = await api('/admin/sync');
+    if (res.created > 0 || res.updated > 0) {
+      notifications.unshift({
+        type: 'warning',
+        msg: `🔄 Auto-sync: ${res.created} baru, ${res.updated} diupdate`,
+        time: new Date().toISOString()
+      });
+      localStorage.setItem('arkx_notifs', JSON.stringify(notifications));
+      document.getElementById('notifBadge').textContent = notifications.length || '';
+      loadData();
+    }
+  } catch(e) { /* silent fail */ }
+}, 300000); // 5 menit
 </script>
 </body>
 </html>
