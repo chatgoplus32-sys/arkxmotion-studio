@@ -23,6 +23,10 @@ export const RUNNINGHUB_AUDIO_AVATAR_AUDIO_NODE = '215'
 // node 14 = width, node 15 = height, node 16 = fps
 export const RUNNINGHUB_LIPSYNC_WORKFLOW_ID = '2098820058905927682'
 
+// FLUX.1 Kontext image edit (instruksi bahasa alami):
+// node 28 = image (foto), node 31 = text (perintah edit)
+export const RUNNINGHUB_IMAGE_EDIT_WORKFLOW_ID = '1928844216607129602'
+
 // VOSR2 Video Upscale 2K (peningkatan bertingkat):
 // node 1 = video + frame_load_cap, node 21 = cfg/scheduler/steps,
 // node 13 = save_output
@@ -390,8 +394,7 @@ export interface PhotoEnhanceParams {
   scaleBy?: number
   apiKey?: string
   workflowId?: string
-}
-export async function submitRunningHubPhotoEnhance(params: PhotoEnhanceParams): Promise<MotionControlResult> {
+}export async function submitRunningHubPhotoEnhance(params: PhotoEnhanceParams): Promise<MotionControlResult> {
   const workflowId = params.workflowId || RUNNINGHUB_PHOTO_ENHANCE_WORKFLOW_ID
 
   const imageBase64 = await fileToBase64(params.imageFile)
@@ -451,6 +454,35 @@ export async function submitRunningHubLipSync(params: LipSyncParams): Promise<Mo
     height: params.height ?? 720,
     fps: params.fps ?? 30,
     prompt: params.prompt || '',
+  }, params.apiKey)
+
+  return {
+    id: result.id || result.taskId,
+    taskId: result.taskId || result.id,
+    status: result.status || 'QUEUED',
+    provider: result.provider || 'runninghub',
+    workflowId: result.workflowId || workflowId,
+  }
+}
+
+export interface ImageEditParams {
+  imageFile: File
+  prompt: string
+  apiKey?: string
+  workflowId?: string
+}
+
+export async function submitRunningHubImageEdit(params: ImageEditParams): Promise<MotionControlResult> {
+  const workflowId = params.workflowId || RUNNINGHUB_IMAGE_EDIT_WORKFLOW_ID
+
+  const imageBase64 = await fileToBase64(params.imageFile)
+
+  const result = await runninghubProxy('submit-image-edit', {
+    workflow_id: workflowId,
+    imageBase64,
+    imageFileName: params.imageFile.name,
+    imageMimeType: params.imageFile.type || 'image/jpeg',
+    prompt: params.prompt,
   }, params.apiKey)
 
   return {

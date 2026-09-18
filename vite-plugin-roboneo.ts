@@ -1515,6 +1515,102 @@ export function roboneoProxyPlugin(): Plugin {
             return
           }
 
+          // FLUX.1 Kontext image edit (1928844216607129602): node 28 = foto, 31 = teks
+          if (action === 'submit-image-edit') {
+            const EDIT_WF = '1928844216607129602'
+            const wfId = params.workflow_id || params.workflowId || EDIT_WF
+            const { imageBase64, imageFileName = 'photo.jpg', imageMimeType = 'image/jpeg', prompt = '' } = params
+            if (!imageBase64 || !prompt) {
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: false, error: 'Missing imageBase64 or prompt' }))
+              return
+            }
+            try {
+              const bin = Buffer.from(imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64, 'base64')
+              const fd = new FormData()
+              fd.append('file', new Blob([bin], { type: imageMimeType }), imageFileName)
+              const up = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/media/upload/binary`, {
+                method: 'POST', headers: { 'Authorization': `Bearer ${apiKey}` }, body: fd,
+              })
+              const upText = await up.text()
+              let upData: any; try { upData = JSON.parse(upText) } catch { upData = {} }
+              const imgFn = upData?.data?.fileName || upData?.fileName
+              if (!imgFn) throw new Error('Upload failed: ' + upText.slice(0, 200))
+              const IMG_CANDS = ['image', 'file', 'path', 'filename', 'input', 'src']
+              const TXT_CANDS = ['text', 'prompt', 'positive']
+              const nodeField: Record<string, string> = { '28': 'image', '31': 'text' }
+              const dropped = new Set<string>()
+              const buildList = () => {
+                const l: any[] = [
+                  { nodeId: '28', fieldName: nodeField['28'], fieldValue: imgFn },
+                  { nodeId: '31', fieldName: nodeField['31'], fieldValue: String(prompt) },
+                ]
+                return dropped.size === 0 ? l : l.filter((e) => !dropped.has(`${e.nodeId}/${e.fieldName}`))
+              }
+              const postRun = async (list: any[]) => {
+                const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${wfId}`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                  body: JSON.stringify({ nodeInfoList: list, instanceType: 'default', usePersonalQueue: 'false' }),
+                })
+                const text = await r.text()
+                console.log(`[runninghub-proxy] image-edit ${r.status}:`, text.slice(0, 500))
+                let data: any; try { data = JSON.parse(text) } catch { data = { raw: text } }
+                return {
+                  data,
+                  code: data?.code ?? data?.errorCode,
+                  msg: String(data?.msg || data?.errorMessage || data?.message || ''),
+                  taskId: data?.data?.taskId || data?.taskId || data?.id,
+                  status: data?.data?.status || 'QUEUED',
+                }
+              }
+              const parseMM = (msg: string) => {
+                const m = /nodeId=([^,\)]+),\s*fieldName=([^,\)]+),\s*reason=([^,\)]+)/.exec(msg)
+                return m ? { nodeId: m[1].trim(), fieldName: m[2].trim(), reason: m[3].trim() } : null
+              }
+              const ok = (taskId: string, status: string) => {
+                res.writeHead(200, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ ok: true, data: { id: taskId, taskId, status, provider: 'runninghub', workflowId: wfId } }))
+              }
+              const fail = (error: string, data?: any) => {
+                res.writeHead(200, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ ok: false, error, data }))
+              }
+              let lastErr = 'Unknown'
+              let lastData: any = null
+              let done = false
+              for (let round = 0; round < 14 && !done; round++) {
+                console.log(`[runninghub-proxy] image-edit round=${round}`)
+                const r = await postRun(buildList())
+                if (r.taskId) { ok(r.taskId, r.status); done = true; break }
+                lastErr = r.msg || `Error code: ${r.code}`
+                lastData = r.data
+                const mm = r.code === 803 || (r.code as any) === '803' ? parseMM(r.msg) : null
+                if (mm && /field_not_found|node_not_found/i.test(mm.reason) && ['28', '31'].includes(mm.nodeId)) {
+                  if (/node_not_found/i.test(mm.reason)) { fail(`Node ${mm.nodeId} tidak ada di workflow ini`, r.data); done = true; break }
+                  const cands = mm.nodeId === '31' ? TXT_CANDS : IMG_CANDS
+                  const cur = nodeField[mm.nodeId] || ''
+                  const ni = cands.indexOf(cur) + 1
+                  if (ni <= 0 || ni >= cands.length) { fail(`Field ${mm.nodeId} ditolak semua kandidat. Terakhir: ${r.msg}`, r.data); done = true; break }
+                  nodeField[mm.nodeId] = cands[ni]
+                  console.log(`[runninghub-proxy] image-edit node ${mm.nodeId}: "${cur}" → "${cands[ni]}"`)
+                  continue
+                }
+                if (mm && /field_not_found|node_not_found/i.test(mm.reason)) {
+                  console.log(`[runninghub-proxy] image-edit buang field ${mm.nodeId}/${mm.fieldName} (${mm.reason})`)
+                  dropped.add(`${mm.nodeId}/${mm.fieldName}`)
+                  continue
+                }
+                fail(r.msg || 'No taskId', r.data); done = true; break
+              }
+              if (!done) fail(`Gagal submit image-edit. Terakhir: ${lastErr}`, lastData)
+            } catch (err: any) {
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: false, error: err.message }))
+            }
+            return
+          }
+
           // Fallback: Express lokal dulu (punya semua handler runninghub
           // termasuk motion-control-ultra-hd), Vercel terakhir
           const { status, text } = await forwardApi('/api/public/runninghub', {

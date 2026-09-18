@@ -6,13 +6,16 @@ import { Loader2, Upload, Trash2, Download, X, ImagePlus, ExternalLink, Search, 
 import { useProviderManager, PROVIDER_CONFIGS } from '@/stores/providerManager'
 import { useToastStore } from '@/stores/toastStore'
 import { withTokenRotation } from '@/lib/tokenRotation'
+import { submitRunningHubImageEdit, pollRunningHubTask } from '@/lib/runninghub'
+import { normalizeImage } from '@/lib/roboneo'
 import { addBgLog, getLogs, addResult, removeResult, startBackgroundPolling, persistResultToR2 } from '@/lib/backgroundTasks'
 
-type EditProvider = 'riverside' | 'nexabot'
+type EditProvider = 'riverside' | 'nexabot' | 'runninghub'
 
 const PROVIDER_OPTIONS: Array<{ value: EditProvider; label: string; icon: string }> = [
   { value: 'nexabot', label: 'NexaBot (GPT Image)', icon: '🔮' },
   { value: 'riverside', label: 'Riverside', icon: '🎙️' },
+  { value: 'runninghub', label: 'RunningHub (Kontext)', icon: '🖌️' },
 ]
 
 const RIVERSIDE_IMAGE_MODELS = [
@@ -28,9 +31,20 @@ const NEXABOT_IMAGE_MODELS = [
   { value: 'nb:img', label: '✨ GPT Image (NexaBot)', cr: 0.1, apiModel: 'img' },
 ]
 
+const RUNNINGHUB_IMAGE_MODELS = [
+  { value: 'rh:kontext-edit', label: 'FLUX Kontext Edit', cr: 0, apiModel: 'kontext-edit' },
+]
+
 const ALL_MODELS: Record<EditProvider, typeof RIVERSIDE_IMAGE_MODELS> = {
   riverside: RIVERSIDE_IMAGE_MODELS,
   nexabot: NEXABOT_IMAGE_MODELS,
+  runninghub: RUNNINGHUB_IMAGE_MODELS,
+}
+
+const PROVIDER_LABEL: Record<EditProvider, string> = {
+  nexabot: 'NexaBot (GPT Image)',
+  riverside: 'Riverside',
+  runninghub: 'RunningHub (Kontext)',
 }
 
 const RIVERSIDE_PLAYGROUND_URL = 'https://riverside.com/dashboard/studios/surahs-studio-2hkky/playground?mode=image'
@@ -112,7 +126,7 @@ export default function EditImagePage() {
     setGenerating(true)
     setLogs([])
     addLog(`🚀 Mulai generate gambar`, 'info')
-    addLog(`   Provider: ${provider === 'nexabot' ? 'NexaBot (GPT Image)' : 'Riverside'}`, 'debug')
+    addLog(`   Provider: ${PROVIDER_LABEL[provider]}`, 'debug')
     addLog(`   Model: ${currentModel.label}`, 'debug')
     addLog(`   Mode: ${provider === 'nexabot' ? 'Text to Image' : (imgFile ? 'Edit Gambar + Prompt' : 'Text to Image')}`, 'debug')
     addLog(`   Prompt: "${prompt.trim().slice(0, 80)}${prompt.trim().length > 80 ? '...' : ''}"`, 'debug')
@@ -120,6 +134,8 @@ export default function EditImagePage() {
     try {
       if (provider === 'nexabot') {
         await handleGenerateNexabot()
+      } else if (provider === 'runninghub') {
+        await handleGenerateRunningHub()
       } else {
         await handleGenerateRiverside()
       }
@@ -191,8 +207,83 @@ export default function EditImagePage() {
     addToast('Generate gambar selesai!', 'success')
   }
 
-  const handleGenerateRiverside = async () => {
+  const handleGenerateRunningHub = async () => {
     if (!imgFile) {
+      addToast('Upload gambar terlebih dahulu untuk mode edit', 'error')
+      return
+    }
+
+    addLog(`[1/3] 🖼️ Normalisasi gambar...`, 'info')
+    let upFile = imgFile
+    try {
+      upFile = await normalizeImage(imgFile, (msg) => addLog(`   ${msg}`, 'debug'))
+      addLog(`   ✓ Siap: ${(upFile.size / 1024).toFixed(0)}KB`, 'debug')
+    } catch (e: any) {
+      addLog(`   ⚠️ Normalisasi gagal, pakai file asli: ${e.message}`, 'warn')
+    }
+
+    const rotation = await withTokenRotation<string>(
+      provider,
+      async (apiKey, keyInfo) => {
+        addLog(`🔑 Trying key: ${keyInfo.name || keyInfo.id}`, 'info')
+        addLog(`[2/3] 🚀 Submit ke RunningHub Kontext...`, 'info')
+
+        const submit = await submitRunningHubImageEdit({
+          imageFile: upFile,
+          prompt: prompt.trim(),
+          apiKey,
+        })
+        addLog(`   ✓ Task: ${submit.taskId.slice(0, 20)}...`, 'success')
+
+        addLog(`[3/3] ⏳ Polling hasil...`, 'info')
+        const url = await pollRunningHubTask(submit.taskId, (status, pct) => {
+          addLog(`   ${status} ${pct}%`, 'debug')
+        }, 600000, apiKey)
+        return url
+      },
+      {
+        onKeySwitch: (from, to, attempt) => {
+          addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn')
+        },
+        onError: (err, key) => {
+          addLog(`⚠️ Key "${key.name}" error: ${err.message}`, 'warn')
+        },
+      }
+    )
+
+    if (rotation.ok && rotation.result) {
+      const item: GalleryItem = {
+        id: `editimg-${Date.now()}`,
+        url: rotation.result,
+        prompt: prompt.trim(),
+        provider: 'runninghub',
+        model: currentModel.label,
+        createdAt: new Date().toISOString(),
+      }
+      setGallery((prev) => {
+        const updated = [item, ...prev]
+        saveGallery(updated)
+        return updated
+      })
+      addResult({
+        id: item.id,
+        url: item.url,
+        prompt: item.prompt,
+        date: new Date().toISOString(),
+        page: 'edit-image',
+        provider: 'runninghub',
+        model: item.model,
+      })
+      persistResultToR2(item.id, item.url)
+      window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
+      addLog(`[3/3] ✅ Selesai ✓`, 'success')
+      addToast('Edit gambar selesai!', 'success')
+    } else {
+      throw new Error(rotation.error || 'Generation failed')
+    }
+  }
+
+  const handleGenerateRiverside = async () => {    if (!imgFile) {
       addToast('Upload gambar terlebih dahulu untuk mode edit', 'error')
       return
     }
@@ -359,7 +450,9 @@ export default function EditImagePage() {
                     value: m.value,
                     label: provider === 'nexabot'
                       ? `${m.label} — $${m.cr}/gambar`
-                      : `${m.label} — $${((m as any).cr / 1000).toFixed(3)}`,
+                      : provider === 'runninghub'
+                        ? `${m.label} — koin RH`
+                        : `${m.label} — $${((m as any).cr / 1000).toFixed(3)}`,
                   }))}
                 />
 
@@ -379,7 +472,7 @@ export default function EditImagePage() {
                   <div className="font-medium text-foreground">💡 NexaBot Image</div>
                   <div>• <b>Text to Image</b> — cukup tulis prompt</div>
                   <div>• 💰 0.1 kredit/gambar • ♾️ Gratis kalau Unlimited aktif</div>
-                  <div>• ⚠️ Untuk edit gambar, gunakan <b>Riverside</b></div>
+                  <div>• ⚠️ Untuk edit gambar, gunakan <b>Riverside</b> atau <b>RunningHub (Kontext)</b></div>
                 </div>
 
                 <div className="flex flex-col gap-2 pt-2">
@@ -401,7 +494,7 @@ export default function EditImagePage() {
 
                 {!hasActiveKey && (
                   <div className="text-[11px] text-blue-400 bg-blue-500/10 rounded-lg p-2 border border-blue-500/20">
-                    Tambahkan API key <b>{provider === 'nexabot' ? 'NexaBot' : 'Riverside'}</b> di halaman <b>Providers</b> untuk bisa generate dari sini.
+                    Tambahkan API key <b>{PROVIDER_LABEL[provider]}</b> di halaman <b>Providers</b> untuk bisa generate dari sini.
                   </div>
                 )}
               </div>
@@ -412,7 +505,7 @@ export default function EditImagePage() {
           <div className="lg:col-span-2 space-y-5">
             <Section
               title={provider === 'nexabot' ? '🖼️ Gambar (Opsional)' : '🖼️ Gambar Input'}
-              sub={provider === 'nexabot' ? 'NexaBot hanya mendukung Text to Image — untuk edit gambar pakai Riverside' : 'Upload 1 gambar untuk diedit'}
+              sub={provider === 'nexabot' ? 'NexaBot hanya mendukung Text to Image — untuk edit gambar pakai Riverside / RunningHub' : 'Upload 1 gambar untuk diedit'}
               right={
                 <button
                   onClick={() => filePickerRef.current?.click()}
