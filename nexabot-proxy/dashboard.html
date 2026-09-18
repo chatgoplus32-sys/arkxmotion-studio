@@ -254,7 +254,7 @@
 
 <script>
 const COST = 250;
-const BASE = location.pathname.replace(/admin\.html?$/, '').replace(/\/$/, '');
+const BASE = location.pathname.replace(/\/admin\/?$/, '');
 let allMembers = [];
 let notifications = JSON.parse(localStorage.getItem('arkx_notifs') || '[]');
 let topupTarget = null, renewTarget = null;
