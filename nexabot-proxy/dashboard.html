@@ -254,13 +254,14 @@
 
 <script>
 const COST = 250;
+const BASE = location.pathname.replace(/admin\.html?$/, '').replace(/\/$/, '');
 let allMembers = [];
 let notifications = JSON.parse(localStorage.getItem('arkx_notifs') || '[]');
 let topupTarget = null, renewTarget = null;
 
 async function api(path, opts = {}) {
   const key = document.getElementById('adminKey').value;
-  const res = await fetch(path, { ...opts, headers: { 'Content-Type': 'application/json', 'X-Admin-Key': key, ...(opts.headers||{}) } });
+  const res = await fetch(BASE + path, { ...opts, headers: { 'Content-Type': 'application/json', 'X-Admin-Key': key, ...(opts.headers||{}) } });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
   return data;
