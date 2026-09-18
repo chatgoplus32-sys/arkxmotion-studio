@@ -420,7 +420,13 @@ export async function pollRunningHubTask(
 
   const poll = async (): Promise<string> => {
     let consecutiveErrors = 0
-    
+
+    const fatal = (msg: string): Error => {
+      const e: any = new Error(msg)
+      e.fatalTaskFailure = true
+      return e
+    }
+
     while (Date.now() - startTime < timeoutMs) {
       try {
         const result = await runninghubProxy('query', { taskId }, apiKey)
@@ -436,23 +442,28 @@ export async function pollRunningHubTask(
             onProgress?.('COMPLETED', 100)
             return url
           }
-          throw new Error('Task completed but no result URL found')
+          throw fatal('Task completed but no result URL found')
         }
 
         if (status === 'FAILED') {
-          throw new Error(result.error || 'Task failed')
+          // Task gagal di server — fatal, jangan habiskan retry.
+          // Sertakan kode RunningHub kalau ada (mis. 1501 = verifikasi konten).
+          const detail = result.error || result.errorMessage || 'Task failed'
+          const code = result.code ? ` [${result.code}]` : ''
+          throw fatal(`Task gagal${code}: ${typeof detail === 'string' ? detail : JSON.stringify(detail)}`)
         }
 
         onProgress?.(status || 'RUNNING', Math.min(progress, 99))
         await new Promise((r) => setTimeout(r, POLL_INTERVAL))
       } catch (err: any) {
+        if (err?.fatalTaskFailure) throw err
         consecutiveErrors++
         console.warn(`[runninghub] Poll error (${consecutiveErrors}/${MAX_RETRIES}):`, err.message)
-        
+
         if (consecutiveErrors >= MAX_RETRIES) {
           throw new Error(`Polling failed after ${MAX_RETRIES} retries: ${err.message}`)
         }
-        
+
         await new Promise((r) => setTimeout(r, POLL_INTERVAL * Math.min(consecutiveErrors, 5)))
       }
     }

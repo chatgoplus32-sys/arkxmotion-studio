@@ -1362,6 +1362,7 @@ async function handleQuery(apiKey: string, taskId: string, res: VercelResponse) 
       progress: taskData.progress || data.progress || 0,
       videoUrl,
       imageUrl,
+      code: taskData.errorCode || data.errorCode || null,
       error: mappedStatus === 'FAILED' ? (taskData.errorMessage || taskData.failedReason || taskData.msg || errorMsg || 'Task failed') : null,
       provider: 'runninghub',
     },

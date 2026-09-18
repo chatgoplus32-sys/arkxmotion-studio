@@ -858,6 +858,10 @@ export function roboneoProxyPlugin(): Plugin {
             let data: any; try { data = JSON.parse(text) } catch { data = {} }
             const task = data?.data || data
             const status = (task?.status || '').toUpperCase()
+            const errCode = task?.errorCode || data?.errorCode || null
+            if (status === 'SUCCESS' || status === 'FAILED') {
+              console.log(`[runninghub-proxy] query ${taskId.slice(0, 12)}... → ${status} code=${errCode} err=${JSON.stringify(task?.errorMessage || task?.failedReason || null).slice(0, 300)}`)
+            }
             const results = Array.isArray(task?.results) ? task.results : []
             const pickVid = results.find((x: any) =>
               /\.(mp4|webm|mov|m4v)$/i.test(String(x?.url || '').split('?')[0]) || /video/i.test(String(x?.outputType || '')))
@@ -874,6 +878,7 @@ export function roboneoProxyPlugin(): Plugin {
                 status: status === 'SUCCESS' ? 'COMPLETED' : status === 'FAILED' ? 'FAILED' : 'RUNNING',
                 videoUrl,
                 imageUrl,
+                code: errCode,
                 progress,
                 error: task?.errorMessage || task?.failedReason || null,
               }

@@ -41,6 +41,7 @@ export default function TalkingPhotoPage() {
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState(0)
   const [history, setHistory] = useState<HistoryItem[]>([])
+  const [timedOutTaskId, setTimedOutTaskId] = useState<string | null>(null)
 
   const photoPickerRef = useRef<HTMLInputElement | null>(null)
   const audioPickerRef = useRef<HTMLInputElement | null>(null)
@@ -79,10 +80,11 @@ export default function TalkingPhotoPage() {
     setError(null)
     setResultUrl(null)
     setProgress(0)
+    setTimedOutTaskId(null)
     setTaskStatus('submitting')
 
+    let submittedTaskId = ''
     try {
-      let submittedTaskId = ''
       const rotation = await withTokenRotation<string>(
         'runninghub',
         async (key) => {
@@ -98,7 +100,7 @@ export default function TalkingPhotoPage() {
           const url = await pollRunningHubTask(submit.taskId, (_status, pct) => {
             setTaskStatus('running')
             setProgress(pct)
-          }, 1800000, key)
+          }, 3600000, key)
           return url
         },
         {
@@ -119,20 +121,59 @@ export default function TalkingPhotoPage() {
 
       const url = rotation.result
       const tid = submittedTaskId || `avatar-${Date.now()}`
-      setResultUrl(url)
-      setTaskStatus('success')
-      setProgress(100)
-      // URL RunningHub kedaluwarsa 24 jam — simpan permanen ke R2
-      persistResultToR2(tid, url)
-      setHistory((prev) => [
-        { time: new Date().toLocaleTimeString('id-ID'), taskId: tid, status: '✅ Selesai', url },
-        ...prev,
-      ])
-      addToast('✅ Talking Photo selesai!', 'success')
+      finishSuccess(url, tid)
     } catch (e: any) {
       setTaskStatus('error')
       setError(e.message || 'Unknown error')
       addToast(`❌ ${e.message}`, 'error')
+      if (/timeout/i.test(e.message || '') && submittedTaskId) {
+        setTimedOutTaskId(submittedTaskId)
+        addToast('Task masih jalan di server — pakai "Lanjutkan" untuk cek lagi tanpa submit baru', 'info')
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const finishSuccess = (url: string, tid: string) => {
+    setResultUrl(url)
+    setTaskStatus('success')
+    setProgress(100)
+    setTimedOutTaskId(null)
+    // URL RunningHub kedaluwarsa 24 jam — simpan permanen ke R2
+    persistResultToR2(tid, url)
+    setHistory((prev) => [
+      { time: new Date().toLocaleTimeString('id-ID'), taskId: tid, status: '✅ Selesai', url },
+      ...prev,
+    ])
+    addToast('✅ Talking Photo selesai!', 'success')
+  }
+
+  const continuePolling = async () => {
+    if (!timedOutTaskId || loading) return
+    setLoading(true)
+    setError(null)
+    setTaskStatus('running')
+    try {
+      const rotation = await withTokenRotation<string>(
+        'runninghub',
+        async (key) => {
+          return pollRunningHubTask(timedOutTaskId, (_status, pct) => {
+            setTaskStatus('running')
+            setProgress(pct)
+          }, 3600000, key)
+        },
+        {},
+      )
+      if (!rotation.ok || !rotation.result) {
+        throw new Error(rotation.error || 'Polling failed')
+      }
+      finishSuccess(rotation.result, timedOutTaskId)
+    } catch (e: any) {
+      setTaskStatus('error')
+      setError(e.message || 'Unknown error')
+      if (!/timeout/i.test(e.message || '')) setTimedOutTaskId(null)
+      else addToast('Masih jalan — coba "Lanjutkan" lagi nanti', 'info')
     } finally {
       setLoading(false)
     }
@@ -216,6 +257,16 @@ export default function TalkingPhotoPage() {
             {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
             {taskStatus === 'submitting' ? '🚀 Submitting...' : taskStatus === 'running' ? `⏳ Running... ${progress}%` : '🚀 Jalankan AI'}
           </Button>
+          {timedOutTaskId && !loading && (
+            <Button
+              onClick={continuePolling}
+              disabled={loading}
+              variant="outline"
+              className="w-full mt-2"
+            >
+              🔄 Lanjutkan polling task sebelumnya
+            </Button>
+          )}
           <p className="text-xs text-muted-foreground mt-2">
             Output HD 1080p. Hasil bergantung kualitas foto & audio; durasi video mengikuti audio.
           </p>

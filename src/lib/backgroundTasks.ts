@@ -1,5 +1,7 @@
 import { pollRoboneoI2V } from '@/lib/roboneo'
 import { pollRunningHubTask } from '@/lib/runninghub'
+import { detectTokenError } from '@/lib/tokenRotation'
+import { useProviderManager } from '@/stores/providerManager'
 
 const ACTIVE_KEY = 'arkxmotion_active_tasks'
 const RESULTS_KEY = 'arkxmotion_results'
@@ -203,6 +205,26 @@ export function startBackgroundPolling() {
 }
 
 const MAX_BG_RETRIES = 3
+const MAX_BG_ROTATIONS = 5
+const _rotations = new Map<string, number>()
+
+function updateActiveTaskToken(taskId: string, token: string) {
+  const tasks = getActiveTasks()
+  const t = tasks.find((x) => x.taskId === taskId)
+  if (t) { t.token = token; saveActiveTasks(tasks) }
+}
+
+function nextRunningHubKey(failedToken: string): string | null {
+  try {
+    const keys = useProviderManager.getState().keys?.runninghub || []
+    const usable = keys.filter((k: any) => k.status !== 'invalid' && k.status !== 'expired')
+    if (usable.length < 2) return null
+    const idx = usable.findIndex((k: any) => k.key === failedToken)
+    const next = usable[(idx + 1) % usable.length]
+    if (!next || next.key === failedToken) return null
+    return next.key
+  } catch { return null }
+}
 
 function pollWithRetry(task: ActiveTask, ctrl: AbortController, attempt: number) {
   if (ctrl.signal.aborted) return
@@ -229,6 +251,7 @@ function pollWithRetry(task: ActiveTask, ctrl: AbortController, attempt: number)
       if (ctrl.signal.aborted) return
       const t = _pollTimeouts.get(task.taskId)
       if (t) { clearTimeout(t); _pollTimeouts.delete(task.taskId) }
+      _rotations.delete(task.taskId)
       addResult({ id: task.taskId, url, prompt: task.prompt, date: new Date().toISOString(), page: task.page })
       removeActiveTask(task.taskId)
       _active.delete(task.taskId)
@@ -240,6 +263,26 @@ function pollWithRetry(task: ActiveTask, ctrl: AbortController, attempt: number)
     })
     .catch((err) => {
       if (ctrl.signal.aborted) return
+
+      // Auto-rotate: key RunningHub mati di tengah polling background
+      // (expired/invalid/saldo) → ganti key lain & lanjut tanpa mengulang task.
+      if (task.provider === 'runninghub' && detectTokenError('runninghub', err)) {
+        const used = _rotations.get(task.taskId) || 0
+        const next = used < MAX_BG_ROTATIONS ? nextRunningHubKey(task.token) : null
+        if (next) {
+          _rotations.set(task.taskId, used + 1)
+          task.token = next
+          updateActiveTaskToken(task.taskId, next)
+          addBgLog(`🔄 ${task.model}: key bermasalah (${String(err.message || err).slice(0, 80)}), rotasi & lanjut polling...`, 'warn')
+          setTimeout(() => {
+            if (!ctrl.signal.aborted) {
+              pollWithRetry(task, ctrl, 0)
+            }
+          }, 3000)
+          return
+        }
+        addBgLog(`❌ ${task.model}: tidak ada key RunningHub lain untuk rotasi`, 'error')
+      }
 
       const isBusy = /busy|sibuk|try again|later|overload|capacity|queue|结果接口获取失败|error_code.*6/i.test(err.message)
       if (isBusy && attempt < MAX_BG_RETRIES) {
