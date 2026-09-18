@@ -111,7 +111,7 @@ export default function EditImagePage() {
     }
   }
 
-  const canGenerate = (!imgFile || provider === 'nexabot') && !generating && !!prompt.trim() && hasActiveKey
+  const canGenerate = (provider === 'nexabot' || !!imgFile) && !generating && !!prompt.trim() && hasActiveKey
 
   const handleGenerate = async () => {
     if (!prompt.trim()) {
