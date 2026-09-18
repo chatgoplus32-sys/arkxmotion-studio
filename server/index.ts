@@ -90,7 +90,7 @@ app.use(cors({
 app.use('/api/public/upload-catbox', publicUploadCatboxRoutes)
 
 app.use(monitorMiddleware)
-app.use(express.json({ limit: '10mb' }))
+app.use(express.json({ limit: '50mb' }))
 
 // --- API Routes ---
 app.use('/api/auth', authRoutes)
@@ -207,6 +207,11 @@ if (isProd && fs.existsSync(FRONTEND_DIR)) {
 app.use((err: any, _req: any, res: any, _next: any) => {
   console.error("[server] Unhandled error:", err.stack || err)
   if (!res.headersSent) {
+    // 413 payload-too-large: pesan jelas (mis. foto base64 > limit) bukan "Internal server error"
+    if (err.status === 413 || /too large|too big|limit/i.test(String(err.message || ''))) {
+      res.status(413).json({ error: "File terlalu besar — maksimal 50MB per request. Kecilkan/kompres file lalu coba lagi." })
+      return
+    }
     res.status(err.status || 500).json({ error: "Internal server error" })
   }
 })

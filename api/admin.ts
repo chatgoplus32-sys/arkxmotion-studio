@@ -1122,30 +1122,31 @@ async function handleAnalytics(_req: VercelRequest, res: VercelResponse) {
 async function handleActivity(req: VercelRequest, res: VercelResponse) {
   try {
     const sql = getSql()
-    const limit = Math.min(Number(req.query.limit) || 50, 200)
+    const limit = Math.min(Number(req.query.limit) || 20, 200)
+    const offset = Math.max(0, Number(req.query.offset) || 0)
     const provider = req.query.provider as string | undefined
     const status = req.query.status as string | undefined
     const userId = req.query.user_id as string | undefined
 
     let logs: any[]
     if (provider && status && userId) {
-      logs = await sql`SELECT g.*, u.name as user_name, u.email as user_email FROM generation_logs g LEFT JOIN users u ON g.user_id = u.id WHERE g.provider = ${provider} AND g.status = ${status} AND g.user_id = ${Number(userId)} ORDER BY g.created_at DESC LIMIT ${limit}`
+      logs = await sql`SELECT g.*, u.name as user_name, u.email as user_email FROM generation_logs g LEFT JOIN users u ON g.user_id = u.id WHERE g.provider = ${provider} AND g.status = ${status} AND g.user_id = ${Number(userId)} ORDER BY g.created_at DESC LIMIT ${limit} OFFSET ${offset}`
     } else if (provider && status) {
-      logs = await sql`SELECT g.*, u.name as user_name, u.email as user_email FROM generation_logs g LEFT JOIN users u ON g.user_id = u.id WHERE g.provider = ${provider} AND g.status = ${status} ORDER BY g.created_at DESC LIMIT ${limit}`
+      logs = await sql`SELECT g.*, u.name as user_name, u.email as user_email FROM generation_logs g LEFT JOIN users u ON g.user_id = u.id WHERE g.provider = ${provider} AND g.status = ${status} ORDER BY g.created_at DESC LIMIT ${limit} OFFSET ${offset}`
     } else if (provider && userId) {
-      logs = await sql`SELECT g.*, u.name as user_name, u.email as user_email FROM generation_logs g LEFT JOIN users u ON g.user_id = u.id WHERE g.provider = ${provider} AND g.user_id = ${Number(userId)} ORDER BY g.created_at DESC LIMIT ${limit}`
+      logs = await sql`SELECT g.*, u.name as user_name, u.email as user_email FROM generation_logs g LEFT JOIN users u ON g.user_id = u.id WHERE g.provider = ${provider} AND g.user_id = ${Number(userId)} ORDER BY g.created_at DESC LIMIT ${limit} OFFSET ${offset}`
     } else if (status && userId) {
-      logs = await sql`SELECT g.*, u.name as user_name, u.email as user_email FROM generation_logs g LEFT JOIN users u ON g.user_id = u.id WHERE g.status = ${status} AND g.user_id = ${Number(userId)} ORDER BY g.created_at DESC LIMIT ${limit}`
+      logs = await sql`SELECT g.*, u.name as user_name, u.email as user_email FROM generation_logs g LEFT JOIN users u ON g.user_id = u.id WHERE g.status = ${status} AND g.user_id = ${Number(userId)} ORDER BY g.created_at DESC LIMIT ${limit} OFFSET ${offset}`
     } else if (provider) {
-      logs = await sql`SELECT g.*, u.name as user_name, u.email as user_email FROM generation_logs g LEFT JOIN users u ON g.user_id = u.id WHERE g.provider = ${provider} ORDER BY g.created_at DESC LIMIT ${limit}`
+      logs = await sql`SELECT g.*, u.name as user_name, u.email as user_email FROM generation_logs g LEFT JOIN users u ON g.user_id = u.id WHERE g.provider = ${provider} ORDER BY g.created_at DESC LIMIT ${limit} OFFSET ${offset}`
     } else if (status) {
-      logs = await sql`SELECT g.*, u.name as user_name, u.email as user_email FROM generation_logs g LEFT JOIN users u ON g.user_id = u.id WHERE g.status = ${status} ORDER BY g.created_at DESC LIMIT ${limit}`
+      logs = await sql`SELECT g.*, u.name as user_name, u.email as user_email FROM generation_logs g LEFT JOIN users u ON g.user_id = u.id WHERE g.status = ${status} ORDER BY g.created_at DESC LIMIT ${limit} OFFSET ${offset}`
     } else if (userId) {
-      logs = await sql`SELECT g.*, u.name as user_name, u.email as user_email FROM generation_logs g LEFT JOIN users u ON g.user_id = u.id WHERE g.user_id = ${Number(userId)} ORDER BY g.created_at DESC LIMIT ${limit}`
+      logs = await sql`SELECT g.*, u.name as user_name, u.email as user_email FROM generation_logs g LEFT JOIN users u ON g.user_id = u.id WHERE g.user_id = ${Number(userId)} ORDER BY g.created_at DESC LIMIT ${limit} OFFSET ${offset}`
     } else {
-      logs = await sql`SELECT g.*, u.name as user_name, u.email as user_email FROM generation_logs g LEFT JOIN users u ON g.user_id = u.id ORDER BY g.created_at DESC LIMIT ${limit}`
+      logs = await sql`SELECT g.*, u.name as user_name, u.email as user_email FROM generation_logs g LEFT JOIN users u ON g.user_id = u.id ORDER BY g.created_at DESC LIMIT ${limit} OFFSET ${offset}`
     }
-    return res.status(200).json({ logs })
+    return res.status(200).json({ logs, limit, offset })
   } catch (err: any) {
     console.error('[admin-activity] error:', err.message)
     return res.status(500).json({ error: err.message })

@@ -7,6 +7,7 @@ import { submitRunningHubAudioAvatar, submitRunningHubLipSync, pollRunningHubTas
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { persistResultToR2 } from '@/lib/backgroundTasks'
 import { useLocalStorage } from '@/lib/useLocalStorage'
+import { normalizeImage } from '@/lib/roboneo'
 
 interface HistoryItem {
   time: string
@@ -105,7 +106,23 @@ export default function TalkingPhotoPage() {
     setTimedOutTaskId(null)
     setTaskStatus('submitting')
     setLogs([])
-    addLog(`Mulai (${isLtx ? 'LTX-2.5 LipSync' : 'H3 Avatar'}): foto ${(photoFile!.size / 1024).toFixed(0)}KB ${photoFile!.name}` + (isLtx && photoFile2 ? ` + foto2 ${(photoFile2.size / 1024).toFixed(0)}KB ${photoFile2.name}` : '') + ` + audio ${(audioFile!.size / 1024 / 1024).toFixed(1)}MB ${audioFile!.name}`)
+
+    // Normalisasi foto (PNG besar → JPEG terkompresi) supaya request muat limit server
+    let upPhoto = photoFile!
+    let upPhoto2 = photoFile2
+    try {
+      addLog(`Normalisasi foto ${(photoFile!.size / 1024 / 1024).toFixed(1)}MB...`)
+      upPhoto = await normalizeImage(photoFile!, (msg) => addLog(msg))
+      addLog(`Foto siap: ${(upPhoto.size / 1024).toFixed(0)}KB`, 'success')
+      if (isLtx && photoFile2) {
+        upPhoto2 = await normalizeImage(photoFile2, (msg) => addLog(msg))
+        addLog(`Foto2 siap: ${(upPhoto2.size / 1024).toFixed(0)}KB`, 'success')
+      }
+    } catch (e: any) {
+      addLog(`Normalisasi gagal, pakai file asli: ${e.message}`, 'warn')
+    }
+
+    addLog(`Mulai (${isLtx ? 'LTX-2.5 LipSync' : 'H3 Avatar'}): foto ${(upPhoto.size / 1024).toFixed(0)}KB ${upPhoto.name}` + (isLtx && upPhoto2 ? ` + foto2 ${(upPhoto2.size / 1024).toFixed(0)}KB ${upPhoto2.name}` : '') + ` + audio ${(audioFile!.size / 1024 / 1024).toFixed(1)}MB ${audioFile!.name}`)
     if (isLtx) addLog(`Params: ${lipWidth}x${lipHeight} @${lipFps}fps`)
     if (prompt.trim()) addLog(`Prompt: ${prompt.trim().slice(0, 120)}`)
 
@@ -117,8 +134,8 @@ export default function TalkingPhotoPage() {
           addLog(`🔑 Key: ${keyInfo?.name || keyInfo?.id || 'default'}`)
           const submit = isLtx
             ? await submitRunningHubLipSync({
-              imageFile: photoFile!,
-              imageFile2: photoFile2,
+              imageFile: upPhoto,
+              imageFile2: upPhoto2,
               audioFile: audioFile!,
               width: lipWidth,
               height: lipHeight,
@@ -127,7 +144,7 @@ export default function TalkingPhotoPage() {
               apiKey: key,
             })
             : await submitRunningHubAudioAvatar({
-              imageFile: photoFile!,
+              imageFile: upPhoto,
               audioFile: audioFile!,
               prompt: prompt.trim() || undefined,
               apiKey: key,

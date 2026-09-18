@@ -148,7 +148,15 @@ export default function App() {
       if (startX.current < 28 && dx > 72 && sidebarCollapsed) toggleSidebar()
       if (!sidebarCollapsed && dx < -72 && startX.current < 300) toggleSidebar()
     }
-    const onKey = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') { e.preventDefault(); toggleSidebar() } }
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') { e.preventDefault(); toggleSidebar() }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        const el = document.activeElement as HTMLElement | null
+        if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return
+        e.preventDefault()
+        if (window.location.pathname !== '/command') window.location.assign('/command')
+      }
+    }
     window.addEventListener('touchstart', onStart as any, { passive: true })
     window.addEventListener('touchmove', onMove as any, { passive: true })
     window.addEventListener('keydown', onKey)

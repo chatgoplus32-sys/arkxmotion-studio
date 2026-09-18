@@ -28,18 +28,27 @@
     "api/public/weavy-credits.ts": { "maxDuration": 30 },
     "api/public/upload-images.ts": { "maxDuration": 30 },
     "api/public/tiktok-download.ts": { "maxDuration": 30 },
-    "api/public/galleri5.ts": { "maxDuration": 120 },
+    "api/public/galleri5.ts": { "maxDuration": 60 },
     "api/public/oneover.ts": { "maxDuration": 60 },
-    "api/public/genspark.ts": { "maxDuration": 300 },
+    "api/public/genspark.ts": { "maxDuration": 60 },
     "api/public/genspark-upload.ts": { "maxDuration": 60 },
-    "api/public/nexabot.ts": { "maxDuration": 300 },
+    "api/public/nexabot.ts": { "maxDuration": 60 },
     "api/public/pricing.ts": { "maxDuration": 10 },
-    "api/public/runninghub.ts": { "maxDuration": 120 },
+    "api/public/runninghub.ts": { "maxDuration": 60 },
     "api/public/r2-upload.ts": { "maxDuration": 60 },
     "api/public/validate-media.ts": { "maxDuration": 30 },
     "api/logs/generation.ts": { "maxDuration": 10 }
   },
   "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+        { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=()" }
+      ]
+    },
     {
       "source": "/index.html",
       "headers": [

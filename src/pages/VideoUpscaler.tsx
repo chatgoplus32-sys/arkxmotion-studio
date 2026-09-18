@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Label, Select, EmptyState } from '@/components/ui'
 import { Loader2, Upload, Download, X, Sparkles, CheckCircle2, AlertCircle, Clock, Clapperboard } from 'lucide-react'
@@ -166,6 +166,19 @@ export default function VideoUpscalerPage() {
     }
   }
 
+  const canRunUpscale = !!apiKey && !!videoFile && !loading
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && canRunUpscale) {
+        e.preventDefault()
+        void runWorkflow()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
   return (
     <PageContent>
       <PageHeader
@@ -291,6 +304,17 @@ export default function VideoUpscalerPage() {
             {taskStatus === 'error' && (
               <span className="text-sm text-red-400 flex items-center gap-2">
                 <AlertCircle className="h-4 w-4" /> Error: {error || 'Unknown error'}
+                {videoFile && (
+                  <button
+                    type="button"
+                    onClick={runWorkflow}
+                    disabled={loading}
+                    className="ml-2 px-2 py-0.5 rounded border border-red-400/40 text-xs hover:bg-red-500/20"
+                    aria-label="Coba lagi dengan file yang sama"
+                  >
+                    Coba lagi
+                  </button>
+                )}
               </span>
             )}
           </div>

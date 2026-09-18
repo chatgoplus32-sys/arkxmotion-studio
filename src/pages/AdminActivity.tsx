@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
-import { Section, Button } from '@/components/ui'
+import { Section, Button, EmptyState } from '@/components/ui'
+import { SkeletonList } from '@/components/ui/Skeleton'
 import { useAuthStore } from '@/stores/authStore'
 import {
   RefreshCw,
@@ -55,36 +56,48 @@ export default function AdminActivityPage() {
   const { token } = useAuthStore()
   const [logs, setLogs] = useState<ActivityLog[]>([])
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [lastFetch, setLastFetch] = useState('')
   const [filterProvider, setFilterProvider] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [searchEmail, setSearchEmail] = useState('')
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const LIMIT = 20
 
-  const fetchActivity = useCallback(async () => {
+  const fetchActivity = useCallback(async (pageNum = 1) => {
     if (!token) return
     setLoading(true)
+    setError(null)
     try {
       const params = new URLSearchParams()
-      params.set('limit', '100')
+      params.set('limit', String(LIMIT))
+      params.set('offset', String((pageNum - 1) * LIMIT))
       if (filterProvider) params.set('provider', filterProvider)
       if (filterStatus) params.set('status', filterStatus)
 
       const res = await fetch(`/api/admin/activity?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(15000),
       })
       if (res.ok) {
         const json = await res.json()
         setLogs(json.logs || [])
+        if (typeof json.total === 'number') setTotal(json.total)
         setLastFetch(new Date().toLocaleTimeString('id-ID'))
+      } else {
+        setError(`Gagal memuat (HTTP ${res.status})`)
       }
     } catch (err) {
-      console.error('Failed to fetch activity:', err)
+      setError(err instanceof Error ? err.message : 'Gagal memuat aktivitas')
     } finally {
       setLoading(false)
     }
   }, [token, filterProvider, filterStatus])
 
-  useEffect(() => { fetchActivity() }, [fetchActivity])
+  useEffect(() => { void fetchActivity(1) }, [fetchActivity])
+
+  const totalPages = total > 0 ? Math.max(1, Math.ceil(total / LIMIT)) : 1
 
   const filteredLogs = searchEmail
     ? logs.filter(l => l.user_email?.toLowerCase().includes(searchEmail.toLowerCase()) || l.user_name?.toLowerCase().includes(searchEmail.toLowerCase()))
@@ -103,7 +116,7 @@ export default function AdminActivityPage() {
 
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-2 mb-4">
-        <Button onClick={fetchActivity} disabled={loading} variant="outline" className="gap-2">
+        <Button onClick={() => { setPage(1); void fetchActivity(1) }} disabled={loading} variant="outline" className="gap-2" aria-label="Refresh aktivitas">
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
           Refresh
         </Button>
@@ -115,7 +128,8 @@ export default function AdminActivityPage() {
 
         <select
           value={filterProvider}
-          onChange={(e) => setFilterProvider(e.target.value)}
+          onChange={(e) => { setFilterProvider(e.target.value); setPage(1) }}
+          aria-label="Filter provider"
           className="ml-auto rounded-lg border border-border bg-card px-3 py-1.5 text-xs"
         >
           <option value="">Semua Provider</option>
@@ -124,7 +138,8 @@ export default function AdminActivityPage() {
 
         <select
           value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value)}
+          onChange={(e) => { setFilterStatus(e.target.value); setPage(1) }}
+          aria-label="Filter status"
           className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs"
         >
           <option value="">Semua Status</option>
@@ -163,10 +178,24 @@ export default function AdminActivityPage() {
       </div>
 
       {/* Activity list */}
-      <Section title={`📋 Activity (${filteredLogs.length})`}>
-        {filteredLogs.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Belum ada activity</p>
+      <Section title={`📋 Activity (${total || filteredLogs.length})`}>
+        {loading && logs.length === 0 ? (
+          <SkeletonList count={5} />
+        ) : error && logs.length === 0 ? (
+          <EmptyState
+            icon={<XCircle className="h-8 w-8" />}
+            title="Gagal memuat aktivitas"
+            description={error}
+            action={<Button size="sm" variant="outline" onClick={() => void fetchActivity(page)}>Coba lagi</Button>}
+          />
+        ) : filteredLogs.length === 0 ? (
+          <EmptyState
+            icon={<Search className="h-8 w-8" />}
+            title="Belum ada activity"
+            description="Coba ubah filter atau kata kunci pencarian"
+          />
         ) : (
+          <>
           <div className="space-y-2 max-h-[60vh] overflow-y-auto">
             {filteredLogs.map((log) => {
               const st = STATUS_CONFIG[log.status] || STATUS_CONFIG.pending
@@ -207,6 +236,30 @@ export default function AdminActivityPage() {
               )
             })}
           </div>
+          <div className="flex items-center justify-between mt-3 text-xs text-muted-foreground">
+            <span>Halaman {page} dari {totalPages}{total ? ` · ${total} total` : ''}</span>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={page <= 1 || loading}
+                onClick={() => { const p = Math.max(1, page - 1); setPage(p); void fetchActivity(p) }}
+                aria-label="Halaman sebelumnya"
+              >
+                ← Prev
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={loading || (total > 0 && page >= totalPages) || filteredLogs.length < LIMIT}
+                onClick={() => { const p = page + 1; setPage(p); void fetchActivity(p) }}
+                aria-label="Halaman berikutnya"
+              >
+                Next →
+              </Button>
+            </div>
+          </div>
+          </>
         )}
       </Section>
     </PageContent>

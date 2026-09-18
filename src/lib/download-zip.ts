@@ -13,10 +13,11 @@ async function fetchFileAsBlob(url: string): Promise<Blob> {
 
 export async function downloadFilesAsZip(
   items: DownloadItem[],
-  zipName: string = `bulk-fashion-${Date.now()}.zip`
+  zipName: string = `bulk-fashion-${Date.now()}.zip`,
+  folderName = 'bulk-fashion',
 ): Promise<void> {
   const zip = new JSZip()
-  const folder = zip.folder('bulk-fashion')!
+  const folder = zip.folder(folderName)!
 
   const results = await Promise.allSettled(
     items.map(async (item) => {

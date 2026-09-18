@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Label, EmptyState } from '@/components/ui'
 import { Loader2, Upload, Download, X, Shirt, User, Sparkles, CheckCircle2, AlertCircle, Clock } from 'lucide-react'
@@ -174,6 +174,19 @@ export default function VirtualTryOnPage() {
     }
   }
 
+  const canRun = !!apiKey && !!personFile && (mode === 'extract' || !!garmentFile) && !loading
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && canRun) {
+        e.preventDefault()
+        void runWorkflow()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
   const FileUpload = ({ label, icon, file, preview, pickerRef, onPick, onRemove, type }: {
     label: string; icon: React.ReactNode; file: File | null; preview: string | null;
     pickerRef: React.RefObject<HTMLInputElement | null>; onPick: () => void; onRemove: () => void; type: 'person' | 'garment'
@@ -263,6 +276,7 @@ export default function VirtualTryOnPage() {
             disabled={loading || !apiKey || !personFile || (mode === 'tryon' && !garmentFile)}
             className="w-full"
             size="lg"
+            title="Ctrl+Enter untuk jalankan"
           >
             {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
             {taskStatus === 'submitting' ? '🚀 Submitting...' : taskStatus === 'running' ? `⏳ Running... ${progress}%` : '🚀 Jalankan AI'}
@@ -293,6 +307,17 @@ export default function VirtualTryOnPage() {
             {taskStatus === 'error' && (
               <span className="text-sm text-red-400 flex items-center gap-2">
                 <AlertCircle className="h-4 w-4" /> Error: {error || 'Unknown error'}
+                {(personFile || garmentFile) && (
+                  <button
+                    type="button"
+                    onClick={runWorkflow}
+                    disabled={loading}
+                    className="ml-2 px-2 py-0.5 rounded border border-red-400/40 text-xs hover:bg-red-500/20"
+                    aria-label="Coba lagi dengan file yang sama"
+                  >
+                    Coba lagi
+                  </button>
+                )}
               </span>
             )}
           </div>

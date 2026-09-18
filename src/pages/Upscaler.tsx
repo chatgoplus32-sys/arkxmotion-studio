@@ -106,6 +106,7 @@ export default function UpscalerPage() {
   const [progress, setProgress] = useState({ done: 0, total: 0 })
   const [gallerySearch, setGallerySearch] = useState('')
   const [gallery, setGallery] = useState<GalleryItem[]>(() => loadGallery())
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
   const [topazModel, setTopazModel] = useState('Standard V2')
   const [topazFactor, setTopazFactor] = useState(2)
@@ -432,7 +433,46 @@ export default function UpscalerPage() {
     if (gallery.length === 0) return
     if (!confirm(`Hapus semua ${gallery.length} hasil dari gallery?`)) return
     setGallery([])
+    setSelectedIds(new Set())
     saveGallery([])
+  }
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const downloadSelected = async () => {
+    const items = filteredGallery.filter((g) => selectedIds.has(g.id))
+    if (items.length === 0) return
+    try {
+      const { downloadFilesAsZip, getExtensionFromUrl } = await import('@/lib/download-zip')
+      await downloadFilesAsZip(
+        items.map((item, i) => ({
+          url: item.url,
+          filename: `upscale-${String(i + 1).padStart(2, '0')}-${item.id}.${getExtensionFromUrl(item.url)}`,
+        })),
+        `upscaler-selected-${new Date().toISOString().slice(0, 10)}.zip`,
+        'upscaler',
+      )
+    } catch (err: unknown) {
+      addLog(`ZIP error: ${err instanceof Error ? err.message : String(err)}`, 'error')
+    }
+  }
+
+  const deleteSelected = () => {
+    if (selectedIds.size === 0) return
+    if (!confirm(`Hapus ${selectedIds.size} hasil terpilih?`)) return
+    setGallery((prev) => {
+      const updated = prev.filter((e) => !selectedIds.has(e.id))
+      saveGallery(updated)
+      return updated
+    })
+    setSelectedIds(new Set())
   }
 
   const pct = progress.total ? Math.round(progress.done / progress.total * 100) : 0
@@ -758,12 +798,56 @@ export default function UpscalerPage() {
           {filteredGallery.length === 0 ? (
             <EmptyState icon={<ImageIcon className="h-8 w-8" />} title="Belum ada hasil" description="Gambar hasil upscale akan muncul di sini" />
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
-              {filteredGallery.map(item => (
-                <div key={item.id} className="rounded-xl overflow-hidden border border-border/60 bg-card/40 group">
-                  <a href={item.url} target="_blank" rel="noreferrer" className="block relative bg-black/40">
-                    <img src={item.url} alt={item.sourceName || 'Hasil upscale'} className="w-full h-auto object-contain" loading="lazy" />
-                  </a>
+            <>
+              <div className="flex items-center gap-2 mb-3 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setSelectedIds(new Set(filteredGallery.map((g) => g.id)))}
+                  className="px-2 py-1 rounded border border-border hover:bg-accent"
+                >
+                  Pilih semua ({filteredGallery.length})
+                </button>
+                {selectedIds.size > 0 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedIds(new Set())}
+                      className="px-2 py-1 rounded border border-border hover:bg-accent"
+                    >
+                      Batal ({selectedIds.size})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={downloadSelected}
+                      className="px-2 py-1 rounded border border-border hover:bg-accent inline-flex items-center gap-1"
+                    >
+                      <Download className="h-3 w-3" /> Zip terpilih
+                    </button>
+                    <button
+                      type="button"
+                      onClick={deleteSelected}
+                      className="px-2 py-1 rounded border border-destructive/40 text-destructive hover:bg-destructive/10 inline-flex items-center gap-1"
+                    >
+                      <Trash2 className="h-3 w-3" /> Hapus terpilih
+                    </button>
+                  </>
+                )}
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+                {filteredGallery.map(item => (
+                  <div key={item.id} className={`rounded-xl overflow-hidden border bg-card/40 group ${selectedIds.has(item.id) ? 'border-primary' : 'border-border/60'}`}>
+                    <div className="block relative bg-black/40">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(item.id)}
+                        onChange={() => toggleSelect(item.id)}
+                        aria-label={`Pilih ${item.sourceName}`}
+                        className="absolute top-2 left-2 h-4 w-4 z-10 accent-primary"
+                      />
+                      <a href={item.url} target="_blank" rel="noreferrer" className="block">
+                        <img src={item.url} alt={item.sourceName || 'Hasil upscale'} className="w-full h-auto object-contain" loading="lazy" />
+                      </a>
+                    </div>
                   <div className="p-2 text-[11px] text-muted-foreground flex items-center justify-between gap-1">
                     <span className="truncate flex-1" title={item.sourceName}>{item.sourceName}</span>
                     <button onClick={() => downloadItem(item)} aria-label={`Download ${item.sourceName}`}
@@ -777,7 +861,8 @@ export default function UpscalerPage() {
                   </div>
                 </div>
               ))}
-            </div>
+              </div>
+            </>
           )}
         </Section>
       </div>

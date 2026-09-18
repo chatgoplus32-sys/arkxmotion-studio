@@ -439,28 +439,31 @@ router.get('/analytics', authenticateToken, requireAdmin, (_req: AuthRequest, re
 // GET /api/admin/activity — recent activity feed across all users
 router.get('/activity', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
   try {
-    const limit = Math.min(Number(req.query.limit) || 50, 200)
+    const limit = Math.min(Number(req.query.limit) || 20, 200)
+    const offset = Math.max(0, Number(req.query.offset) || 0)
     const provider = req.query.provider as string | undefined
     const status = req.query.status as string | undefined
     const userId = req.query.user_id as string | undefined
 
-    let query = `
-      SELECT g.*, u.name as user_name, u.email as user_email
-      FROM generation_logs g
-      LEFT JOIN users u ON g.user_id = u.id
-      WHERE 1=1`
+    let where = `WHERE 1=1`
     const params: any[] = []
 
-    if (provider) { query += ` AND g.provider = ?`; params.push(provider) }
-    if (status) { query += ` AND g.status = ?`; params.push(status) }
-    if (userId) { query += ` AND g.user_id = ?`; params.push(Number(userId)) }
+    if (provider) { where += ` AND g.provider = ?`; params.push(provider) }
+    if (status) { where += ` AND g.status = ?`; params.push(status) }
+    if (userId) { where += ` AND g.user_id = ?`; params.push(Number(userId)) }
 
-    query += ` ORDER BY g.created_at DESC LIMIT ?`
-    params.push(limit)
+    const totalRow = db.prepare(
+      `SELECT COUNT(*) as c FROM generation_logs g LEFT JOIN users u ON g.user_id = u.id ${where}`
+    ).get(...params) as { c: number }
 
-    const logs = db.prepare(query).all(...params)
+    const logs = db.prepare(
+      `SELECT g.*, u.name as user_name, u.email as user_email
+      FROM generation_logs g
+      LEFT JOIN users u ON g.user_id = u.id
+      ${where} ORDER BY g.created_at DESC LIMIT ? OFFSET ?`
+    ).all(...params, limit, offset)
 
-    res.json({ logs })
+    res.json({ logs, total: totalRow?.c ?? 0, limit, offset })
   } catch (err: any) {
     console.error('[admin-activity] error:', err.message)
     res.status(500).json({ error: err.message })
