@@ -357,19 +357,7 @@ app.post('/admin/members/:id/deactivate', requireAdmin, (req, res) => {
   res.json({ message: `${member.name} dinonaktifkan.` });
 });
 
-// ── Delete member ────────────────────────────────────────────────────────
-app.delete('/admin/members/:id', requireAdmin, (req, res) => {
-  const { id } = req.params;
-  const member = db.prepare('SELECT * FROM members WHERE id = ?').get(id);
-  if (!member) return res.status(404).json({ error: 'Member tidak ditemukan.' });
-
-  db.prepare('DELETE FROM usage_log WHERE member_id = ?').run(id);
-  db.prepare('DELETE FROM members WHERE id = ?').run(id);
-
-  res.json({ message: `🗑️ ${member.name} (ID: ${id}) berhasil dihapus.` });
-});
-
-// ── Delete all seed members (bulk) ────────────────────────────────────────
+// ── Delete all seed members (bulk) — HARUS sebelum route :id! ─────────────
 app.delete('/admin/members/seed/all', requireAdmin, (req, res) => {
   const seedNames = [
     'Budi Santoso', 'Rina Wati', 'Ahmad Fauzi', 'Siti Nurhaliza', 'Andi Pratama',
@@ -386,6 +374,18 @@ app.delete('/admin/members/seed/all', requireAdmin, (req, res) => {
   db.prepare(`DELETE FROM members WHERE id IN (${idPlaceholders})`).run(...ids);
 
   res.json({ message: `🗑️ ${ids.length} seed member berhasil dihapus.`, deleted: ids });
+});
+
+// ── Delete single member ──────────────────────────────────────────────────
+app.delete('/admin/members/:id', requireAdmin, (req, res) => {
+  const { id } = req.params;
+  const member = db.prepare('SELECT * FROM members WHERE id = ?').get(id);
+  if (!member) return res.status(404).json({ error: 'Member tidak ditemukan.' });
+
+  db.prepare('DELETE FROM usage_log WHERE member_id = ?').run(id);
+  db.prepare('DELETE FROM members WHERE id = ?').run(id);
+
+  res.json({ message: `🗑️ ${member.name} (ID: ${id}) berhasil dihapus.` });
 });
 
 // ── Regenerate API key ─────────────────────────────────────────────────────
