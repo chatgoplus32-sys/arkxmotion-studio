@@ -8,6 +8,7 @@ import { useToastStore } from '@/stores/toastStore'
 import { runMagnificUpscale, getMagnificApiKey, type MagnificEngine, type MagnificOptimizedFor } from '@/lib/magnific'
 import { runLeonardoUpscale } from '@/lib/leonardo-upscale'
 import { runTopazUpscale } from '@/lib/weavy'
+import { submitRunningHubPhotoEnhance, pollRunningHubTask } from '@/lib/runninghub'
 import { withTokenRotation } from '@/lib/tokenRotation'
 
 const MAX_IMAGES = 50
@@ -97,7 +98,7 @@ export default function UpscalerPage() {
   const addToast = useToastStore((s) => s.addToast)
   const { keys, fetchMaintenance } = useProviderManager()
 
-  const [provider, setProvider] = useState<'topaz' | 'magnific' | 'leonardo'>('topaz')
+  const [provider, setProvider] = useState<'topaz' | 'magnific' | 'leonardo' | 'runninghub'>('topaz')
   const [mode, setMode] = useState<'upscale' | 'enhance'>('upscale')
   const [rows, setRows] = useState<ImageRow[]>([])
   const [running, setRunning] = useState(false)
@@ -125,16 +126,21 @@ export default function UpscalerPage() {
   const [leoFactor, setLeoFactor] = useState(2)
   const [leoFixArtifacts, setLeoFixArtifacts] = useState(true)
 
+  const [rhScaleBy, setRhScaleBy] = useState(2)
+
   const filePickerRef = useRef<HTMLInputElement | null>(null)
   const runningRef = useRef(false)
+  const [timedOut, setTimedOut] = useState<{ taskId: string; index: number; fileName: string } | null>(null)
 
   const magnificKey = getMagnificApiKey()
   const leonardoKeys = keys.leonardo || []
   const hasLeonardoKey = leonardoKeys.some(k => k.status !== 'invalid' && k.status !== 'expired')
   const weavyKeys = keys.weavy || []
   const hasWeavyKey = weavyKeys.some(k => k.status !== 'invalid' && k.status !== 'expired')
+  const rhKeys = keys.runninghub || []
+  const hasRunningHubKey = rhKeys.some(k => k.status !== 'invalid' && k.status !== 'expired')
   const canRun = rows.length > 0 && !running &&
-    ((provider === 'topaz' && hasWeavyKey) || (provider === 'magnific' && !!magnificKey) || (provider === 'leonardo' && hasLeonardoKey))
+    ((provider === 'topaz' && hasWeavyKey) || (provider === 'magnific' && !!magnificKey) || (provider === 'leonardo' && hasLeonardoKey) || (provider === 'runninghub' && hasRunningHubKey))
 
   const addLog = useCallback((msg: string, level: LogEntry['level'] = 'info') => {
     const time = new Date().toLocaleTimeString()
@@ -208,6 +214,7 @@ export default function UpscalerPage() {
   async function handleRun() {
     if (rows.length === 0 || running) return
     setRunning(true)
+    setTimedOut(null)
     runningRef.current = true
     setLogs([])
     setProgress({ done: 0, total: rows.length })
@@ -222,6 +229,7 @@ export default function UpscalerPage() {
         addLog(`#${item.index + 1}: ${msg}`, lvl || 'info')
         setRows(prev => prev.map((r, i) => i === item.index ? { ...r, status: 'processing' } : r))
       }
+      let taskTid = ''
 
       try {
         log('mulai...')
@@ -245,6 +253,31 @@ export default function UpscalerPage() {
             fractality: magFractality,
             prompt: magPrompt || undefined,
           }, (msg) => log(msg))
+        } else if (provider === 'runninghub') {
+          const rotation = await withTokenRotation<string>(
+            'runninghub',
+            async (token, keyInfo) => {
+              log(`🔑 key: ${keyInfo?.name || keyInfo?.id || 'default'}`)
+              const submit = await submitRunningHubPhotoEnhance({
+                imageFile: item.file,
+                scaleBy: rhScaleBy,
+                apiKey: token,
+              })
+              taskTid = submit.taskId
+              log(`task: ${submit.taskId.slice(0, 20)}...`)
+              const url = await pollRunningHubTask(submit.taskId, (status, pct) => {
+                log(`${status} ${pct}%`)
+              }, 1800000, token)
+              return url
+            },
+            {
+              onKeySwitch: (from, to, attempt) => {
+                log(`↻ rotate key RunningHub #${attempt}: ${from.name} → ${to.name}`, 'warn')
+              },
+            }
+          )
+          if (!rotation.ok) throw new Error(rotation.error || 'RunningHub failed')
+          url = rotation.result!
         } else {
           const rotation = await withTokenRotation<string>(
             'leonardo',
@@ -290,6 +323,10 @@ export default function UpscalerPage() {
         completed++
         setProgress({ done: completed, total: rows.length })
         log(msg, 'error')
+        if (/timeout/i.test(msg) && taskTid) {
+          setTimedOut({ taskId: taskTid, index: item.index, fileName: item.file.name })
+          log(`task ${taskTid.slice(0, 20)}... masih jalan di server — pakai "Lanjutkan" untuk cek lagi`, 'warn')
+        }
       }
     }
 
@@ -305,6 +342,53 @@ export default function UpscalerPage() {
       addToast(`Upscale selesai: ${completed}/${rows.length} gambar`, 'success')
     } catch (err: any) {
       addLog(`Fatal: ${err.message}`, 'error')
+    } finally {
+      setRunning(false)
+      runningRef.current = false
+    }
+  }
+
+  async function continuePolling() {
+    if (!timedOut || running) return
+    const { taskId, index, fileName } = timedOut
+    setRunning(true)
+    runningRef.current = true
+    addLog(`🔄 Lanjutkan polling task ${taskId.slice(0, 20)}... (${fileName})`)
+    setRows(prev => prev.map((r, i) => i === index ? { ...r, status: 'processing', error: undefined } : r))
+    try {
+      const rotation = await withTokenRotation<string>(
+        'runninghub',
+        async (token) => {
+          return pollRunningHubTask(taskId, (status, pct) => {
+            addLog(`#${index + 1}: ${status} ${pct}%`)
+          }, 1800000, token)
+        },
+        {}
+      )
+      if (!rotation.ok) throw new Error(rotation.error || 'Polling failed')
+      const url = rotation.result!
+      setRows(prev => prev.map((r, i) => i === index ? { ...r, status: 'done', url } : r))
+      const newItem: GalleryItem = {
+        id: Math.random().toString(36).slice(2),
+        url,
+        sourceName: fileName,
+        provider: 'runninghub',
+        mode,
+        createdAt: new Date().toISOString(),
+      }
+      setGallery(prev => {
+        const updated = [newItem, ...prev]
+        saveGallery(updated)
+        return updated
+      })
+      setTimedOut(null)
+      addLog(`#${index + 1}: done`, 'success')
+      addToast('Upscale selesai!', 'success')
+    } catch (err: any) {
+      const msg = err instanceof Error ? err.message : String(err)
+      addLog(`Lanjut polling gagal: ${msg}`, 'error')
+      if (!/timeout/i.test(msg)) setTimedOut(null)
+      else addToast('Masih jalan — coba "Lanjutkan" lagi nanti', 'info')
     } finally {
       setRunning(false)
       runningRef.current = false
@@ -359,7 +443,7 @@ export default function UpscalerPage() {
         eyebrow="Generate"
         title="AI Upscaler &"
         highlight="Enhancer"
-        desc={`Provider Topaz (via Weavy) atau Magnific. Bulk maksimum ${MAX_IMAGES} gambar sekaligus.`}
+        desc={`Topaz/Magnific via Weavy, Aurora Leonardo, atau AI Photo Enhancer via RunningHub. Bulk maksimum ${MAX_IMAGES} gambar sekaligus.`}
       />
 
       <div className="flex flex-col gap-5">
@@ -377,10 +461,18 @@ export default function UpscalerPage() {
                     { value: 'topaz', label: 'Topaz Upscale (Weavy node)' },
                     { value: 'magnific', label: 'Magnific Upscale (Weavy node)' },
                     { value: 'leonardo', label: 'Aurora (Leonardo)' },
+                    { value: 'runninghub', label: 'AI Photo Enhancer (RunningHub)' },
                   ]}
                 />
 
-                <MaintenanceBanner providerId={provider === 'topaz' ? 'weavy' : provider} />
+                <MaintenanceBanner providerId={provider === 'topaz' ? 'weavy' : provider as any} />
+
+                {provider === 'runninghub' && !hasRunningHubKey && (
+                  <div className="flex items-center gap-2 text-xs text-blue-400 bg-blue-500/10 rounded-lg p-2 border border-blue-500/20">
+                    <Key className="h-4 w-4" />
+                    <span>Photo Enhancer butuh RunningHub API key. Tambahkan di <b>Kelola Token</b> → provider <b>RunningHub</b>.</span>
+                  </div>
+                )}
 
                 {provider === 'topaz' && !hasWeavyKey && (
                   <div className="flex items-center gap-2 text-xs text-blue-400 bg-blue-500/10 rounded-lg p-2 border border-blue-500/20">
@@ -487,6 +579,18 @@ export default function UpscalerPage() {
                   </>
                 )}
 
+                {/* RunningHub Settings */}
+                {provider === 'runninghub' && (
+                  <>
+                    <Label>Scale (scale_by)</Label>
+                    <Select value={String(rhScaleBy)} onChange={e => setRhScaleBy(Number(e.target.value))} disabled={running}
+                      options={[{ value: '1', label: '1x' }, { value: '2', label: '2x' }, { value: '3', label: '3x' }, { value: '4', label: '4x' }]} />
+                    <p className="text-[11px] text-muted-foreground">
+                      AI Photo Enhancer — retus potret alami (kulit, wajah, rambut, pakaian). Hasil menjaga tampilan asli, cocok untuk UGC/fashion/profil.
+                    </p>
+                  </>
+                )}
+
                 <div className="flex gap-2 pt-2">
                   <Button onClick={handleRun} disabled={!canRun}>
                     {running ? 'Memproses...' : `Jalankan (${rows.length})`}
@@ -495,6 +599,11 @@ export default function UpscalerPage() {
                     Bersihkan
                   </Button>
                 </div>
+                {timedOut && !running && (
+                  <Button variant="outline" onClick={continuePolling} disabled={running}>
+                    🔄 Lanjutkan: {timedOut.fileName.slice(0, 25)}
+                  </Button>
+                )}
               </div>
             </Section>
           </div>

@@ -15,6 +15,22 @@ export interface AuthRequest extends Request {
   }
 }
 
+/**
+ * Identitas wajib. Token hilang ATAU tidak sah/kedaluwarsa sama-sama dijawab
+ * **401**, bukan 403.
+ *
+ * Kenapa ini penting: access token app cuma hidup 15 menit (ACCESS_EXPIRES di
+ * routes/auth.ts), jadi "kedaluwarsa" adalah keadaan normal, bukan pelanggaran
+ * izin. App memutuskan mau refresh diam-diam atau logout dari kode respons, dan
+ * dulu ia hanya menangani 401 — sementara middleware ini menjawab 403, sehingga
+ * setiap 15 menit sesi yang masih bisa di-refresh malah dipaksa logout, dan
+ * poller auto-sync (7 provider tiap 10 detik) menghujani server dengan 403
+ * "Invalid or expired token" yang tidak ada satu pun pemakainya.
+ *
+ * 403 tetap dipakai untuk arti sebenarnya: sudah terautentikasi tapi memang
+ * tidak berhak (`requireAdmin` di bawah), sama seperti versi Vercel
+ * (api/sync-tokens.ts) yang sejak awal menjawab 401 untuk kasus ini.
+ */
 export const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction) => {
   const authHeader = req.headers['authorization']
   const token = authHeader && authHeader.split(' ')[1]
@@ -28,7 +44,7 @@ export const authenticateToken = (req: AuthRequest, res: Response, next: NextFun
     req.user = decoded
     next()
   } catch {
-    return res.status(403).json({ error: 'Invalid or expired token' })
+    return res.status(401).json({ error: 'Invalid or expired token' })
   }
 }
 

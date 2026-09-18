@@ -1,7 +1,7 @@
 import { Suspense, useEffect, useRef } from 'react'
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import { Sidebar, Header } from '@/components/layout'
-import { useAppStore } from '@/stores'
+import { useAppStore, useAuthStore } from '@/stores'
 import { cn } from '@/lib/utils'
 import ProtectedRoute from '@/components/auth/ProtectedRoute'
 import { ToastContainer } from '@/components/ui/Toast'
@@ -51,6 +51,9 @@ const CreatePulseTopupPage = lazyWithRetry(() => import('@/pages/CreatePulseTopu
 const NexaBotTopupPage = lazyWithRetry(() => import('@/pages/NexaBotTopup'))
 const BeliTokenPage = lazyWithRetry(() => import('@/pages/BeliToken'))
 const PluginsPage = lazyWithRetry(() => import('@/pages/Plugins'))
+const VirtualTryOnPage = lazyWithRetry(() => import('@/pages/VirtualTryOn'))
+const TalkingPhotoPage = lazyWithRetry(() => import('@/pages/TalkingPhoto'))
+const VideoUpscalerPage = lazyWithRetry(() => import('@/pages/VideoUpscaler'))
 
 function PageLoader() {
   return <div className="flex items-center justify-center py-20"><div className="h-8 w-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin" /></div>
@@ -107,6 +110,26 @@ export default function App() {
     run()
     const timer = setInterval(run, 10000)
     return () => { cancelled = true; clearInterval(timer) }
+  }, [])
+
+  // Sesi app: access token cuma hidup 15 menit, dan poller auto-sync di atas
+  // memakai token yang sama tiap 10 detik. Tanpa perpanjangan di latar
+  // belakang, sesi yang masih bisa di-refresh mati di tengah jalan dan semua
+  // permintaan sesudahnya jadi 401/403 (dulu 403 untuk 7 provider sekaligus).
+  // Diperiksa tiap menit dan setiap kali tab kembali aktif — kasus paling
+  // sering: tab lama dibuka lagi setelah lebih dari 15 menit.
+  useEffect(() => {
+    const tick = () => { void useAuthStore.getState().refreshIfExpiring() }
+    tick()
+    const timer = setInterval(tick, 60000)
+    const onActive = () => { if (!document.hidden) tick() }
+    document.addEventListener('visibilitychange', onActive)
+    window.addEventListener('focus', onActive)
+    return () => {
+      clearInterval(timer)
+      document.removeEventListener('visibilitychange', onActive)
+      window.removeEventListener('focus', onActive)
+    }
   }, [])
 
   // NexaBot: pantau sesi cookie (paket Unlimited) di latar belakang supaya user
@@ -172,6 +195,9 @@ export default function App() {
                         <Route path="/command" element={<CommandPage />} />
                         <Route path="/generate/motion" element={<MotionPage />} />
                         <Route path="/generate/bulk-fashion" element={<BulkFashionPage />} />
+                        <Route path="/generate/virtual-tryon" element={<VirtualTryOnPage />} />
+                        <Route path="/generate/talking-photo" element={<TalkingPhotoPage />} />
+                        <Route path="/generate/video-upscaler" element={<VideoUpscalerPage />} />
                         <Route path="/generate/ugc" element={<UGCPage />} />
                         <Route path="/generate/upscaler" element={<UpscalerPage />} />
                         <Route path="/generate/image-to-video" element={<ImageToVideoPage />} />

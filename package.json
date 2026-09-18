@@ -25,6 +25,7 @@
     "@ffmpeg/util": "^0.12.2",
     "@neondatabase/serverless": "^1.1.0",
     "@types/formidable": "^3.5.1",
+    "@vercel/postgres": "^0.10.0",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^13.0.1",
     "clsx": "^2.1.1",

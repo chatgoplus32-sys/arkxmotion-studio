@@ -8,7 +8,7 @@ import { uploadToCatbox, compressVideo, normalizeImage, getVideoDurationFromFile
 import { submitGensparkVideo, extractGensparkVideoUrl, uploadToGenspark, pollGensparkVideo } from '@/lib/genspark'
 import { trimVideoFFmpeg } from '@/lib/ffmpeg-compress'
 import { submitWeavyMotionControl, uploadWeavyAssetWithRetry, resolveWeavyAssetUrl, getActiveWeavyAccessToken, compressImageForWeavy } from '@/lib/weavy'
-import { getRunningHubApiKey, getRunningHubWorkflowId, submitRunningHubMotionControl, pollRunningHubTask } from '@/lib/runninghub'
+import { getRunningHubApiKey, getRunningHubWorkflowId, submitRunningHubMotionControl, submitRunningHubUltraFastHD, pollRunningHubTask } from '@/lib/runninghub'
 import { getGalleri5AuthHeaders, submitGalleri5MotionControl, pollGalleri5MotionControl, isGalleri5ModelRestricted, getGalleri5ErrorMessage, GALLERI5_MOTION_MODELS, runGalleri5WithRotation } from '@/lib/galleri5'
 import { getMagnificApiKey, submitMagnificMotion, pollMagnificMotion, type MagnificMotionModel } from '@/lib/magnific'
 import { useLocalStorage } from '@/lib/useLocalStorage'
@@ -62,6 +62,7 @@ const PROVIDERS = {
     { key: 'framia:kling-v2.6-motion', label: 'Kling V2.6 Motion Control (Framia)', cr: 35 },
   ]},
   runninghub: { name: 'Motion Control (RunningHub)', models: [
+    { key: 'rh:wf:ultra-hd', label: 'MC Ultra Fast HD (RunningHub)', cr: 80 },
     { key: 'rh:pro:2.6', label: 'Kling 2.6 Pro (RunningHub)', cr: 80 },
     { key: 'rh:std:2.6', label: 'Kling 2.6 Standard (RunningHub)', cr: 50 },
     { key: 'rh:wf:2.9', label: 'Kling 2.9 Workflow (RunningHub)', cr: 80 },
@@ -126,6 +127,9 @@ export default function MotionPage() {
   const [safetyChecker, setSafetyChecker] = useLocalStorage('motion.safetyChecker', false)
   const [enhanceIdentity, setEnhanceIdentity] = useLocalStorage('motion.enhanceIdentity', false)
   const [autoTrim, setAutoTrim] = useLocalStorage('motion.autoTrim', true)
+  const [ultraFps, setUltraFps] = useLocalStorage('motion.ultraHdFps', 60)
+  const [ultraSteps, setUltraSteps] = useLocalStorage('motion.ultraHdSteps', 4)
+  const [ultraMaxFrames, setUltraMaxFrames] = useLocalStorage('motion.ultraHdMaxFrames', 120)
   const [tiktokUrl, setTiktokUrl] = useState('')
   const [tiktokLoading, setTiktokLoading] = useState(false)
   const [slots, setSlots] = useState<Slot[]>(() => {
@@ -1143,15 +1147,30 @@ export default function MotionPage() {
               const WORKFLOW_IDS: Record<string, string> = {
                 'rh:wf:2.9': '2092795737699856386',
                 'rh:wf:v3.0': '2093040535905165313',
+                'rh:wf:ultra-hd': '2095008448978407425',
               }
               const workflowId = WORKFLOW_IDS[modelKey] || getRunningHubWorkflowId()
-              addLog(`#${slotNum} Submit ke RunningHub (${modelVersion} ${mode}, workflow: ${workflowId.slice(0, 15)}...)`)
+              addLog(modelKey === 'rh:wf:ultra-hd'
+                ? `#${slotNum} Submit ke RunningHub Ultra HD (fps: ${ultraFps}, steps: ${ultraSteps}, maxFrames: ${ultraMaxFrames})`
+                : `#${slotNum} Submit ke RunningHub (${modelVersion} ${mode}, workflow: ${workflowId.slice(0, 15)}...)`)
 
               const rotation = await withTokenRotation<string>(
                 'runninghub',
                 async (apiKey, keyInfo) => {
                   addLog(`#${slotNum} 🔑 Trying key: ${keyInfo.name || keyInfo.id}`, 'info')
-                  const result = await submitRunningHubMotionControl({
+                  const result = modelKey === 'rh:wf:ultra-hd'
+                    ? await submitRunningHubUltraFastHD({
+                      imageFile: normalizedImage,
+                      videoFile,
+                      fps: ultraFps,
+                      steps: ultraSteps,
+                      maxFrames: ultraMaxFrames,
+                      prompt: finalPrompt || undefined,
+                      negativePrompt: negativePrompt.trim() || undefined,
+                      apiKey,
+                      workflowId,
+                    })
+                    : await submitRunningHubMotionControl({
                     imageFile: normalizedImage,
                     videoFile,
                     prompt: finalPrompt || undefined,
@@ -1984,6 +2003,51 @@ export default function MotionPage() {
                 </span>
                 <span className="text-sm text-foreground/90">Keep Original Sound</span>
               </label>
+
+              {/* MC Ultra Fast HD specific options */}
+              {modelKey === 'rh:wf:ultra-hd' && (
+                <>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <Label>FPS</Label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={60}
+                        value={ultraFps}
+                        onChange={(e) => setUltraFps(Math.max(1, Math.min(60, Number(e.target.value) || 60)))}
+                        className="w-full px-3 py-2 rounded-lg bg-surface-secondary border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      />
+                    </div>
+                    <div>
+                      <Label>Steps</Label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={ultraSteps}
+                        onChange={(e) => setUltraSteps(Math.max(1, Math.min(100, Number(e.target.value) || 4)))}
+                        className="w-full px-3 py-2 rounded-lg bg-surface-secondary border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      />
+                    </div>
+                    <div>
+                      <Label>Max Frames</Label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={1000}
+                        value={ultraMaxFrames}
+                        onChange={(e) => setUltraMaxFrames(Math.max(1, Math.min(1000, Number(e.target.value) || 120)))}
+                        className="w-full px-3 py-2 rounded-lg bg-surface-secondary border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground -mt-1">
+                    Default workflow: 60 FPS · 4 Steps · output vertikal 1080×1920 (proses 480×848 lalu upscale HD).
+                    FPS/Steps lebih tinggi = beban proses lebih berat.
+                  </p>
+                </>
+              )}
 
               {/* Wan Motion specific options */}
               {modelKey === 'g5:wan-motion' && (

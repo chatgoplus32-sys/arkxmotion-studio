@@ -223,9 +223,22 @@ async function handleMe(req: VercelRequest, res: VercelResponse) {
   const token = authHeader && authHeader.split(' ')[1]
   if (!token) return res.status(401).json({ error: 'Access token required' })
 
+  // Verifikasi dipisah dari pekerjaan DB: token kedaluwarsa atau tidak sah
+  // dijawab 401, bukan 403. Access token app cuma hidup 15 menit di jalur
+  // Express (ACCESS_EXPIRES di server/routes/auth.ts), jadi kedaluwarsa itu
+  // keadaan normal — dan app hanya mencoba refresh diam-diam kalau
+  // jawabannya 401. Digabung dalam satu catch, sesi yang masih bisa
+  // diselamatkan malah dilempar keluar, sementara error DB menyamar sebagai
+  // "token tidak sah".
+  let decoded: { id: number; email: string; role: string }
+  try {
+    decoded = jwt.verify(token, JWT_SECRET) as { id: number; email: string; role: string }
+  } catch {
+    return res.status(401).json({ error: 'Invalid or expired token' })
+  }
+
   try {
     const sql = getSql()
-    const decoded = jwt.verify(token, JWT_SECRET) as { id: number; email: string; role: string }
     const rows = await sql`
       SELECT id, email, name, role, approved, created_at
       FROM users WHERE id = ${decoded.id}
@@ -239,8 +252,9 @@ async function handleMe(req: VercelRequest, res: VercelResponse) {
         role: user.role, approved: !!user.approved, created_at: user.created_at
       }
     })
-  } catch {
-    return res.status(403).json({ error: 'Invalid or expired token' })
+  } catch (err: any) {
+    console.error('Get me error:', err?.message || err)
+    return res.status(500).json({ error: 'Internal server error' })
   }
 }
 
@@ -395,8 +409,16 @@ async function handleChangePassword(req: VercelRequest, res: VercelResponse) {
   const token = authHeader && authHeader.split(' ')[1]
   if (!token) return res.status(401).json({ error: 'Access token required' })
 
+  // Sama seperti handleMe: token tidak sah/kedaluwarsa = 401 (bukan 403),
+  // dan error DB tidak lagi menyamar sebagai masalah token.
+  let decoded: { id: number; email: string }
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { id: number; email: string }
+    decoded = jwt.verify(token, JWT_SECRET) as { id: number; email: string }
+  } catch {
+    return res.status(401).json({ error: 'Invalid or expired token' })
+  }
+
+  try {
     const { old_password, new_password } = req.body || {}
 
     if (!old_password || !new_password) {
@@ -419,8 +441,9 @@ async function handleChangePassword(req: VercelRequest, res: VercelResponse) {
     await sql`UPDATE users SET password = ${hashedPassword}, updated_at = CURRENT_TIMESTAMP WHERE id = ${decoded.id}`
 
     return res.status(200).json({ message: 'Password berhasil diubah' })
-  } catch {
-    return res.status(403).json({ error: 'Invalid or expired token' })
+  } catch (err: any) {
+    console.error('Change password error:', err?.message || err)
+    return res.status(500).json({ error: 'Internal server error' })
   }
 }
 

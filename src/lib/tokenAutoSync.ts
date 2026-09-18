@@ -297,18 +297,36 @@ function consumeQueueToken(provider: string, token: string) {
 }
 
 // Mirip tombol "Cek Limit & Status": sinkronkan balance key yang baru
-// di-refresh ke DB admin (Credit Management) kalau user sudah login.
-function syncCreditsToDb(def: AutoSyncDef) {
-  const token = useAuthStore.getState().token
-  if (!token) return
-  const keys = useProviderManager.getState().keys[def.id] || []
-  if (keys.length === 0) return
-  const updates = keys.map((k) => ({ credits: k.balance ?? 0 }))
+// di-refresh ke halaman Credit Management.
+//
+// Endpoint-nya admin-only (`authenticateToken` + `requireAdmin` di
+// server/routes/admin.ts, verifyAdmin di api/admin.ts), jadi user biasa yang
+// memanggilnya SELALU dapat 403 "Admin access required" — dan karena
+// hasilnya dulu dibuang tanpa dilihat, tidak pernah ketahuan sebabnya.
+// Penyaringan admin ada di sini supaya kedua pemanggil (poller auto-sync dan
+// tombol Cek Limit & Status) tidak mengirim permintaan yang pasti ditolak.
+//
+// `credits: null` (bukan 0) untuk saldo yang belum diketahui: endpoint sync
+// melewati entri non-number, jadi nilai lama di Credit Management tidak
+// tertimpa 0 hanya karena upstream menggantung.
+export function syncCreditsToDbAsAdmin(provider: ProviderId, updates: { credits: number | null }[]): void {
+  const { token, user } = useAuthStore.getState()
+  if (!token || user?.role !== 'admin') return
+  if (updates.length === 0) return
   fetch('/api/admin/credits/sync', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ provider: def.id, updates }),
+    body: JSON.stringify({ provider, updates }),
+  }).then((res) => {
+    if (res.status === 401 || res.status === 403) {
+      console.warn(`[credits-sync] ${provider}: ditolak (HTTP ${res.status}) — sesi admin tidak valid`)
+    }
   }).catch(() => {})
+}
+
+function syncCreditsToDb(def: AutoSyncDef) {
+  const keys = useProviderManager.getState().keys[def.id] || []
+  syncCreditsToDbAsAdmin(def.id, keys.map((k) => ({ credits: k.balance ?? null })))
 }
 
 function summarize(def: AutoSyncDef, outcome: CheckOutcome, action: 'replaced' | 'added'): string {
@@ -339,6 +357,12 @@ export async function pollSyncQueueImmediate(providerId: string): Promise<string
 }
 
 export async function pollAutoSyncQueues(): Promise<void> {
+  // Tanpa sesi app, endpoint sync tidak bisa dipakai (sekarang per user):
+  // tanpa Authorization setiap poll dijawab 401. Dulu poller tetap menembak
+  // delapan provider tiap 10 detik dalam keadaan itu — console penuh error
+  // tanpa satu pun yang berguna. Polling dilanjutkan lagi begitu ada token
+  // (login, atau refresh berhasil).
+  if (!useAuthStore.getState().token) return
   if (polling) return
   polling = true
   try {

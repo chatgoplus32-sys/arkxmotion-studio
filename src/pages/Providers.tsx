@@ -20,7 +20,7 @@ import {
   Wallet,
 } from 'lucide-react'
 import { useProviderManager, ProviderId, HIDDEN_PROVIDERS } from '@/stores/providerManager'
-import { useAuthStore } from '@/stores/authStore'
+import { syncCreditsToDbAsAdmin } from '@/lib/tokenAutoSync'
 import ProviderStatusBar from '@/components/providers/ProviderStatusBar'
 import TokenSyncHistory from '@/components/providers/TokenSyncHistory'
 import { checkRoboneoBalance } from '@/lib/roboneo'
@@ -1363,31 +1363,19 @@ export default function ProvidersPage() {
     setProgress({ show: false, pct: 0, text: '' })
     setChecking(false)
 
-    // Auto-sync credits to database for Credit Management page
+    // Auto-sync credits to database for Credit Management page. Endpoint-nya
+    // admin-only, jadi penyaringan ada di helper-nya: user biasa dulu
+    // memanggilnya dan selalu dapat 403 (tampil sebagai [credits-sync] error).
+    // Read balance from providerManager store (updated by updateKeyStatus).
+    // credits null = saldo belum diketahui (cek timeout/504); endpoint sync
+    // melewati entri non-number, jadi kredit lama di Credit Management tidak
+    // ditimpa 0 hanya karena upstream menggantung.
     try {
-      const token = useAuthStore.getState().token
-      if (token) {
-        // Read balance from providerManager store (updated by updateKeyStatus)
-        const freshKeys = useProviderManager.getState().keys[selectedProvider as ProviderId] || []
-        // credits null = saldo belum diketahui (cek timeout/504). Endpoint sync
-        // melewati entri non-number, jadi kredit lama di Credit Management tidak
-        // ditimpa 0 hanya karena upstream NexaBot menggantung.
-        const syncUpdates = freshKeys.map((k) => ({
-          credits: k.balance ?? null,
-        }))
-        if (syncUpdates.length > 0) {
-          console.log(`[credits-sync] ${selectedProvider}: syncing ${syncUpdates.length} keys`, syncUpdates.map(u => u.credits))
-          fetch('/api/admin/credits/sync', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify({ provider: selectedProvider, updates: syncUpdates }),
-          }).then(r => r.json()).then(d => {
-            console.log(`[credits-sync] result:`, d)
-          }).catch(err => {
-            console.error(`[credits-sync] error:`, err)
-          })
-        }
-      }
+      const freshKeys = useProviderManager.getState().keys[selectedProvider as ProviderId] || []
+      syncCreditsToDbAsAdmin(
+        selectedProvider as ProviderId,
+        freshKeys.map((k) => ({ credits: k.balance ?? null })),
+      )
     } catch (err) {
       console.error('[credits-sync] exception:', err)
     }

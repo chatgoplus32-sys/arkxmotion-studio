@@ -2549,7 +2549,11 @@ export default function ImageToVideoPage() {
                   {formatRp(nbWallet?.balance ?? 0)}
                 </b>
               </div>
-              <div>Paket Unlimited {nbWallet?.package.days ?? 7} hari: <b className="text-foreground">{formatRp(nbWallet?.package.price ?? 35000)}</b></div>
+              {nbWallet?.unlimited.active ? (
+                <div>Paket Unlimited {nbWallet?.package.days ?? 7} hari: <b className="text-emerald-500">Aktif</b></div>
+              ) : (
+                <div>Top Up: <b className="text-foreground">Rp 250/generate</b></div>
+              )}
               {nbWallet?.unlimited.active ? (
                 <div>Status: <b className="text-emerald-500">GRATIS sampai paket habis</b></div>
               ) : (

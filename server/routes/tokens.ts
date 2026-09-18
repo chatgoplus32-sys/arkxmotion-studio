@@ -27,7 +27,7 @@ interface TokenRow {
 }
 
 // Specific routes FIRST (before /:provider)
-router.get('/', authenticateToken, (req: AuthRequest, res: Response) => {
+router.get('/', authenticateToken, (_req: AuthRequest, res: Response) => {
   try {
     const tokens = db.prepare(
       'SELECT id, provider, name, price, status, created_at FROM tokens WHERE status = ? ORDER BY created_at DESC'

@@ -125,10 +125,20 @@ test('POST /:provider/consume tanpa identitas ditolak', async () => {
 
 test('JWT yang tidak sah ditolak dan tidak menyimpan apa pun', async () => {
   const hasil = await kirim({ provider: 'jwt-palsu', token: 'x' }, 'bukan.jwt.sungguhan')
-  assert.equal(hasil.status, 403, JSON.stringify(hasil.body))
+  // 401, bukan 403: app memutuskan "refresh diam-diam" vs "logout" dari kode
+  // ini, dan access token app memang cuma hidup 15 menit — kedaluwarsa itu
+  // keadaan normal, bukan pelanggaran izin (403 = sudah login tapi tidak
+  // berhak, mis. requireAdmin di /api/admin/*).
+  assert.equal(hasil.status, 401, JSON.stringify(hasil.body))
 
   const milikA = await ambil('jwt-palsu', { token: tokenA })
   assert.equal(milikA.body.count, 0)
+})
+
+test("JWT kedaluwarsa dijawab 401 (sinyal refresh diam-diam), bukan 403", async () => {
+  const kedaluwarsa = jwt.sign({ id: USER_A, email: 'a@test.local', role: 'user' }, JWT_SECRET, { expiresIn: -60 })
+  const hasil = await ambil('nexabot', { full: true, token: kedaluwarsa })
+  assert.equal(hasil.status, 401, JSON.stringify(hasil.body))
 })
 
 // ── Fitur tetap jalan untuk pemiliknya ──────────────────────────────────────

@@ -2,6 +2,56 @@ import type { Plugin } from 'vite'
 import http from 'http'
 
 const VERCEL_ORIGIN = 'https://arkxmotion-studio.vercel.app'
+const LOCAL_ORIGIN = 'http://127.0.0.1:6000'
+
+// Dev: Express lokal (:6000, `npm run dev:server`) dulu — deploy Vercel
+// production sedang 402 (spend cap), jadi Vercel hanya fallback terakhir.
+//
+// Catatan: JANGAN pakai fetch() ke :6000 — undici/Chrome menganggap 6000
+// "bad port" (daftar port X11 yang diblokir), jadi request lokal selalu
+// gagal "fetch failed". Pakai http.request yang tidak punya batasan itu.
+function forwardLocal(path: string, method: string, headers: Record<string, string>, body?: Buffer): Promise<{ status: number; text: string; contentType: string }> {
+  return new Promise((resolve, reject) => {
+    const proxyReq = http.request(
+      { host: '127.0.0.1', port: 6000, path, method, headers },
+      (proxyRes) => {
+        const chunks: Buffer[] = []
+        proxyRes.on('data', (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)))
+        proxyRes.on('end', () => resolve({
+          status: proxyRes.statusCode || 500,
+          text: Buffer.concat(chunks).toString(),
+          contentType: String(proxyRes.headers['content-type'] || 'application/json'),
+        }))
+      },
+    )
+    proxyReq.on('error', reject)
+    proxyReq.setTimeout(30000, () => proxyReq.destroy(new Error('local timeout')))
+    if (body && body.length && method !== 'GET' && method !== 'HEAD') proxyReq.write(body)
+    proxyReq.end()
+  })
+}
+
+async function forwardApi(path: string, init: { method?: string; headers?: Record<string, string>; body?: Buffer | string }): Promise<{ status: number; text: string; contentType: string }> {
+  const method = init.method || 'GET'
+  const bodyBuf = !init.body || method === 'GET' || method === 'HEAD'
+    ? undefined
+    : Buffer.isBuffer(init.body) ? init.body : Buffer.from(init.body)
+  try {
+    const local = await forwardLocal(path, method, init.headers || {}, bodyBuf)
+    if (local.status !== 404 && local.status !== 405) {
+      return local
+    }
+    console.log(`[proxy] local ${path} → ${local.status}, fallback Vercel`)
+  } catch (err: any) {
+    console.log(`[proxy] local ${path} unreachable (${err.message}), fallback Vercel`)
+  }
+  const up = await fetch(`${VERCEL_ORIGIN}${path}`, {
+    method,
+    headers: init.headers,
+    body: method === 'GET' || method === 'HEAD' ? undefined : bodyBuf,
+  })
+  return { status: up.status, text: await up.text(), contentType: up.headers.get('content-type') || 'application/json' }
+}
 
 export function roboneoProxyPlugin(): Plugin {
   return {
@@ -468,10 +518,10 @@ export function roboneoProxyPlugin(): Plugin {
         const rawBody = Buffer.concat(chunks).toString()
         const auth = req.headers.authorization || ''
 
-        console.log(`[leonardo-proxy] POST → ${VERCEL_ORIGIN}/api/public/leonardo`)
+        console.log(`[leonardo-proxy] POST → local ${LOCAL_ORIGIN}/api/public/leonardo (fallback Vercel)`)
 
         try {
-          const leoRes = await fetch(`${VERCEL_ORIGIN}/api/public/leonardo`, {
+          const { status, text: leoText } = await forwardApi('/api/public/leonardo', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -480,10 +530,9 @@ export function roboneoProxyPlugin(): Plugin {
             body: rawBody,
           })
 
-          const leoText = await leoRes.text()
-          console.log(`[leonardo-proxy] ${leoRes.status}:`, leoText.slice(0, 500))
+          console.log(`[leonardo-proxy] ${status}:`, leoText.slice(0, 500))
 
-          res.writeHead(leoRes.status, {
+          res.writeHead(status, {
             'Content-Type': 'application/json',
             'Access-Control-Allow-Origin': '*',
           })
@@ -809,7 +858,13 @@ export function roboneoProxyPlugin(): Plugin {
             let data: any; try { data = JSON.parse(text) } catch { data = {} }
             const task = data?.data || data
             const status = (task?.status || '').toUpperCase()
-            const videoUrl = task?.results?.[0]?.url || null
+            const results = Array.isArray(task?.results) ? task.results : []
+            const pickVid = results.find((x: any) =>
+              /\.(mp4|webm|mov|m4v)$/i.test(String(x?.url || '').split('?')[0]) || /video/i.test(String(x?.outputType || '')))
+            const pickImg = results.find((x: any) =>
+              /\.(png|jpe?g|webp|gif|bmp)$/i.test(String(x?.url || '').split('?')[0]) || /image/i.test(String(x?.outputType || '')))
+            const videoUrl = pickVid?.url || results[0]?.url || null
+            const imageUrl = pickImg?.url || null
             const progress = status === 'SUCCESS' ? 100 : status === 'RUNNING' ? (task?.progress || 50) : 0
             res.writeHead(200, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({
@@ -818,6 +873,7 @@ export function roboneoProxyPlugin(): Plugin {
                 taskId,
                 status: status === 'SUCCESS' ? 'COMPLETED' : status === 'FAILED' ? 'FAILED' : 'RUNNING',
                 videoUrl,
+                imageUrl,
                 progress,
                 error: task?.errorMessage || task?.failedReason || null,
               }
@@ -909,14 +965,446 @@ export function roboneoProxyPlugin(): Plugin {
             return
           }
 
-          // Fallback: forward to Vercel
-          const upstream = await fetch(`${VERCEL_ORIGIN}/api/public/runninghub`, {
+          // MC Ultra Fast HD workflow (2095008448978407425) — handled locally
+          // so dev doesn't depend on Vercel deploy. Uploads + auto-maps nodes.
+          if (action === 'motion-control-ultra-hd' || action === 'get-workflow-info') {
+            const ULTRA_HD_WF = '2095008448978407425'
+            const wfId = params.workflow_id || params.workflowId || ULTRA_HD_WF
+
+            const discoverNodes = async (): Promise<any[]> => {
+              let lastErr = ''
+              for (const ep of [`${RUNNINGHUB_BASE}/api/openapi/getJsonApiFormat`, `${RUNNINGHUB_BASE}/openapi/getJsonApiFormat`]) {
+                try {
+                  const r = await fetch(ep, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                    body: JSON.stringify({ apiKey, workflowId: wfId }),
+                  })
+                  const t = await r.text()
+                  let d: any; try { d = JSON.parse(t) } catch { d = {} }
+                  const ps = d?.data?.prompt || d?.prompt || d?.data
+                  if (typeof ps === 'string' && ps.includes('class_type')) {
+                    const prompt = JSON.parse(ps)
+                    return Object.entries(prompt).map(([nodeId, node]: [string, any]) => ({
+                      nodeId, classType: node.class_type, inputs: node.inputs || {}, title: node._meta?.title || '',
+                    }))
+                  }
+                  lastErr = `${ep} → ${r.status}: ${t.slice(0, 200)}`
+                } catch (err: any) {
+                  lastErr = `${ep}: ${err.message}`
+                }
+              }
+              console.log(`[runninghub-proxy] ultra-hd discovery failed: ${lastErr}`)
+              throw new Error('node discovery failed')
+            }
+
+            if (action === 'get-workflow-info') {
+              try {
+                const nodes = await discoverNodes()
+                res.writeHead(200, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ ok: true, data: { workflowId: wfId, nodes } }))
+              } catch (err: any) {
+                res.writeHead(200, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ ok: false, error: err.message }))
+              }
+              return
+            }
+
+            // motion-control-ultra-hd
+            const { imageBase64, videoBase64, imageFileName = 'image.jpg', videoFileName = 'video.mp4',
+              imageMimeType = 'image/jpeg', videoMimeType = 'video/mp4',
+              fps = 60, steps = 4, maxFrames = 120, max_frames, frameLimit } = params
+            if (!imageBase64 || !videoBase64) {
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: false, error: 'Missing imageBase64 or videoBase64' }))
+              return
+            }
+            const upOne = async (b64: string, name: string, mime: string) => {
+              const bin = Buffer.from(b64.includes(',') ? b64.split(',')[1] : b64, 'base64')
+              const fd = new FormData()
+              fd.append('file', new Blob([bin], { type: mime }), name)
+              const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/media/upload/binary`, {
+                method: 'POST', headers: { 'Authorization': `Bearer ${apiKey}` }, body: fd,
+              })
+              const t = await r.text()
+              let d: any; try { d = JSON.parse(t) } catch { d = {} }
+              const fn = d?.data?.fileName || d?.fileName
+              if (!fn) throw new Error('Upload failed: ' + t.slice(0, 200))
+              return fn
+            }
+            try {
+              const imgFn = await upOne(imageBase64, imageFileName, imageMimeType)
+              const vidFn = await upOne(videoBase64, videoFileName, videoMimeType)
+              const effFps = Math.max(1, Math.min(60, Number(fps) || 60))
+              const effSteps = Math.max(1, Math.min(100, Number(steps) || 4))
+              const effMax = Math.max(1, Math.min(1000, Number(maxFrames ?? max_frames ?? frameLimit) || 120))
+              // Node resmi Ultra HD: 30 = image, 33 = video (dok. workflow).
+              let nodeInfoList: any[] = [
+                { nodeId: '30', fieldName: 'image', fieldValue: imgFn },
+                { nodeId: '33', fieldName: 'video', fieldValue: vidFn },
+              ]
+              try {
+                const nodes = await discoverNodes()
+                const nl: any[] = []
+                let imgOk = false, vidOk = false
+                const findKey = (inputs: any, pats: RegExp[]) => Object.keys(inputs).find((k) => pats.some((p) => p.test(k))) || null
+                for (const n of nodes) {
+                  const inp = n.inputs || {}
+                  const tag = `${n.classType || ''} ${n.title || ''}`
+                  if (!imgOk && /loadimage|image/i.test(tag)) {
+                    nl.push({ nodeId: String(n.nodeId), fieldName: findKey(inp, [/image/i]) || 'image', fieldValue: imgFn })
+                    imgOk = true; continue
+                  }
+                  if (!vidOk && /loadvideo|video/i.test(tag)) {
+                    nl.push({ nodeId: String(n.nodeId), fieldName: findKey(inp, [/video/i]) || 'video', fieldValue: vidFn })
+                    vidOk = true; continue
+                  }
+                  const fk = findKey(inp, [/^fps$/i, /frame_?rate/i])
+                  if (fk) { nl.push({ nodeId: String(n.nodeId), fieldName: fk, fieldValue: String(effFps) }); continue }
+                  const sk = findKey(inp, [/^steps$/i])
+                  if (sk) { nl.push({ nodeId: String(n.nodeId), fieldName: sk, fieldValue: String(effSteps) }); continue }
+                  const mk = findKey(inp, [/max_?frames?/i, /frame_?limit/i, /num_?frames?/i, /^frames?$/i])
+                  if (mk) { nl.push({ nodeId: String(n.nodeId), fieldName: mk, fieldValue: String(effMax) }); continue }
+                }
+                if (imgOk && vidOk) {
+                  nodeInfoList = nl
+                } else {
+                  // Discovery sebagian: pertahankan base 30/33, tempel extras non-image/video
+                  const extras = nl.filter((e) => !/^(image|video)$/i.test(e.fieldName))
+                  if (extras.length) nodeInfoList = [...nodeInfoList, ...extras]
+                }
+              } catch {}
+              const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${wfId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                body: JSON.stringify({ nodeInfoList, instanceType: 'default', usePersonalQueue: 'false' }),
+              })
+              const text = await r.text()
+              console.log(`[runninghub-proxy] ultra-hd ${r.status}:`, text.slice(0, 500))
+              let data: any; try { data = JSON.parse(text) } catch { data = { raw: text } }
+              const taskId = data?.data?.taskId || data?.taskId || data?.id
+              if (!taskId) {
+                res.writeHead(200, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ ok: false, error: data?.msg || data?.message || 'No taskId', data }))
+                return
+              }
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: true, data: { id: taskId, taskId, status: data?.data?.status || 'QUEUED', provider: 'runninghub', workflowId: wfId } }))
+            } catch (err: any) {
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: false, error: err.message }))
+            }
+            return
+          }
+
+          // Virtual Try-On (2099800742046818306): node 13 = orang, 53 = pakaian
+          if (action === 'submit-tryon') {
+            const TRYON_WF = '2099800742046818306'
+            const wfId = params.workflow_id || params.workflowId || TRYON_WF
+            const { personBase64, personFileName = 'person.jpg', personMimeType = 'image/jpeg',
+              garmentBase64, garmentFileName = 'garment.jpg', garmentMimeType = 'image/jpeg',
+              mode = 'tryon' } = params
+            if (!personBase64 || (mode === 'tryon' && !garmentBase64)) {
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: false, error: 'Missing personBase64 or garmentBase64' }))
+              return
+            }
+            const upOne = async (b64: string, name: string, mime: string) => {
+              const bin = Buffer.from(b64.includes(',') ? b64.split(',')[1] : b64, 'base64')
+              const fd = new FormData()
+              fd.append('file', new Blob([bin], { type: mime }), name)
+              const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/media/upload/binary`, {
+                method: 'POST', headers: { 'Authorization': `Bearer ${apiKey}` }, body: fd,
+              })
+              const t = await r.text()
+              let d: any; try { d = JSON.parse(t) } catch { d = {} }
+              const fn = d?.data?.fileName || d?.fileName
+              if (!fn) throw new Error('Upload failed: ' + t.slice(0, 200))
+              return fn
+            }
+            try {
+              const personFn = await upOne(personBase64, personFileName, personMimeType)
+              const nodeInfoList: any[] = [{ nodeId: '13', fieldName: 'image', fieldValue: personFn }]
+              if (garmentBase64) {
+                const garmentFn = await upOne(garmentBase64, garmentFileName, garmentMimeType)
+                nodeInfoList.push({ nodeId: '53', fieldName: 'image', fieldValue: garmentFn })
+              }
+              const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${wfId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                body: JSON.stringify({ nodeInfoList, instanceType: 'default', usePersonalQueue: 'false' }),
+              })
+              const text = await r.text()
+              console.log(`[runninghub-proxy] tryon ${r.status}:`, text.slice(0, 500))
+              let data: any; try { data = JSON.parse(text) } catch { data = { raw: text } }
+              const taskId = data?.data?.taskId || data?.taskId || data?.id
+              if (!taskId) {
+                res.writeHead(200, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ ok: false, error: data?.msg || data?.message || 'No taskId', data }))
+                return
+              }
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: true, data: { id: taskId, taskId, status: data?.data?.status || 'QUEUED', provider: 'runninghub', workflowId: wfId } }))
+            } catch (err: any) {
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: false, error: err.message }))
+            }
+            return
+          }
+
+          // H3 Audio Avatar (2099332942179229697): node 209 = foto, 215 = audio
+          if (action === 'submit-audio-avatar') {
+            const AVATAR_WF = '2099332942179229697'
+            const wfId = params.workflow_id || params.workflowId || AVATAR_WF
+            const { imageBase64, imageFileName = 'photo.jpg', imageMimeType = 'image/jpeg',
+              audioBase64, audioFileName = 'audio.mp3', audioMimeType = 'audio/mpeg' } = params
+            if (!imageBase64 || !audioBase64) {
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: false, error: 'Missing imageBase64 or audioBase64' }))
+              return
+            }
+            const upOne = async (b64: string, name: string, mime: string) => {
+              const bin = Buffer.from(b64.includes(',') ? b64.split(',')[1] : b64, 'base64')
+              const fd = new FormData()
+              fd.append('file', new Blob([bin], { type: mime }), name)
+              const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/media/upload/binary`, {
+                method: 'POST', headers: { 'Authorization': `Bearer ${apiKey}` }, body: fd,
+              })
+              const t = await r.text()
+              let d: any; try { d = JSON.parse(t) } catch { d = {} }
+              const fn = d?.data?.fileName || d?.fileName
+              if (!fn) throw new Error('Upload failed: ' + t.slice(0, 200))
+              return fn
+            }
+            try {
+              const imgFn = await upOne(imageBase64, imageFileName, imageMimeType)
+              const audFn = await upOne(audioBase64, audioFileName, audioMimeType)
+              const nodeInfoList = [
+                { nodeId: '209', fieldName: 'image', fieldValue: imgFn },
+                { nodeId: '215', fieldName: 'audio', fieldValue: audFn },
+              ]
+              const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${wfId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                body: JSON.stringify({ nodeInfoList, instanceType: 'default', usePersonalQueue: 'false' }),
+              })
+              const text = await r.text()
+              console.log(`[runninghub-proxy] audio-avatar ${r.status}:`, text.slice(0, 500))
+              let data: any; try { data = JSON.parse(text) } catch { data = { raw: text } }
+              const taskId = data?.data?.taskId || data?.taskId || data?.id
+              if (!taskId) {
+                res.writeHead(200, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ ok: false, error: data?.msg || data?.message || 'No taskId', data }))
+                return
+              }
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: true, data: { id: taskId, taskId, status: data?.data?.status || 'QUEUED', provider: 'runninghub', workflowId: wfId } }))
+            } catch (err: any) {
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: false, error: err.message }))
+            }
+            return
+          }
+
+          // VOSR2 Video Upscale 2K (2100537736599035906)
+          if (action === 'submit-video-upscale') {
+            const UPSCALE_WF = '2100537736599035906'
+            const wfId = params.workflow_id || params.workflowId || UPSCALE_WF
+            const ALLOWED_SCHED = new Set(['simple', 'sgm_uniform', 'karras', 'exponential', 'ddim_uniform', 'beta', 'normal', 'linear_quadratic', 'kl_optimal', 'beta57', 'gits', 'beta_1_1'])
+            const { videoBase64, videoFileName = 'video.mp4', videoMimeType = 'video/mp4',
+              steps = 4, cfg = 4.5, scheduler = 'beta', frameLoadCap = 0 } = params
+            if (!videoBase64) {
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: false, error: 'Missing videoBase64' }))
+              return
+            }
+            const effSteps = Math.max(1, Math.min(50, Number(steps) || 4))
+            const effCfg = Math.max(0, Math.min(30, Number(cfg) || 4.5))
+            const effScheduler = ALLOWED_SCHED.has(String(scheduler)) ? String(scheduler) : 'beta'
+            const effFrameCap = Math.max(0, Math.min(10000, Number(frameLoadCap) || 0))
+            try {
+              const bin = Buffer.from(videoBase64.includes(',') ? videoBase64.split(',')[1] : videoBase64, 'base64')
+              const fd = new FormData()
+              fd.append('file', new Blob([bin], { type: videoMimeType }), videoFileName)
+              const up = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/media/upload/binary`, {
+                method: 'POST', headers: { 'Authorization': `Bearer ${apiKey}` }, body: fd,
+              })
+              const upText = await up.text()
+              let upData: any; try { upData = JSON.parse(upText) } catch { upData = {} }
+              const vidFn = upData?.data?.fileName || upData?.fileName
+              if (!vidFn) throw new Error('Upload failed: ' + upText.slice(0, 200))
+              const baseList = [
+                { nodeId: '1', fieldName: 'video', fieldValue: vidFn },
+                { nodeId: '1', fieldName: 'frame_load_cap', fieldValue: String(effFrameCap) },
+                { nodeId: '21', fieldName: 'cfg', fieldValue: String(effCfg) },
+                { nodeId: '21', fieldName: 'scheduler', fieldValue: effScheduler },
+                { nodeId: '21', fieldName: 'steps', fieldValue: String(effSteps) },
+                { nodeId: '13', fieldName: 'save_output', fieldValue: 'true' },
+              ]
+              const postRun = async (list: any[]) => {
+                const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${wfId}`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                  body: JSON.stringify({ nodeInfoList: list, instanceType: 'default', usePersonalQueue: 'false' }),
+                })
+                const text = await r.text()
+                console.log(`[runninghub-proxy] upscale ${r.status}:`, text.slice(0, 500))
+                let data: any; try { data = JSON.parse(text) } catch { data = { raw: text } }
+                return {
+                  data,
+                  code: data?.code ?? data?.errorCode,
+                  msg: String(data?.msg || data?.errorMessage || data?.message || ''),
+                  taskId: data?.data?.taskId || data?.taskId || data?.id,
+                  status: data?.data?.status || 'QUEUED',
+                }
+              }
+              const parseMM = (msg: string) => {
+                const m = /nodeId=([^,\)]+),\s*fieldName=([^,\)]+),\s*reason=([^,\)]+)/.exec(msg)
+                return m ? { nodeId: m[1].trim(), fieldName: m[2].trim(), reason: m[3].trim() } : null
+              }
+              const ok = (taskId: string, status: string) => {
+                res.writeHead(200, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ ok: true, data: { id: taskId, taskId, status, provider: 'runninghub', workflowId: wfId } }))
+              }
+              const fail = (error: string, data?: any) => {
+                res.writeHead(200, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ ok: false, error, data }))
+              }
+              let lastErr = 'Unknown'
+              let lastData: any = null
+              let done = false
+              for (const vf of ['video', 'file', 'path', 'video_path', 'filename']) {
+                if (done) break
+                let list = baseList.map((e) =>
+                  e.nodeId === '1' && /video|file|path|filename|input/i.test(e.fieldName) ? { ...e, fieldName: vf } : e,
+                )
+                for (let fix = 0; fix < 6 && !done; fix++) {
+                  console.log(`[runninghub-proxy] upscale field=${vf} fix=${fix}`)
+                  const r = await postRun(list)
+                  if (r.taskId) { ok(r.taskId, r.status); done = true; break }
+                  lastErr = r.msg || `Error code: ${r.code}`
+                  lastData = r.data
+                  const mm = r.code === 803 || (r.code as any) === '803' ? parseMM(r.msg) : null
+                  if (mm && /field_not_found|node_not_found/i.test(mm.reason)) {
+                    const isVideoEntry = mm.nodeId === '1' && mm.fieldName === vf
+                    if (isVideoEntry) {
+                      if (/field_not_found/i.test(mm.reason)) break
+                      fail('Node video (1) tidak ada di workflow ini', r.data); done = true; break
+                    }
+                    console.log(`[runninghub-proxy] upscale buang field ${mm.nodeId}/${mm.fieldName} (${mm.reason})`)
+                    list = list.filter((e) => !(String(e.nodeId) === mm.nodeId && String(e.fieldName) === mm.fieldName))
+                    continue
+                  }
+                  fail(r.msg || 'No taskId', r.data); done = true; break
+                }
+              }
+              if (!done) fail(`Semua kandidat field video ditolak. Terakhir: ${lastErr}`, lastData)
+            } catch (err: any) {
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: false, error: err.message }))
+            }
+            return
+          }
+
+          // AI Photo Enhancer (2100619334354759681): node 642 = foto, 688 = scale_by
+          if (action === 'submit-photo-enhance') {
+            const ENHANCE_WF = '2100619334354759681'
+            const wfId = params.workflow_id || params.workflowId || ENHANCE_WF
+            const { imageBase64, imageFileName = 'photo.jpg', imageMimeType = 'image/jpeg', scaleBy = 2 } = params
+            if (!imageBase64) {
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: false, error: 'Missing imageBase64' }))
+              return
+            }
+            const effScale = Math.max(1, Math.min(4, Number(scaleBy) || 2))
+            try {
+              const bin = Buffer.from(imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64, 'base64')
+              const fd = new FormData()
+              fd.append('file', new Blob([bin], { type: imageMimeType }), imageFileName)
+              const up = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/media/upload/binary`, {
+                method: 'POST', headers: { 'Authorization': `Bearer ${apiKey}` }, body: fd,
+              })
+              const upText = await up.text()
+              let upData: any; try { upData = JSON.parse(upText) } catch { upData = {} }
+              const imgFn = upData?.data?.fileName || upData?.fileName
+              if (!imgFn) throw new Error('Upload failed: ' + upText.slice(0, 200))
+              const baseList = [
+                { nodeId: '642', fieldName: 'image', fieldValue: imgFn },
+                { nodeId: '688', fieldName: 'scale_by', fieldValue: String(effScale) },
+              ]
+              const postRun = async (list: any[]) => {
+                const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${wfId}`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                  body: JSON.stringify({ nodeInfoList: list, instanceType: 'default', usePersonalQueue: 'false' }),
+                })
+                const text = await r.text()
+                console.log(`[runninghub-proxy] enhance ${r.status}:`, text.slice(0, 500))
+                let data: any; try { data = JSON.parse(text) } catch { data = { raw: text } }
+                return {
+                  data,
+                  code: data?.code ?? data?.errorCode,
+                  msg: String(data?.msg || data?.errorMessage || data?.message || ''),
+                  taskId: data?.data?.taskId || data?.taskId || data?.id,
+                  status: data?.data?.status || 'QUEUED',
+                }
+              }
+              const parseMM = (msg: string) => {
+                const m = /nodeId=([^,\)]+),\s*fieldName=([^,\)]+),\s*reason=([^,\)]+)/.exec(msg)
+                return m ? { nodeId: m[1].trim(), fieldName: m[2].trim(), reason: m[3].trim() } : null
+              }
+              const ok = (taskId: string, status: string) => {
+                res.writeHead(200, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ ok: true, data: { id: taskId, taskId, status, provider: 'runninghub', workflowId: wfId } }))
+              }
+              const fail = (error: string, data?: any) => {
+                res.writeHead(200, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ ok: false, error, data }))
+              }
+              let lastErr = 'Unknown'
+              let lastData: any = null
+              let done = false
+              for (const vf of ['image', 'file', 'path', 'filename', 'input', 'src']) {
+                if (done) break
+                let list = baseList.map((e) =>
+                  e.nodeId === '642' && /image|file|path|filename|input|src/i.test(e.fieldName) ? { ...e, fieldName: vf } : e,
+                )
+                for (let fix = 0; fix < 4 && !done; fix++) {
+                  console.log(`[runninghub-proxy] enhance field=${vf} fix=${fix}`)
+                  const r = await postRun(list)
+                  if (r.taskId) { ok(r.taskId, r.status); done = true; break }
+                  lastErr = r.msg || `Error code: ${r.code}`
+                  lastData = r.data
+                  const mm = r.code === 803 || (r.code as any) === '803' ? parseMM(r.msg) : null
+                  if (mm && /field_not_found|node_not_found/i.test(mm.reason)) {
+                    const isImageEntry = mm.nodeId === '642' && mm.fieldName === vf
+                    if (isImageEntry) {
+                      if (/field_not_found/i.test(mm.reason)) break
+                      fail('Node image (642) tidak ada di workflow ini', r.data); done = true; break
+                    }
+                    console.log(`[runninghub-proxy] enhance buang field ${mm.nodeId}/${mm.fieldName} (${mm.reason})`)
+                    list = list.filter((e) => !(String(e.nodeId) === mm.nodeId && String(e.fieldName) === mm.fieldName))
+                    continue
+                  }
+                  fail(r.msg || 'No taskId', r.data); done = true; break
+                }
+              }
+              if (!done) fail(`Semua kandidat field image ditolak. Terakhir: ${lastErr}`, lastData)
+            } catch (err: any) {
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: false, error: err.message }))
+            }
+            return
+          }
+
+          // Fallback: Express lokal dulu (punya semua handler runninghub
+          // termasuk motion-control-ultra-hd), Vercel terakhir
+          const { status, text } = await forwardApi('/api/public/runninghub', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: rawBody,
           })
-          const text = await upstream.text()
-          res.writeHead(upstream.status, { 'Content-Type': 'application/json' })
+          res.writeHead(status, { 'Content-Type': 'application/json' })
           res.end(text)
         } catch (err: any) {
           console.error(`[runninghub-proxy] error:`, err.message)
@@ -1212,8 +1700,8 @@ export function roboneoProxyPlugin(): Plugin {
           for await (const chunk of req) chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
           const rawBody = Buffer.concat(chunks)
 
-          // Connect menghapus prefix mount ('/api/public') dari req.url, jadi tambahkan lagi
-          const url = new URL(`/api/public${req.url || '/'}`, VERCEL_ORIGIN)
+          // Connect menghapus prefix mount ('/api/public') dari req.url,
+          // forwardApi menambahkan lagi dari path yang diberikan.
           const headers: Record<string, string> = {
             'Content-Type': req.headers['content-type'] || 'application/json',
           }
@@ -1223,17 +1711,16 @@ export function roboneoProxyPlugin(): Plugin {
             if (v) headers[h] = String(v)
           }
 
-          console.log(`[public-proxy] ${req.method} ${req.url} → ${VERCEL_ORIGIN}`)
+          console.log(`[public-proxy] ${req.method} ${req.url} → local ${LOCAL_ORIGIN} (fallback Vercel)`)
 
-          const upstream = await fetch(url.toString(), {
+          const { status, text, contentType } = await forwardApi(`/api/public${req.url || '/'}`, {
             method: req.method,
             headers,
             body: req.method === 'GET' ? undefined : rawBody,
           })
 
-          const text = await upstream.text()
-          res.writeHead(upstream.status, {
-            'Content-Type': upstream.headers.get('content-type') || 'application/json',
+          res.writeHead(status, {
+            'Content-Type': contentType,
             'Access-Control-Allow-Origin': '*',
           })
           res.end(text)

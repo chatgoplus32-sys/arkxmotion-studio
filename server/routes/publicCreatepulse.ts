@@ -1,6 +1,11 @@
 import { fetchWithTimeout } from '../lib/fetchTimeout'
 import { Router, Request, Response } from 'express'
+import { callCreatepulseUpstream } from '../../shared/createpulseUpstream.js'
 
+// ─── Proxy CreatePulse (jalur Express) ──────────────────────────────────────
+// Semua kebijakan dan pencatatan ada di shared/createpulseUpstream.ts, dipakai
+// bersama versi Vercel (api/public/createpulse.ts). Di sini hanya pemetaan
+// aksi → endpoint upstream.
 const router = Router()
 const CP_API = 'https://createpulse.online/api'
 const ADMIN_CP_KEY = process.env.CREATEPULSE_API_KEY || ''
@@ -19,22 +24,28 @@ router.all('/{*path}', (req: Request, res: Response) => {
     try {
       if (action === 'generate' && req.method === 'POST') {
         const { action: _, ...body } = req.body || {}
-        const r = await fetchWithTimeout(`${CP_API}/generate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-API-Key': String(apiKey) },
-          body: JSON.stringify(body),
+        const r = await callCreatepulseUpstream({
+          action: 'generate',
+          url: `${CP_API}/generate`,
+          init: {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-API-Key': String(apiKey) },
+            body: JSON.stringify(body),
+          },
+          fetchWithTimeout,
         })
-        const data = await r.json().catch(() => ({}))
-        return res.status(r.status).json(data)
+        return res.status(r.status).json(r.body)
       }
 
       if (action === 'status') {
         const batchId = req.query.batchId || req.body?.batchId
-        const r = await fetchWithTimeout(`${CP_API}/status?batchId=${batchId}`, {
-          headers: { 'X-API-Key': String(apiKey) },
+        const r = await callCreatepulseUpstream({
+          action: 'status',
+          url: `${CP_API}/status?batchId=${batchId}`,
+          init: { headers: { 'X-API-Key': String(apiKey) } },
+          fetchWithTimeout,
         })
-        const data = await r.json().catch(() => ({}))
-        return res.status(r.status).json(data)
+        return res.status(r.status).json(r.body)
       }
 
       if (action === 'download') {
@@ -63,6 +74,7 @@ router.all('/{*path}', (req: Request, res: Response) => {
 
       return res.status(400).json({ error: 'Unknown action' })
     } catch (err: any) {
+      console.error('[createpulse] gagal memproses:', err?.message || err)
       return res.status(502).json({ error: err.message })
     }
   })()

@@ -1,8 +1,13 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { callCreatepulseUpstream } from '../../shared/createpulseUpstream.js'
 
+// ─── Proxy CreatePulse (versi Vercel) ───────────────────────────────────────
+// Cermin dari server/routes/publicCreatepulse.ts; kebijakan dan pencatatannya
+// sama-sama dari shared/createpulseUpstream.ts supaya dev dan produksi tidak
+// bisa berbeda perilaku (dulu keduanya membaca body dengan json().catch(() =>
+// ({})), sehingga 502 gateway createpulse.online selalu jadi "unknown").
 const CP_API = 'https://createpulse.online/api'
 const ADMIN_CP_KEY = process.env.CREATEPULSE_API_KEY || ''
-
 
 const FETCH_TIMEOUT_MS = 30000
 async function fetchWithTimeout(url: string | URL, init?: RequestInit & { timeoutMs?: number }): Promise<Response> {
@@ -11,6 +16,7 @@ async function fetchWithTimeout(url: string | URL, init?: RequestInit & { timeou
   const tid = setTimeout(() => ac.abort(), timeoutMs)
   try { return await fetch(url, { ...init, signal: ac.signal }) } finally { clearTimeout(tid) }
 }
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
@@ -24,22 +30,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     if (action === 'generate' && req.method === 'POST') {
       const { action: _, ...body } = req.body || {}
-      const r = await fetchWithTimeout(`${CP_API}/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-API-Key': String(apiKey) },
-        body: JSON.stringify(body),
+      const r = await callCreatepulseUpstream({
+        action: 'generate',
+        url: `${CP_API}/generate`,
+        init: {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-API-Key': String(apiKey) },
+          body: JSON.stringify(body),
+        },
+        fetchWithTimeout,
       })
-      const data = await r.json().catch(() => ({}))
-      return res.status(r.status).json(data)
+      return res.status(r.status).json(r.body)
     }
 
     if (action === 'status') {
       const batchId = req.query.batchId || req.body?.batchId
-      const r = await fetchWithTimeout(`${CP_API}/status?batchId=${batchId}`, {
-        headers: { 'X-API-Key': String(apiKey) },
+      const r = await callCreatepulseUpstream({
+        action: 'status',
+        url: `${CP_API}/status?batchId=${batchId}`,
+        init: { headers: { 'X-API-Key': String(apiKey) } },
+        fetchWithTimeout,
       })
-      const data = await r.json().catch(() => ({}))
-      return res.status(r.status).json(data)
+      return res.status(r.status).json(r.body)
     }
 
     if (action === 'download') {

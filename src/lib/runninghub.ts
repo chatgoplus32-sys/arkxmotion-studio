@@ -2,6 +2,30 @@ const RUNNINGHUB_PROXY = '/api/public/runninghub'
 
 const RUNNINGHUB_DEFAULT_WORKFLOW_ID = '2092795737699856386'
 
+export const RUNNINGHUB_ULTRA_HD_WORKFLOW_ID = '2095008448978407425'
+
+// Virtual Try-On & Ekstraksi Pakaian (FireRed 2-in-1)
+// node 13 = foto orang/model, node 53 = foto pakaian/garment
+export const RUNNINGHUB_TRYON_WORKFLOW_ID = '2099800742046818306'
+export const RUNNINGHUB_TRYON_PERSON_NODE = '13'
+export const RUNNINGHUB_TRYON_GARMENT_NODE = '53'
+
+// H3 Studio Markas HD 1080p Audio Sync (MiniMax H3 digital human):
+// 1 foto + audio → video bicara/bernyanyi.
+// node 209 = image (foto), node 215 = audio
+export const RUNNINGHUB_AUDIO_AVATAR_WORKFLOW_ID = '2099332942179229697'
+export const RUNNINGHUB_AUDIO_AVATAR_IMAGE_NODE = '209'
+export const RUNNINGHUB_AUDIO_AVATAR_AUDIO_NODE = '215'
+
+// VOSR2 Video Upscale 2K (peningkatan bertingkat):
+// node 1 = video + frame_load_cap, node 21 = cfg/scheduler/steps,
+// node 13 = save_output
+export const RUNNINGHUB_VIDEO_UPSCALE_WORKFLOW_ID = '2100537736599035906'
+
+// AI Photo Enhancer (retus potret alami):
+// node 642 = image (foto), node 688 = scale_by
+export const RUNNINGHUB_PHOTO_ENHANCE_WORKFLOW_ID = '2100619334354759681'
+
 function getStoredProviderKey(provider: string): string | null {
   if (typeof window === 'undefined') return null
   try {
@@ -166,6 +190,50 @@ export interface MotionControlV3Params {
   keepOriginalSound?: boolean
 }
 
+export interface MotionControlUltraHDParams {
+  imageFile: File
+  videoFile: File
+  fps?: number
+  steps?: number
+  maxFrames?: number
+  prompt?: string
+  negativePrompt?: string
+  apiKey?: string
+  workflowId?: string
+}
+
+export async function submitRunningHubUltraFastHD(params: MotionControlUltraHDParams): Promise<MotionControlResult> {
+  const workflowId = params.workflowId || RUNNINGHUB_ULTRA_HD_WORKFLOW_ID
+
+  const [imageBase64, videoBase64] = await Promise.all([
+    fileToBase64(params.imageFile),
+    fileToBase64(params.videoFile),
+  ])
+
+  const result = await runninghubProxy('motion-control-ultra-hd', {
+    workflow_id: workflowId,
+    imageBase64,
+    videoBase64,
+    imageFileName: params.imageFile.name,
+    videoFileName: params.videoFile.name,
+    imageMimeType: params.imageFile.type || 'image/jpeg',
+    videoMimeType: params.videoFile.type || 'video/mp4',
+    fps: params.fps ?? 60,
+    steps: params.steps ?? 4,
+    maxFrames: params.maxFrames ?? 120,
+    prompt: params.prompt || '',
+    negative_prompt: params.negativePrompt || '',
+  }, params.apiKey)
+
+  return {
+    id: result.id || result.taskId,
+    taskId: result.taskId || result.id,
+    status: result.status || 'QUEUED',
+    provider: result.provider || 'runninghub',
+    workflowId: result.workflowId || workflowId,
+  }
+}
+
 export async function submitRunningHubMotionControlV26Pro(params: MotionControlV26StdParams): Promise<MotionControlResult> {
   const result = await runninghubProxy('motion-control-v2.6-pro', {
     imageUrl: params.imageUrl,
@@ -203,6 +271,143 @@ export async function submitRunningHubMotionControlV3(params: MotionControlV3Par
 
 export type RunningHubTaskStatus = 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED'
 
+export interface TryOnParams {
+  personFile: File
+  garmentFile?: File | null
+  mode?: 'tryon' | 'extract'
+  prompt?: string
+  apiKey?: string
+  workflowId?: string
+}
+
+export async function submitRunningHubTryOn(params: TryOnParams): Promise<MotionControlResult> {
+  const workflowId = params.workflowId || RUNNINGHUB_TRYON_WORKFLOW_ID
+
+  const fileToB64 = (f: File) => fileToBase64(f)
+  const personBase64 = await fileToB64(params.personFile)
+  const garmentBase64 = params.garmentFile ? await fileToB64(params.garmentFile) : undefined
+
+  const result = await runninghubProxy('submit-tryon', {
+    workflow_id: workflowId,
+    mode: params.mode || 'tryon',
+    personBase64,
+    personFileName: params.personFile.name,
+    personMimeType: params.personFile.type || 'image/jpeg',
+    ...(garmentBase64 && params.garmentFile ? {
+      garmentBase64,
+      garmentFileName: params.garmentFile.name,
+      garmentMimeType: params.garmentFile.type || 'image/jpeg',
+    } : {}),
+    prompt: params.prompt || '',
+  }, params.apiKey)
+
+  return {
+    id: result.id || result.taskId,
+    taskId: result.taskId || result.id,
+    status: result.status || 'QUEUED',
+    provider: result.provider || 'runninghub',
+    workflowId: result.workflowId || workflowId,
+  }
+}
+
+export interface AudioAvatarParams {
+  imageFile: File
+  audioFile: File
+  prompt?: string
+  apiKey?: string
+  workflowId?: string
+}
+export async function submitRunningHubAudioAvatar(params: AudioAvatarParams): Promise<MotionControlResult> {
+  const workflowId = params.workflowId || RUNNINGHUB_AUDIO_AVATAR_WORKFLOW_ID
+
+  const [imageBase64, audioBase64] = await Promise.all([
+    fileToBase64(params.imageFile),
+    fileToBase64(params.audioFile),
+  ])
+
+  const result = await runninghubProxy('submit-audio-avatar', {
+    workflow_id: workflowId,
+    imageBase64,
+    imageFileName: params.imageFile.name,
+    imageMimeType: params.imageFile.type || 'image/jpeg',
+    audioBase64,
+    audioFileName: params.audioFile.name,
+    audioMimeType: params.audioFile.type || 'audio/mpeg',
+    prompt: params.prompt || '',
+  }, params.apiKey)
+
+  return {
+    id: result.id || result.taskId,
+    taskId: result.taskId || result.id,
+    status: result.status || 'QUEUED',
+    provider: result.provider || 'runninghub',
+    workflowId: result.workflowId || workflowId,
+  }
+}
+
+export interface VideoUpscaleParams {
+  videoFile: File
+  steps?: number
+  cfg?: number
+  scheduler?: string
+  frameLoadCap?: number
+  apiKey?: string
+  workflowId?: string
+}
+export async function submitRunningHubVideoUpscale(params: VideoUpscaleParams): Promise<MotionControlResult> {
+  const workflowId = params.workflowId || RUNNINGHUB_VIDEO_UPSCALE_WORKFLOW_ID
+
+  const videoBase64 = await fileToBase64(params.videoFile)
+
+  const result = await runninghubProxy('submit-video-upscale', {
+    workflow_id: workflowId,
+    videoBase64,
+    videoFileName: params.videoFile.name,
+    videoMimeType: params.videoFile.type || 'video/mp4',
+    steps: params.steps ?? 4,
+    cfg: params.cfg ?? 4.5,
+    scheduler: params.scheduler || 'beta',
+    frameLoadCap: params.frameLoadCap ?? 0,
+  }, params.apiKey)
+
+  return {
+    id: result.id || result.taskId,
+    taskId: result.taskId || result.id,
+    status: result.status || 'QUEUED',
+    provider: result.provider || 'runninghub',
+    workflowId: result.workflowId || workflowId,
+  }
+}
+
+export interface PhotoEnhanceParams {
+  imageFile: File
+  scaleBy?: number
+  apiKey?: string
+  workflowId?: string
+}
+
+export async function submitRunningHubPhotoEnhance(params: PhotoEnhanceParams): Promise<MotionControlResult> {
+  const workflowId = params.workflowId || RUNNINGHUB_PHOTO_ENHANCE_WORKFLOW_ID
+
+  const imageBase64 = await fileToBase64(params.imageFile)
+
+  const result = await runninghubProxy('submit-photo-enhance', {
+    workflow_id: workflowId,
+    imageBase64,
+    imageFileName: params.imageFile.name,
+    imageMimeType: params.imageFile.type || 'image/jpeg',
+    scaleBy: params.scaleBy ?? 2,
+  }, params.apiKey)
+
+  return {
+    id: result.id || result.taskId,
+    taskId: result.taskId || result.id,
+    status: result.status || 'QUEUED',
+    provider: result.provider || 'runninghub',
+    workflowId: result.workflowId || workflowId,
+  }
+}
+
 export async function pollRunningHubTask(
   taskId: string,
   onProgress?: (status: string, progress: number) => void,
@@ -226,11 +431,12 @@ export async function pollRunningHubTask(
         const progress = result.progress || 0
 
         if (status === 'COMPLETED') {
-          if (result.videoUrl) {
+          const url = result.imageUrl || result.videoUrl
+          if (url) {
             onProgress?.('COMPLETED', 100)
-            return result.videoUrl
+            return url
           }
-          throw new Error('Task completed but no video URL found')
+          throw new Error('Task completed but no result URL found')
         }
 
         if (status === 'FAILED') {

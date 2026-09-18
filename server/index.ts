@@ -1,8 +1,12 @@
+// Harus impor PALING AWAL: memuat .env sebelum modul lain mana pun dievaluasi.
+// Modul-modul di bawah membaca process.env di top level, jadi urutan inilah yang
+// membuat nilainya terbaca. Penjelasan lengkap ada di server/env.ts.
+import './env.js'
+
 import { fileURLToPath } from 'url'
 import path from 'path'
 import express from 'express'
 import cors from 'cors'
-import dotenv from 'dotenv'
 import fs from 'fs'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 import db from './db.js'
@@ -46,7 +50,9 @@ import publicR2UploadRoutes from './routes/publicR2Upload.js'
 import { backupOnStartup, noteStartupBackupDisabled } from './backup.js'
 import { startBackupScheduler, getBackupStatus, runBackup } from './lib/backupR2.js'
 
-dotenv.config()
+// .env sudah dimuat server/env.ts (impor pertama), yaitu sebelum modul-modul di
+// atas dievaluasi. Tidak ada pemuatan kedua di sini supaya hanya ada satu sumber
+// kebenaran: kalau impornya berpindah, test/envLoadOrder.test.ts yang gagal.
 
 const app = express()
 const PORT = Number(process.env.PORT) || 6000

@@ -115,7 +115,12 @@ function giveApprovedPackage({ slug = 'unlimited_monthly', days = 30, expiresInD
 
 // ── Auth ───────────────────────────────────────────────────────────────────
 
-test('tanpa token → 401, token ngawur → 403', async () => {
+// Keduanya 401: token yang tidak sah bukan "sudah login tapi tidak berhak",
+// melainkan belum/tidak lagi punya identitas — access token app cuma hidup
+// 15 menit (ACCESS_EXPIRES di server/routes/auth.ts) dan app hanya mencoba
+// refresh diam-diam kalau jawabannya 401. 403 tetap untuk requireAdmin,
+// yang dikunci test/nexabotUpstreamUsage.test.ts.
+test('tanpa token → 401, token ngawur → 401', async () => {
   const guarded: [string, string][] = [
     ['GET', '/balance'],
     ['POST', '/package'],
@@ -130,7 +135,7 @@ test('tanpa token → 401, token ngawur → 403', async () => {
   }
 
   const wrong = await api('GET', '/api/nexabot/balance', { token: jwt.sign({ id: USER_ID }, 'secret-lain') })
-  assert.equal(wrong.status, 403)
+  assert.equal(wrong.status, 401)
 })
 
 // ── GET /balance ───────────────────────────────────────────────────────────
