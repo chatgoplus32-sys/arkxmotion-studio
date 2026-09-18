@@ -29,7 +29,6 @@ import {
 
   ShoppingCart,
   Route,
-  ShoppingBag,
   Puzzle,
   Shirt,
   Mic,
@@ -54,11 +53,9 @@ const generateNav: NavItem[] = [
   { label: 'Image to Video', href: '/generate/image-to-video', icon: <Image className="h-4 w-4" /> },
   { label: 'Edit Image', href: '/generate/edit-image', icon: <ImagePlus className="h-4 w-4" /> },
 
-  { label: 'Bulk Fashion', href: '/generate/bulk-fashion', icon: <ShoppingBag className="h-4 w-4" /> },
   { label: 'Virtual Try-On', href: '/generate/virtual-tryon', icon: <Shirt className="h-4 w-4" /> },
   { label: 'Talking Photo', href: '/generate/talking-photo', icon: <Mic className="h-4 w-4" /> },
   { label: 'Video Upscaler', href: '/generate/video-upscaler', icon: <ArrowUpFromLine className="h-4 w-4" /> },
-  { label: 'Product UGC', href: '/generate/ugc', icon: <Image className="h-4 w-4" /> },
   { label: 'AI Upscaler', href: '/generate/upscaler', icon: <Wand2 className="h-4 w-4" /> },
 ]
 
