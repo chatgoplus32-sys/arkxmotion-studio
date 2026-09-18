@@ -282,10 +282,11 @@ export async function fetchWeavyCreditsClient(accessToken: string): Promise<numb
     })
     if (r.ok) {
       const d = await r.json()
-      console.log('[weavy] POST /weavy-credits →', JSON.stringify(d).slice(0, 500))
       if (typeof d?.credits === 'number') return d.credits
     }
-  } catch {}
+  } catch (e) {
+    if (import.meta.env.DEV) console.warn('[weavy] weavy-credits fallback failed:', e)
+  }
 
   return null
 }
@@ -313,34 +314,25 @@ async function resolveAccessToken(token: string): Promise<string> {
 }
 
 async function resolveAndFetchCredits(token: string): Promise<{ ok: boolean; credits: number | null; email?: string; subscriptionType?: string }> {
-  console.log('[weavy] resolveAndFetchCredits called, token starts:', token.slice(0, 20) + '...')
-
   // Step 1: Refresh token → get access token
   let accessToken = token
   if (isRefreshToken(token)) {
-    console.log('[weavy] refreshing token via securetoken.googleapis.com...')
     const r = await refreshWeavyAccessToken(token)
     if (r?.accessToken) {
       accessToken = r.accessToken
-      console.log('[weavy] token refreshed OK, accessToken starts:', accessToken.slice(0, 30) + '...')
     } else {
-      console.log('[weavy] token refresh FAILED — cannot fetch live credits, will try cached')
       // Token refresh failed. We cannot call Weavy API with a refresh token.
       // Return ok=true with credits=null so UI shows cached value from localStorage.
       return { ok: true, credits: null, email: extractEmailFromJwt(token) || undefined, subscriptionType: extractSubscriptionType(token) || undefined }
     }
-  } else {
-    console.log('[weavy] token is JWT, using directly')
   }
 
   // Step 2: Extract email & subscription from JWT
   const email = extractEmailFromJwt(accessToken) || undefined
   const subscriptionType = extractSubscriptionType(accessToken) || undefined
-  console.log('[weavy] email:', email, 'subscription:', subscriptionType)
 
   // Step 3: Call Weavy API via Vercel proxy (only if we have a valid access token)
   const credits = await fetchWeavyCreditsClient(accessToken)
-  console.log('[weavy] final credits:', credits)
 
   return { ok: true, credits, email, subscriptionType }
 }

@@ -110,9 +110,13 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
 
     const fetchPending = () => {
       fetch('/api/admin/users/pending', {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 'Authorization': `Bearer ${token}` },
+        signal: AbortSignal.timeout(8000),
       })
-        .then(res => res.json())
+        .then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          return res.json()
+        })
         .then(data => {
           const count = data.users?.length || 0
           const prev = prevPendingRef.current
@@ -130,7 +134,7 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
             })
           }
         })
-        .catch(() => {})
+        .catch((e) => { if (import.meta.env.DEV) console.warn('[sidebar] fetchPending failed:', e) })
     }
 
     fetchPending()

@@ -2506,9 +2506,9 @@ const FileUpload = forwardRef<HTMLInputElement, FileUploadProps>(
           {hasFile ? (
             <>
               {kind === 'image' ? (
-                <img src={previewUrl} alt="" className="absolute inset-0 h-full w-full object-contain bg-black/40" />
+                <img src={previewUrl} alt="Preview input motion" className="absolute inset-0 h-full w-full object-contain bg-black/40" />
               ) : (
-                <video src={previewUrl} className="absolute inset-0 h-full w-full object-contain bg-black/40" muted playsInline />
+                <video src={previewUrl} aria-label="Preview input motion" className="absolute inset-0 h-full w-full object-contain bg-black/40" muted playsInline />
               )}
               <div className="absolute inset-x-0 bottom-0 bg-black/60 backdrop-blur-sm px-2.5 py-1.5 flex items-center justify-between text-[11px] opacity-0 group-hover:opacity-100 md:opacity-100 transition-opacity">
                 <span className="truncate text-foreground/95 max-w-[70%]">{file.name}</span>

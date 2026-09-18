@@ -17,6 +17,12 @@ export const RUNNINGHUB_AUDIO_AVATAR_WORKFLOW_ID = '2099332942179229697'
 export const RUNNINGHUB_AUDIO_AVATAR_IMAGE_NODE = '209'
 export const RUNNINGHUB_AUDIO_AVATAR_AUDIO_NODE = '215'
 
+// LTX-2.5 I2V LipSync Bahasa Indonesia:
+// foto + audio → video lip-sync.
+// node 23 = image1, node 30 = image2, node 148 = audio,
+// node 14 = width, node 15 = height, node 16 = fps
+export const RUNNINGHUB_LIPSYNC_WORKFLOW_ID = '2098820058905927682'
+
 // VOSR2 Video Upscale 2K (peningkatan bertingkat):
 // node 1 = video + frame_load_cap, node 21 = cfg/scheduler/steps,
 // node 13 = save_output
@@ -385,7 +391,6 @@ export interface PhotoEnhanceParams {
   apiKey?: string
   workflowId?: string
 }
-
 export async function submitRunningHubPhotoEnhance(params: PhotoEnhanceParams): Promise<MotionControlResult> {
   const workflowId = params.workflowId || RUNNINGHUB_PHOTO_ENHANCE_WORKFLOW_ID
 
@@ -397,6 +402,55 @@ export async function submitRunningHubPhotoEnhance(params: PhotoEnhanceParams): 
     imageFileName: params.imageFile.name,
     imageMimeType: params.imageFile.type || 'image/jpeg',
     scaleBy: params.scaleBy ?? 2,
+  }, params.apiKey)
+
+  return {
+    id: result.id || result.taskId,
+    taskId: result.taskId || result.id,
+    status: result.status || 'QUEUED',
+    provider: result.provider || 'runninghub',
+    workflowId: result.workflowId || workflowId,
+  }
+}
+
+export interface LipSyncParams {
+  imageFile: File
+  imageFile2?: File | null
+  audioFile: File
+  width?: number
+  height?: number
+  fps?: number
+  prompt?: string
+  apiKey?: string
+  workflowId?: string
+}
+
+export async function submitRunningHubLipSync(params: LipSyncParams): Promise<MotionControlResult> {
+  const workflowId = params.workflowId || RUNNINGHUB_LIPSYNC_WORKFLOW_ID
+
+  const [imageBase64, audioBase64] = await Promise.all([
+    fileToBase64(params.imageFile),
+    fileToBase64(params.audioFile),
+  ])
+  const imageBase64_2 = params.imageFile2 ? await fileToBase64(params.imageFile2) : undefined
+
+  const result = await runninghubProxy('submit-lipsync', {
+    workflow_id: workflowId,
+    imageBase64,
+    imageFileName: params.imageFile.name,
+    imageMimeType: params.imageFile.type || 'image/jpeg',
+    ...(imageBase64_2 && params.imageFile2 ? {
+      imageBase64_2,
+      imageFileName2: params.imageFile2.name,
+      imageMimeType2: params.imageFile2.type || 'image/jpeg',
+    } : {}),
+    audioBase64,
+    audioFileName: params.audioFile.name,
+    audioMimeType: params.audioFile.type || 'audio/mpeg',
+    width: params.width ?? 1280,
+    height: params.height ?? 720,
+    fps: params.fps ?? 30,
+    prompt: params.prompt || '',
   }, params.apiKey)
 
   return {

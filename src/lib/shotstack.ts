@@ -16,8 +16,8 @@ export async function checkShotstackBalance(apiKey: string): Promise<{ ok: boole
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}` }
     const data = await res.json()
     return { ok: true, balance: data.plan?.remaining?.minutes ?? null }
-  } catch (err: any) {
-    return { ok: false, error: err.message }
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
   }
 }
 

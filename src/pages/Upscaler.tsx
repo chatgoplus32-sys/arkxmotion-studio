@@ -635,9 +635,9 @@ export default function UpscalerPage() {
                   {rows.map((row, idx) => (
                     <div key={row.id} className="relative rounded-xl overflow-hidden border border-border bg-background/40">
                       <div className="relative bg-black/40" style={{ aspectRatio: row.ratio || 1 }}>
-                        <img src={row.preview} alt="" className="absolute inset-0 w-full h-full object-contain" />
+                        <img src={row.preview} alt={row.file?.name || `Input upscale ${idx + 1}`} className="absolute inset-0 w-full h-full object-contain" />
                         {!running && (
-                          <button onClick={() => removeImage(row.id)}
+                          <button onClick={() => removeImage(row.id)} aria-label={`Hapus ${row.file?.name || `gambar ${idx + 1}`}`}
                             className="absolute top-1 right-1 h-6 w-6 grid place-items-center rounded-full bg-black/70 text-white hover:bg-black/90">
                             <X className="h-3 w-3" />
                           </button>
@@ -762,15 +762,15 @@ export default function UpscalerPage() {
               {filteredGallery.map(item => (
                 <div key={item.id} className="rounded-xl overflow-hidden border border-border/60 bg-card/40 group">
                   <a href={item.url} target="_blank" rel="noreferrer" className="block relative bg-black/40">
-                    <img src={item.url} alt="" className="w-full h-auto object-contain" loading="lazy" />
+                    <img src={item.url} alt={item.sourceName || 'Hasil upscale'} className="w-full h-auto object-contain" loading="lazy" />
                   </a>
                   <div className="p-2 text-[11px] text-muted-foreground flex items-center justify-between gap-1">
                     <span className="truncate flex-1" title={item.sourceName}>{item.sourceName}</span>
-                    <button onClick={() => downloadItem(item)}
+                    <button onClick={() => downloadItem(item)} aria-label={`Download ${item.sourceName}`}
                       className="inline-flex items-center gap-1 rounded-full border border-border bg-card/60 px-2 py-1 hover:text-foreground hover:border-primary/50 transition" title="Download">
                       <Download className="h-3.5 w-3.5" />
                     </button>
-                    <button onClick={() => removeGalleryItem(item.id)}
+                    <button onClick={() => removeGalleryItem(item.id)} aria-label={`Hapus ${item.sourceName}`}
                       className="inline-flex items-center gap-1 rounded-full border border-border bg-card/60 px-2 py-1 hover:text-destructive hover:border-destructive/50 transition" title="Hapus">
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>

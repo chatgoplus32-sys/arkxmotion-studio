@@ -1,15 +1,24 @@
-import { Router, Response } from 'express'
+import { Router, Request, Response, NextFunction } from 'express'
 import db from '../db.js'
 import { backupOnStartup } from '../backup.js'
 
 const router = Router()
 
-router.get('/daily-stats', (req, res: Response) => {
+function requireCronSecret(req: Request, res: Response, next: NextFunction) {
   const cronSecret = process.env.CRON_SECRET
-  if (cronSecret && req.headers['x-cron-secret'] !== cronSecret && req.query.secret !== cronSecret) {
-    const auth = req.headers.authorization
-    if (auth !== `Bearer ${cronSecret}`) return res.status(401).json({ error: 'Unauthorized cron' })
+  if (!cronSecret) {
+    return res.status(500).json({ error: 'CRON_SECRET belum dikonfigurasi' })
   }
+  const header = req.headers['x-cron-secret']
+  const query = req.query.secret
+  const auth = req.headers.authorization
+  if (header === cronSecret || query === cronSecret || auth === `Bearer ${cronSecret}`) {
+    return next()
+  }
+  return res.status(401).json({ error: 'Unauthorized cron' })
+}
+
+router.get('/daily-stats', requireCronSecret, (req, res: Response) => {
   try {
     const totalUsers = (db.prepare('SELECT COUNT(*) as c FROM users').get() as any).c
     const pendingUsers = (db.prepare("SELECT COUNT(*) as c FROM users WHERE approved=0 AND role!='admin'").get() as any).c
@@ -26,11 +35,11 @@ router.get('/daily-stats', (req, res: Response) => {
   } catch (e: any) { res.status(500).json({ error: e.message }) }
 })
 
-router.post('/daily-stats', (req, res: Response) => {
+router.post('/daily-stats', requireCronSecret, (req, res: Response) => {
   return (router as any).handle({ ...req, method: 'GET', url: '/daily-stats' }, res, () => {})
 })
 
-router.get('/backup', async (_req, res: Response) => {
+router.get('/backup', requireCronSecret, async (_req, res: Response) => {
   try {
     const file = await backupOnStartup()
     res.json({ ok: true, file: file || null, message: file ? 'Backup created' : 'No data to backup' })
@@ -39,7 +48,7 @@ router.get('/backup', async (_req, res: Response) => {
   }
 })
 
-router.post('/backup', async (req, res: Response) => {
+router.post('/backup', requireCronSecret, async (req, res: Response) => {
   return (router as any).handle({ ...req, method: 'GET', url: '/backup' }, res, () => {})
 })
 

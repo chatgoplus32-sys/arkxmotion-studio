@@ -28,8 +28,8 @@ export async function uploadToCdn(
     if (!data.ok) return { ok: false, error: data.error }
 
     return { ok: true, url: data.url }
-  } catch (err: any) {
-    return { ok: false, error: err.message }
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
   }
 }
 
@@ -70,7 +70,7 @@ export async function uploadBlobToCdn(
     })
 
     return { ok: true, url }
-  } catch (err: any) {
-    return { ok: false, error: err.message }
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
   }
 }

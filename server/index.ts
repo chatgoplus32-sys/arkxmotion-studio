@@ -49,6 +49,7 @@ import publicWeavyCreditsRoutes from './routes/publicWeavyCredits.js'
 import publicR2UploadRoutes from './routes/publicR2Upload.js'
 import { backupOnStartup, noteStartupBackupDisabled } from './backup.js'
 import { startBackupScheduler, getBackupStatus, runBackup } from './lib/backupR2.js'
+import { authenticateToken, requireAdmin } from './middleware/auth.js'
 
 // .env sudah dimuat server/env.ts (impor pertama), yaitu sebelum modul-modul di
 // atas dievaluasi. Tidak ada pemuatan kedua di sini supaya hanya ada satu sumber
@@ -59,12 +60,18 @@ const PORT = Number(process.env.PORT) || 6000
 const isProd = process.env.NODE_ENV === 'production'
 const FRONTEND_DIR = path.resolve(__dirname, '..', 'dist')
 
+const extraOrigins = (process.env.CORS_ALLOWED_ORIGINS ?? '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean)
+
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:5174',
   'http://localhost:3000',
   'http://localhost:6000',
   'https://arkxmotion-studio.win',
+  ...extraOrigins,
 ]
 
 app.use(cors({
@@ -73,7 +80,7 @@ app.use(cors({
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true)
     } else {
-      callback(null, true) // In prod, allow all origins for API proxies
+      callback(new Error('Not allowed by CORS'))
     }
   },
   credentials: true
@@ -164,11 +171,11 @@ app.get('/api/admin/public/maintenance', (_req, res) => {
 // mencocokkan rute menurut urutan pendaftaran. Kalau urutannya terbalik, kedua
 // rute ini mati justru di lingkungan yang paling membutuhkannya — dan hanya di
 // production, karena di dev catch-all itu tidak dipasang.
-app.get("/api/backup/status", (_req, res) => {
+app.get("/api/backup/status", authenticateToken, requireAdmin, (_req, res) => {
   res.json(getBackupStatus())
 })
 
-app.post("/api/backup/run", async (_req, res) => {
+app.post("/api/backup/run", authenticateToken, requireAdmin, async (_req, res) => {
   const result = await runBackup()
   res.json(result)
 })

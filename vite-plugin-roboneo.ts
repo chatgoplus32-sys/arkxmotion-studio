@@ -1402,6 +1402,119 @@ export function roboneoProxyPlugin(): Plugin {
             return
           }
 
+          // LTX-2.5 LipSync ID (2098820058905927682)
+          if (action === 'submit-lipsync') {
+            const LIPSYNC_WF = '2098820058905927682'
+            const wfId = params.workflow_id || params.workflowId || LIPSYNC_WF
+            const { imageBase64, imageFileName = 'photo.jpg', imageMimeType = 'image/jpeg',
+              imageBase64_2, imageFileName2 = 'photo2.jpg', imageMimeType2 = 'image/jpeg',
+              audioBase64, audioFileName = 'audio.mp3', audioMimeType = 'audio/mpeg',
+              width = 1280, height = 720, fps = 30 } = params
+            if (!imageBase64 || !audioBase64) {
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: false, error: 'Missing imageBase64 or audioBase64' }))
+              return
+            }
+            const effW = Math.max(64, Math.min(2048, Number(width) || 1280))
+            const effH = Math.max(64, Math.min(2048, Number(height) || 720))
+            const effF = Math.max(1, Math.min(60, Number(fps) || 30))
+            const upOne = async (b64: string, name: string, mime: string) => {
+              const bin = Buffer.from(b64.includes(',') ? b64.split(',')[1] : b64, 'base64')
+              const fd = new FormData()
+              fd.append('file', new Blob([bin], { type: mime }), name)
+              const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/media/upload/binary`, {
+                method: 'POST', headers: { 'Authorization': `Bearer ${apiKey}` }, body: fd,
+              })
+              const t = await r.text()
+              let d: any; try { d = JSON.parse(t) } catch { d = {} }
+              const fn = d?.data?.fileName || d?.fileName
+              if (!fn) throw new Error('Upload failed: ' + t.slice(0, 200))
+              return fn
+            }
+            try {
+              const imgFn = await upOne(imageBase64, imageFileName, imageMimeType)
+              const imgFn2 = imageBase64_2 ? await upOne(imageBase64_2, imageFileName2, imageMimeType2) : null
+              const audFn = await upOne(audioBase64, audioFileName, audioMimeType)
+              const IMG_CANDS = ['image', 'file', 'path', 'filename', 'input', 'src']
+              const AUD_CANDS = ['audio', 'file', 'path', 'filename', 'input', 'src']
+              const nodeField: Record<string, string> = { '23': 'image', '148': 'audio' }
+              if (imgFn2) nodeField['30'] = 'image'
+              const dropped = new Set<string>()
+              const buildList = () => {
+                const l: any[] = [
+                  { nodeId: '23', fieldName: nodeField['23'], fieldValue: imgFn },
+                  ...(imgFn2 ? [{ nodeId: '30', fieldName: nodeField['30'], fieldValue: imgFn2 }] : []),
+                  { nodeId: '148', fieldName: nodeField['148'], fieldValue: audFn },
+                  { nodeId: '14', fieldName: 'value', fieldValue: String(effW) },
+                  { nodeId: '15', fieldName: 'value', fieldValue: String(effH) },
+                  { nodeId: '16', fieldName: 'value', fieldValue: String(effF) },
+                ]
+                return dropped.size === 0 ? l : l.filter((e) => !dropped.has(`${e.nodeId}/${e.fieldName}`))
+              }
+              const postRun = async (list: any[]) => {
+                const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${wfId}`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                  body: JSON.stringify({ nodeInfoList: list, instanceType: 'default', usePersonalQueue: 'false' }),
+                })
+                const text = await r.text()
+                console.log(`[runninghub-proxy] lipsync ${r.status}:`, text.slice(0, 500))
+                let data: any; try { data = JSON.parse(text) } catch { data = { raw: text } }
+                return {
+                  data,
+                  code: data?.code ?? data?.errorCode,
+                  msg: String(data?.msg || data?.errorMessage || data?.message || ''),
+                  taskId: data?.data?.taskId || data?.taskId || data?.id,
+                  status: data?.data?.status || 'QUEUED',
+                }
+              }
+              const parseMM = (msg: string) => {
+                const m = /nodeId=([^,\)]+),\s*fieldName=([^,\)]+),\s*reason=([^,\)]+)/.exec(msg)
+                return m ? { nodeId: m[1].trim(), fieldName: m[2].trim(), reason: m[3].trim() } : null
+              }
+              const ok = (taskId: string, status: string) => {
+                res.writeHead(200, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ ok: true, data: { id: taskId, taskId, status, provider: 'runninghub', workflowId: wfId } }))
+              }
+              const fail = (error: string, data?: any) => {
+                res.writeHead(200, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ ok: false, error, data }))
+              }
+              let lastErr = 'Unknown'
+              let lastData: any = null
+              let done = false
+              for (let round = 0; round < 18 && !done; round++) {
+                console.log(`[runninghub-proxy] lipsync round=${round}`)
+                const r = await postRun(buildList())
+                if (r.taskId) { ok(r.taskId, r.status); done = true; break }
+                lastErr = r.msg || `Error code: ${r.code}`
+                lastData = r.data
+                const mm = r.code === 803 || (r.code as any) === '803' ? parseMM(r.msg) : null
+                if (mm && /field_not_found|node_not_found/i.test(mm.reason) && ['23', '30', '148'].includes(mm.nodeId)) {
+                  if (/node_not_found/i.test(mm.reason)) { fail(`Node ${mm.nodeId} tidak ada di workflow ini`, r.data); done = true; break }
+                  const cands = mm.nodeId === '148' ? AUD_CANDS : IMG_CANDS
+                  const cur = nodeField[mm.nodeId] || ''
+                  const ni = cands.indexOf(cur) + 1
+                  if (ni <= 0 || ni >= cands.length) { fail(`Field ${mm.nodeId} ditolak semua kandidat. Terakhir: ${r.msg}`, r.data); done = true; break }
+                  nodeField[mm.nodeId] = cands[ni]
+                  console.log(`[runninghub-proxy] lipsync node ${mm.nodeId}: "${cur}" → "${cands[ni]}"`)
+                  continue
+                }
+                if (mm && /field_not_found|node_not_found/i.test(mm.reason)) {
+                  console.log(`[runninghub-proxy] lipsync buang field ${mm.nodeId}/${mm.fieldName} (${mm.reason})`)
+                  dropped.add(`${mm.nodeId}/${mm.fieldName}`)
+                  continue
+                }
+                fail(r.msg || 'No taskId', r.data); done = true; break
+              }
+              if (!done) fail(`Gagal submit lip-sync. Terakhir: ${lastErr}`, lastData)
+            } catch (err: any) {
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: false, error: err.message }))
+            }
+            return
+          }
+
           // Fallback: Express lokal dulu (punya semua handler runninghub
           // termasuk motion-control-ultra-hd), Vercel terakhir
           const { status, text } = await forwardApi('/api/public/runninghub', {

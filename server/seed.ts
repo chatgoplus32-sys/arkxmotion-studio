@@ -2,8 +2,12 @@ import bcrypt from 'bcryptjs'
 import db from './db.js'
 
 async function seedAdmin() {
-  const email = 'nuallakoko@gmail.com'
-  const password = 'admin123'
+  const email = process.env.ADMIN_EMAIL
+  const password = process.env.ADMIN_PASSWORD
+  if (!email || !password) {
+    console.error('ADMIN_EMAIL dan ADMIN_PASSWORD wajib diisi di env untuk seed admin')
+    process.exit(1)
+  }
   const name = 'Admin'
   const role = 'admin'
 
@@ -22,7 +26,6 @@ async function seedAdmin() {
 
   console.log('Admin user created successfully!')
   console.log(`Email: ${email}`)
-  console.log(`Password: ${password}`)
   console.log(`Role: ${role}`)
 
   process.exit(0)

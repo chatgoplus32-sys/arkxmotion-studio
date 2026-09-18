@@ -6,13 +6,16 @@ import { useState } from 'react'
 export default function ResearchPage() {
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [results, setResults] = useState<any>(null)
 
   const handleSearch = async () => {
     if (!query.trim()) return
     setLoading(true)
-    await new Promise((r) => setTimeout(r, 2000))
-    setResults({
+    setError(null)
+    try {
+      await new Promise((r) => setTimeout(r, 2000))
+      setResults({
       trending: [
         { keyword: 'AI Video Generator', volume: '12K', trend: '+45%' },
         { keyword: 'Motion Capture AI', volume: '8K', trend: '+32%' },
@@ -30,7 +33,25 @@ export default function ResearchPage() {
         { segment: 'Small Business Owners', size: '3.2M', engagement: 'High' },
       ],
     })
-    setLoading(false)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Gagal memuat riset (demo)')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const exportCsv = () => {
+    if (!results) return
+    const rows = ['type,name,value']
+    for (const t of results.trending || []) rows.push(`trending,"${t.keyword}",${t.volume}`)
+    for (const g of results.gaps || []) rows.push(`gap,"${String(g).replace(/"/g, '""')}",`)
+    const blob = new Blob([rows.join('\n')], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `research-${Date.now()}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   return (
@@ -42,19 +63,32 @@ export default function ResearchPage() {
         desc="Trending topics, content gap analysis, and audience insights."
       />
 
-      <Section title="🔍 Research Query">
+      <Section title="🔍 Research Query (Demo)">
+        <p className="text-xs text-muted-foreground mb-2">Mode demo: hasil contoh lokal, bukan data AI live.</p>
         <div className="flex gap-2">
           <Input
             placeholder="Enter topic or keyword..."
+            aria-label="Topik riset"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
           />
-          <Button onClick={handleSearch} loading={loading} disabled={!query.trim()}>
+          <Button onClick={handleSearch} loading={loading} disabled={!query.trim()} aria-label="Cari riset">
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
             Search
           </Button>
+          {results && (
+            <Button variant="outline" onClick={exportCsv} aria-label="Export CSV">
+              Export CSV
+            </Button>
+          )}
         </div>
+        {error && (
+          <div className="mt-3 text-sm text-destructive flex items-center gap-2">
+            <span>{error}</span>
+            <Button size="sm" variant="outline" onClick={handleSearch}>Coba lagi</Button>
+          </div>
+        )}
       </Section>
 
       {results ? (

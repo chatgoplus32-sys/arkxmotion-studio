@@ -288,12 +288,21 @@ async function runProviderCheck(def: AutoSyncDef, key: string): Promise<CheckOut
   }
 }
 
-function consumeQueueToken(provider: string, token: string) {
-  fetch(`/api/sync-tokens/${provider}/consume`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...syncAuthHeaders() },
-    body: JSON.stringify({ token }),
-  }).catch(() => {})
+async function consumeQueueToken(provider: string, token: string, retries = 2) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(`/api/sync-tokens/${provider}/consume`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...syncAuthHeaders() },
+        body: JSON.stringify({ token }),
+        signal: AbortSignal.timeout(10000),
+      })
+      if (res.ok) return
+      if (import.meta.env.DEV) console.warn(`[token-consume] ${provider}: HTTP ${res.status} (attempt ${attempt + 1})`)
+    } catch (e) {
+      if (attempt === retries && import.meta.env.DEV) console.warn(`[token-consume] ${provider}: gagal setelah ${retries + 1}x`, e)
+    }
+  }
 }
 
 // Mirip tombol "Cek Limit & Status": sinkronkan balance key yang baru

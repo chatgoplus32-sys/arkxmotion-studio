@@ -75,7 +75,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   logout: () => {
     const rt = get().refreshToken || localStorage.getItem(REFRESH_KEY)
     const tk = get().token || localStorage.getItem(TOKEN_KEY)
-    fetch('/api/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(tk ? { Authorization: `Bearer ${tk}` } : {}) }, body: JSON.stringify({ refreshToken: rt }) }).catch(() => {})
+    fetch('/api/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(tk ? { Authorization: `Bearer ${tk}` } : {}) }, body: JSON.stringify({ refreshToken: rt }), signal: AbortSignal.timeout(8000) }).then((res) => {
+      if (!res.ok && import.meta.env.DEV) console.warn('[auth] logout HTTP', res.status)
+    }).catch((e) => { if (import.meta.env.DEV) console.warn('[auth] logout failed:', e) })
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(REFRESH_KEY)
     set({ user: null, token: null, refreshToken: null, isAuthenticated: false })

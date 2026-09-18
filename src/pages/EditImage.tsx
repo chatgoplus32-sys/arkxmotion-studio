@@ -442,12 +442,13 @@ export default function EditImagePage() {
                 </button>
               ) : (
                 <div className="relative rounded-xl overflow-hidden border border-border bg-black/40">
-                  <img src={imgUrl} alt="" className="w-full max-h-[420px] object-contain" />
+                  <img src={imgUrl} alt="Gambar yang akan diedit" className="w-full max-h-[420px] object-contain" />
                   {!generating && (
                     <button
                       onClick={() => { if (imgUrl) URL.revokeObjectURL(imgUrl); setImgUrl(null); setImgFile(null) }}
                       className="absolute top-2 right-2 h-7 w-7 grid place-items-center rounded-full bg-black/70 text-white hover:bg-black/90"
                       title="Hapus gambar"
+                      aria-label="Hapus gambar yang akan diedit"
                     >
                       <X className="h-3.5 w-3.5" />
                     </button>
@@ -532,7 +533,7 @@ export default function EditImagePage() {
               {filteredGallery.map((item) => (
                 <div key={item.id} className="rounded-xl overflow-hidden border border-border/60 bg-card/40 group">
                   <a href={item.url} target="_blank" rel="noreferrer" className="block relative bg-black/40">
-                    <img src={item.url} alt="" className="w-full h-auto object-contain" loading="lazy" />
+                    <img src={item.url} alt={item.prompt?.slice(0, 80) || 'Hasil edit gambar'} className="w-full h-auto object-contain" loading="lazy" />
                   </a>
                   <div className="p-2 text-[11px] text-muted-foreground space-y-0.5">
                     <div className="truncate" title={item.prompt}>💬 {item.prompt}</div>

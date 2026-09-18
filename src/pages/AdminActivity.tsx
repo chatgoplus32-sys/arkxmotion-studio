@@ -140,6 +140,7 @@ export default function AdminActivityPage() {
             value={searchEmail}
             onChange={(e) => setSearchEmail(e.target.value)}
             placeholder="Cari email..."
+            aria-label="Cari email aktivitas"
             className="rounded-lg border border-border bg-card pl-8 pr-3 py-1.5 text-xs w-48"
           />
         </div>

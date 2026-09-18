@@ -2,9 +2,10 @@ import { Router, Request, Response } from 'express'
 
 const router = Router()
 const WEAVY_API = 'https://api.weavy.ai/api'
-const FIREBASE_KEY = 'AIzaSyC-qLy3TFyXMogJPfMkZJ9H_q46hEu1sxI'
+const FIREBASE_KEY = process.env.FIREBASE_KEY || ''
 
 async function refreshWeavyToken(refreshToken: string): Promise<{ accessToken: string; refreshToken: string; expiresIn: number } | null> {
+  if (!FIREBASE_KEY) return null
   try {
     const r = await fetch(`https://securetoken.googleapis.com/v1/token?key=${FIREBASE_KEY}`, {
       method: 'POST',
@@ -13,7 +14,6 @@ async function refreshWeavyToken(refreshToken: string): Promise<{ accessToken: s
       signal: AbortSignal.timeout(10000),
     })
     const data: any = await r.json().catch(() => ({}))
-    console.log(`[weavy-proxy] firebase refresh → ${r.status}`, JSON.stringify(data).slice(0, 300))
     if (!r.ok || !data.id_token) return null
     return {
       accessToken: data.id_token,
@@ -43,27 +43,20 @@ function isJwtToken(token: string): boolean {
 
 async function resolveAccessToken(token: string): Promise<{ accessToken: string; refreshToken?: string; email?: string; refreshed: boolean }> {
   const isJwt = isJwtToken(token)
-  console.log(`[weavy-proxy] resolveAccessToken: isJwt=${isJwt} tokenLen=${token.length} tokenStart=${token.slice(0, 20)}`)
 
   if (isJwt) {
     const email = extractEmailFromJwt(token)
-    console.log(`[weavy-proxy] JWT detected, email=${email}, trying refresh...`)
     const refreshed = await refreshWeavyToken(token)
     if (refreshed?.accessToken) {
-      console.log(`[weavy-proxy] JWT → refreshed OK, newEmail=${extractEmailFromJwt(refreshed.accessToken)}`)
       return { accessToken: refreshed.accessToken, refreshToken: refreshed.refreshToken, email: extractEmailFromJwt(refreshed.accessToken) || email || undefined, refreshed: true }
     }
-    console.log(`[weavy-proxy] JWT → refresh FAILED, raw JWT may be expired`)
     return { accessToken: token, email: email || undefined, refreshed: false }
   }
 
-  console.log(`[weavy-proxy] RefreshToken detected (len=${token.length}), trying refresh...`)
   const refreshed = await refreshWeavyToken(token)
   if (refreshed?.accessToken) {
-    console.log(`[weavy-proxy] refreshToken → refreshed OK, email=${extractEmailFromJwt(refreshed.accessToken)}`)
     return { accessToken: refreshed.accessToken, refreshToken: refreshed.refreshToken, email: extractEmailFromJwt(refreshed.accessToken) || undefined, refreshed: true }
   }
-  console.log(`[weavy-proxy] refreshToken → refresh FAILED, cannot proceed with raw refresh token`)
   return { accessToken: token, email: extractEmailFromJwt(token) || undefined, refreshed: false }
 }
 
@@ -132,10 +125,9 @@ router.all('/', (req: Request, res: Response) => {
 
     try {
       const { accessToken, refreshToken, email, refreshed } = await resolveAccessToken(token)
-      console.log(`[weavy-proxy] resolved token: email=${email} refreshed=${refreshed} tokenLen=${accessToken?.length}`)
 
       if (!refreshed && !isJwtToken(token)) {
-        console.log(`[weavy-proxy] WARN: refresh token could not be refreshed, attempting balance check anyway`)
+        console.warn(`[weavy-proxy] WARN: refresh token could not be refreshed`)
       }
 
       const authHeaders: Record<string, string> = {
@@ -156,7 +148,6 @@ router.all('/', (req: Request, res: Response) => {
 
       if (action === 'balance') {
         const credits = await fetchWeavyCredits(accessToken)
-        console.log(`[weavy-proxy] balance → credits=${credits} email=${email}`)
 
         return res.status(200).json({
           ok: true,

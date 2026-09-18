@@ -300,9 +300,10 @@ export default function UGCPage() {
                 <div className="grid grid-cols-4 gap-2">
                   {products.slice(0, 8).map((p) => (
                     <div key={p.id} className="relative aspect-square rounded-lg overflow-hidden border border-border group">
-                      <img src={p.preview} alt="" className="w-full h-full object-cover" />
+                      <img src={p.preview} alt={p.name || `Produk ${p.id}`} className="w-full h-full object-cover" />
                       <button
                         onClick={() => removeProduct(p.id)}
+                        aria-label={`Hapus ${p.name || 'produk'}`}
                         className="absolute top-1 right-1 h-5 w-5 grid place-items-center rounded-full bg-black/70 text-white opacity-0 group-hover:opacity-100 transition"
                       >
                         <X className="h-3 w-3" />
@@ -408,8 +409,8 @@ export default function UGCPage() {
                   <div key={r.id} className="rounded-xl overflow-hidden border border-border bg-black/40">
                     {r.status === 'done' ? (
                       <>
-                        <button onClick={() => setPreviewUrl(r.url)} className="block w-full aspect-[4/5] overflow-hidden cursor-zoom-in">
-                          <img src={r.url} alt="" className="w-full h-full object-cover" />
+                        <button onClick={() => setPreviewUrl(r.url)} aria-label="Lihat hasil UGC full screen" className="block w-full aspect-[4/5] overflow-hidden cursor-zoom-in">
+                          <img src={r.url} alt="Hasil UGC" className="w-full h-full object-cover" />
                         </button>
                         <div className="p-2 flex justify-between">
                           <button onClick={() => handleDownloadSingle(r.url, `ugc-${Date.now()}.jpg`)} className="text-[11px] text-primary hover:underline">Download</button>

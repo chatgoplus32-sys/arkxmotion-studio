@@ -2652,8 +2652,8 @@ export default function ImageToVideoPage() {
                 <input ref={inputRef} type="file" accept="image/*" hidden onChange={(e) => handleFileChange(e.target.files)} />
                 {imgUrl ? (
                   <div className="relative aspect-[9/16] rounded-2xl overflow-hidden border border-border">
-                    <img src={imgUrl} alt="" className="w-full h-full object-cover" />
-                    <button onClick={() => inputRef.current?.click()} className="absolute top-2 right-2 rounded-full px-2 md:px-2.5 py-1 text-xs bg-black/60 text-white flex items-center gap-1">
+                    <img src={imgUrl} alt="Input image-to-video" className="w-full h-full object-cover" />
+                    <button onClick={() => inputRef.current?.click()} aria-label="Ganti gambar input" className="absolute top-2 right-2 rounded-full px-2 md:px-2.5 py-1 text-xs bg-black/60 text-white flex items-center gap-1">
                       <Upload className="h-3 w-3" />
                       <span className="hidden md:inline">Ganti</span>
                     </button>
@@ -3013,7 +3013,7 @@ export default function ImageToVideoPage() {
                     <div className="p-2 flex flex-col gap-1.5">
                       {item.inputImageUrl && (
                         <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                          <img src={item.inputImageUrl} alt="" className="w-6 h-6 rounded object-cover" />
+                          <img src={item.inputImageUrl} alt={item.prompt?.slice(0, 60) || 'Input riwayat video'} className="w-6 h-6 rounded object-cover" />
                           <span className="truncate flex-1">Input: {item.prompt.slice(0, 40)}...</span>
                         </div>
                       )}

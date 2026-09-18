@@ -16,6 +16,9 @@ const RUNNINGHUB_AUDIO_AVATAR_AUDIO_NODE = '215'
 const RUNNINGHUB_VIDEO_UPSCALE_WORKFLOW_ID = '2100537736599035906'
 // AI Photo Enhancer: node 642 = image, node 688 = scale_by
 const RUNNINGHUB_PHOTO_ENHANCE_WORKFLOW_ID = '2100619334354759681'
+// LTX-2.5 LipSync ID: node 23/30 = image, node 148 = audio,
+// node 14 = width, node 15 = height, node 16 = fps
+const RUNNINGHUB_LIPSYNC_WORKFLOW_ID = '2098820058905927682'
 // MC Ultra Fast HD — node ID resmi dari dokumentasi workflow:
 // node 30 = image (LoadImage), node 33 = video (LoadVideo)
 const ULTRA_HD_IMAGE_NODE = '30'
@@ -70,6 +73,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     if (action === 'submit-photo-enhance') {
       return await handleSubmitPhotoEnhance(apiKey, params, res)
+    }
+    if (action === 'submit-lipsync') {
+      return await handleSubmitLipSync(apiKey, params, res)
     }
     if (action === 'query') {
       return await handleQuery(apiKey, params.taskId, res)
@@ -1161,6 +1167,165 @@ async function handleSubmitPhotoEnhance(apiKey: string, params: any, res: Vercel
   }
 
   return res.status(200).json({ ok: false, error: `Semua kandidat field image ditolak. Terakhir: ${lastErr}`, data: lastData })
+}
+
+async function handleSubmitLipSync(apiKey: string, params: any, res: VercelResponse) {
+  const {
+    workflow_id,
+    workflowId,
+    imageBase64,
+    imageFileName = 'photo.jpg',
+    imageMimeType = 'image/jpeg',
+    imageBase64_2,
+    imageFileName2 = 'photo2.jpg',
+    imageMimeType2 = 'image/jpeg',
+    audioBase64,
+    audioFileName = 'audio.mp3',
+    audioMimeType = 'audio/mpeg',
+    width = 1280,
+    height = 720,
+    fps = 30,
+    prompt = '',
+  } = params
+
+  if (!imageBase64) return res.status(200).json({ ok: false, error: 'Missing imageBase64' })
+  if (!audioBase64) return res.status(200).json({ ok: false, error: 'Missing audioBase64' })
+
+  const effectiveWorkflowId = workflow_id || workflowId || RUNNINGHUB_LIPSYNC_WORKFLOW_ID
+  const effWidth = Math.max(64, Math.min(2048, Number(width) || 1280))
+  const effHeight = Math.max(64, Math.min(2048, Number(height) || 720))
+  const effFps = Math.max(1, Math.min(60, Number(fps) || 30))
+
+  console.log(`[runninghub] Uploading image 1 (lipsync)...`)
+  const imageUpload = await rhUpload(apiKey, imageBase64, imageFileName, imageMimeType)
+  console.log(`[runninghub] Image 1 uploaded: ${imageUpload.fileName}`)
+
+  let imageUpload2: { fileName: string; downloadUrl: string } | null = null
+  if (imageBase64_2) {
+    console.log(`[runninghub] Uploading image 2 (lipsync)...`)
+    imageUpload2 = await rhUpload(apiKey, imageBase64_2, imageFileName2, imageMimeType2)
+    console.log(`[runninghub] Image 2 uploaded: ${imageUpload2.fileName}`)
+  }
+
+  console.log(`[runninghub] Uploading audio (lipsync)...`)
+  const audioUpload = await rhUpload(apiKey, audioBase64, audioFileName, audioMimeType)
+  console.log(`[runninghub] Audio uploaded: ${audioUpload.fileName}`)
+
+  const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${effectiveWorkflowId}`
+  const RETRY_DELAY_MS = 10000
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+  const postRun = async (list: any[]) => {
+    const apiRes = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({ nodeInfoList: list, instanceType: 'default', usePersonalQueue: 'false' }),
+    })
+    const rawText = await apiRes.text()
+    console.log(`[runninghub] submit-lipsync ${apiRes.status}:`, rawText.slice(0, 1000))
+    let data: any
+    try { data = JSON.parse(rawText) } catch { data = { raw: rawText } }
+    return {
+      http: apiRes.status,
+      data,
+      raw: rawText.slice(0, 500),
+      code: data.code ?? data.errorCode,
+      msg: String(data.msg || data.errorMessage || data.message || ''),
+      taskId: data.data?.taskId || data.taskId || data.id || data.task_id,
+      status: data.data?.status || data.status || 'QUEUED',
+    }
+  }
+
+  const parseMismatch = (msg: string): { nodeId: string; fieldName: string; reason: string } | null => {
+    const m = /nodeId=([^,\)]+),\s*fieldName=([^,\)]+),\s*reason=([^,\)]+)/.exec(msg)
+    return m ? { nodeId: m[1].trim(), fieldName: m[2].trim(), reason: m[3].trim() } : null
+  }
+
+  // Dok bisa generik — nama field media dicari per-node, entri asing dibuang.
+  // 803 = validasi gratis (task tidak jalan, koin tidak kepakai).
+  const IMG_CANDS = ['image', 'file', 'path', 'filename', 'input', 'src']
+  const AUD_CANDS = ['audio', 'file', 'path', 'filename', 'input', 'src']
+  const nodeField: Record<string, string> = { '23': 'image', '148': 'audio' }
+  if (imageUpload2) nodeField['30'] = 'image'
+
+  const buildList = () => {
+    const list: any[] = [
+      { nodeId: '23', fieldName: nodeField['23'], fieldValue: imageUpload.fileName },
+      ...(imageUpload2 ? [{ nodeId: '30', fieldName: nodeField['30'], fieldValue: imageUpload2.fileName }] : []),
+      { nodeId: '148', fieldName: nodeField['148'], fieldValue: audioUpload.fileName },
+      { nodeId: '14', fieldName: 'value', fieldValue: String(effWidth) },
+      { nodeId: '15', fieldName: 'value', fieldValue: String(effHeight) },
+      { nodeId: '16', fieldName: 'value', fieldValue: String(effFps) },
+    ]
+    return droppedEntries.size === 0 ? list : list.filter((e) => !droppedEntries.has(`${e.nodeId}/${e.fieldName}`))
+  }
+  const droppedEntries = new Set<string>()
+  const MEDIA_NODES = ['23', '30', '148']
+
+  let lastErr = 'Unknown error'
+  let lastData: any = null
+
+  for (let round = 0; round < 18; round++) {
+    const list = buildList()
+    let r: Awaited<ReturnType<typeof postRun>> | null = null
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      console.log(`[runninghub] lipsync round=${round} (attempt ${attempt}/3)`)
+      r = await postRun(list)
+      if (r.taskId || (r.http !== 429 && r.code !== 429 && r.code !== 421 && r.code !== '421')) break
+      if (r.http === 429 || r.code === 429) {
+        return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data: r.data, retryable: true })
+      }
+      console.log(`[runninghub] Queue limit (421), retrying in ${RETRY_DELAY_MS / 1000}s...`)
+      if (attempt < 3) await sleep(RETRY_DELAY_MS)
+    }
+    if (!r) break
+    if (r.taskId) {
+      return res.status(200).json({
+        ok: true,
+        data: {
+          id: r.taskId,
+          taskId: r.taskId,
+          status: r.status,
+          provider: 'runninghub',
+          workflowId: effectiveWorkflowId,
+        },
+      })
+    }
+    if (r.code === 421 || r.code === '421') {
+      return res.status(200).json({ ok: false, error: 'Queue limit reached, coba lagi dalam beberapa menit', data: r.data, retryable: true })
+    }
+    lastErr = r.msg || `Error code: ${r.code}`
+    lastData = r.data
+    const mm = r.code === 803 || r.code === '803' ? parseMismatch(r.msg) : null
+    if (mm && /field_not_found|node_not_found/i.test(mm.reason) && MEDIA_NODES.includes(mm.nodeId)) {
+      if (/node_not_found/i.test(mm.reason)) {
+        return res.status(200).json({ ok: false, error: `Node ${mm.nodeId} tidak ada di workflow ini`, data: r.data })
+      }
+      // field media ditolak → maju ke kandidat berikutnya untuk node itu
+      const cands = mm.nodeId === '148' ? AUD_CANDS : IMG_CANDS
+      const cur = nodeField[mm.nodeId] || ''
+      const nextIdx = cands.indexOf(cur) + 1
+      if (nextIdx <= 0 || nextIdx >= cands.length) {
+        return res.status(200).json({ ok: false, error: `Field ${mm.nodeId} ditolak semua kandidat. Terakhir: ${r.msg}`, data: r.data })
+      }
+      nodeField[mm.nodeId] = cands[nextIdx]
+      console.log(`[runninghub] lipsync node ${mm.nodeId}: "${cur}" ditolak → coba "${cands[nextIdx]}"`)
+      continue
+    }
+    if (mm && /field_not_found|node_not_found/i.test(mm.reason)) {
+      // Entri non-media bermasalah → buang (pakai default workflow), submit ulang
+      console.log(`[runninghub] lipsync buang field ${mm.nodeId}/${mm.fieldName} (${mm.reason}), pakai default workflow`)
+      droppedEntries.add(`${mm.nodeId}/${mm.fieldName}`)
+      continue
+    }
+    const errorMsg = translateRhError(String(r.code ?? ''), r.msg) || r.msg || 'Submit gagal'
+    return res.status(200).json({ ok: false, error: errorMsg, code: r.code, data: r.data })
+  }
+
+  return res.status(200).json({ ok: false, error: `Gagal submit lip-sync. Terakhir: ${lastErr}`, data: lastData })
 }
 
 async function handleMotionControl(apiKey: string, params: any, res: VercelResponse) {  const {

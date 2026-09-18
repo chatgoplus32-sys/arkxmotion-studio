@@ -320,7 +320,7 @@ export default function VirtualTryOnPage() {
               <div className="space-y-1 max-h-40 overflow-y-auto">
                 {history.map((h, i) => (
                   <div key={i} className="flex items-center justify-between gap-2 text-xs py-1 border-b border-border/50">
-                    {h.url && <img src={h.url} alt="" className="h-8 w-8 rounded object-cover shrink-0" />}
+                    {h.url && <img src={h.url} alt={`Riwayat try-on ${i + 1}`} className="h-8 w-8 rounded object-cover shrink-0" />}
                     <span className="text-muted-foreground">{h.time}</span>
                     <span className="text-muted-foreground font-mono truncate">{h.taskId?.slice(0, 15)}...</span>
                     <span className="shrink-0">{h.status}</span>

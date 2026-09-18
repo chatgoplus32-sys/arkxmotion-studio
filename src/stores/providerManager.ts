@@ -324,11 +324,12 @@ function loadKeysFromStorage(): Record<ProviderId, ProviderKey[]> {
   }
   const validIds = Object.keys(defaults) as string[]
 
-  const mergeKnown = (src: any, out: Record<ProviderId, ProviderKey[]>, stale: string[]) => {
+  const mergeKnown = (src: unknown, out: Record<ProviderId, ProviderKey[]>, stale: string[]) => {
     if (!src || typeof src !== 'object') return
-    for (const k of Object.keys(src)) {
+    for (const k of Object.keys(src as Record<string, unknown>)) {
       if (validIds.includes(k)) {
-        if (Array.isArray(src[k])) (out as any)[k] = src[k]
+        const val = (src as Record<string, unknown>)[k]
+        if (Array.isArray(val)) out[k as ProviderId] = val as ProviderKey[]
       } else {
         stale.push(k)
       }

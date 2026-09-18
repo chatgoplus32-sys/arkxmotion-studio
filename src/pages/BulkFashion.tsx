@@ -547,10 +547,11 @@ export default function BulkFashionPage() {
               <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
                 {outfitUrls.map((url, index) => (
                   <div key={index} className="relative aspect-square rounded-lg overflow-hidden border border-border group">
-                    <img src={url} alt="" className="w-full h-full object-cover" />
+                    <img src={url} alt={`Outfit ${index + 1}`} className="w-full h-full object-cover" />
                     <button
                       onClick={() => removeOutfit(index)}
                       title="Hapus outfit"
+                      aria-label={`Hapus outfit ${index + 1}`}
                       className="absolute top-1 right-1 inline-flex items-center gap-1 rounded-full bg-black/70 text-white px-1.5 py-0.5 text-[12px] opacity-0 group-hover:opacity-100"
                     >
                       <Trash2 className="h-3 w-3" /> Hapus
@@ -822,8 +823,9 @@ export default function BulkFashionPage() {
                         onClick={() => setPreviewUrl(result.url)}
                         className={`block w-full ${aspectToClass(ratio)} overflow-hidden cursor-zoom-in`}
                         title="Klik untuk lihat full screen"
+                        aria-label="Lihat hasil fashion full screen"
                       >
-                        <img src={result.url} alt="" className="w-full h-full object-cover" />
+                        <img src={result.url} alt="Hasil bulk fashion" className="w-full h-full object-cover" />
                       </button>
                       <div className="p-2 flex justify-between">
                         <button

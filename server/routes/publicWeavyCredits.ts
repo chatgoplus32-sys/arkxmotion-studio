@@ -2,9 +2,10 @@ import { Router, Request, Response } from 'express'
 
 const router = Router()
 const WEAVY_API = 'https://api.weavy.ai/api'
-const FIREBASE_KEY = 'AIzaSyC-qLy3TFyXMogJPfMkZJ9H_q46hEu1sxI'
+const FIREBASE_KEY = process.env.FIREBASE_KEY || ''
 
 async function refreshWeavyToken(refreshToken: string): Promise<{ accessToken: string; refreshToken: string; expiresIn: number } | null> {
+  if (!FIREBASE_KEY) return null
   try {
     const r = await fetch(`https://securetoken.googleapis.com/v1/token?key=${FIREBASE_KEY}`, {
       method: 'POST',
