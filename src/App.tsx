@@ -53,6 +53,7 @@ const BeliTokenPage = lazyWithRetry(() => import('@/pages/BeliToken'))
 const PluginsPage = lazyWithRetry(() => import('@/pages/Plugins'))
 const VirtualTryOnPage = lazyWithRetry(() => import('@/pages/VirtualTryOn'))
 const TalkingPhotoPage = lazyWithRetry(() => import('@/pages/TalkingPhoto'))
+const H3ImageToVideoPage = lazyWithRetry(() => import('@/pages/H3ImageToVideo'))
 const VideoUpscalerPage = lazyWithRetry(() => import('@/pages/VideoUpscaler'))
 
 function PageLoader() {
@@ -205,6 +206,7 @@ export default function App() {
                         <Route path="/generate/bulk-fashion" element={<BulkFashionPage />} />
                         <Route path="/generate/virtual-tryon" element={<VirtualTryOnPage />} />
                         <Route path="/generate/talking-photo" element={<TalkingPhotoPage />} />
+                        <Route path="/generate/h3-i2v" element={<H3ImageToVideoPage />} />
                         <Route path="/generate/video-upscaler" element={<VideoUpscalerPage />} />
                         <Route path="/generate/ugc" element={<UGCPage />} />
                         <Route path="/generate/upscaler" element={<UpscalerPage />} />

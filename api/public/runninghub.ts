@@ -21,6 +21,9 @@ const RUNNINGHUB_PHOTO_ENHANCE_WORKFLOW_ID = '2100619334354759681'
 const RUNNINGHUB_LIPSYNC_WORKFLOW_ID = '2098820058905927682'
 // FLUX.1 Kontext image edit: node 28 = image, node 31 = text
 const RUNNINGHUB_IMAGE_EDIT_WORKFLOW_ID = '1928844216607129602'
+// MiniMax H3 I2V: node 181 = text, node 143 = image,
+// node 126 = steps, node 146 = aspect_ratio
+const RUNNINGHUB_H3_I2V_WORKFLOW_ID = '2099854999999340546'
 // MC Ultra Fast HD — node ID resmi dari dokumentasi workflow:
 // node 30 = image (LoadImage), node 33 = video (LoadVideo)
 const ULTRA_HD_IMAGE_NODE = '30'
@@ -81,6 +84,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     if (action === 'submit-image-edit') {
       return await handleSubmitImageEdit(apiKey, params, res)
+    }
+    if (action === 'submit-h3-i2v') {
+      return await handleSubmitH3I2V(apiKey, params, res)
     }
     if (action === 'query') {
       return await handleQuery(apiKey, params.taskId, res)
@@ -1458,6 +1464,141 @@ async function handleSubmitImageEdit(apiKey: string, params: any, res: VercelRes
   return res.status(200).json({ ok: false, error: `Gagal submit image-edit. Terakhir: ${lastErr}`, data: lastData })
 }
 
+const H3_ASPECTS = new Set([
+  'original', 'custom', '1:1', '3:2', '4:3', '16:9', '2:3', '3:4', '9:16',
+])
+
+async function handleSubmitH3I2V(apiKey: string, params: any, res: VercelResponse) {
+  const {
+    workflow_id,
+    workflowId,
+    imageBase64,
+    imageFileName = 'photo.jpg',
+    imageMimeType = 'image/jpeg',
+    prompt = '',
+    steps = 8,
+    aspectRatio = 'original',
+  } = params
+
+  if (!imageBase64) return res.status(200).json({ ok: false, error: 'Missing imageBase64' })
+  if (!prompt) return res.status(200).json({ ok: false, error: 'Missing prompt' })
+
+  const effectiveWorkflowId = workflow_id || workflowId || RUNNINGHUB_H3_I2V_WORKFLOW_ID
+  const effSteps = Math.max(1, Math.min(50, Number(steps) || 8))
+  const effAspect = H3_ASPECTS.has(String(aspectRatio)) ? String(aspectRatio) : 'original'
+
+  console.log(`[runninghub] Uploading image (h3-i2v)...`)
+  const imageUpload = await rhUpload(apiKey, imageBase64, imageFileName, imageMimeType)
+  console.log(`[runninghub] Image uploaded: ${imageUpload.fileName}`)
+
+  const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${effectiveWorkflowId}`
+  const RETRY_DELAY_MS = 10000
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+  const postRun = async (list: any[]) => {
+    const apiRes = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({ nodeInfoList: list, instanceType: 'default', usePersonalQueue: 'false' }),
+    })
+    const rawText = await apiRes.text()
+    console.log(`[runninghub] submit-h3-i2v ${apiRes.status}:`, rawText.slice(0, 1000))
+    let data: any
+    try { data = JSON.parse(rawText) } catch { data = { raw: rawText } }
+    return {
+      http: apiRes.status,
+      data,
+      raw: rawText.slice(0, 500),
+      code: data.code ?? data.errorCode,
+      msg: String(data.msg || data.errorMessage || data.message || ''),
+      taskId: data.data?.taskId || data.taskId || data.id || data.task_id,
+      status: data.data?.status || data.status || 'QUEUED',
+    }
+  }
+
+  const parseMismatch = (msg: string): { nodeId: string; fieldName: string; reason: string } | null => {
+    const m = /nodeId=([^,\)]+),\s*fieldName=([^,\)]+),\s*reason=([^,\)]+)/.exec(msg)
+    return m ? { nodeId: m[1].trim(), fieldName: m[2].trim(), reason: m[3].trim() } : null
+  }
+
+  const IMG_CANDS = ['image', 'file', 'path', 'filename', 'input', 'src']
+  const TXT_CANDS = ['text', 'prompt', 'positive']
+  const nodeField: Record<string, string> = { '143': 'image', '181': 'text' }
+  const droppedEntries = new Set<string>()
+  const buildList = () => {
+    const list: any[] = [
+      { nodeId: '181', fieldName: nodeField['181'], fieldValue: String(prompt) },
+      { nodeId: '143', fieldName: nodeField['143'], fieldValue: imageUpload.fileName },
+      { nodeId: '126', fieldName: 'steps', fieldValue: String(effSteps) },
+      { nodeId: '146', fieldName: 'aspect_ratio', fieldValue: effAspect },
+    ]
+    return droppedEntries.size === 0 ? list : list.filter((e) => !droppedEntries.has(`${e.nodeId}/${e.fieldName}`))
+  }
+
+  let lastErr = 'Unknown error'
+  let lastData: any = null
+
+  for (let round = 0; round < 14; round++) {
+    const list = buildList()
+    let r: Awaited<ReturnType<typeof postRun>> | null = null
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      console.log(`[runninghub] h3-i2v round=${round} (attempt ${attempt}/3)`)
+      r = await postRun(list)
+      if (r.taskId || (r.http !== 429 && r.code !== 429 && r.code !== 421 && r.code !== '421')) break
+      if (r.http === 429 || r.code === 429) {
+        return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data: r.data, retryable: true })
+      }
+      console.log(`[runninghub] Queue limit (421), retrying in ${RETRY_DELAY_MS / 1000}s...`)
+      if (attempt < 3) await sleep(RETRY_DELAY_MS)
+    }
+    if (!r) break
+    if (r.taskId) {
+      return res.status(200).json({
+        ok: true,
+        data: {
+          id: r.taskId,
+          taskId: r.taskId,
+          status: r.status,
+          provider: 'runninghub',
+          workflowId: effectiveWorkflowId,
+        },
+      })
+    }
+    if (r.code === 421 || r.code === '421') {
+      return res.status(200).json({ ok: false, error: 'Queue limit reached, coba lagi dalam beberapa menit', data: r.data, retryable: true })
+    }
+    lastErr = r.msg || `Error code: ${r.code}`
+    lastData = r.data
+    const mm = r.code === 803 || r.code === '803' ? parseMismatch(r.msg) : null
+    if (mm && /field_not_found|node_not_found/i.test(mm.reason) && ['143', '181'].includes(mm.nodeId)) {
+      if (/node_not_found/i.test(mm.reason)) {
+        return res.status(200).json({ ok: false, error: `Node ${mm.nodeId} tidak ada di workflow ini`, data: r.data })
+      }
+      const cands = mm.nodeId === '181' ? TXT_CANDS : IMG_CANDS
+      const cur = nodeField[mm.nodeId] || ''
+      const nextIdx = cands.indexOf(cur) + 1
+      if (nextIdx <= 0 || nextIdx >= cands.length) {
+        return res.status(200).json({ ok: false, error: `Field ${mm.nodeId} ditolak semua kandidat. Terakhir: ${r.msg}`, data: r.data })
+      }
+      nodeField[mm.nodeId] = cands[nextIdx]
+      console.log(`[runninghub] h3-i2v node ${mm.nodeId}: "${cur}" ditolak → coba "${cands[nextIdx]}"`)
+      continue
+    }
+    if (mm && /field_not_found|node_not_found/i.test(mm.reason)) {
+      console.log(`[runninghub] h3-i2v buang field ${mm.nodeId}/${mm.fieldName} (${mm.reason}), pakai default workflow`)
+      droppedEntries.add(`${mm.nodeId}/${mm.fieldName}`)
+      continue
+    }
+    const errorMsg = translateRhError(String(r.code ?? ''), r.msg) || r.msg || 'Submit gagal'
+    return res.status(200).json({ ok: false, error: errorMsg, code: r.code, data: r.data })
+  }
+
+  return res.status(200).json({ ok: false, error: `Gagal submit h3-i2v. Terakhir: ${lastErr}`, data: lastData })
+}
+
 async function handleMotionControl(apiKey: string, params: any, res: VercelResponse) {  const {
     workflow_id,
     imageBase64,
@@ -1602,6 +1743,27 @@ async function handleQuery(apiKey: string, taskId: string, res: VercelResponse) 
   }
 
   if (rhCode !== undefined && rhCode !== 0 && rhCode !== '0' && rhCode !== '') {
+    const msgStr = String(errorMsg || '')
+    // RunningHub mengembalikan error generik berbahasa Mandarin saat task gagal di tengah jalan,
+    // mis. "工作流运行失败" (= workflow run failed). Ini BUKAN network error — task sudah
+    // dibuat & dijalankan lalu gagal di server. Kembalikan sebagai FAILED agar frontend
+    // langsung berhenti (fatal) alih-alih retry 10x selama ±3 menit.
+    if (/工作流运行失败|运行失败|workflow.*fail|task.*fail|执行失败/i.test(msgStr)) {
+      return res.status(200).json({
+        ok: true,
+        data: {
+          id: taskId,
+          taskId,
+          status: 'FAILED',
+          progress: 0,
+          videoUrl: null,
+          imageUrl: null,
+          code: rhCode,
+          error: translateRhError(String(rhCode), errorMsg),
+          provider: 'runninghub',
+        },
+      })
+    }
     return res.status(200).json({ ok: false, error: translateRhError(String(rhCode), errorMsg) || errorMsg || `Error code: ${rhCode}`, data })
   }
 
@@ -1674,8 +1836,17 @@ function translateRhError(code: string, msg?: string): string {
     '1004': 'Workflow tidak ditemukan.',
     '5101': 'Gagal membuat task, coba lagi.',
   }
-  if (msg && /NOT_ENOUGH_POWER|balance|insufficient|coin/i.test(msg)) {
+  const msgStr = String(msg || '')
+  // Terjemahkan pesan Mandarin generik dari RunningHub agar user paham.
+  if (/工作流运行失败|运行失败|workflow.*fail/i.test(msgStr)) {
+    return 'Workflow RunningHub gagal dijalankan (工作流运行失败). Task sudah dibuat tapi error di server — biasanya karena: (1) gambar input ditolak model (coba resolusi/format lain, min. 512px, JPG), (2) prompt terlalu pendek/tidak didukung (coba prompt Inggris lebih deskriptif, mis. "convert to cartoon style, keep face"), (3) workflow Kontext sedang error/overload, atau (4) koin RH habis di tengah jalan. Coba lagi, ganti gambar/prompt, atau ganti API key.'
+  }
+  if (/NOT_ENOUGH_POWER|balance|insufficient|coin/i.test(msgStr)) {
     return 'Saldo/kuota kerja tidak cukup. Silakan top up RH coins di akun RunningHub.'
+  }
+  // Pesan Mandarin lain yang tidak dikenal — sertakan arti generik + pesan asli.
+  if (/[\u4e00-\u9fff]/.test(msgStr)) {
+    return `RunningHub error: ${msgStr} (pesan asli dari server, coba lagi atau ganti gambar/prompt)`
   }
   return map[code] || msg || `Error RunningHub (${code})`
 }

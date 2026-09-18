@@ -27,6 +27,11 @@ export const RUNNINGHUB_LIPSYNC_WORKFLOW_ID = '2098820058905927682'
 // node 28 = image (foto), node 31 = text (perintah edit)
 export const RUNNINGHUB_IMAGE_EDIT_WORKFLOW_ID = '1928844216607129602'
 
+// MiniMax H3 Ultra-HD Fast 8-Step I2V:
+// node 181 = text (prompt), node 143 = image,
+// node 126 = steps, node 146 = aspect_ratio
+export const RUNNINGHUB_H3_I2V_WORKFLOW_ID = '2099854999999340546'
+
 // VOSR2 Video Upscale 2K (peningkatan bertingkat):
 // node 1 = video + frame_load_cap, node 21 = cfg/scheduler/steps,
 // node 13 = save_output
@@ -494,6 +499,39 @@ export async function submitRunningHubImageEdit(params: ImageEditParams): Promis
   }
 }
 
+export interface H3I2VParams {
+  imageFile: File
+  prompt: string
+  steps?: number
+  aspectRatio?: string
+  apiKey?: string
+  workflowId?: string
+}
+
+export async function submitRunningHubH3I2V(params: H3I2VParams): Promise<MotionControlResult> {
+  const workflowId = params.workflowId || RUNNINGHUB_H3_I2V_WORKFLOW_ID
+
+  const imageBase64 = await fileToBase64(params.imageFile)
+
+  const result = await runninghubProxy('submit-h3-i2v', {
+    workflow_id: workflowId,
+    imageBase64,
+    imageFileName: params.imageFile.name,
+    imageMimeType: params.imageFile.type || 'image/jpeg',
+    prompt: params.prompt,
+    steps: params.steps ?? 8,
+    aspectRatio: params.aspectRatio || 'original',
+  }, params.apiKey)
+
+  return {
+    id: result.id || result.taskId,
+    taskId: result.taskId || result.id,
+    status: result.status || 'QUEUED',
+    provider: result.provider || 'runninghub',
+    workflowId: result.workflowId || workflowId,
+  }
+}
+
 export async function pollRunningHubTask(
   taskId: string,
   onProgress?: (status: string, progress: number) => void,
@@ -536,13 +574,19 @@ export async function pollRunningHubTask(
           // Sertakan kode RunningHub kalau ada (mis. 1501 = verifikasi konten).
           const detail = result.error || result.errorMessage || 'Task failed'
           const code = result.code ? ` [${result.code}]` : ''
-          throw fatal(`Task gagal${code}: ${typeof detail === 'string' ? detail : JSON.stringify(detail)}`)
+          const detailStr = typeof detail === 'string' ? detail : JSON.stringify(detail)
+          throw fatal(translateWorkflowError(detailStr, code))
         }
 
         onProgress?.(status || 'RUNNING', Math.min(progress, 99))
         await new Promise((r) => setTimeout(r, POLL_INTERVAL))
       } catch (err: any) {
         if (err?.fatalTaskFailure) throw err
+        // Kegagalan workflow di server (mis. "工作流运行失败") bukan network error —
+        // langsung fatal agar tidak retry 10x (±3 menit) dan tidak merusak key rotation.
+        if (isWorkflowFailure(err?.message)) {
+          throw translateWorkflowErrorAsFatal(err.message)
+        }
         consecutiveErrors++
         console.warn(`[runninghub] Poll error (${consecutiveErrors}/${MAX_RETRIES}):`, err.message)
 
@@ -558,4 +602,24 @@ export async function pollRunningHubTask(
   }
 
   return poll()
+}
+
+function isWorkflowFailure(msg?: string): boolean {
+  if (!msg) return false
+  return /工作流运行失败|运行失败|workflow.*fail|task.*fail|执行失败/i.test(msg)
+}
+
+function translateWorkflowError(detail: string, code: string): string {
+  if (isWorkflowFailure(detail)) {
+    return `Task gagal${code}: Workflow RunningHub gagal dijalankan. Penyebab umum: (1) gambar input ditolak model — coba JPG ≥512px, bukan hasil kompres terlalu kecil; (2) prompt terlalu pendek — coba Inggris deskriptif mis. "convert to cartoon style, keep face identity"; (3) workflow Kontext error/overload — coba lagi 1-2 menit; (4) koin RH habis. Detail asli: ${detail}`
+  }
+  return `Task gagal${code}: ${detail}`
+}
+
+function translateWorkflowErrorAsFatal(rawMessage: string): Error {
+  const e: any = new Error(
+    `Workflow RunningHub gagal dijalankan (bukan network error, langsung berhenti agar tidak buang 3 menit retry). Penyebab umum: gambar ditolak model / prompt terlalu pendek / workflow overload / koin habis. Coba: ganti ke JPG ≥512px, prompt Inggris deskriptif, atau retry. Detail asli: ${rawMessage}`,
+  )
+  e.fatalTaskFailure = true
+  return e
 }

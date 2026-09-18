@@ -65,11 +65,44 @@ export function removeActiveTask(taskId: string) {
   saveActiveTasks(getActiveTasks().filter((t) => t.taskId !== taskId))
 }
 
-export function getResults(): CompletedResult[] { return readJson(RESULTS_KEY, []) }
+function isBlobUrl(url?: string | null): boolean {
+  return !!url && url.startsWith('blob:')
+}
+
+function isPersistableUrl(url?: string | null): boolean {
+  return !!url && (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/'))
+}
+
+export function getResults(): CompletedResult[] {
+  const raw = readJson(RESULTS_KEY, [] as CompletedResult[])
+  if (!Array.isArray(raw)) return []
+  // Migrasi: blob: URL hanya hidup di satu sesi dokumen — setelah reload/revoke
+  // selalu jadi ERR_FILE_NOT_FOUND. Buang dari storage agar gallery tak request mati.
+  const cleaned = raw.filter((r) => r && isPersistableUrl(r.url))
+  let mutated = false
+  const normalized = cleaned.map((r) => {
+    if (r.inputImageUrl && !isPersistableUrl(r.inputImageUrl)) {
+      mutated = true
+      const { inputImageUrl: _drop, ...rest } = r
+      return rest as CompletedResult
+    }
+    return r
+  })
+  if (normalized.length !== raw.length || mutated) {
+    try { saveResults(normalized) } catch {}
+  }
+  return normalized
+}
 function saveResults(r: CompletedResult[]) { writeJson(RESULTS_KEY, r.slice(0, 50)) }
 
 export function addResult(result: CompletedResult) {
-  const r = getResults(); r.unshift(result); saveResults(r)
+  // Jangan persist blob: URL — hanya valid di sesi ini, mati setelah reload.
+  if (!isPersistableUrl(result.url)) return
+  const clean: CompletedResult = { ...result }
+  if (clean.inputImageUrl && !isPersistableUrl(clean.inputImageUrl)) {
+    delete (clean as any).inputImageUrl
+  }
+  const r = readJson(RESULTS_KEY, [] as CompletedResult[]); r.unshift(clean); saveResults(r)
 }
 
 export function clearResults() { localStorage.removeItem(RESULTS_KEY) }

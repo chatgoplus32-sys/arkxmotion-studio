@@ -8,7 +8,7 @@ import { useToastStore } from '@/stores/toastStore'
 import { withTokenRotation } from '@/lib/tokenRotation'
 import { submitRunningHubImageEdit, pollRunningHubTask } from '@/lib/runninghub'
 import { normalizeImage } from '@/lib/roboneo'
-import { addBgLog, getLogs, addResult, removeResult, startBackgroundPolling, persistResultToR2 } from '@/lib/backgroundTasks'
+import { addBgLog, getLogs, addResult, removeResult, startBackgroundPolling, persistResultToR2, clearLogs as clearBgLogs } from '@/lib/backgroundTasks'
 
 type EditProvider = 'riverside' | 'nexabot' | 'runninghub'
 
@@ -61,10 +61,20 @@ interface GalleryItem {
 const GALLERY_KEY = 'arkxmotion.editimage.gallery'
 
 function loadGallery(): GalleryItem[] {
-  try { return JSON.parse(localStorage.getItem(GALLERY_KEY) || '[]') } catch { return [] }
+  try {
+    const raw = JSON.parse(localStorage.getItem(GALLERY_KEY) || '[]')
+    if (!Array.isArray(raw)) return []
+    // blob: URL mati setelah reload → buang agar tak ERR_FILE_NOT_FOUND
+    const cleaned = raw.filter((g: any) => g && typeof g.url === 'string' && (g.url.startsWith('http://') || g.url.startsWith('https://') || g.url.startsWith('/')))
+    if (cleaned.length !== raw.length) {
+      try { localStorage.setItem(GALLERY_KEY, JSON.stringify(cleaned.slice(0, 200))) } catch {}
+    }
+    return cleaned
+  } catch { return [] }
 }
 function saveGallery(items: GalleryItem[]) {
-  localStorage.setItem(GALLERY_KEY, JSON.stringify(items.slice(0, 200)))
+  const persistable = items.filter((g) => g && typeof g.url === 'string' && (g.url.startsWith('http://') || g.url.startsWith('https://') || g.url.startsWith('/')))
+  localStorage.setItem(GALLERY_KEY, JSON.stringify(persistable.slice(0, 200)))
 }
 
 export default function EditImagePage() {
@@ -106,7 +116,10 @@ export default function EditImagePage() {
   const handleFileChange = (files: FileList | null) => {
     const file = files?.[0]
     if (file) {
-      setImgUrl(URL.createObjectURL(file))
+      setImgUrl((prev) => {
+        if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev)
+        return URL.createObjectURL(file)
+      })
       setImgFile(file)
     }
   }
@@ -125,6 +138,7 @@ export default function EditImagePage() {
 
     setGenerating(true)
     setLogs([])
+    clearBgLogs()
     addLog(`🚀 Mulai generate gambar`, 'info')
     addLog(`   Provider: ${PROVIDER_LABEL[provider]}`, 'debug')
     addLog(`   Model: ${currentModel.label}`, 'debug')
@@ -382,7 +396,8 @@ export default function EditImagePage() {
 
   const clearLogs = () => {
     setLogs([])
-    addToast('Log dihapus', 'info')
+    clearBgLogs()
+    addToast('Log dihapus permanen', 'info')
   }
 
   const downloadItem = async (item: GalleryItem) => {

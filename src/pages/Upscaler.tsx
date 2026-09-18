@@ -66,10 +66,20 @@ interface GalleryItem {
 const GALLERY_KEY = 'arkxmotion.upscaler.gallery'
 
 function loadGallery(): GalleryItem[] {
-  try { return JSON.parse(localStorage.getItem(GALLERY_KEY) || '[]') } catch { return [] }
+  try {
+    const raw = JSON.parse(localStorage.getItem(GALLERY_KEY) || '[]')
+    if (!Array.isArray(raw)) return []
+    // blob: URL (preview) mati setelah reload → buang agar tak ERR_FILE_NOT_FOUND
+    const cleaned = raw.filter((g: any) => g && typeof (g.url || g.preview) === 'string' && String(g.url || g.preview).startsWith('http'))
+    if (cleaned.length !== raw.length) {
+      try { localStorage.setItem(GALLERY_KEY, JSON.stringify(cleaned.slice(0, 200))) } catch {}
+    }
+    return cleaned
+  } catch { return [] }
 }
 function saveGallery(items: GalleryItem[]) {
-  localStorage.setItem(GALLERY_KEY, JSON.stringify(items.slice(0, 200)))
+  const persistable = items.filter((g: any) => g && typeof (g.url || g.preview) === 'string' && String(g.url || g.preview).startsWith('http'))
+  localStorage.setItem(GALLERY_KEY, JSON.stringify(persistable.slice(0, 200)))
 }
 
 const HANDOFF_KEY = 'upscaler:handoff'

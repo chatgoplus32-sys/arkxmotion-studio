@@ -36,17 +36,21 @@ function collectAssets(): AssetItem[] {
   const out: AssetItem[] = []
   for (const item of readJsonArray('arkxmotion.upscaler.gallery') as Array<{ url?: string; preview?: string; sourceName?: string; createdAt?: string }>) {
     const url = item.url || item.preview
-    if (!url) continue
+    if (!url || url.startsWith('blob:')) continue
     out.push({ id: `upscaler-${url}`, url, kind: 'image', name: item.sourceName || 'Upscaler', createdAt: item.createdAt })
   }
   for (const item of readJsonArray('arkxmotion.editimage.gallery') as Array<{ url?: string; createdAt?: string }>) {
-    if (!item.url) continue
+    if (!item.url || item.url.startsWith('blob:')) continue
     out.push({ id: `edit-${item.url}`, url: item.url, kind: 'image', name: 'EditImage', createdAt: item.createdAt })
   }
   for (const item of readJsonArray('createpulse.results') as Array<{ videoUrl?: string; url?: string; prompt?: string; createdAt?: string }>) {
     const url = item.videoUrl || item.url
-    if (!url) continue
+    if (!url || (typeof url === 'string' && (url as string).startsWith('blob:'))) continue
     out.push({ id: `i2v-${url}`, url, kind: 'video', name: item.prompt?.slice(0, 40) || 'ImageToVideo', createdAt: item.createdAt })
+  }
+  for (const item of readJsonArray('arkxmotion_results') as Array<{ url?: string; prompt?: string; date?: string }>) {
+    if (!item.url || item.url.startsWith('blob:')) continue
+    out.push({ id: `bg-${item.url}`, url: item.url, kind: item.url.match(/\.(mp4|webm|mov)$/i) ? 'video' : 'image', name: item.prompt?.slice(0, 40) || 'Result', createdAt: item.date })
   }
   return out.slice(0, 200)
 }

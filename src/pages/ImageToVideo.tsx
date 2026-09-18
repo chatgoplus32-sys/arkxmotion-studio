@@ -109,9 +109,12 @@ export default function ImageToVideoPage() {
       const saved = localStorage.getItem('createpulse.results')
       if (saved) {
         const parsed: string[] = JSON.parse(saved)
-        return parsed.map((url) =>
-          url.startsWith('http') ? url : `https://createpulse.online${url}`
-        )
+        // blob: URL mati setelah reload → buang agar tak request ERR_FILE_NOT_FOUND
+        return parsed
+          .filter((url) => typeof url === 'string' && (url.startsWith('http') || url.startsWith('/')))
+          .map((url) =>
+            url.startsWith('http') ? url : `https://createpulse.online${url}`
+          )
       }
       return []
     } catch {
@@ -200,7 +203,18 @@ export default function ImageToVideoPage() {
   }, [fetchMaintenance])
 
   useEffect(() => {
-    localStorage.setItem('createpulse.results', JSON.stringify(results))
+    // Jangan persist blob: URL — hanya hidup di sesi dokumen ini
+    const persistable = results.filter((u) => typeof u === 'string' && (u.startsWith('http') || u.startsWith('/')))
+    if (persistable.length !== results.length) {
+      try {
+        const saved = JSON.parse(localStorage.getItem('createpulse.results') || '[]')
+        if (Array.isArray(saved) && saved.some((u: any) => typeof u === 'string' && u.startsWith('blob:'))) {
+          localStorage.setItem('createpulse.results', JSON.stringify(persistable))
+          return
+        }
+      } catch {}
+    }
+    localStorage.setItem('createpulse.results', JSON.stringify(persistable))
   }, [results])
 
   useEffect(() => {
@@ -391,7 +405,10 @@ export default function ImageToVideoPage() {
   const handleFileChange = (files: FileList | null) => {
     const file = files?.[0]
     if (file) {
-      setImgUrl(URL.createObjectURL(file))
+      setImgUrl((prev) => {
+        if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev)
+        return URL.createObjectURL(file)
+      })
       setImgFile(file)
     }
   }
@@ -400,7 +417,10 @@ export default function ImageToVideoPage() {
     const file = files?.[0]
     if (file) {
       setStartFrameFile(file)
-      setStartFrameUrl(URL.createObjectURL(file))
+      setStartFrameUrl((prev) => {
+        if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev)
+        return URL.createObjectURL(file)
+      })
     }
   }
 
@@ -408,7 +428,10 @@ export default function ImageToVideoPage() {
     const file = files?.[0]
     if (file) {
       setEndFrameFile(file)
-      setEndFrameUrl(URL.createObjectURL(file))
+      setEndFrameUrl((prev) => {
+        if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev)
+        return URL.createObjectURL(file)
+      })
     }
   }
 
@@ -423,7 +446,11 @@ export default function ImageToVideoPage() {
 
   const removeRef = (index: number) => {
     setRefFiles((prev) => prev.filter((_, i) => i !== index))
-    setRefUrls((prev) => prev.filter((_, i) => i !== index))
+    setRefUrls((prev) => {
+      const target = prev[index]
+      if (target && target.startsWith('blob:')) URL.revokeObjectURL(target)
+      return prev.filter((_, i) => i !== index)
+    })
   }
 
   const handleVideoRefChange = (files: FileList | null) => {
@@ -461,14 +488,18 @@ export default function ImageToVideoPage() {
       ratio,
       duration: currentQuality?.duration,
       credits: totalCredits,
-      inputImageUrl: imgUrl || undefined,
+      // blob: URL preview input mati setelah reload — jangan simpan
+      inputImageUrl: imgUrl && !imgUrl.startsWith('blob:') ? imgUrl : undefined,
     }
+    // addResult otomatis skip blob: URL (lihat backgroundTasks) agar tak jadi ERR_FILE_NOT_FOUND
     addResult(item)
     refreshGallery()
     persistResultToR2(item.id, url)
   }
 
   const filteredGallery = galleryItems.filter((item) => {
+    // blob: URL dari sesi lama sudah mati — jangan render agar tak ERR_FILE_NOT_FOUND
+    if (!item.url || item.url.startsWith('blob:')) return false
     if (galleryFilter !== 'all' && item.provider !== galleryFilter) return false
     if (gallerySearch && !item.prompt.toLowerCase().includes(gallerySearch.toLowerCase()) && !(item.model || '').toLowerCase().includes(gallerySearch.toLowerCase())) return false
     return true
@@ -893,7 +924,7 @@ export default function ImageToVideoPage() {
             ratio,
             duration: currentQuality?.duration,
             credits: totalCredits,
-            inputImageUrl: imgUrl || undefined,
+            inputImageUrl: imgUrl && !imgUrl.startsWith('blob:') ? imgUrl : undefined,
             taskUrl: rotation.result!.roomId ? `https://www.roboneo.com/team_studio?room_id=${rotation.result!.roomId}` : undefined,
           })
           persistResultToR2(`roboneo-${Date.now()}`, rotation.result!.videoUrl)
@@ -1327,7 +1358,7 @@ export default function ImageToVideoPage() {
             ratio,
             duration: currentQuality?.duration,
             credits: totalCredits,
-            inputImageUrl: imgUrl || undefined,
+            inputImageUrl: imgUrl && !imgUrl.startsWith('blob:') ? imgUrl : undefined,
           })
           persistResultToR2(`leonardo-${Date.now()}`, rotation.result!)
           refreshGallery()
@@ -3011,9 +3042,9 @@ export default function ImageToVideoPage() {
                   <div className="relative rounded-xl border border-border bg-black/40">
                     <VideoPlayer directUrl={directUrl} proxyFallback={proxyFallback} rawUrl={item.url} ratio={item.ratio} />
                     <div className="p-2 flex flex-col gap-1.5">
-                      {item.inputImageUrl && (
+                      {item.inputImageUrl && !item.inputImageUrl.startsWith('blob:') && (
                         <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                          <img src={item.inputImageUrl} alt={item.prompt?.slice(0, 60) || 'Input riwayat video'} className="w-6 h-6 rounded object-cover" />
+                          <img src={item.inputImageUrl} alt={item.prompt?.slice(0, 60) || 'Input riwayat video'} className="w-6 h-6 rounded object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
                           <span className="truncate flex-1">Input: {item.prompt.slice(0, 40)}...</span>
                         </div>
                       )}
