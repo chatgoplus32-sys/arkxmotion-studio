@@ -3,7 +3,14 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Label, Textarea } from '@/components/ui'
 import { Video, Loader2, Play, Key } from 'lucide-react'
 import { useProviderManager } from '@/stores/providerManager'
+import { useToastStore } from '@/stores/toastStore'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
+
+interface LogEntry {
+  time: string
+  msg: string
+  level: 'info' | 'warn' | 'error' | 'success'
+}
 
 interface FramiaSkill {
   id: string
@@ -25,6 +32,7 @@ const FRAMIA_API = '/framia/video/api'
 
 export default function FramiaPage() {
   const { keys } = useProviderManager()
+  const addToast = useToastStore((s) => s.addToast)
   const [skills, setSkills] = useState<FramiaSkill[]>([])
   const [templates, setTemplates] = useState<FramiaTemplate[]>([])
   const [credits, setCredits] = useState<number | null>(null)
@@ -34,8 +42,14 @@ export default function FramiaPage() {
   const [prompt, setPrompt] = useState('')
   const [generating, setGenerating] = useState(false)
   const [results, setResults] = useState<string[]>([])
+  const [logs, setLogs] = useState<LogEntry[]>([])
 
   const apiKey = keys.framia?.[0]?.key || ''
+
+  const addLog = (msg: string, level: LogEntry['level'] = 'info') => {
+    const time = new Date().toLocaleTimeString()
+    setLogs((prev) => [...prev, { time, msg, level }].slice(-200))
+  }
 
   const loadFramiaData = useCallback(async () => {
     if (!apiKey) return
@@ -65,7 +79,7 @@ export default function FramiaPage() {
         setTemplates(allTemplates)
       }
     } catch (err) {
-      console.error('Failed to load Framia data:', err)
+      addLog(`Gagal memuat data Framia: ${err instanceof Error ? err.message : String(err)}`, 'error')
     } finally {
       setLoading(false)
     }
@@ -79,10 +93,12 @@ export default function FramiaPage() {
     if (!apiKey) return
     setGenerating(true)
     setSelectedSkill(skill)
+    addLog(`🚀 Run skill: ${skill.name} — "${prompt.trim().slice(0, 80)}"`)
     try {
       const rotation = await withTokenRotation<string>(
         'framia',
-        async (token) => {
+        async (token, keyInfo) => {
+          addLog(`🔑 Key: ${keyInfo?.name || keyInfo?.id || 'default'}`)
           const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
           const res = await fetch(`${FRAMIA_API}/workflows/runs`, {
             method: 'POST',
@@ -96,14 +112,20 @@ export default function FramiaPage() {
           const data = await res.json()
           const runId = data.run_id || data.id
           if (!runId) throw new Error('No run ID returned')
+          addLog(`Run ID: ${runId}`, 'success')
 
           const pollHeaders = { Authorization: `Bearer ${token}` }
           for (let i = 0; i < 120; i++) {
             await new Promise(r => setTimeout(r, 3000))
             const pollRes = await fetch(`${FRAMIA_API}/workflows/runs/${runId}/nodes`, { headers: pollHeaders })
-            if (!pollRes.ok) continue
+            if (!pollRes.ok) {
+              addLog(`Poll #${i + 1}: HTTP ${pollRes.status} (retry)`, 'warn')
+              continue
+            }
             const pollData = await pollRes.json()
             const nodes = pollData.nodes || []
+            const doneCount = nodes.filter((n: any) => n.status === 'completed').length
+            if (i % 10 === 0) addLog(`Poll #${i + 1}: ${doneCount}/${nodes.length} nodes completed`)
             const outputNode = nodes.find((n: any) => n.output_url || n.status === 'completed')
             if (outputNode?.output_url) {
               return outputNode.output_url
@@ -116,11 +138,12 @@ export default function FramiaPage() {
         },
         {
           onKeySwitch: (from, to, attempt) => {
-            console.log(`[framia] Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`)
+            const msg = `🔄 Token invalid, pindah ke key #${attempt}: "${from.name}" → "${to.name}"`
+            addLog(msg, 'warn')
           },
           onError: (err, key) => {
             if (detectTokenError('framia', err)) {
-              console.log(`[framia] Key "${key.name}" is invalid: ${err.message}`)
+              addLog(`⚠️ Key "${key.name}" bermasalah: ${err.message}`, 'warn')
             }
           },
         }
@@ -128,6 +151,8 @@ export default function FramiaPage() {
 
       if (rotation.ok && rotation.result) {
         setResults(prev => [rotation.result!, ...prev])
+        addLog(`✅ Selesai: ${rotation.result!.slice(0, 80)}...`, 'success')
+        addToast('✅ Framia selesai!', 'success')
         // Refresh credits after success
         try {
           const headers = { Authorization: `Bearer ${apiKey}` }
@@ -137,9 +162,13 @@ export default function FramiaPage() {
             setCredits(creditsData.credits ?? creditsData.balance ?? null)
         }
       } catch (e) { console.warn('[Framia] Failed to refresh credits:', e) }
+    } else {
+      throw new Error(rotation.error || 'Run failed')
     }
   } catch (err: any) {
-      console.error('Run failed:', err)
+      const msg = err.message || 'Run failed'
+      addLog(`❌ ${msg}`, 'error')
+      addToast(`❌ ${msg}`, 'error')
       // Refresh credits after failure
       try {
         const headers = { Authorization: `Bearer ${apiKey}` }
@@ -248,6 +277,25 @@ export default function FramiaPage() {
                 {results.map((url, i) => (
                   <div key={i} className="rounded-xl overflow-hidden border border-border bg-black/40">
                     <video src={url} controls playsInline className="w-full aspect-[9/16] object-cover bg-black" />
+                  </div>
+                ))}
+              </div>
+            </Section>
+          )}
+
+          {(generating || logs.length > 0) && (
+            <Section title="🧾 Log Detail" sub={`Total ${logs.length} entri`}>
+              <div className="rounded-xl border border-border/60 bg-black/40 p-2 max-h-64 overflow-y-auto overflow-x-hidden text-[11px] font-mono min-w-0">
+                {logs.length === 0 ? (
+                  <div className="text-muted-foreground px-1 py-2">Memproses...</div>
+                ) : logs.map((log, i) => (
+                  <div key={i} className={`break-all min-w-0 px-1 py-0.5 ${
+                    log.level === 'error' ? 'text-red-400' :
+                    log.level === 'warn' ? 'text-amber-400' :
+                    log.level === 'success' ? 'text-emerald-400' :
+                    'text-muted-foreground'
+                  }`}>
+                    [{log.time}] {log.msg}
                   </div>
                 ))}
               </div>

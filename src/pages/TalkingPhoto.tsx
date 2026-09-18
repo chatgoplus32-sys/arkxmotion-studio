@@ -14,6 +14,12 @@ interface HistoryItem {
   url?: string
 }
 
+interface LogEntry {
+  time: string
+  msg: string
+  level: 'info' | 'warn' | 'error' | 'success'
+}
+
 function getStoredProviderKey(provider: string): string | null {
   if (typeof window === 'undefined') return null
   try {
@@ -42,11 +48,17 @@ export default function TalkingPhotoPage() {
   const [progress, setProgress] = useState(0)
   const [history, setHistory] = useState<HistoryItem[]>([])
   const [timedOutTaskId, setTimedOutTaskId] = useState<string | null>(null)
+  const [logs, setLogs] = useState<LogEntry[]>([])
 
   const photoPickerRef = useRef<HTMLInputElement | null>(null)
   const audioPickerRef = useRef<HTMLInputElement | null>(null)
 
   const apiKey = getStoredProviderKey('runninghub')
+
+  const addLog = (msg: string, level: LogEntry['level'] = 'info') => {
+    const time = new Date().toLocaleTimeString('id-ID')
+    setLogs((prev) => [...prev, { time, msg, level }].slice(-200))
+  }
 
   const handlePhotoSelect = (file: File) => {
     const reader = new FileReader()
@@ -82,12 +94,16 @@ export default function TalkingPhotoPage() {
     setProgress(0)
     setTimedOutTaskId(null)
     setTaskStatus('submitting')
+    setLogs([])
+    addLog(`Mulai: foto ${(photoFile!.size / 1024).toFixed(0)}KB ${photoFile!.name} + audio ${(audioFile!.size / 1024 / 1024).toFixed(1)}MB ${audioFile!.name}`)
+    if (prompt.trim()) addLog(`Prompt: ${prompt.trim().slice(0, 120)}`)
 
     let submittedTaskId = ''
     try {
       const rotation = await withTokenRotation<string>(
         'runninghub',
-        async (key) => {
+        async (key, keyInfo) => {
+          addLog(`🔑 Key: ${keyInfo?.name || keyInfo?.id || 'default'}`)
           const submit = await submitRunningHubAudioAvatar({
             imageFile: photoFile!,
             audioFile: audioFile!,
@@ -97,19 +113,25 @@ export default function TalkingPhotoPage() {
           submittedTaskId = submit.taskId
           setTaskId(submit.taskId)
           setTaskStatus('running')
-          const url = await pollRunningHubTask(submit.taskId, (_status, pct) => {
+          addLog(`TaskId: ${submit.taskId} (status: ${submit.status})`, 'success')
+          const url = await pollRunningHubTask(submit.taskId, (status, pct) => {
             setTaskStatus('running')
             setProgress(pct)
+            addLog(`Poll: ${status} ${pct}%`)
           }, 3600000, key)
           return url
         },
         {
           onKeySwitch: (from, to, attempt) => {
-            addToast(`🔄 Key "${from.name}" gagal, pindah ke key #${attempt}: "${to.name}"`, 'info')
+            const msg = `🔄 Key "${from.name}" gagal, pindah ke key #${attempt}: "${to.name}"`
+            addLog(msg, 'warn')
+            addToast(msg, 'info')
           },
           onError: (err, key) => {
             if (detectTokenError('runninghub', err)) {
-              addToast(`⚠️ Key "${key.name}" bermasalah: ${err.message}`, 'warning')
+              const msg = `⚠️ Key "${key.name}" bermasalah: ${err.message}`
+              addLog(msg, 'warn')
+              addToast(msg, 'warning')
             }
           },
         },
@@ -125,6 +147,7 @@ export default function TalkingPhotoPage() {
     } catch (e: any) {
       setTaskStatus('error')
       setError(e.message || 'Unknown error')
+      addLog(`Gagal: ${e.message || e}`, 'error')
       addToast(`❌ ${e.message}`, 'error')
       if (/timeout/i.test(e.message || '') && submittedTaskId) {
         setTimedOutTaskId(submittedTaskId)
@@ -140,6 +163,7 @@ export default function TalkingPhotoPage() {
     setTaskStatus('success')
     setProgress(100)
     setTimedOutTaskId(null)
+    addLog(`Selesai: ${url.slice(0, 100)}...`, 'success')
     // URL RunningHub kedaluwarsa 24 jam — simpan permanen ke R2
     persistResultToR2(tid, url)
     setHistory((prev) => [
@@ -154,13 +178,15 @@ export default function TalkingPhotoPage() {
     setLoading(true)
     setError(null)
     setTaskStatus('running')
+    addLog(`🔄 Lanjutkan polling task ${timedOutTaskId.slice(0, 20)}...`)
     try {
       const rotation = await withTokenRotation<string>(
         'runninghub',
         async (key) => {
-          return pollRunningHubTask(timedOutTaskId, (_status, pct) => {
+          return pollRunningHubTask(timedOutTaskId, (status, pct) => {
             setTaskStatus('running')
             setProgress(pct)
+            addLog(`Poll: ${status} ${pct}%`)
           }, 3600000, key)
         },
         {},
@@ -172,6 +198,7 @@ export default function TalkingPhotoPage() {
     } catch (e: any) {
       setTaskStatus('error')
       setError(e.message || 'Unknown error')
+      addLog(`Lanjut polling gagal: ${e.message || e}`, 'error')
       if (!/timeout/i.test(e.message || '')) setTimedOutTaskId(null)
       else addToast('Masih jalan — coba "Lanjutkan" lagi nanti', 'info')
     } finally {
@@ -333,6 +360,24 @@ export default function TalkingPhotoPage() {
           )}
         </Section>
       </div>
+
+      {/* Log Detail */}
+      <Section title="🧾 Log Detail" sub={`Total ${logs.length} entri`}>
+        <div className="rounded-xl border border-border/60 bg-black/40 p-2 max-h-64 overflow-y-auto overflow-x-hidden text-[11px] font-mono min-w-0">
+          {logs.length === 0 ? (
+            <div className="text-muted-foreground px-1 py-2">Belum ada log. Jalankan generate untuk melihat detail proses.</div>
+          ) : logs.map((log, i) => (
+            <div key={i} className={`break-all min-w-0 px-1 py-0.5 ${
+              log.level === 'error' ? 'text-red-400' :
+              log.level === 'warn' ? 'text-amber-400' :
+              log.level === 'success' ? 'text-emerald-400' :
+              'text-muted-foreground'
+            }`}>
+              [{log.time}] {log.msg}
+            </div>
+          ))}
+        </div>
+      </Section>
     </PageContent>
   )
 }

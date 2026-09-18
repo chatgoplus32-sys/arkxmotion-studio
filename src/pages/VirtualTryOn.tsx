@@ -16,6 +16,12 @@ interface HistoryItem {
   url?: string
 }
 
+interface LogEntry {
+  time: string
+  msg: string
+  level: 'info' | 'warn' | 'error' | 'success'
+}
+
 function getStoredProviderKey(provider: string): string | null {
   if (typeof window === 'undefined') return null
   try {
@@ -44,11 +50,17 @@ export default function VirtualTryOnPage() {
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState(0)
   const [history, setHistory] = useState<HistoryItem[]>([])
+  const [logs, setLogs] = useState<LogEntry[]>([])
 
   const personPickerRef = useRef<HTMLInputElement | null>(null)
   const garmentPickerRef = useRef<HTMLInputElement | null>(null)
 
   const apiKey = getStoredProviderKey('runninghub')
+
+  const addLog = (msg: string, level: LogEntry['level'] = 'info') => {
+    const time = new Date().toLocaleTimeString('id-ID')
+    setLogs((prev) => [...prev, { time, msg, level }].slice(-200))
+  }
 
   const handleFileSelect = (file: File, type: 'person' | 'garment') => {
     const reader = new FileReader()
@@ -88,12 +100,16 @@ export default function VirtualTryOnPage() {
     setResultUrl(null)
     setProgress(0)
     setTaskStatus('submitting')
+    setLogs([])
+    addLog(`Mulai (${mode}): ${(personFile!.size / 1024).toFixed(0)}KB ${personFile!.name}` + (mode === 'tryon' && garmentFile ? ` + ${(garmentFile.size / 1024).toFixed(0)}KB ${garmentFile.name}` : ''))
+    if (prompt.trim()) addLog(`Prompt: ${prompt.trim().slice(0, 120)}`)
 
     try {
       let submittedTaskId = ''
       const rotation = await withTokenRotation<string>(
         'runninghub',
-        async (key) => {
+        async (key, keyInfo) => {
+          addLog(`🔑 Key: ${keyInfo?.name || keyInfo?.id || 'default'}`)
           const submit = await submitRunningHubTryOn({
             personFile: personFile!,
             garmentFile: mode === 'tryon' ? garmentFile : null,
@@ -104,19 +120,25 @@ export default function VirtualTryOnPage() {
           submittedTaskId = submit.taskId
           setTaskId(submit.taskId)
           setTaskStatus('running')
+          addLog(`TaskId: ${submit.taskId} (status: ${submit.status})`, 'success')
           const url = await pollRunningHubTask(submit.taskId, (status, pct) => {
             setTaskStatus('running')
             setProgress(pct)
+            addLog(`Poll: ${status} ${pct}%`)
           }, 600000, key)
           return url
         },
         {
           onKeySwitch: (from, to, attempt) => {
-            addToast(`🔄 Key "${from.name}" gagal, pindah ke key #${attempt}: "${to.name}"`, 'info')
+            const msg = `🔄 Key "${from.name}" gagal, pindah ke key #${attempt}: "${to.name}"`
+            addLog(msg, 'warn')
+            addToast(msg, 'info')
           },
           onError: (err, key) => {
             if (detectTokenError('runninghub', err)) {
-              addToast(`⚠️ Key "${key.name}" bermasalah: ${err.message}`, 'warning')
+              const msg = `⚠️ Key "${key.name}" bermasalah: ${err.message}`
+              addLog(msg, 'warn')
+              addToast(msg, 'warning')
             }
           },
         },
@@ -131,6 +153,10 @@ export default function VirtualTryOnPage() {
       setResultUrl(url)
       setTaskStatus('success')
       setProgress(100)
+      addLog(`Selesai: ${url.slice(0, 100)}...`, 'success')
+      if ((rotation.triedKeys || 1) > 1) {
+        addLog(`Dipakai key "${rotation.usedKey?.name}" setelah ${rotation.triedKeys} percobaan`)
+      }
       // URL RunningHub kedaluwarsa 24 jam — simpan permanen ke R2
       persistResultToR2(tid, url)
       setHistory((prev) => [
@@ -141,6 +167,7 @@ export default function VirtualTryOnPage() {
     } catch (e: any) {
       setTaskStatus('error')
       setError(e.message || 'Unknown error')
+      addLog(`Gagal: ${e.message || e}`, 'error')
       addToast(`❌ ${e.message}`, 'error')
     } finally {
       setLoading(false)
@@ -304,6 +331,24 @@ export default function VirtualTryOnPage() {
           )}
         </Section>
       </div>
+
+      {/* Log Detail */}
+      <Section title="🧾 Log Detail" sub={`Total ${logs.length} entri`}>
+        <div className="rounded-xl border border-border/60 bg-black/40 p-2 max-h-64 overflow-y-auto overflow-x-hidden text-[11px] font-mono min-w-0">
+          {logs.length === 0 ? (
+            <div className="text-muted-foreground px-1 py-2">Belum ada log. Jalankan generate untuk melihat detail proses.</div>
+          ) : logs.map((log, i) => (
+            <div key={i} className={`break-all min-w-0 px-1 py-0.5 ${
+              log.level === 'error' ? 'text-red-400' :
+              log.level === 'warn' ? 'text-amber-400' :
+              log.level === 'success' ? 'text-emerald-400' :
+              'text-muted-foreground'
+            }`}>
+              [{log.time}] {log.msg}
+            </div>
+          ))}
+        </div>
+      </Section>
     </PageContent>
   )
 }

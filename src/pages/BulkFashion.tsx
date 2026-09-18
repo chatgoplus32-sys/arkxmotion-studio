@@ -202,6 +202,12 @@ export default function BulkFashionPage() {
   // ─── Routing state ──────────────────────────────────────────────────────
   const [activeProvider, setActiveProvider] = useState(() => getActiveProviderForCap('bulk-fashion'))
   const [outfitProgress, setOutfitProgress] = useState<Array<{ index: number; status: 'queued' | 'processing' | 'done' | 'error'; message?: string }>>([])
+  const [logs, setLogs] = useState<Array<{ time: string; msg: string; level: 'info' | 'warn' | 'error' | 'success' }>>([])
+
+  const addLog = (msg: string, level: 'info' | 'warn' | 'error' | 'success' = 'info') => {
+    const time = new Date().toLocaleTimeString()
+    setLogs((prev) => [...prev, { time, msg, level }].slice(-300))
+  }
 
   useEffect(() => {
     const handler = () => setActiveProvider(getActiveProviderForCap('bulk-fashion'))
@@ -264,12 +270,15 @@ export default function BulkFashionPage() {
     if (!pre.ok) {
       addToast(pre.error || 'Saldo tidak cukup', 'error')
       setStatus({ show: true, text: `❌ ${pre.error || 'Saldo tidak cukup'}`, pct: 100, time: '0:00' })
+      addLog(`❌ Pre-check gagal: ${pre.error || 'Saldo tidak cukup'}`, 'error')
       return
     }
 
     setGenerating(true)
     clearResults()
     setStatus({ show: true, text: `Memproses ${outfitFiles.length} outfit…`, pct: 5, time: '0:00' })
+    setLogs([])
+    addLog(`🚀 Mulai bulk fashion: ${outfitFiles.length} outfit via ${activeProvider}/${model}`, 'info')
 
     // Initialize per-outfit progress
     setOutfitProgress(outfitFiles.map((_, i) => ({ index: i, status: 'queued' as const })))
@@ -320,10 +329,12 @@ export default function BulkFashionPage() {
             completedCount.value++
             addResult({ url: resultUrl, status: 'done' })
             setOutfitProgress((prev) => prev.map((p) => p.index === idx ? { ...p, status: 'done', message: 'Selesai' } : p))
+            addLog(`#${idx + 1}: ✅ Selesai`, 'success')
           } else if (error) {
             completedCount.value++
             addResult({ url: '', status: 'error', error })
             setOutfitProgress((prev) => prev.map((p) => p.index === idx ? { ...p, status: 'error', message: error } : p))
+            addLog(`#${idx + 1}: ❌ ${error}`, 'error')
           } else {
             setOutfitProgress((prev) => prev.map((p) => p.index === idx ? { ...p, status: 'processing', message: statusText } : p))
           }
@@ -357,6 +368,7 @@ export default function BulkFashionPage() {
 
         // Toast notification
         addToast(`Bulk Fashion selesai: ${resultUrls.length}/${outfitFiles.length} gambar`, 'success')
+        addLog(`🏁 Selesai: ${resultUrls.length}/${outfitFiles.length} sukses`, 'success')
 
         // Audit log
         logAudit('BULK_FASHION', `${resultUrls.length}/${outfitFiles.length} gambar di-generate (${activeProvider}/${model})`, 'success')
@@ -365,6 +377,7 @@ export default function BulkFashionPage() {
     } catch (err: any) {
       if (!controller.signal.aborted) {
         setStatus({ pct: 100, text: `❌ ${err.message || String(err)}` })
+        addLog(`❌ Fatal: ${err.message || String(err)}`, 'error')
         if (logId) logGenerationFailed(logId, err.message || 'Unknown error', Date.now() - startTime)
       }
     } finally {
@@ -378,6 +391,7 @@ export default function BulkFashionPage() {
     abortRef.current?.abort()
     setGenerating(false)
     setStatus({ text: '⏹️ Dihentikan oleh user', pct: 100 })
+    addLog('⏹️ Dihentikan oleh user', 'warn')
   }
 
   // ─── Template handlers ──────────────────────────────────────────────────
@@ -703,6 +717,26 @@ export default function BulkFashionPage() {
                    p.status === 'processing' ? `⏳ ${p.message || 'Processing...'}` :
                    '⏸️ Queued'}
                 </div>
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+
+      {/* Log Detail */}
+      {(generating || logs.length > 0) && (
+        <Section title="🧾 Log Detail" sub={`Total ${logs.length} entri`}>
+          <div className="rounded-xl border border-border/60 bg-black/40 p-2 max-h-64 overflow-y-auto overflow-x-hidden text-[11px] font-mono min-w-0">
+            {logs.length === 0 ? (
+              <div className="text-muted-foreground px-1 py-2">Memproses...</div>
+            ) : logs.map((log, i) => (
+              <div key={i} className={`break-all min-w-0 px-1 py-0.5 ${
+                log.level === 'error' ? 'text-red-400' :
+                log.level === 'warn' ? 'text-amber-400' :
+                log.level === 'success' ? 'text-emerald-400' :
+                'text-muted-foreground'
+              }`}>
+                [{log.time}] {log.msg}
               </div>
             ))}
           </div>
