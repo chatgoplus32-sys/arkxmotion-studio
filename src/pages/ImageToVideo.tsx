@@ -8,7 +8,7 @@ import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/provi
 import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { uploadToCatbox, submitRoboneoI2V, pollRoboneoI2V, checkRoboneoBalance, uploadImageForRoboneo,
-isRoboneoFormatError, compressVideo } from '@/lib/roboneo'
+isRoboneoFormatError, compressVideo, normalizeImage } from '@/lib/roboneo'
 import { generateWithFramia } from '@/lib/framia'
 import { runLeonardoVideo } from '@/lib/leonardo'
 import { leonardoVideoQualityOptions } from '@/lib/leonardo-video'
@@ -96,9 +96,6 @@ export default function ImageToVideoPage() {
   const [endFrameUrl, setEndFrameUrl] = useState<string | null>(null)
   const [refUrls, setRefUrls] = useState<string[]>([])
   const [provider, setProvider] = useState<ProviderId>(routing['image-to-video'] || 'weavy')
-  useEffect(() => {
-    if (provider === 'runninghub') setProvider('weavy')
-  }, [provider])
   const [model, setModel] = useState('')
   const [ratio, setRatio] = useState('9:16')
   const [quality, setQuality] = useState('std')
@@ -680,6 +677,7 @@ export default function ImageToVideoPage() {
     if (provider === 'nexabot' && user?.role !== 'admin' && !nbWallet?.unlimited.active && (nbWallet?.balance ?? 0) < (nbWallet?.price ?? 250))
       return `Saldo NexaBot tidak cukup (${formatRp(nbWallet?.balance ?? 0)}). Top up atau ambil Paket Unlimited ${nbWallet?.package.days ?? 7} hari di halaman Top Up NexaBot.`
     if (provider === 'roboneo' && !imgFile) return 'Roboneo membutuhkan gambar input'
+    if (provider === 'runninghub' && !imgFile) return 'RunningHub H3 I2V membutuhkan gambar input'
     if (provider === 'nexabot') {
       const nbMode = currentModel?.apiModel
       const nbImages = [imgFile, startFrameFile, ...refFiles].filter((f): f is File => !!f && f.type.startsWith('image/'))
@@ -2380,6 +2378,92 @@ export default function ImageToVideoPage() {
         } else {
           throw new Error(rotation.error || 'Generation failed')
         }
+      } else if (provider === 'runninghub') {
+        // ─── RunningHub: MiniMax H3 Ultra-HD Fast 8-Step I2V ───
+        if (!imgFile) throw new Error('RunningHub H3 I2V membutuhkan gambar input')
+        addLog(`[1/3] 🖼️ Normalisasi gambar...`, 'info', 'runninghub')
+        let upFile = imgFile
+        try {
+          upFile = await normalizeImage(imgFile, (msg) => addLog(`   ${msg}`, 'debug', 'runninghub'))
+          addLog(`   ✓ Siap: ${(upFile.size / 1024).toFixed(0)}KB`, 'debug', 'runninghub')
+        } catch (e: any) {
+          addLog(`   ⚠️ Normalisasi gagal, pakai file asli: ${e.message}`, 'warn', 'runninghub')
+        }
+
+        const { submitRunningHubH3I2V, pollRunningHubTask } = await import('@/lib/runninghub')
+        const H3_ASPECTS = ['original', '1:1', '3:2', '4:3', '16:9', '2:3', '3:4', '9:16']
+        const h3Aspect = H3_ASPECTS.includes(ratio) ? ratio : 'original'
+
+        const rotation = await withTokenRotation<string>(
+          'runninghub',
+          async (token, keyInfo) => {
+            addLog(`🔑 Trying key: ${keyInfo.name || keyInfo.id}`, 'info', 'runninghub')
+            setStatus((s) => ({ ...s, text: 'Submit H3 I2V...', pct: 15 }))
+
+            const submit = await submitRunningHubH3I2V({
+              imageFile: upFile,
+              prompt: prompt.trim(),
+              steps: 8,
+              aspectRatio: h3Aspect,
+              apiKey: token,
+            })
+            const taskId = submit.taskId
+            addLog(`[2/3] ✅ Task created ✓ task=${taskId.slice(0, 20)}...`, 'success', 'runninghub')
+
+            addActiveTask({
+              id: taskId,
+              taskId,
+              roomId: '',
+              nodeId: '',
+              token,
+              model: currentModel?.label || model,
+              prompt: prompt.trim() || '(no prompt)',
+              startedAt: Date.now(),
+              page: 'image-to-video',
+              provider: 'runninghub',
+            })
+            activeTaskId = taskId
+
+            addLog(`[3/3] ⏳ Polling for result...`, 'info', 'runninghub')
+            setStatus((s) => ({ ...s, text: 'Processing...', pct: 25 }))
+
+            const videoUrl = await pollRunningHubTask(taskId, (status, pct) => {
+              addLog(`⏳ RH ${status} (${pct}%)`, 'debug', 'runninghub')
+              setStatus((s) => ({ ...s, pct: Math.min(pct || 0, 95), text: `RH ${status}` }))
+            }, 3600000, token)
+
+            setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+            addLog(`✅ Video selesai ✓`, 'success', 'runninghub')
+
+            removeActiveTask(taskId)
+            activeTaskId = null
+            return videoUrl
+          },
+          {
+            onKeySwitch: (from, to, attempt) => {
+              addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn', 'runninghub')
+              if (activeTaskId) removeActiveTask(activeTaskId)
+              activeTaskId = null
+            },
+            onError: (err, _key) => {
+              if (detectTokenError('runninghub', err)) {
+                addLog(`⚠️ Key is invalid: ${err.message}`, 'warn', 'runninghub')
+              }
+            },
+          }
+        )
+        if (rotation.ok && rotation.result) {
+          setResults((prev) => [rotation.result!, ...prev])
+          saveGalleryItem(rotation.result!)
+          successRef.current = true
+          setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+          notifyGenerationComplete(currentModel?.label || model, PROVIDER_CONFIGS[provider].name)
+          if (rotation.triedKeys > 1) {
+            addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success', 'runninghub')
+          }
+        } else {
+          throw new Error(rotation.error || 'Generation failed')
+        }
       } else {
         addLog(`ℹ️ Using default provider flow for ${PROVIDER_CONFIGS[provider].name}`, 'info', provider)
         const rotation = await withTokenRotation<string>(
@@ -2452,7 +2536,7 @@ export default function ImageToVideoPage() {
   // Ditampilkan di kartu provider NexaBot (lihat nexabotPathPill).
   const nexabotPill = nexabotPathPill(keys.nexabot, nexabotSession, nexabotChecking)
 
-  const PROVIDER_IDS: ProviderId[] = ['weavy', 'wavespeed', 'roboneo', 'createpulse', 'framia', 'leonardo', 'galleri5', 'oneover', 'firefly', 'genspark', 'riverside', 'nexabot']
+  const PROVIDER_IDS: ProviderId[] = ['weavy', 'wavespeed', 'roboneo', 'createpulse', 'framia', 'leonardo', 'galleri5', 'oneover', 'firefly', 'genspark', 'riverside', 'nexabot', 'runninghub']
 
   return (
     <PageContent>

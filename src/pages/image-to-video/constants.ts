@@ -85,7 +85,9 @@ export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'firefly:kling-3', label: 'Kling 3.0 I2V (Firefly)', cr: 100, provider: 'firefly' },
     { value: 'firefly:kling-v3-pro-i2v', label: 'Kling 3.0 Pro I2V (Firefly)', cr: 130, provider: 'firefly' },
   ],
-  runninghub: [],
+  runninghub: [
+    { value: 'rh:h3-i2v', label: 'MiniMax H3 — Ultra-HD Fast 8-Step Image to Video (RunningHub)', cr: 80, provider: 'runninghub' },
+  ],
 
   galleri5: [
     { value: 'g5:gemini-omni-flash-i2v', label: 'Gemini Omni Flash I2V (Galery5)', cr: 134, provider: 'galleri5' },
@@ -388,7 +390,14 @@ export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: s
       { value: '10s', label: '10 detik', mult: 2, duration: 10 },
     ],
   },
-  runninghub: {},
+  runninghub: {
+    default: [
+      { value: 'std', label: 'Standard', mult: 1, duration: 10 },
+    ],
+    'rh:h3-i2v': [
+      { value: 'std', label: 'Standard (durasi dari prompt)', mult: 1, duration: 10 },
+    ],
+  },
   galleri5: {
     'g5:gemini-omni-flash-i2v': [
       { value: '10s-720p', label: '10 detik · 720p', mult: 1, duration: 10, cr: 134, resolution: '720p' },
