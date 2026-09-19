@@ -111,6 +111,7 @@
   <div class="tab active" onclick="switchTab('members',this)">👥 Semua Member</div>
   <div class="tab" onclick="switchTab('pending',this)">⏳ Pending <span class="count-badge" id="pendingCount" style="display:none"></span></div>
   <div class="tab" onclick="switchTab('topup',this)">💰 Topup</div>
+  <div class="tab" onclick="switchTab('tryon',this)">👗 Virtual Try-On</div>
   <div class="tab" onclick="switchTab('log',this)">📋 Log</div>
 </div>
 
@@ -172,6 +173,84 @@
     <thead><tr><th>Waktu</th><th>Aksi</th><th>Biaya</th><th>Saldo</th></tr></thead>
     <tbody id="logBody"></tbody>
   </table>
+</div>
+
+<!-- Virtual Try-On Tab -->
+<div class="table-container" id="tabTryon" style="display:none">
+  <div style="max-width:900px;margin:0 auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+      <h2 style="margin:0;">👗 Virtual Try-On & Ekstraksi Pakaian</h2>
+      <button class="btn btn-primary" onclick="loadTryOnNodes()">🔄 Load Nodes</button>
+    </div>
+    <p style="color:var(--muted);margin-bottom:20px;">
+      Ubah pakaian pada karakter atau ekstrak pakaian menjadi mockup datar. 
+      Didukung oleh FireRed 2-in-1, Qwen-Image-Lightning, dan Qwen 2.5 VL 7B.
+    </p>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+      <!-- Left: Input -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;">
+        <h3 style="margin-bottom:16px;">📸 Input</h3>
+
+        <div style="margin-bottom:16px;">
+          <label style="display:block;font-size:13px;color:var(--muted);margin-bottom:6px;">Mode</label>
+          <select id="tryonMode" class="admin-key-input" style="width:100%;" onchange="updateTryOnUI()">
+            <option value="tryon">👗 Virtual Try-On (Ganti Pakaian)</option>
+            <option value="extract">🧵 Ekstraksi Pakaian (Ke Mockup)</option>
+          </select>
+        </div>
+
+        <div style="margin-bottom:16px;">
+          <label style="display:block;font-size:13px;color:var(--muted);margin-bottom:6px;">🖼️ Foto Karakter / Model</label>
+          <div style="border:2px dashed var(--border);border-radius:8px;padding:20px;text-align:center;cursor:pointer;transition:all .15s;" onclick="document.getElementById('tryonPersonFile').click()" id="tryonPersonDrop">
+            <div style="font-size:32px;margin-bottom:8px;">👤</div>
+            <div style="color:var(--muted);font-size:13px;">Klik atau seret foto di sini</div>
+            <div style="color:var(--muted);font-size:11px;margin-top:4px;">JPG, PNG, WEBP — max 50MB</div>
+            <input type="file" id="tryonPersonFile" accept="image/*" style="display:none" onchange="previewTryOnImage(this,'tryonPersonPreview','tryonPersonDrop')">
+          </div>
+          <div id="tryonPersonPreview" style="margin-top:8px;display:none;"><img src="" style="max-width:100%;border-radius:8px;"></div>
+        </div>
+
+        <div style="margin-bottom:16px;">
+          <label style="display:block;font-size:13px;color:var(--muted);margin-bottom:6px;">👕 Foto Pakaian / Garment</label>
+          <div style="border:2px dashed var(--border);border-radius:8px;padding:20px;text-align:center;cursor:pointer;transition:all .15s;" onclick="document.getElementById('tryonGarmentFile').click()" id="tryonGarmentDrop">
+            <div style="font-size:32px;margin-bottom:8px;">👔</div>
+            <div style="color:var(--muted);font-size:13px;">Klik atau seret foto di sini</div>
+            <div style="color:var(--muted);font-size:11px;margin-top:4px;">JPG, PNG, WEBP — max 50MB</div>
+            <input type="file" id="tryonGarmentFile" accept="image/*" style="display:none" onchange="previewTryOnImage(this,'tryonGarmentPreview','tryonGarmentDrop')">
+          </div>
+          <div id="tryonGarmentPreview" style="margin-top:8px;display:none;"><img src="" style="max-width:100%;border-radius:8px;"></div>
+        </div>
+
+        <div style="margin-bottom:16px;" id="tryonPromptField">
+          <label style="display:block;font-size:13px;color:var(--muted);margin-bottom:6px;">✏️ Prompt (opsional)</label>
+          <textarea id="tryonPrompt" class="admin-key-input" style="width:100%;height:80px;resize:vertical;" placeholder="Deskripsikan perubahan yang diinginkan..."></textarea>
+        </div>
+
+        <button class="btn btn-primary" style="width:100%;padding:12px;font-size:15px;" onclick="runTryOn()" id="tryonRunBtn">
+          🚀 Jalankan AI
+        </button>
+      </div>
+
+      <!-- Right: Output -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;">
+        <h3 style="margin-bottom:16px;">📤 Hasil</h3>
+        <div id="tryonStatus" style="margin-bottom:12px;">
+          <span style="color:var(--muted);font-size:13px;">Belum ada task yang dijalankan.</span>
+        </div>
+        <div id="tryonResult" style="text-align:center;">
+          <div style="padding:40px;color:var(--muted);">
+            <div style="font-size:48px;margin-bottom:12px;">🎨</div>
+            Hasil akan muncul di sini setelah proses selesai.
+          </div>
+        </div>
+        <div id="tryonHistory" style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px;">
+          <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Riwayat</div>
+          <div id="tryonHistoryList" style="font-size:13px;color:var(--muted);"></div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- Notifikasi -->
@@ -376,7 +455,7 @@ function filterMembers() {
 function switchTab(tab, el) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   el.classList.add('active');
-  ['Members','Pending','Topup','Log'].forEach(t => document.getElementById('tab'+t).style.display = 'none');
+  ['Members','Pending','Topup','Tryon','Log'].forEach(t => document.getElementById('tab'+t).style.display = 'none');
   document.getElementById('tab' + tab.charAt(0).toUpperCase() + tab.slice(1)).style.display = '';
 }
 
@@ -499,6 +578,213 @@ function renderNotifList(){const l=document.getElementById('notifList');if(!noti
 function clearNotif(){notifications=[];localStorage.removeItem('arkx_notifs');Object.keys(localStorage).filter(k=>k.startsWith('n_')).forEach(k=>localStorage.removeItem(k));renderNotifList();document.getElementById('notifBadge').textContent='';}
 
 function toast(msg,err=false){const e=document.getElementById('toast');e.textContent=msg;e.className='toast show'+(err?' error':'');setTimeout(()=>e.classList.remove('show'),3000);}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// RUNNINGHUB: Virtual Try-On & Ekstraksi Pakaian
+// ══════════════════════════════════════════════════════════════════════════════
+let tryonNodes = [];
+let tryonPersonFile = null;
+let tryonGarmentFile = null;
+let tryonRunning = false;
+
+function previewTryOnImage(input, previewId, dropId) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const preview = document.getElementById(previewId);
+    preview.querySelector('img').src = e.target.result;
+    preview.style.display = '';
+  };
+  reader.readAsDataURL(file);
+  // Simpan file untuk upload nanti
+  if (dropId === 'tryonPersonDrop') tryonPersonFile = file;
+  else tryonGarmentFile = file;
+}
+
+function updateTryOnUI() {
+  const mode = document.getElementById('tryonMode').value;
+  const garmentDrop = document.getElementById('tryonGarmentDrop').parentElement;
+  if (mode === 'extract') {
+    garmentDrop.style.display = 'none';
+    document.getElementById('tryonPromptField').style.display = 'none';
+  } else {
+    garmentDrop.style.display = '';
+    document.getElementById('tryonPromptField').style.display = '';
+  }
+}
+
+async function loadTryOnNodes() {
+  try {
+    const data = await api('/api/runninghub/nodes');
+    if (data.code !== 0) throw new Error(data.msg || 'Gagal load nodes');
+    tryonNodes = data.data?.nodeInfoList || [];
+    toast(`✅ Loaded ${tryonNodes.length} nodes`);
+  } catch(e) { toast('Gagal load nodes: ' + e.message, true); }
+}
+
+async function uploadToRunningHub(file, fileType) {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('fileType', fileType || 'input');
+  const key = document.getElementById('adminKey').value;
+  const res = await fetch(BASE + '/api/runninghub/upload', {
+    method: 'POST',
+    headers: { 'X-Admin-Key': key },
+    body: formData
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Upload gagal');
+  return data;
+}
+
+async function runTryOn() {
+  if (tryonRunning) return;
+  if (!tryonPersonFile) { toast('Upload foto karakter terlebih dahulu!', true); return; }
+  const mode = document.getElementById('tryonMode').value;
+  if (mode === 'tryon' && !tryonGarmentFile) { toast('Upload foto pakaian terlebih dahulu!', true); return; }
+
+  tryonRunning = true;
+  const runBtn = document.getElementById('tryonRunBtn');
+  runBtn.disabled = true;
+  runBtn.textContent = '⏳ Mengunggah...';
+  document.getElementById('tryonStatus').innerHTML = '<span style="color:var(--yellow);font-size:13px;">📤 Mengunggah gambar...</span>';
+
+  try {
+    // 1. Load nodes jika belum ada
+    if (!tryonNodes.length) {
+      const nodeData = await api('/api/runninghub/nodes');
+      if (nodeData.code !== 0) throw new Error(nodeData.msg || 'Gagal load nodes');
+      tryonNodes = nodeData.data?.nodeInfoList || [];
+    }
+    if (!tryonNodes.length) throw new Error('Tidak ada node info dari workflow');
+
+    // 2. Upload person image
+    const personUpload = await uploadToRunningHub(tryonPersonFile, 'image');
+    const personFileName = personUpload?.data?.fileName;
+    if (!personFileName) throw new Error('Upload foto karakter gagal');
+
+    // 3. Upload garment image (jika mode tryon)
+    let garmentFileName = null;
+    if (mode === 'tryon') {
+      const garmentUpload = await uploadToRunningHub(tryonGarmentFile, 'image');
+      garmentFileName = garmentUpload?.data?.fileName;
+      if (!garmentFileName) throw new Error('Upload foto pakaian gagal');
+    }
+
+    // 4. Build nodeInfoList berdasarkan nodes yang ada
+    const nodeInfoList = tryonNodes.map(node => {
+      const updated = { ...node };
+      // Update nilai berdasarkan node type
+      if (node.fieldName === 'image' && node.fieldType === 'IMAGE') {
+        updated.fieldValue = personFileName;
+      }
+      if (mode === 'tryon' && node.fieldName === 'garment_image' && node.fieldType === 'IMAGE') {
+        updated.fieldValue = garmentFileName;
+      }
+      if (node.fieldName === 'prompt' && node.fieldType === 'STRING') {
+        updated.fieldValue = document.getElementById('tryonPrompt').value || node.fieldValue;
+      }
+      if (node.fieldName === 'mode' && node.fieldType === 'LIST') {
+        updated.fieldValue = mode === 'tryon' ? 'tryon' : 'extract';
+      }
+      return updated;
+    });
+
+    // 5. Submit task
+    runBtn.textContent = '⏳ Menjalankan AI...';
+    document.getElementById('tryonStatus').innerHTML = '<span style="color:var(--yellow);font-size:13px;">🚀 Submit task ke RunningHub...</span>';
+
+    const submitData = await api('/api/runninghub/run', {
+      method: 'POST',
+      body: JSON.stringify({ nodeInfoList })
+    });
+
+    if (submitData.code !== 0) throw new Error(submitData.msg || 'Submit task gagal');
+
+    const taskId = submitData.data?.taskId;
+    if (!taskId) throw new Error('Tidak ada taskId dari response');
+
+    document.getElementById('tryonStatus').innerHTML = `<span style="color:var(--blue);font-size:13px;">⏳ Task ID: ${taskId} — Menunggu hasil...</span>`;
+
+    // 6. Poll status
+    let attempts = 0;
+    const maxAttempts = 120; // 10 menit (5 detik interval)
+    const pollInterval = setInterval(async () => {
+      attempts++;
+      try {
+        const result = await api('/api/runninghub/query', {
+          method: 'POST',
+          body: JSON.stringify({ taskId })
+        });
+        const code = result.code;
+        const data = result.data;
+
+        if (code === 0 && data) {
+          // Sukses!
+          clearInterval(pollInterval);
+          tryonRunning = false;
+          runBtn.disabled = false;
+          runBtn.textContent = '🚀 Jalankan AI';
+
+          const files = Array.isArray(data) ? data : (data.results || []);
+          let resultHtml = '';
+          if (files.length > 0) {
+            resultHtml = files.map((f, i) => {
+              const url = f.url || f;
+              const type = (f.outputType || '').toLowerCase();
+              if (['png','jpg','jpeg','webp'].includes(type)) {
+                return `<div style="margin-bottom:12px;"><img src="${url}" style="max-width:100%;border-radius:8px;border:1px solid var(--border);"><br><a href="${url}" target="_blank" style="font-size:12px;color:var(--accent);">🔗 Buka Full Size</a></div>`;
+              }
+              return `<div style="margin-bottom:12px;"><a href="${url}" target="_blank" class="btn btn-sm btn-primary">📥 Download ${type || 'File'} ${i+1}</a></div>`;
+            }).join('');
+          } else {
+            resultHtml = '<div style="color:var(--muted);">Tidak ada file hasil ditemukan.</div>';
+          }
+          document.getElementById('tryonStatus').innerHTML = '<span style="color:var(--green);font-size:13px;">✅ Selesai!</span>';
+          document.getElementById('tryonResult').innerHTML = resultHtml;
+
+          // Tambah ke riwayat
+          addTryOnHistory(taskId, '✅ Selesai', files[0]?.url || '');
+        } else if (code === 805) {
+          clearInterval(pollInterval);
+          tryonRunning = false;
+          runBtn.disabled = false;
+          runBtn.textContent = '🚀 Jalankan AI';
+          const reason = data?.failedReason || {};
+          document.getElementById('tryonStatus').innerHTML = `<span style="color:var(--red);font-size:13px;">❌ Task gagal: ${reason.exception_message || 'Unknown error'}</span>`;
+          addTryOnHistory(taskId, '❌ Gagal', '');
+        } else if (code === 804 || code === 813) {
+          document.getElementById('tryonStatus').innerHTML = `<span style="color:var(--yellow);font-size:13px;">⏳ ${code===804?'Running':'Queued'}... (${attempts}s)</span>`;
+        }
+      } catch(e) { console.error('Poll error:', e); }
+
+      if (attempts >= maxAttempts) {
+        clearInterval(pollInterval);
+        tryonRunning = false;
+        runBtn.disabled = false;
+        runBtn.textContent = '🚀 Jalankan AI';
+        document.getElementById('tryonStatus').innerHTML = '<span style="color:var(--red);font-size:13px;">⏰ Timeout — task belum selesai dalam 10 menit</span>';
+      }
+    }, 5000);
+
+  } catch(e) {
+    tryonRunning = false;
+    runBtn.disabled = false;
+    runBtn.textContent = '🚀 Jalankan AI';
+    document.getElementById('tryonStatus').innerHTML = `<span style="color:var(--red);font-size:13px;">❌ Error: ${e.message}</span>`;
+    toast('Gagal: ' + e.message, true);
+  }
+}
+
+function addTryOnHistory(taskId, status, url) {
+  const list = document.getElementById('tryonHistoryList');
+  const time = new Date().toLocaleTimeString('id-ID');
+  const entry = document.createElement('div');
+  entry.style.cssText = 'padding:6px 0;border-bottom:1px solid var(--border);';
+  entry.innerHTML = `<span style="color:var(--text);">${time}</span> — <span style="color:var(--muted);font-size:12px;">${taskId}</span> — ${status}`;
+  list.insertBefore(entry, list.firstChild);
+}
 
 loadData(); setInterval(loadData,60000);
 document.querySelectorAll('.modal-overlay').forEach(el=>el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('show');}));

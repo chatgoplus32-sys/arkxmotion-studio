@@ -27,6 +27,8 @@ const MASTER_KEY = process.env.NEXABOT_MASTER_KEY;
 const NEXABOT_BASE_URL = process.env.NEXABOT_BASE_URL || 'https://api.nexabot.com';
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'members.db');
 const COST_PER_GENERATE = parseInt(process.env.COST_PER_GENERATE) || 250;
+const RUNNINGHUB_API_KEY = process.env.RUNNINGHUB_API_KEY || '';
+const RUNNINGHUB_WEBAPP_ID = process.env.RUNNINGHUB_WEBAPP_ID || '2099800742046818306';
 
 if (!MASTER_KEY) {
   console.error('❌ NEXABOT_MASTER_KEY wajib diisi di .env');
@@ -74,6 +76,122 @@ app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'dashboard.htm
 app.get('/register', (req, res) => res.sendFile(path.join(__dirname, 'register.html')));
 
 app.get('/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
+
+// ══════════════════════════════════════════════════════════════════════════════
+// RUNNINGHUB: Virtual Try-On & Ekstraksi Pakaian
+// ══════════════════════════════════════════════════════════════════════════════
+const multer = require('multer');
+const FormData = require('form-data');
+const fs = require('fs');
+const os = require('os');
+
+const uploadTemp = multer({
+  dest: path.join(os.tmpdir(), 'rh-upload-'),
+  limits: { fileSize: 50 * 1024 * 1024 } // 50MB max
+});
+
+const RH_API = 'www.runninghub.ai';
+
+// Helper: RunningHub HTTP request
+async function rhRequest(method, urlPath, body = null, isForm = false) {
+  const opts = {
+    method,
+    hostname: RH_API,
+    path: urlPath,
+    headers: {}
+  };
+  if (!isForm && body) {
+    opts.headers['Content-Type'] = 'application/json';
+  }
+  return new Promise((resolve, reject) => {
+    const req = require('https').request(opts, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try { resolve(JSON.parse(data)); }
+        catch (e) { reject(new Error('Invalid JSON from RunningHub')); }
+      });
+    });
+    req.on('error', reject);
+    if (isForm && body) {
+      body.pipe(req);
+    } else if (body) {
+      req.write(JSON.stringify(body));
+    }
+    req.end();
+  });
+}
+
+// POST /api/runninghub/nodes — Get workflow node info
+app.get('/api/runninghub/nodes', requireAdmin, async (req, res) => {
+  if (!RUNNINGHUB_API_KEY) return res.status(500).json({ error: 'RUNNINGHUB_API_KEY belum dikonfigurasi di .env' });
+  try {
+    const data = await rhRequest('GET', `/api/webapp/apiCallDemo?apiKey=${encodeURIComponent(RUNNINGHUB_API_KEY)}&webappId=${RUNNINGHUB_WEBAPP_ID}`);
+    res.json(data);
+  } catch (err) {
+    console.error('[RUNNINGHUB NODES]', err.message);
+    res.status(502).json({ error: 'Gagal mengambil info node: ' + err.message });
+  }
+});
+
+// POST /api/runninghub/upload — Upload file ke RunningHub
+app.post('/api/runninghub/upload', requireAdmin, uploadTemp.single('file'), async (req, res) => {
+  if (!RUNNINGHUB_API_KEY) return res.status(500).json({ error: 'RUNNINGHUB_API_KEY belum dikonfigurasi' });
+  if (!req.file) return res.status(400).json({ error: 'File tidak ditemukan' });
+  try {
+    const form = new FormData();
+    form.append('apiKey', RUNNINGHUB_API_KEY);
+    form.append('fileType', req.body.fileType || 'input');
+    form.append('file', fs.createReadStream(req.file.path), req.file.originalname);
+
+    const data = await rhRequest('POST', '/task/openapi/upload', form, true);
+
+    // Hapus file temporary
+    fs.unlink(req.file.path, () => {});
+    res.json(data);
+  } catch (err) {
+    console.error('[RUNNINGHUB UPLOAD]', err.message);
+    if (req.file) fs.unlink(req.file.path, () => {});
+    res.status(502).json({ error: 'Upload gagal: ' + err.message });
+  }
+});
+
+// POST /api/runninghub/run — Submit workflow task
+app.post('/api/runninghub/run', requireAdmin, async (req, res) => {
+  if (!RUNNINGHUB_API_KEY) return res.status(500).json({ error: 'RUNNINGHUB_API_KEY belum dikonfigurasi' });
+  const { nodeInfoList } = req.body;
+  if (!nodeInfoList || !Array.isArray(nodeInfoList)) {
+    return res.status(400).json({ error: 'nodeInfoList wajib berupa array' });
+  }
+  try {
+    const data = await rhRequest('POST', '/task/openapi/ai-app/run', {
+      webappId: RUNNINGHUB_WEBAPP_ID,
+      apiKey: RUNNINGHUB_API_KEY,
+      nodeInfoList
+    });
+    res.json(data);
+  } catch (err) {
+    console.error('[RUNNINGHUB RUN]', err.message);
+    res.status(502).json({ error: 'Submit task gagal: ' + err.message });
+  }
+});
+
+// POST /api/runninghub/query — Query task status & results
+app.post('/api/runninghub/query', requireAdmin, async (req, res) => {
+  if (!RUNNINGHUB_API_KEY) return res.status(500).json({ error: 'RUNNINGHUB_API_KEY belum dikonfigurasi' });
+  const { taskId } = req.body;
+  if (!taskId) return res.status(400).json({ error: 'taskId wajib diisi' });
+  try {
+    const data = await rhRequest('POST', '/task/openapi/outputs', {
+      apiKey: RUNNINGHUB_API_KEY,
+      taskId
+    });
+    res.json(data);
+  } catch (err) {
+    console.error('[RUNNINGHUB QUERY]', err.message);
+    res.status(502).json({ error: 'Query gagal: ' + err.message });
+  }
+});
 
 // ══════════════════════════════════════════════════════════════════════════════
 // PUBLIC: Register (member self-register)
@@ -207,7 +325,11 @@ app.all('/v1/*', validateSubscription, async (req, res) => {
 // ══════════════════════════════════════════════════════════════════════════════
 // ADMIN API
 // ══════════════════════════════════════════════════════════════════════════════
-const ADMIN_KEY = process.env.ADMIN_KEY || 'change-me-admin-key';
+const ADMIN_KEY = process.env.ADMIN_KEY;
+if (!ADMIN_KEY || ADMIN_KEY === 'change-me-admin-key') {
+  console.error('❌ ADMIN_KEY wajib diisi di .env dengan nilai random (jangan pakai default)');
+  process.exit(1);
+}
 function requireAdmin(req, res, next) {
   if (req.headers['x-admin-key'] !== ADMIN_KEY) return res.status(403).json({ error: 'Admin key tidak valid.' });
   next();
@@ -235,7 +357,7 @@ app.get('/admin/members', requireAdmin, (req, res) => {
 // ── Tambah member → status 'pending' ────────────────────────────────────────
 app.post('/admin/members', requireAdmin, (req, res) => {
   const { name, plan, saldo } = req.body;
-  if (!name || !plan) return res.status(400).json({ error: 'name dan plan wajib diisi.' });
+  if (typeof name !== 'string' || name.trim().length < 1 || name.trim().length > 80) return res.status(400).json({ error: 'name wajib 1-80 karakter.' });
   if (!['weekly', 'monthly', 'topup'].includes(plan)) return res.status(400).json({ error: 'Plan tidak valid.' });
 
   const apiKey = `arkx-${crypto.randomBytes(24).toString('hex')}`;
@@ -245,15 +367,21 @@ app.post('/admin/members', requireAdmin, (req, res) => {
 
   if (plan === 'weekly') expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
   else if (plan === 'monthly') expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
-  else { expiresAt = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000).toISOString(); initialSaldo = parseInt(saldo) || 0; }
+  else {
+    expiresAt = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000).toISOString();
+    const parsed = Number.parseInt(saldo, 10);
+    if (saldo !== undefined && (!Number.isInteger(parsed) || parsed < 0 || parsed > 1000000000)) return res.status(400).json({ error: 'saldo harus integer 0-1000000000.' });
+    initialSaldo = saldo === undefined ? 0 : parsed;
+  }
 
+  const cleanName = name.trim();
   const result = db.prepare(
     `INSERT INTO members (name, api_key, plan, status, saldo, started_at, expires_at) VALUES (?, ?, ?, 'pending', ?, datetime('now'), ?)`
-  ).run(name, apiKey, plan, initialSaldo, expiresAt);
+  ).run(cleanName, apiKey, plan, initialSaldo, expiresAt);
 
   res.json({
     message: 'Member ditambahkan (status: pending, menunggu approve).',
-    id: result.lastInsertRowid, name, plan, saldo: initialSaldo,
+    id: result.lastInsertRowid, name: cleanName, plan, saldo: initialSaldo,
     api_key: apiKey, // ← hanya ditampilkan sekali saat pembuatan
     expires_at: expiresAt
   });
@@ -421,124 +549,120 @@ app.get('/admin/pending', requireAdmin, (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
-// SYNC: Pull users from Arkx Motion Studio
+// SYNC: Pull users from Arkx Motion Studio (read SQLite directly)
 // ══════════════════════════════════════════════════════════════════════════════
-const ARKX_STUDIO_URL = process.env.ARKX_STUDIO_URL || 'https://arkxmotion-studio.win';
-const NEXABOT_SYNC_SECRET = process.env.NEXABOT_SYNC_SECRET || 'change-me-sync-secret';
+const ARKX_DB_PATH = process.env.ARKX_DB_PATH || '/opt/arkxmotion-studio/data/arkxmotion.db';
+let arkxDb = null;
+
+try {
+  arkxDb = new Database(ARKX_DB_PATH, { readonly: true });
+  console.log(`[SYNC] Arkx DB connected: ${ARKX_DB_PATH}`);
+} catch (err) {
+  console.error(`[SYNC] Cannot open Arkx DB: ${err.message}`);
+}
 
 // Mapping package_slug ke plan nexabot proxy
 function mapPackageToPlan(pkg) {
-  if (!pkg.package_kind) return null;
-  if (pkg.package_kind === 'unlimited') {
+  if (!pkg.kind) return null;
+  if (pkg.kind === 'unlimited') {
     if (pkg.package_slug?.includes('weekly')) return 'weekly';
     if (pkg.package_slug?.includes('monthly')) return 'monthly';
-    return 'monthly'; // default
+    return 'monthly';
   }
-  if (pkg.package_kind === 'balance') return 'topup';
+  if (pkg.kind === 'balance') return 'topup';
   return null;
 }
 
-// Sync users dari Arkx Studio → Nexabot Proxy
-app.get('/admin/sync', requireAdmin, async (req, res) => {
+// Sync users dari Arkx Studio SQLite → Nexabot Proxy
+app.get('/admin/sync', requireAdmin, (req, res) => {
+  if (!arkxDb) return res.status(500).json({ error: 'Arkx database tidak tersedia' });
+
   try {
-    const since = req.query.since || '';
-    const url = `${ARKX_STUDIO_URL}/api/nexabot-sync-users?secret=${encodeURIComponent(NEXABOT_SYNC_SECRET)}` + (since ? `&since=${encodeURIComponent(since)}` : '');
-    
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`Arkx Studio API error: ${response.status}`);
-    
-    const data = await response.json();
-    const users = data.users || [];
-    
+    // 1. Ambil paket unlimited (weekly/monthly)
+    const packages = arkxDb.prepare(`
+      SELECT u.id as user_id, u.name, u.email, t.kind, t.package_slug, t.status as pkg_status, t.days, t.expires_at
+      FROM users u
+      JOIN nexabot_topup t ON u.id = t.user_id
+      WHERE t.status = 'approved' AND t.kind = 'unlimited'
+    `).all();
+
+    // 2. Ambil total saldo topup per user (semua approved balance)
+    const balanceRows = arkxDb.prepare(`
+      SELECT u.id as user_id, u.name, u.email, COALESCE(SUM(t.amount), 0) as total_saldo
+      FROM users u
+      JOIN nexabot_topup t ON u.id = t.user_id
+      WHERE t.status = 'approved' AND t.kind = 'balance'
+      GROUP BY u.id
+    `).all();
+    const balanceMap = {};
+    for (const b of balanceRows) balanceMap[b.user_id] = b.total_saldo;
+
+    // Gabungkan: user dengan paket unlimited ATAU balance
+    const allUserIds = new Set();
+    for (const p of packages) allUserIds.add(p.user_id);
+    for (const b of balanceRows) allUserIds.add(b.user_id);
+
     let created = 0, updated = 0, skipped = 0;
     const results = [];
-    
-    for (const user of users) {
-      const plan = mapPackageToPlan(user);
-      if (!plan) { skipped++; continue; }
-      
-      // Cek apakah user sudah ada di members (berdasarkan name + email)
+
+    for (const userId of allUserIds) {
+      const pkg = packages.find(p => p.user_id === userId);
+      const totalSaldo = balanceMap[userId] || 0;
+
+      // Tentukan plan: kalau ada paket unlimited, pakai itu; kalau cuma balance, pakai topup
+      let plan, user;
+      if (pkg) {
+        plan = mapPackageToPlan(pkg);
+        user = pkg;
+      } else {
+        plan = 'topup';
+        user = balanceRows.find(b => b.user_id === userId);
+      }
+      if (!plan || !user) { skipped++; continue; }
+
       const existingMember = db.prepare(
-        'SELECT * FROM members WHERE name = ? OR (name = ? AND api_key LIKE ?)'
-      ).get(user.name, `${user.name} (${user.email})`, `arkx-arkxuser-${user.id}%`);
-      
+        'SELECT * FROM members WHERE api_key LIKE ?'
+      ).get(`arkx-arkxuser-${userId}-%`);
+
       if (existingMember) {
-        // Update status jika berubah
-        if (user.status === 'approved' && existingMember.status !== 'approved') {
-          db.prepare("UPDATE members SET status = 'approved', active = 1 WHERE id = ?").run(existingMember.id);
+        // Update saldo untuk plan topup
+        if (plan === 'topup' && totalSaldo > 0 && existingMember.saldo !== totalSaldo) {
+          db.prepare('UPDATE members SET saldo = ?, active = 1 WHERE id = ?').run(totalSaldo, existingMember.id);
           updated++;
-          results.push({ id: existingMember.id, name: user.name, action: 'updated' });
+          results.push({ id: existingMember.id, name: user.name, action: 'updated_saldo', saldo: totalSaldo });
+        }
+        // Update expiry jika berubah
+        if (pkg && user.expires_at && existingMember.expires_at !== user.expires_at) {
+          db.prepare('UPDATE members SET expires_at = ? WHERE id = ?').run(user.expires_at, existingMember.id);
+          updated++;
+          results.push({ id: existingMember.id, name: user.name, action: 'updated_expiry' });
         }
       } else {
         // Buat member baru
-        const apiKey = `arkx-arkxuser-${user.id}-${crypto.randomBytes(12).toString('hex')}`;
-        let expiresAt;
-        let initialSaldo = 0;
-        
-        if (plan === 'weekly') {
-          expiresAt = user.expires_at || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-        } else if (plan === 'monthly') {
-          expiresAt = user.expires_at || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-        } else {
+        const apiKey = `arkx-arkxuser-${userId}-${crypto.randomBytes(12).toString('hex')}`;
+        let expiresAt = (user.expires_at || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString());
+        let initialSaldo = totalSaldo;
+
+        if (plan === 'topup') {
           expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
-          initialSaldo = 5000; // Default saldo untuk topup
         }
-        
-        const memberName = `${user.name}`;
-        const status = user.status === 'approved' ? 'approved' : 'pending';
-        
+
         db.prepare(
-          `INSERT INTO members (name, api_key, plan, status, saldo, started_at, expires_at) VALUES (?, ?, ?, ?, ?, datetime('now'), ?)`
-        ).run(memberName, apiKey, plan, status, initialSaldo, expiresAt);
-        
+          `INSERT INTO members (name, api_key, plan, status, saldo, started_at, expires_at) VALUES (?, ?, ?, 'approved', ?, datetime('now'), ?)`
+        ).run(user.name, apiKey, plan, initialSaldo, expiresAt);
+
         created++;
-        results.push({ id: db.prepare('SELECT last_insert_rowid() as id').get().id, name: memberName, api_key: apiKey, action: 'created' });
-        
-        // Broadcast real-time event
-        broadcastSSE({ type: 'sync_new_member', name: memberName, plan, time: new Date().toISOString() });
+        const newId = db.prepare('SELECT last_insert_rowid() as id').get().id;
+        results.push({ id: newId, name: user.name, api_key: apiKey, action: 'created', saldo: initialSaldo });
+        broadcastSSE({ type: 'sync_new_member', name: user.name, plan, time: new Date().toISOString() });
       }
     }
-    
-    res.json({ message: `Sync selesai: ${created} baru, ${updated} diupdate, ${skipped} dilewati`, created, updated, skipped, results });
+
+    res.json({ message: `Sync: ${created} baru, ${updated} diupdate, ${skipped} dilewati`, created, updated, skipped, results });
   } catch (err) {
     console.error('[SYNC ERROR]', err.message);
     res.status(500).json({ error: 'Gagal sync: ' + err.message });
   }
-});
-
-// Auto-sync endpoint (dipanggil dari webhook Arkx Studio)
-app.post('/webhook/arkx-sync', async (req, res) => {
-  const secret = req.headers['x-webhook-secret'];
-  if (secret !== NEXABOT_SYNC_SECRET) return res.status(403).json({ error: 'Invalid secret' });
-  
-  const { user_id, name, email, package_kind, package_slug, status } = req.body;
-  if (!user_id || !name) return res.status(400).json({ error: 'Missing required fields' });
-  
-  const plan = mapPackageToPlan({ package_kind, package_slug });
-  if (!plan) return res.status(400).json({ error: 'Invalid package' });
-  
-  // Cek duplikat
-  const existing = db.prepare('SELECT id FROM members WHERE api_key LIKE ?').get(`arkx-arkxuser-${user_id}%`);
-  if (existing) return res.json({ message: 'Member sudah ada', id: existing.id });
-  
-  // Buat member baru
-  const apiKey = `arkx-arkxuser-${user_id}-${crypto.randomBytes(12).toString('hex')}`;
-  let expiresAt;
-  let initialSaldo = 0;
-  
-  if (plan === 'weekly') expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-  else if (plan === 'monthly') expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-  else { expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(); initialSaldo = 5000; }
-  
-  const memberStatus = status === 'approved' ? 'approved' : 'pending';
-  const result = db.prepare(
-    `INSERT INTO members (name, api_key, plan, status, saldo, started_at, expires_at) VALUES (?, ?, ?, ?, ?, datetime('now'), ?)`
-  ).run(name, apiKey, plan, memberStatus, initialSaldo, expiresAt);
-  
-  console.log(`[WEBHOOK] New member from Arkx: ${name} (${plan}) — ID: ${result.lastInsertRowid}`);
-  broadcastSSE({ type: 'webhook_new_member', name, plan, time: new Date().toISOString() });
-  
-  res.json({ message: `Member ${name} ditambahkan`, id: result.lastInsertRowid, api_key: apiKey });
 });
 
 // ── SSE: Real-time updates for admin ────────────────────────────────────────
@@ -570,4 +694,6 @@ app.listen(PORT, () => {
   console.log(`   Dashboard: http://localhost:${PORT}/admin`);
   console.log(`   Register: http://localhost:${PORT}/register`);
   console.log(`   Biaya/generate: Rp ${COST_PER_GENERATE.toLocaleString('id-ID')}`);
+  if (RUNNINGHUB_API_KEY) console.log(`   RunningHub: ✅ terhubung (webapp: ${RUNNINGHUB_WEBAPP_ID})`);
+  else console.log(`   RunningHub: ⚠️ API key belum dikonfigurasi`);
 });
