@@ -2,6 +2,7 @@ import { useState, useRef, useMemo, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Select, Label, Textarea, EmptyState, Input, BalanceBadge } from '@/components/ui'
+import { LogDetailActions } from '@/components/ui/LogDetailActions'
 import { useBulkFashionStore } from '@/stores/bulkFashionStore'
 import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
@@ -208,6 +209,8 @@ export default function BulkFashionPage() {
     const time = new Date().toLocaleTimeString()
     setLogs((prev) => [...prev, { time, msg, level }].slice(-300))
   }
+
+  const clearLogs = () => setLogs([])
 
   useEffect(() => {
     const handler = () => setActiveProvider(getActiveProviderForCap('bulk-fashion'))
@@ -727,6 +730,7 @@ export default function BulkFashionPage() {
       {/* Log Detail */}
       {(generating || logs.length > 0) && (
         <Section title="🧾 Log Detail" sub={`Total ${logs.length} entri`}>
+            <LogDetailActions logs={logs} onClear={clearLogs} />
           <div className="rounded-xl border border-border/60 bg-black/40 p-2 max-h-64 overflow-y-auto overflow-x-hidden text-[11px] font-mono min-w-0">
             {logs.length === 0 ? (
               <div className="text-muted-foreground px-1 py-2">Memproses...</div>

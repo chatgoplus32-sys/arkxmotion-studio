@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Label, EmptyState } from '@/components/ui'
+import { LogDetailActions } from '@/components/ui/LogDetailActions'
 import { Loader2, Upload, Download, X, Mic, Image as ImageIcon, Sparkles, CheckCircle2, AlertCircle, Clock, Music } from 'lucide-react'
 import { useToastStore } from '@/stores/toastStore'
 import { submitRunningHubAudioAvatar, submitRunningHubLipSync, pollRunningHubTask } from '@/lib/runninghub'
@@ -68,6 +69,8 @@ export default function TalkingPhotoPage() {
     const time = new Date().toLocaleTimeString('id-ID')
     setLogs((prev) => [...prev, { time, msg, level }].slice(-200))
   }
+
+  const clearLogs = () => setLogs([])
 
   const handlePhotoSelect = (file: File) => {
     const reader = new FileReader()
@@ -479,6 +482,7 @@ export default function TalkingPhotoPage() {
 
       {/* Log Detail */}
       <Section title="🧾 Log Detail" sub={`Total ${logs.length} entri`}>
+          <LogDetailActions logs={logs} onClear={clearLogs} />
         <div className="rounded-xl border border-border/60 bg-black/40 p-2 max-h-64 overflow-y-auto overflow-x-hidden text-[11px] font-mono min-w-0">
           {logs.length === 0 ? (
             <div className="text-muted-foreground px-1 py-2">Belum ada log. Jalankan generate untuk melihat detail proses.</div>

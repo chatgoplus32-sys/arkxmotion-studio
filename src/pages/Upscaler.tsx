@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Select, Label, Textarea, EmptyState } from '@/components/ui'
+import { LogDetailActions } from '@/components/ui/LogDetailActions'
 import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
 import { Loader2, Upload, Trash2, Key, Download, ImageIcon, Search, X, CheckCircle2, AlertCircle } from 'lucide-react'
 import { useProviderManager } from '@/stores/providerManager'
@@ -157,6 +158,8 @@ export default function UpscalerPage() {
     const time = new Date().toLocaleTimeString()
     setLogs(prev => [...prev, { time, msg, level }].slice(-300))
   }, [])
+
+  const clearLogs = () => setLogs([])
 
   const addImages = useCallback((files: File[]) => {
     const remaining = MAX_IMAGES - rows.length
@@ -726,6 +729,7 @@ export default function UpscalerPage() {
 
         {/* Log Panel */}
         <Section title="Log Info & Progress" sub={`Total ${logs.length} entri`}>
+          <LogDetailActions logs={logs} onClear={clearLogs} />
           {(running || progress.total > 0) && (
             <div className="mb-3">
               <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-1">
