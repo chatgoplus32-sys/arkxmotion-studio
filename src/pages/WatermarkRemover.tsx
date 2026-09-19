@@ -11,6 +11,7 @@ import { initInpainter, inpaint, isReady, getBackend } from '@/lib/migan-inpaint
 import { detectWatermarks, type WatermarkCandidate } from '@/lib/watermark-detect'
 import { textureFill } from '@/lib/texturefill'
 import { loadVideoMetadata, grabFirstFrame, processVideo } from '@/lib/video-watermark-process'
+import { getGeminiWatermarkRegion, removeGeminiWatermark } from '@/lib/gemini-watermark'
 
 type Tool = 'rect' | 'brush' | 'eraser'
 type InputMode = 'image' | 'video'
@@ -144,7 +145,26 @@ export default function WatermarkRemoverPage() {
 
         const mc = maskCanvasRef.current!
         mc.width = img.width; mc.height = img.height
-        setMaskData(new ImageData(img.width, img.height))
+        // Auto-apply the known Gemini/Veo bottom-right region so the user
+        // does not have to draw the mask manually (matches nexabot.id UX).
+        const region = getGeminiWatermarkRegion(img.width, img.height)
+        const autoMask = new ImageData(img.width, img.height)
+        for (let ry = 0; ry < region.height; ry++) {
+          for (let rx = 0; rx < region.width; rx++) {
+            const px = region.x + rx, py = region.y + ry
+            const idx = (py * img.width + px) * 4
+            autoMask.data[idx] = 255
+            autoMask.data[idx + 1] = 0
+            autoMask.data[idx + 2] = 0
+            autoMask.data[idx + 3] = 200
+          }
+        }
+        setMaskData(autoMask)
+        // Draw it on the visible mask canvas too
+        const mctx = mc.getContext('2d')!
+        mctx.clearRect(0, 0, mc.width, mc.height)
+        mctx.fillStyle = 'rgba(255, 0, 0, 0.5)'
+        mctx.fillRect(region.x, region.y, region.width, region.height)
       }
       img.src = URL.createObjectURL(f)
     } else {
@@ -157,7 +177,23 @@ export default function WatermarkRemoverPage() {
 
         const mc = maskCanvasRef.current!
         mc.width = ff.width; mc.height = ff.height
-        setMaskData(new ImageData(ff.width, ff.height))
+        const region = getGeminiWatermarkRegion(ff.width, ff.height)
+        const autoMask = new ImageData(ff.width, ff.height)
+        for (let ry = 0; ry < region.height; ry++) {
+          for (let rx = 0; rx < region.width; rx++) {
+            const px = region.x + rx, py = region.y + ry
+            const idx = (py * ff.width + px) * 4
+            autoMask.data[idx] = 255
+            autoMask.data[idx + 1] = 0
+            autoMask.data[idx + 2] = 0
+            autoMask.data[idx + 3] = 200
+          }
+        }
+        setMaskData(autoMask)
+        const mctx = mc.getContext('2d')!
+        mctx.clearRect(0, 0, mc.width, mc.height)
+        mctx.fillStyle = 'rgba(255, 0, 0, 0.5)'
+        mctx.fillRect(region.x, region.y, region.width, region.height)
         URL.revokeObjectURL(meta.url)
       })
     }
@@ -267,42 +303,93 @@ export default function WatermarkRemoverPage() {
   }, [imageData, ensureEngine, addToast, applyCandidateMask])
 
   // ── Main removal pipeline ──────────────────────────────────────────
+  // Gemini/Veo path uses exact reverse-alpha-blend (no AI model, no download).
+  // Falls back to MI-GAN two-stage when the watermark is NOT Gemini/Veo.
   const runRemove = async () => {
     if (!imageData || !maskData) { addToast('⚠️ Upload & buat mask dulu!', 'warning'); return }
     const hasMask = Array.from(maskData.data).some((v, i) => i % 4 === 3 && v > 16)
     if (!hasMask) { addToast('⚠️ Area mask kosong!', 'warning'); return }
-    const ok = await ensureEngine(); if (!ok) return
 
     setProcessing(true); setProgress(0); setProgressMsg('Starting…')
 
     try {
       if (inputMode === 'video' && file) {
+        // Video: try exact Gemini removal per-frame first (bottom-right logo is
+        // static), then fall back to inpainting if the logo is not detected.
         const meta = await loadVideoMetadata(file)
-        setProgressMsg('Stage 1/2: Texture analysis…'); setProgress(3)
-        const blob = await processVideo({
-          video: meta.video, maskImageData: maskData,
-          inpaintFn: async (img, mask) => {
-            return await twoStageRemoval(img, mask, quality, (stage, pct) => {
-              setProgressMsg(stage); setProgress(Math.max(3, Math.min(pct, 25)))
-            })
-          },
-          onProgress: (pct, msg) => {
-            setProgress(25 + (pct / 100) * 75)
-            setProgressMsg(pct >= 95 ? msg : `Recording: ${msg}`)
-          },
-        })
-        setResultUrl(URL.createObjectURL(blob)); setResultBlob(blob)
-        addToast('✅ Video dibersihkan (two-stage)!', 'success')
-        URL.revokeObjectURL(meta.url)
+        setProgressMsg('Checking for Gemini/Veo watermark…'); setProgress(3)
+        const firstFrame = imageData
+        const geminiResult = removeGeminiWatermark(firstFrame)
+
+        if (geminiResult.meta.applied) {
+          // Exact path: patch every frame with the reversed-alpha region.
+          setProgressMsg('Gemini watermark terdeteksi — membersihkan exact…')
+          const region = geminiResult.meta.position!
+          const regionMask = new ImageData(imageData.width, imageData.height)
+          for (let ry = 0; ry < region.height; ry++) {
+            for (let rx = 0; rx < region.width; rx++) {
+              const px = region.x + rx, py = region.y + ry
+              const idx = (py * imageData.width + px) * 4
+              regionMask.data[idx] = 255
+              regionMask.data[idx + 1] = 0
+              regionMask.data[idx + 2] = 0
+              regionMask.data[idx + 3] = 255
+            }
+          }
+          const blob = await processVideo({
+            video: meta.video, maskImageData: regionMask,
+            inpaintFn: async (img) => {
+              const r = removeGeminiWatermark(img)
+              return r.imageData
+            },
+            onProgress: (pct, msg) => {
+              setProgress(3 + (pct / 100) * 97)
+              setProgressMsg(pct >= 95 ? msg : `Exact removal: ${msg}`)
+            },
+          })
+          setResultUrl(URL.createObjectURL(blob)); setResultBlob(blob)
+          addToast('✅ Watermark Gemini dihapus (exact)!', 'success')
+          URL.revokeObjectURL(meta.url)
+        } else {
+          // Fallback: MI-GAN two-stage inpainting for non-Gemini watermarks.
+          const ok = await ensureEngine(); if (!ok) { setProcessing(false); return }
+          setProgressMsg('Stage 1/2: Texture analysis…'); setProgress(3)
+          const blob = await processVideo({
+            video: meta.video, maskImageData: maskData,
+            inpaintFn: async (img, mask) => {
+              return await twoStageRemoval(img, mask, quality, (stage, pct) => {
+                setProgressMsg(stage); setProgress(Math.max(3, Math.min(pct, 25)))
+              })
+            },
+            onProgress: (pct, msg) => {
+              setProgress(25 + (pct / 100) * 75)
+              setProgressMsg(pct >= 95 ? msg : `Recording: ${msg}`)
+            },
+          })
+          setResultUrl(URL.createObjectURL(blob)); setResultBlob(blob)
+          addToast('✅ Video dibersihkan (two-stage)!', 'success')
+          URL.revokeObjectURL(meta.url)
+        }
       } else {
-        const result = await twoStageRemoval(imageData, maskData, quality, (stage, pct) => {
-          setProgressMsg(stage); setProgress(pct)
-        })
-        const blob = await imageDataToBlob(result)
-        setResultUrl(URL.createObjectURL(blob)); setResultBlob(blob)
-        addToast('✅ Watermark dibersihkan (two-stage)!', 'success')
+        // Image: exact Gemini removal first (instant, lossless), else two-stage.
+        setProgressMsg('Checking for Gemini/Veo watermark…'); setProgress(5)
+        const geminiResult = removeGeminiWatermark(imageData)
+        if (geminiResult.meta.applied) {
+          const blob = await imageDataToBlob(geminiResult.imageData)
+          setResultUrl(URL.createObjectURL(blob)); setResultBlob(blob)
+          addToast('✅ Watermark Gemini dihapus (exact)!', 'success')
+          setProgress(100)
+        } else {
+          const ok = await ensureEngine(); if (!ok) { setProcessing(false); return }
+          const result = await twoStageRemoval(imageData, maskData, quality, (stage, pct) => {
+            setProgressMsg(stage); setProgress(pct)
+          })
+          const blob = await imageDataToBlob(result)
+          setResultUrl(URL.createObjectURL(blob)); setResultBlob(blob)
+          addToast('✅ Watermark dibersihkan (two-stage)!', 'success')
+          setProgress(100)
+        }
       }
-      setProgress(100)
     } catch (e: any) { addToast(`❌ ${e.message}`, 'error') }
     finally { setProcessing(false) }
   }
@@ -316,13 +403,13 @@ export default function WatermarkRemoverPage() {
 
   return (
     <PageContent>
-      <PageHeader title="🧽 Watermark Remover" desc="Two-stage: texture recovery + MI-GAN AI. 100% lokal di browser." />
+      <PageHeader title="🧽 Watermark Remover" desc="Gemini/Veo exact + AI inpainting fallback. 100% lokal di browser." />
 
       <Section className="!p-4 mb-4">
         <div className="flex items-center gap-3 flex-wrap">
           <div className={`flex items-center gap-1.5 text-xs font-medium ${engineReady ? 'text-emerald-400' : 'text-amber-400'}`}>
             <BrainCircuit className="h-3.5 w-3.5" />
-            {engineReady ? `MI-GAN ready (${backend})` : engineLoading ? engineProgress : 'Click to init engine'}
+            {engineReady ? `MI-GAN ready (${backend})` : engineLoading ? engineProgress : 'Gemini exact ✓ · MI-GAN untuk watermark lain'}
           </div>
           {!engineReady && (
             <Button size="sm" variant="outline" onClick={ensureEngine} disabled={engineLoading}>
@@ -424,7 +511,7 @@ export default function WatermarkRemoverPage() {
             {processing ? `Membersihkan… ${progress}%` : '🧽 Bersihkan Watermark'}
           </Button>
           <p className="text-xs text-muted-foreground mt-2">
-            Two-stage: texture recovery + MI-GAN AI. ~29MB model cached di browser.
+            Gemini/Veo: reverse-alpha exact (instan). Lainnya: texture + MI-GAN AI (~29MB, cached).
           </p>
         </Section>
 
