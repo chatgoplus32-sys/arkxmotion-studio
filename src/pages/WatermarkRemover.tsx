@@ -124,6 +124,30 @@ export default function WatermarkRemoverPage() {
     }
   }, [])
 
+  // ── Shared video exact-removal pipeline (used by auto & manual paths) ──
+  const runGeminiVideo = useCallback(async (f: File, region: { x: number; y: number; width: number; height: number }, w: number, h: number) => {
+    const meta = await loadVideoMetadata(f)
+    setProgressMsg('Gemini watermark terdeteksi — membersihkan exact…')
+    const regionMask = new ImageData(w, h)
+    for (let ry = 0; ry < region.height; ry++) {
+      for (let rx = 0; rx < region.width; rx++) {
+        const idx = ((region.y + ry) * w + (region.x + rx)) * 4
+        regionMask.data[idx] = 255
+        regionMask.data[idx + 3] = 255
+      }
+    }
+    const blob = await processVideo({
+      video: meta.video, maskImageData: regionMask,
+      inpaintFn: async (img) => removeGeminiWatermark(img).imageData,
+      onProgress: (pct, msg) => {
+        setProgress(3 + (pct / 100) * 97)
+        setProgressMsg(pct >= 95 ? msg : `Exact removal: ${msg}`)
+      },
+    })
+    setResultUrl(URL.createObjectURL(blob)); setResultBlob(blob)
+    URL.revokeObjectURL(meta.url)
+  }, [])
+
   const handleFile = useCallback((f: File) => {
     const isVideo = /video\//.test(f.type) || /\.(mp4|mov|webm)$/i.test(f.name)
     const isImage = /image\//.test(f.type) || /\.(png|jpe?g|webp|bmp)$/i.test(f.name)
@@ -141,7 +165,8 @@ export default function WatermarkRemoverPage() {
         const c = canvasRef.current!
         c.width = img.width; c.height = img.height
         c.getContext('2d')!.drawImage(img, 0, 0)
-        setImageData(c.getContext('2d')!.getImageData(0, 0, img.width, img.height))
+        const data = c.getContext('2d')!.getImageData(0, 0, img.width, img.height)
+        setImageData(data)
 
         const mc = maskCanvasRef.current!
         mc.width = img.width; mc.height = img.height
@@ -165,6 +190,20 @@ export default function WatermarkRemoverPage() {
         mctx.clearRect(0, 0, mc.width, mc.height)
         mctx.fillStyle = 'rgba(255, 0, 0, 0.5)'
         mctx.fillRect(region.x, region.y, region.width, region.height)
+
+        // Auto-process: nexabot.id UX — scan & clean immediately after upload.
+        setProcessing(true); setProgress(5); setProgressMsg('Menganalisis watermark…')
+        const gem = removeGeminiWatermark(data)
+        if (gem.meta.applied) {
+          imageDataToBlob(gem.imageData).then((blob) => {
+            setResultUrl(URL.createObjectURL(blob)); setResultBlob(blob)
+            addToast('✅ Watermark Gemini dihapus otomatis (exact)!', 'success')
+            setProgress(100); setProcessing(false)
+          }).catch((e) => { addToast(`❌ ${e.message}`, 'error'); setProcessing(false) })
+        } else {
+          setProcessing(false); setProgress(0); setProgressMsg('')
+          addToast('ℹ️ Bukan watermark Gemini — sesuaikan mask lalu klik Bersihkan.', 'info')
+        }
       }
       img.src = URL.createObjectURL(f)
     } else {
@@ -195,9 +234,24 @@ export default function WatermarkRemoverPage() {
         mctx.fillStyle = 'rgba(255, 0, 0, 0.5)'
         mctx.fillRect(region.x, region.y, region.width, region.height)
         URL.revokeObjectURL(meta.url)
+
+        // Auto-process: nexabot.id UX — scan & clean immediately after upload.
+        setProcessing(true); setProgress(3); setProgressMsg('Menganalisis watermark…')
+        const gem = removeGeminiWatermark(ff)
+        if (gem.meta.applied) {
+          try {
+            await runGeminiVideo(f, gem.meta.position!, ff.width, ff.height)
+            addToast('✅ Watermark Gemini dihapus otomatis (exact)!', 'success')
+            setProgress(100)
+          } catch (e: any) { addToast(`❌ ${e.message}`, 'error') }
+          setProcessing(false)
+        } else {
+          setProcessing(false); setProgress(0); setProgressMsg('')
+          addToast('ℹ️ Bukan watermark Gemini — sesuaikan mask lalu klik Bersihkan.', 'info')
+        }
       })
     }
-  }, [addToast])
+  }, [addToast, runGeminiVideo])
 
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) handleFile(f)
@@ -316,43 +370,17 @@ export default function WatermarkRemoverPage() {
       if (inputMode === 'video' && file) {
         // Video: try exact Gemini removal per-frame first (bottom-right logo is
         // static), then fall back to inpainting if the logo is not detected.
-        const meta = await loadVideoMetadata(file)
         setProgressMsg('Checking for Gemini/Veo watermark…'); setProgress(3)
-        const firstFrame = imageData
-        const geminiResult = removeGeminiWatermark(firstFrame)
+        const geminiResult = removeGeminiWatermark(imageData)
 
         if (geminiResult.meta.applied) {
-          // Exact path: patch every frame with the reversed-alpha region.
-          setProgressMsg('Gemini watermark terdeteksi — membersihkan exact…')
-          const region = geminiResult.meta.position!
-          const regionMask = new ImageData(imageData.width, imageData.height)
-          for (let ry = 0; ry < region.height; ry++) {
-            for (let rx = 0; rx < region.width; rx++) {
-              const px = region.x + rx, py = region.y + ry
-              const idx = (py * imageData.width + px) * 4
-              regionMask.data[idx] = 255
-              regionMask.data[idx + 1] = 0
-              regionMask.data[idx + 2] = 0
-              regionMask.data[idx + 3] = 255
-            }
-          }
-          const blob = await processVideo({
-            video: meta.video, maskImageData: regionMask,
-            inpaintFn: async (img) => {
-              const r = removeGeminiWatermark(img)
-              return r.imageData
-            },
-            onProgress: (pct, msg) => {
-              setProgress(3 + (pct / 100) * 97)
-              setProgressMsg(pct >= 95 ? msg : `Exact removal: ${msg}`)
-            },
-          })
-          setResultUrl(URL.createObjectURL(blob)); setResultBlob(blob)
+          await runGeminiVideo(file, geminiResult.meta.position!, imageData.width, imageData.height)
           addToast('✅ Watermark Gemini dihapus (exact)!', 'success')
-          URL.revokeObjectURL(meta.url)
+          setProgress(100)
         } else {
           // Fallback: MI-GAN two-stage inpainting for non-Gemini watermarks.
           const ok = await ensureEngine(); if (!ok) { setProcessing(false); return }
+          const meta = await loadVideoMetadata(file)
           setProgressMsg('Stage 1/2: Texture analysis…'); setProgress(3)
           const blob = await processVideo({
             video: meta.video, maskImageData: maskData,
