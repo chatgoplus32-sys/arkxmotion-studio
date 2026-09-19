@@ -31,6 +31,12 @@ export const RUNNINGHUB_IMAGE_EDIT_WORKFLOW_ID = '1928844216607129602'
 // node 181 = text (prompt), node 143 = image,
 // node 126 = steps, node 146 = aspect_ratio
 export const RUNNINGHUB_H3_I2V_WORKFLOW_ID = '2099854999999340546'
+// UGC Storyboard (MiniMax H3 I2V — gambar ke video multi-scene + audio)
+export const RUNNINGHUB_UGC_WORKFLOW_ID = '2096092981395841025'
+export const UGC_STORYBOARD_ASPECTS = [
+  '9:16 (Portrait Widescreen)', '1:1 (Square)', '2:3 (Portrait Photo)', '3:2 (Photo)',
+  '3:4 (Portrait Standard)', '4:3 (Standard)', '16:9 (Widescreen)', '21:9 (Ultrawide)',
+]
 
 // VOSR2 Video Upscale 2K (peningkatan bertingkat):
 // node 1 = video + frame_load_cap, node 21 = cfg/scheduler/steps,
@@ -40,6 +46,7 @@ export const RUNNINGHUB_VIDEO_UPSCALE_WORKFLOW_ID = '2100537736599035906'
 // AI Photo Enhancer (retus potret alami):
 // node 642 = image (foto), node 688 = scale_by
 export const RUNNINGHUB_PHOTO_ENHANCE_WORKFLOW_ID = '2100619334354759681'
+export const RUNNINGHUB_TRAVEL_PHOTO_WORKFLOW_ID = '2097726202999336962'
 
 function getStoredProviderKey(provider: string): string | null {
   if (typeof window === 'undefined') return null
@@ -399,7 +406,9 @@ export interface PhotoEnhanceParams {
   scaleBy?: number
   apiKey?: string
   workflowId?: string
-}export async function submitRunningHubPhotoEnhance(params: PhotoEnhanceParams): Promise<MotionControlResult> {
+}
+
+export async function submitRunningHubPhotoEnhance(params: PhotoEnhanceParams): Promise<MotionControlResult> {
   const workflowId = params.workflowId || RUNNINGHUB_PHOTO_ENHANCE_WORKFLOW_ID
 
   const imageBase64 = await fileToBase64(params.imageFile)
@@ -410,6 +419,42 @@ export interface PhotoEnhanceParams {
     imageFileName: params.imageFile.name,
     imageMimeType: params.imageFile.type || 'image/jpeg',
     scaleBy: params.scaleBy ?? 2,
+  }, params.apiKey)
+
+  return {
+    id: result.id || result.taskId,
+    taskId: result.taskId || result.id,
+    status: result.status || 'QUEUED',
+    provider: result.provider || 'runninghub',
+    workflowId: result.workflowId || workflowId,
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// Qwen AI Travel Photography — 1 foto → banyak destinasi
+// ══════════════════════════════════════════════════════════════
+export interface TravelPhotoParams {
+  characterFile: File
+  destination?: string
+  prompt?: string
+  aspectRatio?: string
+  apiKey?: string
+  workflowId?: string
+}
+
+export async function submitRunningHubTravelPhoto(params: TravelPhotoParams): Promise<MotionControlResult> {
+  const workflowId = params.workflowId || RUNNINGHUB_TRAVEL_PHOTO_WORKFLOW_ID
+
+  const characterBase64 = await fileToBase64(params.characterFile)
+
+  const result = await runninghubProxy('submit-travel-photo', {
+    workflow_id: workflowId,
+    characterBase64,
+    characterFileName: params.characterFile.name,
+    characterMimeType: params.characterFile.type || 'image/jpeg',
+    destination: params.destination || '',
+    prompt: params.prompt || '',
+    aspectRatio: params.aspectRatio || '9:16',
   }, params.apiKey)
 
   return {
@@ -521,6 +566,55 @@ export async function submitRunningHubH3I2V(params: H3I2VParams): Promise<Motion
     prompt: params.prompt,
     steps: params.steps ?? 8,
     aspectRatio: params.aspectRatio || 'original',
+  }, params.apiKey)
+
+  return {
+    id: result.id || result.taskId,
+    taskId: result.taskId || result.id,
+    status: result.status || 'QUEUED',
+    provider: result.provider || 'runninghub',
+    workflowId: result.workflowId || workflowId,
+  }
+}
+
+export interface UGCStoryboardSceneImage {
+  base64: string
+  fileName: string
+  mimeType: string
+}
+
+export interface UGCStoryboardParams {
+  characterImage: File
+  sceneImages: File[]
+  prompt?: string
+  duration?: number
+  aspectRatio?: string
+  apiKey?: string
+  workflowId?: string
+}
+
+export async function submitRunningHubUGCStoryboard(params: UGCStoryboardParams): Promise<MotionControlResult> {
+  const workflowId = params.workflowId || RUNNINGHUB_UGC_WORKFLOW_ID
+
+  const characterImageBase64 = await fileToBase64(params.characterImage)
+  const sceneImages: UGCStoryboardSceneImage[] = []
+  for (const f of params.sceneImages.slice(0, 4)) {
+    sceneImages.push({
+      base64: await fileToBase64(f),
+      fileName: f.name || `scene${sceneImages.length + 1}.jpg`,
+      mimeType: f.type || 'image/jpeg',
+    })
+  }
+
+  const result = await runninghubProxy('submit-ugc-storyboard', {
+    workflow_id: workflowId,
+    characterImageBase64,
+    characterImageFileName: params.characterImage.name || 'character.jpg',
+    characterImageMimeType: params.characterImage.type || 'image/jpeg',
+    sceneImages,
+    prompt: params.prompt || 'follow prompt storyboards',
+    duration: params.duration ?? 15,
+    aspectRatio: params.aspectRatio || '9:16 (Portrait Widescreen)',
   }, params.apiKey)
 
   return {

@@ -7,6 +7,7 @@ import { useTokenSyncStore } from '@/stores/tokenSyncStore'
 import { sendNotification } from '@/lib/notify'
 import {
   LayoutDashboard,
+  Globe, MessageSquare,
   Video,
   Image,
   Settings,
@@ -32,7 +33,9 @@ import {
   Puzzle,
   Shirt,
   Mic,
+  Eraser,
   ArrowUpFromLine,
+  Film,
 } from 'lucide-react'
 
 interface NavItem {
@@ -44,6 +47,7 @@ interface NavItem {
 }
 
 const mainNav: NavItem[] = [
+  { label: 'Mulai', href: '/quick-start', icon: <Sparkles className="h-4 w-4" /> },
   { label: 'Dashboard', href: '/dashboard', icon: <LayoutDashboard className="h-4 w-4" /> },
   { label: 'Command Center', href: '/command', icon: <Sparkles className="h-4 w-4" /> },
 ]
@@ -51,11 +55,15 @@ const mainNav: NavItem[] = [
 const generateNav: NavItem[] = [
   { label: 'Motion Control', href: '/generate/motion', icon: <Video className="h-4 w-4" /> },
   { label: 'Image to Video', href: '/generate/image-to-video', icon: <Image className="h-4 w-4" /> },
-  { label: 'Edit Image', href: '/generate/edit-image', icon: <ImagePlus className="h-4 w-4" /> },
+  // { label: 'Edit Image', href: '/generate/edit-image', icon: <ImagePlus className="h-4 w-4" /> },  // Coming Soon
 
   { label: 'Virtual Try-On', href: '/generate/virtual-tryon', icon: <Shirt className="h-4 w-4" /> },
+  { label: 'Travel Photo', href: '/generate/travel-photo', icon: <Globe className="h-4 w-4" /> },
+  { label: 'Dola Chat', href: '/generate/dola-chat', icon: <MessageSquare className="h-4 w-4" /> },
   { label: 'Talking Photo', href: '/generate/talking-photo', icon: <Mic className="h-4 w-4" /> },
   { label: 'H3 Image→Video', href: '/generate/h3-i2v', icon: <Zap className="h-4 w-4" /> },
+  { label: 'UGC Video Storyboard', href: '/generate/ugc-storyboard', icon: <Film className="h-4 w-4" /> },
+  // { label: 'Watermark Remover', href: '/generate/watermark-remover', icon: <Eraser className="h-4 w-4" /> },  // Coming Soon
   { label: 'Video Upscaler', href: '/generate/video-upscaler', icon: <ArrowUpFromLine className="h-4 w-4" /> },
   { label: 'AI Upscaler', href: '/generate/upscaler', icon: <Wand2 className="h-4 w-4" /> },
 ]
@@ -242,8 +250,8 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
 
       <nav className="flex-1 overflow-y-auto p-3 space-y-4">
         {renderNavGroup(mainNav)}
-        {renderNavGroup(generateNav, 'Generate')}
-        {renderNavGroup(toolsNav, 'Tools')}
+        {renderNavGroup(generateNav, 'Fitur AI')}
+        {renderNavGroup(toolsNav, 'Lainnya')}
         {user?.role === 'admin' && renderNavGroup(adminNav, 'Admin')}
       </nav>
 

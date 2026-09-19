@@ -24,6 +24,16 @@ const RUNNINGHUB_IMAGE_EDIT_WORKFLOW_ID = '1928844216607129602'
 // MiniMax H3 I2V: node 181 = text, node 143 = image,
 // node 126 = steps, node 146 = aspect_ratio
 const RUNNINGHUB_H3_I2V_WORKFLOW_ID = '2099854999999340546'
+// UGC Storyboard (MiniMax H3 I2V — gambar ke video multi-scene + audio):
+// node 114/162 = karakter utama, node 170/167/165/166 = scene 1-4,
+// node 135 = durasi (detik), node 115 = aspect_ratio, node 136 = prompt
+// https://www.runninghub.ai/id/ai-detail/2096092981395841025
+const RUNNINGHUB_UGC_WORKFLOW_ID = '2096092981395841025'
+const UGC_ASPECTS = new Set([
+  '1:1 (Square)', '2:3 (Portrait Photo)', '3:2 (Photo)', '3:4 (Portrait Standard)',
+  '4:3 (Standard)', '9:16 (Portrait Widescreen)', '16:9 (Widescreen)', '21:9 (Ultrawide)',
+])
+const UGC_SCENE_NODES = ['170', '167', '165', '166']
 // MC Ultra Fast HD — node ID resmi dari dokumentasi workflow:
 // node 30 = image (LoadImage), node 33 = video (LoadVideo)
 const ULTRA_HD_IMAGE_NODE = '30'
@@ -87,6 +97,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     if (action === 'submit-h3-i2v') {
       return await handleSubmitH3I2V(apiKey, params, res)
+    }
+    if (action === 'submit-ugc-storyboard') {
+      return await handleSubmitUGCStoryboard(apiKey, params, res)
     }
     if (action === 'query') {
       return await handleQuery(apiKey, params.taskId, res)
@@ -1597,6 +1610,141 @@ async function handleSubmitH3I2V(apiKey: string, params: any, res: VercelRespons
   }
 
   return res.status(200).json({ ok: false, error: `Gagal submit h3-i2v. Terakhir: ${lastErr}`, data: lastData })
+}
+
+async function handleSubmitUGCStoryboard(apiKey: string, params: any, res: VercelResponse) {
+  const {
+    characterImageBase64,
+    characterImageFileName = 'character.jpg',
+    characterImageMimeType = 'image/jpeg',
+    sceneImages = [],
+    prompt = 'follow prompt storyboards',
+    duration = 15,
+    aspectRatio = '9:16 (Portrait Widescreen)',
+  } = params
+
+  if (!characterImageBase64) return res.status(200).json({ ok: false, error: 'Missing characterImageBase64' })
+  if (!Array.isArray(sceneImages) || sceneImages.length === 0) {
+    return res.status(200).json({ ok: false, error: 'Missing sceneImages (minimal 1 gambar scene)' })
+  }
+
+  const scenes = sceneImages.slice(0, 4)
+  const effDuration = Math.max(1, Math.min(15, Number(duration) || 15))
+  const effAspect = UGC_ASPECTS.has(String(aspectRatio)) ? String(aspectRatio) : '9:16 (Portrait Widescreen)'
+
+  try {
+    console.log(`[runninghub] Uploading character image (ugc-storyboard)...`)
+    const charUpload = await rhUpload(apiKey, characterImageBase64, characterImageFileName, characterImageMimeType)
+    console.log(`[runninghub] Character uploaded: ${charUpload.fileName}`)
+
+    const sceneFileNames: string[] = []
+    for (let i = 0; i < scenes.length; i++) {
+      const s = scenes[i]
+      console.log(`[runninghub] Uploading scene ${i + 1}/${scenes.length} (ugc-storyboard)...`)
+      const up = await rhUpload(apiKey, s.base64, s.fileName || `scene${i + 1}.jpg`, s.mimeType || 'image/jpeg')
+      sceneFileNames.push(up.fileName)
+      console.log(`[runninghub] Scene ${i + 1} uploaded: ${up.fileName}`)
+    }
+
+    const buildList = () => {
+      const list: any[] = [
+        { nodeId: '114', fieldName: 'image', fieldValue: charUpload.fileName },
+        { nodeId: '162', fieldName: 'image', fieldValue: charUpload.fileName },
+        { nodeId: '135', fieldName: 'value', fieldValue: String(effDuration) },
+        { nodeId: '115', fieldName: 'aspect_ratio', fieldValue: effAspect },
+        { nodeId: '136', fieldName: 'text', fieldValue: String(prompt) },
+      ]
+      for (let i = 0; i < UGC_SCENE_NODES.length; i++) {
+        list.push({
+          nodeId: UGC_SCENE_NODES[i],
+          fieldName: 'image',
+          fieldValue: sceneFileNames[i] || 'None',
+        })
+      }
+      return list
+    }
+
+    const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${RUNNINGHUB_UGC_WORKFLOW_ID}`
+    const RETRY_DELAY_MS = 10000
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+    const parseMismatch = (msg: string): { nodeId: string; fieldName: string; reason: string } | null => {
+      const m = /nodeId=([^,\)]+),\s*fieldName=([^,\)]+),\s*reason=([^,\)]+)/.exec(msg)
+      return m ? { nodeId: m[1].trim(), fieldName: m[2].trim(), reason: m[3].trim() } : null
+    }
+
+    const droppedEntries = new Set<string>()
+    let lastErr = 'Unknown error'
+    let lastData: any = null
+
+    for (let round = 0; round < 8; round++) {
+      const list = buildList().filter((e) => !droppedEntries.has(`${e.nodeId}/${e.fieldName}`))
+      let r: any = null
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        console.log(`[runninghub] ugc-storyboard round=${round} (attempt ${attempt}/3)`)
+        const apiRes = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({ nodeInfoList: list, instanceType: 'default', usePersonalQueue: 'false' }),
+        })
+        const rawText = await apiRes.text()
+        console.log(`[runninghub] submit-ugc-storyboard ${apiRes.status}:`, rawText.slice(0, 1000))
+        let data: any
+        try { data = JSON.parse(rawText) } catch { data = { raw: rawText } }
+        r = {
+          http: apiRes.status,
+          data,
+          code: data.code ?? data.errorCode,
+          msg: String(data.msg || data.errorMessage || data.message || ''),
+          taskId: data.data?.taskId || data.taskId || data.id || data.task_id,
+          status: data.data?.status || data.status || 'QUEUED',
+        }
+        if (r.taskId || (r.http !== 429 && r.code !== 429 && r.code !== 421 && r.code !== '421')) break
+        if (r.http === 429 || r.code === 429) {
+          return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data: r.data, retryable: true })
+        }
+        console.log(`[runninghub] Queue limit (421), retrying in ${RETRY_DELAY_MS / 1000}s...`)
+        if (attempt < 3) await sleep(RETRY_DELAY_MS)
+      }
+      if (!r) break
+      if (r.taskId) {
+        return res.status(200).json({
+          ok: true,
+          data: {
+            id: r.taskId,
+            taskId: r.taskId,
+            status: r.status,
+            provider: 'runninghub',
+            workflowId: RUNNINGHUB_UGC_WORKFLOW_ID,
+          },
+        })
+      }
+      if (r.code === 421 || r.code === '421') {
+        return res.status(200).json({ ok: false, error: 'Queue limit reached, coba lagi dalam beberapa menit', data: r.data, retryable: true })
+      }
+      lastErr = r.msg || `Error code: ${r.code}`
+      lastData = r.data
+      const mm = r.code === 803 || r.code === '803' ? parseMismatch(r.msg) : null
+      if (mm && /field_not_found|node_not_found/i.test(mm.reason)) {
+        if (/node_not_found/i.test(mm.reason)) {
+          return res.status(200).json({ ok: false, error: `Node ${mm.nodeId} tidak ada di workflow UGC ini`, data: r.data })
+        }
+        console.log(`[runninghub] ugc-storyboard buang field ${mm.nodeId}/${mm.fieldName} (${mm.reason}), pakai default workflow`)
+        droppedEntries.add(`${mm.nodeId}/${mm.fieldName}`)
+        continue
+      }
+      const errorMsg = translateRhError(String(r.code ?? ''), r.msg) || r.msg || 'Submit gagal'
+      return res.status(200).json({ ok: false, error: errorMsg, code: r.code, data: r.data })
+    }
+
+    return res.status(200).json({ ok: false, error: `Gagal submit ugc-storyboard. Terakhir: ${lastErr}`, data: lastData })
+  } catch (err: any) {
+    console.error('[runninghub] ugc-storyboard error:', err.message)
+    return res.status(200).json({ ok: false, error: err.message || 'UGC storyboard gagal' })
+  }
 }
 
 async function handleMotionControl(apiKey: string, params: any, res: VercelResponse) {  const {

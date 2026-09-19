@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { PageContent } from '@/components/layout'
 import { Card, CardContent } from '@/components/ui'
-import { Sparkles, ArrowRight, Loader2, Video, Image, Search, ShoppingBag, Wand2, Zap, Route, Settings, Clock, Star, Command as CommandIcon, Trash2 } from 'lucide-react'
+import { Sparkles, ArrowRight, Loader2, Video, Image, Search, ShoppingBag, Wand2, Zap, Route, Settings, Clock, Star, Command as CommandIcon, Trash2, Film } from 'lucide-react'
 
 interface WorkflowRoute {
   id: string
@@ -20,6 +20,7 @@ const workflows: WorkflowRoute[] = [
   { id: 'image-to-video', label: 'Image to Video', route: '/generate/image-to-video', icon: <Image className="h-5 w-5" />, keywords: ['image','gambar','animate','foto','photo','picture','img2vid','i2v','veo','wan'], description: 'Foto jadi video sinematik', accent: 'from-violet-500 to-purple-400', hotkey: 'I' },
   { id: 'bulk', label: 'Bulk Fashion', route: '/generate/bulk-fashion', icon: <ShoppingBag className="h-5 w-5" />, keywords: ['bulk','fashion','outfit','csv','katalog','parallel','baju'], description: '1 model + 100 outfit parallel', accent: 'from-orange-500 to-amber-400', hotkey: 'B' },
   { id: 'ugc', label: 'Product UGC', route: '/generate/ugc', icon: <Star className="h-5 w-5" />, keywords: ['ugc','product','produk','shopee','tokopedia','tiktok','jual'], description: 'Product photo → UGC video', accent: 'from-pink-500 to-rose-400', hotkey: 'U' },
+  { id: 'ugc-storyboard', label: 'UGC Video Storyboard', route: '/generate/ugc-storyboard', icon: <Film className="h-5 w-5" />, keywords: ['ugc','storyboard','video','minimax','h3','multiscene','tiktok'], description: 'Multi-image → multi-scene UGC video (MiniMax H3)', accent: 'from-fuchsia-500 to-purple-400', hotkey: 'V' },
   { id: 'upscaler', label: 'AI Upscaler', route: '/generate/upscaler', icon: <Wand2 className="h-5 w-5" />, keywords: ['upscale','enhance','4k','magnific','leonardo','topaz','hd'], description: 'Upscale 4K enhance detail', accent: 'from-cyan-500 to-blue-400', hotkey: 'E' },
   { id: 'providers', label: 'Providers', route: '/providers', icon: <Zap className="h-5 w-5" />, keywords: ['provider','api','key','token','setup','config','balance'], description: 'Kelola API keys & tokens', accent: 'from-emerald-500 to-teal-400', hotkey: 'P' },
   { id: 'routing', label: 'Smart Routing', route: '/manage/routing', icon: <Route className="h-5 w-5" />, keywords: ['routing','route','smart','auto','fallback'], description: 'Auto pilih provider termurah', accent: 'from-blue-500 to-orange-400', hotkey: 'R' },

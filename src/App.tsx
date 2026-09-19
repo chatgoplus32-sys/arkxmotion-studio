@@ -23,11 +23,15 @@ import ResetPasswordPage from '@/pages/ResetPassword'
 
 const DashboardPage = lazyWithRetry(() => import('@/pages/Dashboard'))
 const CommandPage = lazyWithRetry(() => import('@/pages/Command'))
+const QuickStartPage = lazyWithRetry(() => import('@/pages/QuickStart'))
+const TravelPhotoPage = lazyWithRetry(() => import('@/pages/TravelPhoto'))
+const DolaChatPage = lazyWithRetry(() => import('@/pages/DolaChat'))
 const MotionPage = lazyWithRetry(() => import('@/pages/Motion'))
 const BulkFashionPage = lazyWithRetry(() => import('@/pages/BulkFashion'))
 const ImageToVideoPage = lazyWithRetry(() => import('@/pages/ImageToVideo'))
 const UpscalerPage = lazyWithRetry(() => import('@/pages/Upscaler'))
 const UGCPage = lazyWithRetry(() => import('@/pages/UGC'))
+const UGCStoryboardPage = lazyWithRetry(() => import('@/pages/UGCStoryboard'))
 const TextToVideoPage = lazyWithRetry(() => import('@/pages/TextToVideo'))
 const EditImagePage = lazyWithRetry(() => import('@/pages/EditImage'))
 const ProvidersPage = lazyWithRetry(() => import('@/pages/Providers'))
@@ -54,6 +58,7 @@ const PluginsPage = lazyWithRetry(() => import('@/pages/Plugins'))
 const VirtualTryOnPage = lazyWithRetry(() => import('@/pages/VirtualTryOn'))
 const TalkingPhotoPage = lazyWithRetry(() => import('@/pages/TalkingPhoto'))
 const H3ImageToVideoPage = lazyWithRetry(() => import('@/pages/H3ImageToVideo'))
+const WatermarkRemoverPage = lazyWithRetry(() => import('@/pages/WatermarkRemover'))
 const VideoUpscalerPage = lazyWithRetry(() => import('@/pages/VideoUpscaler'))
 
 function PageLoader() {
@@ -201,14 +206,19 @@ export default function App() {
                     <Suspense fallback={<PageLoader />}>
                       <Routes>
                         <Route path="/dashboard" element={<DashboardPage />} />
+                        <Route path="/quick-start" element={<QuickStartPage />} />
                         <Route path="/command" element={<CommandPage />} />
                         <Route path="/generate/motion" element={<MotionPage />} />
                         <Route path="/generate/bulk-fashion" element={<BulkFashionPage />} />
                         <Route path="/generate/virtual-tryon" element={<VirtualTryOnPage />} />
+                        <Route path="/generate/travel-photo" element={<TravelPhotoPage />} />
+                        <Route path="/generate/dola-chat" element={<DolaChatPage />} />
                         <Route path="/generate/talking-photo" element={<TalkingPhotoPage />} />
                         <Route path="/generate/h3-i2v" element={<H3ImageToVideoPage />} />
+                        <Route path="/generate/watermark-remover" element={<WatermarkRemoverPage />} />
                         <Route path="/generate/video-upscaler" element={<VideoUpscalerPage />} />
                         <Route path="/generate/ugc" element={<UGCPage />} />
+                        <Route path="/generate/ugc-storyboard" element={<UGCStoryboardPage />} />
                         <Route path="/generate/upscaler" element={<UpscalerPage />} />
                         <Route path="/generate/image-to-video" element={<ImageToVideoPage />} />
                         <Route path="/generate/image" element={<TextToVideoPage />} />
