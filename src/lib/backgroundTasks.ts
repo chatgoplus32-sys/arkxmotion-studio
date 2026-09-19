@@ -2,6 +2,7 @@ import { pollRoboneoI2V } from '@/lib/roboneo'
 import { pollRunningHubTask } from '@/lib/runninghub'
 import { detectTokenError } from '@/lib/tokenRotation'
 import { useProviderManager } from '@/stores/providerManager'
+import { saveVideoBlob, loadVideoBlob, deleteVideoBlob } from '@/lib/videoStorage'
 
 const ACTIVE_KEY = 'arkxmotion_active_tasks'
 const RESULTS_KEY = 'arkxmotion_results'
@@ -76,32 +77,59 @@ function isPersistableUrl(url?: string | null): boolean {
 export function getResults(): CompletedResult[] {
   const raw = readJson(RESULTS_KEY, [] as CompletedResult[])
   if (!Array.isArray(raw)) return []
-  // Migrasi: blob: URL hanya hidup di satu sesi dokumen — setelah reload/revoke
-  // selalu jadi ERR_FILE_NOT_FOUND. Buang dari storage agar gallery tak request mati.
-  const cleaned = raw.filter((r) => r && isPersistableUrl(r.url))
+  // Keep all results — blob URLs are restored from IndexedDB by restoreIdbVideos()
+  return raw.filter((r) => r && r.url)
+}
+
+/**
+ * Restore dead blob URLs from IndexedDB.
+ * MUST be called BEFORE React renders (in main.tsx, before createRoot).
+ * After a page reload, blob: URLs are dead. This replaces them with
+ * fresh blob URLs by loading the actual video data from IndexedDB.
+ */
+export async function restoreIdbVideos(): Promise<void> {
+  const raw = readJson(RESULTS_KEY, [] as CompletedResult[])
+  if (!raw.length) return
+  const restored: CompletedResult[] = []
   let mutated = false
-  const normalized = cleaned.map((r) => {
-    if (r.inputImageUrl && !isPersistableUrl(r.inputImageUrl)) {
+  for (const r of raw) {
+    if (!r || !r.url) { mutated = true; continue }
+    // Only restore blob: URLs that are dead (after reload they always are)
+    if (r.url.startsWith('blob:')) {
+      try {
+        const blob = await loadVideoBlob(r.id)
+        if (blob) {
+          restored.push({ ...r, url: URL.createObjectURL(blob) })
+          continue
+        }
+      } catch {}
+      // No IndexedDB backup — this result is dead, remove it
       mutated = true
-      const { inputImageUrl: _drop, ...rest } = r
-      return rest as CompletedResult
+      continue
     }
-    return r
-  })
-  if (normalized.length !== raw.length || mutated) {
-    try { saveResults(normalized) } catch {}
+    restored.push(r)
   }
-  return normalized
+  if (mutated) {
+    try { saveResults(restored) } catch {}
+  }
 }
 function saveResults(r: CompletedResult[]) { writeJson(RESULTS_KEY, r.slice(0, 50)) }
 
 export function addResult(result: CompletedResult) {
-  // Jangan persist blob: URL — hanya valid di sesi ini, mati setelah reload.
-  if (!isPersistableUrl(result.url)) return
   const clean: CompletedResult = { ...result }
   if (clean.inputImageUrl && !isPersistableUrl(clean.inputImageUrl)) {
     delete (clean as any).inputImageUrl
   }
+
+  if (isBlobUrl(clean.url)) {
+    // Blob URL — save to IndexedDB for persistence across reloads
+    fetch(clean.url)
+      .then((res) => res.blob())
+      .then((blob) => saveVideoBlob(clean.id, blob))
+      .then(() => console.log('[backgroundTasks] Video saved to IndexedDB:', clean.id))
+      .catch((e) => console.warn('[backgroundTasks] IndexedDB save failed:', e))
+  }
+
   const r = readJson(RESULTS_KEY, [] as CompletedResult[]); r.unshift(clean); saveResults(r)
 }
 
@@ -110,6 +138,7 @@ export function clearResults() { localStorage.removeItem(RESULTS_KEY) }
 export function removeResult(id: string) {
   const results = getResults().filter(r => r.id !== id)
   saveResults(results)
+  deleteVideoBlob(id).catch(() => {})
 }
 
 export function updateResult(id: string, updates: Partial<CompletedResult>) {
@@ -122,14 +151,23 @@ export function updateResult(id: string, updates: Partial<CompletedResult>) {
 }
 
 export function persistResultToR2(id: string, url: string) {
-  if (!url || url.includes('r2.dev') || url.includes('catbox.moe') || url.startsWith('blob:')) return
+  if (!url || url.includes('r2.dev') || url.includes('catbox.moe') || url.startsWith('blob:') ) return
   import('@/lib/cdn').then(({ uploadToCdn }) => {
     uploadToCdn(url, `persist-${id}.mp4`).then((res) => {
       if (res.ok && res.url) {
         updateResult(id, { url: res.url })
       }
+    }).catch(() => {
+      // R2 failed — fallback: save video blob to IndexedDB
+      fetch(url).then(r => r.blob()).then(blob => saveVideoBlob(id, blob)).then(() => {
+        console.log("[backgroundTasks] R2 fallback: saved to IndexedDB:", id)
+      }).catch(() => {})
+    })
+  }).catch(() => {
+    fetch(url).then(r => r.blob()).then(blob => saveVideoBlob(id, blob)).then(() => {
+      console.log("[backgroundTasks] R2 fallback: saved to IndexedDB:", id)
     }).catch(() => {})
-  }).catch(() => {})
+  })
 }
 
 export function getLogs(): LogEntry[] { return readJson(LOGS_KEY, []) }

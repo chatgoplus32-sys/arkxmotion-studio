@@ -50,6 +50,8 @@ import publicR2UploadRoutes from './routes/publicR2Upload.js'
 import { backupOnStartup, noteStartupBackupDisabled } from './backup.js'
 import { startBackupScheduler, getBackupStatus, runBackup } from './lib/backupR2.js'
 import { authenticateToken, requireAdmin } from './middleware/auth.js'
+import chatgptRoutes from './routes/chatgpt.js'
+import publicDolaRoutes from './routes/publicDola.js'
 
 // .env sudah dimuat server/env.ts (impor pertama), yaitu sebelum modul-modul di
 // atas dievaluasi. Tidak ada pemuatan kedua di sini supaya hanya ada satu sumber
@@ -127,6 +129,8 @@ app.use('/api/public/weavy-proxy', publicWeavyProxyRoutes)
 app.use('/api/public/weavy-credits', publicWeavyCreditsRoutes)
 app.use('/api/public/r2-upload', publicR2UploadRoutes)
 app.use('/api/nexabot', nexabotWalletRoutes)
+app.use('/api/chatgpt', chatgptRoutes)
+app.use('/api/dola', publicDolaRoutes)
 
 app.get("/api/health", async (_req, res) => {
   try {

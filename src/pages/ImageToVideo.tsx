@@ -28,6 +28,7 @@ import {
   clearLogs,
   clearResults,
 } from '@/lib/backgroundTasks'
+import { useResolvedGalleryUrls } from '@/hooks/useResolvedGalleryUrls'
 import type { CompletedResult } from '@/lib/backgroundTasks'
 import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
 import { isNotificationsEnabled, setNotificationsEnabled, requestNotificationPermission, notifyGenerationComplete } from '@/lib/notify'
@@ -496,12 +497,13 @@ export default function ImageToVideoPage() {
 
   const filteredGallery = galleryItems.filter((item) => {
     // blob: URL dari sesi lama sudah mati — jangan render agar tak ERR_FILE_NOT_FOUND
-    if (!item.url || item.url.startsWith('blob:')) return false
+    if (!item.url) return false
     if (galleryFilter !== 'all' && item.provider !== galleryFilter) return false
     if (gallerySearch && !item.prompt.toLowerCase().includes(gallerySearch.toLowerCase()) && !(item.model || '').toLowerCase().includes(gallerySearch.toLowerCase())) return false
     return true
   })
 
+  
   const galleryProviders = Array.from(new Set(galleryItems.map((i) => i.provider).filter(Boolean)))
 
   const generateWithCreatePulse = async (apiKey: string) => {
