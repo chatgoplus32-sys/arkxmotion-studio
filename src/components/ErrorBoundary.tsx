@@ -4,7 +4,13 @@ interface Props { children: ReactNode }
 interface State { hasError: boolean; msg: string }
 
 function isChunkError(msg: string): boolean {
-  return /Failed to fetch.*imported module|ChunkLoadError|Loading chunk|dynamically imported module/i.test(msg)
+  // Termasuk error PARSE modul, bukan cuma gagal fetch: chunk yang terpotong
+  // di cache browser (download terputus / campur versi lama-baru) memunculkan
+  // "Unexpected end of input" atau "Unexpected token '<'", bukan pesan fetch.
+  // Tanpa pola ini, halaman cuma menampilkan layar error dan user mentok.
+  return /Failed to fetch.*imported module|ChunkLoadError|Loading chunk|dynamically imported module|Unexpected end of input|Unexpected token '<'|Importing a module script failed|error loading dynamically imported module|Invalid or unexpected token/i.test(
+    msg
+  )
 }
 
 function cacheBustReload() {

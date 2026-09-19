@@ -23,7 +23,7 @@ export function initChunkErrorInterceptor() {
   window.addEventListener('unhandledrejection', (event) => {
     const reason = event.reason
     const msg = String(reason?.message || reason || '')
-    if (/Failed to fetch.*imported module|ChunkLoadError|Loading chunk|dynamically imported module/i.test(msg)) {
+    if (/Failed to fetch.*imported module|ChunkLoadError|Loading chunk|dynamically imported module|Unexpected end of input|Unexpected token '<'|Importing a module script failed|Invalid or unexpected token/i.test(msg)) {
       console.warn('[ChunkInterceptor] Chunk load rejection:', msg)
       event.preventDefault() // Prevent default unhandled rejection
       triggerReload()

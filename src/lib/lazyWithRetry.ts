@@ -27,7 +27,7 @@ export function lazyWithRetry(
   const loadWithRetry = (attempt: number): Promise<{ default: ComponentType<any> }> => {
     return loader().catch((error: Error) => {
       const isChunkError =
-        /Failed to fetch.*imported module|ChunkLoadError|Loading chunk|dynamically imported module/i.test(
+        /Failed to fetch.*imported module|ChunkLoadError|Loading chunk|dynamically imported module|Unexpected end of input|Unexpected token '<'|Importing a module script failed|error loading dynamically imported module|Invalid or unexpected token/i.test(
           error.message || String(error)
         )
 
