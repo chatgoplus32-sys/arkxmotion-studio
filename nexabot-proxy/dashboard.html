@@ -112,6 +112,11 @@
   <div class="tab" onclick="switchTab('pending',this)">⏳ Pending <span class="count-badge" id="pendingCount" style="display:none"></span></div>
   <div class="tab" onclick="switchTab('topup',this)">💰 Topup</div>
   <div class="tab" onclick="switchTab('tryon',this)">👗 Virtual Try-On</div>
+  <div class="tab" onclick="switchTab('ugc',this)">🎬 UGC Video</div>
+  <!--
+  <div class="tab" onclick="switchTab('editimage',this)">🖼️ Edit Image</div>
+  <div class="tab" onclick="switchTab('removewm',this)">💧 Remove Watermark</div>
+  -->
   <div class="tab" onclick="switchTab('log',this)">📋 Log</div>
 </div>
 
@@ -162,6 +167,62 @@
   </table>
 </div>
 
+<!-- Edit Image Tab (Coming Soon) -->
+<div class="table-container" id="tabEditimage" style="display:none">
+  <div style="max-width:900px;margin:0 auto;text-align:center;padding:60px 24px;">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:48px 32px;">
+      <div style="font-size:64px;margin-bottom:20px;">🖼️</div>
+      <h2 style="margin-bottom:12px;">Edit Image</h2>
+      <div style="display:inline-block;background:linear-gradient(135deg,var(--accent),#a29bfe);color:#fff;font-size:12px;font-weight:700;padding:6px 16px;border-radius:20px;text-transform:uppercase;letter-spacing:1px;margin-bottom:20px;">🚀 Coming Soon</div>
+      <p style="color:var(--muted);font-size:15px;max-width:500px;margin:0 auto 24px;line-height:1.6;">
+        Fitur edit gambar AI akan segera hadir. Crop, resize, filter, enhance, dan manipulasi gambar — semua dalam satu tool.
+      </p>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;max-width:600px;margin:0 auto;">
+        <div style="background:var(--surface2);border-radius:10px;padding:16px;">
+          <div style="font-size:28px;margin-bottom:8px;">✂️</div>
+          <div style="font-size:13px;font-weight:600;">Crop & Resize</div>
+        </div>
+        <div style="background:var(--surface2);border-radius:10px;padding:16px;">
+          <div style="font-size:28px;margin-bottom:8px;">🎨</div>
+          <div style="font-size:13px;font-weight:600;">AI Filter</div>
+        </div>
+        <div style="background:var(--surface2);border-radius:10px;padding:16px;">
+          <div style="font-size:28px;margin-bottom:8px;">✨</div>
+          <div style="font-size:13px;font-weight:600;">Enhance</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Remove Watermark Tab (Coming Soon) -->
+<div class="table-container" id="tabRemovewm" style="display:none">
+  <div style="max-width:900px;margin:0 auto;text-align:center;padding:60px 24px;">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:48px 32px;">
+      <div style="font-size:64px;margin-bottom:20px;">💧</div>
+      <h2 style="margin-bottom:12px;">Remove Watermark</h2>
+      <div style="display:inline-block;background:linear-gradient(135deg,#00b894,#55efc4);color:#fff;font-size:12px;font-weight:700;padding:6px 16px;border-radius:20px;text-transform:uppercase;letter-spacing:1px;margin-bottom:20px;">🚀 Coming Soon</div>
+      <p style="color:var(--muted);font-size:15px;max-width:500px;margin:0 auto 24px;line-height:1.6;">
+        Hapus watermark dari gambar dan video secara otomatis menggunakan AI. Cepat, akurat, dan mudah digunakan.
+      </p>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;max-width:600px;margin:0 auto;">
+        <div style="background:var(--surface2);border-radius:10px;padding:16px;">
+          <div style="font-size:28px;margin-bottom:8px;">🖼️</div>
+          <div style="font-size:13px;font-weight:600;">Image WM</div>
+        </div>
+        <div style="background:var(--surface2);border-radius:10px;padding:16px;">
+          <div style="font-size:28px;margin-bottom:8px;">🎥</div>
+          <div style="font-size:13px;font-weight:600;">Video WM</div>
+        </div>
+        <div style="background:var(--surface2);border-radius:10px;padding:16px;">
+          <div style="font-size:28px;margin-bottom:8px;">🤖</div>
+          <div style="font-size:13px;font-weight:600;">AI Auto</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Log Tab -->
 <div class="table-container" id="tabLog" style="display:none">
   <div style="margin-bottom:16px;">
@@ -182,6 +243,18 @@
       <h2 style="margin:0;">👗 Virtual Try-On & Ekstraksi Pakaian</h2>
       <button class="btn btn-primary" onclick="loadTryOnNodes()">🔄 Load Nodes</button>
     </div>
+    
+    <!-- Provider Status Banner -->
+    <div id="providerBanner" style="background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--green);border-radius:8px;padding:16px 20px;margin-bottom:20px;display:flex;align-items:center;gap:12px;">
+      <div style="font-size:24px;">🔒</div>
+      <div style="flex:1;">
+        <div style="font-weight:600;font-size:14px;">Provider: <span style="color:var(--green);">RunningHub AI</span> <span style="background:var(--green);color:#fff;font-size:10px;padding:2px 6px;border-radius:4px;margin-left:6px;">LOCKED</span></div>
+        <div style="color:var(--muted);font-size:12px;margin-top:4px;">Motion control dikunci ke RunningHub — tidak perlu konfigurasi tambahan. Model: FireRed 2-in-1, Qwen-Image-Lightning, Qwen 2.5 VL 7B</div>
+      </div>
+      <div id="providerStatus" style="font-size:12px;"></div>
+      <div id="keyStatus" style="font-size:11px;color:var(--muted);"></div>
+    </div>
+    
     <p style="color:var(--muted);margin-bottom:20px;">
       Ubah pakaian pada karakter atau ekstrak pakaian menjadi mockup datar. 
       Didukung oleh FireRed 2-in-1, Qwen-Image-Lightning, dan Qwen 2.5 VL 7B.
@@ -247,6 +320,96 @@
         <div id="tryonHistory" style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px;">
           <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Riwayat</div>
           <div id="tryonHistoryList" style="font-size:13px;color:var(--muted);"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- UGC Storyboard Tab (MiniMax H3 I2V) -->
+<div class="table-container" id="tabUgc" style="display:none">
+  <div style="max-width:1100px;margin:0 auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:8px;">
+      <h2 style="margin:0;">🎬 UGC Storyboard — AI Video Creator</h2>
+      <button class="btn btn-outline" onclick="loadUgcInfo()">ℹ️ Info Workflow</button>
+    </div>
+
+    <!-- Banner -->
+    <div style="background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--green);border-radius:8px;padding:16px 20px;margin-bottom:20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+      <div style="font-size:24px;">🎥</div>
+      <div style="flex:1;min-width:240px;">
+        <div style="font-weight:600;font-size:14px;">Model: <span style="color:var(--green);">MiniMax H3 I2V</span> <span style="background:var(--green);color:#fff;font-size:10px;padding:2px 6px;border-radius:4px;margin-left:6px;">RunningHub API v2</span></div>
+        <div style="color:var(--muted);font-size:12px;margin-top:4px;">Multi-Shot Storyboard • Multi-Angle Camera • Konsistensi Karakter • Dialog Bahasa Indonesia + Lip-Sync • Video + Audio • Durasi hingga 15 detik</div>
+      </div>
+      <div id="ugcKeyInfo" style="font-size:11px;color:var(--muted);"></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+      <!-- Left: Input -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;">
+        <h3 style="margin-bottom:16px;">📸 Input Storyboard</h3>
+
+        <div style="margin-bottom:16px;">
+          <label style="display:block;font-size:13px;color:var(--muted);margin-bottom:6px;">👤 Gambar Karakter Utama (referensi wajah & gaya — wajib)</label>
+          <div style="border:2px dashed var(--border);border-radius:8px;padding:20px;text-align:center;cursor:pointer;transition:all .15s;" onclick="document.getElementById('ugcCharFile').click()" id="ugcCharDrop">
+            <div style="font-size:32px;margin-bottom:8px;">👤</div>
+            <div style="color:var(--muted);font-size:13px;">Klik atau seret foto karakter di sini</div>
+            <div style="color:var(--muted);font-size:11px;margin-top:4px;">JPG, PNG, WEBP — jadi acuan konsistensi wajah di semua scene</div>
+            <input type="file" id="ugcCharFile" accept="image/*" style="display:none" onchange="previewUgcChar(this)">
+          </div>
+          <div id="ugcCharPreview" style="margin-top:8px;display:none;"><img src="" style="max-width:100%;max-height:200px;border-radius:8px;"></div>
+        </div>
+
+        <div style="margin-bottom:16px;">
+          <label style="display:block;font-size:13px;color:var(--muted);margin-bottom:6px;">🖼️ Gambar Scene / Produk (min 1, maks 4) — storyboard tiap scene</label>
+          <div id="ugcSceneList"></div>
+          <input type="file" id="ugcSceneInput" accept="image/*" multiple style="display:none" onchange="onUgcSceneFiles(this)">
+          <button class="btn btn-sm btn-outline" onclick="document.getElementById('ugcSceneInput').click()" id="ugcAddSceneBtn">+ Tambah Scene</button>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+          <div>
+            <label style="display:block;font-size:13px;color:var(--muted);margin-bottom:6px;">⏱️ Durasi Video (detik, maks 15)</label>
+            <input type="number" id="ugcDuration" class="admin-key-input" style="width:100%;" value="15" min="1" max="15">
+          </div>
+          <div>
+            <label style="display:block;font-size:13px;color:var(--muted);margin-bottom:6px;">🖼️ Aspect Ratio</label>
+            <select id="ugcAspectRatio" class="admin-key-input" style="width:100%;">
+              <option selected>9:16 (Portrait Widescreen)</option>
+              <option>1:1 (Square)</option>
+              <option>2:3 (Portrait Photo)</option>
+              <option>3:2 (Photo)</option>
+              <option>3:4 (Portrait Standard)</option>
+              <option>4:3 (Standard)</option>
+              <option>16:9 (Widescreen)</option>
+              <option>21:9 (Ultrawide)</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="margin-bottom:16px;">
+          <label style="display:block;font-size:13px;color:var(--muted);margin-bottom:6px;">✏️ Prompt Storyboard / Instruksi Video</label>
+          <textarea id="ugcPrompt" class="admin-key-input" style="width:100%;height:110px;resize:vertical;" placeholder="Contoh: Character holds the product, talks to camera in Indonesian, natural expressions, multi-angle shots, UGC style...">follow prompt storyboards</textarea>
+        </div>
+
+        <button class="btn btn-primary" style="width:100%;padding:12px;font-size:15px;" onclick="runUgc()" id="ugcRunBtn">🚀 Generate Video UGC</button>
+      </div>
+
+      <!-- Right: Output -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;">
+        <h3 style="margin-bottom:16px;">📤 Hasil Video</h3>
+        <div id="ugcStatus" style="margin-bottom:12px;">
+          <span style="color:var(--muted);font-size:13px;">Belum ada task yang dijalankan.</span>
+        </div>
+        <div id="ugcResult" style="text-align:center;">
+          <div style="padding:40px;color:var(--muted);">
+            <div style="font-size:48px;margin-bottom:12px;">🎬</div>
+            Video UGC akan muncul di sini. Render 1-15 detik biasanya butuh beberapa menit.
+          </div>
+        </div>
+        <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px;">
+          <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Riwayat</div>
+          <div id="ugcHistoryList" style="font-size:13px;color:var(--muted);"></div>
         </div>
       </div>
     </div>
@@ -453,9 +616,7 @@ function filterMembers() {
 }
 
 function switchTab(tab, el) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  el.classList.add('active');
-  ['Members','Pending','Topup','Tryon','Log'].forEach(t => document.getElementById('tab'+t).style.display = 'none');
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));      el.classList.add('active');      ['Members','Pending','Topup','Tryon','Ugc','Editimage','Removewm','Log'].forEach(t => document.getElementById('tab'+t).style.display = 'none');
   document.getElementById('tab' + tab.charAt(0).toUpperCase() + tab.slice(1)).style.display = '';
 }
 
@@ -578,6 +739,36 @@ function renderNotifList(){const l=document.getElementById('notifList');if(!noti
 function clearNotif(){notifications=[];localStorage.removeItem('arkx_notifs');Object.keys(localStorage).filter(k=>k.startsWith('n_')).forEach(k=>localStorage.removeItem(k));renderNotifList();document.getElementById('notifBadge').textContent='';}
 
 function toast(msg,err=false){const e=document.getElementById('toast');e.textContent=msg;e.className='toast show'+(err?' error':'');setTimeout(()=>e.classList.remove('show'),3000);}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PROVIDER STATUS: Load & update banner
+// ══════════════════════════════════════════════════════════════════════════════
+let providerInfo = null;
+async function loadProviderInfo() {
+  try {
+    const data = await api('/api/provider');
+    providerInfo = data.data;
+    const statusEl = document.getElementById('providerStatus');
+    if (providerInfo.locked) {
+      statusEl.innerHTML = '<span style="color:var(--green);">✅ Aktif</span>';
+    } else {
+      statusEl.innerHTML = '<span style="color:var(--yellow);">⚠️ Belum dikonfigurasi</span>';
+    }
+  } catch(e) { console.error('Gagal load provider info:', e); }
+  // Load key pool status
+  try {
+    const kd = await api('/api/runninghub/keys');
+    const keyEl = document.getElementById('keyStatus');
+    if (!kd.total) { keyEl.innerHTML = ''; return; }
+    const activeKeys = kd.keys.filter(k => k.active).length;
+    const parts = kd.keys.map(k => {
+      const color = k.active ? 'var(--green)' : 'var(--red)';
+      const icon = k.active ? '🟢' : '🔴';
+      return `${icon} Key${k.index} (${k.key_preview})`;
+    });
+    keyEl.innerHTML = `<span style="color:var(--text);">🔑 ${activeKeys}/${kd.total} aktif</span> — ${parts.join('  ')}`;
+  } catch(e) { console.error('Gagal load key status:', e); }
+}
 
 // ══════════════════════════════════════════════════════════════════════════════
 // RUNNINGHUB: Virtual Try-On & Ekstraksi Pakaian
@@ -786,7 +977,219 @@ function addTryOnHistory(taskId, status, url) {
   list.insertBefore(entry, list.firstChild);
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// UGC STORYBOARD: MiniMax H3 I2V — Gambar ke Video Multi-Scene (+ Audio)
+// ══════════════════════════════════════════════════════════════════════════════
+let ugcCharFile = null;
+let ugcScenes = []; // { id, file, previewUrl }
+let ugcSceneSeq = 0;
+let ugcRunning = false;
+const UGC_MAX_SCENES = 4;
+
+function esc2(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function previewUgcChar(input) {
+  const file = input.files[0];
+  if (!file) return;
+  ugcCharFile = file;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const preview = document.getElementById('ugcCharPreview');
+    preview.querySelector('img').src = e.target.result;
+    preview.style.display = '';
+  };
+  reader.readAsDataURL(file);
+  toast('👤 Karakter utama siap: ' + file.name);
+}
+
+function onUgcSceneFiles(input) {
+  [...input.files].forEach(f => {
+    if (ugcScenes.length >= UGC_MAX_SCENES) { toast(`Maksimal ${UGC_MAX_SCENES} gambar scene`, true); return; }
+    ugcScenes.push({ id: ++ugcSceneSeq, file: f, previewUrl: URL.createObjectURL(f) });
+  });
+  input.value = '';
+  renderUgcScenes();
+}
+
+function removeUgcScene(id) {
+  ugcScenes = ugcScenes.filter(s => s.id !== id);
+  renderUgcScenes();
+}
+
+function renderUgcScenes() {
+  const list = document.getElementById('ugcSceneList');
+  if (!ugcScenes.length) {
+    list.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px 0;">Belum ada gambar scene — tambahkan minimal 1 (pose/ekspresi/komposisi tiap scene).</div>';
+  } else {
+    list.innerHTML = ugcScenes.map((s, i) => `
+      <div style="display:flex;align-items:center;gap:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:8px;">
+        <img src="${s.previewUrl}" style="width:48px;height:48px;object-fit:cover;border-radius:6px;">
+        <div style="flex:1;font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Scene ${i+1}: ${esc2(s.file.name)}</div>
+        <button class="btn btn-sm btn-red" onclick="removeUgcScene(${s.id})">✕</button>
+      </div>`).join('');
+  }
+  document.getElementById('ugcAddSceneBtn').style.display = ugcScenes.length >= UGC_MAX_SCENES ? 'none' : '';
+}
+
+async function loadUgcInfo() {
+  try {
+    const d = await api('/api/ugc/info');
+    const feats = (d.features || []).join(' • ');
+    alert(`🎬 ${d.name}\n\nModel: ${d.model}\nWebApp ID: ${d.webappId} (API ${d.api_version})\n\nFitur: ${feats}\n\nLimit: ${d.limits.max_scenes} scene, ${d.limits.max_duration_seconds} detik\n⚠️ Link hasil hanya berlaku ${d.result_link_valid_hours} jam — segera download!`);
+  } catch(e) { toast('Gagal: ' + e.message, true); }
+}
+
+function setUgcStatus(color, text) {
+  document.getElementById('ugcStatus').innerHTML = `<span style="color:var(--${color});font-size:13px;">${text}</span>`;
+}
+
+function finishUgcRun() {
+  ugcRunning = false;
+  const runBtn = document.getElementById('ugcRunBtn');
+  runBtn.disabled = false;
+  runBtn.textContent = '🚀 Generate Video UGC';
+}
+
+function addUgcHistory(taskId, status) {
+  const list = document.getElementById('ugcHistoryList');
+  const time = new Date().toLocaleTimeString('id-ID');
+  const entry = document.createElement('div');
+  entry.style.cssText = 'padding:6px 0;border-bottom:1px solid var(--border);';
+  entry.innerHTML = `<span style="color:var(--text);">${time}</span> — <span style="color:var(--muted);font-size:12px;font-family:monospace;">${esc2(taskId)}</span> — ${status}`;
+  list.insertBefore(entry, list.firstChild);
+}
+
+async function runUgc() {
+  if (ugcRunning) return;
+  if (!ugcCharFile) { toast('Upload gambar karakter utama dulu!', true); return; }
+  const scenesWithFile = ugcScenes.filter(s => s.file);
+  if (!scenesWithFile.length) { toast('Tambahkan minimal 1 gambar scene!', true); return; }
+  const dur = parseInt(document.getElementById('ugcDuration').value) || 15;
+  if (dur < 1 || dur > 15) { toast('Durasi harus 1-15 detik', true); return; }
+
+  ugcRunning = true;
+  const runBtn = document.getElementById('ugcRunBtn');
+  runBtn.disabled = true;
+  runBtn.textContent = '⏳ Mengunggah gambar...';
+  setUgcStatus('yellow', '📤 Mengunggah gambar ke RunningHub...');
+
+  try {
+    // 1. Upload karakter + semua scene dalam satu panggilan multipart
+    const fd = new FormData();
+    fd.append('files', ugcCharFile);
+    scenesWithFile.forEach(s => fd.append('files', s.file));
+    const upRes = await fetch(BASE + '/api/ugc/upload', {
+      method: 'POST',
+      headers: { 'X-Admin-Key': document.getElementById('adminKey').value },
+      body: fd
+    });
+    const upData = await upRes.json();
+    if (!upRes.ok) throw new Error(upData.error || 'Upload gagal');
+    const uploaded = upData.uploaded || [];
+    if (uploaded.length < 1 + scenesWithFile.length) {
+      const errs = (upData.errors || []).map(e => `${e.original}: ${e.error}`).join('; ');
+      throw new Error('Sebagian upload gagal: ' + errs);
+    }
+    const charName = uploaded[0].fileName;
+    const sceneNames = uploaded.slice(1).map(u => u.fileName);
+
+    // 2. Build nodeInfoList workflow MiniMax H3 I2V
+    runBtn.textContent = '⏳ Menjalankan AI...';
+    setUgcStatus('blue', '🚀 Submit task ke RunningHub...');
+    const nodeInfoList = [
+      { nodeId: '114', fieldName: 'image', fieldValue: charName, description: null },
+      { nodeId: '162', fieldName: 'image', fieldValue: charName, description: null },
+      { nodeId: '170', fieldName: 'image', fieldValue: sceneNames[0], description: null },
+      { nodeId: '167', fieldName: 'image', fieldValue: sceneNames[1] || 'None', description: null },
+      { nodeId: '165', fieldName: 'image', fieldValue: sceneNames[2] || 'None', description: null },
+      { nodeId: '166', fieldName: 'image', fieldValue: sceneNames[3] || 'None', description: null },
+      { nodeId: '135', fieldName: 'value', fieldValue: String(dur), description: null },
+      { nodeId: '115', fieldName: 'aspect_ratio', fieldValue: document.getElementById('ugcAspectRatio').value, description: null },
+      { nodeId: '136', fieldName: 'text', fieldValue: document.getElementById('ugcPrompt').value.trim() || 'follow prompt storyboards', description: null }
+    ];
+
+    const runData = await api('/api/ugc/run', { method: 'POST', body: JSON.stringify({ nodeInfoList }) });
+    if (!runData.taskId) {
+      throw new Error(runData.errorMessage || runData.error || `Submit gagal (${runData.errorCode || 'tidak ada taskId'})`);
+    }
+    const taskId = runData.taskId;
+    setUgcStatus('blue', `⏳ Task: ${taskId} — antre/render... (bisa 5-15 menit)`);
+    addUgcHistory(taskId, '⏳ Berjalan');
+
+    // 3. Poll status tiap 5 detik (maks 20 menit)
+    let attempts = 0;
+    const maxAttempts = 240;
+    const poll = setInterval(async () => {
+      attempts++;
+      try {
+        const d = await api('/api/ugc/status', { method: 'POST', body: JSON.stringify({ taskId }) });
+        if (d.status === 'SUCCESS') {
+          clearInterval(poll); finishUgcRun();
+          const files = d.results || [];
+          let html = '';
+          if (files.length) {
+            html = files.map((f, i) => {
+              const url = f.url;
+              const type = (f.outputType || '').toLowerCase();
+              if (['mp4','webm','mov'].includes(type)) {
+                return `<div style="margin-bottom:12px;"><video src="${url}" controls style="max-width:100%;border-radius:8px;border:1px solid var(--border);"></video><br><a href="${url}" download target="_blank" style="font-size:12px;color:var(--accent);">📥 Download Video</a> <span style="font-size:11px;color:var(--red);">⚠️ link berlaku 24 jam!</span></div>`;
+              }
+              if (['png','jpg','jpeg','webp','gif'].includes(type)) {
+                return `<div style="margin-bottom:12px;"><img src="${url}" style="max-width:100%;border-radius:8px;border:1px solid var(--border);"><br><a href="${url}" target="_blank" style="font-size:12px;color:var(--accent);">🔗 Buka Full Size</a></div>`;
+              }
+              return `<div style="margin-bottom:12px;"><a href="${url}" target="_blank" class="btn btn-sm btn-primary">📥 Download ${type || 'file'} ${i+1}</a></div>`;
+            }).join('');
+          } else {
+            html = '<div style="color:var(--muted);">Task sukses tapi tidak ada file hasil.</div>';
+          }
+          setUgcStatus('green', '✅ Selesai!');
+          document.getElementById('ugcResult').innerHTML = html;
+          addUgcHistory(taskId, '✅ Selesai');
+          toast('🎬 Video UGC siap!');
+        } else if (d.status === 'FAILED') {
+          clearInterval(poll); finishUgcRun();
+          const reason = d.failedReason || {};
+          const msg = esc2(d.errorMessage || reason.exception_message || 'Unknown error');
+          setUgcStatus('red', `❌ Gagal: ${msg}`);
+          addUgcHistory(taskId, '❌ Gagal');
+        } else {
+          const s = d.status || 'UNKNOWN';
+          setUgcStatus('yellow', `⏳ ${s}... (${Math.round(attempts * 5 / 60)} menit)`);
+        }
+      } catch(e) { console.error('UGC poll error:', e); }
+      if (attempts >= maxAttempts) {
+        clearInterval(poll); finishUgcRun();
+        setUgcStatus('red', '⏰ Timeout — task masih diproses di RunningHub, cek manual dengan taskId di riwayat');
+      }
+    }, 5000);
+  } catch(e) {
+    finishUgcRun();
+    setUgcStatus('red', `❌ Error: ${esc2(e.message)}`);
+    toast('Gagal: ' + e.message, true);
+  }
+}
+
+// Init UGC tab: sinkronkan aspect ratio + status key
+(async function initUgc() {
+  renderUgcScenes();
+  try {
+    const d = await api('/api/ugc/info');
+    if (Array.isArray(d.aspect_ratios) && d.aspect_ratios.length) {
+      document.getElementById('ugcAspectRatio').innerHTML = d.aspect_ratios
+        .map(r => `<option ${r === '9:16 (Portrait Widescreen)' ? 'selected' : ''}>${esc2(r)}</option>`).join('');
+    }
+  } catch(e) { /* pakai default statis */ }
+  try {
+    const kd = await api('/api/runninghub/keys');
+    if (kd.total) {
+      const active = kd.keys.filter(k => k.active).length;
+      document.getElementById('ugcKeyInfo').textContent = `🔑 ${active}/${kd.total} key aktif`;
+    }
+  } catch(e) {}
+})();
+
 loadData(); setInterval(loadData,60000);
+loadProviderInfo();
 document.querySelectorAll('.modal-overlay').forEach(el=>el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('show');}));
 
 // ── Real-time SSE connection ──
