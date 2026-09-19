@@ -63,7 +63,7 @@ const generateNav: NavItem[] = [
   { label: 'Talking Photo', href: '/generate/talking-photo', icon: <Mic className="h-4 w-4" /> },
   { label: 'H3 Image→Video', href: '/generate/h3-i2v', icon: <Zap className="h-4 w-4" /> },
   { label: 'UGC Video Storyboard', href: '/generate/ugc-storyboard', icon: <Film className="h-4 w-4" /> },
-  // { label: 'Watermark Remover', href: '/generate/watermark-remover', icon: <Eraser className="h-4 w-4" /> },  // Coming Soon
+  { label: 'Watermark Remover', href: '/generate/watermark-remover', icon: <Eraser className="h-4 w-4" /> },
   { label: 'Video Upscaler', href: '/generate/video-upscaler', icon: <ArrowUpFromLine className="h-4 w-4" /> },
   { label: 'AI Upscaler', href: '/generate/upscaler', icon: <Wand2 className="h-4 w-4" /> },
 ]
