@@ -154,8 +154,11 @@ export async function processVideo({
   if (audioTrack) mediaStream.addTrack(audioTrack)
 
   const candidates = [
-    'video/webm;codecs=vp8,opus',
+    // Prefer MP4 — most players (Windows Media Player, HP) can't play WebM.
+    'video/mp4;codecs=avc1.640028,mp4a.40.2',
+    'video/mp4',
     'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
     'video/webm',
   ]
   const mimeType = opts.mimeType || candidates.find(m => MediaRecorder.isTypeSupported(m))
@@ -164,7 +167,20 @@ export async function processVideo({
   const recorder = new MediaRecorder(mediaStream, { mimeType, videoBitsPerSecond: 5_000_000 })
   const chunks: Blob[] = []
   recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data) }
-  const recordingDone = new Promise<void>(r => { recorder.onstop = () => r() })
+  let resolveRecordingDone!: () => void
+  const recordingDone = new Promise<void>(r => { resolveRecordingDone = r })
+  let recorderStopped = false
+  const stopRecorderOnce = () => {
+    if (recorderStopped) return
+    recorderStopped = true
+    try {
+      recorder.onstop = () => resolveRecordingDone()
+      if (recorder.state !== 'inactive') recorder.stop()
+      else resolveRecordingDone()
+    } catch { resolveRecordingDone() }
+  }
+
+  let frameCount = 0
 
   // ===== Step 4: Play video and capture =====
   onProgress?.(15, 'Recording — playing through video')
@@ -191,7 +207,7 @@ export async function processVideo({
       stopped = true
       console.warn('[video] Force-stop timer triggered')
       video.pause()
-      recorder.stop()
+      stopRecorderOnce()
     }
   }, FORCE_STOP_MS)
 
@@ -245,10 +261,9 @@ export async function processVideo({
   })
 
   // ===== Step 5: Finalize =====
-  let frameCount = 0
   onProgress?.(99, 'Encoding final frames')
   await new Promise<void>(r => setTimeout(r, 1000)) // Wait for encoder to flush
-  recorder.stop()
+  stopRecorderOnce()
   await recordingDone
   video.pause()
 

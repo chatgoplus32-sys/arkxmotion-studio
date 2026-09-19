@@ -424,8 +424,10 @@ export default function WatermarkRemoverPage() {
 
   const downloadResult = () => {
     if (!resultUrl) return
+    // Extension must match the real blob type — WebM renamed to .mp4 won't play.
+    const videoExt = resultBlob?.type.includes('mp4') ? 'mp4' : 'webm'
     const a = document.createElement('a'); a.href = resultUrl
-    a.download = file ? file.name.replace(/\.[^.]+$/, '') + '_nowm.' + (inputMode === 'video' ? 'mp4' : 'png') : 'result.png'
+    a.download = file ? file.name.replace(/\.[^.]+$/, '') + '_nowm.' + (inputMode === 'video' ? videoExt : 'png') : 'result.png'
     a.click()
   }
 
