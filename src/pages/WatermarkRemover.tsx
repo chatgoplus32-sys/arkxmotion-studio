@@ -11,7 +11,14 @@ import { initInpainter, inpaint, isReady, getBackend } from '@/lib/migan-inpaint
 import { detectWatermarks, type WatermarkCandidate } from '@/lib/watermark-detect'
 import { textureFill } from '@/lib/texturefill'
 import { loadVideoMetadata, grabFirstFrame, processVideo } from '@/lib/video-watermark-process'
-import { getGeminiWatermarkRegion, removeGeminiWatermark } from '@/lib/gemini-watermark'
+import {
+  getGeminiWatermarkRegion,
+  removeGeminiWatermark,
+  createGeminiFramePlan,
+  createGeminiFrameProcessor,
+  detectGeminiInVideo,
+  type GeminiFramePlan,
+} from '@/lib/gemini-watermark'
 
 type Tool = 'rect' | 'brush' | 'eraser'
 type InputMode = 'image' | 'video'
@@ -125,20 +132,14 @@ export default function WatermarkRemoverPage() {
   }, [])
 
   // ── Shared video exact-removal pipeline (used by auto & manual paths) ──
-  const runGeminiVideo = useCallback(async (f: File, region: { x: number; y: number; width: number; height: number }, w: number, h: number) => {
+  // Plan berisi posisi + alpha map dari deteksi; tiap frame dibersihkan
+  // dengan reverse-alpha sesuai kontennya (tanpa patch beku → tanpa blur).
+  const runGeminiVideo = useCallback(async (f: File, plan: GeminiFramePlan) => {
     const meta = await loadVideoMetadata(f)
-    setProgressMsg('Gemini watermark terdeteksi — membersihkan exact…')
-    const regionMask = new ImageData(w, h)
-    for (let ry = 0; ry < region.height; ry++) {
-      for (let rx = 0; rx < region.width; rx++) {
-        const idx = ((region.y + ry) * w + (region.x + rx)) * 4
-        regionMask.data[idx] = 255
-        regionMask.data[idx + 3] = 255
-      }
-    }
+    setProgressMsg('Gemini watermark terdeteksi — bersihkan tiap frame…')
+    const frameProcessor = createGeminiFrameProcessor(plan)
     const blob = await processVideo({
-      video: meta.video, maskImageData: regionMask,
-      inpaintFn: async (img) => removeGeminiWatermark(img).imageData,
+      video: meta.video, frameProcessor,
       onProgress: (pct, msg) => {
         setProgress(3 + (pct / 100) * 97)
         setProgressMsg(pct >= 95 ? msg : `Exact removal: ${msg}`)
@@ -228,20 +229,39 @@ export default function WatermarkRemoverPage() {
             autoMask.data[idx + 3] = 200
           }
         }
-        setMaskData(autoMask)
-        const mctx = mc.getContext('2d')!
-        mctx.clearRect(0, 0, mc.width, mc.height)
-        mctx.fillStyle = 'rgba(255, 0, 0, 0.5)'
-        mctx.fillRect(region.x, region.y, region.width, region.height)
+        // Auto-process: nexabot.id UX — scan & clean immediately after upload.
+        // Deteksi di frame pertama; kalau belum yakin, sampling titik-titik
+        // di tengah video (watermark Gemini selalu ada sepanjang video).
+        setProcessing(true); setProgress(3); setProgressMsg('Menganalisis watermark…')
+        let plan = await createGeminiFramePlan(ff)
+        if (!plan) {
+          setProgressMsg('Frame pertama belum yakin — sampling frame lain…')
+          plan = await detectGeminiInVideo(meta.video, null, 4)
+        }
         URL.revokeObjectURL(meta.url)
 
-        // Auto-process: nexabot.id UX — scan & clean immediately after upload.
-        setProcessing(true); setProgress(3); setProgressMsg('Menganalisis watermark…')
-        const gem = removeGeminiWatermark(ff)
-        if (gem.meta.applied) {
+        if (plan) {
+          // Auto-mask di posisi hasil deteksi (bukan default katalog).
+          const region = plan.position
+          const autoMask = new ImageData(ff.width, ff.height)
+          for (let ry = 0; ry < region.height; ry++) {
+            for (let rx = 0; rx < region.width; rx++) {
+              const idx = ((region.y + ry) * ff.width + (region.x + rx)) * 4
+              autoMask.data[idx] = 255
+              autoMask.data[idx + 1] = 0
+              autoMask.data[idx + 2] = 0
+              autoMask.data[idx + 3] = 200
+            }
+          }
+          setMaskData(autoMask)
+          const mctx = mc.getContext('2d')!
+          mctx.clearRect(0, 0, mc.width, mc.height)
+          mctx.fillStyle = 'rgba(255, 0, 0, 0.5)'
+          mctx.fillRect(region.x, region.y, region.width, region.height)
+
           try {
-            await runGeminiVideo(f, gem.meta.position!, ff.width, ff.height)
-            addToast('✅ Watermark Gemini dihapus otomatis (exact)!', 'success')
+            await runGeminiVideo(f, plan)
+            addToast('✅ Watermark Gemini dibersihkan otomatis (per-frame)!', 'success')
             setProgress(100)
           } catch (e: any) { addToast(`❌ ${e.message}`, 'error') }
           setProcessing(false)
@@ -368,14 +388,20 @@ export default function WatermarkRemoverPage() {
 
     try {
       if (inputMode === 'video' && file) {
-        // Video: try exact Gemini removal per-frame first (bottom-right logo is
-        // static), then fall back to inpainting if the logo is not detected.
+        // Video: deteksi plan Gemini per-frame dulu, fallback ke MI-GAN
+        // two-stage bila watermark bukan Gemini/Veo.
         setProgressMsg('Checking for Gemini/Veo watermark…'); setProgress(3)
-        const geminiResult = removeGeminiWatermark(imageData)
+        let plan = await createGeminiFramePlan(imageData)
+        if (!plan) {
+          setProgressMsg('Sampling frame lain untuk deteksi…')
+          const probe = await loadVideoMetadata(file)
+          plan = await detectGeminiInVideo(probe.video, null, 4)
+          URL.revokeObjectURL(probe.url)
+        }
 
-        if (geminiResult.meta.applied) {
-          await runGeminiVideo(file, geminiResult.meta.position!, imageData.width, imageData.height)
-          addToast('✅ Watermark Gemini dihapus (exact)!', 'success')
+        if (plan) {
+          await runGeminiVideo(file, plan)
+          addToast('✅ Watermark Gemini dibersihkan (per-frame)!', 'success')
           setProgress(100)
         } else {
           // Fallback: MI-GAN two-stage inpainting for non-Gemini watermarks.

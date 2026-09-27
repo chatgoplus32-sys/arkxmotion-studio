@@ -82,26 +82,37 @@ export interface ProcessVideoProgress {
   (pct: number, msg: string): void
 }
 
+/**
+ * @param frameProcessor Diproses tiap frame (mis. reverse-alpha Gemini) —
+ *   hasilnya selalu ikut konten frame, bukan patch beku.
+ * @param inpaintFn Legacy: hasilkan patch dari frame pertama lalu composite
+ *   ke semua frame (fallback MI-GAN untuk watermark non-Gemini).
+ */
 export async function processVideo({
   video,
   maskImageData,
   inpaintFn,
+  frameProcessor,
   onProgress,
   opts = {},
 }: {
   video: HTMLVideoElement
-  maskImageData: ImageData
-  inpaintFn: (imageData: ImageData, maskData: ImageData) => Promise<ImageData>
+  maskImageData?: ImageData | null
+  inpaintFn?: (imageData: ImageData, maskData: ImageData) => Promise<ImageData>
+  frameProcessor?: (ctx: CanvasRenderingContext2D) => void
   onProgress?: ProcessVideoProgress
   opts?: ProcessVideoOpts
 }): Promise<Blob> {
+  if (!frameProcessor && (!inpaintFn || !maskImageData)) {
+    throw new Error('processVideo: butuh frameProcessor atau inpaintFn + mask')
+  }
   const fps = opts.fps || 30
   const width = video.videoWidth
   const height = video.videoHeight
   const duration = video.duration
   const t0 = performance.now()
 
-  // ===== Step 1: AI on first frame =====
+  // ===== Step 1: seek to start =====
   onProgress?.(2, 'Decoding first frame')
   video.muted = true
   video.currentTime = 0
@@ -117,18 +128,28 @@ export async function processVideo({
   refCtx.drawImage(video, 0, 0)
   const firstFrameImageData = refCtx.getImageData(0, 0, width, height)
 
-  onProgress?.(5, 'Running AI on reference frame (one-time)')
-  const inpaintedFirstFrame = await inpaintFn(firstFrameImageData, maskImageData)
-
-  // ===== Step 2: Build patch =====
-  onProgress?.(12, 'Preparing patch')
-  const patchCanvas = buildPatchCanvas(inpaintedFirstFrame, maskImageData, 6)
+  // Patch statis hanya untuk jalur inpaintFn (fallback MI-GAN).
+  let patchCanvas: OffscreenCanvas | null = null
+  if (!frameProcessor && inpaintFn && maskImageData) {
+    onProgress?.(5, 'Running AI on reference frame (one-time)')
+    const inpaintedFirstFrame = await inpaintFn(firstFrameImageData, maskImageData)
+    onProgress?.(12, 'Preparing patch')
+    patchCanvas = buildPatchCanvas(inpaintedFirstFrame, maskImageData, 6)
+  } else {
+    onProgress?.(5, 'Preparing per-frame cleaner')
+  }
 
   // ===== Step 3: Set up output canvas + recording =====
   const outCanvas = document.createElement('canvas')
   outCanvas.width = width
   outCanvas.height = height
-  const outCtx = outCanvas.getContext('2d')!
+  const outCtx = outCanvas.getContext('2d', { willReadFrequently: true })!
+
+  const drawClean = () => {
+    outCtx.drawImage(video, 0, 0, width, height)
+    if (frameProcessor) frameProcessor(outCtx)
+    else if (patchCanvas) outCtx.drawImage(patchCanvas, 0, 0)
+  }
 
   // captureStream(fps) — auto-capture at the specified rate
   const canvasStream = outCanvas.captureStream(fps)
@@ -193,8 +214,7 @@ export async function processVideo({
   })
 
   // Draw first frame
-  outCtx.drawImage(video, 0, 0, width, height)
-  outCtx.drawImage(patchCanvas, 0, 0)
+  drawClean()
 
   // Start recorder
   recorder.start()
@@ -221,8 +241,7 @@ export async function processVideo({
       clearTimeout(forceStopTimer)
       cancelAnimationFrame(animId)
       // Draw final frame one last time
-      outCtx.drawImage(video, 0, 0, width, height)
-      outCtx.drawImage(patchCanvas, 0, 0)
+      drawClean()
       resolve()
     }
 
@@ -235,9 +254,8 @@ export async function processVideo({
         return
       }
 
-      // Draw video frame + patch overlay
-      outCtx.drawImage(video, 0, 0, width, height)
-      outCtx.drawImage(patchCanvas, 0, 0)
+      // Draw video frame + per-frame cleaning (bukan patch statis)
+      drawClean()
       frameCount++
 
       const progress = Math.min(98, 15 + (video.currentTime / Math.max(duration, 0.01)) * 83)
