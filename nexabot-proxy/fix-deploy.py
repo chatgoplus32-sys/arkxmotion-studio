@@ -1,20 +1,32 @@
-import paramiko, os, sys, io, time
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+import os
+import sys
+import time
 
-c = paramiko.SSHClient()
-c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-c.connect('103.172.204.6', port=22, username='arkxmotion', password='Masuk1234_', timeout=15, allow_agent=False, look_for_keys=False)
+from vps_config import run_check, ssh_connect, vps_config
+
+sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
+CONF = vps_config()
+REMOTE_DIR = CONF['remote_dir']
+
+if '--check' in sys.argv[1:]:
+    run_check(CONF)
+
+print('[..] Connecting to VPS...')
+c = ssh_connect(CONF)
+print('  Connected OK')
 
 # 1. Upload server.js
 sftp = c.open_sftp()
-sftp.put(r'D:\KOKO MITION\clone\nexabot-proxy\server.js', '/home/arkxmotion/nexabot-proxy/server.js')
+local_server = os.path.join(CONF['local_dir'], 'server.js')
+sftp.put(local_server, REMOTE_DIR + '/server.js')
 sftp.close()
 print('1. server.js uploaded')
 
 # 2. Upload fix script
-fix_script = r"""
-const Database = require('/home/arkxmotion/nexabot-proxy/node_modules/better-sqlite3');
-const db = new Database('/home/arkxmotion/nexabot-proxy/members.db');
+fix_script = f"""
+const Database = require('{REMOTE_DIR}/node_modules/better-sqlite3');
+const db = new Database('{REMOTE_DIR}/members.db');
 const r = db.prepare("UPDATE members SET saldo = 10000 WHERE name = 'koko'").run();
 console.log('Fixed koko saldo to 10000, changes:', r.changes);
 db.close();

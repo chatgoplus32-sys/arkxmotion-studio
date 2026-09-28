@@ -606,6 +606,27 @@ rc=$?
 check_eq 'exit 0 (hanya baris baru yang dinilai)' '0' "$rc"
 check_absent 'berkasnya tidak disebut sebagai pelanggaran' "$out" 'lama2.py'
 
+case_start '42. check.sh: kunci VPS_PASS juga dikenali sebagai kredensial'
+prepare_dev_case
+reset_index
+printf "VPS_PASS = 'RahasiaUji12345'\n" > "$SANDBOX/arkxmotion-studio/deploy_a.py"
+stage deploy_a.py
+out="$(run_check --staged)"
+rc=$?
+check_eq 'exit 1' '1' "$rc"
+check_contains 'kuncinya disebut' "$out" 'VPS_PASS'
+check_absent 'nilai rahasianya TIDAK ikut tercetak' "$out" 'RahasiaUji12345'
+
+case_start '43. check.sh: PASSWORD tanpa awalan tetap dikenali di berkas gaya .env'
+prepare_dev_case
+reset_index
+printf 'PASSWORD=BukanUntukDilihat123\n' > "$SANDBOX/arkxmotion-studio/config_lokal.env"
+stage config_lokal.env
+out="$(run_check --staged)"
+rc=$?
+check_eq 'exit 1' '1' "$rc"
+check_contains 'kuncinya disebut' "$out" 'PASSWORD'
+
 # ── Ringkasan ───────────────────────────────────────────────────────────────
 printf '\n────────────────────────────────────────\n'
 printf 'Lolos: %s   Gagal: %s\n' "$PASS" "$FAIL"

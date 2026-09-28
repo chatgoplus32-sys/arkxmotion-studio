@@ -163,7 +163,11 @@ config_phase() {
 # (`Password=`, `API_KEY=`). Mode staged memakai `git grep --cached`, yang
 # memeriksa ISI INDEX — persis yang akan masuk commit — bukan isi worktree, jadi
 # coretan lokal yang belum di-stage tidak ikut dinilai.
-CREDENTIAL_NAME='(PASSWORD|PASSWD|SECRET|TOKEN|APIKEY|API_KEY|ACCESS_KEY|PRIVATE_KEY|CLIENT_SECRET|CREDENTIAL)'
+# `PASS`, `PWD`, dan `PASSPHRASE` ikut masuk daftar karena celahnya terbukti nyata:
+# password VPS pernah tertanam di tiga skrip sebagai `VPS_PASS = '...'`, dan
+# justru nama kunci itulah yang lolos — gerbang yang mencari "PASSWORD" tidak
+# mengenalinya, sehingga berkas yang paling perlu diperiksa tidak pernah muncul.
+CREDENTIAL_NAME='(PASSWORD|PASSWD|PASSPHRASE|PASS|PWD|SECRET|TOKEN|APIKEY|API_KEY|ACCESS_KEY|PRIVATE_KEY|CLIENT_SECRET|CREDENTIAL)'
 
 # Berkas yang memang boleh memuat pola itu: check.sh dan tesnya memuat contoh
 # polanya sendiri, dan lockfile penuh hash (yang bukan rahasia apa pun).
@@ -224,8 +228,15 @@ credential_patterns_quoted() { # $1 = kelas kutip
 # (`VPS_PASSWORD=`), sehingga penugasan variabel di kode — `accessToken =
 # refreshed.accessToken`, `tokens = filtered.slice(0, 10)` — tidak ikut masuk.
 # Karena itu pula pola ini dijalankan TANPA -i.
+#
+# Huruf besar di awal TIDAK lagi diwajibkan secara terpisah: bentuk lama
+# menuntut minimal satu karakter sebelum nama kunci (`[A-Z]` + `[A-Z0-9_]*`),
+# jadi `PASSWORD=rahasia123` tanpa awalan justru tidak tertangkap sama sekali —
+# padahal itu bentuk paling lazim di berkas .env. Kelas `[A-Z0-9_]*` saja sudah
+# cukup menjaga maksudnya: kunci huruf kecil seperti `accessToken = ...` tetap
+# tidak cocok.
 credential_patterns_env() { # $1 = kelas kutip
-  printf '%s\n' "^${CREDENTIAL_LINE_PREFIX}[[:space:]]*(export[[:space:]]+)?[A-Z][A-Z0-9_]*${CREDENTIAL_NAME}[A-Z0-9_]*[[:space:]]*=[[:space:]]*[^[:space:]${1}]{8,}"
+  printf '%s\n' "^${CREDENTIAL_LINE_PREFIX}[[:space:]]*(export[[:space:]]+)?[A-Z0-9_]*${CREDENTIAL_NAME}[A-Z0-9_]*[[:space:]]*=[[:space:]]*[^[:space:]${1}]{8,}"
 }
 
 # Penyaring daftar izin menilai ISI baris, bukan seluruh baris keluaran git grep.
