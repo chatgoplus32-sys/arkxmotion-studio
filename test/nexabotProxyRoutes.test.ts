@@ -157,6 +157,22 @@ test('/job/:id: halaman HTML (cookie mati) diteruskan apa adanya, bukan diulang'
   assert.equal(calls.length, 1)
 })
 
+test('/generate: resolution diteruskan ke upstream', async () => {
+  let sentBody = ''
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = (async (_input: any, init?: any) => {
+    sentBody = String(init?.body ?? '')
+    return jsonResponse({ ok: true, job_id: 'job-res', status: 'queued' })
+  }) as typeof fetch
+  try {
+    const res = await post('/api/public/nexabot/generate', { mode: 't2v', prompt: 'drone shot', resolution: 1080 }, { 'X-Nexabot-Cookie': 'session=abc' })
+    assert.equal(res.status, 200)
+    assert.equal(JSON.parse(sentBody).resolution, 1080)
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
 test('/generate: timeout TIDAK diulang (hindari job & kredit ganda)', async () => {
   queue.push(() => { throw timeoutError() })
 

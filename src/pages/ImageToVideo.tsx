@@ -322,9 +322,18 @@ export default function ImageToVideoPage() {
 
   const models = useMemo(() => PROVIDER_MODELS[provider] || [], [provider])
   const currentModel = models.find((m) => m.value === model) || models[0]
-  const isNbOmniFlash = provider === 'nexabot' && (model === 'nb:omni-flash-1.1' || model === 'nb:omni-r2v')
+  // NexaBot Omni Flash 1.1 — 4 jenis mengikuti nexabot.id/video-generator:
+  const isNb = provider === 'nexabot'
+  const nbApiModel = isNb ? (currentModel?.apiModel || 't2v') : ''
+  const isNbT2V = isNb && nbApiModel === 't2v'
+  const isNbSFV = isNb && nbApiModel === 'sfv'
+  const isNbI2V = isNb && nbApiModel === 'i2v'
+  const isNbR2V = isNb && nbApiModel === 'r2v'
+  const isNbOmniFlash = isNbR2V
   const nbVideoIdx = refFiles.findIndex((f) => f.type.startsWith('video/'))
   const nbVideoUrl = nbVideoIdx >= 0 ? refUrls[nbVideoIdx] ?? null : null
+  // Gambar input = semua refUrls sebelum video (urutan dijaga handler).
+  const nbImageUrls = nbVideoIdx >= 0 ? refUrls.slice(0, nbVideoIdx) : refUrls
 
   const hasImgFile = !!imgFile
   const qualityOptions = useMemo(() => {
@@ -443,6 +452,34 @@ export default function ImageToVideoPage() {
   }
 
   const removeRef = (index: number) => {
+    setRefFiles((prev) => prev.filter((_, i) => i !== index))
+    setRefUrls((prev) => {
+      const target = prev[index]
+      if (target && target.startsWith('blob:')) URL.revokeObjectURL(target)
+      return prev.filter((_, i) => i !== index)
+    })
+  }
+
+  // NexaBot: ganti kumpulan gambar input (sfv = 1, i2v = 1-3).
+  // Video referensi (r2v) dipertahankan — urutan refFiles selalu [gambar…, video?].
+  const handleNbImagesChange = (files: FileList | null) => {
+    if (!files || files.length === 0) return
+    const max = isNbI2V ? 3 : 1
+    const imgs = Array.from(files).filter((f) => f.type.startsWith('image/')).slice(0, max)
+    if (imgs.length === 0) return
+    const video = refFiles.find((f) => f.type.startsWith('video/')) || null
+    const videoUrl = video ? nbVideoUrl : null
+    setRefUrls((prev) => {
+      prev.forEach((u, i) => {
+        if (u.startsWith('blob:') && !(video && refFiles[i] === video)) URL.revokeObjectURL(u)
+      })
+      return video ? [...imgs.map((f) => URL.createObjectURL(f)), videoUrl!] : imgs.map((f) => URL.createObjectURL(f))
+    })
+    setRefFiles(video ? [...imgs, video] : imgs)
+  }
+
+  const removeNbImage = (index: number) => {
+    if (index === nbVideoIdx) return // penghapusan video lewat tombol video
     setRefFiles((prev) => prev.filter((_, i) => i !== index))
     setRefUrls((prev) => {
       const target = prev[index]
@@ -718,7 +755,9 @@ export default function ImageToVideoPage() {
     addLog(`🚀 Mulai generate video`, 'info', provider)
     addLog(`   Provider: ${PROVIDER_CONFIGS[provider].name}`, 'debug', provider)
     addLog(`   Model: ${currentModel?.label || model}`, 'debug', provider)
-    addLog(`   Rasio: ${ratio} | Durasi: ${currentQuality?.duration || 5}s`, 'debug', provider)
+    addLog(provider === 'nexabot'
+      ? `   Rasio: ${ratio} | Resolusi: ${currentQuality?.resolution || '720'}p`
+      : `   Rasio: ${ratio} | Durasi: ${currentQuality?.duration || 5}s`, 'debug', provider)
     addLog(`   Prompt: "${prompt.trim().slice(0, 80)}${prompt.trim().length > 80 ? '...' : ''}"`, 'debug', provider)
 
     const currentUser = useAuthStore.getState().user
@@ -2205,42 +2244,39 @@ export default function ImageToVideoPage() {
             } else if (apiModel === 't2v' || apiModel === 'sfv' || apiModel === 'i2v') {
               if (ratio === '16:9') ratioParam = 1
               else if (ratio === '9:16') ratioParam = 2
+            } else if (apiModel === 'r2v') {
+              // r2v: bila ratio kosong, ikut orientasi video sumber
+              if (ratio === '16:9') ratioParam = 1
+              else if (ratio === '9:16') ratioParam = 2
             }
+            // Resolusi video dari dropdown kualitas (720p/1080p)
+            const nbResolution = apiModel === 't2v' || apiModel === 'sfv' || apiModel === 'i2v' || apiModel === 'r2v'
+              ? (Number(currentQuality?.resolution) || 720)
+              : undefined
 
             // Media input (base64 data URI) sesuai aturan tiap mode:
             //  • sfv: 1 gambar start frame · i2v: 1-3 gambar ingredient
             //  • r2v: media[0]=video + 1 gambar opsional (Omni Flash 1.1)
             //  • NexaBot (t2v): kirim semua gambar/video sebagai media reference
-            const imageFiles = [imgFile, startFrameFile, ...refFiles]
-              .filter((f): f is File => !!f && f.type.startsWith('image/'))
+            // NexaBot: semua gambar input hidup di refFiles (panel input 4 jenis);
+            // imgFile/startFrameFile milik provider lain dan tidak boleh bocor ke sini.
+            const imageFiles = refFiles.filter((f) => f.type.startsWith('image/'))
             const videoFile = refFiles.find((f) => f.type.startsWith('video/'))
 
-            // NexaBot: mode ditentukan oleh model yang dipilih user (apiModel),
-            // dengan fallback otomatis berdasarkan media yang tersedia.
-            //  - nb:omni        → t2v (default, bisa naik ke sfv/r2v kalau ada media)
-            //  - nb:omni-sfv    → sfv (start frame to video)
-            //  - nb:omni-i2v    → i2v (image to video, 1-3 gambar)
-            //  - nb:omni-r2v    → r2v (reference to video, wajib video)
-            //  - nb:omni-flash  → r2v (Omni Flash 1.1, wajib video)
+            // NexaBot: mode = jenis yang dipilih user. Validasi media ketat
+            // sesuai docs (media salah = job gagal di upstream setelah antre):
+            //   t2v tanpa media · sfv 1 gambar · i2v 1-3 gambar
+            //   r2v video:1 + gambar opsional 0-1
             type NbMode = import('@/lib/nexabot').NexabotMode
-            const baseMode = (apiModel as NbMode) || 't2v'
-            let nbMode: NbMode = baseMode
-            if (baseMode === 't2v') {
-              // Mode default: naikkan otomatis berdasarkan media yang di-upload
-              if (videoFile) nbMode = 'r2v'
-              else if (imageFiles.length > 0) nbMode = 'sfv'
-            } else if (baseMode === 'sfv') {
-              // Start Frame: pastikan ada gambar, fallback ke t2v kalau kosong
-              if (imageFiles.length === 0) nbMode = videoFile ? 'r2v' : 't2v'
-            } else if (baseMode === 'i2v') {
-              // Image to Video: butuh minimal 1 gambar
-              if (imageFiles.length === 0) nbMode = videoFile ? 'r2v' : 't2v'
-            } else if (baseMode === 'r2v') {
-              // Reference to Video: butuh video referensi
-              if (!videoFile) {
-                // Fallback: kalau ada gambar tapi tidak ada video → sfv
-                nbMode = imageFiles.length > 0 ? 'sfv' : 't2v'
-              }
+            const nbMode: NbMode = (apiModel as NbMode) || 't2v'
+            if (nbMode === 'sfv' && imageFiles.length !== 1) {
+              throw new Error('Start Frame to Video butuh tepat 1 gambar — upload dulu di panel input.')
+            }
+            if (nbMode === 'i2v' && (imageFiles.length < 1 || imageFiles.length > 3)) {
+              throw new Error('Ingredients to Video butuh 1-3 gambar.')
+            }
+            if (nbMode === 'r2v' && !videoFile) {
+              throw new Error('Reference Video to Video butuh 1 video referensi — upload dulu di panel input.')
             }
 
             // Media (base64 data URI) dibatasi sesuai aturan tiap mode:
@@ -2292,6 +2328,7 @@ export default function ImageToVideoPage() {
                   prompt: prompt.trim(),
                   ratio: ratioParam,
                   aspect: aspectParam,
+                  resolution: nbResolution,
                   voice: apiModel === 'tts' ? NEXABOT_DEFAULT_VOICE : undefined,
                   media: media.length > 0 ? media : undefined,
                   // Billing NexaBot mengikuti telegram_id (kalau diisi di halaman Providers).
@@ -2763,9 +2800,78 @@ export default function ImageToVideoPage() {
                   </div>
                 </div>
               </Section>
+            ) : isNb ? (
+              /* NexaBot: input mengikuti 4 jenis video-generator */
+              <Section title="🖼️ Gambar / Video Input" sub={
+                isNbT2V ? 'Text to Video — tanpa input media'
+                : isNbSFV ? 'Start Frame to Video — 1 gambar wajib'
+                : isNbI2V ? 'Ingredients to Video — 1-3 gambar'
+                : 'Reference Video to Video — 1 video (wajib) + 1 gambar (opsional)'
+              }>
+                {!isNbT2V && (
+                  <>
+                    <input ref={inputRef} type="file" accept="image/*" multiple={isNbI2V} hidden onChange={(e) => handleNbImagesChange(e.target.files)} />
+                    {nbImageUrls.length > 0 ? (
+                      <div className="grid grid-cols-3 gap-2">
+                        {nbImageUrls.map((u, i) => (
+                          <div key={i} className="relative aspect-square rounded-xl overflow-hidden border border-border">
+                            <img src={u} alt={`gambar ${i + 1}`} className="w-full h-full object-cover" />
+                            <button onClick={() => removeNbImage(i)} aria-label="Hapus gambar" className="absolute top-1 right-1 rounded-full w-6 h-6 bg-black/60 text-white text-xs grid place-items-center hover:bg-black/80">×</button>
+                          </div>
+                        ))}
+                        {isNbI2V && nbImageUrls.length < 3 && (
+                          <button onClick={() => inputRef.current?.click()} className="aspect-square rounded-xl border border-dashed border-border/80 bg-card/30 grid place-items-center hover:border-primary/60 transition text-center">
+                            <div>
+                              <div className="text-2xl">➕</div>
+                              <div className="text-[10px] mt-0.5">Tambah ({nbImageUrls.length}/3)</div>
+                            </div>
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <button onClick={() => inputRef.current?.click()} className="w-full aspect-[9/16] rounded-2xl border border-dashed border-border/80 bg-card/30 grid place-items-center hover:border-primary/60 transition text-center px-4">
+                        <div>
+                          <div className="text-3xl">🖼️</div>
+                          <div className="text-sm mt-1">{isNbR2V ? 'Gambar pendamping (opsional)' : 'Tap atau tarik gambar (wajib)'}</div>
+                          <div className="text-[11px] text-muted-foreground">{isNbI2V ? '1-3 gambar · JPG / PNG / WEBP' : 'JPG / PNG / WEBP'}</div>
+                        </div>
+                      </button>
+                    )}
+                  </>
+                )}
+                {isNbR2V && (
+                  <div className="mt-3">
+                    <input ref={videoRefInputRef} type="file" accept="video/*" hidden onChange={(e) => handleVideoRefChange(e.target.files)} />
+                    <div className="text-[11px] text-muted-foreground mb-1.5">🎬 Video Referensi (wajib)</div>
+                    {nbVideoUrl ? (
+                      <div className="relative aspect-video rounded-2xl overflow-hidden border border-border">
+                        <video src={nbVideoUrl} className="w-full h-full object-cover" controls />
+                        <button onClick={() => removeRef(nbVideoIdx)} className="absolute top-2 right-2 rounded-full w-6 h-6 bg-black/60 text-white text-xs grid place-items-center hover:bg-black/80">×</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => videoRefInputRef.current?.click()} className="w-full aspect-video rounded-2xl border border-dashed border-border/80 bg-card/30 grid place-items-center hover:border-primary/60 transition text-center px-4">
+                        <div>
+                          <div className="text-3xl">🎬</div>
+                          <div className="text-sm mt-1">Tap untuk upload video referensi (wajib)</div>
+                          <div className="text-[11px] text-muted-foreground">MP4 / WEBM / MOV</div>
+                        </div>
+                      </button>
+                    )}
+                  </div>
+                )}
+                {isNbT2V && (
+                  <div className="aspect-[9/16] rounded-2xl border border-dashed border-border/60 bg-card/20 grid place-items-center text-center px-4">
+                    <div>
+                      <div className="text-3xl">✍️</div>
+                      <div className="text-sm mt-1 text-muted-foreground">Text to Video — cukup tulis prompt</div>
+                      <div className="text-[11px] text-muted-foreground">Tidak ada input media</div>
+                    </div>
+                  </div>
+                )}
+              </Section>
             ) : (
               /* Default UI for other providers */
-              <Section title="🖼️ Gambar / Video Input" sub={isNbOmniFlash ? "Gambar referensi (opsional) + video referensi (wajib) untuk Reference to Video" : "1 file (JPG / PNG / WEBP / MP4) — optional untuk text-to-video"}>
+              <Section title="🖼️ Gambar / Video Input" sub="1 file (JPG / PNG / WEBP / MP4) — optional untuk text-to-video">
                 <input ref={inputRef} type="file" accept="image/*" hidden onChange={(e) => handleFileChange(e.target.files)} />
                 {imgUrl ? (
                   <div className="relative aspect-[9/16] rounded-2xl overflow-hidden border border-border">
@@ -2834,7 +2940,7 @@ export default function ImageToVideoPage() {
                     />
                   </div>
                   <div>
-                    <Label>Durasi</Label>
+                    <Label>{isNb ? 'Resolusi' : 'Durasi'}</Label>
                     <Select
                       value={quality}
                       onChange={(e) => setQuality(e.target.value)}

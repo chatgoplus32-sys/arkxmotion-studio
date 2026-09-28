@@ -126,16 +126,15 @@ export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'rs:happyhorse-1.1', label: 'HappyHorse 1.1 (Riverside)', cr: 12, provider: 'riverside', apiModel: 'happyhorse-1.1' },
     { value: 'rs:kling-3.0-pro', label: 'Kling 3.0 Pro (Riverside)', cr: 13, provider: 'riverside', apiModel: 'kling-3.0-pro' },
   ],
-  // NexaBot: Google Omni ( semua mode video ). API-nya tidak punya parameter
-  // `model` (docs resmi hanya: mode, prompt, telegram_id, ratio/media), jadi
-  // mode diturunkan dari media yang di-upload. Setiap model mencakup beberapa
-  // mode sekaligus — mode aktual dipilih otomatis oleh ImageToVideo.tsx.
+  // NexaBot: Omni Flash 1.1 (satu model, 4 jenis) — mengikuti
+  // nexabot.id/video-generator: mode menentukan jenis input, resolusi
+  // 720/1080 dipilih user. API tidak punya parameter `model`; yang dikirim
+  // adalah `mode` + `resolution` (lihat GET /api/v1/modes).
   nexabot: [
-    { value: 'nb:omni', label: '✨ Google Omni — Text to Video (NexaBot)', cr: 0.25, provider: 'nexabot', apiModel: 't2v' },
-    { value: 'nb:omni-sfv', label: '🖼️ Google Omni — Start Frame to Video (NexaBot)', cr: 0.25, provider: 'nexabot', apiModel: 'sfv' },
-    { value: 'nb:omni-i2v', label: '🖼️ Google Omni — Image to Video (NexaBot)', cr: 0.25, provider: 'nexabot', apiModel: 'i2v' },
-    { value: 'nb:omni-r2v', label: '🎬 Google Omni — Reference to Video (NexaBot)', cr: 0.25, provider: 'nexabot', apiModel: 'r2v' },
-    { value: 'nb:omni-flash-1.1', label: '⚡ Omni Flash 1.1 — Reference to Video (NexaBot)', cr: 0.25, provider: 'nexabot', apiModel: 'r2v' },
+    { value: 'nb:t2v', label: '✍️ Text to Video — Omni Flash 1.1 (NexaBot)', cr: 0.25, provider: 'nexabot', apiModel: 't2v' },
+    { value: 'nb:sfv', label: '🖼️ Start Frame to Video — Omni Flash 1.1 (NexaBot)', cr: 0.25, provider: 'nexabot', apiModel: 'sfv' },
+    { value: 'nb:i2v', label: '🧩 Ingredients to Video (1-3 img) — Omni Flash 1.1 (NexaBot)', cr: 0.25, provider: 'nexabot', apiModel: 'i2v' },
+    { value: 'nb:r2v', label: '🎬 Reference Video to Video — Omni Flash 1.1 (NexaBot)', cr: 0.25, provider: 'nexabot', apiModel: 'r2v' },
   ],
 }
 
@@ -557,32 +556,29 @@ export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: s
     ],
   },
   nexabot: {
-    // Durasi tidak dikirim ke API NexaBot (tidak ada parameter durasi/max_seconds),
-    // jadi semua mode memakai daftar yang sama. `cr` wajib diisi eksplisit:
-    // totalCredits memakai Math.round(cr * mult), dan Math.round(0.25) = 0.
-    'nb:omni': [
-      { value: '5s', label: '5 detik — Text to Video', mult: 1, duration: 5, cr: 0.25 },
-      { value: '10s', label: '10 detik — Text to Video', mult: 1, duration: 10, cr: 0.25 },
+    // API NexaBot TIDAK punya parameter durasi (docs: mode/prompt/ratio/media/
+    // resolution) — pilihan "5s/10s" lama tidak pernah dikirim, jadi diganti
+    // jadi pilihan RESOLUSI yang benar-benar dikirim ke body. `resolution`
+    // menempel di opsi; `duration` 0 = tidak ditampilkan di log durasi.
+    'nb:t2v': [
+      { value: '720', label: '720p — cepat', mult: 1, duration: 0, cr: 0.25, resolution: '720' },
+      { value: '1080', label: '1080p — lebih tajam, proses lebih lama', mult: 1, duration: 0, cr: 0.25, resolution: '1080' },
     ],
-    'nb:omni-sfv': [
-      { value: '5s', label: '5 detik — Start Frame', mult: 1, duration: 5, cr: 0.25 },
-      { value: '10s', label: '10 detik — Start Frame', mult: 1, duration: 10, cr: 0.25 },
+    'nb:sfv': [
+      { value: '720', label: '720p — cepat', mult: 1, duration: 0, cr: 0.25, resolution: '720' },
+      { value: '1080', label: '1080p — lebih tajam, proses lebih lama', mult: 1, duration: 0, cr: 0.25, resolution: '1080' },
     ],
-    'nb:omni-i2v': [
-      { value: '5s', label: '5 detik — Image to Video', mult: 1, duration: 5, cr: 0.25 },
-      { value: '10s', label: '10 detik — Image to Video', mult: 1, duration: 10, cr: 0.25 },
+    'nb:i2v': [
+      { value: '720', label: '720p — cepat', mult: 1, duration: 0, cr: 0.25, resolution: '720' },
+      { value: '1080', label: '1080p — lebih tajam, proses lebih lama', mult: 1, duration: 0, cr: 0.25, resolution: '1080' },
     ],
-    'nb:omni-r2v': [
-      { value: '5s', label: '5 detik — Reference to Video', mult: 1, duration: 5, cr: 0.25 },
-      { value: '10s', label: '10 detik — Reference to Video', mult: 1, duration: 10, cr: 0.25 },
-    ],
-    'nb:omni-flash-1.1': [
-      { value: '5s', label: '5 detik — Flash Ref to Video', mult: 1, duration: 5, cr: 0.25 },
-      { value: '10s', label: '10 detik — Flash Ref to Video', mult: 1, duration: 10, cr: 0.25 },
+    'nb:r2v': [
+      { value: '720', label: '720p — cepat', mult: 1, duration: 0, cr: 0.25, resolution: '720' },
+      { value: '1080', label: '1080p — lebih tajam, proses lebih lama', mult: 1, duration: 0, cr: 0.25, resolution: '1080' },
     ],
     default: [
-      { value: '5s', label: '5 detik', mult: 1, duration: 5, cr: 0.25 },
-      { value: '10s', label: '10 detik', mult: 1, duration: 10, cr: 0.25 },
+      { value: '720', label: '720p', mult: 1, duration: 0, cr: 0.25, resolution: '720' },
+      { value: '1080', label: '1080p', mult: 1, duration: 0, cr: 0.25, resolution: '1080' },
     ],
   },
 }
@@ -603,6 +599,12 @@ export const RATIOS = ['16:9', '9:16', '1:1', '4:3']
 /** Model-specific ratio restrictions (empty = use all RATIOS). */
 export const MODEL_RATIO_RESTRICTIONS: Record<string, string[]> = {
   'veo-omni-10s': ['9:16', '16:9'],
+  // NexaBot Omni Flash 1.1 (docs /api/v1/modes): ratio 1=landscape, 2=portrait
+  // — 1:1 & 4:3 tidak didukung upstream.
+  'nb:t2v': ['16:9', '9:16'],
+  'nb:sfv': ['16:9', '9:16'],
+  'nb:i2v': ['16:9', '9:16'],
+  'nb:r2v': ['16:9', '9:16'],
 }
 
 export const TEMPLATES = [

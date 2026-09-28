@@ -597,6 +597,8 @@ export interface NexabotSubmitParams {
   aspect?: number      // 1 = square, 2 = 2:3, 5 = 9:16
   voice?: string       // untuk tts (default: en-US-Wavenet-D)
   media?: string[]     // base64 data URI
+  /** 720 | 1080 — hanya mode video (t2v/sfv/i2v/r2v); lihat GET /api/v1/modes. */
+  resolution?: number
   /**
    * ID Telegram yang ditagihkan (parameter resmi NexaBot: "user id for credit
    * billing"). Kalau kosong, NexaBot memakai akun default milik API key.
@@ -642,6 +644,10 @@ export async function submitNexabot(
   if (params.aspect !== undefined) body.aspect = params.aspect
   if (params.voice) body.voice = params.voice
   if (params.media) body.media = params.media
+  // Resolusi video (720|1080) — mode video saja; img/music/tts menolaknya.
+  if (params.resolution !== undefined && ['t2v', 'sfv', 'i2v', 'r2v'].includes(params.mode)) {
+    body.resolution = params.resolution
+  }
   // telegram_id hanya dipakai jalur API key (billing). Di mode session, akun
   // sudah ditentukan oleh cookie login.
   if (params.telegramId && !session) body.telegram_id = params.telegramId

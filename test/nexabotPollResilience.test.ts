@@ -24,6 +24,40 @@ function jsonResponse(body: unknown, status = 200, headers: Record<string, strin
   })
 }
 
+test('submitNexabot mengirim resolution di body (mode video)', async () => {
+  let sentBody = ''
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = (async (_input: any, init?: any) => {
+    sentBody = String(init?.body ?? '')
+    return jsonResponse({ ok: true, job_id: 'job-res', status: 'queued' })
+  }) as typeof fetch
+  try {
+    const r = await submitNexabot({ mode: 't2v', prompt: 'drone shot', resolution: 1080 }, AUTH, FAST)
+    assert.equal(r.ok, true)
+    const body = JSON.parse(sentBody)
+    assert.equal(body.resolution, 1080)
+    assert.equal(body.mode, 't2v')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('submitNexabot: resolution TIDAK dikirim untuk mode non-video (img)', async () => {
+  let sentBody = ''
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = (async (_input: any, init?: any) => {
+    sentBody = String(init?.body ?? '')
+    return jsonResponse({ ok: true, job_id: 'job-img', status: 'queued' })
+  }) as typeof fetch
+  try {
+    await submitNexabot({ mode: 'img', prompt: 'kucing', resolution: 1080 }, AUTH, FAST)
+    const body = JSON.parse(sentBody)
+    assert.equal(body.resolution, undefined)
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
 const QUEUED_JOB = { ok: true, job: { id: 'job-1', status: 'queued', mode: 'sfv', prompt: 'animasikan' } }
 const DONE_JOB = { ok: true, job: { id: 'job-1', status: 'done', mode: 'sfv', prompt: 'animasikan' } }
 

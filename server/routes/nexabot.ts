@@ -231,6 +231,8 @@ router.post('/submit', async (req: Request, res: Response) => {
   if (body.aspect !== undefined) upstreamBody.aspect = body.aspect
   if (body.voice) upstreamBody.voice = body.voice
   if (body.media) upstreamBody.media = body.media
+  // Resolusi video 720|1080 (mode video; lihat /api/v1/modes).
+  if (body.resolution !== undefined) upstreamBody.resolution = body.resolution
   // telegram_id = "user id for credit billing" (docs NexaBot) — menentukan
   // akun mana yang ditagih 0.25 cr/request.
   if (body.telegram_id) upstreamBody.telegram_id = body.telegram_id
@@ -272,6 +274,8 @@ router.post('/generate', async (req: Request, res: Response) => {
   if (body.aspect !== undefined) upstreamBody.aspect = body.aspect
   if (body.voice) upstreamBody.voice = body.voice
   if (body.media) upstreamBody.media = body.media
+  // Resolusi video 720|1080 (mode video; lihat /api/v1/modes).
+  if (body.resolution !== undefined) upstreamBody.resolution = body.resolution
   if (body.telegram_id) upstreamBody.telegram_id = body.telegram_id
 
   // Tanpa retry, sama alasannya dengan /submit: hindari job & kredit ganda.
