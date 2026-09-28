@@ -96,7 +96,7 @@ export interface HealthCheckResult {
   status: 'ok' | 'degraded' | 'error'
   timestamp: string
   uptime: number
-  checks: Record<string, { status: string; latencyMs?: number; error?: string }>
+  checks: Record<string, { status: string; latencyMs?: number; error?: string; note?: string }>
 }
 
 const upstreams: Record<string, string> = {
@@ -104,6 +104,28 @@ const upstreams: Record<string, string> = {
   createpulse: 'https://createpulse.online/api/status',
   framia: 'https://api.framia.pro/video/api',
   runninghub: 'https://www.runninghub.ai/enterprise-api/consumerApi',
+}
+
+/**
+ * Status HTTP yang tetap berarti "service HIDUP" walau probe-nya ditolak:
+ * 401/403 butuh kredensial, 404 endpoint probe memang tidak ada, 405 metode
+ * HEAD tidak diizinkan, 429 sedang dibatasi. Selama server MENJAWAB, service
+ * tidak boleh dilaporkan "degraded" — kalau tidak, /api/health selalu kuning
+ * padahal upstreamnya sehat (createpulse 401, framia 404).
+ */
+const REACHABLE_HTTP = new Set([401, 403, 404, 405, 429])
+
+/**
+ * Klasifikasi satu respons probe upstream. Murni (tanpa jaringan/DOM) supaya
+ * bisa diuji langsung, termasuk kasus di mana probe naive salah menyebut
+ * service sehat sebagai "degraded".
+ */
+export function classifyProbe(status: number): { status: 'ok' | 'degraded'; note?: string } {
+  if (status >= 200 && status < 300) return { status: 'ok' }
+  if (REACHABLE_HTTP.has(status)) {
+    return { status: 'ok', note: `HTTP ${status} — server menjawab (probe tanpa kredensial)` }
+  }
+  return { status: 'degraded', note: `HTTP ${status}` }
 }
 
 export async function checkHealth(): Promise<HealthCheckResult> {
@@ -130,8 +152,9 @@ export async function checkHealth(): Promise<HealthCheckResult> {
       const res = await fetch(url, { method: 'HEAD', signal: ac.signal })
       clearTimeout(tid)
       const latencyMs = Date.now() - start
-      checks[name] = { status: res.ok ? 'ok' : 'degraded', latencyMs }
-      if (!res.ok && overallStatus === 'ok') overallStatus = 'degraded'
+      const verdict = classifyProbe(res.status)
+      checks[name] = { ...verdict, latencyMs }
+      if (verdict.status === 'degraded' && overallStatus === 'ok') overallStatus = 'degraded'
     } catch (err: any) {
       checks[name] = { status: 'error', error: err.message }
       if (overallStatus === 'ok') overallStatus = 'degraded'
