@@ -55,7 +55,7 @@ const mainNav: NavItem[] = [
 const generateNav: NavItem[] = [
   { label: 'Motion Control', href: '/generate/motion', icon: <Video className="h-4 w-4" /> },
   { label: 'Image to Video', href: '/generate/image-to-video', icon: <Image className="h-4 w-4" /> },
-  // { label: 'Edit Image', href: '/generate/edit-image', icon: <ImagePlus className="h-4 w-4" /> },  // Coming Soon
+  { label: 'Edit Image', href: '/generate/edit-image', icon: <ImagePlus className="h-4 w-4" /> },
 
   { label: 'Virtual Try-On', href: '/generate/virtual-tryon', icon: <Shirt className="h-4 w-4" /> },
   { label: 'Travel Photo', href: '/generate/travel-photo', icon: <Globe className="h-4 w-4" /> },
