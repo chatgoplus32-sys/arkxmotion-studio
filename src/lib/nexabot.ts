@@ -697,6 +697,13 @@ export async function submitNexabot(
         throw new Error(`NexaBot: ${message} — tunggu sebentar lalu coba lagi${retryAfterHint(res)}`)
       }
 
+      // 503 throttle "Server gambar sedang dibatasi upstream" = ditolak SEBELUM
+      // job dibuat (hitungan mundur di body) → aman diulang terjadwal.
+      if (res.status === 503) {
+        const waitSeconds = parseNexabotThrottleSeconds(errText)
+        if (waitSeconds != null) throw new NexabotThrottleError(waitSeconds)
+      }
+
       throw new Error(`NexaBot HTTP ${res.status}: ${errText.slice(0, 200)}`)
     }
 
@@ -718,6 +725,64 @@ export async function submitNexabot(
 
   // Tidak tercapai untuk maxAttempts >= 1 (loop selalu return/throw), jaga-jaga.
   throw new Error('NexaBot: Submit gagal setelah beberapa percobaan')
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// THROTTLE UPSTREAM (HTTP 503 "Server gambar sedang dibatasi upstream")
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Ambil hitungan mundur (detik) dari body 503 throttle nexabot.id,
+ * mis. `... Coba lagi dalam ~141s.` → 141. null kalau tidak ada.
+ */
+export function parseNexabotThrottleSeconds(errText: string): number | null {
+  const m = /coba lagi dalam\s*~?\s*(\d+)\s*s/i.exec(errText || '')
+  return m ? Math.max(1, Number(m[1])) : null
+}
+
+/** Error throttle dengan info tunggu — dipakai submit untuk retry terjadwal. */
+export class NexabotThrottleError extends Error {
+  readonly waitSeconds: number
+  constructor(waitSeconds: number) {
+    super(`NexaBot dibatasi upstream — tunggu ${waitSeconds}s lalu dicoba otomatis`)
+    this.name = 'NexabotThrottleError'
+    this.waitSeconds = waitSeconds
+  }
+}
+
+/**
+ * Submit ulang yang sadar-throttle: menjalankan `fn` (satu panggilan submit).
+ * Kalau kena 503 throttle, tunggu PERSIS sesuai anjuran upstream (dikurangi
+ * 3s, min. 5s) lalu coba lagi — berulang sampai jatah total habis.
+ * 503 ini eksplisit "ditolak sebelum job dibuat" (ada hitungan mundur di
+ * body), jadi aman diulang tanpa risiko job/kredit ganda — beda dari 5xx acak.
+ */
+export async function runWithNexabotThrottleRetry<T>(
+  fn: () => Promise<T>,
+  hooks?: {
+    onThrottle?: (waitSeconds: number) => void
+    maxTotalMs?: number
+    sleep?: (ms: number) => Promise<void>
+  }
+): Promise<T> {
+  const maxTotalMs = hooks?.maxTotalMs ?? 15 * 60 * 1000
+  const sleep = hooks?.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
+  const startedAt = Date.now()
+  for (;;) {
+    try {
+      return await fn()
+    } catch (err) {
+      if (!(err instanceof NexabotThrottleError)) throw err
+      if (Date.now() - startedAt + err.waitSeconds * 1000 > maxTotalMs) {
+        throw new Error(
+          `NexaBot masih dibatasi upstream (tunggu ±${Math.round(err.waitSeconds)}s) ` +
+          `dan melebihi batas tunggu ${Math.round(maxTotalMs / 60000)} menit. Coba lagi nanti.`,
+        )
+      }
+      hooks?.onThrottle?.(err.waitSeconds)
+      await sleep(Math.max(5, err.waitSeconds - 3) * 1000)
+    }
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1111,6 +1176,11 @@ export async function submitNexabotGptImage(
 
       // Retry HANYA untuk 429: upstream menolak rate-limited tanpa membuat job.
       // 5xx/timeout sengaja tidak diulang — job bisa sudah terbentuk (kredit ganda).
+      // Kecuali 503 throttle (hitungan mundur di body) — lihat submitNexabot.
+      if (res.status === 503) {
+        const waitSeconds = parseNexabotThrottleSeconds(errText)
+        if (waitSeconds != null) throw new NexabotThrottleError(waitSeconds)
+      }
       if (res.status === 429) {
         const message = describeNexabotStatus(res.status)
         if (attempt < attempts) {

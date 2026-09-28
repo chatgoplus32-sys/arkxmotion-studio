@@ -43,6 +43,7 @@ import { nexabotPathPill } from './image-to-video/nexabotPathPill'
 import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, type NexabotWallet } from '@/lib/nexabotWallet'
 import { formatRp } from '@/lib/payment'
 import { runNexabotJobWithSessionFallback } from './image-to-video/nexabotSessionFallback'
+import { runWithNexabotThrottleRetry } from '@/lib/nexabot'
 
 // Voice default untuk mode Voice Over NexaBot — salah satu nama dari daftar
 // voice resmi NexaBot (GET /api/v1/modes → voices).
@@ -2323,7 +2324,7 @@ export default function ImageToVideoPage() {
                 addLog(`[2/3] 🚀 Submitting to NexaBot ${nbMode} via ${via}...`, 'info', 'nexabot')
                 setStatus((s) => ({ ...s, text: `Submit NexaBot ${nbMode}...`, pct: 15 }))
 
-                const submit = await submitNexabot({
+                const submit = await runWithNexabotThrottleRetry(() => submitNexabot({
                   mode: nbMode,
                   prompt: prompt.trim(),
                   ratio: ratioParam,
@@ -2339,6 +2340,14 @@ export default function ImageToVideoPage() {
                   // menolak tanpa membuat job, jadi aman diulang).
                   onRetry: ({ status, delayMs }) => {
                     addLog(`⏳ NexaBot sibuk (HTTP ${status}) — submit diulang dalam ${Math.ceil(delayMs / 1000)}s...`, 'warn', 'nexabot')
+                  },
+                }), {
+                  // 503 throttle upstream: tunggu sesuai anjuran lalu submit
+                  // ulang otomatis — user tidak perlu klik ulang (klik ulang
+                  // justru memperbesar window throttle).
+                  onThrottle: (waitSeconds) => {
+                    addLog(`⏳ Server gambar NexaBot sedang dibatasi upstream — menunggu ${waitSeconds}s lalu submit otomatis...`, 'warn', 'nexabot')
+                    setStatus((s) => ({ ...s, text: `Server gambar sibuk — menunggu ${waitSeconds}s (otomatis)...`, pct: 10 }))
                   },
                 })
                 if (!submit.ok || !submit.jobId) throw new Error(submit.error || 'NexaBot submit gagal')

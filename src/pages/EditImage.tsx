@@ -308,7 +308,7 @@ export default function EditImagePage() {
   }
 
   const handleGenerateGpt25 = async () => {
-    const { submitNexabotGptImage, pollNexabotGptImage, downloadNexabotGptImage, compressForApi } = await import('@/lib/nexabot')
+    const { submitNexabotGptImage, pollNexabotGptImage, downloadNexabotGptImage, compressForApi, runWithNexabotThrottleRetry } = await import('@/lib/nexabot')
 
     const aspectLabel = gptAspect === 2 ? '16:9' : gptAspect === 1 ? '1:1' : '9:16'
     addLog(`[1/3] 📤 Submit GPT Image 2.5 (rasio ${aspectLabel}${refFiles.length ? `, ${refFiles.length} referensi` : ''})...`, 'info')
@@ -325,10 +325,14 @@ export default function EditImagePage() {
       }))
     }
 
-    const submit = await submitNexabotGptImage({
+    const submit = await runWithNexabotThrottleRetry(() => submitNexabotGptImage({
       prompt: prompt.trim(),
       aspect: gptAspect,
       references,
+    }), {
+      onThrottle: (waitSeconds) => {
+        addLog(`⏳ Server gambar NexaBot sedang dibatasi upstream — menunggu ${waitSeconds}s lalu submit otomatis...`, 'warn')
+      },
     })
     if (!submit.ok || !submit.id) throw new Error(submit.error || 'Submit gagal')
     addLog(`   ✓ Job ID: ${submit.id}`, 'success')
