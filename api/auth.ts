@@ -314,7 +314,45 @@ async function handleRegister(req: VercelRequest, res: VercelResponse) {
   }
 }
 
-async function handleSeed(_req: VercelRequest, res: VercelResponse) {
+// Kunci untuk rute seed. Selama SEED_KEY belum diisi, rutenya DIMATIKAN (503) —
+// bukan dibiarkan terbuka: salah konfigurasi tidak boleh berubah jadi akses admin.
+function seedAuthorized(req: VercelRequest, res: VercelResponse): boolean {
+  const expected = process.env.SEED_KEY
+  if (!expected) {
+    res.status(503).json({ error: 'SEED_KEY belum dikonfigurasi — rute seed dimatikan' })
+    return false
+  }
+
+  const auth = req.headers['authorization']
+  const candidate = String(
+    req.headers['x-seed-key']
+    || req.query.secret
+    || (auth && auth.startsWith('Bearer ') ? auth.slice(7) : '')
+  )
+  const a = Buffer.from(candidate)
+  const b = Buffer.from(expected)
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    res.status(401).json({ error: 'Unauthorized' })
+    return false
+  }
+  return true
+}
+
+async function handleSeed(req: VercelRequest, res: VercelResponse) {
+  // Rute ini membuat atau mengatur ulang akun admin, jadi ia butuh dua hal yang
+  // sebelumnya tidak ada: metode yang benar, dan kunci dari environment. Tanpa
+  // keduanya, siapa pun yang tahu alamatnya bisa menetapkan password admin —
+  // apalagi nilainya dulu tertanam di berkas ini, yang berarti sudah ada di repo
+  // publik.
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  if (!seedAuthorized(req, res)) return
+
+  const email = process.env.ADMIN_EMAIL
+  const password = process.env.ADMIN_PASSWORD
+  if (!email || !password) {
+    return res.status(500).json({ error: 'ADMIN_EMAIL dan ADMIN_PASSWORD wajib diisi di environment untuk seed admin' })
+  }
+
   try {
     const sql = getSql()
 
@@ -371,20 +409,19 @@ async function handleSeed(_req: VercelRequest, res: VercelResponse) {
       await sql`ALTER TABLE token_orders ADD COLUMN bulk_id TEXT NOT NULL DEFAULT ''`
     } catch { /* column already exists */ }
 
-    const password = 'admin123'
     const hashedPassword = await bcrypt.hash(password, 10)
 
-    const existing = await sql`SELECT id FROM users WHERE email = 'nuallakoko@gmail.com'`
+    const existing = await sql`SELECT id FROM users WHERE email = ${email}`
 
     if (existing.length > 0) {
       await sql`
         UPDATE users SET password = ${hashedPassword}, role = 'admin', approved = 1
-        WHERE email = 'nuallakoko@gmail.com'
+        WHERE email = ${email}
       `
     } else {
       await sql`
         INSERT INTO users (email, password, name, role, approved)
-        VALUES ('nuallakoko@gmail.com', ${hashedPassword}, 'Admin', 'admin', 1)
+        VALUES (${email}, ${hashedPassword}, 'Admin', 'admin', 1)
       `
     }
 
@@ -392,8 +429,7 @@ async function handleSeed(_req: VercelRequest, res: VercelResponse) {
 
     return res.status(200).json({
       message: 'Admin seeded!',
-      email: 'nuallakoko@gmail.com',
-      password: 'admin123',
+      email,
       users
     })
   } catch (err: any) {
