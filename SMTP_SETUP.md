@@ -50,7 +50,7 @@ SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_SECURE=false
 SMTP_USER=your-email@gmail.com
-SMTP_PASS=abcdEFGHijklMNOP            # App Password 16 karakter, tanpa spasi
+SMTP_PASS=your-16-char-app-password            # App Password 16 karakter, tanpa spasi
 MAIL_FROM=ARKXMotion Studio <your-email@gmail.com>
 APP_URL=http://localhost:5173         # ganti dengan URL produksi di Vercel
 ```
