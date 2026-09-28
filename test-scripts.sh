@@ -165,6 +165,18 @@ run_check() { # semua argumen diteruskan apa adanya
   ( cd "$SANDBOX" && bash ./check.sh "$@" ) 2>&1
 }
 
+# Fase kredensial menilai ISI INDEX, jadi tiap kasus harus mulai dari index yang
+# bersih — kalau tidak, sisa berkas dari kasus sebelumnya ikut dinilai dan
+# hasilnya menyesatkan.
+reset_index() {
+  git -C "$SANDBOX" rm -r --cached -q --ignore-unmatch . >/dev/null 2>&1 || true
+  git -C "$SANDBOX/arkxmotion-studio" rm -r --cached -q --ignore-unmatch . >/dev/null 2>&1 || true
+}
+
+stage() { # $1 = berkas (relatif terhadap repo produk), isinya sudah ditulis tes
+  git -C "$SANDBOX/arkxmotion-studio" add -- "$1" >/dev/null 2>&1 || true
+}
+
 freebuff_files() { ls "$SANDBOX/.freebuff" 2>/dev/null | tr '\n' ' '; }
 log_names()      { ls "$SANDBOX/scratch/logs" 2>/dev/null | tr '\n' ' '; }
 npm_log()        { cat "$SANDBOX/npm.log" 2>/dev/null; }
@@ -477,6 +489,122 @@ check_file 'hook asing tetap ada' "$SANDBOX/arkxmotion-studio/.git/hooks/pre-com
 run_check --install-hook --product --force >/dev/null
 run_check --uninstall-hook --product >/dev/null
 check_no_file 'hook buatan check.sh terlepas' "$SANDBOX/arkxmotion-studio/.git/hooks/pre-commit"
+
+case_start '32. check.sh: kredensial literal di berkas staged ditolak'
+prepare_dev_case
+reset_index
+printf 'VPS_PASSWORD=IniPasswordAsli123\n' > "$SANDBOX/arkxmotion-studio/deploy_x.py"
+stage deploy_x.py
+out="$(run_check --staged)"
+rc=$?
+check_eq 'exit 1' '1' "$rc"
+check_contains 'berkasnya disebut' "$out" 'deploy_x.py'
+check_contains 'kuncinya disebut' "$out" 'VPS_PASSWORD'
+check_absent 'nilai rahasianya TIDAK ikut tercetak' "$out" 'IniPasswordAsli123'
+
+case_start '33. check.sh: rujukan environment dan placeholder bukan rahasia'
+prepare_dev_case
+reset_index
+printf 'API_KEY=<isi-di-env>\nSECRET=${MY_SECRET}\nTOKEN=process.env.TOKEN\nDB_PASSWORD=\nJWT_SECRET=$(openssl rand -hex 32)\n' \
+  > "$SANDBOX/arkxmotion-studio/aman.sh"
+stage aman.sh
+out="$(run_check --staged)"
+rc=$?
+check_eq 'exit 0 (tidak ada false positive)' '0' "$rc"
+check_contains 'dinyatakan bersih' "$out" 'tidak ada kredensial literal di baris yang di-stage'
+
+case_start '34. check.sh: penugasan variabel biasa tidak dianggap kredensial'
+prepare_dev_case
+reset_index
+printf "accessToken = refreshed.accessToken\ntokens = filtered.slice(0, 10)\ncredentials: 'include',\nconst TOKEN_KEY = 'arkxmotion_token'\napiKey: 'health-check-invalid'\n" \
+  > "$SANDBOX/arkxmotion-studio/biasa.ts"
+stage biasa.ts
+out="$(run_check --staged)"
+rc=$?
+check_eq 'exit 0' '0' "$rc"
+
+case_start '35. check.sh: berkas yang belum di-stage tidak diperiksa'
+prepare_dev_case
+reset_index
+printf 'VPS_PASSWORD=IniPasswordAsli123\n' > "$SANDBOX/arkxmotion-studio/belum_staged.py"
+out="$(run_check --staged)"
+rc=$?
+check_eq 'exit 0' '0' "$rc"
+check_absent 'berkas itu tidak dinilai' "$out" 'belum_staged.py'
+
+case_start '36. check.sh: kredensial di berkas tes hanya dicatat, tidak memblokir'
+prepare_dev_case
+reset_index
+mkdir -p "$SANDBOX/arkxmotion-studio/test"
+printf "const API_KEY = 'apikey-RAHASIA-12345'\n" \
+  > "$SANDBOX/arkxmotion-studio/test/contoh.test.ts"
+stage test/contoh.test.ts
+out="$(run_check --staged)"
+rc=$?
+check_eq 'exit 0 (tes tidak memblokir commit)' '0' "$rc"
+check_contains 'tetap dicatat' "$out" 'berkas tes (tidak memblokir)'
+
+case_start '37. check.sh --no-secrets: fase kredensial bisa dilewati'
+prepare_dev_case
+reset_index
+printf 'VPS_PASSWORD=IniPasswordAsli123\n' > "$SANDBOX/arkxmotion-studio/deploy_y.py"
+stage deploy_y.py
+out="$(run_check --staged --no-secrets)"
+rc=$?
+check_eq 'exit 0' '0' "$rc"
+check_absent 'tidak ada laporan kredensial' "$out" 'Kredensial literal'
+
+case_start '38. check.sh --staged: kredensial di repo workspace juga diperiksa'
+prepare_dev_case
+reset_index
+mkdir -p "$SANDBOX/nexabot-proxy"
+printf "password='IniPasswordAsli123'\n" > "$SANDBOX/nexabot-proxy/deploy_z.py"
+git -C "$SANDBOX" add -- nexabot-proxy/deploy_z.py >/dev/null 2>&1 || true
+out="$(run_check --staged)"
+rc=$?
+check_eq 'exit 1' '1' "$rc"
+check_contains 'menyebut repo workspace' "$out" 'workspace: nexabot-proxy/deploy_z.py'
+
+case_start '39. check.sh: nama berkas ber-kata izin tidak membungkam isinya'
+prepare_dev_case
+reset_index
+mkdir -p "$SANDBOX/arkxmotion-studio/docs"
+printf 'VPS_PASSWORD=IniPasswordAsli123\n' \
+  > "$SANDBOX/arkxmotion-studio/docs/contoh-config.py"
+stage docs/contoh-config.py
+out="$(run_check --staged)"
+rc=$?
+check_eq 'exit 1 (berkas non-tes tetap diperiksa)' '1' "$rc"
+check_contains 'berkasnya disebut' "$out" 'docs/contoh-config.py'
+check_absent 'nilai rahasianya TIDAK ikut tercetak' "$out" 'IniPasswordAsli123'
+
+case_start '40. check.sh (audit): kredensial lama dilaporkan, tapi tidak memblokir'
+prepare_dev_case
+reset_index
+printf 'VPS_PASSWORD=IniPasswordAsli123\n' > "$SANDBOX/arkxmotion-studio/lama.py"
+git -C "$SANDBOX/arkxmotion-studio" add -- lama.py >/dev/null 2>&1
+git -C "$SANDBOX/arkxmotion-studio" -c user.email=tes@contoh.local -c user.name=Tes \
+  commit -qm 'kredensial lama' >/dev/null 2>&1
+out="$(run_check)"
+rc=$?
+check_eq 'exit 0 (audit tidak memblokir)' '0' "$rc"
+check_contains 'dilaporkan sebagai audit' "$out" 'sudah ter-commit (audit, tidak memblokir)'
+check_contains 'jumlahnya disebut' "$out" 'temuan lama di repo (audit)'
+check_absent 'nilai rahasianya TIDAK ikut tercetak' "$out" 'IniPasswordAsli123'
+
+case_start '41. check.sh --staged: baris lama di berkas yang diubah tidak memblokir'
+prepare_dev_case
+reset_index
+printf 'VPS_PASSWORD=IniPasswordAsli123\n' > "$SANDBOX/arkxmotion-studio/lama2.py"
+git -C "$SANDBOX/arkxmotion-studio" add -- lama2.py >/dev/null 2>&1
+git -C "$SANDBOX/arkxmotion-studio" -c user.email=tes@contoh.local -c user.name=Tes \
+  commit -qm 'kredensial lama 2' >/dev/null 2>&1
+printf 'print("baris baru yang bersih")\n' >> "$SANDBOX/arkxmotion-studio/lama2.py"
+git -C "$SANDBOX/arkxmotion-studio" add -- lama2.py >/dev/null 2>&1
+out="$(run_check --staged)"
+rc=$?
+check_eq 'exit 0 (hanya baris baru yang dinilai)' '0' "$rc"
+check_absent 'berkasnya tidak disebut sebagai pelanggaran' "$out" 'lama2.py'
 
 # ── Ringkasan ───────────────────────────────────────────────────────────────
 printf '\n────────────────────────────────────────\n'
