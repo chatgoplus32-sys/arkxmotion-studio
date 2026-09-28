@@ -1,3 +1,10 @@
+import {
+  autoDilateRadius,
+  dilateMask,
+  MASK_THRESHOLD,
+  removeWithSeamCorrection,
+} from './inpaint-core'
+
 /**
  * Video watermark removal pipeline — pure browser, no ffmpeg.
  *
@@ -47,29 +54,34 @@ export async function grabFirstFrame(video: HTMLVideoElement): Promise<ImageData
   return ctx.getImageData(0, 0, canvas.width, canvas.height)
 }
 
+/**
+ * Patch RGBA untuk jalur inpaint: hanya piksel di dalam hole yang dipakai
+ * (area lain transparan supaya frame asli yang terlihat).
+ *
+ * Nada patch sudah dikoreksi lewat removeWithSeamCorrection dan hole-nya
+ * dilebarkan otomatis, jadi saat ditempel ke setiap frame tidak ada bekas
+ * garis/blur di tepi patch.
+ */
 function buildPatchCanvas(
+  originalFrame: ImageData,
   inpaintedImage: ImageData,
   maskImage: ImageData,
-  featherRadius = 6,
 ): OffscreenCanvas {
-  const { width: w, height: h } = inpaintedImage
+  const { width: w, height: h } = maskImage
+  const composited = removeWithSeamCorrection(originalFrame, inpaintedImage, maskImage)
+  const hole = dilateMask(maskImage, autoDilateRadius(maskImage))
   const patch = new ImageData(w, h)
   for (let i = 0; i < w * h; i++) {
-    if (maskImage.data[i * 4 + 3] > 16) {
-      patch.data[i * 4] = inpaintedImage.data[i * 4]
-      patch.data[i * 4 + 1] = inpaintedImage.data[i * 4 + 1]
-      patch.data[i * 4 + 2] = inpaintedImage.data[i * 4 + 2]
+    if (hole.data[i * 4 + 3] > MASK_THRESHOLD) {
+      patch.data[i * 4] = composited[i * 4]
+      patch.data[i * 4 + 1] = composited[i * 4 + 1]
+      patch.data[i * 4 + 2] = composited[i * 4 + 2]
       patch.data[i * 4 + 3] = 255
     }
   }
-  const baseCanvas = new OffscreenCanvas(w, h)
-  baseCanvas.getContext('2d')!.putImageData(patch, 0, 0)
-  const featherCanvas = new OffscreenCanvas(w, h)
-  const fctx = featherCanvas.getContext('2d')!
-  fctx.filter = `blur(${featherRadius}px)`
-  fctx.drawImage(baseCanvas, 0, 0)
-  fctx.filter = 'none'
-  return featherCanvas
+  const cn = new OffscreenCanvas(w, h)
+  cn.getContext('2d')!.putImageData(patch, 0, 0)
+  return cn
 }
 
 export interface ProcessVideoOpts {
@@ -134,7 +146,7 @@ export async function processVideo({
     onProgress?.(5, 'Running AI on reference frame (one-time)')
     const inpaintedFirstFrame = await inpaintFn(firstFrameImageData, maskImageData)
     onProgress?.(12, 'Preparing patch')
-    patchCanvas = buildPatchCanvas(inpaintedFirstFrame, maskImageData, 6)
+    patchCanvas = buildPatchCanvas(firstFrameImageData, inpaintedFirstFrame, maskImageData)
   } else {
     onProgress?.(5, 'Preparing per-frame cleaner')
   }

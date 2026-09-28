@@ -8,9 +8,11 @@ import {
 } from 'lucide-react'
 import { useToastStore } from '@/stores/toastStore'
 import { initInpainter, inpaint, isReady, getBackend } from '@/lib/migan-inpainter'
+import { removeWithSeamCorrection } from '@/lib/inpaint-core'
 import { detectWatermarks, type WatermarkCandidate } from '@/lib/watermark-detect'
 import { textureFill } from '@/lib/texturefill'
 import { loadVideoMetadata, grabFirstFrame, processVideo } from '@/lib/video-watermark-process'
+import { createSeamFrameProcessor } from '@/lib/video-frame-cleaner'
 import {
   getGeminiWatermarkRegion,
   removeGeminiWatermark,
@@ -24,41 +26,50 @@ type Tool = 'rect' | 'brush' | 'eraser'
 type InputMode = 'image' | 'video'
 
 /**
- * Two-stage removal pipeline (matches WatermarkOut / nexabot.id):
- * Stage 1 — Texture fill (exemplar/patch-based copy from nearby real pixels)
- * Stage 2 — MI-GAN generative inpainting (polish edges + fill opaque core)
+ * Pipeline penghapusan lokal (tanpa unggah ke server).
+ *
+ * Kenapa berubah: pipeline lama menempelkan hasil model dengan alpha-feather
+ * dari mask biner, sehingga (a) di tepi, piksel hasil AI dicampur dengan piksel
+ * ASLI yang masih mengandung watermark — sisa logo tampak samar/berblur, dan
+ * (b) warna patch tidak nyambung dengan sekitarnya sehingga bekasnya terlihat.
+ *
+ * Sekarang:
+ *  1. Jalur cepat — kalau salinan tekstur menemukan padanan hampir identik
+ *     (area rata/berulang: langit, dinding, kain), pakai salinan itu apa adanya.
+ *     Hasilnya tajam, instan, dan tanpa halusinasi model.
+ *  2. Jalur AI — MI-GAN dengan mask yang DILEBARKAN (menelan tepi anti-alias
+ *     watermark) + komposit seam-aware (koreksi nada dari ring sekitarnya),
+ *     jadi tidak ada piksel ber-watermark yang bocor ke hasil akhir.
  */
-async function twoStageRemoval(
+const FAST_PATH_CONFIDENCE = 0.93
+
+async function removeWatermarkLocal(
   imageData: ImageData,
   maskData: ImageData,
   quality: string,
   onStage: (stage: string, pct: number) => void,
-): Promise<ImageData> {
-  onStage('Stage 1/2: Analisis texture…', 5)
+): Promise<{ result: ImageData; mode: 'fast' | 'ai' }> {
+  onStage('Analisis area watermark…', 8)
   const texResult = textureFill(imageData, maskData)
-  const texPct = Math.round(texResult.confidence * 100)
 
-  if (texResult.confidence > 0.8) {
-    onStage(`Stage 1/2: Texture fill (${texPct}%) — polishing edges…`, 25)
-    return await inpaint(texResult.result, maskData, {
-      quality,
-      onPass: (i, total) => onStage(`Stage 2/2: AI polish (pass ${i + 1}/${total})…`, 40 + (i / total) * 55),
-    })
+  if (texResult.confidence >= FAST_PATH_CONFIDENCE) {
+    const pct = Math.round(texResult.confidence * 100)
+    onStage(`Area rata/berulang terdeteksi (${pct}%) — salin tekstur…`, 45)
+    const composited = removeWithSeamCorrection(imageData, texResult.result, maskData)
+    // Dibuat lewat canvas ImageData + set() supaya tipe buffer-nya tidak
+    // menyalahi tipe global ImageData (SharedArrayBuffer vs ArrayBuffer).
+    const result = new ImageData(imageData.width, imageData.height)
+    result.data.set(composited)
+    return { result, mode: 'fast' }
   }
 
-  if (texResult.confidence > 0.3) {
-    onStage(`Stage 1/2: Texture fill partial (${texPct}%) — AI completing…`, 20)
-    return await inpaint(texResult.result, maskData, {
-      quality,
-      onPass: (i, total) => onStage(`Stage 2/2: AI inpainting (pass ${i + 1}/${total})…`, 35 + (i / total) * 60),
-    })
-  }
-
-  onStage(`Stage 1/2: Texture minimal (${texPct}%) — AI full inpaint…`, 10)
-  return await inpaint(imageData, maskData, {
+  onStage('AI inpainting (MI-GAN) — melebarkan area mask…', 12)
+  const result = await inpaint(imageData, maskData, {
     quality,
-    onPass: (i, total) => onStage(`Stage 2/2: AI inpainting (pass ${i + 1}/${total})…`, 25 + (i / total) * 70),
+    onPass: (i, total) =>
+      onStage(`AI inpainting (pass ${i + 1}/${total}) + komposit seam-aware…`, 20 + (i / total) * 75),
   })
+  return { result, mode: 'ai' }
 }
 
 function imageDataToBlob(img: ImageData): Promise<Blob> {
@@ -378,7 +389,7 @@ export default function WatermarkRemoverPage() {
 
   // ── Main removal pipeline ──────────────────────────────────────────
   // Gemini/Veo path uses exact reverse-alpha-blend (no AI model, no download).
-  // Falls back to MI-GAN two-stage when the watermark is NOT Gemini/Veo.
+  // Falls back to MI-GAN seam-aware inpainting when the watermark is NOT Gemini/Veo.
   const runRemove = async () => {
     if (!imageData || !maskData) { addToast('⚠️ Upload & buat mask dulu!', 'warning'); return }
     const hasMask = Array.from(maskData.data).some((v, i) => i % 4 === 3 && v > 16)
@@ -389,7 +400,7 @@ export default function WatermarkRemoverPage() {
     try {
       if (inputMode === 'video' && file) {
         // Video: deteksi plan Gemini per-frame dulu, fallback ke MI-GAN
-        // two-stage bila watermark bukan Gemini/Veo.
+        // seam-aware inpainting bila watermark bukan Gemini/Veo.
         setProgressMsg('Checking for Gemini/Veo watermark…'); setProgress(3)
         let plan = await createGeminiFramePlan(imageData)
         if (!plan) {
@@ -404,28 +415,32 @@ export default function WatermarkRemoverPage() {
           addToast('✅ Watermark Gemini dibersihkan (per-frame)!', 'success')
           setProgress(100)
         } else {
-          // Fallback: MI-GAN two-stage inpainting for non-Gemini watermarks.
-          const ok = await ensureEngine(); if (!ok) { setProcessing(false); return }
+          // Per-frame: area watermark dibersihkan ULANG tiap frame dari konteks
+          // frame itu sendiri, jadi tidak ada "patch beku" saat ada gerakan.
           const meta = await loadVideoMetadata(file)
-          setProgressMsg('Stage 1/2: Texture analysis…'); setProgress(3)
+          setProgressMsg('Menyiapkan pembersih per-frame…'); setProgress(3)
+          const cleaner = createSeamFrameProcessor(maskData, meta.video.videoWidth, meta.video.videoHeight)
+          if (!cleaner) {
+            addToast('Mask kosong — tandai dulu area watermark.', 'error')
+            URL.revokeObjectURL(meta.url); setProcessing(false); return
+          }
           const blob = await processVideo({
-            video: meta.video, maskImageData: maskData,
-            inpaintFn: async (img, mask) => {
-              return await twoStageRemoval(img, mask, quality, (stage, pct) => {
-                setProgressMsg(stage); setProgress(Math.max(3, Math.min(pct, 25)))
-              })
-            },
+            video: meta.video,
+            frameProcessor: (ctx) => cleaner.process(ctx),
             onProgress: (pct, msg) => {
-              setProgress(25 + (pct / 100) * 75)
-              setProgressMsg(pct >= 95 ? msg : `Recording: ${msg}`)
+              setProgress(3 + (pct / 100) * 97)
+              setProgressMsg(pct >= 95 ? msg : `Bersih per-frame: ${msg}`)
             },
           })
           setResultUrl(URL.createObjectURL(blob)); setResultBlob(blob)
-          addToast('✅ Video dibersihkan (two-stage)!', 'success')
+          addToast(
+            `✅ Video dibersihkan per-frame (${cleaner.frames()} frame, ${cleaner.avgMs().toFixed(1)} ms/frame ≈ ${cleaner.secondsPerMinute().toFixed(1)} s per menit video)`,
+            'success',
+          )
           URL.revokeObjectURL(meta.url)
         }
       } else {
-        // Image: exact Gemini removal first (instant, lossless), else two-stage.
+        // Image: exact Gemini removal first (instant, lossless), else local pipeline.
         setProgressMsg('Checking for Gemini/Veo watermark…'); setProgress(5)
         const geminiResult = removeGeminiWatermark(imageData)
         if (geminiResult.meta.applied) {
@@ -435,12 +450,17 @@ export default function WatermarkRemoverPage() {
           setProgress(100)
         } else {
           const ok = await ensureEngine(); if (!ok) { setProcessing(false); return }
-          const result = await twoStageRemoval(imageData, maskData, quality, (stage, pct) => {
+          const { result, mode } = await removeWatermarkLocal(imageData, maskData, quality, (stage, pct) => {
             setProgressMsg(stage); setProgress(pct)
           })
           const blob = await imageDataToBlob(result)
           setResultUrl(URL.createObjectURL(blob)); setResultBlob(blob)
-          addToast('✅ Watermark dibersihkan (two-stage)!', 'success')
+          addToast(
+            mode === 'fast'
+              ? '✅ Dibersihkan instan (salin tekstur + seam-aware)!'
+              : '✅ Dibersihkan (AI inpainting + komposit seam-aware)!',
+            'success',
+          )
           setProgress(100)
         }
       }
@@ -459,7 +479,7 @@ export default function WatermarkRemoverPage() {
 
   return (
     <PageContent>
-      <PageHeader title="🧽 Watermark Remover" desc="Gemini/Veo exact + AI inpainting fallback. 100% lokal di browser." />
+      <PageHeader title="🧽 Watermark Remover" desc="Gemini/Veo exact + AI inpainting seam-aware. 100% lokal di browser." />
 
       <Section className="!p-4 mb-4">
         <div className="flex items-center gap-3 flex-wrap">
