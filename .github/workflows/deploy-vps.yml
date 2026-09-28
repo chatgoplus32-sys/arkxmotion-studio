@@ -59,10 +59,20 @@ jobs:
 
             echo "🔄 Menarik perubahan terbaru..."
             git fetch origin main
-            # `npm install` di VPS mengubah package-lock.json; kembalikan dulu
-            # supaya pull tidak gagal karena perubahan lokal itu.
-            git checkout -- package-lock.json 2>/dev/null || true
-            git pull --ff-only origin main
+            # Checkout di VPS bisa TERKOTOR oleh jalur deploy yang lain:
+            # deploy_vps.py mengunggah server/, package.json, dan vite.config.ts
+            # lewat SFTP, sehingga berkas ter-track berubah di luar git.
+            # `git pull --ff-only` menolak jalan begitu berkas kotor itu juga
+            # berubah di commit yang masuk:
+            #   error: Your local changes to the following files would be
+            #          overwritten by merge ... Aborting
+            # Itulah sebab deploy CI gagal sejak 18 Sep 2026 (SSH dan
+            # kredensialnya sehat — terlihat dari auth.log VPS: runner GitHub
+            # berhasil login, sesi ditutup 13 detik kemudian saat pull gagal).
+            # Repo ini sumber kebenarannya, jadi samakan checkout dengan origin:
+            # perubahan lokal berkas TER-TRACK dibuang (berkas di-ignore seperti
+            # .env dan data/ tidak tersentuh).
+            git reset --hard origin/main
             echo "   HEAD: $(git log --oneline -1)"
 
             echo "📦 Memasang dependencies..."
