@@ -9,6 +9,54 @@ const RUNNINGHUB_ULTRA_HD_WORKFLOW_ID = '2095008448978407425'
 // node 30 = image (LoadImage), node 33 = video (LoadVideo)
 const ULTRA_HD_IMAGE_NODE = '30'
 const ULTRA_HD_VIDEO_NODE = '33'
+
+// Kling Motion Control v2.6 Motion Transfer (app RunningHub):
+// node 3 = image (foto karakter), node 5 = file (video referensi gerakan).
+// https://www.runninghub.ai/id/ai-detail/2054013205567033345
+const RUNNINGHUB_KLING_MC_WORKFLOW_ID = '2054013205567033345'
+const KLING_MC_IMAGE_NODE = '3'
+const KLING_MC_VIDEO_NODE = '5'
+const KLING_MC_VIDEO_FIELD = 'file'
+
+// MC ULTRA HD — AI Motion Transfer PRO+ (app RunningHub 2101654299003973634):
+// node 30 = image (foto karakter), node 33 = video (video referensi gerakan).
+// Struktur node-nya sama dengan Ultra Fast HD, tapi app-nya berbeda (SAM3 person
+// tracking + multi-person), jadi app id-nya tetap dipisah.
+const RUNNINGHUB_ULTRA_HD_PRO_WORKFLOW_ID = '2101654299003973634'
+const ULTRA_HD_PRO_IMAGE_NODE = '30'
+const ULTRA_HD_PRO_VIDEO_NODE = '33'
+const ULTRA_HD_PRO_VIDEO_FIELD = 'video'
+
+// Tabel app RunningHub berbasis workflow dengan dua input (gambar + video
+// referensi). Model baru cukup ditambah satu entri di sini: `action` dipakai UI
+// sebagai nama aksi, `appId` app RunningHub-nya, `imageNode`/`videoNode` node yang
+// menerima berkasnya, dan `videoField` nama field node video (app Kling 2.6
+// menamainya 'file', app ultra-hd menamainya 'video').
+interface MotionAppConfig {
+  appId: string
+  imageNode: string
+  videoNode: string
+  videoField: string
+  label: string
+}
+
+const MOTION_APPS: Record<string, MotionAppConfig> = {
+  'motion-control-kling-2.6': {
+    appId: RUNNINGHUB_KLING_MC_WORKFLOW_ID,
+    imageNode: KLING_MC_IMAGE_NODE,
+    videoNode: KLING_MC_VIDEO_NODE,
+    videoField: KLING_MC_VIDEO_FIELD,
+    label: 'kling-mc',
+  },
+  // MC ULTRA HD — AI Motion Transfer PRO+ (SAM3 person tracking, multi-person)
+  'motion-control-ultra-hd-pro': {
+    appId: RUNNINGHUB_ULTRA_HD_PRO_WORKFLOW_ID,
+    imageNode: ULTRA_HD_PRO_IMAGE_NODE,
+    videoNode: ULTRA_HD_PRO_VIDEO_NODE,
+    videoField: ULTRA_HD_PRO_VIDEO_FIELD,
+    label: 'ultra-hd-pro',
+  },
+}
 // Virtual Try-On & Ekstraksi Pakaian: node 13 = foto orang, node 53 = pakaian
 const RUNNINGHUB_TRYON_WORKFLOW_ID = '2099800742046818306'
 const RUNNINGHUB_TRYON_PERSON_NODE = '13'
@@ -114,6 +162,10 @@ router.all('/', async (req: Request, res: Response) => {
     }
     if (action === 'motion-control-ultra-hd') {
       return await handleMotionControlUltraHD(apiKey, params, res)
+    }
+    const motionApp = MOTION_APPS[action]
+    if (motionApp) {
+      return await handleMotionAppWorkflow(apiKey, params, res, motionApp)
     }
     if (action === 'get-workflow-info') {
       return await handleGetWorkflowInfo(apiKey, params.workflowId || params.workflow_id, res)
@@ -708,6 +760,149 @@ async function handleMotionControlUltraHD(apiKey: string, params: any, res: Resp
     const taskId = data.data?.taskId || data.taskId || data.id || data.task_id
     if (!taskId) {
       console.error(`[runninghub] No taskId found (ultra-hd):`, JSON.stringify(data).slice(0, 500))
+      return res.status(200).json({ ok: false, error: 'No taskId returned', raw: lastRawText.slice(0, 500) })
+    }
+
+    const netWssUrl = data.data?.netWssUrl
+    return res.status(200).json({
+      ok: true,
+      data: {
+        id: taskId,
+        taskId,
+        status: data.data?.status || data.status || 'QUEUED',
+        netWssUrl,
+        provider: 'runninghub',
+        workflowId: effectiveWorkflowId,
+      },
+    })
+  }
+
+  return res.status(200).json({ ok: false, error: 'Max retries exceeded', raw: lastRawText.slice(0, 500) })
+}
+
+// Ambil node teks saja (prompt/negative). App motion transfer ini tidak punya node
+// fps/steps/frames, jadi bagian itu sengaja tidak disalin dari handler ultra-hd.
+function collectPromptExtras(nodes: any[], opts: { prompt: string; negativePrompt: string }): any[] {
+  const extras: any[] = []
+  if (!nodes || nodes.length === 0) return extras
+  for (const n of nodes) {
+    const inputs = n.inputs || {}
+    const tag = `${String(n.classType || '')} ${String(n.title || '')}`
+    const promptKey = Object.keys(inputs).find((k) => /^(prompt|text)$/i.test(k) || /positive/i.test(k))
+    if (!promptKey || !/clip|prompt|text/i.test(tag)) continue
+    const value = /negative/i.test(tag) ? opts.negativePrompt : opts.prompt
+    if (value) extras.push({ nodeId: String(n.nodeId), fieldName: promptKey, fieldValue: value })
+  }
+  return extras
+}
+
+// App motion control berbasis workflow: unggah gambar + video referensi, kirim
+// nodeInfoList sesuai konfigurasi app (MOTION_APPS), lalu serahkan taskId ke UI.
+// Karena konfigurasinya tabel, menambah model baru tidak menambah blok kode di sini.
+async function handleMotionAppWorkflow(apiKey: string, params: any, res: Response, cfg: MotionAppConfig) {
+  const {
+    workflow_id,
+    workflowId,
+    imageBase64,
+    videoBase64,
+    imageFileName = 'image.jpg',
+    videoFileName = 'video.mp4',
+    imageMimeType = 'image/jpeg',
+    videoMimeType = 'video/mp4',
+    prompt = '',
+    negative_prompt = '',
+    negativePrompt = '',
+  } = params
+
+  if (!imageBase64) return res.status(200).json({ ok: false, error: 'Missing imageBase64' })
+  if (!videoBase64) return res.status(200).json({ ok: false, error: 'Missing videoBase64' })
+
+  const effectiveWorkflowId = workflow_id || workflowId || cfg.appId
+  const effPrompt = String(prompt || '')
+  const effNegative = String(negative_prompt || negativePrompt || '')
+
+  console.log(`[runninghub] Uploading image (${cfg.label})...`)
+  const imageUpload = await rhUpload(apiKey, imageBase64, imageFileName, imageMimeType)
+  console.log(`[runninghub] Image uploaded: ${imageUpload.fileName}`)
+
+  console.log(`[runninghub] Uploading video (${cfg.label})...`)
+  const videoUpload = await rhUpload(apiKey, videoBase64, videoFileName, videoMimeType)
+  console.log(`[runninghub] Video uploaded: ${videoUpload.fileName}`)
+
+  let nodeInfoList: any[] = [
+    { nodeId: cfg.imageNode, fieldName: 'image', fieldValue: imageUpload.fileName },
+    { nodeId: cfg.videoNode, fieldName: cfg.videoField, fieldValue: videoUpload.fileName },
+  ]
+
+  if (effPrompt || effNegative) {
+    try {
+      const nodes = await fetchWorkflowNodes(apiKey, effectiveWorkflowId)
+      const extras = collectPromptExtras(nodes, { prompt: effPrompt, negativePrompt: effNegative })
+      if (extras.length > 0) {
+        nodeInfoList = [...nodeInfoList, ...extras]
+        console.log(`[runninghub] ${cfg.label} prompt dikirim ke ${extras.length} node teks`)
+      } else {
+        console.log(`[runninghub] ${cfg.label}: prompt diabaikan, workflow ini tidak punya node teks`)
+      }
+    } catch (err: any) {
+      console.log(`[runninghub] ${cfg.label} prompt discovery gagal: ${err.message}`)
+    }
+  }
+
+  const body = {
+    nodeInfoList,
+    instanceType: 'default',
+    usePersonalQueue: 'false',
+  }
+
+  const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${effectiveWorkflowId}`
+
+  const MAX_RETRIES = 3
+  const RETRY_DELAY_MS = 10000
+  let lastRawText = ''
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    console.log(`[runninghub] POST ${endpoint} (${cfg.label} attempt ${attempt}/${MAX_RETRIES})`)
+
+    const apiRes = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+    })
+
+    lastRawText = await apiRes.text()
+    console.log(`[runninghub] ${cfg.label} ${apiRes.status}:`, lastRawText.slice(0, 1000))
+
+    let data: any
+    try { data = JSON.parse(lastRawText) } catch { data = { raw: lastRawText } }
+
+    const rhCode = data.code ?? data.errorCode
+    const rhMsg = data.msg || data.errorMessage || data.message
+
+    if (apiRes.status === 429 || rhCode === 429) {
+      return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data, retryable: true })
+    }
+
+    if (rhCode === 421 || rhCode === '421') {
+      console.log(`[runninghub] Queue limit (421), retrying in ${RETRY_DELAY_MS / 1000}s... (${attempt}/${MAX_RETRIES})`)
+      if (attempt < MAX_RETRIES) {
+        await new Promise(r => setTimeout(r, RETRY_DELAY_MS))
+        continue
+      }
+      return res.status(200).json({ ok: false, error: 'Queue limit reached, coba lagi dalam beberapa menit', data, retryable: true })
+    }
+
+    if (rhCode !== undefined && rhCode !== 0 && rhCode !== '0' && rhCode !== '') {
+      const errorMsg = translateRhError(String(rhCode), rhMsg) || rhMsg || `Error code: ${rhCode}`
+      return res.status(200).json({ ok: false, error: errorMsg, code: rhCode, data })
+    }
+
+    const taskId = data.data?.taskId || data.taskId || data.id || data.task_id
+    if (!taskId) {
+      console.error(`[runninghub] No taskId found (${cfg.label}):`, JSON.stringify(data).slice(0, 500))
       return res.status(200).json({ ok: false, error: 'No taskId returned', raw: lastRawText.slice(0, 500) })
     }
 

@@ -4,6 +4,7 @@ const RUNNINGHUB_DEFAULT_WORKFLOW_ID = '2092795737699856386'
 
 export const RUNNINGHUB_ULTRA_HD_WORKFLOW_ID = '2095008448978407425'
 
+
 // Virtual Try-On & Ekstraksi Pakaian (FireRed 2-in-1)
 // node 13 = foto orang/model, node 53 = foto pakaian/garment
 export const RUNNINGHUB_TRYON_WORKFLOW_ID = '2099800742046818306'
@@ -253,6 +254,45 @@ export async function submitRunningHubUltraFastHD(params: MotionControlUltraHDPa
     status: result.status || 'QUEUED',
     provider: result.provider || 'runninghub',
     workflowId: result.workflowId || workflowId,
+  }
+}
+
+export interface MotionAppParams {
+  action: string
+  imageFile: File
+  videoFile: File
+  prompt?: string
+  negativePrompt?: string
+  apiKey?: string
+  workflowId?: string
+}
+
+// App motion control berbasis workflow RunningHub (gambar + video referensi).
+// `action` harus punya entri dengan nama sama di MOTION_APPS sisi server.
+export async function submitRunningHubMotionApp(params: MotionAppParams): Promise<MotionControlResult> {
+  const [imageBase64, videoBase64] = await Promise.all([
+    fileToBase64(params.imageFile),
+    fileToBase64(params.videoFile),
+  ])
+
+  const result = await runninghubProxy(params.action, {
+    workflow_id: params.workflowId,
+    imageBase64,
+    videoBase64,
+    imageFileName: params.imageFile.name,
+    videoFileName: params.videoFile.name,
+    imageMimeType: params.imageFile.type || 'image/jpeg',
+    videoMimeType: params.videoFile.type || 'video/mp4',
+    prompt: params.prompt || '',
+    negative_prompt: params.negativePrompt || '',
+  }, params.apiKey)
+
+  return {
+    id: result.id || result.taskId,
+    taskId: result.taskId || result.id,
+    status: result.status || 'QUEUED',
+    provider: result.provider || 'runninghub',
+    workflowId: result.workflowId || params.workflowId || '',
   }
 }
 

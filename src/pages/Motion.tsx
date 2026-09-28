@@ -8,7 +8,7 @@ import { uploadToCatbox, compressVideo, normalizeImage, getVideoDurationFromFile
 import { submitGensparkVideo, extractGensparkVideoUrl, uploadToGenspark, pollGensparkVideo } from '@/lib/genspark'
 import { trimVideoFFmpeg } from '@/lib/ffmpeg-compress'
 import { submitWeavyMotionControl, uploadWeavyAssetWithRetry, resolveWeavyAssetUrl, getActiveWeavyAccessToken, compressImageForWeavy } from '@/lib/weavy'
-import { getRunningHubApiKey, getRunningHubWorkflowId, submitRunningHubMotionControl, submitRunningHubUltraFastHD, pollRunningHubTask } from '@/lib/runninghub'
+import { getRunningHubApiKey, getRunningHubWorkflowId, submitRunningHubMotionControl, submitRunningHubUltraFastHD, submitRunningHubMotionApp, pollRunningHubTask } from '@/lib/runninghub'
 import { getGalleri5AuthHeaders, submitGalleri5MotionControl, pollGalleri5MotionControl, isGalleri5ModelRestricted, getGalleri5ErrorMessage, GALLERI5_MOTION_MODELS, runGalleri5WithRotation } from '@/lib/galleri5'
 import { getMagnificApiKey, submitMagnificMotion, pollMagnificMotion, type MagnificMotionModel } from '@/lib/magnific'
 import { useLocalStorage } from '@/lib/useLocalStorage'
@@ -32,6 +32,27 @@ import {
   Globe,
   Copy,
 } from 'lucide-react'
+
+// Model motion control berbasis app/workflow RunningHub. Menambah model baru:
+// satu entri di sini, dan satu entri dengan `action` yang sama di MOTION_APPS pada
+// server/routes/publicRunninghub.ts.
+const RUNNINGHUB_MOTION_APPS = [
+  {
+    key: 'rh:app:kling-2.6',
+    action: 'motion-control-kling-2.6',
+    workflowId: '2054013205567033345',
+    label: 'Kling 2.6 Motion Transfer (RunningHub)',
+    cr: 80,
+  },
+  {
+    // MC ULTRA HD — AI Motion Transfer PRO+ (SAM3, multi-person)
+    key: 'rh:app:ultra-hd-pro',
+    action: 'motion-control-ultra-hd-pro',
+    workflowId: '2101654299003973634',
+    label: 'MC Ultra HD PRO+ — Motion Transfer (RunningHub)',
+    cr: 80,
+  },
+]
 
 const PROVIDERS = {
   weavy: { name: 'Weavy', models: [
@@ -63,6 +84,7 @@ const PROVIDERS = {
   ]},
   runninghub: { name: 'Motion Control (RunningHub)', models: [
     { key: 'rh:wf:ultra-hd', label: 'MC Ultra Fast HD (RunningHub)', cr: 80 },
+    ...RUNNINGHUB_MOTION_APPS.map((a) => ({ key: a.key, label: a.label, cr: a.cr })),
     { key: 'rh:pro:2.6', label: 'Kling 2.6 Pro (RunningHub)', cr: 80 },
     { key: 'rh:std:2.6', label: 'Kling 2.6 Standard (RunningHub)', cr: 50 },
     { key: 'rh:wf:2.9', label: 'Kling 2.9 Workflow (RunningHub)', cr: 80 },
@@ -1149,9 +1171,12 @@ export default function MotionPage() {
                 'rh:wf:v3.0': '2093040535905165313',
                 'rh:wf:ultra-hd': '2095008448978407425',
               }
-              const workflowId = WORKFLOW_IDS[modelKey] || getRunningHubWorkflowId()
+              const motionApp = RUNNINGHUB_MOTION_APPS.find((a) => a.key === modelKey)
+              const workflowId = motionApp?.workflowId || WORKFLOW_IDS[modelKey] || getRunningHubWorkflowId()
               addLog(modelKey === 'rh:wf:ultra-hd'
                 ? `#${slotNum} Submit ke RunningHub Ultra HD (fps: ${ultraFps}, steps: ${ultraSteps}, maxFrames: ${ultraMaxFrames})`
+                : motionApp
+                ? `#${slotNum} Submit ke ${motionApp.label} (workflow: ${workflowId.slice(0, 15)}...)`
                 : `#${slotNum} Submit ke RunningHub (${modelVersion} ${mode}, workflow: ${workflowId.slice(0, 15)}...)`)
 
               const rotation = await withTokenRotation<string>(
@@ -1165,6 +1190,16 @@ export default function MotionPage() {
                       fps: ultraFps,
                       steps: ultraSteps,
                       maxFrames: ultraMaxFrames,
+                      prompt: finalPrompt || undefined,
+                      negativePrompt: negativePrompt.trim() || undefined,
+                      apiKey,
+                      workflowId,
+                    })
+                    : motionApp
+                    ? await submitRunningHubMotionApp({
+                      action: motionApp.action,
+                      imageFile: normalizedImage,
+                      videoFile,
                       prompt: finalPrompt || undefined,
                       negativePrompt: negativePrompt.trim() || undefined,
                       apiKey,
