@@ -47,6 +47,8 @@ import publicWeavyRoutes from './routes/publicWeavy.js'
 import publicWeavyProxyRoutes from './routes/publicWeavyProxy.js'
 import publicWeavyCreditsRoutes from './routes/publicWeavyCredits.js'
 import publicR2UploadRoutes from './routes/publicR2Upload.js'
+import publicFireflyRoutes from './routes/publicFirefly.js'
+import publicTiktokRoutes from './routes/publicTiktok.js'
 import { backupOnStartup, noteStartupBackupDisabled } from './backup.js'
 import { startBackupScheduler, getBackupStatus, runBackup } from './lib/backupR2.js'
 import { authenticateToken, requireAdmin } from './middleware/auth.js'
@@ -128,6 +130,10 @@ app.use('/api/public/weavy', publicWeavyRoutes)
 app.use('/api/public/weavy-proxy', publicWeavyProxyRoutes)
 app.use('/api/public/weavy-credits', publicWeavyCreditsRoutes)
 app.use('/api/public/r2-upload', publicR2UploadRoutes)
+// Dua ini dulu hanya ada di stack Vercel yang kini mati (api/public/*), sehingga
+// di produksi VPS keduanya menjawab 404 walau frontend masih memanggilnya.
+app.use('/api/public/firefly', publicFireflyRoutes)
+app.use('/api/public/tiktok-download', publicTiktokRoutes)
 app.use('/api/nexabot', nexabotWalletRoutes)
 app.use('/api/chatgpt', chatgptRoutes)
 app.use('/api/dola', publicDolaRoutes)

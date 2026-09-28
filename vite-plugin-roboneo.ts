@@ -1,11 +1,12 @@
 import type { Plugin } from 'vite'
 import http from 'http'
 
-const VERCEL_ORIGIN = 'https://arkxmotion-studio.vercel.app'
+const PROD_ORIGIN = 'https://arkxmotion-studio.win'
 const LOCAL_ORIGIN = 'http://127.0.0.1:6000'
 
-// Dev: Express lokal (:6000, `npm run dev:server`) dulu — deploy Vercel
-// production sedang 402 (spend cap), jadi Vercel hanya fallback terakhir.
+// Dev: Express lokal (:6000, `npm run dev:server`) dulu, lalu produksi VPS sebagai
+// fallback terakhir. Dulu fallback-nya deployment Vercel, tapi stack itu tidak lagi
+// dipakai (dan mati: HTTP 402), sedangkan ketiga jalur di bawah sudah ada di VPS.
 //
 // Catatan: JANGAN pakai fetch() ke :6000 — undici/Chrome menganggap 6000
 // "bad port" (daftar port X11 yang diblokir), jadi request lokal selalu
@@ -41,11 +42,11 @@ async function forwardApi(path: string, init: { method?: string; headers?: Recor
     if (local.status !== 404 && local.status !== 405) {
       return local
     }
-    console.log(`[proxy] local ${path} → ${local.status}, fallback Vercel`)
+    console.log(`[proxy] local ${path} → ${local.status}, fallback produksi`)
   } catch (err: any) {
-    console.log(`[proxy] local ${path} unreachable (${err.message}), fallback Vercel`)
+    console.log(`[proxy] local ${path} unreachable (${err.message}), fallback produksi`)
   }
-  const up = await fetch(`${VERCEL_ORIGIN}${path}`, {
+  const up = await fetch(`${PROD_ORIGIN}${path}`, {
     method,
     headers: init.headers,
     body: method === 'GET' || method === 'HEAD' ? undefined : bodyBuf,
@@ -78,18 +79,17 @@ export function roboneoProxyPlugin(): Plugin {
           for await (const chunk of req) chunks.push(chunk)
           const rawBody = Buffer.concat(chunks).toString()
 
-          console.log(`[tiktok-proxy] POST → ${VERCEL_ORIGIN}/api/public/tiktok-download`)
+          console.log(`[tiktok-proxy] POST → lokal dulu (:6000), produksi hanya cadangan`)
 
-          const tiktokRes = await fetch(`${VERCEL_ORIGIN}/api/public/tiktok-download`, {
+          const { status, text: tiktokText } = await forwardApi('/api/public/tiktok-download', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: rawBody,
           })
 
-          const tiktokText = await tiktokRes.text()
-          console.log(`[tiktok-proxy] ${tiktokRes.status}:`, tiktokText.slice(0, 300))
+          console.log(`[tiktok-proxy] ${status}:`, tiktokText.slice(0, 300))
 
-          res.writeHead(tiktokRes.status, {
+          res.writeHead(status, {
             'Content-Type': 'application/json',
             'Access-Control-Allow-Origin': '*',
           })
@@ -115,7 +115,7 @@ export function roboneoProxyPlugin(): Plugin {
 
           const contentType = req.headers['content-type'] || ''
 
-          const roboneoRes = await fetch(`${VERCEL_ORIGIN}/api/public/upload-catbox`, {
+          const { status, text: roboneoText } = await forwardApi('/api/public/upload-catbox', {
             method: 'POST',
             headers: {
               'Content-Type': contentType,
@@ -123,8 +123,7 @@ export function roboneoProxyPlugin(): Plugin {
             body: rawBody,
           })
 
-          const roboneoText = await roboneoRes.text()
-          console.log(`[upload-proxy] ${roboneoRes.status}:`, roboneoText.slice(0, 300))
+          console.log(`[upload-proxy] ${status}:`, roboneoText.slice(0, 300))
 
           let roboneoData: any = null
           try { roboneoData = JSON.parse(roboneoText) } catch {}
@@ -133,8 +132,8 @@ export function roboneoProxyPlugin(): Plugin {
 
           res.writeHead(200, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({
-            ok: roboneoRes.ok,
-            status: roboneoRes.status,
+            ok: status >= 200 && status < 300,
+            status,
             data: innerData,
           }))
         } catch (err: any) {
@@ -518,7 +517,7 @@ export function roboneoProxyPlugin(): Plugin {
         const rawBody = Buffer.concat(chunks).toString()
         const auth = req.headers.authorization || ''
 
-        console.log(`[leonardo-proxy] POST → local ${LOCAL_ORIGIN}/api/public/leonardo (fallback Vercel)`)
+        console.log(`[leonardo-proxy] POST → local ${LOCAL_ORIGIN}/api/public/leonardo (fallback produksi)`)
 
         try {
           const { status, text: leoText } = await forwardApi('/api/public/leonardo', {
@@ -566,11 +565,12 @@ export function roboneoProxyPlugin(): Plugin {
         const nonce = req.headers['x-firefly-nonce'] || ''
         const arpSession = req.headers['x-firefly-arp'] || ''
 
-        console.log(`[firefly-proxy] POST → ${VERCEL_ORIGIN}/api/public/firefly`)
+        const ffPath = `/api/public/firefly${req.url || ''}`
+        console.log(`[firefly-proxy] ${req.method} ${ffPath} → lokal dulu (:6000)`)
 
         try {
-          const ffRes = await fetch(`${VERCEL_ORIGIN}/api/public/firefly`, {
-            method: 'POST',
+          const { status, text: ffText } = await forwardApi(ffPath, {
+            method: req.method,
             headers: {
               'Content-Type': 'application/json',
               'X-Firefly-Token': String(token),
@@ -579,14 +579,16 @@ export function roboneoProxyPlugin(): Plugin {
               'X-Firefly-Session': String(session),
               ...(nonce ? { 'X-Firefly-Nonce': String(nonce) } : {}),
               ...(arpSession ? { 'X-Firefly-Arp': String(arpSession) } : {}),
+              ...(req.headers['authorization'] ? { 'authorization': String(req.headers['authorization']) } : {}),
+              ...(req.headers['x-api-key'] ? { 'x-api-key': String(req.headers['x-api-key']) } : {}),
+              ...(req.headers['x-account-id'] ? { 'x-account-id': String(req.headers['x-account-id']) } : {}),
             },
             body: rawBody,
           })
 
-          const ffText = await ffRes.text()
-          console.log(`[firefly-proxy] ${ffRes.status}:`, ffText.slice(0, 500))
+          console.log(`[firefly-proxy] ${status}:`, ffText.slice(0, 500))
 
-          res.writeHead(ffRes.status, {
+          res.writeHead(status, {
             'Content-Type': 'application/json',
             'Access-Control-Allow-Origin': '*',
           })
@@ -971,7 +973,7 @@ export function roboneoProxyPlugin(): Plugin {
           }
 
           // MC Ultra Fast HD workflow (2095008448978407425) — handled locally
-          // so dev doesn't depend on Vercel deploy. Uploads + auto-maps nodes.
+          // so dev doesn't depend on the remote deploy. Uploads + auto-maps nodes.
           if (action === 'motion-control-ultra-hd' || action === 'get-workflow-info') {
             const ULTRA_HD_WF = '2095008448978407425'
             const wfId = params.workflow_id || params.workflowId || ULTRA_HD_WF
@@ -1714,7 +1716,7 @@ export function roboneoProxyPlugin(): Plugin {
           }
 
           // Fallback: Express lokal dulu (punya semua handler runninghub
-          // termasuk motion-control-ultra-hd), Vercel terakhir
+          // termasuk motion-control-ultra-hd), produksi terakhir
           const { status, text } = await forwardApi('/api/public/runninghub', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1974,7 +1976,7 @@ export function roboneoProxyPlugin(): Plugin {
 
       // Catch-all untuk endpoint /api/public/* lain (galleri5, magnific,
       // weavy, uploads, shotstack, creatomate, roboneo-membership, dsb)
-      // → diteruskan ke deployment Vercel. Spesifik handler di atas menang duluan.
+      // → diteruskan ke produksi (arkxmotion-studio.win). Spesifik handler di atas menang duluan.
       // NexaBot: proxy langsung ke Express lokal (:6000) — jangan pakai fetch()
       // karena port 6000 termasuk blocked-port WHATWG.
       server.middlewares.use('/api/public/nexabot', (req, res) => {
@@ -1998,7 +2000,7 @@ export function roboneoProxyPlugin(): Plugin {
 
       server.middlewares.use('/api/public', async (req, res, next) => {
         // Endpoint yang memang router Express lokal (bukan upstream provider)
-        // diteruskan ke proxy /api → localhost:6000, jangan ke Vercel.
+        // diteruskan ke proxy /api → localhost:6000, jangan ke produksi.
         if ((req.url || '').startsWith('/nexabot') || (req.url || '').startsWith('/pricing')) return next()
 
         if (req.method === 'OPTIONS') {
@@ -2027,7 +2029,7 @@ export function roboneoProxyPlugin(): Plugin {
             if (v) headers[h] = String(v)
           }
 
-          console.log(`[public-proxy] ${req.method} ${req.url} → local ${LOCAL_ORIGIN} (fallback Vercel)`)
+          console.log(`[public-proxy] ${req.method} ${req.url} → local ${LOCAL_ORIGIN} (fallback produksi)`)
 
           const { status, text, contentType } = await forwardApi(`/api/public${req.url || '/'}`, {
             method: req.method,

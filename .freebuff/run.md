@@ -12,8 +12,12 @@
    ```
    npm run dev
    ```
-2. The Vite dev server proxies `/api/public/*` requests to the production Vercel
-   deployment via `vite-plugin-roboneo.ts`, so the frontend renders standalone.
+2. `vite-plugin-roboneo.ts` forwards most `/api/public/*` paths to the local
+   Express backend first (`:6000`, `npm run dev:server`), and falls back to the
+   production site (https://arkxmotion-studio.win) only when that backend is not
+   running. Exception: `tiktok-download`, `upload-catbox`, and `firefly` POST
+   straight to production — the local-first path was never wired for those three.
+   Production is the VPS — there is no Vercel deployment anymore.
    The `/api` routes (auth, tokens, admin) proxy to `localhost:6000` (Express backend)
    — not needed for the preview UI.
 
