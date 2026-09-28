@@ -34,6 +34,18 @@ const UGC_ASPECTS = new Set([
   '4:3 (Standard)', '9:16 (Portrait Widescreen)', '16:9 (Widescreen)', '21:9 (Ultrawide)',
 ])
 const UGC_SCENE_NODES = ['170', '167', '165', '166']
+// Seedance 2.0 Replica (gambar + prompt storyboard → video):
+// node 168 = image, node 136 = text (storyboard), node 115 = aspect_ratio.
+// https://www.runninghub.ai/id/ai-detail/2104455137652932609
+const RUNNINGHUB_SEEDANCE2_WORKFLOW_ID = '2104455137652932609'
+const SEEDANCE2_IMAGE_NODE = '168'
+const SEEDANCE2_TEXT_NODE = '136'
+const SEEDANCE2_ASPECT_NODE = '115'
+const SEEDANCE2_ASPECTS = new Set([
+  '1:1 (Square)', '2:3 (Portrait Photo)', '3:2 (Photo)', '3:4 (Portrait Standard)',
+  '4:3 (Standard)', '9:16 (Portrait Widescreen)', '16:9 (Widescreen)', '21:9 (Ultrawide)',
+])
+const SEEDANCE2_ASPECT_FALLBACK = '16:9 (Widescreen)'
 // MC Ultra Fast HD — node ID resmi dari dokumentasi workflow:
 // node 30 = image (LoadImage), node 33 = video (LoadVideo)
 const ULTRA_HD_IMAGE_NODE = '30'
@@ -100,6 +112,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     if (action === 'submit-ugc-storyboard') {
       return await handleSubmitUGCStoryboard(apiKey, params, res)
+    }
+    if (action === 'submit-seedance2') {
+      return await handleSubmitSeedance2(apiKey, params, res)
     }
     if (action === 'query') {
       return await handleQuery(apiKey, params.taskId, res)
@@ -1610,6 +1625,129 @@ async function handleSubmitH3I2V(apiKey: string, params: any, res: VercelRespons
   }
 
   return res.status(200).json({ ok: false, error: `Gagal submit h3-i2v. Terakhir: ${lastErr}`, data: lastData })
+}
+
+async function handleSubmitSeedance2(apiKey: string, params: any, res: VercelResponse) {
+  const {
+    workflow_id,
+    workflowId,
+    imageBase64,
+    imageFileName = 'reference.jpg',
+    imageMimeType = 'image/jpeg',
+    prompt = '',
+    aspectRatio = SEEDANCE2_ASPECT_FALLBACK,
+  } = params
+
+  if (!imageBase64) return res.status(200).json({ ok: false, error: 'Missing imageBase64' })
+  if (!prompt) return res.status(200).json({ ok: false, error: 'Missing prompt storyboard' })
+
+  const effectiveWorkflowId = workflow_id || workflowId || RUNNINGHUB_SEEDANCE2_WORKFLOW_ID
+  const effAspect = SEEDANCE2_ASPECTS.has(String(aspectRatio)) ? String(aspectRatio) : SEEDANCE2_ASPECT_FALLBACK
+
+  try {
+    console.log(`[runninghub] Uploading image (seedance2)...`)
+    const imageUpload = await rhUpload(apiKey, imageBase64, imageFileName, imageMimeType)
+    console.log(`[runninghub] Image uploaded: ${imageUpload.fileName}`)
+
+    const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${effectiveWorkflowId}`
+    const RETRY_DELAY_MS = 10000
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+    const nodeField: Record<string, string> = { [SEEDANCE2_IMAGE_NODE]: 'image' }
+    const IMG_CANDS = ['image', 'file', 'path', 'filename', 'input', 'src']
+    const parseMismatch = (msg: string): { nodeId: string; fieldName: string; reason: string } | null => {
+      const m = /nodeId=([^,\)]+),\s*fieldName=([^,\)]+),\s*reason=([^,\)]+)/.exec(msg)
+      return m ? { nodeId: m[1].trim(), fieldName: m[2].trim(), reason: m[3].trim() } : null
+    }
+
+    const buildList = () => [
+      { nodeId: SEEDANCE2_IMAGE_NODE, fieldName: nodeField[SEEDANCE2_IMAGE_NODE], fieldValue: imageUpload.fileName },
+      { nodeId: SEEDANCE2_TEXT_NODE, fieldName: 'text', fieldValue: String(prompt) },
+      { nodeId: SEEDANCE2_ASPECT_NODE, fieldName: 'aspect_ratio', fieldValue: effAspect },
+    ]
+
+    const droppedEntries = new Set<string>()
+    let lastErr = 'Unknown error'
+    let lastData: any = null
+    let r: any = null
+
+    for (let round = 0; round < 8; round++) {
+      const list = buildList().filter((e) => !droppedEntries.has(`${e.nodeId}/${e.fieldName}`))
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        console.log(`[runninghub] seedance2 round=${round} (attempt ${attempt}/3)`)
+        const apiRes = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({ nodeInfoList: list, instanceType: 'default', usePersonalQueue: 'false' }),
+        })
+        const rawText = await apiRes.text()
+        console.log(`[runninghub] submit-seedance2 ${apiRes.status}:`, rawText.slice(0, 1000))
+        let data: any
+        try { data = JSON.parse(rawText) } catch { data = { raw: rawText } }
+        r = {
+          http: apiRes.status,
+          data,
+          code: data.code ?? data.errorCode,
+          msg: String(data.msg || data.errorMessage || data.message || ''),
+          taskId: data.data?.taskId || data.taskId || data.id || data.task_id,
+          status: data.data?.status || data.status || 'QUEUED',
+        }
+        if (r.taskId || (r.http !== 429 && r.code !== 429 && r.code !== 421 && r.code !== '421')) break
+        if (r.http === 429 || r.code === 429) {
+          return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data: r.data, retryable: true })
+        }
+        console.log(`[runninghub] Queue limit (421), retrying in ${RETRY_DELAY_MS / 1000}s...`)
+        if (attempt < 3) await sleep(RETRY_DELAY_MS)
+      }
+      if (!r) break
+      if (r.taskId) {
+        return res.status(200).json({
+          ok: true,
+          data: {
+            id: r.taskId,
+            taskId: r.taskId,
+            status: r.status,
+            provider: 'runninghub',
+            workflowId: effectiveWorkflowId,
+          },
+        })
+      }
+      if (r.code === 421 || r.code === '421') {
+        return res.status(200).json({ ok: false, error: 'Queue limit reached, coba lagi dalam beberapa menit', data: r.data, retryable: true })
+      }
+      lastErr = r.msg || `Error code: ${r.code}`
+      lastData = r.data
+      const mm = r.code === 803 || r.code === '803' ? parseMismatch(r.msg) : null
+      if (mm && /field_not_found|node_not_found/i.test(mm.reason) && mm.nodeId === SEEDANCE2_IMAGE_NODE) {
+        if (/node_not_found/i.test(mm.reason)) {
+          return res.status(200).json({ ok: false, error: `Node ${mm.nodeId} tidak ada di workflow ini`, data: r.data })
+        }
+        const cur = nodeField[mm.nodeId] || ''
+        const nextIdx = IMG_CANDS.indexOf(cur) + 1
+        if (nextIdx <= 0 || nextIdx >= IMG_CANDS.length) {
+          return res.status(200).json({ ok: false, error: `Field ${mm.nodeId} ditolak semua kandidat. Terakhir: ${r.msg}`, data: r.data })
+        }
+        nodeField[mm.nodeId] = IMG_CANDS[nextIdx]
+        console.log(`[runninghub] seedance2 node ${mm.nodeId}: "${cur}" ditolak → coba "${IMG_CANDS[nextIdx]}"`)
+        continue
+      }
+      if (mm && /field_not_found|node_not_found/i.test(mm.reason)) {
+        console.log(`[runninghub] seedance2 buang field ${mm.nodeId}/${mm.fieldName} (${mm.reason}), pakai default workflow`)
+        droppedEntries.add(`${mm.nodeId}/${mm.fieldName}`)
+        continue
+      }
+      const errorMsg = translateRhError(String(r.code ?? ''), r.msg) || r.msg || 'Submit gagal'
+      return res.status(200).json({ ok: false, error: errorMsg, code: r.code, data: r.data })
+    }
+
+    return res.status(200).json({ ok: false, error: `Gagal submit seedance2. Terakhir: ${lastErr}`, data: lastData })
+  } catch (err: any) {
+    console.error('[runninghub] seedance2 error:', err.message)
+    return res.status(200).json({ ok: false, error: err.message || 'Seedance2 gagal' })
+  }
 }
 
 async function handleSubmitUGCStoryboard(apiKey: string, params: any, res: VercelResponse) {

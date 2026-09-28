@@ -34,6 +34,11 @@ export const RUNNINGHUB_IMAGE_EDIT_WORKFLOW_ID = '1928844216607129602'
 export const RUNNINGHUB_H3_I2V_WORKFLOW_ID = '2099854999999340546'
 // UGC Storyboard (MiniMax H3 I2V — gambar ke video multi-scene + audio)
 export const RUNNINGHUB_UGC_WORKFLOW_ID = '2096092981395841025'
+
+// Seedance 2.0 Replica — gambar + prompt storyboard → video:
+// node 168 = image (gambar referensi), node 136 = text (storyboard),
+// node 115 = aspect_ratio. https://www.runninghub.ai/id/ai-detail/2104455137652932609
+export const RUNNINGHUB_SEEDANCE2_WORKFLOW_ID = '2104455137652932609'
 export const UGC_STORYBOARD_ASPECTS = [
   '9:16 (Portrait Widescreen)', '1:1 (Square)', '2:3 (Portrait Photo)', '3:2 (Photo)',
   '3:4 (Portrait Standard)', '4:3 (Standard)', '16:9 (Widescreen)', '21:9 (Ultrawide)',
@@ -655,6 +660,36 @@ export async function submitRunningHubUGCStoryboard(params: UGCStoryboardParams)
     prompt: params.prompt || 'follow prompt storyboards',
     duration: params.duration ?? 15,
     aspectRatio: params.aspectRatio || '9:16 (Portrait Widescreen)',
+  }, params.apiKey)
+
+  return {
+    id: result.id || result.taskId,
+    taskId: result.taskId || result.id,
+    status: result.status || 'QUEUED',
+    provider: result.provider || 'runninghub',
+    workflowId: result.workflowId || workflowId,
+  }
+}
+
+export interface Seedance2Params {
+  imageFile: File
+  prompt?: string
+  aspectRatio?: string
+  apiKey?: string
+  workflowId?: string
+}
+
+export async function submitRunningHubSeedance2(params: Seedance2Params): Promise<MotionControlResult> {
+  const workflowId = params.workflowId || RUNNINGHUB_SEEDANCE2_WORKFLOW_ID
+  const imageBase64 = await fileToBase64(params.imageFile)
+
+  const result = await runninghubProxy('submit-seedance2', {
+    workflow_id: workflowId,
+    imageBase64,
+    imageFileName: params.imageFile.name || 'reference.jpg',
+    imageMimeType: params.imageFile.type || 'image/jpeg',
+    prompt: params.prompt || 'Ikuti storyboard pada prompt.',
+    aspectRatio: params.aspectRatio || '16:9 (Widescreen)',
   }, params.apiKey)
 
   return {

@@ -326,6 +326,8 @@ export default function ImageToVideoPage() {
   // NexaBot Omni Flash 1.1 — 4 jenis mengikuti nexabot.id/video-generator:
   const isNb = provider === 'nexabot'
   const nbApiModel = isNb ? (currentModel?.apiModel || 't2v') : ''
+  // Seedance 2.0 Replica (RunningHub): gambar + prompt storyboard → video.
+  const isRhSeedance = provider === 'runninghub' && currentModel?.apiModel === 'seedance2'
   const isNbT2V = isNb && nbApiModel === 't2v'
   const isNbSFV = isNb && nbApiModel === 'sfv'
   const isNbI2V = isNb && nbApiModel === 'i2v'
@@ -717,7 +719,9 @@ export default function ImageToVideoPage() {
     if (provider === 'nexabot' && user?.role !== 'admin' && !nbWallet?.unlimited.active && (nbWallet?.balance ?? 0) < (nbWallet?.price ?? 250))
       return `Saldo NexaBot tidak cukup (${formatRp(nbWallet?.balance ?? 0)}). Top up atau ambil Paket Unlimited ${nbWallet?.package.days ?? 7} hari di halaman Top Up NexaBot.`
     if (provider === 'roboneo' && !imgFile) return 'Roboneo membutuhkan gambar input'
-    if (provider === 'runninghub' && !imgFile) return 'RunningHub H3 I2V membutuhkan gambar input'
+    if (provider === 'runninghub' && !imgFile) return isRhSeedance
+      ? 'Seedance 2.0 Storyboard membutuhkan 1 gambar referensi'
+      : 'RunningHub H3 I2V membutuhkan gambar input'
     if (provider === 'nexabot') {
       const nbMode = currentModel?.apiModel
       const nbImages = [imgFile, startFrameFile, ...refFiles].filter((f): f is File => !!f && f.type.startsWith('image/'))
@@ -2423,6 +2427,93 @@ export default function ImageToVideoPage() {
           setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai' }))
           notifyGenerationComplete(currentModel?.label || model, PROVIDER_CONFIGS['nexabot'].name)
           if (logId) logGenerationComplete(logId, { status: 'completed', result_url: rotation.result, duration_ms: Date.now() - startTime })
+        } else {
+          throw new Error(rotation.error || 'Generation failed')
+        }
+      } else if (provider === 'runninghub' && isRhSeedance) {
+        // ─── RunningHub: Seedance 2.0 Replica (gambar + prompt storyboard → video) ───
+        if (!imgFile) throw new Error('Seedance 2.0 Storyboard membutuhkan 1 gambar referensi')
+        addLog(`[1/3] 🖼️ Menyiapkan gambar referensi...`, 'info', 'runninghub')
+
+        const { submitRunningHubSeedance2, pollRunningHubTask } = await import('@/lib/runninghub')
+        const SEEDANCE_ASPECT_MAP: Record<string, string> = {
+          '1:1': '1:1 (Square)',
+          '2:3': '2:3 (Portrait Photo)',
+          '3:2': '3:2 (Photo)',
+          '3:4': '3:4 (Portrait Standard)',
+          '4:3': '4:3 (Standard)',
+          '9:16': '9:16 (Portrait Widescreen)',
+          '16:9': '16:9 (Widescreen)',
+          '21:9': '21:9 (Ultrawide)',
+        }
+        const seedanceAspect = SEEDANCE_ASPECT_MAP[ratio] || '16:9 (Widescreen)'
+
+        const rotation = await withTokenRotation<string>(
+          'runninghub',
+          async (token, keyInfo) => {
+            addLog(`🔑 Trying key: ${keyInfo.name || keyInfo.id}`, 'info', 'runninghub')
+            setStatus((s) => ({ ...s, text: 'Submit Seedance 2.0...', pct: 15 }))
+
+            const submit = await submitRunningHubSeedance2({
+              imageFile: imgFile!,
+              prompt: prompt.trim(),
+              aspectRatio: seedanceAspect,
+              apiKey: token,
+            })
+            const taskId = submit.taskId
+            addLog(`[2/3] ✅ Task created ✓ task=${taskId.slice(0, 20)}...`, 'success', 'runninghub')
+
+            addActiveTask({
+              id: taskId,
+              taskId,
+              roomId: '',
+              nodeId: '',
+              token,
+              model: currentModel?.label || model,
+              prompt: prompt.trim() || '(no prompt)',
+              startedAt: Date.now(),
+              page: 'image-to-video',
+              provider: 'runninghub',
+            })
+            activeTaskId = taskId
+
+            addLog(`[3/3] ⏳ Polling for result...`, 'info', 'runninghub')
+            setStatus((s) => ({ ...s, text: 'Processing...', pct: 25 }))
+
+            const videoUrl = await pollRunningHubTask(taskId, (status, pct) => {
+              addLog(`⏳ RH ${status} (${pct}%)`, 'debug', 'runninghub')
+              setStatus((s) => ({ ...s, pct: Math.min(pct || 0, 95), text: `RH ${status}` }))
+            }, 3600000, token)
+
+            setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+            addLog(`✅ Video selesai ✓`, 'success', 'runninghub')
+
+            removeActiveTask(taskId)
+            activeTaskId = null
+            return videoUrl
+          },
+          {
+            onKeySwitch: (from, to, attempt) => {
+              addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn', 'runninghub')
+              if (activeTaskId) removeActiveTask(activeTaskId)
+              activeTaskId = null
+            },
+            onError: (err, _key) => {
+              if (detectTokenError('runninghub', err)) {
+                addLog(`⚠️ Key is invalid: ${err.message}`, 'warn', 'runninghub')
+              }
+            },
+          }
+        )
+        if (rotation.ok && rotation.result) {
+          setResults((prev) => [rotation.result!, ...prev])
+          saveGalleryItem(rotation.result!)
+          successRef.current = true
+          setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+          notifyGenerationComplete(currentModel?.label || model, PROVIDER_CONFIGS[provider].name)
+          if (rotation.triedKeys > 1) {
+            addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success', 'runninghub')
+          }
         } else {
           throw new Error(rotation.error || 'Generation failed')
         }
