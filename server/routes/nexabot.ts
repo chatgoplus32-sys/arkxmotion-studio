@@ -166,7 +166,7 @@ router.use((req: Request, _res: Response, next) => {
   const action = req.query.action as string | undefined
   if (!action || req.path !== '/') return next()
   const id = req.query.id as string | undefined
-  if ((action === 'job' || action === 'download') && id) req.url = `/${action}/${id}`
+  if ((action === 'job' || action === 'download' || action === 'gpt-image') && id) req.url = `/${action}/${id}`
   else req.url = `/${action}`
   next()
 })
@@ -292,6 +292,160 @@ router.post('/generate', async (req: Request, res: Response) => {
       statusCode: hasil.status,
       bodyText: hasil.text,
       credential: { kind: 'cookie', source: 'own-cookie', secret: cookies },
+    })
+  }
+})
+
+
+// ── GPT Image 2.5 (jalur web nexabot.id/gpt-image) ──
+// Kontrak upstream (diverifikasi langsung dengan kredensial valid):
+//   POST {prompt, aspect, references} → {ok, id} — tanpa prompt: 400, tanpa job;
+//   GET  /:id → {ok, job:{status, progress, phase, images[], error}}.
+// Auth-nya menerima x-api-key, cookie, dan Bearer (tanpa → 401), jadi rute ini
+// memakai resolusi kredensial penuh seperti /submit, bukan session-only.
+router.post('/gpt-image', async (req: Request, res: Response) => {
+  const auth = resolveUpstreamAuth(req)
+  if (Object.keys(auth.headers).length === 0) {
+    return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key header' })
+  }
+
+  const body = req.body
+  console.log(`[nexabot-local] POST /api/v1/gpt-image (aspect: ${body.aspect ?? '-'}, refs: ${Array.isArray(body.references) ? body.references.length : 0})`)
+
+  const upstreamBody: Record<string, any> = {
+    prompt: body.prompt,
+    // Enum angka milik nexabot.id: 1 = 1:1, 2 = 16:9, 5 = 9:16. Default 2
+    // mengikuti halaman web-nya (tombol 16:9 yang terpilih bawaan).
+    aspect: body.aspect ?? 2,
+    references: Array.isArray(body.references) ? body.references.slice(0, 10) : [],
+  }
+  if (body.telegram_id) upstreamBody.telegram_id = body.telegram_id
+
+  // Tanpa retry, sama alasannya dengan /submit: job & kredit 0,1 tidak boleh ganda.
+  const hasil = await relayUpstream(res, 'gpt-image', `${NEXABOT_BASE}/api/v1/gpt-image`, {
+    method: 'POST',
+    headers: {
+      ...auth.headers,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    },
+    body: JSON.stringify(upstreamBody),
+  })
+  // Dicatat setelah respons upstream diterima: rute inilah yang memakai kuota.
+  if (hasil) {
+    recordUpstreamUsage({
+      req,
+      route: 'gpt-image',
+      statusCode: hasil.status,
+      bodyText: hasil.text,
+      credential: auth.credential,
+    })
+  }
+})
+
+// ── Poll status GPT Image (read-only) ──
+// Sama dengan /job/:id tapi ke endpoint gpt-image; memakai aksi 'job' supaya
+// kebijakan retry-nya identik (2×, 25s — klien punya backoff sendiri).
+router.get('/gpt-image/:id', async (req: Request, res: Response) => {
+  const auth = resolveUpstreamAuth(req, { bacaSaja: true })
+  const jobId = req.params.id
+  if (Object.keys(auth.headers).length === 0) {
+    return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key / X-Nexabot-Cookie header' })
+  }
+  if (!jobId) {
+    return res.status(400).json({ ok: false, error: 'Missing job id' })
+  }
+
+  const idPath = encodeURIComponent(String(jobId))
+  console.log(`[nexabot-local] GET /api/v1/gpt-image/${idPath}`)
+  await relayUpstream(res, 'job', `${NEXABOT_BASE}/api/v1/gpt-image/${idPath}`, {
+    method: 'GET',
+    headers: {
+      ...auth.headers,
+      'Accept': 'application/json',
+    },
+  })
+})
+
+// ── Download hasil GPT Image (menyuntikkan kredensial) ──
+// Uji nyata membuktikan images[].url berupa path RELATIF di origin nexabot.id
+// yang MENGHARUSKAN auth (tanpa kredensial -> 401). Tag <img> galeri tidak bisa
+// mengirim header, jadi lib klien mengalihkan URL hasil ke rute ini.
+router.get('/gpt-image/:id/download', async (req: Request, res: Response) => {
+  const auth = resolveUpstreamAuth(req, { bacaSaja: true })
+  const jobId = req.params.id
+  if (Object.keys(auth.headers).length === 0) {
+    return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key / X-Nexabot-Cookie header' })
+  }
+  if (!jobId) {
+    return res.status(400).json({ ok: false, error: 'Missing job id' })
+  }
+
+  const idPath = encodeURIComponent(String(jobId))
+  const index = typeof req.query.index === 'string' && req.query.index ? encodeURIComponent(req.query.index) : '0'
+  const wantAttachment = req.query.download !== undefined
+
+  try {
+    console.log(`[nexabot-local] GET /api/v1/gpt-image/${idPath}/download?index=${index}`)
+    const { response: upstreamRes } = await fetchNexabotUpstream(
+      `${NEXABOT_BASE}/api/v1/gpt-image/${idPath}/download?index=${index}`,
+      {
+        method: 'GET',
+        headers: { ...auth.headers, 'Accept': 'image/*, application/json' },
+        redirect: 'follow',
+      },
+      { action: 'download' },
+    )
+
+    if (!upstreamRes.ok) {
+      const errText = await upstreamRes.text().catch(() => '')
+      console.log(`[nexabot-local] gpt-image download ${upstreamRes.status}: ${errText.slice(0, 200)}`)
+      res.writeHead(upstreamRes.status, {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      })
+      res.end(JSON.stringify({ ok: false, error: `Download gagal: HTTP ${upstreamRes.status}` }))
+      return
+    }
+
+    const contentType = upstreamRes.headers.get('content-type') || ''
+    if (contentType.includes('application/json')) {
+      const text = await upstreamRes.text()
+      console.log(`[nexabot-local] gpt-image download json: ${text.slice(0, 300)}`)
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      })
+      res.end(text)
+      return
+    }
+
+    const headers: Record<string, string> = {
+      'Content-Type': contentType || 'image/png',
+      'Access-Control-Allow-Origin': '*',
+    }
+    // Inline untuk <img>; ?download=1 mengikuti konvensi halaman web nexabot.id.
+    if (wantAttachment) headers['Content-Disposition'] = `attachment; filename="nexabot-gpt-image-${idPath}.png"`
+    const len = upstreamRes.headers.get('content-length')
+    if (len) headers['Content-Length'] = len
+
+    res.writeHead(200, headers)
+    const reader = upstreamRes.body?.getReader()
+    if (reader) {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        res.write(value)
+      }
+    }
+    res.end()
+  } catch (err: any) {
+    const cause = nexabotErrorCause(err)
+    console.error(`[nexabot-local] gpt-image download error:`, err.message, cause ? `(cause: ${cause})` : '')
+    const upstream = err instanceof NexabotUpstreamError ? err : null
+    res.status(upstream?.timeout ? 504 : 502).json({
+      ok: false,
+      error: upstream ? `${upstream.message} — ${nexabotErrorAdvice('download')}` : err.message,
     })
   }
 })

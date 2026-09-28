@@ -27,6 +27,7 @@ export type NexabotProxyAction =
   | 'modes'
   | 'submit'
   | 'generate'
+  | 'gpt-image'
   | 'download'
   | 'generic'
 
@@ -62,6 +63,9 @@ export const NEXABOT_PROXY_POLICY: Record<NexabotProxyAction, NexabotProxyPolicy
   // sudah terbentuk upstream — mengulang berarti kredit terpotong dua kali.
   submit: { timeoutMs: 180_000, attempts: 1, label: 'submit ke NexaBot' },
   generate: { timeoutMs: 180_000, attempts: 1, label: 'generate via session' },
+  // GPT Image 2.5 (nexabot.id/gpt-image): sekali jalan seperti submit —
+  // respons hilang berarti job mungkin sudah terbentuk dan 0,1 cr terpotong.
+  'gpt-image': { timeoutMs: 180_000, attempts: 1, label: 'generate GPT Image' },
   download: { timeoutMs: 180_000, attempts: 1, label: 'unduh hasil' },
   // Jalur cadangan (path yang tidak dikenali): tetap diberi timeout supaya tidak
   // menggantung tanpa batas, tapi tanpa retry karena isinya tidak diketahui.
@@ -324,7 +328,7 @@ export function nexabotErrorCause(err: any): string {
  * mungkin sudah terbentuk, jadi jangan menyarankan "coba lagi" begitu saja.
  */
 export function isNexabotNonIdempotentAction(action: NexabotProxyAction): boolean {
-  return action === 'submit' || action === 'generate'
+  return action === 'submit' || action === 'generate' || action === 'gpt-image'
 }
 
 /**
@@ -335,9 +339,10 @@ export function isNexabotNonIdempotentAction(action: NexabotProxyAction): boolea
  * bukan "coba lagi".
  */
 export function nexabotErrorAdvice(action: NexabotProxyAction): string {
-  return isNexabotNonIdempotentAction(action)
-    ? 'Respons NexaBot hilang — job MUNGKIN sudah terbentuk, jadi cek dulu di nexabot.id/riwayat; ulangi hanya kalau kamu yakin belum ada job, karena kredit 0.25 cr bisa terpotong dua kali.'
-    : 'coba lagi'
+  if (!isNexabotNonIdempotentAction(action)) return 'coba lagi'
+  // Biaya per aksi: GPT Image 0,1 cr, sisanya 0,25 cr.
+  const biaya = action === 'gpt-image' ? '0,1' : '0,25'
+  return `Respons NexaBot hilang — job MUNGKIN sudah terbentuk, jadi cek dulu di nexabot.id/riwayat; ulangi hanya kalau kamu yakin belum ada job, karena kredit ${biaya} cr bisa terpotong dua kali.`
 }
 
 /** Error dari percobaan yang semuanya gagal (timeout / koneksi). */

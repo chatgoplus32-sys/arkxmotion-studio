@@ -30,7 +30,7 @@ import db from '../db.js'
  */
 
 /** Rute yang mengonsumsi kuota upstream. Poll job/health/credit sengaja tidak. */
-export type ConsumingRoute = 'generate' | 'submit'
+export type ConsumingRoute = 'generate' | 'submit' | 'gpt-image'
 
 const EVIDENCE_MAX = 300
 

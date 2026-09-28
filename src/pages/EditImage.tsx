@@ -9,6 +9,7 @@ import { withTokenRotation } from '@/lib/tokenRotation'
 import { submitRunningHubImageEdit, pollRunningHubTask } from '@/lib/runninghub'
 import { normalizeImage } from '@/lib/roboneo'
 import { addBgLog, getLogs, addResult, removeResult, startBackgroundPolling, persistResultToR2, clearLogs as clearBgLogs } from '@/lib/backgroundTasks'
+import { loadVideoBlob } from '@/lib/videoStorage'
 
 type EditProvider = 'riverside' | 'nexabot' | 'runninghub'
 
@@ -28,6 +29,7 @@ const RIVERSIDE_IMAGE_MODELS = [
 ]
 
 const NEXABOT_IMAGE_MODELS = [
+  { value: 'nb:gpt25', label: '✨ GPT Image 2.5 (NexaBot)', cr: 0.1, apiModel: 'gpt-image' },
   { value: 'nb:img', label: '✨ GPT Image (NexaBot)', cr: 0.1, apiModel: 'img' },
 ]
 
@@ -60,20 +62,26 @@ interface GalleryItem {
 
 const GALLERY_KEY = 'arkxmotion.editimage.gallery'
 
+/** URL yang boleh disimpan — blob: sah karena byte-nya ada di IndexedDB. */
+function persistableUrl(url: string): boolean {
+  return url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/') || url.startsWith('blob:')
+}
+
 function loadGallery(): GalleryItem[] {
   try {
     const raw = JSON.parse(localStorage.getItem(GALLERY_KEY) || '[]')
     if (!Array.isArray(raw)) return []
-    // blob: URL mati setelah reload → buang agar tak ERR_FILE_NOT_FOUND
-    const cleaned = raw.filter((g: any) => g && typeof g.url === 'string' && (g.url.startsWith('http://') || g.url.startsWith('https://') || g.url.startsWith('/')))
-    if (cleaned.length !== raw.length) {
-      try { localStorage.setItem(GALLERY_KEY, JSON.stringify(cleaned.slice(0, 200))) } catch {}
+    const valid = raw.filter((g: any) => g && typeof g.url === 'string' && persistableUrl(g.url))
+    if (valid.length !== raw.length) {
+      try { localStorage.setItem(GALLERY_KEY, JSON.stringify(valid.slice(0, 200))) } catch {}
     }
-    return cleaned
+    // Item blob: tetap tinggal di storage — URL-nya mati setelah reload, jadi
+    // jangan dirender dulu; dipulihkan dari IndexedDB oleh efek restore di bawah.
+    return valid.filter((g: any) => !g.url.startsWith('blob:'))
   } catch { return [] }
 }
 function saveGallery(items: GalleryItem[]) {
-  const persistable = items.filter((g) => g && typeof g.url === 'string' && (g.url.startsWith('http://') || g.url.startsWith('https://') || g.url.startsWith('/')))
+  const persistable = items.filter((g) => g && typeof g.url === 'string' && persistableUrl(g.url))
   localStorage.setItem(GALLERY_KEY, JSON.stringify(persistable.slice(0, 200)))
 }
 
@@ -84,6 +92,12 @@ export default function EditImagePage() {
   const [provider, setProvider] = useState<EditProvider>('nexabot')
   const [imgUrl, setImgUrl] = useState<string | null>(null)
   const [imgFile, setImgFile] = useState<File | null>(null)
+  // GPT Image 2.5: rasio + hingga 10 gambar referensi (enum nexabot.id:
+  // 2 = 16:9, 1 = 1:1, 5 = 9:16 — urutan & nilai persis seperti halaman web).
+  const [gptAspect, setGptAspect] = useState<1 | 2 | 5>(2)
+  const [refFiles, setRefFiles] = useState<File[]>([])
+  const [refUrls, setRefUrls] = useState<string[]>([])
+  const refPickerRef = useRef<HTMLInputElement | null>(null)
   const [model, setModel] = useState(NEXABOT_IMAGE_MODELS[0].value)
   const [prompt, setPrompt] = useState('')
   const [generating, setGenerating] = useState(false)
@@ -94,6 +108,7 @@ export default function EditImagePage() {
   const filePickerRef = useRef<HTMLInputElement | null>(null)
 
   const currentModel = ALL_MODELS[provider].find((m) => m.value === model) || ALL_MODELS[provider][0]
+  const isGpt25 = provider === 'nexabot' && model === 'nb:gpt25'
   const providerKeyCount = keys[provider]?.length || 0
   const hasActiveKey = keys[provider]?.some((k) => k.status !== 'invalid' && k.status !== 'expired') || false
 
@@ -113,6 +128,60 @@ export default function EditImagePage() {
     return () => window.removeEventListener('arkxmotion-tasks-changed', sync)
   }, [])
 
+  // Pulihkan item galeri blob: dari IndexedDB — byte-nya disimpan addResult()
+  // dengan id yang sama; URL blob: di storage hanya penanda yang mati tiap
+  // reload. Yang bytenya sudah tak ada dibuang agar tak jadi gambar rusak.
+  useEffect(() => {
+    let batal = false
+    ;(async () => {
+      try {
+        const raw = JSON.parse(localStorage.getItem(GALLERY_KEY) || '[]')
+        if (!Array.isArray(raw)) return
+        const hidup: GalleryItem[] = []
+        const matiIdx: number[] = []
+        for (let i = 0; i < raw.length; i++) {
+          const g = raw[i]
+          if (!g || typeof g.url !== 'string' || !g.url.startsWith('blob:')) continue
+          if (typeof g.id !== 'string') { matiIdx.push(i); continue }
+          try {
+            const blob = await loadVideoBlob(g.id)
+            if (blob) hidup.push({ ...g, url: URL.createObjectURL(blob) })
+            else matiIdx.push(i)
+          } catch { matiIdx.push(i) }
+        }
+        if (batal) return
+        if (matiIdx.length) {
+          try {
+            const sisa = raw.filter((_: any, i: number) => !matiIdx.includes(i))
+            localStorage.setItem(GALLERY_KEY, JSON.stringify(sisa.slice(0, 200)))
+          } catch {}
+        }
+        if (!hidup.length) return
+        setGallery((prev) => {
+          const prevById = new Map(prev.map((p) => [p.id, p]))
+          const hidupById = new Map(hidup.map((h) => [h.id, h]))
+          const hasil: GalleryItem[] = []
+          const terpakai = new Set<string>()
+          // Susun sesuai urutan storage; item blob pakai versi yang baru hidup.
+          for (const g of raw) {
+            if (!g || typeof g.id !== 'string' || terpakai.has(g.id)) continue
+            if (typeof g.url === 'string' && g.url.startsWith('blob:')) {
+              const r = hidupById.get(g.id)
+              if (r) { hasil.push(r); terpakai.add(g.id) }
+            } else {
+              const p = prevById.get(g.id)
+              if (p) { hasil.push(p); terpakai.add(g.id) }
+            }
+          }
+          // Item yang lahir selama pemulihan berjalan (belum ada di snapshot).
+          for (const p of prev) if (!terpakai.has(p.id)) hasil.unshift(p)
+          return hasil
+        })
+      } catch { /* biarkan galeri tampil tanpa item pulihan */ }
+    })()
+    return () => { batal = true }
+  }, [])
+
   const handleFileChange = (files: FileList | null) => {
     const file = files?.[0]
     if (file) {
@@ -122,6 +191,22 @@ export default function EditImagePage() {
       })
       setImgFile(file)
     }
+  }
+
+  const addRefFiles = (files: FileList | null) => {
+    if (!files?.length) return
+    const incoming = Array.from(files).slice(0, Math.max(0, 10 - refFiles.length))
+    if (!incoming.length) return
+    setRefFiles((prev) => [...prev, ...incoming])
+    setRefUrls((prev) => [...prev, ...incoming.map((f) => URL.createObjectURL(f))])
+  }
+
+  const removeRef = (index: number) => {
+    setRefUrls((prev) => {
+      if (prev[index]) URL.revokeObjectURL(prev[index])
+      return prev.filter((_, i) => i !== index)
+    })
+    setRefFiles((prev) => prev.filter((_, i) => i !== index))
   }
 
   const canGenerate = (provider === 'nexabot' || !!imgFile) && !generating && !!prompt.trim() && hasActiveKey
@@ -147,7 +232,8 @@ export default function EditImagePage() {
 
     try {
       if (provider === 'nexabot') {
-        await handleGenerateNexabot()
+        if (isGpt25) await handleGenerateGpt25()
+        else await handleGenerateNexabot()
       } else if (provider === 'runninghub') {
         await handleGenerateRunningHub()
       } else {
@@ -219,6 +305,84 @@ export default function EditImagePage() {
     persistResultToR2(item.id, item.url)
     window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
     addToast('Generate gambar selesai!', 'success')
+  }
+
+  const handleGenerateGpt25 = async () => {
+    const { submitNexabotGptImage, pollNexabotGptImage, downloadNexabotGptImage, compressForApi } = await import('@/lib/nexabot')
+
+    const aspectLabel = gptAspect === 2 ? '16:9' : gptAspect === 1 ? '1:1' : '9:16'
+    addLog(`[1/3] 📤 Submit GPT Image 2.5 (rasio ${aspectLabel}${refFiles.length ? `, ${refFiles.length} referensi` : ''})...`, 'info')
+
+    // Referensi dipadatkan dulu: 10 foto mentah bisa meledakkan body JSON 50MB.
+    const references: string[] = []
+    for (const f of refFiles) {
+      const small = await compressForApi(f, 1024, 0.72)
+      references.push(await new Promise<string>((resolve, reject) => {
+        const r = new FileReader()
+        r.onload = () => resolve(String(r.result))
+        r.onerror = () => reject(new Error('Gagal membaca file referensi'))
+        r.readAsDataURL(small)
+      }))
+    }
+
+    const submit = await submitNexabotGptImage({
+      prompt: prompt.trim(),
+      aspect: gptAspect,
+      references,
+    })
+    if (!submit.ok || !submit.id) throw new Error(submit.error || 'Submit gagal')
+    addLog(`   ✓ Job ID: ${submit.id}`, 'success')
+    addLog(`   💰 Biaya: ${submit.cost ?? 0.1} kredit${submit.creditBalance != null ? ` — sisa saldo ${submit.creditBalance}` : ''}`, 'debug')
+
+    addLog('[2/3] ⏳ Polling status (maks 6 menit)...', 'info')
+    const job = await pollNexabotGptImage(submit.id, undefined, (msg) => addLog(msg, 'debug'))
+    addLog(`   ✓ Status: ${job.status}`, 'success')
+
+    const images = (job.images || []).filter((im) => im && typeof im.url === 'string')
+    if (!images.length) throw new Error('Tidak ada gambar yang dihasilkan')
+
+    // URL hasil menuntut header auth — <img> tak bisa mengirimnya, jadi unduh
+    // dengan autentikasi dulu. Simpan di browser saja: blob URL tampil sesi
+    // ini, bytenya masuk IndexedDB lewat addResult dan dipulihkan tiap muat
+    // halaman (efek restore galeri) — tanpa R2/CDN.
+    addLog(`[3/3] 📥 Mengunduh ${images.length} gambar...`, 'info')
+    let tersimpan = 0
+    for (let i = 0; i < images.length; i++) {
+      const dl = await downloadNexabotGptImage(images[i].url)
+      if (!dl.ok || !dl.blob) {
+        addLog(`   ⚠️ Gambar ${i + 1}/${images.length} gagal diunduh: ${dl.error}`, 'warn')
+        continue
+      }
+      const finalUrl = URL.createObjectURL(dl.blob)
+
+      const item: GalleryItem = {
+        id: `editimg-${Date.now()}-${i}`,
+        url: finalUrl,
+        prompt: prompt.trim(),
+        provider: 'nexabot',
+        model: currentModel.label,
+        createdAt: new Date().toISOString(),
+      }
+      setGallery((prev) => {
+        const updated = [item, ...prev]
+        saveGallery(updated)
+        return updated
+      })
+      addResult({
+        id: item.id,
+        url: item.url,
+        prompt: item.prompt,
+        date: item.createdAt,
+        page: 'edit-image',
+        provider: 'nexabot',
+        model: item.model,
+      })
+      addLog(`   ✓ Gambar ${i + 1}/${images.length} disimpan di browser ✓`, 'success')
+      tersimpan++
+    }
+    if (!tersimpan) throw new Error('Semua gambar gagal diunduh dari NexaBot')
+    window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
+    addToast(tersimpan > 1 ? `GPT Image 2.5 selesai — ${tersimpan} gambar!` : 'GPT Image 2.5 selesai!', 'success')
   }
 
   const handleGenerateRunningHub = async () => {
@@ -471,6 +635,25 @@ export default function EditImagePage() {
                   }))}
                 />
 
+                {isGpt25 && (
+                  <div className="space-y-2">
+                    <Label>Rasio</Label>
+                    <div className="flex gap-2">
+                      {([2, 1, 5] as const).map((v) => (
+                        <button
+                          key={v}
+                          type="button"
+                          disabled={generating}
+                          onClick={() => setGptAspect(v)}
+                          className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-all ${gptAspect === v ? 'border-primary bg-primary/10 text-foreground' : 'border-border text-muted-foreground hover:bg-accent/40'}`}
+                        >
+                          {v === 2 ? '16:9' : v === 1 ? '1:1' : '9:16'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <Label>Prompt</Label>
                 <Textarea
                   rows={4}
@@ -492,7 +675,7 @@ export default function EditImagePage() {
 
                 <div className="flex flex-col gap-2 pt-2">
                   <Button onClick={handleGenerate} disabled={!canGenerate} loading={generating}>
-                    {generating ? 'Memproses...' : (provider === 'nexabot' ? 'Generate Gambar' : (imgFile ? 'Edit Gambar' : 'Generate Gambar'))}
+                    {generating ? 'Memproses...' : isGpt25 ? 'Generate • 0.1 kredit' : (provider === 'nexabot' ? 'Generate Gambar' : (imgFile ? 'Edit Gambar' : 'Generate Gambar'))}
                   </Button>
                   {provider === 'riverside' && (
                     <a
@@ -519,11 +702,11 @@ export default function EditImagePage() {
           {/* Image Panel */}
           <div className="lg:col-span-2 space-y-5">
             <Section
-              title={provider === 'nexabot' ? '🖼️ Gambar (Opsional)' : '🖼️ Gambar Input'}
-              sub={provider === 'nexabot' ? 'NexaBot hanya mendukung Text to Image — untuk edit gambar pakai Riverside / RunningHub' : 'Upload 1 gambar untuk diedit'}
+              title={isGpt25 ? '🖼️ Gambar Referensi (Opsional)' : provider === 'nexabot' ? '🖼️ Gambar (Opsional)' : '🖼️ Gambar Input'}
+              sub={isGpt25 ? 'Hingga 10 gambar — acuan karakter & gaya untuk GPT Image 2.5' : provider === 'nexabot' ? 'NexaBot hanya mendukung Text to Image — untuk edit gambar pakai Riverside / RunningHub' : 'Upload 1 gambar untuk diedit'}
               right={
                 <button
-                  onClick={() => filePickerRef.current?.click()}
+                  onClick={() => (isGpt25 ? refPickerRef.current : filePickerRef.current)?.click()}
                   className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold border border-border cursor-pointer hover:bg-accent/40"
                 >
                   <Upload className="h-4 w-4" /> Upload
@@ -537,7 +720,56 @@ export default function EditImagePage() {
                 hidden
                 onChange={(e) => { if (e.target.files) handleFileChange(e.target.files); e.target.value = '' }}
               />
-              {!imgUrl ? (
+              <input
+                ref={refPickerRef}
+                type="file"
+                accept="image/*"
+                multiple
+                hidden
+                onChange={(e) => { addRefFiles(e.target.files); e.target.value = '' }}
+              />
+              {isGpt25 ? (
+                <div className="space-y-3">
+                  {refUrls.length === 0 ? (
+                    <button
+                      onClick={() => refPickerRef.current?.click()}
+                      className="w-full p-10 text-sm text-muted-foreground border border-dashed border-border rounded-xl hover:bg-accent/30 transition-all"
+                    >
+                      <ImagePlus className="h-8 w-8 mx-auto mb-2 opacity-60" />
+                      Belum ada gambar referensi — tap untuk pilih (0/10)
+                    </button>
+                  ) : (
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                      {refUrls.map((url, i) => (
+                        <div key={url} className="relative rounded-lg overflow-hidden border border-border bg-black/40">
+                          <img src={url} alt={`Referensi ${i + 1}`} className="w-full h-24 object-cover" />
+                          {!generating && (
+                            <button
+                              onClick={() => removeRef(i)}
+                              className="absolute top-1 right-1 h-6 w-6 grid place-items-center rounded-full bg-black/70 text-white hover:bg-black/90"
+                              title="Hapus referensi"
+                              aria-label={`Hapus referensi ${i + 1}`}
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      {refUrls.length < 10 && (
+                        <button
+                          onClick={() => refPickerRef.current?.click()}
+                          disabled={generating}
+                          className="h-24 grid place-items-center rounded-lg border border-dashed border-border text-muted-foreground hover:bg-accent/30 transition-all"
+                          title="Tambah referensi"
+                        >
+                          <ImagePlus className="h-6 w-6 opacity-60" />
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  <div className="text-xs text-muted-foreground">Referensi <b>{refUrls.length}/10</b> — opsional; gambar dipadatkan dulu sebelum dikirim</div>
+                </div>
+              ) : !imgUrl ? (
                 <button
                   onClick={() => filePickerRef.current?.click()}
                   className="w-full p-10 text-sm text-muted-foreground border border-dashed border-border rounded-xl hover:bg-accent/30 transition-all"

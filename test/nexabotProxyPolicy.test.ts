@@ -62,7 +62,7 @@ test('policy: read-only boleh diulang, submit/generate tidak', () => {
   for (const action of ['credit', 'session', 'job', 'modes'] as const) {
     assert.ok(NEXABOT_PROXY_POLICY[action].attempts > 1, `${action} harus retryable`)
   }
-  for (const action of ['submit', 'generate', 'download', 'generic'] as const) {
+  for (const action of ['submit', 'generate', 'gpt-image', 'download', 'generic'] as const) {
     assert.equal(NEXABOT_PROXY_POLICY[action].attempts, 1, `${action} tidak boleh diulang`)
   }
   // Timeout dibedakan per jenis request: poll status jauh lebih pendek daripada submit.

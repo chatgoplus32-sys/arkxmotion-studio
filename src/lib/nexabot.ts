@@ -1003,3 +1003,269 @@ export async function compressForApi(
   console.log(`[nexabot] compressForApi: ${file.name} (${(file.size / 1024).toFixed(0)}KB) → ${result.name} (${(result.size / 1024).toFixed(0)}KB) @ ${maxLongestPx}px q${quality}`)
   return result
 }
+
+
+// ═══════════════════════════════════════════════════════════════════
+// GPT IMAGE 2.5 (nexabot.id/gpt-image)
+// ═══════════════════════════════════════════════════════════════════
+//
+// Beda dengan submitNexabot di atas: endpoint khusus gambar dengan rasio dan
+// hingga 10 gambar referensi. Kontraknya diuji langsung ke nexabot.id — respons
+// submit memuat `id`, bukan `job_id`; statusnya menyiapkan `images[]` lengkap
+// dengan URL, jadi tidak ada tahap download terpisah seperti lama.
+
+/** Enum rasio milik nexabot.id (angka, bukan string): 1 = 1:1, 2 = 16:9, 5 = 9:16. */
+export type NexabotGptImageAspect = 1 | 2 | 5
+
+export const GPT_IMAGE_REFERENCES_MAX = 10
+
+export interface NexabotGptImageParams {
+  prompt: string
+  aspect?: NexabotGptImageAspect
+  /** Data URI (data:image/...;base64,...) — maksimum 10, mengikuti halaman web. */
+  references?: string[]
+}
+
+export interface NexabotGptImageSubmitResult {
+  ok: boolean
+  id?: string
+  /** Biaya aktual dari upstream (kredit) — 0,1 pada pengujian nyata. */
+  cost?: number
+  /** Sisa saldo setelah submit, langsung dari upstream. */
+  creditBalance?: number
+  error?: string
+}
+
+export interface NexabotGptImageImage {
+  url: string
+  width?: number
+  height?: number
+}
+
+export interface NexabotGptImageJob {
+  status: string
+  progress?: number
+  phase?: string
+  images?: NexabotGptImageImage[]
+  error?: { message?: string } | string | null
+}
+
+/**
+ * Hasil gpt-image datang sebagai path RELATIF di origin nexabot.id yang butuh
+ * auth (diuji: HEAD tanpa kredensial → 401), sehingga <img> tidak bisa memakai
+ *nya. Alihkan ke rute download relay yang menyuntikkan kredensial.
+ */
+function gptImageDownloadUrl(raw: string): string {
+  const m = /^\/api\/v1\/gpt-image\/([^/?]+)\/download(\?.*)?$/.exec(raw)
+  if (m) return `${NEXABOT_BASE}/gpt-image/${m[1]}/download${m[2] || ''}`
+  return raw
+}
+
+export async function submitNexabotGptImage(
+  params: NexabotGptImageParams,
+  authOverride?: NexabotAuth | string,
+  opts: NexabotRetryOptions = {}
+): Promise<NexabotGptImageSubmitResult> {
+  const { maxAttempts = 3, baseMs = 2000, maxMs = 15000, random, onRetry } = opts
+  const auth = fillAuthFromStorage(normalizeAuth(authOverride))
+  const { apiKey, cookies } = normalizeValues(auth)
+  if (!apiKey && !cookies) {
+    throw new Error('NexaBot: tidak ada API key / cookie session yang valid — cek format di halaman Providers')
+  }
+  const session = !!cookies
+
+  const body: Record<string, any> = {
+    prompt: params.prompt,
+    aspect: params.aspect ?? 2,
+    references: (params.references || []).slice(0, GPT_IMAGE_REFERENCES_MAX),
+  }
+
+  console.log(`[nexabot] GPT Image submit (${body.aspect}, refs: ${body.references.length})`)
+
+  const attempts = Math.max(1, maxAttempts)
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const res = await fetch(`${NEXABOT_BASE}/gpt-image`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(auth),
+        ...appAuthHeaders(),
+      },
+      body: JSON.stringify(body),
+    })
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '')
+      if (res.status === 401 || res.status === 403) {
+        throw new Error(session
+          ? 'NexaBot: session cookie kedaluwarsa — login ulang di nexabot.id lalu paste cookie baru'
+          : 'NexaBot: API key tidak valid')
+      }
+      if (res.status === 402) throw new Error('NexaBot: Kredit tidak cukup (perlu 0.1)')
+
+      // Retry HANYA untuk 429: upstream menolak rate-limited tanpa membuat job.
+      // 5xx/timeout sengaja tidak diulang — job bisa sudah terbentuk (kredit ganda).
+      if (res.status === 429) {
+        const message = describeNexabotStatus(res.status)
+        if (attempt < attempts) {
+          const delayMs = nexabotRetryDelayMs({ attempt, retryAfterHeader: res.headers.get('retry-after'), opts: { baseMs, maxMs, random } })
+          onRetry?.({ attempt, status: res.status, delayMs, message })
+          console.warn(`[nexabot] GPT Image ${res.status} (${message}) — coba lagi dalam ${Math.round(delayMs / 1000)}s`)
+          await sleep(delayMs)
+          continue
+        }
+        throw new Error(`NexaBot: ${message} — tunggu sebentar lalu coba lagi${retryAfterHint(res)}`)
+      }
+
+      throw new Error(`NexaBot HTTP ${res.status}: ${errText.slice(0, 200)}`)
+    }
+
+    const data = await res.json()
+    const id = data.id || data.job_id || data.taskId
+    if (!data.ok || !id) {
+      throw new Error(data.error || 'NexaBot: submit GPT Image gagal')
+    }
+    return { ok: true, id, cost: data.cost, creditBalance: data.credit_balance }
+  }
+
+  throw new Error('NexaBot: submit GPT Image gagal setelah beberapa percobaan')
+}
+
+/**
+ * Poll sampai `completed`/`failed`, maksimum 6 menit seperti halaman web-nya.
+ * `onProgress` dipanggil tiap perubahan progress/phase untuk log UI.
+ */
+export async function pollNexabotGptImage(
+  jobId: string,
+  authOverride?: NexabotAuth | string,
+  onProgress?: (msg: string) => void,
+  opts: NexabotRetryOptions & { maxTotalMs?: number } = {}
+): Promise<NexabotGptImageJob> {
+  const { maxAttempts = 180, baseMs = 2000, maxMs = 10000, maxTotalMs = 6 * 60 * 1000, random, onRetry } = opts
+  const auth = fillAuthFromStorage(normalizeAuth(authOverride))
+  const { apiKey, cookies } = normalizeValues(auth)
+  if (!apiKey && !cookies) throw new Error('NexaBot: tidak ada API key / cookie session yang valid')
+
+  const attempts = Math.max(1, maxAttempts)
+  const startedAt = Date.now()
+  let attempt = 0
+  let transientStreak = 0
+  let delayMs = baseMs
+  let lastProgress = -1
+  let lastPhase = ''
+
+  while (attempt < attempts) {
+    if (attempt > 0) {
+      await sleep(delayMs)
+    }
+    attempt++
+
+    let res: Response
+    try {
+      res = await fetch(`${NEXABOT_BASE}/gpt-image/${encodeURIComponent(jobId)}`, {
+        headers: { ...authHeaders(auth), ...appAuthHeaders() },
+      })
+    } catch (err: any) {
+      // Jaringan/proxy putus — bukan berarti job gagal.
+      transientStreak++
+      delayMs = nexabotRetryDelayMs({ attempt: transientStreak, opts: { baseMs, maxMs, random } })
+      onRetry?.({ attempt, status: null, delayMs, message: err?.message || 'koneksi terputus' })
+      if (transientStreak >= MAX_CONSECUTIVE_TRANSIENT) {
+        throw new Error(`NexaBot tidak merespons (${transientStreak} percobaan berturut-turut gagal) — cek status GPT Image ${jobId} di nexabot.id.`)
+      }
+      if (Date.now() - startedAt > maxTotalMs) {
+        throw new Error(`NexaBot polling timeout (${Math.round((Date.now() - startedAt) / 1000)}s) — cek status GPT Image ${jobId} di nexabot.id.`)
+      }
+      continue
+    }
+
+    const verdict = nexabotHttpVerdict(res.status)
+    if (verdict === 'fatal') {
+      const errText = await res.text().catch(() => '')
+      if (res.status === 401 || res.status === 403) {
+        throw new Error('NexaBot: session cookie kedaluwarsa — login ulang di nexabot.id lalu paste cookie baru')
+      }
+      throw new Error(`NexaBot GPT Image tidak ditemukan atau gagal — ${describeNexabotStatus(res.status)}${errText ? `: ${errText.slice(0, 120)}` : ''}`)
+    }
+    if (verdict === 'retry') {
+      transientStreak++
+      delayMs = nexabotRetryDelayMs({ attempt: transientStreak, retryAfterHeader: res.headers.get('retry-after'), opts: { baseMs, maxMs, random } })
+      onRetry?.({ attempt, status: res.status, delayMs, message: describeNexabotStatus(res.status) })
+      if (transientStreak >= MAX_CONSECUTIVE_TRANSIENT || Date.now() - startedAt > maxTotalMs) {
+        throw new Error(`NexaBot tidak merespons (${describeNexabotStatus(res.status)}) — cek status GPT Image ${jobId} di nexabot.id.`)
+      }
+      continue
+    }
+
+    const data = await res.json().catch(() => null)
+    if (!data?.ok || !data.job) {
+      throw new Error(data?.error || 'NexaBot: respons status GPT Image tidak valid')
+    }
+    const job: NexabotGptImageJob = data.job
+    // URL hasil dialihkan ke relay (lihat gptImageDownloadUrl) begitu status
+    // diproses — sekali di sini, semua pemakai (galeri, unduh, R2) konsisten.
+    if (Array.isArray(job.images)) {
+      job.images = job.images.map((im) =>
+        im && typeof im.url === 'string' ? { ...im, url: gptImageDownloadUrl(im.url) } : im,
+      )
+    }
+
+    if (job.status === 'completed') return job
+    if (job.status === 'failed') {
+      const msg = typeof job.error === 'string' ? job.error : job.error?.message
+      throw new Error(msg || 'NexaBot: generate GPT Image gagal')
+    }
+
+    transientStreak = 0
+    if (typeof job.progress === 'number' && job.progress !== lastProgress) {
+      lastProgress = job.progress
+      onProgress?.(`  ${job.progress}%${job.phase ? ` — ${job.phase}` : ''}`)
+    }
+    if (job.phase && job.phase !== lastPhase) {
+      lastPhase = job.phase
+      onProgress?.(`  ${job.phase}`)
+    }
+
+    if (Date.now() - startedAt > maxTotalMs) {
+      throw new Error(`NexaBot polling timeout (${Math.round((Date.now() - startedAt) / 1000)}s) — cek status GPT Image ${jobId} di nexabot.id.`)
+    }
+  }
+
+  throw new Error(`NexaBot: polling GPT Image ${jobId} berhenti setelah ${attempts} percobaan.`)
+}
+
+/**
+ * Unduh byte hasil GPT Image dari relay DENGAN header auth.
+ *
+ * Kenapa perlu: URL hasil dialihkan ke rute download relay yang menuntut
+ * kredensial (diuji: tanpa header -> 400), sehingga `<img>` galeri tidak
+ * bisa memakainya. Fungsi ini mengambil byte dengan autentikasi lalu
+ * pemanggil menyimpannya di browser (IndexedDB lewat addResult) — tanpa R2.
+ * Menerima URL mentah upstream (/api/v1/...) maupun yang sudah dialihkan
+ * poll (idempoten, lihat gptImageDownloadUrl).
+ */
+export async function downloadNexabotGptImage(
+  rawUrl: string,
+  authOverride?: NexabotAuth | string,
+): Promise<{ ok: boolean; blob?: Blob; error?: string }> {
+  const auth = fillAuthFromStorage(normalizeAuth(authOverride))
+  try {
+    const res = await fetch(gptImageDownloadUrl(rawUrl), {
+      headers: { ...authHeaders(auth), ...appAuthHeaders() },
+    })
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '')
+      return { ok: false, error: `HTTP ${res.status}${errText ? ` — ${errText.slice(0, 160)}` : ''}` }
+    }
+    const contentType = res.headers.get('content-type') || ''
+    if (contentType.includes('application/json')) {
+      const data = await res.json().catch(() => null)
+      return { ok: false, error: data?.error || 'respons upstream bukan gambar' }
+    }
+    const blob = await res.blob()
+    if (!blob.size) return { ok: false, error: 'file kosong' }
+    return { ok: true, blob }
+  } catch (err: any) {
+    return { ok: false, error: err?.message || 'gagal mengunduh hasil GPT Image' }
+  }
+}

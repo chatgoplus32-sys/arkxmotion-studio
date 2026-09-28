@@ -212,3 +212,71 @@ test('/submit: koneksi upstream putus → 502 yang menjelaskan risikonya', async
   assert.match(res.body.error, /ECONNRESET/, 'penyebab asli ikut terbaca')
   assert.match(res.body.error, /MUNGKIN sudah terbentuk/, 'jangan menyuruh retry buta')
 })
+
+
+// ── GPT Image 2.5 (nexabot.id/gpt-image) ─────────────────────────────────────
+// POST sekali jalan: job & 0,1 cr tidak boleh ganda. GET status read-only.
+
+test('/gpt-image: hasil upstream diteruskan apa adanya', async () => {
+  queue.push(() => jsonResponse({ ok: true, id: 'gptjob-123' }))
+  const res = await post('/api/public/nexabot/gpt-image', { prompt: 'kucing astronot', aspect: 2, references: [] }, { 'X-Api-Key': 'nxb_test' })
+  assert.equal(res.status, 200)
+  assert.equal(res.body.ok, true)
+  assert.equal(res.body.id, 'gptjob-123')
+  assert.equal(calls.length, 1)
+  assert.match(calls[0], /\/api\/v1\/gpt-image$/)
+})
+
+test('/gpt-image: timeout TIDAK diulang (job & kredit tidak ganda)', async () => {
+  queue.push(() => { throw timeoutError() })
+  const res = await post('/api/public/nexabot/gpt-image', { prompt: 'x', aspect: 1 }, { 'X-Api-Key': 'nxb_test' })
+  assert.equal(calls.length, 1, 'gpt-image tetap sekali jalan')
+  assert.match(res.body.error, /generate GPT Image/)
+})
+
+test('/gpt-image: tanpa kredensial → 400 jelas', async () => {
+  const res = await post('/api/public/nexabot/gpt-image', { prompt: 'x' })
+  assert.equal(res.status, 400)
+  assert.match(res.body.error, /X-Api-Key/)
+  assert.equal(calls.length, 0, 'upstream tidak pernah dipanggil')
+})
+
+test('/gpt-image: 429 upstream diteruskan tanpa membuat job', async () => {
+  queue.push(() => jsonResponse({ ok: false, error: 'rate limited' }, 429, { 'Retry-After': '7' }))
+  const res = await post('/api/public/nexabot/gpt-image', { prompt: 'x' }, { 'X-Api-Key': 'nxb_test' })
+  assert.equal(res.status, 429)
+  assert.equal(calls.length, 1, '429 tidak diulang di proxy')
+})
+
+test('/gpt-image/:id: status job diteruskan', async () => {
+  queue.push(() => jsonResponse({ ok: true, job: { status: 'completed', images: [{ url: 'https://cdn.example/x.png' }] } }))
+  const res = await get('/api/public/nexabot/gpt-image/gptjob-123', { 'X-Api-Key': 'nxb_test' })
+  assert.equal(res.status, 200)
+  assert.equal(res.body.job.status, 'completed')
+  assert.match(calls[0], /\/api\/v1\/gpt-image\/gptjob-123$/)
+})
+
+
+test('/gpt-image/:id/download: header auth diteruskan, gambar di-stream', async () => {
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47])
+  queue.push(() => new Response(png, { status: 200, headers: { 'Content-Type': 'image/png', 'Content-Length': '4' } }))
+  const res = await originalFetch(`${base}/api/public/nexabot/gpt-image/gptjob-1/download?index=0`, { headers: { 'X-Api-Key': 'nxb_test' } })
+  assert.equal(res.status, 200)
+  assert.equal(res.headers.get('content-type'), 'image/png')
+  const buf = new Uint8Array(await res.arrayBuffer())
+  assert.deepEqual(Array.from(buf), Array.from(png), 'byte gambar diteruskan utuh')
+  assert.match(calls[0], /\/api\/v1\/gpt-image\/gptjob-1\/download\?index=0/)
+})
+
+test('/gpt-image/:id/download: tanpa kredensial → 400 tanpa memanggil upstream', async () => {
+  const res = await originalFetch(`${base}/api/public/nexabot/gpt-image/gpt-job/download`)
+  assert.equal(res.status, 400)
+  assert.equal(calls.length, 0)
+})
+
+test('/gpt-image/:id/download: ?download=1 → attachment', async () => {
+  queue.push(() => new Response(new Uint8Array([1, 2, 3]), { status: 200, headers: { 'Content-Type': 'image/png' } }))
+  const res = await originalFetch(`${base}/api/public/nexabot/gpt-image/abc/download?index=0&download=1`, { headers: { 'X-Api-Key': 'nxb_test' } })
+  assert.equal(res.status, 200)
+  assert.match(res.headers.get('content-disposition') || '', /attachment; filename="nexabot-gpt-image-abc\.png"/)
+})
