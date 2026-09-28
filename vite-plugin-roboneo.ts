@@ -363,7 +363,7 @@ export function roboneoProxyPlugin(): Plugin {
         const gid = `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}-${Math.random().toString(16).slice(2)}`
 
         const parameter = {
-          token: '45C30555F10E49629098A75F95828DA6',
+          token: '45C30555F10E49629098A75F95828DA6',  // kredensial-ok: konstanta yang sama seperti src/lib/roboneo.ts, untuk plugin build
           gid,
           uid,
           trace_id: `${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`,

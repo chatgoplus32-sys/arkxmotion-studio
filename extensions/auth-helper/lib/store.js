@@ -8,7 +8,7 @@
 
 import { mergeEntry } from './tokens.js'
 
-export const TOKENS_KEY = 'ah_tokens_v1'
+export const TOKENS_KEY = 'ah_tokens_v1'  // kredensial-ok: nama kunci penyimpanan di browser, bukan rahasia (APP_URL_KEY di bawahnya sama bentuknya)
 export const APP_URL_KEY = 'ah_app_url'
 
 /** Baca seluruh state (map token + app URL). */

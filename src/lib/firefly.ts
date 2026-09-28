@@ -1,4 +1,4 @@
-const FIREFLY_API_KEY = 'SunbreakWebUI1'
+const FIREFLY_API_KEY = 'SunbreakWebUI1'  // kredensial-ok: kunci klien yang ikut ter-bundle ke browser, jadi tidak bisa dijaga sebagai rahasia
 const FIREFLY_PROXY = '/api/public/firefly'
 
 function decodeJwtPayload(token: string): Record<string, unknown> | null {

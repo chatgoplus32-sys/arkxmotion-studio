@@ -389,7 +389,7 @@ const taskMetaMap = new Map<string, { roomId: string; nodeId: string }>()
 
 function buildTrackingParams(accessToken: string, pathScene: string, roomId: string) {
   return {
-    token: '45C30555F10E49629098A75F95828DA6',
+    token: '45C30555F10E49629098A75F95828DA6',  // kredensial-ok: konstanta amplop request klien web pihak ketiga (sekamar dengan client_id/app_scene), dikirim browser
     gid: generateGnum(),
     uid: extractUid(accessToken),
     trace_id: uuid(),
