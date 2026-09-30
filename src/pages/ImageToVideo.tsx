@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Select, Label, Textarea, EmptyState, Badge, BalanceBadge } from '@/components/ui'
 import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
-import { Image, Upload, Rocket, Loader2, Trash2, Key, ExternalLink, Download, X, Copy } from 'lucide-react'
+import { Image, Upload, Rocket, Loader2, Trash2, Key, ExternalLink, Download, X, Copy, Plus } from 'lucide-react'
 import { Swipeable } from '@/components/Swipeable'
 import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
 import { getSeaviSpec, generateWithSeavi, fetchSeaviBalance } from '@/lib/seavi'
@@ -49,6 +49,73 @@ import { runWithNexabotThrottleRetry } from '@/lib/nexabot'
 // Voice default untuk mode Voice Over NexaBot — salah satu nama dari daftar
 // voice resmi NexaBot (GET /api/v1/modes → voices).
 const NEXABOT_DEFAULT_VOICE = 'Kore'
+
+function SeaviMcSlotCard({ index, slot, onImage, onVideo, onRemove, canRemove }: {
+  index: number
+  slot: { id: string; image: File | null; imageUrl: string | null; video: File | null; videoUrl: string | null }
+  onImage: (file: File | null) => void
+  onVideo: (file: File | null) => void
+  onRemove: () => void
+  canRemove: boolean
+}) {
+  const imgRef = useRef<HTMLInputElement>(null)
+  const vidRef = useRef<HTMLInputElement>(null)
+  const lengkap = !!slot.image && !!slot.video
+
+  return (
+    <div className={`rounded-2xl border p-4 transition-colors ${lengkap ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-border/70 bg-card/30'}`}>
+      <div className="flex items-center justify-between mb-3 gap-2">
+        <div className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground shrink-0">
+          Referensi #{index + 1}
+        </div>
+        <div className="flex items-center gap-2">
+          {lengkap && <span className="text-[11px] px-2 py-0.5 rounded-full border border-emerald-500/40 text-emerald-400 bg-black/30">Siap</span>}
+          {canRemove && (
+            <button onClick={onRemove} className="inline-flex items-center gap-1 rounded-full border border-border bg-card/50 px-2.5 py-1 text-[11px] text-muted-foreground hover:text-destructive hover:border-destructive/50 transition">
+              <Trash2 className="h-3.5 w-3.5" /> Hapus
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <div className="text-[11px] font-mono uppercase tracking-[0.18em] text-muted-foreground mb-1.5">Character Image</div>
+          <input ref={imgRef} type="file" accept="image/*" hidden onChange={(e) => { onImage(e.target.files?.[0] ?? null); e.currentTarget.value = '' }} />
+          {slot.imageUrl ? (
+            <div className="relative aspect-square rounded-xl overflow-hidden border border-border">
+              <img src={slot.imageUrl} alt={`karakter ${index + 1}`} className="w-full h-full object-cover" />
+              <button onClick={() => onImage(null)} className="absolute top-1 right-1 rounded-full w-5 h-5 bg-black/60 text-white text-[10px] grid place-items-center hover:bg-black/80">×</button>
+            </div>
+          ) : (
+            <button onClick={() => imgRef.current?.click()} className="w-full aspect-square rounded-xl border border-dashed border-border/80 bg-card/30 grid place-items-center hover:border-primary/60 transition text-center px-2">
+              <div>
+                <div className="text-2xl">🖼️</div>
+                <div className="text-[10px] text-muted-foreground mt-1">PNG / JPG</div>
+              </div>
+            </button>
+          )}
+        </div>
+        <div>
+          <div className="text-[11px] font-mono uppercase tracking-[0.18em] text-muted-foreground mb-1.5">Reference Video</div>
+          <input ref={vidRef} type="file" accept="video/*" hidden onChange={(e) => { onVideo(e.target.files?.[0] ?? null); e.currentTarget.value = '' }} />
+          {slot.videoUrl ? (
+            <div className="relative aspect-square rounded-xl overflow-hidden border border-border">
+              <video src={slot.videoUrl} className="w-full h-full object-cover" controls />
+              <button onClick={() => onVideo(null)} className="absolute top-1 right-1 rounded-full w-5 h-5 bg-black/60 text-white text-[10px] grid place-items-center hover:bg-black/80">×</button>
+            </div>
+          ) : (
+            <button onClick={() => vidRef.current?.click()} className="w-full aspect-square rounded-xl border border-dashed border-border/80 bg-card/30 grid place-items-center hover:border-primary/60 transition text-center px-2">
+              <div>
+                <div className="text-2xl">🎬</div>
+                <div className="text-[10px] text-muted-foreground mt-1">MP4 / MOV</div>
+              </div>
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export default function ImageToVideoPage() {
   const { keys, routing, fetchMaintenance } = useProviderManager()
@@ -329,9 +396,36 @@ export default function ImageToVideoPage() {
   // Seavi: mode input dipandu SEAVI_MODELS (gambar multi, video & audio referensi).
   const isSeavi = provider === 'seavi'
   const seaviSpec = isSeavi && currentModel ? getSeaviSpec(currentModel.apiModel || '') : undefined
-  const isSeaviMc = !!seaviSpec && seaviSpec.category === 'motion_control'
+  // isSeaviMc didefinisikan setelah state slot MC di bawah
   const seaviImageMax = seaviSpec ? (seaviSpec.imageMode === 'none' ? 0 : seaviSpec.imageMode === 'single' ? 1 : seaviSpec.imageMax ?? 0) : 0
   const seaviVideoMode = seaviSpec ? seaviSpec.videoMode : 'none'
+
+  // ── Motion Control Seavi: slot pasangan [Character Image | Reference Video] ──
+  // UI mengikuti halaman Motion: tiap slot menghasilkan 1 video, bisa banyak slot.
+  const SEAVI_MC_MAX_SLOTS = 6
+  interface SeaviMcSlot { id: string; image: File | null; imageUrl: string | null; video: File | null; videoUrl: string | null }
+  const newSeaviSlot = (): SeaviMcSlot => ({ id: `mc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, image: null, imageUrl: null, video: null, videoUrl: null })
+  const [seaviSlots, setSeaviSlots] = useState<SeaviMcSlot[]>([newSeaviSlot()])
+  const isSeaviMc = !!seaviSpec && seaviSpec.category === 'motion_control'
+  const seaviSlotCount = seaviSlots.filter((sl) => sl.image && sl.video).length
+
+  const updateSeaviSlot = (id: string, updates: Partial<SeaviMcSlot>) => {
+    setSeaviSlots((prev) => prev.map((sl) => {
+      if (sl.id !== id) return sl
+      const next = { ...sl, ...updates }
+      if (updates.image === null && sl.imageUrl) URL.revokeObjectURL(sl.imageUrl)
+      if (updates.video === null && sl.videoUrl) URL.revokeObjectURL(sl.videoUrl)
+      return next
+    }))
+  }
+
+  const addSeaviSlot = () => setSeaviSlots((prev) => (prev.length < SEAVI_MC_MAX_SLOTS ? [...prev, newSeaviSlot()] : prev))
+  const removeSeaviSlot = (id: string) => setSeaviSlots((prev) => {
+    const target = prev.find((sl) => sl.id === id)
+    if (target?.imageUrl) URL.revokeObjectURL(target.imageUrl)
+    if (target?.videoUrl) URL.revokeObjectURL(target.videoUrl)
+    return prev.length > 1 ? prev.filter((sl) => sl.id !== id) : [newSeaviSlot()]
+  })
   const nbApiModel = isNb ? (currentModel?.apiModel || 't2v') : ''
   // Seedance 2.0 Replica (RunningHub): gambar + prompt storyboard → video.
   const isRhSeedance = provider === 'runninghub' && currentModel?.apiModel === 'seedance2'
@@ -727,16 +821,22 @@ export default function ImageToVideoPage() {
       return `Saldo NexaBot tidak cukup (${formatRp(nbWallet?.balance ?? 0)}). Top up atau ambil Paket Unlimited ${nbWallet?.package.days ?? 7} hari di halaman Top Up NexaBot.`
     if (provider === 'roboneo' && !imgFile) return 'Roboneo membutuhkan gambar input'
     if (provider === 'seavi' && seaviSpec) {
-      const imgs = refFiles.filter((f) => f.type.startsWith('image/')).length
-      const vids = refFiles.filter((f) => f.type.startsWith('video/')).length
-      if (seaviSpec.imageMode === 'single' && imgs !== 1) return `${seaviSpec.label} membutuhkan tepat 1 gambar`
-      if (seaviSpec.imageMode === 'multi') {
-        if (imgs < (seaviSpec.imageMin ?? 0)) return `${seaviSpec.label} butuh minimal ${seaviSpec.imageMin} gambar`
-        if (imgs > (seaviSpec.imageMax ?? 0)) return `${seaviSpec.label} maksimal ${seaviSpec.imageMax} gambar`
+      if (isSeaviMc) {
+        const tidakLengkap = seaviSlots.filter((sl) => (sl.image ? 1 : 0) !== (sl.video ? 1 : 0)).length
+        if (tidakLengkap > 0) return `${tidakLengkap} slot belum lengkap — isi pasangan gambar + video (atau hapus slotnya)`
+        if (seaviSlotCount === 0) return 'Isi minimal 1 slot: gambar karakter + video referensi'
+      } else {
+        const imgs = refFiles.filter((f) => f.type.startsWith('image/')).length
+        const vids = refFiles.filter((f) => f.type.startsWith('video/')).length
+        if (seaviSpec.imageMode === 'single' && imgs !== 1) return `${seaviSpec.label} membutuhkan tepat 1 gambar`
+        if (seaviSpec.imageMode === 'multi') {
+          if (imgs < (seaviSpec.imageMin ?? 0)) return `${seaviSpec.label} butuh minimal ${seaviSpec.imageMin} gambar`
+          if (imgs > (seaviSpec.imageMax ?? 0)) return `${seaviSpec.label} maksimal ${seaviSpec.imageMax} gambar`
+        }
+        if (seaviSpec.videoMode === 'single' && vids !== 1) return `${seaviSpec.label} membutuhkan tepat 1 video referensi`
+        if (seaviSpec.videoMode === 'multi' && vids > (seaviSpec.videoMax ?? 0)) return `${seaviSpec.label} maksimal ${seaviSpec.videoMax} video`
       }
-      if (seaviSpec.videoMode === 'single' && vids !== 1) return `${seaviSpec.label} membutuhkan tepat 1 video referensi`
-      if (seaviSpec.videoMode === 'multi' && vids > (seaviSpec.videoMax ?? 0)) return `${seaviSpec.label} maksimal ${seaviSpec.videoMax} video`
-      if (seaviSpec.promptRequired !== false && seaviSpec.promptMax !== 0 && !prompt.trim()) return 'Prompt wajib diisi'
+      if (seaviSpec.promptRequired === true && !prompt.trim()) return 'Prompt wajib diisi'
     }
     if (provider === 'runninghub' && !imgFile) return isRhSeedance
       ? 'Seedance 2.0 Storyboard membutuhkan 1 gambar referensi'
@@ -1003,25 +1103,45 @@ export default function ImageToVideoPage() {
         }
       } else if (provider === 'seavi') {
         if (!seaviSpec) throw new Error('Model Seavi tidak dikenal')
-        addLog(`[1/3] 🖼️ Menyiapkan media...`, 'info', 'seavi')
-        const imageUrls: string[] = []
-        for (const f of refFiles.filter((x) => x.type.startsWith('image/'))) {
-          const u = await uploadToCatbox(f)
-          imageUrls.push(u)
-          addLog(`[1/3] ✅ Gambar terunggah ✓ ${u.slice(0, 60)}...`, 'success', 'seavi')
-        }
-        let videoUrls: string[] = []
-        const videoFile = refFiles.find((f) => f.type.startsWith('video/'))
-        if (videoFile) {
-          const vu = await uploadToCatbox(videoFile)
-          videoUrls = [vu]
-          addLog(`[1/3] ✅ Video referensi terunggah ✓`, 'success', 'seavi')
-        }
-        let audioUrl: string | undefined
-        const audioFile = refFiles.find((f) => f.type.startsWith('audio/'))
-        if (audioFile) {
-          audioUrl = await uploadToCatbox(audioFile)
-          addLog(`[1/3] ✅ Audio terunggah ✓`, 'success', 'seavi')
+        const seaviImageUrls: string[] = []
+        let seaviVideoUrls: string[] = []
+        let seaviAudioUrl: string | undefined
+        const seaviPairs: Array<{ imageUrl: string; videoUrl: string }> = []
+        if (isSeaviMc) {
+          // Motion Control: tiap slot = 1 pasangan [gambar karakter, video gerakan].
+          addLog(`[1/3] 🎞️ Menyiapkan ${seaviSlotCount} slot motion control...`, 'info', 'seavi')
+          let slotNo = 0
+          for (const sl of seaviSlots) {
+            if (!sl.image || !sl.video) continue
+            slotNo++
+            addLog(`── Slot #${slotNo} ──`, 'debug', 'seavi')
+            const normImg = await normalizeImage(sl.image, (msg) => addLog(`#${slotNo} ${msg}`, 'debug', 'seavi'))
+            const imageUrl = await uploadToCatbox(normImg, 'image', (msg, pct) => addLog(`#${slotNo} ${msg}${pct != null ? ` ${pct}%` : ''}`, 'debug', 'seavi'))
+            addLog(`#${slotNo} ✅ Gambar ✓ ${imageUrl.slice(0, 60)}...`, 'success', 'seavi')
+            const compVid = await compressVideo(sl.video, 4, (msg, pct) => addLog(`#${slotNo} ${msg}${pct != null ? ` ${pct}%` : ''}`, 'debug', 'seavi'))
+            const videoUrl = await uploadToCatbox(compVid, 'video', (msg, pct) => addLog(`#${slotNo} ${msg}${pct != null ? ` ${pct}%` : ''}`, 'debug', 'seavi'))
+            addLog(`#${slotNo} ✅ Video ✓ ${videoUrl.slice(0, 60)}...`, 'success', 'seavi')
+            seaviPairs.push({ imageUrl, videoUrl })
+          }
+          if (seaviPairs.length === 0) throw new Error('Tidak ada slot lengkap (gambar + video)')
+        } else {
+          addLog(`[1/3] 🖼️ Menyiapkan media...`, 'info', 'seavi')
+          for (const f of refFiles.filter((x) => x.type.startsWith('image/'))) {
+            const u = await uploadToCatbox(f)
+            seaviImageUrls.push(u)
+            addLog(`[1/3] ✅ Gambar terunggah ✓ ${u.slice(0, 60)}...`, 'success', 'seavi')
+          }
+          const videoFile = refFiles.find((f) => f.type.startsWith('video/'))
+          if (videoFile) {
+            const vu = await uploadToCatbox(videoFile)
+            seaviVideoUrls = [vu]
+            addLog(`[1/3] ✅ Video referensi terunggah ✓`, 'success', 'seavi')
+          }
+          const audioFile = refFiles.find((f) => f.type.startsWith('audio/'))
+          if (audioFile) {
+            seaviAudioUrl = await uploadToCatbox(audioFile)
+            addLog(`[1/3] ✅ Audio terunggah ✓`, 'success', 'seavi')
+          }
         }
 
         const rotation = await withTokenRotation<string>(
@@ -1032,14 +1152,34 @@ export default function ImageToVideoPage() {
             if (bal.ok && typeof bal.balance === 'number') {
               addLog(`💰 Saldo: ${bal.balance} token`, 'info', 'seavi')
             }
+            if (isSeaviMc) {
+              const seaviResults: string[] = []
+              let done = 0
+              for (const pair of seaviPairs) {
+                done++
+                setStatus((s) => ({ ...s, text: `[Seavi] Slot ${done}/${seaviPairs.length}...` }))
+                const url = await generateWithSeavi({
+                  apiKey,
+                  spec: seaviSpec,
+                  imageUrls: [pair.imageUrl],
+                  videoUrls: [pair.videoUrl],
+                  prompt: prompt.trim(),
+                  onLog: (msg, level) => addLog(`[${done}/${seaviPairs.length}] ${msg}`, level as any, 'seavi'),
+                  onStatus: (text, pct) => setStatus((s) => ({ ...s, pct: Math.round(((done - 1 + pct / 100) / seaviPairs.length) * 100), text: `[Seavi] Slot ${done}/${seaviPairs.length} — ${text}` })),
+                })
+                seaviResults.push(url)
+                setResults((prev) => [url, ...prev])
+              }
+              return seaviResults[0]
+            }
             return await generateWithSeavi({
               apiKey,
               spec: seaviSpec,
-              imageUrls,
-              videoUrls,
-              audioUrl,
+              imageUrls: seaviImageUrls,
+              videoUrls: seaviVideoUrls,
+              audioUrl: seaviAudioUrl,
               prompt: prompt.trim(),
-              aspectRatio: isSeaviMc ? undefined : ratio,
+              aspectRatio: ratio,
               duration: currentQuality?.duration,
               onLog: (msg, level) => addLog(msg, level as any, 'seavi'),
               onStatus: (text, pct) => setStatus((s) => ({ ...s, pct, text: `[Seavi] ${text}` })),
@@ -1057,9 +1197,9 @@ export default function ImageToVideoPage() {
           }
         )
         if (rotation.ok && rotation.result) {
-          setResults((prev) => [rotation.result!, ...prev])
+          if (!isSeaviMc) setResults((prev) => [rotation.result!, ...prev])
           successRef.current = true
-          setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+          setStatus((s) => ({ ...s, pct: 100, text: isSeaviMc ? `✅ Selesai — ${seaviPairs.length} video!` : '✅ Selesai!' }))
           notifyGenerationComplete(currentModel?.label || model, 'Seavi')
           if (rotation.triedKeys > 1) {
             addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success', 'seavi')
@@ -3054,6 +3194,35 @@ export default function ImageToVideoPage() {
                   </div>
                 )}
               </Section>
+            ) : isSeavi && isSeaviMc ? (
+              /* Seavi Motion Control: slot pasangan [gambar | video] seperti halaman Motion */
+              <Section
+                title={`Referensi (${seaviSlotCount}/${seaviSlots.length} siap)`}
+                sub="Setiap pasangan gambar + video menghasilkan 1 video"
+                right={
+                  <button
+                    onClick={addSeaviSlot}
+                    disabled={seaviSlots.length >= 6 || generating}
+                    className="inline-flex items-center gap-1 rounded-full border border-border bg-card/50 px-3 py-1 text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground transition disabled:opacity-50"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Tambah
+                  </button>
+                }
+              >
+                <div className="grid gap-3 grid-cols-1 xl:grid-cols-2">
+                  {seaviSlots.map((sl, i) => (
+                    <SeaviMcSlotCard
+                      key={sl.id}
+                      index={i}
+                      slot={sl}
+                      onImage={(file) => updateSeaviSlot(sl.id, { image: file, imageUrl: file ? URL.createObjectURL(file) : null })}
+                      onVideo={(file) => updateSeaviSlot(sl.id, { video: file, videoUrl: file ? URL.createObjectURL(file) : null })}
+                      onRemove={() => removeSeaviSlot(sl.id)}
+                      canRemove={seaviSlots.length > 1}
+                    />
+                  ))}
+                </div>
+              </Section>
             ) : isSeavi ? (
               /* Seavi: gambar multi + video referensi mengikuti model */
               <Section title="🖼️ Media Input" sub={isSeaviMc ? '1 gambar (wajib) + 1 video referensi (wajib)' : `Gambar: ${seaviImageMax === 0 ? 'tidak dipakai' : seaviImageMax === 1 ? '1 (wajib)' : `${seaviSpec?.imageMin ?? 0}-${seaviImageMax} (sesuai model)`}${seaviVideoMode !== 'none' ? ' · Video referensi didukung' : ''}`}>
@@ -3222,7 +3391,7 @@ export default function ImageToVideoPage() {
             <div className="flex items-center gap-3 mt-4 flex-wrap">
               <Button
                 onClick={() => setShowPreview(true)}
-                disabled={!prompt.trim() || generating}
+                disabled={(!prompt.trim() && !isSeaviMc) || generating}
               >
                 {generating ? (
                   <>
