@@ -117,6 +117,11 @@ function SeaviMcSlotCard({ index, slot, onImage, onVideo, onRemove, canRemove }:
   )
 }
 
+// Provider yang sementara disembunyikan di halaman Image to Video (tinggal
+// kembangkan daftarnya untuk menampilkan lagi): weavy, wavespeed, framia,
+// oneover, firefly, genspark, riverside.
+const I2V_PROVIDER_IDS: ProviderId[] = ['roboneo', 'createpulse', 'leonardo', 'galleri5', 'nexabot', 'runninghub', 'seavi']
+
 export default function ImageToVideoPage() {
   const { keys, routing, fetchMaintenance } = useProviderManager()
 
@@ -165,7 +170,13 @@ export default function ImageToVideoPage() {
   const [startFrameUrl, setStartFrameUrl] = useState<string | null>(null)
   const [endFrameUrl, setEndFrameUrl] = useState<string | null>(null)
   const [refUrls, setRefUrls] = useState<string[]>([])
-  const [provider, setProvider] = useState<ProviderId>(routing['image-to-video'] || 'weavy')
+  // Provider default: ikuti routing user, tapi jatuh ke 'roboneo' bila provider routing disembunyikan.
+  const I2V_VISIBLE_FALLBACK: ProviderId = 'roboneo'
+  const [provider, setProvider] = useState<ProviderId>(
+    (I2V_PROVIDER_IDS as readonly string[]).includes(routing['image-to-video'] || '')
+      ? routing['image-to-video']
+      : I2V_VISIBLE_FALLBACK
+  )
   const [model, setModel] = useState('')
   const [ratio, setRatio] = useState('9:16')
   const [quality, setQuality] = useState('std')
@@ -2957,7 +2968,8 @@ export default function ImageToVideoPage() {
   // Ditampilkan di kartu provider NexaBot (lihat nexabotPathPill).
   const nexabotPill = nexabotPathPill(keys.nexabot, nexabotSession, nexabotChecking)
 
-  const PROVIDER_IDS: ProviderId[] = ['weavy', 'wavespeed', 'roboneo', 'createpulse', 'framia', 'leonardo', 'galleri5', 'oneover', 'firefly', 'genspark', 'riverside', 'nexabot', 'runninghub', 'seavi']
+  // Sementara hanya 7 provider ini yang tampil (weavy, wavespeed, framia, oneover, firefly, genspark, riverside disembunyikan).
+  const PROVIDER_IDS: ProviderId[] = I2V_PROVIDER_IDS
 
   return (
     <PageContent>
