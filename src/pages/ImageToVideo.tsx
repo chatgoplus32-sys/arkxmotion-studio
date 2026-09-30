@@ -1170,6 +1170,31 @@ export default function ImageToVideoPage() {
                 })
                 seaviResults.push(url)
                 setResults((prev) => [url, ...prev])
+                // Masukkan ke galeri: unduh jadi blob agar tahan bila URL sementara
+                // (catbox litter), fallback simpan URL remote bila unduhan gagal.
+                try {
+                  const blob = await fetch(url).then((r) => r.blob())
+                  addResult({
+                    id: `seavi-mc-${Date.now()}-${done}`,
+                    url: URL.createObjectURL(blob),
+                    prompt: prompt.trim() || '(motion control)',
+                    date: new Date().toISOString(),
+                    page: 'image-to-video',
+                    provider: 'seavi',
+                    model: currentModel?.label || model,
+                  })
+                } catch {
+                  addResult({
+                    id: `seavi-mc-${Date.now()}-${done}`,
+                    url,
+                    prompt: prompt.trim() || '(motion control)',
+                    date: new Date().toISOString(),
+                    page: 'image-to-video',
+                    provider: 'seavi',
+                    model: currentModel?.label || model,
+                  })
+                }
+                refreshGallery()
               }
               return seaviResults[0]
             }
@@ -1198,7 +1223,38 @@ export default function ImageToVideoPage() {
           }
         )
         if (rotation.ok && rotation.result) {
-          if (!isSeaviMc) setResults((prev) => [rotation.result!, ...prev])
+          if (!isSeaviMc) {
+            setResults((prev) => [rotation.result!, ...prev])
+            try {
+              const blob = await fetch(rotation.result).then((r) => r.blob())
+              addResult({
+                id: `seavi-${Date.now()}`,
+                url: URL.createObjectURL(blob),
+                prompt: prompt.trim(),
+                date: new Date().toISOString(),
+                page: 'image-to-video',
+                provider: 'seavi',
+                model: currentModel?.label || model,
+                ratio,
+                duration: currentQuality?.duration,
+                credits: totalCredits,
+              })
+            } catch {
+              addResult({
+                id: `seavi-${Date.now()}`,
+                url: rotation.result,
+                prompt: prompt.trim(),
+                date: new Date().toISOString(),
+                page: 'image-to-video',
+                provider: 'seavi',
+                model: currentModel?.label || model,
+                ratio,
+                duration: currentQuality?.duration,
+                credits: totalCredits,
+              })
+            }
+            refreshGallery()
+          }
           successRef.current = true
           setStatus((s) => ({ ...s, pct: 100, text: isSeaviMc ? `✅ Selesai — ${seaviPairs.length} video!` : '✅ Selesai!' }))
           notifyGenerationComplete(currentModel?.label || model, 'Seavi')
