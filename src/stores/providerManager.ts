@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'runninghub' | 'createpulse' | 'framia' | 'firefly' | 'leonardo' | 'gemini' | 'openai' | 'shotstack' | 'creatomate' | 'galleri5' | 'oneover' | 'genspark' | 'riverside' | 'nexabot'
+export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'runninghub' | 'createpulse' | 'framia' | 'firefly' | 'leonardo' | 'gemini' | 'openai' | 'shotstack' | 'creatomate' | 'galleri5' | 'oneover' | 'genspark' | 'riverside' | 'nexabot' | 'seavi'
 
 export const HIDDEN_PROVIDERS: ProviderId[] = []
 
@@ -205,6 +205,16 @@ export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
     minCredits: 0,
     supportsBalance: false,
   },
+  seavi: {
+    id: 'seavi',
+    name: 'Seavi Labs',
+    icon: '🌌',
+    description: 'Video & image generation (Seedance 2.5 Multi, Kling 3, Veo 3.1, Motion Control) via api.seavilabs.site',
+    keyPlaceholder: 'Paste your Seavi API key...',
+    keyFormat: 'API key (sea-...)',
+    minCredits: 1,
+    supportsBalance: true,
+  },
   nexabot: {
     id: 'nexabot',
     name: 'NexaBot',
@@ -237,6 +247,7 @@ function getDefaultMaintenance(): Record<ProviderId, MaintenanceInfo> {
     genspark: { isMaintenance: false, message: '' },
     riverside: { isMaintenance: false, message: '' },
     nexabot: { isMaintenance: false, message: '' },
+    seavi: { isMaintenance: false, message: '' },
   }
 }
 
@@ -321,6 +332,7 @@ function loadKeysFromStorage(): Record<ProviderId, ProviderKey[]> {
     genspark: [],
     riverside: [],
     nexabot: [],
+    seavi: [],
   }
   const validIds = Object.keys(defaults) as string[]
 

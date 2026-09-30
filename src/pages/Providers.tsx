@@ -30,6 +30,7 @@ import { checkRunningHubBalance } from '@/lib/runninghub'
 import { checkFireflyBalance } from '@/lib/firefly'
 import { parseNexabotCookieInput, parseNexabotApiKeyInput } from '@/lib/nexabot'
 import { NEXABOT_CHECK_TIMEOUT_MS } from '@/lib/nexabot-constants'
+import { fetchSeaviBalance } from '@/lib/seavi'
 import { refreshNexabotSessionMonitor } from '@/lib/nexabotSessionMonitor'
 import { checkGalleri5Balance, isGalleri5TokenError } from '@/lib/galleri5'
 
@@ -48,6 +49,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   firefly: '#FF6A00',
   riverside: '#FF6B6B',
   nexabot: '#00D4AA',
+  seavi: '#7C6FE8',
 }
 
 const PROVIDER_LIST = [
@@ -64,6 +66,7 @@ const PROVIDER_LIST = [
   { key: 'firefly', label: 'Adobe Firefly', desc: 'Video generation (Veo 3.1, Firefly Video) via firefly.adobe.com — Adobe IMS Bearer token.' },
   { key: 'genspark', label: 'Genspark AI', desc: 'Kling V3 Motion Control + 14 video models (Veo, Sora, Hailuo, PixVerse) via genspark.ai Tool API — API key (gsk-...).' },
   { key: 'riverside', label: 'Riverside', desc: 'Riverside Business API — Professional video/audio recording, editing, and production platform.' },
+  { key: 'seavi', label: 'Seavi Labs', desc: 'Video & image generation (Seedance 2.5 Multi, Kling 3, Veo 3.1, Motion Control) via api.seavilabs.site — API key (sea-...), saldo token bersama.' },
   { key: 'nexabot', label: 'NexaBot', desc: 'NexaBot AI via nexabot.id — Google Omni (text, image & video ref). Mode session cookie (Unlimited) atau API key (nxb_...).' },
 ] as const
 
@@ -270,6 +273,17 @@ const TOKEN_GUIDE: Record<string, {
       { text: 'Alternatif manual lain: F12 → Network → klik request API apa pun → Headers → salin value header "Authorization: Bearer ..." (tanpa awalan "Bearer ").' },
     ],
     tip: 'PENTING: session JWT Riverside (eyJ…) cuma bertahan ±10 menit by design. Dashboard menahan login lewat refresh endpoint cookie (/auth/refresh/reactive) yang cuma bisa dipanggil dari dalam browser yang sudah login — app ini tidak bisa me-refresh token kamu (cross-origin, tanpa cookie). Solusi paling awet: install extension Riverside v1.3+ (halaman Plugins) — dia jalan di dalam halaman dashboard, auto-refresh tiap 4 menit, lalu OTOMATIS mengirim JWT terbaru ke app lewat /api/sync-tokens. App polling tiap 30 detik dan langsung mengganti key yang expired — token kamu praktis tidak pernah mati selama tab dashboard kebuka. Token AMf-… (Firebase) TIDAK dipakai Riverside — itu punya Galleri5/layanan lain, jangan ditempel untuk Riverside.',
+  },
+  seavi: {
+    url: 'https://www.seavilabs.site',
+    urlLabel: 'seavilabs.site',
+    prefix: 'sea-...',
+    steps: [
+      { text: 'Buka seavilabs.site → daftar/login → buka Dashboard → API Keys.' },
+      { text: 'Buat API key baru (format: sea-...) → copy.' },
+      { text: 'Paste ke input di samping → klik Cek Token untuk melihat saldo token.' },
+    ],
+    tip: 'Seavi memakai saldo token bersama (shared pool): 1-2 token per generate, refund otomatis bila job gagal. Rate limit 5 request/menit (polling status tidak dihitung).',
   },
   nexabot: {
     url: 'https://nexabot.id',
@@ -677,6 +691,7 @@ export default function ProvidersPage() {
       genspark: 'genspark',
       riverside: 'riverside',
       nexabot: 'nexabot',
+      seavi: 'seavi',
     }
     const providerId = providerMap[selectedProvider]
     return providerId ? isProviderMaintenance(providerId) : false
@@ -892,6 +907,24 @@ export default function ProvidersPage() {
   }, [savedKeys, keys, selectedProvider, removeKey])
 
   const handleCheckKey = useCallback(async (key: string) => {
+    if (selectedProvider === 'seavi') {
+      try {
+        const result = await fetchSeaviBalance(key)
+        if (result.ok) {
+          if (typeof result.balance === 'number') {
+            return result.balance > 0
+              ? { state: 'active', balance: result.balance, detail: `Balance: ${result.balance} token` }
+              : { state: 'empty', balance: 0, detail: 'Balance: 0 token — habis' }
+          }
+          return { state: 'active', detail: 'Kunci valid' }
+        }
+        const msg = String(result.error || '')
+        if (/401|403|tidak valid/i.test(msg)) return { state: 'invalid', detail: msg }
+        return { state: 'unknown', detail: msg || 'Gagal cek token' }
+      } catch {
+        return { state: 'failed', detail: 'Error checking token' }
+      }
+    }
     if (selectedProvider === 'roboneo') {
       try {
         const result = await checkRoboneoBalance(key)

@@ -131,6 +131,22 @@ export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
   // nexabot.id/video-generator: mode menentukan jenis input, resolusi
   // 720/1080 dipilih user. API tidak punya parameter `model`; yang dikirim
   // adalah `mode` + `resolution` (lihat GET /api/v1/modes).
+  seavi: [
+    // Motion Control (gambar + video referensi) — tanpa rasio
+    { value: 'sv:motion_control_v3_server10_30dtk', label: 'Motion Control V3 · S10 30s (Seavi)', cr: 1, provider: 'seavi', apiModel: 'motion_control_v3_server10_30dtk' },
+    { value: 'sv:motion_control_v3_server16', label: 'Motion Control V3 · S16 10s (Seavi)', cr: 1, provider: 'seavi', apiModel: 'motion_control_v3_server16' },
+    { value: 'sv:motion_control_v3_server17', label: 'Motion Control V3 · S17 15s (Seavi)', cr: 1, provider: 'seavi', apiModel: 'motion_control_v3_server17' },
+    // Image to video
+    { value: 'sv:veo31_s9', label: 'Veo 3.1 · S9 — 8s (Seavi)', cr: 1, provider: 'seavi', apiModel: 'veo31_s9' },
+    { value: 'sv:kling3_server10', label: 'Kling 3 · S10 — 6/10s (Seavi)', cr: 1, provider: 'seavi', apiModel: 'kling3_server10' },
+    { value: 'sv:kling21pro_server10', label: 'Kling 2.1 Pro · S10 — 5/10s (Seavi)', cr: 1, provider: 'seavi', apiModel: 'kling21pro_server10' },
+    { value: 'sv:grok_imagine_s15', label: 'Grok Imagine · S15 — 10s (Seavi)', cr: 1, provider: 'seavi', apiModel: 'grok_imagine_s15' },
+    // Multi-image / multimodal
+    { value: 'sv:seedance2_multi_s15', label: 'Seedance 2 Multi · S15 — 1-3 img (Seavi)', cr: 1, provider: 'seavi', apiModel: 'seedance2_multi_s15' },
+    { value: 'sv:seedance25_server19', label: 'Seedance 2.5 · S19 — multi + audio (Seavi)', cr: 1, provider: 'seavi', apiModel: 'seedance25_server19' },
+    { value: 'sv:wan30_server19', label: 'Wan 3.0 · S19 — audio, 5/10/15s (Seavi)', cr: 2, provider: 'seavi', apiModel: 'wan30_server19' },
+    { value: 'sv:gemini_omni_server19', label: 'Gemini Omni · S19 — multi + audio (Seavi)', cr: 2, provider: 'seavi', apiModel: 'gemini_omni_server19' },
+  ],
   nexabot: [
     { value: 'nb:t2v', label: '✍️ Text to Video — Omni Flash 1.1 (NexaBot)', cr: 0.25, provider: 'nexabot', apiModel: 't2v' },
     { value: 'nb:sfv', label: '🖼️ Start Frame to Video — Omni Flash 1.1 (NexaBot)', cr: 0.25, provider: 'nexabot', apiModel: 'sfv' },
@@ -140,6 +156,39 @@ export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
 }
 
 export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; label: string; mult: number; duration: number; cr?: number; resolution?: string; sound?: string; sizeTier?: string }>>> = {
+  seavi: {
+    motion_control_v3_server10_30dtk: [{ value: 'mc', label: 'Video referensi ±30s', mult: 1, duration: 30, cr: 1 }],
+    motion_control_v3_server16: [{ value: 'mc', label: 'Video referensi ±10s', mult: 1, duration: 10, cr: 1 }],
+    motion_control_v3_server17: [{ value: 'mc', label: 'Video referensi ±15s', mult: 1, duration: 15, cr: 1 }],
+    veo31_s9: [{ value: 'd8', label: '8 detik', mult: 1, duration: 8, cr: 1 }],
+    kling3_server10: [
+      { value: 'd6', label: '6 detik', mult: 1, duration: 6, cr: 1 },
+      { value: 'd10', label: '10 detik', mult: 1, duration: 10, cr: 1 },
+    ],
+    kling21pro_server10: [
+      { value: 'd5', label: '5 detik', mult: 1, duration: 5, cr: 1 },
+      { value: 'd10', label: '10 detik', mult: 1, duration: 10, cr: 1 },
+    ],
+    grok_imagine_s15: [{ value: 'd10', label: '10 detik', mult: 1, duration: 10, cr: 1 }],
+    seedance2_multi_s15: [
+      { value: 'd5', label: '5 detik', mult: 1, duration: 5, cr: 1 },
+      { value: 'd10', label: '10 detik', mult: 1, duration: 10, cr: 1 },
+    ],
+    seedance25_server19: [
+      { value: 'd5', label: '5 detik', mult: 1, duration: 5, cr: 1 },
+      { value: 'd10', label: '10 detik', mult: 1, duration: 10, cr: 1 },
+    ],
+    wan30_server19: [
+      { value: 'd5', label: '5 detik', mult: 1, duration: 5, cr: 2 },
+      { value: 'd10', label: '10 detik', mult: 1, duration: 10, cr: 2 },
+      { value: 'd15', label: '15 detik', mult: 1, duration: 15, cr: 2 },
+    ],
+    gemini_omni_server19: [
+      { value: 'd5', label: '5 detik', mult: 1, duration: 5, cr: 2 },
+      { value: 'd10', label: '10 detik', mult: 1, duration: 10, cr: 2 },
+      { value: 'd15', label: '15 detik', mult: 1, duration: 15, cr: 2 },
+    ],
+  },
   weavy: {
     'sora-2': [
       { value: '16s-720p', label: '16 detik · 720p', mult: 1, duration: 16, cr: 96, resolution: '720p' },
@@ -602,6 +651,17 @@ export const RATIOS = ['16:9', '9:16', '1:1', '4:3']
 
 /** Model-specific ratio restrictions (empty = use all RATIOS). */
 export const MODEL_RATIO_RESTRICTIONS: Record<string, string[]> = {
+  motion_control_v3_server10_30dtk: [], // MC: tanpa aspect_ratio
+  motion_control_v3_server16: [],
+  motion_control_v3_server17: [],
+  veo31_s9: ['9:16', '16:9'],
+  kling3_server10: ['9:16', '16:9'],
+  kling21pro_server10: ['9:16', '16:9'],
+  grok_imagine_s15: ['9:16', '16:9', '1:1', '4:3'],
+  seedance2_multi_s15: ['9:16', '16:9', '1:1', '4:3'],
+  seedance25_server19: ['9:16', '16:9', '1:1', '3:4', '4:3'],
+  wan30_server19: [],
+  gemini_omni_server19: ['9:16', '16:9', '1:1', '3:4', '4:3'],
   'veo-omni-10s': ['9:16', '16:9'],
   // NexaBot Omni Flash 1.1 (docs /api/v1/modes): ratio 1=landscape, 2=portrait
   // — 1:1 & 4:3 tidak didukung upstream.

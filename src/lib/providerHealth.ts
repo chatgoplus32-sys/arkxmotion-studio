@@ -247,6 +247,31 @@ async function checkNexabot(): Promise<ProviderHealth> {
   }
 }
 
+// ─── Seavi ────────────────────────────────────────────────────────────
+// Probe via balance endpoint — lightweight, read-only.
+async function checkSeavi(): Promise<ProviderHealth> {
+  const token = firstValidKey('seavi')
+  if (!token) {
+    return { provider: 'seavi', status: 'nokey', detail: 'Tidak ada API key', checkedAt: Date.now() }
+  }
+  try {
+    const { latencyMs, res } = await probe('/api/public/seavi?path=balance', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const json = await res.json().catch(() => null)
+    if (res.ok && typeof json?.token_remaining === 'number') {
+      return { provider: 'seavi', status: 'online', latencyMs, detail: `Balance: ${json.token_remaining} token`, checkedAt: Date.now() }
+    }
+    if (res.ok && !json?.error) {
+      return { provider: 'seavi', status: 'online', latencyMs, detail: 'API OK', checkedAt: Date.now() }
+    }
+    return { provider: 'seavi', status: 'down', latencyMs, detail: json?.error?.message || json?.error || `HTTP ${res.status}`, checkedAt: Date.now() }
+  } catch (err: any) {
+    return { provider: 'seavi', status: 'down', detail: err?.message || 'Tidak terhubung', checkedAt: Date.now() }
+  }
+}
+
 const CHECKERS: Record<string, () => Promise<ProviderHealth>> = {
   roboneo: checkRoboneo,
   galleri5: checkGalleri5,
@@ -256,6 +281,7 @@ const CHECKERS: Record<string, () => Promise<ProviderHealth>> = {
   framia: checkFramia,
   oneover: checkOneOver,
   nexabot: checkNexabot,
+  seavi: checkSeavi,
 }
 
 /** Provider yang punya probe live. Lainnya (mis. wavespeed) ditampilkan via status key. */

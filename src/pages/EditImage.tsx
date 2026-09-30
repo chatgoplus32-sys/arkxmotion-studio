@@ -7,16 +7,25 @@ import { useProviderManager, PROVIDER_CONFIGS } from '@/stores/providerManager'
 import { useToastStore } from '@/stores/toastStore'
 import { withTokenRotation } from '@/lib/tokenRotation'
 import { submitRunningHubImageEdit, pollRunningHubTask } from '@/lib/runninghub'
+import { SEAVI_IMAGE_MODELS, buildSeaviPayload, generateSeaviImage, fetchSeaviBalance } from '@/lib/seavi'
 import { normalizeImage } from '@/lib/roboneo'
 import { addBgLog, getLogs, addResult, removeResult, startBackgroundPolling, persistResultToR2, clearLogs as clearBgLogs } from '@/lib/backgroundTasks'
 import { loadVideoBlob } from '@/lib/videoStorage'
 
-type EditProvider = 'riverside' | 'nexabot' | 'runninghub'
+type EditProvider = 'riverside' | 'nexabot' | 'runninghub' | 'seavi'
+
+const SEAVI_IMAGE_UI_MODELS = [
+  { value: 'sv:gpt_image2_s9', label: 'GPT Image 2 · S9 (Seavi)', cr: 1, apiModel: 'gpt_image2_s9' },
+  { value: 'sv:grok_imagine_gambar_s9', label: 'Grok Imagine Gambar · S9 (Seavi)', cr: 1, apiModel: 'grok_imagine_gambar_s9' },
+  { value: 'sv:nano_banana_2_server9', label: 'Nano Banana 2 · S9 (Seavi)', cr: 1, apiModel: 'nano_banana_2_server9' },
+  { value: 'sv:seedream5_s9', label: 'Seedream 5 · S9 (Seavi)', cr: 1, apiModel: 'seedream5_s9' },
+]
 
 const PROVIDER_OPTIONS: Array<{ value: EditProvider; label: string; icon: string }> = [
   { value: 'nexabot', label: 'NexaBot (GPT Image)', icon: '🔮' },
   { value: 'riverside', label: 'Riverside', icon: '🎙️' },
   { value: 'runninghub', label: 'RunningHub (Kontext)', icon: '🖌️' },
+  { value: 'seavi', label: 'Seavi Labs', icon: '🌌' },
 ]
 
 const RIVERSIDE_IMAGE_MODELS = [
@@ -41,12 +50,14 @@ const ALL_MODELS: Record<EditProvider, typeof RIVERSIDE_IMAGE_MODELS> = {
   riverside: RIVERSIDE_IMAGE_MODELS,
   nexabot: NEXABOT_IMAGE_MODELS,
   runninghub: RUNNINGHUB_IMAGE_MODELS,
+  seavi: SEAVI_IMAGE_UI_MODELS,
 }
 
 const PROVIDER_LABEL: Record<EditProvider, string> = {
   nexabot: 'NexaBot (GPT Image)',
   riverside: 'Riverside',
   runninghub: 'RunningHub (Kontext)',
+  seavi: 'Seavi Labs',
 }
 
 const RIVERSIDE_PLAYGROUND_URL = 'https://riverside.com/dashboard/studios/surahs-studio-2hkky/playground?mode=image'
@@ -95,10 +106,16 @@ export default function EditImagePage() {
   // GPT Image 2.5: rasio + hingga 10 gambar referensi (enum nexabot.id:
   // 2 = 16:9, 1 = 1:1, 5 = 9:16 — urutan & nilai persis seperti halaman web).
   const [gptAspect, setGptAspect] = useState<1 | 2 | 5>(2)
+  // Seavi: rasio per model (string '9:16' dst), '' = default model.
+  const [seaviAspect, setSeaviAspect] = useState('')
   const [refFiles, setRefFiles] = useState<File[]>([])
   const [refUrls, setRefUrls] = useState<string[]>([])
   const refPickerRef = useRef<HTMLInputElement | null>(null)
   const [model, setModel] = useState(NEXABOT_IMAGE_MODELS[0].value)
+  const handleModelChange = (v: string) => {
+    setModel(v)
+    setSeaviAspect('')
+  }
   const [prompt, setPrompt] = useState('')
   const [generating, setGenerating] = useState(false)
   const [logs, setLogs] = useState<Array<{ time: string; msg: string; level: string }>>(() => getLogs())
@@ -109,6 +126,9 @@ export default function EditImagePage() {
 
   const currentModel = ALL_MODELS[provider].find((m) => m.value === model) || ALL_MODELS[provider][0]
   const isGpt25 = provider === 'nexabot' && model === 'nb:gpt25'
+  const isSeavi = provider === 'seavi'
+  const seaviSpec = isSeavi && currentModel ? SEAVI_IMAGE_MODELS[(currentModel as any).apiModel || ''] : undefined
+  const seaviAspects = seaviSpec?.aspects || []
   const providerKeyCount = keys[provider]?.length || 0
   const hasActiveKey = keys[provider]?.some((k) => k.status !== 'invalid' && k.status !== 'expired') || false
 
@@ -227,7 +247,7 @@ export default function EditImagePage() {
     addLog(`🚀 Mulai generate gambar`, 'info')
     addLog(`   Provider: ${PROVIDER_LABEL[provider]}`, 'debug')
     addLog(`   Model: ${currentModel.label}`, 'debug')
-    addLog(`   Mode: ${provider === 'nexabot' ? 'Text to Image' : (imgFile ? 'Edit Gambar + Prompt' : 'Text to Image')}`, 'debug')
+    addLog(`   Mode: ${isSeavi ? (refFiles.length ? `Edit + ${refFiles.length} referensi` : 'Text to Image') : provider === 'nexabot' ? 'Text to Image' : (imgFile ? 'Edit Gambar + Prompt' : 'Text to Image')}`, 'debug')
     addLog(`   Prompt: "${prompt.trim().slice(0, 80)}${prompt.trim().length > 80 ? '...' : ''}"`, 'debug')
 
     try {
@@ -236,6 +256,8 @@ export default function EditImagePage() {
         else await handleGenerateNexabot()
       } else if (provider === 'runninghub') {
         await handleGenerateRunningHub()
+      } else if (provider === 'seavi') {
+        await handleGenerateSeavi()
       } else {
         await handleGenerateRiverside()
       }
@@ -387,6 +409,84 @@ export default function EditImagePage() {
     if (!tersimpan) throw new Error('Semua gambar gagal diunduh dari NexaBot')
     window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
     addToast(tersimpan > 1 ? `GPT Image 2.5 selesai — ${tersimpan} gambar!` : 'GPT Image 2.5 selesai!', 'success')
+  }
+
+  /** Unggah file ke catbox via relay server (mengikuti pola uploadToCatbox lib roboneo). */
+  const uploadToCatboxFile = async (file: File): Promise<string> => {
+    const { uploadToCatbox } = await import('@/lib/roboneo')
+    return uploadToCatbox(file)
+  }
+
+  const handleGenerateSeavi = async () => {
+    if (!seaviSpec) throw new Error('Model Seavi tidak dikenal')
+
+    addLog(`[1/3] 🖼️ Menyiapkan referensi...`, 'info')
+    // Referensi dipadatkan lalu diunggah ke catbox (API Seavi makan URL publik).
+    const imageUrls: string[] = []
+    for (const f of refFiles) {
+      const u = await uploadToCatboxFile(f)
+      imageUrls.push(u)
+      addLog(`   ✓ Referensi terunggah: ${u.slice(0, 60)}...`, 'success')
+    }
+
+    const payload = buildSeaviPayload(seaviSpec, {
+      imageUrls,
+      prompt: prompt.trim(),
+      aspectRatio: seaviAspect || undefined,
+    })
+
+    const rotation = await withTokenRotation<string>(
+      'seavi',
+      async (apiKey, keyInfo) => {
+        addLog(`🔑 Trying key: ${keyInfo.name || keyInfo.id}`, 'info')
+        const bal = await fetchSeaviBalance(apiKey)
+        if (bal.ok && typeof bal.balance === 'number') {
+          addLog(`   💰 Saldo: ${bal.balance} token`, 'debug')
+        }
+        addLog(`[2/3] 🚀 Submit ${seaviSpec.label}...`, 'info')
+        return await generateSeaviImage(apiKey, payload)
+      },
+      {
+        onKeySwitch: (from, to, attempt) => {
+          addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn')
+        },
+        onError: (err, key) => {
+          addLog(`⚠️ Key "${key.name}" bermasalah: ${err.message}`, 'warn')
+        },
+      },
+    )
+    if (!rotation.ok || !rotation.result) throw new Error(rotation.error || 'Generation failed')
+
+    addLog(`[3/3] 📥 Mengunduh hasil PNG...`, 'info')
+    const res = await fetch(rotation.result)
+    if (!res.ok) throw new Error(`Gagal mengunduh hasil: HTTP ${res.status}`)
+    const blob = await res.blob()
+    const finalUrl = URL.createObjectURL(blob)
+
+    const item: GalleryItem = {
+      id: `editimg-${Date.now()}`,
+      url: finalUrl,
+      prompt: prompt.trim(),
+      provider: 'seavi',
+      model: currentModel.label,
+      createdAt: new Date().toISOString(),
+    }
+    setGallery((prev) => {
+      const updated = [item, ...prev]
+      saveGallery(updated)
+      return updated
+    })
+    addResult({
+      id: item.id,
+      url: item.url,
+      prompt: item.prompt,
+      date: item.createdAt,
+      page: 'edit-image',
+      provider: 'seavi',
+      model: item.model,
+    })
+    window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
+    addToast('Gambar Seavi selesai!', 'success')
   }
 
   const handleGenerateRunningHub = async () => {
@@ -627,7 +727,7 @@ export default function EditImagePage() {
                 <Label>Model AI</Label>
                 <Select
                   value={model}
-                  onChange={(e) => setModel(e.target.value)}
+                  onChange={(e) => handleModelChange(e.target.value)}
                   disabled={generating}
                   options={ALL_MODELS[provider].map((m) => ({
                     value: m.value,
@@ -638,6 +738,25 @@ export default function EditImagePage() {
                         : `${m.label} — $${((m as any).cr / 1000).toFixed(3)}`,
                   }))}
                 />
+
+                {isSeavi && seaviAspects.length > 0 && (
+                  <div className="space-y-2">
+                    <Label>Rasio</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {(['', ...seaviAspects] as string[]).map((v) => (
+                        <button
+                          key={v || 'default'}
+                          type="button"
+                          disabled={generating}
+                          onClick={() => setSeaviAspect(v)}
+                          className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-all ${seaviAspect === v ? 'border-primary bg-primary/10 text-foreground' : 'border-border text-muted-foreground hover:bg-accent/40'}`}
+                        >
+                          {v || 'Default'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {isGpt25 && (
                   <div className="space-y-2">

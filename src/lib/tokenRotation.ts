@@ -75,6 +75,7 @@ export function detectTokenError(provider: ProviderId, error: any): boolean {
     case 'oneover': return /unauthorized|forbidden|invalid.*token|token.*invalid|expired|401|403|refresh.*token|login/i.test(String(error?.message || error))
     case 'genspark': return /invalid.*key|expired|401|403|unauthorized|forbidden|api.*key/i.test(String(error?.message || error))
     case 'runninghub': return /saldo|kuota|not_enough_power|insufficient|balance|power|coin|414|1002|1003|invalid.*key|key.*invalid|expired|401|403|unauthorized|forbidden|queue.limit|421|concurren|top up/i.test(String(error?.message || error))
+    case 'seavi': return /401|403|unauthorized|forbidden|invalid.*key|key.*invalid|api.*key|expired/i.test(String(error?.message || error))
     // Termasuk kegagalan cookie sesi (jalur Unlimited): error eksplisit dari
     // submitNexabot, halaman login HTML dari upstream, atau cookie kedaluwarsa.
     // Tanpa ini, key session yang mati hanya menggagalkan generate tanpa

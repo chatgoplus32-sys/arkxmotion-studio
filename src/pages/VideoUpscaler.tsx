@@ -5,6 +5,8 @@ import { LogDetailActions } from '@/components/ui/LogDetailActions'
 import { Loader2, Upload, Download, X, Sparkles, CheckCircle2, AlertCircle, Clock, Clapperboard } from 'lucide-react'
 import { useToastStore } from '@/stores/toastStore'
 import { submitRunningHubVideoUpscale, pollRunningHubTask } from '@/lib/runninghub'
+import { SEAVI_VIDEO_UPSCALER, generateWithSeavi, fetchSeaviBalance } from '@/lib/seavi'
+import { uploadToCatbox } from '@/lib/roboneo'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { persistResultToR2 } from '@/lib/backgroundTasks'
 import { useLocalStorage } from '@/lib/useLocalStorage'
@@ -50,6 +52,7 @@ export default function VideoUpscalerPage() {
 
   const [videoFile, setVideoFile] = useState<File | null>(null)
   const [videoPreview, setVideoPreview] = useState<string | null>(null)
+  const [engine, setEngine] = useState<'runninghub' | 'seavi'>('runninghub')
   const [steps, setSteps] = useLocalStorage('vosr2.steps', 4)
   const [cfg, setCfg] = useLocalStorage('vosr2.cfg', 4.5)
   const [scheduler, setScheduler] = useLocalStorage('vosr2.scheduler', 'beta')
@@ -65,7 +68,7 @@ export default function VideoUpscalerPage() {
 
   const videoPickerRef = useRef<HTMLInputElement | null>(null)
 
-  const apiKey = getStoredProviderKey('runninghub')
+  const apiKey = getStoredProviderKey(engine === 'seavi' ? 'seavi' : 'runninghub')
 
   const addLog = (msg: string, level: LogEntry['level'] = 'info') => {
     const time = new Date().toLocaleTimeString('id-ID')
@@ -79,6 +82,70 @@ export default function VideoUpscalerPage() {
     setVideoPreview(URL.createObjectURL(file))
   }
 
+  const runSeaviUpscale = async () => {
+    setLoading(true)
+    setError(null)
+    setResultUrl(null)
+    setProgress(0)
+    setTaskStatus('submitting')
+    setLogs([])
+    try {
+      addLog(`[1/2] 📤 Mengunggah video (${(videoFile!.size / 1024 / 1024).toFixed(1)}MB)...`)
+      const videoUrl = await uploadToCatbox(videoFile!, 'video', (msg, pct) => {
+        addLog(`${msg}${pct != null ? ` ${pct}%` : ''}`)
+      })
+      addLog(`[1/2] ✓ Terunggah: ${videoUrl.slice(0, 80)}...`, 'success')
+
+      const rotation = await withTokenRotation<string>(
+        'seavi',
+        async (key, keyInfo) => {
+          addLog(`🔑 Key: ${keyInfo?.name || keyInfo?.id || 'default'}`)
+          const bal = await fetchSeaviBalance(key)
+          if (bal.ok && typeof bal.balance === 'number') addLog(`💰 Saldo: ${bal.balance} token`)
+          return await generateWithSeavi({
+            apiKey: key,
+            spec: SEAVI_VIDEO_UPSCALER,
+            videoUrls: [videoUrl],
+            onLog: (msg, level) => addLog(msg, (level as LogEntry['level']) || 'info'),
+            onStatus: (text, pct) => {
+              setTaskStatus('running')
+              setProgress(pct)
+            },
+          })
+        },
+        {
+          onKeySwitch: (from, to, attempt) => {
+            addLog(`🔄 Key "${from.name}" gagal, pindah ke key #${attempt}: "${to.name}"`, 'warn')
+          },
+          onError: (err, key) => {
+            addLog(`⚠️ Key "${key.name}" bermasalah: ${err.message}`, 'warn')
+          },
+        },
+      )
+      if (!rotation.ok || !rotation.result) throw new Error(rotation.error || 'Upscale gagal')
+
+      const url = rotation.result
+      const tid = `seavi-upscale-${Date.now()}`
+      setResultUrl(url)
+      setTaskStatus('success')
+      setProgress(100)
+      addLog(`Selesai: ${url.slice(0, 100)}...`, 'success')
+      persistResultToR2(tid, url)
+      setHistory((prev) => [
+        { time: new Date().toLocaleTimeString('id-ID'), taskId: tid, status: '✅ Selesai', url },
+        ...prev,
+      ])
+      addToast('✅ Video upscale (Seavi) selesai!', 'success')
+    } catch (e: any) {
+      setTaskStatus('error')
+      setError(e.message || 'Unknown error')
+      addLog(`Gagal: ${e.message || e}`, 'error')
+      addToast(`❌ ${e.message}`, 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const runWorkflow = async () => {
     if (!apiKey) {
       addToast('⚠️ Belum ada RunningHub API key. Tambahkan di Providers.', 'warning')
@@ -88,6 +155,8 @@ export default function VideoUpscalerPage() {
       addToast('⚠️ Upload video terlebih dahulu!', 'warning')
       return
     }
+
+    if (engine === 'seavi') return runSeaviUpscale()
 
     setLoading(true)
     setError(null)
@@ -186,7 +255,7 @@ export default function VideoUpscalerPage() {
     <PageContent>
       <PageHeader
         title="⬆️ Video Upscaler 2K"
-        desc="Tingkatkan video ke kualitas 2K yang stabil via RunningHub (VOSR2 — peningkatan bertingkat, siap distribusi digital)."
+        desc="Tingkatkan video ke kualitas lebih stabil & tajam — pilih engine RunningHub (VOSR2 2K bertingkat) atau Seavi (Upscale Video S7)."
       />
 
       {!apiKey && (
@@ -222,6 +291,25 @@ export default function VideoUpscalerPage() {
             <input ref={videoPickerRef} type="file" accept="video/*" className="hidden" onChange={(e) => e.target.files?.[0] && handleVideoSelect(e.target.files[0])} />
           </div>
 
+          <div className="mb-4">
+            <Label>Engine</Label>
+            <div className="flex gap-2">
+              {([['runninghub', 'RunningHub (VOSR2)'], ['seavi', 'Seavi (S7)']] as const).map(([v, label]) => (
+                <button
+                  key={v}
+                  type="button"
+                  disabled={loading}
+                  onClick={() => setEngine(v)}
+                  className={`px-3 py-2 rounded-xl text-sm font-semibold border transition-all ${engine === v ? 'border-primary bg-primary/10 text-foreground' : 'border-border text-muted-foreground hover:bg-accent/40'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {engine === 'runninghub' && (
+          <>
           <div className="grid grid-cols-2 gap-3 mb-4">
             <div>
               <Label>Steps</Label>
@@ -268,6 +356,8 @@ export default function VideoUpscalerPage() {
               className="w-full px-3 py-2 rounded-lg bg-surface-secondary border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
             />
           </div>
+          </>
+          )}
 
           <Button
             onClick={runWorkflow}

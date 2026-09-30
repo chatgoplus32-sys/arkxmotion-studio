@@ -5,6 +5,7 @@ import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
 import { Image, Upload, Rocket, Loader2, Trash2, Key, ExternalLink, Download, X, Copy } from 'lucide-react'
 import { Swipeable } from '@/components/Swipeable'
 import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
+import { getSeaviSpec, generateWithSeavi, fetchSeaviBalance } from '@/lib/seavi'
 import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { uploadToCatbox, submitRoboneoI2V, pollRoboneoI2V, checkRoboneoBalance, uploadImageForRoboneo,
@@ -325,6 +326,12 @@ export default function ImageToVideoPage() {
   const currentModel = models.find((m) => m.value === model) || models[0]
   // NexaBot Omni Flash 1.1 — 4 jenis mengikuti nexabot.id/video-generator:
   const isNb = provider === 'nexabot'
+  // Seavi: mode input dipandu SEAVI_MODELS (gambar multi, video & audio referensi).
+  const isSeavi = provider === 'seavi'
+  const seaviSpec = isSeavi && currentModel ? getSeaviSpec(currentModel.apiModel || '') : undefined
+  const isSeaviMc = !!seaviSpec && seaviSpec.category === 'motion_control'
+  const seaviImageMax = seaviSpec ? (seaviSpec.imageMode === 'none' ? 0 : seaviSpec.imageMode === 'single' ? 1 : seaviSpec.imageMax ?? 0) : 0
+  const seaviVideoMode = seaviSpec ? seaviSpec.videoMode : 'none'
   const nbApiModel = isNb ? (currentModel?.apiModel || 't2v') : ''
   // Seedance 2.0 Replica (RunningHub): gambar + prompt storyboard → video.
   const isRhSeedance = provider === 'runninghub' && currentModel?.apiModel === 'seedance2'
@@ -719,6 +726,18 @@ export default function ImageToVideoPage() {
     if (provider === 'nexabot' && user?.role !== 'admin' && !nbWallet?.unlimited.active && (nbWallet?.balance ?? 0) < (nbWallet?.price ?? 250))
       return `Saldo NexaBot tidak cukup (${formatRp(nbWallet?.balance ?? 0)}). Top up atau ambil Paket Unlimited ${nbWallet?.package.days ?? 7} hari di halaman Top Up NexaBot.`
     if (provider === 'roboneo' && !imgFile) return 'Roboneo membutuhkan gambar input'
+    if (provider === 'seavi' && seaviSpec) {
+      const imgs = refFiles.filter((f) => f.type.startsWith('image/')).length
+      const vids = refFiles.filter((f) => f.type.startsWith('video/')).length
+      if (seaviSpec.imageMode === 'single' && imgs !== 1) return `${seaviSpec.label} membutuhkan tepat 1 gambar`
+      if (seaviSpec.imageMode === 'multi') {
+        if (imgs < (seaviSpec.imageMin ?? 0)) return `${seaviSpec.label} butuh minimal ${seaviSpec.imageMin} gambar`
+        if (imgs > (seaviSpec.imageMax ?? 0)) return `${seaviSpec.label} maksimal ${seaviSpec.imageMax} gambar`
+      }
+      if (seaviSpec.videoMode === 'single' && vids !== 1) return `${seaviSpec.label} membutuhkan tepat 1 video referensi`
+      if (seaviSpec.videoMode === 'multi' && vids > (seaviSpec.videoMax ?? 0)) return `${seaviSpec.label} maksimal ${seaviSpec.videoMax} video`
+      if (seaviSpec.promptRequired !== false && seaviSpec.promptMax !== 0 && !prompt.trim()) return 'Prompt wajib diisi'
+    }
     if (provider === 'runninghub' && !imgFile) return isRhSeedance
       ? 'Seedance 2.0 Storyboard membutuhkan 1 gambar referensi'
       : 'RunningHub H3 I2V membutuhkan gambar input'
@@ -978,6 +997,72 @@ export default function ImageToVideoPage() {
           notifyGenerationComplete(currentModel?.label || model, 'Roboneo')
           if (rotation.triedKeys > 1) {
             addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success', 'roboneo')
+          }
+        } else {
+          throw new Error(rotation.error || 'Generation failed')
+        }
+      } else if (provider === 'seavi') {
+        if (!seaviSpec) throw new Error('Model Seavi tidak dikenal')
+        addLog(`[1/3] 🖼️ Menyiapkan media...`, 'info', 'seavi')
+        const imageUrls: string[] = []
+        for (const f of refFiles.filter((x) => x.type.startsWith('image/'))) {
+          const u = await uploadToCatbox(f)
+          imageUrls.push(u)
+          addLog(`[1/3] ✅ Gambar terunggah ✓ ${u.slice(0, 60)}...`, 'success', 'seavi')
+        }
+        let videoUrls: string[] = []
+        const videoFile = refFiles.find((f) => f.type.startsWith('video/'))
+        if (videoFile) {
+          const vu = await uploadToCatbox(videoFile)
+          videoUrls = [vu]
+          addLog(`[1/3] ✅ Video referensi terunggah ✓`, 'success', 'seavi')
+        }
+        let audioUrl: string | undefined
+        const audioFile = refFiles.find((f) => f.type.startsWith('audio/'))
+        if (audioFile) {
+          audioUrl = await uploadToCatbox(audioFile)
+          addLog(`[1/3] ✅ Audio terunggah ✓`, 'success', 'seavi')
+        }
+
+        const rotation = await withTokenRotation<string>(
+          'seavi',
+          async (apiKey, keyInfo) => {
+            addLog(`🔑 Trying key: ${keyInfo.name || keyInfo.id}`, 'info', 'seavi')
+            const bal = await fetchSeaviBalance(apiKey)
+            if (bal.ok && typeof bal.balance === 'number') {
+              addLog(`💰 Saldo: ${bal.balance} token`, 'info', 'seavi')
+            }
+            return await generateWithSeavi({
+              apiKey,
+              spec: seaviSpec,
+              imageUrls,
+              videoUrls,
+              audioUrl,
+              prompt: prompt.trim(),
+              aspectRatio: isSeaviMc ? undefined : ratio,
+              duration: currentQuality?.duration,
+              onLog: (msg, level) => addLog(msg, level as any, 'seavi'),
+              onStatus: (text, pct) => setStatus((s) => ({ ...s, pct, text: `[Seavi] ${text}` })),
+            })
+          },
+          {
+            onKeySwitch: (from, to, attempt) => {
+              addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn', 'seavi')
+            },
+            onError: (err, key) => {
+              if (detectTokenError('seavi', err)) {
+                addLog(`⚠️ Key "${key.name}" is invalid: ${err.message}`, 'warn', 'seavi')
+              }
+            },
+          }
+        )
+        if (rotation.ok && rotation.result) {
+          setResults((prev) => [rotation.result!, ...prev])
+          successRef.current = true
+          setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+          notifyGenerationComplete(currentModel?.label || model, 'Seavi')
+          if (rotation.triedKeys > 1) {
+            addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success', 'seavi')
           }
         } else {
           throw new Error(rotation.error || 'Generation failed')
@@ -2675,7 +2760,7 @@ export default function ImageToVideoPage() {
   // Ditampilkan di kartu provider NexaBot (lihat nexabotPathPill).
   const nexabotPill = nexabotPathPill(keys.nexabot, nexabotSession, nexabotChecking)
 
-  const PROVIDER_IDS: ProviderId[] = ['weavy', 'wavespeed', 'roboneo', 'createpulse', 'framia', 'leonardo', 'galleri5', 'oneover', 'firefly', 'genspark', 'riverside', 'nexabot', 'runninghub']
+  const PROVIDER_IDS: ProviderId[] = ['weavy', 'wavespeed', 'roboneo', 'createpulse', 'framia', 'leonardo', 'galleri5', 'oneover', 'firefly', 'genspark', 'riverside', 'nexabot', 'runninghub', 'seavi']
 
   return (
     <PageContent>
@@ -2969,6 +3054,66 @@ export default function ImageToVideoPage() {
                   </div>
                 )}
               </Section>
+            ) : isSeavi ? (
+              /* Seavi: gambar multi + video referensi mengikuti model */
+              <Section title="🖼️ Media Input" sub={isSeaviMc ? '1 gambar (wajib) + 1 video referensi (wajib)' : `Gambar: ${seaviImageMax === 0 ? 'tidak dipakai' : seaviImageMax === 1 ? '1 (wajib)' : `${seaviSpec?.imageMin ?? 0}-${seaviImageMax} (sesuai model)`}${seaviVideoMode !== 'none' ? ' · Video referensi didukung' : ''}`}>
+                <input ref={inputRef} type="file" accept="image/*" multiple={(seaviImageMax ?? 0) > 1} hidden onChange={(e) => handleNbImagesChange(e.target.files)} />
+                {nbImageUrls.length > 0 ? (
+                  <div className="grid grid-cols-3 gap-2">
+                    {nbImageUrls.map((u, i) => (
+                      <div key={i} className="relative aspect-square rounded-xl overflow-hidden border border-border">
+                        <img src={u} alt={`gambar ${i + 1}`} className="w-full h-full object-cover" />
+                        <button onClick={() => removeNbImage(i)} aria-label="Hapus gambar" className="absolute top-1 right-1 rounded-full w-6 h-6 bg-black/60 text-white text-xs grid place-items-center hover:bg-black/80">×</button>
+                      </div>
+                    ))}
+                    {nbImageUrls.length < (seaviImageMax || 1) && (
+                      <button onClick={() => inputRef.current?.click()} className="aspect-square rounded-xl border border-dashed border-border/80 bg-card/30 grid place-items-center hover:border-primary/60 transition text-center">
+                        <div>
+                          <div className="text-2xl">➕</div>
+                          <div className="text-[10px] mt-0.5">Tambah ({nbImageUrls.length}/{seaviImageMax})</div>
+                        </div>
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  seaviImageMax > 0 ? (
+                    <button onClick={() => inputRef.current?.click()} className="w-full aspect-[9/16] rounded-2xl border border-dashed border-border/80 bg-card/30 grid place-items-center hover:border-primary/60 transition text-center px-4">
+                      <div>
+                        <div className="text-3xl">🖼️</div>
+                        <div className="text-sm mt-1">{seaviImageMax === 1 ? 'Tap untuk upload gambar (wajib)' : 'Tap untuk upload gambar'}</div>
+                        <div className="text-[11px] text-muted-foreground">JPG / PNG / WEBP</div>
+                      </div>
+                    </button>
+                  ) : (
+                    <div className="aspect-[9/16] rounded-2xl border border-dashed border-border/60 bg-card/20 grid place-items-center text-center px-4">
+                      <div>
+                        <div className="text-3xl">✍️</div>
+                        <div className="text-sm mt-1 text-muted-foreground">Model ini tanpa gambar — cukup tulis prompt</div>
+                      </div>
+                    </div>
+                  )
+                )}
+                {seaviVideoMode !== 'none' && (
+                  <div className="mt-3">
+                    <input ref={videoRefInputRef} type="file" accept="video/*" hidden onChange={(e) => handleVideoRefChange(e.target.files)} />
+                    <div className="text-[11px] text-muted-foreground mb-1.5">🎬 Video Referensi {isSeaviMc ? '(wajib)' : `(opsional, maks ${seaviSpec?.videoMax ?? 1})`}</div>
+                    {nbVideoUrl ? (
+                      <div className="relative aspect-video rounded-2xl overflow-hidden border border-border">
+                        <video src={nbVideoUrl} className="w-full h-full object-cover" controls />
+                        <button onClick={() => removeRef(nbVideoIdx)} className="absolute top-2 right-2 rounded-full w-6 h-6 bg-black/60 text-white text-xs grid place-items-center hover:bg-black/80">×</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => videoRefInputRef.current?.click()} className="w-full aspect-video rounded-2xl border border-dashed border-border/80 bg-card/30 grid place-items-center hover:border-primary/60 transition text-center px-4">
+                        <div>
+                          <div className="text-3xl">🎬</div>
+                          <div className="text-sm mt-1">Tap untuk upload video referensi</div>
+                          <div className="text-[11px] text-muted-foreground">MP4 / WEBM / MOV</div>
+                        </div>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </Section>
             ) : (
               /* Default UI for other providers */
               <Section title="🖼️ Gambar / Video Input" sub="1 file (JPG / PNG / WEBP / MP4) — optional untuk text-to-video">
@@ -3031,12 +3176,12 @@ export default function ImageToVideoPage() {
                     />
                   </div>
                   <div>
-                    <Label>Aspek Rasio {isVeoI2V && <span className="text-[10px] text-blue-400 font-normal ml-1">(16:9 only)</span>}</Label>
+                    <Label>Aspek Rasio {isVeoI2V && <span className="text-[10px] text-blue-400 font-normal ml-1">(16:9 only)</span>}{isSeaviMc && <span className="text-[10px] text-blue-400 font-normal ml-1">(ikut video referensi)</span>}</Label>
                     <Select
                       value={ratio}
                       onChange={(e) => setRatio(e.target.value)}
                       options={availableRatios.map((r) => ({ value: r, label: r }))}
-                      disabled={isVeoI2V}
+                      disabled={isVeoI2V || isSeaviMc}
                     />
                   </div>
                   <div>
