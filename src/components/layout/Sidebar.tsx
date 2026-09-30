@@ -7,7 +7,6 @@ import { useTokenSyncStore } from '@/stores/tokenSyncStore'
 import { sendNotification } from '@/lib/notify'
 import {
   LayoutDashboard,
-  Globe, MessageSquare,
   Video,
   Image,
   Settings,
@@ -31,11 +30,9 @@ import {
   ShoppingCart,
   Route,
   Puzzle,
-  Shirt,
   Mic,
   Eraser,
   ArrowUpFromLine,
-  Film,
 } from 'lucide-react'
 
 interface NavItem {
@@ -57,12 +54,12 @@ const generateNav: NavItem[] = [
   { label: 'Image to Video', href: '/generate/image-to-video', icon: <Image className="h-4 w-4" /> },
   { label: 'Edit Image', href: '/generate/edit-image', icon: <ImagePlus className="h-4 w-4" /> },
 
-  { label: 'Virtual Try-On', href: '/generate/virtual-tryon', icon: <Shirt className="h-4 w-4" /> },
-  { label: 'Travel Photo', href: '/generate/travel-photo', icon: <Globe className="h-4 w-4" /> },
-  { label: 'Dola Chat', href: '/generate/dola-chat', icon: <MessageSquare className="h-4 w-4" /> },
+  // (disembunyikan) { label: 'Virtual Try-On', href: '/generate/virtual-tryon', icon: <Shirt className="h-4 w-4" /> },
+  // (disembunyikan) { label: 'Travel Photo', href: '/generate/travel-photo', icon: <Globe className="h-4 w-4" /> },
+  // (disembunyikan) { label: 'Dola Chat', href: '/generate/dola-chat', icon: <MessageSquare className="h-4 w-4" /> },
   { label: 'Talking Photo', href: '/generate/talking-photo', icon: <Mic className="h-4 w-4" /> },
-  { label: 'H3 Image→Video', href: '/generate/h3-i2v', icon: <Zap className="h-4 w-4" /> },
-  { label: 'UGC Video Storyboard', href: '/generate/ugc-storyboard', icon: <Film className="h-4 w-4" /> },
+  // (disembunyikan) { label: 'H3 Image→Video', href: '/generate/h3-i2v', icon: <Zap className="h-4 w-4" /> },
+  // (disembunyikan) { label: 'UGC Video Storyboard', href: '/generate/ugc-storyboard', icon: <Film className="h-4 w-4" /> },
   { label: 'Watermark Remover', href: '/generate/watermark-remover', icon: <Eraser className="h-4 w-4" /> },
   { label: 'Video Upscaler', href: '/generate/video-upscaler', icon: <ArrowUpFromLine className="h-4 w-4" /> },
   { label: 'AI Upscaler', href: '/generate/upscaler', icon: <Wand2 className="h-4 w-4" /> },
