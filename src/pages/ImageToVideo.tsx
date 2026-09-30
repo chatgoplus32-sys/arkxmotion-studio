@@ -813,7 +813,8 @@ export default function ImageToVideoPage() {
   }
 
   const validateGenerate = (): string | null => {
-    if (!prompt.trim()) return 'Prompt harus diisi'
+    // Motion Control Seavi tidak memakai prompt (upstream S10/S16 bahkan tanpa parameter prompt).
+    if (!prompt.trim() && !isSeaviMc) return 'Prompt harus diisi'
     if (!hasActiveKey && provider !== 'roboneo' && provider !== 'createpulse') return `Tidak ada API key aktif untuk ${PROVIDER_CONFIGS[provider].name}`
     if (provider === 'createpulse' && user?.role !== 'admin' && cpBalance < getCreatepulseCost(currentModel?.apiModel)) return 'Saldo CreatePulse tidak cukup. Top up minimal Rp 10.000'
     // NexaBot: paket Unlimited = gratis, jadi cek saldo hanya saat paket tidak aktif.
