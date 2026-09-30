@@ -157,33 +157,33 @@ export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
 
 export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; label: string; mult: number; duration: number; cr?: number; resolution?: string; sound?: string; sizeTier?: string }>>> = {
   seavi: {
-    motion_control_v3_server10_30dtk: [{ value: 'mc', label: 'Video referensi ±30s', mult: 1, duration: 30, cr: 1 }],
-    motion_control_v3_server16: [{ value: 'mc', label: 'Video referensi ±10s', mult: 1, duration: 10, cr: 1 }],
-    motion_control_v3_server17: [{ value: 'mc', label: 'Video referensi ±15s', mult: 1, duration: 15, cr: 1 }],
-    veo31_s9: [{ value: 'd8', label: '8 detik', mult: 1, duration: 8, cr: 1 }],
-    kling3_server10: [
+    'sv:motion_control_v3_server10_30dtk': [{ value: 'mc', label: 'Video referensi ±30s', mult: 1, duration: 30, cr: 1 }],
+    'sv:motion_control_v3_server16': [{ value: 'mc', label: 'Video referensi ±10s', mult: 1, duration: 10, cr: 1 }],
+    'sv:motion_control_v3_server17': [{ value: 'mc', label: 'Video referensi ±15s', mult: 1, duration: 15, cr: 1 }],
+    'sv:veo31_s9': [{ value: 'd8', label: '8 detik', mult: 1, duration: 8, cr: 1 }],
+    'sv:kling3_server10': [
       { value: 'd6', label: '6 detik', mult: 1, duration: 6, cr: 1 },
       { value: 'd10', label: '10 detik', mult: 1, duration: 10, cr: 1 },
     ],
-    kling21pro_server10: [
+    'sv:kling21pro_server10': [
       { value: 'd5', label: '5 detik', mult: 1, duration: 5, cr: 1 },
       { value: 'd10', label: '10 detik', mult: 1, duration: 10, cr: 1 },
     ],
-    grok_imagine_s15: [{ value: 'd10', label: '10 detik', mult: 1, duration: 10, cr: 1 }],
-    seedance2_multi_s15: [
+    'sv:grok_imagine_s15': [{ value: 'd10', label: '10 detik', mult: 1, duration: 10, cr: 1 }],
+    'sv:seedance2_multi_s15': [
       { value: 'd5', label: '5 detik', mult: 1, duration: 5, cr: 1 },
       { value: 'd10', label: '10 detik', mult: 1, duration: 10, cr: 1 },
     ],
-    seedance25_server19: [
+    'sv:seedance25_server19': [
       { value: 'd5', label: '5 detik', mult: 1, duration: 5, cr: 1 },
       { value: 'd10', label: '10 detik', mult: 1, duration: 10, cr: 1 },
     ],
-    wan30_server19: [
+    'sv:wan30_server19': [
       { value: 'd5', label: '5 detik', mult: 1, duration: 5, cr: 2 },
       { value: 'd10', label: '10 detik', mult: 1, duration: 10, cr: 2 },
       { value: 'd15', label: '15 detik', mult: 1, duration: 15, cr: 2 },
     ],
-    gemini_omni_server19: [
+    'sv:gemini_omni_server19': [
       { value: 'd5', label: '5 detik', mult: 1, duration: 5, cr: 2 },
       { value: 'd10', label: '10 detik', mult: 1, duration: 10, cr: 2 },
       { value: 'd15', label: '15 detik', mult: 1, duration: 15, cr: 2 },
