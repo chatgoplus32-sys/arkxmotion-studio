@@ -38,3 +38,6 @@ server/*.db
 *.sw?
 
 .vercel
+
+# Python deploy scripts
+__pycache__/

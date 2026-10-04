@@ -1248,7 +1248,7 @@ async function handleSubmitVideoUpscale(apiKey: string, params: any, res: Respon
   }
 
   const parseMismatch = (msg: string): { nodeId: string; fieldName: string; reason: string } | null => {
-    const m = /nodeId=([^,\)]+),\s*fieldName=([^,\)]+),\s*reason=([^,\)]+)/.exec(msg)
+    const m = /nodeId=([^,)]+),\s*fieldName=([^,)]+),\s*reason=([^,)]+)/.exec(msg)
     return m ? { nodeId: m[1].trim(), fieldName: m[2].trim(), reason: m[3].trim() } : null
   }
 
@@ -1365,7 +1365,7 @@ async function handleSubmitPhotoEnhance(apiKey: string, params: any, res: Respon
   }
 
   const parseMismatch = (msg: string): { nodeId: string; fieldName: string; reason: string } | null => {
-    const m = /nodeId=([^,\)]+),\s*fieldName=([^,\)]+),\s*reason=([^,\)]+)/.exec(msg)
+    const m = /nodeId=([^,)]+),\s*fieldName=([^,)]+),\s*reason=([^,)]+)/.exec(msg)
     return m ? { nodeId: m[1].trim(), fieldName: m[2].trim(), reason: m[3].trim() } : null
   }
 
@@ -1590,7 +1590,7 @@ async function handleSubmitLipSync(apiKey: string, params: any, res: Response) {
   }
 
   const parseMismatch = (msg: string): { nodeId: string; fieldName: string; reason: string } | null => {
-    const m = /nodeId=([^,\)]+),\s*fieldName=([^,\)]+),\s*reason=([^,\)]+)/.exec(msg)
+    const m = /nodeId=([^,)]+),\s*fieldName=([^,)]+),\s*reason=([^,)]+)/.exec(msg)
     return m ? { nodeId: m[1].trim(), fieldName: m[2].trim(), reason: m[3].trim() } : null
   }
 
@@ -1721,7 +1721,7 @@ async function handleSubmitImageEdit(apiKey: string, params: any, res: Response)
   }
 
   const parseMismatch = (msg: string): { nodeId: string; fieldName: string; reason: string } | null => {
-    const m = /nodeId=([^,\)]+),\s*fieldName=([^,\)]+),\s*reason=([^,\)]+)/.exec(msg)
+    const m = /nodeId=([^,)]+),\s*fieldName=([^,)]+),\s*reason=([^,)]+)/.exec(msg)
     return m ? { nodeId: m[1].trim(), fieldName: m[2].trim(), reason: m[3].trim() } : null
   }
 
@@ -1854,7 +1854,7 @@ async function handleSubmitH3I2V(apiKey: string, params: any, res: Response) {
   }
 
   const parseMismatch = (msg: string): { nodeId: string; fieldName: string; reason: string } | null => {
-    const m = /nodeId=([^,\)]+),\s*fieldName=([^,\)]+),\s*reason=([^,\)]+)/.exec(msg)
+    const m = /nodeId=([^,)]+),\s*fieldName=([^,)]+),\s*reason=([^,)]+)/.exec(msg)
     return m ? { nodeId: m[1].trim(), fieldName: m[2].trim(), reason: m[3].trim() } : null
   }
 
@@ -1962,7 +1962,7 @@ async function handleSubmitSeedance2(apiKey: string, params: any, res: Response)
     const nodeField: Record<string, string> = { [SEEDANCE2_IMAGE_NODE]: 'image' }
     const IMG_CANDS = ['image', 'file', 'path', 'filename', 'input', 'src']
     const parseMismatch = (msg: string): { nodeId: string; fieldName: string; reason: string } | null => {
-      const m = /nodeId=([^,\)]+),\s*fieldName=([^,\)]+),\s*reason=([^,\)]+)/.exec(msg)
+      const m = /nodeId=([^,)]+),\s*fieldName=([^,)]+),\s*reason=([^,)]+)/.exec(msg)
       return m ? { nodeId: m[1].trim(), fieldName: m[2].trim(), reason: m[3].trim() } : null
     }
 
@@ -2113,7 +2113,7 @@ async function handleSubmitUGCStoryboard(apiKey: string, params: any, res: Respo
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
     const parseMismatch = (msg: string): { nodeId: string; fieldName: string; reason: string } | null => {
-      const m = /nodeId=([^,\)]+),\s*fieldName=([^,\)]+),\s*reason=([^,\)]+)/.exec(msg)
+      const m = /nodeId=([^,)]+),\s*fieldName=([^,)]+),\s*reason=([^,)]+)/.exec(msg)
       return m ? { nodeId: m[1].trim(), fieldName: m[2].trim(), reason: m[3].trim() } : null
     }
 

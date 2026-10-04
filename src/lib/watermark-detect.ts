@@ -194,7 +194,7 @@ function scanRegion(imageData: ImageData, region: Region, W: number, H: number):
       const cxFrac = (bx + bw / 2) / W
       const cyFrac = (by + bh / 2) / H
       const dx = Math.abs(cxFrac - region.ax)
-      const dy = Math.abs(cxFrac - region.ay)
+      const dy = Math.abs(cyFrac - region.ay)
       const cornerDist = Math.hypot(dx, dy)
 
       let score = 0

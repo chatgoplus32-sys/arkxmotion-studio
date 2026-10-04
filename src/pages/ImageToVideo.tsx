@@ -29,7 +29,6 @@ import {
   clearLogs,
   clearResults,
 } from '@/lib/backgroundTasks'
-import { useResolvedGalleryUrls } from '@/hooks/useResolvedGalleryUrls'
 import type { CompletedResult } from '@/lib/backgroundTasks'
 import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
 import { isNotificationsEnabled, setNotificationsEnabled, requestNotificationPermission, notifyGenerationComplete } from '@/lib/notify'

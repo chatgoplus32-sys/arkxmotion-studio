@@ -85,7 +85,7 @@ async function readTokenFromTabs(base) {
     checked[origin] = true
 
     var tabs = []
-    try { tabs = await chrome.tabs.query({ url: origin + '/*' }) } catch (e) { tabs = [] }
+    try { tabs = await chrome.tabs.query({ url: origin + '/*' }) } catch { tabs = [] }
 
     for (var j = 0; j < tabs.length; j++) {
       var tab = tabs[j]
@@ -93,12 +93,12 @@ async function readTokenFromTabs(base) {
       try {
         var results = await chrome.scripting.executeScript({
           target: { tabId: tab.id },
-          func: function (key) { try { return localStorage.getItem(key) } catch (e) { return null } },
+          func: function (key) { try { return localStorage.getItem(key) } catch { return null } },
           args: [APP_TOKEN_STORAGE_KEY],
         })
         var token = results && results[0] && results[0].result
         if (token && typeof token === 'string') return token
-      } catch (e) {
+      } catch {
         // Tab tidak bisa di-script (chrome://, tab dibekukan, dsb) — lanjut.
       }
     }

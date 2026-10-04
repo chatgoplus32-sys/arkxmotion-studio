@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Label, Select, EmptyState } from '@/components/ui'
 import {
@@ -570,7 +570,7 @@ export default function WatermarkRemoverPage() {
                   <Label>Detected ({candidates.length}) — click to apply:</Label>
                   {candidates.map((c, i) => (
                     <button key={i}
-                      onClick={() => { setSelectedCandidate(i); imageData && applyCandidateMask(c, imageData.width, imageData.height) }}
+                      onClick={() => { setSelectedCandidate(i); if (imageData) applyCandidateMask(c, imageData.width, imageData.height) }}
                       className={`block w-full text-left text-xs p-2 rounded border transition-colors ${
                         i === selectedCandidate ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/50'
                       }`}>

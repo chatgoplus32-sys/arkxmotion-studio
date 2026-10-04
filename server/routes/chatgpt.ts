@@ -1,6 +1,5 @@
 import { Router, Request, Response } from 'express'
 import https from 'https'
-import http from 'http'
 import { URL } from 'url'
 import { authenticateToken } from '../middleware/auth.js'
 

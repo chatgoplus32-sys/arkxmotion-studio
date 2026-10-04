@@ -1023,7 +1023,7 @@ async function handleSubmitVideoUpscale(apiKey: string, params: any, res: Vercel
   }
 
   const parseMismatch = (msg: string): { nodeId: string; fieldName: string; reason: string } | null => {
-    const m = /nodeId=([^,\)]+),\s*fieldName=([^,\)]+),\s*reason=([^,\)]+)/.exec(msg)
+    const m = /nodeId=([^,)]+),\s*fieldName=([^,)]+),\s*reason=([^,)]+)/.exec(msg)
     return m ? { nodeId: m[1].trim(), fieldName: m[2].trim(), reason: m[3].trim() } : null
   }
 
@@ -1143,7 +1143,7 @@ async function handleSubmitPhotoEnhance(apiKey: string, params: any, res: Vercel
   }
 
   const parseMismatch = (msg: string): { nodeId: string; fieldName: string; reason: string } | null => {
-    const m = /nodeId=([^,\)]+),\s*fieldName=([^,\)]+),\s*reason=([^,\)]+)/.exec(msg)
+    const m = /nodeId=([^,)]+),\s*fieldName=([^,)]+),\s*reason=([^,)]+)/.exec(msg)
     return m ? { nodeId: m[1].trim(), fieldName: m[2].trim(), reason: m[3].trim() } : null
   }
 
@@ -1224,7 +1224,6 @@ async function handleSubmitLipSync(apiKey: string, params: any, res: VercelRespo
     width = 1280,
     height = 720,
     fps = 30,
-    prompt = '',
   } = params
 
   if (!imageBase64) return res.status(200).json({ ok: false, error: 'Missing imageBase64' })
@@ -1279,7 +1278,7 @@ async function handleSubmitLipSync(apiKey: string, params: any, res: VercelRespo
   }
 
   const parseMismatch = (msg: string): { nodeId: string; fieldName: string; reason: string } | null => {
-    const m = /nodeId=([^,\)]+),\s*fieldName=([^,\)]+),\s*reason=([^,\)]+)/.exec(msg)
+    const m = /nodeId=([^,)]+),\s*fieldName=([^,)]+),\s*reason=([^,)]+)/.exec(msg)
     return m ? { nodeId: m[1].trim(), fieldName: m[2].trim(), reason: m[3].trim() } : null
   }
 
@@ -1415,7 +1414,7 @@ async function handleSubmitImageEdit(apiKey: string, params: any, res: VercelRes
   }
 
   const parseMismatch = (msg: string): { nodeId: string; fieldName: string; reason: string } | null => {
-    const m = /nodeId=([^,\)]+),\s*fieldName=([^,\)]+),\s*reason=([^,\)]+)/.exec(msg)
+    const m = /nodeId=([^,)]+),\s*fieldName=([^,)]+),\s*reason=([^,)]+)/.exec(msg)
     return m ? { nodeId: m[1].trim(), fieldName: m[2].trim(), reason: m[3].trim() } : null
   }
 
@@ -1548,7 +1547,7 @@ async function handleSubmitH3I2V(apiKey: string, params: any, res: VercelRespons
   }
 
   const parseMismatch = (msg: string): { nodeId: string; fieldName: string; reason: string } | null => {
-    const m = /nodeId=([^,\)]+),\s*fieldName=([^,\)]+),\s*reason=([^,\)]+)/.exec(msg)
+    const m = /nodeId=([^,)]+),\s*fieldName=([^,)]+),\s*reason=([^,)]+)/.exec(msg)
     return m ? { nodeId: m[1].trim(), fieldName: m[2].trim(), reason: m[3].trim() } : null
   }
 
@@ -1656,7 +1655,7 @@ async function handleSubmitSeedance2(apiKey: string, params: any, res: VercelRes
     const nodeField: Record<string, string> = { [SEEDANCE2_IMAGE_NODE]: 'image' }
     const IMG_CANDS = ['image', 'file', 'path', 'filename', 'input', 'src']
     const parseMismatch = (msg: string): { nodeId: string; fieldName: string; reason: string } | null => {
-      const m = /nodeId=([^,\)]+),\s*fieldName=([^,\)]+),\s*reason=([^,\)]+)/.exec(msg)
+      const m = /nodeId=([^,)]+),\s*fieldName=([^,)]+),\s*reason=([^,)]+)/.exec(msg)
       return m ? { nodeId: m[1].trim(), fieldName: m[2].trim(), reason: m[3].trim() } : null
     }
 
@@ -1807,7 +1806,7 @@ async function handleSubmitUGCStoryboard(apiKey: string, params: any, res: Verce
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
     const parseMismatch = (msg: string): { nodeId: string; fieldName: string; reason: string } | null => {
-      const m = /nodeId=([^,\)]+),\s*fieldName=([^,\)]+),\s*reason=([^,\)]+)/.exec(msg)
+      const m = /nodeId=([^,)]+),\s*fieldName=([^,)]+),\s*reason=([^,)]+)/.exec(msg)
       return m ? { nodeId: m[1].trim(), fieldName: m[2].trim(), reason: m[3].trim() } : null
     }
 

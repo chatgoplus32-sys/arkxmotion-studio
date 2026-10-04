@@ -1266,7 +1266,7 @@ export function roboneoProxyPlugin(): Plugin {
                 }
               }
               const parseMM = (msg: string) => {
-                const m = /nodeId=([^,\)]+),\s*fieldName=([^,\)]+),\s*reason=([^,\)]+)/.exec(msg)
+                const m = /nodeId=([^,)]+),\s*fieldName=([^,)]+),\s*reason=([^,)]+)/.exec(msg)
                 return m ? { nodeId: m[1].trim(), fieldName: m[2].trim(), reason: m[3].trim() } : null
               }
               const ok = (taskId: string, status: string) => {
@@ -1357,7 +1357,7 @@ export function roboneoProxyPlugin(): Plugin {
                 }
               }
               const parseMM = (msg: string) => {
-                const m = /nodeId=([^,\)]+),\s*fieldName=([^,\)]+),\s*reason=([^,\)]+)/.exec(msg)
+                const m = /nodeId=([^,)]+),\s*fieldName=([^,)]+),\s*reason=([^,)]+)/.exec(msg)
                 return m ? { nodeId: m[1].trim(), fieldName: m[2].trim(), reason: m[3].trim() } : null
               }
               const ok = (taskId: string, status: string) => {
@@ -1471,7 +1471,7 @@ export function roboneoProxyPlugin(): Plugin {
                 }
               }
               const parseMM = (msg: string) => {
-                const m = /nodeId=([^,\)]+),\s*fieldName=([^,\)]+),\s*reason=([^,\)]+)/.exec(msg)
+                const m = /nodeId=([^,)]+),\s*fieldName=([^,)]+),\s*reason=([^,)]+)/.exec(msg)
                 return m ? { nodeId: m[1].trim(), fieldName: m[2].trim(), reason: m[3].trim() } : null
               }
               const ok = (taskId: string, status: string) => {
@@ -1567,7 +1567,7 @@ export function roboneoProxyPlugin(): Plugin {
                 }
               }
               const parseMM = (msg: string) => {
-                const m = /nodeId=([^,\)]+),\s*fieldName=([^,\)]+),\s*reason=([^,\)]+)/.exec(msg)
+                const m = /nodeId=([^,)]+),\s*fieldName=([^,)]+),\s*reason=([^,)]+)/.exec(msg)
                 return m ? { nodeId: m[1].trim(), fieldName: m[2].trim(), reason: m[3].trim() } : null
               }
               const ok = (taskId: string, status: string) => {
@@ -1669,7 +1669,7 @@ export function roboneoProxyPlugin(): Plugin {
                 }
               }
               const parseMM = (msg: string) => {
-                const m = /nodeId=([^,\)]+),\s*fieldName=([^,\)]+),\s*reason=([^,\)]+)/.exec(msg)
+                const m = /nodeId=([^,)]+),\s*fieldName=([^,)]+),\s*reason=([^,)]+)/.exec(msg)
                 return m ? { nodeId: m[1].trim(), fieldName: m[2].trim(), reason: m[3].trim() } : null
               }
               const ok = (taskId: string, status: string) => {

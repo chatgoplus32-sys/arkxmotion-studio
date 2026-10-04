@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { PageContent } from '@/components/layout'
 import { Button, Label } from '@/components/ui'
-import { Loader2, Send, MessageSquare, Plus, Settings, Copy, Trash2, RefreshCw } from 'lucide-react'
+import { Loader2, Send, MessageSquare, Plus, Settings, Copy, RefreshCw } from 'lucide-react'
 import { useToastStore } from '@/stores/toastStore'
 import {
   fetchDolaConversations,

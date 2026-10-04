@@ -57,7 +57,7 @@ export async function fetchDolaConversations(): Promise<DolaConversation[]> {
 export async function sendDolaMessage(
   convId: string | null,
   message: string,
-  onChunk?: (text: string) => void
+  _onChunk?: (text: string) => void
 ): Promise<string> {
   const cookies = getDolaCookies()
   if (!cookies) throw new Error('Belum ada Dola session.')
