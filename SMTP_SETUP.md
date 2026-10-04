@@ -16,8 +16,8 @@ tetap bisa diuji tanpa email sungguhan.
 
 ## 1. Variabel yang dibutuhkan
 
-Salin `.env.example` ke `.env` (untuk lokal) dan set Environment Variables di
-Vercel (untuk produksi) dengan variabel berikut:
+Salin `.env.example` ke `.env` (lokal), dan isi `.env` di server produksi
+(`/opt/arkxmotion-studio/.env`) dengan variabel yang sama:
 
 | Variabel | Wajib | Keterangan |
 |---|---|---|
@@ -27,7 +27,7 @@ Vercel (untuk produksi) dengan variabel berikut:
 | `SMTP_USER` | ✅ | Username SMTP (biasanya alamat email / email login akun) |
 | `SMTP_PASS` | ✅ | **App Password / SMTP key** — bukan password akun biasa |
 | `MAIL_FROM` | | Alamat pengirim di email (default: `SMTP_USER`) |
-| `APP_URL` | ✅ | Base URL app untuk membangun link (lokal `http://localhost:5173`, produksi `https://…vercel.app`) |
+| `APP_URL` | ✅ | Base URL app untuk membangun link (lokal `http://localhost:5173`, produksi `https://arkxmotion-studio.win`) |
 
 > **Catatan**: `SMTP_SECURE=true` hanya untuk port 465. Untuk port 587
 > (STARTTLS) biarkan `false` — nodemailer menaikkan enkripsi otomatis.
@@ -43,7 +43,7 @@ Vercel (untuk produksi) dengan variabel berikut:
 2. Buat **App Password**: https://myaccount.google.com/apppasswords
    - Pilih *Other (Custom name)* → ketik `arkxmotion` → *Generate*.
    - Google menampilkan 16 karakter (format: `abcd efgh ijkl mnop`) — **hapus spasi** saat menyalin.
-3. Isi `.env` / Vercel:
+3. Isi `.env` (di server: `/opt/arkxmotion-studio/.env`):
 
 ```env
 SMTP_HOST=smtp.gmail.com
@@ -52,7 +52,7 @@ SMTP_SECURE=false
 SMTP_USER=your-email@gmail.com
 SMTP_PASS=your-16-char-app-password            # App Password 16 karakter, tanpa spasi
 MAIL_FROM=ARKXMotion Studio <your-email@gmail.com>
-APP_URL=http://localhost:5173         # ganti dengan URL produksi di Vercel
+APP_URL=http://localhost:5173         # ganti dengan URL produksi (VPS)
 ```
 
 **Batas**: ±500 email/hari. App Password **tidak bisa** dipakai kalau 2FA mati —
@@ -74,7 +74,7 @@ SMTP_SECURE=false
 SMTP_USER=your-login@email.com        # email login akun Brevo
 SMTP_PASS=xsmtpsib-xxxxxxxxxxxxxxxx   # SMTP key dari Brevo
 MAIL_FROM=ARKXMotion Studio <verified-sender@email.com>
-APP_URL=https://arkxmotion-studio.vercel.app
+APP_URL=https://arkxmotion-studio.win
 ```
 
 **Catatan**: Brevo juga mendukung port `465` (SSL) dan `2525`. Pastikan sender
@@ -98,7 +98,7 @@ SMTP_SECURE=true                      # Zoho port 465 = SSL
 SMTP_USER=you@yourdomain.com          # alamat email Zoho lengkap
 SMTP_PASS=xxxx-xxxx-xxxx-xxxx         # App-specific password (jika 2FA)
 MAIL_FROM=ARKXMotion Studio <you@yourdomain.com>
-APP_URL=https://arkxmotion-studio.vercel.app
+APP_URL=https://arkxmotion-studio.win
 ```
 
 **Catatan**: Zoho juga menerima port `587` (STARTTLS, `SMTP_SECURE=false`).
@@ -132,12 +132,19 @@ Kalau belum dikonfigurasi:
 ```
 (dan link verifikasi muncul langsung di UI)
 
-### Produksi (Vercel)
+### Produksi (VPS)
 
-1. Vercel Project → **Settings** → **Environment Variables** → tambahkan semua
-   variabel di atas (`SMTP_*`, `MAIL_FROM`, `APP_URL`).
-2. Redeploy. Email dikirim dari serverless function `api/auth.ts` / `api/admin.ts`
-   (nodemailer sudah ada di dependencies).
+1. Tambahkan variabel di atas (`SMTP_*`, `MAIL_FROM`, `APP_URL`) ke
+   `/opt/arkxmotion-studio/.env` di server.
+2. Restart prosesnya supaya env baru terbaca:
+   `pm2 startOrReload ecosystem.config.cjs && pm2 save`.
+   Email dikirim oleh `server/mailer.ts` lewat route Express — bukan `api/*.ts`,
+   yang merupakan stack Vercel lama dan tidak dijalankan di VPS.
+
+> Per kondisi terakhir diperiksa (28 Sep 2026), `.env` produksi belum memuat
+> kunci `SMTP_*` sama sekali, jadi email masih jatuh ke mode dev (isi email
+> hanya dicatat ke console). Kalau email sungguhan diinginkan, langkah 1 belum
+> pernah dijalankan.
 
 ---
 
@@ -160,7 +167,7 @@ Kalau belum dikonfigurasi:
 | File | Fungsi |
 |---|---|
 | `server/mailer.ts` | Mailer lokal (Express, port 6000) |
-| `api/mailer.ts` | Mailer produksi (Vercel serverless) |
+| `api/mailer.ts` | Mailer stack Vercel lama — **tidak dipakai produksi** |
 | `server/routes/auth.ts` | Kirim verifikasi (daftar) & reset password |
 | `server/routes/admin.ts` | Kirim ulang link verifikasi (admin) |
 | `.env.example` | Template variabel environment |
