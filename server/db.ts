@@ -213,6 +213,101 @@ db.exec(`
   )
 `)
 
+// ─── Wallet Seavi (token, bukan Rp) ────────────────────────────────────────
+// 1 token = Rp 2.000 (lihat shared/pricing.ts). `balance` dihitung dalam
+// TOKEN, sedangkan `amount` di seavi_topup adalah Rupiah yang dibayar dan
+// `tokens` adalah token yang dikreditkan saat admin approve.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS seavi_balance (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER UNIQUE NOT NULL,
+    balance INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`)
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS seavi_topup (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    amount INTEGER NOT NULL,
+    tokens INTEGER NOT NULL DEFAULT 0,
+    package_slug TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected')),
+    proof_note TEXT NOT NULL DEFAULT '',
+    admin_note TEXT NOT NULL DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`)
+
+// Migrasi DB lama: kolom paket token ditambahkan kalau belum ada.
+const seaviTopupColumns = db.prepare("PRAGMA table_info(seavi_topup)").all() as { name: string }[]
+if (!seaviTopupColumns.some(c => c.name === 'tokens')) {
+  db.exec('ALTER TABLE seavi_topup ADD COLUMN tokens INTEGER NOT NULL DEFAULT 0')
+}
+if (!seaviTopupColumns.some(c => c.name === 'package_slug')) {
+  db.exec("ALTER TABLE seavi_topup ADD COLUMN package_slug TEXT NOT NULL DEFAULT ''")
+}
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS seavi_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    model TEXT NOT NULL,
+    cost INTEGER NOT NULL,
+    batch_id TEXT,
+    status TEXT NOT NULL DEFAULT 'used' CHECK(status IN ('used', 'refunded')),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`)
+
+// ─── Wallet Alriz (Rp, mirip CreatePulse/NexaBot) ──────────────────────────
+// Top up Rp 5.000–100.000 (lihat shared/pricing.ts) → admin approve → kredit
+// 1:1 ke `balance`. Generate Motion Control memotong harga model per video
+// dari `alriz_usage` (bisa di-refund kalau job upstream gagal).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS alriz_balance (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER UNIQUE NOT NULL,
+    balance INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`)
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS alriz_topup (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    amount INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected')),
+    proof_note TEXT NOT NULL DEFAULT '',
+    admin_note TEXT NOT NULL DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`)
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS alriz_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    model TEXT NOT NULL,
+    cost INTEGER NOT NULL,
+    batch_id TEXT,
+    status TEXT NOT NULL DEFAULT 'used' CHECK(status IN ('used', 'refunded')),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`)
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS provider_maintenance (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

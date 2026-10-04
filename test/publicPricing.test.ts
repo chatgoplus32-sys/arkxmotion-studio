@@ -14,6 +14,10 @@ import {
   NEXABOT_MIN_TOPUP,
   NEXABOT_PACKAGES,
   NEXABOT_UNLIMITED_SLUG,
+  SEAVI_MIN_TOPUP,
+  SEAVI_PACKAGES,
+  SEAVI_TOKEN_PRICE,
+  SEAVI_DEFAULT_CHARGE,
   parseNexabotPricing,
 } from '../shared/pricing.js'
 
@@ -117,6 +121,23 @@ test('respons CreatePulse: rentang harga & tarif model ikut terkirim', async () 
   assert.equal(createpulse.default_price, CREATEPULSE_DEFAULT_PRICE)
   assert.ok(createpulse.price_range.min <= createpulse.price_range.max)
   assert.ok(Object.keys(createpulse.models).length > 0)
+})
+
+test('respons Seavi: harga per token, min topup, paket & bobot model', async () => {
+  const capture = await callQuietly('GET')
+  const seavi = capture.body.providers.seavi
+
+  assert.equal(seavi.name, 'Seavi')
+  assert.equal(seavi.price_per_token, SEAVI_TOKEN_PRICE)
+  assert.equal(seavi.min_topup, SEAVI_MIN_TOPUP)
+  assert.equal(seavi.default_charge, SEAVI_DEFAULT_CHARGE)
+  assert.deepEqual(seavi.packages, SEAVI_PACKAGES)
+  // 1 token = Rp 2.000: paket harus konsisten (4000=2, 10000=5).
+  for (const pkg of seavi.packages) {
+    assert.ok(Number.isInteger(pkg.tokens) && pkg.tokens > 0, `${pkg.slug} token harus integer > 0`)
+    assert.equal(pkg.price, pkg.tokens * SEAVI_TOKEN_PRICE)
+  }
+  assert.ok(Object.keys(seavi.models).length > 0)
 })
 
 test('header cache & CORS diisi (harga publik boleh di-cache singkat)', async () => {

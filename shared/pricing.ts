@@ -5,7 +5,8 @@
 // `app_settings` (diatur admin), sedangkan CreatePulse masih konstanta kode.
 //
 // Dipakai oleh: server/routes/nexabotWallet.ts, server/routes/createpulse.ts,
-// api/nexabot-wallet.ts, api/admin.ts, api/createpulse.ts, dan endpoint publik
+// server/routes/seaviWallet.ts, api/nexabot-wallet.ts, api/admin.ts,
+// api/createpulse.ts, api/seavi-wallet.ts, dan endpoint publik
 // /api/public/pricing.
 
 // ── NexaBot ────────────────────────────────────────────────────────────────
@@ -220,5 +221,110 @@ export function getCreatepulseCharge(model?: string): number {
 /** Rentang harga efektif provider ini — dipakai endpoint publik & halaman landing. */
 export function getCreatepulsePriceRange(): { min: number; max: number } {
   const values = [CREATEPULSE_DEFAULT_PRICE, ...Object.values(CREATEPULSE_MODEL_PRICES)]
+  return { min: Math.min(...values), max: Math.max(...values) }
+}
+
+// ── Seavi ────────────────────────────────────────────────────────────────
+// Wallet TOKEN (bukan Rp): 1 token = Rp 2.000. User membeli paket token,
+// generate memotong N token sesuai bobot model (lihat `tokens` di
+// src/lib/seavi.ts — angka di bawah harus selalu sama dengan spec itu).
+// Paket: Rp 4.000 = 2 token, Rp 10.000 = 5 token.
+
+/** Harga 1 token Seavi dalam Rupiah. */
+export const SEAVI_TOKEN_PRICE = 2000
+
+/** Minimal top up Seavi (sama dengan paket terkecil). */
+export const SEAVI_MIN_TOPUP = 4000
+
+export interface SeaviPackagePlan {
+  slug: string
+  label: string
+  /** Harga bayar (Rp). */
+  price: number
+  /** Token yang didapat setelah admin approve. */
+  tokens: number
+}
+
+export const SEAVI_PACKAGES: SeaviPackagePlan[] = [
+  { slug: 'seavi_2', label: '2 Token', price: 4000, tokens: 2 },
+  { slug: 'seavi_3', label: '3 Token', price: 6000, tokens: 3 },
+  { slug: 'seavi_4', label: '4 Token', price: 8000, tokens: 4 },
+  { slug: 'seavi_5', label: '5 Token', price: 10000, tokens: 5 },
+  { slug: 'seavi_10', label: '10 Token', price: 20000, tokens: 10 },
+  { slug: 'seavi_25', label: '25 Token', price: 50000, tokens: 25 },
+  { slug: 'seavi_50', label: '50 Token', price: 100000, tokens: 50 },
+]
+
+/** Biaya default 1 generate (token) untuk model yang tidak dikenal. */
+export const SEAVI_DEFAULT_CHARGE = 1
+
+/**
+ * Bobot token per model id Seavi (tanpa prefix `sv:`). Hanya model berbobot
+ * 2 yang didaftar di sini — sisanya 1 token. Cermin `spec.tokens` di
+ * src/lib/seavi.ts (SEAVI_MODELS, SEAVI_IMAGE_MODELS, SEAVI_VIDEO_UPSCALER).
+ */
+export const SEAVI_MODEL_TOKENS: Record<string, number> = {
+  wan30_server19: 2,
+  gemini_omni_server19: 2,
+}
+
+/** Biaya satu generate Seavi dalam token (dikalikan `quantity` di server). */
+export function getSeaviCharge(model?: string): number {
+  if (!model) return SEAVI_DEFAULT_CHARGE
+  // Client mengirim 'sv:xxx' atau id mentah 'xxx' — samakan dulu.
+  const id = model.includes(':') ? (model.split(':').pop() || model) : model
+  return SEAVI_MODEL_TOKENS[id] ?? SEAVI_DEFAULT_CHARGE
+}
+
+/** Paket token menurut slug; undefined kalau slug tidak dikenal. */
+export function findSeaviPackage(slug?: string | null): SeaviPackagePlan | undefined {
+  if (!slug) return undefined
+  return SEAVI_PACKAGES.find((plan) => plan.slug === slug)
+}
+
+// ── Alriz Motion ────────────────────────────────────────────────────────
+// Wallet Rupiah per user (mirip CreatePulse/NexaBot): top up Rp 5.000–100.000,
+// approve admin mengkredit `amount` apa adanya (1:1). Generate Motion Control
+// memotong harga model per video. Angka di bawah adalah tarif yang
+// BENAR-BENAR dipotong oleh /api/alriz/deduct — cermin src/lib/alriz.ts
+// (ALRIZ_MODELS) dan upstream alrizmotion.my.id.
+
+/** Minimal top up Alriz (Rp). */
+export const ALRIZ_MIN_TOPUP = 5000
+
+/** Maksimal top up Alriz per pengajuan (Rp). */
+export const ALRIZ_MAX_TOPUP = 100000
+
+/** Nominal preset yang ditampilkan di halaman top up. */
+export const ALRIZ_NOMINALS: number[] = [5000, 10000, 15000, 20000, 25000, 50000, 100000]
+
+/** Harga model yang tidak dikenal (aman: model termurah). */
+export const ALRIZ_DEFAULT_PRICE = 750
+
+/** Tarif per video per model (Rp) — sama dengan harga upstream. */
+export const ALRIZ_MODEL_PRICES: Record<string, number> = {
+  'mc-kling-2.6-std': 750,
+  'mc-kling-2.6-pro': 1500,
+  'mc-kling-3.0-std': 1000,
+  'mc-kling-3.0-pro': 1750,
+}
+
+/** Validasi nominal top up Alriz: harus number bulat, ≥ min, ≤ max. */
+export function isValidAlrizTopup(amount: unknown): boolean {
+  if (typeof amount !== 'number' || !Number.isInteger(amount)) return false
+  return amount >= ALRIZ_MIN_TOPUP && amount <= ALRIZ_MAX_TOPUP
+}
+
+/** Biaya satu generate Alriz dalam Rp (dikalikan `quantity` di server). */
+export function getAlrizCharge(model?: string): number {
+  if (!model) return ALRIZ_DEFAULT_PRICE
+  // Client mengirim 'al:xxx' atau id mentah 'xxx' — samakan dulu.
+  const id = model.includes(':') ? (model.split(':').pop() || model) : model
+  return ALRIZ_MODEL_PRICES[id] ?? ALRIZ_DEFAULT_PRICE
+}
+
+/** Rentang harga model Alriz — dipakai endpoint publik & landing. */
+export function getAlrizPriceRange(): { min: number; max: number } {
+  const values = Object.values(ALRIZ_MODEL_PRICES)
   return { min: Math.min(...values), max: Math.max(...values) }
 }

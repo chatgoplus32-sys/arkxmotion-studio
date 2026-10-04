@@ -12,8 +12,13 @@ import {
   NEXABOT_PRICING_KEYS,
   NEXABOT_PRICING_SETTING_KEYS,
   NEXABOT_UNLIMITED_SLUG,
+  SEAVI_TOKEN_PRICE,
+  SEAVI_MIN_TOPUP,
+  SEAVI_PACKAGES,
   describeNexabotPricing,
   findNexabotPackage,
+  findSeaviPackage,
+  getSeaviCharge,
   nexabotPackageName,
   parseNexabotPricing,
   validateNexabotPackageValue,
@@ -180,5 +185,63 @@ test('nama varian & pesan admin memakai label katalog', () => {
   assert.match(message, /Rp 500\/generate/)
   for (const plan of NEXABOT_PACKAGES) {
     assert.ok(message.includes(plan.label), `pesan harus menyebut paket ${plan.label}`)
+  }
+})
+
+test('katalog Seavi: 1 token Rp 2.000, paket 4rb=2 & 10rb=5', () => {
+  assert.equal(SEAVI_TOKEN_PRICE, 2000)
+  assert.equal(SEAVI_MIN_TOPUP, 4000)
+
+  const slugs = SEAVI_PACKAGES.map((p) => p.slug)
+  assert.equal(new Set(slugs).size, slugs.length, 'slug paket harus unik')
+  assert.deepEqual(
+    SEAVI_PACKAGES.map((p) => [p.slug, p.price, p.tokens]),
+    [['seavi_2', 4000, 2], ['seavi_3', 6000, 3], ['seavi_4', 8000, 4], ['seavi_5', 10000, 5], ['seavi_10', 20000, 10], ['seavi_25', 50000, 25], ['seavi_50', 100000, 50]],
+  )
+  // Harga paket harus persis tokens × harga token.
+  for (const plan of SEAVI_PACKAGES) {
+    assert.equal(plan.price, plan.tokens * SEAVI_TOKEN_PRICE)
+  }
+})
+
+test('findSeaviPackage: slug dikenal / kosong / asing', () => {
+  assert.equal(findSeaviPackage('seavi_2')?.tokens, 2)
+  assert.equal(findSeaviPackage('seavi_3')?.tokens, 3)
+  assert.equal(findSeaviPackage('seavi_4')?.tokens, 4)
+  assert.equal(findSeaviPackage('seavi_5')?.tokens, 5)
+  assert.equal(findSeaviPackage('seavi_50')?.tokens, 50)
+  assert.equal(findSeaviPackage(), undefined)
+  assert.equal(findSeaviPackage(''), undefined)
+  assert.equal(findSeaviPackage('seavi_100'), undefined)
+})
+
+test('getSeaviCharge: bobot per model, default 1 token', () => {
+  // Model 2 token (lihat SEAVI_MODEL_TOKENS).
+  assert.equal(getSeaviCharge('wan30_server19'), 2)
+  assert.equal(getSeaviCharge('gemini_omni_server19'), 2)
+  // Prefix sv: dari client dinormalisasi dulu.
+  assert.equal(getSeaviCharge('sv:wan30_server19'), 2)
+  assert.equal(getSeaviCharge('sv:veo31_s9'), 1)
+  // Model 1 token & tak dikenal → default.
+  assert.equal(getSeaviCharge('veo31_s9'), 1)
+  assert.equal(getSeaviCharge('motion_control_v3_server16'), 1)
+  assert.equal(getSeaviCharge('upscale_video_server7'), 1)
+  assert.equal(getSeaviCharge('model_baru_xx'), 1)
+  assert.equal(getSeaviCharge(), 1)
+  assert.equal(getSeaviCharge(''), 1)
+})
+
+test('getSeaviCharge selaras dengan spec.tokens src/lib/seavi.ts', async () => {
+  // Kontrak silang: angka deduct server HARUS sama dengan bobot `tokens`
+  // di SEAVI_MODELS / SEAVI_IMAGE_MODELS / SEAVI_VIDEO_UPSCALER.
+  const { SEAVI_MODELS, SEAVI_IMAGE_MODELS, SEAVI_VIDEO_UPSCALER } = await import('../src/lib/seavi.js')
+  const specs = [...Object.values(SEAVI_MODELS), ...Object.values(SEAVI_IMAGE_MODELS), SEAVI_VIDEO_UPSCALER]
+  assert.ok(specs.length > 0)
+  for (const spec of specs) {
+    assert.equal(
+      getSeaviCharge(spec.id),
+      spec.tokens,
+      `charge ${spec.id} harus ${spec.tokens} token`,
+    )
   }
 })

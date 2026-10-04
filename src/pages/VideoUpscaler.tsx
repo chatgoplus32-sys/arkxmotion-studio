@@ -4,8 +4,10 @@ import { Section, Button, Label, Select, EmptyState } from '@/components/ui'
 import { LogDetailActions } from '@/components/ui/LogDetailActions'
 import { Loader2, Upload, Download, X, Sparkles, CheckCircle2, AlertCircle, Clock, Clapperboard } from 'lucide-react'
 import { useToastStore } from '@/stores/toastStore'
+import { useAuthStore } from '@/stores/authStore'
 import { submitRunningHubVideoUpscale, pollRunningHubTask } from '@/lib/runninghub'
 import { SEAVI_VIDEO_UPSCALER, generateWithSeavi, fetchSeaviBalance } from '@/lib/seavi'
+import { chargeSeaviWallet, refundSeaviWallet } from '@/lib/seaviWallet'
 import { uploadToCatbox } from '@/lib/roboneo'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { persistResultToR2 } from '@/lib/backgroundTasks'
@@ -49,6 +51,7 @@ function getStoredProviderKey(provider: string): string | null {
 
 export default function VideoUpscalerPage() {
   const addToast = useToastStore((s) => s.addToast)
+  const { token: authToken, user } = useAuthStore()
 
   const [videoFile, setVideoFile] = useState<File | null>(null)
   const [videoPreview, setVideoPreview] = useState<string | null>(null)
@@ -96,6 +99,22 @@ export default function VideoUpscalerPage() {
       })
       addLog(`[1/2] ✓ Terunggah: ${videoUrl.slice(0, 80)}...`, 'success')
 
+      // Wallet token internal: upscale Seavi = 1 token. Tamu tanpa login
+      // tetap bisa memakai key sendiri tanpa potongan.
+      const seaviIsAdmin = user?.role === 'admin'
+      let seaviBatchId = ''
+      if (!seaviIsAdmin && authToken) {
+        addLog(`[1/2] 💰 Memotong ${SEAVI_VIDEO_UPSCALER.tokens} token Seavi...`)
+        try {
+          const charge = await chargeSeaviWallet(authToken, SEAVI_VIDEO_UPSCALER.id, 1)
+          seaviBatchId = charge.batchId
+          addLog(`[1/2] ✅ Token terpotong ✓ sisa ${charge.tokens} token`, 'success')
+        } catch (e: any) {
+          throw new Error(e.message || 'Token Seavi tidak cukup. Top up di halaman Top Up Seavi (Rp 4.000 = 2 token).')
+        }
+      }
+
+      try {
       const rotation = await withTokenRotation<string>(
         'seavi',
         async (key, keyInfo) => {
@@ -136,6 +155,14 @@ export default function VideoUpscalerPage() {
         ...prev,
       ])
       addToast('✅ Video upscale (Seavi) selesai!', 'success')
+      } catch (e: any) {
+        if (seaviBatchId && authToken && !seaviIsAdmin) {
+          addLog(`💸 Refund ${SEAVI_VIDEO_UPSCALER.tokens} token...`, 'warn')
+          const refunded = await refundSeaviWallet(authToken, { batch_id: seaviBatchId })
+          if (refunded != null) addLog(`✅ Refund berhasil ✓ sisa ${refunded} token`, 'success')
+        }
+        throw e
+      }
     } catch (e: any) {
       setTaskStatus('error')
       setError(e.message || 'Unknown error')

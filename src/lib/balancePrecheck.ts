@@ -22,7 +22,7 @@ export interface BalancePrecheckResult {
 export async function precheckProviderBalance(
   provider: string,
   minCredits: number,
-  opts: { cpBalance?: number; authToken?: string; isCpAdmin?: boolean } = {}
+  opts: { cpBalance?: number; authToken?: string; isCpAdmin?: boolean; isAdmin?: boolean } = {}
 ): Promise<BalancePrecheckResult> {
   if (minCredits <= 0) return { ok: true }
 
@@ -37,6 +37,8 @@ export async function precheckProviderBalance(
       return precheckOneOverBalance(minCredits)
     case 'nexabot':
       return precheckNexabotBalance(minCredits)
+    case 'alriz':
+      return precheckAlrizBalance(minCredits, { authToken: opts.authToken, isAdmin: opts.isAdmin })
     case 'createpulse': {
       if (opts.isCpAdmin) return { ok: true }
       const balance = opts.cpBalance
@@ -232,6 +234,79 @@ export async function precheckNexabotBalance(minCredits: number): Promise<Balanc
 }
 
 /**
+ * Cek saldo Alriz.
+ *
+ * Urutan:
+ *  1. Admin → lolos tanpa cek (generate admin tidak dipotong wallet).
+ *  2. Login  → pakai WALLET INTERNAL (tabel alriz_balance, Rp) — saldo yang
+ *     dibeli user di /topup/alriz, karena generate user dipotong dari sana.
+ *  3. Tamu   → fallback probe key upstream (alz_...) via relay — tamu memakai
+ *     key sendiri dan saldo key itu yang dipotong alrizmotion.my.id.
+ */
+export async function precheckAlrizBalance(
+  minCredits: number,
+  opts: { authToken?: string; isAdmin?: boolean } = {},
+): Promise<BalancePrecheckResult> {
+  if (opts.isAdmin) return { ok: true }
+
+  if (opts.authToken) {
+    try {
+      const res = await fetch('/api/alriz/balance', {
+        headers: { Authorization: `Bearer ${opts.authToken}` },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        const bal = Number(data.balance) || 0
+        if (bal >= minCredits) return { ok: true, balance: bal }
+        return {
+          ok: false,
+          balance: bal,
+          error: `Saldo Alriz tidak cukup: butuh Rp ${minCredits.toLocaleString('id-ID')}, saldo Rp ${bal.toLocaleString('id-ID')}. Top up di halaman Top Up Alriz.`,
+        }
+      }
+    } catch {
+      // network error → lanjut ke fallback cek key
+    }
+  }
+
+  const store = useProviderManager.getState()
+  const keys = store.keys.alriz || []
+  if (keys.length === 0) {
+    return { ok: false, error: 'Tidak ada API key Alriz. Tambahkan key (alz_...) di halaman Providers.' }
+  }
+
+  const cached = keys.find((k) => k.status === 'active' && k.balance != null && k.balance >= minCredits)
+  if (cached) return { ok: true, balance: cached.balance }
+
+  const candidates = [...keys]
+    .filter((k) => k.status !== 'invalid' && k.status !== 'expired')
+    .sort((a, b) => (b.balance ?? 0) - (a.balance ?? 0))
+
+  let bestBalance: number | null = null
+  for (const k of candidates) {
+    try {
+      const { fetchAlrizAccount } = await import('@/lib/alriz')
+      const res = await fetchAlrizAccount(k.key)
+      if (!res.ok || !res.account) continue
+      const bal = res.account.balance
+      bestBalance = Math.max(bestBalance ?? 0, bal)
+      store.updateKeyStatus('alriz', k.id, bal >= minCredits ? 'active' : bal > 0 ? 'active' : 'empty', bal, res.account.email || undefined)
+      if (bal >= minCredits) return { ok: true, balance: bal }
+    } catch {
+      // key error — try next
+    }
+  }
+
+  return {
+    ok: false,
+    balance: bestBalance,
+    error: bestBalance != null
+      ? `Saldo key Alriz tidak cukup: butuh Rp ${minCredits.toLocaleString('id-ID')}, saldo tertinggi Rp ${bestBalance.toLocaleString('id-ID')}. Login untuk pakai saldo app, atau top up key (alz_...) di console Alriz.`
+      : 'Saldo Alriz tidak bisa dicek. Perbarui API key di Providers.',
+  }
+}
+
+/**
  * Refresh saldo dari API provider (bukan dari cache localStorage) dan tulis
  * hasilnya kembali ke storage arkxmotion.providers. Dipakai badge saldo
  * (klik untuk refresh) dan halaman Providers.
@@ -301,9 +376,25 @@ export async function refreshProviderBalance(
     }
   }
 
+  if (provider === 'alriz') {
+    const keys = store.keys.alriz || []
+    const key = keys.find((k) => k.status !== 'invalid' && k.status !== 'expired') || keys[0]
+    if (!key) return { ok: false, error: 'Tidak ada API key Alriz di Providers.' }
+    try {
+      const { fetchAlrizAccount } = await import('@/lib/alriz')
+      const res = await fetchAlrizAccount(key.key)
+      if (!res.ok || !res.account) return { ok: false, error: res.error || 'Gagal cek saldo Alriz' }
+      const bal = res.account.balance
+      store.updateKeyStatus('alriz', key.id, bal > 0 ? 'active' : 'empty', bal, res.account.email || undefined)
+      window.dispatchEvent(new Event('aatools:keys-changed'))
+      return { ok: true, balance: bal, email: res.account.email || undefined }
+    } catch (err: any) {
+      return { ok: false, error: err.message || 'Gagal cek saldo Alriz' }
+    }
+  }
+
   if (provider === 'nexabot') {
-    const keys = store.keys.nexabot || []
-    // Mode session (cookie) → probe status sesi, bukan saldo API key (endpoint
+    const keys = store.keys.nexabot || []    // Mode session (cookie) → probe status sesi, bukan saldo API key (endpoint
     // /credit menggantung untuk key tak dikenal dan bikin timeout).
     const sessionKey = keys.find((k) => !!k.cookies && k.status !== 'invalid' && k.status !== 'expired')
     if (sessionKey?.cookies) {

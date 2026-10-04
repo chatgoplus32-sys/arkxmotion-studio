@@ -24,6 +24,8 @@ import cronRoutes from './routes/cron.js'
 import syncTokensRoutes from './routes/syncTokens.js'
 import nexabotRoutes from './routes/nexabot.js'
 import nexabotWalletRoutes from './routes/nexabotWallet.js'
+import seaviWalletRoutes from './routes/seaviWallet.js'
+import alrizWalletRoutes from './routes/alrizWallet.js'
 import publicPricingRoutes from './routes/publicPricing.js'
 import publicCreatepulseRoutes from './routes/publicCreatepulse.js'
 import publicMaintenanceRoutes from './routes/publicMaintenance.js'
@@ -38,6 +40,7 @@ import publicLeonardoUploadRoutes from './routes/publicLeonardoUpload.js'
 import publicVideoProxyRoutes from './routes/publicVideoProxy.js'
 import publicFramiaRoutes from './routes/publicFramia.js'
 import publicSeaviRoutes from './routes/publicSeavi.js'
+import publicAlrizRoutes from './routes/publicAlriz.js'
 import publicShotstackRoutes from './routes/publicShotstack.js'
 import publicCreatomateRoutes from './routes/publicCreatomate.js'
 import publicOneoverRoutes from './routes/publicOneover.js'
@@ -122,6 +125,7 @@ app.use('/api/public/leonardo-upload', publicLeonardoUploadRoutes)
 app.use('/api/public/video-proxy', publicVideoProxyRoutes)
 app.use('/api/public/framia', publicFramiaRoutes)
 app.use('/api/public/seavi', publicSeaviRoutes)
+app.use('/api/public/alriz', publicAlrizRoutes)
 app.use('/api/public/shotstack', publicShotstackRoutes)
 app.use('/api/public/creatomate', publicCreatomateRoutes)
 app.use('/api/public/oneover', publicOneoverRoutes)
@@ -137,6 +141,8 @@ app.use('/api/public/r2-upload', publicR2UploadRoutes)
 app.use('/api/public/firefly', publicFireflyRoutes)
 app.use('/api/public/tiktok-download', publicTiktokRoutes)
 app.use('/api/nexabot', nexabotWalletRoutes)
+app.use('/api/seavi', seaviWalletRoutes)
+app.use('/api/alriz', alrizWalletRoutes)
 app.use('/api/chatgpt', chatgptRoutes)
 app.use('/api/dola', publicDolaRoutes)
 

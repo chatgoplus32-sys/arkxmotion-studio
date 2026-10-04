@@ -70,6 +70,8 @@ const toolsNavBase: NavItem[] = [
   { label: 'Routing Provider', href: '/manage/routing', icon: <Route className="h-4 w-4" /> },
   { label: 'Top Up CreatePulse', href: '/topup/createpulse', icon: <Wallet className="h-4 w-4" /> },
   { label: 'Top Up NexaBot', href: '/topup/nexabot', icon: <Wallet className="h-4 w-4" /> },
+  { label: 'Top Up Seavi', href: '/topup/seavi', icon: <Wallet className="h-4 w-4" /> },
+  { label: 'Top Up Alriz', href: '/topup/alriz', icon: <Wallet className="h-4 w-4" /> },
   { label: 'Settings', href: '/settings', icon: <Settings className="h-4 w-4" /> },
   { label: 'Beli Token', href: '/beli-token', icon: <ShoppingCart className="h-4 w-4" /> },
   { label: 'Plugins', href: '/plugins', icon: <Puzzle className="h-4 w-4" /> },
@@ -91,7 +93,7 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
 
   const toolsNav = toolsNavBase
     .filter((item) => {
-      if ((item.href === '/topup/createpulse' || item.href === '/topup/nexabot') && user?.role === 'admin') return false
+      if ((item.href === '/topup/createpulse' || item.href === '/topup/nexabot' || item.href === '/topup/seavi' || item.href === '/topup/alriz') && user?.role === 'admin') return false
       return true
     })
     .map((item) => {

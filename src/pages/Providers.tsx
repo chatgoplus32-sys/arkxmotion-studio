@@ -31,6 +31,7 @@ import { checkFireflyBalance } from '@/lib/firefly'
 import { parseNexabotCookieInput, parseNexabotApiKeyInput } from '@/lib/nexabot'
 import { NEXABOT_CHECK_TIMEOUT_MS } from '@/lib/nexabot-constants'
 import { fetchSeaviBalance } from '@/lib/seavi'
+import { fetchAlrizAccount } from '@/lib/alriz'
 import { refreshNexabotSessionMonitor } from '@/lib/nexabotSessionMonitor'
 import { checkGalleri5Balance, isGalleri5TokenError } from '@/lib/galleri5'
 
@@ -50,6 +51,15 @@ const PROVIDER_COLORS: Record<string, string> = {
   riverside: '#FF6B6B',
   nexabot: '#00D4AA',
   seavi: '#7C6FE8',
+  alriz: '#F43F5E',
+}
+
+/** Tujuan tombol isi-saldo per provider (wallet sendiri vs Token Bank). */
+function topupCta(provider: string): { route: string; label: string } {
+  if (provider === 'createpulse') return { route: '/topup/createpulse', label: 'Topup CreatePulse' }
+  if (provider === 'seavi') return { route: '/topup/seavi', label: 'Topup Seavi' }
+  if (provider === 'alriz') return { route: '/topup/alriz', label: 'Topup Alriz' }
+  return { route: '/beli-token', label: 'Beli Token' }
 }
 
 const PROVIDER_LIST = [
@@ -68,6 +78,7 @@ const PROVIDER_LIST = [
   { key: 'riverside', label: 'Riverside', desc: 'Riverside Business API — Professional video/audio recording, editing, and production platform.' },
   { key: 'seavi', label: 'Seavi Labs', desc: 'Video & image generation (Seedance 2.5 Multi, Kling 3, Veo 3.1, Motion Control) via api.seavilabs.site — API key (sea-...), saldo token bersama.' },
   { key: 'nexabot', label: 'NexaBot', desc: 'NexaBot AI via nexabot.id — Google Omni (text, image & video ref). Mode session cookie (Unlimited) atau API key (nxb_...).' },
+  { key: 'alriz', label: 'Alriz Motion', desc: 'Kling Motion Control (2.6/3.0 Std & Pro, 720p/1080p) via alrizmotion.my.id — API key (alz_...), saldo Rp.' },
 ] as const
 
 const VISIBLE_PROVIDER_LIST = PROVIDER_LIST.filter(p => !(HIDDEN_PROVIDERS as readonly string[]).includes(p.key))
@@ -296,6 +307,17 @@ const TOKEN_GUIDE: Record<string, {
       { text: 'Top up saldo minimal 0.25 credits di menu Top Up (hanya untuk mode API key).' },
     ],
     tip: 'NexaBot punya satu model: Google Omni — tipe video ditentukan otomatis dari input (teks / gambar / video referensi). ADA DUA JALUR: (a) SESSION COOKIE dari login web dikirim ke /api/v1/generate — kalau akun yang login punya paket Unlimited, generate TIDAK dipotong kredit; (b) API KEY (nxb_...) lewat /api/v1/api — selalu pay-as-you-go 0.25 cr/request walau Unlimited aktif. Kalau key punya cookie, app otomatis memakai jalur session. Cookie bisa kedaluwarsa: kalau muncul error session, login ulang di nexabot.id dan paste cookie baru.',
+  },
+  alriz: {
+    url: 'https://alrizmotion.my.id',
+    urlLabel: 'alrizmotion.my.id',
+    prefix: 'alz_...',
+    steps: [
+      { text: 'Buka alrizmotion.my.id → daftar/login → buka Console → API Keys.' },
+      { text: 'Buat API key baru (format: alz_...) → copy.' },
+      { text: 'Paste ke input di samping → klik Cek Token untuk melihat saldo Rp.' },
+    ],
+    tip: 'Alriz memakai saldo Rupiah per key: Rp 750 (2.6 Std) · Rp 1.000 (3.0 Std) · Rp 1.500 (2.6 Pro) · Rp 1.750 (3.0 Pro) per video. Job gagal / kapasitas habis direfund otomatis oleh upstream.',
   },
 }
 function maskKey(key: string): string {
@@ -692,6 +714,7 @@ export default function ProvidersPage() {
       riverside: 'riverside',
       nexabot: 'nexabot',
       seavi: 'seavi',
+      alriz: 'alriz',
     }
     const providerId = providerMap[selectedProvider]
     return providerId ? isProviderMaintenance(providerId) : false
@@ -712,6 +735,8 @@ export default function ProvidersPage() {
       genspark: 'genspark',
       riverside: 'riverside',
       nexabot: 'nexabot',
+      seavi: 'seavi',
+      alriz: 'alriz',
     }
     const providerId = providerMap[selectedProvider]
     return providerId ? getMaintenanceMessage(providerId) : ''
@@ -907,6 +932,22 @@ export default function ProvidersPage() {
   }, [savedKeys, keys, selectedProvider, removeKey])
 
   const handleCheckKey = useCallback(async (key: string) => {
+    if (selectedProvider === 'alriz') {
+      try {
+        const result = await fetchAlrizAccount(key)
+        if (result.ok && result.account) {
+          const bal = result.account.balance
+          return bal > 0
+            ? { state: 'active', balance: bal, detail: `Saldo: Rp ${bal.toLocaleString('id-ID')}${result.account.email ? ` · ${result.account.email}` : ''}` }
+            : { state: 'empty', balance: 0, detail: 'Saldo Rp 0 — habis' }
+        }
+        const msg = String(result.error || '')
+        if (/401|403|tidak valid|dicabut|ditangguhkan/i.test(msg)) return { state: 'invalid', detail: msg }
+        return { state: 'unknown', detail: msg || 'Gagal cek token' }
+      } catch {
+        return { state: 'failed', detail: 'Error checking token' }
+      }
+    }
     if (selectedProvider === 'seavi') {
       try {
         const result = await fetchSeaviBalance(key)
@@ -1532,12 +1573,12 @@ export default function ProvidersPage() {
 
         <div className="ml-auto flex items-center gap-2 w-full md:w-auto justify-end">
           <button
-            onClick={() => navigate(selectedProvider === 'createpulse' ? '/topup/createpulse' : '/beli-token')}
+            onClick={() => navigate(topupCta(selectedProvider).route)}
             className="relative inline-flex items-center gap-1.5 rounded-full border border-[#00a8ff]/50 bg-gradient-to-r from-[#00a8ff]/20 via-[#00a8ff]/10 to-[#00a8ff]/20 text-[#00d4ff] px-3.5 py-2 text-xs md:text-sm font-semibold md:font-bold md:px-5 md:py-2.5 shadow-[0_0_14px_rgba(0,168,255,0.35)] md:shadow-[0_0_20px_rgba(0,168,255,0.55)] hover:shadow-[0_0_28px_rgba(0,168,255,0.75)] hover:scale-[1.02] transition-all"
-            title={selectedProvider === 'createpulse' ? 'Topup CreatePulse' : 'Beli token dari Token Bank'}
+            title={topupCta(selectedProvider).label}
           >
-            {selectedProvider === 'createpulse' ? <Wallet className="h-3.5 w-3.5 md:h-4 md:w-4" /> : <ShoppingCart className="h-3.5 w-3.5 md:h-4 md:w-4" />}
-            {selectedProvider === 'createpulse' ? 'Topup CreatePulse' : 'Beli Token'}
+            {topupCta(selectedProvider).route !== '/beli-token' ? <Wallet className="h-3.5 w-3.5 md:h-4 md:w-4" /> : <ShoppingCart className="h-3.5 w-3.5 md:h-4 md:w-4" />}
+            {topupCta(selectedProvider).label}
           </button>
           <button
             onClick={() => setViewHidden(!viewHidden)}

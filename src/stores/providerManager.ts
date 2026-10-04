@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'runninghub' | 'createpulse' | 'framia' | 'firefly' | 'leonardo' | 'gemini' | 'openai' | 'shotstack' | 'creatomate' | 'galleri5' | 'oneover' | 'genspark' | 'riverside' | 'nexabot' | 'seavi'
+export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'runninghub' | 'createpulse' | 'framia' | 'firefly' | 'leonardo' | 'gemini' | 'openai' | 'shotstack' | 'creatomate' | 'galleri5' | 'oneover' | 'genspark' | 'riverside' | 'nexabot' | 'seavi' | 'alriz'
 
 export const HIDDEN_PROVIDERS: ProviderId[] = []
 
@@ -225,6 +225,16 @@ export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
     minCredits: 0.25,
     supportsBalance: true,
   },
+  alriz: {
+    id: 'alriz',
+    name: 'Alriz Motion',
+    icon: '🎬',
+    description: 'Kling Motion Control (2.6 / 3.0, Std & Pro) via alrizmotion.my.id — Rp 750-1.750/video',
+    keyPlaceholder: 'Paste your Alriz API key (alz_...)',
+    keyFormat: 'API key (alz_...)',
+    minCredits: 750,
+    supportsBalance: true,
+  },
 }
 
 function getDefaultMaintenance(): Record<ProviderId, MaintenanceInfo> {
@@ -248,6 +258,7 @@ function getDefaultMaintenance(): Record<ProviderId, MaintenanceInfo> {
     riverside: { isMaintenance: false, message: '' },
     nexabot: { isMaintenance: false, message: '' },
     seavi: { isMaintenance: false, message: '' },
+    alriz: { isMaintenance: false, message: '' },
   }
 }
 
@@ -333,6 +344,7 @@ function loadKeysFromStorage(): Record<ProviderId, ProviderKey[]> {
     riverside: [],
     nexabot: [],
     seavi: [],
+    alriz: [],
   }
   const validIds = Object.keys(defaults) as string[]
 

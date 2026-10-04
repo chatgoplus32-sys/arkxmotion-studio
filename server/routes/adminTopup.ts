@@ -10,8 +10,12 @@ const router = Router()
  * menyuntik nama tabel lewat parameter `provider`.
  */
 const WALLETS = {
-  createpulse: { topup: 'createpulse_topup', balance: 'createpulse_balance' },
-  nexabot: { topup: 'nexabot_topup', balance: 'nexabot_balance' },
+  createpulse: { topup: 'createpulse_topup', balance: 'createpulse_balance', credit: 'amount' },
+  nexabot: { topup: 'nexabot_topup', balance: 'nexabot_balance', credit: 'amount' },
+  // Seavi: saldo dalam TOKEN — approve menambah `tokens`, bukan `amount` (Rp).
+  seavi: { topup: 'seavi_topup', balance: 'seavi_balance', credit: 'tokens' },
+  // Alriz: saldo Rp (mirip CreatePulse) — top up Rp 5.000–100.000.
+  alriz: { topup: 'alriz_topup', balance: 'alriz_balance', credit: 'amount' },
 } as const
 type WalletKey = keyof typeof WALLETS
 
@@ -108,11 +112,13 @@ router.patch('/approve', authenticateToken, requireAdmin, (req: AuthRequest, res
 
     db.prepare(`UPDATE ${w.topup} SET status = 'approved', admin_note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(admin_note || '', id)
 
+    // Seavi dikredit dalam token (`tokens`), wallet lain dalam Rupiah (`amount`).
+    const credit = Number((topup as any)[w.credit]) || 0
     let bal = db.prepare(`SELECT balance FROM ${w.balance} WHERE user_id = ?`).get(topup.user_id) as { balance: number } | undefined
     if (!bal) {
-      db.prepare(`INSERT INTO ${w.balance} (user_id, balance) VALUES (?, ?)`).run(topup.user_id, topup.amount)
+      db.prepare(`INSERT INTO ${w.balance} (user_id, balance) VALUES (?, ?)`).run(topup.user_id, credit)
     } else {
-      db.prepare(`UPDATE ${w.balance} SET balance = balance + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`).run(topup.amount, topup.user_id)
+      db.prepare(`UPDATE ${w.balance} SET balance = balance + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`).run(credit, topup.user_id)
     }
 
     const updated = db.prepare(`SELECT balance FROM ${w.balance} WHERE user_id = ?`).get(topup.user_id) as { balance: number }

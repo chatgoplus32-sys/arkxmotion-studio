@@ -10,11 +10,13 @@ interface Topup {
   id: number
   user_id: number
   amount: number
+  /** Token Seavi yang dikreditkan (hanya provider seavi). */
+  tokens?: number
   status: 'pending' | 'approved' | 'rejected'
   /** 'unlimited' = pembelian Paket Unlimited (approve → aktifkan masa berlaku, bukan tambah saldo). */
   kind?: 'balance' | 'unlimited'
   days?: number
-  /** Varian paket NexaBot yang dibeli (mist. unlimited_monthly). */
+  /** Varian paket NexaBot yang dibeli (mis. unlimited_monthly) / paket Seavi (mis. seavi_5). */
   package_slug?: string
   expires_at?: string | null
   proof_note: string
@@ -30,8 +32,8 @@ export default function AdminTopupPage() {
   const [topups, setTopups] = useState<Topup[]>([])
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<number | null>(null)
-  // Wallet mana yang sedang dibuka: CreatePulse (Rp 1.500+) atau NexaBot (Rp 250).
-  const [provider, setProvider] = useState<'createpulse' | 'nexabot'>('createpulse')
+  // Wallet mana yang sedang dibuka: CreatePulse (Rp), NexaBot (Rp), Seavi (token), Alriz (Rp).
+  const [provider, setProvider] = useState<'createpulse' | 'nexabot' | 'seavi' | 'alriz'>('createpulse')
 
   const API = '/api/admin/topup'
   const headers = useMemo(() => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }), [token])
@@ -71,7 +73,9 @@ export default function AdminTopupPage() {
         addToast(
           data.unlimited
             ? (data.message || 'Paket Unlimited diaktifkan')
-            : `Topup approved — saldo ${data.balance?.toLocaleString('id-ID')}`,
+            : provider === 'seavi'
+              ? (data.message || `Topup approved — ${data.tokens ?? data.balance ?? 0} token`)
+              : `Topup approved — saldo ${data.balance?.toLocaleString('id-ID')}`,
           'success',
         )
         fetchTopups()
@@ -102,6 +106,9 @@ export default function AdminTopupPage() {
   }
 
   const formatRp = (n: number) => `Rp ${n.toLocaleString('id-ID')}`
+  /** Nominal utama tiap baris: token untuk Seavi, Rupiah untuk lainnya. */
+  const formatCredit = (t: Topup) =>
+    provider === 'seavi' ? `${Number(t.tokens) || 0} token (${formatRp(t.amount)})` : formatRp(t.amount)
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -118,7 +125,7 @@ export default function AdminTopupPage() {
       <PageHeader
         eyebrow="Admin"
         title="Approval Top Up"
-        highlight={provider === 'nexabot' ? 'NexaBot' : 'CreatePulse'}
+        highlight={provider === 'nexabot' ? 'NexaBot' : provider === 'seavi' ? 'Seavi' : provider === 'alriz' ? 'Alriz' : 'CreatePulse'}
         desc="Setujui atau tolak topup saldo member"
       />
 
@@ -136,6 +143,20 @@ export default function AdminTopupPage() {
           onClick={() => setProvider('nexabot')}
         >
           NexaBot
+        </Button>
+        <Button
+          size="sm"
+          variant={provider === 'seavi' ? 'default' : 'outline'}
+          onClick={() => setProvider('seavi')}
+        >
+          Seavi
+        </Button>
+        <Button
+          size="sm"
+          variant={provider === 'alriz' ? 'default' : 'outline'}
+          onClick={() => setProvider('alriz')}
+        >
+          Alriz
         </Button>
       </div>
 
@@ -163,9 +184,12 @@ export default function AdminTopupPage() {
                       {t.kind === 'unlimited'
                         ? <Sparkles className="h-4 w-4 text-primary" />
                         : <Wallet className="h-4 w-4 text-primary" />}
-                      <span className="font-bold text-lg">{formatRp(t.amount)}</span>
+                      <span className="font-bold text-lg">{formatCredit(t)}</span>
                       {t.kind === 'unlimited' && (
                         <Badge variant="default">Paket {nexabotPackageName(t.package_slug, t.days || 7)}</Badge>
+                      )}
+                      {provider === 'seavi' && Number(t.tokens) > 0 && (
+                        <Badge variant="default">Paket {t.tokens} Token</Badge>
                       )}
                     </div>
                     <div className="text-sm">{t.user_name} ({t.email})</div>

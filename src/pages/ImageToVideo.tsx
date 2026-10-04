@@ -42,6 +42,7 @@ import { PROVIDER_MODELS, QUALITY_OPTIONS, getCreatepulseCost, RATIOS, MODEL_RAT
 import VideoPlayer from './image-to-video/VideoPlayer'
 import { nexabotPathPill } from './image-to-video/nexabotPathPill'
 import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, type NexabotWallet } from '@/lib/nexabotWallet'
+import { fetchSeaviWallet, chargeSeaviWallet, refundSeaviWallet } from '@/lib/seaviWallet'
 import { formatRp } from '@/lib/payment'
 import { runNexabotJobWithSessionFallback } from './image-to-video/nexabotSessionFallback'
 import { runWithNexabotThrottleRetry } from '@/lib/nexabot'
@@ -161,6 +162,10 @@ export default function ImageToVideoPage() {
   const [nbWallet, setNbWallet] = useState<NexabotWallet | null>(null)
   // usage_id pemotongan yang masih bisa di-refund kalau generate gagal.
   const nbChargeRef = useRef<number | null>(null)
+  // Token wallet Seavi user (1 token = Rp 2.000). Null = belum dimuat / tamu.
+  const [seaviTokens, setSeaviTokens] = useState<number | null>(null)
+  // batch_id pemotongan yang masih bisa di-refund kalau generate gagal.
+  const seaviChargeRef = useRef<string | null>(null)
 
   const [imgUrl, setImgUrl] = useState<string | null>(null)
   const [imgFile, setImgFile] = useState<File | null>(null)
@@ -524,6 +529,11 @@ export default function ImageToVideoPage() {
     fetchNexabotWallet(authToken).then((w) => { if (w) setNbWallet(w) }).catch(() => {})
   }, [provider, authToken])
 
+  useEffect(() => {
+    if (provider !== 'seavi' || !authToken) { if (provider !== 'seavi') setSeaviTokens(null); return }
+    fetchSeaviWallet(authToken).then((w) => { if (w) setSeaviTokens(w.tokens) }).catch(() => {})
+  }, [provider, authToken])
+
   const handleFileChange = (files: FileList | null) => {
     const file = files?.[0]
     if (file) {
@@ -831,6 +841,10 @@ export default function ImageToVideoPage() {
     // NexaBot: paket Unlimited = gratis, jadi cek saldo hanya saat paket tidak aktif.
     if (provider === 'nexabot' && user?.role !== 'admin' && !nbWallet?.unlimited.active && (nbWallet?.balance ?? 0) < (nbWallet?.price ?? 250))
       return `Saldo NexaBot tidak cukup (${formatRp(nbWallet?.balance ?? 0)}). Top up atau ambil Paket Unlimited ${nbWallet?.package.days ?? 7} hari di halaman Top Up NexaBot.`
+    // Seavi: wallet token internal (deduct saat generate). Tamu tanpa login
+    // tetap bisa memakai key sendiri tanpa potongan internal.
+    if (provider === 'seavi' && seaviSpec && user?.role !== 'admin' && authToken && (seaviTokens ?? 0) < seaviSpec.tokens)
+      return `Token Seavi tidak cukup (${seaviTokens ?? 0} token, butuh ${seaviSpec.tokens} token). Top up di halaman Top Up Seavi (Rp 4.000 = 2 token).`
     if (provider === 'roboneo' && !imgFile) return 'Roboneo membutuhkan gambar input'
     if (provider === 'seavi' && seaviSpec) {
       if (isSeaviMc) {
@@ -871,8 +885,10 @@ export default function ImageToVideoPage() {
       return
     }
 
-    // Pre-check saldo vs estimasi biaya sebelum upload dimulai
-    if (provider !== 'createpulse') {
+    // Pre-check saldo vs estimasi biaya sebelum upload dimulai.
+    // CreatePulse & Seavi dilewati: keduanya memakai wallet internal yang
+    // dicek di validateGenerate + deduct/refund di alur generate sendiri.
+    if (provider !== 'createpulse' && provider !== 'seavi') {
       const pre = await precheckProviderBalance(provider, totalCredits)
       if (!pre.ok) {
         addLog(`❌ ${pre.error}`, 'error', provider)
@@ -1154,6 +1170,25 @@ export default function ImageToVideoPage() {
             seaviAudioUrl = await uploadToCatbox(audioFile)
             addLog(`[1/3] ✅ Audio terunggah ✓`, 'success', 'seavi')
           }
+        }
+
+        // Wallet token internal: potong di depan per jumlah generate
+        // (Motion Control multi-slot = 1 generate per slot). Tamu tanpa login
+        // tetap bisa memakai key sendiri tanpa potongan internal.
+        const seaviIsAdmin = user?.role === 'admin'
+        const seaviUnits = isSeaviMc ? seaviPairs.length : 1
+        const seaviCost = seaviSpec.tokens * seaviUnits
+        if (!seaviIsAdmin && authToken) {
+          if ((seaviTokens ?? 0) < seaviCost) {
+            throw new Error(`Token Seavi tidak cukup (${seaviTokens ?? 0} token, butuh ${seaviCost} token). Top up di halaman Top Up Seavi (Rp 4.000 = 2 token).`)
+          }
+          addLog(`[1/3] 💰 Memotong ${seaviCost} token Seavi...`, 'info', 'seavi')
+          const charge = await chargeSeaviWallet(authToken, seaviSpec.id, seaviUnits)
+          seaviChargeRef.current = charge.batchId
+          setSeaviTokens(charge.tokens)
+          addLog(`[1/3] ✅ Token terpotong ✓ sisa ${charge.tokens} token`, 'success', 'seavi')
+        } else if (seaviIsAdmin) {
+          addLog(`[1/3] ⚡ Admin mode — skip token`, 'info', 'seavi')
         }
 
         const rotation = await withTokenRotation<string>(
@@ -2930,17 +2965,27 @@ export default function ImageToVideoPage() {
           throw new Error(rotation.error || 'Generation failed')
         }
       }
-     } catch (err: any) {
-       if (activeTaskId) removeActiveTask(activeTaskId)
-       // NexaBot: kembalikan saldo yang sudah dipotong untuk generate ini.
-       if (provider === 'nexabot' && nbChargeRef.current && authToken) {
-         const refundedBalance = await refundNexabotWallet(authToken, nbChargeRef.current)
-         nbChargeRef.current = null
-         if (refundedBalance != null) {
-           addLog(`💸 Saldo NexaBot dikembalikan ✓ sisa ${formatRp(refundedBalance)}`, 'warn', 'nexabot')
-           setNbWallet((w) => (w ? { ...w, balance: refundedBalance } : w))
-         }
-       }
+      } catch (err: any) {
+        if (activeTaskId) removeActiveTask(activeTaskId)
+        // NexaBot: kembalikan saldo yang sudah dipotong untuk generate ini.
+        if (provider === 'nexabot' && nbChargeRef.current && authToken) {
+          const refundedBalance = await refundNexabotWallet(authToken, nbChargeRef.current)
+          nbChargeRef.current = null
+          if (refundedBalance != null) {
+            addLog(`💸 Saldo NexaBot dikembalikan ✓ sisa ${formatRp(refundedBalance)}`, 'warn', 'nexabot')
+            setNbWallet((w) => (w ? { ...w, balance: refundedBalance } : w))
+          }
+        }
+        // Seavi: kembalikan token yang sudah dipotong untuk generate ini.
+        if (provider === 'seavi' && seaviChargeRef.current && authToken) {
+          const batch = seaviChargeRef.current
+          seaviChargeRef.current = null
+          const refunded = await refundSeaviWallet(authToken, { batch_id: batch })
+          if (refunded != null) {
+            addLog(`💸 Token Seavi dikembalikan ✓ sisa ${refunded} token`, 'warn', 'seavi')
+            setSeaviTokens(refunded)
+          }
+        }
        addLog(`❌ Error: ${err.message}`, 'error', provider)
        addToast(`Generate gagal: ${err.message}`, 'error')
        if (logId) logGenerationFailed(logId, err.message, Date.now() - startTime)
@@ -2948,11 +2993,12 @@ export default function ImageToVideoPage() {
          addLog('⚠️ Credit mungkin sudah terpotong oleh server provider. Hubungi provider untuk refund jika gagal.', 'warn', provider)
        }
        setStatus((s) => ({ ...s, pct: 100, text: `❌ Error: ${err.message}` }))
-    } finally {
-      clearInterval(timer)
-      // Blok catch sudah menangani refund (kalau ada); sisanya dibuang supaya
-      // generate berikutnya tidak me-refund catatan lama.
-      nbChargeRef.current = null
+     } finally {
+       clearInterval(timer)
+       // Blok catch sudah menangani refund (kalau ada); sisanya dibuang supaya
+       // generate berikutnya tidak me-refund catatan lama.
+       nbChargeRef.current = null
+       seaviChargeRef.current = null
       setCompressDialog(null)
       const wasGenerating = generatingRef.current
       setGenerating(false)
@@ -3112,6 +3158,36 @@ export default function ImageToVideoPage() {
               <div className="mt-2 text-[11px]">
                 <a href="/topup/nexabot" className="text-primary hover:underline font-medium">
                   Top Up Saldo / Beli Paket Unlimited →
+                </a>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Seavi Pricing Info — wallet token (1 token = Rp 2.000) */}
+        {provider === 'seavi' && (
+          <div className="mt-3 p-3 rounded-xl border border-primary/20 bg-primary/5">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-xs font-medium text-primary">
+                🌌 Seavi {user?.role === 'admin' ? '(Admin — Free)' : `— ${seaviSpec ? `${seaviSpec.tokens} token` : '1-2 token'}/generate`}
+              </div>
+              {user?.role !== 'admin' && authToken && (
+                <div className="text-xs">
+                  Token: <b className={`font-bold ${(seaviTokens ?? 0) >= (seaviSpec?.tokens ?? 1) ? 'text-emerald-500' : 'text-destructive'}`}>
+                    {seaviTokens ?? '…'} token
+                  </b>
+                </div>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
+              <div>Model 1 token: <b className="text-foreground">Veo 3.1, Kling, Grok, Seedance, MC</b></div>
+              <div>Model 2 token: <b className="text-foreground">Wan 3.0, Gemini Omni</b></div>
+              {user?.role !== 'admin' && <div>Failed generations: <b className="text-emerald-500">auto-refunded</b></div>}
+            </div>
+            {user?.role !== 'admin' && authToken && (seaviTokens ?? 0) < (seaviSpec?.tokens ?? 1) && (
+              <div className="mt-2 text-[11px]">
+                <a href="/topup/seavi" className="text-primary hover:underline font-medium">
+                  Top Up Token (Rp 4.000 = 2 token) →
                 </a>
               </div>
             )}

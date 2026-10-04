@@ -153,6 +153,8 @@ export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'nb:i2v', label: '🧩 Ingredients to Video (1-3 img) — Omni Flash 1.1 (NexaBot)', cr: 0.25, provider: 'nexabot', apiModel: 'i2v' },
     { value: 'nb:r2v', label: '🎬 Reference Video to Video — Omni Flash 1.1 (NexaBot)', cr: 0.25, provider: 'nexabot', apiModel: 'r2v' },
   ],
+  // Alriz hanya dipakai di halaman Motion (motion control).
+  alriz: [],
 }
 
 export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; label: string; mult: number; duration: number; cr?: number; resolution?: string; sound?: string; sizeTier?: string }>>> = {
@@ -634,6 +636,9 @@ export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: s
       { value: '1080', label: '1080p', mult: 1, duration: 0, cr: 0.25, resolution: '1080' },
     ],
   },
+  // Alriz hanya dipakai di halaman Motion (motion control) — tidak ada
+  // model/varian kualitas di Image-to-Video.
+  alriz: {},
 }
 
 export const CP_PRICES: Record<string, number> = {

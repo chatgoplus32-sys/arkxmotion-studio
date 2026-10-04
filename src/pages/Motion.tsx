@@ -11,6 +11,8 @@ import { submitWeavyMotionControl, uploadWeavyAssetWithRetry, resolveWeavyAssetU
 import { getRunningHubApiKey, getRunningHubWorkflowId, submitRunningHubMotionControl, submitRunningHubUltraFastHD, submitRunningHubMotionApp, pollRunningHubTask } from '@/lib/runninghub'
 import { getGalleri5AuthHeaders, submitGalleri5MotionControl, pollGalleri5MotionControl, isGalleri5ModelRestricted, getGalleri5ErrorMessage, GALLERI5_MOTION_MODELS, runGalleri5WithRotation } from '@/lib/galleri5'
 import { getMagnificApiKey, submitMagnificMotion, pollMagnificMotion, type MagnificMotionModel } from '@/lib/magnific'
+import { generateWithAlriz } from '@/lib/alriz'
+import { chargeAlrizWallet, refundAlrizWallet } from '@/lib/alrizWallet'
 import { useLocalStorage } from '@/lib/useLocalStorage'
 import { precheckProviderBalance } from '@/lib/balancePrecheck'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
@@ -105,6 +107,14 @@ const PROVIDERS = {
   genspark: { name: 'Genspark AI', models: [
     { key: 'gp:kling-v3-pro-motion', label: 'Kling V3 Pro Motion Control (Genspark)', cr: 80 },
     { key: 'gp:kling-v3-std-motion', label: 'Kling V3 Standard Motion Control (Genspark)', cr: 60 },
+  ]},
+  // Alriz: harga per video dalam RUPIAH (cr = Rp) — 2.6 Std Rp750,
+  // 3.0 Std Rp1.000, 2.6 Pro Rp1.500, 3.0 Pro Rp1.750.
+  alriz: { name: 'Alriz Motion', models: [
+    { key: 'al:mc-kling-2.6-std', label: 'MC 2.6 Std · 720p', cr: 750 },
+    { key: 'al:mc-kling-3.0-std', label: 'MC 3.0 Std · 720p', cr: 1000 },
+    { key: 'al:mc-kling-2.6-pro', label: 'MC 2.6 Pro · 1080p', cr: 1500 },
+    { key: 'al:mc-kling-3.0-pro', label: 'MC 3.0 Pro · 1080p', cr: 1750 },
   ]},
 }
 
@@ -469,8 +479,14 @@ export default function MotionPage() {
       return
     }
 
-    // Pre-check saldo vs estimasi biaya sebelum upload dimulai
-    const pre = await precheckProviderBalance(provider, totalCredits)
+    // Pre-check saldo vs estimasi biaya sebelum upload dimulai.
+    // Alriz: user login dicek dari wallet internal (Rp), admin lolos, tamu
+    // fallback ke cek key upstream (alz_...).
+    const authSnapshot = useAuthStore.getState()
+    const pre = await precheckProviderBalance(provider, totalCredits, {
+      authToken: authSnapshot.token || undefined,
+      isAdmin: authSnapshot.user?.role === 'admin',
+    })
     if (!pre.ok) {
       addLog(`❌ ${pre.error}`, 'error')
       addToast(pre.error || 'Saldo tidak cukup', 'error')
@@ -1493,6 +1509,119 @@ export default function MotionPage() {
               addLog(`#${slotNum} Error: ${err.message}`, 'error')
               return false
             }
+          } else if (provider === 'alriz' && slot.image && slot.video) {
+            // ─── Alriz Motion: Kling Motion Control via alrizmotion.my.id ───
+            // Wallet internal: user login dipotong harga model per video
+            // (Rp 750–1.750, tarif dari server) SEBELUM upload — kalau saldo
+            // kurang gagal cepat. Admin lolos tanpa potongan; tamu tanpa login
+            // lewat tanpa wallet (key sendiri, saldo key dipotong upstream).
+            // Batch id dibuat di awal supaya semua kegagalan setelah charge
+            // (upload/submit/poll) bisa di-refund.
+            const alrizAuth = useAuthStore.getState()
+            const alrizIsAdmin = alrizAuth.user?.role === 'admin'
+            const alrizAuthToken = alrizAuth.token || ''
+            const alrizBatchId = !alrizIsAdmin && alrizAuthToken
+              ? `alriz-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+              : null
+            let alrizCharged = 0
+            try {
+              const alrizModel = modelKey.replace(/^al:/, '')
+              addLog(`#${slotNum} Model: ${currentModel.label} (Rp ${currentModel.cr.toLocaleString('id-ID')}) [api: ${alrizModel}]`)
+
+              if (alrizBatchId) {
+                addLog(`#${slotNum} 💰 Memotong saldo Alriz...`)
+                const charge = await chargeAlrizWallet(alrizAuthToken, alrizModel, 1, alrizBatchId)
+                alrizCharged = charge.deducted
+                addLog(`#${slotNum} ✅ Terpotong Rp ${charge.deducted.toLocaleString('id-ID')} ✓ sisa Rp ${charge.balance.toLocaleString('id-ID')}`, 'success')
+              } else if (alrizIsAdmin) {
+                addLog(`#${slotNum} ⚡ Admin mode — skip saldo wallet`, 'info')
+              } else {
+                addLog(`#${slotNum} ℹ️ Tamu — saldo dipotong dari key upstream`, 'info')
+              }
+
+              let imageUrl = slot.imageUrl || ''
+              if (!imageUrl || imageUrl.startsWith('blob:')) {
+                updateSlotStatus(slot.id, 'uploading img...')
+                addLog(`#${slotNum} Upload image...`)
+                const normalizedImage = await normalizeImage(slot.image, (msg) => {
+                  updateSlotStatus(slot.id, 'uploading img...', msg)
+                  addLog(`#${slotNum} ${msg}`)
+                })
+                imageUrl = await uploadToCatbox(normalizedImage, 'image', (msg) => {
+                  updateSlotStatus(slot.id, 'uploading img...', msg)
+                })
+                updateSlot(slot.id, { imageUrl })
+              }
+              addLog(`#${slotNum} Image: ${imageUrl.slice(0, 60)}...`)
+
+              let videoUrl = slot.videoUrl || ''
+              if (!videoUrl || videoUrl.startsWith('blob:')) {
+                updateSlotStatus(slot.id, 'uploading vid...')
+                addLog(`#${slotNum} Upload video...`)
+                const videoFile = await compressVideo(slot.video, 4, (msg) => {
+                  updateSlotStatus(slot.id, 'uploading vid...', msg)
+                })
+                videoUrl = await uploadToCatbox(videoFile, 'video', (msg) => {
+                  updateSlotStatus(slot.id, 'uploading vid...', msg)
+                })
+                updateSlot(slot.id, { videoUrl })
+              }
+              addLog(`#${slotNum} Video: ${videoUrl.slice(0, 60)}...`)
+
+              updateSlotStatus(slot.id, 'processing', 'submitting...')
+              addLog(`#${slotNum} Submit ke Alriz (${alrizModel})...`)
+              const resultUrl = await generateWithAlriz({
+                apiKey: token,
+                model: alrizModel,
+                imageUrl,
+                videoUrl,
+                prompt: finalPrompt || undefined,
+                onLog: (msg, level) => addLog(`#${slotNum} ${msg}`, (level as any) || 'info'),
+                onStatus: (text, pct) => {
+                  updateSlotStatus(slot.id, 'processing', text)
+                  if (pct) setProgress(pct)
+                },
+              })
+
+              updateSlotStatus(slot.id, 'done')
+              addLog(`#${slotNum} Done: ${resultUrl.slice(0, 60)}...`, 'success')
+
+              const alrizId = `alriz-${Date.now().toString(36)}`
+              addResult({
+                id: alrizId,
+                url: resultUrl,
+                prompt: finalPrompt || '(no prompt)',
+                date: new Date().toISOString(),
+                page: 'motion',
+              })
+              persistResultToR2(alrizId, resultUrl)
+              setResults((prev) => [
+                {
+                  id: alrizId,
+                  url: resultUrl,
+                  prompt: finalPrompt || '(no prompt)',
+                  date: new Date().toISOString(),
+                },
+                ...prev,
+              ])
+              return true
+            } catch (err: any) {
+              // Job gagal (upload/submit/poll/kapasitas) → kembalikan saldo
+              // yang tadi dipotong. Upstream Alriz sudah refund key-nya
+              // sendiri untuk STK/GEN; ini refund wallet app.
+              if (alrizBatchId && alrizCharged > 0) {
+                const refunded = await refundAlrizWallet(alrizAuthToken, { batch_id: alrizBatchId })
+                if (refunded != null) {
+                  addLog(`#${slotNum} ↩ Refund Rp ${alrizCharged.toLocaleString('id-ID')} ✓ sisa Rp ${refunded.toLocaleString('id-ID')}`, 'info')
+                } else {
+                  addLog(`#${slotNum} ⚠️ Refund wallet gagal — hubungi admin (batch ${alrizBatchId})`, 'error')
+                }
+              }
+              setCompressDialog(null)
+              updateSlotStatus(slot.id, 'error', err.message)
+              addLog(`#${slotNum} Error: ${err.message}`, 'error')
+              return false
+            }
           } else if (provider === 'genspark' && slot.image && slot.video) {
             // ─── Genspark: Kling V3 Motion Control ────
             try {
@@ -1985,7 +2114,7 @@ export default function MotionPage() {
                   onChange={(e) => setModelKey(e.target.value)}
                   options={currentProvider.models.map((m) => ({
                     value: m.key,
-                    label: `${m.label} (${m.cr} cr)`,
+                    label: provider === 'alriz' ? `${m.label} (Rp ${m.cr.toLocaleString('id-ID')})` : `${m.label} (${m.cr} cr)`,
                   }))}
                 />
               </div>
@@ -2230,7 +2359,11 @@ export default function MotionPage() {
 
               <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
                 <span>
-                  Total: <span className="text-foreground font-mono font-semibold">{totalCredits.toLocaleString()}</span> credits ({filledSlots} × {currentModel.cr})
+                  {provider === 'alriz' ? (
+                    <>Total: <span className="text-foreground font-mono font-semibold">Rp {totalCredits.toLocaleString('id-ID')}</span> ({filledSlots} × Rp {currentModel.cr.toLocaleString('id-ID')})</>
+                  ) : (
+                    <>Total: <span className="text-foreground font-mono font-semibold">{totalCredits.toLocaleString()}</span> credits ({filledSlots} × {currentModel.cr})</>
+                  )}
                 </span>
                 <BalanceBadge provider={provider} required={totalCredits} />
               </div>

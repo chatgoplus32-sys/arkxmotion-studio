@@ -5,9 +5,11 @@ import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
 import { Loader2, Upload, Trash2, Download, X, ImagePlus, ExternalLink, Search, Copy, ClipboardCheck } from 'lucide-react'
 import { useProviderManager, PROVIDER_CONFIGS } from '@/stores/providerManager'
 import { useToastStore } from '@/stores/toastStore'
+import { useAuthStore } from '@/stores/authStore'
 import { withTokenRotation } from '@/lib/tokenRotation'
 import { submitRunningHubImageEdit, pollRunningHubTask } from '@/lib/runninghub'
 import { SEAVI_IMAGE_MODELS, buildSeaviPayload, generateSeaviImage, fetchSeaviBalance } from '@/lib/seavi'
+import { chargeSeaviWallet, refundSeaviWallet, fetchSeaviWallet } from '@/lib/seaviWallet'
 import { normalizeImage } from '@/lib/roboneo'
 import { addBgLog, getLogs, addResult, removeResult, startBackgroundPolling, persistResultToR2, clearLogs as clearBgLogs } from '@/lib/backgroundTasks'
 import { loadVideoBlob } from '@/lib/videoStorage'
@@ -99,6 +101,9 @@ function saveGallery(items: GalleryItem[]) {
 export default function EditImagePage() {
   const addToast = useToastStore((s) => s.addToast)
   const { keys, fetchMaintenance } = useProviderManager()
+  const { token: authToken, user } = useAuthStore()
+  // Token wallet Seavi (1 token = Rp 2.000). Null = belum dimuat / tamu.
+  const [seaviTokens, setSeaviTokens] = useState<number | null>(null)
 
   const [provider, setProvider] = useState<EditProvider>('nexabot')
   const [imgUrl, setImgUrl] = useState<string | null>(null)
@@ -140,6 +145,11 @@ export default function EditImagePage() {
   useEffect(() => {
     fetchMaintenance()
   }, [fetchMaintenance])
+
+  useEffect(() => {
+    if (provider !== 'seavi' || !authToken) { if (provider !== 'seavi') setSeaviTokens(null); return }
+    fetchSeaviWallet(authToken).then((w) => { if (w) setSeaviTokens(w.tokens) }).catch(() => {})
+  }, [provider, authToken])
 
   useEffect(() => {
     startBackgroundPolling()
@@ -435,6 +445,22 @@ export default function EditImagePage() {
       aspectRatio: seaviAspect || undefined,
     })
 
+    // Wallet token internal: potong di depan (model image = 1 token).
+    // Tamu tanpa login tetap bisa memakai key sendiri tanpa potongan.
+    const seaviIsAdmin = user?.role === 'admin'
+    let seaviBatchId = ''
+    if (!seaviIsAdmin && authToken) {
+      if ((seaviTokens ?? 0) < seaviSpec.tokens) {
+        throw new Error(`Token Seavi tidak cukup (${seaviTokens ?? 0} token, butuh ${seaviSpec.tokens} token). Top up di halaman Top Up Seavi (Rp 4.000 = 2 token).`)
+      }
+      addLog(`[1/3] 💰 Memotong ${seaviSpec.tokens} token Seavi...`, 'info')
+      const charge = await chargeSeaviWallet(authToken, seaviSpec.id, 1)
+      seaviBatchId = charge.batchId
+      setSeaviTokens(charge.tokens)
+      addLog(`[1/3] ✅ Token terpotong ✓ sisa ${charge.tokens} token`, 'success')
+    }
+
+    try {
     const rotation = await withTokenRotation<string>(
       'seavi',
       async (apiKey, keyInfo) => {
@@ -487,6 +513,17 @@ export default function EditImagePage() {
     })
     window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
     addToast('Gambar Seavi selesai!', 'success')
+    } catch (err: any) {
+      if (seaviBatchId && authToken && !seaviIsAdmin) {
+        addLog(`💸 Refund ${seaviSpec.tokens} token...`, 'warn')
+        const refunded = await refundSeaviWallet(authToken, { batch_id: seaviBatchId })
+        if (refunded != null) {
+          setSeaviTokens(refunded)
+          addLog(`✅ Refund berhasil ✓ sisa ${refunded} token`, 'success')
+        }
+      }
+      throw err
+    }
   }
 
   const handleGenerateRunningHub = async () => {
