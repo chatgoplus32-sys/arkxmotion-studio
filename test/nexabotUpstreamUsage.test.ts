@@ -49,7 +49,7 @@ const upstream = http.createServer((req, res) => {
 
     if (req.method === 'POST' && (req.url === '/api/v1/generate' || req.url === '/api/v1/api')) {
       const jawab: Record<string, unknown> = { ok: true, job_id: 'job-' + permintaanUpstream.length, status: 'queued' }
-      if (biayaDilaporkan) jawab.credits = 0.25
+      if (biayaDilaporkan) jawab.credits = 0.15
       res.end(JSON.stringify(jawab))
       return
     }
@@ -154,7 +154,7 @@ test('generate dengan cookie dicatat sebagai cookie, biaya dari upstream disimpa
   assert.equal(row.route, 'generate')
   assert.equal(row.credential_kind, 'cookie')
   assert.equal(row.status_code, 200)
-  assert.equal(Number(row.cost_value), 0.25, 'angka biaya upstream tidak tersimpan')
+  assert.equal(Number(row.cost_value), 0.15, 'angka biaya upstream tidak tersimpan')
   assert.match(String(row.cost_field), /credit/i)
 })
 

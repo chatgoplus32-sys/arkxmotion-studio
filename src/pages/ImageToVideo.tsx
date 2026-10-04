@@ -480,8 +480,8 @@ export default function ImageToVideoPage() {
   const currentQuality = qualityOptions.find((q) => q.value === quality) || qualityOptions[0]
 
   const totalCredits = currentModel ? (currentQuality?.cr ?? Math.round(currentModel.cr * (currentQuality?.mult || 1))) : 0
-  // NexaBot: tampilkan kredit sebagai desimal (0.25 cr), bukan bulatkan ke 0
-  const displayCredits = provider === 'nexabot' ? (totalCredits || 0.25) : totalCredits
+  // NexaBot: tampilkan kredit sebagai desimal (0.15 cr), bukan bulatkan ke 0
+  const displayCredits = provider === 'nexabot' ? (totalCredits || 0.15) : totalCredits
 
   const providerKeyCount = keys[provider]?.length || 0
   const hasActiveKey = keys[provider]?.some((k) => k.status !== 'invalid' && k.status !== 'expired') || false
@@ -2553,7 +2553,7 @@ export default function ImageToVideoPage() {
           async (apiKey, keyInfo) => {
             // Mode session (cookie): generate lewat /api/v1/generate yang
             // menghormati paket Unlimited. Key tanpa cookie langsung lewat API
-            // key (pay-as-you-go 0.25 cr). Key dengan cookie yang mati di tengah
+            // key (pay-as-you-go 0.15 cr). Key dengan cookie yang mati di tengah
             // job ditangani runNexabotJobWithSessionFallback() di bawah.
             const sessionMode = !!keyInfo?.cookies
             addLog(sessionMode

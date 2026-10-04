@@ -87,7 +87,7 @@ async function post(path: string, body: unknown, headers: Record<string, string>
 test('/credit: satu timeout lalu sukses → klien tidak pernah melihat 504', async () => {
   queue.push(
     () => { throw timeoutError() },
-    () => jsonResponse({ ok: true, credit: 4.75, credit_cost: 0.25 }),
+    () => jsonResponse({ ok: true, credit: 4.75, credit_cost: 0.15 }),
   )
 
   const res = await get('/api/public/nexabot/credit', { 'X-Api-Key': 'nxb_test' })

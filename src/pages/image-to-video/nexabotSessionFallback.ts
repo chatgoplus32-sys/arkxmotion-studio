@@ -4,7 +4,7 @@
  * NexaBot punya dua jalur yang sangat berbeda konsekuensinya:
  *  - cookie session login nexabot.id → web /api/v1/generate, akun Unlimited
  *    tidak dipotong kredit;
- *  - API key nxb_… → /api/v1/api, selalu pay-as-you-go 0.25 cr/request.
+ *  - API key nxb_… → /api/v1/api, selalu pay-as-you-go 0.15 cr/request.
  *
  * Cookie session bisa mati di tengah job (job NexaBot bisa berjalan menit-an).
  * Dulu itu langsung menggagalkan generate. Sekarang:
@@ -13,7 +13,7 @@
  *     berhasil, tetap lewat paket Unlimited tanpa potong kredit;
  *  2. kalau cookie baru tidak ada / tetap ditolak, generate otomatis beralih ke
  *     API key pay-as-you-go milik key yang sama (kalau ada), dengan notifikasi
- *     ke user bahwa kredit 0.25 cr akan terpotong dan job dibuat ulang.
+ *     ke user bahwa kredit 0.15 cr akan terpotong dan job dibuat ulang.
  *
  * Dipisah dari halaman supaya logikanya bisa diuji & dipakai ulang tanpa
  * merender halaman (halaman itu menyentuh banyak store).
@@ -172,13 +172,13 @@ export async function runNexabotJobWithSessionFallback<T>(
     }
 
     hooks.log(
-      '💳 Beralih ke API key NexaBot — pay-as-you-go 0.25 cr/request (job baru dibuat ulang, job sesi lama ditinggalkan)',
+      '💳 Beralih ke API key NexaBot — pay-as-you-go 0.15 cr/request (job baru dibuat ulang, job sesi lama ditinggalkan)',
       'warn',
       'nexabot'
     )
-    hooks.notify('💳 Beralih ke API key NexaBot (pay-as-you-go 0.25 cr) karena sesi Unlimited kedaluwarsa', 'warning')
+    hooks.notify('💳 Beralih ke API key NexaBot (pay-as-you-go 0.15 cr) karena sesi Unlimited kedaluwarsa', 'warning')
     sendNotification('💳 NexaBot beralih ke API key', {
-      body: 'Sesi Unlimited kedaluwarsa; generate dilanjutkan lewat API key pay-as-you-go (0.25 cr).',
+      body: 'Sesi Unlimited kedaluwarsa; generate dilanjutkan lewat API key pay-as-you-go (0.15 cr).',
     })
     return run({ apiKey }, 'API key (fallback pay-as-you-go)')
   }

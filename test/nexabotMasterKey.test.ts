@@ -50,7 +50,7 @@ const upstream = http.createServer((req, res) => {
       cookie: (req.headers['cookie'] as string) || null,
     })
     res.setHeader('Content-Type', 'application/json')
-    res.end(JSON.stringify({ ok: true, job_id: 'job-' + diterima.length, credits: 0.25 }))
+    res.end(JSON.stringify({ ok: true, job_id: 'job-' + diterima.length, credits: 0.15 }))
   })
 })
 

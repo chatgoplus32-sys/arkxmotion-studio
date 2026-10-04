@@ -234,11 +234,11 @@ router.post('/submit', async (req: Request, res: Response) => {
   // Resolusi video 720|1080 (mode video; lihat /api/v1/modes).
   if (body.resolution !== undefined) upstreamBody.resolution = body.resolution
   // telegram_id = "user id for credit billing" (docs NexaBot) — menentukan
-  // akun mana yang ditagih 0.25 cr/request.
+  // akun mana yang ditagih 0.15 cr/request.
   if (body.telegram_id) upstreamBody.telegram_id = body.telegram_id
 
   // Sengaja TANPA retry: kalau responsnya hilang, job bisa saja sudah terbentuk
-  // dan kredit 0.25 sudah terpotong.
+  // dan kredit 0.15 sudah terpotong.
   const hasil = await relayUpstream(res, 'submit', `${NEXABOT_BASE}/api/v1/api`, {
     method: 'POST',
     headers: {

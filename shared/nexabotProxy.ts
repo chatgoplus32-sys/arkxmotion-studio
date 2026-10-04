@@ -335,13 +335,13 @@ export function isNexabotNonIdempotentAction(action: NexabotProxyAction): boolea
  * Saran aman yang boleh ditampilkan ke user setelah kegagalan.
  *
  * Untuk submit/generate, mengulang tanpa memeriksa lebih dulu bisa membuat job
- * ganda dan kredit 0.25 cr terpotong dua kali — jadi sarannya diperingatkan,
+ * ganda dan kredit 0.15 cr terpotong dua kali — jadi sarannya diperingatkan,
  * bukan "coba lagi".
  */
 export function nexabotErrorAdvice(action: NexabotProxyAction): string {
   if (!isNexabotNonIdempotentAction(action)) return 'coba lagi'
-  // Biaya per aksi: GPT Image 0,1 cr, sisanya 0,25 cr.
-  const biaya = action === 'gpt-image' ? '0,1' : '0,25'
+  // Biaya per aksi: GPT Image 0,1 cr, sisanya 0,15 cr.
+  const biaya = action === 'gpt-image' ? '0,1' : '0,15'
   return `Respons NexaBot hilang — job MUNGKIN sudah terbentuk, jadi cek dulu di nexabot.id/riwayat; ulangi hanya kalau kamu yakin belum ada job, karena kredit ${biaya} cr bisa terpotong dua kali.`
 }
 

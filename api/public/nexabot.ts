@@ -163,10 +163,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (body.voice) upstreamBody.voice = body.voice
       if (body.media) upstreamBody.media = body.media
       // telegram_id = "user id for credit billing" (docs NexaBot) — menentukan
-      // akun mana yang ditagih 0.25 cr/request.
+      // akun mana yang ditagih 0.15 cr/request.
       if (body.telegram_id) upstreamBody.telegram_id = body.telegram_id
 
-      // Tanpa retry: kredit 0.25 bisa terpotong dua kali kalau diulang.
+      // Tanpa retry: kredit 0.15 bisa terpotong dua kali kalau diulang.
       await relayJson(res, 'submit', `${NEXABOT_BASE}/api/v1/api`, {
         method: 'POST',
         headers: {

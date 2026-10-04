@@ -148,10 +148,10 @@ export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'sv:gemini_omni_server19', label: 'Gemini Omni · S19 — multi + audio (Seavi)', cr: 2, provider: 'seavi', apiModel: 'gemini_omni_server19' },
   ],
   nexabot: [
-    { value: 'nb:t2v', label: '✍️ Text to Video — Omni Flash 1.1 (NexaBot)', cr: 0.25, provider: 'nexabot', apiModel: 't2v' },
-    { value: 'nb:sfv', label: '🖼️ Start Frame to Video — Omni Flash 1.1 (NexaBot)', cr: 0.25, provider: 'nexabot', apiModel: 'sfv' },
-    { value: 'nb:i2v', label: '🧩 Ingredients to Video (1-3 img) — Omni Flash 1.1 (NexaBot)', cr: 0.25, provider: 'nexabot', apiModel: 'i2v' },
-    { value: 'nb:r2v', label: '🎬 Reference Video to Video — Omni Flash 1.1 (NexaBot)', cr: 0.25, provider: 'nexabot', apiModel: 'r2v' },
+    { value: 'nb:t2v', label: '✍️ Text to Video — Omni Flash 1.1 (NexaBot)', cr: 0.15, provider: 'nexabot', apiModel: 't2v' },
+    { value: 'nb:sfv', label: '🖼️ Start Frame to Video — Omni Flash 1.1 (NexaBot)', cr: 0.15, provider: 'nexabot', apiModel: 'sfv' },
+    { value: 'nb:i2v', label: '🧩 Ingredients to Video (1-3 img) — Omni Flash 1.1 (NexaBot)', cr: 0.15, provider: 'nexabot', apiModel: 'i2v' },
+    { value: 'nb:r2v', label: '🎬 Reference Video to Video — Omni Flash 1.1 (NexaBot)', cr: 0.15, provider: 'nexabot', apiModel: 'r2v' },
   ],
   // Alriz hanya dipakai di halaman Motion (motion control).
   alriz: [],
@@ -616,24 +616,24 @@ export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: s
     // jadi pilihan RESOLUSI yang benar-benar dikirim ke body. `resolution`
     // menempel di opsi; `duration` 0 = tidak ditampilkan di log durasi.
     'nb:t2v': [
-      { value: '720', label: '720p — cepat', mult: 1, duration: 0, cr: 0.25, resolution: '720' },
-      { value: '1080', label: '1080p — lebih tajam, proses lebih lama', mult: 1, duration: 0, cr: 0.25, resolution: '1080' },
+      { value: '720', label: '720p — cepat', mult: 1, duration: 0, cr: 0.15, resolution: '720' },
+      { value: '1080', label: '1080p — lebih tajam, proses lebih lama', mult: 1, duration: 0, cr: 0.15, resolution: '1080' },
     ],
     'nb:sfv': [
-      { value: '720', label: '720p — cepat', mult: 1, duration: 0, cr: 0.25, resolution: '720' },
-      { value: '1080', label: '1080p — lebih tajam, proses lebih lama', mult: 1, duration: 0, cr: 0.25, resolution: '1080' },
+      { value: '720', label: '720p — cepat', mult: 1, duration: 0, cr: 0.15, resolution: '720' },
+      { value: '1080', label: '1080p — lebih tajam, proses lebih lama', mult: 1, duration: 0, cr: 0.15, resolution: '1080' },
     ],
     'nb:i2v': [
-      { value: '720', label: '720p — cepat', mult: 1, duration: 0, cr: 0.25, resolution: '720' },
-      { value: '1080', label: '1080p — lebih tajam, proses lebih lama', mult: 1, duration: 0, cr: 0.25, resolution: '1080' },
+      { value: '720', label: '720p — cepat', mult: 1, duration: 0, cr: 0.15, resolution: '720' },
+      { value: '1080', label: '1080p — lebih tajam, proses lebih lama', mult: 1, duration: 0, cr: 0.15, resolution: '1080' },
     ],
     'nb:r2v': [
-      { value: '720', label: '720p — cepat', mult: 1, duration: 0, cr: 0.25, resolution: '720' },
-      { value: '1080', label: '1080p — lebih tajam, proses lebih lama', mult: 1, duration: 0, cr: 0.25, resolution: '1080' },
+      { value: '720', label: '720p — cepat', mult: 1, duration: 0, cr: 0.15, resolution: '720' },
+      { value: '1080', label: '1080p — lebih tajam, proses lebih lama', mult: 1, duration: 0, cr: 0.15, resolution: '1080' },
     ],
     default: [
-      { value: '720', label: '720p', mult: 1, duration: 0, cr: 0.25, resolution: '720' },
-      { value: '1080', label: '1080p', mult: 1, duration: 0, cr: 0.25, resolution: '1080' },
+      { value: '720', label: '720p', mult: 1, duration: 0, cr: 0.15, resolution: '720' },
+      { value: '1080', label: '1080p', mult: 1, duration: 0, cr: 0.15, resolution: '1080' },
     ],
   },
   // Alriz hanya dipakai di halaman Motion (motion control) — tidak ada

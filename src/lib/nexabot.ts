@@ -553,8 +553,8 @@ export function nexabotSessionWarning(
     return {
       level: 'expired',
       message: baruSaja
-        ? `⚠️ Masa berlaku paket Unlimited NexaBot baru saja berakhir (${session.until}). Login ulang di nexabot.id agar generate tetap tanpa potong kredit — kalau tidak, generate otomatis beralih ke API key (0.25 cr).`
-        : '⚠️ Sesi Unlimited NexaBot sudah kedaluwarsa. Perbarui cookie (extension NexaBot / login ulang di nexabot.id) — tanpa itu generate otomatis beralih ke API key pay-as-you-go 0.25 cr.',
+        ? `⚠️ Masa berlaku paket Unlimited NexaBot baru saja berakhir (${session.until}). Login ulang di nexabot.id agar generate tetap tanpa potong kredit — kalau tidak, generate otomatis beralih ke API key (0.15 cr).`
+        : '⚠️ Sesi Unlimited NexaBot sudah kedaluwarsa. Perbarui cookie (extension NexaBot / login ulang di nexabot.id) — tanpa itu generate otomatis beralih ke API key pay-as-you-go 0.15 cr.',
       body: 'Sesi Unlimited NexaBot berakhir. Login ulang / perbarui cookie sebelum generate berikutnya.',
       remainingMs: untilMs != null ? untilMs - now : null,
     }
@@ -564,7 +564,7 @@ export function nexabotSessionWarning(
   if (remainingMs != null && remainingMs <= NEXABOT_EXPIRING_WINDOW_MS) {
     return {
       level: 'expiring',
-      message: `⏳ Sesi Unlimited NexaBot berakhir ${formatNexabotDuration(remainingMs)} lagi${session.until ? ` (${session.until})` : ''}. Perbarui cookie sebelum menjalankan generate panjang — kalau sesi mati di tengah job, generate otomatis beralih ke API key 0.25 cr.`,
+      message: `⏳ Sesi Unlimited NexaBot berakhir ${formatNexabotDuration(remainingMs)} lagi${session.until ? ` (${session.until})` : ''}. Perbarui cookie sebelum menjalankan generate panjang — kalau sesi mati di tengah job, generate otomatis beralih ke API key 0.15 cr.`,
       body: `Paket Unlimited berakhir ${formatNexabotDuration(remainingMs)} lagi. Perbarui cookie sesi lewat extension NexaBot.`,
       remainingMs,
     }
@@ -575,7 +575,7 @@ export function nexabotSessionWarning(
     const age = formatNexabotDuration(now - cookiesAt)
     return {
       level: 'stale',
-      message: `🍪 Cookie sesi NexaBot sudah ${age} tidak diperbarui. Pastikan extension NexaBot / tab nexabot.id tetap terbuka — kalau sesi mati di tengah job, generate otomatis beralih ke API key pay-as-you-go 0.25 cr.`,
+      message: `🍪 Cookie sesi NexaBot sudah ${age} tidak diperbarui. Pastikan extension NexaBot / tab nexabot.id tetap terbuka — kalau sesi mati di tengah job, generate otomatis beralih ke API key pay-as-you-go 0.15 cr.`,
       body: `Cookie sesi NexaBot berumur ${age}. Buka nexabot.id agar extension mengirim cookie segar.`,
       remainingMs,
     }
@@ -656,7 +656,7 @@ export async function submitNexabot(
   // memilih perilaku: t2v / sfv / i2v / r2v.
 
   // Mode session → endpoint web /generate (menghormati paket Unlimited).
-  // Mode API key → /submit (pay-as-you-go 0.25 cr).
+  // Mode API key → /submit (pay-as-you-go 0.15 cr).
   const endpoint = session ? `${NEXABOT_BASE}/generate` : `${NEXABOT_BASE}/submit`
   console.log(`[nexabot] Submit ${params.mode} via ${session ? 'session(cookie)' : 'api-key'}: ${params.prompt.slice(0, 50)}...`)
 
@@ -679,12 +679,12 @@ export async function submitNexabot(
           ? 'NexaBot: session cookie kedaluwarsa — login ulang di nexabot.id lalu paste cookie baru'
           : 'NexaBot: API key tidak valid')
       }
-      if (res.status === 402) throw new Error('NexaBot: Kredit tidak cukup (perlu 0.25)')
+      if (res.status === 402) throw new Error('NexaBot: Kredit tidak cukup (perlu 0.15)')
 
       // Retry HANYA untuk 429. Upstream menolak permintaan rate-limited tanpa
       // membuat job, jadi mengulang tidak menghasilkan job/kredit ganda. Untuk
       // 5xx & timeout kita sengaja TIDAK mengulang: job bisa saja sudah terbentuk
-      // di sana (kredit 0.25 hangus dua kali kalau asal ulang).
+      // di sana (kredit 0.15 hangus dua kali kalau asal ulang).
       if (res.status === 429) {
         const message = describeNexabotStatus(res.status)
         if (attempt < attempts) {

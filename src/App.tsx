@@ -143,7 +143,7 @@ export default function App() {
   // NexaBot: pantau sesi cookie (paket Unlimited) di latar belakang supaya user
   // diberi tahu SEBELUM generate kalau sesi sudah/mendekati kedaluwarsa — job
   // NexaBot bisa berjalan menit-an, dan sesi yang mati di tengah job memaksa
-  // fallback ke API key pay-as-you-go (0.25 cr). Probe tiap 5 menit + langsung
+  // fallback ke API key pay-as-you-go (0.15 cr). Probe tiap 5 menit + langsung
   // saat cookie baru masuk dari extension (`aatools:keys-changed`).
   useEffect(() => {
     const stop = startNexabotSessionMonitor()

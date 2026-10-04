@@ -304,9 +304,9 @@ const TOKEN_GUIDE: Record<string, {
       { text: 'OPSI 1 — PAKET UNLIMITED (disarankan): login nexabot.id di browser, lalu isi panel “Session Login Unlimited (cookie)” di bawah (paste document.cookie). Generate otomatis lewat /api/v1/generate dan tidak dipotong kredit.' },
       { text: 'OPSI 2 — API key (pay-as-you-go): buka nexabot.id → Dashboard → API Keys → Create API Key.' },
       { text: 'Copy API key (format: nxb_...) → paste ke input di samping.' },
-      { text: 'Top up saldo minimal 0.25 credits di menu Top Up (hanya untuk mode API key).' },
+      { text: 'Top up saldo minimal 0.15 credits di menu Top Up (hanya untuk mode API key).' },
     ],
-    tip: 'NexaBot punya satu model: Google Omni — tipe video ditentukan otomatis dari input (teks / gambar / video referensi). ADA DUA JALUR: (a) SESSION COOKIE dari login web dikirim ke /api/v1/generate — kalau akun yang login punya paket Unlimited, generate TIDAK dipotong kredit; (b) API KEY (nxb_...) lewat /api/v1/api — selalu pay-as-you-go 0.25 cr/request walau Unlimited aktif. Kalau key punya cookie, app otomatis memakai jalur session. Cookie bisa kedaluwarsa: kalau muncul error session, login ulang di nexabot.id dan paste cookie baru.',
+    tip: 'NexaBot punya satu model: Google Omni — tipe video ditentukan otomatis dari input (teks / gambar / video referensi). ADA DUA JALUR: (a) SESSION COOKIE dari login web dikirim ke /api/v1/generate — kalau akun yang login punya paket Unlimited, generate TIDAK dipotong kredit; (b) API KEY (nxb_...) lewat /api/v1/api — selalu pay-as-you-go 0.15 cr/request walau Unlimited aktif. Kalau key punya cookie, app otomatis memakai jalur session. Cookie bisa kedaluwarsa: kalau muncul error session, login ulang di nexabot.id dan paste cookie baru.',
   },
   alriz: {
     url: 'https://alrizmotion.my.id',
@@ -432,7 +432,7 @@ function GensparkCookiesInput({ providerKeys, setKeyCookies }: {
 }
 
 // NexaBot Session Cookies Input — mode login web (cookie) supaya generate lewat
-// /api/v1/generate menghormati paket Unlimited (tidak dipotong 0.25 cr).
+// /api/v1/generate menghormati paket Unlimited (tidak dipotong 0.15 cr).
 function NexabotSessionInput({ providerKeys, addKey, setKeyCookies }: {
   providerKeys: { id: string; key: string; name?: string; status?: string; cookies?: string; cookiesAt?: number }[]
   addKey: (provider: string, key: string, name?: string) => void
@@ -575,7 +575,7 @@ function NexabotSessionInput({ providerKeys, addKey, setKeyCookies }: {
   )
 }
 
-// NexaBot Telegram ID Input — NexaBot menagihkan biaya API (`credit_cost`, 0.25 cr)
+// NexaBot Telegram ID Input — NexaBot menagihkan biaya API (`credit_cost`, 0.15 cr)
 // ke `telegram_id` yang dikirim saat submit (docs: "user id for credit billing").
 // Paket Unlimited (1 Hari/2 Hari/…) terikat ke akun Telegram, jadi kalau paket
 // ada di akun Telegram lain, ID-nya diisi di sini.
@@ -654,7 +654,7 @@ function NexabotTelegramInput({ providerKeys, setKeyTelegramId }: {
         </div>
       )}
       <div className="text-[10.5px] text-[#a0a0a0] leading-relaxed">
-        NexaBot memotong <span className="text-[#00d4ff]">0.25 cr/request</span> dari saldo akun Telegram pemilik API key ini — biaya ini dipotong oleh NexaBot, bukan oleh ARKXMotion. Kalau paket Unlimited kamu ada di akun Telegram lain, isi ID-nya di sini agar request ditagihkan ke akun itu.
+        NexaBot memotong <span className="text-[#00d4ff]">0.15 cr/request</span> dari saldo akun Telegram pemilik API key ini — biaya ini dipotong oleh NexaBot, bukan oleh ARKXMotion. Kalau paket Unlimited kamu ada di akun Telegram lain, isi ID-nya di sini agar request ditagihkan ke akun itu.
       </div>
     </div>
   )
