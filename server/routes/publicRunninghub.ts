@@ -4,7 +4,7 @@ const router = Router()
 
 const RUNNINGHUB_BASE = 'https://www.runninghub.ai'
 const RUNNINGHUB_DEFAULT_WORKFLOW_ID = '2092795737699856386'
-const RUNNINGHUB_ULTRA_HD_WORKFLOW_ID = '2095008448978407425'
+const RUNNINGHUB_ULTRA_HD_WORKFLOW_ID = '2102004799470764034'
 // MC Ultra Fast HD — node ID resmi dari dokumentasi workflow:
 // node 30 = image (LoadImage), node 33 = video (LoadVideo)
 const ULTRA_HD_IMAGE_NODE = '30'
@@ -65,6 +65,14 @@ const RUNNINGHUB_TRYON_GARMENT_NODE = '53'
 const RUNNINGHUB_AUDIO_AVATAR_WORKFLOW_ID = '2099332942179229697'
 const RUNNINGHUB_AUDIO_AVATAR_IMAGE_NODE = '209'
 const RUNNINGHUB_AUDIO_AVATAR_AUDIO_NODE = '215'
+// AI Song Cover Studio (app RunningHub 2104229552179425282):
+// node 1 = audio (lagu asli), node 4 = prompt (gaya/arrangement cover),
+// node 5 = prompt (lirik).
+// https://www.runninghub.ai/ai-detail/2104229552179425282
+const RUNNINGHUB_SONG_COVER_WORKFLOW_ID = '2104229552179425282'
+const SONG_COVER_AUDIO_NODE = '1'
+const SONG_COVER_STYLE_NODE = '4'
+const SONG_COVER_LYRICS_NODE = '5'
 // VOSR2 Video Upscale 2K: node 1 = video + frame_load_cap,
 // node 21 = cfg/scheduler/steps, node 13 = save_output
 const RUNNINGHUB_VIDEO_UPSCALE_WORKFLOW_ID = '2100537736599035906'
@@ -138,6 +146,34 @@ const SEEDANCE2_ASPECTS = new Set([
   '4:3 (Standard)', '9:16 (Portrait Widescreen)', '16:9 (Widescreen)', '21:9 (Ultrawide)',
 ])
 const SEEDANCE2_ASPECT_FALLBACK = '16:9 (Widescreen)'
+// Seedance 2.6 Replica (multi karakter + prompt storyboard → video):
+// app 2105907802166689794. node 168/169/170/171/173 = image (referensi karakter),
+// node 136 = text (storyboard), node 115 = aspect_ratio.
+// https://www.runninghub.ai/id/ai-detail/2105907802166689794
+const RUNNINGHUB_SEEDANCE26_APP_ID = '2105907802166689794'
+const SEEDANCE26_IMAGE_NODES = ['168', '169', '170', '171', '173']
+const SEEDANCE26_TEXT_NODE = '136'
+const SEEDANCE26_ASPECT_NODE = '115'
+const SEEDANCE26_MAX_IMAGES = 5
+const SEEDANCE26_ASPECTS = new Set([
+  '1:1 (Square)', '2:3 (Portrait Photo)', '3:2 (Photo)', '3:4 (Portrait Standard)',
+  '4:3 (Standard)', '9:16 (Portrait Widescreen)', '16:9 (Widescreen)', '21:9 (Ultrawide)',
+])
+const SEEDANCE26_ASPECT_FALLBACK = '16:9 (Widescreen)'
+// MiniMax-H3 Drama (DSW+LMS+SelfLift+VDN+SLA) — High-Speed High-Dynamic Action & Drama:
+// app 2105691518597177345. node 49/55 = image (referensi), node 51 = aspect_ratio,
+// node 56 = value (prompt/enhance). https://www.runninghub.ai/ai-detail/2105691518597177345
+const RUNNINGHUB_H3_DRAMA_APP_ID = '2105691518597177345'
+const H3_DRAMA_IMAGE_NODES = ['49', '55']
+const H3_DRAMA_ASPECT_NODE = '51'
+const H3_DRAMA_TEXT_NODE = '56'
+const H3_DRAMA_MAX_IMAGES = 2
+const H3_DRAMA_ASPECTS = new Set([
+  '1:1 (Square)', '2:3 (Portrait Photo)', '3:2 (Photo)', '3:4 (Portrait Standard)',
+  '4:3 (Standard)', '9:16 (Portrait Widescreen)', '16:9 (Widescreen)', '21:9 (Ultrawide)',
+])
+const H3_DRAMA_ASPECT_FALLBACK = '16:9 (Widescreen)'
+const H3_DRAMA_DEFAULT_PROMPT = 'Enhance this video with sharp, crisp details while preserving a natural photorealistic appearance.'
 
 function rhAuthHeaders(_apiKey: string) {
   return { 'Content-Type': 'application/json', 'User-Agent': 'ArkxMotion/1.0' }
@@ -188,6 +224,9 @@ router.all('/', async (req: Request, res: Response) => {
     if (action === 'submit-audio-avatar') {
       return await handleSubmitAudioAvatar(apiKey, params, res)
     }
+    if (action === 'submit-song-cover') {
+      return await handleSubmitSongCover(apiKey, params, res)
+    }
     if (action === 'submit-video-upscale') {
       return await handleSubmitVideoUpscale(apiKey, params, res)
     }
@@ -211,6 +250,12 @@ router.all('/', async (req: Request, res: Response) => {
     }
     if (action === 'submit-seedance2') {
       return await handleSubmitSeedance2(apiKey, params, res)
+    }
+    if (action === 'submit-seedance2.6') {
+      return await handleSubmitSeedance26(apiKey, params, res)
+    }
+    if (action === 'submit-h3-drama') {
+      return await handleSubmitH3Drama(apiKey, params, res)
     }
     if (action === 'query') {
       return await handleQuery(apiKey, params.taskId, res)
@@ -1180,6 +1225,113 @@ async function handleSubmitAudioAvatar(apiKey: string, params: any, res: Respons
   return res.status(200).json({ ok: false, error: 'Max retries exceeded', raw: lastRawText.slice(0, 500) })
 }
 
+async function handleSubmitSongCover(apiKey: string, params: any, res: Response) {
+  const {
+    workflow_id,
+    workflowId,
+    audioBase64,
+    audioFileName = 'song.mp3',
+    audioMimeType = 'audio/mpeg',
+    stylePrompt = '',
+    lyrics = '',
+    instanceType = 'default',
+  } = params
+
+  if (!audioBase64) return res.status(200).json({ ok: false, error: 'Missing audioBase64' })
+  if (!stylePrompt && !lyrics) {
+    return res.status(200).json({ ok: false, error: 'Isi minimal gaya (style prompt) atau lirik.' })
+  }
+
+  const effectiveWorkflowId = workflow_id || workflowId || RUNNINGHUB_SONG_COVER_WORKFLOW_ID
+
+  console.log(`[runninghub] Uploading audio (song-cover)...`)
+  const audioUpload = await rhUpload(apiKey, audioBase64, audioFileName, audioMimeType)
+  console.log(`[runninghub] Audio uploaded: ${audioUpload.fileName}`)
+
+  const nodeInfoList: any[] = [
+    { nodeId: SONG_COVER_AUDIO_NODE, fieldName: 'audio', fieldValue: audioUpload.fileName },
+  ]
+  if (stylePrompt) {
+    nodeInfoList.push({ nodeId: SONG_COVER_STYLE_NODE, fieldName: 'prompt', fieldValue: String(stylePrompt) })
+  }
+  if (lyrics) {
+    nodeInfoList.push({ nodeId: SONG_COVER_LYRICS_NODE, fieldName: 'prompt', fieldValue: String(lyrics) })
+  }
+
+  const instance = ['default', 'plus', 'ultra'].includes(String(instanceType)) ? String(instanceType) : 'default'
+  const body = {
+    nodeInfoList,
+    instanceType: instance,
+    usePersonalQueue: 'false',
+  }
+
+  const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${effectiveWorkflowId}`
+
+  const MAX_RETRIES = 3
+  const RETRY_DELAY_MS = 10000
+  let lastRawText = ''
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    console.log(`[runninghub] POST ${endpoint} (song-cover attempt ${attempt}/${MAX_RETRIES})`)
+    console.log(`[runninghub] body:`, JSON.stringify(body).slice(0, 1000))
+
+    const apiRes = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+    })
+
+    lastRawText = await apiRes.text()
+    console.log(`[runninghub] submit-song-cover ${apiRes.status}:`, lastRawText.slice(0, 1000))
+
+    let data: any
+    try { data = JSON.parse(lastRawText) } catch { data = { raw: lastRawText } }
+
+    const rhCode = data.code ?? data.errorCode
+    const rhMsg = data.msg || data.errorMessage || data.message
+
+    if (apiRes.status === 429 || rhCode === 429) {
+      return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data, retryable: true })
+    }
+
+    if (rhCode === 421 || rhCode === '421') {
+      console.log(`[runninghub] Queue limit (421), retrying in ${RETRY_DELAY_MS / 1000}s... (${attempt}/${MAX_RETRIES})`)
+      if (attempt < MAX_RETRIES) {
+        await new Promise(r => setTimeout(r, RETRY_DELAY_MS))
+        continue
+      }
+      return res.status(200).json({ ok: false, error: 'Queue limit reached, coba lagi dalam beberapa menit', data, retryable: true })
+    }
+
+    if (rhCode !== undefined && rhCode !== 0 && rhCode !== '0' && rhCode !== '') {
+      const errorMsg = translateRhError(String(rhCode), rhMsg) || rhMsg || `Error code: ${rhCode}`
+      return res.status(200).json({ ok: false, error: errorMsg, code: rhCode, data })
+    }
+
+    const taskId = data.data?.taskId || data.taskId || data.id || data.task_id
+    if (!taskId) {
+      console.error(`[runninghub] No taskId found (song-cover):`, JSON.stringify(data).slice(0, 500))
+      return res.status(200).json({ ok: false, error: 'No taskId returned', raw: lastRawText.slice(0, 500) })
+    }
+
+    return res.status(200).json({
+      ok: true,
+      data: {
+        id: taskId,
+        taskId,
+        status: data.data?.status || data.status || 'QUEUED',
+        provider: 'runninghub',
+        workflowId: effectiveWorkflowId,
+      },
+    })
+  }
+
+  return res.status(200).json({ ok: false, error: 'Max retries exceeded', raw: lastRawText.slice(0, 500) })
+}
+
 const VOSR2_SCHEDULERS = new Set([
   'simple', 'sgm_uniform', 'karras', 'exponential', 'ddim_uniform', 'beta',
   'normal', 'linear_quadratic', 'kl_optimal', 'beta57', 'gits', 'beta_1_1',
@@ -2056,6 +2208,284 @@ async function handleSubmitSeedance2(apiKey: string, params: any, res: Response)
   }
 }
 
+async function handleSubmitSeedance26(apiKey: string, params: any, res: Response) {
+  const {
+    workflow_id,
+    workflowId,
+    images = [],
+    prompt = '',
+    aspectRatio = SEEDANCE26_ASPECT_FALLBACK,
+  } = params
+
+  const imageList: Array<{ base64: string; fileName?: string; mimeType?: string }> = Array.isArray(images)
+    ? images.filter((im: any) => im && im.base64).slice(0, SEEDANCE26_MAX_IMAGES)
+    : []
+  if (imageList.length === 0) return res.status(200).json({ ok: false, error: 'Missing images' })
+  if (!prompt) return res.status(200).json({ ok: false, error: 'Missing prompt storyboard' })
+
+  const appId = workflow_id || workflowId || RUNNINGHUB_SEEDANCE26_APP_ID
+  const effAspect = SEEDANCE26_ASPECTS.has(String(aspectRatio)) ? String(aspectRatio) : SEEDANCE26_ASPECT_FALLBACK
+
+  try {
+    const uploaded: string[] = []
+    for (let i = 0; i < imageList.length; i++) {
+      const im = imageList[i]
+      console.log(`[runninghub] Uploading image ${i + 1}/${imageList.length} (seedance2.6)...`)
+      const up = await rhUpload(apiKey, im.base64, im.fileName || `reference${i + 1}.jpg`, im.mimeType || 'image/jpeg')
+      uploaded.push(up.fileName)
+    }
+    console.log(`[runninghub] seedance2.6 images uploaded: ${uploaded.length}`)
+
+    const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${appId}`
+    const RETRY_DELAY_MS = 10000
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+    const nodeField: Record<string, string> = {}
+    SEEDANCE26_IMAGE_NODES.forEach((n) => { nodeField[n] = 'image' })
+    const IMG_CANDS = ['image', 'file', 'path', 'filename', 'input', 'src']
+    const parseMismatch = (msg: string): { nodeId: string; fieldName: string; reason: string } | null => {
+      const m = /nodeId=([^,)]+),\s*fieldName=([^,)]+),\s*reason=([^,)]+)/.exec(msg)
+      return m ? { nodeId: m[1].trim(), fieldName: m[2].trim(), reason: m[3].trim() } : null
+    }
+
+    const buildList = () => {
+      const list: Array<{ nodeId: string; fieldName: string; fieldValue: string }> = []
+      uploaded.forEach((fileName, i) => {
+        const node = SEEDANCE26_IMAGE_NODES[i]
+        list.push({ nodeId: node, fieldName: nodeField[node], fieldValue: fileName })
+      })
+      list.push({ nodeId: SEEDANCE26_TEXT_NODE, fieldName: 'text', fieldValue: String(prompt) })
+      list.push({ nodeId: SEEDANCE26_ASPECT_NODE, fieldName: 'aspect_ratio', fieldValue: effAspect })
+      return list
+    }
+
+    const droppedEntries = new Set<string>()
+    let lastErr = 'Unknown error'
+    let lastData: any = null
+    let r: any = null
+
+    for (let round = 0; round < 8; round++) {
+      const list = buildList().filter((e) => !droppedEntries.has(`${e.nodeId}/${e.fieldName}`))
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        console.log(`[runninghub] seedance2.6 round=${round} (attempt ${attempt}/3)`)
+        const apiRes = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({ nodeInfoList: list, instanceType: 'default', usePersonalQueue: 'false' }),
+        })
+        const rawText = await apiRes.text()
+        console.log(`[runninghub] submit-seedance2.6 ${apiRes.status}:`, rawText.slice(0, 1000))
+        let data: any
+        try { data = JSON.parse(rawText) } catch { data = { raw: rawText } }
+        r = {
+          http: apiRes.status,
+          data,
+          code: data.code ?? data.errorCode,
+          msg: String(data.msg || data.errorMessage || data.message || ''),
+          taskId: data.data?.taskId || data.taskId || data.id || data.task_id,
+          status: data.data?.status || data.status || 'QUEUED',
+        }
+        if (r.taskId || (r.http !== 429 && r.code !== 429 && r.code !== 421 && r.code !== '421')) break
+        if (r.http === 429 || r.code === 429) {
+          return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data: r.data, retryable: true })
+        }
+        console.log(`[runninghub] Queue limit (421), retrying in ${RETRY_DELAY_MS / 1000}s...`)
+        if (attempt < 3) await sleep(RETRY_DELAY_MS)
+      }
+      if (!r) break
+      if (r.taskId) {
+        return res.status(200).json({
+          ok: true,
+          data: {
+            id: r.taskId,
+            taskId: r.taskId,
+            status: r.status,
+            provider: 'runninghub',
+            workflowId: appId,
+          },
+        })
+      }
+      if (r.code === 421 || r.code === '421') {
+        return res.status(200).json({ ok: false, error: 'Queue limit reached, coba lagi dalam beberapa menit', data: r.data, retryable: true })
+      }
+      lastErr = r.msg || `Error code: ${r.code}`
+      lastData = r.data
+      const mm = r.code === 803 || r.code === '803' ? parseMismatch(r.msg) : null
+      if (mm && /field_not_found|node_not_found/i.test(mm.reason) && SEEDANCE26_IMAGE_NODES.includes(mm.nodeId)) {
+        if (/node_not_found/i.test(mm.reason)) {
+          droppedEntries.add(`${mm.nodeId}/${nodeField[mm.nodeId]}`)
+          console.log(`[runninghub] seedance2.6 node ${mm.nodeId} tidak ada, dibuang`)
+          continue
+        }
+        const cur = nodeField[mm.nodeId] || ''
+        const nextIdx = IMG_CANDS.indexOf(cur) + 1
+        if (nextIdx <= 0 || nextIdx >= IMG_CANDS.length) {
+          droppedEntries.add(`${mm.nodeId}/${cur}`)
+          console.log(`[runninghub] seedance2.6 field ${mm.nodeId} ditolak semua kandidat, dibuang`)
+          continue
+        }
+        nodeField[mm.nodeId] = IMG_CANDS[nextIdx]
+        console.log(`[runninghub] seedance2.6 node ${mm.nodeId}: "${cur}" ditolak → coba "${IMG_CANDS[nextIdx]}"`)
+        continue
+      }
+      if (mm && /field_not_found|node_not_found/i.test(mm.reason)) {
+        console.log(`[runninghub] seedance2.6 buang field ${mm.nodeId}/${mm.fieldName} (${mm.reason})`)
+        droppedEntries.add(`${mm.nodeId}/${mm.fieldName}`)
+        continue
+      }
+      const errorMsg = translateRhError(String(r.code ?? ''), r.msg) || r.msg || 'Submit gagal'
+      return res.status(200).json({ ok: false, error: errorMsg, code: r.code, data: r.data })
+    }
+
+    return res.status(200).json({ ok: false, error: `Gagal submit seedance2.6. Terakhir: ${lastErr}`, data: lastData })
+  } catch (err: any) {
+    console.error('[runninghub] seedance2.6 error:', err.message)
+    return res.status(200).json({ ok: false, error: err.message || 'Seedance2.6 gagal' })
+  }
+}
+
+async function handleSubmitH3Drama(apiKey: string, params: any, res: Response) {
+  const {
+    workflow_id,
+    workflowId,
+    images = [],
+    prompt = '',
+    aspectRatio = H3_DRAMA_ASPECT_FALLBACK,
+  } = params
+
+  const imageList: Array<{ base64: string; fileName?: string; mimeType?: string }> = Array.isArray(images)
+    ? images.filter((im: any) => im && im.base64).slice(0, H3_DRAMA_MAX_IMAGES)
+    : []
+  if (imageList.length === 0) return res.status(200).json({ ok: false, error: 'Missing images' })
+
+  const appId = workflow_id || workflowId || RUNNINGHUB_H3_DRAMA_APP_ID
+  const effAspect = H3_DRAMA_ASPECTS.has(String(aspectRatio)) ? String(aspectRatio) : H3_DRAMA_ASPECT_FALLBACK
+  const effPrompt = String(prompt).trim() || H3_DRAMA_DEFAULT_PROMPT
+
+  try {
+    const uploaded: string[] = []
+    for (let i = 0; i < imageList.length; i++) {
+      const im = imageList[i]
+      console.log(`[runninghub] Uploading image ${i + 1}/${imageList.length} (h3-drama)...`)
+      const up = await rhUpload(apiKey, im.base64, im.fileName || `reference${i + 1}.jpg`, im.mimeType || 'image/jpeg')
+      uploaded.push(up.fileName)
+    }
+    console.log(`[runninghub] h3-drama images uploaded: ${uploaded.length}`)
+
+    const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${appId}`
+    const RETRY_DELAY_MS = 10000
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+    const nodeField: Record<string, string> = {}
+    H3_DRAMA_IMAGE_NODES.forEach((n) => { nodeField[n] = 'image' })
+    const IMG_CANDS = ['image', 'file', 'path', 'filename', 'input', 'src']
+    const parseMismatch = (msg: string): { nodeId: string; fieldName: string; reason: string } | null => {
+      const m = /nodeId=([^,)]+),\s*fieldName=([^,)]+),\s*reason=([^,)]+)/.exec(msg)
+      return m ? { nodeId: m[1].trim(), fieldName: m[2].trim(), reason: m[3].trim() } : null
+    }
+
+    const buildList = () => {
+      const list: Array<{ nodeId: string; fieldName: string; fieldValue: string }> = []
+      uploaded.forEach((fileName, i) => {
+        const node = H3_DRAMA_IMAGE_NODES[i]
+        list.push({ nodeId: node, fieldName: nodeField[node], fieldValue: fileName })
+      })
+      list.push({ nodeId: H3_DRAMA_TEXT_NODE, fieldName: 'value', fieldValue: effPrompt })
+      list.push({ nodeId: H3_DRAMA_ASPECT_NODE, fieldName: 'aspect_ratio', fieldValue: effAspect })
+      return list
+    }
+
+    const droppedEntries = new Set<string>()
+    let lastErr = 'Unknown error'
+    let lastData: any = null
+    let r: any = null
+
+    for (let round = 0; round < 8; round++) {
+      const list = buildList().filter((e) => !droppedEntries.has(`${e.nodeId}/${e.fieldName}`))
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        console.log(`[runninghub] h3-drama round=${round} (attempt ${attempt}/3)`)
+        const apiRes = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({ nodeInfoList: list, instanceType: 'default', usePersonalQueue: 'false' }),
+        })
+        const rawText = await apiRes.text()
+        console.log(`[runninghub] submit-h3-drama ${apiRes.status}:`, rawText.slice(0, 1000))
+        let data: any
+        try { data = JSON.parse(rawText) } catch { data = { raw: rawText } }
+        r = {
+          http: apiRes.status,
+          data,
+          code: data.code ?? data.errorCode,
+          msg: String(data.msg || data.errorMessage || data.message || ''),
+          taskId: data.data?.taskId || data.taskId || data.id || data.task_id,
+          status: data.data?.status || data.status || 'QUEUED',
+        }
+        if (r.taskId || (r.http !== 429 && r.code !== 429 && r.code !== 421 && r.code !== '421')) break
+        if (r.http === 429 || r.code === 429) {
+          return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data: r.data, retryable: true })
+        }
+        console.log(`[runninghub] Queue limit (421), retrying in ${RETRY_DELAY_MS / 1000}s...`)
+        if (attempt < 3) await sleep(RETRY_DELAY_MS)
+      }
+      if (!r) break
+      if (r.taskId) {
+        return res.status(200).json({
+          ok: true,
+          data: {
+            id: r.taskId,
+            taskId: r.taskId,
+            status: r.status,
+            provider: 'runninghub',
+            workflowId: appId,
+          },
+        })
+      }
+      if (r.code === 421 || r.code === '421') {
+        return res.status(200).json({ ok: false, error: 'Queue limit reached, coba lagi dalam beberapa menit', data: r.data, retryable: true })
+      }
+      lastErr = r.msg || `Error code: ${r.code}`
+      lastData = r.data
+      const mm = r.code === 803 || r.code === '803' ? parseMismatch(r.msg) : null
+      if (mm && /field_not_found|node_not_found/i.test(mm.reason) && H3_DRAMA_IMAGE_NODES.includes(mm.nodeId)) {
+        if (/node_not_found/i.test(mm.reason)) {
+          droppedEntries.add(`${mm.nodeId}/${nodeField[mm.nodeId]}`)
+          console.log(`[runninghub] h3-drama node ${mm.nodeId} tidak ada, dibuang`)
+          continue
+        }
+        const cur = nodeField[mm.nodeId] || ''
+        const nextIdx = IMG_CANDS.indexOf(cur) + 1
+        if (nextIdx <= 0 || nextIdx >= IMG_CANDS.length) {
+          droppedEntries.add(`${mm.nodeId}/${cur}`)
+          console.log(`[runninghub] h3-drama field ${mm.nodeId} ditolak semua kandidat, dibuang`)
+          continue
+        }
+        nodeField[mm.nodeId] = IMG_CANDS[nextIdx]
+        console.log(`[runninghub] h3-drama node ${mm.nodeId}: "${cur}" ditolak → coba "${IMG_CANDS[nextIdx]}"`)
+        continue
+      }
+      if (mm && /field_not_found|node_not_found/i.test(mm.reason)) {
+        console.log(`[runninghub] h3-drama buang field ${mm.nodeId}/${mm.fieldName} (${mm.reason})`)
+        droppedEntries.add(`${mm.nodeId}/${mm.fieldName}`)
+        continue
+      }
+      const errorMsg = translateRhError(String(r.code ?? ''), r.msg) || r.msg || 'Submit gagal'
+      return res.status(200).json({ ok: false, error: errorMsg, code: r.code, data: r.data })
+    }
+
+    return res.status(200).json({ ok: false, error: `Gagal submit h3-drama. Terakhir: ${lastErr}`, data: lastData })
+  } catch (err: any) {
+    console.error('[runninghub] h3-drama error:', err.message)
+    return res.status(200).json({ ok: false, error: err.message || 'H3 Drama gagal' })
+  }
+}
+
 async function handleSubmitUGCStoryboard(apiKey: string, params: any, res: Response) {
   const {
     characterImageBase64,
@@ -2351,6 +2781,7 @@ async function handleQuery(apiKey: string, taskId: string, res: Response) {
 
   let videoUrl: string | null = null
   let imageUrl: string | null = null
+  let audioUrl: string | null = null
   if (mappedStatus === 'COMPLETED') {
     const results = taskData.results || taskData.output || data.results || taskData.outputs || data.outputs
     const pickUrl = (r: any): string | null =>
@@ -2359,6 +2790,8 @@ async function handleQuery(apiKey: string, taskId: string, res: Response) {
       !!url && (/\.(mp4|webm|mov|m4v)$/i.test(url.split('?')[0]) || /video/i.test(String(r?.outputType || '')))
     const isImage = (r: any, url: string | null): boolean =>
       !!url && (/\.(png|jpe?g|webp|gif|bmp)$/i.test(url.split('?')[0]) || /image/i.test(String(r?.outputType || '')))
+    const isAudio = (r: any, url: string | null): boolean =>
+      !!url && (/\.(mp3|wav|m4a|aac|ogg|flac)$/i.test(url.split('?')[0]) || /audio|mp3|wav/i.test(String(r?.outputType || '')))
     if (Array.isArray(results) && results.length > 0) {
       for (const r of results) {
         const url = pickUrl(r)
@@ -2367,10 +2800,16 @@ async function handleQuery(apiKey: string, taskId: string, res: Response) {
       if (!videoUrl) {
         for (const r of results) {
           const url = pickUrl(r)
+          if (isAudio(r, url)) { audioUrl = url; break }
+        }
+      }
+      if (!videoUrl && !audioUrl) {
+        for (const r of results) {
+          const url = pickUrl(r)
           if (url && (typeof r === 'string' || (r?.outputType && r.outputType !== 'text'))) { videoUrl = url; break }
         }
       }
-      if (!videoUrl) videoUrl = pickUrl(results[0])
+      if (!videoUrl && !audioUrl) videoUrl = pickUrl(results[0])
       for (const r of results) {
         const url = pickUrl(r)
         if (isImage(r, url)) { imageUrl = url; break }
@@ -2392,6 +2831,7 @@ async function handleQuery(apiKey: string, taskId: string, res: Response) {
       progress: taskData.progress || data.progress || 0,
       videoUrl,
       imageUrl,
+      audioUrl,
       code: taskData.errorCode || data.errorCode || null,
       error: mappedStatus === 'FAILED' ? (taskData.errorMessage || taskData.failedReason || taskData.msg || errorMsg || 'Task failed') : null,
       provider: 'runninghub',

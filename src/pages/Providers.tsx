@@ -67,7 +67,7 @@ const PROVIDER_LIST = [
   { key: 'weavy', label: 'Weavy', desc: 'Provider utama Kling Motion Control, Wan, Sora, Seedance.' },
   { key: 'wavespeed', label: 'Wavespeed', desc: 'Provider alternatif — cek balance via api.wavespeed.ai/api/v3/balance.' },
   { key: 'roboneo', label: 'Roboneo', desc: 'AI video generation via Roboneo (Meitu) — Seedance 2.0, Kling 3.0, Wan 2.6, Sora 2, VEO 3.0, Happy Horse, Google Omni.' },
-  { key: 'runninghub', label: 'Motion Control HD (Markasflow-V2)', desc: 'RunningHub AI video generation via Markasflow-V2 — Kling 3.0 Pro/Standard.' },
+  { key: 'runninghub', label: 'RunningHub', desc: 'RunningHub AI apps & workflows — Seedance 2.0/2.6 Replica, MiniMax H3 I2V/Drama, UGC Storyboard, Try-On, dll.' },
   { key: 'framia', label: 'Framia', desc: 'Canvas workflow (Converge AI) — semua node & recipe: image, video, avatar, garment, storyboard.' },
   { key: 'leonardo', label: 'Leonardo.ai', desc: 'app.leonardo.ai via Cognito Bearer JWT — Text-to-Image (Phoenix, Diffusion XL, Kino, Anime, Vision).' },
   { key: 'createpulse', label: 'CreatePulse', desc: 'Video generation (Seedance 2.0/2.5, Veo Omni) via createpulse.online — pakai API key sendiri.' },

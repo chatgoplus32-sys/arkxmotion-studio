@@ -51,7 +51,7 @@ export default function SettingsPage() {
     if (!oldPassword || !newPassword || newPassword.length < 8) return
     setChangingPassword(true)
     try {
-      const response = await fetch('/api/auth?path=change-password', {
+      const response = await fetch('/api/auth/change-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authStore.token}` },
         body: JSON.stringify({ old_password: oldPassword, new_password: newPassword })

@@ -77,9 +77,9 @@ export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
   },
   runninghub: {
     id: 'runninghub',
-    name: 'Motion Control HD (Markasflow-V2)',
+    name: 'RunningHub',
     icon: '🚀',
-    description: 'RunningHub AI video generation via Markasflow-V2',
+    description: 'RunningHub AI apps & workflows — Seedance, MiniMax H3, dll.',
     keyPlaceholder: 'Paste your RunningHub API key...',
     keyFormat: 'API key (32 chars)',
     minCredits: 0,

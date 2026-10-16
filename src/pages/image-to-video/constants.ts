@@ -88,6 +88,8 @@ export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
   runninghub: [
     { value: 'rh:h3-i2v', label: 'MiniMax H3 — Ultra-HD Fast 8-Step Image to Video (RunningHub)', cr: 80, provider: 'runninghub' },
     { value: 'rh:seedance2', label: 'Seedance 2.0 Replica — Image to Video Storyboard (RunningHub)', cr: 40, provider: 'runninghub', apiModel: 'seedance2' },
+    { value: 'rh:seedance2.6', label: 'Seedance 2.6 Replica — Multi Karakter + Storyboard (RunningHub)', cr: 50, provider: 'runninghub', apiModel: 'seedance26' },
+    { value: 'rh:h3-drama', label: 'MiniMax H3 Drama — High-Dynamic Action & Drama I2V (RunningHub)', cr: 80, provider: 'runninghub', apiModel: 'h3drama' },
   ],
 
   galleri5: [
@@ -152,6 +154,7 @@ export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'nb:sfv', label: '🖼️ Start Frame to Video — Omni Flash 1.1 (NexaBot)', cr: 0.15, provider: 'nexabot', apiModel: 'sfv' },
     { value: 'nb:i2v', label: '🧩 Ingredients to Video (1-3 img) — Omni Flash 1.1 (NexaBot)', cr: 0.15, provider: 'nexabot', apiModel: 'i2v' },
     { value: 'nb:r2v', label: '🎬 Reference Video to Video — Omni Flash 1.1 (NexaBot)', cr: 0.15, provider: 'nexabot', apiModel: 'r2v' },
+    { value: 'nb:extend', label: '⏩ Extend Video (1 video) — Omni Flash 1.1 (NexaBot)', cr: 0.15, provider: 'nexabot', apiModel: 'extend' },
   ],
   // Alriz hanya dipakai di halaman Motion (motion control).
   alriz: [],
@@ -451,6 +454,12 @@ export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: s
     'rh:seedance2': [
       { value: 'std', label: 'Standard (durasi dari prompt)', mult: 1, duration: 10 },
     ],
+    'rh:seedance2.6': [
+      { value: 'std', label: 'Standard (durasi dari prompt)', mult: 1, duration: 10 },
+    ],
+    'rh:h3-drama': [
+      { value: 'std', label: 'Standard (durasi dari prompt)', mult: 1, duration: 10 },
+    ],
   },
   galleri5: {
     'g5:gemini-omni-flash-i2v': [
@@ -631,6 +640,11 @@ export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: s
       { value: '720', label: '720p — cepat', mult: 1, duration: 0, cr: 0.15, resolution: '720' },
       { value: '1080', label: '1080p — lebih tajam, proses lebih lama', mult: 1, duration: 0, cr: 0.15, resolution: '1080' },
     ],
+    // Extend: hasil SELALU 1080p — upstream mengabaikan `resolution`, jadi
+    // hanya satu opsi informatif di dropdown.
+    'nb:extend': [
+      { value: '1080', label: '1080p — otomatis (hasil selalu 1080p)', mult: 1, duration: 0, cr: 0.15, resolution: '1080' },
+    ],
     default: [
       { value: '720', label: '720p', mult: 1, duration: 0, cr: 0.15, resolution: '720' },
       { value: '1080', label: '1080p', mult: 1, duration: 0, cr: 0.15, resolution: '1080' },
@@ -674,6 +688,7 @@ export const MODEL_RATIO_RESTRICTIONS: Record<string, string[]> = {
   'nb:sfv': ['16:9', '9:16'],
   'nb:i2v': ['16:9', '9:16'],
   'nb:r2v': ['16:9', '9:16'],
+  'nb:extend': ['16:9', '9:16'],
 }
 
 export const TEMPLATES = [

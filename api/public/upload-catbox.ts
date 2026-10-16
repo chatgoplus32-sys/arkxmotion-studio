@@ -40,6 +40,19 @@ function parseMultipartField(raw: Buffer, contentType: string): { fileBuffer: Bu
   return null
 }
 
+async function uploadToUguu(fileBuffer: Buffer, fileName: string, mimeType: string): Promise<string | null> {
+  try {
+    const fd = new FormData()
+    fd.append('files[]', new Blob([new Uint8Array(fileBuffer)], { type: mimeType }), fileName)
+    const res = await fetch('https://uguu.se/upload.php', { method: 'POST', body: fd, signal: AbortSignal.timeout(120000) })
+    const data = await res.json().catch(() => null) as any
+    const url = data?.files?.[0]?.url
+    if (res.ok && url && /^https?:\/\//i.test(url)) return String(url).replace(/\\\//g, '/')
+    console.log('[upload] uguu failed:', res.status, JSON.stringify(data).slice(0, 200))
+  } catch (e: any) { console.log('[upload] uguu error:', e.message) }
+  return null
+}
+
 async function uploadToCatbox(fileBuffer: Buffer, fileName: string, mimeType: string): Promise<string | null> {
   try {
     const fd = new FormData()
@@ -110,6 +123,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const { fileBuffer, fileName, mimeType } = parsed
     console.log(`[upload] file: ${fileName} (${(fileBuffer.length / 1024).toFixed(1)}KB, ${mimeType})`)
+
+    const uguuUrl = await uploadToUguu(fileBuffer, fileName, mimeType)
+    if (uguuUrl) return res.status(200).json({ ok: true, url: uguuUrl })
 
     const catboxUrl = await uploadToCatbox(fileBuffer, fileName, mimeType)
     if (catboxUrl) return res.status(200).json({ ok: true, url: catboxUrl })

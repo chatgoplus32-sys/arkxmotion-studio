@@ -972,10 +972,10 @@ export function roboneoProxyPlugin(): Plugin {
             return
           }
 
-          // MC Ultra Fast HD workflow (2095008448978407425) — handled locally
+          // MC Ultra Fast HD workflow (2102004799470764034) — handled locally
           // so dev doesn't depend on the remote deploy. Uploads + auto-maps nodes.
           if (action === 'motion-control-ultra-hd' || action === 'get-workflow-info') {
-            const ULTRA_HD_WF = '2095008448978407425'
+            const ULTRA_HD_WF = '2102004799470764034'
             const wfId = params.workflow_id || params.workflowId || ULTRA_HD_WF
 
             const discoverNodes = async (): Promise<any[]> => {
@@ -1197,6 +1197,64 @@ export function roboneoProxyPlugin(): Plugin {
               })
               const text = await r.text()
               console.log(`[runninghub-proxy] audio-avatar ${r.status}:`, text.slice(0, 500))
+              let data: any; try { data = JSON.parse(text) } catch { data = { raw: text } }
+              const taskId = data?.data?.taskId || data?.taskId || data?.id
+              if (!taskId) {
+                res.writeHead(200, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ ok: false, error: data?.msg || data?.message || 'No taskId', data }))
+                return
+              }
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: true, data: { id: taskId, taskId, status: data?.data?.status || 'QUEUED', provider: 'runninghub', workflowId: wfId } }))
+            } catch (err: any) {
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: false, error: err.message }))
+            }
+            return
+          }
+
+          // AI Song Cover Studio (2104229552179425282): node 1 = audio,
+          // 4 = prompt gaya, 5 = prompt lirik
+          if (action === 'submit-song-cover') {
+            const SONG_WF = '2104229552179425282'
+            const wfId = params.workflow_id || params.workflowId || SONG_WF
+            const { audioBase64, audioFileName = 'song.mp3', audioMimeType = 'audio/mpeg',
+              stylePrompt = '', lyrics = '' } = params
+            if (!audioBase64) {
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: false, error: 'Missing audioBase64' }))
+              return
+            }
+            if (!stylePrompt && !lyrics) {
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: false, error: 'Isi minimal gaya (style prompt) atau lirik.' }))
+              return
+            }
+            const upOne = async (b64: string, name: string, mime: string) => {
+              const bin = Buffer.from(b64.includes(',') ? b64.split(',')[1] : b64, 'base64')
+              const fd = new FormData()
+              fd.append('file', new Blob([bin], { type: mime }), name)
+              const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/media/upload/binary`, {
+                method: 'POST', headers: { 'Authorization': `Bearer ${apiKey}` }, body: fd,
+              })
+              const t = await r.text()
+              let d: any; try { d = JSON.parse(t) } catch { d = {} }
+              const fn = d?.data?.fileName || d?.fileName
+              if (!fn) throw new Error('Upload failed: ' + t.slice(0, 200))
+              return fn
+            }
+            try {
+              const audFn = await upOne(audioBase64, audioFileName, audioMimeType)
+              const nodeInfoList: any[] = [{ nodeId: '1', fieldName: 'audio', fieldValue: audFn }]
+              if (stylePrompt) nodeInfoList.push({ nodeId: '4', fieldName: 'prompt', fieldValue: String(stylePrompt) })
+              if (lyrics) nodeInfoList.push({ nodeId: '5', fieldName: 'prompt', fieldValue: String(lyrics) })
+              const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${wfId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                body: JSON.stringify({ nodeInfoList, instanceType: 'default', usePersonalQueue: 'false' }),
+              })
+              const text = await r.text()
+              console.log(`[runninghub-proxy] song-cover ${r.status}:`, text.slice(0, 500))
               let data: any; try { data = JSON.parse(text) } catch { data = { raw: text } }
               const taskId = data?.data?.taskId || data?.taskId || data?.id
               if (!taskId) {

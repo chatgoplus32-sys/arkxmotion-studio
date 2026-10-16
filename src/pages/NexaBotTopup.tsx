@@ -168,7 +168,7 @@ export default function NexaBotTopupPage() {
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-          <span>Semua mode (t2v, sfv, i2v, r2v, img, tts): <b className="text-foreground">{formatRp(wallet?.price ?? 250)}/generate</b></span>
+          <span>Semua mode (t2v, sfv, i2v, r2v, extend, img, music, tts): <b className="text-foreground">{formatRp(wallet?.price ?? 250)}/generate</b></span>
           {unlimited?.active && (
             <Badge variant="success">
               <Zap className="h-3 w-3 mr-1" />

@@ -2,7 +2,7 @@ const RUNNINGHUB_PROXY = '/api/public/runninghub'
 
 const RUNNINGHUB_DEFAULT_WORKFLOW_ID = '2092795737699856386'
 
-export const RUNNINGHUB_ULTRA_HD_WORKFLOW_ID = '2095008448978407425'
+export const RUNNINGHUB_ULTRA_HD_WORKFLOW_ID = '2102004799470764034'
 
 
 // Virtual Try-On & Ekstraksi Pakaian (FireRed 2-in-1)
@@ -43,6 +43,25 @@ export const UGC_STORYBOARD_ASPECTS = [
   '9:16 (Portrait Widescreen)', '1:1 (Square)', '2:3 (Portrait Photo)', '3:2 (Photo)',
   '3:4 (Portrait Standard)', '4:3 (Standard)', '16:9 (Widescreen)', '21:9 (Ultrawide)',
 ]
+
+// Seedance 2.6 Replica (multi karakter + prompt storyboard → video):
+// node 168/169/170/171/173 = image (referensi karakter), node 136 = text (storyboard),
+// node 115 = aspect_ratio. https://www.runninghub.ai/id/ai-detail/2105907802166689794
+export const RUNNINGHUB_SEEDANCE26_APP_ID = '2105907802166689794'
+export const SEEDANCE26_MAX_IMAGES = 5
+
+// MiniMax-H3 Drama (DSW+LMS+SelfLift+VDN+SLA) — High-Speed High-Dynamic Action & Drama:
+// node 49/55 = image (referensi), node 51 = aspect_ratio, node 56 = value (prompt).
+// https://www.runninghub.ai/ai-detail/2105691518597177345
+export const RUNNINGHUB_H3_DRAMA_APP_ID = '2105691518597177345'
+export const H3_DRAMA_MAX_IMAGES = 2
+export const H3_DRAMA_DEFAULT_PROMPT = 'Enhance this video with sharp, crisp details while preserving a natural photorealistic appearance.'
+
+// AI Song Cover Studio (app RunningHub 2104229552179425282):
+// node 1 = audio (lagu asli), node 4 = prompt (gaya/arrangement cover),
+// node 5 = prompt (lirik).
+// https://www.runninghub.ai/ai-detail/2104229552179425282
+export const RUNNINGHUB_SONG_COVER_WORKFLOW_ID = '2104229552179425282'
 
 // VOSR2 Video Upscale 2K (peningkatan bertingkat):
 // node 1 = video + frame_load_cap, node 21 = cfg/scheduler/steps,
@@ -701,6 +720,114 @@ export async function submitRunningHubSeedance2(params: Seedance2Params): Promis
   }
 }
 
+export interface Seedance26Image {
+  base64: string
+  fileName: string
+  mimeType: string
+}
+
+export interface Seedance26Params {
+  imageFiles: File[]
+  prompt?: string
+  aspectRatio?: string
+  apiKey?: string
+  workflowId?: string
+}
+
+export async function submitRunningHubSeedance26(params: Seedance26Params): Promise<MotionControlResult> {
+  const appId = params.workflowId || RUNNINGHUB_SEEDANCE26_APP_ID
+
+  const images: Seedance26Image[] = []
+  for (const f of params.imageFiles.slice(0, SEEDANCE26_MAX_IMAGES)) {
+    images.push({
+      base64: await fileToBase64(f),
+      fileName: f.name || `reference${images.length + 1}.jpg`,
+      mimeType: f.type || 'image/jpeg',
+    })
+  }
+
+  const result = await runninghubProxy('submit-seedance2.6', {
+    workflow_id: appId,
+    images,
+    prompt: params.prompt || 'Ikuti storyboard pada prompt.',
+    aspectRatio: params.aspectRatio || '16:9 (Widescreen)',
+  }, params.apiKey)
+
+  return {
+    id: result.id || result.taskId,
+    taskId: result.taskId || result.id,
+    status: result.status || 'QUEUED',
+    provider: result.provider || 'runninghub',
+    workflowId: result.workflowId || appId,
+  }
+}
+
+export interface H3DramaParams {
+  imageFiles: File[]
+  prompt?: string
+  aspectRatio?: string
+  apiKey?: string
+  workflowId?: string
+}
+
+export async function submitRunningHubH3Drama(params: H3DramaParams): Promise<MotionControlResult> {
+  const appId = params.workflowId || RUNNINGHUB_H3_DRAMA_APP_ID
+
+  const images: Seedance26Image[] = []
+  for (const f of params.imageFiles.slice(0, H3_DRAMA_MAX_IMAGES)) {
+    images.push({
+      base64: await fileToBase64(f),
+      fileName: f.name || `reference${images.length + 1}.jpg`,
+      mimeType: f.type || 'image/jpeg',
+    })
+  }
+
+  const result = await runninghubProxy('submit-h3-drama', {
+    workflow_id: appId,
+    images,
+    prompt: params.prompt || H3_DRAMA_DEFAULT_PROMPT,
+    aspectRatio: params.aspectRatio || '16:9 (Widescreen)',
+  }, params.apiKey)
+
+  return {
+    id: result.id || result.taskId,
+    taskId: result.taskId || result.id,
+    status: result.status || 'QUEUED',
+    provider: result.provider || 'runninghub',
+    workflowId: result.workflowId || appId,
+  }
+}
+
+export interface SongCoverParams {
+  audioFile: File
+  stylePrompt: string
+  lyrics?: string
+  apiKey?: string
+  workflowId?: string
+}
+
+export async function submitRunningHubSongCover(params: SongCoverParams): Promise<MotionControlResult> {
+  const workflowId = params.workflowId || RUNNINGHUB_SONG_COVER_WORKFLOW_ID
+  const audioBase64 = await fileToBase64(params.audioFile)
+
+  const result = await runninghubProxy('submit-song-cover', {
+    workflow_id: workflowId,
+    audioBase64,
+    audioFileName: params.audioFile.name || 'song.mp3',
+    audioMimeType: params.audioFile.type || 'audio/mpeg',
+    stylePrompt: params.stylePrompt || '',
+    lyrics: params.lyrics || '',
+  }, params.apiKey)
+
+  return {
+    id: result.id || result.taskId,
+    taskId: result.taskId || result.id,
+    status: result.status || 'QUEUED',
+    provider: result.provider || 'runninghub',
+    workflowId: result.workflowId || workflowId,
+  }
+}
+
 export async function pollRunningHubTask(
   taskId: string,
   onProgress?: (status: string, progress: number) => void,
@@ -730,7 +857,7 @@ export async function pollRunningHubTask(
         const progress = result.progress || 0
 
         if (status === 'COMPLETED') {
-          const url = result.imageUrl || result.videoUrl
+          const url = result.imageUrl || result.videoUrl || result.audioUrl
           if (url) {
             onProgress?.('COMPLETED', 100)
             return url

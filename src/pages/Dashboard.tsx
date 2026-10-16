@@ -8,7 +8,7 @@ import { calculateStats, DashboardStats } from '@/lib/stats'
 import { checkAllProviderHealth, HEALTH_PROVIDERS, ProviderHealth } from '@/lib/providerHealth'
 import {
   Video, Image, Zap, ShoppingBag, Wand2,
-  Route, Key, Clock, ArrowRight,
+  Route, Key, Clock, ArrowRight, Music,
   BarChart3, Target, Clock3, Trophy, Coins, RefreshCw, Loader2,
   CheckCircle2, XCircle, Gauge, Sparkles, ChevronRight, Flame, Play, TrendingUp, Activity, ShieldCheck, ArrowUpRight
 } from 'lucide-react'
@@ -103,6 +103,7 @@ const TOOLS = [
   { icon: <ShoppingBag className="h-[18px] w-[18px]" />, label: 'Bulk Fashion', desc: '1 model + 100 outfit parallel', href: '/generate/bulk-fashion', accent: 'from-cyan-500 to-blue-400' },
   { icon: <Image className="h-[18px] w-[18px]" />, label: 'Image to Video', desc: 'Foto jadi video sinematik', href: '/generate/image-to-video', accent: 'from-violet-500 to-purple-400' },
   { icon: <Wand2 className="h-[18px] w-[18px]" />, label: 'AI Upscaler', desc: 'Upscale 4K enhance detail', href: '/generate/upscaler', accent: 'from-cyan-500 to-blue-400' },
+  { icon: <Music className="h-[18px] w-[18px]" />, label: 'AI Song Cover', desc: 'Lagu apa pun → cover bergaya baru', href: '/generate/song-cover', accent: 'from-emerald-500 to-cyan-400' },
   { icon: <Zap className="h-[18px] w-[18px]" />, label: 'Providers', desc: 'Kelola API keys & tokens', href: '/providers', accent: 'from-emerald-500 to-teal-400' },
 ]
 

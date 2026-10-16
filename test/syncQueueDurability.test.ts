@@ -84,6 +84,11 @@ async function nyalakanServer(): Promise<void> {
       NODE_ENV: '',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
+    // POSIX: proses terpisah jadi pemilik grup proses sendiri, supaya
+    // matikanServer bisa membunuh SELURUH pohon (tsx → node server) dengan
+    // process.kill(-pid). Tanpa ini, SIGKILL ke wrapper tsx meninggalkan
+    // server/index.ts sebagai yatim yang menahan socket & event loop tes.
+    detached: process.platform !== 'win32',
   })
   anak.stdout?.on('data', (d) => log.push(String(d)))
   anak.stderr?.on('data', (d) => log.push(String(d)))
@@ -109,10 +114,21 @@ async function matikanServer(): Promise<void> {
   if (!proses || proses.exitCode !== null) return
 
   const berhenti = new Promise<void>((resolve) => proses.once('exit', () => resolve()))
-  proses.kill('SIGKILL')
-  if (process.platform === 'win32' && proses.pid) {
-    // tsx bisa menjalankan proses anak; /T memastikan seluruh pohonnya berhenti.
-    spawn('taskkill', ['/pid', String(proses.pid), '/f', '/t'], { shell: true }).once('exit', () => {})
+  if (process.platform === 'win32') {
+    proses.kill('SIGKILL')
+    if (proses.pid) {
+      // tsx bisa menjalankan proses anak; /T memastikan seluruh pohonnya berhenti.
+      spawn('taskkill', ['/pid', String(proses.pid), '/f', '/t'], { shell: true }).once('exit', () => {})
+    }
+  } else if (proses.pid) {
+    // Bunuh grup proses (spawn detached) supaya cucu `server/index.ts` ikut
+    // mati — SIGKILL biasa ke wrapper tsx saja meninggalkan server yatim yang
+    // menahan socket keep-alive dan membuat proses tes tidak pernah keluar.
+    try {
+      process.kill(-proses.pid, 'SIGKILL')
+    } catch {
+      try { proses.kill('SIGKILL') } catch { /* sudah mati */ }
+    }
   }
   await Promise.race([berhenti, new Promise((r) => setTimeout(r, 10000))])
 

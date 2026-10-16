@@ -177,8 +177,8 @@ export default function AdminUsersPage() {
     }
     setActionLoading(userId)
     try {
-      const response = await fetch(`/api/admin?id=${userId}&action=reset-password`, {
-        method: 'PATCH',
+      const response = await fetch(`/api/admin/users/${userId}/reset-password`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ new_password: newPassword })
       })

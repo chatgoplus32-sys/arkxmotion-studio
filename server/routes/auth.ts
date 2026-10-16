@@ -264,6 +264,38 @@ router.get('/me', authenticateToken, (req: AuthRequest, res: Response) => {
   }
 })
 
+// ─── Ganti password sendiri (butuh login) ──────────────────────────────
+router.post('/change-password', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const { old_password, new_password } = req.body || {}
+
+    if (!old_password || !new_password) {
+      return res.status(400).json({ error: 'Password lama dan baru harus diisi' })
+    }
+    if (String(new_password).length < 8) {
+      return res.status(400).json({ error: 'Password baru minimal 8 karakter' })
+    }
+
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user!.id) as UserRow | undefined
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' })
+    }
+
+    const validPassword = await bcrypt.compare(old_password, user.password)
+    if (!validPassword) {
+      return res.status(401).json({ error: 'Password lama salah' })
+    }
+
+    const hashedPassword = await bcrypt.hash(String(new_password), 10)
+    db.prepare('UPDATE users SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(hashedPassword, user.id)
+
+    res.json({ message: 'Password berhasil diubah' })
+  } catch (error) {
+    console.error('Change password error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
 // ─── Status pendaftaran (tanpa login) ───────────────────────────────────
 router.post('/status', (req, res: Response) => {
   try {

@@ -1,4 +1,5 @@
 import { Router, Response } from 'express'
+import bcrypt from 'bcryptjs'
 
 import db from '../db.js'
 import { authenticateToken, requireAdmin, AuthRequest } from '../middleware/auth.js'
@@ -138,6 +139,31 @@ router.delete('/users/:id', authenticateToken, requireAdmin, (req: AuthRequest, 
     res.json({ message: `User ${user.email} deleted successfully` })
   } catch (error) {
     console.error('Delete user error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// Reset password user oleh admin
+router.post('/users/:id/reset-password', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params
+    const { new_password } = req.body || {}
+
+    if (!new_password || String(new_password).length < 8) {
+      return res.status(400).json({ error: 'Password minimal 8 karakter' })
+    }
+
+    const user = db.prepare('SELECT id, email, role FROM users WHERE id = ?').get(id) as UserRow | undefined
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' })
+    }
+
+    const hashedPassword = await bcrypt.hash(String(new_password), 10)
+    db.prepare('UPDATE users SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(hashedPassword, id)
+
+    res.json({ message: `Password ${user.email} berhasil direset` })
+  } catch (error) {
+    console.error('Reset password error:', error)
     res.status(500).json({ error: 'Internal server error' })
   }
 })

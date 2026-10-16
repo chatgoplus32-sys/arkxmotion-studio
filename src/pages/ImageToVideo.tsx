@@ -48,7 +48,7 @@ import { runWithNexabotThrottleRetry } from '@/lib/nexabot'
 
 // Voice default untuk mode Voice Over NexaBot — salah satu nama dari daftar
 // voice resmi NexaBot (GET /api/v1/modes → voices).
-const NEXABOT_DEFAULT_VOICE = 'Kore'
+const NEXABOT_DEFAULT_VOICE = 'Achernar'
 
 function SeaviMcSlotCard({ index, slot, onImage, onVideo, onRemove, canRemove }: {
   index: number
@@ -174,6 +174,12 @@ export default function ImageToVideoPage() {
   const [startFrameUrl, setStartFrameUrl] = useState<string | null>(null)
   const [endFrameUrl, setEndFrameUrl] = useState<string | null>(null)
   const [refUrls, setRefUrls] = useState<string[]>([])
+  // Seedance 2.6 Replica (RunningHub): 1-5 gambar referensi karakter + storyboard.
+  const [sd26Files, setSd26Files] = useState<File[]>([])
+  const [sd26Urls, setSd26Urls] = useState<string[]>([])
+  // MiniMax H3 Drama (RunningHub): 1-2 gambar referensi + prompt.
+  const [h3dFiles, setH3dFiles] = useState<File[]>([])
+  const [h3dUrls, setH3dUrls] = useState<string[]>([])
   // Provider default: ikuti routing user, tapi jatuh ke 'roboneo' bila provider routing disembunyikan.
   const I2V_VISIBLE_FALLBACK: ProviderId = 'roboneo'
   const [provider, setProvider] = useState<ProviderId>(
@@ -230,6 +236,8 @@ export default function ImageToVideoPage() {
   const endFrameRef = useRef<HTMLInputElement>(null)
   const refInputRef = useRef<HTMLInputElement>(null)
   const videoRefInputRef = useRef<HTMLInputElement>(null)
+  const sd26InputRef = useRef<HTMLInputElement>(null)
+  const h3dInputRef = useRef<HTMLInputElement>(null)
   const resultsRef = useRef<HTMLDivElement>(null)
 
   const [notifEnabled, setNotifEnabled] = useState(() => isNotificationsEnabled())
@@ -444,6 +452,12 @@ export default function ImageToVideoPage() {
   const nbApiModel = isNb ? (currentModel?.apiModel || 't2v') : ''
   // Seedance 2.0 Replica (RunningHub): gambar + prompt storyboard → video.
   const isRhSeedance = provider === 'runninghub' && currentModel?.apiModel === 'seedance2'
+  // Seedance 2.6 Replica (RunningHub): 1-5 gambar referensi karakter + storyboard → video.
+  const isRhSeedance26 = provider === 'runninghub' && currentModel?.apiModel === 'seedance26'
+  const SD26_MAX_IMAGES = 5
+  // MiniMax H3 Drama (RunningHub): 1-2 gambar referensi + prompt → video.
+  const isRhH3Drama = provider === 'runninghub' && currentModel?.apiModel === 'h3drama'
+  const H3D_MAX_IMAGES = 2
   const isNbT2V = isNb && nbApiModel === 't2v'
   const isNbSFV = isNb && nbApiModel === 'sfv'
   const isNbI2V = isNb && nbApiModel === 'i2v'
@@ -578,6 +592,46 @@ export default function ImageToVideoPage() {
   const removeRef = (index: number) => {
     setRefFiles((prev) => prev.filter((_, i) => i !== index))
     setRefUrls((prev) => {
+      const target = prev[index]
+      if (target && target.startsWith('blob:')) URL.revokeObjectURL(target)
+      return prev.filter((_, i) => i !== index)
+    })
+  }
+
+  // Seedance 2.6 Replica: kelola sampai 5 gambar referensi karakter.
+  const handleSd26Change = (files: FileList | null) => {
+    if (!files) return
+    const incoming = Array.from(files).filter((f) => f.type.startsWith('image/'))
+    if (incoming.length === 0) return
+    const added = incoming.slice(0, SD26_MAX_IMAGES - sd26Files.length)
+    if (added.length === 0) return
+    setSd26Files((prev) => [...prev, ...added].slice(0, SD26_MAX_IMAGES))
+    setSd26Urls((prev) => [...prev, ...added.map((f) => URL.createObjectURL(f))].slice(0, SD26_MAX_IMAGES))
+  }
+
+  const removeSd26 = (index: number) => {
+    setSd26Files((prev) => prev.filter((_, i) => i !== index))
+    setSd26Urls((prev) => {
+      const target = prev[index]
+      if (target && target.startsWith('blob:')) URL.revokeObjectURL(target)
+      return prev.filter((_, i) => i !== index)
+    })
+  }
+
+  // MiniMax H3 Drama: kelola sampai 2 gambar referensi.
+  const handleH3dChange = (files: FileList | null) => {
+    if (!files) return
+    const incoming = Array.from(files).filter((f) => f.type.startsWith('image/'))
+    if (incoming.length === 0) return
+    const added = incoming.slice(0, H3D_MAX_IMAGES - h3dFiles.length)
+    if (added.length === 0) return
+    setH3dFiles((prev) => [...prev, ...added].slice(0, H3D_MAX_IMAGES))
+    setH3dUrls((prev) => [...prev, ...added.map((f) => URL.createObjectURL(f))].slice(0, H3D_MAX_IMAGES))
+  }
+
+  const removeH3d = (index: number) => {
+    setH3dFiles((prev) => prev.filter((_, i) => i !== index))
+    setH3dUrls((prev) => {
       const target = prev[index]
       if (target && target.startsWith('blob:')) URL.revokeObjectURL(target)
       return prev.filter((_, i) => i !== index)
@@ -834,7 +888,7 @@ export default function ImageToVideoPage() {
 
   const validateGenerate = (): string | null => {
     // Motion Control Seavi tidak memakai prompt (upstream S10/S16 bahkan tanpa parameter prompt).
-    if (!prompt.trim() && !isSeaviMc) return 'Prompt harus diisi'
+    if (!prompt.trim() && !isSeaviMc && !isRhH3Drama) return 'Prompt harus diisi'
     if (!hasActiveKey && provider !== 'roboneo' && provider !== 'createpulse') return `Tidak ada API key aktif untuk ${PROVIDER_CONFIGS[provider].name}`
     if (provider === 'createpulse' && user?.role !== 'admin' && cpBalance < getCreatepulseCost(currentModel?.apiModel)) return 'Saldo CreatePulse tidak cukup. Top up minimal Rp 10.000'
     // NexaBot: paket Unlimited = gratis, jadi cek saldo hanya saat paket tidak aktif.
@@ -863,7 +917,11 @@ export default function ImageToVideoPage() {
       }
       if (seaviSpec.promptRequired === true && !prompt.trim()) return 'Prompt wajib diisi'
     }
-    if (provider === 'runninghub' && !imgFile) return isRhSeedance
+    if (provider === 'runninghub' && isRhSeedance26) {
+      if (sd26Files.length === 0) return 'Seedance 2.6 Storyboard membutuhkan minimal 1 gambar referensi'
+    } else if (provider === 'runninghub' && isRhH3Drama) {
+      if (h3dFiles.length === 0) return 'MiniMax H3 Drama membutuhkan minimal 1 gambar referensi'
+    } else if (provider === 'runninghub' && !imgFile) return isRhSeedance
       ? 'Seedance 2.0 Storyboard membutuhkan 1 gambar referensi'
       : 'RunningHub H3 I2V membutuhkan gambar input'
     if (provider === 'nexabot') {
@@ -2573,7 +2631,7 @@ export default function ImageToVideoPage() {
               if (ratio === '1:1') aspectParam = 1
               else if (ratio === '16:9') aspectParam = 2
               else if (ratio === '9:16') aspectParam = 5
-            } else if (apiModel === 't2v' || apiModel === 'sfv' || apiModel === 'i2v') {
+            } else if (apiModel === 't2v' || apiModel === 'sfv' || apiModel === 'i2v' || apiModel === 'extend') {
               if (ratio === '16:9') ratioParam = 1
               else if (ratio === '9:16') ratioParam = 2
             } else if (apiModel === 'r2v') {
@@ -2598,7 +2656,7 @@ export default function ImageToVideoPage() {
             // NexaBot: mode = jenis yang dipilih user. Validasi media ketat
             // sesuai docs (media salah = job gagal di upstream setelah antre):
             //   t2v tanpa media · sfv 1 gambar · i2v 1-3 gambar
-            //   r2v video:1 + gambar opsional 0-1
+            //   r2v video:1 + gambar opsional 0-1 · extend 1 video (mp4)
             type NbMode = import('@/lib/nexabot').NexabotMode
             const nbMode: NbMode = (apiModel as NbMode) || 't2v'
             if (nbMode === 'sfv' && imageFiles.length !== 1) {
@@ -2610,10 +2668,14 @@ export default function ImageToVideoPage() {
             if (nbMode === 'r2v' && !videoFile) {
               throw new Error('Reference Video to Video butuh 1 video referensi — upload dulu di panel input.')
             }
+            if (nbMode === 'extend' && !videoFile) {
+              throw new Error('Extend Video butuh 1 video sumber (mp4) — upload dulu di panel input.')
+            }
 
             // Media (base64 data URI) dibatasi sesuai aturan tiap mode:
             //   sfv = 1 gambar start frame · i2v = 1-3 gambar
-            //   r2v = media[0]=video + 1 gambar opsional (Omni Flash 1.1) · t2v = tanpa media
+            //   r2v = media[0]=video + 1 gambar opsional (Omni Flash 1.1)
+            //   extend = 1 video sumber (mp4) · t2v = tanpa media
             const media: string[] = []
             {
               // NexaBot: kompres agresif agar payload JSON < 1MB
@@ -2643,6 +2705,17 @@ export default function ImageToVideoPage() {
                   media.push(await fileToBase64(await compressForApi(f)))
                 }
                 if (media.length === 0 && imageFiles[0]) media.push(await fileToBase64(await compressForApi(imageFiles[0])))
+              } else if (nbMode === 'extend') {
+                // Extend: media[0] = 1 video sumber (mp4), tanpa gambar.
+                // Kompresi sama seperti r2v — payload JSON harus < 1MB.
+                addLog(`[2/3] 🎬 Menyiapkan video sumber (${(videoFile!.size / 1024 / 1024).toFixed(1)}MB)...`, 'info', 'nexabot')
+                const srcVideo = await compressVideo(videoFile!, 6, (msg, pct) => {
+                  setStatus((s) => ({ ...s, text: msg, pct: Math.min(pct || 0, 10) }))
+                })
+                if (srcVideo.size > 6 * 1024 * 1024) {
+                  throw new Error(`Video sumber terlalu besar (${(srcVideo.size / 1024 / 1024).toFixed(1)}MB setelah kompresi, maks 6MB). Potong durasinya lalu coba lagi.`)
+                }
+                media.push(await fileToBase64(srcVideo))
               }
             }
             // Jalur session → API key dengan pemulihan otomatis: kalau cookie
@@ -2785,6 +2858,180 @@ export default function ImageToVideoPage() {
               imageFile: imgFile!,
               prompt: prompt.trim(),
               aspectRatio: seedanceAspect,
+              apiKey: token,
+            })
+            const taskId = submit.taskId
+            addLog(`[2/3] ✅ Task created ✓ task=${taskId.slice(0, 20)}...`, 'success', 'runninghub')
+
+            addActiveTask({
+              id: taskId,
+              taskId,
+              roomId: '',
+              nodeId: '',
+              token,
+              model: currentModel?.label || model,
+              prompt: prompt.trim() || '(no prompt)',
+              startedAt: Date.now(),
+              page: 'image-to-video',
+              provider: 'runninghub',
+            })
+            activeTaskId = taskId
+
+            addLog(`[3/3] ⏳ Polling for result...`, 'info', 'runninghub')
+            setStatus((s) => ({ ...s, text: 'Processing...', pct: 25 }))
+
+            const videoUrl = await pollRunningHubTask(taskId, (status, pct) => {
+              addLog(`⏳ RH ${status} (${pct}%)`, 'debug', 'runninghub')
+              setStatus((s) => ({ ...s, pct: Math.min(pct || 0, 95), text: `RH ${status}` }))
+            }, 3600000, token)
+
+            setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+            addLog(`✅ Video selesai ✓`, 'success', 'runninghub')
+
+            removeActiveTask(taskId)
+            activeTaskId = null
+            return videoUrl
+          },
+          {
+            onKeySwitch: (from, to, attempt) => {
+              addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn', 'runninghub')
+              if (activeTaskId) removeActiveTask(activeTaskId)
+              activeTaskId = null
+            },
+            onError: (err, _key) => {
+              if (detectTokenError('runninghub', err)) {
+                addLog(`⚠️ Key is invalid: ${err.message}`, 'warn', 'runninghub')
+              }
+            },
+          }
+        )
+        if (rotation.ok && rotation.result) {
+          setResults((prev) => [rotation.result!, ...prev])
+          saveGalleryItem(rotation.result!)
+          successRef.current = true
+          setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+          notifyGenerationComplete(currentModel?.label || model, PROVIDER_CONFIGS[provider].name)
+          if (rotation.triedKeys > 1) {
+            addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success', 'runninghub')
+          }
+        } else {
+          throw new Error(rotation.error || 'Generation failed')
+        }
+      } else if (provider === 'runninghub' && isRhSeedance26) {
+        // ─── RunningHub: Seedance 2.6 Replica (multi gambar + prompt storyboard → video) ───
+        if (sd26Files.length === 0) throw new Error('Seedance 2.6 Storyboard membutuhkan minimal 1 gambar referensi')
+        addLog(`[1/3] 🖼️ Menyiapkan ${sd26Files.length} gambar referensi...`, 'info', 'runninghub')
+
+        const { submitRunningHubSeedance26, pollRunningHubTask } = await import('@/lib/runninghub')
+        const SEEDANCE26_ASPECT_MAP: Record<string, string> = {
+          '1:1': '1:1 (Square)',
+          '2:3': '2:3 (Portrait Photo)',
+          '3:2': '3:2 (Photo)',
+          '3:4': '3:4 (Portrait Standard)',
+          '4:3': '4:3 (Standard)',
+          '9:16': '9:16 (Portrait Widescreen)',
+          '16:9': '16:9 (Widescreen)',
+          '21:9': '21:9 (Ultrawide)',
+        }
+        const seedance26Aspect = SEEDANCE26_ASPECT_MAP[ratio] || '16:9 (Widescreen)'
+
+        const rotation = await withTokenRotation<string>(
+          'runninghub',
+          async (token, keyInfo) => {
+            addLog(`🔑 Trying key: ${keyInfo.name || keyInfo.id}`, 'info', 'runninghub')
+            setStatus((s) => ({ ...s, text: 'Submit Seedance 2.6...', pct: 15 }))
+
+            const submit = await submitRunningHubSeedance26({
+              imageFiles: sd26Files,
+              prompt: prompt.trim(),
+              aspectRatio: seedance26Aspect,
+              apiKey: token,
+            })
+            const taskId = submit.taskId
+            addLog(`[2/3] ✅ Task created ✓ task=${taskId.slice(0, 20)}...`, 'success', 'runninghub')
+
+            addActiveTask({
+              id: taskId,
+              taskId,
+              roomId: '',
+              nodeId: '',
+              token,
+              model: currentModel?.label || model,
+              prompt: prompt.trim() || '(no prompt)',
+              startedAt: Date.now(),
+              page: 'image-to-video',
+              provider: 'runninghub',
+            })
+            activeTaskId = taskId
+
+            addLog(`[3/3] ⏳ Polling for result...`, 'info', 'runninghub')
+            setStatus((s) => ({ ...s, text: 'Processing...', pct: 25 }))
+
+            const videoUrl = await pollRunningHubTask(taskId, (status, pct) => {
+              addLog(`⏳ RH ${status} (${pct}%)`, 'debug', 'runninghub')
+              setStatus((s) => ({ ...s, pct: Math.min(pct || 0, 95), text: `RH ${status}` }))
+            }, 3600000, token)
+
+            setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+            addLog(`✅ Video selesai ✓`, 'success', 'runninghub')
+
+            removeActiveTask(taskId)
+            activeTaskId = null
+            return videoUrl
+          },
+          {
+            onKeySwitch: (from, to, attempt) => {
+              addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn', 'runninghub')
+              if (activeTaskId) removeActiveTask(activeTaskId)
+              activeTaskId = null
+            },
+            onError: (err, _key) => {
+              if (detectTokenError('runninghub', err)) {
+                addLog(`⚠️ Key is invalid: ${err.message}`, 'warn', 'runninghub')
+              }
+            },
+          }
+        )
+        if (rotation.ok && rotation.result) {
+          setResults((prev) => [rotation.result!, ...prev])
+          saveGalleryItem(rotation.result!)
+          successRef.current = true
+          setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+          notifyGenerationComplete(currentModel?.label || model, PROVIDER_CONFIGS[provider].name)
+          if (rotation.triedKeys > 1) {
+            addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success', 'runninghub')
+          }
+        } else {
+          throw new Error(rotation.error || 'Generation failed')
+        }
+      } else if (provider === 'runninghub' && isRhH3Drama) {
+        // ─── RunningHub: MiniMax H3 Drama (multi gambar + prompt → video) ───
+        if (h3dFiles.length === 0) throw new Error('MiniMax H3 Drama membutuhkan minimal 1 gambar referensi')
+        addLog(`[1/3] 🖼️ Menyiapkan ${h3dFiles.length} gambar referensi...`, 'info', 'runninghub')
+
+        const { submitRunningHubH3Drama, pollRunningHubTask } = await import('@/lib/runninghub')
+        const H3D_ASPECT_MAP: Record<string, string> = {
+          '1:1': '1:1 (Square)',
+          '2:3': '2:3 (Portrait Photo)',
+          '3:2': '3:2 (Photo)',
+          '3:4': '3:4 (Portrait Standard)',
+          '4:3': '4:3 (Standard)',
+          '9:16': '9:16 (Portrait Widescreen)',
+          '16:9': '16:9 (Widescreen)',
+          '21:9': '21:9 (Ultrawide)',
+        }
+        const h3dAspect = H3D_ASPECT_MAP[ratio] || '16:9 (Widescreen)'
+
+        const rotation = await withTokenRotation<string>(
+          'runninghub',
+          async (token, keyInfo) => {
+            addLog(`🔑 Trying key: ${keyInfo.name || keyInfo.id}`, 'info', 'runninghub')
+            setStatus((s) => ({ ...s, text: 'Submit H3 Drama...', pct: 15 }))
+
+            const submit = await submitRunningHubH3Drama({
+              imageFiles: h3dFiles,
+              prompt: prompt.trim(),
+              aspectRatio: h3dAspect,
               apiKey: token,
             })
             const taskId = submit.taskId
@@ -3427,6 +3674,68 @@ export default function ImageToVideoPage() {
                   </div>
                 )}
               </Section>
+            ) : isRhH3Drama ? (
+              /* MiniMax H3 Drama: 1-2 gambar referensi + prompt */
+              <Section title={`🖼️ Referensi (${h3dUrls.length}/${H3D_MAX_IMAGES})`} sub="1-2 gambar referensi (wajib minimal 1). Model ini preset action/drama — prompt = instruksi adegan, Pakai Inggris agar lebih patuh.">
+                <input ref={h3dInputRef} type="file" accept="image/*" multiple hidden onChange={(e) => { handleH3dChange(e.target.files); e.target.value = '' }} />
+                {h3dUrls.length > 0 ? (
+                  <div className="grid grid-cols-3 gap-2">
+                    {h3dUrls.map((u, i) => (
+                      <div key={i} className="relative aspect-square rounded-xl overflow-hidden border border-border">
+                        <img src={u} alt={`referensi ${i + 1}`} className="w-full h-full object-cover" />
+                        <button onClick={() => removeH3d(i)} aria-label="Hapus gambar" className="absolute top-1 right-1 rounded-full w-6 h-6 bg-black/60 text-white text-xs grid place-items-center hover:bg-black/80">×</button>
+                      </div>
+                    ))}
+                    {h3dUrls.length < H3D_MAX_IMAGES && (
+                      <button onClick={() => h3dInputRef.current?.click()} className="aspect-square rounded-xl border border-dashed border-border/80 bg-card/30 grid place-items-center hover:border-primary/60 transition text-center">
+                        <div>
+                          <div className="text-2xl">➕</div>
+                          <div className="text-[10px] mt-0.5">Tambah ({h3dUrls.length}/{H3D_MAX_IMAGES})</div>
+                        </div>
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <button onClick={() => h3dInputRef.current?.click()} className="w-full aspect-[9/16] rounded-2xl border border-dashed border-border/80 bg-card/30 grid place-items-center hover:border-primary/60 transition text-center px-4">
+                    <div>
+                      <div className="text-3xl">🖼️</div>
+                      <div className="text-sm mt-1">Tap untuk upload gambar referensi (wajib)</div>
+                      <div className="text-[11px] text-muted-foreground">1-{H3D_MAX_IMAGES} gambar · JPG / PNG / WEBP</div>
+                    </div>
+                  </button>
+                )}
+              </Section>
+            ) : isRhSeedance26 ? (
+              /* Seedance 2.6 Replica: 1-5 gambar referensi karakter + prompt storyboard */
+              <Section title={`🖼️ Referensi Karakter (${sd26Urls.length}/${SD26_MAX_IMAGES})`} sub="1-5 gambar referensi (wajib minimal 1) + prompt storyboard">
+                <input ref={sd26InputRef} type="file" accept="image/*" multiple hidden onChange={(e) => { handleSd26Change(e.target.files); e.target.value = '' }} />
+                {sd26Urls.length > 0 ? (
+                  <div className="grid grid-cols-3 gap-2">
+                    {sd26Urls.map((u, i) => (
+                      <div key={i} className="relative aspect-square rounded-xl overflow-hidden border border-border">
+                        <img src={u} alt={`referensi ${i + 1}`} className="w-full h-full object-cover" />
+                        <button onClick={() => removeSd26(i)} aria-label="Hapus gambar" className="absolute top-1 right-1 rounded-full w-6 h-6 bg-black/60 text-white text-xs grid place-items-center hover:bg-black/80">×</button>
+                      </div>
+                    ))}
+                    {sd26Urls.length < SD26_MAX_IMAGES && (
+                      <button onClick={() => sd26InputRef.current?.click()} className="aspect-square rounded-xl border border-dashed border-border/80 bg-card/30 grid place-items-center hover:border-primary/60 transition text-center">
+                        <div>
+                          <div className="text-2xl">➕</div>
+                          <div className="text-[10px] mt-0.5">Tambah ({sd26Urls.length}/{SD26_MAX_IMAGES})</div>
+                        </div>
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <button onClick={() => sd26InputRef.current?.click()} className="w-full aspect-[9/16] rounded-2xl border border-dashed border-border/80 bg-card/30 grid place-items-center hover:border-primary/60 transition text-center px-4">
+                    <div>
+                      <div className="text-3xl">🖼️</div>
+                      <div className="text-sm mt-1">Tap untuk upload gambar referensi (wajib)</div>
+                      <div className="text-[11px] text-muted-foreground">1-{SD26_MAX_IMAGES} gambar · JPG / PNG / WEBP</div>
+                    </div>
+                  </button>
+                )}
+              </Section>
             ) : (
               /* Default UI for other providers */
               <Section title="🖼️ Gambar / Video Input" sub="1 file (JPG / PNG / WEBP / MP4) — optional untuk text-to-video">
@@ -3535,7 +3844,7 @@ export default function ImageToVideoPage() {
             <div className="flex items-center gap-3 mt-4 flex-wrap">
               <Button
                 onClick={() => setShowPreview(true)}
-                disabled={(!prompt.trim() && !isSeaviMc) || generating}
+                disabled={(!prompt.trim() && !isSeaviMc && !isRhH3Drama) || generating}
               >
                 {generating ? (
                   <>

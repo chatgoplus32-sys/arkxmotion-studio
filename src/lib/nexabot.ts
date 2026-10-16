@@ -588,16 +588,17 @@ export function nexabotSessionWarning(
 // SUBMIT VIDEO GENERATION
 // ═══════════════════════════════════════════════════════════════════
 
-export type NexabotMode = 't2v' | 'sfv' | 'i2v' | 'r2v' | 'img' | 'music' | 'tts'
+export type NexabotMode = 't2v' | 'sfv' | 'i2v' | 'r2v' | 'extend' | 'img' | 'music' | 'tts'
 
 export interface NexabotSubmitParams {
   mode: NexabotMode
   prompt: string
-  ratio?: number       // 1 = 16:9, 2 = 9:16
-  aspect?: number      // 1 = square, 2 = 2:3, 5 = 9:16
-  voice?: string       // untuk tts (default: en-US-Wavenet-D)
+  ratio?: number       // 1 = 16:9, 2 = 9:16 (video + extend)
+  aspect?: number      // img: 1 = 1:1, 2 = 16:9, 5 = 9:16 (docs & /api/v1/modes)
+  voice?: string       // untuk tts (default upstream: Achernar)
   media?: string[]     // base64 data URI
-  /** 720 | 1080 — hanya mode video (t2v/sfv/i2v/r2v); lihat GET /api/v1/modes. */
+  /** 720 | 1080 — hanya mode video (t2v/sfv/i2v/r2v); lihat GET /api/v1/modes.
+   *  Extend SELALU 1080p — parameter resolution diabaikan upstream. */
   resolution?: number
   /**
    * ID Telegram yang ditagihkan (parameter resmi NexaBot: "user id for credit
