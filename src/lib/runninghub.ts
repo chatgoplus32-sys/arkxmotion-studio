@@ -50,13 +50,6 @@ export const UGC_STORYBOARD_ASPECTS = [
 export const RUNNINGHUB_SEEDANCE26_APP_ID = '2105907802166689794'
 export const SEEDANCE26_MAX_IMAGES = 5
 
-// MiniMax-H3 Drama (DSW+LMS+SelfLift+VDN+SLA) — High-Speed High-Dynamic Action & Drama:
-// node 49/55 = image (referensi), node 51 = aspect_ratio, node 56 = value (prompt).
-// https://www.runninghub.ai/ai-detail/2105691518597177345
-export const RUNNINGHUB_H3_DRAMA_APP_ID = '2105691518597177345'
-export const H3_DRAMA_MAX_IMAGES = 2
-export const H3_DRAMA_DEFAULT_PROMPT = 'Enhance this video with sharp, crisp details while preserving a natural photorealistic appearance.'
-
 // AI Song Cover Studio (app RunningHub 2104229552179425282):
 // node 1 = audio (lagu asli), node 4 = prompt (gaya/arrangement cover),
 // node 5 = prompt (lirik).
@@ -750,42 +743,6 @@ export async function submitRunningHubSeedance26(params: Seedance26Params): Prom
     workflow_id: appId,
     images,
     prompt: params.prompt || 'Ikuti storyboard pada prompt.',
-    aspectRatio: params.aspectRatio || '16:9 (Widescreen)',
-  }, params.apiKey)
-
-  return {
-    id: result.id || result.taskId,
-    taskId: result.taskId || result.id,
-    status: result.status || 'QUEUED',
-    provider: result.provider || 'runninghub',
-    workflowId: result.workflowId || appId,
-  }
-}
-
-export interface H3DramaParams {
-  imageFiles: File[]
-  prompt?: string
-  aspectRatio?: string
-  apiKey?: string
-  workflowId?: string
-}
-
-export async function submitRunningHubH3Drama(params: H3DramaParams): Promise<MotionControlResult> {
-  const appId = params.workflowId || RUNNINGHUB_H3_DRAMA_APP_ID
-
-  const images: Seedance26Image[] = []
-  for (const f of params.imageFiles.slice(0, H3_DRAMA_MAX_IMAGES)) {
-    images.push({
-      base64: await fileToBase64(f),
-      fileName: f.name || `reference${images.length + 1}.jpg`,
-      mimeType: f.type || 'image/jpeg',
-    })
-  }
-
-  const result = await runninghubProxy('submit-h3-drama', {
-    workflow_id: appId,
-    images,
-    prompt: params.prompt || H3_DRAMA_DEFAULT_PROMPT,
     aspectRatio: params.aspectRatio || '16:9 (Widescreen)',
   }, params.apiKey)
 

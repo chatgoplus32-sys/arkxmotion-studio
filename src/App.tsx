@@ -63,6 +63,7 @@ const H3ImageToVideoPage = lazyWithRetry(() => import('@/pages/H3ImageToVideo'))
 const WatermarkRemoverPage = lazyWithRetry(() => import('@/pages/WatermarkRemover'))
 const VideoUpscalerPage = lazyWithRetry(() => import('@/pages/VideoUpscaler'))
 const SongCoverPage = lazyWithRetry(() => import('@/pages/SongCover'))
+const VoiceOverPage = lazyWithRetry(() => import('@/pages/VoiceOver'))
 
 function PageLoader() {
   return <div className="flex items-center justify-center py-20"><div className="h-8 w-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin" /></div>
@@ -221,6 +222,7 @@ export default function App() {
                         <Route path="/generate/watermark-remover" element={<WatermarkRemoverPage />} />
                         <Route path="/generate/video-upscaler" element={<VideoUpscalerPage />} />
                         <Route path="/generate/song-cover" element={<SongCoverPage />} />
+                        <Route path="/generate/voice-over" element={<VoiceOverPage />} />
                         <Route path="/generate/ugc" element={<UGCPage />} />
                         <Route path="/generate/ugc-storyboard" element={<UGCStoryboardPage />} />
                         <Route path="/generate/upscaler" element={<UpscalerPage />} />

@@ -1,4 +1,4 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node'
+﻿import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 const RUNNINGHUB_BASE = 'https://www.runninghub.ai'
 const RUNNINGHUB_DEFAULT_WORKFLOW_ID = '2092795737699856386'
@@ -32,7 +32,7 @@ const RUNNINGHUB_IMAGE_EDIT_WORKFLOW_ID = '1928844216607129602'
 // MiniMax H3 I2V: node 181 = text, node 143 = image,
 // node 126 = steps, node 146 = aspect_ratio
 const RUNNINGHUB_H3_I2V_WORKFLOW_ID = '2099854999999340546'
-// UGC Storyboard (MiniMax H3 I2V — gambar ke video multi-scene + audio):
+// UGC Storyboard (MiniMax H3 I2V â€” gambar ke video multi-scene + audio):
 // node 114/162 = karakter utama, node 170/167/165/166 = scene 1-4,
 // node 135 = durasi (detik), node 115 = aspect_ratio, node 136 = prompt
 // https://www.runninghub.ai/id/ai-detail/2096092981395841025
@@ -42,7 +42,7 @@ const UGC_ASPECTS = new Set([
   '4:3 (Standard)', '9:16 (Portrait Widescreen)', '16:9 (Widescreen)', '21:9 (Ultrawide)',
 ])
 const UGC_SCENE_NODES = ['170', '167', '165', '166']
-// Seedance 2.0 Replica (gambar + prompt storyboard → video):
+// Seedance 2.0 Replica (gambar + prompt storyboard â†’ video):
 // node 168 = image, node 136 = text (storyboard), node 115 = aspect_ratio.
 // https://www.runninghub.ai/id/ai-detail/2104455137652932609
 const RUNNINGHUB_SEEDANCE2_WORKFLOW_ID = '2104455137652932609'
@@ -54,7 +54,7 @@ const SEEDANCE2_ASPECTS = new Set([
   '4:3 (Standard)', '9:16 (Portrait Widescreen)', '16:9 (Widescreen)', '21:9 (Ultrawide)',
 ])
 const SEEDANCE2_ASPECT_FALLBACK = '16:9 (Widescreen)'
-// Seedance 2.6 Replica (multi karakter + prompt storyboard → video):
+// Seedance 2.6 Replica (multi karakter + prompt storyboard â†’ video):
 // app 2105907802166689794. node 168/169/170/171/173 = image (referensi karakter),
 // node 136 = text (storyboard), node 115 = aspect_ratio.
 const RUNNINGHUB_SEEDANCE26_APP_ID = '2105907802166689794'
@@ -67,21 +67,7 @@ const SEEDANCE26_ASPECTS = new Set([
   '4:3 (Standard)', '9:16 (Portrait Widescreen)', '16:9 (Widescreen)', '21:9 (Ultrawide)',
 ])
 const SEEDANCE26_ASPECT_FALLBACK = '16:9 (Widescreen)'
-// MiniMax-H3 Drama (DSW+LMS+SelfLift+VDN+SLA) — High-Speed High-Dynamic Action & Drama:
-// app 2105691518597177345. node 49/55 = image (referensi), node 51 = aspect_ratio,
-// node 56 = value (prompt/enhance).
-const RUNNINGHUB_H3_DRAMA_APP_ID = '2105691518597177345'
-const H3_DRAMA_IMAGE_NODES = ['49', '55']
-const H3_DRAMA_ASPECT_NODE = '51'
-const H3_DRAMA_TEXT_NODE = '56'
-const H3_DRAMA_MAX_IMAGES = 2
-const H3_DRAMA_ASPECTS = new Set([
-  '1:1 (Square)', '2:3 (Portrait Photo)', '3:2 (Photo)', '3:4 (Portrait Standard)',
-  '4:3 (Standard)', '9:16 (Portrait Widescreen)', '16:9 (Widescreen)', '21:9 (Ultrawide)',
-])
-const H3_DRAMA_ASPECT_FALLBACK = '16:9 (Widescreen)'
-const H3_DRAMA_DEFAULT_PROMPT = 'Enhance this video with sharp, crisp details while preserving a natural photorealistic appearance.'
-// MC Ultra Fast HD — node ID resmi dari dokumentasi workflow:
+// MC Ultra Fast HD â€” node ID resmi dari dokumentasi workflow:
 // node 30 = image (LoadImage), node 33 = video (LoadVideo)
 const ULTRA_HD_IMAGE_NODE = '30'
 const ULTRA_HD_VIDEO_NODE = '33'
@@ -157,9 +143,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (action === 'submit-seedance2.6') {
       return await handleSubmitSeedance26(apiKey, params, res)
     }
-    if (action === 'submit-h3-drama') {
-      return await handleSubmitH3Drama(apiKey, params, res)
-    }
     if (action === 'query') {
       return await handleQuery(apiKey, params.taskId, res)
     }
@@ -203,7 +186,7 @@ async function rhUpload(apiKey: string, fileBase64: string, fileName: string, mi
     throw new Error('No fileName in upload response: ' + rawText.slice(0, 300))
   }
 
-  // download_url might be relative (just filename) — construct full URL
+  // download_url might be relative (just filename) â€” construct full URL
   let fullDownloadUrl = downloadUrl || ''
   if (fullDownloadUrl && !fullDownloadUrl.startsWith('http')) {
     fullDownloadUrl = `https://rh-hk-images-switch.xiaoyaoyou.com/input/${uploadedFileName}`
@@ -573,7 +556,7 @@ function collectUltraHDExtras(nodes: any[], opts: {
     const cls = String(n.classType || '')
     const title = String(n.title || '')
     const tag = `${cls} ${title}`
-    // Lewati loader image/video — sudah dipegang node 30/33
+    // Lewati loader image/video â€” sudah dipegang node 30/33
     if (/loadimage|loadvideo|image|video/i.test(tag) && (findInputKey(inputs, [/^image$/i, /^video$/i]))) continue
 
     const fpsKey = findInputKey(inputs, [/^fps$/i, /frame_?rate/i])
@@ -795,7 +778,7 @@ async function handleSubmitTryOn(apiKey: string, params: any, res: VercelRespons
   }
 
   // Prompt tambahan kalau workflow menyediakannya (best-effort via discovery).
-  // Hanya field teks — fps/steps/frames tidak relevan untuk try-on.
+  // Hanya field teks â€” fps/steps/frames tidak relevan untuk try-on.
   try {
     const nodes = await fetchWorkflowNodes(apiKey, effectiveWorkflowId)
     const extras = collectUltraHDExtras(nodes, {
@@ -1178,7 +1161,7 @@ async function handleSubmitVideoUpscale(apiKey: string, params: any, res: Vercel
     return m ? { nodeId: m[1].trim(), fieldName: m[2].trim(), reason: m[3].trim() } : null
   }
 
-  // Dok workflow ini generik — nama field video aslinya dicari otomatis.
+  // Dok workflow ini generik â€” nama field video aslinya dicari otomatis.
   // 803 field_not_found = validasi gratis (task tidak jalan, koin tidak kepakai).
   const VIDEO_FIELDS = ['video', 'file', 'path', 'video_path', 'filename']
   let lastErr = 'Unknown error'
@@ -1228,7 +1211,7 @@ async function handleSubmitVideoUpscale(apiKey: string, params: any, res: Vercel
           }
           return res.status(200).json({ ok: false, error: `Node video (1) tidak ada di workflow ini`, data: r.data })
         }
-        // Entri non-video bermasalah → buang (pakai default workflow), submit ulang
+        // Entri non-video bermasalah â†’ buang (pakai default workflow), submit ulang
         console.log(`[runninghub] upscale buang field ${mm.nodeId}/${mm.fieldName} (${mm.reason}), pakai default workflow`)
         list = list.filter((e) => !(String(e.nodeId) === mm.nodeId && String(e.fieldName) === mm.fieldName))
         continue
@@ -1298,7 +1281,7 @@ async function handleSubmitPhotoEnhance(apiKey: string, params: any, res: Vercel
     return m ? { nodeId: m[1].trim(), fieldName: m[2].trim(), reason: m[3].trim() } : null
   }
 
-  // Dok bisa generik — nama field image dicari otomatis, entri asing dibuang.
+  // Dok bisa generik â€” nama field image dicari otomatis, entri asing dibuang.
   const IMAGE_FIELDS = ['image', 'file', 'path', 'filename', 'input', 'src']
   let lastErr = 'Unknown error'
   let lastData: any = null
@@ -1433,7 +1416,7 @@ async function handleSubmitLipSync(apiKey: string, params: any, res: VercelRespo
     return m ? { nodeId: m[1].trim(), fieldName: m[2].trim(), reason: m[3].trim() } : null
   }
 
-  // Dok bisa generik — nama field media dicari per-node, entri asing dibuang.
+  // Dok bisa generik â€” nama field media dicari per-node, entri asing dibuang.
   // 803 = validasi gratis (task tidak jalan, koin tidak kepakai).
   const IMG_CANDS = ['image', 'file', 'path', 'filename', 'input', 'src']
   const AUD_CANDS = ['audio', 'file', 'path', 'filename', 'input', 'src']
@@ -1493,7 +1476,7 @@ async function handleSubmitLipSync(apiKey: string, params: any, res: VercelRespo
       if (/node_not_found/i.test(mm.reason)) {
         return res.status(200).json({ ok: false, error: `Node ${mm.nodeId} tidak ada di workflow ini`, data: r.data })
       }
-      // field media ditolak → maju ke kandidat berikutnya untuk node itu
+      // field media ditolak â†’ maju ke kandidat berikutnya untuk node itu
       const cands = mm.nodeId === '148' ? AUD_CANDS : IMG_CANDS
       const cur = nodeField[mm.nodeId] || ''
       const nextIdx = cands.indexOf(cur) + 1
@@ -1501,11 +1484,11 @@ async function handleSubmitLipSync(apiKey: string, params: any, res: VercelRespo
         return res.status(200).json({ ok: false, error: `Field ${mm.nodeId} ditolak semua kandidat. Terakhir: ${r.msg}`, data: r.data })
       }
       nodeField[mm.nodeId] = cands[nextIdx]
-      console.log(`[runninghub] lipsync node ${mm.nodeId}: "${cur}" ditolak → coba "${cands[nextIdx]}"`)
+      console.log(`[runninghub] lipsync node ${mm.nodeId}: "${cur}" ditolak â†’ coba "${cands[nextIdx]}"`)
       continue
     }
     if (mm && /field_not_found|node_not_found/i.test(mm.reason)) {
-      // Entri non-media bermasalah → buang (pakai default workflow), submit ulang
+      // Entri non-media bermasalah â†’ buang (pakai default workflow), submit ulang
       console.log(`[runninghub] lipsync buang field ${mm.nodeId}/${mm.fieldName} (${mm.reason}), pakai default workflow`)
       droppedEntries.add(`${mm.nodeId}/${mm.fieldName}`)
       continue
@@ -1627,7 +1610,7 @@ async function handleSubmitImageEdit(apiKey: string, params: any, res: VercelRes
         return res.status(200).json({ ok: false, error: `Field ${mm.nodeId} ditolak semua kandidat. Terakhir: ${r.msg}`, data: r.data })
       }
       nodeField[mm.nodeId] = cands[nextIdx]
-      console.log(`[runninghub] image-edit node ${mm.nodeId}: "${cur}" ditolak → coba "${cands[nextIdx]}"`)
+      console.log(`[runninghub] image-edit node ${mm.nodeId}: "${cur}" ditolak â†’ coba "${cands[nextIdx]}"`)
       continue
     }
     if (mm && /field_not_found|node_not_found/i.test(mm.reason)) {
@@ -1762,7 +1745,7 @@ async function handleSubmitH3I2V(apiKey: string, params: any, res: VercelRespons
         return res.status(200).json({ ok: false, error: `Field ${mm.nodeId} ditolak semua kandidat. Terakhir: ${r.msg}`, data: r.data })
       }
       nodeField[mm.nodeId] = cands[nextIdx]
-      console.log(`[runninghub] h3-i2v node ${mm.nodeId}: "${cur}" ditolak → coba "${cands[nextIdx]}"`)
+      console.log(`[runninghub] h3-i2v node ${mm.nodeId}: "${cur}" ditolak â†’ coba "${cands[nextIdx]}"`)
       continue
     }
     if (mm && /field_not_found|node_not_found/i.test(mm.reason)) {
@@ -1881,7 +1864,7 @@ async function handleSubmitSeedance2(apiKey: string, params: any, res: VercelRes
           return res.status(200).json({ ok: false, error: `Field ${mm.nodeId} ditolak semua kandidat. Terakhir: ${r.msg}`, data: r.data })
         }
         nodeField[mm.nodeId] = IMG_CANDS[nextIdx]
-        console.log(`[runninghub] seedance2 node ${mm.nodeId}: "${cur}" ditolak → coba "${IMG_CANDS[nextIdx]}"`)
+        console.log(`[runninghub] seedance2 node ${mm.nodeId}: "${cur}" ditolak â†’ coba "${IMG_CANDS[nextIdx]}"`)
         continue
       }
       if (mm && /field_not_found|node_not_found/i.test(mm.reason)) {
@@ -2020,7 +2003,7 @@ async function handleSubmitSeedance26(apiKey: string, params: any, res: VercelRe
           continue
         }
         nodeField[mm.nodeId] = IMG_CANDS[nextIdx]
-        console.log(`[runninghub] seedance2.6 node ${mm.nodeId}: "${cur}" ditolak → coba "${IMG_CANDS[nextIdx]}"`)
+        console.log(`[runninghub] seedance2.6 node ${mm.nodeId}: "${cur}" ditolak â†’ coba "${IMG_CANDS[nextIdx]}"`)
         continue
       }
       if (mm && /field_not_found|node_not_found/i.test(mm.reason)) {
@@ -2036,145 +2019,6 @@ async function handleSubmitSeedance26(apiKey: string, params: any, res: VercelRe
   } catch (err: any) {
     console.error('[runninghub] seedance2.6 error:', err.message)
     return res.status(200).json({ ok: false, error: err.message || 'Seedance2.6 gagal' })
-  }
-}
-
-async function handleSubmitH3Drama(apiKey: string, params: any, res: VercelResponse) {
-  const {
-    workflow_id,
-    workflowId,
-    images = [],
-    prompt = '',
-    aspectRatio = H3_DRAMA_ASPECT_FALLBACK,
-  } = params
-
-  const imageList: Array<{ base64: string; fileName?: string; mimeType?: string }> = Array.isArray(images)
-    ? images.filter((im: any) => im && im.base64).slice(0, H3_DRAMA_MAX_IMAGES)
-    : []
-  if (imageList.length === 0) return res.status(200).json({ ok: false, error: 'Missing images' })
-
-  const appId = workflow_id || workflowId || RUNNINGHUB_H3_DRAMA_APP_ID
-  const effAspect = H3_DRAMA_ASPECTS.has(String(aspectRatio)) ? String(aspectRatio) : H3_DRAMA_ASPECT_FALLBACK
-  const effPrompt = String(prompt).trim() || H3_DRAMA_DEFAULT_PROMPT
-
-  try {
-    const uploaded: string[] = []
-    for (let i = 0; i < imageList.length; i++) {
-      const im = imageList[i]
-      console.log(`[runninghub] Uploading image ${i + 1}/${imageList.length} (h3-drama)...`)
-      const up = await rhUpload(apiKey, im.base64, im.fileName || `reference${i + 1}.jpg`, im.mimeType || 'image/jpeg')
-      uploaded.push(up.fileName)
-    }
-    console.log(`[runninghub] h3-drama images uploaded: ${uploaded.length}`)
-
-    const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${appId}`
-    const RETRY_DELAY_MS = 10000
-    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
-
-    const nodeField: Record<string, string> = {}
-    H3_DRAMA_IMAGE_NODES.forEach((n) => { nodeField[n] = 'image' })
-    const IMG_CANDS = ['image', 'file', 'path', 'filename', 'input', 'src']
-    const parseMismatch = (msg: string): { nodeId: string; fieldName: string; reason: string } | null => {
-      const m = /nodeId=([^,)]+),\s*fieldName=([^,)]+),\s*reason=([^,)]+)/.exec(msg)
-      return m ? { nodeId: m[1].trim(), fieldName: m[2].trim(), reason: m[3].trim() } : null
-    }
-
-    const buildList = () => {
-      const list: Array<{ nodeId: string; fieldName: string; fieldValue: string }> = []
-      uploaded.forEach((fileName, i) => {
-        const node = H3_DRAMA_IMAGE_NODES[i]
-        list.push({ nodeId: node, fieldName: nodeField[node], fieldValue: fileName })
-      })
-      list.push({ nodeId: H3_DRAMA_TEXT_NODE, fieldName: 'value', fieldValue: effPrompt })
-      list.push({ nodeId: H3_DRAMA_ASPECT_NODE, fieldName: 'aspect_ratio', fieldValue: effAspect })
-      return list
-    }
-
-    const droppedEntries = new Set<string>()
-    let lastErr = 'Unknown error'
-    let lastData: any = null
-    let r: any = null
-
-    for (let round = 0; round < 8; round++) {
-      const list = buildList().filter((e) => !droppedEntries.has(`${e.nodeId}/${e.fieldName}`))
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        console.log(`[runninghub] h3-drama round=${round} (attempt ${attempt}/3)`)
-        const apiRes = await fetch(endpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify({ nodeInfoList: list, instanceType: 'default', usePersonalQueue: 'false' }),
-        })
-        const rawText = await apiRes.text()
-        console.log(`[runninghub] submit-h3-drama ${apiRes.status}:`, rawText.slice(0, 1000))
-        let data: any
-        try { data = JSON.parse(rawText) } catch { data = { raw: rawText } }
-        r = {
-          http: apiRes.status,
-          data,
-          code: data.code ?? data.errorCode,
-          msg: String(data.msg || data.errorMessage || data.message || ''),
-          taskId: data.data?.taskId || data.taskId || data.id || data.task_id,
-          status: data.data?.status || data.status || 'QUEUED',
-        }
-        if (r.taskId || (r.http !== 429 && r.code !== 429 && r.code !== 421 && r.code !== '421')) break
-        if (r.http === 429 || r.code === 429) {
-          return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data: r.data, retryable: true })
-        }
-        console.log(`[runninghub] Queue limit (421), retrying in ${RETRY_DELAY_MS / 1000}s...`)
-        if (attempt < 3) await sleep(RETRY_DELAY_MS)
-      }
-      if (!r) break
-      if (r.taskId) {
-        return res.status(200).json({
-          ok: true,
-          data: {
-            id: r.taskId,
-            taskId: r.taskId,
-            status: r.status,
-            provider: 'runninghub',
-            workflowId: appId,
-          },
-        })
-      }
-      if (r.code === 421 || r.code === '421') {
-        return res.status(200).json({ ok: false, error: 'Queue limit reached, coba lagi dalam beberapa menit', data: r.data, retryable: true })
-      }
-      lastErr = r.msg || `Error code: ${r.code}`
-      lastData = r.data
-      const mm = r.code === 803 || r.code === '803' ? parseMismatch(r.msg) : null
-      if (mm && /field_not_found|node_not_found/i.test(mm.reason) && H3_DRAMA_IMAGE_NODES.includes(mm.nodeId)) {
-        if (/node_not_found/i.test(mm.reason)) {
-          droppedEntries.add(`${mm.nodeId}/${nodeField[mm.nodeId]}`)
-          console.log(`[runninghub] h3-drama node ${mm.nodeId} tidak ada, dibuang`)
-          continue
-        }
-        const cur = nodeField[mm.nodeId] || ''
-        const nextIdx = IMG_CANDS.indexOf(cur) + 1
-        if (nextIdx <= 0 || nextIdx >= IMG_CANDS.length) {
-          droppedEntries.add(`${mm.nodeId}/${cur}`)
-          console.log(`[runninghub] h3-drama field ${mm.nodeId} ditolak semua kandidat, dibuang`)
-          continue
-        }
-        nodeField[mm.nodeId] = IMG_CANDS[nextIdx]
-        console.log(`[runninghub] h3-drama node ${mm.nodeId}: "${cur}" ditolak → coba "${IMG_CANDS[nextIdx]}"`)
-        continue
-      }
-      if (mm && /field_not_found|node_not_found/i.test(mm.reason)) {
-        console.log(`[runninghub] h3-drama buang field ${mm.nodeId}/${mm.fieldName} (${mm.reason})`)
-        droppedEntries.add(`${mm.nodeId}/${mm.fieldName}`)
-        continue
-      }
-      const errorMsg = translateRhError(String(r.code ?? ''), r.msg) || r.msg || 'Submit gagal'
-      return res.status(200).json({ ok: false, error: errorMsg, code: r.code, data: r.data })
-    }
-
-    return res.status(200).json({ ok: false, error: `Gagal submit h3-drama. Terakhir: ${lastErr}`, data: lastData })
-  } catch (err: any) {
-    console.error('[runninghub] h3-drama error:', err.message)
-    return res.status(200).json({ ok: false, error: err.message || 'H3 Drama gagal' })
   }
 }
 
@@ -2459,10 +2303,10 @@ async function handleQuery(apiKey: string, taskId: string, res: VercelResponse) 
   if (rhCode !== undefined && rhCode !== 0 && rhCode !== '0' && rhCode !== '') {
     const msgStr = String(errorMsg || '')
     // RunningHub mengembalikan error generik berbahasa Mandarin saat task gagal di tengah jalan,
-    // mis. "工作流运行失败" (= workflow run failed). Ini BUKAN network error — task sudah
+    // mis. "å·¥ä½œæµè¿è¡Œå¤±è´¥" (= workflow run failed). Ini BUKAN network error â€” task sudah
     // dibuat & dijalankan lalu gagal di server. Kembalikan sebagai FAILED agar frontend
-    // langsung berhenti (fatal) alih-alih retry 10x selama ±3 menit.
-    if (/工作流运行失败|运行失败|workflow.*fail|task.*fail|执行失败/i.test(msgStr)) {
+    // langsung berhenti (fatal) alih-alih retry 10x selama Â±3 menit.
+    if (/å·¥ä½œæµè¿è¡Œå¤±è´¥|è¿è¡Œå¤±è´¥|workflow.*fail|task.*fail|æ‰§è¡Œå¤±è´¥/i.test(msgStr)) {
       return res.status(200).json({
         ok: true,
         data: {
@@ -2562,13 +2406,13 @@ function translateRhError(code: string, msg?: string): string {
   }
   const msgStr = String(msg || '')
   // Terjemahkan pesan Mandarin generik dari RunningHub agar user paham.
-  if (/工作流运行失败|运行失败|workflow.*fail/i.test(msgStr)) {
-    return 'Workflow RunningHub gagal dijalankan (工作流运行失败). Task sudah dibuat tapi error di server — biasanya karena: (1) gambar input ditolak model (coba resolusi/format lain, min. 512px, JPG), (2) prompt terlalu pendek/tidak didukung (coba prompt Inggris lebih deskriptif, mis. "convert to cartoon style, keep face"), (3) workflow Kontext sedang error/overload, atau (4) koin RH habis di tengah jalan. Coba lagi, ganti gambar/prompt, atau ganti API key.'
+  if (/å·¥ä½œæµè¿è¡Œå¤±è´¥|è¿è¡Œå¤±è´¥|workflow.*fail/i.test(msgStr)) {
+    return 'Workflow RunningHub gagal dijalankan (å·¥ä½œæµè¿è¡Œå¤±è´¥). Task sudah dibuat tapi error di server â€” biasanya karena: (1) gambar input ditolak model (coba resolusi/format lain, min. 512px, JPG), (2) prompt terlalu pendek/tidak didukung (coba prompt Inggris lebih deskriptif, mis. "convert to cartoon style, keep face"), (3) workflow Kontext sedang error/overload, atau (4) koin RH habis di tengah jalan. Coba lagi, ganti gambar/prompt, atau ganti API key.'
   }
   if (/NOT_ENOUGH_POWER|balance|insufficient|coin/i.test(msgStr)) {
     return 'Saldo/kuota kerja tidak cukup. Silakan top up RH coins di akun RunningHub.'
   }
-  // Pesan Mandarin lain yang tidak dikenal — sertakan arti generik + pesan asli.
+  // Pesan Mandarin lain yang tidak dikenal â€” sertakan arti generik + pesan asli.
   if (/[\u4e00-\u9fff]/.test(msgStr)) {
     return `RunningHub error: ${msgStr} (pesan asli dari server, coba lagi atau ganti gambar/prompt)`
   }

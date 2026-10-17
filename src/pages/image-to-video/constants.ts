@@ -89,7 +89,6 @@ export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'rh:h3-i2v', label: 'MiniMax H3 — Ultra-HD Fast 8-Step Image to Video (RunningHub)', cr: 80, provider: 'runninghub' },
     { value: 'rh:seedance2', label: 'Seedance 2.0 Replica — Image to Video Storyboard (RunningHub)', cr: 40, provider: 'runninghub', apiModel: 'seedance2' },
     { value: 'rh:seedance2.6', label: 'Seedance 2.6 Replica — Multi Karakter + Storyboard (RunningHub)', cr: 50, provider: 'runninghub', apiModel: 'seedance26' },
-    { value: 'rh:h3-drama', label: 'MiniMax H3 Drama — High-Dynamic Action & Drama I2V (RunningHub)', cr: 80, provider: 'runninghub', apiModel: 'h3drama' },
   ],
 
   galleri5: [
@@ -455,9 +454,6 @@ export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: s
       { value: 'std', label: 'Standard (durasi dari prompt)', mult: 1, duration: 10 },
     ],
     'rh:seedance2.6': [
-      { value: 'std', label: 'Standard (durasi dari prompt)', mult: 1, duration: 10 },
-    ],
-    'rh:h3-drama': [
       { value: 'std', label: 'Standard (durasi dari prompt)', mult: 1, duration: 10 },
     ],
   },

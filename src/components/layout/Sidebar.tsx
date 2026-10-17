@@ -34,6 +34,7 @@ import {
   Eraser,
   ArrowUpFromLine,
   Music,
+  Volume2,
 } from 'lucide-react'
 
 interface NavItem {
@@ -60,6 +61,7 @@ const generateNav: NavItem[] = [
   // (disembunyikan) { label: 'Dola Chat', href: '/generate/dola-chat', icon: <MessageSquare className="h-4 w-4" /> },
   { label: 'Talking Photo', href: '/generate/talking-photo', icon: <Mic className="h-4 w-4" /> },
   { label: 'AI Song Cover', href: '/generate/song-cover', icon: <Music className="h-4 w-4" /> },
+  { label: 'Voice Over', href: '/generate/voice-over', icon: <Volume2 className="h-4 w-4" /> },
   // (disembunyikan) { label: 'H3 Image→Video', href: '/generate/h3-i2v', icon: <Zap className="h-4 w-4" /> },
   // (disembunyikan) { label: 'UGC Video Storyboard', href: '/generate/ugc-storyboard', icon: <Film className="h-4 w-4" /> },
   { label: 'Watermark Remover', href: '/generate/watermark-remover', icon: <Eraser className="h-4 w-4" /> },
