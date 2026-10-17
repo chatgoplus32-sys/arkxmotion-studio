@@ -155,8 +155,21 @@ export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'nb:r2v', label: '🎬 Reference Video to Video — Omni Flash 1.1 (NexaBot)', cr: 0.15, provider: 'nexabot', apiModel: 'r2v' },
     { value: 'nb:extend', label: '⏩ Extend Video (1 video) — Omni Flash 1.1 (NexaBot)', cr: 0.15, provider: 'nexabot', apiModel: 'extend' },
   ],
-  // Alriz hanya dipakai di halaman Motion (motion control).
-  alriz: [],
+  // Alriz Motion (halaman Image-to-Video): 10 model I2V — 1 gambar + prompt,
+  // tanpa video referensi. Harga per video Rp1.000 (cr = RUPIAH, bukan kredit).
+  // Motion Control (mc-kling-*) tetap di halaman Motion.
+  alriz: [
+    { value: 'al:kling-3.0-turbo-std', label: 'Kling 3.0 Turbo · 720p · 13 dtk (Alriz)', cr: 1000, provider: 'alriz', apiModel: 'kling-3.0-turbo-std' },
+    { value: 'al:gemini-omni-flash-std', label: 'Gemini Omni Flash · 720p · 10 dtk (Alriz)', cr: 1000, provider: 'alriz', apiModel: 'gemini-omni-flash-std' },
+    { value: 'al:happy-horse-std', label: 'Happy Horse · 720p · 10 dtk (Alriz)', cr: 1000, provider: 'alriz', apiModel: 'happy-horse-std' },
+    { value: 'al:happy-horse-1.1-std', label: 'Happy Horse 1.1 · 720p · 10 dtk (Alriz)', cr: 1000, provider: 'alriz', apiModel: 'happy-horse-1.1-std' },
+    { value: 'al:wan-3.0-std', label: 'Wan 3.0 · 720p · 14 dtk (Alriz)', cr: 1000, provider: 'alriz', apiModel: 'wan-3.0-std' },
+    { value: 'al:wan-3.0-prime-std', label: 'Wan 3.0 Prime · 720p · 10 dtk (Alriz)', cr: 1000, provider: 'alriz', apiModel: 'wan-3.0-prime-std' },
+    { value: 'al:grok-imagine-1.5-std', label: 'Grok Imagine 1.5 · 720p · 10 dtk (Alriz)', cr: 1000, provider: 'alriz', apiModel: 'grok-imagine-1.5-std' },
+    { value: 'al:kling-o3-pro', label: 'Kling O3 Pro · 1080p · 10 dtk (Alriz)', cr: 1000, provider: 'alriz', apiModel: 'kling-o3-pro' },
+    { value: 'al:kling-v3-standard-std', label: 'Kling V3 Standard · 720p · 9 dtk (Alriz)', cr: 1000, provider: 'alriz', apiModel: 'kling-v3-standard-std' },
+    { value: 'al:minimax-h3-std', label: 'MiniMax H3 · 768p · 15 dtk (Alriz)', cr: 1000, provider: 'alriz', apiModel: 'minimax-h3-std' },
+  ],
 }
 
 export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; label: string; mult: number; duration: number; cr?: number; resolution?: string; sound?: string; sizeTier?: string }>>> = {
@@ -672,7 +685,7 @@ export const MODEL_RATIO_RESTRICTIONS: Record<string, string[]> = {
   kling3_server10: ['9:16', '16:9'],
   kling21pro_server10: ['9:16', '16:9'],
   grok_imagine_s15: ['9:16', '16:9', '1:1', '4:3'],
-  sora2_server10: ['16:9', '9:16'],
+  sora2_server10: [], // Sora 2: tanpa aspect_ratio — rasio mengikuti gambar sumber
   seedance2_multi_s15: ['9:16', '16:9', '1:1', '4:3'],
   seedance25_server19: ['9:16', '16:9', '1:1', '3:4', '4:3'],
   wan30_server19: [],
@@ -685,6 +698,17 @@ export const MODEL_RATIO_RESTRICTIONS: Record<string, string[]> = {
   'nb:i2v': ['16:9', '9:16'],
   'nb:r2v': ['16:9', '9:16'],
   'nb:extend': ['16:9', '9:16'],
+  // Alriz I2V — aspek dari /api/models upstream ('auto' → pakai daftar default)
+  'kling-3.0-turbo-std': ['16:9', '9:16', '1:1'],
+  'gemini-omni-flash-std': ['16:9', '9:16'],
+  'happy-horse-std': ['16:9', '9:16', '1:1', '4:3', '3:4'],
+  'happy-horse-1.1-std': ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', '9:21', '5:4', '4:5'],
+  'wan-3.0-std': ['16:9', '9:16', '1:1'],
+  'wan-3.0-prime-std': ['16:9', '9:16', '1:1'],
+  'grok-imagine-1.5-std': ['16:9', '9:16', '1:1'],
+  'kling-o3-pro': ['16:9', '9:16', '1:1'],
+  'kling-v3-standard-std': ['16:9', '9:16', '1:1'],
+  // minimax-h3-std: upstream 'auto' → tanpa restriction
 }
 
 export const TEMPLATES = [

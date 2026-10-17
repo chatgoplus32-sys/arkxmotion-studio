@@ -65,7 +65,8 @@ export const SEAVI_MODELS: Record<string, SeaviModelSpec> = {
   kling21pro_server10: i2v('kling21pro_server10', 'Kling 2.1 Pro · Server 10', 2, [5, 10], ['9:16', '16:9']),
   grok_imagine_s15: i2v('grok_imagine_s15', 'Grok Imagine · Server 15', 1, [10], ['9:16', '16:9', '1:1', '4:3']),
   // Sora 2: i2v — 1 gambar WAJIB (upstream menolak t2v: "Missing required
-  // input: image_url", terverifikasi 17 Okt 2026) — 10 detik, 1 token.
+  // input: image_url") dan TANPA aspect_ratio ("Unsupported parameter:
+  // aspect_ratio", terverifikasi 17 Okt 2026) — rasio mengikuti gambar sumber.
   sora2_server10: {
     id: 'sora2_server10',
     label: 'Sora 2 · Server 10',
@@ -75,7 +76,7 @@ export const SEAVI_MODELS: Record<string, SeaviModelSpec> = {
     imageMode: 'single',
     videoMode: 'none',
     durations: [10],
-    aspects: ['16:9', '9:16'],
+    aspects: [],
     promptMax: 2000,
     promptRequired: true,
   },

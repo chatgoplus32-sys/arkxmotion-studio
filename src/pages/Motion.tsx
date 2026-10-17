@@ -88,22 +88,12 @@ const PROVIDERS = {
   ]},
   // Alriz: harga per video dalam RUPIAH (cr = Rp) — sinkron upstream /api/models (okt 2026):
   // MC 2.6 Std Rp750, MC 2.6 Pro Rp1.250, MC 3.0 Std Rp1.000, MC 3.0 Pro Rp1.500.
-  // Model I2V (gambar saja + prompt, tanpa video referensi) semua Rp1.000.
+  // Model I2V (gambar + prompt) dipindah ke halaman Image-to-Video (provider 'alriz').
   alriz: { name: 'Alriz Motion', models: [
     { key: 'al:mc-kling-2.6-std', label: 'MC 2.6 Std · 720p', cr: 750 },
     { key: 'al:mc-kling-2.6-pro', label: 'MC 2.6 Pro · 1080p', cr: 1250 },
     { key: 'al:mc-kling-3.0-std', label: 'MC 3.0 Std · 720p', cr: 1000 },
     { key: 'al:mc-kling-3.0-pro', label: 'MC 3.0 Pro · 1080p', cr: 1500 },
-    { key: 'al:kling-3.0-turbo-std', label: 'Kling 3.0 Turbo I2V · 720p · 13 dtk', cr: 1000 },
-    { key: 'al:gemini-omni-flash-std', label: 'Gemini Omni Flash I2V · 720p · 10 dtk', cr: 1000 },
-    { key: 'al:happy-horse-std', label: 'Happy Horse I2V · 720p · 10 dtk', cr: 1000 },
-    { key: 'al:happy-horse-1.1-std', label: 'Happy Horse 1.1 I2V · 720p · 10 dtk', cr: 1000 },
-    { key: 'al:wan-3.0-std', label: 'Wan 3.0 I2V · 720p · 14 dtk', cr: 1000 },
-    { key: 'al:wan-3.0-prime-std', label: 'Wan 3.0 Prime I2V · 720p · 10 dtk', cr: 1000 },
-    { key: 'al:grok-imagine-1.5-std', label: 'Grok Imagine 1.5 I2V · 720p · 10 dtk', cr: 1000 },
-    { key: 'al:kling-o3-pro', label: 'Kling O3 Pro I2V · 1080p · 10 dtk', cr: 1000 },
-    { key: 'al:kling-v3-standard-std', label: 'Kling V3 Std I2V · 720p · 9 dtk', cr: 1000 },
-    { key: 'al:minimax-h3-std', label: 'MiniMax H3 I2V · 768p · 15 dtk', cr: 1000 },
   ]},
 }
 

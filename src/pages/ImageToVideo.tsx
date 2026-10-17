@@ -6,6 +6,8 @@ import { Image, Upload, Rocket, Loader2, Trash2, Key, ExternalLink, Download, X,
 import { Swipeable } from '@/components/Swipeable'
 import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
 import { getSeaviSpec, generateWithSeavi, fetchSeaviBalance } from '@/lib/seavi'
+import { generateWithAlriz, getAlrizModel } from '@/lib/alriz'
+import { chargeAlrizWallet, refundAlrizWallet } from '@/lib/alrizWallet'
 import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { uploadToCatbox, submitRoboneoI2V, pollRoboneoI2V, checkRoboneoBalance, uploadImageForRoboneo,
@@ -120,7 +122,7 @@ function SeaviMcSlotCard({ index, slot, onImage, onVideo, onRemove, canRemove }:
 // Provider yang sementara disembunyikan di halaman Image to Video (tinggal
 // kembangkan daftarnya untuk menampilkan lagi): weavy, wavespeed, framia,
 // oneover, firefly, genspark, riverside.
-const I2V_PROVIDER_IDS: ProviderId[] = ['roboneo', 'createpulse', 'leonardo', 'galleri5', 'nexabot', 'runninghub', 'seavi']
+const I2V_PROVIDER_IDS: ProviderId[] = ['roboneo', 'createpulse', 'leonardo', 'galleri5', 'nexabot', 'runninghub', 'seavi', 'alriz']
 
 export default function ImageToVideoPage() {
   const { keys, routing, fetchMaintenance } = useProviderManager()
@@ -457,6 +459,9 @@ export default function ImageToVideoPage() {
   // Seedance 2.6 Replica (RunningHub): 1-5 gambar referensi karakter + storyboard → video.
   const isRhSeedance26 = provider === 'runninghub' && currentModel?.apiModel === 'seedance26'
   const SD26_MAX_IMAGES = 5
+  // Alriz Motion (I2V): 1 gambar + prompt → video via alrizmotion.my.id.
+  const isAlriz = provider === 'alriz'
+  const alrizSpec = isAlriz ? getAlrizModel(currentModel?.apiModel || '') : undefined
   const isNbT2V = isNb && nbApiModel === 't2v'
   const isNbSFV = isNb && nbApiModel === 'sfv'
   const isNbI2V = isNb && nbApiModel === 'i2v'
@@ -898,6 +903,9 @@ export default function ImageToVideoPage() {
     }
     if (provider === 'runninghub' && isRhSeedance26) {
       if (sd26Files.length === 0) return 'Seedance 2.6 Storyboard membutuhkan minimal 1 gambar referensi'
+    } else if (provider === 'alriz') {
+      if (!imgFile) return 'Alriz I2V membutuhkan gambar input'
+      if (alrizSpec && availableRatios.length > 0 && !availableRatios.includes(ratio)) return `Rasio ${ratio} tidak didukung model ini — pilih di antara: ${availableRatios.join(', ')}`
     } else if (provider === 'runninghub' && !imgFile) return isRhSeedance
       ? 'Seedance 2.0 Storyboard membutuhkan 1 gambar referensi'
       : 'RunningHub H3 I2V membutuhkan gambar input'
@@ -923,7 +931,10 @@ export default function ImageToVideoPage() {
     // CreatePulse & Seavi dilewati: keduanya memakai wallet internal yang
     // dicek di validateGenerate + deduct/refund di alur generate sendiri.
     if (provider !== 'createpulse' && provider !== 'seavi') {
-      const pre = await precheckProviderBalance(provider, totalCredits)
+      const preOpts = provider === 'alriz'
+        ? { authToken: useAuthStore.getState().token || undefined, isAdmin: useAuthStore.getState().user?.role === 'admin' }
+        : undefined
+      const pre = await precheckProviderBalance(provider, totalCredits, preOpts as any)
       if (!pre.ok) {
         addLog(`❌ ${pre.error}`, 'error', provider)
         addToast(pre.error || 'Saldo tidak cukup', 'error')
@@ -3067,6 +3078,95 @@ export default function ImageToVideoPage() {
         } else {
           throw new Error(rotation.error || 'Generation failed')
         }
+      } else if (provider === 'alriz') {
+        // ─── Alriz Motion I2V: 1 gambar + prompt → video (alrizmotion.my.id) ───
+        if (!imgFile) throw new Error('Alriz I2V membutuhkan gambar input')
+        const alrizModelId = currentModel?.apiModel || ''
+        const alrizOkRatio = !alrizSpec || alrizSpec.aspectRatios.length === 0 || alrizSpec.aspectRatios.includes(ratio)
+
+        // Upload gambar (normalisasi + catbox) → public URL untuk upstream.
+        setStatus((s) => ({ ...s, text: 'Upload gambar...', pct: 8 }))
+        const normalizedImage = await normalizeImage(imgFile, (msg) => {
+          addLog(`🖼️ ${msg}`, 'debug', 'alriz')
+        })
+        const imageUrl = await uploadToCatbox(normalizedImage, 'image', (msg) => {
+          addLog(`🖼️ ${msg}`, 'debug', 'alriz')
+        })
+        addLog(`🖼️ Image uploaded: ${imageUrl.slice(0, 60)}...`, 'info', 'alriz')
+
+        // Wallet internal (user login): potong harga model SEBELUM submit;
+        // admin tandai skip; tamu tanpa login pakai saldo key upstream.
+        const alrizAuth = useAuthStore.getState()
+        const alrizIsAdmin = alrizAuth.user?.role === 'admin'
+        const alrizAuthToken = alrizAuth.token || ''
+        const alrizBatchId = !alrizIsAdmin && alrizAuthToken
+          ? `alriz-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+          : null
+        let alrizCharged = 0
+        try {
+          if (alrizBatchId) {
+            addLog(`💰 Memotong saldo Alriz...`, 'info', 'alriz')
+            const charge = await chargeAlrizWallet(alrizAuthToken, alrizModelId, 1, alrizBatchId)
+            alrizCharged = charge.deducted
+            addLog(`✅ Terpotong Rp ${charge.deducted.toLocaleString('id-ID')} ✓ sisa Rp ${charge.balance.toLocaleString('id-ID')}`, 'success', 'alriz')
+          } else if (alrizIsAdmin) {
+            addLog(`⚡ Admin mode — skip saldo wallet`, 'info', 'alriz')
+          } else {
+            addLog(`ℹ️ Tamu — saldo dipotong dari key upstream`, 'info', 'alriz')
+          }
+
+          setStatus((s) => ({ ...s, text: 'Submit Alriz...', pct: 15 }))
+          const rotation = await withTokenRotation<string>(
+            'alriz',
+            async (apiKey, keyInfo) => {
+              addLog(`🔑 Trying key: ${keyInfo.name || keyInfo.id}`, 'info', 'alriz')
+              return await generateWithAlriz({
+                apiKey,
+                model: alrizModelId,
+                imageUrl,
+                prompt: prompt.trim() || undefined,
+                aspectRatio: alrizOkRatio ? ratio : undefined,
+                onLog: (msg, level) => addLog(msg, (level as any) || 'info', 'alriz'),
+                onStatus: (text, pct) => setStatus((s) => ({ ...s, text, pct: Math.max(s.pct, Math.min(95, pct)) })),
+              })
+            },
+            {
+              onKeySwitch: (from, to, attempt) => {
+                addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn', 'alriz')
+              },
+              onError: (err, key) => {
+                if (detectTokenError('alriz', err)) {
+                  addLog(`⚠️ Key "${key.name}" is invalid: ${err.message}`, 'warn', 'alriz')
+                }
+              },
+            }
+          )
+          if (!rotation.ok || !rotation.result) throw new Error(rotation.error || 'Alriz generation failed')
+
+          const videoUrl = rotation.result
+          setResults((prev) => [videoUrl, ...prev])
+          saveGalleryItem(videoUrl)
+          successRef.current = true
+          setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+          addLog(`✅ Video selesai: ${videoUrl.slice(0, 60)}...`, 'success', 'alriz')
+          notifyGenerationComplete(currentModel?.label || model, 'Alriz Motion')
+          if (rotation.triedKeys > 1) {
+            addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success', 'alriz')
+          }
+        } catch (err: any) {
+          // Gagal (upload/submit/poll/kapasitas) → refund potongan wallet.
+          if (alrizBatchId && alrizCharged > 0) {
+            try {
+              const refunded = await refundAlrizWallet(alrizAuthToken, { batch_id: alrizBatchId })
+              if (refunded != null) {
+                addLog(`↩ Refund Rp ${alrizCharged.toLocaleString('id-ID')} ✓ sisa Rp ${refunded.toLocaleString('id-ID')}`, 'info', 'alriz')
+              } else {
+                addLog(`⚠️ Refund wallet gagal — hubungi admin (batch ${alrizBatchId})`, 'error', 'alriz')
+              }
+            } catch { /* tenang di failover */ }
+          }
+          throw err
+        }
       } else {
         addLog(`ℹ️ Using default provider flow for ${PROVIDER_CONFIGS[provider].name}`, 'info', provider)
         const rotation = await withTokenRotation<string>(
@@ -3652,7 +3752,9 @@ export default function ImageToVideoPage() {
                         value: m.value,
                         label: provider === 'createpulse'
                           ? m.label
-                          : `${m.label} — ${m.cr === 0 ? 'kuota' : '$' + (m.cr / 1000).toFixed(3)}`,
+                          : provider === 'alriz'
+                            ? `${m.label} — Rp${m.cr.toLocaleString('id-ID')}`
+                            : `${m.label} — ${m.cr === 0 ? 'kuota' : '$' + (m.cr / 1000).toFixed(3)}`,
                       }))}
                     />
                   </div>
@@ -3667,11 +3769,20 @@ export default function ImageToVideoPage() {
                   </div>
                   <div>
                     <Label>{isNb ? 'Resolusi' : 'Durasi'}</Label>
-                    <Select
-                      value={quality}
-                      onChange={(e) => setQuality(e.target.value)}
-                      options={qualityOptions.map((q) => ({ value: q.value, label: q.label }))}
-                    />
+                    {provider === 'alriz' ? (
+                      <Select
+                        value="std"
+                        onChange={() => {}}
+                        disabled
+                        options={[{ value: 'std', label: `${alrizSpec?.maxDuration ?? '—'} detik (mengikuti model)` }]}
+                      />
+                    ) : (
+                      <Select
+                        value={quality}
+                        onChange={(e) => setQuality(e.target.value)}
+                        options={qualityOptions.map((q) => ({ value: q.value, label: q.label }))}
+                      />
+                    )}
                   </div>
                   <div>
                     <Label>Template Prompt</Label>
@@ -3718,8 +3829,8 @@ export default function ImageToVideoPage() {
                 )}
               </Button>
               <div className="text-xs text-muted-foreground">
-                Est. Cost: <b className="text-foreground font-mono">{provider === 'createpulse' ? `Rp ${getCreatepulseCost(currentModel?.apiModel).toLocaleString('id-ID')}` : provider === 'nexabot' ? `${displayCredits} cr` : `${totalCredits} credits`}</b>
-                {provider !== 'createpulse' && <BalanceBadge provider={provider} required={totalCredits} />}
+                Est. Cost: <b className="text-foreground font-mono">{provider === 'createpulse' ? `Rp ${getCreatepulseCost(currentModel?.apiModel).toLocaleString('id-ID')}` : provider === 'alriz' ? `Rp ${totalCredits.toLocaleString('id-ID')}` : provider === 'nexabot' ? `${displayCredits} cr` : `${totalCredits} credits`}</b>
+                {(provider !== 'createpulse' && provider !== 'alriz') && <BalanceBadge provider={provider} required={totalCredits} />}
               </div>
               {!hasActiveKey && provider !== 'createpulse' && (
                 <a
