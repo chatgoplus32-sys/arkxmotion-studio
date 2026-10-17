@@ -141,7 +141,7 @@ export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'sv:kling3_server10', label: 'Kling 3 · S10 — 6/10s (Seavi)', cr: 1, provider: 'seavi', apiModel: 'kling3_server10' },
     { value: 'sv:kling21pro_server10', label: 'Kling 2.1 Pro · S10 — 5/10s (Seavi)', cr: 2, provider: 'seavi', apiModel: 'kling21pro_server10' },
     { value: 'sv:grok_imagine_s15', label: 'Grok Imagine · S15 — 10s (Seavi)', cr: 1, provider: 'seavi', apiModel: 'grok_imagine_s15' },
-    { value: 'sv:sora2_server10', label: 'Sora 2 · S10 — t2v/i2v 10s (Seavi)', cr: 1, provider: 'seavi', apiModel: 'sora2_server10' },
+    { value: 'sv:sora2_server10', label: 'Sora 2 · S10 — i2v 10s (Seavi)', cr: 1, provider: 'seavi', apiModel: 'sora2_server10' },
     // Multi-image / multimodal
     { value: 'sv:seedance2_multi_s15', label: 'Seedance 2 Multi · S15 — 1-3 img (Seavi)', cr: 1, provider: 'seavi', apiModel: 'seedance2_multi_s15' },
     { value: 'sv:seedance25_server19', label: 'Seedance 2.5 · S19 — multi + audio (Seavi)', cr: 2, provider: 'seavi', apiModel: 'seedance25_server19' },

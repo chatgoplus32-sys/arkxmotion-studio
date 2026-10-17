@@ -229,7 +229,7 @@ export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
     id: 'alriz',
     name: 'Alriz Motion',
     icon: '🎬',
-    description: 'Kling Motion Control (2.6 / 3.0, Std & Pro) via alrizmotion.my.id — Rp 750-1.750/video',
+    description: 'Kling Motion Control + 10 model I2V via alrizmotion.my.id — Rp 750-1.500/video',
     keyPlaceholder: 'Paste your Alriz API key (alz_...)',
     keyFormat: 'API key (alz_...)',
     minCredits: 750,

@@ -64,16 +64,15 @@ export const SEAVI_MODELS: Record<string, SeaviModelSpec> = {
   kling3_server10: i2v('kling3_server10', 'Kling 3 · Server 10', 1, [6, 10], ['9:16', '16:9']),
   kling21pro_server10: i2v('kling21pro_server10', 'Kling 2.1 Pro · Server 10', 2, [5, 10], ['9:16', '16:9']),
   grok_imagine_s15: i2v('grok_imagine_s15', 'Grok Imagine · Server 15', 1, [10], ['9:16', '16:9', '1:1', '4:3']),
-  // Sora 2: t2v (tanpa gambar) atau i2v (1 gambar) — 10 detik, 1 token.
+  // Sora 2: i2v — 1 gambar WAJIB (upstream menolak t2v: "Missing required
+  // input: image_url", terverifikasi 17 Okt 2026) — 10 detik, 1 token.
   sora2_server10: {
     id: 'sora2_server10',
     label: 'Sora 2 · Server 10',
     category: 'video_generation',
-    inputType: 'text_or_image_to_video',
+    inputType: 'image_to_video',
     tokens: 1,
-    imageMode: 'multi',
-    imageMin: 0,
-    imageMax: 1,
+    imageMode: 'single',
     videoMode: 'none',
     durations: [10],
     aspects: ['16:9', '9:16'],

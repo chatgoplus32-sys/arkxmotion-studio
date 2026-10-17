@@ -304,12 +304,22 @@ export const ALRIZ_NOMINALS: number[] = [5000, 10000, 15000, 20000, 25000, 50000
 /** Harga model yang tidak dikenal (aman: model termurah). */
 export const ALRIZ_DEFAULT_PRICE = 750
 
-/** Tarif per video per model (Rp) — sama dengan harga upstream. */
+/** Tarif per video per model (Rp) — sama dengan harga upstream /api/models (okt 2026). */
 export const ALRIZ_MODEL_PRICES: Record<string, number> = {
   'mc-kling-2.6-std': 750,
-  'mc-kling-2.6-pro': 1500,
+  'mc-kling-2.6-pro': 1250,
   'mc-kling-3.0-std': 1000,
-  'mc-kling-3.0-pro': 1750,
+  'mc-kling-3.0-pro': 1500,
+  'kling-3.0-turbo-std': 1000,
+  'gemini-omni-flash-std': 1000,
+  'happy-horse-std': 1000,
+  'happy-horse-1.1-std': 1000,
+  'wan-3.0-std': 1000,
+  'wan-3.0-prime-std': 1000,
+  'grok-imagine-1.5-std': 1000,
+  'kling-o3-pro': 1000,
+  'kling-v3-standard-std': 1000,
+  'minimax-h3-std': 1000,
 }
 
 /** Validasi nominal top up Alriz: harus number bulat, ≥ min, ≤ max. */

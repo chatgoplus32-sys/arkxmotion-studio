@@ -78,7 +78,7 @@ const PROVIDER_LIST = [
   { key: 'riverside', label: 'Riverside', desc: 'Riverside Business API — Professional video/audio recording, editing, and production platform.' },
   { key: 'seavi', label: 'Seavi Labs', desc: 'Video & image generation (Seedance 2.5 Multi, Kling 3, Veo 3.1, Motion Control) via api.seavilabs.site — API key (sea-...), saldo token bersama.' },
   { key: 'nexabot', label: 'NexaBot', desc: 'NexaBot AI via nexabot.id — Google Omni (text, image & video ref). Mode session cookie (Unlimited) atau API key (nxb_...).' },
-  { key: 'alriz', label: 'Alriz Motion', desc: 'Kling Motion Control (2.6/3.0 Std & Pro, 720p/1080p) via alrizmotion.my.id — API key (alz_...), saldo Rp.' },
+  { key: 'alriz', label: 'Alriz Motion', desc: 'Kling Motion Control (2.6/3.0, 720p/1080p/768p) + 10 model I2V (Kling 3.0 Turbo/O3/V3, Gemini Omni Flash, Happy Horse, Wan 3.0, MiniMax H3, dll.) via alrizmotion.my.id — API key (alz_...), saldo Rp.' },
 ] as const
 
 const VISIBLE_PROVIDER_LIST = PROVIDER_LIST.filter(p => !(HIDDEN_PROVIDERS as readonly string[]).includes(p.key))
@@ -317,7 +317,7 @@ const TOKEN_GUIDE: Record<string, {
       { text: 'Buat API key baru (format: alz_...) → copy.' },
       { text: 'Paste ke input di samping → klik Cek Token untuk melihat saldo Rp.' },
     ],
-    tip: 'Alriz memakai saldo Rupiah per key: Rp 750 (2.6 Std) · Rp 1.000 (3.0 Std) · Rp 1.500 (2.6 Pro) · Rp 1.750 (3.0 Pro) per video. Job gagal / kapasitas habis direfund otomatis oleh upstream.',
+    tip: 'Alriz memakai saldo Rupiah per key: Rp 750 (2.6 Std) · Rp 1.000 (3.0 Std / semua model I2V) · Rp 1.250 (2.6 Pro) · Rp 1.500 (3.0 Pro) per video. Job gagal / kapasitas habis direfund otomatis oleh upstream.',
   },
 }
 function maskKey(key: string): string {

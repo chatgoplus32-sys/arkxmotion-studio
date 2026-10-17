@@ -10,18 +10,32 @@ const ALRIZ_PROXY = '/api/public/alriz'
 export interface AlrizModelSpec {
   id: string
   name: string
-  resolution: '720p' | '1080p'
+  kind: 'motion' | 'i2v'
+  resolution: '720p' | '1080p' | '768p' | string
   /** Harga per video (Rp) — dipotong dari saldo key upstream. */
   price: number
   maxDuration: number
+  aspectRatios: string[]
   active: boolean
 }
 
+// Sinkron dengan upstream https://alrizmotion.my.id/api/models (okt 2026):
+// harga pro turun (1.500/1.750 → 1.250/1.500) + 10 model I2V baru (Rp1.000).
 export const ALRIZ_MODELS: AlrizModelSpec[] = [
-  { id: 'mc-kling-2.6-std', name: 'Motion Control 2.6', resolution: '720p', price: 750, maxDuration: 30, active: true },
-  { id: 'mc-kling-2.6-pro', name: 'Motion Control 2.6 Pro', resolution: '1080p', price: 1500, maxDuration: 30, active: true },
-  { id: 'mc-kling-3.0-std', name: 'Motion Control 3.0', resolution: '720p', price: 1000, maxDuration: 30, active: true },
-  { id: 'mc-kling-3.0-pro', name: 'Motion Control 3.0 Pro', resolution: '1080p', price: 1750, maxDuration: 30, active: true },
+  { id: 'mc-kling-2.6-std', name: 'Motion Control 2.6', kind: 'motion', resolution: '720p', price: 750, maxDuration: 30, aspectRatios: [], active: true },
+  { id: 'mc-kling-2.6-pro', name: 'Motion Control 2.6 Pro', kind: 'motion', resolution: '1080p', price: 1250, maxDuration: 30, aspectRatios: [], active: true },
+  { id: 'mc-kling-3.0-std', name: 'Motion Control 3.0', kind: 'motion', resolution: '720p', price: 1000, maxDuration: 30, aspectRatios: [], active: true },
+  { id: 'mc-kling-3.0-pro', name: 'Motion Control 3.0 Pro', kind: 'motion', resolution: '1080p', price: 1500, maxDuration: 30, aspectRatios: [], active: true },
+  { id: 'kling-3.0-turbo-std', name: 'Kling 3.0 Turbo', kind: 'i2v', resolution: '720p', price: 1000, maxDuration: 13, aspectRatios: ['16:9', '9:16', '1:1'], active: true },
+  { id: 'gemini-omni-flash-std', name: 'Gemini Omni Flash', kind: 'i2v', resolution: '720p', price: 1000, maxDuration: 10, aspectRatios: ['16:9', '9:16'], active: true },
+  { id: 'happy-horse-std', name: 'Happy Horse', kind: 'i2v', resolution: '720p', price: 1000, maxDuration: 10, aspectRatios: ['16:9', '9:16', '1:1', '4:3', '3:4'], active: true },
+  { id: 'happy-horse-1.1-std', name: 'Happy Horse 1.1', kind: 'i2v', resolution: '720p', price: 1000, maxDuration: 10, aspectRatios: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', '9:21', '5:4', '4:5'], active: true },
+  { id: 'wan-3.0-std', name: 'Wan 3.0', kind: 'i2v', resolution: '720p', price: 1000, maxDuration: 14, aspectRatios: ['16:9', '9:16', '1:1'], active: true },
+  { id: 'wan-3.0-prime-std', name: 'Wan 3.0 Prime', kind: 'i2v', resolution: '720p', price: 1000, maxDuration: 10, aspectRatios: ['16:9', '9:16', '1:1'], active: true },
+  { id: 'grok-imagine-1.5-std', name: 'Grok Imagine 1.5', kind: 'i2v', resolution: '720p', price: 1000, maxDuration: 10, aspectRatios: ['16:9', '9:16', '1:1'], active: true },
+  { id: 'kling-o3-pro', name: 'Kling O3 Pro', kind: 'i2v', resolution: '1080p', price: 1000, maxDuration: 10, aspectRatios: ['16:9', '9:16', '1:1'], active: true },
+  { id: 'kling-v3-standard-std', name: 'Kling V3 Standard', kind: 'i2v', resolution: '720p', price: 1000, maxDuration: 9, aspectRatios: ['16:9', '9:16', '1:1'], active: true },
+  { id: 'minimax-h3-std', name: 'MiniMax H3', kind: 'i2v', resolution: '768p', price: 1000, maxDuration: 15, aspectRatios: ['auto'], active: true },
 ]
 
 export function getAlrizModel(id: string): AlrizModelSpec | undefined {
@@ -101,6 +115,7 @@ export interface AlrizSubmitParams {
   imageUrl?: string
   videoUrl?: string
   prompt?: string
+  aspectRatio?: string
 }
 
 /** POST /jobs → job_id (202). Minimal salah satu image_url / video_url. */
@@ -109,6 +124,7 @@ export async function submitAlrizJob(apiKey: string, params: AlrizSubmitParams):
   if (params.imageUrl) body.image_url = params.imageUrl
   if (params.videoUrl) body.video_url = params.videoUrl
   if (params.prompt) body.prompt = params.prompt
+  if (params.aspectRatio) body.aspect_ratio = params.aspectRatio
   const res = await fetch(`${ALRIZ_PROXY}?path=jobs`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
@@ -206,6 +222,7 @@ export interface AlrizGenerateOptions extends AlrizLogOpts {
   imageUrl?: string
   videoUrl?: string
   prompt?: string
+  aspectRatio?: string
 }
 
 /** End-to-end: submit → poll → URL video hasil. */
@@ -219,6 +236,7 @@ export async function generateWithAlriz(opts: AlrizGenerateOptions): Promise<str
     imageUrl: opts.imageUrl,
     videoUrl: opts.videoUrl,
     prompt: opts.prompt,
+    aspectRatio: opts.aspectRatio,
   })
   onLog?.(`[2/3] ✅ Job dibuat ✓ id=${id}`, 'success')
   onLog?.(`[3/3] ⏳ Polling hasil...`, 'info')

@@ -74,6 +74,16 @@ test('payload multi: seedance2_multi_s15 menerima 1-3 gambar → image_urls', ()
   assert.throws(() => buildSeaviPayload(spec, { imageUrls: ['1', '2', '3', '4'], prompt: 'x' }), /menerima 1-3 gambar/)
 })
 
+// Sora 2 upstream MENOLAK t2v: "Missing required input: image_url" (422,
+// terverifikasi 17 Okt 2026) — wajib i2v dengan field image_url tunggal.
+test('payload sora2: 1 gambar wajib → image_url (bukan image_urls)', () => {
+  const spec = getSeaviSpec('sora2_server10')!
+  const p = buildSeaviPayload(spec, { imageUrls: ['https://x/f.jpg'], prompt: 'animasikan' })
+  assert.equal(p.model, 'sora2_server10')
+  assert.deepEqual(p.input, { image_url: 'https://x/f.jpg' })
+  assert.throws(() => buildSeaviPayload(spec, { prompt: 'tanpa gambar' }), /tepat 1 gambar/)
+})
+
 test('payload multimodal: seedance25_server19 boleh tanpa media, video ≤3', () => {
   const spec = getSeaviSpec('seedance25_server19')!
   const p = buildSeaviPayload(spec, { prompt: 'hanya prompt' })

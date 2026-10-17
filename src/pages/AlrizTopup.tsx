@@ -150,7 +150,7 @@ export default function AlrizTopupPage() {
         eyebrow="Alriz Motion"
         title="Top Up"
         highlight="Saldo"
-        desc={`Isi saldo khusus provider Alriz Motion (Kling Motion Control). Harga: ${formatRp(750)}–${formatRp(1750)}/video`}
+        desc={`Isi saldo khusus provider Alriz Motion (Kling Motion Control). Harga: ${formatRp(750)}–${formatRp(1500)}/video`}
       />
 
       {/* Balance */}
@@ -172,7 +172,7 @@ export default function AlrizTopupPage() {
           ) : (
             <>
               <div>MC 2.6 Std / 3.0 Std: <b className="text-foreground">{formatRp(750)}–{formatRp(1000)}/video</b></div>
-              <div>MC 2.6 Pro / 3.0 Pro: <b className="text-foreground">{formatRp(1500)}–{formatRp(1750)}/video</b></div>
+              <div>MC 2.6 Pro / 3.0 Pro: <b className="text-foreground">{formatRp(1250)}–{formatRp(1500)}/video</b></div>
             </>
           )}
         </div>

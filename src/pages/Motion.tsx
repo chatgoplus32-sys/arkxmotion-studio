@@ -11,7 +11,7 @@ import { submitWeavyMotionControl, uploadWeavyAssetWithRetry, resolveWeavyAssetU
 import { getRunningHubApiKey, getRunningHubWorkflowId, submitRunningHubMotionControl, submitRunningHubUltraFastHD, pollRunningHubTask } from '@/lib/runninghub'
 import { getGalleri5AuthHeaders, submitGalleri5MotionControl, pollGalleri5MotionControl, isGalleri5ModelRestricted, getGalleri5ErrorMessage, GALLERI5_MOTION_MODELS, runGalleri5WithRotation } from '@/lib/galleri5'
 import { getMagnificApiKey, submitMagnificMotion, pollMagnificMotion, type MagnificMotionModel } from '@/lib/magnific'
-import { generateWithAlriz } from '@/lib/alriz'
+import { generateWithAlriz, getAlrizModel } from '@/lib/alriz'
 import { chargeAlrizWallet, refundAlrizWallet } from '@/lib/alrizWallet'
 import { useLocalStorage } from '@/lib/useLocalStorage'
 import { precheckProviderBalance } from '@/lib/balancePrecheck'
@@ -86,13 +86,24 @@ const PROVIDERS = {
     { key: 'gp:kling-v3-pro-motion', label: 'Kling V3 Pro Motion Control (Genspark)', cr: 80 },
     { key: 'gp:kling-v3-std-motion', label: 'Kling V3 Standard Motion Control (Genspark)', cr: 60 },
   ]},
-  // Alriz: harga per video dalam RUPIAH (cr = Rp) — 2.6 Std Rp750,
-  // 3.0 Std Rp1.000, 2.6 Pro Rp1.500, 3.0 Pro Rp1.750.
+  // Alriz: harga per video dalam RUPIAH (cr = Rp) — sinkron upstream /api/models (okt 2026):
+  // MC 2.6 Std Rp750, MC 2.6 Pro Rp1.250, MC 3.0 Std Rp1.000, MC 3.0 Pro Rp1.500.
+  // Model I2V (gambar saja + prompt, tanpa video referensi) semua Rp1.000.
   alriz: { name: 'Alriz Motion', models: [
     { key: 'al:mc-kling-2.6-std', label: 'MC 2.6 Std · 720p', cr: 750 },
+    { key: 'al:mc-kling-2.6-pro', label: 'MC 2.6 Pro · 1080p', cr: 1250 },
     { key: 'al:mc-kling-3.0-std', label: 'MC 3.0 Std · 720p', cr: 1000 },
-    { key: 'al:mc-kling-2.6-pro', label: 'MC 2.6 Pro · 1080p', cr: 1500 },
-    { key: 'al:mc-kling-3.0-pro', label: 'MC 3.0 Pro · 1080p', cr: 1750 },
+    { key: 'al:mc-kling-3.0-pro', label: 'MC 3.0 Pro · 1080p', cr: 1500 },
+    { key: 'al:kling-3.0-turbo-std', label: 'Kling 3.0 Turbo I2V · 720p · 13 dtk', cr: 1000 },
+    { key: 'al:gemini-omni-flash-std', label: 'Gemini Omni Flash I2V · 720p · 10 dtk', cr: 1000 },
+    { key: 'al:happy-horse-std', label: 'Happy Horse I2V · 720p · 10 dtk', cr: 1000 },
+    { key: 'al:happy-horse-1.1-std', label: 'Happy Horse 1.1 I2V · 720p · 10 dtk', cr: 1000 },
+    { key: 'al:wan-3.0-std', label: 'Wan 3.0 I2V · 720p · 14 dtk', cr: 1000 },
+    { key: 'al:wan-3.0-prime-std', label: 'Wan 3.0 Prime I2V · 720p · 10 dtk', cr: 1000 },
+    { key: 'al:grok-imagine-1.5-std', label: 'Grok Imagine 1.5 I2V · 720p · 10 dtk', cr: 1000 },
+    { key: 'al:kling-o3-pro', label: 'Kling O3 Pro I2V · 1080p · 10 dtk', cr: 1000 },
+    { key: 'al:kling-v3-standard-std', label: 'Kling V3 Std I2V · 720p · 9 dtk', cr: 1000 },
+    { key: 'al:minimax-h3-std', label: 'MiniMax H3 I2V · 768p · 15 dtk', cr: 1000 },
   ]},
 }
 
@@ -255,7 +266,11 @@ export default function MotionPage() {
   const currentProvider = PROVIDERS[provider as keyof typeof PROVIDERS] || PROVIDERS.wavespeed
   const currentModel = currentProvider.models.find((m) => m.key === modelKey) || currentProvider.models[0]
   const isOmni = modelKey === 'rn:google-omni'
-  const filledSlots = isOmni
+  // Alriz I2V (kling-3.0-turbo, gemini-omni-flash, dll.): cukup gambar + prompt,
+  // tanpa video referensi — slot video disembunyikan & tidak wajib.
+  const isAlrizI2v = provider === 'alriz' && getAlrizModel(modelKey.replace(/^al:/, ''))?.kind === 'i2v'
+  const slotsImageOnly = isOmni || isAlrizI2v
+  const filledSlots = slotsImageOnly
     ? slots.filter((s) => s.image).length
     : slots.filter((s) => s.image && s.video).length
   const rawCredits = filledSlots * (currentModel?.cr || 0)
@@ -282,7 +297,7 @@ export default function MotionPage() {
   }
 
   const slotProgress = useMemo(() => {
-    const filled = slots.filter((s) => s.image && s.video)
+    const filled = slots.filter((s) => (isOmni || isAlrizI2v ? s.image : s.image && s.video))
     if (filled.length === 0) return 0
     const pct = (s: Slot) => {
       if (s.status === 'done' || s.status === 'error') return 100
@@ -295,10 +310,10 @@ export default function MotionPage() {
       return generating ? 5 : 0
     }
     return Math.round(filled.reduce((a, s) => a + pct(s), 0) / filled.length)
-  }, [slots, generating])
+  }, [slots, generating, isOmni, isAlrizI2v])
 
   const statusSummary = useMemo(() => {
-    const filled = slots.filter((s) => s.image && s.video)
+    const filled = slots.filter((s) => (isOmni || isAlrizI2v ? s.image : s.image && s.video))
     if (filled.length === 0) return 'Idle'
     const doneCount = filled.filter((s) => s.status === 'done').length
     const errorCount = filled.filter((s) => s.status === 'error').length
@@ -309,10 +324,10 @@ export default function MotionPage() {
     }
     if (generating) {
       const active = filled.find((s) => s.status !== 'done' && s.status !== 'error' && s.status !== 'idle')
-      return active ? `Slot #${filled.indexOf(active) + 1}: ${active.statusText || active.status}` : 'Memproses…'
+      return active ? `Slot #${filled.indexOf(active) + 1}: ${active.statusText || active.status}` : 'Processing…'
     }
     return 'Idle'
-  }, [slots, generating])
+  }, [slots, generating, isOmni, isAlrizI2v])
 
   const handleFileChange = async (id: string, type: 'image' | 'video', file: File | null) => {
     if (!file) {
@@ -409,7 +424,9 @@ export default function MotionPage() {
     if (generating) return
     const finalPrompt = prompt.trim()
     const isOmni = modelKey === 'rn:google-omni'
-    const filledSlots = isOmni
+    const isAlrizI2v = provider === 'alriz' && getAlrizModel(modelKey.replace(/^al:/, ''))?.kind === 'i2v'
+    const slotsImageOnly = isOmni || isAlrizI2v
+    const filledSlots = slotsImageOnly
       ? slots.filter((s) => s.image)
       : slots.filter((s) => s.image && s.video)
     if (filledSlots.length === 0) return
@@ -427,9 +444,9 @@ export default function MotionPage() {
       const slotNum = i + 1
       
       // Check slot requirements based on model
-      if (isOmni) {
+      if (slotsImageOnly) {
         if (!slot.image) {
-          validationErrors.push(`#${slotNum} - Referensi #${slotNum}: Harap upload gambar untuk Google Omni`)
+          validationErrors.push(`#${slotNum} - Referensi #${slotNum}: Harap upload gambar`)
           slotValidations.push({ id: slot.id, index: i, error: 'Harap upload gambar' })
         }
       } else {
@@ -480,13 +497,13 @@ export default function MotionPage() {
 
     // Reset slot statuses
     setSlots((prev) => prev.map((s) =>
-      (isOmni ? s.image : s.image && s.video)
+      (slotsImageOnly ? s.image : s.image && s.video)
         ? { ...s, status: 'idle' as const, statusText: undefined, error: undefined, resultUrl: undefined }
         : s
     ))
 
     addLog(`🚀 Mulai generate video · ${currentProvider.name} · ${currentModel.label}`)
-    addLog(`Mode: ${isOmni ? 'Image → Video (Google Omni)' : 'Motion Control (Image + Video)'}`)
+    addLog(`Mode: ${isOmni ? 'Image → Video (Google Omni)' : isAlrizI2v ? 'Image → Video (Alriz I2V — gambar + prompt)' : 'Motion Control (Image + Video)'}`)
     addLog(`Processing ${filledSlots.length} slot(s)...`)
 
     const startTime = Date.now()
@@ -1474,10 +1491,10 @@ export default function MotionPage() {
               addLog(`#${slotNum} Error: ${err.message}`, 'error')
               return false
             }
-          } else if (provider === 'alriz' && slot.image && slot.video) {
+          } else if (provider === 'alriz' && slot.image && (slot.video || isAlrizI2v)) {
             // ─── Alriz Motion: Kling Motion Control via alrizmotion.my.id ───
             // Wallet internal: user login dipotong harga model per video
-            // (Rp 750–1.750, tarif dari server) SEBELUM upload — kalau saldo
+            // (Rp 750–1.500, tarif dari server) SEBELUM upload — kalau saldo
             // kurang gagal cepat. Admin lolos tanpa potongan; tamu tanpa login
             // lewat tanpa wallet (key sendiri, saldo key dipotong upstream).
             // Batch id dibuat di awal supaya semua kegagalan setelah charge
@@ -1519,19 +1536,24 @@ export default function MotionPage() {
               }
               addLog(`#${slotNum} Image: ${imageUrl.slice(0, 60)}...`)
 
-              let videoUrl = slot.videoUrl || ''
-              if (!videoUrl || videoUrl.startsWith('blob:')) {
-                updateSlotStatus(slot.id, 'uploading vid...')
-                addLog(`#${slotNum} Upload video...`)
-                const videoFile = await compressVideo(slot.video, 4, (msg) => {
-                  updateSlotStatus(slot.id, 'uploading vid...', msg)
-                })
-                videoUrl = await uploadToCatbox(videoFile, 'video', (msg) => {
-                  updateSlotStatus(slot.id, 'uploading vid...', msg)
-                })
-                updateSlot(slot.id, { videoUrl })
+              let videoUrl = ''
+              if (!isAlrizI2v) {
+                videoUrl = slot.videoUrl || ''
+                if (!videoUrl || videoUrl.startsWith('blob:')) {
+                  updateSlotStatus(slot.id, 'uploading vid...')
+                  addLog(`#${slotNum} Upload video...`)
+                  const videoFile = await compressVideo(slot.video, 4, (msg) => {
+                    updateSlotStatus(slot.id, 'uploading vid...', msg)
+                  })
+                  videoUrl = await uploadToCatbox(videoFile, 'video', (msg) => {
+                    updateSlotStatus(slot.id, 'uploading vid...', msg)
+                  })
+                  updateSlot(slot.id, { videoUrl })
+                }
+              } else {
+                updateSlot(slot.id, { videoUrl: undefined })
               }
-              addLog(`#${slotNum} Video: ${videoUrl.slice(0, 60)}...`)
+              if (videoUrl) addLog(`#${slotNum} Video: ${videoUrl.slice(0, 60)}...`)
 
               updateSlotStatus(slot.id, 'processing', 'submitting...')
               addLog(`#${slotNum} Submit ke Alriz (${alrizModel})...`)
@@ -2021,6 +2043,7 @@ export default function MotionPage() {
                 key={slot.id}
                 index={index}
                 slot={slot}
+                showVideo={!slotsImageOnly}
                 onImage={(file) => handleFileChange(slot.id, 'image', file)}
                 onVideo={(file) => handleFileChange(slot.id, 'video', file)}
                 onRemove={() => removeSlot(slot.id)}
@@ -2542,6 +2565,7 @@ function SlotCard({
   onVideo,
   onRemove,
   canRemove,
+  showVideo = true,
 }: {
   index: number
   slot: Slot
@@ -2549,6 +2573,7 @@ function SlotCard({
   onVideo: (file: File | null) => void
   onRemove: () => void
   canRemove: boolean
+  showVideo?: boolean
 }) {
   const imageRef = useRef<HTMLInputElement>(null)
   const videoRef = useRef<HTMLInputElement>(null)
@@ -2581,27 +2606,29 @@ function SlotCard({
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid gap-2" style={{ gridTemplateColumns: showVideo ? '1fr 1fr' : '1fr' }}>
         <FileUpload
           ref={imageRef}
           kind="image"
-          label="Character Image"
-          hint="PNG / JPG"
+          label={showVideo ? 'Character Image' : 'Image Reference'}
+          hint={showVideo ? 'PNG / JPG' : 'PNG / JPG'}
           accept="image/*"
           file={slot.image}
           previewUrl={slot.imageUrl}
           onChange={onImage}
         />
-        <FileUpload
-          ref={videoRef}
-          kind="video"
-          label="Reference Video"
-          hint="MP4 / MOV"
-          accept="video/*"
-          file={slot.video}
-          previewUrl={slot.videoUrl}
-          onChange={onVideo}
-        />
+        {showVideo && (
+          <FileUpload
+            ref={videoRef}
+            kind="video"
+            label="Reference Video"
+            hint="MP4 / MOV"
+            accept="video/*"
+            file={slot.video}
+            previewUrl={slot.videoUrl}
+            onChange={onVideo}
+          />
+        )}
       </div>
     </div>
   )
