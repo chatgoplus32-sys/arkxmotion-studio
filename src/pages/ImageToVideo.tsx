@@ -347,50 +347,56 @@ export default function ImageToVideoPage() {
         return
       }
 
-      // Try direct download first (no proxy = no binary corruption)
+      // Try DIRECT browser fetch first — host COS RunningHub mengirim ACAO:* dan
+      // jalur browser→COS jauh lebih cepat daripada browser→VPS→COS (proxy slow ~0,3 MB/s).
       const isExternal = /^https?:\/\//i.test(url) && !url.includes(window.location.origin)
       if (isExternal) {
-        // Use proxy to avoid CORS, but verify content is actual video
-        const proxyUrl = `/api/public/video-proxy?url=${encodeURIComponent(url)}`
-        const res = await fetch(proxyUrl)
-        const contentType = res.headers.get('content-type') || ''
-        console.log('[download] proxy content-type:', contentType, 'status:', res.status)
-
-        // If proxy returned non-video (error JSON, HTML, etc.), fall back to direct
-        if (!res.ok || (!contentType.includes('video') && !contentType.includes('octet-stream'))) {
-          console.log('[download] proxy returned non-video, falling back to direct')
+        let blob: Blob | null = null
+        // 1) Fast path: direct fetch (CORS)
+        try {
+          console.log('[download] direct fetch:', url.slice(0, 100))
+          const res = await fetch(url)
+          const ct = (res.headers.get('content-type') || '').toLowerCase()
+          if (res.ok && !ct.includes('html') && !ct.includes('json')) {
+            const b = await res.blob()
+            if (b.size >= 1024) blob = b
+          }
+        } catch {
+          // CORS / jaringan gagal → lanjut proxy
+        }
+        // 2) Fallback: proxy VPS (host anti-CORS yang butuh Referer, dsb.)
+        if (!blob) {
+          try {
+            const proxyUrl = `/api/public/video-proxy?url=${encodeURIComponent(url)}`
+            console.log('[download] proxy fetch:', proxyUrl.slice(0, 120))
+            const res = await fetch(proxyUrl)
+            const contentType = res.headers.get('content-type') || ''
+            if (res.ok && (contentType.includes('video') || contentType.includes('octet-stream'))) {
+              const b = await res.blob()
+              if (b.size >= 1024) blob = b
+            }
+          } catch {
+            // fallthrough
+          }
+        }
+        if (blob) {
+          const blobUrl = URL.createObjectURL(blob)
           const a = document.createElement('a')
-          a.href = url
+          a.href = blobUrl
           a.download = filename
-          a.target = '_blank'
-          a.rel = 'noopener'
           document.body.appendChild(a)
           a.click()
-          document.body.removeChild(a)
+          // Delay revoke to ensure download starts
+          setTimeout(() => {
+            document.body.removeChild(a)
+            URL.revokeObjectURL(blobUrl)
+          }, 1000)
           return
         }
-
-        const blob = await res.blob()
-        console.log('[download] blob size:', blob.size, 'type:', blob.type)
-
-        // Sanity check: video files should be > 1KB
-        if (blob.size < 1024) {
-          console.log('[download] blob too small, falling back to direct')
-          window.open(url, '_blank')
-          return
-        }
-
-        const blobUrl = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = blobUrl
-        a.download = filename
-        document.body.appendChild(a)
-        a.click()
-        // Delay revoke to ensure download starts
-        setTimeout(() => {
-          document.body.removeChild(a)
-          URL.revokeObjectURL(blobUrl)
-        }, 1000)
+        // 3) Semua gagal — tautan langsung (bila disalahkan jadi tab baru)
+        console.error('[download] direct & proxy failed, opening url')
+        window.open(url, '_blank')
+        return
       } else {
         // Same-origin: download directly
         const a = document.createElement('a')

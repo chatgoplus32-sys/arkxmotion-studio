@@ -264,6 +264,9 @@ export const SEAVI_DEFAULT_CHARGE = 1
  * src/lib/seavi.ts (SEAVI_MODELS, SEAVI_IMAGE_MODELS, SEAVI_VIDEO_UPSCALER).
  */
 export const SEAVI_MODEL_TOKENS: Record<string, number> = {
+  motion_control_v3_server10_30dtk: 2,
+  kling21pro_server10: 2,
+  seedance25_server19: 2,
   wan30_server19: 2,
   gemini_omni_server19: 2,
 }

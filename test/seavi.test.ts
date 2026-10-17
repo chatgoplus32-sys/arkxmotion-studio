@@ -35,7 +35,8 @@ function withFetchStub<T>(impl: (url: string, init?: RequestInit) => SeaviStubRe
 test('SEAVI_MODELS: 11 model aktif terdaftar dan spec kunci tersedia', () => {
   assert.equal(Object.keys(SEAVI_MODELS).length, 11)
   assert.ok(getSeaviSpec('seedance2_multi_s15'))
-  assert.ok(getSeaviSpec('motion_control_v3_server16'))
+  assert.ok(getSeaviSpec('motion_control_v3_server19_15dtk'))
+  assert.ok(getSeaviSpec('sora2_server10'))
   assert.equal(getSeaviSpec('model_ngawur'), undefined)
 })
 
@@ -88,7 +89,7 @@ test('payload multimodal: seedance25_server19 boleh tanpa media, video ≤3', ()
 // ── buildSeaviPayload: motion control ───────────────────────────────────────
 
 test('payload MC: butuh gambar + video, prompt opsional, tanpa aspect/durasi', () => {
-  const spec = getSeaviSpec('motion_control_v3_server16')!
+  const spec = getSeaviSpec('motion_control_v3_server19_15dtk')!
   const p = buildSeaviPayload(spec, {
     imageUrls: ['img'],
     videoUrls: ['vid'],

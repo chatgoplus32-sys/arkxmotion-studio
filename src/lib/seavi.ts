@@ -56,15 +56,30 @@ const i2v = (id: string, label: string, tokens: number, durations: number[], asp
 
 export const SEAVI_MODELS: Record<string, SeaviModelSpec> = {
   // ── Motion Control (gambar + video referensi) ──
-  motion_control_v3_server10_30dtk: mc('motion_control_v3_server10_30dtk', 'Motion Control V3 · Server 10 (30 dtk)', 1, 0),
-  motion_control_v3_server16: mc('motion_control_v3_server16', 'Motion Control V3 · Server 16 (10 dtk)', 1, 0),
-  motion_control_v3_server17: mc('motion_control_v3_server17', 'Motion Control V3 · Server 17 (15 dtk)', 1, 250),
+  motion_control_v3_server10_30dtk: mc('motion_control_v3_server10_30dtk', 'Motion Control V3 · Server 10 (30 dtk)', 2, 0),
+  motion_control_v3_server19_15dtk: mc('motion_control_v3_server19_15dtk', 'Motion Control V3 · Server 19 (15 dtk)', 1, 250),
 
   // ── Video generation: image to video ──
   veo31_s9: i2v('veo31_s9', 'Veo 3.1 · Server 9', 1, [8], ['9:16', '16:9']),
   kling3_server10: i2v('kling3_server10', 'Kling 3 · Server 10', 1, [6, 10], ['9:16', '16:9']),
-  kling21pro_server10: i2v('kling21pro_server10', 'Kling 2.1 Pro · Server 10', 1, [5, 10], ['9:16', '16:9']),
+  kling21pro_server10: i2v('kling21pro_server10', 'Kling 2.1 Pro · Server 10', 2, [5, 10], ['9:16', '16:9']),
   grok_imagine_s15: i2v('grok_imagine_s15', 'Grok Imagine · Server 15', 1, [10], ['9:16', '16:9', '1:1', '4:3']),
+  // Sora 2: t2v (tanpa gambar) atau i2v (1 gambar) — 10 detik, 1 token.
+  sora2_server10: {
+    id: 'sora2_server10',
+    label: 'Sora 2 · Server 10',
+    category: 'video_generation',
+    inputType: 'text_or_image_to_video',
+    tokens: 1,
+    imageMode: 'multi',
+    imageMin: 0,
+    imageMax: 1,
+    videoMode: 'none',
+    durations: [10],
+    aspects: ['16:9', '9:16'],
+    promptMax: 2000,
+    promptRequired: true,
+  },
 
   // ── Video generation: multi-image / multimodal ──
   seedance2_multi_s15: {
@@ -87,7 +102,7 @@ export const SEAVI_MODELS: Record<string, SeaviModelSpec> = {
     label: 'Seedance 2.5 · Server 19',
     category: 'video_generation',
     inputType: 'multimodal_to_video',
-    tokens: 1,
+    tokens: 2,
     imageMode: 'multi',
     imageMin: 0,
     imageMax: 9,

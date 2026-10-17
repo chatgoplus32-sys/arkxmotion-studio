@@ -222,9 +222,13 @@ test('getSeaviCharge: bobot per model, default 1 token', () => {
   // Prefix sv: dari client dinormalisasi dulu.
   assert.equal(getSeaviCharge('sv:wan30_server19'), 2)
   assert.equal(getSeaviCharge('sv:veo31_s9'), 1)
-  // Model 1 token & tak dikenal → default.
+  // Model 2 token terdaftar eksplisit (harga upstream 17 Okt 2026).
+  assert.equal(getSeaviCharge('motion_control_v3_server10_30dtk'), 2)
+  assert.equal(getSeaviCharge('kling21pro_server10'), 2)
+  assert.equal(getSeaviCharge('seedance25_server19'), 2)
+  assert.equal(getSeaviCharge('sora2_server10'), 1)
+  assert.equal(getSeaviCharge('motion_control_v3_server19_15dtk'), 1)
   assert.equal(getSeaviCharge('veo31_s9'), 1)
-  assert.equal(getSeaviCharge('motion_control_v3_server16'), 1)
   assert.equal(getSeaviCharge('upscale_video_server7'), 1)
   assert.equal(getSeaviCharge('model_baru_xx'), 1)
   assert.equal(getSeaviCharge(), 1)
