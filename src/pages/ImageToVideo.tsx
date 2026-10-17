@@ -235,6 +235,7 @@ export default function ImageToVideoPage() {
   const endFrameRef = useRef<HTMLInputElement>(null)
   const refInputRef = useRef<HTMLInputElement>(null)
   const videoRefInputRef = useRef<HTMLInputElement>(null)
+  const seaviAudioInputRef = useRef<HTMLInputElement>(null)
   const sd26InputRef = useRef<HTMLInputElement>(null)
   const resultsRef = useRef<HTMLDivElement>(null)
 
@@ -469,8 +470,13 @@ export default function ImageToVideoPage() {
   const isNbOmniFlash = isNbR2V
   const nbVideoIdx = refFiles.findIndex((f) => f.type.startsWith('video/'))
   const nbVideoUrl = nbVideoIdx >= 0 ? refUrls[nbVideoIdx] ?? null : null
-  // Gambar input = semua refUrls sebelum video (urutan dijaga handler).
-  const nbImageUrls = nbVideoIdx >= 0 ? refUrls.slice(0, nbVideoIdx) : refUrls
+  // Seavi: audio referensi (Seedance 2.5 & gemini omni — spec.audio).
+  const seaviAudioIdx = refFiles.findIndex((f) => f.type.startsWith('audio/'))
+  const seaviAudioUrl = seaviAudioIdx >= 0 ? refUrls[seaviAudioIdx] ?? null : null
+  // Gambar input = semua refUrls sebelum non-gambar pertama (invariant:
+  // [gambar..., video?, audio?] — gambar selalu kontigu di depan).
+  const firstNonImageIdx = refFiles.findIndex((f) => f && !f.type.startsWith('image/'))
+  const nbImageUrls = firstNonImageIdx >= 0 ? refUrls.slice(0, firstNonImageIdx) : refUrls
 
   const hasImgFile = !!imgFile
   const qualityOptions = useMemo(() => {
@@ -641,7 +647,8 @@ export default function ImageToVideoPage() {
   }
 
   const removeNbImage = (index: number) => {
-    if (index === nbVideoIdx) return // penghapusan video lewat tombol video
+    const target = refFiles[index]
+    if (target && (target.type.startsWith('video/') || target.type.startsWith('audio/'))) return // video/audio dihapus lewat tombol panelnya
     setRefFiles((prev) => prev.filter((_, i) => i !== index))
     setRefUrls((prev) => {
       const target = prev[index]
@@ -659,9 +666,46 @@ export default function ImageToVideoPage() {
       setRefFiles((prev) => prev.map((f, i) => (i === idx ? file : f)))
       setRefUrls((prev) => prev.map((u, i) => (i === idx ? url : u)))
     } else {
-      setRefFiles((prev) => [...prev, file].slice(0, 4))
-      setRefUrls((prev) => [...prev, url].slice(0, 4))
+      // Sisipkan sebelum audio (invariant: [gambar..., video?, audio?]).
+      const audioIdx = refFiles.findIndex((f) => f.type.startsWith('audio/'))
+      const pos = audioIdx >= 0 ? audioIdx : refFiles.length
+      setRefFiles((prev) => [...prev.slice(0, pos), file, ...prev.slice(pos)])
+      setRefUrls((prev) => [...prev.slice(0, pos), url, ...prev.slice(pos)])
     }
+  }
+
+  const handleAudioRefChange = (files: FileList | null) => {
+    const file = files?.[0]
+    if (!file || !file.type.startsWith('audio/')) return
+    const url = URL.createObjectURL(file)
+    const idx = refFiles.findIndex((f) => f.type.startsWith('audio/'))
+    if (idx >= 0) {
+      setRefFiles((prev) => prev.map((f, i) => (i === idx ? file : f)))
+      setRefUrls((prev) => prev.map((u, i) => (i === idx ? url : u)))
+    } else {
+      // Audio selalu elemen terakhir (invariant: [gambar..., video?, audio?]).
+      setRefFiles((prev) => [...prev, file])
+      setRefUrls((prev) => [...prev, url])
+    }
+  }
+
+  // Seavi non-MC: tambah (append) gambar sampai batas model, TANPA menimpa
+  // gambar/video/audio referensi yang sudah ada. (handleNbImagesChange
+  // menimpa seluruh set — cocok untuk Nexabot, salah untuk Seedance 2.5.)
+  // Invariant urutan refFiles: [gambar..., video?, audio?].
+  const handleSeaviImagesChange = (files: FileList | null) => {
+    if (!files || files.length === 0) return
+    const max = seaviImageMax > 0 ? seaviImageMax : 0
+    if (max === 0) return
+    const incoming = Array.from(files).filter((f) => f.type.startsWith('image/'))
+    if (incoming.length === 0) return
+    const nonImgs = refFiles.filter((f) => !f.type.startsWith('image/'))
+    const nonImgUrls = nonImgs.map((f) => refUrls[refFiles.indexOf(f)] || URL.createObjectURL(f))
+    const oldImgs = refFiles.filter((f) => f.type.startsWith('image/'))
+    const merged = [...oldImgs, ...incoming].slice(0, max)
+    const mergedUrls = merged.map((f) => refUrls[refFiles.indexOf(f)] || URL.createObjectURL(f))
+    setRefFiles([...merged, ...nonImgs])
+    setRefUrls([...mergedUrls, ...nonImgUrls])
   }
 
   const refreshGallery = () => {
@@ -3607,7 +3651,7 @@ export default function ImageToVideoPage() {
             ) : isSeavi ? (
               /* Seavi: gambar multi + video referensi mengikuti model */
               <Section title="🖼️ Media Input" sub={isSeaviMc ? '1 gambar (wajib) + 1 video referensi (wajib)' : `Gambar: ${seaviImageMax === 0 ? 'tidak dipakai' : seaviImageMax === 1 ? '1 (wajib)' : `${seaviSpec?.imageMin ?? 0}-${seaviImageMax} (sesuai model)`}${seaviVideoMode !== 'none' ? ' · Video referensi didukung' : ''}`}>
-                <input ref={inputRef} type="file" accept="image/*" multiple={(seaviImageMax ?? 0) > 1} hidden onChange={(e) => handleNbImagesChange(e.target.files)} />
+                <input ref={inputRef} type="file" accept="image/*" multiple={(seaviImageMax ?? 0) > 1} hidden onChange={(e) => handleSeaviImagesChange(e.target.files)} />
                 {nbImageUrls.length > 0 ? (
                   <div className="grid grid-cols-3 gap-2">
                     {nbImageUrls.map((u, i) => (
@@ -3659,6 +3703,34 @@ export default function ImageToVideoPage() {
                           <div className="text-sm mt-1">Tap untuk upload video referensi</div>
                           <div className="text-[11px] text-muted-foreground">MP4 / WEBM / MOV</div>
                         </div>
+                      </button>
+                    )}
+                  </div>
+                )}
+                {seaviSpec?.audio && !isSeaviMc && (
+                  <div className="mt-3">
+                    <input ref={seaviAudioInputRef} type="file" accept="audio/*" hidden onChange={(e) => { handleAudioRefChange(e.target.files); e.target.value = '' }} />
+                    <div className="text-[11px] text-muted-foreground mb-1.5">🎵 Audio Referensi (opsional, maks 1)</div>
+                    {seaviAudioUrl ? (
+                      <div className="rounded-2xl border border-border bg-card/40 p-3 flex items-center gap-2">
+                        <audio src={seaviAudioUrl} controls className="w-full h-9" />
+                        <button
+                          onClick={() => {
+                            if (seaviAudioUrl.startsWith('blob:')) URL.revokeObjectURL(seaviAudioUrl)
+                            setRefFiles((prev) => prev.filter((_, i) => i !== seaviAudioIdx))
+                            setRefUrls((prev) => prev.filter((_, i) => i !== seaviAudioIdx))
+                          }}
+                          aria-label="Hapus audio"
+                          className="shrink-0 rounded-full w-7 h-7 bg-black/60 text-white text-xs grid place-items-center hover:bg-red-600/80"
+                        >×</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => seaviAudioInputRef.current?.click()} className="w-full rounded-2xl border border-dashed border-border/80 bg-card/30 px-4 py-3 flex items-center gap-3 hover:border-primary/60 transition text-left">
+                        <span className="text-2xl">🎵</span>
+                        <span>
+                          <span className="text-sm block">Tap untuk upload audio referensi</span>
+                          <span className="text-[11px] text-muted-foreground">MP3 / WAV / M4A — jadi panduan suara/musik video</span>
+                        </span>
                       </button>
                     )}
                   </div>
