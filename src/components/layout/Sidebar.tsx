@@ -60,22 +60,23 @@ const mainNav: NavItem[] = [
   { label: 'Hasil', href: '/hasil', icon: <Images className="h-4 w-4" /> },
 ]
 
-const generateNav: NavItem[] = [
+const createNav: NavItem[] = [
   { label: 'Motion Control', href: '/generate/motion', icon: <Video className="h-4 w-4" /> },
   { label: 'Image to Video', href: '/generate/image-to-video', icon: <Image className="h-4 w-4" /> },
   { label: 'Edit Image', href: '/generate/edit-image', icon: <ImagePlus className="h-4 w-4" /> },
-
   { label: 'Virtual Try-On', href: '/generate/virtual-tryon', icon: <Shirt className="h-4 w-4" /> },
   { label: 'Travel Photo', href: '/generate/travel-photo', icon: <Globe className="h-4 w-4" /> },
-  // (disembunyikan) { label: 'Dola Chat', href: '/generate/dola-chat', icon: <MessageSquare className="h-4 w-4" /> },
   { label: 'Talking Photo', href: '/generate/talking-photo', icon: <Mic className="h-4 w-4" /> },
+]
+
+const audioNav: NavItem[] = [
   { label: 'AI Song Cover', href: '/generate/song-cover', icon: <Disc3 className="h-4 w-4" />, pro: true },
   { label: 'H3 Music Avatar', href: '/generate/h3-music-avatar', icon: <AudioLines className="h-4 w-4" />, pro: true },
   { label: 'Voice Over', href: '/generate/voice-over', icon: <Volume2 className="h-4 w-4" /> },
   { label: 'Music Generator', href: '/generate/music-generator', icon: <Music className="h-4 w-4" /> },
+]
 
-  // (disembunyikan) { label: 'H3 Image→Video', href: '/generate/h3-i2v', icon: <Zap className="h-4 w-4" /> },
-  // (disembunyikan) { label: 'UGC Video Storyboard', href: '/generate/ugc-storyboard', icon: <Film className="h-4 w-4" /> },
+const enhanceNav: NavItem[] = [
   { label: 'Watermark Remover', href: '/generate/watermark-remover', icon: <Eraser className="h-4 w-4" /> },
   { label: 'Video Upscaler', href: '/generate/video-upscaler', icon: <ArrowUpFromLine className="h-4 w-4" /> },
   { label: 'AI Upscaler', href: '/generate/upscaler', icon: <Wand2 className="h-4 w-4" /> },
@@ -83,14 +84,11 @@ const generateNav: NavItem[] = [
   { label: 'Metadata Cleaner', href: '/tools/metadata-cleaner', icon: <FileCog className="h-4 w-4" /> },
 ]
 
+// Top up per layanan diakses dari panel saldo di header dan halaman Beli Token.
 const toolsNavBase: NavItem[] = [
   { label: 'Providers', href: '/providers', icon: <Zap className="h-4 w-4" /> },
-  { label: 'Top Up CreatePulse', href: '/topup/createpulse', icon: <Wallet className="h-4 w-4" /> },
-  { label: 'Top Up NexaBot', href: '/topup/nexabot', icon: <Wallet className="h-4 w-4" /> },
-  { label: 'Top Up Seavi', href: '/topup/seavi', icon: <Wallet className="h-4 w-4" /> },
-  { label: 'Top Up Alriz', href: '/topup/alriz', icon: <Wallet className="h-4 w-4" /> },
-  { label: 'Settings', href: '/settings', icon: <Settings className="h-4 w-4" /> },
   { label: 'Beli Token', href: '/beli-token', icon: <ShoppingCart className="h-4 w-4" /> },
+  { label: 'Settings', href: '/settings', icon: <Settings className="h-4 w-4" /> },
   { label: 'Plugins', href: '/plugins', icon: <Puzzle className="h-4 w-4" /> },
 ]
 
@@ -111,19 +109,13 @@ export function Sidebar({ collapsed = false, onClose }: SidebarProps) {
 
   const isPro = user?.role === 'admin' || user?.plan === 'pro'
 
-  const toolsNav = toolsNavBase
-    .filter((item) => {
-      if ((item.href === '/topup/createpulse' || item.href === '/topup/nexabot' || item.href === '/topup/seavi' || item.href === '/topup/alriz') && user?.role === 'admin') return false
-      if (item.href === '/upgrade-pro' && isPro) return false
-      return true
-    })
-    .map((item) => {
-      // Badge unread auto-sync token (Providers) — realtime, hilang saat dibuka
-      if (item.href === '/providers' && syncUnread > 0) {
-        return { ...item, badge: syncUnread > 99 ? '99+' : String(syncUnread) }
-      }
-      return item
-    })
+  const toolsNav = toolsNavBase.map((item) => {
+    // Badge unread auto-sync token (Providers) — realtime, hilang saat dibuka
+    if (item.href === '/providers' && syncUnread > 0) {
+      return { ...item, badge: syncUnread > 99 ? '99+' : String(syncUnread) }
+    }
+    return item
+  })
 
   const handleLogout = () => {
     logout()
@@ -185,12 +177,11 @@ export function Sidebar({ collapsed = false, onClose }: SidebarProps) {
   const isActive = (href: string) => location.pathname === href || location.pathname.startsWith(href + '/')
 
   const renderNavGroup = (items: NavItem[], label?: string) => (
-    <div className="space-y-1">
+    <div className="space-y-0.5">
       {label && !collapsed && (
-        <div className="px-3 py-1.5">
-          <span className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">
-            {label}
-          </span>
+        <div className="flex items-center gap-2 px-3 pb-1.5 pt-2">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/50">{label}</span>
+          <span className="h-px flex-1 bg-border/50" aria-hidden />
         </div>
       )}
       {items.map((item) => (
@@ -198,7 +189,7 @@ export function Sidebar({ collapsed = false, onClose }: SidebarProps) {
           <div
             key={item.href}
             className={cn(
-              'flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition-all cursor-not-allowed opacity-50',
+              'flex cursor-not-allowed items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] opacity-50',
               'text-muted-foreground'
             )}
             title={collapsed ? `${item.label} (Coming Soon)` : `${item.label} - Coming Soon`}
@@ -206,7 +197,7 @@ export function Sidebar({ collapsed = false, onClose }: SidebarProps) {
             {item.icon}
             {!collapsed && <span className="line-through">{item.label}</span>}
             {!collapsed && (
-              <span className="ml-auto text-[12px] bg-secondary text-muted-foreground px-1.5 py-0.5 rounded-full font-medium flex items-center gap-1">
+              <span className="ml-auto flex items-center gap-1 rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
                 <Lock className="h-2.5 w-2.5" /> Soon
               </span>
             )}
@@ -218,7 +209,7 @@ export function Sidebar({ collapsed = false, onClose }: SidebarProps) {
             target="_blank"
             rel="noopener noreferrer"
             className={cn(
-              'flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition-all hover:bg-accent',
+              'flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] transition-colors hover:bg-accent/60',
               'text-muted-foreground hover:text-foreground'
             )}
             title={collapsed ? item.label : undefined}
@@ -235,22 +226,30 @@ export function Sidebar({ collapsed = false, onClose }: SidebarProps) {
             to={item.href}
             onClick={onClose}
             className={cn(
-              'flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition-all hover:bg-accent',
+              'group relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] transition-colors',
               isActive(item.href)
-                ? 'bg-primary/10 text-primary font-medium brand-glow'
-                : 'text-muted-foreground hover:text-foreground'
+                ? 'bg-primary/[0.08] font-medium text-primary'
+                : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
             )}
             title={collapsed ? `${item.label}${item.pro && !isPro ? ' (Pro)' : ''}` : undefined}
           >
-            {item.icon}
+            {isActive(item.href) && (
+              <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-r-full bg-primary" aria-hidden />
+            )}
+            <span className="relative shrink-0">
+              {item.icon}
+              {collapsed && item.pro && !isPro && (
+                <span className="absolute -right-1 -top-1 h-1.5 w-1.5 rounded-full bg-amber-400" aria-hidden />
+              )}
+            </span>
             {!collapsed && <span>{item.label}</span>}
-            {item.pro && !isPro && (
-              <span className="ml-auto flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
-                <Lock className="h-2.5 w-2.5" /> PRO
+            {item.pro && !isPro && !collapsed && (
+              <span className="ml-auto rounded-full border border-amber-400/20 bg-amber-400/10 px-1.5 py-px text-[9px] font-bold tracking-wide text-amber-400/90">
+                PRO
               </span>
             )}
             {item.badge && !collapsed && (
-              <span className="ml-auto text-[12px] bg-yellow-500/20 text-yellow-500 px-1.5 py-0.5 rounded-full font-medium">
+              <span className="ml-auto rounded-full bg-amber-400/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-400">
                 {item.badge}
               </span>
             )}
@@ -286,9 +285,11 @@ export function Sidebar({ collapsed = false, onClose }: SidebarProps) {
         )}
       </div>
 
-      <nav className="flex-1 overflow-y-auto p-3 space-y-4">
+      <nav className="flex-1 space-y-5 overflow-y-auto p-3">
         {renderNavGroup(mainNav)}
-        {renderNavGroup(generateNav, 'Fitur AI')}
+        {renderNavGroup(createNav, 'Buat')}
+        {renderNavGroup(audioNav, 'Audio')}
+        {renderNavGroup(enhanceNav, 'Sempurnakan')}
         {renderNavGroup(toolsNav, 'Lainnya')}
         {user?.role === 'admin' && renderNavGroup(adminNav, 'Admin')}
       </nav>
@@ -301,18 +302,20 @@ export function Sidebar({ collapsed = false, onClose }: SidebarProps) {
               onClick={onClose}
               title={collapsed ? 'Upgrade Pro' : undefined}
               className={cn(
-                'flex items-center gap-2.5 rounded-xl border border-primary/25 bg-gradient-to-r from-primary/15 to-primary/5 px-3 py-2.5 text-primary transition-colors hover:border-primary/40 hover:bg-primary/15',
+                'flex items-center gap-2.5 rounded-xl border border-border/70 bg-secondary/40 px-3 py-2.5 text-foreground transition-colors hover:border-primary/25 hover:bg-secondary/60',
                 collapsed && 'justify-center px-2'
               )}
             >
-              <Crown className="h-4 w-4 shrink-0" />
+              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+                <Crown className="h-3.5 w-3.5" />
+              </span>
               {!collapsed && (
                 <>
                   <div className="min-w-0 flex-1">
                     <div className="text-[13px] font-semibold leading-tight">Upgrade Pro</div>
-                    <div className="text-[11px] text-muted-foreground leading-tight">Buka 3 fitur premium</div>
+                    <div className="text-[11px] leading-tight text-muted-foreground">Buka 3 fitur premium</div>
                   </div>
-                  <ArrowRight className="h-3.5 w-3.5 shrink-0" />
+                  <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 </>
               )}
             </Link>

@@ -131,6 +131,7 @@ export function GenerationIndicator() {
         aria-label={ariaLabel}
         aria-expanded={open}
         aria-haspopup="dialog"
+        title={running > 0 ? `${running} generasi sedang berjalan` : 'Aktivitas generasi'}
         className={cn(
           'relative flex h-9 items-center gap-2 rounded-lg px-2.5 transition-colors',
           running > 0
@@ -148,7 +149,9 @@ export function GenerationIndicator() {
         ) : (
           <Activity className="h-4 w-4" />
         )}
-        <span className="hidden text-xs font-medium sm:inline">{label}</span>
+        {(running > 0 || justFinished) && (
+          <span className="hidden text-xs font-medium sm:inline">{label}</span>
+        )}
         {running > 0 && (
           <span className="grid h-4 min-w-4 place-items-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground sm:hidden">
             {running}

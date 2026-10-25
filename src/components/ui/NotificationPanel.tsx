@@ -158,9 +158,11 @@ export function NotificationPanel() {
       {/* Bell Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
+        aria-label="Notifikasi"
+        aria-expanded={isOpen}
         className={cn(
-          'relative p-2 rounded-lg transition-colors',
-          isOpen ? 'bg-accent text-foreground' : 'hover:bg-accent text-muted-foreground hover:text-foreground'
+          'relative flex h-9 w-9 items-center justify-center rounded-lg transition-colors',
+          isOpen ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground'
         )}
       >
         <Bell className="h-4 w-4" />

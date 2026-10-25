@@ -16,12 +16,13 @@ interface HeaderProps {
 
 export function Header({ title, subtitle, actions, collapsed, onToggleSidebar }: HeaderProps) {
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center gap-4 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4 lg:px-6">
+    <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60 sm:gap-4 lg:px-6">
       <Button
         variant="ghost"
         size="icon"
         className="shrink-0 lg:hidden"
         onClick={onToggleSidebar}
+        aria-label={collapsed ? 'Buka menu' : 'Tutup menu'}
       >
         {collapsed ? <PanelLeft className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
       </Button>
@@ -37,12 +38,15 @@ export function Header({ title, subtitle, actions, collapsed, onToggleSidebar }:
 
       {!title && <div className="flex-1" />}
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5 sm:gap-2">
         {actions}
-        <GenerationIndicator />
         <ThemeToggle />
         <NotificationPanel />
-        <AccountStatus />
+        <div className="flex items-center gap-0.5 rounded-xl border border-border/60 bg-secondary/25 p-0.5">
+          <GenerationIndicator />
+          <span className="mx-0.5 h-4 w-px bg-border/80" aria-hidden />
+          <AccountStatus />
+        </div>
       </div>
     </header>
   )
