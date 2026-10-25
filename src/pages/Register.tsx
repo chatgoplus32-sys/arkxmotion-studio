@@ -2,8 +2,14 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
-import { UserPlus, Mail, Lock, User, AlertCircle, CheckCircle, MessageCircle } from 'lucide-react'
-import { DEFAULT_MEMBERSHIP_FEE, QRIS_IMG, formatRp, buildWaPaymentUrl, getMembershipFee } from '@/lib/membership'
+import { UserPlus, Mail, Lock, User, AlertCircle, CheckCircle, MessageCircle, Crown } from 'lucide-react'
+import {
+  DEFAULT_MEMBERSHIP_FEE,
+  QRIS_IMG,
+  formatRp,
+  buildWaPaymentUrl,
+  getMembershipPricing,
+} from '@/lib/membership'
 
 export default function RegisterPage() {
   const [name, setName] = useState('')
@@ -19,7 +25,9 @@ export default function RegisterPage() {
   const addToast = useToastStore((state) => state.addToast)
 
   useEffect(() => {
-    getMembershipFee().then(setFee).catch(() => {})
+    getMembershipPricing()
+      .then((pricing) => setFee(pricing.fee))
+      .catch(() => {})
   }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -75,7 +83,7 @@ export default function RegisterPage() {
               </div>
               <h2 className="text-lg font-semibold mb-2">Registration Successful!</h2>
               <p className="text-muted-foreground text-sm mb-6">
-                Akun kamu sudah dibuat. Menunggu persetujuan admin — kamu akan bisa login setelah disetujui.
+                Akun kamu sudah dibuat. Setelah pembayaran disetujui admin, akun otomatis jadi <b>Pro</b> dan semua fitur AI terbuka.
               </p>
 
               {/* Konfirmasi pembayaran member (QRIS → WhatsApp) */}
@@ -88,11 +96,11 @@ export default function RegisterPage() {
                   Bayar <b className="text-foreground">{formatRp(fee)}</b> via QRIS di bawah, lalu klik tombol konfirmasi via WhatsApp.
                 </p>
                 <div className="mb-3 rounded-lg overflow-hidden border border-border bg-white p-2">
-                  <img src={QRIS_IMG} alt="QRIS Faezya cell" className="w-full max-w-[220px] mx-auto rounded" />
+                  <img src={QRIS_IMG} alt="QRIS ARKXMotion Studio" className="w-full max-w-[220px] mx-auto rounded" />
                   <p className="text-center text-[12px] text-muted-foreground mt-1">Scan QRIS → Bayar {formatRp(fee)} → Konfirmasi via WhatsApp</p>
                 </div>
                 <div className="mb-2 flex items-center justify-between rounded-lg bg-secondary border border-border px-3 py-2">
-                  <span className="text-xs text-muted-foreground">Biaya pendaftaran</span>
+                  <span className="text-xs text-muted-foreground">Biaya join Pro</span>
                   <span className="text-sm font-bold text-primary">{formatRp(fee)}</span>
                 </div>
                 <div className="mb-3">
@@ -146,6 +154,22 @@ export default function RegisterPage() {
           <div className="flex items-center gap-2 mb-6">
             <UserPlus className="h-5 w-5 text-primary" />
             <h2 className="text-lg font-semibold">Create Account</h2>
+          </div>
+
+          <div className="mb-5 rounded-xl border border-primary/30 bg-primary/5 p-3.5">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-primary">
+                  <Crown className="h-3.5 w-3.5" /> Join Pro
+                </div>
+                <div className="flex items-baseline gap-2 mt-1">
+                  <span className="text-2xl font-bold brand-text">{formatRp(fee)}</span>
+                </div>
+              </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-2">
+              Sekali bayar — setelah disetujui, akun otomatis Pro dan <b>semua fitur AI</b> terbuka permanen. Token generate dibayar terpisah.
+            </p>
           </div>
 
           {error && (

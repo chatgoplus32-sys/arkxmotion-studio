@@ -7,6 +7,8 @@ interface User {
   name: string
   role: string
   approved: boolean
+  plan?: 'free' | 'pro'
+  proSince?: string | null
 }
 
 interface AuthState {

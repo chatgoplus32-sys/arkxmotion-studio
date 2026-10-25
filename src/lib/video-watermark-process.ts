@@ -111,7 +111,7 @@ export async function processVideo({
   video: HTMLVideoElement
   maskImageData?: ImageData | null
   inpaintFn?: (imageData: ImageData, maskData: ImageData) => Promise<ImageData>
-  frameProcessor?: (ctx: CanvasRenderingContext2D) => void
+  frameProcessor?: (ctx: CanvasRenderingContext2D, seconds: number) => void
   onProgress?: ProcessVideoProgress
   opts?: ProcessVideoOpts
 }): Promise<Blob> {
@@ -159,7 +159,7 @@ export async function processVideo({
 
   const drawClean = () => {
     outCtx.drawImage(video, 0, 0, width, height)
-    if (frameProcessor) frameProcessor(outCtx)
+    if (frameProcessor) frameProcessor(outCtx, video.currentTime)
     else if (patchCanvas) outCtx.drawImage(patchCanvas, 0, 0)
   }
 
@@ -246,11 +246,25 @@ export async function processVideo({
   await new Promise<void>((resolve, reject) => {
     let lastReportedPct = 15
     let animId = 0
-  
+
+    // Tab hidden → rAF berhenti total & rVFC tidak ada frame baru. Kalau
+    // video terus jalan sambil loop draw mati, bagian hasil rekaman jadi
+    // frame beku TANPA dibersihkan → watermark muncul lagi di video panjang
+    // saat user pindah tab. Karena itu: tab hidden = pause video (proses
+    // tinggal melambat, konten tidak pernah skipped), tab visible = lanjut.
+    let wasHidden = false
+    const onVisibility = () => {
+      if (stopped) return
+      if (document.hidden) { wasHidden = true; video.pause() }
+      else if (wasHidden && !video.ended) { wasHidden = false; video.play().catch(() => {}) }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+
     const finish = () => {
       if (stopped) return
       stopped = true
       clearTimeout(forceStopTimer)
+      document.removeEventListener('visibilitychange', onVisibility)
       cancelAnimationFrame(animId)
       // Draw final frame one last time
       drawClean()
@@ -260,8 +274,10 @@ export async function processVideo({
     const drawFrame = () => {
       if (stopped) return
 
-      // Time-based end detection (video.ended is unreliable for blob URLs)
-      if (video.currentTime >= duration - 0.1 || video.ended || video.paused) {
+      // Time-based end detection (video.ended is unreliable for blob URLs).
+      // TIDAK include video.paused — pause bisa terjadi karena tab-hidden
+      // guard kita sendiri, bukan berarti video selesai.
+      if (video.currentTime >= duration - 0.1 || video.ended) {
         finish()
         return
       }
@@ -276,15 +292,34 @@ export async function processVideo({
         lastReportedPct = progress
       }
 
-      animId = requestAnimationFrame(drawFrame)
+      scheduleNext()
+    }
+
+    // requestVideoFrameCallback = sinkron 1:1 dengan frame yang ternyata
+    // didecode video (frame-akurat, tidak dobel/skip seperti rAF pada
+    // layar 120Hz vs video 30fps). Fallback rAF untuk browser lama.
+    const scheduleNext = () => {
+      if (stopped) return
+      const v = video as HTMLVideoElement & {
+        requestVideoFrameCallback?: (cb: () => void) => number
+      }
+      if (typeof v.requestVideoFrameCallback === 'function') {
+        v.requestVideoFrameCallback(drawFrame)
+      } else {
+        animId = requestAnimationFrame(drawFrame)
+      }
     }
 
     video.addEventListener('ended', finish, { once: true })
 
     video.play().then(() => {
-      animId = requestAnimationFrame(drawFrame)
+      // Kalau tab sudah hidden saat proses mulai, jangan biarkan video
+      // jalan tanpa dibersihkan — pause sampai tab visible lagi.
+      if (document.hidden) onVisibility()
+      scheduleNext()
     }).catch((e) => {
       clearTimeout(forceStopTimer)
+      document.removeEventListener('visibilitychange', onVisibility)
       cancelAnimationFrame(animId)
       reject(new Error('Could not play video: ' + (e.message || e)))
     })

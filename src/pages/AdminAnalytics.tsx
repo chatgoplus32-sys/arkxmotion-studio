@@ -48,21 +48,27 @@ export default function AdminAnalyticsPage() {
   const [data, setData] = useState<AnalyticsData | null>(null)
   const [loading, setLoading] = useState(false)
   const [lastFetch, setLastFetch] = useState('')
+  const [error, setError] = useState('')
 
   const fetchAnalytics = useCallback(async () => {
     if (!token) return
     setLoading(true)
+    setError('')
     try {
       const res = await fetch('/api/admin/analytics', {
         headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(20000),
       })
-      if (res.ok) {
-        const json = await res.json()
+      const json = await res.json().catch(() => null)
+      if (res.ok && json && !json.error) {
         setData(json)
         setLastFetch(new Date().toLocaleTimeString('id-ID'))
+      } else {
+        setError(json?.error || `Gagal memuat analytics (HTTP ${res.status})`)
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to fetch analytics:', err)
+      setError(err?.name === 'TimeoutError' ? 'Timeout — server lambat merespons' : 'Gagal terhubung ke server')
     } finally {
       setLoading(false)
     }
@@ -92,6 +98,18 @@ export default function AdminAnalyticsPage() {
           Refresh
         </Button>
         {lastFetch && <span className="text-[12px] text-muted-foreground">Terakhir: {lastFetch}</span>}
+        {error && (
+          <span className="text-[12px] text-red-400 flex items-center gap-1">
+            <XCircle className="h-3.5 w-3.5" />
+            {error}
+          </span>
+        )}
+        {!loading && !data && !error && token && (
+          <span className="text-[12px] text-muted-foreground">Memuat data…</span>
+        )}
+        {!token && (
+          <span className="text-[12px] text-muted-foreground">Login sebagai admin untuk memuat data.</span>
+        )}
       </div>
 
       {/* Overview Cards */}

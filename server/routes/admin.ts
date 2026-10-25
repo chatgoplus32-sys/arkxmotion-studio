@@ -4,7 +4,14 @@ import bcrypt from 'bcryptjs'
 import db from '../db.js'
 import { authenticateToken, requireAdmin, AuthRequest } from '../middleware/auth.js'
 import { sendVerificationEmail } from './auth.js'
-import { getMembershipFee, setMembershipFee } from './membership.js'
+import {
+  getMembershipFee,
+  setMembershipFee,
+  getMembershipFeeOriginal,
+  setMembershipFeeOriginal,
+  getProFee,
+  setProFee,
+} from './membership.js'
 import { getNexabotPricing, setNexabotPricing } from './nexabotWallet.js'
 import {
   NEXABOT_PRICING_DEFAULTS,
@@ -23,6 +30,8 @@ interface UserRow {
   name: string
   role: string
   approved: number
+  plan?: string
+  pro_since?: string | null
   created_at: string
   updated_at: string
 }
@@ -31,12 +40,20 @@ function attachPayment(user: any): any {
   const payment = db.prepare(
     'SELECT id, amount, status, proof_note, admin_note, created_at FROM membership_payments WHERE user_id = ? ORDER BY id DESC LIMIT 1'
   ).get(user.id) as { id: number; amount: number; status: string; proof_note: string; admin_note: string; created_at: string } | undefined
+  const proPayment = db.prepare(
+    'SELECT id, amount, status, proof_note, admin_note, created_at FROM pro_payments WHERE user_id = ? ORDER BY id DESC LIMIT 1'
+  ).get(user.id) as { id: number; amount: number; status: string; proof_note: string; admin_note: string; created_at: string } | undefined
   return {
     ...user,
     approved: !!user.approved,
     email_verified: !!user.email_verified,
+    plan: user.role === 'admin' ? 'pro' : (user.plan || 'free'),
+    pro_since: user.pro_since ?? null,
     payment: payment
       ? { id: payment.id, amount: payment.amount, status: payment.status, proofNote: payment.proof_note, adminNote: payment.admin_note, createdAt: payment.created_at }
+      : null,
+    proPayment: proPayment
+      ? { id: proPayment.id, amount: proPayment.amount, status: proPayment.status, proofNote: proPayment.proof_note, adminNote: proPayment.admin_note, createdAt: proPayment.created_at }
       : null,
   }
 }
@@ -44,7 +61,7 @@ function attachPayment(user: any): any {
 router.get('/users', authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
   try {
     const users = db.prepare(
-      'SELECT id, email, name, role, approved, email_verified, created_at, updated_at FROM users ORDER BY created_at DESC'
+      'SELECT id, email, name, role, approved, email_verified, plan, pro_since, created_at, updated_at FROM users ORDER BY created_at DESC'
     ).all() as UserRow[]
 
     res.json({ users: users.map(attachPayment) })
@@ -57,7 +74,7 @@ router.get('/users', authenticateToken, requireAdmin, (_req: AuthRequest, res: R
 router.get('/users/pending', authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
   try {
     const users = db.prepare(
-      'SELECT id, email, name, role, approved, email_verified, created_at FROM users WHERE approved = 0 AND role != ? ORDER BY created_at DESC'
+      'SELECT id, email, name, role, approved, email_verified, plan, pro_since, created_at FROM users WHERE approved = 0 AND role != ? ORDER BY created_at DESC'
     ).all('admin') as UserRow[]
 
     res.json({ users: users.map(attachPayment) })
@@ -80,19 +97,21 @@ router.post('/users/:id/approve', authenticateToken, requireAdmin, async (req: A
       return res.status(400).json({ error: 'Cannot approve admin users' })
     }
 
-    db.prepare('UPDATE users SET approved = 1, email_verified = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(id)
+    db.prepare(
+      "UPDATE users SET approved = 1, email_verified = 1, plan = 'pro', pro_since = COALESCE(pro_since, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+    ).run(id)
 
     try {
       await sendEmail({
         to: user.email,
-        subject: 'Akun Disetujui — ARKXMotion Studio ✅',
-        text: `Halo ${user.name},\n\nAkun kamu di ARKXMotion Studio telah disetujui admin. Silakan login di ${appUrl()}/login\n\nSelamat berkarya!\n— ARKXMotion Studio`,
-        html: `<p>Halo <b>${user.name}</b>,</p><p>Akun kamu di <b>ARKXMotion Studio</b> telah <b>disetujui</b>. Silakan login:</p><p><a href="${appUrl()}/login" style="background:#d4a017;color:#000;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:700">Login Sekarang</a></p><p>— ARKXMotion Studio</p>`,
+        subject: 'Akun Disetujui & Pro Aktif — ARKXMotion Studio ✅',
+        text: `Halo ${user.name},\n\nAkun kamu di ARKXMotion Studio telah disetujui dan otomatis menjadi Pro. Semua fitur AI sudah terbuka — kamu bisa langsung login di ${appUrl()}/login\n\nSelamat berkarya!\n— ARKXMotion Studio`,
+        html: `<p>Halo <b>${user.name}</b>,</p><p>Akun kamu di <b>ARKXMotion Studio</b> telah <b>disetujui</b> dan otomatis menjadi <b>Pro</b>. Semua fitur AI sudah terbuka.</p><p><a href="${appUrl()}/login" style="background:#d4a017;color:#000;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:700">Login Sekarang</a></p><p>— ARKXMotion Studio</p>`,
       })
-      db.prepare("INSERT INTO notifications (title, message, type, target, user_id) VALUES (?, ?, 'success', 'users', ?)").run('Akun Disetujui', 'Akun kamu telah disetujui admin. Silakan login.', Number(id))
+      db.prepare("INSERT INTO notifications (title, message, type, target, user_id) VALUES (?, ?, 'success', 'users', ?)").run('Akun Disetujui — Pro Aktif', 'Akun kamu disetujui dan otomatis menjadi Pro. Semua fitur AI terbuka.', Number(id))
     } catch (e) { console.warn('[admin] Failed to send approval email/notification:', e) }
 
-    res.json({ message: `User ${user.email} approved successfully` })
+    res.json({ message: `User ${user.email} disetujui — Pro aktif` })
   } catch (error) {
     console.error('Approve user error:', error)
     res.status(500).json({ error: 'Internal server error' })
@@ -172,7 +191,12 @@ router.post('/users/:id/reset-password', authenticateToken, requireAdmin, async 
 
 router.get('/membership/config', authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
   try {
-    res.json({ ok: true, membershipFee: getMembershipFee() })
+    res.json({
+      ok: true,
+      membershipFee: getMembershipFee(),
+      membershipFeeOriginal: getMembershipFeeOriginal(),
+      proFee: getProFee(),
+    })
   } catch (error) {
     console.error('Get membership config error:', error)
     res.status(500).json({ error: 'Internal server error' })
@@ -181,12 +205,53 @@ router.get('/membership/config', authenticateToken, requireAdmin, (_req: AuthReq
 
 router.patch('/membership/config', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
   try {
-    const fee = Number((req.body as any)?.membershipFee)
-    if (!Number.isFinite(fee) || fee <= 0) {
-      return res.status(400).json({ error: 'Nominal harus angka lebih dari 0' })
+    const body = req.body as any
+    const hasMembershipFee = body?.membershipFee !== undefined
+    const hasOriginalFee = body?.membershipFeeOriginal !== undefined
+    const hasProFee = body?.proFee !== undefined
+    if (!hasMembershipFee && !hasOriginalFee && !hasProFee) {
+      return res.status(400).json({ error: 'Tidak ada harga yang dikirim' })
     }
-    setMembershipFee(fee)
-    res.json({ ok: true, message: `Harga membership diubah menjadi Rp ${fee.toLocaleString('id-ID')}`, membershipFee: fee })
+
+    const membershipFee = hasMembershipFee ? Number(body.membershipFee) : undefined
+    const originalFee = hasOriginalFee ? Number(body.membershipFeeOriginal) : undefined
+    const proFee = hasProFee ? Number(body.proFee) : undefined
+
+    if (membershipFee !== undefined && (!Number.isFinite(membershipFee) || membershipFee <= 0)) {
+      return res.status(400).json({ error: 'Nominal membership harus angka lebih dari 0' })
+    }
+    if (originalFee !== undefined && (!Number.isFinite(originalFee) || originalFee <= 0)) {
+      return res.status(400).json({ error: 'Harga normal harus angka lebih dari 0' })
+    }
+    if (
+      membershipFee !== undefined &&
+      originalFee !== undefined &&
+      originalFee < membershipFee
+    ) {
+      return res.status(400).json({ error: 'Harga normal tidak boleh lebih kecil dari harga promo' })
+    }
+    if (proFee !== undefined && (!Number.isFinite(proFee) || proFee <= 0)) {
+      return res.status(400).json({ error: 'Nominal Pro harus angka lebih dari 0' })
+    }
+
+    if (membershipFee !== undefined) setMembershipFee(membershipFee)
+    if (originalFee !== undefined) setMembershipFeeOriginal(originalFee)
+    if (proFee !== undefined) setProFee(proFee)
+
+    let message = 'Harga diperbarui'
+    if (hasProFee) {
+      message = `Harga Pro diubah menjadi Rp ${Number(body.proFee).toLocaleString('id-ID')}`
+    } else if (hasMembershipFee || hasOriginalFee) {
+      message = `Harga join diubah — promo Rp ${getMembershipFee().toLocaleString('id-ID')} (normal Rp ${getMembershipFeeOriginal().toLocaleString('id-ID')})`
+    }
+
+    res.json({
+      ok: true,
+      message,
+      membershipFee: getMembershipFee(),
+      membershipFeeOriginal: getMembershipFeeOriginal(),
+      proFee: getProFee(),
+    })
   } catch (error) {
     console.error('Set membership config error:', error)
     res.status(500).json({ error: 'Internal server error' })
@@ -301,18 +366,20 @@ router.post('/membership/payments/:id/approve', authenticateToken, requireAdmin,
     if (payment.status === 'approved') return res.status(400).json({ error: 'Pembayaran ini sudah disetujui' })
 
     db.prepare("UPDATE membership_payments SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(id)
-    db.prepare('UPDATE users SET approved = 1, email_verified = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(payment.user_id)
+    db.prepare(
+      "UPDATE users SET approved = 1, email_verified = 1, plan = 'pro', pro_since = COALESCE(pro_since, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+    ).run(payment.user_id)
     try {
       await sendEmail({
         to: payment.email,
-        subject: 'Pembayaran Disetujui — ARKXMotion Studio ✅',
-        text: `Halo ${payment.name},\n\nPembayaran kamu telah disetujui & akun diaktifkan. Login di ${appUrl()}/login\n— ARKXMotion Studio`,
-        html: `<p>Halo <b>${payment.name}</b>,</p><p>Pembayaran kamu <b>disetujui</b> & akun telah diaktifkan. Silakan login:</p><p><a href="${appUrl()}/login" style="background:#d4a017;color:#000;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:700">Login Sekarang</a></p>`,
+        subject: 'Pembayaran Disetujui & Pro Aktif — ARKXMotion Studio ✅',
+        text: `Halo ${payment.name},\n\nPembayaran kamu telah disetujui, akun diaktifkan, dan otomatis menjadi Pro. Semua fitur AI sudah terbuka. Login di ${appUrl()}/login\n— ARKXMotion Studio`,
+        html: `<p>Halo <b>${payment.name}</b>,</p><p>Pembayaran kamu <b>disetujui</b>, akun telah diaktifkan, dan otomatis menjadi <b>Pro</b>. Semua fitur AI sudah terbuka.</p><p><a href="${appUrl()}/login" style="background:#d4a017;color:#000;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:700">Login Sekarang</a></p>`,
       })
-      db.prepare("INSERT INTO notifications (title, message, type, target, user_id) VALUES (?, ?, 'success', 'users', ?)").run('Pembayaran Disetujui', 'Pembayaran kamu disetujui & akun diaktifkan.', payment.user_id)
+      db.prepare("INSERT INTO notifications (title, message, type, target, user_id) VALUES (?, ?, 'success', 'users', ?)").run('Pembayaran Disetujui — Pro Aktif', 'Pembayaran kamu disetujui. Akun aktif dan semua fitur AI terbuka.', payment.user_id)
     } catch (e) { console.warn('[admin] Failed to send payment approval email/notification:', e) }
 
-    res.json({ ok: true, message: `Pembayaran ${payment.email} disetujui & akun diaktifkan` })
+    res.json({ ok: true, message: `Pembayaran ${payment.email} disetujui — akun aktif & Pro aktif` })
   } catch (error) {
     console.error('Approve membership payment error:', error)
     res.status(500).json({ error: 'Internal server error' })
@@ -332,6 +399,86 @@ router.post('/membership/payments/:id/reject', authenticateToken, requireAdmin, 
     res.json({ ok: true, message: `Pembayaran ${payment.email} ditolak` })
   } catch (error) {
     console.error('Reject membership payment error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// ─── Upgrade Pro ───────────────────────────────────────────────────
+
+router.get('/pro/payments', authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
+  try {
+    const rows = db.prepare(`
+      SELECT pp.id, pp.user_id, pp.amount, pp.status, pp.proof_note, pp.admin_note, pp.created_at,
+             u.email, u.name, u.plan AS user_plan, u.pro_since
+      FROM pro_payments pp
+      JOIN users u ON u.id = pp.user_id
+      ORDER BY CASE pp.status WHEN 'pending' THEN 0 ELSE 1 END, pp.created_at DESC
+    `).all() as any[]
+    res.json({
+      payments: rows.map((p) => ({
+        id: p.id,
+        userId: p.user_id,
+        amount: p.amount,
+        status: p.status,
+        proofNote: p.proof_note,
+        adminNote: p.admin_note,
+        createdAt: p.created_at,
+        email: p.email,
+        name: p.name,
+        userPlan: p.user_plan || 'free',
+        proSince: p.pro_since,
+      })),
+    })
+  } catch (error) {
+    console.error('List pro payments error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.post('/pro/payments/:id/approve', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params
+    const payment = db.prepare(
+      'SELECT pp.id, pp.user_id, pp.status, u.email, u.name FROM pro_payments pp JOIN users u ON u.id = pp.user_id WHERE pp.id = ?'
+    ).get(id) as { id: number; user_id: number; status: string; email: string; name: string } | undefined
+    if (!payment) return res.status(404).json({ error: 'Pembayaran Pro tidak ditemukan' })
+    if (payment.status === 'approved') return res.status(400).json({ error: 'Pembayaran Pro ini sudah disetujui' })
+
+    db.prepare("UPDATE pro_payments SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(id)
+    db.prepare(
+      "UPDATE users SET plan = 'pro', pro_since = COALESCE(pro_since, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+    ).run(payment.user_id)
+
+    try {
+      await sendEmail({
+        to: payment.email,
+        subject: 'Upgrade Pro Berhasil — ARKXMotion Studio ⭐',
+        text: `Halo ${payment.name},\n\nPembayaran upgrade Pro kamu sudah disetujui. Akun kamu sekarang Pro dan menu Gemini Tools sudah terbuka.\n\nMulai sekarang: ${appUrl()}/tools/gemini-tools\n— ARKXMotion Studio`,
+        html: `<p>Halo <b>${payment.name}</b>,</p><p>Pembayaran upgrade <b>Pro</b> kamu sudah disetujui. Akun kamu sekarang <b>Pro</b> dan menu <b>Gemini Tools</b> sudah terbuka.</p><p><a href="${appUrl()}/tools/gemini-tools" style="background:#d4a017;color:#000;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:700">Buka Gemini Tools</a></p><p>— ARKXMotion Studio</p>`,
+      })
+      db.prepare("INSERT INTO notifications (title, message, type, target, user_id) VALUES (?, ?, 'success', 'users', ?)").run('Upgrade Pro Disetujui', 'Akun kamu sekarang Pro — Gemini Tools sudah terbuka.', payment.user_id)
+    } catch (e) { console.warn('[admin] Failed to send pro approval email/notification:', e) }
+
+    res.json({ ok: true, message: `Pembayaran Pro ${payment.email} disetujui — akun kini Pro` })
+  } catch (error) {
+    console.error('Approve pro payment error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.post('/pro/payments/:id/reject', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params
+    const adminNote = String((req.body as any)?.admin_note || '').slice(0, 500)
+    const payment = db.prepare(
+      'SELECT pp.id, pp.user_id, pp.status, u.email FROM pro_payments pp JOIN users u ON u.id = pp.user_id WHERE pp.id = ?'
+    ).get(id) as { id: number; user_id: number; status: string; email: string } | undefined
+    if (!payment) return res.status(404).json({ error: 'Pembayaran Pro tidak ditemukan' })
+
+    db.prepare("UPDATE pro_payments SET status = 'rejected', admin_note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(adminNote, id)
+    res.json({ ok: true, message: `Pembayaran Pro ${payment.email} ditolak` })
+  } catch (error) {
+    console.error('Reject pro payment error:', error)
     res.status(500).json({ error: 'Internal server error' })
   }
 })
@@ -431,13 +578,13 @@ router.get('/analytics', authenticateToken, requireAdmin, (_req: AuthRequest, re
   try {
     const totalUsers = (db.prepare('SELECT COUNT(*) as c FROM users').get() as any).c
     const totalLogs = (db.prepare('SELECT COUNT(*) as c FROM generation_logs').get() as any).c
-    const totalCredits = (db.prepare('SELECT COALESCE(SUM(credits),0) as c FROM generation_logs WHERE status = "completed"').get() as any).c
-    const completedCount = (db.prepare('SELECT COUNT(*) as c FROM generation_logs WHERE status = "completed"').get() as any).c
-    const failedCount = (db.prepare('SELECT COUNT(*) as c FROM generation_logs WHERE status = "failed"').get() as any).c
-    const pendingCount = (db.prepare('SELECT COUNT(*) as c FROM generation_logs WHERE status = "pending"').get() as any).c
+    const totalCredits = (db.prepare("SELECT COALESCE(SUM(credits),0) as c FROM generation_logs WHERE status = 'completed'").get() as any).c
+    const completedCount = (db.prepare("SELECT COUNT(*) as c FROM generation_logs WHERE status = 'completed'").get() as any).c
+    const failedCount = (db.prepare("SELECT COUNT(*) as c FROM generation_logs WHERE status = 'failed'").get() as any).c
+    const pendingCount = (db.prepare("SELECT COUNT(*) as c FROM generation_logs WHERE status = 'pending'").get() as any).c
 
     const byProvider = db.prepare(
-      'SELECT provider, COUNT(*) as count, COALESCE(SUM(credits),0) as credits, COUNT(CASE WHEN status="completed" THEN 1 END) as completed FROM generation_logs GROUP BY provider ORDER BY count DESC'
+      "SELECT provider, COUNT(*) as count, COALESCE(SUM(credits),0) as credits, COUNT(CASE WHEN status='completed' THEN 1 END) as completed FROM generation_logs GROUP BY provider ORDER BY count DESC"
     ).all()
 
     const byModel = db.prepare(
@@ -519,7 +666,9 @@ router.post('/users/bulk', authenticateToken, requireAdmin, (req: AuthRequest, r
 
     const safePlaceholders = safeIds.map(() => '?').join(',')
     if (action === 'approve') {
-      db.prepare(`UPDATE users SET approved = 1, email_verified = 1, updated_at = CURRENT_TIMESTAMP WHERE id IN (${safePlaceholders})`).run(...safeIds)
+      db.prepare(
+        `UPDATE users SET approved = 1, email_verified = 1, plan = 'pro', pro_since = COALESCE(pro_since, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP WHERE id IN (${safePlaceholders})`
+      ).run(...safeIds)
       res.json({ message: `${safeIds.length} user(s) approved`, skipped: adminIds.size })
     } else {
       db.prepare(`DELETE FROM users WHERE id IN (${safePlaceholders})`).run(...safeIds)
@@ -668,6 +817,56 @@ router.post('/credits/sync', authenticateToken, requireAdmin, (req: AuthRequest,
     res.json({ ok: true, synced })
   } catch (err: any) {
     console.error('[admin-credits-sync] error:', err.message)
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// POST /api/admin/credits/import — import API key dari localStorage browser admin
+// Body: { provider, tokens: [{ name, value }] }. Key duplikat (token_value sama
+// pada provider yang sama) di-skip, sisanya INSERT sebagai token 'available'
+// dengan credits NULL (diisi otomatis oleh /credits/sync hasil pengecekan saldo).
+router.post('/credits/import', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
+  try {
+    const { provider, tokens } = req.body as { provider: string; tokens: { name?: string; value: string }[] }
+    if (!provider || !Array.isArray(tokens) || tokens.length === 0) {
+      return res.status(400).json({ error: 'Missing provider or tokens' })
+    }
+    const allowed = db.prepare(
+      "SELECT COUNT(*) n FROM pragma_table_info('tokens') WHERE name = 'provider'"
+    ).get() // hanya penjagaan biar query di bawah gagal jelas kalau skema berubah
+    void allowed
+    const insert = db.prepare(
+      "INSERT INTO tokens (provider, name, token_value, status) VALUES (?, ?, ?, 'available')"
+    )
+    const exists = db.prepare('SELECT id FROM tokens WHERE provider = ? AND token_value = ?')
+    let imported = 0
+    let skipped = 0
+    const invalid: string[] = []
+    for (const t of tokens) {
+      const value = String(t?.value || '').trim()
+      if (!value) { skipped++; continue }
+      if (exists.get(provider, value)) { skipped++; continue }
+      try {
+        const name = (String(t?.name || '').trim() || `Key ${imported + skipped + 1}`).slice(0, 80)
+        insert.run(provider, name, value)
+        imported++
+      } catch (e: any) {
+        // CHECK constraint provider (skema lama) menolak provider di luar daftar
+        invalid.push(provider)
+        break
+      }
+    }
+    res.json({
+      ok: true,
+      imported,
+      skipped,
+      unsupported: invalid.length > 0 ? [...new Set(invalid)] : undefined,
+      message: invalid.length > 0
+        ? `${imported} key diimport; provider "${invalid[0]}" ditolak skema DB (CHECK constraint).`
+        : `${imported} key diimport, ${skipped} duplikat/kosong dilewati`,
+    })
+  } catch (err: any) {
+    console.error('[admin-credits-import] error:', err.message)
     res.status(500).json({ error: err.message })
   }
 })

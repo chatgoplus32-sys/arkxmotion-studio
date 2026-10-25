@@ -12,12 +12,14 @@ import { removeWithSeamCorrection } from '@/lib/inpaint-core'
 import { detectWatermarks, type WatermarkCandidate } from '@/lib/watermark-detect'
 import { textureFill } from '@/lib/texturefill'
 import { loadVideoMetadata, grabFirstFrame, processVideo } from '@/lib/video-watermark-process'
+import { processVideoOffline, isOfflineVideoSupported } from '@/lib/video-offline'
+import { repairDarkOutlineContourROI } from '@/lib/gemini-contour-repair'
 import { createSeamFrameProcessor } from '@/lib/video-frame-cleaner'
 import {
   getGeminiWatermarkRegion,
   removeGeminiWatermark,
   createGeminiFramePlan,
-  createGeminiFrameProcessor,
+  applyReverseAlphaToRegion,
   detectGeminiInVideo,
   type GeminiFramePlan,
 } from '@/lib/gemini-watermark'
@@ -142,23 +144,135 @@ export default function WatermarkRemoverPage() {
     }
   }, [])
 
+  // ── Shared video offline pipeline (WebCodecs, frame-akurat) ─────────
+  // Loop realtime + MediaRecorder dulu bikin masalah di video 30s+:
+  // frame ke-skip → patah-patah, bitrate 5Mbps → hasil 4MB vs asli 44MB.
+  // Sekarang: decode/encode offline via WebCodecs+mediabunny, bitrate
+  // mengikuti file asli. MediaRecorder hanya fallback browser lama.
+  const runVideoThrough = useCallback(async (
+    f: File,
+    frameProcessor: (ctx: CanvasRenderingContext2D, seconds: number) => void,
+    label: string,
+  ): Promise<number> => {
+    if (isOfflineVideoSupported()) {
+      try {
+        const { blob, frames } = await processVideoOffline(f, frameProcessor, (pct, msg) => {
+          setProgress(3 + (pct / 100) * 97)
+          setProgressMsg(msg.startsWith('Selesai') || msg.startsWith('Memproses') ? msg : `${label}: ${msg}`)
+        })
+        setResultUrl(URL.createObjectURL(blob)); setResultBlob(blob)
+        return frames
+      } catch (e) {
+        // WebCodecs gagal di video/browser ini — jangan matikan alur, jatuh ke
+        // jalur lama (MediaRecorder) supaya tetap ada hasil yang bisa dipakai.
+        console.error('[video-offline] gagal, lanjut jalur lama:', e)
+        const detail = String(e instanceof Error ? e.message : e).slice(0, 120)
+        addToast(`⚠️ Encoding WebCodecs gagal (${detail}) — pakai jalur cadangan`, 'warning')
+      }
+    }
+    // Fallback realtime untuk browser tanpa WebCodecs.
+    const meta = await loadVideoMetadata(f)
+    try {
+      const blob = await processVideo({
+        video: meta.video, frameProcessor,
+        onProgress: (pct, msg) => {
+          setProgress(3 + (pct / 100) * 97)
+          setProgressMsg(pct >= 95 ? msg : `${label}: ${msg}`)
+        },
+      })
+      setResultUrl(URL.createObjectURL(blob)); setResultBlob(blob)
+    } finally { URL.revokeObjectURL(meta.url) }
+    return 0
+  }, [addToast])
+
   // ── Shared video exact-removal pipeline (used by auto & manual paths) ──
   // Plan berisi posisi + alpha map dari deteksi; tiap frame dibersihkan
   // dengan reverse-alpha sesuai kontennya (tanpa patch beku → tanpa blur).
-  const runGeminiVideo = useCallback(async (f: File, plan: GeminiFramePlan) => {
-    const meta = await loadVideoMetadata(f)
+  //
+  // Video panjang (30s+): watermark bisa berpindah posisi atau baru muncul
+  // di pertengahan. Probe Balik-ulang MEMALU (mahal: 1-5s utk deteksi full),
+  // jadi jarang (tiap 6s, mulai setelah 10s) — hanya kalau wm belum ketemu
+  // posisi lain. Kalau tampilan pinggiran TMP DOANG, selip laporan di toast.
+  const runGeminiVideo = useCallback(async (
+    f: File,
+    initialPlan: GeminiFramePlan,
+    dims: { width: number; height: number },
+  ) => {
+    const p0 = initialPlan.position
+    addToast(`🔬 Exact: region ${p0.width}×${p0.height} @ (${p0.x},${p0.y}) + inpaint AI`, 'info')
     setProgressMsg('Gemini watermark terdeteksi — bersihkan tiap frame…')
-    const frameProcessor = createGeminiFrameProcessor(plan)
-    const blob = await processVideo({
-      video: meta.video, frameProcessor,
-      onProgress: (pct, msg) => {
-        setProgress(3 + (pct / 100) * 97)
-        setProgressMsg(pct >= 95 ? msg : `Exact removal: ${msg}`)
-      },
-    })
-    setResultUrl(URL.createObjectURL(blob)); setResultBlob(blob)
-    URL.revokeObjectURL(meta.url)
-  }, [])
+
+    const plans: GeminiFramePlan[] = [initialPlan]
+    const keyOf = (p: GeminiFramePlan) =>
+      `${p.position.x},${p.position.y},${p.position.width},${p.position.height}`
+    let lastProbe = -99
+
+    // Pembersih inpaint AI per-frame untuk SISA yang tak luruh oleh
+    // reverse-alpha (rim gelap varian weak-alpha). Mask = union rect semua
+    // plan + padding kecil. Saat plan baru muncul, mask diperbarui.
+    const buildCleanupMask = (): ImageData | null => {
+      if (plans.length === 0) return null
+      const mask = new ImageData(dims.width, dims.height)
+      let painted = false
+      for (const p of plans) {
+        const pad = Math.round(Math.min(p.position.width, p.position.height) * 0.15)
+        const x0 = Math.max(0, p.position.x - pad)
+        const y0 = Math.max(0, p.position.y - pad)
+        const x1 = Math.min(dims.width, p.position.x + p.position.width + pad)
+        const y1 = Math.min(dims.height, p.position.y + p.position.height + pad)
+        for (let py = y0; py < y1; py++) {
+          for (let px = x0; px < x1; px++) {
+            const idx = (py * dims.width + px) * 4
+            mask.data[idx] = 255
+            mask.data[idx + 1] = 0
+            mask.data[idx + 2] = 0
+            mask.data[idx + 3] = 255
+          }
+        }
+        painted = true
+      }
+      return painted ? mask : null
+    }
+
+    let cleanupCleaner = createSeamFrameProcessor(buildCleanupMask() ?? new ImageData(dims.width, dims.height), dims.width, dims.height)
+    const rebuildCleaner = () => {
+      const mask = buildCleanupMask()
+      if (!mask) return
+      const next = createSeamFrameProcessor(mask, dims.width, dims.height)
+      if (next) cleanupCleaner = next
+    }
+
+    const frameProcessor = (ctx: CanvasRenderingContext2D, t: number) => {
+      const w = ctx.canvas.width, h = ctx.canvas.height
+      for (const p of plans) {
+        const { x, y, width, height } = p.position
+        const roi = ctx.getImageData(x, y, width, height)
+        applyReverseAlphaToRegion(roi, p.alphaMap, p.alphaGain)
+        // Bersihkan sisa garis kontur gelap (pola outline V2) supaya hasil
+        // reverse-alpha tidak meninggalkan siluet bintang Gemini.
+        repairDarkOutlineContourROI(roi, p.alphaMap)
+        ctx.putImageData(roi, x, y)
+      }
+      // Inpaint AI per-frame di region yang sama: menghapus sisa rim/fill
+      // yang didn't luruh, dari konteks frame itu sendiri (tanpa patch beku).
+      if (cleanupCleaner) cleanupCleaner.process(ctx)
+      // Re-detect periodik (mahal — dijalankan jarang; snapshot dibaca
+      // SETELAH semua plan dibersihkan, jadi hanya posisi BARU yang match).
+      if (t >= 10 && t - lastProbe >= 6 && w > 0 && h > 0) {
+        lastProbe = t
+        const snap = ctx.getImageData(0, 0, w, h)
+        void createGeminiFramePlan(snap).then((np) => {
+          if (np && !plans.some((p) => keyOf(p) === keyOf(np))) {
+            plans.push(np)
+            rebuildCleaner()
+            addToast(`🧲 Watermark baru terdeteksi di posisi lain (${t.toFixed(1)}s) — ikut dibersihkan`, 'info')
+          }
+        }).catch(() => { /* probe hanya bonus */ })
+      }
+    }
+
+    await runVideoThrough(f, frameProcessor, 'Exact removal')
+  }, [addToast, runVideoThrough])
 
   const handleFile = useCallback((f: File) => {
     const isVideo = /video\//.test(f.type) || /\.(mp4|mov|webm)$/i.test(f.name)
@@ -168,7 +282,7 @@ export default function WatermarkRemoverPage() {
     }
 
     setFile(f); setResultUrl(null); setResultBlob(null); setCandidates([])
-    setMaskData(null); setUndoStack([]); setFileUrl(URL.createObjectURL(f))
+    setMaskData(null); setUndoStack([]); setFileUrl(URL.createObjectURL(f)); setCompare('after')
     setInputMode(isVideo ? 'video' : 'image')
 
     if (isImage) {
@@ -251,6 +365,11 @@ export default function WatermarkRemoverPage() {
         }
         URL.revokeObjectURL(meta.url)
 
+        if (!plan) {
+          // DIAGNOSTik: beri tahu user jalur fallback yang dipakai.
+          const reg = getGeminiWatermarkRegion(ff.width, ff.height)
+          addToast(`ℹ️ Deteksi exact gagal → fallback AI (${ff.width}×${ff.height}, region default ${reg.width}×${reg.height})`, 'info')
+        }
         if (plan) {
           // Auto-mask di posisi hasil deteksi (bukan default katalog).
           const region = plan.position
@@ -271,18 +390,37 @@ export default function WatermarkRemoverPage() {
           mctx.fillRect(region.x, region.y, region.width, region.height)
 
           try {
-            await runGeminiVideo(f, plan)
+            await runGeminiVideo(f, plan, { width: ff.width, height: ff.height })
             addToast('✅ Watermark Gemini dibersihkan otomatis (per-frame)!', 'success')
             setProgress(100)
           } catch (e: any) { addToast(`❌ ${e.message}`, 'error') }
           setProcessing(false)
         } else {
-          setProcessing(false); setProgress(0); setProgressMsg('')
-          addToast('ℹ️ Bukan watermark Gemini — sesuaikan mask lalu klik Bersihkan.', 'info')
+          // Video panjang / watermark varian baru sering gagal kena pola Gemini
+          // persis. Jangan berhenti di toast — lanjut otomatis pakai pembersih
+          // seam per-frame dengan auto-mask region kanan-bawah yang sudah ada.
+          setProgressMsg('Bukan pola Gemini — bersihkan dengan AI per-frame…')
+          try {
+            const meta2 = await loadVideoMetadata(f)
+            const cleaner = createSeamFrameProcessor(autoMask, meta2.video.videoWidth, meta2.video.videoHeight)
+            URL.revokeObjectURL(meta2.url)
+            if (cleaner) {
+              const frames = await runVideoThrough(f, (ctx) => cleaner.process(ctx), 'Bersih per-frame')
+              addToast(
+                `✅ Bukan pola Gemini — area watermark dibersihkan dengan AI per-frame (${frames || cleaner.frames()} frame, ${cleaner.avgMs().toFixed(1)} ms/frame)`,
+                'success',
+              )
+              setProgress(100)
+            }
+          } catch (e: any) {
+            addToast(`❌ ${e.message}`, 'error')
+            setProgress(0)
+          }
+          setProcessing(false)
         }
       })
     }
-  }, [addToast, runGeminiVideo])
+  }, [addToast, runGeminiVideo, runVideoThrough])
 
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) handleFile(f)
@@ -411,33 +549,24 @@ export default function WatermarkRemoverPage() {
         }
 
         if (plan) {
-          await runGeminiVideo(file, plan)
+          await runGeminiVideo(file, plan, { width: imageData.width, height: imageData.height })
           addToast('✅ Watermark Gemini dibersihkan (per-frame)!', 'success')
           setProgress(100)
         } else {
           // Per-frame: area watermark dibersihkan ULANG tiap frame dari konteks
           // frame itu sendiri, jadi tidak ada "patch beku" saat ada gerakan.
           const meta = await loadVideoMetadata(file)
-          setProgressMsg('Menyiapkan pembersih per-frame…'); setProgress(3)
           const cleaner = createSeamFrameProcessor(maskData, meta.video.videoWidth, meta.video.videoHeight)
+          URL.revokeObjectURL(meta.url)
           if (!cleaner) {
             addToast('Mask kosong — tandai dulu area watermark.', 'error')
-            URL.revokeObjectURL(meta.url); setProcessing(false); return
+            setProcessing(false); return
           }
-          const blob = await processVideo({
-            video: meta.video,
-            frameProcessor: (ctx) => cleaner.process(ctx),
-            onProgress: (pct, msg) => {
-              setProgress(3 + (pct / 100) * 97)
-              setProgressMsg(pct >= 95 ? msg : `Bersih per-frame: ${msg}`)
-            },
-          })
-          setResultUrl(URL.createObjectURL(blob)); setResultBlob(blob)
+          const frames = await runVideoThrough(file, (ctx) => cleaner.process(ctx), 'Bersih per-frame')
           addToast(
-            `✅ Video dibersihkan per-frame (${cleaner.frames()} frame, ${cleaner.avgMs().toFixed(1)} ms/frame ≈ ${cleaner.secondsPerMinute().toFixed(1)} s per menit video)`,
+            `✅ Video dibersihkan per-frame (${frames || cleaner.frames()} frame, ${cleaner.avgMs().toFixed(1)} ms/frame ≈ ${cleaner.secondsPerMinute().toFixed(1)} s per menit video)`,
             'success',
           )
-          URL.revokeObjectURL(meta.url)
         }
       } else {
         // Image: exact Gemini removal first (instant, lossless), else local pipeline.
@@ -479,18 +608,50 @@ export default function WatermarkRemoverPage() {
 
   return (
     <PageContent>
-      <PageHeader title="🧽 Watermark Remover" desc="Gemini/Veo exact + AI inpainting seam-aware. 100% lokal di browser." />
+      <PageHeader
+        title="🧽 Watermark Remover"
+        highlight="Secepat Kedip"
+        desc="Tempel video Gemini/Veo kamu dan biarkan AI membersihkan watermark-nya. Semua proses berjalan di perangkat kamu sendiri — video tidak pernah diunggah ke server."
+      />
+
+      {/* Badges ala nexabot.id/watermark-remover */}
+      <div className="flex flex-wrap gap-2 mb-4">
+        {[
+          { icon: '🔒', label: 'Tanpa upload ke server' },
+          { icon: '⚡', label: 'Tanpa antrean' },
+          { icon: '💪', label: 'GPU/CPU perangkat kamu' },
+        ].map((b) => (
+          <span key={b.label} className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/5 px-3 py-1 text-[11px] font-medium text-emerald-400">
+            {b.icon} {b.label}
+          </span>
+        ))}
+      </div>
+
+      {/* Langkah 01/02/03 ala nexabot.id */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+        {[
+          { n: '01', title: 'Pilih video', desc: 'Tarik & letakkan atau pilih file MP4/MOV/WebM — disarankan ≤ 10 detik.' },
+          { n: '02', title: 'AI membersihkan', desc: 'Model neural network berjalan di browser, frame demi frame — watermark Gemini/Veo (kanan bawah) dibersihkan otomatis.' },
+          { n: '03', title: 'Unduh hasil', desc: 'Bandingkan sebelum/sesudah, lalu unduh video/gambar tanpa watermark.' },
+        ].map((s) => (
+          <div key={s.n} className="rounded-xl border border-border/70 bg-card/30 p-3">
+            <div className="text-[11px] font-mono text-muted-foreground tracking-widest mb-1">{s.n}</div>
+            <div className="text-sm font-medium text-foreground">{s.title}</div>
+            <div className="text-[12px] text-muted-foreground mt-0.5 leading-relaxed">{s.desc}</div>
+          </div>
+        ))}
+      </div>
 
       <Section className="!p-4 mb-4">
         <div className="flex items-center gap-3 flex-wrap">
           <div className={`flex items-center gap-1.5 text-xs font-medium ${engineReady ? 'text-emerald-400' : 'text-amber-400'}`}>
             <BrainCircuit className="h-3.5 w-3.5" />
-            {engineReady ? `MI-GAN ready (${backend})` : engineLoading ? engineProgress : 'Gemini exact ✓ · MI-GAN untuk watermark lain'}
+            {engineReady ? `LaMa AI ready (${backend})` : engineLoading ? engineProgress : 'Gemini exact ✓ · LaMa AI untuk watermark lain'}
           </div>
           {!engineReady && (
             <Button size="sm" variant="outline" onClick={ensureEngine} disabled={engineLoading}>
               {engineLoading ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <BrainCircuit className="h-3 w-3 mr-1" />}
-              {engineLoading ? 'Loading…' : 'Init MI-GAN Engine'}
+              {engineLoading ? 'Loading…' : 'Init LaMa AI Engine'}
             </Button>
           )}
           {engineReady && (
@@ -502,7 +663,10 @@ export default function WatermarkRemoverPage() {
             ]} />
           )}
         </div>
-      </Section>
+          <p className="text-[11px] text-muted-foreground mt-2">
+            Engine dioptimalkan untuk watermark Gemini / Veo (kanan bawah). Video/gambar di luar itu mungkin tidak terdeteksi — gunakan mask manual. Semua proses berjalan lokal di browser kamu.
+          </p>
+        </Section>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Section title="🎬 Input & Mask" className="!p-6">
@@ -533,8 +697,14 @@ export default function WatermarkRemoverPage() {
                 <div className="flex justify-center text-muted-foreground mb-2">
                   {inputMode === 'video' ? <Clapperboard className="h-8 w-8" /> : <ImageIcon className="h-8 w-8" />}
                 </div>
-                <div className="text-sm text-muted-foreground font-medium">Tarik & letakkan gambar/video</div>
-                <div className="text-xs text-muted-foreground mt-1">PNG/JPG/WEBP atau MP4/MOV/WebM — ≤ 10 detik untuk video</div>
+                <div className="text-sm text-muted-foreground font-medium">Tarik & letakkan video/gambar</div>
+                <div className="text-xs text-muted-foreground mt-1">atau pilih file dari perangkat — disarankan ≤ 10 detik</div>
+                <div className="flex justify-center gap-1.5 mt-3 flex-wrap">
+                  {['MP4', 'MOV', 'WebM', 'PNG', 'JPG', 'WEBP'].map((f) => (
+                    <span key={f} className="rounded-md border border-border bg-card/40 px-2 py-0.5 text-[10px] font-mono text-muted-foreground">{f}</span>
+                  ))}
+                </div>
+                <div className="text-[11px] text-muted-foreground mt-3">Belum ada file dipilih · semua format umum didukung</div>
               </div>
             )}
             <input id="wm-file-input" type="file" accept="image/*,video/*" className="hidden"
@@ -587,7 +757,7 @@ export default function WatermarkRemoverPage() {
             {processing ? `Membersihkan… ${progress}%` : '🧽 Bersihkan Watermark'}
           </Button>
           <p className="text-xs text-muted-foreground mt-2">
-            Gemini/Veo: reverse-alpha exact (instan). Lainnya: texture + MI-GAN AI (~29MB, cached).
+            Gemini/Veo: reverse-alpha exact (instan). Lainnya: texture + LaMa AI (~93MB, cached).
           </p>
         </Section>
 
@@ -595,16 +765,14 @@ export default function WatermarkRemoverPage() {
           <div className="min-h-[200px]">
             {resultUrl ? (
               <div className="rounded-lg border border-border overflow-hidden">
-                {inputMode === 'image' && (
-                  <div className="flex gap-2 p-2 border-b border-border">
-                    <button onClick={() => setCompare('before')}
-                      className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${compare === 'before' ? 'bg-primary text-primary-foreground' : 'bg-surface-secondary text-muted-foreground'}`}>Sebelum</button>
-                    <button onClick={() => setCompare('after')}
-                      className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${compare === 'after' ? 'bg-primary text-primary-foreground' : 'bg-surface-secondary text-muted-foreground'}`}>Sesudah ✨</button>
-                  </div>
-                )}
+                <div className="flex gap-2 p-2 border-b border-border">
+                  <button onClick={() => setCompare('before')}
+                    className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${compare === 'before' ? 'bg-primary text-primary-foreground' : 'bg-surface-secondary text-muted-foreground'}`}>Sebelum</button>
+                  <button onClick={() => setCompare('after')}
+                    className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${compare === 'after' ? 'bg-primary text-primary-foreground' : 'bg-surface-secondary text-muted-foreground'}`}>Sesudah ✨</button>
+                </div>
                 {inputMode === 'video' ? (
-                  <video src={resultUrl} controls className="w-full" />
+                  <video src={compare === 'before' ? (fileUrl || resultUrl) : resultUrl} controls className="w-full" key={compare || 'v'} />
                 ) : (
                   <img src={compare === 'before' ? (fileUrl || '') : resultUrl} className="w-full" key={compare} />
                 )}

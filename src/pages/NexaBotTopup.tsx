@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { Wallet, Clock, CheckCircle, XCircle, ExternalLink, Copy, Sparkles, Zap } from 'lucide-react'
 import { DANA_NUMBER, DANA_NAME, adminWhatsappLink, formatRp } from '@/lib/payment'
+import { PaymentMethodToggle, QrisPanel } from '@/components/QrisPayment'
 import {
   fetchNexabotWallet,
   nexabotPackageName,
@@ -35,6 +36,7 @@ export default function NexaBotTopupPage() {
   const [selectedAmount, setSelectedAmount] = useState<number>(10000)
   const [customAmount, setCustomAmount] = useState('')
   const [proofNote, setProofNote] = useState('')
+  const [payMethod, setPayMethod] = useState<'dana' | 'qris'>('dana')
   const [loading, setLoading] = useState(false)
   const [topups, setTopups] = useState<Topup[]>([])
   const [mode, setMode] = useState<'balance' | 'package'>('balance')
@@ -284,7 +286,23 @@ export default function NexaBotTopupPage() {
       )}
 
       {step === 'pay' && (
-        <Section title="Pembayaran via DANA" sub="Transfer ke nomor DANA berikut">
+        <Section
+          title={payMethod === 'qris' ? 'Pembayaran via QRIS' : 'Pembayaran via DANA'}
+          sub={payMethod === 'qris' ? 'Scan QRIS di bawah untuk bayar' : 'Transfer ke nomor DANA berikut'}
+        >
+          <PaymentMethodToggle value={payMethod} onChange={setPayMethod} />
+
+          {payMethod === 'qris' && (
+            <QrisPanel
+              amountLabel={
+                mode === 'package'
+                  ? `${pkg.label} · ${formatRp(amount)}`
+                  : formatRp(amount)
+              }
+            />
+          )}
+
+          {payMethod === 'dana' && (
           <div className="rounded-xl border border-border bg-card/50 p-5 mb-4">
             <div className="text-center mb-4">
               <div className="text-sm text-muted-foreground mb-1">Transfer ke:</div>
@@ -312,6 +330,7 @@ export default function NexaBotTopupPage() {
               </div>
             </div>
           </div>
+          )}
 
           <div className="mb-4">
             <label className="text-sm font-medium mb-1 block">Catatan (opsional)</label>
@@ -329,7 +348,7 @@ export default function NexaBotTopupPage() {
               Kembali
             </Button>
             <Button onClick={() => submit(mode === 'package' ? 'package' : 'topup')} disabled={loading} className="flex-1">
-              {loading ? 'Mengirim...' : 'Sudah Transfer'}
+              {loading ? 'Mengirim...' : payMethod === 'qris' ? 'Sudah Bayar' : 'Sudah Transfer'}
             </Button>
           </div>
 

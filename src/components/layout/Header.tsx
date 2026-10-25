@@ -3,6 +3,8 @@ import { PanelLeftClose, PanelLeft } from 'lucide-react'
 import { Button } from '@/components/ui'
 import { NotificationPanel } from '@/components/ui/NotificationPanel'
 import { ThemeToggle } from '@/components/ui/ThemeToggle'
+import { GenerationIndicator } from './GenerationIndicator'
+import { AccountStatus } from './AccountStatus'
 
 interface HeaderProps {
   title?: string
@@ -37,8 +39,10 @@ export function Header({ title, subtitle, actions, collapsed, onToggleSidebar }:
 
       <div className="flex items-center gap-2">
         {actions}
+        <GenerationIndicator />
         <ThemeToggle />
         <NotificationPanel />
+        <AccountStatus />
       </div>
     </header>
   )

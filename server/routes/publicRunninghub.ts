@@ -5,7 +5,7 @@ const router = Router()
 const RUNNINGHUB_BASE = 'https://www.runninghub.ai'
 const RUNNINGHUB_DEFAULT_WORKFLOW_ID = '2092795737699856386'
 const RUNNINGHUB_ULTRA_HD_WORKFLOW_ID = '2102004799470764034'
-// MC Ultra Fast HD â€” node ID resmi dari dokumentasi workflow:
+// MC Ultra Fast HD — node ID resmi dari dokumentasi workflow:
 // node 30 = image (LoadImage), node 33 = video (LoadVideo)
 const ULTRA_HD_IMAGE_NODE = '30'
 const ULTRA_HD_VIDEO_NODE = '33'
@@ -18,7 +18,7 @@ const KLING_MC_IMAGE_NODE = '3'
 const KLING_MC_VIDEO_NODE = '5'
 const KLING_MC_VIDEO_FIELD = 'file'
 
-// MC ULTRA HD â€” AI Motion Transfer PRO+ (app RunningHub 2101654299003973634):
+// MC ULTRA HD — AI Motion Transfer PRO+ (app RunningHub 2101654299003973634):
 // node 30 = image (foto karakter), node 33 = video (video referensi gerakan).
 // Struktur node-nya sama dengan Ultra Fast HD, tapi app-nya berbeda (SAM3 person
 // tracking + multi-person), jadi app id-nya tetap dipisah.
@@ -26,6 +26,38 @@ const RUNNINGHUB_ULTRA_HD_PRO_WORKFLOW_ID = '2101654299003973634'
 const ULTRA_HD_PRO_IMAGE_NODE = '30'
 const ULTRA_HD_PRO_VIDEO_NODE = '33'
 const ULTRA_HD_PRO_VIDEO_FIELD = 'video'
+
+// Motion Control Pro — Motion Transfer V3 (app RunningHub): node 30 = image,
+// node 33 = video. Output maksimum 15 detik — UI memangkas video referensi.
+const RUNNINGHUB_MC_PRO_APP_ID = '2103523610144309249'
+const MC_PRO_IMAGE_NODE = '30'
+const MC_PRO_VIDEO_NODE = '33'
+const MC_PRO_VIDEO_FIELD = 'video'
+
+// Eposcents MC (motion control 512HD 32FPS, maks 50 detik): node 68 = image,
+// node 2 = video. Video referensi >30 detik dipakai instance Plus.
+const RUNNINGHUB_EPOSCENTS_MC_APP_ID = '2107144516724932610'
+const EPOSCENTS_MC_IMAGE_NODE = '68'
+const EPOSCENTS_MC_VIDEO_NODE = '2'
+const EPOSCENTS_MC_VIDEO_FIELD = 'video'
+
+// KONTROL GERAK 50 FPS (app RunningHub): transfer gerakan dari video referensi
+// ke gambar karakter dengan output 50 FPS. Benchmark app: video 24s ~17 menit.
+// node 30 = image, node 33 = video. Tidak ada input prompt/resolusi/fps manual.
+// https://www.runninghub.ai/id/ai-detail/2112893346377531393
+const RUNNINGHUB_KONTROL_GERAKAN_APP_ID = '2112893346377531393'
+const KONTROL_GERAKAN_IMAGE_NODE = '30'
+const KONTROL_GERAKAN_VIDEO_NODE = '33'
+const KONTROL_GERAKAN_VIDEO_FIELD = 'video'
+
+// Virtual Try-On FLUX2-Klein (app RunningHub): transfer pakaian tubuh atas
+// dengan wajah/pose/latar tetap. Urutan input sesuai contoh resmi:
+// node 23 = image (Gambar Orang), node "LoadImage.0" = image (Gambar Pakaian).
+// https://www.runninghub.ai/id/ai-detail/2102388260877221889
+const RUNNINGHUB_TRYON_FLUX2_APP_ID = '2102388260877221889'
+const TRYON_FLUX2_PERSON_NODE = '23'
+const TRYON_FLUX2_GARMENT_NODE = 'LoadImage.0'
+const TRYON_FLUX2_IMAGE_FIELD = 'image'
 
 // Tabel app RunningHub berbasis workflow dengan dua input (gambar + video
 // referensi). Model baru cukup ditambah satu entri di sini: `action` dipakai UI
@@ -38,6 +70,15 @@ interface MotionAppConfig {
   videoNode: string
   videoField: string
   label: string
+  // Kalau durasi video referensi (detik, dikirim client sebagai `durationHint`)
+  // melewati nilai ini, request dipakai `instanceType: 'plus'` (VRAM lebih besar
+  // untuk video panjang, mis. >30 detik butuh Plus di app Eposcents MC).
+  plusAboveSec?: number
+  // Parameter node tetap milik app (resolusi, fps, frame limit, dsb).
+  extraNodes?: Array<{ nodeId: string; fieldName: string; fieldValue: string }>
+  // Node teks yang menerima prompt. Kalau diisi, prompt langsung dikirim ke node
+  // ini dan auto-discovery prompt dilewati.
+  promptNode?: { nodeId: string; fieldName: string; defaultText?: string }
 }
 
 const MOTION_APPS: Record<string, MotionAppConfig> = {
@@ -48,13 +89,49 @@ const MOTION_APPS: Record<string, MotionAppConfig> = {
     videoField: KLING_MC_VIDEO_FIELD,
     label: 'kling-mc',
   },
-  // MC ULTRA HD â€” AI Motion Transfer PRO+ (SAM3 person tracking, multi-person)
+  // MC ULTRA HD — AI Motion Transfer PRO+ (SAM3 person tracking, multi-person)
   'motion-control-ultra-hd-pro': {
     appId: RUNNINGHUB_ULTRA_HD_PRO_WORKFLOW_ID,
     imageNode: ULTRA_HD_PRO_IMAGE_NODE,
     videoNode: ULTRA_HD_PRO_VIDEO_NODE,
     videoField: ULTRA_HD_PRO_VIDEO_FIELD,
     label: 'ultra-hd-pro',
+  },
+  // Motion Control Pro — Motion Transfer V3 (app RunningHub): gerakan mulus &
+  // sinematik dari gambar referensi + video gerakan, output maksimum 15 detik.
+  // node 30 = image (foto karakter), node 33 = video (video referensi gerakan).
+  // https://www.runninghub.ai/id/ai-detail/2103523610144309249
+  'motion-control-pro': {
+    appId: RUNNINGHUB_MC_PRO_APP_ID,
+    imageNode: MC_PRO_IMAGE_NODE,
+    videoNode: MC_PRO_VIDEO_NODE,
+    videoField: MC_PRO_VIDEO_FIELD,
+    label: 'mc-pro',
+  },
+  // Eposcents MC (eposcents studio by Vanixen) — motion control 512HD 32FPS,
+  // output maksimum 50 detik, tanpa watermark. Video referensi >30 detik butuh
+  // instance Plus (diarahkan otomatis dari `durationHint`).
+  // node 68 = image (foto karakter), node 2 = video (video referensi gerakan).
+  // https://www.runninghub.ai/id/ai-detail/2107144516724932610
+  'motion-control-eposcents': {
+    appId: RUNNINGHUB_EPOSCENTS_MC_APP_ID,
+    imageNode: EPOSCENTS_MC_IMAGE_NODE,
+    videoNode: EPOSCENTS_MC_VIDEO_NODE,
+    videoField: EPOSCENTS_MC_VIDEO_FIELD,
+    label: 'eposcents-mc',
+    // plusAboveSec sengaja TIDAK dipakai: tes menunjukkan instance 'plus' membuat
+    // app ini gagal startup (805, node RuntimeError) — semua durasi pakai 'default'.
+  },
+  // KONTROL GERAK 50 FPS — transfer gerakan video referensi ke gambar karakter,
+  // output 50 FPS, benchmark 24 detik selesai ~17 menit di instance default.
+  // App hanya menerima node image (30) + video (33), tanpa prompt/extra nodes.
+  // https://www.runninghub.ai/id/ai-detail/2112893346377531393
+  'motion-control-kontrol-gerakan': {
+    appId: RUNNINGHUB_KONTROL_GERAKAN_APP_ID,
+    imageNode: KONTROL_GERAKAN_IMAGE_NODE,
+    videoNode: KONTROL_GERAKAN_VIDEO_NODE,
+    videoField: KONTROL_GERAKAN_VIDEO_FIELD,
+    label: 'kontrol-gerakan-50fps',
   },
 }
 // Virtual Try-On & Ekstraksi Pakaian: node 13 = foto orang, node 53 = pakaian
@@ -65,6 +142,21 @@ const RUNNINGHUB_TRYON_GARMENT_NODE = '53'
 const RUNNINGHUB_AUDIO_AVATAR_WORKFLOW_ID = '2099332942179229697'
 const RUNNINGHUB_AUDIO_AVATAR_IMAGE_NODE = '209'
 const RUNNINGHUB_AUDIO_AVATAR_AUDIO_NODE = '215'
+// MiniMax H3 Music Avatar (app 2111522730906955778): 1 foto + audio lagu →
+// video avatar menyanyi dengan segmen tanpa batas + video panjang.
+// node 306 = image, node 317 = audio, node 214 = text (prompt acting).
+// https://www.runninghub.ai/id/ai-detail/2111522730906955778
+const RUNNINGHUB_H3_MUSIC_AVATAR_APP_ID = '2111522730906955778'
+const H3_MUSIC_AVATAR_IMAGE_NODE = '306'
+const H3_MUSIC_AVATAR_AUDIO_NODE = '317'
+const H3_MUSIC_AVATAR_PROMPT_NODE = '214'
+// MiniMax H3 Realistic VLOG (app 2112457853784121345): 1 gambar + prompt
+// VLOG terstruktur → video VLOG realistis 15 detik.
+// node 137 = image, node 138 = text (prompt).
+// https://www.runninghub.ai/id/ai-detail/2112457853784121345
+const RUNNINGHUB_H3_VLOG_APP_ID = '2112457853784121345'
+const H3_VLOG_IMAGE_NODE = '137'
+const H3_VLOG_PROMPT_NODE = '138'
 // AI Song Cover Studio (app RunningHub 2104229552179425282):
 // node 1 = audio (lagu asli), node 4 = prompt (gaya/arrangement cover),
 // node 5 = prompt (lirik).
@@ -124,7 +216,7 @@ const RUNNINGHUB_IMAGE_EDIT_WORKFLOW_ID = '1928844216607129602'
 // MiniMax H3 I2V: node 181 = text, node 143 = image,
 // node 126 = steps, node 146 = aspect_ratio
 const RUNNINGHUB_H3_I2V_WORKFLOW_ID = '2099854999999340546'
-// UGC Storyboard (MiniMax H3 I2V â€” gambar ke video multi-scene + audio):
+// UGC Storyboard (MiniMax H3 I2V — gambar ke video multi-scene + audio):
 // node 114/162 = karakter utama, node 170/167/165/166 = scene 1-4,
 // node 135 = durasi (detik), node 115 = aspect_ratio, node 136 = prompt
 // https://www.runninghub.ai/id/ai-detail/2096092981395841025
@@ -134,7 +226,7 @@ const UGC_ASPECTS = new Set([
   '4:3 (Standard)', '9:16 (Portrait Widescreen)', '16:9 (Widescreen)', '21:9 (Ultrawide)',
 ])
 const UGC_SCENE_NODES = ['170', '167', '165', '166']
-// Seedance 2.0 Replica (gambar + prompt storyboard â†’ video):
+// Seedance 2.0 Replica (gambar + prompt storyboard → video):
 // node 168 = image, node 136 = text (storyboard), node 115 = aspect_ratio.
 // https://www.runninghub.ai/id/ai-detail/2104455137652932609
 const RUNNINGHUB_SEEDANCE2_WORKFLOW_ID = '2104455137652932609'
@@ -146,7 +238,7 @@ const SEEDANCE2_ASPECTS = new Set([
   '4:3 (Standard)', '9:16 (Portrait Widescreen)', '16:9 (Widescreen)', '21:9 (Ultrawide)',
 ])
 const SEEDANCE2_ASPECT_FALLBACK = '16:9 (Widescreen)'
-// Seedance 2.6 Replica (multi karakter + prompt storyboard â†’ video):
+// Seedance 2.6 Replica (multi karakter + prompt storyboard → video):
 // app 2105907802166689794. node 168/169/170/171/173 = image (referensi karakter),
 // node 136 = text (storyboard), node 115 = aspect_ratio.
 // https://www.runninghub.ai/id/ai-detail/2105907802166689794
@@ -207,6 +299,9 @@ router.all('/', async (req: Request, res: Response) => {
     if (action === 'submit-tryon') {
       return await handleSubmitTryOn(apiKey, params, res)
     }
+    if (action === 'submit-tryon-flux2') {
+      return await handleSubmitTryOnFlux2(apiKey, params, res)
+    }
     if (action === 'submit-audio-avatar') {
       return await handleSubmitAudioAvatar(apiKey, params, res)
     }
@@ -230,6 +325,12 @@ router.all('/', async (req: Request, res: Response) => {
     }
     if (action === 'submit-h3-i2v') {
       return await handleSubmitH3I2V(apiKey, params, res)
+    }
+    if (action === 'submit-h3-music-avatar') {
+      return await handleSubmitH3MusicAvatar(apiKey, params, res)
+    }
+    if (action === 'submit-h3-vlog') {
+      return await handleSubmitH3Vlog(apiKey, params, res)
     }
     if (action === 'submit-ugc-storyboard') {
       return await handleSubmitUGCStoryboard(apiKey, params, res)
@@ -284,7 +385,7 @@ async function rhUpload(apiKey: string, fileBase64: string, fileName: string, mi
     throw new Error('No fileName in upload response: ' + rawText.slice(0, 300))
   }
 
-  // download_url might be relative (just filename) â€” construct full URL
+  // download_url might be relative (just filename) — construct full URL
   let fullDownloadUrl = downloadUrl || ''
   if (fullDownloadUrl && !fullDownloadUrl.startsWith('http')) {
     fullDownloadUrl = `https://rh-hk-images-switch.xiaoyaoyou.com/input/${uploadedFileName}`
@@ -855,6 +956,8 @@ async function handleMotionAppWorkflow(apiKey: string, params: any, res: Respons
     prompt = '',
     negative_prompt = '',
     negativePrompt = '',
+    durationHint = 0,
+    instanceType = '',
   } = params
 
   if (!imageBase64) return res.status(200).json({ ok: false, error: 'Missing imageBase64' })
@@ -877,7 +980,20 @@ async function handleMotionAppWorkflow(apiKey: string, params: any, res: Respons
     { nodeId: cfg.videoNode, fieldName: cfg.videoField, fieldValue: videoUpload.fileName },
   ]
 
-  if (effPrompt || effNegative) {
+  if (cfg.extraNodes && cfg.extraNodes.length > 0) {
+    nodeInfoList = [...nodeInfoList, ...cfg.extraNodes]
+  }
+
+  if (cfg.promptNode) {
+    const text = effPrompt || cfg.promptNode.defaultText || ''
+    if (text) {
+      nodeInfoList.push({
+        nodeId: cfg.promptNode.nodeId,
+        fieldName: cfg.promptNode.fieldName,
+        fieldValue: text,
+      })
+    }
+  } else if (effPrompt || effNegative) {
     try {
       const nodes = await fetchWorkflowNodes(apiKey, effectiveWorkflowId)
       const extras = collectPromptExtras(nodes, { prompt: effPrompt, negativePrompt: effNegative })
@@ -892,9 +1008,16 @@ async function handleMotionAppWorkflow(apiKey: string, params: any, res: Respons
     }
   }
 
+  // Instance type: client bisa memaksa ('plus'/'ultra'/'default'), atau server
+  // memilih 'plus' bila durasi referensi melewati ambang cfg.plusAboveSec.
+  const effectiveInstance = ['default', 'plus', 'ultra'].includes(String(instanceType))
+    ? String(instanceType)
+    : (cfg.plusAboveSec && Number(durationHint) > cfg.plusAboveSec ? 'plus' : 'default')
+  console.log(`[runninghub] ${cfg.label} instanceType=${effectiveInstance} (durationHint=${Number(durationHint)}s)`)
+
   const body = {
     nodeInfoList,
-    instanceType: 'default',
+    instanceType: effectiveInstance,
     usePersonalQueue: 'false',
   }
 
@@ -1091,6 +1214,123 @@ async function handleSubmitTryOn(apiKey: string, params: any, res: Response) {
   return res.status(200).json({ ok: false, error: 'Max retries exceeded', raw: lastRawText.slice(0, 500) })
 }
 
+async function handleSubmitTryOnFlux2(apiKey: string, params: any, res: Response) {
+  const {
+    workflow_id,
+    workflowId,
+    personBase64,
+    personFileName = 'person.jpg',
+    personMimeType = 'image/jpeg',
+    garmentBase64,
+    garmentFileName = 'garment.jpg',
+    garmentMimeType = 'image/jpeg',
+    prompt = '',
+  } = params
+
+  if (!personBase64) return res.status(200).json({ ok: false, error: 'Missing personBase64' })
+  if (!garmentBase64) return res.status(200).json({ ok: false, error: 'Missing garmentBase64 (FLUX2-Klein butuh foto pakaian)' })
+
+  const effectiveWorkflowId = workflow_id || workflowId || RUNNINGHUB_TRYON_FLUX2_APP_ID
+
+  console.log(`[runninghub] Uploading person image (tryon flux2)...`)
+  const personUpload = await rhUpload(apiKey, personBase64, personFileName, personMimeType)
+  console.log(`[runninghub] Person uploaded: ${personUpload.fileName}`)
+
+  console.log(`[runninghub] Uploading garment image (tryon flux2)...`)
+  const garmentUpload = await rhUpload(apiKey, garmentBase64, garmentFileName, garmentMimeType)
+  console.log(`[runninghub] Garment uploaded: ${garmentUpload.fileName}`)
+
+  const nodeInfoList: any[] = [
+    { nodeId: TRYON_FLUX2_PERSON_NODE, fieldName: TRYON_FLUX2_IMAGE_FIELD, fieldValue: personUpload.fileName },
+    { nodeId: TRYON_FLUX2_GARMENT_NODE, fieldName: TRYON_FLUX2_IMAGE_FIELD, fieldValue: garmentUpload.fileName },
+  ]
+
+  try {
+    const nodes = await fetchWorkflowNodes(apiKey, effectiveWorkflowId)
+    const extras = collectUltraHDExtras(nodes, {
+      fps: 0, steps: 0, maxFrames: 0, prompt: String(prompt || ''), negativePrompt: '',
+    }).filter((e) => /prompt|text|positive/i.test(e.fieldName))
+    if (extras.length > 0) {
+      nodeInfoList.push(...extras)
+      console.log(`[runninghub] tryon-flux2 + ${extras.length} extras`)
+    }
+  } catch (err: any) {
+    console.log(`[runninghub] tryon-flux2 discovery skipped: ${err.message}`)
+  }
+
+  const body = {
+    nodeInfoList,
+    instanceType: 'default',
+    usePersonalQueue: 'false',
+  }
+
+  const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${effectiveWorkflowId}`
+
+  const MAX_RETRIES = 3
+  const RETRY_DELAY_MS = 10000
+  let lastRawText = ''
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    console.log(`[runninghub] POST ${endpoint} (tryon-flux2 attempt ${attempt}/${MAX_RETRIES})`)
+    console.log(`[runninghub] body:`, JSON.stringify(body).slice(0, 1000))
+
+    const apiRes = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+    })
+
+    lastRawText = await apiRes.text()
+    console.log(`[runninghub] submit-tryon-flux2 ${apiRes.status}:`, lastRawText.slice(0, 1000))
+
+    let data: any
+    try { data = JSON.parse(lastRawText) } catch { data = { raw: lastRawText } }
+
+    const rhCode = data.code ?? data.errorCode
+    const rhMsg = data.msg || data.errorMessage || data.message
+
+    if (apiRes.status === 429 || rhCode === 429) {
+      return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data, retryable: true })
+    }
+
+    if (rhCode === 421 || rhCode === '421') {
+      console.log(`[runninghub] Queue limit (421), retrying in ${RETRY_DELAY_MS / 1000}s... (${attempt}/${MAX_RETRIES})`)
+      if (attempt < MAX_RETRIES) {
+        await new Promise(r => setTimeout(r, RETRY_DELAY_MS))
+        continue
+      }
+      return res.status(200).json({ ok: false, error: 'Queue limit reached, coba lagi dalam beberapa menit', data, retryable: true })
+    }
+
+    if (rhCode !== undefined && rhCode !== 0 && rhCode !== '0' && rhCode !== '') {
+      const errorMsg = translateRhError(String(rhCode), rhMsg) || rhMsg || `Error code: ${rhCode}`
+      return res.status(200).json({ ok: false, error: errorMsg, code: rhCode, data })
+    }
+
+    const taskId = data.data?.taskId || data.taskId || data.id || data.task_id
+    if (!taskId) {
+      console.error(`[runninghub] No taskId found (tryon-flux2):`, JSON.stringify(data).slice(0, 500))
+      return res.status(200).json({ ok: false, error: 'No taskId returned', raw: lastRawText.slice(0, 500) })
+    }
+
+    return res.status(200).json({
+      ok: true,
+      data: {
+        id: taskId,
+        taskId,
+        status: data.data?.status || data.status || 'QUEUED',
+        provider: 'runninghub',
+        workflowId: effectiveWorkflowId,
+      },
+    })
+  }
+
+  return res.status(200).json({ ok: false, error: 'Max retries exceeded', raw: lastRawText.slice(0, 500) })
+}
+
 async function handleSubmitAudioAvatar(apiKey: string, params: any, res: Response) {
   const {
     workflow_id,
@@ -1201,6 +1441,214 @@ async function handleSubmitAudioAvatar(apiKey: string, params: any, res: Respons
         status: data.data?.status || data.status || 'QUEUED',
         provider: 'runninghub',
         workflowId: effectiveWorkflowId,
+      },
+    })
+  }
+
+  return res.status(200).json({ ok: false, error: 'Max retries exceeded', raw: lastRawText.slice(0, 500) })
+}
+
+async function handleSubmitH3MusicAvatar(apiKey: string, params: any, res: Response) {
+  const {
+    app_id,
+    appId,
+    imageBase64,
+    imageFileName = 'photo.jpg',
+    imageMimeType = 'image/jpeg',
+    audioBase64,
+    audioFileName = 'audio.mp3',
+    audioMimeType = 'audio/mpeg',
+    prompt = '',
+  } = params
+
+  if (!imageBase64) return res.status(200).json({ ok: false, error: 'Missing imageBase64' })
+  if (!audioBase64) return res.status(200).json({ ok: false, error: 'Missing audioBase64' })
+
+  const effectiveAppId = app_id || appId || RUNNINGHUB_H3_MUSIC_AVATAR_APP_ID
+
+  console.log(`[runninghub] Uploading photo (h3-music-avatar)...`)
+  const imageUpload = await rhUpload(apiKey, imageBase64, imageFileName, imageMimeType)
+  console.log(`[runninghub] Photo uploaded: ${imageUpload.fileName}`)
+
+  console.log(`[runninghub] Uploading audio (h3-music-avatar)...`)
+  const audioUpload = await rhUpload(apiKey, audioBase64, audioFileName, audioMimeType)
+  console.log(`[runninghub] Audio uploaded: ${audioUpload.fileName}`)
+
+  const nodeInfoList: any[] = [
+    { nodeId: H3_MUSIC_AVATAR_IMAGE_NODE, fieldName: 'image', fieldValue: imageUpload.fileName },
+    { nodeId: H3_MUSIC_AVATAR_AUDIO_NODE, fieldName: 'audio', fieldValue: audioUpload.fileName },
+  ]
+
+  // Node 214 = prompt acting. Sesuai contoh resmi docs, fieldName-nya "value".
+  // Tanpa prompt, app memakai teks default di dalam workflow-nya.
+  const effPrompt = String(prompt || '').trim()
+  if (effPrompt) {
+    nodeInfoList.push({ nodeId: H3_MUSIC_AVATAR_PROMPT_NODE, fieldName: 'value', fieldValue: effPrompt })
+  }
+
+  const body = {
+    nodeInfoList,
+    instanceType: 'default',
+    usePersonalQueue: 'false',
+  }
+
+  const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${effectiveAppId}`
+
+  const MAX_RETRIES = 3
+  const RETRY_DELAY_MS = 10000
+  let lastRawText = ''
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    console.log(`[runninghub] POST ${endpoint} (h3-music-avatar attempt ${attempt}/${MAX_RETRIES})`)
+    console.log(`[runninghub] body:`, JSON.stringify(body).slice(0, 1000))
+
+    const apiRes = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+    })
+
+    lastRawText = await apiRes.text()
+    console.log(`[runninghub] submit-h3-music-avatar ${apiRes.status}:`, lastRawText.slice(0, 1000))
+
+    let data: any
+    try { data = JSON.parse(lastRawText) } catch { data = { raw: lastRawText } }
+
+    const rhCode = data.code ?? data.errorCode
+    const rhMsg = data.msg || data.errorMessage || data.message
+
+    if (apiRes.status === 429 || rhCode === 429) {
+      return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data, retryable: true })
+    }
+
+    if (rhCode === 421 || rhCode === '421') {
+      console.log(`[runninghub] Queue limit (421), retrying in ${RETRY_DELAY_MS / 1000}s... (${attempt}/${MAX_RETRIES})`)
+      if (attempt < MAX_RETRIES) {
+        await new Promise(r => setTimeout(r, RETRY_DELAY_MS))
+        continue
+      }
+      return res.status(200).json({ ok: false, error: 'Queue limit reached, coba lagi dalam beberapa menit', data, retryable: true })
+    }
+
+    if (rhCode !== undefined && rhCode !== 0 && rhCode !== '0' && rhCode !== '') {
+      const errorMsg = translateRhError(String(rhCode), rhMsg) || rhMsg || `Error code: ${rhCode}`
+      return res.status(200).json({ ok: false, error: errorMsg, code: rhCode, data })
+    }
+
+    const taskId = data.data?.taskId || data.taskId || data.id || data.task_id
+    if (!taskId) {
+      console.error(`[runninghub] No taskId found (h3-music-avatar):`, JSON.stringify(data).slice(0, 500))
+      return res.status(200).json({ ok: false, error: 'No taskId returned', raw: lastRawText.slice(0, 500) })
+    }
+
+    return res.status(200).json({
+      ok: true,
+      data: {
+        id: taskId,
+        taskId,
+        status: data.data?.status || data.status || 'QUEUED',
+        provider: 'runninghub',
+        workflowId: effectiveAppId,
+      },
+    })
+  }
+
+  return res.status(200).json({ ok: false, error: 'Max retries exceeded', raw: lastRawText.slice(0, 500) })
+}
+
+async function handleSubmitH3Vlog(apiKey: string, params: any, res: Response) {
+  const {
+    app_id,
+    appId,
+    imageBase64,
+    imageFileName = 'photo.jpg',
+    imageMimeType = 'image/jpeg',
+    prompt = '',
+  } = params
+
+  if (!imageBase64) return res.status(200).json({ ok: false, error: 'Missing imageBase64' })
+  if (!String(prompt || '').trim()) return res.status(200).json({ ok: false, error: 'Missing prompt' })
+
+  const effectiveAppId = app_id || appId || RUNNINGHUB_H3_VLOG_APP_ID
+
+  console.log(`[runninghub] Uploading photo (h3-vlog)...`)
+  const imageUpload = await rhUpload(apiKey, imageBase64, imageFileName, imageMimeType)
+  console.log(`[runninghub] Photo uploaded: ${imageUpload.fileName}`)
+
+  const nodeInfoList: any[] = [
+    { nodeId: H3_VLOG_IMAGE_NODE, fieldName: 'image', fieldValue: imageUpload.fileName },
+    { nodeId: H3_VLOG_PROMPT_NODE, fieldName: 'value', fieldValue: String(prompt).trim() },
+  ]
+
+  const body = {
+    nodeInfoList,
+    instanceType: 'default',
+    usePersonalQueue: 'false',
+  }
+
+  const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${effectiveAppId}`
+
+  const MAX_RETRIES = 3
+  const RETRY_DELAY_MS = 10000
+  let lastRawText = ''
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    console.log(`[runninghub] POST ${endpoint} (h3-vlog attempt ${attempt}/${MAX_RETRIES})`)
+    console.log(`[runninghub] body:`, JSON.stringify(body).slice(0, 1000))
+
+    const apiRes = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+    })
+
+    lastRawText = await apiRes.text()
+    console.log(`[runninghub] submit-h3-vlog ${apiRes.status}:`, lastRawText.slice(0, 1000))
+
+    let data: any
+    try { data = JSON.parse(lastRawText) } catch { data = { raw: lastRawText } }
+
+    const rhCode = data.code ?? data.errorCode
+    const rhMsg = data.msg || data.errorMessage || data.message
+
+    if (apiRes.status === 429 || rhCode === 429) {
+      return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data, retryable: true })
+    }
+
+    if (rhCode === 421 || rhCode === '421') {
+      console.log(`[runninghub] Queue limit (421), retrying in ${RETRY_DELAY_MS / 1000}s... (${attempt}/${MAX_RETRIES})`)
+      if (attempt < MAX_RETRIES) {
+        await new Promise(r => setTimeout(r, RETRY_DELAY_MS))
+        continue
+      }
+      return res.status(200).json({ ok: false, error: 'Queue limit reached, coba lagi dalam beberapa menit', data, retryable: true })
+    }
+
+    if (rhCode !== undefined && rhCode !== 0 && rhCode !== '0' && rhCode !== '') {
+      const errorMsg = translateRhError(String(rhCode), rhMsg) || rhMsg || `Error code: ${rhCode}`
+      return res.status(200).json({ ok: false, error: errorMsg, code: rhCode, data })
+    }
+
+    const taskId = data.data?.taskId || data.taskId || data.id || data.task_id
+    if (!taskId) {
+      console.error(`[runninghub] No taskId found (h3-vlog):`, JSON.stringify(data).slice(0, 500))
+      return res.status(200).json({ ok: false, error: 'No taskId returned', raw: lastRawText.slice(0, 500) })
+    }
+
+    return res.status(200).json({
+      ok: true,
+      data: {
+        id: taskId,
+        taskId,
+        status: data.data?.status || data.status || 'QUEUED',
+        provider: 'runninghub',
+        workflowId: effectiveAppId,
       },
     })
   }
@@ -1585,8 +2033,13 @@ async function handleSubmitTravelPhoto(apiKey: string, params: any, res: Respons
   const characterUpload = await rhUpload(apiKey, characterBase64, characterFileName, characterMimeType)
   console.log('[runninghub] Character uploaded: ' + characterUpload.fileName)
 
-  // Build destination prompt
-  const destPrompt = prompt || ('walking in the city of ' + destination + ' at night')
+  // Idea prompt untuk node 152 (CR Text). Dulu selalu "walking in the city of
+  // X at night" — memaksa suasana malam & sering membawa emoji dari label UI.
+  // Master prompt node 15 sudah mengatur suasana mengikuti waktu lokal & cuaca,
+  // jadi default di sini netral. Prompt user (kalau ada) dipakai apa adanya.
+  const destClean = String(destination || '').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').trim()
+  const userPrompt = String(prompt || '').trim()
+  const destPrompt = userPrompt || (destClean ? `candid realistic travel photo of the character exploring ${destClean}` : '')
 
   // Build master prompt with destination injected
   const masterPrompt = TRAVEL_PHOTO_MASTER_PROMPT.replace(/\[lokasi\]/g, destination).replace(/\[jumlah\]/g, '3')
@@ -1793,7 +2246,7 @@ async function handleSubmitLipSync(apiKey: string, params: any, res: Response) {
         return res.status(200).json({ ok: false, error: `Field ${mm.nodeId} ditolak semua kandidat. Terakhir: ${r.msg}`, data: r.data })
       }
       nodeField[mm.nodeId] = cands[nextIdx]
-      console.log(`[runninghub] lipsync node ${mm.nodeId}: "${cur}" ditolak â†’ coba "${cands[nextIdx]}"`)
+      console.log(`[runninghub] lipsync node ${mm.nodeId}: "${cur}" ditolak → coba "${cands[nextIdx]}"`)
       continue
     }
     if (mm && /field_not_found|node_not_found/i.test(mm.reason)) {
@@ -1918,7 +2371,7 @@ async function handleSubmitImageEdit(apiKey: string, params: any, res: Response)
         return res.status(200).json({ ok: false, error: `Field ${mm.nodeId} ditolak semua kandidat. Terakhir: ${r.msg}`, data: r.data })
       }
       nodeField[mm.nodeId] = cands[nextIdx]
-      console.log(`[runninghub] image-edit node ${mm.nodeId}: "${cur}" ditolak â†’ coba "${cands[nextIdx]}"`)
+      console.log(`[runninghub] image-edit node ${mm.nodeId}: "${cur}" ditolak → coba "${cands[nextIdx]}"`)
       continue
     }
     if (mm && /field_not_found|node_not_found/i.test(mm.reason)) {
@@ -2053,7 +2506,7 @@ async function handleSubmitH3I2V(apiKey: string, params: any, res: Response) {
         return res.status(200).json({ ok: false, error: `Field ${mm.nodeId} ditolak semua kandidat. Terakhir: ${r.msg}`, data: r.data })
       }
       nodeField[mm.nodeId] = cands[nextIdx]
-      console.log(`[runninghub] h3-i2v node ${mm.nodeId}: "${cur}" ditolak â†’ coba "${cands[nextIdx]}"`)
+      console.log(`[runninghub] h3-i2v node ${mm.nodeId}: "${cur}" ditolak → coba "${cands[nextIdx]}"`)
       continue
     }
     if (mm && /field_not_found|node_not_found/i.test(mm.reason)) {
@@ -2172,7 +2625,7 @@ async function handleSubmitSeedance2(apiKey: string, params: any, res: Response)
           return res.status(200).json({ ok: false, error: `Field ${mm.nodeId} ditolak semua kandidat. Terakhir: ${r.msg}`, data: r.data })
         }
         nodeField[mm.nodeId] = IMG_CANDS[nextIdx]
-        console.log(`[runninghub] seedance2 node ${mm.nodeId}: "${cur}" ditolak â†’ coba "${IMG_CANDS[nextIdx]}"`)
+        console.log(`[runninghub] seedance2 node ${mm.nodeId}: "${cur}" ditolak → coba "${IMG_CANDS[nextIdx]}"`)
         continue
       }
       if (mm && /field_not_found|node_not_found/i.test(mm.reason)) {
@@ -2311,7 +2764,7 @@ async function handleSubmitSeedance26(apiKey: string, params: any, res: Response
           continue
         }
         nodeField[mm.nodeId] = IMG_CANDS[nextIdx]
-        console.log(`[runninghub] seedance2.6 node ${mm.nodeId}: "${cur}" ditolak â†’ coba "${IMG_CANDS[nextIdx]}"`)
+        console.log(`[runninghub] seedance2.6 node ${mm.nodeId}: "${cur}" ditolak → coba "${IMG_CANDS[nextIdx]}"`)
         continue
       }
       if (mm && /field_not_found|node_not_found/i.test(mm.reason)) {
@@ -2599,7 +3052,7 @@ async function handleQuery(apiKey: string, taskId: string, res: Response) {
   })
 
   const rawText = await apiRes.text()
-  console.log(`[runninghub] query ${apiRes.status}:`, rawText.slice(0, 1000))
+  console.log(`[runninghub] query ${apiRes.status}:`, rawText.slice(0, 8000))
 
   let data: any
   try { data = JSON.parse(rawText) } catch { data = { raw: rawText } }
@@ -2611,10 +3064,6 @@ async function handleQuery(apiKey: string, taskId: string, res: Response) {
     return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data, retryable: true })
   }
 
-  if (rhCode !== undefined && rhCode !== 0 && rhCode !== '0' && rhCode !== '') {
-    return res.status(200).json({ ok: false, error: translateRhError(String(rhCode), errorMsg) || errorMsg || `Error code: ${rhCode}`, data })
-  }
-
   const taskData = data.data || data
   const status = (taskData.status || data.status || '').toUpperCase()
 
@@ -2623,9 +3072,17 @@ async function handleQuery(apiKey: string, taskId: string, res: Response) {
   else if (status === 'FAILED') mappedStatus = 'FAILED'
   else if (status === 'QUEUED') mappedStatus = 'QUEUED'
 
+  // Task FAILED punya errorCode top-level (mis. 805) — jangan dipotong di sini,
+  // kembalikan status FAILED + detail failedReason supaya traceback sampai ke client.
+  if (mappedStatus !== 'FAILED' && rhCode !== undefined && rhCode !== 0 && rhCode !== '0' && rhCode !== '') {
+    return res.status(200).json({ ok: false, error: translateRhError(String(rhCode), errorMsg) || errorMsg || `Error code: ${rhCode}`, data })
+  }
+
   let videoUrl: string | null = null
   let imageUrl: string | null = null
   let audioUrl: string | null = null
+  // Semua hasil gambar (workflow seperti Travel Photo menghasilkan >1 foto).
+  const imageUrls: string[] = []
   if (mappedStatus === 'COMPLETED') {
     const results = taskData.results || taskData.output || data.results || taskData.outputs || data.outputs
     const pickUrl = (r: any): string | null =>
@@ -2656,13 +3113,31 @@ async function handleQuery(apiKey: string, taskId: string, res: Response) {
       if (!videoUrl && !audioUrl) videoUrl = pickUrl(results[0])
       for (const r of results) {
         const url = pickUrl(r)
-        if (isImage(r, url)) { imageUrl = url; break }
+        if (isImage(r, url)) {
+          if (!imageUrl) imageUrl = url
+          if (url && !imageUrls.includes(url)) imageUrls.push(url)
+        }
       }
       if (!imageUrl && videoUrl && /\.(png|jpe?g|webp|gif|bmp)$/i.test(videoUrl.split('?')[0])) {
         imageUrl = videoUrl
       }
     } else if (typeof results === 'string') {
       videoUrl = results
+    }
+  }
+
+  const fr = taskData.failedReason || data.failedReason || null
+  let failedDetail: string | null = null
+  if (mappedStatus === 'FAILED') {
+    if (typeof fr === 'object' && fr && (fr.node_name || fr.exception_type)) {
+      let tb = ''
+      if (typeof fr.traceback === 'string') {
+        try { tb = JSON.parse(fr.traceback).join(' | ') } catch { tb = fr.traceback }
+      }
+      if (Array.isArray(fr.traceback)) tb = fr.traceback.join(' | ')
+      failedDetail = `[${taskData.errorCode || data.errorCode || ''}] node=${fr.node_name || '?'} type=${fr.exception_type || '?'}${tb ? ` — ${String(tb).slice(-700)}` : ''}`
+    } else if (fr && typeof fr === 'object') {
+      failedDetail = `[${taskData.errorCode || data.errorCode || ''}] ${JSON.stringify(fr)}`
     }
   }
 
@@ -2675,9 +3150,12 @@ async function handleQuery(apiKey: string, taskId: string, res: Response) {
       progress: taskData.progress || data.progress || 0,
       videoUrl,
       imageUrl,
+      imageUrls,
       audioUrl,
+      usage: taskData.usage || data.usage || null,
       code: taskData.errorCode || data.errorCode || null,
-      error: mappedStatus === 'FAILED' ? (taskData.errorMessage || taskData.failedReason || taskData.msg || errorMsg || 'Task failed') : null,
+      error: mappedStatus === 'FAILED' ? (failedDetail || taskData.errorMessage || taskData.msg || errorMsg || 'Task failed') : null,
+      promptTips: taskData.promptTips || data.promptTips || null,
       provider: 'runninghub',
     },
   })
@@ -2692,6 +3170,9 @@ function translateRhError(code: string, msg?: string): string {
     '1003': 'API key tidak valid atau telah kedaluwarsa.',
     '1004': 'Workflow tidak ditemukan.',
     '5101': 'Gagal membuat task, coba lagi.',
+  }
+  if (msg && /API balance is insufficient/i.test(msg)) {
+    return 'Saldo LLM API RunningHub tidak cukup (terpisah dari koin RH). Isi ulang "LLM API Balance" di RunningHub lalu coba lagi.'
   }
   if (msg && /NOT_ENOUGH_POWER|balance|insufficient|coin/i.test(msg)) {
     return 'Saldo/kuota kerja tidak cukup. Silakan top up RH coins di akun RunningHub.'

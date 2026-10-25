@@ -57,13 +57,13 @@ const i2v = (id: string, label: string, tokens: number, durations: number[], asp
 export const SEAVI_MODELS: Record<string, SeaviModelSpec> = {
   // ── Motion Control (gambar + video referensi) ──
   motion_control_v3_server10_30dtk: mc('motion_control_v3_server10_30dtk', 'Motion Control V3 · Server 10 (30 dtk)', 2, 0),
+  motion_control_v3_server16: mc('motion_control_v3_server16', 'Motion Control V3 · Server 16', 1, 0),
   motion_control_v3_server19_15dtk: mc('motion_control_v3_server19_15dtk', 'Motion Control V3 · Server 19 (15 dtk)', 1, 250),
 
   // ── Video generation: image to video ──
-  veo31_s9: i2v('veo31_s9', 'Veo 3.1 · Server 9', 1, [8], ['9:16', '16:9']),
   kling3_server10: i2v('kling3_server10', 'Kling 3 · Server 10', 1, [6, 10], ['9:16', '16:9']),
   kling21pro_server10: i2v('kling21pro_server10', 'Kling 2.1 Pro · Server 10', 2, [5, 10], ['9:16', '16:9']),
-  grok_imagine_s15: i2v('grok_imagine_s15', 'Grok Imagine · Server 15', 1, [10], ['9:16', '16:9', '1:1', '4:3']),
+  grok_imagine_s15: i2v('grok_imagine_s15', 'Grok Imagine · Server 15', 1, [5, 10], ['9:16', '16:9', '1:1', '4:3']),
   // Sora 2: i2v — 1 gambar WAJIB (upstream menolak t2v: "Missing required
   // input: image_url") dan TANPA aspect_ratio ("Unsupported parameter:
   // aspect_ratio", terverifikasi 17 Okt 2026) — rasio mengikuti gambar sumber.
@@ -75,7 +75,7 @@ export const SEAVI_MODELS: Record<string, SeaviModelSpec> = {
     tokens: 1,
     imageMode: 'single',
     videoMode: 'none',
-    durations: [10],
+    durations: [5, 10],
     aspects: [],
     promptMax: 2000,
     promptRequired: true,
@@ -104,12 +104,14 @@ export const SEAVI_MODELS: Record<string, SeaviModelSpec> = {
     inputType: 'multimodal_to_video',
     tokens: 2,
     imageMode: 'multi',
-    imageMin: 0,
+    imageMin: 1,
     imageMax: 9,
+    // Upstream kini MENERIMA video referensi 0-3 (schema /models 19 Okt 2026:
+    // video_urls max_items 3, sebelumnya 17 Okt masih menolak) — gambar 0-9 + audio mp3 20MB.
     videoMode: 'multi',
     videoMax: 3,
     audio: true,
-    durations: [5, 10],
+    durations: [5, 10, 15],
     aspects: ['9:16', '16:9', '1:1', '3:4', '4:3'],
     promptMax: 2000,
     promptRequired: false,
@@ -263,7 +265,9 @@ export function buildSeaviPayload(spec: SeaviModelSpec, media: SeaviPayloadInput
   const input: Record<string, unknown> = {}
   if (spec.imageMode === 'single') input.image_url = images[0]
   if (spec.imageMode === 'multi' && images.length > 0) input.image_urls = images
-  if (spec.videoMode !== 'none' && videos.length > 0) input.video_url = videos[0]
+  // MC/upscaler = video_url tunggal; multimodal (Seedance 2.5, Gemini Omni) = video_urls array.
+  if (spec.videoMode === 'single' && videos.length > 0) input.video_url = videos[0]
+  if (spec.videoMode === 'multi' && videos.length > 0) input.video_urls = videos
   if (spec.audio && audio.length === 1) input.audio_url = audio[0]
 
   const params: Record<string, unknown> = {}

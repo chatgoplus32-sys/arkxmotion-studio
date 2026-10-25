@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { Wallet, Clock, CheckCircle, XCircle, ExternalLink, Copy, Coins } from 'lucide-react'
 import { DANA_NUMBER, DANA_NAME, adminWhatsappLink, formatRp } from '@/lib/payment'
+import { PaymentMethodToggle, QrisPanel } from '@/components/QrisPayment'
 import { fetchSeaviWallet, SEAVI_PACKAGE_FALLBACKS, type SeaviPackage } from '@/lib/seaviWallet'
 
 const WHATSAPP_LINK = adminWhatsappLink('Halo saya ingin top up token Seavi')
@@ -28,6 +29,7 @@ export default function SeaviTopupPage() {
   const [tokenPrice, setTokenPrice] = useState(2000)
   const [selectedSlug, setSelectedSlug] = useState<string>(SEAVI_PACKAGE_FALLBACKS[0].slug)
   const [proofNote, setProofNote] = useState('')
+  const [payMethod, setPayMethod] = useState<'dana' | 'qris'>('dana')
   const [loading, setLoading] = useState(false)
   const [topups, setTopups] = useState<Topup[]>([])
   const [step, setStep] = useState<'select' | 'pay' | 'confirm'>('select')
@@ -151,7 +153,7 @@ export default function SeaviTopupPage() {
           </div>
         </div>
         <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
-          <div>Model 1 token: <b className="text-foreground">Veo 3.1, Kling 3, Grok, Seedance, Motion Control, Upscale, Image</b></div>
+          <div>Model 1 token: <b className="text-foreground">Kling 3, Kling 2.1 Pro, Grok, Seedance 2.5, Motion Control, Upscale, Image</b></div>
           <div>Model 2 token: <b className="text-foreground">Wan 3.0, Gemini Omni</b></div>
         </div>
       </div>
@@ -185,7 +187,17 @@ export default function SeaviTopupPage() {
       )}
 
       {step === 'pay' && selectedPackage && (
-        <Section title="Pembayaran via DANA" sub="Transfer ke nomor DANA berikut">
+        <Section
+          title={payMethod === 'qris' ? 'Pembayaran via QRIS' : 'Pembayaran via DANA'}
+          sub={payMethod === 'qris' ? 'Scan QRIS di bawah untuk bayar' : 'Transfer ke nomor DANA berikut'}
+        >
+          <PaymentMethodToggle value={payMethod} onChange={setPayMethod} />
+
+          {payMethod === 'qris' && (
+            <QrisPanel amountLabel={`${selectedPackage.label} — ${formatRp(selectedPackage.price)}`} />
+          )}
+
+          {payMethod === 'dana' && (
           <div className="rounded-xl border border-border bg-card/50 p-5 mb-4">
             <div className="text-center mb-4">
               <div className="text-sm text-muted-foreground mb-1">Transfer ke:</div>
@@ -215,6 +227,7 @@ export default function SeaviTopupPage() {
               </div>
             </div>
           </div>
+          )}
 
           <div className="mb-4">
             <label className="text-sm font-medium mb-1 block">Catatan (opsional)</label>
@@ -232,7 +245,7 @@ export default function SeaviTopupPage() {
               Kembali
             </Button>
             <Button onClick={handleConfirmTransfer} disabled={loading} className="flex-1">
-              {loading ? 'Mengirim...' : 'Sudah Transfer'}
+              {loading ? 'Mengirim...' : payMethod === 'qris' ? 'Sudah Bayar' : 'Sudah Transfer'}
             </Button>
           </div>
 

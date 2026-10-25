@@ -26,7 +26,7 @@ import TokenSyncHistory from '@/components/providers/TokenSyncHistory'
 import { checkRoboneoBalance } from '@/lib/roboneo'
 import { fetchLeonardoBalance } from '@/lib/leonardo'
 import { checkWeavyBalance } from '@/lib/weavy'
-import { checkRunningHubBalance } from '@/lib/runninghub'
+import { checkRunningHubBalance, getRhUsage, clearRhUsage } from '@/lib/runninghub'
 import { checkFireflyBalance } from '@/lib/firefly'
 import { parseNexabotCookieInput, parseNexabotApiKeyInput } from '@/lib/nexabot'
 import { NEXABOT_CHECK_TIMEOUT_MS } from '@/lib/nexabot-constants'
@@ -67,7 +67,7 @@ const PROVIDER_LIST = [
   { key: 'weavy', label: 'Weavy', desc: 'Provider utama Kling Motion Control, Wan, Sora, Seedance.' },
   { key: 'wavespeed', label: 'Wavespeed', desc: 'Provider alternatif — cek balance via api.wavespeed.ai/api/v3/balance.' },
   { key: 'roboneo', label: 'Roboneo', desc: 'AI video generation via Roboneo (Meitu) — Seedance 2.0, Kling 3.0, Wan 2.6, Sora 2, VEO 3.0, Happy Horse, Google Omni.' },
-  { key: 'runninghub', label: 'RunningHub', desc: 'RunningHub AI apps & workflows — Seedance 2.0/2.6 Replica, MiniMax H3 I2V, UGC Storyboard, Try-On, dll.' },
+  { key: 'runninghub', label: 'RunningHub', desc: 'RunningHub AI apps & workflows — MiniMax H3 VLOG, UGC Storyboard, Try-On, dll.' },
   { key: 'framia', label: 'Framia', desc: 'Canvas workflow (Converge AI) — semua node & recipe: image, video, avatar, garment, storyboard.' },
   { key: 'leonardo', label: 'Leonardo.ai', desc: 'app.leonardo.ai via Cognito Bearer JWT — Text-to-Image (Phoenix, Diffusion XL, Kino, Anime, Vision).' },
   { key: 'createpulse', label: 'CreatePulse', desc: 'Video generation (Seedance 2.0/2.5, Veo Omni) via createpulse.online — pakai API key sendiri.' },
@@ -76,12 +76,27 @@ const PROVIDER_LIST = [
   { key: 'firefly', label: 'Adobe Firefly', desc: 'Video generation (Veo 3.1, Firefly Video) via firefly.adobe.com — Adobe IMS Bearer token.' },
   { key: 'genspark', label: 'Genspark AI', desc: 'Kling V3 Motion Control + 14 video models (Veo, Sora, Hailuo, PixVerse) via genspark.ai Tool API — API key (gsk-...).' },
   { key: 'riverside', label: 'Riverside', desc: 'Riverside Business API — Professional video/audio recording, editing, and production platform.' },
-  { key: 'seavi', label: 'Seavi Labs', desc: 'Video & image generation (Seedance 2.5 Multi, Kling 3, Veo 3.1, Motion Control) via api.seavilabs.site — API key (sea-...), saldo token bersama.' },
+  { key: 'seavi', label: 'Seavi Labs', desc: 'Video & image generation (Seedance 2.5 Multi, Kling 3, Motion Control) via api.seavilabs.site — API key (sea-...), saldo token bersama.' },
   { key: 'nexabot', label: 'NexaBot', desc: 'NexaBot AI via nexabot.id — Google Omni (text, image & video ref). Mode session cookie (Unlimited) atau API key (nxb_...).' },
   { key: 'alriz', label: 'Alriz Motion', desc: 'Kling Motion Control (2.6/3.0, 720p/1080p/768p) + 10 model I2V (Kling 3.0 Turbo/O3/V3, Gemini Omni Flash, Happy Horse, Wan 3.0, MiniMax H3, dll.) via alrizmotion.my.id — API key (alz_...), saldo Rp.' },
 ] as const
 
-const VISIBLE_PROVIDER_LIST = PROVIDER_LIST.filter(p => !(HIDDEN_PROVIDERS as readonly string[]).includes(p.key))
+const MENU_HIDDEN_PROVIDERS = [
+  'brain',
+  'weavy',
+  'wavespeed',
+  'roboneo',
+  'framia',
+  'leonardo',
+  'oneover',
+  'firefly',
+  'genspark',
+  'riverside',
+] as const
+
+const HIDDEN_FROM_MENU = new Set<string>([...HIDDEN_PROVIDERS, ...MENU_HIDDEN_PROVIDERS])
+const VISIBLE_PROVIDER_LIST = PROVIDER_LIST.filter(p => !HIDDEN_FROM_MENU.has(p.key))
+const DEFAULT_PROVIDER = VISIBLE_PROVIDER_LIST[0]?.key || 'brain'
 
 const TOKEN_GUIDE: Record<string, {
   url: string
@@ -674,11 +689,14 @@ export default function ProvidersPage() {
     getMaintenanceMessage,
   } = useProviderManager()
 
-  const [selectedProvider, setSelectedProvider] = useState(() => localStorage.getItem('arkxmotion.providers.selected') || 'brain')
+  const [selectedProvider, setSelectedProvider] = useState(() => {
+    const stored = localStorage.getItem('arkxmotion.providers.selected') || DEFAULT_PROVIDER
+    return HIDDEN_FROM_MENU.has(stored) ? DEFAULT_PROVIDER : stored
+  })
   const [dropdownOpen, setDropdownOpen] = useState(false)
-  const [inputValue, setInputValue] = useState(() => localStorage.getItem(`arkxmotion.providers.draft.${localStorage.getItem('arkxmotion.providers.selected') || 'brain'}`) || '')
+  const [inputValue, setInputValue] = useState(() => localStorage.getItem(`arkxmotion.providers.draft.${selectedProvider}`) || '')
   const [bulkMode, setBulkMode] = useState(false)
-  const [bulkText, setBulkText] = useState(() => localStorage.getItem(`arkxmotion.providers.bulk.${localStorage.getItem('arkxmotion.providers.selected') || 'brain'}`) || '')
+  const [bulkText, setBulkText] = useState(() => localStorage.getItem(`arkxmotion.providers.bulk.${selectedProvider}`) || '')
   const [workflowId, setWorkflowId] = useState(() => localStorage.getItem('runninghub.workflowId') || '')
   const [statusMap, setStatusMap] = useState<Record<string, { state: string; detail?: string; balance?: number; email?: string }>>({})
   const navigate = useNavigate()
@@ -688,6 +706,7 @@ export default function ProvidersPage() {
   const [summaryPayload, setSummaryPayload] = useState<{ title: string; rows: Array<{ label: string; value: string | number; tone?: string }>; footer?: string } | null>(null)
   const [tokenBankOpen, setTokenBankOpen] = useState(false)
   const [editingBalanceIdx, setEditingBalanceIdx] = useState<number | null>(null)
+  const [, setRhUsageTick] = useState(0)
   const [editingBalanceVal, setEditingBalanceVal] = useState('')
 
   const currentConfig = PROVIDER_LIST.find(p => p.key === selectedProvider)
@@ -1722,6 +1741,76 @@ export default function ProvidersPage() {
                   </p>
                 </div>
               )}
+
+              {selectedProvider === 'runninghub' && (() => {
+                const rhUsage = getRhUsage()
+                const rows = Object.entries(rhUsage).sort((a, b) => b[1].lastAt - a[1].lastAt)
+                const totalRuns = rows.reduce((s, [, u]) => s + u.runs, 0)
+                const totalCoins = rows.reduce((s, [, u]) => s + u.coins, 0)
+                const totalSec = rows.reduce((s, [, u]) => s + u.taskSec, 0)
+                return (
+                  <div className="neumorph p-3 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="text-[12px] font-mono uppercase tracking-widest text-[#a0a0a0]">
+                        🪙 Detail Penggunaan Koin RH per Model ({rows.length} model)
+                      </label>
+                      {rows.length > 0 && (
+                        <button
+                          onClick={() => { clearRhUsage(); setRhUsageTick(t => t + 1) }}
+                          className="text-[11px] text-red-300/70 hover:text-red-300 shrink-0"
+                        >
+                          Reset statistik
+                        </button>
+                      )}
+                    </div>
+                    {rows.length === 0 ? (
+                      <p className="text-[12px] text-[#666666]">
+                        Belum ada data. Statistik koin (jumlah RH Coins aktual per model) muncul otomatis setelah ada task yang selesai — diambil dari `usage.consumeCoins` API RunningHub saat polling.
+                      </p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-[11px] font-mono">
+                          <thead>
+                            <tr className="text-[#666666] border-b border-[#2a2a2a]">
+                              <th className="text-left py-1 pr-2">Model</th>
+                              <th className="text-right py-1 px-2">Run</th>
+                              <th className="text-right py-1 px-2">Koin RH</th>
+                              <th className="text-right py-1 px-2">Ø Koin/Run</th>
+                              <th className="text-right py-1 px-2">Waktu GPU</th>
+                              <th className="text-right py-1 pl-2">Terakhir</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {rows.map(([model, u]) => (
+                              <tr key={model} className="border-b border-[#1c1c1c] text-[#f5f5f5]/85">
+                                <td className="py-1.5 pr-2 truncate max-w-[220px]" title={model}>{model}</td>
+                                <td className="text-right px-2">{u.runs}</td>
+                                <td className="text-right px-2 text-[#ffd76a]">{u.coins}</td>
+                                <td className="text-right px-2">{u.runs ? (u.coins / u.runs).toFixed(1) : '-'}</td>
+                                <td className="text-right px-2">{u.taskSec > 0 ? `${Math.round(u.taskSec)}s` : '-'}</td>
+                                <td className="text-right pl-2 text-[#666666]">{new Date(u.lastAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })} {new Date(u.lastAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr className="text-[#a0a0a0] font-bold">
+                              <td className="py-1.5 pr-2">TOTAL</td>
+                              <td className="text-right px-2">{totalRuns}</td>
+                              <td className="text-right px-2 text-[#ffd76a]">{totalCoins}</td>
+                              <td className="text-right px-2">{totalRuns ? (totalCoins / totalRuns).toFixed(1) : '-'}</td>
+                              <td className="text-right px-2">{totalSec > 0 ? `${Math.round(totalSec)}s` : '-'}</td>
+                              <td />
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    )}
+                    <p className="text-[11px] text-[#666666]">
+                      Koin per run dihitung dari saldo aktual akun RunningHub (laporan `usage.consumeCoins` per task). Kalau angka 0, app tersebut memakai `consumeMoney` (jatah membership) bukan koin.
+                    </p>
+                  </div>
+                )
+              })()}
 
               {progress.show && (
                 <div className="rounded-md border border-[#2a2a2a] bg-[#141414] p-2">

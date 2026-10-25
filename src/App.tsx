@@ -4,6 +4,7 @@ import { Sidebar, Header } from '@/components/layout'
 import { useAppStore, useAuthStore } from '@/stores'
 import { cn } from '@/lib/utils'
 import ProtectedRoute from '@/components/auth/ProtectedRoute'
+import ProRoute from '@/components/auth/ProRoute'
 import { ToastContainer } from '@/components/ui/Toast'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { lazyWithRetry } from '@/lib/lazyWithRetry'
@@ -22,6 +23,7 @@ import ForgotPasswordPage from '@/pages/ForgotPassword'
 import ResetPasswordPage from '@/pages/ResetPassword'
 
 const DashboardPage = lazyWithRetry(() => import('@/pages/Dashboard'))
+const AssetsPage = lazyWithRetry(() => import('@/pages/Assets'))
 const CommandPage = lazyWithRetry(() => import('@/pages/Command'))
 const QuickStartPage = lazyWithRetry(() => import('@/pages/QuickStart'))
 const TravelPhotoPage = lazyWithRetry(() => import('@/pages/TravelPhoto'))
@@ -50,6 +52,9 @@ const AdminSystemSettingsPage = lazyWithRetry(() => import('@/pages/AdminSystemS
 const AdminSystemHealthPage = lazyWithRetry(() => import('@/pages/AdminSystemHealth'))
 const SecondBrainPage = lazyWithRetry(() => import('@/pages/SecondBrain'))
 const ClipGeniusPage = lazyWithRetry(() => import('@/pages/ClipGenius'))
+const GeminiToolsPage = lazyWithRetry(() => import('@/pages/GeminiTools'))
+const UpgradeProPage = lazyWithRetry(() => import('@/pages/UpgradePro'))
+const MetadataCleanerPage = lazyWithRetry(() => import('@/pages/MetadataCleaner'))
 const AdminNotificationsPage = lazyWithRetry(() => import('@/pages/AdminNotifications'))
 const CreatePulseTopupPage = lazyWithRetry(() => import('@/pages/CreatePulseTopup'))
 const NexaBotTopupPage = lazyWithRetry(() => import('@/pages/NexaBotTopup'))
@@ -64,6 +69,8 @@ const WatermarkRemoverPage = lazyWithRetry(() => import('@/pages/WatermarkRemove
 const VideoUpscalerPage = lazyWithRetry(() => import('@/pages/VideoUpscaler'))
 const SongCoverPage = lazyWithRetry(() => import('@/pages/SongCover'))
 const VoiceOverPage = lazyWithRetry(() => import('@/pages/VoiceOver'))
+const MusicGeneratorPage = lazyWithRetry(() => import('@/pages/MusicGenerator'))
+const H3MusicAvatarPage = lazyWithRetry(() => import('@/pages/H3MusicAvatar'))
 
 function PageLoader() {
   return <div className="flex items-center justify-center py-20"><div className="h-8 w-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin" /></div>
@@ -74,6 +81,9 @@ initChunkErrorInterceptor()
 
 export default function App() {
   const { sidebarCollapsed, toggleSidebar } = useAppStore()
+  const closeMobileSidebar = () => {
+    if (window.matchMedia('(max-width: 1023px)').matches) toggleSidebar()
+  }
   const addToast = useToastStore((s) => s.addToast)
   const startX = useRef(0)
 
@@ -199,7 +209,7 @@ export default function App() {
                   'fixed lg:sticky top-0 z-50 h-screen transition-transform duration-300 lg:translate-x-0',
                   sidebarCollapsed ? '-translate-x-full' : 'translate-x-0'
                 )}>
-                  <Sidebar collapsed={false} />
+                  <Sidebar collapsed={false} onClose={closeMobileSidebar} />
                 </div>
                 <div className="flex-1 flex flex-col min-w-0">
                   <Header
@@ -210,6 +220,7 @@ export default function App() {
                     <Suspense fallback={<PageLoader />}>
                       <Routes>
                         <Route path="/dashboard" element={<DashboardPage />} />
+                        <Route path="/hasil" element={<AssetsPage />} />
                         <Route path="/quick-start" element={<QuickStartPage />} />
                         <Route path="/command" element={<CommandPage />} />
                         <Route path="/generate/motion" element={<MotionPage />} />
@@ -219,10 +230,17 @@ export default function App() {
                         <Route path="/generate/dola-chat" element={<DolaChatPage />} />
                         <Route path="/generate/talking-photo" element={<TalkingPhotoPage />} />
                         <Route path="/generate/h3-i2v" element={<H3ImageToVideoPage />} />
+                        <Route path="/generate/h3-music-avatar" element={<ProRoute><H3MusicAvatarPage /></ProRoute>} />
                         <Route path="/generate/watermark-remover" element={<WatermarkRemoverPage />} />
                         <Route path="/generate/video-upscaler" element={<VideoUpscalerPage />} />
-                        <Route path="/generate/song-cover" element={<SongCoverPage />} />
+                        <Route path="/generate/edit-video-auto-motion" element={<ProRoute><GeminiToolsPage initialTab="auto-motion" /></ProRoute>} />
+                        <Route path="/generate/ugc-pro" element={<ProRoute><GeminiToolsPage initialTab="ugc-pro" /></ProRoute>} />
+                        <Route path="/tools/gemini-tools" element={<ProRoute><GeminiToolsPage /></ProRoute>} />
+                        <Route path="/upgrade-pro" element={<UpgradeProPage />} />
+                        <Route path="/tools/metadata-cleaner" element={<MetadataCleanerPage />} />
+                        <Route path="/generate/song-cover" element={<ProRoute><SongCoverPage /></ProRoute>} />
                         <Route path="/generate/voice-over" element={<VoiceOverPage />} />
+                        <Route path="/generate/music-generator" element={<MusicGeneratorPage />} />
                         <Route path="/generate/ugc" element={<UGCPage />} />
                         <Route path="/generate/ugc-storyboard" element={<UGCStoryboardPage />} />
                         <Route path="/generate/upscaler" element={<UpscalerPage />} />

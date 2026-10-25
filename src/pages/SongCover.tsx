@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+﻿import { useState, useRef, useEffect } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Label, EmptyState } from '@/components/ui'
 import { LogDetailActions } from '@/components/ui/LogDetailActions'
@@ -9,33 +9,9 @@ import { submitRunningHubSongCover, pollRunningHubTask } from '@/lib/runninghub'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { persistResultToR2 } from '@/lib/backgroundTasks'
 import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
+import { STYLE_PRESETS, GENRE_CATEGORIES, type SongGenreCategory } from '@/lib/song-cover-genres'
 
 const CREDIT_COST = 50
-
-const STYLE_PRESETS = [
-  { id: 'reggae', label: '🎸 Roots Reggae', prompt: 'Full song cover, warm groovy arrangement, 84 BPM roots reggae, one drop drums, deep warm bassline, clean off-beat guitar skank, Hammond organ bubble, melodica lead, soft percussion shaker, relaxed and laid back behind the beat, studio quality.' },
-  { id: 'acoustic', label: '🎻 Acoustic', prompt: 'Intimate acoustic cover, fingerstyle guitar, soft piano, gentle strings, natural room reverb, emotional and relaxed, studio quality.' },
-  { id: 'pop', label: '🎤 Pop', prompt: 'Modern pop cover, punchy drums, bright synths, layered backing vocals, polished radio-ready production, energetic and uplifting, studio quality.' },
-  { id: 'dangdut', label: '🥁 Dangdut Koplo', prompt: 'Dangdut koplo cover, kendang, suling, bass dangdut, organ tunggal, energetic groove, catchy and danceable, sing in Indonesian, studio quality.' },
-  { id: 'jazz', label: '🎷 Jazz', prompt: 'Smooth jazz cover, upright bass, brush drums, soft piano comping, saxophone lead, warm lounge vibe, sophisticated and intimate, studio quality.' },
-  { id: 'rnb', label: '💜 R&B', prompt: 'Smooth R&B cover, laid-back groove, lush chords, subtle trap hi-hats, silky harmonies, late night vibe, studio quality.' },
-  { id: 'rock', label: '🎸 Rock', prompt: 'Energetic rock cover, distorted electric guitars, driving drums, powerful bass, anthemic chorus, raw live band energy, studio quality.' },
-  { id: 'metal', label: '🤘 Metal', prompt: 'Heavy metal cover, downtuned distorted guitars, double-kick drums, aggressive powerful delivery, epic guitar solo, studio quality.' },
-  { id: 'edm', label: '🎛️ EDM', prompt: 'Festival EDM cover, big supersaw lead, four-on-the-floor kick, build-ups and drops, energetic club energy, studio quality.' },
-  { id: 'house', label: '🏠 Deep House', prompt: 'Deep house cover, groovy four-on-the-floor beat, warm sub bass, lush pads, plucked synths, hypnotic groove, club vibe, studio quality.' },
-  { id: 'lofi', label: '🌙 Lo-Fi', prompt: 'Lo-fi chill cover, dusty warm vinyl texture, mellow keys, soft boom-bap drums, relaxed nostalgic vibe, studio quality.' },
-  { id: 'kpop', label: '🇰🇷 K-Pop', prompt: 'K-pop cover, catchy hooks, bright synths, punchy drums, tight harmonies, glossy modern production, studio quality.' },
-  { id: 'ballad', label: '💧 Ballad', prompt: 'Emotional piano ballad cover, grand piano, cinematic strings, building dynamics, heartfelt and dramatic, studio quality.' },
-  { id: 'folk', label: '🪕 Folk', prompt: 'Warm folk cover, acoustic guitar, banjo, light percussion, intimate storytelling vibe, organic and cozy, studio quality.' },
-  { id: 'country', label: '🤠 Country', prompt: 'Country cover, twangy acoustic guitar, pedal steel, warm bass, steady drums, heartfelt storytelling, studio quality.' },
-  { id: 'blues', label: '🎺 Blues', prompt: 'Blues cover, gritty electric guitar, shuffle groove, walking bass, harmonica, soulful and raw, studio quality.' },
-  { id: 'hiphop', label: '🔥 Hip-Hop', prompt: 'Hip-hop cover, boom-bap or trap beat, deep 808 bass, punchy drums, rhythmic delivery, confident vibe, studio quality.' },
-  { id: 'bossanova', label: '🌊 Bossa Nova', prompt: 'Bossa nova cover, gentle nylon-string guitar, soft brushed drums, mellow bass, breezy relaxed groove, intimate, studio quality.' },
-  { id: 'cinematic', label: '🎬 Cinematic', prompt: 'Cinematic orchestral cover, sweeping strings, epic horns, powerful percussion, dramatic build, epic film-score production, studio quality.' },
-  { id: 'tropical', label: '🌴 Tropical', prompt: 'Tropical house cover, marimba plucks, soft four-on-the-floor, warm bass, breezy summer vibe, studio quality.' },
-  { id: 'synthwave', label: '🎹 Synthwave', prompt: 'Synthwave cover, retro analog synths, punchy gated drums, arpeggios, nostalgic neon 80s vibe, studio quality.' },
-  { id: 'keroncong', label: '🪘 Keroncong', prompt: 'Keroncong cover, ukulele, cak and cuk, cello, flute, violin, nostalgic Indonesian classic arrangement, sing in Indonesian, studio quality.' },
-]
 
 const VOCALS = [
   { id: 'female', label: '👩 Wanita', descriptor: 'Female lead vocal, warm expressive female singer voice' },
@@ -76,6 +52,10 @@ function mediaKind(url: string): 'audio' | 'video' | 'image' {
   return 'image'
 }
 
+function normalizeGenreSearch(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '')
+}
+
 export default function SongCoverPage() {
   const addToast = useToastStore((s) => s.addToast)
   const currentUser = useAuthStore((s) => s.user)
@@ -83,6 +63,9 @@ export default function SongCoverPage() {
   const [audioFile, setAudioFile] = useState<File | null>(null)
   const [audioPreviewUrl, setAudioPreviewUrl] = useState<string | null>(null)
   const [selected, setSelected] = useState<string[]>([STYLE_PRESETS[0].id])
+  const [genreCat, setGenreCat] = useState<SongGenreCategory | 'all'>('all')
+  const [genreSearch, setGenreSearch] = useState('')
+  const [styleMode, setStyleMode] = useState<'preset' | 'manual'>('preset')
   const [extraPrompt, setExtraPrompt] = useState('')
   const [vocal, setVocal] = useState(VOCALS[0].id)
   const [lyrics, setLyrics] = useState('')
@@ -130,10 +113,16 @@ export default function SongCoverPage() {
   }
 
   const selectedGenres = STYLE_PRESETS.filter((p) => selected.includes(p.id))
-  const composedStyle = [
-    ...selectedGenres.map((g) => g.prompt),
-    extraPrompt.trim(),
-  ].filter(Boolean).join('. ')
+  const genreQuery = normalizeGenreSearch(genreSearch)
+  const visibleGenres = STYLE_PRESETS.filter(
+    (p) =>
+      (genreCat === 'all' || p.cat === genreCat) &&
+      (!genreQuery || normalizeGenreSearch(`${p.id} ${p.label}`).includes(genreQuery)),
+  )
+  const manualStyle = extraPrompt.trim()
+  const composedStyle = styleMode === 'manual'
+    ? manualStyle
+    : [...selectedGenres.map((g) => g.prompt), manualStyle].filter(Boolean).join('. ')
 
   const runWorkflow = async () => {
     if (!apiKey) {
@@ -145,7 +134,7 @@ export default function SongCoverPage() {
       return
     }
     if (!composedStyle && !lyrics.trim()) {
-      addToast('⚠️ Pilih minimal 1 gaya aransemen, isi prompt tambahan, atau lirik!', 'warning')
+      addToast('⚠️ Pilih minimal 1 gaya preset, tulis gaya aransemen manual, atau isi lirik!', 'warning')
       return
     }
 
@@ -159,7 +148,10 @@ export default function SongCoverPage() {
     const finalStyle = [vocalDesc, composedStyle].filter(Boolean).join('. ')
     addLog(`Mulai AI Song Cover: ${(audioFile.size / 1024).toFixed(0)}KB ${audioFile.name}`)
     addLog(`Vokal: ${VOCALS.find((v) => v.id === vocal)?.label || vocal}`)
-    addLog(`Gaya (${selectedGenres.length}): ${selectedGenres.map((g) => g.label).join(' + ') || '(custom)'}`)
+    const styleLabel = styleMode === 'manual'
+      ? manualStyle.slice(0, 120)
+      : selectedGenres.map((g) => g.label).join(' + ') || '(custom)'
+    addLog(`Gaya (${styleMode === 'manual' ? 'manual/prompt' : `${selectedGenres.length} preset`}): ${styleLabel}`)
     if (lyrics.trim()) addLog(`Lirik: ${lyrics.trim().slice(0, 80)}... (${lyrics.trim().length} char)`)
 
     const startTime = Date.now()
@@ -192,7 +184,7 @@ export default function SongCoverPage() {
             setTaskStatus('running')
             setProgress(pct)
             addLog(`Poll: ${status} ${pct}%`)
-          }, 1800000, key)
+          }, 1800000, key, 'AI Song Cover (RunningHub)')
           return url
         },
         {
@@ -303,34 +295,114 @@ export default function SongCoverPage() {
             <input ref={audioPickerRef} type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac" className="hidden" onChange={(e) => e.target.files?.[0] && handleFileSelect(e.target.files[0])} />
           </div>
 
-          {/* Style Presets */}
+          {/* Gaya Aransemen: preset atau manual/prompt */}
           <div className="mb-4">
-            <Label className="mb-2 block">🎨 Gaya Aransemen <span className="text-muted-foreground font-normal">(pilih 1–3, bisa digabung)</span></Label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {STYLE_PRESETS.map((p) => {
-                const active = selected.includes(p.id)
-                const idx = selected.indexOf(p.id)
-                return (
-                  <button
-                    key={p.id}
-                    onClick={() => togglePreset(p)}
-                    className={`relative px-3 py-2 rounded-lg text-xs font-medium transition-colors text-left ${
-                      active
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-surface-secondary text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    {p.label}
-                    {active && (
-                      <span className="absolute top-1 right-1 text-[10px] bg-black/25 rounded-full h-4 w-4 flex items-center justify-center">{idx + 1}</span>
-                    )}
-                  </button>
-                )
-              })}
+            <Label className="mb-2 block">🎨 Gaya Aransemen</Label>
+            <div className="inline-flex rounded-lg bg-surface-secondary p-0.5 mb-3">
+              <button
+                onClick={() => setStyleMode('preset')}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  styleMode === 'preset'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                Pilih Preset
+              </button>
+              <button
+                onClick={() => setStyleMode('manual')}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  styleMode === 'manual'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                Tulis Manual / Prompt
+              </button>
             </div>
-            <div className="mt-1.5 text-[11px] text-muted-foreground">
-              Terpilih {selected.length}/3{selectedGenres.length > 0 && ` — ${selectedGenres.map((g) => g.label).join(' + ')}`}
-            </div>
+
+            {styleMode === 'preset' ? (
+              <>
+                <div className="text-[11px] text-muted-foreground mb-2">Pilih 1–3 genre, bisa digabung. Tambahkan detail di kolom prompt bila perlu.</div>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {GENRE_CATEGORIES.map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => setGenreCat(c.id)}
+                      className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors ${
+                        genreCat === c.id
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-surface-secondary text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {c.label}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  value={genreSearch}
+                  onChange={(e) => setGenreSearch(e.target.value)}
+                  className="w-full px-3 py-1.5 mb-2 rounded-lg bg-surface-secondary border border-border text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  placeholder="🔍 Cari genre (mis. djent, amapiano, koplo)..."
+                />
+                {selectedGenres.some((g) => !visibleGenres.some((v) => v.id === g.id)) && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {selectedGenres.filter((g) => !visibleGenres.some((v) => v.id === g.id)).map((g) => (
+                      <span key={g.id} className="px-2 py-0.5 rounded-full bg-primary/15 text-primary text-[11px]">✓ {g.label}</span>
+                    ))}
+                  </div>
+                )}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-72 overflow-y-auto pr-1">
+                  {visibleGenres.length === 0 && (
+                    <div className="col-span-full text-center text-xs text-muted-foreground py-6">Genre tidak ditemukan. Coba kata kunci lain.</div>
+                  )}
+                  {visibleGenres.map((p) => {
+                    const active = selected.includes(p.id)
+                    const idx = selected.indexOf(p.id)
+                    return (
+                      <button
+                        key={p.id}
+                        onClick={() => togglePreset(p)}
+                        className={`relative px-3 py-2 rounded-lg text-xs font-medium transition-colors text-left ${
+                          active
+                            ? 'bg-primary text-primary-foreground'
+                            : 'bg-surface-secondary text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        {p.label}
+                        {active && (
+                          <span className="absolute top-1 right-1 text-[10px] bg-black/25 rounded-full h-4 w-4 flex items-center justify-center">{idx + 1}</span>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+                <div className="mt-1.5 text-[11px] text-muted-foreground">
+                  Terpilih {selected.length}/3{selectedGenres.length > 0 && ` — ${selectedGenres.map((g) => g.label).join(' + ')}`}
+                </div>
+                <div className="mt-3">
+                  <Label className="mb-1.5 block text-xs">✏️ Prompt Tambahan (opsional)</Label>
+                  <textarea
+                    value={extraPrompt}
+                    onChange={(e) => setExtraPrompt(e.target.value)}
+                    className="w-full h-20 px-3 py-2 rounded-lg bg-surface-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    placeholder="Detail tambahan: tempo/BPM, instrumen, bahasa vokal, mood, referensi artis..."
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <textarea
+                  value={extraPrompt}
+                  onChange={(e) => setExtraPrompt(e.target.value)}
+                  className="w-full h-36 px-3 py-2 rounded-lg bg-surface-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  placeholder="Tulis gaya aransemen atau prompt bebas. Contoh: dangdut koplo modern, kendang cepat, suling ceria, bass dalam, vokal pria, tempo 130 BPM..."
+                />
+                <div className="mt-1.5 text-[11px] text-muted-foreground">
+                  Teks ini langsung dikirim sebagai gaya aransemen. Bisa dipakai tanpa memilih preset, dan tetap bisa digabung dengan pilihan vokal serta lirik.
+                </div>
+              </>
+            )}
           </div>
 
           {/* Vocal */}
@@ -351,17 +423,6 @@ export default function SongCoverPage() {
                 </button>
               ))}
             </div>
-          </div>
-
-          {/* Style Prompt */}
-          <div className="mb-4">
-            <Label className="mb-2 block">✏️ Prompt Tambahan (opsional)</Label>
-            <textarea
-              value={extraPrompt}
-              onChange={(e) => setExtraPrompt(e.target.value)}
-              className="w-full h-20 px-3 py-2 rounded-lg bg-surface-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:ring-2 focus:ring-primary/50"
-              placeholder="Detail tambahan: tempo/BPM, instrumen, bahasa vokal, mood, referensi artis..."
-            />
           </div>
 
           {/* Lyrics */}

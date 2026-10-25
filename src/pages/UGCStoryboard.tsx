@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+﻿import { useState, useRef } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Label, Select, Textarea, EmptyState } from '@/components/ui'
 import { LogDetailActions } from '@/components/ui/LogDetailActions'
@@ -192,7 +192,7 @@ export default function UGCStoryboardPage() {
             setTaskStatus('running')
             setProgress(pct)
             addLog(`Poll: ${status} ${pct}%`)
-          }, 3600000, key)
+          }, 3600000, key, 'UGC Storyboard (RunningHub)')
           return url
         },
         {
@@ -243,7 +243,7 @@ export default function UGCStoryboardPage() {
             setTaskStatus('running')
             setProgress(pct)
             addLog(`Poll: ${status} ${pct}%`)
-          }, 3600000, key)
+          }, 3600000, key, 'UGC Storyboard (RunningHub)')
         },
         {},
       )

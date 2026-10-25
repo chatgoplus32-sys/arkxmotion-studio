@@ -201,7 +201,9 @@ router.post('/login', async (req, res: Response) => {
         email: user.email,
         name: user.name,
         role: user.role,
-        approved: !!user.approved
+        approved: !!user.approved,
+        plan: user.role === 'admin' ? 'pro' : ((user as any).plan || 'free'),
+        proSince: (user as any).pro_since ?? null,
       }
     })
   } catch (error) {
@@ -251,13 +253,20 @@ router.post('/logout', (req, res: Response) => {
 
 router.get('/me', authenticateToken, (req: AuthRequest, res: Response) => {
   try {
-    const user = db.prepare('SELECT id, email, name, role, approved, created_at FROM users WHERE id = ?').get(req.user!.id) as Omit<UserRow, 'password'> | undefined
+    const user = db.prepare('SELECT id, email, name, role, approved, plan, pro_since, created_at FROM users WHERE id = ?').get(req.user!.id) as Omit<UserRow, 'password'> | undefined
 
     if (!user) {
       return res.status(404).json({ error: 'User not found' })
     }
 
-    res.json({ user: { ...user, approved: !!user.approved } })
+    res.json({
+      user: {
+        ...user,
+        approved: !!user.approved,
+        plan: user.role === 'admin' ? 'pro' : ((user as any).plan || 'free'),
+        proSince: (user as any).pro_since ?? null,
+      },
+    })
   } catch (error) {
     console.error('Get me error:', error)
     res.status(500).json({ error: 'Internal server error' })
@@ -302,8 +311,8 @@ router.post('/status', (req, res: Response) => {
     const { email } = req.body
     if (!email) return res.status(400).json({ error: 'Email is required' })
 
-    const user = db.prepare('SELECT id, approved, email_verified, role FROM users WHERE email = ?').get(String(email).toLowerCase()) as
-      | { id: number; approved: number; email_verified?: number; role: string }
+    const user = db.prepare('SELECT id, approved, email_verified, role, plan FROM users WHERE email = ?').get(String(email).toLowerCase()) as
+      | { id: number; approved: number; email_verified?: number; role: string; plan?: string }
       | undefined
 
     if (!user) return res.json({ found: false })
@@ -318,6 +327,7 @@ router.post('/status', (req, res: Response) => {
       approved: !!user.approved,
       emailVerified: !!user.email_verified,
       isAdmin: user.role === 'admin',
+      plan: user.role === 'admin' || user.plan === 'pro' ? 'pro' : 'free',
       payment: payment
         ? {
             amount: payment.amount,

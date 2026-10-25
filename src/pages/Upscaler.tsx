@@ -281,7 +281,7 @@ export default function UpscalerPage() {
               log(`task: ${submit.taskId.slice(0, 20)}...`)
               const url = await pollRunningHubTask(submit.taskId, (status, pct) => {
                 log(`${status} ${pct}%`)
-              }, 1800000, token)
+              }, 1800000, token, 'Photo Enhance (RunningHub)')
               return url
             },
             {
@@ -375,7 +375,7 @@ export default function UpscalerPage() {
         async (token) => {
           return pollRunningHubTask(taskId, (status, pct) => {
             addLog(`#${index + 1}: ${status} ${pct}%`)
-          }, 1800000, token)
+          }, 1800000, token, 'Photo Enhance (RunningHub)')
         },
         {}
       )

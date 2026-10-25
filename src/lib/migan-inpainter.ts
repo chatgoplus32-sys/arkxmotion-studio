@@ -1,23 +1,23 @@
 /**
- * MI-GAN inpainting via ONNX Runtime Web.
+ * LaMa (Big-LAMA) inpainting via ONNX Runtime Web.
  *
- * Model: MI-GAN (Picsart Research, ICCV 2023) — GAN inpainter untuk browser.
- * Input: [1, 4, 512, 512] float32 (mask-0.5, R*mask, G*mask, B*mask)
- * Output: [1, 3, 512, 512] float32 in [-1, 1]
+ * Model: LaMa — Fourier convolution inpainter (WACV 2022), port ONNX resmi
+ * OpenCV Zoo. Kualitas reconstruct jauh lebih baik dari MI-GAN pada hole
+ * bermateri (langit, dinding, kain) — dan menangani mask besar dengan stabil.
  *
- * Catatan penting soal resolusi: model ini punya bentuk input TETAP 512×512
- * (bukan dynamic shape — sudah diverifikasi lewat probe runtime). Jadi kualitas
- * hasil hanya bisa dijaga dengan dua cara:
- *   1. crop dibiarkan se-NATIVE mungkin (tidak diperbesar-paksa ke 512 lalu
- *      dikecilkan lagi), dan
- *   2. komposit akhir tidak mencampur piksel ber-watermark (lihat inpaint-core).
+ * Kontrak I/O (terverifikasi probe Python + onnxruntime, 17 Okt 2026):
+ *   input  image: [1, 3, 512, 512] float32 — RGB 0..1 (CHW), tanpa swapRB
+ *   input  mask : [1, 1, 512, 512] float32 — 1.0 = lubang (inpaint), 0.0 = keep
+ *   output      : [1, 3, 512, 512] float32 — RGB 0..255 (CHW)
+ * Area non-mask dioutput hampir identik dengan input (uji identitas 4 kuadran
+ * sempurna), jadi komposit seam-aware tetap valid di area tepi.
  *
  * Pipeline per pass:
  * 1. Dilatasi mask (menelan tepi anti-alias watermark)
  * 2. Cari bbox hole → square crop dengan konteks × ukuran mask
  * 3. Skala crop ke 512×512 (satu kali, hanya bila crop > 512)
- * 4. Bangun input MI-GAN 4-channel
- * 5. Run model, map [-1,1] → RGBA
+ * 4. Bangun input LaMa 3ch image + 1ch mask
+ * 5. Run model, map 0..255 → RGBA
  * 6. Komposit seam-aware: bidang koreksi nada dipelajari dari ring sekitarnya
  */
 
@@ -63,7 +63,7 @@ export async function initInpainter(onProgress?: (msg: string) => void): Promise
   ort.env.wasm!.proxy = false
   ;(ort.env as any).logLevel = 'warning'
 
-  onProgress?.('Loading MI-GAN model (~29 MB)…')
+  onProgress?.('Loading LaMa model (~93 MB)…')
   const rawBytes = await loadModel((p) => {
     if (p.stage) onProgress?.(`[${p.stage}] ${p.total > 0 ? `${(p.done / 1024 / 1024).toFixed(1)}/${(p.total / 1024 / 1024).toFixed(1)} MB` : ''}`)
   })
@@ -101,34 +101,35 @@ export interface InpaintImageOpts {
   onPass?: (passIndex: number, totalPasses: number) => void
 }
 
-/** Build MI-GAN 4-channel float32 input — matches Picsart's preprocess() exactly. */
-export function buildMIGANInput(imageData: Raster, maskData: Raster): Float32Array {
+/** Build input LaMa: image [1,3,512,512] RGB 0..1 + mask [1,1,512,512] biner. */
+export function buildLamaInput(imageData: Raster, maskData: Raster): {
+  image: Float32Array
+  mask: Float32Array
+} {
   const { width, height, data: img } = imageData
   const maskBytes = maskData.data
   const size = width * height
-  const out = new Float32Array(4 * size)
+  const image = new Float32Array(3 * size)
+  const mask = new Float32Array(size)
   for (let i = 0; i < size; i++) {
     const isInpaint = maskBytes[i * 4 + 3] > 64
-    const mask = isInpaint ? 0.0 : 1.0
-    const r = (img[i * 4] / 255) * 2 - 1
-    const g = (img[i * 4 + 1] / 255) * 2 - 1
-    const b = (img[i * 4 + 2] / 255) * 2 - 1
-    out[i] = mask - 0.5
-    out[i + size] = r * mask
-    out[i + size * 2] = g * mask
-    out[i + size * 3] = b * mask
+    // LaMa memakai RGB 0..1 CHW — ImageData RGBA disalin per channel.
+    image[i] = img[i * 4] / 255
+    image[i + size] = img[i * 4 + 1] / 255
+    image[i + size * 2] = img[i * 4 + 2] / 255
+    if (isInpaint) mask[i] = 1.0
   }
-  return out
+  return { image, mask }
 }
 
-/** Convert MI-GAN [-1,1] float32 CHW output to RGBA ImageData. */
-function miganOutputToRGBA(chw: Float32Array, w: number, h: number): ImageData {
+/** Convert LaMa output (RGB 0..255 CHW) ke RGBA ImageData. */
+function lamaOutputToRGBA(chw: Float32Array, w: number, h: number): ImageData {
   const size = w * h
   const out = new Uint8ClampedArray(size * 4)
   for (let i = 0; i < size; i++) {
-    out[i * 4] = Math.max(0, Math.min(1, chw[i] * 0.5 + 0.5)) * 255
-    out[i * 4 + 1] = Math.max(0, Math.min(1, chw[i + size] * 0.5 + 0.5)) * 255
-    out[i * 4 + 2] = Math.max(0, Math.min(1, chw[i + size * 2] * 0.5 + 0.5)) * 255
+    out[i * 4] = chw[i]
+    out[i * 4 + 1] = chw[i + size]
+    out[i * 4 + 2] = chw[i + size * 2]
     out[i * 4 + 3] = 255
   }
   return new ImageData(out, w, h)
@@ -200,11 +201,10 @@ async function runPass(
 
   const inputNames = Array.from(session.inputNames || [])
   const feeds: Record<string, ort.Tensor> = {}
-  feeds[inputNames[0]] = new ort.Tensor(
-    'float32',
-    buildMIGANInput(inferImage, inferMask),
-    [1, 4, MODEL_SIZE, MODEL_SIZE],
-  )
+  const lama = buildLamaInput(inferImage, inferMask)
+  // Nama input dicek dinamis ('image' & 'mask' pada model OpenCV Zoo).
+  feeds[inputNames[0]] = new ort.Tensor('float32', lama.image, [1, 3, MODEL_SIZE, MODEL_SIZE])
+  feeds[inputNames[1]] = new ort.Tensor('float32', lama.mask, [1, 1, MODEL_SIZE, MODEL_SIZE])
 
   const output = await session.run(feeds)
   const outTensor = output[Object.keys(output)[0]]
@@ -212,7 +212,7 @@ async function runPass(
   const outH = dims[2] || MODEL_SIZE
   const outW = dims[3] || MODEL_SIZE
 
-  const inferResult = miganOutputToRGBA(outTensor.data as unknown as Float32Array, outW, outH)
+  const inferResult = lamaOutputToRGBA(outTensor.data as unknown as Float32Array, outW, outH)
   const cropResult = (outW === cropSize && outH === cropSize)
     ? inferResult
     : resizeImageData(inferResult, cropSize, cropSize)

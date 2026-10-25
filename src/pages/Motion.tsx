@@ -8,7 +8,7 @@ import { uploadToCatbox, compressVideo, normalizeImage, getVideoDurationFromFile
 import { submitGensparkVideo, extractGensparkVideoUrl, uploadToGenspark, pollGensparkVideo } from '@/lib/genspark'
 import { trimVideoFFmpeg } from '@/lib/ffmpeg-compress'
 import { submitWeavyMotionControl, uploadWeavyAssetWithRetry, resolveWeavyAssetUrl, getActiveWeavyAccessToken, compressImageForWeavy } from '@/lib/weavy'
-import { getRunningHubApiKey, getRunningHubWorkflowId, submitRunningHubMotionControl, submitRunningHubUltraFastHD, pollRunningHubTask } from '@/lib/runninghub'
+import { getRunningHubApiKey, getRunningHubWorkflowId, submitRunningHubMotionControl, submitRunningHubUltraFastHD, submitRunningHubMotionApp, pollRunningHubTask } from '@/lib/runninghub'
 import { getGalleri5AuthHeaders, submitGalleri5MotionControl, pollGalleri5MotionControl, isGalleri5ModelRestricted, getGalleri5ErrorMessage, GALLERI5_MOTION_MODELS, runGalleri5WithRotation } from '@/lib/galleri5'
 import { getMagnificApiKey, submitMagnificMotion, pollMagnificMotion, type MagnificMotionModel } from '@/lib/magnific'
 import { generateWithAlriz, getAlrizModel } from '@/lib/alriz'
@@ -64,6 +64,9 @@ const PROVIDERS = {
     { key: 'framia:kling-v2.6-motion', label: 'Kling V2.6 Motion Control (Framia)', cr: 35 },
   ]},
   runninghub: { name: 'Motion Control (RunningHub)', models: [
+    { key: 'rh:wf:kontrol-gerakan', label: 'Kontrol Gerak 50FPS — Lebih Cepat, maks 24s (RunningHub)', cr: 80 },
+    { key: 'rh:wf:eposcents', label: 'Eposcents MC — 512HD 32FPS · 50s (RunningHub)', cr: 80 },
+    { key: 'rh:wf:mc-pro', label: 'Motion Control Pro — Motion Transfer · 15s (RunningHub)', cr: 80 },
     { key: 'rh:wf:ultra-hd', label: 'MC Ultra Fast HD (RunningHub)', cr: 80 },
     { key: 'rh:pro:2.6', label: 'Kling 2.6 Pro (RunningHub)', cr: 80 },
     { key: 'rh:std:2.6', label: 'Kling 2.6 Standard (RunningHub)', cr: 50 },
@@ -102,6 +105,8 @@ const VISIBLE_PROVIDERS = Object.fromEntries(
 ) as typeof PROVIDERS
 
 const MAX_SLOTS = 12
+const MAX_VIDEO_REF_MB = 6
+const MAX_VIDEO_REF_BYTES = MAX_VIDEO_REF_MB * 1024 * 1024
 
 interface Slot {
   id: string
@@ -141,8 +146,6 @@ export default function MotionPage() {
   const [ultraFps, setUltraFps] = useLocalStorage('motion.ultraHdFps', 60)
   const [ultraSteps, setUltraSteps] = useLocalStorage('motion.ultraHdSteps', 4)
   const [ultraMaxFrames, setUltraMaxFrames] = useLocalStorage('motion.ultraHdMaxFrames', 120)
-  const [tiktokUrl, setTiktokUrl] = useState('')
-  const [tiktokLoading, setTiktokLoading] = useState(false)
   const [slots, setSlots] = useState<Slot[]>(() => {
     try {
       const raw = localStorage.getItem('motion.slots')
@@ -329,6 +332,35 @@ export default function MotionPage() {
       return
     }
 
+    if (type === 'video' && file.size > MAX_VIDEO_REF_BYTES) {
+      const sizeMB = (file.size / (1024 * 1024)).toFixed(1)
+      const doCompress = window.confirm(
+        `Video referensi berukuran ${sizeMB}MB. Batas upload maksimal ${MAX_VIDEO_REF_MB}MB.\n\nKlik OK untuk mengompres video otomatis.`
+      )
+      if (!doCompress) {
+        addLog(`#${id.slice(0, 4)} upload dibatalkan: video ${sizeMB}MB > ${MAX_VIDEO_REF_MB}MB`, 'warn')
+        return
+      }
+      setCompressDialog({ msg: `Mengompres video ke maksimal ${MAX_VIDEO_REF_MB}MB...` })
+      try {
+        const compressed = await compressVideo(file, MAX_VIDEO_REF_MB, (msg, pct) => {
+          setCompressDialog({ msg, pct })
+        })
+        setCompressDialog(null)
+        if (compressed.size > MAX_VIDEO_REF_BYTES) {
+          addLog(`Kompresi gagal: video masih ${(compressed.size / (1024 * 1024)).toFixed(1)}MB (maks ${MAX_VIDEO_REF_MB}MB)`, 'error')
+          return
+        }
+        const url = URL.createObjectURL(compressed)
+        updateSlot(id, { video: compressed, videoUrl: url })
+        addLog(`#${id.slice(0, 4)} video dikompres: ${sizeMB}MB → ${(compressed.size / (1024 * 1024)).toFixed(1)}MB`, 'success')
+      } catch (err: any) {
+        setCompressDialog(null)
+        addLog(`Kompresi gagal: ${err.message}`, 'error')
+      }
+      return
+    }
+
     const sizeLimit = 4 * 1024 * 1024
 
     if (provider === 'roboneo' && file.size > sizeLimit) {
@@ -378,35 +410,50 @@ export default function MotionPage() {
     setLogs((prev) => [...prev, entry].slice(-200))
   }
 
-  const handleTiktokImport = async () => {
-    if (!tiktokUrl.trim()) return
-    setTiktokLoading(true)
-    addLog('Fetching TikTok video...')
+  const handleTiktokImport = async (slotId: string, link: string): Promise<void> => {
+    addLog('Mengambil video TikTok…')
     try {
       const res = await fetch('/api/public/tiktok-download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: tiktokUrl.trim() }),
+        body: JSON.stringify({ url: link }),
       })
-      const data = await res.json()
-      if (!res.ok || !data.url) throw new Error(data.error || `HTTP ${res.status}`)
-      
-      addLog(`TikTok video found, downloading...`)
-      const videoRes = await fetch(data.url)
-      if (!videoRes.ok) throw new Error('Failed to download video')
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.url) throw new Error(data.error || `Gagal mengambil video (HTTP ${res.status})`)
+
+      addLog(`Video TikTok ${data.hd ? 'HD tanpa watermark' : 'tanpa watermark'} ditemukan, mengunduh…`)
+      // CDN TikTok tidak mengizinkan CORS dari browser, jadi unduh lewat proxy same-origin.
+      const videoRes = await fetch(`/api/public/video-proxy?url=${encodeURIComponent(data.url)}`)
+      if (!videoRes.ok) throw new Error('Gagal mengunduh file video dari TikTok')
       const blob = await videoRes.blob()
-      const file = new File([blob], `tiktok_${Date.now()}.mp4`, { type: 'video/mp4' })
-      
-      const targetSlot = slots.find(s => !s.video) || slots[slots.length - 1]
-      const url = URL.createObjectURL(file)
-      updateSlot(targetSlot.id, { video: file, videoUrl: url })
-      addLog(`TikTok video loaded: ${(file.size / 1024 / 1024).toFixed(1)}MB`, 'success')
-      setTiktokUrl('')
+      if (blob.size < 1024) throw new Error('File video TikTok kosong / tidak bisa diunduh')
+
+      let file = new File([blob], `tiktok_${Date.now()}.mp4`, {
+        type: blob.type.startsWith('video/') ? blob.type : 'video/mp4',
+      })
+
+      if (file.size > MAX_VIDEO_REF_BYTES) {
+        addLog(`Video TikTok ${(file.size / 1024 / 1024).toFixed(1)}MB > ${MAX_VIDEO_REF_MB}MB, mengompres…`)
+        setCompressDialog({ msg: `Mengompres video TikTok ke maksimal ${MAX_VIDEO_REF_MB}MB...` })
+        try {
+          file = await compressVideo(file, MAX_VIDEO_REF_MB, (msg, pct) => {
+            setCompressDialog({ msg, pct })
+          })
+        } finally {
+          setCompressDialog(null)
+        }
+        if (file.size > MAX_VIDEO_REF_BYTES) {
+          throw new Error(`Video masih ${(file.size / 1024 / 1024).toFixed(1)}MB setelah kompresi (maks ${MAX_VIDEO_REF_MB}MB)`)
+        }
+      }
+
+      updateSlot(slotId, { video: file, videoUrl: URL.createObjectURL(file) })
+      addLog(`Video TikTok siap: ${(file.size / 1024 / 1024).toFixed(1)}MB${data.hd ? ' (HD)' : ''}`, 'success')
+      addToast('Video TikTok siap dipakai sebagai video referensi', 'success')
     } catch (err: any) {
-      addLog(`TikTok import failed: ${err.message}`, 'error')
+      addLog(`Import TikTok gagal: ${err.message}`, 'error')
       addToast(`Gagal import TikTok: ${err.message}`, 'error')
-    } finally {
-      setTiktokLoading(false)
+      throw err
     }
   }
 
@@ -1171,11 +1218,45 @@ export default function MotionPage() {
                 'rh:wf:2.9': '2092795737699856386',
                 'rh:wf:v3.0': '2093040535905165313',
                 'rh:wf:ultra-hd': '2102004799470764034',
+                'rh:wf:mc-pro': '2103523610144309249',
+                'rh:wf:eposcents': '2107144516724932610',
+                'rh:wf:kontrol-gerakan': '2112893346377531393',
               }
               const workflowId = WORKFLOW_IDS[modelKey] || getRunningHubWorkflowId()
               addLog(modelKey === 'rh:wf:ultra-hd'
                 ? `#${slotNum} Submit ke RunningHub Ultra HD (fps: ${ultraFps}, steps: ${ultraSteps}, maxFrames: ${ultraMaxFrames})`
-                : `#${slotNum} Submit ke RunningHub (${modelVersion} ${mode}, workflow: ${workflowId.slice(0, 15)}...)`)
+                : modelKey === 'rh:wf:mc-pro'
+                  ? `#${slotNum} Submit ke RunningHub Motion Control Pro / Motion Transfer (maks 15s, workflow: ${workflowId.slice(0, 15)}...)`
+                  : modelKey === 'rh:wf:eposcents'
+                    ? `#${slotNum} Submit ke RunningHub Eposcents MC (512HD 32FPS, maks 50s, workflow: ${workflowId.slice(0, 15)}...)`
+                    : modelKey === 'rh:wf:kontrol-gerakan'
+                      ? `#${slotNum} Submit ke RunningHub Kontrol Gerak 50FPS (maks 24s, workflow: ${workflowId.slice(0, 15)}...)`
+                      : `#${slotNum} Submit ke RunningHub (${modelVersion} ${mode}, workflow: ${workflowId.slice(0, 15)}...)`)
+
+              // Motion Control Pro: referensi maks 15 detik.
+              // Eposcents MC: referensi maks 50 detik (>30s otomatis instance Plus).
+              // Kontrol Gerak 50FPS: benchmark app 24 detik (1200 frame @ 50fps).
+              let mcProVideoFile = videoFile
+              if ((modelKey === 'rh:wf:mc-pro' || modelKey === 'rh:wf:eposcents' || modelKey === 'rh:wf:kontrol-gerakan') && slot.video) {
+                const MAX_MOTION_DURATION = modelKey === 'rh:wf:eposcents'
+                  ? 50
+                  : modelKey === 'rh:wf:kontrol-gerakan' ? 24 : 15
+                try {
+                  const rawDuration = await getVideoDurationFromFile(slot.video)
+                  if (rawDuration > MAX_MOTION_DURATION + 0.2) {
+                    addLog(`#${slotNum} Referensi ${Math.round(rawDuration)}s > ${MAX_MOTION_DURATION}s, trimming...`)
+                    mcProVideoFile = await trimVideoFFmpeg(videoFile, MAX_MOTION_DURATION, (msg, pct) => {
+                      setCompressDialog({ msg, pct })
+                      updateSlotStatus(slot.id, 'uploading vid...', msg)
+                      addLog(`#${slotNum} ${msg}`)
+                    })
+                    setCompressDialog(null)
+                    addLog(`#${slotNum} Video referensi: ${mcProVideoFile.name || 'ready'} (${MAX_MOTION_DURATION}s)`)
+                  } else {
+                    addLog(`#${slotNum} Durasi referensi: ${Math.round(rawDuration)}s (maks ${MAX_MOTION_DURATION}s)`)
+                  }
+                } catch {}
+              }
 
               const rotation = await withTokenRotation<string>(
                 'runninghub',
@@ -1193,7 +1274,36 @@ export default function MotionPage() {
                       apiKey,
                       workflowId,
                     })
-                    : await submitRunningHubMotionControl({
+                    : modelKey === 'rh:wf:mc-pro'
+                      ? await submitRunningHubMotionApp({
+                        action: 'motion-control-pro',
+                        imageFile: normalizedImage,
+                        videoFile: mcProVideoFile,
+                        prompt: finalPrompt || undefined,
+                        negativePrompt: negativePrompt.trim() || undefined,
+                        apiKey,
+                        workflowId,
+                      })
+                      : modelKey === 'rh:wf:eposcents'
+                        ? await submitRunningHubMotionApp({
+                          action: 'motion-control-eposcents',
+                          imageFile: normalizedImage,
+                          videoFile: mcProVideoFile,
+                          durationHint: await getVideoDurationFromFile(mcProVideoFile).catch(() => 0),
+                          prompt: finalPrompt || undefined,
+                          negativePrompt: negativePrompt.trim() || undefined,
+                          apiKey,
+                          workflowId,
+                        })
+                        : modelKey === 'rh:wf:kontrol-gerakan'
+                          ? await submitRunningHubMotionApp({
+                            action: 'motion-control-kontrol-gerakan',
+                            imageFile: normalizedImage,
+                            videoFile: mcProVideoFile,
+                            apiKey,
+                            workflowId,
+                          })
+                          : await submitRunningHubMotionControl({
                     imageFile: normalizedImage,
                     videoFile,
                     prompt: finalPrompt || undefined,
@@ -1230,7 +1340,7 @@ export default function MotionPage() {
                     updateSlotStatus(slot.id, 'processing', `${status} ${pct}%`)
                     addLog(`#${slotNum} ${status} ${pct}%`)
                     setProgress(pct)
-                  }, 3600000, apiKey)
+                  }, 3600000, apiKey, currentModel.label)
                   removeActiveTask(taskId)
                   attemptTaskId = null
                   return resultUrl
@@ -2036,6 +2146,7 @@ export default function MotionPage() {
                 showVideo={!slotsImageOnly}
                 onImage={(file) => handleFileChange(slot.id, 'image', file)}
                 onVideo={(file) => handleFileChange(slot.id, 'video', file)}
+                onTiktok={(link) => handleTiktokImport(slot.id, link)}
                 onRemove={() => removeSlot(slot.id)}
                 canRemove={slots.length > 1}
               />
@@ -2111,25 +2222,29 @@ export default function MotionPage() {
                 />
               </div>
 
-              <div>
-                <Label>Prompt (opsional)</Label>
-                <Textarea
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  placeholder="Deskripsikan motion yang diinginkan…"
-                  rows={2}
-                />
-              </div>
+              {modelKey !== 'rh:wf:kontrol-gerakan' && (
+                <>
+                  <div>
+                    <Label>Prompt (opsional)</Label>
+                    <Textarea
+                      value={prompt}
+                      onChange={(e) => setPrompt(e.target.value)}
+                      placeholder="Deskripsikan motion yang diinginkan…"
+                      rows={2}
+                    />
+                  </div>
 
-              <div>
-                <Label>Negative Prompt (opsional)</Label>
-                <Textarea
-                  value={negativePrompt}
-                  onChange={(e) => setNegativePrompt(e.target.value)}
-                  placeholder="blurry, low quality, distorted…"
-                  rows={2}
-                />
-              </div>
+                  <div>
+                    <Label>Negative Prompt (opsional)</Label>
+                    <Textarea
+                      value={negativePrompt}
+                      onChange={(e) => setNegativePrompt(e.target.value)}
+                      placeholder="blurry, low quality, distorted…"
+                      rows={2}
+                    />
+                  </div>
+                </>
+              )}
 
               <label className="flex items-center gap-2.5 cursor-pointer select-none">
                 <input
@@ -2149,7 +2264,7 @@ export default function MotionPage() {
               {/* MC Ultra Fast HD specific options */}
               {modelKey === 'rh:wf:ultra-hd' && (
                 <>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-3 gap-2 sm:gap-3">
                     <div>
                       <Label>FPS</Label>
                       <input
@@ -2265,31 +2380,6 @@ export default function MotionPage() {
                 </label>
               )}
 
-              {/* TikTok Link Import (Markas Tools style) */}
-              {provider === 'roboneo' && (
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={tiktokUrl}
-                    onChange={(e) => setTiktokUrl(e.target.value)}
-                    placeholder="Paste link TikTok..."
-                    className="flex-1 rounded-xl border border-border bg-card/50 px-3 py-2 text-sm outline-none focus:border-primary/50 transition"
-                    onKeyDown={(e) => e.key === 'Enter' && handleTiktokImport()}
-                  />
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={handleTiktokImport}
-                    disabled={!tiktokUrl.trim() || tiktokLoading}
-                  >
-                    {tiktokLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Video className="h-3.5 w-3.5" />}
-                    Dari Link TikTok
-                  </Button>
-                </div>
-              )}
-
-              
-
 <Button
                 onClick={handleGenerate}
                 disabled={filledSlots === 0 || generating}
@@ -2335,7 +2425,7 @@ export default function MotionPage() {
                 </Button>
               )}
 
-              <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+              <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-muted-foreground">
                 <span>
                   {provider === 'alriz' ? (
                     <>Total: <span className="text-foreground font-mono font-semibold">Rp {totalCredits.toLocaleString('id-ID')}</span> ({filledSlots} × Rp {currentModel.cr.toLocaleString('id-ID')})</>
@@ -2553,6 +2643,7 @@ function SlotCard({
   slot,
   onImage,
   onVideo,
+  onTiktok,
   onRemove,
   canRemove,
   showVideo = true,
@@ -2561,6 +2652,7 @@ function SlotCard({
   slot: Slot
   onImage: (file: File | null) => void
   onVideo: (file: File | null) => void
+  onTiktok: (link: string) => Promise<void>
   onRemove: () => void
   canRemove: boolean
   showVideo?: boolean
@@ -2596,7 +2688,7 @@ function SlotCard({
         )}
       </div>
 
-      <div className="grid gap-2" style={{ gridTemplateColumns: showVideo ? '1fr 1fr' : '1fr' }}>
+      <div className={`grid gap-2 ${showVideo ? 'grid-cols-1 min-[480px]:grid-cols-2' : 'grid-cols-1'}`}>
         <FileUpload
           ref={imageRef}
           kind="image"
@@ -2608,18 +2700,83 @@ function SlotCard({
           onChange={onImage}
         />
         {showVideo && (
-          <FileUpload
-            ref={videoRef}
-            kind="video"
-            label="Reference Video"
-            hint="MP4 / MOV"
-            accept="video/*"
-            file={slot.video}
-            previewUrl={slot.videoUrl}
-            onChange={onVideo}
-          />
+          <div className="flex flex-col gap-1.5">
+            <FileUpload
+              ref={videoRef}
+              kind="video"
+              label="Reference Video"
+              hint={`MP4 / MOV · maks ${MAX_VIDEO_REF_MB} MB`}
+              accept="video/*"
+              file={slot.video}
+              previewUrl={slot.videoUrl}
+              onChange={onVideo}
+            />
+            <TikTokImportRow onImport={onTiktok} />
+          </div>
         )}
       </div>
+    </div>
+  )
+}
+
+function TikTokImportRow({ onImport }: { onImport: (link: string) => Promise<void> }) {
+  const [link, setLink] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const submit = async () => {
+    const value = link.trim()
+    if (!value || loading) return
+    setLoading(true)
+    setError('')
+    try {
+      await onImport(value)
+      setLink('')
+    } catch (err: any) {
+      setError(err?.message || 'Gagal mengambil video TikTok')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex gap-2">
+        <input
+          type="url"
+          value={link}
+          onChange={(e) => {
+            setLink(e.target.value)
+            if (error) setError('')
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              void submit()
+            }
+          }}
+          disabled={loading}
+          placeholder="Tempel link TikTok publik…"
+          className="min-w-0 flex-1 rounded-lg border border-border bg-card/50 px-2.5 py-1.5 text-xs outline-none transition focus:border-primary/50 disabled:opacity-60"
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => void submit()}
+          disabled={!link.trim() || loading}
+          className="h-8 shrink-0 px-3 text-xs"
+        >
+          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+          Ambil
+        </Button>
+      </div>
+      {error ? (
+        <p className="text-[10px] leading-snug text-red-400">{error}</p>
+      ) : (
+        <p className="text-[10px] leading-snug text-muted-foreground">
+          HD tanpa watermark otomatis jadi video referensi
+        </p>
+      )}
     </div>
   )
 }
@@ -2660,7 +2817,7 @@ const FileUpload = forwardRef<HTMLInputElement, FileUploadProps>(
               ) : (
                 <video src={previewUrl} aria-label="Preview input motion" className="absolute inset-0 h-full w-full object-contain bg-black/40" muted playsInline />
               )}
-              <div className="absolute inset-x-0 bottom-0 bg-black/60 backdrop-blur-sm px-2.5 py-1.5 flex items-center justify-between text-[11px] opacity-0 group-hover:opacity-100 md:opacity-100 transition-opacity">
+              <div className="absolute inset-x-0 bottom-0 bg-black/60 backdrop-blur-sm px-2.5 py-1.5 flex items-center justify-between text-[11px] opacity-100 transition-opacity">
                 <span className="truncate text-foreground/95 max-w-[70%]">{file.name}</span>
                 <span className="font-mono text-muted-foreground">{fileSize}</span>
               </div>

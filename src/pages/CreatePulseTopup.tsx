@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { Wallet, Clock, CheckCircle, XCircle, ExternalLink, Copy } from 'lucide-react'
 import { DANA_NUMBER, DANA_NAME, adminWhatsappLink, formatRp } from '@/lib/payment'
+import { PaymentMethodToggle, QrisPanel } from '@/components/QrisPayment'
 
 const NOMINALS = [10000, 15000, 20000, 25000, 50000, 100000]
 const WHATSAPP_LINK = adminWhatsappLink('Halo saya ingin top up saldo')
@@ -25,6 +26,7 @@ export default function CreatePulseTopupPage() {
   const [selectedAmount, setSelectedAmount] = useState<number>(10000)
   const [customAmount, setCustomAmount] = useState('')
   const [proofNote, setProofNote] = useState('')
+  const [payMethod, setPayMethod] = useState<'dana' | 'qris'>('dana')
   const [loading, setLoading] = useState(false)
   const [topups, setTopups] = useState<Topup[]>([])
   const [step, setStep] = useState<'select' | 'pay' | 'confirm'>('select')
@@ -178,7 +180,17 @@ export default function CreatePulseTopupPage() {
       )}
 
       {step === 'pay' && (
-        <Section title="Pembayaran via DANA" sub="Transfer ke nomor DANA berikut">
+        <Section
+          title={payMethod === 'qris' ? 'Pembayaran via QRIS' : 'Pembayaran via DANA'}
+          sub={payMethod === 'qris' ? 'Scan QRIS di bawah untuk bayar' : 'Transfer ke nomor DANA berikut'}
+        >
+          <PaymentMethodToggle value={payMethod} onChange={setPayMethod} />
+
+          {payMethod === 'qris' && (
+            <QrisPanel amountLabel={formatRp(customAmount ? parseInt(customAmount) || 0 : selectedAmount)} />
+          )}
+
+          {payMethod === 'dana' && (
           <div className="rounded-xl border border-border bg-card/50 p-5 mb-4">
             <div className="text-center mb-4">
               <div className="text-sm text-muted-foreground mb-1">Transfer ke:</div>
@@ -208,6 +220,7 @@ export default function CreatePulseTopupPage() {
               </div>
             </div>
           </div>
+          )}
 
           <div className="mb-4">
             <label className="text-sm font-medium mb-1 block">Catatan (opsional)</label>
@@ -225,7 +238,7 @@ export default function CreatePulseTopupPage() {
               Kembali
             </Button>
             <Button onClick={handleConfirmTransfer} disabled={loading} className="flex-1">
-              {loading ? 'Mengirim...' : 'Sudah Transfer'}
+              {loading ? 'Mengirim...' : payMethod === 'qris' ? 'Sudah Bayar' : 'Sudah Transfer'}
             </Button>
           </div>
 

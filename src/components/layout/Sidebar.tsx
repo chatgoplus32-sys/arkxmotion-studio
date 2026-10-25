@@ -26,15 +26,23 @@ import {
   Bell,
   ImagePlus,
   ExternalLink,
-
+  Globe,
   ShoppingCart,
-  Route,
   Puzzle,
   Mic,
   Eraser,
   ArrowUpFromLine,
   Music,
   Volume2,
+  Shirt,
+  Crown,
+  X,
+  ArrowRight,
+  Disc3,
+  AudioLines,
+  Gem,
+  FileCog,
+  Images,
 } from 'lucide-react'
 
 interface NavItem {
@@ -43,12 +51,13 @@ interface NavItem {
   icon: ReactNode
   badge?: string
   comingSoon?: boolean
+  pro?: boolean
 }
 
 const mainNav: NavItem[] = [
   { label: 'Mulai', href: '/quick-start', icon: <Sparkles className="h-4 w-4" /> },
   { label: 'Dashboard', href: '/dashboard', icon: <LayoutDashboard className="h-4 w-4" /> },
-  { label: 'Command Center', href: '/command', icon: <Sparkles className="h-4 w-4" /> },
+  { label: 'Hasil', href: '/hasil', icon: <Images className="h-4 w-4" /> },
 ]
 
 const generateNav: NavItem[] = [
@@ -56,22 +65,26 @@ const generateNav: NavItem[] = [
   { label: 'Image to Video', href: '/generate/image-to-video', icon: <Image className="h-4 w-4" /> },
   { label: 'Edit Image', href: '/generate/edit-image', icon: <ImagePlus className="h-4 w-4" /> },
 
-  // (disembunyikan) { label: 'Virtual Try-On', href: '/generate/virtual-tryon', icon: <Shirt className="h-4 w-4" /> },
-  // (disembunyikan) { label: 'Travel Photo', href: '/generate/travel-photo', icon: <Globe className="h-4 w-4" /> },
+  { label: 'Virtual Try-On', href: '/generate/virtual-tryon', icon: <Shirt className="h-4 w-4" /> },
+  { label: 'Travel Photo', href: '/generate/travel-photo', icon: <Globe className="h-4 w-4" /> },
   // (disembunyikan) { label: 'Dola Chat', href: '/generate/dola-chat', icon: <MessageSquare className="h-4 w-4" /> },
   { label: 'Talking Photo', href: '/generate/talking-photo', icon: <Mic className="h-4 w-4" /> },
-  { label: 'AI Song Cover', href: '/generate/song-cover', icon: <Music className="h-4 w-4" /> },
+  { label: 'AI Song Cover', href: '/generate/song-cover', icon: <Disc3 className="h-4 w-4" />, pro: true },
+  { label: 'H3 Music Avatar', href: '/generate/h3-music-avatar', icon: <AudioLines className="h-4 w-4" />, pro: true },
   { label: 'Voice Over', href: '/generate/voice-over', icon: <Volume2 className="h-4 w-4" /> },
+  { label: 'Music Generator', href: '/generate/music-generator', icon: <Music className="h-4 w-4" /> },
+
   // (disembunyikan) { label: 'H3 Image→Video', href: '/generate/h3-i2v', icon: <Zap className="h-4 w-4" /> },
   // (disembunyikan) { label: 'UGC Video Storyboard', href: '/generate/ugc-storyboard', icon: <Film className="h-4 w-4" /> },
   { label: 'Watermark Remover', href: '/generate/watermark-remover', icon: <Eraser className="h-4 w-4" /> },
   { label: 'Video Upscaler', href: '/generate/video-upscaler', icon: <ArrowUpFromLine className="h-4 w-4" /> },
   { label: 'AI Upscaler', href: '/generate/upscaler', icon: <Wand2 className="h-4 w-4" /> },
+  { label: 'Gemini Tools', href: '/tools/gemini-tools', icon: <Gem className="h-4 w-4" />, pro: true },
+  { label: 'Metadata Cleaner', href: '/tools/metadata-cleaner', icon: <FileCog className="h-4 w-4" /> },
 ]
 
 const toolsNavBase: NavItem[] = [
   { label: 'Providers', href: '/providers', icon: <Zap className="h-4 w-4" /> },
-  { label: 'Routing Provider', href: '/manage/routing', icon: <Route className="h-4 w-4" /> },
   { label: 'Top Up CreatePulse', href: '/topup/createpulse', icon: <Wallet className="h-4 w-4" /> },
   { label: 'Top Up NexaBot', href: '/topup/nexabot', icon: <Wallet className="h-4 w-4" /> },
   { label: 'Top Up Seavi', href: '/topup/seavi', icon: <Wallet className="h-4 w-4" /> },
@@ -83,9 +96,10 @@ const toolsNavBase: NavItem[] = [
 
 interface SidebarProps {
   collapsed?: boolean
+  onClose?: () => void
 }
 
-export function Sidebar({ collapsed = false }: SidebarProps) {
+export function Sidebar({ collapsed = false, onClose }: SidebarProps) {
   const location = useLocation()
   const navigate = useNavigate()
   const { user, token, logout } = useAuthStore()
@@ -95,9 +109,12 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
   const prevPendingRef = useRef<number | null>(null)
   const lastNotifiedRef = useRef(0)
 
+  const isPro = user?.role === 'admin' || user?.plan === 'pro'
+
   const toolsNav = toolsNavBase
     .filter((item) => {
       if ((item.href === '/topup/createpulse' || item.href === '/topup/nexabot' || item.href === '/topup/seavi' || item.href === '/topup/alriz') && user?.role === 'admin') return false
+      if (item.href === '/upgrade-pro' && isPro) return false
       return true
     })
     .map((item) => {
@@ -170,8 +187,10 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
   const renderNavGroup = (items: NavItem[], label?: string) => (
     <div className="space-y-1">
       {label && !collapsed && (
-        <div className="px-3 py-1.5 text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">
-          {label}
+        <div className="px-3 py-1.5">
+          <span className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">
+            {label}
+          </span>
         </div>
       )}
       {items.map((item) => (
@@ -214,16 +233,22 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
           <Link
             key={item.href}
             to={item.href}
+            onClick={onClose}
             className={cn(
               'flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition-all hover:bg-accent',
               isActive(item.href)
                 ? 'bg-primary/10 text-primary font-medium brand-glow'
                 : 'text-muted-foreground hover:text-foreground'
             )}
-            title={collapsed ? item.label : undefined}
+            title={collapsed ? `${item.label}${item.pro && !isPro ? ' (Pro)' : ''}` : undefined}
           >
             {item.icon}
             {!collapsed && <span>{item.label}</span>}
+            {item.pro && !isPro && (
+              <span className="ml-auto flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
+                <Lock className="h-2.5 w-2.5" /> PRO
+              </span>
+            )}
             {item.badge && !collapsed && (
               <span className="ml-auto text-[12px] bg-yellow-500/20 text-yellow-500 px-1.5 py-0.5 rounded-full font-medium">
                 {item.badge}
@@ -247,7 +272,17 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
         {collapsed ? (
           <img src="/arkx-dashboard-icon.svg" alt="ARKXMotion" className="w-8 h-8" />
         ) : (
-          <img src="/arkx-sidebar-logo.svg" alt="ARKXMotion Studio" className="h-10" />
+          <img src="/arkx-sidebar-logo.svg" alt="ARKXMotion Studio" className="h-10 min-w-0" />
+        )}
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="ml-auto shrink-0 p-1.5 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground transition-colors lg:hidden"
+            title="Tutup menu"
+            aria-label="Tutup menu"
+          >
+            <X className="h-4 w-4" />
+          </button>
         )}
       </div>
 
@@ -258,29 +293,57 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
         {user?.role === 'admin' && renderNavGroup(adminNav, 'Admin')}
       </nav>
 
-      <div className="p-3 border-t border-border">
-        <div className={cn(
-          'flex items-center gap-2 rounded-xl bg-secondary/50 p-2.5',
-          collapsed && 'justify-center'
-        )}>
-          <div className="h-8 w-8 rounded-full bg-gradient-to-br from-gold to-gold-dark flex items-center justify-center text-xs font-bold text-black">
-            {user?.name?.charAt(0).toUpperCase() || 'U'}
-          </div>
-          {!collapsed && (
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium truncate">{user?.name || 'User'}</div>
-              <div className="text-[12px] brand-text">{user?.role === 'admin' ? 'Admin' : 'Free Plan'}</div>
-            </div>
-          )}
-          {!collapsed && (
-            <button
-              onClick={handleLogout}
-              className="p-1.5 rounded-lg hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
-              title="Logout"
+      <div className="border-t border-border">
+        {!isPro && (
+          <div className="p-3 pb-0">
+            <Link
+              to="/upgrade-pro"
+              onClick={onClose}
+              title={collapsed ? 'Upgrade Pro' : undefined}
+              className={cn(
+                'flex items-center gap-2.5 rounded-xl border border-primary/25 bg-gradient-to-r from-primary/15 to-primary/5 px-3 py-2.5 text-primary transition-colors hover:border-primary/40 hover:bg-primary/15',
+                collapsed && 'justify-center px-2'
+              )}
             >
-              <LogOut className="h-4 w-4" />
-            </button>
-          )}
+              <Crown className="h-4 w-4 shrink-0" />
+              {!collapsed && (
+                <>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[13px] font-semibold leading-tight">Upgrade Pro</div>
+                    <div className="text-[11px] text-muted-foreground leading-tight">Buka 3 fitur premium</div>
+                  </div>
+                  <ArrowRight className="h-3.5 w-3.5 shrink-0" />
+                </>
+              )}
+            </Link>
+          </div>
+        )}
+        <div className="p-3">
+          <div className={cn(
+            'flex items-center gap-2 rounded-xl bg-secondary/50 p-2.5',
+            collapsed && 'justify-center'
+          )}>
+            <div className="h-8 w-8 rounded-full bg-gradient-to-br from-gold to-gold-dark flex items-center justify-center text-xs font-bold text-black">
+              {user?.name?.charAt(0).toUpperCase() || 'U'}
+            </div>
+            {!collapsed && (
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium truncate">{user?.name || 'User'}</div>
+                <div className="text-[12px] brand-text flex items-center gap-1">
+                  {user?.role === 'admin' ? 'Admin' : user?.plan === 'pro' ? (<><Crown className="h-3 w-3" /> Pro</>) : 'Free Plan'}
+                </div>
+              </div>
+            )}
+            {!collapsed && (
+              <button
+                onClick={handleLogout}
+                className="p-1.5 rounded-lg hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+                title="Logout"
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </aside>

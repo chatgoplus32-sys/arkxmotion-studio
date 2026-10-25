@@ -51,6 +51,8 @@ import publicWeavyRoutes from './routes/publicWeavy.js'
 import publicWeavyProxyRoutes from './routes/publicWeavyProxy.js'
 import publicWeavyCreditsRoutes from './routes/publicWeavyCredits.js'
 import publicR2UploadRoutes from './routes/publicR2Upload.js'
+import { UPLOAD_DIR, DISK_FILE_BASE } from './routes/publicR2Upload.js'
+import publicAutoClipRoutes from './routes/publicAutoClip.js'
 import publicFireflyRoutes from './routes/publicFirefly.js'
 import publicTiktokRoutes from './routes/publicTiktok.js'
 import { backupOnStartup, noteStartupBackupDisabled } from './backup.js'
@@ -136,6 +138,10 @@ app.use('/api/public/weavy', publicWeavyRoutes)
 app.use('/api/public/weavy-proxy', publicWeavyProxyRoutes)
 app.use('/api/public/weavy-credits', publicWeavyCreditsRoutes)
 app.use('/api/public/r2-upload', publicR2UploadRoutes)
+// Storage fallback disk (dipakai bila kredensial R2 belum di-set di VPS):
+// file hasil generator dilayani dari folder upload di disk via /api path
+// (nginx hanya me-proxy /api/* ke express; path lain menjawab file frontend).
+app.use(DISK_FILE_BASE, express.static(UPLOAD_DIR, { maxAge: '30d', immutable: true }))
 // Dua ini dulu hanya ada di stack Vercel yang kini mati (api/public/*), sehingga
 // di produksi VPS keduanya menjawab 404 walau frontend masih memanggilnya.
 app.use('/api/public/firefly', publicFireflyRoutes)
@@ -145,6 +151,7 @@ app.use('/api/seavi', seaviWalletRoutes)
 app.use('/api/alriz', alrizWalletRoutes)
 app.use('/api/chatgpt', chatgptRoutes)
 app.use('/api/dola', publicDolaRoutes)
+app.use('/api/public/autoclip', publicAutoClipRoutes)
 
 app.get("/api/health", async (_req, res) => {
   try {

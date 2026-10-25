@@ -3,6 +3,7 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
+import { useProviderManager, PROVIDER_CONFIGS } from '@/stores/providerManager'
 import {
   RefreshCw,
   Save,
@@ -10,6 +11,7 @@ import {
   Download,
   Edit3,
   X,
+  Upload,
 } from 'lucide-react'
 
 interface Token {
@@ -48,6 +50,8 @@ export default function AdminCreditManagement() {
   const [editGroup, setEditGroup] = useState('')
   const token = useAuthStore((state) => state.token)
   const addToast = useToastStore((state) => state.addToast)
+  const localKeys = useProviderManager((state) => state.keys)
+  const [importingProvider, setImportingProvider] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
     if (!token) return
@@ -180,6 +184,57 @@ export default function AdminCreditManagement() {
   const totalCreditsAll = tokens.reduce((sum, t) => sum + (t.credits || 0), 0)
   const availableTokens = tokens.filter(t => t.status === 'available').length
 
+  const handleImportProvider = async (provider: string) => {
+    const keysList = localKeys[provider as keyof typeof localKeys] || []
+    if (!token || keysList.length === 0) return
+    setImportingProvider(provider)
+    try {
+      const res = await fetch('/api/admin/credits/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          provider,
+          tokens: keysList.map(k => ({ name: k.name, value: k.key })),
+        }),
+      })
+      const data = await res.json()
+      if (res.ok && data.ok) addToast(data.message, 'success')
+      else addToast(data.error || 'Import gagal', 'error')
+      fetchData()
+    } catch {
+      addToast('Import gagal', 'error')
+    } finally {
+      setImportingProvider(null)
+    }
+  }
+
+  const handleImportAll = async () => {
+    const withKeys = (Object.entries(localKeys) as [string, typeof localKeys[keyof typeof localKeys]][])
+      .filter(([, list]) => list.length > 0)
+    for (const [provider] of withKeys) {
+      await handleImportProvider(provider)
+    }
+  }
+
+  const handleExportCsv = async () => {
+    if (!token) return
+    try {
+      const res = await fetch('/api/admin/credits/export', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `credits-${new Date().toISOString().slice(0, 10)}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      addToast('Export gagal', 'error')
+    }
+  }
+
   return (
     <div>
       <PageHeader
@@ -218,6 +273,37 @@ export default function AdminCreditManagement() {
           </div>
         )}
 
+        {/* Import dari Browser */}
+        <Section
+          title="Import Key dari Browser"
+          sub="Salin API key yang tersimpan di browser ini ke database server agar kredit bisa dilacak di sini."
+        >
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <Button variant="outline" size="sm" onClick={handleImportAll}>
+              <Upload className="h-3.5 w-3.5 mr-1" /> Import Semua Provider
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              {Object.entries(localKeys).filter(([, list]) => list.length > 0).length} provider punya key di browser ini
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {(Object.entries(localKeys) as [string, typeof localKeys[keyof typeof localKeys]][])
+              .filter(([, list]) => list.length > 0)
+              .map(([provider, list]) => (
+                <button
+                  key={provider}
+                  onClick={() => handleImportProvider(provider)}
+                  disabled={importingProvider === provider}
+                  className="px-2.5 py-1.5 rounded-lg border border-border bg-card/40 hover:border-primary/40 text-xs flex items-center gap-1.5 transition disabled:opacity-50"
+                >
+                  <span>{PROVIDER_CONFIGS[provider as keyof typeof PROVIDER_CONFIGS]?.icon || '🔑'}</span>
+                  <span className="font-medium">{provider}</span>
+                  <span className="text-muted-foreground">{list.length} key</span>
+                </button>
+              ))}
+          </div>
+        </Section>
+
         <Section title="Tokens" sub="View and manage credits for each API token">
           {/* Bulk Actions */}
           {selectedIds.size > 0 && (
@@ -250,7 +336,7 @@ export default function AdminCreditManagement() {
               <option value="">Semua Provider</option>
               {providers.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
-            <Button variant="outline" size="sm" onClick={() => window.open('/api/admin/credits/export', '_blank')}>
+            <Button variant="outline" size="sm" onClick={handleExportCsv}>
               <Download className="h-4 w-4 mr-1" /> Export CSV
             </Button>
             <Button variant="outline" size="sm" onClick={handleResetAll} className="text-destructive hover:bg-destructive/10 ml-auto">

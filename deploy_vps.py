@@ -10,6 +10,7 @@ Jalankan:
     python deploy_vps.py --check   # hanya uji kredensial & koneksi, tanpa mengubah apa pun
 """
 import os
+import stat
 import sys
 
 import paramiko
@@ -60,6 +61,61 @@ for root, dirs, files in os.walk(local_dist):
         remote_file = remote_path + '/' + f
         sftp.put(local_file, remote_file)
         print(f'  ✓ {rel}/{f}')
+
+# ── Bersihkan artefak build lama ──────────────────────────────────────
+# Deploy hanya MENGUNGGAH, jadi setiap deploy menumpukkan berkas hash lama
+# di dist/ (18 Okt 2026: menumpuk puluhan chunk ImageToVideo-* basi bekas
+# build sebelumnya). Pembersihan dijalankan SETELAH unggahan selesai — indeks
+# aktif dan seluruh chunk-nya sudah ada lebih dulu, jadi tidak ada jendela
+# waktu di mana index.html atau chunk-nya hilang dari server. Gagal bersih
+# tidak membatalkan deploy (hanya peringatan) — unggahan sudah sukses.
+print('\n🧹 Membersihkan artefak build lama di dist/...')
+
+local_rel = set()
+for root, _dirs, files in os.walk(local_dist):
+    rel = os.path.relpath(root, local_dist).replace('\\', '/')
+    for f_name in files:
+        local_rel.add(f_name if rel == '.' else rel + '/' + f_name)
+
+
+def _remote_tree(base, rel=''):
+    "Daftar (file, direktori) relatif di bawah base via SFTP, rekursif."
+    files, dirs = [], []
+    path = base + ('/' + rel if rel else '')
+    for entry in sftp.listdir_attr(path):
+        child = entry.filename if not rel else rel + '/' + entry.filename
+        if stat.S_ISDIR(entry.st_mode):
+            dirs.append(child)
+            sub_files, sub_dirs = _remote_tree(base, child)
+            files += sub_files
+            dirs += sub_dirs
+        else:
+            files.append(child)
+    return files, dirs
+
+
+try:
+    remote_files, remote_dirs = _remote_tree(remote_dist)
+    stale = sorted(name for name in remote_files if name not in local_rel)
+    for rel_path in stale:
+        sftp.remove(remote_dist + '/' + rel_path)
+    # Rapikan direktori yang kini kosong: terdalam lebih dulu.
+    removed_dirs = 0
+    for d_name in sorted(remote_dirs, key=lambda s: s.count('/'), reverse=True):
+        try:
+            if not sftp.listdir(remote_dist + '/' + d_name):
+                sftp.rmdir(remote_dist + '/' + d_name)
+                removed_dirs += 1
+        except OSError:
+            pass
+    if stale:
+        shown = ', '.join(stale[:5]) + (' ...' if len(stale) > 5 else '')
+        print('  ✓ %d berkas basi dihapus: %s' % (len(stale), shown))
+        print('  ✓ %d direktori kosong dihapus' % removed_dirs)
+    else:
+        print('  ✓ tidak ada berkas basi')
+except Exception as exc:  # pembersihan kosmetik, jangan membatalkan deploy
+    print('  ⚠ Pembersihan dilewati: %s' % exc)
 
 # Upload source files needed for server
 server_files = [

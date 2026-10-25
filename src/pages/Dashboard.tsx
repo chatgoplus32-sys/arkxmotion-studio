@@ -363,7 +363,13 @@ export default function DashboardPage() {
             <CardTitle className="flex items-center gap-2.5">
               <span className="h-8 w-8 rounded-xl bg-gradient-to-br from-violet-500 to-purple-400 grid place-items-center"><Clock className="h-4 w-4 text-white" /></span>
               <span className="font-bold">Recent Activity</span>
-              <span className="ml-auto text-[11px] font-mono text-white/30">{activity.length} items</span>
+              <span className="text-[11px] font-mono text-white/30">{activity.length} items</span>
+              <button
+                onClick={() => navigate('/hasil')}
+                className="ml-auto flex items-center gap-1 text-[11px] font-mono text-white/40 transition hover:text-white"
+              >
+                Semua hasil <ChevronRight className="h-3 w-3" />
+              </button>
             </CardTitle>
           </CardHeader>
           <CardContent>

@@ -5,7 +5,7 @@ import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
 import { Image, Upload, Rocket, Loader2, Trash2, Key, ExternalLink, Download, X, Copy, Plus } from 'lucide-react'
 import { Swipeable } from '@/components/Swipeable'
 import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
-import { getSeaviSpec, generateWithSeavi, fetchSeaviBalance } from '@/lib/seavi'
+import { getSeaviSpec, generateWithSeavi, fetchSeaviBalance, buildSeaviPayload } from '@/lib/seavi'
 import { generateWithAlriz, getAlrizModel } from '@/lib/alriz'
 import { chargeAlrizWallet, refundAlrizWallet } from '@/lib/alrizWallet'
 import { useToastStore } from '@/stores/toastStore'
@@ -457,6 +457,8 @@ export default function ImageToVideoPage() {
   const nbApiModel = isNb ? (currentModel?.apiModel || 't2v') : ''
   // Seedance 2.0 Replica (RunningHub): gambar + prompt storyboard → video.
   const isRhSeedance = provider === 'runninghub' && currentModel?.apiModel === 'seedance2'
+  // MiniMax H3 Realistic VLOG (RunningHub): gambar + prompt VLOG → video 15 detik.
+  const isRhH3Vlog = provider === 'runninghub' && currentModel?.apiModel === 'h3vlog'
   // Seedance 2.6 Replica (RunningHub): 1-5 gambar referensi karakter + storyboard → video.
   const isRhSeedance26 = provider === 'runninghub' && currentModel?.apiModel === 'seedance26'
   const SD26_MAX_IMAGES = 5
@@ -529,6 +531,30 @@ export default function ImageToVideoPage() {
       setRatio(modelRestrictions[0])
     }
   }, [modelRestrictions, ratio])
+
+  // Seavi: buang media referensi yang tidak didukung model aktif supaya state
+  // lama (dari model lain) tidak memicu error lokal saat submit.
+  // Invariant urutan refFiles tetap [gambar..., video?, audio?].
+  useEffect(() => {
+    if (provider !== 'seavi' || !seaviSpec) return
+    const videoOk = seaviSpec.videoMode !== 'none'
+    const audioOk = !!seaviSpec.audio
+    const hasVideo = refFiles.some((f) => f.type.startsWith('video/'))
+    const hasAudio = refFiles.some((f) => f.type.startsWith('audio/'))
+    if ((hasVideo && !videoOk) || (hasAudio && !audioOk)) {
+      setRefFiles((prev) => prev.filter((f) =>
+        f.type.startsWith('image/') ||
+        (videoOk && f.type.startsWith('video/')) ||
+        (audioOk && f.type.startsWith('audio/'))))
+      setRefUrls((prev) => prev.filter((_, i) => {
+        const t = refFiles[i]?.type || ''
+        return t.startsWith('image/') ||
+          (videoOk && t.startsWith('video/')) ||
+          (audioOk && t.startsWith('audio/'))
+      }))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provider, seaviSpec])
 
   useEffect(() => {
     if (qualityOptions.length > 0 && !qualityOptions.find((q) => q.value === quality)) {
@@ -1248,7 +1274,7 @@ export default function ImageToVideoPage() {
             seaviImageUrls.push(u)
             addLog(`[1/3] ✅ Gambar terunggah ✓ ${u.slice(0, 60)}...`, 'success', 'seavi')
           }
-          const videoFile = refFiles.find((f) => f.type.startsWith('video/'))
+          const videoFile = seaviSpec.videoMode !== 'none' ? refFiles.find((f) => f.type.startsWith('video/')) : undefined
           if (videoFile) {
             const vu = await uploadToCatbox(videoFile)
             seaviVideoUrls = [vu]
@@ -1259,6 +1285,21 @@ export default function ImageToVideoPage() {
             seaviAudioUrl = await uploadToCatbox(audioFile)
             addLog(`[1/3] ✅ Audio terunggah ✓`, 'success', 'seavi')
           }
+        }
+
+        // Validasi payload SEBELUM potong token — media yang tidak sesuai
+        // (mis. video untuk model tanpa video_url) gagal cepat tanpa refund.
+        try {
+          buildSeaviPayload(seaviSpec, {
+            imageUrls: seaviImageUrls,
+            videoUrls: seaviVideoUrls,
+            audioUrl: seaviAudioUrl,
+            prompt: prompt.trim(),
+            aspectRatio: ratio,
+            duration: currentQuality?.duration,
+          })
+        } catch (e: any) {
+          throw new Error(e?.message || 'Media input tidak sesuai model Seavi')
         }
 
         // Wallet token internal: potong di depan per jumlah generate
@@ -2915,7 +2956,7 @@ export default function ImageToVideoPage() {
             const videoUrl = await pollRunningHubTask(taskId, (status, pct) => {
               addLog(`⏳ RH ${status} (${pct}%)`, 'debug', 'runninghub')
               setStatus((s) => ({ ...s, pct: Math.min(pct || 0, 95), text: `RH ${status}` }))
-            }, 3600000, token)
+            }, 3600000, token, currentModel?.value || 'RunningHub I2V')
 
             setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
             addLog(`✅ Video selesai ✓`, 'success', 'runninghub')
@@ -3002,7 +3043,89 @@ export default function ImageToVideoPage() {
             const videoUrl = await pollRunningHubTask(taskId, (status, pct) => {
               addLog(`⏳ RH ${status} (${pct}%)`, 'debug', 'runninghub')
               setStatus((s) => ({ ...s, pct: Math.min(pct || 0, 95), text: `RH ${status}` }))
-            }, 3600000, token)
+            }, 3600000, token, currentModel?.value || 'RunningHub I2V')
+
+            setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+            addLog(`✅ Video selesai ✓`, 'success', 'runninghub')
+
+            removeActiveTask(taskId)
+            activeTaskId = null
+            return videoUrl
+          },
+          {
+            onKeySwitch: (from, to, attempt) => {
+              addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn', 'runninghub')
+              if (activeTaskId) removeActiveTask(activeTaskId)
+              activeTaskId = null
+            },
+            onError: (err, _key) => {
+              if (detectTokenError('runninghub', err)) {
+                addLog(`⚠️ Key is invalid: ${err.message}`, 'warn', 'runninghub')
+              }
+            },
+          }
+        )
+        if (rotation.ok && rotation.result) {
+          setResults((prev) => [rotation.result!, ...prev])
+          saveGalleryItem(rotation.result!)
+          successRef.current = true
+          setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+          notifyGenerationComplete(currentModel?.label || model, PROVIDER_CONFIGS[provider].name)
+          if (rotation.triedKeys > 1) {
+            addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success', 'runninghub')
+          }
+        } else {
+          throw new Error(rotation.error || 'Generation failed')
+        }
+      } else if (provider === 'runninghub' && isRhH3Vlog) {
+        // ─── RunningHub: MiniMax H3 Realistic VLOG (gambar + prompt → 15s) ───
+        if (!imgFile) throw new Error('MiniMax H3 Realistic VLOG membutuhkan gambar input')
+        addLog(`[1/3] 🖼️ Normalisasi gambar...`, 'info', 'runninghub')
+        let upFile = imgFile
+        try {
+          upFile = await normalizeImage(imgFile, (msg) => addLog(`   ${msg}`, 'debug', 'runninghub'))
+          addLog(`   ✓ Siap: ${(upFile.size / 1024).toFixed(0)}KB`, 'debug', 'runninghub')
+        } catch (e: any) {
+          addLog(`   ⚠️ Normalisasi gagal, pakai file asli: ${e.message}`, 'warn', 'runninghub')
+        }
+
+        const { submitRunningHubH3Vlog, pollRunningHubTask } = await import('@/lib/runninghub')
+
+        const rotation = await withTokenRotation<string>(
+          'runninghub',
+          async (token, keyInfo) => {
+            addLog(`🔑 Trying key: ${keyInfo.name || keyInfo.id}`, 'info', 'runninghub')
+            setStatus((s) => ({ ...s, text: 'Submit H3 VLOG...', pct: 15 }))
+
+            const submit = await submitRunningHubH3Vlog({
+              imageFile: upFile,
+              prompt: prompt.trim(),
+              apiKey: token,
+            })
+            const taskId = submit.taskId
+            addLog(`[2/3] ✅ Task created ✓ task=${taskId.slice(0, 20)}...`, 'success', 'runninghub')
+
+            addActiveTask({
+              id: taskId,
+              taskId,
+              roomId: '',
+              nodeId: '',
+              token,
+              model: currentModel?.label || model,
+              prompt: prompt.trim() || '(no prompt)',
+              startedAt: Date.now(),
+              page: 'image-to-video',
+              provider: 'runninghub',
+            })
+            activeTaskId = taskId
+
+            addLog(`[3/3] ⏳ Polling for result...`, 'info', 'runninghub')
+            setStatus((s) => ({ ...s, text: 'Processing...', pct: 25 }))
+
+            const videoUrl = await pollRunningHubTask(taskId, (status, pct) => {
+              addLog(`⏳ RH ${status} (${pct}%)`, 'debug', 'runninghub')
+              setStatus((s) => ({ ...s, pct: Math.min(pct || 0, 95), text: `RH ${status}` }))
+            }, 3600000, token, currentModel?.value || 'RunningHub H3 VLOG')
 
             setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
             addLog(`✅ Video selesai ✓`, 'success', 'runninghub')
@@ -3088,7 +3211,7 @@ export default function ImageToVideoPage() {
             const videoUrl = await pollRunningHubTask(taskId, (status, pct) => {
               addLog(`⏳ RH ${status} (${pct}%)`, 'debug', 'runninghub')
               setStatus((s) => ({ ...s, pct: Math.min(pct || 0, 95), text: `RH ${status}` }))
-            }, 3600000, token)
+            }, 3600000, token, currentModel?.value || 'RunningHub I2V')
 
             setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
             addLog(`✅ Video selesai ✓`, 'success', 'runninghub')
@@ -3460,7 +3583,7 @@ export default function ImageToVideoPage() {
               )}
             </div>
             <div className="grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
-              <div>Model 1 token: <b className="text-foreground">Veo 3.1, Kling, Grok, Seedance, MC</b></div>
+              <div>Model 1 token: <b className="text-foreground">Kling 3, Kling 2.1 Pro, Grok, Seedance, MC</b></div>
               <div>Model 2 token: <b className="text-foreground">Wan 3.0, Gemini Omni</b></div>
               {user?.role !== 'admin' && <div>Failed generations: <b className="text-emerald-500">auto-refunded</b></div>}
             </div>

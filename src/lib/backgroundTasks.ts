@@ -60,10 +60,12 @@ function saveActiveTasks(t: ActiveTask[]) { writeJson(ACTIVE_KEY, t) }
 
 export function addActiveTask(task: ActiveTask) {
   const t = getActiveTasks(); t.push(task); saveActiveTasks(t)
+  window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
 }
 
 export function removeActiveTask(taskId: string) {
   saveActiveTasks(getActiveTasks().filter((t) => t.taskId !== taskId))
+  window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
 }
 
 function isBlobUrl(url?: string | null): boolean {
@@ -305,7 +307,7 @@ function pollWithRetry(task: ActiveTask, ctrl: AbortController, attempt: number)
         if (!ctrl.signal.aborted) {
           addBgLog(`⏳ ${task.model}: ${status} — ${pct}%`)
         }
-      }, TASK_TIMEOUT_MS - (Date.now() - task.startedAt), task.token || undefined)
+      }, TASK_TIMEOUT_MS - (Date.now() - task.startedAt), task.token || undefined, task.model || undefined)
     : () => pollRoboneoI2V(task.token, task.taskId, task.roomId,
         (status, pct) => {
           if (!ctrl.signal.aborted) {

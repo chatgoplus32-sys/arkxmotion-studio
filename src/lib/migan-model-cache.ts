@@ -1,17 +1,19 @@
 /**
- * IndexedDB-backed MI-GAN model cache.
- * Model ONNX ~29 MB downloaded once, stored in IndexedDB, reused forever.
+ * IndexedDB-backed inpainting model cache.
+ * Model ONNX (~88 MiB) downloaded once, stored in IndexedDB, reused forever.
  *
- * Model: MI-GAN (Picsart Research, ICCV 2023)
- * Source: https://huggingface.co/lxfater/inpaint-web/resolve/main/migan.onnx
+ * Model: LaMa / Big-LAMA (WACV 2022) — port resmi ONNX dari OpenCV Zoo
+ * Sumber: https://huggingface.co/opencv/inpainting_lama/resolve/main/inpainting_lama_2025jan.onnx
+ * SHA-256 diverifikasi lokal via onnxruntime + probe identitas (RGB, 0..1,
+ * mask 1 = lubang, output 0..255) — 17 Okt 2026.
  */
 
 const DB_NAME = 'arkxmotion-watermark'
 const DB_VERSION = 1
 const STORE = 'models'
-const MODEL_KEY = 'migan_v1'
-const MODEL_URL = 'https://huggingface.co/lxfater/inpaint-web/resolve/main/migan.onnx'
-const MODEL_SHA256 = 'bb7189b2523b8485d9dd6baa2e7e8bccce4493760daa33ffcd432f667945bf62'
+const MODEL_KEY = 'lama_big_v1'
+const MODEL_URL = 'https://huggingface.co/opencv/inpainting_lama/resolve/main/inpainting_lama_2025jan.onnx'
+const MODEL_SHA256 = '7df918ac3921d3daf0aae1d219776cf0dc4e4935f035af81841b40adcf74fdf2'
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -126,7 +128,7 @@ export async function loadModel(onProgress?: (p: ProgressInfo) => void): Promise
     if (finished) break
     chunks.push(value)
     done += value.byteLength
-    onProgress?.({ done, total, stage: 'Downloading model (~29 MB)' })
+    onProgress?.({ done, total, stage: 'Downloading model (~93 MB)' })
   }
 
   const out = new Uint8Array(done)

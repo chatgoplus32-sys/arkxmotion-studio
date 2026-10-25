@@ -1,7 +1,13 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { Search, Mail, Loader2, CheckCircle, Clock, XCircle, AlertCircle, MessageCircle } from 'lucide-react'
-import { DEFAULT_MEMBERSHIP_FEE, QRIS_IMG, formatRp, buildWaPaymentUrl, getMembershipFee } from '@/lib/membership'
+import {
+  DEFAULT_MEMBERSHIP_FEE,
+  QRIS_IMG,
+  formatRp,
+  buildWaPaymentUrl,
+  getMembershipPricing,
+} from '@/lib/membership'
 
 interface PaymentInfo {
   amount: number
@@ -13,7 +19,7 @@ interface PaymentInfo {
 
 type StatusResult =
   | { found: false }
-  | { found: true; approved: boolean; isAdmin: boolean; payment: PaymentInfo | null }
+  | { found: true; approved: boolean; isAdmin: boolean; plan: 'free' | 'pro'; payment: PaymentInfo | null }
 
 export default function RegisterStatusPage() {
   const [email, setEmail] = useState('')
@@ -24,7 +30,9 @@ export default function RegisterStatusPage() {
   const [fee, setFee] = useState(DEFAULT_MEMBERSHIP_FEE)
 
   useEffect(() => {
-    getMembershipFee().then(setFee).catch(() => {})
+    getMembershipPricing()
+      .then((pricing) => setFee(pricing.fee))
+      .catch(() => {})
   }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -146,12 +154,18 @@ export default function RegisterStatusPage() {
                     )}
                     <div>
                       <div className={`text-sm font-medium ${result.approved ? 'text-emerald-400' : 'text-yellow-400'}`}>
-                        {result.approved ? 'Akun disetujui — silakan login' : 'Menunggu persetujuan admin'}
+                        {result.approved
+                          ? result.plan === 'pro'
+                            ? 'Akun disetujui & Pro aktif — silakan login'
+                            : 'Akun disetujui — silakan login'
+                          : 'Menunggu persetujuan admin'}
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">
                         {result.approved
-                          ? 'Akun kamu sudah aktif. Silakan login untuk mulai menggunakan ARKXMotion Studio.'
-                          : 'Admin akan menyetujui akun kamu. Cek kembali halaman ini nanti.'}
+                          ? result.plan === 'pro'
+                            ? 'Akun kamu sudah aktif sebagai Pro. Semua fitur AI terbuka — silakan login.'
+                            : 'Akun kamu sudah aktif. Fitur AI bisa dibuka dengan upgrade Pro dari dalam aplikasi.'
+                          : 'Setelah pembayaran disetujui admin, akun otomatis jadi Pro. Cek kembali halaman ini nanti.'}
                       </p>
                     </div>
                   </div>
@@ -205,11 +219,11 @@ export default function RegisterStatusPage() {
                     Belum bayar? Scan QRIS di bawah, lalu konfirmasi pembayaran via WhatsApp ke admin.
                   </p>
                   <div className="mb-3 rounded-lg overflow-hidden border border-border bg-white p-2">
-                    <img src={QRIS_IMG} alt="QRIS Faezya cell" className="w-full max-w-[200px] mx-auto rounded" />
+                    <img src={QRIS_IMG} alt="QRIS ARKXMotion Studio" className="w-full max-w-[200px] mx-auto rounded" />
                     <p className="text-center text-[12px] text-muted-foreground mt-1">Bayar {formatRp(fee)}</p>
                   </div>
                   <div className="mb-3 flex items-center justify-between rounded-lg bg-secondary border border-border px-3 py-2">
-                    <span className="text-xs text-muted-foreground">Biaya pendaftaran</span>
+                    <span className="text-xs text-muted-foreground">Biaya join Pro</span>
                     <span className="text-sm font-bold text-primary">{formatRp(fee)}</span>
                   </div>
                   <div className="mb-3">

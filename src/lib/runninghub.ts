@@ -11,10 +11,19 @@ export const RUNNINGHUB_TRYON_WORKFLOW_ID = '2099800742046818306'
 export const RUNNINGHUB_TRYON_PERSON_NODE = '13'
 export const RUNNINGHUB_TRYON_GARMENT_NODE = '53'
 
+// Virtual Try-On FLUX2-Klein (app RunningHub): transfer pakaian tubuh atas
+// dengan wajah/pose/latar tetap. Urutan input sesuai contoh resmi:
+// node 23 = image (Gambar Orang), node "LoadImage.0" = image (Gambar Pakaian).
+// https://www.runninghub.ai/id/ai-detail/2102388260877221889
+export const RUNNINGHUB_TRYON_FLUX2_APP_ID = '2102388260877221889'
+
 // H3 Studio Markas HD 1080p Audio Sync (MiniMax H3 digital human):
 // 1 foto + audio → video bicara/bernyanyi.
 // node 209 = image (foto), node 215 = audio
 export const RUNNINGHUB_AUDIO_AVATAR_WORKFLOW_ID = '2099332942179229697'
+// MiniMax H3 Music Avatar (app RunningHub): 1 foto + audio lagu → video
+// avatar menyanyi, segmen tanpa batas + video panjang.
+const RUNNINGHUB_H3_MUSIC_AVATAR_APP_ID = '2111522730906955778'
 export const RUNNINGHUB_AUDIO_AVATAR_IMAGE_NODE = '209'
 export const RUNNINGHUB_AUDIO_AVATAR_AUDIO_NODE = '215'
 
@@ -32,6 +41,11 @@ export const RUNNINGHUB_IMAGE_EDIT_WORKFLOW_ID = '1928844216607129602'
 // node 181 = text (prompt), node 143 = image,
 // node 126 = steps, node 146 = aspect_ratio
 export const RUNNINGHUB_H3_I2V_WORKFLOW_ID = '2099854999999340546'
+// MiniMax H3 Realistic VLOG (app RunningHub): 1 gambar + prompt VLOG
+// terstruktur → video VLOG realistis 15 detik.
+// node 137 = image, node 138 = text (prompt).
+// https://www.runninghub.ai/id/ai-detail/2112457853784121345
+export const RUNNINGHUB_H3_VLOG_APP_ID = '2112457853784121345'
 // UGC Storyboard (MiniMax H3 I2V — gambar ke video multi-scene + audio)
 export const RUNNINGHUB_UGC_WORKFLOW_ID = '2096092981395841025'
 
@@ -48,7 +62,25 @@ export const UGC_STORYBOARD_ASPECTS = [
 // node 168/169/170/171/173 = image (referensi karakter), node 136 = text (storyboard),
 // node 115 = aspect_ratio. https://www.runninghub.ai/id/ai-detail/2105907802166689794
 export const RUNNINGHUB_SEEDANCE26_APP_ID = '2105907802166689794'
+
 export const SEEDANCE26_MAX_IMAGES = 5
+
+// Motion Control Pro — Motion Transfer V3 (motion transfer 15 detik):
+// node 30 = image (foto karakter), node 33 = video (video referensi gerakan).
+// https://www.runninghub.ai/id/ai-detail/2103523610144309249
+export const RUNNINGHUB_MC_PRO_APP_ID = '2103523610144309249'
+
+// Eposcents MC (eposcents studio by Vanixen) — motion control 512HD 32FPS,
+// output maks 50 detik, flag/nama input beda: node 68 = image, node 2 = video.
+// Referensi >30s otomatis pakai instance 'plus' (dikirim server dari durationHint).
+// https://www.runninghub.ai/id/ai-detail/2107144516724932610
+export const RUNNINGHUB_EPOSCENTS_MC_APP_ID = '2107144516724932610'
+
+// KONTROL GERAK 50 FPS — transfer gerakan video referensi ke gambar karakter,
+// output 50 FPS. Benchmark app: video 24s selesai ~17 menit.
+// node 30 = image, node 33 = video. Tanpa input prompt/resolusi/fps manual.
+// https://www.runninghub.ai/id/ai-detail/2112893346377531393
+export const RUNNINGHUB_KONTROL_GERAKAN_APP_ID = '2112893346377531393'
 
 // AI Song Cover Studio (app RunningHub 2104229552179425282):
 // node 1 = audio (lagu asli), node 4 = prompt (gaya/arrangement cover),
@@ -282,6 +314,11 @@ export interface MotionAppParams {
   negativePrompt?: string
   apiKey?: string
   workflowId?: string
+  // Durasi video referensi dalam detik — server pakai untuk memilih
+  // instanceType 'plus' bila melewati ambang app (mis. Eposcents MC >30s).
+  durationHint?: number
+  // Paksa kelas GPU RunningHub: default 24GB, plus 48GB, ultra 84GB.
+  instanceType?: 'default' | 'plus' | 'ultra'
 }
 
 // App motion control berbasis workflow RunningHub (gambar + video referensi).
@@ -302,6 +339,8 @@ export async function submitRunningHubMotionApp(params: MotionAppParams): Promis
     videoMimeType: params.videoFile.type || 'video/mp4',
     prompt: params.prompt || '',
     negative_prompt: params.negativePrompt || '',
+    durationHint: params.durationHint ?? 0,
+    instanceType: params.instanceType || '',
   }, params.apiKey)
 
   return {
@@ -389,14 +428,43 @@ export async function submitRunningHubTryOn(params: TryOnParams): Promise<Motion
   }
 }
 
+export async function submitRunningHubTryOnFlux2(params: TryOnParams): Promise<MotionControlResult> {
+  const workflowId = params.workflowId || RUNNINGHUB_TRYON_FLUX2_APP_ID
+
+  const [personBase64, garmentBase64] = await Promise.all([
+    fileToBase64(params.personFile),
+    params.garmentFile ? fileToBase64(params.garmentFile) : Promise.resolve(undefined),
+  ])
+
+  const result = await runninghubProxy('submit-tryon-flux2', {
+    workflow_id: workflowId,
+    personBase64,
+    personFileName: params.personFile.name,
+    personMimeType: params.personFile.type || 'image/jpeg',
+    ...(garmentBase64 && params.garmentFile ? {
+      garmentBase64,
+      garmentFileName: params.garmentFile.name,
+      garmentMimeType: params.garmentFile.type || 'image/jpeg',
+    } : {}),
+    prompt: params.prompt || '',
+  }, params.apiKey)
+
+  return {
+    id: result.id || result.taskId,
+    taskId: result.taskId || result.id,
+    status: result.status || 'QUEUED',
+    provider: result.provider || 'runninghub',
+    workflowId: result.workflowId || workflowId,
+  }
+}
+
 export interface AudioAvatarParams {
   imageFile: File
   audioFile: File
   prompt?: string
   apiKey?: string
   workflowId?: string
-}
-export async function submitRunningHubAudioAvatar(params: AudioAvatarParams): Promise<MotionControlResult> {
+}export async function submitRunningHubAudioAvatar(params: AudioAvatarParams): Promise<MotionControlResult> {
   const workflowId = params.workflowId || RUNNINGHUB_AUDIO_AVATAR_WORKFLOW_ID
 
   const [imageBase64, audioBase64] = await Promise.all([
@@ -421,6 +489,42 @@ export async function submitRunningHubAudioAvatar(params: AudioAvatarParams): Pr
     status: result.status || 'QUEUED',
     provider: result.provider || 'runninghub',
     workflowId: result.workflowId || workflowId,
+  }
+}
+
+export interface H3MusicAvatarParams {
+  imageFile: File
+  audioFile: File
+  prompt?: string
+  apiKey?: string
+  appId?: string
+}
+
+export async function submitRunningHubH3MusicAvatar(params: H3MusicAvatarParams): Promise<MotionControlResult> {
+  const appId = params.appId || RUNNINGHUB_H3_MUSIC_AVATAR_APP_ID
+
+  const [imageBase64, audioBase64] = await Promise.all([
+    fileToBase64(params.imageFile),
+    fileToBase64(params.audioFile),
+  ])
+
+  const result = await runninghubProxy('submit-h3-music-avatar', {
+    app_id: appId,
+    imageBase64,
+    imageFileName: params.imageFile.name,
+    imageMimeType: params.imageFile.type || 'image/jpeg',
+    audioBase64,
+    audioFileName: params.audioFile.name,
+    audioMimeType: params.audioFile.type || 'audio/mpeg',
+    prompt: params.prompt || '',
+  }, params.apiKey)
+
+  return {
+    id: result.id || result.taskId,
+    taskId: result.taskId || result.id,
+    status: result.status || 'QUEUED',
+    provider: result.provider || 'runninghub',
+    workflowId: result.workflowId || appId,
   }
 }
 
@@ -634,6 +738,35 @@ export async function submitRunningHubH3I2V(params: H3I2VParams): Promise<Motion
   }
 }
 
+export interface H3VlogParams {
+  imageFile: File
+  prompt: string
+  apiKey?: string
+  appId?: string
+}
+
+export async function submitRunningHubH3Vlog(params: H3VlogParams): Promise<MotionControlResult> {
+  const appId = params.appId || RUNNINGHUB_H3_VLOG_APP_ID
+
+  const imageBase64 = await fileToBase64(params.imageFile)
+
+  const result = await runninghubProxy('submit-h3-vlog', {
+    app_id: appId,
+    imageBase64,
+    imageFileName: params.imageFile.name,
+    imageMimeType: params.imageFile.type || 'image/jpeg',
+    prompt: params.prompt,
+  }, params.apiKey)
+
+  return {
+    id: result.id || result.taskId,
+    taskId: result.taskId || result.id,
+    status: result.status || 'QUEUED',
+    provider: result.provider || 'runninghub',
+    workflowId: result.workflowId || appId,
+  }
+}
+
 export interface UGCStoryboardSceneImage {
   base64: string
   fileName: string
@@ -785,11 +918,51 @@ export async function submitRunningHubSongCover(params: SongCoverParams): Promis
   }
 }
 
+// ══════════════════════════════════════════════════════════════
+// Pencatatan penggunaan koin RH per model (aktual dari RunningHub)
+// ══════════════════════════════════════════════════════════════
+export interface RhModelUsage {
+  runs: number
+  coins: number
+  taskSec: number
+  lastAt: number
+}
+
+const RH_USAGE_KEY = 'arkxmotion.rh_usage'
+
+export function getRhUsage(): Record<string, RhModelUsage> {
+  if (typeof window === 'undefined') return {}
+  try {
+    return JSON.parse(localStorage.getItem(RH_USAGE_KEY) || '{}')
+  } catch { return {} }
+}
+
+export function recordRhUsage(modelLabel: string, coins = 0, taskSec = 0) {
+  if (!modelLabel || typeof window === 'undefined') return
+  try {
+    const usage = getRhUsage()
+    const cur = usage[modelLabel] || { runs: 0, coins: 0, taskSec: 0, lastAt: 0 }
+    usage[modelLabel] = {
+      runs: cur.runs + 1,
+      coins: cur.coins + coins,
+      taskSec: cur.taskSec + taskSec,
+      lastAt: Date.now(),
+    }
+    localStorage.setItem(RH_USAGE_KEY, JSON.stringify(usage))
+  } catch { /* localStorage penuh — abaikan */ }
+}
+
+export function clearRhUsage() {
+  if (typeof window === 'undefined') return
+  try { localStorage.removeItem(RH_USAGE_KEY) } catch { /* ignore */ }
+}
+
 export async function pollRunningHubTask(
   taskId: string,
   onProgress?: (status: string, progress: number) => void,
   timeoutMs = 3600000,
   apiKey?: string,
+  modelLabel?: string,
 ): Promise<string> {
   const startTime = Date.now()
   const POLL_INTERVAL = 5000
@@ -814,6 +987,9 @@ export async function pollRunningHubTask(
         const progress = result.progress || 0
 
         if (status === 'COMPLETED') {
+          const coins = Number(result.usage?.consumeCoins ?? result.usage?.thirdPartyConsumeMoney ?? 0) || 0
+          const costTime = Number(result.usage?.taskCostTime ?? 0) || 0
+          if (modelLabel) recordRhUsage(modelLabel, coins, costTime)
           const url = result.imageUrl || result.videoUrl || result.audioUrl
           if (url) {
             onProgress?.('COMPLETED', 100)
@@ -828,6 +1004,10 @@ export async function pollRunningHubTask(
           const detail = result.error || result.errorMessage || 'Task failed'
           const code = result.code ? ` [${result.code}]` : ''
           const detailStr = typeof detail === 'string' ? detail : JSON.stringify(detail)
+          if (modelLabel) {
+            const coins = Number(result.usage?.consumeCoins ?? 0) || 0
+            if (coins > 0) recordRhUsage(modelLabel, coins, 0)
+          }
           throw fatal(translateWorkflowError(detailStr, code))
         }
 
@@ -862,7 +1042,43 @@ function isWorkflowFailure(msg?: string): boolean {
   return /工作流运行失败|运行失败|workflow.*fail|task.*fail|执行失败/i.test(msg)
 }
 
+export interface RunningHubQueryFull {
+  status: string
+  progress: number
+  videoUrl: string | null
+  imageUrl: string | null
+  /** Semua hasil gambar (workflow multi-output seperti Travel Photo). */
+  imageUrls: string[]
+  audioUrl: string | null
+  usage: any
+  error: string | null
+}
+
+/** Query sekali dan kembalikan SEMUA hasil (termasuk daftar gambar lengkap). */
+export async function queryRunningHubTaskFull(taskId: string, apiKey?: string): Promise<RunningHubQueryFull> {
+  const result = await runninghubProxy('query', { taskId }, apiKey)
+  const images = Array.isArray(result.imageUrls) && result.imageUrls.length > 0
+    ? result.imageUrls
+    : result.imageUrl
+      ? [result.imageUrl]
+      : []
+  return {
+    status: String(result.status || '').toUpperCase(),
+    progress: result.progress || 0,
+    videoUrl: result.videoUrl || null,
+    imageUrl: result.imageUrl || null,
+    imageUrls: images,
+    audioUrl: result.audioUrl || null,
+    usage: result.usage || null,
+    error: result.error || null,
+  }
+}
+
 function translateWorkflowError(detail: string, code: string): string {
+  // Saldo LLM API (node RH_LLMAPI_Pro_Node) — beda dari koin RH.
+  if (/API balance is insufficient/i.test(detail)) {
+    return `Task gagal${code}: Saldo LLM API RunningHub tidak cukup — fitur ini butuh "LLM API Balance" (terpisah dari koin RH). Isi ulang di RunningHub (menu LLM API / API Balance) lalu coba lagi.`
+  }
   if (isWorkflowFailure(detail)) {
     return `Task gagal${code}: Workflow RunningHub gagal dijalankan. Penyebab umum: (1) gambar input ditolak model — coba JPG ≥512px, bukan hasil kompres terlalu kecil; (2) prompt terlalu pendek — coba Inggris deskriptif mis. "convert to cartoon style, keep face identity"; (3) workflow Kontext error/overload — coba lagi 1-2 menit; (4) koin RH habis. Detail asli: ${detail}`
   }
@@ -870,6 +1086,13 @@ function translateWorkflowError(detail: string, code: string): string {
 }
 
 function translateWorkflowErrorAsFatal(rawMessage: string): Error {
+  if (/API balance is insufficient/i.test(rawMessage)) {
+    const balErr: any = new Error(
+      'Task gagal: Saldo LLM API RunningHub tidak cukup — fitur ini butuh "LLM API Balance" (terpisah dari koin RH). Isi ulang di RunningHub (menu LLM API / API Balance) lalu coba lagi.',
+    )
+    balErr.fatalTaskFailure = true
+    return balErr
+  }
   const e: any = new Error(
     `Workflow RunningHub gagal dijalankan (bukan network error, langsung berhenti agar tidak buang 3 menit retry). Penyebab umum: gambar ditolak model / prompt terlalu pendek / workflow overload / koin habis. Coba: ganti ke JPG ≥512px, prompt Inggris deskriptif, atau retry. Detail asli: ${rawMessage}`,
   )

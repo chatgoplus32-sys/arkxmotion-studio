@@ -83,7 +83,7 @@ export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
     keyPlaceholder: 'Paste your RunningHub API key...',
     keyFormat: 'API key (32 chars)',
     minCredits: 0,
-    supportsBalance: false,
+    supportsBalance: true,
   },
   createpulse: {
     id: 'createpulse',
@@ -209,7 +209,7 @@ export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
     id: 'seavi',
     name: 'Seavi Labs',
     icon: '🌌',
-    description: 'Video & image generation (Seedance 2.5 Multi, Kling 3, Veo 3.1, Motion Control) via api.seavilabs.site',
+    description: 'Video & image generation (Seedance 2.5 Multi, Kling 3, Motion Control) via api.seavilabs.site',
     keyPlaceholder: 'Paste your Seavi API key...',
     keyFormat: 'API key (sea-...)',
     minCredits: 1,

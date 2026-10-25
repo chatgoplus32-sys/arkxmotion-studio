@@ -3,7 +3,7 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
-import { CheckCircle, XCircle, Clock, Trash2, RefreshCw, Key, BadgeCheck, Ban, Download } from 'lucide-react'
+import { CheckCircle, XCircle, Clock, Trash2, RefreshCw, Key, BadgeCheck, Ban, Download, Crown } from 'lucide-react'
 
 interface User {
   id: number
@@ -12,6 +12,8 @@ interface User {
   role: string
   approved: boolean
   email_verified: boolean
+  plan?: string
+  pro_since?: string | null
   created_at: string
   payment?: {
     id: number
@@ -64,7 +66,7 @@ export default function AdminUsersPage() {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       if (response.ok) {
-        addToast('User approved successfully', 'success')
+        addToast('User disetujui — Pro aktif', 'success')
         fetchUsers()
       } else {
         addToast('Failed to approve user', 'error')
@@ -122,7 +124,7 @@ export default function AdminUsersPage() {
 
   const handleApprovePayment = async (paymentId: number, userEmail: string) => {
     if (!token) return
-    if (!confirm(`Setujui pembayaran ${userEmail}? Akun member akan langsung diaktifkan.`)) return
+    if (!confirm(`Setujui pembayaran ${userEmail}? Akun member diaktifkan dan otomatis jadi Pro.`)) return
     setActionLoading(paymentId)
     try {
       const response = await fetch(`/api/admin/membership/payments/${paymentId}/approve`, {
@@ -331,6 +333,7 @@ export default function AdminUsersPage() {
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground">Name</th>
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground">Email</th>
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground">Role</th>
+                    <th className="text-left py-3 px-4 font-medium text-muted-foreground">Plan</th>
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground">Status</th>
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground">Payment</th>
                     <th className="text-right py-3 px-4 font-medium text-muted-foreground">Actions</th>
@@ -358,6 +361,15 @@ export default function AdminUsersPage() {
                             : 'bg-secondary text-muted-foreground'
                         }`}>
                           {user.role}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                          user.plan === 'pro'
+                            ? 'bg-primary/10 text-primary'
+                            : 'bg-secondary text-muted-foreground'
+                        }`}>
+                          {user.plan === 'pro' ? (<><Crown className="h-3 w-3" /> Pro</>) : 'Free'}
                         </span>
                       </td>
                       <td className="py-3 px-4">

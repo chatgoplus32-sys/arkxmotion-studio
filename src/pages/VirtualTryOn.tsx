@@ -1,14 +1,15 @@
-import { useState, useRef, useEffect } from 'react'
+﻿import { useState, useRef, useEffect } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Label, EmptyState } from '@/components/ui'
 import { LogDetailActions } from '@/components/ui/LogDetailActions'
 import { Loader2, Upload, Download, X, Shirt, User, Sparkles, CheckCircle2, AlertCircle, Clock } from 'lucide-react'
 import { useToastStore } from '@/stores/toastStore'
-import { submitRunningHubTryOn, pollRunningHubTask } from '@/lib/runninghub'
+import { submitRunningHubTryOn, submitRunningHubTryOnFlux2, pollRunningHubTask } from '@/lib/runninghub'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { persistResultToR2 } from '@/lib/backgroundTasks'
 
 type TryOnMode = 'tryon' | 'extract'
+type TryOnEngine = 'firered' | 'flux2'
 
 interface HistoryItem {
   time: string
@@ -39,6 +40,7 @@ export default function VirtualTryOnPage() {
   const addToast = useToastStore((s) => s.addToast)
 
   const [mode, setMode] = useState<TryOnMode>('tryon')
+  const [engine, setEngine] = useState<TryOnEngine>('firered')
   const [personFile, setPersonFile] = useState<File | null>(null)
   const [personPreview, setPersonPreview] = useState<string | null>(null)
   const [garmentFile, setGarmentFile] = useState<File | null>(null)
@@ -97,6 +99,10 @@ export default function VirtualTryOnPage() {
       addToast('⚠️ Upload foto pakaian terlebih dahulu!', 'warning')
       return
     }
+    if (engine === 'flux2' && !garmentFile) {
+      addToast('⚠️ FLUX2-Klein butuh foto pakaian. Upload foto pakaian terlebih dahulu!', 'warning')
+      return
+    }
 
     setLoading(true)
     setError(null)
@@ -113,13 +119,20 @@ export default function VirtualTryOnPage() {
         'runninghub',
         async (key, keyInfo) => {
           addLog(`🔑 Key: ${keyInfo?.name || keyInfo?.id || 'default'}`)
-          const submit = await submitRunningHubTryOn({
-            personFile: personFile!,
-            garmentFile: mode === 'tryon' ? garmentFile : null,
-            mode,
-            prompt: prompt.trim() || undefined,
-            apiKey: key,
-          })
+          const submit = engine === 'flux2'
+            ? await submitRunningHubTryOnFlux2({
+                personFile: personFile!,
+                garmentFile: garmentFile!,
+                prompt: prompt.trim() || undefined,
+                apiKey: key,
+              })
+            : await submitRunningHubTryOn({
+                personFile: personFile!,
+                garmentFile: mode === 'tryon' ? garmentFile : null,
+                mode,
+                prompt: prompt.trim() || undefined,
+                apiKey: key,
+              })
           submittedTaskId = submit.taskId
           setTaskId(submit.taskId)
           setTaskStatus('running')
@@ -128,7 +141,7 @@ export default function VirtualTryOnPage() {
             setTaskStatus('running')
             setProgress(pct)
             addLog(`Poll: ${status} ${pct}%`)
-          }, 600000, key)
+          }, 600000, key, engine === 'flux2' ? 'Virtual Try-On FLUX2-Klein (RunningHub)' : 'Virtual Try-On (RunningHub)')
           return url
         },
         {
@@ -177,7 +190,7 @@ export default function VirtualTryOnPage() {
     }
   }
 
-  const canRun = !!apiKey && !!personFile && (mode === 'extract' || !!garmentFile) && !loading
+  const canRun = !!apiKey && !!personFile && ((mode === 'tryon' || engine === 'flux2') ? !!garmentFile : true) && !loading
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -219,7 +232,7 @@ export default function VirtualTryOnPage() {
     <PageContent>
       <PageHeader
         title="👗 Virtual Try-On & Ekstraksi Pakaian"
-        desc="Ubah pakaian pada karakter atau ekstrak pakaian menjadi mockup datar. Didukung oleh FireRed 2-in-1 via RunningHub."
+        desc="Ubah pakaian pada karakter atau ekstrak pakaian menjadi mockup datar. Didukung oleh FireRed 2-in-1 & FLUX2-Klein (masking SAM3) via RunningHub."
       />
 
       {!apiKey && (
@@ -232,22 +245,47 @@ export default function VirtualTryOnPage() {
         {/* Left: Input */}
         <Section title="📸 Input" className="!p-6">
           <div className="mb-4">
-            <Label className="mb-2 block">Mode</Label>
+            <Label className="mb-2 block">Engine</Label>
             <div className="flex gap-2">
               <button
-                onClick={() => setMode('tryon')}
-                className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${mode === 'tryon' ? 'bg-primary text-primary-foreground' : 'bg-surface-secondary text-muted-foreground hover:text-foreground'}`}
+                onClick={() => setEngine('firered')}
+                className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${engine === 'firered' ? 'bg-primary text-primary-foreground' : 'bg-surface-secondary text-muted-foreground hover:text-foreground'}`}
               >
-                👗 Virtual Try-On
+                🔥 FireRed 2-in-1
               </button>
               <button
-                onClick={() => setMode('extract')}
-                className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${mode === 'extract' ? 'bg-primary text-primary-foreground' : 'bg-surface-secondary text-muted-foreground hover:text-foreground'}`}
+                onClick={() => setEngine('flux2')}
+                className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${engine === 'flux2' ? 'bg-primary text-primary-foreground' : 'bg-surface-secondary text-muted-foreground hover:text-foreground'}`}
               >
-                🧵 Ekstraksi Pakaian
+                ✨ FLUX2-Klein
               </button>
             </div>
+            {engine === 'flux2' && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Transfer pakaian tubuh atas via FLUX2-Klein + masking SAM3: analisis bentuk, garis leher, lengan, bahan, warna & logo — wajah, rambut, pose, proporsi, pakaian bawah, latar & pencahayaan asli tetap dipertahankan. Mode: try-on saja (tanpa ekstraksi).
+              </p>
+            )}
           </div>
+
+          {engine === 'firered' && (
+            <div className="mb-4">
+              <Label className="mb-2 block">Mode</Label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setMode('tryon')}
+                  className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${mode === 'tryon' ? 'bg-primary text-primary-foreground' : 'bg-surface-secondary text-muted-foreground hover:text-foreground'}`}
+                >
+                  👗 Virtual Try-On
+                </button>
+                <button
+                  onClick={() => setMode('extract')}
+                  className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${mode === 'extract' ? 'bg-primary text-primary-foreground' : 'bg-surface-secondary text-muted-foreground hover:text-foreground'}`}
+                >
+                  🧵 Ekstraksi Pakaian
+                </button>
+              </div>
+            </div>
+          )}
 
           <FileUpload
             label={mode === 'tryon' ? '🖼️ Foto Karakter / Model' : '🖼️ Foto Orang Memakai Pakaian'}
@@ -260,8 +298,8 @@ export default function VirtualTryOnPage() {
             type="person"
           />
 
-          {mode === 'tryon' && (
-            <FileUpload label="👕 Foto Pakaian / Garment" icon={<Shirt className="h-8 w-8" />} file={garmentFile} preview={garmentPreview} pickerRef={garmentPickerRef} onPick={() => garmentPickerRef.current?.click()} onRemove={() => removeFile('garment')} type="garment" />
+          {(mode === 'tryon' || engine === 'flux2') && (
+            <FileUpload label="👔 Foto Pakaian / Garment" icon={<Shirt className="h-8 w-8" />} file={garmentFile} preview={garmentPreview} pickerRef={garmentPickerRef} onPick={() => garmentPickerRef.current?.click()} onRemove={() => removeFile('garment')} type="garment" />
           )}
 
           <div className="mb-4">
@@ -276,7 +314,7 @@ export default function VirtualTryOnPage() {
 
           <Button
             onClick={runWorkflow}
-            disabled={loading || !apiKey || !personFile || (mode === 'tryon' && !garmentFile)}
+            disabled={loading || !apiKey || !personFile || ((mode === 'tryon' || engine === 'flux2') && !garmentFile)}
             className="w-full"
             size="lg"
             title="Ctrl+Enter untuk jalankan"

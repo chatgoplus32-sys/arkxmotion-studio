@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
-import { Shirt, Video, MessageSquare, Wand2, ArrowRight, Sparkles, Zap, Clapperboard, Globe } from 'lucide-react'
+import { Shirt, Video, MessageSquare, Wand2, ArrowRight, Sparkles, Zap, Clapperboard } from 'lucide-react'
 
 interface QuickAction {
   id: string
@@ -51,24 +51,6 @@ const quickActions: QuickAction[] = [
     color: 'from-green-500 to-emerald-500',
     gradient: 'bg-gradient-to-br from-green-500/20 to-emerald-500/20 border-green-500/30',
     href: '/generate/talking-photo',
-  },
-  {
-    id: 'travel-photo',
-    title: '🌍 Travel Photo',
-    subtitle: '1 foto karakter → berbagai destinasi realistis',
-    icon: <Globe className="h-8 w-8" />,
-    color: 'from-teal-500 to-cyan-500',
-    gradient: 'bg-gradient-to-br from-teal-500/20 to-cyan-500/20 border-teal-500/30',
-    href: '/generate/travel-photo',
-  },
-  {
-    id: 'dola-chat',
-    title: '💬 Dola Chat',
-    subtitle: 'Chat dengan AI Dola — cerdas & kreatif',
-    icon: <MessageSquare className="h-8 w-8" />,
-    color: 'from-violet-500 to-purple-500',
-    gradient: 'bg-gradient-to-br from-violet-500/20 to-purple-500/20 border-violet-500/30',
-    href: '/generate/dola-chat',
   },
   {
     id: 'upscaler',

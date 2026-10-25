@@ -66,7 +66,7 @@ export default function ForgotPasswordPage() {
 
               {devLink && (
                 <div className="w-full mb-4 p-3 rounded-lg bg-secondary border border-border text-left">
-                  <p className="text-xs text-muted-foreground mb-1.5">Mode dev â€” SMTP belum dikonfigurasi, buka link berikut:</p>
+                  <p className="text-xs text-muted-foreground mb-1.5">Mode dev — SMTP belum dikonfigurasi, buka link berikut:</p>
                   <a href={devLink} className="text-xs text-primary break-all hover:underline">
                     {devLink}
                   </a>

@@ -1,4 +1,6 @@
 import { Router, Request, Response } from 'express'
+import fs from 'node:fs'
+import path from 'node:path'
 
 const router = Router()
 const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID || ''
@@ -6,6 +8,32 @@ const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID || ''
 const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || ''
 const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME || ''
 const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || ''
+
+/**
+ * Fallback storage: kalau kredensial R2 tidak diisi, file disimpan ke disk
+ * VPS dan dilayani lewat this file static route ini. Kredensial R2 yang nanti
+ * diisi di .env VPS akan otomatis memicu upload ke R2 lagi.
+ */
+export const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads')
+
+function ensureUploadDir(): string {
+  fs.mkdirSync(path.join(UPLOAD_DIR, 'videos'), { recursive: true })
+  return UPLOAD_DIR
+}
+
+/**
+ * URL publik untuk file storage disk. Harus lewat path /api/* karena nginx
+ * hanya me-proxy path itu ke express — path lain (mis. /uploads/*) di-cache
+ * sebagai file frontend statis.
+ */
+export const DISK_FILE_BASE = '/api/public/r2-file'
+
+/** URL publik untuk file storage disk — bangun dari header request (di belakang nginx). */
+function diskPublicUrl(req: Request, key: string): string {
+  const proto = String(req.headers['x-forwarded-proto'] || (req.secure ? 'https' : 'http')).split(',')[0].trim()
+  const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost'
+  return `${proto}://${host}${DISK_FILE_BASE}/${key}`
+}
 
 async function getR2Client(): Promise<any> {
   if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY || !R2_BUCKET_NAME) return null
@@ -78,56 +106,86 @@ router.all('/', (req: Request, res: Response) => {
 
   ;(async () => {
     const r2 = await getR2Client()
-    if (!r2) return res.status(500).json({ ok: false, error: 'R2 not configured. Set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME env vars.' })
+    if (r2) {
+      try {
+        const contentTypeHeader = req.headers['content-type'] || ''
+        let body: Buffer
+        let fileName = ''
+        let mimeType = ''
+        let useUrlUpload = false
+        let srcUrl = ''
+        let prefix = 'videos'
 
+        // Direct bytes upload (multipart file) — for blobs that no server can fetch (blob: URLs)
+        if (contentTypeHeader.includes('multipart/form-data')) {
+          const chunks: Uint8Array[] = []
+          for await (const chunk of req) chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk as unknown as Uint8Array)
+          const parsed = parseMultipartFile(Buffer.concat(chunks), contentTypeHeader)
+          if (!parsed) return res.status(400).json({ ok: false, error: 'Could not parse file from multipart body' })
+          body = parsed.fileBuffer
+          fileName = parsed.fileName
+          mimeType = parsed.mimeType
+        } else {
+          const { url, filename, prefix: urlPrefix } = req.body
+          if (!url) return res.status(400).json({ ok: false, error: 'url is required' })
+          const videoRes = await fetch(url, { signal: AbortSignal.timeout(120000) })
+          if (!videoRes.ok) throw new Error(`Failed to fetch video: ${videoRes.status}`)
+          body = Buffer.from(await videoRes.arrayBuffer())
+          fileName = filename || 'video.mp4'
+          mimeType = filename?.endsWith('.webm') ? 'video/webm' : 'video/mp4'
+          useUrlUpload = true
+          srcUrl = url
+          prefix = urlPrefix || 'videos'
+        }
+
+        const key = generateKey(prefix, fileName)
+        await r2.client.send(new r2.PutObjectCommand({
+          Bucket: R2_BUCKET_NAME,
+          Key: key,
+          Body: body,
+          ContentType: mimeType,
+        }))
+
+        const cdnUrl = R2_PUBLIC_URL
+          ? `${R2_PUBLIC_URL.replace(/\/$/, '')}/${key}`
+          : `https://${R2_BUCKET_NAME}.${R2_ACCOUNT_ID}.r2.dev/${key}`
+        return res.status(200).json({ ok: true, url: cdnUrl, key, storage: 'r2' })
+      } catch (err: any) {
+        console.error('[r2-upload] error:', err.message)
+        // Jangan langsung gagal total — lanjut ke bilik disk di bawah.
+      }
+    }
+
+    // Fallback disk: kredensial R2 belum di-set (atau upload ke R2 gagal).
     try {
+      ensureUploadDir()
       const contentTypeHeader = req.headers['content-type'] || ''
+      let fileBuffer: Buffer
+      let fileName: string
 
-      // Direct bytes upload (multipart file) — for blobs that no server can fetch (blob: URLs)
       if (contentTypeHeader.includes('multipart/form-data')) {
         const chunks: Uint8Array[] = []
         for await (const chunk of req) chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk as unknown as Uint8Array)
         const rawBody = Buffer.concat(chunks)
         const parsed = parseMultipartFile(rawBody, contentTypeHeader)
         if (!parsed) return res.status(400).json({ ok: false, error: 'Could not parse file from multipart body' })
-
-        const key = generateKey('videos', parsed.fileName)
-        await r2.client.send(new r2.PutObjectCommand({
-          Bucket: R2_BUCKET_NAME,
-          Key: key,
-          Body: parsed.fileBuffer,
-          ContentType: parsed.mimeType,
-        }))
-
-        const cdnUrl = R2_PUBLIC_URL
-          ? `${R2_PUBLIC_URL.replace(/\/$/, '')}/${key}`
-          : `https://${R2_BUCKET_NAME}.${R2_ACCOUNT_ID}.r2.dev/${key}`
-        return res.status(200).json({ ok: true, url: cdnUrl, key })
+        fileBuffer = parsed.fileBuffer
+        fileName = parsed.fileName
+      } else {
+        const { url, filename, prefix } = req.body
+        if (!url) return res.status(400).json({ ok: false, error: 'url is required' })
+        const videoRes = await fetch(url, { signal: AbortSignal.timeout(120000) })
+        if (!videoRes.ok) throw new Error(`Failed to fetch video: ${videoRes.status}`)
+        fileBuffer = Buffer.from(await videoRes.arrayBuffer())
+        fileName = filename || 'video.mp4'
       }
 
-      const { url, filename, prefix } = req.body
-      if (!url) return res.status(400).json({ ok: false, error: 'url is required' })
-
-      const key = generateKey(prefix || 'videos', filename || 'video.mp4')
-      const videoRes = await fetch(url, { signal: AbortSignal.timeout(120000) })
-      if (!videoRes.ok) throw new Error(`Failed to fetch video: ${videoRes.status}`)
-      const buffer = Buffer.from(await videoRes.arrayBuffer())
-      const contentType = filename?.endsWith('.webm') ? 'video/webm' : 'video/mp4'
-
-      await r2.client.send(new r2.PutObjectCommand({
-        Bucket: R2_BUCKET_NAME,
-        Key: key,
-        Body: buffer,
-        ContentType: contentType,
-      }))
-
-      const cdnUrl = R2_PUBLIC_URL
-        ? `${R2_PUBLIC_URL.replace(/\/$/, '')}/${key}`
-        : `https://${R2_BUCKET_NAME}.${R2_ACCOUNT_ID}.r2.dev/${key}`
-
-      return res.status(200).json({ ok: true, url: cdnUrl, key })
+      const key = generateKey('videos', fileName)
+      fs.writeFileSync(path.join(UPLOAD_DIR, key), fileBuffer)
+      const url = diskPublicUrl(req, key)
+      return res.status(200).json({ ok: true, url, key, storage: 'disk' })
     } catch (err: any) {
-      console.error('[r2-upload] error:', err.message)
+      console.error('[r2-upload] disk fallback error:', err.message)
       return res.status(500).json({ ok: false, error: err.message })
     }
   })()

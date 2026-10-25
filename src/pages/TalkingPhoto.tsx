@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+﻿import { useState, useRef } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Label, EmptyState } from '@/components/ui'
 import { LogDetailActions } from '@/components/ui/LogDetailActions'
@@ -160,7 +160,7 @@ export default function TalkingPhotoPage() {
             setTaskStatus('running')
             setProgress(pct)
             addLog(`Poll: ${status} ${pct}%`)
-          }, 3600000, key)
+          }, 3600000, key, 'Audio Avatar (RunningHub)')
           return url
         },
         {
@@ -229,7 +229,7 @@ export default function TalkingPhotoPage() {
             setTaskStatus('running')
             setProgress(pct)
             addLog(`Poll: ${status} ${pct}%`)
-          }, 3600000, key)
+          }, 3600000, key, 'Audio Avatar (RunningHub)')
         },
         {},
       )

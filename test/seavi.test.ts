@@ -86,16 +86,18 @@ test('payload sora2: 1 gambar wajib → image_url, tanpa aspect_ratio', () => {
   assert.throws(() => buildSeaviPayload(spec, { prompt: 'tanpa gambar' }), /tepat 1 gambar/)
 })
 
-test('payload multimodal: seedance25_server19 boleh tanpa media, video ≤3', () => {
+// Upstream seedance25_server19 MENOLAK video referensi ("Unsupported input:
+// video_url", 422 terverifikasi 17 Okt 2026) — hanya gambar 1-9 + audio.
+test('payload multimodal: seedance25_server19 gambar 1-9 + audio, tanpa video', () => {
   const spec = getSeaviSpec('seedance25_server19')!
-  const p = buildSeaviPayload(spec, { prompt: 'hanya prompt' })
-  assert.deepEqual(p.input, {})
-  const withVids = buildSeaviPayload(spec, { videoUrls: ['v1', 'v2'], prompt: 'x' })
-  assert.deepEqual(withVids.input, { video_url: 'v1' }) // API Seavi: video_url tunggal
   assert.throws(
-    () => buildSeaviPayload(spec, { videoUrls: ['1', '2', '3', '4'], prompt: 'x' }),
-    /maksimal 3 video/,
+    () => buildSeaviPayload(spec, { videoUrls: ['v1'], prompt: 'x' }),
+    /tidak menerima video/,
   )
+  const noImg = buildSeaviPayload(spec, { prompt: 'hanya prompt' })
+  assert.deepEqual(noImg.input, {})
+  const withAudio = buildSeaviPayload(spec, { imageUrls: ['a'], audioUrl: 'au', prompt: 'x' })
+  assert.deepEqual(withAudio.input, { image_url: 'a', audio_url: 'au' })
 })
 
 // ── buildSeaviPayload: motion control ───────────────────────────────────────

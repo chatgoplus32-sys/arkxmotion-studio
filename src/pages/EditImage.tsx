@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+﻿import { useState, useRef, useEffect } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Select, Label, Textarea, EmptyState } from '@/components/ui'
 import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
@@ -557,7 +557,7 @@ export default function EditImagePage() {
         addLog(`[3/3] ⏳ Polling hasil...`, 'info')
         const url = await pollRunningHubTask(submit.taskId, (status, pct) => {
           addLog(`   ${status} ${pct}%`, 'debug')
-        }, 600000, apiKey)
+        }, 600000, apiKey, 'FLUX Kontext Edit (RunningHub)')
         return url
       },
       {

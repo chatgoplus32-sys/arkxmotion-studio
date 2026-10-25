@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useAuthStore } from '@/stores/authStore'
 import { useProviderManager } from '@/stores/providerManager'
 import { useToastStore } from '@/stores/toastStore'
+import { QRIS_IMG, QRIS_MERCHANT, QRIS_NMID } from '@/lib/payment'
 
 interface TokenItem {
   id: number
@@ -511,8 +512,8 @@ export default function BeliTokenPage() {
                   <div className="text-sm font-medium mb-3">Scan QRIS untuk Bayar</div>
                   <div className="flex justify-center mb-3">
                     <img
-                      src="/qris-faezya.jpg"
-                      alt="QRIS Faezya Cell"
+                      src={QRIS_IMG}
+                      alt={`QRIS ${QRIS_MERCHANT}`}
                       className="w-64 h-auto rounded-lg border border-border"
                       onError={(e) => {
                         const target = e.target as HTMLImageElement
@@ -525,13 +526,13 @@ export default function BeliTokenPage() {
                       <QrCode className="h-12 w-12 text-muted-foreground mb-2" />
                       <div className="text-xs text-muted-foreground">
                         QRIS image belum tersedia.
-                        <br />Simpan ke <code className="text-primary">public/qris-faezya.jpg</code>
+                        <br />Simpan ke <code className="text-primary">public/qris-arkx.jpg</code>
                       </div>
                     </div>
                   </div>
                   <div className="text-center text-sm text-muted-foreground space-y-1">
-                    <div className="font-semibold text-foreground">Faezya Cell</div>
-                    <div className="text-xs">NMID: ID1025464045240</div>
+                    <div className="font-semibold text-foreground">{QRIS_MERCHANT}</div>
+                    <div className="text-xs">NMID: {QRIS_NMID}</div>
                     <div className="text-xs">Scan menggunakan aplikasi bank/e-wallet Anda</div>
                   </div>
                 </div>

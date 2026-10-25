@@ -1,12 +1,13 @@
-import { useState, useRef, useEffect } from 'react'
+﻿import { useState, useRef, useEffect } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Label, EmptyState } from '@/components/ui'
 import { LogDetailActions } from '@/components/ui/LogDetailActions'
 import { Loader2, Upload, Download, X, User, Sparkles, CheckCircle2, AlertCircle, Clock, Globe, Copy, Trash2 } from 'lucide-react'
 import { useToastStore } from '@/stores/toastStore'
-import { submitRunningHubTravelPhoto, pollRunningHubTask } from '@/lib/runninghub'
+import { submitRunningHubTravelPhoto, pollRunningHubTask, queryRunningHubTaskFull } from '@/lib/runninghub'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { persistResultToR2 } from '@/lib/backgroundTasks'
+import { filterDuplicateImages } from '@/lib/imageSim'
 
 interface HistoryItem {
   time: string
@@ -33,16 +34,18 @@ function getStoredProviderKey(provider: string): string | null {
   } catch { return null }
 }
 
+// `en` = nama destinasi Inggris bersih (tanpa emoji) yang dipakai di prompt —
+// label ber-emoji pernah merusak prompt ("walking in the city of 🗼 Tokyo...").
 const DESTINATIONS = [
-  { id: 'tokyo', label: '🗼 Tokyo, Jepang', emoji: '🗼' },
-  { id: 'paris', label: '🗼 Paris, Prancis', emoji: '🗼' },
-  { id: 'newyork', label: '🗽 New York, AS', emoji: '🗽' },
-  { id: 'bali', label: '🏝️ Bali, Indonesia', emoji: '🏝️' },
-  { id: 'dubai', label: '🏙️ Dubai, UAE', emoji: '🏙️' },
-  { id: 'rome', label: '🏛️ Roma, Italia', emoji: '🏛️' },
-  { id: 'london', label: '🎡 London, Inggris', emoji: '🎡' },
-  { id: 'sydney', label: '🌊 Sydney, Australia', emoji: '🌊' },
-  { id: 'custom', label: '✏️ Lokasi Lain...', emoji: '✏️' },
+  { id: 'tokyo', label: '🗼 Tokyo, Jepang', en: 'Tokyo, Japan' },
+  { id: 'paris', label: '🗼 Paris, Prancis', en: 'Paris, France' },
+  { id: 'newyork', label: '🗽 New York, AS', en: 'New York City, USA' },
+  { id: 'bali', label: '🏝️ Bali, Indonesia', en: 'Bali, Indonesia' },
+  { id: 'dubai', label: '🏙️ Dubai, UAE', en: 'Dubai, UAE' },
+  { id: 'rome', label: '🏛️ Roma, Italia', en: 'Rome, Italy' },
+  { id: 'london', label: '🎡 London, Inggris', en: 'London, UK' },
+  { id: 'sydney', label: '🌊 Sydney, Australia', en: 'Sydney, Australia' },
+  { id: 'custom', label: '✏️ Lokasi Lain...', en: '' },
 ]
 
 export default function TravelPhotoPage() {
@@ -58,6 +61,7 @@ export default function TravelPhotoPage() {
   const [taskStatus, setTaskStatus] = useState<'idle' | 'uploading' | 'submitting' | 'running' | 'success' | 'error'>('idle')
   const [taskId, setTaskId] = useState<string | null>(null)
   const [resultUrl, setResultUrl] = useState<string | null>(null)
+  const [resultImages, setResultImages] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState(0)
   const [history, setHistory] = useState<HistoryItem[]>([])
@@ -97,7 +101,10 @@ export default function TravelPhotoPage() {
       return
     }
 
-    const dest = destination === 'custom' ? customDestination : DESTINATIONS.find(d => d.id === destination)?.label || destination
+    // Prompt pakai nama Inggris bersih (tanpa emoji) — label UI hanya untuk tampilan.
+    const dest = destination === 'custom'
+      ? customDestination.trim()
+      : DESTINATIONS.find(d => d.id === destination)?.en || destination
     if (destination === 'custom' && !customDestination.trim()) {
       addToast('⚠️ Masukkan nama lokasi tujuan!', 'warning')
       return
@@ -106,6 +113,7 @@ export default function TravelPhotoPage() {
     setLoading(true)
     setError(null)
     setResultUrl(null)
+    setResultImages([])
     setProgress(0)
     setTaskStatus('submitting')
     setLogs([])
@@ -115,6 +123,7 @@ export default function TravelPhotoPage() {
 
     try {
       let submittedTaskId = ''
+      let allImages: string[] = []
       const rotation = await withTokenRotation<string>(
         'runninghub',
         async (key, keyInfo) => {
@@ -134,7 +143,20 @@ export default function TravelPhotoPage() {
             setTaskStatus('running')
             setProgress(pct)
             addLog(`Poll: ${status} ${pct}%`)
-          }, 600000, key)
+          }, 600000, key, 'Travel Photo (RunningHub)')
+          // Workflow menghasilkan beberapa foto (3 variasi) — ambil semuanya,
+          // lalu buang hasil yang ternyata "echo" foto input / duplikat.
+          try {
+            const full = await queryRunningHubTaskFull(submit.taskId, key)
+            if (full.imageUrls.length > 0) {
+              const { kept, dropped } = await filterDuplicateImages(characterFile, full.imageUrls)
+              allImages = kept
+              for (const d of dropped) addLog(`Filter: buang foto duplikat (${d.reason})`)
+            } else {
+              allImages = []
+            }
+            addLog(`Hasil: ${allImages.length} foto (dari ${full.imageUrls.length})`, 'success')
+          } catch { /* fallback: pakai url utama saja */ }
           return url
         },
         {
@@ -159,16 +181,19 @@ export default function TravelPhotoPage() {
 
       const url = rotation.result
       const tid = submittedTaskId || `travel-${Date.now()}`
-      setResultUrl(url)
+      // Primary = hasil generate pertama yang lolos filter (bukan echo input).
+      const primaryUrl = allImages[0] || url
+      setResultUrl(primaryUrl)
+      setResultImages(allImages.length > 0 ? allImages : [primaryUrl])
       setTaskStatus('success')
       setProgress(100)
-      addLog(`Selesai: ${url.slice(0, 100)}...`, 'success')
+      addLog(`Selesai: ${primaryUrl.slice(0, 100)}...`, 'success')
       if ((rotation.triedKeys || 1) > 1) {
         addLog(`Dipakai key "${rotation.usedKey?.name}" setelah ${rotation.triedKeys} percobaan`)
       }
-      persistResultToR2(tid, url)
+      persistResultToR2(tid, primaryUrl)
       setHistory((prev) => [
-        { time: new Date().toLocaleTimeString('id-ID'), taskId: tid, status: '✅ Selesai', url },
+        { time: new Date().toLocaleTimeString('id-ID'), taskId: tid, status: '✅ Selesai', url: primaryUrl },
         ...prev,
       ])
       addToast('✅ Travel Photo selesai!', 'success')
@@ -352,12 +377,27 @@ export default function TravelPhotoPage() {
           <div className="min-h-[200px]">
             {resultUrl ? (
               <div className="rounded-lg border border-border overflow-hidden">
-                <img src={resultUrl} alt="Travel Photo result" className="w-full" />
-                <div className="p-2 flex items-center justify-center gap-4">
+                {resultImages.length > 1 ? (
+                  <div className="p-2">
+                    <div className="text-xs text-muted-foreground mb-2">{resultImages.length} variasi hasil:</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {resultImages.map((img, i) => (
+                        <a key={img} href={img} target="_blank" rel="noopener noreferrer" className="block rounded border border-border overflow-hidden hover:opacity-80">
+                          <img src={img} alt={`Travel Photo variasi ${i + 1}`} className="w-full" />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <img src={resultUrl} alt="Travel Photo result" className="w-full" />
+                )}
+                <div className="p-2 flex flex-wrap items-center justify-center gap-4">
                   <a href={resultUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline">🔗 Buka Full Size</a>
-                  <a href={resultUrl} download className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
-                    <Download className="h-3 w-3" /> Download
-                  </a>
+                  {resultImages.map((img, i) => (
+                    <a key={img} href={img} download className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                      <Download className="h-3 w-3" /> Download{resultImages.length > 1 ? ` #${i + 1}` : ''}
+                    </a>
+                  ))}
                 </div>
               </div>
             ) : (

@@ -27,6 +27,8 @@ db.exec(`
     name TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('user', 'admin')),
     approved INTEGER NOT NULL DEFAULT 0,
+    plan TEXT NOT NULL DEFAULT 'free',
+    pro_since DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )
@@ -367,6 +369,14 @@ if (!userCols.some(c => c.name === 'refresh_token')) {
 if (!userCols.some(c => c.name === 'refresh_expires')) {
   db.exec('ALTER TABLE users ADD COLUMN refresh_expires DATETIME')
 }
+// Paket Pro (upgrade sekali bayar) disimpan terpisah dari `role`: admin tetap
+// punya akses penuh, sedangkan user biasa naik dari free → pro lewat approval.
+if (!userCols.some(c => c.name === 'plan')) {
+  db.exec("ALTER TABLE users ADD COLUMN plan TEXT NOT NULL DEFAULT 'free'")
+}
+if (!userCols.some(c => c.name === 'pro_since')) {
+  db.exec('ALTER TABLE users ADD COLUMN pro_since DATETIME')
+}
 
 // ── Konfirmasi pembayaran member baru ────────────────────────────────────
 db.exec(`
@@ -384,6 +394,23 @@ db.exec(`
 `)
 db.exec('CREATE INDEX IF NOT EXISTS idx_membership_payments_user ON membership_payments(user_id)')
 
+// ── Upgrade Pro (sekali bayar, membuka Gemini Tools) ─────────────────────
+db.exec(`
+  CREATE TABLE IF NOT EXISTS pro_payments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    amount INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected')),
+    proof_note TEXT NOT NULL DEFAULT '',
+    admin_note TEXT NOT NULL DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`)
+db.exec('CREATE INDEX IF NOT EXISTS idx_pro_payments_user ON pro_payments(user_id)')
+db.exec('CREATE INDEX IF NOT EXISTS idx_pro_payments_status ON pro_payments(status)')
+
 // ── Pengaturan app (key-value) ───────────────────────────────────────────
 db.exec(`
   CREATE TABLE IF NOT EXISTS app_settings (
@@ -392,10 +419,28 @@ db.exec(`
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )
 `)
-// Harga membership default Rp 150.000 (bisa diubah lewat halaman admin)
+// Harga join member baru: normal Rp 350.000, promo Rp 250.000. Keduanya bisa
+// diubah admin; `membership_fee` adalah nominal yang benar-benar ditagih.
+const originalFeeRow = db.prepare("SELECT value FROM app_settings WHERE key = 'membership_fee_original'").get() as { value: string } | undefined
+if (!originalFeeRow) {
+  db.prepare("INSERT INTO app_settings (key, value) VALUES ('membership_fee_original', '350000')").run()
+}
+// Terapkan harga baru sekali ke DB lama yang masih memakai default Rp 150.000.
+const pricingV2Row = db.prepare("SELECT value FROM app_settings WHERE key = 'pricing_v2'").get() as { value: string } | undefined
+if (!pricingV2Row) {
+  db.prepare(
+    "INSERT INTO app_settings (key, value, updated_at) VALUES ('membership_fee', '250000', CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP"
+  ).run()
+  db.prepare("INSERT INTO app_settings (key, value) VALUES ('pricing_v2', '1')").run()
+}
 const feeRow = db.prepare("SELECT value FROM app_settings WHERE key = 'membership_fee'").get() as { value: string } | undefined
 if (!feeRow) {
-  db.prepare("INSERT INTO app_settings (key, value) VALUES ('membership_fee', '150000')").run()
+  db.prepare("INSERT INTO app_settings (key, value) VALUES ('membership_fee', '250000')").run()
+}
+// Harga upgrade Pro untuk member lama default Rp 50.000 (sekali bayar, bisa diubah admin)
+const proFeeRow = db.prepare("SELECT value FROM app_settings WHERE key = 'pro_fee'").get() as { value: string } | undefined
+if (!proFeeRow) {
+  db.prepare("INSERT INTO app_settings (key, value) VALUES ('pro_fee', '50000')").run()
 }
 
 const providers = ['weavy', 'wavespeed', 'magnific', 'roboneo', 'createpulse', 'framia', 'firefly', 'leonardo', 'gemini', 'openai', 'shotstack', 'creatomate', 'riverside', 'nexabot']

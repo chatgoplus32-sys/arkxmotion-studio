@@ -5,6 +5,11 @@ export const DANA_NUMBER = '082280204445'
 export const DANA_NAME = 'Yusuf Prihandoko'
 export const ADMIN_WHATSAPP = '6285156207924'
 
+/** Info QRIS statis (satu sumber untuk semua halaman pembayaran). */
+export const QRIS_IMG = '/qris-arkx.jpg'
+export const QRIS_MERCHANT = 'ARKXMotion Studio'
+export const QRIS_NMID = 'ID1025464045240'
+
 /** Link WhatsApp admin dengan pesan awal yang sudah terisi. */
 export function adminWhatsappLink(message: string): string {
   return `https://wa.me/${ADMIN_WHATSAPP}?text=${encodeURIComponent(message)}`
