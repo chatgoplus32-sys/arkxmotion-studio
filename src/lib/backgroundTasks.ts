@@ -3,6 +3,7 @@ import { pollRunningHubTask } from '@/lib/runninghub'
 import { detectTokenError } from '@/lib/tokenRotation'
 import { useProviderManager } from '@/stores/providerManager'
 import { saveVideoBlob, loadVideoBlob, deleteVideoBlob } from '@/lib/videoStorage'
+import { notifyResultReady } from '@/lib/notify'
 
 const ACTIVE_KEY = 'arkxmotion_active_tasks'
 const RESULTS_KEY = 'arkxmotion_results'
@@ -117,7 +118,7 @@ export async function restoreIdbVideos(): Promise<void> {
 }
 function saveResults(r: CompletedResult[]) { writeJson(RESULTS_KEY, r.slice(0, 50)) }
 
-export function addResult(result: CompletedResult) {
+export function addResult(result: CompletedResult, options?: { notify?: boolean }) {
   const clean: CompletedResult = { ...result }
   if (clean.inputImageUrl && !isPersistableUrl(clean.inputImageUrl)) {
     delete (clean as any).inputImageUrl
@@ -133,6 +134,11 @@ export function addResult(result: CompletedResult) {
   }
 
   const r = readJson(RESULTS_KEY, [] as CompletedResult[]); r.unshift(clean); saveResults(r)
+
+  // Hasil baru harus langsung terlihat di panel Generasi header — listener
+  // hanya mendengarkan event ini, bukan perubahan localStorage.
+  window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
+  if (options?.notify !== false) notifyResultReady(clean)
 }
 
 export function clearResults() { localStorage.removeItem(RESULTS_KEY) }
@@ -330,7 +336,6 @@ function pollWithRetry(task: ActiveTask, ctrl: AbortController, attempt: number)
       _active.delete(task.taskId)
       _controllers.delete(task.taskId)
       addBgLog(`✅ Background task done ✓ ${url.slice(0, 60)}...`, 'success')
-      try { if (Notification && Notification.permission==='granted') new Notification('✅ Video selesai', { body: `${task.model} ready`, icon: '/arkx-logo.svg' }) } catch (e) { console.warn('[backgroundTasks] Notification failed:', e) }
       try { if (navigator.serviceWorker?.controller) navigator.serviceWorker.controller.postMessage({ type: 'TASK_DONE', url }) } catch (e) { console.warn('[backgroundTasks] ServiceWorker postMessage failed:', e) }
       window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
     })

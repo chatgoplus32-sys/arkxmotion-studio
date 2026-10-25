@@ -19,11 +19,18 @@ import {
 } from '@/lib/backgroundTasks'
 import { useToastStore } from '@/stores/toastStore'
 import { logAudit, getAuditLog, clearAuditLog } from '@/lib/auditLog'
+import {
+  isNotificationDeliveryReady,
+  isNotificationBlocked,
+  setNotificationsEnabled,
+  requestNotificationPermission,
+} from '@/lib/notify'
 
 export default function SettingsPage() {
   const [theme, setTheme] = useState('system')
   const [language, setLanguage] = useState('id')
-  const [notifications, setNotifications] = useState(true)
+  const [notifications, setNotifications] = useState(() => isNotificationDeliveryReady())
+  const [notificationBlocked, setNotificationBlocked] = useState(() => isNotificationBlocked())
   const [activeTasks, setActiveTasks] = useState<ActiveTask[]>([])
   const [results, setResults] = useState<CompletedResult[]>([])
   const [logs, setLogs] = useState<LogEntry[]>([])
@@ -46,6 +53,25 @@ export default function SettingsPage() {
     setResults(getResults())
     setLogs(getLogs())
   }, [])
+
+  const handleNotificationToggle = async (enabled: boolean) => {
+    if (!enabled) {
+      setNotificationsEnabled(false)
+      setNotifications(false)
+      addToast('Notifikasi dimatikan', 'info')
+      return
+    }
+    const granted = await requestNotificationPermission()
+    setNotificationBlocked(isNotificationBlocked())
+    if (!granted) {
+      setNotifications(false)
+      addToast('Izin notifikasi belum diberikan — cek pengaturan browser', 'error')
+      return
+    }
+    setNotificationsEnabled(true)
+    setNotifications(true)
+    addToast('Notifikasi diaktifkan', 'success')
+  }
 
   const handleChangePassword = async () => {
     if (!oldPassword || !newPassword || newPassword.length < 8) return
@@ -225,10 +251,15 @@ export default function SettingsPage() {
               <input
                 type="checkbox"
                 checked={notifications}
-                onChange={(e) => setNotifications(e.target.checked)}
+                onChange={(e) => void handleNotificationToggle(e.target.checked)}
                 className="h-4 w-4"
               />
             </label>
+            {notificationBlocked && (
+              <p className="text-xs text-amber-500">
+                Izin notifikasi diblokir browser. Buka ikon gembok di address bar, izinkan Notifikasi, lalu muat ulang halaman ini.
+              </p>
+            )}
           </div>
         </Section>
 

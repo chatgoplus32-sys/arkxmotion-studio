@@ -33,7 +33,7 @@ import {
 } from '@/lib/backgroundTasks'
 import type { CompletedResult } from '@/lib/backgroundTasks'
 import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
-import { isNotificationsEnabled, setNotificationsEnabled, requestNotificationPermission, notifyGenerationComplete } from '@/lib/notify'
+import { isNotificationDeliveryReady, setNotificationsEnabled, requestNotificationPermission, notifyGenerationComplete } from '@/lib/notify'
 import { uploadToCdn } from '@/lib/cdn'
 import { precheckProviderBalance } from '@/lib/balancePrecheck'
 import type { NexabotSessionInfo } from '@/lib/nexabot'
@@ -239,7 +239,7 @@ export default function ImageToVideoPage() {
   const sd26InputRef = useRef<HTMLInputElement>(null)
   const resultsRef = useRef<HTMLDivElement>(null)
 
-  const [notifEnabled, setNotifEnabled] = useState(() => isNotificationsEnabled())
+  const [notifEnabled, setNotifEnabled] = useState(() => isNotificationDeliveryReady())
 
   const toggleNotifications = async () => {
     if (!notifEnabled) {
@@ -249,7 +249,7 @@ export default function ImageToVideoPage() {
         setNotifEnabled(true)
         addToast('Notifikasi diaktifkan', 'success')
       } else {
-        addToast('Izin notifikasi ditolak', 'error')
+        addToast('Izin notifikasi belum diberikan — cek pengaturan browser', 'error')
       }
     } else {
       setNotificationsEnabled(false)
@@ -759,7 +759,7 @@ export default function ImageToVideoPage() {
       inputImageUrl: imgUrl && !imgUrl.startsWith('blob:') ? imgUrl : undefined,
     }
     // addResult otomatis skip blob: URL (lihat backgroundTasks) agar tak jadi ERR_FILE_NOT_FOUND
-    addResult(item)
+    addResult(item, { notify: false })
     refreshGallery()
     persistResultToR2(item.id, url)
   }
@@ -1232,7 +1232,7 @@ export default function ImageToVideoPage() {
             credits: totalCredits,
             inputImageUrl: imgUrl && !imgUrl.startsWith('blob:') ? imgUrl : undefined,
             taskUrl: rotation.result!.roomId ? `https://www.roboneo.com/team_studio?room_id=${rotation.result!.roomId}` : undefined,
-          })
+          }, { notify: false })
           persistResultToR2(`roboneo-${Date.now()}`, rotation.result!.videoUrl)
           refreshGallery()
           window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
@@ -1358,7 +1358,7 @@ export default function ImageToVideoPage() {
                     page: 'image-to-video',
                     provider: 'seavi',
                     model: currentModel?.label || model,
-                  })
+                  }, { notify: false })
                 } catch {
                   addResult({
                     id: `seavi-mc-${Date.now()}-${done}`,
@@ -1368,7 +1368,7 @@ export default function ImageToVideoPage() {
                     page: 'image-to-video',
                     provider: 'seavi',
                     model: currentModel?.label || model,
-                  })
+                  }, { notify: false })
                 }
                 refreshGallery()
               }
@@ -1414,7 +1414,7 @@ export default function ImageToVideoPage() {
                 ratio,
                 duration: currentQuality?.duration,
                 credits: totalCredits,
-              })
+              }, { notify: false })
             } catch {
               addResult({
                 id: `seavi-${Date.now()}`,
@@ -1427,7 +1427,7 @@ export default function ImageToVideoPage() {
                 ratio,
                 duration: currentQuality?.duration,
                 credits: totalCredits,
-              })
+              }, { notify: false })
             }
             refreshGallery()
           }
@@ -1861,7 +1861,7 @@ export default function ImageToVideoPage() {
             duration: currentQuality?.duration,
             credits: totalCredits,
             inputImageUrl: imgUrl && !imgUrl.startsWith('blob:') ? imgUrl : undefined,
-          })
+          }, { notify: false })
           persistResultToR2(`leonardo-${Date.now()}`, rotation.result!)
           refreshGallery()
           window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
