@@ -12,20 +12,20 @@ interface PageHeaderProps extends HTMLAttributes<HTMLDivElement> {
 const PageHeader = forwardRef<HTMLDivElement, PageHeaderProps>(
   ({ className, eyebrow, title, highlight, desc, actions, ...props }, ref) => {
     return (
-      <div ref={ref} className={cn('mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4', className)} {...props}>
-        <div>
+      <div ref={ref} className={cn('mb-7 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between', className)} {...props}>
+        <div className="min-w-0">
           {eyebrow && (
-            <div className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">
+            <div className="mb-1.5 text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground/70">
               {eyebrow}
             </div>
           )}
-          <h1 className="text-2xl md:text-3xl font-display font-bold">
+          <h1 className="font-display text-[26px] font-bold leading-[1.15] tracking-tight md:text-[32px]">
             {title}
-            {highlight && <span className="text-primary ml-2">{highlight}</span>}
+            {highlight && <span className="ml-2 text-primary">{highlight}</span>}
           </h1>
-          {desc && <p className="text-sm text-muted-foreground mt-1.5 max-w-2xl">{desc}</p>}
+          {desc && <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-muted-foreground md:text-sm">{desc}</p>}
         </div>
-        {actions && <div className="flex items-center gap-2 shrink-0">{actions}</div>}
+        {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
       </div>
     )
   }
@@ -40,7 +40,7 @@ const PageContent = forwardRef<HTMLDivElement, PageContentProps>(
     return (
       <div
         ref={ref}
-        className={cn('space-y-5', className)}
+        className={cn('space-y-6', className)}
         {...props}
       />
     )

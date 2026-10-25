@@ -271,7 +271,7 @@ export function Sidebar({ collapsed = false, onClose }: SidebarProps) {
         {collapsed ? (
           <img src="/arkx-dashboard-icon.svg" alt="ARKXMotion" className="w-8 h-8" />
         ) : (
-          <img src="/arkx-sidebar-logo.svg" alt="ARKXMotion Studio" className="h-10 min-w-0" />
+          <img src="/arkx-sidebar-logo.svg" alt="ARKXMotion Studio" className="sidebar-brand-logo h-10 min-w-0" />
         )}
         {onClose && (
           <button

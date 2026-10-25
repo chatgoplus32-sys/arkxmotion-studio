@@ -10,8 +10,8 @@ interface CardProps extends HTMLAttributes<HTMLDivElement> {
 const Card = forwardRef<HTMLDivElement, CardProps>(
   ({ className, variant = 'default', hover = false, render, ...props }, ref) => {
     const classes = cn(
-      'rounded-2xl bg-card text-card-foreground shadow-sm transition-all duration-200',
-      variant === 'bordered' && 'border border-border',
+      'rounded-2xl border bg-card text-card-foreground shadow-sm transition-all duration-200',
+      variant === 'bordered' ? 'border-border' : 'border-border/60',
       hover && 'hover:shadow-md hover:-translate-y-0.5 cursor-pointer',
       className
     )

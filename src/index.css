@@ -90,6 +90,10 @@ body {
   background-clip: text;
 }
 
+.light .sidebar-brand-logo {
+  filter: invert(1) hue-rotate(180deg);
+}
+
 .light .silver-text {
   background: linear-gradient(135deg, #666666, #888888, #555555);
   -webkit-background-clip: text;

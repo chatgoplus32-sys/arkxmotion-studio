@@ -216,7 +216,8 @@ export default function App() {
                     collapsed={sidebarCollapsed}
                     onToggleSidebar={toggleSidebar}
                   />
-                  <main className="flex-1 p-4 lg:p-6 overflow-auto">
+                  <main className="flex-1 overflow-auto p-4 sm:p-6 lg:p-8">
+                    <div className="mx-auto w-full max-w-[1520px]">
                     <Suspense fallback={<PageLoader />}>
                       <Routes>
                         <Route path="/dashboard" element={<DashboardPage />} />
@@ -273,6 +274,7 @@ export default function App() {
                         <Route path="/admin/notifications" element={<AdminNotificationsPage />} />
                       </Routes>
                     </Suspense>
+                    </div>
                   </main>
                 </div>
               </div>
