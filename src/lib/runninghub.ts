@@ -88,6 +88,13 @@ export const RUNNINGHUB_KONTROL_GERAKAN_APP_ID = '2112893346377531393'
 // https://www.runninghub.ai/ai-detail/2104229552179425282
 export const RUNNINGHUB_SONG_COVER_WORKFLOW_ID = '2104229552179425282'
 
+// PETTAPUNYA — YuE2 Indonesian Song Reimaginer (app 2102484425270693890):
+// audio referensi menentukan durasi + struktur melodi, lalu YuE2 melakukan
+// restyle/reimagine dengan style dan lirik baru. Bukan text-to-song murni.
+// node 20 = audio, node 81 = style (positive), node 83 = lirik (positive).
+// https://www.runninghub.ai/id/ai-detail/2102484425270693890
+export const RUNNINGHUB_YUE2_REIMAGINER_APP_ID = '2102484425270693890'
+
 // VOSR2 Video Upscale 2K (peningkatan bertingkat):
 // node 1 = video + frame_load_cap, node 21 = cfg/scheduler/steps,
 // node 13 = save_output
@@ -915,6 +922,36 @@ export async function submitRunningHubSongCover(params: SongCoverParams): Promis
     status: result.status || 'QUEUED',
     provider: result.provider || 'runninghub',
     workflowId: result.workflowId || workflowId,
+  }
+}
+
+export interface YuE2ReimaginerParams {
+  audioFile: File
+  stylePrompt: string
+  lyrics: string
+  apiKey?: string
+  appId?: string
+}
+
+export async function submitRunningHubYuE2Reimaginer(params: YuE2ReimaginerParams): Promise<MotionControlResult> {
+  const appId = params.appId || RUNNINGHUB_YUE2_REIMAGINER_APP_ID
+  const audioBase64 = await fileToBase64(params.audioFile)
+
+  const result = await runninghubProxy('submit-yue2-reimaginer', {
+    app_id: appId,
+    audioBase64,
+    audioFileName: params.audioFile.name || 'reference.mp3',
+    audioMimeType: params.audioFile.type || 'audio/mpeg',
+    stylePrompt: params.stylePrompt || '',
+    lyrics: params.lyrics || '',
+  }, params.apiKey)
+
+  return {
+    id: result.id || result.taskId,
+    taskId: result.taskId || result.id,
+    status: result.status || 'QUEUED',
+    provider: result.provider || 'runninghub',
+    workflowId: result.workflowId || appId,
   }
 }
 

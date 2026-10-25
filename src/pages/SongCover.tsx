@@ -5,13 +5,29 @@ import { LogDetailActions } from '@/components/ui/LogDetailActions'
 import { Loader2, Download, X, Music, Sparkles, CheckCircle2, AlertCircle, Clock, FileAudio, Copy, Trash2 } from 'lucide-react'
 import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
-import { submitRunningHubSongCover, pollRunningHubTask } from '@/lib/runninghub'
+import { submitRunningHubSongCover, submitRunningHubYuE2Reimaginer, pollRunningHubTask } from '@/lib/runninghub'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { persistResultToR2 } from '@/lib/backgroundTasks'
 import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
 import { STYLE_PRESETS, GENRE_CATEGORIES, type SongGenreCategory } from '@/lib/song-cover-genres'
 
 const CREDIT_COST = 50
+
+type SongEngine = 'song-cover' | 'yue2'
+
+const ENGINES: Array<{ id: SongEngine; label: string; badge?: string; desc: string }> = [
+  {
+    id: 'song-cover',
+    label: '🎵 AI Song Cover',
+    desc: 'Aransemen ulang lagu dengan gaya bebas. Cukup isi style atau lirik.',
+  },
+  {
+    id: 'yue2',
+    label: '🎤 YuE2 Reimaginer',
+    badge: 'PettaPunya',
+    desc: 'Audio referensi menentukan durasi + struktur melodi, lalu restyle dengan style & lirik baru. Bukan text-to-song.',
+  },
+]
 
 const VOCALS = [
   { id: 'female', label: '👩 Wanita', descriptor: 'Female lead vocal, warm expressive female singer voice' },
@@ -60,6 +76,7 @@ export default function SongCoverPage() {
   const addToast = useToastStore((s) => s.addToast)
   const currentUser = useAuthStore((s) => s.user)
 
+  const [engine, setEngine] = useState<SongEngine>('yue2')
   const [audioFile, setAudioFile] = useState<File | null>(null)
   const [audioPreviewUrl, setAudioPreviewUrl] = useState<string | null>(null)
   const [selected, setSelected] = useState<string[]>([STYLE_PRESETS[0].id])
@@ -123,6 +140,9 @@ export default function SongCoverPage() {
   const composedStyle = styleMode === 'manual'
     ? manualStyle
     : [...selectedGenres.map((g) => g.prompt), manualStyle].filter(Boolean).join('. ')
+  const isYuE2 = engine === 'yue2'
+  const trimmedLyrics = lyrics.trim()
+  const modelLabel = isYuE2 ? 'YuE2 Indonesian Song Reimaginer' : 'AI Song Cover Studio'
 
   const runWorkflow = async () => {
     if (!apiKey) {
@@ -133,7 +153,16 @@ export default function SongCoverPage() {
       addToast('⚠️ Upload file lagu/audio terlebih dahulu!', 'warning')
       return
     }
-    if (!composedStyle && !lyrics.trim()) {
+    if (isYuE2) {
+      if (!composedStyle) {
+        addToast('⚠️ YuE2 butuh style musik. Pilih preset atau tulis style manual.', 'warning')
+        return
+      }
+      if (!trimmedLyrics) {
+        addToast('⚠️ YuE2 butuh lirik lagu Indonesia. Isi lirik terlebih dahulu.', 'warning')
+        return
+      }
+    } else if (!composedStyle && !trimmedLyrics) {
       addToast('⚠️ Pilih minimal 1 gaya preset, tulis gaya aransemen manual, atau isi lirik!', 'warning')
       return
     }
@@ -146,19 +175,20 @@ export default function SongCoverPage() {
     setLogs([])
     const vocalDesc = VOCALS.find((v) => v.id === vocal)?.descriptor || ''
     const finalStyle = [vocalDesc, composedStyle].filter(Boolean).join('. ')
-    addLog(`Mulai AI Song Cover: ${(audioFile.size / 1024).toFixed(0)}KB ${audioFile.name}`)
+    addLog(`Mulai ${isYuE2 ? 'YuE2 Reimaginer' : 'AI Song Cover'}: ${(audioFile.size / 1024).toFixed(0)}KB ${audioFile.name}`)
+    addLog(`Model: ${modelLabel}`)
     addLog(`Vokal: ${VOCALS.find((v) => v.id === vocal)?.label || vocal}`)
     const styleLabel = styleMode === 'manual'
       ? manualStyle.slice(0, 120)
       : selectedGenres.map((g) => g.label).join(' + ') || '(custom)'
     addLog(`Gaya (${styleMode === 'manual' ? 'manual/prompt' : `${selectedGenres.length} preset`}): ${styleLabel}`)
-    if (lyrics.trim()) addLog(`Lirik: ${lyrics.trim().slice(0, 80)}... (${lyrics.trim().length} char)`)
+    if (trimmedLyrics) addLog(`Lirik: ${trimmedLyrics.slice(0, 80)}... (${trimmedLyrics.length} char)`)
 
     const startTime = Date.now()
     const logId = currentUser ? await logGenerationStart({
       page: 'song-cover',
       provider: 'runninghub',
-      model: 'AI Song Cover Studio',
+      model: modelLabel,
       prompt: finalStyle.slice(0, 500),
       credits: CREDIT_COST,
       slot_count: 1,
@@ -170,12 +200,19 @@ export default function SongCoverPage() {
         'runninghub',
         async (key, keyInfo) => {
           addLog(`🔑 Key: ${keyInfo?.name || keyInfo?.id || 'default'}`)
-          const submit = await submitRunningHubSongCover({
-            audioFile,
-            stylePrompt: finalStyle,
-            lyrics: lyrics.trim() || undefined,
-            apiKey: key,
-          })
+          const submit = isYuE2
+            ? await submitRunningHubYuE2Reimaginer({
+                audioFile,
+                stylePrompt: finalStyle,
+                lyrics: trimmedLyrics,
+                apiKey: key,
+              })
+            : await submitRunningHubSongCover({
+                audioFile,
+                stylePrompt: finalStyle,
+                lyrics: trimmedLyrics || undefined,
+                apiKey: key,
+              })
           submittedTaskId = submit.taskId
           setTaskId(submit.taskId)
           setTaskStatus('running')
@@ -184,7 +221,7 @@ export default function SongCoverPage() {
             setTaskStatus('running')
             setProgress(pct)
             addLog(`Poll: ${status} ${pct}%`)
-          }, 1800000, key, 'AI Song Cover (RunningHub)')
+          }, 1800000, key, modelLabel)
           return url
         },
         {
@@ -219,7 +256,7 @@ export default function SongCoverPage() {
         { time: new Date().toLocaleTimeString('id-ID'), taskId: tid, status: '✅ Selesai', url },
         ...prev,
       ])
-      addToast('✅ AI Song Cover selesai!', 'success')
+      addToast(`✅ ${isYuE2 ? 'YuE2 Reimaginer' : 'AI Song Cover'} selesai!`, 'success')
     } catch (e: any) {
       setTaskStatus('error')
       setError(e.message || 'Unknown error')
@@ -231,7 +268,9 @@ export default function SongCoverPage() {
     }
   }
 
-  const canRun = !!apiKey && !!audioFile && !loading && (!!composedStyle || !!lyrics.trim())
+  const canRun = !!apiKey && !!audioFile && !loading && (isYuE2
+    ? !!composedStyle && !!trimmedLyrics
+    : !!composedStyle || !!trimmedLyrics)
   const resultKind = resultUrl ? mediaKind(resultUrl) : null
 
   useEffect(() => {
@@ -249,12 +288,15 @@ export default function SongCoverPage() {
     <PageContent>
       <PageHeader
         title="🎵 AI Song Cover Studio"
-        desc="Ubah lagu apa pun menjadi versi cover dengan gaya bebas. Upload audio (mp3/wav), pilih gaya aransemen atau tulis sendiri, isi lirik bila perlu — AI membuat cover berkualitas studio."
+        desc="Ubah lagu jadi versi baru. Song Cover mengaransemen ulang dengan gaya bebas; YuE2 Reimaginer memakai audio referensi untuk durasi + struktur melodi, lalu restyle dengan style & lirik baru."
       />
 
       {/* Feature badges */}
       <div className="flex flex-wrap gap-2 mb-6">
-        {['🎼 Upload Audio', '🎨 Gaya Bebas', '📝 Lirik Custom', '🎙️ Vokal Studio', '⚡ Fast Render', `💠 ${CREDIT_COST} kredit`].map((badge) => (
+        {(isYuE2
+          ? ['🎼 Audio Referensi', '🇮🇩 Style Indonesia', '📝 Lirik Baru', '🎙️ Vokal Studio', '🎧 Melodi Dipertahankan', `💠 ${CREDIT_COST} kredit`]
+          : ['🎼 Upload Audio', '🎨 Gaya Bebas', '📝 Lirik Custom', '🎙️ Vokal Studio', '⚡ Fast Render', `💠 ${CREDIT_COST} kredit`]
+        ).map((badge) => (
           <span key={badge} className="px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium">{badge}</span>
         ))}
       </div>
@@ -268,9 +310,46 @@ export default function SongCoverPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left: Input */}
         <Section title="🎧 Input" className="!p-6">
+          {/* Engine */}
+          <div className="mb-4">
+            <Label className="mb-2 block">🧠 Mesin</Label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {ENGINES.map((e) => {
+                const active = engine === e.id
+                return (
+                  <button
+                    key={e.id}
+                    onClick={() => setEngine(e.id)}
+                    disabled={loading}
+                    className={`text-left px-3 py-2.5 rounded-lg border transition-colors disabled:opacity-50 ${
+                      active
+                        ? 'border-primary bg-primary/10'
+                        : 'border-border bg-surface-secondary hover:border-primary/40'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className={`text-sm font-medium ${active ? 'text-primary' : 'text-foreground'}`}>{e.label}</span>
+                      {e.badge && (
+                        <span className="px-1.5 py-0.5 rounded-full bg-primary/15 text-primary text-[10px] font-semibold uppercase tracking-wide">
+                          {e.badge}
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{e.desc}</div>
+                  </button>
+                )
+              })}
+            </div>
+            {isYuE2 && (
+              <div className="mt-2 rounded-lg bg-primary/5 border border-primary/15 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+                Workflow ini <strong className="text-foreground">bukan text-to-song</strong>. Audio referensi dipakai untuk mengambil durasi + struktur melodi, lalu YuE2 melakukan restyle/reimagine dengan style dan lirik baru. Style dan lirik wajib diisi.
+              </div>
+            )}
+          </div>
+
           {/* Audio Upload */}
           <div className="mb-4">
-            <Label className="mb-2 block">🎵 File Audio Lagu Asli</Label>
+            <Label className="mb-2 block">{isYuE2 ? '🎼 Audio Referensi' : '🎵 File Audio Lagu Asli'}</Label>
             {audioFile ? (
               <div className="rounded-lg border border-border overflow-hidden">
                 <div className="flex items-center gap-3 p-3 bg-surface-secondary">
@@ -297,7 +376,7 @@ export default function SongCoverPage() {
 
           {/* Gaya Aransemen: preset atau manual/prompt */}
           <div className="mb-4">
-            <Label className="mb-2 block">🎨 Gaya Aransemen</Label>
+            <Label className="mb-2 block">{isYuE2 ? '🎨 Style Musik Indonesia' : '🎨 Gaya Aransemen'}</Label>
             <div className="inline-flex rounded-lg bg-surface-secondary p-0.5 mb-3">
               <button
                 onClick={() => setStyleMode('preset')}
@@ -396,10 +475,14 @@ export default function SongCoverPage() {
                   value={extraPrompt}
                   onChange={(e) => setExtraPrompt(e.target.value)}
                   className="w-full h-36 px-3 py-2 rounded-lg bg-surface-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  placeholder="Tulis gaya aransemen atau prompt bebas. Contoh: dangdut koplo modern, kendang cepat, suling ceria, bass dalam, vokal pria, tempo 130 BPM..."
+                  placeholder={isYuE2
+                    ? 'Contoh: Javanese dangdut koplo, male vocal, emotional and romantic, energetic kendang koplo rhythm, melodic keyboard, warm bass, suling accents, catchy chorus, modern Indonesian live-stage feel...'
+                    : 'Tulis gaya aransemen atau prompt bebas. Contoh: dangdut koplo modern, kendang cepat, suling ceria, bass dalam, vokal pria, tempo 130 BPM...'}
                 />
                 <div className="mt-1.5 text-[11px] text-muted-foreground">
-                  Teks ini langsung dikirim sebagai gaya aransemen. Bisa dipakai tanpa memilih preset, dan tetap bisa digabung dengan pilihan vokal serta lirik.
+                  {isYuE2
+                    ? 'Teks ini dikirim sebagai style musik YuE2. Tulis genre, instrumen, dan karakter vokal; lirik baru diisi di kolom bawah.'
+                    : 'Teks ini langsung dikirim sebagai gaya aransemen. Bisa dipakai tanpa memilih preset, dan tetap bisa digabung dengan pilihan vokal serta lirik.'}
                 </div>
               </>
             )}
@@ -427,13 +510,18 @@ export default function SongCoverPage() {
 
           {/* Lyrics */}
           <div className="mb-4">
-            <Label className="mb-2 block">📝 Lirik (opsional)</Label>
+            <Label className="mb-2 block">📝 Lirik Lagu Indonesia {isYuE2 ? '(wajib)' : '(opsional)'}</Label>
             <textarea
               value={lyrics}
               onChange={(e) => setLyrics(e.target.value)}
               className="w-full h-32 px-3 py-2 rounded-lg bg-surface-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:ring-2 focus:ring-primary/50 font-mono"
-              placeholder={'Tempel lirik lagu di sini (boleh dengan penanda verse/chorus)...'}
+              placeholder={isYuE2
+                ? 'Tempel lirik lagu Indonesia di sini. Lirik inilah yang dinyanyikan YuE2 dengan durasi & struktur melodi dari audio referensi...'
+                : 'Tempel lirik lagu di sini (boleh dengan penanda verse/chorus)...'}
             />
+            {isYuE2 && (
+              <div className="mt-1.5 text-[11px] text-muted-foreground">{lyrics.trim().length} karakter lirik</div>
+            )}
           </div>
 
           <Button
@@ -444,7 +532,7 @@ export default function SongCoverPage() {
             title="Ctrl+Enter untuk jalankan"
           >
             {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
-            {taskStatus === 'submitting' ? '🚀 Submitting...' : taskStatus === 'running' ? `⏳ Running... ${progress}%` : `🚀 Buat Song Cover (${CREDIT_COST} cr)`}
+            {taskStatus === 'submitting' ? '🚀 Submitting...' : taskStatus === 'running' ? `⏳ Running... ${progress}%` : isYuE2 ? `🚀 Reimagine Lagu (${CREDIT_COST} cr)` : `🚀 Buat Song Cover (${CREDIT_COST} cr)`}
           </Button>
         </Section>
 
@@ -508,7 +596,13 @@ export default function SongCoverPage() {
                 </div>
               </div>
             ) : (
-              <EmptyState icon={<Music className="h-12 w-12" />} title="Belum ada hasil" description="Upload audio, pilih gaya, lalu klik Buat Song Cover." />
+              <EmptyState
+                icon={<Music className="h-12 w-12" />}
+                title="Belum ada hasil"
+                description={isYuE2
+                  ? 'Upload audio referensi, isi style musik + lirik baru, lalu klik Reimagine Lagu.'
+                  : 'Upload audio, pilih gaya, lalu klik Buat Song Cover.'}
+              />
             )}
           </div>
 

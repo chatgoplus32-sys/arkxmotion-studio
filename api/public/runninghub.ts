@@ -107,6 +107,15 @@ const RUNNINGHUB_SONG_COVER_WORKFLOW_ID = '2104229552179425282'
 const SONG_COVER_AUDIO_NODE = '1'
 const SONG_COVER_STYLE_NODE = '4'
 const SONG_COVER_LYRICS_NODE = '5'
+// PETTAPUNYA — YuE2 Indonesian Song Reimaginer (app 2102484425270693890):
+// audio referensi → durasi + struktur melodi, lalu restyle/reimagine dengan
+// style & lirik baru. node 20 = audio, node 81 = style, node 83 = lirik
+// (style dan lirik sama-sama field `positive`).
+// https://www.runninghub.ai/id/ai-detail/2102484425270693890
+const RUNNINGHUB_YUE2_REIMAGINER_APP_ID = '2102484425270693890'
+const YUE2_AUDIO_NODE = '20'
+const YUE2_STYLE_NODE = '81'
+const YUE2_LYRICS_NODE = '83'
 // VOSR2 Video Upscale 2K: node 1 = video + frame_load_cap,
 // node 21 = cfg/scheduler/steps, node 13 = save_output
 const RUNNINGHUB_VIDEO_UPSCALE_WORKFLOW_ID = '2100537736599035906'
@@ -216,6 +225,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     if (action === 'submit-song-cover') {
       return await handleSubmitSongCover(apiKey, params, res)
+    }
+    if (action === 'submit-yue2-reimaginer') {
+      return await handleSubmitYuE2Reimaginer(apiKey, params, res)
     }
     if (action === 'submit-video-upscale') {
       return await handleSubmitVideoUpscale(apiKey, params, res)
@@ -1673,6 +1685,110 @@ async function handleSubmitSongCover(apiKey: string, params: any, res: VercelRes
         status: data.data?.status || data.status || 'QUEUED',
         provider: 'runninghub',
         workflowId: effectiveWorkflowId,
+      },
+    })
+  }
+
+  return res.status(200).json({ ok: false, error: 'Max retries exceeded', raw: lastRawText.slice(0, 500) })
+}
+
+async function handleSubmitYuE2Reimaginer(apiKey: string, params: any, res: VercelResponse) {
+  const {
+    app_id,
+    appId,
+    workflow_id,
+    workflowId,
+    audioBase64,
+    audioFileName = 'reference.mp3',
+    audioMimeType = 'audio/mpeg',
+    stylePrompt = '',
+    lyrics = '',
+    instanceType = 'default',
+  } = params
+
+  if (!audioBase64) return res.status(200).json({ ok: false, error: 'Missing audioBase64' })
+  if (!String(stylePrompt).trim() || !String(lyrics).trim()) {
+    return res.status(200).json({ ok: false, error: 'YuE2 Reimaginer butuh style musik dan lirik baru sekaligus.' })
+  }
+
+  const effectiveAppId = app_id || appId || workflow_id || workflowId || RUNNINGHUB_YUE2_REIMAGINER_APP_ID
+
+  console.log(`[runninghub] Uploading audio (yue2-reimaginer)...`)
+  const audioUpload = await rhUpload(apiKey, audioBase64, audioFileName, audioMimeType)
+  console.log(`[runninghub] Audio uploaded: ${audioUpload.fileName}`)
+
+  const nodeInfoList = [
+    { nodeId: YUE2_AUDIO_NODE, fieldName: 'audio', fieldValue: audioUpload.fileName },
+    { nodeId: YUE2_STYLE_NODE, fieldName: 'positive', fieldValue: String(stylePrompt) },
+    { nodeId: YUE2_LYRICS_NODE, fieldName: 'positive', fieldValue: String(lyrics) },
+  ]
+
+  const instance = ['default', 'plus', 'ultra'].includes(String(instanceType)) ? String(instanceType) : 'default'
+  const body = {
+    nodeInfoList,
+    instanceType: instance,
+    usePersonalQueue: 'false',
+  }
+
+  const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${effectiveAppId}`
+
+  const MAX_RETRIES = 3
+  const RETRY_DELAY_MS = 10000
+  let lastRawText = ''
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    console.log(`[runninghub] POST ${endpoint} (yue2-reimaginer attempt ${attempt}/${MAX_RETRIES})`)
+
+    const apiRes = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+    })
+
+    lastRawText = await apiRes.text()
+    console.log(`[runninghub] submit-yue2-reimaginer ${apiRes.status}:`, lastRawText.slice(0, 1000))
+
+    let data: any
+    try { data = JSON.parse(lastRawText) } catch { data = { raw: lastRawText } }
+
+    const rhCode = data.code ?? data.errorCode
+    const rhMsg = data.msg || data.errorMessage || data.message
+
+    if (apiRes.status === 429 || rhCode === 429) {
+      return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data, retryable: true })
+    }
+
+    if (rhCode === 421 || rhCode === '421') {
+      console.log(`[runninghub] Queue limit (421), retrying in ${RETRY_DELAY_MS / 1000}s... (${attempt}/${MAX_RETRIES})`)
+      if (attempt < MAX_RETRIES) {
+        await new Promise(r => setTimeout(r, RETRY_DELAY_MS))
+        continue
+      }
+      return res.status(200).json({ ok: false, error: 'Queue limit reached, coba lagi dalam beberapa menit', data, retryable: true })
+    }
+
+    if (rhCode !== undefined && rhCode !== 0 && rhCode !== '0' && rhCode !== '') {
+      const errorMsg = translateRhError(String(rhCode), rhMsg) || rhMsg || `Error code: ${rhCode}`
+      return res.status(200).json({ ok: false, error: errorMsg, code: rhCode, data })
+    }
+
+    const taskId = data.data?.taskId || data.taskId || data.id || data.task_id
+    if (!taskId) {
+      console.error(`[runninghub] No taskId found (yue2-reimaginer):`, JSON.stringify(data).slice(0, 500))
+      return res.status(200).json({ ok: false, error: 'No taskId returned', raw: lastRawText.slice(0, 500) })
+    }
+
+    return res.status(200).json({
+      ok: true,
+      data: {
+        id: taskId,
+        taskId,
+        status: data.data?.status || data.status || 'QUEUED',
+        provider: 'runninghub',
+        workflowId: effectiveAppId,
       },
     })
   }
