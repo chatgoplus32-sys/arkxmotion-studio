@@ -33,7 +33,7 @@ import {
 } from '@/lib/backgroundTasks'
 import type { CompletedResult } from '@/lib/backgroundTasks'
 import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
-import { isNotificationDeliveryReady, setNotificationsEnabled, requestNotificationPermission, notifyGenerationComplete } from '@/lib/notify'
+import { isNotificationDeliveryReady, setNotificationsEnabled, requestNotificationPermission, promptForNotificationsIfNeeded, notifyGenerationComplete } from '@/lib/notify'
 import { uploadToCdn } from '@/lib/cdn'
 import { precheckProviderBalance } from '@/lib/balancePrecheck'
 import type { NexabotSessionInfo } from '@/lib/nexabot'
@@ -991,6 +991,12 @@ export default function ImageToVideoPage() {
   }
 
   const handleGenerate = async () => {
+    // Panggil di dalam gestur klik: prompt izin yang muncul tanpa gestur
+    // diabaikan Chrome, sehingga notifikasi selesai tidak pernah tampil.
+    // Helper sendiri mengecek preferensi user — jangan digerbangi notifEnabled,
+    // karena state itu false justru saat izin masih `default`.
+    promptForNotificationsIfNeeded().then((granted) => { if (granted) setNotifEnabled(true) })
+
     const validationError = validateGenerate()
     if (validationError) {
       addToast(validationError, 'error')
@@ -1038,6 +1044,27 @@ export default function ImageToVideoPage() {
     }) : null
 
     let activeTaskId: string | null = null
+
+    // Provider di bawah ini mendaftarkan task sendiri (lengkap dengan data
+    // resume). Sisanya butuh task sesi agar panel Generasi menampilkan
+    // "Sedang berjalan" selama proses — sebelumnya panel kosong total.
+    const SELF_TRACKED = new Set(['roboneo', 'weavy', 'galleri5', 'runninghub'])
+    let ephemeralTaskId: string | null = null
+    if (!SELF_TRACKED.has(provider)) {
+      ephemeralTaskId = `i2v-live-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+      addActiveTask({
+        id: ephemeralTaskId,
+        taskId: ephemeralTaskId,
+        roomId: '',
+        token: '',
+        model: currentModel?.label || model,
+        prompt: prompt.trim() || '(no prompt)',
+        startedAt: Date.now(),
+        page: 'image-to-video',
+        provider,
+        ephemeral: true,
+      })
+    }
 
     const startTime = Date.now()
     const timer = setInterval(() => {
@@ -3398,6 +3425,7 @@ export default function ImageToVideoPage() {
        setStatus((s) => ({ ...s, pct: 100, text: `❌ Error: ${err.message}` }))
      } finally {
        clearInterval(timer)
+       if (ephemeralTaskId) removeActiveTask(ephemeralTaskId)
        // Blok catch sudah menangani refund (kalau ada); sisanya dibuang supaya
        // generate berikutnya tidak me-refund catatan lama.
        nbChargeRef.current = null

@@ -554,6 +554,26 @@ export default function MotionPage() {
       slot_count: filledSlots.length,
     }) : null
 
+    // Provider berikut sudah punya task sendiri; sisanya diberi task sesi
+    // supaya panel Generasi menampilkan "Sedang berjalan" selama proses.
+    const SELF_TRACKED = new Set(['roboneo', 'runninghub', 'galleri5', 'genspark'])
+    let ephemeralTaskId: string | null = null
+    if (!SELF_TRACKED.has(provider)) {
+      ephemeralTaskId = `motion-live-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+      addActiveTask({
+        id: ephemeralTaskId,
+        taskId: ephemeralTaskId,
+        roomId: '',
+        token: '',
+        model: currentModel.label,
+        prompt: finalPrompt || '(no prompt)',
+        startedAt: Date.now(),
+        page: 'motion',
+        provider,
+        ephemeral: true,
+      })
+    }
+
     try {
       // Failover ke G5 AI Studio untuk slot yang gagal — dipakai HANYA setelah semua token
       // Roboneo dicoba dan tetap busy (rotasi token sudah jalan duluan di withTokenRotation).
@@ -2003,6 +2023,7 @@ export default function MotionPage() {
       addToast(`Generate gagal: ${genErr.message}`, 'error')
       if (logId) logGenerationFailed(logId, genErr.message, Date.now() - startTime)
     } finally {
+      if (ephemeralTaskId) removeActiveTask(ephemeralTaskId)
       if (generatingRef.current && successRef.current) {
         addToast(`Generate selesai: ${currentProvider.name} · ${currentModel.label}`, 'success')
       }

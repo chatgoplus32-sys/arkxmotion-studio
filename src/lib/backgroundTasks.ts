@@ -22,6 +22,8 @@ export interface ActiveTask {
   startedAt: number
   page: 'motion' | 'image-to-video' | 'upscaler' | 'edit-image'
   provider?: string
+  /** Hanya indikator sesi berjalan; tidak bisa di-resume setelah reload. */
+  ephemeral?: boolean
 }
 
 export interface CompletedResult {
@@ -91,6 +93,12 @@ export function getResults(): CompletedResult[] {
  * fresh blob URLs by loading the actual video data from IndexedDB.
  */
 export async function restoreIdbVideos(): Promise<void> {
+  // Task ephemeral tidak punya data untuk resume — buang setelah reload
+  // supaya panel Generasi tidak menampilkan proses yang sudah mati.
+  const live = readJson(ACTIVE_KEY, [] as ActiveTask[])
+  const resumable = live.filter((t) => !t.ephemeral)
+  if (resumable.length !== live.length) writeJson(ACTIVE_KEY, resumable)
+
   const raw = readJson(RESULTS_KEY, [] as CompletedResult[])
   if (!raw.length) return
   const restored: CompletedResult[] = []
@@ -249,7 +257,7 @@ export function getActiveControllerCount(): number {
 }
 
 export function startBackgroundPolling() {
-  const tasks = getActiveTasks()
+  const tasks = getActiveTasks().filter((t) => !t.ephemeral)
   if (tasks.length === 0) return
 
   for (const task of tasks) {
