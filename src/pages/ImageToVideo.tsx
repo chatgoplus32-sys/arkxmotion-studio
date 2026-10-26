@@ -120,9 +120,9 @@ function SeaviMcSlotCard({ index, slot, onImage, onVideo, onRemove, canRemove }:
 }
 
 // Provider yang sementara disembunyikan di halaman Image to Video (tinggal
-// kembangkan daftarnya untuk menampilkan lagi): weavy, wavespeed, framia,
-// oneover, firefly, genspark, riverside.
-const I2V_PROVIDER_IDS: ProviderId[] = ['roboneo', 'createpulse', 'leonardo', 'galleri5', 'nexabot', 'runninghub', 'seavi', 'alriz']
+// kembangkan daftarnya untuk menampilkan lagi): roboneo, galleri5, weavy,
+// wavespeed, framia, oneover, firefly, genspark, riverside.
+const I2V_PROVIDER_IDS: ProviderId[] = ['createpulse', 'leonardo', 'nexabot', 'runninghub', 'seavi', 'alriz']
 
 export default function ImageToVideoPage() {
   const { keys, routing, fetchMaintenance } = useProviderManager()
@@ -179,8 +179,9 @@ export default function ImageToVideoPage() {
   // Seedance 2.6 Replica (RunningHub): 1-5 gambar referensi karakter + storyboard.
   const [sd26Files, setSd26Files] = useState<File[]>([])
   const [sd26Urls, setSd26Urls] = useState<string[]>([])
-  // Provider default: ikuti routing user, tapi jatuh ke 'roboneo' bila provider routing disembunyikan.
-  const I2V_VISIBLE_FALLBACK: ProviderId = 'roboneo'
+  // Provider default: ikuti routing user, tapi jatuh ke provider pertama yang
+  // terlihat bila routing menunjuk provider yang disembunyikan.
+  const I2V_VISIBLE_FALLBACK: ProviderId = I2V_PROVIDER_IDS[0]
   const [provider, setProvider] = useState<ProviderId>(
     (I2V_PROVIDER_IDS as readonly string[]).includes(routing['image-to-video'] || '')
       ? routing['image-to-video']
