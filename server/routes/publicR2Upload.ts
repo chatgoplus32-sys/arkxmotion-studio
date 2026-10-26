@@ -1,6 +1,14 @@
 import { Router, Request, Response } from 'express'
 import fs from 'node:fs'
 import path from 'node:path'
+import { authenticateToken, AuthRequest } from '../middleware/auth.js'
+import {
+  MAX_UPLOAD_BYTES,
+  UploadError,
+  fetchExternalMedia,
+  resolveMediaType,
+  takeUploadSlot,
+} from '../lib/uploadGuards.js'
 
 const router = Router()
 const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID || ''
@@ -54,11 +62,10 @@ async function getR2Client(): Promise<any> {
   }
 }
 
-function generateKey(prefix: string, filename: string): string {
-  const timestamp = Date.now()
+/** Key selalu di bawah videos/ dan ekstensinya berasal dari MIME yang sudah divalidasi. */
+function generateKey(ext: string): string {
   const random = Math.random().toString(36).substring(2, 8)
-  const ext = filename.split('.').pop() || 'mp4'
-  return `${prefix}/${timestamp}-${random}.${ext}`
+  return `videos/${Date.now()}-${random}.${ext}`
 }
 
 function parseMultipartFile(raw: Buffer, contentType: string): { fileBuffer: Buffer; fileName: string; mimeType: string } | null {
@@ -97,98 +104,83 @@ function parseMultipartFile(raw: Buffer, contentType: string): { fileBuffer: Buf
   return null
 }
 
-router.all('/', (req: Request, res: Response) => {
-  res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
-  if (req.method === 'OPTIONS') return res.status(200).end()
-  if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'Method not allowed' })
+async function readPayload(req: Request): Promise<{ buffer: Buffer; mimeType: string; ext: string }> {
+  const contentTypeHeader = String(req.headers['content-type'] || '')
 
-  ;(async () => {
-    const r2 = await getR2Client()
-    if (r2) {
-      try {
-        const contentTypeHeader = req.headers['content-type'] || ''
-        let body: Buffer
-        let fileName = ''
-        let mimeType = ''
-        let useUrlUpload = false
-        let srcUrl = ''
-        let prefix = 'videos'
-
-        // Direct bytes upload (multipart file) — for blobs that no server can fetch (blob: URLs)
-        if (contentTypeHeader.includes('multipart/form-data')) {
-          const chunks: Uint8Array[] = []
-          for await (const chunk of req) chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk as unknown as Uint8Array)
-          const parsed = parseMultipartFile(Buffer.concat(chunks), contentTypeHeader)
-          if (!parsed) return res.status(400).json({ ok: false, error: 'Could not parse file from multipart body' })
-          body = parsed.fileBuffer
-          fileName = parsed.fileName
-          mimeType = parsed.mimeType
-        } else {
-          const { url, filename, prefix: urlPrefix } = req.body
-          if (!url) return res.status(400).json({ ok: false, error: 'url is required' })
-          const videoRes = await fetch(url, { signal: AbortSignal.timeout(120000) })
-          if (!videoRes.ok) throw new Error(`Failed to fetch video: ${videoRes.status}`)
-          body = Buffer.from(await videoRes.arrayBuffer())
-          fileName = filename || 'video.mp4'
-          mimeType = filename?.endsWith('.webm') ? 'video/webm' : 'video/mp4'
-          useUrlUpload = true
-          srcUrl = url
-          prefix = urlPrefix || 'videos'
-        }
-
-        const key = generateKey(prefix, fileName)
-        await r2.client.send(new r2.PutObjectCommand({
-          Bucket: R2_BUCKET_NAME,
-          Key: key,
-          Body: body,
-          ContentType: mimeType,
-        }))
-
-        const cdnUrl = R2_PUBLIC_URL
-          ? `${R2_PUBLIC_URL.replace(/\/$/, '')}/${key}`
-          : `https://${R2_BUCKET_NAME}.${R2_ACCOUNT_ID}.r2.dev/${key}`
-        return res.status(200).json({ ok: true, url: cdnUrl, key, storage: 'r2' })
-      } catch (err: any) {
-        console.error('[r2-upload] error:', err.message)
-        // Jangan langsung gagal total — lanjut ke bilik disk di bawah.
-      }
+  if (contentTypeHeader.includes('multipart/form-data')) {
+    const chunks: Buffer[] = []
+    let total = 0
+    for await (const chunk of req) {
+      const buf = typeof chunk === 'string' ? Buffer.from(chunk) : Buffer.from(chunk as Uint8Array)
+      total += buf.length
+      if (total > MAX_UPLOAD_BYTES) throw new UploadError(413, 'File terlalu besar (maks 200 MB)')
+      chunks.push(buf)
     }
+    const parsed = parseMultipartFile(Buffer.concat(chunks), contentTypeHeader)
+    if (!parsed) throw new UploadError(400, 'Could not parse file from multipart body')
+    if (parsed.fileBuffer.length === 0) throw new UploadError(400, 'File kosong')
+    const { mimeType, ext } = resolveMediaType(parsed.mimeType, parsed.fileName)
+    return { buffer: parsed.fileBuffer, mimeType, ext }
+  }
 
-    // Fallback disk: kredensial R2 belum di-set (atau upload ke R2 gagal).
+  const { url } = req.body || {}
+  if (!url || typeof url !== 'string') throw new UploadError(400, 'url is required')
+  return fetchExternalMedia(url)
+}
+
+// Preflight tidak membawa Authorization — biarkan middleware CORS global yang menjawab.
+router.options('/', (_req: Request, res: Response) => {
+  res.sendStatus(204)
+})
+
+router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
+  const userId = req.user?.id
+  if (!userId) return res.status(401).json({ ok: false, error: 'Access token required' })
+
+  if (!takeUploadSlot(userId)) {
+    return res.status(429).json({ ok: false, error: 'Terlalu banyak upload — coba lagi beberapa menit lagi' })
+  }
+
+  let payload: { buffer: Buffer; mimeType: string; ext: string }
+  try {
+    payload = await readPayload(req)
+  } catch (err) {
+    if (err instanceof UploadError) return res.status(err.status).json({ ok: false, error: err.message })
+    console.error('[r2-upload] payload error:', err)
+    return res.status(500).json({ ok: false, error: 'Upload gagal' })
+  }
+
+  const key = generateKey(payload.ext)
+
+  const r2 = await getR2Client()
+  if (r2) {
     try {
-      ensureUploadDir()
-      const contentTypeHeader = req.headers['content-type'] || ''
-      let fileBuffer: Buffer
-      let fileName: string
+      await r2.client.send(new r2.PutObjectCommand({
+        Bucket: R2_BUCKET_NAME,
+        Key: key,
+        Body: payload.buffer,
+        ContentType: payload.mimeType,
+      }))
 
-      if (contentTypeHeader.includes('multipart/form-data')) {
-        const chunks: Uint8Array[] = []
-        for await (const chunk of req) chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk as unknown as Uint8Array)
-        const rawBody = Buffer.concat(chunks)
-        const parsed = parseMultipartFile(rawBody, contentTypeHeader)
-        if (!parsed) return res.status(400).json({ ok: false, error: 'Could not parse file from multipart body' })
-        fileBuffer = parsed.fileBuffer
-        fileName = parsed.fileName
-      } else {
-        const { url, filename, prefix } = req.body
-        if (!url) return res.status(400).json({ ok: false, error: 'url is required' })
-        const videoRes = await fetch(url, { signal: AbortSignal.timeout(120000) })
-        if (!videoRes.ok) throw new Error(`Failed to fetch video: ${videoRes.status}`)
-        fileBuffer = Buffer.from(await videoRes.arrayBuffer())
-        fileName = filename || 'video.mp4'
-      }
-
-      const key = generateKey('videos', fileName)
-      fs.writeFileSync(path.join(UPLOAD_DIR, key), fileBuffer)
-      const url = diskPublicUrl(req, key)
-      return res.status(200).json({ ok: true, url, key, storage: 'disk' })
+      const cdnUrl = R2_PUBLIC_URL
+        ? `${R2_PUBLIC_URL.replace(/\/$/, '')}/${key}`
+        : `https://${R2_BUCKET_NAME}.${R2_ACCOUNT_ID}.r2.dev/${key}`
+      return res.status(200).json({ ok: true, url: cdnUrl, key, storage: 'r2' })
     } catch (err: any) {
-      console.error('[r2-upload] disk fallback error:', err.message)
-      return res.status(500).json({ ok: false, error: err.message })
+      console.error('[r2-upload] error:', err?.message || err)
+      // Jangan langsung gagal total — lanjut ke bilik disk di bawah.
     }
-  })()
+  }
+
+  // Fallback disk: kredensial R2 belum di-set (atau upload ke R2 gagal).
+  try {
+    ensureUploadDir()
+    fs.writeFileSync(path.join(UPLOAD_DIR, key), payload.buffer)
+    return res.status(200).json({ ok: true, url: diskPublicUrl(req, key), key, storage: 'disk' })
+  } catch (err: any) {
+    console.error('[r2-upload] disk fallback error:', err?.message || err)
+    return res.status(500).json({ ok: false, error: 'Upload gagal' })
+  }
 })
 
 export default router
