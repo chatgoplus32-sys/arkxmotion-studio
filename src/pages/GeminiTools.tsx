@@ -8,9 +8,11 @@ import { Sparkles, ExternalLink, Copy, Check, Upload, MessageSquarePlus, Scissor
 // Tutorial Gemini dibuka di tab baru — Google memblokir iframe via X-Frame-Options: DENY
 const URL_AUTO_MOTION = 'https://gemini.google.com/share/e7cf0af5e32c?social_preview=false&skid=9e553d6d-2b77-4cba-8cce-4ab5a4a3a18d&hl=id-ID'
 const URL_UGC_PRO = 'https://gemini.google.com/share/37e58d869af2?skid=168a4176-4447-4c98-b04c-35333e853719'
+const URL_UGC_AFFILIATE = 'https://gemini.google.com/share/55de1b1f0bdb?skid=e99bf561-01a5-4a30-b2e3-74d88ba06914'
 const URL_STORYBOARD_V7 = 'https://gemini.google.com/share/b2b10282ee39?skid=b19414e9-98b3-484d-ba80-515b27ca77b4'
+const URL_CLONE_POSE = 'https://gemini.google.com/share/bdcd593aad23?social_preview=false&skid=388d6197-800e-4233-851b-28bd624e17ed'
 
-export type GeminiToolTab = 'auto-motion' | 'ugc-pro' | 'storyboard-v7'
+export type GeminiToolTab = 'auto-motion' | 'ugc-pro' | 'ugc-affiliate' | 'clone-pose' | 'storyboard-v7'
 
 interface PromptTemplate { label: string; prompt: string }
 interface StepDef { n: string; icon: React.ComponentType<{ className?: string }>; title: string; desc: string }
@@ -88,6 +90,66 @@ const TOOLS: ToolDef[] = [
     ],
   },
   {
+    id: 'ugc-affiliate',
+    label: 'UGC Affiliate',
+    tagline: 'Panduan & template UGC Affiliate via Gemini — dari produk affiliate jadi konten yang menjual.',
+    geminiUrl: URL_UGC_AFFILIATE,
+    steps: [
+      { n: '01', icon: Upload, title: 'Siapkan aset produk', desc: 'Kumpulkan foto/video produk, harga, manfaat utama, link affiliate, dan target audiensnya.' },
+      { n: '02', icon: ExternalLink, title: 'Buka Gemini', desc: 'Klik tombol Buka Gemini untuk masuk ke percakapan tutorial UGC Affiliate.' },
+      { n: '03', icon: MessageSquarePlus, title: 'Pakai prompt', desc: 'Salin template, isi detail produk & audiens, lalu lampirkan asetnya di Gemini.' },
+      { n: '04', icon: Wand2, title: 'Produksi konten', desc: 'Ambil naskah/shot list-nya, generate video di UGC Generator, lalu tempel link affiliate di caption atau bio.' },
+    ],
+    prompts: [
+      {
+        label: 'UGC Affiliate — Naskah 30 Detik',
+        prompt: 'Buat naskah video UGC affiliate 30 detik untuk produk: [NAMA PRODUK] ([KATEGORI], harga [HARGA]). Target audiens: [TARGET]. Struktur: hook 3 detik pertama, masalah yang relatable, demo produk, 2-3 manfaat utama, dan CTA halus untuk cek link di bio/keranjang. Format vertikal 9:16, bahasa Indonesia santai ala kreator asli, tanpa klaim berlebihan atau janji hasil instan.',
+      },
+      {
+        label: 'UGC Affiliate — Hook + Caption',
+        prompt: 'Beri saya 10 hook 3-5 kata dan 3 pilihan caption untuk video UGC affiliate produk: [NAMA PRODUK] ([MANFAAT UTAMA]). Caption harus memuat CTA ke link affiliate, 3-5 hashtag relevan, dan keterangan jelas bahwa ini link affiliate. Bahasa percakapan Indonesia, jujur, tanpa clickbait berlebihan.',
+      },
+      {
+        label: 'UGC Affiliate — Storyboard 5 Scene',
+        prompt: 'Susun storyboard UGC affiliate 5 scene untuk produk: [NAMA PRODUK]. Tiap scene tulis: durasi, visual/shot (termasuk close-up produk dan demo pemakaian), teks overlay maks 7 kata, VO singkat, dan aksi kamera. Total 30 detik, format 9:16, akhiri dengan CTA ke link affiliate. Sertakan catatan disclosure affiliate di caption.',
+      },
+    ],
+    nextTools: [
+      { label: 'UGC Generator', href: '/generate/ugc' },
+      { label: 'Clip Genius', href: '/tools/clip-genius' },
+    ],
+  },
+  {
+    id: 'clone-pose',
+    label: 'Clone Pose',
+    tagline: 'Panduan & template Clone Pose via Gemini — tiru pose foto referensi ke subjekmu.',
+    geminiUrl: URL_CLONE_POSE,
+    steps: [
+      { n: '01', icon: Upload, title: 'Siapkan 2 foto', desc: 'Foto subjek (wajah & tubuh terlihat jelas) dan foto referensi pose dari Pinterest/feed — usahakan pose referensi tidak terpotong.' },
+      { n: '02', icon: ExternalLink, title: 'Buka Gemini', desc: 'Klik tombol Buka Gemini untuk masuk ke Gem Clone Pose yang sudah disiapkan.' },
+      { n: '03', icon: MessageSquarePlus, title: 'Upload & tempel prompt', desc: 'Lampirkan foto subjek lebih dulu, lalu foto pose. Sebut urutannya di prompt supaya Gemini tidak menukar peran gambar.' },
+      { n: '04', icon: Wand2, title: 'Sempurnakan hasil', desc: 'Perbaiki wajah/detail yang meleset di Edit Image, atau langsung animasikan pose-nya di Image to Video.' },
+    ],
+    prompts: [
+      {
+        label: 'Clone Pose — Dasar',
+        prompt: 'Gambar 1 adalah subjek (pertahankan wajah, warna kulit, bentuk tubuh, dan outfit). Gambar 2 adalah referensi pose. Tiru pose gambar 2 persis: arah tubuh, posisi tangan & kaki, kemiringan kepala, arah pandangan, dan angle kamera. Jangan ubah identitas maupun outfit subjek. Hasil fotorealistis, proporsi natural, rasio 3:4.',
+      },
+      {
+        label: 'Clone Pose + Latar Baru',
+        prompt: 'Gambar 1 adalah subjek (pertahankan wajah, rambut, dan outfit). Gambar 2 adalah referensi pose. Salin pose, gestur, dan angle kamera gambar 2 ke subjek gambar 1, lalu ganti latar menjadi: [TULIS LATAR/TEMA]. Pencahayaan dan bayangan harus menyatu dengan latar baru. Hasil fotorealistis, rasio 9:16.',
+      },
+      {
+        label: 'Clone Pose untuk Video',
+        prompt: 'Gambar 1 adalah subjek dan gambar 2 adalah referensi pose. Hasilkan satu foto vertikal 9:16 dengan pose yang sama persis seperti gambar 2: tubuh terlihat penuh, ada ruang gerak di sekeliling subjek, pencahayaan merata, tanpa crop. Hindari pose yang menutupi wajah dan pastikan tangan serta kaki terlihat jelas karena foto ini akan dianimasikan menjadi video.',
+      },
+    ],
+    nextTools: [
+      { label: 'Edit Image', href: '/generate/edit-image' },
+      { label: 'Image to Video', href: '/generate/image-to-video' },
+    ],
+  },
+  {
     id: 'storyboard-v7',
     label: 'Storyboard V7',
     tagline: 'Panduan & template Storyboard V7 via Gemini — dari ide jadi papan cerita siap produksi.',
@@ -151,7 +213,7 @@ export default function GeminiToolsPage({ initialTab }: { initialTab?: GeminiToo
         eyebrow="Gemini Tools"
         title="Gemini"
         highlight="Tools"
-        desc="Satu halaman untuk semua panduan & prompt Gemini: Edit Video Auto Motion, UGC Pro, dan Storyboard V7."
+        desc="Satu halaman untuk semua panduan & prompt Gemini: Edit Video Auto Motion, UGC Pro, UGC Affiliate, Clone Pose, dan Storyboard V7."
         actions={
           <Button variant="outline" onClick={() => window.open(tool.geminiUrl, '_blank', 'noopener,noreferrer')}>
             <ExternalLink className="mr-2 h-4 w-4" /> Buka Gemini — {tool.label}
@@ -160,7 +222,7 @@ export default function GeminiToolsPage({ initialTab }: { initialTab?: GeminiToo
       />
 
       {/* Tab */}
-      <div className="flex gap-2 mb-6">
+      <div className="flex flex-wrap gap-2 mb-6">
         {TOOLS.map((t) => (
           <button
             key={t.id}
@@ -179,7 +241,7 @@ export default function GeminiToolsPage({ initialTab }: { initialTab?: GeminiToo
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Section key={tool.id} title="🚀 Cara Kerja" sub="Langkah dari aset mentah jadi hasil siap pakai">
+        <Section title="🚀 Cara Kerja" sub="Langkah dari aset mentah jadi hasil siap pakai">
           <div className="space-y-4">
             {tool.steps.map((step) => (
               <div key={step.n} className="flex gap-3 items-start">
@@ -195,7 +257,7 @@ export default function GeminiToolsPage({ initialTab }: { initialTab?: GeminiToo
           </div>
         </Section>
 
-        <div className="space-y-6" key={tool.id}>
+        <div className="space-y-6">
           <Section
             title="📝 Prompt Template"
             sub="Klik Copy lalu tempel di percakapan Gemini"

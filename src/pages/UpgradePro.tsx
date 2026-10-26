@@ -29,7 +29,7 @@ import {
 } from 'lucide-react'
 
 const BENEFITS = [
-  { icon: Wand2, title: 'Gemini Tools terbuka', desc: 'Edit Video Auto Motion, UGC Pro, dan Storyboard V7 lengkap dengan prompt template.' },
+  { icon: Wand2, title: 'Gemini Tools terbuka', desc: 'Edit Video Auto Motion, UGC Pro, UGC Affiliate, Clone Pose, dan Storyboard V7 lengkap dengan prompt template.' },
   { icon: Music, title: 'AI Song Cover & H3 Music Avatar', desc: 'Buat cover lagu dan avatar musik yang berbicara dari foto.' },
   { icon: Sparkles, title: 'Fitur AI lain tetap terbuka', desc: 'Motion Control, Image to Video, Virtual Try-On, Voice Over, Music Generator, dan lainnya.' },
   { icon: Crown, title: 'Sekali bayar, permanen', desc: 'Tidak ada perpanjangan bulanan. Pro aktif selamanya setelah disetujui.' },
