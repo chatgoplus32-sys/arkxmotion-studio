@@ -1,7 +1,8 @@
 import { useState, useRef, useCallback, useEffect, useMemo, forwardRef } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
-import { Section, Button, Textarea, Select, Label, EmptyState, QuickRoutingDialog, BalanceBadge, getActiveProviderForCap } from '@/components/ui'
-import { useProviderManager, HIDDEN_PROVIDERS, type ProviderId } from '@/stores'
+import { Section, Button, Textarea, Select, Label, EmptyState, BalanceBadge, getActiveProviderForCap } from '@/components/ui'
+import { setRoutingValue } from '@/lib/routing'
+import { useProviderManager, type ProviderId } from '@/stores'
 import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
 import { useToastStore } from '@/stores/toastStore'
 import { uploadToCatbox, compressVideo, normalizeImage, getVideoDurationFromFile, submitMotionControl, submitGoogleOmni, pollRoboneoI2V, checkRoboneoBalance, noteRoboneoMotionChargeFailure, getRoboneoMotionMinCredits, isRoboneoBalanceError, isRoboneoBusyError } from '@/lib/roboneo'
@@ -30,9 +31,11 @@ import {
   Loader2,
   X,
   Download,
-  Repeat,
   Globe,
   Copy,
+  Check,
+  Wallet,
+  Zap,
 } from 'lucide-react'
 
 const PROVIDERS = {
@@ -63,7 +66,7 @@ const PROVIDERS = {
     { key: 'framia:kling-v2.1-motion', label: 'Kling V2.1 Motion Control (Framia)', cr: 40 },
     { key: 'framia:kling-v2.6-motion', label: 'Kling V2.6 Motion Control (Framia)', cr: 35 },
   ]},
-  runninghub: { name: 'Motion Control (RunningHub)', models: [
+  runninghub: { name: 'RunningHub', models: [
     { key: 'rh:wf:kontrol-gerakan', label: 'Kontrol Gerak 50FPS — Lebih Cepat, maks 24s (RunningHub)', cr: 80 },
     { key: 'rh:wf:eposcents', label: 'Eposcents MC — 512HD 32FPS · 50s (RunningHub)', cr: 80 },
     { key: 'rh:wf:mc-pro', label: 'Motion Control Pro — Motion Transfer · 15s (RunningHub)', cr: 80 },
@@ -103,12 +106,50 @@ const PROVIDERS = {
 // Halaman Motion Control sengaja cuma menawarkan dua provider yang paling stabil,
 // biar member tidak bingung memilih. Provider lain tetap dipakai halaman lain.
 const MOTION_PROVIDER_IDS = ['alriz', 'runninghub'] as const
+type MotionProviderId = (typeof MOTION_PROVIDER_IDS)[number]
 
-const VISIBLE_PROVIDERS = Object.fromEntries(
-  MOTION_PROVIDER_IDS
-    .filter((key) => !(HIDDEN_PROVIDERS as readonly string[]).includes(key))
-    .map((key) => [key, PROVIDERS[key]] as const)
-) as typeof PROVIDERS
+const MOTION_PROVIDER_INFO: Record<MotionProviderId, { name: string; tagline: string; note: string; recommended?: boolean }> = {
+  alriz: {
+    name: 'Alriz Motion',
+    tagline: 'Bayar pakai saldo Rupiah',
+    note: 'Tanpa API key — pilihan paling gampang untuk member baru.',
+    recommended: true,
+  },
+  runninghub: {
+    name: 'RunningHub',
+    tagline: 'Bayar pakai kredit RunningHub',
+    note: 'Perlu API key RunningHub yang sudah disimpan di halaman Providers.',
+  },
+}
+
+// Default model tiap provider: pilih yang paling murah, bukan yang pertama di daftar.
+const MOTION_RECOMMENDED_MODEL: Record<MotionProviderId, string> = {
+  alriz: 'al:mc-kling-2.6-std',
+  runninghub: 'rh:std:2.6',
+}
+
+// Label awam untuk dropdown model — nama workflow aslinya terlalu teknis.
+const SIMPLE_MODEL_LABELS: Record<string, string> = {
+  'al:mc-kling-2.6-std': 'Standar 2.6 · 720p',
+  'al:mc-kling-2.6-pro': 'Pro 2.6 · 1080p',
+  'al:mc-kling-3.0-std': 'Standar 3.0 · 720p',
+  'al:mc-kling-3.0-pro': 'Pro 3.0 · 1080p',
+  'rh:wf:kontrol-gerakan': 'Cepat 50 FPS · maks 24 detik',
+  'rh:wf:eposcents': 'Eposcents · 512HD 50 detik',
+  'rh:wf:mc-pro': 'Motion Transfer Pro · 15 detik',
+  'rh:wf:ultra-hd': 'Ultra Fast HD',
+  'rh:pro:2.6': 'Kling 2.6 Pro',
+  'rh:std:2.6': 'Kling 2.6 Standar',
+  'rh:wf:2.9': 'Kling 2.9 Workflow',
+  'rh:wf:v3.0': 'Kling 3.0 Standar',
+}
+
+function motionModelLabel(providerId: MotionProviderId, model: { key: string; label: string; cr: number }): string {
+  const name = SIMPLE_MODEL_LABELS[model.key] || model.label
+  const price = providerId === 'alriz' ? `Rp ${model.cr.toLocaleString('id-ID')}` : `${model.cr} kredit`
+  const tag = model.key === MOTION_RECOMMENDED_MODEL[providerId] ? ' · disarankan' : ''
+  return `${name} · ${price}${tag}`
+}
 
 const MAX_SLOTS = 12
 const MAX_VIDEO_REF_MB = 6
@@ -176,7 +217,6 @@ export default function MotionPage() {
   const elapsedRef = useRef<number | null>(null)
   const generatingRef = useRef(false)
   const successRef = useRef(false)
-  const [showRoutingDialog, setShowRoutingDialog] = useState(false)
   const [confirmDialog, setConfirmDialog] = useState<{ title: string; message: string; onConfirm: () => void; tone?: 'default' | 'danger' } | null>(null)
 
   const { fetchMaintenance } = useProviderManager()
@@ -189,11 +229,11 @@ export default function MotionPage() {
     const p = PROVIDERS[provider as keyof typeof PROVIDERS]
     if (!allowed.includes(provider) || !p || p.models.length === 0) {
       setProvider('alriz')
-      setModelKey(PROVIDERS.alriz.models[0].key)
+      setModelKey(MOTION_RECOMMENDED_MODEL.alriz)
       return
     }
     if (!p.models.some((m) => m.key === modelKey)) {
-      setModelKey(p.models[0].key)
+      setModelKey(MOTION_RECOMMENDED_MODEL[provider as MotionProviderId])
     }
   }, [fetchMaintenance, provider, modelKey, setProvider, setModelKey])
 
@@ -207,8 +247,7 @@ export default function MotionPage() {
         PROVIDERS[cap as keyof typeof PROVIDERS]
       ) {
         setProvider(cap as ProviderId)
-        const p = PROVIDERS[cap as keyof typeof PROVIDERS]
-        if (p.models.length > 0) setModelKey(p.models[0].key)
+        setModelKey(MOTION_RECOMMENDED_MODEL[cap as MotionProviderId])
       }
     }
     sync()
@@ -219,6 +258,14 @@ export default function MotionPage() {
       window.removeEventListener('focus', sync)
     }
   }, [provider, setProvider, setModelKey])
+
+  const selectMotionProvider = (id: MotionProviderId) => {
+    if (id !== provider) {
+      setProvider(id)
+      setModelKey(MOTION_RECOMMENDED_MODEL[id])
+    }
+    setRoutingValue('motion', id)
+  }
 
   useEffect(() => {
     const metadata = slots.map(({ image: _image, video: _video, ...rest }) => rest)
@@ -268,6 +315,7 @@ export default function MotionPage() {
   }, [generating])
 
   const currentProvider = PROVIDERS[provider as keyof typeof PROVIDERS] || PROVIDERS.alriz
+  const recommendedModelKey = MOTION_RECOMMENDED_MODEL[provider as MotionProviderId] || ''
   const currentModel = currentProvider.models.find((m) => m.key === modelKey) || currentProvider.models[0]
   const isOmni = modelKey === 'rn:google-omni'
   // Alriz I2V (kling-3.0-turbo, gemini-omni-flash, dll.): cukup gambar + prompt,
@@ -2208,35 +2256,68 @@ export default function MotionPage() {
         <div className="flex flex-col gap-5">
           <Section title="Pengaturan" sub={`Provider aktif: ${currentProvider.name}`}>
             <div className="flex flex-col gap-4">
-              {/* Provider Info Panel (Markas Tools style) */}
-              {provider === 'roboneo' && (
-                <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 text-xs text-muted-foreground leading-relaxed">
-                  <div className="font-semibold text-foreground mb-1">Provider RoboNeo (Meitu)</div>
-                  Motion Control (berbasis Kling) — animasikan gambar karakter dengan gerakan dari video penggerak.
-                  Pakai akun RoboNeo (access key dari roboneo.com → avatar → CLI Settings).
-                  Sesi berlaku terbatas & perlu ditempel ulang. Biaya mengikuti model: Kling 2.6 Std ±86 🥕, Kling 3.0 Std ≥151 🥕.
+              <div>
+                <Label>Penyedia</Label>
+                <p className="mt-1 mb-2 text-[11px] leading-relaxed text-muted-foreground">
+                  Pilih tempat video diproses. Belum yakin? Pakai Alriz Motion — paling gampang.
+                </p>
+                <div className="grid grid-cols-1 gap-2">
+                  {MOTION_PROVIDER_IDS.map((id) => {
+                    const info = MOTION_PROVIDER_INFO[id]
+                    const isActive = provider === id
+                    const minPrice = Math.min(...PROVIDERS[id].models.map((m) => m.cr))
+                    const priceLine = id === 'alriz'
+                      ? `Mulai Rp ${minPrice.toLocaleString('id-ID')} / video`
+                      : `Mulai ${minPrice} kredit / video`
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => selectMotionProvider(id)}
+                        aria-pressed={isActive}
+                        className={`rounded-xl border p-3 text-left transition ${
+                          isActive
+                            ? 'border-primary/60 bg-primary/10 ring-1 ring-primary/40'
+                            : 'border-border bg-card/40 hover:border-primary/50 hover:bg-card/70'
+                        }`}
+                      >
+                        <div className="flex items-start gap-2.5">
+                          <span className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg ${
+                            isActive ? 'bg-primary/20 text-primary' : 'bg-card text-muted-foreground'
+                          }`}>
+                            {id === 'alriz' ? <Wallet className="h-4 w-4" /> : <Zap className="h-4 w-4" />}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-display text-sm text-foreground">{info.name}</span>
+                              {info.recommended && (
+                                <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary">Disarankan</span>
+                              )}
+                              {isActive && <Check className="ml-auto h-4 w-4 shrink-0 text-primary" />}
+                            </div>
+                            <div className="mt-0.5 text-[11px] text-foreground/80">
+                              {info.tagline} · <span className="font-medium">{priceLine}</span>
+                            </div>
+                            <div className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">{info.note}</div>
+                          </div>
+                        </div>
+                      </button>
+                    )
+                  })}
                 </div>
-              )}
+              </div>
 
               <div>
-                <div className="flex items-center justify-between">
-                  <Label>Model AI</Label>
-                  <button
-                    onClick={() => setShowRoutingDialog(true)}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card/60 px-2.5 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:border-primary/50 transition"
-                    title="Ganti provider"
-                  >
-                    <Repeat className="h-3 w-3" />
-                    {currentProvider.name}
-                  </button>
-                </div>
+                <Label>Model</Label>
+                <p className="mt-1 mb-2 text-[11px] leading-relaxed text-muted-foreground">
+                  Menentukan kualitas dan biaya tiap video. Pilihan bertanda "disarankan" sudah cukup untuk sebagian besar kebutuhan.
+                </p>
                 <Select
                   value={modelKey}
                   onChange={(e) => setModelKey(e.target.value)}
-                  options={currentProvider.models.map((m) => ({
-                    value: m.key,
-                    label: provider === 'alriz' ? `${m.label} (Rp ${m.cr.toLocaleString('id-ID')})` : `${m.label} (${m.cr} cr)`,
-                  }))}
+                  options={[...currentProvider.models]
+                    .sort((a, b) => Number(b.key === recommendedModelKey) - Number(a.key === recommendedModelKey))
+                    .map((m) => ({ value: m.key, label: motionModelLabel(provider as MotionProviderId, m) }))}
                 />
               </div>
 
@@ -2632,24 +2713,6 @@ export default function MotionPage() {
           )}
         </Section>
       </div>
-
-      {showRoutingDialog && (
-        <QuickRoutingDialog
-          cap="motion"
-          activeProvider={provider}
-          providers={Object.entries(VISIBLE_PROVIDERS).map(([key, val]) => ({
-            id: key,
-            name: val.name,
-            models: val.models,
-          }))}
-          onClose={() => setShowRoutingDialog(false)}
-          onSelect={(id) => {
-            setProvider(id as ProviderId)
-            const p = PROVIDERS[id as keyof typeof PROVIDERS]
-            setModelKey(p.models[0].key)
-          }}
-        />
-      )}
 
       {confirmDialog && (
         <div className="fixed inset-0 z-[9999] grid place-items-center bg-background/80 backdrop-blur-sm p-4" onClick={() => setConfirmDialog(null)}>
