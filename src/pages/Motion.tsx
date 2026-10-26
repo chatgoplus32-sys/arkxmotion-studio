@@ -100,8 +100,14 @@ const PROVIDERS = {
   ]},
 }
 
+// Halaman Motion Control sengaja cuma menawarkan dua provider yang paling stabil,
+// biar member tidak bingung memilih. Provider lain tetap dipakai halaman lain.
+const MOTION_PROVIDER_IDS = ['alriz', 'runninghub'] as const
+
 const VISIBLE_PROVIDERS = Object.fromEntries(
-  Object.entries(PROVIDERS).filter(([key]) => !(HIDDEN_PROVIDERS as readonly string[]).includes(key))
+  MOTION_PROVIDER_IDS
+    .filter((key) => !(HIDDEN_PROVIDERS as readonly string[]).includes(key))
+    .map((key) => [key, PROVIDERS[key]] as const)
 ) as typeof PROVIDERS
 
 const MAX_SLOTS = 12
@@ -132,9 +138,9 @@ function createSlot(): Slot {
 }
 
 export default function MotionPage() {
-  const [provider, setProvider] = useLocalStorage<ProviderId>('motion.provider', 'wavespeed')
+  const [provider, setProvider] = useLocalStorage<ProviderId>('motion.provider', 'alriz')
   const addToast = useToastStore((s) => s.addToast)
-  const [modelKey, setModelKey] = useLocalStorage('motion.modelKey', PROVIDERS.wavespeed.models[0]?.key || '')
+  const [modelKey, setModelKey] = useLocalStorage('motion.modelKey', PROVIDERS.alriz.models[0]?.key || '')
   const [orientation, setOrientation] = useLocalStorage<'video' | 'image'>('motion.orientation', 'video')
   const [prompt, setPrompt] = useLocalStorage('motion.prompt', '')
   const [negativePrompt, setNegativePrompt] = useLocalStorage('motion.negativePrompt', '')
@@ -177,14 +183,19 @@ export default function MotionPage() {
 
   useEffect(() => {
     fetchMaintenance()
-    // Auto-correct provider if it has no models (e.g. 'weavy')
+    // Member lama bisa masih menyimpan provider di luar daftar (Weavy/Wavespeed),
+    // jadi arahkan balik ke Alriz dan pastikan model yang dipilih ikut cocok.
+    const allowed = MOTION_PROVIDER_IDS as readonly string[]
     const p = PROVIDERS[provider as keyof typeof PROVIDERS]
-    if (!p || p.models.length === 0) {
-      setProvider('wavespeed')
-      const wp = PROVIDERS.wavespeed
-      if (wp.models.length > 0) setModelKey(wp.models[0].key)
+    if (!allowed.includes(provider) || !p || p.models.length === 0) {
+      setProvider('alriz')
+      setModelKey(PROVIDERS.alriz.models[0].key)
+      return
     }
-  }, [fetchMaintenance, provider, setProvider, setModelKey])
+    if (!p.models.some((m) => m.key === modelKey)) {
+      setModelKey(p.models[0].key)
+    }
+  }, [fetchMaintenance, provider, modelKey, setProvider, setModelKey])
 
   useEffect(() => {
     const sync = () => {
@@ -192,7 +203,7 @@ export default function MotionPage() {
       if (
         cap &&
         cap !== provider &&
-        !(HIDDEN_PROVIDERS as readonly string[]).includes(cap) &&
+        (MOTION_PROVIDER_IDS as readonly string[]).includes(cap) &&
         PROVIDERS[cap as keyof typeof PROVIDERS]
       ) {
         setProvider(cap as ProviderId)
@@ -256,7 +267,7 @@ export default function MotionPage() {
     return () => { if (elapsedRef.current) clearInterval(elapsedRef.current) }
   }, [generating])
 
-  const currentProvider = PROVIDERS[provider as keyof typeof PROVIDERS] || PROVIDERS.wavespeed
+  const currentProvider = PROVIDERS[provider as keyof typeof PROVIDERS] || PROVIDERS.alriz
   const currentModel = currentProvider.models.find((m) => m.key === modelKey) || currentProvider.models[0]
   const isOmni = modelKey === 'rn:google-omni'
   // Alriz I2V (kling-3.0-turbo, gemini-omni-flash, dll.): cukup gambar + prompt,
@@ -2625,6 +2636,7 @@ export default function MotionPage() {
       {showRoutingDialog && (
         <QuickRoutingDialog
           cap="motion"
+          activeProvider={provider}
           providers={Object.entries(VISIBLE_PROVIDERS).map(([key, val]) => ({
             id: key,
             name: val.name,

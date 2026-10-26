@@ -11,12 +11,15 @@ interface ProviderOption {
 interface QuickRoutingDialogProps {
   cap: string
   providers: ProviderOption[]
+  /** Provider yang sedang dipakai halaman, kalau berbeda dari routing global. */
+  activeProvider?: string
   onClose: () => void
   onSelect?: (providerId: string) => void
 }
 
-export function QuickRoutingDialog({ cap, providers, onClose, onSelect }: QuickRoutingDialogProps) {
+export function QuickRoutingDialog({ cap, providers, activeProvider, onClose, onSelect }: QuickRoutingDialogProps) {
   const [active, setActive] = useState(() => getActiveProviderForCap(cap))
+  const activeId = activeProvider || active
 
   useEffect(() => {
     const handler = () => {
@@ -51,7 +54,7 @@ export function QuickRoutingDialog({ cap, providers, onClose, onSelect }: QuickR
         </div>
         <div className="p-4 flex flex-col gap-2.5">
           {providers.map((provider) => {
-            const isActive = active === provider.id
+            const isActive = activeId === provider.id
             return (
               <button
                 key={provider.id}
@@ -77,7 +80,8 @@ export function QuickRoutingDialog({ cap, providers, onClose, onSelect }: QuickR
                       <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary/60 shrink-0" />
                       <span className="text-foreground/80 flex-1 truncate">{model.label}</span>
                       <span className="font-mono text-emerald-300/90 text-[12px] whitespace-nowrap">
-                        ~{model.cr} cr
+                        {/* Alriz menagih rupiah, bukan kredit — jangan campur satuannya. */}
+                        {provider.id === 'alriz' ? `Rp ${model.cr.toLocaleString('id-ID')}` : `~${model.cr} cr`}
                       </span>
                     </div>
                   ))}
