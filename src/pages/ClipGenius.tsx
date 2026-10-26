@@ -4,6 +4,7 @@ import { Section, Button, Textarea, Input, Label, EmptyState } from '@/component
 import { useToastStore } from '@/stores/toastStore'
 import { getGensparkApiKey } from '@/lib/genspark'
 import { createTask, taskStatus } from '@/lib/genspark-tools'
+import { addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
 import { Film, Loader2, Play, Wand2 } from 'lucide-react'
 
 const EDIT_TYPES = [
@@ -74,10 +75,21 @@ export default function ClipGeniusPage() {
     setTaskUrl(null)
     setProgress(0)
 
+    const editLabel = EDIT_TYPES.find(e => e.value === editType)?.label || editType
+    let trackId: string | null = null
+    let trackPrompt = ''
+
     try {
       addLog('🎬 Submitting video edit task...')
 
       const prompt = getEditPrompt()
+      trackPrompt = prompt.slice(0, 500)
+      trackId = startGenerationTask({
+        page: 'clip-genius',
+        model: `Clip Genius · ${editLabel}`,
+        prompt: trackPrompt,
+        provider: 'genspark',
+      })
       const taskResult = await createTask({
         taskType: 'video_generation',
         query: prompt,
@@ -116,12 +128,28 @@ export default function ClipGeniusPage() {
             if (statusStr === 'completed' || statusStr === 'done' || statusStr === 'success') {
               clearInterval(pollInterval)
               setResult(statusData)
+              const resultUrl = statusData?.video_url || statusData?.result_url || statusData?.url
+              if (resultUrl) {
+                addResult({
+                  id: `clip-${Date.now()}`,
+                  url: resultUrl,
+                  prompt: trackPrompt,
+                  date: new Date().toISOString(),
+                  page: 'clip-genius',
+                  kind: 'video',
+                  provider: 'genspark',
+                  model: `Clip Genius · ${editLabel}`,
+                  taskUrl: url || undefined,
+                })
+              }
+              if (trackId) removeActiveTask(trackId)
               setProgress(100)
               setProcessing(false)
               addToast('Video edit selesai!', 'success')
               addLog('✅ Video edit completed!')
             } else if (statusStr === 'failed' || statusStr === 'error') {
               clearInterval(pollInterval)
+              if (trackId) removeActiveTask(trackId)
               setProcessing(false)
               addToast('Video edit gagal', 'error')
               addLog(`❌ Task failed: ${statusData?.error || 'Unknown error'}`)
@@ -132,6 +160,7 @@ export default function ClipGeniusPage() {
 
           if (attempts >= maxAttempts) {
             clearInterval(pollInterval)
+            if (trackId) removeActiveTask(trackId)
             setProcessing(false)
             addToast('Timeout — coba cek task URL', 'warning')
             addLog('⏰ Polling timeout')
@@ -141,11 +170,26 @@ export default function ClipGeniusPage() {
       } else {
         // No URL returned, task might be sync
         setResult(data)
+        const resultUrl = data?.video_url || data?.result_url || data?.url
+        if (resultUrl) {
+          addResult({
+            id: `clip-${Date.now()}`,
+            url: resultUrl,
+            prompt: trackPrompt,
+            date: new Date().toISOString(),
+            page: 'clip-genius',
+            kind: 'video',
+            provider: 'genspark',
+            model: `Clip Genius · ${editLabel}`,
+          })
+        }
+        if (trackId) removeActiveTask(trackId)
         setProgress(100)
         setProcessing(false)
         addLog('✅ Task submitted (sync mode)')
       }
     } catch (err: any) {
+      if (trackId) removeActiveTask(trackId)
       setProcessing(false)
       addToast(`Error: ${err.message}`, 'error')
       addLog(`❌ Error: ${err.message}`)

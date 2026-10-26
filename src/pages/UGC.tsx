@@ -5,6 +5,7 @@ import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { logAudit } from '@/lib/auditLog'
 import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
+import { addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
 import { precheckProviderBalance } from '@/lib/balancePrecheck'
 import {
   Rocket, X, Plus, Square,
@@ -152,6 +153,12 @@ export default function UGCPage() {
     }) : null
 
     const startTime = Date.now()
+    const trackId = startGenerationTask({
+      page: 'ugc',
+      model: 'Nano Banana 2',
+      prompt: `UGC ${products.length} produk`,
+      provider: 'weavy',
+    })
     const timer = setInterval(() => {
       const elapsed = Math.floor((Date.now() - startTime) / 1000)
       setStatus((prev) => ({ ...prev, time: `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}` }))
@@ -185,6 +192,16 @@ export default function UGCPage() {
 
           if (!controller.signal.aborted) {
             setResults((prev) => [...prev, { id: product.id, url: imageUrl, status: 'done' }])
+            addResult({
+              id: `ugc-${Date.now()}-${i}`,
+              url: imageUrl,
+              prompt: prompt.slice(0, 500),
+              date: new Date().toISOString(),
+              page: 'ugc',
+              kind: 'image',
+              provider: 'weavy',
+              model: 'Nano Banana 2',
+            }, { notify: false })
             addLog(`#${i + 1}: ✅ Selesai`, 'success')
           }
         } catch (err: any) {
@@ -210,6 +227,7 @@ export default function UGCPage() {
         if (logId) logGenerationFailed(logId, err.message, Date.now() - startTime)
       }
     } finally {
+      removeActiveTask(trackId)
       clearInterval(timer)
       setGenerating(false)
       abortRef.current = null

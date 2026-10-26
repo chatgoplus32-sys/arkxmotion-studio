@@ -6,7 +6,7 @@ import { Loader2, Upload, Download, X, Shirt, User, Sparkles, CheckCircle2, Aler
 import { useToastStore } from '@/stores/toastStore'
 import { submitRunningHubTryOn, submitRunningHubTryOnFlux2, pollRunningHubTask } from '@/lib/runninghub'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
-import { persistResultToR2 } from '@/lib/backgroundTasks'
+import { persistResultToR2, addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
 
 type TryOnMode = 'tryon' | 'extract'
 type TryOnEngine = 'firered' | 'flux2'
@@ -110,6 +110,12 @@ export default function VirtualTryOnPage() {
     setProgress(0)
     setTaskStatus('submitting')
     setLogs([])
+    const trackId = startGenerationTask({
+      page: 'virtual-tryon',
+      model: engine === 'flux2' ? 'Virtual Try-On FLUX2-Klein' : 'Virtual Try-On',
+      prompt: prompt.trim().slice(0, 500),
+      provider: 'runninghub',
+    })
     addLog(`Mulai (${mode}): ${(personFile!.size / 1024).toFixed(0)}KB ${personFile!.name}` + (mode === 'tryon' && garmentFile ? ` + ${(garmentFile.size / 1024).toFixed(0)}KB ${garmentFile.name}` : ''))
     if (prompt.trim()) addLog(`Prompt: ${prompt.trim().slice(0, 120)}`)
 
@@ -175,6 +181,16 @@ export default function VirtualTryOnPage() {
       }
       // URL RunningHub kedaluwarsa 24 jam — simpan permanen ke R2
       persistResultToR2(tid, url)
+      addResult({
+        id: tid,
+        url,
+        prompt: prompt.trim().slice(0, 500),
+        date: new Date().toISOString(),
+        page: 'virtual-tryon',
+        kind: 'image',
+        provider: 'runninghub',
+        model: engine === 'flux2' ? 'Virtual Try-On FLUX2-Klein' : 'Virtual Try-On',
+      })
       setHistory((prev) => [
         { time: new Date().toLocaleTimeString('id-ID'), taskId: tid, status: '✅ Selesai', url },
         ...prev,
@@ -186,6 +202,7 @@ export default function VirtualTryOnPage() {
       addLog(`Gagal: ${e.message || e}`, 'error')
       addToast(`❌ ${e.message}`, 'error')
     } finally {
+      removeActiveTask(trackId)
       setLoading(false)
     }
   }

@@ -10,6 +10,7 @@ import { runLeonardoImage } from '@/lib/leonardo'
 import { runWeavyImage, uploadToWeavy } from '@/lib/weavy'
 import { submitRoboneoImage, pollRoboneoImage, checkRoboneoBalance } from '@/lib/roboneo'
 import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
+import { addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
 
 interface ImageSize {
   id: string
@@ -370,6 +371,12 @@ export default function TextToImagePage() {
     }) : null
 
     const startTime = Date.now()
+    const trackId = startGenerationTask({
+      page: 'text-to-image',
+      model: selectedModel.label,
+      prompt: prompt.trim().slice(0, 500),
+      provider,
+    })
 
     const onProgress = (text: string, pct?: number) => {
       addLog(text)
@@ -463,6 +470,16 @@ export default function TextToImagePage() {
         timestamp: Date.now(),
       }
       setResults(prev => [result, ...prev])
+      addResult({
+        id: result.id,
+        url: result.url,
+        prompt: result.prompt,
+        date: new Date(result.timestamp).toISOString(),
+        page: 'text-to-image',
+        kind: 'image',
+        provider: result.provider,
+        model: result.model,
+      })
       setProgress({ show: true, text: '✅ Selesai', pct: 100 })
       addLog(`✅ Gambar berhasil dibuat`, 'success')
       addToast('Gambar berhasil dibuat!', 'success')
@@ -475,6 +492,7 @@ export default function TextToImagePage() {
       addToast(errMsg, 'error')
       if (logId) logGenerationFailed(logId, errMsg, Date.now() - startTime)
     } finally {
+      removeActiveTask(trackId)
       setLoading(false)
     }
   }

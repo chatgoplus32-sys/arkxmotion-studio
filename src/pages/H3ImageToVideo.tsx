@@ -6,7 +6,7 @@ import { Loader2, Upload, Download, X, Image as ImageIcon, Sparkles, CheckCircle
 import { useToastStore } from '@/stores/toastStore'
 import { submitRunningHubH3I2V, pollRunningHubTask } from '@/lib/runninghub'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
-import { persistResultToR2 } from '@/lib/backgroundTasks'
+import { persistResultToR2, addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
 import { useLocalStorage } from '@/lib/useLocalStorage'
 import { normalizeImage } from '@/lib/roboneo'
 
@@ -93,6 +93,16 @@ export default function H3ImageToVideoPage() {
     addLog(`Selesai: ${url.slice(0, 100)}...`, 'success')
     // URL RunningHub kedaluwarsa 24 jam — simpan permanen ke R2
     persistResultToR2(tid, url)
+    addResult({
+      id: tid,
+      url,
+      prompt: prompt.trim().slice(0, 500),
+      date: new Date().toISOString(),
+      page: 'h3-i2v',
+      kind: 'video',
+      provider: 'runninghub',
+      model: 'H3 Image to Video',
+    })
     setHistory((prev) => [
       { time: new Date().toLocaleTimeString('id-ID'), taskId: tid, status: '✅ Selesai', url },
       ...prev,
@@ -121,6 +131,12 @@ export default function H3ImageToVideoPage() {
     setTimedOutTaskId(null)
     setTaskStatus('submitting')
     setLogs([])
+    const trackId = startGenerationTask({
+      page: 'h3-i2v',
+      model: 'H3 Image to Video',
+      prompt: prompt.trim().slice(0, 500),
+      provider: 'runninghub',
+    })
 
     let upPhoto = photoFile
     try {
@@ -188,6 +204,7 @@ export default function H3ImageToVideoPage() {
         addToast('Task masih jalan di server — pakai "Lanjutkan" untuk cek lagi tanpa submit baru', 'info')
       }
     } finally {
+      removeActiveTask(trackId)
       setLoading(false)
     }
   }
@@ -197,6 +214,12 @@ export default function H3ImageToVideoPage() {
     setLoading(true)
     setError(null)
     setTaskStatus('running')
+    const trackId = startGenerationTask({
+      page: 'h3-i2v',
+      model: 'H3 Image to Video',
+      prompt: prompt.trim().slice(0, 500),
+      provider: 'runninghub',
+    })
     addLog(`🔄 Lanjutkan polling task ${timedOutTaskId.slice(0, 20)}...`)
     try {
       const rotation = await withTokenRotation<string>(
@@ -221,6 +244,7 @@ export default function H3ImageToVideoPage() {
       if (!/timeout/i.test(e.message || '')) setTimedOutTaskId(null)
       else addToast('Masih jalan — coba "Lanjutkan" lagi nanti', 'info')
     } finally {
+      removeActiveTask(trackId)
       setLoading(false)
     }
   }

@@ -6,7 +6,7 @@ import { Loader2, Upload, Download, X, User, Sparkles, CheckCircle2, AlertCircle
 import { useToastStore } from '@/stores/toastStore'
 import { submitRunningHubH3MusicAvatar, pollRunningHubTask } from '@/lib/runninghub'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
-import { persistResultToR2 } from '@/lib/backgroundTasks'
+import { persistResultToR2, addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
 import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
 
 interface HistoryItem {
@@ -127,6 +127,12 @@ export default function H3MusicAvatarPage() {
     if (efPrompt !== DEFAULT_PROMPT) addLog(`Prompt: ${efPrompt.slice(0, 100)}...`)
 
     const startTime = Date.now()
+    const trackId = startGenerationTask({
+      page: 'h3-music-avatar',
+      model: 'H3 Music Avatar',
+      prompt: efPrompt.slice(0, 500),
+      provider: 'runninghub',
+    })
     const logId = await logGenerationStart({
       page: 'h3-music-avatar',
       provider: 'runninghub',
@@ -171,6 +177,16 @@ export default function H3MusicAvatarPage() {
       setStatusText('')
       addLog(`Selesai: ${url.slice(0, 100)}...`, 'success')
       persistResultToR2(tid, url)
+      addResult({
+        id: tid,
+        url,
+        prompt: efPrompt.slice(0, 500),
+        date: new Date().toISOString(),
+        page: 'h3-music-avatar',
+        kind: 'video',
+        provider: 'runninghub',
+        model: 'H3 Music Avatar',
+      })
       setHistory((prev) => [
         { time: new Date().toLocaleTimeString('id-ID'), taskId: tid, url },
         ...prev,
@@ -184,6 +200,7 @@ export default function H3MusicAvatarPage() {
       if (logId) logGenerationFailed(logId, e.message || 'Unknown error', Date.now() - startTime)
       addToast(`❌ ${e.message}`, 'error')
     } finally {
+      removeActiveTask(trackId)
       setLoading(false)
     }
   }

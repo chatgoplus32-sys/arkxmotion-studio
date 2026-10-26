@@ -6,7 +6,7 @@ import { Loader2, Upload, Download, X, User, Sparkles, CheckCircle2, AlertCircle
 import { useToastStore } from '@/stores/toastStore'
 import { submitRunningHubTravelPhoto, pollRunningHubTask, queryRunningHubTaskFull } from '@/lib/runninghub'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
-import { persistResultToR2 } from '@/lib/backgroundTasks'
+import { persistResultToR2, addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
 import { filterDuplicateImages } from '@/lib/imageSim'
 
 interface HistoryItem {
@@ -117,6 +117,12 @@ export default function TravelPhotoPage() {
     setProgress(0)
     setTaskStatus('submitting')
     setLogs([])
+    const trackId = startGenerationTask({
+      page: 'travel-photo',
+      model: 'Qwen AI Travel Photo',
+      prompt: `${dest}${prompt.trim() ? ` · ${prompt.trim()}` : ''}`.slice(0, 500),
+      provider: 'runninghub',
+    })
     addLog(`Mulai Travel Photo: ${(characterFile.size / 1024).toFixed(0)}KB ${characterFile.name}`)
     addLog(`Destinasi: ${dest}`)
     if (prompt.trim()) addLog(`Prompt: ${prompt.trim().slice(0, 120)}`)
@@ -192,6 +198,16 @@ export default function TravelPhotoPage() {
         addLog(`Dipakai key "${rotation.usedKey?.name}" setelah ${rotation.triedKeys} percobaan`)
       }
       persistResultToR2(tid, primaryUrl)
+      addResult({
+        id: tid,
+        url: primaryUrl,
+        prompt: `${dest}${prompt.trim() ? ` · ${prompt.trim()}` : ''}`.slice(0, 500),
+        date: new Date().toISOString(),
+        page: 'travel-photo',
+        kind: 'image',
+        provider: 'runninghub',
+        model: 'Qwen AI Travel Photo',
+      })
       setHistory((prev) => [
         { time: new Date().toLocaleTimeString('id-ID'), taskId: tid, status: '✅ Selesai', url: primaryUrl },
         ...prev,
@@ -203,6 +219,7 @@ export default function TravelPhotoPage() {
       addLog(`Gagal: ${e.message || e}`, 'error')
       addToast(`❌ ${e.message}`, 'error')
     } finally {
+      removeActiveTask(trackId)
       setLoading(false)
     }
   }

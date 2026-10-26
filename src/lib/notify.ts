@@ -96,12 +96,12 @@ export function notifyGenerationComplete(model: string, provider: string) {
   })
 }
 
-export function notifyResultReady(result: { page?: string; model?: string; provider?: string }) {
-  const isImage = result.page === 'edit-image' || result.page === 'upscaler'
-  const kind = isImage ? 'Gambar' : 'Video'
+export function notifyResultReady(result: { page?: string; model?: string; provider?: string; kind?: 'image' | 'video' | 'audio' }) {
+  const kind = result.kind ?? (result.page === 'edit-image' || result.page === 'upscaler' ? 'image' : 'video')
+  const label = kind === 'audio' ? 'Audio' : kind === 'image' ? 'Gambar' : 'Video'
   const detail = [result.model, result.provider].filter(Boolean).join(' · ')
-  sendNotification(`✅ ${kind} selesai!`, {
-    body: detail ? `${detail} sudah siap di ARKXMotion.` : `Hasil ${kind.toLowerCase()} baru sudah siap.`,
+  sendNotification(`✅ ${label} selesai!`, {
+    body: detail ? `${detail} sudah siap di ARKXMotion.` : `Hasil ${label.toLowerCase()} baru sudah siap.`,
     tag: 'arkxmotion-result',
   })
 }

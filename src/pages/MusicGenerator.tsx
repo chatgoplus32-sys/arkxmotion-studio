@@ -11,6 +11,7 @@ import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, type NexabotWallet } from '@/lib/nexabotWallet'
 import { uploadBlobToCdn } from '@/lib/cdn'
 import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
+import { addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
 
 interface HistoryItem {
   time: string
@@ -73,6 +74,12 @@ export default function MusicGeneratorPage() {
     setStatusText('Menyiapkan...')
     setLogs([])
     nbChargeRef.current = null
+    const trackId = startGenerationTask({
+      page: 'music-generator',
+      model: 'Music Generator',
+      prompt: prompt.trim().slice(0, 500),
+      provider: 'nexabot',
+    })
 
     const startTime = Date.now()
     const promptText = prompt.trim()
@@ -189,8 +196,19 @@ export default function MusicGeneratorPage() {
       setTaskStatus('success')
       setStatusText('')
       addLog(`✅ Selesai ✓ ${url.slice(0, 60)}...`, 'success')
+      const tid = `music-${Date.now()}`
+      addResult({
+        id: tid,
+        url,
+        prompt: promptText.slice(0, 500),
+        date: new Date().toISOString(),
+        page: 'music-generator',
+        kind: 'audio',
+        provider: 'nexabot',
+        model: 'Music Generator',
+      })
       setHistory((prev) => [
-        { time: new Date().toLocaleTimeString('id-ID'), jobId: `music-${Date.now()}`, prompt: promptText, url },
+        { time: new Date().toLocaleTimeString('id-ID'), jobId: tid, prompt: promptText, url },
         ...prev,
       ])
       if (logId) logGenerationComplete(logId, { status: 'completed', result_url: url, duration_ms: Date.now() - startTime })
@@ -210,6 +228,7 @@ export default function MusicGeneratorPage() {
       if (logId) logGenerationFailed(logId, e.message || 'Unknown error', Date.now() - startTime)
       addToast(`❌ ${e.message || 'Music Generator gagal'}`, 'error')
     } finally {
+      removeActiveTask(trackId)
       setLoading(false)
     }
   }

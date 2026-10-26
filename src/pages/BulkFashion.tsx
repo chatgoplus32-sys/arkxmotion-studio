@@ -9,6 +9,11 @@ import { useAuthStore } from '@/stores/authStore'
 import { logAudit } from '@/lib/auditLog'
 import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
 import {
+  addResult as addGenerationResult,
+  startGenerationTask,
+  removeActiveTask,
+} from '@/lib/backgroundTasks'
+import {
   BULK_FASHION_PROVIDERS,
   calculateBulkCost,
   generateBulkFashion,
@@ -297,6 +302,12 @@ export default function BulkFashionPage() {
     }) : null
 
     const startTime = Date.now()
+    const trackId = startGenerationTask({
+      page: 'bulk-fashion',
+      model: currentModel?.label || model,
+      prompt: `Bulk fashion ${outfitFiles.length} outfit`,
+      provider: activeProvider,
+    })
     const completedCount = { value: 0 }
 
     const timer = setInterval(() => {
@@ -331,6 +342,16 @@ export default function BulkFashionPage() {
           if (resultUrl) {
             completedCount.value++
             addResult({ url: resultUrl, status: 'done' })
+            addGenerationResult({
+              id: `bf-${Date.now()}-${idx}`,
+              url: resultUrl,
+              prompt: `Bulk fashion · ${productType} · outfit #${idx + 1}`,
+              date: new Date().toISOString(),
+              page: 'bulk-fashion',
+              kind: 'image',
+              provider: activeProvider,
+              model: currentModel?.label || model,
+            }, { notify: false })
             setOutfitProgress((prev) => prev.map((p) => p.index === idx ? { ...p, status: 'done', message: 'Selesai' } : p))
             addLog(`#${idx + 1}: ✅ Selesai`, 'success')
           } else if (error) {
@@ -384,6 +405,7 @@ export default function BulkFashionPage() {
         if (logId) logGenerationFailed(logId, err.message || 'Unknown error', Date.now() - startTime)
       }
     } finally {
+      removeActiveTask(trackId)
       clearInterval(timer)
       setGenerating(false)
       abortRef.current = null

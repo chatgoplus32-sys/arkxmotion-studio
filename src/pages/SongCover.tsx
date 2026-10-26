@@ -7,7 +7,7 @@ import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { submitRunningHubSongCover, submitRunningHubYuE2Reimaginer, pollRunningHubTask } from '@/lib/runninghub'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
-import { persistResultToR2 } from '@/lib/backgroundTasks'
+import { persistResultToR2, addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
 import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
 import { STYLE_PRESETS, GENRE_CATEGORIES, type SongGenreCategory } from '@/lib/song-cover-genres'
 
@@ -185,6 +185,12 @@ export default function SongCoverPage() {
     if (trimmedLyrics) addLog(`Lirik: ${trimmedLyrics.slice(0, 80)}... (${trimmedLyrics.length} char)`)
 
     const startTime = Date.now()
+    const trackId = startGenerationTask({
+      page: 'song-cover',
+      model: modelLabel,
+      prompt: finalStyle.slice(0, 500),
+      provider: 'runninghub',
+    })
     const logId = currentUser ? await logGenerationStart({
       page: 'song-cover',
       provider: 'runninghub',
@@ -251,6 +257,16 @@ export default function SongCoverPage() {
       setProgress(100)
       addLog(`Selesai: ${url.slice(0, 100)}...`, 'success')
       persistResultToR2(tid, url)
+      addResult({
+        id: tid,
+        url,
+        prompt: finalStyle.slice(0, 500),
+        date: new Date().toISOString(),
+        page: 'song-cover',
+        kind: 'audio',
+        provider: 'runninghub',
+        model: modelLabel,
+      })
       if (logId) logGenerationComplete(logId, { status: 'completed', result_url: url, duration_ms: Date.now() - startTime })
       setHistory((prev) => [
         { time: new Date().toLocaleTimeString('id-ID'), taskId: tid, status: '✅ Selesai', url },
@@ -264,6 +280,7 @@ export default function SongCoverPage() {
       if (logId) logGenerationFailed(logId, e.message || 'Unknown error', Date.now() - startTime)
       addToast(`❌ ${e.message}`, 'error')
     } finally {
+      removeActiveTask(trackId)
       setLoading(false)
     }
   }

@@ -11,6 +11,49 @@ const LOGS_KEY = 'arkxmotion_bg_logs'
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'success'
 
+export type GenerationKind = 'image' | 'video' | 'audio'
+
+export type GenerationPage =
+  | 'motion'
+  | 'image-to-video'
+  | 'upscaler'
+  | 'edit-image'
+  | 'song-cover'
+  | 'video-upscaler'
+  | 'bulk-fashion'
+  | 'virtual-tryon'
+  | 'travel-photo'
+  | 'talking-photo'
+  | 'h3-i2v'
+  | 'h3-music-avatar'
+  | 'ugc-storyboard'
+  | 'voice-over'
+  | 'music-generator'
+  | 'text-to-image'
+  | 'ugc'
+  | 'clip-genius'
+
+export const GENERATION_PAGE_KIND: Record<GenerationPage, GenerationKind> = {
+  motion: 'video',
+  'image-to-video': 'video',
+  upscaler: 'image',
+  'edit-image': 'image',
+  'song-cover': 'audio',
+  'video-upscaler': 'video',
+  'bulk-fashion': 'image',
+  'virtual-tryon': 'image',
+  'travel-photo': 'image',
+  'talking-photo': 'video',
+  'h3-i2v': 'video',
+  'h3-music-avatar': 'video',
+  'ugc-storyboard': 'video',
+  'voice-over': 'audio',
+  'music-generator': 'audio',
+  'text-to-image': 'image',
+  ugc: 'image',
+  'clip-genius': 'video',
+}
+
 export interface ActiveTask {
   id: string
   taskId: string
@@ -20,7 +63,7 @@ export interface ActiveTask {
   model: string
   prompt: string
   startedAt: number
-  page: 'motion' | 'image-to-video' | 'upscaler' | 'edit-image'
+  page: GenerationPage
   provider?: string
   /** Hanya indikator sesi berjalan; tidak bisa di-resume setelah reload. */
   ephemeral?: boolean
@@ -31,7 +74,8 @@ export interface CompletedResult {
   url: string
   prompt: string
   date: string
-  page: 'motion' | 'image-to-video' | 'upscaler' | 'edit-image'
+  page: GenerationPage
+  kind?: GenerationKind
   provider?: string
   model?: string
   ratio?: string
@@ -64,6 +108,33 @@ function saveActiveTasks(t: ActiveTask[]) { writeJson(ACTIVE_KEY, t) }
 export function addActiveTask(task: ActiveTask) {
   const t = getActiveTasks(); t.push(task); saveActiveTasks(t)
   window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
+}
+
+/**
+ * Daftarkan proses generasi halaman mana pun ke panel header. Task ini
+ * "ephemeral": hanya penanda sesi berjalan, tidak di-resume setelah reload.
+ * Selalu pasangkan dengan removeActiveTask() di finally.
+ */
+export function startGenerationTask(input: {
+  page: GenerationPage
+  model: string
+  prompt?: string
+  provider?: string
+}): string {
+  const taskId = `local-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
+  addActiveTask({
+    id: taskId,
+    taskId,
+    roomId: '',
+    token: '',
+    model: input.model,
+    prompt: input.prompt || '',
+    startedAt: Date.now(),
+    page: input.page,
+    provider: input.provider,
+    ephemeral: true,
+  })
+  return taskId
 }
 
 export function removeActiveTask(taskId: string) {
@@ -128,6 +199,7 @@ function saveResults(r: CompletedResult[]) { writeJson(RESULTS_KEY, r.slice(0, 5
 
 export function addResult(result: CompletedResult, options?: { notify?: boolean }) {
   const clean: CompletedResult = { ...result }
+  if (!clean.kind) clean.kind = GENERATION_PAGE_KIND[clean.page]
   if (clean.inputImageUrl && !isPersistableUrl(clean.inputImageUrl)) {
     delete (clean as any).inputImageUrl
   }

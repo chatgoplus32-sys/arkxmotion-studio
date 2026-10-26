@@ -6,7 +6,7 @@ import { Loader2, Upload, Download, X, Mic, Image as ImageIcon, Sparkles, CheckC
 import { useToastStore } from '@/stores/toastStore'
 import { submitRunningHubAudioAvatar, submitRunningHubLipSync, pollRunningHubTask } from '@/lib/runninghub'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
-import { persistResultToR2 } from '@/lib/backgroundTasks'
+import { persistResultToR2, addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
 import { useLocalStorage } from '@/lib/useLocalStorage'
 import { normalizeImage } from '@/lib/roboneo'
 
@@ -109,6 +109,12 @@ export default function TalkingPhotoPage() {
     setTimedOutTaskId(null)
     setTaskStatus('submitting')
     setLogs([])
+    const trackId = startGenerationTask({
+      page: 'talking-photo',
+      model: isLtx ? 'LTX-2.5 LipSync' : 'H3 Talking Photo',
+      prompt: prompt.trim().slice(0, 500),
+      provider: 'runninghub',
+    })
 
     // Normalisasi foto (PNG besar → JPEG terkompresi) supaya request muat limit server
     let upPhoto = photoFile!
@@ -196,6 +202,7 @@ export default function TalkingPhotoPage() {
         addToast('Task masih jalan di server — pakai "Lanjutkan" untuk cek lagi tanpa submit baru', 'info')
       }
     } finally {
+      removeActiveTask(trackId)
       setLoading(false)
     }
   }
@@ -208,6 +215,16 @@ export default function TalkingPhotoPage() {
     addLog(`Selesai: ${url.slice(0, 100)}...`, 'success')
     // URL RunningHub kedaluwarsa 24 jam — simpan permanen ke R2
     persistResultToR2(tid, url)
+    addResult({
+      id: tid,
+      url,
+      prompt: prompt.trim().slice(0, 500),
+      date: new Date().toISOString(),
+      page: 'talking-photo',
+      kind: 'video',
+      provider: 'runninghub',
+      model: avatarModel === 'ltx' ? 'LTX-2.5 LipSync' : 'H3 Talking Photo',
+    })
     setHistory((prev) => [
       { time: new Date().toLocaleTimeString('id-ID'), taskId: tid, status: '✅ Selesai', url },
       ...prev,
@@ -220,6 +237,12 @@ export default function TalkingPhotoPage() {
     setLoading(true)
     setError(null)
     setTaskStatus('running')
+    const trackId = startGenerationTask({
+      page: 'talking-photo',
+      model: avatarModel === 'ltx' ? 'LTX-2.5 LipSync' : 'H3 Talking Photo',
+      prompt: prompt.trim().slice(0, 500),
+      provider: 'runninghub',
+    })
     addLog(`🔄 Lanjutkan polling task ${timedOutTaskId.slice(0, 20)}...`)
     try {
       const rotation = await withTokenRotation<string>(
@@ -244,6 +267,7 @@ export default function TalkingPhotoPage() {
       if (!/timeout/i.test(e.message || '')) setTimedOutTaskId(null)
       else addToast('Masih jalan — coba "Lanjutkan" lagi nanti', 'info')
     } finally {
+      removeActiveTask(trackId)
       setLoading(false)
     }
   }

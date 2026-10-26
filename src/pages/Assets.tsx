@@ -4,14 +4,14 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, EmptyState, Input, Select, Button } from '@/components/ui'
 import {
   AlertTriangle, CalendarDays, CheckCircle2, Clock3, Database, Download,
-  ExternalLink, Image as ImageIcon, Images, Layers, Loader2, Play, RefreshCw,
+  ExternalLink, Image as ImageIcon, Images, Layers, Loader2, Music, Play, RefreshCw,
   Search, Sparkles, Trash2, Video, X,
 } from 'lucide-react'
-import { getResults, removeResult, type CompletedResult } from '@/lib/backgroundTasks'
+import { getResults, removeResult, GENERATION_PAGE_KIND, type CompletedResult } from '@/lib/backgroundTasks'
 import { useToastStore } from '@/stores/toastStore'
 import { cn } from '@/lib/utils'
 
-type AssetKind = 'image' | 'video'
+type AssetKind = 'image' | 'video' | 'audio'
 type StoreId = 'results' | 'upscaler' | 'editimage' | 'createpulse'
 type KindFilter = 'all' | AssetKind
 
@@ -44,6 +44,20 @@ const RESULTS_PAGE_SOURCE: Record<CompletedResult['page'], string> = {
   'image-to-video': 'Image to Video',
   upscaler: 'AI Upscaler',
   'edit-image': 'Edit Image',
+  'song-cover': 'AI Song Cover',
+  'video-upscaler': 'Video Upscaler',
+  'bulk-fashion': 'Bulk Fashion',
+  'virtual-tryon': 'Virtual Try-On',
+  'travel-photo': 'Travel Photo',
+  'talking-photo': 'Talking Photo',
+  'h3-i2v': 'H3 Image to Video',
+  'h3-music-avatar': 'H3 Music Avatar',
+  'ugc-storyboard': 'UGC Storyboard',
+  'voice-over': 'Voice Over',
+  'music-generator': 'Music Generator',
+  'text-to-image': 'Image Generator',
+  ugc: 'Product UGC',
+  'clip-genius': 'Clip Genius',
 }
 
 const UPSCALER_KEY = 'arkxmotion.upscaler.gallery'
@@ -54,12 +68,13 @@ const KIND_TABS: { id: KindFilter; label: string; icon: typeof Images }[] = [
   { id: 'all', label: 'Semua', icon: Layers },
   { id: 'video', label: 'Video', icon: Video },
   { id: 'image', label: 'Gambar', icon: ImageIcon },
+  { id: 'audio', label: 'Audio', icon: Music },
 ]
 
 const VIDEO_EXT = /\.(mp4|webm|mov|m4v)(?:$|[?#])/i
 const IMAGE_EXT = /\.(png|jpe?g|webp|gif|avif)(?:$|[?#])/i
 
-const KIND_ICON = { video: Video, image: ImageIcon }
+const KIND_ICON = { video: Video, image: ImageIcon, audio: Music }
 
 function readArray(key: string): unknown[] {
   try {
@@ -127,11 +142,7 @@ function collectAssets(): AssetItem[] {
   for (const result of getResults()) {
     if (!result?.url) continue
     const source = RESULTS_PAGE_SOURCE[result.page] || 'Generasi'
-    const kind: AssetKind = result.page === 'motion' || result.page === 'image-to-video'
-      ? 'video'
-      : result.page === 'upscaler' || result.page === 'edit-image'
-        ? 'image'
-        : kindFromUrl(result.url)
+    const kind: AssetKind = result.kind || GENERATION_PAGE_KIND[result.page] || kindFromUrl(result.url)
     mergeAsset(map, {
       url: result.url,
       kind,
@@ -237,7 +248,7 @@ function extensionFor(asset: AssetItem): string {
     const match = new URL(asset.url, window.location.origin).pathname.match(/\.([a-z0-9]{2,5})$/i)
     if (match) return match[1].toLowerCase()
   } catch {}
-  return asset.kind === 'video' ? 'mp4' : 'jpg'
+  return asset.kind === 'video' ? 'mp4' : asset.kind === 'audio' ? 'mp3' : 'jpg'
 }
 
 function downloadName(asset: AssetItem): string {
@@ -340,6 +351,7 @@ export default function AssetsPage() {
     all: assets.length,
     video: assets.filter((a) => a.kind === 'video').length,
     image: assets.filter((a) => a.kind === 'image').length,
+    audio: assets.filter((a) => a.kind === 'audio').length,
   }), [assets])
 
   const sources = useMemo(
@@ -448,7 +460,7 @@ export default function AssetsPage() {
         eyebrow="Galeri"
         title="Hasil"
         highlight="Generasi"
-        desc="Semua gambar dan video yang kamu buat di ARKXMotion — cari, pratinjau, unduh, atau hapus dari satu tempat."
+        desc="Semua gambar, video, dan audio yang kamu buat di ARKXMotion — cari, pratinjau, unduh, atau hapus dari satu tempat."
         actions={(
           <Button onClick={() => navigate('/generate/motion')}>
             <Sparkles className="h-4 w-4" />
@@ -457,10 +469,11 @@ export default function AssetsPage() {
         )}
       />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <StatCard icon={<Layers className="h-4 w-4" />} label="Total hasil" value={String(counts.all)} accent="bg-primary/10 text-primary" />
         <StatCard icon={<Video className="h-4 w-4" />} label="Video" value={String(counts.video)} accent="bg-violet-500/10 text-violet-400" />
         <StatCard icon={<ImageIcon className="h-4 w-4" />} label="Gambar" value={String(counts.image)} accent="bg-emerald-500/10 text-emerald-400" />
+        <StatCard icon={<Music className="h-4 w-4" />} label="Audio" value={String(counts.audio)} accent="bg-sky-500/10 text-sky-400" />
         <StatCard icon={<Clock3 className="h-4 w-4" />} label="Terakhir dibuat" value={timeAgo(latestLabel) || '—'} accent="bg-amber-500/10 text-amber-400" />
       </div>
 
@@ -479,7 +492,7 @@ export default function AssetsPage() {
             {KIND_TABS.map((tab) => {
               const Icon = tab.icon
               const active = kind === tab.id
-              const count = tab.id === 'all' ? counts.all : tab.id === 'video' ? counts.video : counts.image
+              const count = tab.id === 'all' ? counts.all : counts[tab.id]
               return (
                 <button
                   key={tab.id}
@@ -534,7 +547,7 @@ export default function AssetsPage() {
           <EmptyState
             icon={<Database className="h-8 w-8" />}
             title="Belum ada hasil tersimpan"
-            description="Hasil dari Motion Control, Image to Video, AI Upscaler, dan Edit Image akan muncul otomatis di sini."
+            description="Hasil dari semua fitur generate — video, gambar, dan audio — akan muncul otomatis di sini."
             action={(
               <div className="flex flex-wrap items-center justify-center gap-2">
                 <Button size="sm" onClick={() => navigate('/generate/motion')}>Motion Control</Button>
@@ -583,6 +596,11 @@ export default function AssetsPage() {
                       onError={() => markBroken(asset.key)}
                       className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
                     />
+                  ) : asset.kind === 'audio' ? (
+                    <span className="flex h-full w-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-sky-500/20 via-secondary to-background text-sky-400">
+                      <Music className="h-8 w-8" />
+                      <span className="text-[10px] font-medium text-muted-foreground">Audio</span>
+                    </span>
                   ) : (
                     <img
                       src={asset.url}
@@ -595,7 +613,7 @@ export default function AssetsPage() {
 
                   <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur">
                     <KindIcon className="h-3 w-3" />
-                    {asset.kind === 'video' ? 'Video' : 'Gambar'}
+                    {asset.kind === 'video' ? 'Video' : asset.kind === 'audio' ? 'Audio' : 'Gambar'}
                   </span>
                   {asset.createdAt && (
                     <span className="absolute right-2 top-2 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] text-white/80 backdrop-blur">
@@ -681,7 +699,7 @@ export default function AssetsPage() {
           >
             <div className="flex items-center gap-2.5 border-b border-border px-4 py-3">
               <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
-                {previewAsset.kind === 'video' ? <Video className="h-4 w-4" /> : <ImageIcon className="h-4 w-4" />}
+                {previewAsset.kind === 'video' ? <Video className="h-4 w-4" /> : previewAsset.kind === 'audio' ? <Music className="h-4 w-4" /> : <ImageIcon className="h-4 w-4" />}
               </span>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold">{previewAsset.title}</p>
@@ -715,6 +733,16 @@ export default function AssetsPage() {
                     onError={() => markBroken(previewAsset.key)}
                     className="max-h-[55vh] w-full rounded-lg bg-black object-contain lg:max-h-[70vh]"
                   />
+                ) : previewAsset.kind === 'audio' ? (
+                  <div className="flex w-full flex-col items-center justify-center gap-4 p-6">
+                    <Music className="h-16 w-16 text-sky-400" />
+                    <audio
+                      src={previewAsset.url}
+                      controls
+                      onError={() => markBroken(previewAsset.key)}
+                      className="w-full max-w-lg"
+                    />
+                  </div>
                 ) : (
                   <img
                     src={previewAsset.url}

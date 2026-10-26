@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Activity, ArrowRight, ArrowUpRight, CheckCircle2, Image as ImageIcon, Images, Loader2,
-  Sparkles, Video, Wand2, X,
+  Activity, ArrowRight, ArrowUpRight, CheckCircle2, Clapperboard, Film, Image as ImageIcon,
+  Images, Layers, Loader2, MapPin, Mic, Music, Shirt, Sparkles, UserRound, Video, Wand2, X,
 } from 'lucide-react'
 import { getActiveTasks, getResults, type ActiveTask, type CompletedResult } from '@/lib/backgroundTasks'
 import { cn } from '@/lib/utils'
@@ -12,6 +12,20 @@ const PAGE_META: Record<ActiveTask['page'], { href: string; label: string; icon:
   'image-to-video': { href: '/generate/image-to-video', label: 'Image to Video', icon: ImageIcon },
   upscaler: { href: '/generate/upscaler', label: 'AI Upscaler', icon: Sparkles },
   'edit-image': { href: '/generate/edit-image', label: 'Edit Image', icon: Wand2 },
+  'song-cover': { href: '/generate/song-cover', label: 'AI Song Cover', icon: Music },
+  'video-upscaler': { href: '/generate/video-upscaler', label: 'Video Upscaler', icon: Clapperboard },
+  'bulk-fashion': { href: '/generate/bulk-fashion', label: 'Bulk Fashion', icon: Shirt },
+  'virtual-tryon': { href: '/generate/virtual-tryon', label: 'Virtual Try-On', icon: Shirt },
+  'travel-photo': { href: '/generate/travel-photo', label: 'Travel Photo', icon: MapPin },
+  'talking-photo': { href: '/generate/talking-photo', label: 'Talking Photo', icon: UserRound },
+  'h3-i2v': { href: '/generate/h3-i2v', label: 'H3 Image to Video', icon: Film },
+  'h3-music-avatar': { href: '/generate/h3-music-avatar', label: 'H3 Music Avatar', icon: Music },
+  'ugc-storyboard': { href: '/generate/ugc-storyboard', label: 'UGC Storyboard', icon: Clapperboard },
+  'voice-over': { href: '/generate/voice-over', label: 'Voice Over', icon: Mic },
+  'music-generator': { href: '/generate/music-generator', label: 'Music Generator', icon: Music },
+  'text-to-image': { href: '/generate/image', label: 'Image Generator', icon: ImageIcon },
+  ugc: { href: '/generate/ugc', label: 'Product UGC', icon: Images },
+  'clip-genius': { href: '/tools/clip-genius', label: 'Clip Genius', icon: Layers },
 }
 const FALLBACK_PAGE = { href: '/dashboard', label: 'Generasi', icon: Sparkles }
 
@@ -229,7 +243,7 @@ export function GenerationIndicator() {
                 <div className="px-4 py-6 text-center">
                   <Sparkles className="mx-auto mb-2 h-7 w-7 text-muted-foreground/40" />
                   <p className="text-sm font-medium">Belum ada generasi</p>
-                  <p className="mt-1 text-[11px] text-muted-foreground">Hasil video dan gambar akan muncul di sini.</p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">Hasil video, gambar, dan audio akan muncul di sini.</p>
                   <div className="mt-3 flex justify-center gap-2">
                     <button
                       onClick={() => go('motion')}

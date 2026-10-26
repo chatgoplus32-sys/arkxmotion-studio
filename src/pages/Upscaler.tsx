@@ -11,6 +11,7 @@ import { runLeonardoUpscale } from '@/lib/leonardo-upscale'
 import { runTopazUpscale } from '@/lib/weavy'
 import { submitRunningHubPhotoEnhance, pollRunningHubTask } from '@/lib/runninghub'
 import { withTokenRotation } from '@/lib/tokenRotation'
+import { addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
 
 const MAX_IMAGES = 50
 
@@ -234,6 +235,14 @@ export default function UpscalerPage() {
     setProgress({ done: 0, total: rows.length })
     setRows(prev => prev.map(r => ({ ...r, status: 'queued' as const, url: undefined, error: undefined })))
 
+    const runId = `upscale-${Date.now().toString(36)}`
+    const trackId = startGenerationTask({
+      page: 'upscaler',
+      model: `AI Upscaler · ${provider}`,
+      prompt: `${rows.length} gambar · ${mode}`,
+      provider: provider === 'topaz' ? 'weavy' : provider,
+    })
+
     const Concurrency = 2
     const queue = rows.map((r, i) => ({ index: i, file: r.file }))
     let completed = 0
@@ -317,6 +326,16 @@ export default function UpscalerPage() {
         completed++
         setProgress({ done: completed, total: rows.length })
         log('done', 'success')
+        addResult({
+          id: `${runId}-${item.index}`,
+          url,
+          prompt: item.file.name,
+          date: new Date().toISOString(),
+          page: 'upscaler',
+          kind: 'image',
+          provider,
+          model: provider === 'topaz' ? 'Topaz Upscale' : provider === 'magnific' ? 'Magnific Upscale' : provider === 'leonardo' ? 'Aurora Upscale' : 'AI Photo Enhancer',
+        }, { notify: false })
 
         const newItem: GalleryItem = {
           id: Math.random().toString(36).slice(2),
@@ -357,6 +376,7 @@ export default function UpscalerPage() {
     } catch (err: any) {
       addLog(`Fatal: ${err.message}`, 'error')
     } finally {
+      removeActiveTask(trackId)
       setRunning(false)
       runningRef.current = false
     }
@@ -367,6 +387,12 @@ export default function UpscalerPage() {
     const { taskId, index, fileName } = timedOut
     setRunning(true)
     runningRef.current = true
+    const trackId = startGenerationTask({
+      page: 'upscaler',
+      model: 'AI Photo Enhancer · Lanjutkan',
+      prompt: fileName,
+      provider: 'runninghub',
+    })
     addLog(`🔄 Lanjutkan polling task ${taskId.slice(0, 20)}... (${fileName})`)
     setRows(prev => prev.map((r, i) => i === index ? { ...r, status: 'processing', error: undefined } : r))
     try {
@@ -382,6 +408,16 @@ export default function UpscalerPage() {
       if (!rotation.ok) throw new Error(rotation.error || 'Polling failed')
       const url = rotation.result!
       setRows(prev => prev.map((r, i) => i === index ? { ...r, status: 'done', url } : r))
+      addResult({
+        id: `rh-enhance-${taskId}`,
+        url,
+        prompt: fileName,
+        date: new Date().toISOString(),
+        page: 'upscaler',
+        kind: 'image',
+        provider: 'runninghub',
+        model: 'AI Photo Enhancer',
+      })
       const newItem: GalleryItem = {
         id: Math.random().toString(36).slice(2),
         url,
@@ -404,6 +440,7 @@ export default function UpscalerPage() {
       if (!/timeout/i.test(msg)) setTimedOut(null)
       else addToast('Masih jalan — coba "Lanjutkan" lagi nanti', 'info')
     } finally {
+      removeActiveTask(trackId)
       setRunning(false)
       runningRef.current = false
     }

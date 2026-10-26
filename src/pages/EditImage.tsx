@@ -11,7 +11,7 @@ import { submitRunningHubImageEdit, pollRunningHubTask } from '@/lib/runninghub'
 import { SEAVI_IMAGE_MODELS, buildSeaviPayload, generateSeaviImage, fetchSeaviBalance } from '@/lib/seavi'
 import { chargeSeaviWallet, refundSeaviWallet, fetchSeaviWallet } from '@/lib/seaviWallet'
 import { normalizeImage } from '@/lib/roboneo'
-import { addBgLog, getLogs, addResult, removeResult, startBackgroundPolling, persistResultToR2, clearLogs as clearBgLogs } from '@/lib/backgroundTasks'
+import { addBgLog, getLogs, addResult, removeResult, startBackgroundPolling, persistResultToR2, clearLogs as clearBgLogs, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
 import { loadVideoBlob } from '@/lib/videoStorage'
 
 type EditProvider = 'riverside' | 'nexabot' | 'runninghub' | 'seavi'
@@ -254,6 +254,12 @@ export default function EditImagePage() {
     setGenerating(true)
     setLogs([])
     clearBgLogs()
+    const trackId = startGenerationTask({
+      page: 'edit-image',
+      model: currentModel.label,
+      prompt: prompt.trim().slice(0, 500),
+      provider,
+    })
     addLog(`🚀 Mulai generate gambar`, 'info')
     addLog(`   Provider: ${PROVIDER_LABEL[provider]}`, 'debug')
     addLog(`   Model: ${currentModel.label}`, 'debug')
@@ -275,6 +281,7 @@ export default function EditImagePage() {
       addLog(`❌ Error: ${err.message}`, 'error')
       addToast(`Generate gagal: ${err.message}`, 'error')
     } finally {
+      removeActiveTask(trackId)
       setGenerating(false)
     }
   }

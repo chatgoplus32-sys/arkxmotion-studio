@@ -11,6 +11,7 @@ import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, type NexabotWallet } from '@/lib/nexabotWallet'
 import { uploadBlobToCdn } from '@/lib/cdn'
 import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
+import { addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
 
 // Voice default NexaBot — salah satu nama dari daftar voice resmi
 // (GET /api/v1/modes → voices). Sama dengan NEXABOT_DEFAULT_VOICE ImageToVideo.
@@ -87,6 +88,12 @@ export default function VoiceOverPage() {
     setStatusText('Menyiapkan...')
     setLogs([])
     nbChargeRef.current = null
+    const trackId = startGenerationTask({
+      page: 'voice-over',
+      model: `Voice Over · ${voice}`,
+      prompt: prompt.trim().slice(0, 500),
+      provider: 'nexabot',
+    })
 
     const startTime = Date.now()
     addLog(`🎙️ Voice Over NexaBot — voice: ${voice}, ${prompt.trim().length} karakter`)
@@ -203,8 +210,19 @@ export default function VoiceOverPage() {
       setTaskStatus('success')
       setStatusText('')
       addLog(`✅ Selesai ✓ ${url.slice(0, 60)}...`, 'success')
+      const tid = `tts-${Date.now()}`
+      addResult({
+        id: tid,
+        url,
+        prompt: prompt.trim().slice(0, 500),
+        date: new Date().toISOString(),
+        page: 'voice-over',
+        kind: 'audio',
+        provider: 'nexabot',
+        model: `Voice Over · ${voice}`,
+      })
       setHistory((prev) => [
-        { time: new Date().toLocaleTimeString('id-ID'), jobId: `tts-${Date.now()}`, voice, url },
+        { time: new Date().toLocaleTimeString('id-ID'), jobId: tid, voice, url },
         ...prev,
       ])
       if (logId) logGenerationComplete(logId, { status: 'completed', result_url: url, duration_ms: Date.now() - startTime })
@@ -224,6 +242,7 @@ export default function VoiceOverPage() {
       if (logId) logGenerationFailed(logId, e.message || 'Unknown error', Date.now() - startTime)
       addToast(`❌ ${e.message || 'Voice Over gagal'}`, 'error')
     } finally {
+      removeActiveTask(trackId)
       setLoading(false)
     }
   }

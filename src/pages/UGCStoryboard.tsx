@@ -6,7 +6,7 @@ import { Loader2, Upload, Download, X, Sparkles, CheckCircle2, AlertCircle, Cloc
 import { useToastStore } from '@/stores/toastStore'
 import { submitRunningHubUGCStoryboard, pollRunningHubTask, UGC_STORYBOARD_ASPECTS } from '@/lib/runninghub'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
-import { persistResultToR2 } from '@/lib/backgroundTasks'
+import { persistResultToR2, addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
 import { useLocalStorage } from '@/lib/useLocalStorage'
 import { normalizeImage } from '@/lib/roboneo'
 
@@ -115,6 +115,16 @@ export default function UGCStoryboardPage() {
     addLog(`Selesai: ${url.slice(0, 100)}...`, 'success')
     // URL RunningHub kedaluwarsa 24 jam — simpan permanen ke R2
     persistResultToR2(tid, url)
+    addResult({
+      id: tid,
+      url,
+      prompt: prompt.trim().slice(0, 500),
+      date: new Date().toISOString(),
+      page: 'ugc-storyboard',
+      kind: 'video',
+      provider: 'runninghub',
+      model: 'UGC Storyboard',
+    })
     setHistory((prev) => [
       { time: new Date().toLocaleTimeString('id-ID'), taskId: tid, status: '✅ Selesai', url },
       ...prev,
@@ -144,6 +154,12 @@ export default function UGCStoryboardPage() {
     setTimedOutTaskId(null)
     setTaskStatus('submitting')
     setLogs([])
+    const trackId = startGenerationTask({
+      page: 'ugc-storyboard',
+      model: 'UGC Storyboard',
+      prompt: prompt.trim().slice(0, 500),
+      provider: 'runninghub',
+    })
 
     // Normalisasi karakter + semua scene (HEIC→JPEG, kompres >4MB)
     let upChar = charFile
@@ -225,6 +241,7 @@ export default function UGCStoryboardPage() {
         addToast('Task masih jalan di server — pakai "Lanjutkan" untuk cek lagi tanpa submit baru', 'info')
       }
     } finally {
+      removeActiveTask(trackId)
       setLoading(false)
     }
   }
@@ -234,6 +251,12 @@ export default function UGCStoryboardPage() {
     setLoading(true)
     setError(null)
     setTaskStatus('running')
+    const trackId = startGenerationTask({
+      page: 'ugc-storyboard',
+      model: 'UGC Storyboard',
+      prompt: prompt.trim().slice(0, 500),
+      provider: 'runninghub',
+    })
     addLog(`🔄 Lanjutkan polling task ${timedOutTaskId.slice(0, 20)}...`)
     try {
       const rotation = await withTokenRotation<string>(
@@ -258,6 +281,7 @@ export default function UGCStoryboardPage() {
       if (!/timeout/i.test(e.message || '')) setTimedOutTaskId(null)
       else addToast('Masih jalan — coba "Lanjutkan" lagi nanti', 'info')
     } finally {
+      removeActiveTask(trackId)
       setLoading(false)
     }
   }

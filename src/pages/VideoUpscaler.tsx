@@ -10,7 +10,7 @@ import { SEAVI_VIDEO_UPSCALER, generateWithSeavi, fetchSeaviBalance } from '@/li
 import { chargeSeaviWallet, refundSeaviWallet } from '@/lib/seaviWallet'
 import { uploadToCatbox } from '@/lib/roboneo'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
-import { persistResultToR2 } from '@/lib/backgroundTasks'
+import { persistResultToR2, addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
 import { useLocalStorage } from '@/lib/useLocalStorage'
 
 const SCHEDULERS = [
@@ -92,6 +92,12 @@ export default function VideoUpscalerPage() {
     setProgress(0)
     setTaskStatus('submitting')
     setLogs([])
+    const trackId = startGenerationTask({
+      page: 'video-upscaler',
+      model: 'Seavi Video Upscaler S7',
+      prompt: videoFile?.name || '',
+      provider: 'seavi',
+    })
     try {
       addLog(`[1/2] 📤 Mengunggah video (${(videoFile!.size / 1024 / 1024).toFixed(1)}MB)...`)
       const videoUrl = await uploadToCatbox(videoFile!, 'video', (msg, pct) => {
@@ -150,6 +156,16 @@ export default function VideoUpscalerPage() {
       setProgress(100)
       addLog(`Selesai: ${url.slice(0, 100)}...`, 'success')
       persistResultToR2(tid, url)
+      addResult({
+        id: tid,
+        url,
+        prompt: videoFile?.name || 'Video upscale',
+        date: new Date().toISOString(),
+        page: 'video-upscaler',
+        kind: 'video',
+        provider: 'seavi',
+        model: 'Seavi Video Upscaler S7',
+      })
       setHistory((prev) => [
         { time: new Date().toLocaleTimeString('id-ID'), taskId: tid, status: '✅ Selesai', url },
         ...prev,
@@ -169,6 +185,7 @@ export default function VideoUpscalerPage() {
       addLog(`Gagal: ${e.message || e}`, 'error')
       addToast(`❌ ${e.message}`, 'error')
     } finally {
+      removeActiveTask(trackId)
       setLoading(false)
     }
   }
@@ -191,6 +208,12 @@ export default function VideoUpscalerPage() {
     setProgress(0)
     setTaskStatus('submitting')
     setLogs([])
+    const trackId = startGenerationTask({
+      page: 'video-upscaler',
+      model: 'Video Upscaler VOSR2 2K',
+      prompt: videoFile?.name || '',
+      provider: 'runninghub',
+    })
     addLog(`Mulai: ${(videoFile!.size / 1024 / 1024).toFixed(1)}MB ${videoFile!.name}`)
     addLog(`Params: steps=${steps} cfg=${cfg} scheduler=${scheduler} frameCap=${frameCap}`)
 
@@ -250,6 +273,16 @@ export default function VideoUpscalerPage() {
       }
       // URL RunningHub kedaluwarsa 24 jam — simpan permanen ke R2
       persistResultToR2(tid, url)
+      addResult({
+        id: tid,
+        url,
+        prompt: videoFile?.name || 'Video upscale',
+        date: new Date().toISOString(),
+        page: 'video-upscaler',
+        kind: 'video',
+        provider: 'runninghub',
+        model: 'Video Upscaler VOSR2 2K',
+      })
       setHistory((prev) => [
         { time: new Date().toLocaleTimeString('id-ID'), taskId: tid, status: '✅ Selesai', url },
         ...prev,
@@ -261,6 +294,7 @@ export default function VideoUpscalerPage() {
       addLog(`Gagal: ${e.message || e}`, 'error')
       addToast(`❌ ${e.message}`, 'error')
     } finally {
+      removeActiveTask(trackId)
       setLoading(false)
     }
   }
