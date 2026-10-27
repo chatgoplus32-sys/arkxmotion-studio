@@ -19,6 +19,7 @@ import {
 } from '@/lib/backgroundTasks'
 import { useToastStore } from '@/stores/toastStore'
 import { logAudit, getAuditLog, clearAuditLog } from '@/lib/auditLog'
+import { useTheme, type ThemePreference } from '@/lib/theme'
 import {
   isNotificationDeliveryReady,
   isNotificationBlocked,
@@ -27,7 +28,7 @@ import {
 } from '@/lib/notify'
 
 export default function SettingsPage() {
-  const [theme, setTheme] = useState('system')
+  const { preference: theme, setTheme } = useTheme()
   const [language, setLanguage] = useState('id')
   const [notifications, setNotifications] = useState(() => isNotificationDeliveryReady())
   const [notificationBlocked, setNotificationBlocked] = useState(() => isNotificationBlocked())
@@ -219,7 +220,7 @@ export default function SettingsPage() {
               <Label>Theme</Label>
               <Select
                 value={theme}
-                onChange={(e) => setTheme(e.target.value)}
+                onChange={(e) => setTheme(e.target.value as ThemePreference)}
                 options={[
                   { value: 'light', label: 'Light' },
                   { value: 'dark', label: 'Dark' },
