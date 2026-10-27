@@ -62,6 +62,7 @@ const NexaBotTopupPage = lazyWithRetry(() => import('@/pages/NexaBotTopup'))
 const SeaviTopupPage = lazyWithRetry(() => import('@/pages/SeaviTopup'))
 const AlrizTopupPage = lazyWithRetry(() => import('@/pages/AlrizTopup'))
 const BeliTokenPage = lazyWithRetry(() => import('@/pages/BeliToken'))
+const SaldoLayananPage = lazyWithRetry(() => import('@/pages/SaldoLayanan'))
 const PluginsPage = lazyWithRetry(() => import('@/pages/Plugins'))
 const VirtualTryOnPage = lazyWithRetry(() => import('@/pages/VirtualTryOn'))
 const TalkingPhotoPage = lazyWithRetry(() => import('@/pages/TalkingPhoto'))
@@ -218,6 +219,7 @@ export default function App() {
                     <KeepAliveRoutes>
                         <Route path="/dashboard" element={<DashboardPage />} />
                         <Route path="/hasil" element={<AssetsPage />} />
+                        <Route path="/saldo" element={<SaldoLayananPage />} />
                         <Route path="/quick-start" element={<QuickStartPage />} />
                         <Route path="/command" element={<CommandPage />} />
                         <Route path="/generate/motion" element={<MotionPage />} />

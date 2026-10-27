@@ -58,6 +58,7 @@ const mainNav: NavItem[] = [
   { label: 'Mulai', href: '/quick-start', icon: <Sparkles className="h-4 w-4" /> },
   { label: 'Dashboard', href: '/dashboard', icon: <LayoutDashboard className="h-4 w-4" /> },
   { label: 'Hasil', href: '/hasil', icon: <Images className="h-4 w-4" /> },
+  { label: 'Saldo Layanan', href: '/saldo', icon: <Wallet className="h-4 w-4" /> },
 ]
 
 const createNav: NavItem[] = [
