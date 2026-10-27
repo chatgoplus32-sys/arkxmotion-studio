@@ -2,7 +2,8 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Select, Label, Textarea, EmptyState, Badge, BalanceBadge } from '@/components/ui'
 import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
-import { Image, Upload, Rocket, Loader2, Trash2, Key, ExternalLink, Download, X, Copy, Plus } from 'lucide-react'
+import { Image, Upload, Rocket, Loader2, Trash2, Key, ExternalLink, Download, X, Copy, Plus, Check } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { Swipeable } from '@/components/Swipeable'
 import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
 import { getSeaviSpec, generateWithSeavi, fetchSeaviBalance, buildSeaviPayload } from '@/lib/seavi'
@@ -120,9 +121,18 @@ function SeaviMcSlotCard({ index, slot, onImage, onVideo, onRemove, canRemove }:
 }
 
 // Provider yang sementara disembunyikan di halaman Image to Video (tinggal
-// kembangkan daftarnya untuk menampilkan lagi): roboneo, galleri5, weavy,
-// wavespeed, framia, oneover, firefly, genspark, riverside.
-const I2V_PROVIDER_IDS: ProviderId[] = ['createpulse', 'leonardo', 'nexabot', 'runninghub', 'seavi', 'alriz']
+// kembangkan daftarnya untuk menampilkan lagi): leonardo, roboneo, galleri5,
+// weavy, wavespeed, framia, oneover, firefly, genspark, riverside.
+const I2V_PROVIDER_IDS: ProviderId[] = ['createpulse', 'nexabot', 'runninghub', 'seavi', 'alriz']
+
+// Bahasa sehari-hari untuk pemilih provider — hindari istilah model/keys mentah.
+const I2V_PROVIDER_HINTS: Partial<Record<ProviderId, { tagline: string; recommended?: boolean }>> = {
+  createpulse: { tagline: 'Paling mudah — langsung bisa dipakai tanpa API key.', recommended: true },
+  nexabot: { tagline: 'Bayar per video dengan saldo NexaBot atau Paket Unlimited.' },
+  runninghub: { tagline: 'Workflow populer: Seedance dan MiniMax H3.' },
+  seavi: { tagline: 'Untuk motion control dan video referensi.' },
+  alriz: { tagline: 'Model Alriz Motion, dibayar dari saldo Alriz.' },
+}
 
 export default function ImageToVideoPage() {
   const { keys, routing, fetchMaintenance } = useProviderManager()
@@ -3446,7 +3456,7 @@ export default function ImageToVideoPage() {
   // Ditampilkan di kartu provider NexaBot (lihat nexabotPathPill).
   const nexabotPill = nexabotPathPill(keys.nexabot, nexabotSession, nexabotChecking)
 
-  // Sementara hanya 7 provider ini yang tampil (weavy, wavespeed, framia, oneover, firefly, genspark, riverside disembunyikan).
+  // Sementara hanya 5 provider ini yang tampil (leonardo, weavy, wavespeed, framia, oneover, firefly, genspark, riverside disembunyikan).
   const PROVIDER_IDS: ProviderId[] = I2V_PROVIDER_IDS
 
   return (
@@ -3459,38 +3469,74 @@ export default function ImageToVideoPage() {
       />
 
       {/* Provider Selection */}
-      <Section title="📡 Pilih Provider" sub="Pilih provider AI untuk generate video">
-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2 sm:gap-3">
+      <Section
+        title="1 · Pilih Layanan Video"
+        sub="Tentukan layanan yang membuat video. Klik salah satu kartu — kartu bertanda centang berarti sedang dipakai."
+      >
+        <div className="mb-3 flex items-start gap-2 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2.5">
+          <span className="text-base leading-none">💡</span>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            <b className="text-foreground">Baru pertama kali?</b> Pilih <b className="text-foreground">💜 CreatePulse</b> — sudah diatur admin, jadi tidak perlu API key.
+            Layanan lain perlu API key yang ditambahkan di menu <Link to="/providers" className="font-medium text-primary hover:underline">Providers</Link>.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5 sm:gap-3">
           {PROVIDER_IDS.map((pid) => {
             const config = PROVIDER_CONFIGS[pid]
             const providerModels = PROVIDER_MODELS[pid] || []
-            const keyCount = keys[pid]?.length || 0
+            const hint = I2V_PROVIDER_HINTS[pid]
             const isActive = provider === pid
+            const ready = pid === 'createpulse' || (keys[pid] || []).some((k) => k.status !== 'invalid' && k.status !== 'expired')
 
             return (
               <button
                 key={pid}
+                type="button"
                 onClick={() => setProvider(pid)}
-                className={`p-2 sm:p-3 rounded-xl border-2 transition-all text-left ${
+                aria-pressed={isActive}
+                className={`flex h-full flex-col rounded-2xl border-2 p-3.5 text-left transition-all ${
                   isActive
                     ? 'border-primary bg-primary/5 shadow-sm'
-                    : 'border-border hover:border-primary/30 bg-card/30'
+                    : 'border-border bg-card/30 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-card/60'
                 }`}
               >
-                <div className="flex items-center gap-1.5 sm:gap-2 mb-1">
-                  <span className="text-base sm:text-lg">{config.icon}</span>
-                  <span className="text-xs sm:text-sm font-medium truncate">{config.name}</span>
-                </div>
-                                                    <div className="text-[9px] sm:text-[10px] text-muted-foreground">
-                  {providerModels.length} models · {keyCount} keys
-                  {pid === 'nexabot' && nexabotPill && (
-                    <span className={nexabotPill.className} title={nexabotPill.title}>{nexabotPill.text}</span>
+                <div className="flex items-start gap-2.5">
+                  <span aria-hidden="true" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-border bg-background/60 text-xl">
+                    {config.icon}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-sm font-semibold">{config.name}</span>
+                      {hint?.recommended && (
+                        <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-500">
+                          Disarankan
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-[11px] leading-snug text-muted-foreground">{hint?.tagline ?? config.description}</p>
+                  </div>
+                  {isActive && (
+                    <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground" title="Sedang dipakai">
+                      <Check className="h-3 w-3" />
+                    </span>
                   )}
                 </div>
-                {isActive && (
-                  <Badge variant="default" className="mt-1 sm:mt-2 text-[9px] sm:text-[10px]">
-                    Active
-                  </Badge>
+                <div className="mt-3 flex items-center justify-between gap-2">
+                  <span className="text-[10px] text-muted-foreground">{providerModels.length} pilihan model</span>
+                  <span className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${
+                    ready
+                      ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-500'
+                      : 'border-amber-500/20 bg-amber-500/10 text-amber-500'
+                  }`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${ready ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                    {ready ? 'Siap dipakai' : 'Perlu API key'}
+                  </span>
+                </div>
+                {nexabotPill && pid === 'nexabot' && !nexabotPill.text.includes('API key') && (
+                  <div className="mt-2 text-[10px] text-muted-foreground">
+                    <span className={nexabotPill.className} title={nexabotPill.title}>{nexabotPill.text}</span>
+                  </div>
                 )}
               </button>
             )
@@ -3499,20 +3545,24 @@ export default function ImageToVideoPage() {
 
         <MaintenanceBanner providerId={provider} />
 
-        {/* Provider Info */}
-        <div className="mt-3 flex flex-wrap gap-4 text-xs text-muted-foreground">
+        {/* Ringkasan layanan aktif */}
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
           <div>
-            Provider aktif: <b className="text-foreground">{PROVIDER_CONFIGS[provider].icon} {PROVIDER_CONFIGS[provider].name}</b>
+            Layanan dipilih: <b className="text-foreground">{PROVIDER_CONFIGS[provider].icon} {PROVIDER_CONFIGS[provider].name}</b>
           </div>
           <div>
             {provider === 'createpulse' ? (
-              <>API Key: <b className="text-emerald-500">Admin Managed</b></>
+              <>Akses: <b className="text-emerald-500">tanpa API key</b></>
+            ) : hasActiveKey ? (
+              <>Akses: <b className="text-emerald-500">{providerKeyCount} API key aktif</b></>
             ) : (
-              <>API Keys: <b className={providerKeyCount > 0 ? 'text-emerald-500' : 'text-destructive'}>{providerKeyCount}</b> tersedia</>
+              <>Akses: <b className="text-amber-500">belum ada API key</b></>
             )}
           </div>
           <div>
-            Status: <b className={provider === 'createpulse' || hasActiveKey ? 'text-emerald-500' : 'text-blue-500'}>{provider === 'createpulse' || hasActiveKey ? 'Ready' : 'No Key'}</b>
+            Status: <b className={provider === 'createpulse' || hasActiveKey ? 'text-emerald-500' : 'text-amber-500'}>
+              {provider === 'createpulse' || hasActiveKey ? 'Siap dipakai' : 'Perlu API key'}
+            </b>
           </div>
           <button
             onClick={toggleNotifications}
@@ -3965,7 +4015,7 @@ export default function ImageToVideoPage() {
 
             {/* Default Settings */}
             <div className="lg:col-span-2">
-              <Section title="⚙️ Pengaturan">
+              <Section title="2 · Atur Video">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   <div>
                     <Label>Model AI ({PROVIDER_CONFIGS[provider].name})</Label>
