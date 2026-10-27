@@ -9,6 +9,8 @@ import {
   AlertTriangle,
   CheckCircle,
   Zap,
+  KeyRound,
+  Trash2,
 } from 'lucide-react'
 
 interface NexabotPackage {
@@ -55,6 +57,13 @@ interface AppSettings {
   [key: string]: string
 }
 
+interface MasterKeyStatus {
+  configured: boolean
+  source: 'database' | 'env' | 'none'
+  mode: 'off' | 'unlimited' | 'unlimited-or-balance'
+  daily_cap: number
+}
+
 interface Maintenance {
   provider: string
   is_maintenance: boolean
@@ -79,11 +88,17 @@ export default function AdminSystemSettings() {
     packages: toPackageForm(),
   })
   const [nbDefaults, setNbDefaults] = useState<{ price: number; packages: NexabotPackage[] }>({
-    price: 250,
+    price: 150,
     packages: NB_PACKAGE_FALLBACKS,
   })
   const [nbActive, setNbActive] = useState<NexabotPricing | null>(null)
   const [nbSaving, setNbSaving] = useState(false)
+  // Kunci induk NexaBot: server hanya melaporkan status, nilainya tidak pernah
+  // dikirim balik ke browser — jadi input selalu kosong dan hanya diisi saat
+  // admin ingin mengganti.
+  const [mkStatus, setMkStatus] = useState<MasterKeyStatus | null>(null)
+  const [mkInput, setMkInput] = useState('')
+  const [mkSaving, setMkSaving] = useState(false)
   const token = useAuthStore((state) => state.token)
   const addToast = useToastStore((state) => state.addToast)
 
@@ -153,6 +168,80 @@ export default function AdminSystemSettings() {
       addToast('Gagal menyimpan harga NexaBot', 'error')
     } finally {
       setNbSaving(false)
+    }
+  }
+
+  const fetchMasterKeyStatus = useCallback(async () => {
+    if (!token) return
+    try {
+      const res = await fetch('/api/admin/nexabot/master-key', { headers: { Authorization: `Bearer ${token}` } })
+      if (!res.ok) return
+      const data = await res.json()
+      setMkStatus({
+        configured: !!data.configured,
+        source: data.source ?? 'none',
+        mode: data.mode ?? 'unlimited-or-balance',
+        daily_cap: Number(data.daily_cap) || 0,
+      })
+    } catch { /* biarkan status lama kalau request gagal */ }
+  }, [token])
+
+  useEffect(() => { fetchMasterKeyStatus() }, [fetchMasterKeyStatus])
+
+  const handleSaveMasterKey = async () => {
+    if (!token || !mkInput.trim()) return
+    setMkSaving(true)
+    try {
+      const res = await fetch('/api/admin/nexabot/master-key', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ apiKey: mkInput.trim() }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        addToast(data.message || 'Kunci server NexaBot disimpan', 'success')
+        setMkStatus({
+          configured: !!data.configured,
+          source: data.source ?? 'none',
+          mode: data.mode ?? 'unlimited-or-balance',
+          daily_cap: Number(data.daily_cap) || 0,
+        })
+        setMkInput('')
+      } else {
+        addToast(data.error || 'Gagal menyimpan kunci server', 'error')
+      }
+    } catch {
+      addToast('Gagal menyimpan kunci server', 'error')
+    } finally {
+      setMkSaving(false)
+    }
+  }
+
+  const handleClearMasterKey = async () => {
+    if (!token) return
+    if (!window.confirm('Hapus kunci server NexaBot dari dashboard? Member tidak bisa generate pakai kunci server sampai kunci baru disimpan (atau .env dipakai kembali).')) return
+    setMkSaving(true)
+    try {
+      const res = await fetch('/api/admin/nexabot/master-key', {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json()
+      if (res.ok) {
+        addToast(data.message || 'Kunci server NexaBot dihapus', 'success')
+        setMkStatus({
+          configured: !!data.configured,
+          source: data.source ?? 'none',
+          mode: data.mode ?? 'unlimited-or-balance',
+          daily_cap: Number(data.daily_cap) || 0,
+        })
+      } else {
+        addToast(data.error || 'Gagal menghapus kunci server', 'error')
+      }
+    } catch {
+      addToast('Gagal menghapus kunci server', 'error')
+    } finally {
+      setMkSaving(false)
     }
   }
 
@@ -382,6 +471,70 @@ export default function AdminSystemSettings() {
                     .join(' · ')}`
                 : 'memuat...'}
             </span>
+          </div>
+        </Section>
+
+        {/* Kunci Server NexaBot */}
+        <Section
+          title="Kunci Server NexaBot"
+          sub="Kunci induk yang dipakai member tanpa API key — disimpan di server, tidak pernah dikirim ke browser"
+        >
+          <div className="rounded-xl border border-border bg-card/40 p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium">Status:</span>
+              {mkStatus?.configured ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-0.5 text-[11px] text-emerald-400">
+                  <CheckCircle className="h-3 w-3" />
+                  Aktif — {mkStatus.source === 'database' ? 'dari dashboard' : 'dari .env'}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 px-2.5 py-0.5 text-[11px] text-amber-400">
+                  <AlertTriangle className="h-3 w-3" />
+                  Belum diatur — member belum bisa generate tanpa API key
+                </span>
+              )}
+              {mkStatus && mkStatus.mode === 'off' && (
+                <span className="text-[11px] text-amber-400">Mode di .env: off (kunci tidak dipakai)</span>
+              )}
+            </div>
+
+            <p className="mt-2 text-[12px] text-muted-foreground leading-relaxed">
+              Member yang sudah top up saldo atau punya Paket Unlimited aktif generate lewat kunci ini;
+              biaya Rp tetap dipotong dari saldo mereka. Kunci disimpan di database, tidak pernah
+              ditampilkan lagi, dan tidak pernah dikirim ke browser mana pun. Isi kolom untuk mengganti
+              kunci — nilai lama langsung tidak berlaku.
+            </p>
+
+            <div className="mt-3 flex flex-col sm:flex-row gap-2">
+              <input
+                type="password"
+                value={mkInput}
+                onChange={e => setMkInput(e.target.value)}
+                placeholder="Tempel API key NexaBot (nxb_...)"
+                autoComplete="off"
+                className="flex-1 px-3 py-2 rounded-lg border border-border bg-card text-sm font-mono"
+              />
+              <Button size="sm" onClick={handleSaveMasterKey} disabled={mkSaving || !mkInput.trim()}>
+                <KeyRound className={`h-4 w-4 mr-2 ${mkSaving ? 'animate-pulse' : ''}`} />
+                {mkSaving ? 'Menyimpan...' : 'Simpan Kunci'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleClearMasterKey}
+                disabled={mkSaving || !mkStatus?.configured || mkStatus?.source === 'env'}
+                title={mkStatus?.source === 'env' ? 'Kunci berasal dari .env — hapus variabelnya di server' : undefined}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Hapus
+              </Button>
+            </div>
+
+            <div className="mt-2 text-[11px] text-muted-foreground leading-relaxed">
+              Urutan yang dipakai server: kunci dashboard → <code>NEXABOT_MASTER_API_KEY</code> di .env →
+              tidak tersedia. Batas harian dan mode tetap diatur lewat env
+              (<code>NEXABOT_MASTER_KEY_MODE</code>, <code>NEXABOT_MASTER_DAILY_CAP</code>).
+            </div>
           </div>
         </Section>
 

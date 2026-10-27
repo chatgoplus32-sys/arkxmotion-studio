@@ -156,6 +156,59 @@ test('paket Unlimited aktif juga membuka kunci induk', async () => {
   assert.equal(terakhir().apiKey, MASTER)
 })
 
+test('saldo yang habis terpotong tepat sebelum submit tetap boleh memakai kunci induk', async () => {
+  // Klien memotong biaya SEBELUM submit, jadi generate terakhir yang sah bisa
+  // menyisakan saldo 0 saat relay memeriksa kelayakan.
+  const BARU_POTONG = 7003
+  jalankanSql(
+    `INSERT OR IGNORE INTO users (id, email, password, name, role, approved) VALUES (?, ?, 'x', 'uji', 'user', 1)`,
+    BARU_POTONG,
+    'baru-potong@test.local',
+  )
+  jalankanSql(`INSERT INTO nexabot_balance (user_id, balance) VALUES (?, 0)`, BARU_POTONG)
+  jalankanSql(`INSERT INTO nexabot_usage (user_id, model, cost, status) VALUES (?, 't2v', 250, 'used')`, BARU_POTONG)
+
+  const hasil = await submit({ Authorization: `Bearer ${tokenUntuk({ id: BARU_POTONG, role: 'user' })}` })
+  assert.equal(hasil.status, 200, JSON.stringify(hasil.json))
+  assert.equal(terakhir().apiKey, MASTER)
+})
+
+test('bukti potong lama tidak membuka kunci induk', async () => {
+  const LAMA = 7004
+  jalankanSql(
+    `INSERT OR IGNORE INTO users (id, email, password, name, role, approved) VALUES (?, ?, 'x', 'uji', 'user', 1)`,
+    LAMA,
+    'potong-lama@test.local',
+  )
+  jalankanSql(`INSERT INTO nexabot_balance (user_id, balance) VALUES (?, 0)`, LAMA)
+  jalankanSql(
+    `INSERT INTO nexabot_usage (user_id, model, cost, status, created_at)
+     VALUES (?, 't2v', 250, 'used', datetime('now', '-2 hours'))`,
+    LAMA,
+  )
+
+  const sebelum = diterima.length
+  const hasil = await submit({ Authorization: `Bearer ${tokenUntuk({ id: LAMA, role: 'user' })}` })
+  assert.equal(hasil.status, 400, JSON.stringify(hasil.json))
+  assert.equal(diterima.length, sebelum, 'relay menembak upstream untuk bukti potong yang sudah kedaluwarsa')
+})
+
+test('GET /api/nexabot/balance melaporkan kelayakan kunci server untuk UI', async () => {
+  const berhak = await fetch(`${base}/api/nexabot/balance`, {
+    headers: { Authorization: `Bearer ${tokenUntuk({ id: BERHAK, role: 'user' })}` },
+  })
+  const dataBerhak = (await berhak.json()) as any
+  assert.equal(dataBerhak.server_key.available, true, JSON.stringify(dataBerhak.server_key))
+  assert.match(String(dataBerhak.server_key.reason), /saldo|Unlimited/i)
+
+  const admin = await fetch(`${base}/api/nexabot/balance`, {
+    headers: { Authorization: `Bearer ${tokenUntuk({ id: ADMIN.id, role: 'admin' })}` },
+  })
+  const dataAdmin = (await admin.json()) as any
+  assert.equal(dataAdmin.server_key.available, false, 'admin tanpa saldo/paket ditawari kunci server')
+  assert.match(String(dataAdmin.server_key.reason), /saldo|paket/i)
+})
+
 test('kunci milik member sendiri tetap dipakai apa adanya', async () => {
   const hasil = await submit({ 'x-api-key': KUNCI_MEMBER, Authorization: `Bearer ${tokenUntuk({ id: BERHAK, role: 'user' })}` })
   assert.equal(hasil.status, 200, JSON.stringify(hasil.json))

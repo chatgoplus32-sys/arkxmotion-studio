@@ -2,7 +2,7 @@
 // Pola sama seperti CreatePulse: user top up saldo Rupiah (approval admin),
 // lalu tiap generate memotong saldo itu. Bedanya:
 //  - saldo terpisah (tabel nexabot_*), jadi ledger CreatePulse tidak tersentuh;
-//  - harga FLAT Rp 250/generate apa pun mode/model/panjang videonya;
+//  - harga FLAT Rp 150/generate apa pun mode/model/panjang videonya;
 //  - ada PAKET UNLIMITED dengan beberapa varian (Mingguan/Bulanan/Tahunan,
 //    harga & durasi diatur admin di shared/pricing.ts + app_settings): selama
 //    paket aktif, /deduct tidak memotong saldo sama sekali (tetap dicatat
@@ -35,6 +35,7 @@ import {
   type NexabotPricing,
   type NexabotPricingField,
 } from '../../shared/pricing.js'
+import { masterKeyEligibility } from '../lib/nexabotMasterKey.js'
 
 // Definisi harga tinggal di shared/pricing.ts supaya server, fungsi Vercel, dan
 // endpoint publik /api/public/pricing tidak pernah beda angka.
@@ -154,6 +155,10 @@ router.get('/balance', authenticateToken, (req: AuthRequest, res: Response) => {
 
     const balance = ensureBalanceRow(userId)
     const pricing = getNexabotPricing()
+    // Kelayakan memakai kunci NexaBot milik server. Dihitung dengan kebijakan
+    // yang sama seperti relay, supaya UI hanya menawarkan jalur tanpa API key
+    // ketika relay benar-benar akan menerimanya.
+    const serverKey = masterKeyEligibility(userId)
     // `price`, `min_topup`, dan detail paket ikut dikirim supaya UI memakai
     // angka otoritatif server (termasuk tarif yang baru diubah admin), bukan
     // konstanta yang bisa langsung usang di klien.
@@ -162,6 +167,7 @@ router.get('/balance', authenticateToken, (req: AuthRequest, res: Response) => {
       price: pricing.price,
       min_topup: NEXABOT_MIN_TOPUP,
       unlimited: unlimitedPayload(getActivePackage(userId)),
+      server_key: { available: serverKey.ok, reason: serverKey.reason },
       // `package` = varian utama (kompatibilitas), `packages` = semua varian
       // yang bisa dipilih user di halaman top up.
       package: {

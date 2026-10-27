@@ -148,7 +148,7 @@ test('GET /balance: saldo, harga, dan semua varian paket dari server', async () 
 
   assert.equal(status, 200)
   assert.equal(body.balance, 5000)
-  assert.equal(body.price, 250)
+  assert.equal(body.price, 150)
   assert.equal(body.min_topup, 10000)
   assert.equal(body.unlimited.active, false)
   assert.equal(body.package.slug, 'unlimited_weekly')
@@ -255,11 +255,11 @@ test('POST /deduct: potong saldo sesuai harga server dan kembalikan usage_id', a
   })
 
   assert.equal(status, 200)
-  assert.equal(body.deducted, 250)
-  assert.equal(body.balance, 750)
+  assert.equal(body.deducted, 150)
+  assert.equal(body.balance, 850)
   assert.equal(body.unlimited, false)
   assert.ok(body.usage_id > 0)
-  assert.equal(getBalance(), 750)
+  assert.equal(getBalance(), 850)
 })
 
 test('POST /deduct: saldo kurang → 400 (tanpa memotong apa pun)', async () => {
@@ -268,7 +268,7 @@ test('POST /deduct: saldo kurang → 400 (tanpa memotong apa pun)', async () => 
   const { status, body } = await api('POST', '/api/nexabot/deduct', { token: userToken, body: {} })
 
   assert.equal(status, 400)
-  assert.equal(body.required, 250)
+  assert.equal(body.required, 150)
   assert.match(body.error, /Saldo NexaBot tidak cukup/)
   assert.match(body.error, /Paket Mingguan/, 'sebut varian termurah sebagai jalan keluar')
   assert.equal(getBalance(), 100)
@@ -299,8 +299,8 @@ test('POST /deduct saat paket sudah kedaluwarsa: tarif normal berlaku lagi', asy
 
   assert.equal(status, 200)
   assert.equal(body.unlimited, false)
-  assert.equal(body.deducted, 250)
-  assert.equal(body.balance, 750)
+  assert.equal(body.deducted, 150)
+  assert.equal(body.balance, 850)
 })
 
 test('POST /deduct memakai harga per generate terbaru dari admin', async () => {
@@ -321,7 +321,7 @@ test('POST /refund: saldo kembali dan usage ditandai refunded (sekali saja)', as
 
   const refund = await api('POST', '/api/nexabot/refund', { token: userToken, body: { usage_id: charge.body.usage_id } })
   assert.equal(refund.status, 200)
-  assert.equal(refund.body.refunded, 250)
+  assert.equal(refund.body.refunded, 150)
   assert.equal(refund.body.balance, 1000)
   assert.equal(getBalance(), 1000)
 

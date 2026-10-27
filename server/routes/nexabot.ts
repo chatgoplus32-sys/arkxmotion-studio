@@ -8,7 +8,7 @@ import {
   nexabotRelayHeaders,
   type NexabotProxyAction,
 } from '../../shared/nexabotProxy.js'
-import { isMasterKey, masterKey, memberMayUseMasterKey, underDailyCap } from '../lib/nexabotMasterKey.js'
+import { isMasterKey, masterKey, masterKeyEligibility } from '../lib/nexabotMasterKey.js'
 import { recordUpstreamUsage, userIdFromRequest, type ResolvedCredential } from '../lib/nexabotUpstreamUsage.js'
 
 const router = Router()
@@ -93,9 +93,8 @@ function bolehPakaiKunciInduk(req: Request): { ok: boolean; reason: string } {
         'Tanpa itu, pakai kunci NexaBot Anda sendiri lewat header X-Api-Key.',
     }
   }
-  const izin = memberMayUseMasterKey(userId)
-  if (!izin.ok) return izin
-  return underDailyCap(userId)
+  const izin = masterKeyEligibility(userId)
+  return izin
 }
 
 /** Boleh tidaknya member ini memakai kunci induk untuk rute BACA. */

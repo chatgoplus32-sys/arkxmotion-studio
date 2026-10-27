@@ -17,12 +17,13 @@ export interface BalancePrecheckResult {
  * @param provider        ID provider (roboneo | weavy | galleri5 | createpulse | lainnya)
  * @param minCredits      Estimasi biaya generate dalam credits
  * @param opts            Opsi tambahan: cpBalance (saldo CreatePulse yang sudah di-fetch di halaman),
- *                        authToken (token sesi untuk CreatePulse)
+ *                        authToken (token sesi untuk CreatePulse),
+ *                        serverKey (member boleh memakai kunci NexaBot milik server)
  */
 export async function precheckProviderBalance(
   provider: string,
   minCredits: number,
-  opts: { cpBalance?: number; authToken?: string; isCpAdmin?: boolean; isAdmin?: boolean } = {}
+  opts: { cpBalance?: number; authToken?: string; isCpAdmin?: boolean; isAdmin?: boolean; serverKey?: boolean } = {}
 ): Promise<BalancePrecheckResult> {
   if (minCredits <= 0) return { ok: true }
 
@@ -36,7 +37,7 @@ export async function precheckProviderBalance(
     case 'oneover':
       return precheckOneOverBalance(minCredits)
     case 'nexabot':
-      return precheckNexabotBalance(minCredits)
+      return precheckNexabotBalance(minCredits, { serverKey: opts.serverKey })
     case 'alriz':
       return precheckAlrizBalance(minCredits, { authToken: opts.authToken, isAdmin: opts.isAdmin })
     case 'createpulse': {
@@ -180,10 +181,17 @@ export async function precheckGalleri5Balance(minCredits: number): Promise<Balan
 /**
  * Cek saldo NexaBot: probe balance via /api/v1/api/credit
  */
-export async function precheckNexabotBalance(minCredits: number): Promise<BalancePrecheckResult> {
+export async function precheckNexabotBalance(
+  minCredits: number,
+  opts: { serverKey?: boolean } = {}
+): Promise<BalancePrecheckResult> {
   const store = useProviderManager.getState()
   const keys = store.keys.nexabot || []
   if (keys.length === 0) {
+    // Tanpa key bukan lagi jalan buntu: relay menyuntikkan kunci induk untuk
+    // member dengan saldo/paket. Kelayakannya sudah diputuskan server (wallet
+    // `server_key.available`), jadi precheck tidak perlu menebak.
+    if (opts.serverKey) return { ok: true }
     return { ok: false, error: 'Tidak ada API key / session NexaBot. Tambahkan di halaman Providers.' }
   }
 

@@ -3,7 +3,7 @@
 // lewat rewrite vercel.json: /api/nexabot/* → /api/nexabot-wallet?sub=*.
 //
 // Sama seperti CreatePulse: saldo Rp per user, top up diajukan ke admin, dan
-// tiap generate memotong Rp 250 (flat). Saldo terpisah dari CreatePulse.
+// tiap generate memotong Rp 150 (flat). Saldo terpisah dari CreatePulse.
 // Tambahan: PAKET UNLIMITED dengan beberapa varian (Mingguan/Bulanan/Tahunan,
 // harga & durasi diatur admin) — selama paket aktif, /deduct tidak memotong
 // saldo (usage tetap dicatat dengan cost 0).

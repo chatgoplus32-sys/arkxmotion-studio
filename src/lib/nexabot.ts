@@ -32,6 +32,20 @@ function retryAfterHint(res: Response): string {
   return ` (disarankan tunggu ±${Math.max(1, Math.round(ms / 1000))}s)`
 }
 
+/**
+ * Pesan `error` dari body JSON relay, kalau ada. Dipakai jalur kunci server:
+ * relay membalas alasan kelayakan (saldo kosong, batas harian, dst.) dan alasan
+ * itu jauh lebih berguna bagi user daripada status HTTP mentah.
+ */
+function jsonErrorMessage(text: string): string | null {
+  try {
+    const parsed = JSON.parse(text)
+    return typeof parsed?.error === 'string' && parsed.error.trim() ? parsed.error.trim() : null
+  } catch {
+    return null
+  }
+}
+
 function getStoredProviderKey(provider: string): string | null {
   if (typeof window === 'undefined') return null
   try {
@@ -173,10 +187,18 @@ function safeHeaderValue(value: string): string {
   return String(value).replace(/[\r\n]+/g, ' ').replace(/[^\x20-\x7E]/g, '').trim()
 }
 
-/** Auth NexaBot: pilih salah satu (atau keduanya) — cookie sesi atau API key. */
+/**
+ * Auth NexaBot. Tiga jalur:
+ *  - `cookies` — sesi login nexabot.id (paket Unlimited, tanpa potong kredit);
+ *  - `apiKey`  — kunci pribadi nxb_… (pay-as-you-go);
+ *  - `master`  — tanpa kredensial dari browser: relay ARKXMotion menyuntikkan
+ *    kunci milik server setelah memverifikasi kelayakan member (top up).
+ *    Hanya `Authorization: Bearer <token app>` yang dikirim klien.
+ */
 export interface NexabotAuth {
   apiKey?: string | null
   cookies?: string | null
+  master?: boolean
 }
 
 function normalizeAuth(auth: NexabotAuth | string | undefined): NexabotAuth {
@@ -185,7 +207,10 @@ function normalizeAuth(auth: NexabotAuth | string | undefined): NexabotAuth {
 }
 
 function fillAuthFromStorage(auth: NexabotAuth): NexabotAuth {
-  if (auth.apiKey || auth.cookies) return auth
+  // Mode master sengaja TIDAK mengisi kredensial dari penyimpanan: kalau key
+  // pribadi ikut terkirim, relay akan memakainya dan jalur kunci server tidak
+  // pernah dipakai.
+  if (auth.apiKey || auth.cookies || auth.master) return auth
   return { apiKey: getNexabotApiKey(), cookies: getNexabotCookies() }
 }
 
@@ -633,7 +658,7 @@ export async function submitNexabot(
   const auth = fillAuthFromStorage(normalizeAuth(authOverride))
   const { apiKey, cookies } = normalizeValues(auth)
   const session = !!cookies
-  if (!apiKey && !cookies) {
+  if (!apiKey && !cookies && !auth.master) {
     throw new Error('NexaBot: tidak ada API key / cookie session yang valid — cek format di halaman Providers')
   }
 
@@ -676,6 +701,9 @@ export async function submitNexabot(
     if (!res.ok) {
       const errText = await res.text().catch(() => '')
       if (res.status === 401 || res.status === 403) {
+        if (auth.master) {
+          throw new Error(jsonErrorMessage(errText) || `NexaBot: kunci server ditolak (HTTP ${res.status})`)
+        }
         throw new Error(session
           ? 'NexaBot: session cookie kedaluwarsa — login ulang di nexabot.id lalu paste cookie baru'
           : 'NexaBot: API key tidak valid')
@@ -703,6 +731,12 @@ export async function submitNexabot(
       if (res.status === 503) {
         const waitSeconds = parseNexabotThrottleSeconds(errText)
         if (waitSeconds != null) throw new NexabotThrottleError(waitSeconds)
+      }
+
+      // Kunci server: relay menolak dengan alasan kelayakan (saldo kosong,
+      // batas harian, kunci induk dimatikan). Tampilkan alasan itu apa adanya.
+      if (auth.master) {
+        throw new Error(jsonErrorMessage(errText) || `NexaBot HTTP ${res.status}: ${errText.slice(0, 200)}`)
       }
 
       throw new Error(`NexaBot HTTP ${res.status}: ${errText.slice(0, 200)}`)
@@ -869,7 +903,7 @@ export async function pollNexabotJob(
   const { maxAttempts = 120, baseMs = 3000, maxMs = 15000, maxTotalMs = 20 * 60 * 1000, random, onRetry } = opts
   const auth = fillAuthFromStorage(normalizeAuth(authOverride))
   const { apiKey, cookies } = normalizeValues(auth)
-  if (!apiKey && !cookies) throw new Error('NexaBot: tidak ada API key / cookie session yang valid')
+  if (!apiKey && !cookies && !auth.master) throw new Error('NexaBot: tidak ada API key / cookie session yang valid')
 
   const attempts = Math.max(1, maxAttempts)
   const startedAt = Date.now()
@@ -909,7 +943,9 @@ export async function pollNexabotJob(
     try {
       res = await fetch(`${NEXABOT_BASE}/job/${jobId}`, {
         method: 'GET',
-        headers: authHeaders(auth),
+        // Mode kunci server tidak punya header kredensial: relay butuh token
+        // login app untuk memverifikasi kelayakan member.
+        headers: { ...authHeaders(auth), ...appAuthHeaders() },
       })
     } catch (err: any) {
       // Jaringan/proxy putus — bukan berarti job-nya gagal.
@@ -922,7 +958,14 @@ export async function pollNexabotJob(
     if (verdict === 'fatal') {
       const errText = await res.text().catch(() => '')
       if (res.status === 401 || res.status === 403) {
+        if (auth.master) {
+          throw new Error(jsonErrorMessage(errText) || `NexaBot: kunci server ditolak (HTTP ${res.status})`)
+        }
         throw new Error('NexaBot: session cookie kedaluwarsa — login ulang di nexabot.id lalu paste cookie baru')
+      }
+      if (auth.master) {
+        const alasan = jsonErrorMessage(errText)
+        if (alasan) throw new Error(alasan)
       }
       throw new Error(`NexaBot job tidak ditemukan atau gagal — ${describeNexabotStatus(res.status)}${errText ? `: ${errText.slice(0, 120)}` : ''}`)
     }
@@ -996,16 +1039,17 @@ export async function downloadNexabotResult(
 ): Promise<{ ok: boolean; url?: string; error?: string; blobUrl?: string }> {
   const auth = fillAuthFromStorage(normalizeAuth(authOverride))
   const { apiKey, cookies } = normalizeValues(auth)
-  if (!apiKey && !cookies) return { ok: false, error: 'NexaBot: tidak ada API key / cookie session yang valid' }
+  if (!apiKey && !cookies && !auth.master) return { ok: false, error: 'NexaBot: tidak ada API key / cookie session yang valid' }
   try {
     const res = await fetch(`${NEXABOT_BASE}/download/${jobId}`, {
       method: 'GET',
-      headers: authHeaders(auth),
+      headers: { ...authHeaders(auth), ...appAuthHeaders() },
     })
 
     if (!res.ok) {
       const errText = await res.text().catch(() => '')
-      return { ok: false, error: `Download gagal: HTTP ${res.status} ${errText.slice(0, 200)}` }
+      const alasan = auth.master ? jsonErrorMessage(errText) : null
+      return { ok: false, error: alasan || `Download gagal: HTTP ${res.status} ${errText.slice(0, 200)}` }
     }
 
     const contentType = res.headers.get('content-type') || ''
@@ -1141,7 +1185,7 @@ export async function submitNexabotGptImage(
   const { maxAttempts = 3, baseMs = 2000, maxMs = 15000, random, onRetry } = opts
   const auth = fillAuthFromStorage(normalizeAuth(authOverride))
   const { apiKey, cookies } = normalizeValues(auth)
-  if (!apiKey && !cookies) {
+  if (!apiKey && !cookies && !auth.master) {
     throw new Error('NexaBot: tidak ada API key / cookie session yang valid — cek format di halaman Providers')
   }
   const session = !!cookies
@@ -1221,7 +1265,7 @@ export async function pollNexabotGptImage(
   const { maxAttempts = 180, baseMs = 2000, maxMs = 10000, maxTotalMs = 6 * 60 * 1000, random, onRetry } = opts
   const auth = fillAuthFromStorage(normalizeAuth(authOverride))
   const { apiKey, cookies } = normalizeValues(auth)
-  if (!apiKey && !cookies) throw new Error('NexaBot: tidak ada API key / cookie session yang valid')
+  if (!apiKey && !cookies && !auth.master) throw new Error('NexaBot: tidak ada API key / cookie session yang valid')
 
   const attempts = Math.max(1, maxAttempts)
   const startedAt = Date.now()

@@ -93,7 +93,7 @@ test('respons NexaBot: harga per generate, min topup, varian utama & semua varia
   const nexabot = capture.body.providers.nexabot
 
   assert.equal(nexabot.name, 'NexaBot')
-  assert.equal(nexabot.price_per_generate, 250)
+  assert.equal(nexabot.price_per_generate, 150)
   assert.equal(nexabot.min_topup, NEXABOT_MIN_TOPUP)
 
   // `package` (varian utama) tetap ada untuk klien lama.
@@ -171,5 +171,5 @@ test('DATABASE_URL rusak → tetap 200 dengan default, bukan 500', async () => {
 
   assert.equal(capture.statusCode, 200)
   assert.deepEqual(capture.body.providers.nexabot.packages, parseNexabotPricing({}).packages)
-  assert.equal(capture.body.providers.nexabot.price_per_generate, 250)
+  assert.equal(capture.body.providers.nexabot.price_per_generate, 150)
 })

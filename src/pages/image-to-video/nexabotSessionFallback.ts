@@ -33,6 +33,8 @@ import { sendNotification } from '@/lib/notify'
 export interface NexabotJobAuth {
   apiKey?: string | null
   cookies?: string | null
+  /** Tanpa kredensial browser: relay menyuntikkan kunci milik server. */
+  master?: boolean
 }
 
 export interface NexabotFallbackHooks {
@@ -71,7 +73,7 @@ function normalizeCookie(raw: string | null | undefined): string {
  * ditulis ke key yang gagal agar badge jalur & generate berikutnya ikut memakainya.
  */
 export async function recoverNexabotSessionCookie(
-  keyId: string,
+  keyId: string | null,
   failedCookies?: string | null
 ): Promise<NexabotCookieRecovery> {
   const failed = normalizeCookie(failedCookies)
@@ -92,7 +94,7 @@ export async function recoverNexabotSessionCookie(
       const info = await checkNexabotSession(candidate.value)
       if (info.ok && info.active) {
         // Simpan supaya jalur generate & badge status langsung memakai cookie ini.
-        useProviderManager.getState().setKeyCookies('nexabot', keyId, candidate.value)
+        if (keyId) useProviderManager.getState().setKeyCookies('nexabot', keyId, candidate.value)
         const from = candidate.source === 'sync-queue' ? 'Cookie baru dari extension' : 'Cookie lebih baru di penyimpanan'
         return {
           ok: true,
@@ -123,8 +125,13 @@ export async function runNexabotJobWithSessionFallback<T>(
     sessionCookies?: string | null
     /** API key milik key yang sama, dipakai untuk fallback pay-as-you-go. */
     apiKey?: string | null
+    /**
+     * Tanpa kredensial browser: relay menyuntikkan kunci NexaBot milik server
+     * untuk member yang sudah top up. `apiKey`/`sessionCookies` diabaikan.
+     */
+    master?: boolean
     /** ID key di providerManager — dipakai untuk menyimpan cookie hasil recovery. */
-    keyId: string
+    keyId?: string
     hooks: NexabotFallbackHooks
   }
 ): Promise<T> {
@@ -132,8 +139,11 @@ export async function runNexabotJobWithSessionFallback<T>(
   const sessionCookies = normalizeCookie(opts.sessionCookies)
   const apiKey = parseNexabotApiKeyInput(opts.apiKey || '')
 
-  // Tanpa cookie: perilaku lama — langsung lewat API key (pay-as-you-go).
-  if (!sessionCookies) return run({ apiKey }, 'API key (pay-as-you-go)')
+  // Tanpa cookie: kunci server (member terverifikasi relay) atau API key pribadi.
+  if (!sessionCookies) {
+    if (opts.master) return run({ master: true }, 'kunci server (potong saldo NexaBot)')
+    return run({ apiKey }, 'API key (pay-as-you-go)')
+  }
 
   try {
     return await run({ cookies: sessionCookies }, 'session Unlimited')
@@ -147,7 +157,7 @@ export async function runNexabotJobWithSessionFallback<T>(
     )
     hooks.notify('⚠️ Sesi Unlimited NexaBot bermasalah — mencoba ambil ulang cookie session…', 'warning')
 
-    const recovered = await recoverNexabotSessionCookie(opts.keyId, sessionCookies)
+    const recovered = await recoverNexabotSessionCookie(opts.keyId ?? null, sessionCookies)
 
     if (recovered.ok && recovered.cookies) {
       hooks.log(`🍪 ${recovered.note} — job diulang lewat jalur Unlimited`, 'success', 'nexabot')

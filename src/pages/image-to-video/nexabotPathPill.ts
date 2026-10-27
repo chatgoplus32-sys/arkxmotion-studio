@@ -3,6 +3,7 @@ import {
   formatNexabotDuration,
   type NexabotSessionInfo,
 } from '../../lib/nexabot'
+import { NEXABOT_PRICE_FALLBACK } from '../../lib/nexabotWallet'
 
 /**
  * Badge jalur NexaBot untuk kartu provider di halaman Image to Video.
@@ -26,14 +27,25 @@ const BASE_CLASS = 'block mt-1 text-[9px] sm:text-[10px] font-medium'
 export function nexabotPathPill(
   nexabotKeys: { cookies?: string; key?: string }[] | undefined,
   session: NexabotSessionInfo | null,
-  checking: boolean
+  checking: boolean,
+  serverKey?: { available: boolean } | null
 ): NexabotPathPill {
   // Ada API key di pool? Kalau ya, sesi yang mati saat job berjalan bisa
   // ditutup otomatis lewat jalur pay-as-you-go (lihat nexabotSessionFallback).
   const hasApiKey = !!nexabotKeys?.some((k) => !!k.key)
 
-  // Tanpa cookie session, app otomatis memakai jalur API key.
+  // Tanpa cookie session: app memakai kunci server (member yang sudah top up)
+  // atau API key pribadi.
   if (!nexabotKeys?.some((k) => !!k.cookies)) {
+    if (serverKey?.available) {
+      return {
+        text: '🔑 Kunci server · tanpa API key',
+        className: `${BASE_CLASS} text-emerald-400`,
+        title:
+          'Saldo/Paket Unlimited NexaBot Anda aktif, jadi generate memakai kunci NexaBot milik server — tidak perlu menempel API key. ' +
+          `Biaya Rp ${NEXABOT_PRICE_FALLBACK}/generate dipotong dari saldo NexaBot (gratis selama Paket Unlimited aktif).`,
+      }
+    }
     return {
       text: '🔑 API key · pay-as-you-go',
       className: `${BASE_CLASS} text-amber-400`,

@@ -10,6 +10,7 @@ import {
   fetchNexabotWallet,
   nexabotPackageName,
   NEXABOT_PACKAGE_FALLBACKS,
+  NEXABOT_PRICE_FALLBACK,
   type NexabotWallet,
 } from '@/lib/nexabotWallet'
 
@@ -154,7 +155,7 @@ export default function NexaBotTopupPage() {
         eyebrow="NexaBot"
         title="Top Up &"
         highlight="Paket"
-        desc={`Saldo ${formatRp(wallet?.price ?? 250)}/generate, atau Paket Unlimited mulai ${formatRp(packages[0].price)}`}
+        desc={`Saldo ${formatRp(wallet?.price ?? NEXABOT_PRICE_FALLBACK)}/generate, atau Paket Unlimited mulai ${formatRp(packages[0].price)}`}
       />
 
       {/* Saldo + status paket */}
@@ -170,7 +171,7 @@ export default function NexaBotTopupPage() {
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-          <span>Semua mode (t2v, sfv, i2v, r2v, extend, img, music, tts): <b className="text-foreground">{formatRp(wallet?.price ?? 250)}/generate</b></span>
+          <span>Semua mode (t2v, sfv, i2v, r2v, extend, img, music, tts): <b className="text-foreground">{formatRp(wallet?.price ?? NEXABOT_PRICE_FALLBACK)}/generate</b></span>
           {unlimited?.active && (
             <Badge variant="success">
               <Zap className="h-3 w-3 mr-1" />

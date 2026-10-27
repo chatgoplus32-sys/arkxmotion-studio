@@ -48,7 +48,7 @@ test('katalog: slug & kunci app_settings unik, varian pertama pakai kunci lama',
 test('app_settings kosong → semua harga jatuh ke default', () => {
   const pricing = parseNexabotPricing({})
 
-  assert.equal(pricing.price, 250)
+  assert.equal(pricing.price, 150)
   assert.equal(pricing.packages.length, NEXABOT_PACKAGES.length)
   assert.deepEqual(
     pricing.packages.map((p) => [p.slug, p.label, p.price, p.days]),
@@ -62,7 +62,7 @@ test('app_settings kosong → semua harga jatuh ke default', () => {
 test('app_settings null/undefined → tetap default, bukan error', () => {
   for (const saved of [null, undefined]) {
     const pricing = parseNexabotPricing(saved as never)
-    assert.equal(pricing.price, 250)
+    assert.equal(pricing.price, 150)
     assert.deepEqual(pricing.packages, parseNexabotPricing({}).packages)
   }
 })
@@ -116,7 +116,7 @@ test('nilai tidak masuk akal → default per field (harga tidak pernah 0/NaN)', 
     nexabot_unlimited_yearly_days: 'NaN',
   })
 
-  assert.equal(pricing.price, 250)
+  assert.equal(pricing.price, 150)
   assert.equal(pricing.packages[0].price, NEXABOT_PACKAGES[0].defaultPrice)
   assert.equal(pricing.packages[0].days, NEXABOT_PACKAGES[0].days)
   assert.equal(pricing.packages[1].price, NEXABOT_PACKAGES[1].defaultPrice)

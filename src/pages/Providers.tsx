@@ -20,6 +20,7 @@ import {
   Wallet,
 } from 'lucide-react'
 import { useProviderManager, ProviderId, HIDDEN_PROVIDERS } from '@/stores/providerManager'
+import { useAuthStore } from '@/stores/authStore'
 import { syncCreditsToDbAsAdmin } from '@/lib/tokenAutoSync'
 import ProviderStatusBar from '@/components/providers/ProviderStatusBar'
 import TokenSyncHistory from '@/components/providers/TokenSyncHistory'
@@ -33,6 +34,7 @@ import { NEXABOT_CHECK_TIMEOUT_MS } from '@/lib/nexabot-constants'
 import { fetchSeaviBalance } from '@/lib/seavi'
 import { fetchAlrizAccount } from '@/lib/alriz'
 import { refreshNexabotSessionMonitor } from '@/lib/nexabotSessionMonitor'
+import { NEXABOT_PRICE_FALLBACK } from '@/lib/nexabotWallet'
 import { checkGalleri5Balance, isGalleri5TokenError } from '@/lib/galleri5'
 
 const PROVIDER_COLORS: Record<string, string> = {
@@ -77,7 +79,7 @@ const PROVIDER_LIST = [
   { key: 'genspark', label: 'Genspark AI', desc: 'Kling V3 Motion Control + 14 video models (Veo, Sora, Hailuo, PixVerse) via genspark.ai Tool API — API key (gsk-...).' },
   { key: 'riverside', label: 'Riverside', desc: 'Riverside Business API — Professional video/audio recording, editing, and production platform.' },
   { key: 'seavi', label: 'Seavi Labs', desc: 'Video & image generation (Seedance 2.5 Multi, Kling 3, Motion Control) via api.seavilabs.site — API key (sea-...), saldo token bersama.' },
-  { key: 'nexabot', label: 'NexaBot', desc: 'NexaBot AI via nexabot.id — Google Omni (text, image & video ref). Mode session cookie (Unlimited) atau API key (nxb_...).' },
+  { key: 'nexabot', label: 'NexaBot', desc: 'NexaBot AI via nexabot.id — Google Omni (text, image & video ref). Member cukup top up saldo atau Paket Unlimited; generate memakai kunci server, tanpa API key.' },
   { key: 'alriz', label: 'Alriz Motion', desc: 'Kling Motion Control (2.6/3.0, 720p/1080p/768p) + 10 model I2V (Kling 3.0 Turbo/O3/V3, Gemini Omni Flash, Happy Horse, Wan 3.0, MiniMax H3, dll.) via alrizmotion.my.id — API key (alz_...), saldo Rp.' },
 ] as const
 
@@ -710,6 +712,11 @@ export default function ProvidersPage() {
   const [editingBalanceVal, setEditingBalanceVal] = useState('')
 
   const currentConfig = PROVIDER_LIST.find(p => p.key === selectedProvider)
+  const isAdmin = useAuthStore((s) => s.user?.role === 'admin')
+  // Member memakai kunci server NexaBot (top up saldo / paket Unlimited), jadi
+  // kolom API key tidak lagi relevan untuk mereka. Admin tetap bisa mengelola
+  // key sendiri di sini.
+  const memberNexabot = selectedProvider === 'nexabot' && !isAdmin
 
   const savedKeys = useMemo(
     () => keys[selectedProvider as ProviderId]?.map(k => k.key) || [],
@@ -1654,6 +1661,26 @@ export default function ProvidersPage() {
             </div>
           ) : (
             <div className="neumorph p-4 space-y-3">
+              {memberNexabot ? (
+                <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 space-y-2">
+                  <div className="text-sm font-semibold text-emerald-300 flex items-center gap-2">
+                    <Check className="h-4 w-4" /> Tidak perlu API key NexaBot
+                  </div>
+                  <p className="text-xs text-[#a0a0a0] leading-relaxed">
+                    Generate memakai kunci NexaBot milik server. Setelah top up saldo atau membeli
+                    Paket Unlimited, Anda langsung bisa generate — biaya{' '}
+                    Rp {NEXABOT_PRICE_FALLBACK.toLocaleString('id-ID')}/generate dipotong dari
+                    saldo NexaBot, dan gratis selama Paket Unlimited aktif.
+                  </p>
+                  <button
+                    onClick={() => navigate('/topup/nexabot')}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 transition"
+                  >
+                    <Wallet className="h-3.5 w-3.5" /> Top Up NexaBot
+                  </button>
+                </div>
+              ) : (
+                <>
               <Textarea
                 rows={6}
                 value={bulkMode ? bulkText : inputValue}
@@ -1664,13 +1691,19 @@ export default function ProvidersPage() {
                 }
                 className="font-mono text-xs bg-[#0a0a0a] border-[#2a2a2a] text-[#f5f5f5] placeholder-[#666666] focus:border-[#00a8ff] focus:ring-[#00a8ff]/30"
               />
+                </>
+              )}
               <div className="flex flex-wrap gap-2">
+                {!memberNexabot && (
+                  <>
                 <Button onClick={bulkMode ? handleBulkUpload : handleAddKey} disabled={bulkMode ? !bulkText.trim() : !inputValue.trim()} className="brand-gradient text-[#0a0a0a] hover:opacity-90">
                   <Plus className="h-3.5 w-3.5" /> Tambah
                 </Button>
                 <Button variant="outline" onClick={() => setBulkMode(!bulkMode)} className="border-[#2a2a2a] bg-[#1a1a1a] text-[#f5f5f5] hover:bg-[#2a2a2a] hover:border-[#00a8ff]/50">
                   <Upload className="h-3.5 w-3.5" /> {bulkMode ? 'Single' : 'Bulk'}
                 </Button>
+                  </>
+                )}
                 <Button variant="outline" onClick={handleCheckAll} disabled={checking || savedKeys.length === 0} className="border-[#2a2a2a] bg-[#1a1a1a] text-[#f5f5f5] hover:bg-[#2a2a2a] hover:border-[#00a8ff]/50">
                   {checking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                   Cek Limit & Status
@@ -1984,7 +2017,7 @@ export default function ProvidersPage() {
             )
           })()}
 
-              {TOKEN_GUIDE[selectedProvider as keyof typeof TOKEN_GUIDE] && (
+              {!memberNexabot && TOKEN_GUIDE[selectedProvider as keyof typeof TOKEN_GUIDE] && (
             <div className="mt-4 rounded-lg border border-[#00a8ff]/30 bg-[#00a8ff]/5 p-3">
               <div className="text-[12px] font-mono uppercase tracking-widest text-[#00a8ff]/80">Cara Dapat Token</div>
               <a
@@ -2031,7 +2064,7 @@ export default function ProvidersPage() {
                 />
               )}
               {/* NexaBot Session Cookies Input (mode Unlimited) */}
-              {selectedProvider === 'nexabot' && (
+              {selectedProvider === 'nexabot' && !memberNexabot && (
                 <NexabotSessionInput
                   providerKeys={keys['nexabot'] || []}
                   addKey={addKey}
@@ -2039,7 +2072,7 @@ export default function ProvidersPage() {
                 />
               )}
               {/* NexaBot Telegram ID Input */}
-              {selectedProvider === 'nexabot' && (
+              {selectedProvider === 'nexabot' && !memberNexabot && (
                 <NexabotTelegramInput
                   providerKeys={keys['nexabot'] || []}
                   setKeyTelegramId={setKeyTelegramId}

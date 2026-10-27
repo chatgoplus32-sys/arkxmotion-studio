@@ -1,0 +1,242 @@
+// ─── Kunci induk NexaBot diatur admin dari dashboard ────────────────────────
+//
+// Kunci ini adalah kredensial operator. Dua hal yang diuji di sini:
+//  1. Hanya admin yang boleh membaca status / menulis / menghapusnya, dan
+//     nilainya TIDAK PERNAH dikirim balik ke browser — termasuk lewat daftar
+//     pengaturan umum yang dulu mengembalikan semua isi app_settings.
+//  2. Relay benar-benar memakai kunci dari dashboard (bukan hanya dari .env),
+//     dan berhenti memakainya begitu kunci dihapus.
+import test, { after, before } from 'node:test'
+import assert from 'node:assert/strict'
+import http from 'node:http'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import type { AddressInfo } from 'node:net'
+import { fileURLToPath } from 'node:url'
+import express from 'express'
+import jwt from 'jsonwebtoken'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
+const DB_PATH = path.join(os.tmpdir(), `arkxmotion-nxb-admin-${process.pid}.db`)
+process.env.ARKXMOTION_DB_PATH = DB_PATH
+const JWT_SECRET = 'test-secret-nexabot-admin'
+process.env.JWT_SECRET = JWT_SECRET
+// File ini menguji kunci dari dashboard, jadi tidak boleh ada fallback env.
+delete process.env.NEXABOT_MASTER_API_KEY
+
+import { createRequire } from 'node:module'
+const requireRepo = createRequire(path.join(__dirname, '..', 'package.json'))
+const Database = requireRepo('better-sqlite3') as new (file: string) => any
+
+const DB_MASTER = 'kunci-dashboard-RAHASIA-123'
+const ENV_MASTER = 'kunci-env-fallback-456'
+
+interface Panggilan { url: string; apiKey: string | null }
+const diterima: Panggilan[] = []
+
+const upstream = http.createServer((req, res) => {
+  req.on('data', () => {})
+  req.on('end', () => {
+    diterima.push({ url: req.url || '', apiKey: (req.headers['x-api-key'] as string) || null })
+    res.setHeader('Content-Type', 'application/json')
+    res.end(JSON.stringify({ ok: true, job_id: 'job-' + diterima.length, credits: 0.15 }))
+  })
+})
+
+const terakhir = () => diterima[diterima.length - 1]
+
+let server: any
+let base = ''
+
+const MEMBER = 8001
+const ADMIN = { id: 800, email: 'admin-kunci@test.local', role: 'admin' }
+const tokenUntuk = (payload: Record<string, unknown>) => jwt.sign(payload, JWT_SECRET)
+const memberToken = () => tokenUntuk({ id: MEMBER, role: 'user' })
+const adminToken = () => tokenUntuk(ADMIN)
+
+function jalankanSql(sql: string, ...args: unknown[]) {
+  const db = new Database(DB_PATH)
+  const info = db.prepare(sql).run(...args)
+  db.close()
+  return info
+}
+
+function bacaSql<T = any>(sql: string, ...args: unknown[]): T[] {
+  const db = new Database(DB_PATH)
+  const rows = db.prepare(sql).all(...args) as T[]
+  db.close()
+  return rows
+}
+
+async function submit() {
+  const res = await fetch(`${base}/api/public/nexabot/submit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${memberToken()}` },
+    body: JSON.stringify({ mode: 't2v', prompt: 'uji kunci dashboard' }),
+  })
+  return { status: res.status, json: (await res.json().catch(() => null)) as any }
+}
+
+const getStatus = async () => {
+  const res = await fetch(`${base}/api/admin/nexabot/master-key`, {
+    headers: { Authorization: `Bearer ${adminToken()}` },
+  })
+  return { status: res.status, text: await res.text() }
+}
+
+before(async () => {
+  await new Promise<void>((resolve) => upstream.listen(0, '127.0.0.1', () => resolve()))
+  process.env.NEXABOT_BASE = `http://127.0.0.1:${(upstream.address() as AddressInfo).port}`
+
+  const relayRoutes = (await import('../server/routes/nexabot.js')).default
+  const adminRoutes = (await import('../server/routes/admin.js')).default
+
+  const app = express()
+  app.use(express.json())
+  app.use('/api/public/nexabot', relayRoutes)
+  app.use('/api/admin', adminRoutes)
+  server = app.listen(0)
+  await new Promise((resolve) => server.once('listening', resolve))
+  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+
+  for (const [id, email, role] of [[MEMBER, 'member-kunci@test.local', 'user'], [ADMIN.id, ADMIN.email, 'admin']] as const) {
+    jalankanSql(`INSERT OR IGNORE INTO users (id, email, password, name, role, approved) VALUES (?, ?, 'x', 'uji', ?, 1)`, id, email, role)
+  }
+  jalankanSql(`INSERT INTO nexabot_balance (user_id, balance) VALUES (?, 50000)`, MEMBER)
+})
+
+after(() => {
+  server.close()
+  upstream.close()
+  for (const suffix of ['', '-wal', '-shm']) {
+    try { fs.unlinkSync(DB_PATH + suffix) } catch { /* belum ada / terkunci */ }
+  }
+})
+
+// ── Hak akses ───────────────────────────────────────────────────────────────
+
+test('member tidak boleh membaca status kunci server', async () => {
+  const res = await fetch(`${base}/api/admin/nexabot/master-key`, {
+    headers: { Authorization: `Bearer ${memberToken()}` },
+  })
+  assert.equal(res.status, 403)
+})
+
+test('member tidak boleh menulis atau menghapus kunci server', async () => {
+  for (const method of ['PUT', 'DELETE']) {
+    const res = await fetch(`${base}/api/admin/nexabot/master-key`, {
+      method,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${memberToken()}` },
+      body: method === 'PUT' ? JSON.stringify({ apiKey: 'kunci-ilegal' }) : undefined,
+    })
+    assert.equal(res.status, 403, `${method} menerima member`)
+  }
+})
+
+// ── Alur admin ──────────────────────────────────────────────────────────────
+
+test('sebelum diatur: status jujur "belum ada" tanpa nilai kunci', async () => {
+  const { status, text } = await getStatus()
+  assert.equal(status, 200)
+
+  const data = JSON.parse(text)
+  assert.equal(data.configured, false)
+  assert.equal(data.source, 'none')
+})
+
+test('admin menyimpan kunci: relay memakainya untuk member, dan nilai tidak pernah dikirim balik', async () => {
+  const put = await fetch(`${base}/api/admin/nexabot/master-key`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken()}` },
+    body: JSON.stringify({ apiKey: `  ${DB_MASTER}\n` }), // spasi/newline copy-paste dibuang
+  })
+  assert.equal(put.status, 200)
+  const putText = await put.text()
+  assert.ok(!putText.includes(DB_MASTER), 'nilai kunci dikirim balik di respons simpan')
+
+  const sesudah = await getStatus()
+  assert.equal(sesudah.status, 200)
+  assert.ok(!sesudah.text.includes(DB_MASTER), 'nilai kunci dikirim balik di status')
+  const data = JSON.parse(sesudah.text)
+  assert.equal(data.configured, true)
+  assert.equal(data.source, 'database')
+
+  const hasil = await submit()
+  assert.equal(hasil.status, 200, JSON.stringify(hasil.json))
+  assert.equal(terakhir().apiKey, DB_MASTER, 'relay tidak memakai kunci dari dashboard')
+
+  const rows = bacaSql(`SELECT credential_source FROM nexabot_upstream_usage ORDER BY id DESC LIMIT 1`)
+  assert.equal(rows[0].credential_source, 'master')
+
+  // Nilai kunci sudah ada di app_settings; daftar pengaturan umum tetap tidak
+  // boleh membocorkannya ke browser admin.
+  const settings = await fetch(`${base}/api/admin/settings`, {
+    headers: { Authorization: `Bearer ${adminToken()}` },
+  })
+  assert.equal(settings.status, 200)
+  const settingsText = await settings.text()
+  assert.ok(!settingsText.includes(DB_MASTER), 'kunci bocor lewat daftar pengaturan umum')
+})
+
+test('formulir pengaturan umum tidak bisa menimpa kunci server', async () => {
+  const res = await fetch(`${base}/api/admin/settings`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken()}` },
+    body: JSON.stringify({ settings: { nexabot_master_api_key: 'suntikan-lewat-settings' } }),
+  })
+  assert.equal(res.status, 200)
+
+  const hasil = await submit()
+  assert.equal(hasil.status, 200, JSON.stringify(hasil.json))
+  assert.equal(terakhir().apiKey, DB_MASTER, 'kunci server tertimpa lewat formulir pengaturan umum')
+})
+
+test('kunci kosong ditolak, bukan menghapus kunci yang sudah ada', async () => {
+  const res = await fetch(`${base}/api/admin/nexabot/master-key`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken()}` },
+    body: JSON.stringify({ apiKey: '   ' }),
+  })
+  assert.equal(res.status, 400)
+
+  const status = await getStatus()
+  assert.equal(JSON.parse(status.text).configured, true)
+})
+
+test('kunci dihapus: fallback ke env kalau ada, dan relay menolak kalau tidak ada sama sekali', async () => {
+  const del = await fetch(`${base}/api/admin/nexabot/master-key`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${adminToken()}` },
+  })
+  assert.equal(del.status, 200)
+  const delText = await del.text()
+  assert.ok(!delText.includes(DB_MASTER), 'nilai kunci muncul di respons hapus')
+
+  let status = await getStatus()
+  assert.equal(JSON.parse(status.text).configured, false)
+  assert.equal(JSON.parse(status.text).source, 'none')
+
+  // Tanpa env: relay tidak punya kunci untuk disuntikkan.
+  const sebelum = diterima.length
+  const gagal = await submit()
+  assert.equal(gagal.status, 400)
+  assert.match(String(gagal.json?.error), /X-Api-Key/i)
+  assert.equal(diterima.length, sebelum, 'relay tetap menembak upstream tanpa kunci')
+
+  // Dengan env: status berubah jujur ke 'env' dan relay memakai nilai itu.
+  process.env.NEXABOT_MASTER_API_KEY = ENV_MASTER
+  try {
+    status = await getStatus()
+    const data = JSON.parse(status.text)
+    assert.equal(data.configured, true)
+    assert.equal(data.source, 'env')
+
+    const hasil = await submit()
+    assert.equal(hasil.status, 200, JSON.stringify(hasil.json))
+    assert.equal(terakhir().apiKey, ENV_MASTER)
+  } finally {
+    delete process.env.NEXABOT_MASTER_API_KEY
+  }
+})

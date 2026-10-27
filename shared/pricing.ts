@@ -67,7 +67,7 @@ export const NEXABOT_UNLIMITED_SLUG = NEXABOT_PACKAGES[0].slug
 /** Dipakai kalau admin belum pernah menyimpan pengaturan harga. */
 export const NEXABOT_PRICING_DEFAULTS = {
   /** Rp per generate (semua mode) — dipotong dari saldo user. */
-  price: 250,
+  price: 150,
   /** Varian pertama (kompatibilitas): sekali bayar → gratis `unlimitedDays` hari. */
   unlimitedPrice: NEXABOT_PACKAGES[0].defaultPrice,
   unlimitedDays: NEXABOT_PACKAGES[0].days,

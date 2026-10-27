@@ -43,7 +43,7 @@ import { PROVIDER_MODELS, QUALITY_OPTIONS, getCreatepulseCost, RATIOS, MODEL_RAT
 
 import VideoPlayer from './image-to-video/VideoPlayer'
 import { nexabotPathPill } from './image-to-video/nexabotPathPill'
-import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, type NexabotWallet } from '@/lib/nexabotWallet'
+import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, NEXABOT_PRICE_FALLBACK, type NexabotWallet } from '@/lib/nexabotWallet'
 import { fetchSeaviWallet, chargeSeaviWallet, refundSeaviWallet } from '@/lib/seaviWallet'
 import { formatRp } from '@/lib/payment'
 import { runNexabotJobWithSessionFallback } from './image-to-video/nexabotSessionFallback'
@@ -521,6 +521,10 @@ export default function ImageToVideoPage() {
 
   const providerKeyCount = keys[provider]?.length || 0
   const hasActiveKey = keys[provider]?.some((k) => k.status !== 'invalid' && k.status !== 'expired') || false
+  // Kunci NexaBot milik server: member yang sudah top up (Unlimited aktif atau
+  // saldo > 0) bisa generate tanpa API key pribadi. Kelayakannya dihitung relay
+  // dan dikirim lewat /balance, jadi UI tidak menebak.
+  const nexabotServerReady = !!nbWallet?.server_key?.available
 
   const isVeoI2V = provider === 'firefly' && model.includes('veo') && !!imgFile
 
@@ -585,7 +589,10 @@ export default function ImageToVideoPage() {
   }, [provider, authToken])
 
   useEffect(() => {
-    if (provider !== 'nexabot' || !authToken) return
+    if (!authToken) return
+    // Dimuat juga saat provider lain dipilih: kartu NexaBot perlu tahu apakah
+    // kunci server tersedia SEBELUM user memilihnya, supaya status "Siap
+    // dipakai" tidak baru muncul setelah diklik.
     fetchNexabotWallet(authToken).then((w) => { if (w) setNbWallet(w) }).catch(() => {})
   }, [provider, authToken])
 
@@ -954,10 +961,11 @@ export default function ImageToVideoPage() {
   const validateGenerate = (): string | null => {
     // Motion Control Seavi tidak memakai prompt (upstream S10/S16 bahkan tanpa parameter prompt).
     if (!prompt.trim() && !isSeaviMc) return 'Prompt harus diisi'
-    if (!hasActiveKey && provider !== 'roboneo' && provider !== 'createpulse') return `Tidak ada API key aktif untuk ${PROVIDER_CONFIGS[provider].name}`
+    if (!hasActiveKey && provider !== 'roboneo' && provider !== 'createpulse' && !(provider === 'nexabot' && nexabotServerReady))
+      return `Tidak ada API key aktif untuk ${PROVIDER_CONFIGS[provider].name}`
     if (provider === 'createpulse' && user?.role !== 'admin' && cpBalance < getCreatepulseCost(currentModel?.apiModel)) return 'Saldo CreatePulse tidak cukup. Top up minimal Rp 10.000'
     // NexaBot: paket Unlimited = gratis, jadi cek saldo hanya saat paket tidak aktif.
-    if (provider === 'nexabot' && user?.role !== 'admin' && !nbWallet?.unlimited.active && (nbWallet?.balance ?? 0) < (nbWallet?.price ?? 250))
+    if (provider === 'nexabot' && user?.role !== 'admin' && !nbWallet?.unlimited.active && (nbWallet?.balance ?? 0) < (nbWallet?.price ?? NEXABOT_PRICE_FALLBACK))
       return `Saldo NexaBot tidak cukup (${formatRp(nbWallet?.balance ?? 0)}). Top up atau ambil Paket Unlimited ${nbWallet?.package.days ?? 7} hari di halaman Top Up NexaBot.`
     // Seavi: wallet token internal (deduct saat generate). Tamu tanpa login
     // tetap bisa memakai key sendiri tanpa potongan internal.
@@ -1018,9 +1026,12 @@ export default function ImageToVideoPage() {
     // CreatePulse & Seavi dilewati: keduanya memakai wallet internal yang
     // dicek di validateGenerate + deduct/refund di alur generate sendiri.
     if (provider !== 'createpulse' && provider !== 'seavi') {
-      const preOpts = provider === 'alriz'
-        ? { authToken: useAuthStore.getState().token || undefined, isAdmin: useAuthStore.getState().user?.role === 'admin' }
-        : undefined
+      const preOpts = {
+        ...(provider === 'alriz'
+          ? { authToken: useAuthStore.getState().token || undefined, isAdmin: useAuthStore.getState().user?.role === 'admin' }
+          : {}),
+        serverKey: provider === 'nexabot' && nexabotServerReady,
+      }
       const pre = await precheckProviderBalance(provider, totalCredits, preOpts as any)
       if (!pre.ok) {
         addLog(`❌ ${pre.error}`, 'error', provider)
@@ -2702,7 +2713,7 @@ export default function ImageToVideoPage() {
         addLog(`[1/3] 🚀 Menyiapkan generate NexaBot...`, 'info', 'nexabot')
         setStatus((s) => ({ ...s, text: 'Menyiapkan...', pct: 5 }))
 
-        // Billing user: 1 generate = Rp 250 (otomatis Rp 0 selama Paket Unlimited
+        // Billing user: 1 generate = Rp 150 (otomatis Rp 0 selama Paket Unlimited
         // aktif, ditegakkan server). Admin bebas. `usage_id`-nya disimpan supaya
         // pemotongan ini bisa di-refund tepat kalau generate gagal.
         if (authToken && currentUser?.role !== 'admin') {
@@ -2716,17 +2727,25 @@ export default function ImageToVideoPage() {
           addLog(`[1/3] ⚡ Admin mode — skip saldo`, 'info', 'nexabot')
         }
 
-        const rotation = await withTokenRotation<string>(
-          'nexabot',
-          async (apiKey, keyInfo) => {
+        // Satu job NexaBot untuk auth tertentu. Dipisah dari pemilihan auth
+        // supaya jalur kunci server tidak menduplikasi submit/poll/download.
+        const runNexabotJob = async (
+          apiKey: string | null,
+          keyInfo: { id: string; name?: string; cookies?: string; telegramId?: string } | null,
+          viaMaster = false
+        ): Promise<string> => {
             // Mode session (cookie): generate lewat /api/v1/generate yang
             // menghormati paket Unlimited. Key tanpa cookie langsung lewat API
             // key (pay-as-you-go 0.15 cr). Key dengan cookie yang mati di tengah
             // job ditangani runNexabotJobWithSessionFallback() di bawah.
             const sessionMode = !!keyInfo?.cookies
-            addLog(sessionMode
-              ? `🍪 Trying session key: ${keyInfo.name || keyInfo.id} (Unlimited) → /api/v1/generate`
-              : `🔑 Trying key: ${keyInfo.name || keyInfo.id} (API key) → /api/v1/api`, 'info', 'nexabot')
+            if (viaMaster) {
+              addLog('🏦 Memakai kunci NexaBot milik server — akses member terverifikasi, tanpa API key pribadi', 'info', 'nexabot')
+            } else {
+              addLog(sessionMode
+                ? `🍪 Trying session key: ${keyInfo?.name || keyInfo?.id} (Unlimited) → /api/v1/generate`
+                : `🔑 Trying key: ${keyInfo?.name || keyInfo?.id} (API key) → /api/v1/api`, 'info', 'nexabot')
+            }
 
             const { submitNexabot, pollNexabotJob, downloadNexabotResult } = await import('@/lib/nexabot')
             const { fileToBase64 } = await import('@/lib/oneover')
@@ -2914,32 +2933,51 @@ export default function ImageToVideoPage() {
               {
                 sessionCookies: keyInfo?.cookies,
                 apiKey,
-                keyId: keyInfo.id,
+                master: viaMaster,
+                keyId: keyInfo?.id,
                 hooks: { log: addLog, notify: addToast },
               }
             )
-          },
-          {
-            requiredCredits: totalCredits,
-            onKeySwitch: (from, to, attempt) => {
-              addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn', 'nexabot')
-            },
-            onError: (err, key) => {
-              if (detectTokenError('nexabot', err)) {
-                addLog(`⚠️ Key "${key.name}" is invalid: ${err.message}`, 'warn', 'nexabot')
-              }
-            },
+        }
+
+        let nexabotResult: string | null = null
+        if (hasActiveKey) {
+          const rotation = await withTokenRotation<string>(
+            'nexabot',
+            (apiKey, keyInfo) => runNexabotJob(apiKey, keyInfo),
+            {
+              requiredCredits: totalCredits,
+              onKeySwitch: (from, to, attempt) => {
+                addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn', 'nexabot')
+              },
+              onError: (err, key) => {
+                if (detectTokenError('nexabot', err)) {
+                  addLog(`⚠️ Key "${key.name}" is invalid: ${err.message}`, 'warn', 'nexabot')
+                }
+              },
+            }
+          )
+          if (rotation.ok && rotation.result) nexabotResult = rotation.result
+          else throw new Error(rotation.error || 'Generation failed')
+        } else {
+          // Tidak ada key pribadi tapi member sudah top up: relay menyuntikkan
+          // kunci NexaBot milik server. Billing Rp tetap lewat wallet di atas.
+          if (!nexabotServerReady) {
+            throw new Error('NexaBot: tidak ada API key aktif dan kunci server belum tersedia — top up NexaBot dulu atau tambahkan API key di halaman Providers.')
           }
-        )
-        if (rotation.ok && rotation.result) {
-          setResults((prev) => [rotation.result!, ...prev])
-          saveGalleryItem(rotation.result!)
+          addLog('🏦 Menjalankan job dengan kunci NexaBot milik server...', 'info', 'nexabot')
+          nexabotResult = await runNexabotJob(null, null, true)
+        }
+
+        if (nexabotResult) {
+          setResults((prev) => [nexabotResult!, ...prev])
+          saveGalleryItem(nexabotResult!)
           successRef.current = true
           setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai' }))
           notifyGenerationComplete(currentModel?.label || model, PROVIDER_CONFIGS['nexabot'].name)
-          if (logId) logGenerationComplete(logId, { status: 'completed', result_url: rotation.result, duration_ms: Date.now() - startTime })
+          if (logId) logGenerationComplete(logId, { status: 'completed', result_url: nexabotResult, duration_ms: Date.now() - startTime })
         } else {
-          throw new Error(rotation.error || 'Generation failed')
+          throw new Error('Generation failed')
         }
       } else if (provider === 'runninghub' && isRhSeedance) {
         // ─── RunningHub: Seedance 2.0 Replica (gambar + prompt storyboard → video) ───
@@ -3454,7 +3492,7 @@ export default function ImageToVideoPage() {
   }
 
   // Ditampilkan di kartu provider NexaBot (lihat nexabotPathPill).
-  const nexabotPill = nexabotPathPill(keys.nexabot, nexabotSession, nexabotChecking)
+  const nexabotPill = nexabotPathPill(keys.nexabot, nexabotSession, nexabotChecking, nbWallet?.server_key)
 
   // Sementara hanya 5 provider ini yang tampil (leonardo, weavy, wavespeed, framia, oneover, firefly, genspark, riverside disembunyikan).
   const PROVIDER_IDS: ProviderId[] = I2V_PROVIDER_IDS
@@ -3477,6 +3515,7 @@ export default function ImageToVideoPage() {
           <span className="text-base leading-none">💡</span>
           <p className="text-xs leading-relaxed text-muted-foreground">
             <b className="text-foreground">Baru pertama kali?</b> Pilih <b className="text-foreground">💜 CreatePulse</b> — sudah diatur admin, jadi tidak perlu API key.
+            <b className="text-foreground"> NexaBot</b> juga bisa dipakai tanpa API key kalau Anda sudah top up saldo atau Paket Unlimited.
             Layanan lain perlu API key yang ditambahkan di menu <Link to="/providers" className="font-medium text-primary hover:underline">Providers</Link>.
           </p>
         </div>
@@ -3487,7 +3526,9 @@ export default function ImageToVideoPage() {
             const providerModels = PROVIDER_MODELS[pid] || []
             const hint = I2V_PROVIDER_HINTS[pid]
             const isActive = provider === pid
-            const ready = pid === 'createpulse' || (keys[pid] || []).some((k) => k.status !== 'invalid' && k.status !== 'expired')
+            const ready = pid === 'createpulse'
+              || (keys[pid] || []).some((k) => k.status !== 'invalid' && k.status !== 'expired')
+              || (pid === 'nexabot' && nexabotServerReady)
 
             return (
               <button
@@ -3533,7 +3574,7 @@ export default function ImageToVideoPage() {
                     {ready ? 'Siap dipakai' : 'Perlu API key'}
                   </span>
                 </div>
-                {nexabotPill && pid === 'nexabot' && !nexabotPill.text.includes('API key') && (
+                {nexabotPill && pid === 'nexabot' && !nexabotPill.text.includes('pay-as-you-go') && (
                   <div className="mt-2 text-[10px] text-muted-foreground">
                     <span className={nexabotPill.className} title={nexabotPill.title}>{nexabotPill.text}</span>
                   </div>
@@ -3555,13 +3596,15 @@ export default function ImageToVideoPage() {
               <>Akses: <b className="text-emerald-500">tanpa API key</b></>
             ) : hasActiveKey ? (
               <>Akses: <b className="text-emerald-500">{providerKeyCount} API key aktif</b></>
+            ) : provider === 'nexabot' && nexabotServerReady ? (
+              <>Akses: <b className="text-emerald-500">kunci server (top up aktif)</b></>
             ) : (
               <>Akses: <b className="text-amber-500">belum ada API key</b></>
             )}
           </div>
           <div>
-            Status: <b className={provider === 'createpulse' || hasActiveKey ? 'text-emerald-500' : 'text-amber-500'}>
-              {provider === 'createpulse' || hasActiveKey ? 'Siap dipakai' : 'Perlu API key'}
+            Status: <b className={provider === 'createpulse' || hasActiveKey || (provider === 'nexabot' && nexabotServerReady) ? 'text-emerald-500' : 'text-amber-500'}>
+              {provider === 'createpulse' || hasActiveKey || (provider === 'nexabot' && nexabotServerReady) ? 'Siap dipakai' : 'Perlu API key'}
             </b>
           </div>
           <button
@@ -3606,12 +3649,12 @@ export default function ImageToVideoPage() {
           </div>
         )}
 
-        {/* NexaBot Pricing Info — saldo Rp 250/generate atau Paket Unlimited */}
+        {/* NexaBot Pricing Info — saldo Rp 150/generate atau Paket Unlimited */}
         {provider === 'nexabot' && (
           <div className="mt-3 p-3 rounded-xl border border-primary/20 bg-primary/5">
             <div className="flex items-center justify-between mb-2">
               <div className="text-xs font-medium text-primary">
-                ⚡ NexaBot {user?.role === 'admin' ? '(Admin — Free)' : `— ${formatRp(nbWallet?.price ?? 250)}/generate`}
+                ⚡ NexaBot {user?.role === 'admin' ? '(Admin — Free)' : `— ${formatRp(nbWallet?.price ?? NEXABOT_PRICE_FALLBACK)}/generate`}
               </div>
               {nbWallet?.unlimited.active && (
                 <Badge variant="success">
@@ -3621,14 +3664,14 @@ export default function ImageToVideoPage() {
             </div>
             <div className="grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
               <div>
-                Saldo: <b className={`font-bold ${nbWallet?.unlimited.active || (nbWallet?.balance ?? 0) >= (nbWallet?.price ?? 250) ? 'text-emerald-500' : 'text-destructive'}`}>
+                Saldo: <b className={`font-bold ${nbWallet?.unlimited.active || (nbWallet?.balance ?? 0) >= (nbWallet?.price ?? NEXABOT_PRICE_FALLBACK) ? 'text-emerald-500' : 'text-destructive'}`}>
                   {formatRp(nbWallet?.balance ?? 0)}
                 </b>
               </div>
               {nbWallet?.unlimited.active ? (
                 <div>Paket Unlimited {nbWallet?.package.days ?? 7} hari: <b className="text-emerald-500">Aktif</b></div>
               ) : (
-                <div>Top Up: <b className="text-foreground">Rp 250/generate</b></div>
+                <div>Top Up: <b className="text-foreground">{formatRp(nbWallet?.price ?? NEXABOT_PRICE_FALLBACK)}/generate</b></div>
               )}
               {nbWallet?.unlimited.active ? (
                 <div>Status: <b className="text-emerald-500">GRATIS sampai paket habis</b></div>
@@ -3636,7 +3679,7 @@ export default function ImageToVideoPage() {
                 <div>Failed generations: <b className="text-emerald-500">auto-refunded</b></div>
               )}
             </div>
-            {user?.role !== 'admin' && !nbWallet?.unlimited.active && (nbWallet?.balance ?? 0) < (nbWallet?.price ?? 250) && (
+            {user?.role !== 'admin' && !nbWallet?.unlimited.active && (nbWallet?.balance ?? 0) < (nbWallet?.price ?? NEXABOT_PRICE_FALLBACK) && (
               <div className="mt-2 text-[11px]">
                 <a href="/topup/nexabot" className="text-primary hover:underline font-medium">
                   Top Up Saldo / Beli Paket Unlimited →
@@ -4106,7 +4149,7 @@ export default function ImageToVideoPage() {
                 Est. Cost: <b className="text-foreground font-mono">{provider === 'createpulse' ? `Rp ${getCreatepulseCost(currentModel?.apiModel).toLocaleString('id-ID')}` : provider === 'alriz' ? `Rp ${totalCredits.toLocaleString('id-ID')}` : provider === 'nexabot' ? `${displayCredits} cr` : `${totalCredits} credits`}</b>
                 {(provider !== 'createpulse' && provider !== 'alriz') && <BalanceBadge provider={provider} required={totalCredits} />}
               </div>
-              {!hasActiveKey && provider !== 'createpulse' && (
+              {!hasActiveKey && provider !== 'createpulse' && !(provider === 'nexabot' && nexabotServerReady) && (
                 <a
                   href="/providers"
                   className="text-xs text-primary hover:underline flex items-center gap-1"

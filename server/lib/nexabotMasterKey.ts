@@ -33,11 +33,59 @@ import db from '../db.js'
 
 export type MasterKeyMode = 'off' | 'unlimited' | 'unlimited-or-balance'
 
-/** Kunci induk dari env, atau null kalau tidak dikonfigurasi / dimatikan. */
+/** Baris `app_settings` tempat admin menyimpan kunci induk lewat dashboard. */
+export const MASTER_KEY_SETTING = 'nexabot_master_api_key'
+
+/**
+ * Nilai kunci dari database (diisi admin lewat dashboard).
+ *
+ * Dibaca di setiap panggilan, bukan di-cache: admin bisa mengganti kunci kapan
+ * saja dan request berikutnya harus langsung memakai nilai baru.
+ */
+function storedMasterKey(): string | null {
+  try {
+    const row = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(MASTER_KEY_SETTING) as
+      | { value: string }
+      | undefined
+    const nilai = (row?.value || '').trim()
+    return nilai || null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Kunci induk efektif: nilai dari dashboard admin, lalu fallback env, atau null
+ * kalau tidak dikonfigurasi / dimatikan.
+ *
+ * Urutan ini disengaja: dashboard menang supaya admin bisa mengganti kunci tanpa
+ * menyentuh VPS, sementara env tetap bekerja untuk deployment yang belum pernah
+ * membuka halaman pengaturan.
+ */
 export function masterKey(): string | null {
   if (masterKeyMode() === 'off') return null
-  const raw = (process.env.NEXABOT_MASTER_API_KEY || '').trim()
-  return raw || null
+  return storedMasterKey() || (process.env.NEXABOT_MASTER_API_KEY || '').trim() || null
+}
+
+export interface MasterKeyStatus {
+  configured: boolean
+  /** Dari mana kunci efektif berasal — tanpa pernah menyertakan nilainya. */
+  source: 'database' | 'env' | 'none'
+  mode: MasterKeyMode
+  daily_cap: number
+}
+
+/** Status untuk dashboard admin. Nilai kunci TIDAK pernah ikut dikembalikan. */
+export function masterKeyStatus(): MasterKeyStatus {
+  const dariDb = storedMasterKey()
+  const dariEnv = (process.env.NEXABOT_MASTER_API_KEY || '').trim()
+  const aktif = masterKeyMode() !== 'off'
+  return {
+    configured: !!masterKey(),
+    source: aktif ? (dariDb ? 'database' : dariEnv ? 'env' : 'none') : 'none',
+    mode: masterKeyMode(),
+    daily_cap: masterDailyCap(),
+  }
 }
 
 export function masterKeyMode(): MasterKeyMode {
@@ -93,6 +141,30 @@ export function balanceOf(userId: number): number {
   return row?.balance ?? 0
 }
 
+/**
+ * Apakah member ini baru saja membayar satu generate?
+ *
+ * Biaya Rp dipotong klien SEBELUM submit (`/api/nexabot/deduct`), jadi saldo
+ * bisa sudah 0 tepat setelah potong — mis. sisa pas Rp 150 untuk generate
+ * terakhir yang sah. Tanpa bukti potong ini, relay akan menolak job yang sudah
+ * dibayar hanya karena `balanceOf()` kebetulan membaca 0.
+ *
+ * Jendelanya pendek supaya tidak membuka pemakaian kunci induk gratis: setelah
+ * jendela lewat, saldo 0 kembali berarti tidak berhak.
+ */
+export function hasRecentPaidUsage(userId: number, withinMinutes = 15): boolean {
+  const menit = Math.max(1, Math.floor(withinMinutes))
+  const row = db
+    .prepare(
+      `SELECT 1 FROM nexabot_usage
+       WHERE user_id = ? AND status = 'used' AND cost > 0
+         AND created_at >= datetime('now', ?)
+       LIMIT 1`,
+    )
+    .get(userId, `-${menit} minutes`)
+  return !!row
+}
+
 /** Job yang sudah berjalan di kunci induk oleh member ini, sejak tengah malam UTC. */
 export function masterJobsToday(userId: number): number {
   const mulai = new Date()
@@ -134,6 +206,10 @@ export function memberMayUseMasterKey(userId: number): Kelayakan {
 
   if (unlimited) return { ok: true, reason: 'Paket Unlimited aktif' }
   if (saldo > 0) return { ok: true, reason: 'Saldo NexaBot tersedia' }
+  // Saldo bisa sudah habis terpotong untuk generate ini (potongan dilakukan
+  // klien sebelum submit) — bukti potong terbaru berarti generate ini sudah
+  // dibayar dan tetap boleh memakai kunci induk.
+  if (hasRecentPaidUsage(userId)) return { ok: true, reason: 'Saldo baru dipotong untuk generate ini' }
   return {
     ok: false,
     reason: 'Saldo NexaBot kosong dan tidak ada paket Unlimited aktif — top up dulu, atau pakai kunci NexaBot milik Anda sendiri',
@@ -148,4 +224,22 @@ export function underDailyCap(userId: number): Kelayakan {
   return dipakai < cap
     ? { ok: true, reason: `${dipakai}/${cap} job hari ini` }
     : { ok: false, reason: `Batas harian kunci NexaBot tercapai (${dipakai}/${cap} job hari ini)` }
+}
+
+/**
+ * Kelayakan lengkap memakai kunci induk: konfigurasi server + status member +
+ * batas harian. Dipakai relay (penegakan) DAN halaman wallet (tampilan), supaya
+ * UI tidak pernah menjanjikan akses yang relay akan tolak.
+ */
+export function masterKeyEligibility(userId: number): Kelayakan {
+  if (!masterKey()) {
+    return { ok: false, reason: 'Kunci NexaBot milik server belum dikonfigurasi admin' }
+  }
+  const izin = memberMayUseMasterKey(userId)
+  if (!izin.ok) return izin
+  const cap = underDailyCap(userId)
+  if (!cap.ok) return cap
+  // Alasan kelayakan (saldo/Unlimited) yang menjelaskan MENGAPA member boleh,
+  // bukan info batas harian yang tidak berguna saat cap dimatikan (default).
+  return { ok: true, reason: masterDailyCap() > 0 ? `${izin.reason} · ${cap.reason}` : izin.reason }
 }

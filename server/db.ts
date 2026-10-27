@@ -147,7 +147,7 @@ db.exec(`
 
 // ─── Wallet NexaBot ────────────────────────────────────────────────────────
 // Sama seperti CreatePulse (prepaid Rp per generate), tapi saldo terpisah:
-// harga flat Rp 250/generate dan tidak menyentuh ledger CreatePulse.
+// harga flat Rp 150/generate dan tidak menyentuh ledger CreatePulse.
 db.exec(`
   CREATE TABLE IF NOT EXISTS nexabot_balance (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

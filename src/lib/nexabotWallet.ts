@@ -1,5 +1,5 @@
 // ─── Klien wallet NexaBot ───────────────────────────────────────────────────
-// Saldo Rp per user (potong Rp 250/generate) + Paket Unlimited dengan beberapa
+// Saldo Rp per user (potong Rp 150/generate) + Paket Unlimited dengan beberapa
 // varian (Mingguan/Bulanan/Tahunan). Semua angka otoritatif datang dari server
 // lewat /api/nexabot/*, jadi kalau admin mengubah harga, UI ikut sendiri.
 //
@@ -32,16 +32,30 @@ export const NEXABOT_PACKAGE_FALLBACKS: NexabotPackage[] = [
   { slug: 'unlimited_yearly', label: 'Tahunan', price: 899000, days: 365 },
 ]
 
+/** Harga per generate versi cermin — hanya untuk tampilan sebelum server menjawab. */
+export const NEXABOT_PRICE_FALLBACK = 150
+
 export interface NexabotWallet {
   balance: number
   /** Harga per generate (Rp) versi server. */
   price: number
   min_topup: number
   unlimited: NexabotUnlimited
+  /**
+   * Kunci NexaBot milik server: member yang sudah top up (Unlimited aktif atau
+   * saldo > 0) bisa generate tanpa menempel API key sendiri. `reason` adalah
+   * alasan yang sama dengan yang dipakai relay saat menolak.
+   */
+  server_key: NexabotServerKey
   /** Varian utama — dipertahankan supaya pemanggil lama tetap jalan. */
   package: NexabotPackage
   /** Semua varian paket yang bisa dipilih user. */
   packages: NexabotPackage[]
+}
+
+export interface NexabotServerKey {
+  available: boolean
+  reason: string
 }
 
 /** Nama varian dari slug (aman walau slug kosong / dari data lama). */
@@ -81,9 +95,15 @@ export async function fetchNexabotWallet(token: string): Promise<NexabotWallet |
 
     return {
       balance: data.balance || 0,
-      price: data.price ?? 250,
+      price: data.price ?? NEXABOT_PRICE_FALLBACK,
       min_topup: data.min_topup ?? 10000,
       unlimited: data.unlimited || EMPTY_UNLIMITED,
+      // Build server lama belum mengirim `server_key`; anggap tidak tersedia
+      // supaya UI tidak menawarkan jalur tanpa API key yang relay tolak.
+      server_key: data.server_key ?? {
+        available: false,
+        reason: 'Server belum mengaktifkan kunci NexaBot bersama',
+      },
       package: packages[0],
       packages,
     }

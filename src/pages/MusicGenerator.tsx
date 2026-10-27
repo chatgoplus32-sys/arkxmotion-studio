@@ -8,7 +8,8 @@ import { useAuthStore } from '@/stores/authStore'
 import { submitNexabot, pollNexabotJob, downloadNexabotResult, runWithNexabotThrottleRetry } from '@/lib/nexabot'
 import { runNexabotJobWithSessionFallback } from '@/pages/image-to-video/nexabotSessionFallback'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
-import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, type NexabotWallet } from '@/lib/nexabotWallet'
+import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, NEXABOT_PRICE_FALLBACK, type NexabotWallet } from '@/lib/nexabotWallet'
+import { useProviderManager } from '@/stores/providerManager'
 import { uploadBlobToCdn } from '@/lib/cdn'
 import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
 import { addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
@@ -56,7 +57,7 @@ export default function MusicGeneratorPage() {
 
   const isAdmin = user?.role === 'admin'
   const canRun = !!prompt.trim() && !!authToken && !loading &&
-    (isAdmin || !!wallet?.unlimited.active || (wallet?.balance ?? 0) >= (wallet?.price ?? 250))
+    (isAdmin || !!wallet?.unlimited.active || (wallet?.balance ?? 0) >= (wallet?.price ?? NEXABOT_PRICE_FALLBACK))
 
   const runMusic = async () => {
     if (!authToken) {
@@ -108,9 +109,13 @@ export default function MusicGeneratorPage() {
         addLog(`[1/3] ⚡ Admin mode — skip saldo`, 'info')
       }
 
-      const rotation = await withTokenRotation<string>(
-        'nexabot',
-        async (apiKey, keyInfo) => {
+      // Satu job music untuk auth tertentu; jalur kunci server memakai alur
+      // submit/poll/download yang sama tanpa API key pribadi.
+      const runJob = async (
+        apiKey: string | null,
+        keyInfo: { id: string; name?: string; cookies?: string } | null,
+        viaMaster = false
+      ): Promise<string> => {
           return await runNexabotJobWithSessionFallback<string>(
             async (auth, via) => {
               addLog(`[2/3] 🚀 Submit music via ${via}...`, 'info')
@@ -172,26 +177,42 @@ export default function MusicGeneratorPage() {
             {
               sessionCookies: keyInfo?.cookies,
               apiKey,
-              keyId: keyInfo.id,
+              master: viaMaster,
+              keyId: keyInfo?.id,
               hooks: { log: addLog, notify: addToast },
             }
           )
-        },
-        {
-          onKeySwitch: (from, to, attempt) => {
-            const msg = `🔄 Key "${from.name}" gagal, pindah ke key #${attempt}: "${to.name}"`
-            addLog(msg, 'warn')
-          },
-          onError: (err, key) => {
-            if (detectTokenError('nexabot', err)) {
-              addLog(`⚠️ Key "${key.name}" bermasalah: ${err.message}`, 'warn')
-            }
-          },
-        },
-      )
+      }
 
-      const url = rotation.ok && rotation.result ? rotation.result : null
-      if (!url) throw new Error(rotation.error || 'Generation failed')
+      let url: string | null = null
+      const hasProviderKeys = (useProviderManager.getState().keys.nexabot || []).length > 0
+      if (hasProviderKeys) {
+        const rotation = await withTokenRotation<string>(
+          'nexabot',
+          (apiKey, keyInfo) => runJob(apiKey, keyInfo),
+          {
+            onKeySwitch: (from, to, attempt) => {
+              const msg = `🔄 Key "${from.name}" gagal, pindah ke key #${attempt}: "${to.name}"`
+              addLog(msg, 'warn')
+            },
+            onError: (err, key) => {
+              if (detectTokenError('nexabot', err)) {
+                addLog(`⚠️ Key "${key.name}" bermasalah: ${err.message}`, 'warn')
+              }
+            },
+          },
+        )
+        url = rotation.ok && rotation.result ? rotation.result : null
+        if (!url && !wallet?.server_key?.available) throw new Error(rotation.error || 'Generation failed')
+        if (!url) addLog(`⚠️ API key tidak bisa dipakai (${rotation.error}) — beralih ke kunci server`, 'warn')
+      }
+      if (!url) {
+        if (!wallet?.server_key?.available) {
+          throw new Error('NexaBot: tidak ada API key dan kunci server belum tersedia — top up NexaBot dulu atau tambahkan API key di halaman Providers.')
+        }
+        addLog('🏦 Memakai kunci NexaBot milik server — tanpa API key pribadi', 'info')
+        url = await runJob(null, null, true)
+      }
 
       setResultUrl(url)
       setTaskStatus('success')
@@ -256,7 +277,7 @@ export default function MusicGeneratorPage() {
 
       {/* Feature badges */}
       <div className="flex flex-wrap gap-2 mb-6">
-        {['🎼 Musik Orisinal dari Prompt', '⚡ ±25 Detik/Generate', '🔗 Hasil Permanen (CDN)', `💠 ${new Intl.NumberFormat('id-ID').format(wallet?.price ?? 250)}/generate`].map((badge) => (
+        {['🎼 Musik Orisinal dari Prompt', '⚡ ±25 Detik/Generate', '🔗 Hasil Permanen (CDN)', `💠 ${new Intl.NumberFormat('id-ID').format(wallet?.price ?? NEXABOT_PRICE_FALLBACK)}/generate`].map((badge) => (
           <span key={badge} className="px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium">{badge}</span>
         ))}
       </div>

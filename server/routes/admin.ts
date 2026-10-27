@@ -13,6 +13,7 @@ import {
   setProFee,
 } from './membership.js'
 import { getNexabotPricing, setNexabotPricing } from './nexabotWallet.js'
+import { MASTER_KEY_SETTING, masterKeyStatus } from '../lib/nexabotMasterKey.js'
 import {
   NEXABOT_PRICING_DEFAULTS,
   NEXABOT_MIN_TOPUP,
@@ -322,6 +323,59 @@ router.patch('/nexabot/config', authenticateToken, requireAdmin, (req: AuthReque
     console.error('Set NexaBot pricing error:', error)
     // Pesan validasi ("price harus angka antara ...") memang untuk admin.
     res.status(400).json({ error: error?.message || 'Internal server error' })
+  }
+})
+
+// ─── Kunci induk NexaBot (disimpan admin, tidak pernah dikirim balik) ──
+//
+// Kunci ini disuntikkan relay ke request upstream untuk member yang sudah top
+// up. Karena itu ia TIDAK boleh ikut dalam respons mana pun — termasuk respons
+// admin — dan hanya statusnya yang boleh dibaca browser.
+
+router.get('/nexabot/master-key', authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
+  try {
+    res.json({ ok: true, ...masterKeyStatus() })
+  } catch (error) {
+    console.error('[admin-nexabot-master-key] get error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.put('/nexabot/master-key', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
+  try {
+    const apiKey = typeof req.body?.apiKey === 'string' ? req.body.apiKey.trim() : ''
+    if (!apiKey) {
+      return res.status(400).json({ error: 'API key NexaBot kosong' })
+    }
+    // Kunci diketik manusia; spasi/newline dari copy-paste sudah dibuang di atas.
+    db.prepare(
+      `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
+    ).run(MASTER_KEY_SETTING, apiKey)
+
+    const status = masterKeyStatus()
+    console.log(`[admin-nexabot-master-key] disimpan (mode: ${status.mode})`)
+    res.json({ ok: true, message: 'Kunci server NexaBot disimpan', ...status })
+  } catch (error) {
+    console.error('[admin-nexabot-master-key] put error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.delete('/nexabot/master-key', authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
+  try {
+    db.prepare('DELETE FROM app_settings WHERE key = ?').run(MASTER_KEY_SETTING)
+    const status = masterKeyStatus()
+    res.json({
+      ok: true,
+      message: status.configured
+        ? 'Kunci dari dashboard dihapus — server memakai kunci dari .env'
+        : 'Kunci server NexaBot dihapus',
+      ...status,
+    })
+  } catch (error) {
+    console.error('[admin-nexabot-master-key] delete error:', error)
+    res.status(500).json({ error: 'Internal server error' })
   }
 })
 
@@ -909,7 +963,12 @@ router.get('/settings', authenticateToken, requireAdmin, (_req: AuthRequest, res
   try {
     const rows = db.prepare('SELECT key, value, updated_at FROM app_settings ORDER BY key').all() as any[]
     const settings: Record<string, string> = {}
-    rows.forEach(r => { settings[r.key] = r.value })
+    rows.forEach(r => {
+      // Kunci induk NexaBot punya endpoint sendiri yang hanya mengembalikan
+      // status. Jangan pernah bocorkan nilainya lewat daftar pengaturan umum.
+      if (r.key === MASTER_KEY_SETTING) return
+      settings[r.key] = r.value
+    })
 
     // Also get provider maintenance status
     const maintenance = db.prepare('SELECT provider, is_maintenance, message FROM provider_maintenance ORDER BY provider').all() as any[]
@@ -935,6 +994,9 @@ router.put('/settings', authenticateToken, requireAdmin, (req: AuthRequest, res:
          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`
       )
       for (const [key, value] of Object.entries(settings)) {
+        // Hanya endpoint /nexabot/master-key yang boleh menulis kunci induk,
+        // supaya nilainya tidak bisa diselipkan lewat formulir pengaturan umum.
+        if (key === MASTER_KEY_SETTING) continue
         upsert.run(key, String(value))
       }
     }
