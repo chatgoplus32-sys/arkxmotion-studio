@@ -7,6 +7,7 @@ import { useToastStore } from '@/stores/toastStore'
 import { submitRunningHubH3MusicAvatar, pollRunningHubTask } from '@/lib/runninghub'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { persistResultToR2, addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
+import { usePageActive } from '@/hooks/usePageActive'
 import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
 
 interface HistoryItem {
@@ -207,8 +208,10 @@ export default function H3MusicAvatarPage() {
 
   const canRun = !!apiKey && !!characterFile && !!audioFile && !loading
 
+  const pageActive = usePageActive()
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (!pageActive) return
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && canRun) {
         e.preventDefault()
         void runWorkflow()

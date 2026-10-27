@@ -7,6 +7,7 @@ import { useToastStore } from '@/stores/toastStore'
 import { submitRunningHubTravelPhoto, pollRunningHubTask, queryRunningHubTaskFull } from '@/lib/runninghub'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { persistResultToR2, addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
+import { usePageActive } from '@/hooks/usePageActive'
 import { filterDuplicateImages } from '@/lib/imageSim'
 
 interface HistoryItem {
@@ -226,8 +227,10 @@ export default function TravelPhotoPage() {
 
   const canRun = !!apiKey && !!characterFile && !loading && !(destination === 'custom' && !customDestination.trim())
 
+  const pageActive = usePageActive()
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (!pageActive) return
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && canRun) {
         e.preventDefault()
         void runWorkflow()

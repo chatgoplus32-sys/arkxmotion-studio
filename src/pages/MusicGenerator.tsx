@@ -12,6 +12,7 @@ import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, type Nexa
 import { uploadBlobToCdn } from '@/lib/cdn'
 import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
 import { addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
+import { usePageActive } from '@/hooks/usePageActive'
 
 interface HistoryItem {
   time: string
@@ -233,8 +234,10 @@ export default function MusicGeneratorPage() {
     }
   }
 
+  const pageActive = usePageActive()
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (!pageActive) return
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && canRun) {
         e.preventDefault()
         void runMusic()

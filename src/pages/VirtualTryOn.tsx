@@ -7,6 +7,7 @@ import { useToastStore } from '@/stores/toastStore'
 import { submitRunningHubTryOn, submitRunningHubTryOnFlux2, pollRunningHubTask } from '@/lib/runninghub'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { persistResultToR2, addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
+import { usePageActive } from '@/hooks/usePageActive'
 
 type TryOnMode = 'tryon' | 'extract'
 type TryOnEngine = 'firered' | 'flux2'
@@ -209,8 +210,10 @@ export default function VirtualTryOnPage() {
 
   const canRun = !!apiKey && !!personFile && ((mode === 'tryon' || engine === 'flux2') ? !!garmentFile : true) && !loading
 
+  const pageActive = usePageActive()
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (!pageActive) return
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && canRun) {
         e.preventDefault()
         void runWorkflow()

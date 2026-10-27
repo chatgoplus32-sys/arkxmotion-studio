@@ -11,6 +11,7 @@ import { chargeSeaviWallet, refundSeaviWallet } from '@/lib/seaviWallet'
 import { uploadToCatbox } from '@/lib/roboneo'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { persistResultToR2, addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
+import { usePageActive } from '@/hooks/usePageActive'
 import { useLocalStorage } from '@/lib/useLocalStorage'
 
 const SCHEDULERS = [
@@ -301,8 +302,10 @@ export default function VideoUpscalerPage() {
 
   const canRunUpscale = !!apiKey && !!videoFile && !loading
 
+  const pageActive = usePageActive()
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (!pageActive) return
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && canRunUpscale) {
         e.preventDefault()
         void runWorkflow()

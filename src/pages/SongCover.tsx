@@ -8,6 +8,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { submitRunningHubSongCover, submitRunningHubYuE2Reimaginer, pollRunningHubTask } from '@/lib/runninghub'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { persistResultToR2, addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
+import { usePageActive } from '@/hooks/usePageActive'
 import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
 import { STYLE_PRESETS, GENRE_CATEGORIES, type SongGenreCategory } from '@/lib/song-cover-genres'
 
@@ -290,8 +291,10 @@ export default function SongCoverPage() {
     : !!composedStyle || !!trimmedLyrics)
   const resultKind = resultUrl ? mediaKind(resultUrl) : null
 
+  const pageActive = usePageActive()
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (!pageActive) return
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && canRun) {
         e.preventDefault()
         void runWorkflow()

@@ -54,6 +54,30 @@ export const GENERATION_PAGE_KIND: Record<GenerationPage, GenerationKind> = {
   'clip-genius': 'video',
 }
 
+// Rute halaman untuk tiap jenis generasi. Dipakai header (tautan panel
+// Generasi) dan keep-alive supaya halaman yang sedang generate tidak
+// di-unmount saat user pindah menu.
+export const GENERATION_PAGE_PATH: Record<GenerationPage, string> = {
+  motion: '/generate/motion',
+  'image-to-video': '/generate/image-to-video',
+  upscaler: '/generate/upscaler',
+  'edit-image': '/generate/edit-image',
+  'song-cover': '/generate/song-cover',
+  'video-upscaler': '/generate/video-upscaler',
+  'bulk-fashion': '/generate/bulk-fashion',
+  'virtual-tryon': '/generate/virtual-tryon',
+  'travel-photo': '/generate/travel-photo',
+  'talking-photo': '/generate/talking-photo',
+  'h3-i2v': '/generate/h3-i2v',
+  'h3-music-avatar': '/generate/h3-music-avatar',
+  'ugc-storyboard': '/generate/ugc-storyboard',
+  'voice-over': '/generate/voice-over',
+  'music-generator': '/generate/music-generator',
+  'text-to-image': '/generate/image',
+  ugc: '/generate/ugc',
+  'clip-genius': '/tools/clip-genius',
+}
+
 export interface ActiveTask {
   id: string
   taskId: string

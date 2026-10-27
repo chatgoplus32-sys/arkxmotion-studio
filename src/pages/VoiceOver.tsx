@@ -12,6 +12,7 @@ import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, type Nexa
 import { uploadBlobToCdn } from '@/lib/cdn'
 import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
 import { addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
+import { usePageActive } from '@/hooks/usePageActive'
 
 // Voice default NexaBot — salah satu nama dari daftar voice resmi
 // (GET /api/v1/modes → voices). Sama dengan NEXABOT_DEFAULT_VOICE ImageToVideo.
@@ -247,8 +248,10 @@ export default function VoiceOverPage() {
     }
   }
 
+  const pageActive = usePageActive()
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (!pageActive) return
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && canRun) {
         e.preventDefault()
         void runTts()

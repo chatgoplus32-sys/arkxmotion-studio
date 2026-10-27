@@ -1,6 +1,7 @@
-import { Suspense, useEffect, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import { Sidebar, Header } from '@/components/layout'
+import { KeepAliveRoutes } from '@/components/layout/KeepAliveRoutes'
 import { useAppStore, useAuthStore } from '@/stores'
 import { cn } from '@/lib/utils'
 import ProtectedRoute from '@/components/auth/ProtectedRoute'
@@ -71,10 +72,6 @@ const SongCoverPage = lazyWithRetry(() => import('@/pages/SongCover'))
 const VoiceOverPage = lazyWithRetry(() => import('@/pages/VoiceOver'))
 const MusicGeneratorPage = lazyWithRetry(() => import('@/pages/MusicGenerator'))
 const H3MusicAvatarPage = lazyWithRetry(() => import('@/pages/H3MusicAvatar'))
-
-function PageLoader() {
-  return <div className="flex items-center justify-center py-20"><div className="h-8 w-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin" /></div>
-}
 
 // Initialize chunk error interceptor immediately
 initChunkErrorInterceptor()
@@ -218,8 +215,7 @@ export default function App() {
                   />
                   <main className="flex-1 overflow-auto p-4 sm:p-6 lg:p-8">
                     <div className="mx-auto w-full max-w-[1520px]">
-                    <Suspense fallback={<PageLoader />}>
-                      <Routes>
+                    <KeepAliveRoutes>
                         <Route path="/dashboard" element={<DashboardPage />} />
                         <Route path="/hasil" element={<AssetsPage />} />
                         <Route path="/quick-start" element={<QuickStartPage />} />
@@ -272,8 +268,7 @@ export default function App() {
                         <Route path="/admin/settings" element={<AdminSystemSettingsPage />} />
                         <Route path="/admin/health" element={<AdminSystemHealthPage />} />
                         <Route path="/admin/notifications" element={<AdminNotificationsPage />} />
-                      </Routes>
-                    </Suspense>
+                    </KeepAliveRoutes>
                     </div>
                   </main>
                 </div>
