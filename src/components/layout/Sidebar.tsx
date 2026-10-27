@@ -58,7 +58,6 @@ const mainNav: NavItem[] = [
   { label: 'Mulai', href: '/quick-start', icon: <Sparkles className="h-4 w-4" /> },
   { label: 'Dashboard', href: '/dashboard', icon: <LayoutDashboard className="h-4 w-4" /> },
   { label: 'Hasil', href: '/hasil', icon: <Images className="h-4 w-4" /> },
-  { label: 'Saldo Layanan', href: '/saldo', icon: <Wallet className="h-4 w-4" /> },
 ]
 
 const createNav: NavItem[] = [
@@ -85,9 +84,11 @@ const enhanceNav: NavItem[] = [
   { label: 'Metadata Cleaner', href: '/tools/metadata-cleaner', icon: <FileCog className="h-4 w-4" /> },
 ]
 
-// Top up per layanan diakses dari panel saldo di header dan halaman Beli Token.
+// Top up per layanan diakses dari panel saldo di header, halaman Saldo
+// Layanan, dan halaman Beli Token.
 const toolsNavBase: NavItem[] = [
   { label: 'Providers', href: '/providers', icon: <Zap className="h-4 w-4" /> },
+  { label: 'Saldo Layanan', href: '/saldo', icon: <Wallet className="h-4 w-4" /> },
   { label: 'Beli Token', href: '/beli-token', icon: <ShoppingCart className="h-4 w-4" /> },
   { label: 'Settings', href: '/settings', icon: <Settings className="h-4 w-4" /> },
   { label: 'Plugins', href: '/plugins', icon: <Puzzle className="h-4 w-4" /> },
