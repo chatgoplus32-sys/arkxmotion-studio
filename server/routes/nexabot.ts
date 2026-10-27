@@ -10,6 +10,12 @@ import {
 } from '../../shared/nexabotProxy.js'
 import { isMasterKey, masterKey, masterKeyEligibility } from '../lib/nexabotMasterKey.js'
 import { masterCookie, masterCookieEligibility } from '../lib/nexabotMasterCookie.js'
+import {
+  consumeChargeTicket,
+  isAdminUser,
+  releaseChargeTicket,
+  reserveChargeTicket,
+} from '../lib/nexabotChargeTicket.js'
 import { recordUpstreamUsage, userIdFromRequest, type ResolvedCredential } from '../lib/nexabotUpstreamUsage.js'
 
 const router = Router()
@@ -203,6 +209,86 @@ function resolveUpstreamAuth(req: Request, opts: { bacaSaja?: boolean } = {}): R
   return kunci
 }
 
+/**
+ * Penegakan pembayaran untuk jalur kredensial SERVER.
+ *
+ * Kredensial sendiri (kunci/cookie milik member) tidak butuh tiket: uang yang
+ * dipakai bukan milik operator. Yang butuh bukti bayar hanya saat relay
+ * menyuntikkan kunci/sesi induk, karena di situlah biaya upstream operator bisa
+ * dipakai berkali-kali tanpa potongan lokal.
+ *
+ * Admin dikecualikan: merekalah pemilik kredensial itu, dan klien memang tidak
+ * memotong saldo admin.
+ */
+interface TiketHasil {
+  ok: boolean
+  /** Tiket yang harus dihanguskan/dilepas setelah respons upstream. */
+  usageId?: number | null
+  /** Status HTTP untuk penolakan (hanya saat `ok: false`). */
+  status?: number
+  reason?: string
+}
+
+function tiketServer(req: Request, auth: ResolvedUpstreamAuth, route: 'submit' | 'gpt-image'): TiketHasil {
+  const sumber = auth.credential?.source
+  if (sumber !== 'master' && sumber !== 'client-master') return { ok: true, usageId: null }
+
+  const userId = userIdFromRequest(req)
+  if (!userId) {
+    return {
+      ok: false,
+      status: 401,
+      reason: 'Kredensial NexaBot milik server hanya untuk member yang login (Authorization: Bearer <token app>).',
+    }
+  }
+  if (isAdminUser(userId)) return { ok: true, usageId: null }
+
+  const header = req.headers['x-nexabot-charge']
+  const mentah = Array.isArray(header) ? header[0] : header
+  const cek = reserveChargeTicket(userId, mentah, route)
+  if (!cek.ok) return { ok: false, status: 402, reason: cek.reason || 'Pembayaran generate ini belum terverifikasi.' }
+  return { ok: true, usageId: cek.usageId ?? null }
+}
+
+/** Upstream menerima dan (setidaknya secara eksplisit) tidak menolak job. */
+function upstreamMembuatJob(status: number, bodyText: string): boolean {
+  if (status < 200 || status >= 300) return false
+  try {
+    const data = JSON.parse(bodyText)
+    return data?.ok !== false
+  } catch {
+    // Body tidak terbaca: jangan hanguskan tiket, tapi juga jangan anggap job ada.
+    return false
+  }
+}
+
+/** Id job dari respons upstream (`job_id` untuk submit, `id` untuk gpt-image). */
+function jobIdDari(bodyText: string): string | null {
+  try {
+    const data = JSON.parse(bodyText)
+    const id = data?.job_id ?? data?.id ?? data?.task_id
+    return id == null ? null : String(id).slice(0, 200)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Status yang PASTI ditolak sebelum job dibuat → tiket dilepas supaya klien boleh
+ * mengulang dengan tiket yang sama (mis. 429). 5xx/timeout sengaja TIDAK di
+ * sini: job bisa saja sudah terbentuk, dan tiket yang lepas membuka job ganda.
+ */
+function upstreamMenolakSebelumJob(status: number, bodyText: string): boolean {
+  if ([400, 401, 402, 403, 404, 409, 422, 429].includes(status)) return true
+  return status === 503 && /coba lagi dalam/i.test(bodyText)
+}
+
+/** Catat hasil relay pada tiket: hanguskan kalau job dibuat, lepas kalau ditolak. */
+function selesaikanTiket(usageId: number, status: number, bodyText: string): void {
+  if (upstreamMembuatJob(status, bodyText)) consumeChargeTicket(usageId, jobIdDari(bodyText))
+  else if (upstreamMenolakSebelumJob(status, bodyText)) releaseChargeTicket(usageId)
+}
+
 // Alias query → path: /api/public/nexabot?action=session (juga credit,
 // generate, job&id=…, download&id=…) dipetakan ke route path-based di bawah.
 // Fallback untuk host/rewrite yang memangkas path (mis. Vercel).
@@ -263,6 +349,8 @@ router.post('/submit', async (req: Request, res: Response) => {
   if (Object.keys(auth.headers).length === 0) {
     return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key header' })
   }
+  const tiket = tiketServer(req, auth, 'submit')
+  if (!tiket.ok) return res.status(tiket.status ?? 402).json({ ok: false, error: tiket.reason })
 
   const body = req.body
   // Kredensial cookie (milik klien atau sesi server) harus lewat jalur web
@@ -299,6 +387,7 @@ router.post('/submit', async (req: Request, res: Response) => {
   })
   // Dicatat setelah respons upstream diterima: rute inilah yang memakai kuota.
   if (hasil) {
+    if (tiket.usageId) selesaikanTiket(tiket.usageId, hasil.status, hasil.text)
     recordUpstreamUsage({
       req,
       route: pakaiSesi ? 'generate' : 'submit',
@@ -367,6 +456,8 @@ router.post('/gpt-image', async (req: Request, res: Response) => {
   if (Object.keys(auth.headers).length === 0) {
     return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key header' })
   }
+  const tiket = tiketServer(req, auth, 'gpt-image')
+  if (!tiket.ok) return res.status(tiket.status ?? 402).json({ ok: false, error: tiket.reason })
 
   const body = req.body
   console.log(`[nexabot-local] POST /api/v1/gpt-image (aspect: ${body.aspect ?? '-'}, refs: ${Array.isArray(body.references) ? body.references.length : 0})`)
@@ -392,6 +483,7 @@ router.post('/gpt-image', async (req: Request, res: Response) => {
   })
   // Dicatat setelah respons upstream diterima: rute inilah yang memakai kuota.
   if (hasil) {
+    if (tiket.usageId) selesaikanTiket(tiket.usageId, hasil.status, hasil.text)
     recordUpstreamUsage({
       req,
       route: 'gpt-image',

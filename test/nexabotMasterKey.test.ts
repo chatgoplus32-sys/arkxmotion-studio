@@ -87,6 +87,20 @@ async function submit(headers: Record<string, string>) {
   return { status: res.status, json: (await res.json().catch(() => null)) as any }
 }
 
+/**
+ * Tiket pembayaran yang sah: relay menolak pemakaian kredensial server tanpa
+ * `usage_id` dari /deduct, jadi tes yang mengharapkan 200 harus menyiapkan
+ * baris usage lebih dulu (persis seperti wallet klien).
+ */
+function tiketBaru(userId: number, cost = 150): string {
+  const info = jalankanSql(
+    `INSERT INTO nexabot_usage (user_id, model, cost, status) VALUES (?, 't2v', ?, 'used')`,
+    userId,
+    cost,
+  )
+  return String(info.lastInsertRowid)
+}
+
 before(async () => {
   await new Promise<void>((resolve) => upstream.listen(0, '127.0.0.1', () => resolve()))
   process.env.NEXABOT_BASE = `http://127.0.0.1:${(upstream.address() as AddressInfo).port}`
@@ -126,7 +140,10 @@ after(() => {
 test('member bersaldo tanpa mengirim kunci: relay menyuntikkan kunci induk', async () => {
   jalankanSql(`INSERT INTO nexabot_balance (user_id, balance) VALUES (?, 50000)`, BERHAK)
 
-  const hasil = await submit({ Authorization: `Bearer ${tokenUntuk({ id: BERHAK, role: 'user' })}` })
+  const hasil = await submit({
+    Authorization: `Bearer ${tokenUntuk({ id: BERHAK, role: 'user' })}`,
+    'X-Nexabot-Charge': tiketBaru(BERHAK),
+  })
   assert.equal(hasil.status, 200, JSON.stringify(hasil.json))
 
   assert.equal(terakhir().apiKey, MASTER, 'kunci induk tidak sampai ke upstream')
@@ -151,7 +168,10 @@ test('paket Unlimited aktif juga membuka kunci induk', async () => {
     MISKIN,
   )
 
-  const hasil = await submit({ Authorization: `Bearer ${tokenUntuk({ id: MISKIN, role: 'user' })}` })
+  const hasil = await submit({
+    Authorization: `Bearer ${tokenUntuk({ id: MISKIN, role: 'user' })}`,
+    'X-Nexabot-Charge': tiketBaru(MISKIN, 0),
+  })
   assert.equal(hasil.status, 200, JSON.stringify(hasil.json))
   assert.equal(terakhir().apiKey, MASTER)
 })
@@ -166,9 +186,12 @@ test('saldo yang habis terpotong tepat sebelum submit tetap boleh memakai kunci 
     'baru-potong@test.local',
   )
   jalankanSql(`INSERT INTO nexabot_balance (user_id, balance) VALUES (?, 0)`, BARU_POTONG)
-  jalankanSql(`INSERT INTO nexabot_usage (user_id, model, cost, status) VALUES (?, 't2v', 250, 'used')`, BARU_POTONG)
+  const tiket = tiketBaru(BARU_POTONG, 250)
 
-  const hasil = await submit({ Authorization: `Bearer ${tokenUntuk({ id: BARU_POTONG, role: 'user' })}` })
+  const hasil = await submit({
+    Authorization: `Bearer ${tokenUntuk({ id: BARU_POTONG, role: 'user' })}`,
+    'X-Nexabot-Charge': tiket,
+  })
   assert.equal(hasil.status, 200, JSON.stringify(hasil.json))
   assert.equal(terakhir().apiKey, MASTER)
 })
@@ -221,7 +244,11 @@ test('kunci milik member sendiri tetap dipakai apa adanya', async () => {
 test('kunci induk yang MASIH dikirim klien ditandai sebagai jejak yang harus ditarik', async () => {
   // Ini keadaan yang ingin dihabiskan: kunci induk beredar di browser. Ia tetap
   // harus lolos kebijakan, dan sumbernya dicatat supaya terlihat di laporan.
-  const hasil = await submit({ 'x-api-key': MASTER, Authorization: `Bearer ${tokenUntuk({ id: BERHAK, role: 'user' })}` })
+  const hasil = await submit({
+    'x-api-key': MASTER,
+    Authorization: `Bearer ${tokenUntuk({ id: BERHAK, role: 'user' })}`,
+    'X-Nexabot-Charge': tiketBaru(BERHAK),
+  })
   assert.equal(hasil.status, 200, JSON.stringify(hasil.json))
 
   const rows = bacaSql(`SELECT * FROM nexabot_upstream_usage ORDER BY id DESC LIMIT 1`)

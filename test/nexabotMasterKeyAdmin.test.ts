@@ -71,9 +71,20 @@ function bacaSql<T = any>(sql: string, ...args: unknown[]): T[] {
 }
 
 async function submit() {
+  // Setiap submit mensimulasikan /deduct: relay hanya mau memakai kredensial
+  // server kalau tiket pembayarannya ada.
+  const tiket = jalankanSql(
+    `INSERT INTO nexabot_usage (user_id, model, cost, status) VALUES (?, 't2v', 150, 'used')`,
+    MEMBER,
+  ).lastInsertRowid
+
   const res = await fetch(`${base}/api/public/nexabot/submit`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${memberToken()}` },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${memberToken()}`,
+      'X-Nexabot-Charge': String(tiket),
+    },
     body: JSON.stringify({ mode: 't2v', prompt: 'uji kunci dashboard' }),
   })
   return { status: res.status, json: (await res.json().catch(() => null)) as any }

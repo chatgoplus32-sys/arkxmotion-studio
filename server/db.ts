@@ -215,6 +215,27 @@ db.exec(`
   )
 `)
 
+// ─── Tiket pembayaran relay NexaBot ────────────────────────────────────────
+// Relay menyuntikkan kredensial server (kunci/sesi induk), jadi ia harus bisa
+// membuktikan bahwa generate ini sudah dibayar lewat /api/nexabot/deduct.
+// Klien mengirim `usage_id` itu sebagai header X-Nexabot-Charge; satu baris di
+// sini memastikan satu usage hanya bisa menghasilkan SATU job:
+//   'reserved' — sedang dipakai submit (boleh diulang saat upstream 429),
+//   'consumed' — upstream sudah menerima job; tiket tidak bisa dipakai lagi.
+// Tanpa FK ke nexabot_usage: tabel ini hanya jejak pemakaian tiket, bukan
+// pemilik data usage (baris usage tidak pernah dihapus).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS nexabot_charge_ticket (
+    usage_id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    route TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'reserved' CHECK(state IN ('reserved', 'consumed')),
+    job_id TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )
+`)
+
 // ─── Wallet Seavi (token, bukan Rp) ────────────────────────────────────────
 // 1 token = Rp 2.000 (lihat shared/pricing.ts). `balance` dihitung dalam
 // TOKEN, sedangkan `amount` di seavi_topup adalah Rupiah yang dibayar dan

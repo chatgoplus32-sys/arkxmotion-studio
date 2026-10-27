@@ -33,6 +33,10 @@ import {
 const PRICING_TTL_MS = 15_000
 let pricingCache: { at: number; value: NexabotPricing } | null = null
 
+// Refund hanya untuk generate yang masih baru (sama dengan server Express):
+// klien otomatis me-refund paling lambat ~35 menit setelah potong.
+const NEXABOT_REFUND_WINDOW_MS = 60 * 60 * 1000
+
 async function getNexabotPricing(sql: any): Promise<NexabotPricing> {
   if (pricingCache && Date.now() - pricingCache.at < PRICING_TTL_MS) return pricingCache.value
 
@@ -254,13 +258,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (sub === 'refund' || url.includes('/refund')) {
       const { usage_id, batch_id } = req.body || {}
 
+      // Umur dihitung di SQL supaya tidak bergantung pada zona waktu.
       let usage
       if (usage_id) {
-        usage = await sql`SELECT * FROM nexabot_usage WHERE user_id = ${user.id} AND id = ${usage_id} AND status = 'used'`
+        usage = await sql`SELECT id, cost, EXTRACT(EPOCH FROM (now() - created_at)) * 1000 AS age_ms FROM nexabot_usage WHERE user_id = ${user.id} AND id = ${usage_id} AND status = 'used'`
       } else if (batch_id) {
-        usage = await sql`SELECT * FROM nexabot_usage WHERE user_id = ${user.id} AND batch_id = ${batch_id} AND status = 'used'`
+        usage = await sql`SELECT id, cost, EXTRACT(EPOCH FROM (now() - created_at)) * 1000 AS age_ms FROM nexabot_usage WHERE user_id = ${user.id} AND batch_id = ${batch_id} AND status = 'used'`
       }
       if (!usage || usage.length === 0) return res.status(404).json({ error: 'Usage not found' })
+
+      // Usage ber-cost 0 (Unlimited) hanya dilabeli ulang, jadi jendela ini
+      // tidak berlaku untuknya.
+      if (Number(usage[0].cost) > 0 && Number(usage[0].age_ms) > NEXABOT_REFUND_WINDOW_MS) {
+        return res.status(400).json({
+          error: 'Refund hanya berlaku untuk generate dalam 60 menit terakhir. Hubungi admin kalau generate-nya gagal padahal saldo sudah terpotong.',
+          refunded: 0,
+        })
+      }
 
       await sql`UPDATE nexabot_usage SET status = 'refunded' WHERE id = ${usage[0].id}`
       // Usage dari paket Unlimited ber-cost 0 → tidak ada yang dikembalikan,

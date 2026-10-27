@@ -50,6 +50,13 @@ export type { NexabotPricing }
 
 const router = Router()
 
+// Refund hanya jendela yang masuk akal: klien otomatis me-refund ketika
+// generate gagal, dan itu paling lambat ~35 menit setelah potong (tunggu
+// throttle 15 menit + polling 20 menit). Di luar jendela ini, refund yang
+// masih diterima berarti saldo lama bisa diuangkan kembali tanpa batas waktu —
+// cukup dengan menyimpan usage_id dari generate yang sudah sukses.
+const NEXABOT_REFUND_WINDOW_MS = 60 * 60 * 1000
+
 function readPricingSettings(): Record<string, string> {
   const keys = NEXABOT_PRICING_SETTING_KEYS
   const rows = db.prepare(
@@ -330,14 +337,26 @@ router.post('/refund', authenticateToken, (req: AuthRequest, res: Response) => {
     // sebagai cadangan untuk pemanggil lama.
     const { usage_id, batch_id } = req.body
 
+    // Umur dihitung di SQL (UTC) supaya tidak bergantung pada zona waktu server
+    // maupun format teks created_at.
+    const kolom = `id, cost, CAST((julianday('now') - julianday(created_at)) * 86400000 AS INTEGER) AS age_ms`
     let usage
     if (usage_id) {
-      usage = db.prepare("SELECT * FROM nexabot_usage WHERE user_id = ? AND id = ? AND status = 'used'").get(userId, usage_id) as { id: number; cost: number } | undefined
+      usage = db.prepare(`SELECT ${kolom} FROM nexabot_usage WHERE user_id = ? AND id = ? AND status = 'used'`).get(userId, usage_id) as { id: number; cost: number; age_ms: number } | undefined
     } else if (batch_id) {
-      usage = db.prepare("SELECT * FROM nexabot_usage WHERE user_id = ? AND batch_id = ? AND status = 'used'").get(userId, batch_id) as { id: number; cost: number } | undefined
+      usage = db.prepare(`SELECT ${kolom} FROM nexabot_usage WHERE user_id = ? AND batch_id = ? AND status = 'used'`).get(userId, batch_id) as { id: number; cost: number; age_ms: number } | undefined
     }
 
     if (!usage) return res.status(404).json({ error: 'Usage not found' })
+
+    // Usage ber-cost 0 (paket Unlimited) tidak mengembalikan uang apa pun, jadi
+    // jendela ini tidak berlaku — menandainya refunded hanya merapikan riwayat.
+    if (usage.cost > 0 && usage.age_ms > NEXABOT_REFUND_WINDOW_MS) {
+      return res.status(400).json({
+        error: 'Refund hanya berlaku untuk generate dalam 60 menit terakhir. Hubungi admin kalau generate-nya gagal padahal saldo sudah terpotong.',
+        refunded: 0,
+      })
+    }
 
     db.prepare('UPDATE nexabot_usage SET status = ? WHERE id = ?').run('refunded', usage.id)
     // Usage dari paket Unlimited ber-cost 0 → tidak ada yang perlu dikembalikan,

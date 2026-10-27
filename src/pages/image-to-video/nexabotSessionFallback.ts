@@ -35,6 +35,8 @@ export interface NexabotJobAuth {
   cookies?: string | null
   /** Tanpa kredensial browser: relay menyuntikkan kunci milik server. */
   master?: boolean
+  /** `usage_id` dari /deduct — bukti bayar yang diverifikasi relay. */
+  ticket?: number | string | null
 }
 
 export interface NexabotFallbackHooks {
@@ -130,6 +132,12 @@ export async function runNexabotJobWithSessionFallback<T>(
      * untuk member yang sudah top up. `apiKey`/`sessionCookies` diabaikan.
      */
     master?: boolean
+    /**
+     * `usage_id` potongan saldo untuk generate ini. Dikirim sebagai
+     * X-Nexabot-Charge supaya relay mau memakai kredensial server; satu tiket
+     * hanya untuk satu job.
+     */
+    ticket?: number | null
     /** ID key di providerManager — dipakai untuk menyimpan cookie hasil recovery. */
     keyId?: string
     hooks: NexabotFallbackHooks
@@ -138,10 +146,11 @@ export async function runNexabotJobWithSessionFallback<T>(
   const { hooks } = opts
   const sessionCookies = normalizeCookie(opts.sessionCookies)
   const apiKey = parseNexabotApiKeyInput(opts.apiKey || '')
+  const ticket = opts.ticket ?? null
 
   // Tanpa cookie: kunci server (member terverifikasi relay) atau API key pribadi.
   if (!sessionCookies) {
-    if (opts.master) return run({ master: true }, 'kunci server (potong saldo NexaBot)')
+    if (opts.master) return run({ master: true, ticket }, 'kunci server (potong saldo NexaBot)')
     return run({ apiKey }, 'API key (pay-as-you-go)')
   }
 

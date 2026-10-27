@@ -95,13 +95,27 @@ function bacaSql<T = any>(sql: string, ...args: unknown[]): T[] {
   return rows
 }
 
-async function submit(token: string) {
+async function submit(token: string, ticket?: string | number) {
   const res = await fetch(`${base}/api/public/nexabot/submit`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+      ...(ticket === undefined ? {} : { 'X-Nexabot-Charge': String(ticket) }),
+    },
     body: JSON.stringify({ mode: 't2v', prompt: 'uji sesi Unlimited server' }),
   })
   return { status: res.status, json: (await res.json().catch(() => null)) as any }
+}
+
+/** Tiket pembayaran (usage_id dari /deduct) — wajib untuk kredensial server. */
+function tiketBaru(userId: number, cost = 0): string {
+  const info = jalankanSql(
+    `INSERT INTO nexabot_usage (user_id, model, cost, status) VALUES (?, 't2v', ?, 'used')`,
+    userId,
+    cost,
+  )
+  return String(info.lastInsertRowid)
 }
 
 const getStatus = async () => {
@@ -264,7 +278,7 @@ test('Cek Limit & Status membaca /api/v1/credits dengan cookie tersimpan', async
 })
 
 test('member Unlimited memakai sesi server lewat /api/v1/generate tanpa kunci', async () => {
-  const hasil = await submit(unlimitedToken())
+  const hasil = await submit(unlimitedToken(), tiketBaru(MEMBER_UNLIMITED))
   assert.equal(hasil.status, 200, JSON.stringify(hasil.json))
 
   const panggilan = terakhir()
@@ -296,7 +310,7 @@ test('formulir pengaturan umum tidak bisa menimpa sesi Unlimited', async () => {
   })
   assert.equal(res.status, 200)
 
-  const hasil = await submit(unlimitedToken())
+  const hasil = await submit(unlimitedToken(), tiketBaru(MEMBER_UNLIMITED))
   assert.equal(hasil.status, 200, JSON.stringify(hasil.json))
   assert.equal(terakhir().cookie, COOKIE_STORE, 'cookie server tertimpa lewat formulir pengaturan umum')
 })

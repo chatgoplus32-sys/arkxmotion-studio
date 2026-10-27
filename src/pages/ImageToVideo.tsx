@@ -2934,6 +2934,8 @@ export default function ImageToVideoPage() {
                 sessionCookies: keyInfo?.cookies,
                 apiKey,
                 master: viaMaster,
+                // Bukti potong saldo: relay menolak kredensial server tanpa ini.
+                ticket: nbChargeRef.current,
                 keyId: keyInfo?.id,
                 hooks: { log: addLog, notify: addToast },
               }

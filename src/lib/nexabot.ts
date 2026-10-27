@@ -194,11 +194,17 @@ function safeHeaderValue(value: string): string {
  *  - `master`  — tanpa kredensial dari browser: relay ARKXMotion menyuntikkan
  *    kunci milik server setelah memverifikasi kelayakan member (top up).
  *    Hanya `Authorization: Bearer <token app>` yang dikirim klien.
+ *
+ * `ticket` adalah `usage_id` dari /api/nexabot/deduct. Relay menolak submit
+ * yang memakai kredensial server tanpa tiket ini, jadi satu potongan saldo
+ * tidak bisa dipakai untuk banyak job. Untuk kunci/cookie pribadi header ini
+ * diabaikan.
  */
 export interface NexabotAuth {
   apiKey?: string | null
   cookies?: string | null
   master?: boolean
+  ticket?: number | string | null
 }
 
 function normalizeAuth(auth: NexabotAuth | string | undefined): NexabotAuth {
@@ -210,7 +216,7 @@ function fillAuthFromStorage(auth: NexabotAuth): NexabotAuth {
   // Mode master sengaja TIDAK mengisi kredensial dari penyimpanan: kalau key
   // pribadi ikut terkirim, relay akan memakainya dan jalur kunci server tidak
   // pernah dipakai.
-  if (auth.apiKey || auth.cookies || auth.master) return auth
+  if (auth.apiKey || auth.cookies || auth.master || auth.ticket) return auth
   return { apiKey: getNexabotApiKey(), cookies: getNexabotCookies() }
 }
 
@@ -229,9 +235,16 @@ function normalizeValues(auth: NexabotAuth): { apiKey: string; cookies: string }
 
 function authHeaders(auth: NexabotAuth): Record<string, string> {
   const { cookies, apiKey } = normalizeValues(auth)
-  if (cookies) return { 'X-Nexabot-Cookie': cookies }
-  if (apiKey) return { 'X-Api-Key': apiKey }
-  return {}
+  const headers: Record<string, string> = {}
+  if (cookies) headers['X-Nexabot-Cookie'] = cookies
+  else if (apiKey) headers['X-Api-Key'] = apiKey
+
+  // Tiket pembayaran hanya berarti di jalur kredensial server (relay yang
+  // memeriksa); rute baca mengabaikannya.
+  const ticket = auth.ticket !== undefined && auth.ticket !== null ? safeHeaderValue(String(auth.ticket)) : ''
+  if (ticket) headers['X-Nexabot-Charge'] = ticket
+
+  return headers
 }
 
 /**
@@ -708,7 +721,12 @@ export async function submitNexabot(
           ? 'NexaBot: session cookie kedaluwarsa — login ulang di nexabot.id lalu paste cookie baru'
           : 'NexaBot: API key tidak valid')
       }
-      if (res.status === 402) throw new Error('NexaBot: Kredit tidak cukup (perlu 0.15)')
+      if (res.status === 402) {
+        // Jalur kunci server memakai 402 untuk tiket pembayaran yang tidak sah
+        // (bukan kredit upstream) — pesannya harus sampai apa adanya.
+        if (auth.master) throw new Error(jsonErrorMessage(errText) || 'NexaBot: pembayaran generate belum terverifikasi server')
+        throw new Error('NexaBot: Kredit tidak cukup (perlu 0.15)')
+      }
 
       // Retry HANYA untuk 429. Upstream menolak permintaan rate-limited tanpa
       // membuat job, jadi mengulang tidak menghasilkan job/kredit ganda. Untuk
@@ -1213,11 +1231,15 @@ export async function submitNexabotGptImage(
     if (!res.ok) {
       const errText = await res.text().catch(() => '')
       if (res.status === 401 || res.status === 403) {
+        if (auth.master) throw new Error(jsonErrorMessage(errText) || `NexaBot: kunci server ditolak (HTTP ${res.status})`)
         throw new Error(session
           ? 'NexaBot: session cookie kedaluwarsa — login ulang di nexabot.id lalu paste cookie baru'
           : 'NexaBot: API key tidak valid')
       }
-      if (res.status === 402) throw new Error('NexaBot: Kredit tidak cukup (perlu 0.1)')
+      if (res.status === 402) {
+        if (auth.master) throw new Error(jsonErrorMessage(errText) || 'NexaBot: pembayaran generate belum terverifikasi server')
+        throw new Error('NexaBot: Kredit tidak cukup (perlu 0.1)')
+      }
 
       // Retry HANYA untuk 429: upstream menolak rate-limited tanpa membuat job.
       // 5xx/timeout sengaja tidak diulang — job bisa sudah terbentuk (kredit ganda).

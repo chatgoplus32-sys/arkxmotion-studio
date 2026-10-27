@@ -178,6 +178,8 @@ export default function MusicGeneratorPage() {
               sessionCookies: keyInfo?.cookies,
               apiKey,
               master: viaMaster,
+              // Bukti potong saldo: relay menolak kredensial server tanpa ini.
+              ticket: nbChargeRef.current?.usageId ?? null,
               keyId: keyInfo?.id,
               hooks: { log: addLog, notify: addToast },
             }
