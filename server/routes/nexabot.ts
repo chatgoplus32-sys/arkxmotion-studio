@@ -62,6 +62,10 @@ async function relayUpstream(
     // tanpa ini hilang menjadi cuma "fetch failed".
     const cause = nexabotErrorCause(err)
     console.error(`[nexabot-local] ${label} error:`, err?.message, cause ? `(cause: ${cause})` : '')
+    if (res.headersSent) {
+      gagalSetelahHeader(res)
+      return null
+    }
     res.status(upstream?.timeout ? 504 : 502).json({
       ok: false,
       error: upstream
@@ -70,6 +74,17 @@ async function relayUpstream(
     })
   }
   return null
+}
+
+/**
+ * Respons gagal untuk jalur yang sudah mulai mengirim body (unduhan streaming).
+ * Begitu header terkirim, status & body tidak bisa diganti lagi — memanggil
+ * res.status().json() di sini melempar ERR_HTTP_HEADERS_SENT dan menyisakan
+ * klien dengan unduhan yang tak pernah selesai. Putuskan koneksinya saja supaya
+ * klien melihat transfer gagal, bukan file terpotong yang tampak berhasil.
+ */
+function gagalSetelahHeader(res: Response): void {
+  if (!res.writableEnded) res.destroy()
 }
 
 // Mode session: request ditandai dengan cookie login nexabot.id (dikirim klien
@@ -583,7 +598,7 @@ router.get('/gpt-image/:id/download', async (req: Request, res: Response) => {
     res.writeHead(200, headers)
     const reader = upstreamRes.body?.getReader()
     if (reader) {
-      while (true) {
+      while (!res.destroyed && !res.writableEnded) {
         const { done, value } = await reader.read()
         if (done) break
         res.write(value)
@@ -593,6 +608,10 @@ router.get('/gpt-image/:id/download', async (req: Request, res: Response) => {
   } catch (err: any) {
     const cause = nexabotErrorCause(err)
     console.error(`[nexabot-local] gpt-image download error:`, err.message, cause ? `(cause: ${cause})` : '')
+    if (res.headersSent) {
+      gagalSetelahHeader(res)
+      return
+    }
     const upstream = err instanceof NexabotUpstreamError ? err : null
     res.status(upstream?.timeout ? 504 : 502).json({
       ok: false,
@@ -679,7 +698,7 @@ router.get('/download/:id', async (req: Request, res: Response) => {
 
     const reader = upstreamRes.body?.getReader()
     if (reader) {
-      while (true) {
+      while (!res.destroyed && !res.writableEnded) {
         const { done, value } = await reader.read()
         if (done) break
         res.write(value)
@@ -689,6 +708,10 @@ router.get('/download/:id', async (req: Request, res: Response) => {
   } catch (err: any) {
     const cause = nexabotErrorCause(err)
     console.error(`[nexabot-local] download error:`, err.message, cause ? `(cause: ${cause})` : '')
+    if (res.headersSent) {
+      gagalSetelahHeader(res)
+      return
+    }
     const upstream = err instanceof NexabotUpstreamError ? err : null
     res.status(upstream?.timeout ? 504 : 502).json({
       ok: false,

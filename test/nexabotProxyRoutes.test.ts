@@ -284,6 +284,39 @@ test('/gpt-image/:id/download: header auth diteruskan, gambar di-stream', async 
   assert.match(calls[0], /\/api\/v1\/gpt-image\/gptjob-1\/download\?index=0/)
 })
 
+// Insiden produksi 2026-10-27: soket undici putus di tengah transfer gambar
+// (UND_ERR_SOCKET "terminated") SETELAH header 200 terkirim. Catch lama mencoba
+// res.status().json() di atas respons yang sudah berjalan → ERR_HTTP_HEADERS_SENT,
+// dan klien tidak pernah menerima akhir respons.
+test('/gpt-image/:id/download: upstream putus di tengah stream → sambungan diputus, tanpa ERR_HTTP_HEADERS_SENT', async () => {
+  const sebagian = new Uint8Array([0x89, 0x50, 0x4e, 0x47])
+  queue.push(() => new Response(new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(sebagian)
+      const putus: any = new TypeError('terminated')
+      putus.cause = Object.assign(new Error('other side closed'), { code: 'UND_ERR_SOCKET' })
+      setTimeout(() => controller.error(putus), 5)
+    },
+  }), { status: 200, headers: { 'Content-Type': 'image/png' } }))
+
+  const dicatat: string[] = []
+  const consoleErrorAsli = console.error
+  console.error = (...args: unknown[]) => { dicatat.push(args.map(String).join(' ')) }
+  let gagalDiKlien = false
+  try {
+    const res = await originalFetch(`${base}/api/public/nexabot/gpt-image/gptjob-putus/download?index=0`, { headers: { 'X-Api-Key': 'nxb_test' } })
+    await res.arrayBuffer()
+  } catch {
+    gagalDiKlien = true
+  } finally {
+    console.error = consoleErrorAsli
+  }
+
+  assert.equal(gagalDiKlien, true, 'klien harus tahu unduhan gagal, bukan menunggu respons yang tak pernah berakhir')
+  assert.ok(dicatat.some((baris) => baris.includes('gpt-image download error')), 'kegagalan upstream tetap tercatat di log')
+  assert.ok(!dicatat.some((baris) => baris.includes('ERR_HTTP_HEADERS_SENT')), 'catch tidak boleh mencoba merespons dua kali')
+})
+
 test('/gpt-image/:id/download: tanpa kredensial → 400 tanpa memanggil upstream', async () => {
   const res = await originalFetch(`${base}/api/public/nexabot/gpt-image/gpt-job/download`)
   assert.equal(res.status, 400)
