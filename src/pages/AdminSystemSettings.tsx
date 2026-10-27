@@ -11,6 +11,8 @@ import {
   Zap,
   KeyRound,
   Trash2,
+  Cookie,
+  Activity,
 } from 'lucide-react'
 
 interface NexabotPackage {
@@ -64,6 +66,28 @@ interface MasterKeyStatus {
   daily_cap: number
 }
 
+interface MasterCookieStatus {
+  configured: boolean
+  source: 'database' | 'none'
+  mode: 'off' | 'unlimited' | 'unlimited-or-balance'
+  daily_cap: number
+}
+
+/** Hasil probe `POST /api/admin/nexabot/master-cookie/check`. */
+interface MasterCookieCheck {
+  ok: boolean
+  active: boolean
+  unlimited: boolean
+  plan: string | null
+  until: string | null
+  balance: number | null
+  email: string | null
+  telegram_id: string | null
+  status: number | null
+  transient?: boolean
+  error?: string
+}
+
 interface Maintenance {
   provider: string
   is_maintenance: boolean
@@ -99,6 +123,13 @@ export default function AdminSystemSettings() {
   const [mkStatus, setMkStatus] = useState<MasterKeyStatus | null>(null)
   const [mkInput, setMkInput] = useState('')
   const [mkSaving, setMkSaving] = useState(false)
+  // Sesi Unlimited (cookie): disimpan di server dan hanya dipakai member dengan
+  // Paket Unlimited aktif. Nilainya tidak pernah dikirim balik ke browser.
+  const [mcStatus, setMcStatus] = useState<MasterCookieStatus | null>(null)
+  const [mcInput, setMcInput] = useState('')
+  const [mcSaving, setMcSaving] = useState(false)
+  const [mcChecking, setMcChecking] = useState(false)
+  const [mcCheck, setMcCheck] = useState<MasterCookieCheck | null>(null)
   const token = useAuthStore((state) => state.token)
   const addToast = useToastStore((state) => state.addToast)
 
@@ -242,6 +273,104 @@ export default function AdminSystemSettings() {
       addToast('Gagal menghapus kunci server', 'error')
     } finally {
       setMkSaving(false)
+    }
+  }
+
+  const fetchMasterCookieStatus = useCallback(async () => {
+    if (!token) return
+    try {
+      const res = await fetch('/api/admin/nexabot/master-cookie', { headers: { Authorization: `Bearer ${token}` } })
+      if (!res.ok) return
+      const data = await res.json()
+      setMcStatus({
+        configured: !!data.configured,
+        source: data.source ?? 'none',
+        mode: data.mode ?? 'unlimited-or-balance',
+        daily_cap: Number(data.daily_cap) || 0,
+      })
+    } catch { /* biarkan status lama kalau request gagal */ }
+  }, [token])
+
+  useEffect(() => { fetchMasterCookieStatus() }, [fetchMasterCookieStatus])
+
+  const handleSaveMasterCookie = async () => {
+    if (!token || !mcInput.trim()) return
+    setMcSaving(true)
+    try {
+      const res = await fetch('/api/admin/nexabot/master-cookie', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ cookie: mcInput.trim() }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        addToast(data.message || 'Sesi Unlimited NexaBot disimpan', 'success')
+        setMcStatus({
+          configured: !!data.configured,
+          source: data.source ?? 'none',
+          mode: data.mode ?? 'unlimited-or-balance',
+          daily_cap: Number(data.daily_cap) || 0,
+        })
+        setMcInput('')
+        // Hasil cek lama tidak berlaku untuk cookie baru.
+        setMcCheck(null)
+      } else {
+        addToast(data.error || 'Gagal menyimpan sesi Unlimited', 'error')
+      }
+    } catch {
+      addToast('Gagal menyimpan sesi Unlimited', 'error')
+    } finally {
+      setMcSaving(false)
+    }
+  }
+
+  const handleClearMasterCookie = async () => {
+    if (!token) return
+    if (!window.confirm('Hapus sesi Unlimited server? Member dengan Paket Unlimited tidak bisa generate lewat sesi server sampai cookie baru disimpan.')) return
+    setMcSaving(true)
+    try {
+      const res = await fetch('/api/admin/nexabot/master-cookie', {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json()
+      if (res.ok) {
+        addToast(data.message || 'Sesi Unlimited server dihapus', 'success')
+        setMcStatus({
+          configured: !!data.configured,
+          source: data.source ?? 'none',
+          mode: data.mode ?? 'unlimited-or-balance',
+          daily_cap: Number(data.daily_cap) || 0,
+        })
+        setMcCheck(null)
+      } else {
+        addToast(data.error || 'Gagal menghapus sesi Unlimited', 'error')
+      }
+    } catch {
+      addToast('Gagal menghapus sesi Unlimited', 'error')
+    } finally {
+      setMcSaving(false)
+    }
+  }
+
+  const handleCheckMasterCookie = async () => {
+    if (!token) return
+    setMcChecking(true)
+    try {
+      const res = await fetch('/api/admin/nexabot/master-cookie/check', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json()
+      if (res.ok && data.check) {
+        setMcCheck(data.check as MasterCookieCheck)
+      } else {
+        addToast(data.error || 'Gagal memeriksa sesi Unlimited', 'error')
+      }
+    } catch {
+      addToast('Gagal memeriksa sesi Unlimited', 'error')
+    } finally {
+      setMcChecking(false)
     }
   }
 
@@ -535,6 +664,149 @@ export default function AdminSystemSettings() {
               tidak tersedia. Batas harian dan mode tetap diatur lewat env
               (<code>NEXABOT_MASTER_KEY_MODE</code>, <code>NEXABOT_MASTER_DAILY_CAP</code>).
             </div>
+          </div>
+        </Section>
+
+        {/* Sesi Unlimited NexaBot */}
+        <Section
+          title="Sesi Unlimited Server NexaBot"
+          sub="Cookie login nexabot.id untuk jalur Unlimited — hanya dipakai member dengan Paket Unlimited aktif"
+        >
+          <div className="rounded-xl border border-border bg-card/40 p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium">Status sesi:</span>
+              {mcStatus?.configured ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-0.5 text-[11px] text-emerald-400">
+                  <CheckCircle className="h-3 w-3" />
+                  Aktif — cookie tersimpan di server
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 px-2.5 py-0.5 text-[11px] text-amber-400">
+                  <AlertTriangle className="h-3 w-3" />
+                  Belum diatur — jalur Unlimited server tidak tersedia
+                </span>
+              )}
+              {mcStatus && mcStatus.mode === 'off' && (
+                <span className="text-[11px] text-amber-400">Mode di .env: off (sesi tidak dipakai)</span>
+              )}
+            </div>
+
+            <p className="mt-2 text-[12px] text-muted-foreground leading-relaxed">
+              Paket Unlimited hanya dihormati lewat cookie login web (endpoint <code>/api/v1/generate</code>),
+              bukan API key. Cookie ini disimpan di database, tidak pernah ditampilkan lagi, dan tidak
+              pernah dikirim ke browser mana pun. Hanya member dengan Paket Unlimited aktif yang memakainya;
+              biaya Rp per generate tetap dipotong dari saldo mereka.
+            </p>
+
+            <label className="block text-[12px] font-medium text-muted-foreground mt-3 mb-1">
+              Tempel cookie sesi
+            </label>
+            <textarea
+              value={mcInput}
+              onChange={e => setMcInput(e.target.value)}
+              placeholder={'Tempel nilai cookie ("session=...; x=..."), header "Cookie: ...", atau hasil Copy as cURL dari nexabot.id'}
+              rows={3}
+              autoComplete="off"
+              spellCheck={false}
+              className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm font-mono resize-y"
+            />
+            <div className="mt-1 text-[11px] text-muted-foreground leading-relaxed">
+              Login di nexabot.id dengan akun Unlimited → DevTools → Network → pilih request ke
+              <code> /api/v1/generate</code> → Copy as cURL → tempel di sini (atau salin nilai
+              <code> document.cookie</code>). Isi kolom untuk mengganti cookie — nilai lama langsung tidak berlaku.
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Button size="sm" onClick={handleSaveMasterCookie} disabled={mcSaving || !mcInput.trim()}>
+                <Cookie className={`h-4 w-4 mr-2 ${mcSaving ? 'animate-pulse' : ''}`} />
+                {mcSaving ? 'Menyimpan...' : 'Simpan Sesi'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleCheckMasterCookie}
+                disabled={mcChecking || !mcStatus?.configured}
+                title={mcStatus?.configured ? undefined : 'Simpan cookie dulu'}
+              >
+                <Activity className={`h-4 w-4 mr-2 ${mcChecking ? 'animate-pulse' : ''}`} />
+                {mcChecking ? 'Memeriksa...' : 'Cek Limit & Status'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleClearMasterCookie}
+                disabled={mcSaving || !mcStatus?.configured}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Hapus
+              </Button>
+            </div>
+
+            {mcCheck && (
+              <div className="mt-4 rounded-lg border border-border bg-card/60 p-3">
+                <div className="flex flex-wrap items-center gap-2 mb-2">
+                  <span className="text-sm font-medium">Hasil cek</span>
+                  {mcCheck.ok && mcCheck.unlimited ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-0.5 text-[11px] text-emerald-400">
+                      <CheckCircle className="h-3 w-3" />
+                      Unlimited aktif
+                    </span>
+                  ) : mcCheck.ok ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 px-2.5 py-0.5 text-[11px] text-amber-400">
+                      <AlertTriangle className="h-3 w-3" />
+                      Sesi valid, tapi Unlimited tidak terdeteksi
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-red-500/10 border border-red-500/30 px-2.5 py-0.5 text-[11px] text-red-400">
+                      <AlertTriangle className="h-3 w-3" />
+                      {mcCheck.transient ? 'Gagal sementara' : 'Sesi ditolak'}
+                    </span>
+                  )}
+                </div>
+
+                {mcCheck.error && (
+                  <div className="mb-2 text-[12px] text-red-400 leading-relaxed">{mcCheck.error}</div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-1.5 text-[12px]">
+                  <div className="flex justify-between gap-2 border-b border-border/60 py-1">
+                    <span className="text-muted-foreground">Paket</span>
+                    <span className="font-medium">{mcCheck.plan || 'tidak terverifikasi'}</span>
+                  </div>
+                  <div className="flex justify-between gap-2 border-b border-border/60 py-1">
+                    <span className="text-muted-foreground">Berlaku sampai</span>
+                    <span className="font-medium">{mcCheck.until || 'tidak terverifikasi'}</span>
+                  </div>
+                  <div className="flex justify-between gap-2 border-b border-border/60 py-1">
+                    <span className="text-muted-foreground">Saldo kredit</span>
+                    <span className="font-medium">
+                      {mcCheck.balance != null
+                        ? `${mcCheck.balance.toLocaleString('id-ID')} cr`
+                        : 'tidak terverifikasi'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-2 border-b border-border/60 py-1">
+                    <span className="text-muted-foreground">Email</span>
+                    <span className="font-medium truncate" title={mcCheck.email || undefined}>
+                      {mcCheck.email || 'tidak terverifikasi'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-2 border-b border-border/60 py-1">
+                    <span className="text-muted-foreground">Telegram ID</span>
+                    <span className="font-medium">{mcCheck.telegram_id || 'tidak terverifikasi'}</span>
+                  </div>
+                  <div className="flex justify-between gap-2 border-b border-border/60 py-1">
+                    <span className="text-muted-foreground">HTTP</span>
+                    <span className="font-medium">{mcCheck.status ?? '—'}</span>
+                  </div>
+                </div>
+
+                <div className="mt-2 text-[11px] text-muted-foreground leading-relaxed">
+                  Field yang tidak dikenali bentuk responsnya ditandai “tidak terverifikasi” — itu bukan
+                  berarti sesi mati. Cek ulang setelah beberapa saat kalau hasilnya gagal sementara.
+                </div>
+              </div>
+            )}
           </div>
         </Section>
 

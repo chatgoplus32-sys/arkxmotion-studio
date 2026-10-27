@@ -56,6 +56,8 @@ export interface NexabotWallet {
 export interface NexabotServerKey {
   available: boolean
   reason: string
+  /** Kredensial server yang akan dipakai relay: sesi Unlimited (cookie) atau kunci API. */
+  kind?: 'cookie' | 'key' | null
 }
 
 /** Nama varian dari slug (aman walau slug kosong / dari data lama). */

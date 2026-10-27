@@ -9,6 +9,7 @@ import {
   type NexabotProxyAction,
 } from '../../shared/nexabotProxy.js'
 import { isMasterKey, masterKey, masterKeyEligibility } from '../lib/nexabotMasterKey.js'
+import { masterCookie, masterCookieEligibility } from '../lib/nexabotMasterCookie.js'
 import { recordUpstreamUsage, userIdFromRequest, type ResolvedCredential } from '../lib/nexabotUpstreamUsage.js'
 
 const router = Router()
@@ -124,6 +125,42 @@ function kunciIndukAuth(req: Request, bacaSaja = false): ResolvedUpstreamAuth {
 }
 
 /**
+ * Sesi Unlimited milik server, hanya untuk member dengan Paket Unlimited aktif.
+ * Alasan penolakan dikembalikan supaya relay bisa meneruskannya apa adanya kalau
+ * tidak ada kunci induk sebagai jalur cadangan.
+ */
+function kukiIndukAuth(req: Request, bacaSaja = false): { auth: ResolvedUpstreamAuth; alasan?: string } {
+  const cookies = masterCookie()
+  if (!cookies) return { auth: { headers: {}, credential: null } }
+
+  // Rute baca cukup identitas: job yang sudah berjalan harus tetap bisa dipoll
+  // walau paket member habis di tengah jalan (sama seperti jalur kunci induk).
+  if (bacaSaja) {
+    const identitas = bolehBacaDenganKunciInduk(req)
+    if (!identitas.ok) return { auth: { headers: {}, credential: null }, alasan: identitas.reason }
+  } else {
+    const userId = userIdFromRequest(req)
+    if (!userId) {
+      return {
+        auth: { headers: {}, credential: null },
+        alasan:
+          'Sesi Unlimited milik server hanya untuk member yang login (Authorization: Bearer <token app>). ' +
+          'Tanpa itu, pakai cookie/API key NexaBot Anda sendiri.',
+      }
+    }
+    const izin = masterCookieEligibility(userId)
+    if (!izin.ok) return { auth: { headers: {}, credential: null }, alasan: izin.reason }
+  }
+
+  return {
+    auth: {
+      headers: sessionHeaders(cookies),
+      credential: { kind: 'cookie', source: 'master', secret: cookies },
+    },
+  }
+}
+
+/**
  * Satu tempat resolusi kredensial ke upstream. Urutannya:
  *   1. cookie sesi dari klien (jalur Unlimited — tidak pernah digantikan);
  *   2. kunci yang dikirim klien;
@@ -155,7 +192,15 @@ function resolveUpstreamAuth(req: Request, opts: { bacaSaja?: boolean } = {}): R
     return { headers: { 'x-api-key': kunci }, credential: { kind: 'api-key', source: 'own-key', secret: kunci } }
   }
 
-  return kunciIndukAuth(req, !!opts.bacaSaja)
+  // Sesi Unlimited server didahulukan dari kunci induk: cookie tidak memotong
+  // kredit upstream, kunci selalu 0.15 cr/request.
+  const kuki = kukiIndukAuth(req, !!opts.bacaSaja)
+  if (Object.keys(kuki.auth.headers).length > 0) return kuki.auth
+  const kunci = kunciIndukAuth(req, !!opts.bacaSaja)
+  // Kalau kunci induk juga tidak ada, alasan cookie lebih menjelaskan keadaan
+  // sebenarnya (mis. member tanpa paket Unlimited) daripada "Missing X-Api-Key".
+  if (!kunci.credential && kuki.alasan) return { headers: {}, credential: null, error: kuki.alasan }
+  return kunci
 }
 
 // Alias query → path: /api/public/nexabot?action=session (juga credit,
@@ -220,7 +265,12 @@ router.post('/submit', async (req: Request, res: Response) => {
   }
 
   const body = req.body
-  console.log(`[nexabot-local] POST /api/v1/api (mode: ${body.mode})`)
+  // Kredensial cookie (milik klien atau sesi server) harus lewat jalur web
+  // /api/v1/generate supaya paket Unlimited dihormati; endpoint API selalu
+  // menagih 0.15 cr/request.
+  const pakaiSesi = auth.credential?.kind === 'cookie'
+  const upstreamPath = pakaiSesi ? '/api/v1/generate' : '/api/v1/api'
+  console.log(`[nexabot-local] POST ${upstreamPath} (mode: ${body.mode}${pakaiSesi ? ', sesi cookie' : ''})`)
 
   const upstreamBody: Record<string, any> = {
     mode: body.mode,
@@ -238,7 +288,7 @@ router.post('/submit', async (req: Request, res: Response) => {
 
   // Sengaja TANPA retry: kalau responsnya hilang, job bisa saja sudah terbentuk
   // dan kredit 0.15 sudah terpotong.
-  const hasil = await relayUpstream(res, 'submit', `${NEXABOT_BASE}/api/v1/api`, {
+  const hasil = await relayUpstream(res, 'submit', `${NEXABOT_BASE}${upstreamPath}`, {
     method: 'POST',
     headers: {
       ...auth.headers,
@@ -249,7 +299,13 @@ router.post('/submit', async (req: Request, res: Response) => {
   })
   // Dicatat setelah respons upstream diterima: rute inilah yang memakai kuota.
   if (hasil) {
-    recordUpstreamUsage({ req, route: 'submit', statusCode: hasil.status, bodyText: hasil.text, credential: auth.credential })
+    recordUpstreamUsage({
+      req,
+      route: pakaiSesi ? 'generate' : 'submit',
+      statusCode: hasil.status,
+      bodyText: hasil.text,
+      credential: auth.credential,
+    })
   }
 })
 

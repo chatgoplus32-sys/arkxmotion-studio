@@ -36,6 +36,7 @@ import {
   type NexabotPricingField,
 } from '../../shared/pricing.js'
 import { masterKeyEligibility } from '../lib/nexabotMasterKey.js'
+import { masterCookieEligibility } from '../lib/nexabotMasterCookie.js'
 
 // Definisi harga tinggal di shared/pricing.ts supaya server, fungsi Vercel, dan
 // endpoint publik /api/public/pricing tidak pernah beda angka.
@@ -155,10 +156,15 @@ router.get('/balance', authenticateToken, (req: AuthRequest, res: Response) => {
 
     const balance = ensureBalanceRow(userId)
     const pricing = getNexabotPricing()
-    // Kelayakan memakai kunci NexaBot milik server. Dihitung dengan kebijakan
-    // yang sama seperti relay, supaya UI hanya menawarkan jalur tanpa API key
-    // ketika relay benar-benar akan menerimanya.
+    // Kelayakan memakai kredensial NexaBot milik server. Dihitung dengan
+    // kebijakan yang sama seperti relay, supaya UI hanya menawarkan jalur tanpa
+    // API key ketika relay benar-benar akan menerimanya.
     const serverKey = masterKeyEligibility(userId)
+    // Sesi Unlimited server (cookie) hanya untuk paket Unlimited aktif; kalau
+    // tersedia, relay memakai /api/v1/generate sehingga upstream tidak memotong
+    // kredit. `kind` dipakai klien untuk menyebut jalur yang benar di UI.
+    const serverCookie = masterCookieEligibility(userId)
+    const kind = serverCookie.ok ? 'cookie' : serverKey.ok ? 'key' : null
     // `price`, `min_topup`, dan detail paket ikut dikirim supaya UI memakai
     // angka otoritatif server (termasuk tarif yang baru diubah admin), bukan
     // konstanta yang bisa langsung usang di klien.
@@ -167,7 +173,11 @@ router.get('/balance', authenticateToken, (req: AuthRequest, res: Response) => {
       price: pricing.price,
       min_topup: NEXABOT_MIN_TOPUP,
       unlimited: unlimitedPayload(getActivePackage(userId)),
-      server_key: { available: serverKey.ok, reason: serverKey.reason },
+      server_key: {
+        available: kind !== null,
+        reason: serverCookie.ok ? serverCookie.reason : serverKey.reason,
+        kind,
+      },
       // `package` = varian utama (kompatibilitas), `packages` = semua varian
       // yang bisa dipilih user di halaman top up.
       package: {

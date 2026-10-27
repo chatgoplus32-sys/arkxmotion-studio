@@ -15,6 +15,13 @@ import {
 import { getNexabotPricing, setNexabotPricing } from './nexabotWallet.js'
 import { MASTER_KEY_SETTING, masterKeyStatus } from '../lib/nexabotMasterKey.js'
 import {
+  MASTER_COOKIE_SETTING,
+  checkMasterCookie,
+  isValidCookie,
+  masterCookieStatus,
+  parseCookieInput,
+} from '../lib/nexabotMasterCookie.js'
+import {
   NEXABOT_PRICING_DEFAULTS,
   NEXABOT_MIN_TOPUP,
   describeNexabotPricing,
@@ -375,6 +382,67 @@ router.delete('/nexabot/master-key', authenticateToken, requireAdmin, (_req: Aut
     })
   } catch (error) {
     console.error('[admin-nexabot-master-key] delete error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// ─── Sesi Unlimited NexaBot (cookie server) ───────────────────────
+// Cookie login nexabot.id milik operator. Hanya member dengan Paket Unlimited
+// aktif yang memakainya, dan nilainya tidak pernah dikirim balik ke browser.
+
+router.get('/nexabot/master-cookie', authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
+  try {
+    res.json({ ok: true, ...masterCookieStatus() })
+  } catch (error) {
+    console.error('[admin-nexabot-master-cookie] get error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.put('/nexabot/master-cookie', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
+  try {
+    const mentah = typeof req.body?.cookie === 'string' ? req.body.cookie : ''
+    // Admin menempel apa saja: document.cookie, header Cookie, atau Copy as cURL.
+    const cookies = parseCookieInput(mentah)
+    if (!cookies) {
+      return res.status(400).json({ error: 'Cookie kosong / format tidak dikenali' })
+    }
+    if (!isValidCookie(cookies)) {
+      return res.status(400).json({
+        error: 'Cookie tidak valid — tempel nilai cookie sesi (mis. `session=...; x=...`) atau hasil “Copy as cURL”',
+      })
+    }
+
+    db.prepare(
+      `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
+    ).run(MASTER_COOKIE_SETTING, cookies)
+
+    console.log('[admin-nexabot-master-cookie] cookie sesi Unlimited disimpan')
+    res.json({ ok: true, message: 'Sesi Unlimited NexaBot disimpan', ...masterCookieStatus() })
+  } catch (error) {
+    console.error('[admin-nexabot-master-cookie] put error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.delete('/nexabot/master-cookie', authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
+  try {
+    db.prepare('DELETE FROM app_settings WHERE key = ?').run(MASTER_COOKIE_SETTING)
+    res.json({ ok: true, message: 'Sesi Unlimited server dihapus', ...masterCookieStatus() })
+  } catch (error) {
+    console.error('[admin-nexabot-master-cookie] delete error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// POST /nexabot/master-cookie/check — probe /api/v1/credits dengan cookie tersimpan.
+router.post('/nexabot/master-cookie/check', authenticateToken, requireAdmin, async (_req: AuthRequest, res: Response) => {
+  try {
+    const hasil = await checkMasterCookie()
+    res.json({ ok: true, check: hasil })
+  } catch (error: any) {
+    console.error('[admin-nexabot-master-cookie] check error:', error?.message || error)
     res.status(500).json({ error: 'Internal server error' })
   }
 })
@@ -964,9 +1032,9 @@ router.get('/settings', authenticateToken, requireAdmin, (_req: AuthRequest, res
     const rows = db.prepare('SELECT key, value, updated_at FROM app_settings ORDER BY key').all() as any[]
     const settings: Record<string, string> = {}
     rows.forEach(r => {
-      // Kunci induk NexaBot punya endpoint sendiri yang hanya mengembalikan
+      // Kredensial induk NexaBot punya endpoint sendiri yang hanya mengembalikan
       // status. Jangan pernah bocorkan nilainya lewat daftar pengaturan umum.
-      if (r.key === MASTER_KEY_SETTING) return
+      if (r.key === MASTER_KEY_SETTING || r.key === MASTER_COOKIE_SETTING) return
       settings[r.key] = r.value
     })
 
@@ -994,9 +1062,9 @@ router.put('/settings', authenticateToken, requireAdmin, (req: AuthRequest, res:
          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`
       )
       for (const [key, value] of Object.entries(settings)) {
-        // Hanya endpoint /nexabot/master-key yang boleh menulis kunci induk,
+        // Hanya endpoint /nexabot/master-* yang boleh menulis kredensial induk,
         // supaya nilainya tidak bisa diselipkan lewat formulir pengaturan umum.
-        if (key === MASTER_KEY_SETTING) continue
+        if (key === MASTER_KEY_SETTING || key === MASTER_COOKIE_SETTING) continue
         upsert.run(key, String(value))
       }
     }
