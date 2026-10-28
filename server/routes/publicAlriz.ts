@@ -1,4 +1,4 @@
-import { fetchWithTimeout } from '../lib/fetchTimeout.js'
+import { describeFetchError, fetchWithProviderRetry } from '../lib/fetchTimeout.js'
 import { Router, Request, Response } from 'express'
 import { decideCredential, isConsumingRequest, settleTicket } from '../lib/providerRelay.js'
 import { providerLabel } from '../lib/providerMasterKey.js'
@@ -36,7 +36,10 @@ router.all('/', async (req: Request, res: Response) => {
     const fetchOpts: RequestInit = { method: req.method, headers }
     if (req.method === 'POST' && req.body) fetchOpts.body = JSON.stringify(req.body)
 
-    const r = await fetchWithTimeout(`${ALRIZ_UPSTREAM}/${subpath}`, fetchOpts)
+    const r = await fetchWithProviderRetry(`${ALRIZ_UPSTREAM}/${subpath}`, fetchOpts, {
+      consuming,
+      label: 'alriz-proxy',
+    })
     const text = await r.text()
     // Tiket hanya dipegang jalur kunci server; jalur kunci member tidak memakai
     // uang operator dan tidak perlu bukti bayar.
@@ -60,8 +63,10 @@ router.all('/', async (req: Request, res: Response) => {
     try { data = JSON.parse(text) } catch { data = text }
     return res.status(r.status).json(data)
   } catch (err: any) {
-    console.error(`[alriz-proxy] error:`, err.message)
-    return res.status(502).json({ ok: false, error: err.message })
+    // `cause` dari undici sering satu-satunya petunjuk (ENOTFOUND vs ECONNRESET
+    // berarti dua hal berbeda untuk saldo member), jadi jangan dibuang.
+    console.error(`[alriz-proxy] error:`, describeFetchError(err))
+    return res.status(502).json({ ok: false, error: describeFetchError(err) })
   }
 })
 
