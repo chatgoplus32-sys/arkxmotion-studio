@@ -36,6 +36,24 @@ export type MasterKeyMode = 'off' | 'unlimited' | 'unlimited-or-balance'
 /** Baris `app_settings` tempat admin menyimpan kunci induk lewat dashboard. */
 export const MASTER_KEY_SETTING = 'nexabot_master_api_key'
 
+/** Sama seperti relay: bisa diarahkan ke upstream tiruan saat tes. */
+const NEXABOT_BASE = (process.env.NEXABOT_BASE || 'https://nexabot.id').replace(/\/+$/, '')
+
+/**
+ * Apakah nilai ini berbentuk header Cookie, bukan API key.
+ *
+ * Insiden 2026-10-28: cookie sesi ikut ditempel ke kolom API key. Relay lalu
+ * mengirimnya sebagai `x-api-key`, upstream membalas 401 "API key tidak valid",
+ * dan SEMUA member yang memakai kredensial server gagal tanpa petunjuk kolom
+ * mana yang salah. Nilai berbentuk cookie sekarang diabaikan sebagai API key
+ * dan ditolak saat admin menyimpannya.
+ */
+export function looksLikeSessionCookie(value: string): boolean {
+  const v = (value || '').trim()
+  if (!v) return false
+  return /(^|[;\s])(session|cf_clearance|__secure-[a-z0-9-]+|token|auth)=/i.test(v) || /;\s*[^=;\s]+=/.test(v)
+}
+
 /**
  * Nilai kunci dari database (diisi admin lewat dashboard).
  *
@@ -62,9 +80,30 @@ function storedMasterKey(): string | null {
  * menyentuh VPS, sementara env tetap bekerja untuk deployment yang belum pernah
  * membuka halaman pengaturan.
  */
+let sudahPeringatKunciCookie = false
+
+function mentahMasterKey(): string {
+  return storedMasterKey() || (process.env.NEXABOT_MASTER_API_KEY || '').trim() || ''
+}
+
 export function masterKey(): string | null {
   if (masterKeyMode() === 'off') return null
-  return storedMasterKey() || (process.env.NEXABOT_MASTER_API_KEY || '').trim() || null
+  const mentah = mentahMasterKey()
+  if (!mentah) return null
+  // Cookie yang salah tempat tidak boleh dikirim sebagai API key: upstream akan
+  // menolaknya untuk semua member, dan pesannya menyesatkan ("API key tidak
+  // valid") seolah kunci member yang salah.
+  if (looksLikeSessionCookie(mentah)) {
+    if (!sudahPeringatKunciCookie) {
+      sudahPeringatKunciCookie = true
+      console.warn(
+        '[nexabot-master-key] nilai kunci berbentuk cookie sesi — diabaikan sebagai API key. ' +
+        'Simpan cookie itu di slot Sesi Unlimited, dan isi Kunci Server dengan API key NexaBot.',
+      )
+    }
+    return null
+  }
+  return mentah
 }
 
 export interface MasterKeyStatus {
@@ -73,6 +112,11 @@ export interface MasterKeyStatus {
   source: 'database' | 'env' | 'none'
   mode: MasterKeyMode
   daily_cap: number
+  /**
+   * true = nilai tersimpan berbentuk cookie sesi, jadi diabaikan sebagai API
+   * key. Panel admin perlu menampilkan ini supaya salah kolom langsung terlihat.
+   */
+  looks_like_cookie: boolean
 }
 
 /** Status untuk dashboard admin. Nilai kunci TIDAK pernah ikut dikembalikan. */
@@ -85,6 +129,7 @@ export function masterKeyStatus(): MasterKeyStatus {
     source: aktif ? (dariDb ? 'database' : dariEnv ? 'env' : 'none') : 'none',
     mode: masterKeyMode(),
     daily_cap: masterDailyCap(),
+    looks_like_cookie: looksLikeSessionCookie(dariDb || dariEnv || ''),
   }
 }
 
@@ -224,6 +269,96 @@ export function underDailyCap(userId: number): Kelayakan {
   return dipakai < cap
     ? { ok: true, reason: `${dipakai}/${cap} job hari ini` }
     : { ok: false, reason: `Batas harian kunci NexaBot tercapai (${dipakai}/${cap} job hari ini)` }
+}
+
+/** Hasil probe kunci induk ke upstream (dipakai tombol "Cek Kunci" di admin). */
+export interface MasterKeyCheck {
+  ok: boolean
+  valid: boolean
+  status: number | null
+  credit: number | null
+  telegram_id: string | null
+  /** true = gangguan gateway (timeout/429/5xx); kunci belum tentu salah. */
+  transient?: boolean
+  error?: string
+}
+
+const KOSONG_KUNCI: MasterKeyCheck = { ok: false, valid: false, status: null, credit: null, telegram_id: null }
+
+function angkaKredit(raw: any): number | null {
+  for (const sumber of [raw, raw?.data]) {
+    if (!sumber || typeof sumber !== 'object') continue
+    for (const k of ['credit', 'credits', 'balance', 'remaining_credits', 'credit_balance']) {
+      const v = sumber[k]
+      if (typeof v === 'number' && Number.isFinite(v)) return v
+      if (typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v.trim())) return Number(v)
+    }
+  }
+  return null
+}
+
+function telegramIdKredit(raw: any): string | null {
+  const v = raw?.telegram_id ?? raw?.data?.telegram_id
+  return v == null || v === '' ? null : String(v)
+}
+
+/**
+ * Probe kunci induk lewat GET /api/v1/api/credit — endpoint yang sama dipakai
+ * relay untuk jalur API key. Tanpa ini, kunci yang salah tidak ketahuan sampai
+ * member mengeluh, karena relay hanya mencatatnya sebagai pemakaian upstream.
+ */
+export async function checkMasterKey(timeoutMs = 20000): Promise<MasterKeyCheck> {
+  const mentah = mentahMasterKey()
+  if (looksLikeSessionCookie(mentah)) {
+    return {
+      ...KOSONG_KUNCI,
+      error: 'Nilai di kolom kunci adalah cookie sesi, bukan API key — pindahkan ke slot Sesi Unlimited',
+    }
+  }
+  const kunci = masterKey()
+  if (!kunci) return { ...KOSONG_KUNCI, error: 'Kunci Server NexaBot belum diatur' }
+
+  try {
+    const res = await fetch(`${NEXABOT_BASE}/api/v1/api/credit`, {
+      method: 'GET',
+      headers: { 'x-api-key': kunci, Accept: 'application/json' },
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+    if (res.status === 401 || res.status === 403) {
+      return {
+        ...KOSONG_KUNCI,
+        status: res.status,
+        error: 'API key ditolak penyedia — buat kunci baru di dashboard nexabot.id lalu simpan ulang di sini',
+      }
+    }
+    if (!res.ok) {
+      return {
+        ...KOSONG_KUNCI,
+        status: res.status,
+        transient: res.status === 408 || res.status === 429 || res.status >= 500,
+        error: `Cek kunci gagal: HTTP ${res.status}`,
+      }
+    }
+
+    const raw = (await res.json().catch(() => null)) as any
+    if (raw && raw.ok === false) {
+      return { ...KOSONG_KUNCI, status: res.status, error: String(raw.error || 'Kunci ditolak penyedia') }
+    }
+    return {
+      ok: true,
+      valid: true,
+      status: res.status,
+      credit: angkaKredit(raw),
+      telegram_id: telegramIdKredit(raw),
+    }
+  } catch (err: any) {
+    const timeout = err?.name === 'TimeoutError' || err?.name === 'AbortError'
+    return {
+      ...KOSONG_KUNCI,
+      transient: true,
+      error: timeout ? 'Cek kunci timeout — upstream tidak menjawab' : `Cek kunci gagal: ${err?.message || err}`,
+    }
+  }
 }
 
 /**

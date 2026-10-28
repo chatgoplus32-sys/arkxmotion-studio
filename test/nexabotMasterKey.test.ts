@@ -232,6 +232,29 @@ test('GET /api/nexabot/balance melaporkan kelayakan kunci server untuk UI', asyn
   assert.match(String(dataAdmin.server_key.reason), /saldo|paket/i)
 })
 
+test('kind di /balance mengikuti urutan relay: Unlimited → cookie, bersaldo → kunci', async () => {
+  jalankanSql(
+    `INSERT INTO app_settings (key, value) VALUES ('nexabot_master_cookie', ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    'session=sesi-server-uji; cf_clearance=abc',
+  )
+  try {
+    const unlimited = await fetch(`${base}/api/nexabot/balance`, {
+      headers: { Authorization: `Bearer ${tokenUntuk({ id: MISKIN, role: 'user' })}` },
+    })
+    const dataUnlimited = (await unlimited.json()) as any
+    assert.equal(dataUnlimited.server_key.kind, 'cookie', JSON.stringify(dataUnlimited.server_key))
+
+    const bersaldo = await fetch(`${base}/api/nexabot/balance`, {
+      headers: { Authorization: `Bearer ${tokenUntuk({ id: BERHAK, role: 'user' })}` },
+    })
+    const dataBersaldo = (await bersaldo.json()) as any
+    assert.equal(dataBersaldo.server_key.kind, 'key', JSON.stringify(dataBersaldo.server_key))
+  } finally {
+    jalankanSql(`DELETE FROM app_settings WHERE key = 'nexabot_master_cookie'`)
+  }
+})
+
 test('kunci milik member sendiri tetap dipakai apa adanya', async () => {
   const hasil = await submit({ 'x-api-key': KUNCI_MEMBER, Authorization: `Bearer ${tokenUntuk({ id: BERHAK, role: 'user' })}` })
   assert.equal(hasil.status, 200, JSON.stringify(hasil.json))
@@ -287,6 +310,42 @@ test('batas harian kunci induk ditegakkan', async () => {
   } finally {
     delete process.env.NEXABOT_MASTER_DAILY_CAP
   }
+})
+
+test('nilai berbentuk cookie di slot kunci diabaikan, bukan dikirim sebagai API key', async () => {
+  const lib = await import('../server/lib/nexabotMasterKey.js')
+  const ASLI = process.env.NEXABOT_MASTER_API_KEY
+  process.env.NEXABOT_MASTER_API_KEY = 'session=sesi-RAHASIA; cf_clearance=abc'
+  try {
+    assert.equal(lib.looksLikeSessionCookie('session=abc; cf_clearance=xyz'), true)
+    assert.equal(lib.looksLikeSessionCookie('kunci-induk-RAHASIA-999'), false)
+    assert.equal(lib.masterKey(), null, 'cookie sesi dipakai sebagai API key')
+    assert.equal(lib.masterKeyStatus().looks_like_cookie, true)
+
+    const sebelum = diterima.length
+    // BERHAK punya saldo, jadi tanpa kunci yang sah relay tidak punya apa pun
+    // untuk disuntikkan — dan TIDAK boleh menembak upstream dengan cookie itu.
+    const hasil = await submit({ Authorization: `Bearer ${tokenUntuk({ id: BERHAK, role: 'user' })}` })
+    assert.equal(hasil.status, 400, JSON.stringify(hasil.json))
+    assert.equal(diterima.length, sebelum, 'cookie yang salah tempat tetap dikirim ke upstream')
+
+    const cek = await lib.checkMasterKey(1000)
+    assert.equal(cek.ok, false)
+    assert.match(String(cek.error), /cookie sesi/i)
+    assert.equal(diterima.length, sebelum, 'Cek Kunci menembak upstream dengan nilai cookie')
+  } finally {
+    if (ASLI === undefined) delete process.env.NEXABOT_MASTER_API_KEY
+    else process.env.NEXABOT_MASTER_API_KEY = ASLI
+  }
+})
+
+test('Cek Kunci memvalidasi kunci induk lewat /api/v1/api/credit', async () => {
+  const lib = await import('../server/lib/nexabotMasterKey.js')
+  const cek = await lib.checkMasterKey(2000)
+  assert.equal(cek.ok, true, cek.error)
+  assert.equal(cek.valid, true)
+  assert.equal(terakhir().url, '/api/v1/api/credit')
+  assert.equal(terakhir().apiKey, MASTER)
 })
 
 test('rute baca hanya butuh identitas: polling tetap jalan walau paket habis', async () => {

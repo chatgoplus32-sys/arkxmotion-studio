@@ -8,7 +8,7 @@ import {
   nexabotRelayHeaders,
   type NexabotProxyAction,
 } from '../../shared/nexabotProxy.js'
-import { isMasterKey, masterKey, masterKeyEligibility } from '../lib/nexabotMasterKey.js'
+import { hasActiveUnlimited, isMasterKey, masterKey, masterKeyEligibility } from '../lib/nexabotMasterKey.js'
 import { masterCookie, masterCookieEligibility } from '../lib/nexabotMasterCookie.js'
 import {
   consumeChargeTicket,
@@ -33,6 +33,7 @@ async function relayUpstream(
   action: NexabotProxyAction,
   url: string,
   init: RequestInit,
+  opts: { kredensialServer?: boolean } = {},
 ): Promise<{ status: number; text: string } | null> {
   const { label } = NEXABOT_PROXY_POLICY[action]
   try {
@@ -46,13 +47,33 @@ async function relayUpstream(
     const text = await response.text()
     const sharedNote = shared ? ' (single-flight: respons dipakai bersama)' : ''
     console.log(`[nexabot-local] ${action} ${response.status}${attempts > 1 ? ` (percobaan ke-${attempts})` : ''}${sharedNote}: ${text.slice(0, 300)}`)
+    // Kredensial server yang ditolak upstream bukan salah member: pesan upstream
+    // ("API key tidak valid") membuat mereka mengira kunci pribadinya yang salah.
+    const ditolakKredensialServer =
+      !!opts.kredensialServer && (response.status === 401 || response.status === 403)
+    if (ditolakKredensialServer) {
+      console.error(
+        `[nexabot-local] kredensial server ditolak upstream (HTTP ${response.status}) — ` +
+        'periksa Kunci Server / Sesi Unlimited di panel admin',
+      )
+    }
     res.writeHead(response.status, {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
       // Teruskan Retry-After upstream supaya klien menunggu sesuai anjuran mereka.
       ...nexabotRelayHeaders(response),
     })
-    res.end(text)
+    res.end(ditolakKredensialServer
+      ? JSON.stringify({
+          ok: false,
+          // Hanya rute yang memotong saldo yang boleh menjanjikan refund.
+          error:
+            'Akses NexaBot milik server ditolak penyedia (bukan kredensial Anda). ' +
+            (action === 'submit' || action === 'gpt-image'
+              ? 'Saldo yang terpotong dikembalikan otomatis — hubungi admin.'
+              : 'Coba lagi nanti; bila berulang, hubungi admin.'),
+        })
+      : text)
     // Dikembalikan supaya rute yang mengonsumsi kuota bisa mencatat biaya
     // upstream-nya tanpa membaca body untuk kedua kalinya.
     return { status: response.status, text }
@@ -146,9 +167,11 @@ function kunciIndukAuth(req: Request, bacaSaja = false): ResolvedUpstreamAuth {
 }
 
 /**
- * Sesi Unlimited milik server, hanya untuk member dengan Paket Unlimited aktif.
- * Alasan penolakan dikembalikan supaya relay bisa meneruskannya apa adanya kalau
- * tidak ada kunci induk sebagai jalur cadangan.
+ * Sesi (cookie) milik server. Kelayakannya mengikuti mode kunci induk: di mode
+ * `unlimited` hanya untuk Paket Unlimited aktif, di mode default
+ * `unlimited-or-balance` juga boleh untuk member bersaldo. Alasan penolakan
+ * dikembalikan supaya relay bisa meneruskannya apa adanya kalau tidak ada kunci
+ * induk sebagai jalur cadangan.
  */
 function kukiIndukAuth(req: Request, bacaSaja = false): { auth: ResolvedUpstreamAuth; alasan?: string } {
   const cookies = masterCookie()
@@ -185,7 +208,8 @@ function kukiIndukAuth(req: Request, bacaSaja = false): { auth: ResolvedUpstream
  * Satu tempat resolusi kredensial ke upstream. Urutannya:
  *   1. cookie sesi dari klien (jalur Unlimited — tidak pernah digantikan);
  *   2. kunci yang dikirim klien;
- *   3. kunci induk milik server, kalau membernya berhak.
+ *   3. kredensial server, kalau membernya berhak — cookie dulu untuk member
+ *      Unlimited, kunci dulu untuk member bersaldo (cookie jadi cadangan).
  *
  * Kunci induk yang MASIH dikirim klien tidak diperlakukan sebagai kunci pribadi:
  * artinya kunci itu beredar di browser, jadi ia tetap harus lolos kebijakan yang
@@ -213,14 +237,23 @@ function resolveUpstreamAuth(req: Request, opts: { bacaSaja?: boolean } = {}): R
     return { headers: { 'x-api-key': kunci }, credential: { kind: 'api-key', source: 'own-key', secret: kunci } }
   }
 
-  // Sesi Unlimited server didahulukan dari kunci induk: cookie tidak memotong
-  // kredit upstream, kunci selalu 0.15 cr/request.
+  // Sesi server vs kunci server:
+  //  • Unlimited → cookie dulu, karena paket hanya dihormati di jalur web;
+  //  • member bersaldo → kunci dulu (pay-as-you-go 0.15 cr/request), lalu cookie
+  //    sebagai cadangan kalau kunci tidak tersedia atau diabaikan (mis. yang
+  //    tersimpan ternyata cookie). Urutan ini tetap sama untuk rute baca, jadi
+  //    job yang di-submit dan di-poll memakai akun yang sama.
+  const userId = userIdFromRequest(req)
+  const sukaKuki = !!userId && hasActiveUnlimited(userId)
   const kuki = kukiIndukAuth(req, !!opts.bacaSaja)
-  if (Object.keys(kuki.auth.headers).length > 0) return kuki.auth
   const kunci = kunciIndukAuth(req, !!opts.bacaSaja)
-  // Kalau kunci induk juga tidak ada, alasan cookie lebih menjelaskan keadaan
-  // sebenarnya (mis. member tanpa paket Unlimited) daripada "Missing X-Api-Key".
-  if (!kunci.credential && kuki.alasan) return { headers: {}, credential: null, error: kuki.alasan }
+  const urutan = sukaKuki ? [kuki.auth, kunci] : [kunci, kuki.auth]
+  for (const auth of urutan) {
+    if (Object.keys(auth.headers).length > 0) return auth
+  }
+  // Kalau tidak ada yang bisa dipakai, alasan cookie lebih menjelaskan keadaan
+  // sebenarnya (mis. saldo kosong) daripada "Missing X-Api-Key".
+  if (kuki.alasan) return { headers: {}, credential: null, error: kuki.alasan }
   return kunci
 }
 
@@ -337,7 +370,7 @@ router.get('/credit', async (req: Request, res: Response) => {
       ...auth.headers,
       'Accept': 'application/json',
     },
-  })
+  }, { kredensialServer: auth.credential?.source === 'master' })
 })
 
 // ── Session info (mode cookie) ──
@@ -399,7 +432,7 @@ router.post('/submit', async (req: Request, res: Response) => {
       'Accept': 'application/json',
     },
     body: JSON.stringify(upstreamBody),
-  })
+  }, { kredensialServer: auth.credential?.source === 'master' })
   // Dicatat setelah respons upstream diterima: rute inilah yang memakai kuota.
   if (hasil) {
     if (tiket.usageId) selesaikanTiket(tiket.usageId, hasil.status, hasil.text)
@@ -495,7 +528,7 @@ router.post('/gpt-image', async (req: Request, res: Response) => {
       'Accept': 'application/json',
     },
     body: JSON.stringify(upstreamBody),
-  })
+  }, { kredensialServer: auth.credential?.source === 'master' })
   // Dicatat setelah respons upstream diterima: rute inilah yang memakai kuota.
   if (hasil) {
     if (tiket.usageId) selesaikanTiket(tiket.usageId, hasil.status, hasil.text)
@@ -530,7 +563,7 @@ router.get('/gpt-image/:id', async (req: Request, res: Response) => {
       ...auth.headers,
       'Accept': 'application/json',
     },
-  })
+  }, { kredensialServer: auth.credential?.source === 'master' })
 })
 
 // ── Download hasil GPT Image (menyuntikkan kredensial) ──
@@ -640,7 +673,7 @@ router.get('/job/:id', async (req: Request, res: Response) => {
       ...auth.headers,
       'Accept': 'application/json',
     },
-  })
+  }, { kredensialServer: auth.credential?.source === 'master' })
 })
 
 // ── Download result ──
@@ -735,7 +768,7 @@ router.get('/modes', async (req: Request, res: Response) => {
       ...auth.headers,
       'Accept': 'application/json',
     },
-  })
+  }, { kredensialServer: auth.credential?.source === 'master' })
 })
 
 export default router

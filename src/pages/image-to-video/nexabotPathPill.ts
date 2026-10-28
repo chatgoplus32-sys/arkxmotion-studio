@@ -40,11 +40,11 @@ export function nexabotPathPill(
     if (serverKey?.available) {
       const sesiServer = serverKey.kind === 'cookie'
       return {
-        text: sesiServer ? '🔑 Sesi Unlimited server · tanpa API key' : '🔑 Kunci server · tanpa API key',
+        text: sesiServer ? '🔑 Sesi server · tanpa API key' : '🔑 Kunci server · tanpa API key',
         className: `${BASE_CLASS} text-emerald-400`,
         title: sesiServer
-          ? 'Paket Unlimited NexaBot Anda aktif, jadi generate memakai sesi login milik server — tidak perlu menempel API key atau cookie. ' +
-            `Biaya Rp ${NEXABOT_PRICE_FALLBACK}/generate tetap dipotong dari saldo NexaBot Anda.`
+          ? 'Generate memakai sesi login NexaBot milik server — tidak perlu menempel API key atau cookie. ' +
+            `Biaya Rp ${NEXABOT_PRICE_FALLBACK}/generate tetap dipotong dari saldo NexaBot Anda (gratis selama Paket Unlimited Anda aktif).`
           : 'Saldo/Paket Unlimited NexaBot Anda aktif, jadi generate memakai kunci NexaBot milik server — tidak perlu menempel API key. ' +
             `Biaya Rp ${NEXABOT_PRICE_FALLBACK}/generate dipotong dari saldo NexaBot (gratis selama Paket Unlimited aktif).`,
       }

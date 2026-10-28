@@ -3599,7 +3599,7 @@ export default function ImageToVideoPage() {
             ) : hasActiveKey ? (
               <>Akses: <b className="text-emerald-500">{providerKeyCount} API key aktif</b></>
             ) : provider === 'nexabot' && nexabotServerReady ? (
-              <>Akses: <b className="text-emerald-500">{nbWallet?.server_key?.kind === 'cookie' ? 'sesi Unlimited server' : 'kunci server (top up aktif)'}</b></>
+              <>Akses: <b className="text-emerald-500">{nbWallet?.server_key?.kind === 'cookie' ? 'sesi server' : 'kunci server'}</b></>
             ) : (
               <>Akses: <b className="text-amber-500">belum ada API key</b></>
             )}

@@ -35,8 +35,8 @@ import {
   type NexabotPricing,
   type NexabotPricingField,
 } from '../../shared/pricing.js'
-import { masterKeyEligibility } from '../lib/nexabotMasterKey.js'
-import { masterCookieEligibility } from '../lib/nexabotMasterCookie.js'
+import { hasActiveUnlimited, masterKeyEligibility } from '../lib/nexabotMasterKey.js'
+import { masterCookie, masterCookieEligibility } from '../lib/nexabotMasterCookie.js'
 
 // Definisi harga tinggal di shared/pricing.ts supaya server, fungsi Vercel, dan
 // endpoint publik /api/public/pricing tidak pernah beda angka.
@@ -167,11 +167,25 @@ router.get('/balance', authenticateToken, (req: AuthRequest, res: Response) => {
     // kebijakan yang sama seperti relay, supaya UI hanya menawarkan jalur tanpa
     // API key ketika relay benar-benar akan menerimanya.
     const serverKey = masterKeyEligibility(userId)
-    // Sesi Unlimited server (cookie) hanya untuk paket Unlimited aktif; kalau
-    // tersedia, relay memakai /api/v1/generate sehingga upstream tidak memotong
-    // kredit. `kind` dipakai klien untuk menyebut jalur yang benar di UI.
+    // Sesi (cookie) server: didahulukan untuk member Unlimited (paket hanya
+    // dihormati di jalur web), dan tersedia juga untuk member bersaldo sebagai
+    // cadangan bila kunci server tidak ada/diabaikan.
     const serverCookie = masterCookieEligibility(userId)
-    const kind = serverCookie.ok ? 'cookie' : serverKey.ok ? 'key' : null
+    // `kind` harus mengikuti urutan yang benar-benar dipakai relay — kalau tidak,
+    // UI menyebut jalur yang berbeda dari yang menagih akun NexaBot.
+    const kind = hasActiveUnlimited(userId)
+      ? (serverCookie.ok ? 'cookie' : serverKey.ok ? 'key' : null)
+      : (serverKey.ok ? 'key' : serverCookie.ok ? 'cookie' : null)
+    // Alasan yang menjelaskan keadaan sebenarnya: alasan cookie hanya dipakai
+    // kalau cookie memang diatur (sama seperti relay).
+    const alasan =
+      kind === 'cookie'
+        ? serverCookie.reason
+        : kind === 'key'
+          ? serverKey.reason
+          : masterCookie() && serverCookie.reason
+            ? serverCookie.reason
+            : serverKey.reason
     // `price`, `min_topup`, dan detail paket ikut dikirim supaya UI memakai
     // angka otoritatif server (termasuk tarif yang baru diubah admin), bukan
     // konstanta yang bisa langsung usang di klien.
@@ -182,7 +196,7 @@ router.get('/balance', authenticateToken, (req: AuthRequest, res: Response) => {
       unlimited: unlimitedPayload(getActivePackage(userId)),
       server_key: {
         available: kind !== null,
-        reason: serverCookie.ok ? serverCookie.reason : serverKey.reason,
+        reason: alasan,
         kind,
       },
       // `package` = varian utama (kompatibilitas), `packages` = semua varian

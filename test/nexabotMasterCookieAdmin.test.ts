@@ -5,8 +5,9 @@
 //  1. Hanya admin yang boleh membaca status / menyimpan / menghapus cookie, dan
 //     nilainya tidak pernah dikirim balik ke browser — termasuk lewat daftar
 //     pengaturan umum.
-//  2. Relay memakai cookie itu lewat /api/v1/generate, dan HANYA untuk member
-//     dengan Paket Unlimited aktif.
+//  2. Relay memakai cookie itu lewat /api/v1/generate: didahulukan untuk member
+//     Unlimited, dan tetap tersedia untuk member bersaldo di mode default
+//     (kunci server tidak ada / nilainya cookie yang salah kolom).
 //  3. Panel admin bisa memeriksa status sesi (unlimited / paket / berlaku
 //     sampai / saldo) lewat /master-cookie/check tanpa melihat nilainya.
 import test, { after, before } from 'node:test'
@@ -125,6 +126,13 @@ const getStatus = async () => {
   return { status: res.status, text: await res.text() }
 }
 
+const getKeyStatus = async () => {
+  const res = await fetch(`${base}/api/admin/nexabot/master-key`, {
+    headers: { Authorization: `Bearer ${adminToken()}` },
+  })
+  return { status: res.status, text: await res.text() }
+}
+
 const checkSesi = async () => {
   const res = await fetch(`${base}/api/admin/nexabot/master-cookie/check`, {
     method: 'POST',
@@ -155,13 +163,14 @@ before(async () => {
   ] as const) {
     jalankanSql(`INSERT OR IGNORE INTO users (id, email, password, name, role, approved) VALUES (?, ?, 'x', 'uji', ?, 1)`, id, email, role)
   }
-  // Member dengan Paket Unlimited aktif — satu-satunya yang boleh memakai cookie.
+  // Member dengan Paket Unlimited aktif — cookie didahulukan untuknya.
   jalankanSql(
     `INSERT INTO nexabot_topup (user_id, amount, status, kind, days, package_slug, expires_at)
      VALUES (?, 35000, 'approved', 'unlimited', 7, 'unlimited_weekly', datetime('now', '+7 days'))`,
     MEMBER_UNLIMITED,
   )
-  // Member yang cuma punya saldo — jalur kunci induk, bukan cookie.
+  // Member yang cuma punya saldo — di mode default tetap dilayani kredensial
+  // server (kunci dulu, cookie sebagai cadangan).
   jalankanSql(`INSERT INTO nexabot_balance (user_id, balance) VALUES (?, 20000)`, MEMBER_BALANCE)
 })
 
@@ -294,12 +303,59 @@ test('member Unlimited memakai sesi server lewat /api/v1/generate tanpa kunci', 
   assert.equal(rows[0].credential_source, 'master')
 })
 
-test('member tanpa Paket Unlimited ditolak dan upstream tidak tersentuh', async () => {
-  const sebelum = diterima.length
-  const hasil = await submit(balanceToken())
-  assert.equal(hasil.status, 400)
-  assert.match(String(hasil.json?.error), /Paket Unlimited/i)
-  assert.equal(diterima.length, sebelum, 'relay tetap menembak upstream untuk member tanpa Unlimited')
+test('member bersaldo tanpa kunci server tetap dilayani lewat sesi cookie', async () => {
+  // Insiden 2026-10-28: member baru top up Rp 10.000 lalu generate dan ditolak
+  // "API key tidak valid" — kunci server yang tersimpan ternyata cookie sesi.
+  // Sesi cookie yang sah harus tetap melayani member bersaldo: cukup top up.
+  const hasil = await submit(balanceToken(), tiketBaru(MEMBER_BALANCE, 150))
+  assert.equal(hasil.status, 200, JSON.stringify(hasil.json))
+
+  const panggilan = terakhir()
+  assert.equal(panggilan.url, '/api/v1/generate', 'relay tidak memakai jalur web /api/v1/generate')
+  assert.equal(panggilan.cookie, COOKIE_STORE)
+  assert.equal(panggilan.apiKey, null, 'relay mengirim API key di jalur sesi')
+
+  const rows = bacaSql<{ credential_kind: string; credential_source: string }>(
+    `SELECT credential_kind, credential_source FROM nexabot_upstream_usage ORDER BY id DESC LIMIT 1`,
+  )
+  assert.equal(rows[0].credential_kind, 'cookie')
+  assert.equal(rows[0].credential_source, 'master')
+})
+
+test('mode unlimited: member bersaldo ditolak walau sesi cookie tersedia', async () => {
+  process.env.NEXABOT_MASTER_KEY_MODE = 'unlimited'
+  try {
+    const sebelum = diterima.length
+    const hasil = await submit(balanceToken(), tiketBaru(MEMBER_BALANCE, 150))
+    assert.equal(hasil.status, 400)
+    assert.match(String(hasil.json?.error), /Paket Unlimited/i)
+    assert.equal(diterima.length, sebelum, 'relay tetap menembak upstream di mode unlimited')
+  } finally {
+    delete process.env.NEXABOT_MASTER_KEY_MODE
+  }
+})
+
+test('cookie yang salah kolom (tersimpan sebagai kunci) tidak merusak member bersaldo', async () => {
+  // Nilai yang sama ditempel ke dua kolom. Nilai di slot kunci harus diabaikan,
+  // sehingga relay tetap memakai sesi cookie — bukan mengirim cookie sebagai
+  // x-api-key yang pasti ditolak upstream.
+  jalankanSql(
+    `INSERT INTO app_settings (key, value, updated_at) VALUES ('nexabot_master_api_key', ?, CURRENT_TIMESTAMP)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
+    COOKIE_VALUE,
+  )
+
+  const status = await getKeyStatus()
+  const data = JSON.parse(status.text)
+  assert.equal(data.configured, false, 'cookie diterima sebagai kunci server')
+  assert.equal(data.looks_like_cookie, true, 'panel admin tidak memperingatkan salah kolom')
+
+  const hasil = await submit(balanceToken(), tiketBaru(MEMBER_BALANCE, 150))
+  assert.equal(hasil.status, 200, JSON.stringify(hasil.json))
+  assert.equal(terakhir().apiKey, null, 'nilai berbentuk cookie dikirim sebagai x-api-key')
+  assert.equal(terakhir().cookie, COOKIE_STORE)
+
+  jalankanSql(`DELETE FROM app_settings WHERE key = 'nexabot_master_api_key'`)
 })
 
 test('formulir pengaturan umum tidak bisa menimpa sesi Unlimited', async () => {

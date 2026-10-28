@@ -3,6 +3,7 @@ import {
   hasActiveUnlimited,
   masterDailyCap,
   masterKeyMode,
+  memberMayUseMasterKey,
   underDailyCap,
   type Kelayakan,
 } from './nexabotMasterKey.js'
@@ -20,9 +21,12 @@ import {
  *
  * Siapa yang boleh memakainya
  * ---------------------------
- * Hanya member dengan Paket Unlimited aktif (`nexabot_topup` yang disetujui dan
- * belum kedaluwarsa) — sesuai gunanya: "khusus paket Unlimited". Member yang
- * cuma punya saldo tetap memakai jalur kunci induk / kunci sendiri.
+ * Mengikuti `NEXABOT_MASTER_KEY_MODE`:
+ *   • `unlimited` — hanya member dengan Paket Unlimited aktif;
+ *   • `unlimited-or-balance` (default) — Unlimited atau punya saldo, sama
+ *     seperti kunci induk. Member bersaldo tetap memakai sesi ini kalau kunci
+ *     API operator tidak tersedia/ditolak, sehingga top up saldo langsung bisa
+ *     dipakai generate.
  *
  * Cookie disimpan di `app_settings` dan TIDAK pernah dikirim balik ke browser,
  * termasuk ke browser admin. Dashboard hanya menampilkan status + hasil cek.
@@ -112,16 +116,24 @@ export function masterCookieStatus(): MasterCookieStatus {
   }
 }
 
-/** Kebijakan relay: cookie server khusus member dengan Paket Unlimited aktif. */
+/**
+ * Kebijakan relay untuk cookie server.
+ *
+ * Mode `unlimited`: hanya member dengan Paket Unlimited aktif.
+ * Mode `unlimited-or-balance` (default): aturannya sama dengan kunci induk —
+ * Unlimited ATAU punya saldo. Ini yang membuat member baru "cukup top up saldo
+ * lalu bisa generate" walau kunci API operator belum tersedia atau ditolak
+ * upstream: sesi cookie yang sah tetap bisa melayani mereka.
+ */
 export function memberMayUseMasterCookie(userId: number): Kelayakan {
-  if (masterKeyMode() === 'off') return { ok: false, reason: 'Kunci induk NexaBot dimatikan di server' }
-  if (!hasActiveUnlimited(userId)) {
-    return {
-      ok: false,
-      reason: 'Sesi Unlimited milik server hanya untuk member dengan Paket Unlimited aktif',
-    }
+  const mode = masterKeyMode()
+  if (mode === 'off') return { ok: false, reason: 'Kunci induk NexaBot dimatikan di server' }
+  if (mode === 'unlimited') {
+    return hasActiveUnlimited(userId)
+      ? { ok: true, reason: 'Paket Unlimited aktif' }
+      : { ok: false, reason: 'Sesi Unlimited milik server hanya untuk member dengan Paket Unlimited aktif' }
   }
-  return { ok: true, reason: 'Paket Unlimited aktif' }
+  return memberMayUseMasterKey(userId)
 }
 
 /** Kelayakan lengkap (konfigurasi + paket + batas harian), dipakai relay & wallet. */

@@ -13,7 +13,12 @@ import {
   setProFee,
 } from './membership.js'
 import { getNexabotPricing, setNexabotPricing } from './nexabotWallet.js'
-import { MASTER_KEY_SETTING, masterKeyStatus } from '../lib/nexabotMasterKey.js'
+import {
+  MASTER_KEY_SETTING,
+  checkMasterKey,
+  looksLikeSessionCookie,
+  masterKeyStatus,
+} from '../lib/nexabotMasterKey.js'
 import {
   MASTER_COOKIE_SETTING,
   checkMasterCookie,
@@ -354,6 +359,17 @@ router.put('/nexabot/master-key', authenticateToken, requireAdmin, (req: AuthReq
     if (!apiKey) {
       return res.status(400).json({ error: 'API key NexaBot kosong' })
     }
+    // Insiden 2026-10-28: cookie sesi ditempel ke kolom API key, lalu relay
+    // mengirimnya sebagai x-api-key — semua member yang memakai kredensial
+    // server gagal dengan "API key tidak valid" tanpa petunjuk kolom mana yang
+    // salah. Tolak di sini, jangan simpan nilai yang pasti ditolak upstream.
+    if (looksLikeSessionCookie(apiKey)) {
+      return res.status(400).json({
+        error:
+          'Nilai itu cookie sesi (mengandung session=...), bukan API key. ' +
+          'Simpan cookie di bagian "Sesi Unlimited Server NexaBot", dan isi kolom ini dengan API key dari dashboard nexabot.id.',
+      })
+    }
     // Kunci diketik manusia; spasi/newline dari copy-paste sudah dibuang di atas.
     db.prepare(
       `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
@@ -386,9 +402,22 @@ router.delete('/nexabot/master-key', authenticateToken, requireAdmin, (_req: Aut
   }
 })
 
+// POST /nexabot/master-key/check — probe /api/v1/api/credit dengan kunci tersimpan.
+// Tanpa ini, kunci yang ditolak upstream hanya ketahuan dari keluhan member.
+router.post('/nexabot/master-key/check', authenticateToken, requireAdmin, async (_req: AuthRequest, res: Response) => {
+  try {
+    const hasil = await checkMasterKey()
+    res.json({ ok: true, check: hasil })
+  } catch (error: any) {
+    console.error('[admin-nexabot-master-key] check error:', error?.message || error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
 // ─── Sesi Unlimited NexaBot (cookie server) ───────────────────────
-// Cookie login nexabot.id milik operator. Hanya member dengan Paket Unlimited
-// aktif yang memakainya, dan nilainya tidak pernah dikirim balik ke browser.
+// Cookie login nexabot.id milik operator. Dipakai untuk member Unlimited, dan
+// juga untuk member bersaldo di mode default (bila kunci server tidak ada).
+// Nilainya tidak pernah dikirim balik ke browser.
 
 router.get('/nexabot/master-cookie', authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
   try {

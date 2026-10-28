@@ -32,6 +32,7 @@ const Database = requireRepo('better-sqlite3') as new (file: string) => any
 
 const DB_MASTER = 'kunci-dashboard-RAHASIA-123'
 const ENV_MASTER = 'kunci-env-fallback-456'
+const KUNCI_DITOLAK = 'kunci-ditolak-upstream-789'
 
 interface Panggilan { url: string; apiKey: string | null }
 const diterima: Panggilan[] = []
@@ -39,8 +40,18 @@ const diterima: Panggilan[] = []
 const upstream = http.createServer((req, res) => {
   req.on('data', () => {})
   req.on('end', () => {
-    diterima.push({ url: req.url || '', apiKey: (req.headers['x-api-key'] as string) || null })
+    const apiKey = (req.headers['x-api-key'] as string) || null
+    diterima.push({ url: req.url || '', apiKey })
     res.setHeader('Content-Type', 'application/json')
+    if (apiKey === KUNCI_DITOLAK) {
+      res.statusCode = 401
+      res.end(JSON.stringify({ ok: false, error: 'API key tidak valid' }))
+      return
+    }
+    if ((req.url || '').startsWith('/api/v1/api/credit')) {
+      res.end(JSON.stringify({ ok: true, credit: 7.5, telegram_id: '667788' }))
+      return
+    }
     res.end(JSON.stringify({ ok: true, job_id: 'job-' + diterima.length, credits: 0.15 }))
   })
 })
@@ -87,7 +98,7 @@ async function submit() {
     },
     body: JSON.stringify({ mode: 't2v', prompt: 'uji kunci dashboard' }),
   })
-  return { status: res.status, json: (await res.json().catch(() => null)) as any }
+  return { status: res.status, json: (await res.json().catch(() => null)) as any, tiket: Number(tiket) }
 }
 
 const getStatus = async () => {
@@ -214,6 +225,109 @@ test('kunci kosong ditolak, bukan menghapus kunci yang sudah ada', async () => {
 
   const status = await getStatus()
   assert.equal(JSON.parse(status.text).configured, true)
+})
+
+test('cookie sesi yang ditempel ke kolom kunci ditolak sebelum disimpan', async () => {
+  const res = await fetch(`${base}/api/admin/nexabot/master-key`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken()}` },
+    body: JSON.stringify({ apiKey: 'session=sesi-RAHASIA-abc; cf_clearance=xyz' }),
+  })
+  assert.equal(res.status, 400)
+  assert.match(String(((await res.json()) as any).error), /cookie sesi/i)
+
+  const status = await getStatus()
+  assert.equal(JSON.parse(status.text).configured, true, 'kunci lama ikut terhapus oleh input yang ditolak')
+})
+
+test('cookie yang terlanjur tersimpan di slot kunci diabaikan, bukan dikirim sebagai API key', async () => {
+  // Insiden 2026-10-28: nilai yang sama ditempel ke dua kolom. Relay mengirim
+  // cookie itu sebagai x-api-key, upstream membalas 401 "API key tidak valid",
+  // dan member baru yang sudah top up saldo tidak bisa generate.
+  jalankanSql(
+    `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
+    'nexabot_master_api_key',
+    'session=sesi-RAHASIA-abc; cf_clearance=xyz',
+  )
+
+  const status = JSON.parse((await getStatus()).text)
+  assert.equal(status.configured, false, 'cookie diterima sebagai kunci server')
+  assert.equal(status.looks_like_cookie, true, 'panel admin tidak memperingatkan salah kolom')
+
+  const sebelum = diterima.length
+  const hasil = await submit()
+  assert.equal(hasil.status, 400, JSON.stringify(hasil.json))
+  assert.equal(diterima.length, sebelum, 'cookie yang salah kolom tetap dikirim ke upstream')
+
+  // Cek Kunci menunjuk kolom yang salah, juga tanpa menembak upstream.
+  const cek = await fetch(`${base}/api/admin/nexabot/master-key/check`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${adminToken()}` },
+  })
+  assert.equal(cek.status, 200)
+  const hasilCek = JSON.parse(await cek.text()).check
+  assert.equal(hasilCek.ok, false)
+  assert.match(String(hasilCek.error), /cookie sesi/i)
+  assert.equal(diterima.length, sebelum, 'Cek Kunci menembak upstream dengan nilai cookie')
+
+  // Kembalikan kunci yang sah untuk tes berikutnya.
+  jalankanSql(`UPDATE app_settings SET value = ? WHERE key = 'nexabot_master_api_key'`, DB_MASTER)
+})
+
+test('Cek Kunci memvalidasi kunci tersimpan dan melaporkan kredit tanpa membocorkan nilainya', async () => {
+  const res = await fetch(`${base}/api/admin/nexabot/master-key/check`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${adminToken()}` },
+  })
+  assert.equal(res.status, 200)
+  const text = await res.text()
+  assert.ok(!text.includes(DB_MASTER), 'nilai kunci dikirim balik oleh Cek Kunci')
+
+  const hasil = JSON.parse(text).check
+  assert.equal(hasil.ok, true, hasil.error)
+  assert.equal(hasil.valid, true)
+  assert.equal(hasil.credit, 7.5)
+  assert.equal(hasil.telegram_id, '667788')
+
+  assert.equal(terakhir().url, '/api/v1/api/credit')
+  assert.equal(terakhir().apiKey, DB_MASTER)
+})
+
+test('kredensial server yang ditolak upstream tidak menyalahkan member', async () => {
+  const put = await fetch(`${base}/api/admin/nexabot/master-key`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken()}` },
+    body: JSON.stringify({ apiKey: KUNCI_DITOLAK }),
+  })
+  assert.equal(put.status, 200)
+
+  const hasil = await submit()
+  assert.equal(hasil.status, 401, JSON.stringify(hasil.json))
+  assert.match(String(hasil.json?.error), /Akses NexaBot milik server ditolak penyedia/i)
+  assert.ok(
+    !String(hasil.json?.error).includes('API key tidak valid'),
+    'pesan upstream mentah diteruskan ke member',
+  )
+
+  // Bukti mentah tetap diarsipkan supaya admin bisa menelusuri penyebabnya.
+  const rows = bacaSql<{ status_code: number; credential_source: string }>(
+    `SELECT status_code, credential_source FROM nexabot_upstream_usage ORDER BY id DESC LIMIT 1`,
+  )
+  assert.equal(rows[0].status_code, 401)
+  assert.equal(rows[0].credential_source, 'master')
+
+  // 401 = kredensialnya sendiri yang ditolak, bukan job yang terbentuk: tiket
+  // dilepas supaya member tidak kehilangan Rp 150 untuk generate yang tidak ada.
+  const tiket = bacaSql(`SELECT 1 FROM nexabot_charge_ticket WHERE usage_id = ?`, hasil.tiket)
+  assert.equal(tiket.length, 0, 'tiket tetap terpakai padahal upstream tidak membuat job')
+
+  const pulih = await fetch(`${base}/api/admin/nexabot/master-key`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken()}` },
+    body: JSON.stringify({ apiKey: DB_MASTER }),
+  })
+  assert.equal(pulih.status, 200)
 })
 
 test('kunci dihapus: fallback ke env kalau ada, dan relay menolak kalau tidak ada sama sekali', async () => {

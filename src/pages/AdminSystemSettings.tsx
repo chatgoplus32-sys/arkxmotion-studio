@@ -64,6 +64,19 @@ interface MasterKeyStatus {
   source: 'database' | 'env' | 'none'
   mode: 'off' | 'unlimited' | 'unlimited-or-balance'
   daily_cap: number
+  /** Nilai tersimpan berbentuk cookie sesi, jadi diabaikan sebagai API key. */
+  looks_like_cookie?: boolean
+}
+
+/** Hasil probe `POST /api/admin/nexabot/master-key/check`. */
+interface MasterKeyCheck {
+  ok: boolean
+  valid: boolean
+  status: number | null
+  credit: number | null
+  telegram_id: string | null
+  transient?: boolean
+  error?: string
 }
 
 interface MasterCookieStatus {
@@ -123,6 +136,8 @@ export default function AdminSystemSettings() {
   const [mkStatus, setMkStatus] = useState<MasterKeyStatus | null>(null)
   const [mkInput, setMkInput] = useState('')
   const [mkSaving, setMkSaving] = useState(false)
+  const [mkChecking, setMkChecking] = useState(false)
+  const [mkCheck, setMkCheck] = useState<MasterKeyCheck | null>(null)
   // Sesi Unlimited (cookie): disimpan di server dan hanya dipakai member dengan
   // Paket Unlimited aktif. Nilainya tidak pernah dikirim balik ke browser.
   const [mcStatus, setMcStatus] = useState<MasterCookieStatus | null>(null)
@@ -213,11 +228,30 @@ export default function AdminSystemSettings() {
         source: data.source ?? 'none',
         mode: data.mode ?? 'unlimited-or-balance',
         daily_cap: Number(data.daily_cap) || 0,
+        looks_like_cookie: !!data.looks_like_cookie,
       })
     } catch { /* biarkan status lama kalau request gagal */ }
   }, [token])
 
   useEffect(() => { fetchMasterKeyStatus() }, [fetchMasterKeyStatus])
+
+  const handleCheckMasterKey = async () => {
+    if (!token) return
+    setMkChecking(true)
+    try {
+      const res = await fetch('/api/admin/nexabot/master-key/check', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json()
+      if (res.ok && data.check) setMkCheck(data.check as MasterKeyCheck)
+      else addToast(data.error || 'Gagal memeriksa kunci server', 'error')
+    } catch {
+      addToast('Gagal memeriksa kunci server', 'error')
+    } finally {
+      setMkChecking(false)
+    }
+  }
 
   const handleSaveMasterKey = async () => {
     if (!token || !mkInput.trim()) return
@@ -236,8 +270,13 @@ export default function AdminSystemSettings() {
           source: data.source ?? 'none',
           mode: data.mode ?? 'unlimited-or-balance',
           daily_cap: Number(data.daily_cap) || 0,
+          looks_like_cookie: !!data.looks_like_cookie,
         })
+        setMkCheck(null)
         setMkInput('')
+        // Langsung buktikan kuncinya diterima upstream — kunci yang salah tidak
+        // boleh terlihat "Aktif" tanpa peringatan.
+        await handleCheckMasterKey()
       } else {
         addToast(data.error || 'Gagal menyimpan kunci server', 'error')
       }
@@ -265,7 +304,9 @@ export default function AdminSystemSettings() {
           source: data.source ?? 'none',
           mode: data.mode ?? 'unlimited-or-balance',
           daily_cap: Number(data.daily_cap) || 0,
+          looks_like_cookie: !!data.looks_like_cookie,
         })
+        setMkCheck(null)
       } else {
         addToast(data.error || 'Gagal menghapus kunci server', 'error')
       }
@@ -619,7 +660,7 @@ export default function AdminSystemSettings() {
               ) : (
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 px-2.5 py-0.5 text-[11px] text-amber-400">
                   <AlertTriangle className="h-3 w-3" />
-                  Belum diatur — member belum bisa generate tanpa API key
+                  Belum diatur — member hanya bisa lewat sesi cookie server (bila ada)
                 </span>
               )}
               {mkStatus && mkStatus.mode === 'off' && (
@@ -628,10 +669,11 @@ export default function AdminSystemSettings() {
             </div>
 
             <p className="mt-2 text-[12px] text-muted-foreground leading-relaxed">
-              Member yang sudah top up saldo atau punya Paket Unlimited aktif generate lewat kunci ini;
-              biaya Rp tetap dipotong dari saldo mereka. Kunci disimpan di database, tidak pernah
-              ditampilkan lagi, dan tidak pernah dikirim ke browser mana pun. Isi kolom untuk mengganti
-              kunci — nilai lama langsung tidak berlaku.
+              Member yang sudah top up saldo atau punya Paket Unlimited aktif generate lewat kredensial
+              server (kunci ini, atau sesi cookie di bawah bila kunci tidak tersedia); biaya Rp tetap
+              dipotong dari saldo mereka. Kunci disimpan di database, tidak pernah ditampilkan lagi, dan
+              tidak pernah dikirim ke browser mana pun. Isi kolom untuk mengganti kunci — nilai lama
+              langsung tidak berlaku.
             </p>
 
             <div className="mt-3 flex flex-col sm:flex-row gap-2">
@@ -657,7 +699,51 @@ export default function AdminSystemSettings() {
                 <Trash2 className="h-4 w-4 mr-2" />
                 Hapus
               </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleCheckMasterKey}
+                disabled={mkChecking || !mkStatus?.configured}
+              >
+                <Activity className={`h-4 w-4 mr-2 ${mkChecking ? 'animate-pulse' : ''}`} />
+                {mkChecking ? 'Memeriksa...' : 'Cek Kunci'}
+              </Button>
             </div>
+
+            {mkStatus?.looks_like_cookie && (
+              <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-[12px] text-red-300 leading-relaxed">
+                Nilai yang tersimpan berbentuk <strong>cookie sesi</strong>, bukan API key — server
+                mengabaikannya sebagai kunci. Pindahkan nilai itu ke bagian “Sesi Unlimited Server
+                NexaBot”, lalu simpan API key NexaBot yang asli di sini.
+              </div>
+            )}
+
+            {mkCheck && (
+              <div
+                className={`mt-3 rounded-lg border px-3 py-2 text-[12px] leading-relaxed ${
+                  mkCheck.valid
+                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                    : mkCheck.transient
+                      ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+                      : 'border-red-500/30 bg-red-500/10 text-red-300'
+                }`}
+              >
+                <span className="font-medium">
+                  {mkCheck.valid
+                    ? `Kunci diterima (HTTP ${mkCheck.status})`
+                    : mkCheck.transient
+                      ? 'Cek gagal sementara'
+                      : 'Kunci ditolak'}
+                </span>
+                {mkCheck.valid && (
+                  <span className="ml-2 opacity-80">
+                    kredit {mkCheck.credit ?? 'tidak terverifikasi'}
+                    {mkCheck.telegram_id ? ` · telegram ${mkCheck.telegram_id}` : ''}
+                  </span>
+                )}
+                {mkCheck.error && <div className="mt-1">{mkCheck.error}</div>}
+              </div>
+            )}
 
             <div className="mt-2 text-[11px] text-muted-foreground leading-relaxed">
               Urutan yang dipakai server: kunci dashboard → <code>NEXABOT_MASTER_API_KEY</code> di .env →
@@ -670,7 +756,7 @@ export default function AdminSystemSettings() {
         {/* Sesi Unlimited NexaBot */}
         <Section
           title="Sesi Unlimited Server NexaBot"
-          sub="Cookie login nexabot.id untuk jalur Unlimited — hanya dipakai member dengan Paket Unlimited aktif"
+          sub="Cookie login nexabot.id untuk jalur web — melayani member Unlimited, dan member saldo pada mode default"
         >
           <div className="rounded-xl border border-border bg-card/40 p-4">
             <div className="flex flex-wrap items-center gap-2">
@@ -683,7 +769,7 @@ export default function AdminSystemSettings() {
               ) : (
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 px-2.5 py-0.5 text-[11px] text-amber-400">
                   <AlertTriangle className="h-3 w-3" />
-                  Belum diatur — jalur Unlimited server tidak tersedia
+                  Belum diatur — jalur sesi server tidak tersedia
                 </span>
               )}
               {mcStatus && mcStatus.mode === 'off' && (
@@ -694,8 +780,9 @@ export default function AdminSystemSettings() {
             <p className="mt-2 text-[12px] text-muted-foreground leading-relaxed">
               Paket Unlimited hanya dihormati lewat cookie login web (endpoint <code>/api/v1/generate</code>),
               bukan API key. Cookie ini disimpan di database, tidak pernah ditampilkan lagi, dan tidak
-              pernah dikirim ke browser mana pun. Hanya member dengan Paket Unlimited aktif yang memakainya;
-              biaya Rp per generate tetap dipotong dari saldo mereka.
+              pernah dikirim ke browser mana pun. Siapa yang boleh memakainya mengikuti mode server:
+              member Unlimited saja, atau juga member bersaldo pada mode <code>unlimited-or-balance</code>{' '}
+              (default). Biaya Rp per generate tetap dipotong dari saldo mereka.
             </p>
 
             <label className="block text-[12px] font-medium text-muted-foreground mt-3 mb-1">
