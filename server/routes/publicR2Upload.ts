@@ -1,6 +1,4 @@
 import { Router, Request, Response } from 'express'
-import fs from 'node:fs'
-import path from 'node:path'
 import { authenticateToken, AuthRequest } from '../middleware/auth.js'
 import {
   MAX_UPLOAD_BYTES,
@@ -9,64 +7,9 @@ import {
   resolveMediaType,
   takeUploadSlot,
 } from '../lib/uploadGuards.js'
+import { diskPublicUrl, storeMedia } from '../lib/mediaStorage.js'
 
 const router = Router()
-const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID || ''
-const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID || ''
-const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || ''
-const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME || ''
-const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || ''
-
-/**
- * Fallback storage: kalau kredensial R2 tidak diisi, file disimpan ke disk
- * VPS dan dilayani lewat this file static route ini. Kredensial R2 yang nanti
- * diisi di .env VPS akan otomatis memicu upload ke R2 lagi.
- */
-export const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads')
-
-function ensureUploadDir(): string {
-  fs.mkdirSync(path.join(UPLOAD_DIR, 'videos'), { recursive: true })
-  return UPLOAD_DIR
-}
-
-/**
- * URL publik untuk file storage disk. Harus lewat path /api/* karena nginx
- * hanya me-proxy path itu ke express — path lain (mis. /uploads/*) di-cache
- * sebagai file frontend statis.
- */
-export const DISK_FILE_BASE = '/api/public/r2-file'
-
-/** URL publik untuk file storage disk — bangun dari header request (di belakang nginx). */
-function diskPublicUrl(req: Request, key: string): string {
-  const proto = String(req.headers['x-forwarded-proto'] || (req.secure ? 'https' : 'http')).split(',')[0].trim()
-  const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost'
-  return `${proto}://${host}${DISK_FILE_BASE}/${key}`
-}
-
-async function getR2Client(): Promise<any> {
-  if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY || !R2_BUCKET_NAME) return null
-  try {
-    // Dynamic import: file ini ESM (package.json "type":"module"), jadi `require`
-    // TIDAK ada saat runtime — memakainya melempar ReferenceError dan bikin route
-    // ini selalu balas "R2 not configured" walau env R2 sudah diisi.
-    const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3')
-    const client = new S3Client({
-      region: 'auto',
-      endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-      credentials: { accessKeyId: R2_ACCESS_KEY_ID, secretAccessKey: R2_SECRET_ACCESS_KEY },
-    })
-    return { client, PutObjectCommand }
-  } catch (err: any) {
-    console.error('[r2-upload] gagal memuat @aws-sdk/client-s3:', err?.message || err)
-    return null
-  }
-}
-
-/** Key selalu di bawah videos/ dan ekstensinya berasal dari MIME yang sudah divalidasi. */
-function generateKey(ext: string): string {
-  const random = Math.random().toString(36).substring(2, 8)
-  return `videos/${Date.now()}-${random}.${ext}`
-}
 
 function parseMultipartFile(raw: Buffer, contentType: string): { fileBuffer: Buffer; fileName: string; mimeType: string } | null {
   const boundaryMatch = contentType.match(/boundary=(.+)/)
@@ -150,35 +93,20 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
     return res.status(500).json({ ok: false, error: 'Upload gagal' })
   }
 
-  const key = generateKey(payload.ext)
-
-  const r2 = await getR2Client()
-  if (r2) {
-    try {
-      await r2.client.send(new r2.PutObjectCommand({
-        Bucket: R2_BUCKET_NAME,
-        Key: key,
-        Body: payload.buffer,
-        ContentType: payload.mimeType,
-      }))
-
-      const cdnUrl = R2_PUBLIC_URL
-        ? `${R2_PUBLIC_URL.replace(/\/$/, '')}/${key}`
-        : `https://${R2_BUCKET_NAME}.${R2_ACCOUNT_ID}.r2.dev/${key}`
-      return res.status(200).json({ ok: true, url: cdnUrl, key, storage: 'r2' })
-    } catch (err: any) {
-      console.error('[r2-upload] error:', err?.message || err)
-      // Jangan langsung gagal total — lanjut ke bilik disk di bawah.
-    }
-  }
-
-  // Fallback disk: kredensial R2 belum di-set (atau upload ke R2 gagal).
   try {
-    ensureUploadDir()
-    fs.writeFileSync(path.join(UPLOAD_DIR, key), payload.buffer)
-    return res.status(200).json({ ok: true, url: diskPublicUrl(req, key), key, storage: 'disk' })
+    const stored = await storeMedia(payload.buffer, {
+      ext: payload.ext,
+      mimeType: payload.mimeType,
+      prefix: 'videos',
+    })
+    return res.status(200).json({
+      ok: true,
+      url: stored.cdnUrl || diskPublicUrl(req, stored.key),
+      key: stored.key,
+      storage: stored.storage,
+    })
   } catch (err: any) {
-    console.error('[r2-upload] disk fallback error:', err?.message || err)
+    console.error('[r2-upload] simpan gagal:', err?.message || err)
     return res.status(500).json({ ok: false, error: 'Upload gagal' })
   }
 })

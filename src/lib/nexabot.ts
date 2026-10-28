@@ -1095,6 +1095,47 @@ export async function downloadNexabotResult(
   }
 }
 
+/**
+ * Simpan hasil job secara permanen — diunduh & disimpan oleh SERVER.
+ *
+ * Jalur lama mengunduh file ke browser (blob:) lalu mengunggahnya kembali,
+ * jadi file besar melintasi koneksi member dua kali dan tahap "simpan ke CDN"
+ * bisa makan menit-menitan. Di sini server yang menarik hasil dari NexaBot dan
+ * menuliskannya ke R2/disk, jadi member hanya menunggu satu arah.
+ */
+export async function saveNexabotResult(
+  jobId: string,
+  authOverride: NexabotAuth | string,
+  filename?: string
+): Promise<{ ok: boolean; url?: string; error?: string }> {
+  const auth = fillAuthFromStorage(normalizeAuth(authOverride))
+  const { apiKey, cookies } = normalizeValues(auth)
+  if (!apiKey && !cookies && !auth.master) return { ok: false, error: 'NexaBot: tidak ada API key / cookie session yang valid' }
+  try {
+    const { getAppAuthToken } = await import('@/lib/cdn')
+    const appToken = await getAppAuthToken()
+    if (!appToken) return { ok: false, error: 'Sesi berakhir — login ulang untuk menyimpan hasil.' }
+
+    const res = await fetch(`${NEXABOT_BASE}/save/${jobId}`, {
+      method: 'POST',
+      headers: {
+        ...authHeaders(auth),
+        Authorization: `Bearer ${appToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ filename: filename || undefined }),
+    })
+
+    const data = await res.json().catch(() => null)
+    if (!res.ok || !data?.ok || !data?.url) {
+      return { ok: false, error: data?.error || `Simpan gagal: HTTP ${res.status}` }
+    }
+    return { ok: true, url: data.url }
+  } catch (err: any) {
+    return { ok: false, error: err?.message || String(err) }
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // IMAGE COMPRESSION FOR API (aggressive — target <500KB raw)
 // NexaBot API rejects payloads > ~2MB; base64 adds 33% overhead

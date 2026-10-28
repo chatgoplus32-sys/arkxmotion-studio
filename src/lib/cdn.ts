@@ -17,7 +17,7 @@ function isTokenExpiring(token: string): boolean {
 }
 
 /** Endpoint upload butuh login; refresh token dulu kalau akses sudah mepet kedaluwarsa. */
-async function getUploadToken(): Promise<string | null> {
+export async function getAppAuthToken(): Promise<string | null> {
   try {
     const { useAuthStore } = await import('@/stores/authStore')
     let token = useAuthStore.getState().token || localStorage.getItem('arkxmotion_token')
@@ -40,7 +40,7 @@ export async function uploadToCdn(
   filename?: string,
 ): Promise<CdnUploadResult> {
   try {
-    const token = await getUploadToken()
+    const token = await getAppAuthToken()
     if (!token) return { ok: false, error: SESSION_EXPIRED }
 
     const res = await fetch('/api/public/r2-upload', {
@@ -76,7 +76,7 @@ export async function uploadBlobToCdn(
   onProgress?: (pct: number) => void,
 ): Promise<CdnUploadResult> {
   try {
-    const token = await getUploadToken()
+    const token = await getAppAuthToken()
     if (!token) return { ok: false, error: SESSION_EXPIRED }
 
     const fd = new FormData()

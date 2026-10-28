@@ -1,4 +1,7 @@
 import { Router, Request, Response } from 'express'
+import { authenticateToken, AuthRequest } from '../middleware/auth.js'
+import { MAX_UPLOAD_BYTES, resolveMediaType, takeUploadSlot } from '../lib/uploadGuards.js'
+import { diskPublicUrl, storeMedia } from '../lib/mediaStorage.js'
 import {
   NEXABOT_PROXY_POLICY,
   NexabotUpstreamError,
@@ -823,6 +826,84 @@ router.get('/download/:id', async (req: Request, res: Response) => {
   }
 })
 
+
+// ── Simpan hasil permanen (sisi server) ──
+/**
+ * Unduh hasil job LANGSUNG di server lalu simpan ke R2/disk, balas URL permanen.
+ *
+ * Kenapa bukan lewat browser: dulu klien mengunduh seluruh file ke browser
+ * (blob:) lalu mengunggahnya kembali ke /r2-upload. Dua kali lintas koneksi
+ * member — untuk WAV/video besar ini yang bikin tahap "simpan ke CDN" makan
+ * menit-menitan. Di sini file cuma sekali lewat: NexaBot → VPS → storage.
+ */
+router.post('/save/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  const auth = resolveUpstreamAuth(req, { bacaSaja: true })
+  const jobId = req.params.id
+  const userId = req.user?.id
+  if (!userId) {
+    return res.status(401).json({ ok: false, error: 'Login dulu untuk menyimpan hasil.' })
+  }
+  if (Object.keys(auth.headers).length === 0) {
+    return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key / X-Nexabot-Cookie header' })
+  }
+  if (!jobId) {
+    return res.status(400).json({ ok: false, error: 'Missing job id' })
+  }
+  if (!takeUploadSlot(userId)) {
+    return res.status(429).json({ ok: false, error: 'Terlalu banyak penyimpanan — coba lagi beberapa menit lagi' })
+  }
+
+  try {
+    console.log(`[nexabot-local] POST save ${jobId} → unduh & simpan di server`)
+    const { response: upstreamRes } = await fetchNexabotUpstream(`${NEXABOT_BASE}/api/v1/jobs/${jobId}/download`, {
+      method: 'GET',
+      headers: { ...auth.headers, 'Accept': '*/*' },
+      redirect: 'follow',
+    }, { action: 'download' })
+
+    if (!upstreamRes.ok) {
+      const errText = await upstreamRes.text().catch(() => '')
+      return res.status(upstreamRes.status === 404 ? 404 : 502).json({
+        ok: false,
+        error: `NexaBot menolak unduhan: HTTP ${upstreamRes.status} ${errText.slice(0, 200)}`,
+      })
+    }
+
+    const contentType = upstreamRes.headers.get('content-type') || ''
+    if (contentType.includes('application/json')) {
+      const errText = await upstreamRes.text().catch(() => '')
+      return res.status(502).json({ ok: false, error: `NexaBot tidak mengirim file: ${errText.slice(0, 200)}` })
+    }
+
+    const { mimeType, ext } = resolveMediaType(contentType, String(req.body?.filename || ''))
+    if (!upstreamRes.body) throw new Error('NexaBot tidak mengirim data')
+
+    const reader = upstreamRes.body.getReader()
+    const chunks: Buffer[] = []
+    let total = 0
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      total += value.byteLength
+      if (total > MAX_UPLOAD_BYTES) {
+        await reader.cancel().catch(() => {})
+        return res.status(413).json({ ok: false, error: 'Hasil terlalu besar untuk disimpan (maks 200 MB)' })
+      }
+      chunks.push(Buffer.from(value))
+    }
+    if (total === 0) return res.status(502).json({ ok: false, error: 'Hasil kosong' })
+
+    const stored = await storeMedia(Buffer.concat(chunks), { ext, mimeType })
+    const url = stored.cdnUrl || diskPublicUrl(req, stored.key)
+    console.log(`[nexabot-local] save ${jobId} → ${stored.storage} ${(total / 1024 / 1024).toFixed(1)} MB`)
+    return res.status(200).json({ ok: true, url, key: stored.key, storage: stored.storage, bytes: total })
+  } catch (err: any) {
+    const cause = nexabotErrorCause(err)
+    console.error(`[nexabot-local] save error:`, err.message, cause ? `(cause: ${cause})` : '')
+    if (res.headersSent) return gagalSetelahHeader(res)
+    return res.status(502).json({ ok: false, error: err.message || 'Simpan hasil gagal' })
+  }
+})
 
 // ── Daftar mode/model yang tersedia ─────────────────────────────────────
 router.get('/modes', async (req: Request, res: Response) => {

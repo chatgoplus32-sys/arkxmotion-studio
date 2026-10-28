@@ -5,7 +5,7 @@ import { LogDetailActions } from '@/components/ui/LogDetailActions'
 import { Loader2, Download, Music, Sparkles, CheckCircle2, AlertCircle, Clock, Copy, Trash2 } from 'lucide-react'
 import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
-import { submitNexabot, pollNexabotJob, downloadNexabotResult, runWithNexabotThrottleRetry } from '@/lib/nexabot'
+import { submitNexabot, pollNexabotJob, downloadNexabotResult, saveNexabotResult, runWithNexabotThrottleRetry } from '@/lib/nexabot'
 import { runNexabotJobWithSessionFallback } from '@/pages/image-to-video/nexabotSessionFallback'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, NEXABOT_PRICE_FALLBACK, type NexabotWallet } from '@/lib/nexabotWallet'
@@ -149,14 +149,21 @@ export default function MusicGeneratorPage() {
                 },
               })
 
-              setStatusText('Mengunduh hasil...')
+              setStatusText('Menyimpan hasil...')
+              addLog(`[3/3] 📤 Menyimpan hasil permanen ke CDN...`, 'info')
+              const saved = await saveNexabotResult(submit.jobId, auth, `nexabot-music-${submit.jobId}.wav`)
+              if (saved.ok && saved.url) {
+                addLog(`[3/3] 📤 Hasil tersimpan permanen ✓`, 'success')
+                return saved.url
+              }
+              addLog(`[3/3] ⚠️ Simpan di server gagal (${saved.error}) — fallback unduh + unggah...`, 'warn')
+
               const dl = await downloadNexabotResult(submit.jobId, auth)
               if (!dl.ok || !dl.url) throw new Error(dl.error || 'NexaBot download gagal')
 
               let finalUrl = dl.url
               if (dl.url.startsWith('blob:')) {
                 try {
-                  addLog(`[3/3] 📤 Menyimpan hasil permanen ke CDN...`, 'info')
                   const blobRes = await fetch(dl.url)
                   const blob = await blobRes.blob()
                   const up = await uploadBlobToCdn(blob, `nexabot-music-${submit.jobId}.wav`, (pct) => {
