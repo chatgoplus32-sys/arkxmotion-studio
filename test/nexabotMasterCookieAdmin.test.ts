@@ -5,9 +5,10 @@
 //  1. Hanya admin yang boleh membaca status / menyimpan / menghapus cookie, dan
 //     nilainya tidak pernah dikirim balik ke browser — termasuk lewat daftar
 //     pengaturan umum.
-//  2. Relay memakai cookie itu lewat /api/v1/generate: didahulukan untuk member
-//     Unlimited, dan tetap tersedia untuk member bersaldo di mode default
-//     (kunci server tidak ada / nilainya cookie yang salah kolom).
+//  2. Relay memakai cookie itu lewat /api/v1/generate — didahulukan untuk SEMUA
+//     member berhak, karena paket Unlimited hanya dihormati di jalur web. Kunci
+//     server hanya cadangan, dan cookie yang salah kolom tidak mematikan jalur
+//     sesi.
 //  3. Panel admin bisa memeriksa status sesi (unlimited / paket / berlaku
 //     sampai / saldo) lewat /master-cookie/check tanpa melihat nilainya.
 import test, { after, before } from 'node:test'
@@ -169,8 +170,8 @@ before(async () => {
      VALUES (?, 35000, 'approved', 'unlimited', 7, 'unlimited_weekly', datetime('now', '+7 days'))`,
     MEMBER_UNLIMITED,
   )
-  // Member yang cuma punya saldo — di mode default tetap dilayani kredensial
-  // server (kunci dulu, cookie sebagai cadangan).
+  // Member yang cuma punya saldo — di mode default tetap dilayani sesi cookie
+  // server (didahulukan), dengan kunci server sebagai cadangan.
   jalankanSql(`INSERT INTO nexabot_balance (user_id, balance) VALUES (?, 20000)`, MEMBER_BALANCE)
 })
 

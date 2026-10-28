@@ -33,17 +33,19 @@ const Database = requireRepo('better-sqlite3') as new (file: string) => any
 const DB_MASTER = 'kunci-dashboard-RAHASIA-123'
 const ENV_MASTER = 'kunci-env-fallback-456'
 const KUNCI_DITOLAK = 'kunci-ditolak-upstream-789'
+const KUKI_KEDALUWARSA = 'nexabot_session=sesi-kedaluwarsa.xyz'
 
-interface Panggilan { url: string; apiKey: string | null }
+interface Panggilan { url: string; apiKey: string | null; cookie: string | null }
 const diterima: Panggilan[] = []
 
 const upstream = http.createServer((req, res) => {
   req.on('data', () => {})
   req.on('end', () => {
     const apiKey = (req.headers['x-api-key'] as string) || null
-    diterima.push({ url: req.url || '', apiKey })
+    const cookie = (req.headers['cookie'] as string) || null
+    diterima.push({ url: req.url || '', apiKey, cookie })
     res.setHeader('Content-Type', 'application/json')
-    if (apiKey === KUNCI_DITOLAK) {
+    if (apiKey === KUNCI_DITOLAK || cookie === KUKI_KEDALUWARSA) {
       res.statusCode = 401
       res.end(JSON.stringify({ ok: false, error: 'API key tidak valid' }))
       return
@@ -292,6 +294,72 @@ test('Cek Kunci memvalidasi kunci tersimpan dan melaporkan kredit tanpa membocor
 
   assert.equal(terakhir().url, '/api/v1/api/credit')
   assert.equal(terakhir().apiKey, DB_MASTER)
+})
+
+// ── Sesi cookie didahulukan, kunci server jadi cadangan ─────────────────────
+//
+// Insiden 2026-10-28: sesi login NexaBot terlanjur ditempel ke slot API key,
+// relay mengirimnya sebagai `x-api-key`, upstream membalas 401, dan member baru
+// yang sudah top up saldo tidak bisa generate. Dua tes di bawah mengunci
+// perbaikan yang membuat satu kredensial yang salah tidak mematikan jalur
+// generate selama kredensial server lainnya masih sah.
+
+function simpanKuki(value: string) {
+  jalankanSql(
+    `INSERT INTO app_settings (key, value, updated_at) VALUES ('nexabot_master_cookie', ?, CURRENT_TIMESTAMP)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
+    value,
+  )
+}
+
+function hapusKuki() {
+  jalankanSql(`DELETE FROM app_settings WHERE key = 'nexabot_master_cookie'`)
+}
+
+test('sesi cookie server didahulukan: kredit upstream tidak terpotong lewat jalur API', async () => {
+  const KUKI = 'nexabot_session=sesi-server-ok.abc'
+  simpanKuki(KUKI)
+  try {
+    const hasil = await submit()
+    assert.equal(hasil.status, 200, JSON.stringify(hasil.json))
+
+    assert.equal(terakhir().cookie, KUKI, 'relay tidak memakai sesi cookie server yang tersedia')
+    assert.equal(terakhir().apiKey, null, 'relay masih mengirim API key padahal sesi cookie tersedia')
+    assert.equal(terakhir().url, '/api/v1/generate', 'sesi cookie harus lewat jalur web agar Unlimited dihormati')
+
+    const rows = bacaSql(`SELECT credential_kind, credential_source FROM nexabot_upstream_usage ORDER BY id DESC LIMIT 1`)
+    assert.equal(rows[0].credential_kind, 'cookie')
+    assert.equal(rows[0].credential_source, 'master')
+  } finally {
+    hapusKuki()
+  }
+})
+
+test('sesi cookie kedaluwarsa: relay ulang sekali dengan kunci server, bukan menyerah', async () => {
+  simpanKuki(KUKI_KEDALUWARSA)
+  try {
+    const sebelum = diterima.length
+    const hasil = await submit()
+    assert.equal(hasil.status, 200, JSON.stringify(hasil.json))
+    assert.equal(diterima.length, sebelum + 2, 'relay tidak mengulang dengan kredensial cadangan')
+
+    const pertama = diterima[sebelum]
+    const kedua = diterima[sebelum + 1]
+    assert.equal(pertama.cookie, KUKI_KEDALUWARSA, 'percobaan pertama bukan dengan sesi cookie')
+    assert.equal(pertama.apiKey, null)
+    assert.equal(pertama.url, '/api/v1/generate')
+    assert.equal(kedua.apiKey, DB_MASTER, 'percobaan kedua tidak memakai kunci server')
+    assert.equal(kedua.cookie, null, 'cookie yang sudah ditolak ikut terkirim lagi')
+    assert.equal(kedua.url, '/api/v1/api', 'kunci cadangan dikirim ke jalur web yang tidak mengenal API key')
+
+    // Catatan pemakaian mengikuti kredensial yang berhasil, bukan yang gagal.
+    const rows = bacaSql(`SELECT credential_kind, credential_source, status_code FROM nexabot_upstream_usage ORDER BY id DESC LIMIT 1`)
+    assert.equal(rows[0].credential_kind, 'api-key')
+    assert.equal(rows[0].credential_source, 'master')
+    assert.equal(rows[0].status_code, 200)
+  } finally {
+    hapusKuki()
+  }
 })
 
 test('kredensial server yang ditolak upstream tidak menyalahkan member', async () => {

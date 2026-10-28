@@ -232,11 +232,14 @@ test('GET /api/nexabot/balance melaporkan kelayakan kunci server untuk UI', asyn
   assert.match(String(dataAdmin.server_key.reason), /saldo|paket/i)
 })
 
-test('kind di /balance mengikuti urutan relay: Unlimited → cookie, bersaldo → kunci', async () => {
+test('kind di /balance mengikuti urutan relay: sesi cookie didahulukan untuk semua member berhak', async () => {
+  // Relay sekarang mencoba sesi cookie lebih dulu (paket Unlimited hanya dihormati
+  // di jalur web), jadi UI harus menyebut jalur yang sama untuk member Unlimited
+  // MAUPUN member bersaldo — bukan 'kunci server' untuk yang bersaldo.
   jalankanSql(
     `INSERT INTO app_settings (key, value) VALUES ('nexabot_master_cookie', ?)
      ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-    'session=sesi-server-uji; cf_clearance=abc',
+    'nexabot_session=sesi-server-uji.abc',
   )
   try {
     const unlimited = await fetch(`${base}/api/nexabot/balance`, {
@@ -249,7 +252,7 @@ test('kind di /balance mengikuti urutan relay: Unlimited → cookie, bersaldo �
       headers: { Authorization: `Bearer ${tokenUntuk({ id: BERHAK, role: 'user' })}` },
     })
     const dataBersaldo = (await bersaldo.json()) as any
-    assert.equal(dataBersaldo.server_key.kind, 'key', JSON.stringify(dataBersaldo.server_key))
+    assert.equal(dataBersaldo.server_key.kind, 'cookie', JSON.stringify(dataBersaldo.server_key))
   } finally {
     jalankanSql(`DELETE FROM app_settings WHERE key = 'nexabot_master_cookie'`)
   }
@@ -318,7 +321,11 @@ test('nilai berbentuk cookie di slot kunci diabaikan, bukan dikirim sebagai API 
   process.env.NEXABOT_MASTER_API_KEY = 'session=sesi-RAHASIA; cf_clearance=abc'
   try {
     assert.equal(lib.looksLikeSessionCookie('session=abc; cf_clearance=xyz'), true)
+    // Kasus produksi 2026-10-28: satu cookie tanpa `;`, namanya bukan `session`.
+    // Bentuk ini dulu lolos sebagai "API key" lalu ditolak upstream 401.
+    assert.equal(lib.looksLikeSessionCookie('nexabot_session=179karakter.abc'), true)
     assert.equal(lib.looksLikeSessionCookie('kunci-induk-RAHASIA-999'), false)
+    assert.equal(lib.looksLikeSessionCookie('nxb_abcdef123456'), false)
     assert.equal(lib.masterKey(), null, 'cookie sesi dipakai sebagai API key')
     assert.equal(lib.masterKeyStatus().looks_like_cookie, true)
 

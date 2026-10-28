@@ -35,7 +35,7 @@ import {
   type NexabotPricing,
   type NexabotPricingField,
 } from '../../shared/pricing.js'
-import { hasActiveUnlimited, masterKeyEligibility } from '../lib/nexabotMasterKey.js'
+import { masterKeyEligibility } from '../lib/nexabotMasterKey.js'
 import { masterCookie, masterCookieEligibility } from '../lib/nexabotMasterCookie.js'
 
 // Definisi harga tinggal di shared/pricing.ts supaya server, fungsi Vercel, dan
@@ -167,15 +167,13 @@ router.get('/balance', authenticateToken, (req: AuthRequest, res: Response) => {
     // kebijakan yang sama seperti relay, supaya UI hanya menawarkan jalur tanpa
     // API key ketika relay benar-benar akan menerimanya.
     const serverKey = masterKeyEligibility(userId)
-    // Sesi (cookie) server: didahulukan untuk member Unlimited (paket hanya
-    // dihormati di jalur web), dan tersedia juga untuk member bersaldo sebagai
-    // cadangan bila kunci server tidak ada/diabaikan.
+    // Sesi (cookie) server didahulukan — sama seperti relay: paket Unlimited
+    // hanya dihormati di jalur web, jadi kredensial server tidak memotong kredit
+    // upstream. Kunci server jadi cadangan bila sesi tidak tersedia/ditolak.
     const serverCookie = masterCookieEligibility(userId)
     // `kind` harus mengikuti urutan yang benar-benar dipakai relay — kalau tidak,
     // UI menyebut jalur yang berbeda dari yang menagih akun NexaBot.
-    const kind = hasActiveUnlimited(userId)
-      ? (serverCookie.ok ? 'cookie' : serverKey.ok ? 'key' : null)
-      : (serverKey.ok ? 'key' : serverCookie.ok ? 'cookie' : null)
+    const kind = serverCookie.ok ? 'cookie' : serverKey.ok ? 'key' : null
     // Alasan yang menjelaskan keadaan sebenarnya: alasan cookie hanya dipakai
     // kalau cookie memang diatur (sama seperti relay).
     const alasan =

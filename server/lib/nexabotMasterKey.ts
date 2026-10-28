@@ -40,17 +40,25 @@ export const MASTER_KEY_SETTING = 'nexabot_master_api_key'
 const NEXABOT_BASE = (process.env.NEXABOT_BASE || 'https://nexabot.id').replace(/\/+$/, '')
 
 /**
- * Apakah nilai ini berbentuk header Cookie, bukan API key.
+ * Apakah nilai ini berbentuk cookie sesi, bukan API key.
  *
  * Insiden 2026-10-28: cookie sesi ikut ditempel ke kolom API key. Relay lalu
  * mengirimnya sebagai `x-api-key`, upstream membalas 401 "API key tidak valid",
  * dan SEMUA member yang memakai kredensial server gagal tanpa petunjuk kolom
  * mana yang salah. Nilai berbentuk cookie sekarang diabaikan sebagai API key
  * dan ditolak saat admin menyimpannya.
+ *
+ * API key NexaBot berbentuk `nxb_…` / `nxa_…` tanpa `=`; cookie selalu
+ * `nama=isi`. Karena itu satu pasangan `nama=isi` sudah cukup dicurigai —
+ * termasuk `nexabot_session=…` yang tidak mengandung `;` (kasus produksi
+ * 2026-10-28). `=` di akhir nilai dibiarkan lolos supaya padding base64 pada
+ * kunci biasa tidak salah tandai.
  */
 export function looksLikeSessionCookie(value: string): boolean {
   const v = (value || '').trim()
   if (!v) return false
+  const eq = v.indexOf('=')
+  if (eq > 0 && eq < v.length - 1) return true
   return /(^|[;\s])(session|cf_clearance|__secure-[a-z0-9-]+|token|auth)=/i.test(v) || /;\s*[^=;\s]+=/.test(v)
 }
 

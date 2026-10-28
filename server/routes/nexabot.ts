@@ -8,7 +8,7 @@ import {
   nexabotRelayHeaders,
   type NexabotProxyAction,
 } from '../../shared/nexabotProxy.js'
-import { hasActiveUnlimited, isMasterKey, masterKey, masterKeyEligibility } from '../lib/nexabotMasterKey.js'
+import { isMasterKey, masterKey, masterKeyEligibility } from '../lib/nexabotMasterKey.js'
 import { masterCookie, masterCookieEligibility } from '../lib/nexabotMasterCookie.js'
 import {
   consumeChargeTicket,
@@ -27,24 +27,63 @@ const NEXABOT_BASE = (process.env.NEXABOT_BASE || 'https://nexabot.id').replace(
  * Satu call upstream ke NexaBot dengan timeout & retry sesuai jenis request
  * (lihat shared/nexabotProxy.ts), lalu teruskan status + body apa adanya ke
  * klien. Read-only (saldo/sesi/job/mode) boleh diulang; submit/generate tidak.
+ *
+ * Kalau kredensial SERVER ditolak upstream (401/403) dan ada kredensial server
+ * lain, request diulang SEKALI dengan kredensial itu. Aman untuk submit: 401/403
+ * berarti upstream menolak sebelum job dibuat, jadi tidak ada job/kredit ganda.
  */
 async function relayUpstream(
   res: Response,
   action: NexabotProxyAction,
   url: string,
   init: RequestInit,
-  opts: { kredensialServer?: boolean } = {},
-): Promise<{ status: number; text: string } | null> {
+  opts: {
+    /** true = percobaan pertama memakai kredensial milik server. */
+    kredensialServer?: boolean
+    /** Kredensial percobaan pertama, supaya catatan pemakaian tetap akurat. */
+    credential?: ResolvedCredential | null
+    /**
+     * Kredensial server lain bila yang utama ditolak upstream. `url` hanya
+     * dipakai kalau jalur upstream bergantung pada jenis kredensial
+     * (/submit: cookie ke /api/v1/generate, kunci ke /api/v1/api).
+     */
+    cadangan?: { headers: Record<string, string>; credential: ResolvedCredential; url?: string }
+  } = {},
+): Promise<{ status: number; text: string; credential: ResolvedCredential | null } | null> {
   const { label } = NEXABOT_PROXY_POLICY[action]
+  const kirim = (tambahan?: Record<string, string>, alamat = url) =>
+    fetchNexabotUpstream(
+      alamat,
+      tambahan ? { ...init, headers: { ...tanpaKredensial(init.headers), ...tambahan } } : init,
+      {
+        action,
+        onRetry: ({ attempt, status, delayMs, message }) =>
+          console.warn(
+            `[nexabot-local] ${action} percobaan ${attempt} gagal (${message}${status ? ` HTTP ${status}` : ''}) — coba lagi dalam ${delayMs}ms`,
+          ),
+      },
+    )
   try {
-    const { response, attempts, shared } = await fetchNexabotUpstream(url, init, {
-      action,
-      onRetry: ({ attempt, status, delayMs, message }) =>
-        console.warn(
-          `[nexabot-local] ${action} percobaan ${attempt} gagal (${message}${status ? ` HTTP ${status}` : ''}) — coba lagi dalam ${delayMs}ms`,
-        ),
-    })
-    const text = await response.text()
+    let { response, attempts, shared } = await kirim()
+    let text = await response.text()
+    let credential = opts.credential ?? null
+
+    // Kredensial utama ditolak → coba kredensial server lainnya sebelum
+    // menyimpulkan admin salah konfigurasi. Kunci yang kedaluwarsa/salah tempel
+    // tidak lagi mematikan jalur generate selama sesi cookie masih sah.
+    if ((response.status === 401 || response.status === 403) && opts.cadangan) {
+      const jenis = opts.cadangan.credential.kind === 'cookie' ? 'sesi cookie server' : 'kunci server'
+      console.warn(
+        `[nexabot-local] ${action}: kredensial server ditolak (HTTP ${response.status}) — ulangi dengan ${jenis} cadangan`,
+      )
+      const ulang = await kirim(opts.cadangan.headers, opts.cadangan.url || url)
+      response = ulang.response
+      attempts = ulang.attempts
+      shared = ulang.shared
+      text = await response.text()
+      credential = opts.cadangan.credential
+    }
+
     const sharedNote = shared ? ' (single-flight: respons dipakai bersama)' : ''
     console.log(`[nexabot-local] ${action} ${response.status}${attempts > 1 ? ` (percobaan ke-${attempts})` : ''}${sharedNote}: ${text.slice(0, 300)}`)
     // Kredensial server yang ditolak upstream bukan salah member: pesan upstream
@@ -76,7 +115,7 @@ async function relayUpstream(
       : text)
     // Dikembalikan supaya rute yang mengonsumsi kuota bisa mencatat biaya
     // upstream-nya tanpa membaca body untuk kedua kalinya.
-    return { status: response.status, text }
+    return { status: response.status, text, credential }
   } catch (err: any) {
     const upstream = err instanceof NexabotUpstreamError ? err : null
     // `cause` = alasan asli dari undici (ECONNRESET, UND_ERR_SOCKET, dst) yang
@@ -108,6 +147,16 @@ function gagalSetelahHeader(res: Response): void {
   if (!res.writableEnded) res.destroy()
 }
 
+/** Buang header kredensial sebelum menempelkan kredensial server lain. */
+function tanpaKredensial(headers: unknown): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries((headers || {}) as Record<string, string>)) {
+    if (/^(x-api-key|cookie|origin|referer)$/i.test(k)) continue
+    out[k] = v
+  }
+  return out
+}
+
 // Mode session: request ditandai dengan cookie login nexabot.id (dikirim klien
 // sebagai header X-Nexabot-Cookie karena browser melarang set header `Cookie`).
 function sessionHeaders(cookies: string): Record<string, string> {
@@ -123,6 +172,8 @@ interface ResolvedUpstreamAuth {
   credential: ResolvedCredential | null
   /** Pesan untuk klien kalau tidak ada kredensial yang bisa dipakai. */
   error?: string
+  /** Kredensial server lain, dicoba kalau yang utama ditolak upstream. */
+  cadangan?: { headers: Record<string, string>; credential: ResolvedCredential }
 }
 
 /** Boleh tidaknya member ini memakai kunci induk milik server. */
@@ -208,8 +259,8 @@ function kukiIndukAuth(req: Request, bacaSaja = false): { auth: ResolvedUpstream
  * Satu tempat resolusi kredensial ke upstream. Urutannya:
  *   1. cookie sesi dari klien (jalur Unlimited — tidak pernah digantikan);
  *   2. kunci yang dikirim klien;
- *   3. kredensial server, kalau membernya berhak — cookie dulu untuk member
- *      Unlimited, kunci dulu untuk member bersaldo (cookie jadi cadangan).
+ *   3. kredensial server, kalau membernya berhak — sesi cookie dulu (paket
+ *      Unlimited hanya dihormati di jalur web), kunci server sebagai cadangan.
  *
  * Kunci induk yang MASIH dikirim klien tidak diperlakukan sebagai kunci pribadi:
  * artinya kunci itu beredar di browser, jadi ia tetap harus lolos kebijakan yang
@@ -237,19 +288,22 @@ function resolveUpstreamAuth(req: Request, opts: { bacaSaja?: boolean } = {}): R
     return { headers: { 'x-api-key': kunci }, credential: { kind: 'api-key', source: 'own-key', secret: kunci } }
   }
 
-  // Sesi server vs kunci server:
-  //  • Unlimited → cookie dulu, karena paket hanya dihormati di jalur web;
-  //  • member bersaldo → kunci dulu (pay-as-you-go 0.15 cr/request), lalu cookie
-  //    sebagai cadangan kalau kunci tidak tersedia atau diabaikan (mis. yang
-  //    tersimpan ternyata cookie). Urutan ini tetap sama untuk rute baca, jadi
-  //    job yang di-submit dan di-poll memakai akun yang sama.
-  const userId = userIdFromRequest(req)
-  const sukaKuki = !!userId && hasActiveUnlimited(userId)
+  // Sesi cookie didahulukan di antara kredensial server: paket Unlimited hanya
+  // dihormati di jalur web (/api/v1/generate), sehingga generate tidak memotong
+  // kredit upstream. Kunci API server jadi cadangan — kalau cookie ditolak
+  // (kedaluwarsa), relay mengulang sekali dengan kunci, dan sebaliknya.
   const kuki = kukiIndukAuth(req, !!opts.bacaSaja)
   const kunci = kunciIndukAuth(req, !!opts.bacaSaja)
-  const urutan = sukaKuki ? [kuki.auth, kunci] : [kunci, kuki.auth]
-  for (const auth of urutan) {
-    if (Object.keys(auth.headers).length > 0) return auth
+  const kukiSiap = Object.keys(kuki.auth.headers).length > 0
+  const kunciSiap = Object.keys(kunci.headers).length > 0
+  const utama = kukiSiap ? kuki.auth : kunciSiap ? kunci : null
+  if (utama) {
+    const lain = utama === kuki.auth ? kunci : kuki.auth
+    const cadangan =
+      lain.credential && Object.keys(lain.headers).length > 0
+        ? { headers: lain.headers, credential: lain.credential }
+        : undefined
+    return { ...utama, cadangan }
   }
   // Kalau tidak ada yang bisa dipakai, alasan cookie lebih menjelaskan keadaan
   // sebenarnya (mis. saldo kosong) daripada "Missing X-Api-Key".
@@ -370,7 +424,7 @@ router.get('/credit', async (req: Request, res: Response) => {
       ...auth.headers,
       'Accept': 'application/json',
     },
-  }, { kredensialServer: auth.credential?.source === 'master' })
+  }, { kredensialServer: auth.credential?.source === 'master', credential: auth.credential, cadangan: auth.cadangan })
 })
 
 // ── Session info (mode cookie) ──
@@ -432,16 +486,32 @@ router.post('/submit', async (req: Request, res: Response) => {
       'Accept': 'application/json',
     },
     body: JSON.stringify(upstreamBody),
-  }, { kredensialServer: auth.credential?.source === 'master' })
+  }, {
+    kredensialServer: auth.credential?.source === 'master',
+    credential: auth.credential,
+    // Kredensial cadangan bisa berjenis berbeda, dan jenis itulah yang menentukan
+    // jalur upstream: kunci ke /api/v1/api (selalu menagih), cookie ke
+    // /api/v1/generate (Unlimited dihormati). Tanpa ini kunci akan dikirim ke
+    // jalur web yang tidak mengenalnya.
+    cadangan: auth.cadangan && {
+      ...auth.cadangan,
+      url: auth.cadangan.credential.kind === 'cookie'
+        ? `${NEXABOT_BASE}/api/v1/generate`
+        : `${NEXABOT_BASE}/api/v1/api`,
+    },
+  })
   // Dicatat setelah respons upstream diterima: rute inilah yang memakai kuota.
   if (hasil) {
     if (tiket.usageId) selesaikanTiket(tiket.usageId, hasil.status, hasil.text)
     recordUpstreamUsage({
       req,
-      route: pakaiSesi ? 'generate' : 'submit',
+      // Mengikuti kredensial yang BENAR-BENAR dipakai: kalau cookie ditolak lalu
+      // kunci cadangan yang berhasil, job itu tercatat di /api/v1/api — bukan di
+      // jalur sesi yang gagal.
+      route: hasil.credential?.kind === 'cookie' ? 'generate' : 'submit',
       statusCode: hasil.status,
       bodyText: hasil.text,
-      credential: auth.credential,
+      credential: hasil.credential,
     })
   }
 })
@@ -528,7 +598,7 @@ router.post('/gpt-image', async (req: Request, res: Response) => {
       'Accept': 'application/json',
     },
     body: JSON.stringify(upstreamBody),
-  }, { kredensialServer: auth.credential?.source === 'master' })
+  }, { kredensialServer: auth.credential?.source === 'master', credential: auth.credential, cadangan: auth.cadangan })
   // Dicatat setelah respons upstream diterima: rute inilah yang memakai kuota.
   if (hasil) {
     if (tiket.usageId) selesaikanTiket(tiket.usageId, hasil.status, hasil.text)
@@ -537,7 +607,7 @@ router.post('/gpt-image', async (req: Request, res: Response) => {
       route: 'gpt-image',
       statusCode: hasil.status,
       bodyText: hasil.text,
-      credential: auth.credential,
+      credential: hasil.credential,
     })
   }
 })
@@ -563,7 +633,7 @@ router.get('/gpt-image/:id', async (req: Request, res: Response) => {
       ...auth.headers,
       'Accept': 'application/json',
     },
-  }, { kredensialServer: auth.credential?.source === 'master' })
+  }, { kredensialServer: auth.credential?.source === 'master', credential: auth.credential, cadangan: auth.cadangan })
 })
 
 // ── Download hasil GPT Image (menyuntikkan kredensial) ──
@@ -673,7 +743,7 @@ router.get('/job/:id', async (req: Request, res: Response) => {
       ...auth.headers,
       'Accept': 'application/json',
     },
-  }, { kredensialServer: auth.credential?.source === 'master' })
+  }, { kredensialServer: auth.credential?.source === 'master', credential: auth.credential, cadangan: auth.cadangan })
 })
 
 // ── Download result ──
@@ -768,7 +838,7 @@ router.get('/modes', async (req: Request, res: Response) => {
       ...auth.headers,
       'Accept': 'application/json',
     },
-  }, { kredensialServer: auth.credential?.source === 'master' })
+  }, { kredensialServer: auth.credential?.source === 'master', credential: auth.credential, cadangan: auth.cadangan })
 })
 
 export default router
