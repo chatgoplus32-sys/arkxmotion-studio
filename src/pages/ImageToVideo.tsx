@@ -1350,10 +1350,14 @@ export default function ImageToVideoPage() {
 
         // Validasi payload SEBELUM potong token — media yang tidak sesuai
         // (mis. video untuk model tanpa video_url) gagal cepat tanpa refund.
+        // MC: tiap slot adalah pasangan gambar+video sendiri (spec MC hanya
+        // menerima 1 gambar + 1 video), bukan digabung jadi satu payload.
+        const seaviValidateMedia = isSeaviMc
+          ? { imageUrls: [seaviPairs[0].imageUrl], videoUrls: [seaviPairs[0].videoUrl] }
+          : { imageUrls: seaviImageUrls, videoUrls: seaviVideoUrls }
         try {
           buildSeaviPayload(seaviSpec, {
-            imageUrls: seaviImageUrls,
-            videoUrls: seaviVideoUrls,
+            ...seaviValidateMedia,
             audioUrl: seaviAudioUrl,
             prompt: prompt.trim(),
             aspectRatio: ratio,
