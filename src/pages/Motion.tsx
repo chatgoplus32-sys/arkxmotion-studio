@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo, forwardRef } from 'react'
+import { Link } from 'react-router-dom'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Textarea, Select, Label, EmptyState, BalanceBadge, getActiveProviderForCap } from '@/components/ui'
 import { setRoutingValue } from '@/lib/routing'
@@ -14,6 +15,8 @@ import { getGalleri5AuthHeaders, submitGalleri5MotionControl, pollGalleri5Motion
 import { getMagnificApiKey, submitMagnificMotion, pollMagnificMotion, type MagnificMotionModel } from '@/lib/magnific'
 import { generateWithAlriz, getAlrizModel } from '@/lib/alriz'
 import { chargeAlrizWallet, refundAlrizWallet } from '@/lib/alrizWallet'
+import { getSeaviSpec, generateWithSeavi, buildSeaviPayload } from '@/lib/seavi'
+import { fetchSeaviWallet, chargeSeaviWallet, refundSeaviWallet } from '@/lib/seaviWallet'
 import { useLocalStorage } from '@/lib/useLocalStorage'
 import { precheckProviderBalance } from '@/lib/balancePrecheck'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
@@ -36,6 +39,7 @@ import {
   Check,
   Wallet,
   Zap,
+  Coins,
 } from 'lucide-react'
 
 const PROVIDERS = {
@@ -101,11 +105,16 @@ const PROVIDERS = {
     { key: 'al:mc-kling-3.0-std', label: 'MC 3.0 Std · 720p', cr: 1000 },
     { key: 'al:mc-kling-3.0-pro', label: 'MC 3.0 Pro · 1080p', cr: 1500 },
   ]},
+  // Seavi Labs: harga per video dalam TOKEN (cr = token, 1 token = Rp 2.000).
+  seavi: { name: 'Seavi Labs', models: [
+    { key: 'sv:motion_control_v3_server19_15dtk', label: 'Motion Control V3 · S19 15 dtk', cr: 1 },
+    { key: 'sv:motion_control_v3_server10_30dtk', label: 'Motion Control V3 · S10 30 dtk', cr: 1 },
+  ]},
 }
 
-// Halaman Motion Control sengaja cuma menawarkan dua provider yang paling stabil,
-// biar member tidak bingung memilih. Provider lain tetap dipakai halaman lain.
-const MOTION_PROVIDER_IDS = ['alriz', 'runninghub'] as const
+// Halaman Motion Control menawarkan tiga provider yang paling stabil, biar
+// member tidak bingung memilih. Provider lain tetap dipakai halaman lain.
+const MOTION_PROVIDER_IDS = ['alriz', 'runninghub', 'seavi'] as const
 type MotionProviderId = (typeof MOTION_PROVIDER_IDS)[number]
 
 const MOTION_PROVIDER_INFO: Record<MotionProviderId, { name: string; tagline: string; note: string; recommended?: boolean }> = {
@@ -120,12 +129,18 @@ const MOTION_PROVIDER_INFO: Record<MotionProviderId, { name: string; tagline: st
     tagline: 'Bayar pakai kredit RunningHub',
     note: 'Perlu API key RunningHub yang sudah disimpan di halaman Providers.',
   },
+  seavi: {
+    name: 'Seavi Labs',
+    tagline: 'Bayar pakai token Seavi',
+    note: 'Tanpa API key — top up token di halaman Top Up Seavi (Rp 4.000 = 2 token).',
+  },
 }
 
 // Default model tiap provider: pilih yang paling murah, bukan yang pertama di daftar.
 const MOTION_RECOMMENDED_MODEL: Record<MotionProviderId, string> = {
   alriz: 'al:mc-kling-2.6-std',
   runninghub: 'rh:std:2.6',
+  seavi: 'sv:motion_control_v3_server19_15dtk',
 }
 
 // Label awam untuk dropdown model — nama workflow aslinya terlalu teknis.
@@ -142,11 +157,17 @@ const SIMPLE_MODEL_LABELS: Record<string, string> = {
   'rh:std:2.6': 'Kling 2.6 Standar',
   'rh:wf:2.9': 'Kling 2.9 Workflow',
   'rh:wf:v3.0': 'Kling 3.0 Standar',
+  'sv:motion_control_v3_server19_15dtk': 'Motion Control V3 · 15 detik',
+  'sv:motion_control_v3_server10_30dtk': 'Motion Control V3 · 30 detik',
 }
 
 function motionModelLabel(providerId: MotionProviderId, model: { key: string; label: string; cr: number }): string {
   const name = SIMPLE_MODEL_LABELS[model.key] || model.label
-  const price = providerId === 'alriz' ? `Rp ${model.cr.toLocaleString('id-ID')}` : `${model.cr} kredit`
+  const price = providerId === 'alriz'
+    ? `Rp ${model.cr.toLocaleString('id-ID')}`
+    : providerId === 'seavi'
+    ? `${model.cr} token`
+    : `${model.cr} kredit`
   const tag = model.key === MOTION_RECOMMENDED_MODEL[providerId] ? ' · disarankan' : ''
   return `${name} · ${price}${tag}`
 }
@@ -218,8 +239,24 @@ export default function MotionPage() {
   const generatingRef = useRef(false)
   const successRef = useRef(false)
   const [confirmDialog, setConfirmDialog] = useState<{ title: string; message: string; onConfirm: () => void; tone?: 'default' | 'danger' } | null>(null)
+  const authToken = useAuthStore((s) => s.token)
+  const authRole = useAuthStore((s) => s.user?.role)
+  const [seaviTokens, setSeaviTokens] = useState<number | null>(null)
 
   const { fetchMaintenance } = useProviderManager()
+
+  useEffect(() => {
+    if (provider !== 'seavi') {
+      setSeaviTokens(null)
+      return
+    }
+    if (!authToken) return
+    let alive = true
+    fetchSeaviWallet(authToken)
+      .then((w) => { if (alive && w) setSeaviTokens(w.tokens) })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [provider, authToken])
 
   useEffect(() => {
     fetchMaintenance()
@@ -634,6 +671,132 @@ export default function MotionPage() {
     }
 
     try {
+      if (provider === 'seavi') {
+        const spec = getSeaviSpec(modelKey.replace(/^sv:/, ''))
+        if (!spec) throw new Error('Model Seavi tidak dikenal')
+
+        // Upload semua slot sekali — rotasi kunci tidak perlu mengulang upload.
+        const prepared: Array<{ slot: Slot; n: number; imageUrl: string; videoUrl: string }> = []
+        let uploadNo = 0
+        for (const slot of filledSlots) {
+          uploadNo++
+          updateSlotStatus(slot.id, 'uploading img...')
+          const normImg = await normalizeImage(slot.image!, (msg) => addLog(`#${uploadNo} ${msg}`))
+          const imageUrl = await uploadToCatbox(normImg, 'image', (msg, pct) => {
+            updateSlotStatus(slot.id, 'uploading img...', pct != null ? `${msg} ${pct}%` : msg)
+            addLog(`#${uploadNo} ${msg}${pct != null ? ` ${pct}%` : ''}`)
+          })
+          addLog(`#${uploadNo} ✅ Gambar ✓ ${imageUrl.slice(0, 60)}...`, 'success')
+          updateSlotStatus(slot.id, 'uploading vid...')
+          const compVid = await compressVideo(slot.video!, 4, (msg, pct) => {
+            updateSlotStatus(slot.id, 'uploading vid...', pct != null ? `${msg} ${pct}%` : msg)
+            addLog(`#${uploadNo} ${msg}${pct != null ? ` ${pct}%` : ''}`)
+          })
+          const videoUrl = await uploadToCatbox(compVid, 'video', (msg, pct) => {
+            updateSlotStatus(slot.id, 'uploading vid...', pct != null ? `${msg} ${pct}%` : msg)
+            addLog(`#${uploadNo} ${msg}${pct != null ? ` ${pct}%` : ''}`)
+          })
+          addLog(`#${uploadNo} ✅ Video ✓ ${videoUrl.slice(0, 60)}...`, 'success')
+          prepared.push({ slot, n: uploadNo, imageUrl, videoUrl })
+        }
+
+        // Validasi kontrak model sebelum token dipotong.
+        buildSeaviPayload(spec, {
+          imageUrls: [prepared[0].imageUrl],
+          videoUrls: [prepared[0].videoUrl],
+          prompt: finalPrompt,
+        })
+
+        // Generate per slot; tiap slot dipotong & dikembalikan sendiri supaya
+        // slot yang gagal tidak menghabiskan token slot lain.
+        const rotation = await withTokenRotation<number>(
+          'seavi',
+          async (apiKey, keyInfo) => {
+            addLog(`🔑 Trying key: ${keyInfo.name || keyInfo.id}`)
+            let okCount = 0
+            for (const item of prepared) {
+              const { slot, n, imageUrl, videoUrl } = item
+              let batchId: string | null = null
+              let chargeId: number | null = null
+              if (authRole !== 'admin' && authToken) {
+                const charge = await chargeSeaviWallet(authToken, spec.id, 1)
+                batchId = charge.batchId
+                chargeId = charge.usageId ?? null
+                setSeaviTokens(charge.tokens)
+                addLog(`💰 #${n} ${charge.deducted} token dipotong · sisa ${charge.tokens}`, 'info')
+              }
+              try {
+                updateSlotStatus(slot.id, 'processing', 'Mengirim ke Seavi...')
+                const url = await generateWithSeavi({
+                  apiKey,
+                  chargeId,
+                  spec,
+                  imageUrls: [imageUrl],
+                  videoUrls: [videoUrl],
+                  prompt: finalPrompt,
+                  onLog: (msg, level) => addLog(`#${n} ${msg}`, level as any),
+                  onStatus: (text, pct) => updateSlotStatus(slot.id, 'processing', `${text} ${Math.round(pct || 0)}%`),
+                })
+                updateSlotStatus(slot.id, 'done')
+                addLog(`#${n} ✅ Selesai ✓ ${url.slice(0, 60)}...`, 'success')
+                okCount++
+                const rid = `seavi-mc-${Date.now()}-${n}`
+                addResult({
+                  id: rid,
+                  url,
+                  prompt: finalPrompt || '(motion control)',
+                  date: new Date().toISOString(),
+                  page: 'motion',
+                  provider: 'seavi',
+                  model: spec.label,
+                })
+                persistResultToR2(rid, url)
+                setResults((prev) => [{ id: rid, url, prompt: finalPrompt || '(motion control)', date: new Date().toISOString() }, ...prev])
+                setProgress(Math.round((okCount / prepared.length) * 100))
+              } catch (slotErr: any) {
+                if (batchId && authToken) {
+                  const refunded = await refundSeaviWallet(authToken, { batch_id: batchId })
+                  if (refunded != null) {
+                    setSeaviTokens(refunded)
+                    addLog(`💸 #${n} token dikembalikan ✓ sisa ${refunded}`, 'warn')
+                  }
+                }
+                updateSlotStatus(slot.id, 'error', slotErr?.message || 'Gagal')
+                addLog(`#${n} ❌ ${slotErr?.message || 'Gagal'}`, 'error')
+                // Kunci ditolak → hentikan putaran ini agar kunci berikutnya dicoba.
+                if (detectTokenError('seavi', slotErr)) throw slotErr
+              }
+            }
+            return okCount
+          },
+          {
+            allowServerKey: true,
+            onKeySwitch: (from, to, attempt) => {
+              addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn')
+            },
+            onError: (err, key) => {
+              if (detectTokenError('seavi', err)) {
+                addLog(`Key "${key.name}" is invalid: ${err.message}`, 'warn')
+              }
+            },
+          },
+        )
+
+        const okCount = rotation.ok ? (rotation.result ?? 0) : 0
+        if (okCount > 0) successRef.current = true
+        if (rotation.ok) {
+          addLog(okCount > 0 ? `Selesai — ${okCount} video` : 'Tidak ada video yang berhasil', okCount > 0 ? 'success' : 'error')
+          if (logId) {
+            if (okCount > 0) logGenerationComplete(logId, { status: 'completed', duration_ms: Date.now() - startTime })
+            else logGenerationFailed(logId, 'Tidak ada video yang berhasil', Date.now() - startTime)
+          }
+        } else {
+          addLog(`Generation failed: ${rotation.error}`, 'error')
+          if (logId) logGenerationFailed(logId, rotation.error || 'Unknown error', Date.now() - startTime)
+        }
+        return
+      }
+
       // Failover ke G5 AI Studio untuk slot yang gagal — dipakai HANYA setelah semua token
       // Roboneo dicoba dan tetap busy (rotasi token sudah jalan duluan di withTokenRotation).
       const runG5FailoverForSlot = async (slot: Slot, slotNum: number): Promise<boolean> => {
@@ -2274,6 +2437,8 @@ export default function MotionPage() {
                     const minPrice = Math.min(...PROVIDERS[id].models.map((m) => m.cr))
                     const priceLine = id === 'alriz'
                       ? `Mulai Rp ${minPrice.toLocaleString('id-ID')} / video`
+                      : id === 'seavi'
+                      ? `Mulai ${minPrice} token / video`
                       : `Mulai ${minPrice} kredit / video`
                     return (
                       <button
@@ -2291,7 +2456,11 @@ export default function MotionPage() {
                           <span className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg ${
                             isActive ? 'bg-primary/20 text-primary' : 'bg-card text-muted-foreground'
                           }`}>
-                            {id === 'alriz' ? <Wallet className="h-4 w-4" /> : <Zap className="h-4 w-4" />}
+                            {id === 'alriz'
+                              ? <Wallet className="h-4 w-4" />
+                              : id === 'seavi'
+                              ? <Coins className="h-4 w-4" />
+                              : <Zap className="h-4 w-4" />}
                           </span>
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-1.5">
@@ -2329,17 +2498,19 @@ export default function MotionPage() {
 
               <MaintenanceBanner providerId={provider} />
 
-              <div>
-                <Label>Character Orientation</Label>
-                <Select
-                  value={orientation}
-                  onChange={(e) => setOrientation(e.target.value as 'video' | 'image')}
-                  options={[
-                    { value: 'video', label: 'Video (durasi mengikuti referensi)' },
-                    { value: 'image', label: 'Image (output max 5–10 detik)' },
-                  ]}
-                />
-              </div>
+              {provider !== 'seavi' && (
+                <div>
+                  <Label>Character Orientation</Label>
+                  <Select
+                    value={orientation}
+                    onChange={(e) => setOrientation(e.target.value as 'video' | 'image')}
+                    options={[
+                      { value: 'video', label: 'Video (durasi mengikuti referensi)' },
+                      { value: 'image', label: 'Image (output max 5–10 detik)' },
+                    ]}
+                  />
+                </div>
+              )}
 
               {modelKey !== 'rh:wf:kontrol-gerakan' && (
                 <>
@@ -2353,18 +2524,21 @@ export default function MotionPage() {
                     />
                   </div>
 
-                  <div>
-                    <Label>Negative Prompt (opsional)</Label>
-                    <Textarea
-                      value={negativePrompt}
-                      onChange={(e) => setNegativePrompt(e.target.value)}
-                      placeholder="blurry, low quality, distorted…"
-                      rows={2}
-                    />
-                  </div>
+                  {provider !== 'seavi' && (
+                    <div>
+                      <Label>Negative Prompt (opsional)</Label>
+                      <Textarea
+                        value={negativePrompt}
+                        onChange={(e) => setNegativePrompt(e.target.value)}
+                        placeholder="blurry, low quality, distorted…"
+                        rows={2}
+                      />
+                    </div>
+                  )}
                 </>
               )}
 
+              {provider !== 'seavi' && (
               <label className="flex items-center gap-2.5 cursor-pointer select-none">
                 <input
                   type="checkbox"
@@ -2379,6 +2553,7 @@ export default function MotionPage() {
                 </span>
                 <span className="text-sm text-foreground/90">Keep Original Sound</span>
               </label>
+              )}
 
               {/* MC Ultra Fast HD specific options */}
               {modelKey === 'rh:wf:ultra-hd' && (
@@ -2548,12 +2723,31 @@ export default function MotionPage() {
                 <span>
                   {provider === 'alriz' ? (
                     <>Total: <span className="text-foreground font-mono font-semibold">Rp {totalCredits.toLocaleString('id-ID')}</span> ({filledSlots} × Rp {currentModel.cr.toLocaleString('id-ID')})</>
+                  ) : provider === 'seavi' ? (
+                    <>Total: <span className="text-foreground font-mono font-semibold">{totalCredits.toLocaleString()}</span> token ({filledSlots} × {currentModel.cr} token)</>
                   ) : (
                     <>Total: <span className="text-foreground font-mono font-semibold">{totalCredits.toLocaleString()}</span> credits ({filledSlots} × {currentModel.cr})</>
                   )}
                 </span>
-                <BalanceBadge provider={provider} required={totalCredits} />
+                {provider === 'seavi' && authRole !== 'admin' ? (
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[11px] ${
+                      (seaviTokens ?? 0) >= totalCredits
+                        ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
+                        : 'border-red-500/40 bg-red-500/10 text-red-400'
+                    }`}
+                  >
+                    <Coins className="h-3 w-3" /> {seaviTokens ?? '…'} token
+                  </span>
+                ) : provider !== 'seavi' ? (
+                  <BalanceBadge provider={provider} required={totalCredits} />
+                ) : null}
               </div>
+              {provider === 'seavi' && authRole !== 'admin' && authToken && (seaviTokens ?? 0) < totalCredits && (
+                <Link to="/topup/seavi" className="text-center text-[11px] font-medium text-primary hover:underline">
+                  Top Up Token Seavi (Rp 4.000 = 2 token) →
+                </Link>
+              )}
             </div>
           </Section>
 

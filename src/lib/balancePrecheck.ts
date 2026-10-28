@@ -40,6 +40,8 @@ export async function precheckProviderBalance(
       return precheckNexabotBalance(minCredits, { serverKey: opts.serverKey })
     case 'alriz':
       return precheckAlrizBalance(minCredits, { authToken: opts.authToken, isAdmin: opts.isAdmin })
+    case 'seavi':
+      return precheckSeaviBalance(minCredits, { authToken: opts.authToken, isAdmin: opts.isAdmin })
     case 'createpulse': {
       if (opts.isCpAdmin) return { ok: true }
       const balance = opts.cpBalance
@@ -312,6 +314,51 @@ export async function precheckAlrizBalance(
       ? `Saldo key Alriz tidak cukup: butuh Rp ${minCredits.toLocaleString('id-ID')}, saldo tertinggi Rp ${bestBalance.toLocaleString('id-ID')}. Login untuk pakai saldo app, atau top up key (alz_...) di console Alriz.`
       : 'Saldo Alriz tidak bisa dicek. Perbarui API key di Providers.',
   }
+}
+
+/**
+ * Cek token Seavi.
+ *
+ * Urutan:
+ *  1. Admin  → lolos (generate admin tidak dipotong wallet).
+ *  2. Login  → wallet token internal (/api/seavi/balance).
+ *  3. Tamu / wallet tak terbaca → wajib punya kunci member di Providers.
+ */
+export async function precheckSeaviBalance(
+  minTokens: number,
+  opts: { authToken?: string; isAdmin?: boolean } = {},
+): Promise<BalancePrecheckResult> {
+  if (opts.isAdmin) return { ok: true }
+
+  if (opts.authToken) {
+    try {
+      const res = await fetch('/api/seavi/balance', {
+        headers: { Authorization: `Bearer ${opts.authToken}` },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        const bal = Number(data.tokens ?? data.balance) || 0
+        if (bal >= minTokens) return { ok: true, balance: bal }
+        return {
+          ok: false,
+          balance: bal,
+          error: `Token Seavi tidak cukup: butuh ${minTokens} token, saldo ${bal} token. Top up di halaman Top Up Seavi (Rp 4.000 = 2 token).`,
+        }
+      }
+    } catch {
+      // jaringan bermasalah → lanjut cek kunci member
+    }
+  }
+
+  const store = useProviderManager.getState()
+  const keys = (store.keys.seavi || []).filter((k) => k.status !== 'invalid' && k.status !== 'expired')
+  if (keys.length === 0) {
+    return {
+      ok: false,
+      error: 'Belum ada token Seavi atau kunci member. Login lalu top up token, atau tambahkan kunci Seavi di Providers.',
+    }
+  }
+  return { ok: true }
 }
 
 /**
