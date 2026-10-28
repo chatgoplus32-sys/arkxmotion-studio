@@ -1685,6 +1685,7 @@ export default function MotionPage() {
               ? `alriz-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
               : null
             let alrizCharged = 0
+            let alrizUsageId: number | null = null
             try {
               const alrizModel = modelKey.replace(/^al:/, '')
               addLog(`#${slotNum} Model: ${currentModel.label} (Rp ${currentModel.cr.toLocaleString('id-ID')}) [api: ${alrizModel}]`)
@@ -1693,6 +1694,7 @@ export default function MotionPage() {
                 addLog(`#${slotNum} 💰 Memotong saldo Alriz...`)
                 const charge = await chargeAlrizWallet(alrizAuthToken, alrizModel, 1, alrizBatchId)
                 alrizCharged = charge.deducted
+                alrizUsageId = charge.usageId ?? null
                 addLog(`#${slotNum} ✅ Terpotong Rp ${charge.deducted.toLocaleString('id-ID')} ✓ sisa Rp ${charge.balance.toLocaleString('id-ID')}`, 'success')
               } else if (alrizIsAdmin) {
                 addLog(`#${slotNum} ⚡ Admin mode — skip saldo wallet`, 'info')
@@ -1738,6 +1740,7 @@ export default function MotionPage() {
               addLog(`#${slotNum} Submit ke Alriz (${alrizModel})...`)
               const resultUrl = await generateWithAlriz({
                 apiKey: token,
+                chargeId: alrizUsageId,
                 model: alrizModel,
                 imageUrl,
                 videoUrl,
@@ -2016,6 +2019,9 @@ export default function MotionPage() {
       },
       {
         requiredCredits: totalCredits,
+        // Alriz tanpa API key sendiri: relay memasang kunci server untuk
+        // member yang sudah top up. Provider lain tidak memakai opsi ini.
+        allowServerKey: provider === 'alriz',
         onKeySwitch: (from, to, attempt) => {
           addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn')
         },

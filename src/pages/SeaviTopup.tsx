@@ -27,6 +27,8 @@ export default function SeaviTopupPage() {
   const [balance, setBalance] = useState(0)
   const [packages, setPackages] = useState<SeaviPackage[]>(SEAVI_PACKAGE_FALLBACKS)
   const [tokenPrice, setTokenPrice] = useState(2000)
+  // Kelayakan kunci server dari server (top up / admin) — bukan tebakan browser.
+  const [serverKey, setServerKey] = useState<{ available: boolean; reason?: string } | null>(null)
   const [selectedSlug, setSelectedSlug] = useState<string>(SEAVI_PACKAGE_FALLBACKS[0].slug)
   const [proofNote, setProofNote] = useState('')
   const [payMethod, setPayMethod] = useState<'dana' | 'qris'>('dana')
@@ -48,6 +50,7 @@ export default function SeaviTopupPage() {
         setBalance(w.tokens)
         setPackages(w.packages.length > 0 ? w.packages : SEAVI_PACKAGE_FALLBACKS)
         setTokenPrice(w.token_price || 2000)
+        setServerKey(w.server_key ?? null)
         if (!w.packages.some((p) => p.slug === selectedSlug) && w.packages.length > 0) {
           setSelectedSlug(w.packages[0].slug)
         }
@@ -155,6 +158,18 @@ export default function SeaviTopupPage() {
         <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
           <div>Model 1 token: <b className="text-foreground">Kling 3, Kling 2.1 Pro, Grok, Seedance 2.5, Motion Control, Upscale, Image</b></div>
           <div>Model 2 token: <b className="text-foreground">Wan 3.0, Gemini Omni</b></div>
+        </div>
+        <div className="mt-3 text-[11px] leading-relaxed">
+          {serverKey?.available ? (
+            <span className="text-emerald-500">
+              ✓ Setelah token masuk, generate langsung jalan tanpa API key — relay memakai kunci server Seavi dan
+              token ini yang dipotong.
+            </span>
+          ) : (
+            <span className="text-muted-foreground">
+              {serverKey?.reason || 'Kunci server Seavi belum diatur admin — generate membutuhkan API key Seavi sendiri di halaman Providers.'}
+            </span>
+          )}
         </div>
       </div>
 

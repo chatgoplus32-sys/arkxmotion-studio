@@ -1,6 +1,9 @@
 // Seavi Labs REST API client — api.seavilabs.site via relay /api/public/seavi
 // Kontrak terverifikasi dari docs resmi + probe nyata (submit 202 → poll progress → result.url).
 // Model aktif diverifikasi via GET /models (16 model, bukan 70 di docs).
+// Tanpa kunci member, relay bisa memasang kunci server untuk member yang sudah
+// top up — lihat providerServerKey.ts.
+import { isServerKey, relayAuthHeaders } from './providerServerKey.js'
 const SEAVI_PROXY = '/api/public/seavi'
 
 export interface SeaviModelSpec {
@@ -291,14 +294,14 @@ export interface SeaviLogOpts {
 export async function fetchSeaviBalance(apiKey: string): Promise<{ ok: boolean; balance?: number; used?: number; error?: string }> {
   try {
     const res = await fetch(`${SEAVI_PROXY}?path=balance`, {
-      headers: { Authorization: `Bearer ${apiKey}` },
+      headers: relayAuthHeaders(apiKey),
     })
     const text = await res.text()
     let data: any
     try { data = JSON.parse(text) } catch { data = null }
     if (res.status === 401 || res.status === 403) {
       const msg = data?.error?.message || data?.message || `HTTP ${res.status}`
-      return { ok: false, error: `Kunci tidak valid: ${msg}` }
+      return { ok: false, error: isServerKey(apiKey) ? String(msg) : `Kunci tidak valid: ${msg}` }
     }
     if (!res.ok || !data) {
       return { ok: false, error: data?.error?.message || `HTTP ${res.status}` }
@@ -313,13 +316,14 @@ export async function fetchSeaviBalance(apiKey: string): Promise<{ ok: boolean; 
 export async function generateSeaviImage(
   apiKey: string,
   payload: { model: string; input: Record<string, unknown>; params: Record<string, unknown> },
+  chargeId?: number | null,
 ): Promise<string> {
-  const id = await submitSeaviGeneration(apiKey, payload)
+  const id = await submitSeaviGeneration(apiKey, payload, chargeId)
   const maxPolls = 120 // 4s x 120 = 8 menit (image jauh lebih cepat dari video)
   for (let i = 0; i < maxPolls; i++) {
     if (i > 0) await new Promise((r) => setTimeout(r, 4000))
     const res = await fetch(`${SEAVI_PROXY}?path=generate/${encodeURIComponent(id)}/status`, {
-      headers: { Authorization: `Bearer ${apiKey}` },
+      headers: relayAuthHeaders(apiKey),
     })
     if (!res.ok) continue
     const j = await res.json().catch(() => null)
@@ -347,10 +351,11 @@ export async function generateSeaviImage(
 export async function submitSeaviGeneration(
   apiKey: string,
   payload: { model: string; input: Record<string, unknown>; params: Record<string, unknown> },
+  chargeId?: number | null,
 ): Promise<string> {
   const res = await fetch(`${SEAVI_PROXY}?path=generate`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    headers: { 'Content-Type': 'application/json', ...relayAuthHeaders(apiKey, chargeId) },
     body: JSON.stringify(payload),
   })
   const text = await res.text()
@@ -381,7 +386,7 @@ export async function pollSeaviStatus(apiKey: string, id: string, opts: SeaviLog
   for (let i = 0; i < maxPolls; i++) {
     if (i > 0) await new Promise((r) => setTimeout(r, 5000))
     const res = await fetch(`${SEAVI_PROXY}?path=generate/${encodeURIComponent(id)}/status`, {
-      headers: { Authorization: `Bearer ${apiKey}` },
+      headers: relayAuthHeaders(apiKey),
     })
     if (!res.ok) {
       onLog?.(`Poll #${i + 1}: HTTP ${res.status} (dicoba ulang...)`, 'warn')
@@ -429,6 +434,8 @@ export interface SeaviGenerateOptions extends SeaviLogOpts {
   prompt?: string
   aspectRatio?: string
   duration?: number
+  /** usage_id dari /api/seavi/deduct — tiket relay untuk jalur kunci server. */
+  chargeId?: number | null
 }
 
 /** End-to-end: validasi → submit → poll → URL hasil. */
@@ -444,7 +451,7 @@ export async function generateWithSeavi(opts: SeaviGenerateOptions): Promise<str
   })
   onLog?.(`[2/3] 🚀 Submit ${spec.label} (${spec.tokens} token)...`, 'info')
   onStatus?.(`Submit ${spec.label}...`, 5)
-  const id = await submitSeaviGeneration(apiKey, payload)
+  const id = await submitSeaviGeneration(apiKey, payload, opts.chargeId)
   onLog?.(`[2/3] ✅ Job dibuat ✓ id=${id}`, 'success')
   onLog?.(`[3/3] ⏳ Polling hasil...`, 'info')
   const { url } = await pollSeaviStatus(apiKey, id, { onLog, onStatus })

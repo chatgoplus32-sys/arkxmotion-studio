@@ -38,6 +38,11 @@ export interface SeaviWallet {
   min_topup: number
   token_price: number
   packages: SeaviPackage[]
+  /**
+   * Boleh tidaknya memakai kunci server Seavi tanpa API key sendiri.
+   * Dihitung server (top up / admin); UI hanya menampilkan apa adanya.
+   */
+  server_key?: { available: boolean; reason?: string }
 }
 
 function authHeaders(token: string) {
@@ -60,6 +65,9 @@ export async function fetchSeaviWallet(token: string): Promise<SeaviWallet | nul
       min_topup: data.min_topup ?? 4000,
       token_price: data.token_price ?? 2000,
       packages,
+      server_key: data.server_key && typeof data.server_key === 'object'
+        ? { available: !!data.server_key.available, reason: data.server_key.reason }
+        : undefined,
     }
   } catch {
     return null
@@ -73,6 +81,8 @@ export interface SeaviCharge {
   /** Token yang dipotong generate ini. */
   deducted: number
   batchId: string
+  /** usage_id server — tiket yang dikirim ke relay pada jalur kunci server. */
+  usageId?: number
 }
 
 /**
@@ -96,7 +106,13 @@ export async function chargeSeaviWallet(
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(data.error || 'Gagal memotong token Seavi')
   const balance = data.tokens ?? data.balance ?? 0
-  return { balance, tokens: balance, deducted: data.deducted ?? 0, batchId: batch }
+  return {
+    balance,
+    tokens: balance,
+    deducted: data.deducted ?? 0,
+    batchId: batch,
+    usageId: typeof data.usage_id === 'number' && data.usage_id > 0 ? data.usage_id : undefined,
+  }
 }
 
 /** Kembalikan token saat generate gagal. Return sisa token baru, atau null kalau gagal. */

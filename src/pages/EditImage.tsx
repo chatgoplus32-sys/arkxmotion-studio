@@ -456,6 +456,7 @@ export default function EditImagePage() {
     // Tamu tanpa login tetap bisa memakai key sendiri tanpa potongan.
     const seaviIsAdmin = user?.role === 'admin'
     let seaviBatchId = ''
+    let seaviUsageId: number | null = null
     if (!seaviIsAdmin && authToken) {
       if ((seaviTokens ?? 0) < seaviSpec.tokens) {
         throw new Error(`Token Seavi tidak cukup (${seaviTokens ?? 0} token, butuh ${seaviSpec.tokens} token). Top up di halaman Top Up Seavi (Rp 4.000 = 2 token).`)
@@ -463,6 +464,7 @@ export default function EditImagePage() {
       addLog(`[1/3] 💰 Memotong ${seaviSpec.tokens} token Seavi...`, 'info')
       const charge = await chargeSeaviWallet(authToken, seaviSpec.id, 1)
       seaviBatchId = charge.batchId
+      seaviUsageId = charge.usageId ?? null
       setSeaviTokens(charge.tokens)
       addLog(`[1/3] ✅ Token terpotong ✓ sisa ${charge.tokens} token`, 'success')
     }
@@ -477,9 +479,11 @@ export default function EditImagePage() {
           addLog(`   💰 Saldo: ${bal.balance} token`, 'debug')
         }
         addLog(`[2/3] 🚀 Submit ${seaviSpec.label}...`, 'info')
-        return await generateSeaviImage(apiKey, payload)
+        return await generateSeaviImage(apiKey, payload, seaviUsageId)
       },
       {
+        // Tanpa API key sendiri: member yang sudah top up memakai kunci server.
+        allowServerKey: true,
         onKeySwitch: (from, to, attempt) => {
           addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn')
         },

@@ -27,6 +27,14 @@ import {
   parseCookieInput,
 } from '../lib/nexabotMasterCookie.js'
 import {
+  PROVIDER_MASTER_SETTING_KEYS,
+  checkMasterKey as checkProviderMasterKey,
+  masterKeyStatus as providerMasterKeyStatus,
+  providerLabel as providerMasterLabel,
+  providerSettingKey,
+  type ServerKeyProvider,
+} from '../lib/providerMasterKey.js'
+import {
   NEXABOT_PRICING_DEFAULTS,
   NEXABOT_MIN_TOPUP,
   describeNexabotPricing,
@@ -475,6 +483,71 @@ router.post('/nexabot/master-cookie/check', authenticateToken, requireAdmin, asy
     res.status(500).json({ error: 'Internal server error' })
   }
 })
+
+// ─── Kunci induk Alriz Motion & Seavi Labs ────────────────────────
+//
+// Pola yang sama dengan NexaBot: relay memasang kunci ini untuk member yang
+// sudah top up, jadi nilainya tidak boleh ikut dalam respons mana pun —
+// termasuk respons admin. Yang boleh dibaca browser hanya statusnya.
+
+for (const provider of ['alriz', 'seavi'] as ServerKeyProvider[]) {
+  const label = providerMasterLabel(provider)
+  const settingKey = providerSettingKey(provider)
+
+  router.get(`/${provider}/master-key`, authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
+    try {
+      res.json({ ok: true, ...providerMasterKeyStatus(provider) })
+    } catch (error) {
+      console.error(`[admin-${provider}-master-key] get error:`, error)
+      res.status(500).json({ error: 'Internal server error' })
+    }
+  })
+
+  router.put(`/${provider}/master-key`, authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
+    try {
+      const apiKey = typeof req.body?.apiKey === 'string' ? req.body.apiKey.trim() : ''
+      if (!apiKey) return res.status(400).json({ error: `API key ${label} kosong` })
+      // Kunci diketik manusia; spasi/newline dari copy-paste sudah dibuang di atas.
+      db.prepare(
+        `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
+      ).run(settingKey, apiKey)
+
+      console.log(`[admin-${provider}-master-key] disimpan`)
+      res.json({ ok: true, message: `Kunci server ${label} disimpan`, ...providerMasterKeyStatus(provider) })
+    } catch (error) {
+      console.error(`[admin-${provider}-master-key] put error:`, error)
+      res.status(500).json({ error: 'Internal server error' })
+    }
+  })
+
+  router.delete(`/${provider}/master-key`, authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
+    try {
+      db.prepare('DELETE FROM app_settings WHERE key = ?').run(settingKey)
+      const status = providerMasterKeyStatus(provider)
+      res.json({
+        ok: true,
+        message: status.configured
+          ? `Kunci dari dashboard dihapus — server memakai kunci dari .env`
+          : `Kunci server ${label} dihapus`,
+        ...status,
+      })
+    } catch (error) {
+      console.error(`[admin-${provider}-master-key] delete error:`, error)
+      res.status(500).json({ error: 'Internal server error' })
+    }
+  })
+
+  router.post(`/${provider}/master-key/check`, authenticateToken, requireAdmin, async (_req: AuthRequest, res: Response) => {
+    try {
+      const hasil = await checkProviderMasterKey(provider)
+      res.json({ ok: true, check: hasil })
+    } catch (error: any) {
+      console.error(`[admin-${provider}-master-key] check error:`, error?.message || error)
+      res.status(500).json({ error: 'Internal server error' })
+    }
+  })
+}
 
 // ─── Konfirmasi pembayaran member ─────────────────────────────────
 
@@ -1061,9 +1134,11 @@ router.get('/settings', authenticateToken, requireAdmin, (_req: AuthRequest, res
     const rows = db.prepare('SELECT key, value, updated_at FROM app_settings ORDER BY key').all() as any[]
     const settings: Record<string, string> = {}
     rows.forEach(r => {
-      // Kredensial induk NexaBot punya endpoint sendiri yang hanya mengembalikan
-      // status. Jangan pernah bocorkan nilainya lewat daftar pengaturan umum.
+      // Kredensial induk provider punya endpoint sendiri yang hanya
+      // mengembalikan status. Jangan pernah bocorkan nilainya lewat daftar
+      // pengaturan umum.
       if (r.key === MASTER_KEY_SETTING || r.key === MASTER_COOKIE_SETTING) return
+      if (PROVIDER_MASTER_SETTING_KEYS.includes(r.key)) return
       settings[r.key] = r.value
     })
 
@@ -1091,9 +1166,11 @@ router.put('/settings', authenticateToken, requireAdmin, (req: AuthRequest, res:
          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`
       )
       for (const [key, value] of Object.entries(settings)) {
-        // Hanya endpoint /nexabot/master-* yang boleh menulis kredensial induk,
-        // supaya nilainya tidak bisa diselipkan lewat formulir pengaturan umum.
+        // Hanya endpoint /<provider>/master-key yang boleh menulis kredensial
+        // induk, supaya nilainya tidak bisa diselipkan lewat formulir
+        // pengaturan umum.
         if (key === MASTER_KEY_SETTING || key === MASTER_COOKIE_SETTING) continue
+        if (PROVIDER_MASTER_SETTING_KEYS.includes(key)) continue
         upsert.run(key, String(value))
       }
     }

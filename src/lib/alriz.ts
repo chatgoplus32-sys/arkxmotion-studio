@@ -5,6 +5,9 @@
 //
 // Klien memanggil relay dengan `Authorization: Bearer <key>` (konvensi sama
 // seperti relay Seavi); relay meneruskannya sebagai `X-API-Key` ke upstream.
+// Tanpa kunci member, relay bisa memasang kunci server untuk member yang sudah
+// top up — lihat providerServerKey.ts.
+import { isServerKey, relayAuthHeaders } from './providerServerKey.js'
 const ALRIZ_PROXY = '/api/public/alriz'
 
 export interface AlrizModelSpec {
@@ -59,12 +62,12 @@ export interface AlrizAccount {
 export async function fetchAlrizAccount(apiKey: string): Promise<{ ok: boolean; account?: AlrizAccount; error?: string }> {
   try {
     const res = await fetch(`${ALRIZ_PROXY}?path=account`, {
-      headers: { Authorization: `Bearer ${apiKey}` },
+      headers: relayAuthHeaders(apiKey),
     })
     const data = await res.json().catch(() => null)
     if (res.status === 401 || res.status === 403) {
-      const msg = data?.error?.message || data?.message || `HTTP ${res.status}`
-      return { ok: false, error: `Kunci tidak valid: ${msg}` }
+      const msg = data?.error?.message || data?.message || data?.error || `HTTP ${res.status}`
+      return { ok: false, error: isServerKey(apiKey) ? String(msg) : `Kunci tidak valid: ${msg}` }
     }
     if (!res.ok || !data) {
       return { ok: false, error: data?.error?.message || data?.message || `HTTP ${res.status}` }
@@ -119,7 +122,11 @@ export interface AlrizSubmitParams {
 }
 
 /** POST /jobs → job_id (202). Minimal salah satu image_url / video_url. */
-export async function submitAlrizJob(apiKey: string, params: AlrizSubmitParams): Promise<string> {
+export async function submitAlrizJob(
+  apiKey: string,
+  params: AlrizSubmitParams,
+  chargeId?: number | null,
+): Promise<string> {
   const body: Record<string, unknown> = { model: params.model }
   if (params.imageUrl) body.image_url = params.imageUrl
   if (params.videoUrl) body.video_url = params.videoUrl
@@ -127,7 +134,7 @@ export async function submitAlrizJob(apiKey: string, params: AlrizSubmitParams):
   if (params.aspectRatio) body.aspect_ratio = params.aspectRatio
   const res = await fetch(`${ALRIZ_PROXY}?path=jobs`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    headers: { 'Content-Type': 'application/json', ...relayAuthHeaders(apiKey, chargeId) },
     body: JSON.stringify(body),
   })
   const data = await res.json().catch(() => null)
@@ -149,7 +156,7 @@ export interface AlrizJobStatus {
 /** GET /jobs/{id} → status + metadata (result_url terisi setelah DONE). */
 export async function fetchAlrizJob(apiKey: string, jobId: string): Promise<AlrizJobStatus> {
   const res = await fetch(`${ALRIZ_PROXY}?path=jobs/${encodeURIComponent(jobId)}`, {
-    headers: { Authorization: `Bearer ${apiKey}` },
+    headers: relayAuthHeaders(apiKey),
   })
   const data = await res.json().catch(() => null)
   if (!res.ok || !data) throwAlriz(res.status, data, 'Alriz cek status gagal')
@@ -209,7 +216,7 @@ export async function pollAlrizJob(apiKey: string, jobId: string, opts: AlrizLog
 /** GET /jobs/{id}/result → tautan video ( confirmed setelah DONE). */
 export async function fetchAlrizResult(apiKey: string, jobId: string): Promise<string | null> {
   const res = await fetch(`${ALRIZ_PROXY}?path=jobs/${encodeURIComponent(jobId)}/result`, {
-    headers: { Authorization: `Bearer ${apiKey}` },
+    headers: relayAuthHeaders(apiKey),
   })
   const data = await res.json().catch(() => null)
   if (!res.ok || !data) return null
@@ -223,6 +230,8 @@ export interface AlrizGenerateOptions extends AlrizLogOpts {
   videoUrl?: string
   prompt?: string
   aspectRatio?: string
+  /** usage_id dari /api/alriz/deduct — tiket relay untuk jalur kunci server. */
+  chargeId?: number | null
 }
 
 /** End-to-end: submit → poll → URL video hasil. */
@@ -237,7 +246,7 @@ export async function generateWithAlriz(opts: AlrizGenerateOptions): Promise<str
     videoUrl: opts.videoUrl,
     prompt: opts.prompt,
     aspectRatio: opts.aspectRatio,
-  })
+  }, opts.chargeId)
   onLog?.(`[2/3] ✅ Job dibuat ✓ id=${id}`, 'success')
   onLog?.(`[3/3] ⏳ Polling hasil...`, 'info')
   const url = await pollAlrizJob(apiKey, id, { onLog, onStatus })

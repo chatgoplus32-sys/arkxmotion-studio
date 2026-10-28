@@ -8,7 +8,7 @@ import { Swipeable } from '@/components/Swipeable'
 import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
 import { getSeaviSpec, generateWithSeavi, fetchSeaviBalance, buildSeaviPayload } from '@/lib/seavi'
 import { generateWithAlriz, getAlrizModel } from '@/lib/alriz'
-import { chargeAlrizWallet, refundAlrizWallet } from '@/lib/alrizWallet'
+import { fetchAlrizWallet, chargeAlrizWallet, refundAlrizWallet } from '@/lib/alrizWallet'
 import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { uploadToCatbox, submitRoboneoI2V, pollRoboneoI2V, checkRoboneoBalance, uploadImageForRoboneo,
@@ -130,8 +130,8 @@ const I2V_PROVIDER_HINTS: Partial<Record<ProviderId, { tagline: string; recommen
   createpulse: { tagline: 'Paling mudah — langsung bisa dipakai tanpa API key.', recommended: true },
   nexabot: { tagline: 'Bayar per video dengan saldo NexaBot atau Paket Unlimited.' },
   runninghub: { tagline: 'Workflow populer: Seedance dan MiniMax H3.' },
-  seavi: { tagline: 'Untuk motion control dan video referensi.' },
-  alriz: { tagline: 'Model Alriz Motion, dibayar dari saldo Alriz.' },
+  seavi: { tagline: 'Motion control & video referensi — tanpa API key kalau token Seavi sudah diisi.' },
+  alriz: { tagline: 'Model Alriz Motion — tanpa API key kalau saldo Alriz sudah diisi.' },
 }
 
 export default function ImageToVideoPage() {
@@ -171,12 +171,18 @@ export default function ImageToVideoPage() {
   // Wallet NexaBot user (harga/generate dari server) + status Paket Unlimited
   // (varian Mingguan/Bulanan/Tahunan — mana pun yang sedang aktif).
   const [nbWallet, setNbWallet] = useState<NexabotWallet | null>(null)
+  // Kelayakan kunci server Alriz/Seavi — dihitung relay dan dikirim lewat
+  // /balance, jadi kartu provider tidak menebak dari ada-tidaknya API key.
+  const [alrizServerReady, setAlrizServerReady] = useState(false)
+  const [seaviServerReady, setSeaviServerReady] = useState(false)
   // usage_id pemotongan yang masih bisa di-refund kalau generate gagal.
   const nbChargeRef = useRef<number | null>(null)
   // Token wallet Seavi user (1 token = Rp 2.000). Null = belum dimuat / tamu.
   const [seaviTokens, setSeaviTokens] = useState<number | null>(null)
   // batch_id pemotongan yang masih bisa di-refund kalau generate gagal.
   const seaviChargeRef = useRef<string | null>(null)
+  // usage_id potongan aktif — tiket relay saat member memakai kunci server.
+  const seaviChargeIdRef = useRef<number | null>(null)
 
   const [imgUrl, setImgUrl] = useState<string | null>(null)
   const [imgFile, setImgFile] = useState<File | null>(null)
@@ -525,6 +531,10 @@ export default function ImageToVideoPage() {
   // saldo > 0) bisa generate tanpa API key pribadi. Kelayakannya dihitung relay
   // dan dikirim lewat /balance, jadi UI tidak menebak.
   const nexabotServerReady = !!nbWallet?.server_key?.available
+  // Alriz/Seavi: relay memasang kunci operator untuk member yang sudah top up.
+  const serverKeyReady = (provider === 'nexabot' && nexabotServerReady)
+    || (provider === 'alriz' && alrizServerReady)
+    || (provider === 'seavi' && seaviServerReady)
 
   const isVeoI2V = provider === 'firefly' && model.includes('veo') && !!imgFile
 
@@ -594,6 +604,8 @@ export default function ImageToVideoPage() {
     // kunci server tersedia SEBELUM user memilihnya, supaya status "Siap
     // dipakai" tidak baru muncul setelah diklik.
     fetchNexabotWallet(authToken).then((w) => { if (w) setNbWallet(w) }).catch(() => {})
+    fetchAlrizWallet(authToken).then((w) => setAlrizServerReady(!!w?.server_key?.available)).catch(() => {})
+    fetchSeaviWallet(authToken).then((w) => setSeaviServerReady(!!w?.server_key?.available)).catch(() => {})
   }, [provider, authToken])
 
   useEffect(() => {
@@ -1364,6 +1376,7 @@ export default function ImageToVideoPage() {
           addLog(`[1/3] 💰 Memotong ${seaviCost} token Seavi...`, 'info', 'seavi')
           const charge = await chargeSeaviWallet(authToken, seaviSpec.id, seaviUnits)
           seaviChargeRef.current = charge.batchId
+          seaviChargeIdRef.current = charge.usageId ?? null
           setSeaviTokens(charge.tokens)
           addLog(`[1/3] ✅ Token terpotong ✓ sisa ${charge.tokens} token`, 'success', 'seavi')
         } else if (seaviIsAdmin) {
@@ -1386,6 +1399,7 @@ export default function ImageToVideoPage() {
                 setStatus((s) => ({ ...s, text: `[Seavi] Slot ${done}/${seaviPairs.length}...` }))
                 const url = await generateWithSeavi({
                   apiKey,
+                  chargeId: seaviChargeIdRef.current,
                   spec: seaviSpec,
                   imageUrls: [pair.imageUrl],
                   videoUrls: [pair.videoUrl],
@@ -1425,6 +1439,7 @@ export default function ImageToVideoPage() {
             }
             return await generateWithSeavi({
               apiKey,
+              chargeId: seaviChargeIdRef.current,
               spec: seaviSpec,
               imageUrls: seaviImageUrls,
               videoUrls: seaviVideoUrls,
@@ -1437,6 +1452,10 @@ export default function ImageToVideoPage() {
             })
           },
           {
+            // Tanpa API key sendiri: member yang sudah top up tetap bisa
+            // generate lewat kunci server (relay menolak dengan pesan jelas
+            // kalau syaratnya belum terpenuhi).
+            allowServerKey: true,
             onKeySwitch: (from, to, attempt) => {
               addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn', 'seavi')
             },
@@ -2902,14 +2921,24 @@ export default function ImageToVideoPage() {
                   },
                 })
 
-                setStatus((s) => ({ ...s, pct: 90, text: 'Mengunduh hasil...' }))
+                setStatus((s) => ({ ...s, pct: 90, text: 'Menyimpan hasil...' }))
+                addLog(`[3/3] 📤 Menyimpan hasil permanen ke CDN...`, 'info', 'nexabot')
+                const { saveNexabotResult } = await import('@/lib/nexabot')
+                const saved = await saveNexabotResult(submit.jobId, auth, `nexabot-${submit.jobId}.mp4`)
+                if (saved.ok && saved.url) {
+                  setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+                  addLog(`[3/3] 📤 Hasil tersimpan permanen ✓`, 'success', 'nexabot')
+                  addLog(`[3/3] ✅ Selesai ✓ ${saved.url.slice(0, 60)}...`, 'success', 'nexabot')
+                  return saved.url
+                }
+                addLog(`[3/3] ⚠️ Simpan di server gagal (${saved.error}) — fallback unduh + unggah...`, 'warn', 'nexabot')
+
                 const dl = await downloadNexabotResult(submit.jobId, auth)
                 if (!dl.ok || !dl.url) throw new Error(dl.error || 'NexaBot download gagal')
 
                 let finalUrl = dl.url
                 if (dl.url.startsWith('blob:')) {
                   try {
-                    addLog(`[3/3] 📤 Menyimpan hasil permanen ke CDN...`, 'info', 'nexabot')
                     const blobRes = await fetch(dl.url)
                     const blob = await blobRes.blob()
                     const { uploadBlobToCdn } = await import('@/lib/cdn')
@@ -3348,11 +3377,13 @@ export default function ImageToVideoPage() {
           ? `alriz-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
           : null
         let alrizCharged = 0
+        let alrizUsageId: number | null = null
         try {
           if (alrizBatchId) {
             addLog(`💰 Memotong saldo Alriz...`, 'info', 'alriz')
             const charge = await chargeAlrizWallet(alrizAuthToken, alrizModelId, 1, alrizBatchId)
             alrizCharged = charge.deducted
+            alrizUsageId = charge.usageId ?? null
             addLog(`✅ Terpotong Rp ${charge.deducted.toLocaleString('id-ID')} ✓ sisa Rp ${charge.balance.toLocaleString('id-ID')}`, 'success', 'alriz')
           } else if (alrizIsAdmin) {
             addLog(`⚡ Admin mode — skip saldo wallet`, 'info', 'alriz')
@@ -3367,6 +3398,7 @@ export default function ImageToVideoPage() {
               addLog(`🔑 Trying key: ${keyInfo.name || keyInfo.id}`, 'info', 'alriz')
               return await generateWithAlriz({
                 apiKey,
+                chargeId: alrizUsageId,
                 model: alrizModelId,
                 imageUrl,
                 prompt: prompt.trim() || undefined,
@@ -3376,6 +3408,9 @@ export default function ImageToVideoPage() {
               })
             },
             {
+              // Sama seperti Seavi: tanpa API key sendiri, relay memasang kunci
+              // server untuk member yang sudah top up.
+              allowServerKey: true,
               onKeySwitch: (from, to, attempt) => {
                 addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn', 'alriz')
               },
@@ -3481,6 +3516,7 @@ export default function ImageToVideoPage() {
        // generate berikutnya tidak me-refund catatan lama.
        nbChargeRef.current = null
        seaviChargeRef.current = null
+       seaviChargeIdRef.current = null
       setCompressDialog(null)
       const wasGenerating = generatingRef.current
       setGenerating(false)
@@ -3517,7 +3553,7 @@ export default function ImageToVideoPage() {
           <span className="text-base leading-none">💡</span>
           <p className="text-xs leading-relaxed text-muted-foreground">
             <b className="text-foreground">Baru pertama kali?</b> Pilih <b className="text-foreground">💜 CreatePulse</b> — sudah diatur admin, jadi tidak perlu API key.
-            <b className="text-foreground"> NexaBot</b> juga bisa dipakai tanpa API key kalau Anda sudah top up saldo atau Paket Unlimited.
+            <b className="text-foreground"> NexaBot</b>, <b className="text-foreground">Seavi Labs</b>, dan <b className="text-foreground">Alriz Motion</b> juga bisa dipakai tanpa API key kalau saldo/token layanan itu sudah diisi.
             Layanan lain perlu API key yang ditambahkan di menu <Link to="/providers" className="font-medium text-primary hover:underline">Providers</Link>.
           </p>
         </div>
@@ -3531,6 +3567,8 @@ export default function ImageToVideoPage() {
             const ready = pid === 'createpulse'
               || (keys[pid] || []).some((k) => k.status !== 'invalid' && k.status !== 'expired')
               || (pid === 'nexabot' && nexabotServerReady)
+              || (pid === 'alriz' && alrizServerReady)
+              || (pid === 'seavi' && seaviServerReady)
 
             return (
               <button
@@ -3598,15 +3636,15 @@ export default function ImageToVideoPage() {
               <>Akses: <b className="text-emerald-500">tanpa API key</b></>
             ) : hasActiveKey ? (
               <>Akses: <b className="text-emerald-500">{providerKeyCount} API key aktif</b></>
-            ) : provider === 'nexabot' && nexabotServerReady ? (
+            ) : serverKeyReady ? (
               <>Akses: <b className="text-emerald-500">{nbWallet?.server_key?.kind === 'cookie' ? 'sesi server' : 'kunci server'}</b></>
             ) : (
               <>Akses: <b className="text-amber-500">belum ada API key</b></>
             )}
           </div>
           <div>
-            Status: <b className={provider === 'createpulse' || hasActiveKey || (provider === 'nexabot' && nexabotServerReady) ? 'text-emerald-500' : 'text-amber-500'}>
-              {provider === 'createpulse' || hasActiveKey || (provider === 'nexabot' && nexabotServerReady) ? 'Siap dipakai' : 'Perlu API key'}
+            Status: <b className={provider === 'createpulse' || hasActiveKey || serverKeyReady ? 'text-emerald-500' : 'text-amber-500'}>
+              {provider === 'createpulse' || hasActiveKey || serverKeyReady ? 'Siap dipakai' : 'Perlu API key'}
             </b>
           </div>
           <button

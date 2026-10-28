@@ -3,6 +3,7 @@ import { checkRoboneoBalance, isRoboneoBalanceError, isRoboneoRotatableError, is
 import { checkWeavyBalance } from '@/lib/weavy'
 import { fetchLeonardoBalance } from '@/lib/leonardo'
 import { checkOneOverBalance, extractOneOverUserId, resolveOneOverAccessToken } from '@/lib/oneover'
+import { SERVER_KEY, serverKeyEntry } from '@/lib/providerServerKey'
 
 const TOKEN_ERROR_PATTERNS = [
   /token/i, /auth/i, /unauth/i, /forbidden/i,
@@ -102,6 +103,12 @@ export async function withTokenRotation<T>(
     requiredCredits?: number
     onKeySwitch?: (from: ProviderKey, to: ProviderKey, attempt: number) => void
     onError?: (error: any, key: ProviderKey) => void
+    /**
+     * Alriz/Seavi: kalau member tidak punya API key sendiri, jalankan satu
+     * percobaan lewat relay dengan kunci server. Relay yang memutuskan
+     * kelayakannya (top up/admin) dan menolak dengan pesan yang bisa dibaca.
+     */
+    allowServerKey?: boolean
   }
 ): Promise<RotateResult<T>> {
   const store = useProviderManager.getState()
@@ -110,7 +117,22 @@ export async function withTokenRotation<T>(
   const maxRetries = opts?.maxRetries ?? allKeys.length
 
   if (allKeys.length === 0) {
-    return { ok: false, error: `No API keys for ${provider}`, triedKeys: 0 }
+    if (!opts?.allowServerKey) {
+      return { ok: false, error: `No API keys for ${provider}`, triedKeys: 0 }
+    }
+    // Kunci server hanya dipakai kalau member tidak punya kunci sama sekali:
+    // mencampurnya dengan rotasi kunci member akan menghabiskan jatah tiket
+    // pembayaran untuk percobaan yang tidak perlu.
+    const synthetic: ProviderKey = provider === 'alriz' || provider === 'seavi'
+      ? serverKeyEntry(provider)
+      : { id: `server-key:${provider}`, key: SERVER_KEY, name: `Kunci server ${provider}`, status: 'active' }
+    try {
+      const result = await fn(SERVER_KEY, synthetic)
+      return { ok: true, result, usedKey: synthetic, triedKeys: 1 }
+    } catch (err: any) {
+      opts?.onError?.(err, synthetic)
+      return { ok: false, error: err?.message || `Kunci server ${provider} gagal`, triedKeys: 1 }
+    }
   }
 
   const triedKeyIds = new Set<string>()

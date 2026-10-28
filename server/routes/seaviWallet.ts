@@ -2,6 +2,7 @@ import { Router, Response } from 'express'
 import db from '../db.js'
 import { authenticateToken, AuthRequest } from '../middleware/auth.js'
 import { SEAVI_MIN_TOPUP, SEAVI_PACKAGES, SEAVI_TOKEN_PRICE, findSeaviPackage, getSeaviCharge } from '../../shared/pricing.js'
+import { keyEligibility } from '../lib/providerMasterKey.js'
 
 const router = Router()
 
@@ -15,12 +16,16 @@ router.get('/balance', authenticateToken, (req: AuthRequest, res: Response) => {
       db.prepare('INSERT INTO seavi_balance (user_id, balance) VALUES (?, 0)').run(userId)
       row = { balance: 0 }
     }
+    // Relay boleh memakai kunci server untuk member ini? UI memakai jawaban
+    // server apa adanya, bukan menebak dari saldo di browser.
+    const kunciServer = keyEligibility('seavi', userId)
     res.json({
       balance: row.balance,
       tokens: row.balance,
       packages: SEAVI_PACKAGES,
       min_topup: SEAVI_MIN_TOPUP,
       token_price: SEAVI_TOKEN_PRICE,
+      server_key: { available: kunciServer.ok, reason: kunciServer.reason },
     })
   } catch (error) {
     console.error('Get seavi balance error:', error)
@@ -92,10 +97,13 @@ router.post('/deduct', authenticateToken, (req: AuthRequest, res: Response) => {
     }
 
     db.prepare('UPDATE seavi_balance SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?').run(cost, userId)
-    db.prepare('INSERT INTO seavi_usage (user_id, model, cost, batch_id, status) VALUES (?, ?, ?, ?, ?)').run(userId, model || '', cost, batch_id || '', 'used')
+    // `units` = jumlah job yang dibayar. Tiket relay memakai angka ini sebagai
+    // batas, jadi satu potongan multi-slot tidak bisa dipakai lebih dari bayar.
+    const insert = db.prepare('INSERT INTO seavi_usage (user_id, model, cost, units, batch_id, status) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(userId, model || '', cost, units, batch_id || '', 'used')
 
     const updated = db.prepare('SELECT balance FROM seavi_balance WHERE user_id = ?').get(userId) as { balance: number }
-    res.json({ balance: updated.balance, tokens: updated.balance, deducted: cost })
+    res.json({ balance: updated.balance, tokens: updated.balance, deducted: cost, usage_id: Number(insert.lastInsertRowid) })
   } catch (error) {
     console.error('Seavi deduct error:', error)
     res.status(500).json({ error: 'Internal server error' })

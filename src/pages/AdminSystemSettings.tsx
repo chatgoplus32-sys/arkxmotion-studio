@@ -112,6 +112,219 @@ const ALL_PROVIDERS = [
   'framia', 'firefly', 'leonardo', 'oneover', 'gemini', 'riverside',
 ]
 
+// ─── Kunci server Alriz / Seavi ────────────────────────────────────────
+// Pola yang sama dengan NexaBot: relay memasang kunci ini untuk member yang
+// sudah top up. Server hanya melaporkan status — nilainya tidak pernah dikirim
+// balik ke browser, jadi input selalu kosong dan hanya diisi saat mengganti.
+
+interface ProviderKeyStatus {
+  configured: boolean
+  source: 'database' | 'env' | 'none'
+}
+
+interface ProviderKeyCheck {
+  ok: boolean
+  valid: boolean
+  status: number | null
+  detail?: string
+  transient?: boolean
+  error?: string
+}
+
+function ProviderServerKeySection({
+  provider,
+  label,
+  token,
+  addToast,
+}: {
+  provider: 'alriz' | 'seavi'
+  label: string
+  token: string | null
+  addToast: (message: string, type?: 'success' | 'error' | 'info' | 'warning') => void
+}) {
+  const [status, setStatus] = useState<ProviderKeyStatus | null>(null)
+  const [input, setInput] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [checking, setChecking] = useState(false)
+  const [check, setCheck] = useState<ProviderKeyCheck | null>(null)
+
+  const applyStatus = (data: any) => {
+    setStatus({
+      configured: !!data.configured,
+      source: data.source ?? 'none',
+    })
+  }
+
+  const fetchStatus = useCallback(async () => {
+    if (!token) return
+    try {
+      const res = await fetch(`/api/admin/${provider}/master-key`, { headers: { Authorization: `Bearer ${token}` } })
+      if (!res.ok) return
+      applyStatus(await res.json())
+    } catch { /* biarkan status lama kalau request gagal */ }
+  }, [token, provider])
+
+  useEffect(() => { fetchStatus() }, [fetchStatus])
+
+  const handleCheck = async () => {
+    if (!token) return
+    setChecking(true)
+    try {
+      const res = await fetch(`/api/admin/${provider}/master-key/check`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json()
+      if (res.ok && data.check) setCheck(data.check as ProviderKeyCheck)
+      else addToast(data.error || `Gagal memeriksa kunci server ${label}`, 'error')
+    } catch {
+      addToast(`Gagal memeriksa kunci server ${label}`, 'error')
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  const handleSave = async () => {
+    if (!token || !input.trim()) return
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/admin/${provider}/master-key`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ apiKey: input.trim() }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        addToast(data.message || `Kunci server ${label} disimpan`, 'success')
+        applyStatus(data)
+        setCheck(null)
+        setInput('')
+        // Buktikan kuncinya diterima upstream — kunci salah tidak boleh
+        // terlihat "Aktif" tanpa peringatan.
+        await handleCheck()
+      } else {
+        addToast(data.error || `Gagal menyimpan kunci server ${label}`, 'error')
+      }
+    } catch {
+      addToast(`Gagal menyimpan kunci server ${label}`, 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleClear = async () => {
+    if (!token) return
+    if (!window.confirm(`Hapus kunci server ${label} dari dashboard? Member tanpa API key sendiri tidak bisa generate sampai kunci baru disimpan (atau .env dipakai kembali).`)) return
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/admin/${provider}/master-key`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json()
+      if (res.ok) {
+        addToast(data.message || `Kunci server ${label} dihapus`, 'success')
+        applyStatus(data)
+        setCheck(null)
+      } else {
+        addToast(data.error || `Gagal menghapus kunci server ${label}`, 'error')
+      }
+    } catch {
+      addToast(`Gagal menghapus kunci server ${label}`, 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Section
+      title={`Kunci Server ${label}`}
+      sub={`Dipakai relay untuk member yang sudah top up — disimpan di server, tidak pernah dikirim ke browser`}
+    >
+      <div className="rounded-xl border border-border bg-card/40 p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-medium">Status:</span>
+          {status?.configured ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-0.5 text-[11px] text-emerald-400">
+              <CheckCircle className="h-3 w-3" />
+              Aktif — {status.source === 'database' ? 'dari dashboard' : 'dari .env'}
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 px-2.5 py-0.5 text-[11px] text-amber-400">
+              <AlertTriangle className="h-3 w-3" />
+              Belum diatur — member tanpa API key sendiri tidak bisa generate
+            </span>
+          )}
+        </div>
+
+        <p className="mt-2 text-[12px] text-muted-foreground leading-relaxed">
+          Member yang sudah top up {label} generate tanpa API key sendiri: relay yang memasang kunci ini, dan
+          saldo/token mereka yang dipotong. Untuk request yang membuat job, relay juga mewajibkan tiket
+          pembayaran dari wallet app, jadi satu potongan tidak bisa dipakai lebih dari job yang dibayar.
+          Kunci tidak pernah ditampilkan lagi dan tidak pernah dikirim ke browser. Isi kolom untuk mengganti
+          kunci — nilai lama langsung tidak berlaku.
+        </p>
+
+        <div className="mt-3 flex flex-col sm:flex-row gap-2">
+          <input
+            type="password"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder={`Tempel API key ${label}`}
+            autoComplete="off"
+            className="flex-1 px-3 py-2 rounded-lg border border-border bg-card text-sm font-mono"
+          />
+          <Button size="sm" onClick={handleSave} disabled={saving || !input.trim()}>
+            <KeyRound className={`h-4 w-4 mr-2 ${saving ? 'animate-pulse' : ''}`} />
+            {saving ? 'Menyimpan...' : 'Simpan Kunci'}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleClear}
+            disabled={saving || !status?.configured || status?.source === 'env'}
+            title={status?.source === 'env' ? 'Kunci berasal dari .env — hapus variabelnya di server' : undefined}
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            Hapus
+          </Button>
+          <Button size="sm" variant="outline" onClick={handleCheck} disabled={checking || !status?.configured}>
+            <Activity className={`h-4 w-4 mr-2 ${checking ? 'animate-pulse' : ''}`} />
+            {checking ? 'Memeriksa...' : 'Cek Kunci'}
+          </Button>
+        </div>
+
+        {check && (
+          <div
+            className={`mt-3 rounded-lg border px-3 py-2 text-[12px] leading-relaxed ${
+              check.valid
+                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                : check.transient
+                  ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+                  : 'border-red-500/30 bg-red-500/10 text-red-300'
+            }`}
+          >
+            <span className="font-medium">
+              {check.valid
+                ? `Kunci diterima (HTTP ${check.status})`
+                : check.transient
+                  ? 'Cek gagal sementara'
+                  : 'Kunci ditolak'}
+            </span>
+            {check.valid && check.detail && <span className="ml-2 opacity-80">{check.detail}</span>}
+            {check.error && <div className="mt-1">{check.error}</div>}
+          </div>
+        )}
+
+        <div className="mt-2 text-[11px] text-muted-foreground leading-relaxed">
+          Urutan yang dipakai server: kunci dashboard → <code>{`${provider.toUpperCase()}_MASTER_API_KEY`}</code> di .env
+          → tidak tersedia. Admin tidak dipotong; member wajib punya saldo/token atau baru saja membayar.
+        </div>
+      </div>
+    </Section>
+  )
+}
+
 export default function AdminSystemSettings() {
   const [settings, setSettings] = useState<AppSettings>({})
   const [maintenance, setMaintenance] = useState<Maintenance[]>([])
@@ -896,6 +1109,9 @@ export default function AdminSystemSettings() {
             )}
           </div>
         </Section>
+
+        <ProviderServerKeySection provider="alriz" label="Alriz Motion" token={token} addToast={addToast} />
+        <ProviderServerKeySection provider="seavi" label="Seavi Labs" token={token} addToast={addToast} />
 
         {/* Provider Maintenance */}
         <Section title="Provider Maintenance" sub="Toggle maintenance mode for individual providers">

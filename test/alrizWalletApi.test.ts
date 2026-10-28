@@ -95,14 +95,24 @@ test('konstanta Alriz: min 5rb, max 100rb, nominal & harga model masuk akal', ()
   assert.deepEqual(
     Object.entries(ALRIZ_MODEL_PRICES).sort(),
     [
-      ['mc-kling-2.6-pro', 1500],
+      ['mc-kling-2.6-pro', 1250],
       ['mc-kling-2.6-std', 750],
-      ['mc-kling-3.0-pro', 1750],
+      ['mc-kling-3.0-pro', 1500],
       ['mc-kling-3.0-std', 1000],
+      ['kling-3.0-turbo-std', 1000],
+      ['gemini-omni-flash-std', 1000],
+      ['happy-horse-std', 1000],
+      ['happy-horse-1.1-std', 1000],
+      ['wan-3.0-std', 1000],
+      ['wan-3.0-prime-std', 1000],
+      ['grok-imagine-1.5-std', 1000],
+      ['kling-o3-pro', 1000],
+      ['kling-v3-standard-std', 1000],
+      ['minimax-h3-std', 1000],
     ].sort(),
   )
   const range = getAlrizPriceRange()
-  assert.deepEqual(range, { min: 750, max: 1750 })
+  assert.deepEqual(range, { min: 750, max: 1500 })
 })
 
 test('isValidAlrizTopup: batas min/max & bilangan bulat', () => {
@@ -117,7 +127,7 @@ test('isValidAlrizTopup: batas min/max & bilangan bulat', () => {
 })
 
 test('getAlrizCharge: tarif per model, prefix al: dilepas, default termurah', () => {
-  assert.equal(getAlrizCharge('mc-kling-3.0-pro'), 1750)
+  assert.equal(getAlrizCharge('mc-kling-3.0-pro'), 1500)
   assert.equal(getAlrizCharge('al:mc-kling-2.6-std'), 750)
   assert.equal(getAlrizCharge('model_ngawur'), 750)
   assert.equal(getAlrizCharge(), 750)
@@ -237,11 +247,11 @@ test('/deduct: tarif dari shared/pricing (prefix al: dipotong benar) × quantity
     body: { model: 'al:mc-kling-3.0-pro', quantity: 2, batch_id: 'batch-1' },
   })
   assert.equal(res.status, 200)
-  assert.equal(res.body.deducted, 1750 * 2)
-  assert.equal(res.body.balance, 10000 - 3500)
+  assert.equal(res.body.deducted, 1500 * 2)
+  assert.equal(res.body.balance, 10000 - 3000)
 
   const usage = db.prepare("SELECT * FROM alriz_usage WHERE batch_id = 'batch-1'").get() as any
-  assert.equal(usage.cost, 3500)
+  assert.equal(usage.cost, 3000)
   assert.equal(usage.status, 'used')
 })
 
@@ -252,7 +262,7 @@ test('/deduct: saldo kurang → 400 dengan required', async () => {
     body: { model: 'mc-kling-3.0-pro', quantity: 10 },
   })
   assert.equal(res.status, 400)
-  assert.equal(res.body.required, 17500)
+  assert.equal(res.body.required, 15000)
   assert.equal(res.body.balance, 5000)
   const used = db.prepare('SELECT COUNT(*) AS n FROM alriz_usage').get() as { n: number }
   assert.equal(used.n, 0, 'deduct gagal tidak membuat baris usage')

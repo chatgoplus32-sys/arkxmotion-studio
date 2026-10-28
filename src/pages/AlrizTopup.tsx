@@ -32,6 +32,8 @@ export default function AlrizTopupPage() {
   const [maxTopup, setMaxTopup] = useState(ALRIZ_MAX_TOPUP_FALLBACK)
   const [nominals, setNominals] = useState<number[]>(ALRIZ_NOMINALS_FALLBACK)
   const [modelPrices, setModelPrices] = useState<Record<string, number>>({})
+  // Kelayakan kunci server dari server (top up / admin) — bukan tebakan browser.
+  const [serverKey, setServerKey] = useState<{ available: boolean; reason?: string } | null>(null)
   const [selectedAmount, setSelectedAmount] = useState<number>(ALRIZ_NOMINALS_FALLBACK[0])
   const [customAmount, setCustomAmount] = useState('')
   const [proofNote, setProofNote] = useState('')
@@ -55,6 +57,7 @@ export default function AlrizTopupPage() {
       setMaxTopup(w.max_topup)
       setNominals(w.nominals.length > 0 ? w.nominals : ALRIZ_NOMINALS_FALLBACK)
       setModelPrices(w.models)
+      setServerKey(w.server_key ?? null)
       if (!w.nominals.includes(selectedAmount) && w.nominals.length > 0) {
         setSelectedAmount(w.nominals[0])
       }
@@ -176,6 +179,18 @@ export default function AlrizTopupPage() {
               <div>MC 2.6 Std / 3.0 Std: <b className="text-foreground">{formatRp(750)}–{formatRp(1000)}/video</b></div>
               <div>MC 2.6 Pro / 3.0 Pro: <b className="text-foreground">{formatRp(1250)}–{formatRp(1500)}/video</b></div>
             </>
+          )}
+        </div>
+        <div className="mt-3 text-[11px] leading-relaxed">
+          {serverKey?.available ? (
+            <span className="text-emerald-500">
+              ✓ Setelah saldo masuk, generate langsung jalan tanpa API key — relay memakai kunci server Alriz dan
+              saldo ini yang dipotong.
+            </span>
+          ) : (
+            <span className="text-muted-foreground">
+              {serverKey?.reason || 'Kunci server Alriz belum diatur admin — generate membutuhkan API key Alriz sendiri di halaman Providers.'}
+            </span>
           )}
         </div>
       </div>

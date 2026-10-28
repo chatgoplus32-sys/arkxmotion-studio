@@ -282,6 +282,7 @@ db.exec(`
     user_id INTEGER NOT NULL,
     model TEXT NOT NULL,
     cost INTEGER NOT NULL,
+    units INTEGER NOT NULL DEFAULT 1,
     batch_id TEXT,
     status TEXT NOT NULL DEFAULT 'used' CHECK(status IN ('used', 'refunded')),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -324,10 +325,40 @@ db.exec(`
     user_id INTEGER NOT NULL,
     model TEXT NOT NULL,
     cost INTEGER NOT NULL,
+    units INTEGER NOT NULL DEFAULT 1,
     batch_id TEXT,
     status TEXT NOT NULL DEFAULT 'used' CHECK(status IN ('used', 'refunded')),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`)
+
+// `units` = jumlah job yang sudah dibayar satu baris usage. Dipakai tiket
+// kunci server Alriz/Seavi: satu potongan untuk Motion Control multi-slot
+// membayar beberapa job sekaligus, jadi batasnya harus ikut tercatat.
+for (const tabel of ['alriz_usage', 'seavi_usage']) {
+  const kolom = db.prepare(`PRAGMA table_info(${tabel})`).all() as { name: string }[]
+  if (!kolom.some((c) => c.name === 'units')) {
+    db.exec(`ALTER TABLE ${tabel} ADD COLUMN units INTEGER NOT NULL DEFAULT 1`)
+  }
+}
+
+// ─── Tiket pembayaran relay Alriz / Seavi ─────────────────────────────────
+// Relay menyuntikkan kunci server, jadi ia harus bisa membuktikan bahwa job
+// ini sudah dibayar lewat /deduct. `max_jobs`/`used_jobs` membatasi jumlah job
+// pada satu usage; klien tidak bisa mengarang jumlahnya karena angka itu
+// ditulis server saat potong saldo.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS provider_charge_ticket (
+    provider TEXT NOT NULL,
+    usage_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    max_jobs INTEGER NOT NULL DEFAULT 1,
+    used_jobs INTEGER NOT NULL DEFAULT 0,
+    last_job_id TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (provider, usage_id)
   )
 `)
 

@@ -24,6 +24,11 @@ export interface AlrizWallet {
   nominals: number[]
   /** Harga model per video (Rp) — id model → harga. */
   models: Record<string, number>
+  /**
+   * Boleh tidaknya memakai kunci server Alriz tanpa API key sendiri.
+   * Dihitung server (top up / admin); UI hanya menampilkan apa adanya.
+   */
+  server_key?: { available: boolean; reason?: string }
 }
 
 function authHeaders(token: string) {
@@ -45,6 +50,9 @@ export async function fetchAlrizWallet(token: string): Promise<AlrizWallet | nul
       max_topup: data.max_topup ?? ALRIZ_MAX_TOPUP_FALLBACK,
       nominals,
       models: data.models && typeof data.models === 'object' ? data.models : {},
+      server_key: data.server_key && typeof data.server_key === 'object'
+        ? { available: !!data.server_key.available, reason: data.server_key.reason }
+        : undefined,
     }
   } catch {
     return null
@@ -57,6 +65,8 @@ export interface AlrizCharge {
   /** Rupiah yang dipotong generate ini. */
   deducted: number
   batchId: string
+  /** usage_id server — tiket yang dikirim ke relay pada jalur kunci server. */
+  usageId?: number
 }
 
 /**
@@ -78,7 +88,12 @@ export async function chargeAlrizWallet(
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(data.error || 'Gagal memotong saldo Alriz')
-  return { balance: data.balance ?? 0, deducted: data.deducted ?? 0, batchId: batch }
+  return {
+    balance: data.balance ?? 0,
+    deducted: data.deducted ?? 0,
+    batchId: batch,
+    usageId: typeof data.usage_id === 'number' && data.usage_id > 0 ? data.usage_id : undefined,
+  }
 }
 
 /** Kembalikan saldo saat generate gagal. Return sisa saldo baru, atau null kalau gagal. */

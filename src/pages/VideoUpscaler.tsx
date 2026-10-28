@@ -110,11 +110,13 @@ export default function VideoUpscalerPage() {
       // tetap bisa memakai key sendiri tanpa potongan.
       const seaviIsAdmin = user?.role === 'admin'
       let seaviBatchId = ''
+      let seaviUsageId: number | null = null
       if (!seaviIsAdmin && authToken) {
         addLog(`[1/2] 💰 Memotong ${SEAVI_VIDEO_UPSCALER.tokens} token Seavi...`)
         try {
           const charge = await chargeSeaviWallet(authToken, SEAVI_VIDEO_UPSCALER.id, 1)
           seaviBatchId = charge.batchId
+          seaviUsageId = charge.usageId ?? null
           addLog(`[1/2] ✅ Token terpotong ✓ sisa ${charge.tokens} token`, 'success')
         } catch (e: any) {
           throw new Error(e.message || 'Token Seavi tidak cukup. Top up di halaman Top Up Seavi (Rp 4.000 = 2 token).')
@@ -130,6 +132,7 @@ export default function VideoUpscalerPage() {
           if (bal.ok && typeof bal.balance === 'number') addLog(`💰 Saldo: ${bal.balance} token`)
           return await generateWithSeavi({
             apiKey: key,
+            chargeId: seaviUsageId,
             spec: SEAVI_VIDEO_UPSCALER,
             videoUrls: [videoUrl],
             onLog: (msg, level) => addLog(msg, (level as LogEntry['level']) || 'info'),
@@ -140,6 +143,8 @@ export default function VideoUpscalerPage() {
           })
         },
         {
+          // Tanpa API key sendiri: member yang sudah top up memakai kunci server.
+          allowServerKey: true,
           onKeySwitch: (from, to, attempt) => {
             addLog(`🔄 Key "${from.name}" gagal, pindah ke key #${attempt}: "${to.name}"`, 'warn')
           },

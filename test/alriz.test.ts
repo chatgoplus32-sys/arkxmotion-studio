@@ -36,14 +36,15 @@ function withFetchStub<T>(impl: (url: string, init?: RequestInit) => AlrizStubRe
 // ── Katalog model ────────────────────────────────────────────────────────────
 
 test('ALRIZ_MODELS: 4 model Kling Motion Control dengan harga Rp', () => {
-  assert.equal(ALRIZ_MODELS.length, 4)
+  const motion = ALRIZ_MODELS.filter((m) => m.kind === 'motion')
+  assert.equal(motion.length, 4)
   assert.deepEqual(
-    ALRIZ_MODELS.map((m) => [m.id, m.resolution, m.price]),
+    motion.map((m) => [m.id, m.resolution, m.price]),
     [
       ['mc-kling-2.6-std', '720p', 750],
-      ['mc-kling-2.6-pro', '1080p', 1500],
+      ['mc-kling-2.6-pro', '1080p', 1250],
       ['mc-kling-3.0-std', '720p', 1000],
-      ['mc-kling-3.0-pro', '1080p', 1750],
+      ['mc-kling-3.0-pro', '1080p', 1500],
     ],
   )
   assert.ok(getAlrizModel('mc-kling-3.0-pro'))
@@ -52,7 +53,7 @@ test('ALRIZ_MODELS: 4 model Kling Motion Control dengan harga Rp', () => {
 
 test('getAlrizPrice: harga per model, default termurah', () => {
   assert.equal(getAlrizPrice('mc-kling-2.6-std'), 750)
-  assert.equal(getAlrizPrice('mc-kling-3.0-pro'), 1750)
+  assert.equal(getAlrizPrice('mc-kling-3.0-pro'), 1500)
   assert.equal(getAlrizPrice('model_ngawur'), 750)
   assert.equal(getAlrizPrice(), 750)
   assert.equal(getAlrizPrice(''), 750)

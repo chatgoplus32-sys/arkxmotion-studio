@@ -1,7 +1,9 @@
 import crypto from 'crypto'
-import jwt from 'jsonwebtoken'
 import type { Request } from 'express'
 import db from '../db.js'
+import { userIdFromRequest } from './appToken.js'
+
+export { userIdFromRequest }
 
 /**
  * Mencatat pemakaian upstream NexaBot untuk setiap request yang MENGONSUMSI
@@ -49,26 +51,6 @@ export function credentialKindOf(req: Request): { kind: 'cookie' | 'api-key'; se
   const apiKey = req.headers['x-api-key']
   if (typeof apiKey === 'string' && apiKey.trim()) return { kind: 'api-key', secret: apiKey.trim() }
   return null
-}
-
-/**
- * Identitas pemanggil, kalau ia memang mengirim JWT app. Relay ini terbuka
- * (klien bisa memakai kredensial nexabot-nya sendiri tanpa akun app), jadi
- * ketiadaan identitas adalah keadaan sah — bukan alasan menolak request.
- */
-export function userIdFromRequest(req: Request): number | null {
-  const header = req.headers['authorization']
-  if (typeof header !== 'string') return null
-  const token = header.split(' ')[1]
-  if (!token) return null
-  try {
-    const secret = process.env.JWT_SECRET
-    if (!secret) return null
-    const decoded = jwt.verify(token, secret) as { id?: number }
-    return typeof decoded?.id === 'number' ? decoded.id : null
-  } catch {
-    return null
-  }
 }
 
 /**

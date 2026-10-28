@@ -18,6 +18,7 @@ import {
   isValidAlrizTopup,
   getAlrizCharge,
 } from '../../shared/pricing.js'
+import { keyEligibility } from '../lib/providerMasterKey.js'
 
 const router = Router()
 
@@ -31,6 +32,10 @@ router.get('/balance', authenticateToken, (req: AuthRequest, res: Response) => {
       db.prepare('INSERT INTO alriz_balance (user_id, balance) VALUES (?, 0)').run(userId)
       row = { balance: 0 }
     }
+    // Kelayakan memakai kunci server. Dihitung dengan kebijakan yang sama
+    // seperti relay, supaya UI hanya menawarkan jalur tanpa API key ketika
+    // relay benar-benar akan menerimanya.
+    const serverKey = keyEligibility('alriz', userId)
     res.json({
       balance: row.balance,
       min_topup: ALRIZ_MIN_TOPUP,
@@ -38,6 +43,7 @@ router.get('/balance', authenticateToken, (req: AuthRequest, res: Response) => {
       nominals: ALRIZ_NOMINALS,
       models: { ...ALRIZ_MODEL_PRICES },
       default_price: ALRIZ_DEFAULT_PRICE,
+      server_key: { available: serverKey.ok, reason: serverKey.reason },
     })
   } catch (error) {
     console.error('Get alriz balance error:', error)
@@ -113,10 +119,13 @@ router.post('/deduct', authenticateToken, (req: AuthRequest, res: Response) => {
     }
 
     db.prepare('UPDATE alriz_balance SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?').run(cost, userId)
-    db.prepare('INSERT INTO alriz_usage (user_id, model, cost, batch_id, status) VALUES (?, ?, ?, ?, ?)').run(userId, model || '', cost, batch_id || '', 'used')
+    // `units` = jumlah job yang dibayar. Tiket relay memakai angka ini sebagai
+    // batas, jadi satu potongan multi-slot tidak bisa dipakai lebih dari bayar.
+    const insert = db.prepare('INSERT INTO alriz_usage (user_id, model, cost, units, batch_id, status) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(userId, model || '', cost, units, batch_id || '', 'used')
 
     const updated = db.prepare('SELECT balance FROM alriz_balance WHERE user_id = ?').get(userId) as { balance: number }
-    res.json({ balance: updated.balance, deducted: cost })
+    res.json({ balance: updated.balance, deducted: cost, usage_id: Number(insert.lastInsertRowid) })
   } catch (error) {
     console.error('Alriz deduct error:', error)
     res.status(500).json({ error: 'Internal server error' })
