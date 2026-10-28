@@ -17,10 +17,13 @@ import { loadVideoBlob } from '@/lib/videoStorage'
 type EditProvider = 'riverside' | 'nexabot' | 'runninghub' | 'seavi'
 
 const SEAVI_IMAGE_UI_MODELS = [
-  { value: 'sv:gpt_image2_s9', label: 'GPT Image 2 · S9 (Seavi)', cr: 1, apiModel: 'gpt_image2_s9' },
-  { value: 'sv:grok_imagine_gambar_s9', label: 'Grok Imagine Gambar · S9 (Seavi)', cr: 1, apiModel: 'grok_imagine_gambar_s9' },
-  { value: 'sv:nano_banana_2_server9', label: 'Nano Banana 2 · S9 (Seavi)', cr: 1, apiModel: 'nano_banana_2_server9' },
-  { value: 'sv:seedream5_s9', label: 'Seedream 5 · S9 (Seavi)', cr: 1, apiModel: 'seedream5_s9' },
+  { value: 'sv:gpt_image_2_server15', label: 'GPT Image 2 · S15 (Seavi)', cr: 1, apiModel: 'gpt_image_2_server15' },
+  { value: 'sv:nano_banana_2_lite_server15', label: 'Nano Banana 2 Lite · S15 (Seavi)', cr: 1, apiModel: 'nano_banana_2_lite_server15' },
+  { value: 'sv:nano_banana_2_server15', label: 'Nano Banana 2 · S15 (Seavi)', cr: 1, apiModel: 'nano_banana_2_server15' },
+  { value: 'sv:nano_banana_pro_server15', label: 'Nano Banana Pro · S15 (Seavi)', cr: 1, apiModel: 'nano_banana_pro_server15' },
+  { value: 'sv:linocut_image_edit_qwen_server15', label: 'Seavi Image · S15 (Seavi)', cr: 1, apiModel: 'linocut_image_edit_qwen_server15' },
+  { value: 'sv:seedream_4_server15', label: 'Seedream 4 · S15 (Seavi)', cr: 1, apiModel: 'seedream_4_server15' },
+  { value: 'sv:seedream_4_5_server15', label: 'Seedream 4.5 · S15 (Seavi)', cr: 1, apiModel: 'seedream_4_5_server15' },
 ]
 
 const PROVIDER_OPTIONS: Array<{ value: EditProvider; label: string; icon: string }> = [

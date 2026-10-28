@@ -215,21 +215,33 @@ test('findSeaviPackage: slug dikenal / kosong / asing', () => {
   assert.equal(findSeaviPackage('seavi_100'), undefined)
 })
 
-test('getSeaviCharge: bobot per model, default 1 token', () => {
-  // Model 2 token (lihat SEAVI_MODEL_TOKENS).
-  assert.equal(getSeaviCharge('wan30_server19'), 2)
-  assert.equal(getSeaviCharge('gemini_omni_server19'), 2)
+test('getSeaviCharge: semua model aktif 1 token, default 1 token', () => {
+  // Dashboard Seavi 28 Okt 2026: 18 model aktif semuanya 1 token.
+  for (const id of [
+    'motion_control_v3_server10_30dtk',
+    'motion_control_v3_server19_15dtk',
+    'kling3_server10',
+    'kling21pro_server10',
+    'grok_imagine_s15',
+    'sora2_server10',
+    'seedance2_multi_s15',
+    'seedance25_server19',
+    'wan30_server19',
+    'gemini_omni_server19',
+    'gpt_image_2_server15',
+    'nano_banana_2_lite_server15',
+    'nano_banana_2_server15',
+    'nano_banana_pro_server15',
+    'linocut_image_edit_qwen_server15',
+    'seedream_4_server15',
+    'seedream_4_5_server15',
+    'upscale_video_server7',
+  ]) {
+    assert.equal(getSeaviCharge(id), 1, `${id} harus 1 token`)
+  }
   // Prefix sv: dari client dinormalisasi dulu.
-  assert.equal(getSeaviCharge('sv:wan30_server19'), 2)
-  assert.equal(getSeaviCharge('sv:veo31_s9'), 1)
-  // Model 2 token terdaftar eksplisit (harga upstream 17 Okt 2026).
-  assert.equal(getSeaviCharge('motion_control_v3_server10_30dtk'), 2)
-  assert.equal(getSeaviCharge('kling21pro_server10'), 2)
-  assert.equal(getSeaviCharge('seedance25_server19'), 2)
-  assert.equal(getSeaviCharge('sora2_server10'), 1)
-  assert.equal(getSeaviCharge('motion_control_v3_server19_15dtk'), 1)
-  assert.equal(getSeaviCharge('veo31_s9'), 1)
-  assert.equal(getSeaviCharge('upscale_video_server7'), 1)
+  assert.equal(getSeaviCharge('sv:wan30_server19'), 1)
+  assert.equal(getSeaviCharge('sv:kling21pro_server10'), 1)
   assert.equal(getSeaviCharge('model_baru_xx'), 1)
   assert.equal(getSeaviCharge(), 1)
   assert.equal(getSeaviCharge(''), 1)

@@ -141,7 +141,7 @@ export default function SeaviTopupPage() {
         eyebrow="Seavi"
         title="Top Up"
         highlight="Token"
-        desc={`Isi token khusus provider Seavi. Harga: ${formatRp(tokenPrice)}/token — generate 1-2 token tergantung model`}
+        desc={`Isi token khusus provider Seavi. Harga: ${formatRp(tokenPrice)}/token — 1 token per generate untuk semua model aktif`}
       />
 
       {/* Balance */}
@@ -156,8 +156,8 @@ export default function SeaviTopupPage() {
           </div>
         </div>
         <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
-          <div>Model 1 token: <b className="text-foreground">Kling 3, Kling 2.1 Pro, Grok, Seedance 2.5, Motion Control, Upscale, Image</b></div>
-          <div>Model 2 token: <b className="text-foreground">Wan 3.0, Gemini Omni</b></div>
+          <div>1 token per generate: <b className="text-foreground">semua model aktif — video, motion control, image, upscale</b></div>
+          <div>Model aktif: <b className="text-foreground">18 model (dashboard Seavi)</b></div>
         </div>
         <div className="mt-3 text-[11px] leading-relaxed">
           {serverKey?.available ? (

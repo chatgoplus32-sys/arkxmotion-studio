@@ -18,6 +18,7 @@ import {
   SEAVI_PACKAGES,
   SEAVI_TOKEN_PRICE,
   SEAVI_DEFAULT_CHARGE,
+  getSeaviCharge,
   parseNexabotPricing,
 } from '../shared/pricing.js'
 
@@ -137,7 +138,14 @@ test('respons Seavi: harga per token, min topup, paket & bobot model', async () 
     assert.ok(Number.isInteger(pkg.tokens) && pkg.tokens > 0, `${pkg.slug} token harus integer > 0`)
     assert.equal(pkg.price, pkg.tokens * SEAVI_TOKEN_PRICE)
   }
-  assert.ok(Object.keys(seavi.models).length > 0)
+  // `models` hanya berisi bobot yang BERBEDA dari default_charge. Dashboard
+  // Seavi (28 Okt 2026) menagih 1 token untuk semua model aktif, jadi peta ini
+  // boleh kosong — konsumen wajib memakai default_charge untuk model lain.
+  assert.equal(typeof seavi.models, 'object')
+  for (const [id, bobot] of Object.entries(seavi.models)) {
+    assert.equal(bobot, getSeaviCharge(id), `${id} bobot publik harus sama dengan tarif server`)
+    assert.ok((bobot as number) > seavi.default_charge, `${id} cukup didaftar kalau di atas default`)
+  }
 })
 
 test('header cache & CORS diisi (harga publik boleh di-cache singkat)', async () => {

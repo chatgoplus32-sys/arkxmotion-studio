@@ -3734,7 +3734,7 @@ export default function ImageToVideoPage() {
           <div className="mt-3 p-3 rounded-xl border border-primary/20 bg-primary/5">
             <div className="flex items-center justify-between mb-2">
               <div className="text-xs font-medium text-primary">
-                🌌 Seavi {user?.role === 'admin' ? '(Admin — Free)' : `— ${seaviSpec ? `${seaviSpec.tokens} token` : '1-2 token'}/generate`}
+                🌌 Seavi {user?.role === 'admin' ? '(Admin — Free)' : `— ${seaviSpec ? `${seaviSpec.tokens} token` : '1 token'}/generate`}
               </div>
               {user?.role !== 'admin' && authToken && (
                 <div className="text-xs">
@@ -3745,8 +3745,7 @@ export default function ImageToVideoPage() {
               )}
             </div>
             <div className="grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
-              <div>Model 1 token: <b className="text-foreground">Kling 3, Kling 2.1 Pro, Grok, Seedance, MC</b></div>
-              <div>Model 2 token: <b className="text-foreground">Wan 3.0, Gemini Omni</b></div>
+              <div>Semua model Seavi: <b className="text-foreground">1 token per generate</b></div>
               {user?.role !== 'admin' && <div>Failed generations: <b className="text-emerald-500">auto-refunded</b></div>}
             </div>
             {user?.role !== 'admin' && authToken && (seaviTokens ?? 0) < (seaviSpec?.tokens ?? 1) && (

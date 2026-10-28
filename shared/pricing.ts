@@ -259,17 +259,13 @@ export const SEAVI_PACKAGES: SeaviPackagePlan[] = [
 export const SEAVI_DEFAULT_CHARGE = 1
 
 /**
- * Bobot token per model id Seavi (tanpa prefix `sv:`). Hanya model berbobot
- * 2 yang didaftar di sini — sisanya 1 token. Cermin `spec.tokens` di
- * src/lib/seavi.ts (SEAVI_MODELS, SEAVI_IMAGE_MODELS, SEAVI_VIDEO_UPSCALER).
+ * Bobot token per model id Seavi (tanpa prefix `sv:`). Dashboard Seavi
+ * (28 Okt 2026) menagih 1 token untuk SEMUA 18 model aktif, jadi peta ini
+ * kosong; isi hanya kalau ada model yang benar-benar berbobot >1. Cermin
+ * `spec.tokens` di src/lib/seavi.ts (SEAVI_MODELS, SEAVI_IMAGE_MODELS,
+ * SEAVI_VIDEO_UPSCALER) — tes kontrak silang menjaga keduanya tetap sama.
  */
-export const SEAVI_MODEL_TOKENS: Record<string, number> = {
-  motion_control_v3_server10_30dtk: 2,
-  kling21pro_server10: 2,
-  seedance25_server19: 2,
-  wan30_server19: 2,
-  gemini_omni_server19: 2,
-}
+export const SEAVI_MODEL_TOKENS: Record<string, number> = {}
 
 /** Biaya satu generate Seavi dalam token (dikalikan `quantity` di server). */
 export function getSeaviCharge(model?: string): number {

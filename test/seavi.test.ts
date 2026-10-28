@@ -32,11 +32,14 @@ function withFetchStub<T>(impl: (url: string, init?: RequestInit) => SeaviStubRe
 
 // ── Spesifikasi model ────────────────────────────────────────────────────────
 
-test('SEAVI_MODELS: 11 model aktif terdaftar dan spec kunci tersedia', () => {
-  assert.equal(Object.keys(SEAVI_MODELS).length, 11)
+test('SEAVI_MODELS: 10 model video/motion aktif terdaftar dan spec kunci tersedia', () => {
+  assert.equal(Object.keys(SEAVI_MODELS).length, 10)
   assert.ok(getSeaviSpec('seedance2_multi_s15'))
   assert.ok(getSeaviSpec('motion_control_v3_server19_15dtk'))
   assert.ok(getSeaviSpec('sora2_server10'))
+  // Server 16 tidak lagi ada di dashboard Seavi — jangan dihidupkan kembali.
+  assert.equal(getSeaviSpec('motion_control_v3_server16'), undefined)
+  assert.equal(getSeaviSpec('veo31_s9'), undefined)
   assert.equal(getSeaviSpec('model_ngawur'), undefined)
 })
 
@@ -163,7 +166,7 @@ test('submit: 202 → id diekstrak; 401 → error kode UNAUTHORIZED', async () =
     () => ({ status: 202, body: { id: 'req_abc123', status: 'queued', token_cost: 1 } }),
     async () => {
       const id = await submitSeaviGeneration('sea-key', {
-        model: 'veo31_s9',
+        model: 'kling3_server10',
         input: { image_url: 'x' },
         params: { prompt: 'p' },
       })
@@ -174,7 +177,7 @@ test('submit: 202 → id diekstrak; 401 → error kode UNAUTHORIZED', async () =
     () => ({ status: 401, body: { error: { code: 'UNAUTHORIZED', message: 'The API key is missing or invalid.' } } }),
     async () => {
       await assert.rejects(
-        submitSeaviGeneration('sea-bad', { model: 'veo31_s9', input: {}, params: {} }),
+        submitSeaviGeneration('sea-bad', { model: 'kling3_server10', input: {}, params: {} }),
         /UNAUTHORIZED/,
       )
     },
@@ -242,19 +245,29 @@ test('poll: HTTP 5xx sementara dilompati, bukan gagal permanen', async () => {
 
 // ── Image models & upscaler ─────────────────────────────────────────────────
 
-test('SEAVI_IMAGE_MODELS: 4 model image terdaftar; payload tanpa referensi sah', () => {
-  assert.equal(Object.keys(SEAVI_IMAGE_MODELS).length, 4)
-  const spec = SEAVI_IMAGE_MODELS['gpt_image2_s9']
+test('SEAVI_IMAGE_MODELS: 7 model image aktif; payload tanpa referensi sah', () => {
+  assert.equal(Object.keys(SEAVI_IMAGE_MODELS).length, 7)
+  // Katalog S9 lama sudah tidak aktif di dashboard Seavi.
+  assert.equal(SEAVI_IMAGE_MODELS['gpt_image2_s9'], undefined)
+  assert.equal(SEAVI_IMAGE_MODELS['seedream5_s9'], undefined)
+  const spec = SEAVI_IMAGE_MODELS['gpt_image_2_server15']
   const p = buildSeaviPayload(spec, { prompt: 'sunset indah', aspectRatio: '16:9' })
   assert.deepEqual(p.input, {})
   assert.equal(p.params.aspect_ratio, '16:9')
 })
 
 test('image model: aspek di luar opsi diabaikan; prompt wajib', () => {
-  const spec = SEAVI_IMAGE_MODELS['nano_banana_2_server9']
+  const spec = SEAVI_IMAGE_MODELS['nano_banana_2_server15']
   const p = buildSeaviPayload(spec, { prompt: 'x', aspectRatio: '21:9' })
   assert.equal(p.params.aspect_ratio, undefined)
   assert.throws(() => buildSeaviPayload(spec, { prompt: '' }), /Prompt wajib/)
+})
+
+test('image edit (Seavi Image) wajib minimal 1 gambar sumber', () => {
+  const spec = SEAVI_IMAGE_MODELS['linocut_image_edit_qwen_server15']
+  assert.throws(() => buildSeaviPayload(spec, { prompt: 'ubah gaya' }), /menerima 1-8 gambar/)
+  const p = buildSeaviPayload(spec, { imageUrls: ['a.png'], prompt: 'ubah gaya' })
+  assert.deepEqual(p.input, { image_urls: ['a.png'] })
 })
 
 test('upscaler: video wajib, gambar ditolak', () => {
@@ -281,7 +294,7 @@ test('generateSeaviImage: poll image completed → URL string', async () => {
     }), { status: 200 })
   }) as typeof fetch
   try {
-    const url = await generateSeaviImage('sea-key', { model: 'gpt_image2_s9', input: {}, params: { prompt: 'x' } })
+    const url = await generateSeaviImage('sea-key', { model: 'gpt_image_2_server15', input: {}, params: { prompt: 'x' } })
     assert.equal(url, 'https://cdn.seavilabs.site/img.png')
   } finally {
     globalThis.fetch = real

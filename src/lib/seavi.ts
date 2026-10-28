@@ -1,6 +1,7 @@
 // Seavi Labs REST API client — api.seavilabs.site via relay /api/public/seavi
 // Kontrak terverifikasi dari docs resmi + probe nyata (submit 202 → poll progress → result.url).
-// Model aktif diverifikasi via GET /models (16 model, bukan 70 di docs).
+// Katalog disinkronkan dari dashboard Seavi 28 Okt 2026: 18 model aktif —
+// 10 video/motion, 7 image, 1 upscaler — semuanya 1 token per generate.
 // Tanpa kunci member, relay bisa memasang kunci server untuk member yang sudah
 // top up — lihat providerServerKey.ts.
 import { isServerKey, relayAuthHeaders } from './providerServerKey.js'
@@ -59,13 +60,12 @@ const i2v = (id: string, label: string, tokens: number, durations: number[], asp
 
 export const SEAVI_MODELS: Record<string, SeaviModelSpec> = {
   // ── Motion Control (gambar + video referensi) ──
-  motion_control_v3_server10_30dtk: mc('motion_control_v3_server10_30dtk', 'Motion Control V3 · Server 10 (30 dtk)', 2, 0),
-  motion_control_v3_server16: mc('motion_control_v3_server16', 'Motion Control V3 · Server 16', 1, 0),
+  motion_control_v3_server10_30dtk: mc('motion_control_v3_server10_30dtk', 'Motion Control V3 · Server 10 (30 dtk)', 1, 0),
   motion_control_v3_server19_15dtk: mc('motion_control_v3_server19_15dtk', 'Motion Control V3 · Server 19 (15 dtk)', 1, 250),
 
   // ── Video generation: image to video ──
   kling3_server10: i2v('kling3_server10', 'Kling 3 · Server 10', 1, [6, 10], ['9:16', '16:9']),
-  kling21pro_server10: i2v('kling21pro_server10', 'Kling 2.1 Pro · Server 10', 2, [5, 10], ['9:16', '16:9']),
+  kling21pro_server10: i2v('kling21pro_server10', 'Kling 2.1 Pro · Server 10', 1, [5, 10], ['9:16', '16:9']),
   grok_imagine_s15: i2v('grok_imagine_s15', 'Grok Imagine · Server 15', 1, [5, 10], ['9:16', '16:9', '1:1', '4:3']),
   // Sora 2: i2v — 1 gambar WAJIB (upstream menolak t2v: "Missing required
   // input: image_url") dan TANPA aspect_ratio ("Unsupported parameter:
@@ -105,7 +105,7 @@ export const SEAVI_MODELS: Record<string, SeaviModelSpec> = {
     label: 'Seedance 2.5 · Server 19',
     category: 'video_generation',
     inputType: 'multimodal_to_video',
-    tokens: 2,
+    tokens: 1,
     imageMode: 'multi',
     imageMin: 1,
     imageMax: 9,
@@ -124,7 +124,7 @@ export const SEAVI_MODELS: Record<string, SeaviModelSpec> = {
     label: 'Wan 3.0 · Server 19',
     category: 'video_generation',
     inputType: 'image_to_video',
-    tokens: 2,
+    tokens: 1,
     imageMode: 'single',
     imageMin: 1,
     imageMax: 1,
@@ -140,7 +140,7 @@ export const SEAVI_MODELS: Record<string, SeaviModelSpec> = {
     label: 'Gemini Omni · Server 19',
     category: 'video_generation',
     inputType: 'multimodal_to_video',
-    tokens: 2,
+    tokens: 1,
     imageMode: 'multi',
     imageMin: 1,
     imageMax: 9,
@@ -155,15 +155,16 @@ export const SEAVI_MODELS: Record<string, SeaviModelSpec> = {
 }
 
 // ── Image generation (halaman Edit Image) ──
-// Input: image_urls 0-8 referensi; output png. 1 token.
-const seaviImage = (id: string, label: string, maxRefs: number, aspects: string[]): SeaviModelSpec => ({
+// Input: image_urls 0-8 referensi; output png. 1 token. Model "edit" butuh
+// minimal 1 gambar sumber.
+const seaviImage = (id: string, label: string, maxRefs: number, aspects: string[], minRefs = 0): SeaviModelSpec => ({
   id,
   label,
   category: 'image_generation',
   inputType: 'text_or_images_to_image',
   tokens: 1,
   imageMode: 'multi',
-  imageMin: 0,
+  imageMin: minRefs,
   imageMax: maxRefs,
   videoMode: 'none',
   aspects,
@@ -172,16 +173,19 @@ const seaviImage = (id: string, label: string, maxRefs: number, aspects: string[
 })
 
 export const SEAVI_IMAGE_MODELS: Record<string, SeaviModelSpec> = {
-  gpt_image2_s9: seaviImage('gpt_image2_s9', 'GPT Image 2 · S9', 8, ['9:16', '16:9', '1:1', '4:3']),
-  grok_imagine_gambar_s9: seaviImage('grok_imagine_gambar_s9', 'Grok Imagine Gambar · S9', 5, ['9:16', '16:9', '1:1', '4:3']),
-  nano_banana_2_server9: seaviImage('nano_banana_2_server9', 'Nano Banana 2 · S9', 8, ['9:16', '16:9', '1:1', '4:3']),
-  seedream5_s9: seaviImage('seedream5_s9', 'Seedream 5 · S9', 8, ['9:16', '16:9', '1:1', '4:3']),
+  gpt_image_2_server15: seaviImage('gpt_image_2_server15', 'GPT Image 2 · Server 15', 8, ['9:16', '16:9', '1:1', '4:3']),
+  nano_banana_2_lite_server15: seaviImage('nano_banana_2_lite_server15', 'Nano Banana 2 Lite · Server 15', 8, ['9:16', '16:9', '1:1', '4:3']),
+  nano_banana_2_server15: seaviImage('nano_banana_2_server15', 'Nano Banana 2 · Server 15', 8, ['9:16', '16:9', '1:1', '4:3']),
+  nano_banana_pro_server15: seaviImage('nano_banana_pro_server15', 'Nano Banana Pro · Server 15', 8, ['9:16', '16:9', '1:1', '4:3']),
+  linocut_image_edit_qwen_server15: seaviImage('linocut_image_edit_qwen_server15', 'Seavi Image · Server 15', 8, ['9:16', '16:9', '1:1', '4:3'], 1),
+  seedream_4_server15: seaviImage('seedream_4_server15', 'Seedream 4 · Server 15', 8, ['9:16', '16:9', '1:1', '4:3']),
+  seedream_4_5_server15: seaviImage('seedream_4_5_server15', 'Seedream 4.5 · Server 15', 8, ['9:16', '16:9', '1:1', '4:3']),
 }
 
 // ── Upscaler (halaman Video Upscaler) ──
 export const SEAVI_VIDEO_UPSCALER: SeaviModelSpec = {
   id: 'upscale_video_server7',
-  label: 'Upscale Video · S7',
+  label: 'Upscale Video · Server 7',
   category: 'upscaler',
   inputType: 'video_upscale',
   tokens: 1,
