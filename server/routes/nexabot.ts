@@ -26,9 +26,9 @@ import {
   type NexabotSubmitSlot,
 } from '../../shared/nexabotProxy.js'
 import {
-  isAnyServerSecret,
   serverAccounts,
   serverCredentialEligibility,
+  serverSecrets,
   type ServerAccount,
 } from '../lib/nexabotAccounts.js'
 import {
@@ -340,6 +340,14 @@ interface ResolvedUpstreamAuth {
   cadangan?: { headers: Record<string, string>; credential: ResolvedCredential }
   /** Akun pool yang dipakai (untuk mengingat akun asal sebuah job). */
   accountId?: string
+  /** true = semua akun server sedang dipakai; route menjawab 429 antrean. */
+  antrean?: boolean
+  /**
+   * Kredensial server yang DIKIRIM klien (bukan hasil suntikan relay). Dipakai
+   * hanya untuk pencatatan: laporan admin perlu tetap melihat bahwa kunci ini
+   * masih beredar di browser, walau lane-nya dipilih dari pool.
+   */
+  kredensialKlien?: ResolvedCredential
 }
 
 /** Boleh tidaknya member ini memakai kredensial server (kunci atau sesi). */
@@ -423,6 +431,35 @@ function lupakanAkunJob(jobId: string) {
   akunJob.delete(jobId)
 }
 
+// ── Reservasi lane saat submit ────────────────────────────────────
+// Lane baru terkunci SETELAH upstream menjawab, karena id job belum diketahui
+// sebelumnya. Tanpa reservasi, dua submit yang datang hampir bersamaan sama-sama
+// melihat semua lane kosong, memilih akun yang sama, dan yang kedua ditahan 429
+// padahal akun lain menganggur. Reservasi menutup jeda itu: akun yang sudah
+// dipilih dianggap sibuk oleh submit lain sampai relay selesai — atau sampai
+// kedaluwarsa kalau proses mati di tengah jalan.
+const RESERVASI_MS = 90_000
+const reservasiLane = new Map<string, number>()
+
+function laneDireservasi(accountId: string): boolean {
+  const sampai = reservasiLane.get(accountId)
+  if (sampai == null) return false
+  if (sampai <= Date.now()) {
+    reservasiLane.delete(accountId)
+    return false
+  }
+  return true
+}
+
+function reservasiAkun(accountId: string) {
+  reservasiLane.set(accountId, Date.now() + RESERVASI_MS)
+}
+
+/** Lepas reservasi milik request ini. Aman dipanggil walau tidak pernah memasang. */
+function lepasReservasi(accountId?: string | null) {
+  if (accountId) reservasiLane.delete(accountId)
+}
+
 /**
  * Pilih akun server untuk satu request.
  *
@@ -430,12 +467,13 @@ function lupakanAkunJob(jobId: string) {
  * pertama. Rute yang MEMBUAT job memilih akun yang lane-nya kosong — inilah yang
  * membuat beberapa akun benar-benar berjalan paralel. Kalau semuanya sibuk, akun
  * dengan sisa antrean terpendek yang dipakai; relay lalu menjawab 429 antrean
- * dari lane akun itu.
+ * dari lane akun itu. `null` hanya untuk submit saat SEMUA akun sedang direservasi
+ * submit lain yang belum dapat id job — tidak ada akun yang aman ditembak.
  */
 function pilihAkunServer(
   daftar: ServerAccount[],
   opts: { membuatJob?: boolean; jobId?: string },
-): ServerAccount {
+): ServerAccount | null {
   if (opts.jobId) {
     const pemilik = akunJob.get(opts.jobId)
     if (pemilik) {
@@ -447,18 +485,22 @@ function pilihAkunServer(
   // Akun bersesi cookie didahulukan: paket Unlimited hanya dihormati di jalur
   // web, jadi generate tidak memotong kredit upstream operator.
   const urut = [...daftar].sort((a, b) => Number(!!b.cookie) - Number(!!a.cookie))
-  if (!opts.membuatJob) return urut[0]
+  if (!opts.membuatJob) return urut[0] ?? null
 
-  let cadangan = urut[0]
+  let cadangan: ServerAccount | null = null
   let sisaTerpendek = Number.POSITIVE_INFINITY
+  let adaYangBebasReservasi = false
   for (const akun of urut) {
     const kredensial = kredensialAkun(akun)
     if (!kredensial) continue
+    if (laneDireservasi(akun.id)) continue
+    adaYangBebasReservasi = true
     const sibuk = nexabotLaneBusy(nexabotSubmitLaneKey(kredensial))
     if (!sibuk.busy) {
       if (akun !== urut[0]) {
         console.log(`[nexabot-local] akun "${akun.label}" kosong — dipakai untuk submit berikutnya`)
       }
+      reservasiAkun(akun.id)
       return akun
     }
     if (sibuk.retryAfterSeconds < sisaTerpendek) {
@@ -466,10 +508,15 @@ function pilihAkunServer(
       cadangan = akun
     }
   }
+  if (!cadangan && !adaYangBebasReservasi) {
+    console.warn('[nexabot-local] semua akun server sedang dipesan submit lain — jawab antrean')
+    return null
+  }
+  const akun = cadangan ?? urut[0]
   console.warn(
-    `[nexabot-local] semua ${daftar.length} akun server sibuk — submit ditahan di "${cadangan.label}" (±${sisaTerpendek}s)`,
+    `[nexabot-local] semua ${daftar.length} akun server sibuk — submit ditahan di "${akun.label}" (±${sisaTerpendek}s)`,
   )
-  return cadangan
+  return akun
 }
 
 /**
@@ -491,37 +538,48 @@ function resolveUpstreamAuth(
   const cookieMentah = req.headers['x-nexabot-cookie']
   if (typeof cookieMentah === 'string' && cookieMentah.trim()) {
     const cookies = cookieMentah.trim()
-    return {
-      headers: sessionHeaders(cookies),
-      credential: { kind: 'cookie', source: 'own-cookie', secret: cookies },
+    // Cookie yang ternyata sesi milik server (ditempel di halaman Providers atau
+    // dibagikan admin) bukan kredensial pribadi member: lane-nya dipilih dari pool,
+    // supaya dua generate bersamaan tidak berebut satu akun. Aturan tiket tetap
+    // berlaku karena relay yang menyuntikkan kredensial server.
+    if (!serverSecrets().has(cookies)) {
+      return {
+        headers: sessionHeaders(cookies),
+        credential: { kind: 'cookie', source: 'own-cookie', secret: cookies },
+      }
     }
+    return authDariPool(req, opts)
   }
 
   const kunciKlien = req.headers['x-api-key']
   if (typeof kunciKlien === 'string' && kunciKlien.trim()) {
     const kunci = kunciKlien.trim()
-    if (isAnyServerSecret(kunci)) {
-      const izin = opts.bacaSaja ? bolehBacaDenganKunciInduk(req) : bolehPakaiKredensialServer(req)
-      if (!izin.ok) return { headers: {}, credential: null, error: izin.reason }
-      // Kunci server yang masih beredar di browser: kalau akunnya juga punya
-      // sesi cookie, sesi itu tetap jadi cadangan bila kunci ditolak upstream.
-      const pemilik = serverAccounts().find((a) => a.apiKey === kunci || a.cookie === kunci)
-      const lain: ResolvedCredential | null = pemilik
-        ? pemilik.cookie && pemilik.cookie !== kunci
-          ? { kind: 'cookie', source: 'master', secret: pemilik.cookie }
-          : pemilik.apiKey && pemilik.apiKey !== kunci
-            ? { kind: 'api-key', source: 'master', secret: pemilik.apiKey }
-            : null
-        : null
-      return {
-        headers: { 'x-api-key': kunci },
-        credential: { kind: 'api-key', source: 'client-master', secret: kunci },
-        cadangan: lain ? { headers: headersUntuk(lain), credential: lain } : undefined,
-      }
+    if (serverSecrets().has(kunci)) {
+      // Kunci server yang masih beredar di browser: lane-nya dipilih dari pool,
+      // bukan dipaku ke akun yang namanya disebut klien. Jejak "kunci ini masih
+      // di browser" tetap dicatat lewat `kredensialKlien`.
+      const hasil = authDariPool(req, opts)
+      return hasil.credential
+        ? { ...hasil, kredensialKlien: { kind: 'api-key', source: 'client-master', secret: kunci } }
+        : hasil
     }
     return { headers: { 'x-api-key': kunci }, credential: { kind: 'api-key', source: 'own-key', secret: kunci } }
   }
 
+  return authDariPool(req, opts)
+}
+
+/**
+ * Kredensial dari pool akun server untuk satu request.
+ *
+ * Satu pintu untuk jalur tanpa kredensial klien DAN jalur kredensial server yang
+ * dikirim klien: keduanya memakai akun milik operator yang sama, jadi lane-nya
+ * dipilih dengan aturan yang sama (kosong dulu, afinitas job untuk rute baca).
+ */
+function authDariPool(
+  req: Request,
+  opts: { bacaSaja?: boolean; membuatJob?: boolean; jobId?: string },
+): ResolvedUpstreamAuth {
   const daftar = serverAccounts()
   if (daftar.length === 0) {
     return { headers: {}, credential: null, error: 'Missing X-Api-Key header' }
@@ -529,7 +587,19 @@ function resolveUpstreamAuth(
   const izin = opts.bacaSaja ? bolehBacaDenganKunciInduk(req) : bolehPakaiKredensialServer(req)
   if (!izin.ok) return { headers: {}, credential: null, error: izin.reason }
 
-  return authDariAkun(pilihAkunServer(daftar, opts))
+  const akun = pilihAkunServer(daftar, opts)
+  // Semua akun sudah dipesan submit lain yang belum dapat id job: tidak ada
+  // akun yang aman ditembak. Route menjawab 429 antrean (bukan 400) supaya
+  // klien mengulang dengan sabar.
+  if (!akun) {
+    return {
+      headers: {},
+      credential: null,
+      antrean: true,
+      error: 'Semua akun NexaBot server sedang dipakai generate lain — permintaan diulang otomatis sebentar lagi',
+    }
+  }
+  return authDariAkun(akun)
 }
 
 
@@ -681,11 +751,22 @@ router.get('/session', async (req: Request, res: Response) => {
 // ── Submit job ──
 router.post('/submit', async (req: Request, res: Response) => {
   const auth = resolveUpstreamAuth(req, { membuatJob: true })
+  if (auth.antrean) {
+    return res.status(429).json({
+      ok: false,
+      queued: true,
+      retry_after_seconds: 30,
+      error: auth.error,
+    })
+  }
   if (Object.keys(auth.headers).length === 0) {
     return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key header' })
   }
   const tiket = tiketServer(req, auth, 'submit')
-  if (!tiket.ok) return res.status(tiket.status ?? 402).json({ ok: false, error: tiket.reason })
+  if (!tiket.ok) {
+    lepasReservasi(auth.accountId)
+    return res.status(tiket.status ?? 402).json({ ok: false, error: tiket.reason })
+  }
 
   const body = req.body
   // Kredensial cookie (milik klien atau sesi server) harus lewat jalur web
@@ -734,6 +815,9 @@ router.post('/submit', async (req: Request, res: Response) => {
         : `${NEXABOT_BASE}/api/v1/api`,
     },
   })
+  // Lane sudah dikunci job (kalau job terbentuk) atau upstream menolak — dua-duanya
+  // berarti reservasi pemilihan akun sudah tidak diperlukan.
+  lepasReservasi(auth.accountId)
   // Dicatat setelah respons upstream diterima: rute inilah yang memakai kuota.
   if (hasil) {
     if (tiket.usageId) selesaikanTiket(tiket.usageId, hasil.status, hasil.text)
@@ -747,7 +831,13 @@ router.post('/submit', async (req: Request, res: Response) => {
       route: hasil.credential?.kind === 'cookie' ? 'generate' : 'submit',
       statusCode: hasil.status,
       bodyText: hasil.text,
-      credential: hasil.credential,
+      // Kunci server yang dikirim browser tetap dicatat sebagai 'client-master'
+      // walau lane-nya akun pool lain: laporan admin yang menjawab "kunci ini masih
+      // beredar di browser". Kalau cadangan yang dipakai, pencatatan ikut cadangan.
+      credential:
+        auth.kredensialKlien && hasil.credential === auth.credential
+          ? auth.kredensialKlien
+          : hasil.credential,
     })
   }
 })
@@ -809,11 +899,22 @@ router.post('/generate', async (req: Request, res: Response) => {
 // memakai resolusi kredensial penuh seperti /submit, bukan session-only.
 router.post('/gpt-image', async (req: Request, res: Response) => {
   const auth = resolveUpstreamAuth(req, { membuatJob: true })
+  if (auth.antrean) {
+    return res.status(429).json({
+      ok: false,
+      queued: true,
+      retry_after_seconds: 30,
+      error: auth.error,
+    })
+  }
   if (Object.keys(auth.headers).length === 0) {
     return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key header' })
   }
   const tiket = tiketServer(req, auth, 'gpt-image')
-  if (!tiket.ok) return res.status(tiket.status ?? 402).json({ ok: false, error: tiket.reason })
+  if (!tiket.ok) {
+    lepasReservasi(auth.accountId)
+    return res.status(tiket.status ?? 402).json({ ok: false, error: tiket.reason })
+  }
 
   const body = req.body
   console.log(`[nexabot-local] POST /api/v1/gpt-image (aspect: ${body.aspect ?? '-'}, refs: ${Array.isArray(body.references) ? body.references.length : 0})`)
@@ -837,6 +938,9 @@ router.post('/gpt-image', async (req: Request, res: Response) => {
     },
     body: JSON.stringify(upstreamBody),
   }, { kredensialServer: auth.credential?.source === 'master', credential: auth.credential, accountId: auth.accountId, cadangan: auth.cadangan })
+  // Lane sudah dikunci job (kalau job terbentuk) atau upstream menolak — reservasi
+  // pemilihan akun tidak diperlukan lagi.
+  lepasReservasi(auth.accountId)
   // Dicatat setelah respons upstream diterima: rute inilah yang memakai kuota.
   if (hasil) {
     if (tiket.usageId) selesaikanTiket(tiket.usageId, hasil.status, hasil.text)
@@ -845,7 +949,10 @@ router.post('/gpt-image', async (req: Request, res: Response) => {
       route: 'gpt-image',
       statusCode: hasil.status,
       bodyText: hasil.text,
-      credential: hasil.credential,
+      credential:
+        auth.kredensialKlien && hasil.credential === auth.credential
+          ? auth.kredensialKlien
+          : hasil.credential,
     })
   }
 })

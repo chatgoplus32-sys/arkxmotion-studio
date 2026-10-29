@@ -88,7 +88,9 @@ test('lane concurrency 1: pemanggil kedua menunggu, tidak jalan bersamaan', asyn
   const first = await acquireNexabotSubmitSlot(lane, cfg())
   assert.ok(first)
   assert.equal(first.position, 0, 'yang pertama tidak mengantre')
-  assert.equal(first.waitMs, 0)
+  // Bukan 0 persis: acquire tetap satu putaran event loop, dan timer bisa
+  // meleset 1 ms di mesin yang sibuk.
+  assert.ok(first.waitMs <= 5, `pemanggil pertama menunggu ${first.waitMs}ms`)
 
   let pemanggilKeduaSelesai = false
   const kedua = acquireNexabotSubmitSlot(lane, cfg({ maxWaitMs: 5000 })).then((slot) => {
