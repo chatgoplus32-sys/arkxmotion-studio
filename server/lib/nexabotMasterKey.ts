@@ -347,48 +347,65 @@ export async function checkMasterKey(
   return probeKunci(kunci, timeoutMs)
 }
 
+/**
+ * Coba ulang koneksi. Kegagalan jaringan ke nexabot.id (ECONNRESET / connect
+ * timeout) muncul sesekali dan bukan tanda kunci salah; satu kegagalan saja
+ * sudah cukup membuat tombol Cek Kunci tampak seperti kunci yang dicabut.
+ */
+const PERCOBAAN_KONEKSI = 3
+
 async function probeKunci(kunci: string, timeoutMs: number): Promise<MasterKeyCheck> {
-
-  try {
-    const res = await fetch(`${NEXABOT_BASE}/api/v1/api/credit`, {
-      method: 'GET',
-      headers: { 'x-api-key': kunci, Accept: 'application/json' },
-      signal: AbortSignal.timeout(timeoutMs),
-    })
-    if (res.status === 401 || res.status === 403) {
-      return {
-        ...KOSONG_KUNCI,
-        status: res.status,
-        error: 'API key ditolak penyedia — buat kunci baru di dashboard nexabot.id lalu simpan ulang di sini',
+  let terakhir: any = null
+  for (let percobaan = 1; percobaan <= PERCOBAAN_KONEKSI; percobaan++) {
+    if (percobaan > 1) {
+      await new Promise((r) => setTimeout(r, percobaan === 2 ? 800 : 2000))
+    }
+    try {
+      const res = await fetch(`${NEXABOT_BASE}/api/v1/api/credit`, {
+        method: 'GET',
+        headers: { 'x-api-key': kunci, Accept: 'application/json' },
+        signal: AbortSignal.timeout(timeoutMs),
+      })
+      if (res.status === 401 || res.status === 403) {
+        return {
+          ...KOSONG_KUNCI,
+          status: res.status,
+          error: 'API key ditolak penyedia — buat kunci baru di dashboard nexabot.id lalu simpan ulang di sini',
+        }
       }
-    }
-    if (!res.ok) {
-      return {
-        ...KOSONG_KUNCI,
-        status: res.status,
-        transient: res.status === 408 || res.status === 429 || res.status >= 500,
-        error: `Cek kunci gagal: HTTP ${res.status}`,
+      if (!res.ok) {
+        return {
+          ...KOSONG_KUNCI,
+          status: res.status,
+          transient: res.status === 408 || res.status === 429 || res.status >= 500,
+          error: `Cek kunci gagal: HTTP ${res.status}`,
+        }
       }
-    }
 
-    const raw = (await res.json().catch(() => null)) as any
-    if (raw && raw.ok === false) {
-      return { ...KOSONG_KUNCI, status: res.status, error: String(raw.error || 'Kunci ditolak penyedia') }
+      const raw = (await res.json().catch(() => null)) as any
+      if (raw && raw.ok === false) {
+        return { ...KOSONG_KUNCI, status: res.status, error: String(raw.error || 'Kunci ditolak penyedia') }
+      }
+      return {
+        ok: true,
+        valid: true,
+        status: res.status,
+        credit: angkaKredit(raw),
+        telegram_id: telegramIdKredit(raw),
+      }
+    } catch (err: any) {
+      terakhir = err
     }
-    return {
-      ok: true,
-      valid: true,
-      status: res.status,
-      credit: angkaKredit(raw),
-      telegram_id: telegramIdKredit(raw),
-    }
-  } catch (err: any) {
-    const timeout = err?.name === 'TimeoutError' || err?.name === 'AbortError'
-    return {
-      ...KOSONG_KUNCI,
-      transient: true,
-      error: timeout ? 'Cek kunci timeout — upstream tidak menjawab' : `Cek kunci gagal: ${err?.message || err}`,
-    }
+  }
+
+  const timeout = terakhir?.name === 'TimeoutError' || terakhir?.name === 'AbortError'
+  const kode = terakhir?.cause?.code || terakhir?.code
+  return {
+    ...KOSONG_KUNCI,
+    transient: true,
+    error: timeout
+      ? `Cek kunci timeout setelah ${PERCOBAAN_KONEKSI} percobaan — upstream tidak menjawab`
+      : `Cek kunci gagal: ${terakhir?.message || terakhir}${kode ? ` (${kode})` : ''}`,
   }
 }
 
