@@ -209,9 +209,15 @@ const KOSONG: MasterCookieCheck = {
  * dipakai klien saat memeriksa cookie sendiri). Parsing heuristik: bentuk
  * respons web NexaBot bisa berubah, jadi field yang tidak dikenali dibiarkan
  * null dan panel admin menampilkannya sebagai "tidak terverifikasi".
+ *
+ * `cookieOverride` dipakai panel admin untuk memeriksa SATU akun dari pool
+ * tanpa mengubah sesi akun utama.
  */
-export async function checkMasterCookie(timeoutMs = 20000): Promise<MasterCookieCheck> {
-  const cookies = masterCookie()
+export async function checkMasterCookie(
+  timeoutMs = 20000,
+  cookieOverride?: string | null,
+): Promise<MasterCookieCheck> {
+  const cookies = cookieOverride != null ? cookieOverride.trim() : masterCookie()
   if (!cookies) return { ...KOSONG, error: 'Sesi Unlimited server belum diatur' }
 
   try {

@@ -325,6 +325,303 @@ function ProviderServerKeySection({
   )
 }
 
+// ─── Pool akun NexaBot ────────────────────────────────────────────────
+// Satu akun hanya boleh menjalankan satu job. Menambah akun di sini berarti
+// menambah lane: relay memilih akun yang sedang kosong, jadi dua job bisa jalan
+// bersamaan. Server hanya mengirim ringkasan (ada kunci / ada sesi) — nilai
+// rahasianya tidak pernah kembali ke browser.
+
+interface PoolAccount {
+  id: string
+  label: string
+  has_key: boolean
+  has_cookie: boolean
+  legacy: boolean
+}
+
+interface PoolCheckView {
+  ok: boolean
+  transient?: boolean
+  text: string
+  detail?: string
+}
+
+function NexabotAccountPoolSection({
+  token,
+  addToast,
+  refreshSignal,
+}: {
+  token: string | null
+  addToast: (message: string, type: 'success' | 'error' | 'info') => void
+  /** Berubah saat kunci/sesi akun utama disimpan — daftar ikut diperbarui. */
+  refreshSignal: string
+}) {
+  const [accounts, setAccounts] = useState<PoolAccount[]>([])
+  const [label, setLabel] = useState('')
+  const [apiKey, setApiKey] = useState('')
+  const [cookie, setCookie] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [checkingId, setCheckingId] = useState<string | null>(null)
+  const [checks, setChecks] = useState<Record<string, PoolCheckView>>({})
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  const fetchAccounts = useCallback(async () => {
+    if (!token) return
+    setLoading(true)
+    try {
+      const res = await fetch('/api/admin/nexabot/master-accounts', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) return
+      const data = await res.json()
+      setAccounts(Array.isArray(data.accounts) ? data.accounts : [])
+    } catch { /* biarkan daftar lama kalau request gagal */ } finally {
+      setLoading(false)
+    }
+  }, [token])
+
+  useEffect(() => { fetchAccounts() }, [fetchAccounts, refreshSignal])
+
+  const handleAdd = async () => {
+    if (!token || saving) return
+    if (!apiKey.trim() && !cookie.trim()) {
+      addToast('Isi minimal satu: API key atau cookie sesi', 'error')
+      return
+    }
+    setSaving(true)
+    try {
+      const res = await fetch('/api/admin/nexabot/master-accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ label: label.trim(), apiKey: apiKey.trim(), cookie: cookie.trim() }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        addToast(`Akun "${data.account?.label || 'baru'}" ditambahkan`, 'success')
+        setLabel('')
+        setApiKey('')
+        setCookie('')
+        setAccounts(Array.isArray(data.accounts) ? data.accounts : [])
+      } else {
+        addToast(data.error || 'Gagal menambah akun', 'error')
+      }
+    } catch {
+      addToast('Gagal menambah akun', 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDelete = async (akun: PoolAccount) => {
+    if (!token || deletingId) return
+    if (!window.confirm(`Hapus akun "${akun.label}" dari pool? Job yang sedang berjalan di akun ini tetap jalan, tapi tidak ada submit baru yang diarahkan ke sana.`)) return
+    setDeletingId(akun.id)
+    try {
+      const res = await fetch(`/api/admin/nexabot/master-accounts/${akun.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json()
+      if (res.ok) {
+        addToast(`Akun "${akun.label}" dihapus`, 'success')
+        setAccounts(Array.isArray(data.accounts) ? data.accounts : [])
+        setChecks((prev) => {
+          const next = { ...prev }
+          delete next[akun.id]
+          return next
+        })
+      } else {
+        addToast(data.error || 'Gagal menghapus akun', 'error')
+      }
+    } catch {
+      addToast('Gagal menghapus akun', 'error')
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  const handleCheck = async (akun: PoolAccount) => {
+    if (!token || checkingId) return
+    setCheckingId(akun.id)
+    try {
+      const res = await fetch(`/api/admin/nexabot/master-accounts/${akun.id}/check`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json()
+      if (res.ok && data.check) {
+        const check = data.check as any
+        const hasil: PoolCheckView = data.kind === 'cookie'
+          ? {
+              ok: !!check.ok,
+              transient: !!check.transient,
+              text: check.ok
+                ? check.unlimited
+                  ? 'Sesi valid — Unlimited aktif'
+                  : 'Sesi valid, tapi Unlimited tidak terdeteksi'
+                : check.transient
+                  ? 'Cek gagal sementara'
+                  : 'Sesi ditolak',
+              detail: check.error || [check.plan, check.until, check.email].filter(Boolean).join(' · ') || undefined,
+            }
+          : {
+              ok: !!check.valid,
+              transient: !!check.transient,
+              text: check.valid ? `Kunci diterima (HTTP ${check.status})` : check.transient ? 'Cek gagal sementara' : 'Kunci ditolak',
+              detail: check.error || undefined,
+            }
+        setChecks((prev) => ({ ...prev, [akun.id]: hasil }))
+      } else {
+        addToast(data.error || 'Gagal memeriksa akun', 'error')
+      }
+    } catch {
+      addToast('Gagal memeriksa akun', 'error')
+    } finally {
+      setCheckingId(null)
+    }
+  }
+
+  return (
+    <Section
+      title="Akun NexaBot Tambahan"
+      sub="Satu akun = satu lane. Tambah akun kedua dst. supaya beberapa generate bisa berjalan bersamaan"
+    >
+      <div className="rounded-xl border border-border bg-card/40 p-4">
+        <p className="text-[12px] text-muted-foreground leading-relaxed">
+          NexaBot hanya mengizinkan <span className="font-medium text-foreground">satu job berjalan per akun</span>.
+          Relay memilih akun yang sedang kosong setiap kali ada submit, jadi N akun di sini berarti N job bisa
+          paralel. Akun dicoba lewat sesi cookie lebih dulu; kalau tidak ada, lewat API key. Nilai kunci/sesi
+          tidak pernah ditampilkan lagi dan tidak pernah dikirim ke browser.
+        </p>
+
+        {loading && accounts.length === 0 ? (
+          <div className="mt-3 text-[12px] text-muted-foreground">Memuat daftar akun…</div>
+        ) : accounts.length === 0 ? (
+          <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-300">
+            Belum ada akun server. Isi Kunci Server / Sesi Unlimited di atas, atau tambahkan akun di bawah.
+          </div>
+        ) : (
+          <ul className="mt-3 divide-y divide-border/60 rounded-lg border border-border">
+            {accounts.map((akun) => {
+              const hasil = checks[akun.id]
+              return (
+                <li key={akun.id} className="px-3 py-2.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium">{akun.label}</span>
+                    {akun.legacy && (
+                      <span className="rounded-full border border-border bg-card px-2 py-0.5 text-[10px] text-muted-foreground">
+                        akun utama
+                      </span>
+                    )}
+                    {akun.has_cookie && (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-400">
+                        <Cookie className="h-3 w-3" />
+                        Sesi
+                      </span>
+                    )}
+                    {akun.has_key && (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-[10px] text-sky-400">
+                        <KeyRound className="h-3 w-3" />
+                        Kunci
+                      </span>
+                    )}
+                    <span className="ml-auto flex items-center gap-1.5">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleCheck(akun)}
+                        disabled={!!checkingId}
+                      >
+                        <Activity className={`h-3.5 w-3.5 mr-1.5 ${checkingId === akun.id ? 'animate-pulse' : ''}`} />
+                        {checkingId === akun.id ? 'Memeriksa...' : 'Cek'}
+                      </Button>
+                      {!akun.legacy && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleDelete(akun)}
+                          disabled={!!deletingId}
+                        >
+                          <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                          {deletingId === akun.id ? 'Menghapus...' : 'Hapus'}
+                        </Button>
+                      )}
+                    </span>
+                  </div>
+
+                  {hasil && (
+                    <div
+                      className={`mt-2 rounded-lg border px-3 py-1.5 text-[11px] leading-relaxed ${
+                        hasil.ok
+                          ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                          : hasil.transient
+                            ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+                            : 'border-red-500/30 bg-red-500/10 text-red-300'
+                      }`}
+                    >
+                      <span className="font-medium">{hasil.text}</span>
+                      {hasil.detail && <span className="ml-2 opacity-80">{hasil.detail}</span>}
+                    </div>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        )}
+
+        <div className="mt-4 border-t border-border/60 pt-3">
+          <div className="text-[12px] font-medium">Tambah akun</div>
+          <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <input
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="Nama akun (mis. Akun 2 — tim A)"
+              autoComplete="off"
+              maxLength={40}
+              className="px-3 py-2 rounded-lg border border-border bg-card text-sm"
+            />
+            <input
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="API key akun ini (opsional kalau pakai sesi)"
+              autoComplete="off"
+              className="px-3 py-2 rounded-lg border border-border bg-card text-sm font-mono"
+            />
+          </div>
+          <label className="block text-[12px] font-medium text-muted-foreground mt-2 mb-1">
+            Cookie sesi akun ini (opsional)
+          </label>
+          <textarea
+            value={cookie}
+            onChange={(e) => setCookie(e.target.value)}
+            placeholder={'Tempel nilai cookie ("session=...; x=..."), header "Cookie: ...", atau hasil Copy as cURL dari akun tersebut'}
+            rows={2}
+            autoComplete="off"
+            spellCheck={false}
+            className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm font-mono resize-y"
+          />
+          <div className="mt-2 flex items-center gap-2">
+            <Button size="sm" onClick={handleAdd} disabled={saving || (!apiKey.trim() && !cookie.trim())}>
+              <Zap className={`h-4 w-4 mr-2 ${saving ? 'animate-pulse' : ''}`} />
+              {saving ? 'Menyimpan...' : 'Tambah Akun'}
+            </Button>
+            <Button size="sm" variant="outline" onClick={fetchAccounts} disabled={loading}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-pulse' : ''}`} />
+              Muat Ulang
+            </Button>
+          </div>
+          <div className="mt-2 text-[11px] text-muted-foreground leading-relaxed">
+            Isi kunci untuk akun berbayar per generate, atau sesi cookie untuk akun Unlimited. Kalau dua-duanya
+            diisi, relay memakai sesi lebih dulu. Isian kosong saat menyimpan akun lama berarti nilainya dipertahankan.
+          </div>
+        </div>
+      </div>
+    </Section>
+  )
+}
+
 export default function AdminSystemSettings() {
   const [settings, setSettings] = useState<AppSettings>({})
   const [maintenance, setMaintenance] = useState<Maintenance[]>([])
@@ -1109,6 +1406,12 @@ export default function AdminSystemSettings() {
             )}
           </div>
         </Section>
+
+        <NexabotAccountPoolSection
+          token={token}
+          addToast={addToast}
+          refreshSignal={`${mkStatus?.configured ? 1 : 0}-${mcStatus?.configured ? 1 : 0}`}
+        />
 
         <ProviderServerKeySection provider="alriz" label="Alriz Motion" token={token} addToast={addToast} />
         <ProviderServerKeySection provider="seavi" label="Seavi Labs" token={token} addToast={addToast} />

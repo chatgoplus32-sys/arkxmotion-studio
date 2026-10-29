@@ -27,6 +27,15 @@ import {
   parseCookieInput,
 } from '../lib/nexabotMasterCookie.js'
 import {
+  ACCOUNTS_SETTING,
+  AccountInputError,
+  accountSummaries,
+  addServerAccount,
+  removeServerAccount,
+  serverAccountById,
+  updateServerAccount,
+} from '../lib/nexabotAccounts.js'
+import {
   PROVIDER_MASTER_SETTING_KEYS,
   checkMasterKey as checkProviderMasterKey,
   masterKeyStatus as providerMasterKeyStatus,
@@ -480,6 +489,81 @@ router.post('/nexabot/master-cookie/check', authenticateToken, requireAdmin, asy
     res.json({ ok: true, check: hasil })
   } catch (error: any) {
     console.error('[admin-nexabot-master-cookie] check error:', error?.message || error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// ─── Akun NexaBot tambahan (pool) ─────────────────────────────────
+//
+// Satu akun NexaBot hanya menjalankan satu job. Akun tambahan membuat beberapa
+// job berjalan bersamaan: relay memilih akun yang lane-nya kosong. Nilai kunci
+// dan cookie TIDAK pernah dikembalikan — respons hanya berisi boolean.
+
+function tolakInputAkun(res: Response, error: unknown) {
+  if (error instanceof AccountInputError) return res.status(400).json({ error: error.message })
+  console.error('[admin-nexabot-master-accounts] error:', error)
+  return res.status(500).json({ error: 'Internal server error' })
+}
+
+router.get('/nexabot/master-accounts', authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
+  try {
+    res.json({ ok: true, accounts: accountSummaries() })
+  } catch (error) {
+    tolakInputAkun(res, error)
+  }
+})
+
+router.post('/nexabot/master-accounts', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
+  try {
+    const akun = addServerAccount({
+      label: req.body?.label,
+      apiKey: req.body?.apiKey,
+      cookie: req.body?.cookie,
+    })
+    console.log(`[admin-nexabot-master-accounts] akun "${akun.label}" ditambahkan`)
+    res.json({ ok: true, account: akun, accounts: accountSummaries() })
+  } catch (error) {
+    tolakInputAkun(res, error)
+  }
+})
+
+router.put('/nexabot/master-accounts/:id', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
+  try {
+    const akun = updateServerAccount(String(req.params.id || ''), {
+      label: req.body?.label,
+      apiKey: req.body?.apiKey,
+      cookie: req.body?.cookie,
+    })
+    console.log(`[admin-nexabot-master-accounts] akun "${akun.label}" diperbarui`)
+    res.json({ ok: true, account: akun, accounts: accountSummaries() })
+  } catch (error) {
+    tolakInputAkun(res, error)
+  }
+})
+
+router.delete('/nexabot/master-accounts/:id', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
+  try {
+    const accounts = removeServerAccount(String(req.params.id || ''))
+    console.log(`[admin-nexabot-master-accounts] akun ${req.params.id} dihapus`)
+    res.json({ ok: true, accounts })
+  } catch (error) {
+    tolakInputAkun(res, error)
+  }
+})
+
+// POST /nexabot/master-accounts/:id/check — probe hanya akun ini, supaya admin
+// tahu akun mana yang kedaluwarsa tanpa menebak dari keluhan member.
+router.post('/nexabot/master-accounts/:id/check', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const akun = serverAccountById(String(req.params.id || ''))
+    if (!akun) return res.status(404).json({ error: 'Akun tidak ditemukan' })
+    // Sesi diuji lebih dulu karena itulah jalur yang dipakai relay.
+    const check = akun.cookie
+      ? await checkMasterCookie(20000, akun.cookie)
+      : await checkMasterKey(20000, akun.apiKey)
+    res.json({ ok: true, kind: akun.cookie ? 'cookie' : 'key', check })
+  } catch (error: any) {
+    console.error('[admin-nexabot-master-accounts] check error:', error?.message || error)
     res.status(500).json({ error: 'Internal server error' })
   }
 })
@@ -1137,7 +1221,7 @@ router.get('/settings', authenticateToken, requireAdmin, (_req: AuthRequest, res
       // Kredensial induk provider punya endpoint sendiri yang hanya
       // mengembalikan status. Jangan pernah bocorkan nilainya lewat daftar
       // pengaturan umum.
-      if (r.key === MASTER_KEY_SETTING || r.key === MASTER_COOKIE_SETTING) return
+      if (r.key === MASTER_KEY_SETTING || r.key === MASTER_COOKIE_SETTING || r.key === ACCOUNTS_SETTING) return
       if (PROVIDER_MASTER_SETTING_KEYS.includes(r.key)) return
       settings[r.key] = r.value
     })
@@ -1169,7 +1253,7 @@ router.put('/settings', authenticateToken, requireAdmin, (req: AuthRequest, res:
         // Hanya endpoint /<provider>/master-key yang boleh menulis kredensial
         // induk, supaya nilainya tidak bisa diselipkan lewat formulir
         // pengaturan umum.
-        if (key === MASTER_KEY_SETTING || key === MASTER_COOKIE_SETTING) continue
+        if (key === MASTER_KEY_SETTING || key === MASTER_COOKIE_SETTING || key === ACCOUNTS_SETTING) continue
         if (PROVIDER_MASTER_SETTING_KEYS.includes(key)) continue
         upsert.run(key, String(value))
       }

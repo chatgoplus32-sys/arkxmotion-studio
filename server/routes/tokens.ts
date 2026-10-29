@@ -1,7 +1,7 @@
 import { Router, Response } from 'express'
 import db from '../db.js'
 import { authenticateToken, AuthRequest } from '../middleware/auth.js'
-import { isMasterKey, redactIfMasterKey } from '../lib/nexabotMasterKey.js'
+import { redactIfServerSecret, serverSecrets } from '../lib/nexabotAccounts.js'
 
 const router = Router()
 
@@ -15,6 +15,9 @@ const router = Router()
  * ke nexabot.id: di luar app, tidak tercatat, tidak dipotong saldo, tapi tetap
  * ditagih ke akun kita. Jadi nilainya disensor di sisi penyajian, dan tokennya
  * juga tidak dijual — bukan sekadar diharapkan tidak terjadi.
+ *
+ * Sejak ada pool akun, aturan itu berlaku untuk kunci/cookie SEMUA akun server,
+ * bukan cuma akun utama — `serverSecrets()` mengumpulkan keduanya.
  */
 interface TokenRow {
   id: number
@@ -135,8 +138,9 @@ router.get('/note/:bulkId', authenticateToken, (req: AuthRequest, res: Response)
     note += `TOKEN YANG DIBELI:\n`
     note += `----------------------------------------\n\n`
 
+    const rahasiaServer = serverSecrets()
     for (const r of rows) {
-      note += `${redactIfMasterKey(r.token_value)}\n`
+      note += `${redactIfServerSecret(r.token_value, rahasiaServer)}\n`
     }
 
     note += `\n========================================\n`
@@ -169,6 +173,8 @@ router.post('/buy', authenticateToken, (req: AuthRequest, res: Response) => {
     // Wrap entire purchase in a transaction to prevent race conditions
     const successCount = db.transaction(() => {
       let count = 0
+      // Dihitung sekali: tiap akun server dibaca dari DB, jangan per token.
+      const rahasiaServer = serverSecrets()
       for (const tid of token_ids) {
         // Atomic: UPDATE ... WHERE status = 'available' — only one concurrent request can win
         // Kunci induk tidak boleh dijual: pembelinya akan memegang kunci server.
@@ -176,7 +182,7 @@ router.post('/buy', authenticateToken, (req: AuthRequest, res: Response) => {
         const calon = db.prepare('SELECT token_value FROM tokens WHERE id = ?').get(tid) as
           | { token_value: string }
           | undefined
-        if (isMasterKey(calon?.token_value)) {
+        if (calon?.token_value && rahasiaServer.has(calon.token_value.trim())) {
           console.warn('[tokens] kunci induk NexaBot ada di daftar jual dan dilewati — keluarkan dari daftar token')
           continue
         }

@@ -25,8 +25,12 @@ import {
   type NexabotProxyAction,
   type NexabotSubmitSlot,
 } from '../../shared/nexabotProxy.js'
-import { isMasterKey, masterKey, masterKeyEligibility } from '../lib/nexabotMasterKey.js'
-import { masterCookie, masterCookieEligibility } from '../lib/nexabotMasterCookie.js'
+import {
+  isAnyServerSecret,
+  serverAccounts,
+  serverCredentialEligibility,
+  type ServerAccount,
+} from '../lib/nexabotAccounts.js'
 import {
   consumeChargeTicket,
   isAdminUser,
@@ -80,6 +84,8 @@ async function relayUpstream(
      * (/submit: cookie ke /api/v1/generate, kunci ke /api/v1/api).
      */
     cadangan?: { headers: Record<string, string>; credential: ResolvedCredential; url?: string }
+    /** Akun pool yang dipakai; job yang lahir dicatat milik akun ini. */
+    accountId?: string
   } = {},
 ): Promise<RelayHasil | null> {
   const { label } = NEXABOT_PROXY_POLICY[action]
@@ -168,6 +174,13 @@ async function relayUpstream(
           `[nexabot-local] ${action}: upstream masih mengerjakan job lain — jalur ${nexabotSubmitLaneLabel(credential)} cooldown`,
         )
       }
+    }
+
+    // Id job berlaku per akun upstream: poll/unduh/simpan nanti harus memakai
+    // akun yang membuatnya, bukan akun pertama di daftar.
+    if (opts.accountId) {
+      const jobBaru = jobIdDari(text)
+      if (jobBaru && upstreamMembuatJob(response.status, text)) ingatAkunJob(jobBaru, opts.accountId)
     }
 
     const sharedNote = shared ? ' (single-flight: respons dipakai bersama)' : ''
@@ -325,10 +338,12 @@ interface ResolvedUpstreamAuth {
   error?: string
   /** Kredensial server lain, dicoba kalau yang utama ditolak upstream. */
   cadangan?: { headers: Record<string, string>; credential: ResolvedCredential }
+  /** Akun pool yang dipakai (untuk mengingat akun asal sebuah job). */
+  accountId?: string
 }
 
-/** Boleh tidaknya member ini memakai kunci induk milik server. */
-function bolehPakaiKunciInduk(req: Request): { ok: boolean; reason: string } {
+/** Boleh tidaknya member ini memakai kredensial server (kunci atau sesi). */
+function bolehPakaiKredensialServer(req: Request): { ok: boolean; reason: string } {
   const userId = userIdFromRequest(req)
   if (!userId) {
     return {
@@ -338,8 +353,7 @@ function bolehPakaiKunciInduk(req: Request): { ok: boolean; reason: string } {
         'Tanpa itu, pakai kunci NexaBot Anda sendiri lewat header X-Api-Key.',
     }
   }
-  const izin = masterKeyEligibility(userId)
-  return izin
+  return serverCredentialEligibility(userId)
 }
 
 /** Boleh tidaknya member ini memakai kunci induk untuk rute BACA. */
@@ -359,66 +373,121 @@ function bolehBacaDenganKunciInduk(req: Request): { ok: boolean; reason: string 
   return { ok: true, reason: 'Rute baca: hanya butuh identitas' }
 }
 
-/** Kunci induk yang disuntikkan relay — klien tidak pernah melihatnya. */
-function kunciIndukAuth(req: Request, bacaSaja = false): ResolvedUpstreamAuth {
-  const kunci = masterKey()
-  if (!kunci) return { headers: {}, credential: null, error: 'Missing X-Api-Key header' }
-  const izin = bacaSaja ? bolehBacaDenganKunciInduk(req) : bolehPakaiKunciInduk(req)
-  if (!izin.ok) return { headers: {}, credential: null, error: izin.reason }
-  return { headers: { 'x-api-key': kunci }, credential: { kind: 'api-key', source: 'master', secret: kunci } }
+/** Kredensial utama sebuah akun: sesi cookie dulu (Unlimited dihormati), kunci sebagai cadangan. */
+function kredensialAkun(akun: ServerAccount): ResolvedCredential | null {
+  if (akun.cookie) return { kind: 'cookie', source: 'master', secret: akun.cookie }
+  if (akun.apiKey) return { kind: 'api-key', source: 'master', secret: akun.apiKey }
+  return null
+}
+
+function headersUntuk(kredensial: ResolvedCredential): Record<string, string> {
+  return kredensial.kind === 'cookie' ? sessionHeaders(kredensial.secret) : { 'x-api-key': kredensial.secret }
+}
+
+/** Kredensial server yang disuntikkan relay — klien tidak pernah melihat nilainya. */
+function authDariAkun(akun: ServerAccount): ResolvedUpstreamAuth {
+  const utama = kredensialAkun(akun)
+  if (!utama) {
+    return { headers: {}, credential: null, error: 'Akun server NexaBot tidak punya kunci atau sesi' }
+  }
+  const lain: ResolvedCredential | null =
+    utama.kind === 'cookie' && akun.apiKey
+      ? { kind: 'api-key', source: 'master', secret: akun.apiKey }
+      : utama.kind === 'api-key' && akun.cookie
+        ? { kind: 'cookie', source: 'master', secret: akun.cookie }
+        : null
+  return {
+    headers: headersUntuk(utama),
+    credential: utama,
+    accountId: akun.id,
+    cadangan: lain ? { headers: headersUntuk(lain), credential: lain } : undefined,
+  }
+}
+
+// ── Job → akun asal ───────────────────────────────────────────────
+// Id job NexaBot hanya berlaku di akun yang membuatnya. Tanpa ingatan ini,
+// member yang job-nya berjalan di akun kedua akan dipoll memakai akun pertama
+// dan dianggap "job tidak ditemukan". Peta ini proses-wide dan sengaja terbatas.
+const BATAS_INGATAN_JOB = 500
+const akunJob = new Map<string, string>()
+
+function ingatAkunJob(jobId: string, accountId: string) {
+  if (akunJob.size >= BATAS_INGATAN_JOB) {
+    const tertua = akunJob.keys().next().value
+    if (tertua) akunJob.delete(tertua)
+  }
+  akunJob.set(jobId, accountId)
+}
+
+function lupakanAkunJob(jobId: string) {
+  akunJob.delete(jobId)
 }
 
 /**
- * Sesi (cookie) milik server. Kelayakannya mengikuti mode kunci induk: di mode
- * `unlimited` hanya untuk Paket Unlimited aktif, di mode default
- * `unlimited-or-balance` juga boleh untuk member bersaldo. Alasan penolakan
- * dikembalikan supaya relay bisa meneruskannya apa adanya kalau tidak ada kunci
- * induk sebagai jalur cadangan.
+ * Pilih akun server untuk satu request.
+ *
+ * Rute baca memakai akun yang membuat job (bila masih diingat), kalau tidak akun
+ * pertama. Rute yang MEMBUAT job memilih akun yang lane-nya kosong — inilah yang
+ * membuat beberapa akun benar-benar berjalan paralel. Kalau semuanya sibuk, akun
+ * dengan sisa antrean terpendek yang dipakai; relay lalu menjawab 429 antrean
+ * dari lane akun itu.
  */
-function kukiIndukAuth(req: Request, bacaSaja = false): { auth: ResolvedUpstreamAuth; alasan?: string } {
-  const cookies = masterCookie()
-  if (!cookies) return { auth: { headers: {}, credential: null } }
-
-  // Rute baca cukup identitas: job yang sudah berjalan harus tetap bisa dipoll
-  // walau paket member habis di tengah jalan (sama seperti jalur kunci induk).
-  if (bacaSaja) {
-    const identitas = bolehBacaDenganKunciInduk(req)
-    if (!identitas.ok) return { auth: { headers: {}, credential: null }, alasan: identitas.reason }
-  } else {
-    const userId = userIdFromRequest(req)
-    if (!userId) {
-      return {
-        auth: { headers: {}, credential: null },
-        alasan:
-          'Sesi Unlimited milik server hanya untuk member yang login (Authorization: Bearer <token app>). ' +
-          'Tanpa itu, pakai cookie/API key NexaBot Anda sendiri.',
-      }
+function pilihAkunServer(
+  daftar: ServerAccount[],
+  opts: { membuatJob?: boolean; jobId?: string },
+): ServerAccount {
+  if (opts.jobId) {
+    const pemilik = akunJob.get(opts.jobId)
+    if (pemilik) {
+      const ketemu = daftar.find((a) => a.id === pemilik)
+      if (ketemu) return ketemu
     }
-    const izin = masterCookieEligibility(userId)
-    if (!izin.ok) return { auth: { headers: {}, credential: null }, alasan: izin.reason }
   }
 
-  return {
-    auth: {
-      headers: sessionHeaders(cookies),
-      credential: { kind: 'cookie', source: 'master', secret: cookies },
-    },
+  // Akun bersesi cookie didahulukan: paket Unlimited hanya dihormati di jalur
+  // web, jadi generate tidak memotong kredit upstream operator.
+  const urut = [...daftar].sort((a, b) => Number(!!b.cookie) - Number(!!a.cookie))
+  if (!opts.membuatJob) return urut[0]
+
+  let cadangan = urut[0]
+  let sisaTerpendek = Number.POSITIVE_INFINITY
+  for (const akun of urut) {
+    const kredensial = kredensialAkun(akun)
+    if (!kredensial) continue
+    const sibuk = nexabotLaneBusy(nexabotSubmitLaneKey(kredensial))
+    if (!sibuk.busy) {
+      if (akun !== urut[0]) {
+        console.log(`[nexabot-local] akun "${akun.label}" kosong — dipakai untuk submit berikutnya`)
+      }
+      return akun
+    }
+    if (sibuk.retryAfterSeconds < sisaTerpendek) {
+      sisaTerpendek = sibuk.retryAfterSeconds
+      cadangan = akun
+    }
   }
+  console.warn(
+    `[nexabot-local] semua ${daftar.length} akun server sibuk — submit ditahan di "${cadangan.label}" (±${sisaTerpendek}s)`,
+  )
+  return cadangan
 }
 
 /**
  * Satu tempat resolusi kredensial ke upstream. Urutannya:
  *   1. cookie sesi dari klien (jalur Unlimited — tidak pernah digantikan);
  *   2. kunci yang dikirim klien;
- *   3. kredensial server, kalau membernya berhak — sesi cookie dulu (paket
- *      Unlimited hanya dihormati di jalur web), kunci server sebagai cadangan.
+ *   3. akun server, kalau membernya berhak — akun yang lane-nya kosong untuk
+ *      submit, akun pembuat job untuk rute baca.
  *
  * Kunci induk yang MASIH dikirim klien tidak diperlakukan sebagai kunci pribadi:
  * artinya kunci itu beredar di browser, jadi ia tetap harus lolos kebijakan yang
  * sama, dan sidik jarinya dicatat sebagai 'client-master' — jejak kunci yang
  * perlu dihabiskan, bukan kunci yang dianggap aman.
  */
-function resolveUpstreamAuth(req: Request, opts: { bacaSaja?: boolean } = {}): ResolvedUpstreamAuth {
+function resolveUpstreamAuth(
+  req: Request,
+  opts: { bacaSaja?: boolean; membuatJob?: boolean; jobId?: string } = {},
+): ResolvedUpstreamAuth {
   const cookieMentah = req.headers['x-nexabot-cookie']
   if (typeof cookieMentah === 'string' && cookieMentah.trim()) {
     const cookies = cookieMentah.trim()
@@ -431,36 +500,38 @@ function resolveUpstreamAuth(req: Request, opts: { bacaSaja?: boolean } = {}): R
   const kunciKlien = req.headers['x-api-key']
   if (typeof kunciKlien === 'string' && kunciKlien.trim()) {
     const kunci = kunciKlien.trim()
-    if (isMasterKey(kunci)) {
-      const izin = opts.bacaSaja ? bolehBacaDenganKunciInduk(req) : bolehPakaiKunciInduk(req)
+    if (isAnyServerSecret(kunci)) {
+      const izin = opts.bacaSaja ? bolehBacaDenganKunciInduk(req) : bolehPakaiKredensialServer(req)
       if (!izin.ok) return { headers: {}, credential: null, error: izin.reason }
-      return { headers: { 'x-api-key': kunci }, credential: { kind: 'api-key', source: 'client-master', secret: kunci } }
+      // Kunci server yang masih beredar di browser: kalau akunnya juga punya
+      // sesi cookie, sesi itu tetap jadi cadangan bila kunci ditolak upstream.
+      const pemilik = serverAccounts().find((a) => a.apiKey === kunci || a.cookie === kunci)
+      const lain: ResolvedCredential | null = pemilik
+        ? pemilik.cookie && pemilik.cookie !== kunci
+          ? { kind: 'cookie', source: 'master', secret: pemilik.cookie }
+          : pemilik.apiKey && pemilik.apiKey !== kunci
+            ? { kind: 'api-key', source: 'master', secret: pemilik.apiKey }
+            : null
+        : null
+      return {
+        headers: { 'x-api-key': kunci },
+        credential: { kind: 'api-key', source: 'client-master', secret: kunci },
+        cadangan: lain ? { headers: headersUntuk(lain), credential: lain } : undefined,
+      }
     }
     return { headers: { 'x-api-key': kunci }, credential: { kind: 'api-key', source: 'own-key', secret: kunci } }
   }
 
-  // Sesi cookie didahulukan di antara kredensial server: paket Unlimited hanya
-  // dihormati di jalur web (/api/v1/generate), sehingga generate tidak memotong
-  // kredit upstream. Kunci API server jadi cadangan — kalau cookie ditolak
-  // (kedaluwarsa), relay mengulang sekali dengan kunci, dan sebaliknya.
-  const kuki = kukiIndukAuth(req, !!opts.bacaSaja)
-  const kunci = kunciIndukAuth(req, !!opts.bacaSaja)
-  const kukiSiap = Object.keys(kuki.auth.headers).length > 0
-  const kunciSiap = Object.keys(kunci.headers).length > 0
-  const utama = kukiSiap ? kuki.auth : kunciSiap ? kunci : null
-  if (utama) {
-    const lain = utama === kuki.auth ? kunci : kuki.auth
-    const cadangan =
-      lain.credential && Object.keys(lain.headers).length > 0
-        ? { headers: lain.headers, credential: lain.credential }
-        : undefined
-    return { ...utama, cadangan }
+  const daftar = serverAccounts()
+  if (daftar.length === 0) {
+    return { headers: {}, credential: null, error: 'Missing X-Api-Key header' }
   }
-  // Kalau tidak ada yang bisa dipakai, alasan cookie lebih menjelaskan keadaan
-  // sebenarnya (mis. saldo kosong) daripada "Missing X-Api-Key".
-  if (kuki.alasan) return { headers: {}, credential: null, error: kuki.alasan }
-  return kunci
+  const izin = opts.bacaSaja ? bolehBacaDenganKunciInduk(req) : bolehPakaiKredensialServer(req)
+  if (!izin.ok) return { headers: {}, credential: null, error: izin.reason }
+
+  return authDariAkun(pilihAkunServer(daftar, opts))
 }
+
 
 /**
  * Penegakan pembayaran untuk jalur kredensial SERVER.
@@ -609,7 +680,7 @@ router.get('/session', async (req: Request, res: Response) => {
 
 // ── Submit job ──
 router.post('/submit', async (req: Request, res: Response) => {
-  const auth = resolveUpstreamAuth(req)
+  const auth = resolveUpstreamAuth(req, { membuatJob: true })
   if (Object.keys(auth.headers).length === 0) {
     return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key header' })
   }
@@ -651,6 +722,7 @@ router.post('/submit', async (req: Request, res: Response) => {
   }, {
     kredensialServer: auth.credential?.source === 'master',
     credential: auth.credential,
+    accountId: auth.accountId,
     // Kredensial cadangan bisa berjenis berbeda, dan jenis itulah yang menentukan
     // jalur upstream: kunci ke /api/v1/api (selalu menagih), cookie ke
     // /api/v1/generate (Unlimited dihormati). Tanpa ini kunci akan dikirim ke
@@ -736,7 +808,7 @@ router.post('/generate', async (req: Request, res: Response) => {
 // Auth-nya menerima x-api-key, cookie, dan Bearer (tanpa → 401), jadi rute ini
 // memakai resolusi kredensial penuh seperti /submit, bukan session-only.
 router.post('/gpt-image', async (req: Request, res: Response) => {
-  const auth = resolveUpstreamAuth(req)
+  const auth = resolveUpstreamAuth(req, { membuatJob: true })
   if (Object.keys(auth.headers).length === 0) {
     return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key header' })
   }
@@ -764,7 +836,7 @@ router.post('/gpt-image', async (req: Request, res: Response) => {
       'Accept': 'application/json',
     },
     body: JSON.stringify(upstreamBody),
-  }, { kredensialServer: auth.credential?.source === 'master', credential: auth.credential, cadangan: auth.cadangan })
+  }, { kredensialServer: auth.credential?.source === 'master', credential: auth.credential, accountId: auth.accountId, cadangan: auth.cadangan })
   // Dicatat setelah respons upstream diterima: rute inilah yang memakai kuota.
   if (hasil) {
     if (tiket.usageId) selesaikanTiket(tiket.usageId, hasil.status, hasil.text)
@@ -782,8 +854,8 @@ router.post('/gpt-image', async (req: Request, res: Response) => {
 // Sama dengan /job/:id tapi ke endpoint gpt-image; memakai aksi 'job' supaya
 // kebijakan retry-nya identik (2×, 25s — klien punya backoff sendiri).
 router.get('/gpt-image/:id', async (req: Request, res: Response) => {
-  const auth = resolveUpstreamAuth(req, { bacaSaja: true })
   const jobId = String(req.params.id || '')
+  const auth = resolveUpstreamAuth(req, { bacaSaja: true, jobId })
   if (Object.keys(auth.headers).length === 0) {
     return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key / X-Nexabot-Cookie header' })
   }
@@ -793,13 +865,17 @@ router.get('/gpt-image/:id', async (req: Request, res: Response) => {
 
   const idPath = encodeURIComponent(String(jobId))
   console.log(`[nexabot-local] GET /api/v1/gpt-image/${idPath}`)
-  await relayUpstream(res, 'job', `${NEXABOT_BASE}/api/v1/gpt-image/${idPath}`, {
+  const hasil = await relayUpstream(res, 'job', `${NEXABOT_BASE}/api/v1/gpt-image/${idPath}`, {
     method: 'GET',
     headers: {
       ...auth.headers,
       'Accept': 'application/json',
     },
   }, { kredensialServer: auth.credential?.source === 'master', credential: auth.credential, cadangan: auth.cadangan })
+  // Job gambar yang sudah selesai/hilang tidak perlu diingat akun asalnya.
+  if (hasil && (hasil.status === 404 || (hasil.status >= 200 && hasil.status < 300 && isNexabotJobFinishedText(hasil.text)))) {
+    lupakanAkunJob(jobId)
+  }
 })
 
 // ── Download hasil GPT Image (menyuntikkan kredensial) ──
@@ -807,8 +883,8 @@ router.get('/gpt-image/:id', async (req: Request, res: Response) => {
 // yang MENGHARUSKAN auth (tanpa kredensial -> 401). Tag <img> galeri tidak bisa
 // mengirim header, jadi lib klien mengalihkan URL hasil ke rute ini.
 router.get('/gpt-image/:id/download', async (req: Request, res: Response) => {
-  const auth = resolveUpstreamAuth(req, { bacaSaja: true })
   const jobId = String(req.params.id || '')
+  const auth = resolveUpstreamAuth(req, { bacaSaja: true, jobId })
   if (Object.keys(auth.headers).length === 0) {
     return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key / X-Nexabot-Cookie header' })
   }
@@ -891,8 +967,8 @@ router.get('/gpt-image/:id/download', async (req: Request, res: Response) => {
 
 // ── Poll job status ──
 router.get('/job/:id', async (req: Request, res: Response) => {
-  const auth = resolveUpstreamAuth(req, { bacaSaja: true })
   const jobId = String(req.params.id || '')
+  const auth = resolveUpstreamAuth(req, { bacaSaja: true, jobId })
   if (Object.keys(auth.headers).length === 0) {
     return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key / X-Nexabot-Cookie header' })
   }
@@ -916,11 +992,13 @@ router.get('/job/:id', async (req: Request, res: Response) => {
   if (!hasil) return
   if (hasil.status === 404) {
     if (markNexabotJobFinished(jobId)) console.log(`[nexabot-local] job ${jobId} hilang (404) — kunci lane dilepas`)
+    lupakanAkunJob(jobId)
     return
   }
   if (hasil.status >= 200 && hasil.status < 300) {
     if (isNexabotJobFinishedText(hasil.text)) {
       if (markNexabotJobFinished(jobId)) console.log(`[nexabot-local] job ${jobId} selesai — kunci lane dilepas`)
+      lupakanAkunJob(jobId)
     } else {
       touchNexabotJob(jobId)
     }
@@ -929,8 +1007,8 @@ router.get('/job/:id', async (req: Request, res: Response) => {
 
 // ── Download result ──
 router.get('/download/:id', async (req: Request, res: Response) => {
-  const auth = resolveUpstreamAuth(req, { bacaSaja: true })
   const jobId = String(req.params.id || '')
+  const auth = resolveUpstreamAuth(req, { bacaSaja: true, jobId })
   if (Object.keys(auth.headers).length === 0) {
     return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key / X-Nexabot-Cookie header' })
   }
@@ -952,6 +1030,7 @@ router.get('/download/:id', async (req: Request, res: Response) => {
       if (upstreamRes.status === 404 && markNexabotJobFinished(jobId)) {
         console.log(`[nexabot-local] job ${jobId} tidak ada (404) — kunci lane dilepas`)
       }
+      lupakanAkunJob(jobId)
       res.writeHead(upstreamRes.status, {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
@@ -962,6 +1041,7 @@ router.get('/download/:id', async (req: Request, res: Response) => {
 
     // Hasil bisa diunduh = job sudah pasti berhenti menahan akun upstream.
     if (markNexabotJobFinished(jobId)) console.log(`[nexabot-local] unduhan ${jobId} sukses — kunci lane dilepas`)
+    lupakanAkunJob(jobId)
 
     // Check if response is JSON (error) or binary (file)
     const contentType = upstreamRes.headers.get('content-type') || ''
@@ -1021,8 +1101,8 @@ router.get('/download/:id', async (req: Request, res: Response) => {
  * menit-menitan. Di sini file cuma sekali lewat: NexaBot → VPS → storage.
  */
 router.post('/save/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
-  const auth = resolveUpstreamAuth(req, { bacaSaja: true })
   const jobId = String(req.params.id || '')
+  const auth = resolveUpstreamAuth(req, { bacaSaja: true, jobId })
   const userId = req.user?.id
   if (!userId) {
     return res.status(401).json({ ok: false, error: 'Login dulu untuk menyimpan hasil.' })
@@ -1050,6 +1130,7 @@ router.post('/save/:id', authenticateToken, async (req: AuthRequest, res: Respon
       if (upstreamRes.status === 404 && markNexabotJobFinished(jobId)) {
         console.log(`[nexabot-local] job ${jobId} tidak ada (404) — kunci lane dilepas`)
       }
+      lupakanAkunJob(jobId)
       return res.status(upstreamRes.status === 404 ? 404 : 502).json({
         ok: false,
         error: `NexaBot menolak unduhan: HTTP ${upstreamRes.status} ${errText.slice(0, 200)}`,
@@ -1083,6 +1164,7 @@ router.post('/save/:id', authenticateToken, async (req: AuthRequest, res: Respon
     const stored = await storeMedia(Buffer.concat(chunks), { ext, mimeType })
     const url = stored.cdnUrl || diskPublicUrl(req, stored.key)
     if (markNexabotJobFinished(jobId)) console.log(`[nexabot-local] simpan ${jobId} sukses — kunci lane dilepas`)
+    lupakanAkunJob(jobId)
     console.log(`[nexabot-local] save ${jobId} → ${stored.storage} ${(total / 1024 / 1024).toFixed(1)} MB`)
     return res.status(200).json({ ok: true, url, key: stored.key, storage: stored.storage, bytes: total })
   } catch (err: any) {

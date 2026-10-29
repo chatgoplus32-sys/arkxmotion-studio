@@ -314,8 +314,26 @@ function telegramIdKredit(raw: any): string | null {
  * Probe kunci induk lewat GET /api/v1/api/credit — endpoint yang sama dipakai
  * relay untuk jalur API key. Tanpa ini, kunci yang salah tidak ketahuan sampai
  * member mengeluh, karena relay hanya mencatatnya sebagai pemakaian upstream.
+ *
+ * `keyOverride` dipakai panel admin untuk memeriksa SATU akun dari pool tanpa
+ * mengubah kunci akun utama.
  */
-export async function checkMasterKey(timeoutMs = 20000): Promise<MasterKeyCheck> {
+export async function checkMasterKey(
+  timeoutMs = 20000,
+  keyOverride?: string | null,
+): Promise<MasterKeyCheck> {
+  if (keyOverride != null) {
+    const kunci = keyOverride.trim()
+    if (!kunci) return { ...KOSONG_KUNCI, error: 'Kunci akun kosong' }
+    if (looksLikeSessionCookie(kunci)) {
+      return {
+        ...KOSONG_KUNCI,
+        error: 'Nilai di kolom kunci adalah cookie sesi, bukan API key — pindahkan ke slot Sesi Unlimited',
+      }
+    }
+    return probeKunci(kunci, timeoutMs)
+  }
+
   const mentah = mentahMasterKey()
   if (looksLikeSessionCookie(mentah)) {
     return {
@@ -325,6 +343,11 @@ export async function checkMasterKey(timeoutMs = 20000): Promise<MasterKeyCheck>
   }
   const kunci = masterKey()
   if (!kunci) return { ...KOSONG_KUNCI, error: 'Kunci Server NexaBot belum diatur' }
+
+  return probeKunci(kunci, timeoutMs)
+}
+
+async function probeKunci(kunci: string, timeoutMs: number): Promise<MasterKeyCheck> {
 
   try {
     const res = await fetch(`${NEXABOT_BASE}/api/v1/api/credit`, {

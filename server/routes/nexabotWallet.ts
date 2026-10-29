@@ -35,8 +35,7 @@ import {
   type NexabotPricing,
   type NexabotPricingField,
 } from '../../shared/pricing.js'
-import { masterKeyEligibility } from '../lib/nexabotMasterKey.js'
-import { masterCookie, masterCookieEligibility } from '../lib/nexabotMasterCookie.js'
+import { serverAccounts, serverCookieEligible, serverKeyEligible } from '../lib/nexabotAccounts.js'
 
 // Definisi harga tinggal di shared/pricing.ts supaya server, fungsi Vercel, dan
 // endpoint publik /api/public/pricing tidak pernah beda angka.
@@ -166,22 +165,22 @@ router.get('/balance', authenticateToken, (req: AuthRequest, res: Response) => {
     // Kelayakan memakai kredensial NexaBot milik server. Dihitung dengan
     // kebijakan yang sama seperti relay, supaya UI hanya menawarkan jalur tanpa
     // API key ketika relay benar-benar akan menerimanya.
-    const serverKey = masterKeyEligibility(userId)
+    const serverKey = serverKeyEligible(userId)
     // Sesi (cookie) server didahulukan — sama seperti relay: paket Unlimited
     // hanya dihormati di jalur web, jadi kredensial server tidak memotong kredit
     // upstream. Kunci server jadi cadangan bila sesi tidak tersedia/ditolak.
-    const serverCookie = masterCookieEligibility(userId)
+    const serverCookie = serverCookieEligible(userId)
     // `kind` harus mengikuti urutan yang benar-benar dipakai relay — kalau tidak,
     // UI menyebut jalur yang berbeda dari yang menagih akun NexaBot.
     const kind = serverCookie.ok ? 'cookie' : serverKey.ok ? 'key' : null
     // Alasan yang menjelaskan keadaan sebenarnya: alasan cookie hanya dipakai
-    // kalau cookie memang diatur (sama seperti relay).
+    // kalau ada akun yang memang punya sesi (sama seperti relay).
     const alasan =
       kind === 'cookie'
         ? serverCookie.reason
         : kind === 'key'
           ? serverKey.reason
-          : masterCookie() && serverCookie.reason
+          : serverAccounts().some((a) => a.cookie)
             ? serverCookie.reason
             : serverKey.reason
     // `price`, `min_topup`, dan detail paket ikut dikirim supaya UI memakai
