@@ -11,7 +11,7 @@ import assert from 'node:assert/strict'
 import type { AddressInfo } from 'node:net'
 import express from 'express'
 import nexabotRoutes from '../server/routes/nexabot.js'
-import { NEXABOT_PROXY_POLICY } from '../shared/nexabotProxy.js'
+import { NEXABOT_PROXY_POLICY, resetNexabotLaneJobs } from '../shared/nexabotProxy.js'
 
 const originalFetch = globalThis.fetch
 
@@ -75,6 +75,9 @@ async function get(path: string, headers: Record<string, string> = {}) {
 }
 
 async function post(path: string, body: unknown, headers: Record<string, string> = {}) {
+  // Kunci job per-lane proses-wide: file ini menguji timeout/retry proxy, bukan
+  // penjadwalan akun, jadi tiap POST mulai dari lane bersih.
+  resetNexabotLaneJobs()
   const res = await originalFetch(`${base}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...headers },

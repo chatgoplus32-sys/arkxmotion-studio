@@ -101,3 +101,101 @@ export function nexabotRetryDelayMs(params: {
   }
   return nexabotBackoffMs(attempt, opts)
 }
+
+/**
+ * Anggaran retry untuk SUBMIT.
+ *
+ * Angka lama (3 percobaan, jeda 2s → total ±5 detik) dibuat saat 429 dianggap
+ * kejadian sesekali. Ternyata 429 muncul karena beberapa member memakai satu
+ * akun NexaBot bersamaan, dan itu berlangsung puluhan detik — jadi submit yang
+ * sedang mengantre di relay (server menahan slot antrean sampai 45 detik) harus
+ * ditemui klien dengan kesabaran, bukan dengan error merah.
+ *
+ * relay sudah mencegah job ganda (satu slot = satu percobaan), dan 429 selalu
+ * berarti "belum ada job", jadi mengulang tetap aman untuk kredit.
+ */
+export const NEXABOT_SUBMIT_RETRY = {
+  attempts: 4,
+  baseMs: 2_000,
+  maxMs: 20_000,
+  /**
+   * Batas total waktu yang boleh dihabiskan klien untuk submit yang masih
+   * mengantre. Melewati ini user disuruh mencoba lagi, bukan ditahan selamanya.
+   */
+  budgetMs: 180_000,
+  /**
+   * Anggaran untuk 429 dari ANTREAN relay (`queued: true`), yang berarti akun
+   * NexaBot masih mengerjakan job member lain. Akun Unlimited hanya menjalankan
+   * SATU job, jadi member ke-10 bisa menunggu belasan menit — untuk antrean ini
+   * jumlah percobaan TIDAK dipakai sebagai batas, hanya anggaran waktu ini.
+   */
+  queueBudgetMs: 30 * 60_000,
+}
+
+export interface NexabotRetryDecision {
+  /** true = tunggu `delayMs` lalu coba lagi; false = menyerah. */
+  ulang: boolean
+  delayMs: number
+  /** Alasan singkat untuk log/toast saat masih mencoba. */
+  message: string
+  /** Pesan final saat `ulang: false`. */
+  akhir?: string
+}
+
+/**
+ * Putuskan apa yang dilakukan submit setelah dapat 429.
+ *
+ * `antrianSendiri` = 429 berasal dari antrean relay kita (body `queued: true`),
+ * bukan dari NexaBot. Bedanya penting untuk teks yang dilihat user: yang pertama
+ * berarti "giliran member lain sedang jalan", yang kedua berarti akunnya yang
+ * dibatasi — dan keduanya tetap aman diulang.
+ *
+ * Untuk `antrianSendiri`, `attempts` sengaja DIABAIKAN: selama lane masih sibuk,
+ * setiap percobaan berakhir 429 yang sama, jadi batas percobaan hanya akan
+ * membuat member menyerah padahal tinggal menunggu giliran. Yang membatasi
+ * hanya anggaran waktu (`sisaQueueBudgetMs`).
+ */
+export function nexabotSubmit429Decision(params: {
+  attempt: number
+  attempts: number
+  retryAfterHeader?: string | null
+  antrianSendiri?: boolean
+  /** Sisa anggaran waktu klien (ms) sejak submit dimulai — untuk 429 upstream. */
+  sisaBudgetMs: number
+  /** Sisa anggaran antrean (ms) — dipakai saat `antrianSendiri`. */
+  sisaQueueBudgetMs?: number
+  /** Sudah berapa lama klien menunggu untuk submit ini (ms) — dipakai di pesan akhir. */
+  sudahMenungguMs?: number
+  opts?: NexabotBackoffOptions & { maxRetryAfterMs?: number }
+  nowMs?: number
+}): NexabotRetryDecision {
+  const {
+    attempt, attempts, retryAfterHeader, antrianSendiri = false,
+    sisaBudgetMs, sisaQueueBudgetMs, sudahMenungguMs = 0, opts = {}, nowMs = Date.now(),
+  } = params
+  const message = antrianSendiri
+    ? 'antrean generate penuh — member lain sedang jalan'
+    : describeNexabotStatus(429)
+  const hint = parseRetryAfterMs(retryAfterHeader, nowMs)
+  const delayMs = nexabotRetryDelayMs({ attempt, retryAfterHeader, opts, nowMs })
+  const habisPercobaan = !antrianSendiri && attempt >= attempts
+  const sisa = antrianSendiri ? (sisaQueueBudgetMs ?? sisaBudgetMs) : sisaBudgetMs
+  // Menunggu lebih lama dari sisa anggaran hanya membuat user melihat spinner
+  // palsu; lebih baik berhenti sekarang dengan alasan yang jelas.
+  const tidakSempat = delayMs > Math.max(0, sisa)
+
+  if (!tidakSempat && !habisPercobaan) return { ulang: true, delayMs, message }
+
+  const sudahMenunggu = Math.round(sudahMenungguMs / 1000)
+  const anjuran = hint != null
+    ? ` — coba lagi dalam ${Math.max(1, Math.round(hint / 1000))} detik`
+    : ' — tunggu sebentar lalu coba lagi'
+  return {
+    ulang: false,
+    delayMs,
+    message,
+    akhir: antrianSendiri
+      ? `NexaBot: antrean generate masih penuh setelah ±${Math.round(sudahMenunggu / 60)} menit menunggu — saldo tidak terpotong, coba lagi nanti`
+      : `NexaBot: ${message}${sudahMenunggu ? ` (sudah menunggu ±${sudahMenunggu}s)` : ''}${anjuran}`,
+  }
+}

@@ -140,8 +140,8 @@ export default function VoiceOverPage() {
                 prompt: prompt.trim(),
                 voice,
               }, auth, {
-                onRetry: ({ status, delayMs }) => {
-                  addLog(`⏳ NexaBot sibuk (HTTP ${status}) — submit diulang dalam ${Math.ceil(delayMs / 1000)}s...`, 'warn')
+                onRetry: ({ status, delayMs, message }) => {
+                  addLog(`⏳ ${message} (HTTP ${status}) — submit diulang dalam ${Math.ceil(delayMs / 1000)}s...`, 'warn')
                 },
               }), {
                 onThrottle: (waitSeconds) => {

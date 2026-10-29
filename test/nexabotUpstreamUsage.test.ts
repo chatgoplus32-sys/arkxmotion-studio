@@ -23,6 +23,7 @@ import type { AddressInfo } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import express from 'express'
 import jwt from 'jsonwebtoken'
+import { resetNexabotLaneJobs } from '../shared/nexabotProxy.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.join(__dirname, '..')
@@ -78,6 +79,9 @@ const API_KEY = 'apikey-RAHASIA-12345'
 const tokenUntuk = (payload: Record<string, unknown>) => jwt.sign(payload, JWT_SECRET)
 
 async function panggilRelay(jalur: string, opts: { headers?: Record<string, string>; method?: string; body?: unknown } = {}) {
+  // Kunci job per-lane bersifat proses-wide; file ini menguji pencatatan
+  // pemakaian upstream, jadi tiap panggilan mulai dari lane bersih.
+  resetNexabotLaneJobs()
   const res = await fetch(`${base}${jalur}`, {
     method: opts.method || 'POST',
     headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },

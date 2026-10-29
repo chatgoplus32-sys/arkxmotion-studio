@@ -5,11 +5,25 @@ import { diskPublicUrl, storeMedia } from '../lib/mediaStorage.js'
 import {
   NEXABOT_PROXY_POLICY,
   NexabotUpstreamError,
+  acquireNexabotSubmitSlot,
   fetchNexabotUpstream,
+  isNexabotJobAction,
+  isNexabotJobFinishedText,
+  isNexabotNonIdempotentAction,
+  isNexabotUpstreamBusyText,
+  markNexabotJobFinished,
+  markNexabotJobRunning,
+  markNexabotLaneCooldown,
   nexabotErrorAdvice,
   nexabotErrorCause,
+  nexabotLaneBusy,
   nexabotRelayHeaders,
+  nexabotSubmitLaneKey,
+  nexabotSubmitLaneLabel,
+  nexabotSubmitQueueConfig,
+  touchNexabotJob,
   type NexabotProxyAction,
+  type NexabotSubmitSlot,
 } from '../../shared/nexabotProxy.js'
 import { isMasterKey, masterKey, masterKeyEligibility } from '../lib/nexabotMasterKey.js'
 import { masterCookie, masterCookieEligibility } from '../lib/nexabotMasterCookie.js'
@@ -26,10 +40,25 @@ const router = Router()
 // memakainya untuk staging. Tanpa env, perilakunya sama seperti sebelumnya.
 const NEXABOT_BASE = (process.env.NEXABOT_BASE || 'https://nexabot.id').replace(/\/+$/, '')
 
+/** Hasil relay yang dilihat rute: status + body mentah + kredensial terpakai. */
+interface RelayHasil {
+  status: number
+  text: string
+  credential: ResolvedCredential | null
+  /** true = 429 ini berasal dari antrean kita sendiri, bukan dari NexaBot. */
+  antreanPenuh?: boolean
+}
+
 /**
  * Satu call upstream ke NexaBot dengan timeout & retry sesuai jenis request
  * (lihat shared/nexabotProxy.ts), lalu teruskan status + body apa adanya ke
  * klien. Read-only (saldo/sesi/job/mode) boleh diulang; submit/generate tidak.
+ *
+ * Aksi yang MEMBUAT JOB (submit/generate/gpt-image) lebih dulu mengambil satu
+ * slot antrean per kredensial. Without that, dua member yang menekan generate
+ * bersamaan berarti dua submit ke akun yang sama → upstream membalas 429 untuk
+ * keduanya. Slot dipegang hanya selama satu percobaan (tidak ada retry di
+ * dalamnya), jadi slot tidak pernah menahan tempat untuk job kedua.
  *
  * Kalau kredensial SERVER ditolak upstream (401/403) dan ada kredensial server
  * lain, request diulang SEKALI dengan kredensial itu. Aman untuk submit: 401/403
@@ -52,8 +81,33 @@ async function relayUpstream(
      */
     cadangan?: { headers: Record<string, string>; credential: ResolvedCredential; url?: string }
   } = {},
-): Promise<{ status: number; text: string; credential: ResolvedCredential | null } | null> {
+): Promise<RelayHasil | null> {
   const { label } = NEXABOT_PROXY_POLICY[action]
+
+  // ── Antrean submit per kredensial (hanya aksi yang membuat job) ──
+  let slot: NexabotSubmitSlot | null = null
+  // Aksi yang membuat job panjang: selain berebut slot submit, akun upstream-nya
+  // hanya boleh menjalankan SATU job. Lane yang masih memegang job ditahan di
+  // sini — tanpa ini submit ke-2..10 menembus antrean, ditolak NexaBot, lalu
+  // klien menyerah.
+  const jobAction = isNexabotJobAction(action)
+  const laneKey = nexabotSubmitLaneKey(opts.credential)
+  if (isNexabotNonIdempotentAction(action)) {
+    if (jobAction) {
+      const sibuk = nexabotLaneBusy(laneKey)
+      if (sibuk.busy) {
+        return jawabLaneSibuk(res, action, nexabotSubmitLaneLabel(opts.credential), sibuk.retryAfterSeconds)
+      }
+    }
+    slot = await acquireNexabotSubmitSlot(laneKey)
+    if (!slot) return jawabAntreanPenuh(res, action, nexabotSubmitLaneLabel(opts.credential))
+    if (slot.waitMs > 200) {
+      console.log(
+        `[nexabot-local] ${action}: mengantre ${slot.waitMs}ms (posisi ${slot.position}) di jalur ${nexabotSubmitLaneLabel(opts.credential)}`,
+      )
+    }
+  }
+
   const kirim = (tambahan?: Record<string, string>, alamat = url) =>
     fetchNexabotUpstream(
       alamat,
@@ -67,6 +121,15 @@ async function relayUpstream(
       },
     )
   try {
+    // Dicek ULANG setelah dapat slot: dua submit bisa lolos pemeriksaan di atas
+    // bersamaan, lalu yang kedua baru jalan setelah yang pertama mencatat job-nya.
+    if (jobAction) {
+      const sibuk = nexabotLaneBusy(laneKey)
+      if (sibuk.busy) {
+        return jawabLaneSibuk(res, action, nexabotSubmitLaneLabel(opts.credential), sibuk.retryAfterSeconds)
+      }
+    }
+
     let { response, attempts, shared } = await kirim()
     let text = await response.text()
     let credential = opts.credential ?? null
@@ -85,6 +148,26 @@ async function relayUpstream(
       shared = ulang.shared
       text = await response.text()
       credential = opts.cadangan.credential
+    }
+
+    // Job baru yang sah MENGUNCI lane sampai selesai (akun Unlimited hanya
+    // boleh satu job). Kalau upstream justru menolak karena masih ada job lain
+    // berjalan — mis. dari device lain di akun yang sama — pasang cooldown
+    // supaya submit berikutnya ditahan relay, tidak ditembak lalu ditolak lagi.
+    if (jobAction) {
+      const laneAkhir = nexabotSubmitLaneKey(credential)
+      const jobBaru = jobIdDari(text)
+      if (upstreamMembuatJob(response.status, text) && jobBaru) {
+        markNexabotJobRunning(laneAkhir, jobBaru, { estSeconds: estSecondsDari(text) })
+        console.log(
+          `[nexabot-local] ${action}: job ${jobBaru.slice(0, 16)} memegang jalur ${nexabotSubmitLaneLabel(credential)}`,
+        )
+      } else if (isNexabotUpstreamBusyText(text)) {
+        markNexabotLaneCooldown(laneAkhir)
+        console.warn(
+          `[nexabot-local] ${action}: upstream masih mengerjakan job lain — jalur ${nexabotSubmitLaneLabel(credential)} cooldown`,
+        )
+      }
     }
 
     const sharedNote = shared ? ' (single-flight: respons dipakai bersama)' : ''
@@ -135,6 +218,10 @@ async function relayUpstream(
         ? `${upstream.message} — ${nexabotErrorAdvice(action)}`
         : `${err?.message || `Gagal ${label}`}${cause ? ` (${cause})` : ''}`,
     })
+  } finally {
+    // Slot selalu dilepas, termasuk saat jalur error — kalau tidak, satu
+    // koneksi yang putus menahan seluruh antrian member berikutnya selamanya.
+    slot?.release()
   }
   return null
 }
@@ -148,6 +235,67 @@ async function relayUpstream(
  */
 function gagalSetelahHeader(res: Response): void {
   if (!res.writableEnded) res.destroy()
+}
+
+/**
+ * Antrean submit penuh: KITA yang menjawab 429, bukan NexaBot.
+ *
+ * Bedanya penting: upstream tidak pernah melihat request ini, jadi tidak ada job
+ * dan tidak ada kredit yang terpotong. `Retry-After` dipasang supaya klien
+ * menunggu sesuai anjuran kita alih-alih membacot, dan pemanggil melepas tiket
+ * pembayarannya (429 = "ditolak sebelum job") sehingga member cukup menekan
+ * ulang tanpa harus memotong saldo sekali lagi.
+ */
+function jawabAntreanPenuh(res: Response, action: NexabotProxyAction, laneLabel: string): RelayHasil {
+  const { retryAfterSeconds, concurrency } = nexabotSubmitQueueConfig()
+  const body = JSON.stringify({
+    ok: false,
+    queued: true,
+    retry_after_seconds: retryAfterSeconds,
+    error:
+      `Antrian generate NexaBot sedang penuh (${laneLabel}: ${concurrency} permintaan diproses bergantian). ` +
+      `Coba lagi dalam ${retryAfterSeconds} detik — saldo Anda belum terpotong untuk percobaan ini.`,
+  })
+  console.warn(`[nexabot-local] ${action}: antrean penuh (${laneLabel}) — jawab 429 tanpa mengirim ke upstream`)
+  res.writeHead(429, {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*',
+    'Retry-After': String(retryAfterSeconds),
+  })
+  res.end(body)
+  return { status: 429, text: body, credential: null, antreanPenuh: true }
+}
+
+/**
+ * Lane masih menjalankan job: KITA yang menjawab 429 sebelum menyentuh upstream.
+ *
+ * `queued: true` membuat klien mengulang dengan sabar (bukan menyerah), dan
+ * `Retry-After` disusun dari `est_seconds` job yang sedang berjalan supaya
+ * member berikutnya tidak membombardir relay tiap detik.
+ */
+function jawabLaneSibuk(
+  res: Response,
+  action: NexabotProxyAction,
+  laneLabel: string,
+  retryAfterSeconds: number,
+): RelayHasil {
+  const detik = Math.max(1, Math.round(retryAfterSeconds))
+  const body = JSON.stringify({
+    ok: false,
+    queued: true,
+    retry_after_seconds: detik,
+    error:
+      `NexaBot (${laneLabel}) masih mengerjakan generate sebelumnya — akun hanya bisa satu job pada satu waktu. ` +
+      `Permintaan Anda dicoba lagi otomatis dalam ${detik} detik; saldo belum terpotong untuk percobaan ini.`,
+  })
+  console.warn(`[nexabot-local] ${action}: lane sibuk (${laneLabel}) — jawab 429 antrean, upstream tidak disentuh`)
+  res.writeHead(429, {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*',
+    'Retry-After': String(detik),
+  })
+  res.end(body)
+  return { status: 429, text: body, credential: null, antreanPenuh: true }
 }
 
 /** Buang header kredensial sebelum menempelkan kredensial server lain. */
@@ -378,6 +526,17 @@ function jobIdDari(bodyText: string): string | null {
   }
 }
 
+/** Estimasi durasi job dari upstream (`est_seconds`) — dipakai menyusun `Retry-After`. */
+function estSecondsDari(bodyText: string): number | null {
+  try {
+    const data = JSON.parse(bodyText)
+    const est = Number(data?.est_seconds ?? data?.job?.est_seconds)
+    return Number.isFinite(est) && est > 0 ? est : null
+  } catch {
+    return null
+  }
+}
+
 /**
  * Status yang PASTI ditolak sebelum job dibuat → tiket dilepas supaya klien boleh
  * mengulang dengan tiket yang sama (mis. 429). 5xx/timeout sengaja TIDAK di
@@ -506,7 +665,9 @@ router.post('/submit', async (req: Request, res: Response) => {
   // Dicatat setelah respons upstream diterima: rute inilah yang memakai kuota.
   if (hasil) {
     if (tiket.usageId) selesaikanTiket(tiket.usageId, hasil.status, hasil.text)
-    recordUpstreamUsage({
+    // 429 dari antrean kita sendiri bukan pemakaian upstream: mencatatnya akan
+    // membuat laporan operator tampak seperti NexaBot yang menolak.
+    if (!hasil.antreanPenuh) recordUpstreamUsage({
       req,
       // Mengikuti kredensial yang BENAR-BENAR dipakai: kalau cookie ditolak lalu
       // kunci cadangan yang berhasil, job itu tercatat di /api/v1/api — bukan di
@@ -544,6 +705,8 @@ router.post('/generate', async (req: Request, res: Response) => {
   if (body.telegram_id) upstreamBody.telegram_id = body.telegram_id
 
   // Tanpa retry, sama alasannya dengan /submit: hindari job & kredit ganda.
+  // `credential` dibutuhkan supaya antrean submit memegang jalur cookie milik
+  // member ini sendiri — bukan jalur member lain.
   const hasil = await relayUpstream(res, 'generate', `${NEXABOT_BASE}/api/v1/generate`, {
     method: 'POST',
     headers: {
@@ -552,9 +715,9 @@ router.post('/generate', async (req: Request, res: Response) => {
       'Accept': 'application/json',
     },
     body: JSON.stringify(upstreamBody),
-  })
+  }, { credential: { kind: 'cookie', source: 'own-cookie', secret: cookies } })
   // Dicatat setelah respons upstream diterima: rute inilah yang memakai kuota.
-  if (hasil) {
+  if (hasil && !hasil.antreanPenuh) {
     recordUpstreamUsage({
       req,
       route: 'generate',
@@ -605,7 +768,7 @@ router.post('/gpt-image', async (req: Request, res: Response) => {
   // Dicatat setelah respons upstream diterima: rute inilah yang memakai kuota.
   if (hasil) {
     if (tiket.usageId) selesaikanTiket(tiket.usageId, hasil.status, hasil.text)
-    recordUpstreamUsage({
+    if (!hasil.antreanPenuh) recordUpstreamUsage({
       req,
       route: 'gpt-image',
       statusCode: hasil.status,
@@ -620,7 +783,7 @@ router.post('/gpt-image', async (req: Request, res: Response) => {
 // kebijakan retry-nya identik (2×, 25s — klien punya backoff sendiri).
 router.get('/gpt-image/:id', async (req: Request, res: Response) => {
   const auth = resolveUpstreamAuth(req, { bacaSaja: true })
-  const jobId = req.params.id
+  const jobId = String(req.params.id || '')
   if (Object.keys(auth.headers).length === 0) {
     return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key / X-Nexabot-Cookie header' })
   }
@@ -645,7 +808,7 @@ router.get('/gpt-image/:id', async (req: Request, res: Response) => {
 // mengirim header, jadi lib klien mengalihkan URL hasil ke rute ini.
 router.get('/gpt-image/:id/download', async (req: Request, res: Response) => {
   const auth = resolveUpstreamAuth(req, { bacaSaja: true })
-  const jobId = req.params.id
+  const jobId = String(req.params.id || '')
   if (Object.keys(auth.headers).length === 0) {
     return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key / X-Nexabot-Cookie header' })
   }
@@ -729,7 +892,7 @@ router.get('/gpt-image/:id/download', async (req: Request, res: Response) => {
 // ── Poll job status ──
 router.get('/job/:id', async (req: Request, res: Response) => {
   const auth = resolveUpstreamAuth(req, { bacaSaja: true })
-  const jobId = req.params.id
+  const jobId = String(req.params.id || '')
   if (Object.keys(auth.headers).length === 0) {
     return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key / X-Nexabot-Cookie header' })
   }
@@ -740,19 +903,34 @@ router.get('/job/:id', async (req: Request, res: Response) => {
   console.log(`[nexabot-local] GET /api/v1/jobs/${jobId}`)
   // Poll status bersifat read-only → aman diulang; satu hiccup gateway tidak
   // lagi terlihat oleh klien sebagai "job hilang".
-  await relayUpstream(res, 'job', `${NEXABOT_BASE}/api/v1/jobs/${jobId}`, {
+  const hasil = await relayUpstream(res, 'job', `${NEXABOT_BASE}/api/v1/jobs/${jobId}`, {
     method: 'GET',
     headers: {
       ...auth.headers,
       'Accept': 'application/json',
     },
   }, { kredensialServer: auth.credential?.source === 'master', credential: auth.credential, cadangan: auth.cadangan })
+
+  // Kunci lane hanya selama job hidup. Poll yang melaporkan selesai/gagal
+  // melepasnya supaya member berikutnya langsung boleh submit.
+  if (!hasil) return
+  if (hasil.status === 404) {
+    if (markNexabotJobFinished(jobId)) console.log(`[nexabot-local] job ${jobId} hilang (404) — kunci lane dilepas`)
+    return
+  }
+  if (hasil.status >= 200 && hasil.status < 300) {
+    if (isNexabotJobFinishedText(hasil.text)) {
+      if (markNexabotJobFinished(jobId)) console.log(`[nexabot-local] job ${jobId} selesai — kunci lane dilepas`)
+    } else {
+      touchNexabotJob(jobId)
+    }
+  }
 })
 
 // ── Download result ──
 router.get('/download/:id', async (req: Request, res: Response) => {
   const auth = resolveUpstreamAuth(req, { bacaSaja: true })
-  const jobId = req.params.id
+  const jobId = String(req.params.id || '')
   if (Object.keys(auth.headers).length === 0) {
     return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key / X-Nexabot-Cookie header' })
   }
@@ -771,6 +949,9 @@ router.get('/download/:id', async (req: Request, res: Response) => {
     if (!upstreamRes.ok) {
       const errText = await upstreamRes.text().catch(() => '')
       console.log(`[nexabot-local] download ${upstreamRes.status}: ${errText.slice(0, 200)}`)
+      if (upstreamRes.status === 404 && markNexabotJobFinished(jobId)) {
+        console.log(`[nexabot-local] job ${jobId} tidak ada (404) — kunci lane dilepas`)
+      }
       res.writeHead(upstreamRes.status, {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
@@ -778,6 +959,9 @@ router.get('/download/:id', async (req: Request, res: Response) => {
       res.end(JSON.stringify({ ok: false, error: `Download gagal: HTTP ${upstreamRes.status}` }))
       return
     }
+
+    // Hasil bisa diunduh = job sudah pasti berhenti menahan akun upstream.
+    if (markNexabotJobFinished(jobId)) console.log(`[nexabot-local] unduhan ${jobId} sukses — kunci lane dilepas`)
 
     // Check if response is JSON (error) or binary (file)
     const contentType = upstreamRes.headers.get('content-type') || ''
@@ -838,7 +1022,7 @@ router.get('/download/:id', async (req: Request, res: Response) => {
  */
 router.post('/save/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   const auth = resolveUpstreamAuth(req, { bacaSaja: true })
-  const jobId = req.params.id
+  const jobId = String(req.params.id || '')
   const userId = req.user?.id
   if (!userId) {
     return res.status(401).json({ ok: false, error: 'Login dulu untuk menyimpan hasil.' })
@@ -863,6 +1047,9 @@ router.post('/save/:id', authenticateToken, async (req: AuthRequest, res: Respon
 
     if (!upstreamRes.ok) {
       const errText = await upstreamRes.text().catch(() => '')
+      if (upstreamRes.status === 404 && markNexabotJobFinished(jobId)) {
+        console.log(`[nexabot-local] job ${jobId} tidak ada (404) — kunci lane dilepas`)
+      }
       return res.status(upstreamRes.status === 404 ? 404 : 502).json({
         ok: false,
         error: `NexaBot menolak unduhan: HTTP ${upstreamRes.status} ${errText.slice(0, 200)}`,
@@ -895,6 +1082,7 @@ router.post('/save/:id', authenticateToken, async (req: AuthRequest, res: Respon
 
     const stored = await storeMedia(Buffer.concat(chunks), { ext, mimeType })
     const url = stored.cdnUrl || diskPublicUrl(req, stored.key)
+    if (markNexabotJobFinished(jobId)) console.log(`[nexabot-local] simpan ${jobId} sukses — kunci lane dilepas`)
     console.log(`[nexabot-local] save ${jobId} → ${stored.storage} ${(total / 1024 / 1024).toFixed(1)} MB`)
     return res.status(200).json({ ok: true, url, key: stored.key, storage: stored.storage, bytes: total })
   } catch (err: any) {

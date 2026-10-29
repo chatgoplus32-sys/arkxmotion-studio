@@ -2,11 +2,12 @@
 // resolusi nodenext dan tidak tahu alias `@/`, sedangkan Vite memetakan
 // './x.js' ke './x.ts' saat build.
 import {
+  NEXABOT_SUBMIT_RETRY,
   describeNexabotStatus,
   isNexabotTransientStatus,
   nexabotHttpVerdict,
   nexabotRetryDelayMs,
-  parseRetryAfterMs,
+  nexabotSubmit429Decision,
   type NexabotBackoffOptions,
 } from './nexabotRetry.js'
 
@@ -19,17 +20,35 @@ const NEXABOT_BASE = '/api/public/nexabot'
 export interface NexabotRetryOptions extends NexabotBackoffOptions {
   /** Total percobaan (1 = tanpa retry). */
   maxAttempts?: number
+  /**
+   * Batas total waktu yang dihabiskan satu submit (termasuk jeda mengantre).
+   * Submit NexaBot sekarang sabar karena antriannya ada di relay, bukan di
+   * browser — lihat NEXABOT_SUBMIT_RETRY.
+   */
+  budgetMs?: number
+  /**
+   * Batas waktu khusus menunggu antrean relay (`queued: true`). Akun NexaBot
+   * hanya menjalankan satu job, jadi antrean bisa berjalan belasan menit;
+   * jumlah percobaan tidak dipakai sebagai batas untuk antrean.
+   */
+  queueBudgetMs?: number
   /** Diberi tahu setiap kali kita menunggu sebelum mencoba lagi. */
   onRetry?: (info: { attempt: number; status: number | null; delayMs: number; message: string }) => void
 }
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, ms)))
 
-/** Hint dari header `Retry-After` untuk pesan error, mis. " (tunggu ±30s)". */
-function retryAfterHint(res: Response): string {
-  const ms = parseRetryAfterMs(res.headers.get('retry-after'))
-  if (ms == null) return ''
-  return ` (disarankan tunggu ±${Math.max(1, Math.round(ms / 1000))}s)`
+/**
+ * true kalau 429 ini berasal dari antrean relay kita (`queued: true`), bukan dari
+ * NexaBot. Klien menampilkannya sebagai "giliran member lain sedang jalan", dan
+ * tetap aman diulang: relay tidak pernah mengirim request itu ke upstream.
+ */
+function isAntreanRelay(text: string): boolean {
+  try {
+    return JSON.parse(text)?.queued === true
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -667,7 +686,16 @@ export async function submitNexabot(
   authOverride?: NexabotAuth | string,
   opts: NexabotRetryOptions = {}
 ): Promise<NexabotSubmitResult> {
-  const { maxAttempts = 3, baseMs = 2000, maxMs = 15000, random, onRetry } = opts
+  const {
+    maxAttempts = NEXABOT_SUBMIT_RETRY.attempts,
+    baseMs = NEXABOT_SUBMIT_RETRY.baseMs,
+    maxMs = NEXABOT_SUBMIT_RETRY.maxMs,
+    budgetMs = NEXABOT_SUBMIT_RETRY.budgetMs,
+    queueBudgetMs = NEXABOT_SUBMIT_RETRY.queueBudgetMs,
+    random,
+    onRetry,
+  } = opts
+  const mulai = Date.now()
   const auth = fillAuthFromStorage(normalizeAuth(authOverride))
   const { apiKey, cookies } = normalizeValues(auth)
   const session = !!cookies
@@ -700,7 +728,11 @@ export async function submitNexabot(
   console.log(`[nexabot] Submit ${params.mode} via ${session ? 'session(cookie)' : 'api-key'}: ${params.prompt.slice(0, 50)}...`)
 
   const attempts = Math.max(1, maxAttempts)
-  for (let attempt = 1; attempt <= attempts; attempt++) {
+  // Loop TIDAK dibatasi `attempts`: 429 dari antrean relay boleh diulang selama
+  // anggaran antreannya masih ada (relay yang tahu kapan lane bebas).
+  let attempt = 0
+  while (true) {
+    attempt++
     const res = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -732,16 +764,28 @@ export async function submitNexabot(
       // membuat job, jadi mengulang tidak menghasilkan job/kredit ganda. Untuk
       // 5xx & timeout kita sengaja TIDAK mengulang: job bisa saja sudah terbentuk
       // di sana (kredit 0.15 hangus dua kali kalau asal ulang).
+      //
+      // 429 dari antrean relay (queued: true) juga diulang: relay sudah menahan
+      // permintaan ini selama slot antreannya sendiri, jadi klien hanya perlu
+      // bersabar sampai giliran kosong — bukan menganggapnya kegagalan.
       if (res.status === 429) {
-        const message = describeNexabotStatus(res.status)
-        if (attempt < attempts) {
-          const delayMs = nexabotRetryDelayMs({ attempt, retryAfterHeader: res.headers.get('retry-after'), opts: { baseMs, maxMs, random } })
-          onRetry?.({ attempt, status: res.status, delayMs, message })
-          console.warn(`[nexabot] Submit ${res.status} (${message}) — coba lagi dalam ${Math.round(delayMs / 1000)}s`)
-          await sleep(delayMs)
+        const keputusan = nexabotSubmit429Decision({
+          attempt,
+          attempts,
+          retryAfterHeader: res.headers.get('retry-after'),
+          antrianSendiri: isAntreanRelay(errText),
+          sisaBudgetMs: budgetMs - (Date.now() - mulai),
+          sisaQueueBudgetMs: queueBudgetMs - (Date.now() - mulai),
+          sudahMenungguMs: Date.now() - mulai,
+          opts: { baseMs, maxMs, random },
+        })
+        if (keputusan.ulang) {
+          onRetry?.({ attempt, status: res.status, delayMs: keputusan.delayMs, message: keputusan.message })
+          console.warn(`[nexabot] Submit ${res.status} (${keputusan.message}) — coba lagi dalam ${Math.round(keputusan.delayMs / 1000)}s`)
+          await sleep(keputusan.delayMs)
           continue
         }
-        throw new Error(`NexaBot: ${message} — tunggu sebentar lalu coba lagi${retryAfterHint(res)}`)
+        throw new Error(keputusan.akhir || `NexaBot: ${keputusan.message}`)
       }
 
       // 503 throttle "Server gambar sedang dibatasi upstream" = ditolak SEBELUM
@@ -775,9 +819,6 @@ export async function submitNexabot(
       estSeconds: data.est_seconds,
     }
   }
-
-  // Tidak tercapai untuk maxAttempts >= 1 (loop selalu return/throw), jaga-jaga.
-  throw new Error('NexaBot: Submit gagal setelah beberapa percobaan')
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1241,7 +1282,16 @@ export async function submitNexabotGptImage(
   authOverride?: NexabotAuth | string,
   opts: NexabotRetryOptions = {}
 ): Promise<NexabotGptImageSubmitResult> {
-  const { maxAttempts = 3, baseMs = 2000, maxMs = 15000, random, onRetry } = opts
+  const {
+    maxAttempts = NEXABOT_SUBMIT_RETRY.attempts,
+    baseMs = NEXABOT_SUBMIT_RETRY.baseMs,
+    maxMs = NEXABOT_SUBMIT_RETRY.maxMs,
+    budgetMs = NEXABOT_SUBMIT_RETRY.budgetMs,
+    queueBudgetMs = NEXABOT_SUBMIT_RETRY.queueBudgetMs,
+    random,
+    onRetry,
+  } = opts
+  const mulai = Date.now()
   const auth = fillAuthFromStorage(normalizeAuth(authOverride))
   const { apiKey, cookies } = normalizeValues(auth)
   if (!apiKey && !cookies && !auth.master) {
@@ -1258,7 +1308,9 @@ export async function submitNexabotGptImage(
   console.log(`[nexabot] GPT Image submit (${body.aspect}, refs: ${body.references.length})`)
 
   const attempts = Math.max(1, maxAttempts)
-  for (let attempt = 1; attempt <= attempts; attempt++) {
+  let attempt = 0
+  while (true) {
+    attempt++
     const res = await fetch(`${NEXABOT_BASE}/gpt-image`, {
       method: 'POST',
       headers: {
@@ -1290,15 +1342,23 @@ export async function submitNexabotGptImage(
         if (waitSeconds != null) throw new NexabotThrottleError(waitSeconds)
       }
       if (res.status === 429) {
-        const message = describeNexabotStatus(res.status)
-        if (attempt < attempts) {
-          const delayMs = nexabotRetryDelayMs({ attempt, retryAfterHeader: res.headers.get('retry-after'), opts: { baseMs, maxMs, random } })
-          onRetry?.({ attempt, status: res.status, delayMs, message })
-          console.warn(`[nexabot] GPT Image ${res.status} (${message}) — coba lagi dalam ${Math.round(delayMs / 1000)}s`)
-          await sleep(delayMs)
+        const keputusan = nexabotSubmit429Decision({
+          attempt,
+          attempts,
+          retryAfterHeader: res.headers.get('retry-after'),
+          antrianSendiri: isAntreanRelay(errText),
+          sisaBudgetMs: budgetMs - (Date.now() - mulai),
+          sisaQueueBudgetMs: queueBudgetMs - (Date.now() - mulai),
+          sudahMenungguMs: Date.now() - mulai,
+          opts: { baseMs, maxMs, random },
+        })
+        if (keputusan.ulang) {
+          onRetry?.({ attempt, status: res.status, delayMs: keputusan.delayMs, message: keputusan.message })
+          console.warn(`[nexabot] GPT Image ${res.status} (${keputusan.message}) — coba lagi dalam ${Math.round(keputusan.delayMs / 1000)}s`)
+          await sleep(keputusan.delayMs)
           continue
         }
-        throw new Error(`NexaBot: ${message} — tunggu sebentar lalu coba lagi${retryAfterHint(res)}`)
+        throw new Error(keputusan.akhir || `NexaBot: ${keputusan.message}`)
       }
 
       throw new Error(`NexaBot HTTP ${res.status}: ${errText.slice(0, 200)}`)
@@ -1311,8 +1371,6 @@ export async function submitNexabotGptImage(
     }
     return { ok: true, id, cost: data.cost, creditBalance: data.credit_balance }
   }
-
-  throw new Error('NexaBot: submit GPT Image gagal setelah beberapa percobaan')
 }
 
 /**

@@ -25,6 +25,7 @@ import type { AddressInfo } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import express from 'express'
 import jwt from 'jsonwebtoken'
+import { resetNexabotLaneJobs } from '../shared/nexabotProxy.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -108,6 +109,9 @@ function potong(userId: number, opts: { cost?: number; umurMenit?: number; statu
 }
 
 async function submit(headers: Record<string, string>) {
+  // Kunci job per-lane bersifat proses-wide (satu akun = satu job). File ini
+  // menguji tiket pembayaran, bukan penjadwalan, jadi mulai dari lane bersih.
+  resetNexabotLaneJobs()
   const res = await fetch(`${base}/api/public/nexabot/submit`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...headers },

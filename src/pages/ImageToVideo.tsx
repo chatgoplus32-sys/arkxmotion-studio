@@ -2718,10 +2718,13 @@ export default function ImageToVideoPage() {
                   // Di mode session field ini diabaikan — akun ditentukan oleh cookie.
                   telegramId: keyInfo?.telegramId,
                 }, auth, {
-                  // 429 dari NexaBot diulang otomatis setelah jeda (upstream
-                  // menolak tanpa membuat job, jadi aman diulang).
-                  onRetry: ({ status, delayMs }) => {
-                    addLog(`⏳ NexaBot sibuk (HTTP ${status}) — submit diulang dalam ${Math.ceil(delayMs / 1000)}s...`, 'warn', 'nexabot')
+                  // 429 diulang otomatis: upstream menolak TANPA membuat job, dan
+                  // 429 dari antrean relay berarti giliran member lain sedang
+                  // jalan — keduanya aman, jadi user tinggal menunggu.
+                  onRetry: ({ attempt, status, delayMs, message }) => {
+                    const detik = Math.ceil(delayMs / 1000)
+                    addLog(`⏳ ${message} (HTTP ${status}) — submit diulang dalam ${detik}s (percobaan ${attempt})...`, 'warn', 'nexabot')
+                    setStatus((s) => ({ ...s, text: `Mengantre di NexaBot — ${detik}s...`, pct: 15 }))
                   },
                 }), {
                   // 503 throttle upstream: tunggu sesuai anjuran lalu submit

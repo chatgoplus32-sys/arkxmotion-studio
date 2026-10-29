@@ -5,12 +5,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  NEXABOT_SUBMIT_RETRY,
   NEXABOT_TRANSIENT_STATUSES,
   describeNexabotStatus,
   isNexabotTransientStatus,
   nexabotBackoffMs,
   nexabotHttpVerdict,
   nexabotRetryDelayMs,
+  nexabotSubmit429Decision,
   parseRetryAfterMs,
 } from '../src/lib/nexabotRetry.js'
 
@@ -95,4 +97,61 @@ test('Retry-After dari upstream diprioritaskan, tapi tetap dibatasi', () => {
     nexabotRetryDelayMs({ attempt: 1, retryAfterHeader: '3600', opts: { baseMs: 3000, maxMs: 15000, maxRetryAfterMs: 5000 } }),
     5000,
   )
+})
+
+// ─── Keputusan submit saat 429 (antrean berbagi akun) ───────────────────────
+// Dua member generate bersamaan dulu membuat keduanya mati dengan "rate limit"
+// setelah ±5 detik. Sekarang submit sabar: antriannya dipegang relay, dan klien
+// hanya perlu menunggu sesuai Retry-After sampai batas anggaran habis.
+
+test('submit 429: menunggu sesuai Retry-After dan mengulang selama percobaan tersisa', () => {
+  const d = nexabotSubmit429Decision({
+    attempt: 1,
+    attempts: NEXABOT_SUBMIT_RETRY.attempts,
+    retryAfterHeader: '7',
+    sisaBudgetMs: 60_000,
+  })
+  assert.equal(d.ulang, true)
+  assert.equal(d.delayMs, 7000)
+  assert.equal(d.akhir, undefined)
+})
+
+test('submit 429 dari antrean relay pakai bahasa antrean, bukan bahasa rate limit', () => {
+  const antrian = nexabotSubmit429Decision({ attempt: 1, attempts: 4, antrianSendiri: true, sisaBudgetMs: 60_000 })
+  const upstream = nexabotSubmit429Decision({ attempt: 1, attempts: 4, antrianSendiri: false, sisaBudgetMs: 60_000 })
+
+  assert.match(antrian.message, /antrean generate penuh/)
+  assert.equal(upstream.message, describeNexabotStatus(429))
+  assert.notEqual(antrian.message, upstream.message, 'user harus tahu ini giliran member lain, bukan akun yang dibatasi')
+})
+
+test('submit 429: percobaan terakhir menyerah dengan pesan yang menjelaskan', () => {
+  const d = nexabotSubmit429Decision({
+    attempt: 4,
+    attempts: 4,
+    retryAfterHeader: '10',
+    sisaBudgetMs: 60_000,
+    sudahMenungguMs: 95_000,
+  })
+  assert.equal(d.ulang, false)
+  assert.match(d.akhir || '', /sudah menunggu ±95s/)
+  assert.match(d.akhir || '', /coba lagi dalam 10 detik/)
+})
+
+test('submit 429: anggaran habis menghentikan retry walaupun percobaan masih ada', () => {
+  const d = nexabotSubmit429Decision({
+    attempt: 1,
+    attempts: NEXABOT_SUBMIT_RETRY.attempts,
+    retryAfterHeader: '30',
+    sisaBudgetMs: 5_000,
+    sudahMenungguMs: 175_000,
+  })
+  assert.equal(d.ulang, false, 'menunggu 30s dari sisa 5s = spinner palsu')
+  assert.match(d.akhir || '', /sudah menunggu ±175s/)
+})
+
+test('anggaran submit jauh lebih sabar daripada yang lama (3×2s)', () => {
+  assert.equal(NEXABOT_SUBMIT_RETRY.attempts, 4)
+  assert.ok(NEXABOT_SUBMIT_RETRY.budgetMs >= 120_000, 'antrian relay saja bisa menahan 45 detik')
+  assert.ok(NEXABOT_SUBMIT_RETRY.maxMs >= 15_000)
 })

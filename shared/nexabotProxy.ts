@@ -171,7 +171,9 @@ export function nexabotRelayHeaders(upstream: Response): Record<string, string> 
  *     {@link NEXABOT_PROBE_QUEUE.maxWaitMs} supaya tidak menggantung selamanya.
  *
  * Submit & generate TIDAK lewat jalur ini: keduanya bisa membuat job (kredit
- * terpotong) dan tidak boleh dibagi maupun ditahan.
+ * terpotong) dan tidak boleh DIBAGI (satu respons untuk dua submit berbeda tidak
+ * ada artinya). Yang boleh — dan sekarang dilakukan — adalah MENAHAN submit di
+ * antrean sendiri; lihat bagian "ANTREAN SUBMIT PER KREDENSIAL" di bawah.
  *
  * Batasannya: antrean ini per proses/instance server. Di Vercel ia menjaga
  * instance yang dipakai bersama; di server Express lokal (kasus paling sering
@@ -304,6 +306,368 @@ async function runSharedProbe(
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// ANTREAN SUBMIT PER KREDENSIAL (jalur yang membuat job)
+// ═══════════════════════════════════════════════════════════════════
+/**
+ * Dua member menekan "Generate" bersamaan → dua submit menembak AKUN NexaBot
+ * yang sama dari IP yang sama → upstream membalas 429 `Rate limit` untuk
+ * keduanya, dan generate gagal padahal tidak ada job yang terbentuk. Dengan
+ * puluhan member yang berbagi kredensial server (sesi Unlimited + kunci induk)
+ * tabrakan ini bukan lagi insiden, tapi keadaan default.
+ *
+ * Antrean ini memperlakukan akun upstream seperti sumber daya yang punya
+ * jumlah slot: submit per kredensial diurutkan, bukan ditabrakkan. Bedanya
+ * dengan antrean probe di atas:
+ *  - kuncinya PER KREDENSIAL (lane), supaya member yang memakai kunci sendiri
+ *    tidak ikut mengantre di belakang akun orang lain;
+ *  - hanya menahan SEBELUM request dikirim — begitu upstream menjawab, slot
+ *    langsung lepas. Tidak ada retry di dalam slot, jadi tidak mungkin ada
+ *    job/kredit ganda (satu slot = satu percobaan submit).
+ *
+ * Kalau penunggu kehabisan batas sabar, route kita yang menjawab 429 +
+ * `Retry-After` (bukan upstream). Tiket pembayaran klien dilepas, jadi klien
+ * boleh mengulang dengan tiket yang sama — dan klien sekarang cukup sabar untuk
+ * itu (lihat src/lib/nexabotRetry.ts).
+ *
+ * Yang TIDAK dicakup antrean ini: masa job itu sendiri. Akun Unlimited hanya
+ * menjalankan satu job, jadi submit berikutnya harus ditahan sampai job selesai
+ * — lihat bagian "JOB YANG SEDANG BERJALAN PER LANE" di bawah.
+ *
+ * Batasan yang sama seperti antrean probe: per proses/instance. Di PM2 satu
+ * instance (kasus produksi sekarang) itu sudah cukup; kalau kelak dipakai
+ * lebih dari satu proses, penjadwalan harus pindah ke antrean di database.
+ */
+
+export const NEXABOT_SUBMIT_QUEUE = {
+  /** Submit yang boleh jalan bersamaan PER kredensial upstream. */
+  concurrency: 1,
+  /** Batas seorang member menunggu slot sebelum kita jawab "antrian penuh" (ms). */
+  maxWaitMs: 45_000,
+  /** `Retry-After` (detik) yang kita anjurkan saat antrean penuh. */
+  retryAfterSeconds: 10,
+}
+
+export interface NexabotSubmitQueueConfig {
+  concurrency: number
+  maxWaitMs: number
+  retryAfterSeconds: number
+}
+
+/** Config antrean submit — bisa disetel lewat env tanpa deploy ulang. */
+export function nexabotSubmitQueueConfig(env: NodeJS.ProcessEnv = process.env): NexabotSubmitQueueConfig {
+  const num = (raw: string | undefined, fallback: number) => {
+    const n = Number(raw)
+    return Number.isFinite(n) && n > 0 ? n : fallback
+  }
+  return {
+    concurrency: Math.max(1, Math.floor(num(env.NEXABOT_SUBMIT_CONCURRENCY, NEXABOT_SUBMIT_QUEUE.concurrency))),
+    maxWaitMs: num(env.NEXABOT_SUBMIT_QUEUE_MAX_WAIT_MS, NEXABOT_SUBMIT_QUEUE.maxWaitMs),
+    retryAfterSeconds: num(env.NEXABOT_SUBMIT_RETRY_AFTER_S, NEXABOT_SUBMIT_QUEUE.retryAfterSeconds),
+  }
+}
+
+/** Bentuk kredensial yang dipakai relay (dipetakan dari server tanpa mengimpor tipe server). */
+export interface NexabotLaneCredential {
+  kind: 'api-key' | 'cookie'
+  source: string
+  secret: string
+}
+
+/**
+ * Kunci lane = identitas akun upstream yang dipakai. Nilainya hanya jadi kunci
+ * Map di memori proses — tidak pernah di-log maupun dikirim ke klien.
+ */
+export function nexabotSubmitLaneKey(credential: NexabotLaneCredential | null | undefined): string {
+  if (!credential) return 'lane:tanpa-kredensial'
+  return `lane:${credential.kind}:${credential.secret}`
+}
+
+/** Label aman untuk log: jenis kredensialnya saja, isinya tidak pernah muncul. */
+export function nexabotSubmitLaneLabel(credential: NexabotLaneCredential | null | undefined): string {
+  if (!credential) return 'tanpa kredensial'
+  if (credential.source === 'master') return credential.kind === 'cookie' ? 'sesi server' : 'kunci server'
+  if (credential.source === 'client-master') return 'kunci master di browser'
+  return credential.kind === 'cookie' ? 'sesi member' : 'kunci member'
+}
+
+interface SubmitLane {
+  gate: NexabotProbeGate
+}
+
+const submitLanes = new Map<string, SubmitLane>()
+
+function laneOf(key: string): SubmitLane {
+  const existing = submitLanes.get(key)
+  if (existing) return existing
+  const created: SubmitLane = { gate: new NexabotProbeGate() }
+  submitLanes.set(key, created)
+  return created
+}
+
+/** Buang lane yang sudah tidak dipakai supaya Map tidak tumbuh tanpa batas. */
+function dropLaneIfIdle(key: string): void {
+  const lane = submitLanes.get(key)
+  if (!lane) return
+  const { active, waiting } = lane.gate.stats()
+  if (active === 0 && waiting === 0) submitLanes.delete(key)
+}
+
+export interface NexabotSubmitSlot {
+  /** Lama menunggu slot (ms) — 0 kalau langsung jalan. */
+  waitMs: number
+  /** Posisi antrean saat meminta slot (0 = tidak mengantre). */
+  position: number
+  release: () => void
+}
+
+/**
+ * Minta satu slot submit untuk lane ini. `null` = batas sabar habis; pemanggil
+ * wajib menjawab "antrian penuh" dan TIDAK boleh mengirim request ke upstream.
+ */
+export async function acquireNexabotSubmitSlot(
+  laneKey: string,
+  config: NexabotSubmitQueueConfig = nexabotSubmitQueueConfig(),
+): Promise<NexabotSubmitSlot | null> {
+  const lane = laneOf(laneKey)
+  const sebelum = lane.gate.stats()
+  const posisi = sebelum.active >= config.concurrency ? sebelum.waiting + 1 : 0
+  const mulai = Date.now()
+  const dapat = await lane.gate.acquire(config.concurrency, config.maxWaitMs)
+  if (!dapat) {
+    dropLaneIfIdle(laneKey)
+    return null
+  }
+  return {
+    waitMs: Date.now() - mulai,
+    position: posisi,
+    release: () => {
+      lane.gate.release()
+      dropLaneIfIdle(laneKey)
+    },
+  }
+}
+
+/** Kondisi lane saat ini — untuk test & diagnostik "berapa member yang mengantre". */
+export function nexabotSubmitLaneStats(laneKey: string): { active: number; waiting: number } | null {
+  const lane = submitLanes.get(laneKey)
+  return lane ? lane.gate.stats() : null
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// JOB YANG SEDANG BERJALAN PER LANE
+// ═══════════════════════════════════════════════════════════════════
+/**
+ * Antrean submit di atas hanya menyerialkan REQUEST submit (±0,3 detik). Itu
+ * tidak cukup: akun NexaBot (mode Unlimited) hanya boleh menjalankan SATU job
+ * pada satu waktu — submit kedua selama job pertama berjalan dijawab
+ * "Generate sedang berjalan. Tunggu selesai sebelum generate lagi (mode
+ * unlimited)." Di produksi ini terlihat sebagai member ke-2..10 ditolak
+ * upstream lalu klien menyerah setelah ~5 detik.
+ *
+ * Obatnya bukan mengulang lebih cepat, tapi MENAHAN submit sampai job selesai:
+ *  - job dicatat saat submit 2xx membawa `job_id`;
+ *  - catatan diperbarui tiap `/job/:id` dipoll (bukti job masih hidup);
+ *  - dilepas saat poll melaporkan `done`/`failed`, saat hasil diunduh/disimpan,
+ *    atau saat job berhenti dipoll (`idleMs`) / melewati `maxHoldMs`.
+ *
+ * Selama lane sibuk, route kita sendiri yang menjawab 429 `queued: true` +
+ * `Retry-After` tanpa menyentuh upstream: saldo member tidak terpotong dan
+ * klien cukup mengulang (lihat src/lib/nexabotRetry.ts).
+ */
+export const NEXABOT_JOB_LOCK = {
+  /** Batas keras umur satu job — jaring pengaman kalau klien hilang total. */
+  maxHoldMs: 12 * 60_000,
+  /** Job yang tidak dipoll selama ini dianggap selesai (tab ditutup). */
+  idleMs: 3 * 60_000,
+  /** `Retry-After` bawaan (detik) saat job sedang berjalan dan tidak ada estimasi. */
+  busyRetryAfterSeconds: 15,
+  /** Batas `Retry-After` saat ada `est_seconds` dari upstream. */
+  maxBusyRetryAfterSeconds: 60,
+  /** Cooldown setelah upstream menolak karena masih ada job berjalan (ms). */
+  upstreamBusyCooldownMs: 20_000,
+}
+
+export interface NexabotJobLockConfig {
+  maxHoldMs: number
+  idleMs: number
+  busyRetryAfterSeconds: number
+  maxBusyRetryAfterSeconds: number
+  upstreamBusyCooldownMs: number
+}
+
+/** Config kunci job — bisa disetel lewat env tanpa deploy ulang. */
+export function nexabotJobLockConfig(env: NodeJS.ProcessEnv = process.env): NexabotJobLockConfig {
+  const num = (raw: string | undefined, fallback: number) => {
+    const n = Number(raw)
+    return Number.isFinite(n) && n > 0 ? n : fallback
+  }
+  return {
+    maxHoldMs: num(env.NEXABOT_JOB_MAX_HOLD_MS, NEXABOT_JOB_LOCK.maxHoldMs),
+    idleMs: num(env.NEXABOT_JOB_IDLE_MS, NEXABOT_JOB_LOCK.idleMs),
+    busyRetryAfterSeconds: Math.max(1, Math.floor(num(env.NEXABOT_JOB_BUSY_RETRY_AFTER_S, NEXABOT_JOB_LOCK.busyRetryAfterSeconds))),
+    maxBusyRetryAfterSeconds: Math.max(1, Math.floor(num(env.NEXABOT_JOB_MAX_RETRY_AFTER_S, NEXABOT_JOB_LOCK.maxBusyRetryAfterSeconds))),
+    upstreamBusyCooldownMs: num(env.NEXABOT_JOB_BUSY_COOLDOWN_MS, NEXABOT_JOB_LOCK.upstreamBusyCooldownMs),
+  }
+}
+
+/** Aksi yang menjalankan SATU job panjang di akun upstream (submit/generate). */
+export function isNexabotJobAction(action: NexabotProxyAction): boolean {
+  return action === 'submit' || action === 'generate'
+}
+
+interface LaneJob {
+  laneKey: string
+  jobId: string
+  startedAt: number
+  lastSeenAt: number
+  /** `est_seconds` dari upstream, kalau ada — dipakai menyusun Retry-After. */
+  estMs: number | null
+}
+
+/** lane → job yang sedang berjalan; jobId → lane untuk pelepasan dari rute poll. */
+const laneJobs = new Map<string, LaneJob>()
+const jobLanes = new Map<string, string>()
+/** lane → waktu (ms) sampai kapan lane tidak boleh ditembak upstream. */
+const laneCooldowns = new Map<string, number>()
+
+function lupakanJob(laneKey: string): void {
+  const job = laneJobs.get(laneKey)
+  if (!job) return
+  laneJobs.delete(laneKey)
+  if (jobLanes.get(job.jobId) === laneKey) jobLanes.delete(job.jobId)
+}
+
+/** Catat bahwa lane ini sekarang menjalankan `jobId`. Job lama (kalau ada) dilepas. */
+export function markNexabotJobRunning(
+  laneKey: string,
+  jobId: string,
+  opts: { nowMs?: number; estSeconds?: number | null } = {},
+): void {
+  if (!jobId) return
+  const nowMs = opts.nowMs ?? Date.now()
+  lupakanJob(laneKey)
+  const est = Number(opts.estSeconds)
+  laneJobs.set(laneKey, {
+    laneKey,
+    jobId,
+    startedAt: nowMs,
+    lastSeenAt: nowMs,
+    estMs: Number.isFinite(est) && est > 0 ? est * 1000 : null,
+  })
+  jobLanes.set(jobId, laneKey)
+  // Cooldown lama tidak relevan lagi: job yang sah sudah tercatat.
+  laneCooldowns.delete(laneKey)
+}
+
+/** Tandai job masih hidup (dipanggil tiap poll). false = job tidak tercatat. */
+export function touchNexabotJob(jobId: string, nowMs: number = Date.now()): boolean {
+  const laneKey = jobLanes.get(jobId)
+  if (!laneKey) return false
+  const job = laneJobs.get(laneKey)
+  if (!job) return false
+  job.lastSeenAt = nowMs
+  return true
+}
+
+/** Lepas job dari lane-nya (selesai/gagal/terunduh). Idempoten. */
+export function markNexabotJobFinished(jobId: string): boolean {
+  const laneKey = jobLanes.get(jobId)
+  if (!laneKey) return false
+  lupakanJob(laneKey)
+  return true
+}
+
+/**
+ * Lane tidak boleh ditembak selama `ms` — dipakai saat upstream menjawab
+ * "Generate sedang berjalan" / "Terlalu banyak permintaan generate" tetapi kita
+ * tidak tahu job mana yang menahan (mis. job dari device lain di akun yang sama).
+ */
+export function markNexabotLaneCooldown(laneKey: string, ms?: number, nowMs: number = Date.now()): void {
+  const durasi = ms ?? nexabotJobLockConfig().upstreamBusyCooldownMs
+  const sampai = nowMs + Math.max(0, durasi)
+  if (sampai > (laneCooldowns.get(laneKey) ?? 0)) laneCooldowns.set(laneKey, sampai)
+}
+
+export interface NexabotLaneBusy {
+  busy: boolean
+  /** `job` = job kita sendiri masih berjalan; `cooldown` = upstream baru menolak. */
+  reason: 'job' | 'cooldown' | null
+  /** Anjuran menunggu untuk `Retry-After` (detik). */
+  retryAfterSeconds: number
+  jobId?: string
+}
+
+/**
+ * Apakah lane sedang tidak boleh menerima submit baru. Job yang sudah kedaluwarsa
+ * (tidak dipoll / melewati batas keras) dianggap selesai supaya satu klien yang
+ * hilang tidak memblokir semua member selamanya.
+ */
+export function nexabotLaneBusy(laneKey: string, nowMs: number = Date.now()): NexabotLaneBusy {
+  const config = nexabotJobLockConfig()
+
+  const cooldownSampai = laneCooldowns.get(laneKey)
+  if (cooldownSampai != null) {
+    if (cooldownSampai > nowMs) {
+      return {
+        busy: true,
+        reason: 'cooldown',
+        retryAfterSeconds: Math.min(
+          config.maxBusyRetryAfterSeconds,
+          Math.max(1, Math.ceil((cooldownSampai - nowMs) / 1000)),
+        ),
+      }
+    }
+    laneCooldowns.delete(laneKey)
+  }
+
+  const job = laneJobs.get(laneKey)
+  if (!job) return { busy: false, reason: null, retryAfterSeconds: 0 }
+
+  const umur = nowMs - job.startedAt
+  const diam = nowMs - job.lastSeenAt
+  if (umur >= config.maxHoldMs || diam >= config.idleMs) {
+    lupakanJob(laneKey)
+    return { busy: false, reason: null, retryAfterSeconds: 0 }
+  }
+
+  const sisa = job.estMs != null ? (job.estMs - umur) / 1000 : NaN
+  const retryAfterSeconds = Number.isFinite(sisa)
+    ? Math.min(config.maxBusyRetryAfterSeconds, Math.max(1, Math.ceil(sisa)))
+    : config.busyRetryAfterSeconds
+  return { busy: true, reason: 'job', retryAfterSeconds, jobId: job.jobId }
+}
+
+/**
+ * Body/jawaban upstream yang berarti "masih ada job berjalan / terlalu sering".
+ * Dipakai untuk memasang cooldown singkat sehingga submit berikutnya ditahan
+ * relay, bukan ditembakkan lalu ditolak NexaBot lagi.
+ */
+export function isNexabotUpstreamBusyText(text: string): boolean {
+  return /generate sedang berjalan|sudah ada job|masih berjalan|tunggu selesai|terlalu banyak permintaan/i
+    .test(text || '')
+}
+
+const STATUS_SELESAI = new Set(['done', 'completed', 'completed_with_error', 'success', 'failed', 'error', 'cancelled', 'canceled'])
+
+/** Respons poll job yang menandakan job sudah berhenti (berhasil atau gagal). */
+export function isNexabotJobFinishedText(text: string): boolean {
+  try {
+    const data = JSON.parse(text)
+    const status = data?.job?.status ?? data?.status
+    return typeof status === 'string' && STATUS_SELESAI.has(status.trim().toLowerCase())
+  } catch {
+    return false
+  }
+}
+
+/** Dipakai test: kosongkan seluruh catatan job/cooldown. */
+export function resetNexabotLaneJobs(): void {
+  laneJobs.clear()
+  jobLanes.clear()
+  laneCooldowns.clear()
+}
+
 /**
  * Penyebab asli kegagalan jaringan, diambil dari `err.cause`.
  *
@@ -392,7 +756,9 @@ export interface NexabotUpstreamCallResult {
  *
  * Probe read-only (credit/session/modes) lewat antrean + single-flight dulu
  * (lihat {@link isNexabotShareableProbe}); submit/generate/download langsung
- * dieksekusi karena bisa membuat job & memotong kredit.
+ * dieksekusi karena bisa membuat job & memotong kredit. Submit TIDAK ditahan di
+ * sini — penahanannya terjadi satu level di atas ({@link acquireNexabotSubmitSlot}),
+ * supaya slot dipegang sampai tiket & responsnya selesai diproses route.
  */
 export async function fetchNexabotUpstream(
   url: string,

@@ -21,6 +21,7 @@ import type { AddressInfo } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import express from 'express'
 import jwt from 'jsonwebtoken'
+import { resetNexabotLaneJobs } from '../shared/nexabotProxy.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -98,6 +99,9 @@ function bacaSql<T = any>(sql: string, ...args: unknown[]): T[] {
 }
 
 async function submit(token: string, ticket?: string | number) {
+  // Kunci job per-lane proses-wide; file ini menguji jalur sesi Unlimited,
+  // bukan penjadwalan, jadi tiap submit mulai dari lane bersih.
+  resetNexabotLaneJobs()
   const res = await fetch(`${base}/api/public/nexabot/submit`, {
     method: 'POST',
     headers: {
