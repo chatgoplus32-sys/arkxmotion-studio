@@ -228,6 +228,11 @@ export function addResult(result: CompletedResult, options?: { notify?: boolean 
     delete (clean as any).inputImageUrl
   }
 
+  const r = readJson(RESULTS_KEY, [] as CompletedResult[])
+  // Satu video bisa dilaporkan dua kali (poll halaman + poll background).
+  // Simpan sekali saja supaya galeri tidak menampilkan hasil dobel.
+  if (r.some((x) => x.id === clean.id && x.url === clean.url)) return
+
   if (isBlobUrl(clean.url)) {
     // Blob URL — save to IndexedDB for persistence across reloads
     fetch(clean.url)
@@ -237,7 +242,7 @@ export function addResult(result: CompletedResult, options?: { notify?: boolean 
       .catch((e) => console.warn('[backgroundTasks] IndexedDB save failed:', e))
   }
 
-  const r = readJson(RESULTS_KEY, [] as CompletedResult[]); r.unshift(clean); saveResults(r)
+  r.unshift(clean); saveResults(r)
 
   // Hasil baru harus langsung terlihat di panel Generasi header — listener
   // hanya mendengarkan event ini, bukan perubahan localStorage.

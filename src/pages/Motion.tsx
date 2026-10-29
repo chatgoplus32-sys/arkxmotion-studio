@@ -751,7 +751,6 @@ export default function MotionPage() {
                   model: spec.label,
                 })
                 persistResultToR2(rid, url)
-                setResults((prev) => [{ id: rid, url, prompt: finalPrompt || '(motion control)', date: new Date().toISOString() }, ...prev])
                 setProgress(Math.round((okCount / prepared.length) * 100))
               } catch (slotErr: any) {
                 if (batchId && authToken) {
@@ -873,23 +872,15 @@ export default function MotionPage() {
 
           updateSlotStatus(slot.id, 'done')
           addLog(`#${slotNum} Done (failover G5): ${url.slice(0, 60)}...`, 'success')
+          const failoverId = `g5-failover-${Date.now()}-${slotNum}`
           addResult({
-            id: `g5-failover-${Date.now()}`,
+            id: failoverId,
             url,
             prompt: finalPrompt || '(no prompt)',
             date: new Date().toISOString(),
             page: 'motion',
           })
-          persistResultToR2(`g5-failover-${Date.now()}`, url)
-          setResults((prev) => [
-            {
-              id: `g5-failover-${Date.now()}`,
-              url,
-              prompt: finalPrompt || '(no prompt)',
-              date: new Date().toISOString(),
-            },
-            ...prev,
-          ])
+          persistResultToR2(failoverId, url)
           return true
         } catch (err: any) {
           setCompressDialog(null)
@@ -1174,15 +1165,6 @@ export default function MotionPage() {
                 taskUrl: roomId ? `https://www.roboneo.com/team_studio?room_id=${roomId}` : undefined,
               })
               persistResultToR2(taskId, resultUrl!)
-              setResults((prev) => [
-                {
-                  id: taskId,
-                  url: resultUrl!,
-                  prompt: finalPrompt || '(no prompt)',
-                  date: new Date().toISOString(),
-                },
-                ...prev,
-              ])
               return true
             } catch (err: any) {
               setCompressDialog(null)
@@ -1286,15 +1268,6 @@ export default function MotionPage() {
                 page: 'motion',
               })
               persistResultToR2(taskId, resultUrl)
-              setResults((prev) => [
-                {
-                  id: taskId,
-                  url: resultUrl,
-                  prompt: finalPrompt || '(no prompt)',
-                  date: new Date().toISOString(),
-                },
-                ...prev,
-              ])
               return true
             } catch (err: any) {
               setCompressDialog(null)
@@ -1387,23 +1360,15 @@ export default function MotionPage() {
               updateSlotStatus(slot.id, 'done')
               addLog(`#${slotNum} Done: ${resultUrl.slice(0, 60)}...`, 'success')
 
+              const weavyId = `weavy-${Date.now().toString(36)}-${slotNum}`
               addResult({
-                id: `weavy-${Date.now().toString(36)}`,
+                id: weavyId,
                 url: resultUrl,
                 prompt: finalPrompt || '(no prompt)',
                 date: new Date().toISOString(),
                 page: 'motion',
               })
-              persistResultToR2(`weavy-${Date.now().toString(36)}`, resultUrl)
-              setResults((prev) => [
-                {
-                  id: `weavy-${Date.now().toString(36)}`,
-                  url: resultUrl,
-                  prompt: finalPrompt || '(no prompt)',
-                  date: new Date().toISOString(),
-                },
-                ...prev,
-              ])
+              persistResultToR2(weavyId, resultUrl)
               return true
             } catch (err: any) {
               setCompressDialog(null)
@@ -1620,15 +1585,6 @@ export default function MotionPage() {
                 page: 'motion',
               })
               persistResultToR2(doneTaskId, resultUrl)
-              setResults((prev) => [
-                {
-                  id: doneTaskId,
-                  url: resultUrl,
-                  prompt: finalPrompt || '(no prompt)',
-                  date: new Date().toISOString(),
-                },
-                ...prev,
-              ])
               return true
             } catch (err: any) {
               if (attemptTaskId) removeActiveTask(attemptTaskId)
@@ -1739,15 +1695,6 @@ export default function MotionPage() {
                     page: 'motion',
                   })
                   persistResultToR2(submitResult.sessionId, url)
-                  setResults((prev) => [
-                    {
-                      id: submitResult.sessionId,
-                      url,
-                      prompt: finalPrompt || '(no prompt)',
-                      date: new Date().toISOString(),
-                    },
-                    ...prev,
-                  ])
                   return url
                 },
                 {
@@ -1927,15 +1874,6 @@ export default function MotionPage() {
                 page: 'motion',
               })
               persistResultToR2(alrizId, resultUrl)
-              setResults((prev) => [
-                {
-                  id: alrizId,
-                  url: resultUrl,
-                  prompt: finalPrompt || '(no prompt)',
-                  date: new Date().toISOString(),
-                },
-                ...prev,
-              ])
               return true
             } catch (err: any) {
               // Job gagal (upload/submit/poll/kapasitas) → kembalikan saldo
@@ -2128,8 +2066,9 @@ export default function MotionPage() {
               updateSlotStatus(slot.id, 'done')
               addLog(`#${slotNum} Done: ${resultUrl.slice(0, 60)}...`, 'success')
 
+              const gensparkId = `genspark-${Date.now()}-${slotNum}`
               addResult({
-                id: `genspark-${Date.now()}`,
+                id: gensparkId,
                 url: resultUrl,
                 prompt: finalPrompt || '(no prompt)',
                 date: new Date().toISOString(),
@@ -2137,9 +2076,7 @@ export default function MotionPage() {
                 provider: 'genspark',
                 model: currentModel.label,
               })
-              persistResultToR2(`genspark-${Date.now()}`, resultUrl)
-              window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
-              try { setResults(getResults()) } catch {}
+              persistResultToR2(gensparkId, resultUrl)
               return true
             } catch (err: any) {
               setCompressDialog(null)
