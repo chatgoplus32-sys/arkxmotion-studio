@@ -1095,6 +1095,21 @@ export async function pollNexabotJob(
 // DOWNLOAD RESULT
 // ═══════════════════════════════════════════════════════════════════
 
+/**
+ * Gagal di tahap unduh/simpan HASIL, padahal job sudah dibuat & selesai.
+ *
+ * Ini bukan tanda kunci mati: rotasi kunci setelah titik ini tidak akan
+ * menyelamatkan hasil yang sudah jadi, dan bisa menagih job baru. Pemanggil
+ * menandai error dengan kelas ini supaya token rotation tidak menghapus kunci
+ * yang sebenarnya sehat.
+ */
+export class NexabotResultError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'NexabotResultError'
+  }
+}
+
 export async function downloadNexabotResult(
   jobId: string,
   authOverride: NexabotAuth | string

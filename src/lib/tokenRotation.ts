@@ -82,7 +82,13 @@ export function detectTokenError(provider: ProviderId, error: any): boolean {
     // submitNexabot, halaman login HTML dari upstream, atau cookie kedaluwarsa.
     // Tanpa ini, key session yang mati hanya menggagalkan generate tanpa
     // mencoba key/fallback berikutnya.
-    case 'nexabot': return /unauthorized|forbidden|invalid.*key|key.*invalid|expired|401|403|api.*key|cookie|session|kedaluwarsa|login|bukan JSON/i.test(String(error?.message || error))
+    //
+    // Pengecualian: gagal UNDUH/SIMPAN hasil. Job-nya sudah selesai dengan kunci
+    // itu, jadi 403 di tahap tersebut bukan bukti kunci mati — merotasinya malah
+    // membuang kunci sehat (dan job yang sudah dibayar).
+    case 'nexabot':
+      if (error?.name === 'NexabotResultError') return false
+      return /unauthorized|forbidden|invalid.*key|key.*invalid|expired|401|403|api.*key|cookie|session|kedaluwarsa|login|bukan JSON/i.test(String(error?.message || error))
     default: return isTokenError(error)
   }
 }

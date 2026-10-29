@@ -47,7 +47,7 @@ import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, NEXABOT_P
 import { fetchSeaviWallet, chargeSeaviWallet, refundSeaviWallet } from '@/lib/seaviWallet'
 import { formatRp } from '@/lib/payment'
 import { runNexabotJobWithSessionFallback } from './image-to-video/nexabotSessionFallback'
-import { runWithNexabotThrottleRetry } from '@/lib/nexabot'
+import { runWithNexabotThrottleRetry, NexabotResultError } from '@/lib/nexabot'
 
 // Voice default untuk mode Voice Over NexaBot — salah satu nama dari daftar
 // voice resmi NexaBot (GET /api/v1/modes → voices).
@@ -2766,7 +2766,7 @@ export default function ImageToVideoPage() {
                 addLog(`[3/3] ⚠️ Simpan di server gagal (${saved.error}) — fallback unduh + unggah...`, 'warn', 'nexabot')
 
                 const dl = await downloadNexabotResult(submit.jobId, auth)
-                if (!dl.ok || !dl.url) throw new Error(dl.error || 'NexaBot download gagal')
+                if (!dl.ok || !dl.url) throw new NexabotResultError(dl.error || 'NexaBot download gagal')
 
                 let finalUrl = dl.url
                 if (dl.url.startsWith('blob:')) {

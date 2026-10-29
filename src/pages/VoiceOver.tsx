@@ -5,7 +5,7 @@ import { LogDetailActions } from '@/components/ui/LogDetailActions'
 import { Loader2, Download, Volume2, Sparkles, CheckCircle2, AlertCircle, Clock, Copy, Trash2 } from 'lucide-react'
 import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
-import { submitNexabot, pollNexabotJob, downloadNexabotResult, saveNexabotResult, runWithNexabotThrottleRetry } from '@/lib/nexabot'
+import { submitNexabot, pollNexabotJob, downloadNexabotResult, saveNexabotResult, runWithNexabotThrottleRetry, NexabotResultError } from '@/lib/nexabot'
 import { runNexabotJobWithSessionFallback } from '@/pages/image-to-video/nexabotSessionFallback'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, NEXABOT_PRICE_FALLBACK, type NexabotWallet } from '@/lib/nexabotWallet'
@@ -173,7 +173,7 @@ export default function VoiceOverPage() {
               addLog(`[3/3] ⚠️ Simpan di server gagal (${saved.error}) — fallback unduh + unggah...`, 'warn')
 
               const dl = await downloadNexabotResult(submit.jobId, auth)
-              if (!dl.ok || !dl.url) throw new Error(dl.error || 'NexaBot download gagal')
+              if (!dl.ok || !dl.url) throw new NexabotResultError(dl.error || 'NexaBot download gagal')
 
               let finalUrl = dl.url
               if (dl.url.startsWith('blob:')) {

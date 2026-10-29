@@ -416,6 +416,11 @@ function authDariAkun(akun: ServerAccount): ResolvedUpstreamAuth {
 // Id job NexaBot hanya berlaku di akun yang membuatnya. Tanpa ingatan ini,
 // member yang job-nya berjalan di akun kedua akan dipoll memakai akun pertama
 // dan dianggap "job tidak ditemukan". Peta ini proses-wide dan sengaja terbatas.
+//
+// Entri TIDAK dihapus saat job selesai: unduh/simpan hasil terjadi SETELAH job
+// berstatus selesai, dan permintaan itu tetap harus lewat akun pembuatnya —
+// kalau tidak, NexaBot menjawab 403 "Akses ditolak" untuk job yang sebenarnya
+// ada. Entri hanya hilang karena batas ukuran (FIFO) atau restart proses.
 const BATAS_INGATAN_JOB = 500
 const akunJob = new Map<string, string>()
 
@@ -1036,10 +1041,9 @@ router.get('/gpt-image/:id', async (req: Request, res: Response) => {
       'Accept': 'application/json',
     },
   }, { kredensialServer: auth.credential?.source === 'master', credential: auth.credential, cadangan: auth.cadangan })
-  // Job gambar yang sudah selesai/hilang tidak perlu diingat akun asalnya.
-  if (hasil && (hasil.status === 404 || (hasil.status >= 200 && hasil.status < 300 && isNexabotJobFinishedText(hasil.text)))) {
-    lupakanAkunJob(jobId)
-  }
+  // Job gambar yang sudah selesai tetap diingat: unduhannya justru terjadi setelah
+  // job berstatus selesai. Afinitas hanya dibuang kalau job memang tidak ada.
+  if (hasil && hasil.status === 404) lupakanAkunJob(jobId)
 })
 
 // ── Download hasil GPT Image (menyuntikkan kredensial) ──
@@ -1161,8 +1165,9 @@ router.get('/job/:id', async (req: Request, res: Response) => {
   }
   if (hasil.status >= 200 && hasil.status < 300) {
     if (isNexabotJobFinishedText(hasil.text)) {
+      // Lane dilepas supaya member berikutnya boleh submit; afinitas akun TETAP
+      // disimpan karena unduh/simpan hasil terjadi setelah titik ini.
       if (markNexabotJobFinished(jobId)) console.log(`[nexabot-local] job ${jobId} selesai — kunci lane dilepas`)
-      lupakanAkunJob(jobId)
     } else {
       touchNexabotJob(jobId)
     }
@@ -1191,10 +1196,12 @@ router.get('/download/:id', async (req: Request, res: Response) => {
     if (!upstreamRes.ok) {
       const errText = await upstreamRes.text().catch(() => '')
       console.log(`[nexabot-local] download ${upstreamRes.status}: ${errText.slice(0, 200)}`)
-      if (upstreamRes.status === 404 && markNexabotJobFinished(jobId)) {
-        console.log(`[nexabot-local] job ${jobId} tidak ada (404) — kunci lane dilepas`)
+      if (upstreamRes.status === 404) {
+        if (markNexabotJobFinished(jobId)) {
+          console.log(`[nexabot-local] job ${jobId} tidak ada (404) — kunci lane dilepas`)
+        }
+        lupakanAkunJob(jobId)
       }
-      lupakanAkunJob(jobId)
       res.writeHead(upstreamRes.status, {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
@@ -1204,8 +1211,8 @@ router.get('/download/:id', async (req: Request, res: Response) => {
     }
 
     // Hasil bisa diunduh = job sudah pasti berhenti menahan akun upstream.
+    // Afinitas tetap disimpan: klien masih bisa meminta unduhan ulang.
     if (markNexabotJobFinished(jobId)) console.log(`[nexabot-local] unduhan ${jobId} sukses — kunci lane dilepas`)
-    lupakanAkunJob(jobId)
 
     // Check if response is JSON (error) or binary (file)
     const contentType = upstreamRes.headers.get('content-type') || ''
@@ -1291,10 +1298,12 @@ router.post('/save/:id', authenticateToken, async (req: AuthRequest, res: Respon
 
     if (!upstreamRes.ok) {
       const errText = await upstreamRes.text().catch(() => '')
-      if (upstreamRes.status === 404 && markNexabotJobFinished(jobId)) {
-        console.log(`[nexabot-local] job ${jobId} tidak ada (404) — kunci lane dilepas`)
+      if (upstreamRes.status === 404) {
+        if (markNexabotJobFinished(jobId)) {
+          console.log(`[nexabot-local] job ${jobId} tidak ada (404) — kunci lane dilepas`)
+        }
+        lupakanAkunJob(jobId)
       }
-      lupakanAkunJob(jobId)
       return res.status(upstreamRes.status === 404 ? 404 : 502).json({
         ok: false,
         error: `NexaBot menolak unduhan: HTTP ${upstreamRes.status} ${errText.slice(0, 200)}`,
@@ -1328,7 +1337,6 @@ router.post('/save/:id', authenticateToken, async (req: AuthRequest, res: Respon
     const stored = await storeMedia(Buffer.concat(chunks), { ext, mimeType })
     const url = stored.cdnUrl || diskPublicUrl(req, stored.key)
     if (markNexabotJobFinished(jobId)) console.log(`[nexabot-local] simpan ${jobId} sukses — kunci lane dilepas`)
-    lupakanAkunJob(jobId)
     console.log(`[nexabot-local] save ${jobId} → ${stored.storage} ${(total / 1024 / 1024).toFixed(1)} MB`)
     return res.status(200).json({ ok: true, url, key: stored.key, storage: stored.storage, bytes: total })
   } catch (err: any) {

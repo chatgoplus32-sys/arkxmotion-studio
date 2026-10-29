@@ -45,6 +45,8 @@ const diterima: Panggilan[] = []
 let submitKe = 0
 /** Poll pertama sebuah job masih berjalan; poll kedua melaporkan selesai. */
 const pollDihitung = new Map<string, number>()
+/** Kredensial yang membuat tiap job — dipakai menolak unduhan dari akun lain. */
+const pemilikJob = new Map<string, string | null>()
 /**
  * Jeda balasan upstream. Tes submit bersamaan butuh ini: tanpa jeda, submit
  * pertama sudah memasang kunci lane sebelum submit kedua memilih akun, sehingga
@@ -59,11 +61,12 @@ const upstream = http.createServer((req, res) => {
   req.on('end', () => {
     const url = req.url || ''
     const apiKey = (req.headers['x-api-key'] as string) || null
+    const cookie = (req.headers['cookie'] as string) || null
     diterima.push({
       method: req.method || '',
       url,
       apiKey,
-      cookie: (req.headers['cookie'] as string) || null,
+      cookie,
     })
     res.setHeader('Content-Type', 'application/json')
 
@@ -73,9 +76,31 @@ const upstream = http.createServer((req, res) => {
       return
     }
 
+    // Bentuk perilaku NexaBot yang sebenarnya: id job hanya berlaku di akun
+    // pembuatnya, akun lain mendapat 403 "Akses ditolak".
+    const unduh = url.match(/^\/api\/v1\/jobs\/(.+)\/download$/)
+    if (unduh) {
+      const jobId = unduh[1]
+      const pemilik = pemilikJob.get(jobId) ?? null
+      const kredensial = apiKey || cookie
+      if (jobId && pemilik !== kredensial) {
+        res.statusCode = 403
+        res.end(JSON.stringify({ ok: false, error: 'Akses ditolak' }))
+        return
+      }
+      res.setHeader('Content-Type', 'video/mp4')
+      res.end(Buffer.from('video-uji'))
+      return
+    }
+
     const poll = url.match(/^\/api\/v1\/jobs\/(.+)$/)
     if (poll) {
       const jobId = poll[1]
+      if (!pemilikJob.has(jobId)) {
+        res.statusCode = 404
+        res.end(JSON.stringify({ ok: false, error: 'Job tidak ditemukan' }))
+        return
+      }
       const n = (pollDihitung.get(jobId) || 0) + 1
       pollDihitung.set(jobId, n)
       res.end(JSON.stringify({ ok: true, job: { id: jobId, status: n === 1 ? 'processing' : 'done' } }))
@@ -83,7 +108,9 @@ const upstream = http.createServer((req, res) => {
     }
 
     submitKe += 1
-    const body = JSON.stringify({ ok: true, job_id: `job-${submitKe}`, credits: 0.15, est_seconds: 120 })
+    const jobId = `job-${submitKe}`
+    pemilikJob.set(jobId, apiKey || cookie)
+    const body = JSON.stringify({ ok: true, job_id: jobId, credits: 0.15, est_seconds: 120 })
     if (tundaMs > 0) setTimeout(() => res.end(body), tundaMs)
     else res.end(body)
   })
@@ -427,15 +454,42 @@ test('poll job memakai akun yang membuatnya', async () => {
   assert.equal(terakhir().apiKey, KUNCI_B)
 })
 
-test('setelah job selesai, poll berikutnya kembali ke akun default', async () => {
-  // Poll kedua untuk job-2 melaporkan selesai → lane A dilepas dan afinitas lupa.
+test('setelah job selesai, afinitas akun pembuatnya tidak dilepas', async () => {
+  // Poll kedua job-2 melaporkan selesai. Lane boleh dilepas, tetapi afinitas akun
+  // HARUS tetap disimpan: unduh/simpan hasil terjadi justru setelah job selesai,
+  // dan NexaBot menolak job yang diminta lewat akun lain (403 "Akses ditolak").
   const selesai = await poll('job-2')
   assert.equal(selesai.status, 200)
   assert.equal(terakhir().apiKey, KUNCI_A, 'poll terakhir job-2 tetap harus ke akun pembuatnya')
 
   const sesudahnya = await poll('job-2')
   assert.equal(sesudahnya.status, 200)
-  assert.equal(terakhir().apiKey, MASTER, 'afinitas job tidak dilepas setelah job selesai')
+  assert.equal(terakhir().apiKey, KUNCI_A, 'afinitas dilepas setelah job selesai — unduhan akan jatuh ke akun lain')
+})
+
+test('unduh hasil job yang sudah selesai memakai akun pembuatnya, bukan akun default', async () => {
+  // Regresi lapangan: job e646475d136d88dd selesai, lalu simpan/unduh dijawab
+  // `HTTP 403 {"ok":false,"error":"Akses ditolak"}` karena afinitas sudah dihapus.
+  const res = await fetch(`${base}/api/public/nexabot/download/job-2`, {
+    headers: { Authorization: `Bearer ${memberToken()}` },
+  })
+  assert.equal(res.status, 200, `unduhan ditolak: ${await res.text()}`)
+  assert.equal(terakhir().url, '/api/v1/jobs/job-2/download')
+  assert.equal(terakhir().apiKey, KUNCI_A, 'unduhan jatuh ke akun default — NexaBot akan menjawab 403 Akses ditolak')
+})
+
+test('job yang hilang di upstream melepas afinitasnya', async () => {
+  // Job yang tidak ada di akun mana pun tidak perlu diingat akun asalnya —
+  // menyimpannya hanya menahan memori sampai batas FIFO tercapai.
+  pemilikJob.delete('job-3')
+
+  const hilang = await poll('job-3')
+  assert.equal(hilang.status, 404, JSON.stringify(hilang.json))
+  assert.equal(terakhir().apiKey, KUNCI_B, 'poll pertama job-3 tetap ke akun pembuatnya')
+
+  const lagi = await poll('job-3')
+  assert.equal(lagi.status, 404)
+  assert.equal(terakhir().apiKey, MASTER, 'afinitas job 404 tidak dilepas')
 })
 
 // ── Hapus akun ──────────────────────────────────────────────────────────────
