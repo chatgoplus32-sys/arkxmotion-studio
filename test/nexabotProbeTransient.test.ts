@@ -82,3 +82,27 @@ test('sesi: jawaban 200 tetap terbaca normal (bukan transient)', async () => {
   assert.equal(info.balance, 7.5)
   assert.equal(info.transient, false)
 })
+
+test('probe saldo ikut mengirim token app: kunci pool hanya dilayani untuk yang login', async () => {
+  // Regresi produksi 2026-10-30: probe hanya mengirim X-Api-Key. Kunci yang
+  // ternyata milik pool server ditolak 400 "hanya untuk member yang login", lalu
+  // UI menampilkan "Perbarui API key di Providers" padahal kuncinya sehat.
+  const asalWindow = (globalThis as any).window
+  const asalStorage = (globalThis as any).localStorage
+  const storage = { getItem: (k: string) => (k === 'arkxmotion_token' ? 'jwt-uji' : null) }
+  ;(globalThis as any).window = { localStorage: storage }
+  ;(globalThis as any).localStorage = storage
+  let headers: any = null
+  globalThis.fetch = (async (_url: string, init: any) => {
+    headers = init?.headers
+    return jsonResponse({ ok: true, credit: 12 })
+  }) as typeof fetch
+  try {
+    const hasil = await checkNexabotBalance(API_KEY)
+    assert.equal(hasil.ok, true)
+    assert.equal(headers?.Authorization, 'Bearer jwt-uji', 'token app tidak ikut pada probe saldo')
+  } finally {
+    ;(globalThis as any).window = asalWindow
+    ;(globalThis as any).localStorage = asalStorage
+  }
+})

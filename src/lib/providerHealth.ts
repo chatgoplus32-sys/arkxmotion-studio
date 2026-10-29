@@ -1,4 +1,5 @@
 import { getGalleri5AuthHeaders } from '@/lib/galleri5'
+import { appAuthHeaders } from '@/lib/nexabot'
 import { useProviderManager } from '@/stores/providerManager'
 
 export type ProviderHealthStatus = 'online' | 'busy' | 'down' | 'nokey'
@@ -231,7 +232,7 @@ async function checkNexabot(): Promise<ProviderHealth> {
   try {
     const { latencyMs, res } = await probe('/api/public/nexabot/credit', {
       method: 'GET',
-      headers: { 'X-Api-Key': token },
+      headers: { 'X-Api-Key': token, ...appAuthHeaders() },
     })
     const json = await res.json().catch(() => null)
     if (res.ok && json?.ok) {

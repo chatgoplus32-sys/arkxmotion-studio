@@ -86,7 +86,7 @@ function getStoredProviderKey(provider: string): string | null {
  * tanpa akun app), jadi ketiadaan token bukan error: yang hilang hanya
  * atribusinya, dan biaya itu tetap tercatat tanpa user.
  */
-function appAuthHeaders(): Record<string, string> {
+export function appAuthHeaders(): Record<string, string> {
   if (typeof window === 'undefined') return {}
   try {
     const token = localStorage.getItem('arkxmotion_token')
@@ -331,7 +331,10 @@ export async function checkNexabotBalance(apiKey: string, opts: NexabotProbeOpti
   try {
     const res = await fetch(`${NEXABOT_BASE}/credit`, {
       method: 'GET',
-      headers: { 'X-Api-Key': safeHeaderValue(key) },
+      // Token app wajib ikut: kunci yang ternyata milik pool server hanya dilayani
+      // untuk pemakai yang login. Tanpa ini relay menjawab 400 dan UI menyalahkan
+      // kuncinya ("Perbarui API key") padahal kuncinya sehat.
+      headers: { 'X-Api-Key': safeHeaderValue(key), ...appAuthHeaders() },
       // NexaBot /credit menggantung TANPA response untuk key yang tidak dikenal,
       // jadi tanpa timeout cek saldo bisa nge-hang selamanya.
       signal: AbortSignal.timeout(timeoutMs),
