@@ -577,10 +577,12 @@ function resolveUpstreamAuth(
       }
       // Rute baca: job yang dibuat akun pool lain dipoll lewat akun pembuatnya,
       // selain itu pakai kunci yang dikirim klien (cek saldo harus membaca akun
-      // yang kuncinya memang dia pegang).
+      // yang kuncinya memang dia pegang). Kunci yang sudah dicabut di NexaBot
+      // tidak boleh memutus cek saldo: relay mencoba kunci pool lain.
       return authJobAffinity(opts.jobId) ?? {
         headers: { 'x-api-key': kunci },
         credential: { kind: 'api-key', source: 'client-master', secret: kunci },
+        cadangan: cadanganKunciPool(kunci),
       }
     }
     return { headers: { 'x-api-key': kunci }, credential: { kind: 'api-key', source: 'own-key', secret: kunci } }
@@ -604,6 +606,22 @@ function authJobAffinity(jobId?: string): ResolvedUpstreamAuth | null {
   if (!akun) return null
   const auth = authDariAkun(akun)
   return auth.credential ? auth : null
+}
+
+/**
+ * Kunci pool lain untuk rute baca.
+ *
+ * Kunci server yang masih tersimpan di browser bisa saja sudah dicabut di
+ * NexaBot. Tanpa cadangan, admin melihat "Perbarui API key di Providers" padahal
+ * kunci yang lain masih sehat — panel admin bahkan menampilkan kuncinya aktif.
+ */
+function cadanganKunciPool(kecuali: string): ResolvedUpstreamAuth['cadangan'] {
+  const akun = serverAccounts().find((a) => a.apiKey && a.apiKey !== kecuali)
+  if (!akun?.apiKey) return undefined
+  return {
+    headers: { 'x-api-key': akun.apiKey },
+    credential: { kind: 'api-key', source: 'master', secret: akun.apiKey },
+  }
 }
 
 /**

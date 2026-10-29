@@ -232,8 +232,10 @@ test('GET /api/nexabot/balance melaporkan kelayakan kunci server untuk UI', asyn
     headers: { Authorization: `Bearer ${tokenUntuk({ id: ADMIN.id, role: 'admin' })}` },
   })
   const dataAdmin = (await admin.json()) as any
-  assert.equal(dataAdmin.server_key.available, false, 'admin tanpa saldo/paket ditawari kunci server')
-  assert.match(String(dataAdmin.server_key.reason), /saldo|paket/i)
+  // Admin memakai kredensial miliknya sendiri dan tidak dipotong tiket, jadi UI
+  // harus menawarkannya walau admin tidak punya saldo maupun paket.
+  assert.equal(dataAdmin.server_key.available, true, 'admin terkunci dari kunci servernya sendiri')
+  assert.match(String(dataAdmin.server_key.reason), /admin/i)
 })
 
 test('kind di /balance mengikuti urutan relay: sesi cookie didahulukan untuk semua member berhak', async () => {
@@ -286,8 +288,15 @@ test('kunci induk yang MASIH dikirim klien ditandai sebagai jejak yang harus dit
 })
 
 test('kunci induk yang dikirim klien tetap ditolak kalau membernya tidak berhak', async () => {
+  // Admin bukan kasus ini: kredensial server miliknya sendiri dan tidak dipotong
+  // tiket, jadi gerbang saldo dilewati (lihat tes di nexabotAccountPool).
+  const TIDAK_BERHAK = 7099
+  jalankanSql(
+    `INSERT OR IGNORE INTO users (id, email, password, name, role, approved) VALUES (?, 'tidak-berhak@test.local', 'x', 'uji', 'user', 1)`,
+    TIDAK_BERHAK,
+  )
   const sebelum = diterima.length
-  const hasil = await submit({ 'x-api-key': MASTER, Authorization: `Bearer ${tokenUntuk({ id: ADMIN.id, role: 'admin' })}` })
+  const hasil = await submit({ 'x-api-key': MASTER, Authorization: `Bearer ${tokenUntuk({ id: TIDAK_BERHAK, role: 'user' })}` })
   assert.equal(hasil.status, 400, JSON.stringify(hasil.json))
   assert.equal(diterima.length, sebelum)
 })

@@ -51,18 +51,27 @@ const pollDihitung = new Map<string, number>()
  * balapan yang sebenarnya (dua pilihan akun sebelum ada job) tidak pernah terjadi.
  */
 let tundaMs = 0
+/** Kunci yang ditolak upstream (401) — meniru kunci yang sudah dicabut di NexaBot. */
+const kunciDitolak = new Set<string>()
 
 const upstream = http.createServer((req, res) => {
   req.on('data', () => {})
   req.on('end', () => {
     const url = req.url || ''
+    const apiKey = (req.headers['x-api-key'] as string) || null
     diterima.push({
       method: req.method || '',
       url,
-      apiKey: (req.headers['x-api-key'] as string) || null,
+      apiKey,
       cookie: (req.headers['cookie'] as string) || null,
     })
     res.setHeader('Content-Type', 'application/json')
+
+    if (apiKey && kunciDitolak.has(apiKey)) {
+      res.statusCode = 401
+      res.end(JSON.stringify({ ok: false, error: 'API key tidak valid' }))
+      return
+    }
 
     const poll = url.match(/^\/api\/v1\/jobs\/(.+)$/)
     if (poll) {
@@ -359,6 +368,16 @@ test('kunci server yang dikirim browser dilayani lane pool, jejaknya tetap dicat
   )
 })
 
+test('admin tanpa saldo tetap bisa generate lewat pool', async () => {
+  // Regresi: gerbang saldo member ikut menolak admin. Admin tidak dipotong tiket
+  // (tidak ada uang member yang dipakai), dan klien sudah menulis "Admin mode —
+  // skip saldo", jadi penolakan ini tidak pernah masuk akal.
+  resetNexabotLaneJobs()
+  const hasil = await submitDengan({}, adminToken())
+  assert.equal(hasil.status, 200, JSON.stringify(hasil.json))
+  assert.ok(hasil.json?.job_id, 'submit admin tidak menghasilkan job')
+})
+
 // ── Cek saldo ───────────────────────────────────────────────────────────────
 
 test('cek saldo dengan kunci pool tetap jalan walau saldo member kosong', async () => {
@@ -376,6 +395,24 @@ test('cek saldo tanpa login tetap ditolak untuk kunci pool', async () => {
     headers: { 'x-api-key': KUNCI_A },
   })
   assert.equal(res.status, 400)
+})
+
+test('kunci pool yang dicabut di NexaBot tidak memutus cek saldo', async () => {
+  // Kunci yang masih tersimpan di browser bisa saja sudah dicabut. Relay harus
+  // mencoba kunci pool lain, bukan menyimpulkan "Perbarui API key di Providers".
+  resetNexabotLaneJobs()
+  kunciDitolak.add(KUNCI_A)
+  const sebelum = diterima.length
+  try {
+    const hasil = await cekSaldo(KUNCI_A, tokenUntuk({ id: TANPA_SALDO, role: 'user' }))
+    assert.equal(hasil.status, 200, JSON.stringify(hasil.json))
+  } finally {
+    kunciDitolak.delete(KUNCI_A)
+  }
+
+  const panggilan = diterima.slice(sebelum)
+  assert.equal(panggilan[0]?.apiKey, KUNCI_A, 'kunci klien tidak dicoba lebih dulu')
+  assert.equal(panggilan[1]?.apiKey, MASTER, 'kunci cadangan pool tidak dipakai setelah 401')
 })
 
 // ── Afinitas job → akun ─────────────────────────────────────────────────────

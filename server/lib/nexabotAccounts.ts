@@ -1,6 +1,7 @@
 import crypto from 'node:crypto'
 
 import db from '../db.js'
+import { isAdminUser } from './nexabotChargeTicket.js'
 import {
   MASTER_KEY_SETTING,
   looksLikeSessionCookie,
@@ -301,8 +302,7 @@ export function updateServerAccount(
   }
 }
 
-/** Akun utama tidak bisa dihapus dari daftar — kosongkan lewat slot kunci/sesi. */
-export function removeServerAccount(id: string): AccountSummary[] {
+/** Akun utama tidak bisa dihapus dari daftar — kosongkan lewat slot kunci/sesi. */export function removeServerAccount(id: string): AccountSummary[] {
   if (id === 'utama') {
     throw new AccountInputError('Akun utama dihapus lewat bagian Kunci Server / Sesi Unlimited')
   }
@@ -312,6 +312,14 @@ export function removeServerAccount(id: string): AccountSummary[] {
   writeStoredAccounts(sisa)
   return accountSummaries()
 }
+
+/**
+ * Admin memakai kredensial miliknya sendiri dan memang tidak dipotong tiket,
+ * jadi gerbang saldo/paket tidak berlaku untuknya — klien pun menulis
+ * "Admin mode — skip saldo". Tanpa ini admin terkunci dari akunnya sendiri
+ * begitu saldo NexaBot-nya habis.
+ */
+const ADMIN_LOLOS: Kelayakan = { ok: true, reason: 'Admin — kredensial server miliknya sendiri' }
 
 /**
  * Kelayakan memakai kredensial server apa pun (kunci atau cookie).
@@ -326,6 +334,7 @@ export function serverCredentialEligibility(userId: number): Kelayakan {
   if (serverAccounts().length === 0) {
     return { ok: false, reason: 'Kunci/Sesi NexaBot milik server belum diatur admin' }
   }
+  if (isAdminUser(userId)) return ADMIN_LOLOS
   const izin = memberMayUseMasterKey(userId)
   if (!izin.ok) return izin
   const cap = underDailyCap(userId)
@@ -341,6 +350,7 @@ export function serverCookieEligible(userId: number): Kelayakan {
   if (!serverAccounts().some((a) => a.cookie)) {
     return { ok: false, reason: 'Sesi Unlimited NexaBot milik server belum diatur admin' }
   }
+  if (isAdminUser(userId)) return ADMIN_LOLOS
   const izin = memberMayUseMasterCookie(userId)
   if (!izin.ok) return izin
   const cap = underDailyCap(userId)
@@ -356,6 +366,7 @@ export function serverKeyEligible(userId: number): Kelayakan {
   if (!serverAccounts().some((a) => a.apiKey)) {
     return { ok: false, reason: 'Kunci Server NexaBot belum diatur' }
   }
+  if (isAdminUser(userId)) return ADMIN_LOLOS
   const izin = memberMayUseMasterKey(userId)
   if (!izin.ok) return izin
   const cap = underDailyCap(userId)
