@@ -535,38 +535,75 @@ function resolveUpstreamAuth(
   req: Request,
   opts: { bacaSaja?: boolean; membuatJob?: boolean; jobId?: string } = {},
 ): ResolvedUpstreamAuth {
+  const rahasiaServer = serverSecrets()
+
   const cookieMentah = req.headers['x-nexabot-cookie']
   if (typeof cookieMentah === 'string' && cookieMentah.trim()) {
     const cookies = cookieMentah.trim()
     // Cookie yang ternyata sesi milik server (ditempel di halaman Providers atau
-    // dibagikan admin) bukan kredensial pribadi member: lane-nya dipilih dari pool,
-    // supaya dua generate bersamaan tidak berebut satu akun. Aturan tiket tetap
-    // berlaku karena relay yang menyuntikkan kredensial server.
-    if (!serverSecrets().has(cookies)) {
+    // dibagikan admin) bukan kredensial pribadi member: saat MEMBUAT job lanenya
+    // dipilih dari pool supaya tidak berebut satu akun. Rute baca tidak memakai
+    // kredit, jadi kredensial klien dipakai apa adanya — menolaknya akan memutus
+    // cek saldo dan poll job yang sudah berjalan.
+    if (!rahasiaServer.has(cookies)) {
       return {
         headers: sessionHeaders(cookies),
         credential: { kind: 'cookie', source: 'own-cookie', secret: cookies },
       }
     }
-    return authDariPool(req, opts)
+    const izin = opts.bacaSaja ? bolehBacaDenganKunciInduk(req) : bolehPakaiKredensialServer(req)
+    if (!izin.ok) return { headers: {}, credential: null, error: izin.reason }
+    if (opts.membuatJob) return authDariPool(req, opts)
+    return authJobAffinity(opts.jobId) ?? {
+      headers: sessionHeaders(cookies),
+      credential: { kind: 'cookie', source: 'master', secret: cookies },
+    }
   }
 
   const kunciKlien = req.headers['x-api-key']
   if (typeof kunciKlien === 'string' && kunciKlien.trim()) {
     const kunci = kunciKlien.trim()
-    if (serverSecrets().has(kunci)) {
-      // Kunci server yang masih beredar di browser: lane-nya dipilih dari pool,
-      // bukan dipaku ke akun yang namanya disebut klien. Jejak "kunci ini masih
-      // di browser" tetap dicatat lewat `kredensialKlien`.
-      const hasil = authDariPool(req, opts)
-      return hasil.credential
-        ? { ...hasil, kredensialKlien: { kind: 'api-key', source: 'client-master', secret: kunci } }
-        : hasil
+    if (rahasiaServer.has(kunci)) {
+      // Kunci server yang masih beredar di browser: saat MEMBUAT job lanenya
+      // dipilih dari pool, bukan dipaku ke akun yang namanya disebut klien. Jejak
+      // "kunci ini masih di browser" tetap dicatat lewat `kredensialKlien`.
+      const izin = opts.bacaSaja ? bolehBacaDenganKunciInduk(req) : bolehPakaiKredensialServer(req)
+      if (!izin.ok) return { headers: {}, credential: null, error: izin.reason }
+      if (opts.membuatJob) {
+        const hasil = authDariPool(req, opts)
+        return hasil.credential
+          ? { ...hasil, kredensialKlien: { kind: 'api-key', source: 'client-master', secret: kunci } }
+          : hasil
+      }
+      // Rute baca: job yang dibuat akun pool lain dipoll lewat akun pembuatnya,
+      // selain itu pakai kunci yang dikirim klien (cek saldo harus membaca akun
+      // yang kuncinya memang dia pegang).
+      return authJobAffinity(opts.jobId) ?? {
+        headers: { 'x-api-key': kunci },
+        credential: { kind: 'api-key', source: 'client-master', secret: kunci },
+      }
     }
     return { headers: { 'x-api-key': kunci }, credential: { kind: 'api-key', source: 'own-key', secret: kunci } }
   }
 
   return authDariPool(req, opts)
+}
+
+/**
+ * Kredensial akun yang MEMBUAT sebuah job.
+ *
+ * Id job NexaBot hanya berlaku di akun pembuatnya, jadi poll/unduh untuk job yang
+ * lahir di akun pool kedua harus tetap memakai akun itu — `null` kalau job tidak
+ * diingat (relay restart) atau tidak ada id job.
+ */
+function authJobAffinity(jobId?: string): ResolvedUpstreamAuth | null {
+  if (!jobId) return null
+  const akunId = akunJob.get(jobId)
+  if (!akunId) return null
+  const akun = serverAccounts().find((a) => a.id === akunId)
+  if (!akun) return null
+  const auth = authDariAkun(akun)
+  return auth.credential ? auth : null
 }
 
 /**
@@ -713,7 +750,9 @@ router.get('/health', (_req: Request, res: Response) => {
 
 // ── Credit check ──
 router.get('/credit', async (req: Request, res: Response) => {
-  const auth = resolveUpstreamAuth(req)
+  // Rute baca: menolaknya karena saldo kosong justru memutus satu-satunya cara
+  // member tahu saldonya habis (dan apakah kuncinya masih sah).
+  const auth = resolveUpstreamAuth(req, { bacaSaja: true })
   if (Object.keys(auth.headers).length === 0) {
     return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key header' })
   }

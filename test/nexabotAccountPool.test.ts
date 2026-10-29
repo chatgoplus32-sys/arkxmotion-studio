@@ -86,6 +86,8 @@ let server: any
 let base = ''
 
 const MEMBER = 8301
+/** Saldo kosong, tanpa paket — kasus member yang sedang mengecek sisa saldonya. */
+const TANPA_SALDO = 8302
 const ADMIN = { id: 8300, email: 'admin-pool@test.local', role: 'admin' }
 const tokenUntuk = (payload: Record<string, unknown>) => jwt.sign(payload, JWT_SECRET)
 const memberToken = () => tokenUntuk({ id: MEMBER, role: 'user' })
@@ -169,6 +171,14 @@ async function poll(jobId: string) {
   return { status: res.status, json: (await res.json().catch(() => null)) as any }
 }
 
+/** Cek saldo NexaBot seperti balancePrecheck klien (selalu mengirim kunci). */
+async function cekSaldo(apiKey: string, token: string) {
+  const res = await fetch(`${base}/api/public/nexabot/credit`, {
+    headers: { Authorization: `Bearer ${token}`, 'x-api-key': apiKey },
+  })
+  return { status: res.status, json: (await res.json().catch(() => null)) as any }
+}
+
 before(async () => {
   await new Promise<void>((resolve) => upstream.listen(0, '127.0.0.1', () => resolve()))
   process.env.NEXABOT_BASE = `http://127.0.0.1:${(upstream.address() as AddressInfo).port}`
@@ -186,10 +196,12 @@ before(async () => {
 
   for (const [id, email, role] of [
     [MEMBER, 'member-pool@test.local', 'user'],
+    [TANPA_SALDO, 'kosong-pool@test.local', 'user'],
     [ADMIN.id, ADMIN.email, 'admin'],
   ] as const) {
     jalankanSql(`INSERT OR IGNORE INTO users (id, email, password, name, role, approved) VALUES (?, ?, 'x', 'uji', ?, 1)`, id, email, role)
   }
+  // TANPA_SALDO sengaja tidak diberi baris saldo dan tidak punya Unlimited.
   jalankanSql(`INSERT INTO nexabot_balance (user_id, balance) VALUES (?, 20000)`, MEMBER)
 })
 
@@ -347,8 +359,26 @@ test('kunci server yang dikirim browser dilayani lane pool, jejaknya tetap dicat
   )
 })
 
-// ── Afinitas job → akun ─────────────────────────────────────────────────────
+// ── Cek saldo ───────────────────────────────────────────────────────────────
 
+test('cek saldo dengan kunci pool tetap jalan walau saldo member kosong', async () => {
+  // Regresi: rute baca ikut kena gerbang kelayakan generate, sehingga member yang
+  // saldonya habis ditolak justru saat mengecek saldo — dan klien menampilkan
+  // "Perbarui API key di Providers" padahal kuncinya benar.
+  const hasil = await cekSaldo(KUNCI_A, tokenUntuk({ id: TANPA_SALDO, role: 'user' }))
+  assert.equal(hasil.status, 200, JSON.stringify(hasil.json))
+  assert.equal(terakhir().url, '/api/v1/api/credit')
+  assert.equal(terakhir().apiKey, KUNCI_A, 'kunci klien diganti akun pool saat cek saldo')
+})
+
+test('cek saldo tanpa login tetap ditolak untuk kunci pool', async () => {
+  const res = await fetch(`${base}/api/public/nexabot/credit`, {
+    headers: { 'x-api-key': KUNCI_A },
+  })
+  assert.equal(res.status, 400)
+})
+
+// ── Afinitas job → akun ─────────────────────────────────────────────────────
 test('poll job memakai akun yang membuatnya', async () => {
   const dua = await poll('job-2')
   assert.equal(dua.status, 200, JSON.stringify(dua.json))
