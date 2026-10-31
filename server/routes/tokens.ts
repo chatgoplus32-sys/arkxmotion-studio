@@ -157,51 +157,11 @@ router.get('/note/:bulkId', authenticateToken, (req: AuthRequest, res: Response)
   }
 })
 
-// POST buy - bulk tokens
-router.post('/buy', authenticateToken, (req: AuthRequest, res: Response) => {
-  try {
-    const userId = req.user?.id
-    if (!userId) return res.status(401).json({ error: 'Unauthorized' })
-
-    const { token_ids } = req.body || {}
-    if (!token_ids || !Array.isArray(token_ids) || token_ids.length === 0) {
-      return res.status(400).json({ error: 'token_ids array is required' })
-    }
-
-    const bulkId = `bulk_${userId}_${Date.now()}`
-
-    // Wrap entire purchase in a transaction to prevent race conditions
-    const successCount = db.transaction(() => {
-      let count = 0
-      // Dihitung sekali: tiap akun server dibaca dari DB, jangan per token.
-      const rahasiaServer = serverSecrets()
-      for (const tid of token_ids) {
-        // Atomic: UPDATE ... WHERE status = 'available' — only one concurrent request can win
-        // Kunci induk tidak boleh dijual: pembelinya akan memegang kunci server.
-        // Dilewati (tetap 'available'), dan pembelian kunci lain tetap lanjut.
-        const calon = db.prepare('SELECT token_value FROM tokens WHERE id = ?').get(tid) as
-          | { token_value: string }
-          | undefined
-        if (calon?.token_value && rahasiaServer.has(calon.token_value.trim())) {
-          console.warn('[tokens] kunci induk NexaBot ada di daftar jual dan dilewati — keluarkan dari daftar token')
-          continue
-        }
-
-        const result = db.prepare("UPDATE tokens SET status = 'sold', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'available'").run(tid)
-        if (result.changes > 0) {
-          db.prepare('INSERT INTO token_orders (user_id, token_id, status, bulk_id) VALUES (?, ?, ?, ?)').run(userId, tid, 'pending', bulkId)
-          count++
-        }
-      }
-      return count
-    })()
-
-    if (successCount === 0) return res.status(400).json({ error: 'No tokens available' })
-    res.status(201).json({ bulk_id: bulkId, count: successCount, message: `${successCount} tokens ordered` })
-  } catch (error) {
-    console.error('Buy token error:', error)
-    res.status(500).json({ error: 'Internal server error' })
-  }
+// Toko token dikunci: Token Bank belum aktif. Endpoint baca di atas tetap
+// terbuka, tetapi pembelian dimatikan — mengunci halaman saja tidak menutup
+// jalur curl/Postman yang bisa mengubah token jadi 'sold'.
+router.post('/buy', authenticateToken, (_req: AuthRequest, res: Response) => {
+  res.status(503).json({ error: 'Token Bank belum aktif — pembelian token belum dibuka' })
 })
 
 // Parameterized routes LAST

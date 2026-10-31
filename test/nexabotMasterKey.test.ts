@@ -396,9 +396,9 @@ test('nilai kunci induk tidak pernah tersimpan di catatan pemakaian', async () =
   }
 })
 
-// ── Toko token: kunci induk tidak boleh keluar lewat jalur ini ──────────────
+// ── Toko token: endpoint beli dimatikan ─────────────────────────────────────
 
-test('token yang nilainya kunci induk tidak bisa dibeli', async () => {
+test('pembelian token ditolak dan status token tidak berubah', async () => {
   jalankanSql(
     `INSERT INTO tokens (provider, name, token_value, price, status) VALUES ('weavy', 'kunci server (uji)', ?, 1000, 'available')`,
     MASTER,
@@ -410,10 +410,10 @@ test('token yang nilainya kunci induk tidak bisa dibeli', async () => {
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenUntuk({ id: BERHAK, role: 'user' })}` },
     body: JSON.stringify({ token_ids: [id] }),
   })
-  assert.equal(res.status, 400, 'kunci induk sampai terjual')
+  assert.equal(res.status, 503, 'endpoint beli masih memproses pembelian')
 
   const sesudah = bacaSql<{ status: string }>(`SELECT status FROM tokens WHERE id = ?`, id)[0]
-  assert.equal(sesudah.status, 'available', 'kunci induk berubah status jadi terjual')
+  assert.equal(sesudah.status, 'available', 'status token berubah walau pembelian ditutup')
 })
 
 test('catatan pembelian menyensor nilai kunci induk', async () => {
