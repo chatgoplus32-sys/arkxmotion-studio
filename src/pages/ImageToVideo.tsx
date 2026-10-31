@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Select, Label, Textarea, EmptyState, Badge, BalanceBadge } from '@/components/ui'
 import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
-import { Image, Upload, Rocket, Loader2, Trash2, Key, ExternalLink, Download, X, Copy, Check } from 'lucide-react'
+import { Image, Upload, Rocket, Loader2, Trash2, Key, ExternalLink, Download, X, Copy, Check, Eraser } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Swipeable } from '@/components/Swipeable'
 import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
@@ -34,6 +34,7 @@ import type { CompletedResult } from '@/lib/backgroundTasks'
 import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
 import { isNotificationDeliveryReady, setNotificationsEnabled, requestNotificationPermission, promptForNotificationsIfNeeded, notifyGenerationComplete } from '@/lib/notify'
 import { uploadToCdn } from '@/lib/cdn'
+import { autoRemoveWatermarkFromVideo } from '@/lib/auto-watermark'
 import { precheckProviderBalance } from '@/lib/balancePrecheck'
 import type { NexabotSessionInfo } from '@/lib/nexabot'
 
@@ -231,6 +232,60 @@ export default function ImageToVideoPage() {
   const handleCopyCdnUrl = (url: string) => {
     navigator.clipboard.writeText(url)
     addToast('Link CDN disalin!', 'success')
+  }
+
+  // ── Hapus watermark sekali klik dari galeri ────────────────────────
+  // Unduh video → deteksi watermark (pola Gemini/Veo, lalu blob sudut,
+  // lalu katalog kanan-bawah) → bersihkan per frame → langsung download.
+  const [wmBusy, setWmBusy] = useState<Record<string, { pct: number; stage: string }>>({})
+  const wmBusyRef = useRef<Set<string>>(new Set())
+
+  const handleRemoveWatermark = async (item: { id: string; url: string; prompt?: string }) => {
+    if (wmBusyRef.current.has(item.id)) return
+    wmBusyRef.current.add(item.id)
+    const setStage = (stage: string, pct: number) =>
+      setWmBusy((prev) => ({ ...prev, [item.id]: { pct: Math.round(pct), stage } }))
+    setStage('Mengunduh video…', 0)
+    try {
+      let blob: Blob | null = null
+      if (item.url.startsWith('blob:')) {
+        const res = await fetch(item.url)
+        if (res.ok) blob = await res.blob()
+      } else if (item.url.startsWith('/')) {
+        const res = await fetch(item.url)
+        if (res.ok) blob = await res.blob()
+      } else {
+        // URL eksternal: coba langsung (CORS), lalu proxy same-origin.
+        try {
+          const res = await fetch(item.url)
+          const ct = (res.headers.get('content-type') || '').toLowerCase()
+          if (res.ok && !ct.includes('html')) blob = await res.blob()
+        } catch { /* CORS — lanjut proxy */ }
+        if (!blob) {
+          const res = await fetch(`/api/public/video-proxy?url=${encodeURIComponent(item.url)}`)
+          if (res.ok) blob = await res.blob()
+        }
+      }
+      if (!blob || blob.size < 1024) throw new Error('Gagal mengunduh video sumber')
+
+      const { blob: clean, frames, mode } = await autoRemoveWatermarkFromVideo(blob, setStage)
+      const name = (item.prompt || 'video').slice(0, 40).replace(/[^\w-]+/g, '_') || 'video'
+      const out = URL.createObjectURL(clean)
+      const a = document.createElement('a')
+      a.href = out
+      a.download = `${name}-nowm.mp4`
+      document.body.appendChild(a)
+      a.click()
+      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(out) }, 10000)
+
+      const label = mode === 'exact' ? 'pola Gemini/Veo exact' : 'area watermark kanan-bawah'
+      addToast(`🧽 Watermark dibersihkan (${label}, ${frames} frame) — video bersih diunduh`, 'success')
+    } catch (e: any) {
+      addToast(`Gagal hapus watermark: ${e?.message || e}`, 'error')
+    } finally {
+      wmBusyRef.current.delete(item.id)
+      setWmBusy((prev) => { const next = { ...prev }; delete next[item.id]; return next })
+    }
   }
 
   useEffect(() => {
@@ -4170,6 +4225,23 @@ export default function ImageToVideoPage() {
                             )}
                           </button>
                         )}
+                      </div>
+                      <div className="mt-1.5">
+                        <button
+                          onClick={() => handleRemoveWatermark(item)}
+                          disabled={!!wmBusy[item.id]}
+                          title="Deteksi & bersihkan watermark otomatis, lalu unduh video bersih"
+                          className="w-full inline-flex items-center justify-center gap-1 rounded-lg border border-amber-500/30 bg-amber-500/5 hover:bg-amber-500/10 px-3 py-1.5 text-[11px] font-medium text-amber-500 transition disabled:opacity-70"
+                        >
+                          {wmBusy[item.id] ? (
+                            <>
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              {wmBusy[item.id].stage} {wmBusy[item.id].pct}%
+                            </>
+                          ) : (
+                            <><Eraser className="h-3 w-3" /> Hapus Watermark &amp; Download</>
+                          )}
+                        </button>
                       </div>
                     </div>
                   </div>
