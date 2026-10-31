@@ -336,12 +336,12 @@ export function AccountStatus() {
 
           <div className="flex items-center gap-2 border-t border-border p-3">
             <Link
-              to={isAdmin ? '/admin/topup' : '/beli-token'}
+              to={isAdmin ? '/admin/topup' : '/saldo'}
               onClick={() => setOpen(false)}
               className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary/10 px-2 py-2 text-[11px] font-medium text-primary transition hover:bg-primary/15"
             >
-              <ShoppingCart className="h-3.5 w-3.5" />
-              {isAdmin ? 'Approve Top Up' : 'Beli Token'}
+              {isAdmin ? <ShoppingCart className="h-3.5 w-3.5" /> : <Wallet className="h-3.5 w-3.5" />}
+              {isAdmin ? 'Approve Top Up' : 'Saldo Layanan'}
             </Link>
             <Link
               to="/settings"

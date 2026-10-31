@@ -18,6 +18,7 @@ import {
   ExternalLink,
   Wrench,
   Wallet,
+  Lock,
 } from 'lucide-react'
 import { useProviderManager, ProviderId, HIDDEN_PROVIDERS } from '@/stores/providerManager'
 import { useAuthStore } from '@/stores/authStore'
@@ -56,12 +57,16 @@ const PROVIDER_COLORS: Record<string, string> = {
   alriz: '#F43F5E',
 }
 
-/** Tujuan tombol isi-saldo per provider (wallet sendiri vs Token Bank). */
-function topupCta(provider: string): { route: string; label: string } {
-  if (provider === 'createpulse') return { route: '/topup/createpulse', label: 'Topup CreatePulse' }
-  if (provider === 'seavi') return { route: '/topup/seavi', label: 'Topup Seavi' }
-  if (provider === 'alriz') return { route: '/topup/alriz', label: 'Topup Alriz' }
-  return { route: '/beli-token', label: 'Beli Token' }
+/**
+ * Tujuan tombol isi-saldo per provider (wallet sendiri vs Token Bank).
+ * Provider tanpa wallet sendiri belum punya tujuan: Token Bank masih dikunci,
+ * jadi tombolnya tampil nonaktif alih-alih membuka halaman yang tidak dipakai.
+ */
+function topupCta(provider: string): { route: string | null; label: string; locked: boolean } {
+  if (provider === 'createpulse') return { route: '/topup/createpulse', label: 'Topup CreatePulse', locked: false }
+  if (provider === 'seavi') return { route: '/topup/seavi', label: 'Topup Seavi', locked: false }
+  if (provider === 'alriz') return { route: '/topup/alriz', label: 'Topup Alriz', locked: false }
+  return { route: null, label: 'Beli Token', locked: true }
 }
 
 const PROVIDER_LIST = [
@@ -1490,6 +1495,8 @@ export default function ProvidersPage() {
     })
   }, [savedKeys, selectedProvider, handleCheckKey, currentConfig, keys, updateKeyStatus])
 
+  const topup = topupCta(selectedProvider)
+
   return (
     <PageContent>
       <PageHeader
@@ -1599,12 +1606,20 @@ export default function ProvidersPage() {
 
         <div className="ml-auto flex items-center gap-2 w-full md:w-auto justify-end">
           <button
-            onClick={() => navigate(topupCta(selectedProvider).route)}
-            className="relative inline-flex items-center gap-1.5 rounded-full border border-[#00a8ff]/50 bg-gradient-to-r from-[#00a8ff]/20 via-[#00a8ff]/10 to-[#00a8ff]/20 text-[#00d4ff] px-3.5 py-2 text-xs md:text-sm font-semibold md:font-bold md:px-5 md:py-2.5 shadow-[0_0_14px_rgba(0,168,255,0.35)] md:shadow-[0_0_20px_rgba(0,168,255,0.55)] hover:shadow-[0_0_28px_rgba(0,168,255,0.75)] hover:scale-[1.02] transition-all"
-            title={topupCta(selectedProvider).label}
+            onClick={() => { if (topup.route) navigate(topup.route) }}
+            disabled={!topup.route}
+            className={`relative inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs md:text-sm font-semibold md:font-bold md:px-5 md:py-2.5 transition-all ${
+              topup.locked
+                ? 'border-border bg-card/50 text-muted-foreground opacity-60 cursor-not-allowed'
+                : 'border-[#00a8ff]/50 bg-gradient-to-r from-[#00a8ff]/20 via-[#00a8ff]/10 to-[#00a8ff]/20 text-[#00d4ff] shadow-[0_0_14px_rgba(0,168,255,0.35)] md:shadow-[0_0_20px_rgba(0,168,255,0.55)] hover:shadow-[0_0_28px_rgba(0,168,255,0.75)] hover:scale-[1.02]'
+            }`}
+            title={topup.locked ? 'Token Bank belum aktif — isi saldo lewat halaman Saldo Layanan' : topup.label}
           >
-            {topupCta(selectedProvider).route !== '/beli-token' ? <Wallet className="h-3.5 w-3.5 md:h-4 md:w-4" /> : <ShoppingCart className="h-3.5 w-3.5 md:h-4 md:w-4" />}
-            {topupCta(selectedProvider).label}
+            {topup.locked ? <Lock className="h-3.5 w-3.5 md:h-4 md:w-4" /> : <Wallet className="h-3.5 w-3.5 md:h-4 md:w-4" />}
+            {topup.label}
+            {topup.locked && (
+              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-secondary text-muted-foreground">Soon</span>
+            )}
           </button>
           <button
             onClick={() => setViewHidden(!viewHidden)}

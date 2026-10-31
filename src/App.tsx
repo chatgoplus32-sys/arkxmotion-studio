@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { Sidebar, Header } from '@/components/layout'
 import { KeepAliveRoutes } from '@/components/layout/KeepAliveRoutes'
 import { useAppStore, useAuthStore } from '@/stores'
@@ -61,7 +61,6 @@ const CreatePulseTopupPage = lazyWithRetry(() => import('@/pages/CreatePulseTopu
 const NexaBotTopupPage = lazyWithRetry(() => import('@/pages/NexaBotTopup'))
 const SeaviTopupPage = lazyWithRetry(() => import('@/pages/SeaviTopup'))
 const AlrizTopupPage = lazyWithRetry(() => import('@/pages/AlrizTopup'))
-const BeliTokenPage = lazyWithRetry(() => import('@/pages/BeliToken'))
 const SaldoLayananPage = lazyWithRetry(() => import('@/pages/SaldoLayanan'))
 const PluginsPage = lazyWithRetry(() => import('@/pages/Plugins'))
 const VirtualTryOnPage = lazyWithRetry(() => import('@/pages/VirtualTryOn'))
@@ -253,7 +252,8 @@ export default function App() {
                         <Route path="/topup/nexabot" element={<NexaBotTopupPage />} />
                         <Route path="/topup/seavi" element={<SeaviTopupPage />} />
                         <Route path="/topup/alriz" element={<AlrizTopupPage />} />
-                        <Route path="/beli-token" element={<BeliTokenPage />} />
+                        {/* Token Bank belum aktif: tautan lama diarahkan ke Saldo Layanan. */}
+                        <Route path="/beli-token" element={<Navigate to="/saldo" replace />} />
                         <Route path="/plugins" element={<PluginsPage />} />
 
                         <Route path="/tools/second-brain" element={<SecondBrainPage />} />
