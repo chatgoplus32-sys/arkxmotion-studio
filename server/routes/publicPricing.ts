@@ -16,13 +16,7 @@ import {
   SEAVI_TOKEN_PRICE,
   SEAVI_DEFAULT_CHARGE,
   SEAVI_MODEL_TOKENS,
-  ALRIZ_MIN_TOPUP,
-  ALRIZ_MAX_TOPUP,
-  ALRIZ_NOMINALS,
-  ALRIZ_MODEL_PRICES,
-  ALRIZ_DEFAULT_PRICE,
   getCreatepulsePriceRange,
-  getAlrizPriceRange,
 } from '../../shared/pricing.js'
 import { getNexabotPricing } from './nexabotWallet.js'
 
@@ -66,15 +60,6 @@ export function buildPublicPricing() {
         default_charge: SEAVI_DEFAULT_CHARGE,
         packages: SEAVI_PACKAGES.map((p) => ({ ...p })),
         models: { ...SEAVI_MODEL_TOKENS },
-      },
-      alriz: {
-        name: 'Alriz Motion',
-        min_topup: ALRIZ_MIN_TOPUP,
-        max_topup: ALRIZ_MAX_TOPUP,
-        nominals: [...ALRIZ_NOMINALS],
-        default_price: ALRIZ_DEFAULT_PRICE,
-        price_range: getAlrizPriceRange(),
-        models: { ...ALRIZ_MODEL_PRICES },
       },
     },
   }

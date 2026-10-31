@@ -14,8 +14,6 @@ const WALLETS = {
   nexabot: { topup: 'nexabot_topup', balance: 'nexabot_balance', credit: 'amount' },
   // Seavi: saldo dalam TOKEN — approve menambah `tokens`, bukan `amount` (Rp).
   seavi: { topup: 'seavi_topup', balance: 'seavi_balance', credit: 'tokens' },
-  // Alriz: saldo Rp (mirip CreatePulse) — top up Rp 5.000–100.000.
-  alriz: { topup: 'alriz_topup', balance: 'alriz_balance', credit: 'amount' },
 } as const
 type WalletKey = keyof typeof WALLETS
 

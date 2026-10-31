@@ -568,13 +568,13 @@ router.post('/nexabot/master-accounts/:id/check', authenticateToken, requireAdmi
   }
 })
 
-// ─── Kunci induk Alriz Motion & Seavi Labs ────────────────────────
+// ─── Kunci induk Seavi Labs ───────────────────────────────────────
 //
 // Pola yang sama dengan NexaBot: relay memasang kunci ini untuk member yang
 // sudah top up, jadi nilainya tidak boleh ikut dalam respons mana pun —
 // termasuk respons admin. Yang boleh dibaca browser hanya statusnya.
 
-for (const provider of ['alriz', 'seavi'] as ServerKeyProvider[]) {
+for (const provider of ['seavi'] as ServerKeyProvider[]) {
   const label = providerMasterLabel(provider)
   const settingKey = providerSettingKey(provider)
 

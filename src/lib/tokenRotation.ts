@@ -77,7 +77,6 @@ export function detectTokenError(provider: ProviderId, error: any): boolean {
     case 'genspark': return /invalid.*key|expired|401|403|unauthorized|forbidden|api.*key/i.test(String(error?.message || error))
     case 'runninghub': return /saldo|kuota|not_enough_power|insufficient|balance|power|coin|414|1002|1003|invalid.*key|key.*invalid|expired|401|403|unauthorized|forbidden|queue.limit|421|concurren|top up/i.test(String(error?.message || error))
     case 'seavi': return /401|403|unauthorized|forbidden|invalid.*key|key.*invalid|api.*key|expired/i.test(String(error?.message || error))
-    case 'alriz': return /401|403|AUTH_001|AUTH_002|unauthorized|forbidden|tidak valid|dicabut|ditangguhkan|invalid.*key|key.*invalid|api.*key|expired/i.test(String(error?.message || error))
     // Termasuk kegagalan cookie sesi (jalur Unlimited): error eksplisit dari
     // submitNexabot, halaman login HTML dari upstream, atau cookie kedaluwarsa.
     // Tanpa ini, key session yang mati hanya menggagalkan generate tanpa
@@ -110,9 +109,9 @@ export async function withTokenRotation<T>(
     onKeySwitch?: (from: ProviderKey, to: ProviderKey, attempt: number) => void
     onError?: (error: any, key: ProviderKey) => void
     /**
-     * Alriz/Seavi: kalau member tidak punya API key sendiri, jalankan satu
-     * percobaan lewat relay dengan kunci server. Relay yang memutuskan
-     * kelayakannya (top up/admin) dan menolak dengan pesan yang bisa dibaca.
+     * Kalau member tidak punya API key sendiri, jalankan satu percobaan lewat
+     * relay dengan kunci server. Relay yang memutuskan kelayakannya (top
+     * up/admin) dan menolak dengan pesan yang bisa dibaca.
      */
     allowServerKey?: boolean
   }
@@ -129,7 +128,7 @@ export async function withTokenRotation<T>(
     // Kunci server hanya dipakai kalau member tidak punya kunci sama sekali:
     // mencampurnya dengan rotasi kunci member akan menghabiskan jatah tiket
     // pembayaran untuk percobaan yang tidak perlu.
-    const synthetic: ProviderKey = provider === 'alriz' || provider === 'seavi'
+    const synthetic: ProviderKey = provider === 'seavi'
       ? serverKeyEntry(provider)
       : { id: `server-key:${provider}`, key: SERVER_KEY, name: `Kunci server ${provider}`, status: 'active' }
     try {

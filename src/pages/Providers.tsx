@@ -32,7 +32,6 @@ import { checkFireflyBalance } from '@/lib/firefly'
 import { parseNexabotCookieInput, parseNexabotApiKeyInput } from '@/lib/nexabot'
 import { NEXABOT_CHECK_TIMEOUT_MS } from '@/lib/nexabot-constants'
 import { fetchSeaviBalance } from '@/lib/seavi'
-import { fetchAlrizAccount } from '@/lib/alriz'
 import { refreshNexabotSessionMonitor } from '@/lib/nexabotSessionMonitor'
 import { NEXABOT_PRICE_FALLBACK } from '@/lib/nexabotWallet'
 import { checkGalleri5Balance, isGalleri5TokenError } from '@/lib/galleri5'
@@ -53,7 +52,6 @@ const PROVIDER_COLORS: Record<string, string> = {
   riverside: '#FF6B6B',
   nexabot: '#00D4AA',
   seavi: '#7C6FE8',
-  alriz: '#F43F5E',
 }
 
 /**
@@ -64,7 +62,6 @@ const PROVIDER_COLORS: Record<string, string> = {
 function topupCta(provider: string): { route: string; label: string } {
   if (provider === 'createpulse') return { route: '/topup/createpulse', label: 'Topup CreatePulse' }
   if (provider === 'seavi') return { route: '/topup/seavi', label: 'Topup Seavi' }
-  if (provider === 'alriz') return { route: '/topup/alriz', label: 'Topup Alriz' }
   return { route: `/topup/manual?provider=${encodeURIComponent(provider)}`, label: 'Topup Manual' }
 }
 
@@ -84,7 +81,6 @@ const PROVIDER_LIST = [
   { key: 'riverside', label: 'Riverside', desc: 'Riverside Business API — Professional video/audio recording, editing, and production platform.' },
   { key: 'seavi', label: 'Seavi Labs', desc: 'Video & image generation (Seedance 2.5 Multi, Kling 3, Motion Control) via api.seavilabs.site — API key (sea-...), saldo token bersama.' },
   { key: 'nexabot', label: 'NexaBot', desc: 'NexaBot AI via nexabot.id — Google Omni (text, image & video ref). Member cukup top up saldo atau Paket Unlimited; generate memakai kunci server, tanpa API key.' },
-  { key: 'alriz', label: 'Alriz Motion', desc: 'Kling Motion Control (2.6/3.0, 720p/1080p/768p) + 10 model I2V (Kling 3.0 Turbo/O3/V3, Gemini Omni Flash, Happy Horse, Wan 3.0, MiniMax H3, dll.) via alrizmotion.my.id — API key (alz_...), saldo Rp.' },
 ] as const
 
 const MENU_HIDDEN_PROVIDERS = [
@@ -329,17 +325,6 @@ const TOKEN_GUIDE: Record<string, {
       { text: 'Top up saldo minimal 0.15 credits di menu Top Up (hanya untuk mode API key).' },
     ],
     tip: 'NexaBot punya satu model: Google Omni — tipe video ditentukan otomatis dari input (teks / gambar / video referensi). ADA DUA JALUR: (a) SESSION COOKIE dari login web dikirim ke /api/v1/generate — kalau akun yang login punya paket Unlimited, generate TIDAK dipotong kredit; (b) API KEY (nxb_...) lewat /api/v1/api — selalu pay-as-you-go 0.15 cr/request walau Unlimited aktif. Kalau key punya cookie, app otomatis memakai jalur session. Cookie bisa kedaluwarsa: kalau muncul error session, login ulang di nexabot.id dan paste cookie baru.',
-  },
-  alriz: {
-    url: 'https://alrizmotion.my.id',
-    urlLabel: 'alrizmotion.my.id',
-    prefix: 'alz_...',
-    steps: [
-      { text: 'Buka alrizmotion.my.id → daftar/login → buka Console → API Keys.' },
-      { text: 'Buat API key baru (format: alz_...) → copy.' },
-      { text: 'Paste ke input di samping → klik Cek Token untuk melihat saldo Rp.' },
-    ],
-    tip: 'Alriz memakai saldo Rupiah per key: Rp 750 (2.6 Std) · Rp 1.000 (3.0 Std / semua model I2V) · Rp 1.250 (2.6 Pro) · Rp 1.500 (3.0 Pro) per video. Job gagal / kapasitas habis direfund otomatis oleh upstream.',
   },
 }
 function maskKey(key: string): string {
@@ -745,7 +730,6 @@ export default function ProvidersPage() {
       riverside: 'riverside',
       nexabot: 'nexabot',
       seavi: 'seavi',
-      alriz: 'alriz',
     }
     const providerId = providerMap[selectedProvider]
     return providerId ? isProviderMaintenance(providerId) : false
@@ -767,7 +751,6 @@ export default function ProvidersPage() {
       riverside: 'riverside',
       nexabot: 'nexabot',
       seavi: 'seavi',
-      alriz: 'alriz',
     }
     const providerId = providerMap[selectedProvider]
     return providerId ? getMaintenanceMessage(providerId) : ''
@@ -963,22 +946,6 @@ export default function ProvidersPage() {
   }, [savedKeys, keys, selectedProvider, removeKey])
 
   const handleCheckKey = useCallback(async (key: string) => {
-    if (selectedProvider === 'alriz') {
-      try {
-        const result = await fetchAlrizAccount(key)
-        if (result.ok && result.account) {
-          const bal = result.account.balance
-          return bal > 0
-            ? { state: 'active', balance: bal, detail: `Saldo: Rp ${bal.toLocaleString('id-ID')}${result.account.email ? ` · ${result.account.email}` : ''}` }
-            : { state: 'empty', balance: 0, detail: 'Saldo Rp 0 — habis' }
-        }
-        const msg = String(result.error || '')
-        if (/401|403|tidak valid|dicabut|ditangguhkan/i.test(msg)) return { state: 'invalid', detail: msg }
-        return { state: 'unknown', detail: msg || 'Gagal cek token' }
-      } catch {
-        return { state: 'failed', detail: 'Error checking token' }
-      }
-    }
     if (selectedProvider === 'seavi') {
       try {
         const result = await fetchSeaviBalance(key)

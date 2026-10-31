@@ -112,7 +112,7 @@ const ALL_PROVIDERS = [
   'framia', 'firefly', 'leonardo', 'oneover', 'gemini', 'riverside',
 ]
 
-// ─── Kunci server Alriz / Seavi ────────────────────────────────────────
+// ─── Kunci server Seavi ────────────────────────────────────────────────
 // Pola yang sama dengan NexaBot: relay memasang kunci ini untuk member yang
 // sudah top up. Server hanya melaporkan status — nilainya tidak pernah dikirim
 // balik ke browser, jadi input selalu kosong dan hanya diisi saat mengganti.
@@ -137,7 +137,7 @@ function ProviderServerKeySection({
   token,
   addToast,
 }: {
-  provider: 'alriz' | 'seavi'
+  provider: 'seavi'
   label: string
   token: string | null
   addToast: (message: string, type?: 'success' | 'error' | 'info' | 'warning') => void
@@ -1413,7 +1413,6 @@ export default function AdminSystemSettings() {
           refreshSignal={`${mkStatus?.configured ? 1 : 0}-${mcStatus?.configured ? 1 : 0}`}
         />
 
-        <ProviderServerKeySection provider="alriz" label="Alriz Motion" token={token} addToast={addToast} />
         <ProviderServerKeySection provider="seavi" label="Seavi Labs" token={token} addToast={addToast} />
 
         {/* Provider Maintenance */}

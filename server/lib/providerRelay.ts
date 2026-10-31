@@ -4,7 +4,7 @@ import { isAdminUser, keyEligibility, masterKey, providerLabel, type ServerKeyPr
 import { claimChargeTicket, noteChargeTicketJob, releaseChargeTicket } from './providerChargeTicket.js'
 
 /**
- * Kebijakan kredensial relay Alriz / Seavi.
+ * Kebijakan kredensial relay Seavi.
  *
  * Relay menerima dua bentuk kredensial:
  *   1. `Authorization: Bearer <kunci provider>` — kunci milik member (perilaku
@@ -21,7 +21,6 @@ import { claimChargeTicket, noteChargeTicketJob, releaseChargeTicket } from './p
 
 /** Path upstream yang MEMBUAT job (memakai kredit upstream). */
 const CONSUMING_PATH: Record<ServerKeyProvider, RegExp> = {
-  alriz: /^jobs\/?$/,
   seavi: /^generate\/?$/,
 }
 
@@ -95,7 +94,7 @@ export function decideCredential(
   return { kind: 'server', secret, usageId: cek.usageId ?? null }
 }
 
-/** Id job dari respons upstream Alriz (`job_id`) maupun Seavi (`id`). */
+/** Id job dari respons upstream Seavi (`id`). */
 function jobIdDari(bodyText: string): string | null {
   try {
     const data = JSON.parse(bodyText)

@@ -1,9 +1,9 @@
-// ─── Kunci server Alriz / Seavi ─────────────────────────────────────────────
+// ─── Kunci server Seavi ─────────────────────────────────────────────────────
 // Member yang sudah top up saldo provider tidak wajib punya API key sendiri:
-// relay /api/public/{alriz,seavi} bisa memasang kunci milik operator untuk
-// mereka. Kunci itu tidak pernah sampai ke browser — klien hanya mengirim
-// identitas app (JWT) dan, untuk request yang membuat job, tiket pembayaran
-// dari /api/{alriz,seavi}/deduct.
+// relay /api/public/seavi bisa memasang kunci milik operator untuk mereka.
+// Kunci itu tidak pernah sampai ke browser — klien hanya mengirim identitas app
+// (JWT) dan, untuk request yang membuat job, tiket pembayaran dari
+// /api/seavi/deduct.
 //
 // Nilai sentinel di bawah dipakai sebagai `apiKey` di lib provider: selama
 // berupa string biasa, header Authorization berisi kunci member seperti dulu.
@@ -54,11 +54,11 @@ export function relayAuthHeaders(apiKey: string, chargeId?: number | null): Reco
  * Entri kunci semu supaya `withTokenRotation` bisa menjalankan satu percobaan
  * lewat relay tanpa kunci member. Tidak pernah disimpan ke providerManager.
  */
-export function serverKeyEntry(provider: 'alriz' | 'seavi'): ProviderKey {
+export function serverKeyEntry(provider: 'seavi'): ProviderKey {
   return {
     id: `server-key:${provider}`,
     key: SERVER_KEY,
-    name: provider === 'alriz' ? 'Kunci server Alriz' : 'Kunci server Seavi',
+    name: 'Kunci server Seavi',
     status: 'active',
   }
 }

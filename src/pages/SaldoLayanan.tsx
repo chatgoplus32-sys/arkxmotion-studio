@@ -6,13 +6,12 @@ import { useAuthStore } from '@/stores/authStore'
 import { formatRp } from '@/lib/payment'
 import { fetchNexabotWallet } from '@/lib/nexabotWallet'
 import { fetchSeaviWallet } from '@/lib/seaviWallet'
-import { fetchAlrizWallet } from '@/lib/alrizWallet'
 import { cn } from '@/lib/utils'
 import {
-  ArrowUpRight, Bot, Clapperboard, Coins, Loader2, RefreshCw, Zap,
+  ArrowUpRight, Bot, Coins, Loader2, RefreshCw, Zap,
 } from 'lucide-react'
 
-type ServiceKey = 'createpulse' | 'nexabot' | 'seavi' | 'alriz'
+type ServiceKey = 'createpulse' | 'nexabot' | 'seavi'
 
 interface ServiceDef {
   key: ServiceKey
@@ -23,7 +22,7 @@ interface ServiceDef {
   accent: string
 }
 
-// Empat saldo ini benar-benar terpisah di server. Jangan pernah menjumlahkannya
+// Saldo ini benar-benar terpisah di server. Jangan pernah menjumlahkannya
 // jadi satu angka — nilai Rupiah dan token punya satuan berbeda.
 const SERVICES: ServiceDef[] = [
   {
@@ -50,14 +49,6 @@ const SERVICES: ServiceDef[] = [
     icon: <Coins className="h-4 w-4" />,
     accent: 'border-emerald-500/25 bg-emerald-500/10 text-emerald-400',
   },
-  {
-    key: 'alriz',
-    label: 'Alriz Motion',
-    desc: 'Motion Control Alriz — dipotong per video.',
-    href: '/topup/alriz',
-    icon: <Clapperboard className="h-4 w-4" />,
-    accent: 'border-amber-500/25 bg-amber-500/10 text-amber-400',
-  },
 ]
 
 interface ServiceState {
@@ -72,7 +63,6 @@ const EMPTY_STATE: Record<ServiceKey, ServiceState> = {
   createpulse: { amount: null, unitPrice: null, note: null },
   nexabot: { amount: null, unitPrice: null, note: null },
   seavi: { amount: null, unitPrice: null, note: null },
-  alriz: { amount: null, unitPrice: null, note: null },
 }
 
 async function fetchCreatePulseBalance(token: string): Promise<number | null> {
@@ -113,11 +103,10 @@ export default function SaldoLayananPage() {
     if (silent) setRefreshing(true)
     else setLoading(true)
 
-    const [createpulse, nexabot, seavi, alriz] = await Promise.all([
+    const [createpulse, nexabot, seavi] = await Promise.all([
       fetchCreatePulseBalance(token),
       fetchNexabotWallet(token),
       fetchSeaviWallet(token),
-      fetchAlrizWallet(token),
     ])
     if (requestId !== requestRef.current) return
 
@@ -136,7 +125,6 @@ export default function SaldoLayananPage() {
         unitPrice: seavi?.token_price ?? 2000,
         note: null,
       },
-      alriz: { amount: alriz?.balance ?? null, unitPrice: null, note: null },
     })
     setUpdatedAt(Date.now())
     setLoading(false)
@@ -270,7 +258,7 @@ export default function SaldoLayananPage() {
 
         <div className="mt-4 flex flex-col gap-2 rounded-xl bg-secondary/50 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-[11px] leading-relaxed text-muted-foreground">
-            Saldo CreatePulse, NexaBot, dan Alriz dalam Rupiah; Seavi dalam token.
+            Saldo CreatePulse dan NexaBot dalam Rupiah; Seavi dalam token.
             Tiap layanan punya dompet sendiri, jadi saldo tidak bisa dipindah atau dijumlahkan.
           </p>
           <span className="shrink-0 text-[10px] text-muted-foreground">

@@ -312,60 +312,17 @@ db.exec(`
   )
 `)
 
-// ─── Wallet Alriz (Rp, mirip CreatePulse/NexaBot) ──────────────────────────
-// Top up Rp 5.000–100.000 (lihat shared/pricing.ts) → admin approve → kredit
-// 1:1 ke `balance`. Generate Motion Control memotong harga model per video
-// dari `alriz_usage` (bisa di-refund kalau job upstream gagal).
-db.exec(`
-  CREATE TABLE IF NOT EXISTS alriz_balance (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER UNIQUE NOT NULL,
-    balance INTEGER NOT NULL DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id)
-  )
-`)
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS alriz_topup (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    amount INTEGER NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected')),
-    proof_note TEXT NOT NULL DEFAULT '',
-    admin_note TEXT NOT NULL DEFAULT '',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id)
-  )
-`)
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS alriz_usage (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    model TEXT NOT NULL,
-    cost INTEGER NOT NULL,
-    units INTEGER NOT NULL DEFAULT 1,
-    batch_id TEXT,
-    status TEXT NOT NULL DEFAULT 'used' CHECK(status IN ('used', 'refunded')),
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id)
-  )
-`)
-
 // `units` = jumlah job yang sudah dibayar satu baris usage. Dipakai tiket
-// kunci server Alriz/Seavi: satu potongan untuk Motion Control multi-slot
+// kunci server Seavi: satu potongan untuk Motion Control multi-slot
 // membayar beberapa job sekaligus, jadi batasnya harus ikut tercatat.
-for (const tabel of ['alriz_usage', 'seavi_usage']) {
+for (const tabel of ['seavi_usage']) {
   const kolom = db.prepare(`PRAGMA table_info(${tabel})`).all() as { name: string }[]
   if (!kolom.some((c) => c.name === 'units')) {
     db.exec(`ALTER TABLE ${tabel} ADD COLUMN units INTEGER NOT NULL DEFAULT 1`)
   }
 }
 
-// ─── Tiket pembayaran relay Alriz / Seavi ─────────────────────────────────
+// ─── Tiket pembayaran relay Seavi ─────────────────────────────────────────
 // Relay menyuntikkan kunci server, jadi ia harus bisa membuktikan bahwa job
 // ini sudah dibayar lewat /deduct. `max_jobs`/`used_jobs` membatasi jumlah job
 // pada satu usage; klien tidak bisa mengarang jumlahnya karena angka itu

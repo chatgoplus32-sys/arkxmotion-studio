@@ -8,7 +8,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   roboneo: '#34d399', runninghub: '#f97316', framia: '#fb923c',
   galleri5: '#e879f9', leonardo: '#facc15', createpulse: '#c084fc',
   oneover: '#a78bfa', firefly: '#FF6A00',
-  nexabot: '#00D4AA', seavi: '#7C6FE8', alriz: '#F43F5E',
+  nexabot: '#00D4AA', seavi: '#7C6FE8',
 }
 
 const STATUS_PROVIDERS: Array<{ id: ProviderId; label: string }> = [
@@ -17,7 +17,6 @@ const STATUS_PROVIDERS: Array<{ id: ProviderId; label: string }> = [
   { id: 'galleri5', label: 'G5 AI Studio' },
   { id: 'seavi', label: 'Seavi Labs' },
   { id: 'nexabot', label: 'NexaBot' },
-  { id: 'alriz', label: 'Alriz Motion' },
 ]
 
 interface Props {

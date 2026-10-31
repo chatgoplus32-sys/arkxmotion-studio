@@ -198,7 +198,7 @@ export async function fetchWithRetry(
 }
 
 /**
- * Budget retry untuk relay provider (Alriz, Seavi).
+ * Budget retry untuk relay provider Seavi.
  *
  * Rute baca (poll status / cek saldo) dipotong ketat: klien polling tiap
  * beberapa detik, jadi menunggu panjang lebih buruk daripada gagal cepat dan

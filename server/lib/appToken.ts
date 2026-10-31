@@ -4,7 +4,7 @@ import type { Request } from 'express'
 /**
  * Verifikasi JWT app (access token 15 menit) dan kembalikan id user.
  *
- * Relay publik (NexaBot, Alriz, Seavi) terbuka: klien boleh memakai kredensial
+ * Relay publik (NexaBot, Seavi) terbuka: klien boleh memakai kredensial
  * provider miliknya sendiri tanpa akun app. Ketiadaan identitas karena itu
  * keadaan sah — pemanggil yang memutuskan apakah identitasnya diperlukan.
  */

@@ -2,12 +2,12 @@ import db from '../db.js'
 import { PROVIDER_SPECS, type ServerKeyProvider } from './providerMasterKey.js'
 
 /**
- * Tiket pembayaran untuk jalur kunci server Alriz / Seavi.
+ * Tiket pembayaran untuk jalur kunci server Seavi.
  *
  * Kenapa ada
  * ----------
- * Potongan saldo dilakukan klien lewat `/api/alriz/deduct` atau
- * `/api/seavi/deduct`, sedangkan relay yang menyuntikkan kunci server tidak
+ * Potongan saldo dilakukan klien lewat `/api/seavi/deduct`, sedangkan relay
+ * yang menyuntikkan kunci server tidak
  * pernah tahu apakah potongan itu benar-benar terjadi. Tanpa tiket, member
  * (atau siapa pun yang memegang JWT-nya) bisa memanggil relay langsung dan
  * memakai kunci operator berkali-kali padahal saldonya sudah habis.

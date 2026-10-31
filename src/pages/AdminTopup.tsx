@@ -35,9 +35,9 @@ export default function AdminTopupPage() {
   const [topups, setTopups] = useState<Topup[]>([])
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<number | null>(null)
-  // Wallet mana yang sedang dibuka: CreatePulse (Rp), NexaBot (Rp), Seavi (token), Alriz (Rp),
+  // Wallet mana yang sedang dibuka: CreatePulse (Rp), NexaBot (Rp), Seavi (token),
   // atau manual untuk provider tanpa dompet (Roboneo/Weavy/Framia, dll.).
-  const [provider, setProvider] = useState<'createpulse' | 'nexabot' | 'seavi' | 'alriz' | 'manual'>('createpulse')
+  const [provider, setProvider] = useState<'createpulse' | 'nexabot' | 'seavi' | 'manual'>('createpulse')
 
   const API = '/api/admin/topup'
   const headers = useMemo(() => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }), [token])
@@ -171,7 +171,7 @@ export default function AdminTopupPage() {
       <PageHeader
         eyebrow="Admin"
         title="Approval Top Up"
-        highlight={provider === 'manual' ? 'Manual' : provider === 'nexabot' ? 'NexaBot' : provider === 'seavi' ? 'Seavi' : provider === 'alriz' ? 'Alriz' : 'CreatePulse'}
+        highlight={provider === 'manual' ? 'Manual' : provider === 'nexabot' ? 'NexaBot' : provider === 'seavi' ? 'Seavi' : 'CreatePulse'}
         desc="Setujui atau tolak topup saldo member"
       />
 
@@ -196,13 +196,6 @@ export default function AdminTopupPage() {
           onClick={() => setProvider('seavi')}
         >
           Seavi
-        </Button>
-        <Button
-          size="sm"
-          variant={provider === 'alriz' ? 'default' : 'outline'}
-          onClick={() => setProvider('alriz')}
-        >
-          Alriz
         </Button>
         <Button
           size="sm"

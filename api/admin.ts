@@ -305,11 +305,10 @@ async function handleResetPassword(res: VercelResponse, id: number, body: any) {
  * tagged template Neon tidak menerima identifier tabel dinamis, dan cara ini
  * sekaligus menutup celah injeksi lewat parameter `provider`.
  */
-function resolveTopupProvider(req: VercelRequest): 'createpulse' | 'nexabot' | 'seavi' | 'alriz' {
+function resolveTopupProvider(req: VercelRequest): 'createpulse' | 'nexabot' | 'seavi' {
   const raw = String((req.query.provider as string) || req.body?.provider || 'createpulse')
   if (raw === 'nexabot') return 'nexabot'
   if (raw === 'seavi') return 'seavi'
-  if (raw === 'alriz') return 'alriz'
   return 'createpulse'
 }
 
@@ -320,7 +319,6 @@ async function handleTopupRoutes(req: VercelRequest, res: VercelResponse, segmen
     const provider = resolveTopupProvider(req)
     const isNexabot = provider === 'nexabot'
     const isSeavi = provider === 'seavi'
-    const isAlriz = provider === 'alriz'
 
     // GET /api/admin/topup/pending
     if (req.method === 'GET' && last === 'pending') {
@@ -328,9 +326,7 @@ async function handleTopupRoutes(req: VercelRequest, res: VercelResponse, segmen
         ? await sql`SELECT t.*, u.email, u.name as user_name FROM nexabot_topup t JOIN users u ON t.user_id = u.id WHERE t.status = 'pending' ORDER BY t.created_at ASC`
         : isSeavi
           ? await sql`SELECT t.*, u.email, u.name as user_name FROM seavi_topup t JOIN users u ON t.user_id = u.id WHERE t.status = 'pending' ORDER BY t.created_at ASC`
-          : isAlriz
-            ? await sql`SELECT t.*, u.email, u.name as user_name FROM alriz_topup t JOIN users u ON t.user_id = u.id WHERE t.status = 'pending' ORDER BY t.created_at ASC`
-            : await sql`SELECT t.*, u.email, u.name as user_name FROM createpulse_topup t JOIN users u ON t.user_id = u.id WHERE t.status = 'pending' ORDER BY t.created_at ASC`
+          : await sql`SELECT t.*, u.email, u.name as user_name FROM createpulse_topup t JOIN users u ON t.user_id = u.id WHERE t.status = 'pending' ORDER BY t.created_at ASC`
       return res.status(200).json({ topups: rows, provider })
     }
 
@@ -340,9 +336,7 @@ async function handleTopupRoutes(req: VercelRequest, res: VercelResponse, segmen
         ? await sql`SELECT t.*, u.email, u.name as user_name FROM nexabot_topup t JOIN users u ON t.user_id = u.id ORDER BY t.created_at DESC`
         : isSeavi
           ? await sql`SELECT t.*, u.email, u.name as user_name FROM seavi_topup t JOIN users u ON t.user_id = u.id ORDER BY t.created_at DESC`
-          : isAlriz
-            ? await sql`SELECT t.*, u.email, u.name as user_name FROM alriz_topup t JOIN users u ON t.user_id = u.id ORDER BY t.created_at DESC`
-            : await sql`SELECT t.*, u.email, u.name as user_name FROM createpulse_topup t JOIN users u ON t.user_id = u.id ORDER BY t.created_at DESC`
+          : await sql`SELECT t.*, u.email, u.name as user_name FROM createpulse_topup t JOIN users u ON t.user_id = u.id ORDER BY t.created_at DESC`
       return res.status(200).json({ topups: rows, provider })
     }
 
@@ -412,18 +406,6 @@ async function handleTopupRoutes(req: VercelRequest, res: VercelResponse, segmen
         return res.status(200).json({ message: `Topup approved — ${tokens} token Seavi`, balance: bal[0]?.balance || 0, tokens: bal[0]?.balance || 0 })
       }
 
-      // Alriz: kredit Rupiah apa adanya (1:1, top up Rp 5.000–100.000).
-      if (isAlriz) {
-        const topup = await sql`SELECT * FROM alriz_topup WHERE id = ${id} AND status = 'pending'`
-        if (topup.length === 0) return res.status(404).json({ error: 'Pending topup not found' })
-
-        await sql`UPDATE alriz_topup SET status = 'approved', admin_note = ${admin_note || ''}, updated_at = CURRENT_TIMESTAMP WHERE id = ${id}`
-        await sql`INSERT INTO alriz_balance (user_id, balance) VALUES (${topup[0].user_id}, ${topup[0].amount}) ON CONFLICT (user_id) DO UPDATE SET balance = alriz_balance.balance + ${topup[0].amount}, updated_at = CURRENT_TIMESTAMP`
-
-        const bal = await sql`SELECT balance FROM alriz_balance WHERE user_id = ${topup[0].user_id}`
-        return res.status(200).json({ message: 'Topup approved', balance: bal[0]?.balance || 0 })
-      }
-
       const topup = await sql`SELECT * FROM createpulse_topup WHERE id = ${id} AND status = 'pending'`
       if (topup.length === 0) return res.status(404).json({ error: 'Pending topup not found' })
 
@@ -452,14 +434,6 @@ async function handleTopupRoutes(req: VercelRequest, res: VercelResponse, segmen
         if (topup.length === 0) return res.status(404).json({ error: 'Pending topup not found' })
 
         await sql`UPDATE seavi_topup SET status = 'rejected', admin_note = ${admin_note || ''}, updated_at = CURRENT_TIMESTAMP WHERE id = ${id}`
-        return res.status(200).json({ message: 'Topup rejected' })
-      }
-
-      if (isAlriz) {
-        const topup = await sql`SELECT * FROM alriz_topup WHERE id = ${id} AND status = 'pending'`
-        if (topup.length === 0) return res.status(404).json({ error: 'Pending topup not found' })
-
-        await sql`UPDATE alriz_topup SET status = 'rejected', admin_note = ${admin_note || ''}, updated_at = CURRENT_TIMESTAMP WHERE id = ${id}`
         return res.status(200).json({ message: 'Topup rejected' })
       }
 

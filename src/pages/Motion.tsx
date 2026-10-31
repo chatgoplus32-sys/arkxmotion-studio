@@ -13,8 +13,6 @@ import { submitWeavyMotionControl, uploadWeavyAssetWithRetry, resolveWeavyAssetU
 import { getRunningHubApiKey, getRunningHubWorkflowId, submitRunningHubMotionControl, submitRunningHubUltraFastHD, submitRunningHubMotionApp, pollRunningHubTask } from '@/lib/runninghub'
 import { getGalleri5AuthHeaders, submitGalleri5MotionControl, pollGalleri5MotionControl, isGalleri5ModelRestricted, getGalleri5ErrorMessage, GALLERI5_MOTION_MODELS, runGalleri5WithRotation } from '@/lib/galleri5'
 import { getMagnificApiKey, submitMagnificMotion, pollMagnificMotion, type MagnificMotionModel } from '@/lib/magnific'
-import { generateWithAlriz, getAlrizModel } from '@/lib/alriz'
-import { chargeAlrizWallet, refundAlrizWallet } from '@/lib/alrizWallet'
 import { getSeaviSpec, generateWithSeavi, buildSeaviPayload } from '@/lib/seavi'
 import { fetchSeaviWallet, chargeSeaviWallet, refundSeaviWallet } from '@/lib/seaviWallet'
 import { useLocalStorage } from '@/lib/useLocalStorage'
@@ -37,7 +35,6 @@ import {
   Globe,
   Copy,
   Check,
-  Wallet,
   Zap,
   Coins,
 } from 'lucide-react'
@@ -96,15 +93,6 @@ const PROVIDERS = {
     { key: 'gp:kling-v3-pro-motion', label: 'Kling V3 Pro Motion Control (Genspark)', cr: 80 },
     { key: 'gp:kling-v3-std-motion', label: 'Kling V3 Standard Motion Control (Genspark)', cr: 60 },
   ]},
-  // Alriz: harga per video dalam RUPIAH (cr = Rp) — sinkron upstream /api/models (okt 2026):
-  // MC 2.6 Std Rp750, MC 2.6 Pro Rp1.250, MC 3.0 Std Rp1.000, MC 3.0 Pro Rp1.500.
-  // Model I2V (gambar + prompt) dipindah ke halaman Image-to-Video (provider 'alriz').
-  alriz: { name: 'Alriz Motion', models: [
-    { key: 'al:mc-kling-2.6-std', label: 'MC 2.6 Std · 720p', cr: 750 },
-    { key: 'al:mc-kling-2.6-pro', label: 'MC 2.6 Pro · 1080p', cr: 1250 },
-    { key: 'al:mc-kling-3.0-std', label: 'MC 3.0 Std · 720p', cr: 1000 },
-    { key: 'al:mc-kling-3.0-pro', label: 'MC 3.0 Pro · 1080p', cr: 1500 },
-  ]},
   // Seavi Labs: harga per video dalam TOKEN (cr = token, 1 token = Rp 2.000).
   seavi: { name: 'Seavi Labs', models: [
     { key: 'sv:motion_control_v3_server19_15dtk', label: 'Motion Control V3 · S19 15 dtk', cr: 1 },
@@ -114,20 +102,15 @@ const PROVIDERS = {
 
 // Halaman Motion Control menawarkan tiga provider yang paling stabil, biar
 // member tidak bingung memilih. Provider lain tetap dipakai halaman lain.
-const MOTION_PROVIDER_IDS = ['alriz', 'runninghub', 'seavi'] as const
+const MOTION_PROVIDER_IDS = ['runninghub', 'seavi'] as const
 type MotionProviderId = (typeof MOTION_PROVIDER_IDS)[number]
 
 const MOTION_PROVIDER_INFO: Record<MotionProviderId, { name: string; tagline: string; note: string; recommended?: boolean }> = {
-  alriz: {
-    name: 'Alriz Motion',
-    tagline: 'Bayar pakai saldo Rupiah',
-    note: 'Tanpa API key — pilihan paling gampang untuk member baru.',
-    recommended: true,
-  },
   runninghub: {
     name: 'RunningHub',
     tagline: 'Bayar pakai kredit RunningHub',
     note: 'Perlu API key RunningHub yang sudah disimpan di halaman Providers.',
+    recommended: true,
   },
   seavi: {
     name: 'Seavi Labs',
@@ -138,17 +121,12 @@ const MOTION_PROVIDER_INFO: Record<MotionProviderId, { name: string; tagline: st
 
 // Default model tiap provider: pilih yang paling murah, bukan yang pertama di daftar.
 const MOTION_RECOMMENDED_MODEL: Record<MotionProviderId, string> = {
-  alriz: 'al:mc-kling-2.6-std',
   runninghub: 'rh:std:2.6',
   seavi: 'sv:motion_control_v3_server19_15dtk',
 }
 
 // Label awam untuk dropdown model — nama workflow aslinya terlalu teknis.
 const SIMPLE_MODEL_LABELS: Record<string, string> = {
-  'al:mc-kling-2.6-std': 'Standar 2.6 · 720p',
-  'al:mc-kling-2.6-pro': 'Pro 2.6 · 1080p',
-  'al:mc-kling-3.0-std': 'Standar 3.0 · 720p',
-  'al:mc-kling-3.0-pro': 'Pro 3.0 · 1080p',
   'rh:wf:kontrol-gerakan': 'Cepat 50 FPS · maks 24 detik',
   'rh:wf:eposcents': 'Eposcents · 512HD 50 detik',
   'rh:wf:mc-pro': 'Motion Transfer Pro · 15 detik',
@@ -163,9 +141,7 @@ const SIMPLE_MODEL_LABELS: Record<string, string> = {
 
 function motionModelLabel(providerId: MotionProviderId, model: { key: string; label: string; cr: number }): string {
   const name = SIMPLE_MODEL_LABELS[model.key] || model.label
-  const price = providerId === 'alriz'
-    ? `Rp ${model.cr.toLocaleString('id-ID')}`
-    : providerId === 'seavi'
+  const price = providerId === 'seavi'
     ? `${model.cr} token`
     : `${model.cr} kredit`
   const tag = model.key === MOTION_RECOMMENDED_MODEL[providerId] ? ' · disarankan' : ''
@@ -200,9 +176,9 @@ function createSlot(): Slot {
 }
 
 export default function MotionPage() {
-  const [provider, setProvider] = useLocalStorage<ProviderId>('motion.provider', 'alriz')
+  const [provider, setProvider] = useLocalStorage<ProviderId>('motion.provider', 'runninghub')
   const addToast = useToastStore((s) => s.addToast)
-  const [modelKey, setModelKey] = useLocalStorage('motion.modelKey', PROVIDERS.alriz.models[0]?.key || '')
+  const [modelKey, setModelKey] = useLocalStorage('motion.modelKey', MOTION_RECOMMENDED_MODEL.runninghub)
   const [orientation, setOrientation] = useLocalStorage<'video' | 'image'>('motion.orientation', 'video')
   const [prompt, setPrompt] = useLocalStorage('motion.prompt', '')
   const [negativePrompt, setNegativePrompt] = useLocalStorage('motion.negativePrompt', '')
@@ -260,13 +236,14 @@ export default function MotionPage() {
 
   useEffect(() => {
     fetchMaintenance()
-    // Member lama bisa masih menyimpan provider di luar daftar (Weavy/Wavespeed),
-    // jadi arahkan balik ke Alriz dan pastikan model yang dipilih ikut cocok.
+    // Member lama bisa masih menyimpan provider di luar daftar (mis. provider
+    // yang sudah dihapus), jadi arahkan balik ke RunningHub dan pastikan model
+    // yang dipilih ikut cocok.
     const allowed = MOTION_PROVIDER_IDS as readonly string[]
     const p = PROVIDERS[provider as keyof typeof PROVIDERS]
     if (!allowed.includes(provider) || !p || p.models.length === 0) {
-      setProvider('alriz')
-      setModelKey(MOTION_RECOMMENDED_MODEL.alriz)
+      setProvider('runninghub')
+      setModelKey(MOTION_RECOMMENDED_MODEL.runninghub)
       return
     }
     if (!p.models.some((m) => m.key === modelKey)) {
@@ -351,14 +328,11 @@ export default function MotionPage() {
     return () => { if (elapsedRef.current) clearInterval(elapsedRef.current) }
   }, [generating])
 
-  const currentProvider = PROVIDERS[provider as keyof typeof PROVIDERS] || PROVIDERS.alriz
+  const currentProvider = PROVIDERS[provider as keyof typeof PROVIDERS] || PROVIDERS.runninghub
   const recommendedModelKey = MOTION_RECOMMENDED_MODEL[provider as MotionProviderId] || ''
   const currentModel = currentProvider.models.find((m) => m.key === modelKey) || currentProvider.models[0]
   const isOmni = modelKey === 'rn:google-omni'
-  // Alriz I2V (kling-3.0-turbo, gemini-omni-flash, dll.): cukup gambar + prompt,
-  // tanpa video referensi — slot video disembunyikan & tidak wajib.
-  const isAlrizI2v = provider === 'alriz' && getAlrizModel(modelKey.replace(/^al:/, ''))?.kind === 'i2v'
-  const slotsImageOnly = isOmni || isAlrizI2v
+  const slotsImageOnly = isOmni
   const filledSlots = slotsImageOnly
     ? slots.filter((s) => s.image).length
     : slots.filter((s) => s.image && s.video).length
@@ -386,7 +360,7 @@ export default function MotionPage() {
   }
 
   const slotProgress = useMemo(() => {
-    const filled = slots.filter((s) => (isOmni || isAlrizI2v ? s.image : s.image && s.video))
+    const filled = slots.filter((s) => (isOmni ? s.image : s.image && s.video))
     if (filled.length === 0) return 0
     const pct = (s: Slot) => {
       if (s.status === 'done' || s.status === 'error') return 100
@@ -399,10 +373,10 @@ export default function MotionPage() {
       return generating ? 5 : 0
     }
     return Math.round(filled.reduce((a, s) => a + pct(s), 0) / filled.length)
-  }, [slots, generating, isOmni, isAlrizI2v])
+  }, [slots, generating, isOmni])
 
   const statusSummary = useMemo(() => {
-    const filled = slots.filter((s) => (isOmni || isAlrizI2v ? s.image : s.image && s.video))
+    const filled = slots.filter((s) => (isOmni ? s.image : s.image && s.video))
     if (filled.length === 0) return 'Idle'
     const doneCount = filled.filter((s) => s.status === 'done').length
     const errorCount = filled.filter((s) => s.status === 'error').length
@@ -416,7 +390,7 @@ export default function MotionPage() {
       return active ? `Slot #${filled.indexOf(active) + 1}: ${active.statusText || active.status}` : 'Processing…'
     }
     return 'Idle'
-  }, [slots, generating, isOmni, isAlrizI2v])
+  }, [slots, generating, isOmni])
 
   const handleFileChange = async (id: string, type: 'image' | 'video', file: File | null) => {
     if (!file) {
@@ -557,8 +531,7 @@ export default function MotionPage() {
     if (generating) return
     const finalPrompt = prompt.trim()
     const isOmni = modelKey === 'rn:google-omni'
-    const isAlrizI2v = provider === 'alriz' && getAlrizModel(modelKey.replace(/^al:/, ''))?.kind === 'i2v'
-    const slotsImageOnly = isOmni || isAlrizI2v
+    const slotsImageOnly = isOmni
     const filledSlots = slotsImageOnly
       ? slots.filter((s) => s.image)
       : slots.filter((s) => s.image && s.video)
@@ -608,8 +581,6 @@ export default function MotionPage() {
     }
 
     // Pre-check saldo vs estimasi biaya sebelum upload dimulai.
-    // Alriz: user login dicek dari wallet internal (Rp), admin lolos, tamu
-    // fallback ke cek key upstream (alz_...).
     const authSnapshot = useAuthStore.getState()
     const pre = await precheckProviderBalance(provider, totalCredits, {
       authToken: authSnapshot.token || undefined,
@@ -636,7 +607,7 @@ export default function MotionPage() {
     ))
 
     addLog(`🚀 Mulai generate video · ${currentProvider.name} · ${currentModel.label}`)
-    addLog(`Mode: ${isOmni ? 'Image → Video (Google Omni)' : isAlrizI2v ? 'Image → Video (Alriz I2V — gambar + prompt)' : 'Motion Control (Image + Video)'}`)
+    addLog(`Mode: ${isOmni ? 'Image → Video (Google Omni)' : 'Motion Control (Image + Video)'}`)
     addLog(`Processing ${filledSlots.length} slot(s)...`)
 
     const startTime = Date.now()
@@ -1780,118 +1751,6 @@ export default function MotionPage() {
               addLog(`#${slotNum} Error: ${err.message}`, 'error')
               return false
             }
-          } else if (provider === 'alriz' && slot.image && (slot.video || isAlrizI2v)) {
-            // ─── Alriz Motion: Kling Motion Control via alrizmotion.my.id ───
-            // Wallet internal: user login dipotong harga model per video
-            // (Rp 750–1.500, tarif dari server) SEBELUM upload — kalau saldo
-            // kurang gagal cepat. Admin lolos tanpa potongan; tamu tanpa login
-            // lewat tanpa wallet (key sendiri, saldo key dipotong upstream).
-            // Batch id dibuat di awal supaya semua kegagalan setelah charge
-            // (upload/submit/poll) bisa di-refund.
-            const alrizAuth = useAuthStore.getState()
-            const alrizIsAdmin = alrizAuth.user?.role === 'admin'
-            const alrizAuthToken = alrizAuth.token || ''
-            const alrizBatchId = !alrizIsAdmin && alrizAuthToken
-              ? `alriz-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-              : null
-            let alrizCharged = 0
-            let alrizUsageId: number | null = null
-            try {
-              const alrizModel = modelKey.replace(/^al:/, '')
-              addLog(`#${slotNum} Model: ${currentModel.label} (Rp ${currentModel.cr.toLocaleString('id-ID')}) [api: ${alrizModel}]`)
-
-              if (alrizBatchId) {
-                addLog(`#${slotNum} 💰 Memotong saldo Alriz...`)
-                const charge = await chargeAlrizWallet(alrizAuthToken, alrizModel, 1, alrizBatchId)
-                alrizCharged = charge.deducted
-                alrizUsageId = charge.usageId ?? null
-                addLog(`#${slotNum} ✅ Terpotong Rp ${charge.deducted.toLocaleString('id-ID')} ✓ sisa Rp ${charge.balance.toLocaleString('id-ID')}`, 'success')
-              } else if (alrizIsAdmin) {
-                addLog(`#${slotNum} ⚡ Admin mode — skip saldo wallet`, 'info')
-              } else {
-                addLog(`#${slotNum} ℹ️ Tamu — saldo dipotong dari key upstream`, 'info')
-              }
-
-              let imageUrl = slot.imageUrl || ''
-              if (!imageUrl || imageUrl.startsWith('blob:')) {
-                updateSlotStatus(slot.id, 'uploading img...')
-                addLog(`#${slotNum} Upload image...`)
-                const normalizedImage = await normalizeImage(slot.image, (msg) => {
-                  updateSlotStatus(slot.id, 'uploading img...', msg)
-                  addLog(`#${slotNum} ${msg}`)
-                })
-                imageUrl = await uploadToCatbox(normalizedImage, 'image', (msg) => {
-                  updateSlotStatus(slot.id, 'uploading img...', msg)
-                })
-                updateSlot(slot.id, { imageUrl })
-              }
-              addLog(`#${slotNum} Image: ${imageUrl.slice(0, 60)}...`)
-
-              let videoUrl = ''
-              if (!isAlrizI2v) {
-                videoUrl = slot.videoUrl || ''
-                if (!videoUrl || videoUrl.startsWith('blob:')) {
-                  updateSlotStatus(slot.id, 'uploading vid...')
-                  addLog(`#${slotNum} Upload video...`)
-                  const videoFile = await compressVideo(slot.video, 4, (msg) => {
-                    updateSlotStatus(slot.id, 'uploading vid...', msg)
-                  })
-                  videoUrl = await uploadToCatbox(videoFile, 'video', (msg) => {
-                    updateSlotStatus(slot.id, 'uploading vid...', msg)
-                  })
-                  updateSlot(slot.id, { videoUrl })
-                }
-              } else {
-                updateSlot(slot.id, { videoUrl: undefined })
-              }
-              if (videoUrl) addLog(`#${slotNum} Video: ${videoUrl.slice(0, 60)}...`)
-
-              updateSlotStatus(slot.id, 'processing', 'submitting...')
-              addLog(`#${slotNum} Submit ke Alriz (${alrizModel})...`)
-              const resultUrl = await generateWithAlriz({
-                apiKey: token,
-                chargeId: alrizUsageId,
-                model: alrizModel,
-                imageUrl,
-                videoUrl,
-                prompt: finalPrompt || undefined,
-                onLog: (msg, level) => addLog(`#${slotNum} ${msg}`, (level as any) || 'info'),
-                onStatus: (text, pct) => {
-                  updateSlotStatus(slot.id, 'processing', text)
-                  if (pct) setProgress(pct)
-                },
-              })
-
-              updateSlotStatus(slot.id, 'done')
-              addLog(`#${slotNum} Done: ${resultUrl.slice(0, 60)}...`, 'success')
-
-              const alrizId = `alriz-${Date.now().toString(36)}`
-              addResult({
-                id: alrizId,
-                url: resultUrl,
-                prompt: finalPrompt || '(no prompt)',
-                date: new Date().toISOString(),
-                page: 'motion',
-              })
-              persistResultToR2(alrizId, resultUrl)
-              return true
-            } catch (err: any) {
-              // Job gagal (upload/submit/poll/kapasitas) → kembalikan saldo
-              // yang tadi dipotong. Upstream Alriz sudah refund key-nya
-              // sendiri untuk STK/GEN; ini refund wallet app.
-              if (alrizBatchId && alrizCharged > 0) {
-                const refunded = await refundAlrizWallet(alrizAuthToken, { batch_id: alrizBatchId })
-                if (refunded != null) {
-                  addLog(`#${slotNum} ↩ Refund Rp ${alrizCharged.toLocaleString('id-ID')} ✓ sisa Rp ${refunded.toLocaleString('id-ID')}`, 'info')
-                } else {
-                  addLog(`#${slotNum} ⚠️ Refund wallet gagal — hubungi admin (batch ${alrizBatchId})`, 'error')
-                }
-              }
-              setCompressDialog(null)
-              updateSlotStatus(slot.id, 'error', err.message)
-              addLog(`#${slotNum} Error: ${err.message}`, 'error')
-              return false
-            }
           } else if (provider === 'genspark' && slot.image && slot.video) {
             // ─── Genspark: Kling V3 Motion Control ────
             try {
@@ -2119,9 +1978,6 @@ export default function MotionPage() {
       },
       {
         requiredCredits: totalCredits,
-        // Alriz tanpa API key sendiri: relay memasang kunci server untuk
-        // member yang sudah top up. Provider lain tidak memakai opsi ini.
-        allowServerKey: provider === 'alriz',
         onKeySwitch: (from, to, attempt) => {
           addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn')
         },
@@ -2365,16 +2221,14 @@ export default function MotionPage() {
               <div>
                 <Label>Penyedia</Label>
                 <p className="mt-1 mb-2 text-[11px] leading-relaxed text-muted-foreground">
-                  Pilih tempat video diproses. Belum yakin? Pakai Alriz Motion — paling gampang.
+                  Pilih tempat video diproses.
                 </p>
                 <div className="grid grid-cols-1 gap-2">
                   {MOTION_PROVIDER_IDS.map((id) => {
                     const info = MOTION_PROVIDER_INFO[id]
                     const isActive = provider === id
                     const minPrice = Math.min(...PROVIDERS[id].models.map((m) => m.cr))
-                    const priceLine = id === 'alriz'
-                      ? `Mulai Rp ${minPrice.toLocaleString('id-ID')} / video`
-                      : id === 'seavi'
+                    const priceLine = id === 'seavi'
                       ? `Mulai ${minPrice} token / video`
                       : `Mulai ${minPrice} kredit / video`
                     return (
@@ -2393,9 +2247,7 @@ export default function MotionPage() {
                           <span className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg ${
                             isActive ? 'bg-primary/20 text-primary' : 'bg-card text-muted-foreground'
                           }`}>
-                            {id === 'alriz'
-                              ? <Wallet className="h-4 w-4" />
-                              : id === 'seavi'
+                            {id === 'seavi'
                               ? <Coins className="h-4 w-4" />
                               : <Zap className="h-4 w-4" />}
                           </span>
@@ -2658,9 +2510,7 @@ export default function MotionPage() {
 
               <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-muted-foreground">
                 <span>
-                  {provider === 'alriz' ? (
-                    <>Total: <span className="text-foreground font-mono font-semibold">Rp {totalCredits.toLocaleString('id-ID')}</span> ({filledSlots} × Rp {currentModel.cr.toLocaleString('id-ID')})</>
-                  ) : provider === 'seavi' ? (
+                  {provider === 'seavi' ? (
                     <>Total: <span className="text-foreground font-mono font-semibold">{totalCredits.toLocaleString()}</span> token ({filledSlots} × {currentModel.cr} token)</>
                   ) : (
                     <>Total: <span className="text-foreground font-mono font-semibold">{totalCredits.toLocaleString()}</span> credits ({filledSlots} × {currentModel.cr})</>
