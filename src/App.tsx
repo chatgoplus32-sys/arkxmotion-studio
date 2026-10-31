@@ -53,6 +53,7 @@ const AdminSystemSettingsPage = lazyWithRetry(() => import('@/pages/AdminSystemS
 const AdminSystemHealthPage = lazyWithRetry(() => import('@/pages/AdminSystemHealth'))
 const SecondBrainPage = lazyWithRetry(() => import('@/pages/SecondBrain'))
 const ClipGeniusPage = lazyWithRetry(() => import('@/pages/ClipGenius'))
+const VideoEditPage = lazyWithRetry(() => import('@/pages/VideoEdit'))
 const GeminiToolsPage = lazyWithRetry(() => import('@/pages/GeminiTools'))
 const UpgradeProPage = lazyWithRetry(() => import('@/pages/UpgradePro'))
 const MetadataCleanerPage = lazyWithRetry(() => import('@/pages/MetadataCleaner'))
@@ -243,6 +244,7 @@ export default function App() {
                         <Route path="/generate/ugc-storyboard" element={<UGCStoryboardPage />} />
                         <Route path="/generate/upscaler" element={<UpscalerPage />} />
                         <Route path="/generate/image-to-video" element={<ImageToVideoPage />} />
+                        <Route path="/generate/video-edit" element={<VideoEditPage />} />
                         <Route path="/generate/image" element={<TextToVideoPage />} />
                         <Route path="/generate/edit-image" element={<EditImagePage />} />
                         <Route path="/providers" element={<ProvidersPage />} />

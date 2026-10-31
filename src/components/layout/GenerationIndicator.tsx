@@ -26,6 +26,7 @@ const PAGE_META: Record<ActiveTask['page'], { href: string; label: string; icon:
   'text-to-image': { href: '/generate/image', label: 'Image Generator', icon: ImageIcon },
   ugc: { href: '/generate/ugc', label: 'Product UGC', icon: Images },
   'clip-genius': { href: '/tools/clip-genius', label: 'Clip Genius', icon: Layers },
+  'video-edit': { href: '/generate/video-edit', label: 'Video Edit', icon: Clapperboard },
 }
 const FALLBACK_PAGE = { href: '/dashboard', label: 'Generasi', icon: Sparkles }
 

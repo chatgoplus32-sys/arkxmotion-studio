@@ -32,6 +32,7 @@ export type GenerationPage =
   | 'text-to-image'
   | 'ugc'
   | 'clip-genius'
+  | 'video-edit'
 
 export const GENERATION_PAGE_KIND: Record<GenerationPage, GenerationKind> = {
   motion: 'video',
@@ -51,6 +52,7 @@ export const GENERATION_PAGE_KIND: Record<GenerationPage, GenerationKind> = {
   'music-generator': 'audio',
   'text-to-image': 'image',
   ugc: 'image',
+  'video-edit': 'video',
   'clip-genius': 'video',
 }
 
@@ -76,6 +78,7 @@ export const GENERATION_PAGE_PATH: Record<GenerationPage, string> = {
   'text-to-image': '/generate/image',
   ugc: '/generate/ugc',
   'clip-genius': '/tools/clip-genius',
+  'video-edit': '/generate/video-edit',
 }
 
 export interface ActiveTask {
