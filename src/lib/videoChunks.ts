@@ -34,9 +34,13 @@ export function planClips(duration: number, clipSeconds = CLIP_SECONDS, overlap 
   let start = 0
   while (start < duration - 0.05) {
     const remaining = duration - start
-    // Ekor yang terlalu pendek diserap ke klip terakhir — model tidak bisa
-    // dipakai mengedit potongan < 2 detik secara berguna.
-    const len = Math.min(clipSeconds, remaining > clipSeconds + MIN_TAIL_SECONDS ? clipSeconds : remaining)
+    // Sisa ≤ MIN_TAIL setelah satu klip penuh tidak boleh menjadi klip
+    // tersendiri: 1 detik hasil model hanya pemborosan satu tiket. Karena itu
+    // selama remaining masih muat ditoleransi (≤ CLIP + MIN_TAIL) seluruh
+    // sisanya diambil sebagai SATU klip — termasuk kalau itu berarti klipnya
+    // 11–12 detik. `Math.min(clipSeconds, …)` di sini salah: ia memotong
+    // kembali ke 10 dan meninggalkan ekor 1 detik untuk iterasi berikutnya.
+    const len = remaining > clipSeconds + MIN_TAIL_SECONDS ? clipSeconds : remaining
     specs.push({ index: specs.length, start: Number(start.toFixed(3)), duration: Number(len.toFixed(3)) })
     if (start + len >= duration - 0.05) break
     start += clipSeconds - overlap
