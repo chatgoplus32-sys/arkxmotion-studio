@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { CheckCircle, XCircle, Clock, Wallet, Sparkles } from 'lucide-react'
 import { nexabotPackageName } from '@/lib/nexabotWallet'
+import { manualProviderLabel } from '@/lib/manualTopup'
 
 interface Topup {
   id: number
@@ -18,6 +19,8 @@ interface Topup {
   days?: number
   /** Varian paket NexaBot yang dibeli (mis. unlimited_monthly) / paket Seavi (mis. seavi_5). */
   package_slug?: string
+  /** Hanya top-up manual: provider yang diajukan member. */
+  provider?: string
   expires_at?: string | null
   proof_note: string
   admin_note: string
@@ -32,8 +35,9 @@ export default function AdminTopupPage() {
   const [topups, setTopups] = useState<Topup[]>([])
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<number | null>(null)
-  // Wallet mana yang sedang dibuka: CreatePulse (Rp), NexaBot (Rp), Seavi (token), Alriz (Rp).
-  const [provider, setProvider] = useState<'createpulse' | 'nexabot' | 'seavi' | 'alriz'>('createpulse')
+  // Wallet mana yang sedang dibuka: CreatePulse (Rp), NexaBot (Rp), Seavi (token), Alriz (Rp),
+  // atau manual untuk provider tanpa dompet (Roboneo/Weavy/Framia, dll.).
+  const [provider, setProvider] = useState<'createpulse' | 'nexabot' | 'seavi' | 'alriz' | 'manual'>('createpulse')
 
   const API = '/api/admin/topup'
   const headers = useMemo(() => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }), [token])
@@ -41,9 +45,13 @@ export default function AdminTopupPage() {
   const fetchTopups = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch(`${API}/pending?provider=${provider}`, { headers })
+      const url = provider === 'manual' ? '/api/provider-topup/admin/pending' : `${API}/pending?provider=${provider}`
+      const res = await fetch(url, { headers })
       const data = await res.json()
-      setTopups(data.topups || [])
+      // Endpoint manual memakai nama `requests` dan kolom `note`.
+      setTopups((data.topups || data.requests || []).map((t: Topup & { note?: string }) =>
+        t.note !== undefined ? { ...t, proof_note: t.note ?? '' } : t,
+      ))
     } catch (e) { console.error('[AdminTopup] Failed to fetch pending topups:', e) }
     setLoading(false)
   }, [headers, provider])
@@ -53,15 +61,36 @@ export default function AdminTopupPage() {
   const fetchAll = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`${API}/all?provider=${provider}`, { headers })
+      const url = provider === 'manual' ? '/api/provider-topup/admin/all' : `${API}/all?provider=${provider}`
+      const res = await fetch(url, { headers })
       const data = await res.json()
-      setTopups(data.topups || [])
+      setTopups((data.topups || data.requests || []).map((t: Topup & { note?: string }) =>
+        t.note !== undefined ? { ...t, proof_note: t.note ?? '' } : t,
+      ))
     } catch (e) { console.error('[AdminTopup] Failed to fetch all topups:', e) }
     setLoading(false)
   }
 
   const handleApprove = async (id: number) => {
     setActionLoading(id)
+    if (provider === 'manual') {
+      try {
+        const res = await fetch(`/api/provider-topup/admin/${id}`, {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({ status: 'approved', admin_note: 'Approved' }),
+        })
+        const data = await res.json()
+        if (res.ok) {
+          addToast('Topup manual disetujui', 'success')
+          fetchTopups()
+        } else {
+          addToast(data.error || 'Gagal', 'error')
+        }
+      } catch { addToast('Network error', 'error') }
+      setActionLoading(null)
+      return
+    }
     try {
       const res = await fetch(`${API}/approve`, {
         method: 'PATCH',
@@ -88,6 +117,24 @@ export default function AdminTopupPage() {
 
   const handleReject = async (id: number) => {
     setActionLoading(id)
+    if (provider === 'manual') {
+      try {
+        const res = await fetch(`/api/provider-topup/admin/${id}`, {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({ status: 'rejected', admin_note: 'Rejected' }),
+        })
+        if (res.ok) {
+          addToast('Topup manual ditolak', 'info')
+          fetchTopups()
+        } else {
+          const data = await res.json()
+          addToast(data.error || 'Gagal', 'error')
+        }
+      } catch { addToast('Network error', 'error') }
+      setActionLoading(null)
+      return
+    }
     try {
       const res = await fetch(`${API}/reject`, {
         method: 'PATCH',
@@ -109,7 +156,6 @@ export default function AdminTopupPage() {
   /** Nominal utama tiap baris: token untuk Seavi, Rupiah untuk lainnya. */
   const formatCredit = (t: Topup) =>
     provider === 'seavi' ? `${Number(t.tokens) || 0} token (${formatRp(t.amount)})` : formatRp(t.amount)
-
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'approved': return <Badge variant="success"><CheckCircle className="h-3 w-3 mr-1" /> Approved</Badge>
@@ -125,7 +171,7 @@ export default function AdminTopupPage() {
       <PageHeader
         eyebrow="Admin"
         title="Approval Top Up"
-        highlight={provider === 'nexabot' ? 'NexaBot' : provider === 'seavi' ? 'Seavi' : provider === 'alriz' ? 'Alriz' : 'CreatePulse'}
+        highlight={provider === 'manual' ? 'Manual' : provider === 'nexabot' ? 'NexaBot' : provider === 'seavi' ? 'Seavi' : provider === 'alriz' ? 'Alriz' : 'CreatePulse'}
         desc="Setujui atau tolak topup saldo member"
       />
 
@@ -157,6 +203,13 @@ export default function AdminTopupPage() {
           onClick={() => setProvider('alriz')}
         >
           Alriz
+        </Button>
+        <Button
+          size="sm"
+          variant={provider === 'manual' ? 'default' : 'outline'}
+          onClick={() => setProvider('manual')}
+        >
+          Manual
         </Button>
       </div>
 
@@ -190,6 +243,9 @@ export default function AdminTopupPage() {
                       )}
                       {provider === 'seavi' && Number(t.tokens) > 0 && (
                         <Badge variant="default">Paket {t.tokens} Token</Badge>
+                      )}
+                      {provider === 'manual' && t.provider && (
+                        <Badge variant="outline">{manualProviderLabel(t.provider)}</Badge>
                       )}
                     </div>
                     <div className="text-sm">{t.user_name} ({t.email})</div>

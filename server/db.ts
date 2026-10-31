@@ -102,6 +102,28 @@ if (!orderColumns.some(c => c.name === 'bulk_id')) {
   db.exec("ALTER TABLE token_orders ADD COLUMN bulk_id TEXT NOT NULL DEFAULT ''")
 }
 
+// Provider tanpa dompet (Roboneo/Weavy/Framia, dll.) tidak bisa dikreditkan
+// otomatis. Permintaan top-up-nya dicatat di sini, lalu admin memverifikasi
+// pembayaran dan menyerahkan kunci/saldo provider secara manual.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS provider_topup_request (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    provider TEXT NOT NULL,
+    amount INTEGER NOT NULL,
+    note TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected')),
+    admin_note TEXT NOT NULL DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`)
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_provider_topup_request_user
+  ON provider_topup_request(user_id, created_at DESC)
+`)
+
 const adminUser = db.prepare("SELECT id FROM users WHERE role = 'admin' AND email = 'nuallakoko@gmail.com'").get() as { id: number } | undefined
 if (adminUser) {
   db.prepare("UPDATE users SET approved = 1 WHERE id = ?").run(adminUser.id)

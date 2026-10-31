@@ -14,6 +14,15 @@
 /** Minimal top up saldo, mengikuti CreatePulse supaya seragam. */
 export const NEXABOT_MIN_TOPUP = 10000
 
+// ── Top-up manual (provider tanpa dompet) ──────────────────────────────────
+// Roboneo/Weavy/Framia memakai kunci milik member sendiri, jadi tidak punya
+// saldo yang bisa dikreditkan otomatis. Permintaan top-up mereka diverifikasi
+// admin satu per satu (transfer DANA/QRIS) — bukan pembelian token otomatis.
+export const MANUAL_TOPUP_MIN = 10000
+export const MANUAL_TOPUP_MAX = 5000000
+/** Nominal cepat yang ditawarkan di halaman Top Up Manual. */
+export const MANUAL_TOPUP_NOMINALS = [25000, 50000, 100000, 250000] as const
+
 export interface NexabotPackagePlan {
   slug: string
   label: string

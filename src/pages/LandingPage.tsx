@@ -128,7 +128,7 @@ const buildPricing = (p: MemberPricing): PricingPlan[] => [
 
 const buildFaqs = (p: MemberPricing) => [
   { q: 'Apa itu ARKXMotion Studio?', a: 'Platform all-in-one untuk generate video AI. Satu dashboard untuk akses 8+ provider — Weavy, Roboneo, Galleri5, Leonardo, OneOver, Framia, Magnific, CreatePulse — dengan token rotation & smart routing otomatis.' },
-  { q: 'Bagaimana sistem token & credits?', a: 'Saldo diisi per layanan lewat halaman Saldo Layanan — CreatePulse, NexaBot, Seavi, dan Alriz Motion. Sistem cek balance realtime sebelum generate dan auto-fallback ke kunci/token lain jika habis atau error.' },
+  { q: 'Bagaimana sistem token & credits?', a: 'Saldo CreatePulse, NexaBot, Seavi, dan Alriz Motion diisi lewat halaman Saldo Layanan. Provider lain (Roboneo, Weavy, Framia, dll.) memakai kunci milikmu sendiri — top up-nya diajukan lewat Top Up Manual dan diverifikasi admin. Sistem cek balance realtime sebelum generate dan auto-fallback ke kunci/token lain jika habis atau error.' },
   { q: 'Apakah bisa bulk generate?', a: 'Bisa. Bulk Fashion mendukung 1 karakter + ratusan outfit sekaligus, parallel processing. Cocok untuk katalog fashion & UGC massal.' },
   { q: 'Apakah ada watermark?', a: 'ARKXMotion Studio tidak menambahkan watermark ke hasil generate. Tool Watermark Remover juga tersedia untuk video dari sumber lain — termasuk fitur Pro.' },
   { q: `Saya sudah punya akun, apa tetap bayar ${rp(p.fee)}?`, a: `Tidak. Harga join ${rp(p.fee)} untuk pendaftar baru. Member lama cukup upgrade ${rp(p.proFee)} sekali bayar untuk membuka Gemini Tools, AI Song Cover, dan H3 Music Avatar — fitur AI lainnya tetap terbuka tanpa upgrade. Biaya token generate tetap terpisah sesuai pemakaian.` },

@@ -14,6 +14,7 @@ import authRoutes from './routes/auth.js'
 import adminRoutes from './routes/admin.js'
 import adminTokenRoutes from './routes/adminTokens.js'
 import tokenRoutes from './routes/tokens.js'
+import providerTopupRoutes from './routes/providerTopup.js'
 import createpulseRoutes from './routes/createpulse.js'
 import adminTopupRoutes from './routes/adminTopup.js'
 import { monitorMiddleware, getMetrics } from './lib/monitor.js'
@@ -108,6 +109,7 @@ app.use('/api/admin', adminRoutes)
 app.use('/api/admin/tokens', adminTokenRoutes)
 app.use('/api/admin/topup', adminTopupRoutes)
 app.use('/api/tokens', tokenRoutes)
+app.use('/api/provider-topup', providerTopupRoutes)
 app.use('/api/createpulse', createpulseRoutes)
 app.use('/api/logs/generation', generationLogRoutes)
 app.use('/api/membership', membershipRoutes)

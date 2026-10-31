@@ -252,6 +252,22 @@ export default function SaldoLayananPage() {
           })}
         </div>
 
+        <Link
+          to="/topup/manual"
+          className="mt-3 flex flex-col gap-2 rounded-xl border border-border bg-background/40 px-4 py-3 transition hover:border-primary/40 hover:bg-accent/30 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div>
+            <div className="text-sm font-semibold">Provider lain — Roboneo, Weavy, Framia, dll.</div>
+            <p className="text-[11px] text-muted-foreground">
+              Belum punya dompet otomatis: ajukan nominal, bayar DANA/QRIS, lalu diverifikasi admin.
+            </p>
+          </div>
+          <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-primary">
+            Top Up Manual
+            <ArrowUpRight className="h-3.5 w-3.5" />
+          </span>
+        </Link>
+
         <div className="mt-4 flex flex-col gap-2 rounded-xl bg-secondary/50 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-[11px] leading-relaxed text-muted-foreground">
             Saldo CreatePulse, NexaBot, dan Alriz dalam Rupiah; Seavi dalam token.
