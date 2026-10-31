@@ -9,6 +9,8 @@ import { PaymentMethodToggle, QrisPanel } from '@/components/QrisPayment'
 import {
   fetchNexabotWallet,
   nexabotPackageName,
+  nexabotRemainingLabel,
+  isSeedanceOnlyPackage,
   NEXABOT_PACKAGE_FALLBACKS,
   NEXABOT_PRICE_FALLBACK,
   type NexabotWallet,
@@ -51,8 +53,21 @@ export default function NexaBotTopupPage() {
   const packages = wallet?.packages?.length ? wallet.packages : NEXABOT_PACKAGE_FALLBACKS
   const pkg = packages.find((p) => p.slug === selectedSlug) || packages[0]
   const unlimited = wallet?.unlimited
+  // Paket ber-scope (Harian Seedance) hanya membebaskan mode itu; server yang
+  // memutus tagihan, halaman ini hanya memisahkan label & antrian per kelas.
+  const paketSemuaMode = packages.filter((p) => !isSeedanceOnlyPackage(p.slug))
+  const paketSeedance = packages.filter((p) => isSeedanceOnlyPackage(p.slug))
+  const hargaUnlimitedMulai = Math.min(...paketSemuaMode.map((p) => p.price))
+  const seedancePass = wallet?.seedance_unlimited
+  const sedangSeedance = isSeedanceOnlyPackage(pkg.slug)
+  const namaPaketIni = sedangSeedance ? `Seedance 2.5 · ${pkg.days} hari` : `Unlimited ${pkg.label} · ${pkg.days} Hari`
   const amount = mode === 'package' ? pkg.price : customAmount ? parseInt(customAmount, 10) || 0 : selectedAmount
-  const pendingPackage = topups.some((t) => t.kind === 'unlimited' && t.status === 'pending')
+  // Antrian dihitung per kelas, sama seperti aturan server: pengajuan Bulanan
+  // yang belum di-approve tidak boleh menyembunyikan tombol Beli paket Seedance.
+  const pendingPackage = topups.some(
+    (t) => t.kind === 'unlimited' && t.status === 'pending'
+      && isSeedanceOnlyPackage(t.package_slug) === sedangSeedance,
+  )
 
   const fetchBalance = useCallback(async () => {
     if (!token) return
@@ -87,8 +102,8 @@ export default function NexaBotTopupPage() {
       const res = await fetch(`${API}/${endpoint}`, {
         method: 'POST',
         headers,
-        // Nominal paket ditentukan server, jadi klien tidak mengirim `amount`.
-        // Nominal paket ditentukan server dari varian (slug) yang dipilih.
+        // Nominal paket ditentukan server dari varian (slug) yang dipilih —
+        // klien tidak mengirim `amount` untuk pembelian paket.
         body: JSON.stringify(
           endpoint === 'package'
             ? { slug: pkg.slug, proof_note: proofNote }
@@ -145,7 +160,7 @@ export default function NexaBotTopupPage() {
 
   const waLink = adminWhatsappLink(
     mode === 'package'
-      ? `Halo admin, saya ingin beli Paket Unlimited NexaBot ${pkg.label} ${pkg.days} hari (${formatRp(pkg.price)})`
+      ? `Halo admin, saya ingin beli Paket NexaBot ${namaPaketIni} (${formatRp(pkg.price)})`
       : `Halo admin, saya ingin top up saldo NexaBot ${formatRp(amount)}`,
   )
 
@@ -155,7 +170,7 @@ export default function NexaBotTopupPage() {
         eyebrow="NexaBot"
         title="Top Up &"
         highlight="Paket"
-        desc={`Saldo ${formatRp(wallet?.price ?? NEXABOT_PRICE_FALLBACK)}/generate, atau Paket Unlimited mulai ${formatRp(packages[0].price)}`}
+        desc={`Saldo ${formatRp(wallet?.price ?? NEXABOT_PRICE_FALLBACK)}/generate, atau Unlimited semua mode mulai ${formatRp(hargaUnlimitedMulai)}${paketSeedance.length ? ` — khusus Seedance 2.5 ${formatRp(paketSeedance[0].price)}/hari` : ''}`}
       />
 
       {/* Saldo + status paket */}
@@ -175,7 +190,13 @@ export default function NexaBotTopupPage() {
           {unlimited?.active && (
             <Badge variant="success">
               <Zap className="h-3 w-3 mr-1" />
-              Unlimited aktif · sisa {unlimited.days_left} hari
+              Unlimited aktif · sisa {nexabotRemainingLabel(unlimited)}
+            </Badge>
+          )}
+          {!unlimited?.active && seedancePass?.active && (
+            <Badge variant="success">
+              <Zap className="h-3 w-3 mr-1" />
+              Seedance 2.5 aktif · sisa {nexabotRemainingLabel(seedancePass)}
             </Badge>
           )}
         </div>
@@ -184,13 +205,20 @@ export default function NexaBotTopupPage() {
             Paket Unlimited berlaku sampai {formatDate(unlimited.expires_at)} — generate tidak memotong saldo sampai waktu itu.
           </div>
         )}
+        {!unlimited?.active && seedancePass?.active && (
+          <div className="mt-2 text-[11px] text-emerald-500">
+            Paket Seedance 2.5 berlaku sampai {formatDate(seedancePass.expires_at)} — hanya generate Seedance 2.5 yang gratis,
+            mode lain tetap memotong {formatRp(wallet?.price ?? NEXABOT_PRICE_FALLBACK)}/generate.
+          </div>
+        )}
       </div>
 
       {/* Paket Unlimited — semua varian dari server, bisa dipilih user */}
-      <Section title="Paket Unlimited" sub="Pilih masa berlaku — makin panjang, makin murah per harinya">
-        <div className="grid sm:grid-cols-3 gap-3">
+      <Section title="Paket Unlimited" sub="Pilih masa berlaku — paket reguler membebaskan semua mode, paket Seedance hanya Seedance 2.5">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {packages.map((p) => {
             const selected = p.slug === pkg.slug
+            const hanyaSeedance = isSeedanceOnlyPackage(p.slug)
             return (
               <button
                 key={p.slug}
@@ -206,7 +234,8 @@ export default function NexaBotTopupPage() {
                 </div>
                 <div className="mt-2 text-2xl font-bold text-primary">{formatRp(p.price)}</div>
                 <div className="text-[11px] text-muted-foreground">
-                  ≈ {formatRp(Math.round(p.price / Math.max(1, p.days)))}/hari
+                  {hanyaSeedance ? 'Hanya mode Seedance 2.5' : 'Semua mode NexaBot'}
+                  {' · '}≈ {formatRp(Math.round(p.price / Math.max(1, p.days)))}/hari
                 </div>
                 <div className={`mt-2 text-[11px] font-medium ${selected ? 'text-primary' : 'text-transparent'}`}>
                   ✓ Dipilih
@@ -221,13 +250,23 @@ export default function NexaBotTopupPage() {
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <Sparkles className="h-5 w-5 text-primary" />
-                <span className="font-bold text-lg">Unlimited {pkg.label} · {pkg.days} Hari</span>
+                <span className="font-bold text-lg">{namaPaketIni}</span>
               </div>
               <div className="text-3xl font-bold text-primary">{formatRp(pkg.price)}</div>
               <ul className="mt-3 space-y-1 text-xs text-muted-foreground">
-                <li>• Semua mode & model NexaBot tanpa batas</li>
-                <li>• Saldo Rp tetap utuh (tidak terpotong) selama paket aktif</li>
-                <li>• Beli lagi saat masih aktif? Masa berlakunya ditumpuk</li>
+                {sedangSeedance ? (
+                  <>
+                    <li>• Generate Seedance 2.5 tanpa batas selama masa berlaku</li>
+                    <li>• Mode lain (t2v, i2v, r2v, dll.) tetap {formatRp(wallet?.price ?? NEXABOT_PRICE_FALLBACK)}/generate dari saldo</li>
+                    <li>• Bisa dipakai bersamaan dengan Paket Unlimited reguler</li>
+                  </>
+                ) : (
+                  <>
+                    <li>• Semua mode & model NexaBot tanpa batas</li>
+                    <li>• Saldo Rp tetap utuh (tidak terpotong) selama paket aktif</li>
+                    <li>• Beli lagi saat masih aktif? Masa berlakunya ditumpuk</li>
+                  </>
+                )}
               </ul>
             </div>
             <div className="text-right">
@@ -235,7 +274,7 @@ export default function NexaBotTopupPage() {
                 <Badge variant="warning"><Clock className="h-3 w-3 mr-1" /> Menunggu approval</Badge>
               ) : (
                 <Button onClick={() => startPackage(pkg.slug)}>
-                  {unlimited?.active ? `Perpanjang ${pkg.label}` : `Beli Paket ${pkg.label}`}
+                  {(sedangSeedance ? seedancePass?.active : unlimited?.active) ? `Perpanjang ${pkg.label}` : `Beli Paket ${pkg.label}`}
                 </Button>
               )}
             </div>
@@ -325,7 +364,7 @@ export default function NexaBotTopupPage() {
               </div>
               <div className="p-3 rounded-lg bg-background">
                 <div className="text-xs text-muted-foreground">
-                  Jumlah Transfer {mode === 'package' ? `(Paket Unlimited ${pkg.label} · ${pkg.days} hari)` : ''}
+                  Jumlah Transfer {mode === 'package' ? `(Paket ${namaPaketIni})` : ''}
                 </div>
                 <div className="font-bold text-primary text-lg">{formatRp(amount)}</div>
               </div>
@@ -372,11 +411,11 @@ export default function NexaBotTopupPage() {
           <div className="text-center py-8">
             <div className="text-5xl mb-4">⏳</div>
             <div className="text-lg font-medium mb-2">
-              {mode === 'package' ? 'Paket Unlimited menunggu approval' : 'Topup menunggu approval'}
+              {mode === 'package' ? `Paket ${pkg.label} menunggu approval` : 'Topup menunggu approval'}
             </div>
             <div className="text-sm text-muted-foreground mb-4">
               {mode === 'package'
-                ? `Paket ${pkg.label} ${pkg.days} hari aktif otomatis setelah admin menyetujui pembayaran.`
+                ? `Paket ${namaPaketIni} aktif otomatis setelah admin menyetujui pembayaran.${sedangSeedance ? ' Hanya generate Seedance 2.5 yang gratis; mode lain tetap memotong saldo.' : ''}`
                 : 'Saldo masuk otomatis setelah admin menyetujui pembayaran.'}
               <br />Hubungi admin jika sudah transfer.
             </div>

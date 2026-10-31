@@ -1,6 +1,7 @@
 import { Router, Response } from 'express'
 import db from '../db.js'
 import { authenticateToken, requireAdmin, AuthRequest } from '../middleware/auth.js'
+import { NEXABOT_SCOPED_SLUGS, isScopedPackage, nexabotPackageName } from '../../shared/pricing.js'
 
 const router = Router()
 
@@ -78,14 +79,29 @@ router.patch('/approve', authenticateToken, requireAdmin, (req: AuthRequest, res
     // kehilangan sisa hari.
     if (topup.kind === 'unlimited') {
       const days = Number(topup.days) || 7
+      // Penumpukan masa berlaku HANYA dihitung di dalam kelas paket yang sama.
+      // Paket Harian Seedance (scope 'seedance') jangan sampai dapat expiry
+      // menjulur karena user juga punya Bulanan aktif — ia dibeli untuk satu
+      // hari dan hanya membebaskan Seedance. Demikian pula sisa hari Bulanan tidak
+      // pernah dihitung dari expiry paket harian.
+      const punyaSlug = 'package_slug' in topup
+      const kelasBerScope = isScopedPackage(topup.package_slug)
+      const tanda = NEXABOT_SCOPED_SLUGS.map(() => '?').join(', ')
+      const pakaiPemisah = punyaSlug && NEXABOT_SCOPED_SLUGS.length > 0
+      const syaratKelas = pakaiPemisah
+        ? kelasBerScope
+          ? `AND package_slug IN (${tanda})`
+          : `AND (package_slug IS NULL OR package_slug NOT IN (${tanda}))`
+        : ''
+      const paramKelas = pakaiPemisah ? NEXABOT_SCOPED_SLUGS : []
       // Base masa berlaku = expiry TERJAUH yang sudah disetujui untuk user ini,
       // bukan expiry baris ini (saat pengajuan `expires_at` baris ini masih
       // NULL). Tanpa ini, beli paket baru saat paket lama masih jalan akan
       // menghanguskan sisa harinya, padahal UI menjanjikan ditumpuk.
       const priorExpiry = (db.prepare(`
         SELECT MAX(expires_at) AS expires_at FROM ${w.topup}
-        WHERE user_id = ? AND kind = 'unlimited' AND status = 'approved' AND id <> ?
-      `).get(topup.user_id, id) as { expires_at: string | null } | undefined)?.expires_at || null
+        WHERE user_id = ? AND kind = 'unlimited' AND status = 'approved' AND id <> ? ${syaratKelas}
+      `).get(topup.user_id, id, ...paramKelas) as { expires_at: string | null } | undefined)?.expires_at || null
 
       db.prepare(`
         UPDATE ${w.topup}
@@ -99,8 +115,9 @@ router.patch('/approve', authenticateToken, requireAdmin, (req: AuthRequest, res
 
       const activated = db.prepare(`SELECT expires_at FROM ${w.topup} WHERE id = ?`).get(id) as { expires_at: string } | undefined
       const balance = db.prepare(`SELECT balance FROM ${w.balance} WHERE user_id = ?`).get(topup.user_id) as { balance: number } | undefined
+      const namaPaket = nexabotPackageName(topup.package_slug, days)
       return res.json({
-        message: `Paket Unlimited ${days} hari aktif sampai ${activated?.expires_at || '-'}`,
+        message: `Paket ${namaPaket} aktif sampai ${activated?.expires_at || '-'}`,
         balance: balance?.balance || 0,
         // days_left = sisa hari SETELAH penumpukan, bukan jumlah hari yang baru
         // dibeli, supaya admin melihat masa berlaku yang sebenarnya.

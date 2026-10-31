@@ -11,6 +11,8 @@ import {
   NEXABOT_PACKAGES,
   NEXABOT_PRICING_KEYS,
   NEXABOT_PRICING_SETTING_KEYS,
+  NEXABOT_SCOPED_SLUGS,
+  NEXABOT_SEEDANCE_ONLY_SLUGS,
   NEXABOT_UNLIMITED_SLUG,
   SEAVI_TOKEN_PRICE,
   SEAVI_MIN_TOPUP,
@@ -19,6 +21,8 @@ import {
   findNexabotPackage,
   findSeaviPackage,
   getSeaviCharge,
+  isSeedanceModelName,
+  isSeedanceOnlyPackage,
   nexabotPackageName,
   parseNexabotPricing,
   validateNexabotPackageValue,
@@ -85,8 +89,51 @@ test('harga tiap varian dibaca terpisah (tidak saling bocor)', () => {
       ['unlimited_weekly', 45000, 10],
       ['unlimited_monthly', 99000, 30],
       ['unlimited_yearly', 1200000, 365],
+      // Varian ber-scope tidak punya kunci lama, jadi tetap default sampai admin
+      // mengubahnya lewat kunci nexabot_unlimited_seedance_daily_*.
+      ['unlimited_seedance_daily', 15000, 1],
     ],
   )
+})
+
+test('katalog: Harian Seedance 2.5 = Rp 15.000 / 1 hari, scope seedance', () => {
+  const seedance = NEXABOT_PACKAGES.find((p) => p.slug === 'unlimited_seedance_daily')
+  assert.ok(seedance, 'varian Harian Seedance harus ada di katalog')
+  assert.equal(seedance.label, 'Seedance 2.5')
+  assert.equal(seedance.defaultPrice, 15000)
+  assert.equal(seedance.days, 1)
+  assert.equal(seedance.scope, 'seedance')
+  // Tidak boleh menyelinap ke posisi pertama: `packages[0]` adalah varian utama
+  // yang dipakai klien lama (`unlimitedPrice`/`unlimitedDays`).
+  assert.ok(NEXABOT_PACKAGES.indexOf(seedance) > 0, 'varian baru harus di akhir katalog')
+
+  assert.deepEqual(NEXABOT_SEEDANCE_ONLY_SLUGS, ['unlimited_seedance_daily'])
+  assert.deepEqual(NEXABOT_SCOPED_SLUGS, ['unlimited_seedance_daily'])
+  assert.equal(isSeedanceOnlyPackage('unlimited_seedance_daily'), true)
+  // Baris legacy (kolom baru, default '') tetap berarti Unlimited semua mode.
+  assert.equal(isSeedanceOnlyPackage(''), false)
+  assert.equal(isSeedanceOnlyPackage(undefined), false)
+  assert.equal(isSeedanceOnlyPackage('unlimited_monthly'), false)
+
+  for (const model of ['seedance', 'seedance-2.5', 'nb:seedance', 'SEEDANCE']) {
+    assert.equal(isSeedanceModelName(model), true, `${model} harus dikenali sebagai Seedance`)
+  }
+  for (const model of ['t2v', 'i2v', 'r2v', 'sfv', 'extend', 'music', '', undefined, null]) {
+    assert.equal(isSeedanceModelName(model), false, `${model} bukan Seedance`)
+  }
+})
+
+test('harga Harian Seedance dibaca dari kunci sendiri', () => {
+  const pricing = parseNexabotPricing({
+    nexabot_unlimited_seedance_daily_price: '20000',
+    nexabot_unlimited_seedance_daily_days: '3',
+  })
+  const tier = pricing.packages.find((p) => p.slug === 'unlimited_seedance_daily')
+  assert.deepEqual([tier?.price, tier?.days], [20000, 3])
+  // Nilai tidak menular ke varian lain.
+  assert.equal(pricing.packages[0].price, NEXABOT_PACKAGES[0].defaultPrice)
+  // Bentuk payload tetap 4 field — klien & test kontrak lain bergantung pada ini.
+  assert.deepEqual(Object.keys(tier!), ['slug', 'label', 'price', 'days'])
 })
 
 test('kunci lama (data admin sebelum varian ada) terbaca sebagai paket Mingguan', () => {

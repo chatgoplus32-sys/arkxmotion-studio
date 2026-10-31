@@ -4,7 +4,7 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { formatRp } from '@/lib/payment'
-import { fetchNexabotWallet } from '@/lib/nexabotWallet'
+import { fetchNexabotWallet, nexabotRemainingLabel, type NexabotUnlimited } from '@/lib/nexabotWallet'
 import { fetchSeaviWallet } from '@/lib/seaviWallet'
 import { cn } from '@/lib/utils'
 import {
@@ -111,14 +111,23 @@ export default function SaldoLayananPage() {
     if (requestId !== requestRef.current) return
 
     const unlimited = nexabot?.unlimited
+    const seedancePass = nexabot?.seedance_unlimited
+    const sisa = (u: NexabotUnlimited) => {
+      const label = nexabotRemainingLabel(u)
+      return label ? ` · ${label}` : ''
+    }
     setServices({
       createpulse: { amount: createpulse, unitPrice: null, note: null },
       nexabot: {
         amount: nexabot?.balance ?? null,
         unitPrice: nexabot?.price ?? null,
+        // Pass Seedance hanya menggratiskan Seedance 2.5, jadi disebut apa adanya
+        // — jangan tampil sebagai "Unlimited" untuk saldo yang tetap terpotong.
         note: unlimited?.active
-          ? `Paket Unlimited aktif${unlimited.days_left > 0 ? ` · ${unlimited.days_left} hari lagi` : ''}`
-          : null,
+          ? `Paket Unlimited aktif${sisa(unlimited)}`
+          : seedancePass?.active
+            ? `Paket Seedance 2.5 aktif${sisa(seedancePass)} · mode lain per generate`
+            : null,
       },
       seavi: {
         amount: seavi?.tokens ?? null,

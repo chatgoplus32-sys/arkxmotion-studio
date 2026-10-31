@@ -33,6 +33,16 @@ export interface NexabotPackagePlan {
   priceKey: string
   /** Kunci app_settings untuk durasi (hari) varian ini. */
   daysKey: string
+  /**
+   * Bagian mana dari tagihan yang dibebaskan paket ini.
+   *  - 'all'      : semua mode NexaBot (Mingguan/Bulanan/Tahunan);
+   *  - 'seedance' : HANYA mode Seedance 2.5 — mode lain tetap Rp/generate.
+   *
+   * Sengaja tidak ikut dikirim di objek `packages` respons: bentuk payload
+   * itu diuji kontraknya (slug/label/price/days) dan dipakai klien lama.
+   * Kelas paket dibaca lewat slug dengan `isSeedanceOnlyPackage()`.
+   */
+  scope?: 'all' | 'seedance'
 }
 
 /**
@@ -42,6 +52,11 @@ export interface NexabotPackagePlan {
  * Varian pertama sengaja memakai kunci app_settings LAMA
  * (`nexabot_unlimited_price` / `nexabot_unlimited_days`) supaya nilai yang
  * sudah disimpan admin sebelum varian ini ada tetap terpakai apa adanya.
+ *
+ * Entri baru SELALU ditambahkan di AKHIR: `packages[0]` adalah varian utama
+ * yang dipakai klien lama (`NEXABOT_UNLIMITED_SLUG`, `unlimitedPrice`,
+ * `unlimitedDays`), jadi menyisipkan varian di depan diam-diam mengubah
+ * harga paket yang dianggap "utama" di seluruh sistem.
  */
 export const NEXABOT_PACKAGES: NexabotPackagePlan[] = [
   {
@@ -68,7 +83,59 @@ export const NEXABOT_PACKAGES: NexabotPackagePlan[] = [
     priceKey: 'nexabot_unlimited_yearly_price',
     daysKey: 'nexabot_unlimited_yearly_days',
   },
+  {
+    // Pintu masuk Seedance 2.5: 15 detik-nya mahal (upstream menagih 0,2
+    // kredit/video) dan belum ada di paket Unlimited biasa, jadi dijual
+    // terpisah seharian. Member tetap membayar mode lain per generate.
+    slug: 'unlimited_seedance_daily',
+    label: 'Seedance 2.5',
+    days: 1,
+    defaultPrice: 15000,
+    priceKey: 'nexabot_unlimited_seedance_daily_price',
+    daysKey: 'nexabot_unlimited_seedance_daily_days',
+    scope: 'seedance',
+  },
 ]
+
+/** Slug paket yang hanya membebaskan mode Seedance 2.5, bukan mode lain. */
+export const NEXABOT_SEEDANCE_ONLY_SLUGS: string[] = NEXABOT_PACKAGES
+  .filter((plan) => plan.scope === 'seedance')
+  .map((plan) => plan.slug)
+
+/**
+ * Semua slug paket yang TIDAK membebaskan semua mode. Dipakai untuk mengecualikan
+ * paket ber-scope dari status "Unlimited" global.
+ *
+ * Sengaja daftar hitam dari katalog, bukan daftar putih slug 'all': baris paket
+ * lama (sebelum kolom `package_slug` ada) berisi `''` dan harus tetap dihitung
+ * sebagai Unlimited semua mode — itulah janji yang sudah dibayar member.
+ */
+export const NEXABOT_SCOPED_SLUGS: string[] = NEXABOT_PACKAGES
+  .filter((plan) => (plan.scope || 'all') !== 'all')
+  .map((plan) => plan.slug)
+
+/** Apakah slug ini termasuk paket Seedance-saja? Slug lama/kosong → tidak. */
+export function isSeedanceOnlyPackage(slug: string | null | undefined): boolean {
+  return NEXABOT_SEEDANCE_ONLY_SLUGS.includes(String(slug || ''))
+}
+
+/**
+ * Apakah slug ini paket ber-scope — yaitu TIDAK membebaskan semua mode? Ini
+ * pertanyaan yang dipakai untuk memisahkan KELAS paket (antrian pengajuan,
+ * penumpukan expiry); daftar hitamnya bisa bertambah tanpa mengubah aturan.
+ */
+export function isScopedPackage(slug: string | null | undefined): boolean {
+  return NEXABOT_SCOPED_SLUGS.includes(String(slug || ''))
+}
+
+/**
+ * Apakah nama model yang dikirim ke /deduct adalah job Seedance 2.5?
+ * Klien NexaBot mengirim `apiModel` dari katalog halaman ('seedance'); pola
+ * longgar supaya varian nama ('seedance-2.5', 'nb:seedance') tetap kena.
+ */
+export function isSeedanceModelName(model: string | null | undefined): boolean {
+  return /seedance/i.test(String(model || ''))
+}
 
 /** Paket utama — dipakai kalau klien lama tidak menyebut varian (slug). */
 export const NEXABOT_UNLIMITED_SLUG = NEXABOT_PACKAGES[0].slug

@@ -3,6 +3,7 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
+import { isSeedanceOnlyPackage } from '@/lib/nexabotWallet'
 import {
   Save,
   RefreshCw,
@@ -41,6 +42,8 @@ const NB_PACKAGE_FALLBACKS: NexabotPackage[] = [
   { slug: 'unlimited_weekly', label: 'Mingguan', price: 35000, days: 7 },
   { slug: 'unlimited_monthly', label: 'Bulanan', price: 119000, days: 30 },
   { slug: 'unlimited_yearly', label: 'Tahunan', price: 899000, days: 365 },
+  // Ber-scope: hanya membebaskan Seedance 2.5 (server yang menegakkan).
+  { slug: 'unlimited_seedance_daily', label: 'Seedance 2.5', price: 15000, days: 1 },
 ]
 
 /** Paket dari server, atau katalog fallback kalau server belum mengirim. */
@@ -1097,6 +1100,11 @@ export default function AdminSystemSettings() {
                       <span className="font-semibold text-sm">Paket {p.label}</span>
                       <span className="text-[11px] text-muted-foreground font-mono">{p.slug}</span>
                     </div>
+                    {isSeedanceOnlyPackage(p.slug) && (
+                      <div className="mb-3 text-[11px] text-amber-500">
+                        Hanya membebaskan generate Seedance 2.5 — mode lain tetap dipotong harga per generate.
+                      </div>
+                    )}
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="block text-[11px] text-muted-foreground mb-1">Harga (Rp)</label>

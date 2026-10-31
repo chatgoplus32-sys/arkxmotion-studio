@@ -3,6 +3,9 @@
 // varian (Mingguan/Bulanan/Tahunan). Semua angka otoritatif datang dari server
 // lewat /api/nexabot/*, jadi kalau admin mengubah harga, UI ikut sendiri.
 //
+// Varian ber-scope (Harian Seedance 2.5) hanya membebaskan mode Seedance; server
+// yang memutuskan, klien cuma menampilkan.
+//
 // Dipakai halaman /topup/nexabot dan alur generate (Image to Video).
 const API = '/api/nexabot'
 
@@ -10,7 +13,12 @@ export interface NexabotUnlimited {
   active: boolean
   expires_at: string | null
   days_left: number
+  /** Sisa jam — dipakai paket seharian supaya tidak selalu tampil "1 hari". */
+  hours_left?: number
   package_id?: number | null
+  /** Slug paket aktif — penentu scope (lihat NEXABOT_SEEDANCE_ONLY_SLUGS). */
+  package_slug?: string | null
+  days?: number
 }
 
 /** Satu varian Paket Unlimited (harga & durasi efektif versi server). */
@@ -25,12 +33,43 @@ export interface NexabotPackage {
  * Cermin katalog shared/pricing.ts untuk keadaan darurat: dipakai kalau
  * /balance belum sempat dijawab server. Angka di sini hanya tampilan —
  * yang benar-benar ditagih selalu harga dari server.
+ *
+ * Entri baru SELALU di AKHIR, sama seperti katalog server: `packages[0]`
+ * diperlakukan sebagai varian utama oleh klien dan endpoint lama.
  */
 export const NEXABOT_PACKAGE_FALLBACKS: NexabotPackage[] = [
   { slug: 'unlimited_weekly', label: 'Mingguan', price: 35000, days: 7 },
   { slug: 'unlimited_monthly', label: 'Bulanan', price: 119000, days: 30 },
   { slug: 'unlimited_yearly', label: 'Tahunan', price: 899000, days: 365 },
+  { slug: 'unlimited_seedance_daily', label: 'Seedance 2.5', price: 15000, days: 1 },
 ]
+
+/**
+ * Slug paket yang cuma membebaskan Seedance 2.5. Server punya daftar yang sama
+ * (derived dari scope katalog) dan itulah yang menentukan tagihan; klien hanya
+ * perlu ini untuk menulis label yang jujur.
+ */
+export const NEXABOT_SEEDANCE_ONLY_SLUGS = ['unlimited_seedance_daily']
+
+/** Apakah paket ini hanya berlaku untuk Seedance 2.5? */
+export function isSeedanceOnlyPackage(slug: string | null | undefined): boolean {
+  return NEXABOT_SEEDANCE_ONLY_SLUGS.includes(String(slug || ''))
+}
+
+/**
+ * Sisa masa berlaku dalam bahasa UI. Paket seharian disebut dalam jam — dengan
+ * days_left, paket Rp 15.000/malam akan selalu terbaca "1 hari lagi" bahkan
+ * ketika tinggal satu jam.
+ */
+export function nexabotRemainingLabel(u: NexabotUnlimited | null | undefined): string {
+  if (!u?.active) return ''
+  if (isSeedanceOnlyPackage(u.package_slug) || (u.days ?? 0) <= 1) {
+    const jam = u.hours_left ?? 0
+    if (jam <= 0) return ''
+    return jam <= 24 ? `${jam} jam lagi` : `${u.days_left} hari lagi`
+  }
+  return u.days_left > 0 ? `${u.days_left} hari lagi` : ''
+}
 
 /** Harga per generate versi cermin — hanya untuk tampilan sebelum server menjawab. */
 export const NEXABOT_PRICE_FALLBACK = 150
@@ -41,6 +80,12 @@ export interface NexabotWallet {
   price: number
   min_topup: number
   unlimited: NexabotUnlimited
+  /**
+   * Status "ada paket yang membebaskan Seedance 2.5" — termasuk kalau yang aktif
+   * adalah Unlimited semua mode. `unlimited` sengaja TIDAK menghitung paket
+   * Harian Seedance karena paket itu tidak menggratiskan mode lain.
+   */
+  seedance_unlimited?: NexabotUnlimited
   /**
    * Kunci NexaBot milik server: member yang sudah top up (Unlimited aktif atau
    * saldo > 0) bisa generate tanpa menempel API key sendiri. `reason` adalah
@@ -75,7 +120,15 @@ export interface NexabotCharge {
   expiresAt: string | null
 }
 
-const EMPTY_UNLIMITED: NexabotUnlimited = { active: false, expires_at: null, days_left: 0, package_id: null }
+const EMPTY_UNLIMITED: NexabotUnlimited = {
+  active: false,
+  expires_at: null,
+  days_left: 0,
+  hours_left: 0,
+  package_id: null,
+  package_slug: null,
+  days: 0,
+}
 
 function authHeaders(token: string) {
   return { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
@@ -100,6 +153,9 @@ export async function fetchNexabotWallet(token: string): Promise<NexabotWallet |
       price: data.price ?? NEXABOT_PRICE_FALLBACK,
       min_topup: data.min_topup ?? 10000,
       unlimited: data.unlimited || EMPTY_UNLIMITED,
+      // Build server lama belum mengirim status Seedance; tanpa field ini UI
+      // tetap memakai status unlimited biasa.
+      seedance_unlimited: data.seedance_unlimited || undefined,
       // Build server lama belum mengirim `server_key`; anggap tidak tersedia
       // supaya UI tidak menawarkan jalur tanpa API key yang relay tolak.
       server_key: data.server_key ?? {

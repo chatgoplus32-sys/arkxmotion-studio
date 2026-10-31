@@ -8,7 +8,10 @@ import {
   NEXABOT_PRICING_DEFAULTS,
   NEXABOT_PRICING_KEYS,
   NEXABOT_PRICING_SETTING_KEYS,
+  NEXABOT_SCOPED_SLUGS,
   describeNexabotPricing,
+  isScopedPackage,
+  nexabotPackageName,
   parseNexabotPricing,
   validateNexabotPackageValue,
   validateNexabotPricing,
@@ -353,15 +356,25 @@ async function handleTopupRoutes(req: VercelRequest, res: VercelResponse, segmen
         // Paket lama yang masih jalan ditumpuk (lihat priorExpiry di bawah).
         if (topup[0].kind === 'unlimited') {
           const days = Number(topup[0].days) || 7
-          // Base masa berlaku = expiry TERJAUH yang sudah disetujui untuk user
-          // ini (baris yang sedang di-approve masih NULL), supaya beli paket
-          // baru saat paket lama jalan menumpuk sisa hari alih-alih
-          // menghanguskannya — sama seperti sisi Express.
-          const prior = await sql`
-            SELECT MAX(expires_at) AS expires_at FROM nexabot_topup
+          // Base masa berlaku = expiry TERJAUH yang sudah disetujui untuk user ini
+          // (baris yang sedang di-approve masih NULL), supaya beli paket baru saat
+          // paket lama jalan menumpuk sisa hari alih-alih menghanguskannya — sama
+          // seperti sisi Express. Penumpukan hanya di DALAM KELAS paket yang sama:
+          // Harian Seedance tidak boleh mewarisi expiry Bulanan (ia dibeli untuk
+          // satu hari), dan sisa hari Bulanan tidak dihitung dari paket harian.
+          const satuKelas = isScopedPackage(topup[0].package_slug)
+          const approved = await sql`
+            SELECT expires_at, package_slug FROM nexabot_topup
             WHERE user_id = ${topup[0].user_id} AND kind = 'unlimited' AND status = 'approved' AND id <> ${id}
           `
-          const priorExpiry = prior[0]?.expires_at || null
+          const kandidat = approved
+            .filter((r: any) => NEXABOT_SCOPED_SLUGS.length === 0
+              || isScopedPackage(r.package_slug) === satuKelas)
+            .map((r: any) => r.expires_at)
+            .filter(Boolean)
+          const priorExpiry = kandidat.length
+            ? kandidat.reduce((a: any, b: any) => (new Date(b) > new Date(a) ? b : a))
+            : null
           await sql`
             UPDATE nexabot_topup
             SET status = 'approved',
@@ -380,7 +393,7 @@ async function handleTopupRoutes(req: VercelRequest, res: VercelResponse, segmen
             ? Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86400000))
             : 0
           return res.status(200).json({
-            message: `Paket Unlimited ${days} hari diaktifkan`,
+            message: `Paket ${nexabotPackageName(topup[0].package_slug, days)} aktif sampai ${expiresAt ? new Date(expiresAt).toISOString().slice(0, 16).replace('T', ' ') : '-'}`,
             balance: bal[0]?.balance || 0,
             unlimited: { active: true, expires_at: expiresAt, days_left: remaining },
           })

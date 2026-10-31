@@ -7,6 +7,9 @@
 // Tambahan: PAKET UNLIMITED dengan beberapa varian (Mingguan/Bulanan/Tahunan,
 // harga & durasi diatur admin) — selama paket aktif, /deduct tidak memotong
 // saldo (usage tetap dicatat dengan cost 0).
+// Varian ber-scope (Harian Seedance 2.5) hanya membebaskan mode yang disebut di
+// namanya; pemotongan untuk mode lain tetap berjalan, dan keputusan itu dibuat
+// server lewat daftar slug, bukan dari klaim klien.
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import jwt from 'jsonwebtoken'
 import { neon } from '@neondatabase/serverless'
@@ -15,7 +18,9 @@ import {
   NEXABOT_UNLIMITED_SLUG,
   NEXABOT_PACKAGES,
   NEXABOT_PRICING_SETTING_KEYS,
+  NEXABOT_SCOPED_SLUGS,
   findNexabotPackage,
+  isSeedanceModelName,
   parseNexabotPricing,
   type NexabotPricing,
 } from '../shared/pricing.js'
@@ -109,21 +114,90 @@ function daysLeft(expiresAt: any): number {
   return Math.max(0, Math.ceil((end - Date.now()) / 86400000))
 }
 
-function unlimitedPayload(pkg: any) {
-  if (!pkg?.expires_at) return { active: false, expires_at: null, days_left: 0, package_id: null }
-  return { active: true, expires_at: pkg.expires_at, days_left: daysLeft(pkg.expires_at), package_id: pkg.id }
+/** Sisa jam dari TIMESTAMP Postgres — untuk paket seharian (Harian Seedance). */
+function hoursLeft(expiresAt: any): number {
+  if (!expiresAt) return 0
+  const end = expiresAt instanceof Date ? expiresAt.getTime() : new Date(String(expiresAt).replace(' ', 'T')).getTime()
+  if (!Number.isFinite(end)) return 0
+  return Math.max(0, Math.ceil((end - Date.now()) / 3600000))
 }
 
-async function getActivePackage(sql: any, userId: number) {
-  const rows = await sql`
-    SELECT id, amount, days, started_at, expires_at
-    FROM nexabot_topup
-    WHERE user_id = ${userId} AND kind = 'unlimited' AND status = 'approved'
-      AND expires_at IS NOT NULL AND expires_at > NOW()
-    ORDER BY expires_at DESC
-    LIMIT 1
-  `
+function unlimitedPayload(pkg: any) {
+  if (!pkg?.expires_at) return { active: false, expires_at: null, days_left: 0, hours_left: 0, package_id: null, package_slug: null, days: 0 }
+  return {
+    active: true,
+    expires_at: pkg.expires_at,
+    days_left: daysLeft(pkg.expires_at),
+    // Paket seharian selalu tampak "1 hari lagi" kalau UI cuma punya days_left,
+    // padahal tinggal 3 jam.
+    hours_left: hoursLeft(pkg.expires_at),
+    package_id: pkg.id,
+    // Slug + days: UI menyebut nama paketnya, bukan cuma "Unlimited".
+    package_slug: pkg.package_slug || null,
+    days: pkg.days || 0,
+  }
+}
+
+/**
+ * Cermin sisi Express: `hanyaSemuaMode` (default) mengabaikan paket ber-scope
+ * (mis. Harian Seedance) supaya status `unlimited` tidak menjanjikan gratis untuk
+ * mode yang tetap dipotong. `false` = paket mana pun yang berlaku untuk job ini.
+ */
+async function getActivePackage(sql: any, userId: number, hanyaSemuaMode = true) {
+  const rows = hanyaSemuaMode
+    ? await sql`
+        SELECT id, amount, days, started_at, expires_at, package_slug
+        FROM nexabot_topup
+        WHERE user_id = ${userId} AND kind = 'unlimited' AND status = 'approved'
+          AND expires_at IS NOT NULL AND expires_at > NOW()
+          AND (package_slug IS NULL OR package_slug <> ALL(${NEXABOT_SCOPED_SLUGS}))
+        ORDER BY expires_at DESC
+        LIMIT 1
+      `
+    : await sql`
+        SELECT id, amount, days, started_at, expires_at, package_slug
+        FROM nexabot_topup
+        WHERE user_id = ${userId} AND kind = 'unlimited' AND status = 'approved'
+          AND expires_at IS NOT NULL AND expires_at > NOW()
+        ORDER BY expires_at DESC
+        LIMIT 1
+      `
   return rows[0] || null
+}
+
+/** Paket yang membebaskan generate untuk model ini (global ATAU scope cocok). */
+async function getActivePackageForModel(sql: any, userId: number, model?: string) {
+  return getActivePackage(sql, userId, !isSeedanceModelName(model))
+}
+
+/**
+ * Pengajuan paket yang masih menunggu approval, dihitung per kelas. Kelas
+ * ber-scope (mis. Harian Seedance) dibandingkan dengan kelas sisanya — baris
+ * legacy `package_slug = ''` termasuk kelas "semua mode".
+ */
+async function hasPendingPackage(sql: any, userId: number, kelasBerScope: boolean) {
+  if (NEXABOT_SCOPED_SLUGS.length === 0) {
+    const rows = await sql`
+      SELECT id FROM nexabot_topup
+      WHERE user_id = ${userId} AND kind = 'unlimited' AND status = 'pending'
+      LIMIT 1
+    `
+    return rows.length > 0
+  }
+  const rows = kelasBerScope
+    ? await sql`
+        SELECT id FROM nexabot_topup
+        WHERE user_id = ${userId} AND kind = 'unlimited' AND status = 'pending'
+          AND package_slug = ANY(${NEXABOT_SCOPED_SLUGS})
+        LIMIT 1
+      `
+    : await sql`
+        SELECT id FROM nexabot_topup
+        WHERE user_id = ${userId} AND kind = 'unlimited' AND status = 'pending'
+          AND (package_slug IS NULL OR package_slug <> ALL(${NEXABOT_SCOPED_SLUGS}))
+        LIMIT 1
+      `
+  return rows.length > 0
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -154,6 +228,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         price: pricing.price,
         min_topup: NEXABOT_MIN_TOPUP,
         unlimited: unlimitedPayload(pkg),
+        // Status khusus Seedance 2.5 (paket Harian Seedance hanya membebaskan
+        // mode itu) — sama seperti sisi Express.
+        seedance_unlimited: unlimitedPayload(await getActivePackage(sql, user.id, false)),
         // `package` = varian utama (kompatibilitas), `packages` = semua varian
         // yang bisa dipilih user di halaman top up.
         package: {
@@ -180,15 +257,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // ditentukan server (klien tidak mengirim amount). Tanpa slug (klien lama)
     // → varian utama.
     if (sub === 'package' || url.includes('/package')) {
-      const pending = await sql`SELECT id FROM nexabot_topup WHERE user_id = ${user.id} AND kind = 'unlimited' AND status = 'pending'`
-      if (pending.length > 0) {
-        return res.status(400).json({ error: 'Masih ada pembelian Paket Unlimited yang menunggu approval admin' })
-      }
       const { proof_note, slug } = req.body || {}
       const plan = findNexabotPackage(slug)
       if (!plan) {
         return res.status(400).json({
           error: `Paket tidak dikenal. Pilihan: ${NEXABOT_PACKAGES.map((p) => p.slug).join(', ')}`,
+        })
+      }
+
+      // Antrian pending dicek PER KELAS paket (sama seperti sisi Express):
+      // pengajuan Harian Seedance tidak boleh terblok oleh pengajuan Bulanan
+      // yang belum di-approve, tapi dua pengajuan di kelas yang sama ditolak.
+      const kelasBerScope = (plan.scope || 'all') !== 'all'
+      if (await hasPendingPackage(sql, user.id, kelasBerScope)) {
+        return res.status(400).json({
+          error: `Masih ada pembelian paket ${plan.label} yang menunggu approval admin`,
         })
       }
 
@@ -209,8 +292,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // GET topups mine — riwayat gabungan top up saldo & paket.
     if (sub === 'topups-mine' || url.includes('/topups/mine')) {
       const rows = await sql`SELECT * FROM nexabot_topup WHERE user_id = ${user.id} ORDER BY created_at DESC`
-      const pkg = await getActivePackage(sql, user.id)
-      return res.status(200).json({ topups: rows, unlimited: unlimitedPayload(pkg) })
+      return res.status(200).json({
+        topups: rows,
+        unlimited: unlimitedPayload(await getActivePackage(sql, user.id)),
+        seedance_unlimited: unlimitedPayload(await getActivePackage(sql, user.id, false)),
+      })
     }
 
     // POST deduct — harga ditentukan server (flat per generate), bukan dari klien.
@@ -224,14 +310,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         balance = 0
       }
 
-      // Paket Unlimited aktif → generate gratis, tapi usage tetap dicatat (cost 0).
-      const pkg = await getActivePackage(sql, user.id)
+      // Paket aktif untuk mode ini → generate gratis, usage tetap dicatat (cost 0).
+      // Seedance 2.5 juga dihitung oleh paket Harian Seedance (scope 'seedance');
+      // untuk mode lain paket itu sengaja diabaikan server, bukan oleh klien.
+      const pkg = await getActivePackageForModel(sql, user.id, model)
+      const isSeedance = isSeedanceModelName(model)
       const pricing = await getNexabotPricing(sql)
       const cost = pkg ? 0 : pricing.price
 
       if (balance < cost) {
-        // Varian termurah disebut supaya user punya jalan keluar paling ringan.
-        const entry = pricing.packages.reduce((a, b) => (b.price < a.price ? b : a), pricing.packages[0])
+        // Varian termurah yang MEMBEBASKAN MODE INI disebut supaya user punya jalan
+        // keluar paling ringan — paket Seedance-harian tidak ditawarkan untuk mode
+        // lain karena ia tidak menggratiskan mode itu.
+        const kandidat = pricing.packages.filter((p) => isSeedance || !NEXABOT_SCOPED_SLUGS.includes(p.slug))
+        const daftar = kandidat.length ? kandidat : pricing.packages
+        const entry = daftar.reduce((a: any, b: any) => (b.price < a.price ? b : a), daftar[0])
         return res.status(400).json({
           error: `Saldo NexaBot tidak cukup (Rp ${balance.toLocaleString('id-ID')}). Butuh Rp ${cost.toLocaleString('id-ID')} — top up dulu atau ambil Paket ${entry.label} Rp ${entry.price.toLocaleString('id-ID')} / ${entry.days} hari.`,
           balance,
