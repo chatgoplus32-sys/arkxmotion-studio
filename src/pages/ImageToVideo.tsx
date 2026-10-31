@@ -46,7 +46,7 @@ import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, NEXABOT_P
 import { fetchSeaviWallet, chargeSeaviWallet, refundSeaviWallet } from '@/lib/seaviWallet'
 import { formatRp } from '@/lib/payment'
 import { runNexabotJobWithSessionFallback } from './image-to-video/nexabotSessionFallback'
-import { runWithNexabotThrottleRetry, NexabotResultError } from '@/lib/nexabot'
+import { runWithNexabotThrottleRetry, NexabotResultError, SEEDANCE_PROMPT_MAX } from '@/lib/nexabot'
 
 // Voice default untuk mode Voice Over NexaBot — salah satu nama dari daftar
 // voice resmi NexaBot (GET /api/v1/modes → voices).
@@ -439,6 +439,9 @@ export default function ImageToVideoPage() {
   const isNbSFV = isNb && nbApiModel === 'sfv'
   const isNbI2V = isNb && nbApiModel === 'i2v'
   const isNbR2V = isNb && nbApiModel === 'r2v'
+  // Seedance 2.5: endpoint khusus (POST /api/v1/seedance) — durasi 15|30 detik,
+  // 0,2 kredit per video, start frame opsional.
+  const isNbSeedance = isNb && nbApiModel === 'seedance'
   const isNbOmniFlash = isNbR2V
   const nbVideoIdx = refFiles.findIndex((f) => f.type.startsWith('video/'))
   const nbVideoUrl = nbVideoIdx >= 0 ? refUrls[nbVideoIdx] ?? null : null
@@ -958,6 +961,14 @@ export default function ImageToVideoPage() {
       if (nbMode === 'sfv' && nbImages.length === 0) return 'Start Frame to Video butuh minimal 1 gambar input'
       if (nbMode === 'i2v' && nbImages.length === 0) return 'Image to Video butuh minimal 1 gambar input'
       if (nbMode === 'r2v' && !nbVideo) return 'Reference to Video butuh 1 video referensi'
+      if (nbMode === 'seedance') {
+        // Seedance 2.5 tidak wajib media (start frame opsional 1 gambar), tapi
+        // prompt dibatasi 2000 karakter oleh upstream — tolak sebelum submit
+        // supaya tidak memotong prompt user diam-diam.
+        if (prompt.trim().length > SEEDANCE_PROMPT_MAX) {
+          return `Prompt Seedance maksimal ${SEEDANCE_PROMPT_MAX} karakter (sekarang ${prompt.trim().length}).`
+        }
+      }
     }
     return null
   }
@@ -2635,7 +2646,11 @@ export default function ImageToVideoPage() {
                 : `🔑 Trying key: ${keyInfo?.name || keyInfo?.id} (API key) → /api/v1/api`, 'info', 'nexabot')
             }
 
-            const { submitNexabot, pollNexabotJob, downloadNexabotResult } = await import('@/lib/nexabot')
+            const {
+              submitNexabot, pollNexabotJob, downloadNexabotResult, saveNexabotResult,
+              submitNexabotSeedance,
+              nexabotSeedanceStatusPath, nexabotSeedanceDownloadPath, nexabotSeedanceSavePath,
+            } = await import('@/lib/nexabot')
             const { fileToBase64 } = await import('@/lib/oneover')
             // NexaBot tidak punya parameter `model` di API-nya — yang menentukan hasil
             // adalah MODE. Jadi dropdown sekarang berisi mode, bukan nama model palsu.
@@ -2734,6 +2749,10 @@ export default function ImageToVideoPage() {
                   throw new Error(`Video sumber terlalu besar (${(srcVideo.size / 1024 / 1024).toFixed(1)}MB setelah kompresi, maks 6MB). Potong durasinya lalu coba lagi.`)
                 }
                 media.push(await fileToBase64(srcVideo))
+              } else if (apiModel === 'seedance') {
+                // Seedance 2.5: start frame OPSIONAL, maksimal 1 gambar.
+                // Upstream otomatis memperlakukannya sebagai sfv (frame pertama).
+                if (imageFiles[0]) media.push(await fileToBase64(await compressForApi(imageFiles[0])))
               }
             }
             // Jalur session → API key dengan pemulihan otomatis: kalau cookie
@@ -2743,47 +2762,83 @@ export default function ImageToVideoPage() {
             // lengkap dengan notifikasi toast + log.
             return await runNexabotJobWithSessionFallback<string>(
               async (auth, via) => {
-                addLog(`[2/3] 🚀 Submitting to NexaBot ${nbMode} via ${via}...`, 'info', 'nexabot')
-                setStatus((s) => ({ ...s, text: `Submit NexaBot ${nbMode}...`, pct: 15 }))
+                // Seedance 2.5 punya endpoint sendiri (POST /api/v1/seedance)
+                // dengan body berbeda; sisanya memakai alur yang sama.
+                const isSeedance = apiModel === 'seedance'
+                addLog(`[2/3] 🚀 Submitting to NexaBot ${apiModel} via ${via}...`, 'info', 'nexabot')
+                setStatus((s) => ({ ...s, text: `Submit NexaBot ${apiModel}...`, pct: 15 }))
 
-                const submit = await runWithNexabotThrottleRetry(() => submitNexabot({
-                  mode: nbMode,
-                  prompt: prompt.trim(),
-                  ratio: ratioParam,
-                  aspect: aspectParam,
-                  resolution: nbResolution,
-                  voice: apiModel === 'tts' ? NEXABOT_DEFAULT_VOICE : undefined,
-                  media: media.length > 0 ? media : undefined,
-                  // Billing NexaBot mengikuti telegram_id (kalau diisi di halaman Providers).
-                  // Di mode session field ini diabaikan — akun ditentukan oleh cookie.
-                  telegramId: keyInfo?.telegramId,
-                }, auth, {
-                  // 429 diulang otomatis: upstream menolak TANPA membuat job, dan
-                  // 429 dari antrean relay berarti giliran member lain sedang
-                  // jalan — keduanya aman, jadi user tinggal menunggu.
-                  onRetry: ({ attempt, status, delayMs, message }) => {
-                    const detik = Math.ceil(delayMs / 1000)
-                    addLog(`⏳ ${message} (HTTP ${status}) — submit diulang dalam ${detik}s (percobaan ${attempt})...`, 'warn', 'nexabot')
-                    setStatus((s) => ({ ...s, text: `Mengantre di NexaBot — ${detik}s...`, pct: 15 }))
-                  },
-                }), {
-                  // 503 throttle upstream: tunggu sesuai anjuran lalu submit
-                  // ulang otomatis — user tidak perlu klik ulang (klik ulang
-                  // justru memperbesar window throttle).
-                  onThrottle: (waitSeconds) => {
-                    addLog(`⏳ Server gambar NexaBot sedang dibatasi upstream — menunggu ${waitSeconds}s lalu submit otomatis...`, 'warn', 'nexabot')
-                    setStatus((s) => ({ ...s, text: `Server gambar sibuk — menunggu ${waitSeconds}s (otomatis)...`, pct: 10 }))
-                  },
-                })
-                if (!submit.ok || !submit.jobId) throw new Error(submit.error || 'NexaBot submit gagal')
-
-                addLog(`✅ Task created ✓ id=${submit.jobId.slice(0, 20)}...`, 'success', 'nexabot')
+                let jobId = ''
+                if (isSeedance) {
+                  const duration: import('@/lib/nexabot').NexabotSeedanceDuration =
+                    currentQuality?.duration === 30 ? 30 : 15
+                  // Docs: ratio 1 = 16:9, 2 = 9:16, "1:1" = persegi.
+                  const seedanceRatio: import('@/lib/nexabot').NexabotSeedanceRatio =
+                    ratio === '9:16' ? 2 : ratio === '1:1' ? '1:1' : 1
+                  const submit = await runWithNexabotThrottleRetry(() => submitNexabotSeedance({
+                    prompt: prompt.trim(),
+                    duration,
+                    ratio: seedanceRatio,
+                    media: media.length > 0 ? media : undefined,
+                  }, auth, {
+                    onRetry: ({ attempt, status, delayMs, message }) => {
+                      const detik = Math.ceil(delayMs / 1000)
+                      addLog(`⏳ ${message} (HTTP ${status}) — submit diulang dalam ${detik}s (percobaan ${attempt})...`, 'warn', 'nexabot')
+                      setStatus((s) => ({ ...s, text: `Mengantre di NexaBot — ${detik}s...`, pct: 15 }))
+                    },
+                  }), {
+                    onThrottle: (waitSeconds) => {
+                      addLog(`⏳ Server gambar NexaBot sedang dibatasi upstream — menunggu ${waitSeconds}s lalu submit otomatis...`, 'warn', 'nexabot')
+                      setStatus((s) => ({ ...s, text: `Server gambar sibuk — menunggu ${waitSeconds}s (otomatis)...`, pct: 10 }))
+                    },
+                  })
+                  if (!submit.ok || !submit.jobId) throw new Error(submit.error || 'NexaBot submit Seedance gagal')
+                  jobId = submit.jobId
+                  const biaya = submit.creditCost != null ? `${submit.creditCost} cr` : '0,2 cr'
+                  addLog(`✅ Seedance ${duration}s dibuat ✓ id=${jobId.slice(0, 20)}... (${biaya}${submit.queuePosition ? ` · antrean #${submit.queuePosition}` : ''})`, 'success', 'nexabot')
+                  addLog(`⏳ Job masuk antrean batch 60 s — hasil upstream hanya bertahan 30 menit, jadi otomatis disimpan ke CDN.`, 'info', 'nexabot')
+                } else {
+                  const submit = await runWithNexabotThrottleRetry(() => submitNexabot({
+                    mode: nbMode,
+                    prompt: prompt.trim(),
+                    ratio: ratioParam,
+                    aspect: aspectParam,
+                    resolution: nbResolution,
+                    voice: apiModel === 'tts' ? NEXABOT_DEFAULT_VOICE : undefined,
+                    media: media.length > 0 ? media : undefined,
+                    // Billing NexaBot mengikuti telegram_id (kalau diisi di halaman Providers).
+                    // Di mode session field ini diabaikan — akun ditentukan oleh cookie.
+                    telegramId: keyInfo?.telegramId,
+                  }, auth, {
+                    // 429 diulang otomatis: upstream menolak TANPA membuat job, dan
+                    // 429 dari antrean relay berarti giliran member lain sedang
+                    // jalan — keduanya aman, jadi user tinggal menunggu.
+                    onRetry: ({ attempt, status, delayMs, message }) => {
+                      const detik = Math.ceil(delayMs / 1000)
+                      addLog(`⏳ ${message} (HTTP ${status}) — submit diulang dalam ${detik}s (percobaan ${attempt})...`, 'warn', 'nexabot')
+                      setStatus((s) => ({ ...s, text: `Mengantre di NexaBot — ${detik}s...`, pct: 15 }))
+                    },
+                  }), {
+                    // 503 throttle upstream: tunggu sesuai anjuran lalu submit
+                    // ulang otomatis — user tidak perlu klik ulang (klik ulang
+                    // justru memperbesar window throttle).
+                    onThrottle: (waitSeconds) => {
+                      addLog(`⏳ Server gambar NexaBot sedang dibatasi upstream — menunggu ${waitSeconds}s lalu submit otomatis...`, 'warn', 'nexabot')
+                      setStatus((s) => ({ ...s, text: `Server gambar sibuk — menunggu ${waitSeconds}s (otomatis)...`, pct: 10 }))
+                    },
+                  })
+                  if (!submit.ok || !submit.jobId) throw new Error(submit.error || 'NexaBot submit gagal')
+                  jobId = submit.jobId
+                  addLog(`✅ Task created ✓ id=${jobId.slice(0, 20)}...`, 'success', 'nexabot')
+                }
                 setStatus((s) => ({ ...s, text: 'Memproses di NexaBot...', pct: 30 }))
 
-                await pollNexabotJob(submit.jobId, auth, (msg) => {
+                const hasilName = `nexabot-${isSeedance ? 'seedance-' : ''}${jobId}.mp4`
+                await pollNexabotJob(jobId, auth, (msg) => {
                   addLog(msg, 'debug', 'nexabot')
                   setStatus((s) => ({ ...s, text: msg, pct: Math.min((s.pct || 0) + 5, 85) }))
                 }, {
+                  path: isSeedance ? nexabotSeedanceStatusPath(jobId) : undefined,
                   // Poll status itu read-only, jadi hiccup upstream (proxy 504
                   // / rate limit) ditunggu dengan backoff, bukan menggagalkan job.
                   onRetry: ({ status, delayMs, message }) => {
@@ -2795,8 +2850,10 @@ export default function ImageToVideoPage() {
 
                 setStatus((s) => ({ ...s, pct: 90, text: 'Menyimpan hasil...' }))
                 addLog(`[3/3] 📤 Menyimpan hasil permanen ke CDN...`, 'info', 'nexabot')
-                const { saveNexabotResult } = await import('@/lib/nexabot')
-                const saved = await saveNexabotResult(submit.jobId, auth, `nexabot-${submit.jobId}.mp4`)
+                const saved = await saveNexabotResult(
+                  jobId, auth, hasilName,
+                  isSeedance ? nexabotSeedanceSavePath(jobId) : undefined,
+                )
                 if (saved.ok && saved.url) {
                   setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
                   addLog(`[3/3] 📤 Hasil tersimpan permanen ✓`, 'success', 'nexabot')
@@ -2805,7 +2862,10 @@ export default function ImageToVideoPage() {
                 }
                 addLog(`[3/3] ⚠️ Simpan di server gagal (${saved.error}) — fallback unduh + unggah...`, 'warn', 'nexabot')
 
-                const dl = await downloadNexabotResult(submit.jobId, auth)
+                const dl = await downloadNexabotResult(
+                  jobId, auth,
+                  isSeedance ? nexabotSeedanceDownloadPath(jobId) : undefined,
+                )
                 if (!dl.ok || !dl.url) throw new NexabotResultError(dl.error || 'NexaBot download gagal')
 
                 let finalUrl = dl.url
@@ -2814,7 +2874,7 @@ export default function ImageToVideoPage() {
                     const blobRes = await fetch(dl.url)
                     const blob = await blobRes.blob()
                     const { uploadBlobToCdn } = await import('@/lib/cdn')
-                    const up = await uploadBlobToCdn(blob, `nexabot-${submit.jobId}.mp4`, (pct) => {
+                    const up = await uploadBlobToCdn(blob, hasilName, (pct) => {
                       setStatus((s) => ({ ...s, text: `Upload CDN ${pct}%...`, pct: 90 + Math.round(pct / 10) }))
                     })
                     if (up.ok && up.url) {
@@ -3614,6 +3674,7 @@ export default function ImageToVideoPage() {
               /* NexaBot: input mengikuti 4 jenis video-generator */
               <Section title="🖼️ Gambar / Video Input" sub={
                 isNbT2V ? 'Text to Video — tanpa input media'
+                : isNbSeedance ? `Seedance 2.5 — start frame opsional (1 gambar)`
                 : isNbSFV ? 'Start Frame to Video — 1 gambar wajib'
                 : isNbI2V ? 'Ingredients to Video — 1-3 gambar'
                 : 'Reference Video to Video — 1 video (wajib) + 1 gambar (opsional)'
@@ -3642,7 +3703,7 @@ export default function ImageToVideoPage() {
                       <button onClick={() => inputRef.current?.click()} className="w-full aspect-[9/16] rounded-2xl border border-dashed border-border/80 bg-card/30 grid place-items-center hover:border-primary/60 transition text-center px-4">
                         <div>
                           <div className="text-3xl">🖼️</div>
-                          <div className="text-sm mt-1">{isNbR2V ? 'Gambar pendamping (opsional)' : 'Tap atau tarik gambar (wajib)'}</div>
+                          <div className="text-sm mt-1">{isNbSeedance ? 'Start frame (opsional)' : isNbR2V ? 'Gambar pendamping (opsional)' : 'Tap atau tarik gambar (wajib)'}</div>
                           <div className="text-[11px] text-muted-foreground">{isNbI2V ? '1-3 gambar · JPG / PNG / WEBP' : 'JPG / PNG / WEBP'}</div>
                         </div>
                       </button>
@@ -3869,7 +3930,7 @@ export default function ImageToVideoPage() {
                     />
                   </div>
                   <div>
-                    <Label>{isNb ? 'Resolusi' : 'Durasi'}</Label>
+                    <Label>{isNb && !isNbSeedance ? 'Resolusi' : 'Durasi'}</Label>
                     <Select
                       value={quality}
                       onChange={(e) => setQuality(e.target.value)}

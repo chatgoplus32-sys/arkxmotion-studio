@@ -191,13 +191,13 @@ export async function runNexabotJobWithSessionFallback<T>(
     }
 
     hooks.log(
-      '💳 Beralih ke API key NexaBot — pay-as-you-go 0.15 cr/request (job baru dibuat ulang, job sesi lama ditinggalkan)',
+      '💳 Beralih ke API key NexaBot — pay-as-you-go 0.15 cr/request (0,2 cr untuk Seedance 2.5; job baru dibuat ulang, job sesi lama ditinggalkan)',
       'warn',
       'nexabot'
     )
-    hooks.notify('💳 Beralih ke API key NexaBot (pay-as-you-go 0.15 cr) karena sesi Unlimited kedaluwarsa', 'warning')
+    hooks.notify('💳 Beralih ke API key NexaBot (pay-as-you-go 0.15 cr; Seedance 0,2 cr) karena sesi Unlimited kedaluwarsa', 'warning')
     sendNotification('💳 NexaBot beralih ke API key', {
-      body: 'Sesi Unlimited kedaluwarsa; generate dilanjutkan lewat API key pay-as-you-go (0.15 cr).',
+      body: 'Sesi Unlimited kedaluwarsa; generate dilanjutkan lewat API key pay-as-you-go (0.15 cr, Seedance 2.5 0,2 cr).',
     })
     return run({ apiKey }, 'API key (fallback pay-as-you-go)')
   }

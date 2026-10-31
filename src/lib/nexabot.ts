@@ -960,9 +960,9 @@ export async function pollNexabotJob(
   jobId: string,
   authOverride: NexabotAuth | string,
   onProgress?: (msg: string) => void,
-  opts: NexabotRetryOptions & { maxTotalMs?: number } = {}
+  opts: NexabotRetryOptions & { maxTotalMs?: number; path?: string } = {}
 ): Promise<NexabotJob> {
-  const { maxAttempts = 120, baseMs = 3000, maxMs = 15000, maxTotalMs = 20 * 60 * 1000, random, onRetry } = opts
+  const { maxAttempts = 120, baseMs = 3000, maxMs = 15000, maxTotalMs = 20 * 60 * 1000, path, random, onRetry } = opts
   const auth = fillAuthFromStorage(normalizeAuth(authOverride))
   const { apiKey, cookies } = normalizeValues(auth)
   if (!apiKey && !cookies && !auth.master) throw new Error('NexaBot: tidak ada API key / cookie session yang valid')
@@ -1003,7 +1003,7 @@ export async function pollNexabotJob(
 
     let res: Response
     try {
-      res = await fetch(`${NEXABOT_BASE}/job/${jobId}`, {
+      res = await fetch(`${NEXABOT_BASE}${path ?? `/job/${jobId}`}`, {
         method: 'GET',
         // Mode kunci server tidak punya header kredensial: relay butuh token
         // login app untuk memverifikasi kelayakan member.
@@ -1061,7 +1061,8 @@ export async function pollNexabotJob(
       continue
     }
 
-    const job = data.job as NexabotJob
+    // Sebagian endpoint (mis. Seedance) membalas job di root, bukan di `job`.
+    const job = (data.job ?? data) as NexabotJob
     transientStreak = 0
     delayMs = nexabotRetryDelayMs({ attempt: 1, opts: { baseMs, maxMs, random } })
 
@@ -1070,7 +1071,10 @@ export async function pollNexabotJob(
       console.log(`[nexabot] Poll ${attempt}: status=${job.status}${job.progress ? ` ${job.progress}` : ''}`)
     }
 
-    if (job.status === 'done') {
+    // Docs memakai `done`; sebagian respons (mis. Seedance) bisa memakai
+    // varian lain — diterima semua supaya polling tidak menunggu sampai timeout.
+    const status = String(job.status || '').toLowerCase()
+    if (status === 'done' || status === 'completed' || status === 'success' || status === 'succeeded') {
       // Diagnostik sekali per job: laporkan URL hasil yang benar-benar tersedia
       // di payload (`download_url` saja belum tentu satu-satunya varian).
       // Berguna untuk memutuskan asset mana yang diunduh agar hasil bersih.
@@ -1083,7 +1087,7 @@ export async function pollNexabotJob(
       return job
     }
 
-    if (job.status === 'failed') {
+    if (status === 'failed' || status === 'error' || status === 'cancelled' || status === 'canceled') {
       throw new Error(`NexaBot job gagal: ${job.error || 'Unknown error'}`)
     }
   }
@@ -1112,13 +1116,15 @@ export class NexabotResultError extends Error {
 
 export async function downloadNexabotResult(
   jobId: string,
-  authOverride: NexabotAuth | string
+  authOverride: NexabotAuth | string,
+  /** Override path relay bila endpoint hasil bukan `/download/:id` (Seedance). */
+  path?: string
 ): Promise<{ ok: boolean; url?: string; error?: string; blobUrl?: string }> {
   const auth = fillAuthFromStorage(normalizeAuth(authOverride))
   const { apiKey, cookies } = normalizeValues(auth)
   if (!apiKey && !cookies && !auth.master) return { ok: false, error: 'NexaBot: tidak ada API key / cookie session yang valid' }
   try {
-    const res = await fetch(`${NEXABOT_BASE}/download/${jobId}`, {
+    const res = await fetch(`${NEXABOT_BASE}${path ?? `/download/${jobId}`}`, {
       method: 'GET',
       headers: { ...authHeaders(auth), ...appAuthHeaders() },
     })
@@ -1165,7 +1171,9 @@ export async function downloadNexabotResult(
 export async function saveNexabotResult(
   jobId: string,
   authOverride: NexabotAuth | string,
-  filename?: string
+  filename?: string,
+  /** Override path relay simpan bila bukan `/save/:id` (Seedance). */
+  path?: string
 ): Promise<{ ok: boolean; url?: string; error?: string }> {
   const auth = fillAuthFromStorage(normalizeAuth(authOverride))
   const { apiKey, cookies } = normalizeValues(auth)
@@ -1175,7 +1183,7 @@ export async function saveNexabotResult(
     const appToken = await getAppAuthToken()
     if (!appToken) return { ok: false, error: 'Sesi berakhir — login ulang untuk menyimpan hasil.' }
 
-    const res = await fetch(`${NEXABOT_BASE}/save/${jobId}`, {
+    const res = await fetch(`${NEXABOT_BASE}${path ?? `/save/${jobId}`}`, {
       method: 'POST',
       headers: {
         ...authHeaders(auth),
@@ -1527,5 +1535,161 @@ export async function downloadNexabotGptImage(
     return { ok: true, blob }
   } catch (err: any) {
     return { ok: false, error: err?.message || 'gagal mengunduh hasil GPT Image' }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SEEDANCE 2.5 (POST /api/v1/seedance) — 15 / 30 detik
+// ═══════════════════════════════════════════════════════════════════
+//
+// Endpoint khusus di luar mode biasa: durasi wajib 15|30, selalu menagih
+// 0,2 kredit per video (paket Unlimited web tidak berlaku), dan job masuk
+// antrean batch 60 detik — status pertama selalu `queued`. Hasil upstream
+// hanya bertahan 30 menit setelah selesai, jadi alur normal langsung menyimpan
+// ke CDN lewat /seedance/:id/save seperti job video lain.
+
+export type NexabotSeedanceDuration = 15 | 30
+/** 1 = 16:9 landscape, 2 = 9:16 portrait, '1:1' persegi. */
+export type NexabotSeedanceRatio = 1 | 2 | '1:1'
+
+/** Batas prompt yang diterima upstream. */
+export const SEEDANCE_PROMPT_MAX = 2000
+
+export interface NexabotSeedanceParams {
+  prompt: string
+  duration: NexabotSeedanceDuration
+  ratio?: NexabotSeedanceRatio
+  /** Opsional 1 gambar start frame (data URI) — upstream otomatis memakai sfv. */
+  media?: string[]
+}
+
+export interface NexabotSeedanceSubmitResult {
+  ok: boolean
+  jobId?: string
+  status?: string
+  /** 0,2 pada jalur kredit; 0 hanya bila plan API Unlimited kelak berlaku. */
+  creditCost?: number
+  creditBalance?: number
+  queuePosition?: number
+  etaSeconds?: number
+  error?: string
+}
+
+export function nexabotSeedanceStatusPath(jobId: string): string {
+  return `/seedance/${encodeURIComponent(jobId)}`
+}
+
+export function nexabotSeedanceDownloadPath(jobId: string): string {
+  return `/seedance/${encodeURIComponent(jobId)}/download`
+}
+
+export function nexabotSeedanceSavePath(jobId: string): string {
+  return `/seedance/${encodeURIComponent(jobId)}/save`
+}
+
+export async function submitNexabotSeedance(
+  params: NexabotSeedanceParams,
+  authOverride?: NexabotAuth | string,
+  opts: NexabotRetryOptions = {}
+): Promise<NexabotSeedanceSubmitResult> {
+  const {
+    maxAttempts = NEXABOT_SUBMIT_RETRY.attempts,
+    baseMs = NEXABOT_SUBMIT_RETRY.baseMs,
+    maxMs = NEXABOT_SUBMIT_RETRY.maxMs,
+    budgetMs = NEXABOT_SUBMIT_RETRY.budgetMs,
+    queueBudgetMs = NEXABOT_SUBMIT_RETRY.queueBudgetMs,
+    random,
+    onRetry,
+  } = opts
+  const mulai = Date.now()
+  const auth = fillAuthFromStorage(normalizeAuth(authOverride))
+  const { apiKey, cookies } = normalizeValues(auth)
+  const session = !!cookies
+  if (!apiKey && !cookies && !auth.master) {
+    throw new Error('NexaBot: tidak ada API key / cookie session yang valid — cek format di halaman Providers')
+  }
+
+  const body: Record<string, any> = {
+    prompt: params.prompt.slice(0, SEEDANCE_PROMPT_MAX),
+    duration: params.duration,
+  }
+  if (params.ratio !== undefined) body.ratio = params.ratio
+  if (params.media && params.media.length > 0) body.media = params.media.slice(0, 1)
+
+  console.log(`[nexabot] Seedance submit (${params.duration}s, ratio ${body.ratio ?? 1}, media ${body.media?.length ?? 0})`)
+
+  const attempts = Math.max(1, maxAttempts)
+  // 429 dari antrean relay diulang selama anggaran antreannya masih ada.
+  let attempt = 0
+  while (true) {
+    attempt++
+    const res = await fetch(`${NEXABOT_BASE}/seedance`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(auth),
+        ...appAuthHeaders(),
+      },
+      body: JSON.stringify(body),
+    })
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '')
+      if (res.status === 401 || res.status === 403) {
+        if (auth.master) {
+          throw new Error(jsonErrorMessage(errText) || `NexaBot: kunci server ditolak (HTTP ${res.status})`)
+        }
+        throw new Error(session
+          ? 'NexaBot: session cookie kedaluwarsa — login ulang di nexabot.id lalu paste cookie baru'
+          : 'NexaBot: API key tidak valid')
+      }
+      if (res.status === 402) {
+        if (auth.master) throw new Error(jsonErrorMessage(errText) || 'NexaBot: pembayaran generate belum terverifikasi server')
+        throw new Error('NexaBot: Kredit tidak cukup (Seedance 2.5 perlu 0.2 per video)')
+      }
+      if (res.status === 503) {
+        const waitSeconds = parseNexabotThrottleSeconds(errText)
+        if (waitSeconds != null) throw new NexabotThrottleError(waitSeconds)
+      }
+      if (res.status === 429) {
+        const keputusan = nexabotSubmit429Decision({
+          attempt,
+          attempts,
+          retryAfterHeader: res.headers.get('retry-after'),
+          antrianSendiri: isAntreanRelay(errText),
+          sisaBudgetMs: budgetMs - (Date.now() - mulai),
+          sisaQueueBudgetMs: queueBudgetMs - (Date.now() - mulai),
+          sudahMenungguMs: Date.now() - mulai,
+          opts: { baseMs, maxMs, random },
+        })
+        if (keputusan.ulang) {
+          onRetry?.({ attempt, status: res.status, delayMs: keputusan.delayMs, message: keputusan.message })
+          console.warn(`[nexabot] Seedance ${res.status} (${keputusan.message}) — coba lagi dalam ${Math.round(keputusan.delayMs / 1000)}s`)
+          await sleep(keputusan.delayMs)
+          continue
+        }
+        throw new Error(keputusan.akhir || `NexaBot: ${keputusan.message}`)
+      }
+
+      if (auth.master) {
+        throw new Error(jsonErrorMessage(errText) || `NexaBot HTTP ${res.status}: ${errText.slice(0, 200)}`)
+      }
+      throw new Error(`NexaBot HTTP ${res.status}: ${errText.slice(0, 200)}`)
+    }
+
+    const data = await res.json()
+    const jobId = data.job_id || data.id
+    if (!data.ok || !jobId) {
+      throw new Error(data.error || 'NexaBot: submit Seedance gagal')
+    }
+    return {
+      ok: true,
+      jobId,
+      status: data.status,
+      creditCost: data.credit_cost,
+      creditBalance: data.credit_balance,
+      queuePosition: data.queue_position,
+      etaSeconds: data.eta_seconds,
+    }
   }
 }

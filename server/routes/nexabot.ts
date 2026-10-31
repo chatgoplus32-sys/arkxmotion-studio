@@ -207,7 +207,7 @@ async function relayUpstream(
           // Hanya rute yang memotong saldo yang boleh menjanjikan refund.
           error:
             'Akses NexaBot milik server ditolak penyedia (bukan kredensial Anda). ' +
-            (action === 'submit' || action === 'gpt-image'
+            (action === 'submit' || action === 'gpt-image' || action === 'seedance'
               ? 'Saldo yang terpotong dikembalikan otomatis — hubungi admin.'
               : 'Coba lagi nanti; bila berulang, hubungi admin.'),
         })
@@ -683,7 +683,7 @@ interface TiketHasil {
   reason?: string
 }
 
-function tiketServer(req: Request, auth: ResolvedUpstreamAuth, route: 'submit' | 'gpt-image'): TiketHasil {
+function tiketServer(req: Request, auth: ResolvedUpstreamAuth, route: 'submit' | 'gpt-image' | 'seedance'): TiketHasil {
   const sumber = auth.credential?.source
   if (sumber !== 'master' && sumber !== 'client-master') return { ok: true, usageId: null }
 
@@ -1175,21 +1175,25 @@ router.get('/job/:id', async (req: Request, res: Response) => {
 })
 
 // ── Download result ──
-router.get('/download/:id', async (req: Request, res: Response) => {
-  const jobId = String(req.params.id || '')
-  const auth = resolveUpstreamAuth(req, { bacaSaja: true, jobId })
-  if (Object.keys(auth.headers).length === 0) {
-    return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key / X-Nexabot-Cookie header' })
-  }
-  if (!jobId) {
-    return res.status(400).json({ ok: false, error: 'Missing job id' })
-  }
-
+/**
+ * Teruskan unduhan hasil upstream ke klien (streaming).
+ *
+ * Dipakai rute video biasa (`/download/:id`) dan Seedance
+ * (`/seedance/:id/download`) — bentuk respons keduanya sama: bisa JSON error
+ * atau biner file, dan job yang berhasil diunduh berarti lane akun boleh lepas.
+ */
+async function streamHasilJob(
+  res: Response,
+  jobId: string,
+  upstreamUrl: string,
+  filename: string,
+  authHeaders: Record<string, string>,
+): Promise<void> {
   try {
-    console.log(`[nexabot-local] GET /api/v1/jobs/${jobId}/download`)
-    const { response: upstreamRes } = await fetchNexabotUpstream(`${NEXABOT_BASE}/api/v1/jobs/${jobId}/download`, {
+    console.log(`[nexabot-local] GET ${upstreamUrl}`)
+    const { response: upstreamRes } = await fetchNexabotUpstream(upstreamUrl, {
       method: 'GET',
-      headers: { ...auth.headers, 'Accept': 'application/json' },
+      headers: { ...authHeaders, 'Accept': 'application/json' },
       redirect: 'follow',
     }, { action: 'download' })
 
@@ -1228,13 +1232,13 @@ router.get('/download/:id', async (req: Request, res: Response) => {
     }
 
     // Stream binary response
-    const finalUrl = upstreamRes.url || `${NEXABOT_BASE}/api/v1/jobs/${jobId}/download`
+    const finalUrl = upstreamRes.url || upstreamUrl
     console.log(`[nexabot-local] download redirect final: ${finalUrl}`)
 
     res.writeHead(200, {
       'Content-Type': contentType || 'video/mp4',
       'Access-Control-Allow-Origin': '*',
-      'Content-Disposition': `attachment; filename="nexabot-${jobId}.mp4"`,
+      'Content-Disposition': `attachment; filename="${filename}"`,
     })
 
     const reader = upstreamRes.body?.getReader()
@@ -1259,6 +1263,20 @@ router.get('/download/:id', async (req: Request, res: Response) => {
       error: upstream ? `${upstream.message} — ${nexabotErrorAdvice('download')}` : err.message,
     })
   }
+}
+
+router.get('/download/:id', async (req: Request, res: Response) => {
+  const jobId = String(req.params.id || '')
+  const auth = resolveUpstreamAuth(req, { bacaSaja: true, jobId })
+  if (Object.keys(auth.headers).length === 0) {
+    return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key / X-Nexabot-Cookie header' })
+  }
+  if (!jobId) {
+    return res.status(400).json({ ok: false, error: 'Missing job id' })
+  }
+
+  console.log(`[nexabot-local] GET /api/v1/jobs/${jobId}/download`)
+  await streamHasilJob(res, jobId, `${NEXABOT_BASE}/api/v1/jobs/${jobId}/download`, `nexabot-${jobId}.mp4`, auth.headers)
 })
 
 
@@ -1271,8 +1289,12 @@ router.get('/download/:id', async (req: Request, res: Response) => {
  * member — untuk WAV/video besar ini yang bikin tahap "simpan ke CDN" makan
  * menit-menitan. Di sini file cuma sekali lewat: NexaBot → VPS → storage.
  */
-router.post('/save/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
-  const jobId = String(req.params.id || '')
+async function simpanHasilJob(
+  req: AuthRequest,
+  res: Response,
+  jobId: string,
+  upstreamUrl: string,
+): Promise<Response | void> {
   const auth = resolveUpstreamAuth(req, { bacaSaja: true, jobId })
   const userId = req.user?.id
   if (!userId) {
@@ -1290,7 +1312,7 @@ router.post('/save/:id', authenticateToken, async (req: AuthRequest, res: Respon
 
   try {
     console.log(`[nexabot-local] POST save ${jobId} → unduh & simpan di server`)
-    const { response: upstreamRes } = await fetchNexabotUpstream(`${NEXABOT_BASE}/api/v1/jobs/${jobId}/download`, {
+    const { response: upstreamRes } = await fetchNexabotUpstream(upstreamUrl, {
       method: 'GET',
       headers: { ...auth.headers, 'Accept': '*/*' },
       redirect: 'follow',
@@ -1345,6 +1367,136 @@ router.post('/save/:id', authenticateToken, async (req: AuthRequest, res: Respon
     if (res.headersSent) return gagalSetelahHeader(res)
     return res.status(502).json({ ok: false, error: err.message || 'Simpan hasil gagal' })
   }
+}
+
+router.post('/save/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  const jobId = String(req.params.id || '')
+  await simpanHasilJob(req, res, jobId, `${NEXABOT_BASE}/api/v1/jobs/${jobId}/download`)
+})
+
+// ── Seedance 2.5 (15 / 30 detik) ────────────────────────────────────────
+// Endpoint khusus yang selalu menagih kredit (0,2/video) — paket Unlimited web
+// tidak berlaku. Submit hanya memasukkan job ke antrean batch 60 detik, jadi
+// klien langsung mendapat job_id + posisi antrean. Alur baca/unduh/simpan
+// memakai pola yang sama dengan job video biasa, hanya path upstream berbeda.
+router.post('/seedance', async (req: Request, res: Response) => {
+  const auth = resolveUpstreamAuth(req, { membuatJob: true })
+  if (auth.antrean) {
+    return res.status(429).json({
+      ok: false,
+      queued: true,
+      retry_after_seconds: 30,
+      error: auth.error,
+    })
+  }
+  if (Object.keys(auth.headers).length === 0) {
+    return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key header' })
+  }
+  const tiket = tiketServer(req, auth, 'seedance')
+  if (!tiket.ok) {
+    lepasReservasi(auth.accountId)
+    return res.status(tiket.status ?? 402).json({ ok: false, error: tiket.reason })
+  }
+
+  const body = req.body
+  const durasi = Number(body?.duration)
+  if (!body?.prompt || String(body.prompt).trim().length === 0) {
+    lepasReservasi(auth.accountId)
+    if (tiket.usageId) releaseChargeTicket(tiket.usageId)
+    return res.status(400).json({ ok: false, error: 'Seedance 2.5 butuh prompt' })
+  }
+  if (durasi !== 15 && durasi !== 30) {
+    lepasReservasi(auth.accountId)
+    if (tiket.usageId) releaseChargeTicket(tiket.usageId)
+    return res.status(400).json({ ok: false, error: 'Durasi Seedance 2.5 hanya 15 atau 30 detik' })
+  }
+  console.log(`[nexabot-local] POST /api/v1/seedance (durasi: ${durasi}, ratio: ${body.ratio ?? '-'})`)
+
+  const upstreamBody: Record<string, any> = {
+    prompt: String(body.prompt).slice(0, 2000),
+    duration: durasi,
+  }
+  if (body.ratio !== undefined) upstreamBody.ratio = body.ratio
+  // Maksimal 1 gambar start frame; bila ada, upstream otomatis memakai sfv.
+  if (Array.isArray(body.media) && body.media.length > 0) upstreamBody.media = body.media.slice(0, 1)
+  if (body.telegram_id) upstreamBody.telegram_id = body.telegram_id
+
+  // Tanpa retry, sama alasannya dengan /submit: job & kredit 0,2 tidak boleh ganda.
+  const hasil = await relayUpstream(res, 'seedance', `${NEXABOT_BASE}/api/v1/seedance`, {
+    method: 'POST',
+    headers: {
+      ...auth.headers,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    },
+    body: JSON.stringify(upstreamBody),
+  }, { kredensialServer: auth.credential?.source === 'master', credential: auth.credential, accountId: auth.accountId, cadangan: auth.cadangan })
+  lepasReservasi(auth.accountId)
+  if (hasil) {
+    if (tiket.usageId) selesaikanTiket(tiket.usageId, hasil.status, hasil.text)
+    if (!hasil.antreanPenuh) recordUpstreamUsage({
+      req,
+      route: 'seedance',
+      statusCode: hasil.status,
+      bodyText: hasil.text,
+      credential:
+        auth.kredensialKlien && hasil.credential === auth.credential
+          ? auth.kredensialKlien
+          : hasil.credential,
+    })
+  }
+})
+
+// ── Poll status Seedance (read-only) ──
+router.get('/seedance/:id', async (req: Request, res: Response) => {
+  const jobId = String(req.params.id || '')
+  const auth = resolveUpstreamAuth(req, { bacaSaja: true, jobId })
+  if (Object.keys(auth.headers).length === 0) {
+    return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key / X-Nexabot-Cookie header' })
+  }
+  if (!jobId) {
+    return res.status(400).json({ ok: false, error: 'Missing job id' })
+  }
+
+  const idPath = encodeURIComponent(jobId)
+  console.log(`[nexabot-local] GET /api/v1/seedance/${idPath}`)
+  const hasil = await relayUpstream(res, 'job', `${NEXABOT_BASE}/api/v1/seedance/${idPath}`, {
+    method: 'GET',
+    headers: {
+      ...auth.headers,
+      'Accept': 'application/json',
+    },
+  }, { kredensialServer: auth.credential?.source === 'master', credential: auth.credential, cadangan: auth.cadangan })
+  // Afinitas akun tetap disimpan setelah job selesai: unduhan terjadi belakangan.
+  if (hasil && hasil.status === 404) lupakanAkunJob(jobId)
+})
+
+// ── Download hasil Seedance ──
+router.get('/seedance/:id/download', async (req: Request, res: Response) => {
+  const jobId = String(req.params.id || '')
+  const auth = resolveUpstreamAuth(req, { bacaSaja: true, jobId })
+  if (Object.keys(auth.headers).length === 0) {
+    return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key / X-Nexabot-Cookie header' })
+  }
+  if (!jobId) {
+    return res.status(400).json({ ok: false, error: 'Missing job id' })
+  }
+
+  const idPath = encodeURIComponent(jobId)
+  await streamHasilJob(
+    res,
+    jobId,
+    `${NEXABOT_BASE}/api/v1/seedance/${idPath}/download`,
+    `nexabot-seedance-${jobId}.mp4`,
+    auth.headers,
+  )
+})
+
+// ── Simpan hasil Seedance permanen (sisi server) ──
+router.post('/seedance/:id/save', authenticateToken, async (req: AuthRequest, res: Response) => {
+  const jobId = String(req.params.id || '')
+  const idPath = encodeURIComponent(jobId)
+  await simpanHasilJob(req, res, jobId, `${NEXABOT_BASE}/api/v1/seedance/${idPath}/download`)
 })
 
 // ── Daftar mode/model yang tersedia ─────────────────────────────────────

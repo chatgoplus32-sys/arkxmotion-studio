@@ -324,7 +324,7 @@ const TOKEN_GUIDE: Record<string, {
       { text: 'Copy API key (format: nxb_...) → paste ke input di samping.' },
       { text: 'Top up saldo minimal 0.15 credits di menu Top Up (hanya untuk mode API key).' },
     ],
-    tip: 'NexaBot punya satu model: Google Omni — tipe video ditentukan otomatis dari input (teks / gambar / video referensi). ADA DUA JALUR: (a) SESSION COOKIE dari login web dikirim ke /api/v1/generate — kalau akun yang login punya paket Unlimited, generate TIDAK dipotong kredit; (b) API KEY (nxb_...) lewat /api/v1/api — selalu pay-as-you-go 0.15 cr/request walau Unlimited aktif. Kalau key punya cookie, app otomatis memakai jalur session. Cookie bisa kedaluwarsa: kalau muncul error session, login ulang di nexabot.id dan paste cookie baru.',
+    tip: 'NexaBot punya satu model: Google Omni — tipe video ditentukan otomatis dari input (teks / gambar / video referensi). ADA DUA JALUR: (a) SESSION COOKIE dari login web dikirim ke /api/v1/generate — kalau akun yang login punya paket Unlimited, generate TIDAK dipotong kredit; (b) API KEY (nxb_...) lewat /api/v1/api — selalu pay-as-you-go 0.15 cr/request walau Unlimited aktif. Kalau key punya cookie, app otomatis memakai jalur session. Cookie bisa kedaluwarsa: kalau muncul error session, login ulang di nexabot.id dan paste cookie baru. CATATAN BIAYA: Seedance 2.5 (15/30 detik, endpoint khusus /api/v1/seedance) selalu 0,2 cr/video dan GPT Image 0,1 cr/gambar — Paket Unlimited tidak berlaku untuk keduanya.',
   },
 }
 function maskKey(key: string): string {
@@ -661,7 +661,7 @@ function NexabotTelegramInput({ providerKeys, setKeyTelegramId }: {
         </div>
       )}
       <div className="text-[10.5px] text-[#a0a0a0] leading-relaxed">
-        NexaBot memotong <span className="text-[#00d4ff]">0.15 cr/request</span> dari saldo akun Telegram pemilik API key ini — biaya ini dipotong oleh NexaBot, bukan oleh ARKXMotion. Kalau paket Unlimited kamu ada di akun Telegram lain, isi ID-nya di sini agar request ditagihkan ke akun itu.
+        NexaBot memotong <span className="text-[#00d4ff]">0.15 cr/request</span> (Seedance 2.5 0,2 cr/video, GPT Image 0,1 cr/gambar) dari saldo akun Telegram pemilik API key ini — biaya ini dipotong oleh NexaBot, bukan oleh ARKXMotion. Kalau paket Unlimited kamu ada di akun Telegram lain, isi ID-nya di sini agar request ditagihkan ke akun itu.
       </div>
     </div>
   )

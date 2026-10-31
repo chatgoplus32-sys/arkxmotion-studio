@@ -27,6 +27,7 @@ export type NexabotProxyAction =
   | 'modes'
   | 'submit'
   | 'generate'
+  | 'seedance'
   | 'gpt-image'
   | 'download'
   | 'generic'
@@ -63,6 +64,9 @@ export const NEXABOT_PROXY_POLICY: Record<NexabotProxyAction, NexabotProxyPolicy
   // sudah terbentuk upstream — mengulang berarti kredit terpotong dua kali.
   submit: { timeoutMs: 180_000, attempts: 1, label: 'submit ke NexaBot' },
   generate: { timeoutMs: 180_000, attempts: 1, label: 'generate via session' },
+  // Seedance 2.5 (POST /api/v1/seedance): submit hanya memasukkan job ke antrean
+  // batch 60 detik, jadi jawabannya cepat — satu percobaan seperti submit lain.
+  seedance: { timeoutMs: 60_000, attempts: 1, label: 'submit Seedance' },
   // GPT Image 2.5 (nexabot.id/gpt-image): sekali jalan seperti submit —
   // respons hilang berarti job mungkin sudah terbentuk dan 0,1 cr terpotong.
   'gpt-image': { timeoutMs: 180_000, attempts: 1, label: 'generate GPT Image' },
@@ -692,7 +696,7 @@ export function nexabotErrorCause(err: any): string {
  * mungkin sudah terbentuk, jadi jangan menyarankan "coba lagi" begitu saja.
  */
 export function isNexabotNonIdempotentAction(action: NexabotProxyAction): boolean {
-  return action === 'submit' || action === 'generate' || action === 'gpt-image'
+  return action === 'submit' || action === 'generate' || action === 'gpt-image' || action === 'seedance'
 }
 
 /**
@@ -704,8 +708,8 @@ export function isNexabotNonIdempotentAction(action: NexabotProxyAction): boolea
  */
 export function nexabotErrorAdvice(action: NexabotProxyAction): string {
   if (!isNexabotNonIdempotentAction(action)) return 'coba lagi'
-  // Biaya per aksi: GPT Image 0,1 cr, sisanya 0,15 cr.
-  const biaya = action === 'gpt-image' ? '0,1' : '0,15'
+  // Biaya per aksi: GPT Image 0,1 cr, Seedance 0,2 cr, sisanya 0,15 cr.
+  const biaya = action === 'gpt-image' ? '0,1' : action === 'seedance' ? '0,2' : '0,15'
   return `Respons NexaBot hilang — job MUNGKIN sudah terbentuk, jadi cek dulu di nexabot.id/riwayat; ulangi hanya kalau kamu yakin belum ada job, karena kredit ${biaya} cr bisa terpotong dua kali.`
 }
 

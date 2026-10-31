@@ -26,6 +26,7 @@ function jsonResponse(body: unknown, status = 200, headers: Record<string, strin
 }
 
 let calls: string[] = []
+let bodies: any[] = []
 let queue: Array<() => Response> = []
 
 const app = express()
@@ -49,9 +50,11 @@ before(async () => {
 
 beforeEach(() => {
   calls = []
+  bodies = []
   queue = []
-  globalThis.fetch = (async (input: any) => {
+  globalThis.fetch = (async (input: any, init?: any) => {
     calls.push(String(input))
+    bodies.push(init?.body ? JSON.parse(String(init.body)) : null)
     const next = queue.shift()
     if (!next) throw new Error(`fetch dipanggil ke-${calls.length} tanpa langkah berikutnya`)
     return next()
@@ -331,4 +334,72 @@ test('/gpt-image/:id/download: ?download=1 → attachment', async () => {
   const res = await originalFetch(`${base}/api/public/nexabot/gpt-image/abc/download?index=0&download=1`, { headers: { 'X-Api-Key': 'nxb_test' } })
   assert.equal(res.status, 200)
   assert.match(res.headers.get('content-disposition') || '', /attachment; filename="nexabot-gpt-image-abc\.png"/)
+})
+
+// ── Seedance 2.5: endpoint terpisah dari skema mode Omni Flash ─────────────
+// Kontrak upstream: POST /api/v1/seedance (durasi wajib 15|30, ratio opsional,
+// 1 gambar start frame opsional), status & unduhan di /seedance/:id.
+test('/seedance: prompt & durasi diteruskan, start frame dipotong 1 gambar', async () => {
+  queue.push(() => jsonResponse({
+    ok: true,
+    job_id: 'sd-1',
+    status: 'queued',
+    mode: 'sfv',
+    model: 'seedance_2_5',
+    duration: 15,
+    credit_cost: 0.2,
+    credit_balance: 1.3,
+    queue_position: 2,
+    eta_seconds: 120,
+  }, 202))
+
+  const res = await post('/api/public/nexabot/seedance', {
+    prompt: 'ombak senja',
+    duration: 15,
+    ratio: 2,
+    media: ['data:image/png;base64,AAA', 'data:image/png;base64,BBB'],
+  }, { 'X-Api-Key': 'nxb_test' })
+
+  assert.equal(res.status, 202)
+  assert.equal(res.body.job_id, 'sd-1')
+  assert.equal(res.body.credit_cost, 0.2)
+  assert.match(calls[0], /\/api\/v1\/seedance$/)
+  assert.deepEqual(bodies[0], {
+    prompt: 'ombak senja',
+    duration: 15,
+    ratio: 2,
+    media: ['data:image/png;base64,AAA'],
+  }, 'hanya 1 start frame yang diteruskan ke upstream')
+})
+
+test('/seedance: durasi selain 15/30 ditolak sebelum memanggil upstream', async () => {
+  const res = await post('/api/public/nexabot/seedance', { prompt: 'x', duration: 20 }, { 'X-Api-Key': 'nxb_test' })
+  assert.equal(res.status, 400)
+  assert.match(res.body.error, /15 atau 30/)
+  assert.equal(calls.length, 0, 'upstream tidak boleh dipanggil — tidak ada kredit terpakai')
+})
+
+test('/seedance: tanpa kredensial → 400', async () => {
+  const res = await post('/api/public/nexabot/seedance', { prompt: 'x', duration: 15 })
+  assert.equal(res.status, 400)
+  assert.equal(calls.length, 0)
+})
+
+test('/seedance/:id: status dibaca dari endpoint seedance, bukan /jobs', async () => {
+  queue.push(() => jsonResponse({ ok: true, status: 'processing', progress: 40 }))
+  const res = await get('/api/public/nexabot/seedance/sd-1', { 'X-Api-Key': 'nxb_test' })
+  assert.equal(res.status, 200)
+  assert.equal(res.body.status, 'processing')
+  assert.match(calls[0], /\/api\/v1\/seedance\/sd-1$/)
+})
+
+test('/seedance/:id/download: video di-stream utuh', async () => {
+  const mp4 = new Uint8Array([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70])
+  queue.push(() => new Response(mp4, { status: 200, headers: { 'Content-Type': 'video/mp4', 'Content-Length': '8' } }))
+
+  const res = await originalFetch(`${base}/api/public/nexabot/seedance/sd-1/download`, { headers: { 'X-Api-Key': 'nxb_test' } })
+  assert.equal(res.status, 200)
+  assert.equal(res.headers.get('content-type'), 'video/mp4')
+  assert.deepEqual(Array.from(new Uint8Array(await res.arrayBuffer())), Array.from(mp4))
+  assert.match(calls[0], /\/api\/v1\/seedance\/sd-1\/download$/)
 })

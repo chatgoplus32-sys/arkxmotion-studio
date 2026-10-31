@@ -32,7 +32,7 @@ export { userIdFromRequest }
  */
 
 /** Rute yang mengonsumsi kuota upstream. Poll job/health/credit sengaja tidak. */
-export type ConsumingRoute = 'generate' | 'submit' | 'gpt-image'
+export type ConsumingRoute = 'generate' | 'submit' | 'gpt-image' | 'seedance'
 
 const EVIDENCE_MAX = 300
 

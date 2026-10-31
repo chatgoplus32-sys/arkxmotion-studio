@@ -150,6 +150,9 @@ export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'nb:i2v', label: '🧩 Ingredients to Video (1-3 img) — Omni Flash 1.1 (NexaBot)', cr: 0.15, provider: 'nexabot', apiModel: 'i2v' },
     { value: 'nb:r2v', label: '🎬 Reference Video to Video — Omni Flash 1.1 (NexaBot)', cr: 0.15, provider: 'nexabot', apiModel: 'r2v' },
     { value: 'nb:extend', label: '⏩ Extend Video (1 video) — Omni Flash 1.1 (NexaBot)', cr: 0.15, provider: 'nexabot', apiModel: 'extend' },
+    // Endpoint khusus (POST /api/v1/seedance): durasi wajib 15|30 dan selalu
+    // menagih 0,2 kredit — di luar skema mode Omni Flash 0,15.
+    { value: 'nb:seedance', label: '🎬 Seedance 2.5 — 15/30 detik (NexaBot)', cr: 0.2, provider: 'nexabot', apiModel: 'seedance' },
   ],
 }
 
@@ -626,6 +629,12 @@ export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: s
     'nb:extend': [
       { value: '1080', label: '1080p — otomatis (hasil selalu 1080p)', mult: 1, duration: 0, cr: 0.15, resolution: '1080' },
     ],
+    // Seedance 2.5: durasi WAJIB 15|30 dan biaya tetap 0,2 kredit per video
+    // (tidak peduli durasi). `cr` 0,2 dipakai untuk label biaya upstream.
+    'nb:seedance': [
+      { value: '15', label: '15 detik — antrean batch 60 s', mult: 1, duration: 15, cr: 0.2 },
+      { value: '30', label: '30 detik — antrean batch 60 s', mult: 1, duration: 30, cr: 0.2 },
+    ],
     default: [
       { value: '720', label: '720p', mult: 1, duration: 0, cr: 0.15, resolution: '720' },
       { value: '1080', label: '1080p', mult: 1, duration: 0, cr: 0.15, resolution: '1080' },
@@ -658,12 +667,15 @@ export const MODEL_RATIO_RESTRICTIONS: Record<string, string[]> = {
   gemini_omni_server19: ['9:16', '16:9', '1:1', '3:4', '4:3'],
   'veo-omni-10s': ['9:16', '16:9'],
   // NexaBot Omni Flash 1.1 (docs /api/v1/modes): ratio 1=landscape, 2=portrait
-  // — 1:1 & 4:3 tidak didukung upstream.
-  'nb:t2v': ['16:9', '9:16'],
-  'nb:sfv': ['16:9', '9:16'],
-  'nb:i2v': ['16:9', '9:16'],
-  'nb:r2v': ['16:9', '9:16'],
-  'nb:extend': ['16:9', '9:16'],
+  // — 1:1 & 4:3 tidak didukung upstream. Kunci memakai `apiModel` (bukan nilai
+  // model `nb:*`): halaman mencari batas lewat currentModel.apiModel.
+  t2v: ['16:9', '9:16'],
+  sfv: ['16:9', '9:16'],
+  i2v: ['16:9', '9:16'],
+  r2v: ['16:9', '9:16'],
+  extend: ['16:9', '9:16'],
+  // Seedance 2.5 (docs): ratio 1=16:9, 2=9:16, "1:1" — 4:3 tidak ada.
+  seedance: ['16:9', '9:16', '1:1'],
 }
 
 export const H3_VLOG_TEMPLATE = `subject_definitions:
