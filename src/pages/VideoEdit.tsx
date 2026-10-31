@@ -34,7 +34,7 @@ import { precheckProviderBalance } from '@/lib/balancePrecheck'
 import { runWithNexabotThrottleRetry, NexabotResultError } from '@/lib/nexabot'
 import { runNexabotJobWithSessionFallback } from './image-to-video/nexabotSessionFallback'
 import {
-  planClips, splitVideoIntoClips, fetchVideoFile, joinEditedClips,
+  planClips, splitVideoIntoClips, fetchVideoFile, joinEditedClips, lastFrameDataUri,
   CLIP_SECONDS, type ClipSpec,
 } from '@/lib/videoChunks'
 
@@ -128,11 +128,15 @@ const MAX_CLIPS = 30
 const CLIP_CONCURRENCY = 3
 const CLIP_ATTEMPTS = 2
 
+// Mode rantai (chained): klip dirender berurutan dan frame terakhir klip
+// sebelumnya ikut dikirim sebagai acuan. Lebih lambat, tapi hasilnya nyambung.
 type ClipStatus = 'menunggu' | 'render' | 'selesai' | 'gagal'
 
 interface ClipState {
   index: number
   status: ClipStatus
+  /** Rantai acuan dipakai (true) atau ditolak provider lalu dilepas (false). */
+  anchored?: boolean
   error?: string
 }
 
@@ -158,6 +162,8 @@ export default function VideoEditPage() {
   const [ratio, setRatio] = useState('9:16')
   const [resolution, setResolution] = useState('720')
   const [audioMode, setAudioMode] = useState<'original' | 'edited'>('original')
+  const [chained, setChained] = useState(true)
+  const [naskah, setNaskah] = useState('')
   const [clipStates, setClipStates] = useState<ClipState[]>([])
 
   const [wallet, setWallet] = useState<NexabotWallet | null>(null)
@@ -252,6 +258,40 @@ export default function VideoEditPage() {
   )
   const isChunked = clipSpecs.length > 1
 
+  // Satu baris naskah = satu klip, urut dari klip pertama.
+  const scriptLines = useMemo(
+    () => naskah.split('\n').map((l) => l.trim()).filter(Boolean),
+    [naskah]
+  )
+
+  // Tiap klip dirender terpisah, jadi prompt-nya harus menyebut posisinya di
+  // dalam satu video utuh — kalau tidak, model memperlakukan setiap klip seperti
+  // video mandiri dan hasilnya melompat-lompat di tiap batas potong.
+  const buildClipPrompt = (base: string, i: number, total: number, withAnchor: boolean) => {
+    const last = i === total - 1
+    const role = i === 0 ? 'opening' : last ? 'final' : 'middle'
+    const lines = [
+      base,
+      '',
+      `This is segment ${i + 1} of ${total} of ONE continuous video; the segments are stitched back together afterwards in order.`,
+      `This is the ${role} segment. Use exactly the same edit style, effect design, graphic shapes, font, colors, color grade and motion speed as the other segments — being consistent across segments matters more than being interesting.`,
+      'Start on the first frame of this segment and end on its last frame. Do not add an intro, title card, outro, fade-in, fade-out or extra shot, and do not freeze the last frame.',
+      withAnchor
+        ? 'The second reference is the LAST FRAME of the previous segment as edited: match its framing, lighting and on-screen graphics so this segment continues seamlessly from it.'
+        : i === 0
+          ? 'This is the first segment, so it sets the look that every later segment must repeat.'
+          : `Continue from where segment ${i} left off — the motion and graphics should read as one take, and do not wrap up yet.`,
+      last
+        ? 'This is the final segment: land the closing beat calmly, without a hard stop.'
+        : 'Keep the story moving forward; the next segment continues it.',
+    ]
+    if (scriptLines[i]) lines.push(`Narration or beat for this segment only: ${scriptLines[i]}`)
+    if (scriptLines.length > 1) {
+      lines.push(`The whole video follows ${scriptLines.length} narration lines, one per segment — play only this segment's line, do not show the others.`)
+    }
+    return lines.join('\n')
+  }
+
   const setClip = (index: number, patch: Partial<ClipState>) => {
     setClipStates((prev) => prev.map((c) => (c.index === index ? { ...c, ...patch } : c)))
   }
@@ -264,7 +304,7 @@ export default function VideoEditPage() {
   }
 
   const runNexabotJob = async (
-    mediaBase64: string,
+    mediaBase64: string | string[],
     jobPrompt: string,
     apiKey: string | null,
     keyInfo: ProviderKey | null,
@@ -277,11 +317,12 @@ export default function VideoEditPage() {
       onStatus = (text, pct) => setStatus({ text, pct }),
     } = options
     const tag = clipLabel ? `${clipLabel} · ` : ''
+    const media = Array.isArray(mediaBase64) ? mediaBase64 : [mediaBase64]
 
     return runNexabotJobWithSessionFallback<string>(async (auth, via) => {
       const { submitNexabot, pollNexabotJob, saveNexabotResult, downloadNexabotResult } = await import('@/lib/nexabot')
 
-      addLog(`${tag}🚀 Submit ke NexaBot (${via})...`)
+      addLog(`${tag}🚀 Submit ke NexaBot (${via}${media.length > 1 ? ` · ${media.length} referensi` : ''})...`)
       onStatus(`${tag}Submit ke NexaBot...`, 15)
 
       const submit = await runWithNexabotThrottleRetry(
@@ -290,7 +331,7 @@ export default function VideoEditPage() {
           prompt: jobPrompt,
           ratio: ratio === '16:9' ? 1 : 2,
           resolution: Number(resolution),
-          media: [mediaBase64],
+          media,
           telegramId: keyInfo?.telegramId,
         }, auth, {
           onRetry: ({ attempt, status: httpStatus, delayMs, message }) => {
@@ -434,16 +475,25 @@ export default function VideoEditPage() {
     addLog(`✅ ${total} klip siap dikirim (total ${formatSize(clips.reduce((s, c) => s + c.size, 0))})`, 'success')
     setProgress(14)
 
-    const urls: string[] = new Array(total).fill('')
+    const editedFiles: (File | null)[] = new Array(total).fill(null)
     let finished = 0
     // Satu klip gagal permanen → stop. Melanjutkan klip lain hanya membakar
     // saldo untuk hasil yang pada akhirnya dibuang.
     let halted = false
 
-    const editOne = async (i: number) => {
-      for (let attempt = 1; attempt <= CLIP_ATTEMPTS; attempt++) {
+    const editOne = async (i: number, anchor: string | null): Promise<File> => {
+      // Klip pertama tidak punya acuan; klip berikutnya menerima frame akhir
+      // hasil klip sebelumnya. Kalau pengiriman dengan acuan ditolak, klip yang
+      // sama dikirim ulang tanpa acuan — saldo klip itu sudah dikembalikan, jadi
+      // penolakan acuan tidak dihitung sebagai percobaan yang gagal.
+      let useAnchor = !!anchor
+      let attempt = 0
+      while (attempt < CLIP_ATTEMPTS) {
+        attempt += 1
         let ticket: number | null = null
-        setClip(i, { status: 'render' })
+        const media = useAnchor ? [mediaList[i], anchor as string] : mediaList[i]
+        const clipPrompt = buildClipPrompt(jobPrompt, i, total, useAnchor)
+        setClip(i, { status: 'render', ...(useAnchor ? { anchored: true } : {}) })
         try {
           if (!isAdmin) {
             const charge = await chargeNexabotWallet(authToken, 'r2v')
@@ -453,26 +503,34 @@ export default function VideoEditPage() {
           const opts = { ticket, clipLabel: label(i) }
           const url = ctx.hasActiveKey
             ? (await withTokenRotation('nexabot', (apiKey, keyInfo) =>
-                runNexabotJob(mediaList[i], jobPrompt, apiKey, keyInfo, opts), {
+                runNexabotJob(media, clipPrompt, apiKey, keyInfo, opts), {
                 requiredCredits: 0.15,
                 onKeySwitch: (from: ProviderKey, to: ProviderKey, n: number) =>
                   addLog(`🔄 ${label(i)}: pindah key #${n} "${from.name || from.id}" → "${to.name || to.id}"`, 'warn'),
               })).result
-            : await runNexabotJob(mediaList[i], jobPrompt, null, null, { ...opts, viaMaster: true })
+            : await runNexabotJob(media, clipPrompt, null, null, { ...opts, viaMaster: true })
 
           if (!url) throw new Error('NexaBot tidak mengembalikan hasil')
-          urls[i] = url
-          setClip(i, { status: 'selesai' })
+          const file = await fetchVideoFile(url, `clip_${i + 1}.mp4`)
+          editedFiles[i] = file
+          setClip(i, { status: 'selesai', ...(useAnchor ? { anchored: true } : {}) })
           finished += 1
           const pct = 15 + (finished / total) * 70
           setProgress(Math.round(pct))
           setStatus({ text: `${label(i)} selesai — ${finished}/${total} klip`, pct })
-          return
+          return file
         } catch (err: any) {
           // Klip ini dibayar; kalau gagal, uangnya kembali lalu coba sekali lagi.
           if (ticket != null) {
             const refunded = await refundNexabotWallet(authToken, ticket).catch(() => null)
             if (refunded != null) setWallet((w) => (w ? { ...w, balance: refunded } : w))
+          }
+          if (useAnchor) {
+            useAnchor = false
+            setClip(i, { anchored: false })
+            attempt -= 1
+            addLog(`🔗 ${label(i)}: dengan frame acuan ditolak (${err.message}) — kirim ulang tanpa acuan`, 'warn')
+            continue
           }
           if (attempt >= CLIP_ATTEMPTS) {
             setClip(i, { status: 'gagal', error: err.message })
@@ -482,35 +540,52 @@ export default function VideoEditPage() {
           addLog(`⚠️ ${label(i)} gagal (${err.message}) — ulangi`, 'warn')
         }
       }
+      throw new Error(`${label(i)} gagal`)
     }
 
-    // FFmpeg cuma satu instance, tapi generate-nya jaringan — jalankan bertingkat.
-    let cursor = 0
-    const workers = Array.from({ length: Math.min(CLIP_CONCURRENCY, total) }, async () => {
-      while (!halted && cursor < total) {
-        const i = cursor++
-        await editOne(i)
+    const readLastFrame = async (file: File): Promise<string | null> => {
+      try {
+        return await lastFrameDataUri(file)
+      } catch (e: any) {
+        addLog(`🔗 Frame acuan gagal dibaca (${e.message}) — klip berikutnya tanpa acuan`, 'warn')
+        return null
       }
-    })
-    const results = await Promise.allSettled(workers)
-    const failed = results.find((r) => r.status === 'rejected')
-    if (failed && failed.status === 'rejected') {
-      const paid = urls.filter(Boolean).length
-      addLog(`⛔ Mode potong dihentikan — ${paid} klip sudah terlanjur dibayar dan tidak dipakai`, 'error')
-      throw failed.reason
     }
 
-    setStatus({ text: 'Mengunduh klip hasil edit...', pct: 88 })
-    const edited: File[] = []
-    for (let i = 0; i < total; i++) {
-      edited.push(await fetchVideoFile(urls[i], `clip_${i + 1}.mp4`))
-      setStatus({ text: `Unduh klip ${i + 1}/${total}`, pct: 88 + (i / total) * 4 })
+    try {
+      if (chained && total > 1) {
+        addLog(`🔗 Mode rantai: ${total} klip dirender berurutan — tiap klip menerima frame akhir klip sebelumnya`, 'info')
+        let anchor: string | null = null
+        for (let i = 0; i < total; i++) {
+          const file = await editOne(i, anchor)
+          anchor = i === total - 1 ? null : await readLastFrame(file)
+        }
+      } else {
+        addLog(`⚡ Mode paralel — ${Math.min(CLIP_CONCURRENCY, total)} klip sekaligus, tanpa acuan antar klip`, 'info')
+        // FFmpeg cuma satu instance, tapi generate-nya jaringan — jalankan bertingkat.
+        let cursor = 0
+        const workers = Array.from({ length: Math.min(CLIP_CONCURRENCY, total) }, async () => {
+          while (!halted && cursor < total) {
+            const i = cursor++
+            await editOne(i, null)
+          }
+        })
+        const results = await Promise.allSettled(workers)
+        const failed = results.find((r) => r.status === 'rejected')
+        if (failed && failed.status === 'rejected') throw failed.reason
+      }
+    } catch (err: any) {
+      const paid = editedFiles.filter(Boolean).length
+      if (paid > 0) addLog(`⛔ Mode potong dihentikan — ${paid} klip sudah terlanjur dibayar dan tidak dipakai`, 'error')
+      throw err
     }
 
-    const joined = await joinEditedClips(edited, specs, source, meta?.duration ?? 0, {
+    setStatus({ text: 'Menggabungkan klip hasil edit...', pct: 88 })
+    const joined = await joinEditedClips(editedFiles as File[], specs, source, meta?.duration ?? 0, {
       audioMode,
       onProgress: (msg, pct) => setStatus({ text: msg, pct: 92 + ((pct ?? 0) / 100) * 6 }),
     })
+    if (joined.crossfaded) addLog(`🪄 ${total - 1} batas potong dihaluskan dengan crossfade`, 'info')
     if (joined.retimed) addLog(`⏱️ Durasi hasil edit disesuaikan ke ${formatDuration(meta?.duration ?? 0)} agar audio tetap sinkron`, 'info')
     if (joined.audioFrom === 'none') addLog('🔇 Video sumber tanpa audio — hasil gabungan tanpa suara', 'warn')
 
@@ -608,7 +683,9 @@ export default function VideoEditPage() {
         page: 'video-edit',
         kind: 'video',
         provider: 'nexabot',
-        model: isChunked ? `Gemini Omni · Video Edit (${clipSpecs.length} klip)` : 'Gemini Omni · Video Edit',
+        model: isChunked
+          ? `Gemini Omni · Video Edit (${clipSpecs.length} klip${chained ? ', rantai acuan' : ', paralel'})`
+          : 'Gemini Omni · Video Edit',
         ratio,
         credits: isChunked ? 0.15 * clipSpecs.length : 0.15,
       }
@@ -747,9 +824,55 @@ export default function VideoEditPage() {
                 {audioMode === 'original' && (
                   <p className="mt-1 text-[11px] text-muted-foreground">
                     Suara video sumber ditempel lagi ke hasil gabungan, jadi tidak patah di tiap batas potong — tapi SFX
-                    tambahan dari model tidak ikut terpakai.
+                    tambahan dari model tidak ikut terpakai. Tiap batas juga dihaluskan dengan crossfade.
                   </p>
                 )}
+
+                <div className="mt-3 border-t border-border/40 pt-3">
+                  <div className="text-xs font-medium">Kesinambungan antar klip</div>
+                  <div className="mt-2 flex gap-2">
+                    {([
+                      [true, 'Rantai acuan (paling nyambung)'],
+                      [false, 'Paralel (paling cepat)'],
+                    ] as const).map(([value, lab]) => (
+                      <button
+                        key={String(value)}
+                        type="button"
+                        onClick={() => setChained(value)}
+                        aria-pressed={chained === value}
+                        className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-medium transition ${
+                          chained === value
+                            ? 'border-primary bg-primary/10 text-primary'
+                            : 'border-border text-muted-foreground hover:border-primary/50'
+                        }`}
+                      >
+                        {lab}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                    {chained
+                      ? 'Kelebihan: frame akhir tiap klip dikirim sebagai acuan visual untuk klip berikutnya, dan tiap prompt menyebut posisinya di antara ' + clipSpecs.length + ' klip supaya gaya serta grafisnya sama. Konsekuensi: klip dirender satu per satu, jadi total waktunya jauh lebih panjang daripada paralel. Biayanya tetap sama.'
+                      : 'Klip dirender 3 sekaligus jadi lebih cepat, tapi tiap klip hanya melihat potongannya sendiri — gaya grafis bisa berbeda-beda dan batas potong lebih terasa.'}
+                  </p>
+                </div>
+
+                <div className="mt-3 border-t border-border/40 pt-3">
+                  <Label>Naskah per klip (opsional)</Label>
+                  <Textarea
+                    value={naskah}
+                    onChange={(e) => setNaskah(e.target.value)}
+                    rows={Math.min(clipSpecs.length, 6)}
+                    placeholder={`Satu baris = satu klip, urut dari klip 1.\nContoh:\n0-10 dtk: perkenalkan masalah\n10-20 dtk: tunjukkan produk\n20-30 dtk: penutup + ajakan`}
+                  />
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    {scriptLines.length === 0
+                      ? `Kosong = alur narasi mengikuti video sumber saja. Kalau diisi, baris ke-n dipakai oleh klip ke-n (${clipSpecs.length} klip tersedia).`
+                      : scriptLines.length === clipSpecs.length
+                        ? `Pas — ${scriptLines.length} baris untuk ${clipSpecs.length} klip.`
+                        : `${scriptLines.length} baris untuk ${clipSpecs.length} klip — baris ke-n dipakai klip ke-n, sisanya tanpa arahan khusus.`}
+                  </p>
+                </div>
               </div>
             )}
           </Section>
@@ -811,10 +934,25 @@ export default function VideoEditPage() {
               />
             </div>
             <div className="mt-4">
-              <Label>Prompt yang dikirim</Label>
-              <div className="max-h-40 overflow-y-auto whitespace-pre-wrap rounded-xl bg-muted/40 p-3 text-[11px] leading-relaxed text-muted-foreground">
-                {prompt || 'Pilih minimal satu gaya edit atau tulis arahan tambahan.'}
-              </div>
+              <Label>{isChunked ? 'Prompt per klip' : 'Prompt yang dikirim'}</Label>
+              {prompt && isChunked ? (
+                <div className="space-y-2">
+                  {[0, 1].filter((i) => i < clipSpecs.length).map((i) => (
+                    <div key={i}>
+                      <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                        klip {i + 1}{i === 1 && chained ? ' · dengan frame acuan' : ''}
+                      </div>
+                      <div className="max-h-40 overflow-y-auto whitespace-pre-wrap rounded-xl bg-muted/40 p-3 text-[11px] leading-relaxed text-muted-foreground">
+                        {buildClipPrompt(prompt, i, clipSpecs.length, i === 1 && chained)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="max-h-40 overflow-y-auto whitespace-pre-wrap rounded-xl bg-muted/40 p-3 text-[11px] leading-relaxed text-muted-foreground">
+                  {prompt || 'Pilih minimal satu gaya edit atau tulis arahan tambahan.'}
+                </div>
+              )}
             </div>
           </Section>
 
@@ -841,7 +979,7 @@ export default function VideoEditPage() {
               {clipStates.map((c) => (
                 <span
                   key={c.index}
-                  title={c.error}
+                  title={c.error || (c.anchored === false ? 'tanpa acuan' : c.anchored ? 'dengan acuan' : undefined)}
                   className={`rounded-md px-2 py-1 text-[10px] font-medium ${
                     c.status === 'selesai'
                       ? 'bg-green-500/10 text-green-600'
@@ -853,6 +991,7 @@ export default function VideoEditPage() {
                   }`}
                 >
                   {c.index + 1} · {c.status}
+                  {c.status === 'selesai' && c.anchored ? ' 🔗' : ''}
                 </span>
               ))}
             </div>

@@ -14,6 +14,10 @@ export const CLIP_SECONDS = 10
 // hasil model tidak persis sama dengan durasi klip masuk.
 export const CLIP_OVERLAP_SECONDS = 0
 const MIN_TAIL_SECONDS = 2
+// Panjang crossfade di setiap batas klip saat hasil edit digabung ulang —
+// cukup untuk menyembunyikan lompatan, cukup pendek agar timeline tidak
+// menyusut banyak (dipakai juga untuk menghitung faktor retime audio).
+const FADE_SECONDS = 0.3
 
 export interface ClipSpec {
   index: number
@@ -136,9 +140,13 @@ export interface JoinResult {
   editedDuration: number
   retimed: boolean
   audioFrom: 'original' | 'edited' | 'none'
+  /** Batas potong dilarutkan crossfade (hanya saat audio ditutup dari sumber). */
+  crossfaded: boolean
 }
 
-/** Durasi file video lewat elemen <video> — jauh lebih murah daripada probe FFmpeg. */
+/**
+ * Durasi file video lewat elemen <video> — jauh lebih murah daripada probe FFmpeg.
+ */
 export function measureVideoDuration(file: File): Promise<number> {
   return new Promise<number>((resolve) => {
     const url = URL.createObjectURL(file)
@@ -153,6 +161,114 @@ export function measureVideoDuration(file: File): Promise<number> {
     el.onerror = () => done(0)
     el.src = url
   })
+}
+
+/**
+ * Frame terakhir satu video sebagai data URI PNG, dipakai sebagai kunci
+ * kesinambungan antar klip. Diambil lewat canvas, bukan FFmpeg, jadi murah.
+ */
+export function lastFrameDataUri(file: File, seekBack = 0.15): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const url = URL.createObjectURL(file)
+    const el = document.createElement('video')
+    el.muted = true
+    el.preload = 'auto'
+    const cleanup = () => URL.revokeObjectURL(url)
+    el.onloadedmetadata = () => {
+      const d = el.duration
+      // Durasi tak hingga/NaN bikin perhitungan mundur jatuh ke 0 — itu frame
+      // PERTAMA, bukan terakhir. Kirim frame pertama sebagai acuan justru
+      // membuat klip berikutnya mengulang awal klip sebelumnya, jadi lebih baik
+      // menyerah dan klip berikutnya dirender tanpa acuan.
+      if (!isFinite(d) || d <= 0) {
+        cleanup()
+        reject(new Error('durasi hasil edit tidak terbaca'))
+        return
+      }
+      // Mundur sedikit dari ujung: frame paling akhir sering hitam/patah.
+      el.currentTime = Math.max(0, d - seekBack)
+    }
+    el.onseeked = () => {
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width = el.videoWidth || 640
+        canvas.height = el.videoHeight || 360
+        const ctx = canvas.getContext('2d')
+        if (!ctx) throw new Error('canvas tidak tersedia')
+        ctx.drawImage(el, 0, 0, canvas.width, canvas.height)
+        const uri = canvas.toDataURL('image/png')
+        cleanup()
+        resolve(uri)
+      } catch (e: any) {
+        cleanup()
+        reject(e)
+      }
+    }
+    el.onerror = () => {
+      cleanup()
+      reject(new Error('gagal membaca frame terakhir video'))
+    }
+    el.src = url
+  })
+}
+
+/**
+ * Rantai xfade: batas antar klip dilarutkan 0,x detik supaya lompatan kecil
+ * akibat tiap klip dire-render terpisah tidak terlihat sebagai cut kasar.
+ * Perlu re-encode, jadi hanya dipakai saat audio ditutup dari video sumber.
+ */
+async function crossfadeVideos(
+  files: File[],
+  durations: number[],
+  fadeSeconds: number,
+  onProgress?: SplitProgress
+): Promise<File> {
+  if (files.length < 2) return files[0]
+  const ffmpeg = await getFFmpeg()
+  const stamp = Date.now()
+  const names: string[] = []
+
+  try {
+    for (let i = 0; i < files.length; i++) {
+      const n = `xf_${stamp}_${i}.mp4`
+      await ffmpeg.writeFile(n, await fetchFile(files[i]))
+      names.push(n)
+    }
+
+    // Offset tiap xfade = total durasi yang sudah tersusun - fade, dan setiap
+    // xfade mempersingkat timeline sepanjang fade-nya sendiri.
+    const parts: string[] = []
+    let running = durations[0]
+    let prev = '[0:v]'
+    for (let i = 1; i < names.length; i++) {
+      const offset = Math.max(0, running - fadeSeconds)
+      const out = `[v${i}]`
+      parts.push(`${prev}[${i}:v]xfade=transition=fade:duration=${fadeSeconds}:offset=${offset.toFixed(3)}${out}`)
+      running = running + durations[i] - fadeSeconds
+      prev = out
+    }
+
+    const outName = `xf_${stamp}_out.mp4`
+    onProgress?.(`Merapikan ${names.length - 1} batas potong (crossfade ${fadeSeconds}s)...`, 40)
+    await ffmpeg.exec([
+      ...names.flatMap((n) => ['-i', n]),
+      '-filter_complex', parts.join(';'),
+      '-map', prev,
+      '-c:v', 'libx264',
+      '-preset', 'veryfast',
+      '-crf', '23',
+      '-pix_fmt', 'yuv420p',
+      '-an',
+      '-movflags', '+faststart',
+      outName,
+    ])
+    const data = await ffmpeg.readFile(outName)
+    await ffmpeg.deleteFile(outName).catch(() => {})
+    const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : new Uint8Array(data)
+    return toFile(bytes, 'joined_crossfade.mp4')
+  } finally {
+    for (const n of names) await ffmpeg.deleteFile(n).catch(() => {})
+  }
 }
 
 /**
@@ -175,13 +291,31 @@ export async function joinEditedClips(
   const editedDuration = measured.reduce((sum, d, i) => sum + (d > 0 ? d : specs[i]?.duration ?? 0), 0)
 
   onProgress?.('Menggabungkan klip hasil edit...', 0)
-  let joined = await concatVideosFFmpeg(editedClips, (msg) => onProgress?.(msg, 20))
-
-  if (audioMode === 'edited') {
-    return { file: joined, editedDuration, retimed: false, audioFrom: 'edited' }
+  const usable = measured.map((d, i) => (d > 0 ? d : specs[i]?.duration ?? CLIP_SECONDS))
+  let joined: File
+  let crossfaded = false
+  if (audioMode === 'original' && usable.length > 1) {
+    // Crossfade menghilangkan jejak cut di tiap batas; audio memang akan ditempel
+    // ulang dari video sumber, jadi jalur ini tidak menambah acrossfade.
+    try {
+      joined = await crossfadeVideos(editedClips, usable, FADE_SECONDS, onProgress)
+      crossfaded = true
+    } catch {
+      onProgress?.('Crossfade gagal — kembali ke gabung biasa.', 20)
+      joined = await concatVideosFFmpeg(editedClips, (msg) => onProgress?.(msg, 20))
+    }
+  } else {
+    joined = await concatVideosFFmpeg(editedClips, (msg) => onProgress?.(msg, 20))
   }
 
-  const factor = sourceDuration / editedDuration
+  if (audioMode === 'edited') {
+    return { file: joined, editedDuration, retimed: false, audioFrom: 'edited', crossfaded }
+  }
+
+  // Crossfade memakan waktu timeline di setiap batas, jadi durasi gabungan
+  // lebih pendek daripada total klip — faktor retime harus memakai angka ini.
+  const joinedDuration = crossfaded ? editedDuration - FADE_SECONDS * (usable.length - 1) : editedDuration
+  const factor = sourceDuration / joinedDuration
   const drift = Math.abs(factor - 1)
   let retimed = false
 
@@ -225,12 +359,12 @@ export async function joinEditedClips(
         '-movflags', '+faststart',
         `join_${stamp}_final.mp4`,
       ], `join_${stamp}_final.mp4`)
-      return { file: toFile(muxed, 'video-edit-gabungan.mp4'), editedDuration, retimed, audioFrom: 'original' }
+      return { file: toFile(muxed, 'video-edit-gabungan.mp4'), editedDuration, retimed, audioFrom: 'original', crossfaded }
     } catch {
       // Video sumber tidak punya track suara (atau gagal dipetakan) — hasil
       // tetap dipakai, tanpa audio.
       onProgress?.('Video sumber tidak punya audio — hasil tanpa suara.', 90)
-      return { file: joined, editedDuration, retimed, audioFrom: 'none' }
+      return { file: joined, editedDuration, retimed, audioFrom: 'none', crossfaded }
     }
   } finally {
     await ffmpeg.deleteFile(inName).catch(() => {})
