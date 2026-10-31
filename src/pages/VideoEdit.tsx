@@ -33,6 +33,10 @@ import { compressVideo } from '@/lib/roboneo'
 import { precheckProviderBalance } from '@/lib/balancePrecheck'
 import { runWithNexabotThrottleRetry, NexabotResultError } from '@/lib/nexabot'
 import { runNexabotJobWithSessionFallback } from './image-to-video/nexabotSessionFallback'
+import {
+  planClips, splitVideoIntoClips, fetchVideoFile, joinEditedClips,
+  CLIP_SECONDS, type ClipSpec,
+} from '@/lib/videoChunks'
 
 interface EditStyle {
   id: string
@@ -108,8 +112,38 @@ const RESOLUTIONS = [
 
 const RATIOS = ['16:9', '9:16']
 
+// Batas upload seluas mungkin — file bisa 100MB dan 4 menit, karena video
+// dikompres di browser sebelum dikirim. Yang membatasi adalah budget payload
+// (base64-nya harus muat di bawah body limit server), jadi kompresi dicoba
+// dengan target 6MB dulu (angka yang sudah terbukti jalan di Image to Video),
+// lalu naik ke 20MB kalau video panjang tidak mungkin masuk 6MB.
+const MAX_UPLOAD_MB = 100
+const MAX_DURATION_SEC = 240
+const PAYLOAD_BUDGETS_MB = [6, 20]
+
+// Mode potong otomatis: video di atas ambang ini dipecah jadi klip ±10 detik,
+// tiap klip diedit terpisah (1× Rp 150), lalu digabung kembali di browser.
+const CHUNK_THRESHOLD_SEC = 15
+const MAX_CLIPS = 30
+const CLIP_CONCURRENCY = 3
+const CLIP_ATTEMPTS = 2
+
+type ClipStatus = 'menunggu' | 'render' | 'selesai' | 'gagal'
+
+interface ClipState {
+  index: number
+  status: ClipStatus
+  error?: string
+}
+
 function formatSize(bytes: number): string {
   return bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)}MB` : `${Math.max(1, Math.round(bytes / 1024))}KB`
+}
+
+function formatDuration(sec: number): string {
+  const m = Math.floor(sec / 60)
+  const s = Math.round(sec % 60)
+  return m > 0 ? `${m}m ${s}dtk` : `${s}dtk`
 }
 
 export default function VideoEditPage() {
@@ -123,6 +157,8 @@ export default function VideoEditPage() {
   const [extra, setExtra] = useState('')
   const [ratio, setRatio] = useState('9:16')
   const [resolution, setResolution] = useState('720')
+  const [audioMode, setAudioMode] = useState<'original' | 'edited'>('original')
+  const [clipStates, setClipStates] = useState<ClipState[]>([])
 
   const [wallet, setWallet] = useState<NexabotWallet | null>(null)
   const [generating, setGenerating] = useState(false)
@@ -158,10 +194,26 @@ export default function VideoEditPage() {
       addToast('File harus berupa video (MP4 / WEBM / MOV)', 'error')
       return
     }
+    if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+      addToast(`Video terlalu besar (${formatSize(file.size)}). Maksimal ${MAX_UPLOAD_MB}MB.`, 'error')
+      return
+    }
     if (videoUrl) URL.revokeObjectURL(videoUrl)
     setVideoFile(file)
     setVideoUrl(URL.createObjectURL(file))
     setMeta(null)
+  }
+
+  // Durasi baru terbaca setelah metadata video siap, jadi potong di sini:
+  // file di atas 4 menit ditolak sebelum user sempat menekan Edit Video.
+  const handleMetadata = (el: HTMLVideoElement) => {
+    if (el.duration > MAX_DURATION_SEC) {
+      addToast(`Durasi video ${formatDuration(el.duration)} — maksimal ${MAX_DURATION_SEC / 60} menit. Potong dulu.`, 'error')
+      removeVideo()
+      return
+    }
+    setMeta({ duration: el.duration, width: el.videoWidth, height: el.videoHeight })
+    setRatio(el.videoWidth >= el.videoHeight ? '16:9' : '9:16')
   }
 
   const removeVideo = () => {
@@ -169,6 +221,7 @@ export default function VideoEditPage() {
     setVideoFile(null)
     setVideoUrl(null)
     setMeta(null)
+    setClipStates([])
   }
 
   const toggleStyle = (id: string) => {
@@ -191,18 +244,45 @@ export default function VideoEditPage() {
     return lines.join('\n')
   }, [selectedStyles, extra])
 
+  // Rencana pemotongan ditentukan dari durasi video sumber, jadi jumlah klip
+  // dan total biayanya bisa ditampilkan sebelum user menekan tombol.
+  const clipSpecs = useMemo<ClipSpec[]>(
+    () => (meta && meta.duration > CHUNK_THRESHOLD_SEC ? planClips(meta.duration) : []),
+    [meta]
+  )
+  const isChunked = clipSpecs.length > 1
+
+  const setClip = (index: number, patch: Partial<ClipState>) => {
+    setClipStates((prev) => prev.map((c) => (c.index === index ? { ...c, ...patch } : c)))
+  }
+
+  interface JobOptions {
+    viaMaster?: boolean
+    ticket?: number | null
+    clipLabel?: string
+    onStatus?: (text: string, pct: number) => void
+  }
+
   const runNexabotJob = async (
     mediaBase64: string,
     jobPrompt: string,
     apiKey: string | null,
     keyInfo: ProviderKey | null,
-    viaMaster = false
+    options: JobOptions = {}
   ): Promise<string> => {
+    const {
+      viaMaster = false,
+      ticket = nbChargeRef.current,
+      clipLabel = '',
+      onStatus = (text, pct) => setStatus({ text, pct }),
+    } = options
+    const tag = clipLabel ? `${clipLabel} · ` : ''
+
     return runNexabotJobWithSessionFallback<string>(async (auth, via) => {
       const { submitNexabot, pollNexabotJob, saveNexabotResult, downloadNexabotResult } = await import('@/lib/nexabot')
 
-      addLog(`🚀 Submit ke NexaBot (${via})...`)
-      setStatus({ text: 'Submit ke NexaBot...', pct: 15 })
+      addLog(`${tag}🚀 Submit ke NexaBot (${via})...`)
+      onStatus(`${tag}Submit ke NexaBot...`, 15)
 
       const submit = await runWithNexabotThrottleRetry(
         () => submitNexabot({
@@ -216,25 +296,25 @@ export default function VideoEditPage() {
           onRetry: ({ attempt, status: httpStatus, delayMs, message }) => {
             const secs = Math.ceil(delayMs / 1000)
             addLog(`⏳ ${message} (HTTP ${httpStatus}) — ulang dalam ${secs}s (percobaan ${attempt})`, 'warn')
-            setStatus({ text: `Mengantre di NexaBot — ${secs}s...`, pct: 15 })
+            onStatus(`${tag}Mengantre di NexaBot — ${secs}s...`, 15)
           },
         }),
         {
           onThrottle: (seconds) => {
             addLog(`⏳ Server NexaBot dibatasi upstream — menunggu ${seconds}s lalu submit otomatis`, 'warn')
-            setStatus({ text: `Server gambar sibuk — menunggu ${seconds}s...`, pct: 10 })
+            onStatus(`${tag}Server sibuk — menunggu ${seconds}s...`, 10)
           },
         }
       )
       if (!submit.ok || !submit.jobId) throw new Error(submit.error || 'NexaBot menolak submit')
-      addLog(`✅ Job dibuat · ${submit.jobId.slice(0, 18)}...`, 'success')
-      setStatus({ text: 'Memproses di NexaBot...', pct: 30 })
+      addLog(`${tag}✅ Job dibuat · ${submit.jobId.slice(0, 18)}...`, 'success')
+      onStatus(`${tag}Memproses di NexaBot...`, 30)
 
       let pct = 30
       await pollNexabotJob(submit.jobId, auth, (msg) => {
         pct = Math.min(85, pct + 5)
         setProgress(pct)
-        setStatus({ text: msg, pct })
+        onStatus(`${tag}${msg}`, pct)
         addLog(msg, 'debug')
       }, {
         onRetry: ({ status: httpStatus, delayMs, message }) => {
@@ -243,7 +323,7 @@ export default function VideoEditPage() {
         },
       })
 
-      setStatus({ text: 'Menyimpan hasil...', pct: 90 })
+      onStatus(`${tag}Menyimpan hasil...`, 90)
       const saved = await saveNexabotResult(submit.jobId, auth, `video-edit-${submit.jobId}.mp4`)
       if (saved.ok && saved.url) return saved.url
 
@@ -265,13 +345,188 @@ export default function VideoEditPage() {
       sessionCookies: keyInfo?.cookies,
       apiKey,
       master: viaMaster,
-      ticket: nbChargeRef.current,
+      ticket,
       keyId: keyInfo?.id,
       hooks: {
         log: (msg, level) => addLog(msg, level),
         notify: (msg, type) => addToast(msg, type),
       },
     })
+  }
+
+  interface AccessCtx { hasActiveKey: boolean; serverReady: boolean }
+
+  const runSingleJob = async (source: File, jobPrompt: string, ctx: AccessCtx): Promise<string> => {
+    setStatus({ text: 'Menyiapkan video...', pct: 5 })
+    addLog(`🎬 Mengompres video sumber (${formatSize(source.size)}${meta ? ` · ${formatDuration(meta.duration)}` : ''})...`)
+    let compressed: File | null = null
+    let budgetMb = 0
+    for (const mb of PAYLOAD_BUDGETS_MB) {
+      try {
+        const out = await compressVideo(source, mb, (msg, pct) => {
+          setStatus({ text: msg, pct: Math.min(11, Math.max(5, 5 + (pct ?? 0) / 12)) })
+        })
+        if (out.size <= mb * 1024 * 1024) {
+          compressed = out
+          budgetMb = mb
+          break
+        }
+      } catch {
+        // Budget ini tidak tercapai — coba budget berikutnya yang lebih longgar.
+      }
+      addLog(`Kompresi ke ${mb}MB belum tercapai${mb === PAYLOAD_BUDGETS_MB[0] ? ', coba budget 20MB' : ''}`, 'warn')
+    }
+    if (!compressed) {
+      const last = PAYLOAD_BUDGETS_MB[PAYLOAD_BUDGETS_MB.length - 1]
+      throw new Error(`Video tidak muat di ${last}MB meski sudah dikompres maksimal. Potong durasinya lalu coba lagi.`)
+    }
+    const { fileToBase64 } = await import('@/lib/oneover')
+    const mediaBase64 = await fileToBase64(compressed)
+    addLog(`✅ Video siap dikirim (${formatSize(compressed.size)} · budget ${budgetMb}MB)`, 'success')
+    setProgress(12)
+
+    if (ctx.hasActiveKey) {
+      const rotation = await withTokenRotation(
+        'nexabot',
+        (apiKey, keyInfo) => runNexabotJob(mediaBase64, jobPrompt, apiKey, keyInfo),
+        {
+          requiredCredits: 0.15,
+          onKeySwitch: (from, to, attempt) => {
+            addLog(`🔄 Pindah key #${attempt}: "${from.name || from.id}" → "${to.name || to.id}"`, 'warn')
+          },
+          onError: (err, key) => {
+            if (detectTokenError('nexabot', err)) {
+              addLog(`⚠️ Key "${key.name || key.id}": ${err.message}`, 'warn')
+            }
+          },
+        }
+      )
+      if (!rotation.ok || !rotation.result) throw new Error(rotation.error || 'Generate gagal')
+      return rotation.result
+    }
+    addLog('🏦 Memakai kunci NexaBot milik server', 'info')
+    return runNexabotJob(mediaBase64, jobPrompt, null, null, { viaMaster: true })
+  }
+
+  // Mode potong: N klip → N generate (N × tarif NexaBot) → unduh semua klip →
+  // gabung di browser → tempel audio asli → unggah hasil utuh ke CDN.
+  const runChunkedJob = async (
+    source: File,
+    specs: ClipSpec[],
+    jobPrompt: string,
+    ctx: AccessCtx & { isAdmin: boolean; authToken: string }
+  ): Promise<string> => {
+    const { isAdmin, authToken } = ctx
+    const total = specs.length
+    const label = (i: number) => `klip ${i + 1}/${total}`
+    setClipStates(specs.map((s) => ({ index: s.index, status: 'menunggu' as ClipStatus })))
+    addLog(`✂️ Mode potong otomatis: ${total} klip × ±${CLIP_SECONDS} detik`, 'info')
+
+    setStatus({ text: `Memotong video jadi ${total} klip...`, pct: 3 })
+    const clips = await splitVideoIntoClips(source, {
+      specs,
+      height: Number(resolution),
+      onProgress: (msg, pct) => setStatus({ text: msg, pct: 2 + ((pct ?? 0) / 100) * 10 }),
+    })
+
+    const { fileToBase64 } = await import('@/lib/oneover')
+    const mediaList = await Promise.all(clips.map((c) => fileToBase64(c)))
+    addLog(`✅ ${total} klip siap dikirim (total ${formatSize(clips.reduce((s, c) => s + c.size, 0))})`, 'success')
+    setProgress(14)
+
+    const urls: string[] = new Array(total).fill('')
+    let finished = 0
+    // Satu klip gagal permanen → stop. Melanjutkan klip lain hanya membakar
+    // saldo untuk hasil yang pada akhirnya dibuang.
+    let halted = false
+
+    const editOne = async (i: number) => {
+      for (let attempt = 1; attempt <= CLIP_ATTEMPTS; attempt++) {
+        let ticket: number | null = null
+        setClip(i, { status: 'render' })
+        try {
+          if (!isAdmin) {
+            const charge = await chargeNexabotWallet(authToken, 'r2v')
+            ticket = charge.usageId
+            setWallet((w) => (w ? { ...w, balance: charge.balance } : w))
+          }
+          const opts = { ticket, clipLabel: label(i) }
+          const url = ctx.hasActiveKey
+            ? (await withTokenRotation('nexabot', (apiKey, keyInfo) =>
+                runNexabotJob(mediaList[i], jobPrompt, apiKey, keyInfo, opts), {
+                requiredCredits: 0.15,
+                onKeySwitch: (from: ProviderKey, to: ProviderKey, n: number) =>
+                  addLog(`🔄 ${label(i)}: pindah key #${n} "${from.name || from.id}" → "${to.name || to.id}"`, 'warn'),
+              })).result
+            : await runNexabotJob(mediaList[i], jobPrompt, null, null, { ...opts, viaMaster: true })
+
+          if (!url) throw new Error('NexaBot tidak mengembalikan hasil')
+          urls[i] = url
+          setClip(i, { status: 'selesai' })
+          finished += 1
+          const pct = 15 + (finished / total) * 70
+          setProgress(Math.round(pct))
+          setStatus({ text: `${label(i)} selesai — ${finished}/${total} klip`, pct })
+          return
+        } catch (err: any) {
+          // Klip ini dibayar; kalau gagal, uangnya kembali lalu coba sekali lagi.
+          if (ticket != null) {
+            const refunded = await refundNexabotWallet(authToken, ticket).catch(() => null)
+            if (refunded != null) setWallet((w) => (w ? { ...w, balance: refunded } : w))
+          }
+          if (attempt >= CLIP_ATTEMPTS) {
+            setClip(i, { status: 'gagal', error: err.message })
+            halted = true
+            throw new Error(`${label(i)} gagal: ${err.message}`)
+          }
+          addLog(`⚠️ ${label(i)} gagal (${err.message}) — ulangi`, 'warn')
+        }
+      }
+    }
+
+    // FFmpeg cuma satu instance, tapi generate-nya jaringan — jalankan bertingkat.
+    let cursor = 0
+    const workers = Array.from({ length: Math.min(CLIP_CONCURRENCY, total) }, async () => {
+      while (!halted && cursor < total) {
+        const i = cursor++
+        await editOne(i)
+      }
+    })
+    const results = await Promise.allSettled(workers)
+    const failed = results.find((r) => r.status === 'rejected')
+    if (failed && failed.status === 'rejected') {
+      const paid = urls.filter(Boolean).length
+      addLog(`⛔ Mode potong dihentikan — ${paid} klip sudah terlanjur dibayar dan tidak dipakai`, 'error')
+      throw failed.reason
+    }
+
+    setStatus({ text: 'Mengunduh klip hasil edit...', pct: 88 })
+    const edited: File[] = []
+    for (let i = 0; i < total; i++) {
+      edited.push(await fetchVideoFile(urls[i], `clip_${i + 1}.mp4`))
+      setStatus({ text: `Unduh klip ${i + 1}/${total}`, pct: 88 + (i / total) * 4 })
+    }
+
+    const joined = await joinEditedClips(edited, specs, source, meta?.duration ?? 0, {
+      audioMode,
+      onProgress: (msg, pct) => setStatus({ text: msg, pct: 92 + ((pct ?? 0) / 100) * 6 }),
+    })
+    if (joined.retimed) addLog(`⏱️ Durasi hasil edit disesuaikan ke ${formatDuration(meta?.duration ?? 0)} agar audio tetap sinkron`, 'info')
+    if (joined.audioFrom === 'none') addLog('🔇 Video sumber tanpa audio — hasil gabungan tanpa suara', 'warn')
+
+    setStatus({ text: 'Mengunggah hasil gabungan...', pct: 98 })
+    try {
+      const { uploadBlobToCdn } = await import('@/lib/cdn')
+      const up = await uploadBlobToCdn(joined.file, `video-edit-${Date.now()}.mp4`)
+      if (up.ok && up.url) {
+        addLog(`✅ Gabungan ${total} klip tersimpan (${formatSize(joined.file.size)})`, 'success')
+        return up.url
+      }
+      throw new Error(up.error || 'upload gagal')
+    } catch (e: any) {
+      addLog(`⚠️ Unggah CDN gagal (${e.message}) — hasil sementara hanya bisa dilihat sesi ini`, 'warn')
+      return URL.createObjectURL(joined.file)
+    }
   }
 
   const handleGenerate = async () => {
@@ -314,57 +569,31 @@ export default function VideoEditPage() {
       const pre = await precheckProviderBalance('nexabot', 0.15, { serverKey: serverReady })
       if (!pre.ok) throw new Error(pre.error || 'Akses NexaBot belum siap')
 
-      if (!isAdmin) {
-        const charge = await chargeNexabotWallet(authToken, 'r2v')
-        nbChargeRef.current = charge.usageId
-        setWallet((w) => (w ? { ...w, balance: charge.balance } : w))
-        addLog(charge.unlimited
-          ? '🎟️ Paket Unlimited aktif — generate ini gratis'
-          : `💰 Saldo terpotong ${formatRp(charge.deducted)} · sisa ${formatRp(charge.balance)}`, 'success')
-      } else {
-        addLog('⚡ Admin — skip saldo', 'info')
-      }
-
-      setStatus({ text: 'Menyiapkan video...', pct: 5 })
-      addLog(`🎬 Mengompres video sumber (${formatSize(videoFile.size)})...`)
-      const compressed = await compressVideo(videoFile, 6, (msg, pct) => {
-        setStatus({ text: msg, pct: Math.min(10, Math.max(5, pct ?? 5)) })
-      })
-      if (compressed.size > 6 * 1024 * 1024) {
-        throw new Error(`Video masih ${formatSize(compressed.size)} setelah kompresi (maks 6MB). Potong durasinya lalu coba lagi.`)
-      }
-      const { fileToBase64 } = await import('@/lib/oneover')
-      const mediaBase64 = await fileToBase64(compressed)
-      addLog(`✅ Video siap dikirim (${formatSize(compressed.size)})`, 'success')
-      setProgress(12)
-
       const keys = useProviderManager.getState().keys.nexabot || []
       const hasActiveKey = keys.some((k) => k.status !== 'invalid' && k.status !== 'expired')
-
-      let url: string | null = null
-      if (hasActiveKey) {
-        const rotation = await withTokenRotation(
-          'nexabot',
-          (apiKey, keyInfo) => runNexabotJob(mediaBase64, prompt, apiKey, keyInfo),
-          {
-            requiredCredits: 0.15,
-            onKeySwitch: (from, to, attempt) => {
-              addLog(`🔄 Pindah key #${attempt}: "${from.name || from.id}" → "${to.name || to.id}"`, 'warn')
-            },
-            onError: (err, key) => {
-              if (detectTokenError('nexabot', err)) {
-                addLog(`⚠️ Key "${key.name || key.id}": ${err.message}`, 'warn')
-              }
-            },
-          }
-        )
-        if (!rotation.ok || !rotation.result) throw new Error(rotation.error || 'Generate gagal')
-        url = rotation.result
-      } else if (serverReady) {
-        addLog('🏦 Memakai kunci NexaBot milik server', 'info')
-        url = await runNexabotJob(mediaBase64, prompt, null, null, true)
-      } else {
+      if (!hasActiveKey && !serverReady) {
         throw new Error('Belum ada akses NexaBot — top up NexaBot dulu atau tambahkan API key di halaman Providers.')
+      }
+
+      let url: string
+      if (isChunked) {
+        if (clipSpecs.length > MAX_CLIPS) {
+          throw new Error(`Video ini terbagi jadi ${clipSpecs.length} klip — lewat batas ${MAX_CLIPS} klip. Potong durasinya dulu.`)
+        }
+        addLog(`💰 Estimasi biaya mode potong: ${clipSpecs.length} × ${wallet?.unlimited?.active ? 'gratis (paket)' : formatRp(wallet?.price ?? NEXABOT_PRICE_FALLBACK)}`, 'info')
+        url = await runChunkedJob(videoFile, clipSpecs, prompt, { hasActiveKey, serverReady, isAdmin, authToken })
+      } else {
+        if (!isAdmin) {
+          const charge = await chargeNexabotWallet(authToken, 'r2v')
+          nbChargeRef.current = charge.usageId
+          setWallet((w) => (w ? { ...w, balance: charge.balance } : w))
+          addLog(charge.unlimited
+            ? '🎟️ Paket Unlimited aktif — generate ini gratis'
+            : `💰 Saldo terpotong ${formatRp(charge.deducted)} · sisa ${formatRp(charge.balance)}`, 'success')
+        } else {
+          addLog('⚡ Admin — skip saldo', 'info')
+        }
+        url = await runSingleJob(videoFile, prompt, { hasActiveKey, serverReady })
       }
 
       setResultUrl(url)
@@ -379,9 +608,9 @@ export default function VideoEditPage() {
         page: 'video-edit',
         kind: 'video',
         provider: 'nexabot',
-        model: 'Gemini Omni · Video Edit',
+        model: isChunked ? `Gemini Omni · Video Edit (${clipSpecs.length} klip)` : 'Gemini Omni · Video Edit',
         ratio,
-        credits: 0.15,
+        credits: isChunked ? 0.15 * clipSpecs.length : 0.15,
       }
       addResult(item, { notify: false })
       persistResultToR2(item.id, url)
@@ -451,11 +680,7 @@ export default function VideoEditPage() {
                     controls
                     playsInline
                     className="max-h-[320px] w-full bg-black object-contain"
-                    onLoadedMetadata={(e) => {
-                      const v = e.currentTarget
-                      setMeta({ duration: v.duration, width: v.videoWidth, height: v.videoHeight })
-                      setRatio(v.videoWidth >= v.videoHeight ? '16:9' : '9:16')
-                    }}
+                    onLoadedMetadata={(e) => handleMetadata(e.currentTarget)}
                   />
                   <button
                     type="button"
@@ -469,7 +694,7 @@ export default function VideoEditPage() {
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                   <span className="truncate max-w-[220px]">{videoFile?.name}</span>
                   <span>{videoFile ? formatSize(videoFile.size) : ''}</span>
-                  {meta && <span>{meta.width}×{meta.height} · {meta.duration.toFixed(1)} dtk</span>}
+                  {meta && <span>{meta.width}×{meta.height} · {formatDuration(meta.duration)}</span>}
                 </div>
               </div>
             ) : (
@@ -481,13 +706,52 @@ export default function VideoEditPage() {
                 <div>
                   <Upload className="mx-auto h-8 w-8 text-muted-foreground" />
                   <div className="mt-2 text-sm">Tap atau tarik <b>video sumber</b></div>
-                  <div className="text-[11px] text-muted-foreground">MP4 / WEBM / MOV · ideal 5–15 detik</div>
+                  <div className="text-[11px] text-muted-foreground">MP4 / WEBM / MOV · maksimal 4 menit · 100MB</div>
                 </div>
               </button>
             )}
             <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
-              Video dikompres di browser sebelum dikirim. Kalau hasil kompresi masih di atas 6MB, potong dulu durasinya.
+              Video dikompres di browser sebelum dikirim, jadi file besar dan panjang tetap bisa dipakai — tapi prosesnya
+              memakan waktu di perangkat Anda. Kalau hasil kompresi masih di atas 20MB, potong dulu durasinya.
             </p>
+            {isChunked && (
+              <div className="mt-3 rounded-xl border border-primary/30 bg-primary/5 p-3">
+                <div className="text-xs font-medium">
+                  Mode potong otomatis: {clipSpecs.length} klip × ±{CLIP_SECONDS} detik
+                </div>
+                <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                  Video {formatDuration(meta?.duration ?? 0)} dipecah, tiap klip diedit terpisah lalu digabung kembali
+                  menjadi satu utuh. Biayanya {unlimited ? 'gratis (paket Unlimited aktif)' : `± ${formatRp(price * clipSpecs.length)} (${clipSpecs.length} × ${formatRp(price)})`}
+                  {' '}dan prosesnya lebih lama.
+                </p>
+                <div className="mt-2 flex gap-2">
+                  {([
+                    ['original', 'Audio asli (lebih mulus)'],
+                    ['edited', 'Audio hasil edit'],
+                  ] as const).map(([value, lab]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setAudioMode(value)}
+                      aria-pressed={audioMode === value}
+                      className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-medium transition ${
+                        audioMode === value
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-border text-muted-foreground hover:border-primary/50'
+                      }`}
+                    >
+                      {lab}
+                    </button>
+                  ))}
+                </div>
+                {audioMode === 'original' && (
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Suara video sumber ditempel lagi ke hasil gabungan, jadi tidak patah di tiap batas potong — tapi SFX
+                    tambahan dari model tidak ikut terpakai.
+                  </p>
+                )}
+              </div>
+            )}
           </Section>
 
           <Section title="2 · Gaya Edit" sub="Boleh pilih beberapa sekaligus — instruksinya digabung jadi satu prompt">
@@ -563,17 +827,40 @@ export default function VideoEditPage() {
             loading={generating}
           >
             {!generating && <Wand2 className="h-4 w-4" />}
-            {generating ? `Memproses... ${progress}%` : `Edit Video${unlimited ? '' : ` · ${formatRp(price)}`}`}
+            {generating
+              ? `Memproses... ${progress}%`
+              : `Edit Video${unlimited ? '' : ` · ${formatRp(price * (isChunked ? clipSpecs.length : 1))}`}`}
           </Button>
           {generating && (
             <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
               <div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: `${progress}%` }} />
             </div>
           )}
+          {clipStates.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {clipStates.map((c) => (
+                <span
+                  key={c.index}
+                  title={c.error}
+                  className={`rounded-md px-2 py-1 text-[10px] font-medium ${
+                    c.status === 'selesai'
+                      ? 'bg-green-500/10 text-green-600'
+                      : c.status === 'gagal'
+                        ? 'bg-red-500/10 text-red-600'
+                        : c.status === 'render'
+                          ? 'bg-primary/10 text-primary'
+                          : 'bg-muted text-muted-foreground'
+                  }`}
+                >
+                  {c.index + 1} · {c.status}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="space-y-4">
-          <Section title="Biaya & Saldo" sub="Satu generate = satu potong saldo NexaBot">
+          <Section title="Biaya & Saldo" sub={isChunked ? `Mode potong: ${clipSpecs.length} generate, satu per klip` : 'Satu generate = satu potong saldo NexaBot'}>
             <div className="flex items-end justify-between gap-3">
               <div>
                 <div className="text-2xl font-bold">{formatRp(wallet?.balance ?? 0)}</div>
