@@ -3,6 +3,7 @@ import { checkRoboneoBalance, isRoboneoBalanceError, isRoboneoRotatableError, is
 import { checkWeavyBalance } from '@/lib/weavy'
 import { fetchLeonardoBalance } from '@/lib/leonardo'
 import { checkOneOverBalance, extractOneOverUserId, resolveOneOverAccessToken } from '@/lib/oneover'
+import { isNexabotRotatableError } from '@/lib/nexabot'
 import { SERVER_KEY, serverKeyEntry } from '@/lib/providerServerKey'
 
 const TOKEN_ERROR_PATTERNS = [
@@ -82,12 +83,10 @@ export function detectTokenError(provider: ProviderId, error: any): boolean {
     // Tanpa ini, key session yang mati hanya menggagalkan generate tanpa
     // mencoba key/fallback berikutnya.
     //
-    // Pengecualian: gagal UNDUH/SIMPAN hasil. Job-nya sudah selesai dengan kunci
-    // itu, jadi 403 di tahap tersebut bukan bukti kunci mati — merotasinya malah
-    // membuang kunci sehat (dan job yang sudah dibayar).
-    case 'nexabot':
-      if (error?.name === 'NexabotResultError') return false
-      return /unauthorized|forbidden|invalid.*key|key.*invalid|expired|401|403|api.*key|cookie|session|kedaluwarsa|login|bukan JSON/i.test(String(error?.message || error))
+    // Yang diKECUALIKAN (lihat isNexabotRotatableError): gagal unduh/simpan
+    // hasil dan sesi APP kedaluwarsa di tengah job. Kuncinya sehat; merotasinya
+    // mengirim job baru di atas job yang sudah dibayar.
+    case 'nexabot': return isNexabotRotatableError(error)
     default: return isTokenError(error)
   }
 }

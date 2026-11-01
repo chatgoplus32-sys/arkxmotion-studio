@@ -95,6 +95,82 @@ export function appAuthHeaders(): Record<string, string> {
     return {}
   }
 }
+
+/**
+ * Header login app untuk relay, dengan token yang masih hidup.
+ *
+ * Access token app cuma 15 menit dan perpanjangannya bergantung pada tick latar
+ * di App.tsx. Tab yang dibekukan browser tidak menjalankan tick itu, sementara
+ * job NexaBot tetap berjalan puluhan menit — poll berikutnya berangkat dengan
+ * token mati dan relay menjawab 400 "hanya untuk member yang login". Semua
+ * request relay memperbarui sesi dulu di tempat, jadi tidak mengandalkan tick.
+ */
+async function appAuthHeadersFresh(): Promise<Record<string, string>> {
+  try {
+    const { getAppAuthToken } = await import('./cdn')
+    const token = await getAppAuthToken()
+    return token ? { Authorization: `Bearer ${token}` } : appAuthHeaders()
+  } catch {
+    return appAuthHeaders()
+  }
+}
+
+/**
+ * Perbarui sesi app; true kalau token baru benar-benar didapat.
+ * Dipakai pemanggil yang barusan ditolak relay karena identitas, supaya
+ * permintaan read-only-nya bisa langsung diulang.
+ */
+async function segarkanSesiApp(): Promise<boolean> {
+  try {
+    const { getAppAuthToken } = await import('./cdn')
+    return !!(await getAppAuthToken())
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Apakah penolakan ini dari RELAY KITA soal sesi app, bukan soal kunci NexaBot?
+ * Teksnya berasal dari server/routes/nexabot.ts dan server/lib/providerRelay.ts.
+ */
+export function isNexabotRelayIdentityError(status: number | null | undefined, text: string): boolean {
+  if (status !== 400 && status !== 401 && status !== 403) return false
+  return /member yang login|token app|Login dulu untuk memakai|Sesi pengguna tidak dikenali/i.test(text || '')
+}
+
+/** Berapa kali satu request boleh diulang setelah sesi app diperbarui. */
+const MAKS_ULANG_IDENTITAS = 3
+
+/**
+ * Apakah kegagalan ini alasan untuk mencoba kunci NexaBot berikutnya?
+ *
+ * Dipakai tokenRotation. Dua kelas error dikecualikan karena kuncinya terbukti
+ * sehat: hasil yang gagal diunduh/simpan (job-nya sudah selesai dengan kunci
+ * itu) dan sesi APP yang kedaluwarsa di tengah job. Merotasi keduanya berarti
+ * mengirim job baru di atas job yang sudah dibayar — kredit terpotong dua kali
+ * dan videonya ditinggalkan.
+ */
+export function isNexabotRotatableError(error: unknown): boolean {
+  const name = (error as any)?.name
+  if (name === 'NexabotResultError' || name === 'NexabotAppSessionError') return false
+  return /unauthorized|forbidden|invalid.*key|key.*invalid|expired|401|403|api.*key|cookie|session|kedaluwarsa|login|bukan JSON/i.test(
+    String((error as any)?.message || error),
+  )
+}
+
+/**
+ * Sesi app mati di tengah job.
+ *
+ * Kunci NexaBot-nya tidak terbukti rusak, dan job-nya sudah dibuat & dibayar.
+ * Rotasi kunci di titik ini hanya menghabiskan kunci sehat lalu menagih job baru,
+ * jadi tokenRotation mengecualikan kelas error ini (seperti NexabotResultError).
+ */
+export class NexabotAppSessionError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'NexabotAppSessionError'
+  }
+}
 export function getNexabotApiKey(): string | null {
   return getStoredProviderKey('nexabot')
 }
@@ -278,10 +354,17 @@ function authHeaders(auth: NexabotAuth): Record<string, string> {
  *
  * Sengaja TIDAK menganggap error API key (mis. "API key tidak valid") sebagai
  * masalah sesi supaya fallback tidak berputar-putar.
+ *
+ * Juga TIDAK untuk dua error yang kuncinya terbukti sehat: hasil gagal
+ * disimpan (NexabotResultError) dan sesi APP kedaluwarsa (NexabotAppSessionError).
+ * Fallback di sini = mengirim job BARU, jadi salah kelas berarti kredit terpotong
+ * dua kali untuk video yang sama.
  */
 export function isNexabotSessionError(err: unknown): boolean {
   const msg = typeof err === 'string' ? err : (err as any)?.message || ''
   if (!msg) return false
+  const name = (err as any)?.name
+  if (name === 'NexabotAppSessionError' || name === 'NexabotResultError') return false
   if (/session|cookie|kedaluwarsa|login ulang|sign\s*in/i.test(msg)) return true
   if (/\b(401|403)\b/.test(msg)) return true
   if (/unauthorized|forbidden|not authenticated/i.test(msg)) return true
@@ -334,7 +417,7 @@ export async function checkNexabotBalance(apiKey: string, opts: NexabotProbeOpti
       // Token app wajib ikut: kunci yang ternyata milik pool server hanya dilayani
       // untuk pemakai yang login. Tanpa ini relay menjawab 400 dan UI menyalahkan
       // kuncinya ("Perbarui API key") padahal kuncinya sehat.
-      headers: { 'X-Api-Key': safeHeaderValue(key), ...appAuthHeaders() },
+      headers: { 'X-Api-Key': safeHeaderValue(key), ...(await appAuthHeadersFresh()) },
       // NexaBot /credit menggantung TANPA response untuk key yang tidak dikenal,
       // jadi tanpa timeout cek saldo bisa nge-hang selamanya.
       signal: AbortSignal.timeout(timeoutMs),
@@ -734,6 +817,7 @@ export async function submitNexabot(
   // Loop TIDAK dibatasi `attempts`: 429 dari antrean relay boleh diulang selama
   // anggaran antreannya masih ada (relay yang tahu kapan lane bebas).
   let attempt = 0
+  let identitasDiperbarui = 0
   while (true) {
     attempt++
     const res = await fetch(endpoint, {
@@ -741,13 +825,25 @@ export async function submitNexabot(
       headers: {
         'Content-Type': 'application/json',
         ...authHeaders(auth),
-        ...appAuthHeaders(),
+        ...(await appAuthHeadersFresh()),
       },
       body: JSON.stringify(body),
     })
 
     if (!res.ok) {
       const errText = await res.text().catch(() => '')
+      // Yang ditolak relay adalah SESI APP kita (access token 15 menit mati —
+      // tab yang dibekukan browser tidak menjalankan tick perpanjangan sesi di
+      // App.tsx), bukan kunci NexaBot. Segarkan sesi, lalu ulangi request ini.
+      if (isNexabotRelayIdentityError(res.status, errText)) {
+        if (identitasDiperbarui < MAKS_ULANG_IDENTITAS && (await segarkanSesiApp())) {
+          identitasDiperbarui++
+          continue
+        }
+        throw new NexabotAppSessionError(
+          'Sesi app kedaluwarsa — login ulang lalu generate lagi. Kunci NexaBot Anda tidak bermasalah, jadi jangan ganti API key.',
+        )
+      }
       if (res.status === 401 || res.status === 403) {
         if (auth.master) {
           throw new Error(jsonErrorMessage(errText) || `NexaBot: kunci server ditolak (HTTP ${res.status})`)
@@ -970,6 +1066,7 @@ export async function pollNexabotJob(
   const attempts = Math.max(1, maxAttempts)
   const startedAt = Date.now()
   let attempt = 0
+  let identitasDiperbarui = 0
   let transientStreak = 0
   let delayMs = baseMs
   let lastStatus = ''
@@ -1007,7 +1104,7 @@ export async function pollNexabotJob(
         method: 'GET',
         // Mode kunci server tidak punya header kredensial: relay butuh token
         // login app untuk memverifikasi kelayakan member.
-        headers: { ...authHeaders(auth), ...appAuthHeaders() },
+        headers: { ...authHeaders(auth), ...(await appAuthHeadersFresh()) },
       })
     } catch (err: any) {
       // Jaringan/proxy putus — bukan berarti job-nya gagal.
@@ -1019,6 +1116,18 @@ export async function pollNexabotJob(
 
     if (verdict === 'fatal') {
       const errText = await res.text().catch(() => '')
+      // Yang ditolak relay adalah SESI APP kita (access token 15 menit mati —
+      // tab yang dibekukan browser tidak menjalankan tick perpanjangan sesi di
+      // App.tsx), bukan kunci NexaBot. Segarkan sesi, lalu ulangi request ini.
+      if (isNexabotRelayIdentityError(res.status, errText)) {
+        if (identitasDiperbarui < MAKS_ULANG_IDENTITAS && (await segarkanSesiApp())) {
+          identitasDiperbarui++
+          continue
+        }
+        throw new NexabotAppSessionError(
+          `Sesi app kedaluwarsa di tengah job ${jobId.slice(0, 8)} — login ulang, hasilnya masih bisa diambil ±30 menit di nexabot.id. Kunci NexaBot Anda tidak bermasalah, jadi jangan ganti API key.`,
+        )
+      }
       if (res.status === 401 || res.status === 403) {
         if (auth.master) {
           throw new Error(jsonErrorMessage(errText) || `NexaBot: kunci server ditolak (HTTP ${res.status})`)
@@ -1126,7 +1235,7 @@ export async function downloadNexabotResult(
   try {
     const res = await fetch(`${NEXABOT_BASE}${path ?? `/download/${jobId}`}`, {
       method: 'GET',
-      headers: { ...authHeaders(auth), ...appAuthHeaders() },
+      headers: { ...authHeaders(auth), ...(await appAuthHeadersFresh()) },
     })
 
     if (!res.ok) {
@@ -1179,7 +1288,7 @@ export async function saveNexabotResult(
   const { apiKey, cookies } = normalizeValues(auth)
   if (!apiKey && !cookies && !auth.master) return { ok: false, error: 'NexaBot: tidak ada API key / cookie session yang valid' }
   try {
-    const { getAppAuthToken } = await import('@/lib/cdn')
+    const { getAppAuthToken } = await import('./cdn')
     const appToken = await getAppAuthToken()
     if (!appToken) return { ok: false, error: 'Sesi berakhir — login ulang untuk menyimpan hasil.' }
 
@@ -1335,6 +1444,7 @@ export async function submitNexabotGptImage(
 
   const attempts = Math.max(1, maxAttempts)
   let attempt = 0
+  let identitasDiperbarui = 0
   while (true) {
     attempt++
     const res = await fetch(`${NEXABOT_BASE}/gpt-image`, {
@@ -1342,13 +1452,25 @@ export async function submitNexabotGptImage(
       headers: {
         'Content-Type': 'application/json',
         ...authHeaders(auth),
-        ...appAuthHeaders(),
+        ...(await appAuthHeadersFresh()),
       },
       body: JSON.stringify(body),
     })
 
     if (!res.ok) {
       const errText = await res.text().catch(() => '')
+      // Yang ditolak relay adalah SESI APP kita (access token 15 menit mati —
+      // tab yang dibekukan browser tidak menjalankan tick perpanjangan sesi di
+      // App.tsx), bukan kunci NexaBot. Segarkan sesi, lalu ulangi request ini.
+      if (isNexabotRelayIdentityError(res.status, errText)) {
+        if (identitasDiperbarui < MAKS_ULANG_IDENTITAS && (await segarkanSesiApp())) {
+          identitasDiperbarui++
+          continue
+        }
+        throw new NexabotAppSessionError(
+          'Sesi app kedaluwarsa — login ulang lalu generate lagi. Kunci NexaBot Anda tidak bermasalah, jadi jangan ganti API key.',
+        )
+      }
       if (res.status === 401 || res.status === 403) {
         if (auth.master) throw new Error(jsonErrorMessage(errText) || `NexaBot: kunci server ditolak (HTTP ${res.status})`)
         throw new Error(session
@@ -1417,6 +1539,7 @@ export async function pollNexabotGptImage(
   const attempts = Math.max(1, maxAttempts)
   const startedAt = Date.now()
   let attempt = 0
+  let identitasDiperbarui = 0
   let transientStreak = 0
   let delayMs = baseMs
   let lastProgress = -1
@@ -1431,7 +1554,7 @@ export async function pollNexabotGptImage(
     let res: Response
     try {
       res = await fetch(`${NEXABOT_BASE}/gpt-image/${encodeURIComponent(jobId)}`, {
-        headers: { ...authHeaders(auth), ...appAuthHeaders() },
+        headers: { ...authHeaders(auth), ...(await appAuthHeadersFresh()) },
       })
     } catch (err: any) {
       // Jaringan/proxy putus — bukan berarti job gagal.
@@ -1450,6 +1573,18 @@ export async function pollNexabotGptImage(
     const verdict = nexabotHttpVerdict(res.status)
     if (verdict === 'fatal') {
       const errText = await res.text().catch(() => '')
+      // Yang ditolak relay adalah SESI APP kita (access token 15 menit mati —
+      // tab yang dibekukan browser tidak menjalankan tick perpanjangan sesi di
+      // App.tsx), bukan kunci NexaBot. Segarkan sesi, lalu ulangi request ini.
+      if (isNexabotRelayIdentityError(res.status, errText)) {
+        if (identitasDiperbarui < MAKS_ULANG_IDENTITAS && (await segarkanSesiApp())) {
+          identitasDiperbarui++
+          continue
+        }
+        throw new NexabotAppSessionError(
+          `Sesi app kedaluwarsa di tengah job GPT Image ${jobId.slice(0, 8)} — login ulang, hasilnya masih bisa diambil ±30 menit. Kunci NexaBot Anda tidak bermasalah, jadi jangan ganti API key.`,
+        )
+      }
       if (res.status === 401 || res.status === 403) {
         throw new Error('NexaBot: session cookie kedaluwarsa — login ulang di nexabot.id lalu paste cookie baru')
       }
@@ -1519,7 +1654,7 @@ export async function downloadNexabotGptImage(
   const auth = fillAuthFromStorage(normalizeAuth(authOverride))
   try {
     const res = await fetch(gptImageDownloadUrl(rawUrl), {
-      headers: { ...authHeaders(auth), ...appAuthHeaders() },
+      headers: { ...authHeaders(auth), ...(await appAuthHeadersFresh()) },
     })
     if (!res.ok) {
       const errText = await res.text().catch(() => '')
@@ -1621,6 +1756,7 @@ export async function submitNexabotSeedance(
   const attempts = Math.max(1, maxAttempts)
   // 429 dari antrean relay diulang selama anggaran antreannya masih ada.
   let attempt = 0
+  let identitasDiperbarui = 0
   while (true) {
     attempt++
     const res = await fetch(`${NEXABOT_BASE}/seedance`, {
@@ -1628,13 +1764,25 @@ export async function submitNexabotSeedance(
       headers: {
         'Content-Type': 'application/json',
         ...authHeaders(auth),
-        ...appAuthHeaders(),
+        ...(await appAuthHeadersFresh()),
       },
       body: JSON.stringify(body),
     })
 
     if (!res.ok) {
       const errText = await res.text().catch(() => '')
+      // Yang ditolak relay adalah SESI APP kita (access token 15 menit mati —
+      // tab yang dibekukan browser tidak menjalankan tick perpanjangan sesi di
+      // App.tsx), bukan kunci NexaBot. Segarkan sesi, lalu ulangi request ini.
+      if (isNexabotRelayIdentityError(res.status, errText)) {
+        if (identitasDiperbarui < MAKS_ULANG_IDENTITAS && (await segarkanSesiApp())) {
+          identitasDiperbarui++
+          continue
+        }
+        throw new NexabotAppSessionError(
+          'Sesi app kedaluwarsa — login ulang lalu generate lagi. Kunci NexaBot Anda tidak bermasalah, jadi jangan ganti API key.',
+        )
+      }
       if (res.status === 401 || res.status === 403) {
         if (auth.master) {
           throw new Error(jsonErrorMessage(errText) || `NexaBot: kunci server ditolak (HTTP ${res.status})`)

@@ -89,6 +89,23 @@ export function nexabotFreeForModel(wallet: NexabotWallet | null | undefined, mo
 }
 
 /**
+ * Jalur kredensial untuk satu job NexaBot.
+ *
+ * Saat paket (Unlimited / Premium Booster) menanggung biaya generate ini, biaya
+ * upstream dibayar kunci milik server. API key pribadi member TIDAK dipakai di
+ * situ: saldonya bisa kosong dan generate yang sudah dibayar lewat paket gagal
+ * di upstream dengan 402 "Kredit tidak cukup". Tanpa paket, kunci pribadi tetap
+ * didahulukan seperti biasa.
+ */
+export function nexabotPreferServerKey(opts: {
+  hasOwnKey: boolean
+  serverReady: boolean
+  coveredByPackage: boolean
+}): boolean {
+  return opts.serverReady && (opts.coveredByPackage || !opts.hasOwnKey)
+}
+
+/**
  * Sisa masa berlaku dalam bahasa UI. Paket seharian disebut dalam jam — dengan
  * days_left, paket Rp 15.000/malam akan selalu terbaca "1 hari lagi" bahkan
  * ketika tinggal satu jam.

@@ -26,6 +26,7 @@ import {
   chargeNexabotWallet,
   refundNexabotWallet,
   nexabotFreeForModel,
+  nexabotPreferServerKey,
   NEXABOT_PRICE_FALLBACK,
   type NexabotWallet,
 } from '@/lib/nexabotWallet'
@@ -396,7 +397,12 @@ export default function VideoEditPage() {
     })
   }
 
-  interface AccessCtx { hasActiveKey: boolean; serverReady: boolean }
+  interface AccessCtx {
+    hasActiveKey: boolean
+    serverReady: boolean
+    /** Paket (Unlimited/Booster) menanggung biaya generate ini → kunci server. */
+    coveredByPackage?: boolean
+  }
 
   const runSingleJob = async (source: File, jobPrompt: string, ctx: AccessCtx): Promise<string> => {
     setStatus({ text: 'Menyiapkan video...', pct: 5 })
@@ -427,7 +433,14 @@ export default function VideoEditPage() {
     addLog(`✅ Video siap dikirim (${formatSize(compressed.size)} · budget ${budgetMb}MB)`, 'success')
     setProgress(12)
 
-    if (ctx.hasActiveKey) {
+    // Generate yang ditanggung paket memakai kunci server: API key pribadi
+    // member bisa kosong dan tidak boleh menggagalkan biaya yang sudah dibayar.
+    const pakaiKunciServer = nexabotPreferServerKey({
+      hasOwnKey: ctx.hasActiveKey,
+      serverReady: ctx.serverReady,
+      coveredByPackage: !!ctx.coveredByPackage,
+    })
+    if (!pakaiKunciServer && ctx.hasActiveKey) {
       const rotation = await withTokenRotation(
         'nexabot',
         (apiKey, keyInfo) => runNexabotJob(mediaBase64, jobPrompt, apiKey, keyInfo),
@@ -446,6 +459,7 @@ export default function VideoEditPage() {
       if (!rotation.ok || !rotation.result) throw new Error(rotation.error || 'Generate gagal')
       return rotation.result
     }
+    if (!pakaiKunciServer) throw new Error('Belum ada akses NexaBot — top up NexaBot dulu atau tambahkan API key di halaman Providers.')
     addLog('🏦 Memakai kunci NexaBot milik server', 'info')
     return runNexabotJob(mediaBase64, jobPrompt, null, null, { viaMaster: true })
   }
@@ -492,6 +506,8 @@ export default function VideoEditPage() {
       while (attempt < CLIP_ATTEMPTS) {
         attempt += 1
         let ticket: number | null = null
+        // Biaya klip ini ditanggung paket → jalur kunci server.
+        let coveredByPackage = false
         const media = useAnchor ? [mediaList[i], anchor as string] : mediaList[i]
         const clipPrompt = buildClipPrompt(jobPrompt, i, total, useAnchor)
         setClip(i, { status: 'render', ...(useAnchor ? { anchored: true } : {}) })
@@ -499,10 +515,16 @@ export default function VideoEditPage() {
           if (!isAdmin) {
             const charge = await chargeNexabotWallet(authToken, 'r2v')
             ticket = charge.usageId
+            coveredByPackage = charge.unlimited
             setWallet((w) => (w ? { ...w, balance: charge.balance } : w))
           }
           const opts = { ticket, clipLabel: label(i) }
-          const url = ctx.hasActiveKey
+          const useServer = nexabotPreferServerKey({
+            hasOwnKey: ctx.hasActiveKey,
+            serverReady: ctx.serverReady,
+            coveredByPackage,
+          })
+          const url = !useServer && ctx.hasActiveKey
             ? (await withTokenRotation('nexabot', (apiKey, keyInfo) =>
                 runNexabotJob(media, clipPrompt, apiKey, keyInfo, opts), {
                 requiredCredits: 0.15,
@@ -642,7 +664,9 @@ export default function VideoEditPage() {
       addLog('🎬 Mulai edit video · Gemini Omni (NexaBot)')
       addLog(`   Rasio ${ratio} · Resolusi ${resolution}p · ${selectedStyles.length || 0} gaya dipilih`, 'debug')
 
-      const pre = await precheckProviderBalance('nexabot', 0.15, { serverKey: serverReady })
+      const pre = nexabotFreeForModel(freshWallet, 'r2v') && serverReady
+        ? ({ ok: true } as { ok: boolean; error?: string })
+        : await precheckProviderBalance('nexabot', 0.15, { serverKey: serverReady })
       if (!pre.ok) throw new Error(pre.error || 'Akses NexaBot belum siap')
 
       const keys = useProviderManager.getState().keys.nexabot || []
@@ -652,6 +676,9 @@ export default function VideoEditPage() {
       }
 
       let url: string
+      // Biaya generate yang ditanggung paket dibayar kunci server, bukan API key
+      // pribadi member (yang bisa kosong dan menggagalkan upstream).
+      let gratisKarenaPaket = false
       if (isChunked) {
         if (clipSpecs.length > MAX_CLIPS) {
           throw new Error(`Video ini terbagi jadi ${clipSpecs.length} klip — lewat batas ${MAX_CLIPS} klip. Potong durasinya dulu.`)
@@ -662,6 +689,7 @@ export default function VideoEditPage() {
         if (!isAdmin) {
           const charge = await chargeNexabotWallet(authToken, 'r2v')
           nbChargeRef.current = charge.usageId
+          gratisKarenaPaket = charge.unlimited
           setWallet((w) => (w ? { ...w, balance: charge.balance } : w))
           addLog(charge.unlimited
             ? `🎟️ ${passLabel} aktif — generate ini gratis`
@@ -669,7 +697,7 @@ export default function VideoEditPage() {
         } else {
           addLog('⚡ Admin — skip saldo', 'info')
         }
-        url = await runSingleJob(videoFile, prompt, { hasActiveKey, serverReady })
+        url = await runSingleJob(videoFile, prompt, { hasActiveKey, serverReady, coveredByPackage: gratisKarenaPaket })
       }
 
       setResultUrl(url)

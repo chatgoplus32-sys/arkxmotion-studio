@@ -30,8 +30,11 @@ process.env.JWT_SECRET = JWT_SECRET
 delete process.env.NEXABOT_MASTER_API_KEY
 delete process.env.NEXABOT_MASTER_KEY_MODE
 
-import nexabotRoutes from '../server/routes/nexabot.js'
-import db from '../server/db.js'
+// Import server dimuat DINAMIS: ESM meng-hoist `import` statis di atas
+// penugasan env, sehingga db.js akan memakai data/arkxmotion.db (DB dev asli)
+// alih-alih file temp di bawah.
+const { default: nexabotRoutes } = await import('../server/routes/nexabot.js')
+const { default: db } = await import('../server/db.js')
 
 const ADMIN_ID = 9001
 const KUNCI_UTAMA = 'kunci-utama-server-abc'

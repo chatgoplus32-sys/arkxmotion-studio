@@ -42,7 +42,7 @@ import { PROVIDER_MODELS, QUALITY_OPTIONS, getCreatepulseCost, RATIOS, MODEL_RAT
 
 import VideoPlayer from './image-to-video/VideoPlayer'
 import { nexabotPathPill } from './image-to-video/nexabotPathPill'
-import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, nexabotRemainingLabel, nexabotFreeForModel, NEXABOT_PRICE_FALLBACK, type NexabotWallet } from '@/lib/nexabotWallet'
+import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, nexabotRemainingLabel, nexabotFreeForModel, nexabotPreferServerKey, NEXABOT_PRICE_FALLBACK, type NexabotWallet } from '@/lib/nexabotWallet'
 import { fetchSeaviWallet, chargeSeaviWallet, refundSeaviWallet } from '@/lib/seaviWallet'
 import { formatRp } from '@/lib/payment'
 import { runNexabotJobWithSessionFallback } from './image-to-video/nexabotSessionFallback'
@@ -996,14 +996,19 @@ export default function ImageToVideoPage() {
     // CreatePulse & Seavi dilewati: keduanya memakai wallet internal yang
     // dicek di validateGenerate + deduct/refund di alur generate sendiri.
     if (provider !== 'createpulse' && provider !== 'seavi') {
-      const preOpts = {
-        serverKey: provider === 'nexabot' && nexabotServerReady,
-      }
-      const pre = await precheckProviderBalance(provider, totalCredits, preOpts as any)
-      if (!pre.ok) {
-        addLog(`❌ ${pre.error}`, 'error', provider)
-        addToast(pre.error || 'Saldo tidak cukup', 'error')
-        return
+      // NexaBot yang sudah gratis lewat paket tidak perlu cek saldo kredit
+      // pribadi: biaya upstream ditanggung kunci server.
+      const lewatiPrecheck = provider === 'nexabot' && nbFreeForCurrentMode && nexabotServerReady
+      if (!lewatiPrecheck) {
+        const preOpts = {
+          serverKey: provider === 'nexabot' && nexabotServerReady,
+        }
+        const pre = await precheckProviderBalance(provider, totalCredits, preOpts as any)
+        if (!pre.ok) {
+          addLog(`❌ ${pre.error}`, 'error', provider)
+          addToast(pre.error || 'Saldo tidak cukup', 'error')
+          return
+        }
       }
     }
 
@@ -2621,9 +2626,14 @@ export default function ImageToVideoPage() {
         // Billing user: 1 generate = Rp 150 (otomatis Rp 0 selama Paket Unlimited
         // aktif, ditegakkan server). Admin bebas. `usage_id`-nya disimpan supaya
         // pemotongan ini bisa di-refund tepat kalau generate gagal.
+        //
+        // `gratisKarenaPaket` juga menentukan jalur kredensial di bawah: generate
+        // yang ditanggung paket dibayar kunci server, bukan API key pribadi member.
+        let gratisKarenaPaket = false
         if (authToken && currentUser?.role !== 'admin') {
           const charge = await chargeNexabotWallet(authToken, currentModel?.apiModel || 't2v')
           nbChargeRef.current = charge.usageId
+          gratisKarenaPaket = charge.unlimited
           setNbWallet((w) => (w ? { ...w, balance: charge.balance } : w))
           addLog(charge.unlimited
             ? `[1/3] 🎟️ ${nbWallet?.unlimited?.active ? 'Paket Unlimited' : 'Premium Booster'} aktif — generate ini gratis`
@@ -2845,6 +2855,12 @@ export default function ImageToVideoPage() {
                   setStatus((s) => ({ ...s, text: msg, pct: Math.min((s.pct || 0) + 5, 85) }))
                 }, {
                   path: isSeedance ? nexabotSeedanceStatusPath(jobId) : undefined,
+                  // Seedance lewat antrean batch 60 detik upstream — job 15 detik
+                  // bisa saja jadi > 6 menit, jadi anggaran poll default (120
+                  // percobaan ≈ 6 menit) kerap habis sebelum job selesai, padahal
+                  // upstream masih status processing. Untuk Seedance anggarannya
+                  // dinaikkan: 400 percobaan, ikut anggaran 20 menit maxTotalMs.
+                  ...(isSeedance ? { maxAttempts: 400 } : {}),
                   // Poll status itu read-only, jadi hiccup upstream (proxy 504
                   // / rate limit) ditunggu dengan backoff, bukan menggagalkan job.
                   onRetry: ({ status, delayMs, message }) => {
@@ -2910,7 +2926,38 @@ export default function ImageToVideoPage() {
         }
 
         let nexabotResult: string | null = null
-        if (hasActiveKey) {
+        // nbWallet hanya diambil sekali saat halaman dibuka — kalau admin approve
+        // paket SETELAH halaman itu terbuka, status server_key di state jadi basi
+        // dan generate gratis jatuh ke API key pribadi yang kosong (402 upstream
+        // "Kredit tidak cukup"). Baca ulang wallet sebelum memilih jalur, lalu
+        // pakai nilai segarnya — bukan state yang menyimpan keputusan.
+        let serverKeyReady = nexabotServerReady
+        let serverKeyReason: string | null = nbWallet?.server_key?.reason || null
+        if (authToken) {
+          const fresh = await fetchNexabotWallet(authToken).catch(() => null)
+          if (fresh) {
+            setNbWallet(fresh)
+            serverKeyReady = !!fresh.server_key?.available
+            serverKeyReason = fresh.server_key?.reason ?? null
+          }
+        }
+        const pakaiKunciServer = nexabotPreferServerKey({
+          hasOwnKey: hasActiveKey,
+          serverReady: serverKeyReady,
+          coveredByPackage: gratisKarenaPaket,
+        })
+        if (!pakaiKunciServer && gratisKarenaPaket) {
+          addLog(`⚠️ Paket aktif tapi kunci NexaBot server belum tersedia (${serverKeyReason || 'tidak diketahui'}) — mencoba API key pribadi`, 'warn', 'nexabot')
+        }
+        if (pakaiKunciServer) {
+          // Paket menanggung biaya generate ini: biaya upstream dibayar kunci
+          // server. API key pribadi member yang kosong tidak boleh menggagalkan
+          // generate yang sudah dia bayar lewat paket.
+          addLog(hasActiveKey
+            ? '🏦 Paket aktif menanggung biaya upstream — memakai kunci NexaBot milik server (API key pribadi dilewati)'
+            : '🏦 Menjalankan job dengan kunci NexaBot milik server...', 'info', 'nexabot')
+          nexabotResult = await runNexabotJob(null, null, true)
+        } else if (hasActiveKey) {
           const rotation = await withTokenRotation<string>(
             'nexabot',
             (apiKey, keyInfo) => runNexabotJob(apiKey, keyInfo),
@@ -2929,13 +2976,7 @@ export default function ImageToVideoPage() {
           if (rotation.ok && rotation.result) nexabotResult = rotation.result
           else throw new Error(rotation.error || 'Generation failed')
         } else {
-          // Tidak ada key pribadi tapi member sudah top up: relay menyuntikkan
-          // kunci NexaBot milik server. Billing Rp tetap lewat wallet di atas.
-          if (!nexabotServerReady) {
-            throw new Error('NexaBot: tidak ada API key aktif dan kunci server belum tersedia — top up NexaBot dulu atau tambahkan API key di halaman Providers.')
-          }
-          addLog('🏦 Menjalankan job dengan kunci NexaBot milik server...', 'info', 'nexabot')
-          nexabotResult = await runNexabotJob(null, null, true)
+          throw new Error('NexaBot: tidak ada API key aktif dan kunci server belum tersedia — top up NexaBot dulu atau tambahkan API key di halaman Providers.')
         }
 
         if (nexabotResult) {

@@ -488,6 +488,25 @@ function lupakanAkunJob(jobId: string) {
   akunJob.delete(jobId)
 }
 
+/**
+ * Rute baca untuk job yang RELAY INI buat sendiri tidak butuh sesi app yang
+ * masih hidup.
+ *
+ * Pembuatan job sudah lolos identitas + tiket, id job adalah UUID yang tidak
+ * bisa ditebak dan hanya diketahui pembuatnya, dan rute baca tidak memakai
+ * kredit. Memaksa token 15 menit tetap segar di tengah job 20 menit hanya
+ * menghasilkan satu hal: hasil yang sudah dibayar mati di depan mata user
+ * (tab dibekukan browser → tick perpanjangan sesi tidak jalan → poll 400).
+ * Job yang TIDAK kita ingat tetap diperlakukan seperti biasa.
+ */
+function izinKredensialServer(
+  req: Request,
+  opts: { bacaSaja?: boolean; jobId?: string },
+): { ok: boolean; reason: string } {
+  if (opts.bacaSaja && opts.jobId && akunJob.has(opts.jobId)) return { ok: true, reason: '' }
+  return opts.bacaSaja ? bolehBacaDenganKunciInduk(req) : bolehPakaiKredensialServer(req)
+}
+
 // ── Reservasi lane saat submit ────────────────────────────────────
 // Lane baru terkunci SETELAH upstream menjawab, karena id job belum diketahui
 // sebelumnya. Tanpa reservasi, dua submit yang datang hampir bersamaan sama-sama
@@ -611,7 +630,7 @@ function resolveUpstreamAuth(
         credential: { kind: 'cookie', source: 'own-cookie', secret: cookies },
       }
     }
-    const izin = opts.bacaSaja ? bolehBacaDenganKunciInduk(req) : bolehPakaiKredensialServer(req)
+    const izin = izinKredensialServer(req, opts)
     if (!izin.ok) return { headers: {}, credential: null, error: izin.reason }
     // Endpoint khusus kunci tidak bisa dilayani sesi cookie, jadi kredensialnya
     // tetap diambil dari pool (kunci akun), bukan ditempel apa adanya.
@@ -629,7 +648,7 @@ function resolveUpstreamAuth(
       // Kunci server yang masih beredar di browser: saat MEMBUAT job lanenya
       // dipilih dari pool, bukan dipaku ke akun yang namanya disebut klien. Jejak
       // "kunci ini masih di browser" tetap dicatat lewat `kredensialKlien`.
-      const izin = opts.bacaSaja ? bolehBacaDenganKunciInduk(req) : bolehPakaiKredensialServer(req)
+      const izin = izinKredensialServer(req, opts)
       if (!izin.ok) return { headers: {}, credential: null, error: izin.reason }
       if (opts.membuatJob) {
         const hasil = authDariPool(req, opts)
@@ -705,7 +724,7 @@ function authDariPool(
   if (daftar.length === 0) {
     return { headers: {}, credential: null, error: 'Missing X-Api-Key header' }
   }
-  const izin = opts.bacaSaja ? bolehBacaDenganKunciInduk(req) : bolehPakaiKredensialServer(req)
+  const izin = izinKredensialServer(req, opts)
   if (!izin.ok) return { headers: {}, credential: null, error: izin.reason }
 
   const akun = pilihAkunServer(daftar, opts)

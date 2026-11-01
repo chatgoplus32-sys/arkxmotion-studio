@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { isTokenExpiring } from '@/lib/sessionExpiry'
+import { isTokenExpiring } from '../lib/sessionExpiry'
 
 interface User {
   id: number

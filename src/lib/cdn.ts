@@ -19,7 +19,9 @@ function isTokenExpiring(token: string): boolean {
 /** Endpoint upload butuh login; refresh token dulu kalau akses sudah mepet kedaluwarsa. */
 export async function getAppAuthToken(): Promise<string | null> {
   try {
-    const { useAuthStore } = await import('@/stores/authStore')
+    // Specifier relatif (bukan '@/'): rantai perpanjangan sesi harus bisa
+    // diuji tanpa bundler — tsx tidak mengenal alias '@'.
+    const { useAuthStore } = await import('../stores/authStore')
     let token = useAuthStore.getState().token || localStorage.getItem('arkxmotion_token')
     if (!token || isTokenExpiring(token)) {
       const refreshed = await useAuthStore.getState().refresh()

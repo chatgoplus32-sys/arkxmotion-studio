@@ -10,7 +10,7 @@ import { withTokenRotation } from '@/lib/tokenRotation'
 import { submitRunningHubImageEdit, pollRunningHubTask } from '@/lib/runninghub'
 import { SEAVI_IMAGE_MODELS, buildSeaviPayload, generateSeaviImage, fetchSeaviBalance } from '@/lib/seavi'
 import { chargeSeaviWallet, refundSeaviWallet, fetchSeaviWallet } from '@/lib/seaviWallet'
-import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, nexabotRemainingLabel, nexabotFreeForModel, NEXABOT_PRICE_FALLBACK, type NexabotWallet } from '@/lib/nexabotWallet'
+import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, nexabotRemainingLabel, nexabotFreeForModel, nexabotPreferServerKey, NEXABOT_PRICE_FALLBACK, type NexabotWallet } from '@/lib/nexabotWallet'
 import { formatRp } from '@/lib/payment'
 import { normalizeImage } from '@/lib/roboneo'
 import { addBgLog, getLogs, addResult, removeResult, startBackgroundPolling, persistResultToR2, clearLogs as clearBgLogs, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
@@ -113,6 +113,8 @@ export default function EditImagePage() {
   const [nbWallet, setNbWallet] = useState<NexabotWallet | null>(null)
   // usage_id pemotongan yang masih bisa di-refund kalau generate gagal.
   const nbChargeRef = useRef<number | null>(null)
+  // Generate ini ditanggung paket (Unlimited/Booster) → kredensial server.
+  const nbCoveredRef = useRef(false)
 
   const [provider, setProvider] = useState<EditProvider>('nexabot')
   const [imgUrl, setImgUrl] = useState<string | null>(null)
@@ -260,21 +262,36 @@ export default function EditImagePage() {
   const canGenerate = (provider === 'nexabot' || !!imgFile) && !generating && !!prompt.trim() && (hasActiveKey || (provider === 'nexabot' && nexabotServerReady))
 
   /**
-   * Kredensial untuk satu job NexaBot. Kunci/cookie pribadi dipakai bila ada;
-   * kalau tidak, relay menyuntikkan kunci milik server. `ticket` (usage_id dari
-   * /deduct) selalu ikut — relay menolaknya hanya di jalur kunci server, dan
-   * tiket itulah yang mengikat satu potongan saldo ke satu job.
+   * Kredensial untuk satu job NexaBot. Generate yang ditanggung paket memakai
+   * kunci server — API key pribadi yang kosong tidak boleh menggagalkannya.
+   * Di luar itu kunci/cookie pribadi dipakai bila ada; kalau tidak, relay
+   * menyuntikkan kunci milik server. `ticket` (usage_id dari /deduct) selalu
+   * ikut — relay menolaknya hanya di jalur kunci server, dan tiket itulah yang
+   * mengikat satu potongan saldo ke satu job.
    */
   const buildNexabotAuth = async (): Promise<any> => {
     const mod = await import('@/lib/nexabot')
     const apiKey = mod.getNexabotApiKey()
     const cookies = mod.getNexabotCookies()
     const ticket = nbChargeRef.current
-    if (apiKey || cookies) return { apiKey, cookies, ticket }
-    if (!nexabotServerReady) {
-      throw new Error('NexaBot: tidak ada API key aktif dan kunci server belum tersedia — tambahkan API key di halaman Providers atau top up / ambil Premium Booster dulu.')
+    // server_key dari state bisa basi (paket di-approve admin saat halaman sudah
+    // terbuka) — baca ulang sebelum memutuskan, supaya generate yang ditanggung
+    // paket tidak jatuh ke API key pribadi yang kosong (402 upstream).
+    let serverReady = nexabotServerReady
+    if (authToken) {
+      const fresh = await fetchNexabotWallet(authToken).catch(() => null)
+      if (fresh) {
+        setNbWallet(fresh)
+        serverReady = !!fresh.server_key?.available
+      }
     }
-    return { master: true, ticket }
+    if (nexabotPreferServerKey({
+      hasOwnKey: !!(apiKey || cookies),
+      serverReady,
+      coveredByPackage: nbCoveredRef.current,
+    })) return { master: true, ticket }
+    if (apiKey || cookies) return { apiKey, cookies, ticket }
+    throw new Error('NexaBot: tidak ada API key aktif dan kunci server belum tersedia — tambahkan API key di halaman Providers atau top up / ambil Premium Booster dulu.')
   }
 
   const handleGenerate = async () => {
@@ -317,6 +334,7 @@ export default function EditImagePage() {
         if (authToken && user?.role !== 'admin') {
           const charge = await chargeNexabotWallet(authToken, currentModel?.apiModel || 'gpt-image')
           nbChargeRef.current = charge.usageId
+          nbCoveredRef.current = charge.unlimited
           setNbWallet((w) => (w ? { ...w, balance: charge.balance } : w))
           addLog(charge.unlimited
             ? `🎟️ ${nbWallet?.unlimited?.active ? 'Paket Unlimited' : 'Premium Booster'} aktif — gambar ini gratis`
@@ -347,6 +365,7 @@ export default function EditImagePage() {
     } finally {
       removeActiveTask(trackId)
       nbChargeRef.current = null
+      nbCoveredRef.current = false
       setGenerating(false)
     }
   }
