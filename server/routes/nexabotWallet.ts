@@ -381,6 +381,18 @@ router.post('/deduct', authenticateToken, (req: AuthRequest, res: Response) => {
     // Untuk Seedance/Omni/GPT Image, Premium Booster juga dihitung; untuk
     // music/tts paket itu sengaja diabaikan server, bukan klien.
     const pkg = getActivePackageForModel(userId, model)
+
+    // Seedance 2.5 = model paket: member tanpa paket (Unlimited/Premium
+    // Booster) tidak boleh menagih saldo untuk generate Seedance — saldo
+    // NexaBot hanya berlaku untuk Omni Flash 1.1 (dan model Omni lain).
+    // Admin tidak lewat sini (klien skip charge untuk admin).
+    if (/^seedance/.test(String(model || '').toLowerCase()) && !pkg) {
+      return res.status(400).json({
+        error: 'Seedance 2.5 hanya untuk member dengan Paket aktif (Premium Booster / Unlimited) — saldo NexaBot hanya berlaku untuk Omni Flash 1.1.',
+        balance,
+        packages: getNexabotPricing().packages,
+      })
+    }
     const gratisBooster = isBoosterModelName(model)
     const pricing = getNexabotPricing()
     const cost = pkg ? 0 : pricing.price

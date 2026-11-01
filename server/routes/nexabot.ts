@@ -36,6 +36,7 @@ import {
   releaseChargeTicket,
   reserveChargeTicket,
 } from '../lib/nexabotChargeTicket.js'
+import { hasActiveUnlimited } from '../lib/nexabotMasterKey.js'
 import { recordUpstreamUsage, userIdFromRequest, type ResolvedCredential } from '../lib/nexabotUpstreamUsage.js'
 import { getNexabotSubmitQueueConfig } from '../lib/nexabotQueueSettings.js'
 
@@ -1462,6 +1463,19 @@ router.post('/save/:id', authenticateToken, async (req: AuthRequest, res: Respon
 // klien langsung mendapat job_id + posisi antrean. Alur baca/unduh/simpan
 // memakai pola yang sama dengan job video biasa, hanya path upstream berbeda.
 router.post('/seedance', async (req: Request, res: Response) => {
+  // Gate paket: Seedance 2.5 hanya untuk member dengan paket aktif
+  // (Premium Booster / Unlimited) — saldo NexaBot TIDAK membebaskan Seedance
+  // (saldo hanya untuk Omni Flash 1.1), begitu pula API key pribadi: alur
+  // ini ditegakkan di relay supaya tidak bisa dilewati dari browser. Admin
+  // bebas karena kredensial server miliknya.
+  const gateUserId = userIdFromRequest(req)
+  const berhakSeedance = !!gateUserId && (isAdminUser(gateUserId) || hasActiveUnlimited(gateUserId))
+  if (!berhakSeedance) {
+    return res.status(403).json({
+      ok: false,
+      error: 'Seedance 2.5 hanya untuk member dengan Paket Premium Booster/Unlimited aktif — saldo NexaBot hanya berlaku untuk Omni Flash 1.1.',
+    })
+  }
   const auth = resolveUpstreamAuth(req, { membuatJob: true, kunciSaja: true })
   if (auth.antrean) {
     return res.status(429).json({

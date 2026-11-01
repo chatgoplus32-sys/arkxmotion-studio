@@ -2630,6 +2630,16 @@ export default function ImageToVideoPage() {
         // `gratisKarenaPaket` juga menentukan jalur kredensial di bawah: generate
         // yang ditanggung paket dibayar kunci server, bukan API key pribadi member.
         let gratisKarenaPaket = false
+        // Seedance 2.5 = model paket: member biasa tanpa paket ditolak di muka,
+        // WALAU saldo NexaBot cukup — saldo hanya berlaku untuk Omni Flash 1.1.
+        // Gate otoritatif tetap di /deduct + relay (tidak bisa dilewati browser).
+        const nbApiModel = currentModel?.apiModel || 't2v'
+        if (nbApiModel === 'seedance' && currentUser?.role !== 'admin' && nbWallet
+          && !(nbWallet?.unlimited?.active || nbWallet?.booster_unlimited?.active)) {
+          const pesan = 'Seedance 2.5 hanya untuk member dengan Paket aktif (Premium Booster / Unlimited) — saldo NexaBot hanya berlaku untuk Omni Flash 1.1.'
+          addLog(`❌ ${pesan}`, 'error', 'nexabot')
+          throw new Error(pesan)
+        }
         if (authToken && currentUser?.role !== 'admin') {
           const charge = await chargeNexabotWallet(authToken, currentModel?.apiModel || 't2v')
           nbChargeRef.current = charge.usageId

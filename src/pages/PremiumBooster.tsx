@@ -147,7 +147,7 @@ export default function PremiumBoosterPage() {
           </div>
         ) : boosterPass?.active ? (
           <div className="mt-3 text-[11px] text-emerald-500">
-            Booster berlaku sampai {formatDate(boosterPass.expires_at)} — Seedance 2.5, Omni Flash 1.1, dan GPT Image 2.5 di luar daftar ini tetap gratis. Mode lain tetap {formatRp(wallet?.price ?? 150)}/generate dari saldo.
+            Booster berlaku sampai {formatDate(boosterPass.expires_at)} — Seedance 2.5, Omni Flash 1.1, dan GPT Image 2.5 gratis selama masa aktif. Mode lain tetap {formatRp(wallet?.price ?? 150)}/generate dari saldo.
           </div>
         ) : (
           <div className="mt-3 text-[11px] text-muted-foreground">
@@ -168,10 +168,10 @@ export default function PremiumBoosterPage() {
                   <span className="font-semibold text-sm">{nama}</span>
                 </div>
                 <div className="text-[11px] text-muted-foreground">
-                  {i === 0 && 'Text/image to video 4s, 15s & 30s — tanpa potong kredit upstream.'}
-              {i === 1 && 'Semua mode video NexaBot: t2v, sfv, i2v, r2v (AI Video Edit), extend (AI Video Edit lanjutan) dan r2v (Reference Video) — tanpa potong kredit upstream.'}
-              {i === 2 && 'GPT Image 2.5 dari halaman Edit Image, dan Image-to-Video MiniMax H3 (AI I2V / Image Video).'}
-            </div>
+                  {i === 0 && 'Video 4s, 15s & 30s dari halaman Image to Video — tanpa potong kredit upstream.'}
+                  {i === 1 && 'Semua mode video NexaBot: t2v, sfv, i2v, r2v (AI Video Edit) dan extend — tanpa potong kredit upstream.'}
+                  {i === 2 && 'GPT Image 2.5 dari halaman Edit Image — tanpa potong kredit upstream.'}
+                </div>
               </div>
             )
           })}
