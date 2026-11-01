@@ -12,8 +12,10 @@ import {
   NEXABOT_PRICING_KEYS,
   NEXABOT_PRICING_SETTING_KEYS,
   NEXABOT_SCOPED_SLUGS,
-  NEXABOT_SEEDANCE_ONLY_SLUGS,
+  NEXABOT_BOOSTER_SLUGS,
   NEXABOT_UNLIMITED_SLUG,
+  NEXABOT_OMNI_MODELS,
+  NEXABOT_IMAGE_MODELS,
   SEAVI_TOKEN_PRICE,
   SEAVI_MIN_TOPUP,
   SEAVI_PACKAGES,
@@ -22,7 +24,8 @@ import {
   findSeaviPackage,
   getSeaviCharge,
   isSeedanceModelName,
-  isSeedanceOnlyPackage,
+  isBoosterPackage,
+  isBoosterModelName,
   nexabotPackageName,
   parseNexabotPricing,
   validateNexabotPackageValue,
@@ -96,24 +99,24 @@ test('harga tiap varian dibaca terpisah (tidak saling bocor)', () => {
   )
 })
 
-test('katalog: Harian Seedance 2.5 = Rp 15.000 / 1 hari, scope seedance', () => {
-  const seedance = NEXABOT_PACKAGES.find((p) => p.slug === 'unlimited_seedance_daily')
-  assert.ok(seedance, 'varian Harian Seedance harus ada di katalog')
-  assert.equal(seedance.label, 'Seedance 2.5')
-  assert.equal(seedance.defaultPrice, 15000)
-  assert.equal(seedance.days, 1)
-  assert.equal(seedance.scope, 'seedance')
+test('katalog: Premium Booster = Rp 15.000 / 1 hari, scope booster', () => {
+  const booster = NEXABOT_PACKAGES.find((p) => p.slug === 'unlimited_seedance_daily')
+  assert.ok(booster, 'varian Booster harus ada di katalog')
+  assert.equal(booster.label, 'Booster')
+  assert.equal(booster.defaultPrice, 15000)
+  assert.equal(booster.days, 1)
+  assert.equal(booster.scope, 'booster')
   // Tidak boleh menyelinap ke posisi pertama: `packages[0]` adalah varian utama
   // yang dipakai klien lama (`unlimitedPrice`/`unlimitedDays`).
-  assert.ok(NEXABOT_PACKAGES.indexOf(seedance) > 0, 'varian baru harus di akhir katalog')
+  assert.ok(NEXABOT_PACKAGES.indexOf(booster) > 0, 'varian baru harus di akhir katalog')
 
-  assert.deepEqual(NEXABOT_SEEDANCE_ONLY_SLUGS, ['unlimited_seedance_daily'])
+  assert.deepEqual(NEXABOT_BOOSTER_SLUGS, ['unlimited_seedance_daily'])
   assert.deepEqual(NEXABOT_SCOPED_SLUGS, ['unlimited_seedance_daily'])
-  assert.equal(isSeedanceOnlyPackage('unlimited_seedance_daily'), true)
+  assert.equal(isBoosterPackage('unlimited_seedance_daily'), true)
   // Baris legacy (kolom baru, default '') tetap berarti Unlimited semua mode.
-  assert.equal(isSeedanceOnlyPackage(''), false)
-  assert.equal(isSeedanceOnlyPackage(undefined), false)
-  assert.equal(isSeedanceOnlyPackage('unlimited_monthly'), false)
+  assert.equal(isBoosterPackage(''), false)
+  assert.equal(isBoosterPackage(undefined), false)
+  assert.equal(isBoosterPackage('unlimited_monthly'), false)
 
   for (const model of ['seedance', 'seedance-2.5', 'nb:seedance', 'SEEDANCE']) {
     assert.equal(isSeedanceModelName(model), true, `${model} harus dikenali sebagai Seedance`)
@@ -123,7 +126,22 @@ test('katalog: Harian Seedance 2.5 = Rp 15.000 / 1 hari, scope seedance', () => 
   }
 })
 
-test('harga Harian Seedance dibaca dari kunci sendiri', () => {
+test('Booster membebaskan tiga keluarga: Seedance 2.5, Omni Flash 1.1, GPT Image', () => {
+  assert.deepEqual(NEXABOT_OMNI_MODELS, ['t2v', 'sfv', 'i2v', 'r2v', 'extend'])
+  assert.deepEqual(NEXABOT_IMAGE_MODELS, ['gpt-image', 'img'])
+
+  const gratis = ['seedance', 'seedance-2.5', 't2v', 'sfv', 'i2v', 'r2v', 'extend', 'gpt-image', 'img', 'nb:r2v', 'NB:GPT-IMAGE', 'Seedance']
+  for (const model of gratis) {
+    assert.equal(isBoosterModelName(model), true, `${model} harus dibebaskan Booster`)
+  }
+  // Audio sengaja tidak ikut — Booster dijual sebagai paket visual.
+  const tetapBayar = ['music', 'tts', '', 'unknown-mode', undefined, null]
+  for (const model of tetapBayar) {
+    assert.equal(isBoosterModelName(model), false, `${model} tidak boleh dibebaskan Booster`)
+  }
+})
+
+test('harga Booster dibaca dari kunci sendiri', () => {
   const pricing = parseNexabotPricing({
     nexabot_unlimited_seedance_daily_price: '20000',
     nexabot_unlimited_seedance_daily_days: '3',

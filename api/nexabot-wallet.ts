@@ -7,9 +7,9 @@
 // Tambahan: PAKET UNLIMITED dengan beberapa varian (Mingguan/Bulanan/Tahunan,
 // harga & durasi diatur admin) — selama paket aktif, /deduct tidak memotong
 // saldo (usage tetap dicatat dengan cost 0).
-// Varian ber-scope (Harian Seedance 2.5) hanya membebaskan mode yang disebut di
-// namanya; pemotongan untuk mode lain tetap berjalan, dan keputusan itu dibuat
-// server lewat daftar slug, bukan dari klaim klien.
+// Varian ber-scope (Premium Booster) membebaskan keluarga model tertentu —
+// lihat isBoosterModelName di shared/pricing.ts — dan bukan sisanya; keputusan
+// itu dibuat server lewat daftar slug, bukan dari klaim klien.
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import jwt from 'jsonwebtoken'
 import { neon } from '@neondatabase/serverless'
@@ -20,7 +20,7 @@ import {
   NEXABOT_PRICING_SETTING_KEYS,
   NEXABOT_SCOPED_SLUGS,
   findNexabotPackage,
-  isSeedanceModelName,
+  isBoosterModelName,
   parseNexabotPricing,
   type NexabotPricing,
 } from '../shared/pricing.js'
@@ -114,7 +114,7 @@ function daysLeft(expiresAt: any): number {
   return Math.max(0, Math.ceil((end - Date.now()) / 86400000))
 }
 
-/** Sisa jam dari TIMESTAMP Postgres — untuk paket seharian (Harian Seedance). */
+/** Sisa jam dari TIMESTAMP Postgres — untuk paket seharian seperti Premium Booster. */
 function hoursLeft(expiresAt: any): number {
   if (!expiresAt) return 0
   const end = expiresAt instanceof Date ? expiresAt.getTime() : new Date(String(expiresAt).replace(' ', 'T')).getTime()
@@ -140,7 +140,7 @@ function unlimitedPayload(pkg: any) {
 
 /**
  * Cermin sisi Express: `hanyaSemuaMode` (default) mengabaikan paket ber-scope
- * (mis. Harian Seedance) supaya status `unlimited` tidak menjanjikan gratis untuk
+ * (mis. Premium Booster) supaya status `unlimited` tidak menjanjikan gratis untuk
  * mode yang tetap dipotong. `false` = paket mana pun yang berlaku untuk job ini.
  */
 async function getActivePackage(sql: any, userId: number, hanyaSemuaMode = true) {
@@ -167,12 +167,12 @@ async function getActivePackage(sql: any, userId: number, hanyaSemuaMode = true)
 
 /** Paket yang membebaskan generate untuk model ini (global ATAU scope cocok). */
 async function getActivePackageForModel(sql: any, userId: number, model?: string) {
-  return getActivePackage(sql, userId, !isSeedanceModelName(model))
+  return getActivePackage(sql, userId, !isBoosterModelName(model))
 }
 
 /**
  * Pengajuan paket yang masih menunggu approval, dihitung per kelas. Kelas
- * ber-scope (mis. Harian Seedance) dibandingkan dengan kelas sisanya — baris
+ * ber-scope (mis. Premium Booster) dibandingkan dengan kelas sisanya — baris
  * legacy `package_slug = ''` termasuk kelas "semua mode".
  */
 async function hasPendingPackage(sql: any, userId: number, kelasBerScope: boolean) {
@@ -228,9 +228,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         price: pricing.price,
         min_topup: NEXABOT_MIN_TOPUP,
         unlimited: unlimitedPayload(pkg),
-        // Status khusus Seedance 2.5 (paket Harian Seedance hanya membebaskan
-        // mode itu) — sama seperti sisi Express.
-        seedance_unlimited: unlimitedPayload(await getActivePackage(sql, user.id, false)),
+        // Status khusus Premium Booster (ber-scope: hanya Seedance 2.5, Omni
+        // Flash 1.1 & GPT Image) — sama seperti sisi Express.
+        booster_unlimited: unlimitedPayload(await getActivePackage(sql, user.id, false)),
         // `package` = varian utama (kompatibilitas), `packages` = semua varian
         // yang bisa dipilih user di halaman top up.
         package: {
@@ -266,7 +266,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       // Antrian pending dicek PER KELAS paket (sama seperti sisi Express):
-      // pengajuan Harian Seedance tidak boleh terblok oleh pengajuan Bulanan
+      // pengajuan Premium Booster tidak boleh terblok oleh pengajuan Bulanan
       // yang belum di-approve, tapi dua pengajuan di kelas yang sama ditolak.
       const kelasBerScope = (plan.scope || 'all') !== 'all'
       if (await hasPendingPackage(sql, user.id, kelasBerScope)) {
@@ -295,7 +295,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({
         topups: rows,
         unlimited: unlimitedPayload(await getActivePackage(sql, user.id)),
-        seedance_unlimited: unlimitedPayload(await getActivePackage(sql, user.id, false)),
+        booster_unlimited: unlimitedPayload(await getActivePackage(sql, user.id, false)),
       })
     }
 
@@ -311,18 +311,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       // Paket aktif untuk mode ini → generate gratis, usage tetap dicatat (cost 0).
-      // Seedance 2.5 juga dihitung oleh paket Harian Seedance (scope 'seedance');
-      // untuk mode lain paket itu sengaja diabaikan server, bukan oleh klien.
+      // Seedance 2.5, Omni Flash 1.1 dan GPT Image juga dihitung oleh Premium
+      // Booster (ber-scope); untuk music/tts paket itu sengaja diabaikan server,
+      // bukan oleh klien.
       const pkg = await getActivePackageForModel(sql, user.id, model)
-      const isSeedance = isSeedanceModelName(model)
+      const gratisBooster = isBoosterModelName(model)
       const pricing = await getNexabotPricing(sql)
       const cost = pkg ? 0 : pricing.price
 
       if (balance < cost) {
         // Varian termurah yang MEMBEBASKAN MODE INI disebut supaya user punya jalan
-        // keluar paling ringan — paket Seedance-harian tidak ditawarkan untuk mode
-        // lain karena ia tidak menggratiskan mode itu.
-        const kandidat = pricing.packages.filter((p) => isSeedance || !NEXABOT_SCOPED_SLUGS.includes(p.slug))
+        // keluar paling ringan — Premium Booster tidak ditawarkan untuk mode
+        // yang tidak dibebaskannya (music/tts).
+        const kandidat = pricing.packages.filter((p) => gratisBooster || !NEXABOT_SCOPED_SLUGS.includes(p.slug))
         const daftar = kandidat.length ? kandidat : pricing.packages
         const entry = daftar.reduce((a: any, b: any) => (b.price < a.price ? b : a), daftar[0])
         return res.status(400).json({

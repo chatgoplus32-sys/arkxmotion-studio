@@ -3,7 +3,7 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
-import { isSeedanceOnlyPackage } from '@/lib/nexabotWallet'
+import { isBoosterPackage } from '@/lib/nexabotWallet'
 import {
   Save,
   RefreshCw,
@@ -42,8 +42,8 @@ const NB_PACKAGE_FALLBACKS: NexabotPackage[] = [
   { slug: 'unlimited_weekly', label: 'Mingguan', price: 35000, days: 7 },
   { slug: 'unlimited_monthly', label: 'Bulanan', price: 119000, days: 30 },
   { slug: 'unlimited_yearly', label: 'Tahunan', price: 899000, days: 365 },
-  // Ber-scope: hanya membebaskan Seedance 2.5 (server yang menegakkan).
-  { slug: 'unlimited_seedance_daily', label: 'Seedance 2.5', price: 15000, days: 1 },
+  // Ber-scope: Booster membebaskan Seedance 2.5 + Omni + GPT Image (server yang menegakkan).
+  { slug: 'unlimited_seedance_daily', label: 'Booster', price: 15000, days: 1 },
 ]
 
 /** Paket dari server, atau katalog fallback kalau server belum mengirim. */
@@ -643,6 +643,12 @@ export default function AdminSystemSettings() {
   })
   const [nbActive, setNbActive] = useState<NexabotPricing | null>(null)
   const [nbSaving, setNbSaving] = useState(false)
+  // Antrean submit NexaBot (khusus admin): batas submit bersamaan per akun
+  // pool, ditampilkan berdampingan dengan jumlah akun supaya admin tidak
+  // mengira angka itu menambah job yang benar-benar paralel.
+  const [nbQueueInput, setNbQueueInput] = useState('')
+  const [nbAkunPool, setNbAkunPool] = useState(0)
+  const [nbQueueSaving, setNbQueueSaving] = useState(false)
   // Kunci induk NexaBot: server hanya melaporkan status, nilainya tidak pernah
   // dikirim balik ke browser — jadi input selalu kosong dan hanya diisi saat
   // admin ingin mengganti.
@@ -695,8 +701,36 @@ export default function AdminSystemSettings() {
       }
       // Input diisi nilai efektif sekarang supaya admin lihat angka aslinya.
       setNbForm({ price: String(pricing.price), packages: toPackageForm(pricing.packages) })
+      if (data.submit_concurrency !== undefined) {
+        setNbQueueInput(String(data.submit_concurrency))
+        setNbAkunPool(Number(data.akun_pool) || 0)
+      }
     } catch { /* biarkan nilai lama kalau request gagal */ }
   }, [token])
+
+  const handleSaveNexabotQueue = async () => {
+    if (!token) return
+    setNbQueueSaving(true)
+    try {
+      const res = await fetch('/api/admin/nexabot/queue', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ concurrency: Number(nbQueueInput) }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        addToast(data.message || 'Antrean submit NexaBot disimpan', 'success')
+        setNbQueueInput(String(data.submit_concurrency))
+        setNbAkunPool(Number(data.akun_pool) || 0)
+      } else {
+        addToast(data.error || 'Gagal menyimpan antrean submit NexaBot', 'error')
+      }
+    } catch {
+      addToast('Gagal menyimpan antrean submit NexaBot', 'error')
+    } finally {
+      setNbQueueSaving(false)
+    }
+  }
 
   useEffect(() => { fetchNexabotPricing() }, [fetchNexabotPricing])
 
@@ -1100,9 +1134,9 @@ export default function AdminSystemSettings() {
                       <span className="font-semibold text-sm">Paket {p.label}</span>
                       <span className="text-[11px] text-muted-foreground font-mono">{p.slug}</span>
                     </div>
-                    {isSeedanceOnlyPackage(p.slug) && (
+                    {isBoosterPackage(p.slug) && (
                       <div className="mb-3 text-[11px] text-amber-500">
-                        Hanya membebaskan generate Seedance 2.5 — mode lain tetap dipotong harga per generate.
+                        Premium Booster — membebaskan Seedance 2.5, Omni Flash 1.1 (t2v/sfv/i2v/r2v/extend) &amp; GPT Image. Music dan TTS tetap dipotong harga per generate.
                       </div>
                     )}
                     <div className="grid grid-cols-2 gap-3">
@@ -1159,6 +1193,45 @@ export default function AdminSystemSettings() {
                     .join(' · ')}`
                 : 'memuat...'}
             </span>
+          </div>
+        </Section>
+
+        {/* Antrean submit NexaBot — kapasitas nyata ada di jumlah akun pool */}
+        <Section
+          title="Antrean Submit NexaBot"
+          sub="Berapa submit boleh jalan bersamaan per jalur kredensial — hanya admin yang melihatnya"
+        >
+          <div className="rounded-xl border border-border bg-card/40 p-4">
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] text-muted-foreground mb-1">Submit bersamaan per akun (1–20)</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={nbQueueInput}
+                  onChange={e => setNbQueueInput(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-border bg-card text-sm"
+                  placeholder="1"
+                />
+              </div>
+              <div>
+                <div className="block text-[11px] text-muted-foreground mb-1">Job yang bisa benar-benar paralel</div>
+                <div className="px-3 py-2 rounded-lg border border-border bg-card text-sm font-semibold">
+                  {nbAkunPool} akun di pool server
+                </div>
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <Button size="sm" onClick={handleSaveNexabotQueue} disabled={nbQueueSaving || nbQueueInput === ''}>
+                <Zap className={`h-4 w-4 mr-2 ${nbQueueSaving ? 'animate-pulse' : ''}`} />
+                {nbQueueSaving ? 'Menyimpan...' : 'Simpan Antrean Submit'}
+              </Button>
+              <span className="text-[11px] text-muted-foreground">
+                Naikkan angka ini hanya menambah slot antrean per akun. Satu akun NexaBot tetap
+                hanya menjalankan satu job, jadi paralelitas nyata = jumlah akun pool.
+              </span>
+            </div>
           </div>
         </Section>
 

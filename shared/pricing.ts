@@ -35,14 +35,16 @@ export interface NexabotPackagePlan {
   daysKey: string
   /**
    * Bagian mana dari tagihan yang dibebaskan paket ini.
-   *  - 'all'      : semua mode NexaBot (Mingguan/Bulanan/Tahunan);
-   *  - 'seedance' : HANYA mode Seedance 2.5 — mode lain tetap Rp/generate.
+   *  - 'all'     : semua mode NexaBot (Mingguan/Bulanan/Tahunan);
+   *  - 'booster' : Seedance 2.5 + Omni Flash 1.1 + GPT Image — lihat
+   *                `isBoosterModelName()`. Mode lain (music, tts) tetap
+   *                Rp/generate.
    *
    * Sengaja tidak ikut dikirim di objek `packages` respons: bentuk payload
    * itu diuji kontraknya (slug/label/price/days) dan dipakai klien lama.
-   * Kelas paket dibaca lewat slug dengan `isSeedanceOnlyPackage()`.
+   * Kelas paket dibaca lewat slug dengan `isBoosterPackage()`.
    */
-  scope?: 'all' | 'seedance'
+  scope?: 'all' | 'booster'
 }
 
 /**
@@ -84,22 +86,29 @@ export const NEXABOT_PACKAGES: NexabotPackagePlan[] = [
     daysKey: 'nexabot_unlimited_yearly_days',
   },
   {
-    // Pintu masuk Seedance 2.5: 15 detik-nya mahal (upstream menagih 0,2
-    // kredit/video) dan belum ada di paket Unlimited biasa, jadi dijual
-    // terpisah seharian. Member tetap membayar mode lain per generate.
+    // Premium Booster: satu hari tanpa potongan untuk tiga keluarga generate
+    // paling laris — Seedance 2.5 (upstream 0,2 kredit/video), Omni Flash 1.1
+    // (0,15 kredit/request), dan GPT Image (0,1 kredit/gambar). Dinamai dari
+    // halaman tempat paket ini dijual, bukan dari satu model saja.
+    //
+    // slug sengaja TETAP `unlimited_seedance_daily` walaupun cakupanisnya sudah
+    // melebar: baris `nexabot_topup` produksi sudah menyimpan slug ini, dan
+    // kelas paket ditentukan dari daftar hitam slug. Ganti slug = baris lama
+    // tidak lagi dikenali sebagai ber-scope, dan pemiliknya diam-diam dapat
+    // Unlimited semua mode.
     slug: 'unlimited_seedance_daily',
-    label: 'Seedance 2.5',
+    label: 'Booster',
     days: 1,
     defaultPrice: 15000,
     priceKey: 'nexabot_unlimited_seedance_daily_price',
     daysKey: 'nexabot_unlimited_seedance_daily_days',
-    scope: 'seedance',
+    scope: 'booster',
   },
 ]
 
-/** Slug paket yang hanya membebaskan mode Seedance 2.5, bukan mode lain. */
-export const NEXABOT_SEEDANCE_ONLY_SLUGS: string[] = NEXABOT_PACKAGES
-  .filter((plan) => plan.scope === 'seedance')
+/** Slug paket Booster (Seedance + Omni + GPT Image), bukan Unlimited semua mode. */
+export const NEXABOT_BOOSTER_SLUGS: string[] = NEXABOT_PACKAGES
+  .filter((plan) => plan.scope === 'booster')
   .map((plan) => plan.slug)
 
 /**
@@ -114,9 +123,9 @@ export const NEXABOT_SCOPED_SLUGS: string[] = NEXABOT_PACKAGES
   .filter((plan) => (plan.scope || 'all') !== 'all')
   .map((plan) => plan.slug)
 
-/** Apakah slug ini termasuk paket Seedance-saja? Slug lama/kosong → tidak. */
-export function isSeedanceOnlyPackage(slug: string | null | undefined): boolean {
-  return NEXABOT_SEEDANCE_ONLY_SLUGS.includes(String(slug || ''))
+/** Apakah slug ini paket Booster? Slug lama/kosong → tidak. */
+export function isBoosterPackage(slug: string | null | undefined): boolean {
+  return NEXABOT_BOOSTER_SLUGS.includes(String(slug || ''))
 }
 
 /**
@@ -135,6 +144,33 @@ export function isScopedPackage(slug: string | null | undefined): boolean {
  */
 export function isSeedanceModelName(model: string | null | undefined): boolean {
   return /seedance/i.test(String(model || ''))
+}
+
+/**
+ * Mode Omni Flash 1.1 yang dikirim ke /deduct. Tidak ada string "omni" di jalur
+ * biaya: satu model Omni dijual sebagai lima mode video (katalog Image to Video),
+ * dan AI Video Edit mengirim 'r2v' untuk klip hasil potong.
+ */
+export const NEXABOT_OMNI_MODELS = ['t2v', 'sfv', 'i2v', 'r2v', 'extend']
+
+/** Varian GPT Image NexaBot: 2.5 ('gpt-image') dan generasi sebelumnya ('img'). */
+export const NEXABOT_IMAGE_MODELS = ['gpt-image', 'img']
+
+/**
+ * Apakah model ini dibebaskan Premium Booster? Tiga keluarga: Seedance 2.5,
+ * Omni Flash 1.1, dan GPT Image.
+ *
+ * Audio (`music`, `tts`) sengaja TIDAK ikut — Booster dijual sebagai paket
+ * visual dan halaman Top Up menyebut batas itu apa adanya. Daftarnya juga harus
+ * tetap eksplisit: mode baru yang muncul di /deduct tidak boleh otomatis gratis
+ * hanya karena namanya belum sempat diperbarui.
+ */
+export function isBoosterModelName(model: string | null | undefined): boolean {
+  const mentah = String(model || '').toLowerCase()
+  if (isSeedanceModelName(mentah)) return true
+  // Klien lama ada yang mengirim 'nb:r2v'; pakai nama telanjangnya.
+  const inti = mentah.includes(':') ? (mentah.split(':').pop() || '') : mentah
+  return NEXABOT_OMNI_MODELS.includes(inti) || NEXABOT_IMAGE_MODELS.includes(inti)
 }
 
 /** Paket utama — dipakai kalau klien lama tidak menyebut varian (slug). */

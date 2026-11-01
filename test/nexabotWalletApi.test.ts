@@ -379,12 +379,12 @@ test('POST /topup: nominal di bawah minimum ditolak', async () => {
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM nexabot_topup').get().n, 0)
 })
 
-// ── Paket Harian Seedance 2.5 (scope 'seedance') ────────────────────────────
+// ── Premium Booster (slug 'unlimited_seedance_daily', scope 'booster') ──────
 // Uang yang dipertaruhkan di sini: paket Rp 15.000/hari hanya boleh
-// menggratiskan Seedance 2.5. Semua mode lain harus tetap terpotong, dan
-// keputusannya harus dibuat server — bukan oleh klaim klien.
+// menggratiskan Seedance 2.5 + Omni Flash 1.1 + GPT Image. Music dan tts harus
+// tetap terpotong, dan keputusannya harus dibuat server — bukan oleh klaim klien.
 
-test('POST /package slug seedance: Rp 15.000 / 1 hari, harga dari server', async () => {
+test('POST /package slug Booster: Rp 15.000 / 1 hari, harga dari server', async () => {
   const { status, body } = await api('POST', '/api/nexabot/package', {
     token: userToken,
     body: { slug: 'unlimited_seedance_daily', proof_note: 'an. Sari' },
@@ -396,29 +396,29 @@ test('POST /package slug seedance: Rp 15.000 / 1 hari, harga dari server', async
   assert.equal(body.package.days, 1)
   assert.equal(body.package.kind, 'unlimited')
   assert.equal(body.package.status, 'pending')
-  assert.match(body.message, /Seedance/)
+  assert.match(body.message, /Booster/)
 })
 
-test('pengajuan pending dihitung per kelas: Bulanan tidak memblokir Seedance, tapi sesama kelas iya', async () => {
+test('pengajuan pending dihitung per kelas: Bulanan tidak memblokir Booster, tapi sesama kelas iya', async () => {
   const bulanan = await api('POST', '/api/nexabot/package', { token: userToken, body: { slug: 'unlimited_monthly' } })
   assert.equal(bulanan.status, 201)
 
-  const seedance = await api('POST', '/api/nexabot/package', {
+  const booster = await api('POST', '/api/nexabot/package', {
     token: userToken,
     body: { slug: 'unlimited_seedance_daily' },
   })
-  assert.equal(seedance.status, 201, 'pengajuan kelas berbeda tidak boleh terblok')
+  assert.equal(booster.status, 201, 'pengajuan kelas berbeda tidak boleh terblok')
 
   const lagi = await api('POST', '/api/nexabot/package', {
     token: userToken,
     body: { slug: 'unlimited_seedance_daily' },
   })
   assert.equal(lagi.status, 400)
-  assert.match(lagi.body.error, /Seedance/)
+  assert.match(lagi.body.error, /Booster/)
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM nexabot_topup WHERE package_slug = 'unlimited_seedance_daily'").get().n, 1)
 })
 
-test('pass Seedance aktif: Seedance 2.5 gratis, mode lain tetap terpotong', async () => {
+test('pass Booster aktif: Seedance + Omni + GPT Image gratis, music/tts tetap terpotong', async () => {
   setBalance(1000)
   giveApprovedPackage({ slug: 'unlimited_seedance_daily', days: 1, expiresInDays: 1 })
 
@@ -429,55 +429,83 @@ test('pass Seedance aktif: Seedance 2.5 gratis, mode lain tetap terpotong', asyn
   assert.ok(gratis.body.usage_id, 'usage tetap dicatat supaya tiket charge bisa dipakai')
   assert.equal(getBalance(), 1000)
 
-  const ditagih = await api('POST', '/api/nexabot/deduct', { token: userToken, body: { model: 'i2v' } })
-  assert.equal(ditagih.status, 200)
-  assert.equal(ditagih.body.deducted, 150, 'mode lain tidak boleh ikut gratis')
-  assert.equal(ditagih.body.unlimited, false)
-  assert.equal(getBalance(), 850)
+  // Tiga keluarga yang dijanjikan halaman Booster — semua harus gratis.
+  for (const model of ['seedance-2.5', 't2v', 'sfv', 'i2v', 'r2v', 'extend', 'gpt-image', 'img', 'nb:r2v']) {
+    const tagih = await api('POST', '/api/nexabot/deduct', { token: userToken, body: { model } })
+    assert.equal(tagih.status, 200, `${model} harus dilayani`)
+    assert.equal(tagih.body.deducted, 0, `${model} dibebaskan Booster`)
+  }
+  assert.equal(getBalance(), 1000, 'tidak ada saldo terpotong untuk model yang dibebaskan Booster')
 
-  // Varian nama pun harus kena: model selain 'seedance' tetap dibayar.
-  const r2v = await api('POST', '/api/nexabot/deduct', { token: userToken, body: { model: 'r2v' } })
-  assert.equal(r2v.body.deducted, 150)
+  // Audio sengaja TIDAK ikut — Booster dijual sebagai paket visual.
+  for (const model of ['music', 'tts']) {
+    const ditagih = await api('POST', '/api/nexabot/deduct', { token: userToken, body: { model } })
+    assert.equal(ditagih.status, 200)
+    assert.equal(ditagih.body.deducted, 150, `${model} tidak boleh ikut gratis`)
+    assert.equal(ditagih.body.unlimited, false)
+  }
+  assert.equal(getBalance(), 700, 'dua generate audio @Rp 150 tetap dipotong')
 
-  // Seedance tetap gratis walau saldo sudah habis.
+  // Booster tetap gratis walau saldo sudah habis.
   setBalance(0)
-  const tanpaSaldo = await api('POST', '/api/nexabot/deduct', { token: userToken, body: { model: 'seedance-2.5' } })
+  const tanpaSaldo = await api('POST', '/api/nexabot/deduct', { token: userToken, body: { model: 'gpt-image' } })
   assert.equal(tanpaSaldo.status, 200)
   assert.equal(tanpaSaldo.body.deducted, 0)
 })
 
-test('pass Seedance saja: /balance tidak mengaku Unlimited, dan /deduct mode lain tidak menawarkan paket itu', async () => {
+test('GPT Image tanpa Booster: Rp 150/gambar, dan habis saldo = ditolak', async () => {
+  setBalance(300)
+
+  const pertama = await api('POST', '/api/nexabot/deduct', { token: userToken, body: { model: 'gpt-image' } })
+  assert.equal(pertama.status, 200)
+  assert.equal(pertama.body.deducted, 150, 'non-Booster membayar Rp 150 per gambar')
+  assert.equal(pertama.body.unlimited, false)
+  assert.equal(getBalance(), 150)
+
+  const kedua = await api('POST', '/api/nexabot/deduct', { token: userToken, body: { model: 'img' } })
+  assert.equal(kedua.status, 200)
+  assert.equal(getBalance(), 0)
+
+  const habis = await api('POST', '/api/nexabot/deduct', { token: userToken, body: { model: 'gpt-image' } })
+  assert.equal(habis.status, 400)
+  assert.match(habis.body.error, /tidak cukup/)
+  assert.equal(getBalance(), 0, 'percobaan gagal tidak boleh mengubah saldo')
+})
+
+test('pass Booster saja: /balance tidak mengaku Unlimited, dan music tidak ditawari Booster', async () => {
   setBalance(0)
   giveApprovedPackage({ slug: 'unlimited_seedance_daily', days: 1, expiresInDays: 1 })
 
   const { body } = await api('GET', '/api/nexabot/balance', { token: userToken })
-  assert.equal(body.unlimited.active, false, 'unlimited = bebas semua mode; paket Seedance bukan itu')
-  assert.equal(body.seedance_unlimited.active, true)
-  assert.equal(body.seedance_unlimited.package_slug, 'unlimited_seedance_daily')
-  assert.ok(body.seedance_unlimited.hours_left > 0 && body.seedance_unlimited.hours_left <= 24)
+  assert.equal(body.unlimited.active, false, 'unlimited = bebas semua mode; Booster bukan itu')
+  assert.equal(body.booster_unlimited.active, true)
+  assert.equal(body.booster_unlimited.package_slug, 'unlimited_seedance_daily')
+  assert.ok(body.booster_unlimited.hours_left > 0 && body.booster_unlimited.hours_left <= 24)
 
-  const ditagih = await api('POST', '/api/nexabot/deduct', { token: userToken, body: { model: 't2v' } })
+  const ditagih = await api('POST', '/api/nexabot/deduct', { token: userToken, body: { model: 'music' } })
   assert.equal(ditagih.status, 400)
   assert.match(ditagih.body.error, /Paket Mingguan/, 'tawarkan varian semua mode termurah')
-  assert.doesNotMatch(ditagih.body.error, /Seedance/, 'paket Seedance tidak menolong mode ini — jangan ditawarkan')
+  assert.doesNotMatch(ditagih.body.error, /Booster/, 'Booster tidak menolong music — jangan ditawarkan')
 
-  // Untuk Seedance, justru paket itu jalan keluarnya.
-  const seedance = await api('POST', '/api/nexabot/deduct', { token: userToken, body: { model: 'seedance' } })
-  assert.equal(seedance.status, 200, 'pass masih aktif → Seedance gratis walau saldo 0')
+  // Untuk keluarga Booster, justru paket itu jalan keluarnya.
+  for (const model of ['seedance', 'r2v', 'gpt-image']) {
+    const hasil = await api('POST', '/api/nexabot/deduct', { token: userToken, body: { model } })
+    assert.equal(hasil.status, 200, `${model} gratis walau saldo 0`)
+  }
 })
 
-test('admin approve pass Seedance: expiry tidak mewarisi Bulanan, dan ditumpuk sesama kelas', async () => {
+test('admin approve pass Booster: expiry tidak mewarisi Bulanan, dan ditumpuk sesama kelas', async () => {
   giveApprovedPackage({ slug: 'unlimited_monthly', days: 30, expiresInDays: 30 })
 
-  const seedance = await submitPackage('unlimited_seedance_daily')
+  const booster = await submitPackage('unlimited_seedance_daily')
   const approve = await api('PATCH', '/api/admin/topup/approve', {
     token: adminToken,
-    body: { provider: 'nexabot', id: seedance.id },
+    body: { provider: 'nexabot', id: booster.id },
   })
 
   assert.equal(approve.status, 200)
   assert.equal(approve.body.unlimited.days_left, 1, `pass seharian tidak boleh dihitung dari expiry Bulanan: ${approve.body.unlimited.days_left}`)
-  assert.match(approve.body.message, /Seedance/)
+  assert.match(approve.body.message, /Booster/)
 
   // Pembelian kedua di kelas yang sama tetap ditumpuk (1 + 1 hari).
   const lagi = await submitPackage('unlimited_seedance_daily')
@@ -485,7 +513,7 @@ test('admin approve pass Seedance: expiry tidak mewarisi Bulanan, dan ditumpuk s
     token: adminToken,
     body: { provider: 'nexabot', id: lagi.id },
   })
-  assert.equal(approve2.body.unlimited.days_left, 2, 'sisa hari pass Seedance ditumpuk sesama kelas')
+  assert.equal(approve2.body.unlimited.days_left, 2, 'sisa hari Booster ditumpuk sesama kelas')
 
   // Sisa hari Bulannya sendiri tidak terpengaruh.
   const bulanan = db.prepare(
@@ -495,16 +523,45 @@ test('admin approve pass Seedance: expiry tidak mewarisi Bulanan, dan ditumpuk s
   assert.ok(sisaBulanan >= 29 && sisaBulanan <= 31, `expiry Bulanan berubah: ${sisaBulanan}`)
 })
 
-test('Unlimited reguler + pass Seedance: dua-duanya tampil, unlimited tetap yang global', async () => {
+test('antrean submit: nilai admin menimpa env, di luar 1..20 ditolak', async () => {
+  const { getNexabotSubmitQueueConfig, setNexabotSubmitConcurrency, SUBMIT_CONCURRENCY_SETTING } =
+    await import('../server/lib/nexabotQueueSettings.js')
+
+  // Belum ada nilai tersimpan → ikut env/default seperti sebelumnya.
+  const bawaan = getNexabotSubmitQueueConfig()
+  for (const ngawur of [0, -1, 21, 'abc', null, undefined, NaN]) {
+    assert.throws(
+      () => setNexabotSubmitConcurrency(ngawur),
+      /1 dan 20/,
+      `concurrency=${String(ngawur)} harus ditolak`,
+    )
+  }
+  assert.equal(getNexabotSubmitQueueConfig().concurrency, bawaan.concurrency, 'nilai ditolak tidak mengubah yang tersimpan')
+
+  const disimpan = setNexabotSubmitConcurrency(4.9)
+  assert.equal(disimpan, 4, 'dibulatkan ke bawah')
+  assert.equal(getNexabotSubmitQueueConfig().concurrency, 4)
+  assert.equal(
+    db.prepare('SELECT value FROM app_settings WHERE key = ?').get(SUBMIT_CONCURRENCY_SETTING).value,
+    '4',
+  )
+
+  assert.equal(setNexabotSubmitConcurrency(20), 20, 'batas atas masih boleh')
+  assert.equal(getNexabotSubmitQueueConfig().concurrency, 20)
+
+  db.prepare('DELETE FROM app_settings WHERE key = ?').run(SUBMIT_CONCURRENCY_SETTING)
+})
+
+test('Unlimited reguler + pass Booster: dua-duanya tampil, unlimited tetap yang global', async () => {
   giveApprovedPackage({ slug: 'unlimited_monthly', days: 30, expiresInDays: 30 })
   giveApprovedPackage({ slug: 'unlimited_seedance_daily', days: 1, expiresInDays: 1 })
 
   const { body } = await api('GET', '/api/nexabot/balance', { token: userToken })
   assert.equal(body.unlimited.active, true)
   assert.equal(body.unlimited.package_slug, 'unlimited_monthly')
-  assert.equal(body.seedance_unlimited.active, true)
+  assert.equal(body.booster_unlimited.active, true)
 
   const riwayat = await api('GET', '/api/nexabot/topups/mine', { token: userToken })
   assert.equal(riwayat.body.unlimited.active, true)
-  assert.equal(riwayat.body.seedance_unlimited.active, true)
+  assert.equal(riwayat.body.booster_unlimited.active, true)
 })

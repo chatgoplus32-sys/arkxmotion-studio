@@ -4,7 +4,7 @@ import MotionControlDemo from '@/components/landing/MotionControlDemo'
 import HeroDashboard from '@/components/landing/HeroDashboard'
 import { DEFAULT_MEMBERSHIP_FEE } from '@/lib/membership'
 import { DEFAULT_PRO_FEE } from '@/lib/pro'
-import { isSeedanceOnlyPackage } from '@/lib/nexabotWallet'
+import { isBoosterPackage } from '@/lib/nexabotWallet'
 
 // Harga provider live dari /api/public/pricing (read-only, tanpa login).
 interface ProviderPrices {
@@ -459,14 +459,14 @@ export default function LandingPage() {
                     ? [{ slug: 'unlimited_weekly', ...providerPrices.nexabot.package }]
                     : []
                 ).map((pkg) => {
-                  const hanyaSeedance = isSeedanceOnlyPackage(pkg.slug)
+                  const hanyaBooster = isBoosterPackage(pkg.slug)
                   return (
-                  <div key={pkg.slug} className={`rounded-xl border p-3 sm:p-4 ${hanyaSeedance ? 'border-fuchsia-400/25 bg-fuchsia-500/[0.07]' : 'border-blue-500/25 bg-blue-500/[0.07]'}`}>
-                    <div className={`text-[12px] sm:text-[13px] font-semibold ${hanyaSeedance ? 'text-fuchsia-200' : 'text-blue-200'}`}>Paket {pkg.label}</div>
+                  <div key={pkg.slug} className={`rounded-xl border p-3 sm:p-4 ${hanyaBooster ? 'border-fuchsia-400/25 bg-fuchsia-500/[0.07]' : 'border-blue-500/25 bg-blue-500/[0.07]'}`}>
+                    <div className={`text-[12px] sm:text-[13px] font-semibold ${hanyaBooster ? 'text-fuchsia-200' : 'text-blue-200'}`}>Paket {pkg.label}</div>
                     <div className="mt-1 text-[16px] sm:text-[18px] font-black tracking-tight">{rp(pkg.price)}</div>
                     <div className="text-[11px] text-white/40">
-                      {hanyaSeedance
-                        ? `Seedance 2.5 tanpa batas selama ${pkg.days} hari · mode lain tetap per generate`
+                      {hanyaBooster
+                        ? `Seedance 2.5, Omni Flash 1.1 & GPT Image tanpa batas · mode lain tetap per generate`
                         : `Generate semua mode tanpa batas selama ${pkg.days} hari`}
                     </div>
                   </div>

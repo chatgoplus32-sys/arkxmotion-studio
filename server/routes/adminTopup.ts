@@ -80,10 +80,10 @@ router.patch('/approve', authenticateToken, requireAdmin, (req: AuthRequest, res
     if (topup.kind === 'unlimited') {
       const days = Number(topup.days) || 7
       // Penumpukan masa berlaku HANYA dihitung di dalam kelas paket yang sama.
-      // Paket Harian Seedance (scope 'seedance') jangan sampai dapat expiry
-      // menjulur karena user juga punya Bulanan aktif — ia dibeli untuk satu
-      // hari dan hanya membebaskan Seedance. Demikian pula sisa hari Bulanan tidak
-      // pernah dihitung dari expiry paket harian.
+      // Premium Booster (ber-scope) jangan sampai dapat expiry menjulur karena
+      // user juga punya Bulanan aktif — ia dibeli untuk satu hari dan hanya
+      // membebaskan Seedance 2.5, Omni Flash 1.1 dan GPT Image. Demikian pula
+      // sisa hari Bulanan tidak pernah dihitung dari expiry paket harian.
       const punyaSlug = 'package_slug' in topup
       const kelasBerScope = isScopedPackage(topup.package_slug)
       const tanda = NEXABOT_SCOPED_SLUGS.map(() => '?').join(', ')

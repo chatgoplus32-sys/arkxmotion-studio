@@ -13,6 +13,7 @@ import {
   setProFee,
 } from './membership.js'
 import { getNexabotPricing, setNexabotPricing } from './nexabotWallet.js'
+import { getNexabotSubmitQueueConfig, nexabotRealParallelism, setNexabotSubmitConcurrency } from '../lib/nexabotQueueSettings.js'
 import {
   MASTER_KEY_SETTING,
   checkMasterKey,
@@ -299,6 +300,10 @@ router.get('/nexabot/config', authenticateToken, requireAdmin, (_req: AuthReques
       pricing: getNexabotPricing(),
       defaults: NEXABOT_PRICING_DEFAULTS,
       min_topup: NEXABOT_MIN_TOPUP,
+      // Antrean submit + kapasitas nyata — ditampilkan berdampingan supaya admin
+      // tidak mengira menaikkan `concurrency` menambah job yang jalan paralel.
+      submit_concurrency: getNexabotSubmitQueueConfig().concurrency,
+      akun_pool: nexabotRealParallelism(),
     })
   } catch (error) {
     console.error('Get NexaBot pricing error:', error)
@@ -351,6 +356,27 @@ router.patch('/nexabot/config', authenticateToken, requireAdmin, (req: AuthReque
   } catch (error: any) {
     console.error('Set NexaBot pricing error:', error)
     // Pesan validasi ("price harus angka antara ...") memang untuk admin.
+    res.status(400).json({ error: error?.message || 'Internal server error' })
+  }
+})
+
+// ─── Antrean submit NexaBot (khusus admin) ──────────────────────────────
+// Batas submit bersamaan PER jalur kredensial. Paralelitas nyata dibatasi
+// jumlah akun di pool server, bukan angka ini — satu akun NexaBot hanya
+// menjalankan satu job. Karena itu kapasitas pool ikut dikembalikan supaya
+// admin melihat kedua angka itu sekaligus.
+
+router.patch('/nexabot/queue', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
+  try {
+    const concurrency = setNexabotSubmitConcurrency((req.body || {}).concurrency)
+    res.json({
+      ok: true,
+      submit_concurrency: concurrency,
+      akun_pool: nexabotRealParallelism(),
+      message: `Submit bersamaan per akun: ${concurrency} · job yang benar-benar bisa paralel: ${nexabotRealParallelism()} (sebanyak akun di pool)`,
+    })
+  } catch (error: any) {
+    console.error('Set NexaBot queue config error:', error)
     res.status(400).json({ error: error?.message || 'Internal server error' })
   }
 })

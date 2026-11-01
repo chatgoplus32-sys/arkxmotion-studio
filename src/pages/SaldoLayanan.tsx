@@ -111,7 +111,7 @@ export default function SaldoLayananPage() {
     if (requestId !== requestRef.current) return
 
     const unlimited = nexabot?.unlimited
-    const seedancePass = nexabot?.seedance_unlimited
+    const boosterPass = nexabot?.booster_unlimited
     const sisa = (u: NexabotUnlimited) => {
       const label = nexabotRemainingLabel(u)
       return label ? ` · ${label}` : ''
@@ -121,12 +121,12 @@ export default function SaldoLayananPage() {
       nexabot: {
         amount: nexabot?.balance ?? null,
         unitPrice: nexabot?.price ?? null,
-        // Pass Seedance hanya menggratiskan Seedance 2.5, jadi disebut apa adanya
-        // — jangan tampil sebagai "Unlimited" untuk saldo yang tetap terpotong.
+        // Booster hanya menggratiskan Seedance/Omni/GPT Image, jadi disebut apa
+        // adanya — jangan tampil sebagai "Unlimited" untuk saldo yang tetap terpotong.
         note: unlimited?.active
           ? `Paket Unlimited aktif${sisa(unlimited)}`
-          : seedancePass?.active
-            ? `Paket Seedance 2.5 aktif${sisa(seedancePass)} · mode lain per generate`
+          : boosterPass?.active
+            ? `Premium Booster aktif${sisa(boosterPass)} · music/tts per generate`
             : null,
       },
       seavi: {

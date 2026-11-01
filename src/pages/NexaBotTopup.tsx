@@ -10,7 +10,7 @@ import {
   fetchNexabotWallet,
   nexabotPackageName,
   nexabotRemainingLabel,
-  isSeedanceOnlyPackage,
+  isBoosterPackage,
   NEXABOT_PACKAGE_FALLBACKS,
   NEXABOT_PRICE_FALLBACK,
   type NexabotWallet,
@@ -53,20 +53,21 @@ export default function NexaBotTopupPage() {
   const packages = wallet?.packages?.length ? wallet.packages : NEXABOT_PACKAGE_FALLBACKS
   const pkg = packages.find((p) => p.slug === selectedSlug) || packages[0]
   const unlimited = wallet?.unlimited
-  // Paket ber-scope (Harian Seedance) hanya membebaskan mode itu; server yang
-  // memutus tagihan, halaman ini hanya memisahkan label & antrian per kelas.
-  const paketSemuaMode = packages.filter((p) => !isSeedanceOnlyPackage(p.slug))
-  const paketSeedance = packages.filter((p) => isSeedanceOnlyPackage(p.slug))
+  // Premium Booster (ber-scope) membebaskan Seedance 2.5 + Omni + GPT Image;
+  // server yang memutus tagihan, halaman ini hanya memisahkan label & antrian
+  // per kelas.
+  const paketSemuaMode = packages.filter((p) => !isBoosterPackage(p.slug))
+  const paketBooster = packages.filter((p) => isBoosterPackage(p.slug))
   const hargaUnlimitedMulai = Math.min(...paketSemuaMode.map((p) => p.price))
-  const seedancePass = wallet?.seedance_unlimited
-  const sedangSeedance = isSeedanceOnlyPackage(pkg.slug)
-  const namaPaketIni = sedangSeedance ? `Seedance 2.5 · ${pkg.days} hari` : `Unlimited ${pkg.label} · ${pkg.days} Hari`
+  const boosterPass = wallet?.booster_unlimited
+  const sedangBooster = isBoosterPackage(pkg.slug)
+  const namaPaketIni = sedangBooster ? `Premium Booster · ${pkg.days} hari` : `Unlimited ${pkg.label} · ${pkg.days} Hari`
   const amount = mode === 'package' ? pkg.price : customAmount ? parseInt(customAmount, 10) || 0 : selectedAmount
   // Antrian dihitung per kelas, sama seperti aturan server: pengajuan Bulanan
-  // yang belum di-approve tidak boleh menyembunyikan tombol Beli paket Seedance.
+  // yang belum di-approve tidak boleh menyembunyikan tombol Beli Booster.
   const pendingPackage = topups.some(
     (t) => t.kind === 'unlimited' && t.status === 'pending'
-      && isSeedanceOnlyPackage(t.package_slug) === sedangSeedance,
+      && isBoosterPackage(t.package_slug) === sedangBooster,
   )
 
   const fetchBalance = useCallback(async () => {
@@ -170,7 +171,7 @@ export default function NexaBotTopupPage() {
         eyebrow="NexaBot"
         title="Top Up &"
         highlight="Paket"
-        desc={`Saldo ${formatRp(wallet?.price ?? NEXABOT_PRICE_FALLBACK)}/generate, atau Unlimited semua mode mulai ${formatRp(hargaUnlimitedMulai)}${paketSeedance.length ? ` — khusus Seedance 2.5 ${formatRp(paketSeedance[0].price)}/hari` : ''}`}
+        desc={`Saldo ${formatRp(wallet?.price ?? NEXABOT_PRICE_FALLBACK)}/generate, atau Unlimited semua mode mulai ${formatRp(hargaUnlimitedMulai)}${paketBooster.length ? ` — Premium Booster (Seedance 2.5 + Omni + GPT Image) ${formatRp(paketBooster[0].price)}/hari` : ''}`}
       />
 
       {/* Saldo + status paket */}
@@ -193,10 +194,10 @@ export default function NexaBotTopupPage() {
               Unlimited aktif · sisa {nexabotRemainingLabel(unlimited)}
             </Badge>
           )}
-          {!unlimited?.active && seedancePass?.active && (
+          {!unlimited?.active && boosterPass?.active && (
             <Badge variant="success">
               <Zap className="h-3 w-3 mr-1" />
-              Seedance 2.5 aktif · sisa {nexabotRemainingLabel(seedancePass)}
+              Premium Booster aktif · sisa {nexabotRemainingLabel(boosterPass)}
             </Badge>
           )}
         </div>
@@ -205,20 +206,20 @@ export default function NexaBotTopupPage() {
             Paket Unlimited berlaku sampai {formatDate(unlimited.expires_at)} — generate tidak memotong saldo sampai waktu itu.
           </div>
         )}
-        {!unlimited?.active && seedancePass?.active && (
+        {!unlimited?.active && boosterPass?.active && (
           <div className="mt-2 text-[11px] text-emerald-500">
-            Paket Seedance 2.5 berlaku sampai {formatDate(seedancePass.expires_at)} — hanya generate Seedance 2.5 yang gratis,
-            mode lain tetap memotong {formatRp(wallet?.price ?? NEXABOT_PRICE_FALLBACK)}/generate.
+            Premium Booster berlaku sampai {formatDate(boosterPass.expires_at)} — Seedance 2.5, Omni Flash 1.1 &amp; GPT Image gratis,
+            music/tts tetap memotong {formatRp(wallet?.price ?? NEXABOT_PRICE_FALLBACK)}/generate.
           </div>
         )}
       </div>
 
       {/* Paket Unlimited — semua varian dari server, bisa dipilih user */}
-      <Section title="Paket Unlimited" sub="Pilih masa berlaku — paket reguler membebaskan semua mode, paket Seedance hanya Seedance 2.5">
+      <Section title="Paket Unlimited" sub="Pilih masa berlaku — paket reguler membebaskan semua mode, Premium Booster membebaskan Seedance 2.5 + Omni + GPT Image">
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {packages.map((p) => {
             const selected = p.slug === pkg.slug
-            const hanyaSeedance = isSeedanceOnlyPackage(p.slug)
+            const booster = isBoosterPackage(p.slug)
             return (
               <button
                 key={p.slug}
@@ -234,7 +235,7 @@ export default function NexaBotTopupPage() {
                 </div>
                 <div className="mt-2 text-2xl font-bold text-primary">{formatRp(p.price)}</div>
                 <div className="text-[11px] text-muted-foreground">
-                  {hanyaSeedance ? 'Hanya mode Seedance 2.5' : 'Semua mode NexaBot'}
+                  {booster ? 'Seedance 2.5 + Omni + GPT Image' : 'Semua mode NexaBot'}
                   {' · '}≈ {formatRp(Math.round(p.price / Math.max(1, p.days)))}/hari
                 </div>
                 <div className={`mt-2 text-[11px] font-medium ${selected ? 'text-primary' : 'text-transparent'}`}>
@@ -254,10 +255,10 @@ export default function NexaBotTopupPage() {
               </div>
               <div className="text-3xl font-bold text-primary">{formatRp(pkg.price)}</div>
               <ul className="mt-3 space-y-1 text-xs text-muted-foreground">
-                {sedangSeedance ? (
+                {sedangBooster ? (
                   <>
-                    <li>• Generate Seedance 2.5 tanpa batas selama masa berlaku</li>
-                    <li>• Mode lain (t2v, i2v, r2v, dll.) tetap {formatRp(wallet?.price ?? NEXABOT_PRICE_FALLBACK)}/generate dari saldo</li>
+                    <li>• Seedance 2.5, Omni Flash 1.1 &amp; GPT Image tanpa batas selama masa berlaku</li>
+                    <li>• Music dan TTS tetap {formatRp(wallet?.price ?? NEXABOT_PRICE_FALLBACK)}/generate dari saldo</li>
                     <li>• Bisa dipakai bersamaan dengan Paket Unlimited reguler</li>
                   </>
                 ) : (
@@ -274,7 +275,7 @@ export default function NexaBotTopupPage() {
                 <Badge variant="warning"><Clock className="h-3 w-3 mr-1" /> Menunggu approval</Badge>
               ) : (
                 <Button onClick={() => startPackage(pkg.slug)}>
-                  {(sedangSeedance ? seedancePass?.active : unlimited?.active) ? `Perpanjang ${pkg.label}` : `Beli Paket ${pkg.label}`}
+                  {(sedangBooster ? boosterPass?.active : unlimited?.active) ? `Perpanjang ${pkg.label}` : `Beli Paket ${pkg.label}`}
                 </Button>
               )}
             </div>
@@ -415,7 +416,7 @@ export default function NexaBotTopupPage() {
             </div>
             <div className="text-sm text-muted-foreground mb-4">
               {mode === 'package'
-                ? `Paket ${namaPaketIni} aktif otomatis setelah admin menyetujui pembayaran.${sedangSeedance ? ' Hanya generate Seedance 2.5 yang gratis; mode lain tetap memotong saldo.' : ''}`
+                ? `Paket ${namaPaketIni} aktif otomatis setelah admin menyetujui pembayaran.${sedangBooster ? ' Seedance 2.5, Omni Flash 1.1 & GPT Image gratis; music/tts tetap memotong saldo.' : ''}`
                 : 'Saldo masuk otomatis setelah admin menyetujui pembayaran.'}
               <br />Hubungi admin jika sudah transfer.
             </div>

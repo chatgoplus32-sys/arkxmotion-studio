@@ -20,7 +20,6 @@ import {
   nexabotRelayHeaders,
   nexabotSubmitLaneKey,
   nexabotSubmitLaneLabel,
-  nexabotSubmitQueueConfig,
   touchNexabotJob,
   type NexabotProxyAction,
   type NexabotSubmitSlot,
@@ -38,6 +37,7 @@ import {
   reserveChargeTicket,
 } from '../lib/nexabotChargeTicket.js'
 import { recordUpstreamUsage, userIdFromRequest, type ResolvedCredential } from '../lib/nexabotUpstreamUsage.js'
+import { getNexabotSubmitQueueConfig } from '../lib/nexabotQueueSettings.js'
 
 const router = Router()
 // Bisa diarahkan ke host lain: tes menembak upstream tiruan, dan operator bisa
@@ -111,7 +111,7 @@ async function relayUpstream(
         return jawabLaneSibuk(res, action, nexabotSubmitLaneLabel(opts.credential), sibuk.retryAfterSeconds)
       }
     }
-    slot = await acquireNexabotSubmitSlot(laneKey)
+    slot = await acquireNexabotSubmitSlot(laneKey, getNexabotSubmitQueueConfig())
     if (!slot) return jawabAntreanPenuh(res, action, nexabotSubmitLaneLabel(opts.credential))
     if (slot.waitMs > 200) {
       console.log(
@@ -271,7 +271,7 @@ function gagalSetelahHeader(res: Response): void {
  * ulang tanpa harus memotong saldo sekali lagi.
  */
 function jawabAntreanPenuh(res: Response, action: NexabotProxyAction, laneLabel: string): RelayHasil {
-  const { retryAfterSeconds, concurrency } = nexabotSubmitQueueConfig()
+  const { retryAfterSeconds, concurrency } = getNexabotSubmitQueueConfig()
   const body = JSON.stringify({
     ok: false,
     queued: true,

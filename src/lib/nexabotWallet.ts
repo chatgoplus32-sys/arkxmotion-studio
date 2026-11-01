@@ -3,10 +3,11 @@
 // varian (Mingguan/Bulanan/Tahunan). Semua angka otoritatif datang dari server
 // lewat /api/nexabot/*, jadi kalau admin mengubah harga, UI ikut sendiri.
 //
-// Varian ber-scope (Harian Seedance 2.5) hanya membebaskan mode Seedance; server
-// yang memutuskan, klien cuma menampilkan.
+// Varian ber-scope (Premium Booster) hanya membebaskan keluarga model yang
+// server kenal; klien cuma menampilkan. See isBoosterModelName (shared/pricing.ts).
 //
-// Dipakai halaman /topup/nexabot dan alur generate (Image to Video).
+// Dipakai halaman /topup/nexabot, /booster, dan alur generate (Image to Video,
+// AI Video Edit, Edit Gambar).
 const API = '/api/nexabot'
 
 export interface NexabotUnlimited {
@@ -16,7 +17,7 @@ export interface NexabotUnlimited {
   /** Sisa jam — dipakai paket seharian supaya tidak selalu tampil "1 hari". */
   hours_left?: number
   package_id?: number | null
-  /** Slug paket aktif — penentu scope (lihat NEXABOT_SEEDANCE_ONLY_SLUGS). */
+  /** Slug paket aktif — penentu scope (lihat NEXABOT_BOOSTER_SLUGS). */
   package_slug?: string | null
   days?: number
 }
@@ -41,19 +42,50 @@ export const NEXABOT_PACKAGE_FALLBACKS: NexabotPackage[] = [
   { slug: 'unlimited_weekly', label: 'Mingguan', price: 35000, days: 7 },
   { slug: 'unlimited_monthly', label: 'Bulanan', price: 119000, days: 30 },
   { slug: 'unlimited_yearly', label: 'Tahunan', price: 899000, days: 365 },
-  { slug: 'unlimited_seedance_daily', label: 'Seedance 2.5', price: 15000, days: 1 },
+  { slug: 'unlimited_seedance_daily', label: 'Booster', price: 15000, days: 1 },
 ]
 
 /**
- * Slug paket yang cuma membebaskan Seedance 2.5. Server punya daftar yang sama
- * (derived dari scope katalog) dan itulah yang menentukan tagihan; klien hanya
- * perlu ini untuk menulis label yang jujur.
+ * Slug paket Booster — membebaskan Seedance 2.5 + Omni Flash 1.1 + GPT Image,
+ * bukan music/tts. Server punya daftar yang sama (derived dari scope katalog)
+ * dan itulah yang menentukan tagihan; klien hanya perlu ini untuk menulis label
+ * yang jujur.
  */
-export const NEXABOT_SEEDANCE_ONLY_SLUGS = ['unlimited_seedance_daily']
+export const NEXABOT_BOOSTER_SLUGS = ['unlimited_seedance_daily']
 
-/** Apakah paket ini hanya berlaku untuk Seedance 2.5? */
-export function isSeedanceOnlyPackage(slug: string | null | undefined): boolean {
-  return NEXABOT_SEEDANCE_ONLY_SLUGS.includes(String(slug || ''))
+/** Varian Booster yang dijual di halaman Premium Booster. */
+export const NEXABOT_BOOSTER_SLUG = NEXABOT_BOOSTER_SLUGS[0]
+
+/** Apakah paket ini Premium Booster (bukan Unlimited semua mode)? */
+export function isBoosterPackage(slug: string | null | undefined): boolean {
+  return NEXABOT_BOOSTER_SLUGS.includes(String(slug || ''))
+}
+
+/**
+ * Cermin daftar server (shared/pricing.ts): mode yang dibebaskan Premium
+ * Booster. `model` di sini adalah string yang sama dengan yang dikirim ke
+ * /deduct — 'seedance', lima mode Omni, atau 'gpt-image'/'img'. UI memakainya
+ * untuk menampilkan badge di mode yang tepat; yang menagih tetap server.
+ */
+export const NEXABOT_BOOSTER_OMNI_MODELS = ['t2v', 'sfv', 'i2v', 'r2v', 'extend']
+export const NEXABOT_BOOSTER_IMAGE_MODELS = ['gpt-image', 'img']
+
+export function isBoosterModelName(model: string | null | undefined): boolean {
+  const mentah = String(model || '').toLowerCase()
+  if (/seedance/.test(mentah)) return true
+  const inti = mentah.includes(':') ? (mentah.split(':').pop() || '') : mentah
+  return NEXABOT_BOOSTER_OMNI_MODELS.includes(inti) || NEXABOT_BOOSTER_IMAGE_MODELS.includes(inti)
+}
+
+/** Tiga keluarga yang dibebaskan Booster — satu sumber untuk semua copy UI. */
+export const NEXABOT_BOOSTER_COVERAGE = ['Seedance 2.5', 'Omni Flash 1.1', 'GPT Image 2.5']
+
+/**
+ * Apakah satu generate untuk model ini tidak memotong saldo? Server yang
+ * memutuskan lewat /deduct; ini hanya untuk tampilan (badge & copy).
+ */
+export function nexabotFreeForModel(wallet: NexabotWallet | null | undefined, model: string): boolean {
+  return !!wallet?.unlimited?.active || (isBoosterModelName(model) && !!wallet?.booster_unlimited?.active)
 }
 
 /**
@@ -63,7 +95,7 @@ export function isSeedanceOnlyPackage(slug: string | null | undefined): boolean 
  */
 export function nexabotRemainingLabel(u: NexabotUnlimited | null | undefined): string {
   if (!u?.active) return ''
-  if (isSeedanceOnlyPackage(u.package_slug) || (u.days ?? 0) <= 1) {
+  if (isBoosterPackage(u.package_slug) || (u.days ?? 0) <= 1) {
     const jam = u.hours_left ?? 0
     if (jam <= 0) return ''
     return jam <= 24 ? `${jam} jam lagi` : `${u.days_left} hari lagi`
@@ -81,11 +113,11 @@ export interface NexabotWallet {
   min_topup: number
   unlimited: NexabotUnlimited
   /**
-   * Status "ada paket yang membebaskan Seedance 2.5" — termasuk kalau yang aktif
-   * adalah Unlimited semua mode. `unlimited` sengaja TIDAK menghitung paket
-   * Harian Seedance karena paket itu tidak menggratiskan mode lain.
+   * Status Premium Booster — termasuk kalau yang aktif adalah Unlimited semua
+   * mode (ia membebaskan lebih banyak). `unlimited` sengaja TIDAK menghitung
+   * Booster karena Booster tidak menggratiskan music/tts.
    */
-  seedance_unlimited?: NexabotUnlimited
+  booster_unlimited?: NexabotUnlimited
   /**
    * Kunci NexaBot milik server: member yang sudah top up (Unlimited aktif atau
    * saldo > 0) bisa generate tanpa menempel API key sendiri. `reason` adalah
@@ -153,9 +185,9 @@ export async function fetchNexabotWallet(token: string): Promise<NexabotWallet |
       price: data.price ?? NEXABOT_PRICE_FALLBACK,
       min_topup: data.min_topup ?? 10000,
       unlimited: data.unlimited || EMPTY_UNLIMITED,
-      // Build server lama belum mengirim status Seedance; tanpa field ini UI
+      // Build server lama belum mengirim status Booster; tanpa field ini UI
       // tetap memakai status unlimited biasa.
-      seedance_unlimited: data.seedance_unlimited || undefined,
+      booster_unlimited: data.booster_unlimited || undefined,
       // Build server lama belum mengirim `server_key`; anggap tidak tersedia
       // supaya UI tidak menawarkan jalur tanpa API key yang relay tolak.
       server_key: data.server_key ?? {

@@ -7,11 +7,11 @@
 //    harga & durasi diatur admin di shared/pricing.ts + app_settings): selama
 //    paket aktif, /deduct tidak memotong saldo sama sekali (tetap dicatat
 //    sebagai usage Rp 0);
-//  - varian `unlimited_seedance_daily` ber-scope 'seedance': hanya membebaskan
-//    mode Seedance 2.5. Mode lain tetap dipotong per generate, dan status
-//    `unlimited` di /balance sengaja TIDAK ikut menyala supaya UI tidak
-//    menjanjikan gratis yang tidak ada; statusnya sendiri ada di
-//    `seedance_unlimited`.
+//  - varian `unlimited_seedance_daily` ber-scope 'booster' (Premium Booster):
+//    membebaskan Seedance 2.5 + Omni Flash 1.1 + GPT Image. Audio (`music`,
+//    `tts`) dan mode lain tetap dipotong per generate, dan status `unlimited`
+//    di /balance sengaja TIDAK ikut menyala supaya UI tidak menjanjikan gratis
+//    yang tidak ada; status Booster sendiri ada di `booster_unlimited`.
 //  - /deduct mengembalikan `usage_id` sehingga refund saat generate gagal
 //    menunjuk catatan pemotongan yang tepat (CreatePulse hanya bisa "model
 //    terakhir" yang bisa salah kalau ada dua job jalan bersamaan).
@@ -34,7 +34,7 @@ import {
   NEXABOT_PRICING_KEYS,
   NEXABOT_PRICING_SETTING_KEYS,
   findNexabotPackage,
-  isSeedanceModelName,
+  isBoosterModelName,
   parseNexabotPricing,
   validateNexabotPackageValue,
   validateNexabotPricing,
@@ -140,10 +140,10 @@ interface PackageRow {
  * UTC, jadi perbandingannya juga pakai datetime('now') supaya tidak tergantung
  * timezone mesin.
  *
- * `hanyaSemuaMode` (default) = paket yang membebaskan SEMUA mode: baris
- * Seedance-harian dikecualikan supaya status `unlimited` di UI tidak
- * berbohong soal mode lain. `false` = paket mana pun yang berlaku untuk job
- * ini (global ATAU yang scope-nya cocok), dipakai tagihan Seedance.
+ * `hanyaSemuaMode` (default) = paket yang membebaskan SEMUA mode: baris Booster
+ * dikecualikan supaya status `unlimited` di UI tidak berbohong soal music/tts.
+ * `false` = paket mana pun yang berlaku untuk job ini (global ATAU Booster),
+ * dipakai tagihan model yang dibebaskan Booster.
  */
 function getActivePackage(userId: number, hanyaSemuaMode = true): PackageRow | undefined {
   // Daftar hitam dari katalog, bukan daftar putih: baris lama punya
@@ -168,10 +168,11 @@ function getActivePackage(userId: number, hanyaSemuaMode = true): PackageRow | u
 
 /**
  * Paket yang membebaskan satu generate untuk model ini.
- * Seedance 2.5 boleh digratiskan paket ber-scope 'seedance'; mode lain tidak.
+ * Premium Booster (scope 'booster') hanya membebaskan Seedance 2.5, Omni Flash
+ * 1.1, dan GPT Image; mode lain (music, tts) tetap butuh paket semua-mode.
  */
 function getActivePackageForModel(userId: number, model?: string): PackageRow | undefined {
-  return getActivePackage(userId, !isSeedanceModelName(model))
+  return getActivePackage(userId, !isBoosterModelName(model))
 }
 
 function daysLeft(expiresAt: string | null): number {
@@ -181,7 +182,7 @@ function daysLeft(expiresAt: string | null): number {
   return Math.max(0, Math.ceil((end - Date.now()) / 86400000))
 }
 
-/** Sisa jam (pembulatan ke atas) — untuk paket seharian seperti Harian Seedance. */
+/** Sisa jam (pembulatan ke atas) — untuk paket seharian seperti Premium Booster. */
 function hoursLeft(expiresAt: string | null): number {
   if (!expiresAt) return 0
   const end = new Date(expiresAt.replace(' ', 'T') + 'Z').getTime()
@@ -199,7 +200,7 @@ function unlimitedPayload(pkg: PackageRow | undefined) {
     // days_left, padahal tinggal 3 jam.
     hours_left: hoursLeft(pkg.expires_at),
     package_id: pkg.id,
-    // Slug + days dipakai UI untuk menyebut paketnya ("Seedance 2.5 aktif s/d
+    // Slug + days dipakai UI untuk menyebut paketnya ("Booster aktif s/d
     // jam 21:00"), bukan cuma "Unlimited".
     package_slug: pkg.package_slug || null,
     days: pkg.days || 0,
@@ -242,9 +243,10 @@ router.get('/balance', authenticateToken, (req: AuthRequest, res: Response) => {
       price: pricing.price,
       min_topup: NEXABOT_MIN_TOPUP,
       unlimited: unlimitedPayload(getActivePackage(userId)),
-      // Status khusus Seedance 2.5: paket Harian Seedance hanya membebaskan
-      // mode itu, jadi UI tidak boleh menampilkannya sebagai "Unlimited".
-      seedance_unlimited: unlimitedPayload(getActivePackage(userId, false)),
+      // Status Premium Booster. Paket ini TIDAK menggratiskan music/tts, jadi ia
+      // sengaja tidak digabung ke `unlimited` — UI menampilkannya sebagai
+      // "Booster" terpisah dengan daftar yang dibebaskannya.
+      booster_unlimited: unlimitedPayload(getActivePackage(userId, false)),
       server_key: {
         available: kind !== null,
         reason: alasan,
@@ -308,7 +310,7 @@ router.post('/package', authenticateToken, (req: AuthRequest, res: Response) => 
     }
 
     // Antrian pending dicek PER KELAS paket, bukan seluruh kind='unlimited'.
-    // Pembelian Harian Seedance (Rp 15.000, sehari) tidak boleh terblok oleh
+    // Pembelian Premium Booster (Rp 15.000, sehari) tidak boleh terblok oleh
     // pengajuan Bulanan yang belum di-approve, dan sebaliknya — tapi dua
     // pengajuan di kelas yang sama tetap ditolak supaya admin tidak menumpuk
     // pembayaran yang sama dua kali. Kelasnya = daftar hitam slug ber-scope,
@@ -358,7 +360,7 @@ router.get('/topups/mine', authenticateToken, (req: AuthRequest, res: Response) 
     res.json({
       topups,
       unlimited: unlimitedPayload(getActivePackage(userId)),
-      seedance_unlimited: unlimitedPayload(getActivePackage(userId, false)),
+      booster_unlimited: unlimitedPayload(getActivePackage(userId, false)),
     })
   } catch (error) {
     console.error('NexaBot list topups error:', error)
@@ -376,18 +378,18 @@ router.post('/deduct', authenticateToken, (req: AuthRequest, res: Response) => {
 
     // Paket Unlimited aktif → generate gratis. Usage tetap dicatat (cost 0)
     // supaya jumlah generate per user tetap terlihat di riwayat/statistik.
-    // Untuk Seedance 2.5, paket Harian Seedance (scope 'seedance') juga dihitung;
-    // untuk mode lain paket itu sengaja diabaikan server, bukan klien.
+    // Untuk Seedance/Omni/GPT Image, Premium Booster juga dihitung; untuk
+    // music/tts paket itu sengaja diabaikan server, bukan klien.
     const pkg = getActivePackageForModel(userId, model)
-    const isSeedance = isSeedanceModelName(model)
+    const gratisBooster = isBoosterModelName(model)
     const pricing = getNexabotPricing()
     const cost = pkg ? 0 : pricing.price
 
     if (balance < cost) {
       // Varian termurah yang MEMBEBASKAN MODE INI disebut supaya user punya
-      // jalan keluar paling ringan. Paket Seedance-harian tidak ditawarkan di
-      // sini untuk mode lain — ia tidak akan menggratiskan mode itu.
-      const kandidat = pricing.packages.filter((p) => isSeedance || !NEXABOT_SCOPED_SLUGS.includes(p.slug))
+      // jalan keluar paling ringan. Booster tidak ditawarkan untuk music/tts —
+      // ia tidak akan menggratiskan mode itu.
+      const kandidat = pricing.packages.filter((p) => gratisBooster || !NEXABOT_SCOPED_SLUGS.includes(p.slug))
       const daftar = kandidat.length ? kandidat : pricing.packages
       const entry = daftar.reduce((a, b) => (b.price < a.price ? b : a), daftar[0])
       return res.status(400).json({

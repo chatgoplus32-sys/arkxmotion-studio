@@ -42,7 +42,7 @@ import { PROVIDER_MODELS, QUALITY_OPTIONS, getCreatepulseCost, RATIOS, MODEL_RAT
 
 import VideoPlayer from './image-to-video/VideoPlayer'
 import { nexabotPathPill } from './image-to-video/nexabotPathPill'
-import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, nexabotRemainingLabel, NEXABOT_PRICE_FALLBACK, type NexabotWallet } from '@/lib/nexabotWallet'
+import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, nexabotRemainingLabel, nexabotFreeForModel, NEXABOT_PRICE_FALLBACK, type NexabotWallet } from '@/lib/nexabotWallet'
 import { fetchSeaviWallet, chargeSeaviWallet, refundSeaviWallet } from '@/lib/seaviWallet'
 import { formatRp } from '@/lib/payment'
 import { runNexabotJobWithSessionFallback } from './image-to-video/nexabotSessionFallback'
@@ -443,12 +443,12 @@ export default function ImageToVideoPage() {
   // 0,2 kredit per video, start frame opsional.
   const isNbSeedance = isNb && nbApiModel === 'seedance'
   const isNbOmniFlash = isNbR2V
-  // Apakah generate mode ini sedang bebas potongan saldo? Paket Unlimited reguler
-  // membebaskan semua mode; Paket Harian Seedance hanya Seedance 2.5. Server tetap
-  // satu-satunya yang memotong saldo — flag ini hanya mencegah UI menolak job yang
-  // sebenarnya gratis (saldo 0 + pass Seedance aktif).
-  const nbFreeForCurrentMode = !!nbWallet?.unlimited?.active
-    || (isNbSeedance && !!nbWallet?.seedance_unlimited?.active)
+  // Apakah generate mode ini sedang bebas potongan saldo? Unlimited reguler
+  // membebaskan semua mode; Premium Booster membebaskan Seedance 2.5 + Omni
+  // Flash 1.1 (t2v/sfv/i2v/r2v/extend) + GPT Image — lihat halaman Booster.
+  // Server tetap satu-satunya yang memotong saldo; flag ini hanya mencegah UI
+  // menolak job yang sebenarnya gratis (saldo 0 + pass aktif).
+  const nbFreeForCurrentMode = isNb && nexabotFreeForModel(nbWallet, nbApiModel)
   const nbVideoIdx = refFiles.findIndex((f) => f.type.startsWith('video/'))
   const nbVideoUrl = nbVideoIdx >= 0 ? refUrls[nbVideoIdx] ?? null : null
   // Seavi: audio referensi (Seedance 2.5 & gemini omni — spec.audio).
@@ -937,9 +937,7 @@ export default function ImageToVideoPage() {
     if (provider === 'createpulse' && user?.role !== 'admin' && cpBalance < getCreatepulseCost(currentModel?.apiModel)) return 'Saldo CreatePulse tidak cukup. Top up minimal Rp 10.000'
     // NexaBot: paket aktif untuk mode ini = gratis, jadi cek saldo hanya saat tidak aktif.
     if (provider === 'nexabot' && user?.role !== 'admin' && !nbFreeForCurrentMode && (nbWallet?.balance ?? 0) < (nbWallet?.price ?? NEXABOT_PRICE_FALLBACK))
-      return isNbSeedance
-        ? `Saldo NexaBot tidak cukup (${formatRp(nbWallet?.balance ?? 0)}). Top up saldo atau ambil Paket Seedance 2.5 harian di halaman Top Up NexaBot.`
-        : `Saldo NexaBot tidak cukup (${formatRp(nbWallet?.balance ?? 0)}). Top up atau ambil Paket Unlimited ${nbWallet?.package.days ?? 7} hari di halaman Top Up NexaBot.`
+      return `Saldo NexaBot tidak cukup (${formatRp(nbWallet?.balance ?? 0)}). Top up saldo atau ambil Premium Booster Rp 15.000/hari — Seedance 2.5, Omni, dan GPT Image unlimited — di halaman Booster.`
     // Seavi: wallet token internal (deduct saat generate). Tamu tanpa login
     // tetap bisa memakai key sendiri tanpa potongan internal.
     if (provider === 'seavi' && seaviSpec && user?.role !== 'admin' && authToken && (seaviTokens ?? 0) < seaviSpec.tokens)
@@ -2628,7 +2626,7 @@ export default function ImageToVideoPage() {
           nbChargeRef.current = charge.usageId
           setNbWallet((w) => (w ? { ...w, balance: charge.balance } : w))
           addLog(charge.unlimited
-            ? `[1/3] 🎟️ ${isNbSeedance && !nbWallet?.unlimited?.active ? 'Paket Seedance 2.5' : 'Paket Unlimited'} aktif — generate ini gratis`
+            ? `[1/3] 🎟️ ${nbWallet?.unlimited?.active ? 'Paket Unlimited' : 'Premium Booster'} aktif — generate ini gratis`
             : `[1/3] 💰 Saldo terpotong ${formatRp(charge.deducted)} ✓ sisa ${formatRp(charge.balance)}`, 'success', 'nexabot')
         } else if (currentUser?.role === 'admin') {
           addLog(`[1/3] ⚡ Admin mode — skip saldo`, 'info', 'nexabot')
@@ -3544,9 +3542,9 @@ export default function ImageToVideoPage() {
                 <Badge variant="success">
                   Unlimited · sisa {nexabotRemainingLabel(nbWallet.unlimited)}
                 </Badge>
-              ) : isNbSeedance && nbWallet?.seedance_unlimited?.active ? (
+              ) : nbFreeForCurrentMode ? (
                 <Badge variant="success">
-                  Seedance 2.5 · sisa {nexabotRemainingLabel(nbWallet.seedance_unlimited)}
+                  Booster · sisa {nexabotRemainingLabel(nbWallet?.booster_unlimited)}
                 </Badge>
               ) : null}
             </div>
@@ -3558,23 +3556,23 @@ export default function ImageToVideoPage() {
               </div>
               {nbWallet?.unlimited.active ? (
                 <div>Paket Unlimited {nbWallet?.package.days ?? 7} hari: <b className="text-emerald-500">Aktif</b></div>
-              ) : isNbSeedance && nbWallet?.seedance_unlimited?.active ? (
-                <div>Paket Seedance 2.5 harian: <b className="text-emerald-500">Aktif</b></div>
+              ) : nbFreeForCurrentMode ? (
+                <div>Premium Booster: <b className="text-emerald-500">Aktif</b></div>
               ) : (
                 <div>Top Up: <b className="text-foreground">{formatRp(nbWallet?.price ?? NEXABOT_PRICE_FALLBACK)}/generate</b></div>
               )}
               {nbWallet?.unlimited.active ? (
                 <div>Status: <b className="text-emerald-500">GRATIS sampai paket habis</b></div>
-              ) : isNbSeedance && nbWallet?.seedance_unlimited?.active ? (
-                <div>Status: <b className="text-emerald-500">Seedance 2.5 gratis · mode lain potong saldo</b></div>
+              ) : nbFreeForCurrentMode ? (
+                <div>Status: <b className="text-emerald-500">{currentModel?.label?.split('—')[0]?.trim() || 'Mode ini'} gratis · music/tts potong saldo</b></div>
               ) : (
                 <div>Failed generations: <b className="text-emerald-500">auto-refunded</b></div>
               )}
             </div>
             {user?.role !== 'admin' && !nbFreeForCurrentMode && (nbWallet?.balance ?? 0) < (nbWallet?.price ?? NEXABOT_PRICE_FALLBACK) && (
               <div className="mt-2 text-[11px]">
-                <a href="/topup/nexabot" className="text-primary hover:underline font-medium">
-                  {isNbSeedance ? 'Top Up Saldo / Beli Paket Seedance 2.5 Harian →' : 'Top Up Saldo / Beli Paket Unlimited →'}
+                <a href="/booster" className="text-primary hover:underline font-medium">
+                  Top Up Saldo / Beli Premium Booster →
                 </a>
               </div>
             )}

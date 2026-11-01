@@ -10,6 +10,8 @@ import { withTokenRotation } from '@/lib/tokenRotation'
 import { submitRunningHubImageEdit, pollRunningHubTask } from '@/lib/runninghub'
 import { SEAVI_IMAGE_MODELS, buildSeaviPayload, generateSeaviImage, fetchSeaviBalance } from '@/lib/seavi'
 import { chargeSeaviWallet, refundSeaviWallet, fetchSeaviWallet } from '@/lib/seaviWallet'
+import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, nexabotRemainingLabel, nexabotFreeForModel, NEXABOT_PRICE_FALLBACK, type NexabotWallet } from '@/lib/nexabotWallet'
+import { formatRp } from '@/lib/payment'
 import { normalizeImage } from '@/lib/roboneo'
 import { addBgLog, getLogs, addResult, removeResult, startBackgroundPolling, persistResultToR2, clearLogs as clearBgLogs, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
 import { loadVideoBlob } from '@/lib/videoStorage'
@@ -107,6 +109,10 @@ export default function EditImagePage() {
   const { token: authToken, user } = useAuthStore()
   // Token wallet Seavi (1 token = Rp 2.000). Null = belum dimuat / tamu.
   const [seaviTokens, setSeaviTokens] = useState<number | null>(null)
+  // Wallet NexaBot (Rp 150/generate). Null = belum dimuat / tamu.
+  const [nbWallet, setNbWallet] = useState<NexabotWallet | null>(null)
+  // usage_id pemotongan yang masih bisa di-refund kalau generate gagal.
+  const nbChargeRef = useRef<number | null>(null)
 
   const [provider, setProvider] = useState<EditProvider>('nexabot')
   const [imgUrl, setImgUrl] = useState<string | null>(null)
@@ -139,6 +145,10 @@ export default function EditImagePage() {
   const seaviAspects = seaviSpec?.aspects || []
   const providerKeyCount = keys[provider]?.length || 0
   const hasActiveKey = keys[provider]?.some((k) => k.status !== 'invalid' && k.status !== 'expired') || false
+  // Kunci NexaBot milik server: member yang punya saldo/Unlimited/Booster boleh
+  // generate tanpa API key pribadi. Kelayakannya dihitung relay lewat /balance.
+  const nexabotServerReady = !!nbWallet?.server_key?.available
+  const nbFreeForCurrentModel = provider === 'nexabot' && nexabotFreeForModel(nbWallet, currentModel?.apiModel)
 
   const addLog = (msg: string, level: 'debug' | 'info' | 'warn' | 'error' | 'success' = 'info') => {
     addBgLog(msg, level, provider)
@@ -152,6 +162,11 @@ export default function EditImagePage() {
   useEffect(() => {
     if (provider !== 'seavi' || !authToken) { if (provider !== 'seavi') setSeaviTokens(null); return }
     fetchSeaviWallet(authToken).then((w) => { if (w) setSeaviTokens(w.tokens) }).catch(() => {})
+  }, [provider, authToken])
+
+  useEffect(() => {
+    if (provider !== 'nexabot' || !authToken) { if (provider !== 'nexabot') setNbWallet(null); return }
+    fetchNexabotWallet(authToken).then((w) => { if (w) setNbWallet(w) }).catch(() => {})
   }, [provider, authToken])
 
   useEffect(() => {
@@ -242,15 +257,40 @@ export default function EditImagePage() {
     setRefFiles((prev) => prev.filter((_, i) => i !== index))
   }
 
-  const canGenerate = (provider === 'nexabot' || !!imgFile) && !generating && !!prompt.trim() && hasActiveKey
+  const canGenerate = (provider === 'nexabot' || !!imgFile) && !generating && !!prompt.trim() && (hasActiveKey || (provider === 'nexabot' && nexabotServerReady))
+
+  /**
+   * Kredensial untuk satu job NexaBot. Kunci/cookie pribadi dipakai bila ada;
+   * kalau tidak, relay menyuntikkan kunci milik server. `ticket` (usage_id dari
+   * /deduct) selalu ikut — relay menolaknya hanya di jalur kunci server, dan
+   * tiket itulah yang mengikat satu potongan saldo ke satu job.
+   */
+  const buildNexabotAuth = async (): Promise<any> => {
+    const mod = await import('@/lib/nexabot')
+    const apiKey = mod.getNexabotApiKey()
+    const cookies = mod.getNexabotCookies()
+    const ticket = nbChargeRef.current
+    if (apiKey || cookies) return { apiKey, cookies, ticket }
+    if (!nexabotServerReady) {
+      throw new Error('NexaBot: tidak ada API key aktif dan kunci server belum tersedia — tambahkan API key di halaman Providers atau top up / ambil Premium Booster dulu.')
+    }
+    return { master: true, ticket }
+  }
 
   const handleGenerate = async () => {
     if (!prompt.trim()) {
       addToast('Prompt harus diisi', 'error')
       return
     }
-    if (!hasActiveKey) {
+    if (!hasActiveKey && !(provider === 'nexabot' && nexabotServerReady)) {
       addToast(`Tidak ada API key aktif untuk ${PROVIDER_CONFIGS[provider]?.name || provider}`, 'error')
+      return
+    }
+    // NexaBot: saldo dipotong di muka (server yang memutuskan gratis/tidak).
+    // Cek awal hanya jalan kalau wallet sudah dimuat — wallet null berarti
+    // masih muat, bukan saldo kosong, dan /deduct yang tetap jadi penentu.
+    if (provider === 'nexabot' && user?.role !== 'admin' && nbWallet && !nbFreeForCurrentModel && (nbWallet.balance < (nbWallet.price ?? NEXABOT_PRICE_FALLBACK))) {
+      addToast(`Saldo NexaBot tidak cukup (${formatRp(nbWallet.balance)}). Top up saldo atau ambil Premium Booster Rp 15.000/hari di halaman Booster.`, 'error')
       return
     }
 
@@ -271,6 +311,19 @@ export default function EditImagePage() {
 
     try {
       if (provider === 'nexabot') {
+        // Billing user: 1 gambar = Rp 150 (Rp 0 selama Unlimited/Booster aktif,
+        // ditegakkan server). Admin bebas. `usage_id` disimpan untuk refund dan
+        // dikirim sebagai tiket payment ke relay.
+        if (authToken && user?.role !== 'admin') {
+          const charge = await chargeNexabotWallet(authToken, currentModel?.apiModel || 'gpt-image')
+          nbChargeRef.current = charge.usageId
+          setNbWallet((w) => (w ? { ...w, balance: charge.balance } : w))
+          addLog(charge.unlimited
+            ? `🎟️ ${nbWallet?.unlimited?.active ? 'Paket Unlimited' : 'Premium Booster'} aktif — gambar ini gratis`
+            : `💰 Saldo NexaBot terpotong ${formatRp(charge.deducted)} ✓ sisa ${formatRp(charge.balance)}`, 'success')
+        } else if (user?.role === 'admin') {
+          addLog('⚡ Admin mode — skip saldo', 'info')
+        }
         if (isGpt25) await handleGenerateGpt25()
         else await handleGenerateNexabot()
       } else if (provider === 'runninghub') {
@@ -281,22 +334,32 @@ export default function EditImagePage() {
         await handleGenerateRiverside()
       }
     } catch (err: any) {
+      if (provider === 'nexabot' && nbChargeRef.current && authToken) {
+        const refundedBalance = await refundNexabotWallet(authToken, nbChargeRef.current)
+        nbChargeRef.current = null
+        if (refundedBalance != null) {
+          addLog(`💸 Saldo NexaBot dikembalikan ✓ sisa ${formatRp(refundedBalance)}`, 'warn')
+          setNbWallet((w) => (w ? { ...w, balance: refundedBalance } : w))
+        }
+      }
       addLog(`❌ Error: ${err.message}`, 'error')
       addToast(`Generate gagal: ${err.message}`, 'error')
     } finally {
       removeActiveTask(trackId)
+      nbChargeRef.current = null
       setGenerating(false)
     }
   }
 
   const handleGenerateNexabot = async () => {
     const { submitNexabot, pollNexabotJob, downloadNexabotResult } = await import('@/lib/nexabot')
+    const auth = await buildNexabotAuth()
 
     addLog(`[1/3] 📤 Submit job ke NexaBot (text to image)...`, 'info')
     const result = await submitNexabot({
       mode: 'img',
       prompt: prompt.trim(),
-    })
+    }, auth)
 
     if (!result.ok || !result.jobId) {
       throw new Error(result.error || 'Submit gagal')
@@ -306,7 +369,7 @@ export default function EditImagePage() {
     if (result.creditCost) addLog(`   💰 Biaya: 0.1 kredit (image)`, 'debug')
 
     addLog(`[2/3] ⏳ Polling status...`, 'info')
-    const job = await pollNexabotJob(result.jobId, undefined, (msg) => {
+    const job = await pollNexabotJob(result.jobId, auth, (msg) => {
       addLog(`   ${msg}`, 'debug')
     })
 
@@ -316,7 +379,7 @@ export default function EditImagePage() {
     addLog(`   ✓ Status: ${job.status}`, 'success')
 
     addLog(`[3/3] 📥 Download hasil...`, 'info')
-    const dlResult = await downloadNexabotResult(result.jobId, undefined)
+    const dlResult = await downloadNexabotResult(result.jobId, auth)
     if (!dlResult.ok || !dlResult.url) {
       throw new Error(dlResult.error || 'Download gagal')
     }
@@ -351,6 +414,7 @@ export default function EditImagePage() {
 
   const handleGenerateGpt25 = async () => {
     const { submitNexabotGptImage, pollNexabotGptImage, downloadNexabotGptImage, compressForApi, runWithNexabotThrottleRetry } = await import('@/lib/nexabot')
+    const auth = await buildNexabotAuth()
 
     const aspectLabel = gptAspect === 2 ? '16:9' : gptAspect === 1 ? '1:1' : '9:16'
     addLog(`[1/3] 📤 Submit GPT Image 2.5 (rasio ${aspectLabel}${refFiles.length ? `, ${refFiles.length} referensi` : ''})...`, 'info')
@@ -371,7 +435,7 @@ export default function EditImagePage() {
       prompt: prompt.trim(),
       aspect: gptAspect,
       references,
-    }), {
+    }, auth), {
       onThrottle: (waitSeconds) => {
         addLog(`⏳ Server gambar NexaBot sedang dibatasi upstream — menunggu ${waitSeconds}s lalu submit otomatis...`, 'warn')
       },
@@ -381,7 +445,7 @@ export default function EditImagePage() {
     addLog(`   💰 Biaya: ${submit.cost ?? 0.1} kredit${submit.creditBalance != null ? ` — sisa saldo ${submit.creditBalance}` : ''}`, 'debug')
 
     addLog('[2/3] ⏳ Polling status (maks 6 menit)...', 'info')
-    const job = await pollNexabotGptImage(submit.id, undefined, (msg) => addLog(msg, 'debug'))
+    const job = await pollNexabotGptImage(submit.id, auth, (msg) => addLog(msg, 'debug'))
     addLog(`   ✓ Status: ${job.status}`, 'success')
 
     const images = (job.images || []).filter((im) => im && typeof im.url === 'string')
@@ -394,7 +458,7 @@ export default function EditImagePage() {
     addLog(`[3/3] 📥 Mengunduh ${images.length} gambar...`, 'info')
     let tersimpan = 0
     for (let i = 0; i < images.length; i++) {
-      const dl = await downloadNexabotGptImage(images[i].url)
+      const dl = await downloadNexabotGptImage(images[i].url, auth)
       if (!dl.ok || !dl.blob) {
         addLog(`   ⚠️ Gambar ${i + 1}/${images.length} gagal diunduh: ${dl.error}`, 'warn')
         continue
@@ -843,13 +907,28 @@ export default function EditImagePage() {
                 <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 text-xs text-muted-foreground space-y-1">
                   <div className="font-medium text-foreground">💡 NexaBot Image</div>
                   <div>• <b>Text to Image</b> — cukup tulis prompt</div>
-                  <div>• 💰 0.1 kredit/gambar • ♾️ Gratis kalau Unlimited aktif</div>
+                  {provider === 'nexabot' && user?.role === 'admin' ? (
+                    <div>• ⚡ Admin — tanpa potong saldo</div>
+                  ) : provider === 'nexabot' ? (
+                    <>
+                      <div>• 💰 {formatRp(nbWallet?.price ?? NEXABOT_PRICE_FALLBACK)}/gambar dari saldo NexaBot</div>
+                      {nbWallet?.unlimited?.active ? (
+                        <div>• ♾️ Unlimited aktif — gratis semua mode ({nexabotRemainingLabel(nbWallet.unlimited)})</div>
+                      ) : nbFreeForCurrentModel ? (
+                        <div>• 🚀 Premium Booster aktif — GPT Image unlimited ({nexabotRemainingLabel(nbWallet?.booster_unlimited)})</div>
+                      ) : (
+                        <div>• 🚀 Premium Booster Rp 15.000/hari bikin GPT Image + Omni + Seedance unlimited — <a href="/booster" className="text-primary hover:underline font-medium">ambil di Booster →</a></div>
+                      )}
+                    </>
+                  ) : (
+                    <div>• 💰 0.1 kredit/gambar • ♾️ Gratis kalau Unlimited aktif</div>
+                  )}
                   <div>• ⚠️ Untuk edit gambar, gunakan <b>Riverside</b> atau <b>RunningHub (Kontext)</b></div>
                 </div>
 
                 <div className="flex flex-col gap-2 pt-2">
                   <Button onClick={handleGenerate} disabled={!canGenerate} loading={generating}>
-                    {generating ? 'Memproses...' : isGpt25 ? 'Generate • 0.1 kredit' : (provider === 'nexabot' ? 'Generate Gambar' : (imgFile ? 'Edit Gambar' : 'Generate Gambar'))}
+                    {generating ? 'Memproses...' : !hasActiveKey && provider === 'nexabot' && nexabotServerReady ? 'Generate dengan kunci server' : provider === 'nexabot' && nbFreeForCurrentModel ? 'Generate • Unlimited aktif' : (imgFile ? 'Edit Gambar' : 'Generate Gambar')}
                   </Button>
                   {provider === 'riverside' && (
                     <a
@@ -864,9 +943,14 @@ export default function EditImagePage() {
                   )}
                 </div>
 
-                {!hasActiveKey && (
+                {!hasActiveKey && provider !== 'nexabot' && (
                   <div className="text-[11px] text-blue-400 bg-blue-500/10 rounded-lg p-2 border border-blue-500/20">
                     Tambahkan API key <b>{PROVIDER_LABEL[provider]}</b> di halaman <b>Providers</b> untuk bisa generate dari sini.
+                  </div>
+                )}
+                {provider === 'nexabot' && !hasActiveKey && nexabotServerReady && (
+                  <div className="text-[11px] text-blue-400 bg-blue-500/10 rounded-lg p-2 border border-blue-500/20">
+                    Generate memakai <b>kunci NexaBot milik server</b> — {formatRp(nbWallet?.price ?? NEXABOT_PRICE_FALLBACK)}/gambar dari saldo, atau gratis selama Unlimited / Premium Booster aktif.
                   </div>
                 )}
               </div>

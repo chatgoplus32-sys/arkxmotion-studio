@@ -360,7 +360,7 @@ async function handleTopupRoutes(req: VercelRequest, res: VercelResponse, segmen
           // (baris yang sedang di-approve masih NULL), supaya beli paket baru saat
           // paket lama jalan menumpuk sisa hari alih-alih menghanguskannya — sama
           // seperti sisi Express. Penumpukan hanya di DALAM KELAS paket yang sama:
-          // Harian Seedance tidak boleh mewarisi expiry Bulanan (ia dibeli untuk
+          // Premium Booster tidak boleh mewarisi expiry Bulanan (ia dibeli untuk
           // satu hari), dan sisa hari Bulanan tidak dihitung dari paket harian.
           const satuKelas = isScopedPackage(topup[0].package_slug)
           const approved = await sql`

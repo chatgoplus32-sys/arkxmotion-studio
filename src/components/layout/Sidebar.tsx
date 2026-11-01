@@ -44,6 +44,7 @@ import {
   FileCog,
   Images,
   Clapperboard,
+  Rocket,
 } from 'lucide-react'
 
 interface NavItem {
@@ -91,6 +92,7 @@ const enhanceNav: NavItem[] = [
 const toolsNavBase: NavItem[] = [
   { label: 'Providers', href: '/providers', icon: <Zap className="h-4 w-4" /> },
   { label: 'Saldo Layanan', href: '/saldo', icon: <Wallet className="h-4 w-4" /> },
+  { label: 'Premium Booster', href: '/booster', icon: <Rocket className="h-4 w-4" /> },
   // Token Bank belum dipakai: top up per layanan sudah punya halaman sendiri.
   // Menu dikunci dulu supaya member tidak masuk ke alur yang belum aktif.
   { label: 'Beli Token', href: '/beli-token', icon: <ShoppingCart className="h-4 w-4" />, comingSoon: true },

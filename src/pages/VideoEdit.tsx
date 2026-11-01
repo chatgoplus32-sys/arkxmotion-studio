@@ -25,6 +25,7 @@ import {
   fetchNexabotWallet,
   chargeNexabotWallet,
   refundNexabotWallet,
+  nexabotFreeForModel,
   NEXABOT_PRICE_FALLBACK,
   type NexabotWallet,
 } from '@/lib/nexabotWallet'
@@ -655,7 +656,7 @@ export default function VideoEditPage() {
         if (clipSpecs.length > MAX_CLIPS) {
           throw new Error(`Video ini terbagi jadi ${clipSpecs.length} klip — lewat batas ${MAX_CLIPS} klip. Potong durasinya dulu.`)
         }
-        addLog(`💰 Estimasi biaya mode potong: ${clipSpecs.length} × ${wallet?.unlimited?.active ? 'gratis (paket)' : formatRp(wallet?.price ?? NEXABOT_PRICE_FALLBACK)}`, 'info')
+        addLog(`💰 Estimasi biaya mode potong: ${clipSpecs.length} × ${gratisCurrentMode ? `gratis (${passLabel})` : formatRp(wallet?.price ?? NEXABOT_PRICE_FALLBACK)}`, 'info')
         url = await runChunkedJob(videoFile, clipSpecs, prompt, { hasActiveKey, serverReady, isAdmin, authToken })
       } else {
         if (!isAdmin) {
@@ -663,7 +664,7 @@ export default function VideoEditPage() {
           nbChargeRef.current = charge.usageId
           setWallet((w) => (w ? { ...w, balance: charge.balance } : w))
           addLog(charge.unlimited
-            ? '🎟️ Paket Unlimited aktif — generate ini gratis'
+            ? `🎟️ ${passLabel} aktif — generate ini gratis`
             : `💰 Saldo terpotong ${formatRp(charge.deducted)} · sisa ${formatRp(charge.balance)}`, 'success')
         } else {
           addLog('⚡ Admin — skip saldo', 'info')
@@ -716,6 +717,10 @@ export default function VideoEditPage() {
   }
 
   const unlimited = !!wallet?.unlimited?.active
+  // Halaman ini selalu mengirim 'r2v' (Omni Flash 1.1), dan Premium Booster juga
+  // membebaskan mode itu — jadi "gratis" di sini bukan cuma soal Unlimited.
+  const gratisCurrentMode = nexabotFreeForModel(wallet, 'r2v')
+  const passLabel = unlimited ? 'Unlimited' : 'Booster'
   const price = wallet?.price ?? NEXABOT_PRICE_FALLBACK
 
   return (
@@ -727,11 +732,11 @@ export default function VideoEditPage() {
         desc="Upload video sumber, pilih gaya edit (motion graphics, AE zoom, SFX, b-roll, dokumenter, explainer), lalu Gemini Omni merender versi barunya lewat NexaBot."
         actions={
           <Link
-            to="/topup/nexabot"
+            to={gratisCurrentMode ? '/booster' : '/topup/nexabot'}
             className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 text-sm hover:bg-accent"
           >
             <Sparkles className="h-4 w-4" />
-            {unlimited ? 'Unlimited aktif' : `${formatRp(wallet?.balance ?? 0)} · Top up`}
+            {unlimited ? 'Unlimited aktif' : gratisCurrentMode ? 'Booster aktif' : `${formatRp(wallet?.balance ?? 0)} · Top up`}
           </Link>
         }
       />
@@ -798,7 +803,7 @@ export default function VideoEditPage() {
                 </div>
                 <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
                   Video {formatDuration(meta?.duration ?? 0)} dipecah, tiap klip diedit terpisah lalu digabung kembali
-                  menjadi satu utuh. Biayanya {unlimited ? 'gratis (paket Unlimited aktif)' : `± ${formatRp(price * clipSpecs.length)} (${clipSpecs.length} × ${formatRp(price)})`}
+                  menjadi satu utuh. Biayanya {gratisCurrentMode ? `gratis (${passLabel} aktif)` : `± ${formatRp(price * clipSpecs.length)} (${clipSpecs.length} × ${formatRp(price)})`}
                   {' '}dan prosesnya lebih lama.
                 </p>
                 <div className="mt-2 flex gap-2">
@@ -967,7 +972,7 @@ export default function VideoEditPage() {
             {!generating && <Wand2 className="h-4 w-4" />}
             {generating
               ? `Memproses... ${progress}%`
-              : `Edit Video${unlimited ? '' : ` · ${formatRp(price * (isChunked ? clipSpecs.length : 1))}`}`}
+              : `Edit Video${gratisCurrentMode ? '' : ` · ${formatRp(price * (isChunked ? clipSpecs.length : 1))}`}`}
           </Button>
           {generating && (
             <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
@@ -1005,8 +1010,8 @@ export default function VideoEditPage() {
                 <div className="text-2xl font-bold">{formatRp(wallet?.balance ?? 0)}</div>
                 <div className="text-xs text-muted-foreground">Saldo NexaBot</div>
               </div>
-              <div className={`rounded-full px-3 py-1 text-xs ${unlimited ? 'bg-green-500/10 text-green-600' : 'bg-muted text-muted-foreground'}`}>
-                {unlimited ? 'Unlimited aktif' : `${formatRp(price)} / generate`}
+              <div className={`rounded-full px-3 py-1 text-xs ${gratisCurrentMode ? 'bg-green-500/10 text-green-600' : 'bg-muted text-muted-foreground'}`}>
+                {gratisCurrentMode ? `${passLabel} aktif` : `${formatRp(price)} / generate`}
               </div>
             </div>
             <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
