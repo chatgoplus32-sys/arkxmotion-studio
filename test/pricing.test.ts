@@ -281,11 +281,11 @@ test('findSeaviPackage: slug dikenal / kosong / asing', () => {
 })
 
 test('getSeaviCharge: model 1 token & 2 token sesuai katalog, default 1 token', () => {
-  // Katalog Seavi 1 Nov 2026: 17 model 1 token, 3 model 2 token.
+  // Katalog Seavi 1 Nov 2026: 16 model 1 token, 3 model 2 token.
+  // motion_control_v3_server16 sudah dipensiunkan upstream (404 MODEL_NOT_FOUND).
   for (const id of [
     'motion_control_v3_server10_30dtk',
     'motion_control_v3_server19_15dtk',
-    'motion_control_v3_server16',
     'kling3_server10',
     'kling21pro_server10',
     'grok_imagine_s15',

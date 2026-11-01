@@ -31,14 +31,15 @@ function withFetchStub<T>(impl: (url: string, init?: RequestInit) => SeaviStubRe
 
 // ── Spesifikasi model ────────────────────────────────────────────────────────
 
-test('SEAVI_MODELS: 14 model video/motion aktif terdaftar dan spec kunci tersedia', () => {
-  assert.equal(Object.keys(SEAVI_MODELS).length, 14)
+test('SEAVI_MODELS: 13 model video/motion aktif terdaftar dan spec kunci tersedia', () => {
+  assert.equal(Object.keys(SEAVI_MODELS).length, 13)
   assert.ok(getSeaviSpec('seedance2_multi_s15'))
   assert.ok(getSeaviSpec('motion_control_v3_server19_15dtk'))
   assert.ok(getSeaviSpec('sora2_server10'))
-  // Katalog 1 Nov 2026 menghidupkan kembali Server 16 dan menambah tiga model
-  // 2 token: Kling 4.0, Wan 3.0 Prime, dan Seedance 2.5 Server 10.
-  assert.ok(getSeaviSpec('motion_control_v3_server16'))
+  // Katalog 1 Nov 2026: tiga model 2 token (Kling 4.0, Wan 3.0 Prime, Seedance
+  // 2.5 Server 10). Server 16 dipensiunkan upstream malam harinya — sempat lolos
+  // submit lalu gagal GENERATION_FAILED, sekarang POST-nya 404 MODEL_NOT_FOUND.
+  assert.equal(getSeaviSpec('motion_control_v3_server16'), undefined)
   assert.equal(getSeaviSpec('kling4_server19')?.tokens, 2)
   assert.equal(getSeaviSpec('wan30_prime_server19')?.tokens, 2)
   assert.equal(getSeaviSpec('seedance25_server10')?.tokens, 2)

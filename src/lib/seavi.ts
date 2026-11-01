@@ -1,9 +1,10 @@
 // Seavi Labs REST API client — api.seavilabs.site via relay /api/public/seavi
 // Kontrak terverifikasi dari docs resmi + probe nyata (submit 202 → poll progress → result.url).
 // Katalog disinkronkan dari GET https://api.seavilabs.site/v1/models 1 Nov 2026:
-// 20 model aktif — 11 video/motion + 6 image — 1 atau 2 token per generate.
-// Dua model lama sudah dipensiunkan upstream (404 MODEL_NOT_FOUND):
-// linocut_image_edit_qwen_server15 dan upscale_video_server7.
+// aplikasi memakai 19 dari 20 model aktif — 11 video + 2 motion control + 6 image
+// — 1 atau 2 token per generate (seavi_image_server15 belum dipakai).
+// Tiga model sudah dipensiunkan upstream (404 MODEL_NOT_FOUND):
+// linocut_image_edit_qwen_server15, upscale_video_server7, motion_control_v3_server16.
 // Tanpa kunci member, relay bisa memasang kunci server untuk member yang sudah
 // top up — lihat providerServerKey.ts.
 import { isServerKey, relayAuthHeaders } from './providerServerKey.js'
@@ -63,7 +64,10 @@ const i2v = (id: string, label: string, tokens: number, durations: number[], asp
 export const SEAVI_MODELS: Record<string, SeaviModelSpec> = {
   // ── Motion Control (gambar + video referensi) ──
   motion_control_v3_server10_30dtk: mc('motion_control_v3_server10_30dtk', 'Motion Control V3 · Server 10 (30 dtk)', 1, 0),
-  motion_control_v3_server16: mc('motion_control_v3_server16', 'Motion Control V3 · Server 16', 1, 0),
+  // Server 16 dihapus dari katalog 1 Nov 2026 malam: hilang dari GET /v1/models
+  // dan POST /generate menjawab 404 MODEL_NOT_FOUND, sementara job yang telanjur
+  // dikirim berakhir GENERATION_FAILED di 25%. Batas referensinya juga paling
+  // ketat (10 dtk) jadi tidak ada alasan mempertahankannya.
   motion_control_v3_server19_15dtk: mc('motion_control_v3_server19_15dtk', 'Motion Control V3 · Server 19 (15 dtk)', 1, 250),
 
   // ── Video generation: image to video ──
@@ -392,7 +396,9 @@ export async function generateSeaviImage(
       throw new Error(
         code === 'CONTENT_SAFETY_REJECTED'
           ? `Ditolak content safety Seavi — revisi prompt / ganti media referensi${msg ? ` (${msg})` : ''}`
-          : `Seavi job gagal: ${code}${msg ? ` — ${msg}` : ''} (biaya direfund otomatis)`,
+          : code === 'MODEL_NOT_FOUND'
+            ? 'Model ini sudah dimatikan Seavi — pilih model lain (token dikembalikan otomatis)'
+            : `Seavi job gagal: ${code}${msg ? ` — ${msg}` : ''} (biaya direfund otomatis)`,
       )
     }
     if (status === 'cancelled') throw new Error('Seavi job dibatalkan')
@@ -416,6 +422,11 @@ export async function submitSeaviGeneration(
   if (!res.ok || !data) {
     const code = data?.error?.code || ''
     const msg = data?.error?.message || text.slice(0, 200) || `HTTP ${res.status}`
+    // Model yang dipensiunkan upstream menjawab 404 MODEL_NOT_FOUND. Tanpa
+    // pesan khusus ini, member hanya melihat "Seavi 404" dan mengira aplikasinya rusak.
+    if (code === 'MODEL_NOT_FOUND') {
+      throw new Error(`Model ${payload.model} sudah tidak tersedia di Seavi — pilih model lain (token dikembalikan otomatis)`)
+    }
     throw new Error(`Seavi ${res.status}${code ? ` ${code}` : ''}: ${msg}`)
   }
   const id = data.id || data.request_id
@@ -462,7 +473,9 @@ export async function pollSeaviStatus(apiKey: string, id: string, opts: SeaviLog
       throw new Error(
         code === 'CONTENT_SAFETY_REJECTED'
           ? `Ditolak content safety Seavi — revisi prompt / ganti media referensi${msg ? ` (${msg})` : ''}`
-          : `Seavi job gagal: ${code}${msg ? ` — ${msg}` : ''} (biaya direfund otomatis)`,
+          : code === 'MODEL_NOT_FOUND'
+            ? 'Model ini sudah dimatikan Seavi — pilih model lain (token dikembalikan otomatis)'
+            : `Seavi job gagal: ${code}${msg ? ` — ${msg}` : ''} (biaya direfund otomatis)`,
       )
     }
     if (status === 'cancelled') {

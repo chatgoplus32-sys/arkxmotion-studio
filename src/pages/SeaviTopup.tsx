@@ -157,7 +157,7 @@ export default function SeaviTopupPage() {
         </div>
         <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
           <div>Token per generate: <b className="text-foreground">1 token untuk sebagian besar model, 2 token untuk Kling 4.0 / Wan 3.0 Prime / Seedance 2.5 S10</b></div>
-          <div>Model aktif: <b className="text-foreground">20 model (video, motion control, image)</b></div>
+          <div>Model aktif: <b className="text-foreground">19 model (video, motion control, image)</b></div>
         </div>
         <div className="mt-3 text-[11px] leading-relaxed">
           {serverKey?.available ? (

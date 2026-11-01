@@ -131,7 +131,7 @@ export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
   // 720/1080 dipilih user. API tidak punya parameter `model`; yang dikirim
   // adalah `mode` + `resolution` (lihat GET /api/v1/modes).
   seavi: [
-    // Katalog aktif Seavi 1 Nov 2026: 20 model, 1 atau 2 token per generate.
+    // Katalog aktif Seavi 1 Nov 2026: 19 model dipakai (Server 16 dipensiunkan), 1 atau 2 token.
     // Motion Control pindah ke halaman Motion Control (provider Seavi Labs).
     // Image to video
     { value: 'sv:kling3_server10', label: 'Kling 3 · S10 — 6/10s (Seavi)', cr: 1, provider: 'seavi', apiModel: 'kling3_server10' },
