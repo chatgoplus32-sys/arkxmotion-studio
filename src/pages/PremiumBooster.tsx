@@ -179,6 +179,9 @@ export default function PremiumBoosterPage() {
         <div className="mt-3 text-[11px] text-muted-foreground">
           Music dan TTS tidak termasuk — Booster dijual sebagai paket visual, jadi keduanya tetap memotong saldo.
         </div>
+        <div className="mt-3 text-[11px] text-muted-foreground">
+          Seedance 2.5 dibatasi <b className="text-foreground">5 video per hari</b> per akun — biaya kredit upstream model ini selalu ditanggung server, jadi jatahnya dibatasi agar tetap tersedia untuk semua member. Omni Flash 1.1 dan GPT Image tanpa batas harian.
+        </div>
       </Section>
 
       {step === 'select' && (

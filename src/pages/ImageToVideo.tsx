@@ -486,6 +486,12 @@ export default function ImageToVideoPage() {
   const totalCredits = currentModel ? (currentQuality?.cr ?? Math.round(currentModel.cr * (currentQuality?.mult || 1))) : 0
   // NexaBot: tampilkan kredit sebagai desimal (0.15 cr), bukan bulatkan ke 0
   const displayCredits = provider === 'nexabot' ? (totalCredits || 0.15) : totalCredits
+  // Mode yang sudah dibebaskan paket JANGAN menampilkan harga kredit upstream
+  // (mis. 0,2 cr Seedance): itu biaya akun server, bukan tagihan member. Tanpa
+  // ini user membaca "Est. Cost 0.2 cr" padahal saldo rupiahnya tidak tersentuh.
+  const nbCostLabel = provider === 'nexabot'
+    ? (nbFreeForCurrentMode ? 'Rp 0 · gratis' : `${displayCredits} cr`)
+    : null
 
   const providerKeyCount = keys[provider]?.length || 0
   const hasActiveKey = keys[provider]?.some((k) => k.status !== 'invalid' && k.status !== 'expired') || false
@@ -2821,7 +2827,11 @@ export default function ImageToVideoPage() {
                   if (!submit.ok || !submit.jobId) throw new Error(submit.error || 'NexaBot submit Seedance gagal')
                   jobId = submit.jobId
                   const biaya = submit.creditCost != null ? `${submit.creditCost} cr` : '0,2 cr'
-                  addLog(`✅ Seedance ${duration}s dibuat ✓ id=${jobId.slice(0, 20)}... (${biaya}${submit.queuePosition ? ` · antrean #${submit.queuePosition}` : ''})`, 'success', 'nexabot')
+                  // Biaya ini kredit akun NexaBot (upstream), bukan saldo rupiah
+                  // member — sebutkan siapa yang menanggung supaya tidak terbaca
+                  // sebagai potongan saldo.
+                  const penanggung = gratisKarenaPaket ? ' kredit server — gratis untukmu' : ' kredit upstream'
+                  addLog(`✅ Seedance ${duration}s dibuat ✓ id=${jobId.slice(0, 20)}... (${biaya}${penanggung}${submit.queuePosition ? ` · antrean #${submit.queuePosition}` : ''})`, 'success', 'nexabot')
                   addLog(`⏳ Job masuk antrean batch 60 s — hasil upstream hanya bertahan 30 menit, jadi otomatis disimpan ke CDN.`, 'info', 'nexabot')
                 } else {
                   const submit = await runWithNexabotThrottleRetry(() => submitNexabot({
@@ -4047,7 +4057,7 @@ export default function ImageToVideoPage() {
                 )}
               </Button>
               <div className="text-xs text-muted-foreground">
-                Est. Cost: <b className="text-foreground font-mono">{provider === 'createpulse' ? `Rp ${getCreatepulseCost(currentModel?.apiModel).toLocaleString('id-ID')}` : provider === 'nexabot' ? `${displayCredits} cr` : `${totalCredits} credits`}</b>
+                Est. Cost: <b className="text-foreground font-mono">{provider === 'createpulse' ? `Rp ${getCreatepulseCost(currentModel?.apiModel).toLocaleString('id-ID')}` : provider === 'nexabot' ? nbCostLabel : `${totalCredits} credits`}</b>
                 {provider !== 'createpulse' && <BalanceBadge provider={provider} required={totalCredits} />}
               </div>
               {!hasActiveKey && provider !== 'createpulse' && !(provider === 'nexabot' && nexabotServerReady) && (
@@ -4143,7 +4153,7 @@ export default function ImageToVideoPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Est. Cost</span>
-                  <span className="font-medium text-primary">{provider === 'createpulse' ? `Rp ${getCreatepulseCost(currentModel?.apiModel).toLocaleString('id-ID')}` : provider === 'nexabot' ? `${displayCredits} cr` : `${totalCredits} credits`}</span>
+                  <span className="font-medium text-primary">{provider === 'createpulse' ? `Rp ${getCreatepulseCost(currentModel?.apiModel).toLocaleString('id-ID')}` : provider === 'nexabot' ? nbCostLabel : `${totalCredits} credits`}</span>
                 </div>
               </div>
 

@@ -37,6 +37,7 @@ import {
   reserveChargeTicket,
 } from '../lib/nexabotChargeTicket.js'
 import { hasActiveUnlimited } from '../lib/nexabotMasterKey.js'
+import { seedanceQuota, seedanceQuotaMessage } from '../lib/nexabotQuota.js'
 import { recordUpstreamUsage, userIdFromRequest, type ResolvedCredential } from '../lib/nexabotUpstreamUsage.js'
 import { getNexabotSubmitQueueConfig } from '../lib/nexabotQueueSettings.js'
 
@@ -1487,6 +1488,16 @@ router.post('/seedance', async (req: Request, res: Response) => {
   }
   if (Object.keys(auth.headers).length === 0) {
     return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key header' })
+  }
+  // Kuota harian hanya berlaku saat kredensial server yang dipakai: di situlah
+  // kredit operator (0,2/video) benar-benar terbakar. Member yang menempel API
+  // key sendiri tidak dibatasi. Ditegakkan juga di /deduct supaya klien berhenti
+  // sebelum submit; di sini supaya tidak bisa dilewati dari browser.
+  if (auth.credential?.source === 'master' && gateUserId && !isAdminUser(gateUserId)) {
+    const kuota = seedanceQuota(gateUserId)
+    if (kuota.habis) {
+      return res.status(429).json({ ok: false, error: seedanceQuotaMessage(kuota), quota: kuota })
+    }
   }
   const tiket = tiketServer(req, auth, 'seedance')
   if (!tiket.ok) {

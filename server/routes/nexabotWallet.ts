@@ -35,6 +35,7 @@ import {
   NEXABOT_PRICING_SETTING_KEYS,
   findNexabotPackage,
   isBoosterModelName,
+  isSeedanceModelName,
   parseNexabotPricing,
   validateNexabotPackageValue,
   validateNexabotPricing,
@@ -43,6 +44,7 @@ import {
   type NexabotPricingField,
 } from '../../shared/pricing.js'
 import { serverAccounts, serverCookieEligible, serverKeyEligible } from '../lib/nexabotAccounts.js'
+import { seedanceQuota, seedanceQuotaMessage } from '../lib/nexabotQuota.js'
 
 // Definisi harga tinggal di shared/pricing.ts supaya server, fungsi Vercel, dan
 // endpoint publik /api/public/pricing tidak pernah beda angka.
@@ -392,6 +394,20 @@ router.post('/deduct', authenticateToken, (req: AuthRequest, res: Response) => {
         balance,
         packages: getNexabotPricing().packages,
       })
+    }
+    // Kuota harian Seedance: paket membebaskan saldo rupiah member, tapi tiap
+    // video tetap menagih 0,2 kredit akun NexaBot milik operator. Batas ini
+    // mencegah satu member menghabiskan kredit server dalam sehari.
+    if (pkg && isSeedanceModelName(model)) {
+      const kuota = seedanceQuota(userId)
+      if (kuota.habis) {
+        return res.status(429).json({
+          error: seedanceQuotaMessage(kuota),
+          quota: kuota,
+          balance,
+          packages: getNexabotPricing().packages,
+        })
+      }
     }
     const gratisBooster = isBoosterModelName(model)
     const pricing = getNexabotPricing()
