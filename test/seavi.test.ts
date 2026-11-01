@@ -12,7 +12,6 @@ import {
   pollSeaviStatus,
   SEAVI_IMAGE_MODELS,
   SEAVI_MODELS,
-  SEAVI_VIDEO_UPSCALER,
   submitSeaviGeneration,
 } from '../src/lib/seavi.js'
 
@@ -32,13 +31,17 @@ function withFetchStub<T>(impl: (url: string, init?: RequestInit) => SeaviStubRe
 
 // ── Spesifikasi model ────────────────────────────────────────────────────────
 
-test('SEAVI_MODELS: 10 model video/motion aktif terdaftar dan spec kunci tersedia', () => {
-  assert.equal(Object.keys(SEAVI_MODELS).length, 10)
+test('SEAVI_MODELS: 14 model video/motion aktif terdaftar dan spec kunci tersedia', () => {
+  assert.equal(Object.keys(SEAVI_MODELS).length, 14)
   assert.ok(getSeaviSpec('seedance2_multi_s15'))
   assert.ok(getSeaviSpec('motion_control_v3_server19_15dtk'))
   assert.ok(getSeaviSpec('sora2_server10'))
-  // Server 16 tidak lagi ada di dashboard Seavi — jangan dihidupkan kembali.
-  assert.equal(getSeaviSpec('motion_control_v3_server16'), undefined)
+  // Katalog 1 Nov 2026 menghidupkan kembali Server 16 dan menambah tiga model
+  // 2 token: Kling 4.0, Wan 3.0 Prime, dan Seedance 2.5 Server 10.
+  assert.ok(getSeaviSpec('motion_control_v3_server16'))
+  assert.equal(getSeaviSpec('kling4_server19')?.tokens, 2)
+  assert.equal(getSeaviSpec('wan30_prime_server19')?.tokens, 2)
+  assert.equal(getSeaviSpec('seedance25_server10')?.tokens, 2)
   assert.equal(getSeaviSpec('veo31_s9'), undefined)
   assert.equal(getSeaviSpec('model_ngawur'), undefined)
 })
@@ -245,39 +248,60 @@ test('poll: HTTP 5xx sementara dilompati, bukan gagal permanen', async () => {
 
 // ── Image models & upscaler ─────────────────────────────────────────────────
 
-test('SEAVI_IMAGE_MODELS: 7 model image aktif; payload tanpa referensi sah', () => {
-  assert.equal(Object.keys(SEAVI_IMAGE_MODELS).length, 7)
-  // Katalog S9 lama sudah tidak aktif di dashboard Seavi.
+test('SEAVI_IMAGE_MODELS: 6 model image aktif; tiap model wajib 1 gambar sumber', () => {
+  assert.equal(Object.keys(SEAVI_IMAGE_MODELS).length, 6)
+  // Katalog lama sudah tidak aktif di dashboard Seavi.
   assert.equal(SEAVI_IMAGE_MODELS['gpt_image2_s9'], undefined)
   assert.equal(SEAVI_IMAGE_MODELS['seedream5_s9'], undefined)
+  // linocut_image_edit_qwen_server15 dipensiunkan upstream (404 MODEL_NOT_FOUND).
+  assert.equal(SEAVI_IMAGE_MODELS['linocut_image_edit_qwen_server15'], undefined)
   const spec = SEAVI_IMAGE_MODELS['gpt_image_2_server15']
-  const p = buildSeaviPayload(spec, { prompt: 'sunset indah', aspectRatio: '16:9' })
-  assert.deepEqual(p.input, {})
+  assert.throws(() => buildSeaviPayload(spec, { prompt: 'sunset indah' }), /menerima 1-5 gambar/)
+  const p = buildSeaviPayload(spec, { imageUrls: ['a.png'], prompt: 'sunset indah', aspectRatio: '16:9' })
+  assert.deepEqual(p.input, { image_urls: ['a.png'] })
   assert.equal(p.params.aspect_ratio, '16:9')
 })
 
 test('image model: aspek di luar opsi diabaikan; prompt wajib', () => {
   const spec = SEAVI_IMAGE_MODELS['nano_banana_2_server15']
-  const p = buildSeaviPayload(spec, { prompt: 'x', aspectRatio: '21:9' })
+  const p = buildSeaviPayload(spec, { imageUrls: ['a.png'], prompt: 'x', aspectRatio: '21:9' })
   assert.equal(p.params.aspect_ratio, undefined)
-  assert.throws(() => buildSeaviPayload(spec, { prompt: '' }), /Prompt wajib/)
+  assert.throws(() => buildSeaviPayload(spec, { imageUrls: ['a.png'], prompt: '' }), /Prompt wajib/)
 })
 
-test('image edit (Seavi Image) wajib minimal 1 gambar sumber', () => {
-  const spec = SEAVI_IMAGE_MODELS['linocut_image_edit_qwen_server15']
-  assert.throws(() => buildSeaviPayload(spec, { prompt: 'ubah gaya' }), /menerima 1-8 gambar/)
+test('Seedream 4: maksimal 4 gambar referensi (schema upstream 1 Nov 2026)', () => {
+  const spec = SEAVI_IMAGE_MODELS['seedream_4_server15']
+  assert.throws(
+    () => buildSeaviPayload(spec, { imageUrls: ['a', 'b', 'c', 'd', 'e'], prompt: 'x' }),
+    /menerima 1-4 gambar/,
+  )
   const p = buildSeaviPayload(spec, { imageUrls: ['a.png'], prompt: 'ubah gaya' })
   assert.deepEqual(p.input, { image_urls: ['a.png'] })
 })
 
-test('upscaler: video wajib, gambar ditolak', () => {
-  assert.throws(() => buildSeaviPayload(SEAVI_VIDEO_UPSCALER, {}), /tepat 1 video referensi/)
+test('model 2 token: Kling 4.0 menerima sampai 5 video referensi + audio', () => {
+  const spec = getSeaviSpec('kling4_server19')
+  assert.ok(spec)
+  assert.equal(spec.tokens, 2)
+  const p = buildSeaviPayload(spec, {
+    imageUrls: ['a.png'],
+    videoUrls: ['v1', 'v2'],
+    audioUrl: 'a.mp3',
+    prompt: 'gerakan sinematik',
+    duration: 10,
+    aspectRatio: '9:16',
+  })
+  assert.deepEqual(p.input, { image_urls: ['a.png'], video_urls: ['v1', 'v2'], audio_url: 'a.mp3' })
+  assert.equal(p.params.duration, 10)
   assert.throws(
-    () => buildSeaviPayload(SEAVI_VIDEO_UPSCALER, { videoUrls: ['v'], imageUrls: ['i'] }),
-    /tidak menerima gambar/,
+    () => buildSeaviPayload(spec, { imageUrls: ['a'], videoUrls: ['1', '2', '3', '4', '5', '6'], prompt: 'x' }),
+    /maksimal 5 video/,
   )
-  const ok = buildSeaviPayload(SEAVI_VIDEO_UPSCALER, { videoUrls: ['v'] })
-  assert.deepEqual(ok.input, { video_url: 'v' })
+})
+
+test('upscaler Seavi sudah dipensiunkan: modul tidak lagi mengekspornya', async () => {
+  const mod = await import('../src/lib/seavi.js')
+  assert.equal((mod as Record<string, unknown>).SEAVI_VIDEO_UPSCALER, undefined)
 })
 
 test('generateSeaviImage: poll image completed → URL string', async () => {

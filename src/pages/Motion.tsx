@@ -97,6 +97,7 @@ const PROVIDERS = {
   seavi: { name: 'Seavi Labs', models: [
     { key: 'sv:motion_control_v3_server19_15dtk', label: 'Motion Control V3 · S19 15 dtk', cr: 1 },
     { key: 'sv:motion_control_v3_server10_30dtk', label: 'Motion Control V3 · S10 30 dtk', cr: 1 },
+    { key: 'sv:motion_control_v3_server16', label: 'Motion Control V3 · S16', cr: 1 },
   ]},
 }
 
@@ -137,6 +138,7 @@ const SIMPLE_MODEL_LABELS: Record<string, string> = {
   'rh:wf:v3.0': 'Kling 3.0 Standar',
   'sv:motion_control_v3_server19_15dtk': 'Motion Control V3 · 15 detik',
   'sv:motion_control_v3_server10_30dtk': 'Motion Control V3 · 30 detik',
+  'sv:motion_control_v3_server16': 'Motion Control V3 · Server 16',
 }
 
 function motionModelLabel(providerId: MotionProviderId, model: { key: string; label: string; cr: number }): string {

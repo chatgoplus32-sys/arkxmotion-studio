@@ -147,6 +147,24 @@ for root, dirs, files in os.walk(server_local):
         sftp.put(local_file, remote_file)
         print(f'  ✓ {rel}/{f}')
 
+# Upload shared/ — dipakai server DAN frontend (harga, katalog paket). Tanpa
+# ini, perubahan shared/pricing.ts tidak pernah sampai ke VPS: server tetap
+# membaca salinan lama, sehingga tarif yang ditagih berbeda dari yang di-deploy
+# (1 Nov 2026: model Seavi 2 token masih dipotong 1 token di produksi).
+shared_local = os.path.join(LOCAL_DIR, 'shared')
+for root, dirs, files in os.walk(shared_local):
+    rel = os.path.relpath(root, LOCAL_DIR)
+    remote_path = REMOTE_DIR + '/' + rel.replace('\\', '/')
+    try:
+        sftp.listdir(remote_path)
+    except FileNotFoundError:
+        sftp.mkdir(remote_path)
+    for f in files:
+        local_file = os.path.join(root, f)
+        remote_file = remote_path + '/' + f
+        sftp.put(local_file, remote_file)
+        print(f'  ✓ {rel}/{f}')
+
 # Upload specific root files
 for f in ['tsconfig.json', 'vite.config.ts']:
     local_file = os.path.join(LOCAL_DIR, f)

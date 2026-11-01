@@ -3421,6 +3421,12 @@ export default function ImageToVideoPage() {
        nbChargeRef.current = null
        seaviChargeRef.current = null
        seaviChargeIdRef.current = null
+       // Jatah Seedance berubah setiap generate: baca ulang dari server supaya
+       // angka "sisa" di panel tidak tertinggal satu video.
+       if (provider === 'nexabot' && authToken) {
+         const segar = await fetchNexabotWallet(authToken).catch(() => null)
+         if (segar) setNbWallet(segar)
+       }
       setCompressDialog(null)
       const wasGenerating = generatingRef.current
       setGenerating(false)
@@ -3630,6 +3636,14 @@ export default function ImageToVideoPage() {
                 <div>Failed generations: <b className="text-emerald-500">auto-refunded</b></div>
               )}
             </div>
+            {isNbSeedance && nbWallet?.seedance_quota && user?.role !== 'admin' && (
+              <div className={`mt-2 text-[11px] ${nbWallet.seedance_quota.habis ? 'text-destructive' : 'text-muted-foreground'}`}>
+                Seedance hari ini: <b className="text-foreground">{nbWallet.seedance_quota.used}/{nbWallet.seedance_quota.limit}</b>
+                {nbWallet.seedance_quota.habis
+                  ? ' — jatah habis, terbuka lagi besok 00.00 WIB'
+                  : ` — sisa ${nbWallet.seedance_quota.remaining} video`}
+              </div>
+            )}
             {user?.role !== 'admin' && !nbFreeForCurrentMode && (nbWallet?.balance ?? 0) < (nbWallet?.price ?? NEXABOT_PRICE_FALLBACK) && (
               <div className="mt-2 text-[11px]">
                 <a href="/booster" className="text-primary hover:underline font-medium">

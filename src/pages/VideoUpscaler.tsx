@@ -6,8 +6,6 @@ import { Loader2, Upload, Download, X, Sparkles, CheckCircle2, AlertCircle, Cloc
 import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { submitRunningHubVideoUpscale, pollRunningHubTask } from '@/lib/runninghub'
-import { SEAVI_VIDEO_UPSCALER, generateWithSeavi, fetchSeaviBalance } from '@/lib/seavi'
-import { chargeSeaviWallet, refundSeaviWallet } from '@/lib/seaviWallet'
 import { uploadToCatbox } from '@/lib/roboneo'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { persistResultToR2, addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
@@ -56,7 +54,6 @@ export default function VideoUpscalerPage() {
 
   const [videoFile, setVideoFile] = useState<File | null>(null)
   const [videoPreview, setVideoPreview] = useState<string | null>(null)
-  const [engine, setEngine] = useState<'runninghub' | 'seavi'>('runninghub')
   const [steps, setSteps] = useLocalStorage('vosr2.steps', 4)
   const [cfg, setCfg] = useLocalStorage('vosr2.cfg', 4.5)
   const [scheduler, setScheduler] = useLocalStorage('vosr2.scheduler', 'beta')
@@ -72,7 +69,7 @@ export default function VideoUpscalerPage() {
 
   const videoPickerRef = useRef<HTMLInputElement | null>(null)
 
-  const apiKey = getStoredProviderKey(engine === 'seavi' ? 'seavi' : 'runninghub')
+  const apiKey = getStoredProviderKey('runninghub')
 
   const addLog = (msg: string, level: LogEntry['level'] = 'info') => {
     const time = new Date().toLocaleTimeString('id-ID')
@@ -86,116 +83,6 @@ export default function VideoUpscalerPage() {
     setVideoPreview(URL.createObjectURL(file))
   }
 
-  const runSeaviUpscale = async () => {
-    setLoading(true)
-    setError(null)
-    setResultUrl(null)
-    setProgress(0)
-    setTaskStatus('submitting')
-    setLogs([])
-    const trackId = startGenerationTask({
-      page: 'video-upscaler',
-      model: 'Seavi Video Upscaler S7',
-      prompt: videoFile?.name || '',
-      provider: 'seavi',
-    })
-    try {
-      addLog(`[1/2] 📤 Mengunggah video (${(videoFile!.size / 1024 / 1024).toFixed(1)}MB)...`)
-      const videoUrl = await uploadToCatbox(videoFile!, 'video', (msg, pct) => {
-        addLog(`${msg}${pct != null ? ` ${pct}%` : ''}`)
-      })
-      addLog(`[1/2] ✓ Terunggah: ${videoUrl.slice(0, 80)}...`, 'success')
-
-      // Wallet token internal: upscale Seavi = 1 token. Tamu tanpa login
-      // tetap bisa memakai key sendiri tanpa potongan.
-      const seaviIsAdmin = user?.role === 'admin'
-      let seaviBatchId = ''
-      let seaviUsageId: number | null = null
-      if (!seaviIsAdmin && authToken) {
-        addLog(`[1/2] 💰 Memotong ${SEAVI_VIDEO_UPSCALER.tokens} token Seavi...`)
-        try {
-          const charge = await chargeSeaviWallet(authToken, SEAVI_VIDEO_UPSCALER.id, 1)
-          seaviBatchId = charge.batchId
-          seaviUsageId = charge.usageId ?? null
-          addLog(`[1/2] ✅ Token terpotong ✓ sisa ${charge.tokens} token`, 'success')
-        } catch (e: any) {
-          throw new Error(e.message || 'Token Seavi tidak cukup. Top up di halaman Top Up Seavi (Rp 4.000 = 2 token).')
-        }
-      }
-
-      try {
-      const rotation = await withTokenRotation<string>(
-        'seavi',
-        async (key, keyInfo) => {
-          addLog(`🔑 Key: ${keyInfo?.name || keyInfo?.id || 'default'}`)
-          const bal = await fetchSeaviBalance(key)
-          if (bal.ok && typeof bal.balance === 'number') addLog(`💰 Saldo: ${bal.balance} token`)
-          return await generateWithSeavi({
-            apiKey: key,
-            chargeId: seaviUsageId,
-            spec: SEAVI_VIDEO_UPSCALER,
-            videoUrls: [videoUrl],
-            onLog: (msg, level) => addLog(msg, (level as LogEntry['level']) || 'info'),
-            onStatus: (text, pct) => {
-              setTaskStatus('running')
-              setProgress(pct)
-            },
-          })
-        },
-        {
-          // Tanpa API key sendiri: member yang sudah top up memakai kunci server.
-          allowServerKey: true,
-          onKeySwitch: (from, to, attempt) => {
-            addLog(`🔄 Key "${from.name}" gagal, pindah ke key #${attempt}: "${to.name}"`, 'warn')
-          },
-          onError: (err, key) => {
-            addLog(`⚠️ Key "${key.name}" bermasalah: ${err.message}`, 'warn')
-          },
-        },
-      )
-      if (!rotation.ok || !rotation.result) throw new Error(rotation.error || 'Upscale gagal')
-
-      const url = rotation.result
-      const tid = `seavi-upscale-${Date.now()}`
-      setResultUrl(url)
-      setTaskStatus('success')
-      setProgress(100)
-      addLog(`Selesai: ${url.slice(0, 100)}...`, 'success')
-      persistResultToR2(tid, url)
-      addResult({
-        id: tid,
-        url,
-        prompt: videoFile?.name || 'Video upscale',
-        date: new Date().toISOString(),
-        page: 'video-upscaler',
-        kind: 'video',
-        provider: 'seavi',
-        model: 'Seavi Video Upscaler S7',
-      })
-      setHistory((prev) => [
-        { time: new Date().toLocaleTimeString('id-ID'), taskId: tid, status: '✅ Selesai', url },
-        ...prev,
-      ])
-      addToast('✅ Video upscale (Seavi) selesai!', 'success')
-      } catch (e: any) {
-        if (seaviBatchId && authToken && !seaviIsAdmin) {
-          addLog(`💸 Refund ${SEAVI_VIDEO_UPSCALER.tokens} token...`, 'warn')
-          const refunded = await refundSeaviWallet(authToken, { batch_id: seaviBatchId })
-          if (refunded != null) addLog(`✅ Refund berhasil ✓ sisa ${refunded} token`, 'success')
-        }
-        throw e
-      }
-    } catch (e: any) {
-      setTaskStatus('error')
-      setError(e.message || 'Unknown error')
-      addLog(`Gagal: ${e.message || e}`, 'error')
-      addToast(`❌ ${e.message}`, 'error')
-    } finally {
-      removeActiveTask(trackId)
-      setLoading(false)
-    }
-  }
-
   const runWorkflow = async () => {
     if (!apiKey) {
       addToast('⚠️ Belum ada RunningHub API key. Tambahkan di Providers.', 'warning')
@@ -205,8 +92,6 @@ export default function VideoUpscalerPage() {
       addToast('⚠️ Upload video terlebih dahulu!', 'warning')
       return
     }
-
-    if (engine === 'seavi') return runSeaviUpscale()
 
     setLoading(true)
     setError(null)
@@ -324,7 +209,7 @@ export default function VideoUpscalerPage() {
     <PageContent>
       <PageHeader
         title="⬆️ Video Upscaler 2K"
-        desc="Tingkatkan video ke kualitas lebih stabil & tajam — pilih engine RunningHub (VOSR2 2K bertingkat) atau Seavi (Upscale Video S7)."
+        desc="Tingkatkan video ke kualitas lebih stabil & tajam — engine RunningHub VOSR2 2K bertingkat."
       />
 
       {!apiKey && (
@@ -360,24 +245,6 @@ export default function VideoUpscalerPage() {
             <input ref={videoPickerRef} type="file" accept="video/*" className="hidden" onChange={(e) => e.target.files?.[0] && handleVideoSelect(e.target.files[0])} />
           </div>
 
-          <div className="mb-4">
-            <Label>Engine</Label>
-            <div className="flex gap-2">
-              {([['runninghub', 'RunningHub (VOSR2)'], ['seavi', 'Seavi (S7)']] as const).map(([v, label]) => (
-                <button
-                  key={v}
-                  type="button"
-                  disabled={loading}
-                  onClick={() => setEngine(v)}
-                  className={`px-3 py-2 rounded-xl text-sm font-semibold border transition-all ${engine === v ? 'border-primary bg-primary/10 text-foreground' : 'border-border text-muted-foreground hover:bg-accent/40'}`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {engine === 'runninghub' && (
           <>
           <div className="grid grid-cols-2 gap-3 mb-4">
             <div>
@@ -426,7 +293,6 @@ export default function VideoUpscalerPage() {
             />
           </div>
           </>
-          )}
 
           <Button
             onClick={runWorkflow}

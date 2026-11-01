@@ -280,11 +280,12 @@ test('findSeaviPackage: slug dikenal / kosong / asing', () => {
   assert.equal(findSeaviPackage('seavi_100'), undefined)
 })
 
-test('getSeaviCharge: semua model aktif 1 token, default 1 token', () => {
-  // Dashboard Seavi 28 Okt 2026: 18 model aktif semuanya 1 token.
+test('getSeaviCharge: model 1 token & 2 token sesuai katalog, default 1 token', () => {
+  // Katalog Seavi 1 Nov 2026: 17 model 1 token, 3 model 2 token.
   for (const id of [
     'motion_control_v3_server10_30dtk',
     'motion_control_v3_server19_15dtk',
+    'motion_control_v3_server16',
     'kling3_server10',
     'kling21pro_server10',
     'grok_imagine_s15',
@@ -297,12 +298,15 @@ test('getSeaviCharge: semua model aktif 1 token, default 1 token', () => {
     'nano_banana_2_lite_server15',
     'nano_banana_2_server15',
     'nano_banana_pro_server15',
-    'linocut_image_edit_qwen_server15',
     'seedream_4_server15',
     'seedream_4_5_server15',
-    'upscale_video_server7',
   ]) {
     assert.equal(getSeaviCharge(id), 1, `${id} harus 1 token`)
+  }
+  // Katalog 1 Nov 2026: tiga model menagih 2 token.
+  for (const id of ['kling4_server19', 'wan30_prime_server19', 'seedance25_server10']) {
+    assert.equal(getSeaviCharge(id), 2, `${id} harus 2 token`)
+    assert.equal(getSeaviCharge(`sv:${id}`), 2, `prefix sv: ${id} harus 2 token`)
   }
   // Prefix sv: dari client dinormalisasi dulu.
   assert.equal(getSeaviCharge('sv:wan30_server19'), 1)
@@ -314,9 +318,9 @@ test('getSeaviCharge: semua model aktif 1 token, default 1 token', () => {
 
 test('getSeaviCharge selaras dengan spec.tokens src/lib/seavi.ts', async () => {
   // Kontrak silang: angka deduct server HARUS sama dengan bobot `tokens`
-  // di SEAVI_MODELS / SEAVI_IMAGE_MODELS / SEAVI_VIDEO_UPSCALER.
-  const { SEAVI_MODELS, SEAVI_IMAGE_MODELS, SEAVI_VIDEO_UPSCALER } = await import('../src/lib/seavi.js')
-  const specs = [...Object.values(SEAVI_MODELS), ...Object.values(SEAVI_IMAGE_MODELS), SEAVI_VIDEO_UPSCALER]
+  // di SEAVI_MODELS / SEAVI_IMAGE_MODELS.
+  const { SEAVI_MODELS, SEAVI_IMAGE_MODELS } = await import('../src/lib/seavi.js')
+  const specs = [...Object.values(SEAVI_MODELS), ...Object.values(SEAVI_IMAGE_MODELS)]
   assert.ok(specs.length > 0)
   for (const spec of specs) {
     assert.equal(

@@ -263,6 +263,10 @@ router.get('/balance', authenticateToken, (req: AuthRequest, res: Response) => {
         days: pricing.unlimitedDays,
       },
       packages: pricing.packages,
+      // Sisa jatah Seedance hari ini (WIB). Dihitung dari usage yang sudah
+      // tercatat, jadi UI menampilkan angka otoritatif server — bukan tebakan
+      // yang bisa basi setelah halaman dibuka.
+      seedance_quota: seedanceQuota(userId),
     })
   } catch (error) {
     console.error('NexaBot balance error:', error)

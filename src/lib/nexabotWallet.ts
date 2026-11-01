@@ -145,6 +145,19 @@ export interface NexabotWallet {
   package: NexabotPackage
   /** Semua varian paket yang bisa dipilih user. */
   packages: NexabotPackage[]
+  /**
+   * Sisa jatah Seedance 2.5 hari ini (hari WIB). Ada karena paket membebaskan
+   * rupiah member tetapi setiap video tetap menagih kredit akun NexaBot server;
+   * relay menolak video ke-6 dst, jadi UI perlu bisa menampilkannya lebih dulu.
+   */
+  seedance_quota?: NexabotSeedanceQuota
+}
+
+export interface NexabotSeedanceQuota {
+  limit: number
+  used: number
+  remaining: number
+  habis: boolean
 }
 
 export interface NexabotServerKey {
@@ -213,6 +226,9 @@ export async function fetchNexabotWallet(token: string): Promise<NexabotWallet |
       },
       package: packages[0],
       packages,
+      // Build server lama belum mengirim kuota; biarkan undefined dan UI
+      // menampilkan status tanpa baris kuota.
+      seedance_quota: data.seedance_quota || undefined,
     }
   } catch {
     return null
