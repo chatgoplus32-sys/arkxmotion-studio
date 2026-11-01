@@ -49,6 +49,15 @@ const RUNNINGHUB_KONTROL_GERAKAN_APP_ID = '2112893346377531393'
 const KONTROL_GERAKAN_IMAGE_NODE = '30'
 const KONTROL_GERAKAN_VIDEO_NODE = '33'
 const KONTROL_GERAKAN_VIDEO_FIELD = 'video'
+// MOTION CONTROL 72 FPS — transfer gerakan ke 72 FPS, app RunningHub
+// 2114353645982978049. Skema node sama seperti app motion control 50 FPS:
+// node 30 = image (foto karakter), node 33 = video (video referensi gerakan),
+// tanpa prompt/extra node. Rata-rata run ±902 detik (sukses 90%).
+// https://www.runninghub.ai/id/ai-detail/2114353645982978049
+const RUNNINGHUB_72FPS_APP_ID = '2114353645982978049'
+const MOTION_72FPS_IMAGE_NODE = '30'
+const MOTION_72FPS_VIDEO_NODE = '33'
+const MOTION_72FPS_VIDEO_FIELD = 'video'
 
 // Virtual Try-On FLUX2-Klein (app RunningHub): transfer pakaian tubuh atas
 // dengan wajah/pose/latar tetap. Urutan input sesuai contoh resmi:
@@ -132,6 +141,15 @@ const MOTION_APPS: Record<string, MotionAppConfig> = {
     videoNode: KONTROL_GERAKAN_VIDEO_NODE,
     videoField: KONTROL_GERAKAN_VIDEO_FIELD,
     label: 'kontrol-gerakan-50fps',
+  },
+  // MOTION CONTROL 72 FPS — output 72 FPS dari gambar + video referensi gerakan.
+  // App tidak punya node prompt: gambar dan video saja (node 30 & 33).
+  'motion-control-72fps': {
+    appId: RUNNINGHUB_72FPS_APP_ID,
+    imageNode: MOTION_72FPS_IMAGE_NODE,
+    videoNode: MOTION_72FPS_VIDEO_NODE,
+    videoField: MOTION_72FPS_VIDEO_FIELD,
+    label: 'mc-72fps',
   },
 }
 // Virtual Try-On & Ekstraksi Pakaian: node 13 = foto orang, node 53 = pakaian

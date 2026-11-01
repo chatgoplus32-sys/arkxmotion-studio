@@ -82,6 +82,12 @@ export const RUNNINGHUB_EPOSCENTS_MC_APP_ID = '2107144516724932610'
 // https://www.runninghub.ai/id/ai-detail/2112893346377531393
 export const RUNNINGHUB_KONTROL_GERAKAN_APP_ID = '2112893346377531393'
 
+// MOTION CONTROL 72 FPS — transfer gerakan video referensi ke gambar karakter,
+// output 72 FPS. Skema node sama seperti app 50 FPS (node 30 = image,
+// node 33 = video) tanpa prompt. Rata-rata run ±902 detik.
+// https://www.runninghub.ai/id/ai-detail/2114353645982978049
+export const RUNNINGHUB_72FPS_APP_ID = '2114353645982978049'
+
 // AI Song Cover Studio (app RunningHub 2104229552179425282):
 // node 1 = audio (lagu asli), node 4 = prompt (gaya/arrangement cover),
 // node 5 = prompt (lirik).

@@ -68,6 +68,7 @@ const PROVIDERS = {
     { key: 'framia:kling-v2.6-motion', label: 'Kling V2.6 Motion Control (Framia)', cr: 35 },
   ]},
   runninghub: { name: 'RunningHub', models: [
+    { key: 'rh:wf:72fps', label: 'Motion Control 72 FPS — gerakan paling mulus (RunningHub)', cr: 80 },
     { key: 'rh:wf:kontrol-gerakan', label: 'Kontrol Gerak 50FPS — Lebih Cepat, maks 24s (RunningHub)', cr: 80 },
     { key: 'rh:wf:eposcents', label: 'Eposcents MC — 512HD 32FPS · 50s (RunningHub)', cr: 80 },
     { key: 'rh:wf:mc-pro', label: 'Motion Control Pro — Motion Transfer · 15s (RunningHub)', cr: 80 },
@@ -135,6 +136,7 @@ const SIMPLE_MODEL_LABELS: Record<string, string> = {
   'rh:std:2.6': 'Kling 2.6 Standar',
   'rh:wf:2.9': 'Kling 2.9 Workflow',
   'rh:wf:v3.0': 'Kling 3.0 Standar',
+  'rh:wf:72fps': 'Motion Control 72 FPS',
   'sv:motion_control_v3_server19_15dtk': 'Motion Control V3 · 15 detik',
   'sv:motion_control_v3_server10_30dtk': 'Motion Control V3 · 30 detik',
 }
@@ -1399,6 +1401,7 @@ export default function MotionPage() {
                 'rh:wf:mc-pro': '2103523610144309249',
                 'rh:wf:eposcents': '2107144516724932610',
                 'rh:wf:kontrol-gerakan': '2112893346377531393',
+                'rh:wf:72fps': '2114353645982978049',
               }
               const workflowId = WORKFLOW_IDS[modelKey] || getRunningHubWorkflowId()
               addLog(modelKey === 'rh:wf:ultra-hd'
@@ -1409,7 +1412,9 @@ export default function MotionPage() {
                     ? `#${slotNum} Submit ke RunningHub Eposcents MC (512HD 32FPS, maks 50s, workflow: ${workflowId.slice(0, 15)}...)`
                     : modelKey === 'rh:wf:kontrol-gerakan'
                       ? `#${slotNum} Submit ke RunningHub Kontrol Gerak 50FPS (maks 24s, workflow: ${workflowId.slice(0, 15)}...)`
-                      : `#${slotNum} Submit ke RunningHub (${modelVersion} ${mode}, workflow: ${workflowId.slice(0, 15)}...)`)
+                      : modelKey === 'rh:wf:72fps'
+                        ? `#${slotNum} Submit ke RunningHub Motion Control 72 FPS (workflow: ${workflowId.slice(0, 15)}...)`
+                        : `#${slotNum} Submit ke RunningHub (${modelVersion} ${mode}, workflow: ${workflowId.slice(0, 15)}...)`)
 
               // Motion Control Pro: referensi maks 15 detik.
               // Eposcents MC: referensi maks 50 detik (>30s otomatis instance Plus).
@@ -1481,7 +1486,15 @@ export default function MotionPage() {
                             apiKey,
                             workflowId,
                           })
-                          : await submitRunningHubMotionControl({
+                          : modelKey === 'rh:wf:72fps'
+                            ? await submitRunningHubMotionApp({
+                              action: 'motion-control-72fps',
+                              imageFile: normalizedImage,
+                              videoFile: mcProVideoFile,
+                              apiKey,
+                              workflowId,
+                            })
+                            : await submitRunningHubMotionControl({
                     imageFile: normalizedImage,
                     videoFile,
                     prompt: finalPrompt || undefined,
