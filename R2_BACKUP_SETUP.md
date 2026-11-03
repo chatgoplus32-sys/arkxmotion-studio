@@ -130,6 +130,48 @@ naik** — dan tidak ada satu field pun yang membocorkannya.
 | `verify-r2.mjs` gagal `NoSuchBucket` | nama bucket salah |
 | Snapshot lama hilang dari disk VPS | pemangkasan lokal bekerja (`BACKUP_KEEP_LOCAL`); pastikan langkah 4 sudah dijalankan lebih dulu |
 
+## Hasil generate (video/gambar) — bukan cuma backup
+
+Kunci `R2_*` yang sama dipakai menyimpan **hasil generate**, bukan hanya
+snapshot database. Ini penting karena tanpa R2 hasil generate duduk di
+`/opt/arkxmotion-studio/uploads` (±1,5 GB/hari) dan dipangkas otomatis setelah
+3 hari (`UPLOAD_RETENTION_DAYS`). Dengan R2 terisi, file baru **tidak** lagi
+ditulis ke disk, jadi retention tidak menyentuhnya dan link lama tetap hidup.
+
+Syarat tambahan khusus hasil generate — backup database tidak membutuhkannya:
+
+1. **Public access bucket** (Settings → Public Access → Allow Access) atau
+   custom domain. Tanpa ini, unggahan sukses tapi browsernya 404, dan hasil itu
+   **tetap** dipangkas karena tidak pernah jadi URL publik.
+2. `R2_PUBLIC_URL=https://<bucket>.<account>.r2.dev` (atau domain sendiri) di
+   `.env`. Kalau kosong, kode menebak URL `r2.dev` — arahkan eksplisit supaya
+   tidak bergantung tebakan.
+3. Bucket boleh sama dengan bucket backup; prefiks objek hasil generate adalah
+   `videos/` (atau `images/`), sedangkan backup memakai prefiks sendiri.
+
+Urutan menyalakannya di VPS:
+
+```bash
+cd /opt/arkxmotion-studio
+nano .env                      # isi 5 kunci R2_* termasuk R2_PUBLIC_URL
+node scripts/verify-r2.mjs     # wajib: PUT → LIST → GET → GET publik → DELETE
+pm2 restart arkxmotion --update-env
+pm2 logs arkxmotion --lines 40 | grep media-storage
+```
+
+Baris `[media-storage] hasil generate → r2 · bucket "…"` di log adalah bukti
+bahwa proses sudah memakai R2; kalau masih `→ disk`, berarti `.env` belum
+terbaca proses (belum restart / kunci tidak ada di `.env`).
+
+`verify-r2.mjs` sekarang juga membuka objek uji lewat URL publik. Kalau
+`R2_PUBLIC_URL` diisi tetapi objeknya tidak bisa dibaca, skrip **gagal** (exit
+1) — karena itu persis kondisi yang membuat video hasil generate jadi link
+mati padahal unggahannya "berhasil".
+
+Bukti terakhir tetap satu generate sungguhan: hasilnya harus terbuka dari
+`R2_PUBLIC_URL/...` (bukan `/api/public/r2-file/...`), dan `du -sh uploads`
+tidak lagi bertambah.
+
 ## Catatan
 
 - Sejak perubahan ini, kegagalan yang dulu senyap tidak lagi senyap:

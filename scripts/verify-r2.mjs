@@ -112,12 +112,39 @@ try {
   if (back !== body) throw new Error('isi objek berbeda dari yang dikirim')
   console.log(`${step++}. GET  isi objek identik           ✓ cocok`)
 
+  // Hasil generate diputar browser langsung dari URL publik. Unggahan bisa
+  // "berhasil" tapi videonya tetap 404 kalau public access belum menyala —
+  // jadi kalau R2_PUBLIC_URL diisi, ini harus lulus, bukan sekadar dicatat.
+  let publikGagal = null
+  const publikBase = PUBLIC_URL || `https://${BUCKET}.${ACCOUNT}.r2.dev`
+  try {
+    const res = await fetch(`${publikBase}/${key}`)
+    const teks = await res.text()
+    if (res.status !== 200) throw new Error(`HTTP ${res.status}`)
+    if (teks !== body) throw new Error('isi objek publik berbeda dari yang diunggah')
+    console.log(`${step++}. GET  URL publik                 ✓ ${publikBase.replace(/^https:\/\//, '')}/…`)
+  } catch (err) {
+    publikGagal = err.message
+    if (PUBLIC_URL) throw new Error(`URL publik (R2_PUBLIC_URL) tidak bisa dibaca — ${err.message}`)
+    console.log(`${step++}. GET  URL publik                 ⚠ dilewati (${err.message})`)
+  }
+
   await client.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }))
   console.log(`${step++}. DELETE objek uji                 ✓ dibersihkan`)
 
   console.log('\n✅ R2 ROUND-TRIP BERHASIL — kredensial, bucket, dan jaringan benar-benar bekerja.')
-  if (PUBLIC_URL) console.log(`   URL publik: ${PUBLIC_URL}/<key>`)
-  else console.log('   (R2_PUBLIC_URL belum diisi — URL publik objek tidak akan dikembalikan)')
+  if (PUBLIC_URL) {
+    console.log(`   URL publik: ${PUBLIC_URL}/<key>`)
+  } else if (publikGagal) {
+    console.log('   ⚠ R2_PUBLIC_URL kosong dan r2.dev belum aktif.')
+    console.log('     Backup database tetap aman, TAPI hasil generate tidak akan bisa')
+    console.log('     diputar di browser (link mati) — hasilnya juga tetap dipangkas')
+    console.log('     retention karena gagal jadi URL publik. Nyalakan bucket Settings →')
+    console.log('     Public Access, lalu isi R2_PUBLIC_URL=https://<bucket>.<account>.r2.dev')
+  } else {
+    console.log(`   URL publik (otomatis r2.dev): ${publikBase}/<key>`)
+    console.log('   Disarankan isi R2_PUBLIC_URL supaya URL tidak bergantung dugaan r2.dev.')
+  }
   process.exit(0)
 } catch (err) {
   console.log(`❌ GAGAL pada langkah ${step}: ${err.name || 'Error'}: ${err.message}`)

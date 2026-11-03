@@ -50,7 +50,7 @@ import publicWeavyRoutes from './routes/publicWeavy.js'
 import publicWeavyProxyRoutes from './routes/publicWeavyProxy.js'
 import publicWeavyCreditsRoutes from './routes/publicWeavyCredits.js'
 import publicR2UploadRoutes from './routes/publicR2Upload.js'
-import { UPLOAD_DIR, DISK_FILE_BASE, UPLOAD_RETENTION_DAYS, pruneOldUploads, freeDiskBytes } from './lib/mediaStorage.js'
+import { UPLOAD_DIR, DISK_FILE_BASE, UPLOAD_RETENTION_DAYS, pruneOldUploads, freeDiskBytes, mediaStorageMode } from './lib/mediaStorage.js'
 import publicAutoClipRoutes from './routes/publicAutoClip.js'
 import publicFireflyRoutes from './routes/publicFirefly.js'
 import publicTiktokRoutes from './routes/publicTiktok.js'
@@ -275,6 +275,11 @@ if (autoBackupEnabled) {
   console.log(
     `[${isProd ? 'PROD' : 'DEV'}] Backup otomatis dilewati. Set AUTO_BACKUP=1 kalau ingin snapshot database saat start.`,
   )
+}
+
+{
+  const mode = mediaStorageMode()
+  console.log(`[media-storage] hasil generate → ${mode.backend} · ${mode.detail}`)
 }
 
 // Retention hasil generate di disk. Tanpa R2, uploads/ tumbuh ~1,5 GB/hari;

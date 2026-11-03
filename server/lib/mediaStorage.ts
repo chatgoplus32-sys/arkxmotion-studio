@@ -29,6 +29,27 @@ export const UPLOAD_RETENTION_DAYS = (() => {
 const MIN_FREE_BYTES = 200 * 1024 * 1024
 
 /**
+ * Ke mana hasil generate disimpan sekarang — dicatat saat boot supaya tidak
+ * perlu menebak dari log unggahan pertama. "Terkonfigurasi" di sini hanya
+ * berarti kuncinya lengkap; bukti round-trip tetap `scripts/verify-r2.mjs`.
+ */
+export function mediaStorageMode(): { backend: 'r2' | 'disk'; detail: string } {
+  const lengkap = !!(R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY && R2_BUCKET_NAME)
+  if (!lengkap) {
+    return {
+      backend: 'disk',
+      detail: `${UPLOAD_DIR} · dipangkas otomatis setelah ${UPLOAD_RETENTION_DAYS} hari`,
+    }
+  }
+  return {
+    backend: 'r2',
+    detail:
+      `bucket "${R2_BUCKET_NAME}"` +
+      (R2_PUBLIC_URL ? ` · publik ${R2_PUBLIC_URL}` : ' · R2_PUBLIC_URL kosong (URL publik pakai r2.dev)'),
+  }
+}
+
+/**
  * URL publik file disk. Wajib lewat /api/* karena nginx hanya mem-proxy path itu
  * ke express; path lain dijawab sebagai file frontend statis.
  */
