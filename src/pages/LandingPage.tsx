@@ -466,7 +466,7 @@ export default function LandingPage() {
                     <div className="mt-1 text-[16px] sm:text-[18px] font-black tracking-tight">{rp(pkg.price)}</div>
                     <div className="text-[11px] text-white/40">
                       {hanyaBooster
-                        ? `${NEXABOT_BOOSTER_COMING_SOON ? 'Coming soon · ' : ''}Seedance 2.5, Omni Flash 1.1 & GPT Image tanpa batas · mode lain tetap per generate`
+                        ? `${NEXABOT_BOOSTER_COMING_SOON ? 'Coming soon · ' : ''}NexaDance 3.0 (20 detik 720p), Omni Flash 1.1 & GPT Image tanpa batas · mode lain tetap per generate`
                         : `Generate semua mode tanpa batas selama ${pkg.days} hari`}
                     </div>
                   </div>

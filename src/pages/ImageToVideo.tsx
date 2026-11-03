@@ -42,11 +42,11 @@ import { PROVIDER_MODELS, QUALITY_OPTIONS, getCreatepulseCost, RATIOS, MODEL_RAT
 
 import VideoPlayer from './image-to-video/VideoPlayer'
 import { nexabotPathPill } from './image-to-video/nexabotPathPill'
-import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, nexabotRemainingLabel, nexabotFreeForModel, nexabotPreferServerKey, NEXABOT_PRICE_FALLBACK, type NexabotWallet } from '@/lib/nexabotWallet'
+import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, nexabotRemainingLabel, nexabotFreeForModel, nexabotPreferServerKey, NEXABOT_PRICE_FALLBACK, NEXABOT_BOOSTER_COMING_SOON, type NexabotWallet } from '@/lib/nexabotWallet'
 import { fetchSeaviWallet, chargeSeaviWallet, refundSeaviWallet } from '@/lib/seaviWallet'
 import { formatRp } from '@/lib/payment'
 import { runNexabotJobWithSessionFallback } from './image-to-video/nexabotSessionFallback'
-import { runWithNexabotThrottleRetry, NexabotResultError, SEEDANCE_PROMPT_MAX } from '@/lib/nexabot'
+import { runWithNexabotThrottleRetry, NexabotResultError, NEXADANCE_PROMPT_MAX } from '@/lib/nexabot'
 
 // Voice default untuk mode Voice Over NexaBot — salah satu nama dari daftar
 // voice resmi NexaBot (GET /api/v1/modes → voices).
@@ -439,12 +439,12 @@ export default function ImageToVideoPage() {
   const isNbSFV = isNb && nbApiModel === 'sfv'
   const isNbI2V = isNb && nbApiModel === 'i2v'
   const isNbR2V = isNb && nbApiModel === 'r2v'
-  // Seedance 2.5: endpoint khusus (POST /api/v1/seedance) — durasi 15|30 detik,
-  // 0,2 kredit per video, start frame opsional.
-  const isNbSeedance = isNb && nbApiModel === 'seedance'
+  // NexaDance 3.0: endpoint khusus (POST /api/v1/alt-video/generate) — 20 detik
+  // 720p dengan audio, 0,5 kredit per video, start frame opsional.
+  const isNbNexadance = isNb && nbApiModel === 'nexadance'
   const isNbOmniFlash = isNbR2V
   // Apakah generate mode ini sedang bebas potongan saldo? Unlimited reguler
-  // membebaskan semua mode; Premium Booster membebaskan Seedance 2.5 + Omni
+  // membebaskan semua mode; Premium Booster membebaskan NexaDance 3.0 + Omni
   // Flash 1.1 (t2v/sfv/i2v/r2v/extend) + GPT Image — lihat halaman Booster.
   // Server tetap satu-satunya yang memotong saldo; flag ini hanya mencegah UI
   // menolak job yang sebenarnya gratis (saldo 0 + pass aktif).
@@ -487,7 +487,7 @@ export default function ImageToVideoPage() {
   // NexaBot: tampilkan kredit sebagai desimal (0.15 cr), bukan bulatkan ke 0
   const displayCredits = provider === 'nexabot' ? (totalCredits || 0.15) : totalCredits
   // Mode yang sudah dibebaskan paket JANGAN menampilkan harga kredit upstream
-  // (mis. 0,2 cr Seedance): itu biaya akun server, bukan tagihan member. Tanpa
+  // (mis. 0,5 cr NexaDance): itu biaya akun server, bukan tagihan member. Tanpa
   // ini user membaca "Est. Cost 0.2 cr" padahal saldo rupiahnya tidak tersentuh.
   const nbCostLabel = provider === 'nexabot'
     ? (nbFreeForCurrentMode ? 'Rp 0 · gratis' : `${displayCredits} cr`)
@@ -943,7 +943,11 @@ export default function ImageToVideoPage() {
     if (provider === 'createpulse' && user?.role !== 'admin' && cpBalance < getCreatepulseCost(currentModel?.apiModel)) return 'Saldo CreatePulse tidak cukup. Top up minimal Rp 10.000'
     // NexaBot: paket aktif untuk mode ini = gratis, jadi cek saldo hanya saat tidak aktif.
     if (provider === 'nexabot' && user?.role !== 'admin' && !nbFreeForCurrentMode && (nbWallet?.balance ?? 0) < (nbWallet?.price ?? NEXABOT_PRICE_FALLBACK))
-      return `Saldo NexaBot tidak cukup (${formatRp(nbWallet?.balance ?? 0)}). Top up saldo atau ambil Premium Booster Rp 15.000/hari — Seedance 2.5, Omni, dan GPT Image unlimited — di halaman Booster.`
+      // Booster sedang tidak dijual: jangan mengarahkan member ke paket yang
+      // tombolnya mati. Paket Unlimited semua mode tetap mencakup NexaDance 3.0.
+      return NEXABOT_BOOSTER_COMING_SOON
+        ? `Saldo NexaBot tidak cukup (${formatRp(nbWallet?.balance ?? 0)}). Top up saldo (untuk Omni Flash 1.1) atau ambil Paket Unlimited semua mode — NexaDance 3.0, Omni, dan GPT Image gratis — di halaman Top Up NexaBot.`
+        : `Saldo NexaBot tidak cukup (${formatRp(nbWallet?.balance ?? 0)}). Top up saldo atau ambil Premium Booster Rp 15.000/hari — NexaDance 3.0, Omni, dan GPT Image unlimited — di halaman Booster.`
     // Seavi: wallet token internal (deduct saat generate). Tamu tanpa login
     // tetap bisa memakai key sendiri tanpa potongan internal.
     if (provider === 'seavi' && seaviSpec && user?.role !== 'admin' && authToken && (seaviTokens ?? 0) < seaviSpec.tokens)
@@ -973,12 +977,12 @@ export default function ImageToVideoPage() {
       if (nbMode === 'sfv' && nbImages.length === 0) return 'Start Frame to Video butuh minimal 1 gambar input'
       if (nbMode === 'i2v' && nbImages.length === 0) return 'Image to Video butuh minimal 1 gambar input'
       if (nbMode === 'r2v' && !nbVideo) return 'Reference to Video butuh 1 video referensi'
-      if (nbMode === 'seedance') {
-        // Seedance 2.5 tidak wajib media (start frame opsional 1 gambar), tapi
+      if (nbMode === 'nexadance') {
+        // NexaDance 3.0 tidak wajib media (start frame opsional 1 gambar), tapi
         // prompt dibatasi 2000 karakter oleh upstream — tolak sebelum submit
         // supaya tidak memotong prompt user diam-diam.
-        if (prompt.trim().length > SEEDANCE_PROMPT_MAX) {
-          return `Prompt Seedance maksimal ${SEEDANCE_PROMPT_MAX} karakter (sekarang ${prompt.trim().length}).`
+        if (prompt.trim().length > NEXADANCE_PROMPT_MAX) {
+          return `Prompt NexaDance 3.0 maksimal ${NEXADANCE_PROMPT_MAX} karakter (sekarang ${prompt.trim().length}).`
         }
       }
     }
@@ -2636,13 +2640,13 @@ export default function ImageToVideoPage() {
         // `gratisKarenaPaket` juga menentukan jalur kredensial di bawah: generate
         // yang ditanggung paket dibayar kunci server, bukan API key pribadi member.
         let gratisKarenaPaket = false
-        // Seedance 2.5 = model paket: member biasa tanpa paket ditolak di muka,
+        // NexaDance 3.0 = model paket: member biasa tanpa paket ditolak di muka,
         // WALAU saldo NexaBot cukup — saldo hanya berlaku untuk Omni Flash 1.1.
         // Gate otoritatif tetap di /deduct + relay (tidak bisa dilewati browser).
         const nbApiModel = currentModel?.apiModel || 't2v'
-        if (nbApiModel === 'seedance' && currentUser?.role !== 'admin' && nbWallet
+        if (nbApiModel === 'nexadance' && currentUser?.role !== 'admin' && nbWallet
           && !(nbWallet?.unlimited?.active || nbWallet?.booster_unlimited?.active)) {
-          const pesan = 'Seedance 2.5 hanya untuk member dengan Paket aktif (Premium Booster / Unlimited) — saldo NexaBot hanya berlaku untuk Omni Flash 1.1.'
+          const pesan = 'NexaDance 3.0 hanya untuk member dengan Paket aktif (Premium Booster / Unlimited) — saldo NexaBot hanya berlaku untuk Omni Flash 1.1.'
           addLog(`❌ ${pesan}`, 'error', 'nexabot')
           throw new Error(pesan)
         }
@@ -2680,8 +2684,8 @@ export default function ImageToVideoPage() {
 
             const {
               submitNexabot, pollNexabotJob, downloadNexabotResult, saveNexabotResult,
-              submitNexabotSeedance,
-              nexabotSeedanceStatusPath, nexabotSeedanceDownloadPath, nexabotSeedanceSavePath,
+              submitNexabotNexadance,
+              nexabotNexadanceStatusPath, nexabotNexadanceDownloadPath, nexabotNexadanceSavePath,
             } = await import('@/lib/nexabot')
             const { fileToBase64 } = await import('@/lib/oneover')
             // NexaBot tidak punya parameter `model` di API-nya — yang menentukan hasil
@@ -2781,8 +2785,8 @@ export default function ImageToVideoPage() {
                   throw new Error(`Video sumber terlalu besar (${(srcVideo.size / 1024 / 1024).toFixed(1)}MB setelah kompresi, maks 6MB). Potong durasinya lalu coba lagi.`)
                 }
                 media.push(await fileToBase64(srcVideo))
-              } else if (apiModel === 'seedance') {
-                // Seedance 2.5: start frame OPSIONAL, maksimal 1 gambar.
+              } else if (apiModel === 'nexadance') {
+                // NexaDance 3.0: start frame OPSIONAL, maksimal 1 gambar.
                 // Upstream otomatis memperlakukannya sebagai sfv (frame pertama).
                 if (imageFiles[0]) media.push(await fileToBase64(await compressForApi(imageFiles[0])))
               }
@@ -2794,23 +2798,23 @@ export default function ImageToVideoPage() {
             // lengkap dengan notifikasi toast + log.
             return await runNexabotJobWithSessionFallback<string>(
               async (auth, via) => {
-                // Seedance 2.5 punya endpoint sendiri (POST /api/v1/seedance)
+                // NexaDance 3.0 punya endpoint sendiri (POST /api/v1/alt-video/generate)
                 // dengan body berbeda; sisanya memakai alur yang sama.
-                const isSeedance = apiModel === 'seedance'
+                const isNexadance = apiModel === 'nexadance'
                 addLog(`[2/3] 🚀 Submitting to NexaBot ${apiModel} via ${via}...`, 'info', 'nexabot')
                 setStatus((s) => ({ ...s, text: `Submit NexaBot ${apiModel}...`, pct: 15 }))
 
                 let jobId = ''
-                if (isSeedance) {
-                  const duration: import('@/lib/nexabot').NexabotSeedanceDuration =
-                    currentQuality?.duration === 30 ? 30 : 15
-                  // Docs: ratio 1 = 16:9, 2 = 9:16, "1:1" = persegi.
-                  const seedanceRatio: import('@/lib/nexabot').NexabotSeedanceRatio =
-                    ratio === '9:16' ? 2 : ratio === '1:1' ? '1:1' : 1
-                  const submit = await runWithNexabotThrottleRetry(() => submitNexabotSeedance({
+                if (isNexadance) {
+                  // Durasi dikunci upstream: satu-satunya nilai yang diterima 20 detik.
+                  const duration: import('@/lib/nexabot').NexabotNexadanceDuration = 20
+                  // Upstream: ratio 1 = 16:9, 2 = 9:16 (tidak ada 1:1).
+                  const nexadanceRatio: import('@/lib/nexabot').NexabotNexadanceRatio =
+                    ratio === '9:16' ? 2 : 1
+                  const submit = await runWithNexabotThrottleRetry(() => submitNexabotNexadance({
                     prompt: prompt.trim(),
                     duration,
-                    ratio: seedanceRatio,
+                    ratio: nexadanceRatio,
                     media: media.length > 0 ? media : undefined,
                   }, auth, {
                     onRetry: ({ attempt, status, delayMs, message }) => {
@@ -2824,14 +2828,14 @@ export default function ImageToVideoPage() {
                       setStatus((s) => ({ ...s, text: `Server gambar sibuk — menunggu ${waitSeconds}s (otomatis)...`, pct: 10 }))
                     },
                   })
-                  if (!submit.ok || !submit.jobId) throw new Error(submit.error || 'NexaBot submit Seedance gagal')
+                  if (!submit.ok || !submit.jobId) throw new Error(submit.error || 'NexaBot submit NexaDance gagal')
                   jobId = submit.jobId
-                  const biaya = submit.creditCost != null ? `${submit.creditCost} cr` : '0,2 cr'
+                  const biaya = submit.creditCost != null ? `${submit.creditCost} cr` : '0,5 cr'
                   // Biaya ini kredit akun NexaBot (upstream), bukan saldo rupiah
                   // member — sebutkan siapa yang menanggung supaya tidak terbaca
                   // sebagai potongan saldo.
                   const penanggung = gratisKarenaPaket ? ' kredit server — gratis untukmu' : ' kredit upstream'
-                  addLog(`✅ Seedance ${duration}s dibuat ✓ id=${jobId.slice(0, 20)}... (${biaya}${penanggung}${submit.queuePosition ? ` · antrean #${submit.queuePosition}` : ''})`, 'success', 'nexabot')
+                  addLog(`✅ NexaDance 3.0 ${duration}s dibuat ✓ id=${jobId.slice(0, 20)}... (${biaya}${penanggung}${submit.queuePosition ? ` · antrean #${submit.queuePosition}` : ''})`, 'success', 'nexabot')
                   addLog(`⏳ Job masuk antrean batch 60 s — hasil upstream hanya bertahan 30 menit, jadi otomatis disimpan ke CDN.`, 'info', 'nexabot')
                 } else {
                   const submit = await runWithNexabotThrottleRetry(() => submitNexabot({
@@ -2869,18 +2873,18 @@ export default function ImageToVideoPage() {
                 }
                 setStatus((s) => ({ ...s, text: 'Memproses di NexaBot...', pct: 30 }))
 
-                const hasilName = `nexabot-${isSeedance ? 'seedance-' : ''}${jobId}.mp4`
+                const hasilName = `nexabot-${isNexadance ? 'nexadance-' : ''}${jobId}.mp4`
                 await pollNexabotJob(jobId, auth, (msg) => {
                   addLog(msg, 'debug', 'nexabot')
                   setStatus((s) => ({ ...s, text: msg, pct: Math.min((s.pct || 0) + 5, 85) }))
                 }, {
-                  path: isSeedance ? nexabotSeedanceStatusPath(jobId) : undefined,
-                  // Seedance lewat antrean batch 60 detik upstream — job 15 detik
-                  // bisa saja jadi > 6 menit, jadi anggaran poll default (120
+                  path: isNexadance ? nexabotNexadanceStatusPath(jobId) : undefined,
+                  // NexaDance 3.0 lewat antrean batch 60 detik upstream — video 20
+                  // detik bisa saja jadi > 6 menit, jadi anggaran poll default (120
                   // percobaan ≈ 6 menit) kerap habis sebelum job selesai, padahal
-                  // upstream masih status processing. Untuk Seedance anggarannya
+                  // upstream masih status processing. Untuk NexaDance anggarannya
                   // dinaikkan: 400 percobaan, ikut anggaran 20 menit maxTotalMs.
-                  ...(isSeedance ? { maxAttempts: 400 } : {}),
+                  ...(isNexadance ? { maxAttempts: 400 } : {}),
                   // Poll status itu read-only, jadi hiccup upstream (proxy 504
                   // / rate limit) ditunggu dengan backoff, bukan menggagalkan job.
                   onRetry: ({ status, delayMs, message }) => {
@@ -2894,7 +2898,7 @@ export default function ImageToVideoPage() {
                 addLog(`[3/3] 📤 Menyimpan hasil permanen ke CDN...`, 'info', 'nexabot')
                 const saved = await saveNexabotResult(
                   jobId, auth, hasilName,
-                  isSeedance ? nexabotSeedanceSavePath(jobId) : undefined,
+                  isNexadance ? nexabotNexadanceSavePath(jobId) : undefined,
                 )
                 if (saved.ok && saved.url) {
                   setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
@@ -2906,7 +2910,7 @@ export default function ImageToVideoPage() {
 
                 const dl = await downloadNexabotResult(
                   jobId, auth,
-                  isSeedance ? nexabotSeedanceDownloadPath(jobId) : undefined,
+                  isNexadance ? nexabotNexadanceDownloadPath(jobId) : undefined,
                 )
                 if (!dl.ok || !dl.url) throw new NexabotResultError(dl.error || 'NexaBot download gagal')
 
@@ -3421,7 +3425,7 @@ export default function ImageToVideoPage() {
        nbChargeRef.current = null
        seaviChargeRef.current = null
        seaviChargeIdRef.current = null
-       // Jatah Seedance berubah setiap generate: baca ulang dari server supaya
+       // Jatah NexaDance berubah setiap generate: baca ulang dari server supaya
        // angka "sisa" di panel tidak tertinggal satu video.
        if (provider === 'nexabot' && authToken) {
          const segar = await fetchNexabotWallet(authToken).catch(() => null)
@@ -3636,18 +3640,18 @@ export default function ImageToVideoPage() {
                 <div>Failed generations: <b className="text-emerald-500">auto-refunded</b></div>
               )}
             </div>
-            {isNbSeedance && nbWallet?.seedance_quota && user?.role !== 'admin' && (
-              <div className={`mt-2 text-[11px] ${nbWallet.seedance_quota.habis ? 'text-destructive' : 'text-muted-foreground'}`}>
-                Seedance hari ini: <b className="text-foreground">{nbWallet.seedance_quota.used}/{nbWallet.seedance_quota.limit}</b>
-                {nbWallet.seedance_quota.habis
+            {isNbNexadance && nbWallet?.nexadance_quota && user?.role !== 'admin' && (
+              <div className={`mt-2 text-[11px] ${nbWallet.nexadance_quota.habis ? 'text-destructive' : 'text-muted-foreground'}`}>
+                NexaDance hari ini: <b className="text-foreground">{nbWallet.nexadance_quota.used}/{nbWallet.nexadance_quota.limit}</b>
+                {nbWallet.nexadance_quota.habis
                   ? ' — jatah habis, terbuka lagi besok 00.00 WIB'
-                  : ` — sisa ${nbWallet.seedance_quota.remaining} video`}
+                  : ` — sisa ${nbWallet.nexadance_quota.remaining} video`}
               </div>
             )}
             {user?.role !== 'admin' && !nbFreeForCurrentMode && (nbWallet?.balance ?? 0) < (nbWallet?.price ?? NEXABOT_PRICE_FALLBACK) && (
               <div className="mt-2 text-[11px]">
                 <a href="/booster" className="text-primary hover:underline font-medium">
-                  Top Up Saldo / Beli Premium Booster →
+                  {NEXABOT_BOOSTER_COMING_SOON ? 'Top Up Saldo / Lihat Paket →' : 'Top Up Saldo / Beli Premium Booster →'}
                 </a>
               </div>
             )}
@@ -3763,7 +3767,7 @@ export default function ImageToVideoPage() {
               /* NexaBot: input mengikuti 4 jenis video-generator */
               <Section title="🖼️ Gambar / Video Input" sub={
                 isNbT2V ? 'Text to Video — tanpa input media'
-                : isNbSeedance ? `Seedance 2.5 — start frame opsional (1 gambar)`
+                : isNbNexadance ? `NexaDance 3.0 — start frame opsional (1 gambar)`
                 : isNbSFV ? 'Start Frame to Video — 1 gambar wajib'
                 : isNbI2V ? 'Ingredients to Video — 1-3 gambar'
                 : 'Reference Video to Video — 1 video (wajib) + 1 gambar (opsional)'
@@ -3792,7 +3796,7 @@ export default function ImageToVideoPage() {
                       <button onClick={() => inputRef.current?.click()} className="w-full aspect-[9/16] rounded-2xl border border-dashed border-border/80 bg-card/30 grid place-items-center hover:border-primary/60 transition text-center px-4">
                         <div>
                           <div className="text-3xl">🖼️</div>
-                          <div className="text-sm mt-1">{isNbSeedance ? 'Start frame (opsional)' : isNbR2V ? 'Gambar pendamping (opsional)' : 'Tap atau tarik gambar (wajib)'}</div>
+                          <div className="text-sm mt-1">{isNbNexadance ? 'Start frame (opsional)' : isNbR2V ? 'Gambar pendamping (opsional)' : 'Tap atau tarik gambar (wajib)'}</div>
                           <div className="text-[11px] text-muted-foreground">{isNbI2V ? '1-3 gambar · JPG / PNG / WEBP' : 'JPG / PNG / WEBP'}</div>
                         </div>
                       </button>
@@ -4019,7 +4023,7 @@ export default function ImageToVideoPage() {
                     />
                   </div>
                   <div>
-                    <Label>{isNb && !isNbSeedance ? 'Resolusi' : 'Durasi'}</Label>
+                    <Label>{isNb && !isNbNexadance ? 'Resolusi' : 'Durasi'}</Label>
                     <Select
                       value={quality}
                       onChange={(e) => setQuality(e.target.value)}

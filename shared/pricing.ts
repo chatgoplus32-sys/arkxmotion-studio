@@ -36,7 +36,7 @@ export interface NexabotPackagePlan {
   /**
    * Bagian mana dari tagihan yang dibebaskan paket ini.
    *  - 'all'     : semua mode NexaBot (Mingguan/Bulanan/Tahunan);
-   *  - 'booster' : Seedance 2.5 + Omni Flash 1.1 + GPT Image — lihat
+   *  - 'booster' : NexaDance 3.0 + Omni Flash 1.1 + GPT Image — lihat
    *                `isBoosterModelName()`. Mode lain (music, tts) tetap
    *                Rp/generate.
    *
@@ -87,9 +87,9 @@ export const NEXABOT_PACKAGES: NexabotPackagePlan[] = [
   },
   {
     // Premium Booster: satu hari tanpa potongan untuk tiga keluarga generate
-    // paling laris — Seedance 2.5 (upstream 0,2 kredit/video), Omni Flash 1.1
-    // (0,15 kredit/request), dan GPT Image (0,1 kredit/gambar). Dinamai dari
-    // halaman tempat paket ini dijual, bukan dari satu model saja.
+    // paling laris — NexaDance 3.0 (upstream 0,5 kredit/video, 20 detik 720p),
+    // Omni Flash 1.1 (0,15 kredit/request), dan GPT Image (0,1 kredit/gambar).
+    // Dinamai dari halaman tempat paket ini dijual, bukan dari satu model saja.
     //
     // slug sengaja TETAP `unlimited_seedance_daily` walaupun cakupanisnya sudah
     // melebar: baris `nexabot_topup` produksi sudah menyimpan slug ini, dan
@@ -106,26 +106,28 @@ export const NEXABOT_PACKAGES: NexabotPackagePlan[] = [
   },
 ]
 
-/** Slug paket Booster (Seedance + Omni + GPT Image), bukan Unlimited semua mode. */
+/** Slug paket Booster (NexaDance + Omni + GPT Image), bukan Unlimited semua mode. */
 export const NEXABOT_BOOSTER_SLUGS: string[] = NEXABOT_PACKAGES
   .filter((plan) => plan.scope === 'booster')
   .map((plan) => plan.slug)
 
 /**
- * Premium Booster ditutup sementara ("coming soon"): janji utamanya Seedance 2.5,
- * dan Seedance 2 sedang tidak bisa digenerate di provider. Menjualnya sekarang
- * berarti member membayar untuk fitur yang tidak bisa dipakai, jadi pengajuan
- * pembelian ditolak server — bukan sekadar tombol yang dimatikan di UI.
+ * Penjualan Premium Booster ditutup ("coming soon") lewat flag ini. Dipakai saat
+ * paket ini tidak dijual — pengajuan pembelian ditolak server, bukan sekadar
+ * tombol yang dimatikan di UI.
  *
- * Buka lagi: ubah ke `false`. Halaman Booster/topup/landing ikut sendiri karena
- * membaca flag ini (klien punya cerminnya di src/lib/nexabotWallet.ts).
+ * 3 Nov 2026: tetap ditutup karena Seedance 2.5 — model yang membuat paket ini
+ * ada — sudah tidak tersedia di provider (jalur generate-nya kini NexaDance 3.0).
+ * Pemegang Booster yang masih aktif tidak terpengaruh. Untuk membuka penjualan:
+ * ubah ke `false` di sini + cerminnya di src/lib/nexabotWallet.ts. Halaman
+ * Booster/topup/landing ikut sendiri karena membaca flag ini.
  */
 export const NEXABOT_BOOSTER_COMING_SOON = true
 
 /** Pesan yang dipakai UI dan penolakan server — satu teks, jangan bercabang. */
 export const NEXABOT_BOOSTER_COMING_SOON_NOTE =
-  'Premium Booster ditutup sementara — Seedance 2 sedang tidak tersedia di provider. ' +
-  'Paket dibuka lagi setelah modelnya normal; Paket Unlimited semua mode tetap bisa dibeli.'
+  'Premium Booster sedang tidak dijual — Seedance 2.5 sudah tidak ada di provider. ' +
+  'Paket Unlimited semua mode tetap bisa dibeli.'
 
 /**
  * Semua slug paket yang TIDAK membebaskan semua mode. Dipakai untuk mengecualikan
@@ -154,12 +156,15 @@ export function isScopedPackage(slug: string | null | undefined): boolean {
 }
 
 /**
- * Apakah nama model yang dikirim ke /deduct adalah job Seedance 2.5?
- * Klien NexaBot mengirim `apiModel` dari katalog halaman ('seedance'); pola
- * longgar supaya varian nama ('seedance-2.5', 'nb:seedance') tetap kena.
+ * Apakah nama model yang dikirim ke /deduct adalah job NexaDance 3.0?
+ * Klien NexaBot mengirim `apiModel` dari katalog halaman ('nexadance'); pola
+ * longgar supaya varian nama ('nexadance_3_0', 'nb:nexadance') tetap kena.
+ *
+ * 'seedance' sengaja tetap dikenali: baris usage lama (sebelum rebrand) harus
+ * masih dihitung sebagai jatah harian yang sama, bukan jatah baru.
  */
-export function isSeedanceModelName(model: string | null | undefined): boolean {
-  return /seedance/i.test(String(model || ''))
+export function isNexadanceModelName(model: string | null | undefined): boolean {
+  return /nexadance|seedance/i.test(String(model || ''))
 }
 
 /**
@@ -173,7 +178,7 @@ export const NEXABOT_OMNI_MODELS = ['t2v', 'sfv', 'i2v', 'r2v', 'extend']
 export const NEXABOT_IMAGE_MODELS = ['gpt-image', 'img']
 
 /**
- * Apakah model ini dibebaskan Premium Booster? Tiga keluarga: Seedance 2.5,
+ * Apakah model ini dibebaskan Premium Booster? Tiga keluarga: NexaDance 3.0,
  * Omni Flash 1.1, dan GPT Image.
  *
  * Audio (`music`, `tts`) sengaja TIDAK ikut — Booster dijual sebagai paket
@@ -183,7 +188,7 @@ export const NEXABOT_IMAGE_MODELS = ['gpt-image', 'img']
  */
 export function isBoosterModelName(model: string | null | undefined): boolean {
   const mentah = String(model || '').toLowerCase()
-  if (isSeedanceModelName(mentah)) return true
+  if (isNexadanceModelName(mentah)) return true
   // Klien lama ada yang mengirim 'nb:r2v'; pakai nama telanjangnya.
   const inti = mentah.includes(':') ? (mentah.split(':').pop() || '') : mentah
   return NEXABOT_OMNI_MODELS.includes(inti) || NEXABOT_IMAGE_MODELS.includes(inti)

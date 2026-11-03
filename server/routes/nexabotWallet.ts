@@ -8,7 +8,7 @@
 //    paket aktif, /deduct tidak memotong saldo sama sekali (tetap dicatat
 //    sebagai usage Rp 0);
 //  - varian `unlimited_seedance_daily` ber-scope 'booster' (Premium Booster):
-//    membebaskan Seedance 2.5 + Omni Flash 1.1 + GPT Image. Audio (`music`,
+//    membebaskan NexaDance 3.0 + Omni Flash 1.1 + GPT Image. Audio (`music`,
 //    `tts`) dan mode lain tetap dipotong per generate, dan status `unlimited`
 //    di /balance sengaja TIDAK ikut menyala supaya UI tidak menjanjikan gratis
 //    yang tidak ada; status Booster sendiri ada di `booster_unlimited`.
@@ -37,7 +37,7 @@ import {
   NEXABOT_PRICING_SETTING_KEYS,
   findNexabotPackage,
   isBoosterModelName,
-  isSeedanceModelName,
+  isNexadanceModelName,
   parseNexabotPricing,
   validateNexabotPackageValue,
   validateNexabotPricing,
@@ -46,7 +46,7 @@ import {
   type NexabotPricingField,
 } from '../../shared/pricing.js'
 import { serverAccounts, serverCookieEligible, serverKeyEligible } from '../lib/nexabotAccounts.js'
-import { seedanceQuota, seedanceQuotaMessage } from '../lib/nexabotQuota.js'
+import { nexadanceQuota, nexadanceQuotaMessage } from '../lib/nexabotQuota.js'
 
 // Definisi harga tinggal di shared/pricing.ts supaya server, fungsi Vercel, dan
 // endpoint publik /api/public/pricing tidak pernah beda angka.
@@ -172,7 +172,7 @@ function getActivePackage(userId: number, hanyaSemuaMode = true): PackageRow | u
 
 /**
  * Paket yang membebaskan satu generate untuk model ini.
- * Premium Booster (scope 'booster') hanya membebaskan Seedance 2.5, Omni Flash
+ * Premium Booster (scope 'booster') hanya membebaskan NexaDance 3.0, Omni Flash
  * 1.1, dan GPT Image; mode lain (music, tts) tetap butuh paket semua-mode.
  */
 function getActivePackageForModel(userId: number, model?: string): PackageRow | undefined {
@@ -265,10 +265,10 @@ router.get('/balance', authenticateToken, (req: AuthRequest, res: Response) => {
         days: pricing.unlimitedDays,
       },
       packages: pricing.packages,
-      // Sisa jatah Seedance hari ini (WIB). Dihitung dari usage yang sudah
+      // Sisa jatah NexaDance hari ini (WIB). Dihitung dari usage yang sudah
       // tercatat, jadi UI menampilkan angka otoritatif server — bukan tebakan
       // yang bisa basi setelah halaman dibuka.
-      seedance_quota: seedanceQuota(userId),
+      nexadance_quota: nexadanceQuota(userId),
     })
   } catch (error) {
     console.error('NexaBot balance error:', error)
@@ -317,9 +317,10 @@ router.post('/package', authenticateToken, (req: AuthRequest, res: Response) => 
       })
     }
 
-    // Booster sedang ditutup (Seedance 2 tidak tersedia di provider). Ditolak di
-    // sini, bukan hanya di UI: pengajuan lewat API langsung pun tidak boleh
-    // membuat member membayar janji yang belum bisa dipenuhi.
+    // Booster bisa ditutup sementara lewat flag bersama (mis. kalau NexaDance
+    // sedang mati di provider). Ditolak di sini, bukan hanya di UI: pengajuan
+    // lewat API langsung pun tidak boleh membuat member membayar janji yang
+    // belum bisa dipenuhi.
     if (plan.scope === 'booster' && NEXABOT_BOOSTER_COMING_SOON) {
       return res.status(503).json({ error: NEXABOT_BOOSTER_COMING_SOON_NOTE })
     }
@@ -397,25 +398,25 @@ router.post('/deduct', authenticateToken, (req: AuthRequest, res: Response) => {
     // music/tts paket itu sengaja diabaikan server, bukan klien.
     const pkg = getActivePackageForModel(userId, model)
 
-    // Seedance 2.5 = model paket: member tanpa paket (Unlimited/Premium
-    // Booster) tidak boleh menagih saldo untuk generate Seedance — saldo
+    // NexaDance 3.0 = model paket: member tanpa paket (Unlimited/Premium
+    // Booster) tidak boleh menagih saldo untuk generate NexaDance — saldo
     // NexaBot hanya berlaku untuk Omni Flash 1.1 (dan model Omni lain).
     // Admin tidak lewat sini (klien skip charge untuk admin).
-    if (/^seedance/.test(String(model || '').toLowerCase()) && !pkg) {
+    if (/^(nexadance|seedance)/.test(String(model || '').toLowerCase()) && !pkg) {
       return res.status(400).json({
-        error: 'Seedance 2.5 hanya untuk member dengan Paket aktif (Premium Booster / Unlimited) — saldo NexaBot hanya berlaku untuk Omni Flash 1.1.',
+        error: 'NexaDance 3.0 hanya untuk member dengan Paket aktif (Premium Booster / Unlimited) — saldo NexaBot hanya berlaku untuk Omni Flash 1.1.',
         balance,
         packages: getNexabotPricing().packages,
       })
     }
-    // Kuota harian Seedance: paket membebaskan saldo rupiah member, tapi tiap
-    // video tetap menagih 0,2 kredit akun NexaBot milik operator. Batas ini
+    // Kuota harian NexaDance: paket membebaskan saldo rupiah member, tapi tiap
+    // video tetap menagih 0,5 kredit akun NexaBot milik operator. Batas ini
     // mencegah satu member menghabiskan kredit server dalam sehari.
-    if (pkg && isSeedanceModelName(model)) {
-      const kuota = seedanceQuota(userId)
+    if (pkg && isNexadanceModelName(model)) {
+      const kuota = nexadanceQuota(userId)
       if (kuota.habis) {
         return res.status(429).json({
-          error: seedanceQuotaMessage(kuota),
+          error: nexadanceQuotaMessage(kuota),
           quota: kuota,
           balance,
           packages: getNexabotPricing().packages,

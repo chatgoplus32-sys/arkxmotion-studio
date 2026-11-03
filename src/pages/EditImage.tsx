@@ -935,7 +935,7 @@ export default function EditImagePage() {
                       ) : nbFreeForCurrentModel ? (
                         <div>• 🚀 Premium Booster aktif — GPT Image unlimited ({nexabotRemainingLabel(nbWallet?.booster_unlimited)})</div>
                       ) : (
-                        <div>• 🚀 Premium Booster Rp 15.000/hari bikin GPT Image + Omni + Seedance unlimited — <a href="/booster" className="text-primary hover:underline font-medium">ambil di Booster →</a></div>
+                        <div>• 🚀 Premium Booster Rp 15.000/hari bikin GPT Image + Omni + NexaDance 3.0 unlimited — <a href="/booster" className="text-primary hover:underline font-medium">ambil di Booster →</a></div>
                       )}
                     </>
                   ) : (

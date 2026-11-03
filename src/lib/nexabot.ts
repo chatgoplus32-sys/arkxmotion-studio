@@ -1674,35 +1674,41 @@ export async function downloadNexabotGptImage(
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// SEEDANCE 2.5 (POST /api/v1/seedance) — 15 / 30 detik
+// NEXADANCE 3.0 (POST /api/v1/alt-video/generate) — 20 detik, 720p
 // ═══════════════════════════════════════════════════════════════════
 //
-// Endpoint khusus di luar mode biasa: durasi wajib 15|30, selalu menagih
-// 0,2 kredit per video (paket Unlimited web tidak berlaku), dan job masuk
-// antrean batch 60 detik — status pertama selalu `queued`. Hasil upstream
-// hanya bertahan 30 menit setelah selesai, jadi alur normal langsung menyimpan
-// ke CDN lewat /seedance/:id/save seperti job video lain.
+// Model video premium NexaBot (rebrand dari Seedance 2.5; endpoint lama
+// /api/v1/seedance sudah dihapus upstream dan sekarang 404). Durasi tetap 20
+// detik dengan audio, resolusi 720p, dan selalu menagih 0,5 kredit per video
+// (paket Unlimited web NexaBot tidak berlaku). Job masuk antrean batch 60
+// detik — status pertama selalu `queued`. Hasil upstream hanya bertahan 30
+// menit setelah selesai, jadi alur normal langsung menyimpan ke CDN lewat
+// /nexadance/:id/save seperti job video lain.
 
-export type NexabotSeedanceDuration = 15 | 30
-/** 1 = 16:9 landscape, 2 = 9:16 portrait, '1:1' persegi. */
-export type NexabotSeedanceRatio = 1 | 2 | '1:1'
+/** Durasi satu-satunya yang diterima upstream. */
+export type NexabotNexadanceDuration = 20
+/** 1 = 16:9 landscape, 2 = 9:16 portrait. */
+export type NexabotNexadanceRatio = 1 | 2
 
 /** Batas prompt yang diterima upstream. */
-export const SEEDANCE_PROMPT_MAX = 2000
+export const NEXADANCE_PROMPT_MAX = 2000
 
-export interface NexabotSeedanceParams {
+/** Id model di katalog NexaBot. */
+export const NEXADANCE_MODEL_ID = 'nexadance_3_0'
+
+export interface NexabotNexadanceParams {
   prompt: string
-  duration: NexabotSeedanceDuration
-  ratio?: NexabotSeedanceRatio
-  /** Opsional 1 gambar start frame (data URI) — upstream otomatis memakai sfv. */
+  duration: NexabotNexadanceDuration
+  ratio?: NexabotNexadanceRatio
+  /** Opsional 1 gambar start frame (data URI) — upstream lalu memakai mode sfv. */
   media?: string[]
 }
 
-export interface NexabotSeedanceSubmitResult {
+export interface NexabotNexadanceSubmitResult {
   ok: boolean
   jobId?: string
   status?: string
-  /** 0,2 pada jalur kredit; 0 hanya bila plan API Unlimited kelak berlaku. */
+  /** 0,5 pada jalur kredit; 0 hanya bila plan API Unlimited berlaku. */
   creditCost?: number
   creditBalance?: number
   queuePosition?: number
@@ -1710,23 +1716,23 @@ export interface NexabotSeedanceSubmitResult {
   error?: string
 }
 
-export function nexabotSeedanceStatusPath(jobId: string): string {
-  return `/seedance/${encodeURIComponent(jobId)}`
+export function nexabotNexadanceStatusPath(jobId: string): string {
+  return `/nexadance/${encodeURIComponent(jobId)}`
 }
 
-export function nexabotSeedanceDownloadPath(jobId: string): string {
-  return `/seedance/${encodeURIComponent(jobId)}/download`
+export function nexabotNexadanceDownloadPath(jobId: string): string {
+  return `/nexadance/${encodeURIComponent(jobId)}/download`
 }
 
-export function nexabotSeedanceSavePath(jobId: string): string {
-  return `/seedance/${encodeURIComponent(jobId)}/save`
+export function nexabotNexadanceSavePath(jobId: string): string {
+  return `/nexadance/${encodeURIComponent(jobId)}/save`
 }
 
-export async function submitNexabotSeedance(
-  params: NexabotSeedanceParams,
+export async function submitNexabotNexadance(
+  params: NexabotNexadanceParams,
   authOverride?: NexabotAuth | string,
   opts: NexabotRetryOptions = {}
-): Promise<NexabotSeedanceSubmitResult> {
+): Promise<NexabotNexadanceSubmitResult> {
   const {
     maxAttempts = NEXABOT_SUBMIT_RETRY.attempts,
     baseMs = NEXABOT_SUBMIT_RETRY.baseMs,
@@ -1744,14 +1750,18 @@ export async function submitNexabotSeedance(
     throw new Error('NexaBot: tidak ada API key / cookie session yang valid — cek format di halaman Providers')
   }
 
+  const media = params.media && params.media.length > 0 ? params.media.slice(0, 1) : []
   const body: Record<string, any> = {
-    prompt: params.prompt.slice(0, SEEDANCE_PROMPT_MAX),
-    duration: params.duration,
+    // Upstream memilih pipeline dari `mode`: sfv kalau ada start frame.
+    mode: media.length > 0 ? 'sfv' : 't2v',
+    model: NEXADANCE_MODEL_ID,
+    prompt: params.prompt.slice(0, NEXADANCE_PROMPT_MAX),
+    duration: 20,
+    ratio: params.ratio === 2 ? 2 : 1,
   }
-  if (params.ratio !== undefined) body.ratio = params.ratio
-  if (params.media && params.media.length > 0) body.media = params.media.slice(0, 1)
+  if (media.length > 0) body.media = media
 
-  console.log(`[nexabot] Seedance submit (${params.duration}s, ratio ${body.ratio ?? 1}, media ${body.media?.length ?? 0})`)
+  console.log(`[nexabot] NexaDance 3.0 submit (20s, ratio ${body.ratio}, media ${media.length})`)
 
   const attempts = Math.max(1, maxAttempts)
   // 429 dari antrean relay diulang selama anggaran antreannya masih ada.
@@ -1759,7 +1769,7 @@ export async function submitNexabotSeedance(
   let identitasDiperbarui = 0
   while (true) {
     attempt++
-    const res = await fetch(`${NEXABOT_BASE}/seedance`, {
+    const res = await fetch(`${NEXABOT_BASE}/nexadance`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1793,7 +1803,7 @@ export async function submitNexabotSeedance(
       }
       if (res.status === 402) {
         if (auth.master) throw new Error(jsonErrorMessage(errText) || 'NexaBot: pembayaran generate belum terverifikasi server')
-        throw new Error('NexaBot: Kredit tidak cukup (Seedance 2.5 perlu 0.2 per video)')
+        throw new Error('NexaBot: Kredit tidak cukup (NexaDance 3.0 perlu 0.5 per video)')
       }
       if (res.status === 503) {
         const waitSeconds = parseNexabotThrottleSeconds(errText)
@@ -1812,7 +1822,7 @@ export async function submitNexabotSeedance(
         })
         if (keputusan.ulang) {
           onRetry?.({ attempt, status: res.status, delayMs: keputusan.delayMs, message: keputusan.message })
-          console.warn(`[nexabot] Seedance ${res.status} (${keputusan.message}) — coba lagi dalam ${Math.round(keputusan.delayMs / 1000)}s`)
+          console.warn(`[nexabot] NexaDance ${res.status} (${keputusan.message}) — coba lagi dalam ${Math.round(keputusan.delayMs / 1000)}s`)
           await sleep(keputusan.delayMs)
           continue
         }
@@ -1828,13 +1838,14 @@ export async function submitNexabotSeedance(
     const data = await res.json()
     const jobId = data.job_id || data.id
     if (!data.ok || !jobId) {
-      throw new Error(data.error || 'NexaBot: submit Seedance gagal')
+      throw new Error(data.error || 'NexaBot: submit NexaDance 3.0 gagal')
     }
     return {
       ok: true,
       jobId,
       status: data.status,
-      creditCost: data.credit_cost,
+      // Upstream mengirim `price` (0,5); `credit_cost` hanya ada di daftar job.
+      creditCost: data.credit_cost ?? data.price,
       creditBalance: data.credit_balance,
       queuePosition: data.queue_position,
       etaSeconds: data.eta_seconds,

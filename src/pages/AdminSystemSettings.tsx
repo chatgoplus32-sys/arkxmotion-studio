@@ -42,7 +42,7 @@ const NB_PACKAGE_FALLBACKS: NexabotPackage[] = [
   { slug: 'unlimited_weekly', label: 'Mingguan', price: 35000, days: 7 },
   { slug: 'unlimited_monthly', label: 'Bulanan', price: 119000, days: 30 },
   { slug: 'unlimited_yearly', label: 'Tahunan', price: 899000, days: 365 },
-  // Ber-scope: Booster membebaskan Seedance 2.5 + Omni + GPT Image (server yang menegakkan).
+  // Ber-scope: Booster membebaskan NexaDance 3.0 + Omni + GPT Image (server yang menegakkan).
   { slug: 'unlimited_seedance_daily', label: 'Booster', price: 15000, days: 1 },
 ]
 
@@ -1136,7 +1136,7 @@ export default function AdminSystemSettings() {
                     </div>
                     {isBoosterPackage(p.slug) && (
                       <div className="mb-3 text-[11px] text-amber-500">
-                        Premium Booster — membebaskan Seedance 2.5, Omni Flash 1.1 (t2v/sfv/i2v/r2v/extend) &amp; GPT Image. Music dan TTS tetap dipotong harga per generate.
+                        Premium Booster — membebaskan NexaDance 3.0, Omni Flash 1.1 (t2v/sfv/i2v/r2v/extend) &amp; GPT Image. Music dan TTS tetap dipotong harga per generate.
                       </div>
                     )}
                     <div className="grid grid-cols-2 gap-3">

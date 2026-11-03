@@ -154,9 +154,10 @@ export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'nb:i2v', label: '🧩 Ingredients to Video (1-3 img) — Omni Flash 1.1 (NexaBot)', cr: 0.15, provider: 'nexabot', apiModel: 'i2v' },
     { value: 'nb:r2v', label: '🎬 Reference Video to Video — Omni Flash 1.1 (NexaBot)', cr: 0.15, provider: 'nexabot', apiModel: 'r2v' },
     { value: 'nb:extend', label: '⏩ Extend Video (1 video) — Omni Flash 1.1 (NexaBot)', cr: 0.15, provider: 'nexabot', apiModel: 'extend' },
-    // Endpoint khusus (POST /api/v1/seedance): durasi wajib 15|30 dan selalu
-    // menagih 0,2 kredit — di luar skema mode Omni Flash 0,15.
-    { value: 'nb:seedance', label: '🎬 Seedance 2.5 — 15/30 detik (NexaBot)', cr: 0.2, provider: 'nexabot', apiModel: 'seedance' },
+    // Endpoint khusus (POST /api/v1/alt-video/generate): durasi tetap 20 detik
+    // 720p dengan audio, dan selalu menagih 0,5 kredit — di luar skema mode
+    // Omni Flash 0,15. Start frame opsional (mode sfv).
+    { value: 'nb:nexadance', label: '🎬 NexaDance 3.0 — 20 detik 720p (NexaBot)', cr: 0.5, provider: 'nexabot', apiModel: 'nexadance' },
   ],
 }
 
@@ -652,11 +653,11 @@ export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: s
     'nb:extend': [
       { value: '1080', label: '1080p — otomatis (hasil selalu 1080p)', mult: 1, duration: 0, cr: 0.15, resolution: '1080' },
     ],
-    // Seedance 2.5: durasi WAJIB 15|30 dan biaya tetap 0,2 kredit per video
-    // (tidak peduli durasi). `cr` 0,2 dipakai untuk label biaya upstream.
-    'nb:seedance': [
-      { value: '15', label: '15 detik — antrean batch 60 s', mult: 1, duration: 15, cr: 0.2 },
-      { value: '30', label: '30 detik — antrean batch 60 s', mult: 1, duration: 30, cr: 0.2 },
+    // NexaDance 3.0: durasi tetap 20 detik 720p dan biaya tetap 0,5 kredit per
+    // video. Satu opsi saja supaya dropdown tidak menjanjikan pilihan yang
+    // ditolak upstream; `cr` dipakai untuk label biaya upstream.
+    'nb:nexadance': [
+      { value: '20', label: '20 detik · 720p · audio — antrean batch 60 s', mult: 1, duration: 20, cr: 0.5 },
     ],
     default: [
       { value: '720', label: '720p', mult: 1, duration: 0, cr: 0.15, resolution: '720' },
@@ -697,8 +698,8 @@ export const MODEL_RATIO_RESTRICTIONS: Record<string, string[]> = {
   i2v: ['16:9', '9:16'],
   r2v: ['16:9', '9:16'],
   extend: ['16:9', '9:16'],
-  // Seedance 2.5 (docs): ratio 1=16:9, 2=9:16, "1:1" — 4:3 tidak ada.
-  seedance: ['16:9', '9:16', '1:1'],
+  // NexaDance 3.0: ratio 1=16:9, 2=9:16 — tidak ada 1:1 maupun 4:3.
+  nexadance: ['16:9', '9:16'],
 }
 
 export const H3_VLOG_TEMPLATE = `subject_definitions:

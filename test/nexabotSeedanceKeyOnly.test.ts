@@ -22,10 +22,10 @@ import { resetNexabotLaneJobs } from '../shared/nexabotProxy.js'
 
 const DB_PATH = path.join(
   os.tmpdir(),
-  `arkxmotion-nxb-seedance-keyonly-${process.pid}-${Date.now()}.db`,
+  `arkxmotion-nxb-nexadance-keyonly-${process.pid}-${Date.now()}.db`,
 )
 process.env.ARKXMOTION_DB_PATH = DB_PATH
-const JWT_SECRET = 'test-secret-seedance-keyonly'
+const JWT_SECRET = 'test-secret-nexadance-keyonly'
 process.env.JWT_SECRET = JWT_SECRET
 delete process.env.NEXABOT_MASTER_API_KEY
 delete process.env.NEXABOT_MASTER_KEY_MODE
@@ -74,7 +74,7 @@ function aturAkun(utama: { key: string | null; cookie: string | null }, tambahan
 
 async function post(body: unknown, headers: Record<string, string> = {}) {
   resetNexabotLaneJobs()
-  const res = await originalFetch(`${base}/api/public/nexabot/seedance`, {
+  const res = await originalFetch(`${base}/api/public/nexabot/nexadance`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify(body),
@@ -126,11 +126,11 @@ after(async () => {
   }
 })
 
-test('/seedance mengirim API key akun, bukan cookie sesi server', async () => {
+test('/nexadance mengirim API key akun, bukan cookie sesi server', async () => {
   aturAkun({ key: KUNCI_UTAMA, cookie: COOKIE_UTAMA }, [])
-  antrean.push(() => jsonResponse({ ok: true, job_id: 'sd-1', status: 'queued' }, 202))
+  antrean.push(() => jsonResponse({ ok: true, job_id: 'nd-1', status: 'queued' }, 202))
 
-  const res = await post({ prompt: 'x', duration: 15 }, { Authorization: tokenAdmin() })
+  const res = await post({ prompt: 'x', duration: 20 }, { Authorization: tokenAdmin() })
 
   assert.equal(res.status, 202)
   assert.equal(panggilan.length, 1, 'satu request: tidak ada 401 lalu percobaan ulang')
@@ -138,14 +138,14 @@ test('/seedance mengirim API key akun, bukan cookie sesi server', async () => {
   assert.equal(panggilan[0].headers.cookie, undefined, 'endpoint ini menolak sesi cookie')
 })
 
-test('/seedance: kunci akun ditolak → kunci akun pool lain, dan poll lanjut di akun itu', async () => {
+test('/nexadance: kunci akun ditolak → kunci akun pool lain, dan poll lanjut di akun itu', async () => {
   aturAkun({ key: 'kunci-sudah-dicabut', cookie: null }, [{ id: 'acc_2', key: KUNCI_AKUN2 }])
   antrean.push(
     () => jsonResponse({ ok: false, error: 'API key tidak valid' }, 401),
-    () => jsonResponse({ ok: true, job_id: 'sd-2', status: 'queued' }, 202),
+    () => jsonResponse({ ok: true, job_id: 'nd-2', status: 'queued' }, 202),
   )
 
-  const res = await post({ prompt: 'x', duration: 15 }, { Authorization: tokenAdmin() })
+  const res = await post({ prompt: 'x', duration: 20 }, { Authorization: tokenAdmin() })
 
   assert.equal(res.status, 202)
   assert.equal(panggilan.length, 2)
@@ -154,19 +154,19 @@ test('/seedance: kunci akun ditolak → kunci akun pool lain, dan poll lanjut di
 
   // Job lahir di akun cadangan → poll harus langsung memakai kuncinya.
   panggilan = []
-  antrean.push(() => jsonResponse({ ok: true, job: { id: 'sd-2', status: 'processing' } }))
-  const poll = await get('/api/public/nexabot/seedance/sd-2', { Authorization: tokenAdmin() })
+  antrean.push(() => jsonResponse({ ok: true, job: { id: 'nd-2', status: 'processing' } }))
+  const poll = await get('/api/public/nexabot/nexadance/nd-2', { Authorization: tokenAdmin() })
 
   assert.equal(poll.status, 200)
   assert.equal(panggilan.length, 1, 'tanpa 401 berulang di setiap poll')
   assert.equal(panggilan[0].headers['x-api-key'], KUNCI_AKUN2)
 })
 
-test('/seedance/:id dengan cookie sesi server tetap memakai API key', async () => {
+test('/nexadance/:id dengan cookie sesi server tetap memakai API key', async () => {
   aturAkun({ key: KUNCI_UTAMA, cookie: COOKIE_UTAMA }, [])
-  antrean.push(() => jsonResponse({ ok: true, job: { id: 'sd-3', status: 'processing' } }))
+  antrean.push(() => jsonResponse({ ok: true, job: { id: 'nd-3', status: 'processing' } }))
 
-  const res = await get('/api/public/nexabot/seedance/sd-3', {
+  const res = await get('/api/public/nexabot/nexadance/nd-3', {
     Authorization: tokenAdmin(),
     'X-Nexabot-Cookie': COOKIE_UTAMA,
   })

@@ -37,7 +37,7 @@ import {
   reserveChargeTicket,
 } from '../lib/nexabotChargeTicket.js'
 import { hasActiveUnlimited } from '../lib/nexabotMasterKey.js'
-import { seedanceQuota, seedanceQuotaMessage } from '../lib/nexabotQuota.js'
+import { nexadanceQuota, nexadanceQuotaMessage } from '../lib/nexabotQuota.js'
 import { recordUpstreamUsage, userIdFromRequest, type ResolvedCredential } from '../lib/nexabotUpstreamUsage.js'
 import { getNexabotSubmitQueueConfig } from '../lib/nexabotQueueSettings.js'
 
@@ -45,6 +45,12 @@ const router = Router()
 // Bisa diarahkan ke host lain: tes menembak upstream tiruan, dan operator bisa
 // memakainya untuk staging. Tanpa env, perilakunya sama seperti sebelumnya.
 const NEXABOT_BASE = (process.env.NEXABOT_BASE || 'https://nexabot.id').replace(/\/+$/, '')
+
+/**
+ * Id model video premium NexaBot (rebrand dari Seedance 2.5). Durasi, resolusi,
+ * dan harga ditentukan upstream: 20 detik, 720p, 0,5 kredit per video.
+ */
+const NEXADANCE_MODEL = 'nexadance_3_0'
 
 /** Hasil relay yang dilihat rute: status + body mentah + kredensial terpakai. */
 interface RelayHasil {
@@ -220,7 +226,7 @@ async function relayUpstream(
           // Hanya rute yang memotong saldo yang boleh menjanjikan refund.
           error:
             'Akses NexaBot milik server ditolak penyedia (bukan kredensial Anda). ' +
-            (action === 'submit' || action === 'gpt-image' || action === 'seedance'
+            (action === 'submit' || action === 'gpt-image' || action === 'nexadance'
               ? 'Saldo yang terpotong dikembalikan otomatis — hubungi admin.'
               : 'Coba lagi nanti; bila berulang, hubungi admin.'),
         })
@@ -404,7 +410,7 @@ function bolehBacaDenganKunciInduk(req: Request): { ok: boolean; reason: string 
  * sebagai cadangan.
  *
  * `kunciSaja` membalik urutan itu untuk endpoint yang MENOLAK sesi web
- * (/api/v1/seedance/*, /api/v1/api/credit): cookie di sana dijawab 401
+ * (/api/v1/alt-video/*, /api/v1/api/credit): cookie di sana dijawab 401
  * "API key tidak valid", jadi memakainya lebih dulu berarti setiap request
  * membayar satu 401 plus satu percobaan ulang.
  */
@@ -765,7 +771,7 @@ interface TiketHasil {
   reason?: string
 }
 
-function tiketServer(req: Request, auth: ResolvedUpstreamAuth, route: 'submit' | 'gpt-image' | 'seedance'): TiketHasil {
+function tiketServer(req: Request, auth: ResolvedUpstreamAuth, route: 'submit' | 'gpt-image' | 'nexadance'): TiketHasil {
   const sumber = auth.credential?.source
   if (sumber !== 'master' && sumber !== 'client-master') return { ok: true, usageId: null }
 
@@ -1261,8 +1267,8 @@ router.get('/job/:id', async (req: Request, res: Response) => {
 /**
  * Teruskan unduhan hasil upstream ke klien (streaming).
  *
- * Dipakai rute video biasa (`/download/:id`) dan Seedance
- * (`/seedance/:id/download`) — bentuk respons keduanya sama: bisa JSON error
+ * Dipakai rute video biasa (`/download/:id`) dan NexaDance
+ * (`/nexadance/:id/download`) — bentuk respons keduanya sama: bisa JSON error
  * atau biner file, dan job yang berhasil diunduh berarti lane akun boleh lepas.
  */
 async function streamHasilJob(
@@ -1458,25 +1464,14 @@ router.post('/save/:id', authenticateToken, async (req: AuthRequest, res: Respon
   await simpanHasilJob(req, res, jobId, `${NEXABOT_BASE}/api/v1/jobs/${jobId}/download`)
 })
 
-// ── Seedance 2.5 (15 / 30 detik) ────────────────────────────────────────
-// Endpoint khusus yang selalu menagih kredit (0,2/video) — paket Unlimited web
+// ── NexaDance 3.0 (20 detik, 720p, audio) ───────────────────────────────
+// Endpoint khusus yang selalu menagih kredit (0,5/video) — paket Unlimited web
 // tidak berlaku. Submit hanya memasukkan job ke antrean batch 60 detik, jadi
 // klien langsung mendapat job_id + posisi antrean. Alur baca/unduh/simpan
-// memakai pola yang sama dengan job video biasa, hanya path upstream berbeda.
-router.post('/seedance', async (req: Request, res: Response) => {
-  // Gate paket: Seedance 2.5 hanya untuk member dengan paket aktif
-  // (Premium Booster / Unlimited) — saldo NexaBot TIDAK membebaskan Seedance
-  // (saldo hanya untuk Omni Flash 1.1), begitu pula API key pribadi: alur
-  // ini ditegakkan di relay supaya tidak bisa dilewati dari browser. Admin
-  // bebas karena kredensial server miliknya.
+// memakai pola yang sama dengan job video biasa, hanya path upstream berbeda
+// (`/api/v1/alt-video/*`, menggantikan `/api/v1/seedance` yang sudah 404).
+router.post('/nexadance', async (req: Request, res: Response) => {
   const gateUserId = userIdFromRequest(req)
-  const berhakSeedance = !!gateUserId && (isAdminUser(gateUserId) || hasActiveUnlimited(gateUserId))
-  if (!berhakSeedance) {
-    return res.status(403).json({
-      ok: false,
-      error: 'Seedance 2.5 hanya untuk member dengan Paket Premium Booster/Unlimited aktif — saldo NexaBot hanya berlaku untuk Omni Flash 1.1.',
-    })
-  }
   const auth = resolveUpstreamAuth(req, { membuatJob: true, kunciSaja: true })
   if (auth.antrean) {
     return res.status(429).json({
@@ -1489,47 +1484,68 @@ router.post('/seedance', async (req: Request, res: Response) => {
   if (Object.keys(auth.headers).length === 0) {
     return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key header' })
   }
-  // Kuota harian hanya berlaku saat kredensial server yang dipakai: di situlah
-  // kredit operator (0,2/video) benar-benar terbakar. Member yang menempel API
-  // key sendiri tidak dibatasi. Ditegakkan juga di /deduct supaya klien berhenti
-  // sebelum submit; di sini supaya tidak bisa dilewati dari browser.
-  if (auth.credential?.source === 'master' && gateUserId && !isAdminUser(gateUserId)) {
-    const kuota = seedanceQuota(gateUserId)
-    if (kuota.habis) {
-      return res.status(429).json({ ok: false, error: seedanceQuotaMessage(kuota), quota: kuota })
+  // Gate paket hanya untuk generate yang dibayar kredensial SERVER: di situ
+  // kredit operator (0,5/video) yang terbakar, jadi NexaDance 3.0 harus paket
+  // aktif (Premium Booster / Unlimited) — admin bebas karena kreditornya sendiri.
+  // Member yang menempel API key pribadi membayar kreditnya sendiri, jadi tidak
+  // ikut digerbangi di sini; aturan produknya tetap ditegakkan /deduct supaya
+  // UI/alur biasa tidak bisa dilewati dari browser.
+  const pakaiKredensialServer = auth.credential?.source === 'master' || auth.credential?.source === 'client-master'
+  if (pakaiKredensialServer) {
+    const berhakNexadance = !!gateUserId && (isAdminUser(gateUserId) || hasActiveUnlimited(gateUserId))
+    if (!berhakNexadance) {
+      return res.status(403).json({
+        ok: false,
+        error: 'NexaDance 3.0 hanya untuk member dengan Paket Premium Booster/Unlimited aktif — saldo NexaBot hanya berlaku untuk Omni Flash 1.1.',
+      })
     }
   }
-  const tiket = tiketServer(req, auth, 'seedance')
+  // Kuota harian hanya berlaku saat kredensial server yang dipakai: di situlah
+  // kredit operator (0,5/video) benar-benar terbakar. Member yang menempel API
+  // key sendiri tidak dibatasi. Ditegakkan juga di /deduct supaya klien berhenti
+  // sebelum submit; di sini supaya tidak bisa dilewati dari browser.
+  if (pakaiKredensialServer && gateUserId && !isAdminUser(gateUserId)) {
+    const kuota = nexadanceQuota(gateUserId)
+    if (kuota.habis) {
+      return res.status(429).json({ ok: false, error: nexadanceQuotaMessage(kuota), quota: kuota })
+    }
+  }
+  const tiket = tiketServer(req, auth, 'nexadance')
   if (!tiket.ok) {
     lepasReservasi(auth.accountId)
     return res.status(tiket.status ?? 402).json({ ok: false, error: tiket.reason })
   }
 
   const body = req.body
-  const durasi = Number(body?.duration)
+  const durasi = body?.duration == null ? 20 : Number(body.duration)
   if (!body?.prompt || String(body.prompt).trim().length === 0) {
     lepasReservasi(auth.accountId)
     if (tiket.usageId) releaseChargeTicket(tiket.usageId)
-    return res.status(400).json({ ok: false, error: 'Seedance 2.5 butuh prompt' })
+    return res.status(400).json({ ok: false, error: 'NexaDance 3.0 butuh prompt' })
   }
-  if (durasi !== 15 && durasi !== 30) {
+  if (durasi !== 20) {
     lepasReservasi(auth.accountId)
     if (tiket.usageId) releaseChargeTicket(tiket.usageId)
-    return res.status(400).json({ ok: false, error: 'Durasi Seedance 2.5 hanya 15 atau 30 detik' })
+    return res.status(400).json({ ok: false, error: 'Durasi NexaDance 3.0 hanya 20 detik' })
   }
-  console.log(`[nexabot-local] POST /api/v1/seedance (durasi: ${durasi}, ratio: ${body.ratio ?? '-'})`)
+  // Upstream hanya menerima ratio angka: 1 = 16:9, 2 = 9:16.
+  const ratio = body.ratio === 2 || body.ratio === '9:16' ? 2 : 1
+  const media = Array.isArray(body.media) ? body.media.slice(0, 1) : []
+  console.log(`[nexabot-local] POST /api/v1/alt-video/generate (NexaDance 3.0, ${durasi}s, ratio ${ratio}, media ${media.length})`)
 
   const upstreamBody: Record<string, any> = {
+    // Mode sfv dipakai kalau ada start frame; upstream memilih pipeline-nya dari sini.
+    mode: media.length > 0 ? 'sfv' : 't2v',
+    model: NEXADANCE_MODEL,
     prompt: String(body.prompt).slice(0, 2000),
-    duration: durasi,
+    duration: 20,
+    ratio,
   }
-  if (body.ratio !== undefined) upstreamBody.ratio = body.ratio
-  // Maksimal 1 gambar start frame; bila ada, upstream otomatis memakai sfv.
-  if (Array.isArray(body.media) && body.media.length > 0) upstreamBody.media = body.media.slice(0, 1)
+  if (media.length > 0) upstreamBody.media = media
   if (body.telegram_id) upstreamBody.telegram_id = body.telegram_id
 
-  // Tanpa retry, sama alasannya dengan /submit: job & kredit 0,2 tidak boleh ganda.
-  const hasil = await relayUpstream(res, 'seedance', `${NEXABOT_BASE}/api/v1/seedance`, {
+  // Tanpa retry, sama alasannya dengan /submit: job & kredit 0,5 tidak boleh ganda.
+  const hasil = await relayUpstream(res, 'nexadance', `${NEXABOT_BASE}/api/v1/alt-video/generate`, {
     method: 'POST',
     headers: {
       ...auth.headers,
@@ -1543,7 +1559,7 @@ router.post('/seedance', async (req: Request, res: Response) => {
     if (tiket.usageId) selesaikanTiket(tiket.usageId, hasil.status, hasil.text)
     if (!hasil.antreanPenuh) recordUpstreamUsage({
       req,
-      route: 'seedance',
+      route: 'nexadance',
       statusCode: hasil.status,
       bodyText: hasil.text,
       credential:
@@ -1554,8 +1570,8 @@ router.post('/seedance', async (req: Request, res: Response) => {
   }
 })
 
-// ── Poll status Seedance (read-only) ──
-router.get('/seedance/:id', async (req: Request, res: Response) => {
+// ── Poll status NexaDance 3.0 (read-only) ──
+router.get('/nexadance/:id', async (req: Request, res: Response) => {
   const jobId = String(req.params.id || '')
   const auth = resolveUpstreamAuth(req, { bacaSaja: true, jobId, kunciSaja: true })
   if (Object.keys(auth.headers).length === 0) {
@@ -1566,8 +1582,8 @@ router.get('/seedance/:id', async (req: Request, res: Response) => {
   }
 
   const idPath = encodeURIComponent(jobId)
-  console.log(`[nexabot-local] GET /api/v1/seedance/${idPath}`)
-  const hasil = await relayUpstream(res, 'job', `${NEXABOT_BASE}/api/v1/seedance/${idPath}`, {
+  console.log(`[nexabot-local] GET /api/v1/alt-video/jobs/${idPath}`)
+  const hasil = await relayUpstream(res, 'job', `${NEXABOT_BASE}/api/v1/alt-video/jobs/${idPath}`, {
     method: 'GET',
     headers: {
       ...auth.headers,
@@ -1578,8 +1594,8 @@ router.get('/seedance/:id', async (req: Request, res: Response) => {
   if (hasil && hasil.status === 404) lupakanAkunJob(jobId)
 })
 
-// ── Download hasil Seedance ──
-router.get('/seedance/:id/download', async (req: Request, res: Response) => {
+// ── Download hasil NexaDance 3.0 ──
+router.get('/nexadance/:id/download', async (req: Request, res: Response) => {
   const jobId = String(req.params.id || '')
   const auth = resolveUpstreamAuth(req, { bacaSaja: true, jobId, kunciSaja: true })
   if (Object.keys(auth.headers).length === 0) {
@@ -1593,17 +1609,17 @@ router.get('/seedance/:id/download', async (req: Request, res: Response) => {
   await streamHasilJob(
     res,
     jobId,
-    `${NEXABOT_BASE}/api/v1/seedance/${idPath}/download`,
-    `nexabot-seedance-${jobId}.mp4`,
+    `${NEXABOT_BASE}/api/v1/alt-video/jobs/${idPath}/download`,
+    `nexabot-nexadance-${jobId}.mp4`,
     auth.headers,
   )
 })
 
-// ── Simpan hasil Seedance permanen (sisi server) ──
-router.post('/seedance/:id/save', authenticateToken, async (req: AuthRequest, res: Response) => {
+// ── Simpan hasil NexaDance 3.0 permanen (sisi server) ──
+router.post('/nexadance/:id/save', authenticateToken, async (req: AuthRequest, res: Response) => {
   const jobId = String(req.params.id || '')
   const idPath = encodeURIComponent(jobId)
-  await simpanHasilJob(req, res, jobId, `${NEXABOT_BASE}/api/v1/seedance/${idPath}/download`, {
+  await simpanHasilJob(req, res, jobId, `${NEXABOT_BASE}/api/v1/alt-video/jobs/${idPath}/download`, {
     kunciSaja: true,
   })
 })

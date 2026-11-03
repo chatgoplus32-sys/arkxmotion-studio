@@ -23,7 +23,7 @@ import {
   findNexabotPackage,
   findSeaviPackage,
   getSeaviCharge,
-  isSeedanceModelName,
+  isNexadanceModelName,
   isBoosterPackage,
   isBoosterModelName,
   nexabotPackageName,
@@ -118,19 +118,21 @@ test('katalog: Premium Booster = Rp 15.000 / 1 hari, scope booster', () => {
   assert.equal(isBoosterPackage(undefined), false)
   assert.equal(isBoosterPackage('unlimited_monthly'), false)
 
-  for (const model of ['seedance', 'seedance-2.5', 'nb:seedance', 'SEEDANCE']) {
-    assert.equal(isSeedanceModelName(model), true, `${model} harus dikenali sebagai Seedance`)
+  // 'seedance*' tetap dikenali: baris usage lama sebelum rebrand harus masuk
+  // jatah harian yang sama, bukan dianggap jatah baru.
+  for (const model of ['nexadance', 'nexadance_3_0', 'nb:nexadance', 'NEXADANCE', 'seedance', 'seedance-2.5', 'nb:seedance']) {
+    assert.equal(isNexadanceModelName(model), true, `${model} harus dikenali sebagai NexaDance`)
   }
   for (const model of ['t2v', 'i2v', 'r2v', 'sfv', 'extend', 'music', '', undefined, null]) {
-    assert.equal(isSeedanceModelName(model), false, `${model} bukan Seedance`)
+    assert.equal(isNexadanceModelName(model), false, `${model} bukan NexaDance`)
   }
 })
 
-test('Booster membebaskan tiga keluarga: Seedance 2.5, Omni Flash 1.1, GPT Image', () => {
+test('Booster membebaskan tiga keluarga: NexaDance 3.0, Omni Flash 1.1, GPT Image', () => {
   assert.deepEqual(NEXABOT_OMNI_MODELS, ['t2v', 'sfv', 'i2v', 'r2v', 'extend'])
   assert.deepEqual(NEXABOT_IMAGE_MODELS, ['gpt-image', 'img'])
 
-  const gratis = ['seedance', 'seedance-2.5', 't2v', 'sfv', 'i2v', 'r2v', 'extend', 'gpt-image', 'img', 'nb:r2v', 'NB:GPT-IMAGE', 'Seedance']
+  const gratis = ['nexadance', 'nexadance_3_0', 'seedance', 'seedance-2.5', 't2v', 'sfv', 'i2v', 'r2v', 'extend', 'gpt-image', 'img', 'nb:r2v', 'NB:GPT-IMAGE', 'NexaDance']
   for (const model of gratis) {
     assert.equal(isBoosterModelName(model), true, `${model} harus dibebaskan Booster`)
   }

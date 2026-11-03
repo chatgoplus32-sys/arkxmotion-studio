@@ -1,6 +1,6 @@
 // ─── Hasil job tidak boleh hilang karena sesi app mati di tengah job ────────
 //
-// Kejadian produksi 2026-11-01: generate Seedance 30d menit jalan, tab browser
+// Kejadian produksi 2026-11-01: generate video 30 menit jalan, tab browser
 // dibekukan (Memory Saver) sehingga tick perpanjangan sesi di App.tsx tidak
 // pernah jalan. Access token app cuma 15 menit. Saat tab hidup lagi, poll
 // berikutnya dijawab relay 400 "Kunci NexaBot milik server hanya untuk member
@@ -65,7 +65,7 @@ function aturAkun(kunci: string) {
 }
 
 async function post(body: unknown, headers: Record<string, string> = {}) {
-  const res = await originalFetch(`${base}/api/public/nexabot/seedance`, {
+  const res = await originalFetch(`${base}/api/public/nexabot/nexadance`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify(body),
@@ -80,7 +80,7 @@ async function get(pathUrl: string, headers: Record<string, string> = {}) {
   return { status: res.status, body: text ? JSON.parse(text) : undefined }
 }
 
-const token = (opts: { expiresIn: string }) => `Bearer ${jwt.sign({ id: ADMIN_ID }, JWT_SECRET, opts)}`
+const token = (opts: jwt.SignOptions) => `Bearer ${jwt.sign({ id: ADMIN_ID }, JWT_SECRET, opts)}`
 
 before(async () => {
   db.prepare('DELETE FROM users WHERE id = ? OR email = ?').run(ADMIN_ID, 'admin@test.local')
@@ -117,15 +117,15 @@ after(async () => {
 
 test('poll job yang kita buat sendiri tetap jalan walau token app kedaluwarsa', async () => {
   aturAkun(KUNCI_UTAMA)
-  antrean.push(() => jsonResponse({ ok: true, job_id: 'sd-9', status: 'queued' }, 202))
+  antrean.push(() => jsonResponse({ ok: true, job_id: 'nd-9', status: 'queued' }, 202))
 
-  const submit = await post({ prompt: 'x', duration: 15 }, { Authorization: token({ expiresIn: '15m' }) })
+  const submit = await post({ prompt: 'x', duration: 20 }, { Authorization: token({ expiresIn: '15m' }) })
   assert.equal(submit.status, 202)
 
   // 9 menit kemudian (token 15m sudah mati, tab sempat dibekukan browser).
   panggilan = []
-  antrean.push(() => jsonResponse({ ok: true, job: { id: 'sd-9', status: 'processing' } }))
-  const poll = await get('/api/public/nexabot/seedance/sd-9', { Authorization: token({ expiresIn: '-1s' }) })
+  antrean.push(() => jsonResponse({ ok: true, job: { id: 'nd-9', status: 'processing' } }))
+  const poll = await get('/api/public/nexabot/nexadance/nd-9', { Authorization: token({ expiresIn: '-1s' }) })
 
   assert.equal(poll.status, 200, 'hasil yang sudah dibayar tidak boleh hilang karena sesi app')
   assert.equal(panggilan[0].headers['x-api-key'], KUNCI_UTAMA, 'dibaca lewat akun pembuat jobnya')
@@ -133,12 +133,12 @@ test('poll job yang kita buat sendiri tetap jalan walau token app kedaluwarsa', 
 
 test('download job yang diingat juga lolos dari token kedaluwarsa', async () => {
   aturAkun(KUNCI_UTAMA)
-  antrean.push(() => jsonResponse({ ok: true, job_id: 'sd-8', status: 'queued' }, 202))
-  await post({ prompt: 'x', duration: 15 }, { Authorization: token({ expiresIn: '15m' }) })
+  antrean.push(() => jsonResponse({ ok: true, job_id: 'nd-8', status: 'queued' }, 202))
+  await post({ prompt: 'x', duration: 20 }, { Authorization: token({ expiresIn: '15m' }) })
 
   panggilan = []
   antrean.push(() => new Response(Buffer.from('video'), { status: 200, headers: { 'Content-Type': 'video/mp4' } }))
-  const dl = await originalFetch(`${base}/api/public/nexabot/seedance/sd-8/download`, {
+  const dl = await originalFetch(`${base}/api/public/nexabot/nexadance/nd-8/download`, {
     headers: { Authorization: token({ expiresIn: '-1s' }) },
   })
 
@@ -149,7 +149,7 @@ test('download job yang diingat juga lolos dari token kedaluwarsa', async () => 
 test('job yang tidak dikenal relay tetap butuh identitas — kelonggarannya terbatas', async () => {
   aturAkun(KUNCI_UTAMA)
 
-  const res = await get('/api/public/nexabot/seedance/bukan-job-kita', { Authorization: token({ expiresIn: '-1s' }) })
+  const res = await get('/api/public/nexabot/nexadance/bukan-job-kita', { Authorization: token({ expiresIn: '-1s' }) })
 
   assert.equal(res.status, 400)
   assert.match(String(res.body?.error), /member yang login/)

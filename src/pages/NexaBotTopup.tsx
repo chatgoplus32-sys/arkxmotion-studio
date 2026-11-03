@@ -55,7 +55,7 @@ export default function NexaBotTopupPage() {
   const packages = wallet?.packages?.length ? wallet.packages : NEXABOT_PACKAGE_FALLBACKS
   const pkg = packages.find((p) => p.slug === selectedSlug) || packages[0]
   const unlimited = wallet?.unlimited
-  // Premium Booster (ber-scope) membebaskan Seedance 2.5 + Omni + GPT Image;
+  // Premium Booster (ber-scope) membebaskan NexaDance 3.0 + Omni + GPT Image;
   // server yang memutus tagihan, halaman ini hanya memisahkan label & antrian
   // per kelas.
   const paketSemuaMode = packages.filter((p) => !isBoosterPackage(p.slug))
@@ -181,7 +181,7 @@ export default function NexaBotTopupPage() {
         eyebrow="NexaBot"
         title="Top Up &"
         highlight="Paket"
-        desc={`Saldo ${formatRp(wallet?.price ?? NEXABOT_PRICE_FALLBACK)}/generate, atau Unlimited semua mode mulai ${formatRp(hargaUnlimitedMulai)}${paketBooster.length ? ` — Premium Booster (Seedance 2.5 + Omni + GPT Image) ${formatRp(paketBooster[0].price)}/hari` : ''}`}
+        desc={`Saldo ${formatRp(wallet?.price ?? NEXABOT_PRICE_FALLBACK)}/generate, atau Unlimited semua mode mulai ${formatRp(hargaUnlimitedMulai)}${paketBooster.length ? ` — Premium Booster (NexaDance 3.0 + Omni + GPT Image) ${formatRp(paketBooster[0].price)}/hari` : ''}`}
       />
 
       {/* Saldo + status paket */}
@@ -218,14 +218,14 @@ export default function NexaBotTopupPage() {
         )}
         {!unlimited?.active && boosterPass?.active && (
           <div className="mt-2 text-[11px] text-emerald-500">
-            Premium Booster berlaku sampai {formatDate(boosterPass.expires_at)} — Seedance 2.5, Omni Flash 1.1 &amp; GPT Image gratis,
+            Premium Booster berlaku sampai {formatDate(boosterPass.expires_at)} — NexaDance 3.0, Omni Flash 1.1 &amp; GPT Image gratis,
             music/tts tetap memotong {formatRp(wallet?.price ?? NEXABOT_PRICE_FALLBACK)}/generate.
           </div>
         )}
       </div>
 
       {/* Paket Unlimited — semua varian dari server, bisa dipilih user */}
-      <Section title="Paket Unlimited" sub="Pilih masa berlaku — paket reguler membebaskan semua mode, Premium Booster membebaskan Seedance 2.5 + Omni + GPT Image">
+      <Section title="Paket Unlimited" sub="Pilih masa berlaku — paket reguler membebaskan semua mode, Premium Booster membebaskan NexaDance 3.0 + Omni + GPT Image">
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {packages.map((p) => {
             const selected = p.slug === pkg.slug
@@ -245,7 +245,7 @@ export default function NexaBotTopupPage() {
                 </div>
                 <div className="mt-2 text-2xl font-bold text-primary">{formatRp(p.price)}</div>
                 <div className="text-[11px] text-muted-foreground">
-                  {booster ? 'Seedance 2.5 + Omni + GPT Image' : 'Semua mode NexaBot'}
+                  {booster ? 'NexaDance 3.0 + Omni + GPT Image' : 'Semua mode NexaBot'}
                   {' · '}≈ {formatRp(Math.round(p.price / Math.max(1, p.days)))}/hari
                 </div>
                 <div className={`mt-2 text-[11px] font-medium ${booster && NEXABOT_BOOSTER_COMING_SOON ? 'text-amber-500' : selected ? 'text-primary' : 'text-transparent'}`}>
@@ -267,7 +267,7 @@ export default function NexaBotTopupPage() {
               <ul className="mt-3 space-y-1 text-xs text-muted-foreground">
                 {sedangBooster ? (
                   <>
-                    <li>• Seedance 2.5, Omni Flash 1.1 &amp; GPT Image tanpa batas selama masa berlaku</li>
+                    <li>• NexaDance 3.0, Omni Flash 1.1 &amp; GPT Image tanpa batas selama masa berlaku</li>
                     <li>• Music dan TTS tetap {formatRp(wallet?.price ?? NEXABOT_PRICE_FALLBACK)}/generate dari saldo</li>
                     <li>• Bisa dipakai bersamaan dengan Paket Unlimited reguler</li>
                   </>
@@ -428,7 +428,7 @@ export default function NexaBotTopupPage() {
             </div>
             <div className="text-sm text-muted-foreground mb-4">
               {mode === 'package'
-                ? `Paket ${namaPaketIni} aktif otomatis setelah admin menyetujui pembayaran.${sedangBooster ? ' Seedance 2.5, Omni Flash 1.1 & GPT Image gratis; music/tts tetap memotong saldo.' : ''}`
+                ? `Paket ${namaPaketIni} aktif otomatis setelah admin menyetujui pembayaran.${sedangBooster ? ' NexaDance 3.0, Omni Flash 1.1 & GPT Image gratis; music/tts tetap memotong saldo.' : ''}`
                 : 'Saldo masuk otomatis setelah admin menyetujui pembayaran.'}
               <br />Hubungi admin jika sudah transfer.
             </div>

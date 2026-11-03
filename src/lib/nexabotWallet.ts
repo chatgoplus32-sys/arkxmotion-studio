@@ -46,7 +46,7 @@ export const NEXABOT_PACKAGE_FALLBACKS: NexabotPackage[] = [
 ]
 
 /**
- * Slug paket Booster — membebaskan Seedance 2.5 + Omni Flash 1.1 + GPT Image,
+ * Slug paket Booster — membebaskan NexaDance 3.0 + Omni Flash 1.1 + GPT Image,
  * bukan music/tts. Server punya daftar yang sama (derived dari scope katalog)
  * dan itulah yang menentukan tagihan; klien hanya perlu ini untuk menulis label
  * yang jujur.
@@ -64,7 +64,7 @@ export function isBoosterPackage(slug: string | null | undefined): boolean {
 /**
  * Cermin daftar server (shared/pricing.ts): mode yang dibebaskan Premium
  * Booster. `model` di sini adalah string yang sama dengan yang dikirim ke
- * /deduct — 'seedance', lima mode Omni, atau 'gpt-image'/'img'. UI memakainya
+ * /deduct — 'nexadance', lima mode Omni, atau 'gpt-image'/'img'. UI memakainya
  * untuk menampilkan badge di mode yang tepat; yang menagih tetap server.
  */
 export const NEXABOT_BOOSTER_OMNI_MODELS = ['t2v', 'sfv', 'i2v', 'r2v', 'extend']
@@ -72,26 +72,25 @@ export const NEXABOT_BOOSTER_IMAGE_MODELS = ['gpt-image', 'img']
 
 export function isBoosterModelName(model: string | null | undefined): boolean {
   const mentah = String(model || '').toLowerCase()
-  if (/seedance/.test(mentah)) return true
+  if (/nexadance|seedance/.test(mentah)) return true
   const inti = mentah.includes(':') ? (mentah.split(':').pop() || '') : mentah
   return NEXABOT_BOOSTER_OMNI_MODELS.includes(inti) || NEXABOT_BOOSTER_IMAGE_MODELS.includes(inti)
 }
 
 /** Tiga keluarga yang dibebaskan Booster — satu sumber untuk semua copy UI. */
-export const NEXABOT_BOOSTER_COVERAGE = ['Seedance 2.5', 'Omni Flash 1.1', 'GPT Image 2.5']
+export const NEXABOT_BOOSTER_COVERAGE = ['NexaDance 3.0', 'Omni Flash 1.1', 'GPT Image 2.5']
 
 /**
- * Cermin `shared/pricing.ts` (NEXABOT_BOOSTER_COMING_SOON): Booster ditutup
- * sementara karena Seedance 2 tidak tersedia di provider. UI memakai ini untuk
- * menampilkan label "Coming soon" dan mematikan tombol beli; server tetap
- * menolak pengajuannya sendiri, jadi flag di klien hanya untuk tampilan.
- * Buka lagi = ubah keduanya ke false.
+ * Cermin `shared/pricing.ts` (NEXABOT_BOOSTER_COMING_SOON): penjualan Booster
+ * ditutup. UI memakai ini untuk menampilkan label "Coming soon" dan mematikan
+ * tombol beli; server tetap menolak pengajuannya sendiri, jadi flag di klien
+ * hanya untuk tampilan. Buka/tutup = ubah keduanya bersamaan.
  */
 export const NEXABOT_BOOSTER_COMING_SOON = true
 
 export const NEXABOT_BOOSTER_COMING_SOON_NOTE =
-  'Premium Booster ditutup sementara — Seedance 2 sedang tidak tersedia di provider. ' +
-  'Paket dibuka lagi setelah modelnya normal; Paket Unlimited semua mode tetap bisa dibeli.'
+  'Premium Booster sedang tidak dijual — Seedance 2.5 sudah tidak ada di provider. ' +
+  'Paket Unlimited semua mode tetap bisa dibeli.'
 
 /**
  * Apakah satu generate untuk model ini tidak memotong saldo? Server yang
@@ -159,14 +158,14 @@ export interface NexabotWallet {
   /** Semua varian paket yang bisa dipilih user. */
   packages: NexabotPackage[]
   /**
-   * Sisa jatah Seedance 2.5 hari ini (hari WIB). Ada karena paket membebaskan
+   * Sisa jatah NexaDance 3.0 hari ini (hari WIB). Ada karena paket membebaskan
    * rupiah member tetapi setiap video tetap menagih kredit akun NexaBot server;
    * relay menolak video ke-6 dst, jadi UI perlu bisa menampilkannya lebih dulu.
    */
-  seedance_quota?: NexabotSeedanceQuota
+  nexadance_quota?: NexabotNexadanceQuota
 }
 
-export interface NexabotSeedanceQuota {
+export interface NexabotNexadanceQuota {
   limit: number
   used: number
   remaining: number
@@ -241,7 +240,7 @@ export async function fetchNexabotWallet(token: string): Promise<NexabotWallet |
       packages,
       // Build server lama belum mengirim kuota; biarkan undefined dan UI
       // menampilkan status tanpa baris kuota.
-      seedance_quota: data.seedance_quota || undefined,
+      nexadance_quota: data.nexadance_quota || undefined,
     }
   } catch {
     return null
