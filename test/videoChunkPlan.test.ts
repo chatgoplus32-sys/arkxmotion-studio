@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { planClips, CLIP_SECONDS } from '../src/lib/videoChunks'
+import { planClips, normalizeTrim, isTrimmedRange, CLIP_SECONDS } from '../src/lib/videoChunks'
 
 // planClips adalah satu-satunya tempat jumlah klip — dan therefore jumlah
 // tiket yang dibayar member — ditentukan. Satu klip hilang = video hasil
@@ -61,4 +61,35 @@ test('planClips: durasi di bawah 10s tetap satu klip utuh', () => {
     assert.equal(specs.length, 1, `d=${d} tidak boleh dipecah`)
     assert.ok(Math.abs(specs[0].duration - d) < 0.011)
   }
+})
+
+// Rentang potong menentukan berapa detik yang BENAR-BENAR dibayar. Batas yang
+// salah di sini bisa menghasilkan generate 0 detik atau video yang lebih panjang
+// dari sumbernya.
+test('normalizeTrim: menjepit rentang ke durasi video dan minimal 1 detik', () => {
+  assert.deepEqual(normalizeTrim(60, 0, 60), { start: 0, end: 60 })
+  assert.deepEqual(normalizeTrim(60, -5, 999), { start: 0, end: 60 })
+  // Ujung mulai tidak boleh menyisakan kurang dari 1 detik.
+  assert.deepEqual(normalizeTrim(60, 59.8, 60), { start: 59, end: 60 })
+  // Ujung selesai tidak boleh lebih pendek dari 1 detik setelah mulai.
+  assert.deepEqual(normalizeTrim(60, 30, 30.2), { start: 30, end: 31 })
+  assert.deepEqual(normalizeTrim(60, 12, 20), { start: 12, end: 20 })
+})
+
+test('normalizeTrim: video sangat pendek tetap tidak menghasilkan durasi negatif', () => {
+  for (const d of [0, 0.4, 1]) {
+    const r = normalizeTrim(d, 0, d)
+    assert.equal(r.start, 0, `d=${d}`)
+    assert.ok(r.end >= 0 && r.end <= Math.max(d, 0) + 0.001, `d=${d} menghasilkan end ${r.end}`)
+  }
+})
+
+test('isTrimmedRange: hanya true kalau benar-benar memotong', () => {
+  assert.equal(isTrimmedRange(60, null), false)
+  assert.equal(isTrimmedRange(60, { start: 0, end: 60 }), false)
+  assert.equal(isTrimmedRange(60, { start: 0.01, end: 60 }), false)
+  assert.equal(isTrimmedRange(60, { start: 0, end: 59.9 }), false)
+  assert.equal(isTrimmedRange(60, { start: 5, end: 60 }), true)
+  assert.equal(isTrimmedRange(60, { start: 0, end: 45 }), true)
+  assert.equal(isTrimmedRange(60, { start: 5, end: 45 }), true)
 })

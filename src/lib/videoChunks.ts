@@ -25,6 +25,39 @@ export interface ClipSpec {
   duration: number
 }
 
+/** Rentang video sumber yang benar-benar diedit (detik). */
+export interface TrimRange {
+  start: number
+  end: number
+}
+
+/**
+ * Rapikan rentang pilihan user sebelum dipakai menghitung klip & biaya:
+ * dijepit ke durasi video, dan minimal `minSeconds` supaya tidak pernah ada
+ * generate untuk potongan 0 detik (satu tiket terbakar tanpa hasil).
+ */
+export function normalizeTrim(
+  duration: number,
+  start: number,
+  end: number,
+  minSeconds = 1
+): TrimRange {
+  const total = Math.max(0, Number(duration) || 0)
+  if (total <= minSeconds) return { start: 0, end: Number(total.toFixed(3)) }
+  const from = Math.min(Math.max(Number(start) || 0, 0), total - minSeconds)
+  const to = Math.min(Math.max(Number(end) || 0, from + minSeconds), total)
+  return { start: Number(from.toFixed(3)), end: Number(to.toFixed(3)) }
+}
+
+/**
+ * Apakah rentang ini benar-benar memotong, bukan seluruh video? Toleransi 0,1
+ * detik dipakai supaya sisa pembulatan slider tidak memicu potong sia-sia.
+ */
+export function isTrimmedRange(duration: number, range: TrimRange | null): boolean {
+  if (!range) return false
+  return range.start > 0.1 || range.end < duration - 0.1
+}
+
 export interface SplitProgress {
   (msg: string, pct?: number): void
 }
@@ -110,6 +143,51 @@ export async function splitVideoIntoClips(
     await ffmpeg.deleteFile(inputName).catch(() => {})
   }
   return clips
+}
+
+/**
+ * Potong satu rentang dari video sumber dan encode ulang dengan parameter yang
+ * sama dengan pemecah klip (resolusi, fps, sar, pix_fmt). Re-encode dipakai
+ * supaya titik potongnya presisi — `-c copy` hanya bisa memotong di keyframe
+ * terdekat, jadi pilihan user bisa bergeser sampai beberapa detik.
+ */
+export async function trimVideo(
+  file: File,
+  opts: { range: TrimRange; height?: number; fps?: number; onProgress?: SplitProgress }
+): Promise<File> {
+  const { range, height = 720, fps = 30, onProgress } = opts
+  const durasi = Math.max(0.1, range.end - range.start)
+  const ffmpeg = await getFFmpeg()
+  const stamp = Date.now()
+  const ext = (file.name.split('.').pop() || 'mp4').toLowerCase()
+  const inputName = `trim_in_${stamp}.${ext}`
+  const outName = `trim_${stamp}.mp4`
+
+  onProgress?.('Memuat video ke FFmpeg...', 2)
+  await ffmpeg.writeFile(inputName, await fetchFile(file))
+  try {
+    onProgress?.(`Memotong ${range.start}s → ${range.end}s...`, 25)
+    const bytes = await runOnce(ffmpeg, [
+      '-ss', String(range.start),
+      '-i', inputName,
+      '-t', String(Number(durasi.toFixed(3))),
+      '-vf', `scale=-2:'min(${height},ih)',fps=${fps},setsar=1`,
+      '-c:v', 'libx264',
+      '-preset', 'veryfast',
+      '-crf', '28',
+      '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac',
+      '-b:a', '96k',
+      '-avoid_negative_ts', 'make_zero',
+      '-movflags', '+faststart',
+      outName,
+    ], outName)
+    const potongan = toFile(bytes, `potongan_${range.start}-${range.end}s.mp4`)
+    onProgress?.(`Potongan siap (${(potongan.size / 1024 / 1024).toFixed(1)}MB)`, 100)
+    return potongan
+  } finally {
+    await ffmpeg.deleteFile(inputName).catch(() => {})
+  }
 }
 
 /**

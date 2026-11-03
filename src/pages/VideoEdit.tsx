@@ -37,7 +37,8 @@ import { runWithNexabotThrottleRetry, NexabotResultError } from '@/lib/nexabot'
 import { runNexabotJobWithSessionFallback } from './image-to-video/nexabotSessionFallback'
 import {
   planClips, splitVideoIntoClips, fetchVideoFile, joinEditedClips, lastFrameDataUri,
-  CLIP_SECONDS, type ClipSpec,
+  trimVideo, normalizeTrim, isTrimmedRange,
+  CLIP_SECONDS, type ClipSpec, type TrimRange,
 } from '@/lib/videoChunks'
 
 interface EditStyle {
@@ -129,6 +130,8 @@ const CHUNK_THRESHOLD_SEC = 15
 const MAX_CLIPS = 30
 const CLIP_CONCURRENCY = 3
 const CLIP_ATTEMPTS = 2
+// Panjang potongan terpendek yang masih masuk akal untuk dirender (dan dibayar).
+const MIN_TRIM_SECONDS = 1
 
 // Mode rantai (chained): klip dirender berurutan dan frame terakhir klip
 // sebelumnya ikut dikirim sebagai acuan. Lebih lambat, tapi hasilnya nyambung.
@@ -166,6 +169,10 @@ export default function VideoEditPage() {
   const [audioMode, setAudioMode] = useState<'original' | 'edited'>('original')
   const [chained, setChained] = useState(true)
   const [naskah, setNaskah] = useState('')
+  // Rentang yang diedit; null = seluruh video. Hanya bagian ini yang dipotong,
+  // dikirim, dan dibayar — jadi video 2 menit tidak harus dibayar penuh kalau
+  // yang dibutuhkan cuma 15 detik pembukanya.
+  const [trimRange, setTrimRange] = useState<TrimRange | null>(null)
   const [clipStates, setClipStates] = useState<ClipState[]>([])
 
   const [wallet, setWallet] = useState<NexabotWallet | null>(null)
@@ -210,6 +217,7 @@ export default function VideoEditPage() {
     setVideoFile(file)
     setVideoUrl(URL.createObjectURL(file))
     setMeta(null)
+    setTrimRange(null)
   }
 
   // Durasi baru terbaca setelah metadata video siap, jadi potong di sini:
@@ -222,6 +230,7 @@ export default function VideoEditPage() {
     }
     setMeta({ duration: el.duration, width: el.videoWidth, height: el.videoHeight })
     setRatio(el.videoWidth >= el.videoHeight ? '16:9' : '9:16')
+    setTrimRange(null)
   }
 
   const removeVideo = () => {
@@ -229,6 +238,7 @@ export default function VideoEditPage() {
     setVideoFile(null)
     setVideoUrl(null)
     setMeta(null)
+    setTrimRange(null)
     setClipStates([])
   }
 
@@ -252,11 +262,20 @@ export default function VideoEditPage() {
     return lines.join('\n')
   }, [selectedStyles, extra])
 
-  // Rencana pemotongan ditentukan dari durasi video sumber, jadi jumlah klip
-  // dan total biayanya bisa ditampilkan sebelum user menekan tombol.
+  // Rentang pilihan user, sudah dijepit ke durasi video dan minimal 1 detik.
+  const sourceDuration = meta?.duration ?? 0
+  const activeRange = useMemo<TrimRange | null>(
+    () => (meta ? normalizeTrim(meta.duration, trimRange?.start ?? 0, trimRange?.end ?? meta.duration) : null),
+    [meta, trimRange]
+  )
+  const isTrimmed = !!activeRange && isTrimmedRange(sourceDuration, activeRange)
+  const effectiveDuration = activeRange ? activeRange.end - activeRange.start : sourceDuration
+
+  // Rencana pemotongan ditentukan dari durasi yang BENAR-BENAR diedit, jadi
+  // jumlah klip dan total biayanya sudah memperhitungkan rentang pilihan.
   const clipSpecs = useMemo<ClipSpec[]>(
-    () => (meta && meta.duration > CHUNK_THRESHOLD_SEC ? planClips(meta.duration) : []),
-    [meta]
+    () => (effectiveDuration > CHUNK_THRESHOLD_SEC ? planClips(effectiveDuration) : []),
+    [effectiveDuration]
   )
   const isChunked = clipSpecs.length > 1
 
@@ -470,7 +489,7 @@ export default function VideoEditPage() {
     source: File,
     specs: ClipSpec[],
     jobPrompt: string,
-    ctx: AccessCtx & { isAdmin: boolean; authToken: string }
+    ctx: AccessCtx & { isAdmin: boolean; authToken: string; duration: number }
   ): Promise<string> => {
     const { isAdmin, authToken } = ctx
     const total = specs.length
@@ -604,7 +623,7 @@ export default function VideoEditPage() {
     }
 
     setStatus({ text: 'Menggabungkan klip hasil edit...', pct: 88 })
-    const joined = await joinEditedClips(editedFiles as File[], specs, source, meta?.duration ?? 0, {
+    const joined = await joinEditedClips(editedFiles as File[], specs, source, ctx.duration, {
       audioMode,
       onProgress: (msg, pct) => setStatus({ text: msg, pct: 92 + ((pct ?? 0) / 100) * 6 }),
     })
@@ -675,16 +694,32 @@ export default function VideoEditPage() {
         throw new Error('Belum ada akses NexaBot — top up NexaBot dulu atau tambahkan API key di halaman Providers.')
       }
 
+      // Potong dulu kalau user memilih sebagian saja: kompresi, pemecahan klip,
+      // dan biaya sesudahnya memakai potongan itu, bukan video penuh.
+      let sourceFile = videoFile
+      if (isTrimmed && activeRange) {
+        addLog(`✂️ Potong ${formatDuration(activeRange.start)}–${formatDuration(activeRange.end)} · ${formatDuration(effectiveDuration)} dari ${formatDuration(sourceDuration)}`)
+        setStatus({ text: 'Memotong bagian video...', pct: 3 })
+        sourceFile = await trimVideo(videoFile, {
+          range: activeRange,
+          height: Number(resolution),
+          onProgress: (msg, pct) => setStatus({ text: msg, pct: Math.min(11, Math.max(2, (pct ?? 0) / 12)) }),
+        })
+        addLog(`✅ Potongan siap (${formatSize(sourceFile.size)})`, 'success')
+      }
+
       let url: string
       // Biaya generate yang ditanggung paket dibayar kunci server, bukan API key
       // pribadi member (yang bisa kosong dan menggagalkan upstream).
       let gratisKarenaPaket = false
       if (isChunked) {
         if (clipSpecs.length > MAX_CLIPS) {
-          throw new Error(`Video ini terbagi jadi ${clipSpecs.length} klip — lewat batas ${MAX_CLIPS} klip. Potong durasinya dulu.`)
+          throw new Error(`Video ini terbagi jadi ${clipSpecs.length} klip — lewat batas ${MAX_CLIPS} klip. Persempit "Rentang yang diedit" dulu.`)
         }
         addLog(`💰 Estimasi biaya mode potong: ${clipSpecs.length} × ${gratisCurrentMode ? `gratis (${passLabel})` : formatRp(wallet?.price ?? NEXABOT_PRICE_FALLBACK)}`, 'info')
-        url = await runChunkedJob(videoFile, clipSpecs, prompt, { hasActiveKey, serverReady, isAdmin, authToken })
+        url = await runChunkedJob(sourceFile, clipSpecs, prompt, {
+          hasActiveKey, serverReady, isAdmin, authToken, duration: effectiveDuration,
+        })
       } else {
         if (!isAdmin) {
           const charge = await chargeNexabotWallet(authToken, 'r2v')
@@ -697,7 +732,7 @@ export default function VideoEditPage() {
         } else {
           addLog('⚡ Admin — skip saldo', 'info')
         }
-        url = await runSingleJob(videoFile, prompt, { hasActiveKey, serverReady, coveredByPackage: gratisKarenaPaket })
+        url = await runSingleJob(sourceFile, prompt, { hasActiveKey, serverReady, coveredByPackage: gratisKarenaPaket })
       }
 
       setResultUrl(url)
@@ -806,6 +841,65 @@ export default function VideoEditPage() {
                   <span>{videoFile ? formatSize(videoFile.size) : ''}</span>
                   {meta && <span>{meta.width}×{meta.height} · {formatDuration(meta.duration)}</span>}
                 </div>
+                {meta && meta.duration > MIN_TRIM_SECONDS && (
+                  <div className="rounded-xl border border-border bg-card/40 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-xs font-medium">Rentang yang diedit</div>
+                      <div className="text-[11px] text-muted-foreground">
+                        {formatDuration(activeRange?.start ?? 0)} → {formatDuration(activeRange?.end ?? meta.duration)} · {formatDuration(effectiveDuration)}
+                        {isTrimmed ? ` dari ${formatDuration(sourceDuration)}` : ' · seluruh video'}
+                      </div>
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      <label className="block">
+                        <span className="text-[11px] text-muted-foreground">Mulai</span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={Math.max(0, meta.duration - MIN_TRIM_SECONDS)}
+                          step={0.5}
+                          value={activeRange?.start ?? 0}
+                          onChange={(e) => {
+                            const start = Number(e.target.value)
+                            const end = Math.max(start + MIN_TRIM_SECONDS, activeRange?.end ?? meta.duration)
+                            setTrimRange(normalizeTrim(meta.duration, start, end))
+                          }}
+                          className="mt-1 w-full accent-primary"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="text-[11px] text-muted-foreground">Selesai</span>
+                        <input
+                          type="range"
+                          min={MIN_TRIM_SECONDS}
+                          max={meta.duration}
+                          step={0.5}
+                          value={activeRange?.end ?? meta.duration}
+                          onChange={(e) => {
+                            const end = Number(e.target.value)
+                            const start = Math.min(activeRange?.start ?? 0, Math.max(0, end - MIN_TRIM_SECONDS))
+                            setTrimRange(normalizeTrim(meta.duration, start, end))
+                          }}
+                          className="mt-1 w-full accent-primary"
+                        />
+                      </label>
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[11px] text-muted-foreground">
+                        Hanya bagian ini yang dikirim &amp; dibayar.
+                      </span>
+                      {isTrimmed && (
+                        <button
+                          type="button"
+                          onClick={() => setTrimRange(null)}
+                          className="text-[11px] font-medium text-primary hover:underline"
+                        >
+                          Pakai seluruh video
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <button
@@ -830,7 +924,7 @@ export default function VideoEditPage() {
                   Mode potong otomatis: {clipSpecs.length} klip × ±{CLIP_SECONDS} detik
                 </div>
                 <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-                  Video {formatDuration(meta?.duration ?? 0)} dipecah, tiap klip diedit terpisah lalu digabung kembali
+                  Video {formatDuration(effectiveDuration)} dipecah, tiap klip diedit terpisah lalu digabung kembali
                   menjadi satu utuh. Biayanya {gratisCurrentMode ? `gratis (${passLabel} aktif)` : `± ${formatRp(price * clipSpecs.length)} (${clipSpecs.length} × ${formatRp(price)})`}
                   {' '}dan prosesnya lebih lama.
                 </p>
