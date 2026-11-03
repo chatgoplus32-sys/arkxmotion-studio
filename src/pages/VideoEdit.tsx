@@ -314,6 +314,17 @@ export default function VideoEditPage() {
     setSelectedStyles((prev) => prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id])
   }
 
+  // Pilih/kosongkan satu kategori sekaligus. Kalau semua anggotanya sudah
+  // terpilih, tombolnya berbalik jadi "Kosongkan" — satu tombol untuk dua arah,
+  // supaya header kategori tidak penuh kontrol.
+  const toggleCategory = (ids: string[]) => {
+    setSelectedStyles((prev) => {
+      const semua = ids.every((id) => prev.includes(id))
+      if (semua) return prev.filter((id) => !ids.includes(id))
+      return [...prev, ...ids.filter((id) => !prev.includes(id))]
+    })
+  }
+
   const prompt = useMemo(() => {
     const chosen = EDIT_STYLES.filter((s) => selectedStyles.includes(s.id))
     if (chosen.length === 0 && !extra.trim()) return ''
@@ -1085,8 +1096,18 @@ export default function VideoEditPage() {
                         {cat.label}
                         <span className="ml-1.5 font-normal normal-case tracking-normal text-muted-foreground/70">{items.length} gaya</span>
                       </div>
-                      <div className="text-[11px] text-muted-foreground">
-                        {terpilih > 0 ? `${terpilih} dipilih · ${cat.sub}` : cat.sub}
+                      <div className="flex items-center gap-2">
+                        <div className="text-[11px] text-muted-foreground">
+                          {terpilih > 0 ? `${terpilih} dipilih · ${cat.sub}` : cat.sub}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => toggleCategory(items.map((s) => s.id))}
+                          aria-label={terpilih === items.length ? `Kosongkan semua gaya ${cat.label}` : `Pilih semua gaya ${cat.label}`}
+                          className="shrink-0 rounded-lg border border-border px-2 py-0.5 text-[10px] font-medium text-muted-foreground transition hover:border-primary/50 hover:text-primary"
+                        >
+                          {terpilih === items.length ? 'Kosongkan' : 'Pilih semua'}
+                        </button>
                       </div>
                     </div>
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
