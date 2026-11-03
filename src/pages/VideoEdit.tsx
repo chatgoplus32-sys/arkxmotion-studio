@@ -4,7 +4,7 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Select, Label, Textarea } from '@/components/ui'
 import {
   Upload, Loader2, Download, ExternalLink, X, Clapperboard, Wand2, ZoomIn, ZoomOut,
-  Volume2, BookOpen, Lightbulb, Film, Sparkles,
+  Volume2, BookOpen, Lightbulb, Film, Sparkles, Layers, Type, Boxes, Zap,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useAuthStore } from '@/stores/authStore'
@@ -105,6 +105,46 @@ const EDIT_STYLES: EditStyle[] = [
     instruction:
       'Turn the key points into animated explainer segments: clean 2D motion graphics, icons, animated charts and labeled callouts over the footage, step-by-step numbered beats, smooth transitions. Educational, clear and friendly.',
     icon: Lightbulb,
+  },
+  {
+    id: 'remotion',
+    label: 'Remotion Animation',
+    desc: 'Motion graphics terprogram: spring, counter angka, grid presisi.',
+    instruction:
+      'Add Remotion-style programmatic motion graphics: spring-eased entrances and exits with natural overshoot, animated number counters and progress bars, precise grid-based layouts on a strict 8px rhythm, staggered list reveals where items appear 80-150ms apart, and clean vector shapes with a tight 3-4 color palette sampled from the footage. Timing must feel frame-accurate and mechanical, like a coded composition — never hand-drawn, never wobbly. Keep every graphic inside the safe area and never cover faces or the product.',
+    icon: Layers,
+  },
+  {
+    id: 'kinetic-type',
+    label: 'Kinetic Typography',
+    desc: 'Kata besar per beat, potongan keras, satu warna aksen.',
+    instruction:
+      'Turn the spoken words into bold kinetic typography: one to three words at a time, large condensed sans-serif, hard cuts on the beat, quick scale and slide transitions, keyword emphasis in a single accent color. Keep the text in the lower third or off-center so the subject stays visible, spell every word correctly in the language spoken in the video, and clear the text before the next line lands. No long paragraphs, no slow fades.',
+    icon: Type,
+  },
+  {
+    id: 'product-3d',
+    label: '3D Product Reveal',
+    desc: 'Produk berputar, rim light studio, callout spesifikasi.',
+    instruction:
+      'Add a premium 3D product presentation feel: the hero object rotates slowly under studio lighting with soft rim light and specular highlights, a subtle reflective floor, shallow depth of field, and floating specification callouts connected by thin lines. Use slow eased camera arcs and let the product breathe before each reveal. Keep the real product intact — never redesign, warp or recolor the product itself.',
+    icon: Boxes,
+  },
+  {
+    id: 'neon-glitch',
+    label: 'Neon Glitch',
+    desc: 'Cyberpunk: RGB split, scanline, aksen neon, hit di cut.',
+    instruction:
+      'Apply a cyberpunk neon glitch grade: teal-magenta split toning, chromatic aberration at the frame edges, subtle scanlines and digital noise, short RGB-split glitch hits landing on cuts and emphasis beats, plus glowing neon accent lines and HUD ticks in the corners. Keep each glitch brief (2-4 frames) and never on faces; the subject must stay readable and the footage continuous.',
+    icon: Zap,
+  },
+  {
+    id: 'comic-impact',
+    label: 'Comic Impact',
+    desc: 'Panel komik, halftone, kata impact, speed line.',
+    instruction:
+      'Stylize as a comic book: halftone dot shading, bold ink outlines, radial speed lines behind fast actions, and comic impact words (BAM, WHOOSH) with thick borders that appear for 3-5 frames on hits. Panels may wipe in on the beat with hard edges. Keep faces recognizable and keep the live footage underneath — it should read as stylized live action, not a fully drawn animation.',
+    icon: Sparkles,
   },
 ]
 
@@ -792,7 +832,7 @@ export default function VideoEditPage() {
         eyebrow="Generate"
         title="Video"
         highlight="Edit"
-        desc="Upload video sumber, pilih gaya edit (motion graphics, AE zoom, SFX, b-roll, dokumenter, explainer), lalu Gemini Omni merender versi barunya lewat NexaBot."
+        desc="Upload video sumber, pilih gaya edit (motion graphics, Remotion, kinetic typography, 3D reveal, neon glitch, komik, dan lainnya), lalu Gemini Omni merender versi barunya lewat NexaBot."
         actions={
           <Link
             to={gratisCurrentMode ? '/booster' : '/topup/nexabot'}
