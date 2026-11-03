@@ -11,6 +11,8 @@ import {
   nexabotPackageName,
   nexabotRemainingLabel,
   isBoosterPackage,
+  NEXABOT_BOOSTER_COMING_SOON,
+  NEXABOT_BOOSTER_COMING_SOON_NOTE,
   NEXABOT_PACKAGE_FALLBACKS,
   NEXABOT_PRICE_FALLBACK,
   type NexabotWallet,
@@ -94,6 +96,10 @@ export default function NexaBotTopupPage() {
   }, [fetchBalance, fetchTopups])
 
   const submit = async (endpoint: 'topup' | 'package') => {
+    if (endpoint === 'package' && sedangBooster && NEXABOT_BOOSTER_COMING_SOON) {
+      addToast(NEXABOT_BOOSTER_COMING_SOON_NOTE, 'info')
+      return
+    }
     if (endpoint === 'topup' && amount < (wallet?.min_topup ?? 10000)) {
       addToast(`Minimal topup ${formatRp(wallet?.min_topup ?? 10000)}`, 'error')
       return
@@ -132,6 +138,10 @@ export default function NexaBotTopupPage() {
   }
 
   const startPackage = (slug: string) => {
+    if (isBoosterPackage(slug) && NEXABOT_BOOSTER_COMING_SOON) {
+      addToast(NEXABOT_BOOSTER_COMING_SOON_NOTE, 'info')
+      return
+    }
     setSelectedSlug(slug)
     setMode('package')
     setProofNote('')
@@ -238,8 +248,8 @@ export default function NexaBotTopupPage() {
                   {booster ? 'Seedance 2.5 + Omni + GPT Image' : 'Semua mode NexaBot'}
                   {' · '}≈ {formatRp(Math.round(p.price / Math.max(1, p.days)))}/hari
                 </div>
-                <div className={`mt-2 text-[11px] font-medium ${selected ? 'text-primary' : 'text-transparent'}`}>
-                  ✓ Dipilih
+                <div className={`mt-2 text-[11px] font-medium ${booster && NEXABOT_BOOSTER_COMING_SOON ? 'text-amber-500' : selected ? 'text-primary' : 'text-transparent'}`}>
+                  {booster && NEXABOT_BOOSTER_COMING_SOON ? 'Coming soon' : '✓ Dipilih'}
                 </div>
               </button>
             )
@@ -273,6 +283,8 @@ export default function NexaBotTopupPage() {
             <div className="text-right">
               {pendingPackage ? (
                 <Badge variant="warning"><Clock className="h-3 w-3 mr-1" /> Menunggu approval</Badge>
+              ) : sedangBooster && NEXABOT_BOOSTER_COMING_SOON ? (
+                <Button disabled title={NEXABOT_BOOSTER_COMING_SOON_NOTE}>Coming soon · belum dijual</Button>
               ) : (
                 <Button onClick={() => startPackage(pkg.slug)}>
                   {(sedangBooster ? boosterPass?.active : unlimited?.active) ? `Perpanjang ${pkg.label}` : `Beli Paket ${pkg.label}`}

@@ -112,6 +112,22 @@ export const NEXABOT_BOOSTER_SLUGS: string[] = NEXABOT_PACKAGES
   .map((plan) => plan.slug)
 
 /**
+ * Premium Booster ditutup sementara ("coming soon"): janji utamanya Seedance 2.5,
+ * dan Seedance 2 sedang tidak bisa digenerate di provider. Menjualnya sekarang
+ * berarti member membayar untuk fitur yang tidak bisa dipakai, jadi pengajuan
+ * pembelian ditolak server — bukan sekadar tombol yang dimatikan di UI.
+ *
+ * Buka lagi: ubah ke `false`. Halaman Booster/topup/landing ikut sendiri karena
+ * membaca flag ini (klien punya cerminnya di src/lib/nexabotWallet.ts).
+ */
+export const NEXABOT_BOOSTER_COMING_SOON = true
+
+/** Pesan yang dipakai UI dan penolakan server — satu teks, jangan bercabang. */
+export const NEXABOT_BOOSTER_COMING_SOON_NOTE =
+  'Premium Booster ditutup sementara — Seedance 2 sedang tidak tersedia di provider. ' +
+  'Paket dibuka lagi setelah modelnya normal; Paket Unlimited semua mode tetap bisa dibeli.'
+
+/**
  * Semua slug paket yang TIDAK membebaskan semua mode. Dipakai untuk mengecualikan
  * paket ber-scope dari status "Unlimited" global.
  *

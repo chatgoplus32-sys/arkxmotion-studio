@@ -81,6 +81,19 @@ export function isBoosterModelName(model: string | null | undefined): boolean {
 export const NEXABOT_BOOSTER_COVERAGE = ['Seedance 2.5', 'Omni Flash 1.1', 'GPT Image 2.5']
 
 /**
+ * Cermin `shared/pricing.ts` (NEXABOT_BOOSTER_COMING_SOON): Booster ditutup
+ * sementara karena Seedance 2 tidak tersedia di provider. UI memakai ini untuk
+ * menampilkan label "Coming soon" dan mematikan tombol beli; server tetap
+ * menolak pengajuannya sendiri, jadi flag di klien hanya untuk tampilan.
+ * Buka lagi = ubah keduanya ke false.
+ */
+export const NEXABOT_BOOSTER_COMING_SOON = true
+
+export const NEXABOT_BOOSTER_COMING_SOON_NOTE =
+  'Premium Booster ditutup sementara — Seedance 2 sedang tidak tersedia di provider. ' +
+  'Paket dibuka lagi setelah modelnya normal; Paket Unlimited semua mode tetap bisa dibeli.'
+
+/**
  * Apakah satu generate untuk model ini tidak memotong saldo? Server yang
  * memutuskan lewat /deduct; ini hanya untuk tampilan (badge & copy).
  */

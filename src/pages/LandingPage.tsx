@@ -4,7 +4,7 @@ import MotionControlDemo from '@/components/landing/MotionControlDemo'
 import HeroDashboard from '@/components/landing/HeroDashboard'
 import { DEFAULT_MEMBERSHIP_FEE } from '@/lib/membership'
 import { DEFAULT_PRO_FEE } from '@/lib/pro'
-import { isBoosterPackage } from '@/lib/nexabotWallet'
+import { isBoosterPackage, NEXABOT_BOOSTER_COMING_SOON } from '@/lib/nexabotWallet'
 
 // Harga provider live dari /api/public/pricing (read-only, tanpa login).
 interface ProviderPrices {
@@ -466,7 +466,7 @@ export default function LandingPage() {
                     <div className="mt-1 text-[16px] sm:text-[18px] font-black tracking-tight">{rp(pkg.price)}</div>
                     <div className="text-[11px] text-white/40">
                       {hanyaBooster
-                        ? `Seedance 2.5, Omni Flash 1.1 & GPT Image tanpa batas · mode lain tetap per generate`
+                        ? `${NEXABOT_BOOSTER_COMING_SOON ? 'Coming soon · ' : ''}Seedance 2.5, Omni Flash 1.1 & GPT Image tanpa batas · mode lain tetap per generate`
                         : `Generate semua mode tanpa batas selama ${pkg.days} hari`}
                     </div>
                   </div>

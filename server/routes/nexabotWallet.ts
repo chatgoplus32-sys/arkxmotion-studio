@@ -28,6 +28,8 @@ import { authenticateToken, requireAdmin, AuthRequest } from '../middleware/auth
 import {
   NEXABOT_MIN_TOPUP,
   NEXABOT_UNLIMITED_SLUG,
+  NEXABOT_BOOSTER_COMING_SOON,
+  NEXABOT_BOOSTER_COMING_SOON_NOTE,
   NEXABOT_PACKAGES,
   NEXABOT_SCOPED_SLUGS,
   NEXABOT_PRICING_DEFAULTS,
@@ -313,6 +315,13 @@ router.post('/package', authenticateToken, (req: AuthRequest, res: Response) => 
       return res.status(400).json({
         error: `Paket tidak dikenal. Pilihan: ${NEXABOT_PACKAGES.map((p) => p.slug).join(', ')}`,
       })
+    }
+
+    // Booster sedang ditutup (Seedance 2 tidak tersedia di provider). Ditolak di
+    // sini, bukan hanya di UI: pengajuan lewat API langsung pun tidak boleh
+    // membuat member membayar janji yang belum bisa dipenuhi.
+    if (plan.scope === 'booster' && NEXABOT_BOOSTER_COMING_SOON) {
+      return res.status(503).json({ error: NEXABOT_BOOSTER_COMING_SOON_NOTE })
     }
 
     // Antrian pending dicek PER KELAS paket, bukan seluruh kind='unlimited'.

@@ -10,6 +10,8 @@ import {
   fetchNexabotWallet,
   nexabotRemainingLabel,
   isBoosterPackage,
+  NEXABOT_BOOSTER_COMING_SOON,
+  NEXABOT_BOOSTER_COMING_SOON_NOTE,
   NEXABOT_BOOSTER_COVERAGE,
   NEXABOT_BOOSTER_SLUG,
   type NexabotWallet,
@@ -68,6 +70,12 @@ export default function PremiumBoosterPage() {
   useEffect(() => { fetchAll() }, [fetchAll])
 
   const buy = async () => {
+    // Server juga menolak (503), tapi jangan sampai member menempel bukti
+    // transfer untuk paket yang sedang tidak dijual.
+    if (NEXABOT_BOOSTER_COMING_SOON) {
+      addToast(NEXABOT_BOOSTER_COMING_SOON_NOTE, 'info')
+      return
+    }
     setLoading(true)
     try {
       const res = await fetch(`${API}/package`, {
@@ -136,6 +144,8 @@ export default function PremiumBoosterPage() {
               <Zap className="h-3 w-3 mr-1" />
               Booster aktif · sisa {nexabotRemainingLabel(boosterPass)}
             </Badge>
+          ) : NEXABOT_BOOSTER_COMING_SOON ? (
+            <Badge variant="warning"><Clock className="h-3 w-3 mr-1" /> Coming soon</Badge>
           ) : (
             <Badge variant="outline">Belum aktif</Badge>
           )}
@@ -152,6 +162,12 @@ export default function PremiumBoosterPage() {
         ) : (
           <div className="mt-3 text-[11px] text-muted-foreground">
             Mode di luar daftar tetap {formatRp(wallet?.price ?? 150)}/generate dari saldo NexaBot.
+          </div>
+        )}
+
+        {NEXABOT_BOOSTER_COMING_SOON && !boosterPass?.active && (
+          <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-[11px] text-amber-600 dark:text-amber-300">
+            <b>Coming soon</b> — {NEXABOT_BOOSTER_COMING_SOON_NOTE}
           </div>
         )}
       </div>
@@ -189,6 +205,10 @@ export default function PremiumBoosterPage() {
           <div className="flex flex-wrap items-center gap-3">
             {pending ? (
               <Badge variant="warning"><Clock className="h-3 w-3 mr-1" /> Pengajuan Booster menunggu approval</Badge>
+            ) : NEXABOT_BOOSTER_COMING_SOON ? (
+              <Button disabled title={NEXABOT_BOOSTER_COMING_SOON_NOTE}>
+                <Clock className="h-4 w-4 mr-2" /> Coming soon · belum dijual
+              </Button>
             ) : (
               <Button onClick={() => { setProofNote(''); setStep('pay') }}>
                 {boosterPass?.active ? 'Perpanjang Booster' : `Beli Booster ${formatRp(harga)}`}

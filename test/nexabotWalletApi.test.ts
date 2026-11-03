@@ -104,6 +104,18 @@ async function submitPackage(slug?: string) {
   return { id: body.package.id as number, ...body.package }
 }
 
+/**
+ * Baris pengajuan paket langsung di DB, melewati POST /package.
+ * Dipakai untuk paket yang sedang ditutup (Premium Booster) — alur approve dan
+ * aturan antrean per kelas tetap teruji tanpa bergantung pada jalur pembelian.
+ */
+function insertPendingPackage(slug: string, amount = 15000, days = 1) {
+  const info = db.prepare(
+    "INSERT INTO nexabot_topup (user_id, amount, kind, days, package_slug, status) VALUES (?, ?, 'unlimited', ?, ?, 'pending')"
+  ).run(USER_ID, amount, days, slug)
+  return Number(info.lastInsertRowid)
+}
+
 /** Paket Unlimited yang sudah di-approve admin (default: masih berjalan 30 hari). */
 function giveApprovedPackage({ slug = 'unlimited_monthly', days = 30, expiresInDays = 30 } = {}) {
   const info = db.prepare(`
@@ -384,37 +396,33 @@ test('POST /topup: nominal di bawah minimum ditolak', async () => {
 // menggratiskan Seedance 2.5 + Omni Flash 1.1 + GPT Image. Music dan tts harus
 // tetap terpotong, dan keputusannya harus dibuat server — bukan oleh klaim klien.
 
-test('POST /package slug Booster: Rp 15.000 / 1 hari, harga dari server', async () => {
+test('POST /package slug Booster ditutup sementara: 503 + alasan, tanpa baris pengajuan', async () => {
   const { status, body } = await api('POST', '/api/nexabot/package', {
     token: userToken,
     body: { slug: 'unlimited_seedance_daily', proof_note: 'an. Sari' },
   })
 
-  assert.equal(status, 201)
-  assert.equal(body.package.package_slug, 'unlimited_seedance_daily')
-  assert.equal(body.package.amount, 15000)
-  assert.equal(body.package.days, 1)
-  assert.equal(body.package.kind, 'unlimited')
-  assert.equal(body.package.status, 'pending')
-  assert.match(body.message, /Booster/)
+  assert.equal(status, 503, 'pengajuan Booster harus ditolak selama Seedance 2 mati')
+  assert.match(body.error, /Booster/)
+  assert.match(body.error, /sementara/)
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS n FROM nexabot_topup WHERE package_slug = 'unlimited_seedance_daily'").get().n,
+    0,
+    'pengajuan yang ditolak tidak boleh menyisakan baris pending',
+  )
 })
 
-test('pengajuan pending dihitung per kelas: Bulanan tidak memblokir Booster, tapi sesama kelas iya', async () => {
+test('pengajuan pending dihitung per kelas: pending Booster tidak memblokir Bulanan, sesama kelas iya', async () => {
+  // Booster ditutup sementara, jadi antrean pending-nya disiapkan langsung di DB;
+  // yang diuji di sini aturan per-kelas, bukan jalur pembelian Booster.
+  insertPendingPackage('unlimited_seedance_daily')
+
   const bulanan = await api('POST', '/api/nexabot/package', { token: userToken, body: { slug: 'unlimited_monthly' } })
-  assert.equal(bulanan.status, 201)
+  assert.equal(bulanan.status, 201, 'pengajuan kelas berbeda tidak boleh terblok')
 
-  const booster = await api('POST', '/api/nexabot/package', {
-    token: userToken,
-    body: { slug: 'unlimited_seedance_daily' },
-  })
-  assert.equal(booster.status, 201, 'pengajuan kelas berbeda tidak boleh terblok')
-
-  const lagi = await api('POST', '/api/nexabot/package', {
-    token: userToken,
-    body: { slug: 'unlimited_seedance_daily' },
-  })
+  const lagi = await api('POST', '/api/nexabot/package', { token: userToken, body: { slug: 'unlimited_monthly' } })
   assert.equal(lagi.status, 400)
-  assert.match(lagi.body.error, /Booster/)
+  assert.match(lagi.body.error, /Bulanan/)
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM nexabot_topup WHERE package_slug = 'unlimited_seedance_daily'").get().n, 1)
 })
 
@@ -497,10 +505,12 @@ test('pass Booster saja: /balance tidak mengaku Unlimited, dan music tidak ditaw
 test('admin approve pass Booster: expiry tidak mewarisi Bulanan, dan ditumpuk sesama kelas', async () => {
   giveApprovedPackage({ slug: 'unlimited_monthly', days: 30, expiresInDays: 30 })
 
-  const booster = await submitPackage('unlimited_seedance_daily')
+  // Booster ditutup sementara: pengajuan disiapkan langsung di DB supaya alur
+  // approve + aturan penumpukan tetap teruji.
+  const boosterId = insertPendingPackage('unlimited_seedance_daily')
   const approve = await api('PATCH', '/api/admin/topup/approve', {
     token: adminToken,
-    body: { provider: 'nexabot', id: booster.id },
+    body: { provider: 'nexabot', id: boosterId },
   })
 
   assert.equal(approve.status, 200)
@@ -508,10 +518,10 @@ test('admin approve pass Booster: expiry tidak mewarisi Bulanan, dan ditumpuk se
   assert.match(approve.body.message, /Booster/)
 
   // Pembelian kedua di kelas yang sama tetap ditumpuk (1 + 1 hari).
-  const lagi = await submitPackage('unlimited_seedance_daily')
+  const lagiId = insertPendingPackage('unlimited_seedance_daily')
   const approve2 = await api('PATCH', '/api/admin/topup/approve', {
     token: adminToken,
-    body: { provider: 'nexabot', id: lagi.id },
+    body: { provider: 'nexabot', id: lagiId },
   })
   assert.equal(approve2.body.unlimited.days_left, 2, 'sisa hari Booster ditumpuk sesama kelas')
 
