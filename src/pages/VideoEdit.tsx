@@ -41,12 +41,28 @@ import {
   CLIP_SECONDS, type ClipSpec, type TrimRange,
 } from '@/lib/videoChunks'
 
+type StyleCategory = 'brand' | 'camera' | 'motion' | 'stylized' | 'audio'
+
+/**
+ * Urutan kelompok di UI. Dua belas gaya terlalu panjang untuk satu grid datar —
+ * dikelompokkan supaya member bisa langsung memindai kelompok yang relevan
+ * dengan jenis kontennya, bukan membaca semua kartu.
+ */
+const STYLE_CATEGORIES: Array<{ id: StyleCategory; label: string; sub: string }> = [
+  { id: 'brand', label: 'Brand & Explainer', sub: 'Iklan, korporat, edukasi' },
+  { id: 'camera', label: 'Kamera', sub: 'Gerak kamera & zoom' },
+  { id: 'motion', label: 'Motion & Tipografi', sub: 'Grafis terprogram dan teks' },
+  { id: 'stylized', label: 'Stylized & Produk', sub: 'Look sinematik dan produk' },
+  { id: 'audio', label: 'Audio & SFX', sub: 'Sound design' },
+]
+
 interface EditStyle {
   id: string
   label: string
   desc: string
   instruction: string
   icon: LucideIcon
+  category: StyleCategory
 }
 
 const EDIT_STYLES: EditStyle[] = [
@@ -57,6 +73,7 @@ const EDIT_STYLES: EditStyle[] = [
     instruction:
       'Overlay clean animated motion graphics: kinetic titles, lower-third labels, icon callouts, animated arrows or circles that highlight the key object, and subtle grid or line accents. Modern, minimal, brand-safe, colors sampled from the footage.',
     icon: Wand2,
+    category: 'brand',
   },
   {
     id: 'zoom-in',
@@ -65,6 +82,7 @@ const EDIT_STYLES: EditStyle[] = [
     instruction:
       'Add After Effects-style camera moves: smooth eased push-ins toward the subject on the strongest moments and quick punch-in cuts on emphasis beats, with slight parallax. Never warp faces or stretch the frame.',
     icon: ZoomIn,
+    category: 'camera',
   },
   {
     id: 'zoom-out',
@@ -73,6 +91,7 @@ const EDIT_STYLES: EditStyle[] = [
     instruction:
       'Open tight on the subject, then perform a smooth eased zoom-out that reveals the full scene; add a second slow pull-back on the final beat. Keep the horizon stable, no shake.',
     icon: ZoomOut,
+    category: 'camera',
   },
   {
     id: 'sfx',
@@ -81,6 +100,7 @@ const EDIT_STYLES: EditStyle[] = [
     instruction:
       'Add synchronized sound effects: whoosh on transitions, soft impact on cuts, clicks on on-screen actions, and a short riser before the key moment. SFX should support the original dialogue and ambience, not mask them.',
     icon: Volume2,
+    category: 'audio',
   },
   {
     id: 'broll',
@@ -89,6 +109,7 @@ const EDIT_STYLES: EditStyle[] = [
     instruction:
       'Insert animated b-roll cutaways that illustrate the key point: product close-ups, exploded views, icon animations, or diagram snippets. Keep each b-roll 1-2 seconds, match color and lighting, then return to the main footage.',
     icon: Clapperboard,
+    category: 'brand',
   },
   {
     id: 'documentary',
@@ -97,6 +118,7 @@ const EDIT_STYLES: EditStyle[] = [
     instruction:
       'Restyle as a documentary explainer: slow cinematic push-ins, subtle film grain, archival-style stills with gentle parallax, lower-third name and date captions, restrained color grade, serious factual tone.',
     icon: BookOpen,
+    category: 'brand',
   },
   {
     id: 'explainer',
@@ -105,6 +127,7 @@ const EDIT_STYLES: EditStyle[] = [
     instruction:
       'Turn the key points into animated explainer segments: clean 2D motion graphics, icons, animated charts and labeled callouts over the footage, step-by-step numbered beats, smooth transitions. Educational, clear and friendly.',
     icon: Lightbulb,
+    category: 'brand',
   },
   {
     id: 'remotion',
@@ -113,6 +136,7 @@ const EDIT_STYLES: EditStyle[] = [
     instruction:
       'Add Remotion-style programmatic motion graphics: spring-eased entrances and exits with natural overshoot, animated number counters and progress bars, precise grid-based layouts on a strict 8px rhythm, staggered list reveals where items appear 80-150ms apart, and clean vector shapes with a tight 3-4 color palette sampled from the footage. Timing must feel frame-accurate and mechanical, like a coded composition — never hand-drawn, never wobbly. Keep every graphic inside the safe area and never cover faces or the product.',
     icon: Layers,
+    category: 'motion',
   },
   {
     id: 'kinetic-type',
@@ -121,6 +145,7 @@ const EDIT_STYLES: EditStyle[] = [
     instruction:
       'Turn the spoken words into bold kinetic typography: one to three words at a time, large condensed sans-serif, hard cuts on the beat, quick scale and slide transitions, keyword emphasis in a single accent color. Keep the text in the lower third or off-center so the subject stays visible, spell every word correctly in the language spoken in the video, and clear the text before the next line lands. No long paragraphs, no slow fades.',
     icon: Type,
+    category: 'motion',
   },
   {
     id: 'product-3d',
@@ -129,6 +154,7 @@ const EDIT_STYLES: EditStyle[] = [
     instruction:
       'Add a premium 3D product presentation feel: the hero object rotates slowly under studio lighting with soft rim light and specular highlights, a subtle reflective floor, shallow depth of field, and floating specification callouts connected by thin lines. Use slow eased camera arcs and let the product breathe before each reveal. Keep the real product intact — never redesign, warp or recolor the product itself.',
     icon: Boxes,
+    category: 'stylized',
   },
   {
     id: 'neon-glitch',
@@ -137,6 +163,7 @@ const EDIT_STYLES: EditStyle[] = [
     instruction:
       'Apply a cyberpunk neon glitch grade: teal-magenta split toning, chromatic aberration at the frame edges, subtle scanlines and digital noise, short RGB-split glitch hits landing on cuts and emphasis beats, plus glowing neon accent lines and HUD ticks in the corners. Keep each glitch brief (2-4 frames) and never on faces; the subject must stay readable and the footage continuous.',
     icon: Zap,
+    category: 'stylized',
   },
   {
     id: 'comic-impact',
@@ -145,6 +172,7 @@ const EDIT_STYLES: EditStyle[] = [
     instruction:
       'Stylize as a comic book: halftone dot shading, bold ink outlines, radial speed lines behind fast actions, and comic impact words (BAM, WHOOSH) with thick borders that appear for 3-5 frames on hits. Panels may wipe in on the beat with hard edges. Keep faces recognizable and keep the live footage underneath — it should read as stylized live action, not a fully drawn animation.',
     icon: Sparkles,
+    category: 'stylized',
   },
 ]
 
@@ -1045,28 +1073,48 @@ export default function VideoEditPage() {
           </Section>
 
           <Section title="2 · Gaya Edit" sub="Boleh pilih beberapa sekaligus — instruksinya digabung jadi satu prompt">
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {EDIT_STYLES.map((style) => {
-                const active = selectedStyles.includes(style.id)
-                const Icon = style.icon
+            <div className="space-y-4">
+              {STYLE_CATEGORIES.map((cat) => {
+                const items = EDIT_STYLES.filter((s) => s.category === cat.id)
+                if (items.length === 0) return null
+                const terpilih = items.filter((s) => selectedStyles.includes(s.id)).length
                 return (
-                  <button
-                    key={style.id}
-                    type="button"
-                    onClick={() => toggleStyle(style.id)}
-                    aria-pressed={active}
-                    className={`flex items-start gap-3 rounded-xl border p-3 text-left transition ${
-                      active ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/30'
-                    }`}
-                  >
-                    <span className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg ${active ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground'}`}>
-                      <Icon className="h-4 w-4" />
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block text-sm font-medium">{style.label}</span>
-                      <span className="mt-0.5 block text-[11px] leading-relaxed text-muted-foreground">{style.desc}</span>
-                    </span>
-                  </button>
+                  <div key={cat.id}>
+                    <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        {cat.label}
+                        <span className="ml-1.5 font-normal normal-case tracking-normal text-muted-foreground/70">{items.length} gaya</span>
+                      </div>
+                      <div className="text-[11px] text-muted-foreground">
+                        {terpilih > 0 ? `${terpilih} dipilih · ${cat.sub}` : cat.sub}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      {items.map((style) => {
+                        const active = selectedStyles.includes(style.id)
+                        const Icon = style.icon
+                        return (
+                          <button
+                            key={style.id}
+                            type="button"
+                            onClick={() => toggleStyle(style.id)}
+                            aria-pressed={active}
+                            className={`flex items-start gap-3 rounded-xl border p-3 text-left transition ${
+                              active ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/30'
+                            }`}
+                          >
+                            <span className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg ${active ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground'}`}>
+                              <Icon className="h-4 w-4" />
+                            </span>
+                            <span className="min-w-0">
+                              <span className="block text-sm font-medium">{style.label}</span>
+                              <span className="mt-0.5 block text-[11px] leading-relaxed text-muted-foreground">{style.desc}</span>
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
                 )
               })}
             </div>
