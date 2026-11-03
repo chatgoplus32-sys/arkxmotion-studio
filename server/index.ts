@@ -50,7 +50,7 @@ import publicWeavyRoutes from './routes/publicWeavy.js'
 import publicWeavyProxyRoutes from './routes/publicWeavyProxy.js'
 import publicWeavyCreditsRoutes from './routes/publicWeavyCredits.js'
 import publicR2UploadRoutes from './routes/publicR2Upload.js'
-import { UPLOAD_DIR, DISK_FILE_BASE } from './lib/mediaStorage.js'
+import { UPLOAD_DIR, DISK_FILE_BASE, UPLOAD_RETENTION_DAYS, pruneOldUploads, freeDiskBytes } from './lib/mediaStorage.js'
 import publicAutoClipRoutes from './routes/publicAutoClip.js'
 import publicFireflyRoutes from './routes/publicFirefly.js'
 import publicTiktokRoutes from './routes/publicTiktok.js'
@@ -275,6 +275,25 @@ if (autoBackupEnabled) {
   console.log(
     `[${isProd ? 'PROD' : 'DEV'}] Backup otomatis dilewati. Set AUTO_BACKUP=1 kalau ingin snapshot database saat start.`,
   )
+}
+
+// Retention hasil generate di disk. Tanpa R2, uploads/ tumbuh ~1,5 GB/hari;
+// kalau disk penuh, nginx gagal men-buffer body besar dan membalas halaman HTML
+// sehingga frontend hanya melihat "Unexpected token '<'". Jalankan sekali saat
+// start (langsung membebaskan ruang) lalu tiap 6 jam.
+if (UPLOAD_RETENTION_DAYS > 0) {
+  const jalankanRetention = () => {
+    const hasil = pruneOldUploads(UPLOAD_RETENTION_DAYS)
+    if (hasil.deleted || hasil.failed) {
+      console.log(
+        `[retention] hapus ${hasil.deleted} file > ${UPLOAD_RETENTION_DAYS} hari ` +
+        `(${(hasil.bytes / 1073741824).toFixed(2)} GB)${hasil.failed ? `, ${hasil.failed} gagal` : ''}; ` +
+        `sisa disk ${Math.round((freeDiskBytes() ?? 0) / 1048576)}MB`,
+      )
+    }
+  }
+  jalankanRetention()
+  setInterval(jalankanRetention, 6 * 60 * 60 * 1000).unref()
 }
 
 app.listen(PORT, '0.0.0.0', () => {

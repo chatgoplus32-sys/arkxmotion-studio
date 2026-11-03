@@ -12,6 +12,23 @@ const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || ''
 export const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads')
 
 /**
+ * Umur maksimal file hasil generate di disk (hari). 0 = retention mati.
+ * Tanpa R2, uploads/ adalah satu-satunya tempat hasil video disimpan, jadi
+ * tanpa pemangkasan disk VPS penuh dalam hitungan hari — dan saat disk penuh
+ * nginx tidak bisa men-buffer body, sehingga browser menerima halaman HTML
+ * ("Unexpected token '<'") alih-alih JSON.
+ */
+export const UPLOAD_RETENTION_DAYS = (() => {
+  const raw = (process.env.UPLOAD_RETENTION_DAYS ?? '').trim()
+  if (!raw) return 3
+  const n = Number(raw)
+  return Number.isFinite(n) && n >= 0 ? n : 3
+})()
+
+/** Sisa ruang minimum sebelum menolak menulis hasil baru (byte). */
+const MIN_FREE_BYTES = 200 * 1024 * 1024
+
+/**
  * URL publik file disk. Wajib lewat /api/* karena nginx hanya mem-proxy path itu
  * ke express; path lain dijawab sebagai file frontend statis.
  */
@@ -22,6 +39,60 @@ export interface StoredMedia {
   storage: 'r2' | 'disk'
   /** Null untuk penyimpanan disk — pemanggil membangun URL-nya dari request. */
   cdnUrl: string | null
+}
+
+/** Ruang bebas disk untuk folder penyimpanan (null kalau tidak terbaca). */
+export function freeDiskBytes(dir = UPLOAD_DIR): number | null {
+  try {
+    const st: any = (fs as any).statfsSync?.(dir)
+    if (!st) return null
+    return Number(st.bavail) * Number(st.bsize)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Hapus file hasil generate yang lebih tua dari `maxAgeDays`.
+ * Hanya file biasa di dalam UPLOAD_DIR — symlink dan subfolder aneh dilewati.
+ */
+export function pruneOldUploads(maxAgeDays = UPLOAD_RETENTION_DAYS): {
+  deleted: number
+  bytes: number
+  failed: number
+  skipped: boolean
+} {
+  const hasil = { deleted: 0, bytes: 0, failed: 0, skipped: false }
+  if (!(maxAgeDays > 0)) {
+    hasil.skipped = true
+    return hasil
+  }
+  const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000
+
+  const jelajah = (dir: string) => {
+    let entries: fs.Dirent[]
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch { return }
+    for (const entry of entries) {
+      const target = path.join(dir, entry.name)
+      if (entry.isDirectory()) { jelajah(target); continue }
+      if (!entry.isFile()) continue
+      try {
+        const st = fs.statSync(target)
+        if (st.mtimeMs >= cutoff) continue
+        const size = st.size
+        fs.unlinkSync(target)
+        hasil.deleted += 1
+        hasil.bytes += size
+      } catch {
+        hasil.failed += 1
+      }
+    }
+  }
+
+  try { jelajah(UPLOAD_DIR) } catch (err: any) {
+    console.error('[media-storage] prune gagal:', err?.message || err)
+  }
+  return hasil
 }
 
 export function makeStorageKey(prefix: string, ext: string): string {
@@ -84,6 +155,13 @@ export async function storeMedia(
   }
 
   const target = path.join(UPLOAD_DIR, key)
+  const sisa = freeDiskBytes()
+  if (sisa !== null && sisa < MIN_FREE_BYTES) {
+    throw new Error(
+      `Penyimpanan VPS penuh (sisa ${Math.round(sisa / 1048576)}MB). ` +
+      'Hasil tidak bisa disimpan — retention uploads akan membebaskan ruang, atau isi kredensial R2.',
+    )
+  }
   fs.mkdirSync(path.dirname(target), { recursive: true })
   fs.writeFileSync(target, buffer)
   return { key, storage: 'disk', cdnUrl: null }

@@ -172,7 +172,22 @@ function runninghubProxy(action: string, params: Record<string, any>, apiKey?: s
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action, apiKey: key, ...params }),
   }).then(async (res) => {
-    const data = await res.json()
+    // Balasan non-JSON (halaman HTML dari nginx/Cloudflare) hampir selalu
+    // berarti request tidak pernah sampai ke server — mis. disk penuh saat
+    // men-buffer body besar atau 502. Tanpa cabang ini pesannya cuma
+    // "Unexpected token '<'", yang tidak memberi tahu apa pun.
+    const teks = await res.text()
+    let data: any
+    try {
+      data = JSON.parse(teks)
+    } catch {
+      const cuplikan = teks.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160)
+      throw new Error(
+        `Server balas halaman non-JSON (HTTP ${res.status})${cuplikan ? `: ${cuplikan}` : ''}. ` +
+        'Permintaan kemungkinan tidak sampai ke relay — coba lagi setelah beberapa saat; ' +
+        'bila berulang, periksa ruang disk / log server.',
+      )
+    }
     if (!res.ok || !data.ok) {
       throw new Error(data.error || `HTTP ${res.status}`)
     }
