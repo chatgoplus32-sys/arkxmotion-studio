@@ -58,7 +58,7 @@ const RESULTS_PAGE_SOURCE: Record<CompletedResult['page'], string> = {
   'text-to-image': 'Image Generator',
   ugc: 'Product UGC',
   'clip-genius': 'Clip Genius',
-  'video-edit': 'Video Edit',
+  'video-edit': 'ARKX AUTO Studio',
 }
 
 const UPSCALER_KEY = 'arkxmotion.upscaler.gallery'
