@@ -34,9 +34,18 @@ const TMP_CONFIG = path.join(ROOT, '.tsconfig.undefined-check.json')
 
 const SKIP_DIRS = new Set([
   'node_modules', '.git', 'dist', 'build', 'coverage', '.freebuff', 'logs',
-  'data', 'backup', 'backups', '.vercel', '.next', '.tmp-extensions', '.github',
+  'data', 'backup', 'backups', '.vercel', '.next', '.tmp-extensions', '.github', 'scratch',
 ])
 const CODE_EXT = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'])
+
+// VPS menjalankan `git reset --hard` yang TIDAK menghapus berkas tak-ter-track,
+// jadi sisa probe sekali pakai (.tmp_*.js) tinggal selamanya di root dan
+// menggagalkan gerbang ini di setiap deploy (#173–#177, 1–5 Nov 2026: produksi
+// macet di build 95410fe selama empat hari). Berkas semacam itu tidak pernah
+// ikut ter-deploy dan bukan bagian dari build, jadi tidak perlu diperiksa.
+function isArtefakLokal(name) {
+  return name.startsWith('.tmp')
+}
 
 /** Global yang memang disediakan runtime lain, bukan oleh JavaScript/Node. */
 const ALLOWED_UNDEFINED = new Set([
@@ -53,6 +62,7 @@ function collectFiles() {
   const walk = (dir) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const abs = path.join(dir, entry.name)
+      if (isArtefakLokal(entry.name)) continue
       if (entry.isDirectory()) {
         if (SKIP_DIRS.has(entry.name)) continue
         walk(abs)
