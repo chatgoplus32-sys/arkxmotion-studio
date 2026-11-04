@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import { Sparkles, ExternalLink, Copy, Check, Upload, MessageSquarePlus, Scissors, Clapperboard, ArrowRight, Wand2 } from 'lucide-react'
 
 // Tutorial Gemini dibuka di tab baru — Google memblokir iframe via X-Frame-Options: DENY
-const URL_AUTO_MOTION = 'https://gemini.google.com/share/e7cf0af5e32c?social_preview=false&skid=9e553d6d-2b77-4cba-8cce-4ab5a4a3a18d&hl=id-ID'
+const URL_AUTO_MOTION = 'https://gemini.google.com/share/658bbd2ad0b7?social_preview=false&skid=43585bc7-a891-43a6-9aa0-a9292084f7bb&hl=id-ID'
 const URL_UGC_PRO = 'https://gemini.google.com/share/37e58d869af2?skid=168a4176-4447-4c98-b04c-35333e853719'
 const URL_UGC_AFFILIATE = 'https://gemini.google.com/share/55de1b1f0bdb?skid=e99bf561-01a5-4a30-b2e3-74d88ba06914'
 const URL_STORYBOARD_V7 = 'https://gemini.google.com/share/b2b10282ee39?skid=b19414e9-98b3-484d-ba80-515b27ca77b4'
