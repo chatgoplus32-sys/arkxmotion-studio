@@ -670,13 +670,21 @@ export default function LandingPage() {
               { name: 'Riko • Fashion Seller', text: 'Bulk Fashion ngebantu banget. 1 model jadi 80 video katalog dalam 5 menit. Laku keras di Tiktok Shop.', stars: 5 },
               { name: 'Sinta • UGC Creator', text: 'Image to Video Wan & Grok hasilnya sinematik. Client puas, revisi minim.', stars: 5 },
               { name: 'Faezya Cell • Agency', text: 'Smart routing hemat credits. Token rotation otomatis, nggak pernah down pas deadline.', stars: 5 },
-            ].map((t) => (
-              <div key={t.name} className={`rounded-2xl ${glass} p-5 transition hover:border-cyan-300/40`}>
-                <div className="text-sm text-cyan-300">{'★'.repeat(t.stars)}</div>
-                <p className="mt-2 text-[13px] leading-relaxed text-white/70 sm:text-sm">“{t.text}”</p>
-                <div className="mt-3 text-[11px] font-medium text-white/50 sm:text-xs">{t.name}</div>
-              </div>
-            ))}
+            ].map((t) => {
+              const initials = t.name.split(' ').filter(w => /^[A-Za-z]/.test(w)).slice(0, 2).map(w => w[0].toUpperCase()).join('')
+              return (
+                <div key={t.name} className={`rounded-2xl ${glass} p-5 transition hover:border-cyan-300/40`}>
+                  <div className="flex items-center gap-3">
+                    <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-gradient-to-br from-[#0066FF] to-[#8B5CF6] text-[13px] font-bold text-white shadow-[0_0_16px_rgba(0,102,255,0.4)]">{initials}</span>
+                    <div>
+                      <div className="text-sm text-cyan-300">{'★'.repeat(t.stars)}</div>
+                      <div className="mt-0.5 text-[11px] font-medium text-white/60 sm:text-xs">{t.name}</div>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-[13px] leading-relaxed text-white/70 sm:text-sm">“{t.text}”</p>
+                </div>
+              )
+            })}
           </div>
         </div>
       </section>
