@@ -56,6 +56,22 @@ test('tidak ada pemuatan .env kedua di index.ts', () => {
   )
 })
 
+test('server/env.ts mengunci urutan DNS ke ipv4first', () => {
+  // VPS tidak punya IPv6, sedangkan Cloudflare mengirim AAAA lebih dulu. Tanpa
+  // kunci ini setiap panggilan provider (Seavi 51,8 detik, terukur 5 Nov 2026)
+  // menunggu koneksi IPv6 gagal dulu sebelum jatuh ke IPv4.
+  assert.match(
+    envSource,
+    /dns\.setDefaultResultOrder\('ipv4first'\)/,
+    'env.ts harus memanggil dns.setDefaultResultOrder("ipv4first") — dan sebelum modul lain membuat koneksi',
+  )
+  const importOrder = importLines(envSource)
+  assert.ok(
+    importOrder[0] === "import dotenv from 'dotenv'" && importOrder[1] === "import dns from 'node:dns'",
+    'impor dns harus ikut di puncak env.ts, body-nya baru jalan setelah semua impor dievaluasi',
+  )
+})
+
 test('modul yang membaca process.env di top level diimpor setelah env.js', () => {
   const imports = importLines(indexSource)
   const envIndex = imports.indexOf("import './env.js'")
