@@ -10,6 +10,22 @@ import {
   Clock,
   Search,
   Download,
+  User,
+  Zap,
+  Timer,
+  AlertCircle,
+  Waves,
+  Sparkles,
+  Bot,
+  Radio,
+  Clapperboard,
+  Video,
+  Palette,
+  Gem,
+  Flame,
+  Mic,
+  CircleDot,
+  type LucideIcon,
 } from 'lucide-react'
 
 interface ActivityLog {
@@ -29,10 +45,15 @@ interface ActivityLog {
   created_at: string
 }
 
-const PROVIDER_ICONS: Record<string, string> = {
-  weavy: '🌊', wavespeed: '⚡', magnific: '✨', roboneo: '🤖', createpulse: '💜',
-  framia: '🎬', galleri5: '🎬', leonardo: '🎨', oneover: '🔮', firefly: '🔥',
-  gemini: '💎', openai: '🟢', riverside: '🎙️',
+const PROVIDER_ICONS: Record<string, LucideIcon> = {
+  weavy: Waves, wavespeed: Zap, magnific: Sparkles, roboneo: Bot, createpulse: Radio,
+  framia: Clapperboard, galleri5: Video, leonardo: Palette, oneover: Gem, firefly: Flame,
+  gemini: Gem, openai: Zap, riverside: Mic,
+}
+
+function ProviderIcon({ provider }: { provider: string }) {
+  const Icon = PROVIDER_ICONS[provider] || CircleDot
+  return <Icon className="h-4 w-4 text-cyan-300" />
 }
 
 const STATUS_CONFIG: Record<string, { icon: React.ReactNode; color: string; label: string }> = {
@@ -133,7 +154,7 @@ export default function AdminActivityPage() {
           className="ml-auto rounded-lg border border-border bg-card px-3 py-1.5 text-xs"
         >
           <option value="">Semua Provider</option>
-          {providers.map(p => <option key={p} value={p}>{PROVIDER_ICONS[p] || ''} {p}</option>)}
+          {providers.map(p => <option key={p} value={p}>{p}</option>)}
         </select>
 
         <select
@@ -209,7 +230,7 @@ export default function AdminActivityPage() {
                   {/* Content */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="text-sm">{PROVIDER_ICONS[log.provider] || '🔹'}</span>
+                      <ProviderIcon provider={log.provider} />
                       <span className="text-xs font-medium capitalize">{log.provider}</span>
                       <span className="text-[12px] text-muted-foreground">·</span>
                       <span className="text-xs text-muted-foreground truncate">{log.model}</span>
@@ -220,10 +241,10 @@ export default function AdminActivityPage() {
                     )}
 
                     <div className="flex items-center gap-3 text-[12px] text-muted-foreground">
-                      <span>👤 {log.user_name || log.user_email || `User #${log.user_id}`}</span>
-                      {log.credits > 0 && <span>⚡ {log.credits} cr</span>}
-                      {log.duration_ms && <span>⏱ {log.duration_ms > 60000 ? `${Math.round(log.duration_ms / 60000)}m` : `${Math.round(log.duration_ms / 1000)}s`}</span>}
-                      {log.error && <span className="text-red-400 truncate max-w-[200px]">❌ {log.error.slice(0, 60)}</span>}
+                      <span className="flex items-center gap-1"><User className="h-3 w-3" /> {log.user_name || log.user_email || `User #${log.user_id}`}</span>
+                      {log.credits > 0 && <span className="flex items-center gap-1"><Zap className="h-3 w-3 text-yellow-400" /> {log.credits} cr</span>}
+                      {log.duration_ms && <span className="flex items-center gap-1"><Timer className="h-3 w-3" /> {log.duration_ms > 60000 ? `${Math.round(log.duration_ms / 60000)}m` : `${Math.round(log.duration_ms / 1000)}s`}</span>}
+                      {log.error && <span className="flex items-center gap-1 text-red-400 truncate max-w-[220px]"><AlertCircle className="h-3 w-3 shrink-0" /> {log.error.slice(0, 60)}</span>}
                     </div>
                   </div>
 

@@ -13,6 +13,8 @@ import {
   Clock,
   AlertTriangle,
   CheckCircle,
+  Pause,
+  Play,
 } from 'lucide-react'
 
 interface HealthData {
@@ -73,6 +75,8 @@ export default function AdminSystemHealth() {
   const [lastRefresh, setLastRefresh] = useState('')
   const token = useAuthStore((state) => state.token)
   const addToast = useToastStore((state) => state.addToast)
+  const [paused, setPaused] = useState(false)
+  const [tick, setTick] = useState(5)
 
   const fetchData = useCallback(async () => {
     if (!token) return
@@ -84,6 +88,7 @@ export default function AdminSystemHealth() {
         const d = await res.json()
         setData(d)
         setLastRefresh(new Date().toLocaleTimeString('id-ID'))
+        setTick(5)
       }
     } catch {
       addToast('Failed to fetch health data', 'error')
@@ -94,11 +99,19 @@ export default function AdminSystemHealth() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  // Auto-refresh every 5 seconds
+  // Auto-refresh every 5 seconds (unless paused)
   useEffect(() => {
+    if (paused) return
     const interval = setInterval(fetchData, 5000)
     return () => clearInterval(interval)
-  }, [fetchData])
+  }, [fetchData, paused])
+
+  // Countdown tick setiap detik
+  useEffect(() => {
+    if (paused) return
+    const interval = setInterval(() => setTick((t) => (t <= 1 ? 5 : t - 1)), 1000)
+    return () => clearInterval(interval)
+  }, [paused])
 
   if (loading || !data) {
     return (
@@ -119,7 +132,19 @@ export default function AdminSystemHealth() {
     <div>
       <PageHeader
         title="System Health"
+        eyebrow="Admin"
         desc="Monitor server health and system resources in real-time"
+        actions={
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => setPaused((p) => !p)} className="gap-1.5">
+              {paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+              {paused ? 'Resume' : 'Pause'}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => fetchData()} className="gap-1.5">
+              <RefreshCw className="h-3.5 w-3.5" /> Refresh
+            </Button>
+          </div>
+        }
       />
       <PageContent>
         {/* Status Banner */}
@@ -133,7 +158,7 @@ export default function AdminSystemHealth() {
           ) : (
             <><CheckCircle className="h-4 w-4 text-green-500" /><span className="text-sm text-green-500 font-medium">All systems operational</span></>
           )}
-          {lastRefresh && <span className="ml-auto text-[12px] text-muted-foreground">Last: {lastRefresh}</span>}
+          {lastRefresh && <span className="ml-auto text-[12px] text-muted-foreground">Last: {lastRefresh}{!paused && <> · Auto-refresh in <span className="text-cyan-300 font-mono">{tick}s</span></>}{paused && <> · <span className="text-yellow-400">Paused</span></>}</span>}
         </div>
 
         {/* Server Info */}

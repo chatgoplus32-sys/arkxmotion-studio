@@ -10,6 +10,19 @@ import {
   XCircle,
   RefreshCw,
   Activity,
+  Download,
+  Waves,
+  Sparkles,
+  Bot,
+  Radio,
+  Clapperboard,
+  Video,
+  Palette,
+  Gem,
+  Flame,
+  Mic,
+  Circle,
+  type LucideIcon,
 } from 'lucide-react'
 
 interface AnalyticsData {
@@ -25,10 +38,15 @@ interface AnalyticsData {
   topUsers: Array<{ name: string; email: string; generations: number; credits: number }>
 }
 
-const PROVIDER_ICONS: Record<string, string> = {
-  weavy: '🌊', wavespeed: '⚡', magnific: '✨', roboneo: '🤖', createpulse: '💜',
-  framia: '🎬', galleri5: '🎬', leonardo: '🎨', oneover: '🔮', firefly: '🔥',
-  gemini: '💎', openai: '🟢', riverside: '🎙️',
+const PROVIDER_ICONS: Record<string, LucideIcon> = {
+  weavy: Waves, wavespeed: Zap, magnific: Sparkles, roboneo: Bot, createpulse: Radio,
+  framia: Clapperboard, galleri5: Video, leonardo: Palette, oneover: Gem, firefly: Flame,
+  gemini: Gem, openai: Zap, riverside: Mic,
+}
+
+function ProviderIcon({ provider }: { provider: string }) {
+  const Icon = PROVIDER_ICONS[provider] || Circle
+  return <Icon className="h-5 w-5 text-cyan-300" />
 }
 
 function StatCard({ icon, label, value, color }: { icon: React.ReactNode; label: string; value: string | number; color: string }) {
@@ -76,7 +94,13 @@ export default function AdminAnalyticsPage() {
 
   useEffect(() => { fetchAnalytics() }, [fetchAnalytics])
 
-  const successRate = data ? (data.completedCount / Math.max(data.totalLogs, 1) * 100).toFixed(1) : '0'
+  // Auto-refresh every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(fetchAnalytics, 30000)
+    return () => clearInterval(interval)
+  }, [fetchAnalytics])
+
+  const successRate = data ? (data.completedCount / Math.max(data.completedCount + data.failedCount, 1) * 100).toFixed(1) : '0'
 
   return (
     <PageContent>
@@ -96,6 +120,14 @@ export default function AdminAnalyticsPage() {
         >
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
           Refresh
+        </Button>
+        <Button
+          onClick={() => window.open('/api/admin/export/analytics', '_blank')}
+          variant="outline"
+          className="gap-2"
+        >
+          <Download className="h-3.5 w-3.5" />
+          Export CSV
         </Button>
         {lastFetch && <span className="text-[12px] text-muted-foreground">Terakhir: {lastFetch}</span>}
         {error && (
@@ -129,7 +161,7 @@ export default function AdminAnalyticsPage() {
             <div className="space-y-2">
               {data.byProvider.map((p) => (
                 <div key={p.provider} className="flex items-center gap-3 p-2 rounded-lg bg-muted/20">
-                  <span className="text-lg">{PROVIDER_ICONS[p.provider] || '🔹'}</span>
+                  <ProviderIcon provider={p.provider} />
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium capitalize">{p.provider}</div>
                     <div className="text-[12px] text-muted-foreground">

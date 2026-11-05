@@ -1062,6 +1062,40 @@ router.get('/export/activity', authenticateToken, requireAdmin, (req: AuthReques
   }
 })
 
+// GET /api/admin/export/analytics — export analytics summary as CSV
+router.get('/export/analytics', authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
+  try {
+    const totalUsers = (db.prepare('SELECT COUNT(*) as c FROM users').get() as any).c
+    const totalLogs = (db.prepare('SELECT COUNT(*) as c FROM generation_logs').get() as any).c
+    const completedCount = (db.prepare("SELECT COUNT(*) as c FROM generation_logs WHERE status = 'completed'").get() as any).c
+    const failedCount = (db.prepare("SELECT COUNT(*) as c FROM generation_logs WHERE status = 'failed'").get() as any).c
+    const totalCredits = (db.prepare("SELECT COALESCE(SUM(credits),0) as c FROM generation_logs WHERE status = 'completed'").get() as any).c
+    const byProvider = db.prepare(
+      "SELECT provider, COUNT(*) as count, COUNT(CASE WHEN status='completed' THEN 1 END) as completed, COALESCE(SUM(credits),0) as credits FROM generation_logs GROUP BY provider ORDER BY count DESC"
+    ).all() as any[]
+
+    const header = 'Section,Key,Value'
+    const lines: string[] = [
+      header,
+      `Summary,Total Users,${totalUsers}`,
+      `Summary,Total Logs,${totalLogs}`,
+      `Summary,Completed,${completedCount}`,
+      `Summary,Failed,${failedCount}`,
+      `Summary,Credits Used,${totalCredits}`,
+      '',
+      'Provider,Total,Completed,Credits',
+      ...byProvider.map(p => `${p.provider},${p.count},${p.completed},${p.credits}`),
+    ]
+
+    res.setHeader('Content-Type', 'text/csv')
+    res.setHeader('Content-Disposition', `attachment; filename="analytics-${new Date().toISOString().slice(0, 10)}.csv"`)
+    res.send(lines.join('\n'))
+  } catch (err: any) {
+    console.error('[admin-export-analytics] error:', err.message)
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // ─── Credit Management ─────────────────────────────────────────────
 
 // GET /api/admin/credits — list all tokens with credits info

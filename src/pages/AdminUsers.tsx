@@ -3,7 +3,7 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
-import { CheckCircle, XCircle, Clock, Trash2, RefreshCw, Key, BadgeCheck, Ban, Download, Crown } from 'lucide-react'
+import { CheckCircle, XCircle, Clock, Trash2, RefreshCw, Key, BadgeCheck, Ban, Download, Crown, Search, Shield } from 'lucide-react'
 
 interface User {
   id: number
@@ -31,6 +31,7 @@ export default function AdminUsersPage() {
   const [actionLoading, setActionLoading] = useState<number | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [bulkLoading, setBulkLoading] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
   const token = useAuthStore((state) => state.token)
   const addToast = useToastStore((state) => state.addToast)
 
@@ -197,7 +198,10 @@ export default function AdminUsersPage() {
     }
   }
 
-  const filtered = filter === 'all' ? users : users.filter(u => filter === 'pending' ? !u.approved : u.approved)
+  const filtered = (filter === 'all' ? users : users.filter(u => filter === 'pending' ? !u.approved : u.approved))
+    .filter(u => !searchQuery || u.name.toLowerCase().includes(searchQuery.toLowerCase()) || u.email.toLowerCase().includes(searchQuery.toLowerCase()))
+  const approvedCount = users.filter(u => u.approved).length
+  const adminCount = users.filter(u => u.role === 'admin').length
   const pendingCount = users.filter(u => !u.approved && u.role !== 'admin').length
   const selectableUsers = filtered.filter(u => u.role !== 'admin')
   const allSelected = selectableUsers.length > 0 && selectableUsers.every(u => selectedIds.has(u.id))
@@ -270,7 +274,37 @@ export default function AdminUsersPage() {
               </Button>
             </div>
           )}
-          <div className="flex items-center gap-3 mb-4">
+          {/* Stats summary */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+            <div className="rounded-xl border border-cyan-400/15 bg-gradient-to-br from-[#0B1526] to-[#0A1128] p-3">
+              <div className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-cyan-300/70"><Key className="h-3 w-3" /> Users</div>
+              <div className="mt-1 text-2xl font-bold">{users.length}</div>
+            </div>
+            <div className="rounded-xl border border-yellow-500/20 bg-yellow-500/5 p-3">
+              <div className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-yellow-400/80"><Clock className="h-3 w-3" /> Pending</div>
+              <div className="mt-1 text-2xl font-bold text-yellow-400">{pendingCount}</div>
+            </div>
+            <div className="rounded-xl border border-green-500/20 bg-green-500/5 p-3">
+              <div className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-green-400/80"><CheckCircle className="h-3 w-3" /> Approved</div>
+              <div className="mt-1 text-2xl font-bold text-green-400">{approvedCount}</div>
+            </div>
+            <div className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-3">
+              <div className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-purple-400/80"><Shield className="h-3 w-3" /> Admin</div>
+              <div className="mt-1 text-2xl font-bold text-purple-400">{adminCount}</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 mb-4 flex-wrap">
+            {/* Search filter */}
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Cari nama / email..."
+                className="rounded-lg border border-border bg-card pl-8 pr-3 py-1.5 text-xs w-52"
+              />
+            </div>
             <div className="flex gap-2">
               <button
                 onClick={() => setFilter('all')}
