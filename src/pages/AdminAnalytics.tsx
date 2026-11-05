@@ -156,7 +156,7 @@ export default function AdminAnalyticsPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* By Provider */}
-        <Section title="📊 Usage by Provider">
+        <Section title="Usage by Provider">
           {data?.byProvider && data.byProvider.length > 0 ? (
             <div className="space-y-2">
               {data.byProvider.map((p) => (
@@ -183,7 +183,7 @@ export default function AdminAnalyticsPage() {
         </Section>
 
         {/* Top Models */}
-        <Section title="🤖 Top Models">
+        <Section title="Top Models">
           {data?.byModel && data.byModel.length > 0 ? (
             <div className="space-y-2">
               {data.byModel.slice(0, 10).map((m, i) => (
@@ -206,7 +206,7 @@ export default function AdminAnalyticsPage() {
         </Section>
 
         {/* By Day */}
-        <Section title="📅 Daily Usage">
+        <Section title="Daily Usage">
           {data?.byDay && data.byDay.length > 0 ? (
             <div className="space-y-1">
               {data.byDay.slice(0, 14).map((d) => (

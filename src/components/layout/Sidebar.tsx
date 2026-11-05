@@ -14,6 +14,7 @@ import {
   Sparkles,
   LogOut,
   Shield,
+  ShieldCheck,
   Key,
   ClipboardCheck,
   Activity,
@@ -188,7 +189,8 @@ export function Sidebar({ collapsed = false, onClose }: SidebarProps) {
     <div className="space-y-0.5">
       {label && !collapsed && (
         <div className="flex items-center gap-2 px-3 pb-1.5 pt-2">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/50">{label}</span>
+          {label === 'Admin' && <ShieldCheck className="h-3 w-3 text-cyan-400" />}
+          <span className={cn('text-[10px] font-semibold uppercase tracking-[0.14em]', label === 'Admin' ? 'text-cyan-400/80' : 'text-muted-foreground/50')}>{label}</span>
           <span className="h-px flex-1 bg-border/50" aria-hidden />
         </div>
       )}

@@ -199,7 +199,7 @@ export default function AdminActivityPage() {
       </div>
 
       {/* Activity list */}
-      <Section title={`📋 Activity (${total || filteredLogs.length})`}>
+      <Section title={`Activity (${total || filteredLogs.length})`}>
         {loading && logs.length === 0 ? (
           <SkeletonList count={5} />
         ) : error && logs.length === 0 ? (
