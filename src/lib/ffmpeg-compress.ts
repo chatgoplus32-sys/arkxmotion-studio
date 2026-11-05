@@ -252,6 +252,121 @@ export async function concatVideosFFmpeg(
   }
 }
 
+// ── Motion Control: tempel kembali audio video referensi ────────────────────
+// Seavi Motion Control V3 server23 (15 dtk) mengembalikan mp4 tanpa stream audio
+// sama sekali, sementara server10 (30 dtk) tetap membawa suara referensinya.
+// Model tidak punya parameter audio (supported_params kosong), jadi satu-satunya
+// cara menormalkan yang senyap: ambil track audio dari video referensi yang
+// tadi diupload dan di-mux ke hasil — video hasil di-copy, tidak re-encode.
+
+/** Parse log `ffmpeg -i`: adakah stream audio di file ini? */
+export function hasAudioStream(logLines: string[]): boolean {
+  return logLines.some((l) => /Stream\s+#\d+:\d+[^:]*:\s+Audio:/i.test(l))
+}
+
+/** Parse log `ffmpeg -i`: durasi file dalam detik (null bila tidak terbaca). */
+export function parseDurationSeconds(logLines: string[]): number | null {
+  const m = logLines.join('\n').match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/i)
+  if (!m) return null
+  const sec = Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3])
+  return Number.isFinite(sec) && sec > 0 ? sec : null
+}
+
+/**
+ * Argumen mux: video hasil di-copy apa adanya, audio dari referensi.
+ * `videoSeconds` memotong audio sepanjang video hasil. `-shortest` sengaja
+ * tidak dipakai: kalau hasil lebih panjang dari referensi (model kerap membulatkan
+ * durasi), -shortest justru memotong VIDEO-nya.
+ */
+export function muxAudioArgs(resultName: string, audioName: string, outName: string, videoSeconds?: number | null): string[] {
+  const args = [
+    '-i', resultName,
+    '-i', audioName,
+    '-map', '0:v:0',
+    '-map', '1:a:0',
+    '-c:v', 'copy',
+    '-c:a', 'aac',
+    '-b:a', '128k',
+  ]
+  if (videoSeconds && videoSeconds > 0) args.push('-t', videoSeconds.toFixed(3))
+  args.push('-movflags', '+faststart', outName)
+  return args
+}
+
+/** Jalankan `ffmpeg -i` (sengaja exit != 0) dan kumpulkan lognya. */
+async function probeLogs(file: File, tag: string): Promise<string[]> {
+  const ffmpeg = await getFFmpeg()
+  const ext = (file.name.split('.').pop() || 'mp4').toLowerCase()
+  const name = `probe_${tag}_${Date.now()}.${ext}`
+  await ffmpeg.writeFile(name, await fetchFile(file))
+  const lines: string[] = []
+  const handler = ({ message }: { message: string }) => lines.push(stripAnsi(message))
+  ffmpeg.on('log', handler)
+  try {
+    await ffmpeg.exec(['-i', name]).catch(() => {})
+  } finally {
+    ffmpeg.off('log', handler)
+    await ffmpeg.deleteFile(name).catch(() => {})
+  }
+  return lines
+}
+
+/** Ada/tidaknya track audio + durasi file, dari satu kali probe. */
+export async function probeMedia(file: File): Promise<{ hasAudio: boolean; durationSec: number | null }> {
+  const lines = await probeLogs(file, 'probe')
+  return { hasAudio: hasAudioStream(lines), durationSec: parseDurationSeconds(lines) }
+}
+
+/**
+ * Tempel audio `reference` ke `result`. Panggil hanya bila result senyap dan
+ * reference bersuara — kedua kondisi dicek pemanggil supaya tidak ada kerja
+ * dan upload ganda untuk hasil yang memang sudah bersuara.
+ */
+export async function muxReferenceAudioFFmpeg(
+  result: File,
+  reference: File,
+  videoSeconds?: number | null,
+  onProgress?: (msg: string, pct?: number) => void
+): Promise<File> {
+  const ffmpeg = await getFFmpeg()
+  const stamp = Date.now()
+  const inVideo = `mux_video_${stamp}.mp4`
+  const inAudio = `mux_audio_${stamp}.mp4`
+  const outName = `mux_out_${stamp}.mp4`
+
+  await ffmpeg.writeFile(inVideo, await fetchFile(result))
+  await ffmpeg.writeFile(inAudio, await fetchFile(reference))
+  try {
+    onProgress?.('Menempel audio referensi...', 40)
+    const code = await ffmpeg.exec(muxAudioArgs(inVideo, inAudio, outName, videoSeconds))
+    if (code !== 0) throw new Error(`ffmpeg mux gagal (kode ${code})`)
+    const data = await ffmpeg.readFile(outName)
+    const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : data
+    if (bytes.byteLength < 1024) throw new Error('hasil mux terlalu kecil — dianggap gagal')
+    const buf = new ArrayBuffer(bytes.byteLength)
+    new Uint8Array(buf).set(bytes)
+    onProgress?.(`Audio menempel — ${formatSize(bytes.byteLength)}`, 100)
+    return new File([buf], result.name.replace(/\.[^.]+$/, '_audio.mp4'), { type: 'video/mp4' })
+  } finally {
+    await ffmpeg.deleteFile(inVideo).catch(() => {})
+    await ffmpeg.deleteFile(inAudio).catch(() => {})
+    await ffmpeg.deleteFile(outName).catch(() => {})
+  }
+}
+
+/**
+ * Ambil file dari URL hasil (dipakai untuk mux). CDN hasil Seavi mengirim
+ * `Access-Control-Allow-Origin: *`, jadi fetch browser dimungkinkan.
+ */
+export async function fetchAsVideoFile(url: string, nameHint = 'result'): Promise<File> {
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`unduh hasil gagal (HTTP ${res.status})`)
+  const blob = await res.blob()
+  if (!blob.size) throw new Error('unduh hasil: file kosong')
+  const ext = (url.split('?')[0].match(/\.(mp4|webm|mov)$/i) || [])[1] || 'mp4'
+  return new File([blob], `${nameHint}.${ext}`, { type: blob.type || 'video/mp4' })
+}
+
 export async function compressVideoFFmpeg(
   file: File,
   maxBytes: number = 4 * 1024 * 1024,

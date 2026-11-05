@@ -8,7 +8,7 @@ import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
 import { useToastStore } from '@/stores/toastStore'
 import { uploadToCatbox, compressVideo, normalizeImage, getVideoDurationFromFile, submitMotionControl, submitGoogleOmni, pollRoboneoI2V, checkRoboneoBalance, noteRoboneoMotionChargeFailure, getRoboneoMotionMinCredits, isRoboneoBalanceError, isRoboneoBusyError } from '@/lib/roboneo'
 import { submitGensparkVideo, extractGensparkVideoUrl, uploadToGenspark, pollGensparkVideo } from '@/lib/genspark'
-import { trimVideoFFmpeg } from '@/lib/ffmpeg-compress'
+import { trimVideoFFmpeg, probeMedia, fetchAsVideoFile, muxReferenceAudioFFmpeg } from '@/lib/ffmpeg-compress'
 import { submitWeavyMotionControl, uploadWeavyAssetWithRetry, resolveWeavyAssetUrl, getActiveWeavyAccessToken, compressImageForWeavy } from '@/lib/weavy'
 import { getRunningHubApiKey, getRunningHubWorkflowId, submitRunningHubMotionControl, submitRunningHubUltraFastHD, submitRunningHubMotionApp, pollRunningHubTask } from '@/lib/runninghub'
 import { getGalleri5AuthHeaders, submitGalleri5MotionControl, pollGalleri5MotionControl, isGalleri5ModelRestricted, getGalleri5ErrorMessage, GALLERI5_MOTION_MODELS, runGalleri5WithRotation } from '@/lib/galleri5'
@@ -117,7 +117,7 @@ const MOTION_PROVIDER_INFO: Record<MotionProviderId, { name: string; tagline: st
   seavi: {
     name: 'Seavi Labs',
     tagline: 'Bayar pakai token Seavi',
-    note: 'Tanpa API key — top up token di halaman Top Up Seavi (Rp 4.000 = 2 token).',
+    note: 'Tanpa API key — top up token di halaman Top Up Seavi (Rp 4.000 = 2 token). Model 15 dtk keluar tanpa suara; suara video referensi otomatis ditempel ulang di browser (+beberapa detik sebelum hasil tampil).',
   },
 }
 
@@ -154,6 +154,48 @@ function motionModelLabel(providerId: MotionProviderId, model: { key: string; la
 const MAX_SLOTS = 12
 const MAX_VIDEO_REF_MB = 6
 const MAX_VIDEO_REF_BYTES = MAX_VIDEO_REF_MB * 1024 * 1024
+
+/**
+ * Motion Control V3 · Server 23 (15 dtk) dari Seavi menjawab dengan mp4 tanpa
+ * stream audio, padahal Server 10 (30 dtk) tetap membawa suara referensi — model
+ * tidak punya parameter audio (supported_params kosong), jadi suaranya tidak bisa
+ * diminta. Yang hilang dipasang kembali di browser: audio video referensi di-mux
+ * ke hasil, lalu hasil baru diunggah ulang.
+ *
+ * Tahap ini selalu boleh gagal tanpa membatalkan generate — token sudah terpotong
+ * dan hasil senyap lebih baik daripada tidak ada hasil sama sekali.
+ */
+async function restoreMotionAudio(
+  url: string,
+  reference: File,
+  io: { log: (msg: string, level?: string) => void; status: (text: string) => void; upload: (file: File) => Promise<string> },
+): Promise<string> {
+  try {
+    // Cek referensi lebih dulu: kalau sumbernya memang bisu, tidak usah unduh hasil.
+    if (!(await probeMedia(reference)).hasAudio) {
+      io.log('🔇 Video referensi tidak punya audio — hasil tetap senyap', 'warn')
+      return url
+    }
+    io.status('Mengunduh hasil untuk menempel audio...')
+    const generated = await fetchAsVideoFile(url, 'motion_result')
+    const result = await probeMedia(generated)
+    if (result.hasAudio) {
+      io.log('🔊 Hasil sudah bersuara — tidak diubah')
+      return url
+    }
+    io.status('Menempel audio referensi...')
+    const muxed = await muxReferenceAudioFFmpeg(generated, reference, result.durationSec, (msg, pct) =>
+      io.status(`${msg}${pct != null ? ` ${Math.round(pct)}%` : ''}`),
+    )
+    io.status('Upload hasil bersuara...')
+    const voiced = await io.upload(muxed)
+    io.log(`🔊 Audio referensi menempel ✓ ${voiced.slice(0, 60)}...`, 'success')
+    return voiced
+  } catch (err: any) {
+    io.log(`🔇 Gagal menempel audio (${err?.message || err}) — hasil senyap dipakai`, 'warn')
+    return url
+  }
+}
 
 interface Slot {
   id: string
@@ -711,20 +753,31 @@ export default function MotionPage() {
                   onLog: (msg, level) => addLog(`#${n} ${msg}`, level as any),
                   onStatus: (text, pct) => updateSlotStatus(slot.id, 'processing', `${text} ${Math.round(pct || 0)}%`),
                 })
+                // Suara bukan bagian dari kontrak Motion Control Seavi — hasil yang
+                // senyap dilengkapi dari file asli member (bukan kompilasi canvas
+                // compressVideo, yang bisa kehilangan track audio).
+                const finalUrl =
+                  spec.category === 'motion_control' && slot.video
+                    ? await restoreMotionAudio(url, slot.video, {
+                      log: (msg, level) => addLog(`#${n} ${msg}`, level as any),
+                      status: (text) => updateSlotStatus(slot.id, 'processing', text),
+                      upload: (f) => uploadToCatbox(f, 'video'),
+                    })
+                    : url
                 updateSlotStatus(slot.id, 'done')
-                addLog(`#${n} ✅ Selesai ✓ ${url.slice(0, 60)}...`, 'success')
+                addLog(`#${n} ✅ Selesai ✓ ${finalUrl.slice(0, 60)}...`, 'success')
                 okCount++
                 const rid = `seavi-mc-${Date.now()}-${n}`
                 addResult({
                   id: rid,
-                  url,
+                  url: finalUrl,
                   prompt: finalPrompt || '(motion control)',
                   date: new Date().toISOString(),
                   page: 'motion',
                   provider: 'seavi',
                   model: spec.label,
                 })
-                persistResultToR2(rid, url)
+                persistResultToR2(rid, finalUrl)
                 setProgress(Math.round((okCount / prepared.length) * 100))
               } catch (slotErr: any) {
                 if (batchId && authToken) {
