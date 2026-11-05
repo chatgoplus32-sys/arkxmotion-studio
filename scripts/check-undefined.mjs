@@ -52,6 +52,13 @@ const ALLOWED_UNDEFINED = new Set([
   'chrome', // API ekstensi browser (manifest v3), tidak disediakan @types/node
 ])
 
+// Bundel SPA yang ikut di-commit sebagai aset statis (ARKX AUTO Studio). Sudah
+// ter-minify dan memakai global yang disuntikkan skrip inline di index.html
+// (__firebase_config, __app_id, __initial_auth_token), jadi identifier itu
+// memang tidak terdefinisi di file mana pun dan gerbang ini selalu menuduhnya
+// salah (#179, 5 Nov 2026: deploy Studio mati di gerbang 1, 109 detik).
+const SKIP_PATHS = ['public/studio']
+
 // ---------------------------------------------------------------------------
 // 1. Kumpulkan SEMUA file kode, termasuk yang di luar semua tsconfig
 // ---------------------------------------------------------------------------
@@ -65,6 +72,8 @@ function collectFiles() {
       if (isArtefakLokal(entry.name)) continue
       if (entry.isDirectory()) {
         if (SKIP_DIRS.has(entry.name)) continue
+        const rel = path.relative(ROOT, abs).split(path.sep).join('/')
+        if (SKIP_PATHS.some((p) => rel === p || rel.startsWith(p + '/'))) continue
         walk(abs)
       } else if (CODE_EXT.has(path.extname(entry.name)) && !entry.name.endsWith('.d.ts')) {
         out.push(path.relative(ROOT, abs).split(path.sep).join('/'))
