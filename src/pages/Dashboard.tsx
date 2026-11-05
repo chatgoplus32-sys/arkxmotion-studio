@@ -7,15 +7,16 @@ import { useAuthStore } from '@/stores/authStore'
 import { calculateStats, DashboardStats } from '@/lib/stats'
 import { checkAllProviderHealth, HEALTH_PROVIDERS, ProviderHealth } from '@/lib/providerHealth'
 import {
-  Video, Image, Zap, ShoppingBag, Wand2,
-  Route, Key, Clock, ArrowRight, Music,
+  Video, Image, Zap, Wand2, Route, Key, ArrowRight, Music,
   BarChart3, Target, Clock3, Trophy, Coins, RefreshCw, Loader2,
-  CheckCircle2, XCircle, Gauge, Sparkles, ChevronRight, Flame, Play, TrendingUp, Activity, ShieldCheck, ArrowUpRight
+  CheckCircle2, XCircle, Gauge, ChevronRight, Flame, TrendingUp, Activity,
+  Play, Crown, Sparkles, Gift, Headphones, ShoppingBag, ArrowUpRight, Scissors,
+  HelpCircle, MessageCircle, ArrowUp, BookOpen, Shield
 } from 'lucide-react'
 
 const STATUS_META: Record<string, { dot: string; label: string; text: string }> = {
   online: { dot: 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]', label: 'Online', text: 'text-emerald-400' },
-  busy: { dot: 'bg-blue-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]', label: 'Sibuk', text: 'text-blue-400' },
+  busy: { dot: 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]', label: 'Sibuk', text: 'text-amber-400' },
   down: { dot: 'bg-red-400 shadow-[0_0_8px_rgba(248,113,113,0.6)]', label: 'Down', text: 'text-red-400' },
   nokey: { dot: 'bg-white/20', label: 'No key', text: 'text-white/40' },
 }
@@ -56,8 +57,8 @@ function MiniBarChart({ data, maxBars = 7 }: { data: Array<{ date: string; count
         return (
           <div key={bar.date} className="flex-1 flex flex-col items-center gap-1.5 group">
             <span className="text-[11px] font-medium text-white/70 opacity-0 group-hover:opacity-100 transition bg-black/60 px-1.5 py-0.5 rounded-full border border-white/10">{bar.count}</span>
-            <div className={`w-full rounded-t-lg transition-all duration-700 ${isToday ? 'bg-gradient-to-t from-blue-500 to-yellow-300 shadow-[0_0_12px_rgba(0,168,255,0.4)]' : 'bg-gradient-to-t from-white/10 to-white/20 group-hover:from-[#00a8ff]/40 group-hover:to-[#00d4ff]/60'}`} style={{ height: `${h}%`, minHeight: '6px', transitionDelay: `${i * 40}ms` }} />
-            <span className={`text-[11px] font-mono ${isToday ? 'text-blue-300 font-bold' : 'text-white/35'}`}>{dayLabel}</span>
+            <div className={`w-full rounded-t-lg transition-all duration-700 ${isToday ? 'bg-gradient-to-t from-[#00A8FF] to-cyan-300 shadow-[0_0_12px_rgba(0,168,255,0.4)]' : 'bg-gradient-to-t from-cyan-500/20 to-cyan-500/40 group-hover:from-[#00A8FF]/50 group-hover:to-cyan-400/60'}`} style={{ height: `${h}%`, minHeight: '6px', transitionDelay: `${i * 40}ms` }} />
+            <span className={`text-[10px] font-mono ${isToday ? 'text-cyan-300 font-bold' : 'text-white/35'}`}>{dayLabel}</span>
           </div>
         )
       })}
@@ -75,7 +76,7 @@ function CircularProgress({ value, size = 52, strokeWidth = 4, color = 'stroke-e
         <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="currentColor" strokeWidth={strokeWidth} className="text-white/10" />
         <circle cx={size / 2} cy={size / 2} r={radius} fill="none" strokeWidth={strokeWidth} strokeLinecap="round" className={`${color} transition-all duration-1000 drop-shadow-[0_0_6px_currentColor]`} strokeDasharray={circumference} strokeDashoffset={offset} />
       </svg>
-      <span className="absolute inset-0 grid place-items-center text-[11px] font-bold">{value}%</span>
+      <span className="absolute inset-0 grid place-items-center text-[11px] font-black text-white">{value}%</span>
     </div>
   )
 }
@@ -98,19 +99,29 @@ function getRecentActivity(): RecentActivity[] {
   return items.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).slice(0, 8)
 }
 
-const TOOLS = [
-  { icon: <Video className="h-[18px] w-[18px]" />, label: 'Motion Control', desc: 'Transfer motion video → karakter', href: '/generate/motion', accent: 'from-blue-500 to-yellow-400' },
-  { icon: <ShoppingBag className="h-[18px] w-[18px]" />, label: 'Bulk Fashion', desc: '1 model + 100 outfit parallel', href: '/generate/bulk-fashion', accent: 'from-cyan-500 to-blue-400' },
-  { icon: <Image className="h-[18px] w-[18px]" />, label: 'Image to Video', desc: 'Foto jadi video sinematik', href: '/generate/image-to-video', accent: 'from-violet-500 to-purple-400' },
-  { icon: <Wand2 className="h-[18px] w-[18px]" />, label: 'AI Upscaler', desc: 'Upscale 4K enhance detail', href: '/generate/upscaler', accent: 'from-cyan-500 to-blue-400' },
-  { icon: <Music className="h-[18px] w-[18px]" />, label: 'AI Song Cover', desc: 'Cover & reimagine lagu jadi versi baru', href: '/generate/song-cover', accent: 'from-emerald-500 to-cyan-400' },
-  { icon: <Zap className="h-[18px] w-[18px]" />, label: 'Providers', desc: 'Kelola API keys & tokens', href: '/providers', accent: 'from-emerald-500 to-teal-400' },
+const QUICK_TOOLS = [
+  { label: 'Motion Control', desc: 'Video gerakan → karakter AI', icon: <Scissors className="h-6 w-6" />, href: '/generate/motion', grad: 'from-[#0066FF] to-[#00A8FF]' },
+  { label: 'Image to Video', desc: 'Foto jadi video sinematik', icon: <Video className="h-6 w-6" />, href: '/generate/image-to-video', grad: 'from-[#7B2FFF] to-[#B14DFF]' },
+  { label: 'Text to Image', desc: 'Prompt → gambar AI', icon: <Image className="h-6 w-6" />, href: '/generate/image', grad: 'from-[#00C853] to-[#00E676]' },
+  { label: 'Video Upscale', desc: '4K / HD · 30 fps', icon: <ArrowUp className="h-6 w-6" />, href: '/generate/video-upscaler', grad: 'from-[#0066FF] to-[#00D4FF]' },
+  { label: 'Bulk Fashion', desc: '1 model · 100 outfit', icon: <ShoppingBag className="h-6 w-6" />, href: '/generate/bulk-fashion', grad: 'from-[#FF6B35] to-[#FF3D68]' },
+  { label: 'Voice Over', desc: 'AI voice · podcast & karaoke', icon: <Music className="h-6 w-6" />, href: '/generate/voice-over', grad: 'from-[#00A8FF] to-[#7B2FFF]' },
+  { label: 'AI Upscaler', desc: 'Upscale & retouch foto', icon: <Wand2 className="h-6 w-6" />, href: '/generate/upscaler', grad: 'from-[#8B5CF6] to-[#C084FC]' },
+  { label: 'Song Cover', desc: 'Reimagine lagu kamu', icon: <Zap className="h-6 w-6" />, href: '/generate/song-cover', grad: 'from-[#FFB020] to-[#FF8A00]' },
+]
+
+const HELP_LINKS = [
+  { label: 'Pusat Bantuan', icon: <BookOpen className="h-4 w-4" />, href: '/quick-start' },
+  { label: 'Top Up & Saldo', icon: <Coins className="h-4 w-4" />, href: '/saldo' },
+  { label: 'Hubungi Support', icon: <MessageCircle className="h-4 w-4" />, href: '/settings' },
+  { label: 'Request Fitur', icon: <Sparkles className="h-4 w-4" />, href: '/plugins' },
 ]
 
 export default function DashboardPage() {
   const navigate = useNavigate()
   const { keys, routing, fetchMaintenance } = useProviderManager()
   const user = useAuthStore((s) => s.user)
+  const isPro = user?.role === 'admin' || user?.plan === 'pro'
   const [activity, setActivity] = useState<RecentActivity[]>([])
   const [genStats, setGenStats] = useState<DashboardStats | null>(null)
   const [health, setHealth] = useState<Record<string, ProviderHealth>>({})
@@ -175,300 +186,270 @@ export default function DashboardPage() {
   }, [health])
 
   const hasData = (genStats?.totalGenerates || 0) > 0
+  const planName = user?.role === 'admin' ? 'Unlimited Member Pro' : user?.plan === 'pro' ? 'Pro Plan' : 'Free Plan'
 
   return (
-    <PageContent className="space-y-5">
-      <div className="relative overflow-hidden rounded-[24px] border border-white/[0.06] bg-gradient-to-br from-[#00a8ff]/15 via-[#1a1a1a] to-[#0a0a0a] p-6 md:p-7">
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:32px_32px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,black_60%,transparent_100%)]" />
-        <div className="absolute -top-16 -right-16 w-[420px] h-[420px] bg-gradient-to-br from-[#00a8ff]/20 to-transparent rounded-full blur-[50px]" />
-        <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-          <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-mono">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.7)]" /> System Operational
-              <span className="text-white/20">•</span>
-              <span className="text-white/60">{healthSummary.online}/{healthSummary.total} providers online</span>
-            </div>
-            <h1 className="mt-3 text-[26px] md:text-[30px] font-black tracking-tight leading-none">
-              {greeting}, <span className="bg-gradient-to-r from-[#00a8ff] to-[#00d4ff] bg-clip-text text-transparent">{user?.name?.split(' ')[0] || 'Creator'}</span> 👋
-            </h1>
-            <p className="mt-2 text-sm text-white/50 max-w-[560px]">AI-powered creative content production platform. Generate lebih cepat dengan smart routing & token rotation otomatis.</p>
+    <PageContent className="space-y-4 sm:space-y-5">
+
+      {/* ============ HERO BANNER ============ */}
+      <section className="relative overflow-hidden rounded-[26px] border border-cyan-400/25 bg-[#050A15] shadow-[0_0_60px_rgba(0,102,255,0.35)]">
+        {/* Artwork */}
+        <img
+          src="/landing/hero-fantasy.webp"
+          alt="ARKXMotion Studio — ksatria & putri di dunia fantasi"
+          className="pointer-events-none absolute inset-y-0 right-[-20%] hidden h-full w-[62%] object-cover object-[60%_38%] opacity-90 sm:block lg:right-0"
+        />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-[#050A15] via-[#050A15]/85 to-transparent" />
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-[45%] bg-gradient-to-l from-[#050A15]/10 via-transparent to-transparent" />
+        <div className="pointer-events-none absolute -right-10 top-1/3 h-64 w-64 rounded-full bg-[#00A8FF]/10 blur-[80px]" />
+
+        <div className="relative p-5 sm:p-7 lg:p-8 max-w-[560px]">
+          <div className="flex items-center gap-2.5 text-[11px] font-black uppercase tracking-[0.28em] text-cyan-300">
+            <Sparkles className="h-4 w-4" /> ARKXMOTION STUDIO
           </div>
-          <div className="flex flex-wrap gap-2.5 shrink-0">
-            <button onClick={() => navigate('/generate/motion')} className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-[#00a8ff] to-[#00d4ff] text-black font-semibold text-sm hover:shadow-[0_10px_24px_rgba(0,168,255,0.4)] hover:-translate-y-0.5 transition-all">
-              <Play className="h-4 w-4" /> Generate Sekarang
+          <h1 className="mt-3 text-[30px] font-black italic leading-[0.98] tracking-tight sm:text-[38px] lg:text-[42px]">
+            <span className="bg-gradient-to-r from-white via-cyan-100 to-cyan-200 bg-clip-text text-transparent">AI Creative Suite</span><br />
+            <span className="bg-gradient-to-r from-[#00A8FF] via-cyan-300 to-[#7B2FFF] bg-clip-text text-transparent">All-in-One</span>
+          </h1>
+          <p className="mt-3 max-w-[420px] text-[13px] leading-relaxed text-cyan-100/60 sm:text-[14px]">
+            Buat Video, Gambar, Animasi, Lip-Sync, hingga Upscale dengan Teknologi AI Generasi Terbaru.
+          </p>
+          <div className="mt-5 flex flex-wrap items-center gap-2.5">
+            <button onClick={() => navigate('/generate/motion')} className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#00A8FF] to-[#00D4FF] px-5 py-2.5 text-sm font-bold text-black shadow-[0_0_28px_rgba(0,168,255,0.55)] transition hover:-translate-y-0.5 hover:shadow-[0_0_40px_rgba(0,212,255,0.7)]">
+              <Play className="h-4 w-4" fill="currentColor" /> Mulai Generate
             </button>
-            <button onClick={() => navigate('/generate/image-to-video')} className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-white text-black font-semibold text-sm hover:bg-white/90 transition">
-              <Image className="h-4 w-4" /> Image to Video
+            <button onClick={() => navigate('/quick-start')} className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/[0.06] px-5 py-2.5 text-sm font-semibold text-white/85 backdrop-blur transition hover:border-cyan-400/40 hover:bg-white/[0.1]">
+              <BookOpen className="h-4 w-4" /> Lihat Tutorial
             </button>
+          </div>
+          <div className="mt-4 flex items-center gap-2 text-[11px] font-semibold text-cyan-100/45">
+            <Shield className="h-3.5 w-3.5 text-emerald-400" /> {healthSummary.online}/{healthSummary.total} providers online · 2.400+ kreator terdaftar
           </div>
         </div>
-        {!hasData && (
-          <div className="relative mt-6 rounded-2xl border border-blue-500/20 bg-blue-500/10 px-4 py-3 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-blue-500/20 grid place-items-center"><Sparkles className="h-4 w-4 text-blue-400" /></div>
-            <div className="text-sm"><span className="font-semibold text-blue-300">Mulai perjalananmu</span><span className="text-white/60"> — coba generate pertama dan lihat stats live di dashboard ini.</span></div>
-            <button onClick={() => navigate('/generate/motion')} className="ml-auto hidden sm:inline-flex items-center gap-1.5 text-xs font-semibold text-blue-300 hover:text-blue-200">Coba <ArrowRight className="h-3.5 w-3.5" /></button>
-          </div>
-        )}
-      </div>
+      </section>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      {/* ============ STATS ROW ============ */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
         {[
-          { label: 'Total Generates', value: genStats?.totalGenerates || 0, suffix: '', sub: hasData ? '+12% minggu ini' : 'Mulai generate', icon: BarChart3, grad: 'from-blue-500/15 to-yellow-500/5', border: 'border-blue-500/20', iconBg: 'bg-blue-500/15', iconColor: 'text-blue-400', trend: hasData ? 'up' : '' },
-          { label: 'Active Keys', value: keyStats.activeKeys, suffix: `/${keyStats.totalKeys}`, sub: `${keyStats.providerCount} providers`, icon: Key, grad: 'from-blue-500/15 to-cyan-500/5', border: 'border-blue-500/20', iconBg: 'bg-blue-500/15', iconColor: 'text-blue-400', trend: '' },
-          { label: 'Success Rate', value: genStats?.successRate || 0, suffix: '%', sub: hasData ? `${genStats?.successfulGenerates} sukses` : 'Belum ada data', icon: Target, grad: 'from-emerald-500/15 to-teal-500/5', border: 'border-emerald-500/20', iconBg: 'bg-emerald-500/15', iconColor: 'text-emerald-400', trend: '' },
-          { label: 'Credits Used', value: genStats?.totalCredits || 0, suffix: '', sub: hasData ? 'Total terpakai' : '0 credits', icon: Coins, grad: 'from-violet-500/15 to-purple-500/5', border: 'border-violet-500/20', iconBg: 'bg-violet-500/15', iconColor: 'text-violet-400', trend: '' },
+          { label: 'Credits Terpakai', value: genStats?.totalCredits || 0, icon: Coins, text: 'text-amber-400', grad: 'from-amber-500/15 to-yellow-500/5', border: 'border-amber-400/20' },
+          { label: 'Paket Aktif', value: planName, isText: true, icon: Crown, text: 'text-purple-300', grad: 'from-[#7B2FFF]/20 to-[#8B5CF6]/5', border: 'border-purple-400/25' },
+          { label: 'Total Generate', value: genStats?.totalGenerates || 0, icon: Video, text: 'text-cyan-300', grad: 'from-cyan-500/15 to-blue-500/5', border: 'border-cyan-400/20', trend: true },
+          { label: 'Success Rate', value: genStats?.successRate || 0, suffix: '%', icon: Target, text: 'text-emerald-400', grad: 'from-emerald-500/15 to-teal-500/5', border: 'border-emerald-400/20' },
         ].map((c, i) => (
-          <div key={c.label} className={`relative overflow-hidden rounded-2xl border ${c.border} bg-gradient-to-br ${c.grad} p-4 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(0,0,0,0.3)] transition-all group animate-fade-in`} style={{ animationDelay: `${i * 60}ms` }}>
-            <div className="absolute top-3 right-3 opacity-[0.06] group-hover:opacity-[0.10] transition"><c.icon className="h-10 w-10" /></div>
-            <div className="flex items-center gap-3">
-              <div className={`h-10 w-10 rounded-xl ${c.iconBg} grid place-items-center shrink-0`}><c.icon className={`h-5 w-5 ${c.iconColor}`} /></div>
+          <div key={c.label} className={`relative overflow-hidden rounded-2xl border ${c.border} bg-gradient-to-br ${c.grad} p-3.5 sm:p-4 transition hover:-translate-y-0.5`} style={{ animationDelay: `${i * 50}ms` }}>
+            <div className={`flex items-center gap-2.5 ${c.isText ? '' : ''}`}>
+              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/[0.06] border border-white/10"><c.icon className={`h-4 w-4 ${c.text}`} /></div>
               <div className="min-w-0">
-                <div className={`text-2xl font-black tracking-tight ${c.iconColor} flex items-baseline gap-1`}>
-                  <AnimatedCounter value={c.value} /><span className="text-base font-semibold opacity-60">{c.suffix}</span>
-                  {c.trend === 'up' && <span className="ml-1 inline-flex items-center gap-0.5 text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20"><TrendingUp className="h-3 w-3" /> +12%</span>}
+                <div className="text-[9px] font-black uppercase tracking-[0.18em] text-white/40">{c.label}</div>
+                <div className={`text-lg font-black leading-tight ${c.text} truncate`}>
+                  {c.isText ? c.value : <><AnimatedCounter value={c.value as number} />{c.suffix || ''}</>}
                 </div>
-                <div className="text-[11px] font-medium text-white/40 tracking-wide uppercase">{c.label}</div>
-                <div className="text-[11px] text-white/30 truncate">{c.sub}</div>
               </div>
             </div>
+            {c.trend && hasData && <div className="absolute right-3 top-3 inline-flex items-center gap-0.5 rounded-full border border-emerald-400/25 bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-bold text-emerald-400"><TrendingUp className="h-2.5 w-2.5" /> +{Math.round((genStats?.successRate || 0) * 0.2 + 1)}%</div>}
           </div>
         ))}
       </div>
 
+      {/* ============ MAIN GRID ============ */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <Card variant="bordered" className="lg:col-span-2 overflow-hidden bg-gradient-to-b from-card to-card/50 animate-fade-in" style={{ animationDelay: '240ms' }}>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2.5">
-                <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-[#00a8ff] to-[#00d4ff] grid place-items-center shadow-[0_4px_12px_rgba(0,168,255,0.3)]"><Gauge className="h-4 w-4 text-black" /></div>
-                <span className="font-bold tracking-tight">Provider Health</span>
-                <span className="hidden sm:inline-flex items-center gap-1.5 text-[11px] font-mono px-2 py-1 rounded-full bg-white/[0.04] border border-white/5 text-white/40"><Activity className="h-3 w-3" /> LIVE</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="hidden md:flex items-center gap-3 text-[11px]">
-                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]" />{healthSummary.online}</span>
-                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-blue-400" />{healthSummary.busy}</span>
-                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-400" />{healthSummary.down}</span>
-                </div>
-                {healthAt && <span className="text-[11px] font-mono text-white/30 hidden sm:inline">{new Date(healthAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>}
-                <button onClick={runHealth} disabled={healthLoading} className="h-7 w-7 grid place-items-center rounded-lg border border-white/10 bg-white/[0.03] hover:bg-white/[0.06] hover:border-[#00a8ff]/30 transition disabled:opacity-50">
-                  {healthLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                </button>
-              </div>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-              {[...HEALTH_PROVIDERS, 'wavespeed'].map((provider) => {
-                const h = health[provider]
-                const k = (keys as any)[provider] || []
-                const active = k.filter((x: any) => x.status === 'active' || x.status === 'unknown').length
-                const meta = h ? STATUS_META[h.status] : STATUS_META.nokey
-                const latencyColor = h?.latencyMs != null ? (h.latencyMs < 400 ? 'text-emerald-400' : h.latencyMs < 900 ? 'text-blue-400' : 'text-red-400') : 'text-white/30'
-                return (
-                  <a key={provider} href="/providers" className="group flex items-center gap-3 p-3 rounded-xl border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04] hover:border-[#00a8ff]/20 hover:-translate-y-0.5 transition-all">
-                    <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${meta.dot} group-hover:scale-110 transition`} />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[13px] font-semibold capitalize truncate leading-none">{provider}</div>
-                      <div className="text-[11px] truncate mt-0.5">
-                        {h ? <span className={`${meta.text} font-medium`}>{meta.label} <span className={`${latencyColor} font-mono`}>· {h.latencyMs ?? '—'}ms</span></span> : <span className="text-white/40 font-mono">{k.length > 0 ? `${active}/${k.length} keys` : 'no key'}</span>}
-                      </div>
-                    </div>
-                    <ChevronRight className="h-3.5 w-3.5 text-white/20 group-hover:text-white/60 group-hover:translate-x-0.5 transition" />
-                  </a>
-                )
-              })}
-            </div>
-          </CardContent>
-        </Card>
+        <div className="lg:col-span-2 space-y-4">
 
-        <Card variant="bordered" className="overflow-hidden animate-fade-in" style={{ animationDelay: '280ms' }}>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center justify-between">
-              <span className="flex items-center gap-2.5"><span className="h-8 w-8 rounded-xl bg-gradient-to-br from-violet-500 to-purple-400 grid place-items-center"><Flame className="h-4 w-4 text-white" /></span><span className="font-bold">Generates</span></span>
-              {genStats && <span className="text-[11px] font-mono px-2 py-1 rounded-full bg-white/[0.04] border border-white/5 text-white/40">{genStats.generatesByDay.length}d</span>}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {genStats && genStats.generatesByDay.length > 0 ? (
-              <>
-                <MiniBarChart data={genStats.generatesByDay} maxBars={7} />
-                <div className="grid grid-cols-4 gap-2 mt-4 pt-4 border-t border-white/5">
-                  <div className="text-center"><div className="text-base font-black"><AnimatedCounter value={genStats.totalGenerates} /></div><div className="text-[11px] text-white/35 uppercase tracking-wide">Total</div></div>
-                  <div className="text-center"><div className="text-base font-black text-emerald-400"><AnimatedCounter value={genStats.successfulGenerates} /></div><div className="text-[11px] text-white/35 uppercase tracking-wide">Sukses</div></div>
-                  <div className="text-center"><div className="text-base font-black text-red-400"><AnimatedCounter value={genStats.failedGenerates} /></div><div className="text-[11px] text-white/35 uppercase tracking-wide">Gagal</div></div>
-                  <div className="text-center"><div className="text-base font-black text-white">{genStats.avgDurationSec}s</div><div className="text-[11px] text-white/35 uppercase tracking-wide">Avg</div></div>
-                </div>
-              </>
-            ) : (
-              <div className="text-center py-10">
-                <div className="w-12 h-12 rounded-2xl bg-white/[0.04] border border-white/5 grid place-items-center mx-auto"><BarChart3 className="h-6 w-6 text-white/20" /></div>
-                <p className="text-sm font-medium mt-3">Belum ada data</p>
-                <p className="text-xs text-white/35 mt-1">Generate pertamamu akan muncul di sini</p>
-                <button onClick={() => navigate('/generate/motion')} className="mt-4 px-4 py-2 rounded-xl bg-white text-black text-xs font-semibold hover:bg-white/90 transition">Mulai Generate</button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {hasData && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <div className="flex items-center gap-3 p-3.5 rounded-2xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 to-transparent animate-fade-in" style={{ animationDelay: '300ms' }}>
-            <div className="relative shrink-0"><CircularProgress value={genStats?.successRate || 0} color="stroke-emerald-400" /><span className="absolute inset-0 grid place-items-center text-[11px] font-black text-emerald-400">{genStats?.successRate}%</span></div>
-            <div><div className="text-[13px] font-semibold leading-none">Success Rate</div><div className="text-[11px] text-white/40 mt-1">{genStats?.successfulGenerates} / {genStats?.totalGenerates} sukses</div></div>
-          </div>
-          <div className="flex items-center gap-3 p-3.5 rounded-2xl border border-blue-500/20 bg-blue-500/5 animate-fade-in" style={{ animationDelay: '320ms' }}>
-            <div className="h-11 w-11 rounded-xl bg-blue-500/15 grid place-items-center"><Clock3 className="h-5 w-5 text-blue-400" /></div>
-            <div><div className="text-xl font-black text-blue-400 leading-none">{genStats?.avgDurationSec}s</div><div className="text-[11px] text-white/40 uppercase tracking-wide">Avg Duration</div></div>
-          </div>
-          <div className="flex items-center gap-3 p-3.5 rounded-2xl border border-blue-500/20 bg-blue-500/5 animate-fade-in" style={{ animationDelay: '340ms' }}>
-            <div className="h-11 w-11 rounded-xl bg-blue-500/15 grid place-items-center"><Route className="h-5 w-5 text-blue-400" /></div>
-            <div><div className="text-xl font-black text-blue-400 leading-none">{Object.keys(routing).length}</div><div className="text-[11px] text-white/40 uppercase tracking-wide">Active Routes</div></div>
-          </div>
-          <div className="flex items-center gap-3 p-3.5 rounded-2xl border border-violet-500/20 bg-violet-500/5 animate-fade-in" style={{ animationDelay: '360ms' }}>
-            <div className="h-11 w-11 rounded-xl bg-violet-500/15 grid place-items-center"><ShieldCheck className="h-5 w-5 text-violet-400" /></div>
-            <div><div className="text-xl font-black text-violet-400 leading-none">{keyStats.providerCount}</div><div className="text-[11px] text-white/40 uppercase tracking-wide">Providers</div></div>
-          </div>
-        </div>
-      )}
-
-      <Card variant="bordered" className="overflow-hidden animate-fade-in" style={{ animationDelay: '380ms' }}>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2.5">
-            <span className="h-8 w-8 rounded-xl bg-gradient-to-br from-[#00a8ff] to-[#00d4ff] grid place-items-center shadow-[0_4px_12px_rgba(0,168,255,0.25)]"><Sparkles className="h-4 w-4 text-black" /></span>
-            <span className="font-bold">Tools</span>
-            <span className="ml-auto text-[11px] font-mono px-2 py-1 rounded-full bg-white/[0.04] border border-white/5 text-white/30 hidden sm:inline">Pilih workflow → generate</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-            {TOOLS.map((tool) => (
-              <button key={tool.href} onClick={() => navigate(tool.href)} className="group text-left flex items-center gap-3 p-3.5 rounded-2xl border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04] hover:border-[#00a8ff]/30 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(0,0,0,0.25)] transition-all">
-                <div className={`h-10 w-10 rounded-xl bg-gradient-to-br ${tool.accent} grid place-items-center text-white shadow-md group-hover:scale-105 transition`}>{tool.icon}</div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-[13px] font-semibold leading-none truncate">{tool.label}</div>
-                  <div className="text-[11px] text-white/40 truncate mt-1">{tool.desc}</div>
-                </div>
-                <ArrowUpRight className="h-4 w-4 text-white/20 group-hover:text-[#00a8ff] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition shrink-0" />
-              </button>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card variant="bordered" className="overflow-hidden animate-fade-in" style={{ animationDelay: '420ms' }}>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2.5">
-              <span className="h-8 w-8 rounded-xl bg-gradient-to-br from-violet-500 to-purple-400 grid place-items-center"><Clock className="h-4 w-4 text-white" /></span>
-              <span className="font-bold">Recent Activity</span>
-              <span className="text-[11px] font-mono text-white/30">{activity.length} items</span>
-              <button
-                onClick={() => navigate('/hasil')}
-                className="ml-auto flex items-center gap-1 text-[11px] font-mono text-white/40 transition hover:text-white"
-              >
-                Semua hasil <ChevronRight className="h-3 w-3" />
-              </button>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {activity.length === 0 ? (
-              <div className="text-center py-10">
-                <div className="w-12 h-12 rounded-2xl bg-white/[0.04] border border-white/5 grid place-items-center mx-auto"><Clock className="h-6 w-6 text-white/20" /></div>
-                <p className="text-sm font-medium mt-3">Belum ada aktivitas</p>
-                <p className="text-xs text-white/35 mt-1">Mulai generate untuk melihat timeline di sini</p>
-              </div>
-            ) : (
-              <div className="space-y-1.5 max-h-[360px] overflow-y-auto pr-1">
-                {activity.map((item) => (
-                  <div key={item.id} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-white/[0.04] border border-transparent hover:border-white/5 transition group">
-                    {item.status === 'done' ? <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" /> : <XCircle className="h-4 w-4 text-red-400 shrink-0" />}
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[13px] truncate font-medium">{item.title}</div>
-                      <div className="text-[11px] font-mono text-white/35">{item.time ? new Date(item.time).toLocaleString('id-ID', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' }) : ''}</div>
-                    </div>
-                    {item.url && <a href={item.url} target="_blank" rel="noreferrer" className="text-xs font-medium px-2.5 py-1 rounded-full bg-white text-black opacity-0 group-hover:opacity-100 transition">Lihat</a>}
-                  </div>
+          {/* QUICK GENERATE */}
+          <Card variant="bordered" className="overflow-hidden border-cyan-400/15 bg-gradient-to-b from-[#0B1526] to-[#0A1128]">
+            <CardHeader className="pb-2.5">
+              <CardTitle className="flex items-center gap-2.5">
+                <span className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-[#00A8FF] to-[#00D4FF] shadow-[0_0_16px_rgba(0,168,255,0.45)]"><Zap className="h-4 w-4 text-black" /></span>
+                <span className="font-bold">Quick Generate</span>
+                <span className="ml-auto text-[10px] font-mono uppercase tracking-wider text-cyan-300/70">Semua Mode</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+                {QUICK_TOOLS.map((tool) => (
+                  <button key={tool.label} onClick={() => navigate(tool.href)} className="group relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.04] to-transparent p-3 text-left transition-all hover:-translate-y-0.5 hover:border-cyan-400/30 hover:shadow-[0_8px_28px_rgba(0,168,255,0.18)]">
+                    <div className={`grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br ${tool.grad} text-white shadow-[0_4px_16px_rgba(0,0,0,0.4)] transition-transform group-hover:scale-110`}>{tool.icon}</div>
+                    <div className="mt-2.5 text-[12px] font-bold leading-tight text-white">{tool.label}</div>
+                    <div className="mt-0.5 text-[9px] leading-tight text-white/45">{tool.desc}</div>
+                  </button>
                 ))}
               </div>
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
 
-        <Card variant="bordered" className="overflow-hidden animate-fade-in" style={{ animationDelay: '460ms' }}>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2.5">
-              <span className="h-8 w-8 rounded-xl bg-gradient-to-br from-blue-500 to-yellow-400 grid place-items-center"><Trophy className="h-4 w-4 text-black" /></span>
-              <span className="font-bold">Top Models</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {genStats && genStats.topModels.length > 0 ? (
-              <div className="space-y-2.5">
-                {genStats.topModels.map((m, i) => {
-                  const maxCount = genStats.topModels[0]?.count || 1
-                  const pct = Math.round((m.count / maxCount) * 100)
-                  return (
-                    <div key={m.model} className="p-3 rounded-xl border border-white/[0.04] bg-white/[0.02] hover:bg-white/[0.04] hover:border-white/10 transition">
-                      <div className="flex items-center gap-3">
-                        <div className={`h-8 w-8 rounded-xl grid place-items-center text-xs font-black shrink-0 ${i === 0 ? 'bg-gradient-to-br from-blue-500 to-yellow-300 text-black shadow-[0_4px_12px_rgba(0,168,255,0.3)]' : i === 1 ? 'bg-gradient-to-br from-zinc-300 to-zinc-400 text-black' : i === 2 ? 'bg-gradient-to-br from-blue-700 to-blue-600 text-white' : 'bg-white/5 text-white/50 border border-white/5'}`}>{i + 1}</div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="text-[13px] font-semibold truncate">{m.model}</div>
-                            <div className="text-xs font-mono px-2 py-0.5 rounded-full bg-white/[0.06] border border-white/5 text-white/60">{m.count}x</div>
-                          </div>
-                          <div className="text-[11px] font-mono text-white/35 capitalize">{m.provider}</div>
-                          <div className="h-1.5 rounded-full bg-white/5 overflow-hidden mt-2">
-                            <div className={`h-full rounded-full transition-all duration-700 ${i === 0 ? 'bg-gradient-to-r from-blue-500 to-yellow-300' : 'bg-white/20'}`} style={{ width: `${pct}%` }} />
-                          </div>
-                        </div>
+          {/* RIWAYAT GENERAT TERBARU */}
+          <Card variant="bordered" className="overflow-hidden border-cyan-400/15 bg-[#0B1526]/60">
+            <CardHeader className="pb-2.5">
+              <CardTitle className="flex items-center gap-2.5">
+                <span className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-[#00A8FF]/25 to-cyan-400/10 text-cyan-300"><Clock3 className="h-4 w-4" /></span>
+                <span className="font-bold">Riwayat Generate Terbaru</span>
+                <button onClick={() => navigate('/hasil')} className="ml-auto flex items-center gap-1 text-[11px] font-semibold text-cyan-300 transition hover:text-cyan-200">Semua <ChevronRight className="h-3 w-3" /></button>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {activity.length === 0 ? (
+                <div className="py-6 text-center">
+                  <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl border border-white/10 bg-white/[0.04]"><Clock3 className="h-6 w-6 text-white/25" /></div>
+                  <p className="mt-3 text-sm font-medium">Belum ada riwayat</p>
+                  <p className="mt-1 text-xs text-white/35">Generate pertamamu akan muncul di sini</p>
+                  <button onClick={() => navigate('/generate/motion')} className="mt-3 rounded-xl bg-white px-4 py-2 text-xs font-bold text-black transition hover:bg-white/90">Mulai Generate</button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+                  {activity.slice(0, 6).map((item) => (
+                    <div key={item.id} className="group relative overflow-hidden rounded-xl border border-white/10 bg-gradient-to-br from-[#13233C] to-[#0A1128] p-2">
+                      <div className="grid aspect-square w-full place-items-center rounded-lg bg-gradient-to-br from-cyan-500/20 to-purple-600/20">
+                        {item.status === 'done' ? <CheckCircle2 className="h-6 w-6 text-emerald-400" /> : <XCircle className="h-6 w-6 text-red-400" />}
+                      </div>
+                      <div className="mt-1.5 flex items-center justify-between gap-1">
+                        <span className="truncate text-[8px] font-medium text-white/55">{item.title}</span>
+                        <span className="shrink-0 rounded-full border border-emerald-400/30 bg-emerald-500/15 px-1 py-0.5 text-[8px] font-bold text-emerald-400">Selesai</span>
                       </div>
                     </div>
-                  )
-                })}
-              </div>
-            ) : (
-              <div className="text-center py-10">
-                <div className="w-12 h-12 rounded-2xl bg-white/[0.04] border border-white/5 grid place-items-center mx-auto"><Trophy className="h-6 w-6 text-white/20" /></div>
-                <p className="text-sm font-medium mt-3">Belum ada data model</p>
-                <p className="text-xs text-white/35 mt-1">Top model favorit akan muncul di sini</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-      {genStats && genStats.topProviders.length > 0 && (
-        <Card variant="bordered" className="overflow-hidden animate-fade-in" style={{ animationDelay: '500ms' }}>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2.5">
-              <span className="h-8 w-8 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-500 grid place-items-center"><TrendingUp className="h-4 w-4 text-white" /></span>
-              <span className="font-bold">Provider Usage</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {genStats.topProviders.map((p) => {
-                const maxCount = genStats.topProviders[0]?.count || 1
-                const pct = Math.round((p.count / maxCount) * 100)
-                return (
-                  <div key={p.provider} className="p-4 rounded-2xl border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04] hover:border-[#00a8ff]/20 hover:-translate-y-0.5 transition-all group">
-                    <div className="flex items-center justify-between">
-                      <div className="text-[13px] font-semibold capitalize">{p.provider}</div>
-                      <span className="text-xs font-mono px-2 py-1 rounded-full bg-white/[0.06] border border-white/5">{p.count}x</span>
+          {/* STATS CHART + PROVIDER HEALTH */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
+            {/* Statistics */}
+            <Card variant="bordered" className="overflow-hidden border-cyan-400/15 bg-[#0B1526]/60 md:col-span-2">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2.5">
+                  <span className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-[#7B2FFF]/30 to-purple-600/20 text-purple-300"><BarChart3 className="h-4 w-4" /></span>
+                  <span className="font-bold text-sm">Statistik Generate</span>
+                  <span className="ml-auto text-[10px] font-mono text-white/30">30 hari terakhir</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {genStats && genStats.generatesByDay.length > 0 ? (
+                  <>
+                    <div className="flex items-end justify-between">
+                      <div><div className="text-2xl font-black text-white"><AnimatedCounter value={genStats.totalGenerates} /></div><div className="text-[9px] font-bold uppercase tracking-widest text-white/40">Total Generate</div></div>
+                      {hasData && <div className="text-right text-emerald-400"><span className="flex items-center justify-end gap-0.5 text-sm font-black"><TrendingUp className="h-4 w-4" />+{Math.max(genStats.successRate - 70, 1).toFixed(0)}%</span><span className="text-[9px] text-white/35">Success rate</span></div>}
                     </div>
-                    <div className="h-2 rounded-full bg-white/5 overflow-hidden mt-3">
-                      <div className="h-full bg-gradient-to-r from-[#00a8ff] to-[#00d4ff] rounded-full transition-all duration-700 group-hover:shadow-[0_0_10px_rgba(0,168,255,0.4)]" style={{ width: `${pct}%` }} />
+                    <MiniBarChart data={genStats.generatesByDay} maxBars={10} />
+                    <div className="mt-3 grid grid-cols-3 gap-2 border-t border-white/5 pt-3 text-center">
+                      <div><div className="text-base font-black text-emerald-400"><AnimatedCounter value={genStats.successfulGenerates} /></div><div className="text-[9px] font-bold uppercase tracking-wider text-white/40">Sukses</div></div>
+                      <div><div className="text-base font-black text-red-400"><AnimatedCounter value={genStats.failedGenerates} /></div><div className="text-[9px] font-bold uppercase tracking-wider text-white/40">Gagal</div></div>
+                      <div><div className="text-base font-black text-white">{genStats.avgDurationSec}s</div><div className="text-[9px] font-bold uppercase tracking-wider text-white/40">Rata-rata</div></div>
                     </div>
-                    <div className="text-[11px] font-mono text-white/35 mt-2">{p.credits.toLocaleString('id-ID')} credits used</div>
+                  </>
+                ) : (
+                  <div className="py-8 text-center"><BarChart3 className="mx-auto h-8 w-8 text-white/15" /><p className="mt-2 text-xs font-medium text-white/35">Belum ada data 30 hari terakhir</p></div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Provider Health */}
+            <Card variant="bordered" className="overflow-hidden border-cyan-400/15 bg-[#0B1526]/60 md:col-span-3">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2.5">
+                  <span className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-emerald-500/25 to-teal-500/15 text-emerald-400"><Gauge className="h-4 w-4" /></span>
+                  <span className="font-bold text-sm">Status Provider AI</span>
+                  <div className="ml-auto flex items-center gap-1.5">
+                    <span className="hidden items-center gap-1.5 sm:flex text-[10px]"><span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]" /><span className="font-bold text-emerald-400">{healthSummary.online}</span></span>
+                    <span className="hidden items-center gap-1.5 sm:flex text-[10px]"><span className="h-2 w-2 rounded-full bg-amber-400" /><span className="font-bold text-amber-400">{healthSummary.busy}</span></span>
+                    <span className="hidden items-center gap-1.5 sm:flex text-[10px]"><span className="h-2 w-2 rounded-full bg-red-400" /><span className="font-bold text-red-400">{healthSummary.down}</span></span>
+                    <button onClick={runHealth} disabled={healthLoading} className="h-7 w-7 grid place-items-center rounded-lg border border-white/10 bg-white/[0.03] hover:bg-white/[0.06] transition disabled:opacity-50">{healthLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}</button>
                   </div>
-                )
-              })}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {[...HEALTH_PROVIDERS, 'wavespeed'].slice(0, 10).map((provider) => {
+                    const h = health[provider]
+                    const k = (keys as any)[provider] || []
+                    const active = k.filter((x: any) => x.status === 'active' || x.status === 'unknown').length
+                    const meta = h ? STATUS_META[h.status] : STATUS_META.nokey
+                    const latencyColor = h?.latencyMs != null ? (h.latencyMs < 400 ? 'text-emerald-400' : h.latencyMs < 900 ? 'text-amber-400' : 'text-red-400') : 'text-white/30'
+                    return (
+                      <a key={provider} href="/providers" className="flex items-center justify-between gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] px-2 py-1.5 transition-all hover:border-cyan-400/20 hover:bg-white/[0.04]">
+                        <span className="text-[10px] font-semibold text-white/75 truncate">{provider}</span>
+                        <span className="flex shrink-0 items-center gap-1.5">
+                          {h ? <span className={`text-[9px] font-bold ${meta.text}`}>{meta.label}</span> : <span className="text-[9px] font-mono text-white/35">{k.length > 0 ? `${active}/${k.length}` : 'no key'}</span>}
+                          <span className={`text-[9px] font-mono ${latencyColor}`}>{h?.latencyMs ?? '—'}ms</span>
+                          <span className={`h-2 w-2 rounded-full ${meta.dot}`} />
+                        </span>
+                      </a>
+                    )
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+
+        {/* ============ RIGHT RAIL ============ */}
+        <aside className="space-y-4">
+          {/* Paket Anda */}
+          <div className="relative overflow-hidden rounded-2xl border border-purple-400/25 bg-gradient-to-br from-[#1A1033] via-[#150E29] to-[#0A1128] p-5 shadow-[0_0_34px_rgba(123,47,255,0.22)]">
+            <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-[#7B2FFF]/25 blur-2xl" />
+            <div className="relative flex items-center justify-between">
+              <div className="flex items-center gap-2"><Crown className="h-4 w-4 text-yellow-400" fill="currentColor" /><span className="text-[10px] font-black uppercase tracking-[0.2em] text-yellow-400/90">Paket Saya</span></div>
+              <span className="rounded-full border border-emerald-400/25 bg-emerald-500/15 px-2 py-0.5 text-[9px] font-bold text-emerald-400">Aktif</span>
             </div>
-          </CardContent>
-        </Card>
-      )}
+            <div className="relative mt-3">
+              <div className="text-lg font-black leading-tight text-white">{planName}</div>
+              <div className="text-[11px] text-purple-300/60">{isPro ? 'Generasi Unlimited · Akses fitur premium terbuka' : 'Upgrade ke Pro untuk akses tanpa batas'}</div>
+              <ul className="mt-3 space-y-1.5 text-[11px] text-purple-100/70">
+                <li className="flex items-center gap-1.5"><CheckCircle2 className="h-3 w-3 text-emerald-400" /> Generate Tanpa Batas</li>
+                <li className="flex items-center gap-1.5"><CheckCircle2 className="h-3 w-3 text-emerald-400" /> Akses Semua Model Premium</li>
+                <li className="flex items-center gap-1.5"><CheckCircle2 className="h-3 w-3 text-emerald-400" /> Prioritas & Kualitas 4K</li>
+                <li className="flex items-center gap-1.5"><CheckCircle2 className="h-3 w-3 text-emerald-400" /> Prioritas Server</li>
+              </ul>
+              {!isPro && <button onClick={() => navigate('/upgrade-pro')} className="mt-4 w-full rounded-xl bg-gradient-to-r from-[#7B2FFF] to-[#B44DFF] px-4 py-2 text-xs font-bold text-white shadow-[0_0_24px_rgba(123,47,255,0.5)] transition hover:-translate-y-0.5">Upgrade Sekarang</button>}
+            </div>
+          </div>
+
+          {/* Update & Informasi */}
+          <Card variant="bordered" className="border-cyan-400/15 bg-[#0B1526]/60">
+            <CardHeader className="pb-2.5">
+              <CardTitle className="flex items-center gap-2.5">
+                <span className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-cyan-500/25 to-teal-500/15 text-cyan-300"><Gift className="h-4 w-4" /></span>
+                <span className="font-bold text-sm">Update & Informasi</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <button onClick={() => navigate('/saldo')} className="flex w-full items-center gap-2.5 rounded-xl border border-purple-400/20 bg-gradient-to-r from-purple-500/15 to-pink-500/10 p-2.5 text-left transition hover:border-purple-400/35">
+                <Gift className="h-5 w-5 shrink-0 text-pink-400" />
+                <div className="min-w-0"><div className="text-[10px] font-black uppercase tracking-wider text-pink-300">Promo Spesial</div><div className="text-[10px] leading-tight text-white/60 truncate">Unlimited Mingguan — Rp 250.000an</div></div>
+                <ArrowUpRight className="ml-auto h-3.5 w-3.5 shrink-0 text-white/30" />
+              </button>
+              <button onClick={() => navigate('/generate/video-upscaler')} className="flex w-full items-center gap-2.5 rounded-xl border border-cyan-400/15 bg-cyan-500/10 p-2.5 text-left transition hover:border-cyan-400/30">
+                <ArrowUp className="h-5 w-5 shrink-0 text-cyan-400" />
+                <div className="min-w-0"><div className="text-[10px] font-black uppercase tracking-wider text-cyan-300">Fitur Baru</div><div className="text-[10px] leading-tight text-white/60 truncate">Video Upscale 2K/4K · HD · 30fps</div></div>
+                <ArrowUpRight className="ml-auto h-3.5 w-3.5 shrink-0 text-white/30" />
+              </button>
+              <button onClick={() => navigate('/quick-start')} className="flex w-full items-center gap-2.5 rounded-xl border border-white/10 bg-white/[0.03] p-2.5 text-left transition hover:border-white/20">
+                <BookOpen className="h-5 w-5 shrink-0 text-amber-400" />
+                <div className="min-w-0"><div className="text-[10px] font-black uppercase tracking-wider text-amber-300">Panduan</div><div className="text-[10px] leading-tight text-white/60 truncate">Cara generate video AI pertama kamu</div></div>
+                <ArrowUpRight className="ml-auto h-3.5 w-3.5 shrink-0 text-white/30" />
+              </button>
+            </CardContent>
+          </Card>
+
+          {/* Bantuan Cepat */}
+          <Card variant="bordered" className="border-cyan-400/15 bg-[#0B1526]/60">
+            <CardHeader className="pb-2.5">
+              <CardTitle className="flex items-center gap-2.5">
+                <span className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-emerald-500/25 to-cyan-500/15 text-emerald-400"><Headphones className="h-4 w-4" /></span>
+                <span className="font-bold text-sm">Bantuan Cepat</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-2 gap-2">
+              {HELP_LINKS.map((h) => (
+                <button key={h.label} onClick={() => navigate(h.href)} className="flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] p-2.5 text-left transition-all hover:border-cyan-400/25 hover:bg-white/[0.04]">
+                  <span className="text-cyan-300">{h.icon}</span>
+                  <span className="text-[10px] font-semibold text-white/70 leading-tight">{h.label}</span>
+                </button>
+              ))}
+            </CardContent>
+          </Card>
+        </aside>
+      </div>
     </PageContent>
   )
 }
