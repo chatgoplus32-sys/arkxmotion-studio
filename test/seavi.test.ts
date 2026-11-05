@@ -31,18 +31,26 @@ function withFetchStub<T>(impl: (url: string, init?: RequestInit) => SeaviStubRe
 
 // ── Spesifikasi model ────────────────────────────────────────────────────────
 
-test('SEAVI_MODELS: 13 model video/motion aktif terdaftar dan spec kunci tersedia', () => {
-  assert.equal(Object.keys(SEAVI_MODELS).length, 13)
+test('SEAVI_MODELS: 14 model video/motion aktif terdaftar dan spec kunci tersedia', () => {
+  assert.equal(Object.keys(SEAVI_MODELS).length, 14)
   assert.ok(getSeaviSpec('seedance2_multi_s15'))
-  assert.ok(getSeaviSpec('motion_control_v3_server19_15dtk'))
+  assert.ok(getSeaviSpec('motion_control_v3_server23_15dtk'))
   assert.ok(getSeaviSpec('sora2_server10'))
-  // Katalog 1 Nov 2026: tiga model 2 token (Kling 4.0, Wan 3.0 Prime, Seedance
-  // 2.5 Server 10). Server 16 dipensiunkan upstream malam harinya — sempat lolos
-  // submit lalu gagal GENERATION_FAILED, sekarang POST-nya 404 MODEL_NOT_FOUND.
+  // Katalog "Aktif (21)" 5 Nov 2026 — delapan model 2 token. Server 16
+  // dipensiunkan upstream malam 1 Nov (sempat lolos submit lalu gagal
+  // GENERATION_FAILED, sekarang POST-nya 404 MODEL_NOT_FOUND); seedance25_server10
+  // dan motion_control_v3_server19_15dtk keluar dari katalog 5 Nov.
   assert.equal(getSeaviSpec('motion_control_v3_server16'), undefined)
+  assert.equal(getSeaviSpec('seedance25_server10'), undefined)
+  assert.equal(getSeaviSpec('motion_control_v3_server19_15dtk'), undefined)
   assert.equal(getSeaviSpec('kling4_server19')?.tokens, 2)
   assert.equal(getSeaviSpec('wan30_prime_server19')?.tokens, 2)
-  assert.equal(getSeaviSpec('seedance25_server10')?.tokens, 2)
+  assert.equal(getSeaviSpec('gemini_omni_server19')?.tokens, 2)
+  assert.equal(getSeaviSpec('seedance25_server19')?.tokens, 2)
+  assert.equal(getSeaviSpec('wan30_server19')?.tokens, 2)
+  assert.equal(getSeaviSpec('motion_control_v3_server10_30dtk')?.tokens, 2)
+  assert.equal(getSeaviSpec('wan3_server23')?.tokens, 2)
+  assert.equal(getSeaviSpec('happyhorse11_server23')?.tokens, 2)
   assert.equal(getSeaviSpec('veo31_s9'), undefined)
   assert.equal(getSeaviSpec('model_ngawur'), undefined)
 })
@@ -111,7 +119,7 @@ test('payload multimodal: seedance25_server19 gambar 1-9 + video 0-3 + audio', (
 // ── buildSeaviPayload: motion control ───────────────────────────────────────
 
 test('payload MC: butuh gambar + video, prompt opsional, tanpa aspect/durasi', () => {
-  const spec = getSeaviSpec('motion_control_v3_server19_15dtk')!
+  const spec = getSeaviSpec('motion_control_v3_server23_15dtk')!
   const p = buildSeaviPayload(spec, {
     imageUrls: ['img'],
     videoUrls: ['vid'],
@@ -249,8 +257,8 @@ test('poll: HTTP 5xx sementara dilompati, bukan gagal permanen', async () => {
 
 // ── Image models & upscaler ─────────────────────────────────────────────────
 
-test('SEAVI_IMAGE_MODELS: 6 model image aktif; tiap model wajib 1 gambar sumber', () => {
-  assert.equal(Object.keys(SEAVI_IMAGE_MODELS).length, 6)
+test('SEAVI_IMAGE_MODELS: 7 model image aktif; tiap model wajib 1 gambar sumber', () => {
+  assert.equal(Object.keys(SEAVI_IMAGE_MODELS).length, 7)
   // Katalog lama sudah tidak aktif di dashboard Seavi.
   assert.equal(SEAVI_IMAGE_MODELS['gpt_image2_s9'], undefined)
   assert.equal(SEAVI_IMAGE_MODELS['seedream5_s9'], undefined)
@@ -298,6 +306,37 @@ test('model 2 token: Kling 4.0 menerima sampai 5 video referensi + audio', () =>
     () => buildSeaviPayload(spec, { imageUrls: ['a'], videoUrls: ['1', '2', '3', '4', '5', '6'], prompt: 'x' }),
     /maksimal 5 video/,
   )
+})
+
+// Seavi Image · Server 15 (masuk katalog 5 Nov 2026): referensi 1-2 gambar.
+test('seavi_image_server15: 1-2 referensi, 3 ditolak', () => {
+  const spec = SEAVI_IMAGE_MODELS['seavi_image_server15']
+  assert.equal(spec.tokens, 1)
+  const p = buildSeaviPayload(spec, { imageUrls: ['a.png', 'b.png'], prompt: 'gaya poster' })
+  assert.deepEqual(p.input, { image_urls: ['a.png', 'b.png'] })
+  assert.throws(
+    () => buildSeaviPayload(spec, { imageUrls: ['a', 'b', 'c'], prompt: 'x' }),
+    /menerima 1-2 gambar/,
+  )
+})
+
+// Skema HappyHorse 1.1 belum diprobe dari GET /v1/models. Spec sengaja tidak
+// memasang durations/aspects: payload hanya image_url + prompt — kontrak
+// minimum yang pasti diterima upstream.
+test('happyhorse11_server23: payload minimal gambar + prompt tanpa params lain', () => {
+  const spec = getSeaviSpec('happyhorse11_server23')!
+  assert.equal(spec.tokens, 2)
+  const p = buildSeaviPayload(spec, {
+    imageUrls: ['https://x/f.jpg'],
+    prompt: 'kuda berlari',
+    duration: 10,
+    aspectRatio: '9:16',
+  })
+  assert.deepEqual(p, {
+    model: 'happyhorse11_server23',
+    input: { image_url: 'https://x/f.jpg' },
+    params: { prompt: 'kuda berlari' },
+  })
 })
 
 test('upscaler Seavi sudah dipensiunkan: modul tidak lagi mengekspornya', async () => {

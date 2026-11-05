@@ -283,35 +283,41 @@ test('findSeaviPackage: slug dikenal / kosong / asing', () => {
 })
 
 test('getSeaviCharge: model 1 token & 2 token sesuai katalog, default 1 token', () => {
-  // Katalog Seavi 1 Nov 2026: 16 model 1 token, 3 model 2 token.
-  // motion_control_v3_server16 sudah dipensiunkan upstream (404 MODEL_NOT_FOUND).
+  // Katalog Seavi "Aktif (21)" 5 Nov 2026: 13 model 1 token, 8 model 2 token.
+  // Keluar dari katalog: seedance25_server10, motion_control_v3_server19_15dtk.
   for (const id of [
-    'motion_control_v3_server10_30dtk',
-    'motion_control_v3_server19_15dtk',
+    'motion_control_v3_server23_15dtk',
     'kling3_server10',
     'kling21pro_server10',
     'grok_imagine_s15',
     'sora2_server10',
     'seedance2_multi_s15',
-    'seedance25_server19',
-    'wan30_server19',
-    'gemini_omni_server19',
     'gpt_image_2_server15',
     'nano_banana_2_lite_server15',
     'nano_banana_2_server15',
     'nano_banana_pro_server15',
+    'seavi_image_server15',
     'seedream_4_server15',
     'seedream_4_5_server15',
   ]) {
     assert.equal(getSeaviCharge(id), 1, `${id} harus 1 token`)
   }
-  // Katalog 1 Nov 2026: tiga model menagih 2 token.
-  for (const id of ['kling4_server19', 'wan30_prime_server19', 'seedance25_server10']) {
+  // Katalog 5 Nov 2026: delapan model menagih 2 token.
+  for (const id of [
+    'gemini_omni_server19',
+    'happyhorse11_server23',
+    'kling4_server19',
+    'motion_control_v3_server10_30dtk',
+    'seedance25_server19',
+    'wan30_prime_server19',
+    'wan30_server19',
+    'wan3_server23',
+  ]) {
     assert.equal(getSeaviCharge(id), 2, `${id} harus 2 token`)
     assert.equal(getSeaviCharge(`sv:${id}`), 2, `prefix sv: ${id} harus 2 token`)
   }
   // Prefix sv: dari client dinormalisasi dulu.
-  assert.equal(getSeaviCharge('sv:wan30_server19'), 1)
+  assert.equal(getSeaviCharge('sv:wan30_server19'), 2)
   assert.equal(getSeaviCharge('sv:kling21pro_server10'), 1)
   assert.equal(getSeaviCharge('model_baru_xx'), 1)
   assert.equal(getSeaviCharge(), 1)

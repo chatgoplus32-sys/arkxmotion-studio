@@ -1,10 +1,17 @@
 // Seavi Labs REST API client — api.seavilabs.site via relay /api/public/seavi
 // Kontrak terverifikasi dari docs resmi + probe nyata (submit 202 → poll progress → result.url).
-// Katalog disinkronkan dari GET https://api.seavilabs.site/v1/models 1 Nov 2026:
-// aplikasi memakai 19 dari 20 model aktif — 11 video + 2 motion control + 6 image
-// — 1 atau 2 token per generate (seavi_image_server15 belum dipakai).
-// Tiga model sudah dipensiunkan upstream (404 MODEL_NOT_FOUND):
-// linocut_image_edit_qwen_server15, upscale_video_server7, motion_control_v3_server16.
+// Katalog = daftar "Aktif (21)" upstream 5 Nov 2026: 12 video + 2 motion control +
+// 7 image; 8 model menagih 2 token, 13 model 1 token (cermin SEAVI_MODEL_TOKENS di
+// shared/pricing.ts — dijaga tes kontrak silang).
+// Keluar dari katalog dibanding 1 Nov 2026: seedance25_server10 dan
+// motion_control_v3_server19_15dtk. Masuk: motion_control_v3_server23_15dtk,
+// happyhorse11_server23, wan3_server23, seavi_image_server15.
+// Naik tarif jadi 2 token: gemini_omni_server19, seedance25_server19,
+// wan30_server19, motion_control_v3_server10_30dtk.
+// Parameter happyhorse11_server23 dan wan3_server23 belum diprobe langsung dari
+// GET /v1/models — wan3_server23 mengikuti bentuk wan30_server19 (keluarga sama),
+// happyhorse11_server23 sengaja hanya mengirim gambar + prompt supaya tidak
+// menolak parameter yang belum tentu didukung.
 // Tanpa kunci member, relay bisa memasang kunci server untuk member yang sudah
 // top up — lihat providerServerKey.ts.
 import { isServerKey, relayAuthHeaders } from './providerServerKey.js'
@@ -63,12 +70,12 @@ const i2v = (id: string, label: string, tokens: number, durations: number[], asp
 
 export const SEAVI_MODELS: Record<string, SeaviModelSpec> = {
   // ── Motion Control (gambar + video referensi) ──
-  motion_control_v3_server10_30dtk: mc('motion_control_v3_server10_30dtk', 'Motion Control V3 · Server 10 (30 dtk)', 1, 0),
+  motion_control_v3_server10_30dtk: mc('motion_control_v3_server10_30dtk', 'Motion Control V3 · Server 10 (30 dtk)', 2, 0),
   // Server 16 dihapus dari katalog 1 Nov 2026 malam: hilang dari GET /v1/models
   // dan POST /generate menjawab 404 MODEL_NOT_FOUND, sementara job yang telanjur
   // dikirim berakhir GENERATION_FAILED di 25%. Batas referensinya juga paling
   // ketat (10 dtk) jadi tidak ada alasan mempertahankannya.
-  motion_control_v3_server19_15dtk: mc('motion_control_v3_server19_15dtk', 'Motion Control V3 · Server 19 (15 dtk)', 1, 250),
+  motion_control_v3_server23_15dtk: mc('motion_control_v3_server23_15dtk', 'Motion Control V3 · Server 23 (15 dtk)', 1, 250),
 
   // ── Video generation: image to video ──
   kling3_server10: i2v('kling3_server10', 'Kling 3 · Server 10', 1, [6, 10], ['9:16', '16:9']),
@@ -112,7 +119,7 @@ export const SEAVI_MODELS: Record<string, SeaviModelSpec> = {
     label: 'Seedance 2.5 · Server 19',
     category: 'video_generation',
     inputType: 'multimodal_to_video',
-    tokens: 1,
+    tokens: 2,
     imageMode: 'multi',
     imageMin: 1,
     imageMax: 9,
@@ -132,7 +139,7 @@ export const SEAVI_MODELS: Record<string, SeaviModelSpec> = {
     label: 'Wan 3.0 · Server 19',
     category: 'video_generation',
     inputType: 'image_to_video',
-    tokens: 1,
+    tokens: 2,
     imageMode: 'single',
     imageMin: 1,
     imageMax: 1,
@@ -148,7 +155,7 @@ export const SEAVI_MODELS: Record<string, SeaviModelSpec> = {
     label: 'Gemini Omni · Server 19',
     category: 'video_generation',
     inputType: 'multimodal_to_video',
-    tokens: 1,
+    tokens: 2,
     imageMode: 'multi',
     imageMin: 1,
     imageMax: 9,
@@ -196,20 +203,39 @@ export const SEAVI_MODELS: Record<string, SeaviModelSpec> = {
     promptMax: 17000,
     promptRequired: true,
   },
-  seedance25_server10: {
-    id: 'seedance25_server10',
-    label: 'Seedance 2.5 · Server 10',
+  // ── Model baru 5 Nov 2026 — dua token per generate ──
+  wan3_server23: {
+    id: 'wan3_server23',
+    label: 'Wan 3.0 · Server 23',
     category: 'video_generation',
-    inputType: 'multimodal_to_video',
+    inputType: 'image_to_video',
     tokens: 2,
-    imageMode: 'multi',
+    imageMode: 'single',
     imageMin: 1,
-    imageMax: 20,
-    videoMode: 'multi',
-    videoMax: 3,
+    imageMax: 1,
+    videoMode: 'none',
     audio: true,
     durations: [5, 10, 15],
-    aspects: ['9:16', '16:9', '1:1', '3:4', '4:3'],
+    aspects: [], // keluarga Wan 3.0: tidak menerima aspect_ratio
+    promptMax: 1500,
+    promptRequired: true,
+  },
+  // HappyHorse 1.1 di Seavi belum diprobe skemanya. Sengaja tidak memasang
+  // durations/aspects: buildSeaviPayload hanya mengirim parameter yang terdaftar
+  // di spec, jadi request-nya image_url + prompt saja — kontrak minimum yang
+  // pasti diterima upstream. Durasi & rasio menyusul setelah probe /v1/models.
+  happyhorse11_server23: {
+    id: 'happyhorse11_server23',
+    label: 'HappyHorse 1.1 · Server 23',
+    category: 'video_generation',
+    inputType: 'image_to_video',
+    tokens: 2,
+    imageMode: 'single',
+    imageMin: 1,
+    imageMax: 1,
+    videoMode: 'none',
+    durations: [],
+    aspects: [],
     promptMax: 2000,
     promptRequired: true,
   },
@@ -241,6 +267,8 @@ export const SEAVI_IMAGE_MODELS: Record<string, SeaviModelSpec> = {
   nano_banana_pro_server15: seaviImage('nano_banana_pro_server15', 'Nano Banana Pro · Server 15', 10, ['9:16', '16:9', '1:1', '4:3'], 1),
   seedream_4_server15: seaviImage('seedream_4_server15', 'Seedream 4 · Server 15', 4, ['9:16', '16:9', '1:1', '4:3'], 1),
   seedream_4_5_server15: seaviImage('seedream_4_5_server15', 'Seedream 4.5 · Server 15', 4, ['9:16', '16:9', '1:1', '4:3'], 1),
+  // Referensi 1-2 gambar (max_items 2 di skema upstream), prompt wajib ≤2000.
+  seavi_image_server15: seaviImage('seavi_image_server15', 'Seavi Image · Server 15', 2, ['9:16', '16:9', '1:1', '4:3'], 1),
 }
 
 // Upscaler Seavi (upscale_video_server7) sudah dipensiunkan upstream: submit

@@ -25,6 +25,7 @@ const SEAVI_IMAGE_UI_MODELS = [
   { value: 'sv:nano_banana_pro_server15', label: 'Nano Banana Pro · S15 (Seavi)', cr: 1, apiModel: 'nano_banana_pro_server15' },
   { value: 'sv:seedream_4_server15', label: 'Seedream 4 · S15 (Seavi)', cr: 1, apiModel: 'seedream_4_server15' },
   { value: 'sv:seedream_4_5_server15', label: 'Seedream 4.5 · S15 (Seavi)', cr: 1, apiModel: 'seedream_4_5_server15' },
+  { value: 'sv:seavi_image_server15', label: 'Seavi Image · S15 (1-2 ref)', cr: 1, apiModel: 'seavi_image_server15' },
 ]
 
 const PROVIDER_OPTIONS: Array<{ value: EditProvider; label: string; icon: string }> = [
