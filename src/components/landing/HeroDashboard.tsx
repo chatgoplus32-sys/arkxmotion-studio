@@ -115,7 +115,7 @@ export default function HeroDashboard({ providers }: HeroDashboardProps) {
             <span className="w-3 h-3 rounded-full bg-yellow-400/80" />
             <span className="w-3 h-3 rounded-full bg-green-400/80" />
           </div>
-          <div className="text-[11px] sm:text-xs font-mono text-white/40">arkxmotion.studio — Dashboard</div>
+          <div className="min-w-0 flex-1 truncate text-center text-[10px] font-mono text-white/40 sm:text-xs">arkxmotion.studio — Dashboard</div>
           <div className="w-16" />
         </div>
 
