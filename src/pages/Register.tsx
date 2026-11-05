@@ -72,7 +72,7 @@ export default function RegisterPage() {
         <div className="w-full max-w-md">
           <div className="text-center mb-8">
             <div className="flex items-center justify-center mb-4">
-              <img src="/arkx-full-logo.svg" alt="ARKXMotion Studio" className="h-16" />
+              <img src="/landing/arkx-icon.png" alt="ARKXMotion Studio" className="h-16 w-16 object-cover rounded-2xl" />
             </div>
           </div>
 
@@ -146,7 +146,7 @@ export default function RegisterPage() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="flex items-center justify-center mb-4">
-            <img src="/arkx-full-logo.svg" alt="ARKXMotion Studio" className="h-16" />
+            <img src="/landing/arkx-icon.png" alt="ARKXMotion Studio" className="h-16 w-16 object-cover rounded-2xl" />
           </div>
         </div>
 
