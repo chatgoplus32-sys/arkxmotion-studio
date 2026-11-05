@@ -5,7 +5,6 @@ import {
   Layers, Mic, Zap, Gem, Infinity as InfinityIcon, Users, ChevronRight, Menu, X,
 } from 'lucide-react'
 import MotionControlDemo from '@/components/landing/MotionControlDemo'
-import HeroDashboard from '@/components/landing/HeroDashboard'
 import { DEFAULT_MEMBERSHIP_FEE } from '@/lib/membership'
 import { DEFAULT_PRO_FEE } from '@/lib/pro'
 import { isBoosterPackage, NEXABOT_BOOSTER_COMING_SOON } from '@/lib/nexabotWallet'
@@ -383,19 +382,6 @@ export default function LandingPage() {
               <span className="h-6 w-6 rounded-full border-2 border-cyan-300/40" />
             </div>
 
-            <div className="animate-floatY relative z-10 mx-auto -mt-12 w-[94%] max-w-[540px] lg:absolute lg:-bottom-6 lg:left-0 lg:right-0 lg:mt-0 lg:w-full lg:max-w-[500px] lg:origin-bottom lg:scale-[0.94]">
-              <div className="rounded-t-[14px] border-[6px] border-b-0 border-[#1b2740] bg-[#0A1128] p-1.5 shadow-[0_24px_60px_rgba(0,0,0,0.55)]">
-                <div className="overflow-hidden rounded-[8px]">
-                  <HeroDashboard providers={providers} />
-                </div>
-              </div>
-              <div className="relative mx-auto h-3.5 w-[104%] -translate-x-[2%] rounded-b-[12px] bg-gradient-to-b from-[#243350] to-[#101a2c] shadow-[0_10px_28px_rgba(0,0,0,0.5)]">
-                <span className="absolute left-1/2 top-0 h-1.5 w-16 -translate-x-1/2 rounded-b-md bg-[#0b1220]" />
-              </div>
-              <div className="absolute -right-3 -top-4 hidden rotate-[-14deg] items-center gap-1.5 rounded-lg border border-cyan-300/30 bg-[#0A1128]/90 px-2.5 py-1.5 text-[10px] font-semibold text-cyan-200 shadow-[0_0_20px_rgba(0,240,255,0.25)] backdrop-blur lg:flex">
-                <Clapperboard className="h-3.5 w-3.5" /> Timeline Render
-              </div>
-            </div>
           </div>
         </div>
       </section>
