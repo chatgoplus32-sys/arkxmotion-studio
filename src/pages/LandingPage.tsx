@@ -311,6 +311,9 @@ export default function LandingPage() {
             <Link to="/login" onClick={() => setMobileMenu(false)} className="mt-2 flex items-center justify-center gap-2 rounded-xl border border-white/15 px-3 py-2.5 text-sm text-white/80">
               <User className="h-4 w-4" /> Login
             </Link>
+            <Link to="/register" onClick={() => setMobileMenu(false)} className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#0066FF] to-[#8B5CF6] px-3 py-3 text-sm font-bold text-white shadow-[0_0_22px_rgba(0,102,255,0.4)]">
+              Daftar Sekarang
+            </Link>
           </div>
         )}
       </nav>
@@ -352,9 +355,19 @@ export default function LandingPage() {
               </a>
             </div>
 
-            <p className="mt-4 text-[12.5px] text-white/40">
-              Dipercaya 2,400+ kreator · 48k video ter-generate · {providers.length} provider AI dalam satu dashboard
-            </p>
+            <div className="mt-4 flex items-center gap-3">
+              <div className="flex -space-x-2.5">
+                {['RA', 'DP', 'SA', 'MF', 'TN'].map((name, i) => (
+                  <span key={i} className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-[#050816] bg-gradient-to-br from-[#0066FF]/80 to-[#8B5CF6]/80 text-[9px] font-bold text-white ring-1 ring-cyan-400/20">
+                    {name}
+                  </span>
+                ))}
+              </div>
+              <p className="text-[12px] leading-tight text-white/50">
+                <span className="font-bold text-white/80">2.400+ kreator</span> sudah pakai<br />
+                <span className="text-[10.5px] text-white/35">48k video ter-generate · 8 provider AI</span>
+              </p>
+            </div>
 
             <div className="mt-9 grid grid-cols-3 gap-3 sm:grid-cols-6 sm:gap-2.5">
               {quickFeatures.map(({ label, Icon, tint }) => (
@@ -427,7 +440,7 @@ export default function LandingPage() {
 
           <div className="mt-9 grid grid-cols-2 gap-3.5 sm:grid-cols-3 lg:grid-cols-6">
             {showcase.map((s) => (
-              <div key={s.title} className="group relative overflow-hidden rounded-2xl border border-white/10 bg-[#0A1128] transition-all duration-300 hover:-translate-y-1 hover:border-cyan-300/50 hover:shadow-[0_0_36px_rgba(0,240,255,0.22)]">
+              <Link key={s.title} to="/register" aria-label={`Coba ${s.title}`} className="group relative overflow-hidden rounded-2xl border border-white/10 bg-[#0A1128] transition-all duration-300 hover:-translate-y-1 hover:border-cyan-300/50 hover:shadow-[0_0_36px_rgba(0,240,255,0.22)]">
                 <div className="aspect-[3/4] w-full overflow-hidden">
                   <img src={s.img} alt={s.alt} width={768} height={1024} loading="lazy" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.06]" />
                 </div>
@@ -438,7 +451,7 @@ export default function LandingPage() {
                   </span>
                   <span className="text-[12.5px] font-bold leading-tight text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]">{s.title}</span>
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         </div>
