@@ -147,8 +147,8 @@ export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'sv:kling4_server19', label: 'Kling 4.0 · S19 — multi + audio, 2 token (Seavi)', cr: 2, provider: 'seavi', apiModel: 'kling4_server19' },
     { value: 'sv:wan30_prime_server19', label: 'Wan 3.0 Prime · S19 — multi + audio, 2 token (Seavi)', cr: 2, provider: 'seavi', apiModel: 'wan30_prime_server19' },
     // Model baru 5 Nov 2026 — 2 token per generate.
-    { value: 'sv:wan3_server23', label: 'Wan 3.0 · S23 — audio, 5/10/15s, 2 token (Seavi)', cr: 2, provider: 'seavi', apiModel: 'wan3_server23' },
-    { value: 'sv:happyhorse11_server23', label: 'HappyHorse 1.1 · S23 — 2 token (Seavi)', cr: 2, provider: 'seavi', apiModel: 'happyhorse11_server23' },
+    { value: 'sv:wan3_server23', label: 'Wan 3.0 · S23 — 1 img, 5/10/15s, 2 token (Seavi)', cr: 2, provider: 'seavi', apiModel: 'wan3_server23' },
+    { value: 'sv:happyhorse11_server23', label: 'HappyHorse 1.1 · S23 — 1-5 img, 5/10/15s, 2 token (Seavi)', cr: 2, provider: 'seavi', apiModel: 'happyhorse11_server23' },
   ],
   nexabot: [
     { value: 'nb:t2v', label: '✍️ Text to Video — Omni Flash 1.1 (NexaBot)', cr: 0.15, provider: 'nexabot', apiModel: 't2v' },
@@ -212,8 +212,11 @@ export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: s
       { value: 'd10', label: '10 detik', mult: 1, duration: 10, cr: 2 },
       { value: 'd15', label: '15 detik', mult: 1, duration: 15, cr: 2 },
     ],
-    // sv:happyhorse11_server23 sengaja tidak punya opsi durasi: skema upstream-nya
-    // belum diprobe, jadi generate jalan dengan parameter bawaan Seavi.
+    'sv:happyhorse11_server23': [
+      { value: 'd5', label: '5 detik', mult: 1, duration: 5, cr: 2 },
+      { value: 'd10', label: '10 detik', mult: 1, duration: 10, cr: 2 },
+      { value: 'd15', label: '15 detik', mult: 1, duration: 15, cr: 2 },
+    ],
   },
   weavy: {
     'sora-2': [

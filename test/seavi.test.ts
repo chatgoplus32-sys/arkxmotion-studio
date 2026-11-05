@@ -118,17 +118,20 @@ test('payload multimodal: seedance25_server19 gambar 1-9 + video 0-3 + audio', (
 
 // ── buildSeaviPayload: motion control ───────────────────────────────────────
 
-test('payload MC: butuh gambar + video, prompt opsional, tanpa aspect/durasi', () => {
+// Upstream 5 Nov 2026: kedua model Motion Control punya supported_params KOSONG.
+// Mengirim prompt berbalas 422 "Unsupported parameter: prompt", jadi prompt yang
+// diketik member harus diabaikan, bukan diteruskan.
+test('payload MC: butuh gambar + video, prompt & aspek & durasi diabaikan', () => {
   const spec = getSeaviSpec('motion_control_v3_server23_15dtk')!
   const p = buildSeaviPayload(spec, {
     imageUrls: ['img'],
     videoUrls: ['vid'],
     prompt: 'follow moves',
-    aspectRatio: '9:16', // harus diabaikan (MC tanpa aspect_ratio)
-    duration: 10, // harus diabaikan
+    aspectRatio: '9:16',
+    duration: 10,
   })
   assert.deepEqual(p.input, { image_url: 'img', video_url: 'vid' })
-  assert.deepEqual(p.params, { prompt: 'follow moves' })
+  assert.deepEqual(p.params, {})
   assert.throws(
     () => buildSeaviPayload(spec, { imageUrls: ['img'], prompt: '' }),
     /tepat 1 video referensi/,
@@ -288,23 +291,43 @@ test('Seedream 4: maksimal 4 gambar referensi (schema upstream 1 Nov 2026)', () 
   assert.deepEqual(p.input, { image_urls: ['a.png'] })
 })
 
-test('model 2 token: Kling 4.0 menerima sampai 5 video referensi + audio', () => {
+// Upstream 5 Nov 2026 mempersempit video_urls Kling 4.0 dan Wan 3.0 Prime
+// menjadi SATU video (max_items 1); mengirim dua video ditolak 422.
+test('model 2 token: Kling 4.0 hanya menerima 1 video referensi + audio', () => {
   const spec = getSeaviSpec('kling4_server19')
   assert.ok(spec)
   assert.equal(spec.tokens, 2)
   const p = buildSeaviPayload(spec, {
     imageUrls: ['a.png'],
-    videoUrls: ['v1', 'v2'],
+    videoUrls: ['v1'],
     audioUrl: 'a.mp3',
     prompt: 'gerakan sinematik',
     duration: 10,
     aspectRatio: '9:16',
   })
-  assert.deepEqual(p.input, { image_urls: ['a.png'], video_urls: ['v1', 'v2'], audio_url: 'a.mp3' })
+  assert.deepEqual(p.input, { image_urls: ['a.png'], video_urls: ['v1'], audio_url: 'a.mp3' })
   assert.equal(p.params.duration, 10)
   assert.throws(
-    () => buildSeaviPayload(spec, { imageUrls: ['a'], videoUrls: ['1', '2', '3', '4', '5', '6'], prompt: 'x' }),
-    /maksimal 5 video/,
+    () => buildSeaviPayload(spec, { imageUrls: ['a'], videoUrls: ['v1', 'v2'], prompt: 'x' }),
+    /maksimal 1 video/,
+  )
+})
+
+// Skema upstream 5 Nov 2026 (probe langsung): hanya image_url wajib, TANPA
+// audio_url, parameter prompt (≤2000) + duration 5/10/15.
+test('wan3_server23: satu gambar, audio ditolak, tanpa aspect_ratio', () => {
+  const spec = getSeaviSpec('wan3_server23')!
+  const p = buildSeaviPayload(spec, {
+    imageUrls: ['https://x/f.jpg'],
+    prompt: 'ombak pecah di pantai',
+    duration: 15,
+    aspectRatio: '9:16',
+  })
+  assert.deepEqual(p.input, { image_url: 'https://x/f.jpg' })
+  assert.deepEqual(p.params, { prompt: 'ombak pecah di pantai', duration: 15 })
+  assert.throws(
+    () => buildSeaviPayload(spec, { imageUrls: ['i'], prompt: 'x', audioUrl: 'a.mp3' }),
+    /tidak menerima audio/,
   )
 })
 
@@ -320,23 +343,28 @@ test('seavi_image_server15: 1-2 referensi, 3 ditolak', () => {
   )
 })
 
-// Skema HappyHorse 1.1 belum diprobe dari GET /v1/models. Spec sengaja tidak
-// memasang durations/aspects: payload hanya image_url + prompt — kontrak
-// minimum yang pasti diterima upstream.
-test('happyhorse11_server23: payload minimal gambar + prompt tanpa params lain', () => {
+// HappyHorse 1.1 · Server 23, skema upstream 5 Nov 2026: image_urls 1-5,
+// prompt wajib ≤2000, aspect_ratio + duration 5/10/15, tanpa video dan audio.
+test('happyhorse11_server23: 1-5 gambar dengan durasi & aspek, video/audio ditolak', () => {
   const spec = getSeaviSpec('happyhorse11_server23')!
   assert.equal(spec.tokens, 2)
   const p = buildSeaviPayload(spec, {
-    imageUrls: ['https://x/f.jpg'],
-    prompt: 'kuda berlari',
+    imageUrls: ['https://x/1.jpg', 'https://x/2.jpg'],
+    prompt: 'kuda berlari di padang',
     duration: 10,
-    aspectRatio: '9:16',
+    aspectRatio: '16:9',
   })
-  assert.deepEqual(p, {
-    model: 'happyhorse11_server23',
-    input: { image_url: 'https://x/f.jpg' },
-    params: { prompt: 'kuda berlari' },
-  })
+  assert.deepEqual(p.input, { image_urls: ['https://x/1.jpg', 'https://x/2.jpg'] })
+  assert.deepEqual(p.params, { prompt: 'kuda berlari di padang', aspect_ratio: '16:9', duration: 10 })
+  assert.throws(() => buildSeaviPayload(spec, { prompt: 'x' }), /menerima 1-5 gambar/)
+  assert.throws(
+    () => buildSeaviPayload(spec, { imageUrls: ['1', '2', '3', '4', '5', '6'], prompt: 'x' }),
+    /menerima 1-5 gambar/,
+  )
+  assert.throws(
+    () => buildSeaviPayload(spec, { imageUrls: ['a'], videoUrls: ['v'], prompt: 'x' }),
+    /tidak menerima video/,
+  )
 })
 
 test('upscaler Seavi sudah dipensiunkan: modul tidak lagi mengekspornya', async () => {
