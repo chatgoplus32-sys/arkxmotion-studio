@@ -228,7 +228,41 @@ export default function DashboardPage() {
         </div>
       </section>
 
+      {/* ============ ONBOARDING (user baru / belum pernah generate) ============ */}
+      {!hasData && (
+        <section className="relative overflow-hidden rounded-2xl border border-cyan-400/20 bg-gradient-to-br from-[#0B1526] via-[#0A1128] to-[#120A2A] p-5 shadow-[0_0_30px_rgba(0,168,255,0.15)]">
+          <div className="pointer-events-none absolute -right-10 -top-10 h-36 w-36 rounded-full bg-[#00A8FF]/10 blur-3xl" />
+          <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="max-w-[380px]">
+              <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.22em] text-cyan-300"><Sparkles className="h-3.5 w-3.5" /> Mulai 3 Langkah</div>
+              <h2 className="mt-1.5 font-bold text-[17px] leading-snug text-white">Hanya 2 menit dari pertama kali buka hingga dapat <span className="text-cyan-300">video AI kamu sendiri</span>.</h2>
+            </div>
+            <div className="flex flex-wrap items-stretch gap-2 sm:gap-3">
+              {[
+                { n: '1', title: 'Pilih Tool', sub: 'Motion · Image · Bulk', href: '/generate/motion' },
+                { n: '2', title: 'Upload & Isi', sub: 'Foto / video / teks', href: '/generate/image-to-video' },
+                { n: '3', title: 'Generate!', sub: 'AI proses & hasil siap', href: '/quick-start' },
+              ].map(s => (
+                <button key={s.n} onClick={() => navigate(s.href)} className="group flex w-[100px] flex-col items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-2 py-3 text-center transition-all hover:border-cyan-400/40 hover:bg-white/[0.07] sm:w-[130px]">
+                  <span className="grid h-8 w-8 place-items-center rounded-full bg-gradient-to-br from-[#00A8FF] to-[#00D4FF] text-[13px] font-black text-black">{s.n}</span>
+                  <span className="text-[11px] font-bold text-white/90">{s.title}</span>
+                  <span className="text-[8px] leading-tight text-white/45">{s.sub}</span>
+                </button>
+              ))}
+            </div>
+            <button onClick={() => navigate('/quick-start')} className="hidden shrink-0 items-center gap-1.5 self-start rounded-xl border border-cyan-400/30 bg-cyan-500/10 px-3 py-2 text-[10px] font-bold text-cyan-300 transition hover:border-cyan-400/50 lg:inline-flex">
+              Panduan lengkap <ArrowRight className="h-3 w-3" />
+            </button>
+          </div>
+        </section>
+      )}
+
       {/* ============ STATS ROW ============ */}
+      {genStats === null ? (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3 animate-pulse">
+          {[1,2,3,4].map(i => <div key={i} className="h-[88px] rounded-2xl border border-white/5 bg-white/[0.03]" />)}
+        </div>
+      ) : (
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
         {[
           { label: 'Credits Terpakai', value: genStats?.totalCredits || 0, icon: Coins, text: 'text-amber-400', grad: 'from-amber-500/15 to-yellow-500/5', border: 'border-amber-400/20' },
@@ -250,6 +284,7 @@ export default function DashboardPage() {
           </div>
         ))}
       </div>
+      )}
 
       {/* ============ MAIN GRID ============ */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -297,13 +332,19 @@ export default function DashboardPage() {
               ) : (
                 <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
                   {activity.slice(0, 6).map((item) => (
-                    <div key={item.id} className="group relative overflow-hidden rounded-xl border border-white/10 bg-gradient-to-br from-[#13233C] to-[#0A1128] p-2">
-                      <div className="grid aspect-square w-full place-items-center rounded-lg bg-gradient-to-br from-cyan-500/20 to-purple-600/20">
-                        {item.status === 'done' ? <CheckCircle2 className="h-6 w-6 text-emerald-400" /> : <XCircle className="h-6 w-6 text-red-400" />}
+                    <div key={item.id} className="group relative overflow-hidden rounded-xl border border-white/10 bg-[#0B1526] p-1.5">
+                      <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-gradient-to-br from-cyan-500/20 to-purple-600/20">
+                        {item.url ? (
+                          <img src={item.url} alt={item.title} loading="lazy" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                        ) : (
+                          <div className="grid h-full w-full place-items-center">
+                            {item.status === 'done' ? <CheckCircle2 className="h-7 w-7 text-emerald-400" /> : <XCircle className="h-7 w-7 text-red-400" />}
+                          </div>
+                        )}
+                        <span className={`absolute bottom-1 right-1 rounded-full border px-1 py-0.5 text-[8px] font-bold ${item.status === 'done' ? 'border-emerald-400/30 bg-emerald-500/20 text-emerald-400' : 'border-red-400/30 bg-red-500/20 text-red-400'}`}>{item.status === 'done' ? 'Selesai' : 'Error'}</span>
                       </div>
-                      <div className="mt-1.5 flex items-center justify-between gap-1">
-                        <span className="truncate text-[8px] font-medium text-white/55">{item.title}</span>
-                        <span className="shrink-0 rounded-full border border-emerald-400/30 bg-emerald-500/15 px-1 py-0.5 text-[8px] font-bold text-emerald-400">Selesai</span>
+                      <div className="mt-1 px-0.5">
+                        <span className="block truncate text-[8px] font-medium text-white/55">{item.title}</span>
                       </div>
                     </div>
                   ))}

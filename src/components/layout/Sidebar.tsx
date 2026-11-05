@@ -1,6 +1,7 @@
-import { ReactNode, useState, useEffect, useRef } from 'react'
+import { ReactNode, useState, useEffect, useRef, useMemo } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
+import { trackCmdUse, topFrequent } from '@/lib/cmdUsage'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { useTokenSyncStore } from '@/stores/tokenSyncStore'
@@ -183,6 +184,12 @@ export function Sidebar({ collapsed = false, onClose }: SidebarProps) {
     { label: 'Notifications', href: '/admin/notifications', icon: <Bell className="h-4 w-4" /> },
   ]
 
+  const allNavItems = useMemo(() => [...mainNav, ...createNav, ...audioNav, ...enhanceNav, ...toolsNav, ...adminNav], [toolsNav, adminNav])
+  const frequentItems = useMemo(() => {
+    const byHref = new Map(allNavItems.map((i) => [i.href, i]))
+    return topFrequent(6).map((href) => byHref.get(href)).filter(Boolean) as NavItem[]
+  }, [allNavItems, location.pathname])
+
   const isActive = (href: string) => location.pathname === href || location.pathname.startsWith(href + '/')
 
   const renderNavGroup = (items: NavItem[], label?: string) => (
@@ -234,7 +241,7 @@ export function Sidebar({ collapsed = false, onClose }: SidebarProps) {
           <Link
             key={item.href}
             to={item.href}
-            onClick={onClose}
+            onClick={() => { onClose?.(); trackCmdUse(item.href) }}
             className={cn(
               'group relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] transition-colors',
               isActive(item.href)
@@ -296,6 +303,32 @@ export function Sidebar({ collapsed = false, onClose }: SidebarProps) {
       </div>
 
       <nav className="flex-1 space-y-5 overflow-y-auto p-3">
+        {frequentItems.length > 0 && !collapsed && (
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2 px-3 pb-1.5 pt-1">
+              <Zap className="h-3 w-3 text-yellow-400" fill="currentColor" />
+              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-yellow-400/80">Sering Dipakai</span>
+              <span className="h-px flex-1 bg-yellow-400/10" aria-hidden />
+            </div>
+            {frequentItems.slice(0, 5).map((item) => (
+              <Link
+                key={`fav-${item.href}`}
+                to={item.href}
+                onClick={() => { onClose?.(); trackCmdUse(item.href) }}
+                className={cn(
+                  'flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] transition-colors',
+                  isActive(item.href)
+                    ? 'bg-yellow-400/[0.08] font-medium text-yellow-300'
+                    : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
+                )}
+                title={item.label}
+              >
+                {item.icon}
+                <span>{item.label}</span>
+              </Link>
+            ))}
+          </div>
+        )}
         {renderNavGroup(mainNav)}
         {renderNavGroup(createNav, 'Buat')}
         {renderNavGroup(audioNav, 'Audio')}
@@ -309,7 +342,7 @@ export function Sidebar({ collapsed = false, onClose }: SidebarProps) {
           <div className="p-3 pb-0">
             <Link
               to="/upgrade-pro"
-              onClick={onClose}
+              onClick={() => { onClose?.(); trackCmdUse('/upgrade-pro') }}
               title={collapsed ? 'Upgrade Pro' : undefined}
               className={cn(
                 'flex items-center gap-2.5 rounded-xl border border-border/70 bg-secondary/40 px-3 py-2.5 text-foreground transition-colors hover:border-primary/25 hover:bg-secondary/60',

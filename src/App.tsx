@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { Sidebar, Header } from '@/components/layout'
 import { KeepAliveRoutes } from '@/components/layout/KeepAliveRoutes'
+import CommandPalette from '@/components/layout/CommandPalette'
 import { useAppStore, useAuthStore } from '@/stores'
 import { cn } from '@/lib/utils'
 import ProtectedRoute from '@/components/auth/ProtectedRoute'
@@ -215,6 +216,7 @@ export default function App() {
                     collapsed={sidebarCollapsed}
                     onToggleSidebar={toggleSidebar}
                   />
+                  <CommandPalette />
                   <main className="flex-1 overflow-auto p-4 sm:p-6 lg:p-8">
                     <div className="mx-auto w-full max-w-[1520px]">
                     <KeepAliveRoutes>

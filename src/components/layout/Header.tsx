@@ -1,5 +1,5 @@
 import { ReactNode } from 'react'
-import { PanelLeftClose, PanelLeft } from 'lucide-react'
+import { PanelLeftClose, PanelLeft, Search } from 'lucide-react'
 import { Button } from '@/components/ui'
 import { NotificationPanel } from '@/components/ui/NotificationPanel'
 import { ThemeToggle } from '@/components/ui/ThemeToggle'
@@ -41,6 +41,15 @@ export function Header({ title, subtitle, actions, collapsed, onToggleSidebar }:
 
         <div className="flex items-center gap-1.5 sm:gap-2">
           {actions}
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent('arkx:open-palette'))}
+            className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-white/40 transition hover:border-cyan-400/30 hover:text-cyan-300"
+            aria-label="Buka command palette (Ctrl K)"
+          >
+            <Search className="h-3.5 w-3.5" />
+            <span className="hidden md:inline">Cari tools…</span>
+            <kbd className="hidden rounded border border-white/10 bg-white/[0.05] px-1.5 py-0.5 font-mono text-[9px] md:inline">⌘K</kbd>
+          </button>
           <ThemeToggle />
           <NotificationPanel />
           <div className="flex items-center gap-0.5 rounded-xl border border-border/60 bg-secondary/25 p-0.5">
