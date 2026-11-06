@@ -1,3 +1,7 @@
+// Versi 2026-11-06: handler SKIP_WAITING agar SW baru langsung aktif tanpa reload.
+self.addEventListener('message', (e) => {
+  if (e.data && e.data.type === 'SKIP_WAITING') self.skipWaiting()
+})
 self.addEventListener('install', _e => self.skipWaiting())
 self.addEventListener('activate', _e => self.clients.claim())
 self.addEventListener('push', e => { if (e.data) self.registration.showNotification(e.data.text(), { icon: '/arkx-notify.png' }) })

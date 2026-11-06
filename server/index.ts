@@ -205,11 +205,25 @@ app.post("/api/backup/run", authenticateToken, requireAdmin, async (_req, res) =
 
 // --- Production: serve built frontend ---
 if (isProd && fs.existsSync(FRONTEND_DIR)) {
-  // Static assets with long cache
+  // Static assets dengan header cache yang benar per jenis file:
+  // - index.html & sw.js: jangan pernah di-cache lama. Kalau browser memegang
+  //   HTML lama, dia tetap memuat bundle JS lama setelah deploy (bug hasil
+  //   MC senyap: halaman terbangun dengan JS sebelum fix ditempel audio).
+  // - Aset Vite di /assets/ sudah ber-hash (nama berubah tiap build) jadi
+  //   aman di-cache 1 tahun immutable.
   app.use(express.static(FRONTEND_DIR, {
     maxAge: '30d',
     etag: true,
     lastModified: true,
+    setHeaders(res, filePath) {
+      if (filePath.endsWith('index.html') || filePath.endsWith('sw.js')) {
+        res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate')
+        return
+      }
+      if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+      }
+    },
   }))
 
   // SPA fallback — non-API routes serve index.html
@@ -218,6 +232,7 @@ if (isProd && fs.existsSync(FRONTEND_DIR)) {
     if (req.path.startsWith('/api/')) {
       return res.status(404).json({ error: 'API route not found' })
     }
+    res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate')
     res.sendFile(path.join(FRONTEND_DIR, 'index.html'))
   })
 } else {
