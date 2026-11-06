@@ -30,7 +30,7 @@ export default function LoginPage() {
 
     addToast('Welcome back!', 'success')
     logAudit('LOGIN', `User logged in: ${email}`, 'success', email)
-    navigate('/quick-start')
+    navigate('/dashboard')
   }
 
   return (
