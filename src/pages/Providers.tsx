@@ -27,7 +27,7 @@ import TokenSyncHistory from '@/components/providers/TokenSyncHistory'
 import { checkRoboneoBalance } from '@/lib/roboneo'
 import { fetchLeonardoBalance } from '@/lib/leonardo'
 import { checkWeavyBalance } from '@/lib/weavy'
-import { checkRunningHubBalance, getRhUsage, clearRhUsage } from '@/lib/runninghub'
+import { checkRunningHubBalance, getRhUsage, clearRhUsage, parseRunningHubApiKeyInput } from '@/lib/runninghub'
 import { checkFireflyBalance } from '@/lib/firefly'
 import { parseNexabotCookieInput, parseNexabotApiKeyInput } from '@/lib/nexabot'
 import { NEXABOT_CHECK_TIMEOUT_MS } from '@/lib/nexabot-constants'
@@ -217,7 +217,7 @@ const TOKEN_GUIDE: Record<string, {
       { text: 'Buka halaman API Key → klik "Create API Key".' },
       { text: 'Copy API key → paste ke input di sebelah.' },
     ],
-    tip: 'Model: Kling 2.6/2.1 via Workflow API (base64). Consumer-Member key sudah bisa dipakai. Untuk Kling V3, butuh Enterprise-Shared key.',
+    tip: 'Tempel key mentah, "Bearer <key>", atau header apiKey: … — semuanya dibaca. Consumer-Member sudah bisa untuk AI App/Workflow; model tertentu (mis. Kling V3) butuh Enterprise-Shared. Pesan "tidak dikenali" = key sudah dihapus/di-rotate di RunningHub, buat key baru.',
   },
   render: {
     url: 'https://shotstack.io/dashboard/',
@@ -939,11 +939,16 @@ export default function ProvidersPage() {
     // jangan dipecah per baris (dulu pecah → header invalid & cek saldo hang).
     // Bulk (1 key per baris) tetap didukung.
     const nexabotBlob = selectedProvider === 'nexabot' && nexabotInputIsBlob(inputValue)
-    const rawLines = nexabotBlob
+    // RunningHub: tempelan cURL/header dump juga harus dibaca sebagai satu key.
+    const runninghubBlob = selectedProvider === 'runninghub'
+      && (/(^|\s)curl\b/i.test(inputValue) || /api[-_]?key\s*[:=]/i.test(inputValue) || /authorization\s*[:=]/i.test(inputValue))
+    const rawLines = (nexabotBlob || runninghubBlob)
       ? [inputValue]
       : inputValue.split(/[\n,]/).map(l => l.trim()).filter(Boolean)
     const lines = selectedProvider === 'nexabot'
       ? rawLines.map(l => parseNexabotApiKeyInput(l)).filter(Boolean)
+      : selectedProvider === 'runninghub'
+      ? rawLines.map(l => parseRunningHubApiKeyInput(l)).filter(Boolean)
       : rawLines
     if (lines.length === 0) {
       if (selectedProvider === 'nexabot') {
@@ -1027,7 +1032,9 @@ export default function ProvidersPage() {
 
   const handleBulkUpload = useCallback(() => {
     const nexabotBlob = selectedProvider === 'nexabot' && nexabotInputIsBlob(bulkText)
-    const lines = nexabotBlob
+    const runninghubBlob = selectedProvider === 'runninghub'
+      && (/(^|\s)curl\b/i.test(bulkText) || /api[-_]?key\s*[:=]/i.test(bulkText) || /authorization\s*[:=]/i.test(bulkText))
+    const lines = (nexabotBlob || runninghubBlob)
       ? [bulkText]
       : bulkText.split(/[\n\r]+/).map(l => l.trim()).filter(Boolean)
     if (lines.length === 0) return
@@ -1041,6 +1048,10 @@ export default function ProvidersPage() {
       // NexaBot: ambil API key dari cURL/JSON & buang nilai kotor.
       if (selectedProvider === 'nexabot') {
         cleanKey = parseNexabotApiKeyInput(cleanKey)
+      }
+      // RunningHub: tempelan `Bearer …` / header / cURL / JSON juga diterima.
+      if (selectedProvider === 'runninghub') {
+        cleanKey = parseRunningHubApiKeyInput(cleanKey)
       }
       // Auto-parse Firefly JSON
       let refreshToken: string | undefined
@@ -1168,12 +1179,25 @@ export default function ProvidersPage() {
       try {
         const result = await checkRunningHubBalance(key)
         if (result.ok && result.isValidUser) {
-          return { state: 'active', balance: result.balance, detail: `Balance: ${result.balance} RH coins` }
-        } else {
-          return { state: 'invalid', detail: result.error || 'Token tidak valid' }
+          const type = result.keyType ? `${result.keyType} · ` : ''
+          if (result.balance === null) {
+            return { state: 'active', balance: null, detail: `${type}Key valid — saldo RH tidak terbaca` }
+          }
+          if (result.balance <= 0) {
+            return { state: 'empty', balance: 0, detail: `${type}Saldo 0 RH coins — habis, top up dulu` }
+          }
+          return { state: 'active', balance: result.balance, detail: `${type}Balance: ${result.balance} RH coins` }
         }
-      } catch {
-        return { state: 'failed', detail: 'Error checking token' }
+        // Hanya kode yang benar-benar menolak key (806/1002/1003/401) yang
+        // boleh menandai key invalid. Timeout / HTML 502 / gangguan upstream
+        // tidak boleh — dulu key sehat ikut mati dan provider tak bisa dipakai.
+        if (result.invalidKey) return { state: 'invalid', detail: result.error || 'API key ditolak RunningHub' }
+        return {
+          state: 'failed',
+          detail: result.error || 'Gagal cek ke RunningHub — key belum tentu salah, coba lagi',
+        }
+      } catch (err: any) {
+        return { state: 'failed', detail: err?.message || 'Error checking token' }
       }
     }
     if (selectedProvider === 'leonardo') {

@@ -111,6 +111,49 @@ export const RUNNINGHUB_VIDEO_UPSCALE_WORKFLOW_ID = '2100537736599035906'
 export const RUNNINGHUB_PHOTO_ENHANCE_WORKFLOW_ID = '2100619334354759681'
 export const RUNNINGHUB_TRAVEL_PHOTO_WORKFLOW_ID = '2097726202999336962'
 
+/**
+ * Bersihkan nilai API key yang ditempel (kutip, bullet, prefix Bearer).
+ * Dipakai saat menambah key maupun saat membaca key lama dari localStorage,
+ * supaya key yang dulu tersimpan "kotor" tetap bisa dipakai tanpa paste ulang.
+ */
+export function normalizeRunningHubApiKey(raw: string): string {
+  return String(raw || '')
+    .trim()
+    .replace(/^[•*`'"\s-]+|[•*`'"\s-]+$/g, '')
+    .replace(/^Bearer\s+/i, '')
+    .trim()
+}
+
+/**
+ * Terima berbagai bentuk tempelan dari dashboard RunningHub: key mentah,
+ * `Bearer <key>`, header `apiKey: ...` / `x-api-key: ...`, cURL, atau JSON
+ * `{ "apiKey": "..." }`. Mengembalikan '' kalau isinya jelas bukan key.
+ */
+export function parseRunningHubApiKeyInput(raw: string): string {
+  const s = String(raw || '').trim()
+  if (!s) return ''
+
+  if (s.startsWith('{')) {
+    try {
+      const obj = JSON.parse(s)
+      const h = obj?.headers || obj?.Headers || obj
+      const k = h?.['x-api-key'] || h?.['X-Api-Key'] || h?.['authorization'] || h?.['Authorization']
+        || obj?.apiKey || obj?.api_key || obj?.key || obj?.token
+      if (typeof k === 'string' && k.trim()) return normalizeRunningHubApiKey(k)
+    } catch { /* bukan JSON valid — lanjut */ }
+  }
+
+  const header = s.match(/(?:x-api-key|api[-_]?key|authorization)\s*[:=]\s*['"]?(?:Bearer\s+)?([A-Za-z0-9_.:-]{8,})/i)
+  if (header) return normalizeRunningHubApiKey(header[1])
+
+  // Jelas bukan API key (cookie / URL) — jangan menebak.
+  if (/(^|\s)curl\b/i.test(s) || /cookie\s*:/i.test(s) || /^https?:\/\//i.test(s)) return ''
+
+  const single = normalizeRunningHubApiKey(s.replace(/[\r\n]+/g, ' '))
+  if (!single || /\s/.test(single)) return ''
+  return single
+}
+
 function getStoredProviderKey(provider: string): string | null {
   if (typeof window === 'undefined') return null
   try {
@@ -119,7 +162,8 @@ function getStoredProviderKey(provider: string): string | null {
     const parsed = JSON.parse(raw)
     const keys = parsed[provider] || []
     const active = keys.find((k: any) => k.status === 'active' || k.status === 'unknown')
-    return active?.key || keys[0]?.key || null
+    const value = active?.key || keys[0]?.key || null
+    return value ? normalizeRunningHubApiKey(value) : null
   } catch { return null }
 }
 
@@ -132,12 +176,19 @@ export async function checkRunningHubBalance(apiKey: string): Promise<{
   balance: number | null
   isValidUser: boolean
   error?: string
+  /** true hanya kalau RunningHub sendiri menolak key-nya (806/1002/1003/401). */
+  invalidKey?: boolean
+  /** true kalau kegagalan berasal dari jaringan/upstream — key belum tentu salah. */
+  transient?: boolean
+  keyType?: string | null
+  code?: string | number
 }> {
+  const cleanKey = parseRunningHubApiKeyInput(apiKey) || String(apiKey || '').trim()
   try {
     const res = await fetch(RUNNINGHUB_PROXY, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'check-balance', apiKey }),
+      body: JSON.stringify({ action: 'check-balance', apiKey: cleanKey }),
     })
     const data = await res.json()
     return {
@@ -145,9 +196,13 @@ export async function checkRunningHubBalance(apiKey: string): Promise<{
       balance: data.balance ?? null,
       isValidUser: data.isValidUser ?? false,
       error: data.error,
+      invalidKey: data.invalidKey === true,
+      transient: data.transient === true,
+      keyType: data.keyType ?? null,
+      code: data.code,
     }
   } catch (err: any) {
-    return { ok: false, balance: null, isValidUser: false, error: err.message }
+    return { ok: false, balance: null, isValidUser: false, error: err.message, invalidKey: false, transient: true }
   }
 }
 
@@ -164,7 +219,9 @@ export function setRunningHubWorkflowId(workflowId: string) {
 }
 
 function runninghubProxy(action: string, params: Record<string, any>, apiKey?: string): Promise<any> {
-  const key = apiKey || getRunningHubApiKey()
+  // Key yang dipakai rotasi datang mentah dari store — bersihkan di sini juga
+  // supaya key tersimpan "kotor" (kutip/Bearer) tidak menggagalkan submit.
+  const key = normalizeRunningHubApiKey(apiKey || getRunningHubApiKey() || '')
   if (!key) throw new Error('Belum ada RunningHub API key. Silakan tambahkan di Settings.')
 
   return fetch(RUNNINGHUB_PROXY, {

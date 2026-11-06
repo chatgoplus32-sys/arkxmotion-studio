@@ -38,6 +38,16 @@ export async function precheckProviderBalance(
       return precheckOneOverBalance(minCredits)
     case 'nexabot':
       return precheckNexabotBalance(minCredits, { serverKey: opts.serverKey })
+    case 'runninghub': {
+      // Status key RunningHub tidak menentukan saldo kita (biaya = RH coins
+      // upstream). Key yang dulu ditandai invalid karena gangguan cek saldo
+      // tetap dicoba — kalau benar mati, upstream menjawab 806 dengan pesan jelas.
+      const keys = useProviderManager.getState().keys.runninghub || []
+      if (keys.length === 0) {
+        return { ok: false, error: 'Tidak ada API key RunningHub. Tambahkan di halaman Providers.' }
+      }
+      return { ok: true }
+    }
     case 'seavi':
       return precheckSeaviBalance(minCredits, { authToken: opts.authToken, isAdmin: opts.isAdmin })
     case 'createpulse': {

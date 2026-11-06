@@ -284,6 +284,17 @@ function rhAuthHeaders(_apiKey: string) {
   return { 'Content-Type': 'application/json', 'User-Agent': 'ArkxMotion/1.0' }
 }
 
+// Key yang ditempel dari dashboard bisa membawa kutip, bullet, atau prefix
+// "Bearer". Bersihkan di pintu masuk supaya key lama yang tersimpan kotor
+// tetap bisa dipakai tanpa paste ulang.
+function normalizeRhApiKey(raw: unknown): string {
+  return String(raw ?? '')
+    .trim()
+    .replace(/^[•*`'"\s-]+|[•*`'"\s-]+$/g, '')
+    .replace(/^Bearer\s+/i, '')
+    .trim()
+}
+
 router.all('/', async (req: Request, res: Response) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
@@ -293,7 +304,8 @@ router.all('/', async (req: Request, res: Response) => {
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'Method not allowed' })
 
   const body = req.body || {}
-  const { action, apiKey, ...params } = body
+  const { action, apiKey: rawApiKey, ...params } = body
+  const apiKey = normalizeRhApiKey(rawApiKey)
 
   if (!action) return res.status(200).json({ ok: false, error: 'Missing action' })
   if (!apiKey) return res.status(200).json({ ok: false, error: 'Missing apiKey' })
@@ -3054,16 +3066,12 @@ async function handleSubmitUGCStoryboard(apiKey: string, params: any, res: Respo
 
 async function handleMotionControl(apiKey: string, params: any, res: Response) {
   const {
-    _workflow_id,
     imageBase64,
     videoBase64,
     imageFileName = 'image.jpg',
     videoFileName = 'video.mp4',
     imageMimeType = 'image/jpeg',
     videoMimeType = 'video/mp4',
-    _prompt = '',
-    _negative_prompt = '',
-    _keep_original_sound = false,
   } = params
 
   if (!imageBase64) return res.status(200).json({ ok: false, error: 'Missing imageBase64' })
@@ -3105,7 +3113,6 @@ async function handleMotionControl(apiKey: string, params: any, res: Response) {
   const MAX_RETRIES = 3
   const RETRY_DELAY_MS = 10000
   let lastRawText = ''
-  let _lastData: any = null
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     console.log(`[runninghub] POST ${endpoint} (attempt ${attempt}/${MAX_RETRIES})`)
@@ -3125,7 +3132,6 @@ async function handleMotionControl(apiKey: string, params: any, res: Response) {
 
     let data: any
     try { data = JSON.parse(lastRawText) } catch { data = { raw: lastRawText } }
-    _lastData = data
 
     const rhCode = data.code ?? data.errorCode
     const rhMsg = data.msg || data.errorMessage || data.message
@@ -3295,16 +3301,30 @@ async function handleQuery(apiKey: string, taskId: string, res: Response) {
   })
 }
 
+// Kode yang berarti API key-nya sendiri ditolak RunningHub. Selain ini
+// (saldo, izin workflow, gangguan upstream) key tetap sehat dan TIDAK boleh
+// ditandai invalid — dulu semua kegagalan cek saldo membuat key mati permanen.
+export const RH_KEY_REJECT_CODES = new Set(['401', '806', '811', '814', '1002', '1003'])
+
 function translateRhError(code: string, msg?: string): string {
   const map: Record<string, string> = {
     '414': 'Saldo/kuota kerja (power) tidak cukup untuk menjalankan task ini. Silakan top up RH coins di akun RunningHub.',
     '404': 'Workflow tidak ditemukan atau tidak dapat diakses API key ini.',
     '403': 'Akses ditolak. API key tidak berhak mengakses workflow ini.',
+    '806': 'API key tidak dikenali RunningHub (user pemilik key tidak ditemukan). Key mungkin sudah dihapus/di-rotate atau berasal dari akun runninghub.cn — buat API key baru di runninghub.ai → API Keys, lalu paste ulang.',
+    '807': 'Task tidak ditemukan di RunningHub (mungkin sudah kedaluwarsa / dibersihkan).',
+    '811': 'API key Enterprise tidak valid atau akun tidak punya izin enterprise.',
+    '814': 'API key Enterprise tidak valid atau akun tidak punya izin enterprise.',
+    '1014': 'Model ini hanya bisa dipanggil dengan API key Enterprise-Shared. Buat key dari akun tim/enterprise RunningHub, lalu tambahkan di Providers.',
+    '1001': 'Endpoint/URL RunningHub yang dipanggil tidak dikenali (kemungkinan perubahan API upstream).',
     '1002': 'API key tidak valid.',
     '1003': 'API key tidak valid atau telah kedaluwarsa.',
     '1004': 'Workflow tidak ditemukan.',
+    '1601': 'Request ke RunningHub tidak membawa field apiKey.',
+    '1602': 'Header Authorization (Bearer API key) tidak terkirim ke RunningHub.',
     '5101': 'Gagal membuat task, coba lagi.',
   }
+  if (RH_KEY_REJECT_CODES.has(code)) return map[code] || msg || `API key ditolak RunningHub (${code})`
   if (msg && /API balance is insufficient/i.test(msg)) {
     return 'Saldo LLM API RunningHub tidak cukup (terpisah dari koin RH). Isi ulang "LLM API Balance" di RunningHub lalu coba lagi.'
   }
@@ -3312,6 +3332,19 @@ function translateRhError(code: string, msg?: string): string {
     return 'Saldo/kuota kerja tidak cukup. Silakan top up RH coins di akun RunningHub.'
   }
   return map[code] || msg || `Error RunningHub (${code})`
+}
+
+// accountStatus mengembalikan saldo dengan nama field yang berbeda antar
+// generasi API — baca semuanya, jangan hanya remainCoins.
+const RH_BALANCE_FIELDS = ['remainCoins', 'remainCoin', 'coins', 'coin', 'balance', 'power', 'remainPower']
+
+function rhKeyTypeLabel(apiType: unknown): string | null {
+  if (typeof apiType !== 'string' || !apiType.trim()) return null
+  const t = apiType.toLowerCase()
+  if (t.includes('consum') || t.includes('personal') || t.includes('member')) return 'Consumer-Member'
+  if (t.includes('exclusiv')) return 'Enterprise-Exclusive'
+  if (t.includes('enterprise') || t.includes('shared') || t.includes('team')) return 'Enterprise-Shared'
+  return apiType
 }
 
 async function handleCheckBalance(apiKey: string, res: Response) {
@@ -3327,32 +3360,63 @@ async function handleCheckBalance(apiKey: string, res: Response) {
     const rawText = await apiRes.text()
     console.log(`[runninghub] check-balance ${apiRes.status}:`, rawText.slice(0, 500))
 
-    let data: any
-    try { data = JSON.parse(rawText) } catch { data = { raw: rawText } }
+    let data: any = null
+    try { data = JSON.parse(rawText) } catch { data = null }
 
-    if (data.code !== undefined && data.code !== 0) {
+    // Balasan HTML/kosong (502 nginx, maintenance) atau JSON tanpa `code`
+    // maupun `data` bukan bukti key salah.
+    if (
+      !data || typeof data !== 'object' || apiRes.status >= 500
+      || (data.code === undefined && (!data.data || typeof data.data !== 'object'))
+    ) {
       return res.status(200).json({
         ok: false,
-        error: translateRhError(String(data.code), data.msg) || data.msg || 'Gagal cek saldo',
+        transient: true,
+        invalidKey: false,
+        error: `RunningHub tidak membalas JSON (HTTP ${apiRes.status}) — coba lagi sebentar lagi; API key belum tentu salah.`,
         balance: null,
         isValidUser: false,
       })
     }
 
-    const info = data.data || {}
-    const balance = info.remainCoins !== undefined && info.remainCoins !== null ? parseFloat(info.remainCoins) : null
+    if (data.code !== undefined && data.code !== null && data.code !== 0 && data.code !== '0') {
+      const code = String(data.code)
+      const rejected = RH_KEY_REJECT_CODES.has(code)
+      return res.status(200).json({
+        ok: false,
+        transient: !rejected,
+        invalidKey: rejected,
+        error: translateRhError(code, data.msg),
+        balance: null,
+        isValidUser: false,
+        code: data.code,
+      })
+    }
 
+    const info = data.data || {}
+    let balance: number | null = null
+    for (const field of RH_BALANCE_FIELDS) {
+      const raw = info[field]
+      if (raw === undefined || raw === null || raw === '') continue
+      const num = Number(raw)
+      if (Number.isFinite(num)) { balance = num; break }
+    }
+
+    const apiType = info.apiType ?? null
     return res.status(200).json({
       ok: true,
       balance,
       isValidUser: true,
-      apiType: info.apiType || null,
+      apiType,
+      keyType: rhKeyTypeLabel(apiType),
       message: 'API key valid',
     })
   } catch (err: any) {
     return res.status(200).json({
       ok: false,
-      error: err.message,
+      transient: true,
+      invalidKey: false,
+      error: `Gagal terhubung ke RunningHub: ${err.message} — coba lagi; API key belum tentu salah.`,
       balance: null,
       isValidUser: false,
       message: 'Gagal terhubung ke RunningHub',
