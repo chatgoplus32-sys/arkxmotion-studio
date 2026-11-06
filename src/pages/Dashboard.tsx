@@ -11,7 +11,7 @@ import {
   BarChart3, Target, Clock3, Trophy, Coins, RefreshCw, Loader2,
   CheckCircle2, XCircle, Gauge, ChevronRight, Flame, TrendingUp, Activity,
   Play, Crown, Sparkles, Gift, Headphones, ShoppingBag, ArrowUpRight, Scissors,
-  HelpCircle, MessageCircle, ArrowUp, BookOpen, Shield
+  HelpCircle, MessageCircle, ArrowUp, BookOpen, Shield, FolderOpen
 } from 'lucide-react'
 
 const STATUS_META: Record<string, { dot: string; label: string; text: string }> = {
@@ -110,6 +110,26 @@ const QUICK_TOOLS = [
   { label: 'Song Cover', desc: 'Reimagine lagu kamu', icon: <Zap className="h-6 w-6" />, href: '/generate/song-cover', grad: 'from-[#FFB020] to-[#FF8A00]' },
 ]
 
+// Aksi tersering di hero — sengaja subset dari QUICK_TOOLS, bukan mengulang semuanya.
+const HERO_ACTIONS = [
+  { label: 'Motion Control', desc: 'Video → karakter AI', icon: <Scissors className="h-5 w-5" />, href: '/generate/motion', grad: 'from-[#0066FF] to-[#00A8FF]' },
+  { label: 'Image to Video', desc: 'Foto jadi video', icon: <Video className="h-5 w-5" />, href: '/generate/image-to-video', grad: 'from-[#7B2FFF] to-[#B14DFF]' },
+  { label: 'Text to Image', desc: 'Prompt → gambar', icon: <Image className="h-5 w-5" />, href: '/generate/image', grad: 'from-[#00C853] to-[#00E676]' },
+  { label: 'Hasil Saya', desc: 'Semua karyamu', icon: <FolderOpen className="h-5 w-5" />, href: '/hasil', grad: 'from-[#00A8FF] to-[#7B2FFF]' },
+]
+
+function timeAgo(iso: string): string {
+  const t = new Date(iso).getTime()
+  if (Number.isNaN(t)) return ''
+  const s = Math.floor((Date.now() - t) / 1000)
+  if (s < 60) return 'baru saja'
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m} mnt lalu`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h} jam lalu`
+  return `${Math.floor(h / 24)} hr lalu`
+}
+
 const HELP_LINKS = [
   { label: 'Pusat Bantuan', icon: <BookOpen className="h-4 w-4" />, href: '/quick-start' },
   { label: 'Top Up & Saldo', icon: <Coins className="h-4 w-4" />, href: '/saldo' },
@@ -191,39 +211,52 @@ export default function DashboardPage() {
   return (
     <PageContent className="space-y-4 sm:space-y-5">
 
-      {/* ============ HERO BANNER ============ */}
-      <section className="relative overflow-hidden rounded-[26px] border border-cyan-400/25 bg-[#050A15] shadow-[0_0_60px_rgba(0,102,255,0.35)]">
-        {/* Artwork */}
+      {/* ============ HERO — PANEL AKSI CEPAT ============ */}
+      <section className="relative overflow-hidden rounded-[26px] border border-cyan-400/25 bg-[#050A15] shadow-[0_0_60px_rgba(0,102,255,0.28)]">
         <img
           src="/landing/hero-fantasy.webp"
-          alt="ARKXMotion Studio — ksatria & putri di dunia fantasi"
-          className="pointer-events-none absolute inset-y-0 right-[-20%] hidden h-full w-[62%] object-cover object-[60%_38%] opacity-90 sm:block lg:right-0"
+          alt=""
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 right-[-12%] hidden h-full w-[50%] object-cover object-[62%_38%] opacity-25 sm:block"
         />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-[#050A15] via-[#050A15]/85 to-transparent" />
-        <div className="pointer-events-none absolute inset-y-0 right-0 w-[45%] bg-gradient-to-l from-[#050A15]/10 via-transparent to-transparent" />
-        <div className="pointer-events-none absolute -right-10 top-1/3 h-64 w-64 rounded-full bg-[#00A8FF]/10 blur-[80px]" />
 
-        <div className="relative p-5 sm:p-7 lg:p-8 max-w-[560px]">
-          <div className="flex items-center gap-2.5 text-[11px] font-black uppercase tracking-[0.28em] text-cyan-300">
-            <Sparkles className="h-4 w-4" /> ARKXMOTION STUDIO
+        <div className="relative p-5 sm:p-6 lg:p-7 max-w-[680px]">
+          <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.24em] text-cyan-300">
+            <Sparkles className="h-3.5 w-3.5" /> ARKXMOTION STUDIO
           </div>
-          <h1 className="mt-3 text-[30px] font-black italic leading-[0.98] tracking-tight sm:text-[38px] lg:text-[42px]">
-            <span className="bg-gradient-to-r from-white via-cyan-100 to-cyan-200 bg-clip-text text-transparent">AI Creative Suite</span><br />
-            <span className="bg-gradient-to-r from-[#00A8FF] via-cyan-300 to-[#7B2FFF] bg-clip-text text-transparent">All-in-One</span>
+          <h1 className="mt-2 text-[26px] font-black italic leading-[1] tracking-tight sm:text-[32px]">
+            <span className="bg-gradient-to-r from-white via-cyan-100 to-cyan-200 bg-clip-text text-transparent">{greeting}, {(user as any)?.name || 'Kreator'}</span>
           </h1>
-          <p className="mt-3 max-w-[420px] text-[13px] leading-relaxed text-cyan-100/60 sm:text-[14px]">
-            Buat Video, Gambar, Animasi, Lip-Sync, hingga Upscale dengan Teknologi AI Generasi Terbaru.
-          </p>
-          <div className="mt-5 flex flex-wrap items-center gap-2.5">
-            <button onClick={() => navigate('/generate/motion')} className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#00A8FF] to-[#00D4FF] px-5 py-2.5 text-sm font-bold text-black shadow-[0_0_28px_rgba(0,168,255,0.55)] transition hover:-translate-y-0.5 hover:shadow-[0_0_40px_rgba(0,212,255,0.7)]">
-              <Play className="h-4 w-4" fill="currentColor" /> Mulai Generate
+          <p className="mt-1.5 text-[13px] text-cyan-100/55">Mau lanjut proyek terakhir, atau bikin yang baru?</p>
+
+          {activity[0] && (
+            <button onClick={() => navigate('/hasil')} className="mt-4 flex w-full items-center gap-3 rounded-2xl border border-cyan-400/20 bg-white/[0.04] p-3 text-left transition hover:border-cyan-400/40 hover:bg-white/[0.07]">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-[#00A8FF] to-[#00D4FF] text-black"><Play className="h-4 w-4" fill="currentColor" /></span>
+              <span className="min-w-0">
+                <span className="block text-[9px] font-black uppercase tracking-[0.16em] text-cyan-300">Lanjutkan</span>
+                <span className="block truncate text-[12px] font-semibold text-white/85">{activity[0].title} · {timeAgo(activity[0].time)}</span>
+              </span>
+              <ArrowRight className="ml-auto h-4 w-4 shrink-0 text-cyan-300" />
             </button>
-            <button onClick={() => navigate('/quick-start')} className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/[0.06] px-5 py-2.5 text-sm font-semibold text-white/85 backdrop-blur transition hover:border-cyan-400/40 hover:bg-white/[0.1]">
-              <BookOpen className="h-4 w-4" /> Lihat Tutorial
-            </button>
+          )}
+
+          <div className="mt-3.5 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+            {HERO_ACTIONS.map((a) => (
+              <button key={a.label} onClick={() => navigate(a.href)} className="group relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.05] to-transparent p-3 text-left transition-all hover:-translate-y-0.5 hover:border-cyan-400/30 hover:shadow-[0_8px_28px_rgba(0,168,255,0.18)]">
+                <span className={`grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br ${a.grad} text-white shadow-[0_4px_16px_rgba(0,0,0,0.4)] transition-transform group-hover:scale-110`}>{a.icon}</span>
+                <span className="mt-2.5 block text-[12px] font-bold leading-tight text-white">{a.label}</span>
+                <span className="mt-0.5 block text-[9px] leading-tight text-white/45">{a.desc}</span>
+              </button>
+            ))}
           </div>
-          <div className="mt-4 flex items-center gap-2 text-[11px] font-semibold text-cyan-100/45">
-            <Shield className="h-3.5 w-3.5 text-emerald-400" /> {healthSummary.online}/{healthSummary.total} providers online · 2.400+ kreator terdaftar
+
+          <div className="mt-4 flex flex-wrap items-center gap-2.5">
+            <button onClick={() => navigate('/saldo')} className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/[0.06] px-4 py-2 text-[12px] font-semibold text-white/85 backdrop-blur transition hover:border-cyan-400/40 hover:bg-white/[0.1]"><Coins className="h-4 w-4 text-amber-400" /> Cek Saldo</button>
+            <button onClick={() => navigate('/quick-start')} className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/[0.06] px-4 py-2 text-[12px] font-semibold text-white/85 backdrop-blur transition hover:border-cyan-400/40 hover:bg-white/[0.1]"><BookOpen className="h-4 w-4 text-cyan-300" /> Tutorial</button>
+            <span className="ml-auto inline-flex items-center gap-2 text-[11px] font-semibold text-cyan-100/45">
+              <Shield className="h-3.5 w-3.5 text-emerald-400" /> {healthSummary.online}/{healthSummary.total} provider online
+            </span>
           </div>
         </div>
       </section>
