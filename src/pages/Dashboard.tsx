@@ -10,7 +10,7 @@ import {
   Video, Image, Zap, Wand2, Route, Key, ArrowRight, Music,
   BarChart3, Target, Clock3, Trophy, Coins, RefreshCw, Loader2,
   CheckCircle2, XCircle, Gauge, ChevronRight, Flame, TrendingUp, Activity,
-  Play, Crown, Sparkles, Gift, Headphones, ShoppingBag, ArrowUpRight, Scissors,
+  Play, Crown, Sparkles, Gift, Headphones, ArrowUpRight, Scissors,
   HelpCircle, MessageCircle, ArrowUp, BookOpen, Shield, FolderOpen
 } from 'lucide-react'
 
@@ -102,19 +102,18 @@ function getRecentActivity(): RecentActivity[] {
 const QUICK_TOOLS = [
   { label: 'Motion Control', desc: 'Video gerakan → karakter AI', icon: <Scissors className="h-6 w-6" />, href: '/generate/motion', grad: 'from-[#0066FF] to-[#00A8FF]' },
   { label: 'Image to Video', desc: 'Foto jadi video sinematik', icon: <Video className="h-6 w-6" />, href: '/generate/image-to-video', grad: 'from-[#7B2FFF] to-[#B14DFF]' },
-  { label: 'Text to Image', desc: 'Prompt → gambar AI', icon: <Image className="h-6 w-6" />, href: '/generate/image', grad: 'from-[#00C853] to-[#00E676]' },
+  { label: 'Edit Image', desc: 'Edit gambar dengan AI', icon: <Image className="h-6 w-6" />, href: '/generate/edit-image', grad: 'from-[#00C853] to-[#00E676]' },
   { label: 'Video Upscale', desc: '4K / HD · 30 fps', icon: <ArrowUp className="h-6 w-6" />, href: '/generate/video-upscaler', grad: 'from-[#0066FF] to-[#00D4FF]' },
-  { label: 'Bulk Fashion', desc: '1 model · 100 outfit', icon: <ShoppingBag className="h-6 w-6" />, href: '/generate/bulk-fashion', grad: 'from-[#FF6B35] to-[#FF3D68]' },
   { label: 'Voice Over', desc: 'AI voice · podcast & karaoke', icon: <Music className="h-6 w-6" />, href: '/generate/voice-over', grad: 'from-[#00A8FF] to-[#7B2FFF]' },
   { label: 'AI Upscaler', desc: 'Upscale & retouch foto', icon: <Wand2 className="h-6 w-6" />, href: '/generate/upscaler', grad: 'from-[#8B5CF6] to-[#C084FC]' },
-  { label: 'Song Cover', desc: 'Reimagine lagu kamu', icon: <Zap className="h-6 w-6" />, href: '/generate/song-cover', grad: 'from-[#FFB020] to-[#FF8A00]' },
+  { label: 'Music Generator', desc: 'Buat musik dengan AI', icon: <Music className="h-6 w-6" />, href: '/generate/music-generator', grad: 'from-[#FFB020] to-[#FF8A00]' },
 ]
 
 // Aksi tersering di hero — sengaja subset dari QUICK_TOOLS, bukan mengulang semuanya.
 const HERO_ACTIONS = [
   { label: 'Motion Control', desc: 'Video → karakter AI', icon: <Scissors className="h-5 w-5" />, href: '/generate/motion', grad: 'from-[#0066FF] to-[#00A8FF]' },
   { label: 'Image to Video', desc: 'Foto jadi video', icon: <Video className="h-5 w-5" />, href: '/generate/image-to-video', grad: 'from-[#7B2FFF] to-[#B14DFF]' },
-  { label: 'Text to Image', desc: 'Prompt → gambar', icon: <Image className="h-5 w-5" />, href: '/generate/image', grad: 'from-[#00C853] to-[#00E676]' },
+  { label: 'Edit Image', desc: 'Edit gambar AI', icon: <Image className="h-5 w-5" />, href: '/generate/edit-image', grad: 'from-[#00C853] to-[#00E676]' },
   { label: 'Hasil Saya', desc: 'Semua karyamu', icon: <FolderOpen className="h-5 w-5" />, href: '/hasil', grad: 'from-[#00A8FF] to-[#7B2FFF]' },
 ]
 

@@ -12,6 +12,10 @@ import { runTopazUpscale } from '@/lib/weavy'
 import { submitRunningHubPhotoEnhance, pollRunningHubTask } from '@/lib/runninghub'
 import { withTokenRotation } from '@/lib/tokenRotation'
 import { addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
+import { useAuthStore } from '@/stores/authStore'
+import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, nexabotPreferServerKey, nexabotFreeForModel, NEXABOT_PRICE_FALLBACK, type NexabotWallet } from '@/lib/nexabotWallet'
+import { formatRp } from '@/lib/payment'
+import { uploadBlobToCdn } from '@/lib/cdn'
 
 const MAX_IMAGES = 50
 
@@ -109,8 +113,10 @@ async function urlToFile(url: string, name?: string): Promise<File | null> {
 export default function UpscalerPage() {
   const addToast = useToastStore((s) => s.addToast)
   const { keys, fetchMaintenance } = useProviderManager()
+  const { token: authToken, user } = useAuthStore()
+  const [nbWallet, setNbWallet] = useState<NexabotWallet | null>(null)
 
-  const [provider, setProvider] = useState<'topaz' | 'magnific' | 'leonardo' | 'runninghub'>('topaz')
+  const [provider, setProvider] = useState<'topaz' | 'magnific' | 'leonardo' | 'runninghub' | 'nexabot'>('topaz')
   const [mode, setMode] = useState<'upscale' | 'enhance'>('upscale')
   const [rows, setRows] = useState<ImageRow[]>([])
   const [running, setRunning] = useState(false)
@@ -141,6 +147,9 @@ export default function UpscalerPage() {
 
   const [rhScaleBy, setRhScaleBy] = useState(2)
 
+  const [nbAspect, setNbAspect] = useState<'auto' | 1 | 2 | 5>('auto')
+  const [nbPrompt, setNbPrompt] = useState('')
+
   const filePickerRef = useRef<HTMLInputElement | null>(null)
   const runningRef = useRef(false)
   const [timedOut, setTimedOut] = useState<{ taskId: string; index: number; fileName: string } | null>(null)
@@ -152,8 +161,13 @@ export default function UpscalerPage() {
   const hasWeavyKey = weavyKeys.some(k => k.status !== 'invalid' && k.status !== 'expired')
   const rhKeys = keys.runninghub || []
   const hasRunningHubKey = rhKeys.some(k => k.status !== 'invalid' && k.status !== 'expired')
+  const nbKeys = keys.nexabot || []
+  const hasNexabotKey = nbKeys.some(k => k.status !== 'invalid' && k.status !== 'expired')
+  const nexabotServerReady = !!nbWallet?.server_key?.available
+  const nbFreeForModel = nexabotFreeForModel(nbWallet, 'gpt-image')
+  const hasNexabotAuth = user?.role === 'admin' || hasNexabotKey || nexabotServerReady
   const canRun = rows.length > 0 && !running &&
-    ((provider === 'topaz' && hasWeavyKey) || (provider === 'magnific' && !!magnificKey) || (provider === 'leonardo' && hasLeonardoKey) || (provider === 'runninghub' && hasRunningHubKey))
+    ((provider === 'topaz' && hasWeavyKey) || (provider === 'magnific' && !!magnificKey) || (provider === 'leonardo' && hasLeonardoKey) || (provider === 'runninghub' && hasRunningHubKey) || (provider === 'nexabot' && hasNexabotAuth))
 
   const addLog = useCallback((msg: string, level: LogEntry['level'] = 'info') => {
     const time = new Date().toLocaleTimeString()
@@ -213,6 +227,11 @@ export default function UpscalerPage() {
     }
   }, [addImages, addLog])
 
+  useEffect(() => {
+    if (!authToken) { setNbWallet(null); return }
+    fetchNexabotWallet(authToken).then((w) => { if (w) setNbWallet(w) }).catch(() => {})
+  }, [authToken])
+
   function removeImage(id: string) {
     setRows(prev => {
       const row = prev.find(r => r.id === id)
@@ -228,6 +247,10 @@ export default function UpscalerPage() {
 
   async function handleRun() {
     if (rows.length === 0 || running) return
+    if (provider === 'nexabot' && authToken && user?.role !== 'admin' && nbWallet && !nbFreeForModel && nbWallet.balance < (nbWallet.price ?? NEXABOT_PRICE_FALLBACK)) {
+      addToast(`Saldo NexaBot tidak cukup (${formatRp(nbWallet.balance)}). Top up / ambil paket dulu sebelum generate GPT Image.`, 'error')
+      return
+    }
     setRunning(true)
     setTimedOut(null)
     runningRef.current = true
@@ -253,6 +276,7 @@ export default function UpscalerPage() {
         setRows(prev => prev.map((r, i) => i === item.index ? { ...r, status: 'processing' } : r))
       }
       let taskTid = ''
+      let nbChargeTicket: number | null = null
 
       try {
         log('mulai...')
@@ -301,6 +325,73 @@ export default function UpscalerPage() {
           )
           if (!rotation.ok) throw new Error(rotation.error || 'RunningHub failed')
           url = rotation.result!
+        } else if (provider === 'nexabot') {
+          const { submitNexabotGptImage, pollNexabotGptImage, downloadNexabotGptImage, runWithNexabotThrottleRetry, getNexabotApiKey, getNexabotCookies, compressForApi } = await import('@/lib/nexabot')
+
+          // Satu tiket pemotongan saldo per gambar (member; admin bypass).
+          let coveredByPackage = false
+          if (authToken && user?.role !== 'admin') {
+            const charge = await chargeNexabotWallet(authToken, 'gpt-image')
+            nbChargeTicket = charge.usageId
+            coveredByPackage = charge.unlimited
+            setNbWallet((w) => (w ? { ...w, balance: charge.balance } : w))
+            log(charge.unlimited ? '🎟️ paket aktif — gratis' : `💰 -${formatRp(charge.deducted)} (sisa ${formatRp(charge.balance)})`)
+          } else if (user?.role === 'admin') {
+            log('⚡ admin — skip saldo')
+          }
+
+          // Kredensial: prioritaskan kunci server, else API key / cookie milik sendiri.
+          let serverReady = nexabotServerReady
+          if (authToken) {
+            const fresh = await fetchNexabotWallet(authToken).catch(() => null)
+            if (fresh) { setNbWallet(fresh); serverReady = !!fresh.server_key?.available }
+          }
+          const nbApiKey = getNexabotApiKey()
+          const nbCookies = getNexabotCookies()
+          let auth: any
+          if (nexabotPreferServerKey({ hasOwnKey: !!(nbApiKey || nbCookies), serverReady, coveredByPackage })) {
+            auth = { master: true, ticket: nbChargeTicket }
+          } else if (nbApiKey || nbCookies) {
+            auth = { apiKey: nbApiKey, cookies: nbCookies, ticket: nbChargeTicket }
+          } else {
+            throw new Error('NexaBot: tidak ada API key aktif dan kunci server belum tersedia — tambahkan API key di Providers atau top up / ambil paket dulu.')
+          }
+
+          const small = await compressForApi(item.file, 1024, 0.72)
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const r = new FileReader()
+            r.onload = () => resolve(String(r.result))
+            r.onerror = () => reject(new Error('Gagal membaca file gambar'))
+            r.readAsDataURL(small)
+          })
+
+          const ratio = rows[item.index]?.ratio ?? 1
+          const aspect: 1 | 2 | 5 = nbAspect === 'auto'
+            ? (ratio >= 1.4 ? 2 : ratio <= 0.72 ? 5 : 1)
+            : nbAspect
+
+          const enhancePrompt = `Upscale and enhance this image: maximum sharpness and fine detail, remove noise and compression artifacts, refine textures, photorealistic and faithful to the original. Keep the exact subject, composition, colors, framing and aspect ratio — do not add, remove, or rearrange any object.${nbPrompt.trim() ? ` Additional: ${nbPrompt.trim()}` : ''}`
+
+          const submit = await runWithNexabotThrottleRetry(() => submitNexabotGptImage({ prompt: enhancePrompt, aspect, references: [dataUrl] }, auth), {
+            onThrottle: (s) => log(`⏳ throttle upstream — tunggu ${s}s lalu submit otomatis...`, 'warn'),
+          })
+          if (!submit.ok || !submit.id) throw new Error(submit.error || 'Submit NexaBot GPT Image gagal')
+          taskTid = submit.id
+          log(`task ${submit.id.slice(0, 14)}… (biaya ${submit.cost ?? 0.1})`)
+
+          const job = await pollNexabotGptImage(submit.id, auth, (msg) => log(msg))
+          const imgs = (job.images || []).filter((im) => im && typeof im.url === 'string')
+          if (!imgs.length) throw new Error('Tidak ada gambar hasil GPT Image')
+
+          const dl = await downloadNexabotGptImage(imgs[0].url, auth)
+          if (!dl.ok || !dl.blob) throw new Error(`Unduh hasil gagal: ${dl.error || 'blob kosong'}`)
+
+          // URL relay butuh header auth → tak bisa dipakai <img>/galeri langsung.
+          // Unggah byte ke R2 untuk tautan http permanen; fallback blob untuk sesi ini saja.
+          const up = await uploadBlobToCdn(dl.blob, `gptimg-${submit.id}-${item.index}.jpg`)
+          if (up.ok && up.url) url = up.url
+          else { log(`penyimpanan R2 gagal (${up.error}) — pakai pratinjau sesi`, 'warn'); url = URL.createObjectURL(dl.blob) }
+          nbChargeTicket = null // hasil jadi — saldo resmi terpakai, jangan di-refund
         } else {
           const rotation = await withTokenRotation<string>(
             'leonardo',
@@ -334,7 +425,7 @@ export default function UpscalerPage() {
           page: 'upscaler',
           kind: 'image',
           provider,
-          model: provider === 'topaz' ? 'Topaz Upscale' : provider === 'magnific' ? 'Magnific Upscale' : provider === 'leonardo' ? 'Aurora Upscale' : 'AI Photo Enhancer',
+          model: provider === 'topaz' ? 'Topaz Upscale' : provider === 'magnific' ? 'Magnific Upscale' : provider === 'leonardo' ? 'Aurora Upscale' : provider === 'nexabot' ? 'AI Enhance via GPT Image 2.5' : 'AI Photo Enhancer',
         }, { notify: false })
 
         const newItem: GalleryItem = {
@@ -356,6 +447,14 @@ export default function UpscalerPage() {
         completed++
         setProgress({ done: completed, total: rows.length })
         log(msg, 'error')
+        if (provider === 'nexabot' && nbChargeTicket && authToken) {
+          const refundedBalance = await refundNexabotWallet(authToken, nbChargeTicket).catch(() => null)
+          nbChargeTicket = null
+          if (refundedBalance != null) {
+            setNbWallet((w) => (w ? { ...w, balance: refundedBalance } : w))
+            log(`💸 saldo NexaBot dikembalikan — sisa ${formatRp(refundedBalance)}`, 'warn')
+          }
+        }
         if (/timeout/i.test(msg) && taskTid) {
           setTimedOut({ taskId: taskTid, index: item.index, fileName: item.file.name })
           log(`task ${taskTid.slice(0, 20)}... masih jalan di server — pakai "Lanjutkan" untuk cek lagi`, 'warn')
@@ -552,6 +651,7 @@ export default function UpscalerPage() {
                     { value: 'magnific', label: 'Magnific Upscale (Weavy node)' },
                     { value: 'leonardo', label: 'Aurora (Leonardo)' },
                     { value: 'runninghub', label: 'AI Photo Enhancer (RunningHub)' },
+                    { value: 'nexabot', label: 'AI Enhance via GPT Image 2.5 (NexaBot)' },
                   ]}
                 />
 
@@ -574,6 +674,13 @@ export default function UpscalerPage() {
                   <div className="flex items-center gap-2 text-xs text-blue-400 bg-blue-500/10 rounded-lg p-2 border border-blue-500/20">
                     <Key className="h-4 w-4" />
                     <span>Magnific butuh API key. Tambahkan di <b>Kelola Token</b> → provider <b>Magnific</b>.</span>
+                  </div>
+                )}
+
+                {provider === 'nexabot' && !hasNexabotAuth && (
+                  <div className="flex items-center gap-2 text-xs text-blue-400 bg-blue-500/10 rounded-lg p-2 border border-blue-500/20">
+                    <Key className="h-4 w-4" />
+                    <span>GPT Image 2.5 butuh login (saldo/paket NexaBot) atau API key NexaBot di <b>Kelola Token</b> → provider <b>NexaBot</b>.</span>
                   </div>
                 )}
 
@@ -678,6 +785,26 @@ export default function UpscalerPage() {
                     <p className="text-[11px] text-muted-foreground">
                       AI Photo Enhancer — retus potret alami (kulit, wajah, rambut, pakaian). Hasil menjaga tampilan asli, cocok untuk UGC/fashion/profil.
                     </p>
+                  </>
+                )}
+
+                {/* NexaBot GPT Image Settings */}
+                {provider === 'nexabot' && (
+                  <>
+                    <Label>Aspect output</Label>
+                    <Select value={String(nbAspect)} onChange={e => setNbAspect(e.target.value === 'auto' ? 'auto' : Number(e.target.value) as 1 | 2 | 5)} disabled={running}
+                      options={[{ value: 'auto', label: 'Auto (ikuti rasio gambar)' }, { value: '1', label: '1:1' }, { value: '2', label: '16:9' }, { value: '5', label: '9:16' }]} />
+                    <Label>Prompt tambahan (opsional)</Label>
+                    <Textarea rows={3} value={nbPrompt} onChange={e => setNbPrompt(e.target.value)} disabled={running}
+                      placeholder="Arahkan enhance, mis. 'keep skin texture natural, boost fabric detail'..." />
+                    <p className="text-[11px] text-muted-foreground">
+                      GPT Image 2.5 (via NexaBot) menghasilkan ulang gambar dengan detil lebih tajam. Biaya ±0,1 kredit/gambar (0 bila paket Unlimited aktif). Aspect dikunci ke 1:1 / 16:9 / 9:16, jadi rasio non-standar akan di-crop.
+                    </p>
+                    {nbWallet && user?.role !== 'admin' && (
+                      <p className="text-[11px] text-muted-foreground">
+                        Saldo NexaBot: <b>{formatRp(nbWallet.balance)}</b>{nbFreeForModel ? ' · generate ini dicakup paket (gratis)' : ` · ±${formatRp(nbWallet.price ?? NEXABOT_PRICE_FALLBACK)}/gambar`}
+                      </p>
+                    )}
                   </>
                 )}
 
