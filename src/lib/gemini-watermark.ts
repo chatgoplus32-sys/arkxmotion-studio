@@ -99,6 +99,25 @@ function getEngine(): Promise<WatermarkEngine> {
   return enginePromise
 }
 
+const alphaMapCache = new Map<string, Promise<Float32Array | null>>()
+
+/**
+ * Ambil alpha map bawaan engine berdasarkan profil (96, 48, '96-20260520',
+ * '96-outline-light', ...). Di-cache supaya deteksi video multi-frame tidak
+ * berulang kali menyalin 9 KB data.
+ */
+export function getEngineAlphaMap(key: number | string): Promise<Float32Array | null> {
+  const cacheKey = String(key)
+  const cached = alphaMapCache.get(cacheKey)
+  if (cached) return cached
+  const request = (getEngine() as Promise<{ getAlphaMap(k: number | string): Promise<Float32Array> }>)
+    .then((engine) => engine.getAlphaMap(key))
+    .then((map) => (map?.length ? new Float32Array(map) : null))
+    .catch(() => null)
+  alphaMapCache.set(cacheKey, request)
+  return request
+}
+
 /** Resolve alpha map yang benar untuk variant yang terdeteksi (null = tak tersedia). */
 async function resolveAlphaMap(
   size: number | null,

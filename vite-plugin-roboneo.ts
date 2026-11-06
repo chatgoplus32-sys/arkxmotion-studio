@@ -2059,7 +2059,11 @@ export function roboneoProxyPlugin(): Plugin {
       server.middlewares.use('/api/public', async (req, res, next) => {
         // Endpoint yang memang router Express lokal (bukan upstream provider)
         // diteruskan ke proxy /api → localhost:6000, jangan ke produksi.
-        if ((req.url || '').startsWith('/nexabot') || (req.url || '').startsWith('/pricing')) return next()
+        // watermark-engine wajib lewat jalur itu juga: handler di bawah mem-parse
+        // body sebagai teks UTF-8, yang merusak .wasm/.onnx biner mesin denoise
+        // ("section Type extends past end of the module").
+        if ((req.url || '').startsWith('/nexabot') || (req.url || '').startsWith('/pricing')
+          || (req.url || '').startsWith('/watermark-engine')) return next()
 
         if (req.method === 'OPTIONS') {
           res.writeHead(200, {

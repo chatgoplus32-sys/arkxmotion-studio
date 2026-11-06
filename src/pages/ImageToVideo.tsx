@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Select, Label, Textarea, EmptyState, Badge, BalanceBadge } from '@/components/ui'
 import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
-import { Image, Upload, Rocket, Loader2, Trash2, Key, ExternalLink, Download, X, Copy, Check, Eraser } from 'lucide-react'
+import { Image, Upload, Rocket, Loader2, Trash2, Key, ExternalLink, Download, X, Copy, Check, Eraser, BrainCircuit } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Swipeable } from '@/components/Swipeable'
 import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
@@ -34,7 +34,12 @@ import type { CompletedResult } from '@/lib/backgroundTasks'
 import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
 import { isNotificationDeliveryReady, setNotificationsEnabled, requestNotificationPermission, promptForNotificationsIfNeeded, notifyGenerationComplete } from '@/lib/notify'
 import { uploadToCdn } from '@/lib/cdn'
-import { autoRemoveWatermarkFromVideo } from '@/lib/auto-watermark'
+import {
+  autoRemoveWatermarkFromVideo,
+  cleanVideoWatermarkWithEngine,
+  cleanupPathLabel,
+} from '@/lib/auto-watermark'
+import { isLowConfidenceRejection } from '@/lib/watermark-engine'
 import { precheckProviderBalance } from '@/lib/balancePrecheck'
 import type { NexabotSessionInfo } from '@/lib/nexabot'
 
@@ -235,10 +240,40 @@ export default function ImageToVideoPage() {
   }
 
   // ── Hapus watermark sekali klik dari galeri ────────────────────────
-  // Unduh video → deteksi watermark (pola Gemini/Veo, lalu blob sudut,
-  // lalu katalog kanan-bawah) → bersihkan per frame → langsung download.
+  // Tangga yang SAMA dengan halaman Watermark Remover (lib/auto-watermark):
+  // mesin AI resmi di iframe → pola Gemini exact → area kanan-bawah.
   const [wmBusy, setWmBusy] = useState<Record<string, { pct: number; stage: string }>>({})
+  const [wmRefused, setWmRefused] = useState<Record<string, boolean>>({})
   const wmBusyRef = useRef<Set<string>>(new Set())
+
+  const nameHintFor = (prompt?: string) => (prompt || 'video').slice(0, 40).replace(/[^\w-]+/g, '_') || 'video'
+
+  const fetchItemVideo = async (url: string): Promise<Blob> => {
+    if (url.startsWith('blob:') || url.startsWith('/')) {
+      const res = await fetch(url)
+      if (!res.ok) throw new Error('Gagal membaca video')
+      return res.blob()
+    }
+    // URL eksternal: coba langsung (CORS), lalu proxy same-origin.
+    try {
+      const res = await fetch(url)
+      const ct = (res.headers.get('content-type') || '').toLowerCase()
+      if (res.ok && !ct.includes('html')) return await res.blob()
+    } catch { /* CORS — lanjut proxy */ }
+    const res = await fetch(`/api/public/video-proxy?url=${encodeURIComponent(url)}`)
+    if (!res.ok) throw new Error('Gagal mengunduh video sumber')
+    return res.blob()
+  }
+
+  const downloadCleanVideo = (blob: Blob, nameHint: string) => {
+    const out = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = out
+    a.download = `${nameHint}-nowm.mp4`
+    document.body.appendChild(a)
+    a.click()
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(out) }, 10000)
+  }
 
   const handleRemoveWatermark = async (item: { id: string; url: string; prompt?: string }) => {
     if (wmBusyRef.current.has(item.id)) return
@@ -247,41 +282,44 @@ export default function ImageToVideoPage() {
       setWmBusy((prev) => ({ ...prev, [item.id]: { pct: Math.round(pct), stage } }))
     setStage('Mengunduh video…', 0)
     try {
-      let blob: Blob | null = null
-      if (item.url.startsWith('blob:')) {
-        const res = await fetch(item.url)
-        if (res.ok) blob = await res.blob()
-      } else if (item.url.startsWith('/')) {
-        const res = await fetch(item.url)
-        if (res.ok) blob = await res.blob()
-      } else {
-        // URL eksternal: coba langsung (CORS), lalu proxy same-origin.
-        try {
-          const res = await fetch(item.url)
-          const ct = (res.headers.get('content-type') || '').toLowerCase()
-          if (res.ok && !ct.includes('html')) blob = await res.blob()
-        } catch { /* CORS — lanjut proxy */ }
-        if (!blob) {
-          const res = await fetch(`/api/public/video-proxy?url=${encodeURIComponent(item.url)}`)
-          if (res.ok) blob = await res.blob()
-        }
-      }
-      if (!blob || blob.size < 1024) throw new Error('Gagal mengunduh video sumber')
+      const blob = await fetchItemVideo(item.url)
+      if (blob.size < 1024) throw new Error('Gagal mengunduh video sumber')
 
-      const { blob: clean, frames, mode } = await autoRemoveWatermarkFromVideo(blob, setStage)
-      const name = (item.prompt || 'video').slice(0, 40).replace(/[^\w-]+/g, '_') || 'video'
-      const out = URL.createObjectURL(clean)
-      const a = document.createElement('a')
-      a.href = out
-      a.download = `${name}-nowm.mp4`
-      document.body.appendChild(a)
-      a.click()
-      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(out) }, 10000)
-
-      const label = mode === 'exact' ? 'pola Gemini/Veo exact' : 'area watermark kanan-bawah'
-      addToast(`🧽 Watermark dibersihkan (${label}, ${frames} frame) — video bersih diunduh`, 'success')
+      const nameHint = nameHintFor(item.prompt)
+      const file = new File([blob], `${nameHint}.mp4`, { type: blob.type || 'video/mp4' })
+      const { blob: clean, frames, via, engineRefused } = await autoRemoveWatermarkFromVideo(file, {
+        onProgress: setStage,
+        onNotice: (message, tone) => addToast(message, tone),
+      })
+      setWmRefused((prev) => ({ ...prev, [item.id]: engineRefused }))
+      downloadCleanVideo(clean, nameHint)
+      addToast(`🧽 Watermark dibersihkan (${cleanupPathLabel(via)}, ${frames} frame) — video bersih diunduh`, 'success')
     } catch (e: any) {
       addToast(`Gagal hapus watermark: ${e?.message || e}`, 'error')
+    } finally {
+      wmBusyRef.current.delete(item.id)
+      setWmBusy((prev) => { const next = { ...prev }; delete next[item.id]; return next })
+    }
+  }
+
+  // Mesin kurang yakin dengan posisi watermarknya. Ekspor paksa bisa lebih
+  // buruk dari video asal, jadi hanya jalan kalau member menekan ini sendiri.
+  const handleForceEngine = async (item: { id: string; url: string; prompt?: string }) => {
+    if (wmBusyRef.current.has(item.id)) return
+    wmBusyRef.current.add(item.id)
+    const setStage = (stage: string, pct: number) =>
+      setWmBusy((prev) => ({ ...prev, [item.id]: { pct: Math.round(pct), stage } }))
+    setStage('Mengunduh video…', 0)
+    try {
+      const blob = await fetchItemVideo(item.url)
+      const nameHint = nameHintFor(item.prompt)
+      const file = new File([blob], `${nameHint}.mp4`, { type: blob.type || 'video/mp4' })
+      const { blob: clean, frames } = await cleanVideoWatermarkWithEngine(file, { allowLowConfidence: true, onProgress: setStage })
+      downloadCleanVideo(clean, nameHint)
+      addToast(`🧽 Mesin AI memaksa ekspor (${frames ?? 0} frame) — video diunduh`, 'success')
+    } catch (e: any) {
+      if (isLowConfidenceRejection(e)) addToast('ℹ️ Mesin AI tetap tidak yakin — tidak ada file baru dibuat.', 'info')
+      else addToast(`Mesin AI gagal: ${String(e?.message || e).slice(0, 120)}`, 'error')
     } finally {
       wmBusyRef.current.delete(item.id)
       setWmBusy((prev) => { const next = { ...prev }; delete next[item.id]; return next })
@@ -4404,6 +4442,22 @@ export default function ImageToVideoPage() {
                           )}
                         </button>
                       </div>
+                      {wmRefused[item.id] && (
+                        <div className="mt-1.5">
+                          <button
+                            onClick={() => handleForceEngine(item)}
+                            disabled={!!wmBusy[item.id]}
+                            title="Paksa mesin AI meski deteksinya kurang yakin — hasilnya bisa lebih buruk dari video asal"
+                            className="w-full inline-flex items-center justify-center gap-1 rounded-lg border border-purple-500/30 bg-purple-500/5 hover:bg-purple-500/10 px-3 py-1.5 text-[11px] font-medium text-purple-500 transition disabled:opacity-70"
+                          >
+                            {wmBusy[item.id] ? (
+                              <><Loader2 className="h-3 w-3 animate-spin" /> {wmBusy[item.id].stage} {wmBusy[item.id].pct}%</>
+                            ) : (
+                              <><BrainCircuit className="h-3 w-3" /> Paksa Mesin AI (deteksi longgar)</>
+                            )}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </Swipeable>

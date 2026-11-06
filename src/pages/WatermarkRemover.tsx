@@ -4,7 +4,7 @@ import { Section, Button, Label, Select, EmptyState } from '@/components/ui'
 import {
   Loader2, Download, X, Clapperboard, Sparkles, Eraser,
   Paintbrush, Square, Undo2, RotateCcw, Wand2, Image as ImageIcon,
-  BrainCircuit
+  BrainCircuit, CircleStop
 } from 'lucide-react'
 import { useToastStore } from '@/stores/toastStore'
 import { initInpainter, inpaint, isReady, getBackend } from '@/lib/migan-inpainter'
@@ -15,6 +15,8 @@ import { loadVideoMetadata, grabFirstFrame, processVideo } from '@/lib/video-wat
 import { processVideoOffline, isOfflineVideoSupported } from '@/lib/video-offline'
 import { repairDarkOutlineContourROI } from '@/lib/gemini-contour-repair'
 import { createSeamFrameProcessor } from '@/lib/video-frame-cleaner'
+import { isLowConfidenceRejection } from '@/lib/watermark-engine'
+import { autoRemoveWatermarkFromVideo, cleanVideoWatermarkWithEngine } from '@/lib/auto-watermark'
 import {
   getGeminiWatermarkRegion,
   removeGeminiWatermark,
@@ -111,6 +113,11 @@ export default function WatermarkRemoverPage() {
   const [resultBlob, setResultBlob] = useState<Blob | null>(null)
   const [quality, setQuality] = useState('standard')
   const [compare, setCompare] = useState<'before' | 'after'>('after')
+  // Mesin AI menolak ekspor karena deteksi kurang yakin → tawarkan mode paksa.
+  const [engineForce, setEngineForce] = useState(false)
+  // Hanya jalur mesin yang bisa benar-benar dihentikan (halaman engine punya
+  // tombol stop sendiri), jadi tombol Hentikan hanya muncul saat ia berjalan.
+  const [engineRunning, setEngineRunning] = useState(false)
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const maskCanvasRef = useRef<HTMLCanvasElement>(null)
@@ -274,6 +281,112 @@ export default function WatermarkRemoverPage() {
     await runVideoThrough(f, frameProcessor, 'Exact removal')
   }, [addToast, runVideoThrough])
 
+  // ── Jalur utama video: tangga mesin AI → pipeline lokal ────────────
+  // Tangganya sendiri hidup di lib/auto-watermark karena galeri hasil, kartu
+  // Image to Video, dan halaman ini harus memakai kemampuan yang sama persis.
+  const engineAbort = useRef<AbortController | null>(null)
+  const onStage = useCallback((stage: string, pct: number) => {
+    setProgress(pct)
+    setProgressMsg(stage)
+  }, [])
+
+  const onNotice = useCallback((message: string, tone: 'info' | 'warning') => addToast(message, tone), [addToast])
+
+  // Mask di canvas pratinjau video = area yang benar-benar dibersihkan.
+  const paintAutoMask = useCallback((region: { x: number; y: number; width: number; height: number }) => {
+    const mc = maskCanvasRef.current
+    const w = mc?.width || 0
+    const h = mc?.height || 0
+    if (!mc || !w || !h) return
+    const mask = new ImageData(w, h)
+    for (let y = Math.max(0, region.y); y < Math.min(h, region.y + region.height); y++) {
+      for (let x = Math.max(0, region.x); x < Math.min(w, region.x + region.width); x++) {
+        const idx = (y * w + x) * 4
+        mask.data[idx] = 255
+        mask.data[idx + 1] = 0
+        mask.data[idx + 2] = 0
+        mask.data[idx + 3] = 200
+      }
+    }
+    setMaskData(mask)
+    const ctx = mc.getContext('2d')!
+    ctx.clearRect(0, 0, w, h)
+    ctx.fillStyle = 'rgba(255, 0, 0, 0.5)'
+    ctx.fillRect(region.x, region.y, region.width, region.height)
+  }, [])
+
+  const runVideoLadder = useCallback(async (f: File) => {
+    const controller = new AbortController()
+    engineAbort.current = controller
+    setProcessing(true)
+    setEngineForce(false)
+    try {
+      const result = await autoRemoveWatermarkFromVideo(f, {
+        onProgress: onStage,
+        onNotice,
+        onPhase: (phase) => setEngineRunning(phase === 'engine'),
+        signal: controller.signal,
+      })
+      setResultBlob(result.blob)
+      setResultUrl(URL.createObjectURL(result.blob))
+      setCompare('after')
+      setProgress(100)
+      // Mesin tidak yakin → tawarkan ekspor paksa (tidak pernah otomatis).
+      setEngineForce(result.engineRefused)
+      if (result.via === 'engine') {
+        addToast(`✅ Watermark dibersihkan mesin AI${result.frames ? ` — ${result.frames} frame` : ''}`, 'success')
+      } else if (result.region) {
+        paintAutoMask(result.region)
+        addToast(
+          result.via === 'gemini-exact'
+            ? `✅ Watermark pola Gemini dibersihkan per-frame (${result.frames} frame)`
+            : `✅ Area watermark dibersihkan AI per-frame (${result.frames} frame)`,
+          'success',
+        )
+      }
+    } catch (e: any) {
+      if (controller.signal.aborted) {
+        setProgress(0)
+        addToast('⏹️ Penghapusan dihentikan — video tidak diubah.', 'info')
+      } else {
+        addToast(`❌ ${String(e?.message || e).slice(0, 120)}`, 'error')
+      }
+    } finally {
+      setEngineRunning(false)
+      setProcessing(false)
+      if (engineAbort.current === controller) engineAbort.current = null
+    }
+  }, [addToast, onNotice, onStage, paintAutoMask])
+
+  // Ekspor paksa MURNI mesin: hasil lokal yang sudah ada jangan tertimpa oleh
+  // tangga penuh, dan penolakan kedua tidak boleh diam-diam jatuh ke lokal.
+  const forceEngineVideo = useCallback(() => {
+    if (!file) return
+    const controller = new AbortController()
+    engineAbort.current = controller
+    setProcessing(true)
+    setEngineRunning(true)
+    cleanVideoWatermarkWithEngine(file, { allowLowConfidence: true, onProgress: onStage, signal: controller.signal })
+      .then((r) => {
+        setResultBlob(r.blob)
+        setResultUrl(URL.createObjectURL(r.blob))
+        setCompare('after')
+        setProgress(100)
+        setEngineForce(false)
+        addToast(`✅ Mesin AI memaksa ekspor${r.frames ? ` — ${r.frames} frame` : ''}`, 'success')
+      })
+      .catch((e: any) => {
+        if (controller.signal.aborted) addToast('⏹️ Mesin AI dihentikan — hasil yang ada tidak diubah.', 'info')
+        else if (isLowConfidenceRejection(e)) addToast('ℹ️ Mesin AI tetap tidak yakin — hasil yang ada tidak diubah.', 'info')
+        else addToast(`⚠️ Mesin AI gagal: ${String(e?.message || e).slice(0, 90)}`, 'warning')
+      })
+      .finally(() => {
+        setEngineRunning(false)
+        setProcessing(false)
+        if (engineAbort.current === controller) engineAbort.current = null
+      })
+  }, [addToast, file, onStage])
+
   const handleFile = useCallback((f: File) => {
     const isVideo = /video\//.test(f.type) || /\.(mp4|mov|webm)$/i.test(f.name)
     const isImage = /image\//.test(f.type) || /\.(png|jpe?g|webp|bmp)$/i.test(f.name)
@@ -283,6 +396,7 @@ export default function WatermarkRemoverPage() {
 
     setFile(f); setResultUrl(null); setResultBlob(null); setCandidates([])
     setMaskData(null); setUndoStack([]); setFileUrl(URL.createObjectURL(f)); setCompare('after')
+    setEngineForce(false)
     setInputMode(isVideo ? 'video' : 'image')
 
     if (isImage) {
@@ -335,6 +449,7 @@ export default function WatermarkRemoverPage() {
     } else {
       loadVideoMetadata(f).then(async (meta) => {
         const ff = await grabFirstFrame(meta.video)
+        URL.revokeObjectURL(meta.url)
         const c = canvasRef.current!
         c.width = ff.width; c.height = ff.height
         c.getContext('2d')!.putImageData(ff, 0, 0)
@@ -342,85 +457,17 @@ export default function WatermarkRemoverPage() {
 
         const mc = maskCanvasRef.current!
         mc.width = ff.width; mc.height = ff.height
-        const region = getGeminiWatermarkRegion(ff.width, ff.height)
-        const autoMask = new ImageData(ff.width, ff.height)
-        for (let ry = 0; ry < region.height; ry++) {
-          for (let rx = 0; rx < region.width; rx++) {
-            const px = region.x + rx, py = region.y + ry
-            const idx = (py * ff.width + px) * 4
-            autoMask.data[idx] = 255
-            autoMask.data[idx + 1] = 0
-            autoMask.data[idx + 2] = 0
-            autoMask.data[idx + 3] = 200
-          }
-        }
-        // Auto-process: nexabot.id UX — scan & clean immediately after upload.
-        // Deteksi di frame pertama; kalau belum yakin, sampling titik-titik
-        // di tengah video (watermark Gemini selalu ada sepanjang video).
-        setProcessing(true); setProgress(3); setProgressMsg('Menganalisis watermark…')
-        let plan = await createGeminiFramePlan(ff)
-        if (!plan) {
-          setProgressMsg('Frame pertama belum yakin — sampling frame lain…')
-          plan = await detectGeminiInVideo(meta.video, null, 4)
-        }
-        URL.revokeObjectURL(meta.url)
+        // Posisi awal mask = katalog Gemini; tangga di bawah menggantinya dengan
+        // area yang benar-benar dibersihkan begitu hasilnya ada.
+        paintAutoMask(getGeminiWatermarkRegion(ff.width, ff.height))
 
-        if (!plan) {
-          // DIAGNOSTik: beri tahu user jalur fallback yang dipakai.
-          const reg = getGeminiWatermarkRegion(ff.width, ff.height)
-          addToast(`ℹ️ Deteksi exact gagal → fallback AI (${ff.width}×${ff.height}, region default ${reg.width}×${reg.height})`, 'info')
-        }
-        if (plan) {
-          // Auto-mask di posisi hasil deteksi (bukan default katalog).
-          const region = plan.position
-          const autoMask = new ImageData(ff.width, ff.height)
-          for (let ry = 0; ry < region.height; ry++) {
-            for (let rx = 0; rx < region.width; rx++) {
-              const idx = ((region.y + ry) * ff.width + (region.x + rx)) * 4
-              autoMask.data[idx] = 255
-              autoMask.data[idx + 1] = 0
-              autoMask.data[idx + 2] = 0
-              autoMask.data[idx + 3] = 200
-            }
-          }
-          setMaskData(autoMask)
-          const mctx = mc.getContext('2d')!
-          mctx.clearRect(0, 0, mc.width, mc.height)
-          mctx.fillStyle = 'rgba(255, 0, 0, 0.5)'
-          mctx.fillRect(region.x, region.y, region.width, region.height)
-
-          try {
-            await runGeminiVideo(f, plan, { width: ff.width, height: ff.height })
-            addToast('✅ Watermark Gemini dibersihkan otomatis (per-frame)!', 'success')
-            setProgress(100)
-          } catch (e: any) { addToast(`❌ ${e.message}`, 'error') }
-          setProcessing(false)
-        } else {
-          // Video panjang / watermark varian baru sering gagal kena pola Gemini
-          // persis. Jangan berhenti di toast — lanjut otomatis pakai pembersih
-          // seam per-frame dengan auto-mask region kanan-bawah yang sudah ada.
-          setProgressMsg('Bukan pola Gemini — bersihkan dengan AI per-frame…')
-          try {
-            const meta2 = await loadVideoMetadata(f)
-            const cleaner = createSeamFrameProcessor(autoMask, meta2.video.videoWidth, meta2.video.videoHeight)
-            URL.revokeObjectURL(meta2.url)
-            if (cleaner) {
-              const frames = await runVideoThrough(f, (ctx) => cleaner.process(ctx), 'Bersih per-frame')
-              addToast(
-                `✅ Bukan pola Gemini — area watermark dibersihkan dengan AI per-frame (${frames || cleaner.frames()} frame, ${cleaner.avgMs().toFixed(1)} ms/frame)`,
-                'success',
-              )
-              setProgress(100)
-            }
-          } catch (e: any) {
-            addToast(`❌ ${e.message}`, 'error')
-            setProgress(0)
-          }
-          setProcessing(false)
-        }
+        // Jalur utama: tangga yang SAMA dengan galeri hasil — mesin AI resmi
+        // (deteksi katalog + denoise FDnCNN) dulu, pipeline lokal hanya kalau
+        // mesin menolak. Dibatalkan pengguna tidak menjalankan apa pun.
+        await runVideoLadder(f)
       })
     }
-  }, [addToast, runGeminiVideo, runVideoThrough])
+  }, [addToast, paintAutoMask, runVideoLadder])
 
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) handleFile(f)
@@ -754,8 +801,18 @@ export default function WatermarkRemoverPage() {
 
           <Button onClick={runRemove} disabled={processing || !file || !maskData} className="w-full" size="lg">
             {processing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Eraser className="h-4 w-4 mr-2" />}
-            {processing ? `Membersihkan… ${progress}%` : '🧽 Bersihkan Watermark'}
+            {processing ? `Membersihkan… ${Math.round(progress)}%` : '🧽 Bersihkan Watermark'}
           </Button>
+          {engineRunning && (
+            <Button onClick={() => engineAbort.current?.abort()} variant="outline" className="w-full mt-2">
+              <CircleStop className="h-4 w-4 mr-2" /> Hentikan mesin AI
+            </Button>
+          )}
+          {engineForce && file && inputMode === 'video' && (
+            <Button onClick={forceEngineVideo} disabled={processing} variant="outline" className="w-full mt-2">
+              <BrainCircuit className="h-4 w-4 mr-2" /> Paksa mesin AI (deteksi longgar)
+            </Button>
+          )}
           <p className="text-xs text-muted-foreground mt-2">
             Gemini/Veo: reverse-alpha exact (instan). Lainnya: texture + LaMa AI (~93MB, cached).
           </p>

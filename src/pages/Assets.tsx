@@ -3,12 +3,19 @@ import { useNavigate } from 'react-router-dom'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, EmptyState, Input, Select, Button } from '@/components/ui'
 import {
-  AlertTriangle, AudioLines, CalendarDays, CheckCircle2, Clock3, Database, Download,
-  ExternalLink, Image as ImageIcon, Images, Layers, Loader2, Music, Play, RefreshCw,
+  AlertTriangle, AudioLines, BrainCircuit, CalendarDays, CheckCircle2, Clock3, Database, Download,
+  Eraser, ExternalLink, Image as ImageIcon, Images, Layers, Loader2, Music, Play, RefreshCw,
   Search, Sparkles, Trash2, Video, X,
 } from 'lucide-react'
 import { getResults, removeResult, updateResult, persistResultToR2, GENERATION_PAGE_KIND, type CompletedResult } from '@/lib/backgroundTasks'
 import { restoreMotionAudio } from '@/lib/motionAudio'
+import {
+  autoRemoveWatermarkFromVideo,
+  cleanVideoWatermarkWithEngine,
+  cleanupPathLabel,
+  type CleanupVia,
+} from '@/lib/auto-watermark'
+import { isLowConfidenceRejection } from '@/lib/watermark-engine'
 import { useToastStore } from '@/stores/toastStore'
 import { cn } from '@/lib/utils'
 
@@ -265,6 +272,16 @@ function downloadName(asset: AssetItem): string {
   return `arkxmotion-${slug}-${stamp}.${extensionFor(asset)}`
 }
 
+function cleanName(asset: AssetItem): string {
+  return `${downloadName(asset).replace(/\.[a-z0-9]+$/i, '')}-nowm.mp4`
+}
+
+/** Label jujur: dari jalur mana file bersih itu datang. */
+function viaLabel(via: CleanupVia, frames: number): string {
+  const count = frames > 0 ? ` — ${frames} frame` : ''
+  return `🧽 Watermark dibersihkan lewat ${cleanupPathLabel(via)}${count}`
+}
+
 function filterStoredArray(key: string, predicate: (value: unknown) => boolean) {
   let parsed: unknown
   try {
@@ -278,6 +295,32 @@ function filterStoredArray(key: string, predicate: (value: unknown) => boolean) 
   try {
     localStorage.setItem(key, JSON.stringify(parsed.filter(predicate)))
   } catch {}
+}
+
+/**
+ * Ambil bytes hasil. Host luar ada yang menjawab halaman HTML untuk URL
+ * medianya (tmpfiles), jadi kalau response-nya bukan bytes, lewati relay
+ * same-origin — proxy VPS satu-satunya host yang bisa dipakai browser.
+ */
+async function fetchAssetBlob(asset: AssetItem): Promise<Blob> {
+  const res = await fetch(asset.url, { mode: 'cors' })
+  const type = (res.headers.get('content-type') || '').toLowerCase()
+  if (res.ok && !type.includes('text/html')) return res.blob()
+  if (!/^https?:\/\//i.test(asset.url)) throw new Error(`HTTP ${res.status}`)
+  const prox = await fetch(`/api/public/video-proxy?url=${encodeURIComponent(asset.url)}`)
+  if (!prox.ok) throw new Error(`HTTP ${res.status}/${prox.status}`)
+  return prox.blob()
+}
+
+function triggerDownload(blob: Blob, fileName: string): void {
+  const objectUrl = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = objectUrl
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 10000)
 }
 
 function StatCard({ icon, label, value, accent }: { icon: React.ReactNode; label: string; value: string; accent: string }) {
@@ -307,6 +350,11 @@ export default function AssetsPage() {
   const [fixStatus, setFixStatus] = useState('')
   const fixTargetRef = useRef<AssetItem | null>(null)
   const fixInputRef = useRef<HTMLInputElement>(null)
+  // Bersih watermark video: satu job sekaligus — mesinnya satu halaman iframe
+  // bersama, jadi dua video paralel akan saling menimpa.
+  const [wmJob, setWmJob] = useState<{ key: string; stage: string; pct: number } | null>(null)
+  const [wmRefused, setWmRefused] = useState<Set<string>>(() => new Set())
+  const wmAbort = useRef<AbortController | null>(null)
 
   const sync = useCallback(() => setAssets(collectAssets()), [])
 
@@ -323,6 +371,10 @@ export default function AssetsPage() {
       window.clearInterval(interval)
     }
   }, [sync])
+
+  // Job mesin berjalan di iframe yang dilekatkan ke body — tinggalkan halaman
+  // tanpa ini berarti ia terus memakan CPU tanpa ada yang melihat hasilnya.
+  useEffect(() => () => wmAbort.current?.abort(), [])
 
   useEffect(() => {
     if (!confirmKey) return
@@ -403,17 +455,8 @@ export default function AssetsPage() {
     if (downloading) return
     setDownloading(asset.key)
     try {
-      const res = await fetch(asset.url, { mode: 'cors' })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const blob = await res.blob()
-      const objectUrl = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = objectUrl
-      link.download = downloadName(asset)
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 5000)
+      const blob = await fetchAssetBlob(asset)
+      triggerDownload(blob, downloadName(asset))
       addToast('Unduhan dimulai', 'success')
     } catch {
       window.open(asset.url, '_blank', 'noopener,noreferrer')
@@ -422,6 +465,77 @@ export default function AssetsPage() {
       setDownloading(null)
     }
   }
+
+  // ── Bersih watermark dari galeri ───────────────────────────────────
+  // Kemampuan SAMA dengan halaman Watermark Remover (satu fungsi yang sama):
+  // mesin AI resmi di iframe → fallback pipeline lokal per frame.
+  const handleRemoveWatermark = async (asset: AssetItem) => {
+    if (wmJob) return
+    const controller = new AbortController()
+    wmAbort.current = controller
+    const mark = (stage: string, pct: number) => setWmJob({ key: asset.key, stage, pct: Math.round(pct) })
+    mark('Mengunduh video…', 0)
+    try {
+      const blob = await fetchAssetBlob(asset)
+      if (blob.size < 1024) throw new Error('Video sumber kosong')
+      const file = new File([blob], downloadName(asset), { type: blob.type || 'video/mp4' })
+      const result = await autoRemoveWatermarkFromVideo(file, {
+        onProgress: mark,
+        onNotice: (message, tone) => addToast(message, tone),
+        signal: controller.signal,
+      })
+      setWmRefused((prev) => {
+        if (!result.engineRefused) {
+          if (!prev.has(asset.key)) return prev
+          const next = new Set(prev)
+          next.delete(asset.key)
+          return next
+        }
+        const next = new Set(prev)
+        next.add(asset.key)
+        return next
+      })
+      triggerDownload(result.blob, cleanName(asset))
+      addToast(`${viaLabel(result.via, result.frames)} — video bersih diunduh`, 'success')
+    } catch (err: any) {
+      if (controller.signal.aborted) addToast('⏹️ Penghapusan watermark dihentikan — video tidak diubah.', 'info')
+      else addToast(`Gagal hapus watermark: ${String(err?.message || err).slice(0, 120)}`, 'error')
+    } finally {
+      if (wmAbort.current === controller) wmAbort.current = null
+      setWmJob(null)
+    }
+  }
+
+  // Mesin menolak karena posisinya belum yakin. Ekspor paksa bisa lebih buruk
+  // dari aslinya, jadi hanya jalan kalau member menekan tombolnya sendiri —
+  // dan hasilnya murni mesin, tanpa diulang ke jalur lokal.
+  const handleForceEngine = async (asset: AssetItem) => {
+    if (wmJob) return
+    const controller = new AbortController()
+    wmAbort.current = controller
+    const mark = (stage: string, pct: number) => setWmJob({ key: asset.key, stage, pct: Math.round(pct) })
+    mark('Mengunduh video…', 0)
+    try {
+      const blob = await fetchAssetBlob(asset)
+      const file = new File([blob], downloadName(asset), { type: blob.type || 'video/mp4' })
+      const result = await cleanVideoWatermarkWithEngine(file, {
+        allowLowConfidence: true,
+        onProgress: mark,
+        signal: controller.signal,
+      })
+      triggerDownload(result.blob, cleanName(asset))
+      addToast(`🧽 Mesin AI memaksa ekspor (${result.frames ?? 0} frame) — video diunduh`, 'success')
+    } catch (err: any) {
+      if (controller.signal.aborted) addToast('⏹️ Mesin AI dihentikan — video tidak diubah.', 'info')
+      else if (isLowConfidenceRejection(err)) addToast('Mesin AI tetap tidak yakin — tidak ada hasil dibuat.', 'warning')
+      else addToast(`Mesin AI gagal: ${String(err?.message || err).slice(0, 120)}`, 'error')
+    } finally {
+      if (wmAbort.current === controller) wmAbort.current = null
+      setWmJob(null)
+    }
+  }
+
+  const stopWatermarkJob = () => wmAbort.current?.abort()
 
   const handleDelete = (asset: AssetItem) => {
     const removeUrls = new Set<string>([asset.url, ...asset.refs.map((r) => r.url)])
@@ -630,6 +744,8 @@ export default function AssetsPage() {
             const KindIcon = KIND_ICON[asset.kind]
             const isBroken = broken.has(asset.key)
             const isConfirm = confirmKey === asset.key
+            const wm = wmJob && wmJob.key === asset.key ? wmJob : null
+            const wmNeedsForce = asset.kind === 'video' && wmRefused.has(asset.key)
             return (
               <li
                 key={asset.key}
@@ -686,6 +802,18 @@ export default function AssetsPage() {
                       </span>
                     </span>
                   )}
+                  {wm && (
+                    <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-black/70 px-2 py-1 text-[10px] font-medium text-white backdrop-blur">
+                      <span className="flex items-center gap-1.5">
+                        <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
+                        <span className="truncate">{wm.stage}</span>
+                        <span className="ml-auto tabular-nums">{wm.pct}%</span>
+                      </span>
+                      <span className="mt-1 block h-1 w-full overflow-hidden rounded-full bg-white/20">
+                        <span className="block h-full bg-primary transition-[width] duration-300" style={{ width: `${wm.pct}%` }} />
+                      </span>
+                    </span>
+                  )}
                 </button>
 
                 <div className="flex flex-1 flex-col p-2.5">
@@ -713,6 +841,42 @@ export default function AssetsPage() {
                       >
                         {fixing === asset.key ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <AudioLines className="h-3.5 w-3.5" />}
                       </button>
+                    )}
+                    {asset.kind === 'video' && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveWatermark(asset)}
+                          disabled={!!wmJob}
+                          aria-label={`Hapus watermark ${asset.title} lalu unduh`}
+                          title={wm ? 'Sedang membersihkan watermark…' : 'Hapus watermark lalu unduh video bersih'}
+                          className="grid h-7 w-7 place-items-center rounded-lg text-muted-foreground transition hover:bg-amber-500/10 hover:text-amber-500 disabled:opacity-60"
+                        >
+                          {wm ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eraser className="h-3.5 w-3.5" />}
+                        </button>
+                        {wm && (
+                          <button
+                            type="button"
+                            onClick={stopWatermarkJob}
+                            aria-label={`Hentikan pembersihan watermark ${asset.title}`}
+                            title="Hentikan mesin AI"
+                            className="grid h-7 w-7 place-items-center rounded-lg text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                        {wmNeedsForce && !wm && (
+                          <button
+                            type="button"
+                            onClick={() => handleForceEngine(asset)}
+                            aria-label={`Paksa mesin AI untuk ${asset.title}`}
+                            title="Paksa mesin AI (deteksi longgar) — hasil bisa lebih buruk dari aslinya"
+                            className="grid h-7 w-7 place-items-center rounded-lg text-amber-500/80 transition hover:bg-amber-500/10 hover:text-amber-500"
+                          >
+                            <BrainCircuit className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </>
                     )}
                     <button
                       type="button"
@@ -870,6 +1034,34 @@ export default function AssetsPage() {
                 </dl>
 
                 <div className="flex flex-col gap-2">
+                  {previewAsset.kind === 'video' && (
+                    <>
+                      <Button
+                        variant="outline"
+                        onClick={() => handleRemoveWatermark(previewAsset)}
+                        loading={wmJob?.key === previewAsset.key}
+                        disabled={!!wmJob && wmJob.key !== previewAsset.key}
+                        className="border-amber-500/30 bg-amber-500/5 text-amber-500 hover:bg-amber-500/10 hover:text-amber-500"
+                      >
+                        {wmJob?.key !== previewAsset.key && <Eraser className="h-4 w-4" />}
+                        {wmJob?.key === previewAsset.key
+                          ? `${wmJob.stage} ${wmJob.pct}%`
+                          : 'Hapus Watermark & Unduh'}
+                      </Button>
+                      {wmJob?.key === previewAsset.key && (
+                        <Button variant="outline" onClick={stopWatermarkJob}>
+                          <X className="h-4 w-4" />
+                          Hentikan
+                        </Button>
+                      )}
+                      {wmRefused.has(previewAsset.key) && wmJob?.key !== previewAsset.key && (
+                        <Button variant="outline" onClick={() => handleForceEngine(previewAsset)} title="Hasil bisa lebih buruk dari video asal">
+                          <BrainCircuit className="h-4 w-4" />
+                          Paksa Mesin AI (deteksi longgar)
+                        </Button>
+                      )}
+                    </>
+                  )}
                   <Button onClick={() => handleDownload(previewAsset)} loading={downloading === previewAsset.key}>
                     {downloading !== previewAsset.key && <Download className="h-4 w-4" />}
                     Unduh

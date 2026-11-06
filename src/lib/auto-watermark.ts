@@ -1,22 +1,29 @@
 /**
- * Pembersih watermark sekali klik untuk hasil di galeri.
+ * Pembersih watermark video sekali klik — SATU sumber kebenaran untuk semua
+ * tempat yang membersihkan video: kartu hasil di galeri, kartu Image to Video,
+ * dan jalur otomatis halaman Watermark Remover.
  *
- * Alur ini SAMA PERSIS dengan halaman Watermark Remover (yang sudah terbukti
- * menghapus watermarknya):
+ * Tangga yang dijalankan (identik dengan geminiwatermarkremover.io/video):
  *
- *  1. Deteksi plan Gemini/Veo di frame pertama; kalau belum yakin, sampling
- *     4 titik di tengah video (`detectGeminiInVideo`).
- *  2. Ada plan → reverse-alpha exact per frame + perbaikan kontur + pembersih
- *     seam per frame, dengan re-deteksi periodik untuk posisi watermark baru.
- *  3. Tidak ada plan → pembersih seam per frame dengan mask region katalog
- *     kanan-bawah (posisi watermark provider).
+ *  1. Mesin AI resmi di iframe — deteksi katalog + denoise FDnCNN + stabilisasi
+ *     temporal. Ini jalur utama karena ia satu-satunya yang punya profil alpha
+ *     per ukuran frame.
+ *  2. Mesin menolak karena posisi belum yakin → JANGAN pernah ekspor paksa
+ *     otomatis (terukur lebih buruk dari aslinya); lanjut ke pipeline lokal dan
+ *     biarkan pemanggil menawarkan mode paksa lewat cleanVideoWatermarkWithEngine.
+ *  3. Pipeline lokal: plan Gemini exact di frame pertama, sampling 4 titik kalau
+ *     belum yakin → reverse-alpha per frame + perbaikan kontur + pembersih seam
+ *     dengan re-deteksi periodik.
+ *  4. Bukan pola Gemini → pembersih seam per frame pada region kanan-bawah
+ *     (katalog Gemini dilebarkan oleh kandidat kuat di kuadran yang sama).
  *
  * Encoding memakai jalur offline WebCodecs (bitrate & durasi ikut asli), lalu
  * MediaRecorder sebagai cadangan untuk browser tanpa WebCodecs.
  *
- * Sengaja TIDAK memakai deteksi heuristik `detectWatermarks`: pada video nyata
- * kandidat sudut bisa salah sasaran (objek terang di sudut), sehingga area
- * dibersihkan di tempat yang keliru dan watermark asli tertinggal.
+ * Sengaja TIDAK memakai deteksi heuristik `detectWatermarks` sebagai penentu
+ * posisi: pada video nyata kandidat sudut bisa salah sasaran (objek terang di
+ * sudut), sehingga area yang dibersihkan keliru dan watermark asli tertinggal.
+ * Kandidat hanya boleh MELEBARKAN region katalog di kuadran kanan-bawah.
  */
 import {
   applyReverseAlphaToRegion,
@@ -30,32 +37,83 @@ import { createSeamFrameProcessor } from './video-frame-cleaner'
 import { grabFirstFrame, loadVideoMetadata, processVideo } from './video-watermark-process'
 import { isOfflineVideoSupported, processVideoOffline } from './video-offline'
 import { detectWatermarks } from './watermark-detect'
+import {
+  isLowConfidenceRejection,
+  removeVideoWatermarkWithEngine,
+  type EngineConfidence,
+} from './watermark-engine'
 
 /** Skor minimal kandidat sudut sebelum dipakai melebarkan region katalog. */
 const MIN_CANDIDATE_SCORE = 2.5
 
-export interface AutoWatermarkRect {
+export interface WatermarkRect {
   x: number
   y: number
   width: number
   height: number
 }
 
+/** Jalur yang benar-benar menghasilkan file keluaran. */
+export type CleanupVia = 'engine' | 'gemini-exact' | 'seam-area'
+
+/** Nama jalur untuk toast — dipakai semua tempat yang membersihkan video. */
+export function cleanupPathLabel(via: CleanupVia): string {
+  if (via === 'engine') return 'mesin AI resmi (deteksi + denoise FDnCNN)'
+  if (via === 'gemini-exact') return 'pola Gemini/Veo exact per-frame'
+  return 'area watermark kanan-bawah'
+}
+
+export interface CleanupProgress {
+  (stage: string, pct: number): void
+}
+
+/** Pesan yang di halaman jadi toast — pemanggil yang memutuskan tampilnya bagaimana. */
+export interface CleanupNotifier {
+  (message: string, tone: 'info' | 'warning'): void
+}
+
+export interface AutoWatermarkOptions {
+  onProgress?: CleanupProgress
+  onNotice?: CleanupNotifier
+  /** Tahap yang sedang berjalan — pemanggil pakai untuk tombol hentikan. */
+  onPhase?: (phase: 'engine' | 'local') => void
+  /** Membatalkan. Berhenti di antara tahap-tahap; tahap mesin bisa langsung stop. */
+  signal?: AbortSignal
+}
+
 export interface AutoWatermarkResult {
   blob: Blob
   frames: number
-  /** exact = pola Gemini/Veo, fallback = region kanan-bawah katalog. */
-  mode: 'exact' | 'fallback'
-  region: AutoWatermarkRect
+  via: CleanupVia
+  /** Area yang dibersihkan, untuk digambar sebagai mask. */
+  region: WatermarkRect | null
+  /** Mesin menolak karena posisi watermark belum yakin → tawarkan mode paksa. */
+  engineRefused: boolean
 }
-
-export type AutoWatermarkProgress = (stage: string, pct: number) => void
 
 interface Rect {
   x: number
   y: number
   width: number
   height: number
+}
+
+export class CleanupCancelledError extends Error {
+  constructor() {
+    super('Dibatalkan')
+    this.name = 'CleanupCancelledError'
+  }
+}
+
+function checkActive(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new CleanupCancelledError()
+}
+
+function toFile(source: Blob, fileName?: string): File {
+  if (source instanceof File && !fileName) return source
+  const name = fileName
+    || (source instanceof File ? source.name : (source.type.includes('webm') ? 'video.webm' : 'video.mp4'))
+  return new File([source], name, { type: source.type || 'video/mp4' })
 }
 
 /**
@@ -96,15 +154,122 @@ function expandCatalogRegion(frame: ImageData, catalog: Rect): Rect {
   }
 }
 
+function engineStageMessage(p: {
+  phase: string | null
+  processedFrames: number | null
+  frameEstimate: number | null
+}): string {
+  const frameText = p.frameEstimate
+    ? `${p.processedFrames ?? 0}/${p.frameEstimate} frame`
+    : p.processedFrames
+      ? `${p.processedFrames} frame`
+      : ''
+  return p.phase === 'detect'
+    ? 'Mendeteksi watermark…'
+    : `Membersihkan ${frameText}`.trim()
+}
+
+/**
+ * Tahap mesin AI resmi. Melempar kalau mesin menolak/gagal; pembatalan
+ * dilempar sebagai CleanupCancelledError supaya pemanggil tidak salah arti
+ * "dibatalkan" sebagai "mesin gagal, coba jalur lokal".
+ */
+async function runEnginePass(
+  file: File,
+  allowLowConfidence: boolean,
+  onProgress: CleanupProgress,
+  signal?: AbortSignal,
+): Promise<{ blob: Blob; frames: number | null; confidence: EngineConfidence }> {
+  onProgress('Menyiapkan mesin AI watermark…', 2)
+  try {
+    const out = await removeVideoWatermarkWithEngine(file, {
+      allowLowConfidence,
+      signal,
+      onProgress: (p) => {
+        const pct = p.pct != null ? Math.round(p.pct * 100) : null
+        const label = engineStageMessage(p)
+        onProgress(pct != null ? `${label} — ${pct}%` : label, pct != null ? 2 + pct * 0.93 : 3)
+      },
+    })
+    return out
+  } catch (e) {
+    if (signal?.aborted) throw new CleanupCancelledError()
+    throw e
+  }
+}
+
+/**
+ * Bersihkan watermark video pakai mesin AI resmi saja — tanpa tangga lokal.
+ * Dipakai tombol "Paksa mesin AI (deteksi longgar)": pengguna memang ingin
+ * hasil mesin, jadi hasil lokal yang sudah ada tidak boleh tertimpa ulang.
+ * Panggil dengan isLowConfidenceRejection(e) untuk tahu apakah penolakannya
+ * masih soal keyakinan posisi atau video memang ditolak decoder.
+ */
+export async function cleanVideoWatermarkWithEngine(
+  source: Blob,
+  options: { allowLowConfidence?: boolean; onProgress?: CleanupProgress; signal?: AbortSignal; fileName?: string } = {},
+): Promise<{ blob: Blob; frames: number | null; confidence: EngineConfidence }> {
+  const stage = options.onProgress || (() => {})
+  return runEnginePass(
+    toFile(source, options.fileName),
+    options.allowLowConfidence === true,
+    stage,
+    options.signal,
+  )
+}
+
+/**
+ * Tangga penuh: mesin AI dulu, pipeline lokal kalau mesin menolak.
+ * Persis yang dilakukan halaman Watermark Remover untuk video.
+ */
 export async function autoRemoveWatermarkFromVideo(
   source: Blob,
-  onProgress: AutoWatermarkProgress = () => {},
+  onProgress: CleanupProgress | AutoWatermarkOptions = () => {},
 ): Promise<AutoWatermarkResult> {
-  const file = source instanceof File
-    ? source
-    : new File([source], 'video.mp4', { type: source.type || 'video/mp4' })
+  const opts: AutoWatermarkOptions = typeof onProgress === 'function' ? { onProgress } : onProgress
+  const stage = opts.onProgress || (() => {})
+  const notice = opts.onNotice || (() => {})
+  const { signal } = opts
+  const file = source instanceof File ? source : toFile(source)
 
-  onProgress('Menganalisis watermark…', 2)
+  checkActive(signal)
+
+  // ── 1. Mesin AI resmi (jalur utama) ────────────────────────────────
+  let engineRefused = false
+  opts.onPhase?.('engine')
+  try {
+    const engine = await runEnginePass(file, false, stage, signal)
+    stage('Selesai', 100)
+    return {
+      blob: engine.blob,
+      frames: engine.frames ?? 0,
+      via: 'engine',
+      region: null,
+      engineRefused: false,
+    }
+  } catch (e) {
+    if (e instanceof CleanupCancelledError) throw e
+    if (isLowConfidenceRejection(e)) {
+      // Ekspor paksa terbukti memperburuk hasil, jadi tidak pernah otomatis —
+      // pemanggil yang menawarkan tombolnya (sama seperti situs referensi).
+      engineRefused = true
+      notice(
+        'ℹ️ Mesin AI kurang yakin dengan posisi watermark di video ini — dibersihkan dengan jalur lokal dulu.',
+        'info',
+      )
+    } else {
+      notice(
+        `⚠️ Mesin AI gagal (${String((e as Error)?.message || e).slice(0, 90)}) — pakai jalur lokal`,
+        'warning',
+      )
+    }
+  }
+
+  checkActive(signal)
+
+  // ── 2/3/4. Pipeline lokal ──────────────────────────────────────────
+  opts.onPhase?.('local')
+  stage('Menganalisis watermark…', 3)
   const meta = await loadVideoMetadata(file)
 
   let plan: GeminiFramePlan | null = null
@@ -115,7 +280,7 @@ export async function autoRemoveWatermarkFromVideo(
 
     plan = await createGeminiFramePlan(ff)
     if (!plan) {
-      onProgress('Frame pertama belum yakin — sampling frame lain…', 4)
+      stage('Frame pertama belum yakin — sampling frame lain…', 4)
       plan = await detectGeminiInVideo(meta.video, null, 4)
     }
   } finally {
@@ -130,13 +295,15 @@ export async function autoRemoveWatermarkFromVideo(
     frameProcessor: (ctx: CanvasRenderingContext2D, seconds: number) => void,
     fallbackFrames: () => number,
   ): Promise<{ blob: Blob; frames: number }> => {
-    const report = (pct: number, msg: string) => onProgress(msg, Math.min(99, 4 + (pct / 100) * 94))
+    const report = (pct: number, msg: string) =>
+      stage(msg, Math.min(99, 5 + (pct / 100) * 93))
     if (isOfflineVideoSupported()) {
       try {
         return await processVideoOffline(file, frameProcessor, report)
       } catch (e) {
         // Codec video ini tidak bisa di-decode WebCodecs — pakai jalur lama.
         console.warn('[auto-watermark] WebCodecs gagal, lanjut jalur lama:', e)
+        notice('⚠️ Encoding WebCodecs gagal — pakai jalur cadangan', 'warning')
       }
     }
     const fallbackMeta = await loadVideoMetadata(file)
@@ -149,7 +316,7 @@ export async function autoRemoveWatermarkFromVideo(
   }
 
   if (plan) {
-    // ── Jalur exact (identik dengan runGeminiVideo di halaman) ──────────
+    // ── Jalur exact (reverse-alpha + seam per frame) ─────────────────
     const plans: GeminiFramePlan[] = [plan]
     const keyOf = (p: GeminiFramePlan) =>
       `${p.position.x},${p.position.y},${p.position.width},${p.position.height}`
@@ -198,11 +365,15 @@ export async function autoRemoveWatermarkFromVideo(
         const { x, y, width: pw, height: ph } = p.position
         const roi = ctx.getImageData(x, y, pw, ph)
         applyReverseAlphaToRegion(roi, p.alphaMap, p.alphaGain)
+        // Sisa garis kontur gelap (pola outline V2) jangan sampai meningggal
+        // siluet bintang Gemini sesudah reverse-alpha.
         repairDarkOutlineContourROI(roi, p.alphaMap)
         ctx.putImageData(roi, x, y)
       }
+      // Inpaint per-frame di region yang sama: menghapus sisa yang tidak
+      // luruh oleh reverse-alpha, dari konteks frame itu sendiri.
       if (cleanupCleaner) cleanupCleaner.process(ctx)
-      // Re-deteksi jarang: watermark bisa muncul/pindah di pertengahan video.
+      // Re-deteksi jarang (mahal): watermark bisa berpindah/muncul belakangan.
       if (t >= 10 && t - lastProbe >= 6 && w > 0 && h > 0) {
         lastProbe = t
         const snap = ctx.getImageData(0, 0, w, h)
@@ -210,24 +381,27 @@ export async function autoRemoveWatermarkFromVideo(
           if (np && !plans.some((p) => keyOf(p) === keyOf(np))) {
             plans.push(np)
             rebuildCleaner()
+            notice(`🧲 Watermark baru terdeteksi di posisi lain (${t.toFixed(1)}s) — ikut dibersihkan`, 'info')
           }
         }).catch(() => { /* probe hanya bonus */ })
       }
     }
 
-    onProgress('Watermark Gemini terdeteksi — bersihkan tiap frame…', 6)
+    stage('Watermark Gemini terdeteksi — bersihkan tiap frame…', 5)
     const { blob, frames } = await runVideoThrough(frameProcessor, () => 0)
     const p0 = plan.position
     return {
       blob,
       frames,
-      mode: 'exact',
+      via: 'gemini-exact',
       region: { x: p0.x, y: p0.y, width: p0.width, height: p0.height },
+      engineRefused,
     }
   }
 
-  // ── Jalur fallback (identik dengan cabang "bukan pola Gemini") ───────
+  // ── Bukan pola Gemini: seam per frame di region kanan-bawah ────────
   const region = expandCatalogRegion(ff, getGeminiWatermarkRegion(width, height))
+  notice(`ℹ️ Deteksi exact gagal → fallback AI (${width}×${height}, region ${region.width}×${region.height})`, 'info')
   const mask = new ImageData(width, height)
   const x1 = Math.min(width, region.x + region.width)
   const y1 = Math.min(height, region.y + region.height)
@@ -244,7 +418,7 @@ export async function autoRemoveWatermarkFromVideo(
   const cleaner = createSeamFrameProcessor(mask, width, height)
   if (!cleaner) throw new Error('Area watermark kosong — tidak ada yang dibersihkan')
 
-  onProgress('Membersihkan area watermark per frame…', 6)
+  stage('Bukan pola Gemini — bersihkan area watermark per frame…', 5)
   const { blob, frames } = await runVideoThrough((ctx) => cleaner.process(ctx), () => cleaner.frames())
-  return { blob, frames, mode: 'fallback', region }
+  return { blob, frames, via: 'seam-area', region, engineRefused }
 }
