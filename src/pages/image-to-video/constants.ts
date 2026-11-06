@@ -126,10 +126,11 @@ export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'rs:happyhorse-1.1', label: 'HappyHorse 1.1 (Riverside)', cr: 12, provider: 'riverside', apiModel: 'happyhorse-1.1' },
     { value: 'rs:kling-3.0-pro', label: 'Kling 3.0 Pro (Riverside)', cr: 13, provider: 'riverside', apiModel: 'kling-3.0-pro' },
   ],
-  // NexaBot: Omni Flash 1.1 (satu model, 4 jenis) — mengikuti
-  // nexabot.id/video-generator: mode menentukan jenis input, resolusi
-  // 720/1080 dipilih user. API tidak punya parameter `model`; yang dikirim
-  // adalah `mode` + `resolution` (lihat GET /api/v1/modes).
+  // NexaBot: Omni Flash 1.1 (mode Google Vids t2v/sfv/i2v/r2v/extend) —
+  // mengikuti nexabot.id/video-generator: mode menentukan jenis input,
+  // resolusi 720/1080 dan durasi (t2v/sfv/i2v/extend, default 15 detik)
+  // dipilih user. API tidak punya parameter `model`; yang dikirim adalah
+  // `mode` + `resolution` + `duration` (docs nexabot.id/api-docs).
   seavi: [
     // Katalog aktif Seavi 5 Nov 2026 ("Aktif (21)"): 13 model 1 token, 8 model 2 token.
     // Motion Control pindah ke halaman Motion Control (provider Seavi Labs).
@@ -635,30 +636,45 @@ export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: s
     ],
   },
   nexabot: {
-    // API NexaBot TIDAK punya parameter durasi (docs: mode/prompt/ratio/media/
-    // resolution) — pilihan "5s/10s" lama tidak pernah dikirim, jadi diganti
-    // jadi pilihan RESOLUSI yang benar-benar dikirim ke body. `resolution`
-    // menempel di opsi; `duration` 0 = tidak ditampilkan di log durasi.
+    // Docs nexabot.id/api-docs: mode Google Vids t2v/sfv/i2v/extend menerima
+    // parameter `duration` (default 15 detik, rentang 1–60) bersama
+    // `resolution` 720|1080. `duration` 15 detik adalah opsi pertama (= default
+    // upstream). r2v TIDAK punya parameter durasi (mengikuti video sumber) —
+    // opsinya tetap pilihan resolusi saja.
     'nb:t2v': [
-      { value: '720', label: '720p — cepat', mult: 1, duration: 0, cr: 0.15, resolution: '720' },
-      { value: '1080', label: '1080p — lebih tajam, proses lebih lama', mult: 1, duration: 0, cr: 0.15, resolution: '1080' },
+      { value: '15-720', label: '15 detik · 720p — cepat', mult: 1, duration: 15, cr: 0.15, resolution: '720' },
+      { value: '15-1080', label: '15 detik · 1080p — lebih tajam, proses lebih lama', mult: 1, duration: 15, cr: 0.15, resolution: '1080' },
+      { value: '10-720', label: '10 detik · 720p', mult: 1, duration: 10, cr: 0.15, resolution: '720' },
+      { value: '10-1080', label: '10 detik · 1080p', mult: 1, duration: 10, cr: 0.15, resolution: '1080' },
+      { value: '5-720', label: '5 detik · 720p', mult: 1, duration: 5, cr: 0.15, resolution: '720' },
+      { value: '5-1080', label: '5 detik · 1080p', mult: 1, duration: 5, cr: 0.15, resolution: '1080' },
     ],
     'nb:sfv': [
-      { value: '720', label: '720p — cepat', mult: 1, duration: 0, cr: 0.15, resolution: '720' },
-      { value: '1080', label: '1080p — lebih tajam, proses lebih lama', mult: 1, duration: 0, cr: 0.15, resolution: '1080' },
+      { value: '15-720', label: '15 detik · 720p — cepat', mult: 1, duration: 15, cr: 0.15, resolution: '720' },
+      { value: '15-1080', label: '15 detik · 1080p — lebih tajam, proses lebih lama', mult: 1, duration: 15, cr: 0.15, resolution: '1080' },
+      { value: '10-720', label: '10 detik · 720p', mult: 1, duration: 10, cr: 0.15, resolution: '720' },
+      { value: '10-1080', label: '10 detik · 1080p', mult: 1, duration: 10, cr: 0.15, resolution: '1080' },
+      { value: '5-720', label: '5 detik · 720p', mult: 1, duration: 5, cr: 0.15, resolution: '720' },
+      { value: '5-1080', label: '5 detik · 1080p', mult: 1, duration: 5, cr: 0.15, resolution: '1080' },
     ],
     'nb:i2v': [
-      { value: '720', label: '720p — cepat', mult: 1, duration: 0, cr: 0.15, resolution: '720' },
-      { value: '1080', label: '1080p — lebih tajam, proses lebih lama', mult: 1, duration: 0, cr: 0.15, resolution: '1080' },
+      { value: '15-720', label: '15 detik · 720p — cepat', mult: 1, duration: 15, cr: 0.15, resolution: '720' },
+      { value: '15-1080', label: '15 detik · 1080p — lebih tajam, proses lebih lama', mult: 1, duration: 15, cr: 0.15, resolution: '1080' },
+      { value: '10-720', label: '10 detik · 720p', mult: 1, duration: 10, cr: 0.15, resolution: '720' },
+      { value: '10-1080', label: '10 detik · 1080p', mult: 1, duration: 10, cr: 0.15, resolution: '1080' },
+      { value: '5-720', label: '5 detik · 720p', mult: 1, duration: 5, cr: 0.15, resolution: '720' },
+      { value: '5-1080', label: '5 detik · 1080p', mult: 1, duration: 5, cr: 0.15, resolution: '1080' },
     ],
     'nb:r2v': [
       { value: '720', label: '720p — cepat', mult: 1, duration: 0, cr: 0.15, resolution: '720' },
       { value: '1080', label: '1080p — lebih tajam, proses lebih lama', mult: 1, duration: 0, cr: 0.15, resolution: '1080' },
     ],
     // Extend: hasil SELALU 1080p — upstream mengabaikan `resolution`, jadi
-    // hanya satu opsi informatif di dropdown.
+    // opsinya hanya pilihan durasi (15 detik = default upstream).
     'nb:extend': [
-      { value: '1080', label: '1080p — otomatis (hasil selalu 1080p)', mult: 1, duration: 0, cr: 0.15, resolution: '1080' },
+      { value: '15-1080', label: '15 detik · 1080p — otomatis (hasil selalu 1080p)', mult: 1, duration: 15, cr: 0.15, resolution: '1080' },
+      { value: '10-1080', label: '10 detik · 1080p — otomatis (hasil selalu 1080p)', mult: 1, duration: 10, cr: 0.15, resolution: '1080' },
+      { value: '5-1080', label: '5 detik · 1080p — otomatis (hasil selalu 1080p)', mult: 1, duration: 5, cr: 0.15, resolution: '1080' },
     ],
     // NexaDance 3.0: durasi tetap 20 detik 720p dan biaya tetap 0,5 kredit per
     // video. Satu opsi saja supaya dropdown tidak menjanjikan pilihan yang

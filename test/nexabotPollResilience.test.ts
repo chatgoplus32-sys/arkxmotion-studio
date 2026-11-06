@@ -58,6 +58,59 @@ test('submitNexabot: resolution TIDAK dikirim untuk mode non-video (img)', async
   }
 })
 
+test('submitNexabot mengirim duration di body (mode Google Vids t2v/sfv/i2v/extend)', async () => {
+  let sentBody = ''
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = (async (_input: any, init?: any) => {
+    sentBody = String(init?.body ?? '')
+    return jsonResponse({ ok: true, job_id: 'job-dur', status: 'queued' })
+  }) as typeof fetch
+  try {
+    const r = await submitNexabot({ mode: 't2v', prompt: 'drone shot', duration: 15 }, AUTH, FAST)
+    assert.equal(r.ok, true)
+    const body = JSON.parse(sentBody)
+    assert.equal(body.duration, 15)
+    assert.equal(body.mode, 't2v')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('submitNexabot: duration di-clamp ke rentang docs (1–60)', async () => {
+  let sentBody = ''
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = (async (_input: any, init?: any) => {
+    sentBody = String(init?.body ?? '')
+    return jsonResponse({ ok: true, job_id: 'job-dur2', status: 'queued' })
+  }) as typeof fetch
+  try {
+    await submitNexabot({ mode: 'sfv', prompt: 'animasikan', duration: 90 }, AUTH, FAST)
+    assert.equal(JSON.parse(sentBody).duration, 60)
+    await submitNexabot({ mode: 'i2v', prompt: 'animasikan', duration: 0 }, AUTH, FAST)
+    assert.equal(JSON.parse(sentBody).duration, 1)
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('submitNexabot: duration TIDAK dikirim untuk r2v & mode non-video', async () => {
+  let sentBody = ''
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = (async (_input: any, init?: any) => {
+    sentBody = String(init?.body ?? '')
+    return jsonResponse({ ok: true, job_id: 'job-nodur', status: 'queued' })
+  }) as typeof fetch
+  try {
+    // r2v mengikuti durasi video sumber — docs tidak memberi parameter duration.
+    await submitNexabot({ mode: 'r2v', prompt: 'buat versi baru', duration: 15 }, AUTH, FAST)
+    assert.equal(JSON.parse(sentBody).duration, undefined)
+    await submitNexabot({ mode: 'img', prompt: 'kucing', duration: 15 }, AUTH, FAST)
+    assert.equal(JSON.parse(sentBody).duration, undefined)
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
 const QUEUED_JOB = { ok: true, job: { id: 'job-1', status: 'queued', mode: 'sfv', prompt: 'animasikan' } }
 const DONE_JOB = { ok: true, job: { id: 'job-1', status: 'done', mode: 'sfv', prompt: 'animasikan' } }
 

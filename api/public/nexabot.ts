@@ -132,6 +132,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (body.aspect !== undefined) upstreamBody.aspect = body.aspect
       if (body.voice) upstreamBody.voice = body.voice
       if (body.media) upstreamBody.media = body.media
+      // Resolusi video 720|1080 & durasi (detik, mode Google Vids
+      // t2v/sfv/i2v/extend: default 15, rentang 1–60) — docs nexabot.id/api-docs.
+      if (body.resolution !== undefined) upstreamBody.resolution = body.resolution
+      if (body.duration !== undefined) upstreamBody.duration = body.duration
       if (body.telegram_id) upstreamBody.telegram_id = body.telegram_id
 
       // Tanpa retry: kalau responsnya hilang, job bisa saja sudah terbentuk.
@@ -162,6 +166,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (body.aspect !== undefined) upstreamBody.aspect = body.aspect
       if (body.voice) upstreamBody.voice = body.voice
       if (body.media) upstreamBody.media = body.media
+      // Resolusi video 720|1080 & durasi (detik, mode Google Vids
+      // t2v/sfv/i2v/extend: default 15, rentang 1–60) — docs nexabot.id/api-docs.
+      if (body.resolution !== undefined) upstreamBody.resolution = body.resolution
+      if (body.duration !== undefined) upstreamBody.duration = body.duration
       // telegram_id = "user id for credit billing" (docs NexaBot) — menentukan
       // akun mana yang ditagih 0.15 cr/request.
       if (body.telegram_id) upstreamBody.telegram_id = body.telegram_id

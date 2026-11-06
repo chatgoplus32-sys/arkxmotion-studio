@@ -2712,6 +2712,12 @@ export default function ImageToVideoPage() {
             const nbResolution = apiModel === 't2v' || apiModel === 'sfv' || apiModel === 'i2v' || apiModel === 'r2v'
               ? (Number(currentQuality?.resolution) || 720)
               : undefined
+            // Durasi video dari dropdown kualitas — mode Google Vids
+            // t2v/sfv/i2v/extend (docs nexabot.id/api-docs: default 15 detik,
+            // rentang 1–60). r2v mengikuti video sumber, jadi tidak dikirim.
+            const nbDuration = apiModel === 't2v' || apiModel === 'sfv' || apiModel === 'i2v' || apiModel === 'extend'
+              ? (Number(currentQuality?.duration) > 0 ? Number(currentQuality.duration) : 15)
+              : undefined
 
             // Media input (base64 data URI) sesuai aturan tiap mode:
             //  • sfv: 1 gambar start frame · i2v: 1-3 gambar ingredient
@@ -2801,7 +2807,7 @@ export default function ImageToVideoPage() {
                 // NexaDance 3.0 punya endpoint sendiri (POST /api/v1/alt-video/generate)
                 // dengan body berbeda; sisanya memakai alur yang sama.
                 const isNexadance = apiModel === 'nexadance'
-                addLog(`[2/3] 🚀 Submitting to NexaBot ${apiModel} via ${via}...`, 'info', 'nexabot')
+                addLog(`[2/3] 🚀 Submitting to NexaBot ${apiModel}${nbDuration ? ` · ${nbDuration} detik` : ''} via ${via}...`, 'info', 'nexabot')
                 setStatus((s) => ({ ...s, text: `Submit NexaBot ${apiModel}...`, pct: 15 }))
 
                 let jobId = ''
@@ -2844,6 +2850,7 @@ export default function ImageToVideoPage() {
                     ratio: ratioParam,
                     aspect: aspectParam,
                     resolution: nbResolution,
+                    duration: nbDuration,
                     voice: apiModel === 'tts' ? NEXABOT_DEFAULT_VOICE : undefined,
                     media: media.length > 0 ? media : undefined,
                     // Billing NexaBot mengikuti telegram_id (kalau diisi di halaman Providers).

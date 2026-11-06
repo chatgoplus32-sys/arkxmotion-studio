@@ -744,6 +744,13 @@ export interface NexabotSubmitParams {
    *  Extend SELALU 1080p — parameter resolution diabaikan upstream. */
   resolution?: number
   /**
+   * Durasi video dalam detik — mode Google Vids t2v/sfv/i2v/extend
+   * (docs nexabot.id/api-docs: default 15 detik, rentang 1–60).
+   * Diabaikan untuk mode lain (r2v mengikuti video sumber, omni/nexadance
+   * berdurasi tetap 10/20 detik di upstream).
+   */
+  duration?: number
+  /**
    * ID Telegram yang ditagihkan (parameter resmi NexaBot: "user id for credit
    * billing"). Kalau kosong, NexaBot memakai akun default milik API key.
    * Paket Unlimited NexaBot terikat ke akun Telegram — isi ini dengan akun
@@ -800,6 +807,12 @@ export async function submitNexabot(
   // Resolusi video (720|1080) — mode video saja; img/music/tts menolaknya.
   if (params.resolution !== undefined && ['t2v', 'sfv', 'i2v', 'r2v'].includes(params.mode)) {
     body.resolution = params.resolution
+  }
+  // Durasi video (detik) — mode Google Vids t2v/sfv/i2v/extend saja; docs
+  // nexabot.id/api-docs: default 15 detik, rentang 1–60. r2v mengikuti
+  // durasi video sumber dan omni/nexadance berdurasi tetap di upstream.
+  if (params.duration !== undefined && ['t2v', 'sfv', 'i2v', 'extend'].includes(params.mode)) {
+    body.duration = Math.min(60, Math.max(1, Math.round(params.duration)))
   }
   // telegram_id hanya dipakai jalur API key (billing). Di mode session, akun
   // sudah ditentukan oleh cookie login.

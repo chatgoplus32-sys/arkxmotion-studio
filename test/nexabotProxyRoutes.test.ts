@@ -179,6 +179,29 @@ test('/generate: resolution diteruskan ke upstream', async () => {
   }
 })
 
+test('/submit & /generate: duration diteruskan ke upstream', async () => {
+  let sentBody = ''
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = (async (_input: any, init?: any) => {
+    sentBody = String(init?.body ?? '')
+    return jsonResponse({ ok: true, job_id: 'job-dur', status: 'queued' })
+  }) as typeof fetch
+  try {
+    // Jalur API key → POST /api/v1/api (mode Google Vids, default 15 detik).
+    const sub = await post('/api/public/nexabot/submit', { mode: 't2v', prompt: 'drone shot', resolution: 720, duration: 15 }, { 'X-Api-Key': 'nxb_test' })
+    assert.equal(sub.status, 200)
+    assert.equal(JSON.parse(sentBody).duration, 15)
+    assert.equal(JSON.parse(sentBody).resolution, 720)
+
+    // Jalur session (Unlimited) → POST /api/v1/generate.
+    const gen = await post('/api/public/nexabot/generate', { mode: 'i2v', prompt: 'animasikan', duration: 15 }, { 'X-Nexabot-Cookie': 'session=abc' })
+    assert.equal(gen.status, 200)
+    assert.equal(JSON.parse(sentBody).duration, 15)
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
 test('/generate: timeout TIDAK diulang (hindari job & kredit ganda)', async () => {
   queue.push(() => { throw timeoutError() })
 
