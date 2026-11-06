@@ -101,20 +101,11 @@ const PROVIDERS = {
     { key: 'sv:motion_control_v3_server23_15dtk', label: 'Motion Control V3 · S23 15 dtk', cr: 1 },
     { key: 'sv:motion_control_v3_server10_30dtk', label: 'Motion Control V3 · S10 30 dtk', cr: 2 },
   ]},
-  // MarkasTools (ai.markastools.id): Motion Control "Markasflow" via session
-  // cookie + akun token MF-… (lihat lib markastools). Biaya ditagih paket
-  // langganan MarkasTools, bukan kredit ARKXMotion (cr = 0).
-  markastools: { name: 'MarkasTools', models: [
-    { key: 'mt:markasflow-hd', label: 'MarkasFlow Motion HD (MarkasTools)', cr: 0 },
-    { key: 'mt:markasflow-v25', label: 'MarkasFlow Motion V2.5 (MarkasTools)', cr: 0 },
-    { key: 'mt:h3-studio', label: 'Markas H3 Studio (MarkasTools)', cr: 0 },
-    { key: 'mt:kling26', label: 'Kling 2.6 Motion (MarkasTools)', cr: 0 },
-  ]},
 }
 
-// Halaman Motion Control menawarkan tiga provider yang paling stabil, biar
+// Halaman Motion Control menawarkan dua provider yang paling stabil, biar
 // member tidak bingung memilih. Provider lain tetap dipakai halaman lain.
-const MOTION_PROVIDER_IDS = ['runninghub', 'seavi', 'markastools'] as const
+const MOTION_PROVIDER_IDS = ['runninghub', 'seavi'] as const
 type MotionProviderId = (typeof MOTION_PROVIDER_IDS)[number]
 
 const MOTION_PROVIDER_INFO: Record<MotionProviderId, { name: string; tagline: string; note: string; recommended?: boolean }> = {
@@ -129,18 +120,12 @@ const MOTION_PROVIDER_INFO: Record<MotionProviderId, { name: string; tagline: st
     tagline: 'Bayar pakai token Seavi',
     note: 'Tanpa API key — top up token di halaman Top Up Seavi (Rp 4.000 = 2 token). Model 15 dtk keluar tanpa suara; suara video referensi otomatis ditempel ulang di browser (+beberapa detik sebelum hasil tampil).',
   },
-  markastools: {
-    name: 'MarkasTools',
-    tagline: 'Bayar pakai langganan MarkasTools',
-    note: 'Perlu login ai.markastools.id (session cookie) + akun token MF-… (MarkasKeyTool) yang sudah ditambahkan di dashboard MarkasTools. Atur di halaman Providers → MarkasTools. Butuh langganan aktif Rp 60rb/bulan di MarkasTools.',
-  },
 }
 
 // Default model tiap provider: pilih yang paling murah, bukan yang pertama di daftar.
 const MOTION_RECOMMENDED_MODEL: Record<MotionProviderId, string> = {
   runninghub: 'rh:std:2.6',
   seavi: 'sv:motion_control_v3_server23_15dtk',
-  markastools: 'mt:markasflow-hd',
 }
 
 // Label awam untuk dropdown model — nama workflow aslinya terlalu teknis.
@@ -156,10 +141,6 @@ const SIMPLE_MODEL_LABELS: Record<string, string> = {
   'rh:wf:72fps': 'Motion Control 72 FPS',
   'sv:motion_control_v3_server23_15dtk': 'Motion Control V3 · 15 detik',
   'sv:motion_control_v3_server10_30dtk': 'Motion Control V3 · 30 detik',
-  'mt:markasflow-hd': 'MarkasFlow Motion HD',
-  'mt:markasflow-v25': 'MarkasFlow Motion V2.5',
-  'mt:h3-studio': 'Markas H3 Studio',
-  'mt:kling26': 'Kling 2.6 Motion',
 }
 
 function motionModelLabel(providerId: MotionProviderId, model: { key: string; label: string; cr: number }): string {
@@ -646,9 +627,7 @@ export default function MotionPage() {
 
     // Provider berikut sudah punya task sendiri; sisanya diberi task sesi
     // supaya panel Generasi menampilkan "Sedang berjalan" selama proses.
-    // (markastools ditangani cabang khusus di bawah sebelum rotasi token —
-    // ia memakai session cookie, bukan kunci + wallet kredit.)
-    const SELF_TRACKED = new Set(['roboneo', 'runninghub', 'galleri5', 'genspark', 'markastools'])
+    const SELF_TRACKED = new Set(['roboneo', 'runninghub', 'galleri5', 'genspark'])
     let ephemeralTaskId: string | null = null
     if (!SELF_TRACKED.has(provider)) {
       ephemeralTaskId = `motion-live-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
@@ -799,75 +778,6 @@ export default function MotionPage() {
         } else {
           addLog(`Generation failed: ${rotation.error}`, 'error')
           if (logId) logGenerationFailed(logId, rotation.error || 'Unknown error', Date.now() - startTime)
-        }
-        return
-      }
-
-      if (provider === 'markastools') {
-        // MarkasTools (ai.markastools.id): session cookie login + akun token
-        // MF-… (MarkasKeyTool). Biaya ditagih langganan MarkasTools, bukan
-        // kredit ARKXMotion — tanpa wallet charge/refund & tanpa rotasi kunci.
-        const { getMarkastoolsCookies, runMarkasJob } = await import('@/lib/markastools')
-        const cookies = getMarkastoolsCookies()
-        if (!cookies) {
-          throw new Error('Belum ada cookie session MarkasTools. Tambahkan di Providers → MarkasTools (login ai.markastools.id lalu paste cookie).')
-        }
-        const MARKAS_MODEL: Record<string, string> = {
-          'mt:markasflow-hd': 'MarkasFlow Motion HD',
-          'mt:markasflow-v25': 'MarkasFlow Motion V2.5',
-          'mt:h3-studio': 'Markas H3 Studio',
-          'mt:kling26': 'Kling 2.6 Motion',
-        }
-        const modelName = MARKAS_MODEL[modelKey] || currentModel.label
-        let okCount = 0
-        for (const [idx, slot] of filledSlots.entries()) {
-          const n = idx + 1
-          try {
-            updateSlotStatus(slot.id, 'uploading img...')
-            addLog(`#${n} Upload & submit ke MarkasTools (${modelName})...`)
-            const finalUrl = await runMarkasJob(
-              {
-                model: modelName,
-                imageFile: slot.image!,
-                videoFile: slot.video!,
-                prompt: finalPrompt,
-                orientation,
-                keepSound,
-                server: 0,
-              },
-              cookies,
-              {
-                onProgress: (msg) => {
-                  updateSlotStatus(slot.id, 'processing', msg.slice(0, 80))
-                  addLog(`#${n} ${msg}`)
-                },
-              },
-            )
-            updateSlotStatus(slot.id, 'done')
-            addLog(`#${n} ✅ Selesai ✓ ${finalUrl.slice(0, 60)}...`, 'success')
-            okCount++
-            const rid = `markastools-mc-${Date.now()}-${n}`
-            addResult({
-              id: rid,
-              url: finalUrl,
-              prompt: finalPrompt || '(motion control)',
-              date: new Date().toISOString(),
-              page: 'motion',
-              provider: 'markastools',
-              model: modelName,
-            })
-            persistResultToR2(rid, finalUrl)
-            setProgress(Math.round((okCount / filledSlots.length) * 100))
-          } catch (slotErr: any) {
-            updateSlotStatus(slot.id, 'error', slotErr?.message || 'Gagal')
-            addLog(`#${n} ❌ ${slotErr?.message || 'Gagal'}`, 'error')
-          }
-        }
-        if (okCount > 0) successRef.current = true
-        addLog(okCount > 0 ? `Selesai — ${okCount} video via MarkasTools` : 'Tidak ada video yang berhasil', okCount > 0 ? 'success' : 'error')
-        if (logId) {
-          if (okCount > 0) logGenerationComplete(logId, { status: 'completed', duration_ms: Date.now() - startTime })
-          else logGenerationFailed(logId, 'Tidak ada video yang berhasil', Date.now() - startTime)
         }
         return
       }
