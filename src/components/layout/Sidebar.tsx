@@ -286,9 +286,9 @@ export function Sidebar({ collapsed = false, onClose }: SidebarProps) {
       {/* Logo */}
       <div className="flex items-center gap-2.5 h-14 px-4 border-b border-border">
         {collapsed ? (
-          <img src="/landing/arkx-icon-v2.png" alt="ARKXMotion" className="w-8 h-8 object-cover rounded-lg" />
+          <img src="/landing/arkx-icon-v2.png" alt="ARKXMotion" className="w-8 h-8 object-contain" />
         ) : (
-          <img src="/landing/arkx-icon-v2.png" alt="ARKXMotion Studio" className="sidebar-brand-logo h-10 w-10 object-cover rounded-lg min-w-0" />
+          <img src="/landing/arkx-icon-v2.png" alt="ARKXMotion Studio" className="sidebar-brand-logo h-10 w-10 object-contain min-w-0" />
         )}
         {onClose && (
           <button
