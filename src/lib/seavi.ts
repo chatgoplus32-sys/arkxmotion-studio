@@ -243,17 +243,20 @@ export const SEAVI_MODELS: Record<string, SeaviModelSpec> = {
 }
 
 // ── Image generation (halaman Edit Image) ──
-// Input: image_urls referensi; output png. 1 token. Upstream 1 Nov 2026
-// mewajibkan minimal 1 gambar sumber di semua model image, jadi minRefs
-// bukan lagi 0: generate teks-saja akan ditolak 422 VALIDATION_ERROR.
-const seaviImage = (id: string, label: string, maxRefs: number, aspects: string[], minRefs = 0): SeaviModelSpec => ({
+// Input: image_urls referensi WAJIB (semua model image upstream bertipe
+// image_to_image dengan min_items 1), output png, 1 token. Generate teks-saja
+// ditolak 422 VALIDATION_ERROR, jadi imageMin dikunci 1, bukan opsional.
+// Daftar aspek = opsi upstream persis, minus nilai default-nya (auto /
+// match_input_image) karena chip "Default" sudah berarti "param tidak dikirim,
+// upstream pakai default-nya".
+const seaviImage = (id: string, label: string, maxRefs: number, aspects: string[]): SeaviModelSpec => ({
   id,
   label,
   category: 'image_generation',
-  inputType: 'text_or_images_to_image',
+  inputType: 'image_to_image',
   tokens: 1,
   imageMode: 'multi',
-  imageMin: minRefs,
+  imageMin: 1,
   imageMax: maxRefs,
   videoMode: 'none',
   aspects,
@@ -261,15 +264,27 @@ const seaviImage = (id: string, label: string, maxRefs: number, aspects: string[
   promptRequired: true,
 })
 
+const RATIO_NANO = ['1:1', '9:16', '16:9', '3:4', '4:3', '3:2', '2:3', '5:4', '4:5', '21:9']
+const RATIO_SEEDREAM = ['16:9', '4:3', '1:1', '3:4', '9:16', '21:9', '3:2', '2:3']
+
 export const SEAVI_IMAGE_MODELS: Record<string, SeaviModelSpec> = {
-  gpt_image_2_server15: seaviImage('gpt_image_2_server15', 'GPT Image 2 · Server 15', 5, ['9:16', '16:9', '1:1', '4:3'], 1),
-  nano_banana_2_lite_server15: seaviImage('nano_banana_2_lite_server15', 'Nano Banana 2 Lite · Server 15', 10, ['9:16', '16:9', '1:1', '4:3'], 1),
-  nano_banana_2_server15: seaviImage('nano_banana_2_server15', 'Nano Banana 2 · Server 15', 10, ['9:16', '16:9', '1:1', '4:3'], 1),
-  nano_banana_pro_server15: seaviImage('nano_banana_pro_server15', 'Nano Banana Pro · Server 15', 10, ['9:16', '16:9', '1:1', '4:3'], 1),
-  seedream_4_server15: seaviImage('seedream_4_server15', 'Seedream 4 · Server 15', 4, ['9:16', '16:9', '1:1', '4:3'], 1),
-  seedream_4_5_server15: seaviImage('seedream_4_5_server15', 'Seedream 4.5 · Server 15', 4, ['9:16', '16:9', '1:1', '4:3'], 1),
+  // GPT Image 2 juga menerima ukuran piksel eksplisit sampai 4K.
+  gpt_image_2_server15: seaviImage('gpt_image_2_server15', 'GPT Image 2 · Server 15', 5, [
+    '1:1', '3:2', '2:3', '4:3', '3:4', '16:9', '9:16',
+    '1024x1024', '1536x1024', '1024x1536', '1536x1152', '1152x1536',
+    '2048x2048', '2048x1152', '1152x2048', '3840x2160', '2160x3840',
+  ]),
+  nano_banana_2_lite_server15: seaviImage('nano_banana_2_lite_server15', 'Nano Banana 2 Lite · Server 15', 10, [
+    ...RATIO_NANO, '4:1', '1:4', '8:1', '1:8',
+  ]),
+  nano_banana_2_server15: seaviImage('nano_banana_2_server15', 'Nano Banana 2 · Server 15', 10, RATIO_NANO),
+  nano_banana_pro_server15: seaviImage('nano_banana_pro_server15', 'Nano Banana Pro · Server 15', 10, RATIO_NANO),
+  seedream_4_server15: seaviImage('seedream_4_server15', 'Seedream 4 · Server 15', 4, RATIO_SEEDREAM),
+  seedream_4_5_server15: seaviImage('seedream_4_5_server15', 'Seedream 4.5 · Server 15', 4, RATIO_SEEDREAM),
   // Referensi 1-2 gambar (max_items 2 di skema upstream), prompt wajib ≤2000.
-  seavi_image_server15: seaviImage('seavi_image_server15', 'Seavi Image · Server 15', 2, ['9:16', '16:9', '1:1', '4:3'], 1),
+  seavi_image_server15: seaviImage('seavi_image_server15', 'Seavi Image · Server 15', 2, [
+    '1:1', '16:9', '9:16', '4:3', '3:4',
+  ]),
 }
 
 // Upscaler Seavi (upscale_video_server7) sudah dipensiunkan upstream: submit

@@ -274,11 +274,25 @@ test('SEAVI_IMAGE_MODELS: 7 model image aktif; tiap model wajib 1 gambar sumber'
   assert.equal(p.params.aspect_ratio, '16:9')
 })
 
-test('image model: aspek di luar opsi diabaikan; prompt wajib', () => {
-  const spec = SEAVI_IMAGE_MODELS['nano_banana_2_server15']
-  const p = buildSeaviPayload(spec, { imageUrls: ['a.png'], prompt: 'x', aspectRatio: '21:9' })
-  assert.equal(p.params.aspect_ratio, undefined)
-  assert.throws(() => buildSeaviPayload(spec, { imageUrls: ['a.png'], prompt: '' }), /Prompt wajib/)
+// Daftar rasio tiap model image mengikuti upstream 5 Nov 2026 dan tidak sama
+// antar model: Lite punya 8:1, Nano Banana 2 berhenti di 21:9, Seavi Image
+// berhenti di 3:4, GPT Image 2 menerima ukuran piksel.
+test('image model: daftar aspek per model; di luar daftar diabaikan; prompt wajib', () => {
+  const n2 = SEAVI_IMAGE_MODELS['nano_banana_2_server15']
+  assert.equal(buildSeaviPayload(n2, { imageUrls: ['a.png'], prompt: 'x', aspectRatio: '21:9' }).params.aspect_ratio, '21:9')
+  assert.equal(buildSeaviPayload(n2, { imageUrls: ['a.png'], prompt: 'x', aspectRatio: '8:1' }).params.aspect_ratio, undefined)
+
+  const lite = SEAVI_IMAGE_MODELS['nano_banana_2_lite_server15']
+  assert.equal(buildSeaviPayload(lite, { imageUrls: ['a.png'], prompt: 'x', aspectRatio: '8:1' }).params.aspect_ratio, '8:1')
+
+  const seaviImg = SEAVI_IMAGE_MODELS['seavi_image_server15']
+  assert.equal(buildSeaviPayload(seaviImg, { imageUrls: ['a.png'], prompt: 'x', aspectRatio: '21:9' }).params.aspect_ratio, undefined)
+
+  // GPT Image 2 menerima ukuran piksel eksplisit (sampai 4K).
+  const gpt = SEAVI_IMAGE_MODELS['gpt_image_2_server15']
+  assert.equal(buildSeaviPayload(gpt, { imageUrls: ['a.png'], prompt: 'x', aspectRatio: '3840x2160' }).params.aspect_ratio, '3840x2160')
+
+  assert.throws(() => buildSeaviPayload(n2, { imageUrls: ['a.png'], prompt: '' }), /Prompt wajib/)
 })
 
 test('Seedream 4: maksimal 4 gambar referensi (schema upstream 1 Nov 2026)', () => {
