@@ -267,7 +267,7 @@ export default function LandingPage() {
       <nav className="fixed top-0 z-50 w-full border-b border-cyan-400/10 bg-[#050816]/70 backdrop-blur-2xl">
         <div className="mx-auto flex h-[68px] max-w-[1240px] items-center justify-between px-5 sm:px-6">
           <Link to="/" className="flex shrink-0 items-center gap-3">
-            <img src="/landing/arkx-icon.png" alt="ARKX" className="h-10 w-10 object-cover rounded-xl shadow-[0_0_22px_rgba(0,198,255,0.35)]" />
+            <img src="/landing/arkx-icon-v2.png" alt="ARKX" className="h-10 w-10 object-cover rounded-xl shadow-[0_0_22px_rgba(0,198,255,0.35)]" />
             <span className="text-[15px] font-black italic leading-none tracking-tight">
               <span className="bg-gradient-to-r from-white to-cyan-200 bg-clip-text text-transparent">ARKX</span>
               <span className="text-white">MOTION</span>
@@ -328,7 +328,7 @@ export default function LandingPage() {
         <div className="mx-auto grid max-w-[1240px] items-start gap-10 px-5 sm:px-6 lg:grid-cols-[1.02fr_0.98fr] lg:gap-8">
           <div className="relative z-10">
             <div className="flex items-center gap-3">
-              <img src="/landing/arkx-icon.png" alt="" aria-hidden="true" className="h-9 w-9 object-cover rounded-lg shadow-[0_0_18px_rgba(0,198,255,0.4)]" />
+              <img src="/landing/arkx-icon-v2.png" alt="" aria-hidden="true" className="h-9 w-9 object-cover rounded-lg shadow-[0_0_18px_rgba(0,198,255,0.4)]" />
               <span className="text-[13px] font-black italic tracking-wide">
                 ARKX<span className="text-cyan-300">MOTION</span>
                 <span className="ml-1.5 text-[9px] font-semibold not-italic tracking-[0.4em] text-white/45">STUDIO</span>
@@ -712,7 +712,7 @@ export default function LandingPage() {
       <footer className="border-t border-white/5 px-5 py-10 sm:px-6">
         <div className="mx-auto flex max-w-[1240px] flex-col items-center justify-between gap-4 sm:flex-row">
           <div className="flex items-center gap-3">
-            <img src="/landing/arkx-icon.png" alt="ARKX" className="h-7 w-7 object-cover rounded-lg" />
+            <img src="/landing/arkx-icon-v2.png" alt="ARKX" className="h-7 w-7 object-cover rounded-lg" />
             <span className="text-sm font-bold italic">ARKXMOTION STUDIO</span>
             <span className="hidden text-xs text-white/30 sm:inline">© 2026 • AI video generation platform</span>
           </div>
