@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui'
 import { useProviderManager } from '@/stores/providerManager'
 import { useAuthStore } from '@/stores/authStore'
 import { calculateStats, DashboardStats } from '@/lib/stats'
+import { adminWhatsappLink } from '@/lib/payment'
 import { checkAllProviderHealth, HEALTH_PROVIDERS, ProviderHealth } from '@/lib/providerHealth'
 import {
   Video, Image, Zap, Wand2, Route, Key, ArrowRight, Music,
@@ -132,7 +133,7 @@ function timeAgo(iso: string): string {
 const HELP_LINKS = [
   { label: 'Pusat Bantuan', icon: <BookOpen className="h-4 w-4" />, href: '/quick-start' },
   { label: 'Top Up & Saldo', icon: <Coins className="h-4 w-4" />, href: '/saldo' },
-  { label: 'Hubungi Support', icon: <MessageCircle className="h-4 w-4" />, href: '/settings' },
+  { label: 'Hubungi Support', icon: <MessageCircle className="h-4 w-4" />, href: adminWhatsappLink('Halo admin ARKXMotion, saya butuh bantuan') },
   { label: 'Request Fitur', icon: <Sparkles className="h-4 w-4" />, href: '/plugins' },
 ]
 
@@ -513,12 +514,20 @@ export default function DashboardPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="grid grid-cols-2 gap-2">
-              {HELP_LINKS.map((h) => (
-                <button key={h.label} onClick={() => navigate(h.href)} className="flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] p-2.5 text-left transition-all hover:border-cyan-400/25 hover:bg-white/[0.04]">
-                  <span className="text-cyan-300">{h.icon}</span>
-                  <span className="text-[10px] font-semibold text-white/70 leading-tight">{h.label}</span>
-                </button>
-              ))}
+              {HELP_LINKS.map((h) => {
+                const cls = 'flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] p-2.5 text-left transition-all hover:border-cyan-400/25 hover:bg-white/[0.04]'
+                const inner = (
+                  <>
+                    <span className="text-cyan-300">{h.icon}</span>
+                    <span className="text-[10px] font-semibold text-white/70 leading-tight">{h.label}</span>
+                  </>
+                )
+                return h.href.startsWith('http') ? (
+                  <a key={h.label} href={h.href} target="_blank" rel="noopener noreferrer" className={cls}>{inner}</a>
+                ) : (
+                  <button key={h.label} onClick={() => navigate(h.href)} className={cls}>{inner}</button>
+                )
+              })}
             </CardContent>
           </Card>
         </aside>
