@@ -267,7 +267,7 @@ export default function LandingPage() {
       <nav className="fixed top-0 z-50 w-full border-b border-cyan-400/10 bg-[#050816]/70 backdrop-blur-2xl">
         <div className="mx-auto flex h-[68px] max-w-[1240px] items-center justify-between px-5 sm:px-6">
           <Link to="/" className="flex shrink-0 items-center">
-            <img src="/landing/arkx-logo-full.jpg" alt="ARKX Motion Studio" className="h-10 w-auto object-contain drop-shadow-[0_0_18px_rgba(0,198,255,0.35)]" />
+            <img src="/landing/arkx-logo-full.png" alt="ARKX Motion Studio" className="h-10 w-auto object-contain drop-shadow-[0_0_18px_rgba(0,198,255,0.35)]" />
           </Link>
 
           <div className="hidden items-center gap-1 lg:flex">
@@ -323,7 +323,7 @@ export default function LandingPage() {
         <div className="mx-auto grid max-w-[1240px] items-start gap-10 px-5 sm:px-6 lg:grid-cols-[1.02fr_0.98fr] lg:gap-8">
           <div className="relative z-10">
             <div className="flex items-center">
-              <img src="/landing/arkx-logo-full.jpg" alt="ARKX Motion Studio" className="h-9 w-auto object-contain drop-shadow-[0_0_16px_rgba(0,198,255,0.4)]" />
+              <img src="/landing/arkx-logo-full.png" alt="ARKX Motion Studio" className="h-9 w-auto object-contain drop-shadow-[0_0_16px_rgba(0,198,255,0.4)]" />
             </div>
 
             <h1 className="mt-6 text-[38px] font-black italic leading-[0.98] tracking-[-0.03em] sm:text-[52px] md:text-[62px] lg:text-[50px] xl:text-[62px]">
@@ -703,7 +703,7 @@ export default function LandingPage() {
       <footer className="border-t border-white/5 px-5 py-10 sm:px-6">
         <div className="mx-auto flex max-w-[1240px] flex-col items-center justify-between gap-4 sm:flex-row">
           <div className="flex items-center gap-4">
-            <img src="/landing/arkx-logo-full.jpg" alt="ARKX Motion Studio" className="h-8 w-auto object-contain" />
+            <img src="/landing/arkx-logo-full.png" alt="ARKX Motion Studio" className="h-8 w-auto object-contain" />
             <span className="hidden text-xs text-white/30 sm:inline">© 2026 • AI video generation platform</span>
           </div>
           <div className="flex items-center gap-5 text-[11px] sm:text-xs">
