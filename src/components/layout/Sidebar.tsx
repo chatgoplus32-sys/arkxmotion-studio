@@ -67,7 +67,7 @@ const mainNav: NavItem[] = [
 const createNav: NavItem[] = [
   { label: 'Motion Control', href: '/generate/motion', icon: <Video className="h-4 w-4" /> },
   { label: 'Image to Video', href: '/generate/image-to-video', icon: <Image className="h-4 w-4" /> },
-  { label: 'ARKX AUTO Studio', href: '/generate/video-edit', icon: <Clapperboard className="h-4 w-4" /> },
+  { label: 'ARKX AUTO Studio', href: '/generate/video-edit', icon: <Clapperboard className="h-4 w-4" />, pro: true },
   { label: 'Edit Image', href: '/generate/edit-image', icon: <ImagePlus className="h-4 w-4" /> },
   { label: 'Virtual Try-On', href: '/generate/virtual-tryon', icon: <Shirt className="h-4 w-4" /> },
   { label: 'Travel Photo', href: '/generate/travel-photo', icon: <Globe className="h-4 w-4" /> },
@@ -356,7 +356,7 @@ export function Sidebar({ collapsed = false, onClose }: SidebarProps) {
                 <>
                   <div className="min-w-0 flex-1">
                     <div className="text-[13px] font-semibold leading-tight">Upgrade Pro</div>
-                    <div className="text-[11px] leading-tight text-muted-foreground">Buka 3 fitur premium</div>
+                    <div className="text-[11px] leading-tight text-muted-foreground">Buka 4 fitur premium</div>
                   </div>
                   <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 </>

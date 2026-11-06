@@ -148,7 +148,7 @@ const buildPricing = (p: MemberPricing): PricingPlan[] => [
     name: 'Member Lama',
     price: rp(p.proFee),
     sub: 'upgrade sekali bayar · permanen',
-    features: ['Khusus akun yang sudah terdaftar', 'Buka Gemini Tools, AI Song Cover & H3 Music Avatar', 'Fitur AI lain tetap terbuka', 'Sekali bayar · permanen', 'Token generate dibayar terpisah'],
+    features: ['Khusus akun yang sudah terdaftar', 'Buka ARKX AUTO Studio, Gemini Tools, AI Song Cover & H3 Music Avatar', 'Fitur AI lain tetap terbuka', 'Sekali bayar · permanen', 'Token generate dibayar terpisah'],
     cta: 'Login & Upgrade',
     highlight: false,
     to: '/login',
@@ -169,8 +169,8 @@ const buildFaqs = (p: MemberPricing) => [
   { q: 'Bagaimana sistem token & credits?', a: 'Saldo CreatePulse, NexaBot, dan Seavi diisi lewat halaman Saldo Layanan. Provider lain (Roboneo, Weavy, Framia, dll.) memakai kunci milikmu sendiri — top up-nya diajukan lewat Top Up Manual dan diverifikasi admin. Sistem cek balance realtime sebelum generate dan auto-fallback ke kunci/token lain jika habis atau error.' },
   { q: 'Apakah bisa bulk generate?', a: 'Bisa. Bulk Fashion mendukung 1 karakter + ratusan outfit sekaligus, parallel processing. Cocok untuk katalog fashion & UGC massal.' },
   { q: 'Apakah ada watermark?', a: 'ARKXMotion Studio tidak menambahkan watermark ke hasil generate. Tool Watermark Remover juga tersedia untuk video dari sumber lain — termasuk fitur Pro.' },
-  { q: `Saya sudah punya akun, apa tetap bayar ${rp(p.fee)}?`, a: `Tidak. Harga join ${rp(p.fee)} untuk pendaftar baru. Member lama cukup upgrade ${rp(p.proFee)} sekali bayar untuk membuka Gemini Tools, AI Song Cover, dan H3 Music Avatar — fitur AI lainnya tetap terbuka tanpa upgrade. Biaya token generate tetap terpisah sesuai pemakaian.` },
-  { q: 'Apa saja yang terbuka setelah jadi Pro?', a: 'Pendaftar baru yang join Pro langsung mendapat semua fitur AI. Member lama yang upgrade membuka tiga fitur premium: Gemini Tools, AI Song Cover, dan H3 Music Avatar. Sekali bayar, tanpa biaya bulanan.' },
+  { q: `Saya sudah punya akun, apa tetap bayar ${rp(p.fee)}?`, a: `Tidak. Harga join ${rp(p.fee)} untuk pendaftar baru. Member lama cukup upgrade ${rp(p.proFee)} sekali bayar untuk membuka ARKX AUTO Studio, Gemini Tools, AI Song Cover, dan H3 Music Avatar — fitur AI lainnya tetap terbuka tanpa upgrade. Biaya token generate tetap terpisah sesuai pemakaian.` },
+  { q: 'Apa saja yang terbuka setelah jadi Pro?', a: 'Pendaftar baru yang join Pro langsung mendapat semua fitur AI. Member lama yang upgrade membuka empat fitur premium: ARKX AUTO Studio, Gemini Tools, AI Song Cover, dan H3 Music Avatar. Sekali bayar, tanpa biaya bulanan.' },
 ]
 
 /** Pita film dekoratif — perforasi berulang, dipakai di banner CTA bawah. */

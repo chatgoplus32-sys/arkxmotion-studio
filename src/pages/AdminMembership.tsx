@@ -308,7 +308,7 @@ export default function AdminMembershipPage() {
             </p>
           </Section>
 
-          <Section title="Harga Upgrade Pro" sub="Khusus member lama — sekali bayar, membuka Gemini Tools, AI Song Cover & H3 Music Avatar">
+          <Section title="Harga Upgrade Pro" sub="Khusus member lama — sekali bayar, membuka ARKX AUTO Studio, Gemini Tools, AI Song Cover & H3 Music Avatar">
             <div className="flex items-center gap-3 p-4 rounded-xl bg-secondary/50 border border-border mb-4">
               <div className="h-10 w-10 rounded-lg brand-gradient flex items-center justify-center">
                 <Crown className="h-5 w-5 text-black" />
@@ -345,7 +345,7 @@ export default function AdminMembershipPage() {
             </div>
 
             <p className="text-xs text-muted-foreground mt-4">
-              Dipakai di halaman <b>Upgrade Pro</b> dan gerbang tiga fitur premium (Gemini Tools, AI Song Cover, H3 Music Avatar). Nominal pembayaran selalu diambil dari server.
+              Dipakai di halaman <b>Upgrade Pro</b> dan gerbang empat fitur premium (ARKX AUTO Studio, Gemini Tools, AI Song Cover, H3 Music Avatar). Nominal pembayaran selalu diambil dari server.
             </p>
           </Section>
         </div>

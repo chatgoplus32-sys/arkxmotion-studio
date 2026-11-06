@@ -247,7 +247,7 @@ export default function App() {
                         <Route path="/generate/ugc-storyboard" element={<UGCStoryboardPage />} />
                         <Route path="/generate/upscaler" element={<UpscalerPage />} />
                         <Route path="/generate/image-to-video" element={<ImageToVideoPage />} />
-                        <Route path="/generate/video-edit" element={<StudioRedirectPage />} />
+                        <Route path="/generate/video-edit" element={<ProRoute><StudioRedirectPage /></ProRoute>} />
                         <Route path="/generate/image" element={<TextToVideoPage />} />
                         <Route path="/generate/edit-image" element={<EditImagePage />} />
                         <Route path="/providers" element={<ProvidersPage />} />
