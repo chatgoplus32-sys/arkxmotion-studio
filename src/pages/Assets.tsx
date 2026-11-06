@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, EmptyState, Input, Select, Button } from '@/components/ui'
 import {
-  AlertTriangle, CalendarDays, CheckCircle2, Clock3, Database, Download,
+  AlertTriangle, AudioLines, CalendarDays, CheckCircle2, Clock3, Database, Download,
   ExternalLink, Image as ImageIcon, Images, Layers, Loader2, Music, Play, RefreshCw,
   Search, Sparkles, Trash2, Video, X,
 } from 'lucide-react'
-import { getResults, removeResult, GENERATION_PAGE_KIND, type CompletedResult } from '@/lib/backgroundTasks'
+import { getResults, removeResult, updateResult, persistResultToR2, GENERATION_PAGE_KIND, type CompletedResult } from '@/lib/backgroundTasks'
+import { restoreMotionAudio } from '@/lib/motionAudio'
 import { useToastStore } from '@/stores/toastStore'
 import { cn } from '@/lib/utils'
 
@@ -302,6 +303,10 @@ export default function AssetsPage() {
   const [confirmKey, setConfirmKey] = useState<string | null>(null)
   const [broken, setBroken] = useState<Set<string>>(() => new Set())
   const [downloading, setDownloading] = useState<string | null>(null)
+  const [fixing, setFixing] = useState<string | null>(null)
+  const [fixStatus, setFixStatus] = useState('')
+  const fixTargetRef = useRef<AssetItem | null>(null)
+  const fixInputRef = useRef<HTMLInputElement>(null)
 
   const sync = useCallback(() => setAssets(collectAssets()), [])
 
@@ -455,13 +460,66 @@ export default function AssetsPage() {
     window.open(asset.url, '_blank', 'noopener,noreferrer')
   }
 
+  // Hasil Motion Control (Seavi S23 15 dtk) kerap keluar tanpa suara — tombol
+  // ini menempel ulang audio dari video referensi yang di-upload member.
+  const canFixAudio = (asset: AssetItem) =>
+    asset.kind === 'video' && asset.source === 'Motion Control' && asset.refs.some((r) => r.store === 'results' && r.id)
+
+  const triggerFixAudio = (asset: AssetItem) => {
+    if (fixing) return
+    fixTargetRef.current = asset
+    fixInputRef.current?.click()
+  }
+
+  const handleFixAudioFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    const target = fixTargetRef.current
+    e.target.value = ''
+    fixTargetRef.current = null
+    if (!file || !target) return
+    if (!/^video\//.test(file.type) && !/\.(mp4|mov|webm|m4v)$/i.test(file.name)) {
+      addToast('Pilih file video referensi (mp4/mov/webm)', 'error')
+      return
+    }
+    const resultRef = target.refs.find((r) => r.store === 'results' && r.id)
+    if (!resultRef?.id) {
+      addToast('Hasil ini tidak punya referensi lokal untuk diperbarui', 'error')
+      return
+    }
+    setFixing(target.key)
+    setFixStatus('Memeriksa audio video referensi...')
+    try {
+      const voiced = await restoreMotionAudio(target.url, file, {
+        log: (msg) => setFixStatus(msg),
+        status: (text) => setFixStatus(text),
+      })
+      if (voiced.url === target.url) {
+        addToast('Tidak diubah — hasil sudah bersuara, atau video referensi tidak punya audio', 'warning')
+      } else {
+        updateResult(resultRef.id, { url: voiced.url })
+        if (!voiced.selfHosted) persistResultToR2(resultRef.id, voiced.url)
+        window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
+        const next = collectAssets()
+        setAssets(next)
+        const updated = next.find((a) => a.refs.some((r) => r.store === 'results' && r.id === resultRef.id))
+        if (updated && previewKey === target.key) setPreviewKey(updated.key)
+        addToast('Audio referensi berhasil ditempel!', 'success')
+      }
+    } catch (err: any) {
+      addToast(`Gagal menempel audio: ${err?.message || err}`, 'error')
+    } finally {
+      setFixing(null)
+      setFixStatus('')
+    }
+  }
+
   return (
     <PageContent>
       <PageHeader
         eyebrow="Galeri"
         title="Hasil"
         highlight="Generasi"
-        desc="Semua gambar, video, dan audio yang kamu buat di ARKXMotion — cari, pratinjau, unduh, atau hapus dari satu tempat."
+        desc="Semua gambar, video, dan audio yang kamu buat di ARKXMotion — cari, pratinjau, unduh, perbaiki suara hasil Motion Control, atau hapus dari satu tempat."
         actions={(
           <Button onClick={() => navigate('/generate/motion')}>
             <Sparkles className="h-4 w-4" />
@@ -644,6 +702,18 @@ export default function AssetsPage() {
                     )}
                   </div>
                   <div className="mt-auto flex items-center justify-end gap-0.5 border-t border-border/60 pt-1.5">
+                    {canFixAudio(asset) && (
+                      <button
+                        type="button"
+                        onClick={() => triggerFixAudio(asset)}
+                        disabled={fixing !== null}
+                        aria-label={`Perbaiki suara ${asset.title}`}
+                        title="Perbaiki suara — upload video referensi"
+                        className="grid h-7 w-7 place-items-center rounded-lg text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:opacity-60"
+                      >
+                        {fixing === asset.key ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <AudioLines className="h-3.5 w-3.5" />}
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => handleDownload(asset)}
@@ -808,6 +878,17 @@ export default function AssetsPage() {
                     <ExternalLink className="h-4 w-4" />
                     Buka di tab baru
                   </Button>
+                  {canFixAudio(previewAsset) && (
+                    <Button
+                      variant="outline"
+                      onClick={() => triggerFixAudio(previewAsset)}
+                      disabled={fixing !== null}
+                      loading={fixing === previewAsset.key}
+                    >
+                      <AudioLines className="h-4 w-4" />
+                      Perbaiki Suara
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
                     onClick={() => handleDelete(previewAsset)}
@@ -826,6 +907,24 @@ export default function AssetsPage() {
                 )}
               </aside>
             </div>
+          </div>
+        </div>
+      )}
+
+      <input
+        ref={fixInputRef}
+        type="file"
+        accept="video/mp4,video/webm,video/quicktime,video/x-m4v,.mp4,.mov,.webm,.m4v"
+        className="hidden"
+        onChange={handleFixAudioFile}
+      />
+
+      {fixing && (
+        <div className="fixed bottom-4 left-1/2 z-[90] flex w-[min(92vw,26rem)] -translate-x-1/2 items-center gap-3 rounded-2xl border border-primary/30 bg-card/95 px-4 py-3 shadow-2xl backdrop-blur">
+          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" />
+          <div className="min-w-0">
+            <p className="text-xs font-semibold">Menempel audio referensi...</p>
+            <p className="truncate text-[11px] text-muted-foreground">{fixStatus}</p>
           </div>
         </div>
       )}

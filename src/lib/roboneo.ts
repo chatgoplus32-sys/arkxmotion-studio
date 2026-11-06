@@ -236,7 +236,9 @@ export async function validateMedia(url: string, kind: string): Promise<string> 
 
 export async function uploadToCatbox(file: File, kind?: string, onProgress?: (msg: string, pct?: number) => void): Promise<string> {
   const sizeStr = file.size >= 1024 * 1024 ? `${(file.size / 1024 / 1024).toFixed(1)}MB` : file.size >= 1024 ? `${(file.size / 1024).toFixed(1)}KB` : `${file.size}B`
-  const MAX_SERVER_PROXY = 4 * 1024 * 1024
+  // Relay VPS menerima badan sampai 50 MB (client_max_body_size di nginx); sisanya
+  // jatuh ke host eksternal yang POST-nya sering diblokir CORS dari browser.
+  const MAX_SERVER_PROXY = 48 * 1024 * 1024
 
   function xhrUpload(name: string, url: string, formData: FormData, extractUrl: (res: string, status: number) => string): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -346,16 +348,10 @@ export async function uploadToCatbox(file: File, kind?: string, onProgress?: (ms
         throw Error(text || `0x0 HTTP ${status}`)
       })
     }],
-    ['Tmpfiles', async (f) => {
-      const fd = new FormData()
-      fd.append('file', f, f.name || 'upload.bin')
-      return xhrUpload('Tmpfiles', 'https://tmpfiles.org/api/v1/upload', fd, (text, status) => {
-        const data = JSON.parse(text || 'null')
-        const url = data?.data?.url
-        if (status >= 200 && status < 300 && url) return url
-        throw Error(data?.error || `Tmpfiles HTTP ${status}`)
-      })
-    }],
+    // Tmpfiles sengaja tidak dipasang di browser: API-nya cuma mengembalikan URL
+    // halaman HTML, dan tautan /dl/ di halaman itu redirect balik ke HTML kalau
+    // diambil tanpa cookie — browser tidak bisa memperbaikinya, jadi host ini
+    // tidak dipakai sama sekali.
   ]
 
   const isSmall = file.size <= MAX_SERVER_PROXY
@@ -367,13 +363,16 @@ export async function uploadToCatbox(file: File, kind?: string, onProgress?: (ms
       console.log(`[upload] trying ${name} (${sizeStr}, kind=${kind || 'unknown'})...`)
       onProgress?.(`Upload via ${name} (${sizeStr})...`)
       const url = await uploader(file)
-      console.log(`[upload] success via ${name}`)
-      onProgress?.(`Upload selesai via ${name}`)
       if (kind) {
+        // URL yang ternyata bukan file media (mis. halaman HTML host sementara)
+        // tidak pernah bisa dipakai provider maupun pemutar video — jangan
+        // pernah dikirim keluar; coba host berikutnya.
         try { await validateMedia(url, kind) } catch (ve: any) {
-          console.warn(`[upload] ${name} validation failed: ${ve.message}, using anyway`)
+          throw Error(`${ve.message} (url ${url.slice(0, 80)})`)
         }
       }
+      console.log(`[upload] success via ${name}`)
+      onProgress?.(`Upload selesai via ${name}`)
       return url
     } catch (e: any) {
       errors.push(`${name}: ${e.message}`)
