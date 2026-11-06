@@ -96,7 +96,7 @@ test('/api/runninghub/accounts: body JSON diteruskan apa adanya (tambah akun MF-
 
   const res = await post(
     '/api/public/markastools/api/runninghub/accounts',
-    { name: 'markasflow-v2', api_key: 'MF-RKN3GXAWDVB5LTFX838HQR4' },
+    { name: 'markasflow-v2', api_key: 'MF-TESTTOKEN00000000000000000' },
     { 'X-Markastools-Cookie': 'session=abc' },
   )
 
@@ -104,7 +104,7 @@ test('/api/runninghub/accounts: body JSON diteruskan apa adanya (tambah akun MF-
   assert.equal(res.body.ok, true)
   assert.equal(calls[0], 'https://ai.markastools.id/api/runninghub/accounts')
   assert.equal(headersSeen[0]['Cookie'], 'session=abc')
-  assert.deepEqual(JSON.parse(bodies[0]), { name: 'markasflow-v2', api_key: 'MF-RKN3GXAWDVB5LTFX838HQR4' })
+  assert.deepEqual(JSON.parse(bodies[0]), { name: 'markasflow-v2', api_key: 'MF-TESTTOKEN00000000000000000' })
 })
 
 test('/api/order/generate: status & body upstream diteruskan ke klien', async () => {

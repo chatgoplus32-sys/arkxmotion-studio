@@ -69,10 +69,10 @@ test('addMarkastoolsAccount: POST /api/runninghub/accounts {name, api_key}', asy
     return jsonResponse({ ok: true, account: { id: 3, name: 'markasflow-v2' } })
   }) as typeof fetch
 
-  const r = await addMarkastoolsAccount('markasflow-v2', 'MF-RKN3GXAWDVB5LTFX838HQR4', COOKIE)
+  const r = await addMarkastoolsAccount('markasflow-v2', 'MF-TESTTOKEN00000000000000000', COOKIE)
   assert.equal(r.ok, true)
   assert.equal(calls[0], '/api/public/markastools/api/runninghub/accounts')
-  assert.deepEqual(JSON.parse(bodies[0]), { name: 'markasflow-v2', api_key: 'MF-RKN3GXAWDVB5LTFX838HQR4' })
+  assert.deepEqual(JSON.parse(bodies[0]), { name: 'markasflow-v2', api_key: 'MF-TESTTOKEN00000000000000000' })
 })
 
 test('addMarkastoolsAccount: token kosong → error lokal tanpa fetch', async () => {
