@@ -71,7 +71,7 @@ export default function RegisterStatusPage() {
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-2.5 mb-4">
             <div className="h-12 w-12 rounded-lg overflow-hidden flex items-center justify-center">
-              <img src="/landing/arkx-icon-clean.png" alt="ARKXMotion" className="w-full h-full object-contain" />
+              <img src="/landing/arkx-icon-new.png" alt="ARKXMotion" className="w-full h-full object-contain" />
             </div>
           </div>
           <h1 className="font-display text-2xl font-bold">

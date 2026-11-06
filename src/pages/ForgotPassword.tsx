@@ -42,15 +42,8 @@ export default function ForgotPasswordPage() {
       <div className="absolute inset-0 bg-gradient-to-r from-[#050816]/20 via-[#050816]/70 to-[#050816]" />
       <div className="absolute inset-0 bg-gradient-to-t from-[#050816] via-transparent to-[#050816]/40" />
       <div className="relative flex h-full flex-col justify-between p-10">
-        <div className="flex items-center gap-3">
-          <img src="/landing/arkx-icon-clean.png" alt="ARKXMotion Studio" className="h-12 w-auto object-contain drop-shadow-[0_0_28px_rgba(0,168,255,0.5)]" />
-          <div>
-            <div className="text-base font-black italic leading-tight tracking-tight">
-              <span className="bg-gradient-to-r from-white to-cyan-200 bg-clip-text text-transparent">ARKX</span>
-              <span className="text-white">MOTION</span>
-            </div>
-            <div className="text-[9px] font-semibold uppercase tracking-[0.42em] text-cyan-300/70">STUDIO</div>
-          </div>
+        <div className="flex items-center">
+          <img src="/landing/arkx-logo-full.png" alt="ARKXMotion Studio" className="h-12 w-auto object-contain drop-shadow-[0_0_28px_rgba(0,168,255,0.5)]" />
         </div>
 
         <div className="max-w-[470px]">
@@ -114,12 +107,8 @@ export default function ForgotPasswordPage() {
       {leftHero}
       <div className="relative flex items-center justify-center p-4 sm:p-8" style={{ background: 'radial-gradient(800px 500px at 70% 20%, rgba(0,168,255,0.12), transparent 60%), #050816' }}>
         <div className="w-full max-w-[400px]">
-          <div className="mb-8 flex items-center justify-center gap-3 lg:hidden">
-            <img src="/landing/arkx-icon-clean.png" alt="ARKXMotion Studio" className="h-10 w-auto object-contain drop-shadow-[0_0_18px_rgba(0,168,255,0.45)]" />
-            <div>
-              <div className="text-sm font-black italic leading-tight"><span className="bg-gradient-to-r from-white to-cyan-200 bg-clip-text text-transparent">ARKX</span><span>MOTION</span></div>
-              <div className="text-[8px] font-semibold uppercase tracking-[0.42em] text-cyan-300/70">STUDIO</div>
-            </div>
+          <div className="mb-8 flex items-center justify-center lg:hidden">
+            <img src="/landing/arkx-logo-full.png" alt="ARKXMotion Studio" className="h-10 w-auto object-contain drop-shadow-[0_0_18px_rgba(0,168,255,0.45)]" />
           </div>
 
           <div className="rounded-[24px] border border-cyan-400/15 bg-[#0B1526]/80 p-6 shadow-[0_0_60px_rgba(0,168,255,0.12)] backdrop-blur-xl sm:p-8">
