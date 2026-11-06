@@ -1,9 +1,9 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { PageHeader, PageContent } from '@/components/layout'
-import { Section, Button } from '@/components/ui'
+import { Section, Button, Tabs } from '@/components/ui'
 import { useToastStore } from '@/stores/toastStore'
-import { cn } from '@/lib/utils'
-import { Sparkles, ExternalLink, Copy, Check, Upload, MessageSquarePlus, Scissors, Clapperboard, ArrowRight, Wand2 } from 'lucide-react'
+import { Sparkles, ExternalLink, Copy, Check, Upload, MessageSquarePlus, Scissors, Clapperboard, ArrowRight, Wand2, Rocket, LayoutList, BookOpen } from 'lucide-react'
 
 // Tutorial Gemini dibuka di tab baru — Google memblokir iframe via X-Frame-Options: DENY
 const URL_AUTO_MOTION = 'https://gemini.google.com/share/658bbd2ad0b7?social_preview=false&skid=43585bc7-a891-43a6-9aa0-a9292084f7bb&hl=id-ID'
@@ -183,6 +183,7 @@ const TOOLS: ToolDef[] = [
 
 export default function GeminiToolsPage({ initialTab }: { initialTab?: GeminiToolTab }) {
   const addToast = useToastStore((s) => s.addToast)
+  const navigate = useNavigate()
   const [active, setActive] = useState<GeminiToolTab>(initialTab ?? 'auto-motion')
   const [copied, setCopied] = useState<string | null>(null)
 
@@ -222,29 +223,19 @@ export default function GeminiToolsPage({ initialTab }: { initialTab?: GeminiToo
       />
 
       {/* Tab */}
-      <div className="flex flex-wrap gap-2 mb-6">
-        {TOOLS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setActive(t.id)}
-            className={cn(
-              'px-4 py-2 rounded-full text-sm font-medium transition-all border',
-              active === t.id
-                ? 'bg-primary/10 border-primary/40 text-primary'
-                : 'border-border text-muted-foreground hover:text-foreground hover:border-primary/30'
-            )}
-          >
-            {active === t.id && <Wand2 className="inline h-3.5 w-3.5 mr-1 -mt-0.5" />}
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <Tabs<GeminiToolTab>
+        ariaLabel="Pilih tool Gemini"
+        className="mb-6"
+        items={TOOLS.map((t) => ({ value: t.id, label: t.label }))}
+        value={active}
+        onChange={setActive}
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Section title="🚀 Cara Kerja" sub="Langkah dari aset mentah jadi hasil siap pakai">
+        <Section title="Cara Kerja" icon={<Rocket className="h-4 w-4" />} sub="Langkah dari aset mentah jadi hasil siap pakai">
           <div className="space-y-4">
             {tool.steps.map((step) => (
-              <div key={step.n} className="flex gap-3 items-start">
+              <div key={step.n} className="flex gap-3 items-start animate-fade-in" style={{ animationDelay: `${Number(step.n) * 60}ms`, animationFillMode: 'both' }}>
                 <div className="shrink-0 w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
                   <step.icon className="h-4 w-4" />
                 </div>
@@ -259,8 +250,10 @@ export default function GeminiToolsPage({ initialTab }: { initialTab?: GeminiToo
 
         <div className="space-y-6">
           <Section
-            title="📝 Prompt Template"
+            title="Prompt Template"
+            icon={<LayoutList className="h-4 w-4" />}
             sub="Klik Copy lalu tempel di percakapan Gemini"
+            delay={60}
             right={
               <span className="text-[11px] text-muted-foreground flex items-center gap-1">
                 <Sparkles className="h-3 w-3" /> siap pakai
@@ -268,8 +261,12 @@ export default function GeminiToolsPage({ initialTab }: { initialTab?: GeminiToo
             }
           >
             <div className="space-y-3">
-              {tool.prompts.map((tpl) => (
-                <div key={tpl.label} className="rounded-xl border border-border p-3">
+              {tool.prompts.map((tpl, i) => (
+                <div
+                  key={tpl.label}
+                  className="rounded-xl border border-border p-3 transition-all duration-200 hover:border-primary/30 hover:bg-accent/40 animate-fade-in"
+                  style={{ animationDelay: `${i * 70}ms`, animationFillMode: 'both' }}
+                >
                   <div className="flex items-center justify-between gap-2">
                     <div className="text-sm font-semibold">{tpl.label}</div>
                     <Button variant="outline" size="sm" onClick={() => copyPrompt(tpl.label, tpl.prompt)}>
@@ -283,10 +280,10 @@ export default function GeminiToolsPage({ initialTab }: { initialTab?: GeminiToo
             </div>
           </Section>
 
-          <Section title="🎬 Lanjutkan di Studio" sub="Proses ulang aset & hasil dengan tools internal">
+          <Section title="Lanjutkan di Studio" icon={<BookOpen className="h-4 w-4" />} sub="Proses ulang aset & hasil dengan tools internal" delay={120}>
             <div className="flex flex-wrap gap-2">
               {tool.nextTools.map((n) => (
-                <Button key={n.href} variant="secondary" onClick={() => (window.location.href = n.href)}>
+                <Button key={n.href} variant="secondary" onClick={() => navigate(n.href)}>
                   {n.label} <ArrowRight className="ml-1 h-3.5 w-3.5" />
                 </Button>
               ))}

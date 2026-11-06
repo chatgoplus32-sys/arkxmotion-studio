@@ -326,6 +326,17 @@ const TOKEN_GUIDE: Record<string, {
     ],
     tip: 'NexaBot punya satu model: Google Omni — tipe video ditentukan otomatis dari input (teks / gambar / video referensi). ADA DUA JALUR: (a) SESSION COOKIE dari login web dikirim ke /api/v1/generate — kalau akun yang login punya paket Unlimited, generate TIDAK dipotong kredit; (b) API KEY (nxb_...) lewat /api/v1/api — selalu pay-as-you-go 0.15 cr/request walau Unlimited aktif. Kalau key punya cookie, app otomatis memakai jalur session. Cookie bisa kedaluwarsa: kalau muncul error session, login ulang di nexabot.id dan paste cookie baru. CATATAN BIAYA: NexaDance 3.0 (20 detik 720p dengan audio, endpoint khusus /api/v1/alt-video/generate) selalu 0,5 cr/video dan GPT Image 0,1 cr/gambar — Paket Unlimited tidak berlaku untuk keduanya.',
   },
+  markastools: {
+    url: 'https://ai.markastools.id',
+    urlLabel: 'ai.markastools.id',
+    prefix: 'MF-... (token akun MarkasKeyTool)',
+    steps: [
+      { text: 'Langganan MarkasTools dulu (paket Bulanan Rp 60rb) — tanpa langganan aktif, token MF- tidak bisa ditambahkan sebagai akun.' },
+      { text: 'Di dashboard MarkasTools: menu Accounts → Tambah Akun → provider RunningHub (dilabeli "Markasflow") → paste token MF-… → Simpan. Atau biarkan app yang menambahkannya lewat tombol "Tambahkan token MF-…" di panel bawah (memakai session cookie kamu).' },
+      { text: 'Lalu isi panel “Session Login MarkasTools (cookie)” di bawah: login ai.markastools.id di browser → DevTools (F12) → tab Network → klik request /api/me → Headers → salin value header "Cookie" → paste ke panel.' },
+    ],
+    tip: 'MarkasTools TIDAK punya API key publik — semua endpointnya memakai session cookie login (email/Google), jadi jalur generate di ARKXMotion diteruskan lewat relay dengan cookie kamu. Token MF-… bukan API key RunningHub: ia hanya dikenal server MarkasTools sebagai kunci akun pool mereka ("format MF-… hasil MarkasKeyTool dari seller resmi"). Model Motion Control: MarkasFlow Motion HD/V2.5, Markas H3 Studio, Kling 2.6/V3, Seedance 2.0. Cookie bisa kedaluwarsa: kalau muncul error session, login ulang di ai.markastools.id dan paste cookie baru.',
+  },
 }
 function maskKey(key: string): string {
   if (key.length <= 12) return key
@@ -576,6 +587,148 @@ function NexabotSessionInput({ providerKeys, addKey, setKeyCookies }: {
               <span className="text-[#a0a0a0]"> — coba “Cek ulang” atau generate langsung.</span>
             </div>
           )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// MarkasTools Session Cookies Input — MarkasTools (ai.markastools.id) hanya
+// mengenal login session cookie; token MF-… dipakai sebagai kunci akun di
+// dalam dashboard (menu Accounts → Tambah Akun), bukan sebagai kredensial
+// HTTP. Setelah cookie tersimpan, tombol "Hubungkan" mendaftarkan token
+// MF-… ke MarkasTools (POST /api/runninghub/accounts) lewat relay.
+function MarkastoolsSessionInput({ providerKeys, addKey, setKeyCookies }: {
+  providerKeys: { id: string; key: string; name?: string; status?: string; cookies?: string; cookiesAt?: number }[]
+  addKey: (provider: string, key: string, name?: string) => void
+  setKeyCookies: (provider: string, keyId: string, cookies: string) => void
+}) {
+  const sessionKey = providerKeys.find(k => k.cookies)
+  const tokenKey = providerKeys.find(k => k.key?.trim()) || providerKeys[0]
+  const [input, setInput] = useState('')
+  const [saved, setSaved] = useState(false)
+  const [info, setInfo] = useState<{ ok: boolean; user: any | null; error?: string } | null>(null)
+  const [checking, setChecking] = useState(false)
+  const [linking, setLinking] = useState(false)
+  const [linkMsg, setLinkMsg] = useState<string | null>(null)
+
+  useEffect(() => { setInput(sessionKey?.cookies || '') }, [sessionKey?.id, sessionKey?.cookies])
+
+  const runCheck = useCallback(async (cookies: string) => {
+    if (!cookies) { setInfo(null); return }
+    setChecking(true)
+    try {
+      const { checkMarkastoolsSession } = await import('@/lib/markastools')
+      setInfo(await checkMarkastoolsSession(cookies))
+    } catch (e: any) {
+      setInfo({ ok: false, user: null, error: e?.message || 'Gagal cek sesi' })
+    }
+    setChecking(false)
+  }, [])
+
+  useEffect(() => {
+    const cookies = sessionKey?.cookies || ''
+    if (!cookies) { setInfo(null); return }
+    runCheck(cookies)
+  }, [sessionKey?.id, sessionKey?.cookies, runCheck])
+
+  const handlePaste = async () => {
+    try {
+      const text = await navigator.clipboard.readText()
+      if (text?.trim()) setInput(text.trim())
+    } catch {
+      alert('Tidak bisa baca clipboard otomatis (izin ditolak). Klik kolom input lalu tekan Ctrl+V.')
+    }
+  }
+
+  const handleSave = () => {
+    const cookies = parseNexabotCookieInput(input)
+    if (!cookies) return
+    let keyId = sessionKey?.id
+    if (!keyId) {
+      addKey('markastools', '', 'Session MarkasTools (cookie)')
+      keyId = useProviderManager.getState().keys.markastools.slice(-1)[0]?.id
+    }
+    if (!keyId) return
+    setKeyCookies('markastools', keyId, cookies)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
+
+  const handleLinkAccount = async () => {
+    const token = tokenKey?.key?.trim() || ''
+    const cookies = sessionKey?.cookies || ''
+    if (!cookies) { setLinkMsg('Simpan cookie session dulu sebelum menghubungkan token.'); return }
+    if (!token) { setLinkMsg('Paste token MF-… di kolom key di atas dulu.'); return }
+    setLinking(true)
+    setLinkMsg(null)
+    try {
+      const { addMarkastoolsAccount } = await import('@/lib/markastools')
+      const res = await addMarkastoolsAccount('markasflow-v2', token, cookies)
+      setLinkMsg(res.ok
+        ? '✓ Akun Markasflow terdaftar di MarkasTools (semua model Motion Control di sana kini bisa dipesan lewat ARKXMotion).'
+        : `✗ ${res.error || 'Gagal mendaftarkan akun'}`)
+    } catch (e: any) {
+      setLinkMsg(`✗ ${e?.message || 'Gagal menghubungi MarkasTools'}`)
+    }
+    setLinking(false)
+  }
+
+  return (
+    <div className="mt-3 rounded-md border border-[#7fd3ff]/30 bg-[#7fd3ff]/10 p-3">
+      <div className="text-[12px] font-semibold text-[#7fd3ff] mb-1.5">🌀 Session Login MarkasTools (cookie)</div>
+      <div className="text-[11px] text-[#a0a0a0] mb-2 leading-relaxed">
+        MarkasTools (ai.markastools.id) hanya mengenal login session cookie — generate di ARKXMotion diteruskan lewat relay dengan cookie ini.
+        Login di <a href="https://ai.markastools.id" target="_blank" className="text-[#7fd3ff] underline">ai.markastools.id</a> → DevTools (F12) → tab <b>Network</b> → klik request /api/me → Headers → salin value header <span className="font-mono">Cookie</span>.
+        Token <span className="font-mono">MF-…</span> paste di kolom key di atas (format MF-… hasil MarkasKeyTool), lalu klik <b>Hubungkan</b> di bawah.
+        <div className="mt-1 text-[10px] text-amber-300/85">⚠ Akun MarkasTools butuh langganan aktif (Rp 60rb/bulan) untuk menambah akun/token. Cookie bisa kedaluwarsa: kalau cek sesi gagal, login ulang lalu paste cookie baru.</div>
+      </div>
+      <div className="flex gap-2">
+        <input
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          placeholder="Paste cookie session MarkasTools…"
+          className="flex-1 text-[11px] font-mono bg-black/30 border border-[#7fd3ff]/30 text-white px-2 py-1 rounded focus:outline-none focus:border-[#7fd3ff]"
+        />
+        <button
+          onClick={handlePaste}
+          className="text-[11px] px-3 py-1 rounded font-medium border border-[#7fd3ff]/30 bg-black/20 text-[#7fd3ff] hover:bg-[#7fd3ff]/20"
+        >📋 Tempel</button>
+        <button
+          onClick={handleSave}
+          className={`text-[11px] px-3 py-1 rounded font-medium transition ${saved ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-[#7fd3ff]/20 text-[#7fd3ff] border border-[#7fd3ff]/30 hover:bg-[#7fd3ff]/30'}`}
+        >
+          {saved ? '✓ Saved' : 'Simpan Sesi'}
+        </button>
+      </div>
+      <div className="mt-2 flex items-center gap-2">
+        <button
+          onClick={handleLinkAccount}
+          disabled={linking || !sessionKey?.cookies || !tokenKey?.key?.trim()}
+          className="text-[11px] px-3 py-1 rounded font-medium border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50"
+        >{linking ? 'Menghubungkan…' : '🔗 Hubungkan token MF-… ke MarkasTools'}</button>
+        {sessionKey?.cookies && (
+          <>
+            <button
+              onClick={() => runCheck(sessionKey.cookies || '')}
+              disabled={checking}
+              className="text-[10px] text-[#7fd3ff] hover:text-[#7fd3ff]/80 disabled:opacity-50"
+            >{checking ? 'Cek…' : 'Cek ulang'}</button>
+            <button
+              onClick={() => { setKeyCookies('markastools', sessionKey.id, ''); setInput(''); setInfo(null) }}
+              className="text-[10px] text-rose-300 hover:text-rose-200"
+            >Hapus</button>
+          </>
+        )}
+      </div>
+      {linkMsg && (
+        <div className={`mt-2 text-[10.5px] leading-relaxed ${linkMsg.startsWith('✓') ? 'text-emerald-300' : 'text-rose-300'}`}>{linkMsg}</div>
+      )}
+      {info && (
+        <div className={`mt-2 text-[10.5px] leading-relaxed ${info.ok ? 'text-emerald-300' : 'text-rose-300'}`}>
+          {info.ok
+            ? `✓ Session aktif${info.user?.name ? ` — ${info.user.name}` : ''}${info.user?.email ? ` (${info.user.email})` : ''}`
+            : `⚠ ${info.error || 'Status sesi belum bisa dipastikan'} — login ulang di ai.markastools.id lalu paste cookie baru.`}
         </div>
       )}
     </div>
@@ -2041,6 +2194,14 @@ export default function ProvidersPage() {
               {selectedProvider === 'nexabot' && !memberNexabot && (
                 <NexabotSessionInput
                   providerKeys={keys['nexabot'] || []}
+                  addKey={addKey}
+                  setKeyCookies={setKeyCookies}
+                />
+              )}
+              {/* MarkasTools Session Cookies Input (login session + akun MF-) */}
+              {selectedProvider === 'markastools' && (
+                <MarkastoolsSessionInput
+                  providerKeys={keys['markastools'] || []}
                   addKey={addKey}
                   setKeyCookies={setKeyCookies}
                 />

@@ -4,6 +4,9 @@ import { Section, Button, Label, EmptyState } from '@/components/ui'
 import { LogDetailActions } from '@/components/ui/LogDetailActions'
 import { Loader2, Upload, Download, X, Shirt, User, Sparkles, CheckCircle2, AlertCircle, Clock } from 'lucide-react'
 import { useToastStore } from '@/stores/toastStore'
+import { useAuthStore } from '@/stores/authStore'
+import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, nexabotPreferServerKey, nexabotFreeForModel, NEXABOT_PRICE_FALLBACK, type NexabotWallet } from '@/lib/nexabotWallet'
+import { formatRp } from '@/lib/payment'
 import { submitRunningHubTryOn, submitRunningHubTryOnFlux2, pollRunningHubTask } from '@/lib/runninghub'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { persistResultToR2, addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
@@ -11,6 +14,7 @@ import { usePageActive } from '@/hooks/usePageActive'
 
 type TryOnMode = 'tryon' | 'extract'
 type TryOnEngine = 'firered' | 'flux2'
+type TryOnProvider = 'runninghub' | 'nexabot'
 
 interface HistoryItem {
   time: string
@@ -42,6 +46,12 @@ export default function VirtualTryOnPage() {
 
   const [mode, setMode] = useState<TryOnMode>('tryon')
   const [engine, setEngine] = useState<TryOnEngine>('firered')
+  const [provider, setProvider] = useState<TryOnProvider>('runninghub')
+  const [gptAspect, setGptAspect] = useState<1 | 2 | 5>(5)
+  const { token: authToken, user } = useAuthStore()
+  const [nbWallet, setNbWallet] = useState<NexabotWallet | null>(null)
+  const nbChargeRef = useRef<number | null>(null)
+  const nbCoveredRef = useRef(false)
   const [personFile, setPersonFile] = useState<File | null>(null)
   const [personPreview, setPersonPreview] = useState<string | null>(null)
   const [garmentFile, setGarmentFile] = useState<File | null>(null)
@@ -60,6 +70,47 @@ export default function VirtualTryOnPage() {
   const garmentPickerRef = useRef<HTMLInputElement | null>(null)
 
   const apiKey = getStoredProviderKey('runninghub')
+  const nexabotServerReady = !!nbWallet?.server_key?.available
+  const nbFreeForModel = nexabotFreeForModel(nbWallet, 'gpt-image')
+
+  useEffect(() => {
+    if (!authToken) { setNbWallet(null); return }
+    fetchNexabotWallet(authToken).then((w) => { if (w) setNbWallet(w) }).catch(() => {})
+  }, [authToken])
+
+  /** Kredensial NexaBot untuk satu job gpt-image (mengikuti pola EditImage). */
+  const buildNexabotAuth = async (): Promise<any> => {
+    const mod = await import('@/lib/nexabot')
+    const nbApiKey = mod.getNexabotApiKey()
+    const nbCookies = mod.getNexabotCookies()
+    const ticket = nbChargeRef.current
+    let serverReady = nexabotServerReady
+    if (authToken) {
+      const fresh = await fetchNexabotWallet(authToken).catch(() => null)
+      if (fresh) {
+        setNbWallet(fresh)
+        serverReady = !!fresh.server_key?.available
+      }
+    }
+    if (nexabotPreferServerKey({
+      hasOwnKey: !!(nbApiKey || nbCookies),
+      serverReady,
+      coveredByPackage: nbCoveredRef.current,
+    })) return { master: true, ticket }
+    if (nbApiKey || nbCookies) return { apiKey: nbApiKey, cookies: nbCookies, ticket }
+    throw new Error('NexaBot: tidak ada API key aktif dan kunci server belum tersedia — tambahkan API key di halaman Providers atau top up / ambil paket dulu.')
+  }
+
+  const fileToDataUrl = async (file: File): Promise<string> => {
+    const { compressForApi } = await import('@/lib/nexabot')
+    const small = await compressForApi(file, 1024, 0.72)
+    return new Promise<string>((resolve, reject) => {
+      const r = new FileReader()
+      r.onload = () => resolve(String(r.result))
+      r.onerror = () => reject(new Error('Gagal membaca file gambar'))
+      r.readAsDataURL(small)
+    })
+  }
 
   const addLog = (msg: string, level: LogEntry['level'] = 'info') => {
     const time = new Date().toLocaleTimeString('id-ID')
@@ -88,9 +139,12 @@ export default function VirtualTryOnPage() {
   }
 
   const runWorkflow = async () => {
-    if (!apiKey) {
+    if (provider === 'runninghub' && !apiKey) {
       addToast('⚠️ Belum ada RunningHub API key. Tambahkan di Providers.', 'warning')
       return
+    }
+    if (provider === 'nexabot' && !authToken && !getStoredProviderKey('nexabot')) {
+      addToast('⚠️ Untuk NexaBot perlu login (saldo/paket) atau API key NexaBot di Providers.', 'warning')
     }
     if (!personFile) {
       addToast('⚠️ Upload foto karakter terlebih dahulu!', 'warning')
@@ -100,10 +154,19 @@ export default function VirtualTryOnPage() {
       addToast('⚠️ Upload foto pakaian terlebih dahulu!', 'warning')
       return
     }
-    if (engine === 'flux2' && !garmentFile) {
+    if (provider === 'runninghub' && engine === 'flux2' && !garmentFile) {
       addToast('⚠️ FLUX2-Klein butuh foto pakaian. Upload foto pakaian terlebih dahulu!', 'warning')
       return
     }
+    if (provider === 'nexabot' && authToken && user?.role !== 'admin' && nbWallet && !nbFreeForModel && (nbWallet.balance < (nbWallet.price ?? NEXABOT_PRICE_FALLBACK))) {
+      addToast(`Saldo NexaBot tidak cukup (${formatRp(nbWallet.balance)}). Top up dulu di halaman NexaBot.`, 'error')
+      return
+    }
+
+    const isNb = provider === 'nexabot'
+    const modelLabel = isNb
+      ? 'Virtual Try-On (NexaBot GPT Image)'
+      : engine === 'flux2' ? 'Virtual Try-On FLUX2-Klein' : 'Virtual Try-On'
 
     setLoading(true)
     setError(null)
@@ -113,14 +176,83 @@ export default function VirtualTryOnPage() {
     setLogs([])
     const trackId = startGenerationTask({
       page: 'virtual-tryon',
-      model: engine === 'flux2' ? 'Virtual Try-On FLUX2-Klein' : 'Virtual Try-On',
+      model: modelLabel,
       prompt: prompt.trim().slice(0, 500),
-      provider: 'runninghub',
+      provider,
     })
-    addLog(`Mulai (${mode}): ${(personFile!.size / 1024).toFixed(0)}KB ${personFile!.name}` + (mode === 'tryon' && garmentFile ? ` + ${(garmentFile.size / 1024).toFixed(0)}KB ${garmentFile.name}` : ''))
+    addLog(`Mulai (${mode}) via ${isNb ? 'NexaBot GPT Image' : 'RunningHub'}: ${(personFile!.size / 1024).toFixed(0)}KB ${personFile!.name}` + (mode === 'tryon' && garmentFile ? ` + ${(garmentFile.size / 1024).toFixed(0)}KB ${garmentFile.name}` : ''))
     if (prompt.trim()) addLog(`Prompt: ${prompt.trim().slice(0, 120)}`)
 
     try {
+      // ── Jalur NexaBot: GPT Image 2.5 (prompt + gambar referensi) ──
+      if (isNb) {
+        const { submitNexabotGptImage, pollNexabotGptImage, downloadNexabotGptImage, runWithNexabotThrottleRetry } = await import('@/lib/nexabot')
+        if (authToken && user?.role !== 'admin') {
+          const charge = await chargeNexabotWallet(authToken, 'gpt-image')
+          nbChargeRef.current = charge.usageId
+          nbCoveredRef.current = charge.unlimited
+          setNbWallet((w) => (w ? { ...w, balance: charge.balance } : w))
+          addLog(charge.unlimited ? '🎟️ Paket aktif — generate ini gratis' : `💰 Saldo terpotong ${formatRp(charge.deducted)} ✓ sisa ${formatRp(charge.balance)}`, 'success')
+        } else if (user?.role === 'admin') {
+          addLog('⚡ Admin mode — skip saldo', 'info')
+        }
+        const auth = await buildNexabotAuth()
+        const references: string[] = [await fileToDataUrl(personFile!)]
+        if (mode === 'tryon') references.push(await fileToDataUrl(garmentFile!))
+        const fullPrompt = mode === 'tryon'
+          ? `The person in the first reference image is wearing the garment (outfit) shown in the second reference image. Keep the person's face, hair, pose, body shape, background and lighting from the first image unchanged — only change the upper garment to match the second image exactly (color, fabric, cut, pattern, logo). Photorealistic, high detail.${prompt.trim() ? ` Additional: ${prompt.trim()}` : ''}`
+          : `Extract the garment worn by the person in the reference image as a clean flat-lay product photo on a neutral plain background, showing color, fabric, cut and details faithfully. Photorealistic product mockup.${prompt.trim() ? ` Additional: ${prompt.trim()}` : ''}`
+        setTaskStatus('running')
+        const submit = await runWithNexabotThrottleRetry(() => submitNexabotGptImage({
+          prompt: fullPrompt,
+          aspect: gptAspect,
+          references,
+        }, auth), {
+          onThrottle: (waitSeconds) => addLog(`⏳ Server gambar NexaBot dibatasi upstream — menunggu ${waitSeconds}s lalu submit otomatis...`, 'warn'),
+        })
+        if (!submit.ok || !submit.id) throw new Error(submit.error || 'Submit NexaBot gagal')
+        setTaskId(submit.id)
+        addLog(`TaskId: ${submit.id} (biaya ${submit.cost ?? 0.1} kredit)`, 'success')
+        const job = await pollNexabotGptImage(submit.id, auth, (msg) => addLog(msg, 'info'))
+        addLog(`Status: ${job.status}`, 'success')
+        const images = (job.images || []).filter((im) => im && typeof im.url === 'string')
+        if (!images.length) throw new Error('Tidak ada gambar yang dihasilkan')
+        setTaskStatus('running')
+        addLog(`Mengunduh ${images.length} gambar...`)
+        let finalUrl = ''
+        for (let i = 0; i < images.length; i++) {
+          const dl = await downloadNexabotGptImage(images[i].url, auth)
+          if (!dl.ok || !dl.blob) {
+            addLog(`Gambar ${i + 1} gagal diunduh: ${dl.error}`, 'warn')
+            continue
+          }
+          finalUrl = URL.createObjectURL(dl.blob)
+          break
+        }
+        if (!finalUrl) throw new Error('Semua gambar gagal diunduh dari NexaBot')
+        const tid = submit.id || `tryon-${Date.now()}`
+        setResultUrl(finalUrl)
+        setTaskStatus('success')
+        setProgress(100)
+        addLog('Selesai ✓', 'success')
+        addResult({
+          id: tid,
+          url: finalUrl,
+          prompt: prompt.trim().slice(0, 500),
+          date: new Date().toISOString(),
+          page: 'virtual-tryon',
+          kind: 'image',
+          provider: 'nexabot',
+          model: modelLabel,
+        })
+        setHistory((prev) => [
+          { time: new Date().toLocaleTimeString('id-ID'), taskId: tid, status: '✅ Selesai', url: finalUrl },
+          ...prev,
+        ])
+        addToast('✅ Virtual Try-On selesai! (NexaBot)', 'success')
+        return
+      }
+
       let submittedTaskId = ''
       const rotation = await withTokenRotation<string>(
         'runninghub',
@@ -197,18 +329,29 @@ export default function VirtualTryOnPage() {
         ...prev,
       ])
       addToast('✅ Virtual Try-On selesai!', 'success')
+  // Refund saldo NexaBot kalau generate gagal setelah pemotongan
     } catch (e: any) {
+      if (provider === 'nexabot' && nbChargeRef.current && authToken) {
+        const refundedBalance = await refundNexabotWallet(authToken, nbChargeRef.current)
+        nbChargeRef.current = null
+        if (refundedBalance != null) {
+          addLog(`💸 Saldo NexaBot dikembalikan ✓ sisa ${formatRp(refundedBalance)}`, 'warn')
+          setNbWallet((w) => (w ? { ...w, balance: refundedBalance } : w))
+        }
+      }
       setTaskStatus('error')
       setError(e.message || 'Unknown error')
       addLog(`Gagal: ${e.message || e}`, 'error')
       addToast(`❌ ${e.message}`, 'error')
     } finally {
+      nbChargeRef.current = null
+      nbCoveredRef.current = false
       removeActiveTask(trackId)
       setLoading(false)
     }
   }
 
-  const canRun = !!apiKey && !!personFile && ((mode === 'tryon' || engine === 'flux2') ? !!garmentFile : true) && !loading
+  const canRun = (provider === 'runninghub' ? !!apiKey : true) && !!personFile && ((mode === 'tryon' || (provider === 'runninghub' && engine === 'flux2')) ? !!garmentFile : true) && !loading
 
   const pageActive = usePageActive()
   useEffect(() => {
@@ -252,18 +395,38 @@ export default function VirtualTryOnPage() {
     <PageContent>
       <PageHeader
         title="👗 Virtual Try-On & Ekstraksi Pakaian"
-        desc="Ubah pakaian pada karakter atau ekstrak pakaian menjadi mockup datar. Didukung oleh FireRed 2-in-1 & FLUX2-Klein (masking SAM3) via RunningHub."
+        desc="Ubah pakaian pada karakter atau ekstrak pakaian menjadi mockup datar. RunningHub (FireRed 2-in-1 & FLUX2-Klein) atau NexaBot GPT Image 2.5."
       />
 
-      {!apiKey && (
+      <div className="mb-4">
+        <Label className="mb-2 block">Provider</Label>
+        <div className="flex gap-2 max-w-md">
+          <button
+            onClick={() => setProvider('runninghub')}
+            className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${provider === 'runninghub' ? 'bg-primary text-primary-foreground' : 'bg-surface-secondary text-muted-foreground hover:text-foreground'}`}
+          >⚙️ RunningHub</button>
+          <button
+            onClick={() => setProvider('nexabot')}
+            className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${provider === 'nexabot' ? 'bg-primary text-primary-foreground' : 'bg-surface-secondary text-muted-foreground hover:text-foreground'}`}
+          >🔮 NexaBot (GPT Image)</button>
+        </div>
+      </div>
+
+      {provider === 'runninghub' && !apiKey && (
         <div className="mb-6 p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 text-sm">
           ⚠️ Belum ada RunningHub API key. Tambahkan di <strong>Providers</strong> untuk menggunakan fitur ini.
+        </div>
+      )}
+      {provider === 'nexabot' && (
+        <div className="mb-6 p-4 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-300 text-sm">
+          🔮 Mode NexaBot memakai <strong>GPT Image 2.5</strong> — hasil berupa prompt-based try-on (wajah/pose bisa sedikit berubah). Butuh login saldo/paket atau API key NexaBot di Providers.
         </div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left: Input */}
         <Section title="📸 Input" className="!p-6">
+          {provider === 'runninghub' && (
           <div className="mb-4">
             <Label className="mb-2 block">Engine</Label>
             <div className="flex gap-2">
@@ -286,8 +449,9 @@ export default function VirtualTryOnPage() {
               </p>
             )}
           </div>
+          )}
 
-          {engine === 'firered' && (
+          {(provider === 'nexabot' || engine === 'firered') && (
             <div className="mb-4">
               <Label className="mb-2 block">Mode</Label>
               <div className="flex gap-2">
@@ -307,6 +471,21 @@ export default function VirtualTryOnPage() {
             </div>
           )}
 
+          {provider === 'nexabot' && (
+            <div className="mb-4">
+              <Label className="mb-2 block">Rasio (NexaBot)</Label>
+              <div className="flex gap-2 flex-wrap">
+                {([1, 5, 2] as const).map((a) => (
+                  <button
+                    key={a}
+                    onClick={() => setGptAspect(a)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${gptAspect === a ? 'bg-primary text-primary-foreground' : 'bg-surface-secondary text-muted-foreground hover:text-foreground'}`}
+                  >{a === 1 ? '1:1' : a === 5 ? '9:16' : '16:9'}</button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <FileUpload
             label={mode === 'tryon' ? '🖼️ Foto Karakter / Model' : '🖼️ Foto Orang Memakai Pakaian'}
             icon={<User className="h-8 w-8" />}
@@ -318,7 +497,7 @@ export default function VirtualTryOnPage() {
             type="person"
           />
 
-          {(mode === 'tryon' || engine === 'flux2') && (
+          {(mode === 'tryon' || (provider === 'runninghub' && engine === 'flux2')) && (
             <FileUpload label="👔 Foto Pakaian / Garment" icon={<Shirt className="h-8 w-8" />} file={garmentFile} preview={garmentPreview} pickerRef={garmentPickerRef} onPick={() => garmentPickerRef.current?.click()} onRemove={() => removeFile('garment')} type="garment" />
           )}
 
@@ -334,7 +513,7 @@ export default function VirtualTryOnPage() {
 
           <Button
             onClick={runWorkflow}
-            disabled={loading || !apiKey || !personFile || ((mode === 'tryon' || engine === 'flux2') && !garmentFile)}
+            disabled={loading || (provider === 'runninghub' && !apiKey) || !personFile || ((mode === 'tryon' || (provider === 'runninghub' && engine === 'flux2')) && !garmentFile)}
             className="w-full"
             size="lg"
             title="Ctrl+Enter untuk jalankan"

@@ -34,6 +34,7 @@
     "api/public/genspark.ts": { "maxDuration": 60 },
     "api/public/genspark-upload.ts": { "maxDuration": 60 },
     "api/public/nexabot.ts": { "maxDuration": 60 },
+    "api/public/markastools.ts": { "maxDuration": 60 },
     "api/public/pricing.ts": { "maxDuration": 10 },
     "api/public/runninghub.ts": { "maxDuration": 60 },
     "api/public/r2-upload.ts": { "maxDuration": 60 },

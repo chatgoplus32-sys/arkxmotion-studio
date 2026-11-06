@@ -1,23 +1,25 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { PageHeader, PageContent } from '@/components/layout'
-import { Section, Button, Textarea, Input, Label, EmptyState } from '@/components/ui'
+import { Section, Button, Textarea, Input, Label, EmptyState, OptionCard, ProgressBar } from '@/components/ui'
 import { useToastStore } from '@/stores/toastStore'
 import { getGensparkApiKey } from '@/lib/genspark'
 import { createTask, taskStatus } from '@/lib/genspark-tools'
 import { addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
-import { Film, Loader2, Play, Wand2 } from 'lucide-react'
+import { Film, Loader2, Play, Wand2, ScissorsLineDashed, Video, ScrollText, Captions, PencilRuler, ListVideo, Terminal } from 'lucide-react'
 
 const EDIT_TYPES = [
-  { value: 'highlight', label: '🎯 Highlight Reel', description: 'Extract best moments from video' },
-  { value: 'summary', label: '📝 Video Summary', description: 'Create a summary clip' },
-  { value: 'cut', label: '✂️ Smart Cut', description: 'Remove pauses and filler' },
-  { value: 'remix', label: '🎵 Remix', description: 'Remix video with new style' },
-  { value: 'caption', label: '💬 Add Captions', description: 'Auto-generate captions' },
-  { value: 'custom', label: '🎨 Custom Edit', description: 'Describe your own edit' },
+  { value: 'highlight', label: 'Highlight Reel', description: 'Extract best moments from video', icon: ListVideo },
+  { value: 'summary', label: 'Video Summary', description: 'Create a summary clip', icon: ScrollText },
+  { value: 'cut', label: 'Smart Cut', description: 'Remove pauses and filler', icon: ScissorsLineDashed },
+  { value: 'remix', label: 'Remix', description: 'Remix video with new style', icon: Video },
+  { value: 'caption', label: 'Add Captions', description: 'Auto-generate captions', icon: Captions },
+  { value: 'custom', label: 'Custom Edit', description: 'Describe your own edit', icon: PencilRuler },
 ]
 
 export default function ClipGeniusPage() {
   const addToast = useToastStore((s) => s.addToast)
+  const navigate = useNavigate()
   const [videoUrl, setVideoUrl] = useState('')
   const [editType, setEditType] = useState('highlight')
   const [customPrompt, setCustomPrompt] = useState('')
@@ -210,7 +212,7 @@ export default function ClipGeniusPage() {
           title="Belum ada Genspark API Key"
           description="Tambahkan Genspark API key di Providers untuk menggunakan Clip Genius."
           action={
-            <Button onClick={() => window.location.href = '/providers'}>
+            <Button onClick={() => navigate('/providers')}>
               Buka Providers
             </Button>
           }
@@ -230,8 +232,8 @@ export default function ClipGeniusPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left: Input */}
-        <div className="space-y-4">
-          <Section title="🎬 Video Input" sub="URL video yang akan di-edit">
+        <div className="space-y-6">
+          <Section title="Video Input" icon={<Video className="h-4 w-4" />} sub="URL video yang akan di-edit">
             <div className="space-y-3">
               <div>
                 <Label>Video URL</Label>
@@ -247,27 +249,23 @@ export default function ClipGeniusPage() {
             </div>
           </Section>
 
-          <Section title="✂️ Edit Type" sub="Pilih jenis edit yang diinginkan">
+          <Section title="Edit Type" icon={<ScissorsLineDashed className="h-4 w-4" />} sub="Pilih jenis edit yang diinginkan" delay={60}>
             <div className="grid grid-cols-2 gap-2">
               {EDIT_TYPES.map((type) => (
-                <button
+                <OptionCard
                   key={type.value}
+                  title={type.label}
+                  description={type.description}
+                  icon={<type.icon className="h-4 w-4" />}
+                  selected={editType === type.value}
                   onClick={() => setEditType(type.value)}
-                  className={`p-3 rounded-lg border text-left transition-all ${
-                    editType === type.value
-                      ? 'border-primary bg-primary/5'
-                      : 'border-border hover:border-primary/30'
-                  }`}
-                >
-                  <div className="text-sm font-medium">{type.label}</div>
-                  <div className="text-xs text-muted-foreground mt-1">{type.description}</div>
-                </button>
+                />
               ))}
             </div>
           </Section>
 
           {editType === 'custom' && (
-            <Section title="📝 Custom Instructions" sub="Deskripsikan edit yang diinginkan">
+            <Section title="Custom Instructions" icon={<PencilRuler className="h-4 w-4" />} sub="Deskripsikan edit yang diinginkan" delay={60}>
               <Textarea
                 value={customPrompt}
                 onChange={(e) => setCustomPrompt(e.target.value)}
@@ -296,19 +294,12 @@ export default function ClipGeniusPage() {
             )}
           </Button>
 
-          {processing && (
-            <div className="w-full bg-muted rounded-full h-2">
-              <div
-                className="bg-primary h-2 rounded-full transition-all duration-500"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-          )}
+          {processing && <ProgressBar value={progress} label="Memproses video" />}
         </div>
 
         {/* Right: Result & Logs */}
-        <div className="space-y-4">
-          <Section title="📋 Logs" sub="Proses editing">
+        <div className="space-y-6">
+          <Section title="Logs" icon={<Terminal className="h-4 w-4" />} sub="Proses editing">
             <div className="bg-muted/50 rounded-lg p-3 max-h-[200px] overflow-y-auto font-mono text-xs space-y-1">
               {logs.length > 0 ? (
                 logs.map((log, idx) => (
@@ -320,7 +311,7 @@ export default function ClipGeniusPage() {
             </div>
           </Section>
 
-          <Section title="🎬 Hasil" sub="Video yang sudah di-edit">
+          <Section title="Hasil" icon={<Film className="h-4 w-4" />} sub="Video yang sudah di-edit" delay={60}>
             {result ? (
               <div className="space-y-3">
                 {result.video_url || result.result_url || result.url ? (

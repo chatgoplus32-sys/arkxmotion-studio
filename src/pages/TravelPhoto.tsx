@@ -4,6 +4,9 @@ import { Section, Button, Label, EmptyState } from '@/components/ui'
 import { LogDetailActions } from '@/components/ui/LogDetailActions'
 import { Loader2, Upload, Download, X, User, Sparkles, CheckCircle2, AlertCircle, Clock, Globe, Copy, Trash2 } from 'lucide-react'
 import { useToastStore } from '@/stores/toastStore'
+import { useAuthStore } from '@/stores/authStore'
+import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, nexabotPreferServerKey, nexabotFreeForModel, NEXABOT_PRICE_FALLBACK, type NexabotWallet } from '@/lib/nexabotWallet'
+import { formatRp } from '@/lib/payment'
 import { submitRunningHubTravelPhoto, pollRunningHubTask, queryRunningHubTaskFull } from '@/lib/runninghub'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { persistResultToR2, addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
@@ -67,9 +70,62 @@ export default function TravelPhotoPage() {
   const [progress, setProgress] = useState(0)
   const [history, setHistory] = useState<HistoryItem[]>([])
   const [logs, setLogs] = useState<LogEntry[]>([])
+  const [provider, setProvider] = useState<'runninghub' | 'nexabot'>('runninghub')
+  const { token: authToken, user } = useAuthStore()
+  const [nbWallet, setNbWallet] = useState<NexabotWallet | null>(null)
+  const nbChargeRef = useRef<number | null>(null)
+  const nbCoveredRef = useRef(false)
 
   const characterPickerRef = useRef<HTMLInputElement | null>(null)
   const apiKey = getStoredProviderKey('runninghub')
+  const nexabotServerReady = !!nbWallet?.server_key?.available
+  const nbFreeForModel = nexabotFreeForModel(nbWallet, 'gpt-image')
+
+  useEffect(() => {
+    if (!authToken) { setNbWallet(null); return }
+    fetchNexabotWallet(authToken).then((w) => { if (w) setNbWallet(w) }).catch(() => {})
+  }, [authToken])
+
+  /** Kredensial NexaBot untuk satu job gpt-image (mengikuti pola EditImage). */
+  const buildNexabotAuth = async (): Promise<any> => {
+    const mod = await import('@/lib/nexabot')
+    const nbApiKey = mod.getNexabotApiKey()
+    const nbCookies = mod.getNexabotCookies()
+    const ticket = nbChargeRef.current
+    let serverReady = nexabotServerReady
+    if (authToken) {
+      const fresh = await fetchNexabotWallet(authToken).catch(() => null)
+      if (fresh) {
+        setNbWallet(fresh)
+        serverReady = !!fresh.server_key?.available
+      }
+    }
+    if (nexabotPreferServerKey({
+      hasOwnKey: !!(nbApiKey || nbCookies),
+      serverReady,
+      coveredByPackage: nbCoveredRef.current,
+    })) return { master: true, ticket }
+    if (nbApiKey || nbCookies) return { apiKey: nbApiKey, cookies: nbCookies, ticket }
+    throw new Error('NexaBot: tidak ada API key aktif dan kunci server belum tersedia — tambahkan API key di halaman Providers atau top up / ambil paket dulu.')
+  }
+
+  const fileToDataUrl = async (file: File): Promise<string> => {
+    const { compressForApi } = await import('@/lib/nexabot')
+    const small = await compressForApi(file, 1024, 0.72)
+    return new Promise<string>((resolve, reject) => {
+      const r = new FileReader()
+      r.onload = () => resolve(String(r.result))
+      r.onerror = () => reject(new Error('Gagal membaca file gambar'))
+      r.readAsDataURL(small)
+    })
+  }
+
+  /** '9:16'/'16:9'/'1:1' dll → enum NexaBot (1 = 1:1, 2 = 16:9, 5 = 9:16). */
+  const toGptAspect = (ar: string): 1 | 2 | 5 => {
+    if (ar === '1:1') return 1
+    if (ar === '16:9' || ar === '4:3' || ar === '3:2') return 2
+    return 5
+  }
 
   const addLog = (msg: string, level: LogEntry['level'] = 'info') => {
     const time = new Date().toLocaleTimeString('id-ID')
@@ -93,9 +149,12 @@ export default function TravelPhotoPage() {
   }
 
   const runWorkflow = async () => {
-    if (!apiKey) {
+    if (provider === 'runninghub' && !apiKey) {
       addToast('⚠️ Belum ada RunningHub API key. Tambahkan di Providers.', 'warning')
       return
+    }
+    if (provider === 'nexabot' && !authToken && !getStoredProviderKey('nexabot')) {
+      addToast('⚠️ Untuk NexaBot perlu login (saldo/paket) atau API key NexaBot di Providers.', 'warning')
     }
     if (!characterFile) {
       addToast('⚠️ Upload foto karakter terlebih dahulu!', 'warning')
@@ -110,6 +169,13 @@ export default function TravelPhotoPage() {
       addToast('⚠️ Masukkan nama lokasi tujuan!', 'warning')
       return
     }
+    if (provider === 'nexabot' && authToken && user?.role !== 'admin' && nbWallet && !nbFreeForModel && (nbWallet.balance < (nbWallet.price ?? NEXABOT_PRICE_FALLBACK))) {
+      addToast(`Saldo NexaBot tidak cukup (${formatRp(nbWallet.balance)}). Top up dulu di halaman NexaBot.`, 'error')
+      return
+    }
+
+    const isNb = provider === 'nexabot'
+    const modelLabel = isNb ? 'Travel Photo (NexaBot GPT Image)' : 'Qwen AI Travel Photo'
 
     setLoading(true)
     setError(null)
@@ -120,15 +186,80 @@ export default function TravelPhotoPage() {
     setLogs([])
     const trackId = startGenerationTask({
       page: 'travel-photo',
-      model: 'Qwen AI Travel Photo',
+      model: modelLabel,
       prompt: `${dest}${prompt.trim() ? ` · ${prompt.trim()}` : ''}`.slice(0, 500),
-      provider: 'runninghub',
+      provider,
     })
-    addLog(`Mulai Travel Photo: ${(characterFile.size / 1024).toFixed(0)}KB ${characterFile.name}`)
+    addLog(`Mulai Travel Photo via ${isNb ? 'NexaBot GPT Image' : 'RunningHub'}: ${(characterFile.size / 1024).toFixed(0)}KB ${characterFile.name}`)
     addLog(`Destinasi: ${dest}`)
     if (prompt.trim()) addLog(`Prompt: ${prompt.trim().slice(0, 120)}`)
 
     try {
+      // ── Jalur NexaBot: GPT Image 2.5 (prompt + gambar referensi) ──
+      if (isNb) {
+        const { submitNexabotGptImage, pollNexabotGptImage, downloadNexabotGptImage, runWithNexabotThrottleRetry } = await import('@/lib/nexabot')
+        if (authToken && user?.role !== 'admin') {
+          const charge = await chargeNexabotWallet(authToken, 'gpt-image')
+          nbChargeRef.current = charge.usageId
+          nbCoveredRef.current = charge.unlimited
+          setNbWallet((w) => (w ? { ...w, balance: charge.balance } : w))
+          addLog(charge.unlimited ? '🎟️ Paket aktif — generate ini gratis' : `💰 Saldo terpotong ${formatRp(charge.deducted)} ✓ sisa ${formatRp(charge.balance)}`, 'success')
+        } else if (user?.role === 'admin') {
+          addLog('⚡ Admin mode — skip saldo', 'info')
+        }
+        const auth = await buildNexabotAuth()
+        const references = [await fileToDataUrl(characterFile)]
+        const fullPrompt = `Keep the exact same person's face, identity, skin tone, hairstyle and outfit from the reference photo. Show this same person traveling in ${dest}, with natural pose and realistic cinematic travel photography, consistent lighting and proportions.${prompt.trim() ? ` Additional: ${prompt.trim()}` : ''}`
+        setTaskStatus('running')
+        const submit = await runWithNexabotThrottleRetry(() => submitNexabotGptImage({
+          prompt: fullPrompt,
+          aspect: toGptAspect(aspectRatio),
+          references,
+        }, auth), {
+          onThrottle: (waitSeconds) => addLog(`⏳ Server gambar NexaBot dibatasi upstream — menunggu ${waitSeconds}s lalu submit otomatis...`, 'warn'),
+        })
+        if (!submit.ok || !submit.id) throw new Error(submit.error || 'Submit NexaBot gagal')
+        setTaskId(submit.id)
+        addLog(`TaskId: ${submit.id} (biaya ${submit.cost ?? 0.1} kredit)`, 'success')
+        const job = await pollNexabotGptImage(submit.id, auth, (msg) => addLog(msg, 'info'))
+        addLog(`Status: ${job.status}`, 'success')
+        const images = (job.images || []).filter((im) => im && typeof im.url === 'string')
+        if (!images.length) throw new Error('Tidak ada gambar yang dihasilkan')
+        addLog(`Mengunduh ${images.length} gambar...`)
+        const allUrls: string[] = []
+        for (let i = 0; i < images.length; i++) {
+          const dl = await downloadNexabotGptImage(images[i].url, auth)
+          if (!dl.ok || !dl.blob) {
+            addLog(`Gambar ${i + 1} gagal diunduh: ${dl.error}`, 'warn')
+            continue
+          }
+          allUrls.push(URL.createObjectURL(dl.blob))
+        }
+        if (!allUrls.length) throw new Error('Semua gambar gagal diunduh dari NexaBot')
+        const tid = submit.id || `travel-${Date.now()}`
+        setResultUrl(allUrls[0])
+        setResultImages(allUrls)
+        setTaskStatus('success')
+        setProgress(100)
+        addLog(`Selesai: ${allUrls.length} foto`, 'success')
+        addResult({
+          id: tid,
+          url: allUrls[0],
+          prompt: `${dest}${prompt.trim() ? ` · ${prompt.trim()}` : ''}`.slice(0, 500),
+          date: new Date().toISOString(),
+          page: 'travel-photo',
+          kind: 'image',
+          provider: 'nexabot',
+          model: modelLabel,
+        })
+        setHistory((prev) => [
+          { time: new Date().toLocaleTimeString('id-ID'), taskId: tid, status: '✅ Selesai', url: allUrls[0] },
+          ...prev,
+        ])
+        addToast('✅ Travel Photo selesai! (NexaBot)', 'success')
+        return
+      }
+
       let submittedTaskId = ''
       let allImages: string[] = []
       const rotation = await withTokenRotation<string>(
@@ -215,17 +346,27 @@ export default function TravelPhotoPage() {
       ])
       addToast('✅ Travel Photo selesai!', 'success')
     } catch (e: any) {
+      if (provider === 'nexabot' && nbChargeRef.current && authToken) {
+        const refundedBalance = await refundNexabotWallet(authToken, nbChargeRef.current)
+        nbChargeRef.current = null
+        if (refundedBalance != null) {
+          addLog(`💸 Saldo NexaBot dikembalikan ✓ sisa ${formatRp(refundedBalance)}`, 'warn')
+          setNbWallet((w) => (w ? { ...w, balance: refundedBalance } : w))
+        }
+      }
       setTaskStatus('error')
       setError(e.message || 'Unknown error')
       addLog(`Gagal: ${e.message || e}`, 'error')
       addToast(`❌ ${e.message}`, 'error')
     } finally {
+      nbChargeRef.current = null
+      nbCoveredRef.current = false
       removeActiveTask(trackId)
       setLoading(false)
     }
   }
 
-  const canRun = !!apiKey && !!characterFile && !loading && !(destination === 'custom' && !customDestination.trim())
+  const canRun = (provider === 'runninghub' ? !!apiKey : true) && !!characterFile && !loading && !(destination === 'custom' && !customDestination.trim())
 
   const pageActive = usePageActive()
   useEffect(() => {
@@ -244,7 +385,7 @@ export default function TravelPhotoPage() {
     <PageContent>
       <PageHeader
         title="🌍 Qwen AI Travel Photography"
-        desc="Ubah 1 foto karakter menjadi berbagai foto perjalanan realistis di beragam destinasi. AI otomatis membuat variasi pose, ekspresi, komposisi, dan sudut kamera."
+        desc="Ubah 1 foto karakter menjadi berbagai foto perjalanan realistis di beragam destinasi. RunningHub (Qwen) atau NexaBot GPT Image 2.5."
       />
 
       {/* Feature badges */}
@@ -254,9 +395,28 @@ export default function TravelPhotoPage() {
         ))}
       </div>
 
-      {!apiKey && (
+      <div className="mb-4">
+        <Label className="mb-2 block">Provider</Label>
+        <div className="flex gap-2 max-w-md">
+          <button
+            onClick={() => setProvider('runninghub')}
+            className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${provider === 'runninghub' ? 'bg-primary text-primary-foreground' : 'bg-surface-secondary text-muted-foreground hover:text-foreground'}`}
+          >⚙️ RunningHub</button>
+          <button
+            onClick={() => setProvider('nexabot')}
+            className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${provider === 'nexabot' ? 'bg-primary text-primary-foreground' : 'bg-surface-secondary text-muted-foreground hover:text-foreground'}`}
+          >🔮 NexaBot (GPT Image)</button>
+        </div>
+      </div>
+
+      {provider === 'runninghub' && !apiKey && (
         <div className="mb-6 p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 text-sm">
           ⚠️ Belum ada RunningHub API key. Tambahkan di <strong>Providers</strong> untuk menggunakan fitur ini.
+        </div>
+      )}
+      {provider === 'nexabot' && (
+        <div className="mb-6 p-4 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-300 text-sm">
+          🔮 Mode NexaBot memakai <strong>GPT Image 2.5</strong> — foto karakter jadi referensi, wajah dipertahankan lewat prompt. Butuh login saldo/paket atau API key NexaBot di Providers.
         </div>
       )}
 

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'runninghub' | 'createpulse' | 'framia' | 'firefly' | 'leonardo' | 'gemini' | 'openai' | 'shotstack' | 'creatomate' | 'galleri5' | 'oneover' | 'genspark' | 'riverside' | 'nexabot' | 'seavi'
+export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'runninghub' | 'createpulse' | 'framia' | 'firefly' | 'leonardo' | 'gemini' | 'openai' | 'shotstack' | 'creatomate' | 'galleri5' | 'oneover' | 'genspark' | 'riverside' | 'nexabot' | 'seavi' | 'markastools'
 
 export const HIDDEN_PROVIDERS: ProviderId[] = []
 
@@ -225,6 +225,16 @@ export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
     minCredits: 0.15,
     supportsBalance: true,
   },
+  markastools: {
+    id: 'markastools',
+    name: 'MarkasTools',
+    icon: '🌀',
+    description: 'MarkasTools via ai.markastools.id — Motion Control Markasflow (butuh langganan Rp 60rb/bulan di MarkasTools)',
+    keyPlaceholder: 'Paste token akun MF-… (MarkasKeyTool)',
+    keyFormat: 'Token MF-… + cookie session MarkasTools',
+    minCredits: 0,
+    supportsBalance: false,
+  },
 }
 
 function getDefaultMaintenance(): Record<ProviderId, MaintenanceInfo> {
@@ -248,6 +258,7 @@ function getDefaultMaintenance(): Record<ProviderId, MaintenanceInfo> {
     riverside: { isMaintenance: false, message: '' },
     nexabot: { isMaintenance: false, message: '' },
     seavi: { isMaintenance: false, message: '' },
+    markastools: { isMaintenance: false, message: '' },
   }
 }
 
@@ -333,6 +344,7 @@ function loadKeysFromStorage(): Record<ProviderId, ProviderKey[]> {
     riverside: [],
     nexabot: [],
     seavi: [],
+    markastools: [],
   }
   const validIds = Object.keys(defaults) as string[]
 

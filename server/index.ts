@@ -50,6 +50,7 @@ import publicWeavyRoutes from './routes/publicWeavy.js'
 import publicWeavyProxyRoutes from './routes/publicWeavyProxy.js'
 import publicWeavyCreditsRoutes from './routes/publicWeavyCredits.js'
 import publicR2UploadRoutes from './routes/publicR2Upload.js'
+import watermarkEngineRoutes from './routes/watermarkEngine.js'
 import { UPLOAD_DIR, DISK_FILE_BASE, UPLOAD_RETENTION_DAYS, pruneOldUploads, freeDiskBytes, mediaStorageMode } from './lib/mediaStorage.js'
 import publicAutoClipRoutes from './routes/publicAutoClip.js'
 import publicFireflyRoutes from './routes/publicFirefly.js'
@@ -59,6 +60,7 @@ import { startBackupScheduler, getBackupStatus, runBackup } from './lib/backupR2
 import { authenticateToken, requireAdmin } from './middleware/auth.js'
 import chatgptRoutes from './routes/chatgpt.js'
 import publicDolaRoutes from './routes/publicDola.js'
+import markastoolsRoutes from './routes/markastools.js'
 
 // .env sudah dimuat server/env.ts (impor pertama), yaitu sebelum modul-modul di
 // atas dievaluasi. Tidak ada pemuatan kedua di sini supaya hanya ada satu sumber
@@ -83,6 +85,12 @@ const allowedOrigins = [
   ...extraOrigins,
 ]
 
+// Aset mesin watermark video (@pilio/gemini-watermark-remover) disajikan dari
+// node_modules: iframe engine jadi same-origin tanpa menambah ±44 MB aset ke
+// repo. Harus sebelum cors(): browser mengirim Origin untuk setiap import ES
+// module, dan gerbang CORS API akan menjatuhkannya jadi 500 di mesin ONNX.
+app.use('/api/public/watermark-engine', watermarkEngineRoutes)
+
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (mobile apps, curl, etc.)
@@ -97,6 +105,9 @@ app.use(cors({
 
 // Upload route MUST be before express.json() to get raw multipart body
 app.use('/api/public/upload-catbox', publicUploadCatboxRoutes)
+// Relay MarkasTools (pass-through mentah, JSON maupun multipart) — juga
+// harus sebelum express.json() supaya body tidak dipotong parser.
+app.use('/api/public/markastools', markastoolsRoutes)
 
 app.use(monitorMiddleware)
 app.use(express.json({ limit: '50mb' }))

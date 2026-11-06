@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { PageHeader, PageContent } from '@/components/layout'
-import { Section, Button, Input, Label, EmptyState } from '@/components/ui'
+import { Section, Button, Input, Label, EmptyState, OptionCard } from '@/components/ui'
 import { useToastStore } from '@/stores/toastStore'
 import { getGensparkApiKey } from '@/lib/genspark'
 import { secondBrainAction, type SecondBrainSource, type SecondBrainNote } from '@/lib/genspark-tools'
-import { Brain, Search, FileText, RefreshCw, Loader2, ChevronRight, Mail, BookOpen, Calendar } from 'lucide-react'
+import { Brain, Search, FileText, RefreshCw, Loader2, ChevronRight, Mail, BookOpen, Calendar, FolderOpen, ListTree, ScanSearch, NotebookPen } from 'lucide-react'
 
 const SOURCE_ICONS: Record<string, any> = {
   memo: <FileText className="h-4 w-4" />,
@@ -16,6 +17,7 @@ const SOURCE_ICONS: Record<string, any> = {
 
 export default function SecondBrainPage() {
   const addToast = useToastStore((s) => s.addToast)
+  const navigate = useNavigate()
   const [sources, setSources] = useState<SecondBrainSource[]>([])
   const [loadingSources, setLoadingSources] = useState(false)
   const [selectedSource, setSelectedSource] = useState<string>('')
@@ -126,7 +128,7 @@ export default function SecondBrainPage() {
           title="Belum ada Genspark API Key"
           description="Tambahkan Genspark API key di Providers untuk menggunakan Second Brain."
           action={
-            <Button onClick={() => window.location.href = '/providers'}>
+            <Button onClick={() => navigate('/providers')}>
               Buka Providers
             </Button>
           }
@@ -146,22 +148,15 @@ export default function SecondBrainPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left: Sources & Search */}
-        <div className="space-y-4">
-          <Section title="📚 Sources" sub="Sumber data yang terhubung">
+        <div className="space-y-6">
+          <Section title="Sources" icon={<BookOpen className="h-4 w-4" />} sub="Sumber data yang terhubung">
             <div className="space-y-2">
-              <button
+              <OptionCard
+                title="Semua Sources"
+                icon={<Brain className="h-4 w-4" />}
+                selected={!selectedSource}
                 onClick={() => setSelectedSource('')}
-                className={`w-full p-3 rounded-lg border text-left transition-all ${
-                  !selectedSource
-                    ? 'border-primary bg-primary/5'
-                    : 'border-border hover:border-primary/30'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <Brain className="h-4 w-4" />
-                  <span className="text-sm font-medium">Semua Sources</span>
-                </div>
-              </button>
+              />
 
               {loadingSources ? (
                 <div className="flex items-center justify-center py-4">
@@ -169,23 +164,14 @@ export default function SecondBrainPage() {
                 </div>
               ) : sources.length > 0 ? (
                 sources.map((source, idx) => (
-                  <button
+                  <OptionCard
                     key={idx}
+                    title={source.name}
+                    description={source.type}
+                    icon={SOURCE_ICONS[source.type] || <FileText className="h-4 w-4" />}
+                    selected={selectedSource === source.name}
                     onClick={() => setSelectedSource(source.name)}
-                    className={`w-full p-3 rounded-lg border text-left transition-all ${
-                      selectedSource === source.name
-                        ? 'border-primary bg-primary/5'
-                        : 'border-border hover:border-primary/30'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        {SOURCE_ICONS[source.type] || <FileText className="h-4 w-4" />}
-                        <span className="text-sm font-medium">{source.name}</span>
-                      </div>
-                      <span className="text-xs text-muted-foreground">{source.type}</span>
-                    </div>
-                  </button>
+                  />
                 ))
               ) : (
                 <p className="text-xs text-muted-foreground text-center py-4">
@@ -223,7 +209,7 @@ export default function SecondBrainPage() {
             </div>
           </Section>
 
-          <Section title="🔍 Search" sub="Cari di semua knowledge">
+          <Section title="Search" icon={<ScanSearch className="h-4 w-4" />} sub="Cari di semua knowledge" delay={60}>
             <div className="space-y-3">
               <div>
                 <Label>Query</Label>
@@ -256,35 +242,29 @@ export default function SecondBrainPage() {
         </div>
 
         {/* Center: Search Results & Files */}
-        <div className="space-y-4">
+        <div className="space-y-6">
           {listedFiles && (
-            <Section title="📁 Files" sub={`Files in ${selectedSource}`}>
+            <Section title="Files" icon={<FolderOpen className="h-4 w-4" />} sub={`Files in ${selectedSource}`} delay={60}>
               <div className="space-y-1 max-h-[200px] overflow-y-auto">
                 {Array.isArray(listedFiles) ? (
                   listedFiles.map((file: any, idx: number) => (
-                    <button
+                    <OptionCard
                       key={idx}
+                      className="p-2.5"
+                      title={<span className="truncate block">{file.name || file.path || file}</span>}
+                      icon={<FileText className="h-3 w-3" />}
                       onClick={() => handleReadNote(file.path || file.name || file, selectedSource)}
-                      className="w-full p-2 rounded-lg border border-border hover:border-primary/30 text-left transition-all text-sm"
-                    >
-                      <div className="flex items-center gap-2">
-                        <FileText className="h-3 w-3" />
-                        <span className="truncate">{file.name || file.path || file}</span>
-                      </div>
-                    </button>
+                    />
                   ))
                 ) : listedFiles.entries ? (
                   listedFiles.entries.map((file: any, idx: number) => (
-                    <button
+                    <OptionCard
                       key={idx}
+                      className="p-2.5"
+                      title={<span className="truncate block">{file.name || file.path}</span>}
+                      icon={<FileText className="h-3 w-3" />}
                       onClick={() => handleReadNote(file.path || file.name, selectedSource)}
-                      className="w-full p-2 rounded-lg border border-border hover:border-primary/30 text-left transition-all text-sm"
-                    >
-                      <div className="flex items-center gap-2">
-                        <FileText className="h-3 w-3" />
-                        <span className="truncate">{file.name || file.path}</span>
-                      </div>
-                    </button>
+                    />
                   ))
                 ) : (
                   <pre className="text-xs whitespace-pre-wrap p-2 bg-muted/50 rounded max-h-[200px] overflow-y-auto">
@@ -295,46 +275,28 @@ export default function SecondBrainPage() {
             </Section>
           )}
 
-          <Section title="📋 Results" sub="Hasil pencarian">
+          <Section title="Results" icon={<ListTree className="h-4 w-4" />} sub="Hasil pencarian" delay={60}>
             {searchResults ? (
               <div className="space-y-2 max-h-[600px] overflow-y-auto">
                 {Array.isArray(searchResults) ? (
                   searchResults.map((item: any, idx: number) => (
-                    <button
+                    <OptionCard
                       key={idx}
+                      title={item.title || item.path || `Note ${idx + 1}`}
+                      description={item.preview}
+                      icon={SOURCE_ICONS[item.source] || <FileText className="h-4 w-4" />}
+                      trailing={<ChevronRight className="h-4 w-4 text-muted-foreground" />}
                       onClick={() => handleReadNote(item.path || item.id, item.source)}
-                      className="w-full p-3 rounded-lg border border-border hover:border-primary/30 text-left transition-all"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          {SOURCE_ICONS[item.source] || <FileText className="h-4 w-4" />}
-                          <span className="text-sm font-medium truncate">
-                            {item.title || item.path || `Note ${idx + 1}`}
-                          </span>
-                        </div>
-                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                      </div>
-                      {item.preview && (
-                        <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                          {item.preview}
-                        </p>
-                      )}
-                    </button>
+                    />
                   ))
                 ) : searchResults.results ? (
                   searchResults.results.map((item: any, idx: number) => (
-                    <button
+                    <OptionCard
                       key={idx}
+                      title={item.title || item.path || `Result ${idx + 1}`}
+                      trailing={<ChevronRight className="h-4 w-4 text-muted-foreground" />}
                       onClick={() => handleReadNote(item.path || item.id, item.source)}
-                      className="w-full p-3 rounded-lg border border-border hover:border-primary/30 text-left transition-all"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium truncate">
-                          {item.title || item.path || `Result ${idx + 1}`}
-                        </span>
-                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                      </div>
-                    </button>
+                    />
                   ))
                 ) : (
                   <pre className="text-xs text-muted-foreground whitespace-pre-wrap">
@@ -343,18 +305,18 @@ export default function SecondBrainPage() {
                 )}
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-                <Search className="h-12 w-12 mb-4 opacity-50" />
-                <p>Belum ada hasil</p>
-                <p className="text-xs mt-1">Masukkan query lalu klik Search</p>
-              </div>
+              <EmptyState
+                icon={<Search className="h-12 w-12" />}
+                title="Belum ada hasil"
+                description="Masukkan query lalu klik Search"
+              />
             )}
           </Section>
         </div>
 
         {/* Right: Note Detail */}
-        <div className="space-y-4">
-          <Section title="📄 Detail" sub="Isi catatan">
+        <div className="space-y-6">
+          <Section title="Detail" icon={<NotebookPen className="h-4 w-4" />} sub="Isi catatan" delay={120}>
             {selectedNote ? (
               <div className="space-y-3">
                 <div className="flex items-center gap-2 text-sm">
@@ -374,10 +336,10 @@ export default function SecondBrainPage() {
                 </div>
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-                <FileText className="h-12 w-12 mb-4 opacity-50" />
-                <p>Pilih note dari hasil pencarian</p>
-              </div>
+              <EmptyState
+                icon={<FileText className="h-12 w-12" />}
+                title="Pilih note dari hasil pencarian"
+              />
             )}
           </Section>
         </div>
