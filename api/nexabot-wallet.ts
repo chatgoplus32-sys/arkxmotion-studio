@@ -311,7 +311,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       // Paket aktif untuk mode ini → generate gratis, usage tetap dicatat (cost 0).
-      // Seedance 2.5, Omni Flash 1.1 dan GPT Image juga dihitung oleh Premium
+      // Seedance 2.5, Omni Flash 1.2 dan GPT Image juga dihitung oleh Premium
       // Booster (ber-scope); untuk music/tts paket itu sengaja diabaikan server,
       // bukan oleh klien.
       const pkg = await getActivePackageForModel(sql, user.id, model)

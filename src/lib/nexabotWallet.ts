@@ -46,7 +46,7 @@ export const NEXABOT_PACKAGE_FALLBACKS: NexabotPackage[] = [
 ]
 
 /**
- * Slug paket Booster — membebaskan NexaDance 3.0 + Omni Flash 1.1 + GPT Image,
+ * Slug paket Booster — membebaskan NexaDance 3.0 + Omni Flash 1.2 + GPT Image,
  * bukan music/tts. Server punya daftar yang sama (derived dari scope katalog)
  * dan itulah yang menentukan tagihan; klien hanya perlu ini untuk menulis label
  * yang jujur.
@@ -78,7 +78,7 @@ export function isBoosterModelName(model: string | null | undefined): boolean {
 }
 
 /** Tiga keluarga yang dibebaskan Booster — satu sumber untuk semua copy UI. */
-export const NEXABOT_BOOSTER_COVERAGE = ['NexaDance 3.0', 'Omni Flash 1.1', 'GPT Image 2.5']
+export const NEXABOT_BOOSTER_COVERAGE = ['NexaDance 3.0', 'Omni Flash 1.2', 'GPT Image 2.5']
 
 /**
  * Cermin `shared/pricing.ts` (NEXABOT_BOOSTER_COMING_SOON): penjualan Booster

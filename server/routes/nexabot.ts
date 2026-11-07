@@ -1502,7 +1502,7 @@ router.post('/nexadance', async (req: Request, res: Response) => {
     if (!berhakNexadance) {
       return res.status(403).json({
         ok: false,
-        error: 'NexaDance 3.0 hanya untuk member dengan Paket Premium Booster/Unlimited aktif — saldo NexaBot hanya berlaku untuk Omni Flash 1.1.',
+        error: 'NexaDance 3.0 hanya untuk member dengan Paket Premium Booster/Unlimited aktif — saldo NexaBot hanya berlaku untuk Omni Flash 1.2.',
       })
     }
   }

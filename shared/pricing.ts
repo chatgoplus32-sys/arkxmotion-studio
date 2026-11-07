@@ -36,7 +36,7 @@ export interface NexabotPackagePlan {
   /**
    * Bagian mana dari tagihan yang dibebaskan paket ini.
    *  - 'all'     : semua mode NexaBot (Mingguan/Bulanan/Tahunan);
-   *  - 'booster' : NexaDance 3.0 + Omni Flash 1.1 + GPT Image — lihat
+   *  - 'booster' : NexaDance 3.0 + Omni Flash 1.2 + GPT Image — lihat
    *                `isBoosterModelName()`. Mode lain (music, tts) tetap
    *                Rp/generate.
    *
@@ -88,7 +88,7 @@ export const NEXABOT_PACKAGES: NexabotPackagePlan[] = [
   {
     // Premium Booster: satu hari tanpa potongan untuk tiga keluarga generate
     // paling laris — NexaDance 3.0 (upstream 0,5 kredit/video, 20 detik 720p),
-    // Omni Flash 1.1 (0,15 kredit/request), dan GPT Image (0,1 kredit/gambar).
+    // Omni Flash 1.2 (0,15 kredit/request), dan GPT Image (0,1 kredit/gambar).
     // Dinamai dari halaman tempat paket ini dijual, bukan dari satu model saja.
     //
     // slug sengaja TETAP `unlimited_seedance_daily` walaupun cakupanisnya sudah
@@ -168,7 +168,7 @@ export function isNexadanceModelName(model: string | null | undefined): boolean 
 }
 
 /**
- * Mode Omni Flash 1.1 yang dikirim ke /deduct. Tidak ada string "omni" di jalur
+ * Mode Omni Flash 1.2 yang dikirim ke /deduct. Tidak ada string "omni" di jalur
  * biaya: satu model Omni dijual sebagai lima mode video (katalog Image to Video),
  * dan AI Video Edit mengirim 'r2v' untuk klip hasil potong.
  */
@@ -179,7 +179,7 @@ export const NEXABOT_IMAGE_MODELS = ['gpt-image', 'img']
 
 /**
  * Apakah model ini dibebaskan Premium Booster? Tiga keluarga: NexaDance 3.0,
- * Omni Flash 1.1, dan GPT Image.
+ * Omni Flash 1.2, dan GPT Image.
  *
  * Audio (`music`, `tts`) sengaja TIDAK ikut — Booster dijual sebagai paket
  * visual dan halaman Top Up menyebut batas itu apa adanya. Daftarnya juga harus

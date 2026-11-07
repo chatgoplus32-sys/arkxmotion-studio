@@ -218,7 +218,7 @@ export default function NexaBotTopupPage() {
         )}
         {!unlimited?.active && boosterPass?.active && (
           <div className="mt-2 text-[11px] text-emerald-500">
-            Premium Booster berlaku sampai {formatDate(boosterPass.expires_at)} — NexaDance 3.0, Omni Flash 1.1 &amp; GPT Image gratis,
+            Premium Booster berlaku sampai {formatDate(boosterPass.expires_at)} — NexaDance 3.0, Omni Flash 1.2 &amp; GPT Image gratis,
             music/tts tetap memotong {formatRp(wallet?.price ?? NEXABOT_PRICE_FALLBACK)}/generate.
           </div>
         )}
@@ -267,7 +267,7 @@ export default function NexaBotTopupPage() {
               <ul className="mt-3 space-y-1 text-xs text-muted-foreground">
                 {sedangBooster ? (
                   <>
-                    <li>• NexaDance 3.0, Omni Flash 1.1 &amp; GPT Image tanpa batas selama masa berlaku</li>
+                    <li>• NexaDance 3.0, Omni Flash 1.2 &amp; GPT Image tanpa batas selama masa berlaku</li>
                     <li>• Music dan TTS tetap {formatRp(wallet?.price ?? NEXABOT_PRICE_FALLBACK)}/generate dari saldo</li>
                     <li>• Bisa dipakai bersamaan dengan Paket Unlimited reguler</li>
                   </>
@@ -428,7 +428,7 @@ export default function NexaBotTopupPage() {
             </div>
             <div className="text-sm text-muted-foreground mb-4">
               {mode === 'package'
-                ? `Paket ${namaPaketIni} aktif otomatis setelah admin menyetujui pembayaran.${sedangBooster ? ' NexaDance 3.0, Omni Flash 1.1 & GPT Image gratis; music/tts tetap memotong saldo.' : ''}`
+                ? `Paket ${namaPaketIni} aktif otomatis setelah admin menyetujui pembayaran.${sedangBooster ? ' NexaDance 3.0, Omni Flash 1.2 & GPT Image gratis; music/tts tetap memotong saldo.' : ''}`
                 : 'Saldo masuk otomatis setelah admin menyetujui pembayaran.'}
               <br />Hubungi admin jika sudah transfer.
             </div>

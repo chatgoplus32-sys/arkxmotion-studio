@@ -128,7 +128,7 @@ test('katalog: Premium Booster = Rp 15.000 / 1 hari, scope booster', () => {
   }
 })
 
-test('Booster membebaskan tiga keluarga: NexaDance 3.0, Omni Flash 1.1, GPT Image', () => {
+test('Booster membebaskan tiga keluarga: NexaDance 3.0, Omni Flash 1.2, GPT Image', () => {
   assert.deepEqual(NEXABOT_OMNI_MODELS, ['t2v', 'sfv', 'i2v', 'r2v', 'extend'])
   assert.deepEqual(NEXABOT_IMAGE_MODELS, ['gpt-image', 'img'])
 

@@ -458,7 +458,7 @@ export default function ImageToVideoPage() {
 
   const models = useMemo(() => PROVIDER_MODELS[provider] || [], [provider])
   const currentModel = models.find((m) => m.value === model) || models[0]
-  // NexaBot Omni Flash 1.1 — 4 jenis mengikuti nexabot.id/video-generator:
+  // NexaBot Omni Flash 1.2 — 4 jenis mengikuti nexabot.id/video-generator:
   const isNb = provider === 'nexabot'
   // Seavi: mode input dipandu SEAVI_MODELS (gambar multi, video & audio referensi).
   const isSeavi = provider === 'seavi'
@@ -984,7 +984,7 @@ export default function ImageToVideoPage() {
       // Booster sedang tidak dijual: jangan mengarahkan member ke paket yang
       // tombolnya mati. Paket Unlimited semua mode tetap mencakup NexaDance 3.0.
       return NEXABOT_BOOSTER_COMING_SOON
-        ? `Saldo NexaBot tidak cukup (${formatRp(nbWallet?.balance ?? 0)}). Top up saldo (untuk Omni Flash 1.1) atau ambil Paket Unlimited semua mode — NexaDance 3.0, Omni, dan GPT Image gratis — di halaman Top Up NexaBot.`
+        ? `Saldo NexaBot tidak cukup (${formatRp(nbWallet?.balance ?? 0)}). Top up saldo (untuk Omni Flash 1.2) atau ambil Paket Unlimited semua mode — NexaDance 3.0, Omni, dan GPT Image gratis — di halaman Top Up NexaBot.`
         : `Saldo NexaBot tidak cukup (${formatRp(nbWallet?.balance ?? 0)}). Top up saldo atau ambil Premium Booster Rp 15.000/hari — NexaDance 3.0, Omni, dan GPT Image unlimited — di halaman Booster.`
     // Seavi: wallet token internal (deduct saat generate). Tamu tanpa login
     // tetap bisa memakai key sendiri tanpa potongan internal.
@@ -2667,7 +2667,7 @@ export default function ImageToVideoPage() {
           throw new Error(rotation.error || 'Generation failed')
         }
       } else if (provider === 'nexabot') {
-        // ─── NexaBot: REST API (satu model: Google Omni) ─────
+        // ─── NexaBot: REST API (satu model: Google Omni 1.2) ─────
         addLog(`[1/3] 🚀 Menyiapkan generate NexaBot...`, 'info', 'nexabot')
         setStatus((s) => ({ ...s, text: 'Menyiapkan...', pct: 5 }))
 
@@ -2679,12 +2679,12 @@ export default function ImageToVideoPage() {
         // yang ditanggung paket dibayar kunci server, bukan API key pribadi member.
         let gratisKarenaPaket = false
         // NexaDance 3.0 = model paket: member biasa tanpa paket ditolak di muka,
-        // WALAU saldo NexaBot cukup — saldo hanya berlaku untuk Omni Flash 1.1.
+        // WALAU saldo NexaBot cukup — saldo hanya berlaku untuk Omni Flash 1.2.
         // Gate otoritatif tetap di /deduct + relay (tidak bisa dilewati browser).
         const nbApiModel = currentModel?.apiModel || 't2v'
         if (nbApiModel === 'nexadance' && currentUser?.role !== 'admin' && nbWallet
           && !(nbWallet?.unlimited?.active || nbWallet?.booster_unlimited?.active)) {
-          const pesan = 'NexaDance 3.0 hanya untuk member dengan Paket aktif (Premium Booster / Unlimited) — saldo NexaBot hanya berlaku untuk Omni Flash 1.1.'
+          const pesan = 'NexaDance 3.0 hanya untuk member dengan Paket aktif (Premium Booster / Unlimited) — saldo NexaBot hanya berlaku untuk Omni Flash 1.2.'
           addLog(`❌ ${pesan}`, 'error', 'nexabot')
           throw new Error(pesan)
         }
@@ -2759,7 +2759,7 @@ export default function ImageToVideoPage() {
 
             // Media input (base64 data URI) sesuai aturan tiap mode:
             //  • sfv: 1 gambar start frame · i2v: 1-3 gambar ingredient
-            //  • r2v: media[0]=video + 1 gambar opsional (Omni Flash 1.1)
+            //  • r2v: media[0]=video + 1 gambar opsional (Omni Flash 1.2)
             //  • NexaBot (t2v): kirim semua gambar/video sebagai media reference
             // NexaBot: semua gambar input hidup di refFiles (panel input 4 jenis);
             // imgFile/startFrameFile milik provider lain dan tidak boleh bocor ke sini.
@@ -2787,7 +2787,7 @@ export default function ImageToVideoPage() {
 
             // Media (base64 data URI) dibatasi sesuai aturan tiap mode:
             //   sfv = 1 gambar start frame · i2v = 1-3 gambar
-            //   r2v = media[0]=video + 1 gambar opsional (Omni Flash 1.1)
+            //   r2v = media[0]=video + 1 gambar opsional (Omni Flash 1.2)
             //   extend = 1 video sumber (mp4) · t2v = tanpa media
             const media: string[] = []
             {
@@ -2801,7 +2801,7 @@ export default function ImageToVideoPage() {
                   media.push(await fileToBase64(await compressForApi(f)))
                 }
               } else if (nbMode === 'r2v') {
-                // Omni Flash 1.1 r2v: media[0]=video + 1 image opsional
+                // Omni Flash 1.2 r2v: media[0]=video + 1 image opsional
                 // Video referensi wajib dikompresi dulu — file mentah dari HP
                 // (puluhan MB) meledak jadi base64 dan jebol limit body JSON.
                 if (videoFile) {

@@ -64,5 +64,5 @@ export function nexadanceQuota(userId: number): NexadanceQuota {
  * tidak mengira saldo/paketnya rusak.
  */
 export function nexadanceQuotaMessage(q: NexadanceQuota): string {
-  return `Kuota NexaDance 3.0 hari ini habis (${q.used}/${q.limit} video). Jatah baru terbuka besok pukul 00.00 WIB — Omni Flash 1.1 dan GPT Image tetap gratis tanpa batas selama paket aktif.`
+  return `Kuota NexaDance 3.0 hari ini habis (${q.used}/${q.limit} video). Jatah baru terbuka besok pukul 00.00 WIB — Omni Flash 1.2 dan GPT Image tetap gratis tanpa batas selama paket aktif.`
 }

@@ -126,7 +126,7 @@ export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'rs:happyhorse-1.1', label: 'HappyHorse 1.1 (Riverside)', cr: 12, provider: 'riverside', apiModel: 'happyhorse-1.1' },
     { value: 'rs:kling-3.0-pro', label: 'Kling 3.0 Pro (Riverside)', cr: 13, provider: 'riverside', apiModel: 'kling-3.0-pro' },
   ],
-  // NexaBot: Omni Flash 1.1 (mode Google Vids t2v/sfv/i2v/r2v/extend) —
+  // NexaBot: Omni Flash 1.2 (mode Google Vids t2v/sfv/i2v/r2v/extend) —
   // mengikuti nexabot.id/video-generator: mode menentukan jenis input,
   // resolusi 720/1080 dan durasi (t2v/sfv/i2v/extend, default 15 detik)
   // dipilih user. API tidak punya parameter `model`; yang dikirim adalah
@@ -152,11 +152,11 @@ export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'sv:happyhorse11_server23', label: 'HappyHorse 1.1 · S23 — 1-5 img, 5/10/15s, 2 token (Seavi)', cr: 2, provider: 'seavi', apiModel: 'happyhorse11_server23' },
   ],
   nexabot: [
-    { value: 'nb:t2v', label: '✍️ Text to Video — Omni Flash 1.1 (NexaBot)', cr: 0.15, provider: 'nexabot', apiModel: 't2v' },
-    { value: 'nb:sfv', label: '🖼️ Start Frame to Video — Omni Flash 1.1 (NexaBot)', cr: 0.15, provider: 'nexabot', apiModel: 'sfv' },
-    { value: 'nb:i2v', label: '🧩 Ingredients to Video (1-3 img) — Omni Flash 1.1 (NexaBot)', cr: 0.15, provider: 'nexabot', apiModel: 'i2v' },
-    { value: 'nb:r2v', label: '🎬 Reference Video to Video — Omni Flash 1.1 (NexaBot)', cr: 0.15, provider: 'nexabot', apiModel: 'r2v' },
-    { value: 'nb:extend', label: '⏩ Extend Video (1 video) — Omni Flash 1.1 (NexaBot)', cr: 0.15, provider: 'nexabot', apiModel: 'extend' },
+    { value: 'nb:t2v', label: '✍️ Text to Video — Omni Flash 1.2 (NexaBot)', cr: 0.15, provider: 'nexabot', apiModel: 't2v' },
+    { value: 'nb:sfv', label: '🖼️ Start Frame to Video — Omni Flash 1.2 (NexaBot)', cr: 0.15, provider: 'nexabot', apiModel: 'sfv' },
+    { value: 'nb:i2v', label: '🧩 Ingredients to Video (1-3 img) — Omni Flash 1.2 (NexaBot)', cr: 0.15, provider: 'nexabot', apiModel: 'i2v' },
+    { value: 'nb:r2v', label: '🎬 Reference Video to Video — Omni Flash 1.2 (NexaBot)', cr: 0.15, provider: 'nexabot', apiModel: 'r2v' },
+    { value: 'nb:extend', label: '⏩ Extend Video (1 video) — Omni Flash 1.2 (NexaBot)', cr: 0.15, provider: 'nexabot', apiModel: 'extend' },
     // Endpoint khusus (POST /api/v1/alt-video/generate): durasi tetap 20 detik
     // 720p dengan audio, dan selalu menagih 0,5 kredit — di luar skema mode
     // Omni Flash 0,15. Start frame opsional (mode sfv).
@@ -722,7 +722,7 @@ export const MODEL_RATIO_RESTRICTIONS: Record<string, string[]> = {
   wan30_server19: [],
   gemini_omni_server19: ['9:16', '16:9', '1:1', '3:4', '4:3'],
   'veo-omni-10s': ['9:16', '16:9'],
-  // NexaBot Omni Flash 1.1 (docs /api/v1/modes): ratio 1=landscape, 2=portrait
+  // NexaBot Omni Flash 1.2 (docs /api/v1/modes): ratio 1=landscape, 2=portrait
   // — 1:1 & 4:3 tidak didukung upstream. Kunci memakai `apiModel` (bukan nilai
   // model `nb:*`): halaman mencari batas lewat currentModel.apiModel.
   t2v: ['16:9', '9:16'],

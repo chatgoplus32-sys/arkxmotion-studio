@@ -1136,7 +1136,7 @@ export default function AdminSystemSettings() {
                     </div>
                     {isBoosterPackage(p.slug) && (
                       <div className="mb-3 text-[11px] text-amber-500">
-                        Premium Booster — membebaskan NexaDance 3.0, Omni Flash 1.1 (t2v/sfv/i2v/r2v/extend) &amp; GPT Image. Music dan TTS tetap dipotong harga per generate.
+                        Premium Booster — membebaskan NexaDance 3.0, Omni Flash 1.2 (t2v/sfv/i2v/r2v/extend) &amp; GPT Image. Music dan TTS tetap dipotong harga per generate.
                       </div>
                     )}
                     <div className="grid grid-cols-2 gap-3">

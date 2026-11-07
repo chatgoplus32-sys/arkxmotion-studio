@@ -8,7 +8,7 @@
 //    paket aktif, /deduct tidak memotong saldo sama sekali (tetap dicatat
 //    sebagai usage Rp 0);
 //  - varian `unlimited_seedance_daily` ber-scope 'booster' (Premium Booster):
-//    membebaskan NexaDance 3.0 + Omni Flash 1.1 + GPT Image. Audio (`music`,
+//    membebaskan NexaDance 3.0 + Omni Flash 1.2 + GPT Image. Audio (`music`,
 //    `tts`) dan mode lain tetap dipotong per generate, dan status `unlimited`
 //    di /balance sengaja TIDAK ikut menyala supaya UI tidak menjanjikan gratis
 //    yang tidak ada; status Booster sendiri ada di `booster_unlimited`.
@@ -173,7 +173,7 @@ function getActivePackage(userId: number, hanyaSemuaMode = true): PackageRow | u
 /**
  * Paket yang membebaskan satu generate untuk model ini.
  * Premium Booster (scope 'booster') hanya membebaskan NexaDance 3.0, Omni Flash
- * 1.1, dan GPT Image; mode lain (music, tts) tetap butuh paket semua-mode.
+ * 1.2, dan GPT Image; mode lain (music, tts) tetap butuh paket semua-mode.
  */
 function getActivePackageForModel(userId: number, model?: string): PackageRow | undefined {
   return getActivePackage(userId, !isBoosterModelName(model))
@@ -400,11 +400,11 @@ router.post('/deduct', authenticateToken, (req: AuthRequest, res: Response) => {
 
     // NexaDance 3.0 = model paket: member tanpa paket (Unlimited/Premium
     // Booster) tidak boleh menagih saldo untuk generate NexaDance — saldo
-    // NexaBot hanya berlaku untuk Omni Flash 1.1 (dan model Omni lain).
+    // NexaBot hanya berlaku untuk Omni Flash 1.2 (dan model Omni lain).
     // Admin tidak lewat sini (klien skip charge untuk admin).
     if (/^(nexadance|seedance)/.test(String(model || '').toLowerCase()) && !pkg) {
       return res.status(400).json({
-        error: 'NexaDance 3.0 hanya untuk member dengan Paket aktif (Premium Booster / Unlimited) — saldo NexaBot hanya berlaku untuk Omni Flash 1.1.',
+        error: 'NexaDance 3.0 hanya untuk member dengan Paket aktif (Premium Booster / Unlimited) — saldo NexaBot hanya berlaku untuk Omni Flash 1.2.',
         balance,
         packages: getNexabotPricing().packages,
       })

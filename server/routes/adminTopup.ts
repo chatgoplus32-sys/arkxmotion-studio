@@ -82,7 +82,7 @@ router.patch('/approve', authenticateToken, requireAdmin, (req: AuthRequest, res
       // Penumpukan masa berlaku HANYA dihitung di dalam kelas paket yang sama.
       // Premium Booster (ber-scope) jangan sampai dapat expiry menjulur karena
       // user juga punya Bulanan aktif — ia dibeli untuk satu hari dan hanya
-      // membebaskan NexaDance 3.0, Omni Flash 1.1 dan GPT Image. Demikian pula
+      // membebaskan NexaDance 3.0, Omni Flash 1.2 dan GPT Image. Demikian pula
       // sisa hari Bulanan tidak pernah dihitung dari expiry paket harian.
       const punyaSlug = 'package_slug' in topup
       const kelasBerScope = isScopedPackage(topup.package_slug)

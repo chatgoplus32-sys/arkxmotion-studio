@@ -80,7 +80,7 @@ const PROVIDER_LIST = [
   { key: 'genspark', label: 'Genspark AI', desc: 'Kling V3 Motion Control + 14 video models (Veo, Sora, Hailuo, PixVerse) via genspark.ai Tool API — API key (gsk-...).' },
   { key: 'riverside', label: 'Riverside', desc: 'Riverside Business API — Professional video/audio recording, editing, and production platform.' },
   { key: 'seavi', label: 'Seavi Labs', desc: 'Video & image generation (Seedance 2.5 Multi, Kling 3, Motion Control) via api.seavilabs.site — API key (sea-...), saldo token bersama.' },
-  { key: 'nexabot', label: 'NexaBot', desc: 'NexaBot AI via nexabot.id — Google Omni (text, image & video ref). Member cukup top up saldo atau Paket Unlimited; generate memakai kunci server, tanpa API key.' },
+  { key: 'nexabot', label: 'NexaBot', desc: 'NexaBot AI via nexabot.id – Google Omni 1.2 (text, image & video ref). Member cukup top up saldo atau Paket Unlimited; generate memakai kunci server, tanpa API key.' },
 ] as const
 
 const MENU_HIDDEN_PROVIDERS = [
@@ -324,7 +324,7 @@ const TOKEN_GUIDE: Record<string, {
       { text: 'Copy API key (format: nxb_...) → paste ke input di samping.' },
       { text: 'Top up saldo minimal 0.15 credits di menu Top Up (hanya untuk mode API key).' },
     ],
-    tip: 'NexaBot punya satu model: Google Omni — tipe video ditentukan otomatis dari input (teks / gambar / video referensi). ADA DUA JALUR: (a) SESSION COOKIE dari login web dikirim ke /api/v1/generate — kalau akun yang login punya paket Unlimited, generate TIDAK dipotong kredit; (b) API KEY (nxb_...) lewat /api/v1/api — selalu pay-as-you-go 0.15 cr/request walau Unlimited aktif. Kalau key punya cookie, app otomatis memakai jalur session. Cookie bisa kedaluwarsa: kalau muncul error session, login ulang di nexabot.id dan paste cookie baru. CATATAN BIAYA: NexaDance 3.0 (20 detik 720p dengan audio, endpoint khusus /api/v1/alt-video/generate) selalu 0,5 cr/video dan GPT Image 0,1 cr/gambar — Paket Unlimited tidak berlaku untuk keduanya.',
+    tip: 'NexaBot punya satu model: Google Omni 1.2 – tipe video ditentukan otomatis dari input (teks / gambar / video referensi). ADA DUA JALUR: (a) SESSION COOKIE dari login web dikirim ke /api/v1/generate — kalau akun yang login punya paket Unlimited, generate TIDAK dipotong kredit; (b) API KEY (nxb_...) lewat /api/v1/api — selalu pay-as-you-go 0.15 cr/request walau Unlimited aktif. Kalau key punya cookie, app otomatis memakai jalur session. Cookie bisa kedaluwarsa: kalau muncul error session, login ulang di nexabot.id dan paste cookie baru. CATATAN BIAYA: NexaDance 3.0 (20 detik 720p dengan audio, endpoint khusus /api/v1/alt-video/generate) selalu 0,5 cr/video dan GPT Image 0,1 cr/gambar — Paket Unlimited tidak berlaku untuk keduanya.',
   },
   markastools: {
     url: 'https://ai.markastools.id',

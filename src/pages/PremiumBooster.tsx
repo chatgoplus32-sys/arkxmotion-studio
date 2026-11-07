@@ -157,7 +157,7 @@ export default function PremiumBoosterPage() {
           </div>
         ) : boosterPass?.active ? (
           <div className="mt-3 text-[11px] text-emerald-500">
-            Booster berlaku sampai {formatDate(boosterPass.expires_at)} — NexaDance 3.0, Omni Flash 1.1, dan GPT Image 2.5 gratis selama masa aktif. Mode lain tetap {formatRp(wallet?.price ?? 150)}/generate dari saldo.
+            Booster berlaku sampai {formatDate(boosterPass.expires_at)} — NexaDance 3.0, Omni Flash 1.2, dan GPT Image 2.5 gratis selama masa aktif. Mode lain tetap {formatRp(wallet?.price ?? 150)}/generate dari saldo.
           </div>
         ) : (
           <div className="mt-3 text-[11px] text-muted-foreground">
@@ -196,7 +196,7 @@ export default function PremiumBoosterPage() {
           Music dan TTS tidak termasuk — Booster dijual sebagai paket visual, jadi keduanya tetap memotong saldo.
         </div>
         <div className="mt-3 text-[11px] text-muted-foreground">
-          NexaDance 3.0 dibatasi <b className="text-foreground">5 video per hari</b> per akun — biaya kredit upstream model ini selalu ditanggung server, jadi jatahnya dibatasi agar tetap tersedia untuk semua member. Omni Flash 1.1 dan GPT Image tanpa batas harian.
+          NexaDance 3.0 dibatasi <b className="text-foreground">5 video per hari</b> per akun — biaya kredit upstream model ini selalu ditanggung server, jadi jatahnya dibatasi agar tetap tersedia untuk semua member. Omni Flash 1.2 dan GPT Image tanpa batas harian.
         </div>
       </Section>
 
@@ -291,7 +291,7 @@ export default function PremiumBoosterPage() {
             <div className="text-5xl mb-4">⏳</div>
             <div className="text-lg font-medium mb-2">Premium Booster menunggu approval</div>
             <div className="text-sm text-muted-foreground mb-4">
-              Booster aktif otomatis setelah admin menyetujui pembayaran — NexaDance 3.0, Omni Flash 1.1 &amp; GPT Image langsung bebas potongan saldo.
+              Booster aktif otomatis setelah admin menyetujui pembayaran — NexaDance 3.0, Omni Flash 1.2 &amp; GPT Image langsung bebas potongan saldo.
               <br />Hubungi admin jika sudah transfer.
             </div>
             <a href={waLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500/10 text-emerald-500 text-sm font-medium hover:bg-emerald-500/20 transition">

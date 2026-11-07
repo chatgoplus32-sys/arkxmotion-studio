@@ -393,7 +393,7 @@ test('POST /topup: nominal di bawah minimum ditolak', async () => {
 
 // ── Premium Booster (slug 'unlimited_seedance_daily', scope 'booster') ──────
 // Uang yang dipertaruhkan di sini: paket Rp 15.000/hari hanya boleh
-// menggratiskan NexaDance 3.0 + Omni Flash 1.1 + GPT Image. Music dan tts harus
+// menggratiskan NexaDance 3.0 + Omni Flash 1.2 + GPT Image. Music dan tts harus
 // tetap terpotong, dan keputusannya harus dibuat server — bukan oleh klaim klien.
 
 test('POST /package slug Booster ditutup: 503 + alasan, tanpa baris pengajuan', async () => {
