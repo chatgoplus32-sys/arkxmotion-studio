@@ -131,13 +131,17 @@
     quick.addEventListener('click', function (e) {
       var b = e.target && e.target.closest ? e.target.closest('.nb-chip') : null;
       if (!b) return;
+      var style = b.getAttribute('data-style');
       var sel = $('#narasiStyle');
-      if (!sel) return;
-      sel.value = b.getAttribute('data-style');
+      var preset = $('#optPreset');
+      if (sel) sel.value = style;
+      if (preset) preset.value = style;
+      // rerender style grid jika tersedia (bundle exposes applyStyleChoice=fi, au internal)
+      try { if (window.AutoMotion && window.AutoMotion.applyStyleChoice) window.AutoMotion.applyStyleChoice(style); } catch (err) {}
       markChip();
     });
     var sel = $('#narasiStyle');
-    if (sel) sel.addEventListener('change', markChip);
+    if (sel) sel.addEventListener('change', function () { markChip(); var preset = $('#optPreset'); if (preset) preset.value = sel.value; });
   }
   function words(t) { return (String(t).trim().match(/\S+/g) || []).length; }
   function sentences(t) {
