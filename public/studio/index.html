@@ -17,6 +17,23 @@
 .narasi-box .nb-chip{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:999px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font:700 12.5px Inter,sans-serif;cursor:pointer;min-height:38px;transition:border-color .15s,background .15s,transform .15s}
 .narasi-box .nb-chip:hover{border-color:rgba(30,144,255,.6);transform:translateY(-1px)}
 .narasi-box .nb-chip.on{border-color:var(--acc,#1E90FF);background:rgba(30,144,255,.18);box-shadow:inset 0 0 0 1px rgba(30,144,255,.35)}
+.narasi-box .nb-toggle{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font:700 12.5px Inter,sans-serif;cursor:pointer;min-height:38px;transition:border-color .15s,background .15s}
+.narasi-box .nb-toggle:hover{border-color:rgba(30,144,255,.6)}
+.narasi-box .nb-toggle.on{border-color:var(--acc,#1E90FF);background:rgba(30,144,255,.18)}
+.narasi-box .nb-toggle input{width:18px;height:18px;margin:0;accent-color:var(--acc)}
+.narasi-box .nb-doc{margin-top:10px;padding:10px 12px;border:1px dashed var(--line2);border-radius:12px;background:rgba(30,144,255,.06)}
+.narasi-box .nb-doc h4{margin:0 0 8px;font-size:13px;color:var(--acc2)}
+.narasi-box .nb-doc p{margin:0 0 8px;font-size:12.5px;color:var(--mut);line-height:1.5}
+.narasi-box .nb-doc ul{margin:0 0 8px;padding-left:16px;font-size:12px;color:var(--mut)}
+.narasi-box .nb-doc ul li{margin:2px 0}
+.narasi-box .nb-story{display:none;margin-top:10px;border:1px solid var(--line2);border-radius:12px;background:var(--bg2);overflow:hidden}
+.narasi-box .nb-story.on{display:block}
+.narasi-box .nb-story-head{padding:10px 14px;border-bottom:1px solid var(--line2);background:var(--panel);font-size:12.5px;color:var(--acc2);font-weight:700;display:flex;justify-content:space-between;align-items:center}
+.narasi-box .nb-story-body{padding:10px 14px}
+.narasi-box .nb-scene{margin:8px 0;padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.02)}
+.narasi-box .nb-scene .nb-scene-t{font-size:12px;color:var(--mut);margin-bottom:4px}
+.narasi-box .nb-scene .nb-scene-v{font-size:13px;color:var(--txt);margin-bottom:4px}
+.narasi-box .nb-scene .nb-scene-p{font-size:11.5px;color:var(--dim);font-style:italic}
 .narasi-box .nb-req{color:#FF6A6A}
 .narasi-box .big-cta{width:100%;margin-top:4px}
 .narasi-box .hint{margin:2px 0 8px}
@@ -49,6 +66,27 @@
     <label class="nb-chip" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:999px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font:700 12.5px Inter,sans-serif;min-height:38px">
       <input type="checkbox" id="narasiMix" style="width:16px;height:16px;margin:0"> Gabungkan 3 gaya (Remotion + Motion Graphics + Dokumenter)
     </label>
+  </div>
+  <div class="nb-doc" id="narasiDoc" hidden>
+    <h4>&#128213; Mode Dokumen Animasi (Remotion)</h4>
+    <p>AI akan menganalisis narasi per kalimat dan menyusun visual animasi yang sesuai isi pembahasan — ilustrasi, diagram anatomi, dan infografis data — tanpa footage random.</p>
+    <ul>
+      <li>Visual mengikuti konteks narasi, bukan animasi acak</li>
+      <li>Sinkronisasi visual dengan kalimat yang diucapkan voice-over</li>
+      <li>Grafik data dan diagram untuk statistik &amp; perbandingan</li>
+      <li>Tanpa B-roll / footage stock pada mode ini</li>
+    </ul>
+  </div>
+  <div class="nb-toggle" id="narasiNoBroll" role="switch" aria-checked="false" tabindex="0">
+    <input type="checkbox" id="narasiNoBrollInput" style="display:none">
+    &#128456; Tanpa B-roll / footage (hanya motion graphic &amp; ilustrasi)
+  </div>
+  <div class="nb-story" id="narasiStory">
+    <div class="nb-story-head">
+      <span>Storyboard Visual (pratinjau sebelum render)</span>
+      <span id="narasiStoryCount">0 scene</span>
+    </div>
+    <div class="nb-story-body" id="narasiStoryBody"></div>
   </div>
   <p class="hint" id="narasiHint">Narasi dipakai apa adanya sebagai naskah &amp; voice over. Pilih jenis animasi (Remotion, Motion Graphics, atau Dokumenter) — centang "Gabungkan 3 gaya" untuk ketikkan ke 3 sekaligus. AI menyusun scene + voice over, lalu kamu tinggal render MP4.</p>
   <button type="button" class="btn primary big-cta" id="narasiGo">&#10024; Buat animasi penjelasan</button>
@@ -149,6 +187,7 @@
       if (preset) preset.value = style;
       try { if (window.AutoMotion && window.AutoMotion.applyStyleChoice) window.AutoMotion.applyStyleChoice(style); } catch (err) {}
       markChip();
+      showDocBox();
     }
     quick.addEventListener('click', function (e) {
       var b = e.target && e.target.closest ? e.target.closest('.nb-chip') : null;
@@ -168,7 +207,11 @@
       }
     });
     var sel = $('#narasiStyle');
-    if (sel) sel.addEventListener('change', function () { if (!mix || !mix.checked) { markChip(); var preset = $('#optPreset'); if (preset) preset.value = sel.value; } });
+    if (sel) sel.addEventListener('change', function () { if (!mix || !mix.checked) { markChip(); var preset = $('#optPreset'); if (preset) preset.value = sel.value; } showDocBox(); });
+    // no-B-roll toggle
+    var nb = document.getElementById('narasiNoBroll');
+    if (nb) nb.addEventListener('click', toggleNoBroll);
+    showDocBox();
   }
   function markChipMix(keys) {
     var chips = document.querySelectorAll('#narasiQuick .nb-chip');
@@ -180,6 +223,74 @@
     }
     var mix = document.getElementById('narasiMix');
     if (mix) mix.checked = !!keys;
+  }
+  function showDocBox() {
+    var sel = $('#narasiStyle');
+    var v = sel ? sel.value : '';
+    var doc = $('#narasiDoc');
+    var isDoc = v === 'prod:editorial' || (v && v.indexOf('prod:editorial') === 0);
+    if (doc) doc.hidden = !isDoc;
+    var hint = $('#narasiHint');
+    if (hint) {
+      hint.textContent = isDoc
+        ? 'Mode Dokumen Animasi aktif: AI akan menganalisis narasi per kalimat dan menyusun visual ilustrasi, diagram anatomi, dan infografis data sesuai konteks. Tanpa B-roll / footage random.'
+        : 'Narasi dipakai apa adanya sebagai naskah &amp; voice over. Pilih jenis animasi (Remotion, Motion Graphics, atau Dokumenter) — centang "Gabungkan 3 gaya" untuk ketikkan ke 3 sekaligus. AI menyusun scene + voice over, lalu kamu tinggal render MP4.';
+    }
+  }
+  function toggleNoBroll() {
+    var el = document.getElementById('narasiNoBroll');
+    var input = document.getElementById('narasiNoBrollInput');
+    if (!el || !input) return;
+    var on = !input.checked;
+    input.checked = on;
+    el.classList.toggle('on', on);
+    el.setAttribute('aria-checked', String(on));
+  }
+  function segmentStoryboard(text) {
+    var sents = sentences(text);
+    var scenes = [];
+    var cur = [];
+    var curStart = 0;
+    for (var i = 0; i < sents.length; i++) {
+      cur.push(sents[i]);
+      if (cur.length >= 2 || i === sents.length - 1) {
+        scenes.push({
+          start: curStart,
+          end: i,
+          text: cur.join(' ').replace(/[.!?]+$/, ''),
+          visual: visualFor(cur.join(' '))
+        });
+        cur = [];
+        curStart = i + 1;
+      }
+    }
+    return scenes;
+  }
+  function visualFor(seg) {
+    var t = seg.toLowerCase();
+    var v = 'Ilustrasi visual yang sesuai dengan konteks narasi.';
+    if (/gula|glukosa|darah|pankreas|insulin|resistensi/i.test(t)) v = 'Animasi gula masuk ke aliran darah, pankreas memproduksi insulin, dan grafik kadar glukosa naik turun.';
+    else if (/rokok|paru|asap|nikotin|jantung|pembuluh/i.test(t)) v = 'Ilustrasi rokok terbakar, asap masuk ke paru-paru, dan animasi kerusakan organ akibat asap rokok.';
+    else if (/statistik|angka|persen|perbandingan|grafik|data|risiko|kasus/i.test(t)) v = 'Infografis data: grafik batang, diagram lingkaran, dan angka statistik yang bergerak sesuai narasi.';
+    else if (/anatomi|organ|tubuh|sel|jaringan/i.test(t)) v = 'Diagram anatomi tubuh manusia dengan label organ yang relevan.';
+    else if (/timbun|naik|turun|trend|timeline|sejarah/i.test(t)) v = 'Timeline animasi dengan grafik garis yang menunjukkan perubahan dari waktu ke waktu.';
+    return v;
+  }
+  function renderStoryboard(text) {
+    var body = $('#narasiStoryBody');
+    var count = $('#narasiStoryCount');
+    var story = $('#narasiStory');
+    if (!body || !count || !story) return;
+    var scenes = segmentStoryboard(text);
+    count.textContent = scenes.length + ' scene';
+    body.innerHTML = scenes.map(function (s, i) {
+      return '<div class="nb-scene">' +
+        '<div class="nb-scene-t">Scene ' + (i + 1) + ' &middot; kalimat ' + (s.start + 1) + '\u2013' + (s.end + 1) + '</div>' +
+        '<div class="nb-scene-v">' + esc(s.text) + '</div>' +
+        '<div class="nb-scene-p">Visual: ' + esc(s.visual) + '</div>' +
+        '</div>';
+    }).join('');
+    story.classList.add('on');
   }
   function words(t) { return (String(t).trim().match(/\S+/g) || []).length; }
   function sentences(t) {
@@ -267,10 +378,22 @@
       setVal('#optImages', $('#narasiImages').value || '4');
       el = $('#optVO'); if (el) el.value = text.slice(0, 6000);
       el = $('#optFullAI'); if (el) el.checked = false;
-      applyStyle($('#narasiStyle').value || 'auto');
+      var styleVal = $('#narasiStyle').value || 'auto';
+      applyStyle(styleVal);
       var S = (window.AutoMotion || {}).S;
-      if (S) { S.narasiScript = text; }
-      hint.textContent = 'AI menyusun naskah, voice over, visual, dan motion graphics. Proses bisa 1\u20133 menit — biarkan halaman ini terbuka.';
+      if (S) {
+        S.narasiScript = text;
+        var isDoc = styleVal.indexOf('prod:editorial') === 0;
+        S.narasiDocMode = isDoc;
+        var nb = document.getElementById('narasiNoBrollInput');
+        S.noBroll = nb ? nb.checked : false;
+        if (isDoc) {
+          S.narasiStoryboard = segmentStoryboard(text);
+          renderStoryboard(text);
+        }
+      }
+      if (S && S.noBroll) { /* bundle handles noBroll by skipping B-roll section; AI illustration from storyboard still uses optImages */ }
+      hint.textContent = isDoc ? 'Mode Dokumen Animasi: AI menganalisis narasi dan menyusun storyboard visual. Klik render untuk memproses.' : 'AI menyusun naskah, voice over, visual, dan motion graphics. Proses bisa 1\u20133 menit — biarkan halaman ini terbuka.';
       var btn = $('#btnProduct');
       if (btn) btn.click();
     }, 120);
