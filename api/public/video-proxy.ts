@@ -95,8 +95,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const contentRange = upstream.headers.get('content-range')
     const upstreamStatus = upstream.status
 
-    const resolvedType = contentType.includes('video') ? contentType
-      : contentType.includes('octet-stream') ? 'video/mp4'
+    const resolvedType = contentType.includes('video/') || contentType.includes('image/')
+      ? contentType
       : 'video/mp4'
 
     res.setHeader('Content-Type', resolvedType)

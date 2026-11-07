@@ -112,6 +112,40 @@ test('status melaporkan kunci server terpasang tanpa membocorkan nilainya', asyn
   assert.equal(JSON.stringify(json).includes('server-key-test'), false)
 })
 
+function getUsage(token?: string) {
+  return originalFetch(`${base}/api/public/studio-ai/usage`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+}
+
+test('/usage menolak permintaan tanpa login', async () => {
+  const res = await getUsage()
+  assert.equal(res.status, 401)
+})
+
+test('/usage melaporkan pemakaian member Pro', async () => {
+  await post('gemini-3-flash-preview:generateContent', proToken)
+  await post('gemini-3-flash-preview:generateContent', proToken)
+  const res = await getUsage(proToken)
+  const json = (await res.json()) as any
+  assert.equal(res.status, 200)
+  assert.equal(json.eligible, true)
+  assert.equal(json.dailyCap, 40)
+  assert.equal(json.used, 2)
+  assert.equal(json.remaining, 38)
+  assert.equal(res.headers.get('cache-control'), 'no-store')
+  assert.equal(JSON.stringify(json).includes('server-key-test'), false)
+})
+
+test('/usage menandai member gratis tidak berhak memakai relay', async () => {
+  const res = await getUsage(freeToken)
+  const json = (await res.json()) as any
+  assert.equal(res.status, 200)
+  assert.equal(json.eligible, false)
+  assert.equal(json.reason, 'pro')
+  assert.equal(json.used, 0)
+})
+
 test('member gratis ditolak 402 dan tidak ada panggilan ke Gemini', async () => {
   const res = await post('gemini-3-flash-preview:generateContent', freeToken)
   const json = (await res.json()) as any

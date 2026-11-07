@@ -49,7 +49,9 @@ router.get('/', async (req: Request, res: Response) => {
     const contentType = upstream.headers.get('content-type') || ''
     const contentLength = upstream.headers.get('content-length')
     const contentRange = upstream.headers.get('content-range')
-    const resolvedType = contentType.includes('video') ? contentType : contentType.includes('octet-stream') ? 'video/mp4' : 'video/mp4'
+    const resolvedType = contentType.includes('video/') || contentType.includes('image/')
+      ? contentType
+      : 'video/mp4'
 
     res.setHeader('Content-Type', resolvedType)
     if (contentLength) res.setHeader('Content-Length', contentLength)

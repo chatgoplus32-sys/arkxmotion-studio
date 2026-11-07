@@ -36,6 +36,23 @@ router.get('/status', (_req, res: Response) => {
   })
 })
 
+router.get('/usage', authenticateToken, (req: AuthRequest, res: Response) => {
+  const userId = req.user?.id
+  const ent = studioEntitlement(userId)
+  const dailyCap = studioDailyCap()
+  const used = userId ? studioUsageToday(userId) : 0
+  res.setHeader('Cache-Control', 'no-store')
+  res.json({
+    ok: true,
+    configured: !!studioGeminiKey(),
+    eligible: ent.ok,
+    reason: ent.reason,
+    dailyCap,
+    used,
+    remaining: Math.max(0, dailyCap - used),
+  })
+})
+
 /**
  * POST /api/public/studio-ai/v1beta/models/:target
  *
