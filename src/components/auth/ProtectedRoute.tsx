@@ -17,7 +17,7 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
-          <img src="/landing/arkx-icon-clean.png" alt="ARKXMotion" className="w-12 h-12 object-contain animate-pulse" />
+          <img src="/landing/arkx-icon-brand.png" alt="ARKXMotion" className="w-12 h-12 object-contain animate-pulse" />
           <p className="text-muted-foreground text-sm">Loading...</p>
         </div>
       </div>
