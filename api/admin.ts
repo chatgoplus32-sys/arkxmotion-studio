@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import jwt from 'jsonwebtoken'
 import crypto from 'crypto'
 import { neon } from '@neondatabase/serverless'
-import { sendEmail, appUrl } from './mailer.js'
+import { sendEmail, appUrl, allowDevMailLink } from './mailer.js'
 import {
   NEXABOT_PACKAGES,
   NEXABOT_PRICING_DEFAULTS,
@@ -1118,7 +1118,11 @@ async function handleResendVerification(res: VercelResponse, id: number) {
       html: `<p>Halo <b>${user.name}</b>,</p><p>Klik tombol di bawah untuk memverifikasi email kamu:</p><p><a href="${link}" style="background:#E5A93B;color:#000;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600">Verifikasi Email</a></p><p>Atau buka link ini: <a href="${link}">${link}</a></p><p>Link berlaku 24 jam.</p>`,
     })
 
-    return res.status(200).json({ ok: true, message: `Link verifikasi dikirim ke ${user.email}`, devVerifyLink: sent ? null : link })
+    return res.status(200).json({
+      ok: true,
+      message: `Link verifikasi dikirim ke ${user.email}`,
+      ...(!sent && allowDevMailLink() ? { devVerifyLink: link } : {}),
+    })
   } catch (err: any) {
     console.error('Resend verification error:', err)
     return res.status(500).json({ error: err.message || 'Internal server error' })

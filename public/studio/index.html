@@ -39,7 +39,63 @@
 .narasi-box .hint{margin:2px 0 8px}
 @media(max-width:720px){.narasi-box .nb-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:460px){.narasi-box .nb-grid{grid-template-columns:1fr}.narasi-box{padding:14px;border-radius:16px}}
-</style>  <script>(function(){var log=[];window.__amdiag=1;window.__amlog=log;function push(o){try{log.push(o);if(log.length>60)log.shift();}catch(e){}}var of=window.fetch;window.fetch=function(u,opt){var url=String((u&&u.url)||u||"");if(url.indexOf("generativelanguage.googleapis.com")<0)return of.apply(this,arguments);var model=(url.split("/models/")[1]||"").split(":")[0];var body="";try{body=opt&&opt.body?String(opt.body):"";}catch(e){}var hasAudio=/audio\/wav|audio\/mpeg|audio\/mp4|audio\/ogg|inlineData/.test(body);var t0=Date.now();return of.apply(this,arguments).then(function(res){try{var clone=res.clone();clone.text().then(function(txt){var rec={t:new Date().toISOString(),model:model,http:res.status,ms:Date.now()-t0,audio:hasAudio,len:txt.length,err:null,words:0,sample:""};try{var j=JSON.parse(txt);if(j.error)rec.err=String(j.error.message||j.error.status||"error").slice(0,220);var cand=j.candidates&&j.candidates[0];var parts=(cand&&cand.content&&cand.content.parts)||[];var text=parts.map(function(p){return p.text||"";}).join("");rec.finish=cand&&cand.finishReason;rec.sample=text.slice(0,320);var m=text.match(/"w"\s*:/g);if(m)rec.words=m.length;if(!m&&/"events"/.test(text)){try{rec.events=(JSON.parse(text).events||[]).length;}catch(e){}}}catch(e){rec.parseErr=String(e).slice(0,80);}push(rec);}).catch(function(){});}catch(e){}return res;},function(err){push({t:new Date().toISOString(),model:model,http:0,audio:hasAudio,err:"FETCH_FAIL "+String(err&&err.message||err).slice(0,160)});throw err;});};})();</script><script type="module" crossorigin src="assets/index-narasi.js"></script>
+</style>  <script>(function(){var log=[];window.__amdiag=1;window.__amlog=log;function push(o){try{log.push(o);if(log.length>60)log.shift();}catch(e){}}var of=window.fetch;window.fetch=function(u,opt){var url=String((u&&u.url)||u||"");if(url.indexOf("generativelanguage.googleapis.com")<0)return of.apply(this,arguments);var model=(url.split("/models/")[1]||"").split(":")[0];var body="";try{body=opt&&opt.body?String(opt.body):"";}catch(e){}var hasAudio=/audio\/wav|audio\/mpeg|audio\/mp4|audio\/ogg|inlineData/.test(body);var t0=Date.now();return of.apply(this,arguments).then(function(res){try{var clone=res.clone();clone.text().then(function(txt){var rec={t:new Date().toISOString(),model:model,http:res.status,ms:Date.now()-t0,audio:hasAudio,len:txt.length,err:null,words:0,sample:""};try{var j=JSON.parse(txt);if(j.error)rec.err=String(j.error.message||j.error.status||"error").slice(0,220);var cand=j.candidates&&j.candidates[0];var parts=(cand&&cand.content&&cand.content.parts)||[];var text=parts.map(function(p){return p.text||"";}).join("");rec.finish=cand&&cand.finishReason;rec.sample=text.slice(0,320);var m=text.match(/"w"\s*:/g);if(m)rec.words=m.length;if(!m&&/"events"/.test(text)){try{rec.events=(JSON.parse(text).events||[]).length;}catch(e){}}}catch(e){rec.parseErr=String(e).slice(0,80);}push(rec);}).catch(function(){});}catch(e){}return res;},function(err){push({t:new Date().toISOString(),model:model,http:0,audio:hasAudio,err:"FETCH_FAIL "+String(err&&err.message||err).slice(0,160)});throw err;});};})();</script><script>/* AI server ARKX: alihkan panggilan Gemini ke relay /api/public/studio-ai
+   supaya member Pro tidak perlu API key sendiri. Tanpa token app (belum login)
+   atau saat member memakai key sendiri, perilaku lama dibiarkan apa adanya. */
+(function () {
+  var TOKEN = 'arkxmotion_token', REFRESH = 'arkxmotion_refresh', KEY = 'automotion:key';
+  var G = 'https://generativelanguage.googleapis.com/';
+  var PROXY = '/api/public/studio-ai/';
+  var PLACEHOLDER = JSON.stringify('ARKX-SERVER');
+  function ls(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
+  function setToken(v) { try { localStorage.setItem(TOKEN, v); } catch (e) {} }
+  function hasLogin() { return !!ls(TOKEN); }
+  function usesServer() { var own = ls(KEY); return hasLogin() && (!own || own === PLACEHOLDER); }
+  if (hasLogin()) { try { if (!ls(KEY)) localStorage.setItem(KEY, PLACEHOLDER); } catch (e) {} }
+  function refresh() {
+    var rt = ls(REFRESH);
+    if (!rt) return Promise.resolve('');
+    return fetch('/api/auth/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ refreshToken: rt })
+    }).then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) { if (j && j.token) { setToken(j.token); return j.token; } return ''; })
+      .catch(function () { return ''; });
+  }
+  var of = window.fetch;
+  window.fetch = function (u, opt) {
+    var url = String((u && u.url) || u || '');
+    if (url.indexOf(G) !== 0 || !usesServer()) return of.apply(this, arguments);
+    var base = opt ? Object.assign({}, opt) : {};
+    var h = new Headers(base.headers || {});
+    h.delete('x-goog-api-key');
+    base.headers = h;
+    base.credentials = 'same-origin';
+    var target = PROXY + url.slice(G.length);
+    function send(tk) {
+      var hh = new Headers(base.headers);
+      hh.set('Authorization', 'Bearer ' + tk);
+      return of.call(window, target, Object.assign({}, base, { headers: hh }));
+    }
+    return send(ls(TOKEN)).then(function (res) {
+      if (res.status !== 401) return res;
+      return refresh().then(function (tk) { return tk ? send(tk) : res; });
+    });
+  };
+  function badge() {
+    var el = document.getElementById('access');
+    if (!el || !usesServer()) return;
+    var html = el.innerHTML || '';
+    if (html.indexOf('API key Gemini kamu') < 0) return;
+    el.innerHTML = html.replace(/AI aktif memakai API key Gemini kamu[^<]*(\([^<]*\))?\.?/, 'AI aktif memakai akun ARKX (server) — tanpa API key sendiri.');
+  }
+  var tries = 0;
+  var timer = setInterval(function () { badge(); if (++tries > 60) clearInterval(timer); }, 500);
+  document.addEventListener('DOMContentLoaded', badge);
+  window.__studioServerAi = true;
+})();</script><script type="module" crossorigin src="assets/index-narasi.js"></script>
 <script>(function(){try{var TK="arkxmotion_token",RT="arkxmotion_refresh";function dead(){return{state:"denied"}}function me(tok,depth){depth=depth||0;return fetch("/api/auth/me",{headers:{Authorization:"Bearer "+tok}}).then(function(r){if(r.ok)return r.json().then(function(j){return{state:"user",user:j.user}});if((r.status===401||r.status===403)&&depth<1){var rt=localStorage.getItem(RT);if(!rt)return dead();return fetch("/api/auth/refresh",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({refreshToken:rt})}).then(function(x){return x.ok?x.json():null}).then(function(d){if(d&&d.token){localStorage.setItem(TK,d.token);return me(d.token,1)}return dead()})}if(r.status>=500)return{state:"unknown"};return dead()}).catch(function(){return{state:"unknown"}})}var tok=localStorage.getItem(TK);if(!tok){location.replace("/login");return}me(tok).then(function(res){if(res.state==="unknown")return;if(res.state==="denied"||!res.user){location.replace("/login");return}var u=res.user;if(u.role!=="admin"&&u.plan!=="pro"){location.replace("/upgrade-pro")}}).catch(function(){})}catch(e){}})();</script></head><body><header class="top"><div class="brand"><button class="nav-back" id="btnBack" type="button" aria-label="Kembali ke aplikasi utama" title="Kembali ke aplikasi utama"><span aria-hidden="true">←</span><span class="lbl"> Kembali</span></button><div class="logo"><img src="favicon.png?3" alt="" aria-hidden="true" style="width:100%;height:100%;object-fit:cover;border-radius:6px"></div><b>ARKX AUTO Studio</b><span class="sub">Motion graphics otomatis dengan AI</span></div><div class="actions"><div class="nav-wrap"><button class="btn nav-toggle" id="btnNav" type="button" aria-label="Menu navigasi" title="Menu navigasi" aria-haspopup="true" aria-expanded="false" aria-controls="navMenu"><span aria-hidden="true">☰</span><span class="lbl"> Menu</span></button><div class="nav-menu" id="navMenu" role="menu" hidden><div class="grp">Utama</div><a role="menuitem" href="/quick-start">✨ Mulai</a><a role="menuitem" href="/dashboard">📊 Dashboard</a><a role="menuitem" href="/hasil">🖼️ Hasil</a><div class="sep"></div><div class="grp">Buat</div><a role="menuitem" href="/generate/motion">🎬 Motion Control</a><a role="menuitem" href="/generate/image-to-video">🎞️ Image to Video</a><a role="menuitem" href="/generate/video-edit">🤖 ARKX AUTO Studio <span class="cur">aktif</span></a><a role="menuitem" href="/generate/edit-image">✏️ Edit Image</a><a role="menuitem" href="/generate/virtual-tryon">👕 Virtual Try-On</a><a role="menuitem" href="/generate/talking-photo">🗣️ Talking Photo</a><div class="sep"></div><div class="grp">Lainnya</div><a role="menuitem" href="/providers">⚡ Providers</a><a role="menuitem" href="/saldo">💰 Saldo Layanan</a><a role="menuitem" href="/settings">⚙️ Settings</a></div></div><span id="saveState" class="save-state" role="status"></span><button class="btn" id="btnGuide" type="button" aria-label="Panduan" title="Panduan"><span aria-hidden="true">📖</span><span class="lbl"> Panduan</span></button><button class="btn" id="btnNew" type="button" aria-label="Video baru" title="Video baru" hidden><span aria-hidden="true">＋</span><span class="lbl"> Video baru</span></button><button class="btn" id="btnFocus" type="button" aria-label="Layar penuh (mode fokus untuk mengedit)" title="Layar penuh / mode fokus"><span aria-hidden="true">⛶</span></button><button class="btn primary" id="btnRender" type="button" hidden>⬇ Render Video</button></div></header><section id="landing"><div class="hero-brand"><div class="hero-logo"><svg viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="arkxLogoBb" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8FDBFF"/><stop offset=".5" stop-color="#1E90FF"/><stop offset="1" stop-color="#0A4FD8"/></linearGradient><linearGradient id="arkxLogoBs" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F6FAFF"/><stop offset="1" stop-color="#93A6BF"/></linearGradient><linearGradient id="arkxLogoBr" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#1E90FF"/><stop offset="1" stop-color="#8FDBFF"/></linearGradient></defs><circle cx="32" cy="32" r="29.5" fill="none" stroke="url(#arkxLogoBr)" stroke-width="2.2" opacity=".9"/><path d="M13.5 50.5 32 11.5 50.5 50.5H40L32 31.5 24 50.5Z" fill="url(#arkxLogoBb)"/><path d="M23.5 43.5h17" stroke="url(#arkxLogoBs)" stroke-width="3.4" stroke-linecap="round"/><circle cx="45.5" cy="21.5" r="7.2" fill="none" stroke="url(#arkxLogoBs)" stroke-width="2.2"/><circle cx="45.5" cy="21.5" r="1.7" fill="url(#arkxLogoBs)"/></svg></div><div><div class="hero-name">ARKX AUTO Studio</div><span class="eyebrow">● Sutradara motion AI</span></div></div><h1>Bikin video motion profesional<br><em>cukup sekali klik.</em></h1><p class="lead">Upload video kamu ngomong, atau cukup isi info produk + foto/video produkmu. AI menyusun caption, b-roll, animasi penjelasan, latar bergerak, transisi, ganti angle kamera, musik &amp; efek suara, sampai ajakan (CTA). Hasilnya langsung jadi MP4 di browser, dan semua editan tersimpan otomatis.</p><div id="draftsBox" class="drafts-box" hidden><h3>📂 Lanjutkan draf</h3><p class="hint">Semua editan tersimpan otomatis. Buka lagi kapan saja, edit, lalu render ulang.</p><div class="drafts" id="draftList"></div></div><div id="draftNeed" class="draft-need" role="status" aria-live="polite" hidden><div><b id="draftNeedT"></b><small>Semua editan tetap aman. Durasi draf <span id="draftNeedD"></span>. Pilih file video yang sama supaya teks &amp; efek tetap pas.</small></div><div class="row2"><button class="btn primary" type="button" id="draftNeedPick">📂 Pilih video</button><button class="btn" type="button" id="draftNeedCancel">Batal</button></div></div>
 <section id="narasiBox" class="narasi-box" aria-labelledby="narasiH">
   <div class="nb-top">
@@ -422,6 +478,318 @@
     startInit();
     bindGo();
   });
+})();
+</script>
+<style>#aiRoot{position:fixed;right:16px;bottom:92px;z-index:60;font:13px/1.45 Inter,system-ui,sans-serif;color:#F2F7FF}#aiRoot *{box-sizing:border-box}#aiBtn{border:1px solid #1F3351;background:linear-gradient(180deg,#12203a,#0c1526);color:#F2F7FF;border-radius:12px;padding:9px 13px;font-weight:700;box-shadow:0 8px 24px rgba(0,0,0,.45);cursor:pointer}#aiBtn:hover{border-color:#00A8FF}#aiBox{position:absolute;right:0;bottom:48px;width:min(392px,calc(100vw - 32px));max-height:min(76vh,640px);overflow:auto;background:#0A1128;border:1px solid #1F3351;border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.6);padding:12px}#aiBox h4{margin:0;font-size:14px}#aiBox .sub{color:#8AA0BE;font-size:11px;margin:2px 0 8px}#aiBox .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}#aiBox .tabs button{border:1px solid #1F3351;background:#101626;color:#8AA0BE;border-radius:999px;padding:5px 10px;font-size:12px;cursor:pointer}#aiBox .tabs button.on{color:#04111f;background:#00D4FF;border-color:#00D4FF;font-weight:700}#aiBox textarea,#aiBox select,#aiBox input{width:100%;background:#0B1526;border:1px solid #1F3351;border-radius:9px;padding:8px;color:#F2F7FF;font-size:12px}#aiBox textarea{min-height:64px;resize:vertical}#aiBox .row{display:flex;gap:8px;align-items:center;margin-top:8px}#aiBox .row>*{flex:1}#aiBox .go{width:100%;margin-top:8px;border:0;border-radius:10px;padding:9px;font-weight:800;background:#00A8FF;color:#04111f;cursor:pointer}#aiBox .go[disabled]{opacity:.55;cursor:default}#aiBox .note{color:#8AA0BE;font-size:11px;margin-top:6px}#aiBox .msg{margin-top:8px;font-size:12px;color:#8AA0BE;white-space:pre-wrap}#aiBox .msg.err{color:#FF4D6D}#aiBox .msg.ok{color:#22C55E}#aiBox .out{margin-top:10px;border-top:1px solid #16243F;padding-top:10px;display:none}#aiBox .out.show{display:block}#aiBox audio,#aiBox video{width:100%;border-radius:9px;background:#000}#aiBox img{width:100%;border-radius:9px;display:block}#aiBox .acts{display:flex;gap:8px;margin-top:8px}#aiBox .acts a,#aiBox .acts button{flex:1;text-align:center;text-decoration:none;border:1px solid #1F3351;border-radius:9px;padding:7px;font-size:12px;color:#F2F7FF;background:#101626;cursor:pointer}#aiBox .wallet{font-size:11px;color:#8AA0BE;border:1px dashed #1F3351;border-radius:9px;padding:6px 8px;margin-bottom:8px}</style>
+<script>/* Panel Aset AI Studio: musik latar, voice-over, gambar b-roll, klip NexaDance.
+   Semua job lewat relay NexaBot milik ARKX (kunci server + potong tiket), jadi
+   member tidak butuh API key NexaBot sendiri. */
+(function () {
+  if (window.__studioAssetPanel) return;
+  window.__studioAssetPanel = true;
+  var API = '/api/public', TOKEN = 'arkxmotion_token', REFRESH = 'arkxmotion_refresh';
+  function ls(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  async function refreshToken() {
+    var rt = ls(REFRESH);
+    if (!rt) return false;
+    try {
+      var r = await fetch('/api/auth/refresh', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: rt })
+      });
+      if (!r.ok) return false;
+      var j = await r.json();
+      if (j && j.token) { localStorage.setItem(TOKEN, j.token); return true; }
+    } catch (e) {}
+    return false;
+  }
+  async function api(path, opts) {
+    opts = opts || {};
+    var refreshed = false;
+    while (true) {
+      var headers = new Headers(opts.headers || {});
+      headers.set('Authorization', 'Bearer ' + ls(TOKEN));
+      if (opts.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+      var res = await fetch(API + path, {
+        method: opts.method || 'GET', headers: headers,
+        credentials: 'same-origin', body: opts.body
+      });
+      if (res.status === 401 && !refreshed) {
+        refreshed = true;
+        if (await refreshToken()) continue;
+      }
+      var text = await res.text();
+      var data = {};
+      try { data = text ? JSON.parse(text) : {}; } catch (e) { data = { ok: false, error: String(text || '').slice(0, 200) }; }
+      if (!res.ok) {
+        var err = new Error(data.error || ('HTTP ' + res.status));
+        err.status = res.status; err.data = data;
+        throw err;
+      }
+      return data;
+    }
+  }
+
+  var KINDS = {
+    music: {
+      model: 'music', mode: 'music',
+      submit: '/nexabot/submit',
+      body: function (p) { return { mode: 'music', prompt: p }; },
+      status: function (id) { return '/nexabot/job/' + encodeURIComponent(id); },
+      save: function (id) { return '/nexabot/save/' + encodeURIComponent(id); },
+      render: 'audio'
+    },
+    tts: {
+      model: 'tts', mode: 'tts',
+      submit: '/nexabot/submit',
+      body: function (p, v) { return { mode: 'tts', prompt: p, voice: v }; },
+      status: function (id) { return '/nexabot/job/' + encodeURIComponent(id); },
+      save: function (id) { return '/nexabot/save/' + encodeURIComponent(id); },
+      render: 'audio'
+    },
+    img: {
+      model: 'img', mode: 'img',
+      submit: '/nexabot/submit',
+      body: function (p) { return { mode: 'img', prompt: p }; },
+      status: function (id) { return '/nexabot/job/' + encodeURIComponent(id); },
+      save: function (id) { return '/nexabot/save/' + encodeURIComponent(id); },
+      render: 'img'
+    },
+    nexadance: {
+      model: 'nexadance', mode: 'nexadance',
+      submit: '/nexabot/nexadance',
+      body: function (p, _v, ratio) { return { prompt: p, ratio: ratio }; },
+      status: function (id) { return '/nexabot/nexadance/' + encodeURIComponent(id); },
+      save: function (id) { return '/nexabot/nexadance/' + encodeURIComponent(id) + '/save'; },
+      render: 'video'
+    }
+  };
+
+  var VOICES = ['Achernar', 'Achird', 'Algenib', 'Algieba', 'Alnilam', 'Aoede', 'Autonoe', 'Callirrhoe', 'Charon', 'Despina', 'Enceladus', 'Erinome', 'Fenrir', 'Gacrux', 'Iapetus', 'Kore', 'Laomedeia', 'Leda', 'Orus', 'Puck', 'Pulcherrima', 'Rasalgethi', 'Sadachbia', 'Sadaltager', 'Schedar', 'Sulafat', 'Umbriel', 'Vindemiatrix', 'Zephyr', 'Zubenelgenubi'];
+
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  var root = el('div'); root.id = 'aiRoot';
+  var btn = el('button'); btn.id = 'aiBtn'; btn.type = 'button'; btn.textContent = '🎼 Aset AI';
+  var box = el('div'); box.id = 'aiBox'; box.hidden = true;
+
+  var head = el('h4', null, 'Aset AI — NexaBot');
+  var sub = el('div', 'sub', 'Musik, voice-over, gambar, dan klip NexaDance dibuat dengan kunci server ARKX. Setiap generate memotong tiket NexaBot.');
+  var wallet = el('div', 'wallet', 'Saldo: memuat…');
+  var tabs = el('div', 'tabs');
+
+  var FORMS = {};
+  var container = el('div');
+  var msg = el('div', 'msg');
+  var out = el('div', 'out');
+  var busy = false;
+
+  function setMsg(t, kind) { msg.textContent = t || ''; msg.className = 'msg' + (kind ? ' ' + kind : ''); }
+
+  function paneFor(kind) {
+    var pane = el('div');
+    pane.setAttribute('data-pane', kind);
+    var ta = el('textarea');
+    ta.maxLength = 2000;
+    ta.placeholder = kind === 'music'
+      ? 'Contoh: musik latar lo-fi santai, piano lembut, 30 detik, tanpa vokal'
+      : kind === 'tts'
+        ? 'Tulis naskah voice-over di sini…'
+        : kind === 'img'
+          ? 'Contoh: foto produk skincare di meja marmer, cahaya lembut, latar gelap'
+          : 'Contoh: kamera perlahan mengelilingi produk, cahaya studio, gerakan halus';
+    pane.appendChild(ta);
+
+    var voiceSel = null, ratioSel = null;
+    if (kind === 'tts') {
+      var r1 = el('div', 'row');
+      voiceSel = el('select');
+      VOICES.forEach(function (v) { var o = el('option', null, v); o.value = v; voiceSel.appendChild(o); });
+      r1.appendChild(voiceSel);
+      pane.appendChild(r1);
+    }
+    if (kind === 'nexadance') {
+      var r2 = el('div', 'row');
+      ratioSel = el('select');
+      [['1', '16:9 (landscape)'], ['2', '9:16 (portrait)']].forEach(function (p) {
+        var o = el('option', null, p[1]); o.value = p[0]; ratioSel.appendChild(o);
+      });
+      r2.appendChild(ratioSel);
+      pane.appendChild(r2);
+    }
+
+    var go = el('button', 'go', 'Buat ' + (kind === 'music' ? 'musik' : kind === 'tts' ? 'voice-over' : kind === 'img' ? 'gambar' : 'klip NexaDance'));
+    go.type = 'button';
+    go.addEventListener('click', function () {
+      run(kind, ta.value.trim(), voiceSel ? voiceSel.value : '', ratioSel ? Number(ratioSel.value) : 1, go);
+    });
+    pane.appendChild(go);
+    pane.appendChild(el('div', 'note', kind === 'nexadance'
+      ? 'NexaDance 20 detik, hanya untuk paket Premium Booster/Unlimited. Biaya tiket NexaBot 1×.'
+      : 'Biaya tiket NexaBot 1× per generate — gratis bila paket Unlimited aktif.'));
+    FORMS[kind] = { pane: pane, go: go, ta: ta };
+    return pane;
+  }
+
+  Object.keys(KINDS).forEach(function (kind) {
+    var label = kind === 'music' ? '🎵 Musik' : kind === 'tts' ? '🎙️ Voice-over' : kind === 'img' ? '🖼️ Gambar' : '💃 NexaDance';
+    var b = el('button', null, label);
+    b.type = 'button';
+    b.setAttribute('data-tab', kind);
+    b.addEventListener('click', function () { select(kind); });
+    tabs.appendChild(b);
+    var pane = paneFor(kind);
+    if (kind !== 'music') pane.hidden = true;
+    container.appendChild(pane);
+  });
+
+  function select(kind) {
+    Array.prototype.forEach.call(tabs.children, function (b) {
+      b.className = b.getAttribute('data-tab') === kind ? 'on' : '';
+    });
+    Object.keys(FORMS).forEach(function (k) { FORMS[k].pane.hidden = k !== kind; });
+    active = kind;
+  }
+  var active = 'music';
+  select('music');
+
+  box.appendChild(head); box.appendChild(sub); box.appendChild(wallet);
+  box.appendChild(tabs); box.appendChild(container); box.appendChild(msg); box.appendChild(out);
+  root.appendChild(box); root.appendChild(btn);
+
+  btn.addEventListener('click', function () {
+    box.hidden = !box.hidden;
+    if (!box.hidden) loadWallet();
+  });
+
+  async function loadWallet() {
+    if (!ls(TOKEN)) { wallet.textContent = 'Belum login — masuk dulu ke ARKXMotion.'; return; }
+    try {
+      var w = await api('/nexabot-wallet/balance');
+      var parts = ['Saldo Rp ' + new Intl.NumberFormat('id-ID').format(Number(w.balance) || 0)];
+      if (w.unlimited && w.unlimited.active) parts.push('Unlimited aktif');
+      if (w.server_key && w.server_key.available === false) parts.push('kunci server nonaktif');
+      wallet.textContent = parts.join(' • ');
+    } catch (e) {
+      wallet.textContent = 'Saldo tidak terbaca: ' + (e.message || 'gagal');
+    }
+  }
+
+  async function submitWithQueue(path, body, ticket) {
+    for (var i = 0; i < 12; i++) {
+      try {
+        return await api(path, {
+          method: 'POST',
+          headers: { 'X-Nexabot-Charge': String(ticket) },
+          body: JSON.stringify(body)
+        });
+      } catch (e) {
+        if (e.status === 429 && e.data && e.data.queued) {
+          var wait = Math.max(5, Number(e.data.retry_after_seconds) || 30);
+          setMsg('Antrean NexaBot penuh — menunggu ' + wait + 's lalu mencoba lagi…');
+          await sleep(wait * 1000);
+          continue;
+        }
+        throw e;
+      }
+    }
+    throw new Error('Antrean NexaBot tetap penuh — coba beberapa saat lagi.');
+  }
+
+  async function pollJob(path) {
+    var deadline = Date.now() + 20 * 60 * 1000, streak = 0, last = '';
+    while (Date.now() < deadline) {
+      await sleep(3000);
+      try {
+        var d = await api(path);
+        var job = d.job || d;
+        var st = String(job.status || '').toLowerCase();
+        if (job.progress && job.progress !== last) { last = job.progress; setMsg('Proses: ' + job.progress); }
+        if (/^(done|completed|success|succeeded)$/.test(st)) return d;
+        if (/^(failed|error|cancelled|canceled)$/.test(st)) throw new Error(job.error || 'Job NexaBot gagal');
+        streak = 0;
+      } catch (e) {
+        if (e.status && e.status >= 400 && e.status < 500 && e.status !== 408 && e.status !== 429) throw e;
+        if (++streak >= 10) throw new Error('NexaBot tidak merespons selama polling — cek status job di nexabot.id.');
+      }
+    }
+    throw new Error('Menunggu hasil NexaBot melebihi 20 menit — cek status job di nexabot.id.');
+  }
+
+  function showResult(kind, url) {
+    out.textContent = '';
+    var cfg = KINDS[kind];
+    var media;
+    if (cfg.render === 'audio') { media = el('audio'); media.controls = true; media.src = url; }
+    else if (cfg.render === 'video') { media = el('video'); media.controls = true; media.playsInline = true; media.src = url; }
+    else { media = el('img'); media.alt = 'Hasil gambar AI'; media.src = url; }
+    out.appendChild(media);
+    var acts = el('div', 'acts');
+    var open = el('a', null, 'Buka file'); open.href = url; open.target = '_blank'; open.rel = 'noopener noreferrer';
+    var copy = el('button', null, 'Salin URL'); copy.type = 'button';
+    copy.addEventListener('click', function () {
+      try { navigator.clipboard.writeText(url).then(function () { setMsg('URL disalin.', 'ok'); }); } catch (e) { setMsg('Gagal menyalin URL.', 'err'); }
+    });
+    acts.appendChild(open); acts.appendChild(copy);
+    out.appendChild(acts);
+    out.appendChild(el('div', 'note', cfg.render === 'img' || cfg.render === 'video'
+      ? 'Unduh file ini, lalu unggah lewat tab "Aset" di Studio untuk dipakai sebagai b-roll / klip.'
+      : 'File audio berdiri sendiri: Studio hanya menerima unggahan video/gambar, jadi musik & voice-over ini dipakai di luar editan Studio (unduh atau salin URL).'));
+    out.className = 'out show';
+  }
+
+  async function run(kind, prompt, voice, ratio, btnEl) {
+    if (busy) return;
+    if (!prompt) { setMsg('Isi prompt/naskah dulu.', 'err'); FORMS[kind].ta.focus(); return; }
+    if (!ls(TOKEN)) { setMsg('Belum login — buka ARKXMotion, login, lalu kembali ke Studio.', 'err'); return; }
+    var cfg = KINDS[kind];
+    busy = true; btnEl.disabled = true;
+    out.className = 'out';
+    var usageId = null, jobId = null;
+    try {
+      setMsg('Memotong tiket NexaBot…');
+      var charge = await api('/nexabot-wallet/deduct', { method: 'POST', body: JSON.stringify({ model: cfg.model }) });
+      usageId = charge.usage_id || null;
+      if (charge.deducted) setMsg('Saldo terpotong Rp ' + new Intl.NumberFormat('id-ID').format(charge.deducted) + '. Mengirim job…');
+      else setMsg(charge.unlimited ? 'Paket Unlimited — gratis. Mengirim job…' : 'Mengirim job…');
+
+      var sub = await submitWithQueue(cfg.submit, cfg.body(prompt, voice, ratio), usageId || '');
+      jobId = sub.job_id || sub.id;
+      if (!jobId) throw new Error(sub.error || 'NexaBot tidak memberi ID job.');
+      setMsg('Job dibuat (' + String(jobId).slice(0, 8) + '…) — menunggu hasil…');
+
+      await pollJob(cfg.status(jobId));
+      setMsg('Menyimpan hasil ke server ARKX…');
+      var saved = await api(cfg.save(jobId), { method: 'POST' });
+      if (!saved.ok || !saved.url) throw new Error(saved.error || 'Hasil gagal disimpan.');
+      setMsg('Selesai. Biaya tiket sekali generate.', 'ok');
+      showResult(kind, saved.url);
+      loadWallet();
+    } catch (e) {
+      // Tiket hanya dikembalikan bila job belum pernah terbentuk — setelah job
+      // ada, kredit upstream bisa saja sudah terpakai.
+      if (usageId && !jobId) {
+        try { await api('/nexabot-wallet/refund', { method: 'POST', body: JSON.stringify({ usage_id: usageId }) }); setMsg((e.message || 'Gagal') + ' — tiket dikembalikan.', 'err'); }
+        catch (e2) { setMsg((e.message || 'Gagal') + ' — tiket belum bisa dikembalikan, hubungi admin.', 'err'); }
+      } else {
+        setMsg(e.message || 'Generate gagal.', 'err');
+      }
+    } finally {
+      busy = false; btnEl.disabled = false;
+    }
+  }
+
+  function mount() { if (!document.body.contains(root)) document.body.appendChild(root); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
+  else mount();
+  window.__studioAssets = { open: function () { box.hidden = false; loadWallet(); } };
 })();
 </script>
 </body></html>

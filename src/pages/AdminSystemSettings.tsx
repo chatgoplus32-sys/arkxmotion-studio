@@ -664,6 +664,16 @@ export default function AdminSystemSettings() {
   const [mcSaving, setMcSaving] = useState(false)
   const [mcChecking, setMcChecking] = useState(false)
   const [mcCheck, setMcCheck] = useState<MasterCookieCheck | null>(null)
+  // AI ARKX AUTO Studio: kunci Gemini milik server + batas harian per member.
+  const [studioKeyStatus, setStudioKeyStatus] = useState<{
+    configured: boolean
+    source: 'database' | 'env' | 'none'
+    dailyCap: number
+  } | null>(null)
+  const [studioKeyInput, setStudioKeyInput] = useState('')
+  const [studioKeySaving, setStudioKeySaving] = useState(false)
+  const [studioCapInput, setStudioCapInput] = useState('')
+  const [studioCapSaving, setStudioCapSaving] = useState(false)
   const token = useAuthStore((state) => state.token)
   const addToast = useToastStore((state) => state.addToast)
 
@@ -781,6 +791,97 @@ export default function AdminSystemSettings() {
   }, [token])
 
   useEffect(() => { fetchMasterKeyStatus() }, [fetchMasterKeyStatus])
+
+  const fetchStudioKeyStatus = useCallback(async () => {
+    if (!token) return
+    try {
+      const res = await fetch('/api/admin/studio-ai/key', { headers: { Authorization: `Bearer ${token}` } })
+      if (!res.ok) return
+      const data = await res.json()
+      setStudioKeyStatus({
+        configured: !!data.configured,
+        source: data.source ?? 'none',
+        dailyCap: Number(data.dailyCap) || 0,
+      })
+      setStudioCapInput(String(Number(data.dailyCap) || ''))
+    } catch { /* biarkan status lama kalau request gagal */ }
+  }, [token])
+
+  useEffect(() => { fetchStudioKeyStatus() }, [fetchStudioKeyStatus])
+
+  const handleSaveStudioKey = async () => {
+    if (!token || !studioKeyInput.trim()) return
+    setStudioKeySaving(true)
+    try {
+      const res = await fetch('/api/admin/studio-ai/key', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ apiKey: studioKeyInput.trim() }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        addToast('Kunci Gemini untuk AI Studio disimpan', 'success')
+        setStudioKeyInput('')
+        await fetchStudioKeyStatus()
+      } else {
+        addToast(data.error || 'Gagal menyimpan kunci Gemini', 'error')
+      }
+    } catch {
+      addToast('Gagal menyimpan kunci Gemini', 'error')
+    } finally {
+      setStudioKeySaving(false)
+    }
+  }
+
+  const handleClearStudioKey = async () => {
+    if (!token) return
+    if (!window.confirm('Hapus kunci Gemini server? AI Studio kembali meminta API key Gemini milik member masing-masing.')) return
+    setStudioKeySaving(true)
+    try {
+      const res = await fetch('/api/admin/studio-ai/key', {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json()
+      if (res.ok) {
+        addToast('Kunci Gemini server dihapus', 'success')
+        await fetchStudioKeyStatus()
+      } else {
+        addToast(data.error || 'Gagal menghapus kunci Gemini', 'error')
+      }
+    } catch {
+      addToast('Gagal menghapus kunci Gemini', 'error')
+    } finally {
+      setStudioKeySaving(false)
+    }
+  }
+
+  const handleSaveStudioCap = async () => {
+    if (!token) return
+    const cap = Number(studioCapInput)
+    if (!Number.isFinite(cap) || cap < 1) {
+      addToast('Batas harian harus angka minimal 1', 'error')
+      return
+    }
+    setStudioCapSaving(true)
+    try {
+      const res = await fetch('/api/admin/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ settings: { studio_ai_daily_cap: String(Math.floor(cap)) } }),
+      })
+      if (res.ok) {
+        addToast(`Batas harian AI Studio disetel ke ${Math.floor(cap)} panggilan`, 'success')
+        await fetchStudioKeyStatus()
+      } else {
+        addToast('Gagal menyimpan batas harian', 'error')
+      }
+    } catch {
+      addToast('Gagal menyimpan batas harian', 'error')
+    } finally {
+      setStudioCapSaving(false)
+    }
+  }
 
   const handleCheckMasterKey = async () => {
     if (!token) return
@@ -1340,6 +1441,80 @@ export default function AdminSystemSettings() {
               Urutan yang dipakai server: kunci dashboard → <code>NEXABOT_MASTER_API_KEY</code> di .env →
               tidak tersedia. Batas harian dan mode tetap diatur lewat env
               (<code>NEXABOT_MASTER_KEY_MODE</code>, <code>NEXABOT_MASTER_DAILY_CAP</code>).
+            </div>
+          </div>
+        </Section>
+
+        {/* AI ARKX AUTO Studio (Gemini) */}
+        <Section
+          title="AI ARKX AUTO Studio (Gemini)"
+          sub="Kunci Gemini milik server untuk transkripsi, caption, dan voice-over di /studio — member Pro tidak perlu API key sendiri"
+        >
+          <div className="rounded-xl border border-border bg-card/40 p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium">Status kunci:</span>
+              {studioKeyStatus?.configured ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-0.5 text-[11px] text-emerald-400">
+                  <CheckCircle className="h-3 w-3" />
+                  Aktif — {studioKeyStatus.source === 'database' ? 'dari dashboard' : 'dari .env'}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 px-2.5 py-0.5 text-[11px] text-amber-400">
+                  <AlertTriangle className="h-3 w-3" />
+                  Belum diatur — AI Studio hanya jalan dengan API key Gemini milik member
+                </span>
+              )}
+            </div>
+
+            <p className="mt-2 text-[12px] text-muted-foreground leading-relaxed">
+              Relay <code>/api/public/studio-ai</code> memakai kunci ini untuk member <b>Pro / Unlimited</b>
+              (admin bebas). Nilainya disimpan di database, tidak pernah ditampilkan lagi, dan tidak pernah
+              dikirim ke browser. Member yang sudah punya API key sendiri tetap memakai kuncinya.
+            </p>
+
+            <div className="mt-3 flex flex-col sm:flex-row gap-2">
+              <input
+                type="password"
+                value={studioKeyInput}
+                onChange={e => setStudioKeyInput(e.target.value)}
+                placeholder="Tempel API key Gemini (AIza... atau AQ.…)"
+                autoComplete="off"
+                className="flex-1 px-3 py-2 rounded-lg border border-border bg-card text-sm font-mono"
+              />
+              <Button size="sm" onClick={handleSaveStudioKey} disabled={studioKeySaving || !studioKeyInput.trim()}>
+                <KeyRound className={`h-4 w-4 mr-2 ${studioKeySaving ? 'animate-pulse' : ''}`} />
+                {studioKeySaving ? 'Menyimpan...' : 'Simpan Kunci'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleClearStudioKey}
+                disabled={studioKeySaving || !studioKeyStatus?.configured || studioKeyStatus?.source === 'env'}
+                title={studioKeyStatus?.source === 'env' ? 'Kunci berasal dari .env — hapus variabelnya di server' : undefined}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Hapus
+              </Button>
+            </div>
+
+            <div className="mt-4 flex flex-col sm:flex-row sm:items-end gap-2">
+              <div className="flex-1">
+                <label className="block text-[11px] font-medium mb-1">Batas panggilan AI per member per hari</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={studioCapInput}
+                  onChange={e => setStudioCapInput(e.target.value)}
+                  className="w-full sm:w-40 px-3 py-2 rounded-lg border border-border bg-card text-sm"
+                />
+              </div>
+              <Button size="sm" variant="outline" onClick={handleSaveStudioCap} disabled={studioCapSaving}>
+                {studioCapSaving ? 'Menyimpan...' : 'Simpan Batas'}
+              </Button>
+            </div>
+            <div className="mt-2 text-[11px] text-muted-foreground leading-relaxed">
+              Satu panggilan = satu transkripsi/plan/voice-over. Lewat batas ini relay menjawab 429 dan
+              Studio beralih menampilkan pesan kuota, bukan error jaringan.
             </div>
           </div>
         </Section>

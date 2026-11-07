@@ -7,6 +7,7 @@ export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [sent, setSent] = useState(false)
+  const [emailSent, setEmailSent] = useState(true)
   const [devLink, setDevLink] = useState<string | null>(null)
   const [error, setError] = useState('')
   const addToast = useToastStore((state) => state.addToast)
@@ -26,9 +27,16 @@ export default function ForgotPasswordPage() {
         setError(data.error || 'Gagal mengirim link reset')
         return
       }
+      const delivered = data.sent !== false
       setSent(true)
+      setEmailSent(delivered)
       setDevLink(data.devResetLink || null)
-      addToast('Link reset dikirim ke email kamu (jika email terdaftar)', 'success')
+      addToast(
+        delivered
+          ? 'Link reset dikirim ke email kamu (jika email terdaftar)'
+          : 'Email belum terkirim — buka link reset yang tampil di layar',
+        delivered ? 'success' : 'warning'
+      )
     } catch {
       setError('Network error. Please try again.')
     } finally {
@@ -78,16 +86,28 @@ export default function ForgotPasswordPage() {
         <div className="relative flex items-center justify-center p-4 sm:p-8" style={{ background: 'radial-gradient(800px 500px at 70% 20%, rgba(0,168,255,0.12), transparent 60%), #050816' }}>
           <div className="w-full max-w-[400px] rounded-[24px] border border-cyan-400/15 bg-[#0B1526]/80 p-6 text-center shadow-[0_0_60px_rgba(0,168,255,0.12)] backdrop-blur-xl sm:p-8 sm:text-left">
             <div className="flex flex-col items-center">
-              <div className="mb-4 grid h-16 w-16 place-items-center rounded-full border border-emerald-400/30 bg-emerald-500/10 shadow-[0_0_30px_rgba(34,197,94,0.25)]"><CheckCircle2 className="h-8 w-8 text-emerald-400" /></div>
-              <h2 className="text-[22px] font-black italic tracking-tight">Link Reset <span className="bg-gradient-to-r from-emerald-400 to-cyan-300 bg-clip-text text-transparent">Dikirim!</span></h2>
-              <p className="mt-2 text-[13px] leading-relaxed text-white/60">Jika email <b className="text-white">{email}</b> terdaftar, kami sudah mengirim link reset password. Link berlaku 15 menit.</p>
-              <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left text-[11px] leading-relaxed text-white/50">
-                <Sparkles className="mr-1.5 inline h-3.5 w-3.5 text-cyan-300" /> Tips: cek folder Spam / Promotions kalau tidak muncul di inbox dalam 1 menit.
+              <div className={`mb-4 grid h-16 w-16 place-items-center rounded-full border ${emailSent ? 'border-emerald-400/30 bg-emerald-500/10 shadow-[0_0_30px_rgba(34,197,94,0.25)]' : 'border-amber-400/30 bg-amber-500/10 shadow-[0_0_30px_rgba(245,158,11,0.25)]'}`}>
+                {emailSent ? <CheckCircle2 className="h-8 w-8 text-emerald-400" /> : <AlertCircle className="h-8 w-8 text-amber-400" />}
               </div>
+              {emailSent ? (
+                <>
+                  <h2 className="text-[22px] font-black italic tracking-tight">Link Reset <span className="bg-gradient-to-r from-emerald-400 to-cyan-300 bg-clip-text text-transparent">Dikirim!</span></h2>
+                  <p className="mt-2 text-[13px] leading-relaxed text-white/60">Jika email <b className="text-white">{email}</b> terdaftar, kami sudah mengirim link reset password. Link berlaku 15 menit.</p>
+                  <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left text-[11px] leading-relaxed text-white/50">
+                    <Sparkles className="mr-1.5 inline h-3.5 w-3.5 text-cyan-300" /> Tips: cek folder Spam / Promotions kalau tidak muncul di inbox dalam 1 menit.
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h2 className="text-[22px] font-black italic tracking-tight">Email <span className="bg-gradient-to-r from-amber-400 to-orange-300 bg-clip-text text-transparent">Belum Terkirim</span></h2>
+                  <p className="mt-2 text-[13px] leading-relaxed text-white/60">Server email belum bisa mengirim ke <b className="text-white">{email}</b>. {devLink ? 'Untuk sementara, buka link reset langsung di bawah ini.' : 'Coba lagi beberapa saat lagi atau hubungi admin.'}</p>
+                  <button type="button" onClick={() => { setSent(false); setDevLink(null) }} className="mt-3 text-xs font-semibold text-cyan-300 hover:text-cyan-200">Coba kirim ulang</button>
+                </>
+              )}
 
               {devLink && (
                 <div className="mt-4 w-full rounded-xl border border-amber-400/25 bg-amber-500/10 p-3 text-left">
-                  <p className="mb-1.5 text-xs text-amber-200/80">Mode dev — SMTP belum dikonfigurasi, buka link berikut:</p>
+                  <p className="mb-1.5 text-xs text-amber-200/80">Link reset (mode pengembangan):</p>
                   <a href={devLink} className="break-all text-xs text-cyan-300 hover:underline">{devLink}</a>
                 </div>
               )}

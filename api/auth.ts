@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import crypto from 'crypto'
 import { neon } from '@neondatabase/serverless'
-import { sendEmail, appUrl } from './mailer.js'
+import { sendEmail, appUrl, allowDevMailLink } from './mailer.js'
 
 function getSql() {
   const url = process.env.DATABASE_URL
@@ -304,7 +304,7 @@ async function handleRegister(req: VercelRequest, res: VercelResponse) {
     return res.status(201).json({
       message: 'Registration successful. Please check your email to verify, then wait for admin approval.',
       needsApproval: true,
-      devVerifyLink,
+      ...(devVerifyLink && allowDevMailLink() ? { devVerifyLink } : {}),
       paymentToken,
       user: { id: user.id, email: user.email, name: user.name, role: user.role, approved: !!user.approved }
     })
@@ -569,7 +569,11 @@ async function handleForgotPassword(req: VercelRequest, res: VercelResponse) {
       html: `<p>Halo <b>${user.name}</b>,</p><p>Klik tombol di bawah untuk mereset password kamu:</p><p><a href="${link}" style="background:#E5A93B;color:#000;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600">Reset Password</a></p><p>Atau buka link ini: <a href="${link}">${link}</a></p><p>Link berlaku 15 menit.</p>`,
     })
 
-    return res.status(200).json({ ok: true, devResetLink: sent ? null : link })
+    return res.status(200).json({
+      ok: true,
+      sent,
+      ...(!sent && allowDevMailLink() ? { devResetLink: link } : {}),
+    })
   } catch (err: any) {
     console.error('Forgot password error:', err)
     return res.status(500).json({ error: 'Internal server error' })

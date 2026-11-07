@@ -547,6 +547,23 @@ db.exec('CREATE INDEX IF NOT EXISTS idx_nxb_usage_source ON nexabot_upstream_usa
 db.exec('CREATE INDEX IF NOT EXISTS idx_nxb_usage_user ON nexabot_upstream_usage(user_id, created_at)')
 db.exec('CREATE INDEX IF NOT EXISTS idx_nxb_usage_created ON nexabot_upstream_usage(created_at)')
 
+// ── Pemakaian AI ARKX AUTO Studio (kunci Gemini milik server) ─────────
+// Studio memanggil relay ini untuk transkripsi/plan/TTS. Biaya upstream
+// ditanggung operator, jadi tiap panggilan dicatat untuk batas harian per
+// member (app_settings 'studio_ai_daily_cap').
+db.exec(`
+  CREATE TABLE IF NOT EXISTS studio_ai_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    model TEXT NOT NULL DEFAULT '',
+    method TEXT NOT NULL DEFAULT '',
+    status INTEGER NOT NULL DEFAULT 0,
+    ms INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  )
+`)
+db.exec('CREATE INDEX IF NOT EXISTS idx_studio_ai_usage_day ON studio_ai_usage(user_id, created_at)')
+
 // ── Antrean credential dari extension (sync-tokens) ───────────────────
 // Dulu antrean ini hanya hidup di memori proses. Setiap deploy me-restart
 // server, dan cookie sesi nexabot yang baru dikirim extension tapi belum sempat

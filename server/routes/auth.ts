@@ -5,7 +5,7 @@ import crypto from 'crypto'
 import { z } from 'zod'
 import db from '../db.js'
 import { authenticateToken, AuthRequest } from '../middleware/auth.js'
-import { sendEmail, appUrl } from '../mailer.js'
+import { sendEmail, appUrl, allowDevMailLink } from '../mailer.js'
 
 const RegisterSchema = z.object({ email: z.string().email().max(254), password: z.string().min(8).max(128), name: z.string().min(1).max(80).trim() })
 const LoginSchema = z.object({ email: z.string().email().max(254), password: z.string().min(1).max(128) })
@@ -65,8 +65,8 @@ export async function sendVerificationEmail(user: { id: number; email: string; n
   return sent ? null : link
 }
 
-/** Kirim email reset password; kembalikan link bila email tidak terkirim (mode dev). */
-async function sendResetEmail(user: UserRow): Promise<string | null> {
+/** Kirim email reset password; kembalikan status kirim + link (link hanya untuk mode dev). */
+async function sendResetEmail(user: UserRow): Promise<{ sent: boolean; devLink: string | null }> {
   const token = generateToken()
   const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString() // 15 menit
   db.prepare(
@@ -80,7 +80,12 @@ async function sendResetEmail(user: UserRow): Promise<string | null> {
     text: `Halo ${user.name},\n\nKlik link berikut untuk mereset password kamu:\n${link}\n\nLink berlaku 15 menit.\n— ARKXMotion Studio`,
     html: `<p>Halo <b>${user.name}</b>,</p><p>Klik tombol di bawah untuk mereset password kamu:</p><p><a href="${link}" style="background:#E5A93B;color:#000;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600">Reset Password</a></p><p>Atau buka link ini: <a href="${link}">${link}</a></p><p>Link berlaku 15 menit.</p>`,
   })
-  return sent ? null : link
+  return { sent, devLink: sent ? null : link }
+}
+
+/** Link dev hanya boleh keluar di lingkungan lokal (lihat allowDevMailLink). */
+function devLinkOrNull(link: string | null): string | null {
+  return link && allowDevMailLink() ? link : null
 }
 
 const REGISTER_LIMIT_PER_HOUR = 5
@@ -355,14 +360,18 @@ router.post('/forgot-password', async (req, res: Response) => {
     // Respons selalu sama agar email tidak bisa "ditebak" ada/tidak
     if (!user) return res.json({ ok: true })
 
+    let sent = false
     let devLink: string | null = null
     try {
-      devLink = await sendResetEmail(user)
+      const result = await sendResetEmail(user)
+      sent = result.sent
+      devLink = result.devLink
     } catch (err: any) {
       console.error('Send reset email error:', err.message)
     }
 
-    res.json({ ok: true, devResetLink: devLink })
+    const exposedDevLink = devLinkOrNull(devLink)
+    res.json({ ok: true, sent, ...(exposedDevLink ? { devResetLink: exposedDevLink } : {}) })
   } catch (error) {
     console.error('Forgot password error:', error)
     res.status(500).json({ error: 'Internal server error' })

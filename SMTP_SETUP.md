@@ -141,10 +141,14 @@ Kalau belum dikonfigurasi:
    Email dikirim oleh `server/mailer.ts` lewat route Express — bukan `api/*.ts`,
    yang merupakan stack Vercel lama dan tidak dijalankan di VPS.
 
-> Per kondisi terakhir diperiksa (28 Sep 2026), `.env` produksi belum memuat
-> kunci `SMTP_*` sama sekali, jadi email masih jatuh ke mode dev (isi email
-> hanya dicatat ke console). Kalau email sungguhan diinginkan, langkah 1 belum
-> pernah dijalankan.
+> Diperiksa ulang 7 Nov 2026: `SMTP_USER` dan `SMTP_PASS` di `.env` produksi
+> masih kosong, jadi email masih jatuh ke mode dev (isi email hanya dicatat ke
+> console). Isi kedua kunci itu, lalu `pm2 restart arkxmotion --update-env`.
+>
+> Sejak gerbang `allowDevMailLink()` dipasang, link reset TIDAK lagi dikirim
+> lewat respons API di domain publik — jadi konfigurasi SMTP adalah satu-satunya
+> cara link sampai ke pengguna. Jangan deploy perubahan itu sebelum `SMTP_*`
+> terisi, atau pengguna tidak akan menerima link sama sekali.
 
 ---
 

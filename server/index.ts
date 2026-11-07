@@ -24,6 +24,7 @@ import membershipRoutes from './routes/membership.js'
 import cronRoutes from './routes/cron.js'
 import syncTokensRoutes from './routes/syncTokens.js'
 import nexabotRoutes from './routes/nexabot.js'
+import studioAiRoutes from './routes/studioAi.js'
 import nexabotWalletRoutes from './routes/nexabotWallet.js'
 import seaviWalletRoutes from './routes/seaviWallet.js'
 import publicPricingRoutes from './routes/publicPricing.js'
@@ -125,6 +126,7 @@ app.use('/api/membership', membershipRoutes)
 app.use('/api/cron', cronRoutes)
 app.use('/api/sync-tokens', syncTokensRoutes)
 app.use('/api/public/nexabot', nexabotRoutes)
+app.use('/api/public/studio-ai', studioAiRoutes)
 app.use('/api/public/pricing', publicPricingRoutes)
 app.use('/api/public/createpulse', publicCreatepulseRoutes)
 app.use('/api/public/maintenance', publicMaintenanceRoutes)

@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs'
 import db from '../db.js'
 import { authenticateToken, requireAdmin, AuthRequest } from '../middleware/auth.js'
 import { sendVerificationEmail } from './auth.js'
+import { allowDevMailLink } from '../mailer.js'
 import {
   getMembershipFee,
   setMembershipFee,
@@ -20,6 +21,7 @@ import {
   looksLikeSessionCookie,
   masterKeyStatus,
 } from '../lib/nexabotMasterKey.js'
+import { STUDIO_KEY_SETTING, studioDailyCap } from '../lib/studioAi.js'
 import {
   MASTER_COOKIE_SETTING,
   checkMasterCookie,
@@ -833,7 +835,11 @@ router.post('/users/:id/resend-verification', authenticateToken, requireAdmin, a
     }
 
     const devVerifyLink = await sendVerificationEmail(user)
-    res.json({ ok: true, message: `Link verifikasi dikirim ke ${user.email}`, devVerifyLink })
+    res.json({
+      ok: true,
+      message: `Link verifikasi dikirim ke ${user.email}`,
+      ...(devVerifyLink && allowDevMailLink() ? { devVerifyLink } : {}),
+    })
   } catch (error) {
     console.error('Resend verification error:', error)
     res.status(500).json({ error: 'Internal server error' })
@@ -1270,6 +1276,56 @@ router.get('/credits/export', authenticateToken, requireAdmin, (_req: AuthReques
   }
 })
 
+// ─── AI Studio (Gemini) ────────────────────────────────────────────
+// Kunci ini dipakai relay /api/public/studio-ai, jadi nilainya hanya
+// dilaporkan sebagai status — sama seperti kunci induk provider lain.
+router.get('/studio-ai/key', authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
+  try {
+    const row = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(STUDIO_KEY_SETTING) as
+      | { value: string }
+      | undefined
+    const stored = (row?.value || '').trim()
+    const fromEnv = (process.env.GEMINI_API_KEY || '').trim()
+    res.json({
+      configured: !!(stored || fromEnv),
+      source: stored ? 'database' : fromEnv ? 'env' : 'none',
+      dailyCap: studioDailyCap(),
+    })
+  } catch (err: any) {
+    console.error('[studio-ai-key] error:', err.message)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.put('/studio-ai/key', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
+  try {
+    const apiKey = String((req.body as any)?.apiKey || '').trim()
+    if (!apiKey) return res.status(400).json({ error: 'API key Gemini wajib diisi' })
+    if (apiKey.length < 20) {
+      return res.status(400).json({ error: 'API key Gemini terlalu pendek — tempel kunci utuh dari Google AI Studio' })
+    }
+    db.prepare(
+      `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
+    ).run(STUDIO_KEY_SETTING, apiKey)
+    res.json({ ok: true, configured: true })
+  } catch (err: any) {
+    console.error('[studio-ai-key] save error:', err.message)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.delete('/studio-ai/key', authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
+  try {
+    db.prepare('DELETE FROM app_settings WHERE key = ?').run(STUDIO_KEY_SETTING)
+    const fromEnv = (process.env.GEMINI_API_KEY || '').trim()
+    res.json({ ok: true, configured: !!fromEnv, source: fromEnv ? 'env' : 'none' })
+  } catch (err: any) {
+    console.error('[studio-ai-key] clear error:', err.message)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
 // ─── System Settings ───────────────────────────────────────────────
 
 // GET /api/admin/settings — list all settings
@@ -1282,6 +1338,7 @@ router.get('/settings', authenticateToken, requireAdmin, (_req: AuthRequest, res
       // mengembalikan status. Jangan pernah bocorkan nilainya lewat daftar
       // pengaturan umum.
       if (r.key === MASTER_KEY_SETTING || r.key === MASTER_COOKIE_SETTING || r.key === ACCOUNTS_SETTING) return
+      if (r.key === STUDIO_KEY_SETTING) return
       if (PROVIDER_MASTER_SETTING_KEYS.includes(r.key)) return
       settings[r.key] = r.value
     })
@@ -1314,6 +1371,7 @@ router.put('/settings', authenticateToken, requireAdmin, (req: AuthRequest, res:
         // induk, supaya nilainya tidak bisa diselipkan lewat formulir
         // pengaturan umum.
         if (key === MASTER_KEY_SETTING || key === MASTER_COOKIE_SETTING || key === ACCOUNTS_SETTING) continue
+        if (key === STUDIO_KEY_SETTING) continue
         if (PROVIDER_MASTER_SETTING_KEYS.includes(key)) continue
         upsert.run(key, String(value))
       }

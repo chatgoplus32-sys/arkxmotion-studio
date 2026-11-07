@@ -175,6 +175,42 @@ for f in ['tsconfig.json', 'vite.config.ts']:
     except Exception as e:
         print(f'  ⚠ {f}: {e}')
 
+# ── Sinkronkan kunci Gemini Studio ke .env VPS ────────────────────────
+# Relay AI Studio membaca GEMINI_API_KEY dari .env server. Deploy mengunggah
+# kode, bukan .env, jadi tanpa langkah ini kunci yang sudah diuji di lokal
+# tertinggal dan Studio menjawab 503 di produksi. Hanya baris ini yang
+# ditambahkan bila belum ada: isi .env lain tidak disentuh, dan nilainya tidak
+# pernah dicetak.
+def _sync_gemini_key():
+    local_env = os.path.join(LOCAL_DIR, '.env')
+    if not os.path.isfile(local_env):
+        return
+    nilai = ''
+    with open(local_env, encoding='utf-8', errors='replace') as fh:
+        for baris in fh:
+            if baris.startswith('GEMINI_API_KEY='):
+                nilai = baris.split('=', 1)[1].strip()
+    if not nilai:
+        return
+    remote_env = REMOTE_DIR + '/.env'
+    try:
+        with sftp.open(remote_env, 'r') as fh:
+            konten = fh.read().decode('utf-8', errors='replace')
+    except FileNotFoundError:
+        konten = ''
+    if any(b.startswith('GEMINI_API_KEY=') for b in konten.splitlines()):
+        print('  ✓ GEMINI_API_KEY sudah ada di .env VPS (tidak diubah)')
+        return
+    with sftp.open(remote_env, 'a') as fh:
+        fh.write(('\n' if konten and not konten.endswith('\n') else '') + 'GEMINI_API_KEY=' + nilai + '\n')
+    print('  ✓ GEMINI_API_KEY ditambahkan ke .env VPS')
+
+
+try:
+    _sync_gemini_key()
+except Exception as exc:
+    print('  ⚠ Sinkronisasi GEMINI_API_KEY dilewati: %s' % exc)
+
 sftp.close()
 print('\n✅ Files uploaded!')
 

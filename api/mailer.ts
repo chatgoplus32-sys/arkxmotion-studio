@@ -54,3 +54,20 @@ export async function sendEmail(opts: {
 export function appUrl(): string {
   return process.env.APP_URL || 'http://localhost:5173'
 }
+
+/**
+ * Bolehkah link verifikasi/reset dikembalikan di respons API?
+ *
+ * Hanya untuk pengembangan lokal. Di produksi link TIDAK boleh ikut respons:
+ * saat SMTP gagal, siapa pun yang menebak email terdaftar bisa meminta link
+ * reset dan langsung mengambil alih akun.
+ *
+ * Override sadar: MAIL_DEV_LINK=1 (paksa tampilkan) / MAIL_DEV_LINK=0 (matikan).
+ */
+export function allowDevMailLink(): boolean {
+  const flag = process.env.MAIL_DEV_LINK
+  if (flag === '1') return true
+  if (flag === '0') return false
+  if (process.env.NODE_ENV === 'production') return false
+  return /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/i.test(appUrl())
+}
