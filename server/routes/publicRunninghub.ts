@@ -349,6 +349,137 @@ function rhResolveCredential(clientKey: string): { token: string; source: 'user-
   return { token: clientKey, source: 'user-key' }
 }
 
+// ── Jalur khusus access token (JWT) ───────────────────────────────────────
+// Endpoint OpenAPI RunningHub (/openapi/v2/*) hanya menerima API key asli;
+// JWT ditolak dengan "ApiKey verification failed: API Key不存在". Untuk sesi
+// JWT kita memakai dua jalur resmi milik situsnya:
+//   * upload media  → POST /upload/image memakai accessKey dari
+//                     /api/instance/access/auth (dicoba & terbukti jalan);
+//   * submit/query   → POST /api/playground/openapi/v2/*?apiKeyId=<id key
+//                     milik akun> — server RunningHub yang menerjemahkan
+//                     apiKeyId menjadi key asli.
+function rhIsJwt(token: string): boolean {
+  return rhJwtExp(token) !== null && !rhJwtExpired(token)
+}
+
+const RH_PLAYGROUND_PREFIX = '/api/playground/openapi/v2'
+const RH_KEY_ID_CACHE_MS = 10 * 60 * 1000
+let rhKeyIdCache: { value: string; at: number } | null = null
+
+/** Ambil apiKeyId milik akun dari sesi JWT (di-cache 10 menit). */
+async function rhResolveApiKeyId(jwt: string): Promise<string> {
+  if (rhKeyIdCache && Date.now() - rhKeyIdCache.at < RH_KEY_ID_CACHE_MS) {
+    return rhKeyIdCache.value
+  }
+
+  const apiRes = await fetch(`${RUNNINGHUB_BASE}/api/key/list`, {
+    method: 'POST',
+    headers: rhAuthHeaders(jwt),
+    body: JSON.stringify({ type: 'SHARED' }),
+    signal: AbortSignal.timeout(20000),
+  })
+  const rawText = await apiRes.text()
+
+  let data: any = null
+  try { data = JSON.parse(rawText) } catch { data = null }
+  const list: any[] = Array.isArray(data?.data) ? data.data : []
+
+  // Key sistem-auto (isSystemAuto) ditolak gateway (1303) — pakai key milik akun.
+  const mine = list.find((k) => !k?.isSystemAuto && k?.apiKeyId && k?.key != null)
+  if (!mine) {
+    throw new Error('Tidak ada API key milik akun yang bisa dipakai access token: ' + rawText.slice(0, 200))
+  }
+
+  rhKeyIdCache = { value: String(mine.apiKeyId), at: Date.now() }
+  return rhKeyIdCache.value
+}
+
+/** Terjemahkan URL OpenAPI menjadi jalur playground bawaannya JWT. */
+async function rhUpstreamUrl(jwt: string, url: string): Promise<string> {
+  if (!rhIsJwt(jwt)) return url
+  const prefix = `${RUNNINGHUB_BASE}/openapi/v2`
+  if (!url.startsWith(prefix)) return url
+  const kid = await rhResolveApiKeyId(jwt)
+  const rest = url.slice(prefix.length)
+  const join = rest.includes('?') ? '&' : '?'
+  return `${RUNNINGHUB_BASE}${RH_PLAYGROUND_PREFIX}${rest}${join}apiKeyId=${kid}`
+}
+
+/** fetch yang otomatis menukar jalur OpenAPI → playground saat memakai JWT. */
+async function rhFetch(jwt: string, url: string, init?: RequestInit): Promise<Awaited<ReturnType<typeof fetch>>> {
+  return fetch(await rhUpstreamUrl(jwt, url), init)
+}
+
+/** Payload userId dari accessKey ComfyUI (base64 JSON). */
+function rhAccessKeyIdentities(accessKey: string): { identify: string } {
+  try {
+    const padded = String(accessKey).replace(/-/g, '+').replace(/_/g, '/')
+    const json = Buffer.from(padded + '='.repeat((4 - padded.length % 4) % 4), 'base64').toString('utf8')
+    const identify = JSON.parse(json)?.userId
+    if (identify) return { identify: String(identify) }
+  } catch { /* jatuh ke nilai bawah */ }
+  return { identify: '' }
+}
+
+/**
+ * Upload media lewat sesi situs RunningHub (jalur JWT).
+ * Mengembalikan fileName ComfyUI (hash.ext) — format yang sama dengan
+ * /openapi/v2/media/upload/binary sehingga nodeInfoList tidak perlu diubah.
+ */
+async function rhUploadViaSession(
+  jwt: string,
+  fileBase64: string,
+  fileName: string,
+  mimeType: string,
+): Promise<{ fileName: string; downloadUrl: string }> {
+  const authRes = await fetch(`${RUNNINGHUB_BASE}/api/instance/access/auth`, {
+    method: 'POST',
+    headers: rhAuthHeaders(jwt),
+    body: JSON.stringify({}),
+    signal: AbortSignal.timeout(30000),
+  })
+  const authRaw = await authRes.text()
+  let authData: any = null
+  try { authData = JSON.parse(authRaw) } catch { authData = null }
+  const accessKey = authData?.data?.accessKey
+  if (!accessKey) {
+    throw new Error('Gagal dapat accessKey ComfyUI: ' + authRaw.slice(0, 200))
+  }
+
+  const base64Data = fileBase64.includes(',') ? fileBase64.split(',')[1] : fileBase64
+  const binaryData = Buffer.from(base64Data, 'base64')
+
+  const formData = new FormData()
+  const blob = new Blob([binaryData], { type: mimeType || 'application/octet-stream' })
+  formData.append('image', blob, fileName || 'upload.bin')
+
+  const { identify } = rhAccessKeyIdentities(accessKey)
+  const apiRes = await fetch(`${RUNNINGHUB_BASE}/upload/image`, {
+    method: 'POST',
+    headers: { 'Rh-Comfy-Auth': accessKey, 'Rh-Identify': identify },
+    body: formData,
+    signal: AbortSignal.timeout(300000),
+  })
+
+  const rawText = await apiRes.text()
+  console.log(`[runninghub] upload (sesi) ${apiRes.status}:`, rawText.slice(0, 300))
+
+  let data: any
+  try { data = JSON.parse(rawText) } catch { data = { raw: rawText } }
+
+  if (!apiRes.ok) {
+    throw new Error(data.message || data.msg || `Upload failed: HTTP ${apiRes.status}`)
+  }
+
+  const name = data?.name || data?.data?.name || data?.fileName || data?.data?.fileName
+  if (!name) {
+    throw new Error('No fileName in upload response: ' + rawText.slice(0, 300))
+  }
+
+  const subfolder = String(data?.subfolder || data?.data?.subfolder || '').replace(/^\/+|\/+$/g, '')
+  return { fileName: subfolder ? `${subfolder}/${name}` : String(name), downloadUrl: '' }
+}
+
 router.all('/', async (req: Request, res: Response) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
@@ -474,6 +605,11 @@ router.all('/', async (req: Request, res: Response) => {
 })
 
 async function rhUpload(apiKey: string, fileBase64: string, fileName: string, mimeType: string): Promise<{ fileName: string; downloadUrl: string }> {
+  // Access token (JWT): endpoint OpenAPI menolak JWT, jadi upload lewat sesi situs.
+  if (rhIsJwt(apiKey)) {
+    return rhUploadViaSession(apiKey, fileBase64, fileName, mimeType)
+  }
+
   const base64Data = fileBase64.includes(',') ? fileBase64.split(',')[1] : fileBase64
   const binaryData = Buffer.from(base64Data, 'base64')
 
@@ -536,7 +672,7 @@ async function handleMotionControlV26Std(apiKey: string, params: any, res: Respo
   console.log(`[runninghub] POST ${endpoint}`)
   console.log(`[runninghub] body:`, JSON.stringify(body).slice(0, 1000))
 
-  const apiRes = await fetch(endpoint, {
+  const apiRes = await rhFetch(apiKey, endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -567,7 +703,7 @@ async function handleMotionControlV26Std(apiKey: string, params: any, res: Respo
   const taskId = data.taskId || data.data?.taskId || data.id || data.task_id
   if (!taskId) {
     console.error(`[runninghub] No taskId found in response:`, JSON.stringify(data))
-    return res.status(200).json({ ok: false, error: 'No taskId returned', raw: rawText, fullData: data })
+    return res.status(200).json({ ok: false, error: rhTaskErrorFrom(data) || 'No taskId returned', raw: rawText, fullData: data })
   }
 
   return res.status(200).json({
@@ -605,7 +741,7 @@ async function handleMotionControlV26Pro(apiKey: string, params: any, res: Respo
   console.log(`[runninghub] POST ${endpoint}`)
   console.log(`[runninghub] body:`, JSON.stringify(body).slice(0, 1000))
 
-  const apiRes = await fetch(endpoint, {
+  const apiRes = await rhFetch(apiKey, endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -636,7 +772,7 @@ async function handleMotionControlV26Pro(apiKey: string, params: any, res: Respo
   const taskId = data.taskId || data.data?.taskId || data.id || data.task_id
   if (!taskId) {
     console.error(`[runninghub] No taskId found in V2.6 Pro response:`, JSON.stringify(data))
-    return res.status(200).json({ ok: false, error: 'No taskId returned', raw: rawText, fullData: data })
+    return res.status(200).json({ ok: false, error: rhTaskErrorFrom(data) || 'No taskId returned', raw: rawText, fullData: data })
   }
 
   return res.status(200).json({
@@ -676,7 +812,7 @@ async function handleMotionControlV3(apiKey: string, params: any, res: Response)
   console.log(`[runninghub] POST ${endpoint}`)
   console.log(`[runninghub] body:`, JSON.stringify(body).slice(0, 1000))
 
-  const apiRes = await fetch(endpoint, {
+  const apiRes = await rhFetch(apiKey, endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -707,7 +843,7 @@ async function handleMotionControlV3(apiKey: string, params: any, res: Response)
   const taskId = data.taskId || data.data?.taskId || data.id || data.task_id
   if (!taskId) {
     console.error(`[runninghub] No taskId found in V3 response:`, JSON.stringify(data))
-    return res.status(200).json({ ok: false, error: 'No taskId returned', raw: rawText, fullData: data })
+    return res.status(200).json({ ok: false, error: rhTaskErrorFrom(data) || 'No taskId returned', raw: rawText, fullData: data })
   }
 
   return res.status(200).json({
@@ -732,6 +868,11 @@ async function handleGetWorkflowInfo(apiKey: string, workflowId: string, res: Re
 }
 
 async function fetchWorkflowNodes(apiKey: string, workflowId: string): Promise<any[]> {
+  // Discovery butuh API key asli; jalur playground tidak punya padanan
+  // getJsonApiFormat — pemanggil sudah punya daftar node bawaan sebagai cadangan.
+  if (rhIsJwt(apiKey)) {
+    throw new Error('Discovery node butuh API key asli (access token memakai daftar node bawaan)')
+  }
   const endpoints = [
     `${RUNNINGHUB_BASE}/api/openapi/getJsonApiFormat`,
     `${RUNNINGHUB_BASE}/openapi/getJsonApiFormat`,
@@ -739,7 +880,7 @@ async function fetchWorkflowNodes(apiKey: string, workflowId: string): Promise<a
   let lastErr = ''
   for (const endpoint of endpoints) {
     try {
-      const apiRes = await fetch(endpoint, {
+      const apiRes = await rhFetch(apiKey, endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
         body: JSON.stringify({ apiKey, workflowId }),
@@ -983,7 +1124,7 @@ async function handleMotionControlUltraHD(apiKey: string, params: any, res: Resp
     console.log(`[runninghub] POST ${endpoint} (ultra-hd attempt ${attempt}/${MAX_RETRIES})`)
     console.log(`[runninghub] body:`, JSON.stringify(body).slice(0, 1000))
 
-    const apiRes = await fetch(endpoint, {
+    const apiRes = await rhFetch(apiKey, endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1022,7 +1163,7 @@ async function handleMotionControlUltraHD(apiKey: string, params: any, res: Resp
     const taskId = data.data?.taskId || data.taskId || data.id || data.task_id
     if (!taskId) {
       console.error(`[runninghub] No taskId found (ultra-hd):`, JSON.stringify(data).slice(0, 500))
-      return res.status(200).json({ ok: false, error: 'No taskId returned', raw: lastRawText.slice(0, 500) })
+      return res.status(200).json({ ok: false, error: rhTaskErrorFrom(data) || 'No taskId returned', raw: lastRawText.slice(0, 500) })
     }
 
     const netWssUrl = data.data?.netWssUrl
@@ -1148,7 +1289,7 @@ async function handleMotionAppWorkflow(apiKey: string, params: any, res: Respons
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     console.log(`[runninghub] POST ${endpoint} (${cfg.label} attempt ${attempt}/${MAX_RETRIES})`)
 
-    const apiRes = await fetch(endpoint, {
+    const apiRes = await rhFetch(apiKey, endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1187,7 +1328,7 @@ async function handleMotionAppWorkflow(apiKey: string, params: any, res: Respons
     const taskId = data.data?.taskId || data.taskId || data.id || data.task_id
     if (!taskId) {
       console.error(`[runninghub] No taskId found (${cfg.label}):`, JSON.stringify(data).slice(0, 500))
-      return res.status(200).json({ ok: false, error: 'No taskId returned', raw: lastRawText.slice(0, 500) })
+      return res.status(200).json({ ok: false, error: rhTaskErrorFrom(data) || 'No taskId returned', raw: lastRawText.slice(0, 500) })
     }
 
     const netWssUrl = data.data?.netWssUrl
@@ -1275,7 +1416,7 @@ async function handleSubmitTryOn(apiKey: string, params: any, res: Response) {
     console.log(`[runninghub] POST ${endpoint} (tryon attempt ${attempt}/${MAX_RETRIES})`)
     console.log(`[runninghub] body:`, JSON.stringify(body).slice(0, 1000))
 
-    const apiRes = await fetch(endpoint, {
+    const apiRes = await rhFetch(apiKey, endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1314,7 +1455,7 @@ async function handleSubmitTryOn(apiKey: string, params: any, res: Response) {
     const taskId = data.data?.taskId || data.taskId || data.id || data.task_id
     if (!taskId) {
       console.error(`[runninghub] No taskId found (tryon):`, JSON.stringify(data).slice(0, 500))
-      return res.status(200).json({ ok: false, error: 'No taskId returned', raw: lastRawText.slice(0, 500) })
+      return res.status(200).json({ ok: false, error: rhTaskErrorFrom(data) || 'No taskId returned', raw: lastRawText.slice(0, 500) })
     }
 
     return res.status(200).json({
@@ -1392,7 +1533,7 @@ async function handleSubmitTryOnFlux2(apiKey: string, params: any, res: Response
     console.log(`[runninghub] POST ${endpoint} (tryon-flux2 attempt ${attempt}/${MAX_RETRIES})`)
     console.log(`[runninghub] body:`, JSON.stringify(body).slice(0, 1000))
 
-    const apiRes = await fetch(endpoint, {
+    const apiRes = await rhFetch(apiKey, endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1431,7 +1572,7 @@ async function handleSubmitTryOnFlux2(apiKey: string, params: any, res: Response
     const taskId = data.data?.taskId || data.taskId || data.id || data.task_id
     if (!taskId) {
       console.error(`[runninghub] No taskId found (tryon-flux2):`, JSON.stringify(data).slice(0, 500))
-      return res.status(200).json({ ok: false, error: 'No taskId returned', raw: lastRawText.slice(0, 500) })
+      return res.status(200).json({ ok: false, error: rhTaskErrorFrom(data) || 'No taskId returned', raw: lastRawText.slice(0, 500) })
     }
 
     return res.status(200).json({
@@ -1509,7 +1650,7 @@ async function handleSubmitAudioAvatar(apiKey: string, params: any, res: Respons
     console.log(`[runninghub] POST ${endpoint} (audio-avatar attempt ${attempt}/${MAX_RETRIES})`)
     console.log(`[runninghub] body:`, JSON.stringify(body).slice(0, 1000))
 
-    const apiRes = await fetch(endpoint, {
+    const apiRes = await rhFetch(apiKey, endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1548,7 +1689,7 @@ async function handleSubmitAudioAvatar(apiKey: string, params: any, res: Respons
     const taskId = data.data?.taskId || data.taskId || data.id || data.task_id
     if (!taskId) {
       console.error(`[runninghub] No taskId found (audio-avatar):`, JSON.stringify(data).slice(0, 500))
-      return res.status(200).json({ ok: false, error: 'No taskId returned', raw: lastRawText.slice(0, 500) })
+      return res.status(200).json({ ok: false, error: rhTaskErrorFrom(data) || 'No taskId returned', raw: lastRawText.slice(0, 500) })
     }
 
     return res.status(200).json({
@@ -1620,7 +1761,7 @@ async function handleSubmitH3MusicAvatar(apiKey: string, params: any, res: Respo
     console.log(`[runninghub] POST ${endpoint} (h3-music-avatar attempt ${attempt}/${MAX_RETRIES})`)
     console.log(`[runninghub] body:`, JSON.stringify(body).slice(0, 1000))
 
-    const apiRes = await fetch(endpoint, {
+    const apiRes = await rhFetch(apiKey, endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1659,7 +1800,7 @@ async function handleSubmitH3MusicAvatar(apiKey: string, params: any, res: Respo
     const taskId = data.data?.taskId || data.taskId || data.id || data.task_id
     if (!taskId) {
       console.error(`[runninghub] No taskId found (h3-music-avatar):`, JSON.stringify(data).slice(0, 500))
-      return res.status(200).json({ ok: false, error: 'No taskId returned', raw: lastRawText.slice(0, 500) })
+      return res.status(200).json({ ok: false, error: rhTaskErrorFrom(data) || 'No taskId returned', raw: lastRawText.slice(0, 500) })
     }
 
     return res.status(200).json({
@@ -1717,7 +1858,7 @@ async function handleSubmitH3Vlog(apiKey: string, params: any, res: Response) {
     console.log(`[runninghub] POST ${endpoint} (h3-vlog attempt ${attempt}/${MAX_RETRIES})`)
     console.log(`[runninghub] body:`, JSON.stringify(body).slice(0, 1000))
 
-    const apiRes = await fetch(endpoint, {
+    const apiRes = await rhFetch(apiKey, endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1756,7 +1897,7 @@ async function handleSubmitH3Vlog(apiKey: string, params: any, res: Response) {
     const taskId = data.data?.taskId || data.taskId || data.id || data.task_id
     if (!taskId) {
       console.error(`[runninghub] No taskId found (h3-vlog):`, JSON.stringify(data).slice(0, 500))
-      return res.status(200).json({ ok: false, error: 'No taskId returned', raw: lastRawText.slice(0, 500) })
+      return res.status(200).json({ ok: false, error: rhTaskErrorFrom(data) || 'No taskId returned', raw: lastRawText.slice(0, 500) })
     }
 
     return res.status(200).json({
@@ -1824,7 +1965,7 @@ async function handleSubmitSongCover(apiKey: string, params: any, res: Response)
     console.log(`[runninghub] POST ${endpoint} (song-cover attempt ${attempt}/${MAX_RETRIES})`)
     console.log(`[runninghub] body:`, JSON.stringify(body).slice(0, 1000))
 
-    const apiRes = await fetch(endpoint, {
+    const apiRes = await rhFetch(apiKey, endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1863,7 +2004,7 @@ async function handleSubmitSongCover(apiKey: string, params: any, res: Response)
     const taskId = data.data?.taskId || data.taskId || data.id || data.task_id
     if (!taskId) {
       console.error(`[runninghub] No taskId found (song-cover):`, JSON.stringify(data).slice(0, 500))
-      return res.status(200).json({ ok: false, error: 'No taskId returned', raw: lastRawText.slice(0, 500) })
+      return res.status(200).json({ ok: false, error: rhTaskErrorFrom(data) || 'No taskId returned', raw: lastRawText.slice(0, 500) })
     }
 
     return res.status(200).json({
@@ -1928,7 +2069,7 @@ async function handleSubmitYuE2Reimaginer(apiKey: string, params: any, res: Resp
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     console.log(`[runninghub] POST ${endpoint} (yue2-reimaginer attempt ${attempt}/${MAX_RETRIES})`)
 
-    const apiRes = await fetch(endpoint, {
+    const apiRes = await rhFetch(apiKey, endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1967,7 +2108,7 @@ async function handleSubmitYuE2Reimaginer(apiKey: string, params: any, res: Resp
     const taskId = data.data?.taskId || data.taskId || data.id || data.task_id
     if (!taskId) {
       console.error(`[runninghub] No taskId found (yue2-reimaginer):`, JSON.stringify(data).slice(0, 500))
-      return res.status(200).json({ ok: false, error: 'No taskId returned', raw: lastRawText.slice(0, 500) })
+      return res.status(200).json({ ok: false, error: rhTaskErrorFrom(data) || 'No taskId returned', raw: lastRawText.slice(0, 500) })
     }
 
     return res.status(200).json({
@@ -2029,7 +2170,7 @@ async function handleSubmitVideoUpscale(apiKey: string, params: any, res: Respon
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
   const postRun = async (list: any[]) => {
-    const apiRes = await fetch(endpoint, {
+    const apiRes = await rhFetch(apiKey, endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -2146,7 +2287,7 @@ async function handleSubmitPhotoEnhance(apiKey: string, params: any, res: Respon
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
   const postRun = async (list: any[]) => {
-    const apiRes = await fetch(endpoint, {
+    const apiRes = await rhFetch(apiKey, endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -2285,7 +2426,7 @@ async function handleSubmitTravelPhoto(apiKey: string, params: any, res: Respons
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     console.log('[runninghub] POST ' + endpoint + ' (travel-photo attempt ' + attempt + '/' + MAX_RETRIES + ')')
 
-    const apiRes = await fetch(endpoint, {
+    const apiRes = await rhFetch(apiKey, endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
       body: JSON.stringify(body),
@@ -2376,7 +2517,7 @@ async function handleSubmitLipSync(apiKey: string, params: any, res: Response) {
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
   const postRun = async (list: any[]) => {
-    const apiRes = await fetch(endpoint, {
+    const apiRes = await rhFetch(apiKey, endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -2507,7 +2648,7 @@ async function handleSubmitImageEdit(apiKey: string, params: any, res: Response)
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
   const postRun = async (list: any[]) => {
-    const apiRes = await fetch(endpoint, {
+    const apiRes = await rhFetch(apiKey, endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -2640,7 +2781,7 @@ async function handleSubmitH3I2V(apiKey: string, params: any, res: Response) {
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
   const postRun = async (list: any[]) => {
-    const apiRes = await fetch(endpoint, {
+    const apiRes = await rhFetch(apiKey, endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -2791,7 +2932,7 @@ async function handleSubmitSeedance2(apiKey: string, params: any, res: Response)
       const list = buildList().filter((e) => !droppedEntries.has(`${e.nodeId}/${e.fieldName}`))
       for (let attempt = 1; attempt <= 3; attempt++) {
         console.log(`[runninghub] seedance2 round=${round} (attempt ${attempt}/3)`)
-        const apiRes = await fetch(endpoint, {
+        const apiRes = await rhFetch(apiKey, endpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -2926,7 +3067,7 @@ async function handleSubmitSeedance26(apiKey: string, params: any, res: Response
       const list = buildList().filter((e) => !droppedEntries.has(`${e.nodeId}/${e.fieldName}`))
       for (let attempt = 1; attempt <= 3; attempt++) {
         console.log(`[runninghub] seedance2.6 round=${round} (attempt ${attempt}/3)`)
-        const apiRes = await fetch(endpoint, {
+        const apiRes = await rhFetch(apiKey, endpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -3075,7 +3216,7 @@ async function handleSubmitUGCStoryboard(apiKey: string, params: any, res: Respo
       let r: any = null
       for (let attempt = 1; attempt <= 3; attempt++) {
         console.log(`[runninghub] ugc-storyboard round=${round} (attempt ${attempt}/3)`)
-        const apiRes = await fetch(endpoint, {
+        const apiRes = await rhFetch(apiKey, endpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -3194,7 +3335,7 @@ async function handleMotionControl(apiKey: string, params: any, res: Response) {
     console.log(`[runninghub] POST ${endpoint} (attempt ${attempt}/${MAX_RETRIES})`)
     console.log(`[runninghub] body:`, JSON.stringify(body).slice(0, 1000))
 
-    const apiRes = await fetch(endpoint, {
+    const apiRes = await rhFetch(apiKey, endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -3233,7 +3374,7 @@ async function handleMotionControl(apiKey: string, params: any, res: Response) {
     const taskId = data.data?.taskId || data.taskId || data.id || data.task_id
     if (!taskId) {
       console.error(`[runninghub] No taskId found:`, JSON.stringify(data).slice(0, 500))
-      return res.status(200).json({ ok: false, error: 'No taskId returned', raw: lastRawText.slice(0, 500) })
+      return res.status(200).json({ ok: false, error: rhTaskErrorFrom(data) || 'No taskId returned', raw: lastRawText.slice(0, 500) })
     }
 
     const netWssUrl = data.data?.netWssUrl
@@ -3257,7 +3398,7 @@ async function handleQuery(apiKey: string, taskId: string, res: Response) {
 
   const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/query`
 
-  const apiRes = await fetch(endpoint, {
+  const apiRes = await rhFetch(apiKey, endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -3410,6 +3551,18 @@ function translateRhError(code: string, msg?: string): string {
   return map[code] || msg || `Error RunningHub (${code})`
 }
 
+/**
+ * Jalur playground mengembalikan code:0 di level atas dengan errorCode di
+ * dalam data (mis. 605 = saldo habis). Tanpa ini, kegagalan itu terbaca
+ * "No taskId returned" dan pengguna tidak tahu penyebab sebenarnya.
+ */
+function rhTaskErrorFrom(data: any): string | null {
+  const code = data?.data?.errorCode ?? data?.errorCode
+  if (code === undefined || code === null || code === '') return null
+  const msg = data?.data?.errorMessage || data?.errorMessage
+  return translateRhError(String(code), msg) || msg || `Error code: ${code}`
+}
+
 // accountStatus mengembalikan saldo dengan nama field yang berbeda antar
 // generasi API — baca semuanya, jangan hanya remainCoins.
 const RH_BALANCE_FIELDS = ['remainCoins', 'remainCoin', 'coins', 'coin', 'balance', 'power', 'remainPower']
@@ -3427,7 +3580,7 @@ async function handleCheckBalance(apiKey: string, res: Response) {
   try {
     const endpoint = `${RUNNINGHUB_BASE}/uc/openapi/accountStatus`
 
-    const apiRes = await fetch(endpoint, {
+    const apiRes = await rhFetch(apiKey, endpoint, {
       method: 'POST',
       headers: rhAuthHeaders(apiKey),
       body: JSON.stringify({ apiKey, accessToken: apiKey }),

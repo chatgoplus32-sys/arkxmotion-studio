@@ -41,6 +41,104 @@ function resolveRunningHubCredential(raw: unknown): string {
   return global || key
 }
 
+// ── Jalur khusus access token (JWT) — samadan relay Express ────────────────
+// OpenAPI RunningHub menolak JWT, jadi:
+//   * upload media → POST /upload/image + accessKey (/api/instance/access/auth)
+//   * submit/query → POST /api/playground/openapi/v2/*?apiKeyId=<id key akun>
+const RH_PROXY_BASE = 'https://www.runninghub.ai'
+const RH_PROXY_PLAYGROUND = '/api/playground/openapi/v2'
+const RH_PROXY_KEY_CACHE_MS = 10 * 60 * 1000
+let rhProxyKeyIdCache: { value: string; at: number } | null = null
+
+function runningHubIsJwt(token: string): boolean {
+  const exp = runningHubJwtExp(token)
+  return exp !== null && Date.now() <= exp * 1000
+}
+
+async function rhProxyApiKeyId(jwt: string): Promise<string> {
+  if (rhProxyKeyIdCache && Date.now() - rhProxyKeyIdCache.at < RH_PROXY_KEY_CACHE_MS) {
+    return rhProxyKeyIdCache.value
+  }
+  const r = await fetch(`${RH_PROXY_BASE}/api/key/list`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
+    body: JSON.stringify({ type: 'SHARED' }),
+    signal: AbortSignal.timeout(20000),
+  })
+  const raw = await r.text()
+  let data: any; try { data = JSON.parse(raw) } catch { data = null }
+  const list: any[] = Array.isArray(data?.data) ? data.data : []
+  const mine = list.find((k) => !k?.isSystemAuto && k?.apiKeyId && k?.key != null)
+  if (!mine) throw new Error('Tidak ada API key milik akun untuk access token: ' + raw.slice(0, 200))
+  rhProxyKeyIdCache = { value: String(mine.apiKeyId), at: Date.now() }
+  return rhProxyKeyIdCache.value
+}
+
+async function rhProxyUpstreamUrl(jwt: string, url: string): Promise<string> {
+  if (!runningHubIsJwt(jwt)) return url
+  const prefix = `${RH_PROXY_BASE}/openapi/v2`
+  if (!url.startsWith(prefix)) return url
+  const kid = await rhProxyApiKeyId(jwt)
+  const rest = url.slice(prefix.length)
+  const join = rest.includes('?') ? '&' : '?'
+  return `${RH_PROXY_BASE}${RH_PROXY_PLAYGROUND}${rest}${join}apiKeyId=${kid}`
+}
+
+/** Upload media lewat sesi situs RunningHub — mengembalikan fileName ComfyUI. */
+async function rhProxySessionUpload(jwt: string, bytes: Buffer, fileName: string, mime: string): Promise<{ fileName: string }> {
+  const authRes = await fetch(`${RH_PROXY_BASE}/api/instance/access/auth`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
+    body: JSON.stringify({}),
+    signal: AbortSignal.timeout(30000),
+  })
+  const authRaw = await authRes.text()
+  let authData: any; try { authData = JSON.parse(authRaw) } catch { authData = null }
+  const accessKey = authData?.data?.accessKey
+  if (!accessKey) throw new Error('Gagal dapat accessKey ComfyUI: ' + authRaw.slice(0, 200))
+
+  let identify = ''
+  try {
+    const padded = String(accessKey).replace(/-/g, '+').replace(/_/g, '/')
+    identify = String(JSON.parse(Buffer.from(padded + '='.repeat((4 - padded.length % 4) % 4), 'base64').toString('utf8'))?.userId || '')
+  } catch { /* identitas opsional */ }
+
+  const fd = new FormData()
+  fd.append('image', new Blob([bytes], { type: mime || 'application/octet-stream' }), fileName || 'upload.bin')
+  const r = await fetch(`${RH_PROXY_BASE}/upload/image`, {
+    method: 'POST',
+    headers: { 'Rh-Comfy-Auth': accessKey, 'Rh-Identify': identify },
+    body: fd,
+    signal: AbortSignal.timeout(300000),
+  })
+  const raw = await r.text()
+  let data: any; try { data = JSON.parse(raw) } catch { data = { raw } }
+  const name = data?.name || data?.data?.name
+  if (!r.ok || !name) throw new Error('Upload sesi gagal: ' + raw.slice(0, 300))
+  const sub = String(data?.subfolder || '').replace(/^\/+|\/+$/g, '')
+  return { fileName: sub ? `${sub}/${name}` : String(name) }
+}
+
+/**
+ * fetch proxy: memakai jalur playground + upload sesi saat credensial JWT,
+ * lewat tanpa perubahan untuk API key lama.
+ */
+async function rhProxyFetch(jwt: string, url: string, init?: RequestInit): Promise<Awaited<ReturnType<typeof fetch>>> {
+  if (runningHubIsJwt(jwt) && url.includes('/openapi/v2/media/upload/binary')) {
+    const fd = init?.body instanceof FormData ? init.body : null
+    const file = fd?.get('file')
+    if (file && typeof (file as Blob).arrayBuffer === 'function') {
+      const f = file as File
+      const { fileName } = await rhProxySessionUpload(jwt, Buffer.from(await f.arrayBuffer()), f.name, f.type)
+      return new Response(JSON.stringify({ code: 0, msg: 'success', data: { fileName, fileType: 'input' } }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+  }
+  return fetch(await rhProxyUpstreamUrl(jwt, url), init)
+}
+
 // Dev: Express lokal (:6000, `npm run dev:server`) dulu, lalu produksi VPS sebagai
 // fallback terakhir. Dulu fallback-nya deployment Vercel, tapi stack itu tidak lagi
 // dipakai (dan mati: HTTP 402), sedangkan ketiga jalur di bawah sudah ada di VPS.
@@ -889,7 +987,7 @@ export function roboneoProxyPlugin(): Plugin {
 
           if (action === 'query') {
             const { taskId } = params
-            const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/query`, {
+            const r = await rhProxyFetch(apiKey, `${RUNNINGHUB_BASE}/openapi/v2/query`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
               body: JSON.stringify({ taskId }),
@@ -936,7 +1034,7 @@ export function roboneoProxyPlugin(): Plugin {
             const body: any = { imageUrl, videoUrl, characterOrientation, prompt, keepOriginalSound }
             if (negativePrompt) body.negativePrompt = negativePrompt
 
-            const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/kling-v3.0-pro/motion-control`, {
+            const r = await rhProxyFetch(apiKey, `${RUNNINGHUB_BASE}/openapi/v2/kling-v3.0-pro/motion-control`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
               body: JSON.stringify(body),
@@ -948,7 +1046,7 @@ export function roboneoProxyPlugin(): Plugin {
             const taskId = data?.taskId || data?.data?.taskId || data?.id
             if (!taskId) {
               res.writeHead(200, { 'Content-Type': 'application/json' })
-              res.end(JSON.stringify({ ok: false, error: data?.errorMessage || data?.msg || 'No taskId', data }))
+              res.end(JSON.stringify({ ok: false, error: data?.data?.errorMessage || data?.errorMessage || data?.msg || 'No taskId', data }))
               return
             }
             res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -963,7 +1061,7 @@ export function roboneoProxyPlugin(): Plugin {
               res.end(JSON.stringify({ ok: false, error: 'Missing imageUrl or videoUrl' }))
               return
             }
-            const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/kling-v2.6-pro/motion-control`, {
+            const r = await rhProxyFetch(apiKey, `${RUNNINGHUB_BASE}/openapi/v2/kling-v2.6-pro/motion-control`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
               body: JSON.stringify({ imageUrl, videoUrl, characterOrientation, prompt, keepOriginalSound }),
@@ -975,7 +1073,7 @@ export function roboneoProxyPlugin(): Plugin {
             const taskId = data?.taskId || data?.data?.taskId || data?.id
             if (!taskId) {
               res.writeHead(200, { 'Content-Type': 'application/json' })
-              res.end(JSON.stringify({ ok: false, error: data?.errorMessage || 'No taskId', data }))
+              res.end(JSON.stringify({ ok: false, error: data?.data?.errorMessage || data?.errorMessage || 'No taskId', data }))
               return
             }
             res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -990,7 +1088,7 @@ export function roboneoProxyPlugin(): Plugin {
               res.end(JSON.stringify({ ok: false, error: 'Missing imageUrl or videoUrl' }))
               return
             }
-            const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/kling-v2.6-std/motion-control`, {
+            const r = await rhProxyFetch(apiKey, `${RUNNINGHUB_BASE}/openapi/v2/kling-v2.6-std/motion-control`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
               body: JSON.stringify({ imageUrl, videoUrl, characterOrientation, prompt, keepOriginalSound }),
@@ -1002,7 +1100,7 @@ export function roboneoProxyPlugin(): Plugin {
             const taskId = data?.taskId || data?.data?.taskId || data?.id
             if (!taskId) {
               res.writeHead(200, { 'Content-Type': 'application/json' })
-              res.end(JSON.stringify({ ok: false, error: data?.errorMessage || 'No taskId', data }))
+              res.end(JSON.stringify({ ok: false, error: data?.data?.errorMessage || data?.errorMessage || 'No taskId', data }))
               return
             }
             res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -1017,6 +1115,10 @@ export function roboneoProxyPlugin(): Plugin {
             const wfId = params.workflow_id || params.workflowId || ULTRA_HD_WF
 
             const discoverNodes = async (): Promise<any[]> => {
+              // Discovery butuh API key asli; jalur JWT memakai daftar node bawaan.
+              if (runningHubIsJwt(apiKey)) {
+                throw new Error('Discovery node butuh API key asli (access token memakai daftar node bawaan)')
+              }
               let lastErr = ''
               for (const ep of [`${RUNNINGHUB_BASE}/api/openapi/getJsonApiFormat`, `${RUNNINGHUB_BASE}/openapi/getJsonApiFormat`]) {
                 try {
@@ -1068,7 +1170,7 @@ export function roboneoProxyPlugin(): Plugin {
               const bin = Buffer.from(b64.includes(',') ? b64.split(',')[1] : b64, 'base64')
               const fd = new FormData()
               fd.append('file', new Blob([bin], { type: mime }), name)
-              const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/media/upload/binary`, {
+              const r = await rhProxyFetch(apiKey, `${RUNNINGHUB_BASE}/openapi/v2/media/upload/binary`, {
                 method: 'POST', headers: { 'Authorization': `Bearer ${apiKey}` }, body: fd,
               })
               const t = await r.text()
@@ -1119,7 +1221,7 @@ export function roboneoProxyPlugin(): Plugin {
                   if (extras.length) nodeInfoList = [...nodeInfoList, ...extras]
                 }
               } catch {}
-              const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${wfId}`, {
+              const r = await rhProxyFetch(apiKey, `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${wfId}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
                 body: JSON.stringify({ nodeInfoList, instanceType: 'default', usePersonalQueue: 'false' }),
@@ -1130,7 +1232,7 @@ export function roboneoProxyPlugin(): Plugin {
               const taskId = data?.data?.taskId || data?.taskId || data?.id
               if (!taskId) {
                 res.writeHead(200, { 'Content-Type': 'application/json' })
-                res.end(JSON.stringify({ ok: false, error: data?.msg || data?.message || 'No taskId', data }))
+                res.end(JSON.stringify({ ok: false, error: data?.data?.errorMessage || data?.msg || data?.message || 'No taskId', data }))
                 return
               }
               res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -1158,7 +1260,7 @@ export function roboneoProxyPlugin(): Plugin {
               const bin = Buffer.from(b64.includes(',') ? b64.split(',')[1] : b64, 'base64')
               const fd = new FormData()
               fd.append('file', new Blob([bin], { type: mime }), name)
-              const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/media/upload/binary`, {
+              const r = await rhProxyFetch(apiKey, `${RUNNINGHUB_BASE}/openapi/v2/media/upload/binary`, {
                 method: 'POST', headers: { 'Authorization': `Bearer ${apiKey}` }, body: fd,
               })
               const t = await r.text()
@@ -1174,7 +1276,7 @@ export function roboneoProxyPlugin(): Plugin {
                 const garmentFn = await upOne(garmentBase64, garmentFileName, garmentMimeType)
                 nodeInfoList.push({ nodeId: '53', fieldName: 'image', fieldValue: garmentFn })
               }
-              const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${wfId}`, {
+              const r = await rhProxyFetch(apiKey, `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${wfId}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
                 body: JSON.stringify({ nodeInfoList, instanceType: 'default', usePersonalQueue: 'false' }),
@@ -1185,7 +1287,7 @@ export function roboneoProxyPlugin(): Plugin {
               const taskId = data?.data?.taskId || data?.taskId || data?.id
               if (!taskId) {
                 res.writeHead(200, { 'Content-Type': 'application/json' })
-                res.end(JSON.stringify({ ok: false, error: data?.msg || data?.message || 'No taskId', data }))
+                res.end(JSON.stringify({ ok: false, error: data?.data?.errorMessage || data?.msg || data?.message || 'No taskId', data }))
                 return
               }
               res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -1212,7 +1314,7 @@ export function roboneoProxyPlugin(): Plugin {
               const bin = Buffer.from(b64.includes(',') ? b64.split(',')[1] : b64, 'base64')
               const fd = new FormData()
               fd.append('file', new Blob([bin], { type: mime }), name)
-              const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/media/upload/binary`, {
+              const r = await rhProxyFetch(apiKey, `${RUNNINGHUB_BASE}/openapi/v2/media/upload/binary`, {
                 method: 'POST', headers: { 'Authorization': `Bearer ${apiKey}` }, body: fd,
               })
               const t = await r.text()
@@ -1228,7 +1330,7 @@ export function roboneoProxyPlugin(): Plugin {
                 { nodeId: '209', fieldName: 'image', fieldValue: imgFn },
                 { nodeId: '215', fieldName: 'audio', fieldValue: audFn },
               ]
-              const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${wfId}`, {
+              const r = await rhProxyFetch(apiKey, `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${wfId}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
                 body: JSON.stringify({ nodeInfoList, instanceType: 'default', usePersonalQueue: 'false' }),
@@ -1239,7 +1341,7 @@ export function roboneoProxyPlugin(): Plugin {
               const taskId = data?.data?.taskId || data?.taskId || data?.id
               if (!taskId) {
                 res.writeHead(200, { 'Content-Type': 'application/json' })
-                res.end(JSON.stringify({ ok: false, error: data?.msg || data?.message || 'No taskId', data }))
+                res.end(JSON.stringify({ ok: false, error: data?.data?.errorMessage || data?.msg || data?.message || 'No taskId', data }))
                 return
               }
               res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -1272,7 +1374,7 @@ export function roboneoProxyPlugin(): Plugin {
               const bin = Buffer.from(b64.includes(',') ? b64.split(',')[1] : b64, 'base64')
               const fd = new FormData()
               fd.append('file', new Blob([bin], { type: mime }), name)
-              const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/media/upload/binary`, {
+              const r = await rhProxyFetch(apiKey, `${RUNNINGHUB_BASE}/openapi/v2/media/upload/binary`, {
                 method: 'POST', headers: { 'Authorization': `Bearer ${apiKey}` }, body: fd,
               })
               const t = await r.text()
@@ -1286,7 +1388,7 @@ export function roboneoProxyPlugin(): Plugin {
               const nodeInfoList: any[] = [{ nodeId: '1', fieldName: 'audio', fieldValue: audFn }]
               if (stylePrompt) nodeInfoList.push({ nodeId: '4', fieldName: 'prompt', fieldValue: String(stylePrompt) })
               if (lyrics) nodeInfoList.push({ nodeId: '5', fieldName: 'prompt', fieldValue: String(lyrics) })
-              const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${wfId}`, {
+              const r = await rhProxyFetch(apiKey, `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${wfId}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
                 body: JSON.stringify({ nodeInfoList, instanceType: 'default', usePersonalQueue: 'false' }),
@@ -1297,7 +1399,7 @@ export function roboneoProxyPlugin(): Plugin {
               const taskId = data?.data?.taskId || data?.taskId || data?.id
               if (!taskId) {
                 res.writeHead(200, { 'Content-Type': 'application/json' })
-                res.end(JSON.stringify({ ok: false, error: data?.msg || data?.message || 'No taskId', data }))
+                res.end(JSON.stringify({ ok: false, error: data?.data?.errorMessage || data?.msg || data?.message || 'No taskId', data }))
                 return
               }
               res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -1329,7 +1431,7 @@ export function roboneoProxyPlugin(): Plugin {
               const bin = Buffer.from(videoBase64.includes(',') ? videoBase64.split(',')[1] : videoBase64, 'base64')
               const fd = new FormData()
               fd.append('file', new Blob([bin], { type: videoMimeType }), videoFileName)
-              const up = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/media/upload/binary`, {
+              const up = await rhProxyFetch(apiKey, `${RUNNINGHUB_BASE}/openapi/v2/media/upload/binary`, {
                 method: 'POST', headers: { 'Authorization': `Bearer ${apiKey}` }, body: fd,
               })
               const upText = await up.text()
@@ -1345,7 +1447,7 @@ export function roboneoProxyPlugin(): Plugin {
                 { nodeId: '13', fieldName: 'save_output', fieldValue: 'true' },
               ]
               const postRun = async (list: any[]) => {
-                const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${wfId}`, {
+                const r = await rhProxyFetch(apiKey, `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${wfId}`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
                   body: JSON.stringify({ nodeInfoList: list, instanceType: 'default', usePersonalQueue: 'false' }),
@@ -1424,7 +1526,7 @@ export function roboneoProxyPlugin(): Plugin {
               const bin = Buffer.from(imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64, 'base64')
               const fd = new FormData()
               fd.append('file', new Blob([bin], { type: imageMimeType }), imageFileName)
-              const up = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/media/upload/binary`, {
+              const up = await rhProxyFetch(apiKey, `${RUNNINGHUB_BASE}/openapi/v2/media/upload/binary`, {
                 method: 'POST', headers: { 'Authorization': `Bearer ${apiKey}` }, body: fd,
               })
               const upText = await up.text()
@@ -1436,7 +1538,7 @@ export function roboneoProxyPlugin(): Plugin {
                 { nodeId: '688', fieldName: 'scale_by', fieldValue: String(effScale) },
               ]
               const postRun = async (list: any[]) => {
-                const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${wfId}`, {
+                const r = await rhProxyFetch(apiKey, `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${wfId}`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
                   body: JSON.stringify({ nodeInfoList: list, instanceType: 'default', usePersonalQueue: 'false' }),
@@ -1520,7 +1622,7 @@ export function roboneoProxyPlugin(): Plugin {
               const bin = Buffer.from(b64.includes(',') ? b64.split(',')[1] : b64, 'base64')
               const fd = new FormData()
               fd.append('file', new Blob([bin], { type: mime }), name)
-              const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/media/upload/binary`, {
+              const r = await rhProxyFetch(apiKey, `${RUNNINGHUB_BASE}/openapi/v2/media/upload/binary`, {
                 method: 'POST', headers: { 'Authorization': `Bearer ${apiKey}` }, body: fd,
               })
               const t = await r.text()
@@ -1550,7 +1652,7 @@ export function roboneoProxyPlugin(): Plugin {
                 return dropped.size === 0 ? l : l.filter((e) => !dropped.has(`${e.nodeId}/${e.fieldName}`))
               }
               const postRun = async (list: any[]) => {
-                const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${wfId}`, {
+                const r = await rhProxyFetch(apiKey, `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${wfId}`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
                   body: JSON.stringify({ nodeInfoList: list, instanceType: 'default', usePersonalQueue: 'false' }),
@@ -1627,7 +1729,7 @@ export function roboneoProxyPlugin(): Plugin {
               const bin = Buffer.from(imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64, 'base64')
               const fd = new FormData()
               fd.append('file', new Blob([bin], { type: imageMimeType }), imageFileName)
-              const up = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/media/upload/binary`, {
+              const up = await rhProxyFetch(apiKey, `${RUNNINGHUB_BASE}/openapi/v2/media/upload/binary`, {
                 method: 'POST', headers: { 'Authorization': `Bearer ${apiKey}` }, body: fd,
               })
               const upText = await up.text()
@@ -1646,7 +1748,7 @@ export function roboneoProxyPlugin(): Plugin {
                 return dropped.size === 0 ? l : l.filter((e) => !dropped.has(`${e.nodeId}/${e.fieldName}`))
               }
               const postRun = async (list: any[]) => {
-                const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${wfId}`, {
+                const r = await rhProxyFetch(apiKey, `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${wfId}`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
                   body: JSON.stringify({ nodeInfoList: list, instanceType: 'default', usePersonalQueue: 'false' }),
@@ -1727,7 +1829,7 @@ export function roboneoProxyPlugin(): Plugin {
               const bin = Buffer.from(imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64, 'base64')
               const fd = new FormData()
               fd.append('file', new Blob([bin], { type: imageMimeType }), imageFileName)
-              const up = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/media/upload/binary`, {
+              const up = await rhProxyFetch(apiKey, `${RUNNINGHUB_BASE}/openapi/v2/media/upload/binary`, {
                 method: 'POST', headers: { 'Authorization': `Bearer ${apiKey}` }, body: fd,
               })
               const upText = await up.text()
@@ -1748,7 +1850,7 @@ export function roboneoProxyPlugin(): Plugin {
                 return dropped.size === 0 ? l : l.filter((e) => !dropped.has(`${e.nodeId}/${e.fieldName}`))
               }
               const postRun = async (list: any[]) => {
-                const r = await fetch(`${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${wfId}`, {
+                const r = await rhProxyFetch(apiKey, `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${wfId}`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
                   body: JSON.stringify({ nodeInfoList: list, instanceType: 'default', usePersonalQueue: 'false' }),
