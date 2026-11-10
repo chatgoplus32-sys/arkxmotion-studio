@@ -3737,7 +3737,7 @@ export const RH_KEY_REJECT_CODES = new Set(['401', '412', '806', '811', '814', '
 
 function translateRhError(code: string, msg?: string): string {
   const map: Record<string, string> = {
-    '414': 'Saldo/kuota kerja (power) tidak cukup untuk menjalankan task ini. Silakan top up saldo poin di akun RunningHub.',
+    '414': 'RunningHub menolak task: saldo POWER/poin akun tidak cukup. Koin RH yang tampil di situs terpisah dari power — isi power/poin di runninghub.ai (Membership/Power), atau pakai akun lain.',
     '433': 'Saldo poin akun RunningHub tidak cukup untuk task ini (jalur web menagih saldo akun). Isi/top up poin di runninghub.ai atau pakai akun dengan saldo.',
     '423': 'Task ditolak: butuh keanggotaan/mode yang lebih tinggi di akun RunningHub.',
     '424': 'Batas task bersamaan (concurrent) akun RunningHub tercapai. Tunggu task lain selesai atau naikkan paket.',
@@ -3759,13 +3759,20 @@ function translateRhError(code: string, msg?: string): string {
     '5101': 'Gagal membuat task, coba lagi.',
   }
   if (RH_KEY_REJECT_CODES.has(code)) return map[code] || msg || `API key ditolak RunningHub (${code})`
+  // Kode yang sudah punya pesan spesifik harus menang atas pencocokan teks di
+  // bawah: upstream mengirim 414 bersama "NOT_ENOUGH_POWER", sehingga pesan
+  // umum sempat menutupi penjelasan power vs koin RH.
+  if (map[code]) return map[code]
   if (msg && /API balance is insufficient/i.test(msg)) {
     return 'Saldo LLM API RunningHub tidak cukup (terpisah dari koin RH). Isi ulang "LLM API Balance" di RunningHub lalu coba lagi.'
   }
-  if (msg && /NOT_ENOUGH_POWER|balance|insufficient|coin/i.test(msg)) {
-    return 'Saldo/kuota kerja tidak cukup. Silakan top up saldo poin di akun RunningHub.'
+  if (msg && /WORKFLOW_NOT_EXISTS/i.test(msg)) {
+    return 'App/workflow tidak ditemukan untuk kredensial ini — RunningHub menolak karena app bukan milik akun/token ini atau sudah dipindah/dihapus. Pastikan appId/workflow benar dan token berasal dari akun pemilik app.'
   }
-  return map[code] || msg || `Error RunningHub (${code})`
+  if (msg && /NOT_ENOUGH_POWER|balance|insufficient|coin/i.test(msg)) {
+    return 'Saldo/kuota kerja tidak cukup. RunningHub menagih task platform dengan power/poin (terpisah dari koin RH). Top up power di akun RunningHub atau pakai akun lain.'
+  }
+  return msg || `Error RunningHub (${code})`
 }
 
 /**
