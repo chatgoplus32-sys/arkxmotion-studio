@@ -706,8 +706,14 @@ router.all('/', async (req: Request, res: Response) => {
     })
   }
 
-  let { token: apiKey, source: authSource } = rhResolveCredential(clientKey)
+  // Klaim hadiah harian: SELALU pakai token milik pengguna (bukan token
+  // server) — hadiah harian adalah hak per-akun, jadi tidak boleh diklaim
+  // atas nama akun lain.
+  if (action === 'claim-daily-gift') {
+    return await handleClaimDailyGift(clientKey, res)
+  }
 
+  let { token: apiKey, source: authSource } = rhResolveCredential(clientKey)
   if (!action) return res.status(200).json({ ok: false, error: 'Missing action' })
 
   // Token pengguna yang sudah dicabut (412) jangan memblokir generasi bila
@@ -3986,8 +3992,66 @@ function rhKeyTypeLabel(apiType: unknown): string | null {
   return apiType
 }
 
-async function handleCheckBalance(apiKey: string, res: Response) {
+/**
+ * Klaim hadiah harian RunningHub (30 poin/hari, dari /api/welfare/daily-gift/claim).
+ * Hanya bisa memakai access token milik pengguna sendiri — hadiahnya terikat
+ * akun, jadi tidak boleh diklaim memakai token server.
+ */
+async function handleClaimDailyGift(apiKey: string, res: Response) {
+  if (rhJwtExp(apiKey) === null) {
+    return res.status(200).json({
+      ok: false,
+      error: 'Klaim hadiah harian hanya bisa lewat access token (JWT) RunningHub, bukan API key.',
+    })
+  }
+  if (rhJwtExpired(apiKey)) {
+    return res.status(200).json({
+      ok: false,
+      error: 'Access token kedaluwarsa — salin token baru dari sesi runninghub.ai yang masih login, lalu ganti Key ini.',
+    })
+  }
+
   try {
+    const upstream = await fetch(`${RUNNINGHUB_BASE}/api/welfare/daily-gift/claim`, {
+      method: 'POST',
+      headers: rhAuthHeaders(apiKey),
+      body: '{}',
+      signal: AbortSignal.timeout(20000),
+    })
+    const text = await upstream.text()
+    console.log(`[runninghub] claim-daily-gift ${upstream.status}:`, text.slice(0, 300))
+    let data: any = null
+    try { data = JSON.parse(text) } catch { data = null }
+
+    const code = String(data?.code ?? '')
+    const msg = String(data?.msg || data?.message || '')
+    const okClaim = code === '0' || code === '0' || code === ''
+
+    // Buang cache wallet supaya saldo terbaru langsung terbaca.
+    rhWalletCache.delete(rhTokenFingerprint(apiKey))
+    const wallet = await rhTokenWallet(apiKey)
+    const summary = rhWalletSummary(wallet)
+
+    if (!okClaim) {
+      return res.status(200).json({
+        ok: false,
+        code: data?.code ?? null,
+        error: msg || `Hadiah harian gagal diklaim (${code || upstream.status}).`,
+        tokenWallet: wallet,
+      })
+    }
+
+    return res.status(200).json({
+      ok: true,
+      message: `Hadiah harian diklaim. ${summary || 'Saldo poin diperbarui.'}`,
+      tokenWallet: wallet,
+    })
+  } catch (err: any) {
+    return res.status(200).json({ ok: false, error: err.message || 'Gagal klaim hadiah harian.' })
+  }
+}
+
+async function handleCheckBalance(apiKey: string, res: Response) {  try {
     const endpoint = `${RUNNINGHUB_BASE}/uc/openapi/accountStatus`
 
     const apiRes = await rhFetch(apiKey, endpoint, {

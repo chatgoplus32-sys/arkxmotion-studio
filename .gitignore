@@ -41,3 +41,6 @@ server/*.db
 
 # Python deploy scripts
 __pycache__/
+
+# tsconfig sementara untuk scripts/check-undefined.mjs
+.tsconfig.undefined-check.json

@@ -236,6 +236,20 @@ export function formatRhWalletCompact(wallet: RHTokenWallet | null | undefined):
   return parts.join(' · ')
 }
 
+/**
+ * Badge ringkas untuk baris key di halaman Token/API: saldo + status watermark.
+ * Contoh: ["0 poin", "⚠ watermark"].
+ */
+export function formatRhWalletBadges(wallet: RHTokenWallet | null | undefined): string[] {
+  if (!wallet) return []
+  const out: string[] = []
+  const balance = rhPrimaryBalance(wallet)
+  if (balance) out.push(`${rhFmtBalance(balance.value)} ${balance.label}`)
+  if (wallet.watermarkFree === false) out.push('⚠ watermark')
+  else if (wallet.watermarkFree === true) out.push('✓ tanpa WM')
+  return out
+}
+
 /** Versi panjang untuk baris detail: "saldo poin 145 · kredit video 3/3 · …". */
 export function formatRhWalletDetail(wallet: RHTokenWallet | null | undefined): string {
   if (!wallet) return ''
@@ -245,6 +259,7 @@ export function formatRhWalletDetail(wallet: RHTokenWallet | null | undefined): 
   if (wallet.freeVideo) parts.push(`kredit video ${wallet.freeVideo.remaining}/${wallet.freeVideo.total}`)
   if (wallet.freeImage) parts.push(`kredit image ${wallet.freeImage.remaining}/${wallet.freeImage.total}`)
   if (wallet.points !== null) parts.push(`poin harian ${wallet.points}`)
+  else if (wallet.pointsBalance !== null && wallet.pointsBalance !== undefined) parts.push('poin harian belum ada')
   if (wallet.watermarkFree === false) parts.push('hasil bertimestamp (akun gratis)')
   else if (wallet.watermarkFree === true) parts.push('hasil tanpa watermark')
   return parts.join(' · ')
@@ -325,8 +340,38 @@ export async function checkRunningHubBalance(apiKey: string): Promise<{
   }
 }
 
-export function getRunningHubWorkflowId(): string {
-  if (typeof window === 'undefined') return RUNNINGHUB_DEFAULT_WORKFLOW_ID
+/**
+ * Klaim hadiah harian RunningHub (30 poin/hari). Hanya access token (JWT)
+ * milik pengguna yang bisa diklaim — hadiahnya terikat akun.
+ */
+export async function claimRunningHubDailyGift(apiKey: string): Promise<{
+  ok: boolean
+  message?: string
+  error?: string
+  tokenWallet?: RHTokenWallet | null
+  code?: string | number | null
+}> {
+  const cleanKey = parseRunningHubApiKeyInput(apiKey) || String(apiKey || '').trim()
+  try {
+    const res = await fetch(RUNNINGHUB_PROXY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'claim-daily-gift', apiKey: cleanKey }),
+    })
+    const data = await res.json()
+    return {
+      ok: data.ok ?? false,
+      message: data.message,
+      error: data.error,
+      tokenWallet: data.tokenWallet ?? null,
+      code: data.code ?? null,
+    }
+  } catch (err: any) {
+    return { ok: false, error: err.message, tokenWallet: null }
+  }
+}
+
+export function getRunningHubWorkflowId(): string {  if (typeof window === 'undefined') return RUNNINGHUB_DEFAULT_WORKFLOW_ID
   try {
     return localStorage.getItem('runninghub.workflowId') || RUNNINGHUB_DEFAULT_WORKFLOW_ID
   } catch { return RUNNINGHUB_DEFAULT_WORKFLOW_ID }

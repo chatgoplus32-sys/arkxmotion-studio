@@ -18,9 +18,11 @@ import {
   ExternalLink,
   Wrench,
   Wallet,
+  Gift,
 } from 'lucide-react'
 import { useProviderManager, ProviderId, HIDDEN_PROVIDERS, RUNNINGHUB_SERVER_MANAGED_KEY } from '@/stores/providerManager'
 import { useAuthStore } from '@/stores/authStore'
+import { useToastStore } from '@/stores/toastStore'
 import { syncCreditsToDbAsAdmin } from '@/lib/tokenAutoSync'
 import ProviderStatusBar from '@/components/providers/ProviderStatusBar'
 import TokenSyncHistory from '@/components/providers/TokenSyncHistory'
@@ -29,10 +31,12 @@ import { fetchLeonardoBalance } from '@/lib/leonardo'
 import { checkWeavyBalance } from '@/lib/weavy'
 import {
   checkRunningHubBalance,
+  claimRunningHubDailyGift,
   getRhUsage,
   clearRhUsage,
   parseRunningHubApiKeyInput,
   formatRhWalletDetail,
+  formatRhWalletBadges,
   readRhCreditSnapshot,
   saveRhCreditSnapshot,
   RH_CREDIT_EVENT,
@@ -70,8 +74,12 @@ const PROVIDER_COLORS: Record<string, string> = {
  * Provider tanpa dompet (Roboneo/Weavy/Framia, dll.) memakai kunci milik
  * member sendiri, jadi top up-nya diajukan ke admin lewat halaman manual.
  */
-function topupCta(provider: string): { route: string; label: string } {
-  if (provider === 'createpulse') return { route: '/topup/createpulse', label: 'Topup CreatePulse' }
+/** Access token RunningHub = JWT (header base64 "eyJ..."). */
+function isRhJwtKey(key: string): boolean {
+  return /^eyJ[A-Za-z0-9_-]+\./.test(String(key || '').trim())
+}
+
+function topupCta(provider: string): { route: string; label: string } {  if (provider === 'createpulse') return { route: '/topup/createpulse', label: 'Topup CreatePulse' }
   if (provider === 'seavi') return { route: '/topup/seavi', label: 'Topup Seavi' }
   return { route: `/topup/manual?provider=${encodeURIComponent(provider)}`, label: 'Topup Manual' }
 }
@@ -873,6 +881,8 @@ export default function ProvidersPage() {
   const [rhCredit, setRhCredit] = useState<RhCreditSnapshot | null>(() => readRhCreditSnapshot())
   const [tokenBankOpen, setTokenBankOpen] = useState(false)
   const [editingBalanceIdx, setEditingBalanceIdx] = useState<number | null>(null)
+  const [claimingKey, setClaimingKey] = useState<string | null>(null)
+  const addToast = useToastStore((s) => s.addToast)
   const [, setRhUsageTick] = useState(0)
   const [editingBalanceVal, setEditingBalanceVal] = useState('')
 
@@ -1644,6 +1654,32 @@ export default function ProvidersPage() {
     return { state: 'unknown', detail: 'Cek limit belum tersedia untuk provider ini' }
   }, [selectedProvider, keys.riverside, keys.nexabot, replaceKey])
 
+  /**
+   * Klaim hadiah harian RunningHub (30 poin) untuk satu access token, lalu
+   * segarkan baris key itu supaya saldo & status watermark langsung terbaca.
+   */
+  const handleClaimGift = useCallback(async (key: string) => {
+    if (claimingKey) return
+    setClaimingKey(key)
+    try {
+      const res = await claimRunningHubDailyGift(key)
+      if (res.ok) addToast(res.message || 'Hadiah harian diklaim.', 'success')
+      else addToast(res.error || 'Gagal klaim hadiah harian.', 'warning')
+
+      const result = await handleCheckKey(key)
+      setStatusMap(prev => ({ ...prev, [key]: result }))
+      const keyObj = (keys[selectedProvider as ProviderId] || []).find(k => k.key === key)
+      if (keyObj && selectedProvider === 'runninghub') {
+        const keep = (result.state === 'active' || result.state === 'empty') && !!result.detail
+        setKeyCreditDetail(selectedProvider as ProviderId, keyObj.id, keep ? result.detail || null : null, result.wallet ?? null)
+      }
+    } catch (err: any) {
+      addToast(err?.message || 'Gagal klaim hadiah harian.', 'error')
+    } finally {
+      setClaimingKey(null)
+    }
+  }, [claimingKey, addToast, handleCheckKey, keys, selectedProvider, setKeyCreditDetail])
+
   const handleCheckAll = useCallback(async () => {
     if (savedKeys.length === 0) return
     setChecking(true)
@@ -1741,12 +1777,14 @@ export default function ProvidersPage() {
       let videoRem = 0, videoTotal = 0, imageRem = 0, imageTotal = 0
       let points = 0, pointsKnown = false, coins = 0, coinsKnown = false
       let balancePoints = 0, balancePointsKnown = false
+      let walletsRead = 0
       let serverWalletCounted = false
       let walletSource: 'user' | 'server' | null = null
       for (const res of Object.values(newStatusMap)) {
         if (typeof res.balance === 'number') { coins += res.balance; coinsKnown = true }
         const wallet = res.wallet
         if (!wallet) continue
+        walletsRead += 1
         // Token server yang sama dipakai untuk semua key yang dialihkan —
         // jangan dijumlah berulang.
         if (res.walletSource === 'server') {
@@ -1768,7 +1806,7 @@ export default function ProvidersPage() {
         { label: 'Kredit image', value: imageTotal ? `${imageRem}/${imageTotal}` : '—', tone: imageRem > 0 ? 'ok' : 'muted' },
         // Saldo utama akun = poin (billing baru). Koin RH lama tidak dipakai lagi.
         { label: 'Saldo poin', value: balancePointsKnown ? fmtBalance(balancePoints) : '—', tone: balancePointsKnown && balancePoints > 0 ? 'ok' : 'muted' },
-        { label: 'Poin harian', value: pointsKnown ? points : '—', tone: pointsKnown ? undefined : 'muted' },
+        { label: 'Poin harian', value: pointsKnown ? points : walletsRead > 0 ? 'belum ada' : '—', tone: pointsKnown ? undefined : 'muted' },
       )
       // Saldo koin hanya relevan untuk API key lawas (remainCoins), bukan token.
       if (coinsKnown) {
@@ -2275,6 +2313,31 @@ export default function ProvidersPage() {
                           {!isWeavy && !detail && (
                             <span className="text-[12px] text-[#a0a0a0] truncate max-w-[220px]">—</span>
                           )}
+                          {!isWeavy && selectedProvider === 'runninghub' && (
+                            <>
+                              {formatRhWalletBadges(status?.wallet).map((badge, bi) => (
+                                <span
+                                  key={bi}
+                                  title={badge.startsWith('⚠') ? 'Akun tier gratis → hasil generate diberi watermark RunningHub' : badge}
+                                  className={`rounded-full border px-1.5 py-0.5 text-[10.5px] whitespace-nowrap ${badge.startsWith('⚠') ? 'border-amber-500/40 text-amber-300' : 'border-[#2a2a2a] bg-[#1a1a1a] text-[#a0a0a0]'}`}
+                                >
+                                  {badge}
+                                </span>
+                              ))}
+                              {isRhJwtKey(key) && (
+                                <button
+                                  onClick={() => handleClaimGift(key)}
+                                  disabled={claimingKey === key}
+                                  title="Klaim hadiah harian RunningHub (30 poin)"
+                                  className="inline-flex items-center gap-1 rounded-full border border-[#2a2a2a] bg-[#1a1a1a] px-1.5 py-0.5 text-[11px] text-[#a0a0a0] hover:text-[#ffd76a] hover:border-[#ffd76a]/50 transition disabled:opacity-50"
+                                >
+                                  {claimingKey === key
+                                    ? <Loader2 className="h-3 w-3 animate-spin" />
+                                    : <Gift className="h-3 w-3" />}
+                                </button>
+                              )}
+                            </>
+                          )}
                           <span className={`text-[12px] px-2 py-0.5 rounded-full border ${getStatusColor(state)}`}>
                             {getStatusLabel(state)}
                           </span>
@@ -2337,8 +2400,14 @@ export default function ProvidersPage() {
               const video = wallet?.freeVideo ?? null
               const image = wallet?.freeImage ?? null
               const points = wallet?.points ?? null
+              // Saldo poin adalah angka yang dipotong saat generate — baris ini
+              // dulu tidak ada di Pool Summary, jadi akun dengan poin 0/145
+              // terlihat "saldo kosong" walau angkanya sudah terbaca.
+              const pointsBalance = typeof wallet?.pointsBalance === 'number' ? wallet.pointsBalance : null
+              const walletCoins = typeof wallet?.coins === 'number' ? wallet.coins : null
               const freeLeft = (video?.remaining ?? 0) + (image?.remaining ?? 0)
-              const coinsKnown = providerKeys.some(k => typeof k.balance === 'number')
+              const coinsKnown = walletCoins !== null || providerKeys.some(k => typeof k.balance === 'number')
+              const fmtPts = (n: number) => String(Math.round(n * 100) / 100)
               return (
                 <div className="mt-3 rounded-lg border border-[#00a8ff]/30 bg-[#00a8ff]/5 p-3">
                   <div className="text-[12px] font-mono uppercase tracking-widest text-[#00a8ff]/80">Pool Summary</div>
@@ -2358,12 +2427,16 @@ export default function ProvidersPage() {
                       <span className="font-mono text-[#f5f5f5]/85">{image ? `${image.remaining}/${image.total}` : '—'}</span>
                     </div>
                     <div className="flex items-center justify-between gap-2">
+                      <span>Saldo poin</span>
+                      <span className="font-mono text-[#f5f5f5]/85">{pointsBalance !== null ? fmtPts(pointsBalance) : '—'}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
                       <span>Poin harian</span>
-                      <span className="font-mono text-[#f5f5f5]/85">{points !== null ? points : '—'}</span>
+                      <span className="font-mono text-[#f5f5f5]/85">{points !== null ? points : wallet ? 'belum ada' : '—'}</span>
                     </div>
                     <div className="flex items-center justify-between gap-2">
                       <span>Koin RH</span>
-                      <span className="font-mono text-[#f5f5f5]/85">{coinsKnown ? totalBalance.toLocaleString() : 'tidak diekspos token'}</span>
+                      <span className="font-mono text-[#f5f5f5]/85">{walletCoins !== null ? walletCoins.toLocaleString() : coinsKnown ? totalBalance.toLocaleString() : 'tidak diekspos token'}</span>
                     </div>
                   </div>
                   <div className="mt-1.5 text-[10.5px] text-[#00a8ff]/80">

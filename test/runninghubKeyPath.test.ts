@@ -434,7 +434,7 @@ test('saldo poin yang jadi acuan — RH Coin tidak lagi ditampilkan', () => {
   assert.equal(formatRhWalletCompact(wallet), '0 P · V3/3 · I3/3')
   assert.equal(
     formatRhWalletDetail(wallet),
-    'saldo poin 0 · kredit video 3/3 · kredit image 3/3',
+    'saldo poin 0 · kredit video 3/3 · kredit image 3/3 · poin harian belum ada',
   )
 })
 
@@ -546,4 +546,42 @@ test('deteksi hak watermark hasil dari /uc/getUserInfo (gratis vs member)', asyn
   const memberAcc = await checkBalance(fakeJwt(FUTURE() + 558))
   assert.equal(memberAcc.tokenWallet?.watermarkFree, true)
   assert.match(String(memberAcc.message), /tanpa watermark/)
+})
+
+test('claim-daily-gift: klaim hadiah harian pakai token user, kembalikan saldo terbaru', async () => {
+  upstream = (url) => {
+    const u = String(url)
+    if (u.includes('/api/welfare/daily-gift/claim')) return json({ code: 0, msg: 'success', data: { amount: 30 } })
+    if (u.includes('/uc/openapi/accountStatus')) return json({ code: 0, msg: 'success', data: { apiType: 'consumer' } })
+    if (u.includes('/api/welfare/summary')) {
+      return json({ code: 0, data: { dailyGift: { granted: true, amount: 30 }, freeVideo: { total: 3, used: 0, remaining: 3, modelNames: [] }, freeImage: null, freePeriod: null } })
+    }
+    if (u.includes('/uc/point/summary')) return json({ code: 0, data: { billingVersion: 'NEW', transitionCoinRemained: '0', balancePoint: 30 } })
+    if (u.includes('/uc/getUserInfo')) return json({ code: 0, data: { id: 'uji', memberInfo: { userType: '3' } } })
+    return json({})
+  }
+
+  const res = await originalFetch(`${base}/api/public/runninghub`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'claim-daily-gift', apiKey: fakeJwt(FUTURE() + 999) }),
+  })
+  const out = await res.json()
+  assert.equal(out.ok, true, JSON.stringify(out))
+  assert.equal(out.tokenWallet?.pointsBalance, 30)
+  assert.match(String(out.message), /saldo poin 30/)
+  assert.ok(urlsSeen.some(u => u.endsWith('/api/welfare/daily-gift/claim')), 'endpoint klaim harus dipanggil')
+})
+
+test('claim-daily-gift ditolak untuk API key biasa (bukan access token)', async () => {
+  upstream = () => json({ code: 0, data: {} })
+  const res = await originalFetch(`${base}/api/public/runninghub`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'claim-daily-gift', apiKey: 'a1b2c3d4e5f60718293a4b5c6d7e8f90' }),
+  })
+  const out = await res.json()
+  assert.equal(out.ok, false)
+  assert.match(String(out.error), /access token/i)
+  assert.equal(urlsSeen.filter(u => u.endsWith('/api/welfare/daily-gift/claim')).length, 0)
 })
