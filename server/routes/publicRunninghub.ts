@@ -331,6 +331,21 @@ function rhJwtExpired(token: string): boolean {
   return exp !== null && Date.now() > exp * 1000
 }
 
+/** sub (id akun) dari payload JWT — null kalau bukan JWT valid. */
+function rhJwtSub(token: string): string | null {
+  const parts = String(token || '').split('.')
+  if (parts.length < 2 || !parts[0].startsWith('ey')) return null
+  try {
+    const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+    const padded = payload + '='.repeat((4 - payload.length % 4) % 4)
+    const decoded = JSON.parse(Buffer.from(padded, 'base64').toString('utf8'))
+    const sub = decoded?.sub
+    return sub === undefined || sub === null || sub === '' ? null : String(sub)
+  } catch {
+    return null
+  }
+}
+
 /** Token global dari env RUNNINGHUB_ACCESS_TOKEN — '' kalau belum diisi. */
 function rhGlobalAccessToken(): string {
   return normalizeRhApiKey(process.env.RUNNINGHUB_ACCESS_TOKEN)
@@ -3821,6 +3836,13 @@ export interface RHTokenWallet {
   pointsBalance: number | null
   /** Versi billing RunningHub: "NEW" (poin) atau "OLD" (koin). */
   billingVersion: string | null
+  /**
+   * Apakah hasil generate akun ini TANPA watermark "RunningHub".
+   * RunningHub memberi hak "作品免水印" (hasil tanpa watermark) hanya ke akun
+   * tier berbayar; akun gratis (memberInfo.userType "3") selalu diberi watermark.
+   * null = tidak diketahui (endpoint user info tidak terbaca).
+   */
+  watermarkFree: boolean | null
 }
 
 const RH_WALLET_CACHE_MS = 60 * 1000
@@ -3850,17 +3872,59 @@ async function rhTokenJson(jwt: string, path: string, ms = 15000): Promise<any |
   }
 }
 
+/** Data akun (memberInfo, paket aktif) dari /uc/getUserInfo — null kalau gagal. */
+async function rhTokenUserInfo(jwt: string): Promise<any | null> {
+  const userId = rhJwtSub(jwt)
+  if (!userId) return null
+  try {
+    const res = await fetch(`${RUNNINGHUB_BASE}/uc/getUserInfo`, {
+      method: 'POST',
+      headers: rhAuthHeaders(jwt),
+      body: JSON.stringify({ userId }),
+      signal: AbortSignal.timeout(15000),
+    })
+    const data = JSON.parse(await res.text())
+    if (!data || (data.code !== 0 && data.code !== '0') || !data.data) return null
+    return data.data
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Apakah akun punya hak "hasil tanpa watermark" (作品免水印).
+ * RunningHub memberi hak ini hanya ke paket/member berbayar — akun gratis
+ * (memberInfo.userType "3") hasil generate-nya selalu diberi watermark
+ * "RunningHub" di pojok kiri atas.
+ */
+function rhWatermarkFree(user: any): boolean | null {
+  if (!user || typeof user !== 'object') return null
+  const m = user.memberInfo
+  if (!m || typeof m !== 'object') return false
+  if (String(m.userType ?? '') === '1') return true
+  if (m.memberCode) {
+    const exp = m.memberExpiredTime ? Date.parse(String(m.memberExpiredTime)) : NaN
+    return Number.isFinite(exp) ? exp > Date.now() : true
+  }
+  if (m.memberExpiredTime) {
+    const exp = Date.parse(String(m.memberExpiredTime))
+    if (Number.isFinite(exp)) return exp > Date.now()
+  }
+  return false
+}
+
 async function rhTokenWallet(jwt: string): Promise<RHTokenWallet | null> {
   const fp = rhTokenFingerprint(jwt)
   const cached = rhWalletCache.get(fp)
   if (cached && Date.now() - cached.at < RH_WALLET_CACHE_MS) return cached.value
 
-  // Dua sumber berjalan berbarengan; salah satu gagal tetap menghasilkan wallet
-  // selama yang lain terbaca — dulu hanya /api/welfare/summary sehingga RH Coin
-  // (totalCoin/transitionCoinRemained) tidak pernah tampil.
-  const [welfare, points] = await Promise.all([
+  // Tiga sumber berjalan berbarengan; salah satu gagal tetap menghasilkan
+  // wallet selama yang lain terbaca — dulu hanya /api/welfare/summary sehingga
+  // RH Coin (totalCoin/transitionCoinRemained) tidak pernah tampil.
+  const [welfare, points, user] = await Promise.all([
     rhTokenJson(jwt, '/api/welfare/summary'),
     rhTokenJson(jwt, '/uc/point/summary'),
+    rhTokenUserInfo(jwt),
   ])
   if (!welfare && !points) return null
 
@@ -3883,6 +3947,7 @@ async function rhTokenWallet(jwt: string): Promise<RHTokenWallet | null> {
     coins: rhNum(points?.transitionCoinRemained),
     pointsBalance: rhNum(points?.balancePoint),
     billingVersion: typeof points?.billingVersion === 'string' ? points.billingVersion : null,
+    watermarkFree: rhWatermarkFree(user),
   }
   if (rhWalletCache.size > 50) rhWalletCache.clear()
   rhWalletCache.set(fp, { value: wallet, at: Date.now() })
@@ -3906,6 +3971,9 @@ function rhWalletSummary(wallet: RHTokenWallet | null): string {
   if (wallet.freeVideo) parts.push(`kredit video ${wallet.freeVideo.remaining}/${wallet.freeVideo.total}`)
   if (wallet.freeImage) parts.push(`kredit image ${wallet.freeImage.remaining}/${wallet.freeImage.total}`)
   if (wallet.points !== null) parts.push(`poin harian ${rhFmtBalance(wallet.points)}`)
+  // Watermark: hasilRunningHub gratis selalu diberi stempel "RunningHub".
+  if (wallet.watermarkFree === false) parts.push('hasil bertimestamp (akun gratis)')
+  else if (wallet.watermarkFree === true) parts.push('hasil tanpa watermark')
   return parts.join(' · ')
 }
 

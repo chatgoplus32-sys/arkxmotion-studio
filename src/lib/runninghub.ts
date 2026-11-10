@@ -194,6 +194,12 @@ export interface RHTokenWallet {
   pointsBalance?: number | null
   /** "NEW" = billing poin, "OLD" = billing koin. */
   billingVersion?: string | null
+  /**
+   * Hasil generate akun ini tanpa watermark "RunningHub"? RunningHub memberi hak
+   * ini hanya ke paket/member berbayar; akun gratis selalu diberi watermark.
+   * null = belum diketahui.
+   */
+  watermarkFree?: boolean | null
 }
 
 /** Bulatkan saldo ke 2 desimal tanpa nol berekor ("-58.511" → "-58.51"). */
@@ -225,6 +231,8 @@ export function formatRhWalletCompact(wallet: RHTokenWallet | null | undefined):
   if (wallet.freeVideo) parts.push(`V${wallet.freeVideo.remaining}/${wallet.freeVideo.total}`)
   if (wallet.freeImage) parts.push(`I${wallet.freeImage.remaining}/${wallet.freeImage.total}`)
   if (wallet.points !== null) parts.push(`${wallet.points} pt`)
+  if (wallet.watermarkFree === false) parts.push('⚠ watermark')
+  else if (wallet.watermarkFree === true) parts.push('✓ tanpa WM')
   return parts.join(' · ')
 }
 
@@ -237,6 +245,8 @@ export function formatRhWalletDetail(wallet: RHTokenWallet | null | undefined): 
   if (wallet.freeVideo) parts.push(`kredit video ${wallet.freeVideo.remaining}/${wallet.freeVideo.total}`)
   if (wallet.freeImage) parts.push(`kredit image ${wallet.freeImage.remaining}/${wallet.freeImage.total}`)
   if (wallet.points !== null) parts.push(`poin harian ${wallet.points}`)
+  if (wallet.watermarkFree === false) parts.push('hasil bertimestamp (akun gratis)')
+  else if (wallet.watermarkFree === true) parts.push('hasil tanpa watermark')
   return parts.join(' · ')
 }
 

@@ -11,7 +11,7 @@ import { submitGensparkVideo, extractGensparkVideoUrl, uploadToGenspark, pollGen
 import { trimVideoFFmpeg } from '@/lib/ffmpeg-compress'
 import { restoreMotionAudio } from '@/lib/motionAudio'
 import { submitWeavyMotionControl, uploadWeavyAssetWithRetry, resolveWeavyAssetUrl, getActiveWeavyAccessToken, compressImageForWeavy } from '@/lib/weavy'
-import { getRunningHubApiKey, getRunningHubWorkflowId, submitRunningHubMotionControl, submitRunningHubUltraFastHD, submitRunningHubMotionApp, pollRunningHubTask } from '@/lib/runninghub'
+import { getRunningHubApiKey, getRunningHubWorkflowId, submitRunningHubMotionControl, submitRunningHubUltraFastHD, submitRunningHubMotionApp, pollRunningHubTask, checkRunningHubBalance } from '@/lib/runninghub'
 import { getGalleri5AuthHeaders, submitGalleri5MotionControl, pollGalleri5MotionControl, isGalleri5ModelRestricted, getGalleri5ErrorMessage, GALLERI5_MOTION_MODELS, runGalleri5WithRotation } from '@/lib/galleri5'
 import { getMagnificApiKey, submitMagnificMotion, pollMagnificMotion, type MagnificMotionModel } from '@/lib/magnific'
 import { getSeaviSpec, generateWithSeavi, buildSeaviPayload } from '@/lib/seavi'
@@ -1458,6 +1458,14 @@ export default function MotionPage() {
                 'runninghub',
                 async (apiKey, keyInfo) => {
                   addLog(`#${slotNum} 🔑 Trying key: ${keyInfo.name || keyInfo.id}`, 'info')
+                  // RunningHub memberi stempel "RunningHub" pada hasil generate
+                  // akun tier gratis — beri tahu lebih awal ke pengguna.
+                  try {
+                    const bal = await checkRunningHubBalance(apiKey)
+                    if (bal.tokenWallet?.watermarkFree === false) {
+                      addLog(`#${slotNum} ⚠ Akun RunningHub tier gratis → hasil video diberi watermark "RunningHub" (paket/member RunningHub menghilangkannya).`, 'warn')
+                    }
+                  } catch { /* cek saldo hanya untuk info, jangan menggagalkan generate */ }
                   const result = modelKey === 'rh:wf:ultra-hd'
                     ? await submitRunningHubUltraFastHD({
                       imageFile: normalizedImage,

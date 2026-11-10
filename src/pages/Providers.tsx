@@ -867,7 +867,7 @@ export default function ProvidersPage() {
   const [checking, setChecking] = useState(false)
   const [progress, setProgress] = useState({ show: false, pct: 0, text: '' })
   const [viewHidden, setViewHidden] = useState(false)
-  const [summaryPayload, setSummaryPayload] = useState<{ title: string; rows: Array<{ label: string; value: string | number; tone?: string }>; footer?: string } | null>(null)
+  const [summaryPayload, setSummaryPayload] = useState<{ title: string; rows: Array<{ label: string; value: string | number; tone?: string }>; footer?: string; link?: { href: string; label: string } } | null>(null)
   // Snapshot kredit RunningHub (dibaca juga oleh chip status) — disimpan agar
   // Pool Summary tetap menampilkan angka setelah reload tanpa cek ulang.
   const [rhCredit, setRhCredit] = useState<RhCreditSnapshot | null>(() => readRhCreditSnapshot())
@@ -1237,12 +1237,17 @@ export default function ProvidersPage() {
               const walletRead = wallet?.coins != null || wallet?.pointsBalance != null
                 || wallet?.freeVideo != null || wallet?.freeImage != null
               const drained = walletRead && !hasCoins && !hasPoints && !hasFree
+              // RunningHub memberi stempel "RunningHub" di hasil generate untuk
+              // akun tier gratis — hak "作品免水印" hanya ada di paket berbayar.
+              const wmNote = wallet?.watermarkFree === false
+                ? ' · ⚠ hasil generate diberi watermark RunningHub (akun tier gratis) — paket/member RunningHub menghilangkannya'
+                : ''
               return {
                 state: drained ? 'empty' : 'active',
                 balance: null,
                 wallet,
                 walletSource,
-                detail: `${type}${walletText}`,
+                detail: `${type}${walletText}${wmNote}`,
               }
             }
             return {
@@ -1731,6 +1736,7 @@ export default function ProvidersPage() {
       { label: 'Invalid / ditolak', value: invalidCount, tone: invalidCount ? 'bad' : 'muted' },
     ]
     let footer: string | undefined
+    let wmFree = 0, wmBlocked = 0, wmUnknown = 0
     if (selectedProvider === 'runninghub') {
       let videoRem = 0, videoTotal = 0, imageRem = 0, imageTotal = 0
       let points = 0, pointsKnown = false, coins = 0, coinsKnown = false
@@ -1752,6 +1758,9 @@ export default function ProvidersPage() {
         if (wallet.freeImage) { imageRem += wallet.freeImage.remaining; imageTotal += wallet.freeImage.total }
         if (wallet.points !== null) { points += wallet.points; pointsKnown = true }
         if (typeof wallet.pointsBalance === 'number') { balancePoints += wallet.pointsBalance; balancePointsKnown = true }
+        if (wallet.watermarkFree === true) wmFree += 1
+        else if (wallet.watermarkFree === false) wmBlocked += 1
+        else wmUnknown += 1
       }
       const fmtBalance = (n: number) => String(Math.round(n * 100) / 100)
       rows.push(
@@ -1765,15 +1774,32 @@ export default function ProvidersPage() {
       if (coinsKnown) {
         rows.push({ label: 'Saldo API key (koin)', value: coins, tone: coins > 0 ? 'ok' : 'muted' })
       }
+      // Watermark hasil: RunningHub hanya memberi hasil bersih ke akun berbayar.
+      if (wmFree + wmBlocked > 0) {
+        const wmValue = wmBlocked > 0
+          ? `${wmBlocked} akun bertimestamp`
+          : `${wmFree} akun tanpa watermark`
+        rows.push({
+          label: 'Watermark hasil',
+          value: wmValue,
+          tone: wmBlocked > 0 ? 'warn' : 'ok',
+        })
+      }
       footer = walletSource === 'server'
         ? 'Kredit dibaca dari token server yang dipakai generate. Generate memotong saldo poin akun — kredit gratis hanya untuk model playground RunningHub.'
         : 'Generate memotong saldo poin akun. Kredit gratis hanya untuk model playground RunningHub; workflow custom (Motion Control, Song Cover, dll.) tetap memotong saldo akun.'
+      if (wmBlocked > 0) {
+        footer += ' ⚠ Akun tier gratis diberi watermark "RunningHub" di hasil generate — hak hasil tanpa watermark hanya ada di paket/member RunningHub.'
+      }
     }
 
     setSummaryPayload({
       title: `Ringkasan Cek ${currentConfig?.label || selectedProvider}`,
       rows,
       footer,
+      link: wmBlocked > 0
+        ? { href: 'https://www.runninghub.ai/vip-rights', label: 'Buka paket RunningHub — hasil tanpa watermark' }
+        : undefined,
     })
   }, [savedKeys, selectedProvider, handleCheckKey, currentConfig, keys, updateKeyStatus, setKeyCreditDetail])
 
@@ -2466,6 +2492,18 @@ export default function ProvidersPage() {
             </div>
             {summaryPayload.footer && (
               <div className="mt-3 text-[11px] text-[#a0a0a0] text-center leading-relaxed">{summaryPayload.footer}</div>
+            )}
+            {summaryPayload.link && (
+              <div className="mt-3 text-center">
+                <a
+                  href={summaryPayload.link.href}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="inline-block rounded-lg border border-[#2a2a2a] bg-[#141414] px-3 py-1.5 text-[11px] font-semibold text-[#f5f5f5] hover:border-[#00a8ff]"
+                >
+                  {summaryPayload.link.label}
+                </a>
+              </div>
             )}
             <div className="mt-5 flex justify-center">
               <Button onClick={() => setSummaryPayload(null)} className="min-w-[120px] justify-center brand-gradient text-[#0a0a0a]">OK</Button>

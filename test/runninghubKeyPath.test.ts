@@ -520,3 +520,30 @@ test('billing baru: saldo poin ditampilkan walau RH Coin 0', async () => {
   assert.doesNotMatch(String(out.message), /RH Coin/)
   assert.equal(formatRhWalletCompact(out.tokenWallet), '-58.51 P · V3/3 · I3/3 · 30 pt')
 })
+
+test('deteksi hak watermark hasil dari /uc/getUserInfo (gratis vs member)', async () => {
+  // RunningHub memberi hak "作品免水印" hanya ke akun berbayar; akun gratis
+  // (memberInfo.userType "3") hasil generate-nya selalu diberi watermark.
+  let member: any = { userType: '3', memberCode: null, memberExpiredTime: null }
+  upstream = (url) => {
+    const u = String(url)
+    if (u.includes('/uc/openapi/accountStatus')) return json({ code: 0, msg: 'success', data: { apiType: 'consumer' } })
+    if (u.includes('/api/welfare/summary')) {
+      return json({ code: 0, data: { dailyGift: { amount: 30 }, freeVideo: { total: 3, used: 0, remaining: 3, modelNames: [] }, freeImage: null, freePeriod: null } })
+    }
+    if (u.includes('/uc/point/summary')) {
+      return json({ code: 0, data: { billingVersion: 'NEW', transitionCoinRemained: '0', balancePoint: 30 } })
+    }
+    if (u.includes('/uc/getUserInfo')) return json({ code: 0, data: { id: 'uji', memberInfo: member } })
+    return json({})
+  }
+
+  const gratis = await checkBalance(fakeJwt(FUTURE() + 557))
+  assert.equal(gratis.tokenWallet?.watermarkFree, false)
+  assert.match(String(gratis.message), /bertimestamp/)
+
+  member = { userType: '1', memberCode: 'HOBBYIST_MONTH', memberExpiredTime: '2099-01-01T00:00:00Z' }
+  const memberAcc = await checkBalance(fakeJwt(FUTURE() + 558))
+  assert.equal(memberAcc.tokenWallet?.watermarkFree, true)
+  assert.match(String(memberAcc.message), /tanpa watermark/)
+})
