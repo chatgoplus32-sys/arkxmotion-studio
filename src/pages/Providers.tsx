@@ -1228,10 +1228,15 @@ export default function ProvidersPage() {
             const walletText = formatRhWalletDetail(wallet)
             if (walletText) {
               const hasCoins = typeof wallet?.coins === 'number' && wallet.coins > 0
+              // Billing baru menagih poin, bukan koin lama — saldo poin juga
+              // dihitung supaya akun bertoken "RH Coin 0 tapi poin ada" tidak
+              // salah dilabeli habis.
+              const hasPoints = typeof wallet?.pointsBalance === 'number' && wallet.pointsBalance > 0
               const hasFree =
                 (wallet?.freeVideo?.remaining ?? 0) > 0 || (wallet?.freeImage?.remaining ?? 0) > 0
-              const walletRead = wallet?.coins != null || wallet?.freeVideo != null || wallet?.freeImage != null
-              const drained = walletRead && !hasCoins && !hasFree
+              const walletRead = wallet?.coins != null || wallet?.pointsBalance != null
+                || wallet?.freeVideo != null || wallet?.freeImage != null
+              const drained = walletRead && !hasCoins && !hasPoints && !hasFree
               return {
                 state: drained ? 'empty' : 'active',
                 balance: null,
@@ -1729,6 +1734,7 @@ export default function ProvidersPage() {
     if (selectedProvider === 'runninghub') {
       let videoRem = 0, videoTotal = 0, imageRem = 0, imageTotal = 0
       let points = 0, pointsKnown = false, coins = 0, coinsKnown = false
+      let balancePoints = 0, balancePointsKnown = false
       let serverWalletCounted = false
       let walletSource: 'user' | 'server' | null = null
       for (const res of Object.values(newStatusMap)) {
@@ -1745,16 +1751,19 @@ export default function ProvidersPage() {
         if (wallet.freeVideo) { videoRem += wallet.freeVideo.remaining; videoTotal += wallet.freeVideo.total }
         if (wallet.freeImage) { imageRem += wallet.freeImage.remaining; imageTotal += wallet.freeImage.total }
         if (wallet.points !== null) { points += wallet.points; pointsKnown = true }
+        if (typeof wallet.pointsBalance === 'number') { balancePoints += wallet.pointsBalance; balancePointsKnown = true }
       }
+      const fmtBalance = (n: number) => String(Math.round(n * 100) / 100)
       rows.push(
         { label: 'Kredit video', value: videoTotal ? `${videoRem}/${videoTotal}` : '—', tone: videoRem > 0 ? 'ok' : 'muted' },
         { label: 'Kredit image', value: imageTotal ? `${imageRem}/${imageTotal}` : '—', tone: imageRem > 0 ? 'ok' : 'muted' },
+        { label: 'Saldo poin', value: balancePointsKnown ? fmtBalance(balancePoints) : '—', tone: balancePointsKnown && balancePoints > 0 ? 'ok' : 'muted' },
         { label: 'Poin harian', value: pointsKnown ? points : '—', tone: pointsKnown ? undefined : 'muted' },
         { label: 'Koin RH', value: coinsKnown ? coins : 'tidak diekspos token', tone: coinsKnown && coins > 0 ? 'ok' : 'muted' },
       )
       footer = walletSource === 'server'
-        ? 'Kredit dibaca dari token server yang dipakai generate. Kredit gratis hanya untuk model playground RunningHub; workflow custom (Song Cover, dll.) tetap memotong koin RH.'
-        : 'Kredit gratis hanya untuk model playground RunningHub; workflow custom (Song Cover, dll.) tetap memotong koin RH. Koin RH tidak bisa dibaca lewat access token.'
+        ? 'Kredit dibaca dari token server yang dipakai generate. Generate memotong saldo poin (billing baru) atau koin RH (billing lama) — kredit gratis hanya untuk model playground RunningHub.'
+        : 'Generate memotong saldo poin (billing baru) atau koin RH (billing lama). Kredit gratis hanya untuk model playground RunningHub; workflow custom (Motion Control, Song Cover, dll.) tetap memotong saldo akun.'
     }
 
     setSummaryPayload({

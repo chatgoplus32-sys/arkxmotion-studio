@@ -431,10 +431,10 @@ test('RH Coin tampil di chip & baris detail (saldo tidak lagi kosong)', () => {
     freeVideo: { total: 3, used: 0, remaining: 3, models: [] },
     freeImage: { total: 3, used: 0, remaining: 3, models: [] },
   }
-  assert.equal(formatRhWalletCompact(wallet), '145 RC · V3/3 · I3/3')
+  assert.equal(formatRhWalletCompact(wallet), '0 P · 145 RC · V3/3 · I3/3')
   assert.equal(
     formatRhWalletDetail(wallet),
-    'RH Coin 145 · kredit video 3/3 · kredit image 3/3',
+    'saldo poin 0 · RH Coin 145 · kredit video 3/3 · kredit image 3/3',
   )
 })
 
@@ -456,7 +456,7 @@ test('cek saldo sesi JWT membaca RH Coin dari /uc/point/summary', async () => {
       })
     }
     if (u.includes('/uc/point/summary')) {
-      return json({ code: 0, data: { transitionCoinRemained: '145', balancePoint: 0 } })
+      return json({ code: 0, data: { billingVersion: 'OLD', transitionCoinRemained: '145', balancePoint: 0 } })
     }
     return json({})
   }
@@ -467,4 +467,42 @@ test('cek saldo sesi JWT membaca RH Coin dari /uc/point/summary', async () => {
   assert.equal(out.tokenWallet?.freeVideo?.remaining, 3)
   assert.match(String(out.message), /RH Coin 145/)
   assert.match(formatRhWalletCompact(out.tokenWallet), /145 RC/)
+})
+
+test('billing baru: saldo poin ditampilkan walau RH Coin 0', async () => {
+  // Kasus nyata akun RunningHub sekarang: transitionCoinRemained "0" karena
+  // koin sudah dikonversi ke poin; yang dipotong saat generate adalah poin.
+  upstream = (url) => {
+    const u = String(url)
+    if (u.includes('/uc/openapi/accountStatus')) {
+      return json({ code: 0, msg: 'success', data: { apiType: 'consumer' } })
+    }
+    if (u.includes('/api/welfare/summary')) {
+      return json({
+        code: 0,
+        data: {
+          dailyGift: { amount: 30 },
+          freeVideo: { total: 3, used: 0, remaining: 3, modelNames: [] },
+          freeImage: { total: 3, used: 0, remaining: 3, modelNames: [] },
+          freePeriod: null,
+        },
+      })
+    }
+    if (u.includes('/uc/point/summary')) {
+      return json({
+        code: 0,
+        data: { billingVersion: 'NEW', transitionCoinRemained: '0', balancePoint: -58.511 },
+      })
+    }
+    return json({})
+  }
+
+  const out = await checkBalance(fakeJwt(FUTURE() + 556))
+  assert.equal(out.ok, true, JSON.stringify(out))
+  assert.equal(out.tokenWallet?.coins, 0)
+  assert.equal(out.tokenWallet?.pointsBalance, -58.511)
+  assert.equal(out.tokenWallet?.billingVersion, 'NEW')
+  assert.match(String(out.message), /saldo poin -58\.51/)
+  assert.match(String(out.message), /RH Coin 0/)
+  assert.equal(formatRhWalletCompact(out.tokenWallet), '-58.51 P · 0 RC · V3/3 · I3/3 · 30 pt')
 })

@@ -178,35 +178,47 @@ export interface RHTokenCredit {
   models: string[]
 }
 
-/** Saldo yang bisa dibaca dari access token (JWT): RH Coin + kredit gratis + poin. */
+/** Saldo yang bisa dibaca dari access token (JWT): poin + RH Coin + kredit gratis. */
 export interface RHTokenWallet {
   points: number | null
   pointsExpiresAt: string | null
   freeVideo: RHTokenCredit | null
   freeImage: RHTokenCredit | null
   freePeriodEnd: string | null
-  /** RH Coin (koin situs) — dompet yang dipakai generate lewat jalur web. */
+  /**
+   * RH Coin (koin situs). Billing lama: dompet utama. Billing baru ("NEW"):
+   * koin sudah dikonversi ke poin, jadi angkanya biasanya 0.
+   */
   coins?: number | null
-  /** Saldo poin akun (bisa negatif bila pernah minus). */
+  /** Saldo poin akun (bisa negatif bila pernah minus). Ini yang dipotong saat generate. */
   pointsBalance?: number | null
+  /** "NEW" = billing poin, "OLD" = billing koin. */
+  billingVersion?: string | null
 }
 
-/** Versi pendek untuk chip status: "145 RC · V3/3 · I3/3 · 30 pt". */
+/** Bulatkan saldo ke 2 desimal tanpa nol berekor ("-58.511" → "-58.51"). */
+function rhFmtBalance(n: number): string {
+  return String(Math.round(n * 100) / 100)
+}
+
+/** Versi pendek untuk chip status: "145 P · 145 RC · V3/3 · I3/3 · 30 pt". */
 export function formatRhWalletCompact(wallet: RHTokenWallet | null | undefined): string {
   if (!wallet) return ''
   const parts: string[] = []
-  if (wallet.coins !== null && wallet.coins !== undefined) parts.push(`${wallet.coins} RC`)
+  if (wallet.pointsBalance !== null && wallet.pointsBalance !== undefined) parts.push(`${rhFmtBalance(wallet.pointsBalance)} P`)
+  if (wallet.coins !== null && wallet.coins !== undefined) parts.push(`${rhFmtBalance(wallet.coins)} RC`)
   if (wallet.freeVideo) parts.push(`V${wallet.freeVideo.remaining}/${wallet.freeVideo.total}`)
   if (wallet.freeImage) parts.push(`I${wallet.freeImage.remaining}/${wallet.freeImage.total}`)
   if (wallet.points !== null) parts.push(`${wallet.points} pt`)
   return parts.join(' · ')
 }
 
-/** Versi panjang untuk baris detail: "RH Coin 145 · kredit video 3/3 · …". */
+/** Versi panjang untuk baris detail: "saldo poin 145 · RH Coin 0 · kredit video 3/3 · …". */
 export function formatRhWalletDetail(wallet: RHTokenWallet | null | undefined): string {
   if (!wallet) return ''
   const parts: string[] = []
-  if (wallet.coins !== null && wallet.coins !== undefined) parts.push(`RH Coin ${wallet.coins}`)
+  if (wallet.pointsBalance !== null && wallet.pointsBalance !== undefined) parts.push(`saldo poin ${rhFmtBalance(wallet.pointsBalance)}`)
+  if (wallet.coins !== null && wallet.coins !== undefined) parts.push(`RH Coin ${rhFmtBalance(wallet.coins)}`)
   if (wallet.freeVideo) parts.push(`kredit video ${wallet.freeVideo.remaining}/${wallet.freeVideo.total}`)
   if (wallet.freeImage) parts.push(`kredit image ${wallet.freeImage.remaining}/${wallet.freeImage.total}`)
   if (wallet.points !== null) parts.push(`poin harian ${wallet.points}`)

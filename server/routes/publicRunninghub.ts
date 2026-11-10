@@ -3801,10 +3801,19 @@ export interface RHTokenWallet {
   freeVideo: RHTokenCredit | null
   freeImage: RHTokenCredit | null
   freePeriodEnd: string | null
-  /** RH Coin (koin situs) — dompet yang dipakai jalur web /task/webapp/create. */
+  /**
+   * RH Coin (koin situs). Pada billing lama ini dompet utama; pada billing baru
+   * ("NEW") koin sudah dikonversi ke poin sehingga nilainya biasanya 0.
+   */
   coins: number | null
-  /** Saldo poin akun dari /uc/point/summary (bisa negatif bila pernah minus). */
+  /**
+   * Saldo poin akun dari /uc/point/summary (bisa negatif bila pernah minus).
+   * Inilah yang benar-benar dipotong saat generate di billing baru
+   * (settleMode POINT), jadi wajib ditampilkan bersama RH Coin.
+   */
   pointsBalance: number | null
+  /** Versi billing RunningHub: "NEW" (poin) atau "OLD" (koin). */
+  billingVersion: string | null
 }
 
 const RH_WALLET_CACHE_MS = 60 * 1000
@@ -3866,20 +3875,28 @@ async function rhTokenWallet(jwt: string): Promise<RHTokenWallet | null> {
     freePeriodEnd: typeof welfare?.freePeriod?.endTime === 'string' ? welfare.freePeriod.endTime : null,
     coins: rhNum(points?.transitionCoinRemained),
     pointsBalance: rhNum(points?.balancePoint),
+    billingVersion: typeof points?.billingVersion === 'string' ? points.billingVersion : null,
   }
   if (rhWalletCache.size > 50) rhWalletCache.clear()
   rhWalletCache.set(fp, { value: wallet, at: Date.now() })
   return wallet
 }
 
-/** Ringkasan singkat untuk pesan UI, mis. "RH Coin 145 · kredit video 3/3 · image 3/3 · poin 30". */
+/** Angka saldo: bulatkan ke 2 desimal tanpa nol berekor ("-58.511" → "-58.51"). */
+function rhFmtBalance(n: number): string {
+  return String(Math.round(n * 100) / 100)
+}
+
+/** Ringkasan singkat untuk pesan UI, mis. "poin 145 · RH Coin 145 · kredit video 3/3 · poin harian 30". */
 function rhWalletSummary(wallet: RHTokenWallet | null): string {
   if (!wallet) return ''
   const parts: string[] = []
-  if (wallet.coins !== null) parts.push(`RH Coin ${wallet.coins}`)
+  // Poin lebih dulu: di billing baru generate memotong poin, bukan koin lama.
+  if (wallet.pointsBalance !== null) parts.push(`saldo poin ${rhFmtBalance(wallet.pointsBalance)}`)
+  if (wallet.coins !== null) parts.push(`RH Coin ${rhFmtBalance(wallet.coins)}`)
   if (wallet.freeVideo) parts.push(`kredit video ${wallet.freeVideo.remaining}/${wallet.freeVideo.total}`)
   if (wallet.freeImage) parts.push(`kredit image ${wallet.freeImage.remaining}/${wallet.freeImage.total}`)
-  if (wallet.points !== null) parts.push(`poin harian ${wallet.points}`)
+  if (wallet.points !== null) parts.push(`poin harian ${rhFmtBalance(wallet.points)}`)
   return parts.join(' · ')
 }
 
