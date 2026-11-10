@@ -669,8 +669,11 @@ function MarkastoolsSessionInput({ providerKeys, addKey, setKeyCookies, bulkText
     }
   }
 
-  const handleSave = () => {
-    const cookies = parseNexabotCookieInput(input)
+  const handleSave = async () => {
+    // Parser khusus MarkasTools: nilai header Cookie boleh berispasi
+    // ("a=1; b=2") — parser generik pernah memotongnya jadi tidak lengkap.
+    const { parseMarkastoolsCookieInput } = await import('@/lib/markastools')
+    const cookies = parseMarkastoolsCookieInput(input)
     if (!cookies) return
     let keyId = sessionKey?.id
     if (!keyId) {
@@ -754,7 +757,11 @@ function MarkastoolsSessionInput({ providerKeys, addKey, setKeyCookies, bulkText
       <div className="text-[12px] font-semibold text-[#7fd3ff] mb-1.5">🌀 Session Login MarkasTools (cookie)</div>
       <div className="text-[11px] text-[#a0a0a0] mb-2 leading-relaxed">
         MarkasTools (ai.markastools.id) hanya mengenal login session cookie — generate di ARKXMotion diteruskan lewat relay dengan cookie ini.
-        Login di <a href="https://ai.markastools.id" target="_blank" className="text-[#7fd3ff] underline">ai.markastools.id</a> → DevTools (F12) → tab <b>Network</b> → klik request /api/me → Headers → salin value header <span className="font-mono">Cookie</span>.
+        Login di <a href="https://ai.markastools.id" target="_blank" className="text-[#7fd3ff] underline">ai.markastools.id</a> → DevTools (F12) → tab <b>Network</b> → klik request <span className="font-mono">/api/me</span> → Headers → baris <span className="font-mono">Cookie</span> → klik kanan → <b>Copy value</b>.
+        <div className="mt-1 text-[10px] text-[#7fd3ff]/90">
+          • Salin <b>value</b>-nya (bukan "view source", bukan satu pasangan cookie saja) — cookie boleh berispasi: <span className="font-mono">a=1; b=2</span>.
+          • Kalau status <b>invalid</b>: biasanya cookie terpotong, sesi sudah logout, atau akun belum aktif (langganan).
+        </div>
         Token <span className="font-mono">MF-…</span> paste di kolom key di atas (format MF-… hasil MarkasKeyTool), lalu klik <b>Hubungkan</b> di bawah.
         <div className="mt-1 text-[10px] text-amber-300/85">⚠ Akun MarkasTools butuh langganan aktif (Rp 60rb/bulan) untuk menambah akun/token. Cookie bisa kedaluwarsa: kalau cek sesi gagal, login ulang lalu paste cookie baru.</div>
       </div>

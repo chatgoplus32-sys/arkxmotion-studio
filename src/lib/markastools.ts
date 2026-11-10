@@ -44,21 +44,44 @@ export interface MarkastoolsSubmitResult {
   error?: string
 }
 
-/** Normalisasi input cookie session (mentah / header / cURL / JSON). */
+/**
+ * Normalisasi input cookie session (mentah / header / cURL / JSON).
+ *
+ * PENTING: nilai header Cookie boleh BERSPASI ("a=1; b=2") — regex lama yang
+ * berhenti di whitespace memotong cookie jadi tidak lengkap dan MarkasTools
+ * membalas 401 (session tidak dikenal).
+ */
 export function parseMarkastoolsCookieInput(raw: string): string {
   let s = (raw || '').trim()
   if (!s) return ''
-  const headerMatch = s.match(/(?:^|[\s'"-])(?:cookie|Cookie):\s*([^'"\r\n\s][^'"\r\n]*)/)
-  if (headerMatch?.[1]?.trim()) return headerMatch[1].trim()
+
+  // Buang sisa header lain yang menempel di baris yang sama
+  // (mis. "a=1; b=2 Referer: https://…").
+  const cut = (v: string) => v.trim().replace(/^['"]+|['"]+$/g, '').split(/\s{2,}(?=[A-Za-z-]+:)/)[0].trim()
+
+  // Header "Cookie: a=1; b=2" — nilai diambil sampai akhir baris.
+  const headerMatch = s.match(/(?:^|[\s'"-])(?:cookie|Cookie):\s*(.+)$/m)
+  if (headerMatch?.[1]?.trim()) return cut(headerMatch[1])
+
+  // JSON (Copy as fetch / Node).
   if (s.startsWith('{') || s.startsWith('[')) {
     try {
       const obj = JSON.parse(s)
       const c = obj?.cookie || obj?.Cookie || obj?.headers?.cookie || obj?.headers?.Cookie
-      if (typeof c === 'string' && c.trim()) return c.trim()
+      if (typeof c === 'string' && c.trim()) return cut(c)
     } catch { /* bukan JSON valid — lanjut sebagai string biasa */ }
   }
-  const looseMatch = s.match(/cookie\s*:\s*['"]?\s*([^'"\r\n;\s][^'"\r\n]*)/i)
-  if (looseMatch?.[1]?.trim()) return looseMatch[1].trim()
+
+  // cURL: -H 'cookie: a=1; b=2'
+  const looseMatch = s.match(/cookie\s*:\s*(.+)$/im)
+  if (looseMatch?.[1]?.trim()) return cut(looseMatch[1])
+
+  // Tabel cookie DevTools: "nama nilai" (tanpa "=") → ubah jadi nama=nilai.
+  if (!s.includes('=') && /\s/.test(s)) {
+    const [name, ...rest] = s.split(/\s+/)
+    if (name && rest.length) return `${name}=${rest.join(' ')}`.trim()
+  }
+
   s = s.replace(/^-+[Hh]?\s*/, '').replace(/^['"]+|['"]+$/g, '').trim()
   return s
 }
@@ -164,13 +187,53 @@ export async function listMarkastoolsAccounts(
 export async function checkMarkastoolsSession(cookies: string): Promise<MarkastoolsSessionInfo> {
   const cookieHeader = parseMarkastoolsCookieInput(cookies)
   if (!cookieHeader) return { ok: false, user: null, error: 'Cookie session kosong / format tidak dikenali.' }
+  if (!cookieHeader.includes('=')) {
+    return {
+      ok: false,
+      user: null,
+      error: 'Cookie yang ditempel tidak berbentuk "nama=nilainya". Salin utuh header Cookie dari DevTools.',
+    }
+  }
   try {
     const res = await fetch(`${MARKASTOOLS_BASE}/api/me`, {
       method: 'GET',
       headers: authHeaders(cookieHeader),
     })
     if (res.status === 401 || res.status === 403) {
-      return { ok: false, user: null, error: 'Cookie sesi ditolak/kedaluwarsa. Login ulang di ai.markastools.id lalu paste cookie baru.' }
+      // /api/me kadang lebih ketat dari endpoint lain. Coba /api/stats dulu
+      // sebelum menyatakan sesi mati.
+      try {
+        const alt = await fetch(`${MARKASTOOLS_BASE}/api/stats`, {
+          method: 'GET',
+          headers: authHeaders(cookieHeader),
+        })
+        if (alt.ok) {
+          const altData = await alt.json().catch(() => null)
+          if (altData?.ok) return { ok: true, user: altData.user ?? null }
+        }
+      } catch { /* lanjut ke pesan utama */ }
+      const body = await res.json().catch(() => null)
+      const code = String(body?.code || '')
+      // Kode yang dipakai MarkasTools sendiri untuk differentiate jenis gagal.
+      if (code === 'ACCOUNT_INACTIVE') {
+        return {
+          ok: false,
+          user: null,
+          error: 'Akun MarkasTools belum aktif (ACCOUNT_INACTIVE) — langganan belum aktif atau akun dinonaktifkan admin. Token MF- tidak bisa dipakai sebelum akun aktif.',
+        }
+      }
+      if (code === 'SESSION_EXPIRED') {
+        return {
+          ok: false,
+          user: null,
+          error: 'Sesi MarkasTools sudah berakhir (SESSION_EXPIRED) — login ulang di ai.markastools.id lalu paste cookie baru.',
+        }
+      }
+      return {
+        ok: false,
+        user: null,
+        error: `Cookie sesi ditolak${code ? ` (${code})` : ''}. Salin ULANG seluruh header Cookie dari ai.markastools.id (semua pasangan nama=nilainya, termasuk yang ada spasi) lalu Simpan Sesi.`,
+      }
     }
     if (!res.ok) return { ok: false, user: null, error: `Cek sesi gagal (HTTP ${res.status})` }
     const data = await res.json().catch(() => null)
