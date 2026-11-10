@@ -171,16 +171,34 @@ export function getRunningHubApiKey(): string | null {
   return getStoredProviderKey('runninghub')
 }
 
+export interface RHTokenCredit {
+  total: number
+  used: number
+  remaining: number
+  models: string[]
+}
+
+/** Saldo yang bisa dibaca dari access token (JWT): kredit gratis + poin harian. */
+export interface RHTokenWallet {
+  points: number | null
+  pointsExpiresAt: string | null
+  freeVideo: RHTokenCredit | null
+  freeImage: RHTokenCredit | null
+  freePeriodEnd: string | null
+}
+
 export async function checkRunningHubBalance(apiKey: string): Promise<{
   ok: boolean
   balance: number | null
   isValidUser: boolean
   error?: string
+  message?: string
   /** true hanya kalau RunningHub sendiri menolak key-nya (806/1002/1003/401). */
   invalidKey?: boolean
   /** true kalau kegagalan berasal dari jaringan/upstream — key belum tentu salah. */
   transient?: boolean
   keyType?: string | null
+  tokenWallet?: RHTokenWallet | null
   code?: string | number
 }> {
   const cleanKey = parseRunningHubApiKeyInput(apiKey) || String(apiKey || '').trim()
@@ -196,9 +214,11 @@ export async function checkRunningHubBalance(apiKey: string): Promise<{
       balance: data.balance ?? null,
       isValidUser: data.isValidUser ?? false,
       error: data.error,
+      message: data.message,
       invalidKey: data.invalidKey === true,
       transient: data.transient === true,
       keyType: data.keyType ?? null,
+      tokenWallet: data.tokenWallet ?? null,
       code: data.code,
     }
   } catch (err: any) {

@@ -12,6 +12,9 @@ export interface ProviderKey {
   balance?: number | null
   email?: string
   lastChecked?: number
+  /** Ringkasan kredit/poin hasil cek terakhir (mis. access token RunningHub). */
+  creditDetail?: string
+  creditCheckedAt?: number
   cookies?: string  // Session cookies for Genspark ask_proxy / NexaBot session mode
   cookiesAt?: number  // kapan cookie session disimpan (indikator masa berlaku)
   refreshToken?: string  // Riverside: refresh token pendamping JWT session
@@ -301,6 +304,7 @@ export type ProviderState = {
   importKeys: (provider: ProviderId, tokenValues: string[], namePrefix?: string) => number
   removeKey: (provider: ProviderId, keyId: string) => void
   updateKeyStatus: (provider: ProviderId, keyId: string, status: ProviderKey['status'], balance?: number, email?: string) => void
+  setKeyCreditDetail: (provider: ProviderId, keyId: string, detail: string | null) => void
   replaceKey: (provider: ProviderId, keyId: string, newKey: string, refreshToken?: string) => void
   setKeyCookies: (provider: ProviderId, keyId: string, cookies: string) => void
   setKeyTelegramId: (provider: ProviderId, keyId: string, telegramId: string) => void
@@ -538,6 +542,23 @@ export const useProviderManager = create<ProviderState>((set, get) => ({
             ? { ...k, status, balance: balance ?? k.balance, email: email ?? k.email, lastChecked: Date.now() }
             : k
         ),
+      }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))
+      return { keys: updated }
+    })
+  },
+
+  setKeyCreditDetail: (provider, keyId, detail) => {
+    set((state) => {
+      const updated = {
+        ...state.keys,
+        [provider]: state.keys[provider].map((k) => {
+          if (k.id !== keyId) return k
+          const { creditDetail: _dropDetail, creditCheckedAt: _dropAt, ...rest } = k
+          return detail
+            ? { ...rest, creditDetail: detail, creditCheckedAt: Date.now() }
+            : rest
+        }),
       }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))
       return { keys: updated }

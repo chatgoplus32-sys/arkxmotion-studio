@@ -1,4 +1,6 @@
-﻿import { Router, Request, Response } from 'express'
+﻿import { Router } from 'express'
+import type { Request, Response } from 'express'
+import { createHash } from 'node:crypto'
 
 const router = Router()
 
@@ -364,12 +366,20 @@ function rhIsJwt(token: string): boolean {
 
 const RH_PLAYGROUND_PREFIX = '/api/playground/openapi/v2'
 const RH_KEY_ID_CACHE_MS = 10 * 60 * 1000
-let rhKeyIdCache: { value: string; at: number } | null = null
+// Cache per token: akun berbeda = apiKeyId berbeda. Cache global dulu membuat
+// token kedua memakai apiKeyId milik token pertama (task masuk akun yang salah).
+const rhKeyIdCache = new Map<string, { value: string; at: number }>()
 
-/** Ambil apiKeyId milik akun dari sesi JWT (di-cache 10 menit). */
+function rhTokenFingerprint(token: string): string {
+  return createHash('sha256').update(token).digest('hex').slice(0, 20)
+}
+
+/** Ambil apiKeyId milik akun dari sesi JWT (di-cache 10 menit per token). */
 async function rhResolveApiKeyId(jwt: string): Promise<string> {
-  if (rhKeyIdCache && Date.now() - rhKeyIdCache.at < RH_KEY_ID_CACHE_MS) {
-    return rhKeyIdCache.value
+  const fp = rhTokenFingerprint(jwt)
+  const cached = rhKeyIdCache.get(fp)
+  if (cached && Date.now() - cached.at < RH_KEY_ID_CACHE_MS) {
+    return cached.value
   }
 
   const apiRes = await fetch(`${RUNNINGHUB_BASE}/api/key/list`, {
@@ -390,8 +400,9 @@ async function rhResolveApiKeyId(jwt: string): Promise<string> {
     throw new Error('Tidak ada API key milik akun yang bisa dipakai access token: ' + rawText.slice(0, 200))
   }
 
-  rhKeyIdCache = { value: String(mine.apiKeyId), at: Date.now() }
-  return rhKeyIdCache.value
+  if (rhKeyIdCache.size > 50) rhKeyIdCache.clear()
+  rhKeyIdCache.set(fp, { value: String(mine.apiKeyId), at: Date.now() })
+  return String(mine.apiKeyId)
 }
 
 /** Terjemahkan URL OpenAPI menjadi jalur playground bawaannya JWT. */
@@ -405,9 +416,41 @@ async function rhUpstreamUrl(jwt: string, url: string): Promise<string> {
   return `${RUNNINGHUB_BASE}${RH_PLAYGROUND_PREFIX}${rest}${join}apiKeyId=${kid}`
 }
 
-/** fetch yang otomatis menukar jalur OpenAPI → playground saat memakai JWT. */
+/**
+ * fetch yang otomatis menukar jalur OpenAPI → playground saat memakai JWT.
+ *
+ * Playground membungkus kegagalan request di `data.errorCode` sementara
+ * top-level tetap `code: 0` (mis. 605 saldo habis, 1101 node error). Handler
+ * lama hanya membaca top-level, sehingga kegagalan itu terbaca "success" lalu
+ * "No taskId returned". Di sini kode bersarang dinaikkan ke top-level HANYA
+ * untuk respons penolakan (tanpa taskId/status) — respons task yang sudah
+ * berjalan tidak diubah.
+ */
 async function rhFetch(jwt: string, url: string, init?: RequestInit): Promise<Awaited<ReturnType<typeof fetch>>> {
-  return fetch(await rhUpstreamUrl(jwt, url), init)
+  const upstream = await rhUpstreamUrl(jwt, url)
+  const res = await fetch(upstream, init)
+  if (upstream === url) return res
+
+  const text = await res.text()
+  let parsed: any = null
+  try { parsed = JSON.parse(text) } catch {
+    return new globalThis.Response(text, { status: res.status, headers: { 'content-type': 'text/plain' } })
+  }
+
+  const nested = parsed?.data
+  const nestedCode = nested?.errorCode
+  const isRequestRejection = !nested?.taskId && !nested?.status
+    && nestedCode !== undefined && nestedCode !== null && nestedCode !== ''
+    && nestedCode !== 0 && nestedCode !== '0'
+  if ((parsed?.code === 0 || parsed?.code === '0') && isRequestRejection) {
+    parsed.code = nestedCode
+    parsed.msg = nested?.errorMessage || parsed.msg
+  }
+
+  return new globalThis.Response(JSON.stringify(parsed), {
+    status: res.status,
+    headers: { 'content-type': 'application/json' },
+  })
 }
 
 /** Payload userId dari accessKey ComfyUI (base64 JSON). */
@@ -491,6 +534,20 @@ router.all('/', async (req: Request, res: Response) => {
   const body = req.body || {}
   const { action, apiKey: rawApiKey, ...params } = body
   const clientKey = normalizeRhApiKey(rawApiKey)
+
+  // Token MF-… adalah kunci akun MarkasTools (ai.markastools.id), bukan
+  // kredensial RunningHub: key/list menjawab 412 TOKEN_INVALID dan OpenAPI
+  // menjawab 806. Tolak di pintu masuk dengan arahan yang benar.
+  if (/^MF-[A-Z0-9]/i.test(clientKey)) {
+    return res.status(200).json({
+      ok: false,
+      error: 'Token MF-… adalah kunci akun MarkasTools, bukan access token RunningHub. ' +
+        'Hubungkan lewat panel MarkasTools di Providers (butuh cookie sesi ai.markastools.id) — ' +
+        'token ini tidak bisa dipakai langsung ke runninghub.ai.',
+      code: 'MARKASTOOLS_TOKEN',
+    })
+  }
+
   const { token: apiKey, source: authSource } = rhResolveCredential(clientKey)
 
   if (!action) return res.status(200).json({ ok: false, error: 'Missing action' })
@@ -3526,6 +3583,7 @@ export const RH_KEY_REJECT_CODES = new Set(['401', '806', '811', '814', '1002', 
 function translateRhError(code: string, msg?: string): string {
   const map: Record<string, string> = {
     '414': 'Saldo/kuota kerja (power) tidak cukup untuk menjalankan task ini. Silakan top up RH coins di akun RunningHub.',
+    '605': 'Saldo RH coins akun RunningHub tidak cukup untuk model ini — token/key tetap valid. Isi saldo di runninghub.ai atau pakai akun dengan saldo.',
     '404': 'Workflow tidak ditemukan atau tidak dapat diakses API key ini.',
     '403': 'Akses ditolak. API key tidak berhak mengakses workflow ini.',
     '806': 'API key tidak dikenali RunningHub (user pemilik key tidak ditemukan). Key mungkin sudah dihapus/di-rotate atau berasal dari akun runninghub.cn — buat API key baru di runninghub.ai → API Keys, lalu paste ulang.',
@@ -3566,6 +3624,86 @@ function rhTaskErrorFrom(data: any): string | null {
 // accountStatus mengembalikan saldo dengan nama field yang berbeda antar
 // generasi API — baca semuanya, jangan hanya remainCoins.
 const RH_BALANCE_FIELDS = ['remainCoins', 'remainCoin', 'coins', 'coin', 'balance', 'power', 'remainPower']
+
+export interface RHTokenCredit {
+  total: number
+  used: number
+  remaining: number
+  models: string[]
+}
+
+// Saldo yang bisa dibaca dari access token. Endpoint koin lama
+// (/uc/openapi/accountStatus) hanya menerima API key asli, jadi untuk JWT kita
+// baca paket sesi yang memang tersedia: kredit gratis (video/image) + poin
+// harian. Ini angka nyata milik akun, bukan tebakan.
+export interface RHTokenWallet {
+  points: number | null
+  pointsExpiresAt: string | null
+  freeVideo: RHTokenCredit | null
+  freeImage: RHTokenCredit | null
+  freePeriodEnd: string | null
+}
+
+const RH_WALLET_CACHE_MS = 60 * 1000
+const rhWalletCache = new Map<string, { value: RHTokenWallet; at: number }>()
+
+async function rhTokenWallet(jwt: string): Promise<RHTokenWallet | null> {
+  const fp = rhTokenFingerprint(jwt)
+  const cached = rhWalletCache.get(fp)
+  if (cached && Date.now() - cached.at < RH_WALLET_CACHE_MS) return cached.value
+
+  try {
+    const apiRes = await fetch(`${RUNNINGHUB_BASE}/api/welfare/summary`, {
+      method: 'POST',
+      headers: rhAuthHeaders(jwt),
+      body: '{}',
+      signal: AbortSignal.timeout(15000),
+    })
+    const text = await apiRes.text()
+    let data: any = null
+    try { data = JSON.parse(text) } catch { return null }
+    if (!data || data.code !== 0 || !data.data) return null
+
+    const d = data.data
+    const num = (v: unknown): number | null => {
+      if (v === null || v === undefined || v === '') return null
+      const n = Number(v)
+      return Number.isFinite(n) ? n : null
+    }
+    const credit = (c: any): RHTokenCredit | null => {
+      if (!c || typeof c !== 'object') return null
+      return {
+        total: num(c.total) ?? 0,
+        used: num(c.used) ?? 0,
+        remaining: num(c.remaining) ?? 0,
+        models: Array.isArray(c.modelNames) ? c.modelNames.map(String) : [],
+      }
+    }
+
+    const wallet: RHTokenWallet = {
+      points: num(d.dailyGift?.amount),
+      pointsExpiresAt: typeof d.dailyGift?.expireTime === 'string' ? d.dailyGift.expireTime : null,
+      freeVideo: credit(d.freeVideo),
+      freeImage: credit(d.freeImage),
+      freePeriodEnd: typeof d.freePeriod?.endTime === 'string' ? d.freePeriod.endTime : null,
+    }
+    if (rhWalletCache.size > 50) rhWalletCache.clear()
+    rhWalletCache.set(fp, { value: wallet, at: Date.now() })
+    return wallet
+  } catch {
+    return null
+  }
+}
+
+/** Ringkasan singkat untuk pesan UI, mis. "kredit video 3/3 · image 3/3 · poin 30". */
+function rhWalletSummary(wallet: RHTokenWallet | null): string {
+  if (!wallet) return ''
+  const parts: string[] = []
+  if (wallet.freeVideo) parts.push(`kredit video ${wallet.freeVideo.remaining}/${wallet.freeVideo.total}`)
+  if (wallet.freeImage) parts.push(`kredit image ${wallet.freeImage.remaining}/${wallet.freeImage.total}`)
+  if (wallet.points !== null) parts.push(`poin harian ${wallet.points}`)
+  return parts.join(' · ')
+}
 
 function rhKeyTypeLabel(apiType: unknown): string | null {
   if (typeof apiType !== 'string' || !apiType.trim()) return null
@@ -3616,14 +3754,19 @@ async function handleCheckBalance(apiKey: string, res: Response) {
       // saldo lama (/uc/openapi/accountStatus) memang dibuat untuk API key,
       // sehingga token sering ditolak di sini walaupun panggilan OpenAPI
       // (/openapi/v2/…) menerimanya. Jangan tandai token sebagai key invalid —
-      // laporkan token aktif tanpa saldo (cek saldo butuh API key lama).
+      // baca paket sesi (kredit gratis + poin) lewat /api/welfare/summary.
       if (rejected && rhJwtExpired(apiKey) === false && rhJwtExp(apiKey) !== null) {
+        const wallet = await rhTokenWallet(apiKey)
+        const summary = rhWalletSummary(wallet)
         return res.status(200).json({
           ok: true,
           balance: null,
           isValidUser: true,
           keyType: 'Access Token (JWT)',
-          message: 'Access token aktif. RunningHub tidak menampilkan saldo lewat access token — cek saldo hanya untuk API key lama.',
+          tokenWallet: wallet,
+          message: summary
+            ? `Access token aktif. Saldo koin RH tidak diekspos lewat access token; ${summary}.`
+            : 'Access token aktif. RunningHub tidak menampilkan saldo lewat access token — cek saldo hanya untuk API key lama.',
         })
       }
 

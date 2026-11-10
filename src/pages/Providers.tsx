@@ -211,13 +211,13 @@ const TOKEN_GUIDE: Record<string, {
   runninghub: {
     url: 'https://www.runninghub.ai/enterprise-api/consumerApi',
     urlLabel: 'runninghub.ai/enterprise-api/consumerApi',
-    prefix: 'API key (Consumer-Member atau Enterprise-Shared)',
+    prefix: 'API key atau access token (JWT eyJ… )',
     steps: [
       { text: 'Buka runninghub.ai dan login.' },
-      { text: 'Buka halaman API Key → klik "Create API Key".' },
-      { text: 'Copy API key → paste ke input di sebelah.' },
+      { text: 'API key: halaman API Key → "Create API Key" → copy key. Access token: salin JWT (eyJ…) dari sesi login browser.' },
+      { text: 'Copy key/token → paste ke input di sebelah. Keduanya diterima.' },
     ],
-    tip: 'Tempel key mentah, "Bearer <key>", atau header apiKey: … — semuanya dibaca. Consumer-Member sudah bisa untuk AI App/Workflow; model tertentu (mis. Kling V3) butuh Enterprise-Shared. Pesan "tidak dikenali" = key sudah dihapus/di-rotate di RunningHub, buat key baru.',
+    tip: 'Tempel key mentah, "Bearer <key>", header apiKey: …, cURL, atau access token JWT — semuanya dibaca. Access token memakai paket sesi akun (kredit gratis video/image + poin harian); koin RH hanya terbaca lewat API key lama. Pesan "tidak dikenali" = key dihapus/di-rotate di RunningHub, buat key baru. Token MF-… milik MarkasTools — atur di panel MarkasTools, bukan di sini.',
   },
   render: {
     url: 'https://shotstack.io/dashboard/',
@@ -826,6 +826,7 @@ export default function ProvidersPage() {
     addKey,
     removeKey,
     updateKeyStatus,
+    setKeyCreditDetail,
     replaceKey,
     setKeyCookies,
     setKeyTelegramId,
@@ -1176,12 +1177,35 @@ export default function ProvidersPage() {
       return { state: 'invalid', detail: 'Format key harus cp_...' }
     }
     if (selectedProvider === 'runninghub') {
+      // Token MF-… adalah kunci akun MarkasTools, bukan kredensial RunningHub —
+      // tolak di sini supaya tidak berakhir dengan 806/412 yang membingungkan.
+      if (/^MF-[A-Z0-9]/i.test(key)) {
+        return {
+          state: 'invalid',
+          detail: 'Token MF-… adalah kunci akun MarkasTools, bukan access token RunningHub — hubungkan lewat panel MarkasTools (butuh cookie sesi ai.markastools.id)',
+        }
+      }
       try {
         const result = await checkRunningHubBalance(key)
         if (result.ok && result.isValidUser) {
           const type = result.keyType ? `${result.keyType} · ` : ''
           if (result.balance === null) {
-            return { state: 'active', balance: null, detail: `${type}Key valid — saldo RH tidak terbaca` }
+            const wallet = result.tokenWallet
+            const parts: string[] = []
+            if (wallet?.freeVideo) parts.push(`kredit video ${wallet.freeVideo.remaining}/${wallet.freeVideo.total}`)
+            if (wallet?.freeImage) parts.push(`kredit image ${wallet.freeImage.remaining}/${wallet.freeImage.total}`)
+            if (wallet && wallet.points !== null) parts.push(`poin harian ${wallet.points}`)
+            if (parts.length) {
+              const drained =
+                !!wallet?.freeVideo && wallet.freeVideo.remaining <= 0 &&
+                !!wallet?.freeImage && wallet.freeImage.remaining <= 0
+              return {
+                state: drained ? 'empty' : 'active',
+                balance: null,
+                detail: `${type}${parts.join(' · ')} — koin RH tidak diekspos token`,
+              }
+            }
+            return { state: 'active', balance: null, detail: `${type}Key valid — saldo koin RH tidak diekspos access token` }
           }
           if (result.balance <= 0) {
             return { state: 'empty', balance: 0, detail: `${type}Saldo 0 RH coins — habis, top up dulu` }
@@ -1592,6 +1616,13 @@ export default function ProvidersPage() {
               : res.state === 'limited' ? 'rate-limited'
               : 'unknown'
             updateKeyStatus(selectedProvider as ProviderId, keyObj.id, newStatus as any, res.balance, res.email)
+            // RunningHub: simpan ringkasan kredit/poin ke record key supaya
+            // tetap terlihat setelah reload tanpa harus cek ulang. Hasil gagal
+            // menghapus snapshot lama agar tidak menampilkan angka usang.
+            if (selectedProvider === 'runninghub') {
+              const keep = (res.state === 'active' || res.state === 'empty') && !!res.detail
+              setKeyCreditDetail(selectedProvider as ProviderId, keyObj.id, keep ? (res.detail || null) : null)
+            }
           }
         }
         completed++
@@ -1637,7 +1668,7 @@ export default function ProvidersPage() {
         { label: 'Invalid / ditolak', value: invalidCount, tone: invalidCount ? 'bad' : 'muted' },
       ],
     })
-  }, [savedKeys, selectedProvider, handleCheckKey, currentConfig, keys, updateKeyStatus])
+  }, [savedKeys, selectedProvider, handleCheckKey, currentConfig, keys, updateKeyStatus, setKeyCreditDetail])
 
   const topup = topupCta(selectedProvider)
 
@@ -2016,7 +2047,11 @@ export default function ProvidersPage() {
                     const state = status?.state || keyObj?.status || 'unknown'
                     const balance = status?.balance ?? keyObj?.balance
                     const email = status?.email ?? keyObj?.email
-                    const detail = status?.detail || (email ? `${email}${keyObj?.balance != null ? ` · ${keyObj.balance} cr` : ''}` : null)
+                    const detail = status?.detail || keyObj?.creditDetail
+                      || (email ? `${email}${keyObj?.balance != null ? ` · ${keyObj.balance} cr` : ''}` : null)
+                    const creditTitle = keyObj?.creditCheckedAt
+                      ? `Cek terakhir: ${new Date(keyObj.creditCheckedAt).toLocaleString('id-ID')}`
+                      : undefined
                     const isWeavy = selectedProvider === 'weavy'
                     const isEditing = editingBalanceIdx === i
                     const isActive = state === 'active'
@@ -2102,7 +2137,7 @@ export default function ProvidersPage() {
                             </>
                           )}
                           {!isWeavy && detail && (
-                            <span className="text-[12px] text-[#a0a0a0] truncate max-w-[220px]">{detail}</span>
+                            <span title={creditTitle} className="text-[12px] text-[#a0a0a0] truncate max-w-[220px]">{detail}</span>
                           )}
                           {!isWeavy && !detail && (
                             <span className="text-[12px] text-[#a0a0a0] truncate max-w-[220px]">—</span>
