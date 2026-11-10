@@ -173,9 +173,9 @@ export function NotificationPanel() {
         )}
       </button>
 
-      {/* Dropdown Panel */}
+      {/* Dropdown Panel — di HP menempel ke tepi layar; di desktop tetap dropdown */}
       {isOpen && (
-        <div className="absolute right-0 top-full mt-2 w-[360px] bg-card border border-border rounded-xl shadow-2xl overflow-hidden z-50 animate-fade-in">
+        <div className="fixed inset-x-2 top-[3.75rem] z-[70] flex max-h-[calc(100dvh-5rem)] w-auto flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl animate-fade-in sm:absolute sm:inset-x-auto sm:top-full sm:right-0 sm:mt-2 sm:max-h-none sm:w-[360px] sm:z-50">
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-border">
             <h3 className="font-semibold text-sm">Notifikasi</h3>
@@ -232,7 +232,7 @@ export function NotificationPanel() {
 
           {/* Server Notifications Tab */}
           {activeTab === 'server' && (
-            <div className="max-h-[400px] overflow-y-auto">
+            <div className="max-h-[calc(100dvh-14rem)] overflow-y-auto overscroll-contain sm:max-h-[400px]">
               {serverNotifs.length === 0 ? (
                 <div className="px-4 py-10 text-center text-muted-foreground">
                   <Bell className="h-8 w-8 mx-auto mb-2 opacity-30" />
@@ -312,7 +312,7 @@ export function NotificationPanel() {
               </div>
 
               {/* Local Notifications List */}
-              <div className="max-h-[300px] overflow-y-auto">
+              <div className="max-h-[calc(100dvh-18rem)] overflow-y-auto overscroll-contain sm:max-h-[300px]">
                 {localNotifs.length === 0 ? (
                   <div className="px-4 py-8 text-center text-muted-foreground text-sm">
                     Tidak ada aktivitas
