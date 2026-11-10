@@ -259,7 +259,7 @@ export function formatRhWalletDetail(wallet: RHTokenWallet | null | undefined): 
   if (wallet.freeVideo) parts.push(`kredit video ${wallet.freeVideo.remaining}/${wallet.freeVideo.total}`)
   if (wallet.freeImage) parts.push(`kredit image ${wallet.freeImage.remaining}/${wallet.freeImage.total}`)
   if (wallet.points !== null) parts.push(`poin harian ${wallet.points}`)
-  else if (wallet.pointsBalance !== null && wallet.pointsBalance !== undefined) parts.push('poin harian belum ada')
+  else if (wallet.pointsBalance !== null && wallet.pointsBalance !== undefined) parts.push('poin harian belum diklaim')
   if (wallet.watermarkFree === false) parts.push('hasil bertimestamp (akun gratis)')
   else if (wallet.watermarkFree === true) parts.push('hasil tanpa watermark')
   return parts.join(' · ')

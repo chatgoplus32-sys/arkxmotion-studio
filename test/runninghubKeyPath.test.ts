@@ -434,7 +434,7 @@ test('saldo poin yang jadi acuan — RH Coin tidak lagi ditampilkan', () => {
   assert.equal(formatRhWalletCompact(wallet), '0 P · V3/3 · I3/3')
   assert.equal(
     formatRhWalletDetail(wallet),
-    'saldo poin 0 · kredit video 3/3 · kredit image 3/3 · poin harian belum ada',
+    'saldo poin 0 · kredit video 3/3 · kredit image 3/3 · poin harian belum diklaim',
   )
 })
 
