@@ -18,6 +18,17 @@ import {
 
 const originalFetch = globalThis.fetch
 
+// Mode jalur lama: tes-tes di bawah menguji kredensial PER-PENGGUNA (API key),
+// jadi token global RunningHub dimatikan selama suite berjalan. Env dibaca per
+// request, jadi aman di-set di before() dan dikembalikan di after().
+const savedAccessTokenEnv = process.env.RUNNINGHUB_ACCESS_TOKEN
+
+/** JWT palsu dengan exp yang bisa diatur — untuk menguji jalur akses token. */
+function fakeJwt(expSec: number): string {
+  const b64url = (obj: unknown) => Buffer.from(JSON.stringify(obj)).toString('base64url')
+  return `${b64url({ alg: 'HS512', typ: 'JWT' })}.${b64url({ sub: 'uji', exp: expSec })}.tanda-tangan-palsu`
+}
+
 let upstream: () => Response = () => new Response('{}', { status: 200 })
 let bodiesSeen: any[] = []
 
@@ -29,6 +40,8 @@ let server: ReturnType<typeof app.listen>
 let base = ''
 
 before(async () => {
+  // Suite ini menguji mode key per-pengguna — matikan token global dulu.
+  process.env.RUNNINGHUB_ACCESS_TOKEN = ''
   server = app.listen(0)
   await new Promise((resolve) => server.once('listening', resolve))
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
@@ -43,6 +56,8 @@ beforeEach(() => {
 })
 
 after(() => {
+  if (savedAccessTokenEnv === undefined) delete process.env.RUNNINGHUB_ACCESS_TOKEN
+  else process.env.RUNNINGHUB_ACCESS_TOKEN = savedAccessTokenEnv
   globalThis.fetch = originalFetch
   server?.close()
 })
@@ -141,4 +156,68 @@ test('key kotor "Bearer …" dibersihkan sebelum dikirim ke upstream', async () 
   await checkBalance('Bearer a1b2c3d4e5f60718293a4b5c6d7e8f90')
   // check-balance mengirim apiKey di body accountStatus
   assert.equal(bodiesSeen[0]?.apiKey, 'a1b2c3d4e5f60718293a4b5c6d7e8f90')
+})
+
+// ── Akses token (perubahan auth RunningHub) ─────────────────────────────────
+//
+// RunningHub kini memakai access token (JWT). Server memegang token global
+// (RUNNINGHUB_ACCESS_TOKEN) dan menggunakannya untuk SEMUA request upstream,
+// kecuali pengguna mengirim akses token miliknya sendiri yang masih berlaku.
+
+const FUTURE = () => Math.floor(Date.now() / 1000) + 3600
+
+test('token global (env) menggantikan API key lama dari client', async () => {
+  const token = fakeJwt(FUTURE())
+  process.env.RUNNINGHUB_ACCESS_TOKEN = token
+  try {
+    upstream = () => json({ code: 0, data: { remainCoins: 3 } })
+    const out = await checkBalance('a1b2c3d4e5f60718293a4b5c6d7e8f90')
+    assert.equal(out.ok, true)
+    assert.equal(out.balance, 3)
+    assert.equal(bodiesSeen[0]?.apiKey, token)
+    assert.equal(bodiesSeen[0]?.accessToken, token)
+  } finally {
+    process.env.RUNNINGHUB_ACCESS_TOKEN = ''
+  }
+})
+
+test('access token pengguna (JWT berlaku) tidak diganti token global', async () => {
+  const userToken = fakeJwt(FUTURE())
+  const globalToken = fakeJwt(FUTURE() + 600)
+  process.env.RUNNINGHUB_ACCESS_TOKEN = globalToken
+  try {
+    upstream = () => json({ code: 0, data: { remainCoins: 7 } })
+    const out = await checkBalance(userToken)
+    assert.equal(out.ok, true)
+    assert.equal(bodiesSeen[0]?.apiKey, userToken)
+  } finally {
+    process.env.RUNNINGHUB_ACCESS_TOKEN = ''
+  }
+})
+
+test('access token kedaluwarsa → ditolak dengan pesan jelas, upstream tidak dipanggil', async () => {
+  upstream = () => json({ code: 0, data: { remainCoins: 1 } })
+  const out = await checkBalance(fakeJwt(Math.floor(Date.now() / 1000) - 60))
+  assert.equal(out.ok, false)
+  assert.match(out.error, /kedaluwarsa/i)
+  assert.equal(bodiesSeen.length, 0, 'request upstream tidak boleh terkirim')
+})
+
+test('placeholder server-managed tanpa token global → pesan konfigurasi, upstream tidak dipanggil', async () => {
+  upstream = () => json({ code: 0, data: { remainCoins: 1 } })
+  const out = await checkBalance('server-managed')
+  assert.equal(out.ok, false)
+  assert.match(out.error, /RUNNINGHUB_ACCESS_TOKEN/)
+  assert.equal(bodiesSeen.length, 0, 'request upstream tidak boleh terkirim')
+})
+
+test('accountStatus menolak akses token → tetap dilaporkan aktif (bukan key invalid)', async () => {
+  // Token global dimatikan supaya JWT client yang dipakai; accountStatus lama
+  // memang hanya menerima API key sehingga menolak JWT dengan 806.
+  upstream = () => json({ code: 806, msg: 'APIKEY_USER_NOT_FOUND', data: null })
+  const out = await checkBalance(fakeJwt(FUTURE()))
+  assert.equal(out.ok, true)
+  assert.equal(out.isValidUser, true)
+  assert.equal(out.balance, null)
+  assert.match(out.keyType, /Access Token/)
 })

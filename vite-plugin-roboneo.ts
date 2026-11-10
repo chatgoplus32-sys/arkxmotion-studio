@@ -1,8 +1,45 @@
 import type { Plugin } from 'vite'
 import http from 'http'
+// .env dibaca eksplisit: proxy dev berjalan di proses Vite (bukan proses
+// server tsx), jadi tanpa ini RUNNINGHUB_ACCESS_TOKEN tidak terlihat saat dev.
+import 'dotenv/config'
 
 const PROD_ORIGIN = 'https://arkxmotion-studio.win'
 const LOCAL_ORIGIN = 'http://127.0.0.1:6000'
+
+// ── RunningHub: auth memakai akses token (JWT) ─────────────────────────────
+// Sama seperti relay Express di server/routes/publicRunninghub.ts: key lama /
+// key kosong / placeholder diganti token global dari env
+// RUNNINGHUB_ACCESS_TOKEN, sedangkan akses token milik pengguna (JWT yang
+// masih berlaku) dipakai apa adanya. Env kosong = mode lama (key per-user).
+
+function runningHubJwtExp(token: string): number | null {
+  const parts = String(token || '').split('.')
+  if (parts.length < 2 || !parts[0].startsWith('ey')) return null
+  try {
+    const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+    const padded = payload + '='.repeat((4 - payload.length % 4) % 4)
+    const decoded = JSON.parse(Buffer.from(padded, 'base64').toString('utf8'))
+    return typeof decoded?.exp === 'number' ? decoded.exp : null
+  } catch {
+    return null
+  }
+}
+
+function resolveRunningHubCredential(raw: unknown): string {
+  const key = String(raw ?? '')
+    .trim()
+    .replace(/^[•*`'"\s-]+|[•*`'"\s-]+$/g, '')
+    .replace(/^Bearer\s+/i, '')
+    .trim()
+  const exp = runningHubJwtExp(key)
+  if (key && exp !== null && Date.now() <= exp * 1000) return key
+  const global = String(process.env.RUNNINGHUB_ACCESS_TOKEN || '')
+    .trim()
+    .replace(/^Bearer\s+/i, '')
+    .trim()
+  return global || key
+}
 
 // Dev: Express lokal (:6000, `npm run dev:server`) dulu, lalu produksi VPS sebagai
 // fallback terakhir. Dulu fallback-nya deployment Vercel, tapi stack itu tidak lagi
@@ -822,7 +859,8 @@ export function roboneoProxyPlugin(): Plugin {
         let parsed: any
         try { parsed = JSON.parse(rawBody) } catch {}
 
-        const { action, apiKey, ...params } = parsed || {}
+        const { action, apiKey: rawApiKey, ...params } = parsed || {}
+        const apiKey = resolveRunningHubCredential(rawApiKey)
         const RUNNINGHUB_BASE = 'https://www.runninghub.ai'
 
         console.log(`[runninghub-proxy] action=${action}`)

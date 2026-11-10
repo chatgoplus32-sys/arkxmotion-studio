@@ -3,6 +3,17 @@
 const router = Router()
 
 const RUNNINGHUB_BASE = 'https://www.runninghub.ai'
+
+// ── Akses token RunningHub ─────────────────────────────────────────────────
+// RunningHub kini mengautentikasi panggilan OpenAPI dengan access token (JWT)
+// hasil login, bukan API key lama. Token dibaca dari env
+// RUNNINGHUB_ACCESS_TOKEN (isi di .env — berkas itu di-ignore git) dan dipakai
+// sebagai credential default untuk SEMUA request upstream; token tidak pernah
+// dikirim ke browser.
+//
+//   • Env kosong / tidak diisi → mode lama: pakai key yang dikirim tiap user
+//   • Diisi token baru         → mengganti token aktif (mis. sesudah rotate)
+const RUNNINGHUB_SERVER_MANAGED_KEY = 'server-managed'
 const RUNNINGHUB_DEFAULT_WORKFLOW_ID = '2092795737699856386'
 const RUNNINGHUB_ULTRA_HD_WORKFLOW_ID = '2102004799470764034'
 // MC Ultra Fast HD — node ID resmi dari dokumentasi workflow:
@@ -280,8 +291,12 @@ const SEEDANCE26_ASPECTS = new Set([
 ])
 const SEEDANCE26_ASPECT_FALLBACK = '16:9 (Widescreen)'
 
-function rhAuthHeaders(_apiKey: string) {
-  return { 'Content-Type': 'application/json', 'User-Agent': 'ArkxMotion/1.0' }
+function rhAuthHeaders(apiKey: string) {
+  return {
+    'Content-Type': 'application/json',
+    'User-Agent': 'ArkxMotion/1.0',
+    'Authorization': `Bearer ${apiKey}`,
+  }
 }
 
 // Key yang ditempel dari dashboard bisa membawa kutip, bullet, atau prefix
@@ -295,6 +310,45 @@ function normalizeRhApiKey(raw: unknown): string {
     .trim()
 }
 
+/** exp (detik sejak epoch) dari payload JWT — null kalau bukan JWT valid. */
+function rhJwtExp(token: string): number | null {
+  const parts = String(token || '').split('.')
+  if (parts.length < 2 || !parts[0].startsWith('ey')) return null
+  try {
+    const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+    const padded = payload + '='.repeat((4 - payload.length % 4) % 4)
+    const decoded = JSON.parse(Buffer.from(padded, 'base64').toString('utf8'))
+    return typeof decoded?.exp === 'number' ? decoded.exp : null
+  } catch {
+    return null
+  }
+}
+
+function rhJwtExpired(token: string): boolean {
+  const exp = rhJwtExp(token)
+  return exp !== null && Date.now() > exp * 1000
+}
+
+/** Token global dari env RUNNINGHUB_ACCESS_TOKEN — '' kalau belum diisi. */
+function rhGlobalAccessToken(): string {
+  return normalizeRhApiKey(process.env.RUNNINGHUB_ACCESS_TOKEN)
+}
+
+/**
+ * Tentukan credential yang dikirim ke upstream RunningHub:
+ *  1. Akses token milik pengguna (JWT yang masih berlaku) → dipakai apa adanya.
+ *  2. Selain itu (API key lama, key kosong, placeholder server) → token global.
+ *  3. Token global dimatikan (env '') → key pengguna dipakai seperti mode lama.
+ */
+function rhResolveCredential(clientKey: string): { token: string; source: 'user-token' | 'server-token' | 'user-key' } {
+  if (clientKey && rhJwtExp(clientKey) !== null && !rhJwtExpired(clientKey)) {
+    return { token: clientKey, source: 'user-token' }
+  }
+  const global = rhGlobalAccessToken()
+  if (global) return { token: global, source: 'server-token' }
+  return { token: clientKey, source: 'user-key' }
+}
+
 router.all('/', async (req: Request, res: Response) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
@@ -305,12 +359,34 @@ router.all('/', async (req: Request, res: Response) => {
 
   const body = req.body || {}
   const { action, apiKey: rawApiKey, ...params } = body
-  const apiKey = normalizeRhApiKey(rawApiKey)
+  const clientKey = normalizeRhApiKey(rawApiKey)
+  const { token: apiKey, source: authSource } = rhResolveCredential(clientKey)
 
   if (!action) return res.status(200).json({ ok: false, error: 'Missing action' })
-  if (!apiKey) return res.status(200).json({ ok: false, error: 'Missing apiKey' })
 
-  console.log(`[runninghub] action=${action} apiKeyLen=${String(apiKey).length}`)
+  // Placeholder dari client dengan token global yang dimatikan = konfigurasi
+  // belum lengkap — jangan teruskan ke upstream (pasti ditolak dengan 806).
+  if (apiKey === RUNNINGHUB_SERVER_MANAGED_KEY) {
+    return res.status(200).json({
+      ok: false,
+      error: 'Access token RunningHub belum terpasang di server. Isi RUNNINGHUB_ACCESS_TOKEN di .env lalu restart server.',
+    })
+  }
+
+  if (!apiKey) {
+    return res.status(200).json({ ok: false, error: 'Missing apiKey' })
+  }
+
+  // Tolak lebih awal dengan pesan jelas, bukan error 806/401 membingungkan.
+  const exp = rhJwtExp(apiKey)
+  if (exp !== null && Date.now() > exp * 1000) {
+    return res.status(200).json({
+      ok: false,
+      error: `Access token RunningHub kedaluwarsa (${new Date(exp * 1000).toISOString()}). Perbarui token di env RUNNINGHUB_ACCESS_TOKEN lalu restart server.`,
+    })
+  }
+
+  console.log(`[runninghub] action=${action} auth=${authSource} keyLen=${String(apiKey).length}`)
 
   try {
     if (action === 'motion-control') {
@@ -3354,7 +3430,7 @@ async function handleCheckBalance(apiKey: string, res: Response) {
     const apiRes = await fetch(endpoint, {
       method: 'POST',
       headers: rhAuthHeaders(apiKey),
-      body: JSON.stringify({ apiKey }),
+      body: JSON.stringify({ apiKey, accessToken: apiKey }),
     })
 
     const rawText = await apiRes.text()
@@ -3382,6 +3458,22 @@ async function handleCheckBalance(apiKey: string, res: Response) {
     if (data.code !== undefined && data.code !== null && data.code !== 0 && data.code !== '0') {
       const code = String(data.code)
       const rejected = RH_KEY_REJECT_CODES.has(code)
+
+      // Credential berupa akses token (JWT) yang masih berlaku: endpoint cek
+      // saldo lama (/uc/openapi/accountStatus) memang dibuat untuk API key,
+      // sehingga token sering ditolak di sini walaupun panggilan OpenAPI
+      // (/openapi/v2/…) menerimanya. Jangan tandai token sebagai key invalid —
+      // laporkan token aktif tanpa saldo (cek saldo butuh API key lama).
+      if (rejected && rhJwtExpired(apiKey) === false && rhJwtExp(apiKey) !== null) {
+        return res.status(200).json({
+          ok: true,
+          balance: null,
+          isValidUser: true,
+          keyType: 'Access Token (JWT)',
+          message: 'Access token aktif. RunningHub tidak menampilkan saldo lewat access token — cek saldo hanya untuk API key lama.',
+        })
+      }
+
       return res.status(200).json({
         ok: false,
         transient: !rejected,

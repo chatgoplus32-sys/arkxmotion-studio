@@ -1,6 +1,13 @@
 ﻿import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 const RUNNINGHUB_BASE = 'https://www.runninghub.ai'
+
+// ── Akses token RunningHub ─────────────────────────────────────────────────
+// RunningHub kini mengautentikasi panggilan OpenAPI dengan access token (JWT)
+// hasil login, bukan API key lama. Token dibaca dari env
+// RUNNINGHUB_ACCESS_TOKEN dan dipakai sebagai credential default untuk SEMUA
+// request upstream (env kosong = mode lama: key dari tiap pengguna).
+const RUNNINGHUB_SERVER_MANAGED_KEY = 'server-managed'
 const RUNNINGHUB_DEFAULT_WORKFLOW_ID = '2092795737699856386'
 const RUNNINGHUB_ULTRA_HD_WORKFLOW_ID = '2102004799470764034'
 // Motion Control Pro — Motion Transfer V3 (app RunningHub): gerakan mulus &
@@ -169,8 +176,12 @@ const SEEDANCE26_ASPECT_FALLBACK = '16:9 (Widescreen)'
 const ULTRA_HD_IMAGE_NODE = '30'
 const ULTRA_HD_VIDEO_NODE = '33'
 
-function rhAuthHeaders(_apiKey: string) {
-  return { 'Content-Type': 'application/json', 'User-Agent': 'ArkxMotion/1.0' }
+function rhAuthHeaders(apiKey: string) {
+  return {
+    'Content-Type': 'application/json',
+    'User-Agent': 'ArkxMotion/1.0',
+    'Authorization': `Bearer ${apiKey}`,
+  }
 }
 
 // Key yang ditempel dari dashboard bisa membawa kutip, bullet, atau prefix
@@ -183,6 +194,43 @@ function normalizeRhApiKey(raw: unknown): string {
     .trim()
 }
 
+/** exp (detik sejak epoch) dari payload JWT — null kalau bukan JWT valid. */
+function rhJwtExp(token: string): number | null {
+  const parts = String(token || '').split('.')
+  if (parts.length < 2 || !parts[0].startsWith('ey')) return null
+  try {
+    const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+    const padded = payload + '='.repeat((4 - payload.length % 4) % 4)
+    const decoded = JSON.parse(Buffer.from(padded, 'base64').toString('utf8'))
+    return typeof decoded?.exp === 'number' ? decoded.exp : null
+  } catch {
+    return null
+  }
+}
+
+function rhJwtExpired(token: string): boolean {
+  const exp = rhJwtExp(token)
+  return exp !== null && Date.now() > exp * 1000
+}
+
+/** Token global dari env RUNNINGHUB_ACCESS_TOKEN — '' kalau belum diisi. */
+function rhGlobalAccessToken(): string {
+  return normalizeRhApiKey(process.env.RUNNINGHUB_ACCESS_TOKEN)
+}
+
+/**
+ * Credential untuk upstream: akses token pengguna (JWT berlaku) dipertahankan,
+ * selain itu (API key lama / kosong / placeholder) memakai token global.
+ */
+function rhResolveCredential(clientKey: string): { token: string; source: 'user-token' | 'server-token' | 'user-key' } {
+  if (clientKey && rhJwtExp(clientKey) !== null && !rhJwtExpired(clientKey)) {
+    return { token: clientKey, source: 'user-token' }
+  }
+  const global = rhGlobalAccessToken()
+  if (global) return { token: global, source: 'server-token' }
+  return { token: clientKey, source: 'user-key' }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
@@ -192,12 +240,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'Method not allowed' })
 
   const { action, apiKey: rawApiKey, ...params } = req.body || {}
-  const apiKey = normalizeRhApiKey(rawApiKey)
+  const clientKey = normalizeRhApiKey(rawApiKey)
+  const { token: apiKey, source: authSource } = rhResolveCredential(clientKey)
 
   if (!action) return res.status(200).json({ ok: false, error: 'Missing action' })
-  if (!apiKey) return res.status(200).json({ ok: false, error: 'Missing apiKey' })
 
-  console.log(`[runninghub] action=${action} apiKeyLen=${String(apiKey).length}`)
+  // Placeholder dari client dengan token global yang dimatikan = konfigurasi
+  // belum lengkap — jangan teruskan ke upstream (pasti ditolak dengan 806).
+  if (apiKey === RUNNINGHUB_SERVER_MANAGED_KEY) {
+    return res.status(200).json({
+      ok: false,
+      error: 'Access token RunningHub belum terpasang di server. Isi RUNNINGHUB_ACCESS_TOKEN di environment variable lalu deploy ulang.',
+    })
+  }
+
+  if (!apiKey) {
+    return res.status(200).json({ ok: false, error: 'Missing apiKey' })
+  }
+
+  const exp = rhJwtExp(apiKey)
+  if (exp !== null && Date.now() > exp * 1000) {
+    return res.status(200).json({
+      ok: false,
+      error: `Access token RunningHub kedaluwarsa (${new Date(exp * 1000).toISOString()}). Perbarui env RUNNINGHUB_ACCESS_TOKEN.`,
+    })
+  }
+
+  console.log(`[runninghub] action=${action} auth=${authSource} keyLen=${String(apiKey).length}`)
 
   try {
     if (action === 'motion-control') {
@@ -3215,7 +3284,7 @@ async function handleCheckBalance(apiKey: string, res: VercelResponse) {
     const apiRes = await fetch(endpoint, {
       method: 'POST',
       headers: rhAuthHeaders(apiKey),
-      body: JSON.stringify({ apiKey }),
+      body: JSON.stringify({ apiKey, accessToken: apiKey }),
     })
 
     const rawText = await apiRes.text()
@@ -3242,6 +3311,20 @@ async function handleCheckBalance(apiKey: string, res: VercelResponse) {
     if (data.code !== undefined && data.code !== null && data.code !== 0 && data.code !== '0') {
       const code = String(data.code)
       const rejected = RH_KEY_REJECT_CODES.has(code)
+
+      // Akses token (JWT) berlaku tapi cek saldo menolak: endpoint accountStatus
+      // dibuat untuk API key lama — jangan tandai token invalid (OpenAPI tetap
+      // menerimanya). Laporkan token aktif tanpa saldo.
+      if (rejected && rhJwtExp(apiKey) !== null && !rhJwtExpired(apiKey)) {
+        return res.status(200).json({
+          ok: true,
+          balance: null,
+          isValidUser: true,
+          keyType: 'Access Token (JWT)',
+          message: 'Access token aktif. RunningHub tidak menampilkan saldo lewat access token — cek saldo hanya untuk API key lama.',
+        })
+      }
+
       return res.status(200).json({
         ok: false,
         transient: !rejected,

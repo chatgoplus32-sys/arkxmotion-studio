@@ -323,6 +323,34 @@ function generateId(): string {
   return Math.random().toString(36).slice(2, 10)
 }
 
+// ── Placeholder key RunningHub ──────────────────────────────────────────────
+// Provider RunningHub kini memakai akses token global yang dipegang server —
+// pengguna tidak lagi punya API key sendiri. Banyak halaman mengecek
+// "ada tidaknya key RunningHub" sebelum mengizinkan generate (Motion, H3,
+// TryOn, Upscaler, dll.), jadi sediakan placeholder kalau pengguna belum
+// menyimpan key apa pun. Nilai placeholder bukan rahasia: request asli selalu
+// diautentikasi ulang oleh server dengan RUNNINGHUB_ACCESS_TOKEN.
+export const RUNNINGHUB_SERVER_MANAGED_KEY = 'server-managed'
+
+function seedRunningHubKeyIfEmpty(keys: Record<ProviderId, ProviderKey[]>): Record<ProviderId, ProviderKey[]> {
+  if (!Array.isArray(keys.runninghub) || keys.runninghub.length > 0) return keys
+  const seeded: Record<ProviderId, ProviderKey[]> = {
+    ...keys,
+    runninghub: [{
+      id: generateId(),
+      key: RUNNINGHUB_SERVER_MANAGED_KEY,
+      name: 'RunningHub — token server',
+      status: 'active',
+    }],
+  }
+  // Harus ikut ditulis ke localStorage: beberapa halaman membaca
+  // `arkxmotion.providers` langsung (bukan lewat store ini).
+  if (typeof localStorage !== 'undefined') {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded)) } catch { /* storage penuh — abaikan */ }
+  }
+  return seeded
+}
+
 function loadKeysFromStorage(): Record<ProviderId, ProviderKey[]> {
   const defaults: Record<ProviderId, ProviderKey[]> = {
     weavy: [],
@@ -416,7 +444,7 @@ function loadRoutingFromStorage(): Record<string, ProviderId> {
 }
 
 export const useProviderManager = create<ProviderState>((set, get) => ({
-  keys: loadKeysFromStorage(),
+  keys: seedRunningHubKeyIfEmpty(loadKeysFromStorage()),
   activeProvider: 'weavy',
   routing: loadRoutingFromStorage(),
   maintenance: getDefaultMaintenance(),

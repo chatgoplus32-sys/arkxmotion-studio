@@ -222,7 +222,11 @@ function runninghubProxy(action: string, params: Record<string, any>, apiKey?: s
   // Key yang dipakai rotasi datang mentah dari store — bersihkan di sini juga
   // supaya key tersimpan "kotor" (kutip/Bearer) tidak menggagalkan submit.
   const key = normalizeRunningHubApiKey(apiKey || getRunningHubApiKey() || '')
-  if (!key) throw new Error('Belum ada RunningHub API key. Silakan tambahkan di Settings.')
+  // Key boleh kosong: RunningHub kini diautentikasi lewat access token yang
+  // dipegang server (RUNNINGHUB_ACCESS_TOKEN), jadi pengguna tidak wajib
+  // menyimpan key. Kalau server juga tidak punya token, DIA yang menolak
+  // dengan pesan jelas — bukan error umum di sini.
+  if (!key) console.warn('[runninghub] kirim request tanpa key lokal — server yang menentukan access token')
 
   return fetch(RUNNINGHUB_PROXY, {
     method: 'POST',

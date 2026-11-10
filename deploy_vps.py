@@ -206,10 +206,56 @@ def _sync_gemini_key():
     print('  ✓ GEMINI_API_KEY ditambahkan ke .env VPS')
 
 
+# ── Sinkronkan akses token RunningHub ke .env VPS ──────────────────────────
+# Relay RunningHub membaca RUNNINGHUB_ACCESS_TOKEN dari .env server, sedangkan
+# deploy mengunggah kode — bukan .env. Token punya masa berlaku (klaim exp di
+# dalam JWT), jadi selain menambah bila belum ada, nilai yang berbeda ikut
+# diperbarui supaya rotate token langsung sampai ke produksi. Hanya baris ini
+# yang disentuh; nilainya tidak pernah dicetak.
+def _sync_runninghub_token():
+    local_env = os.path.join(LOCAL_DIR, '.env')
+    if not os.path.isfile(local_env):
+        return
+    nilai = ''
+    with open(local_env, encoding='utf-8', errors='replace') as fh:
+        for baris in fh:
+            if baris.startswith('RUNNINGHUB_ACCESS_TOKEN='):
+                nilai = baris.split('=', 1)[1].strip()
+    if not nilai:
+        return
+    kunci = 'RUNNINGHUB_ACCESS_TOKEN='
+    remote_env = REMOTE_DIR + '/.env'
+    try:
+        with sftp.open(remote_env, 'r') as fh:
+            konten = fh.read().decode('utf-8', errors='replace')
+    except FileNotFoundError:
+        konten = ''
+    lama = konten.splitlines()
+    if any(b.startswith(kunci) for b in lama):
+        if kunci + nilai in lama:
+            print('  ✓ RUNNINGHUB_ACCESS_TOKEN sudah sama di .env VPS')
+            return
+        # Nilai lama (token kedaluwarsa / diganti) → timpa, baris lain aman.
+        baru = [(kunci + nilai) if b.startswith(kunci) else b for b in lama]
+        akhir_baris = '\n' if konten.endswith('\n') else ''
+        with sftp.open(remote_env, 'w') as fh:
+            fh.write('\n'.join(baru) + akhir_baris)
+        print('  ✓ RUNNINGHUB_ACCESS_TOKEN diperbarui di .env VPS (token lama diganti)')
+        return
+    with sftp.open(remote_env, 'a') as fh:
+        fh.write(('\n' if konten and not konten.endswith('\n') else '') + kunci + nilai + '\n')
+    print('  ✓ RUNNINGHUB_ACCESS_TOKEN ditambahkan ke .env VPS')
+
+
 try:
     _sync_gemini_key()
 except Exception as exc:
     print('  ⚠ Sinkronisasi GEMINI_API_KEY dilewati: %s' % exc)
+
+try:
+    _sync_runninghub_token()
+except Exception as exc:
+    print('  ⚠ Sinkronisasi RUNNINGHUB_ACCESS_TOKEN dilewati: %s' % exc)
 
 sftp.close()
 print('\n✅ Files uploaded!')
