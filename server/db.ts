@@ -591,4 +591,30 @@ db.exec('CREATE INDEX IF NOT EXISTS idx_sync_queue_created ON sync_token_queue(c
 // sama; router memakai INSERT OR IGNORE dan mengandalkan batasan unik ini.
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_sync_queue_unique ON sync_token_queue(user_id, provider, token)')
 
+// ── Klaim hadiah harian RunningHub (cron server) ────────────────────────
+// Token disalin dari browser hanya setelah pengguna menyalakan klaim otomatis
+// di Providers. Credential ini TIDAK pernah dikembalikan lewat API (yang keluar
+// hanya id akun + status); mengganti daftar token menghapus baris yang tidak
+// dikirim lagi, jadi token lama tidak menumpuk di DB.
+// `last_success_day` memakai hari UTC+8 (reset RunningHub), bukan tanggal lokal
+// server, supaya klaim tidak dobel/terlewat saat zona waktu VPS berbeda.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS runninghub_claim_token (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    token TEXT NOT NULL,
+    account TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','claimed','already','rejected','error')),
+    last_message TEXT NOT NULL DEFAULT '',
+    last_attempt_at INTEGER,
+    last_success_day TEXT,
+    attempt_day TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )
+`)
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_rh_claim_user_token ON runninghub_claim_token(user_id, token)')
+db.exec('CREATE INDEX IF NOT EXISTS idx_rh_claim_user ON runninghub_claim_token(user_id)')
+
 export default db

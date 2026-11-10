@@ -43,6 +43,13 @@ import {
   type RHTokenWallet,
   type RhCreditSnapshot,
 } from '@/lib/runninghub'
+import {
+  fetchRunningHubAutoClaim,
+  saveRunningHubAutoClaim,
+  runRunningHubAutoClaimNow,
+  sleep as sleepRhAutoClaim,
+  type RhAutoClaimStatus,
+} from '@/lib/runninghubDailyClaim'
 import { checkFireflyBalance } from '@/lib/firefly'
 import { parseNexabotCookieInput, parseNexabotApiKeyInput } from '@/lib/nexabot'
 import { NEXABOT_CHECK_TIMEOUT_MS } from '@/lib/nexabot-constants'
@@ -1034,6 +1041,11 @@ export default function ProvidersPage() {
   const [editingBalanceIdx, setEditingBalanceIdx] = useState<number | null>(null)
   const [claimingKey, setClaimingKey] = useState<string | null>(null)
   const [claimingAll, setClaimingAll] = useState(false)
+  // Klaim harian otomatis di server: statusnya hidup di DB server, bukan
+  // localStorage — jadi tetap jalan walau app ditutup.
+  const [rhAutoClaim, setRhAutoClaim] = useState<RhAutoClaimStatus | null>(null)
+  const [rhAutoClaimBusy, setRhAutoClaimBusy] = useState(false)
+  const [rhAutoClaimError, setRhAutoClaimError] = useState<string | null>(null)
   // Token MF- yang akan didaftarkan sebagai akun "Markasflow" di MarkasTools.
   const [mtBulkText, setMtBulkText] = useState('')
   const addToast = useToastStore((s) => s.addToast)
@@ -1051,6 +1063,26 @@ export default function ProvidersPage() {
     () => keys[selectedProvider as ProviderId]?.map(k => k.key) || [],
     [selectedProvider, keys]
   )
+  // Hanya JWT yang bisa memakai hadiah harian — API key 32-hex tidak.
+  const localJwtKeys = useMemo(() => savedKeys.filter(isRhJwtKey), [savedKeys])
+
+  // Status klaim otomatis dimuat saat tab RunningHub dibuka. Tanpa sesi login
+  // tidak ada artinya memanggil endpoint (dan akan tampil sebagai error 401).
+  useEffect(() => {
+    if (selectedProvider !== 'runninghub') return
+    if (!localStorage.getItem('arkxmotion_token')) return
+    let alive = true
+    fetchRunningHubAutoClaim()
+      .then((status) => {
+        if (!alive) return
+        setRhAutoClaim(status)
+        setRhAutoClaimError(null)
+      })
+      .catch((err: any) => {
+        if (alive) setRhAutoClaimError(err?.message || 'Gagal memuat status klaim otomatis')
+      })
+    return () => { alive = false }
+  }, [selectedProvider])
 
   // Check if current selected provider is in maintenance
   const isCurrentMaintenance = useMemo(() => {
@@ -1866,6 +1898,7 @@ export default function ProvidersPage() {
     try {
       const res = await claimRunningHubDailyGift(key)
       if (res.ok) addToast(res.message || 'Hadiah harian diklaim.', 'success')
+      else if (res.alreadyClaimed) addToast('Hadiah harian akun ini sudah diklaim hari ini.', 'info')
       else addToast(res.error || 'Gagal klaim hadiah harian.', 'warning')
 
       const result = await handleCheckKey(key)
@@ -1931,6 +1964,7 @@ export default function ProvidersPage() {
     for (const key of targets) before.set(key, statusMap[key]?.wallet?.pointsBalance ?? null)
 
     let okCount = 0
+    let alreadyCount = 0
     let failCount = 0
     let gained = 0
     const failures: string[] = []
@@ -1944,6 +1978,9 @@ export default function ProvidersPage() {
           const now = res.tokenWallet?.pointsBalance
           const prev = before.get(key)
           if (typeof now === 'number' && typeof prev === 'number') gained += now - prev
+        } else if (res.alreadyClaimed) {
+          // Sudah diambil hari ini (mis. lewat cron server) bukan kegagalan.
+          alreadyCount++
         } else {
           failCount++
           if (failures.length < 4) failures.push(`${maskKey(key)}: ${res.error || 'gagal diklaim'}`)
@@ -1974,14 +2011,73 @@ export default function ProvidersPage() {
     setProgress({ show: false, pct: 0, text: '' })
 
     const gainedText = gained > 0 ? ` (+${Math.round(gained * 100) / 100} poin)` : ''
+    const alreadyText = alreadyCount > 0 ? `, ${alreadyCount} sudah diklaim` : ''
     addToast(
-      `Klaim hadiah harian: ${okCount} berhasil${gainedText}, ${failCount} gagal.`,
-      okCount > 0 ? 'success' : 'warning',
+      `Klaim hadiah harian: ${okCount} berhasil${gainedText}${alreadyText}, ${failCount} gagal.`,
+      okCount > 0 || alreadyCount > 0 ? 'success' : 'warning',
     )
     if (failures.length > 0) {
       console.warn('[runninghub] sebagian klaim hadiah gagal:', failures)
     }
   }, [claimingAll, savedKeys, statusMap, addToast, handleCheckKey, keys, selectedProvider, setKeyCreditDetail])
+
+  /**
+   * Simpan/matikan klaim harian otomatis. Token JWT lokal dikirim ke server
+   * hanya saat pengguna menekan tombol ini; "Matikan" menghapus semuanya.
+   */
+  const syncRhAutoClaim = useCallback(async (enabled: boolean) => {
+    if (rhAutoClaimBusy) return
+    if (enabled && localJwtKeys.length === 0) {
+      addToast('Tidak ada access token RunningHub (JWT) untuk didaftarkan.', 'warning')
+      return
+    }
+    setRhAutoClaimBusy(true)
+    try {
+      const status = await saveRunningHubAutoClaim(localJwtKeys, enabled)
+      setRhAutoClaim(status)
+      setRhAutoClaimError(null)
+      addToast(
+        enabled
+          ? `Klaim otomatis aktif untuk ${status.tokens.length} token — jalan tiap hari tanpa app terbuka.`
+          : 'Klaim otomatis dimatikan — token di server dihapus.',
+        enabled ? 'success' : 'info',
+      )
+    } catch (err: any) {
+      const msg = err?.message || 'Gagal menyimpan pengaturan klaim otomatis'
+      setRhAutoClaimError(msg)
+      addToast(msg, 'error')
+    } finally {
+      setRhAutoClaimBusy(false)
+    }
+  }, [rhAutoClaimBusy, localJwtKeys, addToast])
+
+  /** Klaim semua token di server sekarang, lalu pantau sampai selesai. */
+  const runRhAutoClaim = useCallback(async () => {
+    if (rhAutoClaimBusy) return
+    setRhAutoClaimBusy(true)
+    try {
+      let status = await runRunningHubAutoClaimNow()
+      setRhAutoClaim(status)
+      // Scheduler memproses berurutan (±2 detik/token); poll sampai berhenti.
+      for (let i = 0; i < 45 && status.running; i++) {
+        await sleepRhAutoClaim(4000)
+        status = await fetchRunningHubAutoClaim()
+        setRhAutoClaim(status)
+      }
+      const s = status.summary
+      const rejectedText = s.rejected > 0 ? ` · ${s.rejected} token ditolak` : ''
+      addToast(
+        `Klaim otomatis: ${s.claimedToday}/${s.total} akun sudah diklaim hari ini${rejectedText}.`,
+        s.rejected > 0 ? 'warning' : 'success',
+      )
+    } catch (err: any) {
+      const msg = err?.message || 'Gagal menjalankan klaim otomatis'
+      setRhAutoClaimError(msg)
+      addToast(msg, 'error')
+    } finally {
+      setRhAutoClaimBusy(false)
+    }
+  }, [rhAutoClaimBusy, addToast])
 
   const handleCheckAll = useCallback(async () => {
     if (savedKeys.length === 0) return
@@ -2779,6 +2875,77 @@ export default function ProvidersPage() {
                   </div>
                   <div className="mt-1 text-[11px] text-[#a0a0a0]">
                     {activeCount} active / {providerKeys.length} keys
+                  </div>
+
+                  <div className="mt-2 border-t border-[#00a8ff]/20 pt-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-mono uppercase tracking-widest text-[#00a8ff]/80">Klaim otomatis</span>
+                      <span className={`text-[10.5px] font-mono ${rhAutoClaim?.enabled ? 'text-[#22c55e]' : 'text-[#a0a0a0]'}`}>
+                        {rhAutoClaim?.enabled
+                          ? rhAutoClaim.running ? 'berjalan…' : 'aktif · cron server'
+                          : 'nonaktif'}
+                      </span>
+                    </div>
+                    {rhAutoClaim?.enabled ? (
+                      <div className="mt-1 space-y-0.5 text-[10.5px] text-[#a0a0a0]">
+                        <div className="flex items-center justify-between gap-2">
+                          <span>Diklaim hari ini ({rhAutoClaim.timezone})</span>
+                          <span className="font-mono text-[#f5f5f5]/85">
+                            {rhAutoClaim.summary.claimedToday}/{rhAutoClaim.summary.total}
+                          </span>
+                        </div>
+                        {rhAutoClaim.summary.rejected > 0 && (
+                          <div className="text-[#ffd76a]/90">
+                            {rhAutoClaim.summary.rejected} token ditolak — perbarui JWT di Providers lalu Sinkronkan.
+                          </div>
+                        )}
+                        {rhAutoClaim.summary.lastAttemptAt && (
+                          <div>Terakhir dicoba {new Date(rhAutoClaim.summary.lastAttemptAt).toLocaleString('id-ID')}</div>
+                        )}
+                        {localJwtKeys.length !== rhAutoClaim.tokens.length && (
+                          <div className="text-[#ffd76a]/90">
+                            Key JWT lokal {localJwtKeys.length} ≠ server {rhAutoClaim.tokens.length} — klik Sinkronkan.
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="mt-1 text-[10.5px] text-[#a0a0a0]">
+                        Token JWT disalin ke server supaya hadiah harian diklaim tiap hari tanpa app terbuka.
+                      </div>
+                    )}
+                    {rhAutoClaimError && (
+                      <div className="mt-1 text-[10.5px] text-red-300/90">{rhAutoClaimError}</div>
+                    )}
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => syncRhAutoClaim(true)}
+                        disabled={rhAutoClaimBusy || localJwtKeys.length === 0}
+                        className="rounded-full border border-[#00a8ff]/40 bg-[#00a8ff]/10 px-2 py-0.5 text-[10.5px] text-[#00a8ff] hover:bg-[#00a8ff]/20 transition disabled:opacity-50"
+                      >
+                        {rhAutoClaim?.enabled ? 'Sinkronkan' : `Aktifkan & sinkron (${localJwtKeys.length})`}
+                      </button>
+                      {rhAutoClaim?.enabled && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={runRhAutoClaim}
+                            disabled={rhAutoClaimBusy || rhAutoClaim.running}
+                            className="rounded-full border border-[#ffd76a]/40 bg-[#ffd76a]/10 px-2 py-0.5 text-[10.5px] text-[#ffd76a] hover:bg-[#ffd76a]/20 transition disabled:opacity-50"
+                          >
+                            {rhAutoClaimBusy || rhAutoClaim.running ? 'Mengklaim…' : 'Klaim sekarang'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => syncRhAutoClaim(false)}
+                            disabled={rhAutoClaimBusy}
+                            className="rounded-full border border-[#2a2a2a] bg-[#1a1a1a] px-2 py-0.5 text-[10.5px] text-[#a0a0a0] hover:text-[#f5f5f5] transition disabled:opacity-50"
+                          >
+                            Matikan
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
               )

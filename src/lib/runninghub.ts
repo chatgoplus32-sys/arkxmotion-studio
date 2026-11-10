@@ -350,6 +350,8 @@ export async function claimRunningHubDailyGift(apiKey: string): Promise<{
   error?: string
   tokenWallet?: RHTokenWallet | null
   code?: string | number | null
+  /** Upstream menolak karena hadiah hari ini sudah diambil — bukan kegagalan. */
+  alreadyClaimed?: boolean
 }> {
   const cleanKey = parseRunningHubApiKeyInput(apiKey) || String(apiKey || '').trim()
   try {
@@ -365,6 +367,7 @@ export async function claimRunningHubDailyGift(apiKey: string): Promise<{
       error: data.error,
       tokenWallet: data.tokenWallet ?? null,
       code: data.code ?? null,
+      alreadyClaimed: data.alreadyClaimed === true,
     }
   } catch (err: any) {
     return { ok: false, error: err.message, tokenWallet: null }

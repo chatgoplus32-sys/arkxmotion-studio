@@ -313,7 +313,7 @@ function normalizeRhApiKey(raw: unknown): string {
 }
 
 /** exp (detik sejak epoch) dari payload JWT — null kalau bukan JWT valid. */
-function rhJwtExp(token: string): number | null {
+export function rhJwtExp(token: string): number | null {
   const parts = String(token || '').split('.')
   if (parts.length < 2 || !parts[0].startsWith('ey')) return null
   try {
@@ -326,13 +326,13 @@ function rhJwtExp(token: string): number | null {
   }
 }
 
-function rhJwtExpired(token: string): boolean {
+export function rhJwtExpired(token: string): boolean {
   const exp = rhJwtExp(token)
   return exp !== null && Date.now() > exp * 1000
 }
 
 /** sub (id akun) dari payload JWT — null kalau bukan JWT valid. */
-function rhJwtSub(token: string): string | null {
+export function rhJwtSub(token: string): string | null {
   const parts = String(token || '').split('.')
   if (parts.length < 2 || !parts[0].startsWith('ey')) return null
   try {
@@ -3992,23 +3992,43 @@ function rhKeyTypeLabel(apiType: unknown): string | null {
   return apiType
 }
 
+export type RhDailyClaimOutcome = 'claimed' | 'already' | 'rejected' | 'error'
+
+export interface RhDailyClaimResult {
+  outcome: RhDailyClaimOutcome
+  code: string | null
+  message: string
+  wallet?: RHTokenWallet | null
+}
+
+/** Balasan "sudah diklaim hari ini" beragam (CN/EN) — semuanya bukan kegagalan. */
+const RH_ALREADY_CLAIMED_RE = /already|repeat|duplicate|claimed|领取|已领|重复/i
+
 /**
  * Klaim hadiah harian RunningHub (30 poin/hari, dari /api/welfare/daily-gift/claim).
  * Hanya bisa memakai access token milik pengguna sendiri — hadiahnya terikat
  * akun, jadi tidak boleh diklaim memakai token server.
+ *
+ * Hasilnya dipakai dua jalur: handler HTTP (butuh wallet untuk UI) dan cron
+ * server (tanpa wallet — 35 token × 3 panggilan wallet hanya membebani upstream).
  */
-async function handleClaimDailyGift(apiKey: string, res: Response) {
+export async function rhClaimDailyGift(
+  apiKey: string,
+  opts: { wallet?: boolean } = {},
+): Promise<RhDailyClaimResult> {
   if (rhJwtExp(apiKey) === null) {
-    return res.status(200).json({
-      ok: false,
-      error: 'Klaim hadiah harian hanya bisa lewat access token (JWT) RunningHub, bukan API key.',
-    })
+    return {
+      outcome: 'rejected',
+      code: null,
+      message: 'Klaim hadiah harian hanya bisa lewat access token (JWT) RunningHub, bukan API key.',
+    }
   }
   if (rhJwtExpired(apiKey)) {
-    return res.status(200).json({
-      ok: false,
-      error: 'Access token kedaluwarsa — salin token baru dari sesi runninghub.ai yang masih login, lalu ganti Key ini.',
-    })
+    return {
+      outcome: 'rejected',
+      code: null,
+      message: 'Access token kedaluwarsa — salin token baru dari sesi runninghub.ai yang masih login, lalu ganti Key ini.',
+    }
   }
 
   try {
@@ -4023,32 +4043,60 @@ async function handleClaimDailyGift(apiKey: string, res: Response) {
     let data: any = null
     try { data = JSON.parse(text) } catch { data = null }
 
-    const code = String(data?.code ?? '')
+    const code = data?.code === undefined || data?.code === null ? null : String(data.code)
     const msg = String(data?.msg || data?.message || '')
-    const okClaim = code === '0' || code === '0' || code === ''
 
     // Buang cache wallet supaya saldo terbaru langsung terbaca.
     rhWalletCache.delete(rhTokenFingerprint(apiKey))
-    const wallet = await rhTokenWallet(apiKey)
-    const summary = rhWalletSummary(wallet)
+    const wallet = opts.wallet === false ? null : await rhTokenWallet(apiKey)
 
-    if (!okClaim) {
-      return res.status(200).json({
-        ok: false,
-        code: data?.code ?? null,
-        error: msg || `Hadiah harian gagal diklaim (${code || upstream.status}).`,
-        tokenWallet: wallet,
-      })
+    // HTML (502 nginx/maintenance) atau JSON tanpa code bukan bukti klaim
+    // berhasil — dulu balasan seperti itu dihitung sukses karena code kosong.
+    if (!data || upstream.status >= 500) {
+      return {
+        outcome: 'error',
+        code,
+        message: `RunningHub tidak membalas JSON (HTTP ${upstream.status}) — coba lagi nanti.`,
+        wallet,
+      }
     }
+    if (code === '0') {
+      return { outcome: 'claimed', code, message: msg || 'success', wallet }
+    }
+    if (code && RH_KEY_REJECT_CODES.has(code)) {
+      return { outcome: 'rejected', code, message: translateRhError(code, msg), wallet }
+    }
+    if (RH_ALREADY_CLAIMED_RE.test(msg)) {
+      return { outcome: 'already', code, message: msg || 'Hadiah harian hari ini sudah diklaim.', wallet }
+    }
+    return {
+      outcome: 'error',
+      code,
+      message: msg || `Hadiah harian gagal diklaim (${code || upstream.status}).`,
+      wallet,
+    }
+  } catch (err: any) {
+    return { outcome: 'error', code: null, message: err.message || 'Gagal klaim hadiah harian.' }
+  }
+}
 
+async function handleClaimDailyGift(apiKey: string, res: Response) {
+  const result = await rhClaimDailyGift(apiKey)
+  if (result.outcome === 'claimed') {
+    const summary = rhWalletSummary(result.wallet ?? null)
     return res.status(200).json({
       ok: true,
       message: `Hadiah harian diklaim. ${summary || 'Saldo poin diperbarui.'}`,
-      tokenWallet: wallet,
+      tokenWallet: result.wallet ?? null,
     })
-  } catch (err: any) {
-    return res.status(200).json({ ok: false, error: err.message || 'Gagal klaim hadiah harian.' })
   }
+  return res.status(200).json({
+    ok: false,
+    alreadyClaimed: result.outcome === 'already',
+    code: result.code,
+    error: result.message,
+    ...(result.wallet ? { tokenWallet: result.wallet } : {}),
+  })
 }
 
 async function handleCheckBalance(apiKey: string, res: Response) {  try {

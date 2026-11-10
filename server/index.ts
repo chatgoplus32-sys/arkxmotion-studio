@@ -63,6 +63,8 @@ import chatgptRoutes from './routes/chatgpt.js'
 import publicDolaRoutes from './routes/publicDola.js'
 import markastoolsRoutes from './routes/markastools.js'
 import featureRequestRoutes from './routes/featureRequests.js'
+import runninghubDailyClaimRoutes from './routes/runninghubDailyClaim.js'
+import { startRunningHubDailyClaimScheduler } from './lib/runninghubDailyClaim.js'
 
 // .env sudah dimuat server/env.ts (impor pertama), yaitu sebelum modul-modul di
 // atas dievaluasi. Tidak ada pemuatan kedua di sini supaya hanya ada satu sumber
@@ -162,6 +164,7 @@ app.use('/api/public/firefly', publicFireflyRoutes)
 app.use('/api/public/tiktok-download', publicTiktokRoutes)
 app.use('/api/nexabot', nexabotWalletRoutes)
 app.use('/api/seavi', seaviWalletRoutes)
+app.use('/api/runninghub', runninghubDailyClaimRoutes)
 app.use('/api/chatgpt', chatgptRoutes)
 app.use('/api/dola', publicDolaRoutes)
 app.use('/api/public/autoclip', publicAutoClipRoutes)
@@ -330,6 +333,11 @@ if (UPLOAD_RETENTION_DAYS > 0) {
   jalankanRetention()
   setInterval(jalankanRetention, 6 * 60 * 60 * 1000).unref()
 }
+
+// Klaim hadiah harian RunningHub untuk token yang didaftarkan pengguna.
+// Default aktif di production; status per hari disimpan di DB sehingga restart
+// tidak membuat klaim dobel maupun terlewat.
+startRunningHubDailyClaimScheduler()
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`[${isProd ? 'PROD' : 'DEV'}] Server running on http://0.0.0.0:${PORT}`)
