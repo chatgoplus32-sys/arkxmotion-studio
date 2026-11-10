@@ -882,6 +882,7 @@ export default function ProvidersPage() {
   const [tokenBankOpen, setTokenBankOpen] = useState(false)
   const [editingBalanceIdx, setEditingBalanceIdx] = useState<number | null>(null)
   const [claimingKey, setClaimingKey] = useState<string | null>(null)
+  const [claimingAll, setClaimingAll] = useState(false)
   const addToast = useToastStore((s) => s.addToast)
   const [, setRhUsageTick] = useState(0)
   const [editingBalanceVal, setEditingBalanceVal] = useState('')
@@ -1680,6 +1681,78 @@ export default function ProvidersPage() {
     }
   }, [claimingKey, addToast, handleCheckKey, keys, selectedProvider, setKeyCreditDetail])
 
+  /**
+   * Klaim hadiah harian untuk SEMUA access token RunningHub yang tersimpan.
+   * Berjalan berurutan (bukan paralel) karena RunningHub/throttle request
+   * bertubi-tubi — diberi jeda ~2 detik antar akun.
+   */
+  const handleClaimAllGifts = useCallback(async () => {
+    if (claimingAll) return
+    const targets = savedKeys.filter(isRhJwtKey)
+    if (targets.length === 0) {
+      addToast('Tidak ada access token RunningHub (JWT) untuk diklaim.', 'warning')
+      return
+    }
+
+    setClaimingAll(true)
+    setProgress({ show: true, pct: 0, text: `Klaim hadiah 0/${targets.length}` })
+
+    const before = new Map<string, number | null>()
+    for (const key of targets) before.set(key, statusMap[key]?.wallet?.pointsBalance ?? null)
+
+    let okCount = 0
+    let failCount = 0
+    let gained = 0
+    const failures: string[] = []
+
+    for (let i = 0; i < targets.length; i++) {
+      const key = targets[i]
+      try {
+        const res = await claimRunningHubDailyGift(key)
+        if (res.ok) {
+          okCount++
+          const now = res.tokenWallet?.pointsBalance
+          const prev = before.get(key)
+          if (typeof now === 'number' && typeof prev === 'number') gained += now - prev
+        } else {
+          failCount++
+          if (failures.length < 4) failures.push(`${maskKey(key)}: ${res.error || 'gagal diklaim'}`)
+        }
+
+        const result = await handleCheckKey(key)
+        setStatusMap(prev => ({ ...prev, [key]: result }))
+        const keyObj = (keys[selectedProvider as ProviderId] || []).find(k => k.key === key)
+        if (keyObj) {
+          const keep = (result.state === 'active' || result.state === 'empty') && !!result.detail
+          setKeyCreditDetail(selectedProvider as ProviderId, keyObj.id, keep ? result.detail || null : null, result.wallet ?? null)
+        }
+      } catch (err: any) {
+        failCount++
+        if (failures.length < 4) failures.push(`${maskKey(key)}: ${err?.message || 'error'}`)
+      }
+
+      setProgress({
+        show: true,
+        pct: Math.round(((i + 1) / targets.length) * 100),
+        text: `Klaim hadiah ${i + 1}/${targets.length}`,
+      })
+      // RunningHub memblokir request bertubi-tubi — beri jeda antar akun.
+      if (i < targets.length - 1) await new Promise(r => setTimeout(r, 2000))
+    }
+
+    setClaimingAll(false)
+    setProgress({ show: false, pct: 0, text: '' })
+
+    const gainedText = gained > 0 ? ` (+${Math.round(gained * 100) / 100} poin)` : ''
+    addToast(
+      `Klaim hadiah harian: ${okCount} berhasil${gainedText}, ${failCount} gagal.`,
+      okCount > 0 ? 'success' : 'warning',
+    )
+    if (failures.length > 0) {
+      console.warn('[runninghub] sebagian klaim hadiah gagal:', failures)
+    }
+  }, [claimingAll, savedKeys, statusMap, addToast, handleCheckKey, keys, selectedProvider, setKeyCreditDetail])
+
   const handleCheckAll = useCallback(async () => {
     if (savedKeys.length === 0) return
     setChecking(true)
@@ -1806,7 +1879,7 @@ export default function ProvidersPage() {
         { label: 'Kredit image', value: imageTotal ? `${imageRem}/${imageTotal}` : '—', tone: imageRem > 0 ? 'ok' : 'muted' },
         // Saldo utama akun = poin (billing baru). Koin RH lama tidak dipakai lagi.
         { label: 'Saldo poin', value: balancePointsKnown ? fmtBalance(balancePoints) : '—', tone: balancePointsKnown && balancePoints > 0 ? 'ok' : 'muted' },
-        { label: 'Poin harian', value: pointsKnown ? points : walletsRead > 0 ? 'belum ada' : '—', tone: pointsKnown ? undefined : 'muted' },
+        { label: 'Poin harian', value: pointsKnown ? points : walletsRead > 0 ? 'belum diklaim' : '—', tone: pointsKnown ? undefined : 'muted' },
       )
       // Saldo koin hanya relevan untuk API key lawas (remainCoins), bukan token.
       if (coinsKnown) {
@@ -2061,6 +2134,18 @@ export default function ProvidersPage() {
                   {checking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                   Cek Limit & Status
                 </Button>
+                {selectedProvider === 'runninghub' && (
+                  <Button
+                    variant="outline"
+                    onClick={handleClaimAllGifts}
+                    disabled={claimingAll || savedKeys.filter(isRhJwtKey).length === 0}
+                    title="Klaim hadiah harian (30 poin) untuk semua access token RunningHub"
+                    className="border-[#ffd76a]/40 bg-[#ffd76a]/10 text-[#ffd76a] hover:bg-[#ffd76a]/20 hover:border-[#ffd76a]/70"
+                  >
+                    {claimingAll ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Gift className="h-3.5 w-3.5" />}
+                    Klaim Hadiah Harian (Semua)
+                  </Button>
+                )}
                 <Button variant="destructive" onClick={handleDeleteAll} disabled={savedKeys.length === 0}>
                   <Trash2 className="h-3.5 w-3.5" /> Hapus Semua
                 </Button>
@@ -2432,13 +2517,18 @@ export default function ProvidersPage() {
                     </div>
                     <div className="flex items-center justify-between gap-2">
                       <span>Poin harian</span>
-                      <span className="font-mono text-[#f5f5f5]/85">{points !== null ? points : wallet ? 'belum ada' : '—'}</span>
+                      <span className="font-mono text-[#f5f5f5]/85">{points !== null ? points : wallet ? 'belum diklaim' : '—'}</span>
                     </div>
                     <div className="flex items-center justify-between gap-2">
                       <span>Koin RH</span>
                       <span className="font-mono text-[#f5f5f5]/85">{walletCoins !== null ? walletCoins.toLocaleString() : coinsKnown ? totalBalance.toLocaleString() : 'tidak diekspos token'}</span>
                     </div>
                   </div>
+                  {wallet && points === null && (
+                    <div className="mt-1 text-[10.5px] text-[#ffd76a]/80">
+                      Poin harian belum diklaim — klik ikon hadiah di baris key untuk mengklaim poin harian RunningHub.
+                    </div>
+                  )}
                   <div className="mt-1.5 text-[10.5px] text-[#00a8ff]/80">
                     {wallet
                       ? `${source === 'server' ? 'Dibaca dari token server (dipakai generate)' : 'Dibaca dari access token kamu'}${at ? ` · ${new Date(at).toLocaleString('id-ID')}` : ''}`
