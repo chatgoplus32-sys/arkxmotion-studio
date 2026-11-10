@@ -3801,63 +3801,82 @@ export interface RHTokenWallet {
   freeVideo: RHTokenCredit | null
   freeImage: RHTokenCredit | null
   freePeriodEnd: string | null
+  /** RH Coin (koin situs) — dompet yang dipakai jalur web /task/webapp/create. */
+  coins: number | null
+  /** Saldo poin akun dari /uc/point/summary (bisa negatif bila pernah minus). */
+  pointsBalance: number | null
 }
 
 const RH_WALLET_CACHE_MS = 60 * 1000
 const rhWalletCache = new Map<string, { value: RHTokenWallet; at: number }>()
+
+function rhNum(v: unknown): number | null {
+  if (v === null || v === undefined || v === '') return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
+
+/** POST JSON dengan sesi JWT; null kalau gagal / bukan code 0. */
+async function rhTokenJson(jwt: string, path: string, ms = 15000): Promise<any | null> {
+  try {
+    const res = await fetch(`${RUNNINGHUB_BASE}${path}`, {
+      method: 'POST',
+      headers: rhAuthHeaders(jwt),
+      body: '{}',
+      signal: AbortSignal.timeout(ms),
+    })
+    const text = await res.text()
+    const data = JSON.parse(text)
+    if (!data || (data.code !== 0 && data.code !== '0') || !data.data) return null
+    return data.data
+  } catch {
+    return null
+  }
+}
 
 async function rhTokenWallet(jwt: string): Promise<RHTokenWallet | null> {
   const fp = rhTokenFingerprint(jwt)
   const cached = rhWalletCache.get(fp)
   if (cached && Date.now() - cached.at < RH_WALLET_CACHE_MS) return cached.value
 
-  try {
-    const apiRes = await fetch(`${RUNNINGHUB_BASE}/api/welfare/summary`, {
-      method: 'POST',
-      headers: rhAuthHeaders(jwt),
-      body: '{}',
-      signal: AbortSignal.timeout(15000),
-    })
-    const text = await apiRes.text()
-    let data: any = null
-    try { data = JSON.parse(text) } catch { return null }
-    if (!data || data.code !== 0 || !data.data) return null
+  // Dua sumber berjalan berbarengan; salah satu gagal tetap menghasilkan wallet
+  // selama yang lain terbaca — dulu hanya /api/welfare/summary sehingga RH Coin
+  // (totalCoin/transitionCoinRemained) tidak pernah tampil.
+  const [welfare, points] = await Promise.all([
+    rhTokenJson(jwt, '/api/welfare/summary'),
+    rhTokenJson(jwt, '/uc/point/summary'),
+  ])
+  if (!welfare && !points) return null
 
-    const d = data.data
-    const num = (v: unknown): number | null => {
-      if (v === null || v === undefined || v === '') return null
-      const n = Number(v)
-      return Number.isFinite(n) ? n : null
+  const credit = (c: any): RHTokenCredit | null => {
+    if (!c || typeof c !== 'object') return null
+    return {
+      total: rhNum(c.total) ?? 0,
+      used: rhNum(c.used) ?? 0,
+      remaining: rhNum(c.remaining) ?? 0,
+      models: Array.isArray(c.modelNames) ? c.modelNames.map(String) : [],
     }
-    const credit = (c: any): RHTokenCredit | null => {
-      if (!c || typeof c !== 'object') return null
-      return {
-        total: num(c.total) ?? 0,
-        used: num(c.used) ?? 0,
-        remaining: num(c.remaining) ?? 0,
-        models: Array.isArray(c.modelNames) ? c.modelNames.map(String) : [],
-      }
-    }
-
-    const wallet: RHTokenWallet = {
-      points: num(d.dailyGift?.amount),
-      pointsExpiresAt: typeof d.dailyGift?.expireTime === 'string' ? d.dailyGift.expireTime : null,
-      freeVideo: credit(d.freeVideo),
-      freeImage: credit(d.freeImage),
-      freePeriodEnd: typeof d.freePeriod?.endTime === 'string' ? d.freePeriod.endTime : null,
-    }
-    if (rhWalletCache.size > 50) rhWalletCache.clear()
-    rhWalletCache.set(fp, { value: wallet, at: Date.now() })
-    return wallet
-  } catch {
-    return null
   }
+
+  const wallet: RHTokenWallet = {
+    points: rhNum(welfare?.dailyGift?.amount),
+    pointsExpiresAt: typeof welfare?.dailyGift?.expireTime === 'string' ? welfare.dailyGift.expireTime : null,
+    freeVideo: credit(welfare?.freeVideo),
+    freeImage: credit(welfare?.freeImage),
+    freePeriodEnd: typeof welfare?.freePeriod?.endTime === 'string' ? welfare.freePeriod.endTime : null,
+    coins: rhNum(points?.transitionCoinRemained),
+    pointsBalance: rhNum(points?.balancePoint),
+  }
+  if (rhWalletCache.size > 50) rhWalletCache.clear()
+  rhWalletCache.set(fp, { value: wallet, at: Date.now() })
+  return wallet
 }
 
-/** Ringkasan singkat untuk pesan UI, mis. "kredit video 3/3 · image 3/3 · poin 30". */
+/** Ringkasan singkat untuk pesan UI, mis. "RH Coin 145 · kredit video 3/3 · image 3/3 · poin 30". */
 function rhWalletSummary(wallet: RHTokenWallet | null): string {
   if (!wallet) return ''
   const parts: string[] = []
+  if (wallet.coins !== null) parts.push(`RH Coin ${wallet.coins}`)
   if (wallet.freeVideo) parts.push(`kredit video ${wallet.freeVideo.remaining}/${wallet.freeVideo.total}`)
   if (wallet.freeImage) parts.push(`kredit image ${wallet.freeImage.remaining}/${wallet.freeImage.total}`)
   if (wallet.points !== null) parts.push(`poin harian ${wallet.points}`)
@@ -3927,7 +3946,7 @@ async function handleCheckBalance(apiKey: string, res: Response) {
             keyType: 'Access Token (JWT)',
             tokenWallet: wallet,
             message: summary
-              ? `Access token aktif. Saldo koin RH tidak diekspos lewat access token; ${summary}.`
+              ? `Access token aktif. ${summary}.`
               : 'Access token aktif. RunningHub tidak menampilkan saldo lewat access token — cek saldo hanya untuk API key lama.',
           })
         }
@@ -3965,13 +3984,20 @@ async function handleCheckBalance(apiKey: string, res: Response) {
     }
 
     const apiType = info.apiType ?? null
+    // Sesi JWT selalu membawa wallet RH Coin walau accountStatus lama membalas
+    // code 0 tanpa angka saldo — tanpa ini UI menampilkan "saldo belum terbaca".
+    const tokenWallet = rhJwtExp(apiKey) !== null ? await rhTokenWallet(apiKey) : null
+    const walletSummary = rhWalletSummary(tokenWallet)
     return res.status(200).json({
       ok: true,
       balance,
       isValidUser: true,
       apiType,
-      keyType: rhKeyTypeLabel(apiType),
-      message: 'API key valid',
+      keyType: tokenWallet ? 'Access Token (JWT)' : rhKeyTypeLabel(apiType),
+      tokenWallet,
+      message: tokenWallet
+        ? `Access token aktif${walletSummary ? `. ${walletSummary}` : ''}.`
+        : 'API key valid',
     })
   } catch (err: any) {
     return res.status(200).json({

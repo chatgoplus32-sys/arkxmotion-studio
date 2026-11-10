@@ -1227,15 +1227,17 @@ export default function ProvidersPage() {
           if (result.balance === null) {
             const walletText = formatRhWalletDetail(wallet)
             if (walletText) {
-              const drained =
-                !!wallet?.freeVideo && wallet.freeVideo.remaining <= 0 &&
-                !!wallet?.freeImage && wallet.freeImage.remaining <= 0
+              const hasCoins = typeof wallet?.coins === 'number' && wallet.coins > 0
+              const hasFree =
+                (wallet?.freeVideo?.remaining ?? 0) > 0 || (wallet?.freeImage?.remaining ?? 0) > 0
+              const walletRead = wallet?.coins != null || wallet?.freeVideo != null || wallet?.freeImage != null
+              const drained = walletRead && !hasCoins && !hasFree
               return {
                 state: drained ? 'empty' : 'active',
                 balance: null,
                 wallet,
                 walletSource,
-                detail: `${type}${walletText} — koin RH tidak diekspos token`,
+                detail: `${type}${walletText}`,
               }
             }
             return {
@@ -1243,7 +1245,7 @@ export default function ProvidersPage() {
               balance: null,
               wallet: null,
               walletSource,
-              detail: `${type}Key valid — saldo koin RH tidak diekspos access token`,
+              detail: `${type}Key valid — saldo belum terbaca`,
             }
           }
           if (result.balance <= 0) {

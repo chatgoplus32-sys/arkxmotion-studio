@@ -398,8 +398,7 @@ test('submit jalur web ditolak (433 saldo RH Coin habis) → pesan sebabnya, buk
 // tidak mengembalikan angka `balance`. Wallet (kredit video/image + poin)
 // harus tetap tampil sebagai teks status.
 
-test('wallet access token diformat untuk chip status dan baris detail', () => {
-  const wallet = {
+test('wallet access token diformat untuk chip status dan baris detail', () => {  const wallet = {
     points: 30,
     pointsExpiresAt: null,
     freePeriodEnd: null,
@@ -420,4 +419,52 @@ test('wallet tanpa kredit/poin tidak menghasilkan teks palsu', () => {
     formatRhWalletCompact({ points: null, pointsExpiresAt: null, freePeriodEnd: null, freeVideo: null, freeImage: null }),
     '',
   )
+})
+
+test('RH Coin tampil di chip & baris detail (saldo tidak lagi kosong)', () => {
+  const wallet = {
+    coins: 145,
+    pointsBalance: 0,
+    points: null,
+    pointsExpiresAt: null,
+    freePeriodEnd: null,
+    freeVideo: { total: 3, used: 0, remaining: 3, models: [] },
+    freeImage: { total: 3, used: 0, remaining: 3, models: [] },
+  }
+  assert.equal(formatRhWalletCompact(wallet), '145 RC · V3/3 · I3/3')
+  assert.equal(
+    formatRhWalletDetail(wallet),
+    'RH Coin 145 · kredit video 3/3 · kredit image 3/3',
+  )
+})
+
+test('cek saldo sesi JWT membaca RH Coin dari /uc/point/summary', async () => {
+  upstream = (url) => {
+    const u = String(url)
+    if (u.includes('/uc/openapi/accountStatus')) {
+      return json({ code: 0, msg: 'success', data: { apiType: 'consumer' } })
+    }
+    if (u.includes('/api/welfare/summary')) {
+      return json({
+        code: 0,
+        data: {
+          dailyGift: { amount: 0 },
+          freeVideo: { total: 3, used: 0, remaining: 3, modelNames: [] },
+          freeImage: null,
+          freePeriod: null,
+        },
+      })
+    }
+    if (u.includes('/uc/point/summary')) {
+      return json({ code: 0, data: { transitionCoinRemained: '145', balancePoint: 0 } })
+    }
+    return json({})
+  }
+
+  const out = await checkBalance(fakeJwt(FUTURE() + 555))
+  assert.equal(out.ok, true, JSON.stringify(out))
+  assert.equal(out.tokenWallet?.coins, 145)
+  assert.equal(out.tokenWallet?.freeVideo?.remaining, 3)
+  assert.match(String(out.message), /RH Coin 145/)
+  assert.match(formatRhWalletCompact(out.tokenWallet), /145 RC/)
 })
