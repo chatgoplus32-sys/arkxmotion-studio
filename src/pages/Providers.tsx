@@ -80,6 +80,19 @@ function isRhJwtKey(key: string): boolean {
   return /^eyJ[A-Za-z0-9_-]+\./.test(String(key || '').trim())
 }
 
+/** Token akun Markasflow (MarkasKeyTool): MF- + karakter acak. */
+const MF_TOKEN_RE = /^MF-[A-Za-z0-9]{10,}$/
+
+/** Ambil semua token MF- dari teks bebas (satu per baris / dipisah spasi atau koma). */
+function extractMfTokens(text: string): string[] {
+  const out: string[] = []
+  for (const raw of String(text || '').split(/[\s,;]+/)) {
+    const t = raw.trim()
+    if (t && MF_TOKEN_RE.test(t) && !out.includes(t)) out.push(t)
+  }
+  return out
+}
+
 function topupCta(provider: string): { route: string; label: string } {  if (provider === 'createpulse') return { route: '/topup/createpulse', label: 'Topup CreatePulse' }
   if (provider === 'seavi') return { route: '/topup/seavi', label: 'Topup Seavi' }
   return { route: `/topup/manual?provider=${encodeURIComponent(provider)}`, label: 'Topup Manual' }
@@ -707,14 +720,17 @@ function MarkastoolsSessionInput({ providerKeys, addKey, setKeyCookies, bulkText
 
   const handleBulkAdd = async () => {
     const cookies = sessionKey?.cookies || ''
-    const text = bulkText.trim()
+    // Token dari kolom bulk + token MF- yang tersimpan sebagai baris key.
+    const stored = providerKeys.map(k => k.key?.trim() || '').filter(k => MF_TOKEN_RE.test(k))
+    const typed = bulkText.split(/[\s,;]+/).map(s => s.trim()).filter(s => MF_TOKEN_RE.test(s))
+    const tokens = [...new Set([...typed, ...stored])]
     if (!cookies) { setBulkMsg('Simpan cookie session dulu sebelum menambah token.'); return }
-    if (!text) { setBulkMsg('Paste daftar token MF- dulu (satu token per baris).'); return }
+    if (tokens.length === 0) { setBulkMsg('Paste daftar token MF- dulu (satu token per baris).'); return }
     setBulkBusy(true)
     setBulkMsg(null)
     try {
       const { addMarkastoolsAccountsBulk } = await import('@/lib/markastools')
-      const res = await addMarkastoolsAccountsBulk(text, cookies)
+      const res = await addMarkastoolsAccountsBulk(tokens.join('\n'), cookies)
       if (!res.ok) {
         setBulkMsg(`✗ ${res.error || 'Gagal menambahkan akun'}`)
       } else {
@@ -722,6 +738,13 @@ function MarkastoolsSessionInput({ providerKeys, addKey, setKeyCookies, bulkText
         const pending = res.pending ? ` · ${res.pending} menunggu cek saldo provider` : ''
         setBulkMsg(`✓ ${res.added ?? 0} akun ditambahkan (total ${res.total ?? 0})${pending}${errs}`)
         setBulkText('')
+        // Tandai baris token sebagai aktif + sudah terdaftar di MarkasTools.
+        const store = useProviderManager.getState()
+        for (const k of providerKeys) {
+          if (!MF_TOKEN_RE.test(k.key?.trim() || '')) continue
+          store.updateKeyStatus('markastools', k.id, 'active', undefined)
+          store.setKeyCreditDetail('markastools', k.id, '✓ Terdaftar di MarkasTools (akun Markasflow)', null)
+        }
         void loadAccounts()
       }
     } catch (e: any) {
@@ -1134,19 +1157,21 @@ export default function ProvidersPage() {
       return
     }
 
-    // Token MF- bukan key generate langsung: didaftarkan sebagai akun
-    // "Markasflow" di MarkasTools lewat panel bulk (butuh cookie session).
-    if (selectedProvider === 'markastools') {
-      const tokens = rawLines.filter(l => /^MF-[A-Za-z0-9_-]{8,}$/i.test(l))
+    // Token MF- bukan key generate langsung: dipindah ke provider MarkasTools
+    // (didaftarkan sebagai akun "Markasflow" di sana lewat panel bulk).
+    if (selectedProvider === 'runninghub' || selectedProvider === 'markastools') {
+      const tokens = extractMfTokens(inputValue)
       if (tokens.length > 0) {
+        tokens.forEach((t, i) => addKey('markastools', t, `Markasflow #${i + 1}`))
         setMtBulkText(tokens.join('\n'))
+        setInputValue('')
         setSummaryPayload({
-          title: `${tokens.length} token MF- siap didaftarkan`,
+          title: `${tokens.length} token MF- dipindahkan ke MarkasTools`,
           rows: [
-            { label: 'Token terdeteksi', value: tokens.length },
+            { label: 'Token MF-', value: tokens.length },
             { label: 'Tujuan', value: 'akun "Markasflow" di MarkasTools' },
           ],
-          footer: 'Token sudah dipindahkan ke panel “＋ Bulk token MF-” di bawah. Simpan cookie session MarkasTools dulu, lalu klik tombol Tambah — token langsung terdaftar dan dipakai otomatis oleh MarkasFlow Motion V2.5.',
+          footer: 'Token MF- bukan access token RunningHub (itu sebabnya statusnya Invalid di tab RunningHub). Sekarang: buka tab MarkasTools → simpan cookie session → klik “＋ Tambah semua token MF-” untuk mendaftarkan semuanya sekaligus.',
         })
         return
       }
@@ -1372,7 +1397,7 @@ export default function ProvidersPage() {
       if (/^MF-[A-Z0-9]/i.test(key)) {
         return {
           state: 'invalid',
-          detail: 'Token MF-… adalah kunci akun MarkasTools, bukan access token RunningHub — hubungkan lewat panel MarkasTools (butuh cookie sesi ai.markastools.id)',
+          detail: 'Token MF-… bukan access token RunningHub (itu kunci akun MarkasTools). Pakai tombol “→ Pindah ke MarkasTools” di bawah, lalu daftarkan lewat panel MarkasTools (butuh cookie sesi ai.markastools.id).',
         }
       }
       try {
@@ -1862,8 +1887,37 @@ export default function ProvidersPage() {
    * Berjalan berurutan (bukan paralel) karena RunningHub/throttle request
    * bertubi-tubi — diberi jeda ~2 detik antar akun.
    */
-  const handleClaimAllGifts = useCallback(async () => {
-    if (claimingAll) return
+  /**
+   * Pindahkan token MF- yang tersimpan di provider lain (mis. RunningHub) ke
+   * provider MarkasTools — di sana token itu didaftarkan sebagai akun
+   * "Markasflow" lalu dipakai otomatis untuk Motion Control.
+   */
+  const moveMfToMarkastools = useCallback(() => {
+    const mf = savedKeys.filter(k => MF_TOKEN_RE.test(k.trim()))
+    if (mf.length === 0) return
+    mf.forEach((t, i) => addKey('markastools', t, `Markasflow #${i + 1}`))
+    const store = useProviderManager.getState()
+    for (const t of mf) {
+      const row = (store.keys.runninghub || []).find(k => k.key === t)
+      if (row) store.removeKey('runninghub', row.id)
+      setStatusMap(prev => {
+        const next = { ...prev }
+        delete next[t]
+        return next
+      })
+    }
+    setMtBulkText(mf.join('\n'))
+    setSummaryPayload({
+      title: `${mf.length} token MF- dipindahkan ke MarkasTools`,
+      rows: [
+        { label: 'Token dipindah', value: mf.length },
+        { label: 'Tujuan', value: 'akun "Markasflow" di MarkasTools' },
+      ],
+      footer: 'Langkah berikutnya: buka tab MarkasTools → simpan cookie session (ai.markastools.id) → klik “＋ Tambah semua token MF-”.',
+    })
+  }, [savedKeys, addKey, setStatusMap])
+
+  const handleClaimAllGifts = useCallback(async () => {    if (claimingAll) return
     const targets = savedKeys.filter(isRhJwtKey)
     if (targets.length === 0) {
       addToast('Tidak ada access token RunningHub (JWT) untuk diklaim.', 'warning')
@@ -2470,6 +2524,19 @@ export default function ProvidersPage() {
 
               {savedKeys.length > 0 && (
                 <div className="mt-1 space-y-1.5">
+                  {selectedProvider === 'runninghub' && savedKeys.some(k => MF_TOKEN_RE.test(k.trim())) && (
+                    <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5">
+                      <span className="text-[11.5px] text-amber-200">
+                        {savedKeys.filter(k => MF_TOKEN_RE.test(k.trim())).length} token MF- tersimpan di provider ini. Token MF- bukan key RunningHub — pindahkan ke MarkasTools, lalu daftarkan jadi akun “Markasflow”.
+                      </span>
+                      <button
+                        onClick={moveMfToMarkastools}
+                        className="text-[11px] px-2 py-0.5 rounded border border-amber-400/40 text-amber-200 hover:bg-amber-400/20 transition"
+                      >
+                        → Pindah ke MarkasTools
+                      </button>
+                    </div>
+                  )}
                   <div className="text-[12px] font-mono uppercase tracking-widest text-[#a0a0a0]">
                     Key tersimpan ({savedKeys.length})
                   </div>
