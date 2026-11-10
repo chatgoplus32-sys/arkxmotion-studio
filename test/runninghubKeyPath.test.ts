@@ -328,15 +328,14 @@ test('API key lama tetap memakai jalur OpenAPI lama (tanpa playground)', async (
   assert.deepEqual(urlsSeen, ['https://www.runninghub.ai/openapi/v2/query'], JSON.stringify(urlsSeen))
 })
 
-test('motion-control dengan akses token: upload via sesi, submit via playground', async () => {
+test('motion-control dengan akses token: upload via sesi, submit via /task/webapp/create (RH Coin)', async () => {
   const accessKey = Buffer.from(JSON.stringify({ userId: 'uji-user', sign: 'x' })).toString('base64')
   upstream = (url) => {
     if (url?.includes('/api/instance/access/auth')) return json({ code: 0, data: { accessKey } })
     if (url?.includes('/upload/image')) return json({ name: 'hashimg.png', subfolder: '', type: 'input' })
-    if (url?.includes('/api/key/list')) {
-      return json({ code: 0, data: [{ apiKeyId: RH_KID, key: 'ccfa****c4a7', isSystemAuto: false }] })
+    if (url?.includes('/task/webapp/create')) {
+      return json({ code: 0, msg: 'success', data: { taskId: '999', clientId: 'c-1', taskStatus: 'QUEUED' } })
     }
-    if (url?.includes('/run/ai-app/')) return json({ code: 0, data: { taskId: '999', status: 'QUEUED' } })
     return json({})
   }
 
@@ -355,30 +354,31 @@ test('motion-control dengan akses token: upload via sesi, submit via playground'
   assert.equal(out.data?.taskId, '999')
   assert.ok(urlsSeen.some((u) => u.endsWith('/api/instance/access/auth')), JSON.stringify(urlsSeen))
   assert.ok(urlsSeen.filter((u) => u.endsWith('/upload/image')).length === 2, 'image + video: ' + JSON.stringify(urlsSeen))
-  assert.ok(urlsSeen.some((u) => u.includes('/api/playground/openapi/v2/run/ai-app/')), JSON.stringify(urlsSeen))
-  assert.ok(urlsSeen.some((u) => u.includes(`apiKeyId=${RH_KID}`)), JSON.stringify(urlsSeen))
-  // OpenAPI telanjang tidak boleh dipanggil dengan JWT
-  assert.ok(!urlsSeen.some((u) => u.includes('://www.runninghub.ai/openapi/v2/')), JSON.stringify(urlsSeen))
+
+  // Jalur web situs: menagih RH Coin akun, bukan wallet USD playground.
+  const submitUrl = urlsSeen.find((u) => u.endsWith('/task/webapp/create'))
+  assert.ok(submitUrl, 'submit harus lewat /task/webapp/create: ' + JSON.stringify(urlsSeen))
+  const submitBody = bodiesSeen[urlsSeen.indexOf(submitUrl!)]
+  assert.equal(submitBody?.webappId, '2092795737699856386')
+  assert.ok(Array.isArray(submitBody?.inputs), 'inputs wajib ada: ' + JSON.stringify(submitBody))
+  assert.equal(submitBody.inputs.length, 2)
+  assert.deepEqual(submitBody.inputs.map((n: any) => n.nodeId).sort(), ['46', '47'])
+  assert.ok(submitBody.inputs.every((n: any) => n.fieldValue), 'fieldValue harus terisi: ' + JSON.stringify(submitBody.inputs))
+
+  // Jalur yang gagal (901) / menagih USD (playground) tidak boleh dipakai.
+  assert.ok(!urlsSeen.some((u) => u.includes('/run/ai-app/')), JSON.stringify(urlsSeen))
+  assert.ok(!urlsSeen.some((u) => u.includes('/api/playground/openapi/v2/run/')), JSON.stringify(urlsSeen))
 })
 
-test('balasan playground tanpa taskId tapi bawa errorCode → pesan sebabnya, bukan No taskId', async () => {
+test('submit jalur web ditolak (433 saldo RH Coin habis) → pesan sebabnya, bukan No taskId', async () => {
   const accessKey = Buffer.from(JSON.stringify({ userId: 'uji-user', sign: 'x' })).toString('base64')
   upstream = (url) => {
     if (url?.includes('/api/instance/access/auth')) return json({ code: 0, data: { accessKey } })
     if (url?.includes('/upload/image')) return json({ name: 'hash.png', subfolder: '', type: 'input' })
-    if (url?.includes('/run/ai-app/')) {
-      return json({
-        code: 0,
-        msg: 'success',
-        data: {
-          taskId: '',
-          status: '',
-          errorCode: '605',
-          errorMessage: 'Your balance is insufficient. Please top up your account.',
-        },
-      })
+    if (url?.includes('/task/webapp/create')) {
+      return json({ code: 433, msg: '余额不足', errorMessages: null, data: null })
     }
-    return json({ code: 0, data: [{ apiKeyId: RH_KID, key: 'ccfa****c4a7', isSystemAuto: false }] })
+    return json({})
   }
 
   const out = await postRunninghub({
@@ -390,7 +390,7 @@ test('balasan playground tanpa taskId tapi bawa errorCode → pesan sebabnya, bu
 
   assert.equal(out.ok, false, JSON.stringify(out))
   assert.notEqual(out.error, 'No taskId returned')
-  assert.match(String(out.error), /saldo|top up/i)
+  assert.match(String(out.error), /saldo|RH Coin/i)
 })
 
 // ── Ringkasan wallet untuk status / limit ─────────────────────────────────

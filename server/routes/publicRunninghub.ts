@@ -1,6 +1,6 @@
 ﻿import { Router } from 'express'
 import type { Request, Response } from 'express'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 
 const router = Router()
 
@@ -354,12 +354,17 @@ function rhResolveCredential(clientKey: string): { token: string; source: 'user-
 // ── Jalur khusus access token (JWT) ───────────────────────────────────────
 // Endpoint OpenAPI RunningHub (/openapi/v2/*) hanya menerima API key asli;
 // JWT ditolak dengan "ApiKey verification failed: API Key不存在". Untuk sesi
-// JWT kita memakai dua jalur resmi milik situsnya:
+// JWT kita memakai jalur resmi milik situsnya:
 //   * upload media  → POST /upload/image memakai accessKey dari
 //                     /api/instance/access/auth (dicoba & terbukti jalan);
-//   * submit/query   → POST /api/playground/openapi/v2/*?apiKeyId=<id key
-//                     milik akun> — server RunningHub yang menerjemahkan
-//                     apiKeyId menjadi key asli.
+//   * submit        → POST /task/webapp/create — jalur yang dipakai UI situs
+//                     saat tombol Run ditekan. Ini yang menagih RH Coin akun.
+//                     Jalur klasik /openapi/v2/run/ai-app/{id} membalas
+//                     901 "webapp not exists", sedangkan playground menagih
+//                     wallet USD (605 untuk akun yang cuma punya RH Coin).
+//   * query         → POST /api/playground/openapi/v2/query?apiKeyId=<id key>
+//                     (server RunningHub yang menerjemahkan apiKeyId menjadi
+//                     key asli) — task dari jalur web tetap terbaca di sini.
 function rhIsJwt(token: string): boolean {
   return rhJwtExp(token) !== null && !rhJwtExpired(token)
 }
@@ -456,6 +461,88 @@ async function rhUpstreamUrl(jwt: string, url: string): Promise<string> {
 }
 
 /**
+ * Terjemahkan permintaan run klasik (/openapi/v2/run/ai-app/{id}) menjadi
+ * permintaan yang dipakai UI situs (/task/webapp/create). Hanya untuk sesi JWT.
+ *
+ * Jalur web ini yang menagih RH Coin milik akun. Jalur klasik membalas
+ * 901 "webapp not exists" untuk JWT, dan playground menagih wallet USD.
+ */
+const RH_WEBAPP_RUN_RE = /\/openapi\/v2\/run\/ai-app\/([^/?#]+)\/?$/
+
+function rhWebappRunRequest(url: string, init?: RequestInit): { url: string; init: RequestInit } | null {
+  if (!init || String(init.method ?? 'GET').toUpperCase() !== 'POST') return null
+  if (typeof init.body !== 'string') return null
+
+  const match = RH_WEBAPP_RUN_RE.exec(url.split('?')[0])
+  if (!match) return null
+
+  let body: any
+  try { body = JSON.parse(init.body) } catch { return null }
+  const nodeInfoList: any[] = Array.isArray(body?.nodeInfoList) ? body.nodeInfoList : []
+  if (!nodeInfoList.length) return null
+
+  // UI situs mengirim `inputs`, bukan `nodeInfoList`. Tanpa `inputs` server
+  // menjawab 301 "must not be null".
+  const inputs = nodeInfoList.map((node) => ({
+    nodeId: String(node?.nodeId ?? ''),
+    nodeName: String(node?.nodeName ?? node?.fieldName ?? ''),
+    fieldName: String(node?.fieldName ?? ''),
+    fieldValue: node?.fieldValue,
+    description: node?.description ?? null,
+  }))
+
+  const requested = String(body?.instanceType ?? '').toLowerCase()
+  const instanceType = !requested || requested === 'default' ? 'standard' : requested
+  const usePersonalQueue = body?.usePersonalQueue === true || body?.usePersonalQueue === 'true'
+
+  return {
+    url: `${RUNNINGHUB_BASE}/task/webapp/create`,
+    init: {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        webappId: decodeURIComponent(match[1]),
+        inputs,
+        clientId: randomUUID(),
+        instanceType,
+        usePersonalQueue,
+      }),
+    },
+  }
+}
+
+/**
+ * Samakan bentuk respons /task/webapp/create dengan respons run klasik supaya
+ * handler lama (yang membaca data.data.taskId / data.data.status) tetap jalan.
+ */
+async function rhNormalizeWebappRunResponse(
+  res: Awaited<ReturnType<typeof fetch>>,
+): Promise<Awaited<ReturnType<typeof fetch>>> {
+  const text = await res.text()
+  let parsed: any = null
+  try { parsed = JSON.parse(text) } catch {
+    return new globalThis.Response(text, { status: res.status, headers: { 'content-type': 'text/plain' } })
+  }
+
+  const data = parsed?.data
+  if ((parsed?.code === 0 || parsed?.code === '0') && data && data.taskId) {
+    parsed.data = {
+      ...data,
+      status: data.taskStatus ?? data.status ?? '',
+      errorCode: '',
+      errorMessage: '',
+      results: null,
+      usage: null,
+    }
+  }
+
+  return new globalThis.Response(JSON.stringify(parsed), {
+    status: res.status,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
+/**
  * fetch yang otomatis menukar jalur OpenAPI → playground saat memakai JWT.
  *
  * Playground membungkus kegagalan request di `data.errorCode` sementara
@@ -466,6 +553,15 @@ async function rhUpstreamUrl(jwt: string, url: string): Promise<string> {
  * berjalan tidak diubah.
  */
 async function rhFetch(jwt: string, url: string, init?: RequestInit): Promise<Awaited<ReturnType<typeof fetch>>> {
+  // Submit AI-app dengan sesi JWT harus lewat jalur web (RH Coin), bukan
+  // /openapi/v2 (901) maupun playground (605 / wallet USD).
+  const webappRun = rhIsJwt(jwt) ? rhWebappRunRequest(url, init) : null
+  if (webappRun) {
+    console.log('[runninghub] run/ai-app → /task/webapp/create (jalur RH Coin)')
+    const res = await fetch(webappRun.url, { ...webappRun.init, headers: rhAuthHeaders(jwt) })
+    return rhNormalizeWebappRunResponse(res)
+  }
+
   const upstream = await rhUpstreamUrl(jwt, url)
   const res = await fetch(upstream, init)
   if (upstream === url) return res
@@ -3642,6 +3738,9 @@ export const RH_KEY_REJECT_CODES = new Set(['401', '412', '806', '811', '814', '
 function translateRhError(code: string, msg?: string): string {
   const map: Record<string, string> = {
     '414': 'Saldo/kuota kerja (power) tidak cukup untuk menjalankan task ini. Silakan top up RH coins di akun RunningHub.',
+    '433': 'Saldo RH Coin akun RunningHub tidak cukup untuk task ini (jalur web/RH Coin). Isi RH Coin di runninghub.ai atau pakai akun dengan saldo.',
+    '423': 'Task ditolak: butuh keanggotaan/mode yang lebih tinggi di akun RunningHub.',
+    '424': 'Batas task bersamaan (concurrent) akun RunningHub tercapai. Tunggu task lain selesai atau naikkan paket.',
     '605': 'Saldo RH coins akun RunningHub tidak cukup untuk model ini — token/key tetap valid. Isi saldo di runninghub.ai atau pakai akun dengan saldo.',
     '404': 'Workflow tidak ditemukan atau tidak dapat diakses API key ini.',
     '403': 'Akses ditolak. API key tidak berhak mengakses workflow ini.',
