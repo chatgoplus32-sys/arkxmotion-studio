@@ -201,24 +201,39 @@ function rhFmtBalance(n: number): string {
   return String(Math.round(n * 100) / 100)
 }
 
-/** Versi pendek untuk chip status: "145 P · 145 RC · V3/3 · I3/3 · 30 pt". */
+/**
+ * Saldo utama akun = poin. RH Coin (koin) sudah tidak dipakai RunningHub
+ * (billing baru mengonversinya ke poin), jadi tidak ditampilkan lagi kecuali
+ * saldo poin tidak terbaca sama sekali — mis. billing lama.
+ */
+function rhPrimaryBalance(wallet: RHTokenWallet): { label: string; value: number } | null {
+  if (wallet.pointsBalance !== null && wallet.pointsBalance !== undefined) {
+    return { label: 'poin', value: wallet.pointsBalance }
+  }
+  if (wallet.coins !== null && wallet.coins !== undefined) {
+    return { label: 'koin', value: wallet.coins }
+  }
+  return null
+}
+
+/** Versi pendek untuk chip status: "145 P · V3/3 · I3/3 · 30 pt". */
 export function formatRhWalletCompact(wallet: RHTokenWallet | null | undefined): string {
   if (!wallet) return ''
   const parts: string[] = []
-  if (wallet.pointsBalance !== null && wallet.pointsBalance !== undefined) parts.push(`${rhFmtBalance(wallet.pointsBalance)} P`)
-  if (wallet.coins !== null && wallet.coins !== undefined) parts.push(`${rhFmtBalance(wallet.coins)} RC`)
+  const balance = rhPrimaryBalance(wallet)
+  if (balance) parts.push(`${rhFmtBalance(balance.value)} ${balance.label === 'poin' ? 'P' : 'RC'}`)
   if (wallet.freeVideo) parts.push(`V${wallet.freeVideo.remaining}/${wallet.freeVideo.total}`)
   if (wallet.freeImage) parts.push(`I${wallet.freeImage.remaining}/${wallet.freeImage.total}`)
   if (wallet.points !== null) parts.push(`${wallet.points} pt`)
   return parts.join(' · ')
 }
 
-/** Versi panjang untuk baris detail: "saldo poin 145 · RH Coin 0 · kredit video 3/3 · …". */
+/** Versi panjang untuk baris detail: "saldo poin 145 · kredit video 3/3 · …". */
 export function formatRhWalletDetail(wallet: RHTokenWallet | null | undefined): string {
   if (!wallet) return ''
   const parts: string[] = []
-  if (wallet.pointsBalance !== null && wallet.pointsBalance !== undefined) parts.push(`saldo poin ${rhFmtBalance(wallet.pointsBalance)}`)
-  if (wallet.coins !== null && wallet.coins !== undefined) parts.push(`RH Coin ${rhFmtBalance(wallet.coins)}`)
+  const balance = rhPrimaryBalance(wallet)
+  if (balance) parts.push(`saldo ${balance.label} ${rhFmtBalance(balance.value)}`)
   if (wallet.freeVideo) parts.push(`kredit video ${wallet.freeVideo.remaining}/${wallet.freeVideo.total}`)
   if (wallet.freeImage) parts.push(`kredit image ${wallet.freeImage.remaining}/${wallet.freeImage.total}`)
   if (wallet.points !== null) parts.push(`poin harian ${wallet.points}`)
@@ -1288,12 +1303,12 @@ export async function queryRunningHubTaskFull(taskId: string, apiKey?: string): 
 }
 
 function translateWorkflowError(detail: string, code: string): string {
-  // Saldo LLM API (node RH_LLMAPI_Pro_Node) — beda dari koin RH.
+  // Saldo LLM API (node RH_LLMAPI_Pro_Node) — beda dari saldo poin akun.
   if (/API balance is insufficient/i.test(detail)) {
-    return `Task gagal${code}: Saldo LLM API RunningHub tidak cukup — fitur ini butuh "LLM API Balance" (terpisah dari koin RH). Isi ulang di RunningHub (menu LLM API / API Balance) lalu coba lagi.`
+    return `Task gagal${code}: Saldo LLM API RunningHub tidak cukup — fitur ini butuh "LLM API Balance" (terpisah dari saldo poin). Isi ulang di RunningHub (menu LLM API / API Balance) lalu coba lagi.`
   }
   if (isWorkflowFailure(detail)) {
-    return `Task gagal${code}: Workflow RunningHub gagal dijalankan. Penyebab umum: (1) gambar input ditolak model — coba JPG ≥512px, bukan hasil kompres terlalu kecil; (2) prompt terlalu pendek — coba Inggris deskriptif mis. "convert to cartoon style, keep face identity"; (3) workflow Kontext error/overload — coba lagi 1-2 menit; (4) koin RH habis. Detail asli: ${detail}`
+    return `Task gagal${code}: Workflow RunningHub gagal dijalankan. Penyebab umum: (1) gambar input ditolak model — coba JPG ≥512px, bukan hasil kompres terlalu kecil; (2) prompt terlalu pendek — coba Inggris deskriptif mis. "convert to cartoon style, keep face identity"; (3) workflow Kontext error/overload — coba lagi 1-2 menit; (4) saldo poin akun habis. Detail asli: ${detail}`
   }
   return `Task gagal${code}: ${detail}`
 }
@@ -1301,7 +1316,7 @@ function translateWorkflowError(detail: string, code: string): string {
 function translateWorkflowErrorAsFatal(rawMessage: string): Error {
   if (/API balance is insufficient/i.test(rawMessage)) {
     const balErr: any = new Error(
-      'Task gagal: Saldo LLM API RunningHub tidak cukup — fitur ini butuh "LLM API Balance" (terpisah dari koin RH). Isi ulang di RunningHub (menu LLM API / API Balance) lalu coba lagi.',
+      'Task gagal: Saldo LLM API RunningHub tidak cukup — fitur ini butuh "LLM API Balance" (terpisah dari saldo poin). Isi ulang di RunningHub (menu LLM API / API Balance) lalu coba lagi.',
     )
     balErr.fatalTaskFailure = true
     return balErr

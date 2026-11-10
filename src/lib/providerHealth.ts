@@ -318,7 +318,7 @@ async function checkRunningHub(): Promise<ProviderHealth> {
         source,
         at: Date.now(),
       })
-      const label = walletLabel || (res.balance != null ? `${res.balance} RH coins` : '')
+      const label = walletLabel || (res.balance != null ? `${res.balance} koin` : '')
       return {
         provider: 'runninghub',
         status: 'online',

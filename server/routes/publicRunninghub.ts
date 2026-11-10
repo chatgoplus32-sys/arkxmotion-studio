@@ -3737,11 +3737,11 @@ export const RH_KEY_REJECT_CODES = new Set(['401', '412', '806', '811', '814', '
 
 function translateRhError(code: string, msg?: string): string {
   const map: Record<string, string> = {
-    '414': 'Saldo/kuota kerja (power) tidak cukup untuk menjalankan task ini. Silakan top up RH coins di akun RunningHub.',
-    '433': 'Saldo RH Coin akun RunningHub tidak cukup untuk task ini (jalur web/RH Coin). Isi RH Coin di runninghub.ai atau pakai akun dengan saldo.',
+    '414': 'Saldo/kuota kerja (power) tidak cukup untuk menjalankan task ini. Silakan top up saldo poin di akun RunningHub.',
+    '433': 'Saldo poin akun RunningHub tidak cukup untuk task ini (jalur web menagih saldo akun). Isi/top up poin di runninghub.ai atau pakai akun dengan saldo.',
     '423': 'Task ditolak: butuh keanggotaan/mode yang lebih tinggi di akun RunningHub.',
     '424': 'Batas task bersamaan (concurrent) akun RunningHub tercapai. Tunggu task lain selesai atau naikkan paket.',
-    '605': 'Saldo RH coins akun RunningHub tidak cukup untuk model ini — token/key tetap valid. Isi saldo di runninghub.ai atau pakai akun dengan saldo.',
+    '605': 'Saldo akun RunningHub tidak cukup untuk model ini — token/key tetap valid. Isi/top up saldo di runninghub.ai atau pakai akun dengan saldo.',
     '404': 'Workflow tidak ditemukan atau tidak dapat diakses API key ini.',
     '403': 'Akses ditolak. API key tidak berhak mengakses workflow ini.',
     '412': 'Access token ditolak RunningHub (412 TOKEN_INVALID) — sesi login sudah tidak berlaku (logout / login ulang / di-rotate). Salin access token baru dari sesi runninghub.ai yang masih login, lalu ganti Key ini di Providers.',
@@ -3763,7 +3763,7 @@ function translateRhError(code: string, msg?: string): string {
     return 'Saldo LLM API RunningHub tidak cukup (terpisah dari koin RH). Isi ulang "LLM API Balance" di RunningHub lalu coba lagi.'
   }
   if (msg && /NOT_ENOUGH_POWER|balance|insufficient|coin/i.test(msg)) {
-    return 'Saldo/kuota kerja tidak cukup. Silakan top up RH coins di akun RunningHub.'
+    return 'Saldo/kuota kerja tidak cukup. Silakan top up saldo poin di akun RunningHub.'
   }
   return map[code] || msg || `Error RunningHub (${code})`
 }
@@ -3887,13 +3887,15 @@ function rhFmtBalance(n: number): string {
   return String(Math.round(n * 100) / 100)
 }
 
-/** Ringkasan singkat untuk pesan UI, mis. "poin 145 · RH Coin 145 · kredit video 3/3 · poin harian 30". */
+/** Ringkasan singkat untuk pesan UI, mis. "saldo poin 145 · kredit video 3/3 · poin harian 30". */
 function rhWalletSummary(wallet: RHTokenWallet | null): string {
   if (!wallet) return ''
   const parts: string[] = []
-  // Poin lebih dulu: di billing baru generate memotong poin, bukan koin lama.
+  // Poin adalah saldo yang dipotong saat generate. RH Coin sudah tidak dipakai
+  // RunningHub (billing baru mengonversinya ke poin) — jadi tidak ditampilkan
+  // lagi; koin hanya jadi cadangan bila saldo poin tidak terbaca sama sekali.
   if (wallet.pointsBalance !== null) parts.push(`saldo poin ${rhFmtBalance(wallet.pointsBalance)}`)
-  if (wallet.coins !== null) parts.push(`RH Coin ${rhFmtBalance(wallet.coins)}`)
+  else if (wallet.coins !== null && wallet.coins > 0) parts.push(`saldo koin ${rhFmtBalance(wallet.coins)}`)
   if (wallet.freeVideo) parts.push(`kredit video ${wallet.freeVideo.remaining}/${wallet.freeVideo.total}`)
   if (wallet.freeImage) parts.push(`kredit image ${wallet.freeImage.remaining}/${wallet.freeImage.total}`)
   if (wallet.points !== null) parts.push(`poin harian ${rhFmtBalance(wallet.points)}`)

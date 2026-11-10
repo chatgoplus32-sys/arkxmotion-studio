@@ -421,7 +421,7 @@ test('wallet tanpa kredit/poin tidak menghasilkan teks palsu', () => {
   )
 })
 
-test('RH Coin tampil di chip & baris detail (saldo tidak lagi kosong)', () => {
+test('saldo poin yang jadi acuan — RH Coin tidak lagi ditampilkan', () => {
   const wallet = {
     coins: 145,
     pointsBalance: 0,
@@ -431,11 +431,25 @@ test('RH Coin tampil di chip & baris detail (saldo tidak lagi kosong)', () => {
     freeVideo: { total: 3, used: 0, remaining: 3, models: [] },
     freeImage: { total: 3, used: 0, remaining: 3, models: [] },
   }
-  assert.equal(formatRhWalletCompact(wallet), '0 P · 145 RC · V3/3 · I3/3')
+  assert.equal(formatRhWalletCompact(wallet), '0 P · V3/3 · I3/3')
   assert.equal(
     formatRhWalletDetail(wallet),
-    'saldo poin 0 · RH Coin 145 · kredit video 3/3 · kredit image 3/3',
+    'saldo poin 0 · kredit video 3/3 · kredit image 3/3',
   )
+})
+
+test('RH Coin hanya jadi cadangan bila saldo poin tidak terbaca', () => {
+  const wallet = {
+    coins: 145,
+    pointsBalance: null,
+    points: null,
+    pointsExpiresAt: null,
+    freePeriodEnd: null,
+    freeVideo: null,
+    freeImage: null,
+  }
+  assert.equal(formatRhWalletCompact(wallet), '145 RC')
+  assert.equal(formatRhWalletDetail(wallet), 'saldo koin 145')
 })
 
 test('cek saldo sesi JWT membaca RH Coin dari /uc/point/summary', async () => {
@@ -465,8 +479,8 @@ test('cek saldo sesi JWT membaca RH Coin dari /uc/point/summary', async () => {
   assert.equal(out.ok, true, JSON.stringify(out))
   assert.equal(out.tokenWallet?.coins, 145)
   assert.equal(out.tokenWallet?.freeVideo?.remaining, 3)
-  assert.match(String(out.message), /RH Coin 145/)
-  assert.match(formatRhWalletCompact(out.tokenWallet), /145 RC/)
+  assert.match(String(out.message), /saldo poin 0/)
+  assert.doesNotMatch(String(out.message), /RH Coin/)
 })
 
 test('billing baru: saldo poin ditampilkan walau RH Coin 0', async () => {
@@ -503,6 +517,6 @@ test('billing baru: saldo poin ditampilkan walau RH Coin 0', async () => {
   assert.equal(out.tokenWallet?.pointsBalance, -58.511)
   assert.equal(out.tokenWallet?.billingVersion, 'NEW')
   assert.match(String(out.message), /saldo poin -58\.51/)
-  assert.match(String(out.message), /RH Coin 0/)
-  assert.equal(formatRhWalletCompact(out.tokenWallet), '-58.51 P · 0 RC · V3/3 · I3/3 · 30 pt')
+  assert.doesNotMatch(String(out.message), /RH Coin/)
+  assert.equal(formatRhWalletCompact(out.tokenWallet), '-58.51 P · V3/3 · I3/3 · 30 pt')
 })

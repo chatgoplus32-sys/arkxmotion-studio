@@ -228,7 +228,7 @@ const TOKEN_GUIDE: Record<string, {
       { text: 'API key: halaman API Key → "Create API Key" → copy key. Access token: salin JWT (eyJ…) dari sesi login browser.' },
       { text: 'Copy key/token → paste ke input di sebelah. Keduanya diterima.' },
     ],
-    tip: 'Tempel key mentah, "Bearer <key>", header apiKey: …, cURL, atau access token JWT — semuanya dibaca. Access token memakai paket sesi akun (kredit gratis video/image + poin harian); koin RH hanya terbaca lewat API key lama. Pesan "tidak dikenali" = key dihapus/di-rotate di RunningHub, buat key baru. Token MF-… milik MarkasTools — atur di panel MarkasTools, bukan di sini.',
+    tip: 'Tempel key mentah, "Bearer <key>", header apiKey: …, cURL, atau access token JWT — semuanya dibaca. Access token membaca saldo akun (poin) + kredit gratis video/image + poin harian; RH Coin lama sudah tidak dipakai RunningHub. Pesan "tidak dikenali" = key dihapus/di-rotate di RunningHub, buat key baru. Token MF-… milik MarkasTools — atur di panel MarkasTools, bukan di sini.',
   },
   render: {
     url: 'https://shotstack.io/dashboard/',
@@ -1254,9 +1254,9 @@ export default function ProvidersPage() {
             }
           }
           if (result.balance <= 0) {
-            return { state: 'empty', balance: 0, detail: `${type}Saldo 0 RH coins — habis, top up dulu` }
+            return { state: 'empty', balance: 0, detail: `${type}Saldo 0 koin — habis, top up dulu` }
           }
-          return { state: 'active', balance: result.balance, detail: `${type}Balance: ${result.balance} RH coins` }
+          return { state: 'active', balance: result.balance, detail: `${type}Saldo: ${result.balance} koin` }
         }
         // Key ditolak RunningHub, tapi generate tetap jalan lewat token server.
         // Tampilkan kredit token server agar status tidak kosong tanpa angka.
@@ -1757,13 +1757,17 @@ export default function ProvidersPage() {
       rows.push(
         { label: 'Kredit video', value: videoTotal ? `${videoRem}/${videoTotal}` : '—', tone: videoRem > 0 ? 'ok' : 'muted' },
         { label: 'Kredit image', value: imageTotal ? `${imageRem}/${imageTotal}` : '—', tone: imageRem > 0 ? 'ok' : 'muted' },
+        // Saldo utama akun = poin (billing baru). Koin RH lama tidak dipakai lagi.
         { label: 'Saldo poin', value: balancePointsKnown ? fmtBalance(balancePoints) : '—', tone: balancePointsKnown && balancePoints > 0 ? 'ok' : 'muted' },
         { label: 'Poin harian', value: pointsKnown ? points : '—', tone: pointsKnown ? undefined : 'muted' },
-        { label: 'Koin RH', value: coinsKnown ? coins : 'tidak diekspos token', tone: coinsKnown && coins > 0 ? 'ok' : 'muted' },
       )
+      // Saldo koin hanya relevan untuk API key lawas (remainCoins), bukan token.
+      if (coinsKnown) {
+        rows.push({ label: 'Saldo API key (koin)', value: coins, tone: coins > 0 ? 'ok' : 'muted' })
+      }
       footer = walletSource === 'server'
-        ? 'Kredit dibaca dari token server yang dipakai generate. Generate memotong saldo poin (billing baru) atau koin RH (billing lama) — kredit gratis hanya untuk model playground RunningHub.'
-        : 'Generate memotong saldo poin (billing baru) atau koin RH (billing lama). Kredit gratis hanya untuk model playground RunningHub; workflow custom (Motion Control, Song Cover, dll.) tetap memotong saldo akun.'
+        ? 'Kredit dibaca dari token server yang dipakai generate. Generate memotong saldo poin akun — kredit gratis hanya untuk model playground RunningHub.'
+        : 'Generate memotong saldo poin akun. Kredit gratis hanya untuk model playground RunningHub; workflow custom (Motion Control, Song Cover, dll.) tetap memotong saldo akun.'
     }
 
     setSummaryPayload({
