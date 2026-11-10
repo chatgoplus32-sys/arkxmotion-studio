@@ -94,6 +94,71 @@ async function request(path: string, init: RequestInit, cookies: string): Promis
 }
 
 /**
+ * Bulk tambah akun Markasflow: POST /api/runninghub/accounts/bulk
+ * { text } → { added, total, pending, results: [{ ok, error }] }.
+ * Dipakai untuk mendaftarkan banyak token MF- sekaligus (satu klik untuk
+ * seluruh daftar token).
+ */
+export async function addMarkastoolsAccountsBulk(
+  text: string,
+  cookies: string,
+): Promise<{ ok: boolean; added?: number; total?: number; pending?: number; errors?: string[]; error?: string }> {
+  const raw = (text || '').trim()
+  if (!raw) return { ok: false, error: 'Daftar token MF- kosong.' }
+  try {
+    const data = await request(
+      '/api/runninghub/accounts/bulk',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: raw }),
+      },
+      cookies,
+    )
+    const results = Array.isArray(data?.results) ? data.results : []
+    const errors = results
+      .filter((r: any) => !r?.ok)
+      .map((r: any) => {
+        const key = String(r?.key || r?.api_key || '')
+        const masked = key ? `${key.slice(0, 6)}…${key.slice(-4)}` : 'token'
+        return `${masked}: ${r?.error || 'gagal'}`
+      })
+    return {
+      ok: true,
+      added: Number(data?.added ?? 0),
+      total: Number(data?.total ?? 0),
+      pending: Number(data?.pending ?? 0),
+      errors,
+    }
+  } catch (err: any) {
+    return { ok: false, error: err?.message || 'Gagal menambahkan akun' }
+  }
+}
+
+export interface MarkastoolsAccount {
+  id?: string | number
+  name?: string
+  label?: string
+  provider?: string
+  status?: string
+  active?: boolean
+  balance?: number | string | null
+  [key: string]: unknown
+}
+
+/** Daftar akun provider yang tersimpan di MarkasTools: GET /api/accounts. */
+export async function listMarkastoolsAccounts(
+  cookies: string,
+): Promise<{ ok: boolean; accounts: MarkastoolsAccount[]; error?: string }> {
+  try {
+    const data = await request('/api/accounts', { method: 'GET' }, cookies)
+    return { ok: true, accounts: Array.isArray(data?.accounts) ? data.accounts : [] }
+  } catch (err: any) {
+    return { ok: false, accounts: [], error: err?.message || 'Gagal memuat daftar akun' }
+  }
+}
+
+/**
  * Cek session MarkasTools lewat GET /api/me. 401/403 = sesi mati.
  */
 export async function checkMarkastoolsSession(cookies: string): Promise<MarkastoolsSessionInfo> {
@@ -145,15 +210,41 @@ export async function addMarkastoolsAccount(
 }
 
 /**
- * Unggah media ke pool order MarkasTools: POST /api/order/upload
- * (FormData field "file") → {url}.
+ * Unggah media ke pool order MarkasTools.
+ *
+ * Alur resmi dashboard: POST /api/order/upload-ticket → kalau mode "server",
+ * unggah lewat POST /api/order/upload (FormData "file"). Kalau mode client,
+ * unggah langsung ke upload_url dengan Bearer access_token + header
+ * x-app-recipeid. Jalur cadangan: langsung POST /api/order/upload.
  */
-export async function uploadMarkasMedia(file: File, cookies: string): Promise<string> {
-  const fd = new FormData()
-  fd.append('file', file, file.name || 'media')
-  const data = await request('/api/order/upload', { method: 'POST', body: fd }, cookies)
-  if (!data?.url) throw new Error('Upload media gagal (tidak ada URL)')
-  return String(data.url)
+export async function uploadMarkasMedia(file: File, cookies: string, type: 'image' | 'video' | 'audio' = 'image'): Promise<string> {
+  const uploadViaServer = async (): Promise<string> => {
+    const fd = new FormData()
+    fd.append('file', file, file.name || 'media')
+    const data = await request('/api/order/upload', { method: 'POST', body: fd }, cookies)
+    if (!data?.url) throw new Error('Upload media gagal (tidak ada URL)')
+    return String(data.url)
+  }
+
+  try {
+    const ticket = await request('/api/order/upload-ticket', { method: 'POST' }, cookies)
+    if (ticket?.mode === 'server') return await uploadViaServer()
+    if (ticket?.upload_url && ticket?.access_token) {
+      const fd = new FormData()
+      fd.append('file', file, file.name || 'media')
+      fd.append('type', type)
+      const headers: Record<string, string> = { Authorization: `Bearer ${ticket.access_token}` }
+      if (ticket.recipe_id) headers['x-app-recipeid'] = String(ticket.recipe_id)
+      const res = await fetch(String(ticket.upload_url), { method: 'POST', headers, body: fd })
+      if (res.ok) {
+        const data = await res.json().catch(() => null)
+        if (data?.url) return String(data.url)
+      }
+    }
+  } catch {
+    // tiket gagal → jatuh ke jalur unggah server
+  }
+  return uploadViaServer()
 }
 
 /**
@@ -263,6 +354,46 @@ export async function pollMarkasJob(
 }
 
 /**
+ * Model Motion Control yang tersedia di MarkasTools (label resmi dari
+ * /api/public/home). Token MF- yang terdaftar di MarkasTools (akun
+ * "Markasflow") dipakai service ini — rotasi antar akun dilakukan
+ * MarkasTools sendiri.
+ */
+export const MARKAS_MOTION_MODELS = [
+  { key: 'mt:markasflow-motion-v25', label: 'MarkasFlow Motion V2.5 (MarkasTools)', model: 'MarkasFlow Motion V2.5', cr: 0 },
+] as const
+
+/**
+ * Jalur Motion Control lewat MarkasTools: unggah gambar + video referensi →
+ * submit order → poll → kembalikan URL hasil.
+ */
+export async function runMarkasMotionControl(
+  params: {
+    model: string
+    imageFile?: File
+    videoFile?: File
+    prompt?: string
+    keepSound?: boolean
+    cookies: string
+    onProgress?: (msg: string) => void
+  },
+): Promise<string> {
+  if (!params.cookies) throw new Error('Belum ada cookie session MarkasTools. Simpan cookie di halaman Providers → MarkasTools.')
+  return runMarkasJob(
+    {
+      model: params.model,
+      imageFile: params.imageFile,
+      videoFile: params.videoFile,
+      prompt: params.prompt,
+      orientation: 'video',
+      keepSound: params.keepSound !== false,
+    },
+    params.cookies,
+    { onProgress: params.onProgress },
+  )
+}
+
+/**
  * Alur penuh: unggah media → submit order → poll → kembalikan URL hasil.
  */
 export async function runMarkasJob(
@@ -272,9 +403,9 @@ export async function runMarkasJob(
 ): Promise<string> {
   const { imageFile, videoFile, audioFile, ...submit } = params
   opts.onProgress?.('Mengunggah media ke MarkasTools...')
-  const imageUrl = imageFile ? await uploadMarkasMedia(imageFile, cookies) : submit.imageUrl || ''
-  const videoUrl = videoFile ? await uploadMarkasMedia(videoFile, cookies) : submit.videoUrl || ''
-  const audioUrl = audioFile ? await uploadMarkasMedia(audioFile, cookies) : submit.audioUrl || ''
+  const imageUrl = imageFile ? await uploadMarkasMedia(imageFile, cookies, 'image') : submit.imageUrl || ''
+  const videoUrl = videoFile ? await uploadMarkasMedia(videoFile, cookies, 'video') : submit.videoUrl || ''
+  const audioUrl = audioFile ? await uploadMarkasMedia(audioFile, cookies, 'audio') : submit.audioUrl || ''
 
   opts.onProgress?.(`Submit ke MarkasTools (${submit.model})...`)
   const sub = await submitMarkasOrder({ ...submit, imageUrl, videoUrl, audioUrl }, cookies)

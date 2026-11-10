@@ -12,6 +12,7 @@ import { trimVideoFFmpeg } from '@/lib/ffmpeg-compress'
 import { restoreMotionAudio } from '@/lib/motionAudio'
 import { submitWeavyMotionControl, uploadWeavyAssetWithRetry, resolveWeavyAssetUrl, getActiveWeavyAccessToken, compressImageForWeavy } from '@/lib/weavy'
 import { getRunningHubApiKey, getRunningHubWorkflowId, submitRunningHubMotionControl, submitRunningHubUltraFastHD, submitRunningHubMotionApp, pollRunningHubTask, checkRunningHubBalance } from '@/lib/runninghub'
+import { getMarkastoolsCookies, runMarkasMotionControl, MARKAS_MOTION_MODELS } from '@/lib/markastools'
 import { getGalleri5AuthHeaders, submitGalleri5MotionControl, pollGalleri5MotionControl, isGalleri5ModelRestricted, getGalleri5ErrorMessage, GALLERI5_MOTION_MODELS, runGalleri5WithRotation } from '@/lib/galleri5'
 import { getMagnificApiKey, submitMagnificMotion, pollMagnificMotion, type MagnificMotionModel } from '@/lib/magnific'
 import { getSeaviSpec, generateWithSeavi, buildSeaviPayload } from '@/lib/seavi'
@@ -38,6 +39,7 @@ import {
   Check,
   Zap,
   Coins,
+  Key,
 } from 'lucide-react'
 
 const PROVIDERS = {
@@ -101,11 +103,14 @@ const PROVIDERS = {
     { key: 'sv:motion_control_v3_server23_15dtk', label: 'Motion Control V3 · S23 15 dtk', cr: 1 },
     { key: 'sv:motion_control_v3_server10_30dtk', label: 'Motion Control V3 · S10 30 dtk', cr: 2 },
   ]},
+  // MarkasTools: dibayar lewat langganan MarkasTools (Rp 60rb/bulan) jadi cr = 0.
+  // Token MF- didaftarkan sebagai akun "Markasflow" di MarkasTools (rotasi otomatis).
+  markastools: { name: 'MarkasTools', models: MARKAS_MOTION_MODELS.map(m => ({ key: m.key, label: m.label, cr: m.cr })) },
 }
 
 // Halaman Motion Control menawarkan dua provider yang paling stabil, biar
 // member tidak bingung memilih. Provider lain tetap dipakai halaman lain.
-const MOTION_PROVIDER_IDS = ['runninghub', 'seavi'] as const
+const MOTION_PROVIDER_IDS = ['runninghub', 'seavi', 'markastools'] as const
 type MotionProviderId = (typeof MOTION_PROVIDER_IDS)[number]
 
 const MOTION_PROVIDER_INFO: Record<MotionProviderId, { name: string; tagline: string; note: string; recommended?: boolean }> = {
@@ -120,12 +125,18 @@ const MOTION_PROVIDER_INFO: Record<MotionProviderId, { name: string; tagline: st
     tagline: 'Bayar pakai token Seavi',
     note: 'Tanpa API key — top up token di halaman Top Up Seavi (Rp 4.000 = 2 token). Model 15 dtk keluar tanpa suara; suara video referensi otomatis ditempel ulang di browser (+beberapa detik sebelum hasil tampil).',
   },
+  markastools: {
+    name: 'MarkasTools',
+    tagline: 'Bayar lewat langganan MarkasTools',
+    note: 'BUTUH: cookie session ai.markastools.id + token MF- didaftarkan sebagai akun Markasflow (Providers → MarkasTools → Bulk token MF-). MarkasTools yang merotasi token antar generate, jadi 1 akun aktif saja cukup.',
+  },
 }
 
 // Default model tiap provider: pilih yang paling murah, bukan yang pertama di daftar.
 const MOTION_RECOMMENDED_MODEL: Record<MotionProviderId, string> = {
   runninghub: 'rh:std:2.6',
   seavi: 'sv:motion_control_v3_server23_15dtk',
+  markastools: 'mt:markasflow-motion-v25',
 }
 
 // Label awam untuk dropdown model — nama workflow aslinya terlalu teknis.
@@ -141,13 +152,16 @@ const SIMPLE_MODEL_LABELS: Record<string, string> = {
   'rh:wf:72fps': 'Motion Control 72 FPS',
   'sv:motion_control_v3_server23_15dtk': 'Motion Control V3 · 15 detik',
   'sv:motion_control_v3_server10_30dtk': 'Motion Control V3 · 30 detik',
+  'mt:markasflow-motion-v25': 'MarkasFlow Motion V2.5',
 }
 
 function motionModelLabel(providerId: MotionProviderId, model: { key: string; label: string; cr: number }): string {
   const name = SIMPLE_MODEL_LABELS[model.key] || model.label
   const price = providerId === 'seavi'
     ? `${model.cr} token`
-    : `${model.cr} kredit`
+    : providerId === 'markastools'
+      ? 'langganan MarkasTools'
+      : `${model.cr} kredit`
   const tag = model.key === MOTION_RECOMMENDED_MODEL[providerId] ? ' · disarankan' : ''
   return `${name} · ${price}${tag}`
 }
@@ -627,7 +641,7 @@ export default function MotionPage() {
 
     // Provider berikut sudah punya task sendiri; sisanya diberi task sesi
     // supaya panel Generasi menampilkan "Sedang berjalan" selama proses.
-    const SELF_TRACKED = new Set(['roboneo', 'runninghub', 'galleri5', 'genspark'])
+    const SELF_TRACKED = new Set(['roboneo', 'runninghub', 'galleri5', 'genspark', 'markastools'])
     let ephemeralTaskId: string | null = null
     if (!SELF_TRACKED.has(provider)) {
       ephemeralTaskId = `motion-live-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
@@ -1722,6 +1736,82 @@ export default function MotionPage() {
               
               return false
             }
+          } else if (provider === 'markastools' && slot.image && slot.video) {
+            // ─── MarkasTools: Motion Control via MarkasFlow (akun token MF-) ────
+            try {
+              const cookies = getMarkastoolsCookies() || ''
+              if (!cookies) {
+                throw new Error(
+                  'Belum ada cookie session MarkasTools. Buka Manage → Tokens → MarkasTools, tempel cookie dari ai.markastools.id, lalu simpan. Token MF- juga harus didaftarkan lewat tombol "Bulk token MF-" di panel yang sama.',
+                )
+              }
+              const mtModel = MARKAS_MOTION_MODELS.find((m) => m.key === modelKey) || MARKAS_MOTION_MODELS[0]
+              addLog(`#${slotNum} Model: ${mtModel.label} (bayar langganan MarkasTools)`)
+
+              updateSlotStatus(slot.id, 'uploading img...')
+              addLog(`#${slotNum} Normalisasi + upload gambar ke MarkasTools...`)
+              const normalizedImage = await normalizeImage(slot.image, (msg, pct) => {
+                setCompressDialog({ msg, pct })
+                updateSlotStatus(slot.id, 'uploading img...', msg)
+                addLog(`#${slotNum} ${msg}`)
+              })
+              setCompressDialog(null)
+
+              updateSlotStatus(slot.id, 'uploading vid...')
+              const mtVideoFile = await compressVideo(slot.video, 4, (msg, pct) => {
+                setCompressDialog({ msg, pct })
+                updateSlotStatus(slot.id, 'uploading vid...', msg)
+                addLog(`#${slotNum} ${msg}`)
+              })
+              setCompressDialog(null)
+
+              updateSlotStatus(slot.id, 'processing', 'submitting...')
+              addLog(`#${slotNum} Submit order ke MarkasTools (${mtModel.model})...`)
+
+              const jobId = `mt-${Date.now()}`
+              addActiveTask({
+                id: jobId,
+                taskId: jobId,
+                roomId: '',
+                nodeId: '',
+                token: 'markastools-session',
+                model: mtModel.label,
+                prompt: finalPrompt || '(no prompt)',
+                startedAt: Date.now(),
+                page: 'motion',
+              })
+
+              const resultUrl = await runMarkasMotionControl({
+                model: mtModel.model,
+                imageFile: normalizedImage,
+                videoFile: mtVideoFile,
+                prompt: finalPrompt || undefined,
+                keepSound: keepSound,
+                cookies,
+                onProgress: (msg) => {
+                  updateSlotStatus(slot.id, 'processing', msg)
+                  addLog(`#${slotNum} ${msg}`)
+                },
+              })
+
+              removeActiveTask(jobId)
+              updateSlotStatus(slot.id, 'done')
+              addLog(`#${slotNum} Done: ${resultUrl.slice(0, 60)}...`, 'success')
+              addResult({
+                id: jobId,
+                url: resultUrl,
+                prompt: finalPrompt || '(no prompt)',
+                date: new Date().toISOString(),
+                page: 'motion',
+              })
+              persistResultToR2(jobId, resultUrl)
+              return true
+            } catch (err: any) {
+              setCompressDialog(null)
+              updateSlotStatus(slot.id, 'error', err.message)
+              addLog(`#${slotNum} Error: ${err.message}`, 'error')
+              return false
+            }
           } else if (provider === 'oneover' && slot.image) {
             // ─── OneOver: image-to-video via Grok / Seedance / Gemini ────
             try {
@@ -2264,7 +2354,9 @@ export default function MotionPage() {
                     const minPrice = Math.min(...PROVIDERS[id].models.map((m) => m.cr))
                     const priceLine = id === 'seavi'
                       ? `Mulai ${minPrice} token / video`
-                      : `Mulai ${minPrice} kredit / video`
+                      : id === 'markastools'
+                        ? 'Langganan MarkasTools'
+                        : `Mulai ${minPrice} kredit / video`
                     return (
                       <button
                         key={id}
@@ -2546,11 +2638,17 @@ export default function MotionPage() {
                 <span>
                   {provider === 'seavi' ? (
                     <>Total: <span className="text-foreground font-mono font-semibold">{totalCredits.toLocaleString()}</span> token ({filledSlots} × {currentModel.cr} token)</>
+                  ) : provider === 'markastools' ? (
+                    <>Total: <span className="text-foreground font-mono font-semibold">{filledSlots}</span> video (bayar lewat langganan MarkasTools)</>
                   ) : (
                     <>Total: <span className="text-foreground font-mono font-semibold">{totalCredits.toLocaleString()}</span> credits ({filledSlots} × {currentModel.cr})</>
                   )}
                 </span>
-                {provider === 'seavi' && authRole !== 'admin' ? (
+                {provider === 'markastools' ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-[#7fd3ff]/40 bg-[#7fd3ff]/10 px-2 py-0.5 font-mono text-[11px] text-[#7fd3ff]">
+                    <Key className="h-3 w-3" /> token MF- via MarkasTools
+                  </span>
+                ) : provider === 'seavi' && authRole !== 'admin' ? (
                   <span
                     className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[11px] ${
                       (seaviTokens ?? 0) >= totalCredits

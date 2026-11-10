@@ -67,6 +67,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   riverside: '#FF6B6B',
   nexabot: '#00D4AA',
   seavi: '#7C6FE8',
+  markastools: '#7fd3ff',
 }
 
 /**
@@ -100,6 +101,7 @@ const PROVIDER_LIST = [
   { key: 'riverside', label: 'Riverside', desc: 'Riverside Business API — Professional video/audio recording, editing, and production platform.' },
   { key: 'seavi', label: 'Seavi Labs', desc: 'Video & image generation (Seedance 2.5 Multi, Kling 3, Motion Control) via api.seavilabs.site — API key (sea-...), saldo token bersama.' },
   { key: 'nexabot', label: 'NexaBot', desc: 'NexaBot AI via nexabot.id – Google Omni 1.2 (text, image & video ref). Member cukup top up saldo atau Paket Unlimited; generate memakai kunci server, tanpa API key.' },
+  { key: 'markastools', label: 'MarkasTools', desc: 'MarkasTools via ai.markastools.id — Motion Control MarkasFlow. Token akun MF- (MarkasKeyTool) didaftarkan sebagai akun "Markasflow", lalu dipakai otomatis (rotasi oleh MarkasTools). Butuh langganan MarkasTools + cookie session.' },
 ] as const
 
 const MENU_HIDDEN_PROVIDERS = [
@@ -617,10 +619,12 @@ function NexabotSessionInput({ providerKeys, addKey, setKeyCookies }: {
 // dalam dashboard (menu Accounts → Tambah Akun), bukan sebagai kredensial
 // HTTP. Setelah cookie tersimpan, tombol "Hubungkan" mendaftarkan token
 // MF-… ke MarkasTools (POST /api/runninghub/accounts) lewat relay.
-function MarkastoolsSessionInput({ providerKeys, addKey, setKeyCookies }: {
+function MarkastoolsSessionInput({ providerKeys, addKey, setKeyCookies, bulkText, setBulkText }: {
   providerKeys: { id: string; key: string; name?: string; status?: string; cookies?: string; cookiesAt?: number }[]
   addKey: (provider: string, key: string, name?: string) => void
   setKeyCookies: (provider: string, keyId: string, cookies: string) => void
+  bulkText: string
+  setBulkText: (v: string) => void
 }) {
   const sessionKey = providerKeys.find(k => k.cookies)
   const tokenKey = providerKeys.find(k => k.key?.trim()) || providerKeys[0]
@@ -630,6 +634,11 @@ function MarkastoolsSessionInput({ providerKeys, addKey, setKeyCookies }: {
   const [checking, setChecking] = useState(false)
   const [linking, setLinking] = useState(false)
   const [linkMsg, setLinkMsg] = useState<string | null>(null)
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const [bulkMsg, setBulkMsg] = useState<string | null>(null)
+  const [accounts, setAccounts] = useState<any[] | null>(null)
+  const [accBusy, setAccBusy] = useState(false)
+  const [accMsg, setAccMsg] = useState<string | null>(null)
 
   useEffect(() => { setInput(sessionKey?.cookies || '') }, [sessionKey?.id, sessionKey?.cookies])
 
@@ -693,6 +702,53 @@ function MarkastoolsSessionInput({ providerKeys, addKey, setKeyCookies }: {
     setLinking(false)
   }
 
+  const handleBulkAdd = async () => {
+    const cookies = sessionKey?.cookies || ''
+    const text = bulkText.trim()
+    if (!cookies) { setBulkMsg('Simpan cookie session dulu sebelum menambah token.'); return }
+    if (!text) { setBulkMsg('Paste daftar token MF- dulu (satu token per baris).'); return }
+    setBulkBusy(true)
+    setBulkMsg(null)
+    try {
+      const { addMarkastoolsAccountsBulk } = await import('@/lib/markastools')
+      const res = await addMarkastoolsAccountsBulk(text, cookies)
+      if (!res.ok) {
+        setBulkMsg(`✗ ${res.error || 'Gagal menambahkan akun'}`)
+      } else {
+        const errs = res.errors && res.errors.length ? ` · ${res.errors.length} gagal: ${res.errors.slice(0, 3).join('; ')}` : ''
+        const pending = res.pending ? ` · ${res.pending} menunggu cek saldo provider` : ''
+        setBulkMsg(`✓ ${res.added ?? 0} akun ditambahkan (total ${res.total ?? 0})${pending}${errs}`)
+        setBulkText('')
+        void loadAccounts()
+      }
+    } catch (e: any) {
+      setBulkMsg(`✗ ${e?.message || 'Gagal menghubungi MarkasTools'}`)
+    }
+    setBulkBusy(false)
+  }
+
+  const loadAccounts = async () => {
+    const cookies = sessionKey?.cookies || ''
+    if (!cookies) { setAccMsg('Simpan cookie session dulu.'); return }
+    setAccBusy(true)
+    setAccMsg(null)
+    try {
+      const { listMarkastoolsAccounts } = await import('@/lib/markastools')
+      const res = await listMarkastoolsAccounts(cookies)
+      if (!res.ok) {
+        setAccounts(null)
+        setAccMsg(`✗ ${res.error || 'Gagal memuat daftar akun'}`)
+      } else {
+        setAccounts(res.accounts)
+        const markas = res.accounts.filter((a: any) => String(a?.provider || '').toLowerCase() === 'runninghub')
+        setAccMsg(`✓ ${res.accounts.length} akun terdaftar · ${markas.length} akun Markasflow (token MF-)`)
+      }
+    } catch (e: any) {
+      setAccMsg(`✗ ${e?.message || 'Gagal memuat daftar akun'}`)
+    }
+    setAccBusy(false)
+  }
+
   return (
     <div className="mt-3 rounded-md border border-[#7fd3ff]/30 bg-[#7fd3ff]/10 p-3">
       <div className="text-[12px] font-semibold text-[#7fd3ff] mb-1.5">🌀 Session Login MarkasTools (cookie)</div>
@@ -743,6 +799,71 @@ function MarkastoolsSessionInput({ providerKeys, addKey, setKeyCookies }: {
       {linkMsg && (
         <div className={`mt-2 text-[10.5px] leading-relaxed ${linkMsg.startsWith('✓') ? 'text-emerald-300' : 'text-rose-300'}`}>{linkMsg}</div>
       )}
+
+      {/* Bulk import token MF- — satu klik untuk seluruh daftar token. */}
+      <div className="mt-3 border-t border-[#7fd3ff]/20 pt-2">
+        <div className="text-[11.5px] font-semibold text-[#7fd3ff] mb-1">＋ Bulk token MF- (daftar akun Markasflow)</div>
+        <div className="text-[10.5px] text-[#a0a0a0] mb-1.5 leading-relaxed">
+          Tempel semua token <span className="font-mono">MF-…</span> (satu per baris) lalu klik Tambah — sekalian didaftarkan
+          di MarkasTools sebagai akun provider "Markasflow" yang dipakai untuk model Motion Control
+          (MarkasFlow Motion V2.5). Setelah terdaftar, MarkasTools merotasi sendiri antar akun.
+        </div>
+        <textarea
+          value={bulkText}
+          onChange={e => setBulkText(e.target.value)}
+          rows={4}
+          placeholder={'MF-XXXXXXXXXXXXXXXXXXXXXXXX\nMF-YYYYYYYYYYYYYYYYYYYYYYYY'}
+          className="w-full text-[11px] font-mono bg-black/30 border border-[#7fd3ff]/30 text-white px-2 py-1.5 rounded focus:outline-none focus:border-[#7fd3ff]"
+        />
+        <div className="mt-2 flex items-center gap-2 flex-wrap">
+          <button
+            onClick={handleBulkAdd}
+            disabled={bulkBusy || !sessionKey?.cookies}
+            className="text-[11px] px-3 py-1 rounded font-medium border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50"
+          >
+            {bulkBusy ? 'Menambahkan…' : '＋ Tambah semua token MF-'}
+          </button>
+          <button
+            onClick={loadAccounts}
+            disabled={accBusy || !sessionKey?.cookies}
+            className="text-[11px] px-3 py-1 rounded font-medium border border-[#7fd3ff]/30 bg-[#7fd3ff]/10 text-[#7fd3ff] hover:bg-[#7fd3ff]/20 disabled:opacity-50"
+          >
+            {accBusy ? 'Memuat…' : '⟳ Daftar akun'}
+          </button>
+        </div>
+        {bulkMsg && (
+          <div className={`mt-2 text-[10.5px] leading-relaxed ${bulkMsg.startsWith('✓') ? 'text-emerald-300' : 'text-rose-300'}`}>{bulkMsg}</div>
+        )}
+        {accMsg && (
+          <div className={`mt-1 text-[10.5px] leading-relaxed ${accMsg.startsWith('✓') ? 'text-emerald-300' : 'text-rose-300'}`}>{accMsg}</div>
+        )}
+        {accounts && accounts.length > 0 && (
+          <div className="mt-2 max-h-[190px] overflow-y-auto rounded border border-[#2a2a2a] bg-black/25">
+            <table className="w-full text-[10.5px]">
+              <thead>
+                <tr className="text-[#7fd3ff]/80 text-left">
+                  <th className="px-2 py-1 font-medium">Akun</th>
+                  <th className="px-2 py-1 font-medium">Provider</th>
+                  <th className="px-2 py-1 font-medium text-right">Status</th>
+                  <th className="px-2 py-1 font-medium text-right">Saldo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {accounts.map((a: any, i: number) => (
+                  <tr key={a?.id ?? i} className="border-t border-[#1f1f1f] text-[#d5d5d5]">
+                    <td className="px-2 py-1 font-mono truncate max-w-[150px]" title={String(a?.name || a?.label || '')}>
+                      {String(a?.name || a?.label || `akun ${i + 1}`)}
+                    </td>
+                    <td className="px-2 py-1">{String(a?.provider || '—')}</td>
+                    <td className="px-2 py-1 text-right">{String(a?.status || (a?.active ? 'aktif' : '—'))}</td>
+                    <td className="px-2 py-1 text-right font-mono">{a?.balance != null ? String(a.balance) : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
       {info && (
         <div className={`mt-2 text-[10.5px] leading-relaxed ${info.ok ? 'text-emerald-300' : 'text-rose-300'}`}>
           {info.ok
@@ -883,6 +1004,8 @@ export default function ProvidersPage() {
   const [editingBalanceIdx, setEditingBalanceIdx] = useState<number | null>(null)
   const [claimingKey, setClaimingKey] = useState<string | null>(null)
   const [claimingAll, setClaimingAll] = useState(false)
+  // Token MF- yang akan didaftarkan sebagai akun "Markasflow" di MarkasTools.
+  const [mtBulkText, setMtBulkText] = useState('')
   const addToast = useToastStore((s) => s.addToast)
   const [, setRhUsageTick] = useState(0)
   const [editingBalanceVal, setEditingBalanceVal] = useState('')
@@ -1002,6 +1125,24 @@ export default function ProvidersPage() {
         })
       }
       return
+    }
+
+    // Token MF- bukan key generate langsung: didaftarkan sebagai akun
+    // "Markasflow" di MarkasTools lewat panel bulk (butuh cookie session).
+    if (selectedProvider === 'markastools') {
+      const tokens = rawLines.filter(l => /^MF-[A-Za-z0-9_-]{8,}$/i.test(l))
+      if (tokens.length > 0) {
+        setMtBulkText(tokens.join('\n'))
+        setSummaryPayload({
+          title: `${tokens.length} token MF- siap didaftarkan`,
+          rows: [
+            { label: 'Token terdeteksi', value: tokens.length },
+            { label: 'Tujuan', value: 'akun "Markasflow" di MarkasTools' },
+          ],
+          footer: 'Token sudah dipindahkan ke panel “＋ Bulk token MF-” di bawah. Simpan cookie session MarkasTools dulu, lalu klik tombol Tambah — token langsung terdaftar dan dipakai otomatis oleh MarkasFlow Motion V2.5.',
+        })
+        return
+      }
     }
 
     const existing = new Set(savedKeys)
@@ -1538,6 +1679,34 @@ export default function ProvidersPage() {
         }
       } catch (err: any) {
         return { state: 'failed', detail: err.message || 'Error checking Riverside token' }
+      }
+    }
+    if (selectedProvider === 'markastools') {
+      // Status MarkasTools = cookie session + jumlah akun Markasflow (MF-).
+      const keyRow = keys.markastools?.find(k => k.key === key)
+      const sessionCookies = keyRow?.cookies || keys.markastools?.find(k => k.cookies)?.cookies
+      if (!sessionCookies) {
+        return {
+          state: 'unknown',
+          detail: 'Belum ada cookie session MarkasTools — simpan cookie di panel “Session Login MarkasTools” di bawah',
+        }
+      }
+      try {
+        const { checkMarkastoolsSession, listMarkastoolsAccounts } = await import('@/lib/markastools')
+        const s = await checkMarkastoolsSession(sessionCookies)
+        if (!s.ok) {
+          return { state: 'invalid', detail: s.error || 'Cookie sesi ditolak — login ulang di ai.markastools.id lalu paste cookie baru' }
+        }
+        const acc = await listMarkastoolsAccounts(sessionCookies)
+        const markas = acc.ok
+          ? acc.accounts.filter((a: any) => String(a?.provider || '').toLowerCase() === 'runninghub')
+          : []
+        return {
+          state: 'active',
+          detail: `✓ Sesi aktif${s.user?.name ? ` — ${s.user.name}` : ''} · ${markas.length} akun Markasflow (token MF-)${acc.ok ? '' : ' · daftar akun gagal dimuat'}`,
+        }
+      } catch (err: any) {
+        return { state: 'failed', detail: err.message || 'Gagal cek sesi MarkasTools' }
       }
     }
     if (selectedProvider === 'nexabot') {
@@ -2620,6 +2789,8 @@ export default function ProvidersPage() {
                   providerKeys={keys['markastools'] || []}
                   addKey={addKey}
                   setKeyCookies={setKeyCookies}
+                  bulkText={mtBulkText}
+                  setBulkText={setMtBulkText}
                 />
               )}
               {/* NexaBot Telegram ID Input */}
