@@ -14,6 +14,8 @@ import runninghubRoutes from '../server/routes/publicRunninghub.js'
 import {
   parseRunningHubApiKeyInput,
   normalizeRunningHubApiKey,
+  formatRhWalletCompact,
+  formatRhWalletDetail,
 } from '../src/lib/runninghub.js'
 
 const originalFetch = globalThis.fetch
@@ -32,6 +34,7 @@ function fakeJwt(expSec: number): string {
 let upstream: (url?: string, init?: any) => Response = () => new Response('{}', { status: 200 })
 let bodiesSeen: any[] = []
 let urlsSeen: string[] = []
+let authSeen: string[] = []
 
 const app = express()
 app.use(express.json({ limit: '50mb' }))
@@ -48,6 +51,7 @@ before(async () => {
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
   globalThis.fetch = (async (_url: any, init?: any) => {
     urlsSeen.push(String(_url))
+    authSeen.push(String(init?.headers?.Authorization || init?.headers?.authorization || ''))
     try { bodiesSeen.push(init?.body ? JSON.parse(init.body) : null) } catch { bodiesSeen.push(init?.body) }
     return upstream(String(_url), init)
   }) as any
@@ -56,6 +60,7 @@ before(async () => {
 beforeEach(() => {
   bodiesSeen = []
   urlsSeen = []
+  authSeen = []
 })
 
 after(() => {
@@ -216,13 +221,59 @@ test('placeholder server-managed tanpa token global → pesan konfigurasi, upstr
 
 test('accountStatus menolak akses token → tetap dilaporkan aktif (bukan key invalid)', async () => {
   // Token global dimatikan supaya JWT client yang dipakai; accountStatus lama
-  // memang hanya menerima API key sehingga menolak JWT dengan 806.
-  upstream = () => json({ code: 806, msg: 'APIKEY_USER_NOT_FOUND', data: null })
-  const out = await checkBalance(fakeJwt(FUTURE()))
+  // memang hanya menerima API key sehingga menolak JWT dengan 806. Bukti token
+  // masih hidup diambil dari /api/welfare/summary.
+  upstream = (url) => String(url).includes('/api/welfare/summary')
+    ? json({
+        code: 0,
+        data: {
+          dailyGift: { amount: 5 },
+          freeVideo: { total: 2, used: 1, remaining: 1, modelNames: ['M'] },
+          freeImage: null,
+          freePeriod: { endTime: '2026-12-01T00:00:00Z' },
+        },
+      })
+    : json({ code: 806, msg: 'APIKEY_USER_NOT_FOUND', data: null })
+  const out = await checkBalance(fakeJwt(FUTURE() + 1234))
   assert.equal(out.ok, true)
   assert.equal(out.isValidUser, true)
   assert.equal(out.balance, null)
   assert.match(out.keyType, /Access Token/)
+  assert.equal(out.tokenWallet?.freeVideo?.remaining, 1)
+})
+
+test('akses token dicabut (412) → dilaporkan invalid, bukan "aktif"', async () => {
+  upstream = (url) => String(url).includes('/api/welfare/summary')
+    ? json({ code: 412, msg: 'TOKEN_INVALID', data: null })
+    : json({ code: 806, msg: 'APIKEY_USER_NOT_FOUND', data: null })
+  const out = await checkBalance(fakeJwt(FUTURE() + 4321))
+  assert.equal(out.ok, false)
+  assert.equal(out.invalidKey, true)
+  assert.equal(out.isValidUser, false)
+  assert.match(out.error, /sesi login/i)
+  assert.match(out.error, /tidak berlaku/i)
+})
+
+test('token pengguna dicabut → generate memakai token server', async () => {
+  const userToken = fakeJwt(FUTURE() + 777)
+  const globalToken = fakeJwt(FUTURE() + 999)
+  process.env.RUNNINGHUB_ACCESS_TOKEN = globalToken
+  try {
+    upstream = (url) => {
+      const u = String(url)
+      if (u.includes('/api/welfare/summary')) return json({ code: 412, msg: 'TOKEN_INVALID', data: null })
+      if (u.includes('/api/key/list')) return json({ code: 0, data: [{ apiKeyId: '222', key: 'x', isSystemAuto: false }] })
+      return json({ code: 0, data: { taskId: '1', status: '', errorCode: '1004', errorMessage: 'Task not found', results: null } })
+    }
+    const out = await postRunninghub({ action: 'query', apiKey: userToken, taskId: '1' })
+    assert.equal(out.ok, true, JSON.stringify(out))
+    assert.ok(
+      authSeen.some((h) => h === `Bearer ${globalToken}`),
+      'request upstream harus memakai token server setelah token pengguna ditolak 412',
+    )
+  } finally {
+    process.env.RUNNINGHUB_ACCESS_TOKEN = ''
+  }
 })
 
 // ── Jalur akses token (JWT): upload & submit lewat situs RunningHub ─────────
@@ -340,4 +391,33 @@ test('balasan playground tanpa taskId tapi bawa errorCode → pesan sebabnya, bu
   assert.equal(out.ok, false, JSON.stringify(out))
   assert.notEqual(out.error, 'No taskId returned')
   assert.match(String(out.error), /saldo|top up/i)
+})
+
+// ── Ringkasan wallet untuk status / limit ─────────────────────────────────
+// Cek Limit & Status RunningHub tidak menampilkan saldo karena access token
+// tidak mengembalikan angka `balance`. Wallet (kredit video/image + poin)
+// harus tetap tampil sebagai teks status.
+
+test('wallet access token diformat untuk chip status dan baris detail', () => {
+  const wallet = {
+    points: 30,
+    pointsExpiresAt: null,
+    freePeriodEnd: null,
+    freeVideo: { total: 3, used: 1, remaining: 2, models: ['MInimax H3-RH Enhanced'] },
+    freeImage: { total: 3, used: 0, remaining: 3, models: ['Nano Banana2-Low-Cost'] },
+  }
+  assert.equal(formatRhWalletCompact(wallet), 'V2/3 · I3/3 · 30 pt')
+  assert.equal(
+    formatRhWalletDetail(wallet),
+    'kredit video 2/3 · kredit image 3/3 · poin harian 30',
+  )
+})
+
+test('wallet tanpa kredit/poin tidak menghasilkan teks palsu', () => {
+  assert.equal(formatRhWalletCompact(null), '')
+  assert.equal(formatRhWalletDetail(null), '')
+  assert.equal(
+    formatRhWalletCompact({ points: null, pointsExpiresAt: null, freePeriodEnd: null, freeVideo: null, freeImage: null }),
+    '',
+  )
 })

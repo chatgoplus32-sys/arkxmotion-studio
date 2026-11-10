@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { RHTokenWallet } from '@/lib/runninghub'
 
 export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'runninghub' | 'createpulse' | 'framia' | 'firefly' | 'leonardo' | 'gemini' | 'openai' | 'shotstack' | 'creatomate' | 'galleri5' | 'oneover' | 'genspark' | 'riverside' | 'nexabot' | 'seavi' | 'markastools'
 
@@ -15,6 +16,8 @@ export interface ProviderKey {
   /** Ringkasan kredit/poin hasil cek terakhir (mis. access token RunningHub). */
   creditDetail?: string
   creditCheckedAt?: number
+  /** Snapshot terstruktur kredit access token RunningHub (video/image/poin). */
+  creditWallet?: RHTokenWallet | null
   cookies?: string  // Session cookies for Genspark ask_proxy / NexaBot session mode
   cookiesAt?: number  // kapan cookie session disimpan (indikator masa berlaku)
   refreshToken?: string  // Riverside: refresh token pendamping JWT session
@@ -304,7 +307,7 @@ export type ProviderState = {
   importKeys: (provider: ProviderId, tokenValues: string[], namePrefix?: string) => number
   removeKey: (provider: ProviderId, keyId: string) => void
   updateKeyStatus: (provider: ProviderId, keyId: string, status: ProviderKey['status'], balance?: number, email?: string) => void
-  setKeyCreditDetail: (provider: ProviderId, keyId: string, detail: string | null) => void
+  setKeyCreditDetail: (provider: ProviderId, keyId: string, detail: string | null, wallet?: RHTokenWallet | null) => void
   replaceKey: (provider: ProviderId, keyId: string, newKey: string, refreshToken?: string) => void
   setKeyCookies: (provider: ProviderId, keyId: string, cookies: string) => void
   setKeyTelegramId: (provider: ProviderId, keyId: string, telegramId: string) => void
@@ -548,15 +551,15 @@ export const useProviderManager = create<ProviderState>((set, get) => ({
     })
   },
 
-  setKeyCreditDetail: (provider, keyId, detail) => {
+  setKeyCreditDetail: (provider, keyId, detail, wallet) => {
     set((state) => {
       const updated = {
         ...state.keys,
         [provider]: state.keys[provider].map((k) => {
           if (k.id !== keyId) return k
-          const { creditDetail: _dropDetail, creditCheckedAt: _dropAt, ...rest } = k
+          const { creditDetail: _dropDetail, creditCheckedAt: _dropAt, creditWallet: _dropWallet, ...rest } = k
           return detail
-            ? { ...rest, creditDetail: detail, creditCheckedAt: Date.now() }
+            ? { ...rest, creditDetail: detail, creditCheckedAt: Date.now(), ...(wallet ? { creditWallet: wallet } : {}) }
             : rest
         }),
       }

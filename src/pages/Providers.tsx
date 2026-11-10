@@ -19,7 +19,7 @@ import {
   Wrench,
   Wallet,
 } from 'lucide-react'
-import { useProviderManager, ProviderId, HIDDEN_PROVIDERS } from '@/stores/providerManager'
+import { useProviderManager, ProviderId, HIDDEN_PROVIDERS, RUNNINGHUB_SERVER_MANAGED_KEY } from '@/stores/providerManager'
 import { useAuthStore } from '@/stores/authStore'
 import { syncCreditsToDbAsAdmin } from '@/lib/tokenAutoSync'
 import ProviderStatusBar from '@/components/providers/ProviderStatusBar'
@@ -27,7 +27,18 @@ import TokenSyncHistory from '@/components/providers/TokenSyncHistory'
 import { checkRoboneoBalance } from '@/lib/roboneo'
 import { fetchLeonardoBalance } from '@/lib/leonardo'
 import { checkWeavyBalance } from '@/lib/weavy'
-import { checkRunningHubBalance, getRhUsage, clearRhUsage, parseRunningHubApiKeyInput } from '@/lib/runninghub'
+import {
+  checkRunningHubBalance,
+  getRhUsage,
+  clearRhUsage,
+  parseRunningHubApiKeyInput,
+  formatRhWalletDetail,
+  readRhCreditSnapshot,
+  saveRhCreditSnapshot,
+  RH_CREDIT_EVENT,
+  type RHTokenWallet,
+  type RhCreditSnapshot,
+} from '@/lib/runninghub'
 import { checkFireflyBalance } from '@/lib/firefly'
 import { parseNexabotCookieInput, parseNexabotApiKeyInput } from '@/lib/nexabot'
 import { NEXABOT_CHECK_TIMEOUT_MS } from '@/lib/nexabot-constants'
@@ -844,12 +855,22 @@ export default function ProvidersPage() {
   const [bulkMode, setBulkMode] = useState(false)
   const [bulkText, setBulkText] = useState(() => localStorage.getItem(`arkxmotion.providers.bulk.${selectedProvider}`) || '')
   const [workflowId, setWorkflowId] = useState(() => localStorage.getItem('runninghub.workflowId') || '')
-  const [statusMap, setStatusMap] = useState<Record<string, { state: string; detail?: string; balance?: number; email?: string }>>({})
+  const [statusMap, setStatusMap] = useState<Record<string, {
+    state: string
+    detail?: string
+    balance?: number | null
+    email?: string
+    wallet?: RHTokenWallet | null
+    walletSource?: 'user' | 'server'
+  }>>({})
   const navigate = useNavigate()
   const [checking, setChecking] = useState(false)
   const [progress, setProgress] = useState({ show: false, pct: 0, text: '' })
   const [viewHidden, setViewHidden] = useState(false)
   const [summaryPayload, setSummaryPayload] = useState<{ title: string; rows: Array<{ label: string; value: string | number; tone?: string }>; footer?: string } | null>(null)
+  // Snapshot kredit RunningHub (dibaca juga oleh chip status) — disimpan agar
+  // Pool Summary tetap menampilkan angka setelah reload tanpa cek ulang.
+  const [rhCredit, setRhCredit] = useState<RhCreditSnapshot | null>(() => readRhCreditSnapshot())
   const [tokenBankOpen, setTokenBankOpen] = useState(false)
   const [editingBalanceIdx, setEditingBalanceIdx] = useState<number | null>(null)
   const [, setRhUsageTick] = useState(0)
@@ -934,6 +955,16 @@ export default function ProvidersPage() {
       localStorage.setItem('runninghub.workflowId', workflowId)
     }
   }, [workflowId])
+
+  useEffect(() => {
+    const sync = () => setRhCredit(readRhCreditSnapshot())
+    window.addEventListener(RH_CREDIT_EVENT, sync)
+    window.addEventListener('storage', sync)
+    return () => {
+      window.removeEventListener(RH_CREDIT_EVENT, sync)
+      window.removeEventListener('storage', sync)
+    }
+  }, [])
 
   const handleAddKey = useCallback(() => {
     // NexaBot: hasil “Copy as cURL” multi-baris harus dibaca sebagai SATU key —
@@ -1188,34 +1219,58 @@ export default function ProvidersPage() {
       try {
         const result = await checkRunningHubBalance(key)
         if (result.ok && result.isValidUser) {
+          const wallet = result.tokenWallet ?? null
           const type = result.keyType ? `${result.keyType} · ` : ''
+          // Placeholder "server-managed" berarti kredit milik token server.
+          const walletSource: 'user' | 'server' = key === RUNNINGHUB_SERVER_MANAGED_KEY ? 'server' : 'user'
+          saveRhCreditSnapshot({ wallet, balance: result.balance ?? null, source: walletSource, at: Date.now() })
           if (result.balance === null) {
-            const wallet = result.tokenWallet
-            const parts: string[] = []
-            if (wallet?.freeVideo) parts.push(`kredit video ${wallet.freeVideo.remaining}/${wallet.freeVideo.total}`)
-            if (wallet?.freeImage) parts.push(`kredit image ${wallet.freeImage.remaining}/${wallet.freeImage.total}`)
-            if (wallet && wallet.points !== null) parts.push(`poin harian ${wallet.points}`)
-            if (parts.length) {
+            const walletText = formatRhWalletDetail(wallet)
+            if (walletText) {
               const drained =
                 !!wallet?.freeVideo && wallet.freeVideo.remaining <= 0 &&
                 !!wallet?.freeImage && wallet.freeImage.remaining <= 0
               return {
                 state: drained ? 'empty' : 'active',
                 balance: null,
-                detail: `${type}${parts.join(' · ')} — koin RH tidak diekspos token`,
+                wallet,
+                walletSource,
+                detail: `${type}${walletText} — koin RH tidak diekspos token`,
               }
             }
-            return { state: 'active', balance: null, detail: `${type}Key valid — saldo koin RH tidak diekspos access token` }
+            return {
+              state: 'active',
+              balance: null,
+              wallet: null,
+              walletSource,
+              detail: `${type}Key valid — saldo koin RH tidak diekspos access token`,
+            }
           }
           if (result.balance <= 0) {
             return { state: 'empty', balance: 0, detail: `${type}Saldo 0 RH coins — habis, top up dulu` }
           }
           return { state: 'active', balance: result.balance, detail: `${type}Balance: ${result.balance} RH coins` }
         }
-        // Hanya kode yang benar-benar menolak key (806/1002/1003/401) yang
-        // boleh menandai key invalid. Timeout / HTML 502 / gangguan upstream
-        // tidak boleh — dulu key sehat ikut mati dan provider tak bisa dipakai.
-        if (result.invalidKey) return { state: 'invalid', detail: result.error || 'API key ditolak RunningHub' }
+        // Key ditolak RunningHub, tapi generate tetap jalan lewat token server.
+        // Tampilkan kredit token server agar status tidak kosong tanpa angka.
+        if (result.invalidKey) {
+          const baseDetail = result.error || 'API key ditolak RunningHub'
+          try {
+            const server = await checkRunningHubBalance('')
+            if (server.ok && server.isValidUser) {
+              const wallet = server.tokenWallet ?? null
+              const walletText = formatRhWalletDetail(wallet)
+              saveRhCreditSnapshot({ wallet, balance: server.balance ?? null, source: 'server', at: Date.now() })
+              return {
+                state: 'invalid',
+                wallet,
+                walletSource: 'server' as const,
+                detail: `${baseDetail} · generate dialihkan ke token server${walletText ? ` — ${walletText}` : ''}`,
+              }
+            }
+          } catch { /* token server tak terbaca — tampilkan pesan key saja */ }
+          return { state: 'invalid', detail: baseDetail }
+        }
         return {
           state: 'failed',
           detail: result.error || 'Gagal cek ke RunningHub — key belum tentu salah, coba lagi',
@@ -1615,13 +1670,13 @@ export default function ProvidersPage() {
               : res.state === 'invalid' ? 'invalid'
               : res.state === 'limited' ? 'rate-limited'
               : 'unknown'
-            updateKeyStatus(selectedProvider as ProviderId, keyObj.id, newStatus as any, res.balance, res.email)
+            updateKeyStatus(selectedProvider as ProviderId, keyObj.id, newStatus as any, res.balance ?? undefined, res.email)
             // RunningHub: simpan ringkasan kredit/poin ke record key supaya
             // tetap terlihat setelah reload tanpa harus cek ulang. Hasil gagal
             // menghapus snapshot lama agar tidak menampilkan angka usang.
             if (selectedProvider === 'runninghub') {
               const keep = (res.state === 'active' || res.state === 'empty') && !!res.detail
-              setKeyCreditDetail(selectedProvider as ProviderId, keyObj.id, keep ? (res.detail || null) : null)
+              setKeyCreditDetail(selectedProvider as ProviderId, keyObj.id, keep ? (res.detail || null) : null, res.wallet ?? null)
             }
           }
         }
@@ -1659,14 +1714,51 @@ export default function ProvidersPage() {
       console.error('[credits-sync] exception:', err)
     }
 
+    // RunningHub tidak mengekspos koin RH sebagai angka `balance` lewat access
+    // token, jadi ringkasan "Cek Limit & Status" harus membaca wallet
+    // (kredit video/image + poin harian) agar tidak tampil kosong.
+    const rows: Array<{ label: string; value: string | number; tone?: string }> = [
+      { label: 'Total key dicek', value: savedKeys.length },
+      { label: 'Aktif', value: activeCount, tone: 'ok' },
+      { label: 'Rate-limited', value: limitedCount, tone: limitedCount ? 'warn' : 'muted' },
+      { label: 'Invalid / ditolak', value: invalidCount, tone: invalidCount ? 'bad' : 'muted' },
+    ]
+    let footer: string | undefined
+    if (selectedProvider === 'runninghub') {
+      let videoRem = 0, videoTotal = 0, imageRem = 0, imageTotal = 0
+      let points = 0, pointsKnown = false, coins = 0, coinsKnown = false
+      let serverWalletCounted = false
+      let walletSource: 'user' | 'server' | null = null
+      for (const res of Object.values(newStatusMap)) {
+        if (typeof res.balance === 'number') { coins += res.balance; coinsKnown = true }
+        const wallet = res.wallet
+        if (!wallet) continue
+        // Token server yang sama dipakai untuk semua key yang dialihkan —
+        // jangan dijumlah berulang.
+        if (res.walletSource === 'server') {
+          if (serverWalletCounted) continue
+          serverWalletCounted = true
+        }
+        walletSource = res.walletSource || walletSource
+        if (wallet.freeVideo) { videoRem += wallet.freeVideo.remaining; videoTotal += wallet.freeVideo.total }
+        if (wallet.freeImage) { imageRem += wallet.freeImage.remaining; imageTotal += wallet.freeImage.total }
+        if (wallet.points !== null) { points += wallet.points; pointsKnown = true }
+      }
+      rows.push(
+        { label: 'Kredit video', value: videoTotal ? `${videoRem}/${videoTotal}` : '—', tone: videoRem > 0 ? 'ok' : 'muted' },
+        { label: 'Kredit image', value: imageTotal ? `${imageRem}/${imageTotal}` : '—', tone: imageRem > 0 ? 'ok' : 'muted' },
+        { label: 'Poin harian', value: pointsKnown ? points : '—', tone: pointsKnown ? undefined : 'muted' },
+        { label: 'Koin RH', value: coinsKnown ? coins : 'tidak diekspos token', tone: coinsKnown && coins > 0 ? 'ok' : 'muted' },
+      )
+      footer = walletSource === 'server'
+        ? 'Kredit dibaca dari token server yang dipakai generate. Kredit gratis hanya untuk model playground RunningHub; workflow custom (Song Cover, dll.) tetap memotong koin RH.'
+        : 'Kredit gratis hanya untuk model playground RunningHub; workflow custom (Song Cover, dll.) tetap memotong koin RH. Koin RH tidak bisa dibaca lewat access token.'
+    }
+
     setSummaryPayload({
       title: `Ringkasan Cek ${currentConfig?.label || selectedProvider}`,
-      rows: [
-        { label: 'Total key dicek', value: savedKeys.length },
-        { label: 'Aktif', value: activeCount, tone: 'ok' },
-        { label: 'Rate-limited', value: limitedCount, tone: limitedCount ? 'warn' : 'muted' },
-        { label: 'Invalid / ditolak', value: invalidCount, tone: invalidCount ? 'bad' : 'muted' },
-      ],
+      rows,
+      footer,
     })
   }, [savedKeys, selectedProvider, handleCheckKey, currentConfig, keys, updateKeyStatus, setKeyCreditDetail])
 
@@ -2137,7 +2229,7 @@ export default function ProvidersPage() {
                             </>
                           )}
                           {!isWeavy && detail && (
-                            <span title={creditTitle} className="text-[12px] text-[#a0a0a0] truncate max-w-[220px]">{detail}</span>
+                            <span title={creditTitle ? `${detail} · ${creditTitle}` : detail} className="text-[12px] text-[#a0a0a0] truncate max-w-[220px]">{detail}</span>
                           )}
                           {!isWeavy && !detail && (
                             <span className="text-[12px] text-[#a0a0a0] truncate max-w-[220px]">—</span>
@@ -2183,7 +2275,68 @@ export default function ProvidersPage() {
             const totalBalance = providerKeys.reduce((sum, k) => sum + (k.balance ?? 0), 0)
             const activeCount = providerKeys.filter(k => k.status === 'active').length
             const isWeavyPool = selectedProvider === 'weavy'
+            const isRunningHub = selectedProvider === 'runninghub'
             if (providerKeys.length === 0) return null
+
+            if (isRunningHub) {
+              // Koin RH tidak diekspos access token — yang bisa dibaca hanya
+              // kredit gratis (video/image) + poin harian. Pakai snapshot live
+              // dari chip status, atau snapshot per-key dari cek manual.
+              let wallet: RHTokenWallet | null = rhCredit?.wallet ?? null
+              let source = rhCredit?.source ?? null
+              let at = rhCredit?.at ?? null
+              if (!wallet) {
+                const keyWithWallet = providerKeys.find(k => !!k.creditWallet)
+                if (keyWithWallet) {
+                  wallet = keyWithWallet.creditWallet ?? null
+                  source = 'user'
+                  at = keyWithWallet.creditCheckedAt ?? null
+                }
+              }
+              const video = wallet?.freeVideo ?? null
+              const image = wallet?.freeImage ?? null
+              const points = wallet?.points ?? null
+              const freeLeft = (video?.remaining ?? 0) + (image?.remaining ?? 0)
+              const coinsKnown = providerKeys.some(k => typeof k.balance === 'number')
+              return (
+                <div className="mt-3 rounded-lg border border-[#00a8ff]/30 bg-[#00a8ff]/5 p-3">
+                  <div className="text-[12px] font-mono uppercase tracking-widest text-[#00a8ff]/80">Pool Summary</div>
+                  <div className="mt-2 flex items-baseline gap-2">
+                    <span className="font-display text-2xl font-black brand-text">
+                      {wallet ? freeLeft.toLocaleString() : '—'}
+                    </span>
+                    <span className="text-[11px] text-[#a0a0a0]">kredit gratis tersisa</span>
+                  </div>
+                  <div className="mt-2 space-y-1 text-[11px] text-[#a0a0a0]">
+                    <div className="flex items-center justify-between gap-2">
+                      <span>Kredit video</span>
+                      <span className="font-mono text-[#f5f5f5]/85">{video ? `${video.remaining}/${video.total}` : '—'}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span>Kredit image</span>
+                      <span className="font-mono text-[#f5f5f5]/85">{image ? `${image.remaining}/${image.total}` : '—'}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span>Poin harian</span>
+                      <span className="font-mono text-[#f5f5f5]/85">{points !== null ? points : '—'}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span>Koin RH</span>
+                      <span className="font-mono text-[#f5f5f5]/85">{coinsKnown ? totalBalance.toLocaleString() : 'tidak diekspos token'}</span>
+                    </div>
+                  </div>
+                  <div className="mt-1.5 text-[10.5px] text-[#00a8ff]/80">
+                    {wallet
+                      ? `${source === 'server' ? 'Dibaca dari token server (dipakai generate)' : 'Dibaca dari access token kamu'}${at ? ` · ${new Date(at).toLocaleString('id-ID')}` : ''}`
+                      : 'Klik “Cek Limit & Status” untuk membaca kredit access token.'}
+                  </div>
+                  <div className="mt-1 text-[11px] text-[#a0a0a0]">
+                    {activeCount} active / {providerKeys.length} keys
+                  </div>
+                </div>
+              )
+            }
+
             return (
               <div className="mt-3 rounded-lg border border-[#00a8ff]/30 bg-[#00a8ff]/5 p-3">
                 <div className="text-[12px] font-mono uppercase tracking-widest text-[#00a8ff]/80">Pool Summary</div>

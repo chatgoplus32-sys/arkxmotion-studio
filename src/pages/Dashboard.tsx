@@ -466,15 +466,20 @@ export default function DashboardPage() {
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 gap-1.5">
-                  {[...HEALTH_PROVIDERS, 'wavespeed'].slice(0, 10).map((provider) => {
+                  {[...HEALTH_PROVIDERS, 'wavespeed'].slice(0, 11).map((provider) => {
                     const h = health[provider]
                     const k = (keys as any)[provider] || []
                     const active = k.filter((x: any) => x.status === 'active' || x.status === 'unknown').length
                     const meta = h ? STATUS_META[h.status] : STATUS_META.nokey
                     const latencyColor = h?.latencyMs != null ? (h.latencyMs < 400 ? 'text-emerald-400' : h.latencyMs < 900 ? 'text-amber-400' : 'text-red-400') : 'text-white/30'
                     return (
-                      <a key={provider} href="/providers" className="flex items-center justify-between gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] px-2 py-1.5 transition-all hover:border-cyan-400/20 hover:bg-white/[0.04]">
-                        <span className="text-[10px] font-semibold text-white/75 truncate">{provider}</span>
+                      <a key={provider} href="/providers" title={h?.detail} className="flex items-center justify-between gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] px-2 py-1.5 transition-all hover:border-cyan-400/20 hover:bg-white/[0.04]">
+                        <span className="min-w-0">
+                          <span className="block text-[10px] font-semibold text-white/75 truncate">{provider}</span>
+                          {h?.creditsLabel && (
+                            <span className="block truncate text-[8.5px] font-mono text-emerald-400/80">{h.creditsLabel}</span>
+                          )}
+                        </span>
                         <span className="flex shrink-0 items-center gap-1.5">
                           {h ? <span className={`text-[9px] font-bold ${meta.text}`}>{meta.label}</span> : <span className="text-[9px] font-mono text-white/35">{k.length > 0 ? `${active}/${k.length}` : 'no key'}</span>}
                           <span className={`text-[9px] font-mono ${latencyColor}`}>{h?.latencyMs ?? '—'}ms</span>

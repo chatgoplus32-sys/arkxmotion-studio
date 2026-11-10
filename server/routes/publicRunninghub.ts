@@ -364,6 +364,39 @@ function rhIsJwt(token: string): boolean {
   return rhJwtExp(token) !== null && !rhJwtExpired(token)
 }
 
+// Token bisa terlihat hidup (exp masih jauh) tapi sudah dicabut RunningHub —
+// mis. login ulang mem-rotate sesi. /api/welfare/summary menolaknya dengan
+// 412 TOKEN_INVALID; hasilnya di-cache 60 detik agar tidak menambah latensi.
+const RH_TOKEN_HEALTH_MS = 60 * 1000
+const rhTokenHealthCache = new Map<string, { ok: boolean; at: number }>()
+
+async function rhJwtStillAccepted(jwt: string): Promise<boolean> {
+  const fp = rhTokenFingerprint(jwt)
+  const cached = rhTokenHealthCache.get(fp)
+  if (cached && Date.now() - cached.at < RH_TOKEN_HEALTH_MS) return cached.ok
+
+  let ok = true
+  try {
+    const res = await fetch(`${RUNNINGHUB_BASE}/api/welfare/summary`, {
+      method: 'POST',
+      headers: rhAuthHeaders(jwt),
+      body: '{}',
+      signal: AbortSignal.timeout(15000),
+    })
+    const text = await res.text()
+    let data: any = null
+    try { data = JSON.parse(text) } catch { data = null }
+    const code = String(data?.code ?? '')
+    // Hanya 412/401 yang tegas berarti token mati; gangguan upstream lain
+    // jangan membuat token pengguna dibuang.
+    ok = !(code === '412' || code === '401' || res.status === 401)
+  } catch { ok = true }
+
+  if (rhTokenHealthCache.size > 50) rhTokenHealthCache.clear()
+  rhTokenHealthCache.set(fp, { ok, at: Date.now() })
+  return ok
+}
+
 const RH_PLAYGROUND_PREFIX = '/api/playground/openapi/v2'
 const RH_KEY_ID_CACHE_MS = 10 * 60 * 1000
 // Cache per token: akun berbeda = apiKeyId berbeda. Cache global dulu membuat
@@ -393,6 +426,12 @@ async function rhResolveApiKeyId(jwt: string): Promise<string> {
   let data: any = null
   try { data = JSON.parse(rawText) } catch { data = null }
   const list: any[] = Array.isArray(data?.data) ? data.data : []
+
+  const rejCode = String(data?.code ?? '')
+  if (!list.length && (rejCode === '412' || rejCode === '401' || apiRes.status === 401 || apiRes.status === 412
+    || /TOKEN_INVALID|UNAUTHORIZED/i.test(String(data?.msg ?? '')))) {
+    throw new Error(`Access token ditolak RunningHub (${rejCode || apiRes.status} ${data?.msg || 'TOKEN_INVALID'}) — token sudah tidak berlaku (logout/rotate). Salin access token baru dari sesi runninghub.ai yang masih login, lalu ganti Key ini di Providers.`)
+  }
 
   // Key sistem-auto (isSystemAuto) ditolak gateway (1303) — pakai key milik akun.
   const mine = list.find((k) => !k?.isSystemAuto && k?.apiKeyId && k?.key != null)
@@ -486,6 +525,14 @@ async function rhUploadViaSession(
   try { authData = JSON.parse(authRaw) } catch { authData = null }
   const accessKey = authData?.data?.accessKey
   if (!accessKey) {
+    // 412 TOKEN_INVALID = token ditolak RunningHub (sudah logout/di-rotate),
+    // bukan gangguan jaringan. Pesan mentah JSON bikin key sehat kelihatan
+    // "bermasalah" tanpa petunjuk apa yang harus dilakukan.
+    const authCode = String(authData?.code ?? '')
+    const authMsg = String(authData?.msg ?? '')
+    if (authCode === '412' || authCode === '401' || authRes.status === 401 || authRes.status === 412 || /TOKEN_INVALID|UNAUTHORIZED/i.test(authMsg)) {
+      throw new Error(`Access token ditolak RunningHub (${authCode || authRes.status} ${authMsg || 'TOKEN_INVALID'}) — token sudah tidak berlaku (logout/rotate). Salin access token baru dari sesi runninghub.ai yang masih login, lalu ganti Key ini di Providers.`)
+    }
     throw new Error('Gagal dapat accessKey ComfyUI: ' + authRaw.slice(0, 200))
   }
 
@@ -548,9 +595,21 @@ router.all('/', async (req: Request, res: Response) => {
     })
   }
 
-  const { token: apiKey, source: authSource } = rhResolveCredential(clientKey)
+  let { token: apiKey, source: authSource } = rhResolveCredential(clientKey)
 
   if (!action) return res.status(200).json({ ok: false, error: 'Missing action' })
+
+  // Token pengguna yang sudah dicabut (412) jangan memblokir generasi bila
+  // server punya token sendiri. check-balance dikecualikan: di sana justru
+  // penting melaporkan keadaan token pengguna apa adanya.
+  if (action !== 'check-balance' && authSource === 'user-token') {
+    const global = rhGlobalAccessToken()
+    if (global && global !== apiKey && !(await rhJwtStillAccepted(apiKey))) {
+      console.log('[runninghub] token pengguna ditolak RunningHub (412) — memakai token server')
+      apiKey = global
+      authSource = 'server-token'
+    }
+  }
 
   // Placeholder dari client dengan token global yang dimatikan = konfigurasi
   // belum lengkap — jangan teruskan ke upstream (pasti ditolak dengan 806).
@@ -3578,7 +3637,7 @@ async function handleQuery(apiKey: string, taskId: string, res: Response) {
 // Kode yang berarti API key-nya sendiri ditolak RunningHub. Selain ini
 // (saldo, izin workflow, gangguan upstream) key tetap sehat dan TIDAK boleh
 // ditandai invalid — dulu semua kegagalan cek saldo membuat key mati permanen.
-export const RH_KEY_REJECT_CODES = new Set(['401', '806', '811', '814', '1002', '1003'])
+export const RH_KEY_REJECT_CODES = new Set(['401', '412', '806', '811', '814', '1002', '1003'])
 
 function translateRhError(code: string, msg?: string): string {
   const map: Record<string, string> = {
@@ -3586,6 +3645,7 @@ function translateRhError(code: string, msg?: string): string {
     '605': 'Saldo RH coins akun RunningHub tidak cukup untuk model ini — token/key tetap valid. Isi saldo di runninghub.ai atau pakai akun dengan saldo.',
     '404': 'Workflow tidak ditemukan atau tidak dapat diakses API key ini.',
     '403': 'Akses ditolak. API key tidak berhak mengakses workflow ini.',
+    '412': 'Access token ditolak RunningHub (412 TOKEN_INVALID) — sesi login sudah tidak berlaku (logout / login ulang / di-rotate). Salin access token baru dari sesi runninghub.ai yang masih login, lalu ganti Key ini di Providers.',
     '806': 'API key tidak dikenali RunningHub (user pemilik key tidak ditemukan). Key mungkin sudah dihapus/di-rotate atau berasal dari akun runninghub.cn — buat API key baru di runninghub.ai → API Keys, lalu paste ulang.',
     '807': 'Task tidak ditemukan di RunningHub (mungkin sudah kedaluwarsa / dibersihkan).',
     '811': 'API key Enterprise tidak valid atau akun tidak punya izin enterprise.',
@@ -3757,16 +3817,31 @@ async function handleCheckBalance(apiKey: string, res: Response) {
       // baca paket sesi (kredit gratis + poin) lewat /api/welfare/summary.
       if (rejected && rhJwtExpired(apiKey) === false && rhJwtExp(apiKey) !== null) {
         const wallet = await rhTokenWallet(apiKey)
-        const summary = rhWalletSummary(wallet)
+        // wallet null = token ini tidak bisa membaca data akun (dicabut/412):
+        // jangan dilaporkan "aktif" hanya karena exp-nya belum lewat.
+        if (wallet) {
+          const summary = rhWalletSummary(wallet)
+          return res.status(200).json({
+            ok: true,
+            balance: null,
+            isValidUser: true,
+            keyType: 'Access Token (JWT)',
+            tokenWallet: wallet,
+            message: summary
+              ? `Access token aktif. Saldo koin RH tidak diekspos lewat access token; ${summary}.`
+              : 'Access token aktif. RunningHub tidak menampilkan saldo lewat access token — cek saldo hanya untuk API key lama.',
+          })
+        }
+        // Credential ini JWT yang belum kedaluwarsa tapi tidak bisa membaca
+        // data akun: RunningHub menolaknya (412/806/...) karena sesi dicabut.
         return res.status(200).json({
-          ok: true,
+          ok: false,
+          transient: false,
+          invalidKey: true,
+          error: `Access token ditolak RunningHub — sesi login sudah tidak berlaku (logout / login ulang / di-rotate)${code ? ` [${code}${data.msg ? ' ' + data.msg : ''}]` : ''}. Salin access token baru dari sesi runninghub.ai yang masih login, lalu ganti Key ini di Providers.`,
           balance: null,
-          isValidUser: true,
-          keyType: 'Access Token (JWT)',
-          tokenWallet: wallet,
-          message: summary
-            ? `Access token aktif. Saldo koin RH tidak diekspos lewat access token; ${summary}.`
-            : 'Access token aktif. RunningHub tidak menampilkan saldo lewat access token — cek saldo hanya untuk API key lama.',
+          isValidUser: false,
+          code: data.code,
         })
       }
 

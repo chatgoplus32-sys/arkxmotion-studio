@@ -187,6 +187,62 @@ export interface RHTokenWallet {
   freePeriodEnd: string | null
 }
 
+/** Versi pendek untuk chip status: "V3/3 · I3/3 · 30 pt". */
+export function formatRhWalletCompact(wallet: RHTokenWallet | null | undefined): string {
+  if (!wallet) return ''
+  const parts: string[] = []
+  if (wallet.freeVideo) parts.push(`V${wallet.freeVideo.remaining}/${wallet.freeVideo.total}`)
+  if (wallet.freeImage) parts.push(`I${wallet.freeImage.remaining}/${wallet.freeImage.total}`)
+  if (wallet.points !== null) parts.push(`${wallet.points} pt`)
+  return parts.join(' · ')
+}
+
+/** Versi panjang untuk baris detail: "kredit video 3/3 · kredit image 3/3 · poin harian 30". */
+export function formatRhWalletDetail(wallet: RHTokenWallet | null | undefined): string {
+  if (!wallet) return ''
+  const parts: string[] = []
+  if (wallet.freeVideo) parts.push(`kredit video ${wallet.freeVideo.remaining}/${wallet.freeVideo.total}`)
+  if (wallet.freeImage) parts.push(`kredit image ${wallet.freeImage.remaining}/${wallet.freeImage.total}`)
+  if (wallet.points !== null) parts.push(`poin harian ${wallet.points}`)
+  return parts.join(' · ')
+}
+
+/**
+ * Snapshot wallet RunningHub dari pembacaan terakhir, disimpan di localStorage
+ * supaya angka kredit tetap terlihat setelah reload tanpa cek ulang.
+ * `source` penting: 'server' = token global (yang benar-benar dipakai generate
+ * saat key pengguna ditolak), 'user' = access token milik pengguna.
+ */
+export interface RhCreditSnapshot {
+  wallet: RHTokenWallet | null
+  balance: number | null
+  source: 'user' | 'server'
+  at: number
+  error?: string
+}
+
+const RH_CREDIT_SNAPSHOT_KEY = 'arkxmotion.runninghub.credit'
+export const RH_CREDIT_EVENT = 'aatools:rh-credit'
+
+export function saveRhCreditSnapshot(snapshot: RhCreditSnapshot) {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem(RH_CREDIT_SNAPSHOT_KEY, JSON.stringify(snapshot))
+    window.dispatchEvent(new Event(RH_CREDIT_EVENT))
+  } catch { /* storage penuh — abaikan */ }
+}
+
+export function readRhCreditSnapshot(): RhCreditSnapshot | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = localStorage.getItem(RH_CREDIT_SNAPSHOT_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || typeof parsed.at !== 'number') return null
+    return parsed as RhCreditSnapshot
+  } catch { return null }
+}
+
 export async function checkRunningHubBalance(apiKey: string): Promise<{
   ok: boolean
   balance: number | null

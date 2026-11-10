@@ -60,7 +60,7 @@ export default function ProviderStatusBar({ selectedProvider, onSelect }: Props)
     else if (h?.status === 'down') status = 'down'
     else if (k.length > 0) status = 'online' // has keys, assume ok
 
-    return { provider, label, status, color, activeKeys, totalKeys: k.length, totalCredits, latencyMs: h?.latencyMs }
+    return { provider, label, status, color, activeKeys, totalKeys: k.length, totalCredits, latencyMs: h?.latencyMs, creditsLabel: h?.creditsLabel, detail: h?.detail }
   })
 
   const online = providerStatuses.filter(p => p.status === 'online').length
@@ -83,7 +83,7 @@ export default function ProviderStatusBar({ selectedProvider, onSelect }: Props)
         </div>
       </div>
       <div className="flex flex-wrap gap-1.5">
-        {providerStatuses.map(({ provider, label, status, color, activeKeys, totalKeys, totalCredits, latencyMs }) => {
+        {providerStatuses.map(({ provider, label, status, color, activeKeys, totalKeys, totalCredits, latencyMs, creditsLabel, detail }) => {
           const isActive = selectedProvider === provider
           const dotColor = status === 'maintenance' ? 'bg-orange-400'
             : status === 'online' ? 'bg-emerald-400'
@@ -94,12 +94,14 @@ export default function ProviderStatusBar({ selectedProvider, onSelect }: Props)
             <button
               key={provider}
               onClick={() => onSelect(provider)}
+              title={detail}
               className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[12px] font-medium transition border ${isActive ? 'border-primary/50 bg-primary/10 text-primary' : 'border-border/50 hover:bg-accent/50 text-muted-foreground hover:text-foreground'}`}
             >
               <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${dotColor}`} style={{ boxShadow: `0 0 4px ${color}66` }} />
               <span className="truncate">{label}</span>
               {latencyMs != null && <span className="text-[11px] opacity-60">{latencyMs}ms</span>}
               {totalKeys > 0 && <span className="text-[11px] opacity-50">{activeKeys}/{totalKeys}</span>}
+              {creditsLabel && <span className="text-[11px] font-mono text-emerald-400/80">{creditsLabel}</span>}
               {totalCredits > 0 && <span className="text-[11px] text-emerald-400/70">{totalCredits}cr</span>}
             </button>
           )

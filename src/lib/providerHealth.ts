@@ -1,6 +1,12 @@
 import { getGalleri5AuthHeaders } from '@/lib/galleri5'
 import { appAuthHeaders } from '@/lib/nexabot'
-import { useProviderManager } from '@/stores/providerManager'
+import {
+  checkRunningHubBalance,
+  formatRhWalletCompact,
+  saveRhCreditSnapshot,
+  type RHTokenWallet,
+} from '@/lib/runninghub'
+import { useProviderManager, RUNNINGHUB_SERVER_MANAGED_KEY } from '@/stores/providerManager'
 
 export type ProviderHealthStatus = 'online' | 'busy' | 'down' | 'nokey'
 
@@ -9,6 +15,10 @@ export interface ProviderHealth {
   status: ProviderHealthStatus
   latencyMs?: number
   detail?: string
+  /** Ringkasan kredit/saldo versi pendek untuk chip status. */
+  creditsLabel?: string
+  /** Snapshot kredit access token RunningHub. */
+  wallet?: RHTokenWallet | null
   checkedAt: number
 }
 
@@ -273,7 +283,83 @@ async function checkSeavi(): Promise<ProviderHealth> {
   }
 }
 
+// ─── RunningHub ─────────────────────────────────────────────────────────
+// Cek limit/status = baca wallet access token (kredit video/image + poin
+// harian). Key pengguna yang sudah dicabut tidak membuat provider tampak mati:
+// relay mengalihkan generate ke token server, jadi status mengikuti token yang
+// benar-benar dipakai. Koin RH tidak bisa dibaca dari access token — hanya
+// kredit gratis + poin yang dilaporkan.
+async function checkRunningHub(): Promise<ProviderHealth> {
+  const keys = useProviderManager.getState().keys.runninghub || []
+  // Placeholder "server-managed" bukan kredensial milik pengguna — relai yang
+  // menyuntikkan token server, jadi probe tanpa key (server yang menentukan).
+  const userKey = keys.find((k) => k.key && k.key !== RUNNINGHUB_SERVER_MANAGED_KEY) || null
+
+  try {
+    let source: 'user' | 'server' = userKey ? 'user' : 'server'
+    let res = await checkRunningHubBalance(userKey?.key || '')
+
+    // Key pengguna ditolak RunningHub (412/806) — generate tetap jalan lewat
+    // token server, jadi kredit yang ditampilkan harus milik token server.
+    if (userKey && res.invalidKey) {
+      const server = await checkRunningHubBalance('')
+      if (server.ok && server.isValidUser) {
+        res = server
+        source = 'server'
+      }
+    }
+
+    const wallet = res.tokenWallet ?? null
+    const walletLabel = formatRhWalletCompact(wallet)
+    if (res.ok && res.isValidUser) {
+      saveRhCreditSnapshot({
+        wallet,
+        balance: res.balance ?? null,
+        source,
+        at: Date.now(),
+      })
+      const label = walletLabel || (res.balance != null ? `${res.balance} RH coins` : '')
+      return {
+        provider: 'runninghub',
+        status: 'online',
+        detail: [source === 'server' ? 'token server' : 'token pengguna', label || 'saldo belum terbaca']
+          .filter(Boolean)
+          .join(' · '),
+        creditsLabel: label || undefined,
+        wallet,
+        checkedAt: Date.now(),
+      }
+    }
+
+    if (res.invalidKey) {
+      saveRhCreditSnapshot({ wallet: null, balance: null, source, at: Date.now(), error: res.error })
+      return {
+        provider: 'runninghub',
+        status: 'down',
+        detail: res.error || 'Access token ditolak RunningHub',
+        checkedAt: Date.now(),
+      }
+    }
+
+    // Gangguan upstream (timeout/HTML 502) bukan bukti provider mati.
+    return {
+      provider: 'runninghub',
+      status: keys.length ? 'online' : 'nokey',
+      detail: res.error || 'Gateway OK · kredit belum terbaca',
+      checkedAt: Date.now(),
+    }
+  } catch (err: any) {
+    return {
+      provider: 'runninghub',
+      status: keys.length ? 'online' : 'nokey',
+      detail: err?.message || 'Tidak terhubung',
+      checkedAt: Date.now(),
+    }
+  }
+}
+
 const CHECKERS: Record<string, () => Promise<ProviderHealth>> = {
+  runninghub: checkRunningHub,
   roboneo: checkRoboneo,
   galleri5: checkGalleri5,
   weavy: checkWeavy,
