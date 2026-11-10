@@ -29,8 +29,9 @@ function fakeJwt(expSec: number): string {
   return `${b64url({ alg: 'HS512', typ: 'JWT' })}.${b64url({ sub: 'uji', exp: expSec })}.tanda-tangan-palsu`
 }
 
-let upstream: () => Response = () => new Response('{}', { status: 200 })
+let upstream: (url?: string, init?: any) => Response = () => new Response('{}', { status: 200 })
 let bodiesSeen: any[] = []
+let urlsSeen: string[] = []
 
 const app = express()
 app.use(express.json({ limit: '50mb' }))
@@ -46,13 +47,15 @@ before(async () => {
   await new Promise((resolve) => server.once('listening', resolve))
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
   globalThis.fetch = (async (_url: any, init?: any) => {
+    urlsSeen.push(String(_url))
     try { bodiesSeen.push(init?.body ? JSON.parse(init.body) : null) } catch { bodiesSeen.push(init?.body) }
-    return upstream()
+    return upstream(String(_url), init)
   }) as any
 })
 
 beforeEach(() => {
   bodiesSeen = []
+  urlsSeen = []
 })
 
 after(() => {
@@ -220,4 +223,121 @@ test('accountStatus menolak akses token → tetap dilaporkan aktif (bukan key in
   assert.equal(out.isValidUser, true)
   assert.equal(out.balance, null)
   assert.match(out.keyType, /Access Token/)
+})
+
+// ── Jalur akses token (JWT): upload & submit lewat situs RunningHub ─────────
+//
+// OpenAPI RunningHub (/openapi/v2/*) menolak JWT ("ApiKey verification failed").
+// Untuk sesi JWT relay memakai dua jalur resmi situsnya:
+//   * submit/query → /api/playground/openapi/v2/*?apiKeyId=<id key milik akun>
+//   * upload media → /upload/image + accessKey (/api/instance/access/auth)
+
+const RH_KID = '2119296871366062081'
+const PNG_1PX = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+
+async function postRunninghub(body: unknown) {
+  const res = await originalFetch(`${base}/api/public/runninghub`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  return res.json()
+}
+
+test('query dengan akses token diteruskan ke jalur playground + apiKeyId milik akun', async () => {
+  upstream = (url) => {
+    if (url?.includes('/api/key/list')) {
+      return json({
+        code: 0,
+        data: [
+          { apiKeyId: '111111', key: null, isSystemAuto: true },
+          { apiKeyId: RH_KID, key: 'ccfa****c4a7', isSystemAuto: false },
+        ],
+      })
+    }
+    return json({ code: 0, data: { taskId: '1', status: '', errorCode: '1004', errorMessage: 'Task not found', results: null } })
+  }
+
+  const out = await postRunninghub({ action: 'query', apiKey: fakeJwt(FUTURE()), taskId: '1' })
+  assert.equal(out.ok, true, JSON.stringify(out))
+
+  const listUrl = urlsSeen.find((u) => u.includes('/api/key/list'))
+  const queryUrl = urlsSeen.find((u) => u.includes('/api/playground/openapi/v2/query'))
+  assert.ok(listUrl, 'apiKeyId diambil lewat /api/key/list dengan sesi JWT: ' + JSON.stringify(urlsSeen))
+  assert.ok(queryUrl, 'query harus lewat jalur playground: ' + JSON.stringify(urlsSeen))
+  assert.ok(queryUrl!.endsWith(`/api/playground/openapi/v2/query?apiKeyId=${RH_KID}`), queryUrl)
+  // key sistem-auto (1303) tidak boleh dipakai
+  assert.notEqual(queryUrl!.includes('111111'), true)
+})
+
+test('API key lama tetap memakai jalur OpenAPI lama (tanpa playground)', async () => {
+  upstream = () => json({ code: 0, data: { taskId: '7', status: 'RUNNING', results: null } })
+  const out = await postRunninghub({ action: 'query', apiKey: 'a1b2c3d4e5f60718293a4b5c6d7e8f90', taskId: '7' })
+  assert.equal(out.ok, true, JSON.stringify(out))
+  assert.deepEqual(urlsSeen, ['https://www.runninghub.ai/openapi/v2/query'], JSON.stringify(urlsSeen))
+})
+
+test('motion-control dengan akses token: upload via sesi, submit via playground', async () => {
+  const accessKey = Buffer.from(JSON.stringify({ userId: 'uji-user', sign: 'x' })).toString('base64')
+  upstream = (url) => {
+    if (url?.includes('/api/instance/access/auth')) return json({ code: 0, data: { accessKey } })
+    if (url?.includes('/upload/image')) return json({ name: 'hashimg.png', subfolder: '', type: 'input' })
+    if (url?.includes('/api/key/list')) {
+      return json({ code: 0, data: [{ apiKeyId: RH_KID, key: 'ccfa****c4a7', isSystemAuto: false }] })
+    }
+    if (url?.includes('/run/ai-app/')) return json({ code: 0, data: { taskId: '999', status: 'QUEUED' } })
+    return json({})
+  }
+
+  const out = await postRunninghub({
+    action: 'motion-control',
+    apiKey: fakeJwt(FUTURE()),
+    imageBase64: PNG_1PX,
+    imageFileName: 'motion.jpg',
+    imageMimeType: 'image/jpeg',
+    videoBase64: PNG_1PX,
+    videoFileName: 'motion.mp4',
+    videoMimeType: 'video/mp4',
+  })
+
+  assert.equal(out.ok, true, JSON.stringify(out))
+  assert.equal(out.data?.taskId, '999')
+  assert.ok(urlsSeen.some((u) => u.endsWith('/api/instance/access/auth')), JSON.stringify(urlsSeen))
+  assert.ok(urlsSeen.filter((u) => u.endsWith('/upload/image')).length === 2, 'image + video: ' + JSON.stringify(urlsSeen))
+  assert.ok(urlsSeen.some((u) => u.includes('/api/playground/openapi/v2/run/ai-app/')), JSON.stringify(urlsSeen))
+  assert.ok(urlsSeen.some((u) => u.includes(`apiKeyId=${RH_KID}`)), JSON.stringify(urlsSeen))
+  // OpenAPI telanjang tidak boleh dipanggil dengan JWT
+  assert.ok(!urlsSeen.some((u) => u.includes('://www.runninghub.ai/openapi/v2/')), JSON.stringify(urlsSeen))
+})
+
+test('balasan playground tanpa taskId tapi bawa errorCode → pesan sebabnya, bukan No taskId', async () => {
+  const accessKey = Buffer.from(JSON.stringify({ userId: 'uji-user', sign: 'x' })).toString('base64')
+  upstream = (url) => {
+    if (url?.includes('/api/instance/access/auth')) return json({ code: 0, data: { accessKey } })
+    if (url?.includes('/upload/image')) return json({ name: 'hash.png', subfolder: '', type: 'input' })
+    if (url?.includes('/run/ai-app/')) {
+      return json({
+        code: 0,
+        msg: 'success',
+        data: {
+          taskId: '',
+          status: '',
+          errorCode: '605',
+          errorMessage: 'Your balance is insufficient. Please top up your account.',
+        },
+      })
+    }
+    return json({ code: 0, data: [{ apiKeyId: RH_KID, key: 'ccfa****c4a7', isSystemAuto: false }] })
+  }
+
+  const out = await postRunninghub({
+    action: 'motion-control',
+    apiKey: fakeJwt(FUTURE()),
+    imageBase64: PNG_1PX,
+    videoBase64: PNG_1PX,
+  })
+
+  assert.equal(out.ok, false, JSON.stringify(out))
+  assert.notEqual(out.error, 'No taskId returned')
+  assert.match(String(out.error), /saldo|top up/i)
 })
