@@ -48,7 +48,8 @@ function resolveRunningHubCredential(raw: unknown): string {
 const RH_PROXY_BASE = 'https://www.runninghub.ai'
 const RH_PROXY_PLAYGROUND = '/api/playground/openapi/v2'
 const RH_PROXY_KEY_CACHE_MS = 10 * 60 * 1000
-let rhProxyKeyIdCache: { value: string; at: number } | null = null
+// Cache per token: dua access token dari akun berbeda punya apiKeyId berbeda.
+const rhProxyKeyIdCache = new Map<string, { value: string; at: number }>()
 
 function runningHubIsJwt(token: string): boolean {
   const exp = runningHubJwtExp(token)
@@ -56,8 +57,9 @@ function runningHubIsJwt(token: string): boolean {
 }
 
 async function rhProxyApiKeyId(jwt: string): Promise<string> {
-  if (rhProxyKeyIdCache && Date.now() - rhProxyKeyIdCache.at < RH_PROXY_KEY_CACHE_MS) {
-    return rhProxyKeyIdCache.value
+  const cached = rhProxyKeyIdCache.get(jwt)
+  if (cached && Date.now() - cached.at < RH_PROXY_KEY_CACHE_MS) {
+    return cached.value
   }
   const r = await fetch(`${RH_PROXY_BASE}/api/key/list`, {
     method: 'POST',
@@ -68,10 +70,16 @@ async function rhProxyApiKeyId(jwt: string): Promise<string> {
   const raw = await r.text()
   let data: any; try { data = JSON.parse(raw) } catch { data = null }
   const list: any[] = Array.isArray(data?.data) ? data.data : []
+  const rejCode = String(data?.code ?? '')
+  if (!list.length && (rejCode === '412' || rejCode === '401' || r.status === 401 || r.status === 412
+    || /TOKEN_INVALID|UNAUTHORIZED/i.test(String(data?.msg ?? '')))) {
+    throw new Error(`Access token ditolak RunningHub (${rejCode || r.status} ${data?.msg || 'TOKEN_INVALID'}) — token sudah tidak berlaku (logout/rotate). Salin access token baru dari sesi runninghub.ai yang masih login, lalu ganti Key ini di Providers.`)
+  }
   const mine = list.find((k) => !k?.isSystemAuto && k?.apiKeyId && k?.key != null)
   if (!mine) throw new Error('Tidak ada API key milik akun untuk access token: ' + raw.slice(0, 200))
-  rhProxyKeyIdCache = { value: String(mine.apiKeyId), at: Date.now() }
-  return rhProxyKeyIdCache.value
+  if (rhProxyKeyIdCache.size > 50) rhProxyKeyIdCache.clear()
+  rhProxyKeyIdCache.set(jwt, { value: String(mine.apiKeyId), at: Date.now() })
+  return String(mine.apiKeyId)
 }
 
 async function rhProxyUpstreamUrl(jwt: string, url: string): Promise<string> {
@@ -95,7 +103,14 @@ async function rhProxySessionUpload(jwt: string, bytes: Buffer, fileName: string
   const authRaw = await authRes.text()
   let authData: any; try { authData = JSON.parse(authRaw) } catch { authData = null }
   const accessKey = authData?.data?.accessKey
-  if (!accessKey) throw new Error('Gagal dapat accessKey ComfyUI: ' + authRaw.slice(0, 200))
+  if (!accessKey) {
+    const authCode = String(authData?.code ?? '')
+    const authMsg = String(authData?.msg ?? '')
+    if (authCode === '412' || authCode === '401' || authRes.status === 401 || authRes.status === 412 || /TOKEN_INVALID|UNAUTHORIZED/i.test(authMsg)) {
+      throw new Error(`Access token ditolak RunningHub (${authCode || authRes.status} ${authMsg || 'TOKEN_INVALID'}) — token sudah tidak berlaku (logout/rotate). Salin access token baru dari sesi runninghub.ai yang masih login, lalu ganti Key ini di Providers.`)
+    }
+    throw new Error('Gagal dapat accessKey ComfyUI: ' + authRaw.slice(0, 200))
+  }
 
   let identify = ''
   try {
@@ -119,9 +134,120 @@ async function rhProxySessionUpload(jwt: string, bytes: Buffer, fileName: string
   return { fileName: sub ? `${sub}/${name}` : String(name) }
 }
 
+/** Saldo yang bisa dibaca dari access token (kredit sesi + poin harian). */
+interface RHProxyTokenCredit { total: number; used: number; remaining: number; models: string[] }
+interface RHProxyTokenWallet {
+  points: number | null
+  pointsExpiresAt: string | null
+  freeVideo: RHProxyTokenCredit | null
+  freeImage: RHProxyTokenCredit | null
+  freePeriodEnd: string | null
+}
+
+const RH_PROXY_WALLET_CACHE_MS = 60 * 1000
+const rhProxyWalletCache = new Map<string, { value: RHProxyTokenWallet; at: number }>()
+
+async function rhProxyTokenWallet(jwt: string): Promise<RHProxyTokenWallet | null> {
+  const cached = rhProxyWalletCache.get(jwt)
+  if (cached && Date.now() - cached.at < RH_PROXY_WALLET_CACHE_MS) return cached.value
+
+  try {
+    const apiRes = await fetch(`${RH_PROXY_BASE}/api/welfare/summary`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'User-Agent': 'ArkxMotion/1.0', Authorization: `Bearer ${jwt}` },
+      body: '{}',
+      signal: AbortSignal.timeout(15000),
+    })
+    const raw = await apiRes.text()
+    let data: any = null
+    try { data = JSON.parse(raw) } catch { return null }
+    if (!data || data.code !== 0 || !data.data) return null
+
+    const d = data.data
+    const num = (v: unknown): number | null => {
+      if (v === null || v === undefined || v === '') return null
+      const n = Number(v)
+      return Number.isFinite(n) ? n : null
+    }
+    const credit = (c: any): RHProxyTokenCredit | null => {
+      if (!c || typeof c !== 'object') return null
+      return {
+        total: num(c.total) ?? 0,
+        used: num(c.used) ?? 0,
+        remaining: num(c.remaining) ?? 0,
+        models: Array.isArray(c.modelNames) ? c.modelNames.map(String) : [],
+      }
+    }
+
+    const wallet: RHProxyTokenWallet = {
+      points: num(d.dailyGift?.amount),
+      pointsExpiresAt: typeof d.dailyGift?.expireTime === 'string' ? d.dailyGift.expireTime : null,
+      freeVideo: credit(d.freeVideo),
+      freeImage: credit(d.freeImage),
+      freePeriodEnd: typeof d.freePeriod?.endTime === 'string' ? d.freePeriod.endTime : null,
+    }
+    if (rhProxyWalletCache.size > 50) rhProxyWalletCache.clear()
+    rhProxyWalletCache.set(jwt, { value: wallet, at: Date.now() })
+    return wallet
+  } catch {
+    return null
+  }
+}
+
+function runningHubGlobalToken(): string {
+  return String(process.env.RUNNINGHUB_ACCESS_TOKEN || '')
+    .trim()
+    .replace(/^Bearer\s+/i, '')
+    .trim()
+}
+
+type RHProxyTokenHealth = 'ok' | 'dead' | 'unknown'
+const rhProxyHealthCache = new Map<string, { value: RHProxyTokenHealth; at: number }>()
+
+/**
+ * Token bisa "hidup" (exp jauh) tapi sudah dicabut RunningHub — login ulang
+ * mem-rotate sesi dan jawabannya 412 TOKEN_INVALID. Bedakan tegas dari
+ * gangguan upstream supaya token pengguna tidak dibuang percuma.
+ */
+async function rhProxyTokenHealth(jwt: string): Promise<RHProxyTokenHealth> {
+  const cached = rhProxyHealthCache.get(jwt)
+  if (cached && Date.now() - cached.at < 60 * 1000) return cached.value
+
+  let value: RHProxyTokenHealth = 'unknown'
+  try {
+    const res = await fetch(`${RH_PROXY_BASE}/api/welfare/summary`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'User-Agent': 'ArkxMotion/1.0', Authorization: `Bearer ${jwt}` },
+      body: '{}',
+      signal: AbortSignal.timeout(15000),
+    })
+    const raw = await res.text()
+    let data: any = null
+    try { data = JSON.parse(raw) } catch { data = null }
+    const code = String(data?.code ?? '')
+    if (code === '412' || code === '401' || res.status === 401) value = 'dead'
+    else if (code === '0') value = 'ok'
+  } catch { /* tetap unknown */ }
+
+  if (rhProxyHealthCache.size > 50) rhProxyHealthCache.clear()
+  rhProxyHealthCache.set(jwt, { value, at: Date.now() })
+  return value
+}
+
+function rhProxyWalletSummary(wallet: RHProxyTokenWallet | null): string {
+  if (!wallet) return ''
+  const parts: string[] = []
+  if (wallet.freeVideo) parts.push(`kredit video ${wallet.freeVideo.remaining}/${wallet.freeVideo.total}`)
+  if (wallet.freeImage) parts.push(`kredit image ${wallet.freeImage.remaining}/${wallet.freeImage.total}`)
+  if (wallet.points !== null) parts.push(`poin harian ${wallet.points}`)
+  return parts.join(' · ')
+}
+
 /**
  * fetch proxy: memakai jalur playground + upload sesi saat credensial JWT,
- * lewat tanpa perubahan untuk API key lama.
+ * lewat tanpa perubahan untuk API key lama. Kegagalan request playground
+ * dibungkus di `data.errorCode` dengan top-level `code: 0` — naikkan ke
+ * top-level supaya bukan terbaca "success" lalu "No taskId returned".
  */
 async function rhProxyFetch(jwt: string, url: string, init?: RequestInit): Promise<Awaited<ReturnType<typeof fetch>>> {
   if (runningHubIsJwt(jwt) && url.includes('/openapi/v2/media/upload/binary')) {
@@ -136,7 +262,31 @@ async function rhProxyFetch(jwt: string, url: string, init?: RequestInit): Promi
       })
     }
   }
-  return fetch(await rhProxyUpstreamUrl(jwt, url), init)
+
+  const upstream = await rhProxyUpstreamUrl(jwt, url)
+  const res = await fetch(upstream, init)
+  if (upstream === url) return res
+
+  const text = await res.text()
+  let parsed: any = null
+  try { parsed = JSON.parse(text) } catch {
+    return new Response(text, { status: res.status, headers: { 'Content-Type': 'text/plain' } })
+  }
+
+  const nested = parsed?.data
+  const nestedCode = nested?.errorCode
+  const isRequestRejection = !nested?.taskId && !nested?.status
+    && nestedCode !== undefined && nestedCode !== null && nestedCode !== ''
+    && nestedCode !== 0 && nestedCode !== '0'
+  if ((parsed?.code === 0 || parsed?.code === '0') && isRequestRejection) {
+    parsed.code = nestedCode
+    parsed.msg = nested?.errorMessage || parsed.msg
+  }
+
+  return new Response(JSON.stringify(parsed), {
+    status: res.status,
+    headers: { 'Content-Type': 'application/json' },
+  })
 }
 
 // Dev: Express lokal (:6000, `npm run dev:server`) dulu, lalu produksi VPS sebagai
@@ -146,7 +296,7 @@ async function rhProxyFetch(jwt: string, url: string, init?: RequestInit): Promi
 // Catatan: JANGAN pakai fetch() ke :6000 — undici/Chrome menganggap 6000
 // "bad port" (daftar port X11 yang diblokir), jadi request lokal selalu
 // gagal "fetch failed". Pakai http.request yang tidak punya batasan itu.
-function forwardLocal(path: string, method: string, headers: Record<string, string>, body?: Buffer): Promise<{ status: number; text: string; contentType: string }> {
+function forwardLocal(path: string, method: string, headers: Record<string, string>, body?: Buffer, timeoutMs = 30000): Promise<{ status: number; text: string; contentType: string }> {
   return new Promise((resolve, reject) => {
     const proxyReq = http.request(
       { host: '127.0.0.1', port: 6000, path, method, headers },
@@ -161,7 +311,7 @@ function forwardLocal(path: string, method: string, headers: Record<string, stri
       },
     )
     proxyReq.on('error', reject)
-    proxyReq.setTimeout(30000, () => proxyReq.destroy(new Error('local timeout')))
+    proxyReq.setTimeout(timeoutMs, () => proxyReq.destroy(new Error('local timeout')))
     if (body && body.length && method !== 'GET' && method !== 'HEAD') proxyReq.write(body)
     proxyReq.end()
   })
@@ -953,18 +1103,102 @@ export function roboneoProxyPlugin(): Plugin {
 
         const chunks: Buffer[] = []
         for await (const chunk of req) chunks.push(chunk)
-        const rawBody = Buffer.concat(chunks).toString()
+        const rawBuf = Buffer.concat(chunks)
+        const rawBody = rawBuf.toString()
+
+        // Jalur utama dev: teruskan ke relay Express (:6000) supaya perilaku
+        // sama persis dengan produksi VPS (access token playground, saldo
+        // kredit, guard MF-, error bersarang). Fallback internal di bawah hanya
+        // dipakai kalau `npm run dev:server` tidak jalan. Timeout panjang:
+        // upload audio/video besar + submit bisa lewat 30 detik.
+        try {
+          const proxied = await forwardLocal('/api/public/runninghub', 'POST', {
+            'content-type': 'application/json',
+            'content-length': String(rawBuf.length),
+          }, rawBuf, 600000)
+          if (proxied.status !== 404 && proxied.status !== 405) {
+            res.writeHead(proxied.status, { 'Content-Type': proxied.contentType })
+            res.end(proxied.text)
+            return
+          }
+        } catch (err: any) {
+          console.log(`[runninghub-proxy] relay lokal tidak tersedia (${err.message}) — pakai implementasi internal`)
+        }
+
         let parsed: any
         try { parsed = JSON.parse(rawBody) } catch {}
 
         const { action, apiKey: rawApiKey, ...params } = parsed || {}
-        const apiKey = resolveRunningHubCredential(rawApiKey)
+
+        // Sama seperti Express: MF-… adalah kunci akun MarkasTools, bukan
+        // kredensial RunningHub (key/list → 412, OpenAPI → 806).
+        const clientKey = String(rawApiKey ?? '')
+          .trim()
+          .replace(/^[•*`'"\s-]+|[•*`'"\s-]+$/g, '')
+          .replace(/^Bearer\s+/i, '')
+          .trim()
+        if (/^MF-[A-Z0-9]/i.test(clientKey)) {
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({
+            ok: false,
+            code: 'MARKASTOOLS_TOKEN',
+            error: 'Token MF-… adalah kunci akun MarkasTools, bukan access token RunningHub. ' +
+              'Hubungkan lewat panel MarkasTools di Providers (butuh cookie sesi ai.markastools.id) — ' +
+              'token ini tidak bisa dipakai langsung ke runninghub.ai.',
+          }))
+          return
+        }
+
+        let apiKey = resolveRunningHubCredential(clientKey)
         const RUNNINGHUB_BASE = 'https://www.runninghub.ai'
+
+        // Token pengguna yang sudah dicabut (412) tidak boleh memblokir
+        // generasi bila server punya token sendiri.
+        if (action !== 'check-balance' && runningHubIsJwt(clientKey)) {
+          const globalToken = runningHubGlobalToken()
+          if (globalToken && globalToken !== clientKey && await rhProxyTokenHealth(clientKey) === 'dead') {
+            console.log('[runninghub-proxy] token pengguna ditolak RunningHub (412) — memakai token server')
+            apiKey = globalToken
+          }
+        }
 
         console.log(`[runninghub-proxy] action=${action}`)
 
         try {
           if (action === 'check-balance') {
+            // Access token (JWT): /uc/openapi/accountStatus hanya menerima API
+            // key dan menolak token → jangan lapor "token tidak valid", baca
+            // paket sesi (kredit gratis + poin harian) milik akun.
+            if (runningHubIsJwt(apiKey)) {
+              const wallet = await rhProxyTokenWallet(apiKey)
+              if (!wallet && await rhProxyTokenHealth(apiKey) === 'dead') {
+                res.writeHead(200, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({
+                  ok: false,
+                  transient: false,
+                  invalidKey: true,
+                  error: 'Access token ditolak RunningHub (412 TOKEN_INVALID) — sesi login sudah tidak berlaku (logout / login ulang / di-rotate). Salin access token baru dari sesi runninghub.ai yang masih login, lalu ganti Key ini di Providers.',
+                  balance: null,
+                  isValidUser: false,
+                  code: 412,
+                }))
+                return
+              }
+              const summary = rhProxyWalletSummary(wallet)
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({
+                ok: true,
+                balance: null,
+                isValidUser: true,
+                keyType: 'Access Token (JWT)',
+                tokenWallet: wallet,
+                message: summary
+                  ? `Access token aktif. Saldo koin RH tidak diekspos lewat access token; ${summary}.`
+                  : 'Access token aktif. RunningHub tidak menampilkan saldo lewat access token — cek saldo hanya untuk API key lama.',
+              }))
+              return
+            }
+
             const r = await fetch(`${RUNNINGHUB_BASE}/uc/openapi/accountStatus`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'User-Agent': 'ArkxMotion/1.0' },
