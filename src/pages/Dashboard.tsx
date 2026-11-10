@@ -7,12 +7,15 @@ import { useAuthStore } from '@/stores/authStore'
 import { calculateStats, DashboardStats } from '@/lib/stats'
 import { adminWhatsappLink } from '@/lib/payment'
 import { checkAllProviderHealth, HEALTH_PROVIDERS, ProviderHealth } from '@/lib/providerHealth'
+import { getAppAuthToken } from '@/lib/cdn'
+import { useToastStore } from '@/stores/toastStore'
 import {
   Video, Image, Zap, Wand2, Route, Key, ArrowRight, Music,
   BarChart3, Target, Clock3, Trophy, Coins, RefreshCw, Loader2,
   CheckCircle2, XCircle, Gauge, ChevronRight, Flame, TrendingUp, Activity,
   Play, Crown, Sparkles, Gift, Headphones, ArrowUpRight, Scissors,
-  HelpCircle, MessageCircle, ArrowUp, BookOpen, Shield, FolderOpen
+  HelpCircle, MessageCircle, ArrowUp, BookOpen, Shield, FolderOpen,
+  Send, X
 } from 'lucide-react'
 
 const STATUS_META: Record<string, { dot: string; label: string; text: string }> = {
@@ -130,11 +133,13 @@ function timeAgo(iso: string): string {
   return `${Math.floor(h / 24)} hr lalu`
 }
 
-const HELP_LINKS = [
+type HelpLink = { label: string; icon: React.ReactNode; href?: string; action?: 'featureRequest' }
+
+const HELP_LINKS: HelpLink[] = [
   { label: 'Pusat Bantuan', icon: <BookOpen className="h-4 w-4" />, href: '/quick-start' },
   { label: 'Top Up & Saldo', icon: <Coins className="h-4 w-4" />, href: '/saldo' },
   { label: 'Hubungi Support', icon: <MessageCircle className="h-4 w-4" />, href: adminWhatsappLink('Halo admin ARKXMotion, saya butuh bantuan') },
-  { label: 'Request Fitur', icon: <Sparkles className="h-4 w-4" />, href: '/plugins' },
+  { label: 'Request Fitur', icon: <Sparkles className="h-4 w-4" />, action: 'featureRequest' },
 ]
 
 export default function DashboardPage() {
@@ -147,6 +152,10 @@ export default function DashboardPage() {
   const [health, setHealth] = useState<Record<string, ProviderHealth>>({})
   const [healthLoading, setHealthLoading] = useState(true)
   const [healthAt, setHealthAt] = useState<number | null>(null)
+  const addToast = useToastStore((s) => s.addToast)
+  const [featureOpen, setFeatureOpen] = useState(false)
+  const [featureText, setFeatureText] = useState('')
+  const [featureSending, setFeatureSending] = useState(false)
 
   const greeting = useMemo(() => {
     const h = new Date().getHours()
@@ -164,6 +173,30 @@ export default function DashboardPage() {
       setHealthAt(Date.now())
     } finally { setHealthLoading(false) }
   }, [])
+
+  const submitFeatureRequest = async () => {
+    const text = featureText.trim()
+    if (text.length < 10) { addToast('Tulis minimal 10 karakter', 'warning'); return }
+    setFeatureSending(true)
+    try {
+      const token = await getAppAuthToken()
+      if (!token) { addToast('Sesi berakhir — login ulang untuk mengirim', 'error'); return }
+      const res = await fetch('/api/feature-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ text }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+      addToast('Request fitur terkirim ke admin', 'success')
+      setFeatureOpen(false)
+      setFeatureText('')
+    } catch (e) {
+      addToast(e instanceof Error ? e.message : 'Gagal mengirim request fitur', 'error')
+    } finally {
+      setFeatureSending(false)
+    }
+  }
 
   useEffect(() => {
     fetchMaintenance()
@@ -522,16 +555,87 @@ export default function DashboardPage() {
                     <span className="text-[10px] font-semibold text-white/70 leading-tight">{h.label}</span>
                   </>
                 )
-                return h.href.startsWith('http') ? (
+                if (h.action === 'featureRequest') {
+                  return (
+                    <button key={h.label} onClick={() => setFeatureOpen(true)} className={cls}>{inner}</button>
+                  )
+                }
+                return h.href?.startsWith('http') ? (
                   <a key={h.label} href={h.href} target="_blank" rel="noopener noreferrer" className={cls}>{inner}</a>
                 ) : (
-                  <button key={h.label} onClick={() => navigate(h.href)} className={cls}>{inner}</button>
+                  <button key={h.label} onClick={() => h.href && navigate(h.href)} className={cls}>{inner}</button>
                 )
               })}
             </CardContent>
           </Card>
         </aside>
       </div>
+
+      {/* Request Fitur — masukan ketik member, masuk ke Notifikasi admin */}
+      {featureOpen && (
+        <div
+          className="fixed inset-0 z-[80] flex items-end justify-center bg-black/70 p-3 backdrop-blur-sm sm:items-center"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Request fitur ARKX Motion Studio"
+          onClick={() => { if (!featureSending) setFeatureOpen(false) }}
+          onKeyDown={(e) => { if (e.key === 'Escape' && !featureSending) setFeatureOpen(false) }}
+        >
+          <div
+            className="w-full max-w-md overflow-hidden rounded-2xl border border-cyan-400/25 bg-[#0B1526] shadow-[0_24px_80px_rgba(0,0,0,0.6)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3 border-b border-white/5 p-4">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-cyan-500/25 to-blue-500/15 text-cyan-300">
+                <Sparkles className="h-4 w-4" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-sm font-bold text-white">Request Fitur ARKX Motion Studio</h3>
+                <p className="mt-0.5 text-[11px] leading-snug text-white/50">Tulis fitur atau gaya yang kamu butuhkan. Masukan langsung masuk ke Notifikasi admin.</p>
+              </div>
+              <button
+                onClick={() => { if (!featureSending) setFeatureOpen(false) }}
+                className="rounded-lg p-1 text-white/40 transition hover:bg-white/5 hover:text-white"
+                aria-label="Tutup"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-4">
+              <textarea
+                autoFocus
+                value={featureText}
+                onChange={(e) => setFeatureText(e.target.value)}
+                rows={5}
+                maxLength={2000}
+                placeholder="Contoh: Tambahkan gaya produk 'Review Video' di ARKX AUTO Studio — durasi 30 detik, subtitle otomatis."
+                className="w-full resize-none rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 text-[13px] text-white placeholder:text-white/25 focus:border-cyan-400/40 focus:outline-none"
+              />
+              <div className="mt-1.5 flex items-center justify-between text-[10px] text-white/40">
+                <span>Minimal 10 karakter</span>
+                <span>{featureText.length}/2000</span>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t border-white/5 p-3">
+              <button
+                onClick={() => setFeatureOpen(false)}
+                disabled={featureSending}
+                className="rounded-xl border border-white/10 px-3.5 py-2 text-xs font-semibold text-white/60 transition hover:bg-white/5 disabled:opacity-40"
+              >
+                Batal
+              </button>
+              <button
+                onClick={submitFeatureRequest}
+                disabled={featureSending || featureText.trim().length < 10}
+                className="flex items-center gap-1.5 rounded-xl brand-gradient px-4 py-2 text-xs font-bold text-black transition hover:opacity-90 disabled:opacity-40"
+              >
+                {featureSending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                Kirim ke Admin
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </PageContent>
   )
 }

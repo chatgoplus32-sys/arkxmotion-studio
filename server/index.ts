@@ -62,6 +62,7 @@ import { authenticateToken, requireAdmin } from './middleware/auth.js'
 import chatgptRoutes from './routes/chatgpt.js'
 import publicDolaRoutes from './routes/publicDola.js'
 import markastoolsRoutes from './routes/markastools.js'
+import featureRequestRoutes from './routes/featureRequests.js'
 
 // .env sudah dimuat server/env.ts (impor pertama), yaitu sebelum modul-modul di
 // atas dievaluasi. Tidak ada pemuatan kedua di sini supaya hanya ada satu sumber
@@ -115,6 +116,7 @@ app.use(express.json({ limit: '50mb' }))
 
 // --- API Routes ---
 app.use('/api/auth', authRoutes)
+app.use('/api/feature-request', featureRequestRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/admin/tokens', adminTokenRoutes)
 app.use('/api/admin/topup', adminTopupRoutes)

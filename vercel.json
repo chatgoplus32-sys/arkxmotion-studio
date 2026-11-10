@@ -39,6 +39,7 @@
     "api/public/runninghub.ts": { "maxDuration": 60 },
     "api/public/r2-upload.ts": { "maxDuration": 60 },
     "api/public/validate-media.ts": { "maxDuration": 30 },
+    "api/feature-request.ts": { "maxDuration": 10 },
     "api/logs/generation.ts": { "maxDuration": 10 }
   },
   "headers": [
