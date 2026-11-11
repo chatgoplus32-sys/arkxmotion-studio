@@ -8,6 +8,7 @@ import MotionControlDemo from '@/components/landing/MotionControlDemo'
 import { DEFAULT_MEMBERSHIP_FEE, DEFAULT_MEMBERSHIP_FEE_ORIGINAL, WA_NUMBER } from '@/lib/membership'
 import { DEFAULT_PRO_FEE } from '@/lib/pro'
 import { isBoosterPackage, NEXABOT_BOOSTER_COMING_SOON } from '@/lib/nexabotWallet'
+import { PROVIDER_CONFIGS, HIDDEN_PROVIDERS } from '@/stores/providerManager'
 
 // Harga provider live dari /api/public/pricing (read-only, tanpa login).
 interface ProviderPrices {
@@ -37,7 +38,6 @@ interface ProviderPrices {
 interface PublicStats {
   users?: number
   videos?: number
-  providers?: number
   /** Kreator yang benar-benar pernah generate (distinct user di log). */
   active_users?: number
   /** Halaman tool dengan generate selesai terbanyak (tanpa data pribadi). */
@@ -89,22 +89,36 @@ const NAV = [
  * src/stores/providerManager.ts). Daftar lama masih 8 provider padahal
  * integrasi sudah jauh lebih banyak — landing terlihat basi.
  */
-const providers = [
-  { name: 'Weavy', dot: '#8b5cf6' },
-  { name: 'Roboneo', dot: '#ec4899' },
-  { name: 'RunningHub', dot: '#22d3ee' },
-  { name: 'CreatePulse', dot: '#3b82f6' },
-  { name: 'NexaBot', dot: '#a3e635' },
-  { name: 'Seavi', dot: '#f97316' },
-  { name: 'Galleri5', dot: '#f59e0b' },
-  { name: 'Leonardo', dot: '#06b6d4' },
-  { name: 'OneOver', dot: '#a78bfa' },
-  { name: 'Framia', dot: '#10b981' },
-  { name: 'Magnific', dot: '#f43f5e' },
-  { name: 'WaveSpeed', dot: '#38bdf8' },
-  { name: 'Shotstack', dot: '#fb923c' },
-  { name: 'Creatomate', dot: '#c084fc' },
+/**
+ * Strip provider diambil langsung dari PROVIDER_CONFIGS (src/stores/
+ * providerManager.ts) supaya tidak pernah basi saat ada provider baru.
+ * Sebelumnya daftar ditulis manual di landing — Freebeat AI baru masuk
+ * tapi tidak tampil, dan angkanya tetap "20".
+ *
+ * 'markastools' dikecualikan: provider ini masih disuspensi (butuh
+ * langganan dulu sebelum bisa dipakai) — lihat MENU_HIDDEN_PROVIDERS di
+ * src/pages/Providers.tsx. Hapus dari sini kalau MarkasTools dihidupkan lagi.
+ */
+const SUSPENDED_PROVIDERS = new Set(['markastools'])
+
+/** Warna titik tiap provider (diputar sesuai urutan agar tetap konsisten). */
+const PROVIDER_DOTS = [
+  '#8b5cf6', '#ec4899', '#22d3ee', '#3b82f6', '#a3e635', '#f97316', '#f59e0b',
+  '#06b6d4', '#a78bfa', '#10b981', '#f43f5e', '#38bdf8', '#fb923c', '#c084fc',
+  '#4ade80', '#e879f9', '#facc15', '#2dd4bf', '#818cf8', '#f472b6',
 ]
+
+const providerEntries = Object.values(PROVIDER_CONFIGS).filter(
+  p => !SUSPENDED_PROVIDERS.has(p.id) && !HIDDEN_PROVIDERS.includes(p.id),
+)
+
+const providers = providerEntries.map((p, i) => ({
+  name: p.name,
+  dot: PROVIDER_DOTS[i % PROVIDER_DOTS.length],
+}))
+
+/** Jumlah provider yang benar-benar terhubung (tidak termasuk yang disuspensi). */
+const PROVIDER_COUNT = providers.length
 
 const quickFeatures = [
   { label: 'AI Video Generator', Icon: Clapperboard, tint: 'text-cyan-300' },
@@ -278,7 +292,7 @@ const buildPricing = (p: MemberPricing): PricingPlan[] => [
 ]
 
 const buildFaqs = (p: MemberPricing) => [
-  { q: 'Apa itu ARKXMotion Studio?', a: 'Platform all-in-one untuk generate video AI. Satu dashboard untuk akses 20 provider — Weavy, Roboneo, RunningHub, CreatePulse, NexaBot, Seavi, Galleri5, Leonardo, OneOver, Framia, Magnific, WaveSpeed, Shotstack, Creatomate dan lainnya — dengan token rotation & smart routing otomatis.' },
+  { q: 'Apa itu ARKXMotion Studio?', a: `Platform all-in-one untuk generate video AI. Satu dashboard untuk akses ${PROVIDER_COUNT} provider — Weavy, Roboneo, RunningHub, CreatePulse, NexaBot, Seavi, Freebeat AI, G5 AI Studio, Leonardo, OneOver, Framia, Magnific, Wavespeed, Shotstack, Creatomate dan lainnya — dengan token rotation & smart routing otomatis.` },
   { q: 'Bagaimana sistem token & credits?', a: 'Saldo CreatePulse, NexaBot, dan Seavi diisi lewat halaman Saldo Layanan. Provider lain (Roboneo, Weavy, Framia, dll.) memakai kunci milikmu sendiri — top up-nya diajukan lewat Top Up Manual dan diverifikasi admin. Sistem cek balance realtime sebelum generate dan auto-fallback ke kunci/token lain jika habis atau error.' },
   { q: 'Apakah bisa bulk generate?', a: 'Bisa. Bulk Fashion mendukung 1 karakter + ratusan outfit sekaligus, parallel processing. Cocok untuk katalog fashion & UGC massal.' },
   { q: 'Apakah ada watermark?', a: 'ARKXMotion Studio tidak menambahkan watermark ke hasil generate. Tool Watermark Remover juga tersedia untuk video dari sumber lain — termasuk fitur Pro.' },
@@ -360,7 +374,7 @@ export default function LandingPage() {
     let alive = true
     fetch('/api/public/stats')
       .then(r => (r.ok ? r.json() : null))
-      .then(d => { if (alive && d?.ok) setStats({ users: d.users, videos: d.videos, providers: d.providers, active_users: d.active_users, top_pages: d.top_pages }) })
+      .then(d => { if (alive && d?.ok) setStats({ users: d.users, videos: d.videos, active_users: d.active_users, top_pages: d.top_pages }) })
       .catch(() => { /* biarkan null */ })
     return () => { alive = false }
   }, [])
@@ -529,11 +543,11 @@ export default function LandingPage() {
                   <>
                     <span className="font-bold text-white/85">{ringkas(stats.videos)} video</span> sudah dibuat
                     {stats?.active_users ? <> oleh <span className="font-bold text-white/85">{stats.active_users} kreator</span></> : null}<br />
-                    <span className="text-[10.5px] text-white/55">{stats.providers ?? 20} provider AI · auto rotation & fallback</span>
+                    <span className="text-[10.5px] text-white/55">{PROVIDER_COUNT} provider AI · auto rotation & fallback</span>
                   </>
                 ) : (
                   <>
-                    <span className="font-bold text-white/85">{stats?.providers ?? 20} provider AI</span> terhubung<br />
+                    <span className="font-bold text-white/85">{PROVIDER_COUNT} provider AI</span> terhubung<br />
                     <span className="text-[10.5px] text-white/55">Auto rotation, load balancing & fallback otomatis</span>
                   </>
                 )}
@@ -636,7 +650,7 @@ export default function LandingPage() {
       <section className="border-y border-white/[0.06] bg-white/[0.015] px-5 py-6 sm:px-6">
         <div className="mx-auto max-w-[1240px]">
           <p className="mb-4 text-center font-mono text-[10px] uppercase tracking-[0.2em] text-white/60 sm:mb-5 sm:text-[11px]">
-            {stats?.providers ?? 20} Provider Terhubung • Auto Rotation • Load Balanced
+            {PROVIDER_COUNT} Provider Terhubung • Auto Rotation • Load Balanced
           </p>
           <div className="flex flex-wrap justify-center gap-1.5 sm:gap-2 md:gap-3">
             {providers.map((p) => (
@@ -892,7 +906,7 @@ export default function LandingPage() {
             {[
               stats?.videos != null && { label: 'Video AI selesai dibuat', value: ringkas(stats.videos) },
               stats?.active_users != null && { label: 'Kreator yang sudah generate', value: String(stats.active_users) },
-              stats?.providers != null && { label: 'Provider AI terhubung', value: String(stats.providers) },
+              { label: 'Provider AI terhubung', value: String(PROVIDER_COUNT) },
               { label: 'Respon support WA', value: '< 1 jam' },
             ].filter(Boolean).map((s) => (
               <div key={s!.label} className={`rounded-2xl ${glass} p-5 text-center transition hover:border-cyan-300/40`}>

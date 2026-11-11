@@ -14,9 +14,6 @@ import db from '../db.js'
 
 const router = Router()
 
-/** Jumlah provider yang terhubung di app (daftar di src/stores/providerManager.ts). */
-const PROVIDER_COUNT = 20
-
 export function buildPublicStats() {
   const hitung = (sql: string): number => {
     try {
@@ -55,7 +52,9 @@ export function buildPublicStats() {
     // Kreator yang benar-benar pernah generate (distinct), bukan sekadar
     // daftar akun — angka ini yang dipakai "kreator aktif".
     active_users: hitung('SELECT COUNT(DISTINCT user_id) AS c FROM generation_logs'),
-    providers: PROVIDER_COUNT,
+    // Jumlah provider sengaja TIDAK di sini: daftarnya hidup di client
+    // (PROVIDER_CONFIGS) dan berubah tiap ada provider baru — server
+    // tidak punya akses ke file itu, jadi angka di server pasti basi.
     top_pages: topPages,
   }
 }
