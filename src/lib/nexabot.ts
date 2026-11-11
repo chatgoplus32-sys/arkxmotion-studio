@@ -308,10 +308,14 @@ function normalizeAuth(auth: NexabotAuth | string | undefined): NexabotAuth {
 }
 
 function fillAuthFromStorage(auth: NexabotAuth): NexabotAuth {
-  // Mode master sengaja TIDAK mengisi kredensial dari penyimpanan: kalau key
-  // pribadi ikut terkirim, relay akan memakainya dan jalur kunci server tidak
-  // pernah dipakai.
-  if (auth.apiKey || auth.cookies || auth.master || auth.ticket) return auth
+  // Mode master/ticket sengaja TIDAK mengisi kredensial dari penyimpanan: kalau
+  // key pribadi ikut terkirim, relay akan memakainya dan jalur kunci server
+  // tidak pernah dipakai.
+  //
+  // Tapi master/ticket TIDAK cukup untuk operasi baca (mis. daftar suara):
+  // relay butuh API key atau cookie untuk mengidentifikasi pengguna. Jika
+  // hanya master/ticket yang tersedia, ambil kredensial dari penyimpanan.
+  if (auth.apiKey || auth.cookies) return auth
   return { apiKey: getNexabotApiKey(), cookies: getNexabotCookies() }
 }
 
@@ -1397,6 +1401,14 @@ export interface NexabotGptImageParams {
   aspect?: NexabotGptImageAspect
   /** Data URI (data:image/...;base64,...) — maksimum 10, mengikuti halaman web. */
   references?: string[]
+  /**
+   * Id model image nexabot.id (update 11 Nov 2026): nano_banana_2,
+   * nano_banana_2_lite, nano_banana_pro, nano_banana, gpt_image_2,
+   * gpt_image_2_5_flare, gpt_image_2_5_sunburst, mai_image_2_6_flash,
+   * mai_image_2_6, mai_image_2_5, mai_image_2_5_pro — semuanya 0,1 kredit.
+   * Kosong = perilaku lama (GPT Image 2.5 bawaan halaman web).
+   */
+  model?: string
 }
 
 export interface NexabotGptImageSubmitResult {
@@ -1461,6 +1473,9 @@ export async function submitNexabotGptImage(
     aspect: params.aspect ?? 2,
     references: (params.references || []).slice(0, GPT_IMAGE_REFERENCES_MAX),
   }
+  // Model dipilih user (11 model 11 Nov 2026). Tidak dikirim saat kosong supaya
+  // request model lama tidak berubah sama sekali.
+  if (params.model) body.model = params.model
 
   console.log(`[nexabot] GPT Image submit (${body.aspect}, refs: ${body.references.length})`)
 
@@ -1877,4 +1892,126 @@ export async function submitNexabotNexadance(
       etaSeconds: data.eta_seconds,
     }
   }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// CLONE VOICE + ELEVENLABS (kontrak nexabot.id/voice-generator)
+// ═══════════════════════════════════════════════════════════════════
+//
+// Kontrak dibaca dari bundle halaman upstream (11 Nov 2026):
+//   GET  /api/generators/voices      → { voices: [{ id, name, provider }] }
+//   POST /api/generators/voice/clone → multipart: files, name, gender
+//   POST /api/generators/voice       → { text, speakerId, languageCode, speed }
+// Relay kita meneruskan ke path itu lewat /api/public/nexabot/*.
+
+export interface NexabotVoiceOption {
+  id: string
+  name: string
+  provider: string
+}
+
+/** Daftar voice siap pakai (ElevenLabs / MiniMax / Microsoft) dari upstream. */
+export async function fetchNexabotVoices(
+  authOverride?: NexabotAuth | string,
+): Promise<NexabotVoiceOption[]> {
+  const auth = fillAuthFromStorage(normalizeAuth(authOverride))
+  const res = await fetch(`${NEXABOT_BASE}/voices`, {
+    headers: { ...authHeaders(auth), ...(await appAuthHeadersFresh()) },
+  })
+  const text = await res.text().catch(() => '')
+  let data: any
+  try { data = JSON.parse(text) } catch { data = null }
+  if (!res.ok || !data) {
+    throw new Error(jsonErrorMessage(text) || `NexaBot HTTP ${res.status}: ${text.slice(0, 200)}`)
+  }
+  const daftar = Array.isArray(data.voices) ? data.voices : []
+  return daftar
+    .map((v: any) => ({
+      id: String(v.id || v.speakerId || ''),
+      name: String(v.name || v.displayName || ''),
+      provider: String(v.provider || 'ElevenLabs'),
+    }))
+    .filter((v: NexabotVoiceOption) => v.id && v.name)
+}
+
+export interface NexabotVoiceCloneParams {
+  file: File | Blob
+  name: string
+  gender: 'female' | 'male' | string
+}
+
+/** Clone voice dari sample audio (multipart, sama seperti halaman upstream). */
+export async function submitNexabotVoiceClone(
+  params: NexabotVoiceCloneParams,
+  authOverride?: NexabotAuth | string,
+): Promise<NexabotVoiceOption> {
+  const auth = fillAuthFromStorage(normalizeAuth(authOverride))
+  const fd = new FormData()
+  const namaFile = params.file instanceof File ? params.file.name : 'sample.wav'
+  fd.append('files', params.file, namaFile)
+  fd.append('name', params.name)
+  fd.append('gender', params.gender)
+
+  const res = await fetch(`${NEXABOT_BASE}/voice-clone`, {
+    method: 'POST',
+    // Content-Type sengaja tidak di-set: browser menambahkan boundary-nya.
+    headers: { ...authHeaders(auth), ...(await appAuthHeadersFresh()) },
+    body: fd,
+  })
+
+  const text = await res.text().catch(() => '')
+  let data: any
+  try { data = JSON.parse(text) } catch { data = null }
+  if (!res.ok || !data || data.ok === false) {
+    throw new Error(data?.error || jsonErrorMessage(text) || `Clone voice gagal (HTTP ${res.status})`)
+  }
+  const v = data.voice || data
+  const id = String(v.id || v.speakerId || '')
+  if (!id) throw new Error('Clone voice selesai tanpa speaker id')
+  return {
+    id,
+    name: String(v.name || v.displayName || params.name),
+    provider: String(v.provider || 'ElevenLabs'),
+  }
+}
+
+export interface NexabotElevenLabsParams {
+  text: string
+  /** Id voice upstream (hasil clone atau dari daftar /voices). */
+  speakerId: string
+  languageCode?: string
+}
+
+/** Teks → suara ElevenLabs. Mengembalikan URL audio hasil. */
+export async function submitNexabotElevenLabs(
+  params: NexabotElevenLabsParams,
+  authOverride?: NexabotAuth | string,
+): Promise<string> {
+  const auth = fillAuthFromStorage(normalizeAuth(authOverride))
+  const res = await fetch(`${NEXABOT_BASE}/elevenlabs`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(auth),
+      ...(await appAuthHeadersFresh()),
+    },
+    body: JSON.stringify({
+      text: params.text,
+      speakerId: params.speakerId,
+      languageCode: params.languageCode || 'id-ID',
+      speed: 1,
+    }),
+  })
+
+  const text = await res.text().catch(() => '')
+  let data: any
+  try { data = JSON.parse(text) } catch { data = null }
+  if (!res.ok || !data || data.ok === false) {
+    throw new Error(data?.error || jsonErrorMessage(text) || `Generate ElevenLabs gagal (HTTP ${res.status})`)
+  }
+  const hasil = data.result || data
+  const url = String(hasil.audioUrl || hasil.audio_url || hasil.url || '')
+  if (!url) throw new Error('Generate ElevenLabs selesai tanpa URL audio')
+  return url
 }
