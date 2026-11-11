@@ -1412,7 +1412,9 @@ export default function ProvidersPage() {
         }
         // Endpoint saldo tidak menerima API key CLI — kunci tetap dipakai
         // langsung saat generate, jadi anggap valid tanpa saldo.
-        return { state: 'active', detail: 'Kunci tersimpan (saldo tidak bisa dicek via API key)' }
+        return result.ok
+          ? { state: 'active', detail: 'Kunci valid — saldo akan ditampilkan saat generate' }
+          : { state: 'invalid', detail: result.error || 'Gagal memuat saldo' }
       } catch {
         return { state: 'failed', detail: 'Error checking token' }
       }

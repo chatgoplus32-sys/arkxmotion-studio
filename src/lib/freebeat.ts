@@ -267,39 +267,82 @@ function sleep(ms: number): Promise<void> {
  * Saldo kredit akun freebeat (best-effort): endpoint web /v1/user/credits/
  * findCredits belum dijamin menerima API key CLI — kalau ditolak (401/403),
  * panggilan ini gagal lembut dan UI hanya menyembunyikan saldo.
+ *
+ * Dicoba beberapa bentuk body (kosong / {}) karena dokumentasi resmi untuk
+ * endpoint ini belum tersedia. Saldo dicari secara rekursif di seluruh
+ * data respons (key: credits, credit, balance, point, dll.).
  */
 export async function fetchFreebeatCredits(key: string): Promise<{ ok: boolean; credits?: number; error?: string }> {
-  try {
-    const res = await fetch(`${FREEBEAT_PROXY}/v1/user/credits/findCredits`, {
-      method: 'POST',
-      headers: freebeatHeaders(key),
-      body: JSON.stringify({}),
-    })
-    const text = await res.text()
-    let json: any
-    try { json = JSON.parse(text) } catch {
-      return { ok: false, error: `HTTP ${res.status}` }
+  const bodies: any[] = [{}, { uid: '' }, { userId: '' }]
+  let lastText = ''
+  for (const body of bodies) {
+    try {
+      const res = await fetch(`${FREEBEAT_PROXY}/v1/user/credits/findCredits`, {
+        method: 'POST',
+        headers: freebeatHeaders(key),
+        body: JSON.stringify(body),
+      })
+      lastText = await res.text()
+      let json: any
+      try { json = JSON.parse(lastText) } catch {
+        continue // coba body berikutnya
+      }
+      if (res.status === 401 || res.status === 403) {
+        return { ok: false, error: json?.msg || 'API key tidak valid (401/403)' }
+      }
+      if (json?.code != null && json.code !== 0) {
+        continue // coba body berikutnya
+      }
+      const d = json?.data ?? json
+      const credits = pickCreditNumber(d)
+      if (credits != null) return { ok: true, credits }
+      // kode 0 tapi format belum dikenal — lanjut coba body lain
+    } catch {
+      continue
     }
-    if (res.status === 401 || res.status === 403 || (json?.code != null && json.code !== 0)) {
-      return { ok: false, error: json?.msg || `HTTP ${res.status}` }
-    }
-    const d = json?.data ?? json
-    const credits = pickCreditNumber(d)
-    if (credits == null) return { ok: false, error: 'format saldo tidak dikenali' }
-    return { ok: true, credits }
-  } catch (err: any) {
-    return { ok: false, error: err?.message || 'gagal memuat saldo' }
   }
+  // Semua body coba gagal menemukan format saldo yang dikenali.
+  if (lastText) {
+    return { ok: false, error: 'format saldo tidak dikenali (respons upstream non-numerik)' }
+  }
+  return { ok: false, error: 'gagal memuat saldo' }
 }
 
-function pickCreditNumber(data: any): number | null {
+function pickCreditNumber(data: any, depth = 0): number | null {
+  if (depth > 6) return null
   if (data == null) return null
   if (typeof data === 'number') return data
-  for (const k of ['credits', 'credit', 'balance', 'remaining', 'total', 'remainCredits', 'availableCredits']) {
-    if (typeof data[k] === 'number') return data[k]
-    if (data[k] != null && typeof data[k] === 'object') {
-      const nested = pickCreditNumber(data[k])
-      if (nested != null) return nested
+  if (typeof data === 'string') {
+    const n = Number(data.trim())
+    if (!isNaN(n) && n >= 0) return n
+    return null
+  }
+  if (Array.isArray(data)) {
+    for (const item of data) {
+      const found = pickCreditNumber(item, depth + 1)
+      if (found != null) return found
+    }
+    return null
+  }
+  if (typeof data === 'object') {
+    const creditKeys = [
+      'credits', 'credit', 'balance', 'remaining', 'total', 'remainCredits',
+      'availableCredits', 'creditBalance', 'availableBalance', 'totalCredits',
+      'creditsTotal', 'userCredits', 'accountCredits', 'point', 'points',
+      'freeCredit', 'paidCredit', 'currentCredits', 'creditAmount',
+    ]
+    for (const k of creditKeys) {
+      if (k in data) {
+        const v = data[k]
+        const found = pickCreditNumber(v, depth + 1)
+        if (found != null) return found
+      }
+    }
+    // Jika objek tidak punya kunci di atas, telusuri semua properti secara rekursif.
+    for (const k of Object.keys(data)) {
+      if (creditKeys.includes(k)) continue
+      const found = pickCreditNumber(data[k], depth + 1)
+      if (found != null) return found
     }
   }
   return null
