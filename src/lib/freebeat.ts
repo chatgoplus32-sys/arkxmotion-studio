@@ -177,7 +177,8 @@ export async function createFreebeatImageBatch(
   item: FreebeatBatchItem,
   opts: { onLog?: (msg: string) => void; maxRetries?: number } = {},
 ): Promise<FreebeatBatchCreateResult> {
-  const maxRetries = opts.maxRetries ?? 3
+  const maxRetries = opts.maxRetries ?? 6
+  const retryDelays = [5, 10, 15, 20, 25, 30] // detik
   let lastErr: any = null
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
@@ -190,9 +191,9 @@ export async function createFreebeatImageBatch(
       if (res.status === 429 || res.status === 502 || res.status === 503 || res.status === 504) {
         lastErr = new Error(`HTTP ${res.status} — ${text.slice(0, 120)}`)
         if (attempt < maxRetries) {
-          const delay = 2000 * (attempt + 1)
-          opts.onLog?.(`⏳ Rate limited (HTTP ${res.status}) — coba ulang dalam ${delay / 1000}s...`)
-          await sleep(delay)
+          const delay = retryDelays[Math.min(attempt, retryDelays.length - 1)]
+          opts.onLog?.(`⏳ Rate limited (HTTP ${res.status}) — coba ulang dalam ${delay}s...`)
+          await sleep(delay * 1000)
           continue
         }
         throw lastErr
@@ -227,31 +228,50 @@ export async function createFreebeatImageBatch(
 
 /** Poll status batch (sekali panggil — loop ada di pemanggil). */
 export async function queryFreebeatBatch(key: string, batchId: string, serialNo?: string | null): Promise<FreebeatBatchQuery> {
-  const res = await fetch(`${FREEBEAT_PROXY}/v1/ai/cli/queryBatch`, {
-    method: 'POST',
-    headers: freebeatHeaders(key),
-    body: JSON.stringify(serialNo ? { batchId, serialNo } : { batchId }),
-  })
-  const text = await res.text()
-  if (res.status === 429 || res.status === 502 || res.status === 503 || res.status === 504) {
-    throw new Error(`HTTP ${res.status} — ${text.slice(0, 120)}`)
+  const retryDelays = [5, 10, 15, 20, 25, 30] // detik
+  let lastErr: any = null
+  for (let attempt = 0; attempt <= retryDelays.length; attempt++) {
+    try {
+      const res = await fetch(`${FREEBEAT_PROXY}/v1/ai/cli/queryBatch`, {
+        method: 'POST',
+        headers: freebeatHeaders(key),
+        body: JSON.stringify(serialNo ? { batchId, serialNo } : { batchId }),
+      })
+      const text = await res.text()
+      if (res.status === 429 || res.status === 502 || res.status === 503 || res.status === 504) {
+        lastErr = new Error(`HTTP ${res.status} — ${text.slice(0, 120)}`)
+        if (attempt < retryDelays.length) {
+          const delay = retryDelays[Math.min(attempt, retryDelays.length - 1)]
+          await sleep(delay * 1000)
+          continue
+        }
+        throw lastErr
+      }
+      const data = await unwrapEnvelope(res, 'Query batch', text)
+      const items = (Array.isArray(data?.items) ? data.items : []).map((raw: any) => ({
+        serialNo: String(raw?.serialNo ?? ''),
+        status: String(raw?.status ?? '').toLowerCase(),
+        usedCredits: raw?.usedCredits ?? 0,
+        errorCode: raw?.errorCode ?? null,
+        errorMessage: raw?.errorMessage ?? null,
+        imageUrl: raw?.imageUrl ?? (Array.isArray(raw?.editImages) ? raw.editImages[0] : null) ?? null,
+      })) as FreebeatBatchQueryItem[]
+      let status: FreebeatBatchQuery['status'] = 'unknown'
+      if (items.length === 0) status = 'unknown'
+      else if (items.every((i) => DONE_STATUSES.includes(i.status))) status = 'completed'
+      else if (items.every((i) => FAIL_STATUSES.includes(i.status))) status = 'failed'
+      else if (items.some((i) => FAIL_STATUSES.includes(i.status))) status = 'partial_failed'
+      else status = 'running'
+      return { batchId: String(data?.batchId ?? batchId), status, items }
+    } catch (err: any) {
+      lastErr = err
+      if (!/HTTP (429|502|503|504)/.test(err?.message || '')) {
+        throw err
+      }
+      if (attempt >= retryDelays.length) throw lastErr
+    }
   }
-  const data = await unwrapEnvelope(res, 'Query batch', text)
-  const items = (Array.isArray(data?.items) ? data.items : []).map((raw: any) => ({
-    serialNo: String(raw?.serialNo ?? ''),
-    status: String(raw?.status ?? '').toLowerCase(),
-    usedCredits: raw?.usedCredits ?? 0,
-    errorCode: raw?.errorCode ?? null,
-    errorMessage: raw?.errorMessage ?? null,
-    imageUrl: raw?.imageUrl ?? (Array.isArray(raw?.editImages) ? raw.editImages[0] : null) ?? null,
-  })) as FreebeatBatchQueryItem[]
-  let status: FreebeatBatchQuery['status'] = 'unknown'
-  if (items.length === 0) status = 'unknown'
-  else if (items.every((i) => DONE_STATUSES.includes(i.status))) status = 'completed'
-  else if (items.every((i) => FAIL_STATUSES.includes(i.status))) status = 'failed'
-  else if (items.some((i) => FAIL_STATUSES.includes(i.status))) status = 'partial_failed'
-  else status = 'running'
-  return { batchId: String(data?.batchId ?? batchId), status, items }
+  throw lastErr || new Error('Gagal query batch setelah beberapa percobaan')
 }
 
 /**
