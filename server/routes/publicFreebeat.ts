@@ -1,4 +1,10 @@
-import { Router, Request, Response } from 'express'
+// `Response` di bawah dipakai sebagai NILAI (new Response(...)) untuk
+// meneruskan response dari fetch global. Kalau `Response` di-import sebagai
+// nilai dari express, import itu menimpa global dan esbuild tidak boleh
+// meng-elide-nya -> server crash saat start ("express does not provide an
+// export named 'Response'"). Karena itu tipe express di-import type-only.
+import { Router } from 'express'
+import type { Request, Response } from 'express'
 import { describeFetchError } from '../lib/fetchTimeout.js'
 
 // ── Relay Freebeat AI (pass-through API key milik user) ─────────────────────
@@ -36,24 +42,30 @@ async function freebeatFetch(upstreamPath: string, body: Uint8Array | undefined,
     {
       headers: {
         'Authorization': `Bearer ${key}`,
+        'token': key,
+        'udt': key,
+        'X-Platform-Type': 'web',
         'Content-Type': 'application/json',
         'Accept': 'application/json, text/plain, */*',
         'Origin': 'https://freebeat.ai',
         'Referer': 'https://freebeat.ai/',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       },
-      label: 'Bearer',
+      label: 'Bearer+token+udt',
     },
     {
       headers: {
         'Authorization': key,
+        'token': key,
+        'udt': key,
+        'X-Platform-Type': 'web',
         'Content-Type': 'application/json',
         'Accept': 'application/json, text/plain, */*',
         'Origin': 'https://freebeat.ai',
         'Referer': 'https://freebeat.ai/',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       },
-      label: 'raw',
+      label: 'raw+token+udt',
     },
   ]
 
