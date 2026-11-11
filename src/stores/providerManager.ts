@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { RHTokenWallet } from '@/lib/runninghub'
 
-export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'runninghub' | 'createpulse' | 'framia' | 'firefly' | 'leonardo' | 'gemini' | 'openai' | 'shotstack' | 'creatomate' | 'galleri5' | 'oneover' | 'genspark' | 'riverside' | 'nexabot' | 'seavi' | 'markastools'
+export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'runninghub' | 'createpulse' | 'framia' | 'firefly' | 'leonardo' | 'gemini' | 'openai' | 'shotstack' | 'creatomate' | 'galleri5' | 'oneover' | 'genspark' | 'riverside' | 'nexabot' | 'seavi' | 'markastools' | 'freebeat'
 
 export const HIDDEN_PROVIDERS: ProviderId[] = []
 
@@ -241,6 +241,16 @@ export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
     minCredits: 0,
     supportsBalance: false,
   },
+  freebeat: {
+    id: 'freebeat',
+    name: 'Freebeat AI',
+    icon: '🍌',
+    description: 'Freebeat AI via freebeat.ai — 31 model gambar: Nano Banana 2, Z-Image Turbo, Kling Image V3, Qwen, Wan, Seedream, Flux, GPT-Image, dll. Kredit dipotong langsung di akun freebeat.',
+    keyPlaceholder: 'Paste your Freebeat API key...',
+    keyFormat: 'API key dari profil akun freebeat.ai (sidebar → API)',
+    minCredits: 0,
+    supportsBalance: false,
+  },
 }
 
 function getDefaultMaintenance(): Record<ProviderId, MaintenanceInfo> {
@@ -265,6 +275,7 @@ function getDefaultMaintenance(): Record<ProviderId, MaintenanceInfo> {
     nexabot: { isMaintenance: false, message: '' },
     seavi: { isMaintenance: false, message: '' },
     markastools: { isMaintenance: false, message: '' },
+    freebeat: { isMaintenance: false, message: '' },
   }
 }
 
@@ -380,6 +391,7 @@ function loadKeysFromStorage(): Record<ProviderId, ProviderKey[]> {
     nexabot: [],
     seavi: [],
     markastools: [],
+    freebeat: [],
   }
   const validIds = Object.keys(defaults) as string[]
 

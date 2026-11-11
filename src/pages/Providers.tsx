@@ -54,6 +54,7 @@ import { checkFireflyBalance } from '@/lib/firefly'
 import { parseNexabotCookieInput, parseNexabotApiKeyInput } from '@/lib/nexabot'
 import { NEXABOT_CHECK_TIMEOUT_MS } from '@/lib/nexabot-constants'
 import { fetchSeaviBalance } from '@/lib/seavi'
+import { fetchFreebeatCredits } from '@/lib/freebeat'
 import { refreshNexabotSessionMonitor } from '@/lib/nexabotSessionMonitor'
 import { NEXABOT_PRICE_FALLBACK } from '@/lib/nexabotWallet'
 import { checkGalleri5Balance, isGalleri5TokenError } from '@/lib/galleri5'
@@ -75,6 +76,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   nexabot: '#00D4AA',
   seavi: '#7C6FE8',
   markastools: '#7fd3ff',
+  freebeat: '#F5C542',
 }
 
 /**
@@ -122,6 +124,7 @@ const PROVIDER_LIST = [
   { key: 'seavi', label: 'Seavi Labs', desc: 'Video & image generation (Seedance 2.5 Multi, Kling 3, Motion Control) via api.seavilabs.site — API key (sea-...), saldo token bersama.' },
   { key: 'nexabot', label: 'NexaBot', desc: 'NexaBot AI via nexabot.id – Google Omni 1.2 (text, image & video ref). Member cukup top up saldo atau Paket Unlimited; generate memakai kunci server, tanpa API key.' },
   { key: 'markastools', label: 'MarkasTools', desc: 'MarkasTools via ai.markastools.id — Motion Control MarkasFlow. Token akun MF- (MarkasKeyTool) didaftarkan sebagai akun "Markasflow", lalu dipakai otomatis (rotasi oleh MarkasTools). Butuh langganan MarkasTools + cookie session.' },
+  { key: 'freebeat', label: 'Freebeat AI', desc: '31 model gambar (Nano Banana 2, Z-Image Turbo, Kling Image V3, Qwen, Wan, Seedream, Flux, GPT-Image) via freebeat.ai — API key dari profil akun, kredit dipotong langsung di akun freebeat.' },
 ] as const
 
 const MENU_HIDDEN_PROVIDERS = [
@@ -381,6 +384,18 @@ const TOKEN_GUIDE: Record<string, {
       { text: 'Lalu isi panel “Session Login MarkasTools (cookie)” di bawah: login ai.markastools.id di browser → DevTools (F12) → tab Network → klik request /api/me → Headers → salin value header "Cookie" → paste ke panel.' },
     ],
     tip: 'MarkasTools TIDAK punya API key publik — semua endpointnya memakai session cookie login (email/Google), jadi jalur generate di ARKXMotion diteruskan lewat relay dengan cookie kamu. Token MF-… bukan API key RunningHub: ia hanya dikenal server MarkasTools sebagai kunci akun pool mereka ("format MF-… hasil MarkasKeyTool dari seller resmi"). Model Motion Control: MarkasFlow Motion HD/V2.5, Markas H3 Studio, Kling 2.6/V3, Seedance 2.0. Cookie bisa kedaluwarsa: kalau muncul error session, login ulang di ai.markastools.id dan paste cookie baru.',
+  },
+  freebeat: {
+    url: 'https://freebeat.ai/app',
+    urlLabel: 'freebeat.ai',
+    prefix: 'API key (tanpa prefix khusus)',
+    steps: [
+      { text: 'Login akun freebeat Anda di freebeat.ai/app (kredit dipotong langsung di akun ini).' },
+      { text: 'Buka sidebar app → menu API (halaman MCP & CLI).', link: { url: 'https://freebeat.ai/mcp', label: 'freebeat.ai/mcp' } },
+      { text: 'Buat API key baru → copy → paste ke input di samping.' },
+      { text: 'Klik Cek Token untuk melihat sisa kredit (best-effort).' },
+    ],
+    tip: 'Freebeat dipakai di halaman Edit Image dengan 31 model gambar (Nano Banana 2/Pro, Z-Image Turbo, Kling Image V3, Qwen, Wan, Seedream 5.0, Flux, GPT-Image, dll). Setiap generate memotong kredit akun freebeat upstream — app ini tidak menagih saldo lokal (Z-Image Turbo termurah: 3 kredit; Nano Banana 2: 23; Nano Banana Pro: 46). 500 kredit gratis saat daftar; top up paket di freebeat.ai/pricing.',
   },
 }
 function maskKey(key: string): string {
@@ -1126,6 +1141,7 @@ export default function ProvidersPage() {
       riverside: 'riverside',
       nexabot: 'nexabot',
       seavi: 'seavi',
+      freebeat: 'freebeat',
     }
     const providerId = providerMap[selectedProvider]
     return providerId ? isProviderMaintenance(providerId) : false
@@ -1383,6 +1399,21 @@ export default function ProvidersPage() {
   }, [savedKeys, keys, selectedProvider, removeKey])
 
   const handleCheckKey = useCallback(async (key: string) => {
+    if (selectedProvider === 'freebeat') {
+      try {
+        const result = await fetchFreebeatCredits(key)
+        if (result.ok && result.credits != null) {
+          return result.credits > 0
+            ? { state: 'active', balance: result.credits, detail: `Kredit: ${result.credits}` }
+            : { state: 'empty', balance: 0, detail: 'Kredit: 0 — habis' }
+        }
+        // Endpoint saldo tidak menerima API key CLI — kunci tetap dipakai
+        // langsung saat generate, jadi anggap valid tanpa saldo.
+        return { state: 'active', detail: 'Kunci tersimpan (saldo tidak bisa dicek via API key)' }
+      } catch {
+        return { state: 'failed', detail: 'Error checking token' }
+      }
+    }
     if (selectedProvider === 'seavi') {
       try {
         const result = await fetchSeaviBalance(key)

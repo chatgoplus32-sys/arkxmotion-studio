@@ -175,6 +175,7 @@ export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
   // lewat halaman Providers (session + token MF-…). Daftar model ditambah
   // begitu submit-nya dipasang ke halaman generate.
   markastools: [],
+  freebeat: [],
 }
 
 export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; label: string; mult: number; duration: number; cr?: number; resolution?: string; sound?: string; sizeTier?: string }>>> = {
@@ -717,6 +718,7 @@ export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: s
   // MarkasTools belum dipasang ke halaman Image-to-Video (submit-nya lewat
   // /api/order/generate — dipasang bersama lib markastools.ts).
   markastools: {},
+  freebeat: {},
 }
 
 export const CP_PRICES: Record<string, number> = {

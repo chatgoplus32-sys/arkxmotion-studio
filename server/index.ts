@@ -46,6 +46,7 @@ import publicShotstackRoutes from './routes/publicShotstack.js'
 import publicCreatomateRoutes from './routes/publicCreatomate.js'
 import publicOneoverRoutes from './routes/publicOneover.js'
 import publicGensparkRoutes from './routes/publicGenspark.js'
+import publicFreebeatRoutes from './routes/publicFreebeat.js'
 import publicGensparkUploadRoutes from './routes/publicGensparkUpload.js'
 import publicRunninghubRoutes from './routes/publicRunninghub.js'
 import publicWeavyRoutes from './routes/publicWeavy.js'
@@ -150,6 +151,7 @@ app.use('/api/public/shotstack', publicShotstackRoutes)
 app.use('/api/public/creatomate', publicCreatomateRoutes)
 app.use('/api/public/oneover', publicOneoverRoutes)
 app.use('/api/public/genspark', publicGensparkRoutes)
+app.use('/api/public/freebeat', publicFreebeatRoutes)
 app.use('/api/public/genspark-upload', publicGensparkUploadRoutes)
 app.use('/api/public/runninghub', publicRunninghubRoutes)
 app.use('/api/public/weavy', publicWeavyRoutes)

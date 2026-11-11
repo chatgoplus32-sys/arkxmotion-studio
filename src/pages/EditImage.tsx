@@ -9,6 +9,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { withTokenRotation } from '@/lib/tokenRotation'
 import { submitRunningHubImageEdit, pollRunningHubTask } from '@/lib/runninghub'
 import { SEAVI_IMAGE_MODELS, buildSeaviPayload, generateSeaviImage, fetchSeaviBalance } from '@/lib/seavi'
+import { FREEBEAT_IMAGE_MODELS, buildFreebeatImageItem, createFreebeatImageBatch, pollFreebeatBatch, getFreebeatModel } from '@/lib/freebeat'
 import { chargeSeaviWallet, refundSeaviWallet, fetchSeaviWallet } from '@/lib/seaviWallet'
 import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, nexabotRemainingLabel, nexabotFreeForModel, nexabotPreferServerKey, NEXABOT_PRICE_FALLBACK, type NexabotWallet } from '@/lib/nexabotWallet'
 import { formatRp } from '@/lib/payment'
@@ -16,7 +17,7 @@ import { normalizeImage } from '@/lib/roboneo'
 import { addBgLog, getLogs, addResult, removeResult, startBackgroundPolling, persistResultToR2, clearLogs as clearBgLogs, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
 import { loadVideoBlob } from '@/lib/videoStorage'
 
-type EditProvider = 'riverside' | 'nexabot' | 'runninghub' | 'seavi'
+type EditProvider = 'riverside' | 'nexabot' | 'runninghub' | 'seavi' | 'freebeat'
 
 const SEAVI_IMAGE_UI_MODELS = [
   { value: 'sv:gpt_image_2_server15', label: 'GPT Image 2 · S15 (Seavi)', cr: 1, apiModel: 'gpt_image_2_server15' },
@@ -33,6 +34,7 @@ const PROVIDER_OPTIONS: Array<{ value: EditProvider; label: string; icon: string
   { value: 'riverside', label: 'Riverside', icon: '🎙️' },
   { value: 'runninghub', label: 'RunningHub (Kontext)', icon: '🖌️' },
   { value: 'seavi', label: 'Seavi Labs', icon: '🌌' },
+  { value: 'freebeat', label: 'Freebeat AI', icon: '🍌' },
 ]
 
 const RIVERSIDE_IMAGE_MODELS = [
@@ -53,11 +55,21 @@ const RUNNINGHUB_IMAGE_MODELS = [
   { value: 'rh:kontext-edit', label: 'FLUX Kontext Edit', cr: 0, apiModel: 'kontext-edit' },
 ]
 
+// Freebeat: seluruh katalog live (31 model) — kredit dipotong langsung di
+// akun freebeat upstream (user paste API key sendiri), tanpa wallet lokal.
+const FREEBEAT_UI_MODELS = FREEBEAT_IMAGE_MODELS.map((m) => ({
+  value: `fb:${m.id}`,
+  label: m.label,
+  cr: 0,
+  apiModel: m.id,
+}))
+
 const ALL_MODELS: Record<EditProvider, typeof RIVERSIDE_IMAGE_MODELS> = {
   riverside: RIVERSIDE_IMAGE_MODELS,
   nexabot: NEXABOT_IMAGE_MODELS,
   runninghub: RUNNINGHUB_IMAGE_MODELS,
   seavi: SEAVI_IMAGE_UI_MODELS,
+  freebeat: FREEBEAT_UI_MODELS,
 }
 
 const PROVIDER_LABEL: Record<EditProvider, string> = {
@@ -65,6 +77,7 @@ const PROVIDER_LABEL: Record<EditProvider, string> = {
   riverside: 'Riverside',
   runninghub: 'RunningHub (Kontext)',
   seavi: 'Seavi Labs',
+  freebeat: 'Freebeat AI',
 }
 
 const RIVERSIDE_PLAYGROUND_URL = 'https://riverside.com/dashboard/studios/surahs-studio-2hkky/playground?mode=image'
@@ -124,6 +137,8 @@ export default function EditImagePage() {
   const [gptAspect, setGptAspect] = useState<1 | 2 | 5>(2)
   // Seavi: rasio per model (string '9:16' dst), '' = default model.
   const [seaviAspect, setSeaviAspect] = useState('')
+  // Freebeat: rasio via parameter `size` — hanya untuk model yang menerimanya.
+  const [freebeatAspect, setFreebeatAspect] = useState('')
   const [refFiles, setRefFiles] = useState<File[]>([])
   const [refUrls, setRefUrls] = useState<string[]>([])
   const refPickerRef = useRef<HTMLInputElement | null>(null)
@@ -131,6 +146,7 @@ export default function EditImagePage() {
   const handleModelChange = (v: string) => {
     setModel(v)
     setSeaviAspect('')
+    setFreebeatAspect('')
   }
   const [prompt, setPrompt] = useState('')
   const [generating, setGenerating] = useState(false)
@@ -145,6 +161,13 @@ export default function EditImagePage() {
   const isSeavi = provider === 'seavi'
   const seaviSpec = isSeavi && currentModel ? SEAVI_IMAGE_MODELS[(currentModel as any).apiModel || ''] : undefined
   const seaviAspects = seaviSpec?.aspects || []
+  const isFreebeat = provider === 'freebeat'
+  const freebeatSpec = isFreebeat && currentModel ? getFreebeatModel((currentModel as any).apiModel) : undefined
+  const freebeatAspects = freebeatSpec?.aspects || []
+  // Rasio tampil untuk model yang menerimanya (Seavi / Freebeat).
+  const aspectOptions = isSeavi ? seaviAspects : freebeatAspects
+  const aspectValue = isSeavi ? seaviAspect : freebeatAspect
+  const setAspectValue = (v: string) => { if (isSeavi) setSeaviAspect(v); else setFreebeatAspect(v) }
   const providerKeyCount = keys[provider]?.length || 0
   const hasActiveKey = keys[provider]?.some((k) => k.status !== 'invalid' && k.status !== 'expired') || false
   // Kunci NexaBot milik server: member yang punya saldo/Unlimited/Booster boleh
@@ -259,7 +282,10 @@ export default function EditImagePage() {
     setRefFiles((prev) => prev.filter((_, i) => i !== index))
   }
 
-  const canGenerate = (provider === 'nexabot' || !!imgFile) && !generating && !!prompt.trim() && (hasActiveKey || (provider === 'nexabot' && nexabotServerReady))
+  // Freebeat: text-to-image boleh tanpa gambar; model edit-only (Qwen Edit)
+  // tetap wajib upload gambar input.
+  const freebeatNeedsImage = isFreebeat && !!freebeatSpec?.editOnly
+  const canGenerate = ((provider === 'nexabot' || (isFreebeat && !freebeatNeedsImage) || !!imgFile) && !generating && !!prompt.trim() && (hasActiveKey || (provider === 'nexabot' && nexabotServerReady)))
 
   /**
    * Kredensial untuk satu job NexaBot. Generate yang ditanggung paket memakai
@@ -323,7 +349,7 @@ export default function EditImagePage() {
     addLog(`🚀 Mulai generate gambar`, 'info')
     addLog(`   Provider: ${PROVIDER_LABEL[provider]}`, 'debug')
     addLog(`   Model: ${currentModel.label}`, 'debug')
-    addLog(`   Mode: ${isSeavi ? (refFiles.length ? `Edit + ${refFiles.length} referensi` : 'Text to Image') : provider === 'nexabot' ? 'Text to Image' : (imgFile ? 'Edit Gambar + Prompt' : 'Text to Image')}`, 'debug')
+    addLog(`   Mode: ${isSeavi ? (refFiles.length ? `Edit + ${refFiles.length} referensi` : 'Text to Image') : provider === 'nexabot' ? 'Text to Image' : isFreebeat ? (imgFile ? 'Edit Gambar' : 'Text to Image') : (imgFile ? 'Edit Gambar + Prompt' : 'Text to Image')}`, 'debug')
     addLog(`   Prompt: "${prompt.trim().slice(0, 80)}${prompt.trim().length > 80 ? '...' : ''}"`, 'debug')
 
     try {
@@ -348,6 +374,8 @@ export default function EditImagePage() {
         await handleGenerateRunningHub()
       } else if (provider === 'seavi') {
         await handleGenerateSeavi()
+      } else if (provider === 'freebeat') {
+        await handleGenerateFreebeat()
       } else {
         await handleGenerateRiverside()
       }
@@ -623,6 +651,90 @@ export default function EditImagePage() {
     }
   }
 
+  /**
+   * Freebeat: generate (businessType 9) atau edit (businessType 11 + URL
+   * publik). Kredit dipotong langsung di akun freebeat upstream — app ini
+   * tidak menagih apa pun. Satu key aktif user dipakai langsung.
+   */
+  const handleGenerateFreebeat = async () => {
+    const spec = freebeatSpec
+    if (!spec) throw new Error('Model Freebeat tidak dikenal')
+
+    const keyEntry = (keys.freebeat || []).find((k) => k.status !== 'invalid' && k.status !== 'expired' && k.key)
+    if (!keyEntry) throw new Error('Tidak ada API key Freebeat aktif — tambahkan di halaman Providers')
+
+    // Edit mode: gambar input diunggah ke catbox dulu (API freebeat makan URL publik).
+    let imageUrl: string | undefined
+    if (imgFile) {
+      addLog(`[1/3] 🖼️ Mengunggah gambar input ke catbox...`, 'info')
+      imageUrl = await uploadToCatboxFile(imgFile)
+      addLog(`   ✓ Terunggah: ${imageUrl.slice(0, 60)}...`, 'success')
+    }
+
+    const item = buildFreebeatImageItem(spec, {
+      prompt: prompt.trim(),
+      imageUrl,
+      aspect: freebeatSpec?.aspects.includes(freebeatAspect) ? freebeatAspect : undefined,
+    })
+
+    addLog(`[2/3] 🚀 Submit batch ${spec.label}${imageUrl ? ' (edit)' : ''}...`, 'info')
+    const created = await createFreebeatImageBatch(keyEntry.key, item)
+    if (!created.batchId) throw new Error('Batch ditolak upstream — batchId kosong')
+    addLog(`   ✓ Batch: ${created.batchId.slice(0, 48)}`, 'success')
+    if (created.needCredits) addLog(`   💰 Perkiraan biaya: ${created.needCredits} kredit`, 'debug')
+    if (created.itemMessage) addLog(`   ℹ️ ${created.itemMessage}`, 'debug')
+
+    addLog(`[3/3] ⏳ Polling status (maks 8 menit)...`, 'info')
+    const q = await pollFreebeatBatch(keyEntry.key, created.batchId, {
+      serialNo: created.serialNo,
+      onLog: (m) => addLog(`   ${m}`, 'debug'),
+    })
+
+    const okItem = q.items.find((i) => i.imageUrl)
+    if (!okItem?.imageUrl) {
+      const failed = q.items.find((i) => i.errorMessage)
+      throw new Error(
+        failed
+          ? `Gagal: ${failed.errorMessage}${failed.errorCode != null ? ` (code ${failed.errorCode})` : ''}`
+          : `Batch ${q.status} tanpa gambar`,
+      )
+    }
+    const used = okItem.usedCredits || created.needCredits || 0
+    addLog(`   ✓ Selesai — ${used ? `${used} kredit terpakai` : 'selesai'}`, 'success')
+
+    // Hasil: URL publik — unduh ke blob agar galeri bertahan via IndexedDB.
+    addLog(`[3/3] 📥 Mengunduh hasil...`, 'info')
+    const res = await fetch(okItem.imageUrl)
+    if (!res.ok) throw new Error(`Gagal mengunduh hasil: HTTP ${res.status}`)
+    const blob = await res.blob()
+    const finalUrl = URL.createObjectURL(blob)
+
+    const itemGallery: GalleryItem = {
+      id: `editimg-${Date.now()}`,
+      url: finalUrl,
+      prompt: prompt.trim(),
+      provider: 'freebeat',
+      model: currentModel.label,
+      createdAt: new Date().toISOString(),
+    }
+    setGallery((prev) => {
+      const updated = [itemGallery, ...prev]
+      saveGallery(updated)
+      return updated
+    })
+    addResult({
+      id: itemGallery.id,
+      url: itemGallery.url,
+      prompt: itemGallery.prompt,
+      date: itemGallery.createdAt,
+      page: 'edit-image',
+      provider: 'freebeat',
+      model: itemGallery.model,
+    })
+    window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
+    addToast('Gambar Freebeat selesai!', 'success')
+  }
+
   const handleGenerateRunningHub = async () => {
     if (!imgFile) {
       addToast('Upload gambar terlebih dahulu untuk mode edit', 'error')
@@ -863,27 +975,32 @@ export default function EditImagePage() {
                   value={model}
                   onChange={(e) => handleModelChange(e.target.value)}
                   disabled={generating}
-                  options={ALL_MODELS[provider].map((m) => ({
-                    value: m.value,
-                    label: provider === 'nexabot'
-                      ? `${m.label} — $${m.cr}/gambar`
-                      : provider === 'runninghub'
-                        ? `${m.label} — koin RH`
-                        : `${m.label} — $${((m as any).cr / 1000).toFixed(3)}`,
-                  }))}
+                  options={ALL_MODELS[provider].map((m) => {
+                    const fb = provider === 'freebeat' ? getFreebeatModel((m as any).apiModel) : undefined
+                    return {
+                      value: m.value,
+                      label: provider === 'nexabot'
+                        ? `${m.label} — $${m.cr}/gambar`
+                        : provider === 'runninghub'
+                          ? `${m.label} — koin RH`
+                          : provider === 'freebeat'
+                            ? `${m.label} — ${fb?.credits != null ? `${fb.credits} kredit` : 'kredit bervariasi'}`
+                            : `${m.label} — $${((m as any).cr / 1000).toFixed(3)}`,
+                    }
+                  })}
                 />
 
-                {isSeavi && seaviAspects.length > 0 && (
+                {aspectOptions.length > 0 && (
                   <div className="space-y-2">
                     <Label>Rasio</Label>
                     <div className="flex flex-wrap gap-2">
-                      {(['', ...seaviAspects] as string[]).map((v) => (
+                      {(['', ...aspectOptions] as string[]).map((v) => (
                         <button
                           key={v || 'default'}
                           type="button"
                           disabled={generating}
-                          onClick={() => setSeaviAspect(v)}
-                          className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-all ${seaviAspect === v ? 'border-primary bg-primary/10 text-foreground' : 'border-border text-muted-foreground hover:bg-accent/40'}`}
+                          onClick={() => setAspectValue(v)}
+                          className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-all ${aspectValue === v ? 'border-primary bg-primary/10 text-foreground' : 'border-border text-muted-foreground hover:bg-accent/40'}`}
                         >
                           {v || 'Default'}
                         </button>
@@ -939,10 +1056,19 @@ export default function EditImagePage() {
                         <div>• 🚀 Premium Booster Rp 15.000/hari bikin GPT Image + Omni + NexaDance 3.0 unlimited — <a href="/booster" className="text-primary hover:underline font-medium">ambil di Booster →</a></div>
                       )}
                     </>
+                  ) : provider === 'freebeat' ? (
+                    <>
+                      <div>• 🍌 <b>Text to Image</b> — cukup tulis prompt; upload 1 gambar untuk mode <b>edit</b></div>
+                      <div>• 💰 Kredit dipotong <b>langsung di akun freebeat Anda</b> (bukan saldo app)</div>
+                      <div>• 🎨 {FREEBEAT_IMAGE_MODELS.length} model — Nano Banana 2, Z-Image Turbo (3 kredit), Kling Image V3, Qwen, Wan, Seedream, Flux, GPT-Image</div>
+                      {freebeatSpec?.creditsNote && <div>• ℹ️ {freebeatSpec.label}: {freebeatSpec.creditsNote}</div>}
+                    </>
                   ) : (
                     <div>• 💰 0.1 kredit/gambar • ♾️ Gratis kalau Unlimited aktif</div>
                   )}
-                  <div>• ⚠️ Untuk edit gambar, gunakan <b>Riverside</b> atau <b>RunningHub (Kontext)</b></div>
+                  {provider !== 'freebeat' && (
+                    <div>• ⚠️ Untuk edit gambar, gunakan <b>Riverside</b> atau <b>RunningHub (Kontext)</b></div>
+                  )}
                 </div>
 
                 <div className="flex flex-col gap-2 pt-2">
@@ -979,8 +1105,8 @@ export default function EditImagePage() {
           {/* Image Panel */}
           <div className="lg:col-span-2 space-y-5">
             <Section
-              title={isGpt25 ? '🖼️ Gambar Referensi (Opsional)' : provider === 'nexabot' ? '🖼️ Gambar (Opsional)' : '🖼️ Gambar Input'}
-              sub={isGpt25 ? 'Hingga 10 gambar — acuan karakter & gaya untuk GPT Image 2.5' : provider === 'nexabot' ? 'NexaBot hanya mendukung Text to Image — untuk edit gambar pakai Riverside / RunningHub' : 'Upload 1 gambar untuk diedit'}
+              title={isGpt25 ? '🖼️ Gambar Referensi (Opsional)' : provider === 'nexabot' || isFreebeat ? '🖼️ Gambar (Opsional)' : '🖼️ Gambar Input'}
+              sub={isGpt25 ? 'Hingga 10 gambar — acuan karakter & gaya untuk GPT Image 2.5' : provider === 'nexabot' ? 'NexaBot hanya mendukung Text to Image — untuk edit gambar pakai Riverside / RunningHub' : isFreebeat ? 'Upload 1 gambar untuk mode edit — kosongkan untuk Text to Image' : 'Upload 1 gambar untuk diedit'}
               right={
                 <button
                   onClick={() => (isGpt25 ? refPickerRef.current : filePickerRef.current)?.click()}
@@ -1054,7 +1180,9 @@ export default function EditImagePage() {
                   <ImagePlus className="h-8 w-8 mx-auto mb-2 opacity-60" />
                   {provider === 'nexabot'
                     ? 'NexaBot tidak mendukung edit gambar — gunakan Riverside untuk edit gambar'
-                    : 'Tap atau tarik gambar untuk diedit'
+                    : isFreebeat
+                      ? 'Opsional — upload untuk mode edit, kosongkan untuk Text to Image'
+                      : 'Tap atau tarik gambar untuk diedit'
                   }
                 </button>
               ) : (
