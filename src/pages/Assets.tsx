@@ -64,6 +64,7 @@ const RESULTS_PAGE_SOURCE: Record<CompletedResult['page'], string> = {
   'voice-over': 'Voice Over',
   'music-generator': 'Music Generator',
   'music-studio': 'AI Music Studio',
+  'image-studio': 'AI Image Studio',
   'text-to-image': 'Image Generator',
   ugc: 'Product UGC',
   'clip-genius': 'Clip Genius',

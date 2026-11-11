@@ -103,6 +103,8 @@ interface ImageOpts {
   refs?: number
   /** Model yang mewajibkan satu gambar acuan (krea2_2k). */
   imageRequired?: boolean
+  /** Model teks-saja tanpa gambar acuan (Imagen 4 Ultra, Grok Imagine Image). */
+  t2iOnly?: boolean
 }
 
 const imageGen = (id: string, label: string, opts: ImageOpts = {}): PosbotModelSpec => ({
@@ -117,8 +119,8 @@ const imageGen = (id: string, label: string, opts: ImageOpts = {}): PosbotModelS
   imageMax: opts.imageRequired ? 1 : opts.refs,
   videoMode: 'none',
   aspects: IMAGE_ASPECTS,
-  // Krea 2 wajib gambar acuan (i2i); sisanya bisa teks murni atau acuan gambar.
-  modes: opts.imageRequired ? ['i2i'] : ['t2i', 'i2i'],
+  // Krea 2 wajib gambar acuan (i2i); teks-saja hanya t2i; sisanya teks atau acuan gambar.
+  modes: opts.imageRequired ? ['i2i'] : opts.t2iOnly ? ['t2i'] : ['t2i', 'i2i'],
 })
 
 interface VideoOpts {
@@ -260,6 +262,16 @@ export const POSBOT_MODELS: Record<string, PosbotModelSpec> = {
     imageGen('seedream_45', 'Seedream 4.5 (4K)', { refs: 3 }),
     imageGen('seedream_5_fast_2k', 'Seedream 5 Fast 2K', { refs: 4 }),
     imageGen('seedream_5_pro_2k', 'Seedream 5 Pro 2K', { refs: 10, promptMax: 3000 }),
+    imageGen('nano_banana_21_4k', 'Nano Banana 2.1 (4K)', { refs: 4 }),
+    imageGen('nano_banana_2_2k', 'Nano Banana 2 (2K)', { refs: 14 }),
+    imageGen('nano_banana_pro_2k', 'Nano Banana Pro (2K)', { refs: 8 }),
+    imageGen('gpt_image_2_2k', 'GPT Image 2 (2K)', { refs: 16 }),
+    imageGen('flux_2_pro_2k', 'Flux 2 Pro (2K)', { refs: 8 }),
+    imageGen('seedream_5_flash_2k', 'Seedream 5 Flash 2K', { refs: 4 }),
+    imageGen('qwen_image_3_pro_2k', 'Qwen Image 3.0 Pro (2K)', { refs: 3 }),
+    imageGen('qwen_z_image_1k', 'Qwen Z-Image (1K)', { refs: 1 }),
+    imageGen('imagen4_ultra_2k', 'Imagen 4 Ultra (2K)', { t2iOnly: true }),
+    imageGen('grok_image_2_1k', 'Grok Imagine Image 2.0 (1K)', { t2iOnly: true }),
   ]),
 
   // ── Image edit ──

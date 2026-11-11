@@ -37,10 +37,10 @@ function withFetchStub<T>(impl: (url: string, init?: RequestInit) => StubRes | P
 
 // ── Katalog ────────────────────────────────────────────────────────────────
 
-test('katalog: 61 model aktif terbagi per kategori, id unik', () => {
-  assert.equal(listPosbotModelIds().length, 61)
+test('katalog: 71 model aktif terbagi per kategori, id unik', () => {
+  assert.equal(listPosbotModelIds().length, 71)
   assert.equal(listPosbotModelIds().length, new Set(listPosbotModelIds()).size)
-  assert.equal(posbotModelsByCategory('image').length, 12)
+  assert.equal(posbotModelsByCategory('image').length, 22)
   assert.equal(posbotModelsByCategory('image_edit').length, 2)
   assert.equal(posbotModelsByCategory('video').length, 22)
   assert.equal(posbotModelsByCategory('lipsync').length, 2)

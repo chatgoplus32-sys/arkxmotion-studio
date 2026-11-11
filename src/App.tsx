@@ -77,6 +77,7 @@ const SongCoverPage = lazyWithRetry(() => import('@/pages/SongCover'))
 const VoiceOverPage = lazyWithRetry(() => import('@/pages/VoiceOver'))
 const MusicGeneratorPage = lazyWithRetry(() => import('@/pages/MusicGenerator'))
 const MusicStudioPage = lazyWithRetry(() => import('@/pages/MusicStudio'))
+const ImageStudioPage = lazyWithRetry(() => import('@/pages/ImageStudio'))
 const H3MusicAvatarPage = lazyWithRetry(() => import('@/pages/H3MusicAvatar'))
 
 // Initialize chunk error interceptor immediately
@@ -248,6 +249,7 @@ export default function App() {
                         <Route path="/generate/voice-over" element={<VoiceOverPage />} />
                         <Route path="/generate/music-generator" element={<MusicGeneratorPage />} />
                         <Route path="/generate/music-studio" element={<MusicStudioPage />} />
+                        <Route path="/generate/image-studio" element={<ImageStudioPage />} />
                         <Route path="/generate/ugc" element={<UGCPage />} />
                         <Route path="/generate/ugc-storyboard" element={<UGCStoryboardPage />} />
                         <Route path="/generate/upscaler" element={<UpscalerPage />} />
