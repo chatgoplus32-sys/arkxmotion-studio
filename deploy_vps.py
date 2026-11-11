@@ -59,7 +59,11 @@ for root, dirs, files in os.walk(local_dist):
     for f in files:
         local_file = os.path.join(root, f)
         remote_file = remote_path + '/' + f
-        sftp.put(local_file, remote_file)
+        # confirm=False: paramiko 5 melakukan stat() setelah transfer untuk
+        # mencocokkan ukuran. Kalau file dihapus (mis. oleh deploy lain yang
+        # jalan bersamaan) stat() melempar FileNotFoundError dan deploy
+        # berhenti di tengah jalan meskipun transfer-nya sudah berhasil.
+        sftp.put(local_file, remote_file, confirm=False)
         print(f'  ✓ {rel}/{f}')
 
 # ── Bersihkan artefak build lama ──────────────────────────────────────
@@ -144,7 +148,7 @@ for root, dirs, files in os.walk(server_local):
             continue  # skip database
         local_file = os.path.join(root, f)
         remote_file = remote_path + '/' + f
-        sftp.put(local_file, remote_file)
+        sftp.put(local_file, remote_file, confirm=False)
         print(f'  ✓ {rel}/{f}')
 
 # Upload shared/ — dipakai server DAN frontend (harga, katalog paket). Tanpa
@@ -162,7 +166,7 @@ for root, dirs, files in os.walk(shared_local):
     for f in files:
         local_file = os.path.join(root, f)
         remote_file = remote_path + '/' + f
-        sftp.put(local_file, remote_file)
+        sftp.put(local_file, remote_file, confirm=False)
         print(f'  ✓ {rel}/{f}')
 
 # Upload specific root files
@@ -170,7 +174,7 @@ for f in ['tsconfig.json', 'vite.config.ts']:
     local_file = os.path.join(LOCAL_DIR, f)
     remote_file = REMOTE_DIR + '/' + f
     try:
-        sftp.put(local_file, remote_file)
+        sftp.put(local_file, remote_file, confirm=False)
         print(f'  ✓ {f}')
     except Exception as e:
         print(f'  ⚠ {f}: {e}')
