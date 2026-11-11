@@ -308,10 +308,11 @@ async function handleResetPassword(res: VercelResponse, id: number, body: any) {
  * tagged template Neon tidak menerima identifier tabel dinamis, dan cara ini
  * sekaligus menutup celah injeksi lewat parameter `provider`.
  */
-function resolveTopupProvider(req: VercelRequest): 'createpulse' | 'nexabot' | 'seavi' {
+function resolveTopupProvider(req: VercelRequest): 'createpulse' | 'nexabot' | 'seavi' | 'posbot' {
   const raw = String((req.query.provider as string) || req.body?.provider || 'createpulse')
   if (raw === 'nexabot') return 'nexabot'
   if (raw === 'seavi') return 'seavi'
+  if (raw === 'posbot') return 'posbot'
   return 'createpulse'
 }
 
@@ -322,6 +323,7 @@ async function handleTopupRoutes(req: VercelRequest, res: VercelResponse, segmen
     const provider = resolveTopupProvider(req)
     const isNexabot = provider === 'nexabot'
     const isSeavi = provider === 'seavi'
+    const isPosbot = provider === 'posbot'
 
     // GET /api/admin/topup/pending
     if (req.method === 'GET' && last === 'pending') {
@@ -329,7 +331,9 @@ async function handleTopupRoutes(req: VercelRequest, res: VercelResponse, segmen
         ? await sql`SELECT t.*, u.email, u.name as user_name FROM nexabot_topup t JOIN users u ON t.user_id = u.id WHERE t.status = 'pending' ORDER BY t.created_at ASC`
         : isSeavi
           ? await sql`SELECT t.*, u.email, u.name as user_name FROM seavi_topup t JOIN users u ON t.user_id = u.id WHERE t.status = 'pending' ORDER BY t.created_at ASC`
-          : await sql`SELECT t.*, u.email, u.name as user_name FROM createpulse_topup t JOIN users u ON t.user_id = u.id WHERE t.status = 'pending' ORDER BY t.created_at ASC`
+          : isPosbot
+            ? await sql`SELECT t.*, u.email, u.name as user_name FROM posbot_topup t JOIN users u ON t.user_id = u.id WHERE t.status = 'pending' ORDER BY t.created_at ASC`
+            : await sql`SELECT t.*, u.email, u.name as user_name FROM createpulse_topup t JOIN users u ON t.user_id = u.id WHERE t.status = 'pending' ORDER BY t.created_at ASC`
       return res.status(200).json({ topups: rows, provider })
     }
 
@@ -339,7 +343,9 @@ async function handleTopupRoutes(req: VercelRequest, res: VercelResponse, segmen
         ? await sql`SELECT t.*, u.email, u.name as user_name FROM nexabot_topup t JOIN users u ON t.user_id = u.id ORDER BY t.created_at DESC`
         : isSeavi
           ? await sql`SELECT t.*, u.email, u.name as user_name FROM seavi_topup t JOIN users u ON t.user_id = u.id ORDER BY t.created_at DESC`
-          : await sql`SELECT t.*, u.email, u.name as user_name FROM createpulse_topup t JOIN users u ON t.user_id = u.id ORDER BY t.created_at DESC`
+          : isPosbot
+            ? await sql`SELECT t.*, u.email, u.name as user_name FROM posbot_topup t JOIN users u ON t.user_id = u.id ORDER BY t.created_at DESC`
+            : await sql`SELECT t.*, u.email, u.name as user_name FROM createpulse_topup t JOIN users u ON t.user_id = u.id ORDER BY t.created_at DESC`
       return res.status(200).json({ topups: rows, provider })
     }
 
@@ -419,6 +425,20 @@ async function handleTopupRoutes(req: VercelRequest, res: VercelResponse, segmen
         return res.status(200).json({ message: `Topup approved — ${tokens} token Seavi`, balance: bal[0]?.balance || 0, tokens: bal[0]?.balance || 0 })
       }
 
+      // PosBot: approve menambah RUPIAH (`amount`) — sama seperti CreatePulse,
+      // hanya tabelnya berbeda (relay server-key + wallet internal PosBot).
+      if (isPosbot) {
+        const topup = await sql`SELECT * FROM posbot_topup WHERE id = ${id} AND status = 'pending'`
+        if (topup.length === 0) return res.status(404).json({ error: 'Pending topup not found' })
+
+        const amount = Number(topup[0].amount) || 0
+        await sql`UPDATE posbot_topup SET status = 'approved', admin_note = ${admin_note || ''}, updated_at = CURRENT_TIMESTAMP WHERE id = ${id}`
+        await sql`INSERT INTO posbot_balance (user_id, balance) VALUES (${topup[0].user_id}, ${amount}) ON CONFLICT (user_id) DO UPDATE SET balance = posbot_balance.balance + ${amount}, updated_at = CURRENT_TIMESTAMP`
+
+        const bal = await sql`SELECT balance FROM posbot_balance WHERE user_id = ${topup[0].user_id}`
+        return res.status(200).json({ message: `Topup approved — Rp ${amount.toLocaleString('id-ID')} PosBot`, balance: bal[0]?.balance || 0 })
+      }
+
       const topup = await sql`SELECT * FROM createpulse_topup WHERE id = ${id} AND status = 'pending'`
       if (topup.length === 0) return res.status(404).json({ error: 'Pending topup not found' })
 
@@ -450,11 +470,70 @@ async function handleTopupRoutes(req: VercelRequest, res: VercelResponse, segmen
         return res.status(200).json({ message: 'Topup rejected' })
       }
 
+      if (isPosbot) {
+        const topup = await sql`SELECT * FROM posbot_topup WHERE id = ${id} AND status = 'pending'`
+        if (topup.length === 0) return res.status(404).json({ error: 'Pending topup not found' })
+
+        await sql`UPDATE posbot_topup SET status = 'rejected', admin_note = ${admin_note || ''}, updated_at = CURRENT_TIMESTAMP WHERE id = ${id}`
+        return res.status(200).json({ message: 'Topup rejected' })
+      }
+
       const topup = await sql`SELECT * FROM createpulse_topup WHERE id = ${id} AND status = 'pending'`
       if (topup.length === 0) return res.status(404).json({ error: 'Pending topup not found' })
 
       await sql`UPDATE createpulse_topup SET status = 'rejected', admin_note = ${admin_note || ''}, updated_at = CURRENT_TIMESTAMP WHERE id = ${id}`
       return res.status(200).json({ message: 'Topup rejected' })
+    }
+
+    // POST /api/admin/topup/inject — admin menyuntik saldo langsung (mis. promo),
+    // di luar alur top-up member. Hanya dompet member (createpulse/nexabot/seavi)
+    // yang punya saldo; tabel dipilih dari cabang eksplisit, bukan dinamis.
+    if (req.method === 'POST' && last === 'inject') {
+      const rawProvider = String(req.body?.provider || '').trim().toLowerCase()
+      if (!['createpulse', 'nexabot', 'seavi', 'posbot'].includes(rawProvider)) {
+        return res.status(400).json({ error: 'Provider ini tidak punya saldo layanan — yang bisa di-inject hanya CreatePulse / NexaBot / PosBot (Rp) atau Seavi (token).' })
+      }
+      const userId = Number(req.body?.user_id)
+      const credit = Math.round(Number(req.body?.amount))
+      const adminNote = String(req.body?.note || '').trim().slice(0, 300) || 'Inject saldo oleh admin'
+      const unit = isSeavi ? 'token' : 'Rp'
+      const max = isSeavi ? 100000 : 100000000
+
+      if (!Number.isInteger(userId) || userId <= 0) return res.status(400).json({ error: 'Member tidak valid' })
+      if (!Number.isInteger(credit) || credit <= 0) return res.status(400).json({ error: `Nominal harus bilangan bulat positif (${unit})` })
+      if (credit > max) return res.status(400).json({ error: `Nominal terlalu besar (maks ${max.toLocaleString('id-ID')} ${unit})` })
+
+      const found = await sql`SELECT id, email, name FROM users WHERE id = ${userId}`
+      if (found.length === 0) return res.status(404).json({ error: 'Member tidak ditemukan' })
+
+      if (isSeavi) {
+        await sql`INSERT INTO seavi_balance (user_id, balance) VALUES (${userId}, ${credit}) ON CONFLICT (user_id) DO UPDATE SET balance = seavi_balance.balance + ${credit}, updated_at = CURRENT_TIMESTAMP`
+        await sql`INSERT INTO seavi_topup (user_id, amount, tokens, status, proof_note, admin_note) VALUES (${userId}, 0, ${credit}, 'approved', '[inject]', ${adminNote})`
+      } else if (isPosbot) {
+        await sql`INSERT INTO posbot_balance (user_id, balance) VALUES (${userId}, ${credit}) ON CONFLICT (user_id) DO UPDATE SET balance = posbot_balance.balance + ${credit}, updated_at = CURRENT_TIMESTAMP`
+        await sql`INSERT INTO posbot_topup (user_id, amount, status, proof_note, admin_note) VALUES (${userId}, ${credit}, 'approved', '[inject]', ${adminNote})`
+      } else if (isNexabot) {
+        await sql`INSERT INTO nexabot_balance (user_id, balance) VALUES (${userId}, ${credit}) ON CONFLICT (user_id) DO UPDATE SET balance = nexabot_balance.balance + ${credit}, updated_at = CURRENT_TIMESTAMP`
+        await sql`INSERT INTO nexabot_topup (user_id, amount, status, proof_note, admin_note) VALUES (${userId}, ${credit}, 'approved', '[inject]', ${adminNote})`
+      } else {
+        await sql`INSERT INTO createpulse_balance (user_id, balance) VALUES (${userId}, ${credit}) ON CONFLICT (user_id) DO UPDATE SET balance = createpulse_balance.balance + ${credit}, updated_at = CURRENT_TIMESTAMP`
+        await sql`INSERT INTO createpulse_topup (user_id, amount, status, proof_note, admin_note) VALUES (${userId}, ${credit}, 'approved', '[inject]', ${adminNote})`
+      }
+
+      const bal = isSeavi
+        ? await sql`SELECT balance FROM seavi_balance WHERE user_id = ${userId}`
+        : isPosbot
+          ? await sql`SELECT balance FROM posbot_balance WHERE user_id = ${userId}`
+          : isNexabot
+            ? await sql`SELECT balance FROM nexabot_balance WHERE user_id = ${userId}`
+            : await sql`SELECT balance FROM createpulse_balance WHERE user_id = ${userId}`
+      return res.status(200).json({
+        message: `Berhasil inject ${credit.toLocaleString('id-ID')} ${unit} ke ${found[0].name || found[0].email}`,
+        provider: rawProvider,
+        user_id: userId,
+        credited: credit,
+        balance: Number(bal[0]?.balance) || 0,
+      })
     }
 
     return res.status(404).json({ error: 'Not found' })

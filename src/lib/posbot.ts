@@ -696,10 +696,11 @@ export async function fetchPosbotModelsStatus(apiKey: string): Promise<PosbotMod
 export async function submitPosbotGeneration(
   apiKey: string,
   payload: Record<string, unknown>,
+  chargeId?: number | null,
 ): Promise<string> {
   const res = await fetch(`${POSBOT_PROXY}?path=generate`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...relayAuthHeaders(apiKey) },
+    headers: { 'Content-Type': 'application/json', ...relayAuthHeaders(apiKey, chargeId) },
     body: JSON.stringify(payload),
   })
   const text = await res.text()
@@ -776,6 +777,8 @@ export interface PosbotGenerateOptions extends PosbotLogOpts {
   instrumental?: boolean
   negativePrompt?: string
   voice?: string
+  /** usage_id dari /api/posbot/deduct — tiket relay untuk jalur kunci server. */
+  chargeId?: number | null
 }
 
 /** End-to-end: validasi → submit → poll → URL hasil. */
@@ -798,7 +801,7 @@ export async function generateWithPosbot(opts: PosbotGenerateOptions): Promise<s
   })
   onLog?.(`[2/3] 🚀 Submit ${spec.label} (${formatPosbotRupiah(spec.price)})...`, 'info')
   onStatus?.(`Submit ${spec.label}...`, 5)
-  const jobCode = await submitPosbotGeneration(apiKey, payload)
+  const jobCode = await submitPosbotGeneration(apiKey, payload, opts.chargeId)
   onLog?.(`[2/3] ✅ Job dibuat ✓ ${jobCode}`, 'success')
   onLog?.(`[3/3] ⏳ Polling hasil...`, 'info')
   const { url } = await pollPosbotStatus(apiKey, jobCode, { onLog, onStatus })

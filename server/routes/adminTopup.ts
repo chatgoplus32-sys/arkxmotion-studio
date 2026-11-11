@@ -15,6 +15,8 @@ const WALLETS = {
   nexabot: { topup: 'nexabot_topup', balance: 'nexabot_balance', credit: 'amount' },
   // Seavi: saldo dalam TOKEN — approve menambah `tokens`, bukan `amount` (Rp).
   seavi: { topup: 'seavi_topup', balance: 'seavi_balance', credit: 'tokens' },
+  // PosBot: saldo dalam RUPIAH seperti CreatePulse/NexaBot (kredit via `amount`).
+  posbot: { topup: 'posbot_topup', balance: 'posbot_balance', credit: 'amount' },
 } as const
 type WalletKey = keyof typeof WALLETS
 
@@ -171,6 +173,66 @@ router.get('/balance/:userId', authenticateToken, requireAdmin, (req: AuthReques
     res.json({ balance: bal.balance })
   } catch (error) {
     console.error('Get user balance error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+/** Batas penyuntikan saldo manual — anti salah ketik nominal raksasa. */
+const INJECT_MAX_RP = 100_000_000
+const INJECT_MAX_TOKENS = 100_000
+
+/**
+ * Inject saldo langsung oleh admin (di luar alur top-up member) — mis. promo.
+ * Hanya provider yang punya dompet member (createpulse/nexabot/seavi) yang bisa
+ * di-inject; provider berbasis kunci sendiri tidak punya saldo untuk ditambah.
+ * Tabel diambil dari whitelist WALLETS, jadi `provider` tak pernah mentah.
+ */
+router.post('/inject', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
+  try {
+    const providerKey = String(req.body?.provider || '')
+    if (!(providerKey in WALLETS)) {
+      return res.status(400).json({ error: 'Provider ini tidak punya saldo layanan — yang bisa di-inject hanya CreatePulse / NexaBot / PosBot (Rp) atau Seavi (token).' })
+    }
+    const w = WALLETS[providerKey as WalletKey]
+    const isSeavi = providerKey === 'seavi'
+    const unit = isSeavi ? 'token' : 'Rp'
+    const max = isSeavi ? INJECT_MAX_TOKENS : INJECT_MAX_RP
+
+    const userId = Number(req.body?.user_id)
+    const credit = Math.round(Number(req.body?.amount))
+    const note = String(req.body?.note || '').trim().slice(0, 300)
+
+    if (!Number.isInteger(userId) || userId <= 0) return res.status(400).json({ error: 'Member tidak valid' })
+    if (!Number.isInteger(credit) || credit <= 0) return res.status(400).json({ error: `Nominal harus bilangan bulat positif (${unit})` })
+    if (credit > max) return res.status(400).json({ error: `Nominal terlalu besar (maks ${max.toLocaleString('id-ID')} ${unit})` })
+
+    const user = db.prepare('SELECT id, email, name FROM users WHERE id = ?').get(userId) as { id: number; email: string; name: string } | undefined
+    if (!user) return res.status(404).json({ error: 'Member tidak ditemukan' })
+
+    const adminNote = note || 'Inject saldo oleh admin'
+    db.transaction(() => {
+      const bal = db.prepare(`SELECT balance FROM ${w.balance} WHERE user_id = ?`).get(userId) as { balance: number } | undefined
+      if (!bal) db.prepare(`INSERT INTO ${w.balance} (user_id, balance) VALUES (?, ?)`).run(userId, credit)
+      else db.prepare(`UPDATE ${w.balance} SET balance = balance + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`).run(credit, userId)
+
+      // Jejak audit di tabel topup provider — tampil di riwayat approval admin.
+      if (isSeavi) {
+        db.prepare(`INSERT INTO ${w.topup} (user_id, amount, tokens, status, proof_note, admin_note) VALUES (?, 0, ?, 'approved', '[inject]', ?)`).run(userId, credit, adminNote)
+      } else {
+        db.prepare(`INSERT INTO ${w.topup} (user_id, amount, status, proof_note, admin_note) VALUES (?, ?, 'approved', '[inject]', ?)`).run(userId, credit, adminNote)
+      }
+    })()
+
+    const updated = db.prepare(`SELECT balance FROM ${w.balance} WHERE user_id = ?`).get(userId) as { balance: number }
+    res.json({
+      message: `Berhasil inject ${credit.toLocaleString('id-ID')} ${unit} ke ${user.name || user.email}`,
+      provider: providerKey,
+      user_id: userId,
+      credited: credit,
+      balance: updated.balance,
+    })
+  } catch (error) {
+    console.error('Inject balance error:', error)
     res.status(500).json({ error: 'Internal server error' })
   }
 })

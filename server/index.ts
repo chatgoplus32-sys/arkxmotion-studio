@@ -27,6 +27,7 @@ import nexabotRoutes from './routes/nexabot.js'
 import studioAiRoutes from './routes/studioAi.js'
 import nexabotWalletRoutes from './routes/nexabotWallet.js'
 import seaviWalletRoutes from './routes/seaviWallet.js'
+import posbotWalletRoutes from './routes/posbotWallet.js'
 import publicPricingRoutes from './routes/publicPricing.js'
 import publicStatsRoutes from './routes/publicStats.js'
 import publicCreatepulseRoutes from './routes/publicCreatepulse.js'
@@ -170,6 +171,7 @@ app.use('/api/public/firefly', publicFireflyRoutes)
 app.use('/api/public/tiktok-download', publicTiktokRoutes)
 app.use('/api/nexabot', nexabotWalletRoutes)
 app.use('/api/seavi', seaviWalletRoutes)
+app.use('/api/posbot', posbotWalletRoutes)
 app.use('/api/runninghub', runninghubDailyClaimRoutes)
 app.use('/api/chatgpt', chatgptRoutes)
 app.use('/api/dola', publicDolaRoutes)

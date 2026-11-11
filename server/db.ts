@@ -322,6 +322,51 @@ for (const tabel of ['seavi_usage']) {
   }
 }
 
+// ─── Wallet PosBot (Rupiah, sistem sama dengan Seavi) ──────────────────────
+// Saldo per member dihitung dalam RUPIAH (tarif developer PosBot = IDR), tapi
+// seluruh mesinnya meniru Seavi: saldo di server, dipotong per generate lewat
+// /deduct, relay memasang kunci server dengan tiket pembayaran. Bedanya cuma
+// satuan — `balance` di sini Rp, bukan token. `units` di posbot_usage dipakai
+// tiket multi-job provider_charge_ticket (jalur yang sama dengan Seavi).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS posbot_balance (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER UNIQUE NOT NULL,
+    balance INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`)
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS posbot_topup (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    amount INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected')),
+    proof_note TEXT NOT NULL DEFAULT '',
+    admin_note TEXT NOT NULL DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`)
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS posbot_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    model TEXT NOT NULL,
+    cost INTEGER NOT NULL,
+    units INTEGER NOT NULL DEFAULT 1,
+    batch_id TEXT,
+    status TEXT NOT NULL DEFAULT 'used' CHECK(status IN ('used', 'refunded')),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`)
+
 // ─── Tiket pembayaran relay Seavi ─────────────────────────────────────────
 // Relay menyuntikkan kunci server, jadi ia harus bisa membuktikan bahwa job
 // ini sudah dibayar lewat /deduct. `max_jobs`/`used_jobs` membatasi jumlah job

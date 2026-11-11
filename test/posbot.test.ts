@@ -16,8 +16,10 @@ import {
   pollPosbotStatus,
   posbotModelsByCategory,
   posbotModeSummary,
+  POSBOT_MODELS,
   submitPosbotGeneration,
 } from '../src/lib/posbot.js'
+import { getPosbotCharge, POSBOT_DEFAULT_CHARGE } from '../shared/pricing.js'
 
 type StubRes = { status: number; body: unknown }
 
@@ -88,6 +90,23 @@ test('katalog: tarif Rupiah kunci sesuai dokumen developer', () => {
   assert.equal(getPosbotSpec('nano_banana_2_4k')?.promptMax, 2000)
   assert.equal(getPosbotSpec('model_ngawur'), undefined)
   assert.equal(formatPosbotRupiah(6500), `Rp ${(6500).toLocaleString('id-ID')}`)
+})
+
+// Kontrak klien↔server: potongan saldo server (getPosbotCharge, shared/pricing)
+// harus SAMA persis dengan harga yang ditampilkan katalog klien. Kalau salah
+// satu diedit tanpa yang lain, member melihat tarif yang tidak benar-benar
+// dipotong server — saldo PosBot kini dompet member, jadi angka wajib cocok.
+test('kontrak: harga katalog klien == tarif potongan server (getPosbotCharge)', () => {
+  for (const [key, spec] of Object.entries(POSBOT_MODELS)) {
+    assert.equal(spec.id, key, `POSBOT_MODELS[${key}] punya id beda dari key`)
+    assert.equal(getPosbotCharge(spec.id), spec.price, `${spec.id}: server tagih ${getPosbotCharge(spec.id)} tapi katalog ${spec.price}`)
+    // Relay mengirim 'pb:<id>'; prefix wajib dinetralkan sebelum lookup.
+    assert.equal(getPosbotCharge(`pb:${spec.id}`), spec.price, `pb:${spec.id} prefix tidak dinormalkan`)
+    assert.ok(Number.isInteger(spec.price) && spec.price > 0, `${spec.id} tarif harus integer > 0`)
+  }
+  // Id tak dikenal jatuh ke default (bukan 0/NaN) supaya generate tak gratis.
+  assert.equal(getPosbotCharge('model_ngawur'), POSBOT_DEFAULT_CHARGE)
+  assert.equal(getPosbotCharge(), POSBOT_DEFAULT_CHARGE)
 })
 
 // ── buildPosbotPayload: video ──────────────────────────────────────────────

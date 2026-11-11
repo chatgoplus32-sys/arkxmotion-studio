@@ -106,6 +106,7 @@ function extractMfTokens(text: string): string[] {
 
 function topupCta(provider: string): { route: string; label: string } {  if (provider === 'createpulse') return { route: '/topup/createpulse', label: 'Topup CreatePulse' }
   if (provider === 'seavi') return { route: '/topup/seavi', label: 'Topup Seavi' }
+  if (provider === 'posbot') return { route: '/topup/posbot', label: 'Topup PosBot' }
   return { route: `/topup/manual?provider=${encodeURIComponent(provider)}`, label: 'Topup Manual' }
 }
 

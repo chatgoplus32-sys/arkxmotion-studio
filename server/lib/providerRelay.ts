@@ -22,6 +22,7 @@ import { claimChargeTicket, noteChargeTicketJob, releaseChargeTicket } from './p
 /** Path upstream yang MEMBUAT job (memakai kredit upstream). */
 const CONSUMING_PATH: Record<ServerKeyProvider, RegExp> = {
   seavi: /^generate\/?$/,
+  posbot: /^generate\/?$/,
 }
 
 export function isConsumingRequest(provider: ServerKeyProvider, method: string, subpath: string): boolean {
@@ -94,11 +95,11 @@ export function decideCredential(
   return { kind: 'server', secret, usageId: cek.usageId ?? null }
 }
 
-/** Id job dari respons upstream Seavi (`id`). */
+/** Id job dari respons upstream (`id` Seavi, `job_code` PosBot). */
 function jobIdDari(bodyText: string): string | null {
   try {
     const data = JSON.parse(bodyText)
-    const id = data?.job_id ?? data?.id ?? data?.request_id ?? data?.task_id
+    const id = data?.job_code ?? data?.job_id ?? data?.id ?? data?.request_id ?? data?.task_id
     return id == null ? null : String(id).slice(0, 200)
   } catch {
     return null

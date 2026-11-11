@@ -64,6 +64,7 @@ const CreatePulseTopupPage = lazyWithRetry(() => import('@/pages/CreatePulseTopu
 const NexaBotTopupPage = lazyWithRetry(() => import('@/pages/NexaBotTopup'))
 const PremiumBoosterPage = lazyWithRetry(() => import('@/pages/PremiumBooster'))
 const SeaviTopupPage = lazyWithRetry(() => import('@/pages/SeaviTopup'))
+const PosBotTopupPage = lazyWithRetry(() => import('@/pages/PosBotTopup'))
 const ManualTopupPage = lazyWithRetry(() => import('@/pages/ManualTopup'))
 const SaldoLayananPage = lazyWithRetry(() => import('@/pages/SaldoLayanan'))
 const PluginsPage = lazyWithRetry(() => import('@/pages/Plugins'))
@@ -259,6 +260,7 @@ export default function App() {
                         <Route path="/topup/nexabot" element={<NexaBotTopupPage />} />
                         <Route path="/booster" element={<PremiumBoosterPage />} />
                         <Route path="/topup/seavi" element={<SeaviTopupPage />} />
+                        <Route path="/topup/posbot" element={<PosBotTopupPage />} />
                         <Route path="/topup/manual" element={<ManualTopupPage />} />
                         {/* Token Bank belum aktif: tautan lama diarahkan ke Saldo Layanan. */}
                         <Route path="/beli-token" element={<Navigate to="/saldo" replace />} />

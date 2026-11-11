@@ -6,12 +6,13 @@ import { useAuthStore } from '@/stores/authStore'
 import { formatRp } from '@/lib/payment'
 import { fetchNexabotWallet, nexabotRemainingLabel, type NexabotUnlimited } from '@/lib/nexabotWallet'
 import { fetchSeaviWallet } from '@/lib/seaviWallet'
+import { fetchPosbotWallet } from '@/lib/posbotWallet'
 import { cn } from '@/lib/utils'
 import {
-  ArrowUpRight, Bot, Coins, Loader2, RefreshCw, Zap,
+  ArrowUpRight, Bot, Coins, Loader2, RefreshCw, Wallet, Zap,
 } from 'lucide-react'
 
-type ServiceKey = 'createpulse' | 'nexabot' | 'seavi'
+type ServiceKey = 'createpulse' | 'nexabot' | 'seavi' | 'posbot'
 
 interface ServiceDef {
   key: ServiceKey
@@ -49,6 +50,14 @@ const SERVICES: ServiceDef[] = [
     icon: <Coins className="h-4 w-4" />,
     accent: 'border-emerald-500/25 bg-emerald-500/10 text-emerald-400',
   },
+  {
+    key: 'posbot',
+    label: 'PosBot',
+    desc: 'Saldo Rupiah PosBot — dipotong per generate sesuai tarif model.',
+    href: '/topup/posbot',
+    icon: <Wallet className="h-4 w-4" />,
+    accent: 'border-teal-500/25 bg-teal-500/10 text-teal-400',
+  },
 ]
 
 interface ServiceState {
@@ -63,6 +72,7 @@ const EMPTY_STATE: Record<ServiceKey, ServiceState> = {
   createpulse: { amount: null, unitPrice: null, note: null },
   nexabot: { amount: null, unitPrice: null, note: null },
   seavi: { amount: null, unitPrice: null, note: null },
+  posbot: { amount: null, unitPrice: null, note: null },
 }
 
 async function fetchCreatePulseBalance(token: string): Promise<number | null> {
@@ -103,10 +113,11 @@ export default function SaldoLayananPage() {
     if (silent) setRefreshing(true)
     else setLoading(true)
 
-    const [createpulse, nexabot, seavi] = await Promise.all([
+    const [createpulse, nexabot, seavi, posbot] = await Promise.all([
       fetchCreatePulseBalance(token),
       fetchNexabotWallet(token),
       fetchSeaviWallet(token),
+      fetchPosbotWallet(token),
     ])
     if (requestId !== requestRef.current) return
 
@@ -132,6 +143,11 @@ export default function SaldoLayananPage() {
       seavi: {
         amount: seavi?.tokens ?? null,
         unitPrice: seavi?.token_price ?? 2000,
+        note: null,
+      },
+      posbot: {
+        amount: posbot?.balance ?? null,
+        unitPrice: null,
         note: null,
       },
     })
@@ -267,7 +283,7 @@ export default function SaldoLayananPage() {
 
         <div className="mt-4 flex flex-col gap-2 rounded-xl bg-secondary/50 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-[11px] leading-relaxed text-muted-foreground">
-            Saldo CreatePulse dan NexaBot dalam Rupiah; Seavi dalam token.
+            Saldo CreatePulse, NexaBot, dan PosBot dalam Rupiah; Seavi dalam token.
             Tiap layanan punya dompet sendiri, jadi saldo tidak bisa dipindah atau dijumlahkan.
           </p>
           <span className="shrink-0 text-[10px] text-muted-foreground">

@@ -24,26 +24,38 @@ import db from '../db.js'
  * tanpa menyentuh VPS.
  */
 
-export type ServerKeyProvider = 'seavi'
+export type ServerKeyProvider = 'seavi' | 'posbot'
 
 interface ProviderSpec {
   label: string
+  /** Nama singkat untuk kalimat kelayakan saldo (mis. 'Seavi', 'PosBot'). */
+  msgName: string
   /** Nama satuan saldo yang dibaca member. */
   unit: 'saldo' | 'token'
   settingKey: string
   envKey: string
-  balanceTable: 'seavi_balance'
-  usageTable: 'seavi_usage'
+  balanceTable: string
+  usageTable: string
 }
 
 export const PROVIDER_SPECS: Record<ServerKeyProvider, ProviderSpec> = {
   seavi: {
     label: 'Seavi Labs',
+    msgName: 'Seavi',
     unit: 'token',
     settingKey: 'seavi_master_api_key',
     envKey: 'SEAVI_MASTER_API_KEY',
     balanceTable: 'seavi_balance',
     usageTable: 'seavi_usage',
+  },
+  posbot: {
+    label: 'PosBot',
+    msgName: 'PosBot',
+    unit: 'saldo',
+    settingKey: 'posbot_master_api_key',
+    envKey: 'POSBOT_MASTER_API_KEY',
+    balanceTable: 'posbot_balance',
+    usageTable: 'posbot_usage',
   },
 }
 
@@ -142,6 +154,7 @@ export interface Kelayakan {
  */
 export function keyEligibility(provider: ServerKeyProvider, userId: number): Kelayakan {
   const spec = PROVIDER_SPECS[provider]
+  const namaSatuan = spec.unit === 'token' ? 'Token' : 'Saldo'
   if (!masterKey(provider)) {
     return { ok: false, reason: `Kunci ${spec.label} milik server belum diatur admin` }
   }
@@ -149,14 +162,14 @@ export function keyEligibility(provider: ServerKeyProvider, userId: number): Kel
     return { ok: true, reason: 'Admin — memakai kunci server tanpa potongan' }
   }
   if (balanceOf(provider, userId) > 0) {
-    return { ok: true, reason: 'Token Seavi tersedia' }
+    return { ok: true, reason: `${namaSatuan} ${spec.msgName} tersedia` }
   }
   if (hasRecentPaidUsage(provider, userId)) {
     return { ok: true, reason: 'Saldo baru dipotong untuk generate ini' }
   }
   return {
     ok: false,
-    reason: 'Token Seavi kosong — top up dulu, atau pakai API key Seavi milik Anda sendiri',
+    reason: `${namaSatuan} ${spec.msgName} kosong — top up dulu, atau pakai API key ${spec.msgName} milik Anda sendiri`,
   }
 }
 
@@ -175,16 +188,23 @@ export interface MasterKeyCheck {
 const KOSONG: MasterKeyCheck = { ok: false, valid: false, status: null }
 
 const SEAVI_BASE = (process.env.SEAVI_BASE || 'https://api.seavilabs.site/v1').replace(/\/+$/, '')
+const POSBOT_BASE = (process.env.POSBOT_BASE || 'https://api.posbot.web.id/api/v1').replace(/\/+$/, '')
 
-function probeRequest(kunci: string): { url: string; headers: Record<string, string> } {
-  return { url: `${SEAVI_BASE}/balance`, headers: { Authorization: `Bearer ${kunci}`, Accept: 'application/json' } }
+function probeRequest(provider: ServerKeyProvider, kunci: string): { url: string; headers: Record<string, string> } {
+  const headers = { Authorization: `Bearer ${kunci}`, Accept: 'application/json' }
+  if (provider === 'posbot') return { url: `${POSBOT_BASE}/balance`, headers }
+  return { url: `${SEAVI_BASE}/balance`, headers }
 }
 
-function ringkasanAkun(raw: any): string | undefined {
+function ringkasanAkun(provider: ServerKeyProvider, raw: any): string | undefined {
   if (!raw || typeof raw !== 'object') return undefined
   const bagian: string[] = []
+  // Seavi menjawab jumlah token; PosBot menjawab saldo Rupiah (IDR).
   if (typeof raw.token_remaining === 'number') bagian.push(`sisa ${raw.token_remaining} token`)
   if (typeof raw.token_used === 'number') bagian.push(`terpakai ${raw.token_used} token`)
+  if (provider === 'posbot' && typeof raw.saldo_generate === 'number') {
+    bagian.push(`sisa Rp ${raw.saldo_generate.toLocaleString('id-ID')}`)
+  }
   return bagian.length ? bagian.join(' · ') : undefined
 }
 
@@ -196,7 +216,7 @@ export async function checkMasterKey(provider: ServerKeyProvider, timeoutMs = 20
   const kunci = masterKey(provider)
   if (!kunci) return { ...KOSONG, error: `Kunci ${providerLabel(provider)} milik server belum diatur` }
 
-  const { url, headers } = probeRequest(kunci)
+  const { url, headers } = probeRequest(provider, kunci)
   try {
     const res = await fetch(url, { method: 'GET', headers, signal: AbortSignal.timeout(timeoutMs) })
     if (res.status === 401 || res.status === 403) {
@@ -218,7 +238,10 @@ export async function checkMasterKey(provider: ServerKeyProvider, timeoutMs = 20
     if (raw && raw.ok === false) {
       return { ...KOSONG, status: res.status, error: String(raw.error?.message || raw.error || 'Kunci ditolak penyedia') }
     }
-    return { ok: true, valid: true, status: res.status, detail: ringkasanAkun(raw) }
+    if (raw && raw.success === false) {
+      return { ...KOSONG, status: res.status, error: String(raw.error?.message || raw.error || 'Kunci ditolak penyedia') }
+    }
+    return { ok: true, valid: true, status: res.status, detail: ringkasanAkun(provider, raw) }
   } catch (err: any) {
     const timeout = err?.name === 'TimeoutError' || err?.name === 'AbortError'
     return {

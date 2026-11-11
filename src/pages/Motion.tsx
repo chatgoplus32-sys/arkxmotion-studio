@@ -18,6 +18,7 @@ import { getMagnificApiKey, submitMagnificMotion, pollMagnificMotion, type Magni
 import { getSeaviSpec, generateWithSeavi, buildSeaviPayload } from '@/lib/seavi'
 import { fetchSeaviWallet, chargeSeaviWallet, refundSeaviWallet } from '@/lib/seaviWallet'
 import { getPosbotSpec, generateWithPosbot, buildPosbotPayload, formatPosbotRupiah } from '@/lib/posbot'
+import { fetchPosbotWallet, chargePosbotWallet, refundPosbotWallet } from '@/lib/posbotWallet'
 import { useLocalStorage } from '@/lib/useLocalStorage'
 import { precheckProviderBalance } from '@/lib/balancePrecheck'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
@@ -258,6 +259,8 @@ export default function MotionPage() {
   const authToken = useAuthStore((s) => s.token)
   const authRole = useAuthStore((s) => s.user?.role)
   const [seaviTokens, setSeaviTokens] = useState<number | null>(null)
+  // Saldo Rupiah wallet PosBot user (deduct per slot saat generate).
+  const [posbotBalance, setPosbotBalance] = useState<number | null>(null)
 
   const { fetchMaintenance } = useProviderManager()
 
@@ -270,6 +273,19 @@ export default function MotionPage() {
     let alive = true
     fetchSeaviWallet(authToken)
       .then((w) => { if (alive && w) setSeaviTokens(w.tokens) })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [provider, authToken])
+
+  useEffect(() => {
+    if (provider !== 'posbot') {
+      setPosbotBalance(null)
+      return
+    }
+    if (!authToken) return
+    let alive = true
+    fetchPosbotWallet(authToken)
+      .then((w) => { if (alive && w) setPosbotBalance(w.balance) })
       .catch(() => {})
     return () => { alive = false }
   }, [provider, authToken])
@@ -719,8 +735,9 @@ export default function MotionPage() {
           negativePrompt: negativePrompt || undefined,
         })
 
-        // Generate per slot. PosBot memotong saldo saat submit dan merefund
-        // otomatis bila job gagal, jadi tidak ada pembukuan token di klien.
+        // Generate per slot; tiap slot dipotong & dikembalikan sendiri (wallet
+        // Rupiah internal — sama seperti Seavi) supaya slot yang gagal tidak
+        // memakan saldo slot lain. Upstream PosBot juga merefund saldonya sendiri.
         const rotation = await withTokenRotation<number>(
           'posbot',
           async (apiKey, keyInfo) => {
@@ -728,10 +745,20 @@ export default function MotionPage() {
             let okCount = 0
             for (const item of prepared) {
               const { slot, n, imageUrl, videoUrl } = item
+              let batchId: string | null = null
+              let chargeId: number | null = null
+              if (authRole !== 'admin' && authToken) {
+                const charge = await chargePosbotWallet(authToken, spec.id, 1)
+                batchId = charge.batchId
+                chargeId = charge.usageId ?? null
+                setPosbotBalance(charge.balance)
+                addLog(`💰 #${n} ${formatPosbotRupiah(charge.deducted)} dipotong · sisa ${formatPosbotRupiah(charge.balance)}`, 'info')
+              }
               try {
                 updateSlotStatus(slot.id, 'processing', 'Mengirim ke PosBot...')
                 const url = await generateWithPosbot({
                   apiKey,
+                  chargeId,
                   spec,
                   prompt: finalPrompt,
                   imageUrl,
@@ -765,6 +792,13 @@ export default function MotionPage() {
                 if (!voiced.selfHosted) persistResultToR2(rid, finalUrl)
                 setProgress(Math.round((okCount / prepared.length) * 100))
               } catch (slotErr: any) {
+                if (batchId && authToken) {
+                  const refunded = await refundPosbotWallet(authToken, { batch_id: batchId })
+                  if (refunded != null) {
+                    setPosbotBalance(refunded)
+                    addLog(`💸 #${n} saldo dikembalikan ✓ sisa ${formatPosbotRupiah(refunded)}`, 'warn')
+                  }
+                }
                 updateSlotStatus(slot.id, 'error', slotErr?.message || 'Gagal')
                 addLog(`#${n} ❌ ${slotErr?.message || 'Gagal'}`, 'error')
                 // Kunci ditolak / saldo habis → hentikan putaran ini agar kunci berikutnya dicoba.
@@ -774,6 +808,7 @@ export default function MotionPage() {
             return okCount
           },
           {
+            allowServerKey: true,
             onKeySwitch: (from, to, attempt) => {
               addLog(`🔄 Kunci invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn')
             },
@@ -2802,13 +2837,28 @@ export default function MotionPage() {
                   >
                     <Coins className="h-3 w-3" /> {seaviTokens ?? '…'} token
                   </span>
-                ) : provider !== 'seavi' ? (
+                ) : provider === 'posbot' && authRole !== 'admin' ? (
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[11px] ${
+                      (posbotBalance ?? 0) >= totalCredits
+                        ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
+                        : 'border-red-500/40 bg-red-500/10 text-red-400'
+                    }`}
+                  >
+                    <Coins className="h-3 w-3" /> {posbotBalance == null ? '…' : formatPosbotRupiah(posbotBalance)}
+                  </span>
+                ) : provider !== 'seavi' && provider !== 'posbot' ? (
                   <BalanceBadge provider={provider} required={totalCredits} />
                 ) : null}
               </div>
               {provider === 'seavi' && authRole !== 'admin' && authToken && (seaviTokens ?? 0) < totalCredits && (
                 <Link to="/topup/seavi" className="text-center text-[11px] font-medium text-primary hover:underline">
                   Top Up Token Seavi (Rp 3.400 = 2 token) →
+                </Link>
+              )}
+              {provider === 'posbot' && authRole !== 'admin' && authToken && (posbotBalance ?? 0) < totalCredits && (
+                <Link to="/topup/posbot" className="text-center text-[11px] font-medium text-primary hover:underline">
+                  Top Up Saldo PosBot →
                 </Link>
               )}
             </div>

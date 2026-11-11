@@ -424,3 +424,115 @@ export function findSeaviPackage(slug?: string | null): SeaviPackagePlan | undef
   if (!slug) return undefined
   return SEAVI_PACKAGES.find((plan) => plan.slug === slug)
 }
+
+// ── PosBot ───────────────────────────────────────────────────────────────
+// Wallet Rupiah per member (sama sistemnya dengan Seavi: saldo di server,
+// dipotong per generate, relay menyuntik kunci server lewat tiket pembayaran).
+// Bedanya hanya SATUAN: PosBot menagih dalam Rupiah (tarif developer upstream
+// = `saldo_generate` IDR), jadi saldo & tagihan dihitung Rp, bukan token.
+// Tarif di bawah WAJIB sama dengan `spec.price` di src/lib/posbot.ts — dijaga
+// tes kontrak silang (test/posbot.test.ts) supaya angka UI = angka potong server.
+
+/** Minimal top up saldo PosBot (Rp), sama dengan CreatePulse/NexaBot. */
+export const POSBOT_MIN_TOPUP = 10000
+
+/** Batas atas satu pengajuan top up PosBot (Rp) — salah ketik tidak merusak billing. */
+export const POSBOT_TOPUP_MAX = 5000000
+
+/** Nominal cepat yang ditawarkan di halaman Top Up PosBot. */
+export const POSBOT_TOPUP_PRESETS = [25000, 50000, 100000, 250000, 500000, 1000000] as const
+
+/** Tarif default untuk model yang tidak punya harga terdaftar. */
+export const POSBOT_DEFAULT_CHARGE = 1000
+
+/**
+ * Tarif Rupiah per generate tiap model PosBot. Cermin `spec.price` di
+ * src/lib/posbot.ts (POSBOT_MODELS). Daftar LENGKAP di sini — berbeda dari
+ * Seavi yang hanya mendaftarkan bobot > default — karena harga PosBot bervariasi
+ * 350–6500 dan tidak ada satu angka yang bisa jadi default aman.
+ */
+export const POSBOT_MODEL_PRICES: Record<string, number> = {
+  // Image generation
+  krea2_2k: 350,
+  nano_banana_2_4k: 350,
+  nano_banana_pro_4k: 350,
+  gpt_image_2_high: 350,
+  gpt_image_25: 350,
+  gpt_image_25_sunburst: 350,
+  flux_2_pro: 350,
+  seedream_50_lite: 350,
+  seedream_50_pro: 350,
+  seedream_45: 350,
+  seedream_5_fast_2k: 350,
+  seedream_5_pro_2k: 350,
+  // Image edit
+  face_swap: 350,
+  upscale_4k: 350,
+  // Video generation
+  grok_imagine_2_15s: 2500,
+  grok_imagine_2_30s: 4000,
+  grok_imagine_15_video_720p: 1500,
+  betagrok_15s: 1000,
+  s2_seedance_25_30s: 5000,
+  seedance_25_30s_strict: 5000,
+  seedance_20_15s: 5000,
+  seedance_20_mini: 2500,
+  wan_30_hd: 3000,
+  wan_remix_720p: 1000,
+  minimax_h3: 2000,
+  minimax_h3_720p: 1500,
+  kling_25_turbo: 2500,
+  kling_26_pro_1080p: 3000,
+  kling_30_turbo: 3000,
+  omni_flash_t2v: 1000,
+  omni_flash_sfv: 1000,
+  omni_flash_i2v: 1000,
+  omni_flash_r2v: 1000,
+  omni_flash_11_720p: 1000,
+  omni_flash_12_1080p: 1000,
+  watermark_remover: 1000,
+  // LipSync
+  minimax_lipsync: 1000,
+  ltx_lipsync: 2000,
+  // Motion control
+  betamotion_hd: 1000,
+  betamotion_1080p: 1500,
+  betamotion_1080p_pro: 2000,
+  betamotion_1080p_max: 2500,
+  motion_control_std: 1000,
+  motion_control_pro: 2500,
+  kling_30_std: 2000,
+  kling_30_pro: 3000,
+  // Video upscale
+  upscale_2k_60fps: 1000,
+  // Reference-to-video
+  seedance_25_30s_r2v: 6500,
+  seedance_20_mini_r2v: 3000,
+  kling_30_omni_r2v: 3500,
+  wan_30_r2v: 3000,
+  minimax_h3_r2v: 2500,
+  // Audio, TTS & music
+  google_tts: 500,
+  suno_v6: 500,
+  suno_v6_wild: 500,
+  suno_v6_mini: 500,
+  lyria_35: 500,
+  minimax_music_3: 500,
+  mureka_95: 500,
+  sonauto_3: 400,
+  acestep_15: 400,
+}
+
+/** Biaya satu generate PosBot dalam Rupiah (dikalikan `quantity` di server). */
+export function getPosbotCharge(model?: string): number {
+  if (!model) return POSBOT_DEFAULT_CHARGE
+  // Klien ada yang mengirim 'pb:xxx' atau id mentah 'xxx' — samakan dulu.
+  const id = model.includes(':') ? (model.split(':').pop() || model) : model
+  return POSBOT_MODEL_PRICES[id] ?? POSBOT_DEFAULT_CHARGE
+}
+
+/** Rentang harga efektif PosBot — dipakai endpoint publik & landing. */
+export function getPosbotPriceRange(): { min: number; max: number } {
+  const values = Object.values(POSBOT_MODEL_PRICES)
+  return { min: Math.min(...values), max: Math.max(...values) }
+}

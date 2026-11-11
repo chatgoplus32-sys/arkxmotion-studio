@@ -16,7 +16,13 @@ import {
   SEAVI_TOKEN_PRICE,
   SEAVI_DEFAULT_CHARGE,
   SEAVI_MODEL_TOKENS,
+  POSBOT_MIN_TOPUP,
+  POSBOT_TOPUP_MAX,
+  POSBOT_TOPUP_PRESETS,
+  POSBOT_DEFAULT_CHARGE,
+  POSBOT_MODEL_PRICES,
   getCreatepulsePriceRange,
+  getPosbotPriceRange,
 } from '../../shared/pricing.js'
 import { getNexabotPricing } from './nexabotWallet.js'
 
@@ -60,6 +66,15 @@ export function buildPublicPricing() {
         default_charge: SEAVI_DEFAULT_CHARGE,
         packages: SEAVI_PACKAGES.map((p) => ({ ...p })),
         models: { ...SEAVI_MODEL_TOKENS },
+      },
+      posbot: {
+        name: 'PosBot',
+        min_topup: POSBOT_MIN_TOPUP,
+        max_topup: POSBOT_TOPUP_MAX,
+        default_charge: POSBOT_DEFAULT_CHARGE,
+        presets: [...POSBOT_TOPUP_PRESETS],
+        price_range: getPosbotPriceRange(),
+        models: { ...POSBOT_MODEL_PRICES },
       },
     },
   }

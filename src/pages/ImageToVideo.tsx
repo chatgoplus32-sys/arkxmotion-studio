@@ -50,6 +50,7 @@ import VideoPlayer from './image-to-video/VideoPlayer'
 import { nexabotPathPill } from './image-to-video/nexabotPathPill'
 import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, nexabotRemainingLabel, nexabotFreeForModel, nexabotPreferServerKey, NEXABOT_PRICE_FALLBACK, NEXABOT_BOOSTER_COMING_SOON, type NexabotWallet } from '@/lib/nexabotWallet'
 import { fetchSeaviWallet, chargeSeaviWallet, refundSeaviWallet } from '@/lib/seaviWallet'
+import { fetchPosbotWallet, chargePosbotWallet, refundPosbotWallet, posbotPreferServerKey, type PosbotWallet } from '@/lib/posbotWallet'
 import { formatRp } from '@/lib/payment'
 import { runNexabotJobWithSessionFallback } from './image-to-video/nexabotSessionFallback'
 import { runWithNexabotThrottleRetry, NexabotResultError, NEXADANCE_PROMPT_MAX } from '@/lib/nexabot'
@@ -120,6 +121,13 @@ export default function ImageToVideoPage() {
   const seaviChargeRef = useRef<string | null>(null)
   // usage_id potongan aktif — tiket relay saat member memakai kunci server.
   const seaviChargeIdRef = useRef<number | null>(null)
+  // Kelayakan kunci server PosBot — dihitung relay, dikirim lewat /balance.
+  const [posbotServerReady, setPosbotServerReady] = useState(false)
+  // Saldo Rupiah wallet PosBot user. Null = belum dimuat / tamu.
+  const [posbotWallet, setPosbotWallet] = useState<PosbotWallet | null>(null)
+  // batch_id + usage_id potongan PosBot yang masih bisa di-refund bila gagal.
+  const posbotChargeRef = useRef<string | null>(null)
+  const posbotChargeIdRef = useRef<number | null>(null)
 
   const [imgUrl, setImgUrl] = useState<string | null>(null)
   const [imgFile, setImgFile] = useState<File | null>(null)
@@ -558,6 +566,7 @@ export default function ImageToVideoPage() {
   // Seavi: relay memasang kunci operator untuk member yang sudah top up.
   const serverKeyReady = (provider === 'nexabot' && nexabotServerReady)
     || (provider === 'seavi' && seaviServerReady)
+    || (provider === 'posbot' && posbotServerReady)
 
   const isVeoI2V = provider === 'firefly' && model.includes('veo') && !!imgFile
 
@@ -655,11 +664,17 @@ export default function ImageToVideoPage() {
     // dipakai" tidak baru muncul setelah diklik.
     fetchNexabotWallet(authToken).then((w) => { if (w) setNbWallet(w) }).catch(() => {})
     fetchSeaviWallet(authToken).then((w) => setSeaviServerReady(!!w?.server_key?.available)).catch(() => {})
+    fetchPosbotWallet(authToken).then((w) => setPosbotServerReady(!!w?.server_key?.available)).catch(() => {})
   }, [provider, authToken])
 
   useEffect(() => {
     if (provider !== 'seavi' || !authToken) { if (provider !== 'seavi') setSeaviTokens(null); return }
     fetchSeaviWallet(authToken).then((w) => { if (w) setSeaviTokens(w.tokens) }).catch(() => {})
+  }, [provider, authToken])
+
+  useEffect(() => {
+    if (provider !== 'posbot' || !authToken) { if (provider !== 'posbot') setPosbotWallet(null); return }
+    fetchPosbotWallet(authToken).then((w) => { if (w) setPosbotWallet(w) }).catch(() => {})
   }, [provider, authToken])
 
   const handleFileChange = (files: FileList | null) => {
@@ -1078,6 +1093,11 @@ export default function ImageToVideoPage() {
         })
       } catch (e: any) {
         return e?.message || 'Media input tidak sesuai model PosBot'
+      }
+      // Wallet Rupiah internal: cek kecukupan saldo sebelum generate (potongan
+      // sebenarnya terjadi di /deduct). Tamu tanpa login tetap pakai key sendiri.
+      if (user?.role !== 'admin' && authToken && (posbotWallet?.balance ?? 0) < posbotSpec.price) {
+        return `Saldo PosBot tidak cukup (${formatRp(posbotWallet?.balance ?? 0)}, butuh ${formatRp(posbotSpec.price)}). Top up di halaman Top Up PosBot.`
       }
     }
     if (provider === 'runninghub' && isRhSeedance26) {
@@ -1565,12 +1585,32 @@ export default function ImageToVideoPage() {
           throw new Error(e?.message || 'Media input tidak sesuai model PosBot')
         }
 
+        // Wallet Rupiah internal: potong di depan (sama seperti Seavi). Tamu
+        // tanpa login & admin tidak dipotong; admin tetap bisa pakai key sendiri.
+        const posbotIsAdmin = user?.role === 'admin'
+        const posbotUnits = 1
+        const posbotCost = spec.price * posbotUnits
+        if (!posbotIsAdmin && authToken) {
+          if ((posbotWallet?.balance ?? 0) < posbotCost) {
+            throw new Error(`Saldo PosBot tidak cukup (${formatRp(posbotWallet?.balance ?? 0)}, butuh ${formatRp(posbotCost)}). Top up di halaman Top Up PosBot.`)
+          }
+          addLog(`[1/3] 💰 Memotong ${formatRp(posbotCost)} saldo PosBot...`, 'info', 'posbot')
+          const charge = await chargePosbotWallet(authToken, spec.id, posbotUnits)
+          posbotChargeRef.current = charge.batchId
+          posbotChargeIdRef.current = charge.usageId ?? null
+          setPosbotWallet((w) => (w ? { ...w, balance: charge.balance } : w))
+          addLog(`[1/3] ✅ Saldo terpotong ✓ sisa ${formatRp(charge.balance)}`, 'success', 'posbot')
+        } else if (posbotIsAdmin) {
+          addLog(`[1/3] ⚡ Admin mode — skip potongan saldo`, 'info', 'posbot')
+        }
+
         const rotation = await withTokenRotation<string>(
           'posbot',
           async (apiKey, keyInfo) => {
             addLog(`🔑 Trying key: ${keyInfo.name || keyInfo.id}`, 'info', 'posbot')
             return await generateWithPosbot({
               apiKey,
+              chargeId: posbotChargeIdRef.current,
               spec,
               prompt: prompt.trim(),
               imageUrls: posbotImageUrls,
@@ -1584,6 +1624,10 @@ export default function ImageToVideoPage() {
             })
           },
           {
+            // Tanpa API key sendiri: member yang sudah top up tetap bisa
+            // generate lewat kunci server (relay menolak dengan pesan jelas
+            // kalau syaratnya belum terpenuhi).
+            allowServerKey: true,
             onKeySwitch: (from, to, attempt) => {
               addLog(`🔄 Kunci/saldo bermasalah! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn', 'posbot')
             },
@@ -3626,6 +3670,17 @@ export default function ImageToVideoPage() {
             setSeaviTokens(refunded)
           }
         }
+        // PosBot: kembalikan saldo Rupiah yang dipotong aplikasi bila generate
+        // gagal. (Upstream PosBot juga me-refund saldo_gross miliknya sendiri.)
+        if (provider === 'posbot' && posbotChargeRef.current && authToken) {
+          const batch = posbotChargeRef.current
+          posbotChargeRef.current = null
+          const refunded = await refundPosbotWallet(authToken, { batch_id: batch })
+          if (refunded != null) {
+            addLog(`💸 Saldo PosBot dikembalikan ✓ sisa ${formatRp(refunded)}`, 'warn', 'posbot')
+            setPosbotWallet((w) => (w ? { ...w, balance: refunded } : w))
+          }
+        }
        addLog(`❌ Error: ${err.message}`, 'error', provider)
        addToast(`Generate gagal: ${err.message}`, 'error')
        if (logId) logGenerationFailed(logId, err.message, Date.now() - startTime)
@@ -3641,6 +3696,8 @@ export default function ImageToVideoPage() {
        nbChargeRef.current = null
        seaviChargeRef.current = null
        seaviChargeIdRef.current = null
+       posbotChargeRef.current = null
+       posbotChargeIdRef.current = null
        // Jatah NexaDance berubah setiap generate: baca ulang dari server supaya
        // angka "sisa" di panel tidak tertinggal satu video.
        if (provider === 'nexabot' && authToken) {

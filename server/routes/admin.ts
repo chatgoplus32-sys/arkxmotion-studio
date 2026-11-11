@@ -602,7 +602,7 @@ router.post('/nexabot/master-accounts/:id/check', authenticateToken, requireAdmi
 // sudah top up, jadi nilainya tidak boleh ikut dalam respons mana pun —
 // termasuk respons admin. Yang boleh dibaca browser hanya statusnya.
 
-for (const provider of ['seavi'] as ServerKeyProvider[]) {
+for (const provider of ['seavi', 'posbot'] as ServerKeyProvider[]) {
   const label = providerMasterLabel(provider)
   const settingKey = providerSettingKey(provider)
 

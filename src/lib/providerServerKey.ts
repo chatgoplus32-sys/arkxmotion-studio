@@ -54,11 +54,11 @@ export function relayAuthHeaders(apiKey: string, chargeId?: number | null): Reco
  * Entri kunci semu supaya `withTokenRotation` bisa menjalankan satu percobaan
  * lewat relay tanpa kunci member. Tidak pernah disimpan ke providerManager.
  */
-export function serverKeyEntry(provider: 'seavi'): ProviderKey {
+export function serverKeyEntry(provider: 'seavi' | 'posbot'): ProviderKey {
   return {
     id: `server-key:${provider}`,
     key: SERVER_KEY,
-    name: 'Kunci server Seavi',
+    name: `Kunci server ${provider === 'posbot' ? 'PosBot' : 'Seavi'}`,
     status: 'active',
   }
 }

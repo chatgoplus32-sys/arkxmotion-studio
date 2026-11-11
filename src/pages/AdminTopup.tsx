@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
-import { Section, Button, Badge } from '@/components/ui'
+import { Section, Button, Badge, Select, Label } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { CheckCircle, XCircle, Clock, Wallet, Sparkles } from 'lucide-react'
@@ -37,7 +37,17 @@ export default function AdminTopupPage() {
   const [actionLoading, setActionLoading] = useState<number | null>(null)
   // Wallet mana yang sedang dibuka: CreatePulse (Rp), NexaBot (Rp), Seavi (token),
   // atau manual untuk provider tanpa dompet (Roboneo/Weavy/Framia, dll.).
-  const [provider, setProvider] = useState<'createpulse' | 'nexabot' | 'seavi' | 'manual'>('createpulse')
+  const [provider, setProvider] = useState<'createpulse' | 'nexabot' | 'seavi' | 'posbot' | 'manual'>('createpulse')
+
+  // Inject saldo langsung (promo) — hanya dompet member yang punya saldo.
+  const [users, setUsers] = useState<{ id: number; email: string; name: string | null }[]>([])
+  const [injUserFilter, setInjUserFilter] = useState('')
+  const [injUserId, setInjUserId] = useState('')
+  const [injProvider, setInjProvider] = useState<'createpulse' | 'nexabot' | 'seavi' | 'posbot'>('createpulse')
+  const [injAmount, setInjAmount] = useState('')
+  const [injNote, setInjNote] = useState('')
+  const [injBalance, setInjBalance] = useState<number | null>(null)
+  const [injBusy, setInjBusy] = useState(false)
 
   const API = '/api/admin/topup'
   const headers = useMemo(() => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }), [token])
@@ -153,6 +163,60 @@ export default function AdminTopupPage() {
   }
 
   const formatRp = (n: number) => `Rp ${n.toLocaleString('id-ID')}`
+
+  useEffect(() => {
+    fetch('/api/admin/users', { headers })
+      .then((r) => r.json())
+      .then((d) => setUsers(Array.isArray(d.users) ? d.users : []))
+      .catch((e) => console.error('[AdminTopup] Failed to load members:', e))
+  }, [headers])
+
+  // Pratinjau saldo target setiap member/provider berubah.
+  useEffect(() => {
+    if (!injUserId) { setInjBalance(null); return }
+    fetch(`${API}/balance/${injUserId}?provider=${injProvider}`, { headers })
+      .then((r) => r.json())
+      .then((d) => setInjBalance(Number(d.balance) || 0))
+      .catch(() => setInjBalance(null))
+  }, [injUserId, injProvider, headers, API])
+
+  const filteredUsers = useMemo(() => {
+    const q = injUserFilter.toLowerCase().trim()
+    const list = q ? users.filter((u) => `${u.email} ${u.name || ''}`.toLowerCase().includes(q)) : users
+    return list.slice(0, 80)
+  }, [users, injUserFilter])
+
+  const handleInject = async () => {
+    const amount = Math.round(Number(injAmount))
+    if (!injUserId) { addToast('Pilih member dulu', 'warning'); return }
+    if (!Number.isFinite(amount) || amount <= 0) { addToast('Nominal tidak valid', 'warning'); return }
+    setInjBusy(true)
+    try {
+      const res = await fetch(`${API}/inject`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ user_id: Number(injUserId), provider: injProvider, amount, note: injNote }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        addToast(data.message || 'Berhasil inject saldo', 'success')
+        setInjBalance(Number(data.balance) || 0)
+        setInjAmount('')
+        setInjNote('')
+        fetchTopups()
+      } else {
+        addToast(data.error || 'Gagal inject saldo', 'error')
+      }
+    } catch {
+      addToast('Network error', 'error')
+    }
+    setInjBusy(false)
+  }
+
+  const injIsToken = injProvider === 'seavi'
+  const injUnit = injIsToken ? 'token' : 'Rp'
+  const injBalanceLabel = injBalance == null ? '—' : (injIsToken ? `${injBalance.toLocaleString('id-ID')} token` : formatRp(injBalance))
+
   /** Nominal utama tiap baris: token untuk Seavi, Rupiah untuk lainnya. */
   const formatCredit = (t: Topup) =>
     provider === 'seavi' ? `${Number(t.tokens) || 0} token (${formatRp(t.amount)})` : formatRp(t.amount)
@@ -171,9 +235,80 @@ export default function AdminTopupPage() {
       <PageHeader
         eyebrow="Admin"
         title="Approval Top Up"
-        highlight={provider === 'manual' ? 'Manual' : provider === 'nexabot' ? 'NexaBot' : provider === 'seavi' ? 'Seavi' : 'CreatePulse'}
+        highlight={provider === 'manual' ? 'Manual' : provider === 'nexabot' ? 'NexaBot' : provider === 'seavi' ? 'Seavi' : provider === 'posbot' ? 'PosBot' : 'CreatePulse'}
         desc="Setujui atau tolak topup saldo member"
       />
+
+      <Section title="Inject Saldo Promo" sub="Kredit saldo layanan member langsung di luar alur top-up. Hanya CreatePulse / NexaBot / PosBot (Rp) & Seavi (token) yang punya dompet member.">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <Label className="mb-1 block">Cari member</Label>
+            <input
+              value={injUserFilter}
+              onChange={(e) => setInjUserFilter(e.target.value)}
+              placeholder="nama / email"
+              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <Label className="mb-1 block">Member</Label>
+            <Select
+              value={injUserId}
+              onChange={(e) => setInjUserId(e.target.value)}
+              options={[
+                { value: '', label: '— pilih member —' },
+                ...filteredUsers.map((u) => ({ value: String(u.id), label: `${u.name || '(tanpa nama)'} — ${u.email}` })),
+              ]}
+            />
+          </div>
+          <div>
+            <Label className="mb-1 block">Provider</Label>
+            <Select
+              value={injProvider}
+              onChange={(e) => setInjProvider(e.target.value as 'createpulse' | 'nexabot' | 'seavi' | 'posbot')}
+              options={[
+                { value: 'createpulse', label: 'CreatePulse (Rp)' },
+                { value: 'nexabot', label: 'NexaBot (Rp)' },
+                { value: 'seavi', label: 'Seavi (token)' },
+                { value: 'posbot', label: 'PosBot (Rp)' },
+              ]}
+            />
+          </div>
+          <div>
+            <Label className="mb-1 block">Jumlah ({injUnit})</Label>
+            <input
+              type="number"
+              min={1}
+              value={injAmount}
+              onChange={(e) => setInjAmount(e.target.value)}
+              placeholder={injIsToken ? 'mis. 50' : 'mis. 100000'}
+              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+            />
+          </div>
+          <div className="md:col-span-2">
+            <Label className="mb-1 block">Catatan (opsional)</Label>
+            <input
+              value={injNote}
+              onChange={(e) => setInjNote(e.target.value)}
+              placeholder="mis. promo bulan ini / ganti rugi / hadiah event"
+              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+            />
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 mt-4">
+          <div className="text-sm text-muted-foreground">
+            {injUserId ? (
+              <>Saldo {injIsToken ? 'Seavi' : injProvider === 'nexabot' ? 'NexaBot' : injProvider === 'posbot' ? 'PosBot' : 'CreatePulse'} saat ini: <b className="text-foreground">{injBalanceLabel}</b></>
+            ) : (
+              'Pilih member untuk melihat saldo saat ini.'
+            )}
+          </div>
+          <Button onClick={handleInject} disabled={injBusy || !injUserId || !injAmount}>
+            <Sparkles className="h-4 w-4 mr-1" />
+            {injBusy ? 'Memproses…' : 'Kredit Saldo'}
+          </Button>
+        </div>
+      </Section>
 
       <div className="flex gap-2 mb-4">
         <Button
@@ -196,6 +331,13 @@ export default function AdminTopupPage() {
           onClick={() => setProvider('seavi')}
         >
           Seavi
+        </Button>
+        <Button
+          size="sm"
+          variant={provider === 'posbot' ? 'default' : 'outline'}
+          onClick={() => setProvider('posbot')}
+        >
+          PosBot
         </Button>
         <Button
           size="sm"
