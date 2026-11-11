@@ -223,6 +223,7 @@ export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'pb:wan_30_r2v', label: 'Wan 3.0 R2V HD · 15 dtk', cr: 3000, provider: 'posbot', apiModel: 'wan_30_r2v' },
     { value: 'pb:minimax_h3_r2v', label: 'MiniMax H3 R2V HD · 15 dtk', cr: 2500, provider: 'posbot', apiModel: 'minimax_h3_r2v' },
   ],
+  omni: [],
 }
 
 export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; label: string; mult: number; duration: number; cr?: number; resolution?: string; sound?: string; sizeTier?: string }>>> = {
@@ -820,6 +821,7 @@ export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: s
     }
     return out
   })(),
+  omni: {},
 }
 
 export const CP_PRICES: Record<string, number> = {

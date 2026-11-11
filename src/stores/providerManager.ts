@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { RHTokenWallet } from '@/lib/runninghub'
 
-export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'runninghub' | 'createpulse' | 'framia' | 'firefly' | 'leonardo' | 'gemini' | 'openai' | 'shotstack' | 'creatomate' | 'galleri5' | 'oneover' | 'genspark' | 'riverside' | 'nexabot' | 'seavi' | 'markastools' | 'freebeat' | 'posbot'
+export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'runninghub' | 'createpulse' | 'framia' | 'firefly' | 'leonardo' | 'gemini' | 'openai' | 'shotstack' | 'creatomate' | 'galleri5' | 'oneover' | 'genspark' | 'riverside' | 'nexabot' | 'seavi' | 'markastools' | 'freebeat' | 'posbot' | 'omni'
 
 export const HIDDEN_PROVIDERS: ProviderId[] = []
 
@@ -261,6 +261,16 @@ export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
     minCredits: 0,
     supportsBalance: true,
   },
+  omni: {
+    id: 'omni',
+    name: 'Omni (Google Gemini)',
+    icon: '🧠',
+    description: 'Google Gemini Omni (omni-1.2-flash) — generate video 15 detik dari teks via API key Gemini',
+    keyPlaceholder: 'Paste your Gemini API key...',
+    keyFormat: 'API key dari Google AI Studio (aistudio.google.com)',
+    minCredits: 0,
+    supportsBalance: false,
+  },
 }
 
 function getDefaultMaintenance(): Record<ProviderId, MaintenanceInfo> {
@@ -287,6 +297,7 @@ function getDefaultMaintenance(): Record<ProviderId, MaintenanceInfo> {
     markastools: { isMaintenance: false, message: '' },
     freebeat: { isMaintenance: false, message: '' },
     posbot: { isMaintenance: false, message: '' },
+  omni: { isMaintenance: false, message: '' },
   }
 }
 
@@ -404,6 +415,7 @@ function loadKeysFromStorage(): Record<ProviderId, ProviderKey[]> {
     markastools: [],
     freebeat: [],
     posbot: [],
+    omni: [],
   }
   const validIds = Object.keys(defaults) as string[]
 

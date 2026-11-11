@@ -79,6 +79,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   markastools: '#7fd3ff',
   freebeat: '#F5C542',
   posbot: '#14b8a6',
+  omni: '#8B5CF6',
 }
 
 /**
@@ -129,6 +130,7 @@ const PROVIDER_LIST = [
   { key: 'markastools', label: 'MarkasTools', desc: 'MarkasTools via ai.markastools.id — Motion Control MarkasFlow. Token akun MF- (MarkasKeyTool) didaftarkan sebagai akun "Markasflow", lalu dipakai otomatis (rotasi oleh MarkasTools). Butuh langganan MarkasTools + cookie session.' },
   { key: 'freebeat', label: 'Freebeat AI', desc: '31 model gambar (Nano Banana 2, Z-Image Turbo, Kling Image V3, Qwen, Wan, Seedream, Flux, GPT-Image) via freebeat.ai — API key dari profil akun, kredit dipotong langsung di akun freebeat.' },
   { key: 'posbot', label: 'PosBot', desc: 'PosBot Developer API v1 — 60 model AI: gambar, video T2V/I2V/R2V, motion control, lipsync, TTS & musik. Saldo Rupiah dipotong per generate, job gagal direfund 100% otomatis.' },
+  { key: 'omni', label: 'Omni (Google Gemini)', desc: 'Omni (omni-1.2-flash) via freebeat.ai — generate video 15 detik dari teks. Kredit dipotong langsung di akun freebeat.' },
 ] as const
 
 const MENU_HIDDEN_PROVIDERS = [
@@ -412,6 +414,17 @@ const TOKEN_GUIDE: Record<string, {
       { text: 'Klik Cek Token untuk melihat sisa kredit (best-effort).' },
     ],
     tip: 'Freebeat dipakai di halaman Edit Image dengan 31 model gambar (Nano Banana 2/Pro, Z-Image Turbo, Kling Image V3, Qwen, Wan, Seedream 5.0, Flux, GPT-Image, dll). Setiap generate memotong kredit akun freebeat upstream — app ini tidak menagih saldo lokal (Z-Image Turbo termurah: 3 kredit; Nano Banana 2: 23; Nano Banana Pro: 46). 500 kredit gratis saat daftar; top up paket di freebeat.ai/pricing.',
+  },
+  omni: {
+    url: 'https://aistudio.google.com/api-keys',
+    urlLabel: 'Google AI Studio',
+    prefix: 'API key (tanpa prefix khusus)',
+    steps: [
+      { text: 'Buka Google AI Studio dan login pakai akun Google.' },
+      { text: 'Klik "Get API key" → buat key baru → copy.' },
+      { text: 'Paste ke input di samping → klik Cek Token untuk memverifikasi.' },
+    ],
+    tip: 'Omni (Google Gemini omni-1.2-flash) generate video 15 detik dari teks. Setiap generate memotong kuota API key Google Anda — app ini tidak menagih saldo lokal.',
   },
 }
 function maskKey(key: string): string {
@@ -1161,6 +1174,7 @@ export default function ProvidersPage() {
       seavi: 'seavi',
       freebeat: 'freebeat',
       posbot: 'posbot',
+      omni: 'omni',
     }
     const providerId = providerMap[selectedProvider]
     return providerId ? isProviderMaintenance(providerId) : false
@@ -1184,6 +1198,7 @@ export default function ProvidersPage() {
       seavi: 'seavi',
       freebeat: 'freebeat',
       posbot: 'posbot',
+      omni: 'omni',
     }
     const providerId = providerMap[selectedProvider]
     return providerId ? getMaintenanceMessage(providerId) : ''
