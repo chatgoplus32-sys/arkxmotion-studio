@@ -18,7 +18,7 @@ print('  Connected OK')
 
 sftp = c.open_sftp()
 
-files = ['server.js', 'dashboard.html', 'register.html', '.env.example', 'package.json']
+files = ['server.js', 'dashboard.html', 'register.html', '.env.example', 'package.json', 'seavi-models.json']
 for f in files:
     local_path = LOCAL_DIR + '/' + f
     remote_path = REMOTE_DIR + '/' + f
