@@ -22,6 +22,51 @@ const ALLOWED_PATHS = new Set([
   '/v1/user/credits/findCredits',
 ])
 
+/** Coba auth raw dulu (kontrak freebeat-mcp), fallback Bearer bila 401/403. */
+async function freebeatFetch(upstreamUrl: string, body: Uint8Array | undefined, authKey: string): Promise<any> {
+  const rawHeaders: Record<string, string> = {
+    'Authorization': authKey.trim(),
+    'Content-Type': 'application/json',
+    'Accept': 'application/json, text/plain, */*',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  }
+  const bearerHeaders: Record<string, string> = {
+    ...rawHeaders,
+    'Authorization': `Bearer ${authKey.trim()}`,
+  }
+
+  let lastRes: any = null
+  let lastText = ''
+
+  for (const headers of [rawHeaders, bearerHeaders]) {
+    try {
+      const res = await fetch(upstreamUrl, {
+        method: 'POST',
+        headers,
+        body: body ?? undefined,
+        signal: AbortSignal.timeout(120000),
+      })
+      lastRes = res
+      lastText = await res.text()
+      // Jika berhasil atau bukan error auth, langsung kembalikan.
+      if (res.status < 400 || (res.status !== 401 && res.status !== 403)) {
+        return res
+      }
+      // 401/403 dengan raw → coba Bearer.
+    } catch {
+      continue
+    }
+  }
+  // Kembalikan respons terakhir (biasanya 401/403) agar errornya terlihat.
+  if (lastRes) {
+    return new Response(lastText, {
+      status: lastRes.status,
+      headers: { 'Content-Type': lastRes.headers.get('content-type') || 'application/json' },
+    })
+  }
+  throw new Error('freebeat upstream tidak merespons')
+}
+
 router.all('/{*path}', async (req: Request, res: Response) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
@@ -51,22 +96,11 @@ router.all('/{*path}', async (req: Request, res: Response) => {
     const upstreamUrl = `${FREEBEAT_BASE}${upstreamPath}`
     console.log(`[freebeat-proxy] ${req.method} ${upstreamPath}`)
 
-    const proxyRes = await fetch(upstreamUrl, {
-      method: req.method,
-      headers: {
-        // MENTAH — tanpa prefix "Bearer" (kontrak freebeat CLI).
-        'Authorization': String(auth).trim(),
-        'Content-Type': 'application/json',
-        'Accept': 'application/json, text/plain, */*',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      },
-      body: req.method !== 'GET' && req.method !== 'HEAD' ? rawBody : undefined,
-      signal: AbortSignal.timeout(120000),
-    })
+    const proxyRes = await freebeatFetch(upstreamUrl, rawBody, String(auth))
 
     const text = await proxyRes.text()
     if (proxyRes.status >= 400) {
-      console.log(`[freebeat-proxy] ${proxyRes.status}: ${text.slice(0, 200)}`)
+      console.log(`[freebeat-proxy] ${proxyRes.status}: ${text}`)
     }
     res.writeHead(proxyRes.status, {
       'Content-Type': proxyRes.headers.get('content-type') || 'application/json',
