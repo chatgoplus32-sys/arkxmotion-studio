@@ -58,10 +58,10 @@ import { runWithNexabotThrottleRetry, NexabotResultError, NEXADANCE_PROMPT_MAX }
 // voice resmi NexaBot (GET /api/v1/modes → voices).
 const NEXABOT_DEFAULT_VOICE = 'Achernar'
 
-// Provider yang sementara disembunyikan di halaman Image to Video (tinggal
-// kembangkan daftarnya untuk menampilkan lagi): leonardo, roboneo, galleri5,
-// weavy, wavespeed, framia, oneover, firefly, genspark, riverside.
-const I2V_PROVIDER_IDS: ProviderId[] = ['createpulse', 'nexabot', 'runninghub', 'seavi']
+// Provider yang tampil di halaman Image to Video. Kembangkan daftar ini untuk
+// menampilkan provider lain yang sudah terdaftar (leonardo, roboneo, galleri5,
+// weavy, wavespeed, framia, oneover, firefly, genspark, riverside).
+const I2V_PROVIDER_IDS: ProviderId[] = ['createpulse', 'nexabot', 'runninghub', 'seavi', 'posbot']
 
 // Bahasa sehari-hari untuk pemilih provider — hindari istilah model/keys mentah.
 const I2V_PROVIDER_HINTS: Partial<Record<ProviderId, { tagline: string; recommended?: boolean }>> = {
@@ -69,6 +69,7 @@ const I2V_PROVIDER_HINTS: Partial<Record<ProviderId, { tagline: string; recommen
   nexabot: { tagline: 'Bayar per video dengan saldo NexaBot atau Paket Unlimited.' },
   runninghub: { tagline: 'Workflow populer: Seedance dan MiniMax H3.' },
   seavi: { tagline: 'Image to video & multimodal — tanpa API key kalau token Seavi sudah diisi.' },
+  posbot: { tagline: 'Bayar pakai saldo Rupiah PosBot — 19 model video, API key pb_live_… dari bot Telegram.' },
 }
 
 export default function ImageToVideoPage() {
@@ -3571,7 +3572,8 @@ export default function ImageToVideoPage() {
   // Ditampilkan di kartu provider NexaBot (lihat nexabotPathPill).
   const nexabotPill = nexabotPathPill(keys.nexabot, nexabotSession, nexabotChecking, nbWallet?.server_key)
 
-  // Sementara hanya 5 provider ini yang tampil (leonardo, weavy, wavespeed, framia, oneover, firefly, genspark, riverside disembunyikan).
+  // Hanya provider di I2V_PROVIDER_IDS yang tampil sebagai kartu; sisanya
+  // (leonardo, weavy, wavespeed, framia, oneover, firefly, genspark, riverside) disembunyikan.
   const PROVIDER_IDS: ProviderId[] = I2V_PROVIDER_IDS
 
   return (
@@ -4079,7 +4081,7 @@ export default function ImageToVideoPage() {
               </Section>
             ) : (
               /* Default UI for other providers */
-              <Section title="🖼️ Gambar / Video Input" sub="1 file (JPG / PNG / WEBP / MP4) — optional untuk text-to-video">
+              <Section title="🖼️ Gambar / Video Input" sub={isPosbot ? '1 gambar (wajib) — JPG / PNG / WEBP' : '1 file (JPG / PNG / WEBP / MP4) — optional untuk text-to-video'}>
                 <input ref={inputRef} type="file" accept="image/*" hidden onChange={(e) => handleFileChange(e.target.files)} />
                 {imgUrl ? (
                   <div className="relative aspect-[9/16] rounded-2xl overflow-hidden border border-border">
@@ -4093,7 +4095,7 @@ export default function ImageToVideoPage() {
                   <button onClick={() => inputRef.current?.click()} className="w-full aspect-[9/16] rounded-2xl border border-dashed border-border/80 bg-card/30 grid place-items-center hover:border-primary/60 transition text-center px-4">
                     <div>
                       <div className="text-3xl">🖼️</div>
-                      <div className="text-sm mt-1">Tap atau tarik <b>gambar</b> (opsional)</div>
+                      <div className="text-sm mt-1">Tap atau tarik <b>gambar</b> {isPosbot ? '(wajib)' : '(opsional)'}</div>
                       <div className="text-[11px] text-muted-foreground">JPG / PNG / WEBP</div>
                     </div>
                   </button>
@@ -4134,7 +4136,9 @@ export default function ImageToVideoPage() {
                         value: m.value,
                         label: provider === 'createpulse'
                           ? m.label
-                          : `${m.label} — ${m.cr === 0 ? 'kuota' : '$' + (m.cr / 1000).toFixed(3)}`,
+                          : provider === 'posbot'
+                            ? `${m.label} — Rp ${m.cr.toLocaleString('id-ID')}`
+                            : `${m.label} — ${m.cr === 0 ? 'kuota' : '$' + (m.cr / 1000).toFixed(3)}`,
                       }))}
                     />
                   </div>
