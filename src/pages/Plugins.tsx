@@ -433,18 +433,11 @@ const PLUGINS: PluginInfo[] = [
     hasExtension: true,
     status: 'available',
   },
-  {
-    id: 'markastools',
-    name: 'MarkasTools',
-    icon: '🌀',
-    color: '#7fd3ff',
-    description: 'Ambil cookie session ai.markastools.id (HttpOnly) + AUTO-SYNC ke app — syarat utama agar token MF- bisa didaftarkan',
-    type: 'extension',
-    // Cookie sesi MarkasTools HttpOnly → hanya extension yang bisa membacanya.
-    hasScript: false,
-    hasExtension: true,
-    status: 'available',
-  },
+  // Catatan: entri MarkasTools sengaja DIHAPUS dari daftar ini sementara —
+  // MarkasTools butuh langganan Rp 60rb/bulan sebelum token MF- bisa dipakai.
+  // File extensionnya masih ada di public/downloads/markastools-extension.zip
+  // dan kodenya masih utuh; cukup tambahkan entri { id: 'markastools', … }
+  // di sini untuk menampilkannya lagi.
 ]
 
 // ─── Install guide steps ─────────────────────────────────────────────────────

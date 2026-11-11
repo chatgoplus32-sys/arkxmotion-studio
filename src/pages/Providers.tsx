@@ -136,6 +136,10 @@ const MENU_HIDDEN_PROVIDERS = [
   'genspark',
   'riverside',
   'galleri5',
+  // MarkasTools disembunyikan sementara: butuh langganan Rp 60rb/bulan
+  // (paket Bulanan) sebelum token MF- bisa dipakai. Kode & token yang sudah
+  // disimpan TIDAK dihapus — cukup hapus baris ini untuk menghidupkan lagi.
+  'markastools',
 ] as const
 
 const HIDDEN_FROM_MENU = new Set<string>([...HIDDEN_PROVIDERS, ...MENU_HIDDEN_PROVIDERS])

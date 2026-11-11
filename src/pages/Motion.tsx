@@ -110,7 +110,7 @@ const PROVIDERS = {
 
 // Halaman Motion Control menawarkan dua provider yang paling stabil, biar
 // member tidak bingung memilih. Provider lain tetap dipakai halaman lain.
-const MOTION_PROVIDER_IDS = ['runninghub', 'seavi', 'markastools'] as const
+const MOTION_PROVIDER_IDS = ['runninghub', 'seavi'] as const
 type MotionProviderId = (typeof MOTION_PROVIDER_IDS)[number]
 
 const MOTION_PROVIDER_INFO: Record<MotionProviderId, { name: string; tagline: string; note: string; recommended?: boolean }> = {
@@ -125,18 +125,12 @@ const MOTION_PROVIDER_INFO: Record<MotionProviderId, { name: string; tagline: st
     tagline: 'Bayar pakai token Seavi',
     note: 'Tanpa API key — top up token di halaman Top Up Seavi (Rp 4.000 = 2 token). Model 15 dtk keluar tanpa suara; suara video referensi otomatis ditempel ulang di browser (+beberapa detik sebelum hasil tampil).',
   },
-  markastools: {
-    name: 'MarkasTools',
-    tagline: 'Bayar lewat langganan MarkasTools',
-    note: 'BUTUH: cookie session ai.markastools.id + token MF- didaftarkan sebagai akun Markasflow (Providers → MarkasTools → Bulk token MF-). MarkasTools yang merotasi token antar generate, jadi 1 akun aktif saja cukup.',
-  },
 }
 
 // Default model tiap provider: pilih yang paling murah, bukan yang pertama di daftar.
 const MOTION_RECOMMENDED_MODEL: Record<MotionProviderId, string> = {
   runninghub: 'rh:std:2.6',
   seavi: 'sv:motion_control_v3_server23_15dtk',
-  markastools: 'mt:markasflow-motion-v25',
 }
 
 // Label awam untuk dropdown model — nama workflow aslinya terlalu teknis.
@@ -159,7 +153,7 @@ function motionModelLabel(providerId: MotionProviderId, model: { key: string; la
   const name = SIMPLE_MODEL_LABELS[model.key] || model.label
   const price = providerId === 'seavi'
     ? `${model.cr} token`
-    : providerId === 'markastools'
+    : (providerId as string) === 'markastools'
       ? 'langganan MarkasTools'
       : `${model.cr} kredit`
   const tag = model.key === MOTION_RECOMMENDED_MODEL[providerId] ? ' · disarankan' : ''
@@ -1736,7 +1730,7 @@ export default function MotionPage() {
               
               return false
             }
-          } else if (provider === 'markastools' && slot.image && slot.video) {
+          } else if ((provider as string) === 'markastools' && slot.image && slot.video) {
             // ─── MarkasTools: Motion Control via MarkasFlow (akun token MF-) ────
             try {
               const cookies = getMarkastoolsCookies() || ''
@@ -2354,7 +2348,7 @@ export default function MotionPage() {
                     const minPrice = Math.min(...PROVIDERS[id].models.map((m) => m.cr))
                     const priceLine = id === 'seavi'
                       ? `Mulai ${minPrice} token / video`
-                      : id === 'markastools'
+                      : (id as string) === 'markastools'
                         ? 'Langganan MarkasTools'
                         : `Mulai ${minPrice} kredit / video`
                     return (
