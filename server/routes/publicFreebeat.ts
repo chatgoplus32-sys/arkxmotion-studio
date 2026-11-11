@@ -70,7 +70,6 @@ async function freebeatFetch(upstreamPath: string, body: Uint8Array | undefined,
   ]
 
   let lastRes: any = null
-  let lastText = ''
   let lastStatus = 0
 
   for (const base of bases) {
@@ -84,22 +83,20 @@ async function freebeatFetch(upstreamPath: string, body: Uint8Array | undefined,
         })
         lastRes = res
         lastStatus = res.status
-        lastText = await res.text()
+        // Jangan baca body di sini (stream hanya bisa dibaca sekali);
+        // pemanggil akan membacanya setelah kita kembalikan res.
         if (res.status < 400 || (res.status !== 401 && res.status !== 403)) {
           console.log(`[freebeat-proxy] ${v.label} @ ${base} → ${res.status}`)
           return res
         }
-        console.log(`[freebeat-proxy] ${v.label} @ ${base} → ${res.status} ${lastText.slice(0, 120)}`)
+        console.log(`[freebeat-proxy] ${v.label} @ ${base} → ${res.status}`)
       } catch {
         continue
       }
     }
   }
   if (lastRes) {
-    return new Response(lastText, {
-      status: lastRes.status,
-      headers: { 'Content-Type': lastRes.headers.get('content-type') || 'application/json' },
-    })
+    return lastRes
   }
   throw new Error('freebeat upstream tidak merespons')
 }
