@@ -301,6 +301,17 @@ export async function uploadToCatbox(file: File, kind?: string, onProgress?: (ms
     })
   }
 
+  const uploadToProxy = async (target: string, f: File): Promise<string> => {
+    const fd = new FormData()
+    fd.append('file', new File([f], f.name || 'upload.bin', { type: f.type || 'application/octet-stream' }))
+    const url = `/api/public/upload-catbox?target=${encodeURIComponent(target)}`
+    return xhrUpload(target, url, fd, (text, status) => {
+      const data = JSON.parse(text || 'null')
+      if (status >= 200 && status < 300 && data?.url) return data.url
+      throw Error(data?.error || `${target} HTTP ${status}`)
+    })
+  }
+
   const uploaders: Array<[string, (f: File) => Promise<string>]> = [
     ['Server', async (f) => {
       const fd = new FormData()
@@ -312,46 +323,17 @@ export async function uploadToCatbox(file: File, kind?: string, onProgress?: (ms
         throw Error(data?.error || `Server HTTP ${status}`)
       })
     }],
-    ['Uguu', async (f) => {
-      const fd = new FormData()
-      fd.append('files[]', f, f.name || 'upload.bin')
-      return xhrUpload('Uguu', 'https://uguu.se/upload.php', fd, (text, status) => {
-        const data = JSON.parse(text || 'null')
-        const url = data?.files?.[0]?.url
-        if (status >= 200 && status < 300 && url && /^https?:\/\//i.test(url)) return url.replace(/\\\//g, '/')
-        throw Error(data?.error || `Uguu HTTP ${status}`)
-      })
-    }],
-    ['Catbox', async (f) => {
-      const fd = new FormData()
-      fd.append('reqtype', 'fileupload')
-      fd.append('fileToUpload', f, f.name || 'upload.bin')
-      return xhrUpload('Catbox', 'https://catbox.moe/user/api.php', fd, (text, status) => {
-        if (status >= 200 && status < 300 && /^https?:\/\//i.test(text)) return text
-        throw Error(text || `Catbox HTTP ${status}`)
-      })
-    }],
-    ['Pixeldrain', async (f) => {
-      const fd = new FormData()
-      fd.append('file', f, f.name || 'upload.bin')
-      return xhrUpload('Pixeldrain', 'https://pixeldrain.com/api/file', fd, (text, status) => {
-        const data = JSON.parse(text || 'null')
-        if (status >= 200 && status < 300 && data?.id) return `https://pixeldrain.com/api/file/${data.id}`
-        throw Error(data?.message || `Pixeldrain HTTP ${status}`)
-      })
-    }],
-    ['0x0', async (f) => {
-      const fd = new FormData()
-      fd.append('file', f, f.name || 'upload.bin')
-      return xhrUpload('0x0', 'https://0x0.st', fd, (text, status) => {
-        if (status >= 200 && status < 300 && /^https?:\/\//i.test(text)) return text
-        throw Error(text || `0x0 HTTP ${status}`)
-      })
-    }],
-    // Tmpfiles sengaja tidak dipasang di browser: API-nya cuma mengembalikan URL
-    // halaman HTML, dan tautan /dl/ di halaman itu redirect balik ke HTML kalau
-    // diambil tanpa cookie — browser tidak bisa memperbaikinya, jadi host ini
-    // tidak dipakai sama sekali.
+    // Semua fallback upload lewat proxy server (same-origin) agar tidak kena
+    // CORS dari browser. VPS melakukan server-to-server request ke layanan
+    // eksternal, jadi tidak ada masalah CORS.
+    ['Uguu', (f) => uploadToProxy('uguu', f)],
+    ['Catbox', (f) => uploadToProxy('catbox', f)],
+    ['Pixeldrain', (f) => uploadToProxy('pixeldrain', f)],
+    ['0x0', (f) => uploadToProxy('0x0', f)],
+    // Tmpfiles sengaja tidak dipasang: API-nya cuma mengembalikan URL halaman
+    // HTML, dan tautan /dl/ di halaman itu redirect balik ke HTML kalau diambil
+    // tanpa cookie — browser tidak bisa memperbaikinya, jadi host ini tidak
+    // dipakai sama sekali.
   ]
 
   const isSmall = file.size <= MAX_SERVER_PROXY

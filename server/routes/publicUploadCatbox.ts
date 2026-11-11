@@ -118,26 +118,46 @@ router.post('/', (req: Request, res: Response) => {
       if (!parsed) return res.status(400).json({ ok: false, error: 'Could not parse file from multipart body' })
 
       const { fileBuffer, fileName, mimeType } = parsed
-      console.log(`[upload] file: ${fileName} (${(fileBuffer.length / 1024).toFixed(1)}KB, ${mimeType})`)
+      const target = (req.query.target as string) || ''
+      console.log(`[upload] file: ${fileName} (${(fileBuffer.length / 1024).toFixed(1)}KB, ${mimeType}) target=${target || 'auto'}`)
 
-      const uguuUrl = await uploadToUguu(fileBuffer, fileName, mimeType)
-      if (uguuUrl) return res.status(200).json({ ok: true, url: uguuUrl })
+      const tryUpload = async (uploads: Array<Promise<string | null>>): Promise<string | null> => {
+        for (const u of uploads) {
+          try {
+            const url = await u
+            if (url) return url
+          } catch (e: any) { console.log('[upload] fallback error:', e.message) }
+        }
+        return null
+      }
 
-      const catboxUrl = await uploadToCatbox(fileBuffer, fileName, mimeType)
-      if (catboxUrl) return res.status(200).json({ ok: true, url: catboxUrl })
+      if (target === 'uguu') {
+        const url = await uploadToUguu(fileBuffer, fileName, mimeType)
+        if (url) return res.status(200).json({ ok: true, url })
+      } else if (target === 'catbox') {
+        const url = await uploadToCatbox(fileBuffer, fileName, mimeType)
+        if (url) return res.status(200).json({ ok: true, url })
+      } else if (target === 'litterbox') {
+        const url = await uploadToLitterbox(fileBuffer, fileName, mimeType)
+        if (url) return res.status(200).json({ ok: true, url })
+      } else if (target === 'pixeldrain') {
+        const url = await uploadToPixeldrain(fileBuffer, fileName, mimeType)
+        if (url) return res.status(200).json({ ok: true, url })
+      } else if (target === '0x0') {
+        const url = await uploadTo0x0(fileBuffer, fileName, mimeType)
+        if (url) return res.status(200).json({ ok: true, url })
+      } else {
+        // Auto: coba semua secara berurutan
+        const url = await tryUpload([
+          uploadToUguu(fileBuffer, fileName, mimeType),
+          uploadToCatbox(fileBuffer, fileName, mimeType),
+          uploadToLitterbox(fileBuffer, fileName, mimeType),
+          uploadToPixeldrain(fileBuffer, fileName, mimeType),
+          uploadTo0x0(fileBuffer, fileName, mimeType),
+        ])
+        if (url) return res.status(200).json({ ok: true, url })
+      }
 
-      const litterUrl = await uploadToLitterbox(fileBuffer, fileName, mimeType)
-      if (litterUrl) return res.status(200).json({ ok: true, url: litterUrl })
-
-      const pdUrl = await uploadToPixeldrain(fileBuffer, fileName, mimeType)
-      if (pdUrl) return res.status(200).json({ ok: true, url: pdUrl })
-
-      const zeroUrl = await uploadTo0x0(fileBuffer, fileName, mimeType)
-      if (zeroUrl) return res.status(200).json({ ok: true, url: zeroUrl })
-
-      // Tmpfiles tidak dipakai: API-nya hanya mengembalikan URL halaman view, dan
-      // tautan /dl/ yang ada di halaman itu redirect balik ke view saat diambil
-      // tanpa cookie — file media yang tidak pernah bisa dibaca.
       return res.status(502).json({ ok: false, error: 'All upload providers failed' })
     } catch (err: any) {
       console.error('[upload] error:', err.message)
