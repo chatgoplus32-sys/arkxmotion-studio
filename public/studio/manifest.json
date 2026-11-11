@@ -1,0 +1,21 @@
+{
+  "name": "ARKX AUTO Studio",
+  "short_name": "ARKX Studio",
+  "description": "Motion graphics otomatis dengan AI: caption, b-roll, animasi, musik, sampai render MP4 di browser.",
+  "lang": "id",
+  "dir": "ltr",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#050A15",
+  "theme_color": "#050A15",
+  "categories": ["video", "productivity", "graphics"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -231,6 +231,23 @@ app.post("/api/backup/run", authenticateToken, requireAdmin, async (_req, res) =
 
 // --- Production: serve built frontend ---
 if (isProd && fs.existsSync(FRONTEND_DIR)) {
+  // PWA (ARKX AUTO Studio di /studio/): dua berkas ini butuh header khusus.
+  // - sw.js tidak boleh di-cache lama, kalau tidak strategi cache baru baru
+  //   kepakai seminggu kemudian.
+  // - manifest perlu MIME JSON; tanpa itu browser menolak memasang aplikasi
+  //   (Express mengirimnya sebagai application/octet-stream).
+  const studioDir = path.join(FRONTEND_DIR, 'studio')
+  if (fs.existsSync(studioDir)) {
+    app.get('/studio/sw.js', (_req, res) => {
+      res.type('application/javascript').set('Cache-Control', 'no-cache, must-revalidate')
+      res.sendFile(path.join(studioDir, 'sw.js'))
+    })
+    app.get('/studio/manifest.json', (_req, res) => {
+      res.type('application/json').set('Cache-Control', 'no-cache, must-revalidate')
+      res.sendFile(path.join(studioDir, 'manifest.json'))
+    })
+  }
+
   // Static assets dengan header cache yang benar per jenis file:
   // - index.html & sw.js: jangan pernah di-cache lama. Kalau browser memegang
   //   HTML lama, dia tetap memuat bundle JS lama setelah deploy (bug hasil
