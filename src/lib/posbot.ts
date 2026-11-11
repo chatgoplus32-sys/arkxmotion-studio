@@ -17,6 +17,46 @@ export type PosbotCategory =
   | 'tts'
   | 'music'
 
+/**
+ * Matriks kemampuan tiap model. Dinilai dari katalog developer §5:
+ * - t2v/i2v/sfv/f2f/r2v : mode video (teks, gambar, start-frame, frame→frame,
+ *   referensi video+gambar).
+ * - v2v : video masuk → video keluar (motion control, upscale, watermark).
+ * - t2i/i2i : generasi gambar dari teks / acuan gambar.
+ * - face_swap/upscale/lipsync/music/tts : kategori non-video.
+ */
+export type PosbotMode =
+  | 't2v'
+  | 'i2v'
+  | 'sfv'
+  | 'f2f'
+  | 'r2v'
+  | 'v2v'
+  | 't2i'
+  | 'i2i'
+  | 'face_swap'
+  | 'upscale'
+  | 'lipsync'
+  | 'music'
+  | 'tts'
+
+/** Label pendek mode — dipakai UI untuk menjelaskan kebutuhan input model. */
+export const POSBOT_MODE_LABELS: Record<PosbotMode, string> = {
+  t2v: 'T2V',
+  i2v: 'I2V',
+  sfv: 'SFV',
+  f2f: 'F2F',
+  r2v: 'R2V',
+  v2v: 'V2V',
+  t2i: 'T2I',
+  i2i: 'I2I',
+  face_swap: 'FACE SWAP',
+  upscale: 'UPSCALE',
+  lipsync: 'LIPSYNC',
+  music: 'MUSIC',
+  tts: 'TTS',
+}
+
 export interface PosbotModelSpec {
   id: string
   label: string
@@ -40,7 +80,18 @@ export interface PosbotModelSpec {
   /** Output duration yang diketahui; hanya dikirim bila `sendDuration`. */
   durations?: number[]
   sendDuration?: boolean
-  modes?: string[]
+  /** Seluruh kemampuan model (UI), bukan hanya mode yang dikirim upstream. */
+  modes?: PosbotMode[]
+  /**
+   * Upstream hanya menerima parameter `mode` untuk Seedance 2.0/2.5 dan Omni
+   * Flash 1.1/1.2 (dokumen §3). Model lain: mode hanya memandu UI.
+   */
+  sendMode?: boolean
+}
+
+/** "T2V · I2V · F2F" — detail mode yang ditampilkan di samping nama model. */
+export function posbotModeSummary(spec: PosbotModelSpec): string {
+  return (spec.modes ?? []).map((m) => POSBOT_MODE_LABELS[m] ?? m).join(' · ')
 }
 
 const IMAGE_ASPECTS = ['9:16', '16:9', '1:1', '3:4', '4:3', '2:3', '3:2', '21:9']
@@ -66,6 +117,8 @@ const imageGen = (id: string, label: string, opts: ImageOpts = {}): PosbotModelS
   imageMax: opts.imageRequired ? 1 : opts.refs,
   videoMode: 'none',
   aspects: IMAGE_ASPECTS,
+  // Krea 2 wajib gambar acuan (i2i); sisanya bisa teks murni atau acuan gambar.
+  modes: opts.imageRequired ? ['i2i'] : ['t2i', 'i2i'],
 })
 
 interface VideoOpts {
@@ -75,19 +128,23 @@ interface VideoOpts {
   image?: 'none' | 'required' | 'optional'
   /** Maksimum total gambar (termasuk gambar utama). */
   images?: number
+  /** Minimum gambar saat `image` required tetapi menerima lebih dari satu. */
+  imageMin?: number
   video?: boolean
   videoOptional?: boolean
   aspects?: string[]
   durations?: number[]
   sendDuration?: boolean
-  modes?: string[]
+  modes?: PosbotMode[]
+  sendMode?: boolean
   promptMin?: number
 }
 
 const videoSpec = (id: string, label: string, opts: VideoOpts): PosbotModelSpec => {
   const image = opts.image ?? 'required'
+  const imageCount = opts.images ?? 1
   const imageMode: PosbotModelSpec['imageMode'] =
-    image === 'none' ? 'none' : image === 'required' ? 'single' : 'multi'
+    image === 'none' ? 'none' : image === 'required' && imageCount === 1 ? 'single' : 'multi'
   return {
     id,
     label,
@@ -97,14 +154,15 @@ const videoSpec = (id: string, label: string, opts: VideoOpts): PosbotModelSpec 
     promptRequired: opts.promptRequired ?? false,
     promptMin: opts.promptMin,
     imageMode,
-    imageMin: image === 'required' ? 1 : 0,
-    imageMax: image === 'none' ? 0 : (opts.images ?? 1),
+    imageMin: image === 'none' ? 0 : (opts.imageMin ?? (image === 'required' ? 1 : 0)),
+    imageMax: image === 'none' ? 0 : imageCount,
     videoMode: opts.video ? 'single' : 'none',
     videoOptional: opts.videoOptional,
     aspects: opts.aspects ?? [],
     durations: opts.durations,
     sendDuration: opts.sendDuration,
     modes: opts.modes,
+    sendMode: opts.sendMode,
   }
 }
 
@@ -122,13 +180,24 @@ const motionSpec = (id: string, label: string, price: number, sendDuration = fal
   aspects: [],
   durations: sendDuration ? [10, 15, 30] : undefined,
   sendDuration,
+  // Salin gerakan video acuan ke gambar karakter = video-to-video.
+  modes: ['v2v'],
 })
 
 const r2vSpec = (
   id: string,
   label: string,
   price: number,
-  opts: { promptMax: number; promptRequired: boolean; images: number; durations: number[] },
+  opts: {
+    promptMax: number
+    promptRequired: boolean
+    images: number
+    durations: number[]
+    imageMin?: number
+    videoOptional?: boolean
+    aspects?: string[]
+    modes?: PosbotMode[]
+  },
 ): PosbotModelSpec => ({
   id,
   label,
@@ -137,11 +206,13 @@ const r2vSpec = (
   promptMax: opts.promptMax,
   promptRequired: opts.promptRequired,
   imageMode: 'multi',
-  imageMin: 1,
+  imageMin: opts.imageMin ?? 1,
   imageMax: opts.images,
   videoMode: 'single',
-  aspects: VIDEO_ASPECTS,
+  videoOptional: opts.videoOptional,
+  aspects: opts.aspects ?? [],
   durations: opts.durations,
+  modes: opts.modes ?? ['r2v', 'v2v'],
 })
 
 const musicSpec = (id: string, label: string, price = 500, lyrics = true): PosbotModelSpec => ({
@@ -155,6 +226,7 @@ const musicSpec = (id: string, label: string, price = 500, lyrics = true): Posbo
   imageMax: 0,
   videoMode: 'none',
   lyrics,
+  modes: ['music'],
 })
 
 const ttsSpec = (id: string, label: string, price = 500): PosbotModelSpec => ({
@@ -167,6 +239,7 @@ const ttsSpec = (id: string, label: string, price = 500): PosbotModelSpec => ({
   imageMode: 'none',
   imageMax: 0,
   videoMode: 'none',
+  modes: ['tts'],
 })
 
 const add = (list: PosbotModelSpec[]): Record<string, PosbotModelSpec> =>
@@ -203,6 +276,7 @@ export const POSBOT_MODELS: Record<string, PosbotModelSpec> = {
     videoMode: 'none',
     swap: true,
     aspects: [],
+    modes: ['face_swap'],
   },
   upscale_4k: {
     id: 'upscale_4k',
@@ -216,83 +290,91 @@ export const POSBOT_MODELS: Record<string, PosbotModelSpec> = {
     imageMax: 1,
     videoMode: 'none',
     aspects: [],
+    modes: ['upscale'],
   },
 
   // ── Video generation ──
   ...add([
     videoSpec('grok_imagine_2_15s', 'Grok Imagine 2 · 15 dtk', {
-      price: 2500, promptMax: 5000, promptRequired: true, image: 'optional', aspects: VIDEO_ASPECTS, durations: [15],
+      price: 2500, promptMax: 5000, promptRequired: true, image: 'optional',
+      aspects: VIDEO_ASPECTS, durations: [15], modes: ['t2v', 'i2v'],
     }),
     videoSpec('grok_imagine_2_30s', 'Grok Imagine 2 · 30 dtk', {
-      price: 4000, promptMax: 5000, promptRequired: true, image: 'optional', aspects: VIDEO_ASPECTS, durations: [30],
+      price: 4000, promptMax: 5000, promptRequired: true, image: 'optional',
+      aspects: VIDEO_ASPECTS, durations: [30], modes: ['t2v', 'i2v'],
     }),
     videoSpec('grok_imagine_15_video_720p', 'Grok Imagine 1.5 · 15 dtk', {
       price: 1500, promptMax: 2500, image: 'required', aspects: VIDEO_ASPECTS, durations: [15],
+      modes: ['i2v'],
     }),
     videoSpec('betagrok_15s', 'BetaGrok 1.5 1080p · 15 dtk', {
       price: 1000, promptMax: 2500, image: 'required', images: 4, aspects: VIDEO_ASPECTS, durations: [15],
+      modes: ['i2v'],
     }),
     videoSpec('s2_seedance_25_30s', 'Seedance 2.5 · 30 dtk', {
       price: 5000, promptMax: 8000, promptRequired: true, image: 'optional', images: 2,
-      aspects: VIDEO_ASPECTS, durations: [30], modes: ['t2v', 'i2v', 'f2f'], promptMin: 3,
+      aspects: VIDEO_ASPECTS, durations: [30], modes: ['t2v', 'i2v', 'f2f'], sendMode: true, promptMin: 3,
     }),
     videoSpec('seedance_25_30s_strict', 'Seedance 2.5 Lite · 30 dtk', {
       price: 5000, promptMax: 8000, promptRequired: true, image: 'optional', images: 6,
-      aspects: VIDEO_ASPECTS, durations: [30], modes: ['t2v', 'i2v'], promptMin: 3,
+      aspects: VIDEO_ASPECTS, durations: [30], modes: ['t2v', 'i2v'], sendMode: true, promptMin: 3,
     }),
     videoSpec('seedance_20_15s', 'Seedance 2.0 720p · 15 dtk', {
       price: 5000, promptMax: 8000, promptRequired: true, image: 'optional', images: 2,
-      aspects: VIDEO_ASPECTS, durations: [15], modes: ['t2v', 'i2v'], promptMin: 3,
+      aspects: VIDEO_ASPECTS, durations: [15], modes: ['t2v', 'i2v'], sendMode: true, promptMin: 3,
     }),
     videoSpec('seedance_20_mini', 'Seedance 2.0 Mini · 15 dtk', {
-      price: 2500, promptMax: 8000, image: 'required', durations: [15],
+      price: 2500, promptMax: 8000, image: 'required', durations: [15], modes: ['i2v'],
     }),
     videoSpec('wan_30_hd', 'Wan 3.0 HD · 15 dtk', {
-      price: 3000, promptMax: 10000, image: 'required', durations: [15],
+      price: 3000, promptMax: 10000, image: 'required', durations: [15], modes: ['i2v'],
     }),
     videoSpec('wan_remix_720p', 'Wan Remix 720p · 10 dtk', {
-      price: 1000, promptMax: 2500, image: 'required', durations: [10],
+      price: 1000, promptMax: 2500, image: 'required', durations: [10], modes: ['i2v'],
     }),
     videoSpec('minimax_h3', 'MiniMax H3 1080p · 15 dtk', {
-      price: 2000, promptMax: 5000, image: 'required', aspects: VIDEO_ASPECTS, durations: [15],
+      price: 2000, promptMax: 5000, image: 'required', aspects: VIDEO_ASPECTS, durations: [15], modes: ['i2v'],
     }),
     videoSpec('minimax_h3_720p', 'MiniMax H3 720p · 15 dtk', {
-      price: 1500, promptMax: 5000, image: 'required', durations: [15],
+      price: 1500, promptMax: 5000, image: 'required', durations: [15], modes: ['i2v'],
     }),
     videoSpec('kling_25_turbo', 'Kling 2.5 Turbo 720p · 10 dtk', {
-      price: 2500, promptMax: 2500, image: 'required', durations: [10],
+      price: 2500, promptMax: 2500, image: 'required', durations: [10], modes: ['i2v'],
     }),
     videoSpec('kling_26_pro_1080p', 'Kling 2.6 Pro 1080p · 10 dtk', {
-      price: 3000, promptMax: 2500, image: 'required', durations: [10],
+      price: 3000, promptMax: 2500, image: 'required', durations: [10], modes: ['i2v'],
     }),
     videoSpec('kling_30_turbo', 'Kling 3.0 Turbo · 15 dtk', {
-      price: 3000, promptMax: 2500, image: 'required', durations: [15],
+      price: 3000, promptMax: 2500, image: 'required', durations: [15], modes: ['i2v'],
     }),
     videoSpec('omni_flash_t2v', 'Omni Flash 720p T2V · 10 dtk', {
       price: 1000, promptMax: 2500, promptRequired: true, image: 'none', aspects: VIDEO_ASPECTS, durations: [10],
+      modes: ['t2v'],
     }),
     videoSpec('omni_flash_sfv', 'Omni Flash 720p SFV · 10 dtk', {
       price: 1000, promptMax: 2500, promptRequired: true, image: 'required', aspects: VIDEO_ASPECTS, durations: [10],
+      modes: ['sfv'],
     }),
     videoSpec('omni_flash_i2v', 'Omni Flash 720p I2V · 10 dtk', {
       price: 1000, promptMax: 2500, promptRequired: true, image: 'required', aspects: VIDEO_ASPECTS, durations: [10],
+      modes: ['i2v'],
     }),
     videoSpec('omni_flash_r2v', 'Omni Flash 720p R2V · 10 dtk', {
       price: 1000, promptMax: 2500, promptRequired: true, image: 'required', video: true,
-      aspects: VIDEO_ASPECTS, durations: [10],
+      aspects: VIDEO_ASPECTS, durations: [10], modes: ['r2v', 'v2v'],
     }),
     videoSpec('omni_flash_11_720p', 'Omni Flash 1.1 720p · 10 dtk', {
       price: 1000, promptMax: 2500, promptRequired: true, image: 'optional', images: 3,
       video: true, videoOptional: true, aspects: ['16:9', '9:16'], durations: [10],
-      modes: ['t2v', 'sfv', 'i2v', 'r2v'],
+      modes: ['t2v', 'sfv', 'i2v', 'r2v'], sendMode: true,
     }),
     videoSpec('omni_flash_12_1080p', 'Omni Flash 1.2 1080p · 15 dtk', {
       price: 1000, promptMax: 2500, promptRequired: true, image: 'optional', images: 3,
       video: true, videoOptional: true, aspects: ['16:9', '9:16'], durations: [15],
-      modes: ['t2v', 'sfv', 'i2v', 'r2v'],
+      modes: ['t2v', 'sfv', 'i2v', 'r2v'], sendMode: true,
     }),
     videoSpec('watermark_remover', 'Remove Watermark', {
-      price: 1000, promptMax: 2500, image: 'none', video: true,
+      price: 1000, promptMax: 2500, image: 'none', video: true, modes: ['v2v'],
     }),
   ]),
 
@@ -310,6 +392,7 @@ export const POSBOT_MODELS: Record<string, PosbotModelSpec> = {
     videoMode: 'none',
     audio: true,
     aspects: [],
+    modes: ['lipsync'],
   },
   ltx_lipsync: {
     id: 'ltx_lipsync',
@@ -324,6 +407,7 @@ export const POSBOT_MODELS: Record<string, PosbotModelSpec> = {
     videoMode: 'none',
     audio: true,
     aspects: [],
+    modes: ['lipsync'],
   },
 
   // ── Motion control ──
@@ -350,12 +434,18 @@ export const POSBOT_MODELS: Record<string, PosbotModelSpec> = {
     imageMax: 0,
     videoMode: 'single',
     aspects: [],
+    modes: ['v2v'],
   },
 
   // ── Reference-to-video ──
+  // Video acuan (video_url) + foto karakter (image_url + image_urls); hasilnya
+  // mentransfer gerakan video ke subjek foto — R2V sekaligus V2V.
   ...add([
     r2vSpec('seedance_25_30s_r2v', 'Seedance 2.5 R2V Pro · 30 dtk', 6500, {
       promptMax: 8000, promptRequired: true, images: 9, durations: [30],
+      // Dokumen §5: hanya prompt yang wajib; video & foto acuan opsional.
+      imageMin: 0, videoOptional: true, aspects: VIDEO_ASPECTS,
+      modes: ['t2v', 'i2v', 'r2v'],
     }),
     r2vSpec('seedance_20_mini_r2v', 'Seedance 2.0 Mini R2V · 15 dtk', 3000, {
       promptMax: 8000, promptRequired: false, images: 7, durations: [15],
@@ -477,14 +567,35 @@ export function buildPosbotPayload(spec: PosbotModelSpec, media: PosbotPayloadIn
     throw new Error(`Prompt maksimal ${spec.promptMax} karakter (saat ini: ${prompt.length})`)
   }
 
-  // mode kondisional: Omni Flash 1.1/1.2 memilih t2v/sfv/i2v/r2v
-  const mode = String(media.mode || '').trim().toLowerCase()
-  if (spec.modes && spec.modes.length > 0) {
-    if (mode && !spec.modes.includes(mode)) throw new Error(`Mode ${mode} tidak dikenal untuk ${spec.label}`)
-    if (mode === 't2v' && images.length > 0) throw new Error('Mode t2v tidak menerima gambar')
-    if (mode === 'sfv' && images.length !== 1) throw new Error('Mode sfv membutuhkan tepat 1 gambar')
-    if (mode === 'i2v' && images.length < 1) throw new Error('Mode i2v membutuhkan minimal 1 gambar')
-    if (mode === 'r2v' && !video) throw new Error('Mode r2v membutuhkan video referensi')
+  // Mode kondisional: Seedance 2.0/2.5 & Omni Flash 1.1/1.2 memilih
+  // t2v/sfv/i2v/f2f/r2v. Model lain tetap divalidasi walau `mode` tidak dikirim.
+  const mode = String(media.mode || '').trim().toLowerCase() as PosbotMode | ''
+  if (mode && spec.modes && spec.modes.length > 0) {
+    if (!spec.modes.includes(mode)) throw new Error(`Mode ${mode} tidak dikenal untuk ${spec.label}`)
+    if (mode === 't2v') {
+      if (images.length > 0) throw new Error('Mode t2v tidak menerima gambar')
+      if (video) throw new Error('Mode t2v tidak menerima video')
+    }
+    if (mode === 'sfv') {
+      if (images.length !== 1) throw new Error('Mode sfv membutuhkan tepat 1 gambar')
+      if (video) throw new Error('Mode sfv tidak menerima video')
+    }
+    if (mode === 'i2v') {
+      if (images.length < 1) throw new Error('Mode i2v membutuhkan minimal 1 gambar')
+      if (video) throw new Error('Mode i2v tidak menerima video')
+    }
+    if (mode === 'f2f') {
+      if (images.length < 1) throw new Error('Mode f2f membutuhkan 1-2 gambar (frame awal & akhir)')
+      if (video) throw new Error('Mode f2f tidak menerima video')
+    }
+    if (mode === 'r2v') {
+      if (!video) throw new Error('Mode r2v membutuhkan video referensi')
+      // Omni Flash r2v: 1 video gerakan + opsional 1 gambar pendamping.
+      if (spec.category === 'video' && images.length > 1) {
+        throw new Error('Mode r2v menerima maksimal 1 gambar pendamping')
+      }
+    }
+    if (mode === 'v2v' && !video) throw new Error('Mode v2v membutuhkan video referensi')
   }
 
   const body: Record<string, unknown> = { model: spec.id, notify_telegram: false }
@@ -499,7 +610,9 @@ export function buildPosbotPayload(spec: PosbotModelSpec, media: PosbotPayloadIn
   if (media.aspectRatio && spec.aspects && spec.aspects.includes(media.aspectRatio)) {
     body.aspect_ratio = media.aspectRatio
   }
-  if (mode && spec.modes && spec.modes.includes(mode)) body.mode = mode
+  // Hanya model yang memang menerima parameter `mode` upstream (lihat
+  // PosbotModelSpec.sendMode); model lain cukup memakai mode untuk validasi.
+  if (mode && spec.sendMode && spec.modes?.includes(mode)) body.mode = mode
   if (spec.sendDuration && media.duration && spec.durations?.includes(media.duration)) {
     body.duration = media.duration
   }

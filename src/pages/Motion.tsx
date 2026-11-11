@@ -140,7 +140,7 @@ const MOTION_PROVIDER_INFO: Record<MotionProviderId, { name: string; tagline: st
   posbot: {
     name: 'PosBot',
     tagline: 'Bayar pakai saldo Rupiah PosBot',
-    note: 'Perlu API key pb_live_… dari bot Telegram PosBot → menu Developer API. Saldo dipotong Rupiah per generate, job gagal direfund 100% otomatis. Suara video referensi ditempel ulang di browser karena model motion tidak membawa audio.',
+    note: 'Mode V2V: 1 video referensi (maks 30 dtk, ≥340×340) + 1 gambar karakter. Perlu API key pb_live_… dari bot Telegram PosBot → menu Developer API. Saldo dipotong Rupiah per generate, job gagal direfund 100% otomatis. Suara video referensi ditempel ulang di browser karena model motion tidak membawa audio.',
   },
 }
 

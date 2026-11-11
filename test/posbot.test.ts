@@ -15,6 +15,7 @@ import {
   normalizePosbotKey,
   pollPosbotStatus,
   posbotModelsByCategory,
+  posbotModeSummary,
   submitPosbotGeneration,
 } from '../src/lib/posbot.js'
 
@@ -45,6 +46,35 @@ test('katalog: 61 model aktif terbagi per kategori, id unik', () => {
   assert.equal(posbotModelsByCategory('upscale').length, 1)
   assert.equal(posbotModelsByCategory('r2v').length, 5)
   assert.equal(posbotModelsByCategory('tts', 'music').length, 9)
+})
+
+// Detail per model: setiap model wajib punya matriks mode, termasuk R2V & V2V
+// yang sebelumnya tidak tercatat (Seedance 2.5 tanpa R2V, motion tanpa V2V).
+test('matriks mode: setiap model punya detail mode; R2V/V2V/F2F terdaftar', () => {
+  for (const id of listPosbotModelIds()) {
+    const spec = getPosbotSpec(id)!
+    assert.ok(spec.modes && spec.modes.length > 0, `${id} belum punya modes`)
+  }
+  assert.deepEqual(getPosbotSpec('s2_seedance_25_30s')?.modes, ['t2v', 'i2v', 'f2f'])
+  assert.equal(getPosbotSpec('s2_seedance_25_30s')?.sendMode, true)
+  assert.deepEqual(getPosbotSpec('seedance_25_30s_strict')?.modes, ['t2v', 'i2v'])
+  assert.deepEqual(getPosbotSpec('seedance_20_15s')?.modes, ['t2v', 'i2v'])
+  assert.deepEqual(getPosbotSpec('omni_flash_11_720p')?.modes, ['t2v', 'sfv', 'i2v', 'r2v'])
+  assert.deepEqual(getPosbotSpec('omni_flash_12_1080p')?.modes, ['t2v', 'sfv', 'i2v', 'r2v'])
+  assert.deepEqual(getPosbotSpec('grok_imagine_2_15s')?.modes, ['t2v', 'i2v'])
+  assert.deepEqual(getPosbotSpec('motion_control_std')?.modes, ['v2v'])
+  assert.deepEqual(getPosbotSpec('watermark_remover')?.modes, ['v2v'])
+  assert.deepEqual(getPosbotSpec('upscale_2k_60fps')?.modes, ['v2v'])
+  assert.deepEqual(getPosbotSpec('omni_flash_r2v')?.modes, ['r2v', 'v2v'])
+  assert.deepEqual(getPosbotSpec('seedance_25_30s_r2v')?.modes, ['t2v', 'i2v', 'r2v'])
+  assert.deepEqual(getPosbotSpec('wan_30_r2v')?.modes, ['r2v', 'v2v'])
+  assert.deepEqual(getPosbotSpec('krea2_2k')?.modes, ['i2i'])
+  assert.deepEqual(getPosbotSpec('nano_banana_2_4k')?.modes, ['t2i', 'i2i'])
+  assert.deepEqual(getPosbotSpec('face_swap')?.modes, ['face_swap'])
+  assert.deepEqual(getPosbotSpec('google_tts')?.modes, ['tts'])
+  assert.deepEqual(getPosbotSpec('suno_v6')?.modes, ['music'])
+  assert.equal(posbotModeSummary(getPosbotSpec('s2_seedance_25_30s')!), 'T2V · I2V · F2F')
+  assert.equal(posbotModeSummary(getPosbotSpec('motion_control_std')!), 'V2V')
 })
 
 test('katalog: tarif Rupiah kunci sesuai dokumen developer', () => {
@@ -110,6 +140,60 @@ test('payload prompt dibatasi per model; Seedance T2V minimal 3 karakter', () =>
   assert.equal(String(long.prompt).length, 5000)
   const seedance = getPosbotSpec('s2_seedance_25_30s')!
   assert.throws(() => buildPosbotPayload(seedance, { prompt: 'ab', mode: 't2v' }), /minimal 3/)
+})
+
+// ── matriks mode: V2V, F2F, R2V, multi-gambar ──────────────────────────────
+
+test('v2v: upscale hanya video, mode internal tidak dikirim ke upstream', () => {
+  const spec = getPosbotSpec('upscale_2k_60fps')!
+  assert.throws(() => buildPosbotPayload(spec, { videoUrl: '' }), /video referensi/)
+  const body = buildPosbotPayload(spec, { videoUrl: 'in.mp4', mode: 'v2v' })
+  assert.equal(body.video_url, 'in.mp4')
+  assert.equal(body.mode, undefined)
+  assert.throws(() => buildPosbotPayload(spec, { videoUrl: 'in.mp4', imageUrl: 'x' }), /tidak menerima gambar/)
+})
+
+test('mode hanya dikirim bila model mendukung parameter mode upstream', () => {
+  const seeded = buildPosbotPayload(getPosbotSpec('s2_seedance_25_30s')!, {
+    prompt: 'abc', mode: 'i2v', imageUrl: 'a',
+  })
+  assert.equal(seeded.mode, 'i2v')
+  const grok = buildPosbotPayload(getPosbotSpec('grok_imagine_2_15s')!, {
+    prompt: 'gerak', mode: 'i2v', imageUrl: 'a',
+  })
+  assert.equal(grok.mode, undefined)
+})
+
+test('f2f: butuh 1-2 gambar, menolak video', () => {
+  const spec = getPosbotSpec('s2_seedance_25_30s')!
+  assert.throws(() => buildPosbotPayload(spec, { prompt: 'abc', mode: 'f2f' }), /f2f.*gambar/)
+  assert.throws(() => buildPosbotPayload(spec, { prompt: 'abc', mode: 'f2f', videoUrl: 'v' }), /tidak menerima video/)
+  const two = buildPosbotPayload(spec, { prompt: 'abc', mode: 'f2f', imageUrls: ['a', 'b'] })
+  assert.equal(two.mode, 'f2f')
+  assert.equal((two.image_urls as string[]).length, 2)
+})
+
+test('betagrok: 1-4 gambar referensi (bukan tepat 1)', () => {
+  const spec = getPosbotSpec('betagrok_15s')!
+  assert.throws(() => buildPosbotPayload(spec, { prompt: 'x' }), /menerima 1-4 gambar/)
+  const body = buildPosbotPayload(spec, { prompt: 'x', imageUrls: ['1', '2', '3', '4'] })
+  assert.equal((body.image_urls as string[]).length, 4)
+})
+
+test('r2v: video & gambar pendamping opsional untuk Seedance, maks 1 pendamping di Omni', () => {
+  const seedance = buildPosbotPayload(getPosbotSpec('seedance_25_30s_r2v')!, { prompt: 'gerak sinematik' })
+  assert.equal(seedance.video_url, undefined)
+  assert.equal(seedance.image_url, undefined)
+
+  const omni = getPosbotSpec('omni_flash_11_720p')!
+  assert.throws(
+    () => buildPosbotPayload(omni, { prompt: 'x', mode: 'r2v', videoUrl: 'v', imageUrls: ['a', 'b'] }),
+    /maksimal 1 gambar pendamping/,
+  )
+  const body = buildPosbotPayload(omni, { prompt: 'x', mode: 'r2v', videoUrl: 'v', imageUrl: 'a' })
+  assert.equal(body.mode, 'r2v')
+  assert.equal(body.video_url, 'v')
+  assert.equal(body.image_url, 'a')
 })
 
 // ── buildPosbotPayload: motion & lipsync ───────────────────────────────────

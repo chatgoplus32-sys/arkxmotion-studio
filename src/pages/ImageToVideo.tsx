@@ -7,7 +7,7 @@ import { Link } from 'react-router-dom'
 import { Swipeable } from '@/components/Swipeable'
 import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
 import { getSeaviSpec, generateWithSeavi, fetchSeaviBalance, buildSeaviPayload } from '@/lib/seavi'
-import { getPosbotSpec, generateWithPosbot } from '@/lib/posbot'
+import { buildPosbotPayload, getPosbotSpec, generateWithPosbot, POSBOT_MODE_LABELS, posbotModeSummary } from '@/lib/posbot'
 import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { uploadToCatbox, submitRoboneoI2V, pollRoboneoI2V, checkRoboneoBalance, uploadImageForRoboneo,
@@ -69,7 +69,7 @@ const I2V_PROVIDER_HINTS: Partial<Record<ProviderId, { tagline: string; recommen
   nexabot: { tagline: 'Bayar per video dengan saldo NexaBot atau Paket Unlimited.' },
   runninghub: { tagline: 'Workflow populer: Seedance dan MiniMax H3.' },
   seavi: { tagline: 'Image to video & multimodal — tanpa API key kalau token Seavi sudah diisi.' },
-  posbot: { tagline: 'Bayar pakai saldo Rupiah PosBot — 19 model video, API key pb_live_… dari bot Telegram.' },
+  posbot: { tagline: 'Bayar pakai saldo Rupiah PosBot — 26 model video (T2V · I2V · SFV · F2F · R2V/V2V), API key pb_live_… dari bot Telegram.' },
 }
 
 export default function ImageToVideoPage() {
@@ -143,6 +143,8 @@ export default function ImageToVideoPage() {
   const [model, setModel] = useState('')
   const [ratio, setRatio] = useState('9:16')
   const [quality, setQuality] = useState('std')
+  // PosBot: mode aktif (t2v/i2v/sfv/f2f/r2v) untuk model yang mendukung >1 mode.
+  const [posbotMode, setPosbotMode] = useState('')
   const [tplIdx, setTplIdx] = useState(0)
   const [prompt, setPrompt] = useState('')
   const [results, setResults] = useState<string[]>(() => {
@@ -470,6 +472,14 @@ export default function ImageToVideoPage() {
   const posbotSpec = isPosbot && currentModel
     ? getPosbotSpec(currentModel.apiModel || model.replace(/^pb:/, ''))
     : undefined
+  const posbotModes = posbotSpec?.modes ?? []
+  const posbotImageMax = posbotSpec
+    ? (posbotSpec.imageMode === 'none' ? 0 : posbotSpec.imageMode === 'single' ? 1 : posbotSpec.imageMax ?? 0)
+    : 0
+  const posbotImageMin = posbotSpec
+    ? (posbotSpec.imageMode === 'none' ? 0 : posbotSpec.imageMin ?? (posbotSpec.imageMode === 'single' ? 1 : 0))
+    : 0
+  const posbotVideoOk = !!posbotSpec && posbotSpec.videoMode !== 'none'
   const seaviImageMax = seaviSpec ? (seaviSpec.imageMode === 'none' ? 0 : seaviSpec.imageMode === 'single' ? 1 : seaviSpec.imageMax ?? 0) : 0
   const seaviVideoMode = seaviSpec ? seaviSpec.videoMode : 'none'
   const nbApiModel = isNb ? (currentModel?.apiModel || 't2v') : ''
@@ -593,6 +603,33 @@ export default function ImageToVideoPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider, seaviSpec])
+
+  // PosBot: mode default mengikuti matriks model (R2V diutamakan untuk model
+  // r2v, lalu I2V); media yang tidak didukung model aktif dibuang.
+  // Invariant urutan refFiles tetap [gambar..., video?, audio?].
+  useEffect(() => {
+    if (!isPosbot || !posbotSpec) { setPosbotMode(''); return }
+    const modes = posbotSpec.modes ?? []
+    const preferred = ['r2v', 'sfv', 'f2f', 'i2v', 't2v'] as const
+    const next = posbotSpec.category === 'r2v'
+      ? (modes.find((m) => m === 'r2v') || modes[0] || '')
+      : (preferred.find((m) => modes.includes(m)) || modes[0] || '')
+    setPosbotMode((prev) => (modes.length > 1 && (modes as string[]).includes(prev) ? prev : next))
+
+    const videoOk = posbotSpec.videoMode !== 'none'
+    const imageOk = posbotSpec.imageMode !== 'none'
+    const audioOk = !!posbotSpec.audio
+    const keep = (t: string) =>
+      (t.startsWith('image/') && imageOk) ||
+      (t.startsWith('video/') && videoOk) ||
+      (t.startsWith('audio/') && audioOk)
+    const hasUnsupported = refFiles.some((f) => !keep(f.type))
+    if (hasUnsupported) {
+      setRefFiles((prev) => prev.filter((f) => keep(f.type)))
+      setRefUrls((prev) => prev.filter((_, i) => keep(refFiles[i]?.type || '')))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPosbot, posbotSpec])
 
   useEffect(() => {
     if (qualityOptions.length > 0 && !qualityOptions.find((q) => q.value === quality)) {
@@ -771,6 +808,20 @@ export default function ImageToVideoPage() {
     const nonImgUrls = nonImgs.map((f) => refUrls[refFiles.indexOf(f)] || URL.createObjectURL(f))
     const oldImgs = refFiles.filter((f) => f.type.startsWith('image/'))
     const merged = [...oldImgs, ...incoming].slice(0, max)
+    const mergedUrls = merged.map((f) => refUrls[refFiles.indexOf(f)] || URL.createObjectURL(f))
+    setRefFiles([...merged, ...nonImgs])
+    setRefUrls([...mergedUrls, ...nonImgUrls])
+  }
+
+  // PosBot: jumlah gambar mengikuti spec model (I2V 1-4, R2V 1-10, dst.).
+  const handlePosbotImagesChange = (files: FileList | null) => {
+    if (!files || files.length === 0 || posbotImageMax <= 0) return
+    const incoming = Array.from(files).filter((f) => f.type.startsWith('image/'))
+    if (incoming.length === 0) return
+    const nonImgs = refFiles.filter((f) => !f.type.startsWith('image/'))
+    const nonImgUrls = nonImgs.map((f) => refUrls[refFiles.indexOf(f)] || URL.createObjectURL(f))
+    const oldImgs = refFiles.filter((f) => f.type.startsWith('image/'))
+    const merged = [...oldImgs, ...incoming].slice(0, posbotImageMax)
     const mergedUrls = merged.map((f) => refUrls[refFiles.indexOf(f)] || URL.createObjectURL(f))
     setRefFiles([...merged, ...nonImgs])
     setRefUrls([...mergedUrls, ...nonImgUrls])
@@ -1012,12 +1063,22 @@ export default function ImageToVideoPage() {
       if (seaviSpec.promptRequired === true && !prompt.trim()) return 'Prompt wajib diisi'
     }
     if (provider === 'posbot' && posbotSpec) {
-      // Halaman ini menyediakan satu gambar input (uploader default).
-      const needImage = posbotSpec.imageMode === 'single'
-        || (posbotSpec.imageMode === 'multi' && (posbotSpec.imageMin ?? 0) > 0)
-      if (needImage && !imgFile) return `${posbotSpec.label} membutuhkan gambar input`
-      if (prompt.trim().length > posbotSpec.promptMax) return `Prompt maksimal ${posbotSpec.promptMax} karakter untuk ${posbotSpec.label}`
-      if (posbotSpec.promptMin && prompt.trim().length < posbotSpec.promptMin) return `Prompt minimal ${posbotSpec.promptMin} karakter`
+      // Validasi lewat builder yang sama dengan submit: gambar multi, video
+      // referensi, dan syarat per mode (t2v/sfv/i2v/f2f/r2v) dicek sebelum
+      // PosBot memotong saldo Rupiah.
+      const images = refFiles.filter((f) => f.type.startsWith('image/'))
+      try {
+        buildPosbotPayload(posbotSpec, {
+          imageUrls: images.map((_, i) => `local-image-${i}`),
+          videoUrl: refFiles.some((f) => f.type.startsWith('video/')) ? 'local-video' : undefined,
+          audioUrl: refFiles.some((f) => f.type.startsWith('audio/')) ? 'local-audio' : undefined,
+          prompt: prompt.trim(),
+          aspectRatio: ratio,
+          mode: posbotMode || undefined,
+        })
+      } catch (e: any) {
+        return e?.message || 'Media input tidak sesuai model PosBot'
+      }
     }
     if (provider === 'runninghub' && isRhSeedance26) {
       if (sd26Files.length === 0) return 'Seedance 2.6 Storyboard membutuhkan minimal 1 gambar referensi'
@@ -1467,14 +1528,43 @@ export default function ImageToVideoPage() {
         if (!posbotSpec) throw new Error('Model PosBot tidak dikenal')
         const spec = posbotSpec
         addLog(`[1/3] 🖼️ Menyiapkan media...`, 'info', 'posbot')
-        let posbotImageUrl: string | undefined
-        if (imgFile) {
-          posbotImageUrl = await uploadToCatbox(imgFile)
-          addLog(`[1/3] ✅ Gambar terunggah ✓ ${posbotImageUrl.slice(0, 60)}...`, 'success', 'posbot')
+        const posbotImageUrls: string[] = []
+        for (const f of refFiles.filter((x) => x.type.startsWith('image/'))) {
+          const u = await uploadToCatbox(f)
+          posbotImageUrls.push(u)
+          addLog(`[1/3] ✅ Gambar terunggah ✓ ${u.slice(0, 60)}...`, 'success', 'posbot')
         }
+        let posbotVideoUrl: string | undefined
+        const posbotVideoFile = spec.videoMode !== 'none'
+          ? refFiles.find((f) => f.type.startsWith('video/'))
+          : undefined
+        if (posbotVideoFile) {
+          posbotVideoUrl = await uploadToCatbox(posbotVideoFile)
+          addLog(`[1/3] ✅ Video referensi terunggah ✓`, 'success', 'posbot')
+        }
+        let posbotAudioUrl: string | undefined
+        const posbotAudioFile = spec.audio ? refFiles.find((f) => f.type.startsWith('audio/')) : undefined
+        if (posbotAudioFile) {
+          posbotAudioUrl = await uploadToCatbox(posbotAudioFile)
+          addLog(`[1/3] ✅ Audio terunggah ✓`, 'success', 'posbot')
+        }
+        const mediaMode = posbotMode || undefined
 
         // Validasi payload sebelum submit — PosBot memotong saldo saat POST
         // /generate sukses, jadi input yang salah harus gagal di sini.
+        try {
+          buildPosbotPayload(spec, {
+            imageUrls: posbotImageUrls,
+            videoUrl: posbotVideoUrl,
+            audioUrl: posbotAudioUrl,
+            prompt: prompt.trim(),
+            aspectRatio: ratio,
+            mode: mediaMode,
+          })
+        } catch (e: any) {
+          throw new Error(e?.message || 'Media input tidak sesuai model PosBot')
+        }
+
         const rotation = await withTokenRotation<string>(
           'posbot',
           async (apiKey, keyInfo) => {
@@ -1483,12 +1573,12 @@ export default function ImageToVideoPage() {
               apiKey,
               spec,
               prompt: prompt.trim(),
-              imageUrl: posbotImageUrl,
+              imageUrls: posbotImageUrls,
+              videoUrl: posbotVideoUrl,
+              audioUrl: posbotAudioUrl,
               aspectRatio: ratio,
               duration: currentQuality?.duration,
-              // Omni Flash 1.1/1.2 memilih mode; halaman ini selalu I2V saat
-              // ada gambar, T2V saat tidak ada.
-              mode: spec.modes ? (posbotImageUrl ? 'i2v' : 't2v') : undefined,
+              mode: mediaMode,
               onLog: (msg, level) => addLog(msg, level as any, 'posbot'),
               onStatus: (text, pct) => setStatus((s) => ({ ...s, pct, text: `[PosBot] ${text}` })),
             })
@@ -3890,6 +3980,87 @@ export default function ImageToVideoPage() {
                   </div>
                 </div>
               </Section>
+            ) : isPosbot ? (
+              /* PosBot: input mengikuti matriks mode model (T2V/I2V/SFV/F2F/R2V/V2V) */
+              <Section
+                title="🖼️ Media Input PosBot"
+                sub={`Mode: ${posbotModeSummary(posbotSpec!)}${posbotImageMax > 0
+                  ? ` · ${posbotImageMax === 1 ? '1 gambar' : `${posbotImageMin}-${posbotImageMax} gambar`}`
+                  : ' · tanpa gambar'}${posbotVideoOk ? ` · video referensi ${posbotSpec?.videoOptional ? 'opsional' : 'wajib'}` : ''}`}
+              >
+                {posbotModes.length > 1 && posbotSpec?.sendMode && (
+                  <div className="mb-3">
+                    <Label>Mode</Label>
+                    <Select
+                      value={posbotMode}
+                      onChange={(e) => setPosbotMode(e.target.value)}
+                      options={posbotModes.map((m) => ({ value: m, label: POSBOT_MODE_LABELS[m] ?? m }))}
+                    />
+                  </div>
+                )}
+                {posbotImageMax > 0 ? (
+                  <>
+                    <input ref={inputRef} type="file" accept="image/*" multiple={posbotImageMax > 1} hidden onChange={(e) => { handlePosbotImagesChange(e.target.files); e.target.value = '' }} />
+                    {nbImageUrls.length > 0 ? (
+                      <div className="grid grid-cols-3 gap-2">
+                        {nbImageUrls.map((u, i) => (
+                          <div key={i} className="relative aspect-square rounded-xl overflow-hidden border border-border">
+                            <img src={u} alt={`gambar ${i + 1}`} className="w-full h-full object-cover" />
+                            <button onClick={() => removeNbImage(i)} aria-label="Hapus gambar" className="absolute top-1 right-1 rounded-full w-6 h-6 bg-black/60 text-white text-xs grid place-items-center hover:bg-black/80">×</button>
+                          </div>
+                        ))}
+                        {nbImageUrls.length < posbotImageMax && (
+                          <button onClick={() => inputRef.current?.click()} className="aspect-square rounded-xl border border-dashed border-border/80 bg-card/30 grid place-items-center hover:border-primary/60 transition text-center">
+                            <div>
+                              <div className="text-2xl">➕</div>
+                              <div className="text-[10px] mt-0.5">Tambah ({nbImageUrls.length}/{posbotImageMax})</div>
+                            </div>
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <button onClick={() => inputRef.current?.click()} className="w-full aspect-[9/16] rounded-2xl border border-dashed border-border/80 bg-card/30 grid place-items-center hover:border-primary/60 transition text-center px-4">
+                        <div>
+                          <div className="text-3xl">🖼️</div>
+                          <div className="text-sm mt-1">Tap untuk upload gambar {posbotImageMin > 0 ? '(wajib)' : '(opsional)'}</div>
+                          <div className="text-[11px] text-muted-foreground">
+                            {posbotImageMax === 1 ? '1 gambar' : `${posbotImageMin}-${posbotImageMax} gambar`} · JPG / PNG / WEBP
+                          </div>
+                        </div>
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <div className="aspect-[9/16] rounded-2xl border border-dashed border-border/60 bg-card/20 grid place-items-center text-center px-4">
+                    <div>
+                      <div className="text-3xl">✍️</div>
+                      <div className="text-sm mt-1 text-muted-foreground">Model ini tanpa gambar — cukup tulis prompt</div>
+                    </div>
+                  </div>
+                )}
+                {posbotVideoOk && (
+                  <div className="mt-3">
+                    <input ref={videoRefInputRef} type="file" accept="video/*" hidden onChange={(e) => { handleVideoRefChange(e.target.files); e.target.value = '' }} />
+                    <div className="text-[11px] text-muted-foreground mb-1.5">
+                      🎬 Video Referensi ({posbotSpec?.videoOptional ? 'opsional' : 'wajib'}) — maks 30 detik
+                    </div>
+                    {nbVideoUrl ? (
+                      <div className="relative aspect-video rounded-2xl overflow-hidden border border-border">
+                        <video src={nbVideoUrl} className="w-full h-full object-cover" controls />
+                        <button onClick={() => removeRef(nbVideoIdx)} className="absolute top-2 right-2 rounded-full w-6 h-6 bg-black/60 text-white text-xs grid place-items-center hover:bg-black/80">×</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => videoRefInputRef.current?.click()} className="w-full aspect-video rounded-2xl border border-dashed border-border/80 bg-card/30 grid place-items-center hover:border-primary/60 transition text-center px-4">
+                        <div>
+                          <div className="text-3xl">🎬</div>
+                          <div className="text-sm mt-1">Tap untuk upload <b>video referensi</b></div>
+                          <div className="text-[11px] text-muted-foreground">MP4 / WEBM / MOV — gerakan disalin ke gambar</div>
+                        </div>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </Section>
             ) : isNb ? (
               /* NexaBot: input mengikuti 4 jenis video-generator */
               <Section title="🖼️ Gambar / Video Input" sub={
@@ -4081,7 +4252,7 @@ export default function ImageToVideoPage() {
               </Section>
             ) : (
               /* Default UI for other providers */
-              <Section title="🖼️ Gambar / Video Input" sub={isPosbot ? '1 gambar (wajib) — JPG / PNG / WEBP' : '1 file (JPG / PNG / WEBP / MP4) — optional untuk text-to-video'}>
+              <Section title="🖼️ Gambar / Video Input" sub="1 file (JPG / PNG / WEBP / MP4) — optional untuk text-to-video">
                 <input ref={inputRef} type="file" accept="image/*" hidden onChange={(e) => handleFileChange(e.target.files)} />
                 {imgUrl ? (
                   <div className="relative aspect-[9/16] rounded-2xl overflow-hidden border border-border">
@@ -4095,7 +4266,7 @@ export default function ImageToVideoPage() {
                   <button onClick={() => inputRef.current?.click()} className="w-full aspect-[9/16] rounded-2xl border border-dashed border-border/80 bg-card/30 grid place-items-center hover:border-primary/60 transition text-center px-4">
                     <div>
                       <div className="text-3xl">🖼️</div>
-                      <div className="text-sm mt-1">Tap atau tarik <b>gambar</b> {isPosbot ? '(wajib)' : '(opsional)'}</div>
+                      <div className="text-sm mt-1">Tap atau tarik <b>gambar</b> (opsional)</div>
                       <div className="text-[11px] text-muted-foreground">JPG / PNG / WEBP</div>
                     </div>
                   </button>
@@ -4141,6 +4312,15 @@ export default function ImageToVideoPage() {
                             : `${m.label} — ${m.cr === 0 ? 'kuota' : '$' + (m.cr / 1000).toFixed(3)}`,
                       }))}
                     />
+                    {isPosbot && posbotSpec && (
+                      <div className="text-[11px] text-muted-foreground mt-1.5">
+                        Mode <span className="text-foreground font-medium">{posbotModeSummary(posbotSpec)}</span>
+                        {posbotImageMax > 0
+                          ? ` · ${posbotImageMax === 1 ? '1 gambar' : `${posbotImageMin}-${posbotImageMax} gambar`}`
+                          : ' · tanpa gambar'}
+                        {posbotVideoOk ? ' · video referensi' : ''}
+                      </div>
+                    )}
                   </div>
                   <div>
                     <Label>Aspek Rasio {isVeoI2V && <span className="text-[10px] text-blue-400 font-normal ml-1">(16:9 only)</span>}</Label>

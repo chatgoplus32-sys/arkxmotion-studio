@@ -191,8 +191,10 @@ export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
   // begitu submit-nya dipasang ke halaman generate.
   markastools: [],
   freebeat: [],
-  // PosBot Developer API — tarif dalam Rupiah (bukan kredit app). Hanya model
-  // video yang menerima gambar acuan; model T2V/R2V murni ada di halaman lain.
+  // PosBot Developer API — tarif dalam Rupiah (bukan kredit app). 26 model
+  // video: T2V, I2V (1-4 gambar), SFV, F2F (Seedance 2.5), R2V/V2V
+  // (video referensi + foto karakter). Model lipsync/musik/TTS ada di kategori
+  // masing-masing, motion control di halaman Motion.
   posbot: [
     { value: 'pb:grok_imagine_2_15s', label: 'Grok Imagine 2 · 15 dtk 720p', cr: 2500, provider: 'posbot', apiModel: 'grok_imagine_2_15s' },
     { value: 'pb:grok_imagine_2_30s', label: 'Grok Imagine 2 · 30 dtk 720p', cr: 4000, provider: 'posbot', apiModel: 'grok_imagine_2_30s' },
@@ -213,6 +215,13 @@ export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'pb:omni_flash_i2v', label: 'Omni Flash 720p I2V · 10 dtk', cr: 1000, provider: 'posbot', apiModel: 'omni_flash_i2v' },
     { value: 'pb:omni_flash_11_720p', label: 'Omni Flash 1.1 720p · 10 dtk', cr: 1000, provider: 'posbot', apiModel: 'omni_flash_11_720p' },
     { value: 'pb:omni_flash_12_1080p', label: 'Omni Flash 1.2 1080p · 15 dtk', cr: 1000, provider: 'posbot', apiModel: 'omni_flash_12_1080p' },
+    { value: 'pb:omni_flash_t2v', label: 'Omni Flash 720p T2V · 10 dtk', cr: 1000, provider: 'posbot', apiModel: 'omni_flash_t2v' },
+    { value: 'pb:omni_flash_r2v', label: 'Omni Flash 720p R2V · 10 dtk', cr: 1000, provider: 'posbot', apiModel: 'omni_flash_r2v' },
+    { value: 'pb:seedance_25_30s_r2v', label: 'Seedance 2.5 R2V Pro · 30 dtk', cr: 6500, provider: 'posbot', apiModel: 'seedance_25_30s_r2v' },
+    { value: 'pb:seedance_20_mini_r2v', label: 'Seedance 2.0 Mini R2V · 15 dtk', cr: 3000, provider: 'posbot', apiModel: 'seedance_20_mini_r2v' },
+    { value: 'pb:kling_30_omni_r2v', label: 'Kling 3.0 Omni R2V · 15 dtk', cr: 3500, provider: 'posbot', apiModel: 'kling_30_omni_r2v' },
+    { value: 'pb:wan_30_r2v', label: 'Wan 3.0 R2V HD · 15 dtk', cr: 3000, provider: 'posbot', apiModel: 'wan_30_r2v' },
+    { value: 'pb:minimax_h3_r2v', label: 'MiniMax H3 R2V HD · 15 dtk', cr: 2500, provider: 'posbot', apiModel: 'minimax_h3_r2v' },
   ],
 }
 
@@ -791,6 +800,13 @@ export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: s
       ['omni_flash_i2v', 1000, 10],
       ['omni_flash_11_720p', 1000, 10],
       ['omni_flash_12_1080p', 1000, 15],
+      ['omni_flash_t2v', 1000, 10],
+      ['omni_flash_r2v', 1000, 10],
+      ['seedance_25_30s_r2v', 6500, 30],
+      ['seedance_20_mini_r2v', 3000, 15],
+      ['kling_30_omni_r2v', 3500, 15],
+      ['wan_30_r2v', 3000, 15],
+      ['minimax_h3_r2v', 2500, 15],
     ]
     const out: Record<string, Array<{ value: string; label: string; mult: number; duration: number; cr?: number }>> = {}
     for (const [id, price, duration] of rows) {
@@ -846,6 +862,8 @@ export const MODEL_RATIO_RESTRICTIONS: Record<string, string[]> = {
     'betagrok_15s', 's2_seedance_25_30s', 'seedance_25_30s_strict', 'seedance_20_15s',
     'seedance_20_mini', 'wan_30_hd', 'wan_remix_720p', 'minimax_h3', 'minimax_h3_720p',
     'kling_25_turbo', 'kling_26_pro_1080p', 'kling_30_turbo', 'omni_flash_sfv', 'omni_flash_i2v',
+    'omni_flash_t2v', 'omni_flash_r2v', 'seedance_25_30s_r2v', 'seedance_20_mini_r2v',
+    'kling_30_omni_r2v', 'wan_30_r2v', 'minimax_h3_r2v',
   ].map((id) => [id, ['16:9', '9:16', '1:1']])),
   omni_flash_11_720p: ['16:9', '9:16'],
   omni_flash_12_1080p: ['16:9', '9:16'],
