@@ -164,12 +164,14 @@ export default function CloneVoicePage() {
         serverReady = !!fresh.server_key?.available
       }
     }
+    // Clone voice butuh API key pribadi pengguna (bukan kunci server) agar
+    // suara dikaitkan ke akun NexaBot yang benar.
+    if (apiKey || cookies) return { apiKey, cookies, ticket }
     if (nexabotPreferServerKey({
-      hasOwnKey: !!(apiKey || cookies),
+      hasOwnKey: false,
       serverReady,
       coveredByPackage: coveredRef.current,
     })) return { master: true, ticket }
-    if (apiKey || cookies) return { apiKey, cookies, ticket }
     throw new Error('NexaBot: tidak ada API key aktif dan kunci server belum tersedia — tambahkan API key di halaman Providers atau top up NexaBot dulu.')
   }
 
