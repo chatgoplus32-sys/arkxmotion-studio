@@ -1410,11 +1410,11 @@ export default function ProvidersPage() {
             ? { state: 'active', balance: result.credits, detail: `Kredit: ${result.credits}` }
             : { state: 'empty', balance: 0, detail: 'Kredit: 0 — habis' }
         }
-        // Endpoint saldo tidak menerima API key CLI — kunci tetap dipakai
-        // langsung saat generate, jadi anggap valid tanpa saldo.
+        // Endpoint saldo tidak mendukung autentikasi via API key CLI —
+        // kunci tetap valid, generate tidak bergantung pada endpoint ini.
         return result.ok
-          ? { state: 'active', detail: 'Kunci valid — saldo akan ditampilkan saat generate' }
-          : { state: 'invalid', detail: result.error || 'Gagal memuat saldo' }
+          ? { state: 'active', detail: 'Kunci valid — saldo akan ditampilkan setelah generate pertama' }
+          : { state: 'invalid', detail: result.error || 'API key tidak valid' }
       } catch {
         return { state: 'failed', detail: 'Error checking token' }
       }

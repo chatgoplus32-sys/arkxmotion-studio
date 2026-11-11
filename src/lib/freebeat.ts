@@ -264,46 +264,59 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Saldo kredit akun freebeat (best-effort): endpoint web /v1/user/credits/
- * findCredits belum dijamin menerima API key CLI — kalau ditolak (401/403),
- * panggilan ini gagal lembut dan UI hanya menyembunyikan saldo.
+ * Saldo kredit akun freebeat (best-effort): endpoint web
+ * /v1/user/credits/findCredits belum dijamin menerima API key CLI — hanya
+ * web session/cookie yang didukung upstream. Kalau ditolak (401/403) atau
+ * format tak dikenal, panggilan ini gagal lembut dan UI hanya menyembunyikan
+ * saldo (generate tetap jalan dengan kunci yang valid).
  *
- * Dicoba beberapa bentuk body (kosong / {}) karena dokumentasi resmi untuk
- * endpoint ini belum tersedia. Saldo dicari secara rekursif di seluruh
- * data respons (key: credits, credit, balance, point, dll.).
+ * Dicoba beberapa bentuk body karena dokumentasi resmi untuk endpoint ini
+ * belum tersedia. Saldo dicari secara rekursif di seluruh data respons.
  */
 export async function fetchFreebeatCredits(key: string): Promise<{ ok: boolean; credits?: number; error?: string }> {
+  const endpoints = [
+    '/v1/user/credits/findCredits',
+    '/v1/user/credits/getCreditsUsageRecords',
+  ]
   const bodies: any[] = [{}, { uid: '' }, { userId: '' }]
-  let lastText = ''
-  for (const body of bodies) {
-    try {
-      const res = await fetch(`${FREEBEAT_PROXY}/v1/user/credits/findCredits`, {
-        method: 'POST',
-        headers: freebeatHeaders(key),
-        body: JSON.stringify(body),
-      })
-      lastText = await res.text()
-      let json: any
-      try { json = JSON.parse(lastText) } catch {
-        continue // coba body berikutnya
+  let lastStatus = 0
+  let lastMsg = ''
+  for (const ep of endpoints) {
+    for (const body of bodies) {
+      try {
+        const res = await fetch(`${FREEBEAT_PROXY}${ep}`, {
+          method: 'POST',
+          headers: freebeatHeaders(key),
+          body: JSON.stringify(body),
+        })
+        lastStatus = res.status
+        const text = await res.text()
+        let json: any
+        try { json = JSON.parse(text) } catch {
+          lastMsg = text.slice(0, 120)
+          continue
+        }
+        if (res.status === 401 || res.status === 403 || json?.code === 401 || json?.code === 403) {
+          return { ok: false, error: json?.msg || `API key tidak valid (HTTP ${res.status})` }
+        }
+        if (json?.code != null && json.code !== 0) {
+          lastMsg = json?.msg || `code ${json?.code}`
+          continue
+        }
+        const d = json?.data ?? json
+        const credits = pickCreditNumber(d)
+        if (credits != null) return { ok: true, credits }
+        // kode 0 tapi format belum dikenal — coba body/endpoint berikutnya
+      } catch {
+        continue
       }
-      if (res.status === 401 || res.status === 403) {
-        return { ok: false, error: json?.msg || 'API key tidak valid (401/403)' }
-      }
-      if (json?.code != null && json.code !== 0) {
-        continue // coba body berikutnya
-      }
-      const d = json?.data ?? json
-      const credits = pickCreditNumber(d)
-      if (credits != null) return { ok: true, credits }
-      // kode 0 tapi format belum dikenal — lanjut coba body lain
-    } catch {
-      continue
     }
   }
-  // Semua body coba gagal menemukan format saldo yang dikenali.
-  if (lastText) {
-    return { ok: false, error: 'format saldo tidak dikenali (respons upstream non-numerik)' }
+  // Semua upaya gagal menemukan saldo yang dikenali. Kunci tetap valid
+  // (generate tidak bergantung pada endpoint saldo ini) — beri tahu UI
+  // agar tidak menampilkan "Invalid".
+  if (lastStatus > 0) {
+    return { ok: true, error: lastMsg || 'saldo tidak dapat dicek via API key (gunakan dashboard freebeat)' }
   }
   return { ok: false, error: 'gagal memuat saldo' }
 }
