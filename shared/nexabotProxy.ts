@@ -64,9 +64,10 @@ export const NEXABOT_PROXY_POLICY: Record<NexabotProxyAction, NexabotProxyPolicy
   // sudah terbentuk upstream — mengulang berarti kredit terpotong dua kali.
   submit: { timeoutMs: 180_000, attempts: 1, label: 'submit ke NexaBot' },
   generate: { timeoutMs: 180_000, attempts: 1, label: 'generate via session' },
-  // NexaDance 3.0 (POST /api/v1/alt-video/generate): submit hanya memasukkan job
-  // ke antrean batch 60 detik, jadi jawabannya cepat — satu percobaan seperti
-  // submit lain. 0,5 kredit per video, jadi mengulang berarti bayar dua kali.
+  // NexaDance 3.0 (POST /api/v1/api, model=nexadance — endpoint lama
+  // /api/v1/alt-video/generate sudah tidak ada): submit hanya memasukkan job
+  // ke antrean upstream, jadi jawabannya cepat — satu percobaan seperti submit
+  // lain. 0,2 kredit per video, jadi mengulang berarti bayar dua kali.
   nexadance: { timeoutMs: 60_000, attempts: 1, label: 'submit NexaDance 3.0' },
   // GPT Image 2.5 (nexabot.id/gpt-image): sekali jalan seperti submit —
   // respons hilang berarti job mungkin sudah terbentuk dan 0,1 cr terpotong.
@@ -75,6 +76,43 @@ export const NEXABOT_PROXY_POLICY: Record<NexabotProxyAction, NexabotProxyPolicy
   // Jalur cadangan (path yang tidak dikenali): tetap diberi timeout supaya tidak
   // menggantung tanpa batas, tapi tanpa retry karena isinya tidak diketahui.
   generic: { timeoutMs: 180_000, attempts: 1, label: 'proxy NexaBot' },
+}
+
+// ── Model video (update 10 Nov 2026) ────────────────────────────────────────
+/** Id model video yang diterima upstream. Default (tanpa field `model`) = omni_flash. */
+export const NEXABOT_VIDEO_MODELS = ['omni_flash', 'nexadance', 'omni_lama'] as const
+
+/**
+ * Validasi `model` dari klien SEBELUM request dibangun.
+ *
+ * Mengembalikan pesan error kalau nilainya bukan salah satu id yang valid,
+ * atau `null` kalau aman (termasuk saat field tidak dikirim — berarti default
+ * upstream `omni_flash`, jadi memang tidak boleh dipaksa mengirim apa pun).
+ * Ditolak di sini supaya pesannya jelas (400 lokal), bukan 400 dari upstream
+ * di tengah antrian submit.
+ */
+export function nexabotVideoModelError(model: unknown): string | null {
+  if (model === undefined || model === null || model === '') return null
+  if (typeof model === 'string' && (NEXABOT_VIDEO_MODELS as readonly string[]).includes(model)) return null
+  return `Model tidak valid: ${JSON.stringify(model)}. Pilih omni_flash, nexadance, atau omni_lama (model=omni sudah tidak berlaku sejak update 10 Nov 2026).`
+}
+
+/**
+ * Terjemahan id model → id yang dimengerti WEB `/api/v1/generate`.
+ *
+ * Web memakai id internal yang BERBEDA dari API (diverifikasi dari bundle JS
+ * nexabot.id: halaman alternative-video mengirim `model: "vertex_omni_flash"`
+ * untuk Omni Lama 10s dan `"nexadance_3_0"` untuk NexaDance). Id API yang
+ * asing (`omni_lama`) diabaikan diam-diam oleh web dan job jatuh ke default
+ * `omni_flash` — user pilih Omni Lama, dapat Omni Flash.
+ *
+ * Mengembalikan id web, atau `null` kalau model ini memang default web
+ * (`omni_flash`) dan field `model` tidak boleh dikirim sama sekali.
+ */
+export function nexabotWebModelId(model: string): string | null {
+  if (model === 'omni_lama') return 'vertex_omni_flash'
+  if (model === 'nexadance') return 'nexadance_3_0'
+  return null
 }
 
 /** Jeda antar percobaan (backoff + jitter). */
@@ -704,14 +742,19 @@ export function isNexabotNonIdempotentAction(action: NexabotProxyAction): boolea
  * Saran aman yang boleh ditampilkan ke user setelah kegagalan.
  *
  * Untuk submit/generate, mengulang tanpa memeriksa lebih dulu bisa membuat job
- * ganda dan kredit 0.15 cr terpotong dua kali — jadi sarannya diperingatkan,
+ * ganda dan kreditnya (0,3 cr/video Omni Flash 1.2 dst.) terpotong dua kali —
+ * jadi sarannya diperingatkan,
  * bukan "coba lagi".
  */
 export function nexabotErrorAdvice(action: NexabotProxyAction): string {
   if (!isNexabotNonIdempotentAction(action)) return 'coba lagi'
-  // Biaya per aksi: GPT Image 0,1 cr, NexaDance 3.0 0,5 cr, sisanya 0,15 cr.
-  const biaya = action === 'gpt-image' ? '0,1' : action === 'nexadance' ? '0,5' : '0,15'
-  return `Respons NexaBot hilang — job MUNGKIN sudah terbentuk, jadi cek dulu di nexabot.id/riwayat; ulangi hanya kalau kamu yakin belum ada job, karena kredit ${biaya} cr bisa terpotong dua kali.`
+  // Biaya per aksi (update 10 Nov 2026): GPT Image 0,1 cr, NexaDance 3.0 0,2 cr,
+  // Omni Flash 1.2 0,3 cr/video, sisanya (non-video) 0,15 cr.
+  const biaya = action === 'gpt-image' ? '0,1 cr'
+    : action === 'nexadance' ? '0,2 cr'
+    : action === 'submit' ? '0,3 cr/video Omni Flash 1.2 (0,15 cr non-video)'
+    : '0,15 cr'
+  return `Respons NexaBot hilang — job MUNGKIN sudah terbentuk, jadi cek dulu di nexabot.id/riwayat; ulangi hanya kalau kamu yakin belum ada job, karena kredit ${biaya} bisa terpotong dua kali.`
 }
 
 /** Error dari percobaan yang semuanya gagal (timeout / koneksi). */

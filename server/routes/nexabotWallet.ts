@@ -410,7 +410,7 @@ router.post('/deduct', authenticateToken, (req: AuthRequest, res: Response) => {
       })
     }
     // Kuota harian NexaDance: paket membebaskan saldo rupiah member, tapi tiap
-    // video tetap menagih 0,5 kredit akun NexaBot milik operator. Batas ini
+    // video tetap menagih 0,2 kredit akun NexaBot milik operator. Batas ini
     // mencegah satu member menghabiskan kredit server dalam sehari.
     if (pkg && isNexadanceModelName(model)) {
       const kuota = nexadanceQuota(userId)

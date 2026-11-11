@@ -87,8 +87,8 @@ export const NEXABOT_PACKAGES: NexabotPackagePlan[] = [
   },
   {
     // Premium Booster: satu hari tanpa potongan untuk tiga keluarga generate
-    // paling laris — NexaDance 3.0 (upstream 0,5 kredit/video, 20 detik 720p),
-    // Omni Flash 1.2 (0,15 kredit/request), dan GPT Image (0,1 kredit/gambar).
+    // paling laris — NexaDance 3.0 (upstream 0,2 kredit/video, 20 detik 720p),
+    // Omni Flash 1.2 (0,3 kredit/video), dan GPT Image (0,1 kredit/gambar).
     // Dinamai dari halaman tempat paket ini dijual, bukan dari satu model saja.
     //
     // slug sengaja TETAP `unlimited_seedance_daily` walaupun cakupanisnya sudah

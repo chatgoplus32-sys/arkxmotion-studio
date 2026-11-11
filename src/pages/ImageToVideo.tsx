@@ -477,8 +477,8 @@ export default function ImageToVideoPage() {
   const isNbSFV = isNb && nbApiModel === 'sfv'
   const isNbI2V = isNb && nbApiModel === 'i2v'
   const isNbR2V = isNb && nbApiModel === 'r2v'
-  // NexaDance 3.0: endpoint khusus (POST /api/v1/alt-video/generate) — 20 detik
-  // 720p dengan audio, 0,5 kredit per video, start frame opsional.
+  // NexaDance 3.0: model video khusus (POST /api/v1/api, model=nexadance) —
+  // 20 detik 720p dengan audio, 0,2 kredit per video, mode t2v saja.
   const isNbNexadance = isNb && nbApiModel === 'nexadance'
   const isNbOmniFlash = isNbR2V
   // Apakah generate mode ini sedang bebas potongan saldo? Unlimited reguler
@@ -522,10 +522,11 @@ export default function ImageToVideoPage() {
   const currentQuality = qualityOptions.find((q) => q.value === quality) || qualityOptions[0]
 
   const totalCredits = currentModel ? (currentQuality?.cr ?? Math.round(currentModel.cr * (currentQuality?.mult || 1))) : 0
-  // NexaBot: tampilkan kredit sebagai desimal (0.15 cr), bukan bulatkan ke 0
-  const displayCredits = provider === 'nexabot' ? (totalCredits || 0.15) : totalCredits
+  // NexaBot: tampilkan kredit sebagai desimal (0.3 cr Omni Flash 1.2 / 0.2 cr
+  // NexaDance), bukan bulatkan ke 0
+  const displayCredits = provider === 'nexabot' ? (totalCredits || 0.3) : totalCredits
   // Mode yang sudah dibebaskan paket JANGAN menampilkan harga kredit upstream
-  // (mis. 0,5 cr NexaDance): itu biaya akun server, bukan tagihan member. Tanpa
+  // (mis. 0,2 cr NexaDance): itu biaya akun server, bukan tagihan member. Tanpa
   // ini user membaca "Est. Cost 0.2 cr" padahal saldo rupiahnya tidak tersentuh.
   const nbCostLabel = provider === 'nexabot'
     ? (nbFreeForCurrentMode ? 'Rp 0 · gratis' : `${displayCredits} cr`)
@@ -1016,9 +1017,9 @@ export default function ImageToVideoPage() {
       if (nbMode === 'i2v' && nbImages.length === 0) return 'Image to Video butuh minimal 1 gambar input'
       if (nbMode === 'r2v' && !nbVideo) return 'Reference to Video butuh 1 video referensi'
       if (nbMode === 'nexadance') {
-        // NexaDance 3.0 tidak wajib media (start frame opsional 1 gambar), tapi
-        // prompt dibatasi 2000 karakter oleh upstream — tolak sebelum submit
-        // supaya tidak memotong prompt user diam-diam.
+        // NexaDance 3.0 tidak menerima media sama sekali (mode t2v saja, update
+        // 10 Nov 2026), tapi prompt dibatasi 2000 karakter oleh upstream — tolak
+        // sebelum submit supaya tidak memotong prompt user diam-diam.
         if (prompt.trim().length > NEXADANCE_PROMPT_MAX) {
           return `Prompt NexaDance 3.0 maksimal ${NEXADANCE_PROMPT_MAX} karakter (sekarang ${prompt.trim().length}).`
         }
@@ -2667,7 +2668,7 @@ export default function ImageToVideoPage() {
           throw new Error(rotation.error || 'Generation failed')
         }
       } else if (provider === 'nexabot') {
-        // ─── NexaBot: REST API (satu model: Google Omni 1.2) ─────
+        // ─── NexaBot: REST API (tiga model video, default omni_flash) ───
         addLog(`[1/3] 🚀 Menyiapkan generate NexaBot...`, 'info', 'nexabot')
         setStatus((s) => ({ ...s, text: 'Menyiapkan...', pct: 5 }))
 
@@ -2709,8 +2710,9 @@ export default function ImageToVideoPage() {
         ): Promise<string> => {
             // Mode session (cookie): generate lewat /api/v1/generate yang
             // menghormati paket Unlimited. Key tanpa cookie langsung lewat API
-            // key (pay-as-you-go 0.15 cr). Key dengan cookie yang mati di tengah
-            // job ditangani runNexabotJobWithSessionFallback() di bawah.
+            // key (pay-as-you-go 0,3 cr/video Omni Flash 1.2). Key dengan cookie
+            // yang mati di tengah job ditangani
+            // runNexabotJobWithSessionFallback() di bawah.
             const sessionMode = !!keyInfo?.cookies
             if (viaMaster) {
               addLog('🏦 Memakai kunci NexaBot milik server — akses member terverifikasi, tanpa API key pribadi', 'info', 'nexabot')
@@ -2829,11 +2831,9 @@ export default function ImageToVideoPage() {
                   throw new Error(`Video sumber terlalu besar (${(srcVideo.size / 1024 / 1024).toFixed(1)}MB setelah kompresi, maks 6MB). Potong durasinya lalu coba lagi.`)
                 }
                 media.push(await fileToBase64(srcVideo))
-              } else if (apiModel === 'nexadance') {
-                // NexaDance 3.0: start frame OPSIONAL, maksimal 1 gambar.
-                // Upstream otomatis memperlakukannya sebagai sfv (frame pertama).
-                if (imageFiles[0]) media.push(await fileToBase64(await compressForApi(imageFiles[0])))
               }
+              // NexaDance 3.0: TIDAK ada media — mode t2v saja (update 10 Nov
+              // 2026, start frame tidak lagi diterima upstream).
             }
             // Jalur session → API key dengan pemulihan otomatis: kalau cookie
             // Unlimited kedaluwarsa di tengah job, helper mencoba ambil ulang
@@ -2842,8 +2842,9 @@ export default function ImageToVideoPage() {
             // lengkap dengan notifikasi toast + log.
             return await runNexabotJobWithSessionFallback<string>(
               async (auth, via) => {
-                // NexaDance 3.0 punya endpoint sendiri (POST /api/v1/alt-video/generate)
-                // dengan body berbeda; sisanya memakai alur yang sama.
+                // NexaDance 3.0 disubmit lewat endpoint yang sama dengan mode
+                // lain (POST /api/v1/api) tapi dengan body khusus: model
+                // 'nexadance', mode t2v, durasi 20 detik.
                 const isNexadance = apiModel === 'nexadance'
                 addLog(`[2/3] 🚀 Submitting to NexaBot ${apiModel}${nbDuration ? ` · ${nbDuration} detik` : ''} via ${via}...`, 'info', 'nexabot')
                 setStatus((s) => ({ ...s, text: `Submit NexaBot ${apiModel}...`, pct: 15 }))
@@ -2859,7 +2860,6 @@ export default function ImageToVideoPage() {
                     prompt: prompt.trim(),
                     duration,
                     ratio: nexadanceRatio,
-                    media: media.length > 0 ? media : undefined,
                   }, auth, {
                     onRetry: ({ attempt, status, delayMs, message }) => {
                       const detik = Math.ceil(delayMs / 1000)
@@ -2874,13 +2874,13 @@ export default function ImageToVideoPage() {
                   })
                   if (!submit.ok || !submit.jobId) throw new Error(submit.error || 'NexaBot submit NexaDance gagal')
                   jobId = submit.jobId
-                  const biaya = submit.creditCost != null ? `${submit.creditCost} cr` : '0,5 cr'
+                  const biaya = submit.creditCost != null ? `${submit.creditCost} cr` : '0,2 cr'
                   // Biaya ini kredit akun NexaBot (upstream), bukan saldo rupiah
                   // member — sebutkan siapa yang menanggung supaya tidak terbaca
                   // sebagai potongan saldo.
                   const penanggung = gratisKarenaPaket ? ' kredit server — gratis untukmu' : ' kredit upstream'
                   addLog(`✅ NexaDance 3.0 ${duration}s dibuat ✓ id=${jobId.slice(0, 20)}... (${biaya}${penanggung}${submit.queuePosition ? ` · antrean #${submit.queuePosition}` : ''})`, 'success', 'nexabot')
-                  addLog(`⏳ Job masuk antrean batch 60 s — hasil upstream hanya bertahan 30 menit, jadi otomatis disimpan ke CDN.`, 'info', 'nexabot')
+                  addLog(`⏳ Job NexaDance masuk antrean upstream — hasil hanya bertahan 30 menit setelah selesai, jadi otomatis disimpan ke CDN.`, 'info', 'nexabot')
                 } else {
                   const submit = await runWithNexabotThrottleRetry(() => submitNexabot({
                     mode: nbMode,
@@ -2891,6 +2891,9 @@ export default function ImageToVideoPage() {
                     duration: nbDuration,
                     voice: apiModel === 'tts' ? NEXABOT_DEFAULT_VOICE : undefined,
                     media: media.length > 0 ? media : undefined,
+                    // Model non-default (Omni Lama 10s → 'omni_lama'); undefined
+                    // untuk Omni Flash sehingga upstream memakai defaultnya.
+                    model: currentModel?.upstreamModel,
                     // Billing NexaBot mengikuti telegram_id (kalau diisi di halaman Providers).
                     // Di mode session field ini diabaikan — akun ditentukan oleh cookie.
                     telegramId: keyInfo?.telegramId,
@@ -2924,7 +2927,7 @@ export default function ImageToVideoPage() {
                   setStatus((s) => ({ ...s, text: msg, pct: Math.min((s.pct || 0) + 5, 85) }))
                 }, {
                   path: isNexadance ? nexabotNexadanceStatusPath(jobId) : undefined,
-                  // NexaDance 3.0 lewat antrean batch 60 detik upstream — video 20
+                  // NexaDance 3.0 masuk antrean batch upstream — video 20
                   // detik bisa saja jadi > 6 menit, jadi anggaran poll default (120
                   // percobaan ≈ 6 menit) kerap habis sebelum job selesai, padahal
                   // upstream masih status processing. Untuk NexaDance anggarannya
@@ -3812,12 +3815,12 @@ export default function ImageToVideoPage() {
               /* NexaBot: input mengikuti 4 jenis video-generator */
               <Section title="🖼️ Gambar / Video Input" sub={
                 isNbT2V ? 'Text to Video — tanpa input media'
-                : isNbNexadance ? `NexaDance 3.0 — start frame opsional (1 gambar)`
+                : isNbNexadance ? `NexaDance 3.0 — tanpa input media (t2v saja)`
                 : isNbSFV ? 'Start Frame to Video — 1 gambar wajib'
                 : isNbI2V ? 'Ingredients to Video — 1-3 gambar'
                 : 'Reference Video to Video — 1 video (wajib) + 1 gambar (opsional)'
               }>
-                {!isNbT2V && (
+                {!isNbT2V && !isNbNexadance && (
                   <>
                     <input ref={inputRef} type="file" accept="image/*" multiple={isNbI2V} hidden onChange={(e) => handleNbImagesChange(e.target.files)} />
                     {nbImageUrls.length > 0 ? (
@@ -3841,7 +3844,7 @@ export default function ImageToVideoPage() {
                       <button onClick={() => inputRef.current?.click()} className="w-full aspect-[9/16] rounded-2xl border border-dashed border-border/80 bg-card/30 grid place-items-center hover:border-primary/60 transition text-center px-4">
                         <div>
                           <div className="text-3xl">🖼️</div>
-                          <div className="text-sm mt-1">{isNbNexadance ? 'Start frame (opsional)' : isNbR2V ? 'Gambar pendamping (opsional)' : 'Tap atau tarik gambar (wajib)'}</div>
+                          <div className="text-sm mt-1">{isNbR2V ? 'Gambar pendamping (opsional)' : 'Tap atau tarik gambar (wajib)'}</div>
                           <div className="text-[11px] text-muted-foreground">{isNbI2V ? '1-3 gambar · JPG / PNG / WEBP' : 'JPG / PNG / WEBP'}</div>
                         </div>
                       </button>
@@ -3868,11 +3871,11 @@ export default function ImageToVideoPage() {
                     )}
                   </div>
                 )}
-                {isNbT2V && (
+                {(isNbT2V || isNbNexadance) && (
                   <div className="aspect-[9/16] rounded-2xl border border-dashed border-border/60 bg-card/20 grid place-items-center text-center px-4">
                     <div>
-                      <div className="text-3xl">✍️</div>
-                      <div className="text-sm mt-1 text-muted-foreground">Text to Video — cukup tulis prompt</div>
+                      <div className="text-3xl">{isNbNexadance ? '🎬' : '✍️'}</div>
+                      <div className="text-sm mt-1 text-muted-foreground">{isNbNexadance ? 'NexaDance 3.0 — cukup tulis prompt' : 'Text to Video — cukup tulis prompt'}</div>
                       <div className="text-[11px] text-muted-foreground">Tidak ada input media</div>
                     </div>
                   </div>

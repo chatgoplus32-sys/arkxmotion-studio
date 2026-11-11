@@ -11,7 +11,8 @@ import { NEXABOT_PRICE_FALLBACK } from '../../lib/nexabotWallet'
  * NexaBot punya dua jalur yang sangat berbeda konsekuensinya:
  *  - session cookie login nexabot.id → web /api/v1/generate, paket Unlimited
  *    tidak dipotong kredit;
- *  - API key nxb_… → /api/v1/api, selalu pay-as-you-go 0.15 cr/request.
+ *  - API key nxb_… → /api/v1/api, selalu pay-as-you-go (0,3 cr/video Omni
+ *    Flash 1.2, 0,2 cr NexaDance 3.0, 0,15 cr request non-video).
  *
  * Dipisah ke modul sendiri supaya logikanya bisa diuji tanpa merender halaman
  * (halaman itu menarik banyak store yang menyentuh localStorage).
@@ -53,7 +54,7 @@ export function nexabotPathPill(
       text: '🔑 API key · pay-as-you-go',
       className: `${BASE_CLASS} text-amber-400`,
       title:
-        'Belum ada cookie session. Generate lewat /api/v1/api dan NexaBot memotong 0.15 cr/request. ' +
+        'Belum ada cookie session. Generate lewat /api/v1/api dan NexaBot memotong 0,3 cr/video (Omni Flash 1.2), 0,2 cr/video (NexaDance 3.0), 0,15 cr/request (non-video). ' +
         'Tambahkan session di Providers → NexaBot (atau lewat extension) untuk memakai paket Unlimited.',
     }
   }
@@ -86,14 +87,14 @@ export function nexabotPathPill(
       className: `${BASE_CLASS} text-rose-400`,
       title: (session.error || 'Masa berlaku cookie sesi sudah berakhir — login ulang di nexabot.id.') +
         (hasApiKey
-          ? ' Kalau sesi ini mati di tengah job, generate otomatis beralih ke API key (pay-as-you-go 0.15 cr).'
+          ? ' Kalau sesi ini mati di tengah job, generate otomatis beralih ke API key (pay-as-you-go 0,3 cr/video Omni Flash 1.2).'
           : ' Belum ada API key (nxb_…) di pool untuk fallback pay-as-you-go.'),
     }
   }
 
   const detail = [session.plan, session.until, session.email].filter(Boolean).join(' · ')
   const fallbackNote = hasApiKey
-    ? ' Kalau sesi kedaluwarsa di tengah job, generate otomatis beralih ke API key (pay-as-you-go 0.15 cr).'
+    ? ' Kalau sesi kedaluwarsa di tengah job, generate otomatis beralih ke API key (pay-as-you-go 0,3 cr/video Omni Flash 1.2).'
     : ' Belum ada API key (nxb_…) untuk fallback bila sesi kedaluwarsa di tengah job.'
 
   // Peringatan dini: paket berakhir < 24 jam lagi (pemantau latar belakang juga

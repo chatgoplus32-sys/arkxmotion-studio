@@ -77,8 +77,8 @@ export function isBoosterModelName(model: string | null | undefined): boolean {
   return NEXABOT_BOOSTER_OMNI_MODELS.includes(inti) || NEXABOT_BOOSTER_IMAGE_MODELS.includes(inti)
 }
 
-/** Tiga keluarga yang dibebaskan Booster — satu sumber untuk semua copy UI. */
-export const NEXABOT_BOOSTER_COVERAGE = ['NexaDance 3.0', 'Omni Flash 1.2', 'GPT Image 2.5']
+/** Empat keluarga yang dibebaskan Booster — satu sumber untuk semua copy UI. */
+export const NEXABOT_BOOSTER_COVERAGE = ['NexaDance 3.0', 'Omni Flash 1.2', 'Omni Lama 10s', 'GPT Image 2.5']
 
 /**
  * Cermin `shared/pricing.ts` (NEXABOT_BOOSTER_COMING_SOON): penjualan Booster

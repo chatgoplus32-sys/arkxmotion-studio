@@ -6,10 +6,9 @@ import db from '../db.js'
  * Kenapa ada
  * ----------
  * Paket membebaskan saldo rupiah member, TAPI setiap video NexaDance 3.0 tetap
- * menagih 0,5 kredit ke akun NexaBot milik operator (endpoint
- * /api/v1/alt-video/generate selalu pay-as-you-go — jalur cookie Unlimited
- * ditolak 401). Tanpa batas, satu member bisa menghabiskan kredit server
- * sendirian dalam sehari.
+ * menagih 0,2 kredit ke akun NexaBot milik operator (jalur NexaDance memakai
+ * API key — paket Unlimited web tidak berlaku di jalur API). Tanpa batas, satu
+ * member bisa menghabiskan kredit server sendirian dalam sehari.
  *
  * Hitungannya memakai baris `nexabot_usage` yang sudah dicatat /deduct, jadi
  * tidak ada tabel baru. Baris berstatus 'refunded' (generate gagal lalu saldo

@@ -17,6 +17,8 @@ import {
   nexabotProxyDelayMs,
   nexabotProxyRetryConfig,
   nexabotRelayHeaders,
+  nexabotVideoModelError,
+  nexabotWebModelId,
   parseNexabotRetryAfterMs,
 } from '../shared/nexabotProxy.js'
 
@@ -289,6 +291,30 @@ test('backoff berlipat dan dibatasi maxMs', () => {
   assert.equal(nexabotProxyDelayMs({ attempt: 2, config }), 1000)
   assert.equal(nexabotProxyDelayMs({ attempt: 3, config }), 2000)
   assert.equal(nexabotProxyDelayMs({ attempt: 9, config }), 4000)
+})
+
+// ── Model video (update 10 Nov 2026): validasi & terjemahan id ───────────────
+// Web /api/v1/generate memakai id internal yang BERBEDA dari API (dikurasi dari
+// bundle JS nexabot.id). Id API yang asing diabaikan web → job jatuh ke
+// omni_flash, jadi relay jalur session WAJIB menerjemahkan.
+test('nexabotVideoModelError: allowlist omni_flash/nexadance/omni_lama', () => {
+  assert.equal(nexabotVideoModelError(undefined), null)
+  assert.equal(nexabotVideoModelError(null), null)
+  assert.equal(nexabotVideoModelError(''), null)
+  assert.equal(nexabotVideoModelError('omni_flash'), null)
+  assert.equal(nexabotVideoModelError('nexadance'), null)
+  assert.equal(nexabotVideoModelError('omni_lama'), null)
+
+  assert.match(String(nexabotVideoModelError('omni')), /omni_flash, nexadance, atau omni_lama/)
+  assert.match(String(nexabotVideoModelError('vertex_omni_flash')), /omni_flash, nexadance, atau omni_lama/)
+  assert.match(String(nexabotVideoModelError(42)), /tidak valid/)
+})
+
+test('nexabotWebModelId: menerjemahkan id API → id web; default tidak dikirim', () => {
+  assert.equal(nexabotWebModelId('omni_lama'), 'vertex_omni_flash')
+  assert.equal(nexabotWebModelId('nexadance'), 'nexadance_3_0')
+  // Default web juga omni_flash → field model tidak boleh dikirim sama sekali.
+  assert.equal(nexabotWebModelId('omni_flash'), null)
 })
 
 // ─── Diagnosa kegagalan jaringan ────────────────────────────────────────────

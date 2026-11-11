@@ -20,6 +20,8 @@ import {
   nexabotRelayHeaders,
   nexabotSubmitLaneKey,
   nexabotSubmitLaneLabel,
+  nexabotVideoModelError,
+  nexabotWebModelId,
   touchNexabotJob,
   type NexabotProxyAction,
   type NexabotSubmitSlot,
@@ -47,10 +49,18 @@ const router = Router()
 const NEXABOT_BASE = (process.env.NEXABOT_BASE || 'https://nexabot.id').replace(/\/+$/, '')
 
 /**
- * Id model video premium NexaBot (rebrand dari Seedance 2.5). Durasi, resolusi,
- * dan harga ditentukan upstream: 20 detik, 720p, 0,5 kredit per video.
+ * Id model video premium NexaBot (rebrand dari Seedance 2.5).
+ *
+ * Update upstream 10 November 2026: model video dipecah jadi tiga —
+ * `omni_flash` (Omni Flash 1.2), `nexadance` (NexaDance 3.0), dan
+ * `omni_lama` (Omni Lama 10s). Id lama `nexadance_3_0` dan `omni` sudah tidak
+ * berlaku. Semua model video kini disubmit lewat endpoint yang sama
+ * (`POST /api/v1/api`) dengan parameter `model`.
+ *
+ * Durasi, resolusi, dan harga ditentukan upstream: 20 detik, 720p, 0,2 kredit
+ * per video (sebelum update 0,5).
  */
-const NEXADANCE_MODEL = 'nexadance_3_0'
+const NEXADANCE_MODEL = 'nexadance'
 
 /** Hasil relay yang dilihat rute: status + body mentah + kredensial terpakai. */
 interface RelayHasil {
@@ -90,11 +100,15 @@ async function relayUpstream(
      * Kredensial server lain bila yang utama ditolak upstream. `url` hanya
      * dipakai kalau jalur upstream bergantung pada jenis kredensial
      * (/submit: cookie ke /api/v1/generate, kunci ke /api/v1/api).
+     * `body` untuk kasus yang sama: endpoint berbeda memakai id model berbeda
+     * (web: vertex_omni_flash; API: omni_lama), jadi percobaan cadangan
+     * mengirim body-nya sendiri, bukan body milik jalur utama.
      */
     cadangan?: {
       headers: Record<string, string>
       credential: ResolvedCredential
       url?: string
+      body?: string
       /** Akun pemilik kredensial cadangan, untuk afinitas job. */
       accountId?: string
     }
@@ -128,10 +142,14 @@ async function relayUpstream(
     }
   }
 
-  const kirim = (tambahan?: Record<string, string>, alamat = url) =>
+  const kirim = (tambahan?: Record<string, string>, alamat = url, badan?: string) =>
     fetchNexabotUpstream(
       alamat,
-      tambahan ? { ...init, headers: { ...tanpaKredensial(init.headers), ...tambahan } } : init,
+      {
+        ...init,
+        ...(badan !== undefined ? { body: badan } : {}),
+        ...(tambahan ? { headers: { ...tanpaKredensial(init.headers), ...tambahan } } : {}),
+      },
       {
         action,
         onRetry: ({ attempt, status, delayMs, message }) =>
@@ -166,7 +184,7 @@ async function relayUpstream(
       console.warn(
         `[nexabot-local] ${action}: kredensial server ditolak (HTTP ${response.status}) — ulangi dengan ${jenis} cadangan`,
       )
-      const ulang = await kirim(opts.cadangan.headers, opts.cadangan.url || url)
+      const ulang = await kirim(opts.cadangan.headers, opts.cadangan.url || url, opts.cadangan.body)
       response = ulang.response
       attempts = ulang.attempts
       shared = ulang.shared
@@ -410,9 +428,10 @@ function bolehBacaDenganKunciInduk(req: Request): { ok: boolean; reason: string 
  * sebagai cadangan.
  *
  * `kunciSaja` membalik urutan itu untuk endpoint yang MENOLAK sesi web
- * (/api/v1/alt-video/*, /api/v1/api/credit): cookie di sana dijawab 401
- * "API key tidak valid", jadi memakainya lebih dulu berarti setiap request
- * membayar satu 401 plus satu percobaan ulang.
+ * (/api/v1/api, /api/v1/api/credit): cookie di sana dijawab 401 "API key tidak
+ * valid", jadi memakainya lebih dulu berarti setiap request membayar satu 401
+ * plus satu percobaan ulang. NexaDance 3.0 ikut di sini: jalurnya kini
+ * /api/v1/api (update 10 Nov 2026), bukan endpoint alt-video lagi.
  */
 function kredensialAkun(
   akun: ServerAccount,
@@ -913,6 +932,13 @@ router.post('/submit', async (req: Request, res: Response) => {
   if (Object.keys(auth.headers).length === 0) {
     return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key header' })
   }
+  // Model video divalidasi SEBELUM tiket dibaca: permintaan bergaya curl dengan
+  // model salah tidak boleh menghabiskan tiket /deduct yang sudah terbayar.
+  const salahModel = nexabotVideoModelError(req.body?.model)
+  if (salahModel) {
+    lepasReservasi(auth.accountId)
+    return res.status(400).json({ ok: false, error: salahModel })
+  }
   const tiket = tiketServer(req, auth, 'submit')
   if (!tiket.ok) {
     lepasReservasi(auth.accountId)
@@ -922,7 +948,7 @@ router.post('/submit', async (req: Request, res: Response) => {
   const body = req.body
   // Kredensial cookie (milik klien atau sesi server) harus lewat jalur web
   // /api/v1/generate supaya paket Unlimited dihormati; endpoint API selalu
-  // menagih 0.15 cr/request.
+  // pay-as-you-go (0,3 cr/video Omni Flash 1.2, 0,2 cr NexaDance 3.0).
   const pakaiSesi = auth.credential?.kind === 'cookie'
   const upstreamPath = pakaiSesi ? '/api/v1/generate' : '/api/v1/api'
   console.log(`[nexabot-local] POST ${upstreamPath} (mode: ${body.mode}${pakaiSesi ? ', sesi cookie' : ''})`)
@@ -941,11 +967,23 @@ router.post('/submit', async (req: Request, res: Response) => {
   // nexabot.id/api-docs: default 15 detik, rentang 1–60).
   if (body.duration !== undefined) upstreamBody.duration = body.duration
   // telegram_id = "user id for credit billing" (docs NexaBot) — menentukan
-  // akun mana yang ditagih 0.15 cr/request.
+  // akun mana yang ditagih (0,3 cr/video Omni Flash 1.2, 0,2 cr NexaDance 3.0).
   if (body.telegram_id) upstreamBody.telegram_id = body.telegram_id
+  // Model non-default diteruskan dengan id yang dikenal JALURnya: web
+  // (/api/v1/generate) memakai id internal (omni_lama → vertex_omni_flash —
+  // id API yang asing diabaikan web dan job jatuh ke omni_flash), API
+  // (/api/v1/api) memakai id API. `omni_flash` (default kedua jalur) tidak
+  // dikirim (update 10 Nov 2026).
+  const modelUntukJalur = (kind: 'cookie' | 'api-key'): string | undefined => {
+    const model = typeof body.model === 'string' ? body.model : ''
+    if (!model || model === 'omni_flash') return undefined
+    return kind === 'cookie' ? (nexabotWebModelId(model) ?? undefined) : model
+  }
+  const modelUtama = modelUntukJalur(pakaiSesi ? 'cookie' : 'api-key')
+  if (modelUtama) upstreamBody.model = modelUtama
 
   // Sengaja TANPA retry: kalau responsnya hilang, job bisa saja sudah terbentuk
-  // dan kredit 0.15 sudah terpotong.
+  // dan kreditnya sudah terpotong.
   const hasil = await relayUpstream(res, 'submit', `${NEXABOT_BASE}${upstreamPath}`, {
     method: 'POST',
     headers: {
@@ -961,13 +999,21 @@ router.post('/submit', async (req: Request, res: Response) => {
     // Kredensial cadangan bisa berjenis berbeda, dan jenis itulah yang menentukan
     // jalur upstream: kunci ke /api/v1/api (selalu menagih), cookie ke
     // /api/v1/generate (Unlimited dihormati). Tanpa ini kunci akan dikirim ke
-    // jalur web yang tidak mengenalnya.
-    cadangan: auth.cadangan && {
-      ...auth.cadangan,
-      url: auth.cadangan.credential.kind === 'cookie'
-        ? `${NEXABOT_BASE}/api/v1/generate`
-        : `${NEXABOT_BASE}/api/v1/api`,
-    },
+    // jalur web yang tidak mengenalnya — id modelnya juga ikut jalur cadangan.
+    cadangan: auth.cadangan && (() => {
+      const kindCadangan = auth.cadangan!.credential.kind
+      const bodyCadangan: Record<string, any> = { ...upstreamBody }
+      delete bodyCadangan.model
+      const modelCadangan = modelUntukJalur(kindCadangan)
+      if (modelCadangan) bodyCadangan.model = modelCadangan
+      return {
+        ...auth.cadangan!,
+        url: kindCadangan === 'cookie'
+          ? `${NEXABOT_BASE}/api/v1/generate`
+          : `${NEXABOT_BASE}/api/v1/api`,
+        body: JSON.stringify(bodyCadangan),
+      }
+    })(),
   })
   // Lane sudah dikunci job (kalau job terbentuk) atau upstream menolak — dua-duanya
   // berarti reservasi pemilihan akun sudah tidak diperlukan.
@@ -1006,6 +1052,10 @@ router.post('/generate', async (req: Request, res: Response) => {
   }
 
   const body = req.body
+  // Model video divalidasi dulu supaya permintaan invalid tidak menyentuh
+  // upstream sama sekali (lihat nexabotVideoModelError).
+  const salahModel = nexabotVideoModelError(body?.model)
+  if (salahModel) return res.status(400).json({ ok: false, error: salahModel })
   console.log(`[nexabot-local] POST /api/v1/generate (session, mode: ${body.mode})`)
 
   const upstreamBody: Record<string, any> = {
@@ -1022,6 +1072,13 @@ router.post('/generate', async (req: Request, res: Response) => {
   // nexabot.id/api-docs: default 15 detik, rentang 1–60).
   if (body.duration !== undefined) upstreamBody.duration = body.duration
   if (body.telegram_id) upstreamBody.telegram_id = body.telegram_id
+  // Id model diterjemahkan ke id internal WEB (omni_lama → vertex_omni_flash):
+  // web mengabaikan id API yang asing dan job-nya jatuh ke omni_flash. Default
+  // (omni_flash) tidak dikirim sama sekali (update 10 Nov 2026).
+  if (typeof body.model === 'string' && body.model) {
+    const webModel = nexabotWebModelId(body.model)
+    if (webModel) upstreamBody.model = webModel
+  }
 
   // Tanpa retry, sama alasannya dengan /submit: hindari job & kredit ganda.
   // `credential` dibutuhkan supaya antrean submit memegang jalur cookie milik
@@ -1271,6 +1328,36 @@ router.get('/job/:id', async (req: Request, res: Response) => {
 
 // ── Download result ──
 /**
+ * Pesan error dari body upstream (JSON `{ok:false,error}`), diberi petunjuk
+ * singkat untuk status yang sering muncul dan membingungkan.
+ *
+ * Kenapa perlu: upstream memakai 409 untuk "hasil belum siap" (job masih
+ * queued/processing) dan 410 untuk "file sudah kedaluwarsa" (dihapus 30 menit
+ * setelah selesai). Tanpa pesan aslinya, user hanya melihat "Download gagal:
+ * HTTP 410" dan mengira videonya hilang — padahal solusinya jelas (tunggu /
+ * generate ulang).
+ */
+function pesanErrorUpstream(errText: string, status: number): string | null {
+  let pesan: string | null = null
+  try {
+    const data = JSON.parse(errText)
+    if (data && typeof data.error === 'string' && data.error.trim()) pesan = data.error.trim()
+  } catch {
+    // Body bukan JSON — pakai pesan generis di bawah.
+  }
+  if (status === 409) {
+    return `${pesan || 'Hasil belum siap'} — tunggu job selesai (status done) lalu unduh lagi.`
+  }
+  if (status === 410) {
+    return `${pesan || 'File hasil sudah kedaluwarsa'} — file dihapus otomatis 30 menit setelah selesai, jadi generate ulang.`
+  }
+  if (status === 404) {
+    return pesan || 'Job tidak ditemukan (atau record sudah dihapus setelah melewati TTL).'
+  }
+  return pesan
+}
+
+/**
  * Teruskan unduhan hasil upstream ke klien (streaming).
  *
  * Dipakai rute video biasa (`/download/:id`) dan NexaDance
@@ -1305,7 +1392,13 @@ async function streamHasilJob(
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
       })
-      res.end(JSON.stringify({ ok: false, error: `Download gagal: HTTP ${upstreamRes.status}` }))
+      // Pesan upstream diteruskan apa adanya (error 409 = hasil belum siap,
+      // 410 = file kedaluwarsa) — pesan generik bikin user mengira job-nya
+      // hilang, padahal statusnya cuma belum 'done' atau TTL-nya habis.
+      res.end(JSON.stringify({
+        ok: false,
+        error: pesanErrorUpstream(errText, upstreamRes.status) ?? `Download gagal: HTTP ${upstreamRes.status}`,
+      }))
       return
     }
 
@@ -1471,11 +1564,14 @@ router.post('/save/:id', authenticateToken, async (req: AuthRequest, res: Respon
 })
 
 // ── NexaDance 3.0 (20 detik, 720p, audio) ───────────────────────────────
-// Endpoint khusus yang selalu menagih kredit (0,5/video) — paket Unlimited web
-// tidak berlaku. Submit hanya memasukkan job ke antrean batch 60 detik, jadi
-// klien langsung mendapat job_id + posisi antrean. Alur baca/unduh/simpan
-// memakai pola yang sama dengan job video biasa, hanya path upstream berbeda
-// (`/api/v1/alt-video/*`, menggantikan `/api/v1/seedance` yang sudah 404).
+// Update upstream 10 November 2026: NexaDance bukan lagi model terpisah dengan
+// endpoint sendiri — sekarang dia salah satu dari tiga model video dan
+// disubmit lewat endpoint yang sama seperti model lain (`POST /api/v1/api`)
+// dengan `model: 'nexadance'`. Endpoint lama `/api/v1/alt-video/*` tidak lagi
+// ada di dokumentasi, dan status/unduh kini lewat `/api/v1/jobs/:id`.
+//
+// Kontrak baru: mode t2v SAJA (start frame tidak lagi diterima), durasi tetap
+// 20 detik, resolusi selalu 720p, biaya 0,2 kredit per video.
 router.post('/nexadance', async (req: Request, res: Response) => {
   const gateUserId = userIdFromRequest(req)
   const auth = resolveUpstreamAuth(req, { membuatJob: true, kunciSaja: true })
@@ -1491,7 +1587,7 @@ router.post('/nexadance', async (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key header' })
   }
   // Gate paket hanya untuk generate yang dibayar kredensial SERVER: di situ
-  // kredit operator (0,5/video) yang terbakar, jadi NexaDance 3.0 harus paket
+  // kredit operator (0,2/video) yang terbakar, jadi NexaDance 3.0 harus paket
   // aktif (Premium Booster / Unlimited) — admin bebas karena kreditornya sendiri.
   // Member yang menempel API key pribadi membayar kreditnya sendiri, jadi tidak
   // ikut digerbangi di sini; aturan produknya tetap ditegakkan /deduct supaya
@@ -1507,7 +1603,7 @@ router.post('/nexadance', async (req: Request, res: Response) => {
     }
   }
   // Kuota harian hanya berlaku saat kredensial server yang dipakai: di situlah
-  // kredit operator (0,5/video) benar-benar terbakar. Member yang menempel API
+  // kredit operator (0,2/video) benar-benar terbakar. Member yang menempel API
   // key sendiri tidak dibatasi. Ditegakkan juga di /deduct supaya klien berhenti
   // sebelum submit; di sini supaya tidak bisa dilewati dari browser.
   if (pakaiKredensialServer && gateUserId && !isAdminUser(gateUserId)) {
@@ -1536,22 +1632,28 @@ router.post('/nexadance', async (req: Request, res: Response) => {
   }
   // Upstream hanya menerima ratio angka: 1 = 16:9, 2 = 9:16.
   const ratio = body.ratio === 2 || body.ratio === '9:16' ? 2 : 1
-  const media = Array.isArray(body.media) ? body.media.slice(0, 1) : []
-  console.log(`[nexabot-local] POST /api/v1/alt-video/generate (NexaDance 3.0, ${durasi}s, ratio ${ratio}, media ${media.length})`)
+  // Update 10 Nov 2026: NexaDance 3.0 hanya punya mode t2v — start frame tidak
+  // lagi diterima upstream. Media yang masih terkirim (bundle lama di cache
+  // browser) dibuang dengan peringatan, bukan diteruskan: job tetap jalan.
+  const media = Array.isArray(body.media) ? body.media : []
+  if (media.length > 0) {
+    console.warn('[nexabot-local] NexaDance 3.0 tidak menerima start frame lagi (mode t2v saja) — media dibuang')
+  }
+  console.log(`[nexabot-local] POST /api/v1/api (NexaDance 3.0, ${durasi}s, ratio ${ratio})`)
 
   const upstreamBody: Record<string, any> = {
-    // Mode sfv dipakai kalau ada start frame; upstream memilih pipeline-nya dari sini.
-    mode: media.length > 0 ? 'sfv' : 't2v',
+    // Semua model video kini lewat endpoint yang sama; model yang dipilih lewat
+    // parameter `model` (omni_flash / nexadance / omni_lama).
     model: NEXADANCE_MODEL,
+    mode: 't2v',
     prompt: String(body.prompt).slice(0, 2000),
     duration: 20,
     ratio,
   }
-  if (media.length > 0) upstreamBody.media = media
   if (body.telegram_id) upstreamBody.telegram_id = body.telegram_id
 
-  // Tanpa retry, sama alasannya dengan /submit: job & kredit 0,5 tidak boleh ganda.
-  const hasil = await relayUpstream(res, 'nexadance', `${NEXABOT_BASE}/api/v1/alt-video/generate`, {
+  // Tanpa retry, sama alasannya dengan /submit: job & kredit 0,2 tidak boleh ganda.
+  const hasil = await relayUpstream(res, 'nexadance', `${NEXABOT_BASE}/api/v1/api`, {
     method: 'POST',
     headers: {
       ...auth.headers,
@@ -1588,8 +1690,8 @@ router.get('/nexadance/:id', async (req: Request, res: Response) => {
   }
 
   const idPath = encodeURIComponent(jobId)
-  console.log(`[nexabot-local] GET /api/v1/alt-video/jobs/${idPath}`)
-  const hasil = await relayUpstream(res, 'job', `${NEXABOT_BASE}/api/v1/alt-video/jobs/${idPath}`, {
+  console.log(`[nexabot-local] GET /api/v1/jobs/${idPath} (NexaDance 3.0)`)
+  const hasil = await relayUpstream(res, 'job', `${NEXABOT_BASE}/api/v1/jobs/${idPath}`, {
     method: 'GET',
     headers: {
       ...auth.headers,
@@ -1615,7 +1717,7 @@ router.get('/nexadance/:id/download', async (req: Request, res: Response) => {
   await streamHasilJob(
     res,
     jobId,
-    `${NEXABOT_BASE}/api/v1/alt-video/jobs/${idPath}/download`,
+    `${NEXABOT_BASE}/api/v1/jobs/${idPath}/download`,
     `nexabot-nexadance-${jobId}.mp4`,
     auth.headers,
   )
@@ -1625,7 +1727,7 @@ router.get('/nexadance/:id/download', async (req: Request, res: Response) => {
 router.post('/nexadance/:id/save', authenticateToken, async (req: AuthRequest, res: Response) => {
   const jobId = String(req.params.id || '')
   const idPath = encodeURIComponent(jobId)
-  await simpanHasilJob(req, res, jobId, `${NEXABOT_BASE}/api/v1/alt-video/jobs/${idPath}/download`, {
+  await simpanHasilJob(req, res, jobId, `${NEXABOT_BASE}/api/v1/jobs/${idPath}/download`, {
     kunciSaja: true,
   })
 })

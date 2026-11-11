@@ -5,6 +5,8 @@ import {
   nexabotErrorAdvice,
   nexabotErrorCause,
   nexabotRelayHeaders,
+  nexabotVideoModelError,
+  nexabotWebModelId,
   type NexabotProxyAction,
 } from '../../shared/nexabotProxy.js'
 
@@ -122,6 +124,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ ok: false, error: 'Mode session butuh X-Nexabot-Cookie header' })
       }
       const body = req.body
+      // Model video divalidasi dulu supaya permintaan invalid tidak menyentuh
+      // upstream sama sekali (lihat nexabotVideoModelError).
+      const salahModel = nexabotVideoModelError(body?.model)
+      if (salahModel) return res.status(400).json({ ok: false, error: salahModel })
       console.log(`[nexabot-proxy] POST /api/v1/generate (session, mode: ${body.mode})`)
 
       const upstreamBody: Record<string, any> = {
@@ -137,6 +143,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (body.resolution !== undefined) upstreamBody.resolution = body.resolution
       if (body.duration !== undefined) upstreamBody.duration = body.duration
       if (body.telegram_id) upstreamBody.telegram_id = body.telegram_id
+      // Id model diterjemahkan ke id internal WEB (omni_lama → vertex_omni_flash):
+      // web mengabaikan id API yang asing dan job-nya jatuh ke omni_flash. Default
+      // (omni_flash) tidak dikirim sama sekali (update 10 Nov 2026).
+      if (typeof body.model === 'string' && body.model) {
+        const webModel = nexabotWebModelId(body.model)
+        if (webModel) upstreamBody.model = webModel
+      }
 
       // Tanpa retry: kalau responsnya hilang, job bisa saja sudah terbentuk.
       await relayJson(res, 'generate', `${NEXABOT_BASE}/api/v1/generate`, {
@@ -156,6 +169,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const missing = requireApiKey('Submit')
       if (missing) return missing
       const body = req.body
+      // Model video divalidasi dulu supaya permintaan invalid tidak menyentuh
+      // upstream sama sekali (lihat nexabotVideoModelError).
+      const salahModel = nexabotVideoModelError(body?.model)
+      if (salahModel) return res.status(400).json({ ok: false, error: salahModel })
       console.log(`[nexabot-proxy] POST /api/v1/api (mode: ${body.mode})`)
 
       const upstreamBody: Record<string, any> = {
@@ -171,10 +188,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (body.resolution !== undefined) upstreamBody.resolution = body.resolution
       if (body.duration !== undefined) upstreamBody.duration = body.duration
       // telegram_id = "user id for credit billing" (docs NexaBot) — menentukan
-      // akun mana yang ditagih 0.15 cr/request.
+      // akun mana yang ditagih (0,3 cr/video Omni Flash 1.2, 0,2 cr NexaDance 3.0).
       if (body.telegram_id) upstreamBody.telegram_id = body.telegram_id
+      // Model non-default (omni_lama) diteruskan; `omni_flash` sengaja TIDAK
+      // dikirim — default upstream untuk mode video (update 10 Nov 2026).
+      if (typeof body.model === 'string' && body.model) upstreamBody.model = body.model
 
-      // Tanpa retry: kredit 0.15 bisa terpotong dua kali kalau diulang.
+      // Tanpa retry: kreditnya bisa terpotong dua kali kalau diulang.
       await relayJson(res, 'submit', `${NEXABOT_BASE}/api/v1/api`, {
         method: 'POST',
         headers: {

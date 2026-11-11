@@ -13,8 +13,9 @@ import {
  *
  * Bedanya dengan kunci induk
  * --------------------------
- * API key selalu pay-as-you-go (0.15 cr/request) walau akunnya punya paket
- * Unlimited. Hanya cookie login web yang dihormati paket Unlimited — generate
+ * API key selalu pay-as-you-go (0,3 cr/video Omni Flash 1.2, 0,2 cr NexaDance
+ * 3.0) walau akunnya punya paket Unlimited. Hanya cookie login web yang
+ * dihormati paket Unlimited — generate
  * lewat /api/v1/generate tidak memotong kredit. Karena itu operator bisa
  * menyimpan SATU cookie sesi di server, dan member dengan Paket Unlimited aktif
  * memakainya tanpa pernah melihat nilainya.

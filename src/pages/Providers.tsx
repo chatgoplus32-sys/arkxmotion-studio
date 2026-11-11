@@ -122,7 +122,7 @@ const PROVIDER_LIST = [
   { key: 'genspark', label: 'Genspark AI', desc: 'Kling V3 Motion Control + 14 video models (Veo, Sora, Hailuo, PixVerse) via genspark.ai Tool API — API key (gsk-...).' },
   { key: 'riverside', label: 'Riverside', desc: 'Riverside Business API — Professional video/audio recording, editing, and production platform.' },
   { key: 'seavi', label: 'Seavi Labs', desc: 'Video & image generation (Seedance 2.5 Multi, Kling 3, Motion Control) via api.seavilabs.site — API key (sea-...), saldo token bersama.' },
-  { key: 'nexabot', label: 'NexaBot', desc: 'NexaBot AI via nexabot.id – Google Omni 1.2 (text, image & video ref). Member cukup top up saldo atau Paket Unlimited; generate memakai kunci server, tanpa API key.' },
+  { key: 'nexabot', label: 'NexaBot', desc: 'NexaBot AI via nexabot.id – tiga model video: Omni Flash 1.2, NexaDance 3.0, Omni Lama 10s. Member cukup top up saldo atau Paket Unlimited; generate memakai kunci server, tanpa API key.' },
   { key: 'markastools', label: 'MarkasTools', desc: 'MarkasTools via ai.markastools.id — Motion Control MarkasFlow. Token akun MF- (MarkasKeyTool) didaftarkan sebagai akun "Markasflow", lalu dipakai otomatis (rotasi oleh MarkasTools). Butuh langganan MarkasTools + cookie session.' },
   { key: 'freebeat', label: 'Freebeat AI', desc: '31 model gambar (Nano Banana 2, Z-Image Turbo, Kling Image V3, Qwen, Wan, Seedream, Flux, GPT-Image) via freebeat.ai — API key dari profil akun, kredit dipotong langsung di akun freebeat.' },
 ] as const
@@ -370,9 +370,9 @@ const TOKEN_GUIDE: Record<string, {
       { text: 'OPSI 1 — PAKET UNLIMITED (disarankan): login nexabot.id di browser, lalu isi panel “Session Login Unlimited (cookie)” di bawah (paste document.cookie). Generate otomatis lewat /api/v1/generate dan tidak dipotong kredit.' },
       { text: 'OPSI 2 — API key (pay-as-you-go): buka nexabot.id → Dashboard → API Keys → Create API Key.' },
       { text: 'Copy API key (format: nxb_...) → paste ke input di samping.' },
-      { text: 'Top up saldo minimal 0.15 credits di menu Top Up (hanya untuk mode API key).' },
+      { text: 'Top up saldo minimal 0.2 credits di menu Top Up (cukup untuk satu video termurah; hanya untuk mode API key).' },
     ],
-    tip: 'NexaBot punya satu model: Google Omni 1.2 – tipe video ditentukan otomatis dari input (teks / gambar / video referensi). ADA DUA JALUR: (a) SESSION COOKIE dari login web dikirim ke /api/v1/generate — kalau akun yang login punya paket Unlimited, generate TIDAK dipotong kredit; (b) API KEY (nxb_...) lewat /api/v1/api — selalu pay-as-you-go 0.15 cr/request walau Unlimited aktif. Kalau key punya cookie, app otomatis memakai jalur session. Cookie bisa kedaluwarsa: kalau muncul error session, login ulang di nexabot.id dan paste cookie baru. CATATAN BIAYA: NexaDance 3.0 (20 detik 720p dengan audio, endpoint khusus /api/v1/alt-video/generate) selalu 0,5 cr/video dan GPT Image 0,1 cr/gambar — Paket Unlimited tidak berlaku untuk keduanya.',
+    tip: 'NexaBot punya tiga model video (update 10 Nov 2026): omni_flash (Omni Flash 1.2, 0,3 cr/video), nexadance (NexaDance 3.0, 20 detik 720p, 0,2 cr/video), dan omni_lama (Omni Lama 10s — mode t2v/sfv, durasi tetap 10 detik, 0,2 cr/video). Tipe video ditentukan dari input (teks / gambar / video referensi) lewat parameter mode. ADA DUA JALUR: (a) SESSION COOKIE dari login web dikirim ke /api/v1/generate — kalau akun yang login punya paket Unlimited, generate TIDAK dipotong kredit; (b) API KEY (nxb_...) lewat /api/v1/api — selalu pay-as-you-go (0,15 cr/request non-video) walau Unlimited aktif. Kalau key punya cookie, app otomatis memakai jalur session. Cookie bisa kedaluwarsa: kalau muncul error session, login ulang di nexabot.id dan paste cookie baru. CATATAN BIAYA: GPT Image 2,5 selalu 0,1 cr/gambar walau plan apa pun aktif; lewat jalur API key, hanya plan "API Unlimited" yang membebaskan generate video.',
   },
   markastools: {
     url: 'https://ai.markastools.id',
@@ -510,7 +510,8 @@ function GensparkCookiesInput({ providerKeys, setKeyCookies }: {
 }
 
 // NexaBot Session Cookies Input — mode login web (cookie) supaya generate lewat
-// /api/v1/generate menghormati paket Unlimited (tidak dipotong 0.15 cr).
+// /api/v1/generate menghormati paket Unlimited (tidak dipotong kredit; jalur API
+// memotong 0,3 cr/video Omni Flash 1.2 / 0,2 cr NexaDance 3.0).
 function NexabotSessionInput({ providerKeys, addKey, setKeyCookies }: {
   providerKeys: { id: string; key: string; name?: string; status?: string; cookies?: string; cookiesAt?: number }[]
   addKey: (provider: string, key: string, name?: string) => void
@@ -952,8 +953,9 @@ function MarkastoolsSessionInput({ providerKeys, addKey, setKeyCookies, bulkText
   )
 }
 
-// NexaBot Telegram ID Input — NexaBot menagihkan biaya API (`credit_cost`, 0.15 cr)
-// ke `telegram_id` yang dikirim saat submit (docs: "user id for credit billing").
+// NexaBot Telegram ID Input — NexaBot menagihkan biaya API (`credit_cost`, 0,3
+// cr/video Omni Flash 1.2 dst.) ke `telegram_id` yang dikirim saat submit (docs:
+// "user id for credit billing").
 // Paket Unlimited (1 Hari/2 Hari/…) terikat ke akun Telegram, jadi kalau paket
 // ada di akun Telegram lain, ID-nya diisi di sini.
 function NexabotTelegramInput({ providerKeys, setKeyTelegramId }: {
@@ -1031,7 +1033,7 @@ function NexabotTelegramInput({ providerKeys, setKeyTelegramId }: {
         </div>
       )}
       <div className="text-[10.5px] text-[#a0a0a0] leading-relaxed">
-        NexaBot memotong <span className="text-[#00d4ff]">0.15 cr/request</span> (NexaDance 3.0 0,5 cr/video, GPT Image 0,1 cr/gambar) dari saldo akun Telegram pemilik API key ini — biaya ini dipotong oleh NexaBot, bukan oleh ARKXMotion. Kalau paket Unlimited kamu ada di akun Telegram lain, isi ID-nya di sini agar request ditagihkan ke akun itu.
+        NexaBot memotong <span className="text-[#00d4ff]">0,3 cr/video (Omni Flash 1.2)</span> · 0,2 cr/video (NexaDance 3.0) · 0,15 cr/request (non-video) · 0,1 cr/gambar (GPT Image) dari saldo akun Telegram pemilik API key ini — biaya ini dipotong oleh NexaBot, bukan oleh ARKXMotion. Kalau paket Unlimited kamu ada di akun Telegram lain, isi ID-nya di sini agar request ditagihkan ke akun itu.
       </div>
     </div>
   )
@@ -1163,6 +1165,7 @@ export default function ProvidersPage() {
       riverside: 'riverside',
       nexabot: 'nexabot',
       seavi: 'seavi',
+      freebeat: 'freebeat',
     }
     const providerId = providerMap[selectedProvider]
     return providerId ? getMaintenanceMessage(providerId) : ''

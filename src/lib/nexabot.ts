@@ -696,8 +696,8 @@ export function nexabotSessionWarning(
     return {
       level: 'expired',
       message: baruSaja
-        ? `⚠️ Masa berlaku paket Unlimited NexaBot baru saja berakhir (${session.until}). Login ulang di nexabot.id agar generate tetap tanpa potong kredit — kalau tidak, generate otomatis beralih ke API key (0.15 cr).`
-        : '⚠️ Sesi Unlimited NexaBot sudah kedaluwarsa. Perbarui cookie (extension NexaBot / login ulang di nexabot.id) — tanpa itu generate otomatis beralih ke API key pay-as-you-go 0.15 cr.',
+        ? `⚠️ Masa berlaku paket Unlimited NexaBot baru saja berakhir (${session.until}). Login ulang di nexabot.id agar generate tetap tanpa potong kredit — kalau tidak, generate otomatis beralih ke API key (0,3 cr/video Omni Flash 1.2).`
+        : '⚠️ Sesi Unlimited NexaBot sudah kedaluwarsa. Perbarui cookie (extension NexaBot / login ulang di nexabot.id) — tanpa itu generate otomatis beralih ke API key pay-as-you-go (0,3 cr/video Omni Flash 1.2).',
       body: 'Sesi Unlimited NexaBot berakhir. Login ulang / perbarui cookie sebelum generate berikutnya.',
       remainingMs: untilMs != null ? untilMs - now : null,
     }
@@ -707,7 +707,7 @@ export function nexabotSessionWarning(
   if (remainingMs != null && remainingMs <= NEXABOT_EXPIRING_WINDOW_MS) {
     return {
       level: 'expiring',
-      message: `⏳ Sesi Unlimited NexaBot berakhir ${formatNexabotDuration(remainingMs)} lagi${session.until ? ` (${session.until})` : ''}. Perbarui cookie sebelum menjalankan generate panjang — kalau sesi mati di tengah job, generate otomatis beralih ke API key 0.15 cr.`,
+      message: `⏳ Sesi Unlimited NexaBot berakhir ${formatNexabotDuration(remainingMs)} lagi${session.until ? ` (${session.until})` : ''}. Perbarui cookie sebelum menjalankan generate panjang — kalau sesi mati di tengah job, generate otomatis beralih ke API key (0,3 cr/video Omni Flash 1.2).`,
       body: `Paket Unlimited berakhir ${formatNexabotDuration(remainingMs)} lagi. Perbarui cookie sesi lewat extension NexaBot.`,
       remainingMs,
     }
@@ -718,7 +718,7 @@ export function nexabotSessionWarning(
     const age = formatNexabotDuration(now - cookiesAt)
     return {
       level: 'stale',
-      message: `🍪 Cookie sesi NexaBot sudah ${age} tidak diperbarui. Pastikan extension NexaBot / tab nexabot.id tetap terbuka — kalau sesi mati di tengah job, generate otomatis beralih ke API key pay-as-you-go 0.15 cr.`,
+      message: `🍪 Cookie sesi NexaBot sudah ${age} tidak diperbarui. Pastikan extension NexaBot / tab nexabot.id tetap terbuka — kalau sesi mati di tengah job, generate otomatis beralih ke API key pay-as-you-go (0,3 cr/video Omni Flash 1.2).`,
       body: `Cookie sesi NexaBot berumur ${age}. Buka nexabot.id agar extension mengirim cookie segar.`,
       remainingMs,
     }
@@ -757,9 +757,14 @@ export interface NexabotSubmitParams {
    * pemilik paket supaya request ditagihkan ke akun tersebut.
    */
   telegramId?: string
-  /** @deprecated API NexaBot TIDAK menerima parameter `model` (docs resmi hanya:
-   *  mode, prompt, telegram_id, ratio). Model dipilih otomatis di sisi server.
-   *  Field ini disimpan hanya untuk kompatibilitas dan tidak pernah dikirim. */
+  /**
+   * Id model video upstream (update 10 Nov 2026): 'omni_flash' | 'nexadance' |
+   * 'omni_lama'. OPSIONAL — untuk mode video upstream memakai default
+   * `omni_flash` (Omni Flash 1.2), jadi jalur umum tidak perlu mengirimnya.
+   * Field ini dipakai Omni Lama 10s (`omni_lama`) dari katalog Image to Video;
+   * NexaDance memakai fungsi submitnya sendiri (`model: 'nexadance'`).
+   * Nilai 'omni_flash' tidak pernah ikut dikirim (sama dengan default).
+   */
   model?: string
 }
 
@@ -817,12 +822,16 @@ export async function submitNexabot(
   // telegram_id hanya dipakai jalur API key (billing). Di mode session, akun
   // sudah ditentukan oleh cookie login.
   if (params.telegramId && !session) body.telegram_id = params.telegramId
-  // CATATAN: sengaja TIDAK mengirim `params.model` — NexaBot mengabaikannya
-  // (job yang dikembalikan selalu `"model":null`). Gunakan `mode` untuk
-  // memilih perilaku: t2v / sfv / i2v / r2v.
+  // `model` hanya dikirim kalau BUKAN default upstream (`omni_flash`) — lima
+  // mode Omni Flash cukup jalan tanpa field ini (update 10 Nov 2026). Yang
+  // mengirim nilai non-default: Omni Lama 10s ('omni_lama') dari katalog
+  // Image to Video. NexaDance punya jalur submit sendiri yang selalu mengirim
+  // `model: 'nexadance'`.
+  if (params.model && params.model !== 'omni_flash') body.model = params.model
 
   // Mode session → endpoint web /generate (menghormati paket Unlimited).
-  // Mode API key → /submit (pay-as-you-go 0.15 cr).
+  // Mode API key → /submit (pay-as-you-go: 0,3 cr/video Omni Flash 1.2,
+  // 0,2 cr NexaDance 3.0, 0,15 cr request non-video).
   const endpoint = session ? `${NEXABOT_BASE}/generate` : `${NEXABOT_BASE}/submit`
   console.log(`[nexabot] Submit ${params.mode} via ${session ? 'session(cookie)' : 'api-key'}: ${params.prompt.slice(0, 50)}...`)
 
@@ -1687,16 +1696,22 @@ export async function downloadNexabotGptImage(
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// NEXADANCE 3.0 (POST /api/v1/alt-video/generate) — 20 detik, 720p
+// NEXADANCE 3.0 (POST /api/v1/api dengan model=nexadance) — 20 detik, 720p
 // ═══════════════════════════════════════════════════════════════════
 //
-// Model video premium NexaBot (rebrand dari Seedance 2.5; endpoint lama
-// /api/v1/seedance sudah dihapus upstream dan sekarang 404). Durasi tetap 20
-// detik dengan audio, resolusi 720p, dan selalu menagih 0,5 kredit per video
-// (paket Unlimited web NexaBot tidak berlaku). Job masuk antrean batch 60
-// detik — status pertama selalu `queued`. Hasil upstream hanya bertahan 30
-// menit setelah selesai, jadi alur normal langsung menyimpan ke CDN lewat
-// /nexadance/:id/save seperti job video lain.
+// Update upstream 10 November 2026: model video dipecah menjadi tiga —
+// `omni_flash` (Omni Flash 1.2), `nexadance` (NexaDance 3.0), dan `omni_lama`
+// (Omni Lama 10s). Semua disubmit lewat endpoint yang sama (`/api/v1/api`)
+// dengan parameter `model`; endpoint lama `/api/v1/alt-video/*` tidak lagi
+// ada di dokumentasi.
+//
+// NexaDance 3.0 sekarang: mode t2v SAJA (start frame tidak lagi diterima),
+// durasi tetap 20 detik dengan audio, resolusi selalu 720p, dan biaya 0,2
+// kredit per video (sebelum update 0,5). Paket Unlimited web NexaBot tidak
+// berlaku — hanya plan "API Unlimited" yang membebaskan generate video.
+//
+// Hasil upstream hanya bertahan 30 menit setelah selesai, jadi alur normal
+// langsung menyimpan ke CDN lewat /nexadance/:id/save seperti job video lain.
 
 /** Durasi satu-satunya yang diterima upstream. */
 export type NexabotNexadanceDuration = 20
@@ -1706,22 +1721,20 @@ export type NexabotNexadanceRatio = 1 | 2
 /** Batas prompt yang diterima upstream. */
 export const NEXADANCE_PROMPT_MAX = 2000
 
-/** Id model di katalog NexaBot. */
-export const NEXADANCE_MODEL_ID = 'nexadance_3_0'
+/** Id model di katalog NexaBot (update 10 Nov 2026; id lama 'nexadance_3_0'). */
+export const NEXADANCE_MODEL_ID = 'nexadance'
 
 export interface NexabotNexadanceParams {
   prompt: string
   duration: NexabotNexadanceDuration
   ratio?: NexabotNexadanceRatio
-  /** Opsional 1 gambar start frame (data URI) — upstream lalu memakai mode sfv. */
-  media?: string[]
 }
 
 export interface NexabotNexadanceSubmitResult {
   ok: boolean
   jobId?: string
   status?: string
-  /** 0,5 pada jalur kredit; 0 hanya bila plan API Unlimited berlaku. */
+  /** 0,2 pada jalur kredit; 0 hanya bila plan API Unlimited berlaku. */
   creditCost?: number
   creditBalance?: number
   queuePosition?: number
@@ -1763,18 +1776,17 @@ export async function submitNexabotNexadance(
     throw new Error('NexaBot: tidak ada API key / cookie session yang valid — cek format di halaman Providers')
   }
 
-  const media = params.media && params.media.length > 0 ? params.media.slice(0, 1) : []
   const body: Record<string, any> = {
-    // Upstream memilih pipeline dari `mode`: sfv kalau ada start frame.
-    mode: media.length > 0 ? 'sfv' : 't2v',
+    // Semua model video lewat endpoint yang sama; model dipilih lewat `model`
+    // (omni_flash / nexadance / omni_lama). NexaDance hanya punya mode t2v.
     model: NEXADANCE_MODEL_ID,
+    mode: 't2v',
     prompt: params.prompt.slice(0, NEXADANCE_PROMPT_MAX),
     duration: 20,
     ratio: params.ratio === 2 ? 2 : 1,
   }
-  if (media.length > 0) body.media = media
 
-  console.log(`[nexabot] NexaDance 3.0 submit (20s, ratio ${body.ratio}, media ${media.length})`)
+  console.log(`[nexabot] NexaDance 3.0 submit (20s, ratio ${body.ratio})`)
 
   const attempts = Math.max(1, maxAttempts)
   // 429 dari antrean relay diulang selama anggaran antreannya masih ada.
@@ -1816,7 +1828,7 @@ export async function submitNexabotNexadance(
       }
       if (res.status === 402) {
         if (auth.master) throw new Error(jsonErrorMessage(errText) || 'NexaBot: pembayaran generate belum terverifikasi server')
-        throw new Error('NexaBot: Kredit tidak cukup (NexaDance 3.0 perlu 0.5 per video)')
+        throw new Error('NexaBot: Kredit tidak cukup (NexaDance 3.0 perlu 0.2 per video)')
       }
       if (res.status === 503) {
         const waitSeconds = parseNexabotThrottleSeconds(errText)
@@ -1857,7 +1869,8 @@ export async function submitNexabotNexadance(
       ok: true,
       jobId,
       status: data.status,
-      // Upstream mengirim `price` (0,5); `credit_cost` hanya ada di daftar job.
+      // Respons submit 202 mengirim `credit_cost` (0,2 untuk NexaDance);
+      // `price` dipakai sebagai cadangan kalau upstream masih mengirimnya.
       creditCost: data.credit_cost ?? data.price,
       creditBalance: data.credit_balance,
       queuePosition: data.queue_position,

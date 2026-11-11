@@ -202,6 +202,87 @@ test('/submit & /generate: duration diteruskan ke upstream', async () => {
   }
 })
 
+// ── Model video (update 10 Nov 2026): omni_lama & validasi ───────────────────
+// Tiga model video kini lewat endpoint yang sama; `model` hanya boleh dikirim
+// kalau bukan default (`omni_flash`), dan nilai di luar daftar harus ditolak
+// lokal sebelum memanggil upstream.
+test('/submit: model omni_lama diteruskan; tanpa model tetap default (tidak dikirim)', async () => {
+  const bodies: any[] = []
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = (async (_input: any, init?: any) => {
+    bodies.push(JSON.parse(String(init?.body ?? '{}')))
+    return jsonResponse({ ok: true, job_id: 'job-lama', status: 'queued' })
+  }) as typeof fetch
+  try {
+    const lama = await post('/api/public/nexabot/submit', {
+      mode: 't2v', prompt: 'ombak senja', model: 'omni_lama', duration: 10, resolution: 720,
+    }, { 'X-Api-Key': 'nxb_test' })
+    assert.equal(lama.status, 200)
+    assert.equal(bodies[0].model, 'omni_lama')
+    assert.equal(bodies[0].duration, 10)
+
+    const flash = await post('/api/public/nexabot/submit', { mode: 't2v', prompt: 'ombak senja' }, { 'X-Api-Key': 'nxb_test' })
+    assert.equal(flash.status, 200)
+    assert.equal(bodies[1].model, undefined, 'default omni_flash tidak boleh ikut dikirim')
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('/generate: model omni_lama diterjemahkan ke id web (vertex_omni_flash)', async () => {
+  let sentBody = ''
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = (async (_input: any, init?: any) => {
+    sentBody = String(init?.body ?? '')
+    return jsonResponse({ ok: true, job_id: 'job-lama-sesi', status: 'queued' })
+  }) as typeof fetch
+  try {
+    const res = await post('/api/public/nexabot/generate', {
+      mode: 'sfv', prompt: 'ombak senja', model: 'omni_lama', duration: 10, media: ['data:image/png;base64,AAA'],
+    }, { 'X-Nexabot-Cookie': 'session=abc' })
+    assert.equal(res.status, 200)
+    const body = JSON.parse(sentBody)
+    // Web memakai id internal 'vertex_omni_flash' (bukan 'omni_lama') — id API
+    // yang asing diabaikan web dan job-nya jatuh ke omni_flash.
+    assert.equal(body.model, 'vertex_omni_flash')
+    assert.equal(body.mode, 'sfv')
+    assert.equal(body.duration, 10)
+    assert.deepEqual(body.media, ['data:image/png;base64,AAA'])
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('/generate: model default (omni_flash) tidak mengirim field model ke web', async () => {
+  let sentBody = ''
+  const prevFetch = globalThis.fetch
+  globalThis.fetch = (async (_input: any, init?: any) => {
+    sentBody = String(init?.body ?? '')
+    return jsonResponse({ ok: true, job_id: 'job-flash-sesi', status: 'queued' })
+  }) as typeof fetch
+  try {
+    const res = await post('/api/public/nexabot/generate', { mode: 't2v', prompt: 'ombak senja' }, { 'X-Nexabot-Cookie': 'session=abc' })
+    assert.equal(res.status, 200)
+    assert.equal(JSON.parse(sentBody).model, undefined)
+  } finally {
+    globalThis.fetch = prevFetch
+  }
+})
+
+test('/submit: model di luar daftar ditolak 400 SEBELUM memanggil upstream', async () => {
+  const res = await post('/api/public/nexabot/submit', { mode: 't2v', prompt: 'x', model: 'omni' }, { 'X-Api-Key': 'nxb_test' })
+  assert.equal(res.status, 400)
+  assert.match(res.body.error, /omni_flash, nexadance, atau omni_lama/)
+  assert.equal(calls.length, 0, 'upstream tidak boleh dipanggil — tidak ada kredit terpakai')
+})
+
+test('/generate: model di luar daftar juga ditolak 400 tanpa menyentuh upstream', async () => {
+  const res = await post('/api/public/nexabot/generate', { mode: 't2v', prompt: 'x', model: 'omni' }, { 'X-Nexabot-Cookie': 'session=abc' })
+  assert.equal(res.status, 400)
+  assert.match(res.body.error, /omni_lama/)
+  assert.equal(calls.length, 0)
+})
+
 test('/generate: timeout TIDAK diulang (hindari job & kredit ganda)', async () => {
   queue.push(() => { throw timeoutError() })
 
@@ -359,22 +440,21 @@ test('/gpt-image/:id/download: ?download=1 → attachment', async () => {
   assert.match(res.headers.get('content-disposition') || '', /attachment; filename="nexabot-gpt-image-abc\.png"/)
 })
 
-// ── NexaDance 3.0: endpoint terpisah dari skema mode Omni Flash ────────────
-// Kontrak upstream: POST /api/v1/alt-video/generate (model nexadance_3_0,
-// durasi wajib 20, ratio 1|2, 1 gambar start frame opsional), status & unduhan
-// di /api/v1/alt-video/jobs/:id.
-test('/nexadance: prompt & durasi diteruskan, start frame dipotong 1 gambar', async () => {
+// ── NexaDance 3.0: model video lewat endpoint yang sama dengan model lain ──
+// Kontrak upstream (update 10 Nov 2026): POST /api/v1/api dengan model
+// 'nexadance', mode t2v SAJA (start frame tidak lagi diterima), durasi wajib 20,
+// ratio 1|2, biaya 0,2 kredit. Status & unduhan di /api/v1/jobs/:id — endpoint
+// lama /api/v1/alt-video/* sudah tidak ada di dokumentasi.
+test('/nexadance: prompt & durasi diteruskan lewat /api/v1/api, media dibuang', async () => {
   queue.push(() => jsonResponse({
     ok: true,
     job_id: 'nd-1',
     status: 'queued',
-    mode: 'sfv',
-    model: 'nexadance_3_0',
+    mode: 't2v',
+    model: 'nexadance',
     duration: 20,
-    price: 0.5,
+    credit_cost: 0.2,
     credit_balance: 1.3,
-    queue_position: 2,
-    eta_seconds: 120,
   }, 202))
 
   const res = await post('/api/public/nexabot/nexadance', {
@@ -386,19 +466,18 @@ test('/nexadance: prompt & durasi diteruskan, start frame dipotong 1 gambar', as
 
   assert.equal(res.status, 202)
   assert.equal(res.body.job_id, 'nd-1')
-  assert.equal(res.body.price, 0.5)
-  assert.match(calls[0], /\/api\/v1\/alt-video\/generate$/)
+  assert.equal(res.body.credit_cost, 0.2)
+  assert.match(calls[0], /\/api\/v1\/api$/)
   assert.deepEqual(bodies[0], {
-    mode: 'sfv',
-    model: 'nexadance_3_0',
+    model: 'nexadance',
+    mode: 't2v',
     prompt: 'ombak senja',
     duration: 20,
     ratio: 2,
-    media: ['data:image/png;base64,AAA'],
-  }, 'hanya 1 start frame yang diteruskan ke upstream')
+  }, 'NexaDance 3.0 hanya mode t2v — media tidak boleh diteruskan ke upstream')
 })
 
-test('/nexadance: tanpa start frame memakai mode t2v', async () => {
+test('/nexadance: tanpa media tetap mode t2v + model nexadance', async () => {
   queue.push(() => jsonResponse({ ok: true, job_id: 'nd-2', status: 'queued' }, 202))
 
   const res = await post('/api/public/nexabot/nexadance', {
@@ -408,6 +487,7 @@ test('/nexadance: tanpa start frame memakai mode t2v', async () => {
   }, { 'X-Api-Key': 'nxb_test' })
 
   assert.equal(res.status, 202)
+  assert.equal(bodies[0].model, 'nexadance')
   assert.equal(bodies[0].mode, 't2v')
   assert.equal(bodies[0].duration, 20)
   assert.equal(bodies[0].media, undefined)
@@ -426,12 +506,12 @@ test('/nexadance: tanpa kredensial → 400', async () => {
   assert.equal(calls.length, 0)
 })
 
-test('/nexadance/:id: status dibaca dari endpoint alt-video, bukan /jobs', async () => {
+test('/nexadance/:id: status dibaca dari endpoint jobs standar', async () => {
   queue.push(() => jsonResponse({ ok: true, job: { id: 'nd-1', status: 'processing', progress: 40 } }))
   const res = await get('/api/public/nexabot/nexadance/nd-1', { 'X-Api-Key': 'nxb_test' })
   assert.equal(res.status, 200)
   assert.equal(res.body.job.status, 'processing')
-  assert.match(calls[0], /\/api\/v1\/alt-video\/jobs\/nd-1$/)
+  assert.match(calls[0], /\/api\/v1\/jobs\/nd-1$/)
 })
 
 test('/nexadance/:id/download: video di-stream utuh', async () => {
@@ -442,5 +522,5 @@ test('/nexadance/:id/download: video di-stream utuh', async () => {
   assert.equal(res.status, 200)
   assert.equal(res.headers.get('content-type'), 'video/mp4')
   assert.deepEqual(Array.from(new Uint8Array(await res.arrayBuffer())), Array.from(mp4))
-  assert.match(calls[0], /\/api\/v1\/alt-video\/jobs\/nd-1\/download$/)
+  assert.match(calls[0], /\/api\/v1\/jobs\/nd-1\/download$/)
 })

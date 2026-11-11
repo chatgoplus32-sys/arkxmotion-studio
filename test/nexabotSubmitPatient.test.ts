@@ -58,6 +58,20 @@ test('429 dari antrean relay diulang sampai dapat, dan user diberi tahu alasanny
   ], 'log memakai bahasa antrean, bukan bahasa rate limit')
 })
 
+test('model non-default (omni_lama) ikut dikirim; default omni_flash tidak pernah', async () => {
+  langkah = [{ status: 200, body: { ok: true, job_id: 'job-lama' } }]
+  await submitNexabot({ mode: 't2v', prompt: 'ombak senja', model: 'omni_lama', duration: 10 }, 'nxb_kunci', cepat)
+  assert.equal(calls[0].body.model, 'omni_lama')
+
+  langkah = [{ status: 200, body: { ok: true, job_id: 'job-flash' } }]
+  await submitNexabot({ mode: 't2v', prompt: 'ombak senja' }, 'nxb_kunci', cepat)
+  assert.equal(calls[1].body.model, undefined, 'tanpa model = default upstream, field tidak dikirim')
+
+  langkah = [{ status: 200, body: { ok: true, job_id: 'job-flash-eksplisit' } }]
+  await submitNexabot({ mode: 't2v', prompt: 'x', model: 'omni_flash' }, 'nxb_kunci', cepat)
+  assert.equal(calls[2].body.model, undefined, "model 'omni_flash' sama dengan default — tidak ikut dikirim")
+})
+
 test('429 biasa (rate limit upstream) tetap diulang dengan pesannya sendiri', async () => {
   const pesan: string[] = []
   langkah = [
