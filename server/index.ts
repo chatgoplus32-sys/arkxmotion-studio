@@ -28,6 +28,7 @@ import studioAiRoutes from './routes/studioAi.js'
 import nexabotWalletRoutes from './routes/nexabotWallet.js'
 import seaviWalletRoutes from './routes/seaviWallet.js'
 import publicPricingRoutes from './routes/publicPricing.js'
+import publicStatsRoutes from './routes/publicStats.js'
 import publicCreatepulseRoutes from './routes/publicCreatepulse.js'
 import publicMaintenanceRoutes from './routes/publicMaintenance.js'
 import publicUploadCatboxRoutes from './routes/publicUploadCatbox.js'
@@ -132,6 +133,7 @@ app.use('/api/sync-tokens', syncTokensRoutes)
 app.use('/api/public/nexabot', nexabotRoutes)
 app.use('/api/public/studio-ai', studioAiRoutes)
 app.use('/api/public/pricing', publicPricingRoutes)
+app.use('/api/public/stats', publicStatsRoutes)
 app.use('/api/public/createpulse', publicCreatepulseRoutes)
 app.use('/api/public/maintenance', publicMaintenanceRoutes)
 app.use('/api/public/leonardo', publicLeonardoRoutes)

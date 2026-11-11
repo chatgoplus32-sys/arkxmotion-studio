@@ -138,7 +138,7 @@ export default function MotionControlDemo() {
               demo
             </span>
           </div>
-          <div className="mt-1 text-[10px] sm:text-[11px] font-mono text-white/35">Alur Motion Control · 5s · 720p</div>
+          <div className="mt-1 text-[10px] sm:text-[11px] font-mono text-white/60">Alur Motion Control · 5s · 720p</div>
         </div>
         <button
           type="button"
@@ -223,7 +223,7 @@ export default function MotionControlDemo() {
                       style={{ width: `${progress}%` }}
                     />
                   </div>
-                  <div className="mt-2 flex items-center justify-between text-[9px] font-mono text-white/30">
+                  <div className="mt-2 flex items-center justify-between text-[9px] font-mono text-white/60">
                     <span>Referensi</span>
                     <span>Demo render · 720p</span>
                   </div>
@@ -269,8 +269,8 @@ export default function MotionControlDemo() {
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[10px] sm:text-[11px] font-mono uppercase tracking-[0.16em] text-white/35">Proses generate</span>
-            <span className="text-[10px] sm:text-[11px] font-mono text-white/45">{progress}%</span>
+            <span className="text-[10px] sm:text-[11px] font-mono uppercase tracking-[0.16em] text-white/60">Proses generate</span>
+            <span className="text-[10px] sm:text-[11px] font-mono text-white/65">{progress}%</span>
           </div>
           <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
             <div
@@ -301,16 +301,16 @@ export default function MotionControlDemo() {
                         ? 'border-emerald-500/20 bg-emerald-500/15 text-emerald-400'
                         : active
                           ? 'border-[#00a8ff]/30 bg-[#00a8ff]/15 text-[#4cc7ff]'
-                          : 'border-white/[0.06] bg-white/[0.03] text-white/30'
+                          : 'border-white/[0.06] bg-white/[0.03] text-white/60'
                     }`}
                   >
                     <Icon className="h-3.5 w-3.5" />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <div className={`truncate text-[11px] sm:text-xs font-medium ${done || active ? 'text-white/85' : 'text-white/35'}`}>
+                    <div className={`truncate text-[11px] sm:text-xs font-medium ${done || active ? 'text-white/85' : 'text-white/60'}`}>
                       {step.label}
                     </div>
-                    <div className="truncate text-[9px] sm:text-[10px] text-white/30">{step.desc}</div>
+                    <div className="truncate text-[9px] sm:text-[10px] text-white/60">{step.desc}</div>
                   </div>
                   {done ? (
                     <Check className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
@@ -324,7 +324,7 @@ export default function MotionControlDemo() {
             })}
           </ol>
 
-          <p className="mt-3 rounded-xl border border-white/[0.06] bg-white/[0.025] px-2.5 py-2 text-[10px] leading-relaxed text-white/35">
+          <p className="mt-3 rounded-xl border border-white/[0.06] bg-white/[0.025] px-2.5 py-2 text-[10px] leading-relaxed text-white/60">
             {ready
               ? 'Video siap — geser garis untuk bandingkan foto & hasilnya.'
               : 'Simulasi alur render. Di dashboard prosesnya real dan bisa ditinggal.'}
@@ -332,7 +332,7 @@ export default function MotionControlDemo() {
         </div>
       </div>
 
-      <p className="mt-3 text-[9px] sm:text-[10px] leading-relaxed text-white/25">
+      <p className="mt-3 text-[9px] sm:text-[10px] leading-relaxed text-white/55">
         Demo render 5 detik, bukan generate live. Hasil asli mengikuti model, durasi, dan token yang kamu pilih.
       </p>
     </div>

@@ -5,7 +5,7 @@ import {
   Layers, Mic, Zap, Gem, Infinity as InfinityIcon, Users, ChevronRight, Menu, X,
 } from 'lucide-react'
 import MotionControlDemo from '@/components/landing/MotionControlDemo'
-import { DEFAULT_MEMBERSHIP_FEE, WA_NUMBER } from '@/lib/membership'
+import { DEFAULT_MEMBERSHIP_FEE, DEFAULT_MEMBERSHIP_FEE_ORIGINAL, WA_NUMBER } from '@/lib/membership'
 import { DEFAULT_PRO_FEE } from '@/lib/pro'
 import { isBoosterPackage, NEXABOT_BOOSTER_COMING_SOON } from '@/lib/nexabotWallet'
 
@@ -25,9 +25,31 @@ interface ProviderPrices {
     min_topup: number
     price_range: { min: number; max: number }
   }
+  seavi?: {
+    name: string
+    price_per_token: number
+    min_topup: number
+    packages?: { slug: string; label: string; price: number; tokens?: number }[]
+  }
+}
+
+/** Statistik nyata dari /api/public/stats (jumlah video selesai & provider). */
+interface PublicStats {
+  users?: number
+  videos?: number
+  providers?: number
 }
 
 const rp = (n: number) => `Rp ${n.toLocaleString('id-ID')}`
+
+/**
+ * Ringkas angka besar untuk social proof: 1.272 → "1,3rb".
+ * Format Indonesia pakai titik untuk ribuan dan koma untuk desimal.
+ */
+const ringkas = (n: number): string => {
+  if (n >= 1000) return `${(n / 1000).toFixed(1).replace('.', ',').replace(/,0$/, '')}rb`
+  return String(n)
+}
 
 /**
  * Link WhatsApp admin. Dulu CTA "Chat admin di WhatsApp" menunjuk ke
@@ -41,21 +63,33 @@ const WA_ADMIN_URL = `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(
 const NAV = [
   { id: 'beranda', label: 'Beranda' },
   { id: 'features', label: 'Fitur' },
-  { id: 'pricing', label: 'Harga' },
-  { id: 'tutorial', label: 'Tutorial' },
   { id: 'showcase', label: 'Karya' },
+  { id: 'tutorial', label: 'Tutorial' },
+  { id: 'demo', label: 'Demo' },
+  { id: 'pricing', label: 'Harga' },
   { id: 'komunitas', label: 'Komunitas' },
 ]
 
+/**
+ * Provider yang benar-benar terhubung di app (lihat ProviderId di
+ * src/stores/providerManager.ts). Daftar lama masih 8 provider padahal
+ * integrasi sudah jauh lebih banyak — landing terlihat basi.
+ */
 const providers = [
   { name: 'Weavy', dot: '#8b5cf6' },
   { name: 'Roboneo', dot: '#ec4899' },
+  { name: 'RunningHub', dot: '#22d3ee' },
+  { name: 'CreatePulse', dot: '#3b82f6' },
+  { name: 'NexaBot', dot: '#a3e635' },
+  { name: 'Seavi', dot: '#f97316' },
   { name: 'Galleri5', dot: '#f59e0b' },
   { name: 'Leonardo', dot: '#06b6d4' },
   { name: 'OneOver', dot: '#a78bfa' },
   { name: 'Framia', dot: '#10b981' },
   { name: 'Magnific', dot: '#f43f5e' },
-  { name: 'CreatePulse', dot: '#3b82f6' },
+  { name: 'WaveSpeed', dot: '#38bdf8' },
+  { name: 'Shotstack', dot: '#fb923c' },
+  { name: 'Creatomate', dot: '#c084fc' },
 ]
 
 const quickFeatures = [
@@ -83,7 +117,16 @@ const showcase = [
   { title: 'Edukasi & Animasi', img: '/landing/showcase-edu.webp', alt: 'Karakter animasi 3D anak dengan buku melayang' },
 ]
 
-const features = [
+interface FeatureItem {
+  title: string
+  desc: string
+  icon: string
+  gradient: string
+  /** Fitur premium — dibuka lewat paket Pro / upgrade member lama. */
+  pro?: boolean
+}
+
+const features: FeatureItem[] = [
   {
     title: 'Motion Control',
     desc: 'Transfer motion dari video referensi ke karakter AI. Support Kling V3 Pro, Wan Motion, RoboNeo.',
@@ -120,6 +163,46 @@ const features = [
     icon: 'M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z',
     gradient: 'from-pink-500/20 to-rose-500/10',
   },
+  {
+    title: 'Virtual Try-On',
+    desc: 'Pakai outfit dan aksesori digital ke foto model — untuk katalog dan lookbook.',
+    icon: 'M16 7l4 3-4 3M8 7L4 10l4 3M14 4l-4 16',
+    gradient: 'from-fuchsia-500/20 to-pink-500/10',
+    pro: true,
+  },
+  {
+    title: 'AI Music & Song Cover',
+    desc: 'Buat lagu AI dari nol, atau cover lagu favorit dengan vokal sendiri.',
+    icon: 'M9 18V5l12-2v13M9 18a3 3 0 11-6 0 3 3 0 016 0zm12-2a3 3 0 11-6 0 3 3 0 016 0z',
+    gradient: 'from-purple-500/20 to-indigo-500/10',
+    pro: true,
+  },
+  {
+    title: 'Voice Over & Avatar',
+    desc: 'Avatar AI bicara dengan suara pilihanmu — untuk konten dan penjelasan produk.',
+    icon: 'M19 10v2a7 7 0 01-14 0v-2a7 7 0 0114 0zM12 19v3m-4 0h8',
+    gradient: 'from-sky-500/20 to-cyan-500/10',
+    pro: true,
+  },
+  {
+    title: 'ARKX AUTO Studio',
+    desc: 'Edit video, UGC Pro dan auto-motion dalam satu studio AI (Gemini Tools).',
+    icon: 'M11 3H4a1 1 0 00-1 1v16a1 1 0 001 1h16a1 1 0 001-1v-7M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4 9.5-9.5z',
+    gradient: 'from-cyan-500/20 to-blue-500/10',
+    pro: true,
+  },
+  {
+    title: 'Watermark Remover',
+    desc: 'Hapus watermark dari video milikmu sendiri, termasuk dari sumber lain.',
+    icon: 'M4 4h16v16H4zM8 12l3 3 5-6',
+    gradient: 'from-teal-500/20 to-emerald-500/10',
+  },
+  {
+    title: 'Clip & Highlight',
+    desc: 'Potong video panjang jadi klip pendek, plus Second Brain untuk riset konten.',
+    icon: 'M8 6v12l8-6-8-6zM4 4h16v16H4z',
+    gradient: 'from-orange-500/20 to-amber-500/10',
+  },
 ]
 
 const steps = [
@@ -131,6 +214,8 @@ const steps = [
 interface MemberPricing {
   fee: number
   proFee: number
+  /** Harga normal sebelum promo — ditampilkan sebagai harga coret. */
+  originalFee: number
 }
 
 interface PricingPlan {
@@ -141,20 +226,25 @@ interface PricingPlan {
   cta: string
   highlight: boolean
   to: string
+  /** Harga coret + label hemat (hanya untuk paket join baru). */
+  was?: string
+  saving?: string
 }
 
 const buildPricing = (p: MemberPricing): PricingPlan[] => [
   {
-    name: 'Pro Member',
+    name: 'Join Pro Baru',
     price: rp(p.fee),
+    was: p.originalFee > p.fee ? rp(p.originalFee) : undefined,
+    saving: p.originalFee > p.fee ? `Hemat ${rp(p.originalFee - p.fee)}` : undefined,
     sub: 'sekali bayar · permanen',
-    features: ['Semua fitur AI terbuka', 'Motion, I2V, UGC & bulk fashion', 'Gemini Tools + prompt template', 'Semua provider & smart routing', 'Support WA 1 jam', 'Token generate dibayar terpisah'],
+    features: ['Semua fitur AI terbuka', 'Motion, I2V, UGC & bulk fashion', 'Virtual Try-On, AI Music, Voice Over & ARKX AUTO Studio', 'Semua provider & smart routing', 'Support WA 1 jam', 'Token generate dibayar terpisah'],
     cta: 'Daftar Pro',
     highlight: true,
     to: '/register',
   },
   {
-    name: 'Member Lama',
+    name: 'Upgrade Member Lama',
     price: rp(p.proFee),
     sub: 'upgrade sekali bayar · permanen',
     features: ['Khusus akun yang sudah terdaftar', 'Buka ARKX AUTO Studio, Gemini Tools, AI Song Cover & H3 Music Avatar', 'Fitur AI lain tetap terbuka', 'Sekali bayar · permanen', 'Token generate dibayar terpisah'],
@@ -174,7 +264,7 @@ const buildPricing = (p: MemberPricing): PricingPlan[] => [
 ]
 
 const buildFaqs = (p: MemberPricing) => [
-  { q: 'Apa itu ARKXMotion Studio?', a: 'Platform all-in-one untuk generate video AI. Satu dashboard untuk akses 8+ provider — Weavy, Roboneo, Galleri5, Leonardo, OneOver, Framia, Magnific, CreatePulse — dengan token rotation & smart routing otomatis.' },
+  { q: 'Apa itu ARKXMotion Studio?', a: 'Platform all-in-one untuk generate video AI. Satu dashboard untuk akses 20 provider — Weavy, Roboneo, RunningHub, CreatePulse, NexaBot, Seavi, Galleri5, Leonardo, OneOver, Framia, Magnific, WaveSpeed, Shotstack, Creatomate dan lainnya — dengan token rotation & smart routing otomatis.' },
   { q: 'Bagaimana sistem token & credits?', a: 'Saldo CreatePulse, NexaBot, dan Seavi diisi lewat halaman Saldo Layanan. Provider lain (Roboneo, Weavy, Framia, dll.) memakai kunci milikmu sendiri — top up-nya diajukan lewat Top Up Manual dan diverifikasi admin. Sistem cek balance realtime sebelum generate dan auto-fallback ke kunci/token lain jika habis atau error.' },
   { q: 'Apakah bisa bulk generate?', a: 'Bisa. Bulk Fashion mendukung 1 karakter + ratusan outfit sekaligus, parallel processing. Cocok untuk katalog fashion & UGC massal.' },
   { q: 'Apakah ada watermark?', a: 'ARKXMotion Studio tidak menambahkan watermark ke hasil generate. Tool Watermark Remover juga tersedia untuk video dari sumber lain — termasuk fitur Pro.' },
@@ -199,9 +289,11 @@ export default function LandingPage() {
   const [aktif, setAktif] = useState('beranda')
   // Kalau endpoint harga tidak bisa diakses, bagian ini cukup tidak tampil.
   const [providerPrices, setProviderPrices] = useState<ProviderPrices | null>(null)
+  const [stats, setStats] = useState<PublicStats | null>(null)
   const [memberPricing, setMemberPricing] = useState<MemberPricing>({
     fee: DEFAULT_MEMBERSHIP_FEE,
     proFee: DEFAULT_PRO_FEE,
+    originalFee: DEFAULT_MEMBERSHIP_FEE_ORIGINAL,
   })
   const pricing = buildPricing(memberPricing)
   const faqs = buildFaqs(memberPricing)
@@ -215,6 +307,18 @@ export default function LandingPage() {
     return () => { alive = false }
   }, [])
 
+  // Angka sosial (jumlah video, provider) diambil dari server supaya tidak
+  // pernah jadi klaim basi. Kalau endpoint mati, baris ini jatuh ke teks
+  // yang tidak menyebut angka.
+  useEffect(() => {
+    let alive = true
+    fetch('/api/public/stats')
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (alive && d?.ok) setStats({ users: d.users, videos: d.videos, providers: d.providers }) })
+      .catch(() => { /* biarkan null */ })
+    return () => { alive = false }
+  }, [])
+
   useEffect(() => {
     let alive = true
     fetch('/api/membership/config')
@@ -223,9 +327,11 @@ export default function LandingPage() {
         if (!alive || !d) return
         const fee = Number(d.membershipFee)
         const proFee = Number(d.proFee)
+        const originalFee = Number(d.membershipFeeOriginal)
         setMemberPricing({
           fee: Number.isFinite(fee) && fee > 0 ? fee : DEFAULT_MEMBERSHIP_FEE,
           proFee: Number.isFinite(proFee) && proFee > 0 ? proFee : DEFAULT_PRO_FEE,
+          originalFee: Number.isFinite(originalFee) && originalFee > 0 ? originalFee : DEFAULT_MEMBERSHIP_FEE_ORIGINAL,
         })
       })
       .catch(() => { /* pakai harga default */ })
@@ -323,6 +429,9 @@ export default function LandingPage() {
         )}
       </nav>
 
+      {/* Semua section halaman ada di dalam <main> supaya ada satu landmark
+          utama (Lighthouse: "landmark-one-main"). Nav & footer tetap di luar. */}
+      <main>
       {/* ===================== B. HERO ===================== */}
       <section id="beranda" className="relative scroll-mt-24 overflow-hidden pb-16 pt-[104px] sm:pt-[120px]">
         <div className="absolute inset-0 -z-10">
@@ -364,9 +473,18 @@ export default function LandingPage() {
                   </span>
                 ))}
               </div>
-              <p className="text-[12px] leading-tight text-white/50">
-                <span className="font-bold text-white/80">2.400+ kreator</span> sudah pakai<br />
-                <span className="text-[10.5px] text-white/35">48k video ter-generate · 8 provider AI</span>
+              <p className="text-[12px] leading-tight text-white/60">
+                {stats?.videos ? (
+                  <>
+                    <span className="font-bold text-white/85">{ringkas(stats.videos)} video</span> sudah dibuat<br />
+                    <span className="text-[10.5px] text-white/55">{stats.providers ?? 20} provider AI · auto rotation & fallback</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="font-bold text-white/85">{stats?.providers ?? 20} provider AI</span> terhubung<br />
+                    <span className="text-[10.5px] text-white/55">Auto rotation, load balancing & fallback otomatis</span>
+                  </>
+                )}
               </p>
             </div>
 
@@ -427,6 +545,83 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ===================== E. BOTTOM CTA BANNER ===================== */}
+      <section className="px-5 py-10 sm:px-6 sm:py-14">
+        <div className="relative mx-auto max-w-[1240px] overflow-hidden rounded-[26px] border border-cyan-400/35 bg-gradient-to-br from-[#0A1128] via-[#0b1430] to-[#120a2a] p-6 shadow-[0_0_54px_rgba(0,102,255,0.22)] sm:p-9">
+          <div className="pointer-events-none absolute inset-x-0 -top-2 opacity-25"><FilmStrip /></div>
+          <div className="pointer-events-none absolute inset-x-0 -bottom-2 opacity-25"><FilmStrip /></div>
+          <div className="pointer-events-none absolute -right-10 -top-10 h-48 w-48 rounded-full bg-[#8B5CF6]/25 blur-[70px]" />
+          <div className="pointer-events-none absolute -left-10 bottom-0 h-48 w-48 rounded-full bg-[#00F0FF]/15 blur-[70px]" />
+
+          <div className="relative flex flex-col items-center justify-between gap-6 md:flex-row">
+            <h2 className="max-w-[560px] text-[24px] font-black italic leading-tight tracking-tight sm:text-[32px]">
+              Wujudkan Ide Kreatifmu<br className="hidden sm:block" /> Bersama <span className="bg-gradient-to-r from-cyan-200 to-[#00F0FF] bg-clip-text text-transparent">ARKXMOTION STUDIO</span>
+            </h2>
+            <Link to="/register" className={`${ctaUtama} w-full text-center md:w-auto`}>
+              <Rocket className="h-[18px] w-[18px]" />
+              <span className="text-left leading-tight">
+                Daftar Sekarang
+                <span className="block text-[11px] font-semibold text-white/70">& Dapatkan Akses Fitur Lengkap!</span>
+              </span>
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* ===================== Provider strip ===================== */}
+      <section className="border-y border-white/[0.06] bg-white/[0.015] px-5 py-6 sm:px-6">
+        <div className="mx-auto max-w-[1240px]">
+          <p className="mb-4 text-center font-mono text-[10px] uppercase tracking-[0.2em] text-white/60 sm:mb-5 sm:text-[11px]">
+            {stats?.providers ?? 20} Provider Terhubung • Auto Rotation • Load Balanced
+          </p>
+          <div className="flex flex-wrap justify-center gap-1.5 sm:gap-2 md:gap-3">
+            {providers.map((p) => (
+              <div key={p.name} className="flex items-center gap-2 rounded-full border border-white/5 bg-white/[0.04] px-3 py-1.5 transition-all hover:scale-105 hover:border-cyan-400/30 hover:bg-cyan-400/10 sm:px-4 sm:py-2">
+                <span className="h-2 w-1.5 rounded-full sm:h-2 sm:w-2" style={{ background: p.dot }} />
+                <span className="text-xs font-medium text-white/80 sm:text-sm">{p.name}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ===================== Fitur ===================== */}
+      <section id="features" className="scroll-mt-24 px-5 py-16 sm:px-6 sm:py-20">
+        <div className="mx-auto max-w-[1240px]">
+          <div className="max-w-[640px]">
+            <div className="inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-widest text-cyan-300/80">
+              <span className="h-[1px] w-6 bg-cyan-300/50" /> Fitur Lengkap
+            </div>
+            <h2 className="mt-3 text-[28px] font-black italic leading-none tracking-[-0.02em] sm:text-[32px] md:text-[42px]">
+              Semua tools <span className="bg-gradient-to-r from-[#0066FF] to-[#00F0FF] bg-clip-text text-transparent">video AI</span> dalam satu studio
+            </h2>
+            <p className="mt-4 text-[14px] leading-relaxed text-white/50 sm:text-[15px]">Dari motion transfer sampai bulk UGC — semua provider, satu billing, satu dashboard.</p>
+          </div>
+
+          <div className="mt-8 grid gap-3.5 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
+            {features.map((f) => (
+              <div key={f.title} className={`group relative rounded-[20px] ${glass} p-5 transition-all duration-300 hover:-translate-y-1 hover:border-cyan-300/45 hover:shadow-[0_14px_44px_rgba(0,240,255,0.14)] sm:p-6`}>
+                <div className={`grid h-11 w-11 place-items-center rounded-xl border border-white/5 bg-gradient-to-br ${f.gradient} transition-transform duration-300 group-hover:scale-110 sm:h-12 sm:w-12`}>
+                  <svg className="h-5 w-5 text-cyan-300 sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}><path strokeLinecap="round" strokeLinejoin="round" d={f.icon} /></svg>
+                </div>
+                <div className="mt-4 flex items-start justify-between gap-2">
+                  <h3 className="text-[15px] font-semibold sm:text-[17px]">{f.title}</h3>
+                  {f.pro && (
+                    <span className="shrink-0 rounded-full border border-fuchsia-400/40 bg-fuchsia-500/15 px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest text-fuchsia-200">
+                      Pro
+                    </span>
+                  )}
+                </div>
+                <p className="mt-2 text-[13px] leading-relaxed text-white/65 transition group-hover:text-white/75 sm:text-sm">{f.desc}</p>
+                <div className="mt-4 inline-flex translate-y-1 items-center gap-1.5 text-xs font-medium text-cyan-300 opacity-0 transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100">
+                  Coba sekarang <ChevronRight className="h-3.5 w-3.5" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* ===================== D. SHOWCASE / USE CASE ===================== */}
       <section id="showcase" className="scroll-mt-24 px-5 py-12 sm:px-6 sm:py-16">
         <div className="mx-auto max-w-[1240px]">
@@ -458,91 +653,22 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ===================== E. BOTTOM CTA BANNER ===================== */}
-      <section className="px-5 py-10 sm:px-6 sm:py-14">
-        <div className="relative mx-auto max-w-[1240px] overflow-hidden rounded-[26px] border border-cyan-400/35 bg-gradient-to-br from-[#0A1128] via-[#0b1430] to-[#120a2a] p-6 shadow-[0_0_54px_rgba(0,102,255,0.22)] sm:p-9">
-          <div className="pointer-events-none absolute inset-x-0 -top-2 opacity-25"><FilmStrip /></div>
-          <div className="pointer-events-none absolute inset-x-0 -bottom-2 opacity-25"><FilmStrip /></div>
-          <div className="pointer-events-none absolute -right-10 -top-10 h-48 w-48 rounded-full bg-[#8B5CF6]/25 blur-[70px]" />
-          <div className="pointer-events-none absolute -left-10 bottom-0 h-48 w-48 rounded-full bg-[#00F0FF]/15 blur-[70px]" />
-
-          <div className="relative flex flex-col items-center justify-between gap-6 md:flex-row">
-            <h2 className="max-w-[560px] text-[24px] font-black italic leading-tight tracking-tight sm:text-[32px]">
-              Wujudkan Ide Kreatifmu<br className="hidden sm:block" /> Bersama <span className="bg-gradient-to-r from-cyan-200 to-[#00F0FF] bg-clip-text text-transparent">ARKXMOTION STUDIO</span>
-            </h2>
-            <Link to="/register" className={`${ctaUtama} w-full text-center md:w-auto`}>
-              <Rocket className="h-[18px] w-[18px]" />
-              <span className="text-left leading-tight">
-                Daftar Sekarang
-                <span className="block text-[11px] font-semibold text-white/70">& Dapatkan Akses Fitur Lengkap!</span>
-              </span>
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* ===================== Provider strip ===================== */}
-      <section className="border-y border-white/[0.06] bg-white/[0.015] px-5 py-6 sm:px-6">
-        <div className="mx-auto max-w-[1240px]">
-          <p className="mb-4 text-center font-mono text-[10px] uppercase tracking-[0.2em] text-white/30 sm:mb-5 sm:text-[11px]">Trusted Providers • Auto Rotation • Load Balanced</p>
-          <div className="flex flex-wrap justify-center gap-1.5 sm:gap-2 md:gap-3">
-            {providers.map((p) => (
-              <div key={p.name} className="flex items-center gap-2 rounded-full border border-white/5 bg-white/[0.04] px-3 py-1.5 transition-all hover:scale-105 hover:border-cyan-400/30 hover:bg-cyan-400/10 sm:px-4 sm:py-2">
-                <span className="h-2 w-1.5 rounded-full sm:h-2 sm:w-2" style={{ background: p.dot }} />
-                <span className="text-xs font-medium text-white/80 sm:text-sm">{p.name}</span>
-                <span className="hidden rounded-full border border-emerald-500/20 bg-emerald-500/15 px-1.5 py-0.5 text-[10px] text-emerald-400 sm:inline">● online</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ===================== Fitur ===================== */}
-      <section id="features" className="scroll-mt-24 px-5 py-16 sm:px-6 sm:py-20">
-        <div className="mx-auto max-w-[1240px]">
-          <div className="max-w-[640px]">
-            <div className="inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-widest text-cyan-300/80">
-              <span className="h-[1px] w-6 bg-cyan-300/50" /> Fitur Lengkap
-            </div>
-            <h2 className="mt-3 text-[28px] font-black italic leading-none tracking-[-0.02em] sm:text-[32px] md:text-[42px]">
-              Semua tools <span className="bg-gradient-to-r from-[#0066FF] to-[#00F0FF] bg-clip-text text-transparent">video AI</span> dalam satu studio
-            </h2>
-            <p className="mt-4 text-[14px] leading-relaxed text-white/50 sm:text-[15px]">Dari motion transfer sampai bulk UGC — semua provider, satu billing, satu dashboard.</p>
-          </div>
-
-          <div className="mt-8 grid gap-3.5 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
-            {features.map((f) => (
-              <div key={f.title} className={`group rounded-[20px] ${glass} p-5 transition-all duration-300 hover:-translate-y-1 hover:border-cyan-300/45 hover:shadow-[0_14px_44px_rgba(0,240,255,0.14)] sm:p-6`}>
-                <div className={`grid h-11 w-11 place-items-center rounded-xl border border-white/5 bg-gradient-to-br ${f.gradient} transition-transform duration-300 group-hover:scale-110 sm:h-12 sm:w-12`}>
-                  <svg className="h-5 w-5 text-cyan-300 sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}><path strokeLinecap="round" strokeLinejoin="round" d={f.icon} /></svg>
-                </div>
-                <h3 className="mt-4 text-[15px] font-semibold sm:text-[17px]">{f.title}</h3>
-                <p className="mt-2 text-[13px] leading-relaxed text-white/45 transition group-hover:text-white/60 sm:text-sm">{f.desc}</p>
-                <div className="mt-4 inline-flex translate-y-1 items-center gap-1.5 text-xs font-medium text-cyan-300 opacity-0 transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100">
-                  Coba sekarang <ChevronRight className="h-3.5 w-3.5" />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* ===================== Tutorial: cara kerja + demo ===================== */}
       <section id="tutorial" className="scroll-mt-24 px-5 py-12 sm:px-6 sm:py-16">
         <div className="mx-auto max-w-[1240px] rounded-[24px] border border-cyan-400/15 bg-slate-900/40 p-6 backdrop-blur-xl sm:rounded-[28px] sm:p-8 md:p-10">
           <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
             <div>
-              <div className="font-mono text-[11px] uppercase tracking-[0.2em] text-white/30">Tutorial</div>
+              <div className="font-mono text-[11px] uppercase tracking-[0.2em] text-white/60">Tutorial</div>
               <h2 className="mt-2 text-[22px] font-black italic tracking-tight sm:text-[26px] md:text-[34px]">3 langkah — jadi</h2>
             </div>
-            <p className="max-w-[420px] text-[13px] text-white/45 sm:text-sm">Upload, pilih model, generate. Background polling & notifikasi realtime, tinggal download.</p>
+            <p className="max-w-[420px] text-[13px] text-white/65 sm:text-sm">Upload, pilih model, generate. Background polling & notifikasi realtime, tinggal download.</p>
           </div>
           <div className="mt-8 grid gap-3.5 sm:grid-cols-3">
             {steps.map((s) => (
               <div key={s.n} className="rounded-2xl border border-white/[0.06] bg-[#050816]/70 p-5 transition-colors hover:border-cyan-400/30 sm:p-6">
                 <div className="font-mono text-[12px] tracking-widest text-cyan-300">{s.n}</div>
                 <div className="mt-2 text-[16px] font-semibold">{s.title}</div>
-                <div className="mt-1 text-[13px] leading-relaxed text-white/45 sm:text-sm">{s.desc}</div>
+                <div className="mt-1 text-[13px] leading-relaxed text-white/65 sm:text-sm">{s.desc}</div>
               </div>
             ))}
           </div>
@@ -591,8 +717,18 @@ export default function LandingPage() {
               <div key={p.name} className={`relative flex flex-col rounded-[22px] border p-6 transition-all duration-300 hover:-translate-y-1 sm:rounded-[24px] sm:p-7 ${p.highlight ? 'border-cyan-400/40 bg-gradient-to-b from-[#0066FF]/18 to-slate-900/60 shadow-[0_18px_60px_rgba(0,102,255,0.25)] backdrop-blur-xl md:scale-[1.02]' : 'border-white/10 bg-slate-900/50 backdrop-blur-xl hover:border-cyan-400/30'}`}>
                 {p.highlight && <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-[#0066FF] to-[#00F0FF] px-3 py-1 text-[11px] font-bold uppercase tracking-widest text-white shadow-[0_0_20px_rgba(0,240,255,0.5)]">Paling Populer</div>}
                 <div className="text-sm font-semibold">{p.name}</div>
-                <div className="mt-2 flex items-baseline"><span className="text-[32px] font-black tracking-tight">{p.price}</span></div>
-                <div className="text-xs text-white/45">{p.sub}</div>
+                <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                  <span className="text-[32px] font-black tracking-tight">{p.price}</span>
+                  {p.was && (
+                    <span className="text-[15px] font-medium text-white/65 line-through decoration-white/40">{p.was}</span>
+                  )}
+                </div>
+                {p.saving && (
+                  <span className="mt-2 inline-flex w-fit items-center rounded-full border border-emerald-400/40 bg-emerald-500/15 px-2.5 py-1 text-[11px] font-bold text-emerald-300">
+                    {p.saving}
+                  </span>
+                )}
+                <div className="mt-2 text-xs text-white/65">{p.sub}</div>
                 <ul className="mt-5 flex-1 space-y-2 text-[13px] sm:text-sm">
                   {p.features.map((f) => (
                     <li key={f} className="flex items-center gap-2 text-white/70"><span className="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-cyan-400/25 bg-cyan-400/10 text-[11px] text-cyan-300">✓</span>{f}</li>
@@ -609,7 +745,7 @@ export default function LandingPage() {
               #provider-prices — kalau bloknya hilang saat fetch harga gagal,
               anchor itu jadi target hantu dan klik tidak melakukan apa-apa. */}
           <div id="provider-prices" className="mt-10 scroll-mt-24 rounded-[22px] border border-white/10 bg-slate-900/50 p-5 backdrop-blur-xl">
-            <div className="mb-3 flex items-center gap-2 text-xs text-white/45 sm:text-[13px]">
+            <div className="mb-3 flex items-center gap-2 text-xs text-white/65 sm:text-[13px]">
               <span className={`h-1.5 w-1.5 rounded-full bg-cyan-300 ${providerPrices ? 'animate-pulse' : ''}`} />
               Harga provider — tarif aktif dari server
             </div>
@@ -620,9 +756,9 @@ export default function LandingPage() {
                     <div className="text-[13px] font-semibold text-white/80">{providerPrices.nexabot.name}</div>
                     <div className="mt-1 text-[18px] font-black tracking-tight">
                       {rp(providerPrices.nexabot.price_per_generate)}
-                      <span className="text-[11px] font-normal text-white/40"> /generate</span>
+                      <span className="text-[11px] font-normal text-white/65"> /generate</span>
                     </div>
-                    <div className="text-[11px] text-white/40">Semua mode · min top up {rp(providerPrices.nexabot.min_topup)}</div>
+                    <div className="text-[11px] text-white/65">Semua mode · min top up {rp(providerPrices.nexabot.min_topup)}</div>
                   </div>
                 )}
                 {(providerPrices.nexabot?.packages?.length
@@ -636,7 +772,7 @@ export default function LandingPage() {
                   <div key={pkg.slug} className={`rounded-xl border p-4 ${hanyaBooster ? 'border-fuchsia-400/30 bg-fuchsia-500/[0.08]' : 'border-cyan-400/25 bg-[#0066FF]/[0.08]'}`}>
                     <div className={`text-[13px] font-semibold ${hanyaBooster ? 'text-fuchsia-200' : 'text-cyan-200'}`}>Paket {pkg.label}</div>
                     <div className="mt-1 text-[18px] font-black tracking-tight">{rp(pkg.price)}</div>
-                    <div className="text-[11px] text-white/40">
+                    <div className="text-[11px] text-white/65">
                       {hanyaBooster
                         ? `${NEXABOT_BOOSTER_COMING_SOON ? 'Coming soon · ' : ''}NexaDance 3.0 (20 detik 720p), Omni Flash 1.2 & GPT Image tanpa batas · mode lain tetap per generate`
                         : `Generate semua mode tanpa batas selama ${pkg.days} hari`}
@@ -649,9 +785,19 @@ export default function LandingPage() {
                     <div className="text-[13px] font-semibold text-white/80">{providerPrices.createpulse.name}</div>
                     <div className="mt-1 text-[18px] font-black tracking-tight">
                       {rp(providerPrices.createpulse.price_range.min)} – {rp(providerPrices.createpulse.price_range.max)}
-                      <span className="text-[11px] font-normal text-white/40"> /generate</span>
+                      <span className="text-[11px] font-normal text-white/65"> /generate</span>
                     </div>
-                    <div className="text-[11px] text-white/40">Tergantung model · min top up {rp(providerPrices.createpulse.min_topup)}</div>
+                    <div className="text-[11px] text-white/65">Tergantung model · min top up {rp(providerPrices.createpulse.min_topup)}</div>
+                  </div>
+                )}
+                {providerPrices.seavi && (
+                  <div className="rounded-xl border border-white/10 bg-black/25 p-4">
+                    <div className="text-[13px] font-semibold text-white/80">{providerPrices.seavi.name}</div>
+                    <div className="mt-1 text-[18px] font-black tracking-tight">
+                      {rp(providerPrices.seavi.price_per_token)}
+                      <span className="text-[11px] font-normal text-white/65"> /token</span>
+                    </div>
+                    <div className="text-[11px] text-white/65">1 token dipakai per generate · min top up {rp(providerPrices.seavi.min_topup)}</div>
                   </div>
                 )}
               </div>
@@ -659,12 +805,12 @@ export default function LandingPage() {
               <p className="text-[13px] leading-relaxed text-white/60">
                 Harga provider belum termuat. Muat ulang halaman, atau tanya langsung ke admin — tarif provider
                 berbeda per model dan sering diperbarui.{' '}
-                <a href={WA_ADMIN_URL} target="_blank" rel="noopener noreferrer" className="text-cyan-300 hover:underline">Chat admin di WhatsApp</a>
+                <a href={WA_ADMIN_URL} target="_blank" rel="noopener noreferrer" className="text-cyan-300 underline decoration-cyan-300/50 underline-offset-2 hover:decoration-cyan-300">Chat admin di WhatsApp</a>
               </p>
             )}
           </div>
 
-          <p className="mt-4 text-center text-[11px] text-white/30 sm:text-xs">Butuh custom enterprise? <a href={WA_ADMIN_URL} target="_blank" rel="noopener noreferrer" className="text-cyan-300 hover:underline">Chat admin di WhatsApp</a> — respon &lt; 1 jam.</p>
+          <p className="mt-4 text-center text-[11px] text-white/60 sm:text-xs">Butuh custom enterprise? <a href={WA_ADMIN_URL} target="_blank" rel="noopener noreferrer" className="text-cyan-300 underline decoration-cyan-300/50 underline-offset-2 hover:decoration-cyan-300">Chat admin di WhatsApp</a> — respon &lt; 1 jam.</p>
         </div>
       </section>
 
@@ -706,30 +852,42 @@ export default function LandingPage() {
           <div className="mt-8 divide-y divide-white/5 overflow-hidden rounded-2xl border border-cyan-400/15 bg-slate-900/50 backdrop-blur-xl">
             {faqs.map((f, i) => (
               <div key={f.q}>
-                <button onClick={() => setOpenFaq(openFaq === i ? null : i)} className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition hover:bg-white/[0.03]">
+                <button
+                  id={`faq-btn-${i}`}
+                  onClick={() => setOpenFaq(openFaq === i ? null : i)}
+                  aria-expanded={openFaq === i}
+                  aria-controls={`faq-panel-${i}`}
+                  className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition hover:bg-white/[0.03]"
+                >
                   <span className="text-[13px] font-medium sm:text-sm">{f.q}</span>
-                  <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border transition-all duration-300 ${openFaq === i ? 'border-cyan-300/60 bg-cyan-400/20 text-cyan-200' : 'border-white/10 text-white/60'}`}>{openFaq === i ? '−' : '+'}</span>
+                  <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border transition-all duration-300 ${openFaq === i ? 'border-cyan-300/60 bg-cyan-400/20 text-cyan-200' : 'border-white/10 text-white/60'}`} aria-hidden="true">{openFaq === i ? '−' : '+'}</span>
                 </button>
-                <div className={`overflow-hidden transition-all duration-300 ${openFaq === i ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}>
-                  <div className="px-5 pb-5 text-[13px] leading-relaxed text-white/55 sm:text-sm">{f.a}</div>
+                <div
+                  id={`faq-panel-${i}`}
+                  role="region"
+                  aria-labelledby={`faq-btn-${i}`}
+                  className={`overflow-hidden transition-all duration-300 ${openFaq === i ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}
+                >
+                  <div className="px-5 pb-5 text-[13px] leading-relaxed text-white/65 sm:text-sm">{f.a}</div>
                 </div>
               </div>
             ))}
           </div>
         </div>
       </section>
+      </main>
 
       <footer className="border-t border-white/5 px-5 py-10 sm:px-6">
         <div className="mx-auto flex max-w-[1240px] flex-col items-center justify-between gap-4 sm:flex-row">
           <div className="flex items-center gap-4">
             <img src="/landing/arkx-logo-brand.webp" alt="ARKX Motion Studio" width={640} height={214} className="h-8 w-auto object-contain" />
-            <span className="hidden text-xs text-white/30 sm:inline">© 2026 • AI video generation platform</span>
+            <span className="hidden text-xs text-white/60 sm:inline">© 2026 • AI video generation platform</span>
           </div>
           <div className="flex items-center gap-5 text-[11px] sm:text-xs">
-            <a href="#features" className="text-white/40 transition hover:text-white">Fitur</a>
-            <a href="#pricing" className="text-white/40 transition hover:text-white">Harga</a>
-            <a href="#faq" className="text-white/40 transition hover:text-white">FAQ</a>
-            <Link to="/login" className="text-white/40 transition hover:text-white">Login</Link>
+            <a href="#features" className="text-white/65 transition hover:text-white">Fitur</a>
+            <a href="#pricing" className="text-white/65 transition hover:text-white">Harga</a>
+            <a href="#faq" className="text-white/65 transition hover:text-white">FAQ</a>
+            <Link to="/login" className="text-white/65 transition hover:text-white">Login</Link>
           </div>
         </div>
       </footer>
