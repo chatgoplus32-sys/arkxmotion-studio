@@ -172,13 +172,23 @@ export function buildFreebeatImageItem(
 }
 
 /** Submit batch gambar ke freebeat (via relay). Satu item per panggilan. */
+/** Ambil waktu tunggu dari header Retry-After (detik), atau null. */
+function retryAfterSeconds(res: Response): number | null {
+  const ra = res.headers.get('retry-after')
+  if (!ra) return null
+  const n = Number(ra.trim())
+  if (!isNaN(n) && n > 0) return n
+  // Bisa berupa tanggal HTTP: coba parse
+  try { return Math.max(0, Math.ceil((new Date(ra).getTime() - Date.now()) / 1000)) } catch { return null }
+}
+
 export async function createFreebeatImageBatch(
   key: string,
   item: FreebeatBatchItem,
   opts: { onLog?: (msg: string) => void; maxRetries?: number } = {},
 ): Promise<FreebeatBatchCreateResult> {
   const maxRetries = opts.maxRetries ?? 6
-  const retryDelays = [5, 10, 15, 20, 25, 30] // detik
+  const retryDelays = [10, 20, 30, 45, 60, 60] // detik
   let lastErr: any = null
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
@@ -189,9 +199,10 @@ export async function createFreebeatImageBatch(
       })
       const text = await res.text()
       if (res.status === 429 || res.status === 502 || res.status === 503 || res.status === 504) {
+        const ra = retryAfterSeconds(res)
         lastErr = new Error(`HTTP ${res.status} — ${text.slice(0, 120)}`)
         if (attempt < maxRetries) {
-          const delay = retryDelays[Math.min(attempt, retryDelays.length - 1)]
+          const delay = ra ?? retryDelays[Math.min(attempt, retryDelays.length - 1)]
           opts.onLog?.(`⏳ Rate limited (HTTP ${res.status}) — coba ulang dalam ${delay}s...`)
           await sleep(delay * 1000)
           continue
@@ -228,7 +239,7 @@ export async function createFreebeatImageBatch(
 
 /** Poll status batch (sekali panggil — loop ada di pemanggil). */
 export async function queryFreebeatBatch(key: string, batchId: string, serialNo?: string | null): Promise<FreebeatBatchQuery> {
-  const retryDelays = [5, 10, 15, 20, 25, 30] // detik
+  const retryDelays = [10, 20, 30, 45, 60, 60] // detik
   let lastErr: any = null
   for (let attempt = 0; attempt <= retryDelays.length; attempt++) {
     try {
@@ -239,9 +250,10 @@ export async function queryFreebeatBatch(key: string, batchId: string, serialNo?
       })
       const text = await res.text()
       if (res.status === 429 || res.status === 502 || res.status === 503 || res.status === 504) {
+        const ra = retryAfterSeconds(res)
         lastErr = new Error(`HTTP ${res.status} — ${text.slice(0, 120)}`)
         if (attempt < retryDelays.length) {
-          const delay = retryDelays[Math.min(attempt, retryDelays.length - 1)]
+          const delay = ra ?? retryDelays[Math.min(attempt, retryDelays.length - 1)]
           await sleep(delay * 1000)
           continue
         }
