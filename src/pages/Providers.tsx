@@ -54,6 +54,7 @@ import { checkFireflyBalance } from '@/lib/firefly'
 import { parseNexabotCookieInput, parseNexabotApiKeyInput } from '@/lib/nexabot'
 import { NEXABOT_CHECK_TIMEOUT_MS } from '@/lib/nexabot-constants'
 import { fetchSeaviBalance } from '@/lib/seavi'
+import { fetchPosbotBalance } from '@/lib/posbot'
 import { fetchFreebeatCredits } from '@/lib/freebeat'
 import { refreshNexabotSessionMonitor } from '@/lib/nexabotSessionMonitor'
 import { NEXABOT_PRICE_FALLBACK } from '@/lib/nexabotWallet'
@@ -77,6 +78,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   seavi: '#7C6FE8',
   markastools: '#7fd3ff',
   freebeat: '#F5C542',
+  posbot: '#14b8a6',
 }
 
 /**
@@ -125,6 +127,7 @@ const PROVIDER_LIST = [
   { key: 'nexabot', label: 'NexaBot', desc: 'NexaBot AI via nexabot.id – tiga model video: Omni Flash 1.2, NexaDance 3.0, Omni Lama 10s. Member cukup top up saldo atau Paket Unlimited; generate memakai kunci server, tanpa API key.' },
   { key: 'markastools', label: 'MarkasTools', desc: 'MarkasTools via ai.markastools.id — Motion Control MarkasFlow. Token akun MF- (MarkasKeyTool) didaftarkan sebagai akun "Markasflow", lalu dipakai otomatis (rotasi oleh MarkasTools). Butuh langganan MarkasTools + cookie session.' },
   { key: 'freebeat', label: 'Freebeat AI', desc: '31 model gambar (Nano Banana 2, Z-Image Turbo, Kling Image V3, Qwen, Wan, Seedream, Flux, GPT-Image) via freebeat.ai — API key dari profil akun, kredit dipotong langsung di akun freebeat.' },
+  { key: 'posbot', label: 'PosBot', desc: 'PosBot Developer API v1 — 60 model AI: gambar, video T2V/I2V/R2V, motion control, lipsync, TTS & musik. Saldo Rupiah dipotong per generate, job gagal direfund 100% otomatis.' },
 ] as const
 
 const MENU_HIDDEN_PROVIDERS = [
@@ -156,6 +159,18 @@ const TOKEN_GUIDE: Record<string, {
   steps: Array<{ text: string; link?: { url: string; label: string }; code?: string }>
   tip?: string
 }> = {
+  posbot: {
+    url: 'https://api.posbot.web.id',
+    urlLabel: 'api.posbot.web.id',
+    prefix: 'pb_live_…',
+    steps: [
+      { text: 'Buka bot Telegram resmi PosBot, lalu masuk ke menu "Developer API".' },
+      { text: 'Buat API key baru — nilainya berawalan pb_live_…' },
+      { text: 'Paste ke textarea di sebelah. Satu baris = satu kunci; tambah beberapa untuk rotasi otomatis saat saldo habis.' },
+      { text: 'Generate memotong Saldo Generate (Rupiah) di akun PosBot Anda; job gagal direfund 100% otomatis.' },
+    ],
+    tip: 'Status operasional tiap model (active / maintenance / disabled) dibaca langsung dari PosBot dan tampil di halaman generate.',
+  },
   brain: {
     url: 'https://aistudio.google.com/api-keys',
     urlLabel: 'aistudio.google.com/api-keys',
@@ -1144,6 +1159,7 @@ export default function ProvidersPage() {
       nexabot: 'nexabot',
       seavi: 'seavi',
       freebeat: 'freebeat',
+      posbot: 'posbot',
     }
     const providerId = providerMap[selectedProvider]
     return providerId ? isProviderMaintenance(providerId) : false
@@ -1166,6 +1182,7 @@ export default function ProvidersPage() {
       nexabot: 'nexabot',
       seavi: 'seavi',
       freebeat: 'freebeat',
+      posbot: 'posbot',
     }
     const providerId = providerMap[selectedProvider]
     return providerId ? getMaintenanceMessage(providerId) : ''
@@ -1946,9 +1963,28 @@ export default function ProvidersPage() {
         return { state: 'failed', detail: err.message || 'Error checking Creatomate API key' }
       }
     }
+    if (selectedProvider === 'posbot') {
+      try {
+        const result = await fetchPosbotBalance(key)
+        if (result.ok) {
+          const bal = result.balance
+          if (typeof bal === 'number') {
+            const label = `Rp ${bal.toLocaleString('id-ID')}`
+            return bal > 0
+              ? { state: 'active', balance: bal, detail: `Saldo: ${label}` }
+              : { state: 'empty', balance: 0, detail: 'Saldo Rp 0 — isi ulang lewat bot PosBot' }
+          }
+          return { state: 'active', detail: 'Kunci valid' }
+        }
+        const msg = String(result.error || '')
+        if (/401|403|unauthor|invalid|tidak valid/i.test(msg)) return { state: 'invalid', detail: msg }
+        return { state: 'unknown', detail: msg || 'Gagal cek saldo PosBot' }
+      } catch {
+        return { state: 'failed', detail: 'Error checking token' }
+      }
+    }
     return { state: 'unknown', detail: 'Cek limit belum tersedia untuk provider ini' }
   }, [selectedProvider, keys.riverside, keys.nexabot, replaceKey])
-
   /**
    * Klaim hadiah harian RunningHub (30 poin) untuk satu access token, lalu
    * segarkan baris key itu supaya saldo & status watermark langsung terbaca.

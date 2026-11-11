@@ -7,6 +7,7 @@ import { Link } from 'react-router-dom'
 import { Swipeable } from '@/components/Swipeable'
 import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
 import { getSeaviSpec, generateWithSeavi, fetchSeaviBalance, buildSeaviPayload } from '@/lib/seavi'
+import { getPosbotSpec, generateWithPosbot } from '@/lib/posbot'
 import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { uploadToCatbox, submitRoboneoI2V, pollRoboneoI2V, checkRoboneoBalance, uploadImageForRoboneo,
@@ -463,6 +464,11 @@ export default function ImageToVideoPage() {
   // Seavi: mode input dipandu SEAVI_MODELS (gambar multi, video & audio referensi).
   const isSeavi = provider === 'seavi'
   const seaviSpec = isSeavi && currentModel ? getSeaviSpec(currentModel.apiModel || '') : undefined
+  // PosBot: tarif dalam Rupiah; spesifikasi model menentukan media yang wajib.
+  const isPosbot = provider === 'posbot'
+  const posbotSpec = isPosbot && currentModel
+    ? getPosbotSpec(currentModel.apiModel || model.replace(/^pb:/, ''))
+    : undefined
   const seaviImageMax = seaviSpec ? (seaviSpec.imageMode === 'none' ? 0 : seaviSpec.imageMode === 'single' ? 1 : seaviSpec.imageMax ?? 0) : 0
   const seaviVideoMode = seaviSpec ? seaviSpec.videoMode : 'none'
   const nbApiModel = isNb ? (currentModel?.apiModel || 't2v') : ''
@@ -1004,6 +1010,14 @@ export default function ImageToVideoPage() {
       if (seaviSpec.videoMode === 'multi' && vids > (seaviSpec.videoMax ?? 0)) return `${seaviSpec.label} maksimal ${seaviSpec.videoMax} video`
       if (seaviSpec.promptRequired === true && !prompt.trim()) return 'Prompt wajib diisi'
     }
+    if (provider === 'posbot' && posbotSpec) {
+      // Halaman ini menyediakan satu gambar input (uploader default).
+      const needImage = posbotSpec.imageMode === 'single'
+        || (posbotSpec.imageMode === 'multi' && (posbotSpec.imageMin ?? 0) > 0)
+      if (needImage && !imgFile) return `${posbotSpec.label} membutuhkan gambar input`
+      if (prompt.trim().length > posbotSpec.promptMax) return `Prompt maksimal ${posbotSpec.promptMax} karakter untuk ${posbotSpec.label}`
+      if (posbotSpec.promptMin && prompt.trim().length < posbotSpec.promptMin) return `Prompt minimal ${posbotSpec.promptMin} karakter`
+    }
     if (provider === 'runninghub' && isRhSeedance26) {
       if (sd26Files.length === 0) return 'Seedance 2.6 Storyboard membutuhkan minimal 1 gambar referensi'
     } else if (provider === 'runninghub' && !imgFile) return isRhSeedance
@@ -1448,6 +1462,69 @@ export default function ImageToVideoPage() {
         } else {
           throw new Error(rotation.error || 'Generation failed')
         }
+      } else if (provider === 'posbot') {
+        if (!posbotSpec) throw new Error('Model PosBot tidak dikenal')
+        const spec = posbotSpec
+        addLog(`[1/3] 🖼️ Menyiapkan media...`, 'info', 'posbot')
+        let posbotImageUrl: string | undefined
+        if (imgFile) {
+          posbotImageUrl = await uploadToCatbox(imgFile)
+          addLog(`[1/3] ✅ Gambar terunggah ✓ ${posbotImageUrl.slice(0, 60)}...`, 'success', 'posbot')
+        }
+
+        // Validasi payload sebelum submit — PosBot memotong saldo saat POST
+        // /generate sukses, jadi input yang salah harus gagal di sini.
+        const rotation = await withTokenRotation<string>(
+          'posbot',
+          async (apiKey, keyInfo) => {
+            addLog(`🔑 Trying key: ${keyInfo.name || keyInfo.id}`, 'info', 'posbot')
+            return await generateWithPosbot({
+              apiKey,
+              spec,
+              prompt: prompt.trim(),
+              imageUrl: posbotImageUrl,
+              aspectRatio: ratio,
+              duration: currentQuality?.duration,
+              // Omni Flash 1.1/1.2 memilih mode; halaman ini selalu I2V saat
+              // ada gambar, T2V saat tidak ada.
+              mode: spec.modes ? (posbotImageUrl ? 'i2v' : 't2v') : undefined,
+              onLog: (msg, level) => addLog(msg, level as any, 'posbot'),
+              onStatus: (text, pct) => setStatus((s) => ({ ...s, pct, text: `[PosBot] ${text}` })),
+            })
+          },
+          {
+            onKeySwitch: (from, to, attempt) => {
+              addLog(`🔄 Kunci/saldo bermasalah! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn', 'posbot')
+            },
+            onError: (err, key) => {
+              if (detectTokenError('posbot', err)) {
+                addLog(`⚠️ Key "${key.name}": ${err.message}`, 'warn', 'posbot')
+              }
+            },
+          }
+        )
+        if (!rotation.ok || !rotation.result) throw new Error(rotation.error || 'PosBot generation failed')
+
+        const videoUrl = rotation.result
+        const rid = `posbot-${Date.now()}`
+        setResults((prev) => [videoUrl, ...prev])
+        addResult({
+          id: rid,
+          url: videoUrl,
+          prompt: prompt.trim() || '(no prompt)',
+          date: new Date().toISOString(),
+          page: 'image-to-video',
+          provider: 'posbot',
+          model: currentModel?.label || model,
+          ratio,
+          duration: currentQuality?.duration,
+          credits: totalCredits,
+        }, { notify: false })
+        persistResultToR2(rid, videoUrl)
+        refreshGallery()
+        successRef.current = true
+        setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+        notifyGenerationComplete(currentModel?.label || model, 'PosBot')
       } else if (provider === 'framia') {
         addLog(`[1/2] 🖼️ Preparing image...`, 'info', 'framia')
         let imageUrl: string | undefined
@@ -4123,7 +4200,7 @@ export default function ImageToVideoPage() {
                 )}
               </Button>
               <div className="text-xs text-muted-foreground">
-                Est. Cost: <b className="text-foreground font-mono">{provider === 'createpulse' ? `Rp ${getCreatepulseCost(currentModel?.apiModel).toLocaleString('id-ID')}` : provider === 'nexabot' ? nbCostLabel : `${totalCredits} credits`}</b>
+                Est. Cost: <b className="text-foreground font-mono">{provider === 'createpulse' ? `Rp ${getCreatepulseCost(currentModel?.apiModel).toLocaleString('id-ID')}` : provider === 'nexabot' ? nbCostLabel : provider === 'posbot' ? `Rp ${totalCredits.toLocaleString('id-ID')}` : `${totalCredits} credits`}</b>
                 {provider !== 'createpulse' && <BalanceBadge provider={provider} required={totalCredits} />}
               </div>
               {!hasActiveKey && provider !== 'createpulse' && !(provider === 'nexabot' && nexabotServerReady) && (
@@ -4219,7 +4296,7 @@ export default function ImageToVideoPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Est. Cost</span>
-                  <span className="font-medium text-primary">{provider === 'createpulse' ? `Rp ${getCreatepulseCost(currentModel?.apiModel).toLocaleString('id-ID')}` : provider === 'nexabot' ? nbCostLabel : `${totalCredits} credits`}</span>
+                  <span className="font-medium text-primary">{provider === 'createpulse' ? `Rp ${getCreatepulseCost(currentModel?.apiModel).toLocaleString('id-ID')}` : provider === 'nexabot' ? nbCostLabel : provider === 'posbot' ? `Rp ${totalCredits.toLocaleString('id-ID')}` : `${totalCredits} credits`}</span>
                 </div>
               </div>
 

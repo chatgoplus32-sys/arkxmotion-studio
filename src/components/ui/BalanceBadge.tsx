@@ -6,7 +6,7 @@ import { refreshProviderBalance } from '@/lib/balancePrecheck'
 // Provider yang punya saldo credits tersimpan (bisa ditampilkan di badge).
 // Catatan: Seavi memakai wallet internal server (bukan key), jadi tidak
 // diikutkan di sini — saldonya tampil di halaman top up masing-masing.
-const BALANCE_PROVIDERS = new Set(['roboneo', 'weavy', 'galleri5', 'firefly'])
+const BALANCE_PROVIDERS = new Set(['roboneo', 'weavy', 'galleri5', 'firefly', 'posbot'])
 
 function readBalance(provider: string): { balance: number | null; keyCount: number } {
   try {
@@ -61,6 +61,8 @@ export function BalanceBadge({ provider, required }: { provider: string; require
 
   const enough = required === undefined || info.balance >= required
   const remaining = required !== undefined ? info.balance - required : info.balance
+  // PosBot menyimpan saldo dalam Rupiah, bukan kredit aplikasi.
+  const fmt = (n: number) => (provider === 'posbot' ? `Rp ${n.toLocaleString('id-ID')}` : `${n} cr`)
 
   const handleRefresh = async (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -89,7 +91,7 @@ export function BalanceBadge({ provider, required }: { provider: string; require
       title={
         refreshError
           ? refreshError
-          : `Saldo ${provider} — klik untuk refresh dari API${required !== undefined ? ` · estimasi biaya ${required} cr` : ''}`
+          : `Saldo ${provider} — klik untuk refresh dari API${required !== undefined ? ` · estimasi biaya ${fmt(required)}` : ''}`
       }
       className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-mono transition hover:brightness-125 active:scale-95 disabled:opacity-70 ${
         enough
@@ -98,10 +100,10 @@ export function BalanceBadge({ provider, required }: { provider: string; require
       } ${refreshing ? 'cursor-wait' : 'cursor-pointer'}`}
     >
       {refreshing ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-      {refreshError ? '! gagal' : `${info.balance} cr`}
+      {refreshError ? '! gagal' : fmt(info.balance)}
       {!refreshError && required !== undefined && (
         <span className={enough ? 'text-emerald-500/80' : 'text-red-500/80'}>
-          {enough ? `→ sisa ${remaining}` : `(kurang ${-remaining})`}
+          {enough ? `→ sisa ${fmt(remaining)}` : `(kurang ${fmt(-remaining)})`}
         </span>
       )}
     </button>

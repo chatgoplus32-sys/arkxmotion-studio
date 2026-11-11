@@ -9,6 +9,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   galleri5: '#e879f9', leonardo: '#facc15', createpulse: '#c084fc',
   oneover: '#a78bfa', firefly: '#FF6A00',
   nexabot: '#00D4AA', seavi: '#7C6FE8',
+  posbot: '#14b8a6',
 }
 
 const STATUS_PROVIDERS: Array<{ id: ProviderId; label: string }> = [
@@ -17,6 +18,7 @@ const STATUS_PROVIDERS: Array<{ id: ProviderId; label: string }> = [
   { id: 'galleri5', label: 'G5 AI Studio' },
   { id: 'seavi', label: 'Seavi Labs' },
   { id: 'nexabot', label: 'NexaBot' },
+  { id: 'posbot', label: 'PosBot' },
 ]
 
 interface Props {
@@ -102,7 +104,11 @@ export default function ProviderStatusBar({ selectedProvider, onSelect }: Props)
               {latencyMs != null && <span className="text-[11px] opacity-60">{latencyMs}ms</span>}
               {totalKeys > 0 && <span className="text-[11px] opacity-50">{activeKeys}/{totalKeys}</span>}
               {creditsLabel && <span className="text-[11px] font-mono text-emerald-400/80">{creditsLabel}</span>}
-              {totalCredits > 0 && <span className="text-[11px] text-emerald-400/70">{totalCredits}cr</span>}
+              {totalCredits > 0 && !creditsLabel && (
+                <span className="text-[11px] text-emerald-400/70">
+                  {provider === 'posbot' ? `Rp ${totalCredits.toLocaleString('id-ID')}` : `${totalCredits}cr`}
+                </span>
+              )}
             </button>
           )
         })}

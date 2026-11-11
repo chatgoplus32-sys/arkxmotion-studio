@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { RHTokenWallet } from '@/lib/runninghub'
 
-export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'runninghub' | 'createpulse' | 'framia' | 'firefly' | 'leonardo' | 'gemini' | 'openai' | 'shotstack' | 'creatomate' | 'galleri5' | 'oneover' | 'genspark' | 'riverside' | 'nexabot' | 'seavi' | 'markastools' | 'freebeat'
+export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'runninghub' | 'createpulse' | 'framia' | 'firefly' | 'leonardo' | 'gemini' | 'openai' | 'shotstack' | 'creatomate' | 'galleri5' | 'oneover' | 'genspark' | 'riverside' | 'nexabot' | 'seavi' | 'markastools' | 'freebeat' | 'posbot'
 
 export const HIDDEN_PROVIDERS: ProviderId[] = []
 
@@ -251,6 +251,16 @@ export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
     minCredits: 0,
     supportsBalance: false,
   },
+  posbot: {
+    id: 'posbot',
+    name: 'PosBot',
+    icon: '🤖',
+    description: 'PosBot Developer API — 60 model AI (gambar, video, motion, lipsync, musik) dengan saldo Rupiah',
+    keyPlaceholder: 'pb_live_...',
+    keyFormat: 'Developer API key dari bot Telegram PosBot → menu Developer API',
+    minCredits: 0,
+    supportsBalance: true,
+  },
 }
 
 function getDefaultMaintenance(): Record<ProviderId, MaintenanceInfo> {
@@ -276,6 +286,7 @@ function getDefaultMaintenance(): Record<ProviderId, MaintenanceInfo> {
     seavi: { isMaintenance: false, message: '' },
     markastools: { isMaintenance: false, message: '' },
     freebeat: { isMaintenance: false, message: '' },
+    posbot: { isMaintenance: false, message: '' },
   }
 }
 
@@ -392,6 +403,7 @@ function loadKeysFromStorage(): Record<ProviderId, ProviderKey[]> {
     seavi: [],
     markastools: [],
     freebeat: [],
+    posbot: [],
   }
   const validIds = Object.keys(defaults) as string[]
 

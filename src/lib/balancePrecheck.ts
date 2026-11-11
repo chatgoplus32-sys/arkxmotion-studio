@@ -50,6 +50,8 @@ export async function precheckProviderBalance(
     }
     case 'seavi':
       return precheckSeaviBalance(minCredits, { authToken: opts.authToken, isAdmin: opts.isAdmin })
+    case 'posbot':
+      return precheckPosbotBalance(minCredits)
     case 'createpulse': {
       if (opts.isCpAdmin) return { ok: true }
       const balance = opts.cpBalance
@@ -297,6 +299,48 @@ export async function precheckSeaviBalance(
 }
 
 /**
+ * Cek saldo PosBot dalam Rupiah (minIdr = harga model).
+ * Cache dulu; kalau tidak cukup / belum diketahui, probe langsung ke relay.
+ */
+export async function precheckPosbotBalance(minIdr: number): Promise<BalancePrecheckResult> {
+  const store = useProviderManager.getState()
+  const keys = (store.keys.posbot || []).filter((k) => k.status !== 'invalid' && k.status !== 'expired')
+  if (keys.length === 0) {
+    return { ok: false, error: 'Tidak ada API key PosBot. Tambahkan di halaman Providers.' }
+  }
+
+  const cached = keys.find((k) => k.balance != null && k.balance >= minIdr)
+  if (cached) return { ok: true, balance: cached.balance }
+
+  const { fetchPosbotBalance } = await import('@/lib/posbot')
+  let best: number | null = null
+  for (const key of keys) {
+    try {
+      const res = await fetchPosbotBalance(key.key)
+      if (!res.ok || typeof res.balance !== 'number') continue
+      const bal = res.balance
+      best = best == null ? bal : Math.max(best, bal)
+      store.updateKeyStatus('posbot', key.id, bal > 0 ? 'active' : 'empty', bal)
+      if (bal >= minIdr) {
+        window.dispatchEvent(new Event('aatools:keys-changed'))
+        return { ok: true, balance: bal }
+      }
+    } catch {
+      // lanjut key berikutnya
+    }
+  }
+  window.dispatchEvent(new Event('aatools:keys-changed'))
+
+  return {
+    ok: false,
+    balance: best,
+    error: best != null
+      ? `Saldo PosBot tidak cukup: butuh Rp ${minIdr.toLocaleString('id-ID')}, saldo tertinggi Rp ${best.toLocaleString('id-ID')}. Top up lewat bot PosBot.`
+      : 'Saldo PosBot tidak bisa dicek. Periksa API key di halaman Providers.',
+  }
+}
+
+/**
  * Refresh saldo dari API provider (bukan dari cache localStorage) dan tulis
  * hasilnya kembali ke storage arkxmotion.providers. Dipakai badge saldo
  * (klik untuk refresh) dan halaman Providers.
@@ -305,6 +349,19 @@ export async function refreshProviderBalance(
   provider: string
 ): Promise<BalancePrecheckResult & { email?: string }> {
   const store = useProviderManager.getState()
+
+  if (provider === 'posbot') {
+    const keys = store.keys.posbot || []
+    const key = keys.find((k) => k.status !== 'invalid' && k.status !== 'expired') || keys[0]
+    if (!key) return { ok: false, error: 'Tidak ada API key PosBot di Providers.' }
+    const { fetchPosbotBalance } = await import('@/lib/posbot')
+    const res = await fetchPosbotBalance(key.key)
+    if (!res.ok) return { ok: false, error: res.error || 'Gagal cek saldo PosBot' }
+    const bal = res.balance ?? 0
+    store.updateKeyStatus('posbot', key.id, bal > 0 ? 'active' : 'empty', bal)
+    window.dispatchEvent(new Event('aatools:keys-changed'))
+    return { ok: true, balance: bal }
+  }
 
   if (provider === 'roboneo') {
     const keys = store.keys.roboneo || []

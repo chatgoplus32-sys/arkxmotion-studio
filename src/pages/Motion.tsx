@@ -17,6 +17,7 @@ import { getGalleri5AuthHeaders, submitGalleri5MotionControl, pollGalleri5Motion
 import { getMagnificApiKey, submitMagnificMotion, pollMagnificMotion, type MagnificMotionModel } from '@/lib/magnific'
 import { getSeaviSpec, generateWithSeavi, buildSeaviPayload } from '@/lib/seavi'
 import { fetchSeaviWallet, chargeSeaviWallet, refundSeaviWallet } from '@/lib/seaviWallet'
+import { getPosbotSpec, generateWithPosbot, buildPosbotPayload, formatPosbotRupiah } from '@/lib/posbot'
 import { useLocalStorage } from '@/lib/useLocalStorage'
 import { precheckProviderBalance } from '@/lib/balancePrecheck'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
@@ -103,6 +104,17 @@ const PROVIDERS = {
     { key: 'sv:motion_control_v3_server23_15dtk', label: 'Motion Control V3 · S23 15 dtk', cr: 1 },
     { key: 'sv:motion_control_v3_server10_30dtk', label: 'Motion Control V3 · S10 30 dtk', cr: 2 },
   ]},
+  // PosBot: cr = harga Rupiah per video (Saldo Generate dipotong dari kunci member).
+  posbot: { name: 'PosBot', models: [
+    { key: 'pb:motion_control_std', label: 'Kling 2.6 Std MC (PosBot)', cr: 1000 },
+    { key: 'pb:betamotion_hd', label: 'BetaMotion HD 30 dtk (PosBot)', cr: 1000 },
+    { key: 'pb:betamotion_1080p', label: 'BetaMotion 1080p 30 dtk (PosBot)', cr: 1500 },
+    { key: 'pb:kling_30_std', label: 'Kling 3.0 MC Std (PosBot)', cr: 2000 },
+    { key: 'pb:betamotion_1080p_pro', label: 'BetaMotion 1080p Pro 60fps (PosBot)', cr: 2000 },
+    { key: 'pb:motion_control_pro', label: 'Kling 2.6 Pro MC (PosBot)', cr: 2500 },
+    { key: 'pb:betamotion_1080p_max', label: 'BetaMotion 1080p Max (PosBot)', cr: 2500 },
+    { key: 'pb:kling_30_pro', label: 'Kling 3.0 MC Pro (PosBot)', cr: 3000 },
+  ]},
   // MarkasTools: dibayar lewat langganan MarkasTools (Rp 60rb/bulan) jadi cr = 0.
   // Token MF- didaftarkan sebagai akun "Markasflow" di MarkasTools (rotasi otomatis).
   markastools: { name: 'MarkasTools', models: MARKAS_MOTION_MODELS.map(m => ({ key: m.key, label: m.label, cr: m.cr })) },
@@ -110,7 +122,7 @@ const PROVIDERS = {
 
 // Halaman Motion Control menawarkan dua provider yang paling stabil, biar
 // member tidak bingung memilih. Provider lain tetap dipakai halaman lain.
-const MOTION_PROVIDER_IDS = ['runninghub', 'seavi'] as const
+const MOTION_PROVIDER_IDS = ['runninghub', 'seavi', 'posbot'] as const
 type MotionProviderId = (typeof MOTION_PROVIDER_IDS)[number]
 
 const MOTION_PROVIDER_INFO: Record<MotionProviderId, { name: string; tagline: string; note: string; recommended?: boolean }> = {
@@ -125,12 +137,18 @@ const MOTION_PROVIDER_INFO: Record<MotionProviderId, { name: string; tagline: st
     tagline: 'Bayar pakai token Seavi',
     note: 'Tanpa API key — top up token di halaman Top Up Seavi (Rp 3.400 = 2 token). Model 15 dtk keluar tanpa suara; suara video referensi otomatis ditempel ulang di browser (+beberapa detik sebelum hasil tampil).',
   },
+  posbot: {
+    name: 'PosBot',
+    tagline: 'Bayar pakai saldo Rupiah PosBot',
+    note: 'Perlu API key pb_live_… dari bot Telegram PosBot → menu Developer API. Saldo dipotong Rupiah per generate, job gagal direfund 100% otomatis. Suara video referensi ditempel ulang di browser karena model motion tidak membawa audio.',
+  },
 }
 
 // Default model tiap provider: pilih yang paling murah, bukan yang pertama di daftar.
 const MOTION_RECOMMENDED_MODEL: Record<MotionProviderId, string> = {
   runninghub: 'rh:std:2.6',
   seavi: 'sv:motion_control_v3_server23_15dtk',
+  posbot: 'pb:motion_control_std',
 }
 
 // Label awam untuk dropdown model — nama workflow aslinya terlalu teknis.
@@ -147,15 +165,25 @@ const SIMPLE_MODEL_LABELS: Record<string, string> = {
   'sv:motion_control_v3_server23_15dtk': 'Motion Control V3 · 15 detik',
   'sv:motion_control_v3_server10_30dtk': 'Motion Control V3 · 30 detik',
   'mt:markasflow-motion-v25': 'MarkasFlow Motion V2.5',
+  'pb:motion_control_std': 'Kling 2.6 Std · maks 30 detik',
+  'pb:motion_control_pro': 'Kling 2.6 Pro · maks 30 detik',
+  'pb:betamotion_hd': 'BetaMotion HD · maks 30 detik',
+  'pb:betamotion_1080p': 'BetaMotion 1080p · maks 30 detik',
+  'pb:betamotion_1080p_pro': 'BetaMotion 1080p Pro 60fps',
+  'pb:betamotion_1080p_max': 'BetaMotion 1080p Max',
+  'pb:kling_30_std': 'Kling 3.0 Std · maks 30 detik',
+  'pb:kling_30_pro': 'Kling 3.0 Pro · maks 30 detik',
 }
 
 function motionModelLabel(providerId: MotionProviderId, model: { key: string; label: string; cr: number }): string {
   const name = SIMPLE_MODEL_LABELS[model.key] || model.label
   const price = providerId === 'seavi'
     ? `${model.cr} token`
-    : (providerId as string) === 'markastools'
-      ? 'langganan MarkasTools'
-      : `${model.cr} kredit`
+    : providerId === 'posbot'
+      ? formatPosbotRupiah(model.cr)
+      : (providerId as string) === 'markastools'
+        ? 'langganan MarkasTools'
+        : `${model.cr} kredit`
   const tag = model.key === MOTION_RECOMMENDED_MODEL[providerId] ? ' · disarankan' : ''
   return `${name} · ${price}${tag}`
 }
@@ -654,6 +682,124 @@ export default function MotionPage() {
     }
 
     try {
+      if (provider === 'posbot') {
+        const spec = getPosbotSpec(modelKey.replace(/^pb:/, ''))
+        if (!spec) throw new Error('Model PosBot tidak dikenal')
+
+        // Upload semua slot sekali — rotasi kunci tidak perlu mengulang upload.
+        const prepared: Array<{ slot: Slot; n: number; imageUrl: string; videoUrl: string }> = []
+        let uploadNo = 0
+        for (const slot of filledSlots) {
+          uploadNo++
+          updateSlotStatus(slot.id, 'uploading img...')
+          const normImg = await normalizeImage(slot.image!, (msg) => addLog(`#${uploadNo} ${msg}`))
+          const imageUrl = await uploadToCatbox(normImg, 'image', (msg, pct) => {
+            updateSlotStatus(slot.id, 'uploading img...', pct != null ? `${msg} ${pct}%` : msg)
+            addLog(`#${uploadNo} ${msg}${pct != null ? ` ${pct}%` : ''}`)
+          })
+          addLog(`#${uploadNo} ✅ Gambar ✓ ${imageUrl.slice(0, 60)}...`, 'success')
+          updateSlotStatus(slot.id, 'uploading vid...')
+          const compVid = await compressVideo(slot.video!, 4, (msg, pct) => {
+            updateSlotStatus(slot.id, 'uploading vid...', pct != null ? `${msg} ${pct}%` : msg)
+            addLog(`#${uploadNo} ${msg}${pct != null ? ` ${pct}%` : ''}`)
+          })
+          const videoUrl = await uploadToCatbox(compVid, 'video', (msg, pct) => {
+            updateSlotStatus(slot.id, 'uploading vid...', pct != null ? `${msg} ${pct}%` : msg)
+            addLog(`#${uploadNo} ${msg}${pct != null ? ` ${pct}%` : ''}`)
+          })
+          addLog(`#${uploadNo} ✅ Video ✓ ${videoUrl.slice(0, 60)}...`, 'success')
+          prepared.push({ slot, n: uploadNo, imageUrl, videoUrl })
+        }
+
+        // Validasi kontrak model sebelum saldo dipotong.
+        buildPosbotPayload(spec, {
+          imageUrl: prepared[0].imageUrl,
+          videoUrl: prepared[0].videoUrl,
+          prompt: finalPrompt,
+          negativePrompt: negativePrompt || undefined,
+        })
+
+        // Generate per slot. PosBot memotong saldo saat submit dan merefund
+        // otomatis bila job gagal, jadi tidak ada pembukuan token di klien.
+        const rotation = await withTokenRotation<number>(
+          'posbot',
+          async (apiKey, keyInfo) => {
+            addLog(`🔑 Trying key: ${keyInfo.name || keyInfo.id}`)
+            let okCount = 0
+            for (const item of prepared) {
+              const { slot, n, imageUrl, videoUrl } = item
+              try {
+                updateSlotStatus(slot.id, 'processing', 'Mengirim ke PosBot...')
+                const url = await generateWithPosbot({
+                  apiKey,
+                  spec,
+                  prompt: finalPrompt,
+                  imageUrl,
+                  videoUrl,
+                  negativePrompt: negativePrompt || undefined,
+                  onLog: (msg, level) => addLog(`#${n} ${msg}`, level as any),
+                  onStatus: (text, pct) => updateSlotStatus(slot.id, 'processing', `${text} ${Math.round(pct || 0)}%`),
+                })
+                // Model motion PosBot tidak membawa audio — suara video referensi
+                // ditempel ulang dari file asli member (bukan hasil compressVideo).
+                const voiced = slot.video
+                  ? await restoreMotionAudio(url, slot.video, {
+                    log: (msg, level) => addLog(`#${n} ${msg}`, level as any),
+                    status: (text) => updateSlotStatus(slot.id, 'processing', text),
+                  })
+                  : { url, selfHosted: false }
+                const finalUrl = voiced.url
+                updateSlotStatus(slot.id, 'done')
+                addLog(`#${n} ✅ Selesai ✓ ${finalUrl.slice(0, 60)}...`, 'success')
+                okCount++
+                const rid = `posbot-mc-${Date.now()}-${n}`
+                addResult({
+                  id: rid,
+                  url: finalUrl,
+                  prompt: finalPrompt || '(motion control)',
+                  date: new Date().toISOString(),
+                  page: 'motion',
+                  provider: 'posbot',
+                  model: spec.label,
+                })
+                if (!voiced.selfHosted) persistResultToR2(rid, finalUrl)
+                setProgress(Math.round((okCount / prepared.length) * 100))
+              } catch (slotErr: any) {
+                updateSlotStatus(slot.id, 'error', slotErr?.message || 'Gagal')
+                addLog(`#${n} ❌ ${slotErr?.message || 'Gagal'}`, 'error')
+                // Kunci ditolak / saldo habis → hentikan putaran ini agar kunci berikutnya dicoba.
+                if (detectTokenError('posbot', slotErr)) throw slotErr
+              }
+            }
+            return okCount
+          },
+          {
+            onKeySwitch: (from, to, attempt) => {
+              addLog(`🔄 Kunci invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn')
+            },
+            onError: (err, key) => {
+              if (detectTokenError('posbot', err)) {
+                addLog(`Key "${key.name}" is invalid: ${err.message}`, 'warn')
+              }
+            },
+          },
+        )
+
+        const okCount = rotation.ok ? (rotation.result ?? 0) : 0
+        if (okCount > 0) successRef.current = true
+        if (rotation.ok) {
+          addLog(okCount > 0 ? `Selesai — ${okCount} video` : 'Tidak ada video yang berhasil', okCount > 0 ? 'success' : 'error')
+          if (logId) {
+            if (okCount > 0) logGenerationComplete(logId, { status: 'completed', duration_ms: Date.now() - startTime })
+            else logGenerationFailed(logId, 'Tidak ada video yang berhasil', Date.now() - startTime)
+          }
+        } else {
+          addLog(`Generation failed: ${rotation.error}`, 'error')
+          if (logId) logGenerationFailed(logId, rotation.error || 'Unknown error', Date.now() - startTime)
+        }
+        return
+      }
+
       if (provider === 'seavi') {
         const spec = getSeaviSpec(modelKey.replace(/^sv:/, ''))
         if (!spec) throw new Error('Model Seavi tidak dikenal')
@@ -2348,9 +2494,11 @@ export default function MotionPage() {
                     const minPrice = Math.min(...PROVIDERS[id].models.map((m) => m.cr))
                     const priceLine = id === 'seavi'
                       ? `Mulai ${minPrice} token / video`
-                      : (id as string) === 'markastools'
-                        ? 'Langganan MarkasTools'
-                        : `Mulai ${minPrice} kredit / video`
+                      : id === 'posbot'
+                        ? `Mulai ${formatPosbotRupiah(minPrice)} / video`
+                        : (id as string) === 'markastools'
+                          ? 'Langganan MarkasTools'
+                          : `Mulai ${minPrice} kredit / video`
                     return (
                       <button
                         key={id}
@@ -2367,7 +2515,7 @@ export default function MotionPage() {
                           <span className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg ${
                             isActive ? 'bg-primary/20 text-primary' : 'bg-card text-muted-foreground'
                           }`}>
-                            {id === 'seavi'
+                            {id === 'seavi' || id === 'posbot'
                               ? <Coins className="h-4 w-4" />
                               : <Zap className="h-4 w-4" />}
                           </span>
@@ -2407,7 +2555,7 @@ export default function MotionPage() {
 
               <MaintenanceBanner providerId={provider} />
 
-              {provider !== 'seavi' && (
+              {provider !== 'seavi' && provider !== 'posbot' && (
                 <div>
                   <Label>Character Orientation</Label>
                   <Select
@@ -2447,7 +2595,7 @@ export default function MotionPage() {
                 </>
               )}
 
-              {provider !== 'seavi' && (
+              {provider !== 'seavi' && provider !== 'posbot' && (
               <label className="flex items-center gap-2.5 cursor-pointer select-none">
                 <input
                   type="checkbox"
@@ -2632,6 +2780,8 @@ export default function MotionPage() {
                 <span>
                   {provider === 'seavi' ? (
                     <>Total: <span className="text-foreground font-mono font-semibold">{totalCredits.toLocaleString()}</span> token ({filledSlots} × {currentModel.cr} token)</>
+                  ) : provider === 'posbot' ? (
+                    <>Total: <span className="text-foreground font-mono font-semibold">{formatPosbotRupiah(totalCredits)}</span> ({filledSlots} × {formatPosbotRupiah(currentModel.cr)})</>
                   ) : provider === 'markastools' ? (
                     <>Total: <span className="text-foreground font-mono font-semibold">{filledSlots}</span> video (bayar lewat langganan MarkasTools)</>
                   ) : (

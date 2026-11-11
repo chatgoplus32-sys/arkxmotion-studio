@@ -42,6 +42,7 @@ import publicLeonardoUploadRoutes from './routes/publicLeonardoUpload.js'
 import publicVideoProxyRoutes from './routes/publicVideoProxy.js'
 import publicFramiaRoutes from './routes/publicFramia.js'
 import publicSeaviRoutes from './routes/publicSeavi.js'
+import publicPosbotRoutes from './routes/publicPosbot.js'
 import publicShotstackRoutes from './routes/publicShotstack.js'
 import publicCreatomateRoutes from './routes/publicCreatomate.js'
 import publicOneoverRoutes from './routes/publicOneover.js'
@@ -147,6 +148,7 @@ app.use('/api/public/leonardo-upload', publicLeonardoUploadRoutes)
 app.use('/api/public/video-proxy', publicVideoProxyRoutes)
 app.use('/api/public/framia', publicFramiaRoutes)
 app.use('/api/public/seavi', publicSeaviRoutes)
+app.use('/api/public/posbot', publicPosbotRoutes)
 app.use('/api/public/shotstack', publicShotstackRoutes)
 app.use('/api/public/creatomate', publicCreatomateRoutes)
 app.use('/api/public/oneover', publicOneoverRoutes)

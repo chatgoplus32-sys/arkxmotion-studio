@@ -191,6 +191,29 @@ export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
   // begitu submit-nya dipasang ke halaman generate.
   markastools: [],
   freebeat: [],
+  // PosBot Developer API — tarif dalam Rupiah (bukan kredit app). Hanya model
+  // video yang menerima gambar acuan; model T2V/R2V murni ada di halaman lain.
+  posbot: [
+    { value: 'pb:grok_imagine_2_15s', label: 'Grok Imagine 2 · 15 dtk 720p', cr: 2500, provider: 'posbot', apiModel: 'grok_imagine_2_15s' },
+    { value: 'pb:grok_imagine_2_30s', label: 'Grok Imagine 2 · 30 dtk 720p', cr: 4000, provider: 'posbot', apiModel: 'grok_imagine_2_30s' },
+    { value: 'pb:grok_imagine_15_video_720p', label: 'Grok Imagine 1.5 · 15 dtk', cr: 1500, provider: 'posbot', apiModel: 'grok_imagine_15_video_720p' },
+    { value: 'pb:betagrok_15s', label: 'BetaGrok 1.5 1080p · 15 dtk', cr: 1000, provider: 'posbot', apiModel: 'betagrok_15s' },
+    { value: 'pb:s2_seedance_25_30s', label: 'Seedance 2.5 · 30 dtk', cr: 5000, provider: 'posbot', apiModel: 's2_seedance_25_30s' },
+    { value: 'pb:seedance_25_30s_strict', label: 'Seedance 2.5 Lite · 30 dtk', cr: 5000, provider: 'posbot', apiModel: 'seedance_25_30s_strict' },
+    { value: 'pb:seedance_20_15s', label: 'Seedance 2.0 720p · 15 dtk', cr: 5000, provider: 'posbot', apiModel: 'seedance_20_15s' },
+    { value: 'pb:seedance_20_mini', label: 'Seedance 2.0 Mini · 15 dtk', cr: 2500, provider: 'posbot', apiModel: 'seedance_20_mini' },
+    { value: 'pb:wan_30_hd', label: 'Wan 3.0 HD · 15 dtk', cr: 3000, provider: 'posbot', apiModel: 'wan_30_hd' },
+    { value: 'pb:wan_remix_720p', label: 'Wan Remix 720p · 10 dtk', cr: 1000, provider: 'posbot', apiModel: 'wan_remix_720p' },
+    { value: 'pb:minimax_h3', label: 'MiniMax H3 1080p · 15 dtk', cr: 2000, provider: 'posbot', apiModel: 'minimax_h3' },
+    { value: 'pb:minimax_h3_720p', label: 'MiniMax H3 720p · 15 dtk', cr: 1500, provider: 'posbot', apiModel: 'minimax_h3_720p' },
+    { value: 'pb:kling_25_turbo', label: 'Kling 2.5 Turbo 720p · 10 dtk', cr: 2500, provider: 'posbot', apiModel: 'kling_25_turbo' },
+    { value: 'pb:kling_26_pro_1080p', label: 'Kling 2.6 Pro 1080p · 10 dtk', cr: 3000, provider: 'posbot', apiModel: 'kling_26_pro_1080p' },
+    { value: 'pb:kling_30_turbo', label: 'Kling 3.0 Turbo · 15 dtk', cr: 3000, provider: 'posbot', apiModel: 'kling_30_turbo' },
+    { value: 'pb:omni_flash_sfv', label: 'Omni Flash 720p SFV · 10 dtk', cr: 1000, provider: 'posbot', apiModel: 'omni_flash_sfv' },
+    { value: 'pb:omni_flash_i2v', label: 'Omni Flash 720p I2V · 10 dtk', cr: 1000, provider: 'posbot', apiModel: 'omni_flash_i2v' },
+    { value: 'pb:omni_flash_11_720p', label: 'Omni Flash 1.1 720p · 10 dtk', cr: 1000, provider: 'posbot', apiModel: 'omni_flash_11_720p' },
+    { value: 'pb:omni_flash_12_1080p', label: 'Omni Flash 1.2 1080p · 15 dtk', cr: 1000, provider: 'posbot', apiModel: 'omni_flash_12_1080p' },
+  ],
 }
 
 export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: string; label: string; mult: number; duration: number; cr?: number; resolution?: string; sound?: string; sizeTier?: string }>>> = {
@@ -746,6 +769,41 @@ export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: s
   // /api/order/generate — dipasang bersama lib markastools.ts).
   markastools: {},
   freebeat: {},
+  // Durasi PosBot terkunci per model; harga = tarif developer dalam Rupiah.
+  posbot: (() => {
+    const rows: Array<[string, number, number]> = [
+      ['grok_imagine_2_15s', 2500, 15],
+      ['grok_imagine_2_30s', 4000, 30],
+      ['grok_imagine_15_video_720p', 1500, 15],
+      ['betagrok_15s', 1000, 15],
+      ['s2_seedance_25_30s', 5000, 30],
+      ['seedance_25_30s_strict', 5000, 30],
+      ['seedance_20_15s', 5000, 15],
+      ['seedance_20_mini', 2500, 15],
+      ['wan_30_hd', 3000, 15],
+      ['wan_remix_720p', 1000, 10],
+      ['minimax_h3', 2000, 15],
+      ['minimax_h3_720p', 1500, 15],
+      ['kling_25_turbo', 2500, 10],
+      ['kling_26_pro_1080p', 3000, 10],
+      ['kling_30_turbo', 3000, 15],
+      ['omni_flash_sfv', 1000, 10],
+      ['omni_flash_i2v', 1000, 10],
+      ['omni_flash_11_720p', 1000, 10],
+      ['omni_flash_12_1080p', 1000, 15],
+    ]
+    const out: Record<string, Array<{ value: string; label: string; mult: number; duration: number; cr?: number }>> = {}
+    for (const [id, price, duration] of rows) {
+      out[`pb:${id}`] = [{
+        value: 'fixed',
+        label: `${duration} detik · Rp ${price.toLocaleString('id-ID')}`,
+        mult: 1,
+        duration,
+        cr: price,
+      }]
+    }
+    return out
+  })(),
 }
 
 export const CP_PRICES: Record<string, number> = {
@@ -782,6 +840,15 @@ export const MODEL_RATIO_RESTRICTIONS: Record<string, string[]> = {
   extend: ['16:9', '9:16'],
   // NexaDance 3.0: ratio 1=16:9, 2=9:16 — tidak ada 1:1 maupun 4:3.
   nexadance: ['16:9', '9:16'],
+  // PosBot: video hanya menerima 9:16 / 16:9 / 1:1 (4:3 akan di-snap upstream).
+  ...Object.fromEntries([
+    'grok_imagine_2_15s', 'grok_imagine_2_30s', 'grok_imagine_15_video_720p',
+    'betagrok_15s', 's2_seedance_25_30s', 'seedance_25_30s_strict', 'seedance_20_15s',
+    'seedance_20_mini', 'wan_30_hd', 'wan_remix_720p', 'minimax_h3', 'minimax_h3_720p',
+    'kling_25_turbo', 'kling_26_pro_1080p', 'kling_30_turbo', 'omni_flash_sfv', 'omni_flash_i2v',
+  ].map((id) => [id, ['16:9', '9:16', '1:1']])),
+  omni_flash_11_720p: ['16:9', '9:16'],
+  omni_flash_12_1080p: ['16:9', '9:16'],
 }
 
 export const H3_VLOG_TEMPLATE = `subject_definitions:

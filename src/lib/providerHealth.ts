@@ -358,6 +358,32 @@ async function checkRunningHub(): Promise<ProviderHealth> {
   }
 }
 
+// ─── PosBot ─────────────────────────────────────────────────────────────
+// Probe read-only GET /balance. Saldo PosBot dalam Rupiah, bukan kredit app.
+async function checkPosbot(): Promise<ProviderHealth> {
+  const token = firstValidKey('posbot')
+  if (!token) {
+    return { provider: 'posbot', status: 'nokey', detail: 'Tidak ada API key', checkedAt: Date.now() }
+  }
+  try {
+    const { latencyMs, res } = await probe('/api/public/posbot?path=balance', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const json = await res.json().catch(() => null)
+    if (res.ok && json?.success && typeof json.saldo_generate === 'number') {
+      const label = `Rp ${Number(json.saldo_generate).toLocaleString('id-ID')}`
+      return { provider: 'posbot', status: 'online', latencyMs, detail: `Saldo: ${label}`, creditsLabel: label, checkedAt: Date.now() }
+    }
+    if (res.status === 401 || res.status === 403) {
+      return { provider: 'posbot', status: 'down', latencyMs, detail: 'API key tidak valid', checkedAt: Date.now() }
+    }
+    return { provider: 'posbot', status: 'down', latencyMs, detail: json?.error || `HTTP ${res.status}`, checkedAt: Date.now() }
+  } catch (err: any) {
+    return { provider: 'posbot', status: 'down', detail: err?.message || 'Tidak terhubung', checkedAt: Date.now() }
+  }
+}
+
 const CHECKERS: Record<string, () => Promise<ProviderHealth>> = {
   runninghub: checkRunningHub,
   roboneo: checkRoboneo,
@@ -369,6 +395,7 @@ const CHECKERS: Record<string, () => Promise<ProviderHealth>> = {
   oneover: checkOneOver,
   nexabot: checkNexabot,
   seavi: checkSeavi,
+  posbot: checkPosbot,
 }
 
 /** Provider yang punya probe live. Lainnya (mis. wavespeed) ditampilkan via status key. */
