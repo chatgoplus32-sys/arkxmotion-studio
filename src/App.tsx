@@ -23,6 +23,7 @@ import RegisterPage from '@/pages/Register'
 import RegisterStatusPage from '@/pages/RegisterStatus'
 import ForgotPasswordPage from '@/pages/ForgotPassword'
 import ResetPasswordPage from '@/pages/ResetPassword'
+import RouteMeta from '@/components/seo/RouteMeta'
 
 const DashboardPage = lazyWithRetry(() => import('@/pages/Dashboard'))
 const AssetsPage = lazyWithRetry(() => import('@/pages/Assets'))
@@ -187,6 +188,7 @@ export default function App() {
     <ErrorBoundary>
       <Router>
         <ToastContainer />
+        <RouteMeta />
         <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />

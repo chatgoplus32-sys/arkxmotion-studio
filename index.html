@@ -25,7 +25,8 @@
       property="og:description"
       content="Buat video AI sinematik, animasi, musik & konten kreatif otomatis. Upload video ngomong atau foto produk — hasil profesional dalam hitungan menit."
     />
-    <meta property="og:image" content="https://arkxmotion-studio.win/landing/og-image.webp" />
+    <meta property="og:image" content="https://arkxmotion-studio.win/landing/og-image.jpg" />
+    <meta property="og:image:type" content="image/jpeg" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta property="og:locale" content="id_ID" />
@@ -37,18 +38,53 @@
       name="twitter:description"
       content="Buat video AI sinematik, animasi, musik & konten kreatif otomatis. Upload video ngomong atau foto produk — hasil profesional dalam hitungan menit."
     />
-    <meta name="twitter:image" content="https://arkxmotion-studio.win/landing/og-image.webp" />
+    <meta name="twitter:image" content="https://arkxmotion-studio.win/landing/og-image.jpg" />
 
     <!-- Structured data -->
+    <!-- @graph: Organization (entitas) + WebSite (sitelinks searchbox) +
+         WebApplication (rich result "app" di Google).og-image.jpg dipilih
+         daripada WebP karena beberapa scraper (WhatsApp, LinkedIn) masih
+         tidak men-render WebP di preview link. -->
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
-        "@type": "Organization",
-        "name": "ARKXMotion Studio",
-        "url": "https://arkxmotion-studio.win/",
-        "logo": "https://arkxmotion-studio.win/landing/arkx-icon-brand.png",
-        "description": "Platform kreatif AI all-in-one: buat video AI sinematik, animasi, film, musik dan konten kreatif otomatis dari upload video ngomong atau foto produk.",
-        "sameAs": []
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://arkxmotion-studio.win/#org",
+            "name": "ARKXMotion Studio",
+            "url": "https://arkxmotion-studio.win/",
+            "logo": "https://arkxmotion-studio.win/apple-touch-icon.png",
+            "description": "Platform kreatif AI all-in-one: buat video AI sinematik, animasi, film, musik dan konten kreatif otomatis dari upload video ngomong atau foto produk.",
+            "sameAs": []
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://arkxmotion-studio.win/#website",
+            "url": "https://arkxmotion-studio.win/",
+            "name": "ARKXMotion Studio",
+            "description": "Buat video AI sinematik, animasi, film, musik & konten kreatif otomatis dengan ARKXMotion Studio.",
+            "publisher": { "@id": "https://arkxmotion-studio.win/#org" },
+            "inLanguage": "id-ID"
+          },
+          {
+            "@type": "WebApplication",
+            "@id": "https://arkxmotion-studio.win/#app",
+            "name": "ARKXMotion Studio",
+            "url": "https://arkxmotion-studio.win/",
+            "applicationCategory": "MultimediaApplication",
+            "operatingSystem": "Web",
+            "description": "Studio AI all-in-one untuk generate video: motion control, image-to-video, bulk fashion, upscaling, musik & voice over dari 20 provider AI dalam satu dashboard.",
+            "publisher": { "@id": "https://arkxmotion-studio.win/#org" },
+            "browserRequirements": "Requires JavaScript",
+            "offers": {
+              "@type": "Offer",
+              "price": "250000",
+              "priceCurrency": "IDR",
+              "description": "Membership Pro sekali bayar (permanen); token generate dibayar terpisah per pemakaian."
+            }
+          }
+        ]
       }
     </script>
 

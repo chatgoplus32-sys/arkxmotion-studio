@@ -297,6 +297,38 @@ export default function LandingPage() {
   })
   const pricing = buildPricing(memberPricing)
   const faqs = buildFaqs(memberPricing)
+  // CTA WhatsApp mengambang baru muncul setelah visitor melewati hero supaya
+  // tidak menutupi CTA utama saat first impression.
+  const [showWaFab, setShowWaFab] = useState(false)
+
+  useEffect(() => {
+    const onScroll = () => setShowWaFab(window.scrollY > 600)
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
+  // FAQPage JSON-LD: pertanyaan & jawaban diambil dari daftar faqs yang sama
+  // dengan yang dirender supaya schema tidak pernah beda dengan isi halaman
+  // (harga di FAQ ikut berubah kalau admin mengubah biaya membership).
+  useEffect(() => {
+    const script = document.createElement('script')
+    script.type = 'application/ld+json'
+    script.id = 'faq-jsonld'
+    script.textContent = JSON.stringify({
+      '@context': 'https://schema.org',
+      '@type': 'FAQPage',
+      mainEntity: faqs.map(f => ({
+        '@type': 'Question',
+        name: f.q,
+        acceptedAnswer: { '@type': 'Answer', text: f.a },
+      })),
+    })
+    document.head.appendChild(script)
+    return () => { script.remove() }
+    // faqs berubah hanya kalau harga membership selesai dimuat.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [memberPricing])
 
   useEffect(() => {
     let alive = true
@@ -501,7 +533,19 @@ export default function LandingPage() {
           {/* Seni hero + mockup laptop */}
           <div className="relative flex flex-col lg:block lg:min-h-[720px]">
             <div className="relative h-[300px] overflow-hidden rounded-[28px] border border-cyan-400/20 shadow-[0_0_60px_rgba(0,102,255,0.25)] sm:h-[360px] lg:absolute lg:inset-0 lg:h-auto">
-              <img src="/landing/hero-fantasy.webp" alt="Ilustrasi sinematik ksatria dan putri dengan naga cahaya biru di langit malam" width={1024} height={1536} className="h-full w-full object-cover object-[50%_38%]" />
+              {/* 3 ukuran (480/800/1024): kolom hero di layar besar ~560px dan
+                  300–360px di ponsel, jadi 480px sudah cukup untuk DPR 1–2;
+                  file 1024px (236 KB) hanya diunduh di desktop hi-DPI. */}
+              <img
+                src="/landing/hero-fantasy-800.webp"
+                srcSet="/landing/hero-fantasy-480.webp 480w, /landing/hero-fantasy-800.webp 800w, /landing/hero-fantasy.webp 1024w"
+                sizes="(min-width: 1024px) 560px, calc(100vw - 40px)"
+                alt="Ilustrasi sinematik ksatria dan putri dengan naga cahaya biru di langit malam"
+                width={1024}
+                height={1536}
+                fetchPriority="high"
+                className="h-full w-full object-cover object-[50%_38%]"
+              />
               <div className="absolute inset-x-0 bottom-0 h-3/5 bg-gradient-to-t from-[#050816] via-[#050816]/55 to-transparent" />
             </div>
 
@@ -891,6 +935,21 @@ export default function LandingPage() {
           </div>
         </div>
       </footer>
+
+      {/* CTA WhatsApp mengambang — muncul setelah visitor melewati hero.
+          target _blank supaya visitor tidak kehilangan halaman landing. */}
+      <a
+        href={WA_ADMIN_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="Chat admin di WhatsApp (tab baru)"
+        className={`fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-full bg-[#25D366] py-3 pl-4 pr-5 font-semibold text-white shadow-[0_8px_28px_rgba(37,211,102,0.45)] transition-all duration-300 hover:scale-105 hover:bg-[#20bd5a] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#25D366] sm:bottom-6 sm:right-6 ${showWaFab ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-3 opacity-0'}`}
+      >
+        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor" aria-hidden="true">
+          <path d="M12.04 2a9.9 9.9 0 0 0-8.51 14.93L2 22l5.22-1.49A9.9 9.9 0 1 0 12.04 2Zm0 1.8a8.1 8.1 0 1 1-4.13 15.06l-.3-.18-3.1.89.9-3.02-.2-.31A8.1 8.1 0 0 1 12.04 3.8Zm-3.1 4.06c-.17 0-.45.06-.68.31-.24.24-.9.88-.9 2.14 0 1.25.91 2.46 1.04 2.63.13.17 1.79 2.86 4.45 3.89 2.19.85 2.63.7 3.1.65.48-.04 1.53-.63 1.75-1.23.21-.61.21-1.13.15-1.24-.06-.11-.24-.17-.5-.3-.26-.13-1.53-.76-1.77-.85-.24-.09-.41-.13-.59.13-.17.26-.68.85-.83 1.02-.15.18-.31.2-.57.07-.26-.13-1.1-.4-2.1-1.29-.77-.69-1.29-1.54-1.44-1.8-.15-.26-.02-.4.11-.53.11-.11.26-.3.39-.46.13-.15.17-.26.26-.44.09-.17.04-.33-.02-.46-.07-.13-.59-1.4-.81-1.92-.2-.48-.4-.42-.57-.43h-.47Z" />
+        </svg>
+        Chat Admin
+      </a>
     </div>
   )
 }
