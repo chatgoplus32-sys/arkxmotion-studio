@@ -1,5 +1,6 @@
 import { getGalleri5AuthHeaders } from '@/lib/galleri5'
 import { appAuthHeaders } from '@/lib/nexabot'
+import { OMNI_API_URL, OMNI_MODEL } from '@/lib/omni'
 import {
   checkRunningHubBalance,
   formatRhWalletCompact,
@@ -283,6 +284,45 @@ async function checkSeavi(): Promise<ProviderHealth> {
   }
 }
 
+// ─── Omni (Google Gemini 15s video) ───────────────────────────────────────
+// Probe via POST ke endpoint interaksi Google. Tanpa API key → nokey.
+// Dengan API key (termasuk palsu): 401/403 = upstream hidup (key perlu diperbarui),
+// 2xx = online, 5xx = degraded. Tidak auto-retry (request potensi billable).
+async function checkOmni(): Promise<ProviderHealth> {
+  const token = firstValidKey('omni')
+  if (!token) {
+    return { provider: 'omni', status: 'nokey', detail: 'Tidak ada API key Gemini', checkedAt: Date.now() }
+  }
+  try {
+    const start = Date.now()
+    const ac = new AbortController()
+    const tid = setTimeout(() => ac.abort(), 10000)
+    const res = await fetch(OMNI_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': token,
+      },
+      body: JSON.stringify({
+        model: OMNI_MODEL,
+        input: 'health check',
+        response_format: { type: 'video', duration: '15s', aspect_ratio: '16:9', resolution: '720p', delivery: 'uri' },
+        store: false,
+      }),
+      signal: ac.signal,
+    })
+    clearTimeout(tid)
+    const latencyMs = Date.now() - start
+    if (res.ok) return { provider: 'omni', status: 'online', latencyMs, detail: 'API OK', checkedAt: Date.now() }
+    if (res.status === 401 || res.status === 403) {
+      return { provider: 'omni', status: 'online', latencyMs, detail: 'API OK · key perlu diperbarui', checkedAt: Date.now() }
+    }
+    return { provider: 'omni', status: 'down', latencyMs, detail: `HTTP ${res.status}`, checkedAt: Date.now() }
+  } catch (err: any) {
+    return { provider: 'omni', status: 'down', detail: err?.message || 'Tidak terhubung', checkedAt: Date.now() }
+  }
+}
+
 // ─── RunningHub ─────────────────────────────────────────────────────────
 // Cek limit/status = baca wallet access token (kredit video/image + poin
 // harian). Key pengguna yang sudah dicabut tidak membuat provider tampak mati:
@@ -394,6 +434,7 @@ const CHECKERS: Record<string, () => Promise<ProviderHealth>> = {
   framia: checkFramia,
   oneover: checkOneOver,
   nexabot: checkNexabot,
+  omni: checkOmni,
   seavi: checkSeavi,
   posbot: checkPosbot,
 }
