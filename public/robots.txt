@@ -1,0 +1,31 @@
+# ARKXMotion Studio — https://arkxmotion-studio.win/
+# Halaman publik (landing, register) boleh di-index.
+# Semua halaman di dalam aplikasi butuh login, jadi tidak ada gunanya
+# di-index dan hanya menghasilkan "thin content" di hasil pencarian.
+
+User-agent: *
+Allow: /
+
+# API — bukan konten
+Disallow: /api/
+
+# Area aplikasi (butuh login)
+Disallow: /dashboard
+Disallow: /generate/
+Disallow: /tools/
+Disallow: /manage/
+Disallow: /topup/
+Disallow: /admin/
+Disallow: /saldo
+Disallow: /hasil
+Disallow: /providers
+Disallow: /settings
+Disallow: /command
+Disallow: /quick-start
+Disallow: /upgrade-pro
+Disallow: /booster
+Disallow: /register-status
+Disallow: /forgot-password
+Disallow: /reset-password
+
+Sitemap: https://arkxmotion-studio.win/sitemap.xml

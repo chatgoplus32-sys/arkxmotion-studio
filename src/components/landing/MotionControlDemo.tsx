@@ -31,6 +31,13 @@ export default function MotionControlDemo() {
   const [progress, setProgress] = useState(0)
   const [pos, setPos] = useState(50)
   const [playing, setPlaying] = useState(false)
+  /**
+   * src video baru dipasang setelah demo masuk viewport. Sebelumnya <video>
+   * langsung menunjuk /demo/motion-after.mp4 dengan preload="auto" — file
+   * 510 KB ikut terunduh untuk SEMUA visitor, termasuk yang tidak pernah
+   * menggulir ke section ini.
+   */
+  const [videoSrc, setVideoSrc] = useState<string | null>(null)
 
   const ready = progress >= 100
 
@@ -67,6 +74,10 @@ export default function MotionControlDemo() {
     frame = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(frame)
   }, [started, run])
+
+  useEffect(() => {
+    if (inView) setVideoSrc('/demo/motion-after.mp4')
+  }, [inView])
 
   useEffect(() => {
     const video = videoRef.current
@@ -160,12 +171,12 @@ export default function MotionControlDemo() {
           >
             <video
               ref={videoRef}
-              src="/demo/motion-after.mp4"
-              poster="/demo/motion-before.jpg"
+              src={videoSrc ?? undefined}
+              poster="/demo/motion-before.webp"
               muted
               loop
               playsInline
-              preload="auto"
+              preload="none"
               onPlay={() => setPlaying(true)}
               onPause={() => setPlaying(false)}
               className="absolute inset-0 h-full w-full object-cover"
@@ -173,6 +184,9 @@ export default function MotionControlDemo() {
             <img
               src="/demo/motion-before.webp"
               alt="Foto referensi sebelum dianimasikan"
+              width={800}
+              height={1000}
+              loading="lazy"
               className="pointer-events-none absolute inset-0 h-full w-full object-cover"
               style={{ clipPath: ready ? `inset(0 ${100 - pos}% 0 0)` : 'inset(0 0 0 0)' }}
             />

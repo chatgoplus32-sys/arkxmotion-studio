@@ -5,7 +5,7 @@ import {
   Layers, Mic, Zap, Gem, Infinity as InfinityIcon, Users, ChevronRight, Menu, X,
 } from 'lucide-react'
 import MotionControlDemo from '@/components/landing/MotionControlDemo'
-import { DEFAULT_MEMBERSHIP_FEE } from '@/lib/membership'
+import { DEFAULT_MEMBERSHIP_FEE, WA_NUMBER } from '@/lib/membership'
 import { DEFAULT_PRO_FEE } from '@/lib/pro'
 import { isBoosterPackage, NEXABOT_BOOSTER_COMING_SOON } from '@/lib/nexabotWallet'
 
@@ -28,6 +28,15 @@ interface ProviderPrices {
 }
 
 const rp = (n: number) => `Rp ${n.toLocaleString('id-ID')}`
+
+/**
+ * Link WhatsApp admin. Dulu CTA "Chat admin di WhatsApp" menunjuk ke
+ * /register — salah tujuan dan menutup kanal konversi. Sekarang benar-benar
+ * membuka WhatsApp dengan pesan pembuka.
+ */
+const WA_ADMIN_URL = `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(
+  'Halo admin ARKXMotion Studio, saya butuh informasi untuk paket custom enterprise.',
+)}`
 
 const NAV = [
   { id: 'beranda', label: 'Beranda' },
@@ -254,7 +263,8 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-[#050816] text-white overflow-x-hidden selection:bg-[#00F0FF]/30 [scroll-behavior:smooth]">
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400..900;1,600..900&display=swap');
+        /* Font Inter sudah dimuat via <link> di index.html. @import di sini
+           hanya menambah permintaan CSS yang memblokir render. */
         @keyframes floatY { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-10px) } }
         @keyframes glowPulse { 0%,100% { opacity:.5 } 50% { opacity:.9 } }
         @keyframes spinSlow { to { transform: rotate(360deg) } }
@@ -267,7 +277,7 @@ export default function LandingPage() {
       <nav className="fixed top-0 z-50 w-full border-b border-cyan-400/10 bg-[#050816]/70 backdrop-blur-2xl">
         <div className="mx-auto flex h-[68px] max-w-[1240px] items-center justify-between px-5 sm:px-6">
           <Link to="/" className="flex shrink-0 items-center">
-            <img src="/landing/arkx-logo-brand.png" alt="ARKX Motion Studio" className="h-10 w-auto object-contain drop-shadow-[0_0_18px_rgba(0,198,255,0.35)]" />
+            <img src="/landing/arkx-logo-brand.webp" alt="ARKX Motion Studio" width={640} height={214} className="h-10 w-auto object-contain drop-shadow-[0_0_18px_rgba(0,198,255,0.35)]" />
           </Link>
 
           <div className="hidden items-center gap-1 lg:flex">
@@ -323,7 +333,7 @@ export default function LandingPage() {
         <div className="mx-auto grid max-w-[1240px] items-start gap-10 px-5 sm:px-6 lg:grid-cols-[1.02fr_0.98fr] lg:gap-8">
           <div className="relative z-10">
             <div className="flex items-center">
-              <img src="/landing/arkx-logo-brand.png" alt="ARKX Motion Studio" className="h-9 w-auto object-contain drop-shadow-[0_0_16px_rgba(0,198,255,0.4)]" />
+              <img src="/landing/arkx-logo-brand.webp" alt="ARKX Motion Studio" width={640} height={214} className="h-9 w-auto object-contain drop-shadow-[0_0_16px_rgba(0,198,255,0.4)]" />
             </div>
 
             <h1 className="mt-6 text-[38px] font-black italic leading-[0.98] tracking-[-0.03em] sm:text-[52px] md:text-[62px] lg:text-[50px] xl:text-[62px]">
@@ -595,12 +605,15 @@ export default function LandingPage() {
             ))}
           </div>
 
-          {providerPrices && (
-            <div id="provider-prices" className="mt-10 scroll-mt-24 rounded-[22px] border border-white/10 bg-slate-900/50 p-5 backdrop-blur-xl">
-              <div className="mb-3 flex items-center gap-2 text-xs text-white/45 sm:text-[13px]">
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-300" />
-                Harga provider — tarif aktif dari server
-              </div>
+          {/* Blok ini SELALU dirender. CTA "Lihat Harga Provider" menuju anchor
+              #provider-prices — kalau bloknya hilang saat fetch harga gagal,
+              anchor itu jadi target hantu dan klik tidak melakukan apa-apa. */}
+          <div id="provider-prices" className="mt-10 scroll-mt-24 rounded-[22px] border border-white/10 bg-slate-900/50 p-5 backdrop-blur-xl">
+            <div className="mb-3 flex items-center gap-2 text-xs text-white/45 sm:text-[13px]">
+              <span className={`h-1.5 w-1.5 rounded-full bg-cyan-300 ${providerPrices ? 'animate-pulse' : ''}`} />
+              Harga provider — tarif aktif dari server
+            </div>
+            {providerPrices ? (
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {providerPrices.nexabot && (
                   <div className="rounded-xl border border-white/10 bg-black/25 p-4">
@@ -642,10 +655,16 @@ export default function LandingPage() {
                   </div>
                 )}
               </div>
-            </div>
-          )}
+            ) : (
+              <p className="text-[13px] leading-relaxed text-white/60">
+                Harga provider belum termuat. Muat ulang halaman, atau tanya langsung ke admin — tarif provider
+                berbeda per model dan sering diperbarui.{' '}
+                <a href={WA_ADMIN_URL} target="_blank" rel="noopener noreferrer" className="text-cyan-300 hover:underline">Chat admin di WhatsApp</a>
+              </p>
+            )}
+          </div>
 
-          <p className="mt-4 text-center text-[11px] text-white/30 sm:text-xs">Butuh custom enterprise? <Link to="/register" className="text-cyan-300 hover:underline">Chat admin di WhatsApp</Link> — respon &lt; 1 jam.</p>
+          <p className="mt-4 text-center text-[11px] text-white/30 sm:text-xs">Butuh custom enterprise? <a href={WA_ADMIN_URL} target="_blank" rel="noopener noreferrer" className="text-cyan-300 hover:underline">Chat admin di WhatsApp</a> — respon &lt; 1 jam.</p>
         </div>
       </section>
 
@@ -703,7 +722,7 @@ export default function LandingPage() {
       <footer className="border-t border-white/5 px-5 py-10 sm:px-6">
         <div className="mx-auto flex max-w-[1240px] flex-col items-center justify-between gap-4 sm:flex-row">
           <div className="flex items-center gap-4">
-            <img src="/landing/arkx-logo-brand.png" alt="ARKX Motion Studio" className="h-8 w-auto object-contain" />
+            <img src="/landing/arkx-logo-brand.webp" alt="ARKX Motion Studio" width={640} height={214} className="h-8 w-auto object-contain" />
             <span className="hidden text-xs text-white/30 sm:inline">© 2026 • AI video generation platform</span>
           </div>
           <div className="flex items-center gap-5 text-[11px] sm:text-xs">

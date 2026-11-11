@@ -284,10 +284,10 @@ export function Sidebar({ collapsed = false, onClose }: SidebarProps) {
       {/* Logo */}
       <div className="flex items-center gap-2.5 h-14 px-4 border-b border-border">
         {collapsed ? (
-          <img src="/landing/arkx-icon-brand.png" alt="ARKXMotion" className="w-8 h-8 object-contain" />
+          <img src="/favicon-64.png" alt="ARKXMotion" className="w-8 h-8 object-contain" />
         ) : (
           <span className="inline-flex min-w-0 items-center rounded-lg bg-[#0c0c1a] px-2 py-1.5">
-            <img src="/landing/arkx-logo-brand.png" alt="ARKXMotion Studio" className="sidebar-brand-logo h-8 w-auto object-contain min-w-0" />
+            <img src="/landing/arkx-logo-brand.webp" alt="ARKXMotion Studio" className="sidebar-brand-logo h-8 w-auto object-contain min-w-0" />
           </span>
         )}
         {onClose && (
