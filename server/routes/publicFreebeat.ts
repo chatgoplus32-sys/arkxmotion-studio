@@ -2,8 +2,11 @@ import { Router, Request, Response } from 'express'
 import { describeFetchError } from '../lib/fetchTimeout.js'
 
 // ── Relay Freebeat AI (pass-through API key milik user) ─────────────────────
-// Freebeat mengautentikasi CLI/OpenRPC dengan header `Authorization: <KEY>`
-// MENTAH (tanpa "Bearer") — persis seperti paket resmi npm freebeat-mcp.
+// Freebeat web app memakai proxy https://freebeat.ai/api/proxy/ untuk endpoint
+// generate gambar (terverifikasi bekerja untuk model config di browser).
+// Paket resmi npm freebeat-mcp pakai https://api.freebeatfit.com dengan header
+// Authorization: <KEY> mentah (tanpa Bearer).
+//
 // Kunci dikirim browser tiap request dan DITERUSKAN verbatim ke upstream;
 // server ini TIDAK menyimpannya dan TIDAK punya kunci master (kredit dipotong
 // langsung di akun freebeat upstream, tanpa penagihan lokal).
@@ -14,7 +17,7 @@ import { describeFetchError } from '../lib/fetchTimeout.js'
 //   /v1/user/credits/findCredits  — saldo kredit akun (best-effort)
 
 const router = Router()
-const FREEBEAT_BASE = (process.env.FREEBEAT_BASE || 'https://api.freebeatfit.com').replace(/\/+$/, '')
+const FREEBEAT_BASE = (process.env.FREEBEAT_BASE || 'https://freebeat.ai/api/proxy').replace(/\/+$/, '')
 
 const ALLOWED_PATHS = new Set([
   '/v1/ai/cli/createImageBatch',
@@ -22,42 +25,64 @@ const ALLOWED_PATHS = new Set([
   '/v1/user/credits/findCredits',
 ])
 
-/** Coba auth raw dulu (kontrak freebeat-mcp), fallback Bearer bila 401/403. */
-async function freebeatFetch(upstreamUrl: string, body: Uint8Array | undefined, authKey: string): Promise<any> {
-  const rawHeaders: Record<string, string> = {
-    'Authorization': authKey.trim(),
-    'Content-Type': 'application/json',
-    'Accept': 'application/json, text/plain, */*',
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  }
-  const bearerHeaders: Record<string, string> = {
-    ...rawHeaders,
-    'Authorization': `Bearer ${authKey.trim()}`,
-  }
+/** Coba kombinasi base URL + format auth hingga salah satu berhasil. */
+async function freebeatFetch(upstreamPath: string, body: Uint8Array | undefined, authKey: string): Promise<any> {
+  const bases = [
+    (process.env.FREEBEAT_BASE || 'https://freebeat.ai/api/proxy').replace(/\/+$/, ''),
+    'https://api.freebeatfit.com',
+  ]
+  const key = authKey.trim()
+  const variants: Array<{ headers: Record<string, string>; label: string }> = [
+    {
+      headers: {
+        'Authorization': `Bearer ${key}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, text/plain, */*',
+        'Origin': 'https://freebeat.ai',
+        'Referer': 'https://freebeat.ai/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      },
+      label: 'Bearer',
+    },
+    {
+      headers: {
+        'Authorization': key,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, text/plain, */*',
+        'Origin': 'https://freebeat.ai',
+        'Referer': 'https://freebeat.ai/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      },
+      label: 'raw',
+    },
+  ]
 
   let lastRes: any = null
   let lastText = ''
+  let lastStatus = 0
 
-  for (const headers of [rawHeaders, bearerHeaders]) {
-    try {
-      const res = await fetch(upstreamUrl, {
-        method: 'POST',
-        headers,
-        body: body ?? undefined,
-        signal: AbortSignal.timeout(120000),
-      })
-      lastRes = res
-      lastText = await res.text()
-      // Jika berhasil atau bukan error auth, langsung kembalikan.
-      if (res.status < 400 || (res.status !== 401 && res.status !== 403)) {
-        return res
+  for (const base of bases) {
+    for (const v of variants) {
+      try {
+        const res = await fetch(`${base}${upstreamPath}`, {
+          method: 'POST',
+          headers: v.headers,
+          body: body ?? undefined,
+          signal: AbortSignal.timeout(120000),
+        })
+        lastRes = res
+        lastStatus = res.status
+        lastText = await res.text()
+        if (res.status < 400 || (res.status !== 401 && res.status !== 403)) {
+          console.log(`[freebeat-proxy] ${v.label} @ ${base} → ${res.status}`)
+          return res
+        }
+        console.log(`[freebeat-proxy] ${v.label} @ ${base} → ${res.status} ${lastText.slice(0, 120)}`)
+      } catch {
+        continue
       }
-      // 401/403 dengan raw → coba Bearer.
-    } catch {
-      continue
     }
   }
-  // Kembalikan respons terakhir (biasanya 401/403) agar errornya terlihat.
   if (lastRes) {
     return new Response(lastText, {
       status: lastRes.status,
@@ -93,14 +118,13 @@ router.all('/{*path}', async (req: Request, res: Response) => {
     for await (const chunk of req) chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk as unknown as Uint8Array)
     const rawBody = Buffer.concat(chunks)
 
-    const upstreamUrl = `${FREEBEAT_BASE}${upstreamPath}`
     console.log(`[freebeat-proxy] ${req.method} ${upstreamPath}`)
 
-    const proxyRes = await freebeatFetch(upstreamUrl, rawBody, String(auth))
+    const proxyRes = await freebeatFetch(upstreamPath, rawBody, String(auth))
 
     const text = await proxyRes.text()
     if (proxyRes.status >= 400) {
-      console.log(`[freebeat-proxy] ${proxyRes.status}: ${text}`)
+      console.log(`[freebeat-proxy] FINAL ${proxyRes.status}: ${text}`)
     }
     res.writeHead(proxyRes.status, {
       'Content-Type': proxyRes.headers.get('content-type') || 'application/json',
