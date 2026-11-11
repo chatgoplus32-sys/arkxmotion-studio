@@ -128,8 +128,8 @@ function freebeatHeaders(key: string): Record<string, string> {
 }
 
 /** Buka envelope {code,msg,data}; lempar Error dengan pesan upstream. */
-async function unwrapEnvelope(res: Response, action: string): Promise<any> {
-  const text = await res.text()
+async function unwrapEnvelope(res: Response, action: string, preReadText?: string): Promise<any> {
+  const text = preReadText ?? (await res.text())
   let json: any
   try { json = JSON.parse(text) } catch {
     throw new Error(`${action}: HTTP ${res.status} — respons bukan JSON (${text.slice(0, 120)})`)
@@ -175,28 +175,54 @@ export function buildFreebeatImageItem(
 export async function createFreebeatImageBatch(
   key: string,
   item: FreebeatBatchItem,
+  opts: { onLog?: (msg: string) => void; maxRetries?: number } = {},
 ): Promise<FreebeatBatchCreateResult> {
-  const res = await fetch(`${FREEBEAT_PROXY}/v1/ai/cli/createImageBatch`, {
-    method: 'POST',
-    headers: freebeatHeaders(key),
-    body: JSON.stringify({ items: [item] }),
-  })
-  const data = await unwrapEnvelope(res, 'Create image batch')
-  const batch = data ?? {}
-  const items = Array.isArray(batch.items) ? batch.items : []
-  const first = items[0] || {}
-  if (batch.acceptedCount === 0 || first.accepted === false) {
-    throw new Error(first.message || `Batch ditolak upstream (status ${first.status || '?'})`)
+  const maxRetries = opts.maxRetries ?? 3
+  let lastErr: any = null
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetch(`${FREEBEAT_PROXY}/v1/ai/cli/createImageBatch`, {
+        method: 'POST',
+        headers: freebeatHeaders(key),
+        body: JSON.stringify({ items: [item] }),
+      })
+      const text = await res.text()
+      if (res.status === 429 || res.status === 502 || res.status === 503 || res.status === 504) {
+        lastErr = new Error(`HTTP ${res.status} — ${text.slice(0, 120)}`)
+        if (attempt < maxRetries) {
+          const delay = 2000 * (attempt + 1)
+          opts.onLog?.(`⏳ Rate limited (HTTP ${res.status}) — coba ulang dalam ${delay / 1000}s...`)
+          await sleep(delay)
+          continue
+        }
+        throw lastErr
+      }
+      const data = await unwrapEnvelope(res, 'Create image batch', text)
+      const batch = data ?? {}
+      const items = Array.isArray(batch.items) ? batch.items : []
+      const first = items[0] || {}
+      if (batch.acceptedCount === 0 || first.accepted === false) {
+        throw new Error(first.message || `Batch ditolak upstream (status ${first.status || '?'})`)
+      }
+      return {
+        batchId: String(batch.batchId || ''),
+        acceptedCount: batch.acceptedCount ?? items.length,
+        failedCount: batch.failedCount ?? 0,
+        acceptedCredits: batch.acceptedCredits ?? first.needCredits ?? 0,
+        serialNo: first.serialNo ?? null,
+        needCredits: first.needCredits ?? 0,
+        itemMessage: first.message ?? null,
+      }
+    } catch (err: any) {
+      lastErr = err
+      // Jika bukan error rate limit, jangan coba ulang.
+      if (!/HTTP (429|502|503|504)/.test(err?.message || '')) {
+        throw err
+      }
+      if (attempt >= maxRetries) throw lastErr
+    }
   }
-  return {
-    batchId: String(batch.batchId || ''),
-    acceptedCount: batch.acceptedCount ?? items.length,
-    failedCount: batch.failedCount ?? 0,
-    acceptedCredits: batch.acceptedCredits ?? first.needCredits ?? 0,
-    serialNo: first.serialNo ?? null,
-    needCredits: first.needCredits ?? 0,
-    itemMessage: first.message ?? null,
-  }
+  throw lastErr || new Error('Gagal submit batch setelah beberapa percobaan')
 }
 
 /** Poll status batch (sekali panggil — loop ada di pemanggil). */
@@ -206,7 +232,11 @@ export async function queryFreebeatBatch(key: string, batchId: string, serialNo?
     headers: freebeatHeaders(key),
     body: JSON.stringify(serialNo ? { batchId, serialNo } : { batchId }),
   })
-  const data = await unwrapEnvelope(res, 'Query batch')
+  const text = await res.text()
+  if (res.status === 429 || res.status === 502 || res.status === 503 || res.status === 504) {
+    throw new Error(`HTTP ${res.status} — ${text.slice(0, 120)}`)
+  }
+  const data = await unwrapEnvelope(res, 'Query batch', text)
   const items = (Array.isArray(data?.items) ? data.items : []).map((raw: any) => ({
     serialNo: String(raw?.serialNo ?? ''),
     status: String(raw?.status ?? '').toLowerCase(),
