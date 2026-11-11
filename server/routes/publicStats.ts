@@ -27,6 +27,22 @@ export function buildPublicStats() {
     }
   }
 
+  // Halaman yang paling sering dipakai — agregat tanpa data pribadi (nama
+  // user tidak pernah dikirim), dipakai landing sebagai social proof yang
+  // bisa diverifikasi.
+  let topPages: { page: string; count: number }[] = []
+  try {
+    topPages = (
+      db
+        .prepare(
+          "SELECT page, COUNT(*) AS c FROM generation_logs WHERE status IN ('completed','success','done') GROUP BY page ORDER BY c DESC LIMIT 3",
+        )
+        .all() as { page: string; c: number }[]
+    ).map(r => ({ page: r.page, count: Number(r.c) }))
+  } catch {
+    topPages = []
+  }
+
   return {
     ok: true,
     updated_at: new Date().toISOString(),
@@ -36,7 +52,11 @@ export function buildPublicStats() {
     videos: hitung(
       "SELECT COUNT(*) AS c FROM generation_logs WHERE status IN ('completed','success','done')",
     ),
+    // Kreator yang benar-benar pernah generate (distinct), bukan sekadar
+    // daftar akun — angka ini yang dipakai "kreator aktif".
+    active_users: hitung('SELECT COUNT(DISTINCT user_id) AS c FROM generation_logs'),
     providers: PROVIDER_COUNT,
+    top_pages: topPages,
   }
 }
 

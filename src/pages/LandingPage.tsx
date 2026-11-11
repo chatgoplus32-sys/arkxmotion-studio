@@ -38,6 +38,20 @@ interface PublicStats {
   users?: number
   videos?: number
   providers?: number
+  /** Kreator yang benar-benar pernah generate (distinct user di log). */
+  active_users?: number
+  /** Halaman tool dengan generate selesai terbanyak (tanpa data pribadi). */
+  top_pages?: { page: string; count: number }[]
+}
+
+/** Nama halaman di log → label yang dibaca manusia. */
+const PAGE_LABEL: Record<string, string> = {
+  'image-to-video': 'Image to Video',
+  motion: 'Motion Control',
+  'song-cover': 'AI Song Cover',
+  'h3-music-avatar': 'H3 Music Avatar',
+  'bulk-fashion': 'Bulk Fashion',
+  ugc: 'UGC Studio',
 }
 
 const rp = (n: number) => `Rp ${n.toLocaleString('id-ID')}`
@@ -346,7 +360,7 @@ export default function LandingPage() {
     let alive = true
     fetch('/api/public/stats')
       .then(r => (r.ok ? r.json() : null))
-      .then(d => { if (alive && d?.ok) setStats({ users: d.users, videos: d.videos, providers: d.providers }) })
+      .then(d => { if (alive && d?.ok) setStats({ users: d.users, videos: d.videos, providers: d.providers, active_users: d.active_users, top_pages: d.top_pages }) })
       .catch(() => { /* biarkan null */ })
     return () => { alive = false }
   }, [])
@@ -498,17 +512,23 @@ export default function LandingPage() {
             </div>
 
             <div className="mt-4 flex items-center gap-3">
-              <div className="flex -space-x-2.5">
-                {['RA', 'DP', 'SA', 'MF', 'TN'].map((name, i) => (
-                  <span key={i} className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-[#050816] bg-gradient-to-br from-[#0066FF]/80 to-[#8B5CF6]/80 text-[9px] font-bold text-white ring-1 ring-cyan-400/20">
-                    {name}
-                  </span>
-                ))}
-              </div>
+              {/* Avatar inisial dulu hardcode 'RA','DP',... — keduanya fiktif.
+                  Sekarang angka kreator aktif diambil dari log generate. */}
+              {stats?.active_users ? (
+                <span className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-[#050816] bg-gradient-to-br from-[#0066FF]/80 to-[#8B5CF6]/80 text-[9px] font-bold text-white ring-1 ring-cyan-400/20">
+                  +{stats.active_users}
+                </span>
+              ) : (
+                <span className="relative flex h-8 w-8 items-center justify-center" aria-hidden="true">
+                  <span className="absolute h-2.5 w-2.5 animate-ping rounded-full bg-emerald-400/60" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
+                </span>
+              )}
               <p className="text-[12px] leading-tight text-white/60">
                 {stats?.videos ? (
                   <>
-                    <span className="font-bold text-white/85">{ringkas(stats.videos)} video</span> sudah dibuat<br />
+                    <span className="font-bold text-white/85">{ringkas(stats.videos)} video</span> sudah dibuat
+                    {stats?.active_users ? <> oleh <span className="font-bold text-white/85">{stats.active_users} kreator</span></> : null}<br />
                     <span className="text-[10.5px] text-white/55">{stats.providers ?? 20} provider AI · auto rotation & fallback</span>
                   </>
                 ) : (
@@ -859,32 +879,50 @@ export default function LandingPage() {
       </section>
 
       {/* ===================== Komunitas ===================== */}
+      {/* Testimoni dulu kutipan fiktif ("Riko", "Sinta", "Faezya Cell") yang
+          tidak pernah dikirim user mana pun — berisiko false claim di iklan.
+          Diganti angka pemakaian asli dari log platform. */}
       <section id="komunitas" className="scroll-mt-24 px-5 py-12 sm:px-6 sm:py-14">
         <div className="mx-auto max-w-[1240px]">
           <div className="mb-7 text-center">
             <h2 className="text-[22px] font-black italic tracking-tight sm:text-[28px]">Komunitas <span className="bg-gradient-to-r from-cyan-200 to-[#00F0FF] bg-clip-text text-transparent">Kreatif</span></h2>
-            <p className="mt-2 text-[13.5px] text-white/50">Belajar, berbagi & berkembang bersama kreator yang sudah pakai setiap hari.</p>
+            <p className="mt-2 text-[13.5px] text-white/50">Bukan klaim papan bintang — ini angka pemakaian asli dari log platform, diperbarui otomatis.</p>
           </div>
-          <div className="grid gap-3.5 sm:grid-cols-2 md:grid-cols-3">
+          <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
             {[
-              { name: 'Riko • Fashion Seller', text: 'Bulk Fashion ngebantu banget. 1 model jadi 80 video katalog dalam 5 menit. Laku keras di Tiktok Shop.', stars: 5 },
-              { name: 'Sinta • UGC Creator', text: 'Image to Video Wan & Grok hasilnya sinematik. Client puas, revisi minim.', stars: 5 },
-              { name: 'Faezya Cell • Agency', text: 'Smart routing hemat credits. Token rotation otomatis, nggak pernah down pas deadline.', stars: 5 },
-            ].map((t) => {
-              const initials = t.name.split(' ').filter(w => /^[A-Za-z]/.test(w)).slice(0, 2).map(w => w[0].toUpperCase()).join('')
-              return (
-                <div key={t.name} className={`rounded-2xl ${glass} p-5 transition hover:border-cyan-300/40`}>
-                  <div className="flex items-center gap-3">
-                    <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-gradient-to-br from-[#0066FF] to-[#8B5CF6] text-[13px] font-bold text-white shadow-[0_0_16px_rgba(0,102,255,0.4)]">{initials}</span>
-                    <div>
-                      <div className="text-sm text-cyan-300">{'★'.repeat(t.stars)}</div>
-                      <div className="mt-0.5 text-[11px] font-medium text-white/60 sm:text-xs">{t.name}</div>
-                    </div>
-                  </div>
-                  <p className="mt-3 text-[13px] leading-relaxed text-white/70 sm:text-sm">“{t.text}”</p>
-                </div>
-              )
-            })}
+              stats?.videos != null && { label: 'Video AI selesai dibuat', value: ringkas(stats.videos) },
+              stats?.active_users != null && { label: 'Kreator yang sudah generate', value: String(stats.active_users) },
+              stats?.providers != null && { label: 'Provider AI terhubung', value: String(stats.providers) },
+              { label: 'Respon support WA', value: '< 1 jam' },
+            ].filter(Boolean).map((s) => (
+              <div key={s!.label} className={`rounded-2xl ${glass} p-5 text-center transition hover:border-cyan-300/40`}>
+                <div className="text-[28px] font-black tracking-tight text-white sm:text-[32px]">{s!.value}</div>
+                <div className="mt-1 text-[12px] text-white/60 sm:text-[13px]">{s!.label}</div>
+              </div>
+            ))}
+          </div>
+
+          {stats?.top_pages && stats.top_pages.length > 0 && (
+            <div className="mx-auto mt-5 max-w-[640px] rounded-2xl border border-cyan-400/15 bg-white/[0.03] px-5 py-4">
+              <p className="text-center text-[13px] leading-relaxed text-white/65 sm:text-sm">
+                Tool paling sering dipakai komunitas:{' '}
+                {stats.top_pages.map((t, i) => (
+                  <span key={t.page}>
+                    {i > 0 && ', '}
+                    <span className="font-semibold text-cyan-300">{PAGE_LABEL[t.page] ?? t.page}</span>
+                    <span className="text-white/55"> ({ringkas(t.count)})</span>
+                  </span>
+                ))}
+              </p>
+            </div>
+          )}
+
+          <div className="mt-6 text-center">
+            <a href={WA_ADMIN_URL} target="_blank" rel="noopener noreferrer" className={`${ctaUtama} mx-auto`}>
+              <Rocket className="h-[18px] w-[18px]" />
+              Gabung Komunitas via WhatsApp
+            </a>
+            <p className="mt-3 text-[11px] text-white/55">Berbagi hasil, tips & update fitur bareng kreator lain.</p>
           </div>
         </div>
       </section>

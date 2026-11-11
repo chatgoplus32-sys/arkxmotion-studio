@@ -31,22 +31,35 @@ function withFetchStub<T>(impl: (url: string, init?: RequestInit) => SeaviStubRe
 
 // ── Spesifikasi model ────────────────────────────────────────────────────────
 
-test('SEAVI_MODELS: 14 model video/motion aktif terdaftar dan spec kunci tersedia', () => {
-  assert.equal(Object.keys(SEAVI_MODELS).length, 14)
+test('SEAVI_MODELS: 16 model video/motion aktif terdaftar dan spec kunci tersedia', () => {
+  assert.equal(Object.keys(SEAVI_MODELS).length, 16)
   assert.ok(getSeaviSpec('seedance2_multi_s15'))
   assert.ok(getSeaviSpec('motion_control_v3_server23_15dtk'))
   assert.ok(getSeaviSpec('sora2_server10'))
-  // Katalog "Aktif (21)" 5 Nov 2026 — delapan model 2 token. Server 16
-  // dipensiunkan upstream malam 1 Nov (sempat lolos submit lalu gagal
-  // GENERATION_FAILED, sekarang POST-nya 404 MODEL_NOT_FOUND); seedance25_server10
-  // dan motion_control_v3_server19_15dtk keluar dari katalog 5 Nov.
+  // Katalog 11 Nov 2026 (probe GET /v1/models): sepuluh model 2 token. Server 16
+  // dipensiunkan upstream 1 Nov (sempat lolos submit lalu gagal
+  // GENERATION_FAILED, sekarang POST-nya 404 MODEL_NOT_FOUND) dan
+  // motion_control_v3_server19_15dtk keluar dari katalog; seedance25_server10
+  // justru KEMBALI 11 Nov.
   assert.equal(getSeaviSpec('motion_control_v3_server16'), undefined)
-  assert.equal(getSeaviSpec('seedance25_server10'), undefined)
   assert.equal(getSeaviSpec('motion_control_v3_server19_15dtk'), undefined)
+  // 11 Nov 2026: durasi panjang + model baru.
+  assert.ok(getSeaviSpec('seedance25_server10'), 'seedance25_server10 kembali ke katalog 11 Nov')
+  assert.deepEqual(getSeaviSpec('seedance25_server19')?.durations, [5, 10, 15, 25])
+  assert.deepEqual(getSeaviSpec('seedance25_server10')?.durations, [5, 10, 15, 25])
+  assert.deepEqual(getSeaviSpec('kling4_server19')?.durations, [5, 10, 15, 30])
+  assert.deepEqual(getSeaviSpec('wan30_prime_server19')?.durations, [5, 10, 15, 30])
+  // Model baru: Kling 2.5 Turbo — i2v, 5/10 detik, hanya 1 token.
+  const turbo = getSeaviSpec('kling25_turbo_server23')
+  assert.ok(turbo)
+  assert.equal(turbo?.tokens, 1)
+  assert.deepEqual(turbo?.durations, [5, 10])
+  assert.deepEqual(turbo?.aspects, [])
   assert.equal(getSeaviSpec('kling4_server19')?.tokens, 2)
   assert.equal(getSeaviSpec('wan30_prime_server19')?.tokens, 2)
   assert.equal(getSeaviSpec('gemini_omni_server19')?.tokens, 2)
   assert.equal(getSeaviSpec('seedance25_server19')?.tokens, 2)
+  assert.equal(getSeaviSpec('seedance25_server10')?.tokens, 2)
   assert.equal(getSeaviSpec('wan30_server19')?.tokens, 2)
   assert.equal(getSeaviSpec('motion_control_v3_server10_30dtk')?.tokens, 2)
   assert.equal(getSeaviSpec('wan3_server23')?.tokens, 2)

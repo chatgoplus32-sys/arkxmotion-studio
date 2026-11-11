@@ -132,21 +132,28 @@ export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
   // dipilih user. API tidak punya parameter `model`; yang dikirim adalah
   // `mode` + `resolution` + `duration` (docs nexabot.id/api-docs).
   seavi: [
-    // Katalog aktif Seavi 5 Nov 2026 ("Aktif (21)"): 13 model 1 token, 8 model 2 token.
-    // Motion Control pindah ke halaman Motion Control (provider Seavi Labs).
+    // Katalog aktif Seavi 11 Nov 2026 (probe GET /v1/models): 13 model 1 token,
+    // 10 model 2 token. Motion Control pindah ke halaman Motion Control (provider
+    // Seavi Labs).
     // Image to video
     { value: 'sv:kling3_server10', label: 'Kling 3 · S10 — 6/10s (Seavi)', cr: 1, provider: 'seavi', apiModel: 'kling3_server10' },
     { value: 'sv:kling21pro_server10', label: 'Kling 2.1 Pro · S10 — 5/10s (Seavi)', cr: 1, provider: 'seavi', apiModel: 'kling21pro_server10' },
     { value: 'sv:grok_imagine_s15', label: 'Grok Imagine · S15 — 5/10s (Seavi)', cr: 1, provider: 'seavi', apiModel: 'grok_imagine_s15' },
     { value: 'sv:sora2_server10', label: 'Sora 2 · S10 — i2v 10s (Seavi)', cr: 1, provider: 'seavi', apiModel: 'sora2_server10' },
+    // BARU 11 Nov 2026: Kling 2.5 Turbo — paling cepat & hanya 1 token.
+    { value: 'sv:kling25_turbo_server23', label: '⚡ Kling 2.5 Turbo · S23 — 5/10s, 1 token (Seavi)', cr: 1, provider: 'seavi', apiModel: 'kling25_turbo_server23' },
     // Multi-image / multimodal
     { value: 'sv:seedance2_multi_s15', label: 'Seedance 2 Multi · S15 — 1-3 img (Seavi)', cr: 1, provider: 'seavi', apiModel: 'seedance2_multi_s15' },
-    // Naik ke 2 token di katalog 5 Nov 2026.
-    { value: 'sv:seedance25_server19', label: 'Seedance 2.5 · S19 — multi + audio, 2 token (Seavi)', cr: 2, provider: 'seavi', apiModel: 'seedance25_server19' },
+    // Naik ke 2 token di katalog 5 Nov 2026. 11 Nov 2026: Seedance 2.5 S19 sampai 25 detik.
+    { value: 'sv:seedance25_server19', label: 'Seedance 2.5 · S19 — multi + audio, s/d 25s, 2 token (Seavi)', cr: 2, provider: 'seavi', apiModel: 'seedance25_server19' },
+    // KEMBALI di katalog 11 Nov 2026 (pernah dicabut 1 Nov) — 2 token, s/d 25 detik.
+    { value: 'sv:seedance25_server10', label: 'Seedance 2.5 · S10 — multi + audio, s/d 25s, 2 token (Seavi)', cr: 2, provider: 'seavi', apiModel: 'seedance25_server10' },
     { value: 'sv:wan30_server19', label: 'Wan 3.0 · S19 — audio, 5/10/15s, 2 token (Seavi)', cr: 2, provider: 'seavi', apiModel: 'wan30_server19' },
     { value: 'sv:gemini_omni_server19', label: 'Gemini Omni · S19 — multi + audio, 2 token (Seavi)', cr: 2, provider: 'seavi', apiModel: 'gemini_omni_server19' },
-    { value: 'sv:kling4_server19', label: 'Kling 4.0 · S19 — multi + audio, 2 token (Seavi)', cr: 2, provider: 'seavi', apiModel: 'kling4_server19' },
-    { value: 'sv:wan30_prime_server19', label: 'Wan 3.0 Prime · S19 — multi + audio, 2 token (Seavi)', cr: 2, provider: 'seavi', apiModel: 'wan30_prime_server19' },
+    // 11 Nov 2026: Kling 4.0 S19 sampai 30 detik sekali generate.
+    { value: 'sv:kling4_server19', label: 'Kling 4.0 · S19 — multi + audio, s/d 30s, 2 token (Seavi)', cr: 2, provider: 'seavi', apiModel: 'kling4_server19' },
+    // 11 Nov 2026: Wan 3.0 Prime S19 sampai 30 detik.
+    { value: 'sv:wan30_prime_server19', label: 'Wan 3.0 Prime · S19 — multi + audio, s/d 30s, 2 token (Seavi)', cr: 2, provider: 'seavi', apiModel: 'wan30_prime_server19' },
     // Model baru 5 Nov 2026 — 2 token per generate.
     { value: 'sv:wan3_server23', label: 'Wan 3.0 · S23 — 1 img, 5/10/15s, 2 token (Seavi)', cr: 2, provider: 'seavi', apiModel: 'wan3_server23' },
     { value: 'sv:happyhorse11_server23', label: 'HappyHorse 1.1 · S23 — 1-5 img, 5/10/15s, 2 token (Seavi)', cr: 2, provider: 'seavi', apiModel: 'happyhorse11_server23' },
@@ -190,9 +197,21 @@ export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: s
       { value: 'd10', label: '10 detik', mult: 1, duration: 10, cr: 1 },
       { value: 'd15', label: '15 detik', mult: 1, duration: 15, cr: 1 },
     ],
+    'sv:kling25_turbo_server23': [
+      { value: 'd5', label: '5 detik', mult: 1, duration: 5, cr: 1 },
+      { value: 'd10', label: '10 detik', mult: 1, duration: 10, cr: 1 },
+    ],
     'sv:seedance25_server19': [
       { value: 'd5', label: '5 detik', mult: 1, duration: 5, cr: 2 },
       { value: 'd10', label: '10 detik', mult: 1, duration: 10, cr: 2 },
+      { value: 'd15', label: '15 detik', mult: 1, duration: 15, cr: 2 },
+      { value: 'd25', label: '25 detik', mult: 1, duration: 25, cr: 2 },
+    ],
+    'sv:seedance25_server10': [
+      { value: 'd5', label: '5 detik', mult: 1, duration: 5, cr: 2 },
+      { value: 'd10', label: '10 detik', mult: 1, duration: 10, cr: 2 },
+      { value: 'd15', label: '15 detik', mult: 1, duration: 15, cr: 2 },
+      { value: 'd25', label: '25 detik', mult: 1, duration: 25, cr: 2 },
     ],
     'sv:wan30_server19': [
       { value: 'd5', label: '5 detik', mult: 1, duration: 5, cr: 2 },
@@ -208,11 +227,13 @@ export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: s
       { value: 'd5', label: '5 detik', mult: 1, duration: 5, cr: 2 },
       { value: 'd10', label: '10 detik', mult: 1, duration: 10, cr: 2 },
       { value: 'd15', label: '15 detik', mult: 1, duration: 15, cr: 2 },
+      { value: 'd30', label: '30 detik', mult: 1, duration: 30, cr: 2 },
     ],
     'sv:wan30_prime_server19': [
       { value: 'd5', label: '5 detik', mult: 1, duration: 5, cr: 2 },
       { value: 'd10', label: '10 detik', mult: 1, duration: 10, cr: 2 },
       { value: 'd15', label: '15 detik', mult: 1, duration: 15, cr: 2 },
+      { value: 'd30', label: '30 detik', mult: 1, duration: 30, cr: 2 },
     ],
     'sv:wan3_server23': [
       { value: 'd5', label: '5 detik', mult: 1, duration: 5, cr: 2 },

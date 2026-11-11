@@ -1,18 +1,18 @@
 // Seavi Labs REST API client — api.seavilabs.site via relay /api/public/seavi
 // Kontrak terverifikasi dari docs resmi + probe nyata (submit 202 → poll progress → result.url).
-// Katalog = daftar "Aktif (21)" upstream 5 Nov 2026: 12 video + 2 motion control +
-// 7 image; 8 model menagih 2 token, 13 model 1 token (cermin SEAVI_MODEL_TOKENS di
-// shared/pricing.ts — dijaga tes kontrak silang).
-// Keluar dari katalog dibanding 1 Nov 2026: seedance25_server10,
+// Katalog = probe langsung GET /v1/models 11 Nov 2026 (23 model: 13 video +
+// 2 motion control + 8 image); 10 model menagih 2 token, 13 model 1 token
+// (cermin SEAVI_MODEL_TOKENS di shared/pricing.ts — dijaga tes kontrak silang).
+// PERUBAHAN 11 Nov 2026 (hasil probe /v1/models):
+//   • Seedance 2.5 S19  → durasi 5/10/15/**25** (1x generate sampai 25 detik)
+//   • Kling 4.0 S19      → durasi 5/10/15/**30** (1x generate sampai 30 detik)
+//   • Wan 3.0 Prime S19  → durasi 5/10/15/**30**
+//   • BARU Kling 2.5 Turbo S23 (kling25_turbo_server23) — i2v, 5/10 detik, 1 token
+//   • seedance25_server10 KEMBALI di katalog (pernah dicabut 1 Nov) — 5/10/15/25, 2 token
+// Keluar dari katalog dibanding 1 Nov 2026 (masih absen 11 Nov):
 // motion_control_v3_server19_15dtk, motion_control_v3_server16.
-// Masuk: motion_control_v3_server23_15dtk, happyhorse11_server23, wan3_server23,
-// seavi_image_server15.
-// Naik tarif jadi 2 token: gemini_omni_server19, seedance25_server19,
-// wan30_server19, motion_control_v3_server10_30dtk.
-// Skema empat model baru + batas referensi semuanya sudah diprobe langsung dari
-// GET /v1/models 5 Nov 2026 (scratch/seavi-models-2026-11-05.json); probe ulang
-// dan bandingkan dengan `npx tsx scratch/audit-seavi-spec.ts`. Probe terakhir itu
-// juga mempersempit video_urls Kling 4.0 dan Wan 3.0 Prime dari 5 menjadi 1.
+// Skema model baru + batas referensi semuanya diprobe langsung dari GET /v1/models
+// (11 Nov 2026) — probe ulang dan bandingkan dengan `npx tsx scratch/audit-seavi-spec.ts`.
 // Tanpa kunci member, relay bisa memasang kunci server untuk member yang sudah
 // top up — lihat providerServerKey.ts.
 import { isServerKey, relayAuthHeaders } from './providerServerKey.js'
@@ -129,11 +129,32 @@ export const SEAVI_MODELS: Record<string, SeaviModelSpec> = {
     videoMode: 'multi',
     videoMax: 3,
     audio: true,
-    durations: [5, 10, 15],
+    // 11 Nov 2026: upstream menambah durasi 25 detik (schema /models: [5,10,15,25]).
+    durations: [5, 10, 15, 25],
     aspects: ['9:16', '16:9', '1:1', '3:4', '4:3'],
     // Upstream 1 Nov 2026 menaikkan batas prompt model ini ke 20.000 karakter.
     promptMax: 20000,
     promptRequired: false,
+  },
+  // Seedance 2.5 Server 10 — KEMBALI di katalog 11 Nov 2026 (pernah dicabut 1
+  // Nov). Skema upstream 11 Nov: multimodal, gambar 1-20, video 0-1, audio opsional,
+  // durasi 5/10/15/25, prompt wajib ≤2000, max_reference_video_duration 15.
+  seedance25_server10: {
+    id: 'seedance25_server10',
+    label: 'Seedance 2.5 · Server 10',
+    category: 'video_generation',
+    inputType: 'multimodal_to_video',
+    tokens: 2,
+    imageMode: 'multi',
+    imageMin: 1,
+    imageMax: 20,
+    videoMode: 'multi',
+    videoMax: 1,
+    audio: true,
+    durations: [5, 10, 15, 25],
+    aspects: ['9:16', '16:9', '1:1', '3:4', '4:3'],
+    promptMax: 2000,
+    promptRequired: true,
   },
   wan30_server19: {
     id: 'wan30_server19',
@@ -182,7 +203,8 @@ export const SEAVI_MODELS: Record<string, SeaviModelSpec> = {
     videoMode: 'multi',
     videoMax: 1, // upstream 5 Nov 2026: video_urls max_items 1
     audio: true,
-    durations: [5, 10, 15],
+    // 11 Nov 2026: upstream menambah durasi 30 detik (schema /models: [5,10,15,30]).
+    durations: [5, 10, 15, 30],
     aspects: ['9:16', '16:9', '1:1', '3:4', '4:3'],
     promptMax: 20000,
     promptRequired: true,
@@ -199,7 +221,8 @@ export const SEAVI_MODELS: Record<string, SeaviModelSpec> = {
     videoMode: 'multi',
     videoMax: 1, // upstream 5 Nov 2026: video_urls max_items 1
     audio: true,
-    durations: [5, 10, 15],
+    // 11 Nov 2026: upstream menambah durasi 30 detik (schema /models: [5,10,15,30]).
+    durations: [5, 10, 15, 30],
     aspects: ['9:16', '16:9', '1:1', '3:4', '4:3'],
     promptMax: 17000,
     promptRequired: true,
@@ -237,6 +260,25 @@ export const SEAVI_MODELS: Record<string, SeaviModelSpec> = {
     videoMode: 'none',
     durations: [5, 10, 15],
     aspects: ['9:16', '16:9', '1:1', '3:4', '4:3'],
+    promptMax: 2000,
+    promptRequired: true,
+  },
+  // ── Model baru 11 Nov 2026 — Kling 2.5 Turbo · Server 23 ──
+  // Skema upstream 11 Nov (probe /models): image-to-video, SATU gambar wajib,
+  // TANPA audio_url, tanpa aspect_ratio, durasi 5/10, prompt wajib ≤2000,
+  // dan hanya 1 token per generate — paling murah di katalog video.
+  kling25_turbo_server23: {
+    id: 'kling25_turbo_server23',
+    label: 'Kling 2.5 Turbo · Server 23',
+    category: 'video_generation',
+    inputType: 'image_to_video',
+    tokens: 1,
+    imageMode: 'single',
+    imageMin: 1,
+    imageMax: 1,
+    videoMode: 'none',
+    durations: [5, 10],
+    aspects: [], // upstream: tidak menerima aspect_ratio
     promptMax: 2000,
     promptRequired: true,
   },

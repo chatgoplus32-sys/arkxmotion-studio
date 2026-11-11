@@ -404,6 +404,7 @@ export const SEAVI_MODEL_TOKENS: Record<string, number> = {
   happyhorse11_server23: 2,
   kling4_server19: 2,
   motion_control_v3_server10_30dtk: 2,
+  seedance25_server10: 2,
   seedance25_server19: 2,
   wan30_prime_server19: 2,
   wan30_server19: 2,
