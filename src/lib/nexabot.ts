@@ -1916,23 +1916,32 @@ export async function fetchNexabotVoices(
   authOverride?: NexabotAuth | string,
 ): Promise<NexabotVoiceOption[]> {
   const auth = fillAuthFromStorage(normalizeAuth(authOverride))
-  const res = await fetch(`${NEXABOT_BASE}/voices`, {
-    headers: { ...authHeaders(auth), ...(await appAuthHeadersFresh()) },
-  })
-  const text = await res.text().catch(() => '')
-  let data: any
-  try { data = JSON.parse(text) } catch { data = null }
-  if (!res.ok || !data) {
-    throw new Error(jsonErrorMessage(text) || `NexaBot HTTP ${res.status}: ${text.slice(0, 200)}`)
+  try {
+    const res = await fetch(`${NEXABOT_BASE}/voices`, {
+      headers: { ...authHeaders(auth), ...(await appAuthHeadersFresh()) },
+    })
+    const text = await res.text().catch(() => '')
+    let data: any
+    try { data = JSON.parse(text) } catch { data = null }
+    if (!res.ok || !data) {
+      // Endpoint voice mungkin tidak tersedia pada semua akun NexaBot.
+      // Kembalikan array kosong agar Clone Voice tetap bisa digunakan
+      // tanpa memilih speaker ID tertentu.
+      console.warn('[fetchNexabotVoices] gagal:', res.status, text.slice(0, 200))
+      return []
+    }
+    const daftar = Array.isArray(data.voices) ? data.voices : []
+    return daftar
+      .map((v: any) => ({
+        id: String(v.id || v.speakerId || ''),
+        name: String(v.name || v.displayName || ''),
+        provider: String(v.provider || 'ElevenLabs'),
+      }))
+      .filter((v: NexabotVoiceOption) => v.id && v.name)
+  } catch (e: any) {
+    console.warn('[fetchNexabotVoices] error:', e.message)
+    return []
   }
-  const daftar = Array.isArray(data.voices) ? data.voices : []
-  return daftar
-    .map((v: any) => ({
-      id: String(v.id || v.speakerId || ''),
-      name: String(v.name || v.displayName || ''),
-      provider: String(v.provider || 'ElevenLabs'),
-    }))
-    .filter((v: NexabotVoiceOption) => v.id && v.name)
 }
 
 export interface NexabotVoiceCloneParams {
