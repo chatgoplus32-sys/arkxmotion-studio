@@ -37,6 +37,7 @@ const COMMANDS: CmdItem[] = [
   { id: 'song-cover', label: 'AI Song Cover', keywords: ['song','cover','musik','lagu'], route: '/generate/song-cover', icon: Music, group: 'Generate', proOnly: true },
   { id: 'voice-over', label: 'Voice Over', keywords: ['vo','voice','tts','suara'], route: '/generate/voice-over', icon: Mic, group: 'Generate' },
   { id: 'music-generator', label: 'Music Generator', keywords: ['music','musik','lagu','score'], route: '/generate/music-generator', icon: AudioLines, group: 'Generate' },
+  { id: 'music-studio', label: 'AI Music Studio', keywords: ['music','musik','lagu','suno','mureka','studio'], route: '/generate/music-studio', icon: AudioLines, group: 'Generate' },
   { id: 'ugc', label: 'Product UGC', keywords: ['ugc','product','produk','iklan'], route: '/generate/ugc', icon: Sparkles, group: 'Generate' },
   { id: 'providers', label: 'Providers & API Keys', keywords: ['provider','api','key','token','balance'], route: '/providers', icon: Upload, group: 'Manajemen' },
   { id: 'routing', label: 'Smart Routing', keywords: ['routing','route','auto','termurah'], route: '/manage/routing', icon: Route, group: 'Manajemen' },

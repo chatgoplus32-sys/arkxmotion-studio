@@ -23,6 +23,7 @@ const PAGE_META: Record<ActiveTask['page'], { href: string; label: string; icon:
   'ugc-storyboard': { href: '/generate/ugc-storyboard', label: 'UGC Storyboard', icon: Clapperboard },
   'voice-over': { href: '/generate/voice-over', label: 'Voice Over', icon: Mic },
   'music-generator': { href: '/generate/music-generator', label: 'Music Generator', icon: Music },
+  'music-studio': { href: '/generate/music-studio', label: 'AI Music Studio', icon: Music },
   'text-to-image': { href: '/generate/image', label: 'Image Generator', icon: ImageIcon },
   ugc: { href: '/generate/ugc', label: 'Product UGC', icon: Images },
   'clip-genius': { href: '/tools/clip-genius', label: 'Clip Genius', icon: Layers },

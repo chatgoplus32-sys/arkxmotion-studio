@@ -29,6 +29,7 @@ export type GenerationPage =
   | 'ugc-storyboard'
   | 'voice-over'
   | 'music-generator'
+  | 'music-studio'
   | 'text-to-image'
   | 'ugc'
   | 'clip-genius'
@@ -50,6 +51,7 @@ export const GENERATION_PAGE_KIND: Record<GenerationPage, GenerationKind> = {
   'ugc-storyboard': 'video',
   'voice-over': 'audio',
   'music-generator': 'audio',
+  'music-studio': 'audio',
   'text-to-image': 'image',
   ugc: 'image',
   'video-edit': 'video',
@@ -75,6 +77,7 @@ export const GENERATION_PAGE_PATH: Record<GenerationPage, string> = {
   'ugc-storyboard': '/generate/ugc-storyboard',
   'voice-over': '/generate/voice-over',
   'music-generator': '/generate/music-generator',
+  'music-studio': '/generate/music-studio',
   'text-to-image': '/generate/image',
   ugc: '/generate/ugc',
   'clip-genius': '/tools/clip-genius',

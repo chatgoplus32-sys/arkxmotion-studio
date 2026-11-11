@@ -77,6 +77,7 @@ const audioNav: NavItem[] = [
   { label: 'H3 Music Avatar', href: '/generate/h3-music-avatar', icon: <AudioLines className="h-4 w-4" />, pro: true },
   { label: 'Voice Over', href: '/generate/voice-over', icon: <Volume2 className="h-4 w-4" /> },
   { label: 'Music Generator', href: '/generate/music-generator', icon: <Music className="h-4 w-4" /> },
+  { label: 'AI Music Studio', href: '/generate/music-studio', icon: <AudioLines className="h-4 w-4" /> },
 ]
 
 const enhanceNav: NavItem[] = [

@@ -63,6 +63,7 @@ const RESULTS_PAGE_SOURCE: Record<CompletedResult['page'], string> = {
   'ugc-storyboard': 'UGC Storyboard',
   'voice-over': 'Voice Over',
   'music-generator': 'Music Generator',
+  'music-studio': 'AI Music Studio',
   'text-to-image': 'Image Generator',
   ugc: 'Product UGC',
   'clip-genius': 'Clip Genius',
