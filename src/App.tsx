@@ -56,7 +56,6 @@ const AdminSystemHealthPage = lazyWithRetry(() => import('@/pages/AdminSystemHea
 const SecondBrainPage = lazyWithRetry(() => import('@/pages/SecondBrain'))
 const ClipGeniusPage = lazyWithRetry(() => import('@/pages/ClipGenius'))
 const StudioRedirectPage = lazyWithRetry(() => import('@/pages/StudioRedirect'))
-const HealthAnimPage = lazyWithRetry(() => import('@/pages/HealthAnimPage'))
 const GeminiToolsPage = lazyWithRetry(() => import('@/pages/GeminiTools'))
 const UpgradeProPage = lazyWithRetry(() => import('@/pages/UpgradePro'))
 const MetadataCleanerPage = lazyWithRetry(() => import('@/pages/MetadataCleaner'))
@@ -76,6 +75,7 @@ const WatermarkRemoverPage = lazyWithRetry(() => import('@/pages/WatermarkRemove
 const VideoUpscalerPage = lazyWithRetry(() => import('@/pages/VideoUpscaler'))
 const SongCoverPage = lazyWithRetry(() => import('@/pages/SongCover'))
 const VoiceOverPage = lazyWithRetry(() => import('@/pages/VoiceOver'))
+const CloneVoicePage = lazyWithRetry(() => import('@/pages/CloneVoice'))
 const MusicGeneratorPage = lazyWithRetry(() => import('@/pages/MusicGenerator'))
 const MusicStudioPage = lazyWithRetry(() => import('@/pages/MusicStudio'))
 const ImageStudioPage = lazyWithRetry(() => import('@/pages/ImageStudio'))
@@ -248,6 +248,7 @@ export default function App() {
                         <Route path="/tools/metadata-cleaner" element={<MetadataCleanerPage />} />
                         <Route path="/generate/song-cover" element={<ProRoute><SongCoverPage /></ProRoute>} />
                         <Route path="/generate/voice-over" element={<VoiceOverPage />} />
+                        <Route path="/generate/clone-voice" element={<CloneVoicePage />} />
                         <Route path="/generate/music-generator" element={<MusicGeneratorPage />} />
                         <Route path="/generate/music-studio" element={<MusicStudioPage />} />
                         <Route path="/generate/image-studio" element={<ImageStudioPage />} />
@@ -256,7 +257,6 @@ export default function App() {
                         <Route path="/generate/upscaler" element={<UpscalerPage />} />
                         <Route path="/generate/image-to-video" element={<ImageToVideoPage />} />
                         <Route path="/generate/video-edit" element={<ProRoute><StudioRedirectPage /></ProRoute>} />
-                        <Route path="/generate/arkx-health" element={<HealthAnimPage />} />
                         <Route path="/generate/image" element={<TextToVideoPage />} />
                         <Route path="/generate/edit-image" element={<EditImagePage />} />
                         <Route path="/providers" element={<ProvidersPage />} />
