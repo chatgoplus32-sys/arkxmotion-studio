@@ -41,7 +41,7 @@ router.post('/topup', authenticateToken, (req: AuthRequest, res: Response) => {
     const { package_slug, proof_note } = req.body
     const plan = findSeaviPackage(package_slug)
     if (!plan) {
-      return res.status(400).json({ error: 'Paket tidak dikenal. Pilih 2–5 Token (Rp 4.000–Rp 10.000).' })
+      return res.status(400).json({ error: 'Paket tidak dikenal. Pilih 2-5 Token (Rp 3.400-Rp 8.500).' })
     }
     if (plan.price < SEAVI_MIN_TOPUP) {
       return res.status(400).json({ error: `Minimal topup Rp ${SEAVI_MIN_TOPUP.toLocaleString('id-ID')}` })

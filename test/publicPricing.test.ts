@@ -133,7 +133,7 @@ test('respons Seavi: harga per token, min topup, paket & bobot model', async () 
   assert.equal(seavi.min_topup, SEAVI_MIN_TOPUP)
   assert.equal(seavi.default_charge, SEAVI_DEFAULT_CHARGE)
   assert.deepEqual(seavi.packages, SEAVI_PACKAGES)
-  // 1 token = Rp 2.000: paket harus konsisten (4000=2, 10000=5).
+  // 1 token = Rp 1.700: paket harus konsisten (3400=2, 8500=5).
   for (const pkg of seavi.packages) {
     assert.ok(Number.isInteger(pkg.tokens) && pkg.tokens > 0, `${pkg.slug} token harus integer > 0`)
     assert.equal(pkg.price, pkg.tokens * SEAVI_TOKEN_PRICE)

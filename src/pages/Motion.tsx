@@ -97,7 +97,7 @@ const PROVIDERS = {
     { key: 'gp:kling-v3-pro-motion', label: 'Kling V3 Pro Motion Control (Genspark)', cr: 80 },
     { key: 'gp:kling-v3-std-motion', label: 'Kling V3 Standard Motion Control (Genspark)', cr: 60 },
   ]},
-  // Seavi Labs: harga per video dalam TOKEN (cr = token, 1 token = Rp 2.000).
+  // Seavi Labs: harga per video dalam TOKEN (cr = token, 1 token = Rp 1.700).
   // Katalog "Aktif (21)" 5 Nov 2026: Server 23 (15 dtk) 1 token, Server 10 (30 dtk) 2 token.
   seavi: { name: 'Seavi Labs', models: [
     { key: 'sv:motion_control_v3_server23_15dtk', label: 'Motion Control V3 · S23 15 dtk', cr: 1 },
@@ -123,7 +123,7 @@ const MOTION_PROVIDER_INFO: Record<MotionProviderId, { name: string; tagline: st
   seavi: {
     name: 'Seavi Labs',
     tagline: 'Bayar pakai token Seavi',
-    note: 'Tanpa API key — top up token di halaman Top Up Seavi (Rp 4.000 = 2 token). Model 15 dtk keluar tanpa suara; suara video referensi otomatis ditempel ulang di browser (+beberapa detik sebelum hasil tampil).',
+    note: 'Tanpa API key — top up token di halaman Top Up Seavi (Rp 3.400 = 2 token). Model 15 dtk keluar tanpa suara; suara video referensi otomatis ditempel ulang di browser (+beberapa detik sebelum hasil tampil).',
   },
 }
 
@@ -2658,7 +2658,7 @@ export default function MotionPage() {
               </div>
               {provider === 'seavi' && authRole !== 'admin' && authToken && (seaviTokens ?? 0) < totalCredits && (
                 <Link to="/topup/seavi" className="text-center text-[11px] font-medium text-primary hover:underline">
-                  Top Up Token Seavi (Rp 4.000 = 2 token) →
+                  Top Up Token Seavi (Rp 3.400 = 2 token) →
                 </Link>
               )}
             </div>

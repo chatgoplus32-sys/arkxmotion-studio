@@ -1,5 +1,5 @@
 // ─── Klien wallet Seavi ─────────────────────────────────────────────────────
-// Saldo TOKEN per user (1 token = Rp 2.000). Generate memotong N token sesuai
+// Saldo TOKEN per user (1 token = Rp 1.700). Generate memotong N token sesuai
 // bobot model; paket token dibeli di halaman /topup/seavi dan dikredit admin.
 // Semua angka otoritatif datang dari server lewat /api/seavi/*.
 //

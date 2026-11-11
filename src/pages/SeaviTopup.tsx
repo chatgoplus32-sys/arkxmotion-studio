@@ -174,7 +174,7 @@ export default function SeaviTopupPage() {
       </div>
 
       {step === 'select' && (
-        <Section title="Pilih Paket Token" sub="Minimal Rp 4.000 = 2 token">
+        <Section title="Pilih Paket Token" sub="Minimal Rp 3.400 = 2 token">
           <div className="grid grid-cols-2 gap-3 mb-4">
             {packages.map((p) => (
               <button

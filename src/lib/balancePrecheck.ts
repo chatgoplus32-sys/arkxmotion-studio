@@ -277,7 +277,7 @@ export async function precheckSeaviBalance(
         return {
           ok: false,
           balance: bal,
-          error: `Token Seavi tidak cukup: butuh ${minTokens} token, saldo ${bal} token. Top up di halaman Top Up Seavi (Rp 4.000 = 2 token).`,
+          error: `Token Seavi tidak cukup: butuh ${minTokens} token, saldo ${bal} token. Top up di halaman Top Up Seavi (Rp 3.400 = 2 token).`,
         }
       }
     } catch {

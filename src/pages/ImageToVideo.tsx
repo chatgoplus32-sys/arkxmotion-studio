@@ -112,7 +112,7 @@ export default function ImageToVideoPage() {
   const [seaviServerReady, setSeaviServerReady] = useState(false)
   // usage_id pemotongan yang masih bisa di-refund kalau generate gagal.
   const nbChargeRef = useRef<number | null>(null)
-  // Token wallet Seavi user (1 token = Rp 2.000). Null = belum dimuat / tamu.
+  // Token wallet Seavi user (1 token = Rp 1.700). Null = belum dimuat / tamu.
   const [seaviTokens, setSeaviTokens] = useState<number | null>(null)
   // batch_id pemotongan yang masih bisa di-refund kalau generate gagal.
   const seaviChargeRef = useRef<string | null>(null)
@@ -989,7 +989,7 @@ export default function ImageToVideoPage() {
     // Seavi: wallet token internal (deduct saat generate). Tamu tanpa login
     // tetap bisa memakai key sendiri tanpa potongan internal.
     if (provider === 'seavi' && seaviSpec && user?.role !== 'admin' && authToken && (seaviTokens ?? 0) < seaviSpec.tokens)
-      return `Token Seavi tidak cukup (${seaviTokens ?? 0} token, butuh ${seaviSpec.tokens} token). Top up di halaman Top Up Seavi (Rp 4.000 = 2 token).`
+      return `Token Seavi tidak cukup (${seaviTokens ?? 0} token, butuh ${seaviSpec.tokens} token). Top up di halaman Top Up Seavi (Rp 3.400 = 2 token).`
     if (provider === 'roboneo' && !imgFile) return 'Roboneo membutuhkan gambar input'
     if (provider === 'seavi' && seaviSpec) {
       const imgs = refFiles.filter((f) => f.type.startsWith('image/')).length
@@ -1358,7 +1358,7 @@ export default function ImageToVideoPage() {
         const seaviCost = seaviSpec.tokens * seaviUnits
         if (!seaviIsAdmin && authToken) {
           if ((seaviTokens ?? 0) < seaviCost) {
-            throw new Error(`Token Seavi tidak cukup (${seaviTokens ?? 0} token, butuh ${seaviCost} token). Top up di halaman Top Up Seavi (Rp 4.000 = 2 token).`)
+            throw new Error(`Token Seavi tidak cukup (${seaviTokens ?? 0} token, butuh ${seaviCost} token). Top up di halaman Top Up Seavi (Rp 3.400 = 2 token).`)
           }
           addLog(`[1/3] 💰 Memotong ${seaviCost} token Seavi...`, 'info', 'seavi')
           const charge = await chargeSeaviWallet(authToken, seaviSpec.id, seaviUnits)
@@ -3703,7 +3703,7 @@ export default function ImageToVideoPage() {
           </div>
         )}
 
-        {/* Seavi Pricing Info — wallet token (1 token = Rp 2.000) */}
+        {/* Seavi Pricing Info — wallet token (1 token = Rp 1.700) */}
         {provider === 'seavi' && (
           <div className="mt-3 p-3 rounded-xl border border-primary/20 bg-primary/5">
             <div className="flex items-center justify-between mb-2">
@@ -3725,7 +3725,7 @@ export default function ImageToVideoPage() {
             {user?.role !== 'admin' && authToken && (seaviTokens ?? 0) < (seaviSpec?.tokens ?? 1) && (
               <div className="mt-2 text-[11px]">
                 <a href="/topup/seavi" className="text-primary hover:underline font-medium">
-                  Top Up Token (Rp 4.000 = 2 token) →
+                  Top Up Token (Rp 3.400 = 2 token) →
                 </a>
               </div>
             )}

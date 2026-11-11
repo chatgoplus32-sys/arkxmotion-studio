@@ -358,16 +358,16 @@ export function getCreatepulsePriceRange(): { min: number; max: number } {
 }
 
 // ── Seavi ────────────────────────────────────────────────────────────────
-// Wallet TOKEN (bukan Rp): 1 token = Rp 2.000. User membeli paket token,
+// Wallet TOKEN (bukan Rp): 1 token = Rp 1.700. User membeli paket token,
 // generate memotong N token sesuai bobot model (lihat `tokens` di
 // src/lib/seavi.ts — angka di bawah harus selalu sama dengan spec itu).
-// Paket: Rp 4.000 = 2 token, Rp 10.000 = 5 token.
+// Paket: Rp 3.400 = 2 token, Rp 8.500 = 5 token.
 
 /** Harga 1 token Seavi dalam Rupiah. */
-export const SEAVI_TOKEN_PRICE = 2000
+export const SEAVI_TOKEN_PRICE = 1700
 
-/** Minimal top up Seavi (sama dengan paket terkecil). */
-export const SEAVI_MIN_TOPUP = 4000
+/** Minimal top up Seavi (sama dengan paket terkecil: 2 token × Rp 1.700). */
+export const SEAVI_MIN_TOPUP = 3400
 
 export interface SeaviPackagePlan {
   slug: string
@@ -379,13 +379,13 @@ export interface SeaviPackagePlan {
 }
 
 export const SEAVI_PACKAGES: SeaviPackagePlan[] = [
-  { slug: 'seavi_2', label: '2 Token', price: 4000, tokens: 2 },
-  { slug: 'seavi_3', label: '3 Token', price: 6000, tokens: 3 },
-  { slug: 'seavi_4', label: '4 Token', price: 8000, tokens: 4 },
-  { slug: 'seavi_5', label: '5 Token', price: 10000, tokens: 5 },
-  { slug: 'seavi_10', label: '10 Token', price: 20000, tokens: 10 },
-  { slug: 'seavi_25', label: '25 Token', price: 50000, tokens: 25 },
-  { slug: 'seavi_50', label: '50 Token', price: 100000, tokens: 50 },
+  { slug: 'seavi_2', label: '2 Token', price: 3400, tokens: 2 },
+  { slug: 'seavi_3', label: '3 Token', price: 5100, tokens: 3 },
+  { slug: 'seavi_4', label: '4 Token', price: 6800, tokens: 4 },
+  { slug: 'seavi_5', label: '5 Token', price: 8500, tokens: 5 },
+  { slug: 'seavi_10', label: '10 Token', price: 17000, tokens: 10 },
+  { slug: 'seavi_25', label: '25 Token', price: 42500, tokens: 25 },
+  { slug: 'seavi_50', label: '50 Token', price: 85000, tokens: 50 },
 ]
 
 /** Biaya default 1 generate (token) untuk model yang tidak dikenal. */

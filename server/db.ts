@@ -259,7 +259,7 @@ db.exec(`
 `)
 
 // ─── Wallet Seavi (token, bukan Rp) ────────────────────────────────────────
-// 1 token = Rp 2.000 (lihat shared/pricing.ts). `balance` dihitung dalam
+// 1 token = Rp 1.700 (lihat shared/pricing.ts). `balance` dihitung dalam
 // TOKEN, sedangkan `amount` di seavi_topup adalah Rupiah yang dibayar dan
 // `tokens` adalah token yang dikreditkan saat admin approve.
 db.exec(`

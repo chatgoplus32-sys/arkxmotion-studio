@@ -1,4 +1,4 @@
-﻿import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Select, Label, Textarea, EmptyState } from '@/components/ui'
 import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
@@ -107,7 +107,7 @@ export default function EditImagePage() {
   const addToast = useToastStore((s) => s.addToast)
   const { keys, fetchMaintenance } = useProviderManager()
   const { token: authToken, user } = useAuthStore()
-  // Token wallet Seavi (1 token = Rp 2.000). Null = belum dimuat / tamu.
+  // Token wallet Seavi (1 token = Rp 1.700). Null = belum dimuat / tamu.
   const [seaviTokens, setSeaviTokens] = useState<number | null>(null)
   // Wallet NexaBot (Rp 150/generate). Null = belum dimuat / tamu.
   const [nbWallet, setNbWallet] = useState<NexabotWallet | null>(null)
@@ -545,7 +545,7 @@ export default function EditImagePage() {
     let seaviUsageId: number | null = null
     if (!seaviIsAdmin && authToken) {
       if ((seaviTokens ?? 0) < seaviSpec.tokens) {
-        throw new Error(`Token Seavi tidak cukup (${seaviTokens ?? 0} token, butuh ${seaviSpec.tokens} token). Top up di halaman Top Up Seavi (Rp 4.000 = 2 token).`)
+        throw new Error(`Token Seavi tidak cukup (${seaviTokens ?? 0} token, butuh ${seaviSpec.tokens} token). Top up di halaman Top Up Seavi (Rp 3.400 = 2 token).`)
       }
       addLog(`[1/3] 💰 Memotong ${seaviSpec.tokens} token Seavi...`, 'info')
       const charge = await chargeSeaviWallet(authToken, seaviSpec.id, 1)

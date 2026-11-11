@@ -255,15 +255,15 @@ test('nama varian & pesan admin memakai label katalog', () => {
   }
 })
 
-test('katalog Seavi: 1 token Rp 2.000, paket 4rb=2 & 10rb=5', () => {
-  assert.equal(SEAVI_TOKEN_PRICE, 2000)
-  assert.equal(SEAVI_MIN_TOPUP, 4000)
+test('katalog Seavi: 1 token Rp 1.700, paket 3.400=2 & 8.500=5', () => {
+  assert.equal(SEAVI_TOKEN_PRICE, 1700)
+  assert.equal(SEAVI_MIN_TOPUP, 3400)
 
   const slugs = SEAVI_PACKAGES.map((p) => p.slug)
   assert.equal(new Set(slugs).size, slugs.length, 'slug paket harus unik')
   assert.deepEqual(
     SEAVI_PACKAGES.map((p) => [p.slug, p.price, p.tokens]),
-    [['seavi_2', 4000, 2], ['seavi_3', 6000, 3], ['seavi_4', 8000, 4], ['seavi_5', 10000, 5], ['seavi_10', 20000, 10], ['seavi_25', 50000, 25], ['seavi_50', 100000, 50]],
+    [['seavi_2', 3400, 2], ['seavi_3', 5100, 3], ['seavi_4', 6800, 4], ['seavi_5', 8500, 5], ['seavi_10', 17000, 10], ['seavi_25', 42500, 25], ['seavi_50', 85000, 50]],
   )
   // Harga paket harus persis tokens × harga token.
   for (const plan of SEAVI_PACKAGES) {
