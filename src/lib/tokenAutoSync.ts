@@ -28,6 +28,9 @@ export const AUTO_SYNC_PROVIDERS: AutoSyncDef[] = [
   { id: 'weavy', label: 'Weavy', icon: '🌊' },
   { id: 'leonardo', label: 'Leonardo', icon: '🎨' },
   { id: 'nexabot', label: 'NexaBot', icon: '🧠', kind: 'cookie' },
+  // MarkasTools: cookie sesi HttpOnly (ai.markastools.id) — cookie ini yang
+  // dipakai untuk mendaftarkan token MF- dan submit order Motion Control.
+  { id: 'markastools', label: 'MarkasTools', icon: '🌀', kind: 'cookie' },
   // Token yang dikirim extension auth-helper (G5/OneOver/Firefly) masuk ke field
   // `key`, jadi key di halaman Providers ikut segar tanpa copy-paste.
   { id: 'galleri5', label: 'G5 AI Studio', icon: '🎬' },
@@ -184,6 +187,25 @@ async function runProviderCheck(def: AutoSyncDef, key: string): Promise<CheckOut
         note: r.unlimited
           ? 'paket UNLIMITED aktif'
           : (r.plan ? `sesi aktif (${r.plan})` : 'sesi aktif'),
+      }
+    }
+    if (def.id === 'markastools') {
+      // `key` di sini = header Cookie session MarkasTools (dikirim extension).
+      const { checkMarkastoolsSession, listMarkastoolsAccounts } = await import('@/lib/markastools')
+      const s = await checkMarkastoolsSession(key)
+      if (!s.ok) return { status: 'invalid', note: s.error }
+      try {
+        const acc = await listMarkastoolsAccounts(key)
+        const markas = acc.ok
+          ? acc.accounts.filter((a: any) => String(a?.provider || '').toLowerCase() === 'runninghub')
+          : []
+        return {
+          status: 'active',
+          email: s.user?.email || undefined,
+          note: `sesi aktif · ${markas.length} akun Markasflow (MF-)`,
+        }
+      } catch {
+        return { status: 'active', note: 'sesi aktif' }
       }
     }
     if (def.id === 'riverside') {

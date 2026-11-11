@@ -725,6 +725,18 @@ function MarkastoolsSessionInput({ providerKeys, addKey, setKeyCookies, bulkText
     setLinking(false)
   }
 
+  const handleCopyAppToken = async () => {
+    try {
+      const { getAppAuthToken } = await import('@/lib/cdn')
+      const token = await getAppAuthToken()
+      if (!token) { setLinkMsg('Token app tidak tersedia — login dulu ke ArkxMotion (sesi bisa kedaluwarsa).'); return }
+      await navigator.clipboard.writeText(token)
+      setLinkMsg('✓ Token app disalin. Paste di popup extension “MarkasTools Cookie Manager” (field “Token App”), lalu klik “Kirim ke App”.')
+    } catch (e: any) {
+      setLinkMsg(`✗ ${e?.message || 'Gagal ambil token app'}`)
+    }
+  }
+
   const handleBulkAdd = async () => {
     const cookies = sessionKey?.cookies || ''
     // Token dari kolom bulk + token MF- yang tersimpan sebagai baris key.
@@ -793,6 +805,10 @@ function MarkastoolsSessionInput({ providerKeys, addKey, setKeyCookies, bulkText
           • Kalau status <b>invalid</b>: biasanya cookie terpotong, sesi sudah logout, atau akun belum aktif (langganan).
         </div>
         Token <span className="font-mono">MF-…</span> paste di kolom key di atas (format MF-… hasil MarkasKeyTool), lalu klik <b>Hubungkan</b> di bawah.
+        <div className="mt-1 text-[10px] text-[#7fd3ff]/90">
+          Cara tercepat: pasang extension <b>“MarkasTools Cookie Manager”</b> (halaman <b>Plugins</b> → MarkasTools) — dia ambil cookie HttpOnly
+          + kirim otomatis ke app, jadi tidak perlu paste manual dan tidak perlu login ulang tiap jam.
+        </div>
         <div className="mt-1 text-[10px] text-amber-300/85">⚠ Akun MarkasTools butuh langganan aktif (Rp 60rb/bulan) untuk menambah akun/token. Cookie bisa kedaluwarsa: kalau cek sesi gagal, login ulang lalu paste cookie baru.</div>
       </div>
       <div className="flex gap-2">
@@ -819,6 +835,11 @@ function MarkastoolsSessionInput({ providerKeys, addKey, setKeyCookies, bulkText
           disabled={linking || !sessionKey?.cookies || !tokenKey?.key?.trim()}
           className="text-[11px] px-3 py-1 rounded font-medium border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50"
         >{linking ? 'Menghubungkan…' : '🔗 Hubungkan token MF-… ke MarkasTools'}</button>
+        <button
+          onClick={handleCopyAppToken}
+          title="Salin token login ArkxMotion — dipakai extension MarkasTools untuk kirim cookie otomatis"
+          className="text-[11px] px-3 py-1 rounded font-medium border border-[#7fd3ff]/30 bg-[#7fd3ff]/10 text-[#7fd3ff] hover:bg-[#7fd3ff]/20"
+        >🔑 Salin token app</button>
         {sessionKey?.cookies && (
           <>
             <button

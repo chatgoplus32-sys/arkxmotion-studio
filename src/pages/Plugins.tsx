@@ -433,6 +433,18 @@ const PLUGINS: PluginInfo[] = [
     hasExtension: true,
     status: 'available',
   },
+  {
+    id: 'markastools',
+    name: 'MarkasTools',
+    icon: '🌀',
+    color: '#7fd3ff',
+    description: 'Ambil cookie session ai.markastools.id (HttpOnly) + AUTO-SYNC ke app — syarat utama agar token MF- bisa didaftarkan',
+    type: 'extension',
+    // Cookie sesi MarkasTools HttpOnly → hanya extension yang bisa membacanya.
+    hasScript: false,
+    hasExtension: true,
+    status: 'available',
+  },
 ]
 
 // ─── Install guide steps ─────────────────────────────────────────────────────
