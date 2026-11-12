@@ -196,6 +196,11 @@ body.am-idea-open .copy{display:none}
 .am-story-controls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:16px 0 12px}.am-story-controls label{display:grid;gap:6px;color:#aeb6c4;font-size:10px;font-weight:700}.am-story-controls select{width:100%;min-width:0;border:1px solid #343d4b;border-radius:9px;background:#151b25;color:#edf0f6;padding:10px;font:inherit;font-size:11px;outline:none}.am-story-controls select:focus{border-color:#ff9d68;box-shadow:0 0 0 2px rgba(255,157,104,.14)}
 .am-story-actions{display:flex;flex-wrap:wrap;gap:8px}.am-story-actions button{border-radius:9px;padding:10px 12px;font-size:11px;font-weight:800;cursor:pointer}.am-story-primary{border:0;background:linear-gradient(135deg,#ffc18e,#ff743f);color:#27140c}.am-story-secondary{border:1px solid #394353;background:#171e29;color:#dce2ec}.am-story-actions button:disabled{opacity:.38;cursor:not-allowed}.am-story-status{margin:12px 0;padding:9px 11px;border-radius:8px;background:rgba(255,255,255,.035);color:#aab4c3;font-size:10px;line-height:1.5}.am-story-summary{display:flex;flex-wrap:wrap;gap:7px;margin:10px 0}.am-story-stat{padding:7px 9px;border:1px solid #303a49;border-radius:8px;background:#121923;color:#dce4ee;font-size:10px}.am-story-stat b{color:#ffb17f}.am-storyboard-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.am-story-card{min-width:0;padding:12px;border:1px solid #2d3745;border-radius:11px;background:rgba(10,14,21,.76)}.am-story-card-top{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:8px}.am-story-num{color:#ffad79;font:800 9px ui-monospace,monospace;letter-spacing:.08em}.am-story-beat{padding:4px 7px;border-radius:999px;background:rgba(255,154,100,.12);color:#ffbd95;font-size:9px;font-weight:800}.am-story-line{margin:0 0 8px;color:#edf0f6;font-size:12px;font-weight:800;line-height:1.45}.am-story-meta{display:grid;grid-template-columns:1fr 1fr;gap:6px}.am-story-meta div{padding:7px;border-radius:7px;background:#151c27}.am-story-meta small{display:block;margin-bottom:3px;color:#8490a1;font-size:8px;text-transform:uppercase;letter-spacing:.07em}.am-story-meta span{display:block;color:#cbd3df;font-size:10px;line-height:1.4}.am-story-card-foot{display:flex;justify-content:space-between;gap:8px;margin-top:8px;color:#8793a4;font-size:9px}.am-story-foot{margin:10px 0 0;color:#7f8b9d;font-size:9px;line-height:1.5}
 @media(max-width:760px){.am-story-controls{grid-template-columns:1fr}.am-storyboard-grid{grid-template-columns:1fr}.am-story-head{display:block}.am-story-chip{display:inline-block;margin-top:9px}.am-story-actions button{flex:1 1 46%}}
+
+.am-story-ai-result{margin:12px 0;padding:14px;border:1px solid rgba(116,170,255,.28);border-radius:14px;background:linear-gradient(135deg,rgba(57,91,150,.16),rgba(26,31,43,.55));color:var(--text,#eef2ff)}
+.am-story-ai-result-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.am-story-ai-result p{margin:10px 0 0;line-height:1.65;white-space:pre-wrap;color:var(--muted,#c4cad8);font-size:13px}
+#amStoryGemini:disabled{opacity:.6;cursor:wait}
 </style>
 </head><body><header class="top"><div class="brand"><div class="logo"><svg aria-hidden="true" viewbox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><defs><lineargradient id="amLogoA" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#FFB067"></stop><stop offset="1" stop-color="#FF5A1F"></stop></lineargradient></defs><rect fill="url(#amLogoA)" height="60" rx="17" width="60" x="2" y="2"></rect><path d="M28 21.5 45.5 32 28 42.5Z" fill="#fff" stroke="#fff" stroke-linejoin="round" stroke-width="5"></path><path d="M11 24.5h9M8 32h12M11 39.5h9" opacity=".85" stroke="#fff" stroke-linecap="round" stroke-width="4"></path><path d="M50 8.5l1.7 4.6 4.6 1.7-4.6 1.7-1.7 4.6-1.7-4.6-4.6-1.7 4.6-1.7z" fill="#fff"></path></svg></div><b>ARKX AUTO Motion</b><span class="sub">Motion graphics &amp; editor video</span></div><div class="actions"><span class="save-state" id="saveState" role="status"></span><button aria-label="Beralih antara Explainer Studio dan Editor Video/Produk" class="btn" id="btnExplainerToggle" title="Beralih ke Editor Video & Produk" type="button"><span aria-hidden="true">🎬</span><span class="lbl" id="btnExplainerToggleLbl"> Editor Video &amp; Produk</span></button><button aria-label="Panduan" class="btn" id="btnGuide" title="Panduan" type="button"><span aria-hidden="true">📖</span><span class="lbl"> Panduan</span></button><button aria-label="Video baru" class="btn" hidden="" id="btnNew" title="Video baru" type="button"><span aria-hidden="true">＋</span><span class="lbl"> Video baru</span></button><button aria-label="Layar penuh (mode fokus untuk mengedit)" class="btn" id="btnFocus" title="Layar penuh / mode fokus" type="button"><span aria-hidden="true">⛶</span></button><button class="btn primary" hidden="" id="btnRender" type="button">⬇ Render Video</button></div></header><section id="landing"><div class="hero-brand"><div class="hero-logo"><svg aria-hidden="true" viewbox="0 0 64 64"><defs><lineargradient id="amLogoB" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#FFB067"></stop><stop offset="1" stop-color="#FF5A1F"></stop></lineargradient></defs><rect fill="url(#amLogoB)" height="60" rx="17" width="60" x="2" y="2"></rect><path d="M28 21.5 45.5 32 28 42.5Z" fill="#fff" stroke="#fff" stroke-linejoin="round" stroke-width="5"></path><path d="M11 24.5h9M8 32h12M11 39.5h9" opacity=".85" stroke="#fff" stroke-linecap="round" stroke-width="4"></path><path d="M50 8.5l1.7 4.6 4.6 1.7-4.6 1.7-1.7 4.6-1.7-4.6-4.6-1.7 4.6-1.7z" fill="#fff"></path></svg></div><div><div class="hero-name">ARKX AUTO Motion</div><span class="eyebrow">● Explainer & video studio</span></div></div><h1>Bikin video motion profesional<br/><em>cukup sekali klik.</em></h1><p class="lead">Mulai dari naskah di Explainer Studio, atau gunakan editor video dan produk yang sudah tersedia. Scene motion graphics dan voice-over diekspor sebagai WebM lokal. TTS bahasa Indonesia tersedia lewat backend Gemini; naskah dikirim hanya saat kamu meminta pembuatan VO.</p>
 <div class="drafts-box" hidden="" id="draftsBox"><h3>📂 Lanjutkan draf</h3><p class="hint">Semua editan tersimpan otomatis. Buka lagi kapan saja, edit, lalu render ulang.</p><div class="drafts" id="draftList"></div></div><div aria-live="polite" class="draft-need" hidden="" id="draftNeed" role="status"><div><b id="draftNeedT"></b><small>Semua editan tetap aman. Durasi draf <span id="draftNeedD"></span>. Pilih file video yang sama supaya teks &amp; efek tetap pas.</small></div><div class="row2"><button class="btn primary" id="draftNeedPick" type="button">📂 Pilih video</button><button class="btn" id="draftNeedCancel" type="button">Batal</button></div></div><div aria-label="Jenis video" class="modes" role="tablist"><button class="mode on" data-mode="video" role="tab" type="button">🎥 Punya video ngomong<small>Bicara ke kamera, podcast, ulasan, tutorial</small></button><button class="mode" data-mode="product" role="tab" type="button">🛍️ Tanpa video orang<small>Isi info produk + foto/video produk</small></button></div><section aria-labelledby="landStyleH" class="land-style"><div class="ls-h"><h2 id="landStyleH">Pilih gaya video ngomong &amp; jualan produk (55 gaya)</h2><span class="hint" id="lsHint">Arahkan kursor atau ketuk kartu untuk melihat gerakannya</span></div><select hidden="" id="optPreset"><option value="auto">✨ Otomatis (AI yang pilih &amp; racik)</option><option value="neon30">🔥 SUPER HOT · Neon Sinematik</option><option value="glowpaper">🔥 HOT · Glow Editorial</option><option value="glass">Glass Oranye</option><option value="hype">Hype Doodle</option><option value="clean">Clean Biru</option><option value="karaoke">Karaoke Kuning</option><option value="brutal">Neo Brutal</option><option value="editorial">Editorial Serif</option><option value="neon">Neon Cyber</option><option value="paper">Scrapbook</option><option value="aurora">Aurora Soft</option><option value="mono">Swiss Minimal</option><option value="y2k">Y2K Pop</option><option value="bold">Bold Statement</option><option value="glow">🔥 HOT · Blue Glow</option><option value="yellow">🔥 HOT · Kuning Tegas</option><option value="noir">Noir B&amp;W</option><option value="silver">Silver Chrome</option><option value="podcast">Podcast Serif</option><option value="prod:agent">🔥 HOT · Produk · Agent Noir</option><option value="prod:midnight">🔥 HOT · Produk · Midnight Story</option><option value="prod:hazard">🔥 HOT · Produk · Hazard Lab</option><option value="prod:launch">🔥 HOT · Produk · Tech Launch</option><option value="prod:promo">🔥 HOT · Produk · Promo Meledak</option><option value="prod:clean">Produk · Clean Studio</option><option value="prod:glass">Produk · Glass Premium</option><option value="prod:app">Produk · App &amp; UI Demo</option><option value="prod:mono">Produk · Monokrom Garis</option><option value="prod:silver">Produk · Silver Chrome</option><option value="prod:pastel">Produk · Pastel Ceria</option><option value="prod:tikshop">🔥 SUPER HOT · Produk · Keranjang Kuning</option><option value="prod:flashdeal">🔥 SUPER HOT · Produk · Gebyar Diskon Kembar</option><option value="prod:luxurygold">🔥 SUPER HOT · Produk · Royal Gold Luxury</option><option value="prod:skincareglow">🔥 HOT · Produk · Dewy Skincare Lab</option><option value="prod:kulinerpedas">🔥 HOT · Produk · Kuliner Menggoda</option><option value="prod:unboxreview">🔥 HOT · Produk · Unboxing &amp; Testimoni</option><option value="prod:beforeafter">🔥 HOT · Produk · Bukti Before-After</option><option value="prod:streetwear">🔥 HOT · Produk · Streetwear Drop</option><option value="prod:bundlinghemat">🔥 HOT · Produk · Paket Bundling Hemat</option><option value="prod:codlaris">🔥 HOT · Produk · Jagoan COD &amp; Grosir</option><option value="prod:herbalorganik">Produk · Herbal &amp; Organik Alami</option><option value="prod:kopikafe">Produk · Kopi &amp; Minuman Kafe</option><option value="prod:hijabmodest">Produk · Butik Hijab &amp; Gamis</option><option value="prod:gaminggear">Produk · Gaming &amp; RGB Setup</option><option value="prod:momkids">Produk · Bunda &amp; Si Kecil</option><option value="prod:otomotifpro">Produk · Garasi Otomotif Pro</option><option value="prod:homedecor">Produk · Estetik Dekor Rumah</option><option value="prod:katalogbento">Produk · Katalog Bento Fitur</option><option value="prod:klinikderma">Produk · Klinik &amp; Derma Pro</option><option value="prod:parfummist">Produk · Aura Parfum &amp; Mist</option><option value="prod:sportaktif">Produk · Sport &amp; Gym Energi</option><option value="prod:umkmlokal">Produk · Cerita UMKM &amp; Kerajinan</option><option value="prod:edukasiinfo">Produk · Edukasi Masalah → Solusi</option><option value="prod:hamperskado">Produk · Hampers &amp; Kado Spesial</option><option value="prod:flashneon">Produk · Neon Malam Viral</option></select><div class="chips" id="prodCatBar" style="margin:0 0 10px"></div><div class="style-grid" id="styleGrid"><button class="sg on" data-style="auto" type="button"><div class="sg-auto">✨<small>AI pilih</small></div><span>✨ Otomatis</span></button><button class="sg" data-style="neon30" type="button"><i class="hot">🔥 SUPER HOT</i><img alt="Contoh gaya Neon Sinematik" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Neon Sinematik</span></button><button class="sg" data-style="glowpaper" type="button"><i class="hot">🔥 HOT</i><img alt="Contoh gaya Glow Editorial" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Glow Editorial</span></button><button class="sg" data-style="glow" type="button"><i class="hot">🔥 HOT</i><img alt="Contoh gaya Blue Glow" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Blue Glow</span></button><button class="sg" data-style="yellow" type="button"><i class="hot">🔥 HOT</i><img alt="Contoh gaya Kuning Tegas" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Kuning Tegas</span></button><button class="sg" data-style="glass" type="button"><img alt="Contoh gaya Glass Oranye" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Glass Oranye</span></button><button class="sg" data-style="hype" type="button"><img alt="Contoh gaya Hype Doodle" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Hype Doodle</span></button><button class="sg" data-style="clean" type="button"><img alt="Contoh gaya Clean Biru" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Clean Biru</span></button><button class="sg" data-style="karaoke" type="button"><img alt="Contoh gaya Karaoke Kuning" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Karaoke Kuning</span></button><button class="sg" data-style="brutal" type="button"><img alt="Contoh gaya Neo Brutal" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Neo Brutal</span></button><button class="sg" data-style="editorial" type="button"><img alt="Contoh gaya Editorial Serif" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Editorial Serif</span></button><button class="sg" data-style="neon" type="button"><img alt="Contoh gaya Neon Cyber" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Neon Cyber</span></button><button class="sg" data-style="paper" type="button"><img alt="Contoh gaya Scrapbook" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Scrapbook</span></button><button class="sg" data-style="aurora" type="button"><img alt="Contoh gaya Aurora Soft" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Aurora Soft</span></button><button class="sg" data-style="mono" type="button"><img alt="Contoh gaya Swiss Minimal" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Swiss Minimal</span></button><button class="sg" data-style="y2k" type="button"><img alt="Contoh gaya Y2K Pop" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Y2K Pop</span></button><button class="sg" data-style="bold" type="button"><img alt="Contoh gaya Bold Statement" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Bold Statement</span></button><button class="sg" data-style="noir" type="button"><img alt="Contoh gaya Noir B&amp;W" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Noir B&amp;W</span></button><button class="sg" data-style="silver" type="button"><img alt="Contoh gaya Silver Chrome" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Silver Chrome</span></button><button class="sg" data-style="podcast" type="button"><img alt="Contoh gaya Podcast Serif" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Podcast Serif</span></button></div><p class="hint help" id="styleDesc">AI memilih dan meracik gaya sendiri sesuai isi &amp; suasana videomu: font, warna, bentuk kartu, animasi teks, dan latar.</p></section><section class="land-main" id="landMain"><div class="field full" hidden="" id="productForm"><div class="pf grid2"><h3 class="pstep full"><span>1</span> Info produk</h3><div class="field"><label class="l" for="pBrand">Nama brand *</label><input id="pBrand" placeholder="mis. AuraSkin"/></div><div class="field"><label class="l" for="pTitle">Nama produk / judul utama *</label><input id="pTitle" placeholder="mis. Sunscreen ringan tanpa whitecast"/></div><div class="field full"><label class="l" for="pTagline">Tagline</label><input id="pTagline" placeholder="mis. Nyaman dipakai seharian"/></div><div class="field full"><label class="l" for="pDesc">Deskripsi singkat</label><textarea id="pDesc" placeholder="Produk apa, untuk siapa, dan masalah apa yang diselesaikan" rows="2"></textarea></div><div class="field full"><label class="l" for="pFeatures">Fitur / keunggulan (1 per baris)</label><textarea id="pFeatures" placeholder="Ringan di kulit
@@ -312,7 +317,7 @@ Cocok untuk kulit berminyak" rows="3"></textarea></div><div class="field"><label
         <section class="am-story-architect" id="amStoryArchitect" aria-labelledby="amStoryTitle">
           <div class="am-story-head">
             <div>
-              <span class="am-story-kicker">HYBRID STORY SYSTEM · LOCAL WORKFLOW</span>
+              <span class="am-story-kicker">HYBRID STORY SYSTEM · GEMINI AI + LOCAL WORKFLOW</span>
               <h3 id="amStoryTitle">Story Architect <span>— Visual Director</span></h3>
               <p>Ubah naskah menjadi alur dokumenter dan storyboard: hook, konteks, penjelasan, bukti, klimaks, dan penutup. Hasilnya bisa diterapkan langsung ke scene editor.</p>
             </div>
@@ -330,18 +335,23 @@ Cocok untuk kulit berminyak" rows="3"></textarea></div><div class="field"><label
             </label>
           </div>
           <div class="am-story-actions">
-            <button type="button" class="am-story-primary" id="amStoryBuild">✦ Analisis naskah & buat storyboard</button>
+            <button type="button" class="am-story-primary" id="amStoryGemini" title="Analisis naskah dengan Gemini menggunakan API key yang tersimpan">✦ AI Story Director · Gemini</button>
+            <button type="button" class="am-story-secondary" id="amStoryBuild">Storyboard Lokal</button>
             <button type="button" class="am-story-secondary" id="amStoryApply" disabled>▶ Terapkan ke preview scene</button>
             <button type="button" class="am-story-secondary" id="amStoryExport" disabled>↓ Ekspor storyboard JSON</button>
             <button type="button" class="am-story-secondary" id="amStoryCopy" disabled>Salin shot list</button>
           </div>
-          <div class="am-story-status" id="amStoryStatus" role="status" aria-live="polite">Masukkan naskah terlebih dahulu. Storyboard disusun lokal di browser; tidak mengirim naskah ke layanan AI.</div>
+          <div class="am-story-status" id="amStoryStatus" role="status" aria-live="polite">Masukkan naskah, lalu pilih AI Story Director untuk analisis Gemini atau Storyboard Lokal untuk mode tanpa AI.</div>
+          <section class="am-story-ai-result" id="amStoryAiResult" hidden aria-live="polite">
+            <div class="am-story-ai-result-head"><b>Versi narasi dari Gemini</b><button type="button" class="am-story-secondary" id="amStoryUseNarrative">Gunakan naskah AI</button></div>
+            <p id="amStoryAiNarrative"></p>
+          </section>
           <div class="am-story-summary" id="amStorySummary" hidden></div>
           <div class="am-storyboard-grid" id="amStoryboardGrid" aria-live="polite"></div>
           <p class="am-story-foot">Catatan: shot list adalah arahan produksi yang dapat diedit. Ilustrasi preview memakai visual engine yang tersedia; arahan ini tidak membuat footage 3D atau efek After Effects native secara otomatis.</p>
         </section>
         <button class="am-idea-generate" id="amIdeaGenerateBtn" type="button"><span aria-hidden="true">✦ &nbsp;</span><span data-label>Susun scene &amp; beat motion</span></button>
-        <div class="am-idea-local-note"><b>Privasi &amp; API.</b> Pemecahan scene, preview, dan ekspor berjalan di browser. Naskah dikirim ke Google Gemini saat kamu meminta TTS. Jika kamu memasukkan API key di aplikasi ini, versi ini menyimpannya di localStorage browser pada perangkat ini; jangan gunakan perangkat bersama. Untuk produksi publik, pindahkan pemanggilan API ke backend dengan secret server-side. Maksimum TTS 2.500 karakter per permintaan.</div>
+        <div class="am-idea-local-note"><b>Privasi &amp; API.</b> Pemecahan scene, preview, dan ekspor berjalan di browser. Naskah dikirim ke Google Gemini hanya saat kamu menekan AI Story Director atau meminta TTS. Jika kamu memasukkan API key di aplikasi ini, versi ini menyimpannya di localStorage browser pada perangkat ini; jangan gunakan perangkat bersama. Untuk produksi publik, pindahkan pemanggilan API ke backend dengan secret server-side. Maksimum TTS 2.500 karakter per permintaan.</div>
       </section>
       <div class="am-idea-preview-col">
         <div class="am-idea-preview-head"><span>Preview composition</span><span class="am-idea-meta" id="amIdeaSceneMeta">CONTOH · 4 SCENE</span></div>
@@ -5282,12 +5292,107 @@ ${tweensJs}
       else if (mood === 'graphic') visual = 'Bold editorial motion graphics + data shapes';
       return {scene:i+1,beat,script:sentence,title,shot:shot.shot,visual,camera:shot.camera,transition:shot.transition,kinetic:shot.kinetic,motion:shot.motion,sound:soundFor(beat,pace),duration:Number(duration.toFixed(1)),genre,mood,pace};
     });
+    presentBoard(`Storyboard berhasil disusun secara lokal dari ${parts.length} potongan narasi. Periksa shot list, lalu terapkan arahan kamera, transisi, dan tipografi ke scene preview.`);
+  }
+  function readGeminiKey(){
+    try {
+      const raw=localStorage.getItem('automotion:key');
+      if(!raw) return '';
+      const parsed=JSON.parse(raw);
+      return typeof parsed==='string'?parsed:(parsed?.apiKey||parsed?.key||'');
+    } catch { return ''; }
+  }
+  function storyModel(){
+    const selected=byId('optModel')?.value?.trim();
+    return selected || 'gemini-3-flash-preview';
+  }
+  function extractGeminiText(data){
+    const parts=data?.candidates?.[0]?.content?.parts||[];
+    return parts.map(p=>p.text||'').join('\n').trim();
+  }
+  function parseGeminiJson(raw){
+    const cleaned=String(raw||'').replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'').trim();
+    try{return JSON.parse(cleaned);}catch{}
+    const first=cleaned.indexOf('{'),last=cleaned.lastIndexOf('}');
+    if(first>=0&&last>first)return JSON.parse(cleaned.slice(first,last+1));
+    throw new Error('Respons Gemini tidak berisi JSON storyboard yang valid.');
+  }
+  const allowedCamera=new Set(['auto','push-in','pull-out','pan-right','pan-left','dutch-tilt','diagram-zoom','static']);
+  const allowedTransition=new Set(['auto','diagonal-wipe','radial-iris','split-shutter','curtain-sweep','whip-pan','liquid-wave','flash-cut']);
+  const allowedKinetic=new Set(['auto','pop-pill','flip-3d','brush-sweep','typewriter','split-flap']);
+  function safeEnum(value,set,fallback){const v=String(value||'').trim().toLowerCase();return set.has(v)?v:fallback;}
+  function normalizeAiBoard(payload,genre,mood,pace){
+    const raw=Array.isArray(payload?.scenes)?payload.scenes:[];
+    if(!raw.length)throw new Error('Gemini belum menghasilkan daftar scene. Coba ulangi dengan naskah yang lebih jelas.');
+    return raw.slice(0,24).map((x,i)=>{
+      const script=clean(x.script||x.narration||x.voiceover||'');
+      const beat=clean(x.beat||x.storyBeat|| (i===0?'HOOK · PEMBUKA':i===raw.length-1?'PENUTUP · KESIMPULAN':'PENGEMBANGAN · INSIGHT'));
+      const duration=Math.max(2,Math.min(18,Number(x.duration)||Math.max(3,script.split(/\s+/).length*.34)));
+      return {
+        scene:i+1,beat,script:script||'Narasi scene '+(i+1),
+        title:clean(x.title||x.headline||script).slice(0,110),
+        shot:clean(x.shot||x.shotType||'Medium shot + visual pendukung'),
+        visual:clean(x.visual||x.visualDirection||'Cinematic documentary visual + motion graphic overlay'),
+        camera:safeEnum(x.camera,allowedCamera,'push-in'),
+        transition:safeEnum(x.transition,allowedTransition,'diagonal-wipe'),
+        kinetic:safeEnum(x.kinetic,allowedKinetic,'pop-pill'),
+        motion:clean(x.motion||x.animationDirection||'Gerakan bertahap mengikuti penekanan narasi.'),
+        sound:clean(x.sound||x.soundCue||'Ambient cinematic + subtle whoosh'),
+        duration:Number(duration.toFixed(1)),genre,mood,pace,
+        imagePrompt:clean(x.imagePrompt||x.visualPrompt||''),
+        continuity:clean(x.continuity||x.continuityNotes||'')
+      };
+    }).filter(x=>x.script);
+  }
+  function presentBoard(message){
     renderBoard();
-    const total = currentBoard.reduce((a,x)=>a+x.duration,0);
-    byId('amStorySummary').hidden = false;
-    byId('amStorySummary').innerHTML = `<span class="am-story-stat"><b>${currentBoard.length}</b> scene / shot</span><span class="am-story-stat"><b>${total.toFixed(1)}s</b> estimasi durasi</span><span class="am-story-stat"><b>${genreLabel(genre)}</b> format cerita</span><span class="am-story-stat"><b>${moodLabel(mood)}</b> art direction</span>`;
-    byId('amStoryStatus').textContent = `Storyboard berhasil disusun secara lokal dari ${parts.length} potongan narasi. Periksa shot list, lalu terapkan arahan kamera, transisi, dan tipografi ke scene preview.`;
+    const total=currentBoard.reduce((a,x)=>a+x.duration,0);
+    byId('amStorySummary').hidden=false;
+    byId('amStorySummary').innerHTML=`<span class="am-story-stat"><b>${currentBoard.length}</b> scene / shot</span><span class="am-story-stat"><b>${total.toFixed(1)}s</b> estimasi durasi</span><span class="am-story-stat"><b>${genreLabel(byId('amStoryGenre').value)}</b> format cerita</span><span class="am-story-stat"><b>${moodLabel(byId('amStoryMood').value)}</b> art direction</span>`;
+    byId('amStoryStatus').textContent=message;
     ['amStoryApply','amStoryExport','amStoryCopy'].forEach(id=>byId(id).disabled=false);
+  }
+  async function buildWithGemini(){
+    const button=byId('amStoryGemini');
+    const text=source.value.trim();
+    if(!text){byId('amStoryStatus').textContent='Tulis atau tempel naskah terlebih dahulu.';source.focus();return;}
+    const apiKey=readGeminiKey();
+    if(!apiKey){byId('amStoryStatus').textContent='Gemini API Key belum ditemukan. Simpan API key melalui menu pengaturan API di aplikasi, lalu coba lagi.';return;}
+    const genre=byId('amStoryGenre').value,mood=byId('amStoryMood').value,pace=byId('amStoryPace').value;
+    const original=button.textContent;
+    button.disabled=true;button.textContent='◌ Gemini sedang menyusun cerita…';
+    byId('amStoryStatus').textContent='Mengirim naskah ke Gemini untuk analisis cerita, pengembangan narasi, shot direction, dan motion design…';
+    byId('amStoryAiResult').hidden=true;
+    const system=`Kamu adalah senior documentary showrunner, creative director, editor film, dan Remotion motion-graphics designer. Buat hasil produksi yang spesifik, sinematik, cerdas, tidak generik, dan layak dipakai sebagai blueprint video. Bahasa output Indonesia. Pertahankan fakta, nama, angka, dan maksud sumber; jangan mengarang data atau kutipan. Bila fakta belum tersedia, jangan membuat klaim baru. Cerita harus punya hook kuat, progresi sebab-akibat, variasi visual, transisi emosional, payoff, dan penutup. Hindari pengulangan shot push-in/zoom yang sama. Hybrid berarti footage/documentary visual berpadu dengan animasi grafis yang punya fungsi menjelaskan. Setiap scene harus memiliki satu gagasan visual yang jelas, komposisi, gerakan kamera, gerak objek, tipografi, dan sound cue yang bisa dieksekusi. Durasi scene realistis dan sesuai panjang VO.`;
+    const prompt=`Buat AI STORY DIRECTOR untuk naskah berikut.\n\nJENIS: ${genre}\nNUANSA: ${mood}\nTEMPO: ${pace}\nTARGET: storyboard produksi video 9:16/16:9 adaptif, hybrid documentary + premium motion graphics.\n\nNASKAH ASLI:\n${text}\n\nTUGAS:\n1. Tulis ulang narasi menjadi versi lebih kuat, mengalir, natural saat dibacakan, dan tidak bertele-tele. Pertahankan inti serta semua fakta.\n2. Pecah menjadi 4 sampai 12 scene sesuai kompleksitas naskah. Jangan memecah kalimat secara mekanis.\n3. Buat visual dan motion direction yang benar-benar menjelaskan isi tiap scene, dengan variasi shot dan bahasa kamera.\n4. Untuk setiap scene berikan imagePrompt dalam bahasa Inggris yang detail: subject, environment, framing, lens feel, lighting, color, depth, style, negative constraints, no text unless needed. Beri continuity notes untuk menjaga konsistensi subjek/lokasi.\n5. Pilih camera hanya dari: auto, push-in, pull-out, pan-right, pan-left, dutch-tilt, diagram-zoom, static.\n6. Pilih transition hanya dari: auto, diagonal-wipe, radial-iris, split-shutter, curtain-sweep, whip-pan, liquid-wave, flash-cut.\n7. Pilih kinetic hanya dari: auto, pop-pill, flip-3d, brush-sweep, typewriter, split-flap.\n8. Setiap scene punya beat, script, title, shot, visual, camera, transition, kinetic, motion, sound, duration (detik), imagePrompt, continuity.\n\nKembalikan JSON murni dengan struktur {"narrative":"...","storyTitle":"...","creativeDirection":"...","scenes":[...]}. Jangan sertakan markdown atau teks di luar JSON.`;
+    const request={contents:[{role:'user',parts:[{text:system+'\n\n'+prompt}]}],generationConfig:{temperature:.82,topP:.92,maxOutputTokens:12000,responseMimeType:'application/json'}};
+    const models=[storyModel(),'gemini-2.5-flash'].filter((v,i,a)=>v&&a.indexOf(v)===i);
+    let lastError=null;
+    try{
+      let data=null,usedModel='';
+      for(const model of models){
+        const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),120000);
+        try{
+          const response=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':apiKey},body:JSON.stringify(request),signal:controller.signal});
+          const body=await response.json().catch(()=>({}));
+          if(!response.ok){const msg=body?.error?.message||`HTTP ${response.status}`;lastError=new Error(msg);if((response.status===404||response.status===400)&&model!==models[models.length-1])continue;throw lastError;}
+          data=body;usedModel=model;break;
+        }finally{clearTimeout(timer);}
+      }
+      if(!data)throw lastError||new Error('Gemini tidak mengembalikan respons.');
+      const raw=extractGeminiText(data);if(!raw)throw new Error('Respons Gemini kosong. Periksa kuota dan akses model API key.');
+      const result=parseGeminiJson(raw);
+      currentBoard=normalizeAiBoard(result,genre,mood,pace);
+      if(!currentBoard.length)throw new Error('Storyboard kosong setelah validasi.');
+      const narrative=clean(result.narrative||currentBoard.map(x=>x.script).join('\n\n'));
+      byId('amStoryAiNarrative').textContent=narrative;
+      byId('amStoryAiResult').hidden=false;
+      byId('amStoryUseNarrative').onclick=()=>{source.value=narrative;source.dispatchEvent(new Event('input',{bubbles:true}));byId('amStoryStatus').textContent='Naskah versi AI diterapkan ke kolom naskah. Storyboard yang sudah dibuat tetap tersedia.';};
+      presentBoard(`Storyboard dibuat oleh Gemini (${usedModel}). ${currentBoard.length} scene siap ditinjau. Periksa fakta, prompt visual, dan shot sebelum diterapkan.`);
+    }catch(err){
+      const msg=err?.name==='AbortError'?'Waktu tunggu Gemini habis. Coba naskah lebih pendek atau ulangi.':(err?.message||'Kesalahan tidak diketahui');
+      byId('amStoryStatus').textContent='AI Story Director gagal: '+msg+' — storyboard lokal tetap tersedia sebagai alternatif.';
+    }finally{button.disabled=false;button.textContent=original;}
   }
   function genreLabel(v){return ({documentary:'Dokumenter',educational:'Edukasi',science:'Sains',history:'Sejarah',inspirational:'Inspiratif'})[v]||v;}
   function moodLabel(v){return ({hybrid:'Hybrid',cinematic:'Cinematic',graphic:'Motion graphic'})[v]||v;}
@@ -5301,7 +5406,7 @@ ${tweensJs}
       top.append(num,beat);
       const line=document.createElement('p'); line.className='am-story-line'; line.textContent=item.title;
       const meta=document.createElement('div'); meta.className='am-story-meta';
-      const fields=[['SHOT TYPE',item.shot],['VISUAL DIRECTION',item.visual],['CAMERA',labelCamera(item.camera)],['MOTION & TYPOGRAPHY',item.motion],['TRANSITION',labelTransition(item.transition)],['SOUND CUE',item.sound]];
+      const fields=[['SHOT TYPE',item.shot],['VISUAL DIRECTION',item.visual],['CAMERA',labelCamera(item.camera)],['MOTION & TYPOGRAPHY',item.motion],['TRANSITION',labelTransition(item.transition)],['SOUND CUE',item.sound],...(item.imagePrompt?[['AI VISUAL PROMPT',item.imagePrompt]]:[]),...(item.continuity?[['CONTINUITY',item.continuity]]:[])];
       fields.forEach(([label,value])=>{const box=document.createElement('div');const small=document.createElement('small');small.textContent=label;const span=document.createElement('span');span.textContent=value;box.append(small,span);meta.append(box);});
       const foot=document.createElement('div');foot.className='am-story-card-foot';
       const time=document.createElement('span');time.textContent=`Estimasi ${item.duration}s`;
@@ -5338,9 +5443,10 @@ ${tweensJs}
     const payload={app:'ARKX AUTO Motion',module:'Hybrid Story Architect',version:1,createdAt:new Date().toISOString(),sourceText:source.value,storySettings:{genre:byId('amStoryGenre').value,mood:byId('amStoryMood').value,pace:byId('amStoryPace').value},storyboard:currentBoard};
     const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});download(blob,'ARKX_Hybrid_Storyboard.json');
   }
-  function toMarkdown(){return ['# ARKX AUTO Motion — Hybrid Storyboard','',`Genre: ${genreLabel(byId('amStoryGenre').value)} | Mood: ${moodLabel(byId('amStoryMood').value)}`,'',...currentBoard.flatMap(x=>[`## Shot ${String(x.scene).padStart(2,'0')} — ${x.beat}`,`**Narasi:** ${x.script}`,`**Shot:** ${x.shot}`,`**Visual:** ${x.visual}`,`**Kamera:** ${labelCamera(x.camera)}`,`**Gerak:** ${x.motion}`,`**Transisi:** ${labelTransition(x.transition)}`,`**Audio:** ${x.sound}`,`**Durasi:** ${x.duration}s`,''])].join('\n');}
+  function toMarkdown(){return ['# ARKX AUTO Motion — Hybrid Storyboard','',`Genre: ${genreLabel(byId('amStoryGenre').value)} | Mood: ${moodLabel(byId('amStoryMood').value)}`,'',...currentBoard.flatMap(x=>[`## Shot ${String(x.scene).padStart(2,'0')} — ${x.beat}`,`**Narasi:** ${x.script}`,`**Shot:** ${x.shot}`,`**Visual:** ${x.visual}`,`**Kamera:** ${labelCamera(x.camera)}`,`**Gerak:** ${x.motion}`,`**Transisi:** ${labelTransition(x.transition)}`,`**Audio:** ${x.sound}`,`**Durasi:** ${x.duration}s`,...(x.imagePrompt?[`**AI Visual Prompt:** ${x.imagePrompt}`]:[]),...(x.continuity?[`**Continuity:** ${x.continuity}`]:[]),''])].join('\n');}
   function download(blob,name){const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1200);}
   byId('amStoryBuild').addEventListener('click',buildBoard);
+  byId('amStoryGemini').addEventListener('click',buildWithGemini);
   byId('amStoryApply').addEventListener('click',applyBoard);
   byId('amStoryExport').addEventListener('click',exportBoard);
   byId('amStoryCopy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(toMarkdown());byId('amStoryStatus').textContent='Shot list berhasil disalin.';}catch(e){download(new Blob([toMarkdown()],{type:'text/markdown'}),'ARKX_Hybrid_Shot_List.md');byId('amStoryStatus').textContent='Clipboard tidak tersedia; shot list diunduh sebagai Markdown.';}});
