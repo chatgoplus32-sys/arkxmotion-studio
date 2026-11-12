@@ -110,15 +110,40 @@ test('submitMarkasOrder: POST /api/order/generate dengan field lengkap', async (
   assert.equal(body.orientation, 'video')
 })
 
-test('uploadMarkasMedia: POST /api/order/upload FormData → {url}', async () => {
+test('uploadMarkasMedia: upload-ticket lalu (server) upload → {url}', async () => {
+  const urls: string[] = []
   globalThis.fetch = (async (input: any) => {
-    calls.push(String(input))
+    urls.push(String(input))
     return jsonResponse({ ok: true, url: 'https://pool/media-1.jpg' })
   }) as typeof fetch
 
   const url = await uploadMarkasMedia(new File(['img'], 'x.jpg', { type: 'image/jpeg' }), COOKIE)
   assert.equal(url, 'https://pool/media-1.jpg')
-  assert.equal(calls[0], '/api/public/markastools/api/order/upload')
+  // Alur 2 panggilan: dulu minta tiket unggah, lalu unggah lewat server.
+  assert.deepEqual(urls, [
+    '/api/public/markastools/api/order/upload-ticket',
+    '/api/public/markastools/api/order/upload',
+  ])
+})
+
+test('uploadMarkasMedia: mode client (ticket.upload_url) unggah langsung ke CDN', async () => {
+  const calls: Array<{ url: string; init?: any }> = []
+  globalThis.fetch = (async (input: any, init?: any) => {
+    const url = String(input)
+    calls.push({ url, init })
+    if (url.endsWith('/api/order/upload-ticket')) {
+      return jsonResponse({ ok: true, upload_url: 'https://pool.cdn/upload', access_token: 'tok-1', recipe_id: 'rec-7' })
+    }
+    return jsonResponse({ ok: true, url: 'https://pool/direct.jpg' })
+  }) as typeof fetch
+
+  const url = await uploadMarkasMedia(new File(['img'], 'x.jpg', { type: 'image/jpeg' }), COOKIE)
+  assert.equal(url, 'https://pool/direct.jpg')
+  assert.equal(calls.length, 2)
+  assert.equal(calls[1].url, 'https://pool.cdn/upload')
+  const headers = (calls[1].init?.headers || {}) as Record<string, string>
+  assert.equal(headers.Authorization, 'Bearer tok-1')
+  assert.equal(headers['x-app-recipeid'], 'rec-7')
 })
 
 test('findMarkasResultUrls: menggali URL hasil di payload job', () => {
