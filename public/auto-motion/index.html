@@ -6,7 +6,7 @@
 
 /* ARKX AUTO Motion · Skill Library */
 .am-skill-library{margin:14px 0 16px;padding:13px;border:1px solid #35313a;border-radius:14px;background:radial-gradient(120% 150% at 0 0,rgba(255,106,42,.13),transparent 60%),#101217;box-shadow:0 12px 32px rgba(0,0,0,.16)}
-.am-skill-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}.am-skill-kicker{font:700 9px 'JetBrains Mono',monospace;letter-spacing:.13em;color:#ffad78}.am-skill-head h3{font-size:14px;line-height:1.25;margin:4px 0}.am-skill-head p{font-size:10px;line-height:1.5;color:#9aa1af;margin:0;max-width:430px}.am-skill-count{flex:none;border:1px solid #55402f;border-radius:99px;padding:4px 7px;color:#ffc08f;font:700 9px 'JetBrains Mono',monospace}.am-skill-controls{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;margin-top:11px}.am-skill-controls select{min-width:0;background:#0b0d12;border:1px solid #393d49;border-radius:8px;color:#f1f2f5;padding:8px;font-size:11px}.am-skill-apply{border:0;border-radius:8px;padding:8px 11px;background:linear-gradient(135deg,#ff9a55,#f15a24);color:#211006;font-size:10px;font-weight:850;white-space:nowrap}.am-skill-description{min-height:34px;margin-top:8px;color:#b9bfca;font-size:10px;line-height:1.5}.am-skill-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.am-skill-secondary{border:1px solid #343946;border-radius:7px;background:#171a21;color:#c6cbd5;padding:6px 8px;font-size:9px;font-weight:650}.am-skill-status{margin-top:8px;color:#737d8d;font-size:9px;line-height:1.4}.am-skill-library button:focus-visible,.am-skill-library select:focus-visible{outline:2px solid #ff9b63;outline-offset:2px}
+.am-skill-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}.am-skill-kicker{font:700 9px 'JetBrains Mono',monospace;letter-spacing:.13em;color:#ffad78}.am-skill-head h3{font-size:14px;line-height:1.25;margin:4px 0}.am-skill-head p{font-size:10px;line-height:1.5;color:#9aa1af;margin:0;max-width:430px}.am-skill-count{flex:none;border:1px solid #55402f;border-radius:99px;padding:4px 7px;color:#ffc08f;font:700 9px 'JetBrains Mono',monospace}.am-skill-controls{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;margin-top:11px}.am-skill-controls select{min-width:0;background:#0b0d12;border:1px solid #393d49;border-radius:8px;color:#f1f2f5;padding:8px;font-size:11px}.am-skill-apply{border:0;border-radius:8px;padding:8px 11px;background:linear-gradient(135deg,#ff9a55,#f15a24);color:#211006;font-size:10px;font-weight:850;white-space:nowrap}.am-skill-description{min-height:34px;margin-top:8px;color:#b9bfca;font-size:10px;line-height:1.5;white-space:pre-line}.am-skill-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.am-skill-secondary{border:1px solid #343946;border-radius:7px;background:#171a21;color:#c6cbd5;padding:6px 8px;font-size:9px;font-weight:650}.am-skill-status{margin-top:8px;color:#737d8d;font-size:9px;line-height:1.4}.am-skill-library button:focus-visible,.am-skill-library select:focus-visible{outline:2px solid #ff9b63;outline-offset:2px}.am-preflight{margin-top:11px;padding:10px;border:1px solid #303744;border-radius:10px;background:rgba(7,10,16,.72)}.am-preflight-head{display:flex;align-items:center;justify-content:space-between;gap:8px}.am-preflight-head b{font-size:10px;color:#eef1f7}.am-preflight-sub{margin:5px 0 8px;color:#8993a3;font-size:9px;line-height:1.45}.am-preflight-results{display:grid;gap:5px}.am-preflight-idle{color:#8993a3;font-size:9px}.am-preflight-item{display:flex;align-items:flex-start;gap:7px;color:#c4cbd6;font-size:9px;line-height:1.4}.am-preflight-item strong{font-weight:750}.am-preflight-item .pf-icon{flex:none;width:14px;text-align:center}.am-preflight-item.ok .pf-icon{color:#57d99b}.am-preflight-item.warn .pf-icon{color:#ffc078}.am-preflight-item.fail .pf-icon{color:#ff7777}.am-preflight-foot{margin-top:7px;padding-top:7px;border-top:1px solid #29303a;color:#a9b3c2;font-size:9px;line-height:1.45}
 @media(max-width:560px){.am-skill-controls{grid-template-columns:1fr}.am-skill-apply{width:100%;padding:10px}.am-skill-head p{max-width:280px}}
 </style>
 <style>
@@ -282,7 +282,7 @@ Cocok untuk kulit berminyak" rows="3"></textarea></div><div class="field"><label
         <section class="am-skill-library" aria-labelledby="amSkillTitle">
           <div class="am-skill-head">
             <div><span class="am-skill-kicker">ARKX MOTION SYSTEM</span><h3 id="amSkillTitle">Skill Library · Pro Motion</h3><p>Pilih preset workflow untuk mengatur art direction, tempo, kamera, transisi, tipografi, dan format output.</p></div>
-            <span class="am-skill-count">12 SKILLS</span>
+            <span class="am-skill-count" id="amSkillCount">33 SKILLS</span>
           </div>
           <div class="am-skill-controls">
             <select id="amSkillSelect" aria-label="Pilih skill motion"></select>
@@ -292,11 +292,18 @@ Cocok untuk kulit berminyak" rows="3"></textarea></div><div class="field"><label
           <div class="am-skill-actions">
             <button type="button" class="am-skill-secondary" id="amSkillSave">＋ Simpan konfigurasi saat ini</button>
             <button type="button" class="am-skill-secondary" id="amSkillExport">↓ Ekspor skill JSON</button>
+            <button type="button" class="am-skill-secondary" id="amSkillImportBtn">↑ Impor skill JSON</button>
+            <input type="file" id="amSkillImportFile" accept="application/json,.json" hidden>
           </div>
-          <div class="am-skill-status" id="amSkillStatus" role="status" aria-live="polite">Skill preset hanya mengubah pengaturan motion; naskah dan aset tetap aman.</div>
+          <div class="am-skill-status" id="amSkillStatus" role="status" aria-live="polite">Skill preset mengatur workflow dan parameter motion; naskah dan aset tetap aman.</div>
+          <div class="am-preflight" aria-labelledby="amPreflightTitle">
+            <div class="am-preflight-head"><b id="amPreflightTitle">Project Preflight · Quality Check</b><button type="button" class="am-skill-secondary" id="amPreflightRun">Periksa proyek</button></div>
+            <p class="am-preflight-sub">Audit cepat sebelum preview dan ekspor: naskah, scene, durasi, audio, serta dukungan format browser.</p>
+            <div id="amPreflightResults" class="am-preflight-results" aria-live="polite"><span class="am-preflight-idle">Belum diperiksa. Jalankan pemeriksaan sebelum render.</span></div>
+          </div>
         </section>
         <button class="am-idea-generate" id="amIdeaGenerateBtn" type="button"><span aria-hidden="true">✦ &nbsp;</span><span data-label>Susun scene &amp; beat motion</span></button>
-        <div class="am-idea-local-note"><b>Privasi.</b> Pemecahan scene, preview, dan ekspor berjalan di browser. Naskah hanya dikirim ke Google Gemini saat kamu menekan tombol TTS; kunci API disimpan sebagai secret server-side dan tidak ada di browser. Maksimum TTS 2.500 karakter per permintaan.</div>
+        <div class="am-idea-local-note"><b>Privasi &amp; API.</b> Pemecahan scene, preview, dan ekspor berjalan di browser. Naskah dikirim ke Google Gemini saat kamu meminta TTS. Jika kamu memasukkan API key di aplikasi ini, versi ini menyimpannya di localStorage browser pada perangkat ini; jangan gunakan perangkat bersama. Untuk produksi publik, pindahkan pemanggilan API ke backend dengan secret server-side. Maksimum TTS 2.500 karakter per permintaan.</div>
       </section>
       <div class="am-idea-preview-col">
         <div class="am-idea-preview-head"><span>Preview composition</span><span class="am-idea-meta" id="amIdeaSceneMeta">CONTOH · 4 SCENE</span></div>
@@ -4956,7 +4963,28 @@ ${tweensJs}
     {id:'finance-premium',name:'Finance & Business Report',desc:'Laporan bisnis dan finansial dengan angka, grafik, gaya premium, serta gerak terukur.',style:'luxe',pace:'calm',caption:'full',format:'horizontal',fps:'30',camera:'diagram-zoom',transition:'radial-iris',kinetic:'split-flap',parallax:false,callouts:true,motion:true,music:false,chapters:true},
     {id:'editorial-minimal',name:'Editorial Minimal',desc:'Komposisi lapang, tipografi elegan, transisi halus, dan visual yang tidak ramai.',style:'editorial',pace:'calm',caption:'full',format:'square',fps:'30',camera:'static',transition:'curtain-sweep',kinetic:'brush-sweep',parallax:false,callouts:false,motion:true,music:false,chapters:false},
     {id:'cyber-tech',name:'Cyber Tech Motion',desc:'Nuansa teknologi futuristik, neon, gerak kamera dinamis, dan transisi cepat.',style:'cyberpunk',pace:'energetic',caption:'highlight',format:'vertical',fps:'60',camera:'pan-right',transition:'whip-pan',kinetic:'flip-3d',parallax:true,callouts:true,motion:true,music:true,chapters:true},
-    {id:'social-story',name:'Social Story Fast Cut',desc:'Format short-form dengan hook cepat, caption aktif, beat enerjik, dan visual padat.',style:'neon',pace:'energetic',caption:'highlight',format:'vertical',fps:'30',camera:'push-in',transition:'flash-cut',kinetic:'pop-pill',parallax:true,callouts:false,motion:true,music:true,chapters:false}
+    {id:'social-story',name:'Social Story Fast Cut',desc:'Format short-form dengan hook cepat, caption aktif, beat enerjik, dan visual padat.',style:'neon',pace:'energetic',caption:'highlight',format:'vertical',fps:'30',camera:'push-in',transition:'flash-cut',kinetic:'pop-pill',parallax:true,callouts:false,motion:true,music:true,chapters:false},
+    {id:'edit-cinematic',name:'Video Editing · Cinematic Storytelling',desc:'Workflow editor film: bangun hook, establishing shot, continuity, J-cut/L-cut, montage, match cut, emotional pacing, dan ending yang kuat. Terapkan cut berdasarkan makna adegan, bukan sekadar efek.',workflow:'Urutan kerja: pilih footage terbaik → susun alur hook–build-up–payoff → rapikan continuity → atur J-cut/L-cut → sinkronkan musik dan ambience → color consistency → cek ritme akhir.',style:'cinema',pace:'calm',caption:'full',format:'horizontal',fps:'30',camera:'push-in',transition:'curtain-sweep',kinetic:'typewriter',parallax:true,callouts:true,motion:true,music:true,chapters:true},
+    {id:'edit-montage',name:'Video Editing · Beat Sync Montage',desc:'Montage cepat dengan beat mapping, cut on action, speed ramp, whip transition, impact frame, dan sound hit yang presisi.',workflow:'Tandai beat musik → pilih shot dengan arah gerak konsisten → cut on beat/action → gunakan speed ramp seperlunya → tambahkan impact sound → hindari transisi berlebihan.',style:'neon',pace:'energetic',caption:'highlight',format:'vertical',fps:'60',camera:'pan-right',transition:'whip-pan',kinetic:'flip-3d',parallax:true,callouts:false,motion:true,music:true,chapters:false},
+    {id:'edit-commercial',name:'Video Editing · Commercial & Promo',desc:'Editing iklan profesional: product hero shot, detail insert, benefit sequence, proof, CTA, clean cut, dan sound branding.',workflow:'Buka dengan visual produk paling kuat → tampilkan detail → jelaskan manfaat → beri bukti/pemakaian → tutup CTA. Jaga label dan bentuk produk tetap konsisten.',style:'luxe',pace:'balanced',caption:'highlight',format:'vertical',fps:'30',camera:'push-in',transition:'radial-iris',kinetic:'pop-pill',parallax:true,callouts:true,motion:true,music:true,chapters:false},
+    {id:'motion-kinetic-pro',name:'Motion Graphics · Kinetic Typography Pro',desc:'Animasi teks tingkat lanjut: stagger, word emphasis, overshoot, masking reveal, text tracking, rhythm typography, dan kinetic hierarchy.',workflow:'Tentukan hierarki headline → pecah kalimat menjadi beat → animasikan per kata/baris → gunakan easing konsisten → beri ruang baca → sinkronkan dengan voice-over.',style:'brutalist',pace:'energetic',caption:'highlight',format:'vertical',fps:'60',camera:'static',transition:'whip-pan',kinetic:'flip-3d',parallax:false,callouts:true,motion:true,music:true,chapters:false},
+    {id:'motion-logo',name:'Motion Graphics · Logo & Brand Animation',desc:'Logo reveal, shape morph, line draw, mask reveal, particle accent, brand sting, dan outro identitas visual.',workflow:'Mulai dari bentuk dasar logo → tentukan gerak masuk → reveal simbol dan wordmark → tahan untuk keterbacaan → tambahkan audio sting → siapkan versi transparan dan latar gelap/terang.',style:'swiss',pace:'balanced',caption:'full',format:'square',fps:'60',camera:'push-in',transition:'radial-iris',kinetic:'brush-sweep',parallax:false,callouts:false,motion:true,music:true,chapters:false},
+    {id:'motion-infographic',name:'Motion Graphics · Infographic & Data Story',desc:'Data storytelling dengan angka counter, chart build, diagram, callout, label, garis penghubung, dan transisi antar-insight.',workflow:'Pilih satu pesan utama → sederhanakan data → tampilkan konteks → animasikan chart bertahap → sorot insight → beri sumber dan catatan data.',style:'data',pace:'balanced',caption:'full',format:'horizontal',fps:'30',camera:'diagram-zoom',transition:'diagonal-wipe',kinetic:'split-flap',parallax:false,callouts:true,motion:true,music:false,chapters:true},
+    {id:'motion-ui-hud',name:'Motion Graphics · HUD & Futuristic Interface',desc:'Interface animation, HUD rings, scanning lines, reticles, data panels, holographic overlays, glitch accents, dan tech transitions.',workflow:'Bangun grid interface → kelompokkan panel informasi → animasikan scan dan data readout → gunakan glow secukupnya → pastikan teks tetap terbaca dan tidak meniru tampilan sistem nyata secara menyesatkan.',style:'cyberpunk',pace:'energetic',caption:'highlight',format:'horizontal',fps:'60',camera:'pan-right',transition:'glitch',kinetic:'flip-3d',parallax:true,callouts:true,motion:true,music:true,chapters:true},
+    {id:'remotion-react',name:'Remotion · React Composition Builder',desc:'Rancang video sebagai komposisi React: Composition, props, reusable components, AbsoluteFill, Sequence, dan struktur scene modular.',workflow:'Tentukan ukuran dan fps → buat Root dan Composition → pecah scene menjadi komponen → kendalikan variasi lewat props → gunakan Sequence untuk timing → validasi frame awal/tengah/akhir.',style:'editorial',pace:'balanced',caption:'full',format:'horizontal',fps:'30',camera:'static',transition:'diagonal-wipe',kinetic:'typewriter',parallax:false,callouts:true,motion:true,music:false,chapters:true},
+    {id:'remotion-frame',name:'Remotion · Frame-Based Animation',desc:'Animasi deterministik berbasis useCurrentFrame, interpolate, spring, easing, clamp, dan transform yang konsisten saat render.',workflow:'Gunakan frame sebagai sumber waktu → petakan progress dengan interpolate → atur spring damping/stiffness → clamp rentang → hindari Date.now dan random non-deterministik → cek render frame.',style:'minimal',pace:'balanced',caption:'full',format:'horizontal',fps:'30',camera:'push-in',transition:'curtain-sweep',kinetic:'pop-pill',parallax:true,callouts:true,motion:true,music:false,chapters:false},
+    {id:'remotion-audio',name:'Remotion · Voiceover & Audio Sync',desc:'Sinkronisasi voice-over, subtitle, waveform cue, beat markers, audio ducking, dan scene timing berbasis durasi frame.',workflow:'Impor voice-over → tandai jeda dan penekanan → susun subtitle per frasa → letakkan visual pada kata kunci → turunkan musik saat narasi → cek sinkronisasi pada render.',style:'cinema',pace:'balanced',caption:'highlight',format:'vertical',fps:'30',camera:'static',transition:'flash-cut',kinetic:'typewriter',parallax:false,callouts:true,motion:true,music:true,chapters:true},
+    {id:'doc-animated-history',name:'Animated Documentary · Sejarah & Kronologi',desc:'Dokumenter sejarah dengan timeline, peta, arsip, headline, tanggal, foto berlapis, dan gerak kamera editorial.',workflow:'Verifikasi kronologi → susun bab → tampilkan tanggal/lokasi → gunakan arsip sesuai konteks → animasikan peta dan timeline → bedakan fakta, kutipan, dan rekonstruksi.',style:'cinema',pace:'calm',caption:'full',format:'horizontal',fps:'30',camera:'push-in',transition:'curtain-sweep',kinetic:'typewriter',parallax:true,callouts:true,motion:true,music:true,chapters:true},
+    {id:'doc-parallax-archive',name:'Animated Documentary · Archive Parallax',desc:'Menghidupkan foto arsip dengan depth separation, 2.5D parallax, slow push, light atmosphere, dan gerak kamera lembut.',workflow:'Pilih foto berlisensi/berizin → pisahkan foreground, subject, background → isi area tersembunyi secara hati-hati → gerakkan kamera perlahan → jangan mengubah fakta visual arsip.',style:'editorial',pace:'calm',caption:'full',format:'horizontal',fps:'30',camera:'push-in',transition:'curtain-sweep',kinetic:'brush-sweep',parallax:true,callouts:false,motion:true,music:true,chapters:true},
+    {id:'doc-map-timeline',name:'Animated Documentary · Map & Timeline',desc:'Peta bergerak, rute, penanda lokasi, batas wilayah, garis waktu, dan callout geografis untuk narasi dokumenter.',workflow:'Pastikan nama tempat dan batas akurat → tentukan skala peta → animasikan rute bertahap → beri label yang terbaca → tampilkan tanggal dan sumber.',style:'blueprint',pace:'balanced',caption:'full',format:'horizontal',fps:'30',camera:'diagram-zoom',transition:'diagonal-wipe',kinetic:'split-flap',parallax:false,callouts:true,motion:true,music:false,chapters:true},
+    {id:'doc-science-explainer',name:'Animated Documentary · Science & Mechanism',desc:'Visualisasi proses ilmiah, anatomi, sistem, alur sebab-akibat, diagram berlapis, dan animasi penjelas.',workflow:'Periksa sumber ilmiah → pecah proses menjadi tahapan → pilih analogi visual yang tepat → beri label anatomi/komponen → jangan menyamakan ilustrasi dengan citra medis asli.',style:'blueprint',pace:'balanced',caption:'full',format:'horizontal',fps:'30',camera:'diagram-zoom',transition:'radial-iris',kinetic:'typewriter',parallax:true,callouts:true,motion:true,music:false,chapters:true},
+    {id:'ae-2p5d-camera',name:'After Effects · 2.5D Camera & Parallax',desc:'Workflow efek After Effects untuk layer 3D, camera rig, depth map, parallax, dolly, orbit, dan cinematic focus.',workflow:'Siapkan layer berurutan → aktifkan 3D layer → atur jarak Z → buat camera dan null rig → animasikan dolly/orbit → aktifkan motion blur → periksa edge dan ruang kosong.',style:'cinema',pace:'calm',caption:'full',format:'horizontal',fps:'30',camera:'push-in',transition:'curtain-sweep',kinetic:'brush-sweep',parallax:true,callouts:false,motion:true,music:true,chapters:false},
+    {id:'ae-glitch-energy',name:'After Effects · Glitch, Impact & Energy FX',desc:'Resep efek glitch, RGB split, displacement, shake, flash frame, energy pulse, dan impact typography untuk aksen visual.',workflow:'Bangun base animation → tentukan frame impact → tambahkan displacement/RGB split singkat → sinkronkan shake dan sound hit → batasi efek agar tidak mengganggu pesan.',style:'cyberpunk',pace:'energetic',caption:'highlight',format:'vertical',fps:'60',camera:'pan-right',transition:'glitch',kinetic:'flip-3d',parallax:true,callouts:true,motion:true,music:true,chapters:false},
+    {id:'ae-particles-light',name:'After Effects · Particles, Glow & Light Rays',desc:'Partikel, dust, sparks, bokeh, glow, volumetric light, light sweep, dan atmosfer sinematik.',workflow:'Tentukan sumber cahaya → buat layer partikel terpisah → atur depth dan kecepatan → gunakan glow secara selektif → jaga highlight tidak clipping → render dengan alpha bila diperlukan.',style:'luxe',pace:'calm',caption:'full',format:'horizontal',fps:'30',camera:'push-in',transition:'radial-iris',kinetic:'brush-sweep',parallax:true,callouts:false,motion:true,music:true,chapters:false},
+    {id:'ae-typography-masks',name:'After Effects · Text Animator & Mask Reveal',desc:'Text animator, range selector, tracking, per-character offset, path text, matte, mask reveal, dan typography transition.',workflow:'Buat teks dengan hierarki jelas → animasikan opacity/position/tracking per karakter atau kata → gunakan matte untuk reveal → atur easing → tahan frame untuk membaca.',style:'brutalist',pace:'energetic',caption:'highlight',format:'vertical',fps:'60',camera:'static',transition:'diagonal-wipe',kinetic:'typewriter',parallax:false,callouts:false,motion:true,music:true,chapters:false},
+    {id:'ae-compositing-tracking',name:'After Effects · Tracking, Roto & Compositing',desc:'Motion tracking, planar tracking workflow, rotoscoping, keying, masking, screen replacement, dan compositing shot.',workflow:'Analisis footage → track titik/planar yang stabil → buat mask/roto → cocokkan perspektif dan blur → samakan grain, exposure, dan warna → cek tepi matte pada gerak cepat.',style:'cinema',pace:'balanced',caption:'full',format:'horizontal',fps:'30',camera:'static',transition:'flash-cut',kinetic:'typewriter',parallax:true,callouts:true,motion:true,music:false,chapters:false},
+    {id:'post-color-sound',name:'Post Production · Color Grade & Sound Design',desc:'Finishing video dengan exposure balance, shot matching, look development, ambience, foley, riser, impact, dan mix narasi.',workflow:'Balance exposure dan white balance → samakan antar-shot → terapkan look → bersihkan dialog → tambah ambience/foley → atur musik dan limiter → cek headphone dan speaker.',style:'luxe',pace:'calm',caption:'full',format:'horizontal',fps:'30',camera:'static',transition:'curtain-sweep',kinetic:'typewriter',parallax:false,callouts:false,motion:false,music:true,chapters:false},
+    {id:'storyboard-shotdesign',name:'Pre-Production · Storyboard & Shot Design',desc:'Mengubah naskah menjadi shot list, visual beat, komposisi, gerak kamera, continuity, dan rencana transisi per scene.',workflow:'Pecah naskah menjadi beat → tentukan tujuan tiap shot → pilih wide/medium/close-up → tulis gerak kamera dan aksi → cek continuity → rencanakan aset dan durasi.',style:'editorial',pace:'balanced',caption:'full',format:'horizontal',fps:'30',camera:'push-in',transition:'diagonal-wipe',kinetic:'typewriter',parallax:true,callouts:true,motion:true,music:false,chapters:true}
   ];
   const skillSelect = document.getElementById('amSkillSelect');
   const skillDescription = document.getElementById('amSkillDescription');
@@ -4975,7 +5003,7 @@ ${tweensJs}
     updateSkillDescription();
   }
   function findSkill(id){return ARKX_SKILL_PRESETS.find(x=>x.id===id)||getCustomSkills().find(x=>x.id===id)}
-  function updateSkillDescription(){const x=findSkill(skillSelect?.value);if(skillDescription)skillDescription.textContent=x?x.desc:'Skill tidak ditemukan.';activeSkill=x||null}
+  function updateSkillDescription(){const x=findSkill(skillSelect?.value);if(skillDescription)skillDescription.textContent=x?(x.desc+(x.workflow?'\n\nWORKFLOW: '+x.workflow:'')):'Skill tidak ditemukan.';activeSkill=x||null}
   function applySkillPreset(skill){
     if(!skill)return;
     const set=(id,value,eventName='change')=>{const el=$(id);if(!el)return;if(el.type==='checkbox')el.checked=Boolean(value);else el.value=String(value);el.dispatchEvent(new Event(eventName,{bubbles:true}))};
@@ -4990,14 +5018,103 @@ ${tweensJs}
   document.getElementById('amSkillSave')?.addEventListener('click',()=>{
     const name=prompt('Nama untuk skill custom ini:');if(!name||!name.trim())return;
     const skill={id:'custom-'+Date.now(),name:name.trim().slice(0,48),desc:'Skill custom dari konfigurasi ARKX AUTO Motion.',style:$('Style').value,pace:$('Pace').value,caption:$('Caption').value,format:$('Format').value,fps:$('Fps').value,camera:scenes[activeScene]?.cameraRig||'auto',transition:scenes[activeScene]?.transitionType||'auto',kinetic:scenes[activeScene]?.kineticStyle||'pop-pill',parallax:$('Parallax').checked,callouts:$('Callouts').checked,motion:$('MotionShapes').checked,music:$('BgMusic').checked,chapters:$('Chapters').checked};
-    const all=getCustomSkills();all.push(skill);try{localStorage.setItem('arkx:auto-motion:custom-skills',JSON.stringify(all));refreshSkillOptions(skill.id);if(skillStatus)skillStatus.textContent=`✓ Skill custom "${skill.name}" tersimpan di browser ini.`}catch{if(skillStatus)skillStatus.textContent='Penyimpanan gagal. Periksa kapasitas penyimpanan browser.'}
+    const all=getCustomSkills();all.push(skill);try{localStorage.setItem('arkx:auto-motion:custom-skills',JSON.stringify(all));refreshSkillOptions(skill.id);updateSkillCount();if(skillStatus)skillStatus.textContent=`✓ Skill custom "${skill.name}" tersimpan di browser ini.`}catch{if(skillStatus)skillStatus.textContent='Penyimpanan gagal. Periksa kapasitas penyimpanan browser.'}
   });
   document.getElementById('amSkillExport')?.addEventListener('click',()=>{
     const skill=findSkill(skillSelect.value);if(!skill)return;
-    const blob=new Blob([JSON.stringify({app:'ARKX AUTO Motion',schemaVersion:1,skill},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`ARKX-Skill-${skill.id}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),3000);
+    const blob=new Blob([JSON.stringify({app:'ARKX AUTO Motion',schemaVersion:2,skill},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`ARKX-Skill-${skill.id}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),3000);
     if(skillStatus)skillStatus.textContent=`File JSON skill "${skill.name}" disiapkan untuk diunduh.`;
   });
   refreshSkillOptions(ARKX_SKILL_PRESETS[0].id);
+  const skillCountBadge = document.getElementById('amSkillCount');
+  const updateSkillCount = () => { if (skillCountBadge) skillCountBadge.textContent = `${ARKX_SKILL_PRESETS.length + getCustomSkills().length} SKILLS`; };
+  updateSkillCount();
+
+  // Import a portable skill JSON exported by this app. Only known, safe fields are accepted.
+  const importSkillBtn = document.getElementById('amSkillImportBtn');
+  const importSkillFile = document.getElementById('amSkillImportFile');
+  importSkillBtn?.addEventListener('click', () => importSkillFile?.click());
+  importSkillFile?.addEventListener('change', async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      if (file.size > 256 * 1024) throw new Error('File terlalu besar. Maksimum 256 KB.');
+      const parsed = JSON.parse(await file.text());
+      const raw = parsed?.skill || parsed;
+      if (!raw || typeof raw !== 'object' || typeof raw.name !== 'string' || !raw.name.trim()) throw new Error('Format skill tidak valid: nama skill wajib ada.');
+      const allowed = {
+        style: $('Style'), pace: $('Pace'), caption: $('Caption'), format: $('Format'), fps: $('Fps')
+      };
+      const safeOption = (el, value, fallback) => {
+        const v = String(value ?? '');
+        return [...el.options].some(o => o.value === v) ? v : fallback;
+      };
+      const imported = {
+        id: `imported-${Date.now()}`,
+        name: raw.name.trim().slice(0, 48),
+        desc: String(raw.desc || 'Skill yang diimpor ke ARKX AUTO Motion.').slice(0, 500),
+        workflow: String(raw.workflow || '').slice(0, 2500),
+        style: safeOption(allowed.style, raw.style, $('Style').value || 'cinema'),
+        pace: safeOption(allowed.pace, raw.pace, $('Pace').value || 'balanced'),
+        caption: safeOption(allowed.caption, raw.caption, $('Caption').value || 'highlight'),
+        format: safeOption(allowed.format, raw.format, $('Format').value || 'vertical'),
+        fps: safeOption(allowed.fps, raw.fps, $('Fps').value || '30'),
+        camera: ['auto','push-in','pull-out','pan-right','pan-left','dutch-tilt','diagram-zoom','static'].includes(raw.camera) ? raw.camera : 'auto',
+        transition: ['auto','diagonal-wipe','radial-iris','split-shutter','curtain-sweep','whip-pan','liquid-wave','flash-cut','glitch'].includes(raw.transition) ? raw.transition : 'auto',
+        kinetic: ['auto','pop-pill','flip-3d','brush-sweep','typewriter','split-flap'].includes(raw.kinetic) ? raw.kinetic : 'pop-pill',
+        cameraMotion: raw.cameraMotion !== false,
+        parallax: Boolean(raw.parallax), callouts: Boolean(raw.callouts), motion: Boolean(raw.motion),
+        music: Boolean(raw.music), chapters: Boolean(raw.chapters)
+      };
+      const all = getCustomSkills();
+      all.push(imported);
+      localStorage.setItem('arkx:auto-motion:custom-skills', JSON.stringify(all));
+      refreshSkillOptions(imported.id); updateSkillCount();
+      if (skillStatus) skillStatus.textContent = `✓ Skill "${imported.name}" berhasil diimpor. Pilih Terapkan Skill untuk menggunakannya.`;
+    } catch (error) {
+      if (skillStatus) skillStatus.textContent = `Impor gagal: ${error.message || 'file JSON tidak valid.'}`;
+    } finally { event.target.value = ''; }
+  });
+
+  // Project preflight: advisory checks only; it never changes project content.
+  const preflightBtn = document.getElementById('amPreflightRun');
+  const preflightResults = document.getElementById('amPreflightResults');
+  preflightBtn?.addEventListener('click', () => {
+    if (!preflightResults) return;
+    const checks = [];
+    const add = (level, title, detail) => checks.push({level,title,detail});
+    const scriptText = $('SourceText')?.value?.trim() || '';
+    const sceneList = Array.isArray(scenes) ? scenes : [];
+    const blankScenes = sceneList.filter(sc => !String(sc.sentence || '').trim()).length;
+    const invalidDurations = sceneList.filter(sc => !Number.isFinite(Number(sc.duration)) || Number(sc.duration) <= 0).length;
+    const longHeadlines = sceneList.filter(sc => String(sc.headline || '').trim().length > 42).length;
+    const fpsValue = Number($('Fps')?.value || 30);
+    const formatValue = $('Format')?.value || 'vertical';
+    const hasVoice = Boolean(voiceBuffer || voiceFile);
+    const mediaOk = Boolean(canvas?.captureStream && window.MediaRecorder && typeof window.MediaRecorder.isTypeSupported === 'function' && ['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'].some(type => window.MediaRecorder.isTypeSupported(type)));
+    add(scriptText ? 'ok' : 'fail', 'Naskah', scriptText ? `${scriptText.length.toLocaleString('id-ID')} karakter tersedia.` : 'Naskah masih kosong.');
+    add(sceneList.length ? 'ok' : 'fail', 'Struktur scene', `${sceneList.length} scene terdeteksi${blankScenes ? ` · ${blankScenes} scene tanpa narasi` : ''}.`);
+    add(blankScenes ? 'warn' : 'ok', 'Kelengkapan narasi', blankScenes ? 'Lengkapi narasi pada scene yang kosong.' : 'Semua scene memiliki narasi.');
+    add(invalidDurations ? 'warn' : 'ok', 'Durasi scene', invalidDurations ? `${invalidDurations} scene memiliki durasi yang tidak valid.` : `Total durasi sekitar ${Math.max(0,duration).toFixed(1)} detik.`);
+    add(longHeadlines ? 'warn' : 'ok', 'Keterbacaan judul', longHeadlines ? `${longHeadlines} judul lebih dari 42 karakter; pertimbangkan dipersingkat.` : 'Panjang judul scene berada dalam batas rekomendasi.');
+    add(hasVoice ? 'ok' : 'warn', 'Voice-over', hasVoice ? 'Audio narasi terpasang.' : 'Belum ada VO. Ekspor akan berupa video tanpa narasi suara.');
+    add(mediaOk ? 'ok' : 'fail', 'Kompatibilitas ekspor browser', mediaOk ? 'Browser mendukung perekaman WebM.' : 'MediaRecorder atau WebM tidak didukung di browser ini.');
+    add('ok', 'Pengaturan komposisi', `${formatValue} · ${fpsValue} FPS.`);
+    add('warn', 'Format hasil', 'Ekspor lokal saat ini menghasilkan WebM. MP4/H.264 dan render 2K/4K belum disediakan oleh engine lokal ini.');
+    add('warn', 'Generator eksternal', 'Remotion dan After Effects menghasilkan kode/proyek awal; render final tetap dilakukan di lingkungan Remotion atau After Effects.');
+    const pass = checks.filter(x=>x.level==='ok').length;
+    preflightResults.replaceChildren();
+    checks.forEach(item => {
+      const row = document.createElement('div'); row.className = `am-preflight-item ${item.level}`;
+      const icon = document.createElement('span'); icon.className = 'pf-icon'; icon.textContent = item.level==='ok'?'✓':item.level==='fail'?'✕':'!';
+      const copy = document.createElement('span');
+      const strong = document.createElement('strong'); strong.textContent = `${item.title}: `;
+      copy.append(strong, document.createTextNode(item.detail)); row.append(icon,copy); preflightResults.append(row);
+    });
+    const foot = document.createElement('div'); foot.className = 'am-preflight-foot';
+    foot.textContent = `Hasil audit: ${pass}/${checks.length} pemeriksaan sesuai. Ini pemeriksaan statis proyek, bukan jaminan hasil render akhir.`;
+    preflightResults.append(foot);
+  });
 
   initStyleGrid();
   let restoredDraft = false;
