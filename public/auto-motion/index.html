@@ -298,7 +298,7 @@ Cocok untuk kulit berminyak" rows="3"></textarea></div><div class="field"><label
 <label class="am-idea-check"><input checked="" id="amIdeaCondenseHead" type="checkbox"/> Ringkas judul layar otomatis (3–6 kata)</label>
 <label class="am-idea-check"><input checked="" id="amIdeaParallax" type="checkbox"/> 3-Plane Parallax Depth &amp; Bokeh</label>
 <label class="am-idea-check"><input checked="" id="amIdeaCallouts" type="checkbox"/> Garis Callout Pointer &amp; Anotasi</label>
-</div><div class="am-idea-field am-motion-profile-field"><label for="amIdeaMotionProfile">Motion Graphics Treatment</label><select aria-label="Motion Graphics Treatment" id="amIdeaMotionProfile"><option value="hybrid">Hybrid Cinematic · Documentary + Motion Graphics</option><option value="documentary">Documentary Editorial · Chapter &amp; Light Sweep</option><option value="kinetic">Kinetic Pro · Typography &amp; Impact</option><option value="infographic">Infographic Lab · Data &amp; Diagram</option><option value="minimal">Minimal Premium · Clean Motion</option></select><small>Mengatur aksen visual, light sweep, garis animasi, dan elemen grafis. Treatment ikut masuk preview dan ekspor.</small></div>
+</div><div class="am-idea-field am-motion-profile-field"><label for="amIdeaMotionProfile">Motion Graphics Treatment</label><select aria-label="Motion Graphics Treatment" id="amIdeaMotionProfile"><option value="hybrid">Hybrid Cinematic · Documentary + Motion Graphics</option><option value="documentary">Documentary Editorial · Chapter &amp; Light Sweep</option><option value="kinetic">Kinetic Pro · Typography &amp; Impact</option><option value="infographic">Infographic Lab · Data &amp; Diagram</option><option value="hud">Futuristic HUD · Scan &amp; Target</option><option value="editorial">Editorial Type System · Swiss Layout</option><option value="parallax">2.5D Depth · Layered Camera</option><option value="minimal">Minimal Premium · Clean Motion</option></select><small>Mengatur bahasa visual per scene: chapter, kinetic impact, data chart, HUD radar, editorial grid, dan 2.5D depth. Treatment ikut masuk preview dan ekspor.</small></div>
 <section aria-labelledby="amSkillTitle" class="am-skill-library">
 <div class="am-skill-head">
 <div><span class="am-skill-kicker">ARKX MOTION SYSTEM</span><h3 id="amSkillTitle">Skill Library · Pro Motion</h3><p>Pilih preset workflow untuk mengatur art direction, tempo, kamera, transisi, tipografi, dan format output.</p></div>
@@ -404,8 +404,8 @@ Cocok untuk kulit berminyak" rows="3"></textarea></div><div class="field"><label
 </div>
 <div class="am-scene-inspector-grid-sub">
 <div class="am-idea-field"><label for="amIdeaEditCamera">Camera Rig per-scene</label><select id="amIdeaEditCamera"><option value="auto">Otomatis Sinematik</option><option value="push-in">Push-In Fokus</option><option value="pull-out">Pull-Out Reveal</option><option value="pan-right">Tracking Pan Kanan</option><option value="pan-left">Tracking Pan Kiri</option><option value="dutch-tilt">Dinamis Dutch Tilt</option><option value="diagram-zoom">Zoom Fokus Diagram</option><option value="static">Statis Stabil</option></select></div>
-<div class="am-idea-field"><label for="amIdeaEditTransition">Transisi masuk scene</label><select id="amIdeaEditTransition"><option value="auto">Otomatis Rotasi</option><option value="diagonal-wipe">Diagonal Wipe Slash</option><option value="radial-iris">Radial Iris Ring</option><option value="split-shutter">Horizontal Split Shutter</option><option value="curtain-sweep">Vertical Curtain Sweep</option><option value="whip-pan">Whip Pan Blur</option><option value="liquid-wave">Liquid Wave Sweep</option><option value="flash-cut">Luminescence Flash Cut</option></select></div>
-<div class="am-idea-field"><label for="amIdeaEditKinetic">Gaya Kinetic Caption</label><select id="amIdeaEditKinetic"><option value="auto">Default Studio (Pop Pill)</option><option value="pop-pill">Word Pop + Glow Pill</option><option value="flip-3d">3D Perspective Flip</option><option value="brush-sweep">Highlighter Brush Sweep</option><option value="typewriter">Terminal Typewriter</option><option value="split-flap">Split-Flap Counter</option></select></div>
+<div class="am-idea-field"><label for="amIdeaEditTransition">Transisi masuk scene</label><select id="amIdeaEditTransition"><option value="auto">Otomatis Rotasi</option><option value="diagonal-wipe">Diagonal Wipe Slash</option><option value="radial-iris">Radial Iris Ring</option><option value="split-shutter">Horizontal Split Shutter</option><option value="curtain-sweep">Vertical Curtain Sweep</option><option value="whip-pan">Whip Pan Blur</option><option value="liquid-wave">Liquid Wave Sweep</option><option value="flash-cut">Luminescence Flash Cut</option><option value="zoom-blur">Cinematic Zoom Blur</option><option value="circle-wipe">Circle Reveal</option><option value="glitch-snap">Glitch Snap</option><option value="luma-sweep">Luma Sweep</option></select></div>
+<div class="am-idea-field"><label for="amIdeaEditKinetic">Gaya Kinetic Caption</label><select id="amIdeaEditKinetic"><option value="auto">Default Studio (Pop Pill)</option><option value="pop-pill">Word Pop + Glow Pill</option><option value="flip-3d">3D Perspective Flip</option><option value="brush-sweep">Highlighter Brush Sweep</option><option value="typewriter">Terminal Typewriter</option><option value="split-flap">Split-Flap Counter</option><option value="stagger-rise">Stagger Rise · Word Sequence</option><option value="mask-reveal">Mask Reveal · Text Wipe</option><option value="tracking">Tracking Expand · Editorial</option><option value="glitch-snap">Glitch Snap · Digital Impact</option><option value="elastic-pop">Elastic Pop · Spring</option></select></div>
 <div class="am-idea-field"><label for="amIdeaEditCallout">Label Callout Pointer</label><input id="amIdeaEditCallout" maxlength="42" placeholder="Otomatis dari fokus" type="text"/></div>
 <div class="am-idea-field" style="grid-column:1/-1"><label for="amIdeaEditSentence">Kalimat narasi / caption scene ini</label><input id="amIdeaEditSentence" maxlength="320" placeholder="Kalimat narasi untuk scene ini" type="text"/></div>
 </div>
@@ -1787,20 +1787,38 @@ const t=["gemini-3-flash-preview","gemini-3.8-flash","gemini-3.6-flash","gemini-
         const cleanWord = item.word.toLowerCase().replace(/[,.!?;:…]+$/, '');
         const isFocus = focusSet.has(cleanWord);
         // Elastic jump on active word (+14% scale and wave hop)
-        const kStyle = scene.kineticStyle && scene.kineticStyle !== 'auto' ? scene.kineticStyle : 'pop-pill';
-        const bounce = isActive && kStyle === 'pop-pill' ? Math.sin(wordProgress * Math.PI) * fontSize * .18 : 0;
-        const scaleX = isActive ? (kStyle === 'flip-3d' ? 1 + 0.08 * Math.sin(wordProgress * Math.PI) : 1 + Math.sin(wordProgress * Math.PI) * 0.12) : 1;
-        const scaleY = isActive ? (kStyle === 'flip-3d' ? Math.max(0.28, Math.sin(Math.min(1, wordProgress * 1.35) * Math.PI * 0.5)) : scaleX) : 1;
+        const autoKinetics = ['elastic-pop','stagger-rise','mask-reveal','tracking','brush-sweep','glitch-snap'];
+        const kStyle = scene.kineticStyle && scene.kineticStyle !== 'auto' ? scene.kineticStyle : autoKinetics[(scene.index || 0) % autoKinetics.length];
+        const spring = 1 - Math.exp(-7 * wordProgress) * Math.cos(11 * wordProgress);
+        const bounce = isActive && ['pop-pill','elastic-pop','stagger-rise'].includes(kStyle) ? (1 - spring) * fontSize * .34 : 0;
+        const scaleX = isActive ? (kStyle === 'flip-3d' ? 1 + 0.08 * Math.sin(wordProgress * Math.PI) : kStyle === 'elastic-pop' ? .72 + .28 * spring : 1 + Math.sin(wordProgress * Math.PI) * 0.12) : 1;
+        const scaleY = isActive ? (kStyle === 'flip-3d' ? Math.max(0.28, Math.sin(Math.min(1, wordProgress * 1.35) * Math.PI * 0.5)) : kStyle === 'elastic-pop' ? .72 + .28 * spring : scaleX) : 1;
+        const staggerProgress = isPast ? 1 : isActive ? wordProgress : 0;
+        const riseY = kStyle === 'stagger-rise' ? (1 - ease(staggerProgress)) * fontSize * .72 : 0;
+        const glitchX = kStyle === 'glitch-snap' && isActive ? (wordProgress < .24 ? Math.sin(absoluteTime*91+item.index)*fontSize*.12 : 0) : 0;
 
         ctx.save();
-        const wordCenterY = top + rowIndex * lineGap - bounce;
-        const wordCenterX = left + item.width / 2;
+        const wordCenterY = top + rowIndex * lineGap - bounce - riseY;
+        const wordCenterX = left + item.width / 2 + glitchX;
+        if (kStyle === 'stagger-rise') ctx.globalAlpha *= .22 + .78 * ease(staggerProgress);
         ctx.translate(wordCenterX, wordCenterY);
         ctx.scale(scaleX, scaleY);
         ctx.translate(-wordCenterX, -wordCenterY);
 
         if (isActive) {
-          if (kStyle === 'brush-sweep') {
+          if (kStyle === 'mask-reveal') {
+            ctx.save(); ctx.beginPath(); ctx.rect(left - 2, wordCenterY - fontSize * .72, Math.max(1, item.width * ease(wordProgress)), fontSize * 1.35); ctx.clip();
+            ctx.fillStyle = `${style.a}28`; roundedRect(ctx,left-fontSize*.12,wordCenterY-fontSize*.58,item.width+fontSize*.24,fontSize*1.16,fontSize*.12);ctx.fill();ctx.restore();ctx.fillStyle=style.a;
+          } else if (kStyle === 'tracking') {
+            const chars=[...item.word]; const extra=(1-wordProgress)*fontSize*.22; const total=chars.reduce((sum,ch)=>sum+ctx.measureText(ch).width,0)+extra*Math.max(0,chars.length-1);let cx=left+(item.width-total)/2;
+            ctx.fillStyle=style.a; chars.forEach(ch=>{ctx.fillText(ch,cx,wordCenterY);cx+=ctx.measureText(ch).width+extra;});
+            ctx.restore(); left += item.width + gap; return;
+          } else if (kStyle === 'glitch-snap') {
+            ctx.globalAlpha*=.92;ctx.fillStyle=`${style.b}99`;ctx.fillText(item.word,left+fontSize*.055,wordCenterY-fontSize*.025);ctx.fillStyle=style.a;
+            ctx.fillRect(left-fontSize*.08,wordCenterY+fontSize*.52,item.width*.62*Math.max(.2,wordProgress),Math.max(2,fontSize*.055));
+          } else if (kStyle === 'stagger-rise') {
+            ctx.fillStyle=`${style.a}24`;roundedRect(ctx,left-fontSize*.10,wordCenterY-fontSize*.56,item.width+fontSize*.20,fontSize*1.12,fontSize*.12);ctx.fill();ctx.fillStyle=style.a;
+          } else if (kStyle === 'brush-sweep') {
             ctx.fillStyle = `${style.a}44`;
             roundedRect(ctx, left - fontSize * .2, wordCenterY - fontSize * .56, item.width + fontSize * .4, fontSize * 1.12, fontSize * .18);
             ctx.fill();
@@ -1870,8 +1888,8 @@ const t=["gemini-3-flash-preview","gemini-3.8-flash","gemini-3.6-flash","gemini-
   function drawTransition(ctx, localTime, width, height, style, sceneIndex = 0, customType = 'auto') {
     const p = Math.max(0, 1 - localTime / .44); if (p <= 0) return;
     const progress = ease(p);
-    const typeMap = { 'diagonal-wipe': 0, 'radial-iris': 1, 'split-shutter': 2, 'curtain-sweep': 3, 'whip-pan': 4, 'liquid-wave': 5, 'flash-cut': 6 };
-    const kind = customType && customType !== 'auto' && typeMap[customType] !== undefined ? typeMap[customType] : (sceneIndex % 4);
+    const typeMap = { 'diagonal-wipe': 0, 'radial-iris': 1, 'split-shutter': 2, 'curtain-sweep': 3, 'whip-pan': 4, 'liquid-wave': 5, 'flash-cut': 6, 'zoom-blur': 7, 'circle-wipe': 8, 'glitch-snap': 9, 'luma-sweep': 10 };
+    const kind = customType && customType !== 'auto' && typeMap[customType] !== undefined ? typeMap[customType] : (sceneIndex % 7);
     ctx.save();
     if (kind === 0) {
       // 0: Diagonal Wipe Slash
@@ -1952,13 +1970,21 @@ const t=["gemini-3-flash-preview","gemini-3.8-flash","gemini-3.6-flash","gemini-
       ctx.closePath();
       ctx.fill();
     } else if (kind === 6) {
-      // 6: Luminescence Flash Cut
       ctx.globalAlpha = .48 * Math.pow(progress, 1.6);
-      const g = ctx.createRadialGradient(width * .5, height * .5, 10, width * .5, height * .5, Math.hypot(width, height) * .6);
-      g.addColorStop(0, style.a);
-      g.addColorStop(1, style.b);
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, width, height);
+      const g = ctx.createRadialGradient(width * .5, height * .5, 10, width * .5, height * .5, Math.hypot(width, height) * .6);g.addColorStop(0, style.a);g.addColorStop(1, style.b);ctx.fillStyle = g;ctx.fillRect(0, 0, width, height);
+    } else if (kind === 7) {
+      // Cinematic zoom pulse: expanding ring + directional streaks.
+      ctx.globalAlpha=.42*progress;const r=Math.hypot(width,height)*(.08+.72*(1-progress));ctx.strokeStyle=style.a;ctx.lineWidth=Math.max(3,width*.012*progress);ctx.beginPath();ctx.arc(width*.5,height*.5,r,0,Math.PI*2);ctx.stroke();
+      ctx.globalAlpha=.16*progress;for(let i=0;i<12;i++){const a=i*Math.PI/6;ctx.strokeStyle=i%2?style.a:style.b;ctx.lineWidth=width*.002;ctx.beginPath();ctx.moveTo(width*.5+Math.cos(a)*r*.82,height*.5+Math.sin(a)*r*.82);ctx.lineTo(width*.5+Math.cos(a)*r*1.22,height*.5+Math.sin(a)*r*1.22);ctx.stroke();}
+    } else if (kind === 8) {
+      // Circle reveal ring.
+      const r=Math.hypot(width,height)*(.72*(1-progress));ctx.globalAlpha=.30*progress;ctx.fillStyle=style.a;ctx.beginPath();ctx.arc(width*.5,height*.5,r,0,Math.PI*2);ctx.fill('evenodd');ctx.strokeStyle=style.b;ctx.lineWidth=Math.max(2,width*.006);ctx.stroke();
+    } else if (kind === 9) {
+      // Digital RGB split snap.
+      ctx.globalAlpha=.24*progress;const shift=width*.018*progress;ctx.fillStyle=style.a;ctx.fillRect(-shift,0,width*.42,height);ctx.fillStyle=style.b;ctx.fillRect(width*.58+shift,0,width*.42,height);for(let i=0;i<8;i++){const yy=(i/8)*height;ctx.fillStyle=i%2?`${style.a}88`:`${style.b}88`;ctx.fillRect(0,yy,width*(.18+.12*(i%3)),height*.006);}
+    } else if (kind === 10) {
+      // Luma sweep with a soft luminance band.
+      const x=width*(1-progress);const g=ctx.createLinearGradient(x-width*.2,0,x+width*.2,0);g.addColorStop(0,'#00000000');g.addColorStop(.42,`${style.a}55`);g.addColorStop(.5,'#ffffffcc');g.addColorStop(.58,`${style.b}55`);g.addColorStop(1,'#00000000');ctx.globalAlpha=.7*progress;ctx.fillStyle=g;ctx.fillRect(0,0,width,height);
     }
     ctx.restore();
   }
@@ -2595,54 +2621,64 @@ Memahami label makanan, ukuran porsi, dan kebiasaan harian membantu kita membuat
     const mode = $('MotionProfile')?.value || 'hybrid';
     if (mode === 'minimal') return;
     const p = Math.max(0, Math.min(1, progress));
-    const intro = ease(Math.min(1, p / 0.34));
-    const outro = ease(Math.min(1, (1 - p) / 0.18));
+    const intro = ease(Math.min(1, p / 0.30));
+    const outro = ease(Math.min(1, (1 - p) / 0.16));
     const alpha = Math.min(intro, outro);
     const s = width / 1080;
+    const line = (x1,y1,x2,y2,color=style.a,w=1.5)=>{ctx.strokeStyle=color;ctx.lineWidth=Math.max(1,w*s);ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();};
+    const dot = (x,y,r,color=style.a)=>{ctx.fillStyle=color;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();};
+    const pill = (text,x,y,w)=>{ctx.fillStyle=`${style.bg}d9`;roundRect(ctx,x,y,w,height*.034,height*.009);ctx.fill();ctx.fillStyle=style.a;ctx.font=`700 ${Math.max(11,width*.012)}px Inter,sans-serif`;ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillText(text,x+width*.012,y+height*.017,w-width*.02);};
+    // Hybrid mode deliberately rotates visual grammar by scene, avoiding one repeated HUD overlay.
+    const modes = ['documentary','kinetic','infographic','hud','editorial','parallax'];
+    const activeMode = mode === 'hybrid' ? modes[(sceneIndex + (scene.visual==='compare'?2:scene.visual==='process'?1:0)) % modes.length] : mode;
+    const inset=width*.045;
     ctx.save();
-    ctx.globalCompositeOperation = 'screen';
-    ctx.globalAlpha = 0.18 * alpha;
-    // Soft diagonal light sweep gives each shot a deliberate visual entrance.
-    const sweepX = -width * 0.42 + (width * 1.9 * ease(Math.min(1, p / 0.72)));
-    const sweep = ctx.createLinearGradient(sweepX - width * 0.13, 0, sweepX + width * 0.13, height);
-    sweep.addColorStop(0, `${style.a}00`);
-    sweep.addColorStop(0.48, `${style.a}30`);
-    sweep.addColorStop(0.52, `${style.b}22`);
-    sweep.addColorStop(1, `${style.a}00`);
-    ctx.fillStyle = sweep; ctx.fillRect(0, 0, width, height);
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = 0.72 * alpha;
-    // Editorial corner brackets and a moving progress tick.
-    const inset = width * 0.045, len = width * 0.035;
-    ctx.strokeStyle = `${style.a}99`; ctx.lineWidth = Math.max(1, 1.4 * s);
-    for (const [x, y, dx, dy] of [[inset,inset,1,1],[width-inset,inset,-1,1],[inset,height-inset,1,-1],[width-inset,height-inset,-1,-1]]) {
-      ctx.beginPath(); ctx.moveTo(x + dx * len, y); ctx.lineTo(x, y); ctx.lineTo(x, y + dy * len); ctx.stroke();
+    ctx.globalAlpha=alpha;
+    if(activeMode==='documentary'){
+      // Film-frame chapter treatment + animated timecode and registration marks.
+      ctx.globalAlpha=.78*alpha; ctx.strokeStyle=`${style.a}88`;ctx.lineWidth=1.2*s;ctx.strokeRect(inset,height*.075,width-inset*2,height*.85);
+      for(let i=0;i<12;i++){const x=inset+(width-inset*2)*i/11;line(x,height*.075,x,height*(i%2?.087:.096),style.b,.8);}
+      pill(`FIELD NOTE  ${String(sceneIndex+1).padStart(2,'0')}  /  ${String(scene.label||'STORY').toUpperCase().slice(0,22)}`,inset,height*.105,width*.36);
+      ctx.fillStyle=style.ink;ctx.font=`600 ${Math.max(10,width*.011)}px monospace`;ctx.textAlign='right';ctx.fillText(`00:${String(Math.floor(time)).padStart(2,'0')}`,width-inset,height*.12);
+      const scanY=height*(.18+.66*((time*.22)%1));ctx.globalAlpha=.15*alpha;line(inset,scanY,width-inset,scanY,style.b,1.2);
+    } else if(activeMode==='kinetic'){
+      // Typography stage marks: stagger bars, impact slash and word-beat pulse.
+      const x=width*.085,y=height*.30;ctx.globalAlpha=.92*alpha;
+      for(let i=0;i<5;i++){const q=ease(Math.max(0,Math.min(1,(p-i*.085)/.32)));const yy=y+i*height*.014;ctx.fillStyle=i===Math.floor(p*5)%5?style.b:style.a;roundRect(ctx,x,yy,width*(.12+.055*(i%3))*q,height*.004,height*.003);ctx.fill();}
+      const pulse=1+.16*Math.sin(time*7.5);ctx.strokeStyle=style.b;ctx.lineWidth=2*s;ctx.beginPath();ctx.arc(width*.88,height*.31,width*.025*pulse,0,Math.PI*2);ctx.stroke();
+      line(width*.83,height*.37,width*.93,height*.37,style.a,2);
+      ctx.globalAlpha=.35*alpha;for(let i=0;i<7;i++){const xx=width*(.12+i*.12);line(xx,height*.78,xx+width*.035,height*.78,style.a,1);}
+    } else if(activeMode==='infographic'){
+      // Chart build with animated line, bars and data nodes.
+      const gx=width*.72,gy=height*.28,gw=width*.20,gh=height*.20;ctx.globalAlpha=.65*alpha;
+      for(let i=0;i<4;i++)line(gx,gy+gh*i/3,gx+gw,gy+gh*i/3,`${style.a}44`,.7);
+      const vals=[.32,.58,.43,.76,.63,.91];ctx.beginPath();vals.forEach((v,i)=>{const xx=gx+gw*i/(vals.length-1), yy=gy+gh*(1-v*ease(Math.min(1,p*1.6)));i?ctx.lineTo(xx,yy):ctx.moveTo(xx,yy);});ctx.strokeStyle=style.b;ctx.lineWidth=2.4*s;ctx.stroke();
+      vals.forEach((v,i)=>{const xx=gx+gw*i/(vals.length-1),yy=gy+gh*(1-v*ease(Math.min(1,p*1.6)));dot(xx,yy,width*.004,i===Math.floor(p*vals.length)?style.b:style.a);});
+      pill('DATA / INSIGHT',gx,gy+gh+height*.025,gw*.68);
+    } else if(activeMode==='hud'){
+      // Radar sweep, target reticle and scanning beam.
+      const cx=width*.84,cy=height*.29,r=width*.105;ctx.globalAlpha=.52*alpha;
+      for(let i=1;i<=4;i++){ctx.beginPath();ctx.arc(cx,cy,r*i/4,0,Math.PI*2);ctx.strokeStyle=`${style.a}88`;ctx.lineWidth=1*s;ctx.stroke();}
+      line(cx-r,cy,cx+r,cy,`${style.a}77`,.8);line(cx,cy-r,cx,cy+r,`${style.a}77`,.8);
+      const ang=(time*1.7+sceneIndex*.7)%(Math.PI*2);ctx.fillStyle=`${style.b}25`;ctx.beginPath();ctx.moveTo(cx,cy);ctx.arc(cx,cy,r,ang-.42,ang);ctx.closePath();ctx.fill();line(cx,cy,cx+Math.cos(ang)*r,cy+Math.sin(ang)*r,style.b,1.5);
+      dot(cx+Math.cos(ang)*r*.62,cy+Math.sin(ang)*r*.62,width*.004,style.b);pill('SIGNAL LOCK',inset,height*.14,width*.18);
+    } else if(activeMode==='editorial'){
+      // Swiss editorial grid, section number and animated rule.
+      ctx.globalAlpha=.8*alpha;line(inset,height*.18,inset,height*.82,style.b,1.2);
+      ctx.fillStyle=style.a;ctx.font=`800 ${Math.max(22,width*.045)}px Inter,sans-serif`;ctx.textAlign='left';ctx.textBaseline='top';ctx.fillText(String(sceneIndex+1).padStart(2,'0'),inset+width*.025,height*.17);
+      ctx.fillStyle=style.sub;ctx.font=`600 ${Math.max(10,width*.012)}px Inter,sans-serif`;ctx.fillText('CHAPTER / VISUAL ESSAY',inset+width*.025,height*.245);
+      const ruleW=width*.30*ease(Math.min(1,p/.5));line(inset+width*.025,height*.285,inset+width*.025+ruleW,height*.285,style.a,2);
+      ctx.globalAlpha=.34*alpha;for(let i=0;i<4;i++)line(width*.78+i*width*.035,height*.18,width*.78+i*width*.035,height*.80,style.b,.6);
+    } else if(activeMode==='parallax'){
+      // Layered depth planes with moving perspective rails.
+      ctx.globalAlpha=.48*alpha;const drift=Math.sin(time*.45+sceneIndex)*width*.018;
+      for(let layer=0;layer<3;layer++){const yy=height*(.56+layer*.075);ctx.strokeStyle=layer===2?style.b:style.a;ctx.lineWidth=(1.6-layer*.3)*s;ctx.beginPath();ctx.moveTo(width*.08+drift*(layer+1),yy);ctx.lineTo(width*.92+drift*(layer+1),yy-height*(.12+layer*.035));ctx.stroke();}
+      for(let i=0;i<8;i++){const x=width*(.12+i*.105)+Math.sin(time*.4+i)*width*.008;line(x,height*.70,x+drift*.4,height*.84,`${style.a}88`,.7);}
+      pill('DEPTH LAYERS  /  2.5D',inset,height*.12,width*.27);
     }
-    const tickX = inset + (width - inset * 2) * p;
-    ctx.fillStyle = style.b; ctx.fillRect(tickX - 1.2 * s, height * 0.952, 2.4 * s, height * 0.012);
-    if (mode === 'documentary') {
-      ctx.globalAlpha = 0.72 * alpha;
-      ctx.fillStyle = `${style.bg}cc`;
-      roundRect(ctx, inset, height * 0.105, width * 0.23, height * 0.038, height * 0.009); ctx.fill();
-      ctx.fillStyle = style.a; ctx.font = `700 ${Math.max(12, width * 0.014)}px Inter, sans-serif`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-      ctx.fillText(`CHAPTER ${String(sceneIndex + 1).padStart(2, '0')}  /  ${String(scene.label || 'STORY').toUpperCase().slice(0, 22)}`, inset + width * 0.012, height * 0.124, width * 0.205);
-    } else if (mode === 'kinetic') {
-      const y = height * 0.315, x = width * 0.085, w = width * 0.24 * ease(Math.min(1, p / 0.42));
-      ctx.globalAlpha = 0.9 * alpha; ctx.fillStyle = style.a;
-      roundRect(ctx, x, y, Math.max(0, w), Math.max(3, height * 0.004), height * 0.003); ctx.fill();
-      const pulse = 1 + 0.22 * Math.sin(time * 8); ctx.beginPath(); ctx.arc(x + w, y + height * 0.002, Math.max(2, width * 0.004) * pulse, 0, Math.PI * 2); ctx.fill();
-    } else if (mode === 'infographic') {
-      const gx = width * 0.82, gy = height * 0.25, gw = width * 0.11, gh = height * 0.085;
-      ctx.globalAlpha = 0.62 * alpha; ctx.strokeStyle = `${style.a}88`; ctx.lineWidth = Math.max(1, 1.2 * s);
-      ctx.beginPath(); ctx.moveTo(gx, gy + gh); ctx.lineTo(gx + gw, gy + gh); ctx.stroke();
-      for (let i = 0; i < 5; i++) { const bh = gh * (0.18 + ((i * 7 + sceneIndex * 3) % 9) / 12) * ease(Math.min(1, p * 2.2)); const bx = gx + i * gw / 5 + gw * 0.012; ctx.fillStyle = i === 4 ? style.b : `${style.a}bb`; roundRect(ctx, bx, gy + gh - bh, gw * 0.105, bh, width * 0.003); ctx.fill(); }
-    } else {
-      // Hybrid profile: orbital marker and a restrained film-frame pulse.
-      const cx = width * 0.91, cy = height * 0.16, radius = width * 0.024;
-      ctx.globalAlpha = 0.48 * alpha; ctx.strokeStyle = `${style.b}aa`; ctx.lineWidth = Math.max(1, 1.1 * s);
-      ctx.beginPath(); ctx.arc(cx, cy, radius, -Math.PI * 0.8, -Math.PI * 0.8 + Math.PI * 1.65 * p); ctx.stroke();
-      ctx.fillStyle = style.a; ctx.beginPath(); ctx.arc(cx + Math.cos(time * 1.8) * radius, cy + Math.sin(time * 1.8) * radius, Math.max(2, width * 0.003), 0, Math.PI * 2); ctx.fill();
-    }
+    // Scene-specific marker and persistent safe-area progress rail.
+    ctx.globalAlpha=.75*alpha;ctx.fillStyle=`${style.a}55`;ctx.fillRect(inset,height*.952,width-inset*2,height*.003);
+    ctx.fillStyle=style.b;ctx.fillRect(inset,height*.952,(width-inset*2)*p,height*.003);
     ctx.restore();
   }
 
@@ -2664,23 +2700,25 @@ Memahami label makanan, ukuran porsi, dan kebiasaan harian membantu kita membuat
 
     const parallaxOn = $('Parallax') ? $('Parallax').checked : true;
     const rig = scene.cameraRig || 'auto';
+    const autoRigs = ['push-in','pan-right','pull-out','diagram-zoom','pan-left','dutch-tilt'];
+    const resolvedRig = rig === 'auto' ? autoRigs[index % autoRigs.length] : rig;
     let camZoom = 1, camPanX = 0, camPanY = 0, camRot = 0;
-    if (camActive && rig !== 'static') {
-      if (rig === 'push-in') {
+    if (camActive && resolvedRig !== 'static') {
+      if (resolvedRig === 'push-in') {
         camZoom = 1 + 0.075 * ease(progress);
         camPanY = -height * 0.012 * ease(progress);
-      } else if (rig === 'pull-out') {
+      } else if (resolvedRig === 'pull-out') {
         camZoom = 1.08 - 0.08 * ease(progress);
-      } else if (rig === 'pan-right') {
+      } else if (resolvedRig === 'pan-right') {
         camZoom = 1.035;
         camPanX = (progress - 0.5) * width * 0.045;
-      } else if (rig === 'pan-left') {
+      } else if (resolvedRig === 'pan-left') {
         camZoom = 1.035;
         camPanX = (0.5 - progress) * width * 0.045;
-      } else if (rig === 'dutch-tilt') {
+      } else if (resolvedRig === 'dutch-tilt') {
         camZoom = 1.04 + 0.025 * Math.sin(progress * Math.PI);
         camRot = Math.sin(progress * Math.PI - 0.4) * 0.022;
-      } else if (rig === 'diagram-zoom') {
+      } else if (resolvedRig === 'diagram-zoom') {
         camZoom = 1 + 0.085 * Math.sin(progress * Math.PI);
         camPanY = height * 0.028 * Math.sin(progress * Math.PI);
       } else {
@@ -3971,21 +4009,23 @@ const SceneStage: React.FC<{ scene: SceneItem; props: ExplainerProps }> = ({ sce
   let camY = 0;
   let camRotate = 0;
   if (props.cameraMotion && scene.cameraRig !== 'static') {
-    if (scene.cameraRig === 'push-in') {
+    const autoCameraRigs = ['push-in','pan-right','pull-out','diagram-zoom','pan-left','dutch-tilt'];
+  const cameraRig = scene.cameraRig && scene.cameraRig !== 'auto' ? scene.cameraRig : autoCameraRigs[scene.index % autoCameraRigs.length];
+  if (cameraRig === 'push-in') {
       camScale = interpolate(progress, [0, 1], [1, 1.075]);
       camY = interpolate(progress, [0, 1], [0, -height * 0.012]);
-    } else if (scene.cameraRig === 'pull-out') {
+    } else if (cameraRig === 'pull-out') {
       camScale = interpolate(progress, [0, 1], [1.08, 1]);
-    } else if (scene.cameraRig === 'pan-right') {
+    } else if (cameraRig === 'pan-right') {
       camScale = 1.035;
       camX = interpolate(progress, [0, 1], [-width * 0.022, width * 0.022]);
-    } else if (scene.cameraRig === 'pan-left') {
+    } else if (cameraRig === 'pan-left') {
       camScale = 1.035;
       camX = interpolate(progress, [0, 1], [width * 0.022, -width * 0.022]);
-    } else if (scene.cameraRig === 'dutch-tilt') {
+    } else if (cameraRig === 'dutch-tilt') {
       camScale = 1.045;
       camRotate = interpolate(progress, [0, 0.5, 1], [-1.2, 1.2, -0.6]);
-    } else if (scene.cameraRig === 'diagram-zoom') {
+    } else if (cameraRig === 'diagram-zoom') {
       camScale = 1 + 0.085 * Math.sin(progress * Math.PI);
       camY = height * 0.028 * Math.sin(progress * Math.PI);
     } else {
@@ -3998,7 +4038,8 @@ const SceneStage: React.FC<{ scene: SceneItem; props: ExplainerProps }> = ({ sce
   const activeWord =
     scene.wordTimings.find((wt) => localSec >= wt.localStart && localSec < wt.localEnd) ||
     scene.wordTimings[scene.wordTimings.length - 1];
-  const kStyle = scene.kineticStyle && scene.kineticStyle !== 'auto' ? scene.kineticStyle : 'pop-pill';
+  const autoKineticStyles = ['elastic-pop','stagger-rise','mask-reveal','tracking','brush-sweep','glitch-snap'];
+  const kStyle = scene.kineticStyle && scene.kineticStyle !== 'auto' ? scene.kineticStyle : autoKineticStyles[scene.index % autoKineticStyles.length];
   const transProgress = interpolate(localSec, [0, 0.44], [1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
 
   return (
@@ -4125,7 +4166,17 @@ const SceneStage: React.FC<{ scene: SceneItem; props: ExplainerProps }> = ({ sce
         >
           {scene.wordTimings.map((wt) => {
             const isActive = activeWord && wt.index === activeWord.index;
+            const isPast = localSec >= wt.localEnd;
+            const wordProgress = Math.max(0, Math.min(1, (localSec - wt.localStart) / Math.max(0.04, wt.localEnd - wt.localStart)));
+            const spring = 1 - Math.exp(-7 * wordProgress) * Math.cos(11 * wordProgress);
             const isFocus = scene.focus.includes(wt.word.toLowerCase().replace(/[,.!?;:…]+$/, ''));
+            const wordTransform = isActive
+              ? kStyle === 'flip-3d' ? 'perspective(500px) rotateX(18deg) scale(1.12)'
+              : kStyle === 'elastic-pop' ? ('scale(' + (0.78 + 0.34 * spring) + ') translateY(' + ((1-spring)*-12) + 'px)')
+              : kStyle === 'stagger-rise' ? ('translateY(' + ((1-wordProgress)*18) + 'px) scale(' + (0.96+wordProgress*.04) + ')')
+              : kStyle === 'glitch-snap' ? ('translateX(' + (wordProgress<.22?Math.sin(localSec*90+wt.index)*3:0) + 'px)')
+              : 'scale(1.1) translateY(-3px)'
+              : kStyle === 'stagger-rise' && !isPast ? 'translateY(10px)' : 'scale(1)';
             return (
               <span
                 key={wt.index}
@@ -4152,11 +4203,11 @@ const SceneStage: React.FC<{ scene: SceneItem; props: ExplainerProps }> = ({ sce
                     : isFocus
                     ? palette.b
                     : palette.ink,
-                  transform: isActive
-                    ? kStyle === 'flip-3d'
-                      ? 'perspective(400px) rotateX(14deg) scale(1.1)'
-                      : 'scale(1.12) translateY(-3px)'
-                    : 'scale(1)',
+                  transform: wordTransform,
+                  opacity: kStyle === 'stagger-rise' && !isPast && !isActive ? 0.38 : 1,
+                  letterSpacing: kStyle === 'tracking' && isActive ? ((1-wordProgress)*2.8) + 'px' : 'normal',
+                  clipPath: kStyle === 'mask-reveal' && isActive ? ('inset(0 ' + Math.max(0,(1-wordProgress)*100) + '% 0 0)') : 'inset(0 0 0 0)',
+                  textShadow: kStyle === 'glitch-snap' && isActive ? ('2px 0 ' + palette.b + ', -2px 0 ' + palette.a) : 'none',
                 }}
               >
                 {wt.word}
@@ -5200,7 +5251,7 @@ ${tweensJs}
         fps: safeOption(allowed.fps, raw.fps, $('Fps').value || '30'),
         camera: ['auto','push-in','pull-out','pan-right','pan-left','dutch-tilt','diagram-zoom','static'].includes(raw.camera) ? raw.camera : 'auto',
         transition: ['auto','diagonal-wipe','radial-iris','split-shutter','curtain-sweep','whip-pan','liquid-wave','flash-cut','glitch'].includes(raw.transition) ? raw.transition : 'auto',
-        kinetic: ['auto','pop-pill','flip-3d','brush-sweep','typewriter','split-flap'].includes(raw.kinetic) ? raw.kinetic : 'pop-pill',
+        kinetic: ['auto','pop-pill','flip-3d','brush-sweep','typewriter','split-flap','stagger-rise','mask-reveal','tracking','glitch-snap','elastic-pop'].includes(raw.kinetic) ? raw.kinetic : 'pop-pill',
         cameraMotion: raw.cameraMotion !== false,
         parallax: Boolean(raw.parallax), callouts: Boolean(raw.callouts), motion: Boolean(raw.motion),
         music: Boolean(raw.music), chapters: Boolean(raw.chapters)
@@ -5239,7 +5290,7 @@ ${tweensJs}
     add(hasVoice ? 'ok' : 'warn', 'Voice-over', hasVoice ? 'Audio narasi terpasang.' : 'Belum ada VO. Ekspor akan berupa video tanpa narasi suara.');
     add(mediaOk ? 'ok' : 'fail', 'Kompatibilitas ekspor browser', mediaOk ? 'Browser mendukung perekaman WebM.' : 'MediaRecorder atau WebM tidak didukung di browser ini.');
     add('ok', 'Pengaturan komposisi', `${formatValue} · ${fpsValue} FPS.`);
-    add('warn', 'Format hasil', 'Ekspor lokal saat ini menghasilkan WebM. MP4/H.264 dan render 2K/4K belum disediakan oleh engine lokal ini.');
+    add('warn', 'Format hasil', 'Ekspor MP4 bergantung pada codec browser dan modul konversi; uji file hasil sebelum distribusi. Render server FFmpeg masih memerlukan backend hosting.');
     add('warn', 'Generator eksternal', 'Remotion dan After Effects menghasilkan kode/proyek awal; render final tetap dilakukan di lingkungan Remotion atau After Effects.');
     const pass = checks.filter(x=>x.level==='ok').length;
     preflightResults.replaceChildren();
@@ -5406,8 +5457,8 @@ ${tweensJs}
     throw new Error('Respons Gemini tidak berisi JSON storyboard yang valid.');
   }
   const allowedCamera=new Set(['auto','push-in','pull-out','pan-right','pan-left','dutch-tilt','diagram-zoom','static']);
-  const allowedTransition=new Set(['auto','diagonal-wipe','radial-iris','split-shutter','curtain-sweep','whip-pan','liquid-wave','flash-cut']);
-  const allowedKinetic=new Set(['auto','pop-pill','flip-3d','brush-sweep','typewriter','split-flap']);
+  const allowedTransition=new Set(['auto','diagonal-wipe','radial-iris','split-shutter','curtain-sweep','whip-pan','liquid-wave','flash-cut','zoom-blur','circle-wipe','glitch-snap','luma-sweep']);
+  const allowedKinetic=new Set(['auto','pop-pill','flip-3d','brush-sweep','typewriter','split-flap','stagger-rise','mask-reveal','tracking','glitch-snap','elastic-pop']);
   function safeEnum(value,set,fallback){const v=String(value||'').trim().toLowerCase();return set.has(v)?v:fallback;}
   function normalizeAiBoard(payload,genre,mood,pace){
     const raw=Array.isArray(payload?.scenes)?payload.scenes:[];
