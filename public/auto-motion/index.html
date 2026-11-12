@@ -190,7 +190,14 @@ body.am-idea-open .copy{display:none}
 .am-remotion-foot-actions{display:flex;flex-wrap:wrap;gap:7px}
 @media(max-width:680px){.am-scene-inspector-grid,.am-scene-inspector-grid-sub,.am-remotion-btn-group{grid-template-columns:1fr}}
 
-</style></head><body><header class="top"><div class="brand"><div class="logo"><svg aria-hidden="true" viewbox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><defs><lineargradient id="amLogoA" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#FFB067"></stop><stop offset="1" stop-color="#FF5A1F"></stop></lineargradient></defs><rect fill="url(#amLogoA)" height="60" rx="17" width="60" x="2" y="2"></rect><path d="M28 21.5 45.5 32 28 42.5Z" fill="#fff" stroke="#fff" stroke-linejoin="round" stroke-width="5"></path><path d="M11 24.5h9M8 32h12M11 39.5h9" opacity=".85" stroke="#fff" stroke-linecap="round" stroke-width="4"></path><path d="M50 8.5l1.7 4.6 4.6 1.7-4.6 1.7-1.7 4.6-1.7-4.6-4.6-1.7 4.6-1.7z" fill="#fff"></path></svg></div><b>ARKX AUTO Motion</b><span class="sub">Motion graphics &amp; editor video</span></div><div class="actions"><span class="save-state" id="saveState" role="status"></span><button aria-label="Beralih antara Explainer Studio dan Editor Video/Produk" class="btn" id="btnExplainerToggle" title="Beralih ke Editor Video & Produk" type="button"><span aria-hidden="true">🎬</span><span class="lbl" id="btnExplainerToggleLbl"> Editor Video &amp; Produk</span></button><button aria-label="Panduan" class="btn" id="btnGuide" title="Panduan" type="button"><span aria-hidden="true">📖</span><span class="lbl"> Panduan</span></button><button aria-label="Video baru" class="btn" hidden="" id="btnNew" title="Video baru" type="button"><span aria-hidden="true">＋</span><span class="lbl"> Video baru</span></button><button aria-label="Layar penuh (mode fokus untuk mengedit)" class="btn" id="btnFocus" title="Layar penuh / mode fokus" type="button"><span aria-hidden="true">⛶</span></button><button class="btn primary" hidden="" id="btnRender" type="button">⬇ Render Video</button></div></header><section id="landing"><div class="hero-brand"><div class="hero-logo"><svg aria-hidden="true" viewbox="0 0 64 64"><defs><lineargradient id="amLogoB" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#FFB067"></stop><stop offset="1" stop-color="#FF5A1F"></stop></lineargradient></defs><rect fill="url(#amLogoB)" height="60" rx="17" width="60" x="2" y="2"></rect><path d="M28 21.5 45.5 32 28 42.5Z" fill="#fff" stroke="#fff" stroke-linejoin="round" stroke-width="5"></path><path d="M11 24.5h9M8 32h12M11 39.5h9" opacity=".85" stroke="#fff" stroke-linecap="round" stroke-width="4"></path><path d="M50 8.5l1.7 4.6 4.6 1.7-4.6 1.7-1.7 4.6-1.7-4.6-4.6-1.7 4.6-1.7z" fill="#fff"></path></svg></div><div><div class="hero-name">ARKX AUTO Motion</div><span class="eyebrow">● Explainer & video studio</span></div></div><h1>Bikin video motion profesional<br/><em>cukup sekali klik.</em></h1><p class="lead">Mulai dari naskah di Explainer Studio, atau gunakan editor video dan produk yang sudah tersedia. Scene motion graphics dan voice-over diekspor sebagai WebM lokal. TTS bahasa Indonesia tersedia lewat backend Gemini; naskah dikirim hanya saat kamu meminta pembuatan VO.</p>
+</style><style id="amHybridStoryStyles">
+.am-story-architect{margin:18px 0 16px;padding:18px;border:1px solid rgba(255,151,91,.24);border-radius:18px;background:linear-gradient(145deg,rgba(35,29,28,.94),rgba(13,16,23,.98));box-shadow:0 16px 40px rgba(0,0,0,.16);color:#edf0f6}
+.am-story-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}.am-story-kicker{font:800 9px ui-monospace,monospace;letter-spacing:.15em;color:#ffad79}.am-story-head h3{margin:7px 0 5px;font-size:20px;letter-spacing:-.03em}.am-story-head h3 span{color:#ffad79}.am-story-head p{margin:0;max-width:720px;color:#aab2c0;font-size:12px;line-height:1.6}.am-story-chip{flex:none;border:1px solid rgba(255,166,115,.3);border-radius:999px;padding:6px 9px;color:#ffb58b;font:800 9px ui-monospace,monospace;letter-spacing:.08em}
+.am-story-controls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:16px 0 12px}.am-story-controls label{display:grid;gap:6px;color:#aeb6c4;font-size:10px;font-weight:700}.am-story-controls select{width:100%;min-width:0;border:1px solid #343d4b;border-radius:9px;background:#151b25;color:#edf0f6;padding:10px;font:inherit;font-size:11px;outline:none}.am-story-controls select:focus{border-color:#ff9d68;box-shadow:0 0 0 2px rgba(255,157,104,.14)}
+.am-story-actions{display:flex;flex-wrap:wrap;gap:8px}.am-story-actions button{border-radius:9px;padding:10px 12px;font-size:11px;font-weight:800;cursor:pointer}.am-story-primary{border:0;background:linear-gradient(135deg,#ffc18e,#ff743f);color:#27140c}.am-story-secondary{border:1px solid #394353;background:#171e29;color:#dce2ec}.am-story-actions button:disabled{opacity:.38;cursor:not-allowed}.am-story-status{margin:12px 0;padding:9px 11px;border-radius:8px;background:rgba(255,255,255,.035);color:#aab4c3;font-size:10px;line-height:1.5}.am-story-summary{display:flex;flex-wrap:wrap;gap:7px;margin:10px 0}.am-story-stat{padding:7px 9px;border:1px solid #303a49;border-radius:8px;background:#121923;color:#dce4ee;font-size:10px}.am-story-stat b{color:#ffb17f}.am-storyboard-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.am-story-card{min-width:0;padding:12px;border:1px solid #2d3745;border-radius:11px;background:rgba(10,14,21,.76)}.am-story-card-top{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:8px}.am-story-num{color:#ffad79;font:800 9px ui-monospace,monospace;letter-spacing:.08em}.am-story-beat{padding:4px 7px;border-radius:999px;background:rgba(255,154,100,.12);color:#ffbd95;font-size:9px;font-weight:800}.am-story-line{margin:0 0 8px;color:#edf0f6;font-size:12px;font-weight:800;line-height:1.45}.am-story-meta{display:grid;grid-template-columns:1fr 1fr;gap:6px}.am-story-meta div{padding:7px;border-radius:7px;background:#151c27}.am-story-meta small{display:block;margin-bottom:3px;color:#8490a1;font-size:8px;text-transform:uppercase;letter-spacing:.07em}.am-story-meta span{display:block;color:#cbd3df;font-size:10px;line-height:1.4}.am-story-card-foot{display:flex;justify-content:space-between;gap:8px;margin-top:8px;color:#8793a4;font-size:9px}.am-story-foot{margin:10px 0 0;color:#7f8b9d;font-size:9px;line-height:1.5}
+@media(max-width:760px){.am-story-controls{grid-template-columns:1fr}.am-storyboard-grid{grid-template-columns:1fr}.am-story-head{display:block}.am-story-chip{display:inline-block;margin-top:9px}.am-story-actions button{flex:1 1 46%}}
+</style>
+</head><body><header class="top"><div class="brand"><div class="logo"><svg aria-hidden="true" viewbox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><defs><lineargradient id="amLogoA" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#FFB067"></stop><stop offset="1" stop-color="#FF5A1F"></stop></lineargradient></defs><rect fill="url(#amLogoA)" height="60" rx="17" width="60" x="2" y="2"></rect><path d="M28 21.5 45.5 32 28 42.5Z" fill="#fff" stroke="#fff" stroke-linejoin="round" stroke-width="5"></path><path d="M11 24.5h9M8 32h12M11 39.5h9" opacity=".85" stroke="#fff" stroke-linecap="round" stroke-width="4"></path><path d="M50 8.5l1.7 4.6 4.6 1.7-4.6 1.7-1.7 4.6-1.7-4.6-4.6-1.7 4.6-1.7z" fill="#fff"></path></svg></div><b>ARKX AUTO Motion</b><span class="sub">Motion graphics &amp; editor video</span></div><div class="actions"><span class="save-state" id="saveState" role="status"></span><button aria-label="Beralih antara Explainer Studio dan Editor Video/Produk" class="btn" id="btnExplainerToggle" title="Beralih ke Editor Video & Produk" type="button"><span aria-hidden="true">🎬</span><span class="lbl" id="btnExplainerToggleLbl"> Editor Video &amp; Produk</span></button><button aria-label="Panduan" class="btn" id="btnGuide" title="Panduan" type="button"><span aria-hidden="true">📖</span><span class="lbl"> Panduan</span></button><button aria-label="Video baru" class="btn" hidden="" id="btnNew" title="Video baru" type="button"><span aria-hidden="true">＋</span><span class="lbl"> Video baru</span></button><button aria-label="Layar penuh (mode fokus untuk mengedit)" class="btn" id="btnFocus" title="Layar penuh / mode fokus" type="button"><span aria-hidden="true">⛶</span></button><button class="btn primary" hidden="" id="btnRender" type="button">⬇ Render Video</button></div></header><section id="landing"><div class="hero-brand"><div class="hero-logo"><svg aria-hidden="true" viewbox="0 0 64 64"><defs><lineargradient id="amLogoB" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#FFB067"></stop><stop offset="1" stop-color="#FF5A1F"></stop></lineargradient></defs><rect fill="url(#amLogoB)" height="60" rx="17" width="60" x="2" y="2"></rect><path d="M28 21.5 45.5 32 28 42.5Z" fill="#fff" stroke="#fff" stroke-linejoin="round" stroke-width="5"></path><path d="M11 24.5h9M8 32h12M11 39.5h9" opacity=".85" stroke="#fff" stroke-linecap="round" stroke-width="4"></path><path d="M50 8.5l1.7 4.6 4.6 1.7-4.6 1.7-1.7 4.6-1.7-4.6-4.6-1.7 4.6-1.7z" fill="#fff"></path></svg></div><div><div class="hero-name">ARKX AUTO Motion</div><span class="eyebrow">● Explainer & video studio</span></div></div><h1>Bikin video motion profesional<br/><em>cukup sekali klik.</em></h1><p class="lead">Mulai dari naskah di Explainer Studio, atau gunakan editor video dan produk yang sudah tersedia. Scene motion graphics dan voice-over diekspor sebagai WebM lokal. TTS bahasa Indonesia tersedia lewat backend Gemini; naskah dikirim hanya saat kamu meminta pembuatan VO.</p>
 <div class="drafts-box" hidden="" id="draftsBox"><h3>📂 Lanjutkan draf</h3><p class="hint">Semua editan tersimpan otomatis. Buka lagi kapan saja, edit, lalu render ulang.</p><div class="drafts" id="draftList"></div></div><div aria-live="polite" class="draft-need" hidden="" id="draftNeed" role="status"><div><b id="draftNeedT"></b><small>Semua editan tetap aman. Durasi draf <span id="draftNeedD"></span>. Pilih file video yang sama supaya teks &amp; efek tetap pas.</small></div><div class="row2"><button class="btn primary" id="draftNeedPick" type="button">📂 Pilih video</button><button class="btn" id="draftNeedCancel" type="button">Batal</button></div></div><div aria-label="Jenis video" class="modes" role="tablist"><button class="mode on" data-mode="video" role="tab" type="button">🎥 Punya video ngomong<small>Bicara ke kamera, podcast, ulasan, tutorial</small></button><button class="mode" data-mode="product" role="tab" type="button">🛍️ Tanpa video orang<small>Isi info produk + foto/video produk</small></button></div><section aria-labelledby="landStyleH" class="land-style"><div class="ls-h"><h2 id="landStyleH">Pilih gaya video ngomong &amp; jualan produk (55 gaya)</h2><span class="hint" id="lsHint">Arahkan kursor atau ketuk kartu untuk melihat gerakannya</span></div><select hidden="" id="optPreset"><option value="auto">✨ Otomatis (AI yang pilih &amp; racik)</option><option value="neon30">🔥 SUPER HOT · Neon Sinematik</option><option value="glowpaper">🔥 HOT · Glow Editorial</option><option value="glass">Glass Oranye</option><option value="hype">Hype Doodle</option><option value="clean">Clean Biru</option><option value="karaoke">Karaoke Kuning</option><option value="brutal">Neo Brutal</option><option value="editorial">Editorial Serif</option><option value="neon">Neon Cyber</option><option value="paper">Scrapbook</option><option value="aurora">Aurora Soft</option><option value="mono">Swiss Minimal</option><option value="y2k">Y2K Pop</option><option value="bold">Bold Statement</option><option value="glow">🔥 HOT · Blue Glow</option><option value="yellow">🔥 HOT · Kuning Tegas</option><option value="noir">Noir B&amp;W</option><option value="silver">Silver Chrome</option><option value="podcast">Podcast Serif</option><option value="prod:agent">🔥 HOT · Produk · Agent Noir</option><option value="prod:midnight">🔥 HOT · Produk · Midnight Story</option><option value="prod:hazard">🔥 HOT · Produk · Hazard Lab</option><option value="prod:launch">🔥 HOT · Produk · Tech Launch</option><option value="prod:promo">🔥 HOT · Produk · Promo Meledak</option><option value="prod:clean">Produk · Clean Studio</option><option value="prod:glass">Produk · Glass Premium</option><option value="prod:app">Produk · App &amp; UI Demo</option><option value="prod:mono">Produk · Monokrom Garis</option><option value="prod:silver">Produk · Silver Chrome</option><option value="prod:pastel">Produk · Pastel Ceria</option><option value="prod:tikshop">🔥 SUPER HOT · Produk · Keranjang Kuning</option><option value="prod:flashdeal">🔥 SUPER HOT · Produk · Gebyar Diskon Kembar</option><option value="prod:luxurygold">🔥 SUPER HOT · Produk · Royal Gold Luxury</option><option value="prod:skincareglow">🔥 HOT · Produk · Dewy Skincare Lab</option><option value="prod:kulinerpedas">🔥 HOT · Produk · Kuliner Menggoda</option><option value="prod:unboxreview">🔥 HOT · Produk · Unboxing &amp; Testimoni</option><option value="prod:beforeafter">🔥 HOT · Produk · Bukti Before-After</option><option value="prod:streetwear">🔥 HOT · Produk · Streetwear Drop</option><option value="prod:bundlinghemat">🔥 HOT · Produk · Paket Bundling Hemat</option><option value="prod:codlaris">🔥 HOT · Produk · Jagoan COD &amp; Grosir</option><option value="prod:herbalorganik">Produk · Herbal &amp; Organik Alami</option><option value="prod:kopikafe">Produk · Kopi &amp; Minuman Kafe</option><option value="prod:hijabmodest">Produk · Butik Hijab &amp; Gamis</option><option value="prod:gaminggear">Produk · Gaming &amp; RGB Setup</option><option value="prod:momkids">Produk · Bunda &amp; Si Kecil</option><option value="prod:otomotifpro">Produk · Garasi Otomotif Pro</option><option value="prod:homedecor">Produk · Estetik Dekor Rumah</option><option value="prod:katalogbento">Produk · Katalog Bento Fitur</option><option value="prod:klinikderma">Produk · Klinik &amp; Derma Pro</option><option value="prod:parfummist">Produk · Aura Parfum &amp; Mist</option><option value="prod:sportaktif">Produk · Sport &amp; Gym Energi</option><option value="prod:umkmlokal">Produk · Cerita UMKM &amp; Kerajinan</option><option value="prod:edukasiinfo">Produk · Edukasi Masalah → Solusi</option><option value="prod:hamperskado">Produk · Hampers &amp; Kado Spesial</option><option value="prod:flashneon">Produk · Neon Malam Viral</option></select><div class="chips" id="prodCatBar" style="margin:0 0 10px"></div><div class="style-grid" id="styleGrid"><button class="sg on" data-style="auto" type="button"><div class="sg-auto">✨<small>AI pilih</small></div><span>✨ Otomatis</span></button><button class="sg" data-style="neon30" type="button"><i class="hot">🔥 SUPER HOT</i><img alt="Contoh gaya Neon Sinematik" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Neon Sinematik</span></button><button class="sg" data-style="glowpaper" type="button"><i class="hot">🔥 HOT</i><img alt="Contoh gaya Glow Editorial" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Glow Editorial</span></button><button class="sg" data-style="glow" type="button"><i class="hot">🔥 HOT</i><img alt="Contoh gaya Blue Glow" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Blue Glow</span></button><button class="sg" data-style="yellow" type="button"><i class="hot">🔥 HOT</i><img alt="Contoh gaya Kuning Tegas" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Kuning Tegas</span></button><button class="sg" data-style="glass" type="button"><img alt="Contoh gaya Glass Oranye" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Glass Oranye</span></button><button class="sg" data-style="hype" type="button"><img alt="Contoh gaya Hype Doodle" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Hype Doodle</span></button><button class="sg" data-style="clean" type="button"><img alt="Contoh gaya Clean Biru" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Clean Biru</span></button><button class="sg" data-style="karaoke" type="button"><img alt="Contoh gaya Karaoke Kuning" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Karaoke Kuning</span></button><button class="sg" data-style="brutal" type="button"><img alt="Contoh gaya Neo Brutal" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Neo Brutal</span></button><button class="sg" data-style="editorial" type="button"><img alt="Contoh gaya Editorial Serif" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Editorial Serif</span></button><button class="sg" data-style="neon" type="button"><img alt="Contoh gaya Neon Cyber" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Neon Cyber</span></button><button class="sg" data-style="paper" type="button"><img alt="Contoh gaya Scrapbook" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Scrapbook</span></button><button class="sg" data-style="aurora" type="button"><img alt="Contoh gaya Aurora Soft" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Aurora Soft</span></button><button class="sg" data-style="mono" type="button"><img alt="Contoh gaya Swiss Minimal" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Swiss Minimal</span></button><button class="sg" data-style="y2k" type="button"><img alt="Contoh gaya Y2K Pop" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Y2K Pop</span></button><button class="sg" data-style="bold" type="button"><img alt="Contoh gaya Bold Statement" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Bold Statement</span></button><button class="sg" data-style="noir" type="button"><img alt="Contoh gaya Noir B&amp;W" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Noir B&amp;W</span></button><button class="sg" data-style="silver" type="button"><img alt="Contoh gaya Silver Chrome" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Silver Chrome</span></button><button class="sg" data-style="podcast" type="button"><img alt="Contoh gaya Podcast Serif" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="/><span>Podcast Serif</span></button></div><p class="hint help" id="styleDesc">AI memilih dan meracik gaya sendiri sesuai isi &amp; suasana videomu: font, warna, bentuk kartu, animasi teks, dan latar.</p></section><section class="land-main" id="landMain"><div class="field full" hidden="" id="productForm"><div class="pf grid2"><h3 class="pstep full"><span>1</span> Info produk</h3><div class="field"><label class="l" for="pBrand">Nama brand *</label><input id="pBrand" placeholder="mis. AuraSkin"/></div><div class="field"><label class="l" for="pTitle">Nama produk / judul utama *</label><input id="pTitle" placeholder="mis. Sunscreen ringan tanpa whitecast"/></div><div class="field full"><label class="l" for="pTagline">Tagline</label><input id="pTagline" placeholder="mis. Nyaman dipakai seharian"/></div><div class="field full"><label class="l" for="pDesc">Deskripsi singkat</label><textarea id="pDesc" placeholder="Produk apa, untuk siapa, dan masalah apa yang diselesaikan" rows="2"></textarea></div><div class="field full"><label class="l" for="pFeatures">Fitur / keunggulan (1 per baris)</label><textarea id="pFeatures" placeholder="Ringan di kulit
 Tidak lengket
 Cocok untuk kulit berminyak" rows="3"></textarea></div><div class="field"><label class="l" for="pPrice">Harga / promo (opsional)</label><input id="pPrice" placeholder="mis. Rp49.000, diskon 20%"/></div><div class="field"><label class="l" for="pCta">Ajakan / CTA</label><input id="pCta" placeholder="mis. Klik link di bio"/></div><div class="field full" hidden=""><label class="l">Warna tema (opsional)</label><div class="colors"><input aria-label="Warna utama" id="pC1" type="color" value="#FF6A2A"/><input aria-label="Warna kedua" id="pC2" type="color" value="#FFB067"/><label class="toggle"><input id="pCustom" type="checkbox"/> Pakai warna ini (kalau tidak, ikut gaya)</label></div></div></div><p class="hint help">💡 Maksimal 78 detik supaya suara AI dan render tetap stabil, terutama di HP. Upload foto/video produk di bawah (latar polos paling bagus). Kalau tidak ada, AI membuatkan gambar.</p></div><div class="pf grid2 pvoice" hidden="" id="prodVoice"><h3 class="pstep full"><span>3</span> Suara &amp; durasi</h3><div class="field"><label class="l" for="pDur">Durasi video</label><select id="pDur"><option selected="" value="auto">Otomatis (AI menyesuaikan, biasanya 18–30 dtk)</option><option value="15">15 detik</option><option value="20">20 detik</option><option value="30">30 detik</option><option value="45">45 detik</option><option value="60">60 detik</option><option value="78">78 detik (maksimal)</option></select></div><div class="field"><label class="l" for="pVoice">Suara narator AI</label><select id="pVoice"><option value="Kore">Perempuan, tegas</option><option value="Leda">Perempuan, ceria</option><option value="Charon">Laki-laki, informatif</option><option value="Puck">Laki-laki, semangat</option><option value="none">Tanpa suara (teks saja)</option></select></div></div><div aria-label="Pilih video" class="drop" id="drop" role="button" tabindex="0"><div class="icon">↑</div><div class="big">Tarik &amp; lepas video di sini</div><div class="mut">atau klik untuk memilih · MP4 / MOV / WEBM · ideal ≤ 3 menit</div><div class="mut" id="dropTip" style="margin-top:6px;font-size:12px">💡 Paling lancar di HP: video 1080p/720p, di bawah 100 MB. Video 4K atau ratusan MB sebaiknya dikompres dulu.</div></div><button class="btn primary big-cta" hidden="" id="btnProduct" type="button">✨ Buatkan video produk</button></section><details class="adv" id="advOpts" open=""><summary>⚙️ Pengaturan lanjutan <small>format, gambar AI, warna, musik, model, tema, kamera, konteks</small></summary><div class="opts"><div class="field"><label class="l" for="optAspect">Format output</label><select id="optAspect"><option value="asli">Sama seperti video asli</option><option value="9:16">9:16 · Vertikal (story / short)</option><option value="4:5">4:5 · Feed</option><option value="1:1">1:1 · Kotak</option><option value="16:9">16:9 · Horizontal</option></select></div><div class="field"><label class="l" for="optImages">Gambar buatan AI untuk b-roll</label><select id="optImages"><option value="0">Tidak usah</option><option selected="" value="2">Maksimal 2 gambar</option><option value="4">Maksimal 4 gambar</option><option value="6">Maksimal 6 gambar</option></select></div><div class="field full"><label class="l" for="optColor">Warna</label><div class="colors"><select id="optColor"><option value="">Biar AI / gaya yang pilih</option><option value="auto">🎨 Ambil otomatis dari warna produk / video</option><option value="custom">Pilih sendiri</option></select><span hidden="" id="customColors"><input aria-label="Warna utama" id="optC1" type="color" value="#FF6A2A"/><input aria-label="Warna kedua" id="optC2" type="color" value="#FFB067"/></span><span class="chips" id="paletteChips"></span></div></div><div class="field"><label class="l" for="optMusic">Musik latar (original, otomatis)</label><select id="optMusic"><option value="auto">✨ Otomatis (AI pilih)</option><option value="lofi">Lo-fi santai</option><option value="corporate">Upbeat profesional</option><option value="hype">Hype / trap</option><option value="cinematic">Sinematik</option><option value="tech">Tech minimal</option><option value="happy">Ceria</option><option value="dramatic">Dramatis</option><option value="none">Tanpa musik</option></select></div><div class="field"><label class="l" for="optModel">Model AI</label><select id="optModel"><option value="">Otomatis (disarankan)</option><option value="gemini-3-flash-preview">Cepat &amp; seimbang</option><option value="gemini-3.8-flash">Terbaru (bila tersedia di akunmu)</option><option value="gemini-3.5-flash-lite">Hemat &amp; paling cepat</option><option value="gemini-3.1-pro-preview">Paling teliti (bila tersedia di akunmu)</option></select></div><div class="field"><label class="l" for="optTone">Tema motion</label><select id="optTone"><option value="">Ikut gaya</option><option value="color">Berwarna</option><option value="bw">Motion hitam-putih (garis, latar, teks)</option><option value="silver">Motion silver chrome</option></select></div><div class="field" id="camField"><label class="l" for="optCam">Kamera otomatis</label><select id="optCam"><option value="">Biar AI yang atur</option><option value="angles">Ganti angle (multi-kamera)</option><option value="jumpcut">Jump-cut zoom</option><option value="halus">Zoom halus</option><option value="off">Diam</option></select></div><div class="field" id="bgAmtField"><label class="l" for="optBgAmt">Adegan latar/background</label><select id="optBgAmt"><option selected="" value="">✨ Otomatis (AI pilih)</option><option value="clean">🎬 Clean: tanpa latar &amp; elemen (caption menyala)</option><option value="none">🎥 Tanpa latar: video asli + zoom</option><option value="few">Sedikit (1–2)</option><option value="mid">Sedang (3–4)</option><option value="many">Banyak (5+)</option></select><p class="hint help">💡 Jumlah ganti latar / kartu layar penuh per video (video lebih dari 1 menit dihitung naik, ±1 tiap 30 dtk untuk Sedikit). Sisanya diisi zoom kamera, teks kreatif (termasuk di belakang orang), dan elemen sesuai ucapan. Bisa diganti lagi di studio.</p></div><div class="field full"><label class="l">Kreativitas AI</label><label class="toggle full-ai"><input id="optFullAI" type="checkbox"/> <span><b>🧠 Mode AI penuh</b> (untuk gaya Otomatis): AI merancang sendiri scene animasi dari nol, transisi, efek suara, dan komposisi musik. <em>Proses AI ±20–60 dtk lebih lama, pemakaian akun lebih besar (±2 permintaan &amp; ±14 rb token tambahan), dan render bisa sedikit lebih lama.</em></span></label></div><div class="field full" id="briefField"><label class="l" for="optBrief">Konteks (opsional): produk, target penonton, CTA</label><textarea id="optBrief" placeholder="Contoh: Jualan sepatu lokal untuk anak muda. CTA: komen 'MAU' biar dikirim link." rows="2"></textarea><details class="tips"><summary>📝 Punya naskah VO? Tempel di sini (opsional, supaya caption lebih tepat)</summary><textarea id="optVO" placeholder="Tempel naskah persis seperti yang kamu ucapkan di video" rows="3"></textarea></details></div><div class="field full" id="nicheField"><label class="l" for="optNiche">Paket niche (aturan editing sesuai jenis konten)</label><select id="optNiche"><option value="">✨ Biar AI pilih sesuai isi video</option><option value="otoritas">Bisnis &amp; Otoritas</option><option value="software">Tutorial Software &amp; AI</option><option value="fitness">Energi Tinggi</option><option value="investigasi">Investigasi Vintage</option><option value="edukasi">Edukasi &amp; Personal Brand</option><option value="glitch">Retro Glitch</option><option value="luxury">Luxury Hitam-Emas</option><option value="gadget">Gadget Presisi</option><option value="komik">Komik &amp; Pop</option><option value="lofi">Lo-fi Kenangan</option><option value="kreator">Kreator Editorial Glow</option><option value="none">Tanpa paket niche</option></select><p class="hint help" id="nicheDesc">AI akan memilih paket yang paling cocok dengan isi videomu.</p></div><div class="field full"><label class="l" id="assetLabel">Footage &amp; gambar tambahan (opsional): video produk, screenshot, foto. AI yang mengatur penempatannya.</label><div class="land-assets"><button class="btn" id="landAssetBtn" type="button">＋ Tambah footage / gambar</button><span class="chips" id="landAssets"></span></div><div class="cut-opt" hidden="" id="cutOpt"><div class="pro-opt" id="proOpt"><label class="toggle"><input checked="" id="optPro" type="checkbox"/> <span><b>Foto profesional (AI)</b></span></label><p class="hint">AI membuat versi profesional dari setiap foto produk: foto studio dengan cahaya, latar, dan warna rapi (foto flatlay &amp; close-up tetap dengan komposisi yang sama). Produknya tetap sama persis — bentuk, warna, dan tulisan label dicek otomatis. Kalau berbeda, foto aslimu dirapikan tanpa AI.</p><p aria-live="polite" class="hint pnote" hidden="" id="proNote" role="status">Model gambar belum tersedia di akunmu. Foto aslimu dirapikan otomatis tanpa AI.</p><div class="field pvar"><label class="l" for="optProVar">Varian tambahan</label><select id="optProVar"><option value="auto">Otomatis</option><option value="0">Tidak usah</option><option value="1">1 foto suasana</option><option value="2">2 (suasana + detail)</option></select></div></div><label class="toggle"><input checked="" id="optCut" type="checkbox"/> <span><b>Hapus latar otomatis</b></span></label><p class="hint">Produk dipotong dari fotonya supaya bisa melayang, berputar, dan ditaruh di latar desain. Foto aslimu tidak diubah.</p><p aria-live="polite" class="hint" hidden="" id="cutProg" role="status"></p></div><div class="ugc-opt" hidden="" id="ugcOpt"><label class="toggle"><input checked="" id="optUgc" type="checkbox"/> <span><b>Model UGC (AI)</b></span></label><p class="hint">AI membuat 3–4 foto ala konten pengguna: karakter AI (bukan orang nyata) memegang atau memakai produkmu. Pemakaian AI lebih berat (±4 gambar).</p><p aria-live="polite" class="hint pnote" id="ugcNote" role="status">Upload foto produk dulu supaya AI bisa membuat foto UGC.</p><div class="ugcp" id="ugcPersona"><div class="field"><label class="l">Gender</label><select aria-label="Gender model UGC" data-ugc="gender"><option selected="" value="auto">Otomatis</option><option value="wanita">Perempuan</option><option value="pria">Laki-laki</option></select></div><div class="field"><label class="l">Hijab</label><select aria-label="Hijab model UGC" data-ugc="hijab"><option selected="" value="auto">Otomatis</option><option value="ya">Berhijab</option><option value="tidak">Tidak</option></select></div><div class="field"><label class="l">Umur</label><select aria-label="Umur model UGC" data-ugc="age"><option selected="" value="auto">Otomatis</option><option value="21">21–25</option><option value="26">26–32</option><option value="33">33–40</option></select></div><div class="field"><label class="l">Gaya</label><select aria-label="Gaya model UGC" data-ugc="vibe"><option selected="" value="kasual">Kasual</option><option value="glam">Glam sopan</option><option value="pro">Profesional</option></select></div><div class="field"><label class="l">Latar</label><select aria-label="Latar model UGC" data-ugc="place"><option selected="" value="auto">Otomatis</option><option value="kamar">Kamar</option><option value="kafe">Kafe</option><option value="kantor">Kantor</option><option value="dapur">Dapur</option><option value="luar">Luar ruang</option></select></div><div class="field"><label class="l">Jumlah</label><select aria-label="Jumlah model UGC" data-ugc="n"><option selected="" value="3">3 foto</option><option value="4">4 foto</option></select></div></div><label class="toggle" id="ugcLabelRow"><input checked="" id="optUgcLabel" type="checkbox"/> <span>Label "Gambar AI" di video</span></label><p class="hint pnote" hidden="" id="ugcLabelWarn">Pastikan penonton tetap tahu gambar ini buatan AI.</p><p class="hint">Gambar buatan AI, bukan pengalaman pembeli nyata. Jangan dipakai sebagai testimoni.</p></div></div></div></details><div class="access" id="access"><span class="badge2">✓</span><div><b>Siap dipakai.</b> AI berjalan memakai akun Google kamu sendiri yang sedang login. Tinggal upload video.</div></div><div class="features"><div class="feat"><b>Caption &amp; animasi teks</b>Kata kunci besar berwarna, 9 gaya animasi teks, sinkron per kata.</div><div class="feat"><b>B-roll &amp; ganti latar</b>Foto/video kamu, gambar AI, latar di belakang orang, mockup HP.</div><div class="feat"><b>Animasi &amp; transisi</b>Langkah, grafik, perbandingan, spotlight produk, lalu balik ke video dengan transisi otomatis.</div><div class="feat"><b>Musik &amp; render MP4</b>Musik latar original + efek suara otomatis, render langsung di browser.</div></div><div class="am-idea-launch" aria-label="Buat animasi dari tulisan">
@@ -1956,7 +1963,7 @@ const t=["gemini-3-flash-preview","gemini-3.8-flash","gemini-3.6-flash","gemini-
   };
 })();
 
-</script><script>
+</script><script type="module">
 (() => {
   const $ = (id) => document.getElementById(`amIdea${id}`);
   const root = $('Studio');
@@ -4331,178 +4338,8 @@ ${scenesHtml}
 ${tweensJs}
     window.__timelines["main"] = tl;
   <\/script>
-  </body>
-</html>
-`;
-  }
 
 
-/* ARKX Story Architect — dipindahkan dari dalam template export ke kode
-   interaktif aplikasi (CSS disisipkan ke document.head saat startup) */
-const HYBRID_STORY_CSS = `<style id="amHybridStoryStyles">
-.am-story-architect{margin:18px 0 16px;padding:18px;border:1px solid rgba(255,151,91,.24);border-radius:18px;background:linear-gradient(145deg,rgba(35,29,28,.94),rgba(13,16,23,.98));box-shadow:0 16px 40px rgba(0,0,0,.16);color:#edf0f6}
-.am-story-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}.am-story-kicker{font:800 9px ui-monospace,monospace;letter-spacing:.15em;color:#ffad79}.am-story-head h3{margin:7px 0 5px;font-size:20px;letter-spacing:-.03em}.am-story-head h3 span{color:#ffad79}.am-story-head p{margin:0;max-width:720px;color:#aab2c0;font-size:12px;line-height:1.6}.am-story-chip{flex:none;border:1px solid rgba(255,166,115,.3);border-radius:999px;padding:6px 9px;color:#ffb58b;font:800 9px ui-monospace,monospace;letter-spacing:.08em}
-.am-story-controls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:16px 0 12px}.am-story-controls label{display:grid;gap:6px;color:#aeb6c4;font-size:10px;font-weight:700}.am-story-controls select{width:100%;min-width:0;border:1px solid #343d4b;border-radius:9px;background:#151b25;color:#edf0f6;padding:10px;font:inherit;font-size:11px;outline:none}.am-story-controls select:focus{border-color:#ff9d68;box-shadow:0 0 0 2px rgba(255,157,104,.14)}
-.am-story-actions{display:flex;flex-wrap:wrap;gap:8px}.am-story-actions button{border-radius:9px;padding:10px 12px;font-size:11px;font-weight:800;cursor:pointer}.am-story-primary{border:0;background:linear-gradient(135deg,#ffc18e,#ff743f);color:#27140c}.am-story-secondary{border:1px solid #394353;background:#171e29;color:#dce2ec}.am-story-actions button:disabled{opacity:.38;cursor:not-allowed}.am-story-status{margin:12px 0;padding:9px 11px;border-radius:8px;background:rgba(255,255,255,.035);color:#aab4c3;font-size:10px;line-height:1.5}.am-story-summary{display:flex;flex-wrap:wrap;gap:7px;margin:10px 0}.am-story-stat{padding:7px 9px;border:1px solid #303a49;border-radius:8px;background:#121923;color:#dce4ee;font-size:10px}.am-story-stat b{color:#ffb17f}.am-storyboard-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.am-story-card{min-width:0;padding:12px;border:1px solid #2d3745;border-radius:11px;background:rgba(10,14,21,.76)}.am-story-card-top{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:8px}.am-story-num{color:#ffad79;font:800 9px ui-monospace,monospace;letter-spacing:.08em}.am-story-beat{padding:4px 7px;border-radius:999px;background:rgba(255,154,100,.12);color:#ffbd95;font-size:9px;font-weight:800}.am-story-line{margin:0 0 8px;color:#edf0f6;font-size:12px;font-weight:800;line-height:1.45}.am-story-meta{display:grid;grid-template-columns:1fr 1fr;gap:6px}.am-story-meta div{padding:7px;border-radius:7px;background:#151c27}.am-story-meta small{display:block;margin-bottom:3px;color:#8490a1;font-size:8px;text-transform:uppercase;letter-spacing:.07em}.am-story-meta span{display:block;color:#cbd3df;font-size:10px;line-height:1.4}.am-story-card-foot{display:flex;justify-content:space-between;gap:8px;margin-top:8px;color:#8793a4;font-size:9px}.am-story-foot{margin:10px 0 0;color:#7f8b9d;font-size:9px;line-height:1.5}
-@media(max-width:760px){.am-story-controls{grid-template-columns:1fr}.am-storyboard-grid{grid-template-columns:1fr}.am-story-head{display:block}.am-story-chip{display:inline-block;margin-top:9px}.am-story-actions button{flex:1 1 46%}}
-</style>`;
-document.head.insertAdjacentHTML('beforeend', HYBRID_STORY_CSS);
-
-(() => {
-  'use strict';
-  const byId = (id) => document.getElementById(id);
-  const source = byId('amIdeaSourceText');
-  const grid = byId('amStoryboardGrid');
-  if (!source || !grid || byId('amStoryBuild')?.dataset.ready) return;
-  byId('amStoryBuild').dataset.ready = '1';
-  let currentBoard = [];
-  const clean = (v) => String(v || '').replace(/\s+/g, ' ').trim();
-  function splitNarrative(text) {
-    const normalized = String(text || '').replace(/\r/g, '').trim();
-    if (!normalized) return [];
-    const paragraphs = normalized.split(/\n+/).map(x => x.trim()).filter(Boolean);
-    let parts = paragraphs.flatMap(part => part.match(/[^.!?;…]+[.!?;…]?/g) || []).map(clean).filter(Boolean);
-    if (!parts.length) parts = [clean(normalized)];
-    const expanded = [];
-    for (const part of parts) {
-      const words = part.split(/\s+/);
-      if (words.length <= 22) { expanded.push(part); continue; }
-      let start = 0;
-      while (start < words.length) {
-        let end = Math.min(words.length, start + 18);
-        if (end < words.length) {
-          const tail = words.slice(start + 10, end);
-          let preferred = -1;
-          for (let k = tail.length - 1; k >= 0; k--) { if (/[,;:]$/.test(tail[k])) { preferred = k; break; } }
-          if (preferred >= 0) end = start + 10 + preferred + 1;
-        }
-        expanded.push(words.slice(start, end).join(' ').replace(/[,:;]+$/, '') + (end < words.length ? '…' : ''));
-        start = end;
-      }
-    }
-    return expanded.slice(0, 48);
-  }
-  const has = (s, re) => re.test(s.toLowerCase());
-  function chooseBeat(text, i, n, genre) {
-    const t = text.toLowerCase();
-    if (i === 0) return /\?/.test(text) ? 'HOOK · PERTANYAAN' : 'HOOK · PEMBUKA';
-    if (i === n - 1) return genre === 'inspirational' ? 'PAYOFF · REFLEKSI' : 'PENUTUP · KESIMPULAN';
-    if (has(t, /data|persen|angka|statistik|penelitian|riset|bukti|menurut|hasil|fakta/)) return 'BUKTI · DATA';
-    if (has(t, /tetapi|namun|sayangnya|masalah|tantangan|risiko|bahaya|dampak/)) return 'KONFLIK · TANTANGAN';
-    if (has(t, /karena|sebab|proses|mekanisme|bekerja|terjadi|menyebabkan|mengakibatkan/)) return 'PENJELASAN · MEKANISME';
-    if (has(t, /pertama|kedua|ketiga|langkah|tahap|kemudian|selanjutnya|akhirnya/)) return 'URUTAN · PROSES';
-    if (i === 1) return 'KONTEKS · LATAR';
-    if (i >= Math.ceil(n * .72)) return 'KLIMAKS · IMPLIKASI';
-    return 'PENGEMBANGAN · INSIGHT';
-  }
-  function shotFor(beat, genre, mood) {
-    if (beat.includes('HOOK')) return {shot:'Extreme close-up → reveal',camera:'push-in',transition:'radial-iris',kinetic:'flip-3d',motion:'Reveal bertahap, scale-in pada kata kunci, tahan sejenak untuk membangun rasa ingin tahu.'};
-    if (beat.includes('KONTEKS')) return {shot:'Wide establishing shot',camera:'pull-out',transition:'curtain-sweep',kinetic:'typewriter',motion:'Parallax foreground-background perlahan; judul muncul setelah visual terbaca.'};
-    if (beat.includes('BUKTI')) return {shot:'Insert detail / data graphic',camera:'diagram-zoom',transition:'diagonal-wipe',kinetic:'split-flap',motion:'Angka atau bukti masuk berurutan; gunakan callout dan highlight yang terukur.'};
-    if (beat.includes('KONFLIK')) return {shot:'Medium close-up / contrast',camera:'dutch-tilt',transition:'whip-pan',kinetic:'pop-pill',motion:'Kontras visual, perubahan skala, dan cut lebih tegas pada kata pertentangan.'};
-    if (beat.includes('MEKANISME') || beat.includes('PROSES')) return {shot:genre==='science'?'Scientific diagram close-up':'Process sequence / layered diagram',camera:'diagram-zoom',transition:'split-shutter',kinetic:'typewriter',motion:'Tampilkan proses per tahap dengan garis, panah, label, dan urutan gerak.'};
-    if (beat.includes('KLIMAKS')) return {shot:'Hero shot / visual crescendo',camera:'push-in',transition:'flash-cut',kinetic:'flip-3d',motion:'Percepat gerak menuju satu visual utama; beri jeda singkat pada pesan terpenting.'};
-    if (beat.includes('PAYOFF') || beat.includes('PENUTUP')) return {shot:'Wide resolve / closing frame',camera:'pull-out',transition:'curtain-sweep',kinetic:'brush-sweep',motion:'Gerak melambat, komposisi bersih, kalimat penutup tampil dengan ruang napas.'};
-    return {shot:'Medium shot + supporting graphic',camera:mood==='graphic'?'diagram-zoom':'pan-right',transition:'liquid-wave',kinetic:'pop-pill',motion:'Kombinasikan visual pendukung, keyword caption, dan pergeseran kamera halus.'};
-  }
-  function soundFor(beat, pace) {
-    if (beat.includes('HOOK')) return 'Low impact + short riser';
-    if (beat.includes('BUKTI')) return 'Soft ticks / data blips';
-    if (beat.includes('KONFLIK')) return 'Tension pulse + subtle hit';
-    if (beat.includes('KLIMAKS')) return 'Cinematic swell + impact';
-    if (beat.includes('PENUTUP') || beat.includes('PAYOFF')) return 'Warm resolve + music tail';
-    return pace === 'calm' ? 'Ambient bed + soft whoosh' : 'Light whoosh + restrained ambience';
-  }
-  function buildBoard() {
-    const text = source.value.trim();
-    if (!text) { byId('amStoryStatus').textContent = 'Tulis atau tempel naskah terlebih dahulu.'; source.focus(); return; }
-    const parts = splitNarrative(text);
-    if (!parts.length) return;
-    const genre = byId('amStoryGenre').value;
-    const mood = byId('amStoryMood').value;
-    const pace = byId('amStoryPace').value;
-    const paceScale = pace === 'calm' ? 1.22 : pace === 'energetic' ? .82 : 1;
-    currentBoard = parts.map((sentence, i) => {
-      const beat = chooseBeat(sentence, i, parts.length, genre);
-      const shot = shotFor(beat, genre, mood);
-      const words = sentence.split(/\s+/).length;
-      const duration = Math.max(2.2, Math.min(8, (1.65 + words * .21) * paceScale));
-      const title = sentence.length > 100 ? sentence.slice(0,97).replace(/\s+\S*$/,'')+'…' : sentence;
-      let visual = 'Layered editorial illustration';
-      if (genre === 'science') visual = 'Scientific diagram + annotated visual';
-      else if (genre === 'history') visual = 'Archive-inspired image + animated map/timeline';
-      else if (genre === 'educational') visual = 'Step-by-step infographic + supporting illustration';
-      else if (genre === 'inspirational') visual = 'Human-centered cinematic visual + restrained typography';
-      else if (mood === 'cinematic') visual = 'Cinematic b-roll language + depth/parallax';
-      else if (mood === 'graphic') visual = 'Bold editorial motion graphics + data shapes';
-      return {scene:i+1,beat,script:sentence,title,shot:shot.shot,visual,camera:shot.camera,transition:shot.transition,kinetic:shot.kinetic,motion:shot.motion,sound:soundFor(beat,pace),duration:Number(duration.toFixed(1)),genre,mood,pace};
-    });
-    renderBoard();
-    const total = currentBoard.reduce((a,x)=>a+x.duration,0);
-    byId('amStorySummary').hidden = false;
-    byId('amStorySummary').innerHTML = `<span class="am-story-stat"><b>${currentBoard.length}</b> scene / shot</span><span class="am-story-stat"><b>${total.toFixed(1)}s</b> estimasi durasi</span><span class="am-story-stat"><b>${genreLabel(genre)}</b> format cerita</span><span class="am-story-stat"><b>${moodLabel(mood)}</b> art direction</span>`;
-    byId('amStoryStatus').textContent = `Storyboard berhasil disusun secara lokal dari ${parts.length} potongan narasi. Periksa shot list, lalu terapkan arahan kamera, transisi, dan tipografi ke scene preview.`;
-    ['amStoryApply','amStoryExport','amStoryCopy'].forEach(id=>byId(id).disabled=false);
-  }
-  function genreLabel(v){return ({documentary:'Dokumenter',educational:'Edukasi',science:'Sains',history:'Sejarah',inspirational:'Inspiratif'})[v]||v;}
-  function moodLabel(v){return ({hybrid:'Hybrid',cinematic:'Cinematic',graphic:'Motion graphic'})[v]||v;}
-  function renderBoard() {
-    grid.replaceChildren();
-    currentBoard.forEach(item=>{
-      const card=document.createElement('article'); card.className='am-story-card';
-      const top=document.createElement('div'); top.className='am-story-card-top';
-      const num=document.createElement('span'); num.className='am-story-num'; num.textContent=`SHOT ${String(item.scene).padStart(2,'0')}`;
-      const beat=document.createElement('span'); beat.className='am-story-beat'; beat.textContent=item.beat;
-      top.append(num,beat);
-      const line=document.createElement('p'); line.className='am-story-line'; line.textContent=item.title;
-      const meta=document.createElement('div'); meta.className='am-story-meta';
-      const fields=[['SHOT TYPE',item.shot],['VISUAL DIRECTION',item.visual],['CAMERA',labelCamera(item.camera)],['MOTION & TYPOGRAPHY',item.motion],['TRANSITION',labelTransition(item.transition)],['SOUND CUE',item.sound]];
-      fields.forEach(([label,value])=>{const box=document.createElement('div');const small=document.createElement('small');small.textContent=label;const span=document.createElement('span');span.textContent=value;box.append(small,span);meta.append(box);});
-      const foot=document.createElement('div');foot.className='am-story-card-foot';
-      const time=document.createElement('span');time.textContent=`Estimasi ${item.duration}s`;
-      const words=document.createElement('span');words.textContent=`${item.script.split(/\s+/).length} kata`;foot.append(time,words);
-      card.append(top,line,meta,foot);grid.append(card);
-    });
-  }
-  function labelCamera(v){return ({'push-in':'Push-in','pull-out':'Pull-out reveal','diagram-zoom':'Diagram zoom','dutch-tilt':'Dutch tilt','pan-right':'Pan kanan'})[v]||v;}
-  function labelTransition(v){return v.replace(/-/g,' ').replace(/\b\w/g,c=>c.toUpperCase());}
-  function applyBoard() {
-    if (!currentBoard.length) return;
-    const generate=byId('amIdeaGenerateBtn');
-    const scenes=byId('amIdeaScenes');
-    const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-    (async()=>{
-      if (!scenes?.querySelector('.am-idea-scene')) { generate?.click(); await wait(260); }
-      const sceneButtons=Array.from(byId('amIdeaScenes')?.querySelectorAll('.am-idea-scene')||[]);
-      if (!sceneButtons.length) { byId('amStoryStatus').textContent='Scene preview belum siap. Klik “Susun scene & beat motion” terlebih dahulu, lalu terapkan storyboard.'; return; }
-      const count=Math.min(sceneButtons.length,currentBoard.length);
-      for(let i=0;i<count;i++){
-        sceneButtons[i].click();
-        const item=currentBoard[i];
-        const fields=[['amIdeaEditCamera',item.camera],['amIdeaEditTransition',item.transition],['amIdeaEditKinetic',item.kinetic]];
-        fields.forEach(([id,value])=>{const el=byId(id);if(el){el.value=value;el.dispatchEvent(new Event('change',{bubbles:true}));}});
-        const callout=byId('amIdeaEditCallout');
-        if(callout){callout.value=item.beat.split(' · ')[0];callout.dispatchEvent(new Event('input',{bubbles:true}));}
-        await wait(18);
-      }
-      byId('amStoryStatus').textContent=`Arahan visual diterapkan ke ${count} dari ${sceneButtons.length} scene. Kamera, transisi, kinetic caption, dan callout diperbarui melalui inspector scene yang sudah ada.`;
-    })().catch(err=>{byId('amStoryStatus').textContent='Gagal menerapkan storyboard: '+(err?.message||'kesalahan tidak diketahui');});
-  }
-  function exportBoard(){
-    if(!currentBoard.length)return;
-    const payload={app:'ARKX AUTO Motion',module:'Hybrid Story Architect',version:1,createdAt:new Date().toISOString(),sourceText:source.value,storySettings:{genre:byId('amStoryGenre').value,mood:byId('amStoryMood').value,pace:byId('amStoryPace').value},storyboard:currentBoard};
-    const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});download(blob,'ARKX_Hybrid_Storyboard.json');
-  }
-  function toMarkdown(){return ['# ARKX AUTO Motion — Hybrid Storyboard','',`Genre: ${genreLabel(byId('amStoryGenre').value)} | Mood: ${moodLabel(byId('amStoryMood').value)}`,'',...currentBoard.flatMap(x=>[`## Shot ${String(x.scene).padStart(2,'0')} — ${x.beat}`,`**Narasi:** ${x.script}`,`**Shot:** ${x.shot}`,`**Visual:** ${x.visual}`,`**Kamera:** ${labelCamera(x.camera)}`,`**Gerak:** ${x.motion}`,`**Transisi:** ${labelTransition(x.transition)}`,`**Audio:** ${x.sound}`,`**Durasi:** ${x.duration}s`,''])].join('\n');}
-  function download(blob,name){const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1200);}
-  byId('amStoryBuild').addEventListener('click',buildBoard);
-  byId('amStoryApply').addEventListener('click',applyBoard);
-  byId('amStoryExport').addEventListener('click',exportBoard);
-  byId('amStoryCopy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(toMarkdown());byId('amStoryStatus').textContent='Shot list berhasil disalin.';}catch(e){download(new Blob([toMarkdown()],{type:'text/markdown'}),'ARKX_Hybrid_Shot_List.md');byId('amStoryStatus').textContent='Clipboard tidak tersedia; shot list diunduh sebagai Markdown.';}});
-  source.addEventListener('input',()=>{if(currentBoard.length){byId('amStoryStatus').textContent='Naskah berubah. Buat ulang storyboard agar shot list sesuai dengan naskah terbaru.';}});
-})();
-})();
-</script>
 
 </body>
 </html>
@@ -5355,7 +5192,162 @@ document.head.insertAdjacentHTML('beforeend', HYBRID_STORY_CSS);
   updatePlayButton();
   syncHeaderWorkspaceBtn(false);
 })();
-</script><script>/* KUNCI GEMINI aktif — kelola beberapa API key Gemini + rotasi otomatis saat kuota 429 */
+</script><script type="module" id="amHybridStoryEngine">
+(() => {
+  'use strict';
+  const byId = (id) => document.getElementById(id);
+  const source = byId('amIdeaSourceText');
+  const grid = byId('amStoryboardGrid');
+  if (!source || !grid || byId('amStoryBuild')?.dataset.ready) return;
+  byId('amStoryBuild').dataset.ready = '1';
+  let currentBoard = [];
+  const clean = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+  function splitNarrative(text) {
+    const normalized = String(text || '').replace(/\r/g, '').trim();
+    if (!normalized) return [];
+    const paragraphs = normalized.split(/\n+/).map(x => x.trim()).filter(Boolean);
+    let parts = paragraphs.flatMap(part => part.match(/[^.!?;…]+[.!?;…]?/g) || []).map(clean).filter(Boolean);
+    if (!parts.length) parts = [clean(normalized)];
+    const expanded = [];
+    for (const part of parts) {
+      const words = part.split(/\s+/);
+      if (words.length <= 22) { expanded.push(part); continue; }
+      let start = 0;
+      while (start < words.length) {
+        let end = Math.min(words.length, start + 18);
+        if (end < words.length) {
+          const tail = words.slice(start + 10, end);
+          let preferred = -1;
+          for (let k = tail.length - 1; k >= 0; k--) { if (/[,;:]$/.test(tail[k])) { preferred = k; break; } }
+          if (preferred >= 0) end = start + 10 + preferred + 1;
+        }
+        expanded.push(words.slice(start, end).join(' ').replace(/[,:;]+$/, '') + (end < words.length ? '…' : ''));
+        start = end;
+      }
+    }
+    return expanded.slice(0, 48);
+  }
+  const has = (s, re) => re.test(s.toLowerCase());
+  function chooseBeat(text, i, n, genre) {
+    const t = text.toLowerCase();
+    if (i === 0) return /\?/.test(text) ? 'HOOK · PERTANYAAN' : 'HOOK · PEMBUKA';
+    if (i === n - 1) return genre === 'inspirational' ? 'PAYOFF · REFLEKSI' : 'PENUTUP · KESIMPULAN';
+    if (has(t, /data|persen|angka|statistik|penelitian|riset|bukti|menurut|hasil|fakta/)) return 'BUKTI · DATA';
+    if (has(t, /tetapi|namun|sayangnya|masalah|tantangan|risiko|bahaya|dampak/)) return 'KONFLIK · TANTANGAN';
+    if (has(t, /karena|sebab|proses|mekanisme|bekerja|terjadi|menyebabkan|mengakibatkan/)) return 'PENJELASAN · MEKANISME';
+    if (has(t, /pertama|kedua|ketiga|langkah|tahap|kemudian|selanjutnya|akhirnya/)) return 'URUTAN · PROSES';
+    if (i === 1) return 'KONTEKS · LATAR';
+    if (i >= Math.ceil(n * .72)) return 'KLIMAKS · IMPLIKASI';
+    return 'PENGEMBANGAN · INSIGHT';
+  }
+  function shotFor(beat, genre, mood) {
+    if (beat.includes('HOOK')) return {shot:'Extreme close-up → reveal',camera:'push-in',transition:'radial-iris',kinetic:'flip-3d',motion:'Reveal bertahap, scale-in pada kata kunci, tahan sejenak untuk membangun rasa ingin tahu.'};
+    if (beat.includes('KONTEKS')) return {shot:'Wide establishing shot',camera:'pull-out',transition:'curtain-sweep',kinetic:'typewriter',motion:'Parallax foreground-background perlahan; judul muncul setelah visual terbaca.'};
+    if (beat.includes('BUKTI')) return {shot:'Insert detail / data graphic',camera:'diagram-zoom',transition:'diagonal-wipe',kinetic:'split-flap',motion:'Angka atau bukti masuk berurutan; gunakan callout dan highlight yang terukur.'};
+    if (beat.includes('KONFLIK')) return {shot:'Medium close-up / contrast',camera:'dutch-tilt',transition:'whip-pan',kinetic:'pop-pill',motion:'Kontras visual, perubahan skala, dan cut lebih tegas pada kata pertentangan.'};
+    if (beat.includes('MEKANISME') || beat.includes('PROSES')) return {shot:genre==='science'?'Scientific diagram close-up':'Process sequence / layered diagram',camera:'diagram-zoom',transition:'split-shutter',kinetic:'typewriter',motion:'Tampilkan proses per tahap dengan garis, panah, label, dan urutan gerak.'};
+    if (beat.includes('KLIMAKS')) return {shot:'Hero shot / visual crescendo',camera:'push-in',transition:'flash-cut',kinetic:'flip-3d',motion:'Percepat gerak menuju satu visual utama; beri jeda singkat pada pesan terpenting.'};
+    if (beat.includes('PAYOFF') || beat.includes('PENUTUP')) return {shot:'Wide resolve / closing frame',camera:'pull-out',transition:'curtain-sweep',kinetic:'brush-sweep',motion:'Gerak melambat, komposisi bersih, kalimat penutup tampil dengan ruang napas.'};
+    return {shot:'Medium shot + supporting graphic',camera:mood==='graphic'?'diagram-zoom':'pan-right',transition:'liquid-wave',kinetic:'pop-pill',motion:'Kombinasikan visual pendukung, keyword caption, dan pergeseran kamera halus.'};
+  }
+  function soundFor(beat, pace) {
+    if (beat.includes('HOOK')) return 'Low impact + short riser';
+    if (beat.includes('BUKTI')) return 'Soft ticks / data blips';
+    if (beat.includes('KONFLIK')) return 'Tension pulse + subtle hit';
+    if (beat.includes('KLIMAKS')) return 'Cinematic swell + impact';
+    if (beat.includes('PENUTUP') || beat.includes('PAYOFF')) return 'Warm resolve + music tail';
+    return pace === 'calm' ? 'Ambient bed + soft whoosh' : 'Light whoosh + restrained ambience';
+  }
+  function buildBoard() {
+    const text = source.value.trim();
+    if (!text) { byId('amStoryStatus').textContent = 'Tulis atau tempel naskah terlebih dahulu.'; source.focus(); return; }
+    const parts = splitNarrative(text);
+    if (!parts.length) return;
+    const genre = byId('amStoryGenre').value;
+    const mood = byId('amStoryMood').value;
+    const pace = byId('amStoryPace').value;
+    const paceScale = pace === 'calm' ? 1.22 : pace === 'energetic' ? .82 : 1;
+    currentBoard = parts.map((sentence, i) => {
+      const beat = chooseBeat(sentence, i, parts.length, genre);
+      const shot = shotFor(beat, genre, mood);
+      const words = sentence.split(/\s+/).length;
+      const duration = Math.max(2.2, Math.min(8, (1.65 + words * .21) * paceScale));
+      const title = sentence.length > 100 ? sentence.slice(0,97).replace(/\s+\S*$/,'')+'…' : sentence;
+      let visual = 'Layered editorial illustration';
+      if (genre === 'science') visual = 'Scientific diagram + annotated visual';
+      else if (genre === 'history') visual = 'Archive-inspired image + animated map/timeline';
+      else if (genre === 'educational') visual = 'Step-by-step infographic + supporting illustration';
+      else if (genre === 'inspirational') visual = 'Human-centered cinematic visual + restrained typography';
+      else if (mood === 'cinematic') visual = 'Cinematic b-roll language + depth/parallax';
+      else if (mood === 'graphic') visual = 'Bold editorial motion graphics + data shapes';
+      return {scene:i+1,beat,script:sentence,title,shot:shot.shot,visual,camera:shot.camera,transition:shot.transition,kinetic:shot.kinetic,motion:shot.motion,sound:soundFor(beat,pace),duration:Number(duration.toFixed(1)),genre,mood,pace};
+    });
+    renderBoard();
+    const total = currentBoard.reduce((a,x)=>a+x.duration,0);
+    byId('amStorySummary').hidden = false;
+    byId('amStorySummary').innerHTML = `<span class="am-story-stat"><b>${currentBoard.length}</b> scene / shot</span><span class="am-story-stat"><b>${total.toFixed(1)}s</b> estimasi durasi</span><span class="am-story-stat"><b>${genreLabel(genre)}</b> format cerita</span><span class="am-story-stat"><b>${moodLabel(mood)}</b> art direction</span>`;
+    byId('amStoryStatus').textContent = `Storyboard berhasil disusun secara lokal dari ${parts.length} potongan narasi. Periksa shot list, lalu terapkan arahan kamera, transisi, dan tipografi ke scene preview.`;
+    ['amStoryApply','amStoryExport','amStoryCopy'].forEach(id=>byId(id).disabled=false);
+  }
+  function genreLabel(v){return ({documentary:'Dokumenter',educational:'Edukasi',science:'Sains',history:'Sejarah',inspirational:'Inspiratif'})[v]||v;}
+  function moodLabel(v){return ({hybrid:'Hybrid',cinematic:'Cinematic',graphic:'Motion graphic'})[v]||v;}
+  function renderBoard() {
+    grid.replaceChildren();
+    currentBoard.forEach(item=>{
+      const card=document.createElement('article'); card.className='am-story-card';
+      const top=document.createElement('div'); top.className='am-story-card-top';
+      const num=document.createElement('span'); num.className='am-story-num'; num.textContent=`SHOT ${String(item.scene).padStart(2,'0')}`;
+      const beat=document.createElement('span'); beat.className='am-story-beat'; beat.textContent=item.beat;
+      top.append(num,beat);
+      const line=document.createElement('p'); line.className='am-story-line'; line.textContent=item.title;
+      const meta=document.createElement('div'); meta.className='am-story-meta';
+      const fields=[['SHOT TYPE',item.shot],['VISUAL DIRECTION',item.visual],['CAMERA',labelCamera(item.camera)],['MOTION & TYPOGRAPHY',item.motion],['TRANSITION',labelTransition(item.transition)],['SOUND CUE',item.sound]];
+      fields.forEach(([label,value])=>{const box=document.createElement('div');const small=document.createElement('small');small.textContent=label;const span=document.createElement('span');span.textContent=value;box.append(small,span);meta.append(box);});
+      const foot=document.createElement('div');foot.className='am-story-card-foot';
+      const time=document.createElement('span');time.textContent=`Estimasi ${item.duration}s`;
+      const words=document.createElement('span');words.textContent=`${item.script.split(/\s+/).length} kata`;foot.append(time,words);
+      card.append(top,line,meta,foot);grid.append(card);
+    });
+  }
+  function labelCamera(v){return ({'push-in':'Push-in','pull-out':'Pull-out reveal','diagram-zoom':'Diagram zoom','dutch-tilt':'Dutch tilt','pan-right':'Pan kanan'})[v]||v;}
+  function labelTransition(v){return v.replace(/-/g,' ').replace(/\b\w/g,c=>c.toUpperCase());}
+  function applyBoard() {
+    if (!currentBoard.length) return;
+    const generate=byId('amIdeaGenerateBtn');
+    const scenes=byId('amIdeaScenes');
+    const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+    (async()=>{
+      if (!scenes?.querySelector('.am-idea-scene')) { generate?.click(); await wait(260); }
+      const sceneButtons=Array.from(byId('amIdeaScenes')?.querySelectorAll('.am-idea-scene')||[]);
+      if (!sceneButtons.length) { byId('amStoryStatus').textContent='Scene preview belum siap. Klik “Susun scene & beat motion” terlebih dahulu, lalu terapkan storyboard.'; return; }
+      const count=Math.min(sceneButtons.length,currentBoard.length);
+      for(let i=0;i<count;i++){
+        sceneButtons[i].click();
+        const item=currentBoard[i];
+        const fields=[['amIdeaEditCamera',item.camera],['amIdeaEditTransition',item.transition],['amIdeaEditKinetic',item.kinetic]];
+        fields.forEach(([id,value])=>{const el=byId(id);if(el){el.value=value;el.dispatchEvent(new Event('change',{bubbles:true}));}});
+        const callout=byId('amIdeaEditCallout');
+        if(callout){callout.value=item.beat.split(' · ')[0];callout.dispatchEvent(new Event('input',{bubbles:true}));}
+        await wait(18);
+      }
+      byId('amStoryStatus').textContent=`Arahan visual diterapkan ke ${count} dari ${sceneButtons.length} scene. Kamera, transisi, kinetic caption, dan callout diperbarui melalui inspector scene yang sudah ada.`;
+    })().catch(err=>{byId('amStoryStatus').textContent='Gagal menerapkan storyboard: '+(err?.message||'kesalahan tidak diketahui');});
+  }
+  function exportBoard(){
+    if(!currentBoard.length)return;
+    const payload={app:'ARKX AUTO Motion',module:'Hybrid Story Architect',version:1,createdAt:new Date().toISOString(),sourceText:source.value,storySettings:{genre:byId('amStoryGenre').value,mood:byId('amStoryMood').value,pace:byId('amStoryPace').value},storyboard:currentBoard};
+    const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});download(blob,'ARKX_Hybrid_Storyboard.json');
+  }
+  function toMarkdown(){return ['# ARKX AUTO Motion — Hybrid Storyboard','',`Genre: ${genreLabel(byId('amStoryGenre').value)} | Mood: ${moodLabel(byId('amStoryMood').value)}`,'',...currentBoard.flatMap(x=>[`## Shot ${String(x.scene).padStart(2,'0')} — ${x.beat}`,`**Narasi:** ${x.script}`,`**Shot:** ${x.shot}`,`**Visual:** ${x.visual}`,`**Kamera:** ${labelCamera(x.camera)}`,`**Gerak:** ${x.motion}`,`**Transisi:** ${labelTransition(x.transition)}`,`**Audio:** ${x.sound}`,`**Durasi:** ${x.duration}s`,''])].join('\n');}
+  function download(blob,name){const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1200);}
+  byId('amStoryBuild').addEventListener('click',buildBoard);
+  byId('amStoryApply').addEventListener('click',applyBoard);
+  byId('amStoryExport').addEventListener('click',exportBoard);
+  byId('amStoryCopy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(toMarkdown());byId('amStoryStatus').textContent='Shot list berhasil disalin.';}catch(e){download(new Blob([toMarkdown()],{type:'text/markdown'}),'ARKX_Hybrid_Shot_List.md');byId('amStoryStatus').textContent='Clipboard tidak tersedia; shot list diunduh sebagai Markdown.';}});
+  source.addEventListener('input',()=>{if(currentBoard.length){byId('amStoryStatus').textContent='Naskah berubah. Buat ulang storyboard agar shot list sesuai dengan naskah terbaru.';}});
+})();
+</script>
+<script>/* KUNCI GEMINI aktif — kelola beberapa API key Gemini + rotasi otomatis saat kuota 429 */
 (function () {
   if (window.__arkxKeyMenu) return;
   window.__arkxKeyMenu = true;
