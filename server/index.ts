@@ -26,6 +26,7 @@ import cronRoutes from './routes/cron.js'
 import syncTokensRoutes from './routes/syncTokens.js'
 import nexabotRoutes from './routes/nexabot.js'
 import studioAiRoutes from './routes/studioAi.js'
+import { requireProPage } from './middleware/requireProPage.js'
 import nexabotWalletRoutes from './routes/nexabotWallet.js'
 import seaviWalletRoutes from './routes/seaviWallet.js'
 import posbotWalletRoutes from './routes/posbotWallet.js'
@@ -248,6 +249,22 @@ if (isProd && fs.existsSync(FRONTEND_DIR)) {
       res.type('application/json').set('Cache-Control', 'no-cache, must-revalidate')
       res.sendFile(path.join(studioDir, 'manifest.json'))
     })
+  }
+
+  // Gerbang Pro: aplikasi studio (konten premium) hanya untuk member Pro.
+  // Tanpa ini berkas statis bisa di-Save Page As tanpa akun.
+  for (const dir of ['studio', 'auto-motion']) {
+    app.use(
+      `/${dir}`,
+      requireProPage,
+      express.static(path.join(FRONTEND_DIR, dir), {
+        etag: true,
+        setHeaders(res) {
+          res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive')
+          res.setHeader('Cache-Control', 'no-store')
+        },
+      }),
+    )
   }
 
   // Static assets dengan header cache yang benar per jenis file:

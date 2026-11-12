@@ -197,6 +197,8 @@ router.post('/login', async (req, res: Response) => {
     const refreshToken = signRefreshToken(user as any)
     const refreshExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
     db.prepare('UPDATE users SET refresh_token = ?, refresh_expires = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(refreshToken, refreshExpires, user.id)
+    // Cookie httpOnly untuk gerbang halaman studio (browser tidak mengirim Bearer saat navigasi).
+    res.cookie('arkx_session', refreshToken, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/', maxAge: 7 * 24 * 60 * 60 * 1000 })
 
     res.json({
       token,
@@ -228,6 +230,8 @@ router.post('/refresh', (req, res: Response) => {
     if (!row || row.refresh_token !== refreshToken) return res.status(401).json({ error: 'Refresh token mismatch' })
     if (row.refresh_expires && new Date(row.refresh_expires).getTime() < Date.now()) return res.status(401).json({ error: 'Refresh token expired' })
     const token = signAccessToken({ id: row.id, email: row.email, role: row.role })
+    // Perpanjang umur cookie sesi (sama seperti refresh token, 7 hari).
+    res.cookie('arkx_session', refreshToken, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/', maxAge: 7 * 24 * 60 * 60 * 1000 })
     res.json({ token })
   } catch (error) {
     console.error('Refresh error:', error)
@@ -253,6 +257,7 @@ router.post('/logout', (req, res: Response) => {
       } catch (e) { console.warn('[auth] Logout: invalid refresh token:', e.message) }
     }
   } catch (e) { console.warn('[auth] Logout error:', e) }
+  res.clearCookie('arkx_session', { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/' })
   res.json({ message: 'Logged out successfully' })
 })
 
