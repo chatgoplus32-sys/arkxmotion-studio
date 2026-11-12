@@ -1046,7 +1046,7 @@ router.post('/voice-clone', raw({ type: () => true, limit: '30mb' }), async (req
       'Content-Type': String(req.headers['content-type'] || 'multipart/form-data'),
       'Accept': 'application/json',
     },
-    body: req.body,
+    body: new Uint8Array(req.body),
   }, { kredensialServer: auth.credential?.source === 'master', credential: auth.credential, accountId: auth.accountId, cadangan: auth.cadangan })
   lepasReservasi(auth.accountId)
   if (hasil) {
