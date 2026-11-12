@@ -3308,4 +3308,407 @@ Memahami label makanan, ukuran porsi, dan kebiasaan harian membantu kita membuat
   updatePlayButton();
   syncHeaderWorkspaceBtn(false);
 })();
-</script></body></html>
+</script>
+<script>/* KUNCI GEMINI aktif — kelola beberapa API key Gemini + rotasi otomatis saat kuota 429 */
+(function () {
+  if (window.__arkxKeyMenu) return;
+  window.__arkxKeyMenu = true;
+  var KEY = 'automotion:key', LIST = 'automotion:keys', TOKEN = 'arkxmotion_token';
+  var PLACEHOLDER = 'ARKX-SERVER';
+  var G = 'https://generativelanguage.googleapis.com/';
+  var modal = null, listEl = null, inputEl = null, msgEl = null, modeEl = null;
+  var testState = {}, servWarnAt = 0, exhAt = 0, cleared = false, bridgeSeq = 0;
+
+  function $(s, r) { return (r || document).querySelector(s); }
+  function ls(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
+  function sset(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function jread(k, d) { var raw = ls(k); if (!raw) return d; try { return JSON.parse(raw); } catch (e) { return d; } }
+  function jwrite(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+  function hasLogin() { return false; } // Auto Motion: hanya kunci sendiri (tanpa relay server ARKX)
+  function activeVal() {
+    var v = jread(KEY, null);
+    if (typeof v !== 'string') v = ls(KEY);
+    return String(v || '').trim();
+  }
+  function isServerMode() { return hasLogin() && (!activeVal() || activeVal() === PLACEHOLDER); }
+  function ownKeys() {
+    var l = jread(LIST, []);
+    if (!Array.isArray(l)) l = [];
+    l = l.filter(function (x) { return typeof x === 'string' && x.trim() && x.trim() !== PLACEHOLDER; })
+      .map(function (x) { return x.trim(); });
+    var a = activeVal();
+    if (a && a !== PLACEHOLDER && l.indexOf(a) < 0) l.unshift(a);
+    return l.filter(function (x, i) { return l.indexOf(x) === i; });
+  }
+  function saveKeys(l) { jwrite(LIST, l); }
+  function mask(k) { if (!k) return '—'; if (k.length <= 10) return k.slice(0, 2) + '…' + k.slice(-2); return k.slice(0, 6) + '…' + k.slice(-4); }
+  function toast(m, ms) {
+    var t = document.getElementById('toast');
+    if (!t) return;
+    t.textContent = m;
+    t.classList.add('show');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function () { t.classList.remove('show'); }, ms || 2600);
+  }
+
+  /* --- jembatan ke state app: tulis localStorage + pakai input kunci milik app --- */
+  function bridge(val) {
+    var seq = ++bridgeSeq;
+    var tries = 0;
+    (function go() {
+      if (seq !== bridgeSeq) return;
+      var inp = document.getElementById('apiKey');
+      var btn = document.querySelector('[data-act="saveKey"]');
+      if (!inp || !btn) {
+        var hk = document.getElementById('heroKey'), hb = document.getElementById('heroKeyBtn');
+        if (hk && hb) { inp = hk; btn = hb; }
+      }
+      if (inp && btn) {
+        inp.value = val;
+        try { inp.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
+        btn.click();
+        return;
+      }
+      if (++tries < 8) setTimeout(go, 400);
+    })();
+  }
+  function applyActive(val) {
+    cleared = false;
+    sset(KEY, JSON.stringify(val));
+    var l = ownKeys();
+    saveKeys(l);
+    bridge(val);
+    render();
+  }
+
+  /* --- UI --- */
+  function injectStyle() {
+    if (document.getElementById('kmStyle')) return;
+    var st = document.createElement('style');
+    st.id = 'kmStyle';
+    st.textContent = [
+      '#btnAiKeys{white-space:nowrap}',
+      '#btnAiKeys.km-flash{animation:kmflash .5s ease 3;border-color:var(--acc);color:var(--acc2)}',
+      '@keyframes kmflash{50%{box-shadow:0 0 0 3px rgba(0,168,255,.35)}}',
+      '#aiKeysModal .keym{width:min(590px,100%)}',
+      '#aiKeysModal .km-lead{color:var(--mut);font-size:13px;margin:-4px 0 12px}',
+      '#aiKeysModal .km-mode{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:650;color:var(--acc2);background:rgba(0,168,255,.1);border:1px solid rgba(0,168,255,.3);border-radius:99px;padding:4px 10px;margin-bottom:12px}',
+      '#aiKeysModal .km-list{display:grid;gap:8px;margin-bottom:12px;max-height:42vh;overflow:auto}',
+      '#aiKeysModal .km-row{display:flex;align-items:center;gap:10px;border:1px solid var(--line);background:var(--card);border-radius:12px;padding:9px 11px;flex-wrap:wrap}',
+      '#aiKeysModal .km-row.on{border-color:var(--acc);box-shadow:0 0 0 1px rgba(0,168,255,.25)}',
+      '#aiKeysModal .km-k{flex:1;min-width:150px}',
+      '#aiKeysModal .km-k b{display:block;font:700 13px "JetBrains Mono",monospace;letter-spacing:.01em}',
+      '#aiKeysModal .km-k small{display:block;margin-top:3px;color:var(--dim);font-size:11px}',
+      '#aiKeysModal .km-a{display:flex;gap:6px;flex-wrap:wrap;align-items:center}',
+      '#aiKeysModal .km-a .btn{padding:5px 9px;font-size:12px;border-radius:8px}',
+      '#aiKeysModal .km-on{font-size:11px;font-weight:800;color:#31D5A0;border:1px solid rgba(49,213,160,.4);background:rgba(49,213,160,.1);border-radius:99px;padding:3px 9px}',
+      '#aiKeysModal .km-st.ok{color:#31D5A0}',
+      '#aiKeysModal .km-st.warn{color:#FBBF24}',
+      '#aiKeysModal .km-st.err{color:#FF8FA3}',
+      '#aiKeysModal .km-add{display:flex;gap:8px}',
+      '#aiKeysModal .km-add input{flex:1;min-width:0}',
+      '#aiKeysModal .km-msg{margin:10px 0 0;font-size:12.5px;padding:8px 10px;border-radius:9px;border:1px solid var(--line2);background:var(--bg2);color:var(--mut)}',
+      '#aiKeysModal .km-msg.err{color:#FF8FA3;border-color:rgba(255,77,109,.4)}',
+      '#aiKeysModal .km-msg.ok{color:#31D5A0;border-color:rgba(49,213,160,.4)}',
+      '#aiKeysModal .km-help{color:var(--dim);font-size:12px;margin:12px 0 0;line-height:1.5}',
+      '#aiKeysModal .km-help a{color:var(--acc2)}',
+      '@media(max-width:560px){#btnAiKeys{padding:8px 10px}#btnAiKeys .lbl{display:none}}'
+    ].join('');
+    document.head.appendChild(st);
+  }
+
+  function ensureUI() {
+    if (modal) return;
+    injectStyle();
+    modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.id = 'aiKeysModal';
+    modal.hidden = true;
+    modal.innerHTML = '<div class="dlg keym" role="dialog" aria-modal="true" aria-labelledby="kmTitle">' +
+      '<h3 id="kmTitle">🔑 Kunci AI Gemini</h3>' +
+      '<p class="km-lead">Simpan beberapa kunci. Saat Google membalas kuota habis (429), halaman ini otomatis pindah ke kunci berikutnya.</p>' +
+      '<div class="km-mode" id="kmMode"></div>' +
+      '<div class="km-list" id="kmList"></div>' +
+      '<div class="km-add"><input id="kmInput" type="password" autocomplete="off" spellcheck="false" placeholder="Tempel kunci Gemini (AIza…)"><button class="btn primary" id="kmAdd" type="button">Tambah</button></div>' +
+      '<div class="km-msg" id="kmMsg" hidden></div>' +
+      '<p class="km-help">Kunci gratis di <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio</a>. Kunci hanya disimpan di browser ini (localStorage) dan tidak dikirim ke server ARKX.</p>' +
+      '<div class="dlg-actions"><button class="btn" id="kmTestAll" type="button">Uji semua</button><button class="btn primary" id="kmClose" type="button">Selesai</button></div>' +
+      '</div>';
+    document.body.appendChild(modal);
+    listEl = $('#kmList', modal);
+    inputEl = $('#kmInput', modal);
+    msgEl = $('#kmMsg', modal);
+    modeEl = $('#kmMode', modal);
+    $('#kmClose', modal).addEventListener('click', close);
+    $('#kmAdd', modal).addEventListener('click', addKey);
+    inputEl.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); addKey(); } });
+    $('#kmTestAll', modal).addEventListener('click', testAll);
+    modal.addEventListener('click', function (e) { if (e.target === modal) close(); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && modal && !modal.hidden) close(); });
+  }
+
+  function msg(t, cls) {
+    ensureUI();
+    msgEl.hidden = !t;
+    msgEl.textContent = t || '';
+    msgEl.className = 'km-msg' + (cls ? ' ' + cls : '');
+  }
+
+  function mkBtn(label, cls) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'btn ' + cls;
+    b.textContent = label;
+    return b;
+  }
+
+  function testKey(k, el) {
+    if (!el) return;
+    el.textContent = 'Menguji…';
+    el.className = 'km-st';
+    var x = new XMLHttpRequest();
+    x.open('GET', G + 'v1beta/models?pageSize=1&key=' + encodeURIComponent(k), true);
+    x.timeout = 15000;
+    x.onload = function () {
+      var s = x.status, t, c;
+      if (s === 200) { t = '✓ Bisa dipakai'; c = 'ok'; }
+      else if (s === 429) { t = '⚠ Valid, kuota habis'; c = 'warn'; }
+      else if (s === 400 || s === 401 || s === 403) { t = '✕ Ditolak Google (' + s + ')'; c = 'err'; }
+      else { t = 'HTTP ' + s; c = 'err'; }
+      testState[k] = { t: t, c: c };
+      el.textContent = t;
+      el.className = 'km-st ' + c;
+    };
+    x.onerror = function () { testState[k] = { t: '✕ Gagal jaringan', c: 'err' }; el.textContent = testState[k].t; el.className = 'km-st err'; };
+    x.ontimeout = function () { testState[k] = { t: '✕ Timeout', c: 'err' }; el.textContent = testState[k].t; el.className = 'km-st err'; };
+    try { x.send(); } catch (e) { el.textContent = '✕ Gagal'; el.className = 'km-st err'; }
+  }
+
+  function removeKey(k) {
+    var l = ownKeys().filter(function (x) { return x !== k; });
+    saveKeys(l);
+    delete testState[k];
+    var last = !l.length && !hasLogin();
+    if (activeVal() === k) applyActive(l[0] || (hasLogin() ? PLACEHOLDER : ''));
+    else render();
+    cleared = last;
+    msg('Kunci ' + mask(k) + ' dihapus.', 'ok');
+  }
+
+  function addKey() {
+    ensureUI();
+    var v = String(inputEl.value || '').trim();
+    if (!v) { msg('Tempel dulu kunci Gemini-nya.', 'err'); inputEl.focus(); return; }
+    if (/\s/.test(v)) { msg('Kunci tidak boleh mengandung spasi.', 'err'); return; }
+    if (v.length < 20) { msg('Kunci terlalu pendek — salin ulang dari Google AI Studio.', 'err'); return; }
+    if (v === PLACEHOLDER) { msg('Itu placeholder server, bukan kunci Gemini.', 'err'); return; }
+    var l = ownKeys();
+    var dup = l.indexOf(v) >= 0;
+    if (!dup) { l.push(v); saveKeys(l); }
+    inputEl.value = '';
+    applyActive(v);
+    toast('Kunci ' + mask(v) + ' ' + (dup ? 'sudah ada — diaktifkan.' : 'ditambahkan & aktif.'), 3000);
+    msg(dup ? 'Kunci sudah ada, sekarang aktif.' : 'Kunci ditambahkan dan langsung dipakai.', 'ok');
+  }
+
+  function testAll() {
+    var rows = listEl ? listEl.querySelectorAll('.km-row[data-own]') : [];
+    var keys = ownKeys();
+    var i = 0;
+    (function next() {
+      if (i >= rows.length) return;
+      var row = rows[i], k = keys[+row.getAttribute('data-i')];
+      i++;
+      if (!k) { next(); return; }
+      testKey(k, row.querySelector('.km-st'));
+      setTimeout(next, 500);
+    })();
+  }
+
+  function render() {
+    ensureUI();
+    var active = activeVal();
+    var server = isServerMode();
+    var keys = ownKeys();
+    modeEl.textContent = server ? 'Aktif: Server ARKX (kuota Pro)' : (active && active !== PLACEHOLDER ? 'Aktif: kunci sendiri ' + mask(active) : (active === PLACEHOLDER ? 'Kunci server butuh login' : 'Belum ada kunci aktif'));
+    listEl.innerHTML = '';
+    if (hasLogin()) {
+      var sr = document.createElement('div');
+      sr.className = 'km-row' + (server ? ' on' : '');
+      sr.setAttribute('data-server', '1');
+      var sk = document.createElement('div');
+      sk.className = 'km-k';
+      sk.innerHTML = '<b>Server ARKX</b><small>Relay Pro — kuota harian bersama, tanpa kunci sendiri.</small>';
+      sr.appendChild(sk);
+      var sa = document.createElement('div');
+      sa.className = 'km-a';
+      if (server) { var on = document.createElement('span'); on.className = 'km-on'; on.textContent = 'Aktif'; sa.appendChild(on); }
+      else {
+        var ub = mkBtn('Pakai', 'km-use');
+        ub.addEventListener('click', function () { applyActive(PLACEHOLDER); msg('Beralih ke relay server ARKX.', 'ok'); toast('Memakai server ARKX.', 2400); });
+        sa.appendChild(ub);
+      }
+      sr.appendChild(sa);
+      listEl.appendChild(sr);
+    }
+    if (!keys.length) {
+      var empty = document.createElement('div');
+      empty.className = 'km-row';
+      empty.innerHTML = '<div class="km-k"><b>Belum ada kunci sendiri</b><small>Tambahkan kunci Gemini milikmu di bawah.</small></div>';
+      listEl.appendChild(empty);
+    }
+    keys.forEach(function (k, i) {
+      var isOn = !server && k === active;
+      var row = document.createElement('div');
+      row.className = 'km-row' + (isOn ? ' on' : '');
+      row.setAttribute('data-own', '1');
+      row.setAttribute('data-i', String(i));
+      var kd = document.createElement('div');
+      kd.className = 'km-k';
+      var b = document.createElement('b');
+      b.textContent = mask(k) + (i === 0 ? ' · utama' : '');
+      kd.appendChild(b);
+      var sm = document.createElement('small');
+      sm.className = 'km-st' + (testState[k] ? ' ' + testState[k].c : '');
+      sm.textContent = testState[k] ? testState[k].t : 'Urutan rotasi: ' + (i + 1);
+      kd.appendChild(sm);
+      row.appendChild(kd);
+      var a = document.createElement('div');
+      a.className = 'km-a';
+      if (isOn) { var on2 = document.createElement('span'); on2.className = 'km-on'; on2.textContent = 'Aktif'; a.appendChild(on2); }
+      else {
+        var use = mkBtn('Pakai', 'km-use');
+        use.addEventListener('click', function () { applyActive(k); msg('Kunci ' + mask(k) + ' sekarang aktif.', 'ok'); toast('Kunci ' + mask(k) + ' aktif.', 2400); });
+        a.appendChild(use);
+      }
+      var test = mkBtn('Uji', 'km-test');
+      test.addEventListener('click', function () { testKey(k, sm); });
+      a.appendChild(test);
+      var del = mkBtn('Hapus', 'km-del');
+      del.addEventListener('click', function () {
+        if (del.getAttribute('data-arm') !== '1') {
+          del.setAttribute('data-arm', '1');
+          del.textContent = 'Hapus?';
+          setTimeout(function () { del.removeAttribute('data-arm'); del.textContent = 'Hapus'; }, 2600);
+          return;
+        }
+        removeKey(k);
+      });
+      a.appendChild(del);
+      row.appendChild(a);
+      listEl.appendChild(row);
+    });
+  }
+
+  function open() { ensureUI(); render(); modal.hidden = false; msg('', ''); setTimeout(function () { try { inputEl.focus(); } catch (e) {} }, 30); }
+  function close() { if (modal) modal.hidden = true; }
+
+  function flashBtn() {
+    var b = document.getElementById('btnAiKeys');
+    if (!b) return;
+    b.classList.remove('km-flash');
+    void b.offsetWidth;
+    b.classList.add('km-flash');
+    setTimeout(function () { b.classList.remove('km-flash'); }, 1800);
+  }
+
+  /* --- rotasi otomatis saat Gemini 429 --- */
+  var prevFetch = window.fetch;
+  function orderedAfter(failed) {
+    var l = ownKeys();
+    var i = l.indexOf(failed);
+    if (i < 0) i = l.indexOf(activeVal());
+    if (i < 0) return l;
+    return l.slice(i + 1).concat(l.slice(0, i));
+  }
+  function cloneOpts(o) {
+    var n = {}, k;
+    if (o) for (k in o) { if (k !== '__akTried') n[k] = o[k]; }
+    return n;
+  }
+  function handle429(url, opt, res) {
+    var failed = '';
+    try { failed = String(new Headers(opt.headers || undefined).get('x-goog-api-key') || '').trim(); } catch (e) {}
+    var tried = ((opt && opt.__akTried) || []).slice();
+    if (failed && tried.indexOf(failed) < 0) tried.push(failed);
+    var cand = orderedAfter(failed).filter(function (k) { return tried.indexOf(k) < 0; });
+    if (!cand.length) {
+      if (Date.now() - exhAt > 15000) {
+        exhAt = Date.now();
+        toast('Kuota semua kunci Gemini habis. Tambah kunci baru di 🔑 Kunci AI.', 5200);
+        flashBtn();
+        open();
+        msg('Semua kunci terkena batas kuota (429). Tambahkan kunci Gemini baru, lalu klik Pakai.', 'err');
+      }
+      return res;
+    }
+    var next = cand[0];
+    applyActive(next);
+    toast('Kuota kunci ' + mask(failed || activeVal()) + ' habis → pindah ke ' + mask(next) + '.', 4200);
+    if (opt.body && typeof opt.body !== 'string') return res;
+    var o = cloneOpts(opt);
+    var h = new Headers(o.headers || undefined);
+    h.set('x-goog-api-key', next);
+    o.headers = h;
+    o.__akTried = tried;
+    var u2 = String(url).replace(/([?&])key=[^&]*/, '$1key=' + encodeURIComponent(next));
+    return prevFetch.call(window, u2, o).then(function (r2) {
+      return r2.status === 429 ? handle429(u2, o, r2) : r2;
+    }, function () { return res; });
+  }
+  window.fetch = function (u, opt) {
+    var url = String((u && u.url) || u || '');
+    if (url.indexOf(G) !== 0) return prevFetch.apply(this, arguments);
+    var use = u, opt2 = opt;
+    var k = activeVal();
+    var own = !!k && k !== PLACEHOLDER && !isServerMode();
+    if (own && typeof u === 'string') {
+      opt2 = cloneOpts(opt || {});
+      var h = new Headers(opt2.headers || undefined);
+      h.set('x-goog-api-key', k);
+      opt2.headers = h;
+      url = u.replace(/([?&])key=[^&]*/, '$1key=' + encodeURIComponent(k));
+      use = url;
+    } else if (cleared && typeof u === 'string') {
+      opt2 = cloneOpts(opt || {});
+      var hc = new Headers(opt2.headers || undefined);
+      hc.delete('x-goog-api-key');
+      opt2.headers = hc;
+      url = u.replace(/([?&])key=[^&]*/, '$1key=');
+      use = url;
+    }
+    return prevFetch.call(this, use, opt2).then(function (res) {
+      if (res.status !== 429) return res;
+      if (isServerMode()) {
+        if (Date.now() - servWarnAt > 20000) {
+          servWarnAt = Date.now();
+          toast('Kuota AI server habis. Buka 🔑 Kunci AI untuk memakai kunci Gemini sendiri.', 5600);
+          flashBtn();
+        }
+        return res;
+      }
+      return handle429(url, opt2 || {}, res);
+    }, function (err) { throw err; });
+  };
+
+  /* --- tombol header --- */
+  function mountBtn() {
+    var actions = $('header.top .actions');
+    if (!actions || document.getElementById('btnAiKeys')) return;
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.id = 'btnAiKeys';
+    b.className = 'btn';
+    b.title = 'Kelola kunci Gemini & rotasi kuota';
+    b.innerHTML = '<span aria-hidden="true">🔑</span><span class="lbl"> Kunci AI</span>';
+    b.addEventListener('click', open);
+    var meter = document.getElementById('aiMeter');
+    if (meter && meter.parentNode === actions) meter.insertAdjacentElement('afterend', b);
+    else actions.insertBefore(b, actions.firstChild);
+  }
+  mountBtn();
+  ensureUI();
+  render();
+})();
+</script>
+</body></html>
