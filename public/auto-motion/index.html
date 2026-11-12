@@ -1956,7 +1956,7 @@ const t=["gemini-3-flash-preview","gemini-3.8-flash","gemini-3.6-flash","gemini-
   };
 })();
 
-</script><script type="module">
+</script><script>
 (() => {
   const $ = (id) => document.getElementById(`amIdea${id}`);
   const root = $('Studio');
@@ -4331,17 +4331,23 @@ ${scenesHtml}
 ${tweensJs}
     window.__timelines["main"] = tl;
   <\/script>
+  </body>
+</html>
+`;
+  }
 
-<style id="amHybridStoryStyles">
+
+/* ARKX Story Architect — dipindahkan dari dalam template export ke kode
+   interaktif aplikasi (CSS disisipkan ke document.head saat startup) */
+const HYBRID_STORY_CSS = `<style id="amHybridStoryStyles">
 .am-story-architect{margin:18px 0 16px;padding:18px;border:1px solid rgba(255,151,91,.24);border-radius:18px;background:linear-gradient(145deg,rgba(35,29,28,.94),rgba(13,16,23,.98));box-shadow:0 16px 40px rgba(0,0,0,.16);color:#edf0f6}
 .am-story-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}.am-story-kicker{font:800 9px ui-monospace,monospace;letter-spacing:.15em;color:#ffad79}.am-story-head h3{margin:7px 0 5px;font-size:20px;letter-spacing:-.03em}.am-story-head h3 span{color:#ffad79}.am-story-head p{margin:0;max-width:720px;color:#aab2c0;font-size:12px;line-height:1.6}.am-story-chip{flex:none;border:1px solid rgba(255,166,115,.3);border-radius:999px;padding:6px 9px;color:#ffb58b;font:800 9px ui-monospace,monospace;letter-spacing:.08em}
 .am-story-controls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:16px 0 12px}.am-story-controls label{display:grid;gap:6px;color:#aeb6c4;font-size:10px;font-weight:700}.am-story-controls select{width:100%;min-width:0;border:1px solid #343d4b;border-radius:9px;background:#151b25;color:#edf0f6;padding:10px;font:inherit;font-size:11px;outline:none}.am-story-controls select:focus{border-color:#ff9d68;box-shadow:0 0 0 2px rgba(255,157,104,.14)}
 .am-story-actions{display:flex;flex-wrap:wrap;gap:8px}.am-story-actions button{border-radius:9px;padding:10px 12px;font-size:11px;font-weight:800;cursor:pointer}.am-story-primary{border:0;background:linear-gradient(135deg,#ffc18e,#ff743f);color:#27140c}.am-story-secondary{border:1px solid #394353;background:#171e29;color:#dce2ec}.am-story-actions button:disabled{opacity:.38;cursor:not-allowed}.am-story-status{margin:12px 0;padding:9px 11px;border-radius:8px;background:rgba(255,255,255,.035);color:#aab4c3;font-size:10px;line-height:1.5}.am-story-summary{display:flex;flex-wrap:wrap;gap:7px;margin:10px 0}.am-story-stat{padding:7px 9px;border:1px solid #303a49;border-radius:8px;background:#121923;color:#dce4ee;font-size:10px}.am-story-stat b{color:#ffb17f}.am-storyboard-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.am-story-card{min-width:0;padding:12px;border:1px solid #2d3745;border-radius:11px;background:rgba(10,14,21,.76)}.am-story-card-top{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:8px}.am-story-num{color:#ffad79;font:800 9px ui-monospace,monospace;letter-spacing:.08em}.am-story-beat{padding:4px 7px;border-radius:999px;background:rgba(255,154,100,.12);color:#ffbd95;font-size:9px;font-weight:800}.am-story-line{margin:0 0 8px;color:#edf0f6;font-size:12px;font-weight:800;line-height:1.45}.am-story-meta{display:grid;grid-template-columns:1fr 1fr;gap:6px}.am-story-meta div{padding:7px;border-radius:7px;background:#151c27}.am-story-meta small{display:block;margin-bottom:3px;color:#8490a1;font-size:8px;text-transform:uppercase;letter-spacing:.07em}.am-story-meta span{display:block;color:#cbd3df;font-size:10px;line-height:1.4}.am-story-card-foot{display:flex;justify-content:space-between;gap:8px;margin-top:8px;color:#8793a4;font-size:9px}.am-story-foot{margin:10px 0 0;color:#7f8b9d;font-size:9px;line-height:1.5}
 @media(max-width:760px){.am-story-controls{grid-template-columns:1fr}.am-storyboard-grid{grid-template-columns:1fr}.am-story-head{display:block}.am-story-chip{display:inline-block;margin-top:9px}.am-story-actions button{flex:1 1 46%}}
-</style>
+</style>`;
+document.head.insertAdjacentHTML('beforeend', HYBRID_STORY_CSS);
 
-
-<script id="amHybridStoryEngine">
 (() => {
   'use strict';
   const byId = (id) => document.getElementById(id);
@@ -4494,6 +4500,7 @@ ${tweensJs}
   byId('amStoryExport').addEventListener('click',exportBoard);
   byId('amStoryCopy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(toMarkdown());byId('amStoryStatus').textContent='Shot list berhasil disalin.';}catch(e){download(new Blob([toMarkdown()],{type:'text/markdown'}),'ARKX_Hybrid_Shot_List.md');byId('amStoryStatus').textContent='Clipboard tidak tersedia; shot list diunduh sebagai Markdown.';}});
   source.addEventListener('input',()=>{if(currentBoard.length){byId('amStoryStatus').textContent='Naskah berubah. Buat ulang storyboard agar shot list sesuai dengan naskah terbaru.';}});
+})();
 })();
 </script>
 
