@@ -8,6 +8,7 @@ import {
   Search, Sparkles, Trash2, Video, X,
 } from 'lucide-react'
 import { getResults, removeResult, updateResult, persistResultToR2, GENERATION_PAGE_KIND, type CompletedResult } from '@/lib/backgroundTasks'
+import { downloadExternalViaProxy } from '@/lib/downloadExternal'
 import { restoreMotionAudio } from '@/lib/motionAudio'
 import {
   autoRemoveWatermarkFromVideo,
@@ -458,6 +459,15 @@ export default function AssetsPage() {
     if (downloading) return
     setDownloading(asset.key)
     try {
+      // Unduhan streaming lewat proxy lebih dulu — buffer seluruh blob di
+      // memori sering gagal diam-diam untuk video besar.
+      if (/^https?:\/\//i.test(asset.url)) {
+        const streamed = await downloadExternalViaProxy(asset.url, downloadName(asset))
+        if (streamed) {
+          addToast('Unduhan dimulai', 'success')
+          return
+        }
+      }
       const blob = await fetchAssetBlob(asset)
       triggerDownload(blob, downloadName(asset))
       addToast('Unduhan dimulai', 'success')

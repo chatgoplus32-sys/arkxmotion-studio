@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express'
+import { contentDispositionFilename } from '../../shared/downloadName.js'
 
 const router = Router()
 
@@ -11,6 +12,10 @@ router.get('/', async (req: Request, res: Response) => {
 
   const url = req.query.url as string
   if (!url || !url.startsWith('http')) return res.status(400).json({ ok: false, error: 'Missing or invalid url param' })
+  // Mode unduh: header attachment → browser streaming ke disk (tanpa buffer
+  // seluruh file di memori), dengan nama file yang diminta klien.
+  const download = String(req.query.download || '') === '1'
+  const downloadName = typeof req.query.name === 'string' ? req.query.name : ''
 
   try {
     const parsed = new URL(url)
@@ -59,6 +64,8 @@ router.get('/', async (req: Request, res: Response) => {
     if (upstream.status === 206) res.setHeader('Content-Range', contentRange || `bytes 0-/${contentLength || '?'}`)
     res.setHeader('Accept-Ranges', 'bytes')
     res.setHeader('Cache-Control', 'public, max-age=300, no-transform')
+    res.setHeader('X-Accel-Buffering', 'no')
+    if (download) res.setHeader('Content-Disposition', contentDispositionFilename(downloadName))
 
     if (req.method === 'HEAD') return res.status(200).end()
 

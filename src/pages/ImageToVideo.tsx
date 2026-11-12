@@ -7,6 +7,7 @@ import { Link } from 'react-router-dom'
 import { Swipeable } from '@/components/Swipeable'
 import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
 import { getSeaviSpec, generateWithSeavi, fetchSeaviBalance, buildSeaviPayload } from '@/lib/seavi'
+import { downloadExternalViaProxy } from '@/lib/downloadExternal'
 import { buildPosbotPayload, getPosbotSpec, submitPosbotGeneration, pollPosbotStatus, PosbotJobFailed, POSBOT_MODE_LABELS, posbotModeSummary } from '@/lib/posbot'
 import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
@@ -413,8 +414,13 @@ export default function ImageToVideoPage() {
       // jalur browser→COS jauh lebih cepat daripada browser→VPS→COS (proxy slow ~0,3 MB/s).
       const isExternal = /^https?:\/\//i.test(url) && !url.includes(window.location.origin)
       if (isExternal) {
+        // 1) Unduh streaming lewat proxy dengan attachment → browser simpan
+        //    langsung ke disk (tanpa buffer seluruh file di memori; ini jalur
+        //    yang membuat video besar / Motion Control gagal di ponsel).
+        const viaProxy = await downloadExternalViaProxy(url, filename)
+        if (viaProxy) return
         let blob: Blob | null = null
-        // 1) Fast path: direct fetch (CORS)
+        // 2) Fallback: direct fetch blob (pernah buffer memori)
         try {
           console.log('[download] direct fetch:', url.slice(0, 100))
           const res = await fetch(url)
@@ -426,7 +432,7 @@ export default function ImageToVideoPage() {
         } catch {
           // CORS / jaringan gagal → lanjut proxy
         }
-        // 2) Fallback: proxy VPS (host anti-CORS yang butuh Referer, dsb.)
+        // 3) Fallback: proxy VPS → blob (lama; paling lambat terhadap memori)
         if (!blob) {
           try {
             const proxyUrl = `/api/public/video-proxy?url=${encodeURIComponent(url)}`
@@ -455,8 +461,8 @@ export default function ImageToVideoPage() {
           }, 1000)
           return
         }
-        // 3) Semua gagal — tautan langsung (bila disalahkan jadi tab baru)
-        console.error('[download] direct & proxy failed, opening url')
+        // 4) Semua gagal — tautan langsung (bila disalahkan jadi tab baru)
+        console.error('[download] proxy streaming & blob failed, opening url')
         window.open(url, '_blank')
         return
       } else {
