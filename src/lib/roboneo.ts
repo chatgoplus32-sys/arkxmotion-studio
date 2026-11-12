@@ -327,9 +327,9 @@ export async function uploadToCatbox(file: File, kind?: string, onProgress?: (ms
     // CORS dari browser. VPS melakukan server-to-server request ke layanan
     // eksternal, jadi tidak ada masalah CORS.
     ['Uguu', (f) => uploadToProxy('uguu', f)],
-    ['Catbox', (f) => uploadToProxy('catbox', f)],
-    ['Pixeldrain', (f) => uploadToProxy('pixeldrain', f)],
-    ['0x0', (f) => uploadToProxy('0x0', f)],
+    // Litterbox = satu-satunya host catbox yang reachable dari VPS ini;
+    // catbox.moe/pixeldrain/0x0 connect-timeout — jangan dicoba lagi.
+    ['Litterbox', (f) => uploadToProxy('litterbox', f)],
     // Tmpfiles sengaja tidak dipasang: API-nya cuma mengembalikan URL halaman
     // HTML, dan tautan /dl/ di halaman itu redirect balik ke HTML kalau diambil
     // tanpa cookie — browser tidak bisa memperbaikinya, jadi host ini tidak

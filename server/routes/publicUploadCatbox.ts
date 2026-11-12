@@ -56,7 +56,7 @@ async function uploadToCatbox(fileBuffer: Buffer, fileName: string, mimeType: st
     const fd = new FormData()
     fd.append('reqtype', 'fileupload')
     fd.append('fileToUpload', new Blob([new Uint8Array(fileBuffer)], { type: mimeType }), fileName)
-    const res = await fetch('https://catbox.moe/user/api.php', { method: 'POST', body: fd })
+    const res = await fetch('https://catbox.moe/user/api.php', { method: 'POST', body: fd, signal: AbortSignal.timeout(120000) })
     const text = (await res.text()).trim()
     if (res.ok && text.startsWith('http')) return text
     console.log('[upload] catbox failed:', res.status, text.slice(0, 200))
@@ -70,7 +70,7 @@ async function uploadToLitterbox(fileBuffer: Buffer, fileName: string, mimeType:
     fd.append('reqtype', 'fileupload')
     fd.append('time', '72h')
     fd.append('fileToUpload', new Blob([new Uint8Array(fileBuffer)], { type: mimeType }), fileName)
-    const res = await fetch('https://litterbox.catbox.moe/resources/internals/api.php', { method: 'POST', body: fd })
+    const res = await fetch('https://litterbox.catbox.moe/resources/internals/api.php', { method: 'POST', body: fd, signal: AbortSignal.timeout(120000) })
     const text = (await res.text()).trim()
     if (res.ok && text.startsWith('http')) return text
     console.log('[upload] litterbox failed:', res.status, text.slice(0, 200))
@@ -82,7 +82,7 @@ async function uploadToPixeldrain(fileBuffer: Buffer, fileName: string, mimeType
   try {
     const fd = new FormData()
     fd.append('file', new Blob([new Uint8Array(fileBuffer)], { type: mimeType }), fileName)
-    const res = await fetch('https://pixeldrain.com/api/file', { method: 'POST', body: fd })
+    const res = await fetch('https://pixeldrain.com/api/file', { method: 'POST', body: fd, signal: AbortSignal.timeout(120000) })
     const data = await res.json().catch(() => null) as any
     if (res.ok && data?.id) return `https://pixeldrain.com/api/file/${data.id}`
     console.log('[upload] pixeldrain failed:', res.status, JSON.stringify(data).slice(0, 200))
@@ -94,7 +94,7 @@ async function uploadTo0x0(fileBuffer: Buffer, fileName: string, mimeType: strin
   try {
     const fd = new FormData()
     fd.append('file', new Blob([new Uint8Array(fileBuffer)], { type: mimeType }), fileName)
-    const res = await fetch('https://0x0.st', { method: 'POST', body: fd })
+    const res = await fetch('https://0x0.st', { method: 'POST', body: fd, signal: AbortSignal.timeout(120000) })
     const text = (await res.text()).trim()
     if (res.ok && text.startsWith('http')) return text
     console.log('[upload] 0x0 failed:', res.status, text.slice(0, 200))
@@ -121,10 +121,10 @@ router.post('/', (req: Request, res: Response) => {
       const target = (req.query.target as string) || ''
       console.log(`[upload] file: ${fileName} (${(fileBuffer.length / 1024).toFixed(1)}KB, ${mimeType}) target=${target || 'auto'}`)
 
-      const tryUpload = async (uploads: Array<Promise<string | null>>): Promise<string | null> => {
-        for (const u of uploads) {
+      const tryUpload = async (steps: Array<() => Promise<string | null>>): Promise<string | null> => {
+        for (const step of steps) {
           try {
-            const url = await u
+            const url = await step()
             if (url) return url
           } catch (e: any) { console.log('[upload] fallback error:', e.message) }
         }
@@ -147,13 +147,15 @@ router.post('/', (req: Request, res: Response) => {
         const url = await uploadTo0x0(fileBuffer, fileName, mimeType)
         if (url) return res.status(200).json({ ok: true, url })
       } else {
-        // Auto: coba semua secara berurutan
+        // Auto: coba berurutan, berhenti di keberhasilan pertama. Uguu &
+        // Litterbox terbukti reachable dari VPS ini; catbox/pixeldrain/0x0
+        // timeout — tetap di bawah sebagai cadangan terakhir saja.
         const url = await tryUpload([
-          uploadToUguu(fileBuffer, fileName, mimeType),
-          uploadToCatbox(fileBuffer, fileName, mimeType),
-          uploadToLitterbox(fileBuffer, fileName, mimeType),
-          uploadToPixeldrain(fileBuffer, fileName, mimeType),
-          uploadTo0x0(fileBuffer, fileName, mimeType),
+          () => uploadToUguu(fileBuffer, fileName, mimeType),
+          () => uploadToLitterbox(fileBuffer, fileName, mimeType),
+          () => uploadToCatbox(fileBuffer, fileName, mimeType),
+          () => uploadToPixeldrain(fileBuffer, fileName, mimeType),
+          () => uploadTo0x0(fileBuffer, fileName, mimeType),
         ])
         if (url) return res.status(200).json({ ok: true, url })
       }
