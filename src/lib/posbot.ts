@@ -738,39 +738,172 @@ export interface PosbotLogOpts {
   onStatus?: (text: string, pct: number) => void
 }
 
-/** Poll GET /status/<job_code> sampai completed. Gagal = refund 100% otomatis. */
-export async function pollPosbotStatus(apiKey: string, jobCode: string, opts: PosbotLogOpts = {}): Promise<PosbotStatusResult> {
-  const { onLog, onStatus } = opts
-  const maxPolls = 240 // 5s × 240 = 20 menit (video/MC bisa >3 menit)
-  for (let i = 0; i < maxPolls; i++) {
-    if (i > 0) await new Promise((r) => setTimeout(r, 5000))
-    const res = await fetch(`${POSBOT_PROXY}?path=status/${encodeURIComponent(jobCode)}`, {
-      headers: relayAuthHeaders(apiKey),
-    })
-    if (!res.ok) {
-      onLog?.(`Poll #${i + 1}: HTTP ${res.status} (dicoba ulang...)`, 'warn')
+/** Status HTTP gateway/upstream yang boleh dicoba ulang (tidak merusak job yang sedang berjalan). */
+export const POSBOT_TRANSIENT_STATUSES = [408, 425, 429, 500, 502, 503, 504, 522, 524]
+
+export function isPosbotTransientStatus(status: number): boolean {
+  return POSBOT_TRANSIENT_STATUSES.includes(status)
+}
+
+type PosbotHttpVerdict = 'ok' | 'retry' | 'fatal'
+
+export function posbotHttpVerdict(status: number): PosbotHttpVerdict {
+  if (status < 400) return 'ok'
+  return isPosbotTransientStatus(status) ? 'retry' : 'fatal'
+}
+
+/** Batas kegagalan transient berturut-turut sebelum menyerah. Dengan jeda backoff
+ *  (maks 15s) ini setara ~2-3 menit upstream tidak bisa dihubungi — cukup lama
+ *  untuk melewati hiccup gateway, tidak menggantung user selamanya. */
+const MAX_CONSECUTIVE_TRANSIENT = 12
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, ms)))
+
+function posbotBackoffMs(attempt: number, baseMs: number, maxMs: number, random: () => number): number {
+  const factor = 1.5
+  const jitter = 0.25
+  const step = Math.max(0, Math.floor(attempt) - 1)
+  const raw = Math.min(maxMs, baseMs * Math.pow(factor, step))
+  const spread = raw * Math.min(1, Math.max(0, jitter))
+  const value = raw + (random() * 2 - 1) * spread
+  return Math.max(0, Math.round(Math.min(maxMs, value)))
+}
+
+export interface PosbotPollOptions extends PosbotLogOpts {
+  /** Batas opsional jumlah percobaan; default hanya memakai batas waktu. */
+  maxAttempts?: number
+  /** Jeda percobaan pertama (ms). Default 3000. */
+  baseMs?: number
+  /** Batas jeda backoff (ms). Default 15000. */
+  maxMs?: number
+  /** Batas waktu total polling (ms). Default 20 menit. */
+  maxTotalMs?: number
+  /** Timeout fetch + body per request, default 30 detik. */
+  requestTimeoutMs?: number
+  random?: () => number
+}
+
+export class PosbotMonitoringInterrupted extends Error {
+  readonly jobCode: string
+  constructor(jobCode: string, message: string) {
+    super(message)
+    this.jobCode = jobCode
+    this.name = 'PosbotMonitoringInterrupted'
+  }
+}
+
+export class PosbotJobFailed extends Error {
+  readonly jobCode: string
+  constructor(jobCode: string, message: string) {
+    super(message)
+    this.jobCode = jobCode
+    this.name = 'PosbotJobFailed'
+  }
+}
+
+/** GET-only monitoring. An interruption never confirms job failure. */
+export async function pollPosbotStatus(apiKey: string, jobCode: string, opts: PosbotPollOptions = {}): Promise<PosbotStatusResult> {
+  const { onLog, onStatus, maxAttempts = Infinity, baseMs = 3000, maxMs = 15000, maxTotalMs = 20 * 60 * 1000, requestTimeoutMs = 30000, random = Math.random } = opts
+  const startedAt = Date.now()
+  let attempt = 0
+  let transientStreak = 0
+  let delayMs = baseMs
+  const interrupted = (reason: string) => new PosbotMonitoringInterrupted(jobCode,
+    `PosBot: ${reason} (${attempt} percobaan, ${Math.round((Date.now() - startedAt) / 1000)} detik; batas ${Math.round(maxTotalMs / 1000)} detik). Job ${jobCode} dapat dicek lagi.`)
+  const checkDeadline = () => {
+    if (Date.now() - startedAt >= maxTotalMs) throw interrupted('timeout menunggu hasil')
+  }
+
+  /** Satu kegagalan transient: tunggu lalu lanjut, atau menyerah kalau kebanyakan
+   *  berturut-turut / melebihi anggaran waktu total. */
+  const retryLater = (info: { status: number | null; message: string }) => {
+    transientStreak++
+    delayMs = posbotBackoffMs(transientStreak, baseMs, maxMs, random)
+    onLog?.(`Poll #${attempt}: ${info.message} (dicoba ulang dalam ${Math.round(delayMs / 1000)}s)`, 'warn')
+    checkDeadline()
+    if (transientStreak >= MAX_CONSECUTIVE_TRANSIENT) {
+      throw interrupted(`tidak merespons (${transientStreak} percobaan berturut-turut gagal)`)
+    }
+  }
+
+  while (attempt < maxAttempts) {
+    checkDeadline()
+    if (attempt > 0) await sleep(Math.min(delayMs, maxTotalMs - (Date.now() - startedAt)))
+    checkDeadline()
+    attempt++
+
+    let res: Response
+    let text: string
+    const controller = new AbortController()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          controller.abort()
+          reject(new Error('timeout request status'))
+        }, Math.max(0, Math.min(requestTimeoutMs, maxTotalMs - (Date.now() - startedAt))))
+      })
+      ;({ res, text } = await Promise.race([
+        (async () => {
+          const res = await fetch(`${POSBOT_PROXY}?path=status/${encodeURIComponent(jobCode)}`, {
+            headers: relayAuthHeaders(apiKey), signal: controller.signal,
+          })
+          return { res, text: await res.text() }
+        })(),
+        timeout,
+      ]))
+      checkDeadline()
+    } catch (err: any) {
+      retryLater({ status: null, message: err?.message || 'koneksi terputus' })
+      continue
+    } finally {
+      clearTimeout(timer)
+      controller.abort()
+    }
+
+    const verdict = posbotHttpVerdict(res.status)
+    if (verdict === 'fatal') {
+      const errText = text
+      if (res.status === 401 || res.status === 403) {
+        throw interrupted(`API key tidak valid (HTTP ${res.status})${errText ? `: ${errText.slice(0, 120)}` : ''}`)
+      }
+      if (res.status === 404) {
+        throw interrupted('job tidak ditemukan (HTTP 404)')
+      }
+      throw interrupted(`HTTP ${res.status}: ${errText.slice(0, 200)}`)
+    }
+    if (verdict === 'retry') {
+      retryLater({ status: res.status, message: `HTTP ${res.status}` })
       continue
     }
-    const j = await res.json().catch(() => null)
+
+    let j: any
+    try { j = JSON.parse(text) } catch { j = null }
     if (!j) {
-      onLog?.(`Poll #${i + 1}: respons tidak valid (dicoba ulang...)`, 'warn')
+      retryLater({ status: res.status, message: 'respons tidak valid' })
       continue
     }
+    // Berhasil terhubung — reset streak & jeda ke dasar.
+    transientStreak = 0
+    delayMs = baseMs
+
     const status = String(j.status || '').toLowerCase()
-    const progress = typeof j.progress === 'number' ? j.progress : 0
+    const progress = typeof j.progress === 'number' && Number.isFinite(j.progress) ? j.progress : null
     if (status === 'completed') {
       const url = j.result_url || j.result?.url
-      if (!url) throw new Error('PosBot: job completed tanpa result_url')
+      if (!url) throw interrupted('job completed tanpa result_url')
       return { url: String(url), model: j.model }
     }
     if (status === 'failed') {
-      throw new Error(`PosBot job gagal — saldo direfund otomatis${j.error ? `: ${typeof j.error === 'string' ? j.error : j.error?.message}` : ''}`)
+      throw new PosbotJobFailed(jobCode, `PosBot job gagal${j.error ? `: ${typeof j.error === 'string' ? j.error : j.error?.message}` : ''}`)
     }
     const pct = Math.max(6, Math.min(97, progress || 5))
-    onStatus?.(`Memproses... ${progress}%`, pct)
-    if (i % 6 === 5) onLog?.(`⏳ PosBot ${status || 'processing'} (${progress}%)`, 'debug')
+    const progressText = progress === null ? 'progres belum tersedia' : `${progress}%`
+    onStatus?.(`Memproses... ${progressText}`, pct)
+    if (attempt % 6 === 0) onLog?.(`PosBot ${status || 'processing'} (${progressText})`, 'debug')
   }
-  throw new Error('PosBot: timeout menunggu hasil (>20 menit)')
+
+  throw interrupted('batas percobaan pengecekan tercapai')
 }
 
 export interface PosbotGenerateOptions extends PosbotLogOpts {

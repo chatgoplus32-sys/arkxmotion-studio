@@ -14,6 +14,8 @@ import {
   listPosbotModelIds,
   normalizePosbotKey,
   pollPosbotStatus,
+  PosbotMonitoringInterrupted,
+  PosbotJobFailed,
   posbotModelsByCategory,
   posbotModeSummary,
   POSBOT_MODELS,
@@ -34,6 +36,97 @@ function withFetchStub<T>(impl: (url: string, init?: RequestInit) => StubRes | P
     globalThis.fetch = real
   })
 }
+
+test('monitoring interruption retains job; recovery only GETs the same job', async () => {
+  const calls: string[] = []
+  let completed = false
+  await withFetchStub((url, init) => {
+    assert.equal(init?.method ?? 'GET', 'GET')
+    calls.push(url)
+    return { status: 200, body: completed ? { status: 'completed', result_url: 'https://cdn/result.mp4' } : { status: 'processing' } }
+  }, async () => {
+    let statusText = ''
+    await assert.rejects(pollPosbotStatus('key', 'same-job', {
+      maxAttempts: 1, onStatus: (text) => { statusText = text },
+    }), (err: unknown) => err instanceof PosbotMonitoringInterrupted && err.jobCode === 'same-job' && /1 percobaan/.test(err.message))
+    assert.match(statusText, /progres belum tersedia/)
+    assert.doesNotMatch(statusText, /0%/)
+    completed = true
+    assert.equal((await pollPosbotStatus('key', 'same-job')).url, 'https://cdn/result.mp4')
+    assert.equal(calls[0], calls[1])
+  })
+})
+
+for (const phase of ['fetch', 'body'] as const) {
+  test(`deadline aborts hung ${phase} and retains job`, async () => {
+    const real = globalThis.fetch
+    let signal: AbortSignal | undefined
+    globalThis.fetch = (async (_input, init) => {
+      signal = init?.signal ?? undefined
+      if (phase === 'fetch') return new Promise<Response>(() => {})
+      return { status: 200, text: () => new Promise<string>(() => {}) } as Response
+    }) as typeof fetch
+    try {
+      await assert.rejects(pollPosbotStatus('key', 'hung', { maxTotalMs: 30, requestTimeoutMs: 100 }),
+        (err: unknown) => err instanceof PosbotMonitoringInterrupted && err.jobCode === 'hung' && /timeout/.test(err.message))
+      assert.equal(signal?.aborted, true)
+    } finally { globalThis.fetch = real }
+  })
+}
+
+test('short request timeout retries a hung fetch before total deadline', async () => {
+  const real = globalThis.fetch
+  let calls = 0
+  let firstSignal: AbortSignal | undefined
+  globalThis.fetch = (async (_input, init) => {
+    if (++calls === 1) {
+      firstSignal = init?.signal ?? undefined
+      return new Promise<Response>(() => {})
+    }
+    return new Response(JSON.stringify({ status: 'completed', result_url: 'https://cdn/done' }))
+  }) as typeof fetch
+  try {
+    assert.equal((await pollPosbotStatus('key', 'retry', { requestTimeoutMs: 10, maxTotalMs: 1000, baseMs: 0 })).url, 'https://cdn/done')
+    assert.equal(firstSignal?.aborted, true)
+    assert.equal(calls, 2)
+  } finally { globalThis.fetch = real }
+})
+
+test('transient HTTP and malformed body recover without resubmission', async () => {
+  const replies = [
+    { status: 503, body: {} },
+    { status: 200, body: null },
+    { status: 429, body: {} },
+    { status: 200, body: { status: 'completed', result_url: 'https://cdn/recovered' } },
+  ]
+  await withFetchStub((_url, init) => {
+    assert.equal(init?.method ?? 'GET', 'GET')
+    return replies.shift()!
+  }, async () => {
+    assert.equal((await pollPosbotStatus('key', 'transient', { baseMs: 0 })).url, 'https://cdn/recovered')
+  })
+})
+
+test('default polling is not capped at 240 attempts', async () => {
+  let attempts = 0
+  await withFetchStub(() => ({ status: 200, body: ++attempts > 240
+    ? { status: 'completed', result_url: 'https://cdn/long' }
+    : { status: 'processing' } }), async () => {
+    assert.equal((await pollPosbotStatus('key', 'long', { baseMs: 0, maxTotalMs: 10000 })).url, 'https://cdn/long')
+    assert.equal(attempts, 241)
+  })
+})
+
+test('only explicit failed status confirms job failure', async () => {
+  for (const status of [401, 403, 404]) {
+    await withFetchStub(() => ({ status, body: {} }), async () => {
+      await assert.rejects(pollPosbotStatus('key', 'job'), PosbotMonitoringInterrupted)
+    })
+  }
+  await withFetchStub(() => ({ status: 200, body: { status: 'failed', error: 'rejected' } }), async () => {
+    await assert.rejects(pollPosbotStatus('key', 'job'), (err: unknown) => err instanceof PosbotJobFailed && err.jobCode === 'job')
+  })
+})
 
 // ── Katalog ────────────────────────────────────────────────────────────────
 
@@ -351,11 +444,11 @@ test('poll: completed di tick pertama → result_url', async () => {
   )
 })
 
-test('poll: failed → pesan refund otomatis', async () => {
+test('poll: failed → confirmed failure with upstream error', async () => {
   await withFetchStub(
     () => ({ status: 200, body: { success: true, status: 'failed', error: 'engine error' } }),
     async () => {
-      await assert.rejects(pollPosbotStatus('pb_live_test1234', 'job_x'), /direfund otomatis: engine error/)
+      await assert.rejects(pollPosbotStatus('pb_live_test1234', 'job_x'), /job gagal: engine error/)
     },
   )
 })

@@ -7,7 +7,7 @@ import { Link } from 'react-router-dom'
 import { Swipeable } from '@/components/Swipeable'
 import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
 import { getSeaviSpec, generateWithSeavi, fetchSeaviBalance, buildSeaviPayload } from '@/lib/seavi'
-import { buildPosbotPayload, getPosbotSpec, generateWithPosbot, POSBOT_MODE_LABELS, posbotModeSummary } from '@/lib/posbot'
+import { buildPosbotPayload, getPosbotSpec, submitPosbotGeneration, pollPosbotStatus, PosbotJobFailed, POSBOT_MODE_LABELS, posbotModeSummary } from '@/lib/posbot'
 import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { uploadToCatbox, submitRoboneoI2V, pollRoboneoI2V, checkRoboneoBalance, uploadImageForRoboneo,
@@ -128,6 +128,14 @@ export default function ImageToVideoPage() {
   // batch_id + usage_id potongan PosBot yang masih bisa di-refund bila gagal.
   const posbotChargeRef = useRef<string | null>(null)
   const posbotChargeIdRef = useRef<number | null>(null)
+  // Session-only closures retain the original metadata, credential and charge/log IDs.
+  const posbotRecoveryRef = useRef<{
+    jobCode: string
+    run: () => Promise<void>
+    fail: (error: Error) => Promise<void>
+  } | null>(null)
+  const [posbotUnresolved, setPosbotUnresolved] = useState(false)
+  const posbotStartingRef = useRef(false)
 
   const [imgUrl, setImgUrl] = useState<string | null>(null)
   const [imgFile, setImgFile] = useState<File | null>(null)
@@ -1124,7 +1132,44 @@ export default function ImageToVideoPage() {
     return null
   }
 
+  const showPosbotInterruption = (err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err)
+    setStatus((s) => ({ ...s, show: true, text: `Pengecekan terhenti: ${message}` }))
+    addLog(`Pengecekan terhenti; job tetap dapat dilanjutkan: ${message}`, 'warn', 'posbot')
+  }
+
+  const resumePosbot = async () => {
+    const recovery = posbotRecoveryRef.current
+    if (!recovery || generatingRef.current) return
+    generatingRef.current = true
+    setGenerating(true)
+    setStatus((s) => ({ ...s, show: true, text: `Mengecek job ${recovery.jobCode}...` }))
+    try {
+      await recovery.run()
+    } catch (err) {
+      if (err instanceof PosbotJobFailed) {
+        await recovery.fail(err)
+        posbotRecoveryRef.current = null
+        setPosbotUnresolved(false)
+        setStatus((s) => ({ ...s, text: err.message }))
+      } else showPosbotInterruption(err)
+    } finally {
+      generatingRef.current = false
+      setGenerating(false)
+    }
+  }
+
   const handleGenerate = async () => {
+    if (posbotRecoveryRef.current || generatingRef.current || posbotStartingRef.current) return
+    if (provider === 'posbot') posbotStartingRef.current = true
+    try {
+      await generateNew()
+    } finally {
+      posbotStartingRef.current = false
+    }
+  }
+
+  const generateNew = async () => {
     // Panggil di dalam gestur klik: prompt izin yang muncul tanpa gestur
     // diabaikan Chrome, sehingga notifikasi selesai tidak pernah tampil.
     // Helper sendiri mengecek preferensi user — jangan digerbangi notifEnabled,
@@ -1572,11 +1617,13 @@ export default function ImageToVideoPage() {
 
         // Validasi payload sebelum submit — PosBot memotong saldo saat POST
         // /generate sukses, jadi input yang salah harus gagal di sini.
+        let payload: ReturnType<typeof buildPosbotPayload>
         try {
-          buildPosbotPayload(spec, {
+          payload = buildPosbotPayload(spec, {
             imageUrls: posbotImageUrls,
             videoUrl: posbotVideoUrl,
             audioUrl: posbotAudioUrl,
+            duration: currentQuality?.duration,
             prompt: prompt.trim(),
             aspectRatio: ratio,
             mode: mediaMode,
@@ -1604,24 +1651,12 @@ export default function ImageToVideoPage() {
           addLog(`[1/3] ⚡ Admin mode — skip potongan saldo`, 'info', 'posbot')
         }
 
-        const rotation = await withTokenRotation<string>(
+        const rotation = await withTokenRotation<{ jobCode: string; apiKey: string }>(
           'posbot',
           async (apiKey, keyInfo) => {
-            addLog(`🔑 Trying key: ${keyInfo.name || keyInfo.id}`, 'info', 'posbot')
-            return await generateWithPosbot({
-              apiKey,
-              chargeId: posbotChargeIdRef.current,
-              spec,
-              prompt: prompt.trim(),
-              imageUrls: posbotImageUrls,
-              videoUrl: posbotVideoUrl,
-              audioUrl: posbotAudioUrl,
-              aspectRatio: ratio,
-              duration: currentQuality?.duration,
-              mode: mediaMode,
-              onLog: (msg, level) => addLog(msg, level as any, 'posbot'),
-              onStatus: (text, pct) => setStatus((s) => ({ ...s, pct, text: `[PosBot] ${text}` })),
-            })
+            addLog(`Trying key: ${keyInfo.name || keyInfo.id}`, 'info', 'posbot')
+            const jobCode = await submitPosbotGeneration(apiKey, payload, posbotChargeIdRef.current)
+            return { jobCode, apiKey }
           },
           {
             // Tanpa API key sendiri: member yang sudah top up tetap bisa
@@ -1640,26 +1675,51 @@ export default function ImageToVideoPage() {
         )
         if (!rotation.ok || !rotation.result) throw new Error(rotation.error || 'PosBot generation failed')
 
-        const videoUrl = rotation.result
-        const rid = `posbot-${Date.now()}`
-        setResults((prev) => [videoUrl, ...prev])
-        addResult({
-          id: rid,
-          url: videoUrl,
-          prompt: prompt.trim() || '(no prompt)',
-          date: new Date().toISOString(),
-          page: 'image-to-video',
-          provider: 'posbot',
-          model: currentModel?.label || model,
-          ratio,
-          duration: currentQuality?.duration,
-          credits: totalCredits,
-        }, { notify: false })
-        persistResultToR2(rid, videoUrl)
-        refreshGallery()
-        successRef.current = true
-        setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
-        notifyGenerationComplete(currentModel?.label || model, 'PosBot')
+        const { jobCode, apiKey } = rotation.result
+        const chargeBatch = posbotChargeRef.current
+        const chargeId = posbotChargeIdRef.current
+        const rid = `posbot-${jobCode}`
+        const monitorAndSave = async () => {
+          const { url: videoUrl } = await pollPosbotStatus(apiKey, jobCode, {
+            onLog: (msg, level) => addLog(msg, level as any, 'posbot'),
+            onStatus: (text, pct) => setStatus((s) => ({ ...s, pct, text: `[PosBot] ${text}` })),
+          })
+          setResults((prev) => prev.includes(videoUrl) ? prev : [videoUrl, ...prev])
+          addResult({
+            id: rid,
+            url: videoUrl,
+            prompt: prompt.trim() || '(no prompt)',
+            date: new Date().toISOString(),
+            page: 'image-to-video',
+            provider: 'posbot',
+            model: currentModel?.label || model,
+            ratio,
+            duration: currentQuality?.duration,
+            credits: totalCredits,
+          }, { notify: false })
+          persistResultToR2(rid, videoUrl)
+          refreshGallery()
+          successRef.current = true
+          setStatus((s) => ({ ...s, pct: 100, text: 'Selesai!' }))
+          notifyGenerationComplete(currentModel?.label || model, 'PosBot')
+          if (logId) logGenerationComplete(logId, { status: 'completed', result_url: videoUrl, duration_ms: Date.now() - startTime })
+          posbotRecoveryRef.current = null
+          setPosbotUnresolved(false)
+        }
+        posbotRecoveryRef.current = {
+          jobCode,
+          run: monitorAndSave,
+          fail: async (error) => {
+            if (chargeBatch && authToken) {
+              const refunded = await refundPosbotWallet(authToken, { batch_id: chargeBatch })
+              if (refunded != null) setPosbotWallet((w) => w ? { ...w, balance: refunded } : w)
+            }
+            if (logId) logGenerationFailed(logId, error.message, Date.now() - startTime)
+            addLog(`Job ${jobCode} gagal (usage ${chargeId ?? 'admin'}): ${error.message}`, 'error', 'posbot')
+          },
+        }
+        setPosbotUnresolved(true)
+        await monitorAndSave()
       } else if (provider === 'framia') {
         addLog(`[1/2] 🖼️ Preparing image...`, 'info', 'framia')
         let imageUrl: string | undefined
@@ -3650,6 +3710,14 @@ export default function ImageToVideoPage() {
         }
       }
       } catch (err: any) {
+        if (provider === 'posbot' && posbotRecoveryRef.current) {
+          if (!(err instanceof PosbotJobFailed)) {
+            showPosbotInterruption(err)
+            return
+          }
+          posbotRecoveryRef.current = null
+          setPosbotUnresolved(false)
+        }
         if (activeTaskId) removeActiveTask(activeTaskId)
         // NexaBot: kembalikan saldo yang sudah dipotong untuk generate ini.
         if (provider === 'nexabot' && nbChargeRef.current && authToken) {
@@ -3712,7 +3780,9 @@ export default function ImageToVideoPage() {
         addToast(`Generate selesai: ${PROVIDER_CONFIGS[provider].icon} ${model}`, 'success')
         setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 200)
       }
-      setTimeout(() => setStatus((s) => ({ ...s, show: false })), 3000)
+      setTimeout(() => {
+        if (!posbotRecoveryRef.current && !generatingRef.current) setStatus((s) => ({ ...s, show: false }))
+      }, 3000)
     }
   }
 
@@ -4426,7 +4496,7 @@ export default function ImageToVideoPage() {
             <div className="flex items-center gap-3 mt-4 flex-wrap">
               <Button
                 onClick={() => setShowPreview(true)}
-                disabled={!prompt.trim() || generating}
+                disabled={!prompt.trim() || generating || posbotUnresolved}
               >
                 {generating ? (
                   <>
@@ -4466,7 +4536,12 @@ export default function ImageToVideoPage() {
                      style={{ width: `${status.pct}%` }}
                    />
                  </div>
-                 {!generating && status.pct === 100 && results.length > 0 && (
+                 {posbotUnresolved && (
+                   <Button size="sm" className="w-full mt-3" disabled={generating} onClick={resumePosbot}>
+                     Lanjutkan pengecekan — tanpa generate ulang
+                   </Button>
+                 )}
+                 {!posbotUnresolved && !generating && status.pct === 100 && results.length > 0 && (
                    <Button
                      size="sm"
                      className="w-full mt-3"
