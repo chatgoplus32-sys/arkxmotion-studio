@@ -302,6 +302,37 @@ Cocok untuk kulit berminyak" rows="3"></textarea></div><div class="field"><label
             <div id="amPreflightResults" class="am-preflight-results" aria-live="polite"><span class="am-preflight-idle">Belum diperiksa. Jalankan pemeriksaan sebelum render.</span></div>
           </div>
         </section>
+        <section class="am-story-architect" id="amStoryArchitect" aria-labelledby="amStoryTitle">
+          <div class="am-story-head">
+            <div>
+              <span class="am-story-kicker">HYBRID STORY SYSTEM · LOCAL WORKFLOW</span>
+              <h3 id="amStoryTitle">Story Architect <span>— Visual Director</span></h3>
+              <p>Ubah naskah menjadi alur dokumenter dan storyboard: hook, konteks, penjelasan, bukti, klimaks, dan penutup. Hasilnya bisa diterapkan langsung ke scene editor.</p>
+            </div>
+            <span class="am-story-chip">STORY → SHOTS</span>
+          </div>
+          <div class="am-story-controls">
+            <label>Jenis cerita
+              <select id="amStoryGenre"><option value="documentary">Dokumenter sinematik</option><option value="educational">Edukasi / explainer</option><option value="science">Sains / kesehatan</option><option value="history">Sejarah / kronologi</option><option value="inspirational">Inspiratif / kehidupan</option></select>
+            </label>
+            <label>Nuansa visual
+              <select id="amStoryMood"><option value="hybrid">Hybrid cinematic + motion graphics</option><option value="cinematic">Cinematic realistis</option><option value="graphic">Motion graphics editorial</option></select>
+            </label>
+            <label>Intensitas cerita
+              <select id="amStoryPace"><option value="balanced">Seimbang</option><option value="calm">Tenang dan mendalam</option><option value="energetic">Cepat dan dramatis</option></select>
+            </label>
+          </div>
+          <div class="am-story-actions">
+            <button type="button" class="am-story-primary" id="amStoryBuild">✦ Analisis naskah & buat storyboard</button>
+            <button type="button" class="am-story-secondary" id="amStoryApply" disabled>▶ Terapkan ke preview scene</button>
+            <button type="button" class="am-story-secondary" id="amStoryExport" disabled>↓ Ekspor storyboard JSON</button>
+            <button type="button" class="am-story-secondary" id="amStoryCopy" disabled>Salin shot list</button>
+          </div>
+          <div class="am-story-status" id="amStoryStatus" role="status" aria-live="polite">Masukkan naskah terlebih dahulu. Storyboard disusun lokal di browser; tidak mengirim naskah ke layanan AI.</div>
+          <div class="am-story-summary" id="amStorySummary" hidden></div>
+          <div class="am-storyboard-grid" id="amStoryboardGrid" aria-live="polite"></div>
+          <p class="am-story-foot">Catatan: shot list adalah arahan produksi yang dapat diedit. Ilustrasi preview memakai visual engine yang tersedia; arahan ini tidak membuat footage 3D atau efek After Effects native secara otomatis.</p>
+        </section>
         <button class="am-idea-generate" id="amIdeaGenerateBtn" type="button"><span aria-hidden="true">✦ &nbsp;</span><span data-label>Susun scene &amp; beat motion</span></button>
         <div class="am-idea-local-note"><b>Privasi &amp; API.</b> Pemecahan scene, preview, dan ekspor berjalan di browser. Naskah dikirim ke Google Gemini saat kamu meminta TTS. Jika kamu memasukkan API key di aplikasi ini, versi ini menyimpannya di localStorage browser pada perangkat ini; jangan gunakan perangkat bersama. Untuk produksi publik, pindahkan pemanggilan API ke backend dengan secret server-side. Maksimum TTS 2.500 karakter per permintaan.</div>
       </section>
@@ -4300,6 +4331,172 @@ ${scenesHtml}
 ${tweensJs}
     window.__timelines["main"] = tl;
   <\/script>
+
+<style id="amHybridStoryStyles">
+.am-story-architect{margin:18px 0 16px;padding:18px;border:1px solid rgba(255,151,91,.24);border-radius:18px;background:linear-gradient(145deg,rgba(35,29,28,.94),rgba(13,16,23,.98));box-shadow:0 16px 40px rgba(0,0,0,.16);color:#edf0f6}
+.am-story-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}.am-story-kicker{font:800 9px ui-monospace,monospace;letter-spacing:.15em;color:#ffad79}.am-story-head h3{margin:7px 0 5px;font-size:20px;letter-spacing:-.03em}.am-story-head h3 span{color:#ffad79}.am-story-head p{margin:0;max-width:720px;color:#aab2c0;font-size:12px;line-height:1.6}.am-story-chip{flex:none;border:1px solid rgba(255,166,115,.3);border-radius:999px;padding:6px 9px;color:#ffb58b;font:800 9px ui-monospace,monospace;letter-spacing:.08em}
+.am-story-controls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:16px 0 12px}.am-story-controls label{display:grid;gap:6px;color:#aeb6c4;font-size:10px;font-weight:700}.am-story-controls select{width:100%;min-width:0;border:1px solid #343d4b;border-radius:9px;background:#151b25;color:#edf0f6;padding:10px;font:inherit;font-size:11px;outline:none}.am-story-controls select:focus{border-color:#ff9d68;box-shadow:0 0 0 2px rgba(255,157,104,.14)}
+.am-story-actions{display:flex;flex-wrap:wrap;gap:8px}.am-story-actions button{border-radius:9px;padding:10px 12px;font-size:11px;font-weight:800;cursor:pointer}.am-story-primary{border:0;background:linear-gradient(135deg,#ffc18e,#ff743f);color:#27140c}.am-story-secondary{border:1px solid #394353;background:#171e29;color:#dce2ec}.am-story-actions button:disabled{opacity:.38;cursor:not-allowed}.am-story-status{margin:12px 0;padding:9px 11px;border-radius:8px;background:rgba(255,255,255,.035);color:#aab4c3;font-size:10px;line-height:1.5}.am-story-summary{display:flex;flex-wrap:wrap;gap:7px;margin:10px 0}.am-story-stat{padding:7px 9px;border:1px solid #303a49;border-radius:8px;background:#121923;color:#dce4ee;font-size:10px}.am-story-stat b{color:#ffb17f}.am-storyboard-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.am-story-card{min-width:0;padding:12px;border:1px solid #2d3745;border-radius:11px;background:rgba(10,14,21,.76)}.am-story-card-top{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:8px}.am-story-num{color:#ffad79;font:800 9px ui-monospace,monospace;letter-spacing:.08em}.am-story-beat{padding:4px 7px;border-radius:999px;background:rgba(255,154,100,.12);color:#ffbd95;font-size:9px;font-weight:800}.am-story-line{margin:0 0 8px;color:#edf0f6;font-size:12px;font-weight:800;line-height:1.45}.am-story-meta{display:grid;grid-template-columns:1fr 1fr;gap:6px}.am-story-meta div{padding:7px;border-radius:7px;background:#151c27}.am-story-meta small{display:block;margin-bottom:3px;color:#8490a1;font-size:8px;text-transform:uppercase;letter-spacing:.07em}.am-story-meta span{display:block;color:#cbd3df;font-size:10px;line-height:1.4}.am-story-card-foot{display:flex;justify-content:space-between;gap:8px;margin-top:8px;color:#8793a4;font-size:9px}.am-story-foot{margin:10px 0 0;color:#7f8b9d;font-size:9px;line-height:1.5}
+@media(max-width:760px){.am-story-controls{grid-template-columns:1fr}.am-storyboard-grid{grid-template-columns:1fr}.am-story-head{display:block}.am-story-chip{display:inline-block;margin-top:9px}.am-story-actions button{flex:1 1 46%}}
+</style>
+
+
+<script id="amHybridStoryEngine">
+(() => {
+  'use strict';
+  const byId = (id) => document.getElementById(id);
+  const source = byId('amIdeaSourceText');
+  const grid = byId('amStoryboardGrid');
+  if (!source || !grid || byId('amStoryBuild')?.dataset.ready) return;
+  byId('amStoryBuild').dataset.ready = '1';
+  let currentBoard = [];
+  const clean = (v) => String(v || '').replace(/\s+/g, ' ').trim();
+  function splitNarrative(text) {
+    const normalized = String(text || '').replace(/\r/g, '').trim();
+    if (!normalized) return [];
+    const paragraphs = normalized.split(/\n+/).map(x => x.trim()).filter(Boolean);
+    let parts = paragraphs.flatMap(part => part.match(/[^.!?;…]+[.!?;…]?/g) || []).map(clean).filter(Boolean);
+    if (!parts.length) parts = [clean(normalized)];
+    const expanded = [];
+    for (const part of parts) {
+      const words = part.split(/\s+/);
+      if (words.length <= 22) { expanded.push(part); continue; }
+      let start = 0;
+      while (start < words.length) {
+        let end = Math.min(words.length, start + 18);
+        if (end < words.length) {
+          const tail = words.slice(start + 10, end);
+          let preferred = -1;
+          for (let k = tail.length - 1; k >= 0; k--) { if (/[,;:]$/.test(tail[k])) { preferred = k; break; } }
+          if (preferred >= 0) end = start + 10 + preferred + 1;
+        }
+        expanded.push(words.slice(start, end).join(' ').replace(/[,:;]+$/, '') + (end < words.length ? '…' : ''));
+        start = end;
+      }
+    }
+    return expanded.slice(0, 48);
+  }
+  const has = (s, re) => re.test(s.toLowerCase());
+  function chooseBeat(text, i, n, genre) {
+    const t = text.toLowerCase();
+    if (i === 0) return /\?/.test(text) ? 'HOOK · PERTANYAAN' : 'HOOK · PEMBUKA';
+    if (i === n - 1) return genre === 'inspirational' ? 'PAYOFF · REFLEKSI' : 'PENUTUP · KESIMPULAN';
+    if (has(t, /data|persen|angka|statistik|penelitian|riset|bukti|menurut|hasil|fakta/)) return 'BUKTI · DATA';
+    if (has(t, /tetapi|namun|sayangnya|masalah|tantangan|risiko|bahaya|dampak/)) return 'KONFLIK · TANTANGAN';
+    if (has(t, /karena|sebab|proses|mekanisme|bekerja|terjadi|menyebabkan|mengakibatkan/)) return 'PENJELASAN · MEKANISME';
+    if (has(t, /pertama|kedua|ketiga|langkah|tahap|kemudian|selanjutnya|akhirnya/)) return 'URUTAN · PROSES';
+    if (i === 1) return 'KONTEKS · LATAR';
+    if (i >= Math.ceil(n * .72)) return 'KLIMAKS · IMPLIKASI';
+    return 'PENGEMBANGAN · INSIGHT';
+  }
+  function shotFor(beat, genre, mood) {
+    if (beat.includes('HOOK')) return {shot:'Extreme close-up → reveal',camera:'push-in',transition:'radial-iris',kinetic:'flip-3d',motion:'Reveal bertahap, scale-in pada kata kunci, tahan sejenak untuk membangun rasa ingin tahu.'};
+    if (beat.includes('KONTEKS')) return {shot:'Wide establishing shot',camera:'pull-out',transition:'curtain-sweep',kinetic:'typewriter',motion:'Parallax foreground-background perlahan; judul muncul setelah visual terbaca.'};
+    if (beat.includes('BUKTI')) return {shot:'Insert detail / data graphic',camera:'diagram-zoom',transition:'diagonal-wipe',kinetic:'split-flap',motion:'Angka atau bukti masuk berurutan; gunakan callout dan highlight yang terukur.'};
+    if (beat.includes('KONFLIK')) return {shot:'Medium close-up / contrast',camera:'dutch-tilt',transition:'whip-pan',kinetic:'pop-pill',motion:'Kontras visual, perubahan skala, dan cut lebih tegas pada kata pertentangan.'};
+    if (beat.includes('MEKANISME') || beat.includes('PROSES')) return {shot:genre==='science'?'Scientific diagram close-up':'Process sequence / layered diagram',camera:'diagram-zoom',transition:'split-shutter',kinetic:'typewriter',motion:'Tampilkan proses per tahap dengan garis, panah, label, dan urutan gerak.'};
+    if (beat.includes('KLIMAKS')) return {shot:'Hero shot / visual crescendo',camera:'push-in',transition:'flash-cut',kinetic:'flip-3d',motion:'Percepat gerak menuju satu visual utama; beri jeda singkat pada pesan terpenting.'};
+    if (beat.includes('PAYOFF') || beat.includes('PENUTUP')) return {shot:'Wide resolve / closing frame',camera:'pull-out',transition:'curtain-sweep',kinetic:'brush-sweep',motion:'Gerak melambat, komposisi bersih, kalimat penutup tampil dengan ruang napas.'};
+    return {shot:'Medium shot + supporting graphic',camera:mood==='graphic'?'diagram-zoom':'pan-right',transition:'liquid-wave',kinetic:'pop-pill',motion:'Kombinasikan visual pendukung, keyword caption, dan pergeseran kamera halus.'};
+  }
+  function soundFor(beat, pace) {
+    if (beat.includes('HOOK')) return 'Low impact + short riser';
+    if (beat.includes('BUKTI')) return 'Soft ticks / data blips';
+    if (beat.includes('KONFLIK')) return 'Tension pulse + subtle hit';
+    if (beat.includes('KLIMAKS')) return 'Cinematic swell + impact';
+    if (beat.includes('PENUTUP') || beat.includes('PAYOFF')) return 'Warm resolve + music tail';
+    return pace === 'calm' ? 'Ambient bed + soft whoosh' : 'Light whoosh + restrained ambience';
+  }
+  function buildBoard() {
+    const text = source.value.trim();
+    if (!text) { byId('amStoryStatus').textContent = 'Tulis atau tempel naskah terlebih dahulu.'; source.focus(); return; }
+    const parts = splitNarrative(text);
+    if (!parts.length) return;
+    const genre = byId('amStoryGenre').value;
+    const mood = byId('amStoryMood').value;
+    const pace = byId('amStoryPace').value;
+    const paceScale = pace === 'calm' ? 1.22 : pace === 'energetic' ? .82 : 1;
+    currentBoard = parts.map((sentence, i) => {
+      const beat = chooseBeat(sentence, i, parts.length, genre);
+      const shot = shotFor(beat, genre, mood);
+      const words = sentence.split(/\s+/).length;
+      const duration = Math.max(2.2, Math.min(8, (1.65 + words * .21) * paceScale));
+      const title = sentence.length > 100 ? sentence.slice(0,97).replace(/\s+\S*$/,'')+'…' : sentence;
+      let visual = 'Layered editorial illustration';
+      if (genre === 'science') visual = 'Scientific diagram + annotated visual';
+      else if (genre === 'history') visual = 'Archive-inspired image + animated map/timeline';
+      else if (genre === 'educational') visual = 'Step-by-step infographic + supporting illustration';
+      else if (genre === 'inspirational') visual = 'Human-centered cinematic visual + restrained typography';
+      else if (mood === 'cinematic') visual = 'Cinematic b-roll language + depth/parallax';
+      else if (mood === 'graphic') visual = 'Bold editorial motion graphics + data shapes';
+      return {scene:i+1,beat,script:sentence,title,shot:shot.shot,visual,camera:shot.camera,transition:shot.transition,kinetic:shot.kinetic,motion:shot.motion,sound:soundFor(beat,pace),duration:Number(duration.toFixed(1)),genre,mood,pace};
+    });
+    renderBoard();
+    const total = currentBoard.reduce((a,x)=>a+x.duration,0);
+    byId('amStorySummary').hidden = false;
+    byId('amStorySummary').innerHTML = `<span class="am-story-stat"><b>${currentBoard.length}</b> scene / shot</span><span class="am-story-stat"><b>${total.toFixed(1)}s</b> estimasi durasi</span><span class="am-story-stat"><b>${genreLabel(genre)}</b> format cerita</span><span class="am-story-stat"><b>${moodLabel(mood)}</b> art direction</span>`;
+    byId('amStoryStatus').textContent = `Storyboard berhasil disusun secara lokal dari ${parts.length} potongan narasi. Periksa shot list, lalu terapkan arahan kamera, transisi, dan tipografi ke scene preview.`;
+    ['amStoryApply','amStoryExport','amStoryCopy'].forEach(id=>byId(id).disabled=false);
+  }
+  function genreLabel(v){return ({documentary:'Dokumenter',educational:'Edukasi',science:'Sains',history:'Sejarah',inspirational:'Inspiratif'})[v]||v;}
+  function moodLabel(v){return ({hybrid:'Hybrid',cinematic:'Cinematic',graphic:'Motion graphic'})[v]||v;}
+  function renderBoard() {
+    grid.replaceChildren();
+    currentBoard.forEach(item=>{
+      const card=document.createElement('article'); card.className='am-story-card';
+      const top=document.createElement('div'); top.className='am-story-card-top';
+      const num=document.createElement('span'); num.className='am-story-num'; num.textContent=`SHOT ${String(item.scene).padStart(2,'0')}`;
+      const beat=document.createElement('span'); beat.className='am-story-beat'; beat.textContent=item.beat;
+      top.append(num,beat);
+      const line=document.createElement('p'); line.className='am-story-line'; line.textContent=item.title;
+      const meta=document.createElement('div'); meta.className='am-story-meta';
+      const fields=[['SHOT TYPE',item.shot],['VISUAL DIRECTION',item.visual],['CAMERA',labelCamera(item.camera)],['MOTION & TYPOGRAPHY',item.motion],['TRANSITION',labelTransition(item.transition)],['SOUND CUE',item.sound]];
+      fields.forEach(([label,value])=>{const box=document.createElement('div');const small=document.createElement('small');small.textContent=label;const span=document.createElement('span');span.textContent=value;box.append(small,span);meta.append(box);});
+      const foot=document.createElement('div');foot.className='am-story-card-foot';
+      const time=document.createElement('span');time.textContent=`Estimasi ${item.duration}s`;
+      const words=document.createElement('span');words.textContent=`${item.script.split(/\s+/).length} kata`;foot.append(time,words);
+      card.append(top,line,meta,foot);grid.append(card);
+    });
+  }
+  function labelCamera(v){return ({'push-in':'Push-in','pull-out':'Pull-out reveal','diagram-zoom':'Diagram zoom','dutch-tilt':'Dutch tilt','pan-right':'Pan kanan'})[v]||v;}
+  function labelTransition(v){return v.replace(/-/g,' ').replace(/\b\w/g,c=>c.toUpperCase());}
+  function applyBoard() {
+    if (!currentBoard.length) return;
+    const generate=byId('amIdeaGenerateBtn');
+    const scenes=byId('amIdeaScenes');
+    const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+    (async()=>{
+      if (!scenes?.querySelector('.am-idea-scene')) { generate?.click(); await wait(260); }
+      const sceneButtons=Array.from(byId('amIdeaScenes')?.querySelectorAll('.am-idea-scene')||[]);
+      if (!sceneButtons.length) { byId('amStoryStatus').textContent='Scene preview belum siap. Klik “Susun scene & beat motion” terlebih dahulu, lalu terapkan storyboard.'; return; }
+      const count=Math.min(sceneButtons.length,currentBoard.length);
+      for(let i=0;i<count;i++){
+        sceneButtons[i].click();
+        const item=currentBoard[i];
+        const fields=[['amIdeaEditCamera',item.camera],['amIdeaEditTransition',item.transition],['amIdeaEditKinetic',item.kinetic]];
+        fields.forEach(([id,value])=>{const el=byId(id);if(el){el.value=value;el.dispatchEvent(new Event('change',{bubbles:true}));}});
+        const callout=byId('amIdeaEditCallout');
+        if(callout){callout.value=item.beat.split(' · ')[0];callout.dispatchEvent(new Event('input',{bubbles:true}));}
+        await wait(18);
+      }
+      byId('amStoryStatus').textContent=`Arahan visual diterapkan ke ${count} dari ${sceneButtons.length} scene. Kamera, transisi, kinetic caption, dan callout diperbarui melalui inspector scene yang sudah ada.`;
+    })().catch(err=>{byId('amStoryStatus').textContent='Gagal menerapkan storyboard: '+(err?.message||'kesalahan tidak diketahui');});
+  }
+  function exportBoard(){
+    if(!currentBoard.length)return;
+    const payload={app:'ARKX AUTO Motion',module:'Hybrid Story Architect',version:1,createdAt:new Date().toISOString(),sourceText:source.value,storySettings:{genre:byId('amStoryGenre').value,mood:byId('amStoryMood').value,pace:byId('amStoryPace').value},storyboard:currentBoard};
+    const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});download(blob,'ARKX_Hybrid_Storyboard.json');
+  }
+  function toMarkdown(){return ['# ARKX AUTO Motion — Hybrid Storyboard','',`Genre: ${genreLabel(byId('amStoryGenre').value)} | Mood: ${moodLabel(byId('amStoryMood').value)}`,'',...currentBoard.flatMap(x=>[`## Shot ${String(x.scene).padStart(2,'0')} — ${x.beat}`,`**Narasi:** ${x.script}`,`**Shot:** ${x.shot}`,`**Visual:** ${x.visual}`,`**Kamera:** ${labelCamera(x.camera)}`,`**Gerak:** ${x.motion}`,`**Transisi:** ${labelTransition(x.transition)}`,`**Audio:** ${x.sound}`,`**Durasi:** ${x.duration}s`,''])].join('\n');}
+  function download(blob,name){const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1200);}
+  byId('amStoryBuild').addEventListener('click',buildBoard);
+  byId('amStoryApply').addEventListener('click',applyBoard);
+  byId('amStoryExport').addEventListener('click',exportBoard);
+  byId('amStoryCopy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(toMarkdown());byId('amStoryStatus').textContent='Shot list berhasil disalin.';}catch(e){download(new Blob([toMarkdown()],{type:'text/markdown'}),'ARKX_Hybrid_Shot_List.md');byId('amStoryStatus').textContent='Clipboard tidak tersedia; shot list diunduh sebagai Markdown.';}});
+  source.addEventListener('input',()=>{if(currentBoard.length){byId('amStoryStatus').textContent='Naskah berubah. Buat ulang storyboard agar shot list sesuai dengan naskah terbaru.';}});
+})();
+</script>
+
 </body>
 </html>
 `;
