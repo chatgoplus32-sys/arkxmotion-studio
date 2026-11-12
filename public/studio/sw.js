@@ -15,7 +15,7 @@
  * ikut diperbarui di sini — kalau ditulis tangan, precache akan diam-diam
  * melewatkan bundle baru setelah deploy.
  */
-const VERSION = 'v3'
+const VERSION = 'v4'
 const SHELL_CACHE = `arkx-studio-shell-${VERSION}`
 const EXT_CACHE = `arkx-studio-ext-${VERSION}`
 const EXT_LIMIT = 40
