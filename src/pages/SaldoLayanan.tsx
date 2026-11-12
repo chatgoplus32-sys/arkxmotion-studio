@@ -66,6 +66,8 @@ interface ServiceState {
   unitPrice: number | null
   /** Keterangan tambahan, mis. status Paket Unlimited. */
   note: string | null
+  /** Baris harga langganan (NexaBot), mis. "Unlimited Mingguan Rp 30.000/7 hari". */
+  subExtra?: string | null
 }
 
 const EMPTY_STATE: Record<ServiceKey, ServiceState> = {
@@ -127,11 +129,18 @@ export default function SaldoLayananPage() {
       const label = nexabotRemainingLabel(u)
       return label ? ` · ${label}` : ''
     }
+    // Varian utama (packages[0]) = paket pertama — tampilkan harga langganan
+    // yang berjalan supaya admin melihat efek perubahan di System Settings.
+    const utama = nexabot?.packages?.[0] ?? null
+    const subExtraNexabot = utama
+      ? `Unlimited ${utama.label} ${formatRp(utama.price)}/${utama.days} hari`
+      : null
     setServices({
       createpulse: { amount: createpulse, unitPrice: null, note: null },
       nexabot: {
         amount: nexabot?.balance ?? null,
         unitPrice: nexabot?.price ?? null,
+        subExtra: subExtraNexabot,
         // Booster hanya menggratiskan Seedance/Omni/GPT Image, jadi disebut apa
         // adanya — jangan tampil sebagai "Unlimited" untuk saldo yang tetap terpotong.
         note: unlimited?.active
@@ -246,6 +255,9 @@ export default function SaldoLayananPage() {
                   <p className={cn('mt-1 text-[11px]', unknown ? 'text-destructive' : 'text-muted-foreground')}>
                     {unknown ? 'Gagal memuat saldo layanan ini' : sub}
                   </p>
+                  {state.subExtra && !unknown && (
+                    <p className="mt-0.5 text-[10px] text-muted-foreground">{state.subExtra}</p>
+                  )}
                   {state.note && !unknown && (
                     <p className="mt-1 inline-flex rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
                       {state.note}

@@ -633,9 +633,11 @@ export default function AdminSystemSettings() {
   // Harga NexaBot punya jalur sendiri (`/api/admin/nexabot/config`) karena
   // nilainya dipakai langsung oleh perhitungan charge di server. Tiap varian
   // paket Unlimited (Mingguan/Bulanan/Tahunan) punya harga & durasi sendiri.
+  // Input dikosongkan sampai server menjawab: nilai fallback bisa saja lebih
+  // tua dari yang benar-benar berjalan.
   const [nbForm, setNbForm] = useState<{ price: string; packages: NexabotPackageForm[] }>({
     price: '',
-    packages: toPackageForm(),
+    packages: [],
   })
   const [nbDefaults, setNbDefaults] = useState<{ price: number; packages: NexabotPackage[] }>({
     price: 150,
@@ -643,6 +645,9 @@ export default function AdminSystemSettings() {
   })
   const [nbActive, setNbActive] = useState<NexabotPricing | null>(null)
   const [nbSaving, setNbSaving] = useState(false)
+  // Kalau muat harga gagal, simpan DIBEKUKAN: form mungkin memegang angka
+  // lama/fallback, dan menyimpannya akan menimpa harga yang justru berjalan.
+  const [nbLoadError, setNbLoadError] = useState<string | null>(null)
   // Antrean submit NexaBot (khusus admin): batas submit bersamaan per akun
   // pool, ditampilkan berdampingan dengan jumlah akun supaya admin tidak
   // mengira angka itu menambah job yang benar-benar paralel.
@@ -702,8 +707,14 @@ export default function AdminSystemSettings() {
     if (!token) return
     try {
       const res = await fetch('/api/admin/nexabot/config', { headers: { Authorization: `Bearer ${token}` } })
-      if (!res.ok) return
+      if (!res.ok) {
+        // Jangan biarkan admin mengedit angka yang mungkin bukan yang berjalan:
+        // tampilkan kegagalan dan bekukan tombol simpan sampai muat ulang berhasil.
+        setNbLoadError(`Harga NexaBot gagal dimuat (HTTP ${res.status}) — angka yang tampil mungkin bukan yang sedang berlaku.`)
+        return
+      }
       const data = await res.json()
+      setNbLoadError(null)
       const pricing: NexabotPricing = data.pricing
       setNbActive(pricing)
       if (data.defaults) {
@@ -715,7 +726,9 @@ export default function AdminSystemSettings() {
         setNbQueueInput(String(data.submit_concurrency))
         setNbAkunPool(Number(data.akun_pool) || 0)
       }
-    } catch { /* biarkan nilai lama kalau request gagal */ }
+    } catch (err: any) {
+      setNbLoadError(`Harga NexaBot gagal dimuat (${String(err?.message || err).slice(0, 120)}) — angka yang tampil mungkin bukan yang sedang berlaku.`)
+    }
   }, [token])
 
   const handleSaveNexabotQueue = async () => {
@@ -762,13 +775,16 @@ export default function AdminSystemSettings() {
       const data = await res.json()
       if (res.ok) {
         addToast(data.message || 'Harga NexaBot disimpan', 'success')
+        setNbLoadError(null)
         setNbActive(data.pricing)
         setNbForm({ price: String(data.pricing.price), packages: toPackageForm(data.pricing.packages) })
       } else {
         addToast(data.error || 'Gagal menyimpan harga NexaBot', 'error')
+        setNbLoadError(String(data.error || `Gagal menyimpan (HTTP ${res.status})`))
       }
     } catch {
       addToast('Gagal menyimpan harga NexaBot', 'error')
+      setNbLoadError('Gagal menyimpan harga NexaBot — periksa koneksi lalu coba lagi.')
     } finally {
       setNbSaving(false)
     }
@@ -1223,6 +1239,26 @@ export default function AdminSystemSettings() {
 
           <div className="mt-5">
             <div className="text-sm font-medium text-muted-foreground mb-2">Varian Paket Unlimited</div>
+            {nbForm.packages.length === 0 ? (
+              <div className="rounded-xl border border-border bg-card/40 p-4 text-[12px] text-muted-foreground">
+                {nbLoadError ? (
+                  <>
+                    <p className="text-red-400 font-medium">Harga gagal dimuat dari server.</p>
+                    <p className="mt-1">{nbLoadError}</p>
+                    <button
+                      type="button"
+                      onClick={fetchNexabotPricing}
+                      className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-medium text-foreground transition hover:bg-accent"
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      Muat ulang
+                    </button>
+                  </>
+                ) : (
+                  <p>Memuat harga dari server…</p>
+                )}
+              </div>
+            ) : null}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {nbForm.packages.map((p, idx) => {
                 const fallback = nbDefaults.packages.find(x => x.slug === p.slug)
@@ -1282,10 +1318,19 @@ export default function AdminSystemSettings() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3 mt-4">
-            <Button size="sm" onClick={handleSaveNexabotPricing} disabled={nbSaving}>
+            <Button size="sm" onClick={handleSaveNexabotPricing} disabled={nbSaving || !!nbLoadError || nbForm.packages.length === 0}>
               <Zap className={`h-4 w-4 mr-2 ${nbSaving ? 'animate-pulse' : ''}`} />
               {nbSaving ? 'Menyimpan...' : 'Simpan Harga NexaBot'}
             </Button>
+            <button
+              type="button"
+              onClick={fetchNexabotPricing}
+              disabled={nbSaving}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border px-3 text-[12px] font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:opacity-60"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              Muat ulang
+            </button>
             <span className="text-[11px] text-muted-foreground">
               Aktif sekarang:{' '}
               {nbActive
@@ -1294,6 +1339,11 @@ export default function AdminSystemSettings() {
                     .join(' · ')}`
                 : 'memuat...'}
             </span>
+            {nbLoadError && (
+              <p className="w-full text-[11px] font-medium text-red-400">
+                {nbLoadError} Tombol simpan dibekukan sampai muat ulang berhasil.
+              </p>
+            )}
           </div>
         </Section>
 
