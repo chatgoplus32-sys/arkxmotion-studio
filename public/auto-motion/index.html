@@ -3711,4 +3711,91 @@ Memahami label makanan, ukuran porsi, dan kebiasaan harian membantu kita membuat
   render();
 })();
 </script>
+<script>
+(function () {
+  if (window.__arkxBackNav) return;
+  window.__arkxBackNav = true;
+
+  var css = ''
+    + '.nav-back{border:0;background:none;color:var(--mut);font:650 13px Inter,system-ui,sans-serif;display:inline-flex;align-items:center;gap:7px;padding:8px 10px;border-radius:9px;white-space:nowrap;cursor:pointer}'
+    + '.nav-back:hover{background:#232733;color:var(--txt)}'
+    + '.nav-wrap{position:relative}'
+    + '.nav-toggle{display:inline-flex;align-items:center;gap:7px}'
+    + '.nav-toggle.active{border-color:var(--acc);color:var(--acc2)}'
+    + '.nav-menu{position:absolute;top:calc(100% + 8px);left:0;z-index:60;min-width:250px;max-height:75vh;overflow:auto;background:var(--panel);border:1px solid var(--line2);border-radius:16px;padding:10px;box-shadow:0 24px 60px rgba(0,0,0,.55)}'
+    + '.nav-menu .grp{font-size:10.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);padding:6px 10px 4px}'
+    + '.nav-menu .sep{height:1px;background:var(--line);margin:8px 4px}'
+    + '.nav-menu a{display:block;padding:9px 11px;border-radius:10px;color:var(--mut);text-decoration:none;font-size:13px;font-weight:600}'
+    + '.nav-menu a:hover{background:#1E222C;color:var(--txt)}'
+    + '.nav-menu .cur{margin-left:6px;font-size:10px;font-weight:800;color:var(--acc2);border:1px solid rgba(30,144,255,.4);border-radius:99px;padding:1px 7px;vertical-align:1px}'
+    + '@media (max-width:560px){.nav-back .lbl,.nav-toggle .lbl{display:none}.nav-back,.nav-toggle{width:38px;height:38px;padding:0;justify-content:center}}';
+
+  var st = document.createElement('style');
+  st.textContent = css;
+  document.head.appendChild(st);
+
+  var brand = document.querySelector('header.top .brand');
+  var actions = document.querySelector('header.top .actions');
+  if (!brand || !actions) return;
+
+  var back = document.createElement('button');
+  back.type = 'button';
+  back.className = 'nav-back';
+  back.id = 'btnBack';
+  back.setAttribute('aria-label', 'Kembali ke aplikasi utama');
+  back.title = 'Kembali ke aplikasi utama';
+  back.innerHTML = '<span aria-hidden="true">←</span><span class="lbl"> Kembali</span>';
+  brand.insertBefore(back, brand.firstChild);
+  back.addEventListener('click', function () {
+    var r = document.referrer;
+    try {
+      if (r && new URL(r).origin === location.origin && history.length > 1) { history.back(); return; }
+    } catch (e) {}
+    location.href = '/dashboard';
+  });
+
+  var wrap = document.createElement('div');
+  wrap.className = 'nav-wrap';
+  wrap.innerHTML =
+    '<button class="btn nav-toggle" id="btnNav" type="button" aria-label="Menu navigasi" title="Menu navigasi" aria-haspopup="true" aria-expanded="false" aria-controls="navMenu"><span aria-hidden="true">☰</span><span class="lbl"> Menu</span></button>'
+    + '<div class="nav-menu" id="navMenu" role="menu" hidden>'
+    + '<div class="grp">Utama</div>'
+    + '<a role="menuitem" href="/quick-start">Mulai</a>'
+    + '<a role="menuitem" href="/dashboard">Dashboard</a>'
+    + '<a role="menuitem" href="/hasil">Hasil</a>'
+    + '<div class="sep"></div>'
+    + '<div class="grp">Buat</div>'
+    + '<a role="menuitem" href="/generate/motion">Motion Control</a>'
+    + '<a role="menuitem" href="/generate/image-to-video">Image to Video</a>'
+    + '<a role="menuitem" href="/generate/video-edit">ARKX AUTO Studio</a>'
+    + '<a role="menuitem" href="/generate/auto-motion">ARKX AUTO Motion <span class="cur">aktif</span></a>'
+    + '<a role="menuitem" href="/generate/edit-image">Edit Image</a>'
+    + '<a role="menuitem" href="/generate/virtual-tryon">Virtual Try-On</a>'
+    + '<a role="menuitem" href="/generate/talking-photo">Talking Photo</a>'
+    + '<div class="sep"></div>'
+    + '<div class="grp">Lainnya</div>'
+    + '<a role="menuitem" href="/providers">Providers</a>'
+    + '<a role="menuitem" href="/saldo">Saldo Layanan</a>'
+    + '<a role="menuitem" href="/settings">Settings</a>'
+    + '</div>';
+  actions.insertBefore(wrap, actions.firstChild);
+
+  var t = wrap.querySelector('#btnNav');
+  var m = wrap.querySelector('#navMenu');
+  if (!t || !m) return;
+  var close = function () { m.hidden = true; t.classList.remove('active'); t.setAttribute('aria-expanded', 'false'); };
+  t.addEventListener('click', function (e) {
+    e.stopPropagation();
+    var next = m.hidden;
+    m.hidden = !next;
+    t.classList.toggle('active', next);
+    t.setAttribute('aria-expanded', next ? 'true' : 'false');
+  });
+  document.addEventListener('click', function (e) {
+    if (!m.hidden && !m.contains(e.target) && !t.contains(e.target)) close();
+  });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+  m.addEventListener('click', function (e) { if (e.target.closest('a')) close(); });
+})();
+</script>
 </body></html>
