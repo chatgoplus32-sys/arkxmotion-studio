@@ -234,24 +234,8 @@ app.post("/api/backup/run", authenticateToken, requireAdmin, async (_req, res) =
 
 // --- Production: serve built frontend ---
 if (isProd && fs.existsSync(FRONTEND_DIR)) {
-  // PWA (ARKX AUTO Studio di /studio/): dua berkas ini butuh header khusus.
-  // - sw.js tidak boleh di-cache lama, kalau tidak strategi cache baru baru
-  //   kepakai seminggu kemudian.
-  // - manifest perlu MIME JSON; tanpa itu browser menolak memasang aplikasi
-  //   (Express mengirimnya sebagai application/octet-stream).
-  const studioDir = path.join(FRONTEND_DIR, 'studio')
-  if (fs.existsSync(studioDir)) {
-    app.get('/studio/sw.js', (_req, res) => {
-      res.type('application/javascript').set('Cache-Control', 'no-cache, must-revalidate')
-      res.sendFile(path.join(studioDir, 'sw.js'))
-    })
-    app.get('/studio/manifest.json', (_req, res) => {
-      res.type('application/json').set('Cache-Control', 'no-cache, must-revalidate')
-      res.sendFile(path.join(studioDir, 'manifest.json'))
-    })
-  }
-
   // Gerbang Pro: aplikasi studio (konten premium) hanya untuk member Pro.
+  // sw.js & manifest.json khusus PWA dilayani DI DALAM gerbang (bukan publik).
   // Tanpa ini berkas statis bisa di-Save Page As tanpa akun.
   for (const dir of ['studio', 'auto-motion']) {
     app.use(
@@ -259,9 +243,17 @@ if (isProd && fs.existsSync(FRONTEND_DIR)) {
       requireProPage,
       express.static(path.join(FRONTEND_DIR, dir), {
         etag: true,
-        setHeaders(res) {
+        setHeaders(res, filePath) {
           res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive')
           res.setHeader('Cache-Control', 'no-store')
+          if (filePath.endsWith('sw.js')) {
+            res.setHeader('Content-Type', 'application/javascript; charset=utf-8')
+            res.setHeader('Cache-Control', 'no-cache, must-revalidate')
+          }
+          if (filePath.endsWith('manifest.json')) {
+            res.setHeader('Content-Type', 'application/manifest+json')
+            res.setHeader('Cache-Control', 'no-cache, must-revalidate')
+          }
         },
       }),
     )
