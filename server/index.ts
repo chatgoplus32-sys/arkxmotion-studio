@@ -17,6 +17,7 @@ import tokenRoutes from './routes/tokens.js'
 import providerTopupRoutes from './routes/providerTopup.js'
 import createpulseRoutes from './routes/createpulse.js'
 import adminTopupRoutes from './routes/adminTopup.js'
+import saldoPenyediaRoutes from './routes/saldoPenyedia.js'
 import { monitorMiddleware, getMetrics } from './lib/monitor.js'
 import { checkHealth } from './lib/alerts.js'
 import generationLogRoutes from './routes/generationLogs.js'
@@ -123,6 +124,7 @@ app.use(express.json({ limit: '50mb' }))
 // --- API Routes ---
 app.use('/api/auth', authRoutes)
 app.use('/api/feature-request', featureRequestRoutes)
+app.use('/api/provider-balance', saldoPenyediaRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/admin/tokens', adminTokenRoutes)
 app.use('/api/admin/topup', adminTopupRoutes)

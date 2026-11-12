@@ -60,21 +60,31 @@ const SERVICES: ServiceDef[] = [
   },
 ]
 
+type Satuan = 'Rp' | 'token' | 'kredit'
+
 interface ServiceState {
   amount: number | null
+  /** Satuan angka di kartu. PosBot & CreatePulse Rupiah, Seavi token, NexaBot kredit. */
+  unit: Satuan
   /** Harga satuan dari server (NexaBot per generate, Seavi per token). */
   unitPrice: number | null
   /** Keterangan tambahan, mis. status Paket Unlimited. */
   note: string | null
   /** Baris harga langganan (NexaBot), mis. "Unlimited Mingguan Rp 30.000/7 hari". */
   subExtra?: string | null
+  /** true = angka berasal dari penyedia, bukan dompet internal kita. */
+  provider?: boolean
+  /** Baris penjelas sumber angka. */
+  detail?: string | null
+  /** Angka tidak tersedia, dengan alasan yang ditampilkan netral (bukan error). */
+  unavailable?: string | null
 }
 
 const EMPTY_STATE: Record<ServiceKey, ServiceState> = {
-  createpulse: { amount: null, unitPrice: null, note: null },
-  nexabot: { amount: null, unitPrice: null, note: null },
-  seavi: { amount: null, unitPrice: null, note: null },
-  posbot: { amount: null, unitPrice: null, note: null },
+  createpulse: { amount: null, unit: 'Rp', unitPrice: null, note: null },
+  nexabot: { amount: null, unit: 'Rp', unitPrice: null, note: null },
+  seavi: { amount: null, unit: 'token', unitPrice: null, note: null },
+  posbot: { amount: null, unit: 'Rp', unitPrice: null, note: null },
 }
 
 async function fetchCreatePulseBalance(token: string): Promise<number | null> {
@@ -91,15 +101,50 @@ async function fetchCreatePulseBalance(token: string): Promise<number | null> {
   }
 }
 
-function amountLabel(key: ServiceKey, state: ServiceState, loading: boolean): string {
+interface ProviderBalance {
+  seavi?: { tokens: number | null; used: number | null; status: number | null; error: string | null }
+  nexabot?: { credits: number | null; plan: string | null; unlimited: boolean; status: number | null; error: string | null }
+  posbot?: { rupiah: number | null; source: 'upstream' | 'manual'; status: number | null; error: string | null }
+  createpulse?: { error: string | null }
+}
+
+/**
+ * Saldo asli penyedia untuk akun admin. Admin tidak menagih dirinya sendiri,
+ * jadi dompet internal (yang selalu 0 karena tidak pernah dipotong) tidak
+ * berarti apa-apa untuknya — yang relevan adalah sisa kredit di akun penyedia.
+ */
+async function fetchProviderBalance(token: string): Promise<ProviderBalance | null> {
+  try {
+    const res = await fetch('/api/provider-balance', {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(25000),
+      cache: 'no-store',
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    return data && typeof data === 'object' ? (data as ProviderBalance) : null
+  } catch {
+    return null
+  }
+}
+
+function amountLabel(state: ServiceState, loading: boolean): string {
   if (loading && state.amount === null) return '…'
   if (state.amount === null) return '—'
-  if (key === 'seavi') return `${state.amount} token`
+  if (state.unit === 'token') return `${state.amount} token`
+  if (state.unit === 'kredit') {
+    return `${state.amount.toLocaleString('id-ID', { maximumFractionDigits: 2 })} kredit`
+  }
   return formatRp(state.amount)
 }
 
+function unitLabel(unit: Satuan): string {
+  return unit === 'token' ? 'Token' : unit === 'kredit' ? 'Kredit' : 'Rupiah'
+}
+
 export default function SaldoLayananPage() {
-  const { token } = useAuthStore()
+  const { token, user } = useAuthStore()
+  const isAdmin = user?.role === 'admin'
   const [services, setServices] = useState(EMPTY_STATE)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -114,6 +159,63 @@ export default function SaldoLayananPage() {
     const requestId = ++requestRef.current
     if (silent) setRefreshing(true)
     else setLoading(true)
+
+    // Admin: baca saldo asli penyedia. Member: dompet internal seperti biasa.
+    if (isAdmin) {
+      const saldo = await fetchProviderBalance(token)
+      if (requestId !== requestRef.current) return
+      const gagal = 'Gagal menghubungi penyedia — coba Muat ulang'
+      const sv = saldo?.seavi
+      const nb = saldo?.nexabot
+      const pb = saldo?.posbot
+      setServices({
+        createpulse: {
+          amount: null,
+          unit: 'Rp',
+          unitPrice: null,
+          note: null,
+          provider: true,
+          unavailable: saldo?.createpulse?.error ?? gagal,
+        },
+        nexabot: {
+          amount: nb?.credits ?? null,
+          unit: 'kredit',
+          unitPrice: null,
+          note: nb?.unlimited ? 'Paket Unlimited aktif' : null,
+          provider: true,
+          detail: nb?.plan
+            ? `Paket ${nb.plan} · endpoint /api/v1/credits`
+            : 'Sisa kredit akun NexaBot · endpoint /api/v1/credits',
+          unavailable: nb?.error ?? gagal,
+        },
+        seavi: {
+          amount: sv?.tokens ?? null,
+          unit: 'token',
+          unitPrice: null,
+          note: null,
+          provider: true,
+          detail: sv?.used != null
+            ? `Token terpakai ${sv.used} · endpoint /v1/balance`
+            : 'Sisa token akun Seavi Labs · endpoint /v1/balance',
+          unavailable: sv?.error ?? gagal,
+        },
+        posbot: {
+          amount: pb?.rupiah ?? null,
+          unit: 'Rp',
+          unitPrice: null,
+          note: null,
+          provider: true,
+          detail: pb?.source === 'upstream'
+            ? 'Dibaca dari /balance PosBot memakai kunci induk server'
+            : 'Angka dari dashboard PosBot — kunci induk PosBot belum diatur di panel admin',
+          unavailable: pb?.error ?? gagal,
+        },
+      })
+      setUpdatedAt(Date.now())
+      setLoading(false)
+      setRefreshing(false)
+      return
+    }
 
     const [createpulse, nexabot, seavi, posbot] = await Promise.all([
       fetchCreatePulseBalance(token),
@@ -136,9 +238,10 @@ export default function SaldoLayananPage() {
       ? `Unlimited ${utama.label} ${formatRp(utama.price)}/${utama.days} hari`
       : null
     setServices({
-      createpulse: { amount: createpulse, unitPrice: null, note: null },
+      createpulse: { amount: createpulse, unit: 'Rp', unitPrice: null, note: null },
       nexabot: {
         amount: nexabot?.balance ?? null,
+        unit: 'Rp',
         unitPrice: nexabot?.price ?? null,
         subExtra: subExtraNexabot,
         // Booster hanya menggratiskan Seedance/Omni/GPT Image, jadi disebut apa
@@ -151,11 +254,13 @@ export default function SaldoLayananPage() {
       },
       seavi: {
         amount: seavi?.tokens ?? null,
+        unit: 'token',
         unitPrice: seavi?.token_price ?? 2000,
         note: null,
       },
       posbot: {
         amount: posbot?.balance ?? null,
+        unit: 'Rp',
         unitPrice: null,
         note: null,
       },
@@ -163,7 +268,7 @@ export default function SaldoLayananPage() {
     setUpdatedAt(Date.now())
     setLoading(false)
     setRefreshing(false)
-  }, [token])
+  }, [token, isAdmin])
 
   useEffect(() => { load() }, [load])
 
@@ -193,12 +298,16 @@ export default function SaldoLayananPage() {
         eyebrow="Akun"
         title="Saldo"
         highlight="Layanan"
-        desc="Empat dompet terpisah — saldo tiap layanan tidak digabung."
+        desc={isAdmin
+          ? 'Akun admin — angka dibaca langsung dari penyedia, bukan dari dompet internal.'
+          : 'Empat dompet terpisah — saldo tiap layanan tidak digabung.'}
       />
 
       <Section
         title="💳 Saldo Layanan"
-        sub="Nilai diambil langsung dari server tiap layanan."
+        sub={isAdmin
+          ? 'Diambil dari penyedia tiap halaman dibuka (Seavi /v1/balance, NexaBot /api/v1/credits).'
+          : 'Nilai diambil langsung dari server tiap layanan.'}
         right={
           <button
             type="button"
@@ -214,12 +323,16 @@ export default function SaldoLayananPage() {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {SERVICES.map((service) => {
             const state = services[service.key]
-            const unknown = !loading && state.amount === null
-            const sub = service.key === 'seavi' && state.amount !== null
-              ? `≈ ${formatRp(state.amount * (state.unitPrice ?? 2000))} · ${formatRp(state.unitPrice ?? 2000)}/token`
-              : service.key === 'nexabot' && state.unitPrice !== null
-                ? `${formatRp(state.unitPrice)}/generate`
-                : service.desc
+            // `unknown` = gagal memuat. Angka yang memang tidak tersedia dari
+            // penyedia diberi alasan sendiri lewat `unavailable`, bukan error.
+            const unknown = !loading && state.amount === null && !state.unavailable
+            const sub = state.detail
+              ? state.detail
+              : state.unit === 'token' && state.amount !== null
+                ? `≈ ${formatRp(state.amount * (state.unitPrice ?? 2000))} · ${formatRp(state.unitPrice ?? 2000)}/token`
+                : service.key === 'nexabot' && state.unitPrice !== null
+                  ? `${formatRp(state.unitPrice)}/generate`
+                  : service.desc
 
             return (
               <div
@@ -233,7 +346,7 @@ export default function SaldoLayananPage() {
                   <div className="min-w-0">
                     <div className="truncate text-sm font-semibold">{service.label}</div>
                     <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                      {service.key === 'seavi' ? 'Token' : 'Rupiah'}
+                      {unitLabel(state.unit)}
                     </div>
                   </div>
                 </div>
@@ -247,13 +360,17 @@ export default function SaldoLayananPage() {
                   ) : (
                     <div className={cn(
                       'font-mono text-xl font-bold tabular-nums',
-                      unknown && 'text-muted-foreground',
+                      (unknown || state.unavailable) && 'text-muted-foreground',
                     )}>
-                      {amountLabel(service.key, state, loading)}
+                      {amountLabel(state, loading)}
                     </div>
                   )}
                   <p className={cn('mt-1 text-[11px]', unknown ? 'text-destructive' : 'text-muted-foreground')}>
-                    {unknown ? 'Gagal memuat saldo layanan ini' : sub}
+                    {unknown
+                      ? 'Gagal memuat saldo layanan ini'
+                      : state.amount === null && state.unavailable
+                        ? state.unavailable
+                        : sub}
                   </p>
                   {state.subExtra && !unknown && (
                     <p className="mt-0.5 text-[10px] text-muted-foreground">{state.subExtra}</p>
@@ -265,38 +382,43 @@ export default function SaldoLayananPage() {
                   )}
                 </div>
 
-                <Link
-                  to={service.href}
-                  className="mt-3 flex items-center justify-center gap-1.5 rounded-lg bg-secondary/70 px-2 py-2 text-xs font-medium text-foreground transition hover:bg-secondary"
-                >
-                  Top Up
-                  <ArrowUpRight className="h-3.5 w-3.5" />
-                </Link>
+                {!state.provider && (
+                  <Link
+                    to={service.href}
+                    className="mt-3 flex items-center justify-center gap-1.5 rounded-lg bg-secondary/70 px-2 py-2 text-xs font-medium text-foreground transition hover:bg-secondary"
+                  >
+                    Top Up
+                    <ArrowUpRight className="h-3.5 w-3.5" />
+                  </Link>
+                )}
               </div>
             )
           })}
         </div>
 
-        <Link
-          to="/topup/manual"
-          className="mt-3 flex flex-col gap-2 rounded-xl border border-border bg-background/40 px-4 py-3 transition hover:border-primary/40 hover:bg-accent/30 sm:flex-row sm:items-center sm:justify-between"
-        >
-          <div>
-            <div className="text-sm font-semibold">Provider lain — Roboneo, Weavy, Framia, dll.</div>
-            <p className="text-[11px] text-muted-foreground">
-              Belum punya dompet otomatis: ajukan nominal, bayar DANA/QRIS, lalu diverifikasi admin.
-            </p>
-          </div>
-          <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-primary">
-            Top Up Manual
-            <ArrowUpRight className="h-3.5 w-3.5" />
-          </span>
-        </Link>
+        {!isAdmin && (
+          <Link
+            to="/topup/manual"
+            className="mt-3 flex flex-col gap-2 rounded-xl border border-border bg-background/40 px-4 py-3 transition hover:border-primary/40 hover:bg-accent/30 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <div>
+              <div className="text-sm font-semibold">Provider lain — Roboneo, Weavy, Framia, dll.</div>
+              <p className="text-[11px] text-muted-foreground">
+                Belum punya dompet otomatis: ajukan nominal, bayar DANA/QRIS, lalu diverifikasi admin.
+              </p>
+            </div>
+            <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-primary">
+              Top Up Manual
+              <ArrowUpRight className="h-3.5 w-3.5" />
+            </span>
+          </Link>
+        )}
 
         <div className="mt-4 flex flex-col gap-2 rounded-xl bg-secondary/50 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-[11px] leading-relaxed text-muted-foreground">
-            Saldo CreatePulse, NexaBot, dan PosBot dalam Rupiah; Seavi dalam token.
-            Tiap layanan punya dompet sendiri, jadi saldo tidak bisa dipindah atau dijumlahkan.
+            {isAdmin
+              ? 'Akun admin: Seavi dan NexaBot dibaca langsung dari penyedia; PosBot dibaca dari /balance bila kunci induknya sudah diatur (Sistem → Kunci Server PosBot), dan selama belum diatur memakai angka dari dashboard Anda; CreatePulse belum punya endpoint saldo di integrasi kita. Dompet member tidak berubah.'
+              : 'Saldo CreatePulse, NexaBot, dan PosBot dalam Rupiah; Seavi dalam token. Tiap layanan punya dompet sendiri, jadi saldo tidak bisa dipindah atau dijumlahkan.'}
           </p>
           <span className="shrink-0 text-[10px] text-muted-foreground">
             {allFailed

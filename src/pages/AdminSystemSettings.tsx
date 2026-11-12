@@ -140,7 +140,7 @@ function ProviderServerKeySection({
   token,
   addToast,
 }: {
-  provider: 'seavi'
+  provider: 'seavi' | 'posbot'
   label: string
   token: string | null
   addToast: (message: string, type?: 'success' | 'error' | 'info' | 'warning') => void
@@ -1720,6 +1720,8 @@ export default function AdminSystemSettings() {
         />
 
         <ProviderServerKeySection provider="seavi" label="Seavi Labs" token={token} addToast={addToast} />
+
+        <ProviderServerKeySection provider="posbot" label="PosBot" token={token} addToast={addToast} />
 
         {/* Provider Maintenance */}
         <Section title="Provider Maintenance" sub="Toggle maintenance mode for individual providers">
