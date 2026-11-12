@@ -102,6 +102,19 @@ async function uploadTo0x0(fileBuffer: Buffer, fileName: string, mimeType: strin
   return null
 }
 
+/** x0.at — kembaran 0x0.st yang reachable dari VPS ini (0x0.st connect-timeout). */
+async function uploadToX0At(fileBuffer: Buffer, fileName: string, mimeType: string): Promise<string | null> {
+  try {
+    const fd = new FormData()
+    fd.append('file', new Blob([new Uint8Array(fileBuffer)], { type: mimeType }), fileName)
+    const res = await fetch('https://x0.at', { method: 'POST', body: fd, signal: AbortSignal.timeout(120000) })
+    const text = (await res.text()).trim()
+    if (res.ok && text.startsWith('http')) return text
+    console.log('[upload] x0.at failed:', res.status, text.slice(0, 200))
+  } catch (e: any) { console.log('[upload] x0.at error:', e.message) }
+  return null
+}
+
 router.post('/', (req: Request, res: Response) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
@@ -146,12 +159,16 @@ router.post('/', (req: Request, res: Response) => {
       } else if (target === '0x0') {
         const url = await uploadTo0x0(fileBuffer, fileName, mimeType)
         if (url) return res.status(200).json({ ok: true, url })
+      } else if (target === 'x0at') {
+        const url = await uploadToX0At(fileBuffer, fileName, mimeType)
+        if (url) return res.status(200).json({ ok: true, url })
       } else {
-        // Auto: coba berurutan, berhenti di keberhasilan pertama. Uguu &
-        // Litterbox terbukti reachable dari VPS ini; catbox/pixeldrain/0x0
-        // timeout — tetap di bawah sebagai cadangan terakhir saja.
+        // Auto: coba berurutan, berhenti di keberhasilan pertama. Uguu & x0.at
+        // terbukti reachable dari VPS ini; catbox/pixeldrain/0x0 timeout,
+        // litterbox 412 — tetap ada di urutan terakhir sebagai cadangan.
         const url = await tryUpload([
           () => uploadToUguu(fileBuffer, fileName, mimeType),
+          () => uploadToX0At(fileBuffer, fileName, mimeType),
           () => uploadToLitterbox(fileBuffer, fileName, mimeType),
           () => uploadToCatbox(fileBuffer, fileName, mimeType),
           () => uploadToPixeldrain(fileBuffer, fileName, mimeType),
