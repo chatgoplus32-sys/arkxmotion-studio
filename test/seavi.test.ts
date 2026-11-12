@@ -273,8 +273,24 @@ test('poll: HTTP 5xx sementara dilompati, bukan gagal permanen', async () => {
 
 // ── Image models & upscaler ─────────────────────────────────────────────────
 
-test('SEAVI_IMAGE_MODELS: 7 model image aktif; tiap model wajib 1 gambar sumber', () => {
-  assert.equal(Object.keys(SEAVI_IMAGE_MODELS).length, 7)
+test('SEAVI_IMAGE_MODELS: 14 model image aktif (katalog 11 Nov 2026); tiap model wajib 1 gambar sumber', () => {
+  assert.equal(Object.keys(SEAVI_IMAGE_MODELS).length, 14)
+  // Katalog 11 Nov 2026: Nano Banana dasar, GPT Image 2.5 Flare/Sunburst,
+  // dan empat varian MAI Image masuk — semuanya 1 token.
+  for (const id of [
+    'nano_banana',
+    'gpt_image_2_5_flare',
+    'gpt_image_2_5_sunburst',
+    'mai_image_2_5',
+    'mai_image_2_5_pro',
+    'mai_image_2_6',
+    'mai_image_2_6_flash',
+  ]) {
+    const spec = SEAVI_IMAGE_MODELS[id]
+    assert.ok(spec, `${id} harus ada di katalog`)
+    assert.equal(spec.tokens, 1)
+    assert.equal(spec.imageMin, 1)
+  }
   // Katalog lama sudah tidak aktif di dashboard Seavi.
   assert.equal(SEAVI_IMAGE_MODELS['gpt_image2_s9'], undefined)
   assert.equal(SEAVI_IMAGE_MODELS['seedream5_s9'], undefined)

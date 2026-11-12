@@ -33,6 +33,7 @@ import {
   NEXABOT_PACKAGES,
   NEXABOT_SCOPED_SLUGS,
   NEXABOT_PRICING_DEFAULTS,
+  nexabotPriceForModel,
   NEXABOT_PRICING_KEYS,
   NEXABOT_PRICING_SETTING_KEYS,
   findNexabotPackage,
@@ -425,7 +426,8 @@ router.post('/deduct', authenticateToken, (req: AuthRequest, res: Response) => {
     }
     const gratisBooster = isBoosterModelName(model)
     const pricing = getNexabotPricing()
-    const cost = pkg ? 0 : pricing.price
+    // Model berharga khusus (mis. ElevenLabs 0,02 kredit) memakai tarifnya sendiri.
+    const cost = pkg ? 0 : nexabotPriceForModel(model, pricing.price)
 
     if (balance < cost) {
       // Varian termurah yang MEMBEBASKAN MODE INI disebut supaya user punya

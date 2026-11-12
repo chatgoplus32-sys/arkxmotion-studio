@@ -169,6 +169,32 @@ for root, dirs, files in os.walk(shared_local):
         sftp.put(local_file, remote_file, confirm=False)
         print(f'  ✓ {rel}/{f}')
 
+# Verifikasi: ukuran file server di VPS harus sama dengan lokal. Tanpa cek
+# ini, kegagalan upload satu file (mis. routes/nexabot.ts) tidak kelihatan
+# sampai fitur baru menjawab 404 di produksi.
+print('')
+print('Verifikasi ukuran file server...')
+_beda = []
+for root, _dirs, files in os.walk(server_local):
+    for f in files:
+        if f.endswith(('.db', '.db-journal')):
+            continue
+        local_file = os.path.join(root, f)
+        rel = os.path.relpath(local_file, LOCAL_DIR).replace(os.sep, '/')
+        try:
+            remote_size = sftp.stat(REMOTE_DIR + '/' + rel).st_size
+        except Exception:
+            _beda.append(rel + ' (tidak ada di VPS)')
+            continue
+        if remote_size != os.path.getsize(local_file):
+            _beda.append(rel + ' (%d != %d byte)' % (remote_size, os.path.getsize(local_file)))
+if _beda:
+    print('  PERINGATAN: ukuran tidak cocok:')
+    for b in _beda:
+        print('    - ' + b)
+else:
+    print('  OK: semua file server sama ukurannya')
+
 # Upload specific root files
 for f in ['tsconfig.json', 'vite.config.ts']:
     local_file = os.path.join(LOCAL_DIR, f)

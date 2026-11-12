@@ -49,6 +49,43 @@ const fmtSec = (s: number) => `${s.toFixed(1)} dtk`
 const formatRp = (n: number) => `Rp ${new Intl.NumberFormat('id-ID').format(Math.round(n))}`
 const voiceLabel = (v: NexabotVoiceOption) => `${v.name} · ${v.provider}`
 
+// `/api/generators/voices` hanya berisi voice stok — voice hasil clone tidak
+// pernah ikut di respons itu (halaman NexaBot sendiri pun cuma menyisipkannya
+// ke daftar lokal sesaat setelah clone). Supaya tidak hilang saat "Muat ulang"
+// atau setelah halaman di-refresh, hasil clone disimpan di localStorage dan
+// selalu digabung ke depan daftar.
+const CLONED_KEY = 'arkxmotion.nexabot.clonedVoices'
+
+function bacaClonedTersimpan(cloned: NexabotVoiceOption[]): NexabotVoiceOption[] {
+  try {
+    const raw = localStorage.getItem(CLONED_KEY)
+    if (!raw) return cloned
+    const tersimpan = JSON.parse(raw)
+    if (!Array.isArray(tersimpan)) return cloned
+    const sudahAda = new Set(cloned.map((v) => v.id))
+    const tambahan = tersimpan
+      .filter((v: any) => v && v.id && !sudahAda.has(String(v.id)))
+      .map((v: any) => ({
+        id: String(v.id),
+        name: String(v.name || 'Cloned Voice'),
+        provider: String(v.provider || 'elevenlabs'),
+      }))
+    return [...tambahan, ...cloned]
+  } catch {
+    return cloned
+  }
+}
+
+function simpanClonedVoice(voice: NexabotVoiceOption) {
+  try {
+    const lama = bacaClonedTersimpan([])
+    const baru = [voice, ...lama.filter((v) => v.id !== voice.id)].slice(0, 40)
+    localStorage.setItem(CLONED_KEY, JSON.stringify(baru))
+  } catch {
+    // localStorage penuh/diblokir: daftar tetap jalan tanpa simpanan.
+  }
+}
+
 function readDuration(blob: Blob): Promise<number> {
   return new Promise((resolve) => {
     const url = URL.createObjectURL(blob)
@@ -164,15 +201,12 @@ export default function CloneVoicePage() {
         serverReady = !!fresh.server_key?.available
       }
     }
-    // Clone voice butuh API key pribadi pengguna (bukan kunci server) agar
-    // suara dikaitkan ke akun NexaBot yang benar.
-    if (apiKey || cookies) return { apiKey, cookies, ticket }
-    if (nexabotPreferServerKey({
-      hasOwnKey: false,
-      serverReady,
-      coveredByPackage: coveredRef.current,
-    })) return { master: true, ticket }
-    throw new Error('NexaBot: tidak ada API key aktif dan kunci server belum tersedia — tambahkan API key di halaman Providers atau top up NexaBot dulu.')
+    // Clone voice butuh API key pribadi pengguna agar suara dikaitkan ke
+    // akun NexaBot yang benar. Jangan pakai kunci server untuk voice clone.
+    if (!apiKey && !cookies) {
+      throw new Error('NexaBot: tambahkan API key di halaman Providers terlebih dahulu sebelum klon suara.')
+    }
+    return { apiKey, cookies, ticket }
   }
 
   const loadVoices = async () => {
@@ -182,14 +216,16 @@ export default function CloneVoicePage() {
     try {
       const auth = await buildAuth()
       const list = await fetchNexabotVoices(auth)
-      setVoices(list)
-      setSpeakerId((prev) => prev || list[0]?.id || '')
-    } catch {
-      // Daftar suara tidak kunci penggunaan Clone Voice.
-      // Biarkan kosong agar pengguna tetap bisa klon suara tanpa memilih
-      // speaker ID tertentu.
-      setVoices([])
-      setVoicesError(null)
+      const gabung = bacaClonedTersimpan(list)
+      setVoices(gabung)
+      setSpeakerId((prev) => prev || gabung[0]?.id || '')
+    } catch (err: any) {
+      // Daftar suara tidak mengunci pemakaian Clone Voice: tampilkan sebabnya
+      // dan tetap sisakan voice hasil clone yang tersimpan di browser.
+      const tersimpan = bacaClonedTersimpan([])
+      setVoices(tersimpan)
+      if (tersimpan[0]) setSpeakerId((prev) => prev || tersimpan[0].id)
+      setVoicesError(err?.message || 'Daftar suara tidak bisa dimuat')
     } finally {
       setVoicesLoading(false)
     }
@@ -325,6 +361,7 @@ export default function CloneVoicePage() {
         gender,
       }, auth)
 
+      simpanClonedVoice(voice)
       addLog(`[3/3] ✅ Voice dibuat ✓ id=${voice.id || '-'}`, 'success')
       setCloned(voice)
       setVoices((prev) => [{ ...voice }, ...prev.filter((v) => v.id !== voice.id)])
@@ -536,7 +573,11 @@ export default function CloneVoicePage() {
             <div className="mt-2 max-h-56 overflow-auto rounded-lg border border-border bg-surface-secondary">
               {voiceOptions.length === 0 ? (
                 <div className="px-3 py-2 text-xs text-muted-foreground">
-                  {voicesLoading ? 'Memuat daftar suara...' : 'Tidak ada voice cocok'}
+                  {voicesLoading
+                    ? 'Memuat daftar suara...'
+                    : voicesError
+                      ? 'Daftar kosong — lihat pesan kuning di atas.'
+                      : 'Tidak ada voice cocok'}
                 </div>
               ) : (
                 voiceOptions.map((v) => (

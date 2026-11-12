@@ -62,6 +62,7 @@ const RESULTS_PAGE_SOURCE: Record<CompletedResult['page'], string> = {
   'h3-music-avatar': 'H3 Music Avatar',
   'ugc-storyboard': 'UGC Storyboard',
   'voice-over': 'Voice Over',
+  'clone-voice': 'Clone Voice',
   'music-generator': 'Music Generator',
   'music-studio': 'AI Music Studio',
   'image-studio': 'AI Image Studio',

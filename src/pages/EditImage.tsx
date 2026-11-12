@@ -24,6 +24,13 @@ const SEAVI_IMAGE_UI_MODELS = [
   { value: 'sv:nano_banana_2_lite_server15', label: 'Nano Banana 2 Lite · S15 (Seavi)', cr: 1, apiModel: 'nano_banana_2_lite_server15' },
   { value: 'sv:nano_banana_2_server15', label: 'Nano Banana 2 · S15 (Seavi)', cr: 1, apiModel: 'nano_banana_2_server15' },
   { value: 'sv:nano_banana_pro_server15', label: 'Nano Banana Pro · S15 (Seavi)', cr: 1, apiModel: 'nano_banana_pro_server15' },
+  { value: 'sv:nano_banana', label: 'Nano Banana (Seavi)', cr: 1, apiModel: 'nano_banana' },
+  { value: 'sv:gpt_image_2_5_flare', label: 'GPT Image 2.5 Flare (Seavi)', cr: 1, apiModel: 'gpt_image_2_5_flare' },
+  { value: 'sv:gpt_image_2_5_sunburst', label: 'GPT Image 2.5 Sunburst (Seavi)', cr: 1, apiModel: 'gpt_image_2_5_sunburst' },
+  { value: 'sv:mai_image_2_5', label: 'MAI Image 2.5 (Seavi)', cr: 1, apiModel: 'mai_image_2_5' },
+  { value: 'sv:mai_image_2_5_pro', label: 'MAI Image 2.5 Pro (Seavi)', cr: 1, apiModel: 'mai_image_2_5_pro' },
+  { value: 'sv:mai_image_2_6', label: 'MAI Image 2.6 (Seavi)', cr: 1, apiModel: 'mai_image_2_6' },
+  { value: 'sv:mai_image_2_6_flash', label: 'MAI Image 2.6 Flash (Seavi)', cr: 1, apiModel: 'mai_image_2_6_flash' },
   { value: 'sv:seedream_4_server15', label: 'Seedream 4 · S15 (Seavi)', cr: 1, apiModel: 'seedream_4_server15' },
   { value: 'sv:seedream_4_5_server15', label: 'Seedream 4.5 · S15 (Seavi)', cr: 1, apiModel: 'seedream_4_5_server15' },
   { value: 'sv:seavi_image_server15', label: 'Seavi Image · S15 (1-2 ref)', cr: 1, apiModel: 'seavi_image_server15' },
@@ -37,7 +44,16 @@ const PROVIDER_OPTIONS: Array<{ value: EditProvider; label: string; icon: string
   { value: 'freebeat', label: 'Freebeat AI', icon: '🍌' },
 ]
 
-const RIVERSIDE_IMAGE_MODELS = [
+interface ImageModelOption {
+  value: string
+  label: string
+  cr: number
+  apiModel: string
+  /** Id model upstream untuk endpoint yang menerima parameter `model`. */
+  upstreamModel?: string
+}
+
+const RIVERSIDE_IMAGE_MODELS: ImageModelOption[] = [
   { value: 'rs-img:gpt-image-2', label: 'GPT Image 2', cr: 8, apiModel: 'gpt-image-2' },
   { value: 'rs-img:flux-2-pro', label: 'FLUX 2 Pro', cr: 8, apiModel: 'flux-2-pro' },
   { value: 'rs-img:seedream-4.5', label: 'Seedream 4.5', cr: 10, apiModel: 'seedream-4.5' },
@@ -46,8 +62,20 @@ const RIVERSIDE_IMAGE_MODELS = [
   { value: 'rs-img:recraft-v3', label: 'Recraft V3', cr: 8, apiModel: 'recraft-v3' },
 ]
 
-const NEXABOT_IMAGE_MODELS = [
-  { value: 'nb:gpt25', label: '✨ GPT Image 2.5 (NexaBot)', cr: 0.1, apiModel: 'gpt-image' },
+// Katalog image nexabot.id (11 Nov 2026): semua 0,1 kredit/gambar.
+const NEXABOT_IMAGE_MODELS: ImageModelOption[] = [
+  { value: 'nb:nano_banana_2', label: 'Nano Banana 2 (NexaBot)', cr: 0.1, apiModel: 'gpt-image', upstreamModel: 'nano_banana_2' },
+  { value: 'nb:nano_banana_2_lite', label: 'Nano Banana 2 Lite (NexaBot)', cr: 0.1, apiModel: 'gpt-image', upstreamModel: 'nano_banana_2_lite' },
+  { value: 'nb:nano_banana_pro', label: 'Nano Banana Pro (NexaBot)', cr: 0.1, apiModel: 'gpt-image', upstreamModel: 'nano_banana_pro' },
+  { value: 'nb:nano_banana', label: 'Nano Banana (NexaBot)', cr: 0.1, apiModel: 'gpt-image', upstreamModel: 'nano_banana' },
+  { value: 'nb:gpt_image_2', label: 'GPT Image 2 (NexaBot)', cr: 0.1, apiModel: 'gpt-image', upstreamModel: 'gpt_image_2' },
+  { value: 'nb:gpt_image_2_5_flare', label: 'GPT Image 2.5 Flare (NexaBot)', cr: 0.1, apiModel: 'gpt-image', upstreamModel: 'gpt_image_2_5_flare' },
+  { value: 'nb:gpt_image_2_5_sunburst', label: 'GPT Image 2.5 Sunburst (NexaBot)', cr: 0.1, apiModel: 'gpt-image', upstreamModel: 'gpt_image_2_5_sunburst' },
+  { value: 'nb:mai_image_2_6_flash', label: 'MAI Image 2.6 Flash (NexaBot)', cr: 0.1, apiModel: 'gpt-image', upstreamModel: 'mai_image_2_6_flash' },
+  { value: 'nb:mai_image_2_6', label: 'MAI Image 2.6 (NexaBot)', cr: 0.1, apiModel: 'gpt-image', upstreamModel: 'mai_image_2_6' },
+  { value: 'nb:mai_image_2_5', label: 'MAI Image 2.5 (NexaBot)', cr: 0.1, apiModel: 'gpt-image', upstreamModel: 'mai_image_2_5' },
+  { value: 'nb:mai_image_2_5_pro', label: 'MAI Image 2.5 Pro (NexaBot)', cr: 0.1, apiModel: 'gpt-image', upstreamModel: 'mai_image_2_5_pro' },
+  // Jalur lama mode `img` tetap ada supaya tidak menghilangkan pilihan pengguna.
   { value: 'nb:img', label: '✨ GPT Image (NexaBot)', cr: 0.1, apiModel: 'img' },
 ]
 
@@ -64,7 +92,7 @@ const FREEBEAT_UI_MODELS = FREEBEAT_IMAGE_MODELS.map((m) => ({
   apiModel: m.id,
 }))
 
-const ALL_MODELS: Record<EditProvider, typeof RIVERSIDE_IMAGE_MODELS> = {
+const ALL_MODELS: Record<EditProvider, ImageModelOption[]> = {
   riverside: RIVERSIDE_IMAGE_MODELS,
   nexabot: NEXABOT_IMAGE_MODELS,
   runninghub: RUNNINGHUB_IMAGE_MODELS,
@@ -157,7 +185,8 @@ export default function EditImagePage() {
   const filePickerRef = useRef<HTMLInputElement | null>(null)
 
   const currentModel = ALL_MODELS[provider].find((m) => m.value === model) || ALL_MODELS[provider][0]
-  const isGpt25 = provider === 'nexabot' && model === 'nb:gpt25'
+  // Semua model NexaBot kecuali jalur lama `nb:img` memakai endpoint gpt-image.
+  const isGpt25 = provider === 'nexabot' && model !== 'nb:img'
   const isSeavi = provider === 'seavi'
   const seaviSpec = isSeavi && currentModel ? SEAVI_IMAGE_MODELS[(currentModel as any).apiModel || ''] : undefined
   const seaviAspects = seaviSpec?.aspects || []
@@ -482,6 +511,7 @@ export default function EditImagePage() {
       prompt: prompt.trim(),
       aspect: gptAspect,
       references,
+      model: currentModel?.upstreamModel,
     }, auth), {
       onThrottle: (waitSeconds) => {
         addLog(`⏳ Server gambar NexaBot sedang dibatasi upstream — menunggu ${waitSeconds}s lalu submit otomatis...`, 'warn')

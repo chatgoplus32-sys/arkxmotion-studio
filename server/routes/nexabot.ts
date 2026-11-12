@@ -1,4 +1,6 @@
-import { Router, Request, Response } from 'express'
+import { Router, Request, Response, raw } from 'express'
+import fs from 'fs'
+import path from 'path'
 import { authenticateToken, AuthRequest } from '../middleware/auth.js'
 import { MAX_UPLOAD_BYTES, resolveMediaType, takeUploadSlot } from '../lib/uploadGuards.js'
 import { diskPublicUrl, storeMedia } from '../lib/mediaStorage.js'
@@ -874,6 +876,194 @@ router.use((req: Request, _res: Response, next) => {
 })
 
 // ── Health check ──
+// ── Voice generator (kontrak nexabot.id/voice-generator) ──
+// Clone  : POST /api/generators/voice/clone  (multipart: files, name, gender)
+// TTS    : POST /api/generators/voice        ({ text, speakerId, languageCode, speed })
+// Daftar : GET  /api/generators/voices
+// Clone & TTS mengonsumsi kredit, daftar voice read-only.
+
+// Daftar voice upstream butuh SESI WEB (cookie). Bila sesi kedaluwarsa ia
+// menjawab 401 "Harus login lewat web." sehingga pemilih suara jadi kosong.
+// Hasil sukses terakhir disimpan sebagai cadangan agar daftar tetap berisi id
+// yang sah walau sesi sedang habis.
+const CACHE_VOICES = path.join(process.cwd(), '.nexabot-voices-cache.json')
+
+function bacaCacheVoices(): any {
+  try {
+    const data = JSON.parse(fs.readFileSync(CACHE_VOICES, 'utf8'))
+    return Array.isArray(data?.voices) && data.voices.length > 0 ? data : null
+  } catch {
+    return null
+  }
+}
+
+function tulisCacheVoices(data: any) {
+  try {
+    if (Array.isArray(data?.voices) && data.voices.length > 0) {
+      fs.writeFileSync(CACHE_VOICES, JSON.stringify(data))
+    }
+  } catch {
+    // Cache opsional: kegagalan tulis tidak boleh menggagalkan permintaan.
+  }
+}
+
+router.get('/voices', async (req: Request, res: Response) => {
+  const auth = resolveUpstreamAuth(req, { bacaSaja: true })
+  if (Object.keys(auth.headers).length === 0) {
+    return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key / X-Nexabot-Cookie header' })
+  }
+
+  const kirimCadangan = (alasan: string) => {
+    const cache = bacaCacheVoices()
+    if (!cache) return false
+    res.status(200).json({ ...cache, stale: true, warning: alasan })
+    return true
+  }
+
+  // /api/generators/voices menolak API key ("Harus login lewat web."), jadi
+  // sesi web milik server dicoba lebih dulu — daftar voice bersifat global,
+  // tidak terikat akun member. Kredensial klien tetap dicoba sesudahnya.
+  const kandidat: { label: string; headers: Record<string, string> }[] = []
+  const cookieServer = (() => {
+    try {
+      return serverAccounts().find((a) => a.cookie)?.cookie || null
+    } catch {
+      return null
+    }
+  })()
+  if (cookieServer) kandidat.push({ label: 'cookie server', headers: sessionHeaders(cookieServer) })
+  kandidat.push({ label: 'kredensial klien', headers: { ...auth.headers, 'Accept': 'application/json' } })
+  if (auth.cadangan) {
+    kandidat.push({ label: 'kredensial cadangan', headers: { ...auth.cadangan.headers, 'Accept': 'application/json' } })
+  }
+
+  let statusTerakhir = 0
+  let teksTerakhir = ''
+  for (const k of kandidat) {
+    try {
+      const r = await fetch(`${NEXABOT_BASE}/api/generators/voices`, { method: 'GET', headers: k.headers })
+      const teks = await r.text()
+      statusTerakhir = r.status
+      teksTerakhir = teks
+      if (r.ok) {
+        try { tulisCacheVoices(JSON.parse(teks)) } catch { /* bentuk tak terduga */ }
+        console.log(`[nexabot-local] modes ${r.status} (${k.label}): ${teks.slice(0, 120)}`)
+        return res.status(r.status).type('application/json').send(teks)
+      }
+      console.log(`[nexabot-local] modes ${r.status} (${k.label}): ${teks.slice(0, 120)}`)
+    } catch (e: any) {
+      teksTerakhir = e?.message || 'network error'
+      console.log(`[nexabot-local] modes gagal (${k.label}): ${String(teksTerakhir).slice(0, 120)}`)
+    }
+  }
+
+  const pesan = `Daftar suara upstream menolak (HTTP ${statusTerakhir || 502}): ${teksTerakhir.slice(0, 160)}`
+  if (kirimCadangan(pesan)) return
+  return res.status(statusTerakhir || 502).json({ ok: false, error: pesan })
+})// Teks → suara ElevenLabs (0,02 kredit upstream; tarif lokal Rp 30).
+router.post('/elevenlabs', async (req: Request, res: Response) => {
+  const auth = resolveUpstreamAuth(req, { membuatJob: true })
+  if (auth.antrean) {
+    return res.status(429).json({ ok: false, queued: true, retry_after_seconds: 30, error: auth.error })
+  }
+  if (Object.keys(auth.headers).length === 0) {
+    return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key header' })
+  }
+  const tiket = tiketServer(req, auth, 'submit')
+  if (!tiket.ok) {
+    lepasReservasi(auth.accountId)
+    return res.status(tiket.status ?? 402).json({ ok: false, error: tiket.reason })
+  }
+
+  const body = req.body || {}
+  const teks = String(body.text || '').trim()
+  const speakerId = String(body.speakerId || '').trim()
+  if (!teks) {
+    lepasReservasi(auth.accountId)
+    return res.status(400).json({ ok: false, error: 'text wajib diisi' })
+  }
+  if (!speakerId) {
+    lepasReservasi(auth.accountId)
+    return res.status(400).json({ ok: false, error: 'speakerId wajib diisi (pilih suara dulu)' })
+  }
+
+  console.log(`[nexabot-local] POST /api/generators/voice (speaker: ${speakerId.slice(0, 40)}, ${teks.length} karakter)`)
+  const hasil = await relayUpstream(res, 'submit', `${NEXABOT_BASE}/api/generators/voice`, {
+    method: 'POST',
+    headers: {
+      ...auth.headers,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    },
+    body: JSON.stringify({
+      text: teks,
+      speakerId,
+      languageCode: body.languageCode || 'id-ID',
+      speed: typeof body.speed === 'number' ? body.speed : 1,
+    }),
+  }, { kredensialServer: auth.credential?.source === 'master', credential: auth.credential, accountId: auth.accountId, cadangan: auth.cadangan })
+  lepasReservasi(auth.accountId)
+  if (hasil) {
+    if (tiket.usageId) selesaikanTiket(tiket.usageId, hasil.status, hasil.text)
+    if (!hasil.antreanPenuh) recordUpstreamUsage({
+      req,
+      route: 'voice-clone',
+      statusCode: hasil.status,
+      bodyText: hasil.text,
+      credential:
+        auth.kredensialKlien && hasil.credential === auth.credential
+          ? auth.kredensialKlien
+          : hasil.credential,
+    })
+  }
+})
+
+// Clone voice dari sample audio. Body multipart diteruskan apa adanya supaya
+// boundary & nama file tetap utuh untuk upstream.
+router.post('/voice-clone', raw({ type: () => true, limit: '30mb' }), async (req: Request, res: Response) => {
+  const auth = resolveUpstreamAuth(req, { membuatJob: true })
+  if (auth.antrean) {
+    return res.status(429).json({ ok: false, queued: true, retry_after_seconds: 30, error: auth.error })
+  }
+  if (Object.keys(auth.headers).length === 0) {
+    return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key header' })
+  }
+  const tiket = tiketServer(req, auth, 'submit')
+  if (!tiket.ok) {
+    lepasReservasi(auth.accountId)
+    return res.status(tiket.status ?? 402).json({ ok: false, error: tiket.reason })
+  }
+  if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+    lepasReservasi(auth.accountId)
+    return res.status(400).json({ ok: false, error: 'Body multipart kosong (file sample audio wajib)' })
+  }
+
+  console.log(`[nexabot-local] POST /api/generators/voice/clone (${req.body.length} byte)`)
+  const hasil = await relayUpstream(res, 'submit', `${NEXABOT_BASE}/api/generators/voice/clone`, {
+    method: 'POST',
+    headers: {
+      ...auth.headers,
+      'Content-Type': String(req.headers['content-type'] || 'multipart/form-data'),
+      'Accept': 'application/json',
+    },
+    body: req.body,
+  }, { kredensialServer: auth.credential?.source === 'master', credential: auth.credential, accountId: auth.accountId, cadangan: auth.cadangan })
+  lepasReservasi(auth.accountId)
+  if (hasil) {
+    if (tiket.usageId) selesaikanTiket(tiket.usageId, hasil.status, hasil.text)
+    if (!hasil.antreanPenuh) recordUpstreamUsage({
+      req,
+      route: 'voice-clone',
+      statusCode: hasil.status,
+      bodyText: hasil.text,
+      credential:
+        auth.kredensialKlien && hasil.credential === auth.credential
+          ? auth.kredensialKlien
+          : hasil.credential,
+    })
+  }
+})
+
 router.get('/health', (_req: Request, res: Response) => {
   res.json({ ok: true, provider: 'nexabot', timestamp: new Date().toISOString() })
 })
@@ -1131,7 +1321,7 @@ router.post('/gpt-image', async (req: Request, res: Response) => {
   }
 
   const body = req.body
-  console.log(`[nexabot-local] POST /api/v1/gpt-image (aspect: ${body.aspect ?? '-'}, refs: ${Array.isArray(body.references) ? body.references.length : 0})`)
+  console.log(`[nexabot-local] POST /api/v1/gpt-image (model: ${body.model || 'default'}, aspect: ${body.aspect ?? '-'}, refs: ${Array.isArray(body.references) ? body.references.length : 0})`)
 
   const upstreamBody: Record<string, any> = {
     prompt: body.prompt,
@@ -1140,6 +1330,9 @@ router.post('/gpt-image', async (req: Request, res: Response) => {
     aspect: body.aspect ?? 2,
     references: Array.isArray(body.references) ? body.references.slice(0, 10) : [],
   }
+  // Id model image (nano_banana*, gpt_image_2_5*, mai_image_2_*) — diteruskan apa
+  // adanya; tanpa field ini upstream memakai default GPT Image 2.5 seperti dulu.
+  if (typeof body.model === 'string' && body.model.trim()) upstreamBody.model = body.model.trim()
   if (body.telegram_id) upstreamBody.telegram_id = body.telegram_id
 
   // Tanpa retry, sama alasannya dengan /submit: job & kredit 0,1 tidak boleh ganda.

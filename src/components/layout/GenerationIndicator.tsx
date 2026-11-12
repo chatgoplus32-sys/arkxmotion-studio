@@ -22,6 +22,7 @@ const PAGE_META: Record<ActiveTask['page'], { href: string; label: string; icon:
   'h3-music-avatar': { href: '/generate/h3-music-avatar', label: 'H3 Music Avatar', icon: Music },
   'ugc-storyboard': { href: '/generate/ugc-storyboard', label: 'UGC Storyboard', icon: Clapperboard },
   'voice-over': { href: '/generate/voice-over', label: 'Voice Over', icon: Mic },
+  'clone-voice': { href: '/generate/clone-voice', label: 'Clone Voice', icon: Mic },
   'music-generator': { href: '/generate/music-generator', label: 'Music Generator', icon: Music },
   'music-studio': { href: '/generate/music-studio', label: 'AI Music Studio', icon: Music },
   'image-studio': { href: '/generate/image-studio', label: 'AI Image Studio', icon: ImageIcon },

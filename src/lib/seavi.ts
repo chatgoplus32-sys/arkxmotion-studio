@@ -321,6 +321,17 @@ export const SEAVI_IMAGE_MODELS: Record<string, SeaviModelSpec> = {
   ]),
   nano_banana_2_server15: seaviImage('nano_banana_2_server15', 'Nano Banana 2 · Server 15', 10, RATIO_NANO),
   nano_banana_pro_server15: seaviImage('nano_banana_pro_server15', 'Nano Banana Pro · Server 15', 10, RATIO_NANO),
+  // Katalog 11 Nov 2026 (semua 1 token): Nano Banana dasar, dua varian GPT
+  // Image 2.5, dan empat varian MAI Image. Rasio untuk GPT 2.5/MAI tidak
+  // didokumentasikan upstream → aspects kosong berarti parameter
+  // aspect_ratio tidak dikirim dan upstream memakai default-nya.
+  nano_banana: seaviImage('nano_banana', 'Nano Banana', 10, RATIO_NANO),
+  gpt_image_2_5_flare: seaviImage('gpt_image_2_5_flare', 'GPT Image 2.5 Flare', 4, []),
+  gpt_image_2_5_sunburst: seaviImage('gpt_image_2_5_sunburst', 'GPT Image 2.5 Sunburst', 4, []),
+  mai_image_2_5: seaviImage('mai_image_2_5', 'MAI Image 2.5', 4, []),
+  mai_image_2_5_pro: seaviImage('mai_image_2_5_pro', 'MAI Image 2.5 Pro', 4, []),
+  mai_image_2_6: seaviImage('mai_image_2_6', 'MAI Image 2.6', 4, []),
+  mai_image_2_6_flash: seaviImage('mai_image_2_6_flash', 'MAI Image 2.6 Flash', 4, []),
   seedream_4_server15: seaviImage('seedream_4_server15', 'Seedream 4 · Server 15', 4, RATIO_SEEDREAM),
   seedream_4_5_server15: seaviImage('seedream_4_5_server15', 'Seedream 4.5 · Server 15', 4, RATIO_SEEDREAM),
   // Referensi 1-2 gambar (max_items 2 di skema upstream), prompt wajib ≤2000.

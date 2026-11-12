@@ -207,6 +207,21 @@ export const NEXABOT_PRICING_DEFAULTS = {
 }
 
 /** Kunci app_settings untuk field lama (varian pertama). */
+/**
+ * Harga khusus per model (Rupiah) untuk model yang kreditnya lebih murah dari
+ * tarif standar Rp 150. ElevenLabs TTS ditagih 0,02 kredit = Rp 30
+ * (kurs 1 kredit = Rp 1.500, sama dengan tarif standar 0,1 = Rp 150).
+ */
+export const NEXABOT_MODEL_PRICES: Record<string, number> = {
+  elevenlabs: 30,
+}
+
+/** Harga satu generate untuk model tertentu; fallback = tarif standar. */
+export function nexabotPriceForModel(model: string | null | undefined, fallback: number): number {
+  const key = String(model || '').toLowerCase()
+  return NEXABOT_MODEL_PRICES[key] ?? fallback
+}
+
 export const NEXABOT_PRICING_KEYS = {
   price: 'nexabot_price',
   unlimitedPrice: NEXABOT_PACKAGES[0].priceKey,

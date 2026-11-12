@@ -28,6 +28,7 @@ export type GenerationPage =
   | 'h3-music-avatar'
   | 'ugc-storyboard'
   | 'voice-over'
+  | 'clone-voice'
   | 'music-generator'
   | 'music-studio'
   | 'image-studio'
@@ -51,6 +52,7 @@ export const GENERATION_PAGE_KIND: Record<GenerationPage, GenerationKind> = {
   'h3-music-avatar': 'video',
   'ugc-storyboard': 'video',
   'voice-over': 'audio',
+  'clone-voice': 'audio',
   'music-generator': 'audio',
   'music-studio': 'audio',
   'image-studio': 'image',
@@ -78,6 +80,7 @@ export const GENERATION_PAGE_PATH: Record<GenerationPage, string> = {
   'h3-music-avatar': '/generate/h3-music-avatar',
   'ugc-storyboard': '/generate/ugc-storyboard',
   'voice-over': '/generate/voice-over',
+  'clone-voice': '/generate/clone-voice',
   'music-generator': '/generate/music-generator',
   'music-studio': '/generate/music-studio',
   'image-studio': '/generate/image-studio',

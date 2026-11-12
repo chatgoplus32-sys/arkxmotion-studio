@@ -1911,11 +1911,64 @@ export interface NexabotVoiceOption {
   provider: string
 }
 
+// Bentuk respons asli upstream tidak selalu punya `id`:
+//   clone → { ok:true, voice:{ userId, name:"gvWMqSJaJuOBpgm6GoAA",
+//             displayName:"podace ok", provider:"elevenlabs", … } }
+// Di situ `name` adalah voice id ElevenLabs dan `displayName` nama yang diisi
+// pengguna, jadi id harus dicari di beberapa kemungkinan field.
+const POLA_ID_VOICE = /^[A-Za-z0-9_-]{16,}$/
+
+/** Daftar voice terakhir yang berhasil dimuat (cadangan saat sesi habis). */
+const NEXABOT_VOICES_CACHE = 'arkxmotion.nexabot.voiceList'
+
+/** Pesan ramah untuk penolakan relay/upstream, termasuk halaman HTML 502. */
+function pesanGagalUpstream(status: number, text: string): string {
+  const json = jsonErrorMessage(text)
+  if (json) return json
+  if (status === 502 || status === 503 || status === 504) {
+    return `Server NexaBot sedang gangguan (HTTP ${status}). Coba lagi beberapa saat.`
+  }
+  if (status === 401) {
+    return 'Sesi web NexaBot kedaluwarsa. Login ulang di nexabot.id, lalu perbarui cookie di halaman Providers.'
+  }
+  if (status === 400) return 'Kredensial NexaBot belum lengkap (API key atau cookie).'
+  return `Permintaan ke NexaBot gagal (HTTP ${status}).`
+}
+
+function bacaIdVoice(v: any): string {
+  if (!v || typeof v !== 'object') return ''
+  for (const k of [v.id, v.voiceId, v.voice_id, v.speakerId, v.speaker_id, v.voice]) {
+    if (k && String(k).trim()) return String(k).trim()
+  }
+  const nama = String(v.name || '').trim()
+  if (nama && !nama.includes(' ') && POLA_ID_VOICE.test(nama)) return nama
+  return ''
+}
+
+function bacaNamaVoice(v: any, cadangan: string): string {
+  if (!v || typeof v !== 'object') return cadangan
+  const label = String(v.displayName || v.display_name || '').trim()
+  if (label) return label
+  const nama = String(v.name || '').trim()
+  if (nama && nama !== bacaIdVoice(v)) return nama
+  return cadangan
+}
+
 /** Daftar voice siap pakai (ElevenLabs / MiniMax / Microsoft) dari upstream. */
 export async function fetchNexabotVoices(
   authOverride?: NexabotAuth | string,
 ): Promise<NexabotVoiceOption[]> {
   const auth = fillAuthFromStorage(normalizeAuth(authOverride))
+  // Daftar terakhir yang berhasil disimpan di browser: `/voices` butuh sesi web
+  // NexaBot, jadi tanpa cadangan ini pemilih suara jadi kosong begitu sesi
+  // kedaluwarsa.
+  const bacaCache = (): NexabotVoiceOption[] => {
+    try {
+      const raw = localStorage.getItem(NEXABOT_VOICES_CACHE)
+      const list = raw ? JSON.parse(raw) : []
+      return Array.isArray(list) ? list : []
+    } catch { return [] }
+  }
   try {
     const res = await fetch(`${NEXABOT_BASE}/voices`, {
       headers: { ...authHeaders(auth), ...(await appAuthHeadersFresh()) },
@@ -1923,24 +1976,29 @@ export async function fetchNexabotVoices(
     const text = await res.text().catch(() => '')
     let data: any
     try { data = JSON.parse(text) } catch { data = null }
-    if (!res.ok || !data) {
-      // Endpoint voice mungkin tidak tersedia pada semua akun NexaBot.
-      // Kembalikan array kosong agar Clone Voice tetap bisa digunakan
-      // tanpa memilih speaker ID tertentu.
+    if (!res.ok || !data || data.ok === false) {
+      const sisa = bacaCache()
       console.warn('[fetchNexabotVoices] gagal:', res.status, text.slice(0, 200))
-      return []
+      if (sisa.length > 0) return sisa
+      throw new Error(pesanGagalUpstream(res.status, text))
     }
     const daftar = Array.isArray(data.voices) ? data.voices : []
-    return daftar
+    const hasil = daftar
       .map((v: any) => ({
-        id: String(v.id || v.speakerId || ''),
-        name: String(v.name || v.displayName || ''),
+        id: bacaIdVoice(v),
+        name: bacaNamaVoice(v, String(v?.name || '')),
         provider: String(v.provider || 'ElevenLabs'),
       }))
       .filter((v: NexabotVoiceOption) => v.id && v.name)
+    if (hasil.length > 0) {
+      try { localStorage.setItem(NEXABOT_VOICES_CACHE, JSON.stringify(hasil)) } catch { /* kuota penuh */ }
+    }
+    return hasil
   } catch (e: any) {
+    const sisa = bacaCache()
     console.warn('[fetchNexabotVoices] error:', e.message)
-    return []
+    if (sisa.length > 0) return sisa
+    throw new Error(e?.message || 'Daftar suara tidak bisa dimuat')
   }
 }
 
@@ -1973,14 +2031,16 @@ export async function submitNexabotVoiceClone(
   let data: any
   try { data = JSON.parse(text) } catch { data = null }
   if (!res.ok || !data || data.ok === false) {
-    throw new Error(data?.error || jsonErrorMessage(text) || `Clone voice gagal (HTTP ${res.status})`)
+    throw new Error(data?.error || pesanGagalUpstream(res.status, text))
   }
-  const v = data.voice || data
-  const id = String(v.id || v.speakerId || '')
-  if (!id) throw new Error('Clone voice selesai tanpa speaker id')
+  const v = data.voice || data.data?.voice || data
+  const id = bacaIdVoice(v)
+  if (!id) {
+    throw new Error('Clone voice selesai tanpa speaker id (respons upstream: ' + text.slice(0, 160) + ')')
+  }
   return {
     id,
-    name: String(v.name || v.displayName || params.name),
+    name: bacaNamaVoice(v, params.name),
     provider: String(v.provider || 'ElevenLabs'),
   }
 }
@@ -2017,7 +2077,7 @@ export async function submitNexabotElevenLabs(
   let data: any
   try { data = JSON.parse(text) } catch { data = null }
   if (!res.ok || !data || data.ok === false) {
-    throw new Error(data?.error || jsonErrorMessage(text) || `Generate ElevenLabs gagal (HTTP ${res.status})`)
+    throw new Error(data?.error || pesanGagalUpstream(res.status, text))
   }
   const hasil = data.result || data
   const url = String(hasil.audioUrl || hasil.audio_url || hasil.url || '')
