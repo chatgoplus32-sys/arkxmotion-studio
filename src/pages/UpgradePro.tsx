@@ -31,6 +31,7 @@ import {
 
 const BENEFITS = [
   { icon: Clapperboard, title: 'ARKX AUTO Studio terbuka', desc: 'Timeline editor AI otomatis — susun scene, efek, dan export video jadi tanpa keluar dari platform.' },
+  { icon: Sparkles, title: 'ARKX AUTO Motion terbuka', desc: 'Motion graphics otomatis dari foto/video produk — 55 gaya, voice-over, musik, dan render video di browser.' },
   { icon: Wand2, title: 'Gemini Tools terbuka', desc: 'Edit Video Auto Motion, UGC Pro, UGC Affiliate, Clone Pose, dan Storyboard V7 lengkap dengan prompt template.' },
   { icon: Music, title: 'AI Song Cover & H3 Music Avatar', desc: 'Buat cover lagu dan avatar musik yang berbicara dari foto.' },
   { icon: Sparkles, title: 'Fitur AI lain tetap terbuka', desc: 'Motion Control, Image to Video, Virtual Try-On, Voice Over, Music Generator, dan lainnya.' },
@@ -40,7 +41,7 @@ const BENEFITS = [
 const STEPS = [
   { title: 'Scan & bayar', desc: 'Bayar sesuai nominal lewat QRIS ARKXMotion Studio.' },
   { title: 'Kirim konfirmasi', desc: 'Isi catatan pembayaran lalu kirim konfirmasi dari halaman ini.' },
-  { title: 'Admin aktifkan', desc: 'Setelah pembayaran dicek, akun otomatis jadi Pro dan empat fitur premium terbuka.' },
+  { title: 'Admin aktifkan', desc: 'Setelah pembayaran dicek, akun otomatis jadi Pro dan lima fitur premium terbuka.' },
 ]
 
 function formatDate(value: string | null): string {
@@ -175,7 +176,7 @@ export default function UpgradeProPage() {
             <p className="text-sm text-muted-foreground mt-1 max-w-md">
               {status?.isAdmin || user?.role === 'admin'
                 ? 'Sebagai admin, kamu otomatis punya akses ke semua fitur Pro.'
-                : `Upgrade Pro sudah aktif${status?.proSince ? ` sejak ${formatDate(status.proSince)}` : ''}. ARKX AUTO Studio, Gemini Tools, AI Song Cover, dan H3 Music Avatar sudah terbuka.`}
+                : `Upgrade Pro sudah aktif${status?.proSince ? ` sejak ${formatDate(status.proSince)}` : ''}. ARKX AUTO Studio, ARKX AUTO Motion, Gemini Tools, AI Song Cover, dan H3 Music Avatar sudah terbuka.`}
             </p>
             <div className="flex flex-wrap items-center justify-center gap-2 mt-5">
               <Link to="/tools/gemini-tools">
@@ -199,7 +200,7 @@ export default function UpgradeProPage() {
         eyebrow="ARKXMOTION PRO"
         title="Upgrade"
         highlight="Pro"
-        desc="Membuka ARKX AUTO Studio, Gemini Tools, AI Song Cover, dan H3 Music Avatar. Khusus member lama — fitur AI lainnya tetap terbuka, sekali bayar, berlaku permanen."
+        desc="Membuka ARKX AUTO Studio, ARKX AUTO Motion, Gemini Tools, AI Song Cover, dan H3 Music Avatar. Khusus member lama — fitur AI lainnya tetap terbuka, sekali bayar, berlaku permanen."
         actions={
           <Button variant="outline" onClick={loadStatus}>
             <RefreshCw className="h-4 w-4" /> Cek Status
@@ -209,7 +210,7 @@ export default function UpgradeProPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="space-y-6">
-          <Section title="⭐ Yang kamu dapat" sub="Akses ke empat fitur premium ARKXMotion Studio">
+          <Section title="⭐ Yang kamu dapat" sub="Akses ke lima fitur premium ARKXMotion Studio">
             <div className="space-y-4">
               {BENEFITS.map((b) => (
                 <div key={b.title} className="flex gap-3 items-start">

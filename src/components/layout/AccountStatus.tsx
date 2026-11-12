@@ -234,7 +234,7 @@ export function AccountStatus() {
                     {planLabel}
                   </span>
                   <span className="text-[10px] text-muted-foreground">
-                    {isAdmin ? 'Akses admin penuh' : isPro ? (proSince ? `Pro sejak ${proSince}` : 'Semua fitur Pro aktif') : '4 fitur premium terkunci'}
+                    {isAdmin ? 'Akses admin penuh' : isPro ? (proSince ? `Pro sejak ${proSince}` : 'Semua fitur Pro aktif') : '5 fitur premium terkunci'}
                   </span>
                 </div>
               </div>
@@ -256,7 +256,7 @@ export function AccountStatus() {
               >
                 <span className="flex items-center gap-1.5">
                   <Crown className="h-3.5 w-3.5" />
-                  Buka 4 fitur premium
+                  Buka 5 fitur premium
                 </span>
                 <ArrowUpRight className="h-3.5 w-3.5" />
               </Link>

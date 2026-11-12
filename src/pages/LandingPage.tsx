@@ -266,7 +266,7 @@ const buildPricing = (p: MemberPricing): PricingPlan[] => [
     was: p.originalFee > p.fee ? rp(p.originalFee) : undefined,
     saving: p.originalFee > p.fee ? `Hemat ${rp(p.originalFee - p.fee)}` : undefined,
     sub: 'sekali bayar · permanen',
-    features: ['Semua fitur AI terbuka', 'Motion, I2V, UGC & bulk fashion', 'Virtual Try-On, AI Music, Voice Over & ARKX AUTO Studio', 'Semua provider & smart routing', 'Support WA 1 jam', 'Token generate dibayar terpisah'],
+    features: ['Semua fitur AI terbuka', 'Motion, I2V, UGC & bulk fashion', 'Virtual Try-On, AI Music, Voice Over, ARKX AUTO Studio & ARKX AUTO Motion', 'Semua provider & smart routing', 'Support WA 1 jam', 'Token generate dibayar terpisah'],
     cta: 'Daftar Pro',
     highlight: true,
     to: '/register',
@@ -275,7 +275,7 @@ const buildPricing = (p: MemberPricing): PricingPlan[] => [
     name: 'Upgrade Member Lama',
     price: rp(p.proFee),
     sub: 'upgrade sekali bayar · permanen',
-    features: ['Khusus akun yang sudah terdaftar', 'Buka ARKX AUTO Studio, Gemini Tools, AI Song Cover & H3 Music Avatar', 'Fitur AI lain tetap terbuka', 'Sekali bayar · permanen', 'Token generate dibayar terpisah'],
+    features: ['Khusus akun yang sudah terdaftar', 'Buka ARKX AUTO Studio, ARKX AUTO Motion, Gemini Tools, AI Song Cover & H3 Music Avatar', 'Fitur AI lain tetap terbuka', 'Sekali bayar · permanen', 'Token generate dibayar terpisah'],
     cta: 'Login & Upgrade',
     highlight: false,
     to: '/login',
@@ -295,9 +295,9 @@ const buildFaqs = (p: MemberPricing) => [
   { q: 'Apa itu ARKXMotion Studio?', a: `Platform all-in-one untuk generate video AI. Satu dashboard untuk akses ${PROVIDER_COUNT} provider — Weavy, Roboneo, RunningHub, CreatePulse, NexaBot, Seavi, Freebeat AI, G5 AI Studio, Leonardo, OneOver, Framia, Magnific, Wavespeed, Shotstack, Creatomate dan lainnya — dengan token rotation & smart routing otomatis.` },
   { q: 'Bagaimana sistem token & credits?', a: 'Saldo CreatePulse, NexaBot, dan Seavi diisi lewat halaman Saldo Layanan. Provider lain (Roboneo, Weavy, Framia, dll.) memakai kunci milikmu sendiri — top up-nya diajukan lewat Top Up Manual dan diverifikasi admin. Sistem cek balance realtime sebelum generate dan auto-fallback ke kunci/token lain jika habis atau error.' },
   { q: 'Apakah bisa bulk generate?', a: 'Bisa. Bulk Fashion mendukung 1 karakter + ratusan outfit sekaligus, parallel processing. Cocok untuk katalog fashion & UGC massal.' },
-  { q: 'Apakah ada watermark?', a: 'ARKXMotion Studio tidak menambahkan watermark ke hasil generate. Tool Watermark Remover juga tersedia untuk video dari sumber lain — termasuk fitur Pro.' },
-  { q: `Saya sudah punya akun, apa tetap bayar ${rp(p.fee)}?`, a: `Tidak. Harga join ${rp(p.fee)} untuk pendaftar baru. Member lama cukup upgrade ${rp(p.proFee)} sekali bayar untuk membuka ARKX AUTO Studio, Gemini Tools, AI Song Cover, dan H3 Music Avatar — fitur AI lainnya tetap terbuka tanpa upgrade. Biaya token generate tetap terpisah sesuai pemakaian.` },
-  { q: 'Apa saja yang terbuka setelah jadi Pro?', a: 'Pendaftar baru yang join Pro langsung mendapat semua fitur AI. Member lama yang upgrade membuka empat fitur premium: ARKX AUTO Studio, Gemini Tools, AI Song Cover, dan H3 Music Avatar. Sekali bayar, tanpa biaya bulanan.' },
+  { q: 'Apakah ada watermark?', a: 'ARKXMotion Studio tidak menambahkan watermark ke hasil generate. Tool Watermark Remover juga tersedia untuk video dari sumber lain - termasuk fitur Pro.' },
+  { q: `Saya sudah punya akun, apa tetap bayar ${rp(p.fee)}?`, a: `Tidak. Harga join ${rp(p.fee)} untuk pendaftar baru. Member lama cukup upgrade ${rp(p.proFee)} sekali bayar untuk membuka ARKX AUTO Studio, ARKX AUTO Motion, Gemini Tools, AI Song Cover, dan H3 Music Avatar — fitur AI lainnya tetap terbuka tanpa upgrade. Biaya token generate tetap terpisah sesuai pemakaian.` },
+  { q: 'Apa saja yang terbuka setelah jadi Pro?', a: 'Pendaftar baru yang join Pro langsung mendapat semua fitur AI. Member lama yang upgrade membuka lima fitur premium: ARKX AUTO Studio, ARKX AUTO Motion, Gemini Tools, AI Song Cover, dan H3 Music Avatar. Sekali bayar, tanpa biaya bulanan.' },
 ]
 
 /** Pita film dekoratif — perforasi berulang, dipakai di banner CTA bawah. */
