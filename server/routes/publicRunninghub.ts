@@ -1870,7 +1870,9 @@ async function handleSubmitAudioAvatar(apiKey: string, params: any, res: Respons
 
   const body = {
     nodeInfoList,
-    instanceType: 'default',
+    // App Talking Avatar memakai sampler WanVideo yang OOM (805) di instance
+    // default 24G VRAM — butuh instance plus (48G VRAM).
+    instanceType: 'plus',
     usePersonalQueue: 'false',
   }
 

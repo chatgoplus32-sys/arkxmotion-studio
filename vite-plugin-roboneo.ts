@@ -1564,10 +1564,11 @@ export function roboneoProxyPlugin(): Plugin {
                 { nodeId: '284', fieldName: 'image', fieldValue: imgFn },
                 { nodeId: '125', fieldName: 'audio', fieldValue: audFn },
               ]
+              // instance plus (48G VRAM): app OOM (805) di instance default 24G
               const r = await rhProxyFetch(apiKey, `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${wfId}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-                body: JSON.stringify({ nodeInfoList, instanceType: 'default', usePersonalQueue: 'false' }),
+                body: JSON.stringify({ nodeInfoList, instanceType: 'plus', usePersonalQueue: 'false' }),
               })
               const text = await r.text()
               console.log(`[runninghub-proxy] audio-avatar ${r.status}:`, text.slice(0, 500))
