@@ -130,13 +130,13 @@ test('only explicit failed status confirms job failure', async () => {
 
 // ── Katalog ────────────────────────────────────────────────────────────────
 
-test('katalog: 78 model terdaftar per kategori, id unik (sinkron LIVE 14 Nov 2026)', () => {
-  assert.equal(listPosbotModelIds().length, 78)
+test('katalog: 77 model terdaftar per kategori, id unik (sinkron LIVE 14 Nov 2026; lipsync_pro dihapus)', () => {
+  assert.equal(listPosbotModelIds().length, 77)
   assert.equal(listPosbotModelIds().length, new Set(listPosbotModelIds()).size)
   assert.equal(posbotModelsByCategory('image').length, 23)
   assert.equal(posbotModelsByCategory('image_edit').length, 2)
   assert.equal(posbotModelsByCategory('video').length, 24)
-  assert.equal(posbotModelsByCategory('lipsync').length, 3)
+  assert.equal(posbotModelsByCategory('lipsync').length, 2)
   assert.equal(posbotModelsByCategory('motion').length, 8)
   assert.equal(posbotModelsByCategory('upscale').length, 2)
   assert.equal(posbotModelsByCategory('r2v').length, 6)
@@ -168,7 +168,7 @@ test('matriks mode: setiap model punya detail mode; R2V/V2V/F2F terdaftar', () =
   assert.deepEqual(getPosbotSpec('suno_cover_v6')?.modes, ['music'])
   assert.deepEqual(getPosbotSpec('upscale_video')?.modes, ['v2v'])
   assert.deepEqual(getPosbotSpec('gpt_image_26_flare')?.modes, ['t2i', 'i2i'])
-  assert.deepEqual(getPosbotSpec('minimax_lipsync_pro')?.modes, ['lipsync'])
+  assert.equal(getPosbotSpec('minimax_lipsync_pro'), undefined)
   assert.deepEqual(getPosbotSpec('wan_30_r2v')?.modes, ['r2v', 'v2v'])
   assert.deepEqual(getPosbotSpec('krea2_2k')?.modes, ['i2i'])
   assert.deepEqual(getPosbotSpec('nano_banana_2_4k')?.modes, ['t2i', 'i2i'])
@@ -190,7 +190,6 @@ test('katalog: tarif Rupiah kunci sesuai dokumen developer', () => {
   assert.equal(getPosbotSpec('seedance_25_30s_strict_r2v')?.price, 6000)
   assert.equal(getPosbotSpec('wan_remix_720p')?.price, 2500)
   assert.equal(getPosbotSpec('minimax_h3')?.price, 2500)
-  assert.equal(getPosbotSpec('minimax_lipsync_pro')?.price, 3000)
   assert.equal(getPosbotSpec('suno_cover_v6')?.price, 500)
   assert.equal(getPosbotSpec('gpt_image_2_high'), undefined)
   assert.equal(getPosbotSpec('google_tts')?.price, 500)

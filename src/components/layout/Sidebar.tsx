@@ -83,7 +83,6 @@ const audioNav: NavItem[] = [
 ]
 
 const posbotNav: NavItem[] = [
-  { label: 'LipSync Pro', href: '/generate/lipsync-pro', icon: <Mic className="h-4 w-4" /> },
   { label: 'Upscale Video', href: '/generate/upscale-video', icon: <ArrowUpFromLine className="h-4 w-4" /> },
 ]
 

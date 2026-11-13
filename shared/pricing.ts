@@ -524,7 +524,6 @@ export const POSBOT_MODEL_PRICES: Record<string, number> = {
   watermark_remover: 1500, // maintenance upstream
   // LipSync
   minimax_lipsync: 2000, // maintenance upstream
-  minimax_lipsync_pro: 3000,
   ltx_lipsync: 2500, // maintenance upstream
   // Motion control
   betamotion_hd: 2000, // maintenance upstream

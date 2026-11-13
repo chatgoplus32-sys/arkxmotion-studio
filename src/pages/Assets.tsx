@@ -70,7 +70,6 @@ const RESULTS_PAGE_SOURCE: Record<CompletedResult['page'], string> = {
   ugc: 'Product UGC',
   'clip-genius': 'Clip Genius',
   'video-edit': 'ARKX AUTO Studio',
-  'lipsync-pro': 'LipSync Pro',
   'upscale-video': 'Upscale Video',
 }
 
