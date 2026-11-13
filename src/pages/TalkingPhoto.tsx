@@ -7,7 +7,6 @@ import { useToastStore } from '@/stores/toastStore'
 import { submitRunningHubAudioAvatar, pollRunningHubTask } from '@/lib/runninghub'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { persistResultToR2, addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
-import { useLocalStorage } from '@/lib/useLocalStorage'
 import { normalizeImage } from '@/lib/roboneo'
 
 interface HistoryItem {
@@ -40,8 +39,6 @@ export default function TalkingPhotoPage() {
 
   const [photoFile, setPhotoFile] = useState<File | null>(null)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
-  const [lipValue, setLipValue] = useLocalStorage('talkingphoto.value', 50)
-  const [lipSteps, setLipSteps] = useLocalStorage('talkingphoto.steps', 6)
   const [audioFile, setAudioFile] = useState<File | null>(null)
   const [audioPreview, setAudioPreview] = useState<string | null>(null)
   const [prompt, setPrompt] = useState('')
@@ -120,7 +117,6 @@ export default function TalkingPhotoPage() {
     }
 
     addLog(`Mulai (Talking Photo HD): foto ${(upPhoto.size / 1024).toFixed(0)}KB ${upPhoto.name}` + ` + audio ${(audioFile!.size / 1024 / 1024).toFixed(1)}MB ${audioFile!.name}`)
-    addLog(`Params: value ${lipValue}, steps ${lipSteps}`)
     if (prompt.trim()) addLog(`Prompt: ${prompt.trim().slice(0, 120)}`)
 
     let submittedTaskId = ''
@@ -132,8 +128,6 @@ export default function TalkingPhotoPage() {
           const submit = await submitRunningHubAudioAvatar({
             imageFile: upPhoto,
             audioFile: audioFile!,
-            value: lipValue,
-            steps: lipSteps,
             prompt: prompt.trim() || undefined,
             apiKey: key,
           })
@@ -292,26 +286,7 @@ export default function TalkingPhotoPage() {
             <input ref={photoPickerRef} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && handlePhotoSelect(e.target.files[0])} />
           </div>
 
-          <div className="grid grid-cols-2 gap-3 mb-4">
-            <div>
-              <Label>Value (gerakan bibir)</Label>
-              <input
-                type="number" min={0} max={100}
-                value={lipValue}
-                onChange={(e) => setLipValue(Math.max(0, Math.min(100, Number(e.target.value) || 50)))}
-                className="w-full px-3 py-2 rounded-lg bg-surface-secondary border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-              />
-            </div>
-            <div>
-              <Label>Steps</Label>
-              <input
-                type="number" min={1} max={20}
-                value={lipSteps}
-                onChange={(e) => setLipSteps(Math.max(1, Math.min(20, Number(e.target.value) || 6)))}
-                className="w-full px-3 py-2 rounded-lg bg-surface-secondary border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-              />
-            </div>
-          </div>
+
 
           <div className="mb-4">
             <Label className="mb-2 block">🎵 File Audio (bicara / nyanyi)</Label>
