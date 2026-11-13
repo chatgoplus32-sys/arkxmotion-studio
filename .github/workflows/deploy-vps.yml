@@ -58,7 +58,13 @@ jobs:
             cd /opt/arkxmotion-studio
 
             echo "🔄 Menarik perubahan terbaru..."
-            git fetch origin main
+            echo "   remote lama: $(git remote get-url origin 2>/dev/null || echo '(tidak ada)')"
+            # Remote di VPS pernah menunjuk sumber yang tidak sinkron dengan main
+            # di GitHub — build hijau tapi frontend lama yang ter-deploy. Paksa
+            # remote ke repo sumber kebenaran, lalu fetch yang gagal = deploy gagal.
+            git remote set-url origin https://github.com/chatgoplus32-sys/arkxmotion-studio.git
+            git fetch --prune origin main
+            echo "   origin/main: $(git log --oneline -1 origin/main)"
             # Checkout di VPS bisa TERKOTOR oleh jalur deploy yang lain:
             # deploy_vps.py mengunggah server/, package.json, dan vite.config.ts
             # lewat SFTP, sehingga berkas ter-track berubah di luar git.
@@ -83,6 +89,20 @@ jobs:
 
             echo "🔨 Membangun frontend..."
             npm run build
+
+            echo "🔎 Verifikasi build frontend (anti-stale)..."
+            TP_CHUNK=$(ls dist/assets/TalkingPhoto-*.js 2>/dev/null | head -1)
+            if [ -z "$TP_CHUNK" ]; then
+              echo "❌ VERIFIKASI GAGAL: chunk TalkingPhoto tidak ada di dist/assets."
+              ls dist/assets | head -20
+              exit 1
+            fi
+            if ! grep -q "Talking Avatar HD" "$TP_CHUNK"; then
+              echo "❌ VERIFIKASI GAGAL: build memuat TalkingPhoto versi LAMA (label 'Talking Avatar HD' tidak ada)."
+              echo "   chunk: $TP_CHUNK | HEAD: $(git log --oneline -1)"
+              exit 1
+            fi
+            echo "   ✓ dist memuat frontend terbaru: $(basename "$TP_CHUNK")"
 
             echo "🧪 Gerbang 2 — smoke test (server harus benar-benar bisa boot)..."
             if ! bash scripts/smoke-test.sh; then
