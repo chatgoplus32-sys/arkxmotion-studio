@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Activity, ArrowRight, ArrowUpRight, CheckCircle2, Clapperboard, Film, Image as ImageIcon,
-  Images, Layers, Loader2, MapPin, Mic, Music, Shirt, Sparkles, UserRound, Video, Wand2, X,
+  Images, Layers, Loader2, MapPin, Mic, Music, Shirt, Sparkles, Video, Wand2, X,
 } from 'lucide-react'
 import { getActiveTasks, getResults, type ActiveTask, type CompletedResult } from '@/lib/backgroundTasks'
 import { cn } from '@/lib/utils'
@@ -17,7 +17,6 @@ const PAGE_META: Record<ActiveTask['page'], { href: string; label: string; icon:
   'bulk-fashion': { href: '/generate/bulk-fashion', label: 'Bulk Fashion', icon: Shirt },
   'virtual-tryon': { href: '/generate/virtual-tryon', label: 'Virtual Try-On', icon: Shirt },
   'travel-photo': { href: '/generate/travel-photo', label: 'Travel Photo', icon: MapPin },
-  'talking-photo': { href: '/generate/talking-photo', label: 'Talking Photo', icon: UserRound },
   'h3-i2v': { href: '/generate/h3-i2v', label: 'H3 Image to Video', icon: Film },
   'h3-music-avatar': { href: '/generate/h3-music-avatar', label: 'H3 Music Avatar', icon: Music },
   'ugc-storyboard': { href: '/generate/ugc-storyboard', label: 'UGC Storyboard', icon: Clapperboard },

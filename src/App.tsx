@@ -70,7 +70,6 @@ const ManualTopupPage = lazyWithRetry(() => import('@/pages/ManualTopup'))
 const SaldoLayananPage = lazyWithRetry(() => import('@/pages/SaldoLayanan'))
 const PluginsPage = lazyWithRetry(() => import('@/pages/Plugins'))
 const VirtualTryOnPage = lazyWithRetry(() => import('@/pages/VirtualTryOn'))
-const TalkingPhotoPage = lazyWithRetry(() => import('@/pages/TalkingPhoto'))
 const H3ImageToVideoPage = lazyWithRetry(() => import('@/pages/H3ImageToVideo'))
 const WatermarkRemoverPage = lazyWithRetry(() => import('@/pages/WatermarkRemover'))
 const VideoUpscalerPage = lazyWithRetry(() => import('@/pages/VideoUpscaler'))
@@ -237,7 +236,6 @@ export default function App() {
                         <Route path="/generate/virtual-tryon" element={<VirtualTryOnPage />} />
                         <Route path="/generate/travel-photo" element={<TravelPhotoPage />} />
                         <Route path="/generate/dola-chat" element={<DolaChatPage />} />
-                        <Route path="/generate/talking-photo" element={<TalkingPhotoPage />} />
                         <Route path="/generate/h3-i2v" element={<H3ImageToVideoPage />} />
                         <Route path="/generate/h3-music-avatar" element={<ProRoute><H3MusicAvatarPage /></ProRoute>} />
                         <Route path="/generate/watermark-remover" element={<WatermarkRemoverPage />} />

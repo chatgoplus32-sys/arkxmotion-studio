@@ -71,7 +71,6 @@ const createNav: NavItem[] = [
   { label: 'Edit Image', href: '/generate/edit-image', icon: <ImagePlus className="h-4 w-4" /> },
   { label: 'Virtual Try-On', href: '/generate/virtual-tryon', icon: <Shirt className="h-4 w-4" /> },
   { label: 'Travel Photo', href: '/generate/travel-photo', icon: <Globe className="h-4 w-4" /> },
-  { label: 'Talking Photo', href: '/generate/talking-photo', icon: <Mic className="h-4 w-4" /> },
 ]
 
 const audioNav: NavItem[] = [

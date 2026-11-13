@@ -91,18 +91,19 @@ jobs:
             npm run build
 
             echo "🔎 Verifikasi build frontend (anti-stale)..."
-            TP_CHUNK=$(ls dist/assets/TalkingPhoto-*.js 2>/dev/null | head -1)
-            if [ -z "$TP_CHUNK" ]; then
-              echo "❌ VERIFIKASI GAGAL: chunk TalkingPhoto tidak ada di dist/assets."
-              ls dist/assets | head -20
+            # Fitur Talking Photo sudah dihapus — gerbang spesifik label dilepas.
+            # Anti-stale tetap dijaga dua hal di atas: remote origin dipaksa ke
+            # repo GitHub sumber kebenaran, dan fetch gagal = deploy gagal.
+            IDX_REF=$(grep -o 'assets/index-[A-Za-z0-9_-]*\.js' dist/index.html | head -1)
+            if [ -z "$IDX_REF" ]; then
+              echo "❌ VERIFIKASI GAGAL: dist/index.html tidak mereferensikan bundle hasil build."
               exit 1
             fi
-            if ! grep -q "Talking Photo HD" "$TP_CHUNK"; then
-              echo "❌ VERIFIKASI GAGAL: build memuat TalkingPhoto versi LAMA (label 'Talking Photo HD' tidak ada)."
-              echo "   chunk: $TP_CHUNK | HEAD: $(git log --oneline -1)"
+            if [ ! -f "dist/$IDX_REF" ]; then
+              echo "❌ VERIFIKASI GAGAL: dist/$IDX_REF tidak ada — build tidak utuh."
               exit 1
             fi
-            echo "   ✓ dist memuat frontend terbaru: $(basename "$TP_CHUNK")"
+            echo "   ✓ dist memuat frontend terbaru: $IDX_REF"
 
             echo "🧪 Gerbang 2 — smoke test (server harus benar-benar bisa boot)..."
             if ! bash scripts/smoke-test.sh; then

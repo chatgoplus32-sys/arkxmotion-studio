@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
-import { Shirt, Video, MessageSquare, Wand2, ArrowRight, Sparkles, Zap, Clapperboard } from 'lucide-react'
+import { Shirt, Video, Wand2, ArrowRight, Sparkles, Zap, Clapperboard } from 'lucide-react'
 
 interface QuickAction {
   id: string
@@ -42,15 +42,6 @@ const quickActions: QuickAction[] = [
     color: 'from-blue-500 to-cyan-500',
     gradient: 'bg-gradient-to-br from-blue-500/20 to-cyan-500/20 border-blue-500/30',
     href: '/generate/image-to-video',
-  },
-  {
-    id: 'talking-photo',
-    title: 'Foto Bicara',
-    subtitle: 'Buat foto berbicara dengan suara AI',
-    icon: <MessageSquare className="h-8 w-8" />,
-    color: 'from-green-500 to-emerald-500',
-    gradient: 'bg-gradient-to-br from-green-500/20 to-emerald-500/20 border-green-500/30',
-    href: '/generate/talking-photo',
   },
   {
     id: 'upscaler',

@@ -23,7 +23,6 @@ export type GenerationPage =
   | 'bulk-fashion'
   | 'virtual-tryon'
   | 'travel-photo'
-  | 'talking-photo'
   | 'h3-i2v'
   | 'h3-music-avatar'
   | 'ugc-storyboard'
@@ -47,7 +46,6 @@ export const GENERATION_PAGE_KIND: Record<GenerationPage, GenerationKind> = {
   'bulk-fashion': 'image',
   'virtual-tryon': 'image',
   'travel-photo': 'image',
-  'talking-photo': 'video',
   'h3-i2v': 'video',
   'h3-music-avatar': 'video',
   'ugc-storyboard': 'video',
@@ -75,7 +73,6 @@ export const GENERATION_PAGE_PATH: Record<GenerationPage, string> = {
   'bulk-fashion': '/generate/bulk-fashion',
   'virtual-tryon': '/generate/virtual-tryon',
   'travel-photo': '/generate/travel-photo',
-  'talking-photo': '/generate/talking-photo',
   'h3-i2v': '/generate/h3-i2v',
   'h3-music-avatar': '/generate/h3-music-avatar',
   'ugc-storyboard': '/generate/ugc-storyboard',

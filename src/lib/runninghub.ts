@@ -17,22 +17,9 @@ export const RUNNINGHUB_TRYON_GARMENT_NODE = '53'
 // https://www.runninghub.ai/id/ai-detail/2102388260877221889
 export const RUNNINGHUB_TRYON_FLUX2_APP_ID = '2102388260877221889'
 
-// Talking Photo (RunningHub OpenAPI AI-app 2088287871631835137 — satu-satunya
-// mode Talking Photo; pengganti app 2112155365463203842 yang gerakan bibirnya
-// kurang sinkron): 1 foto + audio → video bicara/bernyanyi.
-// node 284 = image (foto), node 125 = audio
-export const RUNNINGHUB_AUDIO_AVATAR_WORKFLOW_ID = '2088287871631835137'
 // MiniMax H3 Music Avatar (app RunningHub): 1 foto + audio lagu → video
 // avatar menyanyi, segmen tanpa batas + video panjang.
 const RUNNINGHUB_H3_MUSIC_AVATAR_APP_ID = '2111522730906955778'
-export const RUNNINGHUB_AUDIO_AVATAR_IMAGE_NODE = '284'
-export const RUNNINGHUB_AUDIO_AVATAR_AUDIO_NODE = '125'
-
-// LTX-2.5 I2V LipSync Bahasa Indonesia:
-// foto + audio → video lip-sync.
-// node 23 = image1, node 30 = image2, node 148 = audio,
-// node 14 = width, node 15 = height, node 16 = fps
-export const RUNNINGHUB_LIPSYNC_WORKFLOW_ID = '2098820058905927682'
 
 // FLUX.1 Kontext image edit (instruksi bahasa alami):
 // node 28 = image (foto), node 31 = text (perintah edit)
@@ -715,40 +702,6 @@ export async function submitRunningHubTryOnFlux2(params: TryOnParams): Promise<M
   }
 }
 
-export interface AudioAvatarParams {
-  imageFile: File
-  audioFile: File
-  prompt?: string
-  apiKey?: string
-  workflowId?: string
-}export async function submitRunningHubAudioAvatar(params: AudioAvatarParams): Promise<MotionControlResult> {
-  const workflowId = params.workflowId || RUNNINGHUB_AUDIO_AVATAR_WORKFLOW_ID
-
-  const [imageBase64, audioBase64] = await Promise.all([
-    fileToBase64(params.imageFile),
-    fileToBase64(params.audioFile),
-  ])
-
-  const result = await runninghubProxy('submit-audio-avatar', {
-    workflow_id: workflowId,
-    imageBase64,
-    imageFileName: params.imageFile.name,
-    imageMimeType: params.imageFile.type || 'image/jpeg',
-    audioBase64,
-    audioFileName: params.audioFile.name,
-    audioMimeType: params.audioFile.type || 'audio/mpeg',
-    prompt: params.prompt || '',
-  }, params.apiKey)
-
-  return {
-    id: result.id || result.taskId,
-    taskId: result.taskId || result.id,
-    status: result.status || 'QUEUED',
-    provider: result.provider || 'runninghub',
-    workflowId: result.workflowId || workflowId,
-  }
-}
-
 export interface H3MusicAvatarParams {
   imageFile: File
   audioFile: File
@@ -873,55 +826,6 @@ export async function submitRunningHubTravelPhoto(params: TravelPhotoParams): Pr
     destination: params.destination || '',
     prompt: params.prompt || '',
     aspectRatio: params.aspectRatio || '9:16',
-  }, params.apiKey)
-
-  return {
-    id: result.id || result.taskId,
-    taskId: result.taskId || result.id,
-    status: result.status || 'QUEUED',
-    provider: result.provider || 'runninghub',
-    workflowId: result.workflowId || workflowId,
-  }
-}
-
-export interface LipSyncParams {
-  imageFile: File
-  imageFile2?: File | null
-  audioFile: File
-  width?: number
-  height?: number
-  fps?: number
-  prompt?: string
-  apiKey?: string
-  workflowId?: string
-}
-
-export async function submitRunningHubLipSync(params: LipSyncParams): Promise<MotionControlResult> {
-  const workflowId = params.workflowId || RUNNINGHUB_LIPSYNC_WORKFLOW_ID
-
-  const [imageBase64, audioBase64] = await Promise.all([
-    fileToBase64(params.imageFile),
-    fileToBase64(params.audioFile),
-  ])
-  const imageBase64_2 = params.imageFile2 ? await fileToBase64(params.imageFile2) : undefined
-
-  const result = await runninghubProxy('submit-lipsync', {
-    workflow_id: workflowId,
-    imageBase64,
-    imageFileName: params.imageFile.name,
-    imageMimeType: params.imageFile.type || 'image/jpeg',
-    ...(imageBase64_2 && params.imageFile2 ? {
-      imageBase64_2,
-      imageFileName2: params.imageFile2.name,
-      imageMimeType2: params.imageFile2.type || 'image/jpeg',
-    } : {}),
-    audioBase64,
-    audioFileName: params.audioFile.name,
-    audioMimeType: params.audioFile.type || 'audio/mpeg',
-    width: params.width ?? 1280,
-    height: params.height ?? 720,
-    fps: params.fps ?? 30,
-    prompt: params.prompt || '',
   }, params.apiKey)
 
   return {

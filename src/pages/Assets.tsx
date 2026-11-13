@@ -58,7 +58,6 @@ const RESULTS_PAGE_SOURCE: Record<CompletedResult['page'], string> = {
   'bulk-fashion': 'Bulk Fashion',
   'virtual-tryon': 'Virtual Try-On',
   'travel-photo': 'Travel Photo',
-  'talking-photo': 'Talking Photo',
   'h3-i2v': 'H3 Image to Video',
   'h3-music-avatar': 'H3 Music Avatar',
   'ugc-storyboard': 'UGC Storyboard',
