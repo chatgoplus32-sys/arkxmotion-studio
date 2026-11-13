@@ -129,7 +129,7 @@ const PROVIDER_LIST = [
   { key: 'nexabot', label: 'NexaBot', desc: 'NexaBot AI via nexabot.id – tiga model video: Omni Flash 1.2, NexaDance 3.0, Omni Lama 10s. Member cukup top up saldo atau Paket Unlimited; generate memakai kunci server, tanpa API key.' },
   { key: 'markastools', label: 'MarkasTools', desc: 'MarkasTools via ai.markastools.id — Motion Control MarkasFlow. Token akun MF- (MarkasKeyTool) didaftarkan sebagai akun "Markasflow", lalu dipakai otomatis (rotasi oleh MarkasTools). Butuh langganan MarkasTools + cookie session.' },
   { key: 'freebeat', label: 'Freebeat AI', desc: '31 model gambar (Nano Banana 2, Z-Image Turbo, Kling Image V3, Qwen, Wan, Seedream, Flux, GPT-Image) via freebeat.ai — API key dari profil akun, kredit dipotong langsung di akun freebeat.' },
-  { key: 'posbot', label: 'PosBot', desc: 'PosBot Developer API v1 — 60 model AI: gambar, video T2V/I2V/R2V, motion control, lipsync, TTS & musik. Saldo Rupiah dipotong per generate, job gagal direfund 100% otomatis.' },
+  { key: 'posbot', label: 'PosBot', desc: 'PosBot Developer API v1 — 55+ model AI: gambar, video T2V/I2V/R2V, motion control, lipsync, TTS & musik. Saldo Rupiah dipotong per generate, job gagal direfund 100% otomatis.' },
   { key: 'omni', label: 'Omni (Google Gemini)', desc: 'Omni (omni-1.2-flash) via freebeat.ai — generate video 15 detik dari teks. Kredit dipotong langsung di akun freebeat.' },
 ] as const
 

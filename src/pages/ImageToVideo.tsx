@@ -71,7 +71,7 @@ const I2V_PROVIDER_HINTS: Partial<Record<ProviderId, { tagline: string; recommen
   nexabot: { tagline: 'Bayar per video dengan saldo NexaBot atau Paket Unlimited.' },
   runninghub: { tagline: 'Workflow populer: Seedance dan MiniMax H3.' },
   seavi: { tagline: 'Image to video & multimodal — tanpa API key kalau token Seavi sudah diisi.' },
-  posbot: { tagline: 'Bayar pakai saldo Rupiah PosBot — 26 model video (T2V · I2V · SFV · F2F · R2V/V2V), API key pb_live_… dari bot Telegram.' },
+  posbot: { tagline: 'Bayar pakai saldo Rupiah PosBot — 29 model video (T2V · I2V · SFV · F2F · R2V/V2V), API key pb_live_… dari bot Telegram.' },
 }
 
 export default function ImageToVideoPage() {

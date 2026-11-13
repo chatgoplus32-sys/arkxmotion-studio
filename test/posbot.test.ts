@@ -130,17 +130,17 @@ test('only explicit failed status confirms job failure', async () => {
 
 // ── Katalog ────────────────────────────────────────────────────────────────
 
-test('katalog: 71 model aktif terbagi per kategori, id unik', () => {
-  assert.equal(listPosbotModelIds().length, 71)
+test('katalog: 78 model terdaftar per kategori, id unik (sinkron LIVE 14 Nov 2026)', () => {
+  assert.equal(listPosbotModelIds().length, 78)
   assert.equal(listPosbotModelIds().length, new Set(listPosbotModelIds()).size)
-  assert.equal(posbotModelsByCategory('image').length, 22)
+  assert.equal(posbotModelsByCategory('image').length, 23)
   assert.equal(posbotModelsByCategory('image_edit').length, 2)
-  assert.equal(posbotModelsByCategory('video').length, 22)
-  assert.equal(posbotModelsByCategory('lipsync').length, 2)
+  assert.equal(posbotModelsByCategory('video').length, 24)
+  assert.equal(posbotModelsByCategory('lipsync').length, 3)
   assert.equal(posbotModelsByCategory('motion').length, 8)
-  assert.equal(posbotModelsByCategory('upscale').length, 1)
-  assert.equal(posbotModelsByCategory('r2v').length, 5)
-  assert.equal(posbotModelsByCategory('tts', 'music').length, 9)
+  assert.equal(posbotModelsByCategory('upscale').length, 2)
+  assert.equal(posbotModelsByCategory('r2v').length, 6)
+  assert.equal(posbotModelsByCategory('tts', 'music').length, 10)
 })
 
 // Detail per model: setiap model wajib punya matriks mode, termasuk R2V & V2V
@@ -162,6 +162,13 @@ test('matriks mode: setiap model punya detail mode; R2V/V2V/F2F terdaftar', () =
   assert.deepEqual(getPosbotSpec('upscale_2k_60fps')?.modes, ['v2v'])
   assert.deepEqual(getPosbotSpec('omni_flash_r2v')?.modes, ['r2v', 'v2v'])
   assert.deepEqual(getPosbotSpec('seedance_25_30s_r2v')?.modes, ['t2v', 'i2v', 'r2v'])
+  assert.deepEqual(getPosbotSpec('seedance_25_30s_strict_r2v')?.modes, ['r2v'])
+  assert.deepEqual(getPosbotSpec('wan3_hd_15s')?.modes, ['i2v'])
+  assert.deepEqual(getPosbotSpec('wan3_hd_30s')?.modes, ['i2v'])
+  assert.deepEqual(getPosbotSpec('suno_cover_v6')?.modes, ['music'])
+  assert.deepEqual(getPosbotSpec('upscale_video')?.modes, ['v2v'])
+  assert.deepEqual(getPosbotSpec('gpt_image_26_flare')?.modes, ['t2i', 'i2i'])
+  assert.deepEqual(getPosbotSpec('minimax_lipsync_pro')?.modes, ['lipsync'])
   assert.deepEqual(getPosbotSpec('wan_30_r2v')?.modes, ['r2v', 'v2v'])
   assert.deepEqual(getPosbotSpec('krea2_2k')?.modes, ['i2i'])
   assert.deepEqual(getPosbotSpec('nano_banana_2_4k')?.modes, ['t2i', 'i2i'])
@@ -177,12 +184,20 @@ test('katalog: tarif Rupiah kunci sesuai dokumen developer', () => {
   assert.equal(getPosbotSpec('gpt_image_25')?.promptMax, 20000)
   assert.equal(getPosbotSpec('seedream_5_pro_2k')?.promptMax, 3000)
   assert.equal(getPosbotSpec('omni_flash_11_720p')?.price, 1000)
-  assert.equal(getPosbotSpec('kling_30_pro')?.price, 3000)
-  assert.equal(getPosbotSpec('seedance_25_30s_r2v')?.price, 6500)
+  assert.equal(getPosbotSpec('kling_30_pro')?.price, 3500)
+  assert.equal(getPosbotSpec('s2_seedance_25_30s')?.price, 6000)
+  assert.equal(getPosbotSpec('seedance_25_30s_r2v')?.price, 6000)
+  assert.equal(getPosbotSpec('seedance_25_30s_strict_r2v')?.price, 6000)
+  assert.equal(getPosbotSpec('wan_remix_720p')?.price, 2500)
+  assert.equal(getPosbotSpec('minimax_h3')?.price, 2500)
+  assert.equal(getPosbotSpec('minimax_lipsync_pro')?.price, 3000)
+  assert.equal(getPosbotSpec('suno_cover_v6')?.price, 500)
+  assert.equal(getPosbotSpec('gpt_image_2_high'), undefined)
   assert.equal(getPosbotSpec('google_tts')?.price, 500)
   assert.equal(getPosbotSpec('nano_banana_2_4k')?.promptMax, 2000)
+  assert.equal(getPosbotSpec('nano_banana_21_4k')?.promptMax, 20000)
   assert.equal(getPosbotSpec('model_ngawur'), undefined)
-  assert.equal(formatPosbotRupiah(6500), `Rp ${(6500).toLocaleString('id-ID')}`)
+  assert.equal(formatPosbotRupiah(6000), `Rp ${(6000).toLocaleString('id-ID')}`)
 })
 
 // Kontrak klien↔server: potongan saldo server (getPosbotCharge, shared/pricing)
@@ -386,6 +401,26 @@ test('tts: voice diteruskan; model musik tanpa lirik tidak mengirim lyrics', () 
   const lyria = buildPosbotPayload(getPosbotSpec('lyria_35')!, { prompt: 'ambient', lyrics: 'abaikan', instrumental: true })
   assert.equal(lyria.lyrics, undefined)
   assert.equal(lyria.instrumental, undefined)
+})
+
+test('fps: upscale_video hanya menerima 60 atau 30; fps lain ditolak', () => {
+  const spec = getPosbotSpec('upscale_video')!
+  assert.equal(buildPosbotPayload(spec, { videoUrl: 'in.mp4', fps: 30 }).fps, 30)
+  assert.equal(buildPosbotPayload(spec, { videoUrl: 'in.mp4' }).fps, undefined)
+  assert.equal(buildPosbotPayload(getPosbotSpec('upscale_2k_60fps')!, { videoUrl: 'in.mp4', fps: 60 }).fps, 60)
+  assert.throws(() => buildPosbotPayload(spec, { videoUrl: 'in.mp4', fps: 24 }), /fps/)
+})
+
+test('suno cover v6: audio wajib; style/title/instrumental diteruskan; prompt opsional', () => {
+  const spec = getPosbotSpec('suno_cover_v6')!
+  assert.throws(() => buildPosbotPayload(spec, {}), /file audio/)
+  const body = buildPosbotPayload(spec, { audioUrl: 'src.mp3', style: 'city pop', title: 'Lagu Baru', instrumental: true })
+  assert.equal(body.audio_url, 'src.mp3')
+  assert.equal(body.style, 'city pop')
+  assert.equal(body.title, 'Lagu Baru')
+  assert.equal(body.instrumental, true)
+  assert.equal(body.prompt, undefined)
+  assert.equal(body.lyrics, undefined)
 })
 
 // ── submit ─────────────────────────────────────────────────────────────────

@@ -255,7 +255,7 @@ export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
     id: 'posbot',
     name: 'PosBot',
     icon: '🤖',
-    description: 'PosBot Developer API — 60 model AI (gambar, video, motion, lipsync, musik) dengan saldo Rupiah',
+    description: 'PosBot Developer API — 55+ model AI (gambar, video, motion, lipsync, musik) dengan saldo Rupiah',
     keyPlaceholder: 'pb_live_...',
     keyFormat: 'Developer API key dari bot Telegram PosBot → menu Developer API',
     minCredits: 0,

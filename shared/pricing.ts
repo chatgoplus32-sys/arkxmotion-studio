@@ -462,18 +462,22 @@ export const POSBOT_DEFAULT_CHARGE = 1000
 
 /**
  * Tarif Rupiah per generate tiap model PosBot. Cermin `spec.price` di
- * src/lib/posbot.ts (POSBOT_MODELS). Daftar LENGKAP di sini — berbeda dari
- * Seavi yang hanya mendaftarkan bobot > default — karena harga PosBot bervariasi
- * 350–6500 dan tidak ada satu angka yang bisa jadi default aman.
+ * src/lib/posbot.ts (POSBOT_MODELS) — disinkron dengan katalog LIVE
+ * /models + /models/status per 14 Nov 2026. Daftar LENGKAP di sini —
+ * berbeda dari Seavi yang hanya mendaftarkan bobot > default — karena harga
+ * PosBot bervariasi 350–6000 dan tidak ada satu angka yang bisa jadi default aman.
+ * Entri "alias lama" dipertahankan supaya charge job lama tidak jatuh ke default.
  */
 export const POSBOT_MODEL_PRICES: Record<string, number> = {
   // Image generation
-  krea2_2k: 350,
+  krea2_2k: 500, // maintenance upstream
   nano_banana_2_4k: 350,
   nano_banana_pro_4k: 350,
-  gpt_image_2_high: 350,
+  gpt_image_2_high: 350, // DISABLED upstream — digantikan GPT Image 2.5/2.6 (charge legacy)
   gpt_image_25: 350,
   gpt_image_25_sunburst: 350,
+  gpt_image_26_sunburst: 350,
+  gpt_image_26_flare: 350,
   flux_2_pro: 350,
   seedream_50_lite: 350,
   seedream_50_pro: 350,
@@ -491,60 +495,66 @@ export const POSBOT_MODEL_PRICES: Record<string, number> = {
   imagen4_ultra_2k: 350,
   grok_image_2_1k: 350,
   // Image edit
-  face_swap: 350,
-  upscale_4k: 350,
+  face_swap: 350, // maintenance upstream
+  upscale_4k: 500, // maintenance upstream
   // Video generation
   grok_imagine_2_15s: 2500,
   grok_imagine_2_30s: 4000,
   grok_imagine_15_video_720p: 1500,
-  betagrok_15s: 1000,
-  s2_seedance_25_30s: 5000,
-  seedance_25_30s_strict: 5000,
-  seedance_20_15s: 5000,
-  seedance_20_mini: 2500,
-  wan_30_hd: 3000,
-  wan_remix_720p: 1000,
-  minimax_h3: 2000,
-  minimax_h3_720p: 1500,
-  kling_25_turbo: 2500,
-  kling_26_pro_1080p: 3000,
-  kling_30_turbo: 3000,
+  betagrok_15s: 2000, // maintenance upstream
+  s2_seedance_25_30s: 6000,
+  seedance_25_30s_strict: 6000,
+  seedance_20_15s: 5000, // maintenance upstream
+  seedance_20_mini: 2500, // maintenance upstream
+  wan_30_hd: 3000, // maintenance upstream (alias wan_30_720p)
+  wan_remix_720p: 2500,
+  wan3_hd_15s: 3000,
+  wan3_hd_30s: 4500,
+  minimax_h3: 2500,
+  minimax_h3_720p: 1500, // maintenance upstream
+  kling_25_turbo: 2500, // maintenance upstream
+  kling_26_pro_1080p: 3000, // maintenance upstream
+  kling_30_turbo: 3000, // maintenance upstream
   omni_flash_t2v: 1000,
   omni_flash_sfv: 1000,
   omni_flash_i2v: 1000,
   omni_flash_r2v: 1000,
   omni_flash_11_720p: 1000,
   omni_flash_12_1080p: 1000,
-  watermark_remover: 1000,
+  watermark_remover: 1500, // maintenance upstream
   // LipSync
-  minimax_lipsync: 1000,
-  ltx_lipsync: 2000,
+  minimax_lipsync: 2000, // maintenance upstream
+  minimax_lipsync_pro: 3000,
+  ltx_lipsync: 2500, // maintenance upstream
   // Motion control
-  betamotion_hd: 1000,
-  betamotion_1080p: 1500,
-  betamotion_1080p_pro: 2000,
-  betamotion_1080p_max: 2500,
-  motion_control_std: 1000,
+  betamotion_hd: 2000, // maintenance upstream
+  betamotion_1080p: 2500, // maintenance upstream
+  betamotion_1080p_pro: 3000,
+  betamotion_1080p_max: 3500, // maintenance upstream
+  motion_control_std: 1500,
   motion_control_pro: 2500,
-  kling_30_std: 2000,
-  kling_30_pro: 3000,
+  kling_30_std: 2500,
+  kling_30_pro: 3500,
   // Video upscale
-  upscale_2k_60fps: 1000,
+  upscale_2k_60fps: 2000, // alias lama → upscale_video
+  upscale_video: 2000,
   // Reference-to-video
-  seedance_25_30s_r2v: 6500,
-  seedance_20_mini_r2v: 3000,
-  kling_30_omni_r2v: 3500,
-  wan_30_r2v: 3000,
-  minimax_h3_r2v: 2500,
+  seedance_25_30s_r2v: 6000,
+  seedance_25_30s_strict_r2v: 6000,
+  seedance_20_mini_r2v: 3000, // maintenance upstream
+  kling_30_omni_r2v: 3500, // maintenance upstream
+  wan_30_r2v: 3000, // maintenance upstream
+  minimax_h3_r2v: 2500, // maintenance upstream
   // Audio, TTS & music
   google_tts: 500,
+  suno_cover_v6: 500,
   suno_v6: 500,
   suno_v6_wild: 500,
   suno_v6_mini: 500,
   lyria_35: 500,
   minimax_music_3: 500,
   mureka_95: 500,
-  sonauto_3: 400,
+  sonauto_3: 400, // maintenance upstream
   acestep_15: 400,
 }
 

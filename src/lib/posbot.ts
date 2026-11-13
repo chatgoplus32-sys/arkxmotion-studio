@@ -1,7 +1,6 @@
 // PosBot Developer API v1 — api.posbot.web.id via relay /api/public/posbot
-// Kontrak dari dokumen resmi (60 model aktif, saldo IDR, auto-refund 100%).
-// Harga di katalog ini adalah tarif developer dalam Rupiah, bukan "credit"
-// aplikasi: PosBot memotong saldo_generate milik akun pemilik API key.
+// Kontrak dari katalog LIVE /models + /models/status (dicek 14 Nov 2026).
+// Kunci maintenance tetap terdaftar (harga latar), harga = tarif developer IDR.
 import { relayAuthHeaders } from './providerServerKey.js'
 
 const POSBOT_PROXY = '/api/public/posbot'
@@ -87,6 +86,10 @@ export interface PosbotModelSpec {
    * Flash 1.1/1.2 (dokumen §3). Model lain: mode hanya memandu UI.
    */
   sendMode?: boolean
+  /** Frame rate yang diterima (upscale_video: 60/30) — hanya dikirim bila `fps` di payload. */
+  fps?: number[]
+  /** Suno Cover v6: param style/title diteruskan ke upstream. */
+  cover?: boolean
 }
 
 /** "T2V · I2V · F2F" — detail mode yang ditampilkan di samping nama model. */
@@ -105,13 +108,15 @@ interface ImageOpts {
   imageRequired?: boolean
   /** Model teks-saja tanpa gambar acuan (Imagen 4 Ultra, Grok Imagine Image). */
   t2iOnly?: boolean
+  /** Tarif khusus (default Rp 350). */
+  price?: number
 }
 
 const imageGen = (id: string, label: string, opts: ImageOpts = {}): PosbotModelSpec => ({
   id,
   label,
   category: 'image',
-  price: 350,
+  price: opts.price ?? 350,
   promptMax: opts.promptMax ?? 2000,
   promptRequired: true,
   imageMode: opts.imageRequired ? 'single' : opts.refs ? 'multi' : 'none',
@@ -222,7 +227,7 @@ const musicSpec = (id: string, label: string, price = 500, lyrics = true): Posbo
   label,
   category: 'music',
   price,
-  promptMax: 2000,
+  promptMax: 2500,
   promptRequired: true,
   imageMode: 'none',
   imageMax: 0,
@@ -236,7 +241,7 @@ const ttsSpec = (id: string, label: string, price = 500): PosbotModelSpec => ({
   label,
   category: 'tts',
   price,
-  promptMax: 2000,
+  promptMax: 2500,
   promptRequired: true,
   imageMode: 'none',
   imageMax: 0,
@@ -250,28 +255,30 @@ const add = (list: PosbotModelSpec[]): Record<string, PosbotModelSpec> =>
 export const POSBOT_MODELS: Record<string, PosbotModelSpec> = {
   // ── Image generation ──
   ...add([
-    imageGen('krea2_2k', 'Krea 2 (2K)', { imageRequired: true }),
+    imageGen('krea2_2k', 'Krea 2 (2K)', { imageRequired: true, price: 500 }),
     imageGen('nano_banana_2_4k', 'Nano Banana 2 (2.5K)', { refs: 4 }),
     imageGen('nano_banana_pro_4k', 'Nano Banana Pro (2.5K)', { refs: 4 }),
-    imageGen('gpt_image_2_high', 'GPT Image 2 High (4K)', { refs: 5 }),
+    // GPT Image 2 High (4K) upstream DISABLED (digantikan 2.5/2.6) — tidak ditawarkan lagi.
     imageGen('gpt_image_25', 'GPT Image 2.5 Flare (2K)', { refs: 16, promptMax: 20000 }),
     imageGen('gpt_image_25_sunburst', 'GPT Image 2.5 Sunburst (2K)', { refs: 16, promptMax: 20000 }),
+    imageGen('gpt_image_26_flare', 'GPT Image 2.6 Flare (4K)', { refs: 4, promptMax: 20000 }),
+    imageGen('gpt_image_26_sunburst', 'GPT Image 2.6 Sunburst (4K)', { refs: 4, promptMax: 20000 }),
     imageGen('flux_2_pro', 'Flux 2 Pro (2K)', { refs: 6 }),
     imageGen('seedream_50_lite', 'Seedream 5.0 Lite (3K)', { refs: 4 }),
     imageGen('seedream_50_pro', 'Seedream 5.0 Pro (3K)', { refs: 4 }),
     imageGen('seedream_45', 'Seedream 4.5 (4K)', { refs: 3 }),
     imageGen('seedream_5_fast_2k', 'Seedream 5 Fast 2K', { refs: 4 }),
     imageGen('seedream_5_pro_2k', 'Seedream 5 Pro 2K', { refs: 10, promptMax: 3000 }),
-    imageGen('nano_banana_21_4k', 'Nano Banana 2.1 (4K)', { refs: 4 }),
-    imageGen('nano_banana_2_2k', 'Nano Banana 2 (2K)', { refs: 14 }),
-    imageGen('nano_banana_pro_2k', 'Nano Banana Pro (2K)', { refs: 8 }),
-    imageGen('gpt_image_2_2k', 'GPT Image 2 (2K)', { refs: 16 }),
-    imageGen('flux_2_pro_2k', 'Flux 2 Pro (2K)', { refs: 8 }),
-    imageGen('seedream_5_flash_2k', 'Seedream 5 Flash 2K', { refs: 4 }),
-    imageGen('qwen_image_3_pro_2k', 'Qwen Image 3.0 Pro (2K)', { refs: 3 }),
-    imageGen('qwen_z_image_1k', 'Qwen Z-Image (1K)', { refs: 1 }),
-    imageGen('imagen4_ultra_2k', 'Imagen 4 Ultra (2K)', { t2iOnly: true }),
-    imageGen('grok_image_2_1k', 'Grok Imagine Image 2.0 (1K)', { t2iOnly: true }),
+    imageGen('nano_banana_21_4k', 'Nano Banana 2.1 (4K)', { refs: 4, promptMax: 20000 }),
+    imageGen('nano_banana_2_2k', 'Nano Banana 2 (2K)', { refs: 14, promptMax: 20000 }),
+    imageGen('nano_banana_pro_2k', 'Nano Banana Pro (2K)', { refs: 8, promptMax: 20000 }),
+    imageGen('gpt_image_2_2k', 'GPT Image 2 (2K)', { refs: 16, promptMax: 20000 }),
+    imageGen('flux_2_pro_2k', 'Flux 2 Pro (2K)', { refs: 8, promptMax: 5000 }),
+    imageGen('seedream_5_flash_2k', 'Seedream 5 Flash 2K', { refs: 4, promptMax: 3000 }),
+    imageGen('qwen_image_3_pro_2k', 'Qwen Image 3.0 Pro (2K)', { refs: 3, promptMax: 5000 }),
+    imageGen('qwen_z_image_1k', 'Qwen Z-Image (1K)', { refs: 1, promptMax: 5000 }),
+    imageGen('imagen4_ultra_2k', 'Imagen 4 Ultra (2K)', { t2iOnly: true, promptMax: 5000 }),
+    imageGen('grok_image_2_1k', 'Grok Imagine Image 2.0 (1K)', { t2iOnly: true, promptMax: 5000 }),
   ]),
 
   // ── Image edit ──
@@ -294,7 +301,7 @@ export const POSBOT_MODELS: Record<string, PosbotModelSpec> = {
     id: 'upscale_4k',
     label: 'Upscale 4K',
     category: 'image_edit',
-    price: 350,
+    price: 500,
     promptMax: 2000,
     promptRequired: false,
     imageMode: 'single',
@@ -308,11 +315,11 @@ export const POSBOT_MODELS: Record<string, PosbotModelSpec> = {
   // ── Video generation ──
   ...add([
     videoSpec('grok_imagine_2_15s', 'Grok Imagine 2 · 15 dtk', {
-      price: 2500, promptMax: 5000, promptRequired: true, image: 'optional',
+      price: 2500, promptMax: 5000, promptRequired: true, image: 'optional', images: 7,
       aspects: VIDEO_ASPECTS, durations: [15], modes: ['t2v', 'i2v'],
     }),
     videoSpec('grok_imagine_2_30s', 'Grok Imagine 2 · 30 dtk', {
-      price: 4000, promptMax: 5000, promptRequired: true, image: 'optional',
+      price: 4000, promptMax: 5000, promptRequired: true, image: 'optional', images: 7,
       aspects: VIDEO_ASPECTS, durations: [30], modes: ['t2v', 'i2v'],
     }),
     videoSpec('grok_imagine_15_video_720p', 'Grok Imagine 1.5 · 15 dtk', {
@@ -320,15 +327,15 @@ export const POSBOT_MODELS: Record<string, PosbotModelSpec> = {
       modes: ['i2v'],
     }),
     videoSpec('betagrok_15s', 'BetaGrok 1.5 1080p · 15 dtk', {
-      price: 1000, promptMax: 2500, image: 'required', images: 4, aspects: VIDEO_ASPECTS, durations: [15],
+      price: 2000, promptMax: 2500, image: 'required', images: 4, aspects: VIDEO_ASPECTS, durations: [15],
       modes: ['i2v'],
     }),
     videoSpec('s2_seedance_25_30s', 'Seedance 2.5 · 30 dtk', {
-      price: 5000, promptMax: 8000, promptRequired: true, image: 'optional', images: 2,
+      price: 6000, promptMax: 8000, promptRequired: true, image: 'optional', images: 2,
       aspects: VIDEO_ASPECTS, durations: [30], modes: ['t2v', 'i2v', 'f2f'], sendMode: true, promptMin: 3,
     }),
     videoSpec('seedance_25_30s_strict', 'Seedance 2.5 Lite · 30 dtk', {
-      price: 5000, promptMax: 8000, promptRequired: true, image: 'optional', images: 6,
+      price: 6000, promptMax: 8000, promptRequired: true, image: 'optional', images: 6,
       aspects: VIDEO_ASPECTS, durations: [30], modes: ['t2v', 'i2v'], sendMode: true, promptMin: 3,
     }),
     videoSpec('seedance_20_15s', 'Seedance 2.0 720p · 15 dtk', {
@@ -341,11 +348,19 @@ export const POSBOT_MODELS: Record<string, PosbotModelSpec> = {
     videoSpec('wan_30_hd', 'Wan 3.0 HD · 15 dtk', {
       price: 3000, promptMax: 10000, image: 'required', durations: [15], modes: ['i2v'],
     }),
-    videoSpec('wan_remix_720p', 'Wan Remix 720p · 10 dtk', {
-      price: 1000, promptMax: 2500, image: 'required', durations: [10], modes: ['i2v'],
+    videoSpec('wan_remix_720p', 'Wan Remix 1080p · 15 dtk', {
+      price: 2500, promptMax: 2500, image: 'required', durations: [15], modes: ['i2v'],
+    }),
+    videoSpec('wan3_hd_15s', 'Wan 3 HD · 15 dtk', {
+      price: 3000, promptMax: 3000, promptRequired: true, image: 'required', images: 9, imageMin: 1,
+      aspects: ['9:16', '16:9'], durations: [15], modes: ['i2v'],
+    }),
+    videoSpec('wan3_hd_30s', 'Wan 3 HD · 30 dtk', {
+      price: 4500, promptMax: 3000, promptRequired: true, image: 'required', images: 9, imageMin: 1,
+      aspects: ['9:16', '16:9'], durations: [30], modes: ['i2v'],
     }),
     videoSpec('minimax_h3', 'MiniMax H3 1080p · 15 dtk', {
-      price: 2000, promptMax: 5000, image: 'required', aspects: VIDEO_ASPECTS, durations: [15], modes: ['i2v'],
+      price: 2500, promptMax: 5000, image: 'required', aspects: VIDEO_ASPECTS, durations: [15], modes: ['i2v'],
     }),
     videoSpec('minimax_h3_720p', 'MiniMax H3 720p · 15 dtk', {
       price: 1500, promptMax: 5000, image: 'required', durations: [15], modes: ['i2v'],
@@ -386,7 +401,7 @@ export const POSBOT_MODELS: Record<string, PosbotModelSpec> = {
       modes: ['t2v', 'sfv', 'i2v', 'r2v'], sendMode: true,
     }),
     videoSpec('watermark_remover', 'Remove Watermark', {
-      price: 1000, promptMax: 2500, image: 'none', video: true, modes: ['v2v'],
+      price: 1500, promptMax: 2500, image: 'none', video: true, modes: ['v2v'],
     }),
   ]),
 
@@ -395,8 +410,23 @@ export const POSBOT_MODELS: Record<string, PosbotModelSpec> = {
     id: 'minimax_lipsync',
     label: 'MiniMax H3 LipSync · 30 dtk',
     category: 'lipsync',
-    price: 1000,
+    price: 2000,
     promptMax: 0,
+    promptRequired: false,
+    imageMode: 'single',
+    imageMin: 1,
+    imageMax: 1,
+    videoMode: 'none',
+    audio: true,
+    aspects: [],
+    modes: ['lipsync'],
+  },
+  minimax_lipsync_pro: {
+    id: 'minimax_lipsync_pro',
+    label: 'Minimax LipSync Pro · 30 dtk',
+    category: 'lipsync',
+    price: 3000,
+    promptMax: 2500,
     promptRequired: false,
     imageMode: 'single',
     imageMin: 1,
@@ -410,7 +440,7 @@ export const POSBOT_MODELS: Record<string, PosbotModelSpec> = {
     id: 'ltx_lipsync',
     label: 'LTX 2.5 LipSync 1080p · 30 dtk',
     category: 'lipsync',
-    price: 2000,
+    price: 2500,
     promptMax: 0,
     promptRequired: false,
     imageMode: 'single',
@@ -424,28 +454,43 @@ export const POSBOT_MODELS: Record<string, PosbotModelSpec> = {
 
   // ── Motion control ──
   ...add([
-    motionSpec('betamotion_hd', 'BetaMotion HD · 30 dtk', 1000),
-    motionSpec('betamotion_1080p', 'BetaMotion 1080p · 30 dtk', 1500),
-    motionSpec('betamotion_1080p_pro', 'BetaMotion 1080p Pro 60fps', 2000),
-    motionSpec('betamotion_1080p_max', 'BetaMotion 1080p Max', 2500),
-    motionSpec('motion_control_std', 'Kling 2.6 Std MC · 30 dtk', 1000),
+    motionSpec('betamotion_hd', 'BetaMotion HD · 30 dtk', 2000),
+    motionSpec('betamotion_1080p', 'BetaMotion 1080p · 30 dtk', 2500),
+    motionSpec('betamotion_1080p_pro', 'BetaMotion 1080p Pro 60fps', 3000),
+    motionSpec('betamotion_1080p_max', 'BetaMotion 1080p Max', 3500),
+    motionSpec('motion_control_std', 'Kling 2.6 Std MC · 30 dtk', 1500),
     motionSpec('motion_control_pro', 'Kling 2.6 Pro MC · 30 dtk', 2500),
-    motionSpec('kling_30_std', 'Kling 3.0 MC Std', 2000, true),
-    motionSpec('kling_30_pro', 'Kling 3.0 MC Pro', 3000, true),
+    motionSpec('kling_30_std', 'Kling 3.0 MC Std', 2500, true),
+    motionSpec('kling_30_pro', 'Kling 3.0 MC Pro', 3500, true),
   ]),
 
   // ── Video upscale ──
   upscale_2k_60fps: {
     id: 'upscale_2k_60fps',
-    label: 'Upscale 2K 60FPS',
+    label: 'Upscale 2K 60FPS (alias lama)',
     category: 'upscale',
-    price: 1000,
+    price: 2000,
     promptMax: 2500,
     promptRequired: false,
     imageMode: 'none',
     imageMax: 0,
     videoMode: 'single',
     aspects: [],
+    fps: [60, 30],
+    modes: ['v2v'],
+  },
+  upscale_video: {
+    id: 'upscale_video',
+    label: 'Upscale Video (Auto 2x/4x)',
+    category: 'upscale',
+    price: 2000,
+    promptMax: 2500,
+    promptRequired: false,
+    imageMode: 'none',
+    imageMax: 0,
+    videoMode: 'single',
+    aspects: [],
+    fps: [60, 30],
     modes: ['v2v'],
   },
 
@@ -453,11 +498,16 @@ export const POSBOT_MODELS: Record<string, PosbotModelSpec> = {
   // Video acuan (video_url) + foto karakter (image_url + image_urls); hasilnya
   // mentransfer gerakan video ke subjek foto — R2V sekaligus V2V.
   ...add([
-    r2vSpec('seedance_25_30s_r2v', 'Seedance 2.5 R2V Pro · 30 dtk', 6500, {
+    r2vSpec('seedance_25_30s_r2v', 'Seedance 2.5 R2V Pro · 30 dtk', 6000, {
       promptMax: 8000, promptRequired: true, images: 9, durations: [30],
       // Dokumen §5: hanya prompt yang wajib; video & foto acuan opsional.
       imageMin: 0, videoOptional: true, aspects: VIDEO_ASPECTS,
       modes: ['t2v', 'i2v', 'r2v'],
+    }),
+    r2vSpec('seedance_25_30s_strict_r2v', 'Seedance 2.5 R2V Lite · 30 dtk', 6000, {
+      promptMax: 8000, promptRequired: true, images: 6, durations: [30],
+      imageMin: 0, videoOptional: true, aspects: VIDEO_ASPECTS,
+      modes: ['r2v'],
     }),
     r2vSpec('seedance_20_mini_r2v', 'Seedance 2.0 Mini R2V · 15 dtk', 3000, {
       promptMax: 8000, promptRequired: false, images: 7, durations: [15],
@@ -476,6 +526,21 @@ export const POSBOT_MODELS: Record<string, PosbotModelSpec> = {
   // ── Audio, TTS & music ──
   ...add([
     ttsSpec('google_tts', 'Google TTS'),
+    {
+      id: 'suno_cover_v6',
+      label: 'Suno Cover v6',
+      category: 'music',
+      price: 500,
+      promptMax: 2500,
+      promptRequired: false,
+      imageMode: 'none',
+      imageMax: 0,
+      videoMode: 'none',
+      audio: true,
+      cover: true,
+      lyrics: false,
+      modes: ['music'],
+    },
     musicSpec('suno_v6', 'Suno v6 Studio'),
     musicSpec('suno_v6_wild', 'Suno v6 Wild'),
     musicSpec('suno_v6_mini', 'Suno v6 Mini'),
@@ -527,6 +592,12 @@ export interface PosbotPayloadInput {
   instrumental?: boolean
   negativePrompt?: string
   voice?: string
+  /** Khusus upscale_video: 60 (default) atau 30. */
+  fps?: number
+  /** Khusus suno_cover_v6. */
+  style?: string
+  /** Khusus suno_cover_v6. */
+  title?: string
 }
 
 /**
@@ -630,6 +701,17 @@ export function buildPosbotPayload(spec: PosbotModelSpec, media: PosbotPayloadIn
   }
   if (spec.lyrics && media.lyrics) body.lyrics = media.lyrics
   if (spec.lyrics && typeof media.instrumental === 'boolean') body.instrumental = media.instrumental
+  if (spec.cover) {
+    if (media.style) body.style = media.style
+    if (media.title) body.title = media.title
+    if (typeof media.instrumental === 'boolean') body.instrumental = media.instrumental
+  }
+  if (media.fps && spec.fps) {
+    if (!spec.fps.includes(media.fps)) {
+      throw new Error(`${spec.label} menerima fps ${spec.fps.join(' atau ')}`)
+    }
+    body.fps = media.fps
+  }
   if (media.negativePrompt) body.negative_prompt = media.negativePrompt
   if (spec.category === 'tts' && media.voice) body.voice = media.voice
 
@@ -920,6 +1002,9 @@ export interface PosbotGenerateOptions extends PosbotLogOpts {
   mode?: string
   lyrics?: string
   instrumental?: boolean
+  fps?: number
+  style?: string
+  title?: string
   negativePrompt?: string
   voice?: string
   /** usage_id dari /api/posbot/deduct — tiket relay untuk jalur kunci server. */
@@ -943,6 +1028,9 @@ export async function generateWithPosbot(opts: PosbotGenerateOptions): Promise<s
     instrumental: opts.instrumental,
     negativePrompt: opts.negativePrompt,
     voice: opts.voice,
+    fps: opts.fps,
+    style: opts.style,
+    title: opts.title,
   })
   onLog?.(`[2/3] 🚀 Submit ${spec.label} (${formatPosbotRupiah(spec.price)})...`, 'info')
   onStatus?.(`Submit ${spec.label}...`, 5)

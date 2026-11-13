@@ -107,14 +107,14 @@ const PROVIDERS = {
   ]},
   // PosBot: cr = harga Rupiah per video (Saldo Generate dipotong dari kunci member).
   posbot: { name: 'PosBot', models: [
-    { key: 'pb:motion_control_std', label: 'Kling 2.6 Std MC (PosBot)', cr: 1000 },
-    { key: 'pb:betamotion_hd', label: 'BetaMotion HD 30 dtk (PosBot)', cr: 1000 },
-    { key: 'pb:betamotion_1080p', label: 'BetaMotion 1080p 30 dtk (PosBot)', cr: 1500 },
-    { key: 'pb:kling_30_std', label: 'Kling 3.0 MC Std (PosBot)', cr: 2000 },
-    { key: 'pb:betamotion_1080p_pro', label: 'BetaMotion 1080p Pro 60fps (PosBot)', cr: 2000 },
+    { key: 'pb:motion_control_std', label: 'Kling 2.6 Std MC (PosBot)', cr: 1500 },
+    { key: 'pb:betamotion_hd', label: 'BetaMotion HD 30 dtk (PosBot)', cr: 2000 },
+    { key: 'pb:betamotion_1080p', label: 'BetaMotion 1080p 30 dtk (PosBot)', cr: 2500 },
+    { key: 'pb:kling_30_std', label: 'Kling 3.0 MC Std (PosBot)', cr: 2500 },
+    { key: 'pb:betamotion_1080p_pro', label: 'BetaMotion 1080p Pro 60fps (PosBot)', cr: 3000 },
     { key: 'pb:motion_control_pro', label: 'Kling 2.6 Pro MC (PosBot)', cr: 2500 },
-    { key: 'pb:betamotion_1080p_max', label: 'BetaMotion 1080p Max (PosBot)', cr: 2500 },
-    { key: 'pb:kling_30_pro', label: 'Kling 3.0 MC Pro (PosBot)', cr: 3000 },
+    { key: 'pb:betamotion_1080p_max', label: 'BetaMotion 1080p Max (PosBot)', cr: 3500 },
+    { key: 'pb:kling_30_pro', label: 'Kling 3.0 MC Pro (PosBot)', cr: 3500 },
   ]},
   // MarkasTools: dibayar lewat langganan MarkasTools (Rp 60rb/bulan) jadi cr = 0.
   // Token MF- didaftarkan sebagai akun "Markasflow" di MarkasTools (rotasi otomatis).
