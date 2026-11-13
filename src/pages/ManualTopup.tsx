@@ -119,8 +119,15 @@ export default function ManualTopupPage() {
     setSubmitting(false)
   }
 
+  // Setelah pengajuan, nominal bayar yang tepat = amount_total (amount + kode
+  // unik). Inilah yang dicocokkan parser email — jangan biarkan user membayar
+  // nominal bulat sebelum pengajuan.
+  const payTarget = lastSubmitted?.amount_total ?? null
+
   const waMessage = adminWhatsappLink(
-    `Halo admin, saya sudah ajukan top up manual ${manualProviderLabel(provider)} ${formatRp(nominal || 0)}. Mohon diverifikasi.`,
+    payTarget
+      ? `Halo admin, saya sudah ajukan top up manual ${manualProviderLabel(lastSubmitted?.provider || provider)} #${lastSubmitted?.id} senilai ${formatRp(payTarget)}. Mohon diverifikasi.`
+      : `Halo admin, saya sudah ajukan top up manual ${manualProviderLabel(provider)} ${formatRp(nominal || 0)}. Mohon diverifikasi.`,
   )
 
   const handleCopyNumber = () => {
@@ -201,14 +208,23 @@ export default function ManualTopupPage() {
                         <Copy className="h-3.5 w-3.5" /> Salin
                       </Button>
                     </div>
-                    {nominalValid && (
+                    {(nominalValid || payTarget) && (
                       <p className="mt-2 text-xs text-muted-foreground">
-                        Transfer tepat <span className="font-semibold text-foreground">{formatRp(nominal)}</span>.
+                        Transfer tepat{' '}
+                        <span className="font-semibold text-amber-400">
+                          {formatRp(payTarget ?? nominal)}
+                        </span>
+                        {payTarget
+                          ? ' (termasuk kode unik — jangan dibulatkan).'
+                          : " — setelah pengajuan kamu akan dapat nominal TEPAT (termasuk kode unik) untuk verifikasi otomatis."}
                       </p>
                     )}
                   </div>
                 ) : (
-                  <QrisPanel amountLabel={nominalValid ? formatRp(nominal) : undefined} />
+                  <QrisPanel
+                    amountLabel={nominalValid ? formatRp(nominal) : undefined}
+                    exactAmount={payTarget ?? undefined}
+                  />
                 )}
               </div>
 
@@ -242,7 +258,12 @@ export default function ManualTopupPage() {
                     Permintaan #{lastSubmitted.id} terkirim
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {manualProviderLabel(lastSubmitted.provider)} · {formatRp(lastSubmitted.amount)} — menunggu verifikasi admin.
+                    {manualProviderLabel(lastSubmitted.provider)} · bayar tepat{' '}
+                    <span className="font-semibold text-amber-400">
+                      {formatRp(lastSubmitted.amount_total ?? lastSubmitted.amount)}
+                    </span>
+                    {lastSubmitted.unique_code ? ` (kode unik ${lastSubmitted.unique_code})` : ''}
+                    — terverifikasi otomatis begitu pembayarannya masuk.
                   </p>
                   <a
                     href={waMessage}
@@ -288,7 +309,11 @@ export default function ManualTopupPage() {
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <div className="text-sm font-semibold">{manualProviderLabel(r.provider)}</div>
-                        <div className="font-mono text-xs text-muted-foreground">{formatRp(r.amount)}</div>
+                        <div className="font-mono text-xs text-muted-foreground">
+                          {formatRp(r.amount)}
+                          {r.amount_total && r.amount_total !== r.amount && ` → bayar ${formatRp(r.amount_total)}`}
+                          {r.paid_at ? ' · lunas' : ''}
+                        </div>
                       </div>
                       {statusBadge(r.status)}
                     </div>

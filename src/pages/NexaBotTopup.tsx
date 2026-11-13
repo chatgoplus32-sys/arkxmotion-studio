@@ -32,6 +32,9 @@ interface Topup {
   proof_note: string
   admin_note: string
   created_at: string
+  /** Nominal bayar tepat (amount + kode unik) — diisi server saat pengajuan. */
+  unique_code?: number | null
+  amount_total?: number | null
 }
 
 export default function NexaBotTopupPage() {
@@ -46,6 +49,7 @@ export default function NexaBotTopupPage() {
   const [topups, setTopups] = useState<Topup[]>([])
   const [mode, setMode] = useState<'balance' | 'package'>('balance')
   const [step, setStep] = useState<'select' | 'pay' | 'confirm'>('select')
+  const [submitted, setSubmitted] = useState<Topup | null>(null)
   // Varian paket yang sedang dipilih user (Mingguan/Bulanan/Tahunan).
   const [selectedSlug, setSelectedSlug] = useState<string>(NEXABOT_PACKAGE_FALLBACKS[0].slug)
 
@@ -119,6 +123,9 @@ export default function NexaBotTopupPage() {
       })
       const data = await res.json()
       if (res.ok) {
+        // Simpan baris yang diajukan — amount_total (nominal + kode unik)
+        // inilah yang kamu bayar dan yang dicocokkan parser email.
+        setSubmitted(data.topup || data.package || null)
         addToast(
           endpoint === 'package'
             ? `Paket ${pkg.label} ${pkg.days} hari diajukan — ${formatRp(pkg.price)}`
@@ -340,50 +347,23 @@ export default function NexaBotTopupPage() {
 
       {step === 'pay' && (
         <Section
-          title={payMethod === 'qris' ? 'Pembayaran via QRIS' : 'Pembayaran via DANA'}
-          sub={payMethod === 'qris' ? 'Scan QRIS di bawah untuk bayar' : 'Transfer ke nomor DANA berikut'}
+          title="Buat Pengajuan"
+          sub="Pilih metode bayar — nominal tepat (termasuk kode unik) muncul di langkah berikutnya"
         >
           <PaymentMethodToggle value={payMethod} onChange={setPayMethod} />
 
-          {payMethod === 'qris' && (
-            <QrisPanel
-              amountLabel={
-                mode === 'package'
-                  ? `${pkg.label} · ${formatRp(amount)}`
-                  : formatRp(amount)
-              }
-            />
-          )}
-
-          {payMethod === 'dana' && (
-          <div className="rounded-xl border border-border bg-card/50 p-5 mb-4">
-            <div className="text-center mb-4">
-              <div className="text-sm text-muted-foreground mb-1">Transfer ke:</div>
-              <div className="text-xl font-bold">💜 DANA</div>
-            </div>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between p-3 rounded-lg bg-background">
-                <div>
-                  <div className="text-xs text-muted-foreground">Nomor HP</div>
-                  <div className="font-mono font-bold text-lg">{DANA_NUMBER}</div>
-                </div>
-                <button onClick={copyNumber} className="p-2 rounded-lg hover:bg-accent transition">
-                  <Copy className="h-4 w-4" />
-                </button>
-              </div>
-              <div className="p-3 rounded-lg bg-background">
-                <div className="text-xs text-muted-foreground">Atas Nama</div>
-                <div className="font-medium">{DANA_NAME}</div>
-              </div>
-              <div className="p-3 rounded-lg bg-background">
-                <div className="text-xs text-muted-foreground">
-                  Jumlah Transfer {mode === 'package' ? `(Paket ${namaPaketIni})` : ''}
-                </div>
-                <div className="font-bold text-primary text-lg">{formatRp(amount)}</div>
-              </div>
-            </div>
+          {/* Nominal TEPAT (dengan kode unik) baru diketahui setelah pengajuan
+              dibuat di server, jadi QR/DANA tampil di langkah berikutnya.
+              Membayar nominal bulat di langkah ini tidak akan cocok dengan
+              notifikasi bank dan verifikasi otomatisnya gagal. */}
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 mb-4 text-sm">
+            <div className="font-semibold text-amber-400 mb-1">⚠️ Jangan transfer dulu</div>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Setelah tombol <b>Buat Pengajuan</b> ditekan, kamu akan dapat <b>nominal TEPAT</b>
+              (termasuk kode unik, mis. {formatRp(amount + 137)}) yang dicocokkan otomatis dengan
+              notifikasi transfer dari bank/e-wallet kamu. Bayar segitu — jangan dibulatkan.
+            </p>
           </div>
-          )}
 
           <div className="mb-4">
             <label className="text-sm font-medium mb-1 block">Catatan (opsional)</label>
@@ -401,7 +381,7 @@ export default function NexaBotTopupPage() {
               Kembali
             </Button>
             <Button onClick={() => submit(mode === 'package' ? 'package' : 'topup')} disabled={loading} className="flex-1">
-              {loading ? 'Mengirim...' : payMethod === 'qris' ? 'Sudah Bayar' : 'Sudah Transfer'}
+              {loading ? 'Membuat pengajuan...' : 'Buat Pengajuan & Lanjut'}
             </Button>
           </div>
 
@@ -420,17 +400,56 @@ export default function NexaBotTopupPage() {
       )}
 
       {step === 'confirm' && (
-        <Section title="Menunggu Approval" sub="Pengajuan kamu sedang diproses admin">
-          <div className="text-center py-8">
-            <div className="text-5xl mb-4">⏳</div>
-            <div className="text-lg font-medium mb-2">
-              {mode === 'package' ? `Paket ${pkg.label} menunggu approval` : 'Topup menunggu approval'}
+        <Section
+          title="Selesaikan Pembayaran"
+          sub="Bayar TEPAT nominal di bawah — verifikasi berjalan otomatis"
+        >
+          {submitted && (
+            <>
+              {payMethod === 'qris' ? (
+                <QrisPanel
+                  amountLabel={`${mode === 'package' ? `${pkg.label}` : 'Top up saldo'} · ${formatRp(submitted.amount)}`}
+                  exactAmount={submitted.amount_total ?? undefined}
+                />
+              ) : (
+                <div className="rounded-xl border border-border bg-card/50 p-5 mb-4">
+                  <div className="text-center mb-4">
+                    <div className="text-sm text-muted-foreground mb-1">Transfer ke:</div>
+                    <div className="text-xl font-bold">💜 DANA</div>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between p-3 rounded-lg bg-background">
+                      <div>
+                        <div className="text-xs text-muted-foreground">Nomor HP</div>
+                        <div className="font-mono font-bold text-lg">{DANA_NUMBER}</div>
+                      </div>
+                      <button onClick={copyNumber} className="p-2 rounded-lg hover:bg-accent transition">
+                        <Copy className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <div className="p-3 rounded-lg bg-background">
+                      <div className="text-xs text-muted-foreground">Atas Nama</div>
+                      <div className="font-medium">{DANA_NAME}</div>
+                    </div>
+                    <div className="p-3 rounded-lg bg-background">
+                      <div className="text-xs text-muted-foreground">Jumlah Transfer</div>
+                      <div className="font-bold text-amber-400 text-lg">{formatRp(submitted.amount_total ?? submitted.amount)}</div>
+                      <div className="text-[10px] text-muted-foreground">Termasuk kode unik {submitted.unique_code ?? ''} — jangan dibulatkan</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+          <div className="text-center py-4">
+            <div className="text-lg font-medium mb-1">
+              {mode === 'package' ? `Paket ${pkg.label} menunggu pembayaran` : 'Topup menunggu pembayaran'}
             </div>
             <div className="text-sm text-muted-foreground mb-4">
               {mode === 'package'
-                ? `Paket ${namaPaketIni} aktif otomatis setelah admin menyetujui pembayaran.${sedangBooster ? ' NexaDance 3.0, Omni Flash 1.2 & GPT Image gratis; music/tts tetap memotong saldo.' : ''}`
-                : 'Saldo masuk otomatis setelah admin menyetujui pembayaran.'}
-              <br />Hubungi admin jika sudah transfer.
+                ? `Paket ${namaPaketIni} aktif setelah admin menyetujui pembayaran (otomatis bila nominal terdeteksi).${sedangBooster ? ' NexaDance 3.0, Omni Flash 1.2 & GPT Image gratis; music/tts tetap memotong saldo.' : ''}`
+                : 'Saldo masuk otomatis beberapa menit setelah transfer kamu terdeteksi.'}
+              <br />Kalau sudah lebih dari 15 menit belum masuk, hubungi admin via WhatsApp.
             </div>
             <a
               href={waLink}

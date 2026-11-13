@@ -71,6 +71,9 @@ import markastoolsRoutes from './routes/markastools.js'
 import featureRequestRoutes from './routes/featureRequests.js'
 import runninghubDailyClaimRoutes from './routes/runninghubDailyClaim.js'
 import { startRunningHubDailyClaimScheduler } from './lib/runninghubDailyClaim.js'
+import paymentsRoutes from './routes/payments.js'
+import { startPaymentEmailWatcher } from './lib/paymentEmailWatcher.js'
+import paymentIngestRoutes from './routes/paymentIngest.js'
 
 // .env sudah dimuat server/env.ts (impor pertama), yaitu sebelum modul-modul di
 // atas dievaluasi. Tidak ada pemuatan kedua di sini supaya hanya ada satu sumber
@@ -129,6 +132,9 @@ app.use('/api/provider-balance', saldoPenyediaRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/admin/tokens', adminTokenRoutes)
 app.use('/api/admin/topup', adminTopupRoutes)
+app.use('/api/payments', paymentsRoutes)
+// Companion Android (notifikasi bank/e-wallet → verifikasi otomatis QRIS).
+app.use('/api/payments/ingest', paymentIngestRoutes)
 app.use('/api/tokens', tokenRoutes)
 app.use('/api/provider-topup', providerTopupRoutes)
 app.use('/api/createpulse', createpulseRoutes)
@@ -374,6 +380,10 @@ if (UPLOAD_RETENTION_DAYS > 0) {
 // Default aktif di production; status per hari disimpan di DB sehingga restart
 // tidak membuat klaim dobel maupun terlewat.
 startRunningHubDailyClaimScheduler()
+
+// Verifikasi otomatis pembayaran QRIS manual lewat email notifikasi bank.
+// Nonaktif (hanya mencetak catatan) kalau PAYMENT_IMAP_* belum diisi.
+startPaymentEmailWatcher()
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`[${isProd ? 'PROD' : 'DEV'}] Server running on http://0.0.0.0:${PORT}`)

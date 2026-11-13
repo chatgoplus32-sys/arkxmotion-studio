@@ -27,6 +27,46 @@ interface Topup {
   created_at: string
   user_name: string
   email: string
+  /** Kode unik + nominal bayar tepat (diisi server saat pengajuan). */
+  unique_code?: number | null
+  amount_total?: number | null
+  paid_amount?: number | null
+  paid_at?: string | null
+  pay_ref?: string
+}
+
+interface PaymentVerifyQueue {
+  table: string
+  label: string
+  pending: number
+  awaiting_admin: number
+  verified_24h: number
+}
+interface PaymentStatus {
+  email: {
+    ready: boolean
+    enabled: boolean
+    host: string
+    user: string
+    last_check_at: string
+    last_error: string
+    last_result: string
+    processed_total: number
+  }
+  ready: boolean
+  queues: PaymentVerifyQueue[]
+  unmatched_24h: number
+}
+interface PaymentLogEntry {
+  id: number
+  ref_table: string
+  ref_id: number | null
+  amount: number
+  action: string
+  email_from: string
+  email_subject: string
+  detail: string
+  created_at: string
 }
 
 export default function AdminTopupPage() {
@@ -49,6 +89,11 @@ export default function AdminTopupPage() {
   const [injBalance, setInjBalance] = useState<number | null>(null)
   const [injBusy, setInjBusy] = useState(false)
 
+  // Panel verifikasi otomatis pembayaran QRIS manual (kode unik + email).
+  const [payStatus, setPayStatus] = useState<PaymentStatus | null>(null)
+  const [payLog, setPayLog] = useState<PaymentLogEntry[]>([])
+  const [payChecking, setPayChecking] = useState(false)
+
   const API = '/api/admin/topup'
   const headers = useMemo(() => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }), [token])
 
@@ -67,6 +112,37 @@ export default function AdminTopupPage() {
   }, [headers, provider])
 
   useEffect(() => { fetchTopups() }, [fetchTopups])
+
+  const fetchPayStatus = useCallback(async () => {
+    try {
+      const [statusRes, logRes] = await Promise.all([
+        fetch('/api/payments/status', { headers }),
+        fetch('/api/payments/log?limit=12', { headers }),
+      ])
+      if (statusRes.ok) setPayStatus(await statusRes.json())
+      if (logRes.ok) setPayLog(((await logRes.json()).log as PaymentLogEntry[]) || [])
+    } catch (e) { console.error('[AdminTopup] Gagal memuat status verifikasi:', e) }
+  }, [headers])
+
+  useEffect(() => { fetchPayStatus() }, [fetchPayStatus])
+
+  const handleCheckNow = async () => {
+    setPayChecking(true)
+    try {
+      const res = await fetch('/api/payments/check-now', { method: 'POST', headers })
+      const data = await res.json().catch(() => ({} as any))
+      if (res.ok) {
+        addToast(`Cek email: ${data.checked ?? 0} email, ${data.matched ?? 0} cocok, ${data.skipped ?? 0} dilewati`, 'success')
+        fetchPayStatus()
+        fetchTopups()
+      } else {
+        addToast(data.error || 'Gagal cek email', 'error')
+      }
+    } catch {
+      addToast('Network error', 'error')
+    }
+    setPayChecking(false)
+  }
 
   const fetchAll = async () => {
     setLoading(true)
@@ -310,6 +386,71 @@ export default function AdminTopupPage() {
         </div>
       </Section>
 
+      <Section
+        title="🤖 Verifikasi Otomatis QRIS"
+        sub="Nominal masuk (kode unik) dicocokkan otomatis dari email notifikasi bank/e-wallet"
+        right={
+          <Button size="sm" onClick={handleCheckNow} disabled={payChecking || !payStatus?.ready}>
+            {payChecking ? 'Mengecek…' : 'Cek Email Sekarang'}
+          </Button>
+        }
+      >
+        {payStatus ? (
+          <div className="space-y-3">
+            <div className="text-sm flex flex-wrap items-center gap-x-3 gap-y-1">
+              {payStatus.ready ? (
+                <>
+                  <span className="text-emerald-400 font-semibold">✅ Email terhubung</span>
+                  <span className="text-muted-foreground">{payStatus.email.user} · {payStatus.email.host}</span>
+                  <span className="text-[11px] text-muted-foreground">{payStatus.email.last_result || 'belum ada cek'}</span>
+                </>
+              ) : (
+                <span className="text-amber-400">
+                  ⚠️ Email verifikasi belum dikonfigurasi — isi <code>PAYMENT_IMAP_*</code> di .env lalu restart server.
+                </span>
+              )}
+            </div>
+            {payStatus.email.last_error && (
+              <div className="text-[11px] text-red-400">Error terakhir: {payStatus.email.last_error}</div>
+            )}
+            <div className="flex flex-wrap gap-2">
+              {payStatus.queues.map((q) => (
+                <div key={q.table} className="rounded-lg border border-border bg-background/40 px-2.5 py-1.5 text-[11px]">
+                  <div className="font-semibold">{q.label}</div>
+                  <div className="text-muted-foreground">
+                    {q.pending} pending · {q.awaiting_admin} lunas perlu approve · {q.verified_24h} auto 24j
+                  </div>
+                </div>
+              ))}
+              {payStatus.unmatched_24h > 0 && (
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-amber-400">
+                  ⚠️ {payStatus.unmatched_24h} notifikasi 24j terakhir tanpa pasangan (no_match)
+                </div>
+              )}
+            </div>
+            {payLog.length > 0 && (
+              <div>
+                <div className="text-[11px] font-semibold text-muted-foreground mb-1">Aktivitas terakhir</div>
+                <ul className="space-y-1">
+                  {payLog.slice(0, 6).map((l) => (
+                    <li key={l.id} className="text-[11px] text-muted-foreground flex flex-wrap gap-x-2">
+                      <span className={l.action === 'auto_approved' ? 'text-emerald-400' : l.action === 'no_match' ? 'text-amber-400' : 'text-foreground/80'}>
+                        {l.action}
+                      </span>
+                      <span>Rp {l.amount.toLocaleString('id-ID')}</span>
+                      {l.ref_table && <span>→ {l.ref_table}{l.ref_id ? ` #${l.ref_id}` : ''}</span>}
+                      <span>· {new Date(l.created_at.replace(' ', 'T') + 'Z').toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="text-sm text-muted-foreground">Memuat status…</div>
+        )}
+      </Section>
+
       <div className="flex gap-2 mb-4">
         <Button
           size="sm"
@@ -387,6 +528,13 @@ export default function AdminTopupPage() {
                     <div className="text-[11px] text-muted-foreground">
                       {new Date(t.created_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}
                     </div>
+                    {t.amount_total && t.amount_total !== t.amount && (
+                      <div className="text-[11px] text-amber-400 mt-1">
+                        💰 Nominal bayar: <b>{formatRp(t.amount_total)}</b>
+                        {t.unique_code ? ` (kode unik ${t.unique_code})` : ''}
+                        {t.paid_at && <span className="text-emerald-400"> · lunas {new Date(t.paid_at.replace(' ', 'T') + 'Z').toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}</span>}
+                      </div>
+                    )}
                     {t.proof_note && (
                       <div className="text-[11px] text-muted-foreground mt-1 italic">
                         Catatan: {t.proof_note}

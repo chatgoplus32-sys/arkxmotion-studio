@@ -118,6 +118,13 @@ router.patch('/approve', authenticateToken, requireAdmin, (req: AuthRequest, res
       const activated = db.prepare(`SELECT expires_at FROM ${w.topup} WHERE id = ?`).get(id) as { expires_at: string } | undefined
       const balance = db.prepare(`SELECT balance FROM ${w.balance} WHERE user_id = ?`).get(topup.user_id) as { balance: number } | undefined
       const namaPaket = nexabotPackageName(topup.package_slug, days)
+      try {
+        db.prepare("INSERT INTO notifications (title, message, type, target, user_id) VALUES (?, ?, 'success', 'users', ?)").run(
+          'Paket Unlimited Aktif ✅',
+          `Paket ${namaPaket} aktif sampai ${activated?.expires_at || '-'}. Selamat menikmati!`,
+          topup.user_id,
+        )
+      } catch (e) { console.warn('[adminTopup] Gagal kirim notifikasi paket:', e) }
       return res.json({
         message: `Paket ${namaPaket} aktif sampai ${activated?.expires_at || '-'}`,
         balance: balance?.balance || 0,
@@ -129,8 +136,13 @@ router.patch('/approve', authenticateToken, requireAdmin, (req: AuthRequest, res
 
     db.prepare(`UPDATE ${w.topup} SET status = 'approved', admin_note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(admin_note || '', id)
 
-    // Seavi dikredit dalam token (`tokens`), wallet lain dalam Rupiah (`amount`).
-    const credit = Number((topup as any)[w.credit]) || 0
+    // Seavi dikredit dalam token (`tokens`), wallet lain dalam Rupiah. Kalau
+    // pembayaran dengan kode unik, user membayar amount_total (nominal + kode);
+    // itulah yang dikredit supaya nominal yang masuk = saldo yang masuk.
+    const credit =
+      w.credit === 'tokens'
+        ? Number((topup as any)[w.credit]) || 0
+        : Number((topup as any).amount_total) || Number((topup as any)[w.credit]) || 0
     let bal = db.prepare(`SELECT balance FROM ${w.balance} WHERE user_id = ?`).get(topup.user_id) as { balance: number } | undefined
     if (!bal) {
       db.prepare(`INSERT INTO ${w.balance} (user_id, balance) VALUES (?, ?)`).run(topup.user_id, credit)
@@ -139,6 +151,13 @@ router.patch('/approve', authenticateToken, requireAdmin, (req: AuthRequest, res
     }
 
     const updated = db.prepare(`SELECT balance FROM ${w.balance} WHERE user_id = ?`).get(topup.user_id) as { balance: number }
+    try {
+      db.prepare("INSERT INTO notifications (title, message, type, target, user_id) VALUES (?, ?, 'success', 'users', ?)").run(
+        'Topup Disetujui — Saldo Masuk ✅',
+        `Topup kamu senilai Rp ${Number(topup.paid_amount ?? topup.amount_total ?? topup.amount ?? 0).toLocaleString('id-ID')} disetujui. Saldo sudah masuk ke akun kamu.`,
+        topup.user_id,
+      )
+    } catch (e) { console.warn('[adminTopup] Gagal kirim notifikasi topup:', e) }
     res.json({ message: 'Topup approved', balance: updated.balance })
   } catch (error) {
     console.error('Approve topup error:', error)

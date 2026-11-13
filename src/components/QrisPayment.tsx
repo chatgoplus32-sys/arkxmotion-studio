@@ -37,7 +37,7 @@ export function PaymentMethodToggle({
 }
 
 /** Panel tampilan QRIS (gambar statis + identitas merchant + nominal). */
-export function QrisPanel({ amountLabel }: { amountLabel?: string }) {
+export function QrisPanel({ amountLabel, exactAmount }: { amountLabel?: string; exactAmount?: number }) {
   return (
     <div className="rounded-xl border border-border bg-card/50 p-5 mb-4">
       <div className="text-sm font-medium mb-3">Scan QRIS untuk Bayar</div>
@@ -65,11 +65,20 @@ export function QrisPanel({ amountLabel }: { amountLabel?: string }) {
         <div className="font-semibold text-foreground">{QRIS_MERCHANT}</div>
         <div className="text-xs">NMID: {QRIS_NMID}</div>
         <div className="text-xs">Scan menggunakan aplikasi bank/e-wallet Anda</div>
-        {amountLabel && (
+        {exactAmount !== undefined && exactAmount > 0 ? (
           <div className="text-xs">
-            Bayar sesuai nominal:{' '}
-            <span className="font-semibold text-foreground">{amountLabel}</span>
+            Bayar <span className="font-bold text-amber-400">TEPAT Rp {Math.round(exactAmount).toLocaleString('id-ID')}</span>
+            <div className="text-[10px] text-muted-foreground mt-0.5">
+              Nominal ini sudah termasuk kode unik — jangan dibulatkan, kalau tidak verifikasi otomatisnya tidak cocok.
+            </div>
           </div>
+        ) : (
+          amountLabel && (
+            <div className="text-xs">
+              Bayar sesuai nominal:{' '}
+              <span className="font-semibold text-foreground">{amountLabel}</span>
+            </div>
+          )
         )}
       </div>
     </div>

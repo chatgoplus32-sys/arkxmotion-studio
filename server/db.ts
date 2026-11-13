@@ -487,6 +487,54 @@ db.exec(`
 db.exec('CREATE INDEX IF NOT EXISTS idx_pro_payments_user ON pro_payments(user_id)')
 db.exec('CREATE INDEX IF NOT EXISTS idx_pro_payments_status ON pro_payments(status)')
 
+// ── QRIS manual + verifikasi otomatis via email ───────────────────────────
+// Tiap pengajuan top-up diberi KODE UNIK 3 digit pada digit terakhir nominal
+// (Rp 50.000 → Rp 50.137). User membayar TEPAT segitu, parser email notifikasi
+// bank/e-wallet mencocokkan nominal masuk ke `amount_total` baris pending —
+// tanpa perlu API payment gateway. Kolom baru ditambahkan secara aditif ke
+// tabel top-up lama supaya riwayat lama tidak tersentuh.
+const QRIS_PAYMENT_COLUMNS: Array<[string, string]> = [
+  ['unique_code', 'INTEGER'],
+  ['amount_total', 'INTEGER'],
+  ['paid_amount', 'INTEGER'],
+  ['paid_at', 'DATETIME'],
+  ['pay_ref', "TEXT NOT NULL DEFAULT ''"],
+]
+for (const tableName of [
+  'provider_topup_request',
+  'createpulse_topup',
+  'nexabot_topup',
+  'seavi_topup',
+  'posbot_topup',
+]) {
+  const cols = db.prepare(`PRAGMA table_info(${tableName})`).all() as { name: string }[]
+  for (const [colName, colType] of QRIS_PAYMENT_COLUMNS) {
+    if (!cols.some((c) => c.name === colName)) {
+      db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${colName} ${colType}`)
+    }
+  }
+  // Pencarian cocok-nominal: pending punya amount_total unik dalam 24 jam.
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_${tableName}_amount_total ON ${tableName}(amount_total, status)`)
+}
+
+// Jejak audit verifikasi otomatis — admin bisa melihat email mana yang cocok
+// ke pembayaran mana, dan kenapa sebuah email tidak menghasilkan approve.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS payment_verify_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL DEFAULT 'email',
+    ref_table TEXT NOT NULL DEFAULT '',
+    ref_id INTEGER,
+    amount INTEGER NOT NULL DEFAULT 0,
+    action TEXT NOT NULL,
+    email_from TEXT NOT NULL DEFAULT '',
+    email_subject TEXT NOT NULL DEFAULT '',
+    detail TEXT NOT NULL DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`)
+db.exec('CREATE INDEX IF NOT EXISTS idx_payment_verify_log_created ON payment_verify_log(created_at DESC)')
+
 // ── Pengaturan app (key-value) ───────────────────────────────────────────
 db.exec(`
   CREATE TABLE IF NOT EXISTS app_settings (

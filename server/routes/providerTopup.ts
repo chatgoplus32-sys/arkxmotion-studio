@@ -2,6 +2,7 @@ import { Router, Response } from 'express'
 import db from '../db.js'
 import { authenticateToken, requireAdmin, AuthRequest } from '../middleware/auth.js'
 import { MANUAL_TOPUP_MAX, MANUAL_TOPUP_MIN } from '../../shared/pricing.js'
+import { nextUniqueCode } from '../lib/qrisPayment.js'
 
 /**
  * Top-up manual untuk provider tanpa dompet (Roboneo/Weavy/Framia, dll.).
@@ -65,9 +66,13 @@ router.post('/request', authenticateToken, (req: AuthRequest, res: Response) => 
       })
     }
 
+    // Kode unik 3 digit: user membayar TEPAT amount_total (mis. Rp 50.137),
+    // nominal itulah yang dicocokkan parser email notifikasi ke baris ini.
+    const { unique_code, amount_total } = nextUniqueCode(amount)
+
     const result = db.prepare(
-      'INSERT INTO provider_topup_request (user_id, provider, amount, note, status) VALUES (?, ?, ?, ?, ?)',
-    ).run(userId, provider, amount, note, 'pending')
+      'INSERT INTO provider_topup_request (user_id, provider, amount, unique_code, amount_total, note, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ).run(userId, provider, amount, unique_code, amount_total, note, 'pending')
 
     const request = findRequest(result.lastInsertRowid)
     res.status(201).json({ request, message: 'Permintaan top-up terkirim, menunggu verifikasi admin' })
@@ -140,6 +145,17 @@ router.patch('/admin/:id', authenticateToken, requireAdmin, (req: AuthRequest, r
     db.prepare(
       "UPDATE provider_topup_request SET status = ?, admin_note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'pending'",
     ).run(status, adminNote, request.id)
+
+    // Kabar ke member — lonceng mereka polling tiap 30 detik.
+    try {
+      const title = status === 'approved' ? 'Topup Disetujui ✅' : 'Topup Ditolak'
+      const message = status === 'approved'
+        ? `Topup provider ${request.provider} senilai Rp ${Number((request as any).amount ?? 0).toLocaleString('id-ID')} disetujui. Admin akan segera memproses kunci/saldo kamu.`
+        : `Topup provider ${request.provider} ditolak. Hubungi admin via WhatsApp untuk klarifikasi.`
+      db.prepare("INSERT INTO notifications (title, message, type, target, user_id) VALUES (?, ?, ?, 'users', ?)").run(
+        title, message, status === 'approved' ? 'success' : 'info', request.user_id,
+      )
+    } catch (e) { console.warn('[providerTopup] Gagal kirim notifikasi:', e) }
 
     res.json({ request: findRequest(request.id) })
   } catch (error) {

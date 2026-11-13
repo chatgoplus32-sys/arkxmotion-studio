@@ -17,6 +17,9 @@ interface Topup {
   proof_note: string
   admin_note: string
   created_at: string
+  /** Nominal bayar tepat (amount + kode unik) — diisi server saat pengajuan. */
+  unique_code?: number | null
+  amount_total?: number | null
 }
 
 export default function PosBotTopupPage() {
@@ -34,6 +37,7 @@ export default function PosBotTopupPage() {
   const [payMethod, setPayMethod] = useState<'dana' | 'qris'>('dana')
   const [loading, setLoading] = useState(false)
   const [topups, setTopups] = useState<Topup[]>([])
+  const [submitted, setSubmitted] = useState<Topup | null>(null)
   const [step, setStep] = useState<'select' | 'pay' | 'confirm'>('select')
 
   const API = '/api/posbot'
@@ -89,11 +93,15 @@ export default function PosBotTopupPage() {
       const data = await res.json()
       if (res.ok) {
         if (next === 'pay') {
+          // Simpan baris yang diajukan — amount_total adalah nominal yang
+          // harus dibayar dan yang dicocokkan parser email.
+          setSubmitted(data.topup || null)
           addToast(`Topup ${formatRp(amount)} diajukan`, 'success')
           setStep('pay')
           fetchTopups()
         } else {
-          addToast('Konfirmasi terkirim, tunggu approval admin', 'success')
+          // Baris sudah dibuat di langkah pertama — tidak perlu pengajuan kedua.
+          addToast('Konfirmasi terkirim', 'success')
           setStep('confirm')
           fetchTopups()
           fetchWallet()
@@ -202,7 +210,10 @@ export default function PosBotTopupPage() {
           <PaymentMethodToggle value={payMethod} onChange={setPayMethod} />
 
           {payMethod === 'qris' && (
-            <QrisPanel amountLabel={formatRp(Number.isInteger(amount) ? amount : 0)} />
+            <QrisPanel
+              amountLabel={formatRp(Number.isInteger(amount) ? amount : 0)}
+              exactAmount={submitted?.amount_total ?? undefined}
+            />
           )}
 
           {payMethod === 'dana' && (
@@ -230,7 +241,10 @@ export default function PosBotTopupPage() {
               <div className="flex items-center justify-between p-3 rounded-lg bg-background">
                 <div>
                   <div className="text-xs text-muted-foreground">Jumlah Transfer</div>
-                  <div className="font-bold text-primary text-lg">{formatRp(Number.isInteger(amount) ? amount : 0)}</div>
+                  <div className="font-bold text-amber-400 text-lg">
+                    {formatRp(submitted?.amount_total ?? (Number.isInteger(amount) ? amount : 0))}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">Termasuk kode unik — jangan dibulatkan</div>
                 </div>
               </div>
             </div>

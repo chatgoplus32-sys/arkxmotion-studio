@@ -19,6 +19,9 @@ interface Topup {
   proof_note: string
   admin_note: string
   created_at: string
+  /** Nominal bayar tepat (amount + kode unik) — diisi server saat pengajuan. */
+  unique_code?: number | null
+  amount_total?: number | null
 }
 
 export default function SeaviTopupPage() {
@@ -34,6 +37,7 @@ export default function SeaviTopupPage() {
   const [payMethod, setPayMethod] = useState<'dana' | 'qris'>('dana')
   const [loading, setLoading] = useState(false)
   const [topups, setTopups] = useState<Topup[]>([])
+  const [submitted, setSubmitted] = useState<Topup | null>(null)
   const [step, setStep] = useState<'select' | 'pay' | 'confirm'>('select')
 
   const API = '/api/seavi'
@@ -86,6 +90,9 @@ export default function SeaviTopupPage() {
       })
       const data = await res.json()
       if (res.ok) {
+        // Simpan baris yang diajukan — amount_total adalah nominal yang
+        // harus dibayar dan yang dicocokkan parser email.
+        setSubmitted(data.topup || null)
         addToast(`Paket ${selectedPackage.label} diajukan`, 'success')
         setStep('pay')
         fetchTopups()
@@ -99,27 +106,10 @@ export default function SeaviTopupPage() {
   }
 
   const handleConfirmTransfer = async () => {
-    if (!selectedPackage) return
-    setLoading(true)
-    try {
-      const res = await fetch(`${API}/topup`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ package_slug: selectedPackage.slug, proof_note: proofNote || 'Transfer via DANA' }),
-      })
-      const data = await res.json()
-      if (res.ok) {
-        addToast('Konfirmasi terkirim, tunggu approval admin', 'success')
-        setStep('confirm')
-        fetchTopups()
-        fetchWallet()
-      } else {
-        addToast(data.error || 'Gagal', 'error')
-      }
-    } catch {
-      addToast('Network error', 'error')
-    }
-    setLoading(false)
+    // Baris sudah dibuat di handleTopup — tidak perlu pengajuan kedua.
+    setStep('confirm')
+    fetchTopups()
+    fetchWallet()
   }
 
   const copyNumber = () => {
@@ -209,7 +199,10 @@ export default function SeaviTopupPage() {
           <PaymentMethodToggle value={payMethod} onChange={setPayMethod} />
 
           {payMethod === 'qris' && (
-            <QrisPanel amountLabel={`${selectedPackage.label} — ${formatRp(selectedPackage.price)}`} />
+            <QrisPanel
+              amountLabel={`${selectedPackage.label} — ${formatRp(selectedPackage.price)}`}
+              exactAmount={submitted?.amount_total ?? undefined}
+            />
           )}
 
           {payMethod === 'dana' && (
@@ -236,8 +229,11 @@ export default function SeaviTopupPage() {
               </div>
               <div className="flex items-center justify-between p-3 rounded-lg bg-background">
                 <div>
-                  <div className="text-xs text-muted-foreground">Paket</div>
-                  <div className="font-bold text-primary text-lg">{selectedPackage.label} — {formatRp(selectedPackage.price)}</div>
+                  <div className="text-xs text-muted-foreground">Jumlah Transfer</div>
+                  <div className="font-bold text-amber-400 text-lg">
+                    {formatRp(submitted?.amount_total ?? selectedPackage.price)}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">Termasuk kode unik — jangan dibulatkan</div>
                 </div>
               </div>
             </div>

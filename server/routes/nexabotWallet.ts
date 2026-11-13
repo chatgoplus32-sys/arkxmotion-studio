@@ -48,6 +48,7 @@ import {
 } from '../../shared/pricing.js'
 import { serverAccounts, serverCookieEligible, serverKeyEligible } from '../lib/nexabotAccounts.js'
 import { nexadanceQuota, nexadanceQuotaMessage } from '../lib/nexabotQuota.js'
+import { nextUniqueCode } from '../lib/qrisPayment.js'
 
 // Definisi harga tinggal di shared/pricing.ts supaya server, fungsi Vercel, dan
 // endpoint publik /api/public/pricing tidak pernah beda angka.
@@ -287,9 +288,13 @@ router.post('/topup', authenticateToken, (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: `Minimal topup Rp ${NEXABOT_MIN_TOPUP.toLocaleString('id-ID')}` })
     }
 
+    // Kode unik 3 digit → nominal bayar tepat (amount_total) untuk pencocokan
+    // otomatis email notifikasi. Lihat server/lib/qrisPayment.ts.
+    const { unique_code, amount_total } = nextUniqueCode(amount)
+
     const result = db.prepare(
-      "INSERT INTO nexabot_topup (user_id, amount, kind, proof_note, status) VALUES (?, ?, 'balance', ?, 'pending')"
-    ).run(userId, amount, proof_note || '')
+      "INSERT INTO nexabot_topup (user_id, amount, kind, unique_code, amount_total, proof_note, status) VALUES (?, ?, 'balance', ?, ?, ?, 'pending')"
+    ).run(userId, amount, unique_code, amount_total, proof_note || '')
 
     const topup = db.prepare('SELECT * FROM nexabot_topup WHERE id = ?').get(result.lastInsertRowid)
     res.status(201).json({ topup, message: 'Topup request submitted, waiting admin approval' })
@@ -355,9 +360,11 @@ router.post('/package', authenticateToken, (req: AuthRequest, res: Response) => 
     const price = tier?.price ?? plan.defaultPrice
     const days = tier?.days ?? plan.days
 
+    const { unique_code, amount_total } = nextUniqueCode(price)
+
     const result = db.prepare(
-      "INSERT INTO nexabot_topup (user_id, amount, kind, days, package_slug, proof_note, status) VALUES (?, ?, 'unlimited', ?, ?, ?, 'pending')"
-    ).run(userId, price, days, plan.slug, String(proof_note || '').slice(0, 500))
+      "INSERT INTO nexabot_topup (user_id, amount, kind, days, package_slug, unique_code, amount_total, proof_note, status) VALUES (?, ?, 'unlimited', ?, ?, ?, ?, ?, 'pending')"
+    ).run(userId, price, days, plan.slug, unique_code, amount_total, String(proof_note || '').slice(0, 500))
 
     const pkg = db.prepare('SELECT * FROM nexabot_topup WHERE id = ?').get(result.lastInsertRowid)
     res.status(201).json({ package: pkg, message: `Pembelian paket ${plan.label} dikirim, menunggu approval admin` })

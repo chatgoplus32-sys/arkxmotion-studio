@@ -17,6 +17,9 @@ interface Topup {
   proof_note: string
   admin_note: string
   created_at: string
+  /** Nominal bayar tepat (amount + kode unik) — diisi server saat pengajuan. */
+  unique_code?: number | null
+  amount_total?: number | null
 }
 
 export default function CreatePulseTopupPage() {
@@ -29,6 +32,7 @@ export default function CreatePulseTopupPage() {
   const [payMethod, setPayMethod] = useState<'dana' | 'qris'>('dana')
   const [loading, setLoading] = useState(false)
   const [topups, setTopups] = useState<Topup[]>([])
+  const [submitted, setSubmitted] = useState<Topup | null>(null)
   const [step, setStep] = useState<'select' | 'pay' | 'confirm'>('select')
 
   const API = '/api/createpulse'
@@ -71,6 +75,9 @@ export default function CreatePulseTopupPage() {
       })
       const data = await res.json()
       if (res.ok) {
+        // Simpan baris yang diajukan — amount_total (nominal + kode unik)
+        // inilah yang harus dibayar, dan yang dicocokkan parser email.
+        setSubmitted(data.topup || null)
         addToast(`Topup Rp ${amount.toLocaleString('id-ID')} diajukan`, 'success')
         setStep('pay')
         fetchTopups()
@@ -84,27 +91,11 @@ export default function CreatePulseTopupPage() {
   }
 
   const handleConfirmTransfer = async () => {
-    const amount = customAmount ? parseInt(customAmount) : selectedAmount
-    setLoading(true)
-    try {
-      const res = await fetch(`${API}/topup`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ amount, proof_note: proofNote || 'Transfer via DANA' }),
-      })
-      const data = await res.json()
-      if (res.ok) {
-        addToast('Konfirmasi terkirim, tunggu approval admin', 'success')
-        setStep('confirm')
-        fetchTopups()
-        fetchBalance()
-      } else {
-        addToast(data.error || 'Gagal', 'error')
-      }
-    } catch {
-      addToast('Network error', 'error')
-    }
-    setLoading(false)
+    // Baris sudah dibuat di handleTopup — tidak perlu membuat pengajuan
+    // kedua. Yang ini hanya penanda "user sudah mentransfer".
+    setStep('confirm')
+    fetchTopups()
+    fetchBalance()
   }
 
   const copyNumber = () => {
@@ -187,7 +178,10 @@ export default function CreatePulseTopupPage() {
           <PaymentMethodToggle value={payMethod} onChange={setPayMethod} />
 
           {payMethod === 'qris' && (
-            <QrisPanel amountLabel={formatRp(customAmount ? parseInt(customAmount) || 0 : selectedAmount)} />
+            <QrisPanel
+              amountLabel={formatRp(customAmount ? parseInt(customAmount) || 0 : selectedAmount)}
+              exactAmount={submitted?.amount_total ?? undefined}
+            />
           )}
 
           {payMethod === 'dana' && (
@@ -215,7 +209,10 @@ export default function CreatePulseTopupPage() {
               <div className="flex items-center justify-between p-3 rounded-lg bg-background">
                 <div>
                   <div className="text-xs text-muted-foreground">Jumlah Transfer</div>
-                  <div className="font-bold text-primary text-lg">{formatRp(customAmount ? parseInt(customAmount) || 0 : selectedAmount)}</div>
+                  <div className="font-bold text-amber-400 text-lg">
+                    {formatRp(submitted?.amount_total ?? (customAmount ? parseInt(customAmount) || 0 : selectedAmount))}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">Termasuk kode unik — jangan dibulatkan</div>
                 </div>
               </div>
             </div>
@@ -262,7 +259,7 @@ export default function CreatePulseTopupPage() {
             <div className="text-5xl mb-4">⏳</div>
             <div className="text-lg font-medium mb-2">Menunggu Approval Admin</div>
             <div className="text-sm text-muted-foreground mb-4">
-              Topup kamu akan disetujui setelah admin memverifikasi pembayaran.
+              Pembayaranmu terverifikasi otomatis dari notifikasi bank/e-wallet — saldo masuk sendiri beberapa menit setelah transfer. Jika sudah lebih dari 15 menit belum masuk, hubungi admin.
               <br />Hubungi admin jika sudah transfer.
             </div>
             <a

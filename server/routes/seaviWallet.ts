@@ -3,6 +3,7 @@ import db from '../db.js'
 import { authenticateToken, AuthRequest } from '../middleware/auth.js'
 import { SEAVI_MIN_TOPUP, SEAVI_PACKAGES, SEAVI_TOKEN_PRICE, findSeaviPackage, getSeaviCharge } from '../../shared/pricing.js'
 import { keyEligibility } from '../lib/providerMasterKey.js'
+import { nextUniqueCode } from '../lib/qrisPayment.js'
 
 const router = Router()
 
@@ -47,9 +48,12 @@ router.post('/topup', authenticateToken, (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: `Minimal topup Rp ${SEAVI_MIN_TOPUP.toLocaleString('id-ID')}` })
     }
 
+    // Kode unik 3 digit → bayar tepat `amount_total` untuk verifikasi email.
+    const { unique_code, amount_total } = nextUniqueCode(plan.price)
+
     const result = db.prepare(
-      'INSERT INTO seavi_topup (user_id, amount, tokens, package_slug, proof_note, status) VALUES (?, ?, ?, ?, ?, ?)'
-    ).run(userId, plan.price, plan.tokens, plan.slug, proof_note || '', 'pending')
+      'INSERT INTO seavi_topup (user_id, amount, tokens, unique_code, amount_total, package_slug, proof_note, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(userId, plan.price, plan.tokens, unique_code, amount_total, plan.slug, proof_note || '', 'pending')
 
     const topup = db.prepare('SELECT * FROM seavi_topup WHERE id = ?').get(result.lastInsertRowid)
     res.status(201).json({ topup, message: 'Topup request submitted, waiting admin approval' })

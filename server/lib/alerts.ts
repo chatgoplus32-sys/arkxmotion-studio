@@ -62,6 +62,17 @@ async function sendAlert(title: string, message: string, level: 'error' | 'warn'
 }
 
 // ── Public API ────────────────────────────────────────────────
+/**
+ * Info biasa (tanpa cooldown) untuk kejadian yang bukan error — mis. ada
+ * pembayaran QRIS masuk. Kalau webhook belum diset, cukup dicatat ke log.
+ */
+export function alertInfo(title: string, details?: Record<string, any>) {
+  const message = details
+    ? Object.entries(details).map(([k, v]) => `• ${k}: ${v}`).join('\n')
+    : 'No additional details'
+  sendAlert(title, message, 'info')
+}
+
 export function alertError(title: string, details?: Record<string, any>) {
   const key = `error:${title}`
   if (cooldowns.has(key) && Date.now() - cooldowns.get(key)! < COOLDOWN_MS) return

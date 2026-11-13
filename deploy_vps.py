@@ -121,18 +121,6 @@ try:
 except Exception as exc:  # pembersihan kosmetik, jangan membatalkan deploy
     print('  ⚠ Pembersihan dilewati: %s' % exc)
 
-# Upload source files needed for server
-server_files = [
-    'server/index.ts',
-    'server/db.ts',
-    'server/env.ts',
-    'server/mailer.ts',
-    'server/backup.ts',
-    'package.json',
-    'package-lock.json',
-    'tsconfig.json',
-    'vite.config.ts',
-]
 # Upload server directory
 server_local = os.path.join(LOCAL_DIR, 'server')
 server_remote = REMOTE_DIR + '/server'
@@ -196,7 +184,10 @@ else:
     print('  OK: semua file server sama ukurannya')
 
 # Upload specific root files
-for f in ['tsconfig.json', 'vite.config.ts']:
+# package.json + package-lock.json WAJIB ikut: tanpa keduanya, npm install di
+# VPS memakai manifest LAMA sehingga dependensi baru (mis. imapflow) tidak
+# pernah terpasang dan server jatuh dengan ERR_MODULE_NOT_FOUND (Nov 2026).
+for f in ['tsconfig.json', 'vite.config.ts', 'package.json', 'package-lock.json']:
     local_file = os.path.join(LOCAL_DIR, f)
     remote_file = REMOTE_DIR + '/' + f
     try:
@@ -277,6 +268,58 @@ def _sync_runninghub_token():
     print('  ✓ RUNNINGHUB_ACCESS_TOKEN ditambahkan ke .env VPS')
 
 
+# ── Sinkronkan kunci PAYMENT_IMAP_* ke .env VPS ──────────────────────────
+# Verifikasi otomatis QRIS manual memakai inbox IMAP; deploy tidak mengunggah
+# .env, jadi kredensialnya diselaraskan baris ini saja. Nilai tidak pernah
+# dicetak. Baris non-PAYMENT_IMAP di .env VPS tidak disentuh.
+def _sync_payment_imap():
+    local_env = os.path.join(LOCAL_DIR, '.env')
+    if not os.path.isfile(local_env):
+        return
+    # Baris kosong di lokal TIDAK ditulis — supaya kredensial yang sudah
+    # terpasang langsung di .env VPS tidak terhapus diam-diam saat deploy
+    # berikutnya. Yang kosong berarti "biarkan milik server", bukan "kosongkan".
+    keys = ['PAYMENT_IMAP_HOST', 'PAYMENT_IMAP_PORT', 'PAYMENT_IMAP_SECURE',
+            'PAYMENT_IMAP_USER', 'PAYMENT_IMAP_PASS', 'PAYMENT_IMAP_ENABLED',
+            'PAYMENT_INGEST_SECRET']
+    nilai = {}
+    with open(local_env, encoding='utf-8', errors='replace') as fh:
+        for baris in fh:
+            for kunci in keys:
+                if baris.startswith(kunci + '='):
+                    nilai[kunci] = baris.split('=', 1)[1].strip()
+    if not nilai:
+        return
+    # Buang nilai kosong supaya tidak menimpa kredensial VPS dengan baris kosong.
+    nilai = {k: v for k, v in nilai.items() if v}
+    if not nilai:
+        return
+    remote_env = REMOTE_DIR + '/.env'
+    try:
+        with sftp.open(remote_env, 'r') as fh:
+            konten = fh.read().decode('utf-8', errors='replace')
+    except FileNotFoundError:
+        konten = ''
+    baru = konten.splitlines()
+    disentuh = 0
+    for kunci, val in nilai.items():
+        ketemu = False
+        for i, b in enumerate(baru):
+            if b.startswith(kunci + '='):
+                if b != kunci + '=' + val:
+                    baru[i] = kunci + '=' + val
+                    disentuh += 1
+                ketemu = True
+                break
+        if not ketemu:
+            baru.append(kunci + '=' + val)
+            disentuh += 1
+    akhir_baris = '\n' if konten.endswith('\n') else ('\n' if konten else '')
+    with sftp.open(remote_env, 'w') as fh:
+        fh.write('\n'.join(baru) + akhir_baris)
+    print(f'  ✓ PAYMENT_IMAP_* selaras di .env VPS ({disentuh} baris ditambahkan/diperbarui)')
+
+
 try:
     _sync_gemini_key()
 except Exception as exc:
@@ -286,6 +329,11 @@ try:
     _sync_runninghub_token()
 except Exception as exc:
     print('  ⚠ Sinkronisasi RUNNINGHUB_ACCESS_TOKEN dilewati: %s' % exc)
+
+try:
+    _sync_payment_imap()
+except Exception as exc:
+    print('  ⚠ Sinkronisasi PAYMENT_IMAP_* dilewati: %s' % exc)
 
 sftp.close()
 print('\n✅ Files uploaded!')

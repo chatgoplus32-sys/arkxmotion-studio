@@ -3,6 +3,7 @@ import db from '../db.js'
 import { authenticateToken, AuthRequest } from '../middleware/auth.js'
 import { POSBOT_MIN_TOPUP, POSBOT_TOPUP_MAX, POSBOT_TOPUP_PRESETS, getPosbotCharge } from '../../shared/pricing.js'
 import { keyEligibility } from '../lib/providerMasterKey.js'
+import { nextUniqueCode } from '../lib/qrisPayment.js'
 
 const router = Router()
 
@@ -49,9 +50,12 @@ router.post('/topup', authenticateToken, (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: `Maksimal topup Rp ${POSBOT_TOPUP_MAX.toLocaleString('id-ID')}` })
     }
 
+    // Kode unik 3 digit → bayar tepat `amount_total` untuk verifikasi email.
+    const { unique_code, amount_total } = nextUniqueCode(topupAmount)
+
     const result = db.prepare(
-      'INSERT INTO posbot_topup (user_id, amount, proof_note, status) VALUES (?, ?, ?, ?)'
-    ).run(userId, topupAmount, proof_note || '', 'pending')
+      'INSERT INTO posbot_topup (user_id, amount, unique_code, amount_total, proof_note, status) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(userId, topupAmount, unique_code, amount_total, proof_note || '', 'pending')
 
     const topup = db.prepare('SELECT * FROM posbot_topup WHERE id = ?').get(result.lastInsertRowid)
     res.status(201).json({ topup, message: 'Topup request submitted, waiting admin approval' })

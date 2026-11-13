@@ -2,6 +2,7 @@ import { Router, Response } from 'express'
 import db from '../db.js'
 import { authenticateToken, AuthRequest } from '../middleware/auth.js'
 import { CREATEPULSE_MIN_TOPUP, getCreatepulseCharge } from '../../shared/pricing.js'
+import { nextUniqueCode } from '../lib/qrisPayment.js'
 
 const router = Router()
 
@@ -32,9 +33,13 @@ router.post('/topup', authenticateToken, (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: `Minimal topup Rp ${CREATEPULSE_MIN_TOPUP.toLocaleString('id-ID')}` })
     }
 
+    // Kode unik 3 digit → nominal bayar tepat (amount_total) untuk pencocokan
+    // otomatis email notifikasi. Lihat server/lib/qrisPayment.ts.
+    const { unique_code, amount_total } = nextUniqueCode(amount)
+
     const result = db.prepare(
-      'INSERT INTO createpulse_topup (user_id, amount, proof_note, status) VALUES (?, ?, ?, ?)'
-    ).run(userId, amount, proof_note || '', 'pending')
+      'INSERT INTO createpulse_topup (user_id, amount, unique_code, amount_total, proof_note, status) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(userId, amount, unique_code, amount_total, proof_note || '', 'pending')
 
     const topup = db.prepare('SELECT * FROM createpulse_topup WHERE id = ?').get(result.lastInsertRowid)
     res.status(201).json({ topup, message: 'Topup request submitted, waiting admin approval' })

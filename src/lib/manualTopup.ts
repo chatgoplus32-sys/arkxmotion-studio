@@ -14,6 +14,12 @@ export interface ManualTopupRequest {
   admin_note: string
   created_at: string
   updated_at: string
+  /** Kode unik 3 digit + nominal bayar tepat (amount + kode) untuk verifikasi otomatis. */
+  unique_code?: number | null
+  amount_total?: number | null
+  paid_amount?: number | null
+  paid_at?: string | null
+  pay_ref?: string
   /** Ada pada respons admin (join users). */
   user_name?: string
   email?: string
