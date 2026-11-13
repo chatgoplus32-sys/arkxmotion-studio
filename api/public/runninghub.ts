@@ -1496,8 +1496,9 @@ async function handleSubmitAudioAvatar(apiKey: string, params: any, res: VercelR
 
   const body = {
     nodeInfoList,
-    // Docs app 2088287871631835137 memakai instance default (24G VRAM).
-    instanceType: 'default',
+    // App 2088287871631835137 pakai sampler WanVideo yang OOM (805) di
+    // instance default 24G VRAM — naikkan ke plus (48G VRAM).
+    instanceType: 'plus',
     usePersonalQueue: 'false',
   }
 
