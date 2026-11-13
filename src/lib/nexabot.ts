@@ -308,15 +308,17 @@ function normalizeAuth(auth: NexabotAuth | string | undefined): NexabotAuth {
 }
 
 function fillAuthFromStorage(auth: NexabotAuth): NexabotAuth {
-  // Mode master/ticket sengaja TIDAK mengisi kredensial dari penyimpanan: kalau
-  // key pribadi ikut terkirim, relay akan memakainya dan jalur kunci server
-  // tidak pernah dipakai.
-  //
-  // Tapi master/ticket TIDAK cukup untuk operasi baca (mis. daftar suara):
-  // relay butuh API key atau cookie untuk mengidentifikasi pengguna. Jika
-  // hanya master/ticket yang tersedia, ambil kredensial dari penyimpanan.
+  // Jalur kunci server HARUS tetap `master` beserta tiketnya sampai ke relay:
+  // kalau kredensial pribadi ikut diisi (atau master/ticket terbuang di sini),
+  // relay tidak memakai kunci server dan guard "tidak ada API key" menolak job
+  // milik member yang memang sengaja tidak membawa kredensial (member sudah
+  // membayar lewat tiket /api/nexabot/deduct).
+  if (auth.master) return auth
+  // Tanpa kredensial eksplisit dan bukan jalur kunci server (mis. operasi baca
+  // yang dipakai tanpa auth), isi dari penyimpanan seperti sebelumnya; ticket
+  // ikut dibiarkan (rute baca memang mengabaikannya).
   if (auth.apiKey || auth.cookies) return auth
-  return { apiKey: getNexabotApiKey(), cookies: getNexabotCookies() }
+  return { ...auth, apiKey: getNexabotApiKey(), cookies: getNexabotCookies() }
 }
 
 /**
