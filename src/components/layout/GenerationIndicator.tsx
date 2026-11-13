@@ -29,6 +29,8 @@ const PAGE_META: Record<ActiveTask['page'], { href: string; label: string; icon:
   ugc: { href: '/generate/ugc', label: 'Product UGC', icon: Images },
   'clip-genius': { href: '/tools/clip-genius', label: 'Clip Genius', icon: Layers },
   'video-edit': { href: '/generate/video-edit', label: 'ARKX AUTO Studio', icon: Clapperboard },
+  'lipsync-pro': { href: '/generate/lipsync-pro', label: 'LipSync Pro', icon: Mic },
+  'upscale-video': { href: '/generate/upscale-video', label: 'Upscale Video', icon: Clapperboard },
 }
 const FALLBACK_PAGE = { href: '/dashboard', label: 'Generasi', icon: Sparkles }
 

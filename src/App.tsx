@@ -77,6 +77,8 @@ const SongCoverPage = lazyWithRetry(() => import('@/pages/SongCover'))
 const VoiceOverPage = lazyWithRetry(() => import('@/pages/VoiceOver'))
 const CloneVoicePage = lazyWithRetry(() => import('@/pages/CloneVoice'))
 const MusicGeneratorPage = lazyWithRetry(() => import('@/pages/MusicGenerator'))
+const LipSyncProPage = lazyWithRetry(() => import('@/pages/LipSyncPro'))
+const UpscaleVideoPage = lazyWithRetry(() => import('@/pages/UpscaleVideo'))
 const MusicStudioPage = lazyWithRetry(() => import('@/pages/MusicStudio'))
 const ImageStudioPage = lazyWithRetry(() => import('@/pages/ImageStudio'))
 const H3MusicAvatarPage = lazyWithRetry(() => import('@/pages/H3MusicAvatar'))
@@ -250,6 +252,8 @@ export default function App() {
                         <Route path="/generate/clone-voice" element={<CloneVoicePage />} />
                         <Route path="/generate/music-generator" element={<MusicGeneratorPage />} />
                         <Route path="/generate/music-studio" element={<MusicStudioPage />} />
+                        <Route path="/generate/lipsync-pro" element={<LipSyncProPage />} />
+                        <Route path="/generate/upscale-video" element={<UpscaleVideoPage />} />
                         <Route path="/generate/image-studio" element={<ImageStudioPage />} />
                         <Route path="/generate/ugc" element={<UGCPage />} />
                         <Route path="/generate/ugc-storyboard" element={<UGCStoryboardPage />} />

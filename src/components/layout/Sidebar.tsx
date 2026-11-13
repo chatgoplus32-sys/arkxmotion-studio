@@ -82,6 +82,11 @@ const audioNav: NavItem[] = [
   { label: 'AI Music Studio', href: '/generate/music-studio', icon: <AudioLines className="h-4 w-4" /> },
 ]
 
+const posbotNav: NavItem[] = [
+  { label: 'LipSync Pro', href: '/generate/lipsync-pro', icon: <Mic className="h-4 w-4" /> },
+  { label: 'Upscale Video', href: '/generate/upscale-video', icon: <ArrowUpFromLine className="h-4 w-4" /> },
+]
+
 const enhanceNav: NavItem[] = [
   { label: 'Watermark Remover', href: '/generate/watermark-remover', icon: <Eraser className="h-4 w-4" /> },
   { label: 'Video Upscaler', href: '/generate/video-upscaler', icon: <ArrowUpFromLine className="h-4 w-4" /> },
@@ -185,7 +190,7 @@ export function Sidebar({ collapsed = false, onClose }: SidebarProps) {
     { label: 'Notifications', href: '/admin/notifications', icon: <Bell className="h-4 w-4" /> },
   ]
 
-  const allNavItems = useMemo(() => [...mainNav, ...createNav, ...audioNav, ...enhanceNav, ...toolsNav, ...adminNav], [toolsNav, adminNav])
+  const allNavItems = useMemo(() => [...mainNav, ...createNav, ...audioNav, ...enhanceNav, ...posbotNav, ...toolsNav, ...adminNav], [toolsNav, adminNav])
   const frequentItems = useMemo(() => {
     const byHref = new Map(allNavItems.map((i) => [i.href, i]))
     return topFrequent(6).map((href) => byHref.get(href)).filter(Boolean) as NavItem[]
@@ -336,6 +341,7 @@ export function Sidebar({ collapsed = false, onClose }: SidebarProps) {
         {renderNavGroup(createNav, 'Buat')}
         {renderNavGroup(audioNav, 'Audio')}
         {renderNavGroup(enhanceNav, 'Sempurnakan')}
+        {renderNavGroup(posbotNav, 'PosBot AI')}
         {renderNavGroup(toolsNav, 'Lainnya')}
         {user?.role === 'admin' && renderNavGroup(adminNav, 'Admin')}
       </nav>

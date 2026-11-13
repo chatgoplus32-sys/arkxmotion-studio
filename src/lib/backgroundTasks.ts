@@ -35,6 +35,8 @@ export type GenerationPage =
   | 'ugc'
   | 'clip-genius'
   | 'video-edit'
+  | 'lipsync-pro'
+  | 'upscale-video'
 
 export const GENERATION_PAGE_KIND: Record<GenerationPage, GenerationKind> = {
   motion: 'video',
@@ -58,6 +60,8 @@ export const GENERATION_PAGE_KIND: Record<GenerationPage, GenerationKind> = {
   ugc: 'image',
   'video-edit': 'video',
   'clip-genius': 'video',
+  'lipsync-pro': 'video',
+  'upscale-video': 'video',
 }
 
 // Rute halaman untuk tiap jenis generasi. Dipakai header (tautan panel
@@ -85,6 +89,8 @@ export const GENERATION_PAGE_PATH: Record<GenerationPage, string> = {
   ugc: '/generate/ugc',
   'clip-genius': '/tools/clip-genius',
   'video-edit': '/generate/video-edit',
+  'lipsync-pro': '/generate/lipsync-pro',
+  'upscale-video': '/generate/upscale-video',
 }
 
 export interface ActiveTask {
