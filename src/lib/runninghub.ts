@@ -17,15 +17,15 @@ export const RUNNINGHUB_TRYON_GARMENT_NODE = '53'
 // https://www.runninghub.ai/id/ai-detail/2102388260877221889
 export const RUNNINGHUB_TRYON_FLUX2_APP_ID = '2102388260877221889'
 
-// H3 Studio Markas HD 1080p Audio Sync (MiniMax H3 digital human):
+// Talking Avatar HD (RunningHub OpenAPI AI-app 2093007413426294785):
 // 1 foto + audio → video bicara/bernyanyi.
-// node 209 = image (foto), node 215 = audio
-export const RUNNINGHUB_AUDIO_AVATAR_WORKFLOW_ID = '2099332942179229697'
+// node 284 = image (foto), node 125 = audio
+export const RUNNINGHUB_AUDIO_AVATAR_WORKFLOW_ID = '2093007413426294785'
 // MiniMax H3 Music Avatar (app RunningHub): 1 foto + audio lagu → video
 // avatar menyanyi, segmen tanpa batas + video panjang.
 const RUNNINGHUB_H3_MUSIC_AVATAR_APP_ID = '2111522730906955778'
-export const RUNNINGHUB_AUDIO_AVATAR_IMAGE_NODE = '209'
-export const RUNNINGHUB_AUDIO_AVATAR_AUDIO_NODE = '215'
+export const RUNNINGHUB_AUDIO_AVATAR_IMAGE_NODE = '284'
+export const RUNNINGHUB_AUDIO_AVATAR_AUDIO_NODE = '125'
 
 // LTX-2.5 I2V LipSync Bahasa Indonesia:
 // foto + audio → video lip-sync.

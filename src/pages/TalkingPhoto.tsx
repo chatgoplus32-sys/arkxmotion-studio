@@ -111,7 +111,7 @@ export default function TalkingPhotoPage() {
     setLogs([])
     const trackId = startGenerationTask({
       page: 'talking-photo',
-      model: isLtx ? 'LTX-2.5 LipSync' : 'H3 Talking Photo',
+      model: isLtx ? 'LTX-2.5 LipSync' : 'Talking Avatar HD',
       prompt: prompt.trim().slice(0, 500),
       provider: 'runninghub',
     })
@@ -131,7 +131,7 @@ export default function TalkingPhotoPage() {
       addLog(`Normalisasi gagal, pakai file asli: ${e.message}`, 'warn')
     }
 
-    addLog(`Mulai (${isLtx ? 'LTX-2.5 LipSync' : 'H3 Avatar'}): foto ${(upPhoto.size / 1024).toFixed(0)}KB ${upPhoto.name}` + (isLtx && upPhoto2 ? ` + foto2 ${(upPhoto2.size / 1024).toFixed(0)}KB ${upPhoto2.name}` : '') + ` + audio ${(audioFile!.size / 1024 / 1024).toFixed(1)}MB ${audioFile!.name}`)
+    addLog(`Mulai (${isLtx ? 'LTX-2.5 LipSync' : 'Talking Avatar HD'}): foto ${(upPhoto.size / 1024).toFixed(0)}KB ${upPhoto.name}` + (isLtx && upPhoto2 ? ` + foto2 ${(upPhoto2.size / 1024).toFixed(0)}KB ${upPhoto2.name}` : '') + ` + audio ${(audioFile!.size / 1024 / 1024).toFixed(1)}MB ${audioFile!.name}`)
     if (isLtx) addLog(`Params: ${lipWidth}x${lipHeight} @${lipFps}fps`)
     if (prompt.trim()) addLog(`Prompt: ${prompt.trim().slice(0, 120)}`)
 
@@ -223,7 +223,7 @@ export default function TalkingPhotoPage() {
       page: 'talking-photo',
       kind: 'video',
       provider: 'runninghub',
-      model: avatarModel === 'ltx' ? 'LTX-2.5 LipSync' : 'H3 Talking Photo',
+      model: avatarModel === 'ltx' ? 'LTX-2.5 LipSync' : 'Talking Avatar HD',
     })
     setHistory((prev) => [
       { time: new Date().toLocaleTimeString('id-ID'), taskId: tid, status: '✅ Selesai', url },
@@ -239,7 +239,7 @@ export default function TalkingPhotoPage() {
     setTaskStatus('running')
     const trackId = startGenerationTask({
       page: 'talking-photo',
-      model: avatarModel === 'ltx' ? 'LTX-2.5 LipSync' : 'H3 Talking Photo',
+      model: avatarModel === 'ltx' ? 'LTX-2.5 LipSync' : 'Talking Avatar HD',
       prompt: prompt.trim().slice(0, 500),
       provider: 'runninghub',
     })
@@ -276,7 +276,7 @@ export default function TalkingPhotoPage() {
     <PageContent>
       <PageHeader
         title="🎤 Talking Photo & Lip Sync"
-        desc="Foto jadi manusia digital bicara/bernyanyi (MiniMax H3 HD 1080p) atau lip-sync Bahasa Indonesia (LTX-2.5) — via RunningHub."
+        desc="Foto jadi manusia digital bicara/bernyanyi (Talking Avatar HD, RunningHub OpenAPI) atau lip-sync Bahasa Indonesia (LTX-2.5) — via RunningHub."
       />
 
       {!apiKey && (
@@ -295,7 +295,7 @@ export default function TalkingPhotoPage() {
                 onClick={() => setAvatarModel('h3')}
                 className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${avatarModel === 'h3' ? 'bg-primary text-primary-foreground' : 'bg-surface-secondary text-muted-foreground hover:text-foreground'}`}
               >
-                🎤 H3 Avatar HD
+                🎤 Talking Avatar HD
               </button>
               <button
                 onClick={() => setAvatarModel('ltx')}

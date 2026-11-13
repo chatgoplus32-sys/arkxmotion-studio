@@ -169,10 +169,11 @@ const MOTION_APPS: Record<string, MotionAppConfig> = {
 const RUNNINGHUB_TRYON_WORKFLOW_ID = '2099800742046818306'
 const RUNNINGHUB_TRYON_PERSON_NODE = '13'
 const RUNNINGHUB_TRYON_GARMENT_NODE = '53'
-// H3 Audio Avatar: node 209 = foto, node 215 = audio
-const RUNNINGHUB_AUDIO_AVATAR_WORKFLOW_ID = '2099332942179229697'
-const RUNNINGHUB_AUDIO_AVATAR_IMAGE_NODE = '209'
-const RUNNINGHUB_AUDIO_AVATAR_AUDIO_NODE = '215'
+// Talking Avatar HD (RunningHub OpenAPI AI-app 2093007413426294785):
+// node 284 = foto, node 125 = audio
+const RUNNINGHUB_AUDIO_AVATAR_WORKFLOW_ID = '2093007413426294785'
+const RUNNINGHUB_AUDIO_AVATAR_IMAGE_NODE = '284'
+const RUNNINGHUB_AUDIO_AVATAR_AUDIO_NODE = '125'
 // MiniMax H3 Music Avatar (app 2111522730906955778): 1 foto + audio lagu →
 // video avatar menyanyi dengan segmen tanpa batas + video panjang.
 // node 306 = image, node 317 = audio, node 214 = text (prompt acting).

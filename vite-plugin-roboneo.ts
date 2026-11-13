@@ -1533,9 +1533,9 @@ export function roboneoProxyPlugin(): Plugin {
             return
           }
 
-          // H3 Audio Avatar (2099332942179229697): node 209 = foto, 215 = audio
+          // Talking Avatar HD (OpenAPI AI-app 2093007413426294785): node 284 = foto, 125 = audio
           if (action === 'submit-audio-avatar') {
-            const AVATAR_WF = '2099332942179229697'
+            const AVATAR_WF = '2093007413426294785'
             const wfId = params.workflow_id || params.workflowId || AVATAR_WF
             const { imageBase64, imageFileName = 'photo.jpg', imageMimeType = 'image/jpeg',
               audioBase64, audioFileName = 'audio.mp3', audioMimeType = 'audio/mpeg' } = params
@@ -1561,8 +1561,8 @@ export function roboneoProxyPlugin(): Plugin {
               const imgFn = await upOne(imageBase64, imageFileName, imageMimeType)
               const audFn = await upOne(audioBase64, audioFileName, audioMimeType)
               const nodeInfoList = [
-                { nodeId: '209', fieldName: 'image', fieldValue: imgFn },
-                { nodeId: '215', fieldName: 'audio', fieldValue: audFn },
+                { nodeId: '284', fieldName: 'image', fieldValue: imgFn },
+                { nodeId: '125', fieldName: 'audio', fieldValue: audFn },
               ]
               const r = await rhProxyFetch(apiKey, `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${wfId}`, {
                 method: 'POST',
