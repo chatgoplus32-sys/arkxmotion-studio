@@ -87,11 +87,14 @@ const RUNNINGHUB_TRYON_FLUX2_APP_ID = '2102388260877221889'
 const TRYON_FLUX2_PERSON_NODE = '23'
 const TRYON_FLUX2_GARMENT_NODE = 'LoadImage.0'
 const TRYON_FLUX2_IMAGE_FIELD = 'image'
-// Talking Avatar HD (RunningHub OpenAPI AI-app 2093007413426294785):
-// node 284 = foto, node 125 = audio
-const RUNNINGHUB_AUDIO_AVATAR_WORKFLOW_ID = '2093007413426294785'
-const RUNNINGHUB_AUDIO_AVATAR_IMAGE_NODE = '284'
-const RUNNINGHUB_AUDIO_AVATAR_AUDIO_NODE = '125'
+// Talking Photo (RunningHub OpenAPI AI-app 2112155365463203842 — satu-satunya
+// mode Talking Photo; pengganti Talking Avatar HD & LTX-2.5 LipSync):
+// node 9 = foto, node 143 = audio, node 211 = value, node 208 = steps
+const RUNNINGHUB_AUDIO_AVATAR_WORKFLOW_ID = '2112155365463203842'
+const RUNNINGHUB_AUDIO_AVATAR_IMAGE_NODE = '9'
+const RUNNINGHUB_AUDIO_AVATAR_AUDIO_NODE = '143'
+const RUNNINGHUB_AUDIO_AVATAR_VALUE_NODE = '211'
+const RUNNINGHUB_AUDIO_AVATAR_STEPS_NODE = '208'
 // MiniMax H3 Music Avatar (app 2111522730906955778): 1 foto + audio lagu →
 // video avatar menyanyi dengan segmen tanpa batas + video panjang.
 // node 306 = image, node 317 = audio, node 214 = text (prompt acting).
@@ -1460,6 +1463,8 @@ async function handleSubmitAudioAvatar(apiKey: string, params: any, res: VercelR
     audioBase64,
     audioFileName = 'audio.mp3',
     audioMimeType = 'audio/mpeg',
+    value = 50,
+    steps = 6,
     prompt = '',
   } = params
 
@@ -1479,6 +1484,8 @@ async function handleSubmitAudioAvatar(apiKey: string, params: any, res: VercelR
   const nodeInfoList: any[] = [
     { nodeId: RUNNINGHUB_AUDIO_AVATAR_IMAGE_NODE, fieldName: 'image', fieldValue: imageUpload.fileName },
     { nodeId: RUNNINGHUB_AUDIO_AVATAR_AUDIO_NODE, fieldName: 'audio', fieldValue: audioUpload.fileName },
+    { nodeId: RUNNINGHUB_AUDIO_AVATAR_VALUE_NODE, fieldName: 'value', fieldValue: String(value) },
+    { nodeId: RUNNINGHUB_AUDIO_AVATAR_STEPS_NODE, fieldName: 'steps', fieldValue: String(steps) },
   ]
 
   try {
@@ -1496,9 +1503,8 @@ async function handleSubmitAudioAvatar(apiKey: string, params: any, res: VercelR
 
   const body = {
     nodeInfoList,
-    // App Talking Avatar memakai sampler WanVideo yang OOM (805) di instance
-    // default 24G VRAM — butuh instance plus (48G VRAM).
-    instanceType: 'plus',
+    // Docs app 2112155365463203842 memakai instance default (24G VRAM).
+    instanceType: 'default',
     usePersonalQueue: 'false',
   }
 

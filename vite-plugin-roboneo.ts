@@ -1533,12 +1533,14 @@ export function roboneoProxyPlugin(): Plugin {
             return
           }
 
-          // Talking Avatar HD (OpenAPI AI-app 2093007413426294785): node 284 = foto, 125 = audio
+          // Talking Photo (OpenAPI AI-app 2112155365463203842): node 9 = foto,
+          // 143 = audio, 211 = value, 208 = steps
           if (action === 'submit-audio-avatar') {
-            const AVATAR_WF = '2093007413426294785'
+            const AVATAR_WF = '2112155365463203842'
             const wfId = params.workflow_id || params.workflowId || AVATAR_WF
             const { imageBase64, imageFileName = 'photo.jpg', imageMimeType = 'image/jpeg',
-              audioBase64, audioFileName = 'audio.mp3', audioMimeType = 'audio/mpeg' } = params
+              audioBase64, audioFileName = 'audio.mp3', audioMimeType = 'audio/mpeg',
+              value = 50, steps = 6 } = params
             if (!imageBase64 || !audioBase64) {
               res.writeHead(200, { 'Content-Type': 'application/json' })
               res.end(JSON.stringify({ ok: false, error: 'Missing imageBase64 or audioBase64' }))
@@ -1561,14 +1563,16 @@ export function roboneoProxyPlugin(): Plugin {
               const imgFn = await upOne(imageBase64, imageFileName, imageMimeType)
               const audFn = await upOne(audioBase64, audioFileName, audioMimeType)
               const nodeInfoList = [
-                { nodeId: '284', fieldName: 'image', fieldValue: imgFn },
-                { nodeId: '125', fieldName: 'audio', fieldValue: audFn },
+                { nodeId: '9', fieldName: 'image', fieldValue: imgFn },
+                { nodeId: '143', fieldName: 'audio', fieldValue: audFn },
+                { nodeId: '211', fieldName: 'value', fieldValue: String(value) },
+                { nodeId: '208', fieldName: 'steps', fieldValue: String(steps) },
               ]
-              // instance plus (48G VRAM): app OOM (805) di instance default 24G
+              // Docs app 2112155365463203842 memakai instance default (24G VRAM)
               const r = await rhProxyFetch(apiKey, `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${wfId}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-                body: JSON.stringify({ nodeInfoList, instanceType: 'plus', usePersonalQueue: 'false' }),
+                body: JSON.stringify({ nodeInfoList, instanceType: 'default', usePersonalQueue: 'false' }),
               })
               const text = await r.text()
               console.log(`[runninghub-proxy] audio-avatar ${r.status}:`, text.slice(0, 500))

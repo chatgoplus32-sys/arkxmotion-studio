@@ -97,8 +97,8 @@ jobs:
               ls dist/assets | head -20
               exit 1
             fi
-            if ! grep -q "Talking Avatar HD" "$TP_CHUNK"; then
-              echo "❌ VERIFIKASI GAGAL: build memuat TalkingPhoto versi LAMA (label 'Talking Avatar HD' tidak ada)."
+            if ! grep -q "Talking Photo HD" "$TP_CHUNK"; then
+              echo "❌ VERIFIKASI GAGAL: build memuat TalkingPhoto versi LAMA (label 'Talking Photo HD' tidak ada)."
               echo "   chunk: $TP_CHUNK | HEAD: $(git log --oneline -1)"
               exit 1
             fi

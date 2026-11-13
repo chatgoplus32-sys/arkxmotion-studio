@@ -17,15 +17,17 @@ export const RUNNINGHUB_TRYON_GARMENT_NODE = '53'
 // https://www.runninghub.ai/id/ai-detail/2102388260877221889
 export const RUNNINGHUB_TRYON_FLUX2_APP_ID = '2102388260877221889'
 
-// Talking Avatar HD (RunningHub OpenAPI AI-app 2093007413426294785):
+// Talking Photo (RunningHub OpenAPI AI-app 2112155365463203842 — satu-satunya
+// mode Talking Photo; pengganti Talking Avatar HD & LTX-2.5 LipSync):
 // 1 foto + audio → video bicara/bernyanyi.
-// node 284 = image (foto), node 125 = audio
-export const RUNNINGHUB_AUDIO_AVATAR_WORKFLOW_ID = '2093007413426294785'
+// node 9 = image (foto), node 143 = audio,
+// node 211 = value (default 50), node 208 = steps (default 6)
+export const RUNNINGHUB_AUDIO_AVATAR_WORKFLOW_ID = '2112155365463203842'
 // MiniMax H3 Music Avatar (app RunningHub): 1 foto + audio lagu → video
 // avatar menyanyi, segmen tanpa batas + video panjang.
 const RUNNINGHUB_H3_MUSIC_AVATAR_APP_ID = '2111522730906955778'
-export const RUNNINGHUB_AUDIO_AVATAR_IMAGE_NODE = '284'
-export const RUNNINGHUB_AUDIO_AVATAR_AUDIO_NODE = '125'
+export const RUNNINGHUB_AUDIO_AVATAR_IMAGE_NODE = '9'
+export const RUNNINGHUB_AUDIO_AVATAR_AUDIO_NODE = '143'
 
 // LTX-2.5 I2V LipSync Bahasa Indonesia:
 // foto + audio → video lip-sync.
@@ -717,6 +719,10 @@ export async function submitRunningHubTryOnFlux2(params: TryOnParams): Promise<M
 export interface AudioAvatarParams {
   imageFile: File
   audioFile: File
+  /** Node 211 — kekuatan gerakan bibir/ekspresi (0–100, default 50). */
+  value?: number
+  /** Node 208 — jumlah step sampler (default 6). */
+  steps?: number
   prompt?: string
   apiKey?: string
   workflowId?: string
@@ -736,6 +742,8 @@ export interface AudioAvatarParams {
     audioBase64,
     audioFileName: params.audioFile.name,
     audioMimeType: params.audioFile.type || 'audio/mpeg',
+    value: params.value ?? 50,
+    steps: params.steps ?? 6,
     prompt: params.prompt || '',
   }, params.apiKey)
 

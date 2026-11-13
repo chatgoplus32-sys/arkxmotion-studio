@@ -4,7 +4,7 @@ import { Section, Button, Label, EmptyState } from '@/components/ui'
 import { LogDetailActions } from '@/components/ui/LogDetailActions'
 import { Loader2, Upload, Download, X, Mic, Image as ImageIcon, Sparkles, CheckCircle2, AlertCircle, Clock, Music } from 'lucide-react'
 import { useToastStore } from '@/stores/toastStore'
-import { submitRunningHubAudioAvatar, submitRunningHubLipSync, pollRunningHubTask } from '@/lib/runninghub'
+import { submitRunningHubAudioAvatar, pollRunningHubTask } from '@/lib/runninghub'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { persistResultToR2, addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
 import { useLocalStorage } from '@/lib/useLocalStorage'
@@ -38,14 +38,10 @@ function getStoredProviderKey(provider: string): string | null {
 export default function TalkingPhotoPage() {
   const addToast = useToastStore((s) => s.addToast)
 
-  const [avatarModel, setAvatarModel] = useLocalStorage<'h3' | 'ltx'>('talkingphoto.model', 'h3')
   const [photoFile, setPhotoFile] = useState<File | null>(null)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
-  const [photoFile2, setPhotoFile2] = useState<File | null>(null)
-  const [photoPreview2, setPhotoPreview2] = useState<string | null>(null)
-  const [lipWidth, setLipWidth] = useLocalStorage('lipsync.width', 1280)
-  const [lipHeight, setLipHeight] = useLocalStorage('lipsync.height', 720)
-  const [lipFps, setLipFps] = useLocalStorage('lipsync.fps', 30)
+  const [lipValue, setLipValue] = useLocalStorage('talkingphoto.value', 50)
+  const [lipSteps, setLipSteps] = useLocalStorage('talkingphoto.steps', 6)
   const [audioFile, setAudioFile] = useState<File | null>(null)
   const [audioPreview, setAudioPreview] = useState<string | null>(null)
   const [prompt, setPrompt] = useState('')
@@ -60,7 +56,6 @@ export default function TalkingPhotoPage() {
   const [logs, setLogs] = useState<LogEntry[]>([])
 
   const photoPickerRef = useRef<HTMLInputElement | null>(null)
-  const photoPicker2Ref = useRef<HTMLInputElement | null>(null)
   const audioPickerRef = useRef<HTMLInputElement | null>(null)
 
   const apiKey = getStoredProviderKey('runninghub')
@@ -100,8 +95,6 @@ export default function TalkingPhotoPage() {
       return
     }
 
-    const isLtx = avatarModel === 'ltx'
-
     setLoading(true)
     setError(null)
     setResultUrl(null)
@@ -111,28 +104,23 @@ export default function TalkingPhotoPage() {
     setLogs([])
     const trackId = startGenerationTask({
       page: 'talking-photo',
-      model: isLtx ? 'LTX-2.5 LipSync' : 'Talking Avatar HD',
+      model: 'Talking Photo HD',
       prompt: prompt.trim().slice(0, 500),
       provider: 'runninghub',
     })
 
     // Normalisasi foto (PNG besar → JPEG terkompresi) supaya request muat limit server
     let upPhoto = photoFile!
-    let upPhoto2 = photoFile2
     try {
       addLog(`Normalisasi foto ${(photoFile!.size / 1024 / 1024).toFixed(1)}MB...`)
       upPhoto = await normalizeImage(photoFile!, (msg) => addLog(msg))
       addLog(`Foto siap: ${(upPhoto.size / 1024).toFixed(0)}KB`, 'success')
-      if (isLtx && photoFile2) {
-        upPhoto2 = await normalizeImage(photoFile2, (msg) => addLog(msg))
-        addLog(`Foto2 siap: ${(upPhoto2.size / 1024).toFixed(0)}KB`, 'success')
-      }
     } catch (e: any) {
       addLog(`Normalisasi gagal, pakai file asli: ${e.message}`, 'warn')
     }
 
-    addLog(`Mulai (${isLtx ? 'LTX-2.5 LipSync' : 'Talking Avatar HD'}): foto ${(upPhoto.size / 1024).toFixed(0)}KB ${upPhoto.name}` + (isLtx && upPhoto2 ? ` + foto2 ${(upPhoto2.size / 1024).toFixed(0)}KB ${upPhoto2.name}` : '') + ` + audio ${(audioFile!.size / 1024 / 1024).toFixed(1)}MB ${audioFile!.name}`)
-    if (isLtx) addLog(`Params: ${lipWidth}x${lipHeight} @${lipFps}fps`)
+    addLog(`Mulai (Talking Photo HD): foto ${(upPhoto.size / 1024).toFixed(0)}KB ${upPhoto.name}` + ` + audio ${(audioFile!.size / 1024 / 1024).toFixed(1)}MB ${audioFile!.name}`)
+    addLog(`Params: value ${lipValue}, steps ${lipSteps}`)
     if (prompt.trim()) addLog(`Prompt: ${prompt.trim().slice(0, 120)}`)
 
     let submittedTaskId = ''
@@ -141,23 +129,14 @@ export default function TalkingPhotoPage() {
         'runninghub',
         async (key, keyInfo) => {
           addLog(`🔑 Key: ${keyInfo?.name || keyInfo?.id || 'default'}`)
-          const submit = isLtx
-            ? await submitRunningHubLipSync({
-              imageFile: upPhoto,
-              imageFile2: upPhoto2,
-              audioFile: audioFile!,
-              width: lipWidth,
-              height: lipHeight,
-              fps: lipFps,
-              prompt: prompt.trim() || undefined,
-              apiKey: key,
-            })
-            : await submitRunningHubAudioAvatar({
-              imageFile: upPhoto,
-              audioFile: audioFile!,
-              prompt: prompt.trim() || undefined,
-              apiKey: key,
-            })
+          const submit = await submitRunningHubAudioAvatar({
+            imageFile: upPhoto,
+            audioFile: audioFile!,
+            value: lipValue,
+            steps: lipSteps,
+            prompt: prompt.trim() || undefined,
+            apiKey: key,
+          })
           submittedTaskId = submit.taskId
           setTaskId(submit.taskId)
           setTaskStatus('running')
@@ -223,7 +202,7 @@ export default function TalkingPhotoPage() {
       page: 'talking-photo',
       kind: 'video',
       provider: 'runninghub',
-      model: avatarModel === 'ltx' ? 'LTX-2.5 LipSync' : 'Talking Avatar HD',
+      model: 'Talking Photo HD',
     })
     setHistory((prev) => [
       { time: new Date().toLocaleTimeString('id-ID'), taskId: tid, status: '✅ Selesai', url },
@@ -239,7 +218,7 @@ export default function TalkingPhotoPage() {
     setTaskStatus('running')
     const trackId = startGenerationTask({
       page: 'talking-photo',
-      model: avatarModel === 'ltx' ? 'LTX-2.5 LipSync' : 'Talking Avatar HD',
+      model: 'Talking Photo HD',
       prompt: prompt.trim().slice(0, 500),
       provider: 'runninghub',
     })
@@ -276,7 +255,7 @@ export default function TalkingPhotoPage() {
     <PageContent>
       <PageHeader
         title="🎤 Talking Photo & Lip Sync"
-        desc="Foto jadi manusia digital bicara/bernyanyi (Talking Avatar HD, RunningHub OpenAPI) atau lip-sync Bahasa Indonesia (LTX-2.5) — via RunningHub."
+        desc="Foto + audio jadi video manusia digital bicara/bernyanyi — satu mode Talking Photo HD via RunningHub OpenAPI."
       />
 
       {!apiKey && (
@@ -289,21 +268,8 @@ export default function TalkingPhotoPage() {
         {/* Left: Input */}
         <Section title="📸 Input" className="!p-6">
           <div className="mb-4">
-            <Label className="mb-2 block">Model</Label>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setAvatarModel('h3')}
-                className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${avatarModel === 'h3' ? 'bg-primary text-primary-foreground' : 'bg-surface-secondary text-muted-foreground hover:text-foreground'}`}
-              >
-                🎤 Talking Avatar HD
-              </button>
-              <button
-                onClick={() => setAvatarModel('ltx')}
-                className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${avatarModel === 'ltx' ? 'bg-primary text-primary-foreground' : 'bg-surface-secondary text-muted-foreground hover:text-foreground'}`}
-              >
-                🗣️ LTX-2.5 LipSync ID
-              </button>
-            </div>
+            <Label className="mb-2 block">🎤 Talking Photo HD</Label>
+            <div className="text-xs text-muted-foreground">Foto + audio → video bicara/bernyanyi (RunningHub OpenAPI).</div>
           </div>
 
           <div className="mb-4">
@@ -326,64 +292,26 @@ export default function TalkingPhotoPage() {
             <input ref={photoPickerRef} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && handlePhotoSelect(e.target.files[0])} />
           </div>
 
-          {avatarModel === 'ltx' && (
-            <div className="mb-4">
-              <Label className="mb-2 block">🖼️ Foto Kedua (opsional — kalau workflow meminta)</Label>
-              {photoPreview2 ? (
-                <div className="relative rounded-lg border border-border overflow-hidden">
-                  <img src={photoPreview2} alt="Foto 2" className="w-full max-h-48 object-contain bg-surface-secondary" />
-                  <button onClick={() => { setPhotoFile2(null); setPhotoPreview2(null) }} className="absolute top-2 right-2 p-1 rounded-full bg-background/80 hover:bg-red-500/80 transition-colors">
-                    <X className="h-4 w-4" />
-                  </button>
-                  <div className="p-2 text-xs text-muted-foreground truncate">{photoFile2?.name}</div>
-                </div>
-              ) : (
-                <div onClick={() => photoPicker2Ref.current?.click()} className="border-2 border-dashed border-border rounded-lg p-6 text-center cursor-pointer hover:border-primary/50 transition-colors">
-                  <div className="text-sm text-muted-foreground">Klik untuk tambah foto kedua</div>
-                  <div className="text-xs text-muted-foreground mt-1">JPG, PNG, WEBP</div>
-                </div>
-              )}
-              <input ref={photoPicker2Ref} type="file" accept="image/*" className="hidden" onChange={(e) => {
-                const f = e.target.files?.[0]
-                if (!f) return
-                const reader = new FileReader()
-                reader.onload = (ev) => { setPhotoFile2(f); setPhotoPreview2(ev.target?.result as string) }
-                reader.readAsDataURL(f)
-              }} />
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <div>
+              <Label>Value (gerakan bibir)</Label>
+              <input
+                type="number" min={0} max={100}
+                value={lipValue}
+                onChange={(e) => setLipValue(Math.max(0, Math.min(100, Number(e.target.value) || 50)))}
+                className="w-full px-3 py-2 rounded-lg bg-surface-secondary border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+              />
             </div>
-          )}
-
-          {avatarModel === 'ltx' && (
-            <div className="grid grid-cols-3 gap-3 mb-4">
-              <div>
-                <Label>Lebar</Label>
-                <input
-                  type="number" min={64} max={2048} step={64}
-                  value={lipWidth}
-                  onChange={(e) => setLipWidth(Math.max(64, Math.min(2048, Number(e.target.value) || 1280)))}
-                  className="w-full px-3 py-2 rounded-lg bg-surface-secondary border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-                />
-              </div>
-              <div>
-                <Label>Tinggi</Label>
-                <input
-                  type="number" min={64} max={2048} step={64}
-                  value={lipHeight}
-                  onChange={(e) => setLipHeight(Math.max(64, Math.min(2048, Number(e.target.value) || 720)))}
-                  className="w-full px-3 py-2 rounded-lg bg-surface-secondary border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-                />
-              </div>
-              <div>
-                <Label>FPS</Label>
-                <input
-                  type="number" min={1} max={60}
-                  value={lipFps}
-                  onChange={(e) => setLipFps(Math.max(1, Math.min(60, Number(e.target.value) || 30)))}
-                  className="w-full px-3 py-2 rounded-lg bg-surface-secondary border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-                />
-              </div>
+            <div>
+              <Label>Steps</Label>
+              <input
+                type="number" min={1} max={20}
+                value={lipSteps}
+                onChange={(e) => setLipSteps(Math.max(1, Math.min(20, Number(e.target.value) || 6)))}
+                className="w-full px-3 py-2 rounded-lg bg-surface-secondary border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+              />
             </div>
-          )}
+          </div>
 
           <div className="mb-4">
             <Label className="mb-2 block">🎵 File Audio (bicara / nyanyi)</Label>
