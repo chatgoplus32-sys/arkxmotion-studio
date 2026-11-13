@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Label, EmptyState } from '@/components/ui'
 import { LogDetailActions } from '@/components/ui/LogDetailActions'
-import { Loader2, Download, Music, Sparkles, CheckCircle2, AlertCircle, Clock, Copy, Trash2 } from 'lucide-react'
+import { Loader2, Download, Music, Sparkles, CheckCircle2, AlertCircle, Clock, Copy, Trash2, Mic, X } from 'lucide-react'
 import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import {
@@ -12,6 +12,7 @@ import {
   formatPosbotRupiah,
   type PosbotModelSpec,
 } from '@/lib/posbot'
+import { uploadToCatbox } from '@/lib/roboneo'
 import { fetchPosbotWallet, chargePosbotWallet, refundPosbotWallet, type PosbotWallet } from '@/lib/posbotWallet'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
@@ -45,6 +46,11 @@ export default function MusicStudioPage() {
   const [lyrics, setLyrics] = useState('')
   const [instrumental, setInstrumental] = useState(false)
   const [negativePrompt, setNegativePrompt] = useState('')
+  const [audioFile, setAudioFile] = useState<File | null>(null)
+  const [style, setStyle] = useState('')
+  const [title, setTitle] = useState('')
+
+  const audioInputRef = useRef<HTMLInputElement>(null)
 
   const [loading, setLoading] = useState(false)
   const [taskStatus, setTaskStatus] = useState<'idle' | 'submitting' | 'running' | 'success' | 'error'>('idle')
@@ -69,15 +75,22 @@ export default function MusicStudioPage() {
   }, [authToken])
 
   const isAdmin = user?.role === 'admin'
+  const isCover = !!spec.cover
   const enough = isAdmin || !wallet || (wallet.balance ?? 0) >= spec.price
-  const canRun = !!prompt.trim() && !!authToken && !loading && enough
+  const promptOk = !!prompt.trim()
+  // Model cover (suno_cover_v6) wajib upload musik; prompt opsional.
+  const canRun = (isCover ? !!audioFile : promptOk) && !!authToken && !loading && enough
 
   const runMusic = async () => {
     if (!authToken) {
       addToast('⚠️ Login dulu untuk memakai AI Music Studio.', 'warning')
       return
     }
-    if (!prompt.trim()) {
+    if (isCover && !audioFile) {
+      addToast('⚠️ Upload file musik yang mau di-cover dulu!', 'warning')
+      return
+    }
+    if (!isCover && !prompt.trim()) {
       addToast('⚠️ Tulis deskripsi/tema lagu yang mau dibuat dulu!', 'warning')
       return
     }
@@ -97,7 +110,7 @@ export default function MusicStudioPage() {
     const trackId = startGenerationTask({
       page: 'music-studio',
       model: spec.label,
-      prompt: prompt.trim().slice(0, 500),
+      prompt: prompt.trim().slice(0, 500) || (isCover ? 'Suno Cover' : ''),
       provider: 'posbot',
     })
 
@@ -105,17 +118,42 @@ export default function MusicStudioPage() {
     const promptText = prompt.trim()
     const lyricsText = spec.lyrics ? lyrics.trim() : ''
     const negativeText = negativePrompt.trim()
+    const styleText = isCover ? style.trim() : ''
+    const titleText = isCover ? title.trim() : ''
 
     addLog(`🎵 AI Music Studio — ${spec.label} (${formatPosbotRupiah(spec.price)})`, 'info')
+
+    // Model cover perlu URL publik audio — upload dulu, baru potong saldo.
+    let audioUrl: string | undefined
+    if (isCover && audioFile) {
+      try {
+        setStatusText('Upload musik...')
+        audioUrl = await uploadToCatbox(audioFile, 'audio', (msg, pct) => {
+          setStatusText(pct != null ? `Upload musik ${Math.round(pct)}%` : `Upload musik ${msg}`)
+        })
+        addLog(`✅ Musik terupload: ${audioUrl.slice(0, 60)}`, 'success')
+      } catch (e: any) {
+        setError(e?.message || 'Gagal upload musik')
+        setTaskStatus('error')
+        addLog(`❌ Upload musik gagal: ${e?.message || e}`, 'error')
+        removeActiveTask(trackId)
+        setLoading(false)
+        return
+      }
+      setStatusText('Menyiapkan...')
+    }
 
     // Validasi kontrak model SEBELUM saldo dipotong supaya input salah tidak
     // memotong rupiah (sama seperti Motion Control).
     try {
       buildPosbotPayload(spec, {
-        prompt: promptText,
+        prompt: promptText || undefined,
         lyrics: lyricsText || undefined,
         instrumental: spec.lyrics ? instrumental : undefined,
         negativePrompt: negativeText || undefined,
+        audioUrl,
+        style: styleText || undefined,
+        title: titleText || undefined,
       })
     } catch (e: any) {
       setError(e.message || 'Input tidak valid')
@@ -130,7 +168,7 @@ export default function MusicStudioPage() {
       page: 'music-studio',
       provider: 'posbot',
       model: spec.id,
-      prompt: promptText.slice(0, 500),
+      prompt: promptText.slice(0, 500) || (isCover ? 'Suno Cover' : ''),
       credits: 0,
       slot_count: 1,
     })
@@ -156,10 +194,13 @@ export default function MusicStudioPage() {
               apiKey,
               chargeId,
               spec,
-              prompt: promptText,
+              prompt: promptText || undefined,
               lyrics: lyricsText || undefined,
               instrumental: spec.lyrics ? instrumental : undefined,
               negativePrompt: negativeText || undefined,
+              audioUrl,
+              style: styleText || undefined,
+              title: titleText || undefined,
               onLog: addLog,
               onStatus: (text, pct) => setStatusText(`${text} ${Math.round(pct || 0)}%`),
             })
@@ -202,7 +243,7 @@ export default function MusicStudioPage() {
       addResult({
         id: tid,
         url,
-        prompt: promptText.slice(0, 500),
+        prompt: promptText.slice(0, 500) || (isCover ? 'Suno Cover' : ''),
         date: new Date().toISOString(),
         page: 'music-studio',
         kind: 'audio',
@@ -210,7 +251,7 @@ export default function MusicStudioPage() {
         model: spec.label,
       })
       setHistory((prev) => [
-        { time: new Date().toLocaleTimeString('id-ID'), jobId: tid, model: spec.label, prompt: promptText, url },
+        { time: new Date().toLocaleTimeString('id-ID'), jobId: tid, model: spec.label, prompt: promptText || 'Suno Cover', url },
         ...prev,
       ])
       if (logId) logGenerationComplete(logId, { status: 'completed', result_url: url, duration_ms: Date.now() - startTime })
@@ -295,17 +336,67 @@ export default function MusicStudioPage() {
             </div>
           </div>
 
+          {/* File musik untuk model cover (suno_cover_v6) */}
+          {isCover && (
+            <div className="mb-4">
+              <Label className="mb-2 block">🎵 File Musik yang Mau Di-cover</Label>
+              {audioFile ? (
+                <div className="rounded-lg border border-border overflow-hidden bg-surface-secondary p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Mic className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span className="text-xs text-muted-foreground truncate flex-1">{audioFile.name} ({(audioFile.size / 1024 / 1024).toFixed(1)}MB)</span>
+                    <button type="button" onClick={() => { setAudioFile(null) }} className="p-1 rounded-full hover:bg-red-500/80 transition-colors">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <audio src={URL.createObjectURL(audioFile)} controls className="w-full" />
+                </div>
+              ) : (
+                <div onClick={() => audioInputRef.current?.click()} className="border-2 border-dashed border-border rounded-lg p-6 text-center cursor-pointer hover:border-primary/50 transition-colors">
+                  <div className="flex justify-center text-muted-foreground mb-2"><Mic className="h-8 w-8" /></div>
+                  <div className="text-sm text-muted-foreground">Klik untuk upload musik</div>
+                  <div className="text-xs text-muted-foreground mt-1">MP3 / WAV / M4A — maksimal ±10MB</div>
+                </div>
+              )}
+              <input ref={audioInputRef} type="file" accept="audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/x-m4a,audio/*" className="hidden" onChange={(e) => e.target.files?.[0] && setAudioFile(e.target.files[0])} />
+            </div>
+          )}
+
           {/* Prompt / tema */}
           <div className="mb-4">
-            <Label className="mb-2 block">🎼 Deskripsi / Tema Lagu</Label>
+            <Label className="mb-2 block">{isCover ? '🎼 Gaya / Arah Cover (opsional)' : '🎼 Deskripsi / Tema Lagu'}</Label>
             <textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               className="w-full h-28 px-3 py-2 rounded-lg bg-surface-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:ring-2 focus:ring-primary/50"
-              placeholder="Contoh: pop akustik Indonesia tentang hujan di kota, nuansa hangat, vokal perempuan lembut..."
+              placeholder={isCover ? 'Contoh: versi bossa nova pelan, nuansa senja, vokal perempuan lembut...' : 'Contoh: pop akustik Indonesia tentang hujan di kota, nuansa hangat, vokal perempuan lembut...'}
             />
             <div className="mt-1 text-[11px] text-muted-foreground">{prompt.trim().length} / {spec.promptMax} karakter</div>
           </div>
+
+          {/* Style & Judul untuk cover */}
+          {isCover && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+              <div>
+                <Label className="mb-2 block">🎨 Style <span className="text-muted-foreground font-normal">(opsional)</span></Label>
+                <input
+                  value={style}
+                  onChange={(e) => setStyle(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-surface-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  placeholder="mis. city pop, akustik indie"
+                />
+              </div>
+              <div>
+                <Label className="mb-2 block">📝 Judul <span className="text-muted-foreground font-normal">(opsional)</span></Label>
+                <input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-surface-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  placeholder="mis. Hujan di Kota"
+                />
+              </div>
+            </div>
+          )}
 
           {/* Lyrics + instrumental (hanya model yang mendukung lirik) */}
           {spec.lyrics && (
@@ -352,7 +443,7 @@ export default function MusicStudioPage() {
             title="Ctrl+Enter untuk jalankan"
           >
             {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
-            {taskStatus === 'submitting' ? '🚀 Submitting...' : taskStatus === 'running' ? `⏳ ${statusText || 'Running...'}` : '🚀 Buat Lagu'}
+            {taskStatus === 'submitting' ? '🚀 Submitting...' : taskStatus === 'running' ? `⏳ ${statusText || 'Running...'}` : isCover ? '🎤 Buat Cover' : '🚀 Buat Lagu'}
           </Button>
         </Section>
 
@@ -406,7 +497,7 @@ export default function MusicStudioPage() {
                 </div>
               </div>
             ) : (
-              <EmptyState icon={<Music className="h-12 w-12" />} title="Belum ada hasil" description="Pilih mesin, tulis tema/lirik, lalu klik Buat Lagu." />
+              <EmptyState icon={<Music className="h-12 w-12" />} title="Belum ada hasil" description={isCover ? 'Upload musik, pilih model cover, lalu klik Buat Cover.' : 'Pilih mesin, tulis tema/lirik, lalu klik Buat Lagu.'} />
             )}
           </div>
 
