@@ -298,13 +298,13 @@ const HealthAnimTool = () => {
   const [appError, setAppError] = useState('');
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
   const [aiApiKey, setAiApiKey] = useState(() => { try { return sessionStorage.getItem('arkxHealthApiKey') || ''; } catch { return ''; } });
-  const [aiModel, setAiModel] = useState(() => { try { return sessionStorage.getItem('arkxHealthModel') || 'gemini-flash-latest'; } catch { return 'gemini-flash-latest'; } });
+  const [aiModel, setAiModel] = useState(() => { try { return sessionStorage.getItem('arkxHealthModel') || 'gemini-3.1-flash-lite'; } catch { return 'gemini-3.1-flash-lite'; } });
   const saveAiSettings = (event: React.FormEvent) => {
     event.preventDefault();
     try {
       if (aiApiKey.trim()) sessionStorage.setItem('arkxHealthApiKey', aiApiKey.trim());
       else sessionStorage.removeItem('arkxHealthApiKey');
-      sessionStorage.setItem('arkxHealthModel', aiModel.trim() || 'gemini-flash-latest');
+      sessionStorage.setItem('arkxHealthModel', aiModel.trim() || 'gemini-3.1-flash-lite');
     } catch {}
     setAiSettingsOpen(false);
   };
@@ -444,103 +444,122 @@ const HealthAnimTool = () => {
     setTimeout(() => setProgress(0), 2000);
   };
 
+  // Model tercepat yang masih aktif. Kalau model utama sibuk (503), kena limit
+  // sementara (429), atau sudah dipensiunkan Google (404), permintaan otomatis
+  // pindah ke model berikutnya supaya narasi/prompt tidak gagal total.
+  const MODEL_CADANGAN = ['gemini-3.1-flash-lite', 'gemini-flash-lite-latest', 'gemini-3.5-flash', 'gemini-flash-latest'];
+
+  // Model 2.5/3.x "berpikir" dulu sebelum menjawab; itu yang membuat permintaan
+  // JSON kecil terasa lama. Setting-nya beda per generasi.
+  const thinkingConfigUntuk = (model: string) => {
+    if (/^gemini-3/i.test(model)) return { thinkingLevel: 'low' };
+    if (/2\.5/i.test(model) && !/pro/i.test(model)) return { thinkingBudget: 128 };
+    return null;
+  };
+
   const callGeminiAPI = async (prompt: string, systemInstruction: string, schema: any, mediaData?: { mimeType: string, data: string }) => {
     const apiKey = aiApiKey.trim();
     if (!apiKey) {
       setAiSettingsOpen(true);
       throw new Error('Tambahkan API key Gemini pada Pengaturan AI untuk menggunakan fitur generasi. Tidak perlu login atau email.');
     }
-    const model = aiModel.trim() || 'gemini-flash-latest';
-    if (!/^[a-zA-Z0-9._-]+$/.test(model)) throw new Error('Nama model Gemini tidak valid.');
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+    const modelDiminta = aiModel.trim() || 'gemini-3.1-flash-lite';
+    if (!/^[a-zA-Z0-9._-]+$/.test(modelDiminta)) throw new Error('Nama model Gemini tidak valid.');
+    const daftarModel = [...new Set([modelDiminta, ...MODEL_CADANGAN])];
 
     const parts: any[] = [{ text: prompt }];
     if (mediaData) {
-      parts.push({
-        inlineData: {
-          mimeType: mediaData.mimeType,
-          data: mediaData.data
-        }
-      });
+      parts.push({ inlineData: { mimeType: mediaData.mimeType, data: mediaData.data } });
     }
 
-    // Model 2.5 flash/pro secara bawaan "berpikir" dulu sebelum menjawab, dan
-    // itu yang membuat permintaan JSON kecil terasa lama. Matikan thinking
-    // untuk model yang mendukung thinkingBudget.
-    const dukungThinkingBudget = /2\.5|flash-latest|pro-latest/.test(model);
+    const mulai = Date.now();
+    const batasTotal = 100000;
+    let pesanTerakhir = '';
 
-    const payload = {
-      contents: [{ parts }],
-      systemInstruction: { parts: [{ text: systemInstruction }] },
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: schema,
-        temperature: 0.7,
-        topP: 0.95,
-        topK: 40,
-        ...(dukungThinkingBudget ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
-      }
-    };
-
-    let attempt = 0;
-    const maxRetries = 2;
-    const delays = [1500, 4000];
-
-    // Ulangi hanya untuk gangguan sementara (jaringan, 429, 5xx). Error 4xx
-    // seperti key salah atau model tidak tersedia langsung dilaporkan, tidak
-    // diulang berkali-kali sampai pengguna menunggu tanpa hasil.
-    const bolehDiulang = (error: any) => {
-      if (error?.name === 'TimeoutError') return false;
-      const status = Number(error?.status);
-      if (status === 429) return true;
-      if (Number.isFinite(status)) return status >= 500;
-      return true;
-    };
-
-    while (attempt <= maxRetries) {
-      try {
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-          body: JSON.stringify(payload),
-          // Tanpa batas waktu, permintaan yang macet membuat halaman menggantung.
-          signal: AbortSignal.timeout(90000)
-        });
-
-        if (!res.ok) {
-          const err = await res.json().catch(() => null);
-          const apiError: any = new Error(err?.error?.message || `HTTP ${res.status}`);
-          apiError.status = res.status;
-          throw apiError;
-        }
-
-        const result = await res.json();
-        const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
-
-        if (!text) {
-          throw new Error("Tidak ada respon teks dari Gemini.");
-        }
-
+    for (const model of daftarModel) {
+      // Kalau model menolak setting thinking, ulangi model yang sama tanpa itu.
+      let thinkingConfig = thinkingConfigUntuk(model);
+      for (let attempt = 0; attempt < 2; attempt++) {
+        if (Date.now() - mulai > batasTotal) break;
         try {
-          return JSON.parse(text);
-        } catch (parseError) {
-          throw new Error("Format respon AI tidak valid.");
+          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+            body: JSON.stringify({
+              contents: [{ parts }],
+              systemInstruction: { parts: [{ text: systemInstruction }] },
+              generationConfig: {
+                responseMimeType: 'application/json',
+                responseSchema: schema,
+                temperature: 0.7,
+                topP: 0.95,
+                topK: 40,
+                ...(thinkingConfig ? { thinkingConfig } : {}),
+              },
+            }),
+            // Batas per percobaan: model yang macet tidak boleh menggantung halaman.
+            signal: AbortSignal.timeout(40000),
+          });
+
+          if (res.ok) {
+            const result = await res.json();
+            const text = (result.candidates?.[0]?.content?.parts || [])
+              .filter((p: any) => !p.thought)
+              .map((p: any) => p.text || '')
+              .join('');
+            if (!text) {
+              pesanTerakhir = `Model ${model} mengembalikan jawaban kosong.`;
+              break;
+            }
+            try {
+              return JSON.parse(text);
+            } catch {
+              pesanTerakhir = `Format jawaban model ${model} tidak valid.`;
+              break;
+            }
+          }
+
+          const err = await res.json().catch(() => null);
+          const pesan = err?.error?.message || `HTTP ${res.status}`;
+          pesanTerakhir = pesan;
+
+          if (res.status === 400 && thinkingConfig && /thinking/i.test(pesan)) {
+            thinkingConfig = null;
+            attempt--;
+            continue;
+          }
+          if (res.status === 404) break; // model dipensiunkan → langsung model berikutnya
+          if (res.status === 429 || res.status >= 500) {
+            if (attempt < 1 && Date.now() - mulai < batasTotal) {
+              await new Promise(resolve => setTimeout(resolve, 800 + Math.random() * 700));
+              continue;
+            }
+            break;
+          }
+          break; // 4xx lain (key/izin/skema) → coba model berikutnya
+        } catch (error: any) {
+          if (error?.name === 'TimeoutError') {
+            pesanTerakhir = `Model ${model} tidak menjawab dalam 40 detik.`;
+            break;
+          }
+          pesanTerakhir = String(error?.message || 'Gagal menghubungi Gemini.');
+          if (attempt < 1) {
+            await new Promise(resolve => setTimeout(resolve, 700));
+            continue;
+          }
+          break;
         }
-      } catch (error: any) {
-        if (error?.name === 'TimeoutError') {
-          throw new Error("Gemini tidak menjawab dalam 90 detik. Coba lagi atau pakai model yang lebih cepat.");
-        }
-        const pesan = String(error?.message || '');
-        if (pesan.toLowerCase().includes('quota')) {
-          throw new Error("Limit API Gemini Anda telah tercapai. Silakan coba lagi nanti.");
-        }
-        if (attempt >= maxRetries || !bolehDiulang(error)) {
-          throw new Error(pesan || "Terjadi kesalahan saat menghubungi AI Gemini.");
-        }
-        await new Promise(resolve => setTimeout(resolve, delays[attempt]));
-        attempt++;
       }
     }
+
+    if (/quota|billing|prepayment/i.test(pesanTerakhir)) {
+      throw new Error('Limit API Gemini Anda sedang penuh. Tunggu beberapa menit lalu coba lagi.');
+    }
+    if (/api[_ ]?key/i.test(pesanTerakhir)) {
+      setAiSettingsOpen(true);
+      throw new Error('API key Gemini ditolak. Periksa kembali key di Pengaturan AI.');
+    }
+    throw new Error(`Narasi/prompt gagal dibuat: ${pesanTerakhir || 'semua model Gemini tidak merespons.'} Coba lagi sebentar lagi.`);
   };
 
   const handleApiError = (error: any, defaultMessage: string) => {
@@ -1824,7 +1843,7 @@ ATURAN MUTLAK:
             <p className="text-sm text-slate-500 leading-relaxed mb-6">Aplikasi bebas dibuka tanpa akun atau email. Fitur generasi memakai API Gemini Anda sendiri karena integrasi bawaan Canvas tidak ikut pada web statis.</p>
             <form onSubmit={saveAiSettings} className="space-y-4">
               <div><label htmlFor="gemini-api-key" className="block text-sm font-bold text-slate-700 mb-2">API key Gemini</label><input id="gemini-api-key" type="password" autoComplete="off" spellCheck={false} value={aiApiKey} onChange={e => setAiApiKey(e.target.value)} placeholder="Masukkan API key Anda (opsional)" className="w-full border border-slate-200 rounded-xl px-4 py-3 text-slate-900 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-400" /></div>
-              <div><label htmlFor="gemini-model" className="block text-sm font-bold text-slate-700 mb-2">Model Gemini</label><input id="gemini-model" type="text" value={aiModel} onChange={e => setAiModel(e.target.value)} placeholder="gemini-flash-latest" className="w-full border border-slate-200 rounded-xl px-4 py-3 text-slate-900 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-400" /></div>
+              <div><label htmlFor="gemini-model" className="block text-sm font-bold text-slate-700 mb-2">Model Gemini</label><input id="gemini-model" type="text" value={aiModel} onChange={e => setAiModel(e.target.value)} placeholder="gemini-3.1-flash-lite" className="w-full border border-slate-200 rounded-xl px-4 py-3 text-slate-900 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-400" /></div>
               <div className="rounded-xl bg-indigo-50 border border-indigo-100 p-4 text-xs text-indigo-800 leading-relaxed">Key hanya disimpan selama sesi tab browser ini, tidak diterbitkan di situs. Topik dan file yang Anda proses dikirim langsung ke Google Gemini. Penggunaan API mengikuti kuota dan tarif akun Google Anda. Jangan gunakan key pribadi di perangkat bersama.</div>
               <div className="flex flex-wrap gap-3 pt-2"><button type="submit" className="flex-1 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl">Simpan pengaturan</button><button type="button" onClick={() => { setAiApiKey(''); try { sessionStorage.removeItem('arkxHealthApiKey'); } catch {} }} className="px-4 py-3 border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 font-semibold">Hapus key</button></div>
             </form>
