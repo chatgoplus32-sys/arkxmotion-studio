@@ -326,6 +326,8 @@ const HealthAnimTool = () => {
   const [omniVideo, setOmniVideo] = useState<{ url: string; interactionId: string; aspectRatio: string } | null>(null);
   const [loadingOmni, setLoadingOmni] = useState(false);
   const [omniStatus, setOmniStatus] = useState('');
+  // Info diagnosa: model Gemini mana yang dipakai, berapa lama, atau pesan error aslinya.
+  const [aiCallInfo, setAiCallInfo] = useState<{ status: 'ok' | 'error'; model: string; ms: number; pesan?: string; dicoba: string[] } | null>(null);
   const [omniConfirmOpen, setOmniConfirmOpen] = useState(false);
   const omniVideoUrl = useRef('');
   const clearOmniVideo = () => {
@@ -475,8 +477,12 @@ const HealthAnimTool = () => {
     const mulai = Date.now();
     const batasTotal = 100000;
     let pesanTerakhir = '';
+    let modelTerakhir = '';
+    const dicoba: string[] = [];
 
     for (const model of daftarModel) {
+      modelTerakhir = model;
+      dicoba.push(model);
       // Kalau model menolak setting thinking, ulangi model yang sama tanpa itu.
       let thinkingConfig = thinkingConfigUntuk(model);
       for (let attempt = 0; attempt < 2; attempt++) {
@@ -512,7 +518,9 @@ const HealthAnimTool = () => {
               break;
             }
             try {
-              return JSON.parse(text);
+              const hasil = JSON.parse(text);
+              setAiCallInfo({ status: 'ok', model, ms: Date.now() - mulai, dicoba: [...dicoba] });
+              return hasil;
             } catch {
               pesanTerakhir = `Format jawaban model ${model} tidak valid.`;
               break;
@@ -551,6 +559,8 @@ const HealthAnimTool = () => {
         }
       }
     }
+
+    setAiCallInfo({ status: 'error', model: modelTerakhir, ms: Date.now() - mulai, pesan: pesanTerakhir, dicoba: [...dicoba] });
 
     if (/quota|billing|prepayment/i.test(pesanTerakhir)) {
       throw new Error('Limit API Gemini Anda sedang penuh. Tunggu beberapa menit lalu coba lagi.');
@@ -1310,6 +1320,15 @@ ATURAN MUTLAK:
                     {loadingOmni ? <Loader2 className="w-5 h-5 animate-spin" /> : <Video className="w-5 h-5" />}
                     {loadingOmni ? 'Membuat video di Google…' : 'Buat Video Omni Flash · 15 Detik'}
                   </button>
+                  {aiCallInfo && (
+                    <div role="status" aria-live="polite" className={`mt-3 rounded-xl border px-3 py-2 text-xs leading-relaxed ${aiCallInfo.status === 'ok' ? 'border-emerald-100 bg-emerald-50 text-emerald-900' : 'border-rose-200 bg-rose-50 text-rose-900'}`}>
+                      {aiCallInfo.status === 'ok' ? (
+                        <>Model Gemini: <strong>{aiCallInfo.model}</strong> · selesai dalam <strong>{(aiCallInfo.ms / 1000).toFixed(1)} detik</strong>{aiCallInfo.dicoba.length > 1 ? <> · cadangan dipakai: {aiCallInfo.dicoba.join(' → ')}</> : null}</>
+                      ) : (
+                        <>Gagal. Model dicoba: <strong>{aiCallInfo.dicoba.join(' → ')}</strong>. Pesan asli: <span className="font-mono break-words">{aiCallInfo.pesan || 'tidak ada pesan'}</span></>
+                      )}
+                    </div>
+                  )}
                   {loadingOmni && <div role="status" aria-live="polite" className="mt-4 bg-indigo-50 border border-indigo-100 rounded-xl p-4 text-sm text-indigo-800"><p className="font-bold flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />{omniStatus}</p><p className="text-xs mt-2 leading-relaxed">Biarkan tab terbuka. Generasi bisa memerlukan beberapa menit; 15 detik adalah durasi hasil video. Tidak ada retry generasi otomatis.</p></div>}
                   <div className="mt-4 text-xs text-slate-500 leading-relaxed space-y-2">
                     <p>Video dibuat lewat <strong>relay NexaBot</strong> dengan kunci server; biayanya dipotong dari saldo NexaBot Anda (gratis bila paket Unlimited aktif). API key Gemini dari <button onClick={() => setAiSettingsOpen(true)} className="text-indigo-600 font-bold hover:text-indigo-800">Pengaturan AI</button> hanya dipakai untuk menyusun narasi &amp; prompt scene.</p>
