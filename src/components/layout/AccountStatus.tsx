@@ -13,6 +13,7 @@ const WALLET_ROWS = [
   { key: 'nexabot', label: 'NexaBot', href: '/topup/nexabot' },
   { key: 'seavi', label: 'Seavi', href: '/topup/seavi' },
   { key: 'posbot', label: 'PosBot', href: '/topup/posbot' },
+  { key: 'runninghub', label: 'RunningHub', href: '/topup/runninghub' },
 ] as const
 
 type WalletKey = (typeof WALLET_ROWS)[number]['key']
@@ -22,6 +23,7 @@ interface WalletAmounts {
   nexabot: number | null
   seavi: number | null
   posbot: number | null
+  runninghub: number | null
   tokenPrice: number
 }
 
@@ -30,6 +32,7 @@ const INITIAL_WALLETS: WalletAmounts = {
   nexabot: null,
   seavi: null,
   posbot: null,
+  runninghub: null,
   tokenPrice: 2000,
 }
 
@@ -91,11 +94,12 @@ export function AccountStatus() {
     if (silent) setRefreshing(true)
     else setLoading(true)
 
-    const [cp, nb, sv, pb] = await Promise.all([
+    const [cp, nb, sv, pb, rh] = await Promise.all([
       getJson('/api/createpulse/balance', token),
       getJson('/api/nexabot/balance', token),
       getJson('/api/seavi/balance', token),
       getJson('/api/posbot/balance', token),
+      getJson('/api/runninghub-wallet/balance', token),
     ])
     if (requestId !== requestRef.current) return
 
@@ -104,9 +108,10 @@ export function AccountStatus() {
       nexabot: num(nb?.balance),
       seavi: num(sv?.tokens) ?? num(sv?.balance),
       posbot: num(pb?.balance),
+      runninghub: num(rh?.balance),
       tokenPrice: num(sv?.token_price) ?? 2000,
     }
-    const anyKnown = [next.createpulse, next.nexabot, next.seavi, next.posbot].some((v) => v !== null)
+    const anyKnown = [next.createpulse, next.nexabot, next.seavi, next.posbot, next.runninghub].some((v) => v !== null)
     lastLoadRef.current = Date.now()
     setWallets(next)
     setError(!anyKnown)
@@ -163,9 +168,9 @@ export function AccountStatus() {
   const proSince = formatProSince(user?.proSince)
   const initial = user?.name?.trim().charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase() || 'U'
 
-  const known = [wallets.createpulse, wallets.nexabot, wallets.seavi, wallets.posbot]
+  const known = [wallets.createpulse, wallets.nexabot, wallets.seavi, wallets.posbot, wallets.runninghub]
   const allKnown = known.every((v) => v !== null)
-  const total = (wallets.createpulse ?? 0) + (wallets.nexabot ?? 0) + (wallets.seavi ?? 0) * wallets.tokenPrice + (wallets.posbot ?? 0)
+  const total = (wallets.createpulse ?? 0) + (wallets.nexabot ?? 0) + (wallets.seavi ?? 0) * wallets.tokenPrice + (wallets.posbot ?? 0) + (wallets.runninghub ?? 0)
   const chipAmount = loading ? 'Saldo' : allKnown ? compactRp(total) : '—'
 
   const toggle = () => {

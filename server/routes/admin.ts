@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs'
 
 import db from '../db.js'
 import { authenticateToken, requireAdmin, AuthRequest } from '../middleware/auth.js'
+import { approveMembershipPaymentRow, approveProPaymentRow } from '../lib/membershipActivation.js'
 import { sendVerificationEmail } from './auth.js'
 import { allowDevMailLink } from '../mailer.js'
 import {
@@ -54,6 +55,68 @@ import {
   type NexabotPricingField,
 } from '../../shared/pricing.js'
 import { sendEmail, appUrl } from '../mailer.js'
+import {
+  rhPoolAddBulk,
+  rhPoolDelete,
+  rhPoolList,
+  rhPoolRecordCheck,
+  rhPoolSetLabel,
+  rhPoolSummary,
+  rhPoolTokenById,
+} from '../lib/runninghubPool.js'
+import { rhProbePoolToken } from './publicRunninghub.js'
+import { runPoolDailyClaim } from '../lib/runninghubDailyClaim.js'
+
+/**
+ * Hapus member beserta seluruh data yang terikat kepadanya — satu transaksi.
+ *
+ * `foreign_keys = ON` dan tabel-tabel di bawah punya FOREIGN KEY ke users(id)
+ * tanpa `ON DELETE`: `DELETE FROM users` polos selalu gagal dengan
+ * SQLITE_CONSTRAINT begitu member punya saldo/topup/order/log, jadi handler
+ * delete/reject selalu berakhir 500 ("Failed to delete user") untuk member
+ * yang pernah aktif.
+ *
+ * Yang SENGAJA tidak ikut dihapus: `nexabot_upstream_usage`, `studio_ai_usage`,
+ * `basunipay_payment`, `payment_verify_log`, `register_attempts`,
+ * `login_attempts` — audit/atribusi historis (bukan kredensial, tidak punya FK).
+ * `tokens` juga tidak ikut: itu stok token milik operator, bukan data member.
+ * `token_orders` dihapus lebih dulu: ia juga memegang FK ke tokens(id).
+ */
+const hapusUserBesertaData = db.transaction((userId: string) => {
+  const anak = [
+    'token_orders',
+    'provider_topup_request',
+    'createpulse_balance',
+    'createpulse_topup',
+    'createpulse_usage',
+    'nexabot_balance',
+    'nexabot_topup',
+    'nexabot_usage',
+    'seavi_balance',
+    'seavi_topup',
+    'seavi_usage',
+    'posbot_balance',
+    'posbot_topup',
+    'posbot_usage',
+    'runninghub_balance',
+    'runninghub_topup',
+    'runninghub_usage',
+    'generation_logs',
+    'membership_payments',
+    'pro_payments',
+    'notifications',
+    // Antrean & klaim kredensial member — tidak boleh tertinggal.
+    'sync_token_queue',
+    'runninghub_claim_token',
+    // Tiket reservasi (bukan audit) milik member.
+    'nexabot_charge_ticket',
+    'provider_charge_ticket',
+  ]
+  for (const tabel of anak) {
+    db.prepare(`DELETE FROM ${tabel} WHERE user_id = ?`).run(userId)
+  }
+  db.prepare('DELETE FROM users WHERE id = ?').run(userId)
+})
 
 const router = Router()
 
@@ -164,7 +227,7 @@ router.post('/users/:id/reject', authenticateToken, requireAdmin, (req: AuthRequ
       return res.status(400).json({ error: 'Cannot reject admin users' })
     }
 
-    db.prepare('DELETE FROM users WHERE id = ?').run(id)
+    hapusUserBesertaData(String(id))
 
     res.json({ message: `User ${user.email} rejected and removed` })
   } catch (error) {
@@ -186,7 +249,7 @@ router.delete('/users/:id', authenticateToken, requireAdmin, (req: AuthRequest, 
       return res.status(400).json({ error: 'Cannot delete admin users' })
     }
 
-    db.prepare('DELETE FROM users WHERE id = ?').run(id)
+    hapusUserBesertaData(String(id))
 
     res.json({ message: `User ${user.email} deleted successfully` })
   } catch (error) {
@@ -661,6 +724,112 @@ for (const provider of ['seavi', 'posbot'] as ServerKeyProvider[]) {
   })
 }
 
+// ─── Pool token master RunningHub ─────────────────────────────────
+//
+// Admin menempel banyak access token / API key; relay merotasinya untuk member
+// yang top up saldo. Nilai token TIDAK PERNAH dikirim balik ke browser — daftar
+// hanya memuat status, label, akun tersamar, dan snapshot poin.
+
+router.get('/runninghub/pool', authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
+  try {
+    res.json({ ok: true, summary: rhPoolSummary(), tokens: rhPoolList() })
+  } catch (error) {
+    console.error('[admin-rh-pool] get error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.post('/runninghub/pool', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
+  try {
+    const hasil = rhPoolAddBulk(req.body?.tokens, req.body?.label)
+    console.log(`[admin-rh-pool] tambah: +${hasil.added} (skip ${hasil.skipped}, invalid ${hasil.invalid})`)
+    res.json({ ok: true, ...hasil, summary: rhPoolSummary(), tokens: rhPoolList() })
+  } catch (error) {
+    console.error('[admin-rh-pool] add error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.patch('/runninghub/pool/:id', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'ID token tidak valid' })
+    const ok = rhPoolSetLabel(id, String(req.body?.label ?? ''))
+    if (!ok) return res.status(404).json({ error: 'Token tidak ditemukan' })
+    res.json({ ok: true, tokens: rhPoolList() })
+  } catch (error) {
+    console.error('[admin-rh-pool] label error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.delete('/runninghub/pool/:id', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'ID token tidak valid' })
+    const ok = rhPoolDelete(id)
+    if (!ok) return res.status(404).json({ error: 'Token tidak ditemukan' })
+    console.log(`[admin-rh-pool] hapus token #${id}`)
+    res.json({ ok: true, summary: rhPoolSummary(), tokens: rhPoolList() })
+  } catch (error) {
+    console.error('[admin-rh-pool] delete error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.post('/runninghub/pool/:id/check', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id)
+    if (!Number.isInteger(id) || id < 0) return res.status(400).json({ error: 'ID token tidak valid' })
+    const kandidat = rhPoolTokenById(id)
+    if (!kandidat) return res.status(404).json({ error: 'Token tidak ditemukan / sudah ditolak permanen' })
+    const hasil = await rhProbePoolToken(kandidat.token, kandidat.kind)
+    rhPoolRecordCheck(id, { ok: hasil.ok, pointsBalance: hasil.pointsBalance, message: hasil.message, rejected: hasil.rejected })
+    res.json({ ok: true, check: hasil, summary: rhPoolSummary(), tokens: rhPoolList() })
+  } catch (error: any) {
+    console.error('[admin-rh-pool] check error:', error?.message || error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// Cek semua token sekaligus (paralel terbatas supaya tidak membanjiri upstream).
+router.post('/runninghub/pool/check-all', authenticateToken, requireAdmin, async (_req: AuthRequest, res: Response) => {
+  try {
+    const ids = [0, ...rhPoolList().map((t) => t.id)]
+    const hasilPerId: Record<number, { ok: boolean; message: string }> = {}
+    const CONCURRENCY = 5
+    for (let i = 0; i < ids.length; i += CONCURRENCY) {
+      const batch = ids.slice(i, i + CONCURRENCY)
+      await Promise.all(batch.map(async (id) => {
+        const kandidat = rhPoolTokenById(id)
+        if (!kandidat) { hasilPerId[id] = { ok: false, message: 'Token tidak tersedia' }; return }
+        const hasil = await rhProbePoolToken(kandidat.token, kandidat.kind)
+        rhPoolRecordCheck(id, { ok: hasil.ok, pointsBalance: hasil.pointsBalance, message: hasil.message, rejected: hasil.rejected })
+        hasilPerId[id] = { ok: hasil.ok, message: hasil.message }
+      }))
+    }
+    res.json({ ok: true, checked: ids.length, results: hasilPerId, summary: rhPoolSummary(), tokens: rhPoolList() })
+  } catch (error: any) {
+    console.error('[admin-rh-pool] check-all error:', error?.message || error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// Klaim hadiah harian (+30 poin) untuk token JWT pool secara manual. Cron server
+// sudah mengklaim tiap hari (UTC+8); tombol ini menjalankan siklus yang sama
+// sekarang untuk token yang belum diklaim hari ini. Berurutan + jeda 2 detik
+// (upstream menolak burst); klaim sukses mengangkat cooldown saldo token.
+router.post('/runninghub/pool/claim-all', authenticateToken, requireAdmin, async (_req: AuthRequest, res: Response) => {
+  try {
+    const claim = await runPoolDailyClaim()
+    console.log(`[admin-rh-pool] klaim poin: ${claim.claimed} baru, ${claim.already} sudah, ${claim.failed} gagal`)
+    res.json({ ok: true, claim, summary: rhPoolSummary(), tokens: rhPoolList() })
+  } catch (error: any) {
+    console.error('[admin-rh-pool] claim-all error:', error?.message || error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
 // ─── Konfirmasi pembayaran member ─────────────────────────────────
 
 router.get('/membership/payments', authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
@@ -692,30 +861,19 @@ router.get('/membership/payments', authenticateToken, requireAdmin, (_req: AuthR
   }
 })
 
+// Keputusan aktivasi member (dipakai baik oleh approve manual di sini maupun
+// oleh verifikasi otomatis BasuniPay/email/paste) ada di satu tempat:
+// server/lib/membershipActivation.ts — supaya perilakunya identik.
 router.post('/membership/payments/:id/approve', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params
-    const payment = db.prepare(
-      "SELECT mp.id, mp.user_id, mp.status, u.email, u.name FROM membership_payments mp JOIN users u ON u.id = mp.user_id WHERE mp.id = ?"
-    ).get(id) as { id: number; user_id: number; status: string; email: string; name: string } | undefined
-    if (!payment) return res.status(404).json({ error: 'Pembayaran tidak ditemukan' })
-    if (payment.status === 'approved') return res.status(400).json({ error: 'Pembayaran ini sudah disetujui' })
-
-    db.prepare("UPDATE membership_payments SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(id)
-    db.prepare(
-      "UPDATE users SET approved = 1, email_verified = 1, plan = 'pro', pro_since = COALESCE(pro_since, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-    ).run(payment.user_id)
-    try {
-      await sendEmail({
-        to: payment.email,
-        subject: 'Pembayaran Disetujui & Pro Aktif — ARKXMotion Studio ✅',
-        text: `Halo ${payment.name},\n\nPembayaran kamu telah disetujui, akun diaktifkan, dan otomatis menjadi Pro. Semua fitur AI sudah terbuka. Login di ${appUrl()}/login\n— ARKXMotion Studio`,
-        html: `<p>Halo <b>${payment.name}</b>,</p><p>Pembayaran kamu <b>disetujui</b>, akun telah diaktifkan, dan otomatis menjadi <b>Pro</b>. Semua fitur AI sudah terbuka.</p><p><a href="${appUrl()}/login" style="background:#d4a017;color:#000;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:700">Login Sekarang</a></p>`,
-      })
-      db.prepare("INSERT INTO notifications (title, message, type, target, user_id) VALUES (?, ?, 'success', 'users', ?)").run('Pembayaran Disetujui — Pro Aktif', 'Pembayaran kamu disetujui. Akun aktif dan semua fitur AI terbuka.', payment.user_id)
-    } catch (e) { console.warn('[admin] Failed to send payment approval email/notification:', e) }
-
-    res.json({ ok: true, message: `Pembayaran ${payment.email} disetujui — akun aktif & Pro aktif` })
+    const r = approveMembershipPaymentRow(String(id), 'manual')
+    if (!r.ok) {
+      if (r.reason === 'sudah_approve') return res.status(400).json({ error: 'Pembayaran ini sudah disetujui' })
+      if (r.reason === 'tidak_ditemukan') return res.status(404).json({ error: 'Pembayaran tidak ditemukan' })
+      return res.status(400).json({ error: 'Pembayaran tidak valid' })
+    }
+    res.json({ ok: true, message: `Pembayaran ${r.email} disetujui — akun aktif & Pro aktif` })
   } catch (error) {
     console.error('Approve membership payment error:', error)
     res.status(500).json({ error: 'Internal server error' })
@@ -774,28 +932,13 @@ router.get('/pro/payments', authenticateToken, requireAdmin, (_req: AuthRequest,
 router.post('/pro/payments/:id/approve', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params
-    const payment = db.prepare(
-      'SELECT pp.id, pp.user_id, pp.status, u.email, u.name FROM pro_payments pp JOIN users u ON u.id = pp.user_id WHERE pp.id = ?'
-    ).get(id) as { id: number; user_id: number; status: string; email: string; name: string } | undefined
-    if (!payment) return res.status(404).json({ error: 'Pembayaran Pro tidak ditemukan' })
-    if (payment.status === 'approved') return res.status(400).json({ error: 'Pembayaran Pro ini sudah disetujui' })
-
-    db.prepare("UPDATE pro_payments SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(id)
-    db.prepare(
-      "UPDATE users SET plan = 'pro', pro_since = COALESCE(pro_since, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-    ).run(payment.user_id)
-
-    try {
-      await sendEmail({
-        to: payment.email,
-        subject: 'Upgrade Pro Berhasil — ARKXMotion Studio ⭐',
-        text: `Halo ${payment.name},\n\nPembayaran upgrade Pro kamu sudah disetujui. Akun kamu sekarang Pro dan menu Gemini Tools sudah terbuka.\n\nMulai sekarang: ${appUrl()}/tools/gemini-tools\n— ARKXMotion Studio`,
-        html: `<p>Halo <b>${payment.name}</b>,</p><p>Pembayaran upgrade <b>Pro</b> kamu sudah disetujui. Akun kamu sekarang <b>Pro</b> dan menu <b>Gemini Tools</b> sudah terbuka.</p><p><a href="${appUrl()}/tools/gemini-tools" style="background:#d4a017;color:#000;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:700">Buka Gemini Tools</a></p><p>— ARKXMotion Studio</p>`,
-      })
-      db.prepare("INSERT INTO notifications (title, message, type, target, user_id) VALUES (?, ?, 'success', 'users', ?)").run('Upgrade Pro Disetujui', 'Akun kamu sekarang Pro — Gemini Tools sudah terbuka.', payment.user_id)
-    } catch (e) { console.warn('[admin] Failed to send pro approval email/notification:', e) }
-
-    res.json({ ok: true, message: `Pembayaran Pro ${payment.email} disetujui — akun kini Pro` })
+    const r = approveProPaymentRow(String(id), 'manual')
+    if (!r.ok) {
+      if (r.reason === 'sudah_approve') return res.status(400).json({ error: 'Pembayaran Pro ini sudah disetujui' })
+      if (r.reason === 'tidak_ditemukan') return res.status(404).json({ error: 'Pembayaran Pro tidak ditemukan' })
+      return res.status(400).json({ error: 'Pembayaran Pro tidak valid' })
+    }
+    res.json({ ok: true, message: `Pembayaran Pro ${r.email} disetujui — akun kini Pro` })
   } catch (error) {
     console.error('Approve pro payment error:', error)
     res.status(500).json({ error: 'Internal server error' })

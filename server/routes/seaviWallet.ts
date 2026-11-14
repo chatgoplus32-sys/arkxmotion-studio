@@ -4,6 +4,7 @@ import { authenticateToken, AuthRequest } from '../middleware/auth.js'
 import { SEAVI_MIN_TOPUP, SEAVI_PACKAGES, SEAVI_TOKEN_PRICE, findSeaviPackage, getSeaviCharge } from '../../shared/pricing.js'
 import { keyEligibility } from '../lib/providerMasterKey.js'
 import { nextUniqueCode } from '../lib/qrisPayment.js'
+import { createBasunipayPayment } from '../lib/basunipay.js'
 
 const router = Router()
 
@@ -34,7 +35,7 @@ router.get('/balance', authenticateToken, (req: AuthRequest, res: Response) => {
   }
 })
 
-router.post('/topup', authenticateToken, (req: AuthRequest, res: Response) => {
+router.post('/topup', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id
     if (!userId) return res.status(401).json({ error: 'Unauthorized' })
@@ -54,9 +55,18 @@ router.post('/topup', authenticateToken, (req: AuthRequest, res: Response) => {
     const result = db.prepare(
       'INSERT INTO seavi_topup (user_id, amount, tokens, unique_code, amount_total, package_slug, proof_note, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
     ).run(userId, plan.price, plan.tokens, unique_code, amount_total, plan.slug, proof_note || '', 'pending')
+    const refId = Number(result.lastInsertRowid)
 
-    const topup = db.prepare('SELECT * FROM seavi_topup WHERE id = ?').get(result.lastInsertRowid)
-    res.status(201).json({ topup, message: 'Topup request submitted, waiting admin approval' })
+    const basunipay = await createBasunipayPayment({
+      refTable: 'seavi_topup',
+      refId,
+      userId,
+      baseAmount: plan.price,
+      description: `Top up Seavi ${plan.label} — user #${userId}`,
+    })
+
+    const topup = db.prepare('SELECT * FROM seavi_topup WHERE id = ?').get(refId)
+    res.status(201).json({ topup, basunipay, message: 'Topup request submitted, waiting admin approval' })
   } catch (error) {
     console.error('Seavi topup error:', error)
     res.status(500).json({ error: 'Internal server error' })

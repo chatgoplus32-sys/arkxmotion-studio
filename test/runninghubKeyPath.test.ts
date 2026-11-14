@@ -174,16 +174,19 @@ test('key kotor "Bearer …" dibersihkan sebelum dikirim ke upstream', async () 
 
 const FUTURE = () => Math.floor(Date.now() / 1000) + 3600
 
-test('token global (env) menggantikan API key lama dari client', async () => {
+test('API key client dipakai apa adanya (passthrough), tidak diganti token env', async () => {
   const token = fakeJwt(FUTURE())
   process.env.RUNNINGHUB_ACCESS_TOKEN = token
   try {
     upstream = () => json({ code: 0, data: { remainCoins: 3 } })
-    const out = await checkBalance('a1b2c3d4e5f60718293a4b5c6d7e8f90')
+    const clientKey = 'a1b2c3d4e5f60718293a4b5c6d7e8f90'
+    const out = await checkBalance(clientKey)
     assert.equal(out.ok, true)
     assert.equal(out.balance, 3)
-    assert.equal(bodiesSeen[0]?.apiKey, token)
-    assert.equal(bodiesSeen[0]?.accessToken, token)
+    // Kredensial milik pengguna tidak boleh diganti token operator: itu akan
+    // membelanjakan saldo pool untuk member yang membawa key sendiri.
+    assert.equal(bodiesSeen[0]?.apiKey, clientKey)
+    assert.ok(!authSeen.some((h) => h === `Bearer ${token}`), 'token env tidak boleh dipakai untuk key client')
   } finally {
     process.env.RUNNINGHUB_ACCESS_TOKEN = ''
   }
@@ -211,11 +214,11 @@ test('access token kedaluwarsa → ditolak dengan pesan jelas, upstream tidak di
   assert.equal(bodiesSeen.length, 0, 'request upstream tidak boleh terkirim')
 })
 
-test('placeholder server-managed tanpa token global → pesan konfigurasi, upstream tidak dipanggil', async () => {
+test('placeholder server-managed tanpa identitas app → minta login, upstream tidak dipanggil', async () => {
   upstream = () => json({ code: 0, data: { remainCoins: 1 } })
   const out = await checkBalance('server-managed')
   assert.equal(out.ok, false)
-  assert.match(out.error, /RUNNINGHUB_ACCESS_TOKEN/)
+  assert.match(out.error, /login|akun app/i)
   assert.equal(bodiesSeen.length, 0, 'request upstream tidak boleh terkirim')
 })
 
@@ -254,7 +257,7 @@ test('akses token dicabut (412) → dilaporkan invalid, bukan "aktif"', async ()
   assert.match(out.error, /tidak berlaku/i)
 })
 
-test('token pengguna dicabut → generate memakai token server', async () => {
+test('token pengguna dicabut → TIDAK ada fallback diam-diam ke token server', async () => {
   const userToken = fakeJwt(FUTURE() + 777)
   const globalToken = fakeJwt(FUTURE() + 999)
   process.env.RUNNINGHUB_ACCESS_TOKEN = globalToken
@@ -267,9 +270,16 @@ test('token pengguna dicabut → generate memakai token server', async () => {
     }
     const out = await postRunninghub({ action: 'query', apiKey: userToken, taskId: '1' })
     assert.equal(out.ok, true, JSON.stringify(out))
+    // Kredensial pengguna = passthrough. Token operator tidak boleh dipakai
+    // untuk menutupi key pengguna yang dicabut — itu membelanjakan pool tanpa
+    // tiket pembayaran member.
     assert.ok(
-      authSeen.some((h) => h === `Bearer ${globalToken}`),
-      'request upstream harus memakai token server setelah token pengguna ditolak 412',
+      !authSeen.some((h) => h === `Bearer ${globalToken}`),
+      'token server tidak boleh dipakai saat pengguna membawa key sendiri',
+    )
+    assert.ok(
+      authSeen.some((h) => h === `Bearer ${userToken}`),
+      'request upstream harus memakai token pengguna sendiri',
     )
   } finally {
     process.env.RUNNINGHUB_ACCESS_TOKEN = ''

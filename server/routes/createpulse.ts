@@ -3,6 +3,7 @@ import db from '../db.js'
 import { authenticateToken, AuthRequest } from '../middleware/auth.js'
 import { CREATEPULSE_MIN_TOPUP, getCreatepulseCharge } from '../../shared/pricing.js'
 import { nextUniqueCode } from '../lib/qrisPayment.js'
+import { createBasunipayPayment } from '../lib/basunipay.js'
 
 const router = Router()
 
@@ -23,7 +24,7 @@ router.get('/balance', authenticateToken, (req: AuthRequest, res: Response) => {
   }
 })
 
-router.post('/topup', authenticateToken, (req: AuthRequest, res: Response) => {
+router.post('/topup', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id
     if (!userId) return res.status(401).json({ error: 'Unauthorized' })
@@ -40,9 +41,18 @@ router.post('/topup', authenticateToken, (req: AuthRequest, res: Response) => {
     const result = db.prepare(
       'INSERT INTO createpulse_topup (user_id, amount, unique_code, amount_total, proof_note, status) VALUES (?, ?, ?, ?, ?, ?)'
     ).run(userId, amount, unique_code, amount_total, proof_note || '', 'pending')
+    const refId = Number(result.lastInsertRowid)
 
-    const topup = db.prepare('SELECT * FROM createpulse_topup WHERE id = ?').get(result.lastInsertRowid)
-    res.status(201).json({ topup, message: 'Topup request submitted, waiting admin approval' })
+    const basunipay = await createBasunipayPayment({
+      refTable: 'createpulse_topup',
+      refId,
+      userId,
+      baseAmount: amount,
+      description: `Top up CreatePulse — user #${userId}`,
+    })
+
+    const topup = db.prepare('SELECT * FROM createpulse_topup WHERE id = ?').get(refId)
+    res.status(201).json({ topup, basunipay, message: 'Topup request submitted, waiting admin approval' })
   } catch (error) {
     console.error('Topup error:', error)
     res.status(500).json({ error: 'Internal server error' })

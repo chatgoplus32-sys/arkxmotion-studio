@@ -92,7 +92,8 @@ export default function AdminUsersPage() {
         addToast('User rejected and removed', 'success')
         fetchUsers()
       } else {
-        addToast('Failed to reject user', 'error')
+        const data = await response.json().catch(() => ({}))
+        addToast(data.error || 'Failed to reject user', 'error')
       }
     } catch {
       addToast('Failed to reject user', 'error')
@@ -114,7 +115,8 @@ export default function AdminUsersPage() {
         addToast('User deleted successfully', 'success')
         fetchUsers()
       } else {
-        addToast('Failed to delete user', 'error')
+        const data = await response.json().catch(() => ({}))
+        addToast(data.error || 'Failed to delete user', 'error')
       }
     } catch {
       addToast('Failed to delete user', 'error')

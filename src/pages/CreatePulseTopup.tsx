@@ -5,7 +5,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { Wallet, Clock, CheckCircle, XCircle, ExternalLink, Copy } from 'lucide-react'
 import { DANA_NUMBER, DANA_NAME, adminWhatsappLink, formatRp } from '@/lib/payment'
-import { PaymentMethodToggle, QrisPanel } from '@/components/QrisPayment'
+import { PaymentMethodToggle, QrisPanel, BasunipayCheckoutButton } from '@/components/QrisPayment'
 
 const NOMINALS = [10000, 15000, 20000, 25000, 50000, 100000]
 const WHATSAPP_LINK = adminWhatsappLink('Halo saya ingin top up saldo')
@@ -33,6 +33,7 @@ export default function CreatePulseTopupPage() {
   const [loading, setLoading] = useState(false)
   const [topups, setTopups] = useState<Topup[]>([])
   const [submitted, setSubmitted] = useState<Topup | null>(null)
+  const [basunipay, setBasunipay] = useState<{ checkout_url?: string; payable_amount?: number; qris_image?: string } | null>(null)
   const [step, setStep] = useState<'select' | 'pay' | 'confirm'>('select')
 
   const API = '/api/createpulse'
@@ -78,6 +79,7 @@ export default function CreatePulseTopupPage() {
         // Simpan baris yang diajukan — amount_total (nominal + kode unik)
         // inilah yang harus dibayar, dan yang dicocokkan parser email.
         setSubmitted(data.topup || null)
+        setBasunipay(data.basunipay || null)
         addToast(`Topup Rp ${amount.toLocaleString('id-ID')} diajukan`, 'success')
         setStep('pay')
         fetchTopups()
@@ -176,8 +178,9 @@ export default function CreatePulseTopupPage() {
           sub={payMethod === 'qris' ? 'Scan QRIS di bawah untuk bayar' : 'Transfer ke nomor DANA berikut'}
         >
           <PaymentMethodToggle value={payMethod} onChange={setPayMethod} />
+          <BasunipayCheckoutButton url={basunipay?.checkout_url} payable={basunipay?.payable_amount} image={basunipay?.qris_image} />
 
-          {payMethod === 'qris' && (
+          {payMethod === 'qris' && !basunipay?.qris_image && (
             <QrisPanel
               amountLabel={formatRp(customAmount ? parseInt(customAmount) || 0 : selectedAmount)}
               exactAmount={submitted?.amount_total ?? undefined}

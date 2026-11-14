@@ -5,7 +5,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { Wallet, Clock, CheckCircle, XCircle, ExternalLink, Copy, Coins } from 'lucide-react'
 import { DANA_NUMBER, DANA_NAME, adminWhatsappLink, formatRp } from '@/lib/payment'
-import { PaymentMethodToggle, QrisPanel } from '@/components/QrisPayment'
+import { PaymentMethodToggle, QrisPanel, BasunipayCheckoutButton } from '@/components/QrisPayment'
 import { fetchSeaviWallet, SEAVI_PACKAGE_FALLBACKS, type SeaviPackage } from '@/lib/seaviWallet'
 
 const WHATSAPP_LINK = adminWhatsappLink('Halo saya ingin top up token Seavi')
@@ -38,6 +38,7 @@ export default function SeaviTopupPage() {
   const [loading, setLoading] = useState(false)
   const [topups, setTopups] = useState<Topup[]>([])
   const [submitted, setSubmitted] = useState<Topup | null>(null)
+  const [basunipay, setBasunipay] = useState<{ checkout_url?: string; payable_amount?: number; qris_image?: string } | null>(null)
   const [step, setStep] = useState<'select' | 'pay' | 'confirm'>('select')
 
   const API = '/api/seavi'
@@ -93,6 +94,7 @@ export default function SeaviTopupPage() {
         // Simpan baris yang diajukan — amount_total adalah nominal yang
         // harus dibayar dan yang dicocokkan parser email.
         setSubmitted(data.topup || null)
+        setBasunipay(data.basunipay || null)
         addToast(`Paket ${selectedPackage.label} diajukan`, 'success')
         setStep('pay')
         fetchTopups()
@@ -197,8 +199,9 @@ export default function SeaviTopupPage() {
           sub={payMethod === 'qris' ? 'Scan QRIS di bawah untuk bayar' : 'Transfer ke nomor DANA berikut'}
         >
           <PaymentMethodToggle value={payMethod} onChange={setPayMethod} />
+          <BasunipayCheckoutButton url={basunipay?.checkout_url} payable={basunipay?.payable_amount} image={basunipay?.qris_image} />
 
-          {payMethod === 'qris' && (
+          {payMethod === 'qris' && !basunipay?.qris_image && (
             <QrisPanel
               amountLabel={`${selectedPackage.label} — ${formatRp(selectedPackage.price)}`}
               exactAmount={submitted?.amount_total ?? undefined}

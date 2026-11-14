@@ -367,6 +367,84 @@ db.exec(`
   )
 `)
 
+// ─── Wallet RunningHub (Rupiah, mesin sama dengan PosBot) ─────────────────
+// Member top up Rp, generate memotong tarif flat (shared/pricing.ts), relay
+// memasang token master operator dari pool runninghub_master_token.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS runninghub_balance (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER UNIQUE NOT NULL,
+    balance INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`)
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS runninghub_topup (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    amount INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected')),
+    proof_note TEXT NOT NULL DEFAULT '',
+    admin_note TEXT NOT NULL DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`)
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS runninghub_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    model TEXT NOT NULL,
+    cost INTEGER NOT NULL,
+    units INTEGER NOT NULL DEFAULT 1,
+    batch_id TEXT,
+    status TEXT NOT NULL DEFAULT 'used' CHECK(status IN ('used', 'refunded')),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`)
+
+// ─── Pool token master RunningHub (milik operator) ────────────────────────
+// Admin menempel banyak access token (JWT) / API key; relay merotasinya per
+// submit. Token TIDAK PERNAH dikembalikan ke browser — hanya statusnya.
+// status: active (siap pakai) | cooldown (saldo habis, tunggu isi/klaim) |
+// rejected (ditolak upstream, tunggu ganti token).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS runninghub_master_token (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    label TEXT NOT NULL DEFAULT '',
+    token TEXT NOT NULL UNIQUE,
+    kind TEXT NOT NULL DEFAULT 'jwt' CHECK(kind IN ('jwt', 'key')),
+    account TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'cooldown', 'rejected')),
+    cooldown_until INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT NOT NULL DEFAULT '',
+    last_used_at INTEGER,
+    points_balance REAL,
+    points_checked_at INTEGER,
+    last_claim_day TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )
+`)
+
+// Afinitas task → token pool: task RunningHub terikat akun pembuatnya, jadi
+// poll/download harus memakai token yang sama. Disimpan di DB supaya restart
+// server tidak menghilangkan afinitas task yang sedang berjalan.
+// token_id 0 = token env RUNNINGHUB_ACCESS_TOKEN (entri implisit).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS runninghub_task_token (
+    task_id TEXT PRIMARY KEY,
+    token_id INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  )
+`)
+
 // ─── Tiket pembayaran relay Seavi ─────────────────────────────────────────
 // Relay menyuntikkan kunci server, jadi ia harus bisa membuktikan bahwa job
 // ini sudah dibayar lewat /deduct. `max_jobs`/`used_jobs` membatasi jumlah job
@@ -506,6 +584,9 @@ for (const tableName of [
   'nexabot_topup',
   'seavi_topup',
   'posbot_topup',
+  'runninghub_topup',
+  'membership_payments',
+  'pro_payments',
 ]) {
   const cols = db.prepare(`PRAGMA table_info(${tableName})`).all() as { name: string }[]
   for (const [colName, colType] of QRIS_PAYMENT_COLUMNS) {
@@ -534,6 +615,39 @@ db.exec(`
   )
 `)
 db.exec('CREATE INDEX IF NOT EXISTS idx_payment_verify_log_created ON payment_verify_log(created_at DESC)')
+
+// ── BasuniPay (checkout QRIS dinamis + deteksi bayar otomatis) ────────────
+// Mapping pembayaran BasuniPay → baris top-up kita. Dibuat server saat user
+// mengajukan, diperbarui poller/webhook. Baris yang masih pending dan sudah
+// lebih dari 7 hari tidak dipoll lagi.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS basunipay_payment (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id TEXT NOT NULL UNIQUE,
+    payment_id TEXT NOT NULL DEFAULT '',
+    ref_table TEXT NOT NULL,
+    ref_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    base_amount INTEGER NOT NULL,
+    unique_code INTEGER NOT NULL DEFAULT 0,
+    payable_amount INTEGER NOT NULL,
+    checkout_url TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'paid', 'expired', 'failed', 'cancelled', 'canceled')),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    paid_at DATETIME,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`)
+// Gambar QR (data URI) dari checkout BasuniPay — ditampilkan inline di UI
+// "Bayar TEPAT Rp …" tanpa perlu buka halaman checkout lagi.
+{
+  const cols = db.prepare("PRAGMA table_info(basunipay_payment)").all() as { name: string }[]
+  if (!cols.some((c) => c.name === 'qris_image')) {
+    db.exec("ALTER TABLE basunipay_payment ADD COLUMN qris_image TEXT NOT NULL DEFAULT ''")
+  }
+}
+db.exec('CREATE INDEX IF NOT EXISTS idx_basunipay_payment_status ON basunipay_payment(status, created_at)')
+db.exec('CREATE INDEX IF NOT EXISTS idx_basunipay_payment_ref ON basunipay_payment(ref_table, ref_id)')
 
 // ── Pengaturan app (key-value) ───────────────────────────────────────────
 db.exec(`

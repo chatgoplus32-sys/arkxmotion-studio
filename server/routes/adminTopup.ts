@@ -1,7 +1,7 @@
 import { Router, Response } from 'express'
 import db from '../db.js'
 import { authenticateToken, requireAdmin, AuthRequest } from '../middleware/auth.js'
-import { NEXABOT_SCOPED_SLUGS, isScopedPackage, nexabotPackageName } from '../../shared/pricing.js'
+import { activateUnlimitedTopup } from '../lib/unlimitedActivation.js'
 
 const router = Router()
 
@@ -17,20 +17,14 @@ const WALLETS = {
   seavi: { topup: 'seavi_topup', balance: 'seavi_balance', credit: 'tokens' },
   // PosBot: saldo dalam RUPIAH seperti CreatePulse/NexaBot (kredit via `amount`).
   posbot: { topup: 'posbot_topup', balance: 'posbot_balance', credit: 'amount' },
+  // RunningHub: saldo Rupiah, tarif flat per generate (pool token master operator).
+  runninghub: { topup: 'runninghub_topup', balance: 'runninghub_balance', credit: 'amount' },
 } as const
 type WalletKey = keyof typeof WALLETS
 
 function resolveWallet(value: unknown): (typeof WALLETS)[WalletKey] {
   const key = String(value || 'createpulse')
   return key in WALLETS ? WALLETS[key as WalletKey] : WALLETS.createpulse
-}
-
-/** Sisa hari dari DATETIME SQLite (UTC yang disimpan tanpa penanda zona). */
-function remainingDays(expiresAt: string | null | undefined): number {
-  if (!expiresAt) return 0
-  const end = new Date(expiresAt.replace(' ', 'T') + 'Z').getTime()
-  if (!Number.isFinite(end)) return 0
-  return Math.max(0, Math.ceil((end - Date.now()) / 86400000))
 }
 
 router.get('/pending', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
@@ -76,61 +70,22 @@ router.patch('/approve', authenticateToken, requireAdmin, (req: AuthRequest, res
     if (!topup) return res.status(404).json({ error: 'Pending topup not found' })
 
     // Paket Unlimited NexaBot: approve = aktifkan masa berlaku, BUKAN menambah
-    // saldo. Kalau paket sebelumnya masih jalan, masa berlakunya ditumpuk
-    // (mulai dari expiry terlama, bukan dari sekarang) supaya user tidak
-    // kehilangan sisa hari.
+    // saldo. Logika identik dengan aktivasi otomatis via BasuniPay — satu
+    // sumber kebenaran di server/lib/unlimitedActivation.ts.
     if (topup.kind === 'unlimited') {
-      const days = Number(topup.days) || 7
-      // Penumpukan masa berlaku HANYA dihitung di dalam kelas paket yang sama.
-      // Premium Booster (ber-scope) jangan sampai dapat expiry menjulur karena
-      // user juga punya Bulanan aktif — ia dibeli untuk satu hari dan hanya
-      // membebaskan NexaDance 3.0, Omni Flash 1.2 dan GPT Image. Demikian pula
-      // sisa hari Bulanan tidak pernah dihitung dari expiry paket harian.
-      const punyaSlug = 'package_slug' in topup
-      const kelasBerScope = isScopedPackage(topup.package_slug)
-      const tanda = NEXABOT_SCOPED_SLUGS.map(() => '?').join(', ')
-      const pakaiPemisah = punyaSlug && NEXABOT_SCOPED_SLUGS.length > 0
-      const syaratKelas = pakaiPemisah
-        ? kelasBerScope
-          ? `AND package_slug IN (${tanda})`
-          : `AND (package_slug IS NULL OR package_slug NOT IN (${tanda}))`
-        : ''
-      const paramKelas = pakaiPemisah ? NEXABOT_SCOPED_SLUGS : []
-      // Base masa berlaku = expiry TERJAUH yang sudah disetujui untuk user ini,
-      // bukan expiry baris ini (saat pengajuan `expires_at` baris ini masih
-      // NULL). Tanpa ini, beli paket baru saat paket lama masih jalan akan
-      // menghanguskan sisa harinya, padahal UI menjanjikan ditumpuk.
-      const priorExpiry = (db.prepare(`
-        SELECT MAX(expires_at) AS expires_at FROM ${w.topup}
-        WHERE user_id = ? AND kind = 'unlimited' AND status = 'approved' AND id <> ? ${syaratKelas}
-      `).get(topup.user_id, id, ...paramKelas) as { expires_at: string | null } | undefined)?.expires_at || null
-
-      db.prepare(`
-        UPDATE ${w.topup}
-        SET status = 'approved',
-            admin_note = ?,
-            started_at = datetime('now'),
-            expires_at = datetime(MAX(COALESCE(?, datetime('now')), datetime('now')), ?),
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `).run(admin_note || '', priorExpiry, `+${days} days`, id)
-
-      const activated = db.prepare(`SELECT expires_at FROM ${w.topup} WHERE id = ?`).get(id) as { expires_at: string } | undefined
+      const act = activateUnlimitedTopup(topup, admin_note || '')
       const balance = db.prepare(`SELECT balance FROM ${w.balance} WHERE user_id = ?`).get(topup.user_id) as { balance: number } | undefined
-      const namaPaket = nexabotPackageName(topup.package_slug, days)
       try {
         db.prepare("INSERT INTO notifications (title, message, type, target, user_id) VALUES (?, ?, 'success', 'users', ?)").run(
           'Paket Unlimited Aktif ✅',
-          `Paket ${namaPaket} aktif sampai ${activated?.expires_at || '-'}. Selamat menikmati!`,
+          `Paket ${act.name} aktif sampai ${act.expires_at || '-'} (${act.days_left} hari). Selamat menikmati!`,
           topup.user_id,
         )
       } catch (e) { console.warn('[adminTopup] Gagal kirim notifikasi paket:', e) }
       return res.json({
-        message: `Paket ${namaPaket} aktif sampai ${activated?.expires_at || '-'}`,
+        message: `Paket ${act.name} aktif sampai ${act.expires_at || '-'}`,
         balance: balance?.balance || 0,
-        // days_left = sisa hari SETELAH penumpukan, bukan jumlah hari yang baru
-        // dibeli, supaya admin melihat masa berlaku yang sebenarnya.
-        unlimited: { active: true, expires_at: activated?.expires_at || null, days_left: remainingDays(activated?.expires_at) },
+        unlimited: { active: true, expires_at: act.expires_at, days_left: act.days_left },
       })
     }
 
@@ -210,7 +165,7 @@ router.post('/inject', authenticateToken, requireAdmin, (req: AuthRequest, res: 
   try {
     const providerKey = String(req.body?.provider || '')
     if (!(providerKey in WALLETS)) {
-      return res.status(400).json({ error: 'Provider ini tidak punya saldo layanan — yang bisa di-inject hanya CreatePulse / NexaBot / PosBot (Rp) atau Seavi (token).' })
+      return res.status(400).json({ error: 'Provider ini tidak punya saldo layanan — yang bisa di-inject hanya CreatePulse / NexaBot / PosBot / RunningHub (Rp) atau Seavi (token).' })
     }
     const w = WALLETS[providerKey as WalletKey]
     const isSeavi = providerKey === 'seavi'

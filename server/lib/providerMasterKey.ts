@@ -24,7 +24,7 @@ import db from '../db.js'
  * tanpa menyentuh VPS.
  */
 
-export type ServerKeyProvider = 'seavi' | 'posbot'
+export type ServerKeyProvider = 'seavi' | 'posbot' | 'runninghub'
 
 interface ProviderSpec {
   label: string
@@ -32,6 +32,8 @@ interface ProviderSpec {
   msgName: string
   /** Nama satuan saldo yang dibaca member. */
   unit: 'saldo' | 'token'
+  /** Sebutan kredensial milik member di pesan kelayakan (default 'API key'). */
+  keyNoun?: string
   settingKey: string
   envKey: string
   balanceTable: string
@@ -56,6 +58,16 @@ export const PROVIDER_SPECS: Record<ServerKeyProvider, ProviderSpec> = {
     envKey: 'POSBOT_MASTER_API_KEY',
     balanceTable: 'posbot_balance',
     usageTable: 'posbot_usage',
+  },
+  runninghub: {
+    label: 'RunningHub',
+    msgName: 'RunningHub',
+    unit: 'saldo',
+    keyNoun: 'access token/API key',
+    settingKey: 'runninghub_master_api_key',
+    envKey: 'RUNNINGHUB_ACCESS_TOKEN',
+    balanceTable: 'runninghub_balance',
+    usageTable: 'runninghub_usage',
   },
 }
 
@@ -84,7 +96,19 @@ function storedMasterKey(provider: ServerKeyProvider): string | null {
 
 /** Kunci efektif: dashboard dulu, lalu env, atau null kalau tidak diatur. */
 export function masterKey(provider: ServerKeyProvider): string | null {
-  return storedMasterKey(provider) || (process.env[PROVIDER_SPECS[provider].envKey] || '').trim() || null
+  const tunggal = storedMasterKey(provider) || (process.env[PROVIDER_SPECS[provider].envKey] || '').trim() || null
+  if (tunggal || provider !== 'runninghub') return tunggal
+  // RunningHub: kredensial server adalah POOL token master. Untuk gerbang
+  // kelayakan cukup tahu "ada token yang belum ditolak permanen" — pemilihan
+  // token per submit dilakukan relay (rotasi + cooldown).
+  try {
+    const row = db
+      .prepare("SELECT token FROM runninghub_master_token WHERE status != 'rejected' ORDER BY id LIMIT 1")
+      .get() as { token: string } | undefined
+    return row?.token || null
+  } catch {
+    return null
+  }
 }
 
 export interface MasterKeyStatus {
@@ -169,7 +193,7 @@ export function keyEligibility(provider: ServerKeyProvider, userId: number): Kel
   }
   return {
     ok: false,
-    reason: `${namaSatuan} ${spec.msgName} kosong — top up dulu, atau pakai API key ${spec.msgName} milik Anda sendiri`,
+    reason: `${namaSatuan} ${spec.msgName} kosong — top up dulu, atau pakai ${spec.keyNoun || 'API key'} ${spec.msgName} milik Anda sendiri`,
   }
 }
 

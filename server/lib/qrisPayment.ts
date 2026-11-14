@@ -3,19 +3,23 @@
  *
  * QRIS statis tidak punya API, jadi identitas pembayaran dipindahkan ke
  * NOMINAL: tiap pengajuan top-up diberi kode unik 3 digit (Rp 50.000 →
- * Rp 50.137). Parser email (paymentEmailWatcher) mengekstrak nominal masuk,
- * lalu `matchIncomingAmount` mencocokkannya ke baris pending lewat
- * `amount_total` — approve/kredit saldo berjalan tanpa campur tangan admin.
+ * Rp 50.137). Parser email (paymentEmailWatcher) / BasuniPay mengekstrak
+ * nominal masuk, lalu `matchIncomingAmount` mencocokkannya ke baris pending
+ * lewat `amount_total` — approve/kredit saldo berjalan tanpa campur tangan
+ * admin.
  *
- * Dua mode per tabel:
- *  - 'credit' : saldo member dikredit otomatis (wallet CreatePulse/NexaBot/
- *               Seavi/PosBot) — pembayaran = saldo masuk, selesai.
- *  - 'manual' : pembayaran ditandai LUNAS tapi status tetap pending, karena
- *               tindakan admin berikutnya (menyerahkan kunci provider,
- *               aktivasi paket Unlimited) tidak bisa digantikan parser.
+ * Mode per tabel (semuanya otomatis penuh):
+ *  - 'credit' : wallet (CreatePulse/NexaBot saldo/Seavi/PosBot) → saldo masuk.
+ *               Pengecualian: kind='unlimited' di nexabot_topup = AKTIVASI
+ *               paket (penumpukan masa berlaku), bukan kredit saldo.
+ *  - 'manual' : provider manual — uang masuk divalidasi lalu ditandai LUNAS
+ *               + status approved otomatis; admin tinggal menyerahkan
+ *               kunci/akses provider.
  */
 import db from '../db.js'
 import { alertInfo } from './alerts.js'
+import { activateUnlimitedTopup } from './unlimitedActivation.js'
+import { approveMembershipPaymentRow, approveProPaymentRow } from './membershipActivation.js'
 
 // ── Registry tabel top-up yang bisa diverifikasi ──────────────────────────
 interface QrisTable {
@@ -25,18 +29,19 @@ interface QrisTable {
   balanceTable?: string
   /** Kolom baris top-up yang dikredit ke saldo ('amount' Rp / 'tokens'). */
   creditColumn?: 'amount' | 'tokens'
-  /** Syarat SQL tambahan untuk mode credit (mis. kind = 'balance'). */
-  creditWhere?: string
 }
 
 export const QRIS_TABLES: QrisTable[] = [
   { table: 'provider_topup_request', label: 'Top-up Manual Provider', mode: 'manual' },
   { table: 'createpulse_topup', label: 'Top-up CreatePulse', mode: 'credit', balanceTable: 'createpulse_balance', creditColumn: 'amount' },
-  // Paket Unlimited = aktivasi masa berlaku oleh admin → manual. Hanya top-up
-  // saldo (kind='balance') yang boleh dikredit sendiri.
-  { table: 'nexabot_topup', label: 'Top-up NexaBot', mode: 'credit', balanceTable: 'nexabot_balance', creditColumn: 'amount', creditWhere: "kind = 'balance'" },
+  // kind='balance' → kredit saldo; kind='unlimited' → aktivasi paket.
+  { table: 'nexabot_topup', label: 'Top-up NexaBot', mode: 'credit', balanceTable: 'nexabot_balance', creditColumn: 'amount' },
   { table: 'seavi_topup', label: 'Top-up Seavi', mode: 'credit', balanceTable: 'seavi_balance', creditColumn: 'tokens' },
   { table: 'posbot_topup', label: 'Top-up PosBot', mode: 'credit', balanceTable: 'posbot_balance', creditColumn: 'amount' },
+  { table: 'runninghub_topup', label: 'Top-up RunningHub', mode: 'credit', balanceTable: 'runninghub_balance', creditColumn: 'amount' },
+  // Pembayaran member (join Pro) & upgrade Pro — aktivasi akun, bukan saldo.
+  { table: 'membership_payments', label: 'Pembayaran Member (Join Pro)', mode: 'manual' },
+  { table: 'pro_payments', label: 'Upgrade Pro', mode: 'manual' },
 ]
 
 /** Baris pending hanya dicocokkan selama jendela ini sejak diajukan. */
@@ -131,7 +136,7 @@ interface PendingRow {
  */
 export function matchIncomingAmount(
   amount: number,
-  ref: { from?: string; subject?: string; source?: 'email' | 'android' } = {},
+  ref: IncomingRef = {},
 ): { action: string; table?: string; id?: number; detail: string } {
   if (!Number.isFinite(amount) || amount <= 0) return { action: 'skip_invalid', detail: 'Nominal tidak valid' }
 
@@ -142,15 +147,12 @@ export function matchIncomingAmount(
       'amount_total = ?',
       "status = 'pending'",
       "created_at >= datetime('now', ?)",
-      t.creditWhere || '',
-    ].filter(Boolean).join(' AND ')
+    ].join(' AND ')
     const row = db
       .prepare(`SELECT * FROM ${t.table} WHERE ${where} ORDER BY created_at ASC LIMIT 1`)
       .get(amount, `-${MATCH_WINDOW_HOURS} hours`) as PendingRow | undefined
     if (!row) continue
-
-    if (t.mode === 'credit') return approveCredit(t, row, amount, ref)
-    return markPaidManual(t, row, amount, ref)
+    return handleRow(t, row, amount, ref)
   }
 
   logPaymentVerify({
@@ -164,10 +166,100 @@ export function matchIncomingAmount(
   return { action: 'no_match', detail: `Tidak ada baris pending untuk ${amount}` }
 }
 
+type IncomingRef = { from?: string; subject?: string; source?: 'email' | 'android' | 'paste' | 'basunipay' }
+
+/**
+ * Approve baris top-up langsung dari identitas tabel+id (dipakai BasuniPay:
+ * webhook/polling status tahu PERSIS baris mana yang dibayar, tidak perlu
+ * mencocokkan nominal). Logika kredit/tanda-lunas sama dengan pencocokan.
+ */
+/** Satu pintu keputusan: semaunya benar-benar otomatis penuh. */
+function handleRow(
+  t: QrisTable,
+  row: PendingRow,
+  paid: number,
+  ref: IncomingRef,
+): { action: string; table?: string; id?: number; detail: string } {
+  // Member → akun langsung Pro; Upgrade Pro → plan Pro. Keduanya kirim email
+  // + notifikasi sendiri, jadi lewat wrapper di bawah (bukan approveManual).
+  if (t.table === 'membership_payments') {
+    const r = approveMembershipPaymentRow(row.id, ref.source || 'manual')
+    return r.ok
+      ? { action: 'auto_activated', table: t.table, id: row.id, detail: 'Akun Pro diaktifkan' }
+      : { action: 'activate_failed', table: t.table, id: row.id, detail: r.reason || 'gagal aktivasi' }
+  }
+  if (t.table === 'pro_payments') {
+    const r = approveProPaymentRow(row.id, ref.source || 'manual')
+    return r.ok
+      ? { action: 'auto_activated', table: t.table, id: row.id, detail: 'Plan Pro diaktifkan' }
+      : { action: 'activate_failed', table: t.table, id: row.id, detail: r.reason || 'gagal aktivasi' }
+  }
+  if (t.table === 'nexabot_topup' && row.kind === 'unlimited') {
+    return activateUnlimitedRef(t, row, paid, ref)
+  }
+  if (t.mode === 'credit') return approveCredit(t, row, paid, ref)
+  return approveManual(t, row, paid, ref)
+}
+
+/** Aktivasi Paket Unlimited otomatis saat pembayaran terverifikasi. */
+function activateUnlimitedRef(
+  t: QrisTable,
+  row: PendingRow,
+  paid: number,
+  ref: IncomingRef,
+): { action: string; table: string; id: number; detail: string } {
+  const act = activateUnlimitedTopup(row, `Aktif otomatis (${ref.source || 'email'}) — pembayaran Rp ${Math.round(paid).toLocaleString('id-ID')}`)
+  insertNotification(
+    'Paket Unlimited Aktif ✅',
+    `Paket ${act.name} aktif sampai ${act.expires_at || '-'} (${act.days_left} hari). Selamat menikmati!`,
+    'success',
+    'users',
+    row.user_id,
+  )
+  insertNotification(
+    '💰 Paket Unlimited Aktif (auto)',
+    `${t.label} #${row.id} — Paket ${act.name} aktif sampai ${act.expires_at || '-'}. Pembayaran Rp ${Math.round(paid).toLocaleString('id-ID')} terverifikasi otomatis.`,
+    'success',
+    'admins',
+    null,
+  )
+  alertInfo('Paket Unlimited aktif otomatis', {
+    tabel: t.table,
+    id: String(row.id),
+    paket: act.name,
+    aktif_sampai: act.expires_at || '-',
+  })
+  logPaymentVerify({
+    source: ref.source || 'email',
+    refTable: t.table,
+    refId: row.id,
+    amount: paid,
+    action: 'auto_activated',
+    emailFrom: ref.from,
+    emailSubject: ref.subject,
+    detail: `Paket ${act.name} aktif sampai ${act.expires_at}`,
+  })
+  return { action: 'auto_activated', table: t.table, id: row.id, detail: `Paket ${act.name} aktif sampai ${act.expires_at}` }
+}
+
+export function approveTopupRef(
+  table: string,
+  id: number,
+  paid: number,
+  ref: IncomingRef,
+): { action: string; table?: string; id?: number; detail: string } {
+  const t = QRIS_TABLES.find((x) => x.table === table)
+  if (!t) return { action: 'unknown_table', detail: `Tabel tidak dikenal: ${table}` }
+  const row = db.prepare(`SELECT * FROM ${t.table} WHERE id = ? AND status = 'pending'`).get(id) as PendingRow | undefined
+  if (!row) return { action: 'no_pending_row', detail: `Baris ${table} #${id} sudah tidak pending` }
+  return handleRow(t, row, paid, ref)
+}
+
 /** Bayar = saldo masuk: tandai lunas + kredit saldo + beri tahu user & admin. */
-function approveCredit(t: QrisTable, row: PendingRow, paid: number, ref: { from?: string; subject?: string; source?: 'email' | 'android' }): { action: string; table: string; id: number; detail: string } {
+function approveCredit(t: QrisTable, row: PendingRow, paid: number, ref: IncomingRef): { action: string; table: string; id: number; detail: string } {
   // Kredit yang diterima = apa yang benar-benar masuk (termasuk kode unik).
-  const credit = paid
+  // Seavi dikredit dalam TOKEN (kolom tokens), bukan rupiah.
+  const credit = t.creditColumn === 'tokens' ? Number(row?.tokens) || 0 : paid
   db.transaction(() => {
     db.prepare(
       `UPDATE ${t.table}
@@ -220,32 +312,33 @@ function approveCredit(t: QrisTable, row: PendingRow, paid: number, ref: { from?
 }
 
 /**
- * Tandai LUNAS tapi tetap pending: admin masih harus menyerahkan kunci
- * provider / mengaktifkan paket. Admin di-notifikasi supaya tinggal klik.
+ * Provider manual: uang masuk tervalidasi → langsung AUTO-APPROVED (tidak ada
+ * saldo untuk dikredit). Admin tinggal menyerahkan kunci/akses provider;
+ * notifikasi admin memberi tahu.
  */
-function markPaidManual(t: QrisTable, row: PendingRow, paid: number, ref: { from?: string; subject?: string; source?: 'email' | 'android' }): { action: string; table: string; id: number; detail: string } {
+function approveManual(t: QrisTable, row: PendingRow, paid: number, ref: IncomingRef): { action: string; table: string; id: number; detail: string } {
   db.prepare(
     `UPDATE ${t.table}
-        SET paid_amount = ?, paid_at = CURRENT_TIMESTAMP, pay_ref = ?,
-            admin_note = ?, updated_at = CURRENT_TIMESTAMP
+        SET status = 'approved', paid_amount = ?, paid_at = CURRENT_TIMESTAMP,
+            pay_ref = ?, admin_note = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ? AND status = 'pending'`,
-  ).run(paid, (ref.subject || ref.from || '').slice(0, 300), 'Pembayaran terverifikasi via email — tinggal approve', row.id)
+  ).run(paid, (ref.subject || ref.from || '').slice(0, 300), `Pembayaran terverifikasi via ${ref.source || 'email'} — auto-approved`, row.id)
 
   insertNotification(
-    'Pembayaran Diterima — Menunggu Proses Admin',
-    `${t.label} Rp ${paid.toLocaleString('id-ID')} sudah kami terima dan terverifikasi. Proses selanjutnya menyusul.`,
-    'info',
+    'Pembayaran Diterima ✅',
+    `${t.label} Rp ${paid.toLocaleString('id-ID')} sudah tervalidasi. Admin segera menyerahkan kunci/akses provider kamu.`,
+    'success',
     'users',
     row.user_id,
   )
   insertNotification(
-    '💰 Pembayaran QRIS Masuk (perlu approve)',
-    `${t.label} #${row.id} — Rp ${paid.toLocaleString('id-ID')} terverifikasi via email. Tinggal klik approve.`,
+    '💰 Pembayaran Masuk (auto-approved)',
+    `${t.label} #${row.id} — Rp ${paid.toLocaleString('id-ID')} terverifikasi; kunci/akses provider BELUM diserahkan — segera proses.`,
     'warning',
     'admins',
     null,
   )
-  alertInfo('Pembayaran QRIS masuk (perlu approve manual)', {
+  alertInfo('Pembayaran manual auto-approved', {
     tabel: t.table,
     id: String(row.id),
     nominal: `Rp ${paid.toLocaleString('id-ID')}`,
@@ -257,12 +350,12 @@ function markPaidManual(t: QrisTable, row: PendingRow, paid: number, ref: { from
     refTable: t.table,
     refId: row.id,
     amount: paid,
-    action: 'paid_awaiting_admin',
+    action: 'auto_approved',
     emailFrom: ref.from,
     emailSubject: ref.subject,
-    detail: 'Pembayaran lunas, menunggu tindakan admin',
+    detail: 'Provider manual — auto-approved',
   })
-  return { action: 'paid_awaiting_admin', table: t.table, id: row.id, detail: 'Lunas, menunggu approve admin' }
+  return { action: 'auto_approved', table: t.table, id: row.id, detail: 'Otomatis disetujui' }
 }
 
 // ── Parser nominal dari teks email ────────────────────────────────────────

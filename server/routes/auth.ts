@@ -329,8 +329,8 @@ router.post('/status', (req, res: Response) => {
 
     // Info pembayaran member (terbaru) untuk ditampilkan di halaman status
     const payment = db.prepare(
-      'SELECT amount, status, proof_note, admin_note, created_at FROM membership_payments WHERE user_id = ? ORDER BY id DESC LIMIT 1'
-    ).get(user.id) as { amount: number; status: string; proof_note: string; admin_note: string; created_at: string } | undefined
+      'SELECT amount, unique_code, amount_total, status, proof_note, admin_note, created_at FROM membership_payments WHERE user_id = ? ORDER BY id DESC LIMIT 1'
+    ).get(user.id) as { amount: number; unique_code: number | null; amount_total: number | null; status: string; proof_note: string; admin_note: string; created_at: string } | undefined
 
     res.json({
       found: true,
@@ -341,6 +341,8 @@ router.post('/status', (req, res: Response) => {
       payment: payment
         ? {
             amount: payment.amount,
+            uniqueCode: payment.unique_code,
+            amountTotal: payment.amount_total,
             status: payment.status,
             proofNote: payment.proof_note,
             adminNote: payment.admin_note,

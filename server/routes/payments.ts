@@ -6,7 +6,7 @@ import {
   checkPaymentEmailOnce,
   paymentEmailReady,
 } from '../lib/paymentEmailWatcher.js'
-import { QRIS_TABLES } from '../lib/qrisPayment.js'
+import { QRIS_TABLES, extractAmounts, matchIncomingAmount, logPaymentVerify } from '../lib/qrisPayment.js'
 
 /**
  * Panel kontrol verifikasi pembayaran QRIS manual — status koneksi email,
@@ -50,6 +50,61 @@ router.post('/check-now', authenticateToken, requireAdmin, async (_req: AuthRequ
     res.json({ ok: !result.error, ...result })
   } catch (error) {
     console.error('Payment check-now error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+/**
+ * Paste mutasi m-banking/e-wallet: admin menyalin teks riwayat transaksi
+ * (bukan PDF — seleksi teks biasa), sistem mengekstrak SEMUA nominal yang
+ * terdeteksi lalu mencocokkan satu per satu ke baris pending lewat kode unik.
+ * Baris yang sudah ditemukan tidak akan "dimakan" dua kali karena setelah
+ * auto-approve ia bukan pending lagi.
+ */
+router.post('/match-text', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
+  try {
+    const text = String(req.body?.text || '').slice(0, 20000)
+    if (text.trim().length < 8) {
+      return res.status(400).json({ error: 'Teks terlalu pendek — paste seluruh isi mutasi' })
+    }
+
+    const amounts = extractAmounts(text)
+    if (!amounts.length) {
+      logPaymentVerify({
+        source: 'paste',
+        action: 'no_amount',
+        detail: 'Teks paste admin tidak mengandung nominal',
+      })
+      return res.status(200).json({ ok: true, amounts: [], matched: [], note: 'Tidak ada nominal terdeteksi di teks' })
+    }
+
+    // Terbesar dulu — biaya admin kecil tidak boleh mengambil baris orang lain.
+    const matched: Array<{ amount: number; action: string; table?: string; id?: number; detail: string }> = []
+    for (const amount of amounts.sort((a, b) => b - a)) {
+      const r = matchIncomingAmount(amount, {
+        from: 'paste-admin',
+        subject: 'Paste mutasi admin',
+        source: 'paste',
+      })
+      if (r.action !== 'no_match') matched.push({ amount, ...r })
+    }
+
+    logPaymentVerify({
+      source: 'paste',
+      amount: amounts[0] || 0,
+      action: 'paste_processed',
+      detail: `paste: ${amounts.length} nominal, ${matched.length} cocok`,
+    })
+    res.json({
+      ok: true,
+      amounts,
+      matched,
+      note: matched.length
+        ? `${matched.length} pembayaran cocok — saldo dikredit / lunas`
+        : 'Tidak ada nominal yang cocok dengan pengajuan pending (kode unik biasanya belum dibayar, atau user membayar nominal bulat)',
+    })
+  } catch (error) {
+    console.error('Match-text error:', error)
     res.status(500).json({ error: 'Internal server error' })
   }
 })

@@ -570,3 +570,27 @@ export function getPosbotPriceRange(): { min: number; max: number } {
   const values = Object.values(POSBOT_MODEL_PRICES)
   return { min: Math.min(...values), max: Math.max(...values) }
 }
+
+// ── RunningHub ─────────────────────────────────────────────────────────────
+// Wallet Rupiah per member, mesinnya sama dengan PosBot: saldo di server,
+// dipotong per generate, relay memasang token master milik operator dari pool
+// (auto-rotate) lewat tiket pembayaran. Upstream menagih poin akun (±58 poin
+// per task video, bisa minus); member membayar tarif FLAT Rp per generate,
+// apa pun fiturnya — keputusan operator 2026-11-14.
+
+/** Minimal top up saldo RunningHub (Rp), sama dengan provider lain. */
+export const RUNNINGHUB_MIN_TOPUP = 10000
+
+/** Batas atas satu pengajuan top up RunningHub (Rp). */
+export const RUNNINGHUB_TOPUP_MAX = 5000000
+
+/** Nominal cepat yang ditawarkan di halaman Top Up RunningHub. */
+export const RUNNINGHUB_TOPUP_PRESETS = [25000, 50000, 100000, 250000, 500000, 1000000] as const
+
+/** Tarif flat Rp per generate RunningHub (semua fitur). */
+export const RUNNINGHUB_CHARGE = 1500
+
+/** Biaya satu generate RunningHub dalam Rupiah (flat; model diabaikan). */
+export function getRunninghubCharge(_model?: string): number {
+  return RUNNINGHUB_CHARGE
+}

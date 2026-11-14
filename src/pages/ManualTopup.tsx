@@ -5,7 +5,7 @@ import { Section, Button, Badge, Input, Select, Textarea } from '@/components/ui
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { DANA_NAME, DANA_NUMBER, adminWhatsappLink, formatRp } from '@/lib/payment'
-import { PaymentMethodToggle, QrisPanel } from '@/components/QrisPayment'
+import { PaymentMethodToggle, QrisPanel, BasunipayCheckoutButton } from '@/components/QrisPayment'
 import {
   MANUAL_PROVIDERS,
   MANUAL_TOPUP_MAX,
@@ -67,6 +67,7 @@ export default function ManualTopupPage() {
   const [loading, setLoading] = useState(true)
   const [requests, setRequests] = useState<ManualTopupRequest[]>([])
   const [lastSubmitted, setLastSubmitted] = useState<ManualTopupRequest | null>(null)
+  const [basunipay, setBasunipay] = useState<{ checkout_url?: string; payable_amount?: number; qris_image?: string } | null>(null)
 
   const load = useCallback(async () => {
     if (!token) {
@@ -108,6 +109,7 @@ export default function ManualTopupPage() {
         addToast(data.message || 'Permintaan terkirim', 'success')
         setRequests((prev) => [data.request, ...prev])
         setLastSubmitted(data.request)
+        setBasunipay(data.basunipay || null)
         setAmount('')
         setNote('')
       } else {
@@ -196,6 +198,7 @@ export default function ManualTopupPage() {
               <div>
                 <div className="mb-1.5 text-xs font-medium text-muted-foreground">Pembayaran</div>
                 <PaymentMethodToggle value={payMethod} onChange={setPayMethod} />
+                <BasunipayCheckoutButton url={basunipay?.checkout_url} payable={basunipay?.payable_amount} image={basunipay?.qris_image} />
                 {payMethod === 'dana' ? (
                   <div className="rounded-xl border border-border bg-card/50 p-4">
                     <div className="text-sm font-medium">Transfer DANA</div>
@@ -220,12 +223,12 @@ export default function ManualTopupPage() {
                       </p>
                     )}
                   </div>
-                ) : (
+                ) : !basunipay?.qris_image ? (
                   <QrisPanel
                     amountLabel={nominalValid ? formatRp(nominal) : undefined}
                     exactAmount={payTarget ?? undefined}
                   />
-                )}
+                ) : null}
               </div>
 
               <div>

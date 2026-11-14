@@ -1,6 +1,8 @@
 import { Router, Response } from 'express'
 import db from '../db.js'
 import { authenticateToken, AuthRequest } from '../middleware/auth.js'
+import { nextUniqueCode } from '../lib/qrisPayment.js'
+import { createBasunipayPayment } from '../lib/basunipay.js'
 
 const router = Router()
 
@@ -55,9 +57,9 @@ interface ProUserRow {
 
 function latestProPayment(userId: number) {
   return db.prepare(
-    'SELECT id, amount, status, proof_note, admin_note, created_at FROM pro_payments WHERE user_id = ? ORDER BY id DESC LIMIT 1'
+    'SELECT id, amount, unique_code, amount_total, status, proof_note, admin_note, created_at FROM pro_payments WHERE user_id = ? ORDER BY id DESC LIMIT 1'
   ).get(userId) as
-    | { id: number; amount: number; status: string; proof_note: string; admin_note: string; created_at: string }
+    | { id: number; amount: number; unique_code: number | null; amount_total: number | null; status: string; proof_note: string; admin_note: string; created_at: string }
     | undefined
 }
 
@@ -68,14 +70,25 @@ function proPayload(user: ProUserRow) {
     isAdmin: user.role === 'admin',
     proSince: user.pro_since,
     payment: payment
-      ? {
-          id: payment.id,
-          amount: payment.amount,
-          status: payment.status,
-          proofNote: payment.proof_note,
-          adminNote: payment.admin_note,
-          createdAt: payment.created_at,
-        }
+      ? (() => {
+          // Sertakan checkout BasuniPay terbaru bila ada — gambar QR tetap
+          // tampil walau halaman di-refresh.
+          const bp = db.prepare(
+            "SELECT checkout_url, qris_image FROM basunipay_payment WHERE ref_table = 'pro_payments' AND ref_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1",
+          ).get(payment.id) as { checkout_url?: string; qris_image?: string } | undefined
+          return {
+            id: payment.id,
+            amount: payment.amount,
+            amountTotal: payment.amount_total,
+            uniqueCode: payment.unique_code,
+            status: payment.status,
+            proofNote: payment.proof_note,
+            adminNote: payment.admin_note,
+            createdAt: payment.created_at,
+            checkoutUrl: bp?.checkout_url || null,
+            qrisImage: bp?.qris_image || null,
+          }
+        })()
       : null,
   }
 }
@@ -97,15 +110,13 @@ router.get('/config', (_req, res: Response) => {
 
 // Konfirmasi pembayaran member baru — publik, dipakai lewat payment token
 // yang diberikan saat registrasi (user pending belum bisa login).
-router.post('/payment', (req, res: Response) => {
+router.post('/payment', async (req, res: Response) => {
   try {
-    const { token, amount, proof_note } = req.body || {}
+    const { token, proof_note } = req.body || {}
 
     if (!token) return res.status(400).json({ error: 'Token pembayaran diperlukan' })
-    const amt = Number(amount)
-    if (!Number.isFinite(amt) || amt <= 0) {
-      return res.status(400).json({ error: 'Nominal pembayaran tidak valid' })
-    }
+    // Nominal DIKUNCI server — klien tidak mengirim amount (anti bayar kurang).
+    const amt = getMembershipFee()
 
     const user = db.prepare('SELECT id, email, approved, payment_token FROM users WHERE payment_token = ?').get(token) as
       | { id: number; email: string; approved: number; payment_token: string | null }
@@ -117,20 +128,51 @@ router.post('/payment', (req, res: Response) => {
     }
 
     const pending = db.prepare(
-      "SELECT id FROM membership_payments WHERE user_id = ? AND status = 'pending'"
-    ).get(user.id) as { id: number } | undefined
+      "SELECT id, amount_total, unique_code FROM membership_payments WHERE user_id = ? AND status = 'pending'"
+    ).get(user.id) as { id: number; amount_total: number | null; unique_code: number | null } | undefined
     if (pending) {
-      return res.status(400).json({ error: 'Masih ada konfirmasi pembayaran yang belum diproses admin' })
+      // Idempoten: panggilan berulang (mis. halaman dimuat ulang) mengembalikan
+      // data yang sama, bukan error — user perlu link & nominal yang sama.
+      const bp = db.prepare(
+        "SELECT checkout_url, payable_amount, unique_code, qris_image FROM basunipay_payment WHERE ref_table = 'membership_payments' AND ref_id = ? ORDER BY id DESC LIMIT 1",
+      ).get(pending.id) as { checkout_url: string; payable_amount: number; unique_code: number; qris_image?: string } | undefined
+      return res.json({
+        ok: true,
+        message: 'Pembayaranmu sudah tercatat — gunakan link/QR di bawah.',
+        paymentId: pending.id,
+        amount: amt,
+        amountTotal: pending.amount_total ?? amt,
+        uniqueCode: pending.unique_code,
+        basunipay: bp ? { checkout_url: bp.checkout_url, payable_amount: bp.payable_amount, unique_code: bp.unique_code, qris_image: bp.qris_image || '' } : null,
+        pending: true,
+      })
     }
 
+    const { unique_code, amount_total } = nextUniqueCode(amt)
     const result = db.prepare(
-      'INSERT INTO membership_payments (user_id, amount, status, proof_note) VALUES (?, ?, ?, ?)'
-    ).run(user.id, amt, 'pending', String(proof_note || '').slice(0, 500))
+      'INSERT INTO membership_payments (user_id, amount, unique_code, amount_total, status, proof_note) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(user.id, amt, unique_code, amount_total, 'pending', String(proof_note || '').slice(0, 500))
+    const refId = Number(result.lastInsertRowid)
+
+    const basunipay = await createBasunipayPayment({
+      refTable: 'membership_payments',
+      refId,
+      userId: user.id,
+      baseAmount: amt,
+      description: `Join Pro — ${user.email}`,
+    })
+    const payment = db.prepare('SELECT id, amount, amount_total, unique_code FROM membership_payments WHERE id = ?').get(refId) as
+      | { id: number; amount: number; amount_total: number | null; unique_code: number | null }
+      | undefined
 
     res.status(201).json({
       ok: true,
-      message: 'Konfirmasi pembayaran diterima. Admin akan memprosesnya.',
-      paymentId: result.lastInsertRowid,
+      message: 'Konfirmasi pembayaran diterima. Akun akan otomatis aktif begitu pembayaran masuk.',
+      paymentId: refId,
+      amount: amt,
+      amountTotal: payment?.amount_total ?? amount_total,
+      uniqueCode: payment?.unique_code ?? unique_code,
+      basunipay,
     })
   } catch (error) {
     console.error('Membership payment error:', error)
@@ -154,7 +196,7 @@ router.get('/pro/status', authenticateToken, (req: AuthRequest, res: Response) =
 // Ajukan upgrade Pro. Nominal diambil dari server (bukan dari klien) supaya
 // harga tidak bisa diturunkan dari browser; satu user hanya boleh punya satu
 // pengajuan pending.
-router.post('/pro/payment', authenticateToken, (req: AuthRequest, res: Response) => {
+router.post('/pro/payment', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const user = db.prepare('SELECT id, email, name, role, plan, pro_since FROM users WHERE id = ?').get(req.user!.id) as ProUserRow | undefined
     if (!user) return res.status(404).json({ error: 'User not found' })
@@ -171,9 +213,22 @@ router.post('/pro/payment', authenticateToken, (req: AuthRequest, res: Response)
 
     const amount = getProFee()
     const proofNote = String((req.body as any)?.proof_note || '').slice(0, 500)
+    const { unique_code, amount_total } = nextUniqueCode(amount)
     const result = db.prepare(
-      "INSERT INTO pro_payments (user_id, amount, status, proof_note) VALUES (?, ?, 'pending', ?)"
-    ).run(user.id, amount, proofNote)
+      "INSERT INTO pro_payments (user_id, amount, unique_code, amount_total, status, proof_note) VALUES (?, ?, ?, ?, 'pending', ?)"
+    ).run(user.id, amount, unique_code, amount_total, proofNote)
+    const refId = Number(result.lastInsertRowid)
+
+    const basunipay = await createBasunipayPayment({
+      refTable: 'pro_payments',
+      refId,
+      userId: user.id,
+      baseAmount: amount,
+      description: `Upgrade Pro — ${user.email}`,
+    })
+    const payment = db.prepare('SELECT amount_total, unique_code FROM pro_payments WHERE id = ?').get(refId) as
+      | { amount_total: number | null; unique_code: number | null }
+      | undefined
 
     db.prepare(
       "INSERT INTO notifications (title, message, type, target) VALUES (?, ?, 'warning', 'admins')"
@@ -184,15 +239,18 @@ router.post('/pro/payment', authenticateToken, (req: AuthRequest, res: Response)
 
     res.status(201).json({
       ok: true,
-      message: `Konfirmasi pembayaran ${formatRp(amount)} diterima. Admin akan mengaktifkan Pro setelah pembayaran dicek.`,
+      message: `Konfirmasi pembayaran ${formatRp(amount)} diterima. Akun akan otomatis Pro begitu pembayaran masuk.`,
       payment: {
-        id: result.lastInsertRowid,
+        id: refId,
         amount,
+        amountTotal: payment?.amount_total ?? amount_total,
+        uniqueCode: payment?.unique_code ?? unique_code,
         status: 'pending',
         proofNote,
         adminNote: '',
         createdAt: new Date().toISOString(),
       },
+      basunipay,
     })
   } catch (error) {
     console.error('Pro payment error:', error)

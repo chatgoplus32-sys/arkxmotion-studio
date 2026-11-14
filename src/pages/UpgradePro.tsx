@@ -5,6 +5,7 @@ import { Section, Button } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { QRIS_IMG, formatRp } from '@/lib/membership'
+import { BasunipayCheckoutButton } from '@/components/QrisPayment'
 import {
   DEFAULT_PRO_FEE,
   buildProWaPaymentUrl,
@@ -87,6 +88,10 @@ export default function UpgradeProPage() {
   const [fee, setFee] = useState(DEFAULT_PRO_FEE)
   const [note, setNote] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  // Link checkout BasuniPay dari response submit — hilang saat refresh, tapi
+  // nominal TEPAT & kode unik tetap terbawa lewat status.payment (server).
+  const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null)
+  const [checkoutImage, setCheckoutImage] = useState<string | null>(null)
   const syncedProRef = useRef(false)
 
   const isPro = status?.plan === 'pro' || user?.role === 'admin' || user?.plan === 'pro'
@@ -127,6 +132,8 @@ export default function UpgradeProPage() {
     setSubmitting(true)
     try {
       const data = await submitProPayment(token, note)
+      setCheckoutUrl(data.basunipay?.checkout_url ?? null)
+      setCheckoutImage(data.basunipay?.qris_image ?? null)
       setStatus((prev) => ({
         plan: prev?.plan ?? 'free',
         isAdmin: prev?.isAdmin ?? false,
@@ -278,12 +285,35 @@ export default function UpgradeProPage() {
 
           {pendingPayment ? (
             <div className="space-y-3">
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4">
+                <div className="text-sm font-semibold text-emerald-400 mb-1">
+                  {status?.payment?.amountTotal
+                    ? <>Bayar <b>TEPAT {formatRp(status.payment.amountTotal)}</b></>
+                    : 'Bayar sesuai tarif Pro'}
+                </div>
+                <p className="text-[11px] text-muted-foreground mb-2">
+                  Nominal sudah termasuk kode unik — akun Pro aktif otomatis begitu pembayaran masuk, tidak perlu menunggu admin.
+                </p>
+                <BasunipayCheckoutButton
+                  url={checkoutUrl ?? status?.payment?.checkoutUrl ?? null}
+                  payable={status?.payment?.amountTotal ?? null}
+                  image={checkoutImage ?? status?.payment?.qrisImage ?? null}
+                />
+                {!(checkoutImage ?? status?.payment?.qrisImage) && (
+                  <div className="rounded-lg border border-white/10 bg-white p-1.5">
+                    <img src={QRIS_IMG} alt="QRIS ARKXMotion Studio" className="mx-auto w-full max-w-[170px] rounded" />
+                    <p className="mt-1 text-center text-[10px] text-muted-foreground">
+                      {status?.payment?.amountTotal ? `Scan QRIS → bayar ${formatRp(status.payment.amountTotal)}` : 'Scan QRIS → bayar sesuai nominal'}
+                    </p>
+                  </div>
+                )}
+              </div>
               <div className="flex items-start gap-3 rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-3">
                 <Clock className="h-5 w-5 text-yellow-500 shrink-0 mt-0.5" />
                 <div>
-                  <div className="text-sm font-medium text-yellow-500">Menunggu approval admin</div>
+                  <div className="text-sm font-medium text-yellow-500">Menunggu pembayaran terdeteksi</div>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Pembayaran kamu sudah dicatat. Admin akan mengaktifkan Pro setelah mengecek pembayaran.
+                    Begitu pembayaran masuk, akun otomatis jadi Pro dan fitur Gemini Tools terbuka.
                     Halaman ini mengecek status otomatis tiap 10 detik.
                   </p>
                 </div>
@@ -312,6 +342,9 @@ export default function UpgradeProPage() {
                 <img src={QRIS_IMG} alt="QRIS ARKXMotion Studio" className="w-full max-w-[220px] mx-auto rounded" />
                 <p className="text-center text-[12px] text-muted-foreground mt-1">
                   Scan QRIS → bayar {formatRp(fee)}
+                </p>
+                <p className="text-center text-[10px] text-muted-foreground mt-0.5">
+                  Nominal TEPAT (termasuk kode unik) muncul setelah klik “Saya sudah bayar — Kirim Konfirmasi” — bayar segitu, jangan dibulatkan.
                 </p>
               </div>
 

@@ -11,6 +11,8 @@ import {
 
 interface PaymentInfo {
   amount: number
+  uniqueCode?: number | null
+  amountTotal?: number | null
   status: string
   proofNote: string
   adminNote: string
@@ -34,6 +36,24 @@ export default function RegisterStatusPage() {
       .then((pricing) => setFee(pricing.fee))
       .catch(() => {})
   }, [])
+
+  // Auto-polling selama belum approved — begitu pembayaran terdeteksi, halaman
+  // ini langsung berubah jadi "akun aktif" tanpa perlu refresh manual.
+  useEffect(() => {
+    if (!result || result.found && result.approved) return
+    const t = setInterval(async () => {
+      try {
+        const res = await fetch('/api/auth/status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        })
+        const data = await res.json().catch(() => null)
+        if (res.ok && data) setResult(data)
+      } catch { /* coba lagi siklus berikutnya */ }
+    }, 5000)
+    return () => clearInterval(t)
+  }, [result, email])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -156,16 +176,16 @@ export default function RegisterStatusPage() {
                       <div className={`text-sm font-medium ${result.approved ? 'text-emerald-400' : 'text-yellow-400'}`}>
                         {result.approved
                           ? result.plan === 'pro'
-                            ? 'Akun disetujui & Pro aktif — silakan login'
-                            : 'Akun disetujui — silakan login'
-                          : 'Menunggu persetujuan admin'}
+                            ? 'Akun disetujui & Pro aktif â€” silakan login'
+                            : 'Akun disetujui â€” silakan login'
+                          : 'Menunggu pembayaran terdeteksi — akun Pro aktif otomatis'}
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">
                         {result.approved
                           ? result.plan === 'pro'
-                            ? 'Akun kamu sudah aktif sebagai Pro. Semua fitur AI terbuka — silakan login.'
+                            ? 'Akun kamu sudah aktif sebagai Pro. Semua fitur AI terbuka â€” silakan login.'
                             : 'Akun kamu sudah aktif. Fitur AI bisa dibuka dengan upgrade Pro dari dalam aplikasi.'
-                          : 'Setelah pembayaran disetujui admin, akun otomatis jadi Pro. Cek kembali halaman ini nanti.'}
+                                                     : 'Pembayaran dideteksi otomatis — halaman ini ter-update sendiri begitu akun Pro aktif.'}
                       </p>
                     </div>
                   </div>
@@ -187,11 +207,11 @@ export default function RegisterStatusPage() {
                             : 'text-yellow-400'
                       }`}>
                         {result.payment && result.payment.status === 'approved'
-                          ? `Pembayaran disetujui (Rp ${result.payment.amount.toLocaleString('id-ID')})`
+                          ? `Pembayaran disetujui (${formatRp(result.payment.amountTotal ?? result.payment.amount)})`
                           : result.payment && result.payment.status === 'rejected'
-                            ? `Pembayaran ditolak (Rp ${result.payment.amount.toLocaleString('id-ID')})`
+                            ? `Pembayaran ditolak (${formatRp(result.payment.amountTotal ?? result.payment.amount)})`
                             : result.payment
-                              ? `Menunggu konfirmasi pembayaran (Rp ${result.payment.amount.toLocaleString('id-ID')})`
+                              ? `Menunggu pembayaran (${formatRp(result.payment.amountTotal ?? result.payment.amount)})`
                               : 'Belum ada konfirmasi pembayaran'}
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">
@@ -220,7 +240,7 @@ export default function RegisterStatusPage() {
                   </p>
                   <div className="mb-3 rounded-lg overflow-hidden border border-border bg-white p-2">
                     <img src={QRIS_IMG} alt="QRIS ARKXMotion Studio" className="w-full max-w-[200px] mx-auto rounded" />
-                    <p className="text-center text-[12px] text-muted-foreground mt-1">Bayar {formatRp(fee)}</p>
+                    <p className="text-center text-[12px] text-muted-foreground mt-1">Bayar {formatRp(result?.payment?.amountTotal ?? fee)}</p>
                   </div>
                   <div className="mb-3 flex items-center justify-between rounded-lg bg-secondary border border-border px-3 py-2">
                     <span className="text-xs text-muted-foreground">Biaya join Pro</span>

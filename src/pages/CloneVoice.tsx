@@ -188,11 +188,24 @@ export default function CloneVoicePage() {
     setLogs((prev) => [...prev, { time, msg, level }].slice(-120))
   }
 
-  /** Kredensial NexaBot untuk satu job (pola sama dengan Edit Image). */
+  /**
+   * Kredensial NexaBot untuk satu job (pola sama dengan Edit Image / Voice Over).
+   * Job yang ditanggung paket (Unlimited) memakai kredensial milik server — API
+   * key pribadi yang kosong tidak boleh menggagalkannya. Di luar itu kredensial
+   * pribadi dipakai bila ada; kalau tidak, relay menyuntikkan kredensial server
+   * (member wajib login + saldo/paket — diperiksa relay dengan tiket `/deduct`).
+   *
+   * Catatan: voice hasil clone lewat jalur server tersimpan di akun NexaBot
+   * server (bukan akun member), sama seperti generate lain yang memakai kunci
+   * server. Member yang ingin voice-nya terikat ke akun pribadi: tempel API
+   * key/sesi sendiri di halaman Providers.
+   */
   const buildAuth = async (): Promise<any> => {
     const apiKey = getNexabotApiKey()
     const cookies = getNexabotCookies()
     const ticket = chargeRef.current
+    // `server_key` dari state bisa basi — baca ulang sebelum memutuskan, supaya
+    // generate yang ditanggung paket tidak jatuh ke API key pribadi yang kosong.
     let serverReady = !!wallet?.server_key?.available
     if (authToken) {
       const fresh = await fetchNexabotWallet(authToken).catch(() => null)
@@ -201,12 +214,13 @@ export default function CloneVoicePage() {
         serverReady = !!fresh.server_key?.available
       }
     }
-    // Clone voice butuh API key pribadi pengguna agar suara dikaitkan ke
-    // akun NexaBot yang benar. Jangan pakai kunci server untuk voice clone.
-    if (!apiKey && !cookies) {
-      throw new Error('NexaBot: tambahkan API key di halaman Providers terlebih dahulu sebelum klon suara.')
-    }
-    return { apiKey, cookies, ticket }
+    if (nexabotPreferServerKey({
+      hasOwnKey: !!(apiKey || cookies),
+      serverReady,
+      coveredByPackage: coveredRef.current,
+    })) return { master: true, ticket }
+    if (apiKey || cookies) return { apiKey, cookies, ticket }
+    throw new Error('NexaBot: tidak ada API key/sesi sendiri dan kredensial server belum tersedia — top up NexaBot / ambil paket, atau tambahkan API key di halaman Providers.')
   }
 
   const loadVoices = async () => {
@@ -321,7 +335,7 @@ export default function CloneVoicePage() {
   }
 
   const canClone = !!file && !loading && !!authToken && !!name.trim() &&
-    (isAdmin || covered || (wallet?.balance ?? 0) >= price)
+    (isAdmin || covered || !!wallet?.server_key?.available || (wallet?.balance ?? 0) >= price)
 
   const runClone = async () => {
     if (!authToken) { addToast('⚠️ Login dulu untuk memakai Clone Voice.', 'warning'); return }
@@ -353,6 +367,7 @@ export default function CloneVoicePage() {
       }
 
       const auth = await buildAuth()
+      if (auth.master) addLog('📡 Diproses lewat server', 'info')
       setStatusMsg('Meng-clone suara...')
       addLog('[2/3] 🚀 Kirim sample ke NexaBot (Clone Voice)...', 'info')
       const voice = await submitNexabotVoiceClone({
@@ -406,6 +421,7 @@ export default function CloneVoicePage() {
           : `💰 Saldo terpotong ${formatRp(charge.deducted)} ✓ sisa ${formatRp(charge.balance)}`, 'success')
       }
       const auth = await buildAuth()
+      if (auth.master) addLog('📡 Diproses lewat server', 'info')
       addLog(`🚀 Generate ElevenLabs (${selectedVoice ? voiceLabel(selectedVoice) : speakerId})...`, 'info')
       const url = await submitNexabotElevenLabs({
         speakerId,
@@ -450,6 +466,13 @@ export default function CloneVoicePage() {
         <div className="mb-6 text-xs text-muted-foreground">
           Saldo NexaBot: <strong className="text-foreground">{formatRp(wallet.balance)}</strong>
           {wallet.unlimited?.active ? ' · paket Unlimited aktif (gratis)' : ''}
+          {!getNexabotApiKey() && !getNexabotCookies() && (
+            <div className="mt-1">
+              {wallet.server_key?.available
+                ? '📡 Pemrosesan berjalan lewat server'
+                : 'Belum ada API key sendiri dan pemrosesan server belum tersedia — top up NexaBot atau tempel API key di halaman Providers'}
+            </div>
+          )}
         </div>
       )}
 
@@ -498,6 +521,7 @@ export default function CloneVoicePage() {
 
           <p className="mt-3 text-[11px] text-muted-foreground">
             Gunakan satu pembicara tanpa musik latar / noise berlebih. Durasi di luar 15–60 detik akan ditolak upstream.
+            Voice hasil clone tersimpan di layanan pemrosesan, bukan di perangkat Anda — gunakan sample yang Anda bersedia simpan di sana.
           </p>
         </Section>
 

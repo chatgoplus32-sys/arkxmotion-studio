@@ -1,4 +1,11 @@
+import { SERVER_KEY, appToken, relayAuthHeaders } from './providerServerKey.js'
+import { chargeRunninghubWallet, refundRunninghubWallet } from './runninghubWallet.js'
+
 const RUNNINGHUB_PROXY = '/api/public/runninghub'
+
+// Aksi baca tidak memakai kredit upstream → tidak dipotong saldo. Selain itu
+// (submit-*, motion-control*, workflow app) dianggap membuat job → wajib tiket.
+const RH_READ_ACTIONS = new Set(['query', 'check-balance', 'get-workflow-info', 'claim-daily-gift'])
 
 const RUNNINGHUB_DEFAULT_WORKFLOW_ID = '2092795737699856386'
 
@@ -373,21 +380,40 @@ export function setRunningHubWorkflowId(workflowId: string) {
   localStorage.setItem('runninghub.workflowId', workflowId)
 }
 
-function runninghubProxy(action: string, params: Record<string, any>, apiKey?: string): Promise<any> {
+async function runninghubProxy(action: string, params: Record<string, any>, apiKey?: string): Promise<any> {
   // Key yang dipakai rotasi datang mentah dari store — bersihkan di sini juga
   // supaya key tersimpan "kotor" (kutip/Bearer) tidak menggagalkan submit.
-  const key = normalizeRunningHubApiKey(apiKey || getRunningHubApiKey() || '')
-  // Key boleh kosong: RunningHub kini diautentikasi lewat access token yang
-  // dipegang server (RUNNINGHUB_ACCESS_TOKEN), jadi pengguna tidak wajib
-  // menyimpan key. Kalau server juga tidak punya token, DIA yang menolak
-  // dengan pesan jelas — bukan error umum di sini.
-  if (!key) console.warn('[runninghub] kirim request tanpa key lokal — server yang menentukan access token')
+  const rawKey = normalizeRunningHubApiKey(apiKey || getRunningHubApiKey() || '')
+  // Tanpa key lokal (atau sentinel server) = jalur saldo: relay memasang token
+  // master operator. Key asli milik member = passthrough, tanpa potongan.
+  const serverMode = !rawKey || rawKey === SERVER_KEY || rawKey === 'server-managed'
+  const token = appToken()
+  const consuming = !RH_READ_ACTIONS.has(action)
 
-  return fetch(RUNNINGHUB_PROXY, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action, apiKey: key, ...params }),
-  }).then(async (res) => {
+  // Potong saldo SEBELUM submit hanya untuk jalur server yang membuat job.
+  // usage_id menjadi tiket X-Provider-Charge; refund otomatis bila submit gagal.
+  let chargeUsageId: number | undefined
+  let chargeBatch: string | undefined
+  if (serverMode && consuming) {
+    if (!token) {
+      throw new Error('Login dulu untuk memakai saldo RunningHub, atau tempel access token/API key RunningHub Anda sendiri di Providers.')
+    }
+    const charge = await chargeRunninghubWallet(token, action, 1)
+    chargeUsageId = charge.usageId
+    chargeBatch = charge.batchId
+  }
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(serverMode ? relayAuthHeaders(SERVER_KEY, chargeUsageId ?? null) : {}),
+  }
+
+  try {
+    const res = await fetch(RUNNINGHUB_PROXY, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ action, apiKey: serverMode ? SERVER_KEY : rawKey, ...params }),
+    })
     // Balasan non-JSON (halaman HTML dari nginx/Cloudflare) hampir selalu
     // berarti request tidak pernah sampai ke server — mis. disk penuh saat
     // men-buffer body besar atau 502. Tanpa cabang ini pesannya cuma
@@ -408,7 +434,13 @@ function runninghubProxy(action: string, params: Record<string, any>, apiKey?: s
       throw new Error(data.error || `HTTP ${res.status}`)
     }
     return data.data || data
-  })
+  } catch (err) {
+    // Submit gagal di jalur server → kembalikan saldo yang sudah dipotong.
+    if (serverMode && consuming && token && (chargeUsageId || chargeBatch)) {
+      await refundRunninghubWallet(token, { usage_id: chargeUsageId, batch_id: chargeBatch })
+    }
+    throw err
+  }
 }
 
 export interface MotionControlParams {

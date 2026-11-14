@@ -23,6 +23,9 @@ import { claimChargeTicket, noteChargeTicketJob, releaseChargeTicket } from './p
 const CONSUMING_PATH: Record<ServerKeyProvider, RegExp> = {
   seavi: /^generate\/?$/,
   posbot: /^generate\/?$/,
+  // RunningHub memakai body {action}, bukan subpath — klasifikasi consuming
+  // dilakukan di relay-nya sendiri (rhActionConsuming), jadi pola ini tidak dipakai.
+  runninghub: /^$/,
 }
 
 export function isConsumingRequest(provider: ServerKeyProvider, method: string, subpath: string): boolean {

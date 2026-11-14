@@ -7,12 +7,13 @@ import { formatRp } from '@/lib/payment'
 import { fetchNexabotWallet, nexabotRemainingLabel, type NexabotUnlimited } from '@/lib/nexabotWallet'
 import { fetchSeaviWallet } from '@/lib/seaviWallet'
 import { fetchPosbotWallet } from '@/lib/posbotWallet'
+import { fetchRunninghubWallet } from '@/lib/runninghubWallet'
 import { cn } from '@/lib/utils'
 import {
-  ArrowUpRight, Bot, Coins, Loader2, RefreshCw, Wallet, Zap,
+  ArrowUpRight, Bot, Clapperboard, Coins, Loader2, RefreshCw, Wallet, Zap,
 } from 'lucide-react'
 
-type ServiceKey = 'createpulse' | 'nexabot' | 'seavi' | 'posbot'
+type ServiceKey = 'createpulse' | 'nexabot' | 'seavi' | 'posbot' | 'runninghub'
 
 interface ServiceDef {
   key: ServiceKey
@@ -58,6 +59,14 @@ const SERVICES: ServiceDef[] = [
     icon: <Wallet className="h-4 w-4" />,
     accent: 'border-teal-500/25 bg-teal-500/10 text-teal-400',
   },
+  {
+    key: 'runninghub',
+    label: 'RunningHub',
+    desc: 'Saldo Rupiah RunningHub — flat per generate, tanpa perlu token sendiri.',
+    href: '/topup/runninghub',
+    icon: <Clapperboard className="h-4 w-4" />,
+    accent: 'border-orange-500/25 bg-orange-500/10 text-orange-400',
+  },
 ]
 
 type Satuan = 'Rp' | 'token' | 'kredit'
@@ -85,6 +94,7 @@ const EMPTY_STATE: Record<ServiceKey, ServiceState> = {
   nexabot: { amount: null, unit: 'Rp', unitPrice: null, note: null },
   seavi: { amount: null, unit: 'token', unitPrice: null, note: null },
   posbot: { amount: null, unit: 'Rp', unitPrice: null, note: null },
+  runninghub: { amount: null, unit: 'Rp', unitPrice: null, note: null },
 }
 
 async function fetchCreatePulseBalance(token: string): Promise<number | null> {
@@ -210,6 +220,15 @@ export default function SaldoLayananPage() {
             : 'Angka dari dashboard PosBot — kunci induk PosBot belum diatur di panel admin',
           unavailable: pb?.error ?? gagal,
         },
+        runninghub: {
+          amount: null,
+          unit: 'Rp',
+          unitPrice: null,
+          note: null,
+          provider: true,
+          detail: 'Generate member memakai pool token master operator (auto-rotate).',
+          unavailable: 'Kelola di Sistem → Token Master RunningHub',
+        },
       })
       setUpdatedAt(Date.now())
       setLoading(false)
@@ -217,11 +236,12 @@ export default function SaldoLayananPage() {
       return
     }
 
-    const [createpulse, nexabot, seavi, posbot] = await Promise.all([
+    const [createpulse, nexabot, seavi, posbot, runninghub] = await Promise.all([
       fetchCreatePulseBalance(token),
       fetchNexabotWallet(token),
       fetchSeaviWallet(token),
       fetchPosbotWallet(token),
+      fetchRunninghubWallet(token),
     ])
     if (requestId !== requestRef.current) return
 
@@ -264,6 +284,12 @@ export default function SaldoLayananPage() {
         unitPrice: null,
         note: null,
       },
+      runninghub: {
+        amount: runninghub?.balance ?? null,
+        unit: 'Rp',
+        unitPrice: runninghub?.charge ?? 1500,
+        note: null,
+      },
     })
     setUpdatedAt(Date.now())
     setLoading(false)
@@ -300,7 +326,7 @@ export default function SaldoLayananPage() {
         highlight="Layanan"
         desc={isAdmin
           ? 'Akun admin — angka dibaca langsung dari penyedia, bukan dari dompet internal.'
-          : 'Empat dompet terpisah — saldo tiap layanan tidak digabung.'}
+          : 'Lima dompet terpisah — saldo tiap layanan tidak digabung.'}
       />
 
       <Section
@@ -320,7 +346,7 @@ export default function SaldoLayananPage() {
           </button>
         }
       >
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
           {SERVICES.map((service) => {
             const state = services[service.key]
             // `unknown` = gagal memuat. Angka yang memang tidak tersedia dari
@@ -330,7 +356,7 @@ export default function SaldoLayananPage() {
               ? state.detail
               : state.unit === 'token' && state.amount !== null
                 ? `≈ ${formatRp(state.amount * (state.unitPrice ?? 2000))} · ${formatRp(state.unitPrice ?? 2000)}/token`
-                : service.key === 'nexabot' && state.unitPrice !== null
+                : (service.key === 'nexabot' || service.key === 'runninghub') && state.unitPrice !== null
                   ? `${formatRp(state.unitPrice)}/generate`
                   : service.desc
 
@@ -418,7 +444,7 @@ export default function SaldoLayananPage() {
           <p className="text-[11px] leading-relaxed text-muted-foreground">
             {isAdmin
               ? 'Akun admin: Seavi dan NexaBot dibaca langsung dari penyedia; PosBot dibaca dari /balance bila kunci induknya sudah diatur (Sistem → Kunci Server PosBot), dan selama belum diatur memakai angka dari dashboard Anda; CreatePulse belum punya endpoint saldo di integrasi kita. Dompet member tidak berubah.'
-              : 'Saldo CreatePulse, NexaBot, dan PosBot dalam Rupiah; Seavi dalam token. Tiap layanan punya dompet sendiri, jadi saldo tidak bisa dipindah atau dijumlahkan.'}
+              : 'Saldo CreatePulse, NexaBot, PosBot, dan RunningHub dalam Rupiah; Seavi dalam token. Tiap layanan punya dompet sendiri, jadi saldo tidak bisa dipindah atau dijumlahkan.'}
           </p>
           <span className="shrink-0 text-[10px] text-muted-foreground">
             {allFailed

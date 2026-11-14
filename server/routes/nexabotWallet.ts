@@ -49,6 +49,7 @@ import {
 import { serverAccounts, serverCookieEligible, serverKeyEligible } from '../lib/nexabotAccounts.js'
 import { nexadanceQuota, nexadanceQuotaMessage } from '../lib/nexabotQuota.js'
 import { nextUniqueCode } from '../lib/qrisPayment.js'
+import { createBasunipayPayment } from '../lib/basunipay.js'
 
 // Definisi harga tinggal di shared/pricing.ts supaya server, fungsi Vercel, dan
 // endpoint publik /api/public/pricing tidak pernah beda angka.
@@ -278,7 +279,7 @@ router.get('/balance', authenticateToken, (req: AuthRequest, res: Response) => {
   }
 })
 
-router.post('/topup', authenticateToken, (req: AuthRequest, res: Response) => {
+router.post('/topup', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id
     if (!userId) return res.status(401).json({ error: 'Unauthorized' })
@@ -295,9 +296,18 @@ router.post('/topup', authenticateToken, (req: AuthRequest, res: Response) => {
     const result = db.prepare(
       "INSERT INTO nexabot_topup (user_id, amount, kind, unique_code, amount_total, proof_note, status) VALUES (?, ?, 'balance', ?, ?, ?, 'pending')"
     ).run(userId, amount, unique_code, amount_total, proof_note || '')
+    const refId = Number(result.lastInsertRowid)
 
-    const topup = db.prepare('SELECT * FROM nexabot_topup WHERE id = ?').get(result.lastInsertRowid)
-    res.status(201).json({ topup, message: 'Topup request submitted, waiting admin approval' })
+    const basunipay = await createBasunipayPayment({
+      refTable: 'nexabot_topup',
+      refId,
+      userId,
+      baseAmount: amount,
+      description: `Top up NexaBot — user #${userId}`,
+    })
+
+    const topup = db.prepare('SELECT * FROM nexabot_topup WHERE id = ?').get(refId)
+    res.status(201).json({ topup, basunipay, message: 'Topup request submitted, waiting admin approval' })
   } catch (error) {
     console.error('NexaBot topup error:', error)
     res.status(500).json({ error: 'Internal server error' })
@@ -310,7 +320,7 @@ router.post('/topup', authenticateToken, (req: AuthRequest, res: Response) => {
  * user tidak bisa "menawar" sendiri. Paket aktif saat admin approve, bukan saat
  * diajukan. Tanpa `slug` (klien lama) → varian utama.
  */
-router.post('/package', authenticateToken, (req: AuthRequest, res: Response) => {
+router.post('/package', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id
     if (!userId) return res.status(401).json({ error: 'Unauthorized' })
@@ -365,9 +375,18 @@ router.post('/package', authenticateToken, (req: AuthRequest, res: Response) => 
     const result = db.prepare(
       "INSERT INTO nexabot_topup (user_id, amount, kind, days, package_slug, unique_code, amount_total, proof_note, status) VALUES (?, ?, 'unlimited', ?, ?, ?, ?, ?, 'pending')"
     ).run(userId, price, days, plan.slug, unique_code, amount_total, String(proof_note || '').slice(0, 500))
+    const refId = Number(result.lastInsertRowid)
 
-    const pkg = db.prepare('SELECT * FROM nexabot_topup WHERE id = ?').get(result.lastInsertRowid)
-    res.status(201).json({ package: pkg, message: `Pembelian paket ${plan.label} dikirim, menunggu approval admin` })
+    const basunipay = await createBasunipayPayment({
+      refTable: 'nexabot_topup',
+      refId,
+      userId,
+      baseAmount: price,
+      description: `Paket ${plan.label} ${days} hari — user #${userId}`,
+    })
+
+    const pkg = db.prepare('SELECT * FROM nexabot_topup WHERE id = ?').get(refId)
+    res.status(201).json({ package: pkg, basunipay, message: `Pembelian paket ${plan.label} dikirim, menunggu approval admin` })
   } catch (error) {
     console.error('NexaBot package error:', error)
     res.status(500).json({ error: 'Internal server error' })

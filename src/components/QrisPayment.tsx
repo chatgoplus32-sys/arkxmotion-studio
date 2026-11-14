@@ -36,6 +36,38 @@ export function PaymentMethodToggle({
   )
 }
 
+/** Panel bayar BasuniPay — gambar QR dinamis dengan nominal TEPAT + kode unik. */
+export function BasunipayCheckoutButton({ url, payable, image }: { url?: string | null; payable?: number | null; image?: string | null }) {
+  if (!url && !image) return null
+  const nominal = payable ? Math.round(payable).toLocaleString('id-ID') : null
+  return (
+    <div className="mb-4 overflow-hidden rounded-xl border-2 border-emerald-500/50 bg-emerald-500/10 shadow-[0_0_24px_-6px_rgba(16,185,129,0.45)]">
+      <div className="bg-emerald-500/15 px-4 pt-3 pb-2 text-center">
+        <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-400">Bayar tepat segini — jangan dibulatkan</div>
+        {nominal && (
+          <div className="mt-0.5 text-3xl font-black leading-none text-emerald-300">Rp {nominal}</div>
+        )}
+        <div className="mt-1 text-[10px] text-muted-foreground">Pembayaran terverifikasi otomatis — saldo masuk sendiri</div>
+      </div>
+      {image && (
+        <div className="flex justify-center border-y border-emerald-500/20 bg-white p-3">
+          <img src={image} alt="QRIS dinamis BasuniPay" className="w-52 h-auto rounded" />
+        </div>
+      )}
+      {url && (
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block px-4 py-2 text-center text-[11px] font-semibold text-emerald-300 underline underline-offset-2 hover:text-emerald-200"
+        >
+          Link pembayaran cadangan (buka checkout BasuniPay)
+        </a>
+      )}
+    </div>
+  )
+}
+
 /** Panel tampilan QRIS (gambar statis + identitas merchant + nominal). */
 export function QrisPanel({ amountLabel, exactAmount }: { amountLabel?: string; exactAmount?: number }) {
   return (

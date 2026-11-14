@@ -5,7 +5,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { Wallet, Clock, CheckCircle, XCircle, ExternalLink, Copy, Sparkles, Zap } from 'lucide-react'
 import { DANA_NUMBER, DANA_NAME, adminWhatsappLink, formatRp } from '@/lib/payment'
-import { PaymentMethodToggle, QrisPanel } from '@/components/QrisPayment'
+import { PaymentMethodToggle, QrisPanel, BasunipayCheckoutButton } from '@/components/QrisPayment'
 import {
   fetchNexabotWallet,
   nexabotPackageName,
@@ -50,6 +50,7 @@ export default function NexaBotTopupPage() {
   const [mode, setMode] = useState<'balance' | 'package'>('balance')
   const [step, setStep] = useState<'select' | 'pay' | 'confirm'>('select')
   const [submitted, setSubmitted] = useState<Topup | null>(null)
+  const [basunipay, setBasunipay] = useState<{ checkout_url?: string; payable_amount?: number; qris_image?: string } | null>(null)
   // Varian paket yang sedang dipilih user (Mingguan/Bulanan/Tahunan).
   const [selectedSlug, setSelectedSlug] = useState<string>(NEXABOT_PACKAGE_FALLBACKS[0].slug)
 
@@ -126,6 +127,7 @@ export default function NexaBotTopupPage() {
         // Simpan baris yang diajukan — amount_total (nominal + kode unik)
         // inilah yang kamu bayar dan yang dicocokkan parser email.
         setSubmitted(data.topup || data.package || null)
+        setBasunipay(data.basunipay || null)
         addToast(
           endpoint === 'package'
             ? `Paket ${pkg.label} ${pkg.days} hari diajukan — ${formatRp(pkg.price)}`
@@ -406,11 +408,14 @@ export default function NexaBotTopupPage() {
         >
           {submitted && (
             <>
+              <BasunipayCheckoutButton url={basunipay?.checkout_url} payable={basunipay?.payable_amount} image={basunipay?.qris_image} />
               {payMethod === 'qris' ? (
-                <QrisPanel
-                  amountLabel={`${mode === 'package' ? `${pkg.label}` : 'Top up saldo'} · ${formatRp(submitted.amount)}`}
-                  exactAmount={submitted.amount_total ?? undefined}
-                />
+                !basunipay?.qris_image ? (
+                  <QrisPanel
+                    amountLabel={`${mode === 'package' ? `${pkg.label}` : 'Top up saldo'} · ${formatRp(submitted.amount)}`}
+                    exactAmount={submitted.amount_total ?? undefined}
+                  />
+                ) : null
               ) : (
                 <div className="rounded-xl border border-border bg-card/50 p-5 mb-4">
                   <div className="text-center mb-4">

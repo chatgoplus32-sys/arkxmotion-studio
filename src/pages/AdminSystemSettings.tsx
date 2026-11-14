@@ -14,6 +14,7 @@ import {
   Trash2,
   Cookie,
   Activity,
+  Gift,
 } from 'lucide-react'
 
 interface NexabotPackage {
@@ -618,6 +619,424 @@ function NexabotAccountPoolSection({
           <div className="mt-2 text-[11px] text-muted-foreground leading-relaxed">
             Isi kunci untuk akun berbayar per generate, atau sesi cookie untuk akun Unlimited. Kalau dua-duanya
             diisi, relay memakai sesi lebih dulu. Isian kosong saat menyimpan akun lama berarti nilainya dipertahankan.
+          </div>
+        </div>
+      </div>
+    </Section>
+  )
+}
+
+// ─── Pool token master RunningHub ───────────────────────────────────────────
+// Member top up saldo Rupiah lalu generate tanpa token sendiri: relay memasang
+// token dari pool ini (round-robin, auto-rotate). Token sehat dicoba bergilir;
+// saldo habis / kena rate → cooldown sementara; kode invalid → ditolak permanen.
+// JWT juga mengklaim hadiah harian (+30 poin) otomatis lewat cron server.
+// Nilai token TIDAK PERNAH dikirim ke browser — admin hanya melihat status,
+// akun tersamar, dan snapshot poin.
+
+interface RhPoolSummaryView {
+  total: number
+  usable: number
+  active: number
+  cooldown: number
+  rejected: number
+  envConfigured: boolean
+  max: number
+}
+
+interface RhPoolTokenView {
+  id: number
+  label: string
+  kind: 'jwt' | 'key'
+  account: string
+  status: 'active' | 'cooldown' | 'rejected'
+  cooldown_until: number
+  last_error: string
+  last_used_at: number | null
+  points_balance: number | null
+  points_checked_at: number | null
+  last_claim_day: string
+}
+
+interface RhCheckView {
+  ok: boolean
+  transient?: boolean
+  text: string
+  detail?: string
+}
+
+function rhPoolCheckView(check: { ok: boolean; rejected: boolean; message: string }): RhCheckView {
+  if (check.ok) return { ok: true, text: 'Token diterima', detail: check.message }
+  if (check.rejected) return { ok: false, text: 'Token ditolak permanen', detail: check.message }
+  return { ok: false, transient: true, text: 'Cek gagal sementara', detail: check.message }
+}
+
+function RunningHubPoolSection({
+  token,
+  addToast,
+}: {
+  token: string | null
+  addToast: (message: string, type?: 'success' | 'error' | 'info' | 'warning') => void
+}) {
+  const [summary, setSummary] = useState<RhPoolSummaryView | null>(null)
+  const [tokens, setTokens] = useState<RhPoolTokenView[]>([])
+  const [bulk, setBulk] = useState('')
+  const [label, setLabel] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [checkingId, setCheckingId] = useState<number | null>(null)
+  const [checkingAll, setCheckingAll] = useState(false)
+  const [claimingAll, setClaimingAll] = useState(false)
+  const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [checks, setChecks] = useState<Record<number, RhCheckView>>({})
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editLabel, setEditLabel] = useState('')
+
+  const auth = useCallback(() => ({ Authorization: `Bearer ${token}` }), [token])
+
+  const apply = (data: any) => {
+    if (data.summary) setSummary(data.summary as RhPoolSummaryView)
+    if (Array.isArray(data.tokens)) setTokens(data.tokens as RhPoolTokenView[])
+  }
+
+  const fetchPool = useCallback(async () => {
+    if (!token) return
+    setLoading(true)
+    try {
+      const res = await fetch('/api/admin/runninghub/pool', { headers: auth() })
+      if (!res.ok) return
+      apply(await res.json())
+    } catch { /* biarkan daftar lama kalau request gagal */ } finally {
+      setLoading(false)
+    }
+  }, [token, auth])
+
+  useEffect(() => { fetchPool() }, [fetchPool])
+
+  const handleAdd = async () => {
+    if (!token || saving || !bulk.trim()) return
+    setSaving(true)
+    try {
+      const res = await fetch('/api/admin/runninghub/pool', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...auth() },
+        body: JSON.stringify({ tokens: bulk, label: label.trim() }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        addToast(`+${data.added ?? 0} token ditambahkan (duplikat ${data.skipped ?? 0}, invalid ${data.invalid ?? 0})`, 'success')
+        setBulk('')
+        setLabel('')
+        apply(data)
+      } else {
+        addToast(data.error || 'Gagal menambah token', 'error')
+      }
+    } catch {
+      addToast('Gagal menambah token', 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDelete = async (t: RhPoolTokenView) => {
+    if (!token || deletingId !== null) return
+    if (!window.confirm(`Hapus token "${t.label}" dari pool? Generate tidak lagi diarahkan ke token ini.`)) return
+    setDeletingId(t.id)
+    try {
+      const res = await fetch(`/api/admin/runninghub/pool/${t.id}`, { method: 'DELETE', headers: auth() })
+      const data = await res.json()
+      if (res.ok) {
+        addToast(`Token "${t.label}" dihapus`, 'success')
+        apply(data)
+        setChecks((prev) => { const n = { ...prev }; delete n[t.id]; return n })
+      } else {
+        addToast(data.error || 'Gagal menghapus token', 'error')
+      }
+    } catch {
+      addToast('Gagal menghapus token', 'error')
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  const handleCheck = async (id: number) => {
+    if (!token || checkingId !== null) return
+    setCheckingId(id)
+    try {
+      const res = await fetch(`/api/admin/runninghub/pool/${id}/check`, { method: 'POST', headers: auth() })
+      const data = await res.json()
+      if (res.ok && data.check) {
+        setChecks((prev) => ({ ...prev, [id]: rhPoolCheckView(data.check) }))
+        apply(data)
+      } else {
+        addToast(data.error || 'Gagal memeriksa token', 'error')
+      }
+    } catch {
+      addToast('Gagal memeriksa token', 'error')
+    } finally {
+      setCheckingId(null)
+    }
+  }
+
+  const handleCheckAll = async () => {
+    if (!token || checkingAll) return
+    setCheckingAll(true)
+    try {
+      const res = await fetch('/api/admin/runninghub/pool/check-all', { method: 'POST', headers: auth() })
+      const data = await res.json()
+      if (res.ok) {
+        const results = (data.results || {}) as Record<string, { ok: boolean; message: string }>
+        setChecks((prev) => {
+          const next = { ...prev }
+          for (const key of Object.keys(results)) {
+            const r = results[key]
+            next[Number(key)] = { ok: r.ok, transient: !r.ok, text: r.ok ? 'Token diterima' : 'Cek gagal', detail: r.message }
+          }
+          return next
+        })
+        apply(data)
+        addToast(`${data.checked ?? 0} token diperiksa`, 'success')
+      } else {
+        addToast(data.error || 'Gagal memeriksa semua token', 'error')
+      }
+    } catch {
+      addToast('Gagal memeriksa semua token', 'error')
+    } finally {
+      setCheckingAll(false)
+    }
+  }
+
+  const handleClaimAll = async () => {
+    if (!token || claimingAll) return
+    setClaimingAll(true)
+    try {
+      const res = await fetch('/api/admin/runninghub/pool/claim-all', { method: 'POST', headers: auth() })
+      const data = await res.json()
+      if (res.ok) {
+        apply(data)
+        const c = (data.claim || {}) as { processed?: number; claimed?: number; already?: number; failed?: number }
+        if ((c.processed ?? 0) === 0) {
+          addToast('Tidak ada token JWT yang perlu diklaim hari ini (sudah diklaim / bukan JWT).', 'info')
+        } else {
+          addToast(
+            `Klaim poin: ${c.claimed ?? 0} baru, ${c.already ?? 0} sudah, ${c.failed ?? 0} gagal`,
+            (c.failed ?? 0) > 0 ? 'warning' : 'success',
+          )
+        }
+      } else {
+        addToast(data.error || 'Gagal mengklaim poin', 'error')
+      }
+    } catch {
+      addToast('Gagal mengklaim poin', 'error')
+    } finally {
+      setClaimingAll(false)
+    }
+  }
+
+  const handleSaveLabel = async (id: number) => {
+    if (!token) return
+    try {
+      const res = await fetch(`/api/admin/runninghub/pool/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...auth() },
+        body: JSON.stringify({ label: editLabel.trim() }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        apply(data)
+        setEditingId(null)
+        addToast('Label disimpan', 'success')
+      } else {
+        addToast(data.error || 'Gagal menyimpan label', 'error')
+      }
+    } catch {
+      addToast('Gagal menyimpan label', 'error')
+    }
+  }
+
+  const fmtPts = (n: number) => String(Math.round(n * 100) / 100)
+  const busy = checkingId !== null || checkingAll || claimingAll || deletingId !== null
+  const jwtCount = tokens.filter((t) => t.kind === 'jwt' && t.status !== 'rejected').length
+
+  const statusBadge = (t: RhPoolTokenView) => {
+    if (t.status === 'rejected') {
+      return <span className="rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] text-red-400">Ditolak</span>
+    }
+    if (t.status === 'cooldown' && t.cooldown_until > Date.now()) {
+      const mins = Math.max(1, Math.ceil((t.cooldown_until - Date.now()) / 60000))
+      return <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-400">Cooldown {mins}m</span>
+    }
+    return <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-400">Aktif</span>
+  }
+
+  const checkBanner = (id: number) => {
+    const hasil = checks[id]
+    if (!hasil) return null
+    return (
+      <div
+        className={`mt-2 rounded-lg border px-3 py-1.5 text-[11px] leading-relaxed ${
+          hasil.ok
+            ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+            : hasil.transient
+              ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+              : 'border-red-500/30 bg-red-500/10 text-red-300'
+        }`}
+      >
+        <span className="font-medium">{hasil.text}</span>
+        {hasil.detail && <span className="ml-2 opacity-80">{hasil.detail}</span>}
+      </div>
+    )
+  }
+
+  return (
+    <Section
+      title="Token Master RunningHub"
+      sub="Pool token operator — auto-rotate. Member top up saldo lalu generate tanpa token sendiri"
+    >
+      <div className="rounded-xl border border-border bg-card/40 p-4">
+        <div className="flex flex-wrap items-center gap-2 text-[11px]">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-0.5">
+            Total <b className="text-foreground">{summary?.total ?? 0}</b>/{summary?.max ?? 100}
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-emerald-400">
+            <CheckCircle className="h-3 w-3" /> Siap pakai {summary?.usable ?? 0}
+          </span>
+          {(summary?.cooldown ?? 0) > 0 && (
+            <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5 text-amber-400">Cooldown {summary?.cooldown}</span>
+          )}
+          {(summary?.rejected ?? 0) > 0 && (
+            <span className="rounded-full border border-red-500/30 bg-red-500/10 px-2.5 py-0.5 text-red-400">Ditolak {summary?.rejected}</span>
+          )}
+          <span className={`rounded-full border px-2.5 py-0.5 ${summary?.envConfigured ? 'border-sky-500/30 bg-sky-500/10 text-sky-400' : 'border-border bg-card text-muted-foreground'}`}>
+            Token .env {summary?.envConfigured ? 'aktif' : 'tidak ada'}
+          </span>
+        </div>
+
+        <p className="mt-2 text-[12px] text-muted-foreground leading-relaxed">
+          Relay memilih token sehat secara bergilir (round-robin). Saldo habis / kena rate → cooldown sementara;
+          kode invalid → ditolak permanen. Access token (JWT) juga mengklaim hadiah harian +30 poin otomatis
+          (cron server, reset UTC+8) — atau klik <b className="text-foreground">Klaim Poin</b> untuk mengklaim sekarang.
+          Nilai token tidak pernah ditampilkan lagi dan tidak pernah dikirim ke browser.
+        </p>
+
+        {loading && tokens.length === 0 ? (
+          <div className="mt-3 text-[12px] text-muted-foreground">Memuat pool token…</div>
+        ) : tokens.length === 0 && !summary?.envConfigured ? (
+          <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-300">
+            Belum ada token master. Tempel access token / API key RunningHub di bawah supaya member bisa generate memakai saldo.
+          </div>
+        ) : (
+          <ul className="mt-3 divide-y divide-border/60 rounded-lg border border-border">
+            {summary?.envConfigured && (
+              <li className="px-3 py-2.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium">Token .env</span>
+                  <span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-[10px] text-sky-400">RUNNINGHUB_ACCESS_TOKEN</span>
+                  <span className="ml-auto">
+                    <Button size="sm" variant="outline" onClick={() => handleCheck(0)} disabled={busy}>
+                      <Activity className={`h-3.5 w-3.5 mr-1.5 ${checkingId === 0 ? 'animate-pulse' : ''}`} />
+                      {checkingId === 0 ? 'Memeriksa...' : 'Cek'}
+                    </Button>
+                  </span>
+                </div>
+                {checkBanner(0)}
+              </li>
+            )}
+            {tokens.map((t) => (
+              <li key={t.id} className="px-3 py-2.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  {editingId === t.id ? (
+                    <span className="flex items-center gap-1.5">
+                      <input
+                        value={editLabel}
+                        onChange={(e) => setEditLabel(e.target.value)}
+                        maxLength={40}
+                        autoFocus
+                        className="px-2 py-1 rounded-lg border border-border bg-card text-sm"
+                      />
+                      <Button size="sm" onClick={() => handleSaveLabel(t.id)}>Simpan</Button>
+                      <Button size="sm" variant="outline" onClick={() => setEditingId(null)}>Batal</Button>
+                    </span>
+                  ) : (
+                    <span className="text-sm font-medium">{t.label}</span>
+                  )}
+                  <span className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-2 py-0.5 text-[10px] text-muted-foreground">
+                    {t.kind === 'jwt' ? <Zap className="h-3 w-3" /> : <KeyRound className="h-3 w-3" />}
+                    {t.kind === 'jwt' ? 'JWT' : 'API key'}
+                  </span>
+                  <span className="font-mono text-[10px] text-muted-foreground">{t.account}</span>
+                  {statusBadge(t)}
+                  <span className="ml-auto flex items-center gap-1.5">
+                    <Button size="sm" variant="outline" onClick={() => handleCheck(t.id)} disabled={busy}>
+                      <Activity className={`h-3.5 w-3.5 mr-1.5 ${checkingId === t.id ? 'animate-pulse' : ''}`} />
+                      {checkingId === t.id ? 'Memeriksa...' : 'Cek'}
+                    </Button>
+                    {editingId !== t.id && (
+                      <Button size="sm" variant="outline" onClick={() => { setEditingId(t.id); setEditLabel(t.label) }} disabled={busy}>
+                        Label
+                      </Button>
+                    )}
+                    <Button size="sm" variant="outline" onClick={() => handleDelete(t)} disabled={busy}>
+                      <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                      {deletingId === t.id ? 'Menghapus...' : 'Hapus'}
+                    </Button>
+                  </span>
+                </div>
+
+                <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                  <span>Poin: <b className="text-foreground font-mono">{t.points_balance != null ? fmtPts(t.points_balance) : '—'}</b></span>
+                  {t.kind === 'jwt' && <span>Klaim harian: <b className="text-foreground">{t.last_claim_day || '—'}</b></span>}
+                  {t.last_used_at && <span>Terakhir dipakai: {new Date(t.last_used_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}</span>}
+                </div>
+                {t.last_error && (
+                  <div className="mt-1 text-[11px] text-red-400/90 leading-relaxed">{t.last_error}</div>
+                )}
+                {checkBanner(t.id)}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <div className="mt-4 border-t border-border/60 pt-3">
+          <div className="text-[12px] font-medium">Tambah token (bulk)</div>
+          <textarea
+            value={bulk}
+            onChange={(e) => setBulk(e.target.value)}
+            placeholder={'Tempel banyak token sekaligus — satu per baris, atau dipisah koma/titik koma.\nAccess token (JWT eyJ…) untuk poin + klaim harian, atau API key (32 hex) untuk generate openapi.'}
+            rows={4}
+            autoComplete="off"
+            spellCheck={false}
+            className="mt-2 w-full px-3 py-2 rounded-lg border border-border bg-card text-sm font-mono resize-y"
+          />
+          <input
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder="Label batch (opsional, mis. Akun operator A)"
+            autoComplete="off"
+            maxLength={40}
+            className="mt-2 w-full px-3 py-2 rounded-lg border border-border bg-card text-sm"
+          />
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Button size="sm" onClick={handleAdd} disabled={saving || !bulk.trim()}>
+              <Zap className={`h-4 w-4 mr-2 ${saving ? 'animate-pulse' : ''}`} />
+              {saving ? 'Menyimpan...' : 'Tambah Token'}
+            </Button>
+            <Button size="sm" variant="outline" onClick={handleCheckAll} disabled={busy || (tokens.length === 0 && !summary?.envConfigured)}>
+              <Activity className={`h-4 w-4 mr-2 ${checkingAll ? 'animate-pulse' : ''}`} />
+              {checkingAll ? 'Memeriksa semua...' : 'Cek Semua'}
+            </Button>
+            <Button size="sm" variant="outline" onClick={handleClaimAll} disabled={busy || jwtCount === 0}>
+              <Gift className={`h-4 w-4 mr-2 ${claimingAll ? 'animate-pulse' : ''}`} />
+              {claimingAll ? 'Mengklaim poin...' : `Klaim Poin (${jwtCount})`}
+            </Button>
+            <Button size="sm" variant="outline" onClick={fetchPool} disabled={loading}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-pulse' : ''}`} />
+              Muat Ulang
+            </Button>
+          </div>
+          <div className="mt-2 text-[11px] text-muted-foreground leading-relaxed">
+            Duplikat dan token kedaluwarsa otomatis dilewati. Maksimal {summary?.max ?? 100} token. Token yang
+            ditolak permanen (invalid/dicabut) tidak dipakai lagi sampai dihapus dan diganti baru.
           </div>
         </div>
       </div>
@@ -1722,6 +2141,8 @@ export default function AdminSystemSettings() {
         <ProviderServerKeySection provider="seavi" label="Seavi Labs" token={token} addToast={addToast} />
 
         <ProviderServerKeySection provider="posbot" label="PosBot" token={token} addToast={addToast} />
+
+        <RunningHubPoolSection token={token} addToast={addToast} />
 
         {/* Provider Maintenance */}
         <Section title="Provider Maintenance" sub="Toggle maintenance mode for individual providers">

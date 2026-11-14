@@ -14,6 +14,7 @@
 //  - token tidak pernah ikut keluar di API maupun log.
 import db from '../db.js'
 import { rhClaimDailyGift, rhJwtExp, rhJwtExpired, rhJwtSub } from '../routes/publicRunninghub.js'
+import { rhPoolClaimDue, rhPoolMarkClaimed, rhPoolMarkFailure } from './runninghubPool.js'
 
 /** Reset hadiah RunningHub mengikuti waktu China (UTC+8). */
 const CLAIM_DAY_OFFSET_MS = 8 * 60 * 60 * 1000
@@ -303,6 +304,50 @@ async function tick(): Promise<void> {
     } catch (err) {
       console.error('[rh-claim] tick gagal:', (err as any)?.message || err)
     }
+  }
+  try {
+    await runPoolDailyClaim()
+  } catch (err) {
+    console.error('[rh-claim] tick pool gagal:', (err as any)?.message || err)
+  }
+}
+
+// ── Klaim harian untuk token POOL milik operator ──────────────────────────
+// Sama seperti klaim per-user, tapi sasarannya runninghub_master_token (JWT).
+// Klaim sukses mengangkat cooldown saldo sehingga token kembali bisa dipakai
+// relay. Token yang ditolak permanen ditandai rejected lewat rhPoolMarkFailure.
+let poolClaimRunning = false
+
+export async function runPoolDailyClaim(): Promise<RhAutoClaimRunSummary> {
+  const summary: RhAutoClaimRunSummary = { processed: 0, claimed: 0, already: 0, failed: 0, skipped: 0 }
+  if (poolClaimRunning) return summary
+  poolClaimRunning = true
+  try {
+    const day = claimDayKey()
+    const due = rhPoolClaimDue(day)
+    for (let i = 0; i < due.length; i++) {
+      const kandidat = due[i]
+      summary.processed += 1
+      const result = await rhClaimDailyGift(kandidat.token, { wallet: true })
+      if (result.outcome === 'claimed' || result.outcome === 'already') {
+        rhPoolMarkClaimed(kandidat.id, day, result.wallet?.pointsBalance ?? null)
+        if (result.outcome === 'claimed') summary.claimed += 1
+        else summary.already += 1
+      } else if (result.outcome === 'rejected') {
+        rhPoolMarkFailure(kandidat.id, 'invalid', result.message)
+        summary.failed += 1
+      } else {
+        // Transient: jangan tandai rejected; coba lagi tick berikutnya.
+        summary.failed += 1
+      }
+      if (i < due.length - 1) await new Promise((resolve) => setTimeout(resolve, CLAIM_DELAY_MS))
+    }
+    if (summary.processed > 0) {
+      console.log(`[rh-claim] pool: ${summary.claimed} klaim, ${summary.already} sudah, ${summary.failed} gagal`)
+    }
+    return summary
+  } finally {
+    poolClaimRunning = false
   }
 }
 

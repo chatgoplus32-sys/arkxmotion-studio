@@ -1,6 +1,75 @@
 ﻿import { Router } from 'express'
 import type { Request, Response } from 'express'
 import { createHash, randomUUID } from 'node:crypto'
+import { spawn } from 'node:child_process'
+import { join } from 'node:path'
+import { existsSync, mkdirSync } from 'node:fs'
+import { rhJwtExp, rhJwtExpired, rhJwtSub } from '../lib/rhJwt.js'
+import { userIdFromToken } from '../lib/appToken.js'
+import { isAdminUser, keyEligibility, masterKey } from '../lib/providerMasterKey.js'
+import { claimChargeTicket, noteChargeTicketJob, releaseChargeTicket } from '../lib/providerChargeTicket.js'
+import {
+  rhPoolCandidates,
+  rhPoolMarkFailure,
+  rhPoolMarkSuccess,
+  rhPoolTokenById,
+  rhRememberTaskToken,
+  rhTaskTokenId,
+} from '../lib/runninghubPool.js'
+
+// Dipakai ulang oleh scheduler klaim harian & modul lain (lihat lib/rhJwt.ts).
+export { rhJwtExp, rhJwtExpired, rhJwtSub }
+
+// ── Watermark Cleaner ─────────────────────────────────────────────────────
+const PYTHON_SCRIPT = join(process.cwd(), 'python', 'watermark_cleaner', 'cli.py')
+const WATERMARK_OUTPUT_DIR = join(process.cwd(), 'data', 'watermark_cleaned')
+
+if (!existsSync(WATERMARK_OUTPUT_DIR)) {
+  mkdirSync(WATERMARK_OUTPUT_DIR, { recursive: true })
+}
+
+/**
+ * Bersihkan watermark RunningHub dari video URL menggunakan pipeline Python.
+ * Mengembalikan URL download video hasil bersih, atau null jika gagal.
+ */
+async function cleanRunninghubWatermark(videoUrl: string, taskId: string): Promise<string | null> {
+  try {
+    console.log(`[watermark-clean] Memulai pembersihan: taskId=${taskId}, url=${videoUrl}`)
+
+    const python = process.env.PYTHON_EXECUTABLE || 'python3'
+    const child = spawn(python, [PYTHON_SCRIPT, '--url', videoUrl, '--id', taskId, '--output', WATERMARK_OUTPUT_DIR], {
+      cwd: join(process.cwd(), 'python', 'watermark_cleaner'),
+      stdio: ['pipe', 'pipe', 'pipe']
+    })
+
+    let stdout = ''
+    let stderr = ''
+
+    child.stdout.on('data', (data) => { stdout += data.toString() })
+    child.stderr.on('data', (data) => { stderr += data.toString() })
+
+    await new Promise<void>((resolve, reject) => {
+      child.on('close', (code) => {
+        if (code === 0) resolve()
+        else reject(new Error(`Python pipeline exit code ${code}: ${stderr}`))
+      })
+      child.on('error', (err) => reject(err))
+    })
+
+    const cleanPath = join(WATERMARK_OUTPUT_DIR, `clean_${taskId}.mp4`)
+
+    if (!existsSync(cleanPath)) {
+      console.error(`[watermark-clean] File tidak ditemukan: ${cleanPath}`)
+      return null
+    }
+
+    console.log(`[watermark-clean] Selesai: ${cleanPath}`)
+    return cleanPath
+  } catch (err: any) {
+    console.error('[watermark-clean] error:', err.message)
+    return null
+  }
+}
 
 const router = Router()
 
@@ -303,60 +372,6 @@ function normalizeRhApiKey(raw: unknown): string {
     .replace(/^[•*`'"\s-]+|[•*`'"\s-]+$/g, '')
     .replace(/^Bearer\s+/i, '')
     .trim()
-}
-
-/** exp (detik sejak epoch) dari payload JWT — null kalau bukan JWT valid. */
-export function rhJwtExp(token: string): number | null {
-  const parts = String(token || '').split('.')
-  if (parts.length < 2 || !parts[0].startsWith('ey')) return null
-  try {
-    const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/')
-    const padded = payload + '='.repeat((4 - payload.length % 4) % 4)
-    const decoded = JSON.parse(Buffer.from(padded, 'base64').toString('utf8'))
-    return typeof decoded?.exp === 'number' ? decoded.exp : null
-  } catch {
-    return null
-  }
-}
-
-export function rhJwtExpired(token: string): boolean {
-  const exp = rhJwtExp(token)
-  return exp !== null && Date.now() > exp * 1000
-}
-
-/** sub (id akun) dari payload JWT — null kalau bukan JWT valid. */
-export function rhJwtSub(token: string): string | null {
-  const parts = String(token || '').split('.')
-  if (parts.length < 2 || !parts[0].startsWith('ey')) return null
-  try {
-    const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/')
-    const padded = payload + '='.repeat((4 - payload.length % 4) % 4)
-    const decoded = JSON.parse(Buffer.from(padded, 'base64').toString('utf8'))
-    const sub = decoded?.sub
-    return sub === undefined || sub === null || sub === '' ? null : String(sub)
-  } catch {
-    return null
-  }
-}
-
-/** Token global dari env RUNNINGHUB_ACCESS_TOKEN — '' kalau belum diisi. */
-function rhGlobalAccessToken(): string {
-  return normalizeRhApiKey(process.env.RUNNINGHUB_ACCESS_TOKEN)
-}
-
-/**
- * Tentukan credential yang dikirim ke upstream RunningHub:
- *  1. Akses token milik pengguna (JWT yang masih berlaku) → dipakai apa adanya.
- *  2. Selain itu (API key lama, key kosong, placeholder server) → token global.
- *  3. Token global dimatikan (env '') → key pengguna dipakai seperti mode lama.
- */
-function rhResolveCredential(clientKey: string): { token: string; source: 'user-token' | 'server-token' | 'user-key' } {
-  if (clientKey && rhJwtExp(clientKey) !== null && !rhJwtExpired(clientKey)) {
-    return { token: clientKey, source: 'user-token' }
-  }
-  const global = rhGlobalAccessToken()
-  if (global) return { token: global, source: 'server-token' }
-  return { token: clientKey, source: 'user-key' }
 }
 
 // ── Jalur khusus access token (JWT) ───────────────────────────────────────
@@ -674,10 +689,150 @@ async function rhUploadViaSession(
   return { fileName: subfolder ? `${subfolder}/${name}` : String(name), downloadUrl: '' }
 }
 
+// ── Gerbang identitas + rotasi pool untuk jalur kunci server ──────────────
+//
+// Dua jalur kredensial (sama seperti Seavi/PosBot):
+//  1. Kredensial milik member (JWT/API key asli) → diteruskan apa adanya,
+//     tanpa potongan saldo operator.
+//  2. Placeholder server → relay memasang token dari POOL operator. Member
+//     harus login (X-App-Token); request yang membuat job wajib membawa tiket
+//     pembayaran (X-Provider-Charge dari /api/runninghub-wallet/deduct).
+//     Admin pemilik pool melewati tiket. Token dirotasi round-robin; yang
+//     saldo habis di-cooldown, yang ditolak permanen di-rejected.
+
+const RH_SERVER_PLACEHOLDERS = new Set([RUNNINGHUB_SERVER_MANAGED_KEY, '__arkxmotion_server_key__', ''])
+
+/** Aksi yang MEMBUAT job (memakai poin upstream) — wajib tiket pembayaran. */
+function rhActionConsuming(action: string): boolean {
+  if (action === 'query' || action === 'check-balance' || action === 'get-workflow-info' || action === 'claim-daily-gift') return false
+  return action.startsWith('submit-') || action.startsWith('motion-control') || !!MOTION_APPS[action]
+}
+
+function rhAppUserId(req: Request): number | null {
+  const h = req.headers['x-app-token']
+  return userIdFromToken(Array.isArray(h) ? h[0] : h)
+}
+
+type RhVerdict = 'ok' | 'saldo' | 'invalid' | 'rate' | 'error'
+
+/**
+ * Klasifikasikan respons handler untuk memutuskan rotasi. Kode upstream adalah
+ * sinyal utama; teks hanya fallback untuk saldo/rate. 'invalid' HANYA dari kode
+ * tegas supaya token sehat tidak ikut dibuang permanen karena error workflow.
+ */
+function rhPoolVerdict(payload: any): RhVerdict {
+  if (payload && payload.ok === true) return 'ok'
+  const codes = [payload?.code, payload?.data?.code, payload?.data?.errorCode, payload?.errorCode]
+    .map((c) => (c === undefined || c === null ? '' : String(c)))
+  for (const code of codes) {
+    if (RH_KEY_REJECT_CODES.has(code)) return 'invalid'
+    if (code === '414' || code === '433' || code === '605') return 'saldo'
+    if (code === '424' || code === '429') return 'rate'
+  }
+  const errText = String(payload?.error || '')
+  if (payload?.retryable === true || /rate limit/i.test(errText)) return 'rate'
+  if (/NOT_ENOUGH_POWER|insufficient|tidak cukup/i.test(errText)) return 'saldo'
+  return 'error'
+}
+
+function rhTaskIdFromPayload(payload: any): string | null {
+  const id = payload?.data?.taskId ?? payload?.data?.id ?? payload?.taskId ?? payload?.id
+  return id == null ? null : String(id).slice(0, 200)
+}
+
+/**
+ * Penangkap respons: handler menulis ke proxy, bukan ke res asli, supaya bila
+ * token ditolak kita bisa mengulang handler dengan token lain (upload bersifat
+ * per-akun, jadi harus diulang utuh). flush() meneruskan hasil akhir ke klien.
+ */
+function captureRhRes(real: Response) {
+  const cap = {
+    payload: null as any,
+    status: 200,
+    proxy: null as any,
+    flush() {
+      real.status(cap.status).json(cap.payload ?? { ok: false, error: 'Tidak ada respons dari handler RunningHub' })
+    },
+  }
+  cap.proxy = {
+    status(c: number) { cap.status = c; return cap.proxy },
+    json(obj: any) { cap.payload = obj; return cap.proxy },
+    send(obj: any) { cap.payload = obj; return cap.proxy },
+    setHeader() { return cap.proxy },
+    end() { return cap.proxy },
+  }
+  return cap
+}
+
+/**
+ * Jalankan aksi memakai pool token. Untuk submit: rotasi hingga 4 kandidat
+ * sampai job berhasil dibuat. Untuk baca (query/check-balance): satu kandidat
+ * (query mendahulukan token pembuat task — afinitas tersimpan di DB).
+ */
+async function runRhWithPool(action: string, params: any, realRes: Response, usageId: number | null): Promise<any> {
+  const consuming = rhActionConsuming(action)
+  let candidates = rhPoolCandidates()
+
+  if (action === 'query' && params?.taskId) {
+    const affId = rhTaskTokenId(String(params.taskId))
+    if (affId !== null) {
+      const aff = rhPoolTokenById(affId)
+      if (aff) {
+        const idx = candidates.findIndex((c) => c.id === aff.id)
+        if (idx > 0) candidates.unshift(candidates.splice(idx, 1)[0])
+        else if (idx < 0) candidates.unshift(aff)
+      }
+    }
+  }
+
+  if (candidates.length === 0) {
+    if (usageId) releaseChargeTicket('runninghub', usageId)
+    return realRes.status(200).json({
+      ok: false,
+      error: 'Tidak ada token master RunningHub yang tersedia saat ini. Admin perlu menambah token di pool, atau pakai access token/API key RunningHub Anda sendiri.',
+    })
+  }
+
+  const maxAttempts = consuming ? Math.min(candidates.length, 4) : 1
+  let last: any = null
+  for (let i = 0; i < maxAttempts; i++) {
+    const cand = candidates[i]
+    const cap = captureRhRes(realRes)
+    try {
+      await dispatchRhAction(action, cand.token, params, cap.proxy)
+    } catch (err: any) {
+      cap.payload = { ok: false, error: err?.message || 'Gagal memproses permintaan RunningHub' }
+    }
+    last = cap.payload
+    const verdict = rhPoolVerdict(cap.payload)
+
+    if (verdict === 'ok') {
+      rhPoolMarkSuccess(cand.id)
+      const taskId = rhTaskIdFromPayload(cap.payload)
+      if (taskId) rhRememberTaskToken(taskId, cand.id)
+      if (usageId) noteChargeTicketJob('runninghub', usageId, taskId)
+      return cap.flush()
+    }
+    if (verdict === 'saldo' || verdict === 'invalid' || verdict === 'rate') {
+      rhPoolMarkFailure(cand.id, verdict, String(cap.payload?.error || ''))
+      continue
+    }
+    // Error non-kredensial (param/workflow salah): rotasi tidak menolong.
+    if (usageId) releaseChargeTicket('runninghub', usageId)
+    return cap.flush()
+  }
+
+  if (usageId) releaseChargeTicket('runninghub', usageId)
+  return realRes.status(200).json(last ?? {
+    ok: false,
+    error: 'Semua token master RunningHub sedang tidak tersedia (saldo habis / ditolak). Coba lagi nanti atau pakai token Anda sendiri.',
+  })
+}
+
 router.all('/', async (req: Request, res: Response) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Runninghub-Key')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Runninghub-Key, X-App-Token, X-Provider-Charge')
 
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'Method not allowed' })
@@ -686,9 +841,7 @@ router.all('/', async (req: Request, res: Response) => {
   const { action, apiKey: rawApiKey, ...params } = body
   const clientKey = normalizeRhApiKey(rawApiKey)
 
-  // Token MF-… adalah kunci akun MarkasTools (ai.markastools.id), bukan
-  // kredensial RunningHub: key/list menjawab 412 TOKEN_INVALID dan OpenAPI
-  // menjawab 806. Tolak di pintu masuk dengan arahan yang benar.
+  // Token MF-… adalah kunci akun MarkasTools, bukan kredensial RunningHub.
   if (/^MF-[A-Z0-9]/i.test(clientKey)) {
     return res.status(200).json({
       ok: false,
@@ -699,130 +852,100 @@ router.all('/', async (req: Request, res: Response) => {
     })
   }
 
-  // Klaim hadiah harian: SELALU pakai token milik pengguna (bukan token
-  // server) — hadiah harian adalah hak per-akun, jadi tidak boleh diklaim
-  // atas nama akun lain.
+  // Klaim hadiah harian: SELALU token milik pengguna (hak per-akun).
   if (action === 'claim-daily-gift') {
     return await handleClaimDailyGift(clientKey, res)
   }
 
-  let { token: apiKey, source: authSource } = rhResolveCredential(clientKey)
   if (!action) return res.status(200).json({ ok: false, error: 'Missing action' })
 
-  // Token pengguna yang sudah dicabut (412) jangan memblokir generasi bila
-  // server punya token sendiri. check-balance dikecualikan: di sana justru
-  // penting melaporkan keadaan token pengguna apa adanya.
-  if (action !== 'check-balance' && authSource === 'user-token') {
-    const global = rhGlobalAccessToken()
-    if (global && global !== apiKey && !(await rhJwtStillAccepted(apiKey))) {
-      console.log('[runninghub] token pengguna ditolak RunningHub (412) — memakai token server')
-      apiKey = global
-      authSource = 'server-token'
+  // ── Jalur 1: kredensial milik member → passthrough, tanpa potongan ──
+  if (!RH_SERVER_PLACEHOLDERS.has(clientKey)) {
+    const exp = rhJwtExp(clientKey)
+    if (exp !== null && Date.now() > exp * 1000) {
+      return res.status(200).json({
+        ok: false,
+        error: `Access token RunningHub kedaluwarsa (${new Date(exp * 1000).toISOString()}). Salin token baru dari sesi runninghub.ai yang masih login, atau top up saldo untuk memakai token server.`,
+      })
+    }
+    console.log(`[runninghub] action=${action} auth=client keyLen=${clientKey.length}`)
+    try {
+      return await dispatchRhAction(action, clientKey, params, res)
+    } catch (err: any) {
+      console.error('[runninghub] error:', err.message)
+      return res.status(200).json({ ok: false, error: err.message })
     }
   }
 
-  // Placeholder dari client dengan token global yang dimatikan = konfigurasi
-  // belum lengkap — jangan teruskan ke upstream (pasti ditolak dengan 806).
-  if (apiKey === RUNNINGHUB_SERVER_MANAGED_KEY) {
+  // ── Jalur 2: placeholder server → identitas + kelayakan + tiket + pool ──
+  const userId = rhAppUserId(req)
+  if (!userId) {
     return res.status(200).json({
       ok: false,
-      error: 'Access token RunningHub belum terpasang di server. Isi RUNNINGHUB_ACCESS_TOKEN di .env lalu restart server.',
+      error: 'Token RunningHub milik server hanya untuk member yang login. Tanpa akun app, tempel access token/API key RunningHub Anda sendiri di Providers.',
+    })
+  }
+  if (!masterKey('runninghub')) {
+    return res.status(200).json({
+      ok: false,
+      error: 'Token master RunningHub belum diatur admin. Tempel access token/API key RunningHub Anda sendiri di Providers, atau hubungi admin.',
     })
   }
 
-  if (!apiKey) {
-    return res.status(200).json({ ok: false, error: 'Missing apiKey' })
+  const consuming = rhActionConsuming(action)
+  let usageId: number | null = null
+  if (consuming) {
+    const izin = keyEligibility('runninghub', userId)
+    if (!izin.ok) return res.status(200).json({ ok: false, error: izin.reason })
+    // Admin pemilik pool tidak dipotong klien → tidak membawa tiket.
+    if (!isAdminUser(userId)) {
+      const h = req.headers['x-provider-charge']
+      const cek = claimChargeTicket('runninghub', userId, Array.isArray(h) ? h[0] : h)
+      if (!cek.ok) {
+        return res.status(200).json({ ok: false, error: cek.reason || 'Pembayaran generate ini belum terverifikasi server.' })
+      }
+      usageId = cek.usageId ?? null
+    }
   }
 
-  // Tolak lebih awal dengan pesan jelas, bukan error 806/401 membingungkan.
-  const exp = rhJwtExp(apiKey)
-  if (exp !== null && Date.now() > exp * 1000) {
-    return res.status(200).json({
-      ok: false,
-      error: `Access token RunningHub kedaluwarsa (${new Date(exp * 1000).toISOString()}). Perbarui token di env RUNNINGHUB_ACCESS_TOKEN lalu restart server.`,
-    })
-  }
-
-  console.log(`[runninghub] action=${action} auth=${authSource} keyLen=${String(apiKey).length}`)
-
+  console.log(`[runninghub] action=${action} auth=server-pool user=${userId} consuming=${consuming} ticket=${usageId ?? '-'}`)
   try {
-    if (action === 'motion-control') {
-      return await handleMotionControl(apiKey, params, res)
-    }
-    if (action === 'motion-control-v2.6-std') {
-      return await handleMotionControlV26Std(apiKey, params, res)
-    }
-    if (action === 'motion-control-v2.6-pro') {
-      return await handleMotionControlV26Pro(apiKey, params, res)
-    }
-    if (action === 'motion-control-v3') {
-      return await handleMotionControlV3(apiKey, params, res)
-    }
-    if (action === 'motion-control-ultra-hd') {
-      return await handleMotionControlUltraHD(apiKey, params, res)
-    }
-    const motionApp = MOTION_APPS[action]
-    if (motionApp) {
-      return await handleMotionAppWorkflow(apiKey, params, res, motionApp)
-    }
-    if (action === 'get-workflow-info') {
-      return await handleGetWorkflowInfo(apiKey, params.workflowId || params.workflow_id, res)
-    }
-    if (action === 'submit-tryon') {
-      return await handleSubmitTryOn(apiKey, params, res)
-    }
-    if (action === 'submit-tryon-flux2') {
-      return await handleSubmitTryOnFlux2(apiKey, params, res)
-    }
-    if (action === 'submit-song-cover') {
-      return await handleSubmitSongCover(apiKey, params, res)
-    }
-    if (action === 'submit-yue2-reimaginer') {
-      return await handleSubmitYuE2Reimaginer(apiKey, params, res)
-    }
-    if (action === 'submit-video-upscale') {
-      return await handleSubmitVideoUpscale(apiKey, params, res)
-    }
-    if (action === 'submit-photo-enhance') {
-      return await handleSubmitPhotoEnhance(apiKey, params, res)
-    }
-    if (action === 'submit-travel-photo') {
-      return await handleSubmitTravelPhoto(apiKey, params, res)
-    }
-    if (action === 'submit-image-edit') {
-      return await handleSubmitImageEdit(apiKey, params, res)
-    }
-    if (action === 'submit-h3-i2v') {
-      return await handleSubmitH3I2V(apiKey, params, res)
-    }
-    if (action === 'submit-h3-music-avatar') {
-      return await handleSubmitH3MusicAvatar(apiKey, params, res)
-    }
-    if (action === 'submit-h3-vlog') {
-      return await handleSubmitH3Vlog(apiKey, params, res)
-    }
-    if (action === 'submit-ugc-storyboard') {
-      return await handleSubmitUGCStoryboard(apiKey, params, res)
-    }
-    if (action === 'submit-seedance2') {
-      return await handleSubmitSeedance2(apiKey, params, res)
-    }
-    if (action === 'submit-seedance2.6') {
-      return await handleSubmitSeedance26(apiKey, params, res)
-    }
-    if (action === 'query') {
-      return await handleQuery(apiKey, params.taskId, res)
-    }
-    if (action === 'check-balance') {
-      return await handleCheckBalance(apiKey, res)
-    }
-
-    return res.status(200).json({ ok: false, error: `Unknown action: ${action}` })
+    return await runRhWithPool(action, params, res, usageId)
   } catch (err: any) {
-    console.error(`[runninghub] error:`, err.message)
+    console.error('[runninghub] pool error:', err.message)
+    if (usageId) releaseChargeTicket('runninghub', usageId)
     return res.status(200).json({ ok: false, error: err.message })
   }
 })
+
+/** Rute aksi ke handler — dipakai baik jalur member maupun rotasi pool. */
+async function dispatchRhAction(action: string, apiKey: string, params: any, res: Response): Promise<any> {
+  if (action === 'motion-control') return handleMotionControl(apiKey, params, res)
+  if (action === 'motion-control-v2.6-std') return handleMotionControlV26Std(apiKey, params, res)
+  if (action === 'motion-control-v2.6-pro') return handleMotionControlV26Pro(apiKey, params, res)
+  if (action === 'motion-control-v3') return handleMotionControlV3(apiKey, params, res)
+  if (action === 'motion-control-ultra-hd') return handleMotionControlUltraHD(apiKey, params, res)
+  const motionApp = MOTION_APPS[action]
+  if (motionApp) return handleMotionAppWorkflow(apiKey, params, res, motionApp)
+  if (action === 'get-workflow-info') return handleGetWorkflowInfo(apiKey, params.workflowId || params.workflow_id, res)
+  if (action === 'submit-tryon') return handleSubmitTryOn(apiKey, params, res)
+  if (action === 'submit-tryon-flux2') return handleSubmitTryOnFlux2(apiKey, params, res)
+  if (action === 'submit-song-cover') return handleSubmitSongCover(apiKey, params, res)
+  if (action === 'submit-yue2-reimaginer') return handleSubmitYuE2Reimaginer(apiKey, params, res)
+  if (action === 'submit-video-upscale') return handleSubmitVideoUpscale(apiKey, params, res)
+  if (action === 'submit-photo-enhance') return handleSubmitPhotoEnhance(apiKey, params, res)
+  if (action === 'submit-travel-photo') return handleSubmitTravelPhoto(apiKey, params, res)
+  if (action === 'submit-image-edit') return handleSubmitImageEdit(apiKey, params, res)
+  if (action === 'submit-h3-i2v') return handleSubmitH3I2V(apiKey, params, res)
+  if (action === 'submit-h3-music-avatar') return handleSubmitH3MusicAvatar(apiKey, params, res)
+  if (action === 'submit-h3-vlog') return handleSubmitH3Vlog(apiKey, params, res)
+  if (action === 'submit-ugc-storyboard') return handleSubmitUGCStoryboard(apiKey, params, res)
+  if (action === 'submit-seedance2') return handleSubmitSeedance2(apiKey, params, res)
+  if (action === 'submit-seedance2.6') return handleSubmitSeedance26(apiKey, params, res)
+  if (action === 'query') return handleQuery(apiKey, params.taskId, res)
+  if (action === 'check-balance') return handleCheckBalance(apiKey, res)
+  return res.status(200).json({ ok: false, error: `Unknown action: ${action}` })
+}
 
 async function rhUpload(apiKey: string, fileBase64: string, fileName: string, mimeType: string): Promise<{ fileName: string; downloadUrl: string }> {
   // Access token (JWT): endpoint OpenAPI menolak JWT, jadi upload lewat sesi situs.
@@ -3448,6 +3571,17 @@ async function handleQuery(apiKey: string, taskId: string, res: Response) {
     }
   }
 
+  // ── Otomatisasi pembersih watermark RunningHub ────────────────────────
+  // Saat task COMPLETED dan hasilnya video, otomatis panggil pipeline Python
+  // untuk menghapus watermark banner RunningHub di atas video.
+  if (mappedStatus === 'COMPLETED' && videoUrl && /\.(mp4|webm|mov|m4v)$/i.test(videoUrl.split('?')[0])) {
+    const cleanPath = await cleanRunninghubWatermark(videoUrl, taskId)
+    if (cleanPath) {
+      videoUrl = `/api/public/runninghub/watermark-clean/download/${taskId}`
+      console.log(`[watermark-clean] Video siap (bebas watermark): ${videoUrl}`)
+    }
+  }
+
   return res.status(200).json({
     ok: true,
     data: {
@@ -3698,6 +3832,60 @@ function rhWalletSummary(wallet: RHTokenWallet | null): string {
   if (wallet.watermarkFree === false) parts.push('hasil bertimestamp (akun gratis)')
   else if (wallet.watermarkFree === true) parts.push('hasil tanpa watermark')
   return parts.join(' · ')
+}
+
+/**
+ * Probe satu token pool untuk tombol "Cek" admin. Mengembalikan status ringkas
+ * TANPA nilai token. JWT dibaca lewat wallet sesi (poin); API key lama lewat
+ * accountStatus. `rejected` hanya true bila upstream tegas menolak kredensial.
+ */
+export async function rhProbePoolToken(
+  token: string,
+  kind: 'jwt' | 'key',
+): Promise<{ ok: boolean; pointsBalance: number | null; rejected: boolean; message: string }> {
+  const bersih = normalizeRhApiKey(token)
+  if (!bersih) return { ok: false, pointsBalance: null, rejected: false, message: 'Token kosong' }
+  try {
+    if (kind === 'jwt' || rhJwtExp(bersih) !== null) {
+      if (rhJwtExpired(bersih)) {
+        return { ok: false, pointsBalance: null, rejected: true, message: 'Access token kedaluwarsa (exp lewat) — salin token baru dari sesi yang masih login' }
+      }
+      const wallet = await rhTokenWallet(bersih)
+      if (wallet) {
+        const summary = rhWalletSummary(wallet)
+        return { ok: true, pointsBalance: wallet.pointsBalance, rejected: false, message: summary ? `Aktif. ${summary}.` : 'Access token aktif.' }
+      }
+      const accepted = await rhJwtStillAccepted(bersih)
+      if (!accepted) {
+        return { ok: false, pointsBalance: null, rejected: true, message: 'Access token ditolak RunningHub (sesi dicabut/rotate) — ganti token baru' }
+      }
+      return { ok: false, pointsBalance: null, rejected: false, message: 'Tidak bisa membaca data akun — coba lagi sebentar (upstream belum tentu menolak)' }
+    }
+    const apiRes = await rhFetch(bersih, `${RUNNINGHUB_BASE}/uc/openapi/accountStatus`, {
+      method: 'POST',
+      headers: rhAuthHeaders(bersih),
+      body: JSON.stringify({ apiKey: bersih, accessToken: bersih }),
+    })
+    const text = await apiRes.text()
+    let data: any = null
+    try { data = JSON.parse(text) } catch { data = null }
+    if (!data || apiRes.status >= 500 || (data.code === undefined && !data.data)) {
+      return { ok: false, pointsBalance: null, rejected: false, message: `RunningHub tidak membalas JSON (HTTP ${apiRes.status}) — coba lagi` }
+    }
+    if (data.code !== undefined && data.code !== null && data.code !== 0 && data.code !== '0') {
+      const code = String(data.code)
+      return { ok: false, pointsBalance: null, rejected: RH_KEY_REJECT_CODES.has(code), message: translateRhError(code, data.msg) }
+    }
+    const info = data.data || {}
+    let balance: number | null = null
+    for (const field of RH_BALANCE_FIELDS) {
+      const num = Number(info[field])
+      if (Number.isFinite(num)) { balance = num; break }
+    }
+    return { ok: true, pointsBalance: balance, rejected: false, message: balance !== null ? `API key valid · saldo ${balance}` : 'API key valid' }
+  } catch (err: any) {
+    return { ok: false, pointsBalance: null, rejected: false, message: `Gagal terhubung ke RunningHub: ${err?.message || err}` }
+  }
 }
 
 function rhKeyTypeLabel(apiType: unknown): string | null {

@@ -4,6 +4,7 @@ import { authenticateToken, AuthRequest } from '../middleware/auth.js'
 import { POSBOT_MIN_TOPUP, POSBOT_TOPUP_MAX, POSBOT_TOPUP_PRESETS, getPosbotCharge } from '../../shared/pricing.js'
 import { keyEligibility } from '../lib/providerMasterKey.js'
 import { nextUniqueCode } from '../lib/qrisPayment.js'
+import { createBasunipayPayment } from '../lib/basunipay.js'
 
 const router = Router()
 
@@ -36,7 +37,7 @@ router.get('/balance', authenticateToken, (req: AuthRequest, res: Response) => {
   }
 })
 
-router.post('/topup', authenticateToken, (req: AuthRequest, res: Response) => {
+router.post('/topup', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id
     if (!userId) return res.status(401).json({ error: 'Unauthorized' })
@@ -56,9 +57,18 @@ router.post('/topup', authenticateToken, (req: AuthRequest, res: Response) => {
     const result = db.prepare(
       'INSERT INTO posbot_topup (user_id, amount, unique_code, amount_total, proof_note, status) VALUES (?, ?, ?, ?, ?, ?)'
     ).run(userId, topupAmount, unique_code, amount_total, proof_note || '', 'pending')
+    const refId = Number(result.lastInsertRowid)
 
-    const topup = db.prepare('SELECT * FROM posbot_topup WHERE id = ?').get(result.lastInsertRowid)
-    res.status(201).json({ topup, message: 'Topup request submitted, waiting admin approval' })
+    const basunipay = await createBasunipayPayment({
+      refTable: 'posbot_topup',
+      refId,
+      userId,
+      baseAmount: topupAmount,
+      description: `Top up PosBot — user #${userId}`,
+    })
+
+    const topup = db.prepare('SELECT * FROM posbot_topup WHERE id = ?').get(refId)
+    res.status(201).json({ topup, basunipay, message: 'Topup request submitted, waiting admin approval' })
   } catch (error) {
     console.error('Posbot topup error:', error)
     res.status(500).json({ error: 'Internal server error' })

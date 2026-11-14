@@ -30,6 +30,7 @@ import { requireProPage } from './middleware/requireProPage.js'
 import nexabotWalletRoutes from './routes/nexabotWallet.js'
 import seaviWalletRoutes from './routes/seaviWallet.js'
 import posbotWalletRoutes from './routes/posbotWallet.js'
+import runninghubWalletRoutes from './routes/runninghubWallet.js'
 import publicPricingRoutes from './routes/publicPricing.js'
 import publicStatsRoutes from './routes/publicStats.js'
 import publicCreatepulseRoutes from './routes/publicCreatepulse.js'
@@ -43,6 +44,7 @@ import publicRoboneoRoutes from './routes/publicRoboneo.js'
 import publicRoboneoMembershipRoutes from './routes/publicRoboneoMembership.js'
 import publicLeonardoUploadRoutes from './routes/publicLeonardoUpload.js'
 import publicVideoProxyRoutes from './routes/publicVideoProxy.js'
+import publicImageProxyRoutes from './routes/publicImageProxy.js'
 import publicFramiaRoutes from './routes/publicFramia.js'
 import publicSeaviRoutes from './routes/publicSeavi.js'
 import publicPosbotRoutes from './routes/publicPosbot.js'
@@ -53,6 +55,7 @@ import publicGensparkRoutes from './routes/publicGenspark.js'
 import publicFreebeatRoutes from './routes/publicFreebeat.js'
 import publicGensparkUploadRoutes from './routes/publicGensparkUpload.js'
 import publicRunninghubRoutes from './routes/publicRunninghub.js'
+import publicRunninghubWatermarkRoutes from './routes/publicRunninghubWatermark.js'
 import publicWeavyRoutes from './routes/publicWeavy.js'
 import publicWeavyProxyRoutes from './routes/publicWeavyProxy.js'
 import publicWeavyCreditsRoutes from './routes/publicWeavyCredits.js'
@@ -74,6 +77,8 @@ import { startRunningHubDailyClaimScheduler } from './lib/runninghubDailyClaim.j
 import paymentsRoutes from './routes/payments.js'
 import { startPaymentEmailWatcher } from './lib/paymentEmailWatcher.js'
 import paymentIngestRoutes from './routes/paymentIngest.js'
+import basunipayWebhookRoutes from './routes/basunipayWebhook.js'
+import { startBasunipayPoller } from './lib/basunipay.js'
 
 // .env sudah dimuat server/env.ts (impor pertama), yaitu sebelum modul-modul di
 // atas dievaluasi. Tidak ada pemuatan kedua di sini supaya hanya ada satu sumber
@@ -135,6 +140,8 @@ app.use('/api/admin/topup', adminTopupRoutes)
 app.use('/api/payments', paymentsRoutes)
 // Companion Android (notifikasi bank/e-wallet → verifikasi otomatis QRIS).
 app.use('/api/payments/ingest', paymentIngestRoutes)
+// Webhook BasuniPay (https://arkxmotion-studio.win/api/public/basunipay/webhook)
+app.use('/api/public/basunipay/webhook', basunipayWebhookRoutes)
 app.use('/api/tokens', tokenRoutes)
 app.use('/api/provider-topup', providerTopupRoutes)
 app.use('/api/createpulse', createpulseRoutes)
@@ -156,6 +163,7 @@ app.use('/api/public/roboneo', publicRoboneoRoutes)
 app.use('/api/public/roboneo-membership', publicRoboneoMembershipRoutes)
 app.use('/api/public/leonardo-upload', publicLeonardoUploadRoutes)
 app.use('/api/public/video-proxy', publicVideoProxyRoutes)
+app.use('/api/public/proxy-image', publicImageProxyRoutes)
 app.use('/api/public/framia', publicFramiaRoutes)
 app.use('/api/public/seavi', publicSeaviRoutes)
 app.use('/api/public/posbot', publicPosbotRoutes)
@@ -165,6 +173,7 @@ app.use('/api/public/oneover', publicOneoverRoutes)
 app.use('/api/public/genspark', publicGensparkRoutes)
 app.use('/api/public/freebeat', publicFreebeatRoutes)
 app.use('/api/public/genspark-upload', publicGensparkUploadRoutes)
+app.use('/api/public/runninghub/watermark-clean', publicRunninghubWatermarkRoutes)
 app.use('/api/public/runninghub', publicRunninghubRoutes)
 app.use('/api/public/weavy', publicWeavyRoutes)
 app.use('/api/public/weavy-proxy', publicWeavyProxyRoutes)
@@ -181,6 +190,7 @@ app.use('/api/public/tiktok-download', publicTiktokRoutes)
 app.use('/api/nexabot', nexabotWalletRoutes)
 app.use('/api/seavi', seaviWalletRoutes)
 app.use('/api/posbot', posbotWalletRoutes)
+app.use('/api/runninghub-wallet', runninghubWalletRoutes)
 app.use('/api/runninghub', runninghubDailyClaimRoutes)
 app.use('/api/chatgpt', chatgptRoutes)
 app.use('/api/dola', publicDolaRoutes)
@@ -384,6 +394,10 @@ startRunningHubDailyClaimScheduler()
 // Verifikasi otomatis pembayaran QRIS manual lewat email notifikasi bank.
 // Nonaktif (hanya mencetak catatan) kalau PAYMENT_IMAP_* belum diisi.
 startPaymentEmailWatcher()
+
+// Poller BasniPay: cek status payment pending tiap 2 menit (fallback bila
+// webhook belum/tidak sampai). Nonaktif bila BASUNIPAY_ENABLED != 'true'.
+startBasunipayPoller()
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`[${isProd ? 'PROD' : 'DEV'}] Server running on http://0.0.0.0:${PORT}`)

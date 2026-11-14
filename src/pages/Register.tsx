@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { UserPlus, Mail, Lock, User, AlertCircle, CheckCircle, CheckCircle2, MessageCircle, Crown, Sparkles, ArrowRight, ShieldCheck, Zap, Star } from 'lucide-react'
+import { BasunipayCheckoutButton } from '@/components/QrisPayment'
 import {
   DEFAULT_MEMBERSHIP_FEE,
   QRIS_IMG,
@@ -21,6 +22,11 @@ export default function RegisterPage() {
   const [payNote, setPayNote] = useState('')
   const [fee, setFee] = useState(DEFAULT_MEMBERSHIP_FEE)
   const [isLoading, setIsLoading] = useState(false)
+  const [paymentToken, setPaymentToken] = useState<string | null>(null)
+  // Response /api/membership/payment — nominal TEPAT (dengan kode unik) + checkout BasuniPay.
+  const [payFlow, setPayFlow] = useState<{ amountTotal: number; fee: number; checkoutUrl?: string | null; qrisImage?: string | null } | null>(null)
+  // Akun berubah Pro begitu pembayaran terdeteksi → layar otomatis jadi konfirmasi.
+  const [proActive, setProActive] = useState(false)
   const register = useAuthStore((state) => state.register)
   const addToast = useToastStore((state) => state.addToast)
 
@@ -29,6 +35,52 @@ export default function RegisterPage() {
       .then((pricing) => setFee(pricing.fee))
       .catch(() => {})
   }, [])
+
+  // Begitu akun jadi dibuat, langsung buat pengajuan pembayaran + checkout
+  // BasuniPay (kalau aktif). Tanpa ini, pembayaran member tidak akan
+  // terdeteksi otomatis karena belum ada baris payment yang cocok.
+  useEffect(() => {
+    if (!success || !paymentToken) return
+    let cancelled = false
+    fetch('/api/membership/payment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: paymentToken }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled || !data?.ok) return
+        setPayFlow({
+          amountTotal: Number(data.amountTotal) || fee,
+          fee: Number(data.amount) || fee,
+          checkoutUrl: data.basunipay?.checkout_url || null,
+          qrisImage: data.basunipay?.qris_image || null,
+        })
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [success, paymentToken, fee])
+
+  // Setelah pembayaran terdeteksi BasuniPay, akun otomatis Pro — tampilkan
+  // konfirmasi tanpa menunggu pengguna refresh manual.
+  useEffect(() => {
+    if (!success || proActive) return
+    let stop = false
+    const check = async () => {
+      try {
+        const res = await fetch('/api/auth/status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!stop && data?.plan === 'pro') setProActive(true)
+      } catch { /* coba lagi siklus berikutnya */ }
+    }
+    check()
+    const timer = setInterval(check, 5000)
+    return () => { stop = true; clearInterval(timer) }
+  }, [success, email, proActive])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -54,14 +106,15 @@ export default function RegisterPage() {
       return
     }
 
+    if (result.paymentToken) setPaymentToken(result.paymentToken)
     setSuccess(true)
     setIsLoading(false)
-    addToast('Registrasi berhasil! Menunggu persetujuan admin.', 'success')
+    addToast('Registrasi berhasil! Bayar QRIS — akun Pro aktif otomatis begitu pembayaran masuk.', 'success')
   }
 
   const handlePayConfirm = (e: React.FormEvent) => {
     e.preventDefault()
-    const waUrl = buildWaPaymentUrl({ name, email, note: payNote, fee })
+    const waUrl = buildWaPaymentUrl({ name, email, note: payNote, fee: payFlow?.amountTotal ?? fee })
     window.open(waUrl, '_blank')
     addToast('Konfirmasi pembayaran dibuka di WhatsApp', 'success')
   }
@@ -113,29 +166,55 @@ export default function RegisterPage() {
           <div className="w-full max-w-[420px] rounded-[24px] border border-cyan-400/15 bg-[#0B1526]/80 p-6 text-center shadow-[0_0_60px_rgba(0,168,255,0.12)] backdrop-blur-xl sm:p-8">
             <div className="flex flex-col items-center">
               <div className="mb-4 grid h-14 w-14 place-items-center rounded-full border border-emerald-400/30 bg-emerald-500/10 shadow-[0_0_30px_rgba(34,197,94,0.25)]"><CheckCircle className="h-7 w-7 text-emerald-400" /></div>
-              <h2 className="text-[20px] font-black italic tracking-tight">Registration <span className="bg-gradient-to-r from-emerald-400 to-cyan-300 bg-clip-text text-transparent">Successful!</span></h2>
-              <p className="mt-2 text-[13px] leading-relaxed text-white/60">Akun kamu sudah dibuat. Setelah pembayaran disetujui admin, akun otomatis jadi <b className="text-white">Pro</b> dan semua fitur AI terbuka.</p>
-
+              <h2 className="text-[20px] font-black italic tracking-tight">
+                {proActive ? (
+                  <>Akun <span className="bg-gradient-to-r from-emerald-400 to-cyan-300 bg-clip-text text-transparent">Pro Aktif!</span></>
+                ) : (
+                  <>Registration <span className="bg-gradient-to-r from-emerald-400 to-cyan-300 bg-clip-text text-transparent">Successful!</span></>
+                )}
+              </h2>
+              <p className="mt-2 text-[13px] leading-relaxed text-white/60">
+                {proActive
+                  ? 'Pembayaran terdeteksi — akunmu langsung aktif sebagai Pro dan semua fitur AI terbuka. Silakan login.'
+                  : 'Akun kamu sudah dibuat. Begitu pembayaran masuk, akun langsung jadi Pro secara otomatis — tidak perlu menunggu admin.'}
+              </p>
+              {proActive ? (
+                <>
+                  <Link to="/login" className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#0066FF] via-[#00C6FF] to-[#8B5CF6] px-4 py-3 text-sm font-bold text-white shadow-[0_0_28px_rgba(0,102,255,0.45)] transition hover:-translate-y-0.5">Go to Login <ArrowRight className="h-4 w-4" /></Link>
+                </>
+              ) : (
               <form onSubmit={handlePayConfirm} className="mb-4 mt-5 w-full rounded-2xl border border-emerald-400/20 bg-emerald-500/5 p-4 text-left">
-                <div className="mb-2 flex items-center gap-2"><MessageCircle className="h-4 w-4 text-emerald-400" /><span className="text-sm font-semibold">Konfirmasi Pembayaran (QRIS)</span></div>
-                <p className="mb-3 text-[11px] text-white/50">Bayar <b className="text-white">{formatRp(fee)}</b> via QRIS, lalu klik tombol konfirmasi via WhatsApp.</p>
-                <div className="mb-3 rounded-xl border border-white/10 bg-white p-2">
-                  <img src={QRIS_IMG} alt="QRIS ARKXMotion Studio" className="mx-auto w-full max-w-[180px] rounded" />
-                  <p className="mt-1 text-center text-[11px] text-white/50">Scan QRIS → Bayar {formatRp(fee)} → Konfirmasi via WhatsApp</p>
-                </div>
+                <div className="mb-2 flex items-center gap-2"><MessageCircle className="h-4 w-4 text-emerald-400" /><span className="text-sm font-semibold">Pembayaran Join Pro (QRIS)</span></div>
+                <p className="mb-3 text-[11px] text-white/50">
+                  Bayar <b className="text-white">{payFlow ? formatRp(payFlow.amountTotal) : formatRp(fee)}</b> via QRIS —
+                  <b className="text-emerald-300"> akun otomatis Pro begitu pembayaran masuk</b>, tidak perlu konfirmasi admin.
+                </p>
+                <BasunipayCheckoutButton url={payFlow?.checkoutUrl} payable={payFlow?.amountTotal ?? null} image={payFlow?.qrisImage} />
+                {!payFlow?.qrisImage && (
+                  <div className="mb-3 rounded-xl border border-white/10 bg-white p-2">
+                    <img src={QRIS_IMG} alt="QRIS ARKXMotion Studio" className="mx-auto w-full max-w-[180px] rounded" />
+                    <p className="mt-1 text-center text-[11px] text-white/50">Scan QRIS → Bayar {payFlow ? formatRp(payFlow.amountTotal) : formatRp(fee)}</p>
+                  </div>
+                )}
                 <div className="mb-3 flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2">
                   <span className="text-xs text-white/50">Biaya join Pro</span>
-                  <span className="text-sm font-bold text-emerald-300">{formatRp(fee)}</span>
+                  <span className="text-sm font-bold text-emerald-300">{payFlow ? formatRp(payFlow.amountTotal) : formatRp(fee)}</span>
                 </div>
                 <label className="mb-1 block text-[11px] text-white/50">Catatan (opsional)</label>
                 <textarea value={payNote} onChange={(e) => setPayNote(e.target.value)} placeholder="mis. Pembayaran atas nama Koko, jam 14:30" rows={2} className="mb-3 w-full resize-none rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white placeholder:text-white/25 outline-none focus:border-emerald-400/50 focus:ring-2 focus:ring-emerald-400/20" />
-                <button type="submit" className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#25D366] to-[#128C7E] py-2.5 text-sm font-bold text-white transition hover:-translate-y-0.5">
-                  <MessageCircle className="h-4 w-4" /> Konfirmasi via WhatsApp
+                <p className="mb-2 text-center text-[10px] text-white/35">Cadangan saja — akun sudah otomatis aktif tanpa konfirmasi WA.</p>
+                <button type="submit" className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#25D366] to-[#128C7E] py-2 text-xs font-semibold text-white/80 transition hover:-translate-y-0.5">
+                  <MessageCircle className="h-3.5 w-3.5" /> Konfirmasi via WhatsApp (cadangan)
                 </button>
               </form>
+              )}
 
-              <Link to="/register-status" className="mb-2 block w-full rounded-xl border border-white/12 bg-white/[0.04] px-4 py-2.5 text-center text-sm font-semibold text-white/85 transition hover:bg-white/[0.08]">Cek Status Pendaftaran</Link>
-              <Link to="/login" className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#0066FF] via-[#00C6FF] to-[#8B5CF6] px-4 py-2.5 text-sm font-bold text-white shadow-[0_0_28px_rgba(0,102,255,0.45)] transition hover:-translate-y-0.5">Go to Login <ArrowRight className="h-4 w-4" /></Link>
+              {proActive ? null : (
+                <>
+                  <Link to="/register-status" className="mb-2 block w-full rounded-xl border border-white/12 bg-white/[0.04] px-4 py-2.5 text-center text-sm font-semibold text-white/85 transition hover:bg-white/[0.08]">Cek Status Pendaftaran</Link>
+                  <Link to="/login" className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#0066FF] via-[#00C6FF] to-[#8B5CF6] px-4 py-2.5 text-sm font-bold text-white shadow-[0_0_28px_rgba(0,102,255,0.45)] transition hover:-translate-y-0.5">Go to Login <ArrowRight className="h-4 w-4" /></Link>
+                </>
+              )}
             </div>
           </div>
         </div>

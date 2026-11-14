@@ -157,6 +157,24 @@ for root, dirs, files in os.walk(shared_local):
         sftp.put(local_file, remote_file, confirm=False)
         print(f'  ✓ {rel}/{f}')
 
+# Upload python/ — dipakai untuk pemrosesan AI di sisi server (watermark
+# cleaning, dll.). Tidak diunggah ke production sebelumnya, jadi tambahkan
+# di sini untuk memastikan deploy selalu menyertakan versi terbaru.
+python_local = os.path.join(LOCAL_DIR, 'python')
+python_remote = REMOTE_DIR + '/python'
+for root, dirs, files in os.walk(python_local):
+    rel = os.path.relpath(root, LOCAL_DIR)
+    remote_path = REMOTE_DIR + '/' + rel.replace('\\', '/')
+    try:
+        sftp.listdir(remote_path)
+    except FileNotFoundError:
+        sftp.mkdir(remote_path)
+    for f in files:
+        local_file = os.path.join(root, f)
+        remote_file = remote_path + '/' + f
+        sftp.put(local_file, remote_file, confirm=False)
+        print(f'  ✓ {rel}/{f}')
+
 # Verifikasi: ukuran file server di VPS harus sama dengan lokal. Tanpa cek
 # ini, kegagalan upload satu file (mis. routes/nexabot.ts) tidak kelihatan
 # sampai fitur baru menjawab 404 di produksi.
@@ -281,7 +299,8 @@ def _sync_payment_imap():
     # berikutnya. Yang kosong berarti "biarkan milik server", bukan "kosongkan".
     keys = ['PAYMENT_IMAP_HOST', 'PAYMENT_IMAP_PORT', 'PAYMENT_IMAP_SECURE',
             'PAYMENT_IMAP_USER', 'PAYMENT_IMAP_PASS', 'PAYMENT_IMAP_ENABLED',
-            'PAYMENT_INGEST_SECRET']
+            'PAYMENT_INGEST_SECRET',
+            'BASUNIPAY_BASE_URL', 'BASUNIPAY_API_KEY', 'BASUNIPAY_ENABLED']
     nilai = {}
     with open(local_env, encoding='utf-8', errors='replace') as fh:
         for baris in fh:

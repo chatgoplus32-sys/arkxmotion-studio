@@ -5,7 +5,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { Zap, Clock, CheckCircle, ExternalLink, Copy, Rocket, Film, ImageIcon, Video } from 'lucide-react'
 import { DANA_NUMBER, DANA_NAME, adminWhatsappLink, formatRp } from '@/lib/payment'
-import { PaymentMethodToggle, QrisPanel } from '@/components/QrisPayment'
+import { PaymentMethodToggle, QrisPanel, BasunipayCheckoutButton } from '@/components/QrisPayment'
 import {
   fetchNexabotWallet,
   nexabotRemainingLabel,
@@ -42,6 +42,7 @@ export default function PremiumBoosterPage() {
   const [payMethod, setPayMethod] = useState<'dana' | 'qris'>('dana')
   const [proofNote, setProofNote] = useState('')
   const [loading, setLoading] = useState(false)
+  const [basunipay, setBasunipay] = useState<{ checkout_url?: string; payable_amount?: number; qris_image?: string } | null>(null)
 
   const API = '/api/nexabot'
   const headers = useMemo(() => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }), [token])
@@ -86,7 +87,8 @@ export default function PremiumBoosterPage() {
       })
       const data = await res.json()
       if (res.ok) {
-        addToast(`Premium Booster ${formatRp(harga)} diajukan — menunggu approval admin`, 'success')
+        setBasunipay(data.basunipay || null)
+        addToast('Pengajuan terkirim', 'success')
         setStep('confirm')
         fetchAll()
       } else {
@@ -223,40 +225,21 @@ export default function PremiumBoosterPage() {
 
       {step === 'pay' && (
         <Section
-          title={payMethod === 'qris' ? 'Pembayaran via QRIS' : 'Pembayaran via DANA'}
-          sub={`Premium Booster ${hari} hari — ${formatRp(harga)}`}
+          title="Buat Pengajuan"
+          sub={`Premium Booster ${hari} hari — nominal TEPAT muncul di langkah berikutnya`}
         >
           <PaymentMethodToggle value={payMethod} onChange={setPayMethod} />
 
-          {payMethod === 'qris' && <QrisPanel amountLabel={`Premium Booster · ${formatRp(harga)}`} />}
-
-          {payMethod === 'dana' && (
-            <div className="rounded-xl border border-border bg-card/50 p-5 mb-4 mt-4">
-              <div className="text-center mb-4">
-                <div className="text-sm text-muted-foreground mb-1">Transfer ke:</div>
-                <div className="text-xl font-bold">💜 DANA</div>
-              </div>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between p-3 rounded-lg bg-background">
-                  <div>
-                    <div className="text-xs text-muted-foreground">Nomor HP</div>
-                    <div className="font-mono font-bold text-lg">{DANA_NUMBER}</div>
-                  </div>
-                  <button onClick={copyNumber} className="p-2 rounded-lg hover:bg-accent transition">
-                    <Copy className="h-4 w-4" />
-                  </button>
-                </div>
-                <div className="p-3 rounded-lg bg-background">
-                  <div className="text-xs text-muted-foreground">Atas Nama</div>
-                  <div className="font-medium">{DANA_NAME}</div>
-                </div>
-                <div className="p-3 rounded-lg bg-background">
-                  <div className="text-xs text-muted-foreground">Jumlah Transfer (Premium Booster {hari} hari)</div>
-                  <div className="font-bold text-primary text-lg">{formatRp(harga)}</div>
-                </div>
-              </div>
-            </div>
-          )}
+          {/* Nominal TEPAT (kode unik) baru diketahui setelah pengajuan dibuat di
+              server. Membayar nominal bulat akan gagal dicocokkan otomatis. */}
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 mb-4 text-sm">
+            <div className="font-semibold text-amber-400 mb-1">⚠️ Jangan transfer dulu</div>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Setelah tombol <b>Buat Pengajuan</b> ditekan, kamu dapat <b>nominal TEPAT</b>
+              (termasuk kode unik) yang dicocokkan otomatis dengan notifikasi pembayaran dari bank/e-wallet.
+              Bayar segitu — jangan dibulatkan, kalau tidak verifikasi otomatisnya gagal.
+            </p>
+          </div>
 
           <div className="mb-4">
             <label className="text-sm font-medium mb-1 block">Catatan (opsional)</label>
@@ -272,7 +255,7 @@ export default function PremiumBoosterPage() {
           <div className="flex gap-3">
             <Button variant="outline" onClick={() => setStep('select')} className="flex-1">Kembali</Button>
             <Button onClick={buy} disabled={loading} className="flex-1">
-              {loading ? 'Mengirim...' : payMethod === 'qris' ? 'Sudah Bayar' : 'Sudah Transfer'}
+              {loading ? 'Membuat pengajuan...' : 'Buat Pengajuan & Lanjut'}
             </Button>
           </div>
 
@@ -286,19 +269,29 @@ export default function PremiumBoosterPage() {
       )}
 
       {step === 'confirm' && (
-        <Section title="Menunggu Approval" sub="Pengajuan Booster kamu sedang diproses admin">
-          <div className="text-center py-8">
-            <div className="text-5xl mb-4">⏳</div>
-            <div className="text-lg font-medium mb-2">Premium Booster menunggu approval</div>
-            <div className="text-sm text-muted-foreground mb-4">
-              Booster aktif otomatis setelah admin menyetujui pembayaran — NexaDance 3.0, Omni Flash 1.2 &amp; GPT Image langsung bebas potongan saldo.
-              <br />Hubungi admin jika sudah transfer.
-            </div>
-            <a href={waLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500/10 text-emerald-500 text-sm font-medium hover:bg-emerald-500/20 transition">
+        <Section
+          title="Selesaikan Pembayaran"
+          sub="Booster aktif otomatis begitu pembayaran terdeteksi"
+        >
+          {basunipay?.qris_image || basunipay?.checkout_url ? (
+            <BasunipayCheckoutButton
+              url={basunipay?.checkout_url}
+              payable={basunipay?.payable_amount}
+              image={basunipay?.qris_image}
+            />
+          ) : (
+            <QrisPanel amountLabel={`Premium Booster ${hari} hari`} exactAmount={basunipay?.payable_amount} />
+          )}
+          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3 text-xs text-muted-foreground mb-4 space-y-1">
+            <div>⚡ Paket <b>langsung aktif</b> begitu pembayaran terdeteksi — tidak perlu konfirmasi admin.</div>
+            <div>📅 Berlaku {hari} hari sejak paket aktif.</div>
+          </div>
+          <div className="text-center">
+            <a href={waLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-sm text-emerald-500 hover:underline">
               <ExternalLink className="h-4 w-4" />
-              Konfirmasi via WhatsApp
+              Kendala? Hubungi Admin via WhatsApp
             </a>
-            <div className="mt-4">
+            <div className="mt-3">
               <Button variant="outline" onClick={() => { setStep('select'); fetchAll() }}>Kembali</Button>
             </div>
           </div>

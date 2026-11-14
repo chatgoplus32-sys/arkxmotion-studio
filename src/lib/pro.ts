@@ -10,6 +10,11 @@ export interface ProPayment {
   proofNote: string
   adminNote: string
   createdAt: string
+  /** Nominal TEPAT (amount + kode unik) — diisi server saat pengajuan. */
+  amountTotal?: number | null
+  uniqueCode?: number | null
+  checkoutUrl?: string | null
+  qrisImage?: string | null
 }
 
 export interface ProStatus {
@@ -51,7 +56,10 @@ export async function fetchProStatus(token: string): Promise<ProStatus> {
 }
 
 /** Kirim konfirmasi pembayaran Pro (nominal ditentukan server). */
-export async function submitProPayment(token: string, proofNote: string): Promise<{ payment: ProPayment }> {
+export async function submitProPayment(
+  token: string,
+  proofNote: string,
+): Promise<{ payment: ProPayment; basunipay?: { checkout_url?: string; payable_amount?: number; unique_code?: number; qris_image?: string } | null }> {
   const res = await fetch('/api/membership/pro/payment', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -59,7 +67,7 @@ export async function submitProPayment(token: string, proofNote: string): Promis
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(data.error || 'Gagal mengirim konfirmasi pembayaran')
-  return data
+  return data as { payment: ProPayment; basunipay?: { checkout_url?: string; payable_amount?: number; unique_code?: number; qris_image?: string } | null }
 }
 
 /** Pesan WhatsApp ke admin bahwa pembayaran Pro sudah dikirim. */

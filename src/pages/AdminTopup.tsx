@@ -77,13 +77,13 @@ export default function AdminTopupPage() {
   const [actionLoading, setActionLoading] = useState<number | null>(null)
   // Wallet mana yang sedang dibuka: CreatePulse (Rp), NexaBot (Rp), Seavi (token),
   // atau manual untuk provider tanpa dompet (Roboneo/Weavy/Framia, dll.).
-  const [provider, setProvider] = useState<'createpulse' | 'nexabot' | 'seavi' | 'posbot' | 'manual'>('createpulse')
+  const [provider, setProvider] = useState<'createpulse' | 'nexabot' | 'seavi' | 'posbot' | 'runninghub' | 'manual'>('createpulse')
 
   // Inject saldo langsung (promo) — hanya dompet member yang punya saldo.
   const [users, setUsers] = useState<{ id: number; email: string; name: string | null }[]>([])
   const [injUserFilter, setInjUserFilter] = useState('')
   const [injUserId, setInjUserId] = useState('')
-  const [injProvider, setInjProvider] = useState<'createpulse' | 'nexabot' | 'seavi' | 'posbot'>('createpulse')
+  const [injProvider, setInjProvider] = useState<'createpulse' | 'nexabot' | 'seavi' | 'posbot' | 'runninghub'>('createpulse')
   const [injAmount, setInjAmount] = useState('')
   const [injNote, setInjNote] = useState('')
   const [injBalance, setInjBalance] = useState<number | null>(null)
@@ -142,6 +142,46 @@ export default function AdminTopupPage() {
       addToast('Network error', 'error')
     }
     setPayChecking(false)
+  }
+
+  // Paste mutasi: admin salin/tempel riwayat transaksi dari app bank —
+  // semua nominal terdeteksi dicocokkan ke pengajuan pending.
+  const [mutasiText, setMutasiText] = useState('')
+  const [mutasiBusy, setMutasiBusy] = useState(false)
+  const [mutasiResult, setMutasiResult] = useState<{
+    ok: boolean
+    note?: string
+    amounts?: number[]
+    matched?: Array<{ amount: number; action: string; table?: string; id?: number; detail: string }>
+  } | null>(null)
+
+  const handleMatchText = async () => {
+    if (mutasiText.trim().length < 8) {
+      addToast('Paste dulu isi mutasinya', 'error')
+      return
+    }
+    setMutasiBusy(true)
+    try {
+      const res = await fetch('/api/payments/match-text', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ text: mutasiText }),
+      })
+      const data = await res.json().catch(() => ({} as any))
+      setMutasiResult(data)
+      if (res.ok) {
+        addToast(data.note || (data.matched?.length ? `${data.matched.length} pembayaran cocok` : 'Selesai'), data.matched?.length ? 'success' : 'info')
+        if (data.matched?.length) {
+          fetchTopups()
+          fetchPayStatus()
+        }
+      } else {
+        addToast(data.error || 'Gagal mencocokkan', 'error')
+      }
+    } catch {
+      addToast('Network error', 'error')
+    }
+    setMutasiBusy(false)
   }
 
   const fetchAll = async () => {
@@ -311,11 +351,11 @@ export default function AdminTopupPage() {
       <PageHeader
         eyebrow="Admin"
         title="Approval Top Up"
-        highlight={provider === 'manual' ? 'Manual' : provider === 'nexabot' ? 'NexaBot' : provider === 'seavi' ? 'Seavi' : provider === 'posbot' ? 'PosBot' : 'CreatePulse'}
+        highlight={provider === 'manual' ? 'Manual' : provider === 'nexabot' ? 'NexaBot' : provider === 'seavi' ? 'Seavi' : provider === 'posbot' ? 'PosBot' : provider === 'runninghub' ? 'RunningHub' : 'CreatePulse'}
         desc="Setujui atau tolak topup saldo member"
       />
 
-      <Section title="Inject Saldo Promo" sub="Kredit saldo layanan member langsung di luar alur top-up. Hanya CreatePulse / NexaBot / PosBot (Rp) & Seavi (token) yang punya dompet member.">
+      <Section title="Inject Saldo Promo" sub="Kredit saldo layanan member langsung di luar alur top-up. Hanya CreatePulse / NexaBot / PosBot / RunningHub (Rp) & Seavi (token) yang punya dompet member.">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
             <Label className="mb-1 block">Cari member</Label>
@@ -341,12 +381,13 @@ export default function AdminTopupPage() {
             <Label className="mb-1 block">Provider</Label>
             <Select
               value={injProvider}
-              onChange={(e) => setInjProvider(e.target.value as 'createpulse' | 'nexabot' | 'seavi' | 'posbot')}
+              onChange={(e) => setInjProvider(e.target.value as 'createpulse' | 'nexabot' | 'seavi' | 'posbot' | 'runninghub')}
               options={[
                 { value: 'createpulse', label: 'CreatePulse (Rp)' },
                 { value: 'nexabot', label: 'NexaBot (Rp)' },
                 { value: 'seavi', label: 'Seavi (token)' },
                 { value: 'posbot', label: 'PosBot (Rp)' },
+                { value: 'runninghub', label: 'RunningHub (Rp)' },
               ]}
             />
           </div>
@@ -374,7 +415,7 @@ export default function AdminTopupPage() {
         <div className="flex flex-wrap items-center justify-between gap-3 mt-4">
           <div className="text-sm text-muted-foreground">
             {injUserId ? (
-              <>Saldo {injIsToken ? 'Seavi' : injProvider === 'nexabot' ? 'NexaBot' : injProvider === 'posbot' ? 'PosBot' : 'CreatePulse'} saat ini: <b className="text-foreground">{injBalanceLabel}</b></>
+              <>Saldo {injIsToken ? 'Seavi' : injProvider === 'nexabot' ? 'NexaBot' : injProvider === 'posbot' ? 'PosBot' : injProvider === 'runninghub' ? 'RunningHub' : 'CreatePulse'} saat ini: <b className="text-foreground">{injBalanceLabel}</b></>
             ) : (
               'Pilih member untuk melihat saldo saat ini.'
             )}
@@ -451,6 +492,43 @@ export default function AdminTopupPage() {
         )}
       </Section>
 
+      <Section
+        title="📋 Paste Mutasi Manual"
+        sub="Salin seluruh teks riwayat mutasi dari app bank/e-wallet — semua nominal terdeteksi dicocokkan ke pengajuan pending"
+      >
+        <textarea
+          value={mutasiText}
+          onChange={(e) => setMutasiText(e.target.value)}
+          rows={5}
+          className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-mono"
+          placeholder={'Tempel mutasi di sini…\nContoh:\n14/11 10:42 Transfer masuk Rp 50.137 dari A. MADHI\n14/11 09:15 QRIS debit Rp 12.000\n…'}
+        />
+        <div className="flex flex-wrap items-center gap-3 mt-3">
+          <Button size="sm" onClick={handleMatchText} disabled={mutasiBusy || mutasiText.trim().length < 8}>
+            {mutasiBusy ? 'Mencocokkan…' : '⚡ Cocokkan ke Pengajuan Pending'}
+          </Button>
+          <span className="text-[11px] text-muted-foreground">
+            Hanya nominal yang sama persis dengan kode unik pengajuan yang cocok. Teks tidak disimpan.
+          </span>
+        </div>
+        {mutasiResult && (
+          <div className="mt-3 rounded-xl border border-border bg-background/40 p-3 text-[11px]">
+            <div className={mutasiResult.matched?.length ? 'text-emerald-400 font-semibold' : 'text-muted-foreground'}>
+              {mutasiResult.note || 'Selesai'}
+            </div>
+            {mutasiResult.matched && mutasiResult.matched.length > 0 && (
+              <ul className="mt-1.5 space-y-1">
+                {mutasiResult.matched.map((m, i) => (
+                  <li key={i} className="text-emerald-400">
+                    ✓ Rp {m.amount.toLocaleString('id-ID')} → {m.table} #{m.id} ({m.action})
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </Section>
+
       <div className="flex gap-2 mb-4">
         <Button
           size="sm"
@@ -479,6 +557,13 @@ export default function AdminTopupPage() {
           onClick={() => setProvider('posbot')}
         >
           PosBot
+        </Button>
+        <Button
+          size="sm"
+          variant={provider === 'runninghub' ? 'default' : 'outline'}
+          onClick={() => setProvider('runninghub')}
+        >
+          RunningHub
         </Button>
         <Button
           size="sm"
