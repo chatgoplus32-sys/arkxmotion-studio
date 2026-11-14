@@ -22,7 +22,7 @@ const TICK_MS = 10 * 60 * 1000
 const RETRY_GAP_MS = 30 * 60 * 1000
 const MAX_ATTEMPTS_PER_DAY = 6
 const CLAIM_DELAY_MS = 2000
-export const MAX_AUTO_CLAIM_TOKENS = 100
+export const MAX_AUTO_CLAIM_TOKENS = 1000
 
 export type RhAutoClaimStatus = 'pending' | 'claimed' | 'already' | 'rejected' | 'error'
 
