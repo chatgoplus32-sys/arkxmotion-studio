@@ -658,6 +658,19 @@ interface RhPoolTokenView {
   last_claim_day: string
 }
 
+interface RhPoolClaimProgressView {
+  running: boolean
+  total: number
+  processed: number
+  claimed: number
+  already: number
+  failed: number
+  skipped: number
+  startedAt: number
+  updatedAt: number
+  etaMs: number
+}
+
 interface RhCheckView {
   ok: boolean
   transient?: boolean
@@ -687,6 +700,7 @@ function RunningHubPoolSection({
   const [checkingId, setCheckingId] = useState<number | null>(null)
   const [checkingAll, setCheckingAll] = useState(false)
   const [claimingAll, setClaimingAll] = useState(false)
+  const [claimProgress, setClaimProgress] = useState<RhPoolClaimProgressView | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [checks, setChecks] = useState<Record<number, RhCheckView>>({})
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -697,6 +711,7 @@ function RunningHubPoolSection({
   const apply = (data: any) => {
     if (data.summary) setSummary(data.summary as RhPoolSummaryView)
     if (Array.isArray(data.tokens)) setTokens(data.tokens as RhPoolTokenView[])
+    if ('claimProgress' in data) setClaimProgress((data.claimProgress || null) as RhPoolClaimProgressView | null)
   }
 
   const fetchPool = useCallback(async () => {
@@ -812,19 +827,33 @@ function RunningHubPoolSection({
     try {
       const res = await fetch('/api/admin/runninghub/pool/claim-all', { method: 'POST', headers: auth() })
       const data = await res.json()
-      if (res.ok) {
-        apply(data)
-        const c = (data.claim || {}) as { processed?: number; claimed?: number; already?: number; failed?: number }
-        if ((c.processed ?? 0) === 0) {
-          addToast('Tidak ada token JWT yang perlu diklaim hari ini (sudah diklaim / bukan JWT).', 'info')
-        } else {
-          addToast(
-            `Klaim poin: ${c.claimed ?? 0} baru, ${c.already ?? 0} sudah, ${c.failed ?? 0} gagal`,
-            (c.failed ?? 0) > 0 ? 'warning' : 'success',
-          )
-        }
-      } else {
+      if (!res.ok) {
         addToast(data.error || 'Gagal mengklaim poin', 'error')
+        return
+      }
+      apply(data)
+      // Klaim pool berjalan di latar belakang server (jeda 2 detik/token → bisa
+      // puluhan menit). Pantau sampai selesai, batas poll mengikuti jumlah token.
+      let progress = (data.claimProgress || null) as RhPoolClaimProgressView | null
+      setClaimProgress(progress)
+      const total = progress?.total || 0
+      const maxPolls = Math.max(30, Math.ceil((total * 2.5 + 180) / 2))
+      for (let i = 0; i < maxPolls && progress?.running; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 2000))
+        const poll = await fetch('/api/admin/runninghub/pool', { headers: auth() })
+        if (!poll.ok) continue
+        const fresh = await poll.json()
+        apply(fresh)
+        progress = (fresh.claimProgress || null) as RhPoolClaimProgressView | null
+        setClaimProgress(progress)
+      }
+      if (!progress || progress.total === 0) {
+        addToast('Tidak ada token JWT yang perlu diklaim hari ini (sudah diklaim / bukan JWT).', 'info')
+      } else {
+        addToast(
+          `Klaim poin: ${progress.claimed} baru, ${progress.already} sudah, ${progress.failed} gagal`,
+          progress.failed > 0 ? 'warning' : 'success',
+        )
       }
     } catch {
       addToast('Gagal mengklaim poin', 'error')
@@ -1044,6 +1073,29 @@ function RunningHubPoolSection({
               Muat Ulang
             </Button>
           </div>
+          {claimProgress && (claimProgress.running || claimProgress.processed > 0) && (() => {
+            const p = claimProgress
+            const pct = p.total > 0 ? Math.min(100, Math.round((p.processed / p.total) * 100)) : 0
+            const sisa = p.etaMs >= 60000 ? `${Math.max(1, Math.ceil(p.etaMs / 60000))} mnt` : `${Math.max(1, Math.round(p.etaMs / 1000))} dtk`
+            return (
+              <div className="mt-2 rounded-lg border border-border/60 bg-card p-2">
+                <div className="flex items-center justify-between gap-2 text-[11px]">
+                  <span>{p.running ? 'Mengklaim poin…' : 'Klaim terakhir selesai'}</span>
+                  <span className="font-mono">{p.processed}/{p.total} token</span>
+                </div>
+                <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                  <div className={`h-full transition-all ${p.running ? 'bg-primary' : 'bg-primary/50'}`} style={{ width: `${pct}%` }} />
+                </div>
+                <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 font-mono text-[11px] text-muted-foreground">
+                  <span>klaim {p.claimed}</span>
+                  <span>sudah {p.already}</span>
+                  <span className={p.failed > 0 ? 'text-red-500' : ''}>gagal {p.failed}</span>
+                  {p.skipped > 0 && <span>dilewati {p.skipped}</span>}
+                  {p.running && <span>sisa ± {sisa}</span>}
+                </div>
+              </div>
+            )
+          })()}
           <div className="mt-2 text-[11px] text-muted-foreground leading-relaxed">
             Duplikat dan token kedaluwarsa otomatis dilewati. Maksimal {summary?.max ?? 1000} token. Token yang
             ditolak permanen (invalid/dicabut) tidak dipakai lagi sampai dihapus dan diganti baru.

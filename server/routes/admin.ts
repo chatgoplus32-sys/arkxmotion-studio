@@ -65,7 +65,7 @@ import {
   rhPoolTokenById,
 } from '../lib/runninghubPool.js'
 import { rhProbePoolToken } from './publicRunninghub.js'
-import { runPoolDailyClaim } from '../lib/runninghubDailyClaim.js'
+import { rhPoolClaimProgress, runPoolDailyClaim } from '../lib/runninghubDailyClaim.js'
 
 /**
  * Hapus member beserta seluruh data yang terikat kepadanya — satu transaksi.
@@ -732,7 +732,7 @@ for (const provider of ['seavi', 'posbot'] as ServerKeyProvider[]) {
 
 router.get('/runninghub/pool', authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
   try {
-    res.json({ ok: true, summary: rhPoolSummary(), tokens: rhPoolList() })
+    res.json({ ok: true, summary: rhPoolSummary(), tokens: rhPoolList(), claimProgress: rhPoolClaimProgress() })
   } catch (error) {
     console.error('[admin-rh-pool] get error:', error)
     res.status(500).json({ error: 'Internal server error' })
@@ -819,11 +819,19 @@ router.post('/runninghub/pool/check-all', authenticateToken, requireAdmin, async
 // sudah mengklaim tiap hari (UTC+8); tombol ini menjalankan siklus yang sama
 // sekarang untuk token yang belum diklaim hari ini. Berurutan + jeda 2 detik
 // (upstream menolak burst); klaim sukses mengangkat cooldown saldo token.
-router.post('/runninghub/pool/claim-all', authenticateToken, requireAdmin, async (_req: AuthRequest, res: Response) => {
+// Dijalankan di latar belakang: pool 1000 token butuh ±33 menit, jauh melebihi
+// batas waktu proxy, jadi respons langsung dikirim dan progresnya dipantau
+// lewat GET /runninghub/pool → claimProgress.
+router.post('/runninghub/pool/claim-all', authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
   try {
-    const claim = await runPoolDailyClaim()
-    console.log(`[admin-rh-pool] klaim poin: ${claim.claimed} baru, ${claim.already} sudah, ${claim.failed} gagal`)
-    res.json({ ok: true, claim, summary: rhPoolSummary(), tokens: rhPoolList() })
+    void runPoolDailyClaim()
+      .then((claim) => {
+        console.log(`[admin-rh-pool] klaim poin: ${claim.claimed} baru, ${claim.already} sudah, ${claim.failed} gagal`)
+      })
+      .catch((error: any) => {
+        console.error('[admin-rh-pool] claim-all error:', error?.message || error)
+      })
+    res.json({ ok: true, started: true, claimProgress: rhPoolClaimProgress(), summary: rhPoolSummary(), tokens: rhPoolList() })
   } catch (error: any) {
     console.error('[admin-rh-pool] claim-all error:', error?.message || error)
     res.status(500).json({ error: 'Internal server error' })

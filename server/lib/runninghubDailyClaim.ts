@@ -370,6 +370,33 @@ async function tick(): Promise<void> {
 // relay. Token yang ditolak permanen ditandai rejected lewat rhPoolMarkFailure.
 let poolClaimRunning = false
 
+// Progres klaim pool (satu putaran untuk semua token operator). Pool bisa berisi
+// ratusan–ribuan token dengan jeda 2 detik, jadi admin perlu angka berjalan di
+// dashboard, bukan tombol yang menggantung puluhan menit tanpa info.
+export interface RhPoolClaimProgress {
+  running: boolean
+  total: number
+  processed: number
+  claimed: number
+  already: number
+  failed: number
+  skipped: number
+  startedAt: number
+  updatedAt: number
+  etaMs: number
+}
+
+let poolProgress: RhPoolClaimProgress | null = null
+
+/** Snapshot progres klaim pool untuk dashboard admin (null = belum pernah jalan). */
+export function rhPoolClaimProgress(): RhPoolClaimProgress | null {
+  return poolProgress ? { ...poolProgress } : null
+}
+
+export function isPoolClaimRunning(): boolean {
+  return poolClaimRunning
+}
+
 export async function runPoolDailyClaim(): Promise<RhAutoClaimRunSummary> {
   const summary: RhAutoClaimRunSummary = { processed: 0, claimed: 0, already: 0, failed: 0, skipped: 0 }
   if (poolClaimRunning) return summary
@@ -377,6 +404,28 @@ export async function runPoolDailyClaim(): Promise<RhAutoClaimRunSummary> {
   try {
     const day = claimDayKey()
     const due = rhPoolClaimDue(day)
+    poolProgress = {
+      running: true,
+      total: due.length,
+      processed: 0,
+      claimed: 0,
+      already: 0,
+      failed: 0,
+      skipped: 0,
+      startedAt: Date.now(),
+      updatedAt: Date.now(),
+      etaMs: due.length * CLAIM_DELAY_MS,
+    }
+    const syncPoolProgress = () => {
+      if (!poolProgress) return
+      poolProgress.processed = summary.processed
+      poolProgress.claimed = summary.claimed
+      poolProgress.already = summary.already
+      poolProgress.failed = summary.failed
+      poolProgress.skipped = summary.skipped
+      poolProgress.updatedAt = Date.now()
+      poolProgress.etaMs = Math.max(0, (due.length - summary.processed) * CLAIM_DELAY_MS)
+    }
     for (let i = 0; i < due.length; i++) {
       const kandidat = due[i]
       summary.processed += 1
@@ -392,6 +441,7 @@ export async function runPoolDailyClaim(): Promise<RhAutoClaimRunSummary> {
         // Transient: jangan tandai rejected; coba lagi tick berikutnya.
         summary.failed += 1
       }
+      syncPoolProgress()
       if (i < due.length - 1) await new Promise((resolve) => setTimeout(resolve, CLAIM_DELAY_MS))
     }
     if (summary.processed > 0) {
@@ -399,6 +449,11 @@ export async function runPoolDailyClaim(): Promise<RhAutoClaimRunSummary> {
     }
     return summary
   } finally {
+    if (poolProgress) {
+      poolProgress.running = false
+      poolProgress.etaMs = 0
+      poolProgress.updatedAt = Date.now()
+    }
     poolClaimRunning = false
   }
 }
