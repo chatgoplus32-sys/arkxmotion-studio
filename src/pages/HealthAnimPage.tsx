@@ -453,6 +453,11 @@ const HealthAnimTool = () => {
       });
     }
 
+    // Model 2.5 flash/pro secara bawaan "berpikir" dulu sebelum menjawab, dan
+    // itu yang membuat permintaan JSON kecil terasa lama. Matikan thinking
+    // untuk model yang mendukung thinkingBudget.
+    const dukungThinkingBudget = /2\.5|flash-latest|pro-latest/.test(model);
+
     const payload = {
       contents: [{ parts }],
       systemInstruction: { parts: [{ text: systemInstruction }] },
@@ -462,24 +467,40 @@ const HealthAnimTool = () => {
         temperature: 0.7,
         topP: 0.95,
         topK: 40,
+        ...(dukungThinkingBudget ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
       }
     };
 
     let attempt = 0;
-    const maxRetries = 5;
-    const delays = [1000, 2000, 4000, 8000, 16000];
+    const maxRetries = 2;
+    const delays = [1500, 4000];
+
+    // Ulangi hanya untuk gangguan sementara (jaringan, 429, 5xx). Error 4xx
+    // seperti key salah atau model tidak tersedia langsung dilaporkan, tidak
+    // diulang berkali-kali sampai pengguna menunggu tanpa hasil.
+    const bolehDiulang = (error: any) => {
+      if (error?.name === 'TimeoutError') return false;
+      const status = Number(error?.status);
+      if (status === 429) return true;
+      if (Number.isFinite(status)) return status >= 500;
+      return true;
+    };
 
     while (attempt <= maxRetries) {
       try {
         const res = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(payload),
+          // Tanpa batas waktu, permintaan yang macet membuat halaman menggantung.
+          signal: AbortSignal.timeout(90000)
         });
 
         if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err.error?.message || `HTTP ${res.status}`);
+          const err = await res.json().catch(() => null);
+          const apiError: any = new Error(err?.error?.message || `HTTP ${res.status}`);
+          apiError.status = res.status;
+          throw apiError;
         }
 
         const result = await res.json();
@@ -495,11 +516,15 @@ const HealthAnimTool = () => {
           throw new Error("Format respon AI tidak valid.");
         }
       } catch (error: any) {
-        if (attempt === maxRetries) {
-          if (error.message?.toLowerCase().includes('quota')) {
-            throw new Error("Limit API Gemini Anda telah tercapai. Silakan coba lagi nanti.");
-          }
-          throw new Error(error.message || "Terjadi kesalahan saat menghubungi AI Gemini.");
+        if (error?.name === 'TimeoutError') {
+          throw new Error("Gemini tidak menjawab dalam 90 detik. Coba lagi atau pakai model yang lebih cepat.");
+        }
+        const pesan = String(error?.message || '');
+        if (pesan.toLowerCase().includes('quota')) {
+          throw new Error("Limit API Gemini Anda telah tercapai. Silakan coba lagi nanti.");
+        }
+        if (attempt >= maxRetries || !bolehDiulang(error)) {
+          throw new Error(pesan || "Terjadi kesalahan saat menghubungi AI Gemini.");
         }
         await new Promise(resolve => setTimeout(resolve, delays[attempt]));
         attempt++;
@@ -641,7 +666,9 @@ const HealthAnimTool = () => {
       return;
     }
     setLoadingScenes(true);
-    setOmniStatus('');
+    const mulai = Date.now();
+    setOmniStatus('0 detik');
+    const detak = setInterval(() => setOmniStatus(`${Math.round((Date.now() - mulai) / 1000)} detik`), 1000);
     try {
       const prompt = `Buat rencana ${omniSceneCount} scene untuk video kesehatan edukatif berdurasi 15 detik per scene.
 Topik / ide: ${omniIdea.trim()}
@@ -691,6 +718,8 @@ ATURAN MUTLAK:
     } catch (error: any) {
       handleApiError(error, 'Gagal membuat narasi dan prompt scene.');
     } finally {
+      clearInterval(detak);
+      setOmniStatus('');
       setLoadingScenes(false);
     }
   };
@@ -1183,7 +1212,7 @@ ATURAN MUTLAK:
                   </div>
                 </div>
 
-                {loadingScenes && <div role="status" aria-live="polite" className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 text-sm text-indigo-800"><p className="font-bold flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Menyusun narasi dan prompt {omniSceneCount} scene…</p><p className="text-xs mt-2 leading-relaxed">Hanya narasi dan prompt yang dibuat di sini; videonya digenerate di ARKX Studio memakai NexaBot.</p></div>}
+                {loadingScenes && <div role="status" aria-live="polite" className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 text-sm text-indigo-800"><p className="font-bold flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Menyusun narasi dan prompt {omniSceneCount} scene… <span className="font-semibold text-indigo-600">{omniStatus}</span></p><p className="text-xs mt-2 leading-relaxed">Hanya narasi dan prompt yang dibuat di sini; videonya digenerate di ARKX Studio memakai NexaBot.</p></div>}
 
                 {omniScenes.length > 0 && <section className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm anim-fade-in-up" aria-label="Narasi dan prompt per scene">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-5">
