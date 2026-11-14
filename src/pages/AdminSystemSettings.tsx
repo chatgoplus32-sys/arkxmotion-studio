@@ -855,6 +855,13 @@ function RunningHubPoolSection({
   }
 
   const fmtPts = (n: number) => String(Math.round(n * 100) / 100)
+  const cekLalu = (ms: number) => {
+    const menit = Math.max(0, Math.floor((Date.now() - ms) / 60000))
+    if (menit < 1) return 'baru saja'
+    if (menit < 60) return `${menit} mnt lalu`
+    const jam = Math.floor(menit / 60)
+    return jam < 24 ? `${jam} jam lalu` : `${Math.floor(jam / 24)} hari lalu`
+  }
   const busy = checkingId !== null || checkingAll || claimingAll || deletingId !== null
   const jwtCount = tokens.filter((t) => t.kind === 'jwt' && t.status !== 'rejected').length
 
@@ -984,7 +991,10 @@ function RunningHubPoolSection({
                 </div>
 
                 <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-                  <span>Poin: <b className="text-foreground font-mono">{t.points_balance != null ? fmtPts(t.points_balance) : '—'}</b></span>
+                  <span>
+                    Poin: <b className="text-foreground font-mono">{t.points_balance != null ? fmtPts(t.points_balance) : '—'}</b>
+                    {t.points_checked_at && <span className="opacity-70"> · dicek {cekLalu(t.points_checked_at)}</span>}
+                  </span>
                   {t.kind === 'jwt' && <span>Klaim harian: <b className="text-foreground">{t.last_claim_day || '—'}</b></span>}
                   {t.last_used_at && <span>Terakhir dipakai: {new Date(t.last_used_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}</span>}
                 </div>
@@ -1035,7 +1045,7 @@ function RunningHubPoolSection({
             </Button>
           </div>
           <div className="mt-2 text-[11px] text-muted-foreground leading-relaxed">
-            Duplikat dan token kedaluwarsa otomatis dilewati. Maksimal {summary?.max ?? 100} token. Token yang
+            Duplikat dan token kedaluwarsa otomatis dilewati. Maksimal {summary?.max ?? 1000} token. Token yang
             ditolak permanen (invalid/dicabut) tidak dipakai lagi sampai dihapus dan diganti baru.
           </div>
         </div>

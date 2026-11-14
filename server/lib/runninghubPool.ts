@@ -12,7 +12,13 @@
 import db from '../db.js'
 import { rhJwtExp, rhJwtExpired, rhJwtSub } from './rhJwt.js'
 
-export const RH_POOL_MAX = 100
+// Batas jumlah token pool. Default 1000, bisa diubah lewat env tanpa rebuild
+// (penting kalau operator menambah akun lebih banyak dari biasanya).
+export const RH_POOL_MAX = (() => {
+  const raw = Number.parseInt(process.env.RUNNINGHUB_POOL_MAX ?? '', 10)
+  if (Number.isFinite(raw) && raw > 0) return Math.min(raw, 5000)
+  return 1000
+})()
 
 /** Saldo poin habis: tunggu klaim harian / top up operator, jangan dibuang. */
 const COOLDOWN_SALDO_MS = 60 * 60 * 1000
@@ -238,6 +244,14 @@ export function rhPoolMarkFailure(id: number, kind: RhPoolFailureKind, message: 
   db.prepare(
     "UPDATE runninghub_master_token SET status = 'cooldown', cooldown_until = ?, last_error = ?, updated_at = ? WHERE id = ?",
   ).run(until, pesan, now, id)
+}
+
+/** Snapshot poin dari refresh latar belakang — tidak mengubah status token. */
+export function rhPoolUpdatePoints(id: number, pointsBalance: number | null): void {
+  if (id === 0 || pointsBalance === null) return
+  const now = Date.now()
+  db.prepare('UPDATE runninghub_master_token SET points_balance = ?, points_checked_at = ?, updated_at = ? WHERE id = ?')
+    .run(pointsBalance, now, now, id)
 }
 
 /** Hasil "Cek" admin: snapshot poin + status token. */
