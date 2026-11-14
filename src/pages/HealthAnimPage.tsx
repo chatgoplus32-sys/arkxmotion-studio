@@ -6,7 +6,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { OMNI_MODEL, generateOmniVideo } from '@/lib/omni';
-import { Lightbulb, FileText, Image as ImageIcon, Sparkles, Loader2, Check, Copy, Menu, X, ArrowRight, ArrowLeft, PlayCircle, List, Trash2, AlertCircle, Video, ScanSearch, Upload, ShoppingBag, Plus, Zap, ImagePlay, Settings, KeyRound, Download } from 'lucide-react';
+import { Lightbulb, FileText, Image as ImageIcon, Sparkles, Loader2, Check, Copy, Menu, X, ArrowRight, ArrowLeft, PlayCircle, List, Trash2, AlertCircle, Video, ScanSearch, Upload, ShoppingBag, Plus, Zap, ImagePlay, Settings, KeyRound } from 'lucide-react';
 
 // ============================================================================
 // KONFIGURASI TIPE SKEMA AI
@@ -305,22 +305,25 @@ const HealthAnimTool = () => {
   const [ideas, setIdeas] = useState<any[]>([]);
   const [loadingIdeas, setLoadingIdeas] = useState(false);
 
-  // === Google Omni Flash: 15 detik per scene, satu video untuk setiap scene (3/4/6) ===
+  // === Google Omni Flash: pilih 3/4/6 scene → narasi + prompt tiap scene untuk digenerate di ARKX Studio ===
   const [omniIdea, setOmniIdea] = useState('');
   const [omniHookTechnique, setOmniHookTechnique] = useState('Curiosity Gap');
   const [omniAspectRatio, setOmniAspectRatio] = useState<'9:16' | '16:9'>('9:16');
   const [omniSceneCount, setOmniSceneCount] = useState(3);
-  const [omniVideos, setOmniVideos] = useState<{ scene: number; url: string; interactionId: string; aspectRatio: string }[]>([]);
+  const [omniScenes, setOmniScenes] = useState<{ scene: number; role: string; voiceover: string; visual: string; video_prompt: string }[]>([]);
+  const [loadingScenes, setLoadingScenes] = useState(false);
+  const [omniVideo, setOmniVideo] = useState<{ url: string; interactionId: string; aspectRatio: string } | null>(null);
   const [loadingOmni, setLoadingOmni] = useState(false);
   const [omniStatus, setOmniStatus] = useState('');
   const [omniConfirmOpen, setOmniConfirmOpen] = useState(false);
-  const omniVideoUrls = useRef<string[]>([]);
-  const clearOmniVideos = () => {
-    omniVideoUrls.current.forEach(url => URL.revokeObjectURL(url));
-    omniVideoUrls.current = [];
-    setOmniVideos([]);
+  const omniVideoUrl = useRef('');
+  const clearOmniVideo = () => {
+    if (omniVideoUrl.current) URL.revokeObjectURL(omniVideoUrl.current);
+    omniVideoUrl.current = '';
+    setOmniVideo(null);
   };
-  useEffect(() => () => { omniVideoUrls.current.forEach(url => URL.revokeObjectURL(url)); }, []);
+  const clearOmniScenes = () => setOmniScenes([]);
+  useEffect(() => () => { if (omniVideoUrl.current) URL.revokeObjectURL(omniVideoUrl.current); }, []);
 
   // Global Style Selection for Affiliate & Custom
   const [globalPromptStyle, setGlobalPromptStyle] = useState('Microscopic 3D Pixar-style');
@@ -351,7 +354,8 @@ const HealthAnimTool = () => {
   // ============================================================================
   const resetOmniFlash = () => {
     setOmniIdea('');
-    clearOmniVideos();
+    clearOmniVideo();
+    clearOmniScenes();
     setOmniStatus('');
     setOmniConfirmOpen(false);
     setPrompts([]);
@@ -382,7 +386,8 @@ const HealthAnimTool = () => {
     
     // Reset Omni
     setOmniIdea('');
-    clearOmniVideos();
+    clearOmniVideo();
+    clearOmniScenes();
     setOmniStatus('');
     setOmniConfirmOpen(false);
     
@@ -600,39 +605,93 @@ const HealthAnimTool = () => {
     setOmniConfirmOpen(false);
     setLoadingOmni(true);
     setAppError('');
-    clearOmniVideos();
-    const total = omniSceneCount;
+    clearOmniVideo();
+    setOmniStatus('Mengirim satu permintaan video 15 detik...');
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10 * 60 * 1000);
     try {
-      // Satu permintaan video per scene, dijalankan berurutan supaya progres dan
-      // kegagalan scene tertentu terbaca jelas. Tiap scene tetap 15 detik.
-      for (let scene = 1; scene <= total; scene++) {
-        setOmniStatus(`Menyiapkan scene ${scene} dari ${total}…`);
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 10 * 60 * 1000);
-        try {
-          const result = await generateOmniVideo({
-            apiKey: aiApiKey,
-            idea: omniIdea,
-            visualStyle: globalPromptStyle,
-            hookTechnique: omniHookTechnique,
-            aspectRatio: omniAspectRatio,
-            sceneIndex: scene,
-            sceneCount: total
-          }, { signal: controller.signal, onStatus: status => setOmniStatus(`Scene ${scene}/${total} · ${status}`) });
-          const url = URL.createObjectURL(result.blob);
-          omniVideoUrls.current.push(url);
-          setOmniVideos(prev => [...prev, { scene, url, interactionId: result.interactionId, aspectRatio: result.aspectRatio }]);
-        } finally {
-          clearTimeout(timeout);
-        }
-      }
-      setOmniStatus(total > 1 ? `${total} video scene siap diputar dan diunduh.` : 'Video siap diputar dan diunduh.');
+      const result = await generateOmniVideo({
+        apiKey: aiApiKey,
+        idea: omniIdea,
+        visualStyle: globalPromptStyle,
+        hookTechnique: omniHookTechnique,
+        aspectRatio: omniAspectRatio
+      }, { signal: controller.signal, onStatus: setOmniStatus });
+      const url = URL.createObjectURL(result.blob);
+      omniVideoUrl.current = url;
+      setOmniVideo({ url, interactionId: result.interactionId, aspectRatio: result.aspectRatio });
+      setOmniStatus('Video siap diputar dan diunduh.');
     } catch (error: any) {
-      const selesai = omniVideoUrls.current.length;
-      setAppError(`${error?.message || 'Pembuatan video belum berhasil.'}${selesai > 0 ? ` ${selesai} dari ${total} scene sudah selesai dan bisa diunduh di bawah.` : ''} Tidak ada permintaan ulang otomatis.`);
+      setAppError(error?.message || 'Pembuatan video belum berhasil. Tidak ada permintaan ulang otomatis.');
       setOmniStatus('');
     } finally {
+      clearTimeout(timeout);
       setLoadingOmni(false);
+    }
+  };
+
+  // Pilihan 3/4/6 scene = narasi + prompt video tiap scene, bukan 3/4/6 video.
+  // Hasilnya dicopy lalu digenerate di ARKX Studio memakai NexaBot.
+  const generateOmniScenes = async () => {
+    if (!omniIdea.trim() || loadingScenes) return;
+    setAppError('');
+    if (!aiApiKey.trim()) {
+      setAiSettingsOpen(true);
+      setAppError('Tambahkan API key Gemini Anda di Pengaturan AI untuk menyusun narasi dan prompt scene.');
+      return;
+    }
+    setLoadingScenes(true);
+    setOmniStatus('');
+    try {
+      const prompt = `Buat rencana ${omniSceneCount} scene untuk video kesehatan edukatif berdurasi 15 detik per scene.
+Topik / ide: ${omniIdea.trim()}
+Gaya visual: ${globalPromptStyle}
+Teknik hook untuk scene 1: ${omniHookTechnique}
+Rasio video target: ${omniAspectRatio}
+
+ATURAN MUTLAK:
+1. Tepat ${omniSceneCount} scene, bernomor 1 sampai ${omniSceneCount}.
+2. Scene 1 = HOOK yang menghentikan scroll. Scene ${omniSceneCount} = CTA singkat. Scene di antaranya = BODY, satu poin penjelasan per scene.
+3. Latar visual SELALU di dalam tubuh manusia (pembuluh darah, organ, jaringan) dengan karakter organ/sel lucu; bukan manusia asli dan tidak ada orang berbicara.
+4. voiceover: bahasa Indonesia, kalimat pendek yang muat diucapkan dalam 15 detik.
+5. visual: deskripsi visual scene dalam Bahasa Indonesia.
+6. video_prompt: prompt sinematik BAHASA INGGRIS untuk video generator, satu paragraf, sebutkan kamera, gerakan kamera, lighting, dan durasi 15 detik.
+7. Tanpa diagnosis, janji kesembuhan, atau klaim kesehatan berlebihan.`;
+      const systemInstruction = 'Anda penulis skrip video kesehatan vertikal. Output JSON sesuai skema. Narasi dalam Bahasa Indonesia, prompt video dalam Bahasa Inggris.';
+      const schema = {
+        type: Type.OBJECT,
+        properties: {
+          scenes: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                scene: { type: Type.NUMBER },
+                role: { type: Type.STRING },
+                voiceover: { type: Type.STRING },
+                visual: { type: Type.STRING },
+                video_prompt: { type: Type.STRING }
+              },
+              required: ["scene", "role", "voiceover", "visual", "video_prompt"]
+            }
+          }
+        },
+        required: ["scenes"]
+      };
+      const parsed = await callGeminiAPI(prompt, systemInstruction, schema);
+      const scenes = Array.isArray(parsed?.scenes) ? parsed.scenes : [];
+      if (!scenes.length) throw new Error('Gemini tidak mengembalikan scene. Coba topik yang lebih spesifik.');
+      setOmniScenes(scenes.slice(0, omniSceneCount).map((scene: any, index: number) => ({
+        scene: Number(scene?.scene) || index + 1,
+        role: String(scene?.role || (index === 0 ? 'Hook' : index === omniSceneCount - 1 ? 'CTA' : 'Penjelasan')),
+        voiceover: String(scene?.voiceover || ''),
+        visual: String(scene?.visual || ''),
+        video_prompt: String(scene?.video_prompt || '')
+      })));
+    } catch (error: any) {
+      handleApiError(error, 'Gagal membuat narasi dan prompt scene.');
+    } finally {
+      setLoadingScenes(false);
     }
   };
 
@@ -1029,12 +1088,12 @@ const HealthAnimTool = () => {
                   <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
                     <div>
                       <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-100 text-xs font-bold mb-4"><Zap className="w-4 h-4" /> GOOGLE OMNI FLASH</div>
-                      <h2 className="text-2xl font-bold text-slate-900 mb-2">Satu ide. 3–6 scene. 15 detik per scene.</h2>
-                      <p className="text-sm font-medium text-slate-500 leading-relaxed">Buat video animasi kesehatan lengkap dengan audio native, langsung dari Google Omni Flash. Pilih jumlah scene, lalu setiap scene menjadi satu video 15 detik.</p>
+                      <h2 className="text-2xl font-bold text-slate-900 mb-2">Satu ide. 3–6 scene. Narasi + prompt siap copy.</h2>
+                      <p className="text-sm font-medium text-slate-500 leading-relaxed">Pilih jumlah scene, lalu dapatkan narasi dan prompt video tiap scene. Copy hasilnya, buka ARKX Studio, dan generate videonya di sana memakai NexaBot.</p>
                     </div>
                     <div className="shrink-0 rounded-xl bg-indigo-50 border border-indigo-100 px-5 py-3 text-center">
                       <div className="text-3xl font-extrabold text-indigo-700">15<span className="text-sm ml-1">detik</span></div>
-                      <div className="text-xs font-semibold text-indigo-500 mt-1">per scene · {omniSceneCount} video</div>
+                      <div className="text-xs font-semibold text-indigo-500 mt-1">per scene · {omniSceneCount} scene</div>
                     </div>
                   </div>
 
@@ -1080,7 +1139,7 @@ const HealthAnimTool = () => {
                   </div>
 
                   <div className="mb-6">
-                    <span className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Jumlah Scene</span>
+                    <span className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Jumlah Scene (narasi + prompt)</span>
                     <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Jumlah scene video">
                       {[3, 4, 6].map(jumlah => {
                         const dipilih = omniSceneCount === jumlah;
@@ -1100,7 +1159,7 @@ const HealthAnimTool = () => {
                         );
                       })}
                     </div>
-                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">Setiap scene menghasilkan satu video 15 detik, jadi {omniSceneCount} scene berarti {omniSceneCount} permintaan video ke Google.</p>
+                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">Pilihan ini hanya menentukan jumlah narasi dan prompt, bukan jumlah video. {omniSceneCount} scene = {omniSceneCount} narasi + {omniSceneCount} prompt video, masing-masing untuk klip 15 detik.</p>
                   </div>
 
                   <div className="grid grid-cols-3 gap-2 mb-6" aria-label="Alur tiap scene 15 detik">
@@ -1109,51 +1168,86 @@ const HealthAnimTool = () => {
                     <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3"><p className="text-xs font-bold text-emerald-700">11–15 detik</p><p className="text-sm font-bold text-slate-800 mt-1">CTA</p></div>
                   </div>
 
-                  <button onClick={generateOmniFlash} disabled={loadingOmni || !omniIdea.trim()} className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-all shadow-md shadow-indigo-600/20 active:scale-95">
-                    {loadingOmni ? <Loader2 className="w-5 h-5 animate-spin" /> : <Video className="w-5 h-5" />}
-                    {loadingOmni ? `Membuat video scene ${omniVideos.length + 1} dari ${omniSceneCount}…` : `Buat ${omniSceneCount} Video Omni Flash · 15 Detik/Scene`}
+                  <button onClick={generateOmniScenes} disabled={loadingScenes || loadingOmni || !omniIdea.trim()} className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-all shadow-md shadow-indigo-600/20 active:scale-95">
+                    {loadingScenes ? <Loader2 className="w-5 h-5 animate-spin" /> : <List className="w-5 h-5" />}
+                    {loadingScenes ? `Menyusun ${omniSceneCount} scene…` : `Buat Narasi & Prompt ${omniSceneCount} Scene`}
                   </button>
-                  {loadingOmni && <div role="status" aria-live="polite" className="mt-4 bg-indigo-50 border border-indigo-100 rounded-xl p-4 text-sm text-indigo-800"><p className="font-bold flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />{omniStatus}</p><p className="text-xs mt-2 leading-relaxed">Biarkan tab terbuka. Scene dibuat berurutan dan masing-masing bisa memerlukan beberapa menit; 15 detik adalah durasi tiap video. Tidak ada retry generasi otomatis.</p></div>}
+                  <button onClick={generateOmniFlash} disabled={loadingOmni || loadingScenes || !omniIdea.trim()} className="w-full mt-3 py-3 border border-slate-200 bg-slate-50 hover:bg-slate-100 disabled:opacity-50 text-slate-700 font-bold rounded-xl flex items-center justify-center gap-2 transition-all">
+                    {loadingOmni ? <Loader2 className="w-5 h-5 animate-spin" /> : <Video className="w-5 h-5" />}
+                    {loadingOmni ? 'Membuat video di Google…' : 'Buat Video Omni Flash · 15 Detik'}
+                  </button>
+                  {loadingOmni && <div role="status" aria-live="polite" className="mt-4 bg-indigo-50 border border-indigo-100 rounded-xl p-4 text-sm text-indigo-800"><p className="font-bold flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />{omniStatus}</p><p className="text-xs mt-2 leading-relaxed">Biarkan tab terbuka. Generasi bisa memerlukan beberapa menit; 15 detik adalah durasi hasil video. Tidak ada retry generasi otomatis.</p></div>}
                   <div className="mt-4 text-xs text-slate-500 leading-relaxed space-y-2">
                     <p>Memakai API key Anda dari <button onClick={() => setAiSettingsOpen(true)} className="text-indigo-600 font-bold hover:text-indigo-800">Pengaturan AI</button>, hanya dalam sesi tab ini. Model Omni dikunci khusus; model teks di pengaturan tidak mengubahnya.</p>
                     <p>Generasi video dapat dikenakan biaya akun API Google. Aplikasi meminta konfirmasi sebelum setiap permintaan. <a href="https://aistudio.google.com/docs/omni" target="_blank" rel="noopener noreferrer" className="text-indigo-600 font-bold hover:text-indigo-800">Dokumentasi resmi Google ↗</a></p>
                   </div>
                 </div>
 
-                {omniVideos.length > 0 && <section className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm anim-fade-in-up" aria-label="Hasil video Omni Flash">
+                {loadingScenes && <div role="status" aria-live="polite" className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 text-sm text-indigo-800"><p className="font-bold flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Menyusun narasi dan prompt {omniSceneCount} scene…</p><p className="text-xs mt-2 leading-relaxed">Hanya narasi dan prompt yang dibuat di sini; videonya digenerate di ARKX Studio memakai NexaBot.</p></div>}
+
+                {omniScenes.length > 0 && <section className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm anim-fade-in-up" aria-label="Narasi dan prompt per scene">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-5">
-                    <div><h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><Check className="w-5 h-5 text-emerald-600" /> {omniVideos.length} video scene siap</h3><p className="text-xs text-slate-500 mt-1">15 detik per scene · {omniVideos[0].aspectRatio} · MP4 · 720p</p></div>
-                    <span className="text-xs font-bold text-slate-500">{omniVideos.length} dari {omniSceneCount} scene</span>
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><Check className="w-5 h-5 text-emerald-600" /> {omniScenes.length} scene siap dicopy</h3>
+                      <p className="text-xs text-slate-500 mt-1">Copy narasi &amp; prompt, lalu generate videonya di ARKX Studio dengan NexaBot.</p>
+                    </div>
+                    <CopyButton
+                      text={omniScenes.map(s2 => `Scene ${s2.scene} (${s2.role} · 15 detik)\nNarasi: ${s2.voiceover}\nVisual: ${s2.visual}\nVideo Prompt: ${s2.video_prompt}`).join('\n\n---\n\n')}
+                      label="Copy Semua Scene"
+                      className="inline-flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2.5 rounded-xl text-xs font-bold transition-colors shadow-sm"
+                    />
                   </div>
-                  <div className="grid gap-5">
-                    {omniVideos.map(video => {
-                      const peran = video.scene === 1 ? 'Hook' : video.scene === omniSceneCount ? 'CTA' : 'Penjelasan';
-                      return (
-                        <div key={video.scene} className="rounded-2xl border border-slate-200 overflow-hidden">
-                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 py-3 bg-slate-50 border-b border-slate-200">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-bold text-slate-900">Scene {video.scene}</span>
-                              <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 bg-indigo-50 border border-indigo-100 rounded px-2 py-0.5">{peran}</span>
-                              <span className="text-xs text-slate-500">15 detik</span>
-                            </div>
-                            <a href={video.url} download={`arkx-omni-scene-${video.scene}-15-detik.mp4`} className="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl"><Download className="w-4 h-4" /> Unduh Scene {video.scene}</a>
+                  <div className="grid gap-4">
+                    {omniScenes.map(scene => (
+                      <div key={scene.scene} className="rounded-2xl border border-slate-200 overflow-hidden">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 py-3 bg-slate-50 border-b border-slate-200">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold text-slate-900">Scene {scene.scene}</span>
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 bg-indigo-50 border border-indigo-100 rounded px-2 py-0.5">{scene.role}</span>
+                            <span className="text-xs text-slate-500">15 detik</span>
                           </div>
-                          <div className="bg-slate-900 flex justify-center"><video src={video.url} controls playsInline preload="metadata" aria-label={`Video scene ${video.scene} 15 detik`} className="w-full max-h-[560px]" /></div>
-                          {video.interactionId && <p className="text-xs text-slate-400 px-4 py-2 break-all">Interaction ID: {video.interactionId}</p>}
+                          <CopyButton
+                            text={`Scene ${scene.scene} (${scene.role} · 15 detik)\nNarasi: ${scene.voiceover}\nVisual: ${scene.visual}\nVideo Prompt: ${scene.video_prompt}`}
+                            label={`Copy Scene ${scene.scene}`}
+                            className="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl"
+                          />
                         </div>
-                      );
-                    })}
+                        <div className="p-4 grid gap-3">
+                          <div>
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Narasi / Voiceover</span>
+                            <p className="text-sm text-slate-800 leading-relaxed">{scene.voiceover}</p>
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Visual</span>
+                            <p className="text-xs text-slate-600 leading-relaxed">{scene.visual}</p>
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest block mb-1">Prompt Video (EN)</span>
+                            <p className="text-xs text-emerald-700 font-mono bg-emerald-50 p-3 rounded-xl border border-emerald-100 leading-relaxed">{scene.video_prompt}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
+                </section>}
+
+                {omniVideo && <section className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm anim-fade-in-up" aria-label="Hasil video Omni Flash">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-5">
+                    <div><h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><Check className="w-5 h-5 text-emerald-600" /> Video Omni Flash siap</h3><p className="text-xs text-slate-500 mt-1">15 detik · {omniVideo.aspectRatio} · MP4 · 720p</p></div>
+                    <a href={omniVideo.url} download="arkx-omni-flash-15-detik.mp4" className="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm px-5 py-3 rounded-xl"><Video className="w-4 h-4" /> Unduh MP4</a>
+                  </div>
+                  <div className="rounded-xl overflow-hidden bg-slate-900 border border-slate-200 flex justify-center"><video src={omniVideo.url} controls playsInline preload="metadata" aria-label="Video Omni Flash 15 detik" className="w-full max-h-[560px]" /></div>
                   <p className="text-xs text-slate-500 mt-4 leading-relaxed">Unduh sebelum menutup tab atau membuat video baru. Hasil sementara berada di memori browser, bukan galeri publik.</p>
+                  {omniVideo.interactionId && <p className="text-xs text-slate-400 mt-2 break-all">Interaction ID: {omniVideo.interactionId}</p>}
                 </section>}
 
                 {omniConfirmOpen && <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={event => { if (event.target === event.currentTarget) setOmniConfirmOpen(false); }}>
                   <section role="dialog" aria-modal="true" aria-labelledby="omni-confirm-title" aria-describedby="omni-confirm-note" className="w-full max-w-lg bg-white border border-slate-200 rounded-2xl shadow-2xl p-6 sm:p-8 anim-zoom-in max-h-[90vh] overflow-y-auto">
                     <div className="flex items-start justify-between gap-4 mb-4"><h3 id="omni-confirm-title" className="text-xl font-bold text-slate-900">Konfirmasi generasi video</h3><button onClick={() => setOmniConfirmOpen(false)} aria-label="Tutup konfirmasi" className="p-1 rounded-lg text-slate-500 hover:bg-slate-100"><X className="w-5 h-5" /></button></div>
-                    <p id="omni-confirm-note" className="text-sm text-slate-600 leading-relaxed mb-5">Anda akan mengirim <strong>{omniSceneCount} permintaan video</strong> berurutan, satu untuk setiap scene. Penggunaan ini <strong>dapat dikenakan biaya {omniSceneCount} kali</strong> sesuai akun API Google Anda; biaya tidak ditentukan oleh aplikasi ini.</p>
-                    <dl className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2 text-sm mb-5"><div className="flex justify-between gap-3"><dt className="text-slate-500">Model</dt><dd className="font-bold text-slate-800 text-xs">{OMNI_MODEL}</dd></div><div className="flex justify-between gap-3"><dt className="text-slate-500">Output</dt><dd className="font-bold text-slate-800">{omniSceneCount} video · 15 detik per scene</dd></div><div className="flex justify-between gap-3"><dt className="text-slate-500">Format</dt><dd className="font-bold text-slate-800">{omniAspectRatio} · 720p</dd></div></dl>
+                    <p id="omni-confirm-note" className="text-sm text-slate-600 leading-relaxed mb-5">Anda akan mengirim <strong>satu permintaan video</strong> ke Google. Penggunaan ini <strong>dapat dikenakan biaya</strong> sesuai akun API Google Anda; biaya tidak ditentukan oleh aplikasi ini.</p>
+                    <dl className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2 text-sm mb-5"><div className="flex justify-between gap-3"><dt className="text-slate-500">Model</dt><dd className="font-bold text-slate-800 text-xs">{OMNI_MODEL}</dd></div><div className="flex justify-between gap-3"><dt className="text-slate-500">Output</dt><dd className="font-bold text-slate-800">1 video · 15 detik</dd></div><div className="flex justify-between gap-3"><dt className="text-slate-500">Format</dt><dd className="font-bold text-slate-800">{omniAspectRatio} · 720p</dd></div></dl>
                     <p className="text-xs text-slate-500 leading-relaxed mb-6">Topik dan instruksi visual dikirim langsung ke Google dengan key sesi Anda. Tidak ada request sebelum Anda menekan tombol lanjut di bawah, dan tidak ada retry otomatis.</p>
-                    <div className="flex flex-col sm:flex-row gap-3"><button onClick={() => setOmniConfirmOpen(false)} className="px-4 py-3 border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 font-bold">Batal</button><button onClick={confirmOmniFlash} className="flex-1 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl">Lanjutkan · Buat {omniSceneCount} Video</button></div>
+                    <div className="flex flex-col sm:flex-row gap-3"><button onClick={() => setOmniConfirmOpen(false)} className="px-4 py-3 border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 font-bold">Batal</button><button onClick={confirmOmniFlash} className="flex-1 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl">Lanjutkan · Buat 15 Detik</button></div>
                   </section>
                 </div>}
               </div>
