@@ -8,31 +8,14 @@ export type OmniOptions = {
   visualStyle: string;
   hookTechnique: string;
   aspectRatio: '9:16' | '16:9';
-  /** Nomor scene (1-based) dari total scene; kosongkan untuk satu video utuh. */
-  sceneIndex?: number;
-  /** Jumlah scene yang diminta pengguna: 3, 4, atau 6. */
-  sceneCount?: number;
 };
-
-export function sceneRole(index: number, count: number) {
-  if (count <= 1) return 'Single complete 15-second video.';
-  if (index <= 1) return 'HOOK: the first seconds must stop the scroll and state the curiosity gap.';
-  if (index >= count) return 'CTA: short, clear call to action that closes the loop opened in scene 1.';
-  return `BODY part ${index - 1} of ${count - 2}: explain exactly one point and continue the story from the previous scene.`;
-}
 
 export function buildOmniRequest(options: OmniOptions) {
   if (!options.idea.trim()) throw new Error('Masukkan topik atau ide video terlebih dahulu.');
   if (!['9:16', '16:9'].includes(options.aspectRatio)) throw new Error('Rasio video tidak valid.');
-  const sceneIndex = options.sceneIndex ?? 1;
-  const sceneCount = options.sceneCount ?? 1;
-  if (sceneIndex < 1 || sceneIndex > sceneCount) throw new Error('Nomor scene tidak valid.');
-  const sceneBriefing = sceneCount > 1
-    ? `This request is SCENE ${sceneIndex} of ${sceneCount} of a multi-scene health series, and each scene is its own 15-second clip. Scene role: ${sceneRole(sceneIndex, sceneCount)} Keep the same characters, colour palette, and visual style across all scenes. Do not summarise the whole topic; only cover this scene's job, and leave a natural opening for the next scene unless this is the final scene.`
-    : 'Single complete 15-second video: 0–4s attention-grabbing HOOK, 4–11s clear explanatory BODY, 11–15s concise CTA.';
   return {
     model: OMNI_MODEL,
-    input: `Create one complete 15-second health education video with synchronized native audio, not a script or JSON.\nTopic / user direction: ${options.idea.trim()}\nVisual style: ${options.visualStyle}. Use cute anthropomorphic organs or cells strictly inside the human body; no real people talking.\n${sceneBriefing}\nHook technique for the opening beat: ${options.hookTechnique}. Use cinematic wide, close-up, tracking, and macro shots when appropriate.\nSpoken narration: natural Indonesian, concise enough to finish within 15 seconds. Keep narration and visual action synchronized. No medical diagnosis, treatment guarantees, or exaggerated health claims. Use an educational tone.`,
+    input: `Create one complete 15-second health education video with synchronized native audio, not a script or JSON.\nTopic / user direction: ${options.idea.trim()}\nVisual style: ${options.visualStyle}. Use cute anthropomorphic organs or cells strictly inside the human body; no real people talking.\nSingle 15-second timeline: 0–4s attention-grabbing HOOK using ${options.hookTechnique}; 4–11s clear explanatory BODY; 11–15s concise CTA. Use cinematic wide, close-up, tracking, and macro shots when appropriate.\nSpoken narration: natural Indonesian, concise enough to finish within 15 seconds. Keep narration and visual action synchronized. No medical diagnosis, treatment guarantees, or exaggerated health claims. Use an educational tone.`,
     response_format: {
       type: 'video',
       duration: OMNI_DURATION,
