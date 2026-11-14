@@ -155,6 +155,13 @@ const HIDDEN_FROM_MENU = new Set<string>([...HIDDEN_PROVIDERS, ...MENU_HIDDEN_PR
 const VISIBLE_PROVIDER_LIST = PROVIDER_LIST.filter(p => !HIDDEN_FROM_MENU.has(p.key))
 const DEFAULT_PROVIDER = VISIBLE_PROVIDER_LIST[0]?.key || 'brain'
 
+const SERVER_KEY_PROVIDERS: Record<string, { label: string; route: string; cost: string }> = {
+  nexabot: { label: 'NexaBot', route: '/topup/nexabot', cost: '' },
+  seavi: { label: 'Seavi', route: '/topup/seavi', cost: 'Biaya tiap generate dipotong dari saldo Seavi sesuai model yang dipilih.' },
+  posbot: { label: 'PosBot', route: '/topup/posbot', cost: 'Biaya tiap generate dipotong dari saldo PosBot sesuai model yang dipilih; job gagal direfund otomatis.' },
+  runninghub: { label: 'RunningHub', route: '/topup/runninghub', cost: 'Biaya per generate dipotong dari saldo RunningHub — tarif terbaru tampil di halaman Top Up.' },
+}
+
 const TOKEN_GUIDE: Record<string, {
   url: string
   urlLabel: string
@@ -1125,9 +1132,9 @@ export default function ProvidersPage() {
 
   const currentConfig = PROVIDER_LIST.find(p => p.key === selectedProvider)
   const isAdmin = useAuthStore((s) => s.user?.role === 'admin')
-  // Member memakai kunci server NexaBot (top up saldo / paket Unlimited), jadi
-  // kolom API key tidak lagi relevan untuk mereka. Admin tetap bisa mengelola
-  // key sendiri di sini.
+  // Provider berkunci server (dikelola admin di System Settings): member cukup
+  // top up saldo, jadi kolom upload key/token disembunyikan untuk mereka.
+  const memberServerKey = isAdmin ? undefined : SERVER_KEY_PROVIDERS[selectedProvider]
   const memberNexabot = selectedProvider === 'nexabot' && !isAdmin
 
   const savedKeys = useMemo(
@@ -2530,22 +2537,29 @@ export default function ProvidersPage() {
             </div>
           ) : (
             <div className="neumorph p-4 space-y-3">
-              {memberNexabot ? (
+              {memberServerKey ? (
                 <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 space-y-2">
                   <div className="text-sm font-semibold text-emerald-300 flex items-center gap-2">
-                    <Check className="h-4 w-4" /> Tidak perlu API key NexaBot
+                    <Check className="h-4 w-4" /> Tidak perlu API key / token {memberServerKey.label}
                   </div>
-                  <p className="text-xs text-[#a0a0a0] leading-relaxed">
-                    Generate memakai kunci NexaBot milik server. Setelah top up saldo atau membeli
-                    Paket Unlimited, Anda langsung bisa generate — biaya{' '}
-                    Rp {NEXABOT_PRICE_FALLBACK.toLocaleString('id-ID')}/generate dipotong dari
-                    saldo NexaBot, dan gratis selama Paket Unlimited aktif.
-                  </p>
+                  {memberNexabot ? (
+                    <p className="text-xs text-[#a0a0a0] leading-relaxed">
+                      Generate memakai kunci NexaBot milik server. Setelah top up saldo atau membeli
+                      Paket Unlimited, Anda langsung bisa generate — biaya{' '}
+                      Rp {NEXABOT_PRICE_FALLBACK.toLocaleString('id-ID')}/generate dipotong dari
+                      saldo NexaBot, dan gratis selama Paket Unlimited aktif.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-[#a0a0a0] leading-relaxed">
+                      Generate memakai kunci {memberServerKey.label} milik server. Cukup top up saldo,
+                      lalu langsung generate. {memberServerKey.cost}
+                    </p>
+                  )}
                   <button
-                    onClick={() => navigate('/topup/nexabot')}
+                    onClick={() => navigate(memberServerKey.route)}
                     className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 transition"
                   >
-                    <Wallet className="h-3.5 w-3.5" /> Top Up NexaBot
+                    <Wallet className="h-3.5 w-3.5" /> Top Up {memberServerKey.label}
                   </button>
                 </div>
               ) : (
@@ -2563,7 +2577,7 @@ export default function ProvidersPage() {
                 </>
               )}
               <div className="flex flex-wrap gap-2">
-                {!memberNexabot && (
+                {!memberServerKey && (
                   <>
                 <Button onClick={bulkMode ? handleBulkUpload : handleAddKey} disabled={bulkMode ? !bulkText.trim() : !inputValue.trim()} className="brand-gradient text-[#0a0a0a] hover:opacity-90">
                   <Plus className="h-3.5 w-3.5" /> Tambah
@@ -3114,7 +3128,7 @@ export default function ProvidersPage() {
             )
           })()}
 
-              {!memberNexabot && TOKEN_GUIDE[selectedProvider as keyof typeof TOKEN_GUIDE] && (
+              {!memberServerKey && TOKEN_GUIDE[selectedProvider as keyof typeof TOKEN_GUIDE] && (
             <div className="mt-4 rounded-lg border border-[#00a8ff]/30 bg-[#00a8ff]/5 p-3">
               <div className="text-[12px] font-mono uppercase tracking-widest text-[#00a8ff]/80">Cara Dapat Token</div>
               <a
