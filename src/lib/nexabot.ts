@@ -1091,6 +1091,10 @@ export async function pollNexabotJob(
   const { apiKey, cookies } = normalizeValues(auth)
   if (!apiKey && !cookies && !auth.master) throw new Error('NexaBot: tidak ada API key / cookie session yang valid')
 
+  // Catat jobId di server: kalau tab ditutup, job ini bisa dilanjutkan lagi.
+  void import('./jobTracking').then(({ trackGenerationJob }) =>
+    trackGenerationJob({ provider: 'nexabot', jobId }))
+
   const attempts = Math.max(1, maxAttempts)
   const startedAt = Date.now()
   let attempt = 0
@@ -1334,6 +1338,9 @@ export async function saveNexabotResult(
     if (!res.ok || !data?.ok || !data?.url) {
       return { ok: false, error: data?.error || `Simpan gagal: HTTP ${res.status}` }
     }
+    // Hasil sudah permanen di server → job tidak perlu dilanjutkan lagi.
+    void import('./jobTracking').then(({ finishGenerationJob }) =>
+      finishGenerationJob({ provider: 'nexabot', jobId, status: 'done', resultUrl: data.url }))
     return { ok: true, url: data.url }
   } catch (err: any) {
     return { ok: false, error: err?.message || String(err) }

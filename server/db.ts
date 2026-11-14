@@ -62,6 +62,23 @@ if (!columns.some(c => c.name === 'payment_token')) {
 }
 
 db.exec(`
+  -- Job NexaBot/PosBot yang bisa dilanjutkan setelah tab ditutup.
+  CREATE TABLE IF NOT EXISTS generation_job (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    provider TEXT NOT NULL,
+    job_id TEXT NOT NULL,
+    page TEXT NOT NULL DEFAULT '',
+    model TEXT NOT NULL DEFAULT '',
+    prompt TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending',
+    result_url TEXT NOT NULL DEFAULT '',
+    last_error TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    UNIQUE(user_id, provider, job_id)
+  );
+
   CREATE TABLE IF NOT EXISTS tokens (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     provider TEXT NOT NULL CHECK(provider IN ('brain','weavy','wavespeed','roboneo','runninghub','framia','leonardo','createpulse','galleri5','oneover','firefly','riverside','nexabot')),

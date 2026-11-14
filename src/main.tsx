@@ -7,6 +7,7 @@ import App from './App.tsx'
 // After a page reload, all blob: URLs are dead. This replaces them
 // with fresh blob URLs by loading video data from IndexedDB.
 import { restoreIdbVideos, startBackgroundPolling } from '@/lib/backgroundTasks'
+import { resumePendingGenerationJobs } from '@/lib/jobTracking'
 import { promptForNotificationsIfNeeded } from '@/lib/notify'
 
 restoreIdbVideos().then(() => {
@@ -14,6 +15,9 @@ restoreIdbVideos().then(() => {
   // localStorage) langsung dipoll lagi setelah reload, tanpa menunggu user
   // membuka halaman generatornya. Task ephemeral sudah dibuang oleh restore.
   startBackgroundPolling()
+  // Lanjutkan job NexaBot/PosBot yang tertinggal dari sesi sebelumnya (tab
+  // ditutup saat generate). Hasilnya masuk ke panel generasi & galeri.
+  void resumePendingGenerationJobs()
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
       navigator.serviceWorker

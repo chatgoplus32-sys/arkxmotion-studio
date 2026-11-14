@@ -30,6 +30,7 @@ import { requireProPage } from './middleware/requireProPage.js'
 import nexabotWalletRoutes from './routes/nexabotWallet.js'
 import seaviWalletRoutes from './routes/seaviWallet.js'
 import posbotWalletRoutes from './routes/posbotWallet.js'
+import generationJobsRoutes from './routes/generationJobs.js'
 import runninghubWalletRoutes from './routes/runninghubWallet.js'
 import publicPricingRoutes from './routes/publicPricing.js'
 import publicStatsRoutes from './routes/publicStats.js'
@@ -190,6 +191,7 @@ app.use('/api/public/tiktok-download', publicTiktokRoutes)
 app.use('/api/nexabot', nexabotWalletRoutes)
 app.use('/api/seavi', seaviWalletRoutes)
 app.use('/api/posbot', posbotWalletRoutes)
+app.use('/api/generation-jobs', generationJobsRoutes)
 app.use('/api/runninghub-wallet', runninghubWalletRoutes)
 app.use('/api/runninghub', runninghubDailyClaimRoutes)
 app.use('/api/chatgpt', chatgptRoutes)

@@ -871,6 +871,9 @@ export class PosbotJobFailed extends Error {
 /** GET-only monitoring. An interruption never confirms job failure. */
 export async function pollPosbotStatus(apiKey: string, jobCode: string, opts: PosbotPollOptions = {}): Promise<PosbotStatusResult> {
   const { onLog, onStatus, maxAttempts = Infinity, baseMs = 3000, maxMs = 15000, maxTotalMs = 20 * 60 * 1000, requestTimeoutMs = 30000, random = Math.random } = opts
+  // Catat jobCode di server: job tetap bisa dilanjutkan kalau tab ditutup.
+  void import('./jobTracking').then(({ trackGenerationJob }) =>
+    trackGenerationJob({ provider: 'posbot', jobId: jobCode }))
   const startedAt = Date.now()
   let attempt = 0
   let transientStreak = 0
@@ -959,6 +962,8 @@ export async function pollPosbotStatus(apiKey: string, jobCode: string, opts: Po
     if (status === 'completed') {
       const url = j.result_url || j.result?.url
       if (!url) throw interrupted('job completed tanpa result_url')
+      void import('./jobTracking').then(({ finishGenerationJob }) =>
+        finishGenerationJob({ provider: 'posbot', jobId: jobCode, status: 'done', resultUrl: String(url) }))
       return { url: String(url), model: j.model }
     }
     if (status === 'failed') {
