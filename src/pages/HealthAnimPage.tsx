@@ -5,7 +5,16 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { OMNI_MODEL, generateOmniVideo } from '@/lib/omni';
+import {
+  downloadNexabotResult,
+  pollNexabotJob,
+  runWithNexabotThrottleRetry,
+  saveNexabotResult,
+  submitNexabot
+} from '@/lib/nexabot';
+import { chargeNexabotWallet, refundNexabotWallet } from '@/lib/nexabotWallet';
+import { runNexabotJobWithSessionFallback } from '@/pages/image-to-video/nexabotSessionFallback';
+import { useAuthStore } from '@/stores/authStore';
 import { Lightbulb, FileText, Image as ImageIcon, Sparkles, Loader2, Check, Copy, Menu, X, ArrowRight, ArrowLeft, PlayCircle, List, Trash2, AlertCircle, Video, ScanSearch, Upload, ShoppingBag, Plus, Zap, ImagePlay, Settings, KeyRound } from 'lucide-react';
 
 // ============================================================================
@@ -283,6 +292,8 @@ const ProgressBar = ({ progress, loading }: { progress: number; loading: boolean
 // ============================================================================
 const HealthAnimTool = () => {
   const [activeTab, setActiveTab] = useState('ideas');
+  const authToken = useAuthStore((state) => state.token);
+  const authUser = useAuthStore((state) => state.user);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [appError, setAppError] = useState('');
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
@@ -617,9 +628,8 @@ const HealthAnimTool = () => {
   const generateOmniFlash = () => {
     if (!omniIdea.trim() || loadingOmni) return;
     setAppError('');
-    if (!aiApiKey.trim()) {
-      setAiSettingsOpen(true);
-      setAppError('Tambahkan API key Gemini Anda di Pengaturan AI. Omni Flash memakai key lokal yang sama, tanpa login.');
+    if (!authToken) {
+      setAppError('Login dulu untuk membuat video dengan saldo NexaBot.');
       return;
     }
     setOmniConfirmOpen(true);
@@ -631,26 +641,102 @@ const HealthAnimTool = () => {
     setLoadingOmni(true);
     setAppError('');
     clearOmniVideo();
-    setOmniStatus('Mengirim satu permintaan video 15 detik...');
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10 * 60 * 1000);
+    const token = authToken;
+    if (!token) {
+      setAppError('Login dulu untuk membuat video dengan saldo NexaBot.');
+      setLoadingOmni(false);
+      return;
+    }
+    const admin = authUser?.role === 'admin';
+    let tiketPotong: number | null = null;
+    let jobTerakhir = '';
     try {
-      const result = await generateOmniVideo({
-        apiKey: aiApiKey,
-        idea: omniIdea,
-        visualStyle: globalPromptStyle,
-        hookTechnique: omniHookTechnique,
-        aspectRatio: omniAspectRatio
-      }, { signal: controller.signal, onStatus: setOmniStatus });
-      const url = URL.createObjectURL(result.blob);
-      omniVideoUrl.current = url;
-      setOmniVideo({ url, interactionId: result.interactionId, aspectRatio: result.aspectRatio });
+      // 1/3 — potong saldo NexaBot (gratis untuk admin / paket Unlimited).
+      if (!admin) {
+        setOmniStatus('Memotong saldo NexaBot...');
+        const potong = await chargeNexabotWallet(token, 't2v');
+        tiketPotong = potong.usageId ?? null;
+        if (!potong.unlimited && potong.deducted > 0) {
+          setOmniStatus(`Saldo NexaBot terpotong ${new Intl.NumberFormat('id-ID').format(potong.deducted)}.`);
+        }
+      }
+
+      // 2/3 — submit + poll + simpan hasil, semuanya lewat relay NexaBot.
+      const url = await runNexabotJobWithSessionFallback<string>(
+        async (auth, via) => {
+          setOmniStatus(`Mengirim permintaan video ke NexaBot (${via})...`);
+          const submit = await runWithNexabotThrottleRetry(
+            () =>
+              submitNexabot(
+                {
+                  mode: 't2v',
+                  prompt: omniIdea.trim(),
+                  // Upstream: ratio 1 = 16:9, 2 = 9:16.
+                  ratio: omniAspectRatio === '9:16' ? 2 : 1,
+                  resolution: 720,
+                  duration: 15
+                },
+                auth,
+                {
+                  onRetry: ({ status, delayMs, message }) => {
+                    setOmniStatus(`${message}${status ? ` (HTTP ${status})` : ''} — submit diulang dalam ${Math.ceil(delayMs / 1000)}s...`);
+                  }
+                }
+              ),
+            {
+              onThrottle: (waitSeconds) => {
+                setOmniStatus(`Server NexaBot sedang dibatasi upstream — menunggu ${waitSeconds}s lalu submit otomatis...`);
+              }
+            }
+          );
+          if (!submit.ok || !submit.jobId) throw new Error(submit.error || 'NexaBot gagal membuat job video.');
+          jobTerakhir = submit.jobId;
+
+          setOmniStatus('Video sedang dibuat NexaBot (biasanya 1-3 menit)...');
+          await pollNexabotJob(
+            submit.jobId,
+            auth,
+            (msg) => setOmniStatus(msg),
+            {
+              onRetry: ({ status, delayMs, message }) => {
+                setOmniStatus(`${message}${status ? ` (HTTP ${status})` : ''} — coba lagi dalam ${Math.ceil(delayMs / 1000)}s...`);
+              }
+            }
+          );
+
+          // 3/3 — simpan permanen di server; fallback ke URL unduhan NexaBot.
+          setOmniStatus('Menyimpan video ke server...');
+          const saved = await saveNexabotResult(submit.jobId, auth, `arkx-health-${submit.jobId}.mp4`);
+          if (saved.ok && saved.url) return saved.url;
+
+          const unduh = await downloadNexabotResult(submit.jobId, auth);
+          if (!unduh.ok || !unduh.url) throw new Error(unduh.error || 'Hasil video NexaBot tidak bisa diunduh.');
+          return unduh.url;
+        },
+        {
+          master: true,
+          ticket: tiketPotong,
+          hooks: {
+            log: (msg, level) => console.log('[arkx-health/nexabot]', level || 'info', msg),
+            notify: () => {}
+          }
+        }
+      );
+
+      if (url.startsWith('blob:')) omniVideoUrl.current = url;
+      setOmniVideo({ url, interactionId: jobTerakhir, aspectRatio: omniAspectRatio });
       setOmniStatus('Video siap diputar dan diunduh.');
     } catch (error: any) {
-      setAppError(error?.message || 'Pembuatan video belum berhasil. Tidak ada permintaan ulang otomatis.');
+      const pesan = error?.message || 'Pembuatan video belum berhasil.';
+      // Gagal di tengah jalan → kembalikan saldo yang sudah terpotong.
+      let catatanRefund = '';
+      if (tiketPotong != null && !admin) {
+        const sisa = await refundNexabotWallet(token, tiketPotong).catch(() => null);
+        if (sisa !== null) catatanRefund = ' Saldo NexaBot yang terpotong sudah dikembalikan.';
+      }
+      setAppError(`${pesan}${catatanRefund}`);
       setOmniStatus('');
     } finally {
-      clearTimeout(timeout);
       setLoadingOmni(false);
     }
   };
@@ -1127,8 +1213,8 @@ ATURAN MUTLAK:
                   </div>
 
                   <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 mb-6 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-600">
-                    <span><strong className="text-slate-800">Model:</strong> <code>{OMNI_MODEL}</code></span>
-                    <span><strong className="text-slate-800">API:</strong> Interactions</span>
+                    <span><strong className="text-slate-800">Model:</strong> <code>NexaBot · Omni Flash 1.2</code></span>
+                    <span><strong className="text-slate-800">API:</strong> Relay NexaBot (t2v)</span>
                     <span><strong className="text-slate-800">Output:</strong> MP4 · 720p · audio native</span>
                   </div>
 
@@ -1207,8 +1293,8 @@ ATURAN MUTLAK:
                   </button>
                   {loadingOmni && <div role="status" aria-live="polite" className="mt-4 bg-indigo-50 border border-indigo-100 rounded-xl p-4 text-sm text-indigo-800"><p className="font-bold flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />{omniStatus}</p><p className="text-xs mt-2 leading-relaxed">Biarkan tab terbuka. Generasi bisa memerlukan beberapa menit; 15 detik adalah durasi hasil video. Tidak ada retry generasi otomatis.</p></div>}
                   <div className="mt-4 text-xs text-slate-500 leading-relaxed space-y-2">
-                    <p>Memakai API key Anda dari <button onClick={() => setAiSettingsOpen(true)} className="text-indigo-600 font-bold hover:text-indigo-800">Pengaturan AI</button>, hanya dalam sesi tab ini. Model Omni dikunci khusus; model teks di pengaturan tidak mengubahnya.</p>
-                    <p>Generasi video dapat dikenakan biaya akun API Google. Aplikasi meminta konfirmasi sebelum setiap permintaan. <a href="https://aistudio.google.com/docs/omni" target="_blank" rel="noopener noreferrer" className="text-indigo-600 font-bold hover:text-indigo-800">Dokumentasi resmi Google ↗</a></p>
+                    <p>Video dibuat lewat <strong>relay NexaBot</strong> dengan kunci server; biayanya dipotong dari saldo NexaBot Anda (gratis bila paket Unlimited aktif). API key Gemini dari <button onClick={() => setAiSettingsOpen(true)} className="text-indigo-600 font-bold hover:text-indigo-800">Pengaturan AI</button> hanya dipakai untuk menyusun narasi &amp; prompt scene.</p>
+                    <p>Setiap pembuatan video meminta konfirmasi dan memotong saldo satu kali; bila gagal, saldo dikembalikan otomatis. Hasil disimpan permanen di server. <a href="https://nexabot.id/api-docs" target="_blank" rel="noopener noreferrer" className="text-indigo-600 font-bold hover:text-indigo-800">Dokumentasi NexaBot ↗</a></p>
                   </div>
                 </div>
 
@@ -1267,15 +1353,15 @@ ATURAN MUTLAK:
                   </div>
                   <div className="rounded-xl overflow-hidden bg-slate-900 border border-slate-200 flex justify-center"><video src={omniVideo.url} controls playsInline preload="metadata" aria-label="Video Omni Flash 15 detik" className="w-full max-h-[560px]" /></div>
                   <p className="text-xs text-slate-500 mt-4 leading-relaxed">Unduh sebelum menutup tab atau membuat video baru. Hasil sementara berada di memori browser, bukan galeri publik.</p>
-                  {omniVideo.interactionId && <p className="text-xs text-slate-400 mt-2 break-all">Interaction ID: {omniVideo.interactionId}</p>}
+                  {omniVideo.interactionId && <p className="text-xs text-slate-400 mt-2 break-all">Job ID NexaBot: {omniVideo.interactionId}</p>}
                 </section>}
 
                 {omniConfirmOpen && <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={event => { if (event.target === event.currentTarget) setOmniConfirmOpen(false); }}>
                   <section role="dialog" aria-modal="true" aria-labelledby="omni-confirm-title" aria-describedby="omni-confirm-note" className="w-full max-w-lg bg-white border border-slate-200 rounded-2xl shadow-2xl p-6 sm:p-8 anim-zoom-in max-h-[90vh] overflow-y-auto">
                     <div className="flex items-start justify-between gap-4 mb-4"><h3 id="omni-confirm-title" className="text-xl font-bold text-slate-900">Konfirmasi generasi video</h3><button onClick={() => setOmniConfirmOpen(false)} aria-label="Tutup konfirmasi" className="p-1 rounded-lg text-slate-500 hover:bg-slate-100"><X className="w-5 h-5" /></button></div>
-                    <p id="omni-confirm-note" className="text-sm text-slate-600 leading-relaxed mb-5">Anda akan mengirim <strong>satu permintaan video</strong> ke Google. Penggunaan ini <strong>dapat dikenakan biaya</strong> sesuai akun API Google Anda; biaya tidak ditentukan oleh aplikasi ini.</p>
-                    <dl className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2 text-sm mb-5"><div className="flex justify-between gap-3"><dt className="text-slate-500">Model</dt><dd className="font-bold text-slate-800 text-xs">{OMNI_MODEL}</dd></div><div className="flex justify-between gap-3"><dt className="text-slate-500">Output</dt><dd className="font-bold text-slate-800">1 video · 15 detik</dd></div><div className="flex justify-between gap-3"><dt className="text-slate-500">Format</dt><dd className="font-bold text-slate-800">{omniAspectRatio} · 720p</dd></div></dl>
-                    <p className="text-xs text-slate-500 leading-relaxed mb-6">Topik dan instruksi visual dikirim langsung ke Google dengan key sesi Anda. Tidak ada request sebelum Anda menekan tombol lanjut di bawah, dan tidak ada retry otomatis.</p>
+                    <p id="omni-confirm-note" className="text-sm text-slate-600 leading-relaxed mb-5">Anda akan membuat <strong>satu video 15 detik</strong> lewat NexaBot. Biaya dipotong dari <strong>saldo NexaBot</strong> Anda (gratis bila paket Unlimited aktif) dan dikembalikan otomatis bila gagal.</p>
+                    <dl className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2 text-sm mb-5"><div className="flex justify-between gap-3"><dt className="text-slate-500">Model</dt><dd className="font-bold text-slate-800 text-xs">NexaBot · Omni Flash 1.2</dd></div><div className="flex justify-between gap-3"><dt className="text-slate-500">Output</dt><dd className="font-bold text-slate-800">1 video · 15 detik</dd></div><div className="flex justify-between gap-3"><dt className="text-slate-500">Format</dt><dd className="font-bold text-slate-800">{omniAspectRatio} · 720p</dd></div></dl>
+                    <p className="text-xs text-slate-500 leading-relaxed mb-6">Topik dikirim ke NexaBot memakai kunci server. Tidak ada permintaan sebelum Anda menekan tombol lanjut di bawah, dan submit tidak diulang otomatis setelah job terbentuk.</p>
                     <div className="flex flex-col sm:flex-row gap-3"><button onClick={() => setOmniConfirmOpen(false)} className="px-4 py-3 border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 font-bold">Batal</button><button onClick={confirmOmniFlash} className="flex-1 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl">Lanjutkan · Buat 15 Detik</button></div>
                   </section>
                 </div>}
