@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
+import { startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
 import {
   submitNexabotVoiceClone,
   submitNexabotElevenLabs,
@@ -353,6 +354,14 @@ export default function CloneVoicePage() {
     setStatusMsg('Menyiapkan...')
     chargeRef.current = null
     coveredRef.current = false
+    // Clone suara bisa bermenit-menit: daftarkan task supaya tab tidak dibuang
+    // saat user pindah menu dan progresnya tampil di header.
+    const taskId = startGenerationTask({
+      page: 'clone-voice',
+      model: 'NexaBot Clone Voice',
+      prompt: name.trim(),
+      provider: 'nexabot',
+    })
 
     try {
       if (!isAdmin) {
@@ -395,6 +404,7 @@ export default function CloneVoicePage() {
         }
       }
     } finally {
+      removeActiveTask(taskId)
       chargeRef.current = null
       setLoading(false)
     }
@@ -409,6 +419,12 @@ export default function CloneVoicePage() {
     setError(null)
     setElUrl(null)
     let usageId: number | null = null
+    const taskId = startGenerationTask({
+      page: 'clone-voice',
+      model: 'ElevenLabs TTS',
+      prompt: elText.trim().slice(0, 120),
+      provider: 'nexabot',
+    })
     try {
       if (!isAdmin) {
         const charge = await chargeNexabotWallet(authToken, 'elevenlabs')
@@ -439,6 +455,7 @@ export default function CloneVoicePage() {
         if (refunded != null) setWallet((w) => (w ? { ...w, balance: refunded } : w))
       }
     } finally {
+      removeActiveTask(taskId)
       chargeRef.current = null
       setElLoading(false)
     }
