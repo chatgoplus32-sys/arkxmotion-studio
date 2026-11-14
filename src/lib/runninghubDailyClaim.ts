@@ -18,7 +18,7 @@ export interface RhAutoClaimTokenStatus {
   lastSuccessDay: string | null
 }
 
-export interface RhAutoClaimProgress {
+export interface RhClaimProgress {
   running: boolean
   total: number
   processed: number
@@ -37,7 +37,7 @@ export interface RhAutoClaimStatus {
   day: string
   timezone: string
   running: boolean
-  progress?: RhAutoClaimProgress | null
+  progress?: RhClaimProgress | null
   tokens: RhAutoClaimTokenStatus[]
   summary: {
     total: number

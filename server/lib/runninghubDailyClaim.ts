@@ -91,11 +91,11 @@ function maskAccount(account: string, id: number): string {
   return account ? `…${account}` : `token #${id}`
 }
 
-// Progres klaim per pengguna. Klaim berjalan berurutan (±2 detik/token), jadi
-// daftar 150–1000 token butuh hitungan menit; UI perlu angka berjalan, bukan
-// hanya status running. Entri terakhir disimpan setelah selesai supaya UI bisa
-// menampilkan hasil akhirnya.
-export interface RhAutoClaimProgress {
+// Progres klaim (per pengguna maupun pool). Klaim berjalan berurutan (±2 detik/
+// token), jadi daftar 150–1000 token butuh hitungan menit; UI perlu angka
+// berjalan, bukan hanya status running. Entri terakhir disimpan setelah selesai
+// supaya UI bisa menampilkan hasil akhirnya.
+export interface RhClaimProgress {
   running: boolean
   total: number
   processed: number
@@ -108,7 +108,33 @@ export interface RhAutoClaimProgress {
   etaMs: number
 }
 
-const claimProgress = new Map<number, RhAutoClaimProgress>()
+function mulaiProgress(total: number): RhClaimProgress {
+  const now = Date.now()
+  return {
+    running: true, total, processed: 0, claimed: 0, already: 0, failed: 0, skipped: 0,
+    startedAt: now, updatedAt: now, etaMs: total * CLAIM_DELAY_MS,
+  }
+}
+
+/** Salin hasil berjalan ke snapshot (dipanggil tiap token selesai, termasuk yang dilewati). */
+function updateProgress(progress: RhClaimProgress, summary: RhAutoClaimRunSummary, processed: number): void {
+  progress.processed = processed
+  progress.claimed = summary.claimed
+  progress.already = summary.already
+  progress.failed = summary.failed
+  progress.skipped = summary.skipped
+  progress.updatedAt = Date.now()
+  progress.etaMs = Math.max(0, (progress.total - processed) * CLAIM_DELAY_MS)
+}
+
+function selesaikanProgress(progress: RhClaimProgress | null): void {
+  if (!progress) return
+  progress.running = false
+  progress.etaMs = 0
+  progress.updatedAt = Date.now()
+}
+
+const claimProgress = new Map<number, RhClaimProgress>()
 
 // Hasil akhir tetap disimpan sebentar supaya UI yang membuka halaman setelah
 // klaim selesai masih melihat ringkasannya, lalu dibuang agar Map tidak
@@ -121,13 +147,13 @@ let schedulerStarted = false
 /** Buang progres selesai yang sudah kedaluwarsa atau token user-nya sudah hilang. */
 export function pruneClaimProgress(now = Date.now()): number {
   let dibuang = 0
+  const punyaToken = new Set(
+    (db.prepare('SELECT DISTINCT user_id FROM runninghub_claim_token').all() as { user_id: number }[])
+      .map((row) => row.user_id),
+  )
   for (const [userId, progress] of claimProgress) {
     if (progress.running) continue
-    const kedaluwarsa = now - progress.updatedAt > PROGRESS_RETENTION_MS
-    const tokenHabis = !db
-      .prepare('SELECT 1 FROM runninghub_claim_token WHERE user_id = ? LIMIT 1')
-      .get(userId)
-    if (kedaluwarsa || tokenHabis) {
+    if (now - progress.updatedAt > PROGRESS_RETENTION_MS || !punyaToken.has(userId)) {
       claimProgress.delete(userId)
       dibuang += 1
     }
@@ -268,28 +294,11 @@ export async function runAutoClaimForUser(
       .all(userId) as ClaimRow[]
 
     const summary: RhAutoClaimRunSummary = { processed: 0, claimed: 0, already: 0, failed: 0, skipped: 0 }
-    const progress: RhAutoClaimProgress = {
-      running: true,
-      total: rows.length,
-      processed: 0,
-      claimed: 0,
-      already: 0,
-      failed: 0,
-      skipped: 0,
-      startedAt: Date.now(),
-      updatedAt: Date.now(),
-      etaMs: rows.length * CLAIM_DELAY_MS,
-    }
+    const progress = mulaiProgress(rows.length)
     claimProgress.set(userId, progress)
-    const syncProgress = (index: number) => {
-      progress.processed = index + 1
-      progress.claimed = summary.claimed
-      progress.already = summary.already
-      progress.failed = summary.failed
-      progress.skipped = summary.skipped
-      progress.updatedAt = Date.now()
-      progress.etaMs = Math.max(0, (rows.length - progress.processed) * CLAIM_DELAY_MS)
-    }
+    // Posisi daftar (bukan summary.processed) karena token yang dilewati juga
+    // harus membuat bar progres maju.
+    const syncProgress = (index: number) => updateProgress(progress, summary, index + 1)
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i]
@@ -360,12 +369,7 @@ export async function runAutoClaimForUser(
     }
     return summary
   } finally {
-    const selesai = claimProgress.get(userId)
-    if (selesai) {
-      selesai.running = false
-      selesai.etaMs = 0
-      selesai.updatedAt = Date.now()
-    }
+    selesaikanProgress(claimProgress.get(userId) || null)
     runningUsers.delete(userId)
   }
 }
@@ -404,31 +408,14 @@ async function tick(): Promise<void> {
 // relay. Token yang ditolak permanen ditandai rejected lewat rhPoolMarkFailure.
 let poolClaimRunning = false
 
-// Progres klaim pool (satu putaran untuk semua token operator). Pool bisa berisi
+// Progres klaim pool: satu putaran untuk semua token operator. Pool bisa berisi
 // ratusan–ribuan token dengan jeda 2 detik, jadi admin perlu angka berjalan di
 // dashboard, bukan tombol yang menggantung puluhan menit tanpa info.
-export interface RhPoolClaimProgress {
-  running: boolean
-  total: number
-  processed: number
-  claimed: number
-  already: number
-  failed: number
-  skipped: number
-  startedAt: number
-  updatedAt: number
-  etaMs: number
-}
-
-let poolProgress: RhPoolClaimProgress | null = null
+let poolProgress: RhClaimProgress | null = null
 
 /** Snapshot progres klaim pool untuk dashboard admin (null = belum pernah jalan). */
-export function rhPoolClaimProgress(): RhPoolClaimProgress | null {
+export function rhPoolClaimProgress(): RhClaimProgress | null {
   return poolProgress ? { ...poolProgress } : null
-}
-
-export function isPoolClaimRunning(): boolean {
-  return poolClaimRunning
 }
 
 export async function runPoolDailyClaim(): Promise<RhAutoClaimRunSummary> {
@@ -438,28 +425,8 @@ export async function runPoolDailyClaim(): Promise<RhAutoClaimRunSummary> {
   try {
     const day = claimDayKey()
     const due = rhPoolClaimDue(day)
-    poolProgress = {
-      running: true,
-      total: due.length,
-      processed: 0,
-      claimed: 0,
-      already: 0,
-      failed: 0,
-      skipped: 0,
-      startedAt: Date.now(),
-      updatedAt: Date.now(),
-      etaMs: due.length * CLAIM_DELAY_MS,
-    }
-    const syncPoolProgress = () => {
-      if (!poolProgress) return
-      poolProgress.processed = summary.processed
-      poolProgress.claimed = summary.claimed
-      poolProgress.already = summary.already
-      poolProgress.failed = summary.failed
-      poolProgress.skipped = summary.skipped
-      poolProgress.updatedAt = Date.now()
-      poolProgress.etaMs = Math.max(0, (due.length - summary.processed) * CLAIM_DELAY_MS)
-    }
+    const progress = mulaiProgress(due.length)
+    poolProgress = progress
     for (let i = 0; i < due.length; i++) {
       const kandidat = due[i]
       summary.processed += 1
@@ -475,7 +442,7 @@ export async function runPoolDailyClaim(): Promise<RhAutoClaimRunSummary> {
         // Transient: jangan tandai rejected; coba lagi tick berikutnya.
         summary.failed += 1
       }
-      syncPoolProgress()
+      updateProgress(progress, summary, summary.processed)
       if (i < due.length - 1) await new Promise((resolve) => setTimeout(resolve, CLAIM_DELAY_MS))
     }
     if (summary.processed > 0) {
@@ -483,11 +450,7 @@ export async function runPoolDailyClaim(): Promise<RhAutoClaimRunSummary> {
     }
     return summary
   } finally {
-    if (poolProgress) {
-      poolProgress.running = false
-      poolProgress.etaMs = 0
-      poolProgress.updatedAt = Date.now()
-    }
+    selesaikanProgress(poolProgress)
     poolClaimRunning = false
   }
 }

@@ -108,6 +108,8 @@ function extractMfTokens(text: string): string[] {
 function topupCta(provider: string): { route: string; label: string } {  if (provider === 'createpulse') return { route: '/topup/createpulse', label: 'Topup CreatePulse' }
   if (provider === 'seavi') return { route: '/topup/seavi', label: 'Topup Seavi' }
   if (provider === 'posbot') return { route: '/topup/posbot', label: 'Topup PosBot' }
+  if (provider === 'runninghub') return { route: '/topup/runninghub', label: 'Topup RunningHub' }
+  if (provider === 'nexabot') return { route: '/topup/nexabot', label: 'Topup NexaBot' }
   return { route: `/topup/manual?provider=${encodeURIComponent(provider)}`, label: 'Topup Manual' }
 }
 
@@ -2181,8 +2183,7 @@ export default function ProvidersPage() {
       // Scheduler memproses berurutan (±2 detik/token). Daftar 150–1000 token
       // bisa makan puluhan menit, jadi batas poll dihitung dari jumlah token,
       // bukan angka tetap yang membuat pantauan berhenti di tengah jalan.
-      const totalTok = status.summary?.total || status.tokens.length || 0
-      const maxPolls = Math.max(45, Math.ceil((totalTok * 2.5 + 180) / 2))
+      const maxPolls = Math.ceil(((status.summary?.total || 0) * 2.5 + 180) / 2)
       for (let i = 0; i < maxPolls && status.running; i++) {
         await sleepRhAutoClaim(2000)
         status = await fetchRunningHubAutoClaim()

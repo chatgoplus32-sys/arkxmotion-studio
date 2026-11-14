@@ -4,6 +4,7 @@ import { Section, Button } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { isBoosterPackage } from '@/lib/nexabotWallet'
+import type { RhClaimProgress } from '@/lib/runninghubDailyClaim'
 import {
   Save,
   RefreshCw,
@@ -658,19 +659,6 @@ interface RhPoolTokenView {
   last_claim_day: string
 }
 
-interface RhPoolClaimProgressView {
-  running: boolean
-  total: number
-  processed: number
-  claimed: number
-  already: number
-  failed: number
-  skipped: number
-  startedAt: number
-  updatedAt: number
-  etaMs: number
-}
-
 interface RhCheckView {
   ok: boolean
   transient?: boolean
@@ -700,7 +688,7 @@ function RunningHubPoolSection({
   const [checkingId, setCheckingId] = useState<number | null>(null)
   const [checkingAll, setCheckingAll] = useState(false)
   const [claimingAll, setClaimingAll] = useState(false)
-  const [claimProgress, setClaimProgress] = useState<RhPoolClaimProgressView | null>(null)
+  const [claimProgress, setClaimProgress] = useState<RhClaimProgress | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [checks, setChecks] = useState<Record<number, RhCheckView>>({})
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -711,7 +699,7 @@ function RunningHubPoolSection({
   const apply = (data: any) => {
     if (data.summary) setSummary(data.summary as RhPoolSummaryView)
     if (Array.isArray(data.tokens)) setTokens(data.tokens as RhPoolTokenView[])
-    if ('claimProgress' in data) setClaimProgress((data.claimProgress || null) as RhPoolClaimProgressView | null)
+    if ('claimProgress' in data) setClaimProgress((data.claimProgress || null) as RhClaimProgress | null)
   }
 
   const fetchPool = useCallback(async () => {
@@ -834,18 +822,15 @@ function RunningHubPoolSection({
       apply(data)
       // Klaim pool berjalan di latar belakang server (jeda 2 detik/token → bisa
       // puluhan menit). Pantau sampai selesai, batas poll mengikuti jumlah token.
-      let progress = (data.claimProgress || null) as RhPoolClaimProgressView | null
-      setClaimProgress(progress)
-      const total = progress?.total || 0
-      const maxPolls = Math.max(30, Math.ceil((total * 2.5 + 180) / 2))
+      let progress = (data.claimProgress || null) as RhClaimProgress | null
+      const maxPolls = Math.ceil(((progress?.total || 0) * 2.5 + 180) / 2)
       for (let i = 0; i < maxPolls && progress?.running; i++) {
         await new Promise((resolve) => setTimeout(resolve, 2000))
         const poll = await fetch('/api/admin/runninghub/pool', { headers: auth() })
         if (!poll.ok) continue
         const fresh = await poll.json()
         apply(fresh)
-        progress = (fresh.claimProgress || null) as RhPoolClaimProgressView | null
-        setClaimProgress(progress)
+        progress = (fresh.claimProgress || null) as RhClaimProgress | null
       }
       if (!progress || progress.total === 0) {
         addToast('Tidak ada token JWT yang perlu diklaim hari ini (sudah diklaim / bukan JWT).', 'info')
