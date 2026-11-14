@@ -46,6 +46,7 @@ import {
   Images,
   Clapperboard,
   Rocket,
+  HeartPulse,
 } from 'lucide-react'
 
 interface NavItem {
@@ -68,6 +69,7 @@ const createNav: NavItem[] = [
   { label: 'AI Image Studio', href: '/generate/image-studio', icon: <Image className="h-4 w-4" /> },
   { label: 'ARKX AUTO Studio', href: '/generate/video-edit', icon: <Clapperboard className="h-4 w-4" />, pro: true },
   { label: 'ARKX AUTO Motion', href: '/generate/auto-motion', icon: <Wand2 className="h-4 w-4" />, pro: true },
+  { label: 'ARKX Health Animasi', href: '/generate/arkx-health', icon: <HeartPulse className="h-4 w-4" />, pro: true },
   { label: 'Edit Image', href: '/generate/edit-image', icon: <ImagePlus className="h-4 w-4" /> },
   { label: 'Virtual Try-On', href: '/generate/virtual-tryon', icon: <Shirt className="h-4 w-4" /> },
   { label: 'Travel Photo', href: '/generate/travel-photo', icon: <Globe className="h-4 w-4" /> },

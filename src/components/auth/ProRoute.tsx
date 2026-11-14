@@ -10,6 +10,7 @@ import { ArrowRight, Crown, Lock } from 'lucide-react'
 const FEATURES = [
   'ARKX AUTO Studio',
   'ARKX AUTO Motion',
+  'ARKX Health Animasi',
   'Gemini Tools',
   'AI Song Cover',
   'H3 Music Avatar',
@@ -33,7 +34,7 @@ export default function ProRoute({ children }: { children: ReactNode }) {
         eyebrow="ARKXMOTION PRO"
         title="Fitur"
         highlight="Pro"
-        desc="Lima fitur premium khusus member Pro. Fitur AI lainnya tetap terbuka."
+        desc="Fitur premium khusus member Pro. Fitur AI lainnya tetap terbuka."
       />
       <Section className="max-w-2xl mx-auto">
         <div className="flex flex-col items-center text-center py-6">
@@ -46,7 +47,7 @@ export default function ProRoute({ children }: { children: ReactNode }) {
           <h2 className="text-xl font-display font-bold">Fitur premium terkunci</h2>
           <p className="text-sm text-muted-foreground mt-1.5 max-w-md">
             Upgrade Pro sekali bayar untuk membuka <b>ARKX AUTO Studio</b>, <b>ARKX AUTO Motion</b>,{' '}
-            <b>Gemini Tools</b>, <b>AI Song Cover</b>, dan <b>H3 Music Avatar</b>. Fitur AI lain tetap bisa kamu pakai tanpa upgrade.
+            <b>ARKX Health Animasi</b>, <b>Gemini Tools</b>, <b>AI Song Cover</b>, dan <b>H3 Music Avatar</b>. Fitur AI lain tetap bisa kamu pakai tanpa upgrade.
           </p>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 w-full max-w-lg mt-5">
