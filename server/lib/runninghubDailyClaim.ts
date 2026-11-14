@@ -110,8 +110,30 @@ export interface RhAutoClaimProgress {
 
 const claimProgress = new Map<number, RhAutoClaimProgress>()
 
+// Hasil akhir tetap disimpan sebentar supaya UI yang membuka halaman setelah
+// klaim selesai masih melihat ringkasannya, lalu dibuang agar Map tidak
+// menumpuk entri milik user yang sudah lama tidak aktif / tokennya dihapus.
+const PROGRESS_RETENTION_MS = 15 * 60 * 1000
+
 const runningUsers = new Set<number>()
 let schedulerStarted = false
+
+/** Buang progres selesai yang sudah kedaluwarsa atau token user-nya sudah hilang. */
+export function pruneClaimProgress(now = Date.now()): number {
+  let dibuang = 0
+  for (const [userId, progress] of claimProgress) {
+    if (progress.running) continue
+    const kedaluwarsa = now - progress.updatedAt > PROGRESS_RETENTION_MS
+    const tokenHabis = !db
+      .prepare('SELECT 1 FROM runninghub_claim_token WHERE user_id = ? LIMIT 1')
+      .get(userId)
+    if (kedaluwarsa || tokenHabis) {
+      claimProgress.delete(userId)
+      dibuang += 1
+    }
+  }
+  return dibuang
+}
 
 export function isAutoClaimRunning(userId: number): boolean {
   return runningUsers.has(userId)
@@ -149,10 +171,16 @@ export function replaceAutoClaimTokens(userId: number, tokens: string[]): void {
 
 export function clearAutoClaimTokens(userId: number): void {
   db.prepare('DELETE FROM runninghub_claim_token WHERE user_id = ?').run(userId)
+  // Token sudah tidak ada, jadi progres lama tidak ada gunanya lagi di UI.
+  const progress = claimProgress.get(userId)
+  if (progress && !progress.running) claimProgress.delete(userId)
 }
 
 /** Status untuk UI: token tidak ikut dikembalikan, hanya ID akun + hasil. */
 export function getAutoClaimStatus(userId: number) {
+  // Bersihkan entri basi sebelum dibaca supaya respons tidak memantulkan
+  // progres milik daftar token yang sudah tidak ada.
+  pruneClaimProgress()
   const day = claimDayKey()
   const rows = db
     .prepare('SELECT * FROM runninghub_claim_token WHERE user_id = ? ORDER BY id')
@@ -350,6 +378,12 @@ export function autoClaimSchedulerEnabled(): boolean {
 }
 
 async function tick(): Promise<void> {
+  try {
+    const dibuang = pruneClaimProgress()
+    if (dibuang > 0) console.log(`[rh-claim] bersihkan ${dibuang} progres klaim lama`)
+  } catch (err) {
+    console.error('[rh-claim] prune progres gagal:', (err as any)?.message || err)
+  }
   for (const userId of autoClaimUserIds()) {
     try {
       await runAutoClaimForUser(userId)
