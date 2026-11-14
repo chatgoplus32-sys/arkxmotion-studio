@@ -13,6 +13,7 @@ import {
   rhPoolMarkFailure,
   rhPoolMarkSuccess,
   rhPoolTokenById,
+  rhPoolUpdatePoints,
   rhRememberTaskToken,
   rhTaskTokenId,
 } from '../lib/runninghubPool.js'
@@ -764,6 +765,28 @@ function captureRhRes(real: Response) {
   return cap
 }
 
+// RunningHub memotong poin saat task selesai, bukan saat submit — refresh
+// dijadwalkan setelah tiap aksi sukses (submit & poll) dan di-debounce per token.
+const RH_POOL_REFRESH_DELAY_MS = 30 * 1000
+const rhPoolRefreshPending = new Set<number>()
+
+function scheduleRhPoolPointsRefresh(cand: { id: number; token: string; kind: 'jwt' | 'key' }): void {
+  if (cand.id === 0 || rhPoolRefreshPending.has(cand.id)) return
+  rhPoolRefreshPending.add(cand.id)
+  const timer = setTimeout(async () => {
+    try {
+      rhWalletCache.delete(rhTokenFingerprint(normalizeRhApiKey(cand.token)))
+      const hasil = await rhProbePoolToken(cand.token, cand.kind)
+      if (hasil.ok) rhPoolUpdatePoints(cand.id, hasil.pointsBalance)
+    } catch (err) {
+      console.error('[rh-pool] refresh poin gagal:', err)
+    } finally {
+      rhPoolRefreshPending.delete(cand.id)
+    }
+  }, RH_POOL_REFRESH_DELAY_MS)
+  timer.unref?.()
+}
+
 /**
  * Jalankan aksi memakai pool token. Untuk submit: rotasi hingga 4 kandidat
  * sampai job berhasil dibuat. Untuk baca (query/check-balance): satu kandidat
@@ -808,6 +831,7 @@ async function runRhWithPool(action: string, params: any, realRes: Response, usa
 
     if (verdict === 'ok') {
       rhPoolMarkSuccess(cand.id)
+      scheduleRhPoolPointsRefresh(cand)
       const taskId = rhTaskIdFromPayload(cap.payload)
       if (taskId) rhRememberTaskToken(taskId, cand.id)
       if (usageId) noteChargeTicketJob('runninghub', usageId, taskId)

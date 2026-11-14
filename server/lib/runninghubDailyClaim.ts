@@ -91,6 +91,25 @@ function maskAccount(account: string, id: number): string {
   return account ? `…${account}` : `token #${id}`
 }
 
+// Progres klaim per pengguna. Klaim berjalan berurutan (±2 detik/token), jadi
+// daftar 150–1000 token butuh hitungan menit; UI perlu angka berjalan, bukan
+// hanya status running. Entri terakhir disimpan setelah selesai supaya UI bisa
+// menampilkan hasil akhirnya.
+export interface RhAutoClaimProgress {
+  running: boolean
+  total: number
+  processed: number
+  claimed: number
+  already: number
+  failed: number
+  skipped: number
+  startedAt: number
+  updatedAt: number
+  etaMs: number
+}
+
+const claimProgress = new Map<number, RhAutoClaimProgress>()
+
 const runningUsers = new Set<number>()
 let schedulerStarted = false
 
@@ -155,6 +174,7 @@ export function getAutoClaimStatus(userId: number) {
     day,
     timezone: 'UTC+8',
     running: isAutoClaimRunning(userId),
+    progress: claimProgress.get(userId) || null,
     tokens,
     summary: {
       total: tokens.length,
@@ -220,21 +240,46 @@ export async function runAutoClaimForUser(
       .all(userId) as ClaimRow[]
 
     const summary: RhAutoClaimRunSummary = { processed: 0, claimed: 0, already: 0, failed: 0, skipped: 0 }
+    const progress: RhAutoClaimProgress = {
+      running: true,
+      total: rows.length,
+      processed: 0,
+      claimed: 0,
+      already: 0,
+      failed: 0,
+      skipped: 0,
+      startedAt: Date.now(),
+      updatedAt: Date.now(),
+      etaMs: rows.length * CLAIM_DELAY_MS,
+    }
+    claimProgress.set(userId, progress)
+    const syncProgress = (index: number) => {
+      progress.processed = index + 1
+      progress.claimed = summary.claimed
+      progress.already = summary.already
+      progress.failed = summary.failed
+      progress.skipped = summary.skipped
+      progress.updatedAt = Date.now()
+      progress.etaMs = Math.max(0, (rows.length - progress.processed) * CLAIM_DELAY_MS)
+    }
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i]
       if (row.last_success_day === day || row.status === 'rejected') {
         summary.skipped += 1
+        syncProgress(i)
         continue
       }
       const attemptsToday = row.attempt_day === day ? row.attempts : 0
       if (!opts.force) {
         if (attemptsToday >= MAX_ATTEMPTS_PER_DAY) {
           summary.skipped += 1
+          syncProgress(i)
           continue
         }
         if (row.last_attempt_at && Date.now() - row.last_attempt_at < RETRY_GAP_MS) {
           summary.skipped += 1
+          syncProgress(i)
           continue
         }
       }
@@ -275,6 +320,7 @@ export async function runAutoClaimForUser(
         }
       }
 
+      syncProgress(i)
       if (i < rows.length - 1) await new Promise((resolve) => setTimeout(resolve, CLAIM_DELAY_MS))
     }
 
@@ -286,6 +332,12 @@ export async function runAutoClaimForUser(
     }
     return summary
   } finally {
+    const selesai = claimProgress.get(userId)
+    if (selesai) {
+      selesai.running = false
+      selesai.etaMs = 0
+      selesai.updatedAt = Date.now()
+    }
     runningUsers.delete(userId)
   }
 }
