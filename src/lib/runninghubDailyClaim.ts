@@ -18,12 +18,26 @@ export interface RhAutoClaimTokenStatus {
   lastSuccessDay: string | null
 }
 
+export interface RhAutoClaimProgress {
+  running: boolean
+  total: number
+  processed: number
+  claimed: number
+  already: number
+  failed: number
+  skipped: number
+  startedAt: number
+  updatedAt: number
+  etaMs: number
+}
+
 export interface RhAutoClaimStatus {
   ok?: boolean
   enabled: boolean
   day: string
   timezone: string
   running: boolean
+  progress?: RhAutoClaimProgress | null
   tokens: RhAutoClaimTokenStatus[]
   summary: {
     total: number

@@ -2171,9 +2171,13 @@ export default function ProvidersPage() {
     try {
       let status = await runRunningHubAutoClaimNow()
       setRhAutoClaim(status)
-      // Scheduler memproses berurutan (±2 detik/token); poll sampai berhenti.
-      for (let i = 0; i < 45 && status.running; i++) {
-        await sleepRhAutoClaim(4000)
+      // Scheduler memproses berurutan (±2 detik/token). Daftar 150–1000 token
+      // bisa makan puluhan menit, jadi batas poll dihitung dari jumlah token,
+      // bukan angka tetap yang membuat pantauan berhenti di tengah jalan.
+      const totalTok = status.summary?.total || status.tokens.length || 0
+      const maxPolls = Math.max(45, Math.ceil((totalTok * 2.5 + 180) / 2))
+      for (let i = 0; i < maxPolls && status.running; i++) {
+        await sleepRhAutoClaim(2000)
         status = await fetchRunningHubAutoClaim()
         setRhAutoClaim(status)
       }
@@ -3007,6 +3011,33 @@ export default function ProvidersPage() {
                             {rhAutoClaim.summary.claimedToday}/{rhAutoClaim.summary.total}
                           </span>
                         </div>
+                        {(() => {
+                          const p = rhAutoClaim.progress
+                          if (!p || (!p.running && p.processed === 0)) return null
+                          const pct = p.total > 0 ? Math.min(100, Math.round((p.processed / p.total) * 100)) : 0
+                          return (
+                            <div className="mt-1.5 rounded-md border border-[#ffd76a]/30 bg-[#ffd76a]/5 p-2">
+                              <div className="flex items-center justify-between gap-2 text-[10.5px] text-[#f5f5f5]/85">
+                                <span>{p.running ? 'Memproses klaim…' : 'Klaim terakhir selesai'}</span>
+                                <span className="font-mono">{p.processed}/{p.total} token</span>
+                              </div>
+                              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-[#1a1a1a]">
+                                <div className={`h-full transition-all ${p.running ? 'bg-[#ffd76a]' : 'bg-[#22c55e]'}`} style={{ width: `${pct}%` }} />
+                              </div>
+                              <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 font-mono text-[10px] text-[#a0a0a0]">
+                                <span className="text-[#22c55e]">klaim {p.claimed}</span>
+                                <span>sudah {p.already}</span>
+                                <span className={p.failed > 0 ? 'text-red-300' : ''}>gagal {p.failed}</span>
+                                {p.skipped > 0 && <span>dilewati {p.skipped}</span>}
+                                {p.running && (
+                                  <span className="text-[#ffd76a]">
+                                    sisa ± {p.etaMs >= 60000 ? `${Math.max(1, Math.ceil(p.etaMs / 60000))} mnt` : `${Math.max(1, Math.round(p.etaMs / 1000))} dtk`}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })()}
                         {rhAutoClaim.summary.rejected > 0 && (
                           <div className="text-[#ffd76a]/90">
                             {rhAutoClaim.summary.rejected} token ditolak — perbarui JWT di Providers lalu Sinkronkan.
