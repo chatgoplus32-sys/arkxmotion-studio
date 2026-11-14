@@ -44,3 +44,7 @@ __pycache__/
 
 # tsconfig sementara untuk scripts/check-undefined.mjs
 .tsconfig.undefined-check.json
+
+# Artefak kerja lokal (arsip dist sementara, log/probe manual)
+.tmpdbg/
+scratch/
