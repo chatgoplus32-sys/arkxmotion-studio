@@ -13,6 +13,7 @@ import {
   submitNexabot
 } from '@/lib/nexabot';
 import { chargeNexabotWallet, refundNexabotWallet } from '@/lib/nexabotWallet';
+import { startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks';
 import { runNexabotJobWithSessionFallback } from '@/pages/image-to-video/nexabotSessionFallback';
 import { useAuthStore } from '@/stores/authStore';
 import { Lightbulb, FileText, Image as ImageIcon, Sparkles, Loader2, Check, Copy, Menu, X, ArrowRight, ArrowLeft, PlayCircle, List, Trash2, AlertCircle, Video, ScanSearch, Upload, ShoppingBag, Plus, Zap, ImagePlay, Settings, KeyRound, Lock } from 'lucide-react';
@@ -683,6 +684,15 @@ const HealthAnimTool = () => {
     const admin = authUser?.role === 'admin';
     let tiketPotong: number | null = null;
     let jobTerakhir = '';
+    // Daftarkan sebagai task berjalan: KeepAliveRoutes tidak akan membuang tab
+    // ini saat user pindah menu, dan header menampilkan progresnya. Task ini
+    // ephemeral (poll NexaBot tidak bisa dilanjutkan setelah reload).
+    const taskId = startGenerationTask({
+      page: 'arkx-health',
+      model: 'Omni Flash 1.2',
+      prompt: omniIdea.trim(),
+      provider: 'nexabot',
+    });
     try {
       // 1/3 — potong saldo NexaBot (gratis untuk admin / paket Unlimited).
       if (!admin) {
@@ -770,6 +780,7 @@ const HealthAnimTool = () => {
       setAppError(`${pesan}${catatanRefund}`);
       setOmniStatus('');
     } finally {
+      removeActiveTask(taskId);
       setLoadingOmni(false);
     }
   };

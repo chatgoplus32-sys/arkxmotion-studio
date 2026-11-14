@@ -30,6 +30,7 @@ const PAGE_META: Record<ActiveTask['page'], { href: string; label: string; icon:
   'clip-genius': { href: '/tools/clip-genius', label: 'Clip Genius', icon: Layers },
   'video-edit': { href: '/generate/video-edit', label: 'ARKX AUTO Studio', icon: Clapperboard },
   'upscale-video': { href: '/generate/upscale-video', label: 'Upscale Video', icon: Clapperboard },
+  'arkx-health': { href: '/generate/arkx-health', label: 'ARKX Health Animasi', icon: Film },
 }
 const FALLBACK_PAGE = { href: '/dashboard', label: 'Generasi', icon: Sparkles }
 

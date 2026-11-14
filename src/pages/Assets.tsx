@@ -71,6 +71,7 @@ const RESULTS_PAGE_SOURCE: Record<CompletedResult['page'], string> = {
   'clip-genius': 'Clip Genius',
   'video-edit': 'ARKX AUTO Studio',
   'upscale-video': 'Upscale Video',
+  'arkx-health': 'ARKX Health Animasi',
 }
 
 const UPSCALER_KEY = 'arkxmotion.upscaler.gallery'

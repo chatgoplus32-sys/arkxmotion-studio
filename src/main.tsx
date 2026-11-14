@@ -6,10 +6,14 @@ import App from './App.tsx'
 // Restore dead blob URLs from IndexedDB BEFORE React renders.
 // After a page reload, all blob: URLs are dead. This replaces them
 // with fresh blob URLs by loading video data from IndexedDB.
-import { restoreIdbVideos } from '@/lib/backgroundTasks'
+import { restoreIdbVideos, startBackgroundPolling } from '@/lib/backgroundTasks'
 import { promptForNotificationsIfNeeded } from '@/lib/notify'
 
 restoreIdbVideos().then(() => {
+  // Task yang bisa dilanjutkan (RunningHub/Roboneo menyimpan taskId + token di
+  // localStorage) langsung dipoll lagi setelah reload, tanpa menunggu user
+  // membuka halaman generatornya. Task ephemeral sudah dibuang oleh restore.
+  startBackgroundPolling()
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
       navigator.serviceWorker
