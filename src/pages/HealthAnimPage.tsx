@@ -15,7 +15,7 @@ import {
 import { chargeNexabotWallet, refundNexabotWallet } from '@/lib/nexabotWallet';
 import { runNexabotJobWithSessionFallback } from '@/pages/image-to-video/nexabotSessionFallback';
 import { useAuthStore } from '@/stores/authStore';
-import { Lightbulb, FileText, Image as ImageIcon, Sparkles, Loader2, Check, Copy, Menu, X, ArrowRight, ArrowLeft, PlayCircle, List, Trash2, AlertCircle, Video, ScanSearch, Upload, ShoppingBag, Plus, Zap, ImagePlay, Settings, KeyRound } from 'lucide-react';
+import { Lightbulb, FileText, Image as ImageIcon, Sparkles, Loader2, Check, Copy, Menu, X, ArrowRight, ArrowLeft, PlayCircle, List, Trash2, AlertCircle, Video, ScanSearch, Upload, ShoppingBag, Plus, Zap, ImagePlay, Settings, KeyRound, Lock } from 'lucide-react';
 
 // ============================================================================
 // KONFIGURASI TIPE SKEMA AI
@@ -297,6 +297,8 @@ const HealthAnimTool = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [appError, setAppError] = useState('');
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
+  // Pengaturan AI (model + API key) hanya bisa diubah admin; member melihat versi read-only.
+  const pengaturanDikunci = authUser?.role !== 'admin';
   const [aiApiKey, setAiApiKey] = useState(() => { try { return sessionStorage.getItem('arkxHealthApiKey') || ''; } catch { return ''; } });
   const [aiModel, setAiModel] = useState(() => { try { return sessionStorage.getItem('arkxHealthModel') || 'gemini-3.1-flash-lite'; } catch { return 'gemini-3.1-flash-lite'; } });
   const saveAiSettings = (event: React.FormEvent) => {
@@ -463,7 +465,9 @@ const HealthAnimTool = () => {
     const apiKey = aiApiKey.trim();
     if (!apiKey) {
       setAiSettingsOpen(true);
-      throw new Error('Tambahkan API key Gemini pada Pengaturan AI untuk menggunakan fitur generasi. Tidak perlu login atau email.');
+      throw new Error(pengaturanDikunci
+        ? 'API key Gemini belum diisi admin, jadi fitur generasi belum bisa dipakai. Hubungi admin untuk mengisi key di Pengaturan AI.'
+        : 'Tambahkan API key Gemini pada Pengaturan AI untuk menggunakan fitur generasi. Tidak perlu login atau email.');
     }
     const modelDiminta = aiModel.trim() || 'gemini-3.1-flash-lite';
     if (!/^[a-zA-Z0-9._-]+$/.test(modelDiminta)) throw new Error('Nama model Gemini tidak valid.');
@@ -1861,10 +1865,14 @@ ATURAN MUTLAK:
             <div className="flex items-center justify-between gap-3 mb-3"><h2 id="ai-settings-title" className="text-xl font-bold text-slate-900 flex items-center gap-2"><KeyRound className="w-5 h-5 text-indigo-600" /> Pengaturan AI</h2><button onClick={() => setAiSettingsOpen(false)} aria-label="Tutup pengaturan AI" className="p-2 rounded-lg hover:bg-slate-100 text-slate-500"><X className="w-5 h-5" /></button></div>
             <p className="text-sm text-slate-500 leading-relaxed mb-6">Aplikasi bebas dibuka tanpa akun atau email. Fitur generasi memakai API Gemini Anda sendiri karena integrasi bawaan Canvas tidak ikut pada web statis.</p>
             <form onSubmit={saveAiSettings} className="space-y-4">
-              <div><label htmlFor="gemini-api-key" className="block text-sm font-bold text-slate-700 mb-2">API key Gemini</label><input id="gemini-api-key" type="password" autoComplete="off" spellCheck={false} value={aiApiKey} onChange={e => setAiApiKey(e.target.value)} placeholder="Masukkan API key Anda (opsional)" className="w-full border border-slate-200 rounded-xl px-4 py-3 text-slate-900 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-400" /></div>
-              <div><label htmlFor="gemini-model" className="block text-sm font-bold text-slate-700 mb-2">Model Gemini</label><input id="gemini-model" type="text" value={aiModel} onChange={e => setAiModel(e.target.value)} placeholder="gemini-3.1-flash-lite" className="w-full border border-slate-200 rounded-xl px-4 py-3 text-slate-900 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-400" /></div>
+              <div><label htmlFor="gemini-api-key" className="block text-sm font-bold text-slate-700 mb-2">API key Gemini</label><input id="gemini-api-key" type="password" autoComplete="off" spellCheck={false} value={aiApiKey} onChange={e => setAiApiKey(e.target.value)} disabled={pengaturanDikunci} placeholder={pengaturanDikunci ? 'Dikunci oleh admin' : 'Masukkan API key Anda (opsional)'} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-slate-900 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-400 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed" /></div>
+              <div><label htmlFor="gemini-model" className="block text-sm font-bold text-slate-700 mb-2">Model Gemini</label><input id="gemini-model" type="text" value={aiModel} onChange={e => setAiModel(e.target.value)} disabled={pengaturanDikunci} placeholder="gemini-3.1-flash-lite" className="w-full border border-slate-200 rounded-xl px-4 py-3 text-slate-900 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-400 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed" />{pengaturanDikunci && <p className="text-xs text-amber-700 mt-2 flex items-center gap-1"><Lock className="w-3.5 h-3.5" /> Pengaturan AI dikunci oleh admin: model dan API key tidak bisa diubah dari akun member.</p>}</div>
               <div className="rounded-xl bg-indigo-50 border border-indigo-100 p-4 text-xs text-indigo-800 leading-relaxed">Key hanya disimpan selama sesi tab browser ini, tidak diterbitkan di situs. Topik dan file yang Anda proses dikirim langsung ke Google Gemini. Penggunaan API mengikuti kuota dan tarif akun Google Anda. Jangan gunakan key pribadi di perangkat bersama.</div>
-              <div className="flex flex-wrap gap-3 pt-2"><button type="submit" className="flex-1 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl">Simpan pengaturan</button><button type="button" onClick={() => { setAiApiKey(''); try { sessionStorage.removeItem('arkxHealthApiKey'); } catch {} }} className="px-4 py-3 border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 font-semibold">Hapus key</button></div>
+              {pengaturanDikunci ? (
+                <div className="flex flex-wrap gap-3 pt-2"><button type="button" onClick={() => setAiSettingsOpen(false)} className="flex-1 px-4 py-3 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl">Tutup</button></div>
+              ) : (
+                <div className="flex flex-wrap gap-3 pt-2"><button type="submit" className="flex-1 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl">Simpan pengaturan</button><button type="button" onClick={() => { setAiApiKey(''); try { sessionStorage.removeItem('arkxHealthApiKey'); } catch {} }} className="px-4 py-3 border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 font-semibold">Hapus key</button></div>
+              )}
             </form>
           </section>
         </div>
