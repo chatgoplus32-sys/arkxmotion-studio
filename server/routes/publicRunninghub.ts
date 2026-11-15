@@ -728,7 +728,7 @@ function rhPoolVerdict(payload: any): RhVerdict {
   for (const code of codes) {
     if (RH_KEY_REJECT_CODES.has(code)) return 'invalid'
     if (code === '414' || code === '433' || code === '605') return 'saldo'
-    if (code === '424' || code === '429') return 'rate'
+    if (code === '423' || code === '424' || code === '429') return 'rate'
   }
   const errText = String(payload?.error || '')
   if (payload?.retryable === true || /rate limit/i.test(errText)) return 'rate'
@@ -816,7 +816,13 @@ async function runRhWithPool(action: string, params: any, realRes: Response, usa
     })
   }
 
-  const maxAttempts = consuming ? Math.min(candidates.length, 4) : 1
+  // Untuk aksi yang membuat job, prioritaskan token dengan saldo power paling
+  // besar (yang balance null dicoba terakhir) supaya peluang 414/423 minimal.
+  if (consuming && candidates.length > 1) {
+    candidates = [...candidates].sort((a, b) => (b.points ?? Number.NEGATIVE_INFINITY) - (a.points ?? Number.NEGATIVE_INFINITY))
+  }
+
+  const maxAttempts = consuming ? Math.min(candidates.length, 6) : 1
   let last: any = null
   for (let i = 0; i < maxAttempts; i++) {
     const cand = candidates[i]
@@ -847,6 +853,12 @@ async function runRhWithPool(action: string, params: any, realRes: Response, usa
   }
 
   if (usageId) releaseChargeTicket('runninghub', usageId)
+  if (last && rhPoolVerdict(last) === 'saldo') {
+    return realRes.status(200).json({
+      ok: false,
+      error: 'Semua token master RunningHub kehabisan power/saldo poin. Saldo Anda tidak terpotong (dikembalikan otomatis) — coba lagi nanti, atau hubungi admin untuk mengisi power pool RunningHub.',
+    })
+  }
   return realRes.status(200).json(last ?? {
     ok: false,
     error: 'Semua token master RunningHub sedang tidak tersedia (saldo habis / ditolak). Coba lagi nanti atau pakai token Anda sendiri.',
@@ -3635,7 +3647,7 @@ function translateRhError(code: string, msg?: string): string {
   const map: Record<string, string> = {
     '414': 'RunningHub menolak task: saldo POWER/poin akun tidak cukup. Koin RH yang tampil di situs terpisah dari power — isi power/poin di runninghub.ai (Membership/Power), atau pakai akun lain.',
     '433': 'Saldo poin akun RunningHub tidak cukup untuk task ini (jalur web menagih saldo akun). Isi/top up poin di runninghub.ai atau pakai akun dengan saldo.',
-    '423': 'Task ditolak: butuh keanggotaan/mode yang lebih tinggi di akun RunningHub.',
+    '423': 'Batas maksimal task akun RunningHub tercapai (CREATE_MAX_TASKS_LIMIT) — server otomatis mencoba token lain di pool.',
     '424': 'Batas task bersamaan (concurrent) akun RunningHub tercapai. Tunggu task lain selesai atau naikkan paket.',
     '605': 'Saldo akun RunningHub tidak cukup untuk model ini — token/key tetap valid. Isi/top up saldo di runninghub.ai atau pakai akun dengan saldo.',
     '404': 'Workflow tidak ditemukan atau tidak dapat diakses API key ini.',

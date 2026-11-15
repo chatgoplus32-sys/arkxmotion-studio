@@ -49,6 +49,8 @@ export interface RhPoolCandidate {
   token: string
   kind: 'jwt' | 'key'
   label: string
+  /** Saldo poin/power upstream terakhir yang diketahui (null = belum pernah dicek). */
+  points?: number | null
 }
 
 function normalizeToken(raw: unknown): string {
@@ -182,7 +184,7 @@ export function rhPoolCandidates(): RhPoolCandidate[] {
 
   const env = envToken()
   if (env && !envHealth.rejected && envHealth.cooldownUntil <= now && !rhJwtExpired(env)) {
-    out.push({ id: 0, token: env, kind: rhJwtExp(env) !== null ? 'jwt' : 'key', label: 'Token env' })
+    out.push({ id: 0, token: env, kind: rhJwtExp(env) !== null ? 'jwt' : 'key', label: 'Token env', points: null })
   }
 
   const rows = db
@@ -190,7 +192,7 @@ export function rhPoolCandidates(): RhPoolCandidate[] {
     .all(now) as Array<RhPoolRow & { token: string }>
   for (const r of rows) {
     if (r.kind === 'jwt' && rhJwtExpired(r.token)) continue
-    out.push({ id: r.id, token: r.token, kind: r.kind, label: r.label || `Token #${r.id}` })
+    out.push({ id: r.id, token: r.token, kind: r.kind, label: r.label || `Token #${r.id}`, points: r.points_balance })
   }
 
   if (out.length === 0) return out
@@ -209,7 +211,7 @@ export function rhPoolTokenById(id: number): RhPoolCandidate | null {
   const r = db.prepare('SELECT * FROM runninghub_master_token WHERE id = ?').get(id) as (RhPoolRow & { token: string }) | undefined
   if (!r || r.status === 'rejected') return null
   if (r.kind === 'jwt' && rhJwtExpired(r.token)) return null
-  return { id: r.id, token: r.token, kind: r.kind, label: r.label || `Token #${r.id}` }
+  return { id: r.id, token: r.token, kind: r.kind, label: r.label || `Token #${r.id}`, points: r.points_balance }
 }
 
 export function rhPoolMarkSuccess(id: number): void {
