@@ -54,6 +54,12 @@ interface PaymentStatus {
     processed_total: number
   }
   ready: boolean
+  basunipay?: {
+    ready: boolean
+    pending: number
+    paid_24h: number
+    last_created_at: string | null
+  }
   queues: PaymentVerifyQueue[]
   unmatched_24h: number
 }
@@ -132,11 +138,14 @@ export default function AdminTopupPage() {
       const res = await fetch('/api/payments/check-now', { method: 'POST', headers })
       const data = await res.json().catch(() => ({} as any))
       if (res.ok) {
-        addToast(`Cek email: ${data.checked ?? 0} email, ${data.matched ?? 0} cocok, ${data.skipped ?? 0} dilewati`, 'success')
+        const parts: string[] = []
+        if (data.basunipay) parts.push(`BasuniPay: ${data.basunipay.checked ?? 0} dicek, ${data.basunipay.paid ?? 0} lunas`)
+        if (data.email) parts.push(`Email: ${data.email.checked ?? 0} email, ${data.email.matched ?? 0} cocok`)
+        addToast(parts.join(' · ') || 'Cek selesai', data.email?.error ? 'error' : 'success')
         fetchPayStatus()
         fetchTopups()
       } else {
-        addToast(data.error || 'Gagal cek email', 'error')
+        addToast(data.error || 'Gagal cek pembayaran', 'error')
       }
     } catch {
       addToast('Network error', 'error')
@@ -429,25 +438,39 @@ export default function AdminTopupPage() {
 
       <Section
         title="🤖 Verifikasi Otomatis QRIS"
-        sub="Nominal masuk (kode unik) dicocokkan otomatis dari email notifikasi bank/e-wallet"
+        sub="Pembayaran QRIS disetujui otomatis lewat BasuniPay; email notifikasi bank/e-wallet jadi jalur cadangan"
         right={
-          <Button size="sm" onClick={handleCheckNow} disabled={payChecking || !payStatus?.ready}>
-            {payChecking ? 'Mengecek…' : 'Cek Email Sekarang'}
+          <Button size="sm" onClick={handleCheckNow} disabled={payChecking || !(payStatus?.ready || payStatus?.basunipay?.ready)}>
+            {payChecking ? 'Mengecek…' : 'Cek Pembayaran Sekarang'}
           </Button>
         }
       >
         {payStatus ? (
           <div className="space-y-3">
             <div className="text-sm flex flex-wrap items-center gap-x-3 gap-y-1">
-              {payStatus.ready ? (
+              {payStatus.basunipay?.ready ? (
                 <>
-                  <span className="text-emerald-400 font-semibold">✅ Email terhubung</span>
-                  <span className="text-muted-foreground">{payStatus.email.user} · {payStatus.email.host}</span>
-                  <span className="text-[11px] text-muted-foreground">{payStatus.email.last_result || 'belum ada cek'}</span>
+                  <span className="text-emerald-400 font-semibold">✅ BasuniPay aktif</span>
+                  <span className="text-muted-foreground">
+                    {payStatus.basunipay.paid_24h} lunas otomatis 24j · {payStatus.basunipay.pending} menunggu bayar
+                  </span>
                 </>
               ) : (
                 <span className="text-amber-400">
-                  ⚠️ Email verifikasi belum dikonfigurasi — isi <code>PAYMENT_IMAP_*</code> di .env lalu restart server.
+                  ⚠️ BasuniPay nonaktif — set <code>BASUNIPAY_ENABLED=true</code> + <code>BASUNIPAY_API_KEY</code> di .env lalu restart server.
+                </span>
+              )}
+            </div>
+            <div className="text-[11px] flex flex-wrap items-center gap-x-3 gap-y-1">
+              {payStatus.ready ? (
+                <>
+                  <span className="text-emerald-400 font-semibold">✅ Email cadangan terhubung</span>
+                  <span className="text-muted-foreground">{payStatus.email.user} · {payStatus.email.host}</span>
+                  <span className="text-muted-foreground">{payStatus.email.last_result || 'belum ada cek'}</span>
+                </>
+              ) : (
+                <span className="text-muted-foreground">
+                  Email cadangan (opsional): belum diaktifkan. Isi <code>PAYMENT_IMAP_*</code> di .env kalau ingin pencocokan dari email bank/e-wallet juga.
                 </span>
               )}
             </div>

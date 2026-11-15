@@ -7,6 +7,7 @@ import {
   paymentEmailReady,
 } from '../lib/paymentEmailWatcher.js'
 import { QRIS_TABLES, extractAmounts, matchIncomingAmount, logPaymentVerify } from '../lib/qrisPayment.js'
+import { basunipayReady, pollBasunipayPayments } from '../lib/basunipay.js'
 
 /**
  * Panel kontrol verifikasi pembayaran QRIS manual — status koneksi email,
@@ -34,7 +35,21 @@ router.get('/status', authenticateToken, requireAdmin, (_req: AuthRequest, res: 
       "SELECT COUNT(*) AS n FROM payment_verify_log WHERE action IN ('no_match', 'no_amount') AND created_at >= datetime('now', '-24 hours')",
     ).get() as { n: number }
 
-    res.json({ email, ready: paymentEmailReady(), queues, unmatched_24h: unmatched.n })
+    const bp = db.prepare(
+      `SELECT
+         SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
+         SUM(CASE WHEN status = 'paid' AND paid_at >= datetime('now', '-24 hours') THEN 1 ELSE 0 END) AS paid_24h,
+         MAX(created_at) AS last_created_at
+       FROM basunipay_payment`,
+    ).get() as { pending: number | null; paid_24h: number | null; last_created_at: string | null }
+    const basunipay = {
+      ready: basunipayReady(),
+      pending: bp.pending ?? 0,
+      paid_24h: bp.paid_24h ?? 0,
+      last_created_at: bp.last_created_at,
+    }
+
+    res.json({ email, ready: paymentEmailReady(), basunipay, queues, unmatched_24h: unmatched.n })
   } catch (error) {
     console.error('Payment status error:', error)
     res.status(500).json({ error: 'Internal server error' })
@@ -43,11 +58,14 @@ router.get('/status', authenticateToken, requireAdmin, (_req: AuthRequest, res: 
 
 router.post('/check-now', authenticateToken, requireAdmin, async (_req: AuthRequest, res: Response) => {
   try {
-    if (!paymentEmailReady()) {
-      return res.status(400).json({ error: 'Email verifikasi belum dikonfigurasi — isi PAYMENT_IMAP_* di .env' })
+    const bpReady = basunipayReady()
+    const emailReady = paymentEmailReady()
+    if (!bpReady && !emailReady) {
+      return res.status(400).json({ error: 'Belum ada jalur verifikasi aktif — set BASUNIPAY_* atau PAYMENT_IMAP_* di .env' })
     }
-    const result = await checkPaymentEmailOnce()
-    res.json({ ok: !result.error, ...result })
+    const basunipay = bpReady ? await pollBasunipayPayments() : null
+    const email = emailReady ? await checkPaymentEmailOnce() : null
+    res.json({ ok: !email?.error, basunipay, email })
   } catch (error) {
     console.error('Payment check-now error:', error)
     res.status(500).json({ error: 'Internal server error' })
