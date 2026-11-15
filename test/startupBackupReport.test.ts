@@ -17,6 +17,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { tmpTes, bersihkanFolderTes } from './helpers/tmp'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.join(__dirname, '..')
@@ -24,7 +25,9 @@ const ROOT = path.join(__dirname, '..')
 const dbFile = path.join(os.tmpdir(), `arkxmotion-startup-report-${process.pid}.db`)
 process.env.ARKXMOTION_DB_PATH = dbFile // harus sebelum modul db dimuat
 
-const tmp = (prefix: string) => fs.mkdtempSync(path.join(os.tmpdir(), prefix))
+const tmp = tmpTes
+
+test.after(bersihkanFolderTes)
 
 const { backupOnStartup, getStartupBackupStatus, noteStartupBackupDisabled } = await import(
   '../server/backup.js'

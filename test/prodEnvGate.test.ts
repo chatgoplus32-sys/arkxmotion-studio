@@ -13,11 +13,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import os from 'node:os'
 import http from 'node:http'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { BASH, SKIP_TANPA_BASH } from './helpers/bash'
+import { tmpTes, bersihkanFolderTes } from './helpers/tmp'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.join(__dirname, '..')
@@ -37,6 +38,7 @@ await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
 const port = (server.address() as { port: number }).port
 
 test.after(() => server.close())
+test.after(bersihkanFolderTes)
 
 interface Hasil {
   code: number
@@ -45,7 +47,7 @@ interface Hasil {
 
 /** Berkas /proc/<pid>/environ sintetis: entri dipisah NUL, seperti aslinya. */
 function tulisEnviron(entries: string[]): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prodenv-'))
+  const dir = tmpTes('prodenv-')
   const file = path.join(dir, 'environ')
   const buf = Buffer.from(entries.join('\0') + (entries.length ? '\0' : ''), 'utf8')
   fs.writeFileSync(file, buf)
@@ -54,7 +56,7 @@ function tulisEnviron(entries: string[]): string {
 
 function jalankanGerbang(env: Record<string, string>): Promise<Hasil> {
   return new Promise((resolve) => {
-    const child = spawn('bash', [GATE], {
+    const child = spawn(BASH, [GATE], {
       cwd: ROOT,
       env: {
         ...process.env,
@@ -72,14 +74,14 @@ function jalankanGerbang(env: Record<string, string>): Promise<Hasil> {
 
 // ── Perilaku gerbang ────────────────────────────────────────────────────────
 
-test('NODE_ENV=production → lolos', async () => {
+test('NODE_ENV=production → lolos', { skip: SKIP_TANPA_BASH }, async () => {
   const file = tulisEnviron(['PATH=/usr/bin', 'NODE_ENV=production', 'PORT=6000', 'pm_id=0'])
   const hasil = await jalankanGerbang({ ENVIRON_FILE: file })
   assert.equal(hasil.code, 0, hasil.out)
   assert.match(hasil.out, /GERBANG 3a LOLOS/)
 })
 
-test('KASUS PRODUKSI: tanpa NODE_ENV → gagal dan sebabnya dinamai', async () => {
+test('KASUS PRODUKSI: tanpa NODE_ENV → gagal dan sebabnya dinamai', { skip: SKIP_TANPA_BASH }, async () => {
   // Keadaan nyata proses pm2 17 Sep 2026: PORT ada, NODE_ENV sama sekali tidak.
   const file = tulisEnviron(['PATH=/usr/bin', 'PORT=6000', 'pm_id=0'])
   const hasil = await jalankanGerbang({ ENVIRON_FILE: file })
@@ -89,21 +91,21 @@ test('KASUS PRODUKSI: tanpa NODE_ENV → gagal dan sebabnya dinamai', async () =
   assert.match(hasil.out, /pm2 startOrReload ecosystem\.config\.cjs/)
 })
 
-test('NODE_ENV=development → gagal, nilainya ikut dicetak', async () => {
+test('NODE_ENV=development → gagal, nilainya ikut dicetak', { skip: SKIP_TANPA_BASH }, async () => {
   const file = tulisEnviron(['NODE_ENV=development', 'PORT=6000'])
   const hasil = await jalankanGerbang({ ENVIRON_FILE: file })
   assert.equal(hasil.code, 1, hasil.out)
   assert.match(hasil.out, /NODE_ENV='development', bukan 'production'/)
 })
 
-test('NODE_ENV kosong → gagal, bukan dianggap production', async () => {
+test('NODE_ENV kosong → gagal, bukan dianggap production', { skip: SKIP_TANPA_BASH }, async () => {
   const file = tulisEnviron(['NODE_ENV=', 'PORT=6000'])
   const hasil = await jalankanGerbang({ ENVIRON_FILE: file })
   assert.equal(hasil.code, 1, hasil.out)
   assert.match(hasil.out, /NODE_ENV='', bukan 'production'/)
 })
 
-test('variabel lain yang berakhiran NODE_ENV tidak dihitung', async () => {
+test('variabel lain yang berakhiran NODE_ENV tidak dihitung', { skip: SKIP_TANPA_BASH }, async () => {
   // MY_NODE_ENV=production pernah cukup untuk membuat pencocokan longgar lolos.
   const file = tulisEnviron(['MY_NODE_ENV=production', 'APP_NODE_ENV=production'])
   const hasil = await jalankanGerbang({ ENVIRON_FILE: file })
@@ -111,19 +113,19 @@ test('variabel lain yang berakhiran NODE_ENV tidak dihitung', async () => {
   assert.match(hasil.out, /TIDAK PUNYA NODE_ENV/)
 })
 
-test('NODE_ENV=productionProduction tidak lolos (bukan kecocokan sebagian)', async () => {
+test('NODE_ENV=productionProduction tidak lolos (bukan kecocokan sebagian)', { skip: SKIP_TANPA_BASH }, async () => {
   const file = tulisEnviron(['NODE_ENV=productionProduction'])
   const hasil = await jalankanGerbang({ ENVIRON_FILE: file })
   assert.equal(hasil.code, 1, hasil.out)
 })
 
-test('environment yang tidak terbaca → gagal dengan petunjuk, bukan lolos', async () => {
+test('environment yang tidak terbaca → gagal dengan petunjuk, bukan lolos', { skip: SKIP_TANPA_BASH }, async () => {
   const hasil = await jalankanGerbang({ ENVIRON_FILE: '/tmp/tidak-ada-environ-xyz' })
   assert.equal(hasil.code, 1, hasil.out)
   assert.match(hasil.out, /tidak bisa dibaca/)
 })
 
-test('kegagalan mencetak diagnosis: deklarasi ecosystem dan laporan aplikasi', async () => {
+test('kegagalan mencetak diagnosis: deklarasi ecosystem dan laporan aplikasi', { skip: SKIP_TANPA_BASH }, async () => {
   const file = tulisEnviron(['PORT=6000'])
   const hasil = await jalankanGerbang({ ENVIRON_FILE: file })
   assert.match(hasil.out, /yang dideklarasikan ecosystem\.config\.cjs/)

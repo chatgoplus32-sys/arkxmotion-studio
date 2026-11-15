@@ -16,18 +16,19 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import os from 'node:os'
 import http from 'node:http'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { BASH, SKIP_TANPA_BASH } from './helpers/bash'
+import { tmpTes, bersihkanFolderTes } from './helpers/tmp'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.join(__dirname, '..')
 const GATE = path.join(ROOT, 'scripts', 'check-boot-backup.sh')
 
 const now = () => Math.floor(Date.now() / 1000)
-const mkdir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'gate3-'))
+const mkdir = () => tmpTes('gate3-')
 
 let uptime = 5
 const server = http.createServer((req, res) => {
@@ -49,6 +50,7 @@ await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
 const port = (server.address() as { port: number }).port
 
 test.after(() => server.close())
+test.after(bersihkanFolderTes)
 
 interface Hasil {
   code: number
@@ -76,7 +78,7 @@ function jalankanGerbang(opts: {
   if (opts.marker !== undefined) args.push(String(opts.marker))
 
   return new Promise((resolve) => {
-    const child = spawn('bash', args, {
+    const child = spawn(BASH, args, {
       cwd: ROOT,
       env: {
         ...process.env,
@@ -95,13 +97,13 @@ function jalankanGerbang(opts: {
   })
 }
 
-test('snapshot yang lebih baru dari start proses → lolos', async () => {
+test('snapshot yang lebih baru dari start proses → lolos', { skip: SKIP_TANPA_BASH }, async () => {
   const hasil = await jalankanGerbang({ uptimeDetik: 5, snapshotAges: [1], marker: now() - 5 })
   assert.equal(hasil.code, 0, hasil.out)
   assert.match(hasil.out, /GERBANG 3 LOLOS/)
 })
 
-test('KASUS PRODUKSI: snapshot lama sebelum restart tidak dihitung sebagai bukti boot', async () => {
+test('KASUS PRODUKSI: snapshot lama sebelum restart tidak dihitung sebagai bukti boot', { skip: SKIP_TANPA_BASH }, async () => {
   // Proses baru start 5 detik lalu, tapi snapshot terbaru berumur 15 detik —
   // persis pola gerbang 2 (snapshot 11:42:10) vs restart (11:42:19).
   const hasil = await jalankanGerbang({ uptimeDetik: 5, snapshotAges: [15], marker: now() - 5, waitSeconds: 3 })
@@ -110,13 +112,13 @@ test('KASUS PRODUKSI: snapshot lama sebelum restart tidak dihitung sebagai bukti
   assert.match(hasil.out, /TIDAK berjalan/)
 })
 
-test('tanpa snapshot sama sekali → gagal', async () => {
+test('tanpa snapshot sama sekali → gagal', { skip: SKIP_TANPA_BASH }, async () => {
   const hasil = await jalankanGerbang({ uptimeDetik: 5, snapshotAges: [], waitSeconds: 3 })
   assert.equal(hasil.code, 1, hasil.out)
   assert.match(hasil.out, /tidak ada snapshot sama sekali/)
 })
 
-test('server tidak merespons → gagal, bukan lolos diam-diam', async () => {
+test('server tidak merespons → gagal, bukan lolos diam-diam', { skip: SKIP_TANPA_BASH }, async () => {
   const hasil = await jalankanGerbang({
     uptimeDetik: 5,
     snapshotAges: [1],
@@ -127,7 +129,7 @@ test('server tidak merespons → gagal, bukan lolos diam-diam', async () => {
   assert.match(hasil.out, /tidak merespons/)
 })
 
-test('proses lama yang belum benar-benar restart → gagal dengan sebab yang berbeda', async () => {
+test('proses lama yang belum benar-benar restart → gagal dengan sebab yang berbeda', { skip: SKIP_TANPA_BASH }, async () => {
   // uptime 600 detik sementara perintah restart baru saja dijalankan:
   // yang salah bukan backup-nya, tapi restart-nya tidak berefek.
   const hasil = await jalankanGerbang({ uptimeDetik: 600, snapshotAges: [1], marker: now(), waitSeconds: 3 })
@@ -135,7 +137,7 @@ test('proses lama yang belum benar-benar restart → gagal dengan sebab yang ber
   assert.match(hasil.out, /TIDAK baru start/)
 })
 
-test('kegagalan mencetak sebabnya: status backup dan berkas terbaru', async () => {
+test('kegagalan mencetak sebabnya: status backup dan berkas terbaru', { skip: SKIP_TANPA_BASH }, async () => {
   const hasil = await jalankanGerbang({ uptimeDetik: 5, snapshotAges: [15], waitSeconds: 3 })
   assert.match(hasil.out, /status backup saat ini/)
   assert.match(hasil.out, /5 berkas terbaru/)

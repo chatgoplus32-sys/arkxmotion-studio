@@ -27,6 +27,37 @@ import jwt from 'jsonwebtoken'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const DB_PATH = path.join(os.tmpdir(), `arkxmotion-server-key-${process.pid}.db`)
+
+// Berkas DB tes memakai PID, tapi after() tidak bisa menghapusnya di Windows
+// selama koneksi route masih terbuka (unlink diam-diam gagal) — 64 berkas basi
+// menumpuk di tmpdir dan PID yang di-recycle membuat INSERT di before() menabrak
+// data run lama (UNIQUE constraint pada seavi_balance, 15 Nov 2026). Bersihkan
+// sisa run terdahulu saat muat: berkas berumur > 1 jam dianggap basi; milik run
+// lain yang masih hidup tidak pernah disentuh.
+const PREFIX_DB_TES = 'arkxmotion-server-key-'
+function bersihkanSisaDbTes() {
+  let nama: string[]
+  try {
+    nama = fs.readdirSync(os.tmpdir())
+  } catch {
+    return // tmpdir tidak terbaca — bukan tugas tes ini
+  }
+  const batas = Date.now() - 60 * 60 * 1000
+  for (const n of nama) {
+    if (!n.startsWith(PREFIX_DB_TES)) continue
+    const p = path.join(os.tmpdir(), n)
+    try {
+      if (fs.statSync(p).mtimeMs > batas) continue // masih ditulis run lain
+      fs.rmSync(p, { force: true })
+    } catch {
+      /* terkunci atau sudah hilang — abaikan */
+    }
+  }
+}
+bersihkanSisaDbTes()
+// Milik PID proses ini juga wajib dibuang sebelum koneksi dibuka.
+for (const suffix of ['', '-wal', '-shm']) fs.rmSync(DB_PATH + suffix, { force: true })
+
 process.env.ARKXMOTION_DB_PATH = DB_PATH
 const JWT_SECRET = 'test-secret-server-key'
 process.env.JWT_SECRET = JWT_SECRET
