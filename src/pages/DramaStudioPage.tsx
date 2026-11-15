@@ -1,11 +1,8 @@
-import { ExternalLink } from 'lucide-react'
-import { Link } from 'react-router-dom'
-
 /**
  * ARKX Drama Studio — workspace cerita interaktif (static sub-app di
- * /drama-studio/, dimuat dalam iframe). AI Story lewat Gemini (relay studio-ai),
- * gambar referensi lewat NexaBot GPT Image 2.5, dan video adegan lewat NexaBot
- * Omni Flash 1.2 — semuanya memakai API key NexaBot milik member (Providers).
+ * /drama-studio/, dimuat dalam iframe). Navigasi keluar dari workspace
+ * ditangani tombol "←" di topbar aplikasi drama-studio itu sendiri
+ * (menuju /dashboard), agar tetap bekerja dari dalam iframe.
  */
 export default function DramaStudioPage() {
   return (
@@ -15,17 +12,6 @@ export default function DramaStudioPage() {
         title="ARKX Drama Studio"
         className="absolute inset-0 h-full w-full border-0"
       />
-      <Link
-        to="#"
-        onClick={(e) => {
-          e.preventDefault()
-          window.open('/drama-studio/index.html', '_blank', 'noopener,noreferrer')
-        }}
-        className="absolute bottom-3 right-3 z-10 inline-flex h-9 items-center gap-1.5 rounded-xl border border-white/10 bg-black/60 px-3 text-[11px] font-bold text-white/80 backdrop-blur-sm transition-colors hover:text-white"
-        aria-label="Buka di tab baru"
-      >
-        <ExternalLink className="h-4 w-4" /> Tab baru
-      </Link>
     </div>
   )
 }
