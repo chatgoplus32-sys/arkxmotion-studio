@@ -1639,6 +1639,7 @@ async function handleSubmitGenjutsuVideo(apiKey: string, params: any, res: Verce
     prompt = '',
     duration = GENJUTSU_VIDEO_DEFAULT_DURATION,
     megapixels = GENJUTSU_VIDEO_DEFAULT_MEGAPIXELS,
+    instanceType,
   } = params
 
   if (!imageBase64) return res.status(200).json({ ok: false, error: 'Missing imageBase64' })
@@ -1660,9 +1661,15 @@ async function handleSubmitGenjutsuVideo(apiKey: string, params: any, res: Verce
     { nodeId: GENJUTSU_VIDEO_MEGAPIXELS_NODE, fieldName: 'megapixels', fieldValue: String(megapixels) },
   ]
 
+  // Genjutsu Video (motion transfer) butuh VRAM lebih besar dari instance
+  // default (24G) — default berubah ke 'plus' (48G). Client bisa override
+  // lewat param instanceType ('default' | 'plus' | 'ultra').
+  const effectiveInstance = ['default', 'plus', 'ultra'].includes(String(instanceType))
+    ? String(instanceType)
+    : 'plus'
   const body = {
     nodeInfoList,
-    instanceType: 'default',
+    instanceType: effectiveInstance,
     usePersonalQueue: 'false',
   }
 

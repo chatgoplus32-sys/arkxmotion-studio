@@ -43,6 +43,7 @@ export default function GenjutsuVideoPage() {
   const [prompt, setPrompt] = useState('')
   const [duration, setDuration] = useState('14')
   const [megapixels, setMegapixels] = useState('0.6')
+  const [instanceType, setInstanceType] = useState<'default' | 'plus' | 'ultra'>('plus')
   const [loading, setLoading] = useState(false)
   const [taskStatus, setTaskStatus] = useState<'idle' | 'submitting' | 'running' | 'success' | 'error'>('idle')
   const [statusText, setStatusText] = useState('')
@@ -82,6 +83,7 @@ export default function GenjutsuVideoPage() {
       duration: Number(duration) || 14,
       megapixels,
       apiKey: key,
+      instanceType,
     })
     setTaskIdStr(submit.taskId)
     setTaskStatus('running')
@@ -294,6 +296,29 @@ export default function GenjutsuVideoPage() {
               onChange={(e) => setMegapixels(e.target.value)}
               className="w-full px-3 py-2 rounded-lg bg-surface-secondary border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
             />
+            <p className="text-xs text-muted-foreground mt-1.5">Jangan naikkan signifikan dari 0.6 (risiko OOM).</p>
+          </div>
+
+          {/* GPU instance */}
+          <div className="mb-4">
+            <Label className="mb-2 block">🖥️ Kelas GPU</Label>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { value: 'default', label: 'Default (24G)' },
+                { value: 'plus', label: 'Plus (48G)' },
+                { value: 'ultra', label: 'Ultra (84G)' },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setInstanceType(opt.value as 'default' | 'plus' | 'ultra')}
+                  className={`p-2 rounded-lg border text-xs transition-colors ${instanceType === opt.value ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/40'}`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1.5">Plus (48G) direkomendasikan — default 24G gagal (Out of Memory).</p>
           </div>
 
           {/* Prompt */}

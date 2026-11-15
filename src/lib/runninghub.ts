@@ -828,6 +828,9 @@ export interface GenjutsuVideoParams {
   megapixels?: string
   apiKey?: string
   appId?: string
+  // Kelas GPU Upstream: default (24G) | plus (48G) | ultra (84G).
+  // Default 'plus' — Genjutsu Video OOM di instance default.
+  instanceType?: 'default' | 'plus' | 'ultra'
 }
 
 export async function submitRunningHubGenjutsuVideo(params: GenjutsuVideoParams): Promise<MotionControlResult> {
@@ -849,6 +852,7 @@ export async function submitRunningHubGenjutsuVideo(params: GenjutsuVideoParams)
     prompt: params.prompt || '',
     duration: params.duration ?? 14,
     megapixels: params.megapixels || GENJUTSU_VIDEO_DEFAULT_MEGAPIXELS,
+    instanceType: params.instanceType || 'plus',
   }, params.apiKey)
 
   return {

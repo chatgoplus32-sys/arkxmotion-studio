@@ -2204,6 +2204,7 @@ async function handleSubmitGenjutsuVideo(apiKey: string, params: any, res: Respo
     prompt = '',
     duration = GENJUTSU_VIDEO_DEFAULT_DURATION,
     megapixels = GENJUTSU_VIDEO_DEFAULT_MEGAPIXELS,
+    instanceType,
   } = params
 
   if (!imageBase64) return res.status(200).json({ ok: false, error: 'Missing imageBase64' })
@@ -2225,11 +2226,12 @@ async function handleSubmitGenjutsuVideo(apiKey: string, params: any, res: Respo
     { nodeId: GENJUTSU_VIDEO_MEGAPIXELS_NODE, fieldName: 'megapixels', fieldValue: String(megapixels) },
   ]
 
-  const body = {
-    nodeInfoList,
-    instanceType: 'default',
-    usePersonalQueue: 'false',
-  }
+  // Genjutsu Video (motion transfer) butuh VRAM lebih besar dari instance
+  // default (24G) — default 'plus' (48G). Client bisa override via params.
+  const opts = rhRunOptions({ instanceType }, { instanceType: 'plus' })
+  const body = rhBuildRunBody({ nodeInfoList, instanceType: opts.instanceType, usePersonalQueue: opts.usePersonalQueue })
+
+  console.log(`[runninghub] submit-genjutsu-video instanceType=${opts.instanceType} usePersonalQueue=${opts.usePersonalQueue}`)
 
   const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${RUNNINGHUB_GENJUTSU_VIDEO_APP_ID}`
 
