@@ -266,6 +266,14 @@ export default function H3MusicAvatarPage() {
               <div className="text-sm font-medium">🎙️ Mode Podcast</div>
               <div className="text-xs text-muted-foreground mt-0.5">Bicara 2-3 menit, tanpa subtitle</div>
             </button>
+            <button
+              type="button"
+              onClick={() => setMode('mv')}
+              className={`p-3 rounded-lg border text-left transition-colors ${mode === 'mv' ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/40'}`}
+            >
+              <div className="text-sm font-medium">🎬 Music Video</div>
+              <div className="text-xs text-muted-foreground mt-0.5">1 foto + audio + maks 3 scene</div>
+            </button>
           </div>
 
           {/* Image Upload */}
@@ -314,6 +322,62 @@ export default function H3MusicAvatarPage() {
             )}
             <input ref={audioPickerRef} type="file" accept="audio/*" className="hidden" onChange={(e) => e.target.files?.[0] && setAudioFile(e.target.files[0])} />
           </div>
+
+          {/* Scene Upload (opsional, hanya mode Music Video) */}
+          {mode === 'mv' && (
+            <div className="mb-4">
+              <Label className="mb-2 block">📸 Foto Scene Referensi (opsional)</Label>
+              <div className="space-y-2 max-h-40 overflow-y-auto">
+                {sceneFiles.map((file, i) => (
+                  <div key={i} className="flex items-center justify-between gap-2 p-2 rounded-lg border border-border/50 bg-surface-secondary">
+                    <div className="flex items-center gap-3">
+                      <div className="text-sm truncate">{file.name}</div>
+                      <div className="text-xs text-muted-foreground">({(file.size / 1024 / 1024).toFixed(1)} MB)</div>
+                    </div>
+                    <button
+                      onClick={() => setSceneFiles((prev) => prev.filter((_, idx) => idx !== i))}
+                      className="text-xs text-red-400 hover:text-red-300"
+                    >
+                      ❌
+                    </button>
+                  </div>
+                ))}
+                {sceneFiles.length < MUSIC_VIDEO_MAX_SCENES && (
+                  <div
+                    onClick={() => {
+                      const input = document.createElement('input')
+                      input.type = 'file'
+                      input.accept = 'image/*'
+                      input.onchange = (e) => {
+                        const files = Array.from((e.target as HTMLInputElement).files || [])
+                        setSceneFiles((prev) => [...prev, ...files].slice(0, MUSIC_VIDEO_MAX_SCENES))
+                      }
+                      input.click()
+                    }}
+                    className="border-2 border-dashed border-primary/30 rounded-lg p-3 cursor-pointer hover:border-primary/50 transition-colors text-center"
+                  >
+                    <div className="text-sm text-muted-foreground">Tambah scene referensi</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Aspect Ratio (hanya mode Music Video) */}
+          {mode === 'mv' && (
+            <div className="mb-4">
+              <Label className="mb-2 block">📐 Aspect Ratio</Label>
+              <select
+                value={aspectRatio}
+                onChange={(e) => setAspectRatio(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-surface-secondary border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+              >
+                {MUSIC_VIDEO_ASPECTS.map((ratio) => (
+                  <option key={ratio} value={ratio}>{ratio}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Prompt */}
           <div className="mb-4">

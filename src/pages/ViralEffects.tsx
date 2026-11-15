@@ -217,9 +217,9 @@ export default function ViralEffectsPage() {
 
           <div className="mb-4">
             <Label className="mb-2 block">Efek</Label>
-            <select value={effectNumber} onChange={(e) => setEffectNumber(Number(e.target.value))} className="w-full px-3 py-2 rounded-lg bg-surface-secondary border border-border text-sm">
+            <select value={effectNumber} onChange={(e) => setEffectNumber(Number(e.target.value))} className="w-full px-3 py-2 rounded-lg bg-surface-secondary border border-border text-sm text-foreground">
               {EFFECTS.map((e) => (
-                <option key={e.id} value={e.id}>{e.id}. {e.name}</option>
+                <option key={e.id} value={e.id} className="bg-surface-secondary text-foreground">{e.id}. {e.name}</option>
               ))}
             </select>
           </div>
@@ -227,26 +227,26 @@ export default function ViralEffectsPage() {
           <div className="mb-4 grid grid-cols-3 gap-2">
             <div>
               <Label className="mb-1 block text-xs">Steps</Label>
-              <select value={steps} onChange={(e) => setSteps(Number(e.target.value))} className="w-full px-2 py-2 rounded-lg bg-surface-secondary border border-border text-sm">
-                <option value={1}>1 (cepat)</option>
-                <option value={2}>2 (seimbang)</option>
-                <option value={3}>3 (kualitas)</option>
+              <select value={steps} onChange={(e) => setSteps(Number(e.target.value))} className="w-full px-2 py-2 rounded-lg bg-surface-secondary border border-border text-sm text-foreground">
+                <option value={1} className="bg-surface-secondary text-foreground">1 (cepat)</option>
+                <option value={2} className="bg-surface-secondary text-foreground">2 (seimbang)</option>
+                <option value={3} className="bg-surface-secondary text-foreground">3 (kualitas)</option>
               </select>
             </div>
             <div>
               <Label className="mb-1 block text-xs">Frames</Label>
-              <select value={frames} onChange={(e) => setFrames(Number(e.target.value))} className="w-full px-2 py-2 rounded-lg bg-surface-secondary border border-border text-sm">
-                <option value={1}>49</option>
-                <option value={2}>65</option>
-                <option value={3}>81</option>
+              <select value={frames} onChange={(e) => setFrames(Number(e.target.value))} className="w-full px-2 py-2 rounded-lg bg-surface-secondary border border-border text-sm text-foreground">
+                <option value={1} className="bg-surface-secondary text-foreground">49</option>
+                <option value={2} className="bg-surface-secondary text-foreground">65</option>
+                <option value={3} className="bg-surface-secondary text-foreground">81</option>
               </select>
             </div>
             <div>
               <Label className="mb-1 block text-xs">Resolusi</Label>
-              <select value={resolution} onChange={(e) => setResolution(Number(e.target.value))} className="w-full px-2 py-2 rounded-lg bg-surface-secondary border border-border text-sm">
-                <option value={1}>420P</option>
-                <option value={2}>512P</option>
-                <option value={3}>720P</option>
+              <select value={resolution} onChange={(e) => setResolution(Number(e.target.value))} className="w-full px-2 py-2 rounded-lg bg-surface-secondary border border-border text-sm text-foreground">
+                <option value={1} className="bg-surface-secondary text-foreground">420P</option>
+                <option value={2} className="bg-surface-secondary text-foreground">512P</option>
+                <option value={3} className="bg-surface-secondary text-foreground">720P</option>
               </select>
             </div>
           </div>

@@ -758,6 +758,9 @@ export interface H3MusicAvatarParams {
   prompt?: string
   apiKey?: string
   appId?: string
+  // Khusus Music Video: maks 3 foto referensi scene (opsional).
+  sceneFiles?: File[]
+  aspectRatio?: string
 }
 
 // App "Digital human lip-sync singing unlimited duration [HD]" — mode podcast
@@ -766,10 +769,12 @@ export const RUNNINGHUB_PODCAST_LIPSYNC_APP_ID = '1990007675981320194'
 
 export async function submitRunningHubH3MusicAvatar(params: H3MusicAvatarParams): Promise<MotionControlResult> {
   const appId = params.appId || RUNNINGHUB_H3_MUSIC_AVATAR_APP_ID
+  const sceneFiles = (params.sceneFiles || []).slice(0, MUSIC_VIDEO_MAX_SCENES)
 
-  const [imageBase64, audioBase64] = await Promise.all([
+  const [imageBase64, audioBase64, ...sceneBase64] = await Promise.all([
     fileToBase64(params.imageFile),
     fileToBase64(params.audioFile),
+    ...sceneFiles.map((file) => fileToBase64(file)),
   ])
 
   const result = await runninghubProxy('submit-h3-music-avatar', {
@@ -781,6 +786,16 @@ export async function submitRunningHubH3MusicAvatar(params: H3MusicAvatarParams)
     audioFileName: params.audioFile.name,
     audioMimeType: params.audioFile.type || 'audio/mpeg',
     prompt: params.prompt || '',
+    ...(sceneFiles.length > 0 ? {
+      sceneImages: sceneFiles.map((file, i) => ({
+        base64: sceneBase64[i],
+        fileName: file.name,
+        mimeType: file.type || 'image/jpeg',
+      })),
+    } : {}),
+    ...(appId === RUNNINGHUB_MUSIC_VIDEO_APP_ID
+      ? { aspectRatio: params.aspectRatio || MUSIC_VIDEO_DEFAULT_ASPECT }
+      : {}),
   }, params.apiKey)
 
   return {
