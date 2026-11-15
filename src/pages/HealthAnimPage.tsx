@@ -157,8 +157,8 @@ const CustomStyles = () => (
     }
 
     .arkx-health .bg-white { background-color: #0c0c1a !important; }
-    .arkx-health .bg-white/90 { background-color: rgba(12,12,26,.92) !important; }
-    .arkx-health .bg-white/95 { background-color: rgba(12,12,26,.96) !important; }
+    .arkx-health .bg-white\\/90 { background-color: rgba(12,12,26,.92) !important; }
+    .arkx-health .bg-white\\/95 { background-color: rgba(12,12,26,.96) !important; }
     .arkx-health .bg-slate-50 { background-color: #050510 !important; }
     .arkx-health .bg-slate-100 { background-color: #12122a !important; }
     .arkx-health .bg-slate-200 { background-color: #16162e !important; }
@@ -193,13 +193,13 @@ const CustomStyles = () => (
     .arkx-health .border-amber-200 { border-color: rgba(245,158,11,.35) !important; }
     .arkx-health .ring-indigo-100 { --tw-ring-color: rgba(0,168,255,.22) !important; }
 
-    .arkx-health .hover:bg-slate-50:hover { background-color: rgba(255,255,255,.05) !important; }
-    .arkx-health .hover:bg-slate-100:hover { background-color: rgba(255,255,255,.07) !important; }
-    .arkx-health .hover:bg-indigo-100:hover { background-color: rgba(0,168,255,.22) !important; }
-    .arkx-health .hover:text-slate-800:hover { color: #ffffff !important; }
-    .arkx-health .hover:text-indigo-600:hover,
-    .arkx-health .hover:text-indigo-800:hover { color: #66d3ff !important; }
-    .arkx-health .hover:border-slate-300:hover { border-color: #2a2a45 !important; }
+    .arkx-health .hover\\:bg-slate-50:hover { background-color: rgba(255,255,255,.05) !important; }
+    .arkx-health .hover\\:bg-slate-100:hover { background-color: rgba(255,255,255,.07) !important; }
+    .arkx-health .hover\\:bg-indigo-100:hover { background-color: rgba(0,168,255,.22) !important; }
+    .arkx-health .hover\\:text-slate-800:hover { color: #ffffff !important; }
+    .arkx-health .hover\\:text-indigo-600:hover,
+    .arkx-health .hover\\:text-indigo-800:hover { color: #66d3ff !important; }
+    .arkx-health .hover\\:border-slate-300:hover { border-color: #2a2a45 !important; }
 
     .arkx-health input,
     .arkx-health select,
