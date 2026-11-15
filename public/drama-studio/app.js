@@ -11,7 +11,7 @@
   const blankProject = name => ({id:makeId(),name:name || 'Cerita baru',description:'',style:'Drama sinematik',template:'Micro drama · 3 babak',created:Date.now(),characters:[],scenes:[],queue:[],story:{premise:'',template:'Micro drama · 3 babak'}});
   // ══════════════ Integrasi AI: Gemini (story/prompt) · NexaBot (gambar, video) ═══
   // - Story / prompt: pakai relay studio-ai (Gemini server-side, member tak perlu key)
-  // - Gambar: GPT Image 2.5 nexabot.id/gpt-image (member pakai API key NexaBot sendiri)
+  // - Gambar: Nano Banana Pro via nexabot.id/gpt-image (model nano_banana_pro, 0,1 kredit, member pakai API key NexaBot sendiri)
   // - Video drama: Omni Flash 1.2 (model omni_flash) via relay /api/public/nexabot (member key)
   const LS_TOKEN = 'arkxmotion_token', LS_REFRESH = 'arkxmotion_refresh';
   const isTokenFresh = (t) => {
@@ -38,6 +38,15 @@
   };
   const aspectEnum = (ratio) => ratio === '1:1' ? 1 : ratio === '16:9' ? 2 : 5; // 1=1:1, 2=16:9, 5=9:16 (enum nexabot)
   const ratioSubmit = (ratio) => ratio === '16:9' ? 1 : 2; // ratio 1 = 16:9, 2 = 9:16
+  // Prompt video selalu dibarengi kalimat voiceover agar Omni Flash 1.2
+  // MEMBUNYIKAN narasi (seperti fix Arkx Health Animasi) — Bahasa Indonesia.
+  const withVoiceover = (prompt, voiceover) => {
+    const vo = String(voiceover || '').trim();
+    const body = String(prompt || '').trim();
+    if (!vo) return body;
+    if (/voiceover[^.]*(Indonesian|Bahasa Indonesia)/i.test(body)) return body;
+    return `${body}\nA voiceover narrates in Indonesian (Bahasa Indonesia), warm and friendly tone, saying exactly: "${vo}". No English speech.`;
+  };
   const slugify = s => String(s || 'clip').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0, 60) || 'clip';
   const runningOps = new Set();
   const opRunning = key => runningOps.has(key);
@@ -166,16 +175,18 @@
     if (!res.ok || !data?.ok || !data?.url) throw new Error(data?.error || `Simpan gagal (HTTP ${res.status})`);
     return data.url;
   }
-  async function gptImageJob({ prompt, aspect = 5, references = [] }) {
+  async function gptImageJob({ prompt, aspect = 5, references = [], model = 'nano_banana_pro' }) {
     const k = memberKey(); if (!k) throw new Error('API key NexaBot belum diisi — tambahkan di halaman Providers.');
     const t = await appToken();
     const res = await fetch('/api/public/nexabot/gpt-image', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': k, ...(t ? { Authorization: 'Bearer ' + t } : {}) },
-      body: JSON.stringify({ prompt, aspect, references: (Array.isArray(references) ? references : []).slice(0, 10) }),
+      // Model default NexaBot untuk gambar: Nano Banana Pro (0,1 kredit) —
+      // konsisten dengan katalog gambar NexaBot (semua 0,1 cr).
+      body: JSON.stringify({ prompt, aspect, references: (Array.isArray(references) ? references : []).slice(0, 10), model }),
     });
     const data = await res.json().catch(() => null);
-    if (!res.ok || !data?.ok) throw new Error(data?.error || data?.errorMessage || `Submit GPT Image gagal (HTTP ${res.status})`);
+    if (!res.ok || !data?.ok) throw new Error(data?.error || data?.errorMessage || `Submit Nano Banana Pro gagal (HTTP ${res.status})`);
     return data.id || data.jobId || data.data?.id;
   }
   async function gptImagePoll(jobId, onStatus, maxMs = 10 * 60 * 1000) {
@@ -190,8 +201,8 @@
         const data = await res.json().catch(() => null); const job = data?.job || data || {};
         const status = String(job.status || '').toLowerCase();
         if (['done','completed','success','succeeded'].includes(status)) return job;
-        if (['failed','error','cancelled','canceled'].includes(status)) throw new Error('GPT Image gagal: ' + (job.error || 'Unknown error'));
-        onStatus?.(`GPT Image: ${status}${job.progress ? ' ' + job.progress + '%' : ''}`);
+        if (['failed','error','cancelled','canceled'].includes(status)) throw new Error('Nano Banana Pro gagal: ' + (job.error || 'Unknown error'));
+        onStatus?.(`Nano Banana Pro: ${status}${job.progress ? ' ' + job.progress + '%' : ''}`);
       } else if (res.status === 400 || res.status === 401 || res.status === 403) {
         throw new Error('NexaBot menolak kredensial — cek API key di Providers.');
       }
@@ -266,15 +277,15 @@
             type: 'ARRAY',
             items: {
               type: 'OBJECT',
-              properties: { title: { type: 'STRING' }, action: { type: 'STRING' }, dialogue: { type: 'STRING' }, prompt: { type: 'STRING' }, video_prompt: { type: 'STRING' } },
-              required: ['title', 'prompt'],
+              properties: { title: { type: 'STRING' }, action: { type: 'STRING' }, dialogue: { type: 'STRING' }, voiceover: { type: 'STRING' }, prompt: { type: 'STRING' }, video_prompt: { type: 'STRING' } },
+              required: ['title', 'prompt', 'voiceover'],
             },
           },
         },
         required: ['title', 'premise', 'scenes'],
       };
-      const sys = 'Anda penulis skenario drama vertikal Indonesia untuk format video pendek (TikTok/Reels/Shorts). Jawab HANYA JSON sesuai skema. Narasi, judul, aksi, dan dialog dalam Bahasa Indonesia; setiap adegan menyertakan prompt sinematik BAHASA INGGRIS (prompt) untuk gambar still dan prompt sinematik BAHASA INGGRIS (video_prompt) untuk video generator — sebutkan kamera, pergerakan kamera, lighting, suasana; TANPA teks berbahasa apa pun di dalam video (gambar & adegan tidak boleh ada tulisan). Karakter konsisten secara visual antar adegan (sebutkan pakaian, usia, ciri fisik di tiap adegan). Tidak ada klaim kesehatan berlebihan. Tanpa pornografi/kekerasan eksplisit. Jangan pakai trademark asli.';
-      const userPrompt = `Premis: ${premise}\nTemplate: ${template} → tepat ${beats} adegan (adegan 1 = hook yang membuat berhenti scroll, adegan ${beats} = cliffhanger/CTA singkat, di antaranya satu poin cerita per adegan).\nGaya visual: ${p.style || 'Drama sinematik'}.\n\nKembalikan JSON sesuai skema: title (judul cerita mengejutkan, maks 60 karakter), premise (1 kalimat tajam), description (sinopsis 1-2 kalimat), style (gaya visual Inggris atau Indonesia — bebas, singkat), characters (2-4 tokoh; name; description pendek mencakup usia, penampilan, pakaian, sifat), scenes (tepat ${beats} adegan; title; action (apa yang terlihat, 2-4 kalimat, Bahasa Indonesia); dialogue (dialog singkat tokoh utama dengan tanda kutip, Bahasa Indonesia); prompt (EN, sinematic still, sebut kamera/angle/lens/kualitas, 1 paragraf); video_prompt (EN, cinematic video 15 detik, sebut kamera, pergerakan, lighting, mood, 1 paragraf)). Judul adegan diawali nomor urut (01/02/...). Semua prompt Inggris, aksi & dialog Indonesia.`;
+      const sys = 'Anda penulis skenario drama vertikal Indonesia untuk format video pendek (TikTok/Reels/Shorts). Jawab HANYA JSON sesuai skema. Judul, narasi (voiceover), aksi, dan dialog dalam Bahasa Indonesia; setiap adegan menyertakan voiceover (Narasi/VO) Bahasa Indonesia yang singkat (1 kalimat, muat diucapkan dalam 15 detik), prompt sinematik BAHASA INGGRIS (prompt) untuk gambar still dan prompt sinematik BAHASA INGGRIS (video_prompt) untuk video generator — sebutkan kamera, pergerakan kamera, lighting, suasana; TANPA teks berbahasa apa pun di dalam video (gambar & adegan tidak boleh ada tulisan). Karakter konsisten secara visual antar adegan (sebutkan pakaian, usia, ciri fisik di tiap adegan). Tidak ada klaim kesehatan berlebihan. Tanpa pornografi/kekerasan eksplisit. Jangan pakai trademark asli.';
+      const userPrompt = `Premis: ${premise}\nTemplate: ${template} → tepat ${beats} adegan (adegan 1 = hook yang membuat berhenti scroll, adegan ${beats} = cliffhanger/CTA singkat, di antaranya satu poin cerita per adegan).\nGaya visual: ${p.style || 'Drama sinematik'}.\n\nKembalikan JSON sesuai skema: title (judul cerita mengejutkan, maks 60 karakter), premise (1 kalimat tajam), description (sinopsis 1-2 kalimat), style (gaya visual Inggris atau Indonesia — bebas, singkat), characters (2-4 tokoh; name; description pendek mencakup usia, penampilan, pakaian, sifat), scenes (tepat ${beats} adegan; title; action (apa yang terlihat, 2-4 kalimat, Bahasa Indonesia); dialogue (dialog singkat tokoh utama dengan tanda kutip, Bahasa Indonesia); voiceover (NARASI/VO Bahasa Indonesia — 1 kalimat pendek yang diucapkan narrator di adegan ini, SELALU Bahasa Indonesia); prompt (EN, sinematic still, sebut kamera/angle/lens/kualitas, 1 paragraf); video_prompt (EN, cinematic video 15 detik, sebut kamera, pergerakan, lighting, mood, 1 paragraf — JANGAN sebut suara/VO di sini, VO diatur lewat voiceover)). Judul adegan diawali nomor urut (01/02/...). Semua prompt Inggris; aksi, dialog & VO Indonesia.`;
       const parsed = await geminiJSON({ prompt: userPrompt, system: sys, schema });
       p.name = parsed.title ? String(parsed.title).trim().slice(0, 120) : p.name;
       p.description = String(parsed.description || parsed.premise || premise || '').trim().slice(0, 500);
@@ -290,6 +301,7 @@
         title: String(s.title || `Adegan ${String(i + 1).padStart(2, '0')}`).slice(0, 120),
         action: String(s.action || '').trim(),
         dialogue: String(s.dialogue || '').trim(),
+        voiceover: String(s.voiceover || '').trim(),
         prompt: String(s.prompt || '').trim(),
         video_prompt: String(s.video_prompt || '').trim(),
         reference: null,
@@ -297,7 +309,8 @@
       p.queue = p.scenes.map((s, i) => ({
         id: makeId(), sceneId: s.id,
         title: s.title, prompt: s.video_prompt || s.prompt || s.action,
-        provider: 'Gemini', ratio: '9:16', resolution: '720p', duration: '15 detik', variations: '1',
+        voiceover: s.voiceover || '',
+        provider: 'NexaBot (Omni Flash 1.2)', ratio: '9:16', resolution: '720p', duration: '15 detik', variations: '1',
         status: 'ready', result: null, order: i, genStatus: '',
       }));
       persist(); state.page = 'storyboard'; render();
@@ -333,14 +346,14 @@
       s.reference = await downscaleToDataUrl(blob, 1024);
       s.genStatus = '';
       persist(); render();
-      toast('Gambar referensi adegan dibuat (GPT Image 2.5).');
+      toast('Gambar referensi adegan dibuat (Nano Banana Pro).');
     } catch (e) {
       s.genStatus = '';
       persist(); render();
       toast(`Gagal membuat gambar: ${e?.message || e}`);
     } finally {
       setRunning('img-' + sceneId, false);
-      if (triggerBtn) { triggerBtn.disabled = false; triggerBtn.innerHTML = '📷 Gambar referensi'; }
+      if (triggerBtn) { triggerBtn.disabled = false; triggerBtn.innerHTML = '📷 Nano Banana Pro'; }
     }
   }
 
@@ -354,8 +367,19 @@
     if (triggerBtn) { triggerBtn.disabled = true; }
     const setStatus = m => { q.genStatus = m; persist(); render(); };
     try {
+      // Narasi dibaca langsung dari kartu adegan (bila tertaut) supaya edit terbaru
+      // selalu dipakai; fallback ke salinan di antrean.
+      const sceneVo = (() => {
+        try {
+          if (q.sceneId && project()) {
+            const s = project().scenes.find(x => x.id === q.sceneId);
+            if (s && String(s.voiceover || '').trim()) return String(s.voiceover).trim();
+          }
+          return String(q.voiceover || '').trim();
+        } catch { return String(q.voiceover || '').trim() }
+      })();
       setStatus('Mengirim ke Omni Flash 1.2…');
-      const jobId = await nexabotSubmitT2v({ prompt: q.prompt, ratio: q.ratio || '9:16', resolution: 720, duration: 15 });
+      const jobId = await nexabotSubmitT2v({ prompt: withVoiceover(q.prompt, sceneVo), ratio: q.ratio || '9:16', resolution: 720, duration: 15 });
       setStatus(`Video sedang dibuat Omni Flash (job ${String(jobId).slice(0, 8)}…)`);
       await nexabotPollJob(jobId, s => setStatus(s));
       setStatus('Menyimpan hasil ke server…');
@@ -398,7 +422,7 @@
     if (!src || !String(src).trim()) { toast('Isi aksi / prompt visual adegan dulu.'); return; }
     let q = p.queue.find(x => x.sceneId === sceneId);
     if (!q) {
-      q = { id: makeId(), sceneId: s.id, title: s.title || 'Adegan', prompt: String(src).trim(), provider: 'Gemini', ratio: '9:16', resolution: '720p', duration: '15 detik', variations: '1', status: 'ready', result: null, order: p.queue.length, genStatus: '' };
+      q = { id: makeId(), sceneId: s.id, title: s.title || 'Adegan', prompt: String(src).trim(), voiceover: s.voiceover || '', provider: 'NexaBot (Omni Flash 1.2)', ratio: '9:16', resolution: '720p', duration: '15 detik', variations: '1', status: 'ready', result: null, order: p.queue.length, genStatus: '' };
       p.queue.push(q);
       persist(); render();
     }
@@ -502,13 +526,13 @@
     const total=p.queue.length,ready=p.queue.filter(q=>q.status==='ready'||q.status==='copied'||q.result).length,withResult=p.queue.filter(q=>q.result).length;
     const pct=total?Math.round(ready/total*100):0;
     const recent=p.queue.slice(0,3);
-    return `${pageHead('RUANG CERITA · V2','Cerita Anda, siap dirangkai.','Kelola ide, adegan, dan prompt di satu workspace. AI Story (Gemini), Gambar (GPT Image 2.5), dan Video (Omni Flash 1.2) siap generate langsung.',`<button class="button button-quiet" data-page="story">✧ Buka AI Story</button><button class="button button-primary" data-action="add-prompt">＋ Prompt baru</button>`)}
+    return `${pageHead('RUANG CERITA · V2','Cerita Anda, siap dirangkai.','Kelola ide, adegan, dan prompt di satu workspace. AI Story (Gemini), Gambar (Nano Banana Pro), dan Video (Omni Flash 1.2 + narasi, digabung ffmpeg) siap generate langsung.',`<button class="button button-quiet" data-page="story">✧ Buka AI Story</button><button class="button button-primary" data-action="add-prompt">＋ Prompt baru</button>`)}
       <section class="dashboard-hero"><div class="hero-copy"><div class="eyebrow"><i></i> RUANG KERJA LOKAL · TERSIMPAN DI BROWSER</div><h1>Bangun cerita.<br><span style="color:#c5a2fd">Rangkai klip.</span></h1><p>Mulai dari premis, susun adegan, lalu siapkan prompt dan urutan klip untuk diproses manual di layanan pilihan Anda.</p></div><div class="hero-quick"><button class="button button-primary" data-page="story">✧ Susun cerita</button><button class="button" data-page="workspace">Buka Story Workspace →</button></div></section>
       <div class="stats-grid"><div class="stat-card"><span class="stat-icon">◈</span><div><b>${state.projects.length}</b><small>Proyek</small></div><span class="stat-trend">aktif</span></div><div class="stat-card"><span class="stat-icon mint">♙</span><div><b>${p.characters.length}</b><small>Karakter</small></div></div><div class="stat-card"><span class="stat-icon amber">▤</span><div><b>${p.scenes.length}</b><small>Adegan</small></div></div><div class="stat-card"><span class="stat-icon lime">☷</span><div><b>${total}</b><small>Prompt queue</small></div></div></div>
       <div class="grid"><section class="panel col-8"><div class="panel-head"><div><h2>Proyek aktif</h2><p>Ruang cerita yang sedang Anda kerjakan.</p></div><button class="panel-link" data-page="storyboard">Buka storyboard →</button></div><div class="project-summary"><img class="cover-thumb" src="assets/drama.webp" alt="Contoh visual drama"/><div class="project-summary-copy"><b>${esc(p.name)}</b><small>${esc(p.description||'Tambahkan sinopsis di pengaturan proyek.')} · ${esc(p.style||'Drama sinematik')}</small></div><span class="pill mint">Lokal</span><button class="outline-button" data-page="story">Kelola</button></div><div class="divider"></div><div class="section-kicker">ALUR CERITA</div><div class="quick-flow" style="margin-top:9px"><div class="flow-step"><span class="step-no">01</span><b>Premis & tokoh</b><small>${p.characters.length} karakter tersimpan</small></div><div class="flow-step"><span class="step-no">02</span><b>Storyboard</b><small>${p.scenes.length} adegan tersusun</small></div><div class="flow-step"><span class="step-no">03</span><b>Prompt queue</b><small>${total} prompt lokal</small></div><div class="flow-step"><span class="step-no">04</span><b>Hasil & klip</b><small>${withResult} file dilampirkan</small></div></div></section>
       <section class="panel col-4"><div class="panel-head"><div><h2>Progres lokal</h2><p>Status yang Anda kelola sendiri.</p></div><span class="pill purple">manual</span></div><div style="display:flex;justify-content:space-between;align-items:end"><div><b style="font-size:26px;letter-spacing:-1px">${pct}%</b><div class="muted small">siap disalin / sudah punya hasil</div></div><span class="badge-number">${ready} / ${total}</span></div><div class="progress-track"><span style="width:${pct}%"></span></div><p class="muted small" style="margin:11px 0 0">Tidak memantau atau mengirim pekerjaan ke penyedia AI.</p></section>
       <section class="panel col-7"><div class="panel-head"><div><h2>Prompt terbaru</h2><p>Siapkan teks untuk Flow, ChatGPT, Gemini, atau Grok.</p></div><button class="panel-link" data-page="queue">Lihat semua →</button></div><div class="queue-preview">${recent.length?recent.map((q,i)=>`<div class="queue-preview-row"><span class="queue-index">${String(i+1).padStart(2,'0')}</span><div class="queue-row-copy"><b>${esc(q.title||'Prompt tanpa judul')}</b><small><i class="platform-dot ${providerClass(q.provider)}"></i>${esc(q.provider||'Google Flow')} · ${esc(q.ratio||'9:16')}</small></div>${badgeStatus(q)}</div>`).join(''):'<div class="empty-state"><b>Belum ada prompt</b>Tambahkan dari storyboard atau mulai prompt baru.</div>'}</div></section>
-      <section class="panel col-5"><div class="panel-head"><div><h2>Catatan versi</h2><p>Yang bisa dilakukan sekarang.</p></div><span class="pill mint">AI CONNECTED</span></div><div class="notice"><span class="notice-icon">✧</span><span><strong>Cerita AI (Gemini), gambar referensi (GPT Image 2.5), dan video (Omni Flash 1.2) sudah tersambung.</strong> Generate prompt & adegan dari AI, buat gambar referensi per adegan, dan generate semua video drama satu klik.</span></div><div class="divider"></div><div class="small muted">Provider yang bisa dipilih</div><div class="card-actions" style="margin-top:8px">${PROVIDERS.map(x=>`<span class="pill"><i class="platform-dot ${providerClass(x)}"></i>${x}</span>`).join('')}</div></section></div>`;
+      <section class="panel col-5"><div class="panel-head"><div><h2>Catatan versi</h2><p>Yang bisa dilakukan sekarang.</p></div><span class="pill mint">AI CONNECTED</span></div><div class="notice"><span class="notice-icon">✧</span><span><strong>Cerita AI (Gemini), gambar referensi (Nano Banana Pro), dan video ber-narasi (Omni Flash 1.2) sudah tersambung.</strong> Generate prompt & adegan dari AI, buat gambar referensi per adegan, dan generate semua video drama satu klik — lalu gabung jadi satu video di Story Workspace.</span></div><div class="divider"></div><div class="small muted">Provider yang bisa dipilih</div><div class="card-actions" style="margin-top:8px">${PROVIDERS.map(x=>`<span class="pill"><i class="platform-dot ${providerClass(x)}"></i>${x}</span>`).join('')}</div></section></div>`;
   }
   function noProject(){return `${pageHead('WORKSPACE','Mulai cerita baru','Buat proyek untuk mengelola karakter, storyboard, dan antrean prompt.',`<button class="button button-primary" data-action="new-project">＋ Proyek baru</button>`)}<section class="panel empty-state"><b>Belum ada proyek aktif</b>Buat proyek baru untuk melanjutkan.</section>`;}
   function storyPage(){
@@ -526,7 +550,7 @@
   function storyboardPage(){
     const p=project();if(!p)return noProject();
     return `${pageHead('STORYBOARD · ${p.scenes.length} ADEGAN','Susun adegan satu per satu.','Tulis aksi, dialog, prompt visual, dan lampirkan gambar referensi untuk tiap adegan.',`<button class="button button-quiet" data-page="story">Ubah fondasi cerita</button><button class="button button-primary" data-action="add-scene">＋ Tambah adegan</button>`)}
-      <section class="panel"><div class="panel-head"><div><h2>${esc(p.name)}</h2><p>${esc(p.description||'Tambahkan sinopsis dari halaman AI Story.')}</p></div><span class="pill">${esc(p.style||'Drama sinematik')}</span></div><div class="storyboard-list">${p.scenes.length?p.scenes.map((s,i)=>`<article class="scene-card"><div class="scene-top"><span class="scene-number">${String(i+1).padStart(2,'0')}</span><input data-scene-field="title" data-id="${esc(s.id)}" value="${esc(s.title||`Adegan ${i+1}`)}" aria-label="Judul adegan"><span class="pill ${s.reference?'mint':''}">${s.reference?'Referensi ada':'Draft'}</span></div><div class="scene-body"><div class="scene-grid"><div class="field"><label>Aksi / visual</label><textarea class="textarea" data-scene-field="action" data-id="${esc(s.id)}" placeholder="Apa yang terlihat dan terjadi?">${esc(s.action)}</textarea></div><div class="field"><label>Dialog / suara</label><textarea class="textarea" data-scene-field="dialogue" data-id="${esc(s.id)}" placeholder="Tokoh: dialog...">${esc(s.dialogue)}</textarea></div><div class="field scene-prompt"><label>Prompt visual · tulis atau tempel manual</label><textarea class="textarea" data-scene-field="prompt" data-id="${esc(s.id)}" placeholder="Komposisi, suasana, pencahayaan, karakter, gaya...">${esc(s.prompt)}</textarea></div></div><div class="scene-footer"><div class="card-actions"><label class="outline-button file-button">＋ Gambar referensi<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" data-reference-for="${esc(s.id)}"></label>${s.reference?`<span class="result-chip"><img src="${esc(s.reference)}" alt="Gambar referensi"> Tersimpan lokal <button class="link-button" data-action="remove-reference" data-id="${esc(s.id)}">Lepas</button></span>`:'<span class="muted small">Maks. 600 KB / gambar</span>'}</div><div class="card-actions"><button class="outline-button" data-action="scene-to-queue" data-id="${esc(s.id)}">Tambahkan ke queue</button><button class="outline-button" data-drama-action="gen-image" data-id="${esc(s.id)}">📷 Gambar AI</button><button class="outline-button" data-drama-action="gen-video" data-kind="scene" data-id="${esc(s.id)}">⚡ Video 15 dtk</button><button class="outline-button danger-button" data-action="delete-scene" data-id="${esc(s.id)}">Hapus</button></div></div></div></article>`).join(''):'<div class="empty-state"><b>Storyboard masih kosong</b>Buat kerangka di AI Story atau tambahkan adegan manual.</div>'}</div><div class="notice warning" style="margin-top:13px"><span class="notice-icon">ⓘ</span><span>Gambar referensi hanya disimpan dan ditampilkan lokal. Tidak dikirim ke provider AI secara otomatis.</span></div></section>`;
+      <section class="panel"><div class="panel-head"><div><h2>${esc(p.name)}</h2><p>${esc(p.description||'Tambahkan sinopsis dari halaman AI Story.')}</p></div><span class="pill">${esc(p.style||'Drama sinematik')}</span></div><div class="storyboard-list">${p.scenes.length?p.scenes.map((s,i)=>`<article class="scene-card"><div class="scene-top"><span class="scene-number">${String(i+1).padStart(2,'0')}</span><input data-scene-field="title" data-id="${esc(s.id)}" value="${esc(s.title||`Adegan ${i+1}`)}" aria-label="Judul adegan"><span class="pill ${s.reference?'mint':''}">${s.reference?'Referensi ada':'Draft'}</span></div><div class="scene-body"><div class="scene-grid"><div class="field"><label>Aksi / visual</label><textarea class="textarea" data-scene-field="action" data-id="${esc(s.id)}" placeholder="Apa yang terlihat dan terjadi?">${esc(s.action)}</textarea></div><div class="field"><label>Dialog / suara</label><textarea class="textarea" data-scene-field="dialogue" data-id="${esc(s.id)}" placeholder="Tokoh: dialog...">${esc(s.dialogue)}</textarea></div><div class="field scene-prompt"><label>Prompt visual · tulis atau tempel manual</label><textarea class="textarea" data-scene-field="prompt" data-id="${esc(s.id)}" placeholder="Komposisi, suasana, pencahayaan, karakter, gaya...">${esc(s.prompt)}</textarea></div><div class="field scene-prompt"><label>Narasi / Voiceover — dibacakan AI di video (Bahasa Indonesia)</label><textarea class="textarea" data-scene-field="voiceover" data-id="${esc(s.id)}" placeholder="Narasi 1 kalimat Bahasa Indonesia (dibaca di video)">${esc(s.voiceover || '')}</textarea></div></div><div class="scene-footer"><div class="card-actions"><label class="outline-button file-button">＋ Gambar referensi<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" data-reference-for="${esc(s.id)}"></label>${s.reference?`<span class="result-chip"><img src="${esc(s.reference)}" alt="Gambar referensi"> Tersimpan lokal <button class="link-button" data-action="remove-reference" data-id="${esc(s.id)}">Lepas</button></span>`:'<span class="muted small">Maks. 600 KB / gambar</span>'}</div><div class="card-actions"><button class="outline-button" data-action="scene-to-queue" data-id="${esc(s.id)}">Tambahkan ke queue</button><button class="outline-button" data-drama-action="gen-image" data-id="${esc(s.id)}">📷 Nano Banana Pro</button><button class="outline-button" data-drama-action="gen-video" data-kind="scene" data-id="${esc(s.id)}">⚡ Video 15 dtk</button><button class="outline-button danger-button" data-action="delete-scene" data-id="${esc(s.id)}">Hapus</button></div></div></div></article>`).join(''):'<div class="empty-state"><b>Storyboard masih kosong</b>Buat kerangka di AI Story atau tambahkan adegan manual.</div>'}</div><div class="notice warning" style="margin-top:13px"><span class="notice-icon">ⓘ</span><span>Gambar referensi hanya disimpan dan ditampilkan lokal. Tidak dikirim ke provider AI secara otomatis.</span></div></section>`;
   }
   function queueCard(q,i){
     const options=(field,values)=>`<select class="select" data-queue-field="${field}" data-id="${esc(q.id)}">${values.map(v=>`<option ${String(q[field])===String(v)?'selected':''}>${esc(v)}</option>`).join('')}</select>`;
@@ -553,7 +577,7 @@
   function buildOutline(){const p=project();if(!p)return;const premise=$('[data-story-field="premise"]')?.value.trim()||'';if(p.scenes.length&&!confirm('Storyboard sudah berisi adegan. Ganti seluruhnya dengan kerangka baru?'))return;const template=$('[data-story-template]:checked')?.value||p.story?.template||'Micro drama · 3 babak';const title=p.name||'Cerita baru';const n=template.includes('5')?5:template.includes('4')?4:3;const beats=n===5?['Hook pembuka','Pengenalan tokoh','Masalah muncul','Titik balik','Cliffhanger']:n===4?['Pembuka','Pemicu cerita','Titik balik','Resolusi']:['Pemantik','Konflik','Cliffhanger'];p.story={premise,template};p.template=template;if(premise)p.description=premise;p.scenes=beats.map((beat,i)=>({id:makeId(),title:`${String(i+1).padStart(2,'0')} · ${beat}`,action:`${beat}${premise?` — Kembangkan peristiwa yang berhubungan dengan: ${premise}`:''}`,dialogue:'',prompt:'',reference:null}));persist();state.page='storyboard';render();toast(`Kerangka ${n} adegan dibuat dari template lokal.`);}
   function addCharacter(){const p=project();const name=$('#newCharacterName')?.value.trim();if(!p||!name){toast('Isi nama karakter terlebih dahulu.');return;}p.characters.push({id:makeId(),name,description:$('#newCharacterDescription')?.value.trim()||''});persist();render();toast('Karakter ditambahkan.');}
   function addScene(){const p=project();if(!p)return;p.scenes.push({id:makeId(),title:`Adegan ${String(p.scenes.length+1).padStart(2,'0')}`,action:'',dialogue:'',prompt:'',reference:null});persist();render();toast('Adegan ditambahkan.');}
-  function sceneToQueue(id){const p=project(),s=p?.scenes.find(x=>x.id===id);if(!s)return;const prompt=[s.action&&`Aksi: ${s.action}`,s.dialogue&&`Dialog: ${s.dialogue}`,s.prompt&&`Arahan visual: ${s.prompt}`].filter(Boolean).join('\n\n');p.queue.push({id:makeId(),sceneId:s.id,title:s.title||'Adegan',prompt,provider:PROVIDERS[0],ratio:'9:16',resolution:'1080p',duration:'8 detik',variations:'1',status:'draft',result:null,order:p.queue.length});state.page='queue';persist();render();toast('Adegan disalin sebagai draft antrean.');}
+  function sceneToQueue(id){const p=project(),s=p?.scenes.find(x=>x.id===id);if(!s)return;const prompt=[s.action&&`Aksi: ${s.action}`,s.dialogue&&`Dialog: ${s.dialogue}`,s.prompt&&`Arahan visual: ${s.prompt}`].filter(Boolean).join('\n\n');p.queue.push({id:makeId(),sceneId:s.id,title:s.title||'Adegan',prompt,voiceover:s.voiceover||'',provider:PROVIDERS[0],ratio:'9:16',resolution:'1080p',duration:'8 detik',variations:'1',status:'draft',result:null,order:p.queue.length});state.page='queue';persist();render();toast('Adegan disalin sebagai draft antrean.');}
   function download(name,body,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([body],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1200);}
   function projectMarkdown(p){return `# ${p.name}\n\n${p.description||''}\n\n**Gaya:** ${p.style||'—'} · **Template:** ${p.template||'—'}\n\n## Karakter\n${(p.characters||[]).map(c=>`- **${c.name}:** ${c.description||'—'}`).join('\n')||'_Belum ada karakter_'}\n\n## Storyboard\n${(p.scenes||[]).map((s,i)=>`### ${s.title||`Adegan ${i+1}`}\n\n**Aksi:** ${s.action||'—'}\n\n**Dialog:** ${s.dialogue||'—'}\n\n**Prompt visual:** ${s.prompt||'—'}`).join('\n\n')||'_Belum ada adegan_'}\n\n## Prompt queue · draft lokal\n${(p.queue||[]).map(q=>`### ${q.title}\n\nProvider tujuan: ${q.provider||'—'} · ${q.ratio||'—'} · ${q.resolution||'—'} · ${q.duration||'—'}\n\nStatus lokal: ${STATUS[q.status]||'Draft'}\n\n${q.prompt||'_Prompt kosong_'}\n`).join('\n')||'_Kosong_'}\n\n> Prompt dan file hanya disimpan secara lokal. Ekspor ini bukan video final.\n`;}
   function csvEscape(v){const s=String(v??'');return /[",\n\r]/.test(s)?`"${s.replace(/"/g,'""')}"`:s;}

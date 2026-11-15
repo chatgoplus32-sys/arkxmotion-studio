@@ -1,9 +1,11 @@
 /**
  * ARKX Drama Studio — workspace cerita interaktif (static sub-app di
- * /drama-studio/, dimuat dalam iframe full-viewport). Navigasi keluar dari
- * workspace ditangani tombol "←" di topbar aplikasi drama-studio itu sendiri
- * (menuju /dashboard), agar tetap bekerja dari dalam iframe di semua ukuran
- * layar (HP & PC).
+ * /drama-studio/, dimuat dalam iframe full-viewport). AI Story lewat Gemini
+ * (relay studio-ai), gambar per adegan lewat NexaBot Nano Banana Pro
+ * (model nano_banana_pro), dan video adegan lewat NexaBot Omni Flash 1.2
+ * dengan voiceover narasi — digabung ffmpeg.wasm di Story Workspace.
+ * Navigasi keluar ditangani tombol "←" di topbar aplikasi drama-studio
+ * (menuju /dashboard), agar bekerja dari dalam iframe di semua layar.
  */
 export default function DramaStudioPage() {
   return (
