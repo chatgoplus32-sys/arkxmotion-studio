@@ -1,13 +1,13 @@
 // ─── Job generasi yang bertahan lintas-tab ────────────────────────────────
 //
-// Sebelumnya task hanya hidup di memori browser: begitu tab ditutup, job
-// NexaBot/PosBot tidak bisa dilanjutkan walau job-nya masih jalan di upstream.
-// Browser sekarang mencatat jobId ke tabel ini saat mulai polling; halaman yang
-// dibuka lagi memanggil resume lalu melanjutkan polling sampai hasil tersimpan.
+// Task dulu hanya hidup di memori browser: begitu tab ditutup, job NexaBot/
+// PosBot tidak bisa dilanjutkan walau job-nya masih jalan di upstream. Browser
+// mencatat jobId ke tabel ini saat mulai polling; aplikasi yang dibuka lagi
+// mengklaim job (atomik, jadi dua tab tidak memoll job yang sama) lalu
+// melanjutkan polling sampai hasil tersimpan.
 //
-// Token/kunci provider TIDAK disimpan di sini — hanya jobId dan metadata
-// tampilan. Resume memakai kunci server (relay), jadi job yang dulu memakai
-// kunci pribadi member akan berhenti dengan pesan jelas, bukan diam-diam.
+// Kunci provider TIDAK disimpan di sini — hanya jobId + halaman asal. Resume
+// memakai kunci server lewat relay.
 import { Router, type Response } from 'express'
 import db from '../db.js'
 import { authenticateToken, AuthRequest } from '../middleware/auth.js'
@@ -18,21 +18,17 @@ router.use(authenticateToken)
 const PROVIDERS = new Set(['nexabot', 'posbot'])
 /** Job lebih tua dari ini dianggap basi dan tidak ditawarkan untuk resume. */
 const RESUME_MAX_AGE_MS = 24 * 60 * 60 * 1000
-
-interface GenerationJobRow {
-  id: number
-  user_id: number
-  provider: string
-  job_id: string
-  page: string
-  model: string
-  prompt: string
-  status: string
-  result_url: string
-  last_error: string
-  created_at: number
-  updated_at: number
-}
+/**
+ * Job yang baru saja dicatat berarti halamannya masih memoll sendiri; resume
+ * tidak boleh menyalip dan memoll job yang sama dua kali.
+ */
+const TRACK_GRACE_MS = 90 * 1000
+/**
+ * Klaim dianggap milik tab yang sudah mati setelah ini. Sengaja lebih panjang
+ * dari durasi polling resume (±15 menit) supaya polling yang sah tidak direbut
+ * tab lain di tengah jalan.
+ */
+const CLAIM_TTL_MS = 30 * 60 * 1000
 
 function userIdOf(req: AuthRequest, res: Response): number | null {
   const userId = req.user?.id
@@ -43,7 +39,7 @@ function userIdOf(req: AuthRequest, res: Response): number | null {
   return userId
 }
 
-/** POST /api/generation-jobs — catat job yang mulai dipoll (idempoten per job). */
+/** POST /api/generation-jobs — catat job yang mulai dipoll (idempoten). */
 router.post('/', (req: AuthRequest, res: Response) => {
   const userId = userIdOf(req, res)
   if (!userId) return
@@ -55,24 +51,14 @@ router.post('/', (req: AuthRequest, res: Response) => {
   const now = Date.now()
   try {
     db.prepare(
-      `INSERT INTO generation_job (user_id, provider, job_id, page, model, prompt, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+      `INSERT INTO generation_job (user_id, provider, job_id, page, prompt, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
        ON CONFLICT(user_id, provider, job_id) DO UPDATE SET
          page = excluded.page,
-         model = excluded.model,
          prompt = excluded.prompt,
-         status = CASE WHEN generation_job.status = 'done' THEN 'done' ELSE 'pending' END,
+         status = CASE WHEN generation_job.status IN ('done', 'processing') THEN generation_job.status ELSE 'pending' END,
          updated_at = excluded.updated_at`,
-    ).run(
-      userId,
-      provider,
-      jobId,
-      String(req.body?.page || '').slice(0, 40),
-      String(req.body?.model || '').slice(0, 80),
-      String(req.body?.prompt || '').slice(0, 500),
-      now,
-      now,
-    )
+    ).run(userId, provider, jobId, String(req.body?.page || '').slice(0, 40), String(req.body?.prompt || '').slice(0, 500), now, now)
     res.json({ ok: true })
   } catch (error: any) {
     console.error('[generation-jobs] track gagal:', error?.message || error)
@@ -80,19 +66,22 @@ router.post('/', (req: AuthRequest, res: Response) => {
   }
 })
 
-/** GET /api/generation-jobs — job yang masih bisa dilanjutkan. */
+/** GET /api/generation-jobs — job yang bisa dilanjutkan (pending atau klaim basi). */
 router.get('/', (req: AuthRequest, res: Response) => {
   const userId = userIdOf(req, res)
   if (!userId) return
   try {
+    const now = Date.now()
     const rows = db
       .prepare(
-        `SELECT id, provider, job_id, page, model, prompt, status, result_url, created_at, updated_at
+        `SELECT id, provider, job_id, page, prompt, status, result_url, created_at, updated_at
          FROM generation_job
-         WHERE user_id = ? AND status IN ('pending', 'processing') AND updated_at > ?
+         WHERE user_id = ? AND updated_at > ?
+           AND updated_at <= ?
+           AND (status = 'pending' OR (status = 'processing' AND updated_at < ?))
          ORDER BY updated_at DESC LIMIT 20`,
       )
-      .all(userId, Date.now() - RESUME_MAX_AGE_MS) as GenerationJobRow[]
+      .all(userId, now - RESUME_MAX_AGE_MS, now - TRACK_GRACE_MS, now - CLAIM_TTL_MS)
     res.json({ ok: true, jobs: rows })
   } catch (error: any) {
     console.error('[generation-jobs] list gagal:', error?.message || error)
@@ -100,49 +89,60 @@ router.get('/', (req: AuthRequest, res: Response) => {
   }
 })
 
-/** PATCH /api/generation-jobs/:id — tandai selesai/gagal beserta URL hasil. */
-router.patch('/:id', (req: AuthRequest, res: Response) => {
+/**
+ * POST /api/generation-jobs/claim/:provider/:jobId — ambil hak melanjutkan job.
+ * `claimed: false` berarti tab/perangkat lain sudah memegangnya.
+ */
+router.post('/claim/:provider/:jobId', (req: AuthRequest, res: Response) => {
   const userId = userIdOf(req, res)
   if (!userId) return
-  const id = Number(req.params.id)
-  if (!Number.isInteger(id)) return res.status(400).json({ error: 'ID tidak valid' })
-  const status = String(req.body?.status || '')
-  if (!['pending', 'processing', 'done', 'failed'].includes(status)) {
-    return res.status(400).json({ error: 'status tidak valid' })
+  const provider = String(req.params.provider || '')
+  const jobId = String(req.params.jobId || '')
+  if (!PROVIDERS.has(provider) || !jobId) return res.status(400).json({ error: 'provider/jobId tidak valid' })
+  try {
+    const now = Date.now()
+    const hasil = db
+      .prepare(
+        `UPDATE generation_job SET status = 'processing', updated_at = ?
+         WHERE user_id = ? AND provider = ? AND job_id = ?
+           AND (status = 'pending' OR (status = 'processing' AND updated_at < ?))`,
+      )
+      .run(now, userId, provider, jobId, now - CLAIM_TTL_MS)
+    res.json({ ok: true, claimed: hasil.changes > 0 })
+  } catch (error: any) {
+    console.error('[generation-jobs] claim gagal:', error?.message || error)
+    res.status(500).json({ error: 'Internal server error' })
   }
+})
+
+/** PATCH /api/generation-jobs/:provider/:jobId — tandai selesai/gagal. */
+router.patch('/:provider/:jobId', (req: AuthRequest, res: Response) => {
+  const userId = userIdOf(req, res)
+  if (!userId) return
+  const provider = String(req.params.provider || '')
+  const jobId = String(req.params.jobId || '')
+  const status = String(req.body?.status || '')
+  if (!PROVIDERS.has(provider) || !jobId) return res.status(400).json({ error: 'provider/jobId tidak valid' })
+  if (!['done', 'failed'].includes(status)) return res.status(400).json({ error: 'status tidak valid' })
   try {
     const hasil = db
       .prepare(
         `UPDATE generation_job SET status = ?, result_url = ?, last_error = ?, updated_at = ?
-         WHERE id = ? AND user_id = ?`,
+         WHERE user_id = ? AND provider = ? AND job_id = ?`,
       )
       .run(
         status,
         String(req.body?.resultUrl || '').slice(0, 500),
         String(req.body?.error || '').slice(0, 300),
         Date.now(),
-        id,
         userId,
+        provider,
+        jobId,
       )
     if (!hasil.changes) return res.status(404).json({ error: 'Job tidak ditemukan' })
     res.json({ ok: true })
   } catch (error: any) {
     console.error('[generation-jobs] update gagal:', error?.message || error)
-    res.status(500).json({ error: 'Internal server error' })
-  }
-})
-
-/** DELETE /api/generation-jobs/:id — user membuang job dari daftar resume. */
-router.delete('/:id', (req: AuthRequest, res: Response) => {
-  const userId = userIdOf(req, res)
-  if (!userId) return
-  const id = Number(req.params.id)
-  if (!Number.isInteger(id)) return res.status(400).json({ error: 'ID tidak valid' })
-  try {
-    db.prepare('DELETE FROM generation_job WHERE id = ? AND user_id = ?').run(id, userId)
-    res.json({ ok: true })
-  } catch (error: any) {
-    console.error('[generation-jobs] hapus gagal:', error?.message || error)
     res.status(500).json({ error: 'Internal server error' })
   }
 })
