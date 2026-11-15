@@ -21,6 +21,17 @@ const RUNNINGHUB_EPOSCENTS_MC_APP_ID = '2107144516724932610'
 const EPOSCENTS_MC_IMAGE_NODE = '68'
 const EPOSCENTS_MC_VIDEO_NODE = '2'
 const EPOSCENTS_MC_VIDEO_FIELD = 'video'
+// Eposcents_Mini Genjutsu Video 15 sec BETA (app 2109987145921355777):
+// motion control - image + video → video. Node 51 = image, 27 = video,
+// 263 = text (prompt), 259 = value (duration), 252 = megapixels.
+const RUNNINGHUB_GENJUTSU_VIDEO_APP_ID = '2109987145921355777'
+const GENJUTSU_VIDEO_IMAGE_NODE = '51'
+const GENJUTSU_VIDEO_VIDEO_NODE = '27'
+const GENJUTSU_VIDEO_PROMPT_NODE = '263'
+const GENJUTSU_VIDEO_DURATION_NODE = '259'
+const GENJUTSU_VIDEO_MEGAPIXELS_NODE = '252'
+const GENJUTSU_VIDEO_DEFAULT_DURATION = '14'
+const GENJUTSU_VIDEO_DEFAULT_MEGAPIXELS = '0.6000000000000001'
 
 // KONTROL GERAK 50 FPS (app RunningHub): transfer gerakan video referensi ke
 // gambar karakter dengan output 50 FPS. Benchmark app: video 24s ~17 menit.
@@ -436,6 +447,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     if (action === 'submit-h3-music-avatar') {
       return await handleSubmitH3MusicAvatar(apiKey, params, res)
+    }
+    if (action === 'submit-genjutsu-video') {
+      return await handleSubmitGenjutsuVideo(apiKey, params, res)
     }
     if (action === 'submit-h3-vlog') {
       return await handleSubmitH3Vlog(apiKey, params, res)
@@ -1607,6 +1621,110 @@ async function handleSubmitH3MusicAvatar(apiKey: string, params: any, res: Verce
         status: data.data?.status || data.status || 'QUEUED',
         provider: 'runninghub',
         workflowId: effectiveAppId,
+      },
+    })
+  }
+
+  return res.status(200).json({ ok: false, error: 'Max retries exceeded', raw: lastRawText.slice(0, 500) })
+}
+
+async function handleSubmitGenjutsuVideo(apiKey: string, params: any, res: VercelResponse) {
+  const {
+    imageBase64,
+    imageFileName = 'image.jpg',
+    imageMimeType = 'image/jpeg',
+    videoBase64,
+    videoFileName = 'video.mp4',
+    videoMimeType = 'video/mp4',
+    prompt = '',
+    duration = GENJUTSU_VIDEO_DEFAULT_DURATION,
+    megapixels = GENJUTSU_VIDEO_DEFAULT_MEGAPIXELS,
+  } = params
+
+  if (!imageBase64) return res.status(200).json({ ok: false, error: 'Missing imageBase64' })
+  if (!videoBase64) return res.status(200).json({ ok: false, error: 'Missing videoBase64' })
+
+  console.log(`[runninghub] Uploading image (genjutsu-video)...`)
+  const imageUpload = await rhUpload(apiKey, imageBase64, imageFileName, imageMimeType)
+  console.log(`[runninghub] Image uploaded: ${imageUpload.fileName}`)
+
+  console.log(`[runninghub] Uploading video (genjutsu-video)...`)
+  const videoUpload = await rhUpload(apiKey, videoBase64, videoFileName, videoMimeType)
+  console.log(`[runninghub] Video uploaded: ${videoUpload.fileName}`)
+
+  const nodeInfoList: any[] = [
+    { nodeId: GENJUTSU_VIDEO_IMAGE_NODE, fieldName: 'image', fieldValue: imageUpload.fileName },
+    { nodeId: GENJUTSU_VIDEO_VIDEO_NODE, fieldName: 'video', fieldValue: videoUpload.fileName },
+    { nodeId: GENJUTSU_VIDEO_PROMPT_NODE, fieldName: 'text', fieldValue: String(prompt || '').trim() || 'Motion transfer video' },
+    { nodeId: GENJUTSU_VIDEO_DURATION_NODE, fieldName: 'value', fieldValue: String(duration) },
+    { nodeId: GENJUTSU_VIDEO_MEGAPIXELS_NODE, fieldName: 'megapixels', fieldValue: String(megapixels) },
+  ]
+
+  const body = {
+    nodeInfoList,
+    instanceType: 'default',
+    usePersonalQueue: 'false',
+  }
+
+  const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${RUNNINGHUB_GENJUTSU_VIDEO_APP_ID}`
+
+  const MAX_RETRIES = 3
+  const RETRY_DELAY_MS = 10000
+  let lastRawText = ''
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    console.log(`[runninghub] POST ${endpoint} (genjutsu-video attempt ${attempt}/${MAX_RETRIES})`)
+
+    const apiRes = await rhFetch(apiKey, endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+    })
+
+    lastRawText = await apiRes.text()
+    console.log(`[runninghub] submit-genjutsu-video ${apiRes.status}:`, lastRawText.slice(0, 1000))
+
+    let data: any
+    try { data = JSON.parse(lastRawText) } catch { data = { raw: lastRawText } }
+
+    const rhCode = data.code ?? data.errorCode
+    const rhMsg = data.msg || data.errorMessage || data.message
+
+    if (apiRes.status === 429 || rhCode === 429) {
+      return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data, retryable: true })
+    }
+
+    if (rhCode === 421 || rhCode === '421') {
+      console.log(`[runninghub] Queue limit (421), retrying in ${RETRY_DELAY_MS / 1000}s... (${attempt}/${MAX_RETRIES})`)
+      if (attempt < MAX_RETRIES) {
+        await new Promise(r => setTimeout(r, RETRY_DELAY_MS))
+        continue
+      }
+      return res.status(200).json({ ok: false, error: 'Queue limit reached, coba lagi dalam beberapa menit', data, retryable: true })
+    }
+
+    if (rhCode !== undefined && rhCode !== 0 && rhCode !== '0' && rhCode !== '') {
+      const errorMsg = translateRhError(String(rhCode), rhMsg) || rhMsg || `Error code: ${rhCode}`
+      return res.status(200).json({ ok: false, error: errorMsg, code: rhCode, data })
+    }
+
+    const taskId = data.data?.taskId || data.taskId || data.id || data.task_id
+    if (!taskId) {
+      console.error(`[runninghub] No taskId found (genjutsu-video):`, JSON.stringify(data).slice(0, 500))
+      return res.status(200).json({ ok: false, error: rhTaskErrorFrom(data) || 'No taskId returned', raw: lastRawText.slice(0, 500) })
+    }
+
+    return res.status(200).json({
+      ok: true,
+      data: {
+        id: taskId,
+        taskId,
+        status: data.data?.status || data.status || 'QUEUED',
+        provider: 'runninghub',
+        workflowId: RUNNINGHUB_GENJUTSU_VIDEO_APP_ID,
       },
     })
   }

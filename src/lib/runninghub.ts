@@ -46,6 +46,19 @@ export const MUSIC_VIDEO_ASPECTS = [
 ]
 export const MUSIC_VIDEO_DEFAULT_ASPECT = '9:16 (Portrait Widescreen)'
 
+// Eposcents_Mini Genjutsu Video 15 sec BETA (app 2109987145921355777):
+// motion control - image + video → video. Node 51 = image, 27 = video,
+// 263 = text (prompt), 259 = value (duration), 252 = megapixels.
+// https://www.runninghub.ai/id/ai-detail/2109987145921355777
+export const RUNNINGHUB_GENJUTSU_VIDEO_APP_ID = '2109987145921355777'
+export const GENJUTSU_VIDEO_IMAGE_NODE = '51'
+export const GENJUTSU_VIDEO_VIDEO_NODE = '27'
+export const GENJUTSU_VIDEO_PROMPT_NODE = '263'
+export const GENJUTSU_VIDEO_DURATION_NODE = '259'
+export const GENJUTSU_VIDEO_MEGAPIXELS_NODE = '252'
+export const GENJUTSU_VIDEO_DEFAULT_DURATION = '14'
+export const GENJUTSU_VIDEO_DEFAULT_MEGAPIXELS = '0.6000000000000001'
+
 // FLUX.1 Kontext image edit (instruksi bahasa alami):
 // node 28 = image (foto), node 31 = text (perintah edit)
 export const RUNNINGHUB_IMAGE_EDIT_WORKFLOW_ID = '1928844216607129602'
@@ -844,6 +857,45 @@ export async function submitRunningHubViralEffects(params: ViralEffectsParams): 
   }
 }
 
+export interface GenjutsuVideoParams {
+  imageFile: File
+  videoFile: File
+  prompt?: string
+  duration?: number
+  megapixels?: string
+  apiKey?: string
+  appId?: string
+}
+
+export async function submitRunningHubGenjutsuVideo(params: GenjutsuVideoParams): Promise<MotionControlResult> {
+  const appId = params.appId || RUNNINGHUB_GENJUTSU_VIDEO_APP_ID
+
+  const [imageBase64, videoBase64] = await Promise.all([
+    fileToBase64(params.imageFile),
+    fileToBase64(params.videoFile),
+  ])
+
+  const result = await runninghubProxy('submit-genjutsu-video', {
+    app_id: appId,
+    imageBase64,
+    imageFileName: params.imageFile.name,
+    imageMimeType: params.imageFile.type || 'image/jpeg',
+    videoBase64,
+    videoFileName: params.videoFile.name,
+    videoMimeType: params.videoFile.type || 'video/mp4',
+    prompt: params.prompt || '',
+    duration: params.duration ?? 14,
+    megapixels: params.megapixels || GENJUTSU_VIDEO_DEFAULT_MEGAPIXELS,
+  }, params.apiKey)
+
+  return {
+    id: result.id || result.taskId,
+    taskId: result.taskId || result.id,
+    status: result.status || 'QUEUED',
+    provider: result.provider || 'runninghub',
+    workflowId: result.workflowId || appId,
+  }
+}
 export interface VideoUpscaleParams {
   videoFile: File
   steps?: number
