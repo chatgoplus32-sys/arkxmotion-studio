@@ -41,6 +41,7 @@ import {
   reserveChargeTicket,
 } from '../lib/nexabotChargeTicket.js'
 import { hasActiveUnlimited } from '../lib/nexabotMasterKey.js'
+import { autoRefundUsage } from '../lib/autoRefund.js'
 import { nexadanceQuota, nexadanceQuotaMessage } from '../lib/nexabotQuota.js'
 import { recordUpstreamUsage, userIdFromRequest, type ResolvedCredential } from '../lib/nexabotUpstreamUsage.js'
 import { getNexabotSubmitQueueConfig } from '../lib/nexabotQueueSettings.js'
@@ -860,7 +861,15 @@ function upstreamMenolakSebelumJob(status: number, bodyText: string): boolean {
 /** Catat hasil relay pada tiket: hanguskan kalau job dibuat, lepas kalau ditolak. */
 function selesaikanTiket(usageId: number, status: number, bodyText: string): void {
   if (upstreamMembuatJob(status, bodyText)) consumeChargeTicket(usageId, jobIdDari(bodyText))
-  else if (upstreamMenolakSebelumJob(status, bodyText)) releaseChargeTicket(usageId)
+  else if (upstreamMenolakSebelumJob(status, bodyText)) {
+    releaseChargeTicket(usageId)
+    // Generate ini jelas tidak pernah membuat job — kembalikan saldonya langsung.
+    // Idempoten dengan /refund: pemanggilan klien setelah ini = no-op.
+    const hasil = autoRefundUsage('nexabot_usage', 'nexabot_balance', usageId)
+    if (hasil.refunded) {
+      console.warn(`[nexabot-local] pre-job gagal (HTTP ${status}) — saldo dikembalikan otomatis: ${hasil.amount} unit`)
+    }
+  }
 }
 
 // Alias query → path: /api/public/nexabot?action=session (juga credit,
@@ -1815,12 +1824,19 @@ router.post('/nexadance', async (req: Request, res: Response) => {
   const durasi = body?.duration == null ? 20 : Number(body.duration)
   if (!body?.prompt || String(body.prompt).trim().length === 0) {
     lepasReservasi(auth.accountId)
-    if (tiket.usageId) releaseChargeTicket(tiket.usageId)
+    if (tiket.usageId) {
+      releaseChargeTicket(tiket.usageId)
+      // Validasi pra-job: tidak pernah membuat job — kembalikan saldonya.
+      autoRefundUsage('nexabot_usage', 'nexabot_balance', tiket.usageId)
+    }
     return res.status(400).json({ ok: false, error: 'NexaDance 3.0 butuh prompt' })
   }
   if (durasi !== 20) {
     lepasReservasi(auth.accountId)
-    if (tiket.usageId) releaseChargeTicket(tiket.usageId)
+    if (tiket.usageId) {
+      releaseChargeTicket(tiket.usageId)
+      autoRefundUsage('nexabot_usage', 'nexabot_balance', tiket.usageId)
+    }
     return res.status(400).json({ ok: false, error: 'Durasi NexaDance 3.0 hanya 20 detik' })
   }
   // Upstream hanya menerima ratio angka: 1 = 16:9, 2 = 9:16.

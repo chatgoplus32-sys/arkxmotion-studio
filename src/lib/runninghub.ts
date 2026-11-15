@@ -1396,6 +1396,17 @@ function translateWorkflowError(detail: string, code: string): string {
   if (/API balance is insufficient/i.test(detail)) {
     return `Task gagal${code}: Saldo LLM API RunningHub tidak cukup — fitur ini butuh "LLM API Balance" (terpisah dari saldo poin). Isi ulang di RunningHub (menu LLM API / API Balance) lalu coba lagi.`
   }
+  // 805 = node RuntimeError — app gagal startup di GPU instance (bukan saldo/key).
+  // Server yang baru mengirim pesan serupa; cabang ini menjamin UI tetap jelas
+  // juga untuk respons failedReason kosong ('[805] {}').
+  if (code.includes('805') || /\b805\b/.test(detail)) {
+    // '[805] {}' (failedReason kosong dari RunningHub) = noise, jangan ditampilkan;
+    // detail yang sudah memuat pesan server ('node RuntimeError ...') juga tidak
+    // perlu diulang.
+    const isNoise = /^\[\s*805\s*\]\s*(\{\})?$/.test(detail.trim()) || detail.includes('node RuntimeError')
+    const raw = detail && !isNoise ? ` Detail asli: ${detail}` : ''
+    return `Task gagal${code}: node RuntimeError — app RunningHub gagal startup di kelas GPU yang dipakai (bukan masalah saldo/API key). Coba instance Ultra (84G) atau Default (24G), turunkan duration/megapixels, atau ulangi 1-2 menit lagi.${raw}`
+  }
   if (isWorkflowFailure(detail)) {
     return `Task gagal${code}: Workflow RunningHub gagal dijalankan. Penyebab umum: (1) gambar input ditolak model — coba JPG ≥512px, bukan hasil kompres terlalu kecil; (2) prompt terlalu pendek — coba Inggris deskriptif mis. "convert to cartoon style, keep face identity"; (3) workflow Kontext error/overload — coba lagi 1-2 menit; (4) saldo poin akun habis. Detail asli: ${detail}`
   }

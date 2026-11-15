@@ -8,6 +8,7 @@ import { rhJwtExp, rhJwtExpired, rhJwtSub } from '../lib/rhJwt.js'
 import { userIdFromToken } from '../lib/appToken.js'
 import { isAdminUser, keyEligibility, masterKey } from '../lib/providerMasterKey.js'
 import { claimChargeTicket, noteChargeTicketJob, releaseChargeTicket } from '../lib/providerChargeTicket.js'
+import { autoRefundUsage } from '../lib/autoRefund.js'
 import { rhBuildRunBody, rhRunOptions, rhWebhookCallbackUrl } from '../lib/runninghubOpenApi.js'
 import {
   rhPoolCandidates,
@@ -21,6 +22,19 @@ import {
 
 // Dipakai ulang oleh scheduler klaim harian & modul lain (lihat lib/rhJwt.ts).
 export { rhJwtExp, rhJwtExpired, rhJwtSub }
+
+/**
+ * Gagal SEBELUM task terbentuk — lepas klaim tiket sekaligus kembalikan saldonya.
+ * Idempoten dengan /api/runninghub-wallet/refund: pemanggilan klien setelah ini
+ * = no-op. Hanya dipanggil di jalur yang tidak pernah membuat task upstream.
+ */
+function lepasKlaimDanKembalikanSaldo(usageId: number, sebab: string) {
+  releaseChargeTicket('runninghub', usageId)
+  const hasil = autoRefundUsage('runninghub_usage', 'runninghub_balance', usageId)
+  if (hasil.refunded) {
+    console.warn(`[runninghub-relay] ${sebab} — saldo dikembalikan otomatis: ${hasil.amount} unit`)
+  }
+}
 
 // ── Watermark Cleaner ─────────────────────────────────────────────────────
 const PYTHON_SCRIPT = join(process.cwd(), 'python', 'watermark_cleaner', 'cli.py')
@@ -850,7 +864,7 @@ async function runRhWithPool(action: string, params: any, realRes: Response, usa
   }
 
   if (candidates.length === 0) {
-    if (usageId) releaseChargeTicket('runninghub', usageId)
+    if (usageId) lepasKlaimDanKembalikanSaldo(usageId, 'pool token master kosong')
     return realRes.status(200).json({
       ok: false,
       error: 'Tidak ada token master RunningHub yang tersedia saat ini. Admin perlu menambah token di pool, atau pakai access token/API key RunningHub Anda sendiri.',
@@ -889,11 +903,11 @@ async function runRhWithPool(action: string, params: any, realRes: Response, usa
       continue
     }
     // Error non-kredensial (param/workflow salah): rotasi tidak menolong.
-    if (usageId) releaseChargeTicket('runninghub', usageId)
+    if (usageId) lepasKlaimDanKembalikanSaldo(usageId, 'error non-kredensial')
     return cap.flush()
   }
 
-  if (usageId) releaseChargeTicket('runninghub', usageId)
+  if (usageId) lepasKlaimDanKembalikanSaldo(usageId, 'semua kandidat token master gagal')
   if (last && rhPoolVerdict(last) === 'saldo') {
     return realRes.status(200).json({
       ok: false,
@@ -990,7 +1004,7 @@ router.all('/', async (req: Request, res: Response) => {
     return await runRhWithPool(action, params, res, usageId)
   } catch (err: any) {
     console.error('[runninghub] pool error:', err.message)
-    if (usageId) releaseChargeTicket('runninghub', usageId)
+    if (usageId) lepasKlaimDanKembalikanSaldo(usageId, 'exception sebelum task terbentuk')
     return res.status(200).json({ ok: false, error: err.message })
   }
 })
@@ -2227,8 +2241,14 @@ async function handleSubmitGenjutsuVideo(apiKey: string, params: any, res: Respo
   ]
 
   // Genjutsu Video (motion transfer) butuh VRAM lebih besar dari instance
-  // default (24G) — default 'plus' (48G). Client bisa override via params.
-  const opts = rhRunOptions({ instanceType }, { instanceType: 'plus' })
+  // default (24G) — default tetap 'plus' (48G) kalau client tidak mengisi.
+  // Pilihan GPU dari client ('default' | 'plus' | 'ultra') DIHORMATI —
+  // dulu dipaksa 'plus' di sini sehingga tombol di UI diabaikan dan task
+  // selalu crash 805 (node RuntimeError saat startup) di instance 48G.
+  const effectiveInstance = ['default', 'plus', 'ultra'].includes(String(instanceType ?? '').toLowerCase())
+    ? String(instanceType).toLowerCase()
+    : 'plus'
+  const opts = rhRunOptions({ instanceType: effectiveInstance })
   const body = rhBuildRunBody({ nodeInfoList, instanceType: opts.instanceType, usePersonalQueue: opts.usePersonalQueue })
 
   console.log(`[runninghub] submit-genjutsu-video instanceType=${opts.instanceType} usePersonalQueue=${opts.usePersonalQueue}`)
@@ -3824,6 +3844,16 @@ async function handleQuery(apiKey: string, taskId: string, res: Response) {
     } else if (fr && typeof fr === 'object') {
       failedDetail = `[${taskData.errorCode || data.errorCode || ''}] ${JSON.stringify(fr)}`
     }
+    // 805 = node RuntimeError — app gagal startup di GPU instance (mis. instance
+    // 48G penuh/crash). RunningHub sering mengembalikan failedReason = {} untuk
+    // kasus ini; jangan tampilkan mentah '[805] {}' — beri petunjuk aksi konkret,
+    // raw tetap disertakan untuk debug.
+    const errCode = String(taskData.errorCode ?? data.errorCode ?? '')
+    if (errCode === '805') {
+      const raw = failedDetail ? ` Raw: ${failedDetail}` : ''
+      failedDetail = `node RuntimeError saat startup (errorCode 805) — app gagal boot di GPU instance (bukan saldo/API key). Coba instance Ultra (84G) atau Default (24G), turunkan duration/megapixels, atau ulangi 1-2 menit lagi.${raw}`
+    }
+    console.error(`[runninghub] Task FAILED taskId=${taskId} code=${errCode || '?'} failedReason=${fr === null ? 'null' : JSON.stringify(fr)}`)
   }
 
   // ── Parse usage fields from RunningHub OpenAPI v2 query response ────────

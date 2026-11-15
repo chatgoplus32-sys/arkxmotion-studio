@@ -96,10 +96,10 @@ router.post('/deduct', authenticateToken, (req: AuthRequest, res: Response) => {
     }
 
     db.prepare('UPDATE createpulse_balance SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?').run(cost, userId)
-    db.prepare('INSERT INTO createpulse_usage (user_id, model, cost, batch_id, status) VALUES (?, ?, ?, ?, ?)').run(userId, model, cost, batch_id || '', 'used')
+    const insert = db.prepare('INSERT INTO createpulse_usage (user_id, model, cost, batch_id, status) VALUES (?, ?, ?, ?, ?)').run(userId, model, cost, batch_id || '', 'used')
 
     const updated = db.prepare('SELECT balance FROM createpulse_balance WHERE user_id = ?').get(userId) as { balance: number }
-    res.json({ balance: updated.balance, deducted: cost })
+    res.json({ balance: updated.balance, deducted: cost, usage_id: Number(insert.lastInsertRowid) })
   } catch (error) {
     console.error('Deduct error:', error)
     res.status(500).json({ error: 'Internal server error' })

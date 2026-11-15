@@ -1271,6 +1271,7 @@ ATURAN MUTLAK:
                         <option value="TikSehat">TikSehat</option>
                         <option value="Sehat30Hari">Sehat30Hari</option>
                         <option value="SiKawanSehat">SiKawanSehat</option>
+                         <option value="BodyTalk">BodyTalk</option>
                          <option value="Pixar 3D Cartoon">Pixar 3D Cartoon</option>
                          <option value="Claymorphism 3D">Claymorphism 3D</option>
                          <option value="2D Flat Illustration">2D Flat Illustration</option>
@@ -1698,6 +1699,7 @@ ATURAN MUTLAK:
                           <option value="TikSehat">TikSehat</option>
                           <option value="Sehat30Hari">Sehat30Hari</option>
                           <option value="SiKawanSehat">SiKawanSehat</option>
+                         <option value="BodyTalk">BodyTalk</option>
                          <option value="Pixar 3D Cartoon">Pixar 3D Cartoon</option>
                          <option value="Claymorphism 3D">Claymorphism 3D</option>
                          <option value="2D Flat Illustration">2D Flat Illustration</option>

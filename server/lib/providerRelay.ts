@@ -1,7 +1,8 @@
 import type { Request } from 'express'
 import { userIdFromToken } from './appToken.js'
-import { isAdminUser, keyEligibility, masterKey, providerLabel, type ServerKeyProvider } from './providerMasterKey.js'
+import { isAdminUser, keyEligibility, masterKey, providerLabel, PROVIDER_SPECS, type ServerKeyProvider } from './providerMasterKey.js'
 import { claimChargeTicket, noteChargeTicketJob, releaseChargeTicket } from './providerChargeTicket.js'
+import { autoRefundUsage } from './autoRefund.js'
 
 /**
  * Kebijakan kredensial relay Seavi.
@@ -130,5 +131,12 @@ export function settleTicket(
     noteChargeTicketJob(provider, usageId, jobIdDari(bodyText))
   } else if (menolakSebelumJob(status, bodyText)) {
     releaseChargeTicket(provider, usageId)
+    // Generate ini jelas tidak pernah membuat job — kembalikan saldonya langsung.
+    // Idempoten dengan /refund: pemanggilan klien setelah ini = no-op.
+    const spec = PROVIDER_SPECS[provider]
+    const hasil = autoRefundUsage(spec.usageTable, spec.balanceTable, usageId)
+    if (hasil.refunded) {
+      console.warn(`[${provider}-relay] pre-job gagal (HTTP ${status}) — saldo dikembalikan otomatis: ${hasil.amount} unit`)
+    }
   }
 }
