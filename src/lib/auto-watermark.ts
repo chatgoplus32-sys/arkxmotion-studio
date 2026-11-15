@@ -316,47 +316,11 @@ export async function autoRemoveWatermarkFromVideo(
   }
 
   if (plan) {
-    // ── Jalur exact (reverse-alpha + seam per frame) ─────────────────
+    // ── Jalur exact (reverse-alpha per frame, tanpa seam-blur) ──────
     const plans: GeminiFramePlan[] = [plan]
     const keyOf = (p: GeminiFramePlan) =>
       `${p.position.x},${p.position.y},${p.position.width},${p.position.height}`
     let lastProbe = -99
-
-    const buildCleanupMask = (): ImageData | null => {
-      if (plans.length === 0) return null
-      const mask = new ImageData(width, height)
-      let painted = false
-      for (const p of plans) {
-        const pad = Math.round(Math.min(p.position.width, p.position.height) * 0.15)
-        const x0 = Math.max(0, p.position.x - pad)
-        const y0 = Math.max(0, p.position.y - pad)
-        const x1 = Math.min(width, p.position.x + p.position.width + pad)
-        const y1 = Math.min(height, p.position.y + p.position.height + pad)
-        for (let py = y0; py < y1; py++) {
-          for (let px = x0; px < x1; px++) {
-            const idx = (py * width + px) * 4
-            mask.data[idx] = 255
-            mask.data[idx + 1] = 0
-            mask.data[idx + 2] = 0
-            mask.data[idx + 3] = 255
-          }
-        }
-        painted = true
-      }
-      return painted ? mask : null
-    }
-
-    let cleanupCleaner = createSeamFrameProcessor(
-      buildCleanupMask() ?? new ImageData(width, height),
-      width,
-      height,
-    )
-    const rebuildCleaner = () => {
-      const mask = buildCleanupMask()
-      if (!mask) return
-      const next = createSeamFrameProcessor(mask, width, height)
-      if (next) cleanupCleaner = next
-    }
 
     const frameProcessor = (ctx: CanvasRenderingContext2D, t: number) => {
       const w = ctx.canvas.width
@@ -370,17 +334,14 @@ export async function autoRemoveWatermarkFromVideo(
         repairDarkOutlineContourROI(roi, p.alphaMap)
         ctx.putImageData(roi, x, y)
       }
-      // Inpaint per-frame di region yang sama: menghapus sisa yang tidak
-      // luruh oleh reverse-alpha, dari konteks frame itu sendiri.
-      if (cleanupCleaner) cleanupCleaner.process(ctx)
-      // Re-deteksi jarang (mahal): watermark bisa berpindah/muncul belakangan.
+      // Inpaint seam-blur DIHAPUS — reverse-alpha + perbaikan kontur sudah
+      // mengembalikan piksel asli; seam-blur justru mengaburkan detail organik.
       if (t >= 10 && t - lastProbe >= 6 && w > 0 && h > 0) {
         lastProbe = t
         const snap = ctx.getImageData(0, 0, w, h)
         void createGeminiFramePlan(snap).then((np) => {
           if (np && !plans.some((p) => keyOf(p) === keyOf(np))) {
             plans.push(np)
-            rebuildCleaner()
             notice(`🧲 Watermark baru terdeteksi di posisi lain (${t.toFixed(1)}s) — ikut dibersihkan`, 'info')
           }
         }).catch(() => { /* probe hanya bonus */ })

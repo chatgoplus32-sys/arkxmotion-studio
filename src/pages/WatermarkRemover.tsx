@@ -214,41 +214,6 @@ export default function WatermarkRemoverPage() {
       `${p.position.x},${p.position.y},${p.position.width},${p.position.height}`
     let lastProbe = -99
 
-    // Pembersih inpaint AI per-frame untuk SISA yang tak luruh oleh
-    // reverse-alpha (rim gelap varian weak-alpha). Mask = union rect semua
-    // plan + padding kecil. Saat plan baru muncul, mask diperbarui.
-    const buildCleanupMask = (): ImageData | null => {
-      if (plans.length === 0) return null
-      const mask = new ImageData(dims.width, dims.height)
-      let painted = false
-      for (const p of plans) {
-        const pad = Math.round(Math.min(p.position.width, p.position.height) * 0.15)
-        const x0 = Math.max(0, p.position.x - pad)
-        const y0 = Math.max(0, p.position.y - pad)
-        const x1 = Math.min(dims.width, p.position.x + p.position.width + pad)
-        const y1 = Math.min(dims.height, p.position.y + p.position.height + pad)
-        for (let py = y0; py < y1; py++) {
-          for (let px = x0; px < x1; px++) {
-            const idx = (py * dims.width + px) * 4
-            mask.data[idx] = 255
-            mask.data[idx + 1] = 0
-            mask.data[idx + 2] = 0
-            mask.data[idx + 3] = 255
-          }
-        }
-        painted = true
-      }
-      return painted ? mask : null
-    }
-
-    let cleanupCleaner = createSeamFrameProcessor(buildCleanupMask() ?? new ImageData(dims.width, dims.height), dims.width, dims.height)
-    const rebuildCleaner = () => {
-      const mask = buildCleanupMask()
-      if (!mask) return
-      const next = createSeamFrameProcessor(mask, dims.width, dims.height)
-      if (next) cleanupCleaner = next
-    }
-
     const frameProcessor = (ctx: CanvasRenderingContext2D, t: number) => {
       const w = ctx.canvas.width, h = ctx.canvas.height
       for (const p of plans) {
@@ -260,9 +225,9 @@ export default function WatermarkRemoverPage() {
         repairDarkOutlineContourROI(roi, p.alphaMap)
         ctx.putImageData(roi, x, y)
       }
-      // Inpaint AI per-frame di region yang sama: menghapus sisa rim/fill
-      // yang didn't luruh, dari konteks frame itu sendiri (tanpa patch beku).
-      if (cleanupCleaner) cleanupCleaner.process(ctx)
+      // Inpaint per-frame DIHAPUS: reverse-alpha + perbaikan kontur sudah
+      // mengembalikan piksel asli — seam-blur yang jalan menyusul justru membuat
+      // area bekas watermark terlihat berantakan/buram di latar organik.
       // Re-detect periodik (mahal — dijalankan jarang; snapshot dibaca
       // SETELAH semua plan dibersihkan, jadi hanya posisi BARU yang match).
       if (t >= 10 && t - lastProbe >= 6 && w > 0 && h > 0) {
@@ -271,7 +236,6 @@ export default function WatermarkRemoverPage() {
         void createGeminiFramePlan(snap).then((np) => {
           if (np && !plans.some((p) => keyOf(p) === keyOf(np))) {
             plans.push(np)
-            rebuildCleaner()
             addToast(`🧲 Watermark baru terdeteksi di posisi lain (${t.toFixed(1)}s) — ikut dibersihkan`, 'info')
           }
         }).catch(() => { /* probe hanya bonus */ })
