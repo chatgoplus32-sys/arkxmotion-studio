@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
-import { useToastStore } from '@/stores/toastStore'
 import {
   LayoutDashboard, Sparkles, Video, Image, AudioLines, Wand2, ShoppingBag,
-  Music, Mic, Upload, SlidersHorizontal, Route, Settings, Bell, Search,
-  ArrowRight, Command as CommandIcon, X, ChevronRight, Scissors, Waves,
-  BarChart3, Activity, Users, Coins, CreditCard, Puzzle, FileText, Rocket,
+  Music, Mic, Upload, Route, Settings, Search,
+  Command as CommandIcon, X, ChevronRight, Scissors, Waves,
+  BarChart3, Activity, Users, Coins, CreditCard, FileText, Rocket,
   type LucideIcon,
 } from 'lucide-react'
 import { trackCmdUse, topFrequent } from '@/lib/cmdUsage'
@@ -55,7 +54,6 @@ export default function CommandPalette() {
   const navigate = useNavigate()
   const location = useLocation()
   const user = useAuthStore((s) => s.user)
-  const addToast = useToastStore((s) => s.addToast)
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState(0)

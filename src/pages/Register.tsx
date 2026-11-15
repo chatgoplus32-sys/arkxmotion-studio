@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
-import { UserPlus, Mail, Lock, User, AlertCircle, CheckCircle, CheckCircle2, MessageCircle, Crown, Sparkles, ArrowRight, ShieldCheck, Zap, Star } from 'lucide-react'
+import { UserPlus, Mail, Lock, User, AlertCircle, CheckCircle, CheckCircle2, MessageCircle, Crown, ArrowRight, ShieldCheck, Zap, Star } from 'lucide-react'
 import { BasunipayCheckoutButton } from '@/components/QrisPayment'
 import {
   DEFAULT_MEMBERSHIP_FEE,

@@ -468,7 +468,7 @@ export async function scanMetadataFFmpeg(file: File): Promise<string[]> {
   if (start === -1) return []
   const found: string[] = []
   for (let i = start + 1; i < lines.length; i++) {
-    const m = lines[i].match(/^\s{4,}([\w ()/\-]+?)\s*:\s+(.*)$/)
+    const m = lines[i].match(/^\s{4,}([\w ()/-]+?)\s*:\s+(.*)$/)
     if (!m) break
     found.push(`${m[1].trim()}: ${m[2].trim()}`)
   }

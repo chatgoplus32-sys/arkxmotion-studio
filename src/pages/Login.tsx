@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { logAudit } from '@/lib/auditLog'
-import { LogIn, Mail, Lock, AlertCircle, Sparkles, ArrowRight, ShieldCheck, Zap, Star, CheckCircle2 } from 'lucide-react'
+import { LogIn, Mail, Lock, AlertCircle, Sparkles, ShieldCheck, Zap, Star, CheckCircle2 } from 'lucide-react'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')

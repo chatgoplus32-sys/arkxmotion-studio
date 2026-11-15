@@ -10,11 +10,11 @@ import { checkAllProviderHealth, HEALTH_PROVIDERS, ProviderHealth } from '@/lib/
 import { getAppAuthToken } from '@/lib/cdn'
 import { useToastStore } from '@/stores/toastStore'
 import {
-  Video, Image, Zap, Wand2, Route, Key, ArrowRight, Music,
-  BarChart3, Target, Clock3, Trophy, Coins, RefreshCw, Loader2,
-  CheckCircle2, XCircle, Gauge, ChevronRight, Flame, TrendingUp, Activity,
+  Video, Image, Zap, Wand2, ArrowRight, Music,
+  BarChart3, Target, Clock3, Coins, RefreshCw, Loader2,
+  CheckCircle2, XCircle, Gauge, ChevronRight, TrendingUp,
   Play, Crown, Sparkles, Gift, Headphones, ArrowUpRight, Scissors,
-  HelpCircle, MessageCircle, ArrowUp, BookOpen, Shield, FolderOpen,
+  MessageCircle, ArrowUp, BookOpen, Shield, FolderOpen,
   Send, X
 } from 'lucide-react'
 
@@ -66,21 +66,6 @@ function MiniBarChart({ data, maxBars = 7 }: { data: Array<{ date: string; count
           </div>
         )
       })}
-    </div>
-  )
-}
-
-function CircularProgress({ value, size = 52, strokeWidth = 4, color = 'stroke-emerald-400' }: { value: number; size?: number; strokeWidth?: number; color?: string }) {
-  const radius = (size - strokeWidth) / 2
-  const circumference = 2 * Math.PI * radius
-  const offset = circumference - (value / 100) * circumference
-  return (
-    <div className="relative" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="-rotate-90">
-        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="currentColor" strokeWidth={strokeWidth} className="text-white/10" />
-        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" strokeWidth={strokeWidth} strokeLinecap="round" className={`${color} transition-all duration-1000 drop-shadow-[0_0_6px_currentColor]`} strokeDasharray={circumference} strokeDashoffset={offset} />
-      </svg>
-      <span className="absolute inset-0 grid place-items-center text-[11px] font-black text-white">{value}%</span>
     </div>
   )
 }
@@ -144,14 +129,14 @@ const HELP_LINKS: HelpLink[] = [
 
 export default function DashboardPage() {
   const navigate = useNavigate()
-  const { keys, routing, fetchMaintenance } = useProviderManager()
+  const { keys, fetchMaintenance } = useProviderManager()
   const user = useAuthStore((s) => s.user)
   const isPro = user?.role === 'admin' || user?.plan === 'pro'
   const [activity, setActivity] = useState<RecentActivity[]>([])
   const [genStats, setGenStats] = useState<DashboardStats | null>(null)
   const [health, setHealth] = useState<Record<string, ProviderHealth>>({})
   const [healthLoading, setHealthLoading] = useState(true)
-  const [healthAt, setHealthAt] = useState<number | null>(null)
+  const [, setHealthAt] = useState<number | null>(null)
   const addToast = useToastStore((s) => s.addToast)
   const [featureOpen, setFeatureOpen] = useState(false)
   const [featureText, setFeatureText] = useState('')
@@ -211,19 +196,6 @@ export default function DashboardPage() {
     const interval = setInterval(runHealth, 60000)
     return () => clearInterval(interval)
   }, [runHealth])
-
-  const keyStats = useMemo(() => {
-    const allProviders = ['weavy', 'wavespeed', 'roboneo', 'framia', 'leonardo', 'galleri5', 'oneover', 'firefly', 'createpulse'] as const
-    let activeKeys = 0, totalKeys = 0
-    const providerKeys: Record<string, number> = {}
-    allProviders.forEach((p) => {
-      const k = (keys as any)[p] || []
-      totalKeys += k.length
-      activeKeys += k.filter((kk: any) => kk.status === 'active' || kk.status === 'unknown').length
-      if (k.length > 0) providerKeys[p] = k.length
-    })
-    return { activeKeys, totalKeys, providerKeys, providerCount: Object.keys(providerKeys).length }
-  }, [keys])
 
   const healthSummary = useMemo(() => {
     let online = 0, busy = 0, down = 0

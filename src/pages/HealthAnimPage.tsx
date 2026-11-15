@@ -16,7 +16,7 @@ import { chargeNexabotWallet, refundNexabotWallet } from '@/lib/nexabotWallet';
 import { startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks';
 import { runNexabotJobWithSessionFallback } from '@/pages/image-to-video/nexabotSessionFallback';
 import { useAuthStore } from '@/stores/authStore';
-import { Lightbulb, FileText, Image as ImageIcon, Sparkles, Loader2, Check, Copy, Menu, X, ArrowRight, ArrowLeft, PlayCircle, List, Trash2, AlertCircle, Video, ScanSearch, Upload, ShoppingBag, Plus, Zap, ImagePlay, Settings, KeyRound, Lock } from 'lucide-react';
+import { Lightbulb, FileText, Image as ImageIcon, Sparkles, Loader2, Check, Copy, X, ArrowRight, ArrowLeft, PlayCircle, List, Trash2, AlertCircle, Video, ScanSearch, Upload, ShoppingBag, Plus, Zap, ImagePlay, KeyRound, Lock } from 'lucide-react';
 
 // ============================================================================
 // KONFIGURASI TIPE SKEMA AI
@@ -157,8 +157,8 @@ const CustomStyles = () => (
     }
 
     .arkx-health .bg-white { background-color: #0c0c1a !important; }
-    .arkx-health .bg-white\/90 { background-color: rgba(12,12,26,.92) !important; }
-    .arkx-health .bg-white\/95 { background-color: rgba(12,12,26,.96) !important; }
+    .arkx-health .bg-white/90 { background-color: rgba(12,12,26,.92) !important; }
+    .arkx-health .bg-white/95 { background-color: rgba(12,12,26,.96) !important; }
     .arkx-health .bg-slate-50 { background-color: #050510 !important; }
     .arkx-health .bg-slate-100 { background-color: #12122a !important; }
     .arkx-health .bg-slate-200 { background-color: #16162e !important; }
@@ -193,13 +193,13 @@ const CustomStyles = () => (
     .arkx-health .border-amber-200 { border-color: rgba(245,158,11,.35) !important; }
     .arkx-health .ring-indigo-100 { --tw-ring-color: rgba(0,168,255,.22) !important; }
 
-    .arkx-health .hover\:bg-slate-50:hover { background-color: rgba(255,255,255,.05) !important; }
-    .arkx-health .hover\:bg-slate-100:hover { background-color: rgba(255,255,255,.07) !important; }
-    .arkx-health .hover\:bg-indigo-100:hover { background-color: rgba(0,168,255,.22) !important; }
-    .arkx-health .hover\:text-slate-800:hover { color: #ffffff !important; }
-    .arkx-health .hover\:text-indigo-600:hover,
-    .arkx-health .hover\:text-indigo-800:hover { color: #66d3ff !important; }
-    .arkx-health .hover\:border-slate-300:hover { border-color: #2a2a45 !important; }
+    .arkx-health .hover:bg-slate-50:hover { background-color: rgba(255,255,255,.05) !important; }
+    .arkx-health .hover:bg-slate-100:hover { background-color: rgba(255,255,255,.07) !important; }
+    .arkx-health .hover:bg-indigo-100:hover { background-color: rgba(0,168,255,.22) !important; }
+    .arkx-health .hover:text-slate-800:hover { color: #ffffff !important; }
+    .arkx-health .hover:text-indigo-600:hover,
+    .arkx-health .hover:text-indigo-800:hover { color: #66d3ff !important; }
+    .arkx-health .hover:border-slate-300:hover { border-color: #2a2a45 !important; }
 
     .arkx-health input,
     .arkx-health select,
@@ -243,10 +243,10 @@ const CopyButton = ({ text, title, label, className }: { text: string, title?: s
         document.execCommand('copy');
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
-      } catch (err) {} finally {
+      } catch {} finally {
         document.body.removeChild(textArea);
       }
-    } catch (err) {}
+    } catch {}
   };
 
   if (label) {
@@ -295,7 +295,6 @@ const HealthAnimTool = () => {
   const [activeTab, setActiveTab] = useState('ideas');
   const authToken = useAuthStore((state) => state.token);
   const authUser = useAuthStore((state) => state.user);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [appError, setAppError] = useState('');
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
   // Pengaturan AI (model + API key) hanya bisa diubah admin; member melihat versi read-only.
@@ -360,7 +359,6 @@ const HealthAnimTool = () => {
   const [loadingAffiliateScript, setLoadingAffiliateScript] = useState(false);
 
   const [progress, setProgress] = useState(0);
-  const [promptView, setPromptView] = useState('text');
   const progressInterval = useRef<any>(null);
 
   const [affiliateNoOverclaim, setAffiliateNoOverclaim] = useState(false);
@@ -368,16 +366,6 @@ const HealthAnimTool = () => {
   // ============================================================================
   // RESET FUNCTIONS (TOMBOL BUAT BARU)
   // ============================================================================
-  const resetOmniFlash = () => {
-    setOmniIdea('');
-    clearOmniVideo();
-    clearOmniScenes();
-    setOmniStatus('');
-    setOmniConfirmOpen(false);
-    setPrompts([]);
-    setProgress(0);
-  };
-
   const resetAffiliate = () => {
     setAffiliateProductPhoto(null);
     setAffiliateProductDesc('');

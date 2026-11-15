@@ -3,8 +3,8 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Badge } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
-import { Zap, Clock, CheckCircle, ExternalLink, Copy, Rocket, Film, ImageIcon, Video } from 'lucide-react'
-import { DANA_NUMBER, DANA_NAME, adminWhatsappLink, formatRp } from '@/lib/payment'
+import { Zap, Clock, CheckCircle, ExternalLink, Rocket, Film, ImageIcon, Video } from 'lucide-react'
+import { adminWhatsappLink, formatRp } from '@/lib/payment'
 import { PaymentMethodToggle, QrisPanel, BasunipayCheckoutButton } from '@/components/QrisPayment'
 import {
   fetchNexabotWallet,
@@ -98,11 +98,6 @@ export default function PremiumBoosterPage() {
       addToast('Network error', 'error')
     }
     setLoading(false)
-  }
-
-  const copyNumber = () => {
-    navigator.clipboard.writeText(DANA_NUMBER)
-    addToast('Nomor DANA disalin', 'info')
   }
 
   const formatDate = (value: string | null) => {

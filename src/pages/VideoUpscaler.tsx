@@ -4,9 +4,7 @@ import { Section, Button, Label, Select, EmptyState } from '@/components/ui'
 import { LogDetailActions } from '@/components/ui/LogDetailActions'
 import { Loader2, Upload, Download, X, Sparkles, CheckCircle2, AlertCircle, Clock, Clapperboard } from 'lucide-react'
 import { useToastStore } from '@/stores/toastStore'
-import { useAuthStore } from '@/stores/authStore'
 import { submitRunningHubVideoUpscale, pollRunningHubTask } from '@/lib/runninghub'
-import { uploadToCatbox } from '@/lib/roboneo'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { persistResultToR2, addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
 import { usePageActive } from '@/hooks/usePageActive'
@@ -50,7 +48,6 @@ function getStoredProviderKey(provider: string): string | null {
 
 export default function VideoUpscalerPage() {
   const addToast = useToastStore((s) => s.addToast)
-  const { token: authToken, user } = useAuthStore()
 
   const [videoFile, setVideoFile] = useState<File | null>(null)
   const [videoPreview, setVideoPreview] = useState<string | null>(null)

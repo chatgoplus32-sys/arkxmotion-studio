@@ -1375,7 +1375,7 @@ router.post('/credits/import', authenticateToken, requireAdmin, (req: AuthReques
         const name = (String(t?.name || '').trim() || `Key ${imported + skipped + 1}`).slice(0, 80)
         insert.run(provider, name, value)
         imported++
-      } catch (e: any) {
+      } catch {
         // CHECK constraint provider (skema lama) menolak provider di luar daftar
         invalid.push(provider)
         break

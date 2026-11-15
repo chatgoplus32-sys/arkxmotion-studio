@@ -23,7 +23,6 @@ import { describeFetchError } from '../lib/fetchTimeout.js'
 //   /v1/user/credits/findCredits  — saldo kredit akun (best-effort)
 
 const router = Router()
-const FREEBEAT_BASE = (process.env.FREEBEAT_BASE || 'https://freebeat.ai/api/proxy').replace(/\/+$/, '')
 
 const ALLOWED_PATHS = new Set([
   '/v1/ai/cli/createImageBatch',
@@ -72,7 +71,6 @@ async function freebeatFetch(upstreamPath: string, body: Uint8Array | undefined,
   ]
 
   let lastRes: any = null
-  let lastStatus = 0
 
   for (const base of bases) {
     for (const v of variants) {
@@ -84,7 +82,6 @@ async function freebeatFetch(upstreamPath: string, body: Uint8Array | undefined,
           signal: AbortSignal.timeout(120000),
         })
         lastRes = res
-        lastStatus = res.status
         // Jangan baca body di sini (stream hanya bisa dibaca sekali);
         // pemanggil akan membacanya setelah kita kembalikan res.
         if (res.status < 400 || (res.status !== 401 && res.status !== 403)) {
