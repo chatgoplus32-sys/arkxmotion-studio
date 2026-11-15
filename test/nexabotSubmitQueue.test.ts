@@ -90,8 +90,8 @@ test('lane concurrency 1: pemanggil kedua menunggu, tidak jalan bersamaan', asyn
   assert.ok(first)
   assert.equal(first.position, 0, 'yang pertama tidak mengantre')
   // Bukan 0 persis: acquire tetap satu putaran event loop, dan timer bisa
-  // meleset 1 ms di mesin yang sibuk.
-  assert.ok(first.waitMs <= 5, `pemanggil pertama menunggu ${first.waitMs}ms`)
+  // meleset beberapa ms di mesin yang sibuk.
+  assert.ok(first.waitMs <= 12, `pemanggil pertama menunggu ${first.waitMs}ms`)
 
   let pemanggilKeduaSelesai = false
   const kedua = acquireNexabotSubmitSlot(lane, cfg({ maxWaitMs: 5000 })).then((slot) => {
@@ -166,8 +166,8 @@ test('job yang berjalan menahan lane sampai benar-benar dilepas', () => {
 
 test('Retry-After sibuk memakai est_seconds job, dibatasi atas', () => {
   const lane = nexabotSubmitLaneKey({ kind: 'cookie', source: 'master', secret: 'job-unit-2' })
-  markNexabotJobRunning(lane, 'job-2', { nowMs: 0, estSeconds: 90 })
-  // Sisa 80 detik → dibatasi maxBusyRetryAfterSeconds (60).
+  markNexabotJobRunning(lane, 'job-2', { nowMs: 0, estSeconds: 999 })
+  // Sisa ~989 detik → dipotong maxBusyRetryAfterSeconds supaya klien tidak menebak tak tentu.
   assert.equal(nexabotLaneBusy(lane, 10_000).retryAfterSeconds, NEXABOT_JOB_LOCK.maxBusyRetryAfterSeconds)
 
   const tanpaEst = nexabotSubmitLaneKey({ kind: 'cookie', source: 'master', secret: 'job-unit-3' })

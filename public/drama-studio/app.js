@@ -129,19 +129,35 @@
   }
 
   // ── NexaBot (member pakai API key sendiri dari halaman Providers) ───────────
-  async function nexabotSubmitT2v({ prompt, ratio, resolution = 720, duration = 15 }) {
+  // Relay boleh menjawab 429 { ok:false, queued:true, retry_after_seconds } saat
+  // lane penuh (mis. sesi server/unlimited lagi mengerjakan satu job). App
+  // menunggu sejumlah detik itu lalu mencoba lagi otomatis — persis janji
+  // di pesan relay ("Permintaan Anda dicoba lagi otomatis dalam N detik").
+  // Batas percobaan diperbesar (16) supaya job video ~3-5 menit bisa menunggu
+  // job sebelumnya selesai tanpa member kehabisan kesabaran aplikasi.
+  async function nexabotSubmitT2v({ prompt, ratio, resolution = 720, duration = 15, onQueueWait }) {
     const k = memberKey(); if (!k) throw new Error('API key NexaBot belum diisi — tambahkan di halaman Providers.');
-    const t = await appToken();
-    const res = await fetch('/api/public/nexabot/submit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': k, ...(t ? { Authorization: 'Bearer ' + t } : {}) },
-      body: JSON.stringify({ mode: 't2v', prompt, ratio: ratioSubmit(ratio), resolution, duration }),
-    });
-    const data = await res.json().catch(() => null);
-    if (!res.ok || !data?.ok) throw new Error(data?.error || data?.errorMessage || `Submit gagal (HTTP ${res.status})`);
-    const jobId = data.jobId || data.id || data.taskId || data.data?.jobId || data.data?.id;
-    if (!jobId) throw new Error('Submit tidak mengembalikan job id.');
-    return jobId;
+    const MAX_429 = 16;
+    for (let attempt = 1; ; attempt++) {
+      const t = await appToken();
+      const res = await fetch('/api/public/nexabot/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': k, ...(t ? { Authorization: 'Bearer ' + t } : {}) },
+        body: JSON.stringify({ mode: 't2v', prompt, ratio: ratioSubmit(ratio), resolution, duration }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.status === 429 && data?.queued) {
+        const waitSec = Math.min(Math.max(Number(data?.retry_after_seconds) || 30, 5), 180);
+        onQueueWait?.(waitSec, attempt);
+        if (attempt >= MAX_429) throw new Error(`Antrian NexaBot sedang penuh — coba lagi beberapa saat lagi, atau pasang API key NexaBot milikmu sendiri di Providers agar jalurnya tidak antre sesi server.`);
+        await new Promise(r => setTimeout(r, (waitSec + 2) * 1000));
+        continue;
+      }
+      if (!res.ok || !data?.ok) throw new Error(data?.error || data?.errorMessage || `Submit gagal (HTTP ${res.status})`);
+      const jobId = data.jobId || data.id || data.taskId || data.data?.jobId || data.data?.id;
+      if (!jobId) throw new Error('Submit tidak mengembalikan job id.');
+      return jobId;
+    }
   }
   async function nexabotPollJob(jobId, onStatus, maxMs = 25 * 60 * 1000) {
     const k = memberKey(); const start = Date.now(); let delay = 2000;
@@ -175,19 +191,29 @@
     if (!res.ok || !data?.ok || !data?.url) throw new Error(data?.error || `Simpan gagal (HTTP ${res.status})`);
     return data.url;
   }
-  async function gptImageJob({ prompt, aspect = 5, references = [], model = 'nano_banana_pro' }) {
+  async function gptImageJob({ prompt, aspect = 5, references = [], model = 'nano_banana_pro', onQueueWait }) {
     const k = memberKey(); if (!k) throw new Error('API key NexaBot belum diisi — tambahkan di halaman Providers.');
-    const t = await appToken();
-    const res = await fetch('/api/public/nexabot/gpt-image', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': k, ...(t ? { Authorization: 'Bearer ' + t } : {}) },
-      // Model default NexaBot untuk gambar: Nano Banana Pro (0,1 kredit) —
-      // konsisten dengan katalog gambar NexaBot (semua 0,1 cr).
-      body: JSON.stringify({ prompt, aspect, references: (Array.isArray(references) ? references : []).slice(0, 10), model }),
-    });
-    const data = await res.json().catch(() => null);
-    if (!res.ok || !data?.ok) throw new Error(data?.error || data?.errorMessage || `Submit Nano Banana Pro gagal (HTTP ${res.status})`);
-    return data.id || data.jobId || data.data?.id;
+    const MAX_429 = 16;
+    for (let attempt = 1; ; attempt++) {
+      const t = await appToken();
+      const res = await fetch('/api/public/nexabot/gpt-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': k, ...(t ? { Authorization: 'Bearer ' + t } : {}) },
+        // Model default NexaBot untuk gambar: Nano Banana Pro (0,1 kredit) —
+        // konsisten dengan katalog gambar NexaBot (semua 0,1 cr).
+        body: JSON.stringify({ prompt, aspect, references: (Array.isArray(references) ? references : []).slice(0, 10), model }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.status === 429 && data?.queued) {
+        const waitSec = Math.min(Math.max(Number(data?.retry_after_seconds) || 30, 5), 180);
+        onQueueWait?.(waitSec, attempt);
+        if (attempt >= MAX_429) throw new Error(`Antrian NexaBot/sesi server sedang penuh — coba lagi nanti, atau pasang API key NexaBot milikmu sendiri di Providers agar tidak ikut antre sesi server.`);
+        await new Promise(r => setTimeout(r, (waitSec + 2) * 1000));
+        continue;
+      }
+      if (!res.ok || !data?.ok) throw new Error(data?.error || data?.errorMessage || `Submit Nano Banana Pro gagal (HTTP ${res.status})`);
+      return data.id || data.jobId || data.data?.id;
+    }
   }
   async function gptImagePoll(jobId, onStatus, maxMs = 10 * 60 * 1000) {
     const k = memberKey(); const start = Date.now(); let delay = 2500;
@@ -336,7 +362,11 @@
     if (triggerBtn) { triggerBtn.disabled = true; triggerBtn.textContent = '📷 Membuat…'; }
     try {
       const prompt = `${artPrompt}. Vertical cinematic composition, dramatic lighting, photorealistic film still, high detail, no text, no watermark, no subtitle.`;
-      const jobId = await gptImageJob({ prompt, aspect });
+      const jobId = await gptImageJob({
+        prompt,
+        aspect,
+        onQueueWait: (waitSec, attempt) => { s.genStatus = `⏳ Antrian NexaBot penuh (sesi server) — tunggu ${waitSec}s (${attempt}/16)…`; persist(); render(); },
+      });
       const job = await gptImagePoll(jobId, m => { s.genStatus = m; persist(); render(); });
       const images = Array.isArray(job.images) ? job.images : [];
       if (!images.length) throw new Error('Job selesai tapi tidak ada gambar kembali.');
@@ -379,7 +409,11 @@
         } catch { return String(q.voiceover || '').trim() }
       })();
       setStatus('Mengirim ke Omni Flash 1.2…');
-      const jobId = await nexabotSubmitT2v({ prompt: withVoiceover(q.prompt, sceneVo), ratio: q.ratio || '9:16', resolution: 720, duration: 15 });
+      const jobId = await nexabotSubmitT2v({
+        prompt: withVoiceover(q.prompt, sceneVo),
+        ratio: q.ratio || '9:16', resolution: 720, duration: 15,
+        onQueueWait: (waitSec, attempt) => setStatus(`⏳ Antrian NexaBot penuh (sesi server) — tunggu ${waitSec}s (percobaan ${attempt}/16)…`),
+      });
       setStatus(`Video sedang dibuat Omni Flash (job ${String(jobId).slice(0, 8)}…)`);
       await nexabotPollJob(jobId, s => setStatus(s));
       setStatus('Menyimpan hasil ke server…');

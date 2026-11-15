@@ -354,6 +354,7 @@ const HealthAnimTool = () => {
   // Info diagnosa: model Gemini mana yang dipakai, berapa lama, atau pesan error aslinya.
   const [aiCallInfo, setAiCallInfo] = useState<{ status: 'ok' | 'error'; model: string; ms: number; pesan?: string; dicoba: string[] } | null>(null);
   const [omniConfirmOpen, setOmniConfirmOpen] = useState(false);
+  const [omniBatchModel, setOmniBatchModel] = useState<'omni_flash' | 'omni_lama'>('omni_flash');
   const [omniConfirmMode, setOmniConfirmMode] = useState<'single' | 'batch'>('single');
   const omniVideoUrl = useRef('');
   // ── Batch scene: generate 1 video per scene (3/4/6), lalu gabung via ffmpeg ──
@@ -876,7 +877,8 @@ const HealthAnimTool = () => {
                   // Upstream: ratio 1 = 16:9, 2 = 9:16.
                   ratio: omniAspectRatio === '9:16' ? 2 : 1,
                   resolution: 720,
-                  duration: 15
+                  duration: 15,
+                  ...(omniBatchModel === 'omni_lama' ? { model: 'omni_lama' } : {})
                 },
                 auth,
                 {
@@ -1013,6 +1015,29 @@ const HealthAnimTool = () => {
     setOmniBatch(omniScenes.map((s) => ({ scene: s.scene, role: s.role, status: 'idle' as const })));
     const base = omniScenes.map((s) => ({ scene: s.scene, role: s.role, status: 'idle' as const }));
     await runOmniBatchLoop(omniScenes.map((_, i) => i), base);
+  };
+
+  // Salin prompt/naskah affiliate ke Omni Flash batch (video per scene +
+  // gabung via ffmpeg). Prioritas prompts (video_prompt); fallback naskah.
+  const bridgeAffiliateToOmniBatch = () => {
+    const src = (Array.isArray(prompts) && prompts.length ? prompts : affiliateScript) as any[];
+    if (!Array.isArray(src) || src.length === 0) {
+      setAppError('Belum ada prompt. Klik "Generate Prompt" dulu di tab Animasi Affiliate.');
+      return;
+    }
+    const mapped = src.map((item: any, i: number) => ({
+      scene: Number(item?.scene) || i + 1,
+      role: i === 0 ? 'Hook' : i === src.length - 1 ? 'CTA' : 'Penjelasan',
+      voiceover: String(item?.voiceover || ''),
+      visual: String(item?.image_prompt || item?.visual || ''),
+      video_prompt: String(item?.video_prompt || item?.visual || ''),
+    }));
+    setOmniScenes(mapped);
+    setOmniIdea((affiliateProductDesc || 'Konten affiliate').slice(0, 200));
+    setOmniAspectRatio('9:16');
+    setOmniBatchStatus('');
+    setActiveTab('omni_flash');
+    setAppError('');
   };
 
   const retryFailedScenes = async () => {
@@ -1594,6 +1619,13 @@ ATURAN MUTLAK:
                     {loadingScenes ? <Loader2 className="w-5 h-5 animate-spin" /> : <List className="w-5 h-5" />}
                     {loadingScenes ? `Menyusun ${omniSceneCount} scene…` : `Buat Narasi & Prompt ${omniSceneCount} Scene`}
                   </button>
+                  <div className="mt-3 flex items-center justify-between gap-3">
+                    <label htmlFor="omni-batch-model" className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Model Batch</label>
+                    <select id="omni-batch-model" value={omniBatchModel} onChange={e => setOmniBatchModel(e.target.value as 'omni_flash' | 'omni_lama')} disabled={loadingOmni || loadingOmniBatch || mergingBatch} className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-100">
+                      <option value="omni_flash">Omni Flash 1.2 (15 dtk)</option>
+                      <option value="omni_lama">Omni Lama 10s</option>
+                    </select>
+                  </div>
                   <button onClick={omniScenes.length > 0 ? generateOmniBatch : generateOmniFlash} disabled={loadingScenes || loadingOmni || loadingOmniBatch || mergingBatch || (omniScenes.length > 0 ? false : !omniIdea.trim())} className="w-full mt-3 py-3 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50 text-indigo-700 font-bold rounded-xl flex items-center justify-center gap-2 transition-all">
                     {loadingOmniBatch || loadingOmni ? <Loader2 className="w-5 h-5 animate-spin" /> : <Video className="w-5 h-5" />}
                     {loadingOmniBatch ? 'Membuat video per scene…' : loadingOmni ? 'Membuat video di Google…' : omniScenes.length > 0 ? `Buat Video ${omniScenes.length} Scene · ${omniScenes.length * 15} Detik — Gabung Otomatis` : 'Buat Video Omni Flash · 15 Detik'}
@@ -1947,6 +1979,15 @@ ATURAN MUTLAK:
                         Generate Prompt
                       </button>
                     </div>
+                    {prompts.length > 0 && (
+                      <button
+                        onClick={bridgeAffiliateToOmniBatch}
+                        className="w-full mt-3 flex items-center justify-center gap-2 py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all shadow-md active:scale-95"
+                        title="Kirim scene-scene affiliate ke Omni Flash: 1 video per scene, digabung otomatis via ffmpeg"
+                      >
+                        <Zap className="w-5 h-5" /> Generate Omni per Scene + Gabung via FFmpeg
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -2114,6 +2155,15 @@ ATURAN MUTLAK:
 
                   {prompts.length > 0 ? (
                     <div className="space-y-6">
+                      <div className="flex flex-wrap justify-end gap-2 px-2 mb-2">
+                        <button
+                          onClick={bridgeAffiliateToOmniBatch}
+                          className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-sm active:scale-95"
+                          title="Kirim scene-scene ini ke Omni Flash: 1 video per scene, digabung otomatis via ffmpeg"
+                        >
+                          <Zap className="w-4 h-4" /> Generate Omni per Scene + Gabung FFmpeg
+                        </button>
+                      </div>
                       <div className="flex justify-end px-2">
                         <CopyButton 
                           text={prompts.map(p => `Scene ${p.scene} (${p.duration_seconds}s):\n${p.image_prompt ? `Image Prompt:\n${p.image_prompt}\n\n` : ''}${p.video_prompt ? `Video Prompt:\n${p.video_prompt}\n\n` : ''}Voiceover:\n${p.voiceover}`).join('\n\n---\n\n')} 

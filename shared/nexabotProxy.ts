@@ -520,13 +520,13 @@ export function nexabotSubmitLaneStats(laneKey: string): { active: number; waiti
  */
 export const NEXABOT_JOB_LOCK = {
   /** Batas keras umur satu job — jaring pengaman kalau klien hilang total. */
-  maxHoldMs: 12 * 60_000,
+  maxHoldMs: 25 * 60_000,
   /** Job yang tidak dipoll selama ini dianggap selesai (tab ditutup). */
-  idleMs: 3 * 60_000,
+  idleMs: 8 * 60_000,
   /** `Retry-After` bawaan (detik) saat job sedang berjalan dan tidak ada estimasi. */
   busyRetryAfterSeconds: 15,
   /** Batas `Retry-After` saat ada `est_seconds` dari upstream. */
-  maxBusyRetryAfterSeconds: 60,
+  maxBusyRetryAfterSeconds: 90,
   /** Cooldown setelah upstream menolak karena masih ada job berjalan (ms). */
   upstreamBusyCooldownMs: 20_000,
 }

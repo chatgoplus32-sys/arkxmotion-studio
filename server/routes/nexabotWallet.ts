@@ -718,7 +718,7 @@ router.get('/admin/upstream-usage', authenticateToken, requireAdmin, (req: AuthR
 // Lane NexaBot adalah latch in-memory (shared/nexabotProxy.ts). Job yang sudah
 // selesai di sisi NexaBot tapi tidak pernah dipoll sampai selesai oleh
 // kliennya (mis. member menutup tab setelah job selesai, lalu tidak kembali)
-// tinggal menghuni lane sampai idleMs (3 mnt) atau maxHoldMs (12 mnt).
+// tinggal menghuni lane sampai idleMs (8 mnt) atau maxHoldMs (25 mnt).
 // Endpoint ini membebaskannya tanpa menunggu waktu habis; catatan: kalau ada
 // job yang benar-benar masih berjalan, submit berikutnya ditolak lagi sekali
 // oleh upstream (cooldown dipasang ulang) — tidak pernah membuat job ganda.
