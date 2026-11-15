@@ -14,7 +14,6 @@ const FEATURES = [
   'Gemini Tools',
   'AI Song Cover',
   'H3 Music Avatar',
-  'Genjutsu Video',
 ]
 
 export default function ProRoute({ children }: { children: ReactNode }) {
@@ -48,7 +47,7 @@ export default function ProRoute({ children }: { children: ReactNode }) {
           <h2 className="text-xl font-display font-bold">Fitur premium terkunci</h2>
           <p className="text-sm text-muted-foreground mt-1.5 max-w-md">
             Upgrade Pro sekali bayar untuk membuka <b>ARKX AUTO Studio</b>, <b>ARKX AUTO Motion</b>,{' '}
-            <b>ARKX Health Animasi</b>, <b>Gemini Tools</b>, <b>AI Song Cover</b>, <b>H3 Music Avatar</b>, dan <b>Genjutsu Video</b>. Fitur AI lain tetap bisa kamu pakai tanpa upgrade.
+            <b>ARKX Health Animasi</b>, <b>Gemini Tools</b>, <b>AI Song Cover</b>, dan <b>H3 Music Avatar</b>. Fitur AI lain tetap bisa kamu pakai tanpa upgrade.
           </p>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 w-full max-w-lg mt-5">

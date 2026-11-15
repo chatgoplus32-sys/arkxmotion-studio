@@ -83,7 +83,6 @@ const UpscaleVideoPage = lazyWithRetry(() => import('@/pages/UpscaleVideo'))
 const MusicStudioPage = lazyWithRetry(() => import('@/pages/MusicStudio'))
 const ImageStudioPage = lazyWithRetry(() => import('@/pages/ImageStudio'))
 const H3MusicAvatarPage = lazyWithRetry(() => import('@/pages/H3MusicAvatar'))
-const GenjutsuVideoPage = lazyWithRetry(() => import('@/pages/GenjutsuVideo'))
 
 // Initialize chunk error interceptor immediately
 initChunkErrorInterceptor()
@@ -242,7 +241,6 @@ export default function App() {
                         <Route path="/generate/dola-chat" element={<DolaChatPage />} />
                         <Route path="/generate/h3-i2v" element={<H3ImageToVideoPage />} />
                         <Route path="/generate/h3-music-avatar" element={<ProRoute><H3MusicAvatarPage /></ProRoute>} />
-                        <Route path="/generate/genjutsu-video" element={<ProRoute><GenjutsuVideoPage /></ProRoute>} />
                         <Route path="/generate/watermark-remover" element={<WatermarkRemoverPage />} />
                         <Route path="/generate/video-upscaler" element={<VideoUpscalerPage />} />
                         <Route path="/generate/edit-video-auto-motion" element={<ProRoute><GeminiToolsPage initialTab="auto-motion" /></ProRoute>} />

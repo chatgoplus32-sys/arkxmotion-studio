@@ -28,37 +28,6 @@ export const RUNNINGHUB_TRYON_FLUX2_APP_ID = '2102388260877221889'
 // avatar menyanyi, segmen tanpa batas + video panjang.
 const RUNNINGHUB_H3_MUSIC_AVATAR_APP_ID = '2111522730906955778'
 
-// MiniMax H3 Music Video (app 2112585854291116033): 1 foto karakter utama +
-// maks 3 foto referensi scene + audio → music video sinematik. Node 137 =
-// karakter utama, 171 = audio, 138 = prompt, 115 = aspect_ratio.
-// https://www.runninghub.ai/id/ai-detail/2112585854291116033
-export const RUNNINGHUB_MUSIC_VIDEO_APP_ID = '2112585854291116033'
-export const MUSIC_VIDEO_MAX_SCENES = 3
-export const MUSIC_VIDEO_ASPECTS = [
-  '9:16 (Portrait Widescreen)',
-  '16:9 (Widescreen)',
-  '1:1 (Square)',
-  '2:3 (Portrait Photo)',
-  '3:2 (Photo)',
-  '3:4 (Portrait Standard)',
-  '4:3 (Standard)',
-  '21:9 (Ultrawide)',
-]
-export const MUSIC_VIDEO_DEFAULT_ASPECT = '9:16 (Portrait Widescreen)'
-
-// Eposcents_Mini Genjutsu Video 15 sec BETA (app 2109987145921355777):
-// motion control - image + video → video. Node 51 = image, 27 = video,
-// 263 = text (prompt), 259 = value (duration), 252 = megapixels.
-// https://www.runninghub.ai/id/ai-detail/2109987145921355777
-export const RUNNINGHUB_GENJUTSU_VIDEO_APP_ID = '2109987145921355777'
-export const GENJUTSU_VIDEO_IMAGE_NODE = '51'
-export const GENJUTSU_VIDEO_VIDEO_NODE = '27'
-export const GENJUTSU_VIDEO_PROMPT_NODE = '263'
-export const GENJUTSU_VIDEO_DURATION_NODE = '259'
-export const GENJUTSU_VIDEO_MEGAPIXELS_NODE = '252'
-export const GENJUTSU_VIDEO_DEFAULT_DURATION = '14'
-export const GENJUTSU_VIDEO_DEFAULT_MEGAPIXELS = '0.6000000000000001'
-
 // FLUX.1 Kontext image edit (instruksi bahasa alami):
 // node 28 = image (foto), node 31 = text (perintah edit)
 export const RUNNINGHUB_IMAGE_EDIT_WORKFLOW_ID = '1928844216607129602'
@@ -400,6 +369,31 @@ export async function claimRunningHubDailyGift(apiKey: string): Promise<{
   }
 }
 
+/**
+ * Potongan yang menunggu hasil task, keyed by taskId. Saat polling melaporkan
+ * FAILED secara DEFINITIF (upstream menolak job), saldo jalur server harus
+ * kembali ke member. Sampai 15 Nov 2026 task gagal setelah submit tidak
+ * pernah mengembalikan saldo internal sama sekali (hanya jalur submit-gagal
+ * yang /refund — lihat catch(runninghubProxy) di bawah).
+ */
+const rhPendingCharges = new Map<string, { usageId?: number; batchId?: string; token: string }>()
+
+function registerRhPendingCharge(taskId: string, entry: { usageId?: number; batchId?: string; token: string }) {
+  rhPendingCharges.set(String(taskId), entry)
+}
+
+/** Kembalikan saldo member untuk task yang gagal secara definitif. */
+async function refundPendingRhCharge(taskId: string) {
+  const pending = rhPendingCharges.get(String(taskId))
+  if (!pending?.token) return
+  rhPendingCharges.delete(String(taskId))
+  try {
+    await refundRunninghubWallet(pending.token, { usage_id: pending.usageId, batch_id: pending.batchId })
+  } catch {
+    // refund gagal — biarkan; selesai di sini, bukan kegagalan baru
+  }
+}
+
 export function getRunningHubWorkflowId(): string {  if (typeof window === 'undefined') return RUNNINGHUB_DEFAULT_WORKFLOW_ID
   try {
     return localStorage.getItem('runninghub.workflowId') || RUNNINGHUB_DEFAULT_WORKFLOW_ID
@@ -464,7 +458,15 @@ async function runninghubProxy(action: string, params: Record<string, any>, apiK
     if (!res.ok || !data.ok) {
       throw new Error(data.error || `HTTP ${res.status}`)
     }
-    return data.data || data
+    const hasil = data?.data ?? data
+    // Catat potongan menunggu hasil task — refund dipoll/ultimate-failure path.
+    if (serverMode && consuming && token && (chargeUsageId || chargeBatch)) {
+      const rtask = hasil?.taskId ?? hasil?.id ?? hasil?.data?.taskId ?? hasil?.data?.id
+      if (rtask != null) {
+        registerRhPendingCharge(String(rtask), { usageId: chargeUsageId, batchId: chargeBatch, token })
+      }
+    }
+    return hasil
   } catch (err) {
     // Submit gagal di jalur server → kembalikan saldo yang sudah dipotong.
     if (serverMode && consuming && token && (chargeUsageId || chargeBatch)) {
@@ -770,24 +772,14 @@ export interface H3MusicAvatarParams {
   audioFile: File
   prompt?: string
   apiKey?: string
-  appId?: string
-  // Khusus Music Video: maks 3 foto referensi scene (opsional).
-  sceneFiles?: File[]
-  aspectRatio?: string
 }
 
-// App "Digital human lip-sync singing unlimited duration [HD]" — mode podcast
-// tanpa subtitle (lip-sync murni, cocok untuk konten bicara 2-3 menit).
-export const RUNNINGHUB_PODCAST_LIPSYNC_APP_ID = '1990007675981320194'
-
 export async function submitRunningHubH3MusicAvatar(params: H3MusicAvatarParams): Promise<MotionControlResult> {
-  const appId = params.appId || RUNNINGHUB_H3_MUSIC_AVATAR_APP_ID
-  const sceneFiles = (params.sceneFiles || []).slice(0, MUSIC_VIDEO_MAX_SCENES)
+  const appId = RUNNINGHUB_H3_MUSIC_AVATAR_APP_ID
 
-  const [imageBase64, audioBase64, ...sceneBase64] = await Promise.all([
+  const [imageBase64, audioBase64] = await Promise.all([
     fileToBase64(params.imageFile),
     fileToBase64(params.audioFile),
-    ...sceneFiles.map((file) => fileToBase64(file)),
   ])
 
   const result = await runninghubProxy('submit-h3-music-avatar', {
@@ -799,60 +791,6 @@ export async function submitRunningHubH3MusicAvatar(params: H3MusicAvatarParams)
     audioFileName: params.audioFile.name,
     audioMimeType: params.audioFile.type || 'audio/mpeg',
     prompt: params.prompt || '',
-    ...(sceneFiles.length > 0 ? {
-      sceneImages: sceneFiles.map((file, i) => ({
-        base64: sceneBase64[i],
-        fileName: file.name,
-        mimeType: file.type || 'image/jpeg',
-      })),
-    } : {}),
-    ...(appId === RUNNINGHUB_MUSIC_VIDEO_APP_ID
-      ? { aspectRatio: params.aspectRatio || MUSIC_VIDEO_DEFAULT_ASPECT }
-      : {}),
-  }, params.apiKey)
-
-  return {
-    id: result.id || result.taskId,
-    taskId: result.taskId || result.id,
-    status: result.status || 'QUEUED',
-    provider: result.provider || 'runninghub',
-    workflowId: result.workflowId || appId,
-  }
-}
-
-export interface GenjutsuVideoParams {
-  imageFile: File
-  videoFile: File
-  prompt?: string
-  duration?: number
-  megapixels?: string
-  apiKey?: string
-  appId?: string
-  // Kelas GPU Upstream: default (24G) | plus (48G) | ultra (84G).
-  // Default 'plus' — Genjutsu Video OOM di instance default.
-  instanceType?: 'default' | 'plus' | 'ultra'
-}
-
-export async function submitRunningHubGenjutsuVideo(params: GenjutsuVideoParams): Promise<MotionControlResult> {
-  const appId = params.appId || RUNNINGHUB_GENJUTSU_VIDEO_APP_ID
-
-  const [imageBase64, videoBase64] = await Promise.all([
-    fileToBase64(params.imageFile),
-    fileToBase64(params.videoFile),
-  ])
-
-  const result = await runninghubProxy('submit-genjutsu-video', {
-    app_id: appId,
-    imageBase64,
-    imageFileName: params.imageFile.name,
-    imageMimeType: params.imageFile.type || 'image/jpeg',
-    videoBase64,
-    videoFileName: params.videoFile.name,
-    videoMimeType: params.videoFile.type || 'video/mp4',
-    prompt: params.prompt || '',
-    duration: params.duration ?? 14,
-    megapixels: params.megapixels || GENJUTSU_VIDEO_DEFAULT_MEGAPIXELS,
-    instanceType: params.instanceType || 'plus',
   }, params.apiKey)
 
   return {
@@ -1312,6 +1250,7 @@ export async function pollRunningHubTask(
             onProgress?.('COMPLETED', 100)
             return url
           }
+          await refundPendingRhCharge(taskId)
           throw fatal('Task completed but no result URL found')
         }
 
@@ -1325,6 +1264,8 @@ export async function pollRunningHubTask(
             const coins = Number(result.usage?.consumeCoins ?? 0) || 0
             if (coins > 0) recordRhUsage(modelLabel, coins, 0)
           }
+          // Generate gagal secara definitif → kembalikan saldo jalur server.
+          await refundPendingRhCharge(taskId)
           throw fatal(translateWorkflowError(detailStr, code))
         }
 
@@ -1335,6 +1276,7 @@ export async function pollRunningHubTask(
         // Kegagalan workflow di server (mis. "工作流运行失败") bukan network error —
         // langsung fatal agar tidak retry 10x (±3 menit) dan tidak merusak key rotation.
         if (isWorkflowFailure(err?.message)) {
+          await refundPendingRhCharge(taskId)
           throw translateWorkflowErrorAsFatal(err.message)
         }
         consecutiveErrors++

@@ -18,6 +18,7 @@ import {
   type GenerationPage,
 } from '@/lib/backgroundTasks'
 import { SERVER_KEY } from '@/lib/providerServerKey'
+import { pairPendingCharge, hasResumeCharge, takeResumeCharge, clearResumeCharge } from '@/lib/pendingCharges'
 
 const TRACK_URL = '/api/generation-jobs'
 /** Job yang dipoll tab ini — resume tidak boleh mengambil alih. */
@@ -59,6 +60,12 @@ export async function trackGenerationJob(input: {
   const key = keyOf(input.provider, input.jobId)
   if (aktif.has(key)) return
   aktif.add(key)
+  // Pasangkan potongan saldo yang menunggu jobId ini: kalau tab ditutup sebelum
+  // job selesai, jalur resume bisa mengembalikannya bila gagal terminal.
+  // Jangan menimpa pasangan yang sudah ada (job ini bisa dipoll ulang).
+  if (!hasResumeCharge(input.provider, input.jobId)) {
+    pairPendingCharge(input.provider, input.jobId)
+  }
   try {
     await apiFetch('', {
       method: 'POST',
@@ -81,6 +88,8 @@ export async function finishGenerationJob(input: {
   error?: string
 }): Promise<void> {
   aktif.delete(keyOf(input.provider, input.jobId))
+  // Job selesai → pasangan potongan (kalau ada) tidak lagi diperlukan.
+  clearResumeCharge(input.provider === 'posbot' ? 'posbot' : 'nexabot', input.jobId)
   try {
     await apiFetch(`/${input.provider}/${input.jobId}`, {
       method: 'PATCH',
@@ -101,6 +110,31 @@ async function klaim(provider: string, jobId: string): Promise<boolean> {
     return !!(await res.json().catch(() => null))?.claimed
   } catch {
     return false
+  }
+}
+
+/** Kembalikan saldo potongan yang dipasangkan ke job ini (jalur resume gagal). */
+async function refundResumeCharge(provider: string, jobId: string): Promise<void> {
+  const isPos = provider === 'posbot'
+  const charged = takeResumeCharge(isPos ? 'posbot' : 'nexabot', jobId)
+  if (!charged) return
+  const token = tokenSekarang()
+  if (!token) return
+
+  // PosBot /refund mengenal batch_id/model (bukan usage_id); NexaBot kenal usage_id.
+  const body = isPos
+    ? charged.batchId ? { batch_id: charged.batchId } : charged.model ? { model: charged.model } : null
+    : charged.usageId ? { usage_id: charged.usageId } : charged.batchId ? { batch_id: charged.batchId } : null
+  if (!body) return
+
+  try {
+    await fetch(`/api/${isPos ? 'posbot' : 'nexabot'}/refund`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body),
+    })
+  } catch {
+    // refund gagal — biarkan; panel resume tetap menampilkan gagal
   }
 }
 
@@ -156,6 +190,8 @@ export async function resumePendingGenerationJobs(): Promise<void> {
     } catch (err: any) {
       const terminal = err?.name === 'NexabotJobFailed' || err?.name === 'PosbotJobFailed'
       const pesan = terminal ? (err?.message || 'Job gagal') : `Pemantauan terputus; akan dicoba lagi otomatis. ${err?.message || ''}`
+      // Job gagal secara terminal → kembalikan potongan yang dipasangkan ke jobId ini.
+      if (terminal) await refundResumeCharge(job.provider, job.job_id)
       addResumeFailure({
         id: job.job_id,
         provider: job.provider,

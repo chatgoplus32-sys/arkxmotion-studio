@@ -1,4 +1,4 @@
-﻿import type { VercelRequest, VercelResponse } from '@vercel/node'
+import type { VercelRequest, VercelResponse } from '@vercel/node'
 
 const RUNNINGHUB_BASE = 'https://www.runninghub.ai'
 
@@ -21,17 +21,6 @@ const RUNNINGHUB_EPOSCENTS_MC_APP_ID = '2107144516724932610'
 const EPOSCENTS_MC_IMAGE_NODE = '68'
 const EPOSCENTS_MC_VIDEO_NODE = '2'
 const EPOSCENTS_MC_VIDEO_FIELD = 'video'
-// Eposcents_Mini Genjutsu Video 15 sec BETA (app 2109987145921355777):
-// motion control - image + video → video. Node 51 = image, 27 = video,
-// 263 = text (prompt), 259 = value (duration), 252 = megapixels.
-const RUNNINGHUB_GENJUTSU_VIDEO_APP_ID = '2109987145921355777'
-const GENJUTSU_VIDEO_IMAGE_NODE = '51'
-const GENJUTSU_VIDEO_VIDEO_NODE = '27'
-const GENJUTSU_VIDEO_PROMPT_NODE = '263'
-const GENJUTSU_VIDEO_DURATION_NODE = '259'
-const GENJUTSU_VIDEO_MEGAPIXELS_NODE = '252'
-const GENJUTSU_VIDEO_DEFAULT_DURATION = '14'
-const GENJUTSU_VIDEO_DEFAULT_MEGAPIXELS = '0.6000000000000001'
 
 // KONTROL GERAK 50 FPS (app RunningHub): transfer gerakan video referensi ke
 // gambar karakter dengan output 50 FPS. Benchmark app: video 24s ~17 menit.
@@ -106,30 +95,6 @@ const RUNNINGHUB_H3_MUSIC_AVATAR_APP_ID = '2111522730906955778'
 const H3_MUSIC_AVATAR_IMAGE_NODE = '306'
 const H3_MUSIC_AVATAR_AUDIO_NODE = '317'
 const H3_MUSIC_AVATAR_PROMPT_NODE = '214'
-// MiniMax H3 Music Video (app 2112585854291116033): 1 foto karakter utama +
-// audio lagu + maks 3 foto referensi scene → music video sinematik dengan
-// karakter konsisten. node 137 = image (karakter utama), node 171 = audio,
-// node 138 = text (prompt), node 115 = aspect_ratio, node 199/200/201 =
-// image referensi scene (opsional; app memakai contoh default bila kosong).
-// https://www.runninghub.ai/id/ai-detail/2112585854291116033
-const RUNNINGHUB_MUSIC_VIDEO_APP_ID = '2112585854291116033'
-const MUSIC_VIDEO_IMAGE_NODE = '137'
-const MUSIC_VIDEO_AUDIO_NODE = '171'
-const MUSIC_VIDEO_PROMPT_NODE = '138'
-const MUSIC_VIDEO_ASPECT_NODE = '115'
-const MUSIC_VIDEO_SCENE_NODES = ['199', '200', '201']
-const MUSIC_VIDEO_MAX_SCENES = MUSIC_VIDEO_SCENE_NODES.length
-const MUSIC_VIDEO_ASPECTS = new Set([
-  '1:1 (Square)', '2:3 (Portrait Photo)', '3:2 (Photo)', '3:4 (Portrait Standard)',
-  '4:3 (Standard)', '9:16 (Portrait Widescreen)', '16:9 (Widescreen)', '21:9 (Ultrawide)',
-])
-const MUSIC_VIDEO_ASPECT_FALLBACK = '9:16 (Portrait Widescreen)'
-const MUSIC_VIDEO_DEFAULT_PROMPT = `Cinematic music video with High consistent character as Main Character as in Image reference, preserve same identity across all scenes, smooth natural performance, realistic human motion, accurate lipsync with lyrics and gesture movement on music beat.
-
-Scenes details : Main character singing
-Camera : Static > Dynamic Gentle pan orbit >Low angle shot then crane up > Slow zoom close up
-
-Smooth transitions between all reference scenes, consistent character identity, consistent face, realistic anatomy, natural skin and facial movement, accurate lip-sync, beat synchronization, lyric synchronization, cinematic realistic motion, high temporal consistency, high character consistency, no morphing, no face deformation, no extra fingers, no duplicated limbs, no identity change, no sudden camera jumps, No double same character. LIP MOVE WHEN LYRIC SING AVAILABLE, LIP SILENT WHEN NO LYRICS. High quality Video and Clean audio masterpiece result.`
 // MiniMax H3 Realistic VLOG (app 2112457853784121345): 1 gambar + prompt
 // VLOG terstruktur → video VLOG realistis 15 detik.
 // node 137 = image, node 138 = text (prompt).
@@ -447,9 +412,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     if (action === 'submit-h3-music-avatar') {
       return await handleSubmitH3MusicAvatar(apiKey, params, res)
-    }
-    if (action === 'submit-genjutsu-video') {
-      return await handleSubmitGenjutsuVideo(apiKey, params, res)
     }
     if (action === 'submit-h3-vlog') {
       return await handleSubmitH3Vlog(apiKey, params, res)
@@ -1485,18 +1447,15 @@ async function handleSubmitH3MusicAvatar(apiKey: string, params: any, res: Verce
     audioFileName = 'audio.mp3',
     audioMimeType = 'audio/mpeg',
     prompt = '',
-    sceneImages,
-    aspectRatio,
   } = params
 
   if (!imageBase64) return res.status(200).json({ ok: false, error: 'Missing imageBase64' })
   if (!audioBase64) return res.status(200).json({ ok: false, error: 'Missing audioBase64' })
 
   const effectiveAppId = app_id || appId || RUNNINGHUB_H3_MUSIC_AVATAR_APP_ID
-  const isMusicVideoApp = effectiveAppId === RUNNINGHUB_MUSIC_VIDEO_APP_ID
-  const imageNode = isMusicVideoApp ? MUSIC_VIDEO_IMAGE_NODE : H3_MUSIC_AVATAR_IMAGE_NODE
-  const audioNode = isMusicVideoApp ? MUSIC_VIDEO_AUDIO_NODE : H3_MUSIC_AVATAR_AUDIO_NODE
-  const promptNode = isMusicVideoApp ? MUSIC_VIDEO_PROMPT_NODE : H3_MUSIC_AVATAR_PROMPT_NODE
+  const imageNode = H3_MUSIC_AVATAR_IMAGE_NODE
+  const audioNode = H3_MUSIC_AVATAR_AUDIO_NODE
+  const promptNode = H3_MUSIC_AVATAR_PROMPT_NODE
 
   console.log(`[runninghub] Uploading photo (h3-music-avatar)...`)
   const imageUpload = await rhUpload(apiKey, imageBase64, imageFileName, imageMimeType)
@@ -1516,43 +1475,6 @@ async function handleSubmitH3MusicAvatar(apiKey: string, params: any, res: Verce
   const effPrompt = String(prompt || '').trim()
   if (effPrompt) {
     nodeInfoList.push({ nodeId: promptNode, fieldName: 'value', fieldValue: effPrompt })
-  }
-
-  if (isMusicVideoApp) {
-    // Scene referensi opsional: hanya node yang diisi yang dikirim, sisanya
-    // memakai contoh default di dalam app (example.png).
-    const scenes = (Array.isArray(sceneImages) ? sceneImages : [])
-      .filter((s: any) => s && s.base64)
-      .slice(0, MUSIC_VIDEO_MAX_SCENES)
-
-    if (scenes.length > 0) {
-      console.log(`[runninghub] Uploading ${scenes.length} scene reference(s) (music-video)...`)
-      const uploaded = await Promise.all(scenes.map((scene: any, i: number) =>
-        rhUpload(
-          apiKey,
-          scene.base64,
-          scene.fileName || `scene-${i + 1}.jpg`,
-          scene.mimeType || 'image/jpeg',
-        ),
-      ))
-      uploaded.forEach((up, i) => {
-        nodeInfoList.push({
-          nodeId: MUSIC_VIDEO_SCENE_NODES[i],
-          fieldName: 'image',
-          fieldValue: up.fileName,
-        })
-      })
-      console.log(`[runninghub] Scene uploaded: ${uploaded.map((u) => u.fileName).join(', ')}`)
-    }
-
-    const effAspect = MUSIC_VIDEO_ASPECTS.has(String(aspectRatio))
-      ? String(aspectRatio)
-      : MUSIC_VIDEO_ASPECT_FALLBACK
-    nodeInfoList.push({ nodeId: MUSIC_VIDEO_ASPECT_NODE, fieldName: 'aspect_ratio', fieldValue: effAspect })
-
-    if (!effPrompt) {
-      nodeInfoList.push({ nodeId: promptNode, fieldName: 'value', fieldValue: MUSIC_VIDEO_DEFAULT_PROMPT })
-    }
   }
 
   const body = {
@@ -1621,118 +1543,6 @@ async function handleSubmitH3MusicAvatar(apiKey: string, params: any, res: Verce
         status: data.data?.status || data.status || 'QUEUED',
         provider: 'runninghub',
         workflowId: effectiveAppId,
-      },
-    })
-  }
-
-  return res.status(200).json({ ok: false, error: 'Max retries exceeded', raw: lastRawText.slice(0, 500) })
-}
-
-async function handleSubmitGenjutsuVideo(apiKey: string, params: any, res: VercelResponse) {
-  const {
-    imageBase64,
-    imageFileName = 'image.jpg',
-    imageMimeType = 'image/jpeg',
-    videoBase64,
-    videoFileName = 'video.mp4',
-    videoMimeType = 'video/mp4',
-    prompt = '',
-    duration = GENJUTSU_VIDEO_DEFAULT_DURATION,
-    megapixels = GENJUTSU_VIDEO_DEFAULT_MEGAPIXELS,
-    instanceType,
-  } = params
-
-  if (!imageBase64) return res.status(200).json({ ok: false, error: 'Missing imageBase64' })
-  if (!videoBase64) return res.status(200).json({ ok: false, error: 'Missing videoBase64' })
-
-  console.log(`[runninghub] Uploading image (genjutsu-video)...`)
-  const imageUpload = await rhUpload(apiKey, imageBase64, imageFileName, imageMimeType)
-  console.log(`[runninghub] Image uploaded: ${imageUpload.fileName}`)
-
-  console.log(`[runninghub] Uploading video (genjutsu-video)...`)
-  const videoUpload = await rhUpload(apiKey, videoBase64, videoFileName, videoMimeType)
-  console.log(`[runninghub] Video uploaded: ${videoUpload.fileName}`)
-
-  const nodeInfoList: any[] = [
-    { nodeId: GENJUTSU_VIDEO_IMAGE_NODE, fieldName: 'image', fieldValue: imageUpload.fileName },
-    { nodeId: GENJUTSU_VIDEO_VIDEO_NODE, fieldName: 'video', fieldValue: videoUpload.fileName },
-    { nodeId: GENJUTSU_VIDEO_PROMPT_NODE, fieldName: 'text', fieldValue: String(prompt || '').trim() || 'Motion transfer video' },
-    { nodeId: GENJUTSU_VIDEO_DURATION_NODE, fieldName: 'value', fieldValue: String(duration) },
-    { nodeId: GENJUTSU_VIDEO_MEGAPIXELS_NODE, fieldName: 'megapixels', fieldValue: String(megapixels) },
-  ]
-
-  // Genjutsu Video (motion transfer) — app docs default instance 'default'
-  // (24G). Instance 'plus' (48G) lebih mahal dan token pool tidak sanggup
-  // membayar (upstream 414 NOT_ENOUGH_POWER). Client bisa override lewat
-  // param instanceType ('default' | 'plus' | 'ultra').
-  const effectiveInstance = ['default', 'plus', 'ultra'].includes(String(instanceType))
-    ? String(instanceType)
-    : 'default'
-  const body = {
-    nodeInfoList,
-    instanceType: effectiveInstance,
-    usePersonalQueue: 'false',
-  }
-
-  const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${RUNNINGHUB_GENJUTSU_VIDEO_APP_ID}`
-
-  const MAX_RETRIES = 3
-  const RETRY_DELAY_MS = 10000
-  let lastRawText = ''
-
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    console.log(`[runninghub] POST ${endpoint} (genjutsu-video attempt ${attempt}/${MAX_RETRIES})`)
-
-    const apiRes = await rhFetch(apiKey, endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(body),
-    })
-
-    lastRawText = await apiRes.text()
-    console.log(`[runninghub] submit-genjutsu-video ${apiRes.status}:`, lastRawText.slice(0, 1000))
-
-    let data: any
-    try { data = JSON.parse(lastRawText) } catch { data = { raw: lastRawText } }
-
-    const rhCode = data.code ?? data.errorCode
-    const rhMsg = data.msg || data.errorMessage || data.message
-
-    if (apiRes.status === 429 || rhCode === 429) {
-      return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data, retryable: true })
-    }
-
-    if (rhCode === 421 || rhCode === '421') {
-      console.log(`[runninghub] Queue limit (421), retrying in ${RETRY_DELAY_MS / 1000}s... (${attempt}/${MAX_RETRIES})`)
-      if (attempt < MAX_RETRIES) {
-        await new Promise(r => setTimeout(r, RETRY_DELAY_MS))
-        continue
-      }
-      return res.status(200).json({ ok: false, error: 'Queue limit reached, coba lagi dalam beberapa menit', data, retryable: true })
-    }
-
-    if (rhCode !== undefined && rhCode !== 0 && rhCode !== '0' && rhCode !== '') {
-      const errorMsg = translateRhError(String(rhCode), rhMsg) || rhMsg || `Error code: ${rhCode}`
-      return res.status(200).json({ ok: false, error: errorMsg, code: rhCode, data })
-    }
-
-    const taskId = data.data?.taskId || data.taskId || data.id || data.task_id
-    if (!taskId) {
-      console.error(`[runninghub] No taskId found (genjutsu-video):`, JSON.stringify(data).slice(0, 500))
-      return res.status(200).json({ ok: false, error: rhTaskErrorFrom(data) || 'No taskId returned', raw: lastRawText.slice(0, 500) })
-    }
-
-    return res.status(200).json({
-      ok: true,
-      data: {
-        id: taskId,
-        taskId,
-        status: data.data?.status || data.status || 'QUEUED',
-        provider: 'runninghub',
-        workflowId: RUNNINGHUB_GENJUTSU_VIDEO_APP_ID,
       },
     })
   }

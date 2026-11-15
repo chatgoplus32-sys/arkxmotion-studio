@@ -901,6 +901,10 @@ export default function ImageToVideoPage() {
     const duration = currentQuality?.duration || 10
     const cost = getCreatepulseCost(currentModel?.apiModel)
     const isAdmin = user?.role === 'admin'
+    // usage_id dari respons /deduct — referensi refund paling presisi. Kalau deduct
+    // gagal, nilai ini tetap undefined sehingga catch TIDAK mengembalikan saldo yang
+    // memang tidak pernah terpotong.
+    let chargeUsageId: number | undefined
 
     if (!isAdmin) {
       if (cpBalance < cost) {
@@ -921,6 +925,7 @@ export default function ImageToVideoPage() {
       }
       const deductData = await deductRes.json()
       setCpBalance(deductData.balance)
+      chargeUsageId = typeof deductData.usage_id === 'number' && deductData.usage_id > 0 ? deductData.usage_id : undefined
       addLog(`[1/4] ✅ Saldo terpotong ✓ sisa Rp ${deductData.balance.toLocaleString('id-ID')}`, 'success', 'createpulse')
     } else {
       addLog(`[1/4] ⚡ Admin mode — skip saldo`, 'info', 'createpulse')
@@ -1028,34 +1033,27 @@ export default function ImageToVideoPage() {
       throw new Error('Timeout: generation took too long')
     } catch (err: any) {
       if (!isAdmin) {
-        if (batchId) {
+        // chargeUsageId == null → deduct dibatalkan / gagal total, tidak ada saldo
+        // yang perlu ATAU boleh dikembalikan (menghindari refund "menyasar" usage lain).
+        const refundBody = chargeUsageId != null
+          ? { usage_id: chargeUsageId }
+          : batchId ? { batch_id: batchId } : null
+        if (refundBody) {
           addLog(`💸 Refunding Rp ${cost.toLocaleString('id-ID')}...`, 'warn', 'createpulse')
           try {
             const refundRes = await fetch('/api/createpulse/refund', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
-              body: JSON.stringify({ batch_id: batchId }),
+              body: JSON.stringify(refundBody),
             })
             if (refundRes.ok) {
               const rd = await refundRes.json()
               setCpBalance(rd.balance)
               addLog(`✅ Refund berhasil ✓ saldo Rp ${rd.balance.toLocaleString('id-ID')}`, 'success', 'createpulse')
             }
-          } catch (e) { console.warn('[ImageToVideo] Refund by ID failed:', e) }
+          } catch (e) { console.warn('[ImageToVideo] Refund gagal:', e) }
         } else {
-          addLog(`💸 Refunding Rp ${cost.toLocaleString('id-ID')} (by model)...`, 'warn', 'createpulse')
-          try {
-            const refundRes = await fetch('/api/createpulse/refund', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
-              body: JSON.stringify({ model: currentModel?.apiModel || 'dreamina-seedance-2.0' }),
-            })
-            if (refundRes.ok) {
-              const rd = await refundRes.json()
-              setCpBalance(rd.balance)
-              addLog(`✅ Refund berhasil ✓ saldo Rp ${rd.balance.toLocaleString('id-ID')}`, 'success', 'createpulse')
-            }
-          } catch (e) { console.warn('[ImageToVideo] Refund by model failed:', e) }
+          addLog('💰 Tidak ada potongan saldo yang perlu dikembalikan (deduct batal).', 'info', 'createpulse')
         }
       }
       throw err

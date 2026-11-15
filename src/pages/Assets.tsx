@@ -60,7 +60,6 @@ const RESULTS_PAGE_SOURCE: Record<CompletedResult['page'], string> = {
   'travel-photo': 'Travel Photo',
   'h3-i2v': 'H3 Image to Video',
   'h3-music-avatar': 'H3 Music Avatar',
-  'genjutsu-video': 'Genjutsu Video',
   'ugc-storyboard': 'UGC Storyboard',
   'voice-over': 'Voice Over',
   'clone-voice': 'Clone Voice',

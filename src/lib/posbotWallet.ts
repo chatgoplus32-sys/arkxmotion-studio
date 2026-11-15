@@ -6,6 +6,7 @@
 //
 // Dipakai halaman /topup/posbot dan alur generate (Image to Video, Motion,
 // Upscaler).
+import { rememberPendingCharge } from './pendingCharges'
 const API = '/api/posbot'
 
 /** Nominal cepat yang ditampilkan sebagai tombol preset di halaman top up. */
@@ -82,6 +83,13 @@ export async function chargePosbotWallet(
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(data.error || 'Gagal memotong saldo PosBot')
+  // Simpan pasangan potongan → jobId untuk jalur resume (refund otomatis bila job
+  // gagal terminal saat aplikasi dibuka lagi). Best-effort.
+  rememberPendingCharge('posbot', {
+    usageId: typeof data.usage_id === 'number' && data.usage_id > 0 ? data.usage_id : undefined,
+    batchId: batch,
+    model,
+  })
   return {
     balance: Number(data.balance) || 0,
     deducted: data.deducted ?? 0,

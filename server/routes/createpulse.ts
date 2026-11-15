@@ -111,10 +111,16 @@ router.post('/refund', authenticateToken, (req: AuthRequest, res: Response) => {
     const userId = req.user?.id
     if (!userId) return res.status(401).json({ error: 'Unauthorized' })
 
-    const { batch_id, model } = req.body
+    const { batch_id, model, usage_id } = req.body
 
     let usage
-    if (batch_id) {
+    if (usage_id != null) {
+      const id = Number(usage_id)
+      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'usage_id tidak valid' })
+      usage = db.prepare(
+        "SELECT * FROM createpulse_usage WHERE id = ? AND user_id = ? AND status = 'used'"
+      ).get(id, userId) as { id: number; cost: number } | undefined
+    } else if (batch_id) {
       usage = db.prepare(
         "SELECT * FROM createpulse_usage WHERE user_id = ? AND batch_id = ? AND status = 'used'"
       ).get(userId, batch_id) as { id: number; cost: number } | undefined

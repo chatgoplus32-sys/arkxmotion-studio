@@ -13,6 +13,7 @@ function harness() {
   let polls = 0
   let results = 0
   let lists = 0
+  let refunds = 0
   const job = { provider: 'nexabot', job_id: 'test-job', page: 'video-edit' }
   const exports: any = {}
   const modules: Record<string, any> = {
@@ -22,6 +23,11 @@ function harness() {
       GENERATION_PAGE_PATH: { 'video-edit': '/video-edit' },
       startGenerationTask: () => 'task', removeActiveTask: () => {},
       addResumeFailure: () => {}, dismissResumeFailure: () => {}, addResult: () => { results++ },
+    },
+    '@/lib/pendingCharges': {
+      pairPendingCharge: () => {}, hasResumeCharge: () => false,
+      takeResumeCharge: () => ({ provider: 'nexabot', usageId: 77, at: Date.now() }),
+      clearResumeCharge: () => {},
     },
     '@/lib/nexabot': {
       pollNexabotJob: async () => { polls++; if (failure) throw failure },
@@ -35,13 +41,14 @@ function harness() {
     localStorage: { getItem: () => token },
     window: { setInterval: (fn: any) => { tick = fn; return 1 }, clearInterval: () => {}, location: { pathname: '/video-edit' } },
     fetch: async (url: string, options: any) => {
-      if (options.method === 'PATCH') { patches.push(JSON.parse(options.body)); return Response.json({ ok: true }) }
+      if (options?.method === 'PATCH') { patches.push(JSON.parse(options.body)); return Response.json({ ok: true }) }
       if (url.includes('/claim/')) return Response.json({ claimed: true })
+      if (url.includes('/refund')) { refunds++; return Response.json({ ok: true }) }
       lists++
       return Response.json({ jobs: visible ? [job] : [] })
     },
   })
-  return { api: exports, patches, get polls() { return polls }, get results() { return results }, get lists() { return lists },
+  return { api: exports, patches, get polls() { return polls }, get results() { return results }, get lists() { return lists }, get refunds() { return refunds },
     setVisible: () => { visible = true }, setToken: (value: string | null) => { token = value },
     setFailure: (error: Error | null) => { failure = error },
     tick: async () => { tick?.(); await new Promise(resolve => setImmediate(resolve)) },
@@ -69,6 +76,7 @@ test('network interruption releases job as pending and can resume successfully',
   h.setFailure(new Error('Network timeout'))
   await h.api.resumePendingGenerationJobs()
   assert.equal(h.patches[0].status, 'pending')
+  assert.equal(h.refunds, 0, 'interruption bukan kegagalan terminal — saldo tidak boleh direfund')
   h.setFailure(null)
   await h.api.resumePendingGenerationJobs()
   assert.equal(h.results, 1)
@@ -80,4 +88,5 @@ test('only confirmed provider failure is terminal', async () => {
   h.setFailure(Object.assign(new Error('rejected by provider'), { name: 'NexabotJobFailed' }))
   await h.api.resumePendingGenerationJobs()
   assert.equal(h.patches[0].status, 'failed')
+  assert.equal(h.refunds, 1, 'kegagalan terminal harus mengembalikan saldo potongan job itu')
 })

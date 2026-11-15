@@ -8,6 +8,7 @@
 //
 // Dipakai halaman /topup/nexabot, /booster, dan alur generate (Image to Video,
 // AI Video Edit, Edit Gambar).
+import { rememberPendingCharge } from './pendingCharges'
 const API = '/api/nexabot'
 
 export interface NexabotUnlimited {
@@ -260,6 +261,13 @@ export async function chargeNexabotWallet(token: string, model?: string, batchId
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(data.error || 'Gagal memotong saldo NexaBot')
+  // Simpan pasangan potongan → jobId untuk jalur resume (refund otomatis bila job
+  // gagal terminal saat aplikasi dibuka lagi). Best-effort.
+  rememberPendingCharge('nexabot', {
+    usageId: typeof data.usage_id === 'number' && data.usage_id > 0 ? data.usage_id : undefined,
+    batchId: batchId || undefined,
+    model,
+  })
   return {
     balance: data.balance ?? 0,
     deducted: data.deducted ?? 0,

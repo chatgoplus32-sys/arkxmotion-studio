@@ -27,7 +27,6 @@ const PAGE_META: Record<ActiveTask['page'], { href: string; label: string; icon:
   'travel-photo': { href: '/generate/travel-photo', label: 'Travel Photo', icon: MapPin },
   'h3-i2v': { href: '/generate/h3-i2v', label: 'H3 Image to Video', icon: Film },
   'h3-music-avatar': { href: '/generate/h3-music-avatar', label: 'H3 Music Avatar', icon: Music },
-  'genjutsu-video': { href: '/generate/genjutsu-video', label: 'Genjutsu Video', icon: Video },
   'ugc-storyboard': { href: '/generate/ugc-storyboard', label: 'UGC Storyboard', icon: Clapperboard },
   'voice-over': { href: '/generate/voice-over', label: 'Voice Over', icon: Mic },
   'clone-voice': { href: '/generate/clone-voice', label: 'Clone Voice', icon: Mic },

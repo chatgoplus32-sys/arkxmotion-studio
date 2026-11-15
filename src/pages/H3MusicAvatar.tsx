@@ -4,7 +4,7 @@ import { Section, Button, Label, EmptyState } from '@/components/ui'
 import { LogDetailActions } from '@/components/ui/LogDetailActions'
 import { Loader2, Upload, Download, X, User, Sparkles, CheckCircle2, AlertCircle, Clock, Music, Copy, Trash2, Film, AudioLines } from 'lucide-react'
 import { useToastStore } from '@/stores/toastStore'
-import { submitRunningHubH3MusicAvatar, pollRunningHubTask, RUNNINGHUB_PODCAST_LIPSYNC_APP_ID, MUSIC_VIDEO_ASPECTS, MUSIC_VIDEO_MAX_SCENES, MUSIC_VIDEO_DEFAULT_ASPECT } from '@/lib/runninghub'
+import { submitRunningHubH3MusicAvatar, pollRunningHubTask } from '@/lib/runninghub'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { persistResultToR2, addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
 import { usePageActive } from '@/hooks/usePageActive'
@@ -37,11 +37,6 @@ function getStoredProviderKey(provider: string): string | null {
 // Prompt default sesuai contoh resmi docs app Music Avatar.
 const DEFAULT_PROMPT = 'The character in Image1 faces the camera, speaking and singing affectionately. Fixed camera. Clothing and background remain unchanged. No subtitles, no text.'
 
-// Contoh prompt untuk mode podcast (app lip-sync). Kosong = pakai default app.
-const PODCAST_PROMPT_PLACEHOLDER = 'Kosongkan untuk perilaku default, atau isi acting, mis.: "The character speaks naturally and relaxed, like a podcast host talking to the audience. Fixed camera. No subtitles, no text."'
-
-type AvatarMode = 'h3' | 'podcast' | 'mv'
-
 export default function H3MusicAvatarPage() {
   const addToast = useToastStore((s) => s.addToast)
 
@@ -49,9 +44,6 @@ export default function H3MusicAvatarPage() {
   const [characterPreview, setCharacterPreview] = useState<string | null>(null)
   const [audioFile, setAudioFile] = useState<File | null>(null)
   const [prompt, setPrompt] = useState('')
-  const [mode, setMode] = useState<AvatarMode>('h3')
-  const [sceneFiles, setSceneFiles] = useState<File[]>([])
-  const [aspectRatio, setAspectRatio] = useState<string>('9:16 (Portrait Widescreen)')
   const [loading, setLoading] = useState(false)
   const [taskStatus, setTaskStatus] = useState<'idle' | 'submitting' | 'running' | 'success' | 'error'>('idle')
   const [statusText, setStatusText] = useState('')
@@ -91,16 +83,13 @@ export default function H3MusicAvatarPage() {
   // ────────────────────────────────────────────────────────────
   const runSingle = async (key: string) => {
     if (!characterFile || !audioFile) throw new Error('File tidak lengkap')
-    const efPrompt = mode === 'podcast' ? prompt.trim() : (prompt.trim() || DEFAULT_PROMPT)
+    const efPrompt = prompt.trim() || DEFAULT_PROMPT
 
     const submit = await submitRunningHubH3MusicAvatar({
       imageFile: characterFile,
       audioFile,
       prompt: efPrompt,
       apiKey: key,
-      appId: mode === 'podcast' ? RUNNINGHUB_PODCAST_LIPSYNC_APP_ID : undefined,
-      sceneFiles: mode === 'mv' ? sceneFiles : undefined,
-      aspectRatio: mode === 'mv' ? aspectRatio : undefined,
     })
     setTaskIdStr(submit.taskId)
     setTaskStatus('running')
@@ -127,7 +116,7 @@ export default function H3MusicAvatarPage() {
       return
     }
 
-    const efPrompt = mode === 'podcast' ? prompt.trim() : (prompt.trim() || DEFAULT_PROMPT)
+    const efPrompt = prompt.trim() || DEFAULT_PROMPT
 
     setLoading(true)
     setError(null)
@@ -135,7 +124,7 @@ export default function H3MusicAvatarPage() {
     setProgress(0)
     setTaskStatus('submitting')
     setLogs([])
-    addLog(`Mulai ${mode === 'podcast' ? 'Podcast Avatar (Lip-Sync)' : 'Music Avatar'}: ${characterFile.name} + ${audioFile.name}`)
+    addLog(`Mulai Music Avatar: ${characterFile.name} + ${audioFile.name}`)
     if (efPrompt) addLog(`Prompt: ${efPrompt.slice(0, 100)}...`)
 
     const startTime = Date.now()
@@ -248,34 +237,6 @@ export default function H3MusicAvatarPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left: Input */}
         <Section title="🎵 Input" className="!p-6">
-          {/* Mode selector */}
-          <div className="mb-4 grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => setMode('h3')}
-              className={`p-3 rounded-lg border text-left transition-colors ${mode === 'h3' ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/40'}`}
-            >
-              <div className="text-sm font-medium">🎵 Music Avatar</div>
-              <div className="text-xs text-muted-foreground mt-0.5">Nyanyi / ekspresif (H3)</div>
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode('podcast')}
-              className={`p-3 rounded-lg border text-left transition-colors ${mode === 'podcast' ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/40'}`}
-            >
-              <div className="text-sm font-medium">🎙️ Mode Podcast</div>
-              <div className="text-xs text-muted-foreground mt-0.5">Bicara 2-3 menit, tanpa subtitle</div>
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode('mv')}
-              className={`p-3 rounded-lg border text-left transition-colors ${mode === 'mv' ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/40'}`}
-            >
-              <div className="text-sm font-medium">🎬 Music Video</div>
-              <div className="text-xs text-muted-foreground mt-0.5">1 foto + audio + maks 3 scene</div>
-            </button>
-          </div>
-
           {/* Image Upload */}
           <div className="mb-4">
             <Label className="mb-2 block">🧑 Foto Karakter</Label>
@@ -299,7 +260,7 @@ export default function H3MusicAvatarPage() {
 
           {/* Audio Upload */}
           <div className="mb-4">
-            <Label className="mb-2 block">{mode === 'podcast' ? '🎧 Audio Podcast' : '🎧 Audio Lagu'}</Label>
+            <Label className="mb-2 block">🎧 Audio Lagu</Label>
             {audioFile ? (
               <div className="relative rounded-lg border border-border p-3 bg-surface-secondary">
                 <button onClick={() => setAudioFile(null)} className="absolute top-2 right-2 p-1 rounded-full bg-background/80 hover:bg-red-500/80 transition-colors">
@@ -323,62 +284,6 @@ export default function H3MusicAvatarPage() {
             <input ref={audioPickerRef} type="file" accept="audio/*" className="hidden" onChange={(e) => e.target.files?.[0] && setAudioFile(e.target.files[0])} />
           </div>
 
-          {/* Scene Upload (opsional, hanya mode Music Video) */}
-          {mode === 'mv' && (
-            <div className="mb-4">
-              <Label className="mb-2 block">📸 Foto Scene Referensi (opsional)</Label>
-              <div className="space-y-2 max-h-40 overflow-y-auto">
-                {sceneFiles.map((file, i) => (
-                  <div key={i} className="flex items-center justify-between gap-2 p-2 rounded-lg border border-border/50 bg-surface-secondary">
-                    <div className="flex items-center gap-3">
-                      <div className="text-sm truncate">{file.name}</div>
-                      <div className="text-xs text-muted-foreground">({(file.size / 1024 / 1024).toFixed(1)} MB)</div>
-                    </div>
-                    <button
-                      onClick={() => setSceneFiles((prev) => prev.filter((_, idx) => idx !== i))}
-                      className="text-xs text-red-400 hover:text-red-300"
-                    >
-                      ❌
-                    </button>
-                  </div>
-                ))}
-                {sceneFiles.length < MUSIC_VIDEO_MAX_SCENES && (
-                  <div
-                    onClick={() => {
-                      const input = document.createElement('input')
-                      input.type = 'file'
-                      input.accept = 'image/*'
-                      input.onchange = (e) => {
-                        const files = Array.from((e.target as HTMLInputElement).files || [])
-                        setSceneFiles((prev) => [...prev, ...files].slice(0, MUSIC_VIDEO_MAX_SCENES))
-                      }
-                      input.click()
-                    }}
-                    className="border-2 border-dashed border-primary/30 rounded-lg p-3 cursor-pointer hover:border-primary/50 transition-colors text-center"
-                  >
-                    <div className="text-sm text-muted-foreground">Tambah scene referensi</div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Aspect Ratio (hanya mode Music Video) */}
-          {mode === 'mv' && (
-            <div className="mb-4">
-              <Label className="mb-2 block">📐 Aspect Ratio</Label>
-              <select
-                value={aspectRatio}
-                onChange={(e) => setAspectRatio(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-surface-secondary border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-              >
-                {MUSIC_VIDEO_ASPECTS.map((ratio) => (
-                  <option key={ratio} value={ratio}>{ratio}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
           {/* Prompt */}
           <div className="mb-4">
             <Label className="mb-2 block">✏️ Prompt Acting (opsional)</Label>
@@ -386,7 +291,7 @@ export default function H3MusicAvatarPage() {
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               className="w-full h-20 px-3 py-2 rounded-lg bg-surface-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:ring-2 focus:ring-primary/50"
-              placeholder={mode === 'podcast' ? PODCAST_PROMPT_PLACEHOLDER : DEFAULT_PROMPT}
+              placeholder={DEFAULT_PROMPT}
             />
           </div>
 
@@ -398,7 +303,7 @@ export default function H3MusicAvatarPage() {
             title="Ctrl+Enter untuk jalankan"
           >
             {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
-            {taskStatus === 'submitting' ? '🚀 Submitting...' : taskStatus === 'running' ? `⏳ ${statusText || 'Running...'} ${progress ? `(${progress}%)` : ''}` : mode === 'podcast' ? '🚀 Generate Podcast Avatar' : '🚀 Generate Music Avatar'}
+            {taskStatus === 'submitting' ? '🚀 Submitting...' : taskStatus === 'running' ? `⏳ ${statusText || 'Running...'} ${progress ? `(${progress}%)` : ''}` : '🚀 Generate Music Avatar'}
           </Button>
         </Section>
 
