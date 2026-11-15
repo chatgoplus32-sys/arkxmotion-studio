@@ -953,6 +953,18 @@ const HealthAnimTool = () => {
     }
   };
 
+  // Omni Flash tidak melihat narasi kalau prompt-nya tidak memuatnya —
+  // injeksikan kalimat voiceover Bahasa Indonesia ke prompt video agar
+  // audionya berbahasa Indonesia (bukan Inggris default). Dilewati bila
+  // prompt sudah memuat arahan voiceover Indonesia.
+  const buildOmniVideoPromptWithVoice = (prompt: string, voiceover: string) => {
+    const vo = String(voiceover || '').trim();
+    const body = String(prompt || '').trim();
+    if (!vo) return body;
+    if (/voiceover[^.]*(Indonesian|Bahasa Indonesia)/i.test(body)) return body;
+    return `${body}\nA voiceover narrates in Indonesian (Bahasa Indonesia), warm and friendly tone, saying exactly: "${vo}". No English speech.`;
+  };
+
   // Loop berurutan atas index scene yang diminta; gabung otomatis bila SEMUA
   // scene berhasil (termasuk hasil retry). State di-update papan ke papan.
   const runOmniBatchLoop = async (indexes: number[], base: OmniBatchScene[]) => {
@@ -971,7 +983,7 @@ const HealthAnimTool = () => {
         next[i] = { ...next[i], status: 'running', error: undefined };
         setOmniBatch([...next]);
         try {
-          const { url, jobId } = await runOmniBatchScene(scene.video_prompt, (m) => setOmniBatchStatus(`Scene ${i + 1}/${total}: ${m}`));
+          const { url, jobId } = await runOmniBatchScene(buildOmniVideoPromptWithVoice(scene.video_prompt, scene.voiceover), (m) => setOmniBatchStatus(`Scene ${i + 1}/${total}: ${m}`));
           next[i] = { ...next[i], status: 'done', url, jobId, error: undefined };
         } catch (e: any) {
           next[i] = { ...next[i], status: 'error', error: e?.message || 'Gagal membuat video.' };
@@ -1038,11 +1050,11 @@ ATURAN MUTLAK:
 1. Tepat ${omniSceneCount} scene, bernomor 1 sampai ${omniSceneCount}.
 2. Scene 1 = HOOK yang menghentikan scroll. Scene ${omniSceneCount} = CTA singkat. Scene di antaranya = BODY, satu poin penjelasan per scene.
 3. Latar visual SELALU di dalam tubuh manusia (pembuluh darah, organ, jaringan) dengan karakter organ/sel lucu; bukan manusia asli dan tidak ada orang berbicara.
-4. voiceover: bahasa Indonesia, kalimat pendek yang muat diucapkan dalam 15 detik.
+4. voiceover: SELALU Bahasa Indonesia (BUKAN Bahasa Inggris), kalimat pendek yang muat diucapkan dalam 15 detik.
 5. visual: deskripsi visual scene dalam Bahasa Indonesia.
-6. video_prompt: prompt sinematik BAHASA INGGRIS untuk video generator, satu paragraf, sebutkan kamera, gerakan kamera, lighting, dan durasi 15 detik.
+6. video_prompt: prompt sinematik BAHASA INGGRIS untuk video generator, satu paragraf, sebutkan kamera, gerakan kamera, lighting, dan durasi 15 detik — WAJIB diakhiri dengan kalimat: 'A voiceover narrates in Indonesian (Bahasa Indonesia), warm and friendly tone, saying exactly: "<teks voiceover scene>".' (pakai teks voiceover Bahasa Indonesia persis seperti di field voiceover).
 7. Tanpa diagnosis, janji kesembuhan, atau klaim kesehatan berlebihan.`;
-      const systemInstruction = 'Anda penulis skrip video kesehatan vertikal. Output JSON sesuai skema. Narasi dalam Bahasa Indonesia, prompt video dalam Bahasa Inggris.';
+      const systemInstruction = 'Anda penulis skrip video kesehatan vertikal. Output JSON sesuai skema. Narasi HANYA dalam Bahasa Indonesia — JANGAN pernah Bahasa Inggris untuk voiceover. Prompt video dalam Bahasa Inggris, dan WAJIB diakhiri dengan kalimat voiceover Bahasa Indonesia seperti diminta di aturan 6.';
       const schema = {
         type: Type.OBJECT,
         properties: {
