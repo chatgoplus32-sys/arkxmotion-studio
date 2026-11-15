@@ -600,20 +600,68 @@ export default function WatermarkRemoverPage() {
           addToast('✅ Watermark Gemini dibersihkan (per-frame)!', 'success')
           setProgress(100)
         } else {
-          // Per-frame: area watermark dibersihkan ULANG tiap frame dari konteks
-          // frame itu sendiri, jadi tidak ada "patch beku" saat ada gerakan.
-          const meta = await loadVideoMetadata(file)
-          const cleaner = createSeamFrameProcessor(maskData, meta.video.videoWidth, meta.video.videoHeight)
-          URL.revokeObjectURL(meta.url)
-          if (!cleaner) {
-            addToast('Mask kosong — tandai dulu area watermark.', 'error')
-            setProcessing(false); return
+          // Exact tidak ketemu — pakai mesin AI resmi, persis seperti
+          // nexabot.id/watermark-remover (paket yang sama, dijalankan via
+          // iframe). Kalau mesin menolak/gagal, baru fallback ke seam-blur.
+          setProgressMsg('Exact tidak ketemu — mesin AI resmi (seperti nexabot.id/watermark-remover)…'); setProgress(4)
+          const controller = new AbortController()
+          engineAbort.current = controller
+          setEngineRunning(true)
+          let engineDone = false
+          try {
+            const result = await autoRemoveWatermarkFromVideo(file, {
+              onProgress: onStage,
+              onNotice,
+              onPhase: (phase) => setEngineRunning(phase === 'engine'),
+              signal: controller.signal,
+            })
+            setResultBlob(result.blob)
+            setResultUrl(URL.createObjectURL(result.blob))
+            setCompare('after')
+            setProgress(100)
+            engineDone = true
+            setEngineForce(result.engineRefused)
+            if (result.via === 'engine') {
+              addToast(`✅ Watermark dibersihkan mesin AI${result.frames ? ` — ${result.frames} frame` : ''}`, 'success')
+            } else if (result.region) {
+              paintAutoMask(result.region)
+              addToast(
+                result.via === 'gemini-exact'
+                  ? `✅ Watermark pola Gemini dibersihkan per-frame (${result.frames} frame)`
+                  : `✅ Area watermark dibersihkan AI per-frame (${result.frames} frame)`,
+                'success',
+              )
+            } else {
+              addToast('✅ Watermark dibersihkan mesin AI', 'success')
+            }
+          } catch (e: any) {
+            if (controller.signal.aborted || e?.name === 'CleanupCancelledError') {
+              engineDone = true // pembatalan user — jangan lanjut ke fallback
+              addToast('⏹️ Penghapusan dihentikan — video tidak diubah.', 'info')
+            } else {
+              addToast(`Mesin AI gagal (${String(e?.message || e).slice(0, 90)}) — pakai jalur mask`, 'warning')
+            }
+          } finally {
+            setEngineRunning(false)
+            if (engineAbort.current === controller) engineAbort.current = null
           }
-          const frames = await runVideoThrough(file, (ctx) => cleaner.process(ctx), 'Bersih per-frame')
-          addToast(
-            `✅ Video dibersihkan per-frame (${frames || cleaner.frames()} frame, ${cleaner.avgMs().toFixed(1)} ms/frame ≈ ${cleaner.secondsPerMinute().toFixed(1)} s per menit video)`,
-            'success',
-          )
+
+          if (!engineDone) {
+            // Per-frame: area watermark dibersihkan ULANG tiap frame dari konteks
+            // frame itu sendiri, jadi tidak ada "patch beku" saat ada gerakan.
+            const meta = await loadVideoMetadata(file)
+            const cleaner = createSeamFrameProcessor(maskData, meta.video.videoWidth, meta.video.videoHeight)
+            URL.revokeObjectURL(meta.url)
+            if (!cleaner) {
+              addToast('Mask kosong — tandai dulu area watermark.', 'error')
+              setProcessing(false); return
+            }
+            const frames = await runVideoThrough(file, (ctx) => cleaner.process(ctx), 'Bersih per-frame')
+            addToast(
+              `✅ Video dibersihkan per-frame (${frames || cleaner.frames()} frame, ${cleaner.avgMs().toFixed(1)} ms/frame ≈ ${cleaner.secondsPerMinute().toFixed(1)} s per menit video)`,
+              'success',
+            )
+          }
         }
       } else {
         // Image: exact Gemini removal first (instant, lossless), else local pipeline.
@@ -814,7 +862,7 @@ export default function WatermarkRemoverPage() {
             </Button>
           )}
           <p className="text-xs text-muted-foreground mt-2">
-            Gemini/Veo: reverse-alpha exact (instan). Lainnya: texture + LaMa AI (~93MB, cached).
+            Video diproses berurutan: exact Gemini/Veo per-frame → <strong>mesin AI resmi (sama seperti nexabot.id/watermark-remover)</strong> → seam-blur. Mesin yang sama yang kamu coba bersih di NexaBot sudah terintegrasi di tombol ini. Gambar: exact → LaMa AI (~93MB, cached).
           </p>
         </Section>
 
