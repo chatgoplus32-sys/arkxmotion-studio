@@ -355,6 +355,7 @@ const HealthAnimTool = () => {
   const [aiCallInfo, setAiCallInfo] = useState<{ status: 'ok' | 'error'; model: string; ms: number; pesan?: string; dicoba: string[] } | null>(null);
   const [omniConfirmOpen, setOmniConfirmOpen] = useState(false);
   const [omniBatchModel, setOmniBatchModel] = useState<'omni_flash' | 'omni_lama'>('omni_flash');
+  const [loadingBridge, setLoadingBridge] = useState(false);
   const [omniConfirmMode, setOmniConfirmMode] = useState<'single' | 'batch'>('single');
   const omniVideoUrl = useRef('');
   // ── Batch scene: generate 1 video per scene (3/4/6), lalu gabung via ffmpeg ──
@@ -1017,27 +1018,90 @@ const HealthAnimTool = () => {
     await runOmniBatchLoop(omniScenes.map((_, i) => i), base);
   };
 
-  // Salin prompt/naskah affiliate ke Omni Flash batch (video per scene +
-  // gabung via ffmpeg). Prioritas prompts (video_prompt); fallback naskah.
-  const bridgeAffiliateToOmniBatch = () => {
-    const src = (Array.isArray(prompts) && prompts.length ? prompts : affiliateScript) as any[];
+  // Salin materi affiliate ke Omni Flash batch (video per scene + gabung via
+  // ffmpeg). Jumlah scene mengikuti pilihan `omniSceneCount` (3/4/6, masing-
+  // masing 15 detik). Kalau jumlah & panjang voiceover sudah pas, dipakai
+  // langsung; kalau tidak, Gemini menulis ulang narasinya agar muat.
+  const bridgeAffiliateToOmniBatch = async () => {
+    const target = omniSceneCount;
+    const src = ((Array.isArray(prompts) && prompts.length ? prompts : affiliateScript) as any[]) || [];
     if (!Array.isArray(src) || src.length === 0) {
       setAppError('Belum ada prompt. Klik "Generate Prompt" dulu di tab Animasi Affiliate.');
       return;
     }
-    const mapped = src.map((item: any, i: number) => ({
+    const countWords = (text: string) => String(text || '').trim().split(/\s+/).filter(Boolean).length;
+    const fits = src.length === target && src.every(item => countWords(item?.voiceover) <= 38);
+    const mapScene = (item: any, i: number) => ({
       scene: Number(item?.scene) || i + 1,
-      role: i === 0 ? 'Hook' : i === src.length - 1 ? 'CTA' : 'Penjelasan',
-      voiceover: String(item?.voiceover || ''),
-      visual: String(item?.image_prompt || item?.visual || ''),
-      video_prompt: String(item?.video_prompt || item?.visual || ''),
-    }));
-    setOmniScenes(mapped);
-    setOmniIdea((affiliateProductDesc || 'Konten affiliate').slice(0, 200));
-    setOmniAspectRatio('9:16');
-    setOmniBatchStatus('');
-    setActiveTab('omni_flash');
+      role: i === 0 ? 'Hook' : i === target - 1 ? 'CTA' : 'Penjelasan',
+      voiceover: String(item?.voiceover || '').trim(),
+      visual: String(item?.image_prompt || item?.visual || '').trim(),
+      video_prompt: String(item?.video_prompt || item?.visual || '').trim(),
+    });
     setAppError('');
+    if (fits) {
+      setOmniScenes(src.map(mapScene));
+      setOmniIdea((affiliateProductDesc || 'Konten affiliate').slice(0, 200));
+      setOmniAspectRatio('9:16');
+      setOmniBatchStatus('');
+      setActiveTab('omni_flash');
+      return;
+    }
+    setLoadingBridge(true);
+    startProgress();
+    try {
+      const mediaData = affiliateProductPhoto
+        ? { mimeType: affiliateProductPhoto.type, data: await fileToBase64(affiliateProductPhoto) }
+        : undefined;
+      const sourceText = src.map((item: any, i: number) =>
+        `Scene ${i + 1}\nVisual: ${item?.visual || item?.image_prompt || ''}\nVoiceover: ${item?.voiceover || ''}\nVideo prompt: ${item?.video_prompt || ''}`
+      ).join('\n\n');
+      const prompt = `Tulis ulang materi konten affiliate berikut menjadi TEPAT ${target} scene untuk video TikTok 9:16, masing-masing berdurasi 15 detik (Omni Flash 1.2).
+
+${sourceText}
+
+ATURAN WAJIB:
+1. TEPAT ${target} scene, bernomor 1 sampai ${target}. Scene 1 = HOOK yang menghentikan scroll. Scene ${target} = CTA singkat. Sisanya = BODY (satu poin per scene).
+2. voiceover: Bahasa Indonesia, MAKSIMAL 33 kata per scene (~15 detik bicara normal). Kalimat pendek, mengalir, anti overclaim ("membantu", "mendukung", bukan "menyembuhkan").
+3. visual: deskripsi visual 1-2 kalimat Bahasa Indonesia.
+4. video_prompt: prompt sinematik BAHASA INGGRIS satu paragraf, sebutkan kamera, gerakan kamera, lighting, durasi 15 detik; WAJIB diakhiri kalimat: 'A voiceover narrates in Indonesian (Bahasa Indonesia), warm and friendly tone.'
+5. Tanpa diagnosis medis, tanpa janji kesembuhan, tanpa klaim kesehatan berlebihan.
+Produk: ${affiliateProductDesc || 'produk kesehatan'}`;
+      const systemInstruction = 'Kamu penulis skrip video kesehatan affiliate Indonesia. Output JSON sesuai skema. Voiceover HANYA Bahasa Indonesia; video_prompt Bahasa Inggris.';
+      const schema = {
+        type: Type.OBJECT,
+        properties: {
+          scenes: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                scene: { type: Type.NUMBER },
+                role: { type: Type.STRING },
+                voiceover: { type: Type.STRING },
+                visual: { type: Type.STRING },
+                video_prompt: { type: Type.STRING }
+              },
+              required: ["scene", "role", "voiceover", "visual", "video_prompt"]
+            }
+          }
+        },
+        required: ["scenes"]
+      };
+      const parsed = await callGeminiAPI(prompt, systemInstruction, schema, mediaData);
+      const scenes = Array.isArray(parsed?.scenes) ? parsed.scenes : [];
+      if (!scenes.length) throw new Error('Gemini tidak mengembalikan scene. Coba lagi atau ganti materi.');
+      setOmniScenes(scenes.slice(0, target).map(mapScene));
+      setOmniIdea((affiliateProductDesc || 'Konten affiliate').slice(0, 200));
+      setOmniAspectRatio('9:16');
+      setOmniBatchStatus('');
+      setActiveTab('omni_flash');
+    } catch (e) {
+      handleApiError(e, 'Gagal menyesuaikan scene ke jumlah yang dipilih.');
+    } finally {
+      finishProgress();
+      setLoadingBridge(false);
+    }
   };
 
   const retryFailedScenes = async () => {
@@ -1980,13 +2044,19 @@ ATURAN MUTLAK:
                       </button>
                     </div>
                     {prompts.length > 0 && (
-                      <button
-                        onClick={bridgeAffiliateToOmniBatch}
-                        className="w-full mt-3 flex items-center justify-center gap-2 py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all shadow-md active:scale-95"
-                        title="Kirim scene-scene affiliate ke Omni Flash: 1 video per scene, digabung otomatis via ffmpeg"
-                      >
-                        <Zap className="w-5 h-5" /> Generate Omni per Scene + Gabung via FFmpeg
-                      </button>
+                      <div className="mt-3 flex items-stretch gap-2">
+                        <select value={omniSceneCount} onChange={e => setOmniSceneCount(Number(e.target.value))} disabled={loadingBridge} className="bg-white border border-slate-200 text-slate-700 text-xs font-bold rounded-lg px-2 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-100" title="Jumlah scene — masing-masing 15 detik (Omni Flash 1.2)">
+                          {[3, 4, 6].map(n => <option key={n} value={n}>{n} scene × 15 dtk</option>)}
+                        </select>
+                        <button
+                          onClick={bridgeAffiliateToOmniBatch}
+                          disabled={loadingBridge}
+                          className="flex-1 flex items-center justify-center gap-2 py-4 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-bold rounded-xl transition-all shadow-md active:scale-95"
+                          title="AI menyesuaikan narasi & scene: 3/4/6 scene × 15 detik (Omni Flash 1.2), 1 video per scene, digabung otomatis via ffmpeg"
+                        >
+                          {loadingBridge ? <Loader2 className="w-5 h-5 animate-spin" /> : <Zap className="w-5 h-5" />} Generate Omni per Scene + Gabung via FFmpeg
+                        </button>
+                      </div>
                     )}
                   </div>
                 )}
@@ -2156,12 +2226,16 @@ ATURAN MUTLAK:
                   {prompts.length > 0 ? (
                     <div className="space-y-6">
                       <div className="flex flex-wrap justify-end gap-2 px-2 mb-2">
+                        <select value={omniSceneCount} onChange={e => setOmniSceneCount(Number(e.target.value))} disabled={loadingBridge} className="bg-white border border-slate-200 text-slate-700 text-xs font-bold rounded-lg px-2 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-100" title="Jumlah scene — masing-masing 15 detik (Omni Flash 1.2)">
+                          {[3, 4, 6].map(n => <option key={n} value={n}>{n} scene × 15 dtk</option>)}
+                        </select>
                         <button
                           onClick={bridgeAffiliateToOmniBatch}
-                          className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-sm active:scale-95"
-                          title="Kirim scene-scene ini ke Omni Flash: 1 video per scene, digabung otomatis via ffmpeg"
+                          disabled={loadingBridge}
+                          className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-sm active:scale-95"
+                          title="AI menyesuaikan narasi & jumlah scene, lalu 1 video per scene digabung otomatis via ffmpeg"
                         >
-                          <Zap className="w-4 h-4" /> Generate Omni per Scene + Gabung FFmpeg
+                          {loadingBridge ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />} Generate Omni per Scene + Gabung FFmpeg
                         </button>
                       </div>
                       <div className="flex justify-end px-2">
