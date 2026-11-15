@@ -18,6 +18,7 @@ import nexabotRoutes from '../server/routes/nexabot.js'
 import {
   NEXABOT_JOB_LOCK,
   acquireNexabotSubmitSlot,
+  clearNexabotLanes,
   isNexabotJobFinishedText,
   isNexabotUpstreamBusyText,
   markNexabotJobFinished,
@@ -445,3 +446,20 @@ async function getJson(path: string, headers: Record<string, string> = {}) {
   const text = await res.text()
   return { status: res.status, body: text ? JSON.parse(text) : undefined }
 }
+
+test('clearNexabotLanes: kosongkan latch macet (untuk admin), tanpa memengaruhi test lain', () => {
+  const now = Date.now()
+  markNexabotJobRunning('lane-macet-1', 'job-macet-1', { nowMs: now })
+  markNexabotJobRunning('lane-macet-2', 'job-macet-2', { nowMs: now })
+  markNexabotLaneCooldown('lane-cooldown-macet', 60_000, now)
+
+  const sibukSebelum = nexabotLaneBusy('lane-macet-1')
+  assert.equal(sibukSebelum.busy, true)
+
+  const hasil = clearNexabotLanes()
+  assert.ok(hasil.jobs >= 2, 'latch job dikosongkan')
+  assert.ok(hasil.cooldowns >= 1, 'cooldown dikosongkan')
+  assert.equal(nexabotLaneBusy('lane-macet-1').busy, false, 'lane langsung boleh ditembak lagi')
+  assert.equal(nexabotLaneBusy('lane-macet-2').busy, false)
+  assert.equal(clearNexabotLanes().jobs, 0, 'pemanggilan kedua = no-op')
+})

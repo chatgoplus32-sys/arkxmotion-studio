@@ -52,12 +52,14 @@ const ALLOWED_UNDEFINED = new Set([
   'chrome', // API ekstensi browser (manifest v3), tidak disediakan @types/node
 ])
 
-// Bundel SPA yang ikut di-commit sebagai aset statis (ARKX AUTO Studio). Sudah
-// ter-minify dan memakai global yang disuntikkan skrip inline di index.html
-// (__firebase_config, __app_id, __initial_auth_token), jadi identifier itu
-// memang tidak terdefinisi di file mana pun dan gerbang ini selalu menuduhnya
-// salah (#179, 5 Nov 2026: deploy Studio mati di gerbang 1, 109 detik).
-const SKIP_PATHS = ['public/studio']
+// Bundel aplikasi statis yang ikut di-commit sebagai aset statis (ARKX AUTO Studio,
+// Drama Studio). Sudah ter-minify dan memakai global yang disuntikkan skrip inline
+// di index.html / file vendor (public/drama-studio/assets/xlsx.full.min.js →
+// global XLSX), jadi identifier itu memang tidak terdefinisi di file mana pun dan
+// gerbang ini selalu menuduhnya salah (#179, 5 Nov 2026: deploy Studio mati di
+// gerbang 1; 15 Nov 2026: fitur ekspor Excel drama-studio memakai global XLSX
+// dari file vendor ter-minify — semua identifier vendor selalu "tidak terdefinisi").
+const SKIP_PATHS = ['public/studio', 'public/drama-studio']
 
 // ---------------------------------------------------------------------------
 // 1. Kumpulkan file kode yang ikut ter-deploy, termasuk yang di luar semua tsconfig

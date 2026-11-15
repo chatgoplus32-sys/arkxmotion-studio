@@ -50,6 +50,7 @@ import { serverAccounts, serverCookieEligible, serverKeyEligible } from '../lib/
 import { nexadanceQuota, nexadanceQuotaMessage } from '../lib/nexabotQuota.js'
 import { nextUniqueCode } from '../lib/qrisPayment.js'
 import { createBasunipayPayment } from '../lib/basunipay.js'
+import { clearNexabotLanes } from '../../shared/nexabotProxy.js'
 
 // Definisi harga tinggal di shared/pricing.ts supaya server, fungsi Vercel, dan
 // endpoint publik /api/public/pricing tidak pernah beda angka.
@@ -711,6 +712,20 @@ router.get('/admin/upstream-usage', authenticateToken, requireAdmin, (req: AuthR
     console.error('NexaBot upstream usage report error:', error)
     res.status(500).json({ error: 'Internal server error' })
   }
+})
+
+// ── Operasi admin: Lepas lane macet ─────────────────────────────────────────
+// Lane NexaBot adalah latch in-memory (shared/nexabotProxy.ts). Job yang sudah
+// selesai di sisi NexaBot tapi tidak pernah dipoll sampai selesai oleh
+// kliennya (mis. member menutup tab setelah job selesai, lalu tidak kembali)
+// tinggal menghuni lane sampai idleMs (3 mnt) atau maxHoldMs (12 mnt).
+// Endpoint ini membebaskannya tanpa menunggu waktu habis; catatan: kalau ada
+// job yang benar-benar masih berjalan, submit berikutnya ditolak lagi sekali
+// oleh upstream (cooldown dipasang ulang) — tidak pernah membuat job ganda.
+router.post('/admin/lane/clear', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
+  const { jobs, cooldowns } = clearNexabotLanes()
+  console.warn(`[nexabot-wallet] admin ${req.user?.id} mengosongkan lane NexaBot (jobs=${jobs}, cooldowns=${cooldowns})`)
+  res.json({ ok: true, cleared_jobs: jobs, cleared_cooldowns: cooldowns })
 })
 
 export default router

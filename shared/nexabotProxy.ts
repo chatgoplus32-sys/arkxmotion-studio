@@ -711,6 +711,16 @@ export function resetNexabotLaneJobs(): void {
   laneCooldowns.clear()
 }
 
+/** Operasi produksi (admin): kosongkan seluruh catatan lane dan cooldown. Dipakai saat lane macet — mis. job sudah selesai di sisi NexaBot tetapi tidak pernah dipoll sampai selesai (member menutup tab) sehingga latch tinggal. Aman kalaupun ada job yang benar-benar masih berjalan: submit berikutnya cukup ditolak sekali lagi oleh upstream (cooldown dipasang ulang), tanpa membuat job ganda. */
+export function clearNexabotLanes(): { jobs: number; cooldowns: number } {
+  const jobs = laneJobs.size
+  const cooldowns = laneCooldowns.size
+  laneJobs.clear()
+  jobLanes.clear()
+  laneCooldowns.clear()
+  return { jobs, cooldowns }
+}
+
 /**
  * Penyebab asli kegagalan jaringan, diambil dari `err.cause`.
  *
