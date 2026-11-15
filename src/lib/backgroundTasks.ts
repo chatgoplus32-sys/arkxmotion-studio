@@ -26,7 +26,6 @@ export type GenerationPage =
   | 'h3-i2v'
   | 'h3-music-avatar'
   | 'genjutsu-video'
-  | 'viral-effects'
   | 'ugc-storyboard'
   | 'voice-over'
   | 'clone-voice'
@@ -53,7 +52,6 @@ export const GENERATION_PAGE_KIND: Record<GenerationPage, GenerationKind> = {
   'h3-i2v': 'video',
   'h3-music-avatar': 'video',
   'genjutsu-video': 'video',
-  'viral-effects': 'video',
   'ugc-storyboard': 'video',
   'voice-over': 'audio',
   'clone-voice': 'audio',
@@ -84,7 +82,6 @@ export const GENERATION_PAGE_PATH: Record<GenerationPage, string> = {
   'h3-i2v': '/generate/h3-i2v',
   'h3-music-avatar': '/generate/h3-music-avatar',
   'genjutsu-video': '/generate/genjutsu-video',
-  'viral-effects': '/generate/viral-effects',
   'ugc-storyboard': '/generate/ugc-storyboard',
   'voice-over': '/generate/voice-over',
   'clone-voice': '/generate/clone-voice',

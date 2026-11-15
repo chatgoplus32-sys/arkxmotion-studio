@@ -61,7 +61,6 @@ const RESULTS_PAGE_SOURCE: Record<CompletedResult['page'], string> = {
   'h3-i2v': 'H3 Image to Video',
   'h3-music-avatar': 'H3 Music Avatar',
   'genjutsu-video': 'Genjutsu Video',
-  'viral-effects': 'Viral Effects',
   'ugc-storyboard': 'UGC Storyboard',
   'voice-over': 'Voice Over',
   'clone-voice': 'Clone Voice',

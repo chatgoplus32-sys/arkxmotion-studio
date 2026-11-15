@@ -820,43 +820,6 @@ export async function submitRunningHubH3MusicAvatar(params: H3MusicAvatarParams)
   }
 }
 
-// App "60 Popular Video Effects Collection" (Tongyi Wanxiang WAN2.1) — viral effects.
-export const RUNNINGHUB_VIRAL_EFFECTS_APP_ID = '1902990197309476866'
-
-export interface ViralEffectsParams {
-  imageFile: File
-  effectNumber?: number
-  steps?: number
-  frames?: number
-  resolution?: number
-  prompt?: string
-  apiKey?: string
-  appId?: string
-}
-
-export async function submitRunningHubViralEffects(params: ViralEffectsParams): Promise<MotionControlResult> {
-  const appId = params.appId || RUNNINGHUB_VIRAL_EFFECTS_APP_ID
-  const imageBase64 = await fileToBase64(params.imageFile)
-  const result = await runninghubProxy('submit-viral-effects', {
-    app_id: appId,
-    imageBase64,
-    imageFileName: params.imageFile.name,
-    imageMimeType: params.imageFile.type || 'image/jpeg',
-    effectNumber: params.effectNumber ?? 1,
-    steps: params.steps ?? 2,
-    frames: params.frames ?? 2,
-    resolution: params.resolution ?? 3,
-    prompt: params.prompt || '',
-  }, params.apiKey)
-  return {
-    id: result.id || result.taskId,
-    taskId: result.taskId || result.id,
-    status: result.status || 'QUEUED',
-    provider: result.provider || 'runninghub',
-    workflowId: result.workflowId || appId,
-  }
-}
-
 export interface GenjutsuVideoParams {
   imageFile: File
   videoFile: File
@@ -896,6 +859,7 @@ export async function submitRunningHubGenjutsuVideo(params: GenjutsuVideoParams)
     workflowId: result.workflowId || appId,
   }
 }
+
 export interface VideoUpscaleParams {
   videoFile: File
   steps?: number
