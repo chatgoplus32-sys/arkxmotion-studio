@@ -1151,6 +1151,19 @@ ATURAN MUTLAK:
                            <option value="Herbal & Tanaman">Herbal & Tanaman</option>
                            <option value="Buah & Nutrisi">Buah & Nutrisi</option>
                            <option value="Kesehatan Mental">Kesehatan Mental</option>
+                           <option value="Penyakit & Gejala">Penyakit & Gejala</option>
+                           <option value="Obesitas & Turun Berat Badan">Obesitas & Turun Berat Badan</option>
+                           <option value="Fitness & Olahraga">Fitness & Olahraga</option>
+                           <option value="Ibu & Bayi">Ibu & Bayi</option>
+                           <option value="Lansia">Lansia</option>
+                           <option value="Kulit & Kecantikan">Kulit & Kecantikan</option>
+                           <option value="Imunitas & Daya Tahan">Imunitas & Daya Tahan</option>
+                           <option value="Pencernaan & Diet">Pencernaan & Diet</option>
+                           <option value="Jantung & Gula Darah">Jantung & Gula Darah</option>
+                           <option value="Tekanan Darah & Kolesterol">Tekanan Darah & Kolesterol</option>
+                           <option value="Tidur & Stres">Tidur & Stres</option>
+                           <option value="Mitos vs Fakta Kesehatan">Mitos vs Fakta Kesehatan</option>
+                           <option value="Nutrisi & Diet Harian">Nutrisi & Diet Harian</option>
                          </select>
                       </div>
                     </div>
@@ -1258,6 +1271,15 @@ ATURAN MUTLAK:
                         <option value="TikSehat">TikSehat</option>
                         <option value="Sehat30Hari">Sehat30Hari</option>
                         <option value="SiKawanSehat">SiKawanSehat</option>
+                         <option value="Pixar 3D Cartoon">Pixar 3D Cartoon</option>
+                         <option value="Claymorphism 3D">Claymorphism 3D</option>
+                         <option value="2D Flat Illustration">2D Flat Illustration</option>
+                         <option value="Whiteboard Animation">Whiteboard Animation</option>
+                         <option value="Watercolor Storybook">Watercolor Storybook</option>
+                         <option value="Isometric 3D">Isometric 3D</option>
+                         <option value="Comic Book Bold">Comic Book Bold</option>
+                         <option value="Anime Style">Anime Style</option>
+                         <option value="Realistic 3D">Realistic 3D</option>
                       </select>
                     </div>
                     <div>
@@ -1676,6 +1698,15 @@ ATURAN MUTLAK:
                           <option value="TikSehat">TikSehat</option>
                           <option value="Sehat30Hari">Sehat30Hari</option>
                           <option value="SiKawanSehat">SiKawanSehat</option>
+                         <option value="Pixar 3D Cartoon">Pixar 3D Cartoon</option>
+                         <option value="Claymorphism 3D">Claymorphism 3D</option>
+                         <option value="2D Flat Illustration">2D Flat Illustration</option>
+                         <option value="Whiteboard Animation">Whiteboard Animation</option>
+                         <option value="Watercolor Storybook">Watercolor Storybook</option>
+                         <option value="Isometric 3D">Isometric 3D</option>
+                         <option value="Comic Book Bold">Comic Book Bold</option>
+                         <option value="Anime Style">Anime Style</option>
+                         <option value="Realistic 3D">Realistic 3D</option>
                         </select>
                         <button 
                           onClick={() => {
