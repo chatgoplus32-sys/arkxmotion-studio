@@ -15,6 +15,8 @@ import {
 import { chargeNexabotWallet, refundNexabotWallet } from '@/lib/nexabotWallet';
 import { startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks';
 import { runNexabotJobWithSessionFallback } from '@/pages/image-to-video/nexabotSessionFallback';
+import { concatVideosFFmpeg } from '@/lib/ffmpeg-compress';
+import { fetchVideoFile } from '@/lib/videoChunks';
 import { useAuthStore } from '@/stores/authStore';
 import { Lightbulb, FileText, Image as ImageIcon, Sparkles, Loader2, Check, Copy, X, ArrowRight, ArrowLeft, PlayCircle, List, Trash2, AlertCircle, Video, ScanSearch, Upload, ShoppingBag, Plus, Zap, ImagePlay, KeyRound, Lock } from 'lucide-react';
 
@@ -297,20 +299,41 @@ const HealthAnimTool = () => {
   const authUser = useAuthStore((state) => state.user);
   const [appError, setAppError] = useState('');
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
-  // Pengaturan AI (model + API key) hanya bisa diubah admin; member melihat versi read-only.
+  // Pengaturan AI: kunci Gemini dikelola admin di System Settings (app_settings 'studio_gemini_key')
+  // dan dipanggil lewat relay /api/public/studio-ai — member tidak pernah menyimpan key sendiri.
+  // Pengaturan model di halaman ini hanya bisa diubah admin; member melihat versi read-only.
   const pengaturanDikunci = authUser?.role !== 'admin';
-  const [aiApiKey, setAiApiKey] = useState(() => { try { return sessionStorage.getItem('arkxHealthApiKey') || ''; } catch { return ''; } });
-  const [aiModel, setAiModel] = useState(() => { try { return sessionStorage.getItem('arkxHealthModel') || 'gemini-3.1-flash-lite'; } catch { return 'gemini-3.1-flash-lite'; } });
-  const saveAiSettings = (event: React.FormEvent) => {
+  const [aiModel, setAiModel] = useState(() => { try { return localStorage.getItem('arkxHealthModel') || 'gemini-3.1-flash-lite'; } catch { return 'gemini-3.1-flash-lite'; } });
+  const [aiServer, setAiServer] = useState<{ configured: boolean | null; loading: boolean }>({ configured: null, loading: true });
+  const [aiDailyCap, setAiDailyCap] = useState<number | null>(null);
+  const [aiUsed, setAiUsed] = useState<number | null>(null);
+  const saveAiModel = (event: React.FormEvent) => {
     event.preventDefault();
-    try {
-      if (aiApiKey.trim()) sessionStorage.setItem('arkxHealthApiKey', aiApiKey.trim());
-      else sessionStorage.removeItem('arkxHealthApiKey');
-      sessionStorage.setItem('arkxHealthModel', aiModel.trim() || 'gemini-3.1-flash-lite');
-    } catch {}
+    try { localStorage.setItem('arkxHealthModel', aiModel.trim() || 'gemini-3.1-flash-lite'); } catch {}
     setAiSettingsOpen(false);
   };
- 
+  // Status kunci server (terbuka) — dipakai untuk menampilkan aktif/belum di Pengaturan AI & tombol API Key.
+  const loadAiStatus = async () => {
+    try {
+      const r = await fetch('/api/public/studio-ai/status', { cache: 'no-store' });
+      const d = await r.json().catch(() => null);
+      setAiServer({ configured: !!d?.configured, loading: false });
+      if (Number.isFinite(Number(d?.dailyCap))) setAiDailyCap(Number(d.dailyCap));
+    } catch {
+      setAiServer({ configured: null, loading: false });
+    }
+    try {
+      if (!authToken) return;
+      const r = await fetch('/api/public/studio-ai/usage', { cache: 'no-store', headers: { Authorization: `Bearer ${authToken}` } });
+      const d = await r.json().catch(() => null);
+      if (d?.ok && Number.isFinite(Number(d?.used))) setAiUsed(Number(d.used));
+      if (Number.isFinite(Number(d?.dailyCap))) setAiDailyCap(Number(d.dailyCap));
+    } catch { /* usage opsional */ }
+  };
+  useEffect(() => { loadAiStatus(); }, [authToken]);
+  // Bersihkan key lama dari sesi tab (era sebelum kunci server) supaya tidak menggantung di browser pengguna.
+  useEffect(() => { try { sessionStorage.removeItem('arkxHealthApiKey'); sessionStorage.removeItem('arkxHealthModel'); } catch {} }, []);
+  
 
   // === Riset Ide Konten States ===
   const [ideaTopic, setIdeaTopic] = useState('');
@@ -318,7 +341,7 @@ const HealthAnimTool = () => {
   const [ideas, setIdeas] = useState<any[]>([]);
   const [loadingIdeas, setLoadingIdeas] = useState(false);
 
-  // === Google Omni Flash: pilih 3/4/6 scene → narasi + prompt tiap scene untuk digenerate di ARKX Studio ===
+  // === Google Omni Flash: pilih 3/4/6 scene â†’ narasi + prompt tiap scene untuk digenerate di ARKX Studio ===
   const [omniIdea, setOmniIdea] = useState('');
   const [omniHookTechnique, setOmniHookTechnique] = useState('Curiosity Gap');
   const [omniAspectRatio, setOmniAspectRatio] = useState<'9:16' | '16:9'>('9:16');
@@ -331,14 +354,33 @@ const HealthAnimTool = () => {
   // Info diagnosa: model Gemini mana yang dipakai, berapa lama, atau pesan error aslinya.
   const [aiCallInfo, setAiCallInfo] = useState<{ status: 'ok' | 'error'; model: string; ms: number; pesan?: string; dicoba: string[] } | null>(null);
   const [omniConfirmOpen, setOmniConfirmOpen] = useState(false);
+  const [omniConfirmMode, setOmniConfirmMode] = useState<'single' | 'batch'>('single');
   const omniVideoUrl = useRef('');
+  // â”€â”€ Batch scene: generate 1 video per scene (3/4/6), lalu gabung via ffmpeg â”€â”€
+  interface OmniBatchScene { scene: number; role: string; status: 'idle' | 'running' | 'done' | 'error'; url?: string; jobId?: string; error?: string }
+  const [omniBatch, setOmniBatch] = useState<OmniBatchScene[]>([]);
+  const [loadingOmniBatch, setLoadingOmniBatch] = useState(false);
+  const [mergingBatch, setMergingBatch] = useState(false);
+  const [omniBatchStatus, setOmniBatchStatus] = useState('');
+  const [omniMerged, setOmniMerged] = useState<{ url: string; scenes: number } | null>(null);
+  const mergedVideoUrlRef = useRef('');
   const clearOmniVideo = () => {
     if (omniVideoUrl.current) URL.revokeObjectURL(omniVideoUrl.current);
     omniVideoUrl.current = '';
     setOmniVideo(null);
   };
+  const clearOmniMerged = () => {
+    if (mergedVideoUrlRef.current) URL.revokeObjectURL(mergedVideoUrlRef.current);
+    mergedVideoUrlRef.current = '';
+    setOmniMerged(null);
+  };
+  const clearOmniBatch = () => {
+    setOmniBatch([]);
+    setOmniBatchStatus('');
+    clearOmniMerged();
+  };
   const clearOmniScenes = () => setOmniScenes([]);
-  useEffect(() => () => { if (omniVideoUrl.current) URL.revokeObjectURL(omniVideoUrl.current); }, []);
+  useEffect(() => () => { if (omniVideoUrl.current) URL.revokeObjectURL(omniVideoUrl.current); if (mergedVideoUrlRef.current) URL.revokeObjectURL(mergedVideoUrlRef.current); }, []);
 
   // Global Style Selection for Affiliate & Custom
   const [globalPromptStyle, setGlobalPromptStyle] = useState('Microscopic 3D Pixar-style');
@@ -392,8 +434,10 @@ const HealthAnimTool = () => {
     setOmniIdea('');
     clearOmniVideo();
     clearOmniScenes();
+    clearOmniBatch();
     setOmniStatus('');
     setOmniConfirmOpen(false);
+    setOmniConfirmMode('single');
     
     // Reset Affiliate
     setAffiliateProductPhoto(null);
@@ -450,17 +494,20 @@ const HealthAnimTool = () => {
     return null;
   };
 
+  // Panggilan Gemini lewat relay server (/api/public/studio-ai) — kuncinya disimpan
+  // admin di app_settings, member Pro/Unlimited/admin boleh memakainya, dengan batas
+  // harian per member. Browser tidak pernah memegang kunci Gemini.
+  // Relay juga melakukan fallback 404/429 ke model cadangan server-side; percobaan
+  // di bawah tetap dipertahankan untuk kegagalan jaringan/validasi skema.
   const callGeminiAPI = async (prompt: string, systemInstruction: string, schema: any, mediaData?: { mimeType: string, data: string }) => {
-    const apiKey = aiApiKey.trim();
-    if (!apiKey) {
-      setAiSettingsOpen(true);
-      throw new Error(pengaturanDikunci
-        ? 'API key Gemini belum diisi admin, jadi fitur generasi belum bisa dipakai. Hubungi admin untuk mengisi key di Pengaturan AI.'
-        : 'Tambahkan API key Gemini pada Pengaturan AI untuk menggunakan fitur generasi. Tidak perlu login atau email.');
-    }
     const modelDiminta = aiModel.trim() || 'gemini-3.1-flash-lite';
     if (!/^[a-zA-Z0-9._-]+$/.test(modelDiminta)) throw new Error('Nama model Gemini tidak valid.');
     const daftarModel = [...new Set([modelDiminta, ...MODEL_CADANGAN])];
+
+    if (!authToken) {
+      setAiSettingsOpen(true);
+      throw new Error('Sesi login tidak dikenali — login ulang lalu coba lagi.');
+    }
 
     const parts: any[] = [{ text: prompt }];
     if (mediaData) {
@@ -481,9 +528,9 @@ const HealthAnimTool = () => {
       for (let attempt = 0; attempt < 2; attempt++) {
         if (Date.now() - mulai > batasTotal) break;
         try {
-          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+          const res = await fetch(`/api/public/studio-ai/v1beta/models/${model}:generateContent`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
             body: JSON.stringify({
               contents: [{ parts }],
               systemInstruction: { parts: [{ text: systemInstruction }] },
@@ -513,6 +560,7 @@ const HealthAnimTool = () => {
             try {
               const hasil = JSON.parse(text);
               setAiCallInfo({ status: 'ok', model, ms: Date.now() - mulai, dicoba: [...dicoba] });
+              setAiUsed((u) => (u == null ? u : u + 1));
               return hasil;
             } catch {
               pesanTerakhir = `Format jawaban model ${model} tidak valid.`;
@@ -529,7 +577,7 @@ const HealthAnimTool = () => {
             attempt--;
             continue;
           }
-          if (res.status === 404) break; // model dipensiunkan → langsung model berikutnya
+          if (res.status === 404) break; // model dipensiunkan â†’ langsung model berikutnya
           if (res.status === 429 || res.status >= 500) {
             if (attempt < 1 && Date.now() - mulai < batasTotal) {
               await new Promise(resolve => setTimeout(resolve, 800 + Math.random() * 700));
@@ -537,7 +585,7 @@ const HealthAnimTool = () => {
             }
             break;
           }
-          break; // 4xx lain (key/izin/skema) → coba model berikutnya
+          break; // 4xx lain (key/izin/skema) â†’ coba model berikutnya
         } catch (error: any) {
           if (error?.name === 'TimeoutError') {
             pesanTerakhir = `Model ${model} tidak menjawab dalam 40 detik.`;
@@ -555,19 +603,29 @@ const HealthAnimTool = () => {
 
     setAiCallInfo({ status: 'error', model: modelTerakhir, ms: Date.now() - mulai, pesan: pesanTerakhir, dicoba: [...dicoba] });
 
+    if (/Pro \/ Unlimited/i.test(pesanTerakhir)) {
+      throw new Error('Fitur ini memakai kunci Gemini server dan hanya tersedia untuk member Pro / Unlimited. Upgrade ke Pro dulu agar bisa generate.');
+    }
+    if (/studio_gemini_key|Kunci Gemini server belum diisi/i.test(pesanTerakhir)) {
+      setAiSettingsOpen(true);
+      throw new Error('Kunci Gemini server belum diisi admin. Hubungi admin untuk mengisi "studio_gemini_key" di System Settings → AI Studio (Gemini).');
+    }
+    if (/Batas AI Studio hari ini tercapai/i.test(pesanTerakhir)) {
+      throw new Error(pesanTerakhir);
+    }
+    if (/Sesi login tidak dikenali/i.test(pesanTerakhir)) {
+      setAiSettingsOpen(true);
+      throw new Error('Sesi login tidak dikenali — login ulang lalu coba lagi.');
+    }
     if (/quota|billing|prepayment/i.test(pesanTerakhir)) {
       throw new Error('Limit API Gemini Anda sedang penuh. Tunggu beberapa menit lalu coba lagi.');
-    }
-    if (/api[_ ]?key/i.test(pesanTerakhir)) {
-      setAiSettingsOpen(true);
-      throw new Error('API key Gemini ditolak. Periksa kembali key di Pengaturan AI.');
     }
     throw new Error(`Narasi/prompt gagal dibuat: ${pesanTerakhir || 'semua model Gemini tidak merespons.'} Coba lagi sebentar lagi.`);
   };
 
   const handleApiError = (error: any, defaultMessage: string) => {
     const errorMessage = error?.message || defaultMessage;
-    setAppError(errorMessage.toLowerCase().includes('quota') ? "⚠️ Limit API Gemini Anda telah tercapai." : `❌ ${errorMessage}`);
+    setAppError(errorMessage.toLowerCase().includes('quota') ? "âš ï¸ Limit API Gemini Anda telah tercapai." : `âŒ ${errorMessage}`);
     setTimeout(() => setAppError(''), 8000);
   };
 
@@ -645,15 +703,16 @@ const HealthAnimTool = () => {
   };
 
   // ============================================================================
-  // GOOGLE OMNI FLASH VIDEO — paid request requires a separate confirmation
+  // GOOGLE OMNI FLASH VIDEO â€” paid request requires a separate confirmation
   // ============================================================================
   const generateOmniFlash = () => {
-    if (!omniIdea.trim() || loadingOmni) return;
+    if (!omniIdea.trim() || loadingOmni || loadingOmniBatch) return;
     setAppError('');
     if (!authToken) {
       setAppError('Login dulu untuk membuat video dengan saldo NexaBot.');
       return;
     }
+    setOmniConfirmMode('single');
     setOmniConfirmOpen(true);
   };
 
@@ -682,7 +741,7 @@ const HealthAnimTool = () => {
       provider: 'nexabot',
     });
     try {
-      // 1/3 — potong saldo NexaBot (gratis untuk admin / paket Unlimited).
+      // 1/3 â€” potong saldo NexaBot (gratis untuk admin / paket Unlimited).
       if (!admin) {
         setOmniStatus('Memotong saldo NexaBot...');
         const potong = await chargeNexabotWallet(token, 't2v');
@@ -692,7 +751,7 @@ const HealthAnimTool = () => {
         }
       }
 
-      // 2/3 — submit + poll + simpan hasil, semuanya lewat relay NexaBot.
+      // 2/3 â€” submit + poll + simpan hasil, semuanya lewat relay NexaBot.
       const url = await runNexabotJobWithSessionFallback<string>(
         async (auth, via) => {
           setOmniStatus(`Mengirim permintaan video ke NexaBot (${via})...`);
@@ -710,13 +769,13 @@ const HealthAnimTool = () => {
                 auth,
                 {
                   onRetry: ({ status, delayMs, message }) => {
-                    setOmniStatus(`${message}${status ? ` (HTTP ${status})` : ''} — submit diulang dalam ${Math.ceil(delayMs / 1000)}s...`);
+                    setOmniStatus(`${message}${status ? ` (HTTP ${status})` : ''} â€” submit diulang dalam ${Math.ceil(delayMs / 1000)}s...`);
                   }
                 }
               ),
             {
               onThrottle: (waitSeconds) => {
-                setOmniStatus(`Server NexaBot sedang dibatasi upstream — menunggu ${waitSeconds}s lalu submit otomatis...`);
+                setOmniStatus(`Server NexaBot sedang dibatasi upstream â€” menunggu ${waitSeconds}s lalu submit otomatis...`);
               }
             }
           );
@@ -730,12 +789,12 @@ const HealthAnimTool = () => {
             (msg) => setOmniStatus(msg),
             {
               onRetry: ({ status, delayMs, message }) => {
-                setOmniStatus(`${message}${status ? ` (HTTP ${status})` : ''} — coba lagi dalam ${Math.ceil(delayMs / 1000)}s...`);
+                setOmniStatus(`${message}${status ? ` (HTTP ${status})` : ''} â€” coba lagi dalam ${Math.ceil(delayMs / 1000)}s...`);
               }
             }
           );
 
-          // 3/3 — simpan permanen di server; fallback ke URL unduhan NexaBot.
+          // 3/3 â€” simpan permanen di server; fallback ke URL unduhan NexaBot.
           setOmniStatus('Menyimpan video ke server...');
           const saved = await saveNexabotResult(submit.jobId, auth, `arkx-health-${submit.jobId}.mp4`);
           if (saved.ok && saved.url) return saved.url;
@@ -759,7 +818,7 @@ const HealthAnimTool = () => {
       setOmniStatus('Video siap diputar dan diunduh.');
     } catch (error: any) {
       const pesan = error?.message || 'Pembuatan video belum berhasil.';
-      // Gagal di tengah jalan → kembalikan saldo yang sudah terpotong.
+      // Gagal di tengah jalan â†’ kembalikan saldo yang sudah terpotong.
       let catatanRefund = '';
       if (tiketPotong != null && !admin) {
         const sisa = await refundNexabotWallet(token, tiketPotong).catch(() => null);
@@ -773,14 +832,195 @@ const HealthAnimTool = () => {
     }
   };
 
-  // Pilihan 3/4/6 scene = narasi + prompt video tiap scene, bukan 3/4/6 video.
-  // Hasilnya dicopy lalu digenerate di ARKX Studio memakai NexaBot.
+  // ============================================================================
+  // BATCH SCENE: N scene (3/4/6) â†’ N video 15 detik (1 per scene, berurutan)
+  // â†’ gabung otomatis via ffmpeg.wasm menjadi satu video NÃ—15 detik.
+  // Setiap scene memotong saldo NexaBot sendiri (Rp 150/video, gratis untuk
+  // admin/Unlimited) dan di-refund otomatis bila gagal.
+  // ============================================================================
+  const generateOmniBatch = () => {
+    if (loadingOmniBatch || loadingOmni || loadingScenes) return;
+    if (omniScenes.length === 0) return;
+    setAppError('');
+    if (!authToken) {
+      setAppError('Login dulu untuk membuat video dengan saldo NexaBot.');
+      return;
+    }
+    setOmniConfirmMode('batch');
+    setOmniConfirmOpen(true);
+  };
+
+  // Satu job video dari sebuah prompt scene (charge â†’ submit â†’ poll â†’ save).
+  // Mengurus saldonya sendiri: di-refund bila gagal.
+  const runOmniBatchScene = async (videoPrompt: string, onStatus: (msg: string) => void): Promise<{ url: string; jobId: string }> => {
+    const token = authToken;
+    if (!token) throw new Error('Login dulu untuk membuat video dengan saldo NexaBot.');
+    const admin = authUser?.role === 'admin';
+    let tiketPotong: number | null = null;
+    let jobTerakhir = '';
+    try {
+      if (!admin) {
+        onStatus('Memotong saldo NexaBotâ€¦');
+        const potong = await chargeNexabotWallet(token, 't2v');
+        tiketPotong = potong.usageId ?? null;
+      }
+      const url = await runNexabotJobWithSessionFallback<string>(
+        async (auth, via) => {
+          onStatus(`Mengirim prompt scene ke NexaBot (${via})â€¦`);
+          const submit = await runWithNexabotThrottleRetry(
+            () =>
+              submitNexabot(
+                {
+                  mode: 't2v',
+                  prompt: videoPrompt,
+                  // Upstream: ratio 1 = 16:9, 2 = 9:16.
+                  ratio: omniAspectRatio === '9:16' ? 2 : 1,
+                  resolution: 720,
+                  duration: 15
+                },
+                auth,
+                {
+                  onRetry: ({ status, delayMs, message }) => {
+                    onStatus(`${message}${status ? ` (HTTP ${status})` : ''} â€” submit diulang dalam ${Math.ceil(delayMs / 1000)}sâ€¦`);
+                  }
+                }
+              ),
+            {
+              onThrottle: (waitSeconds) => onStatus(`Server NexaBot dibatasi upstream â€” menunggu ${waitSeconds}s lalu submit otomatisâ€¦`),
+            }
+          );
+          if (!submit.ok || !submit.jobId) throw new Error(submit.error || 'NexaBot gagal membuat job video.');
+          jobTerakhir = submit.jobId;
+
+          onStatus('Video sedang dibuat NexaBot (biasanya 1-3 menit)â€¦');
+          await pollNexabotJob(
+            submit.jobId,
+            auth,
+            (msg) => onStatus(msg),
+            {
+              onRetry: ({ status, delayMs, message }) => {
+                onStatus(`${message}${status ? ` (HTTP ${status})` : ''} â€” coba lagi dalam ${Math.ceil(delayMs / 1000)}sâ€¦`);
+              }
+            }
+          );
+
+          onStatus('Menyimpan video ke serverâ€¦');
+          const saved = await saveNexabotResult(submit.jobId, auth, `arkx-health-${submit.jobId}.mp4`);
+          if (saved.ok && saved.url) return saved.url;
+
+          const unduh = await downloadNexabotResult(submit.jobId, auth);
+          if (!unduh.ok || !unduh.url) throw new Error(unduh.error || 'Hasil video NexaBot tidak bisa diunduh.');
+          return unduh.url;
+        },
+        {
+          master: true,
+          ticket: tiketPotong,
+          hooks: {
+            log: (msg, level) => console.log('[arkx-health/batch]', level || 'info', msg),
+            notify: () => {}
+          }
+        }
+      );
+      return { url, jobId: jobTerakhir };
+    } catch (error: any) {
+      if (tiketPotong != null && !admin) await refundNexabotWallet(token, tiketPotong).catch(() => null);
+      throw error;
+    }
+  };
+
+  const mergeBatchVideos = async (urls: string[]) => {
+    if (urls.length < 2) return;
+    setMergingBatch(true);
+    setAppError('');
+    try {
+      const files: File[] = [];
+      for (let i = 0; i < urls.length; i++) {
+        setOmniBatchStatus(`Mengunduh scene ${i + 1}/${urls.length} untuk digabungâ€¦`);
+        files.push(await fetchVideoFile(urls[i], `scene_${i + 1}.mp4`));
+      }
+      setOmniBatchStatus('Menggabungkan semua scene via ffmpegâ€¦');
+      const merged = await concatVideosFFmpeg(files, (msg) => setOmniBatchStatus(msg));
+      const mergedUrl = URL.createObjectURL(merged);
+      if (mergedVideoUrlRef.current) URL.revokeObjectURL(mergedVideoUrlRef.current);
+      mergedVideoUrlRef.current = mergedUrl;
+      setOmniMerged({ url: mergedUrl, scenes: urls.length });
+      setOmniBatchStatus(`Gabungan ${urls.length} scene selesai â€” ${urls.length * 15} detik.`);
+    } catch (e: any) {
+      setAppError(`Video per scene berhasil dibuat, tetapi gagal digabung: ${e?.message || e}. Masing-masing scene bisa diunduh terpisah di bawah.`);
+      setOmniBatchStatus('');
+    } finally {
+      setMergingBatch(false);
+    }
+  };
+
+  // Loop berurutan atas index scene yang diminta; gabung otomatis bila SEMUA
+  // scene berhasil (termasuk hasil retry). State di-update papan ke papan.
+  const runOmniBatchLoop = async (indexes: number[], base: OmniBatchScene[]) => {
+    const total = omniScenes.length;
+    const next = base.map(b => ({ ...b }));
+    const taskId = startGenerationTask({
+      page: 'arkx-health',
+      model: 'Omni Flash 1.2 (video per scene)',
+      prompt: omniIdea.trim(),
+      provider: 'nexabot',
+    });
+    try {
+      for (const i of indexes) {
+        const scene = omniScenes[i];
+        if (!scene) continue;
+        next[i] = { ...next[i], status: 'running', error: undefined };
+        setOmniBatch([...next]);
+        try {
+          const { url, jobId } = await runOmniBatchScene(scene.video_prompt, (m) => setOmniBatchStatus(`Scene ${i + 1}/${total}: ${m}`));
+          next[i] = { ...next[i], status: 'done', url, jobId, error: undefined };
+        } catch (e: any) {
+          next[i] = { ...next[i], status: 'error', error: e?.message || 'Gagal membuat video.' };
+        }
+        setOmniBatch([...next]);
+      }
+      const doneUrls = next.filter(b => b.status === 'done' && b.url).map(b => b.url as string);
+      if (doneUrls.length === total && total >= 2) {
+        await mergeBatchVideos(doneUrls);
+      } else if (doneUrls.length === total) {
+        setOmniBatchStatus('Scene selesai â€” unduh hasilnya di bawah.');
+      } else {
+        setOmniBatchStatus(`${doneUrls.length}/${total} scene berhasil. Ulangi scene yang gagal, atau gabungkan ${doneUrls.length} scene yang jadi (minimal 2).`);
+      }
+    } finally {
+      removeActiveTask(taskId);
+      setLoadingOmniBatch(false);
+    }
+  };
+
+  const confirmOmniBatch = async () => {
+    if (loadingOmniBatch) return;
+    setOmniConfirmOpen(false);
+    setLoadingOmniBatch(true);
+    setAppError('');
+    clearOmniMerged();
+    setOmniBatch(omniScenes.map((s) => ({ scene: s.scene, role: s.role, status: 'idle' as const })));
+    const base = omniScenes.map((s) => ({ scene: s.scene, role: s.role, status: 'idle' as const }));
+    await runOmniBatchLoop(omniScenes.map((_, i) => i), base);
+  };
+
+  const retryFailedScenes = async () => {
+    if (loadingOmniBatch) return;
+    const failedIdx = omniBatch.map((b, i) => (b.status === 'error' ? i : -1)).filter((i) => i >= 0);
+    if (failedIdx.length === 0) return;
+    setLoadingOmniBatch(true);
+    setAppError('');
+    await runOmniBatchLoop(failedIdx, omniBatch);
+  };
+
+  // Pilihan 3/4/6 scene = narasi + prompt video tiap scene. Sejak tombol video
+  // beralih ke mode batch: menekan "Buat Video â€¦ Scene" menghasilkan 1 video
+  // per scene (15 detik) lalu menggabungkannya otomatis jadi satu video NÃ—15.
   const generateOmniScenes = async () => {
     if (!omniIdea.trim() || loadingScenes) return;
     setAppError('');
-    if (!aiApiKey.trim()) {
+    if (aiServer.configured === false) {
       setAiSettingsOpen(true);
-      setAppError('Tambahkan API key Gemini Anda di Pengaturan AI untuk menyusun narasi dan prompt scene.');
+      setAppError('Kunci Gemini server belum diisi admin. Hubungi admin — fitur generasi belum bisa dipakai.');
       return;
     }
     setLoadingScenes(true);
@@ -1084,7 +1324,7 @@ ATURAN MUTLAK:
               <div aria-hidden="true" className="brand-globe" />
               <div className="leading-tight">
                 <div className="text-sm font-extrabold tracking-tight text-slate-900">ARKX Health Animasi</div>
-                <div className="hidden text-[11px] font-medium text-slate-500 sm:block">Riset ide · animasi · prompt video</div>
+                <div className="hidden text-[11px] font-medium text-slate-500 sm:block">Riset ide Â· animasi Â· prompt video</div>
               </div>
             </div>
 
@@ -1093,11 +1333,11 @@ ATURAN MUTLAK:
             </span>
 
             <div className="ml-auto flex items-center gap-2">
-              <button type="button" onClick={() => setAiSettingsOpen(true)} className={`inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl border px-3 py-2 text-xs font-bold transition-all ${aiApiKey.trim() ? 'border-emerald-300 bg-emerald-50 text-emerald-600' : 'border-amber-200 bg-amber-50 text-amber-700'}`} title="Isi API key Gemini untuk membuka fitur generasi">
+              <button type="button" onClick={() => { loadAiStatus(); setAiSettingsOpen(true); }} className={`inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl border px-3 py-2 text-xs font-bold transition-all ${aiServer.configured ? 'border-emerald-300 bg-emerald-50 text-emerald-600' : 'border-amber-200 bg-amber-50 text-amber-700'}`} title={aiServer.configured ? 'Kunci Gemini server aktif — fitur generasi siap' : 'Kunci Gemini server belum diisi admin'}>
                 <KeyRound className="h-4 w-4" />
                 <span className="sm:hidden">API Key</span>
-                <span className="hidden sm:inline">API Key Gemini</span>
-                <span className="hidden text-[10px] uppercase tracking-wider sm:inline">{aiApiKey.trim() ? 'terisi' : 'belum'}</span>
+                <span className="hidden sm:inline">Kunci Server</span>
+                <span className="hidden text-[10px] uppercase tracking-wider sm:inline">{aiServer.configured === null ? '…' : (aiServer.configured ? 'siap' : 'belum')}</span>
               </button>
               <button onClick={handleGlobalReset} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50" title="Mulai Ulang">
                 <Sparkles className="h-4 w-4 text-indigo-500" /> <span className="hidden sm:inline">Mulai Ulang</span>
@@ -1248,25 +1488,25 @@ ATURAN MUTLAK:
                   <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
                     <div>
                       <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-100 text-xs font-bold mb-4"><Zap className="w-4 h-4" /> GOOGLE OMNI FLASH</div>
-                      <h2 className="text-2xl font-bold text-slate-900 mb-2">Satu ide. 3–6 scene. Narasi + prompt siap copy.</h2>
+                      <h2 className="text-2xl font-bold text-slate-900 mb-2">Satu ide. 3â€“6 scene. Narasi + prompt siap copy.</h2>
                       <p className="text-sm font-medium text-slate-500 leading-relaxed">Pilih jumlah scene, lalu dapatkan narasi dan prompt video tiap scene. Copy hasilnya, buka ARKX Studio, dan generate videonya di sana memakai NexaBot.</p>
                     </div>
                     <div className="shrink-0 rounded-xl bg-indigo-50 border border-indigo-100 px-5 py-3 text-center">
                       <div className="text-3xl font-extrabold text-indigo-700">15<span className="text-sm ml-1">detik</span></div>
-                      <div className="text-xs font-semibold text-indigo-500 mt-1">per scene · {omniSceneCount} scene</div>
+                      <div className="text-xs font-semibold text-indigo-500 mt-1">per scene Â· {omniSceneCount} scene</div>
                     </div>
                   </div>
 
                   <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 mb-6 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-600">
-                    <span><strong className="text-slate-800">Model:</strong> <code>NexaBot · Omni Flash 1.2</code></span>
+                    <span><strong className="text-slate-800">Model:</strong> <code>NexaBot Â· Omni Flash 1.2</code></span>
                     <span><strong className="text-slate-800">API:</strong> Relay NexaBot (t2v)</span>
-                    <span><strong className="text-slate-800">Output:</strong> MP4 · 720p · audio native</span>
+                    <span><strong className="text-slate-800">Output:</strong> MP4 Â· 720p Â· audio native</span>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-6">
                     <div>
                       <label htmlFor="omni-style" className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Visual Style</label>
-                      <select id="omni-style" value={globalPromptStyle} onChange={e => setGlobalPromptStyle(e.target.value)} disabled={loadingOmni} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-slate-900 font-bold focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-400 cursor-pointer">
+                      <select id="omni-style" value={globalPromptStyle} onChange={e => setGlobalPromptStyle(e.target.value)} disabled={loadingOmni || loadingOmniBatch || mergingBatch} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-slate-900 font-bold focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-400 cursor-pointer">
                         <option value="Microscopic 3D Pixar-style">Microscopic 3D Pixar-style</option>
                         <option value="TikSehat">TikSehat</option>
                         <option value="Sehat30Hari">Sehat30Hari</option>
@@ -1285,16 +1525,16 @@ ATURAN MUTLAK:
                     </div>
                     <div>
                       <label htmlFor="omni-aspect" className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Format Video</label>
-                      <select id="omni-aspect" value={omniAspectRatio} onChange={e => setOmniAspectRatio(e.target.value as '9:16' | '16:9')} disabled={loadingOmni} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-slate-900 font-bold focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-400 cursor-pointer">
-                        <option value="9:16">Vertikal 9:16 · Reels / Shorts</option>
-                        <option value="16:9">Landscape 16:9 · YouTube</option>
+                      <select id="omni-aspect" value={omniAspectRatio} onChange={e => setOmniAspectRatio(e.target.value as '9:16' | '16:9')} disabled={loadingOmni || loadingOmniBatch || mergingBatch} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-slate-900 font-bold focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-400 cursor-pointer">
+                        <option value="9:16">Vertikal 9:16 Â· Reels / Shorts</option>
+                        <option value="16:9">Landscape 16:9 Â· YouTube</option>
                       </select>
                     </div>
                   </div>
 
                   <div className="mb-6">
                     <label htmlFor="omni-hook" className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Hook Technique</label>
-                    <select id="omni-hook" value={omniHookTechnique} onChange={e => setOmniHookTechnique(e.target.value)} disabled={loadingOmni} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-slate-900 font-bold focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-400 cursor-pointer">
+                    <select id="omni-hook" value={omniHookTechnique} onChange={e => setOmniHookTechnique(e.target.value)} disabled={loadingOmni || loadingOmniBatch || mergingBatch} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-slate-900 font-bold focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-400 cursor-pointer">
                       <option value="Curiosity Gap">Curiosity Gap</option>
                       <option value="Shock">Shock</option>
                       <option value="Fear">Fear</option>
@@ -1305,7 +1545,7 @@ ATURAN MUTLAK:
 
                   <div className="mb-5">
                     <label htmlFor="omni-idea" className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Topik / Ide Utama</label>
-                    <textarea id="omni-idea" value={omniIdea} onChange={e => setOmniIdea(e.target.value)} disabled={loadingOmni} maxLength={3000} placeholder="Contoh: Sel darah merah lucu menjelaskan kenapa tubuh butuh cukup air, dengan visual mikroskopis di dalam pembuluh darah…" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-400 resize-y min-h-[100px]" />
+                    <textarea id="omni-idea" value={omniIdea} onChange={e => setOmniIdea(e.target.value)} disabled={loadingOmni || loadingOmniBatch || mergingBatch} maxLength={3000} placeholder="Contoh: Sel darah merah lucu menjelaskan kenapa tubuh butuh cukup air, dengan visual mikroskopis di dalam pembuluh darahâ€¦" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-400 resize-y min-h-[100px]" />
                   </div>
 
                   <div className="mb-6">
@@ -1320,7 +1560,7 @@ ATURAN MUTLAK:
                             role="radio"
                             aria-checked={dipilih}
                             onClick={() => setOmniSceneCount(jumlah)}
-                            disabled={loadingOmni}
+                            disabled={loadingOmni || loadingOmniBatch || mergingBatch}
                             className={`rounded-xl border px-3 py-3 text-center transition-all disabled:opacity-60 ${dipilih ? 'border-indigo-400 bg-indigo-50 text-indigo-700 ring-2 ring-indigo-100' : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-indigo-300'}`}
                           >
                             <span className="block text-lg font-extrabold leading-none">{jumlah} Scene</span>
@@ -1329,40 +1569,46 @@ ATURAN MUTLAK:
                         );
                       })}
                     </div>
-                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">Pilihan ini hanya menentukan jumlah narasi dan prompt, bukan jumlah video. {omniSceneCount} scene = {omniSceneCount} narasi + {omniSceneCount} prompt video, masing-masing untuk klip 15 detik.</p>
+                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">Pilihan ini menentukan jumlah narasi dan prompt â€” dan juga jumlah video bila kamu menekan tombol buat video setelah narasi jadi: {omniSceneCount} scene = {omniSceneCount} narasi + {omniSceneCount} prompt, masing-masing untuk klip 15 detik yang digabung otomatis jadi {omniSceneCount * 15} detik.</p>
                   </div>
 
                   <div className="grid grid-cols-3 gap-2 mb-6" aria-label="Alur tiap scene 15 detik">
-                    <div className="rounded-xl border border-rose-100 bg-rose-50 p-3"><p className="text-xs font-bold text-rose-600">0–4 detik</p><p className="text-sm font-bold text-slate-800 mt-1">Hook</p></div>
-                    <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-3"><p className="text-xs font-bold text-indigo-600">4–11 detik</p><p className="text-sm font-bold text-slate-800 mt-1">Penjelasan</p></div>
-                    <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3"><p className="text-xs font-bold text-emerald-700">11–15 detik</p><p className="text-sm font-bold text-slate-800 mt-1">CTA</p></div>
+                    <div className="rounded-xl border border-rose-100 bg-rose-50 p-3"><p className="text-xs font-bold text-rose-600">0â€“4 detik</p><p className="text-sm font-bold text-slate-800 mt-1">Hook</p></div>
+                    <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-3"><p className="text-xs font-bold text-indigo-600">4â€“11 detik</p><p className="text-sm font-bold text-slate-800 mt-1">Penjelasan</p></div>
+                    <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3"><p className="text-xs font-bold text-emerald-700">11â€“15 detik</p><p className="text-sm font-bold text-slate-800 mt-1">CTA</p></div>
                   </div>
 
                   <button onClick={generateOmniScenes} disabled={loadingScenes || loadingOmni || !omniIdea.trim()} className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-all shadow-md shadow-indigo-600/20 active:scale-95">
                     {loadingScenes ? <Loader2 className="w-5 h-5 animate-spin" /> : <List className="w-5 h-5" />}
-                    {loadingScenes ? `Menyusun ${omniSceneCount} scene…` : `Buat Narasi & Prompt ${omniSceneCount} Scene`}
+                    {loadingScenes ? `Menyusun ${omniSceneCount} sceneâ€¦` : `Buat Narasi & Prompt ${omniSceneCount} Scene`}
                   </button>
-                  <button onClick={generateOmniFlash} disabled={loadingOmni || loadingScenes || !omniIdea.trim()} className="w-full mt-3 py-3 border border-slate-200 bg-slate-50 hover:bg-slate-100 disabled:opacity-50 text-slate-700 font-bold rounded-xl flex items-center justify-center gap-2 transition-all">
-                    {loadingOmni ? <Loader2 className="w-5 h-5 animate-spin" /> : <Video className="w-5 h-5" />}
-                    {loadingOmni ? 'Membuat video di Google…' : 'Buat Video Omni Flash · 15 Detik'}
+                  <button onClick={omniScenes.length > 0 ? generateOmniBatch : generateOmniFlash} disabled={loadingScenes || loadingOmni || loadingOmniBatch || mergingBatch || (omniScenes.length > 0 ? false : !omniIdea.trim())} className="w-full mt-3 py-3 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50 text-indigo-700 font-bold rounded-xl flex items-center justify-center gap-2 transition-all">
+                    {loadingOmniBatch || loadingOmni ? <Loader2 className="w-5 h-5 animate-spin" /> : <Video className="w-5 h-5" />}
+                    {loadingOmniBatch ? 'Membuat video per sceneâ€¦' : loadingOmni ? 'Membuat video di Googleâ€¦' : omniScenes.length > 0 ? `Buat Video ${omniScenes.length} Scene Â· ${omniScenes.length * 15} Detik â€” Gabung Otomatis` : 'Buat Video Omni Flash Â· 15 Detik'}
                   </button>
+                  {omniScenes.length > 0 && (
+                    <button onClick={generateOmniFlash} disabled={loadingScenes || loadingOmni || loadingOmniBatch || mergingBatch || !omniIdea.trim()} className="w-full mt-2 py-2 text-[11px] text-slate-500 hover:text-indigo-600 disabled:opacity-50 font-bold rounded-xl transition-colors">
+                      Atau buat 1 video dari ide saja (15 detik Â· Rp 150)
+                    </button>
+                  )}
                   {aiCallInfo && (
                     <div role="status" aria-live="polite" className={`mt-3 rounded-xl border px-3 py-2 text-xs leading-relaxed ${aiCallInfo.status === 'ok' ? 'border-emerald-100 bg-emerald-50 text-emerald-900' : 'border-rose-200 bg-rose-50 text-rose-900'}`}>
                       {aiCallInfo.status === 'ok' ? (
-                        <>Model Gemini: <strong>{aiCallInfo.model}</strong> · selesai dalam <strong>{(aiCallInfo.ms / 1000).toFixed(1)} detik</strong>{aiCallInfo.dicoba.length > 1 ? <> · cadangan dipakai: {aiCallInfo.dicoba.join(' → ')}</> : null}</>
+                        <>Model Gemini: <strong>{aiCallInfo.model}</strong> Â· selesai dalam <strong>{(aiCallInfo.ms / 1000).toFixed(1)} detik</strong>{aiCallInfo.dicoba.length > 1 ? <> Â· cadangan dipakai: {aiCallInfo.dicoba.join(' â†’ ')}</> : null}</>
                       ) : (
-                        <>Gagal. Model dicoba: <strong>{aiCallInfo.dicoba.join(' → ')}</strong>. Pesan asli: <span className="font-mono break-words">{aiCallInfo.pesan || 'tidak ada pesan'}</span></>
+                        <>Gagal. Model dicoba: <strong>{aiCallInfo.dicoba.join(' â†’ ')}</strong>. Pesan asli: <span className="font-mono break-words">{aiCallInfo.pesan || 'tidak ada pesan'}</span></>
                       )}
                     </div>
                   )}
                   {loadingOmni && <div role="status" aria-live="polite" className="mt-4 bg-indigo-50 border border-indigo-100 rounded-xl p-4 text-sm text-indigo-800"><p className="font-bold flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />{omniStatus}</p><p className="text-xs mt-2 leading-relaxed">Biarkan tab terbuka. Generasi bisa memerlukan beberapa menit; 15 detik adalah durasi hasil video. Tidak ada retry generasi otomatis.</p></div>}
+                  {(loadingOmniBatch || mergingBatch) && <div role="status" aria-live="polite" className="mt-4 bg-indigo-50 border border-indigo-100 rounded-xl p-4 text-sm text-indigo-800"><p className="font-bold flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />{omniBatchStatus || 'Memproses…'}</p><p className="text-xs mt-2 leading-relaxed">Generate berurutan per scene; tiap scene = 1 potongan saldo. Setelah semua jadi, video digabung otomatis via ffmpeg. Biarkan tab terbuka.</p></div>}
                   <div className="mt-4 text-xs text-slate-500 leading-relaxed space-y-2">
-                    <p>Video dibuat lewat <strong>relay NexaBot</strong> dengan kunci server; biayanya dipotong dari saldo NexaBot Anda (gratis bila paket Unlimited aktif). API key Gemini dari <button onClick={() => setAiSettingsOpen(true)} className="text-indigo-600 font-bold hover:text-indigo-800">Pengaturan AI</button> hanya dipakai untuk menyusun narasi &amp; prompt scene.</p>
-                    <p>Setiap pembuatan video meminta konfirmasi dan memotong saldo satu kali; bila gagal, saldo dikembalikan otomatis. Hasil disimpan permanen di server. <a href="https://nexabot.id/api-docs" target="_blank" rel="noopener noreferrer" className="text-indigo-600 font-bold hover:text-indigo-800">Dokumentasi NexaBot ↗</a></p>
+                    <p>Video dibuat lewat <strong>relay NexaBot</strong> dengan kunci server; biayanya dipotong dari saldo NexaBot Anda per video (gratis bila paket Unlimited / admin). Jika narasi scene sudah dibuat, tombol utama otomatis membuat 1 video per scene berurutan lalu menggabungkannya jadi satu video (N × 15 detik) via ffmpeg — gagal di satu scene tidak menggagalkan scene lain; saldo scene gagal dikembalikan otomatis. API key Gemini tidak perlu diisi — narasi &amp; prompt scene disusun lewat <button onClick={() => { loadAiStatus(); setAiSettingsOpen(true); }} className="text-indigo-600 font-bold hover:text-indigo-800">relay server</button> dengan kunci milik admin (kuota harian per member).</p>
+                    <p>Setiap pembuatan video meminta konfirmasi dan memotong saldo satu kali; bila gagal, saldo dikembalikan otomatis. Hasil disimpan permanen di server. <a href="https://nexabot.id/api-docs" target="_blank" rel="noopener noreferrer" className="text-indigo-600 font-bold hover:text-indigo-800">Dokumentasi NexaBot â†—</a></p>
                   </div>
                 </div>
 
-                {loadingScenes && <div role="status" aria-live="polite" className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 text-sm text-indigo-800"><p className="font-bold flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Menyusun narasi dan prompt {omniSceneCount} scene… <span className="font-semibold text-indigo-600">{omniStatus}</span></p><p className="text-xs mt-2 leading-relaxed">Hanya narasi dan prompt yang dibuat di sini; videonya digenerate di ARKX Studio memakai NexaBot.</p></div>}
+                {loadingScenes && <div role="status" aria-live="polite" className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 text-sm text-indigo-800"><p className="font-bold flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Menyusun narasi dan prompt {omniSceneCount} sceneâ€¦ <span className="font-semibold text-indigo-600">{omniStatus}</span></p><p className="text-xs mt-2 leading-relaxed">Hanya narasi dan prompt yang dibuat di sini; setelah jadi, tekan tombol video di atas — setiap scene dibuat jadi 1 video (15 detik, NexaBot) lalu digabung otomatis jadi satu video (N × 15 detik) via ffmpeg.</p></div>}
 
                 {omniScenes.length > 0 && <section className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm anim-fade-in-up" aria-label="Narasi dan prompt per scene">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-5">
@@ -1371,7 +1617,7 @@ ATURAN MUTLAK:
                       <p className="text-xs text-slate-500 mt-1">Copy narasi &amp; prompt, lalu generate videonya di ARKX Studio dengan NexaBot.</p>
                     </div>
                     <CopyButton
-                      text={omniScenes.map(s2 => `Scene ${s2.scene} (${s2.role} · 15 detik)\nNarasi: ${s2.voiceover}\nVisual: ${s2.visual}\nVideo Prompt: ${s2.video_prompt}`).join('\n\n---\n\n')}
+                      text={omniScenes.map(s2 => `Scene ${s2.scene} (${s2.role} Â· 15 detik)\nNarasi: ${s2.voiceover}\nVisual: ${s2.visual}\nVideo Prompt: ${s2.video_prompt}`).join('\n\n---\n\n')}
                       label="Copy Semua Scene"
                       className="inline-flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2.5 rounded-xl text-xs font-bold transition-colors shadow-sm"
                     />
@@ -1386,7 +1632,7 @@ ATURAN MUTLAK:
                             <span className="text-xs text-slate-500">15 detik</span>
                           </div>
                           <CopyButton
-                            text={`Scene ${scene.scene} (${scene.role} · 15 detik)\nNarasi: ${scene.voiceover}\nVisual: ${scene.visual}\nVideo Prompt: ${scene.video_prompt}`}
+                            text={`Scene ${scene.scene} (${scene.role} Â· 15 detik)\nNarasi: ${scene.voiceover}\nVisual: ${scene.visual}\nVideo Prompt: ${scene.video_prompt}`}
                             label={`Copy Scene ${scene.scene}`}
                             className="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl"
                           />
@@ -1409,10 +1655,63 @@ ATURAN MUTLAK:
                     ))}
                   </div>
                 </section>}
+                {omniBatch.length > 0 && <section className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm anim-fade-in-up" aria-label="Video per scene dan hasil gabungan">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><Video className="w-5 h-5 text-indigo-600" /> Video {omniBatch.length} scene → 1 video</h3>
+                      <p className="text-xs text-slate-500 mt-1">{omniBatch.length} scene · {omniBatch.length * 15} detik bila digabung · 1 video = 1 potongan saldo NexaBot · gagal = otomatis kembali.</p>
+                    </div>
+                  </div>
+                  <div className="grid gap-2 mb-4">
+                    {omniBatch.map((b, i) => (
+                      <div key={i} className="flex flex-col sm:flex-row sm:items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 bg-slate-50">
+                        <div className="flex items-center gap-2 min-w-[140px]">
+                          {b.status === 'done' && <Check className="w-4 h-4 text-emerald-600 shrink-0" />}
+                          {b.status === 'running' && <Loader2 className="w-4 h-4 text-indigo-600 animate-spin shrink-0" />}
+                          {b.status === 'error' && <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />}
+                          {b.status === 'idle' && <span className="w-4 h-4 inline-block rounded-full border border-slate-300 shrink-0" />}
+                          <span className="text-sm font-bold text-slate-900">Scene {b.scene}</span>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 bg-indigo-50 border border-indigo-100 rounded px-2 py-0.5">{b.role}</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          {b.status === 'error'
+                            ? <p className="text-xs text-rose-600 break-words">{b.error}</p>
+                            : <p className="text-xs text-slate-500 truncate">{b.status === 'done' ? `Job ${b.jobId || ''} · selesai` : b.status === 'running' ? 'Sedang dibuat NexaBot…' : 'Menunggu giliran…'}</p>}
+                        </div>
+                        {b.status === 'done' && b.url && <a href={b.url} download={`arkx-health-scene-${b.scene}.mp4`} className="text-xs font-bold text-indigo-600 hover:text-indigo-800 shrink-0">Unduh MP4</a>}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {omniBatch.some(b => b.status === 'error') && (
+                      <button onClick={retryFailedScenes} disabled={loadingOmniBatch || mergingBatch} className="inline-flex items-center gap-2 px-4 py-2.5 border border-rose-200 bg-rose-50 hover:bg-rose-100 disabled:opacity-50 text-rose-700 text-xs font-bold rounded-xl transition-colors">
+                        <Loader2 className={`w-4 h-4 ${loadingOmniBatch ? 'animate-spin' : 'hidden'}`} /> Ulangi Scene Gagal ({omniBatch.filter(b => b.status === 'error').length})
+                      </button>
+                    )}
+                    <button
+                      onClick={() => mergeBatchVideos(omniBatch.filter(b => b.status === 'done' && b.url).map(b => b.url as string))}
+                      disabled={loadingOmniBatch || mergingBatch || omniBatch.filter(b => b.status === 'done' && b.url).length < 2}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
+                    >
+                      {mergingBatch ? <Loader2 className="w-4 h-4 animate-spin" /> : <Video className="w-4 h-4" />}
+                      Gabungkan {omniBatch.filter(b => b.status === 'done' && b.url).length} Scene Jadi 1 Video ({omniBatch.filter(b => b.status === 'done' && b.url).length * 15} dtk)
+                    </button>
+                  </div>
+                  {omniMerged && (
+                    <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+                        <p className="text-sm font-bold text-emerald-800"><Check className="w-4 h-4 inline mr-1" />Gabungan {omniMerged.scenes} scene siap — {omniMerged.scenes * 15} detik</p>
+                        <a href={omniMerged.url} download={`arkx-health-anim-${omniMerged.scenes}-scene-${omniMerged.scenes * 15}detik.mp4`} className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-colors"><Video className="w-4 h-4" /> Unduh MP4</a>
+                      </div>
+                      <div className="rounded-xl overflow-hidden bg-slate-900 border border-emerald-100 flex justify-center"><video src={omniMerged.url} controls playsInline preload="metadata" aria-label="Video gabungan semua scene" className="w-full max-h-[480px]" /></div>
+                      <p className="text-[11px] text-emerald-800/80 mt-2">Hasil gabungan tersimpan sementara di memori browser — unduh sebelum menutup tab.</p>
+                    </div>
+                  )}
+                </section>}
 
                 {omniVideo && <section className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm anim-fade-in-up" aria-label="Hasil video Omni Flash">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-5">
-                    <div><h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><Check className="w-5 h-5 text-emerald-600" /> Video Omni Flash siap</h3><p className="text-xs text-slate-500 mt-1">15 detik · {omniVideo.aspectRatio} · MP4 · 720p</p></div>
+                    <div><h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><Check className="w-5 h-5 text-emerald-600" /> Video Omni Flash siap</h3><p className="text-xs text-slate-500 mt-1">15 detik Â· {omniVideo.aspectRatio} Â· MP4 Â· 720p</p></div>
                     <a href={omniVideo.url} download="arkx-omni-flash-15-detik.mp4" className="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm px-5 py-3 rounded-xl"><Video className="w-4 h-4" /> Unduh MP4</a>
                   </div>
                   <div className="rounded-xl overflow-hidden bg-slate-900 border border-slate-200 flex justify-center"><video src={omniVideo.url} controls playsInline preload="metadata" aria-label="Video Omni Flash 15 detik" className="w-full max-h-[560px]" /></div>
@@ -1423,10 +1722,13 @@ ATURAN MUTLAK:
                 {omniConfirmOpen && <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={event => { if (event.target === event.currentTarget) setOmniConfirmOpen(false); }}>
                   <section role="dialog" aria-modal="true" aria-labelledby="omni-confirm-title" aria-describedby="omni-confirm-note" className="w-full max-w-lg bg-white border border-slate-200 rounded-2xl shadow-2xl p-6 sm:p-8 anim-zoom-in max-h-[90vh] overflow-y-auto">
                     <div className="flex items-start justify-between gap-4 mb-4"><h3 id="omni-confirm-title" className="text-xl font-bold text-slate-900">Konfirmasi generasi video</h3><button onClick={() => setOmniConfirmOpen(false)} aria-label="Tutup konfirmasi" className="p-1 rounded-lg text-slate-500 hover:bg-slate-100"><X className="w-5 h-5" /></button></div>
-                    <p id="omni-confirm-note" className="text-sm text-slate-600 leading-relaxed mb-5">Anda akan membuat <strong>satu video 15 detik</strong> lewat NexaBot. Biaya dipotong dari <strong>saldo NexaBot</strong> Anda (gratis bila paket Unlimited aktif) dan dikembalikan otomatis bila gagal.</p>
-                    <dl className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2 text-sm mb-5"><div className="flex justify-between gap-3"><dt className="text-slate-500">Model</dt><dd className="font-bold text-slate-800 text-xs">NexaBot · Omni Flash 1.2</dd></div><div className="flex justify-between gap-3"><dt className="text-slate-500">Output</dt><dd className="font-bold text-slate-800">1 video · 15 detik</dd></div><div className="flex justify-between gap-3"><dt className="text-slate-500">Format</dt><dd className="font-bold text-slate-800">{omniAspectRatio} · 720p</dd></div></dl>
+                    <p id="omni-confirm-note" className="text-sm text-slate-600 leading-relaxed mb-5">{omniConfirmMode === 'batch'
+                      ? <>Anda akan membuat <strong>{omniScenes.length} video (1 video per scene, masing-masing 15 detik)</strong> lewat NexaBot, lalu menggabungkannya otomatis jadi <strong>satu video {omniScenes.length * 15} detik</strong> via ffmpeg. Biaya dipotong dari <strong>saldo NexaBot</strong> Anda <strong>per video</strong> (gratis bila paket Unlimited / admin) dan dikembalikan otomatis untuk scene yang gagal.</>
+                      : <>Anda akan membuat <strong>satu video 15 detik</strong> lewat NexaBot. Biaya dipotong dari <strong>saldo NexaBot</strong> Anda (gratis bila paket Unlimited aktif) dan dikembalikan otomatis bila gagal.</>}
+                    </p>
+                    <dl className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2 text-sm mb-5"><div className="flex justify-between gap-3"><dt className="text-slate-500">Model</dt><dd className="font-bold text-slate-800 text-xs">NexaBot Â· Omni Flash 1.2</dd></div><div className="flex justify-between gap-3"><dt className="text-slate-500">Output</dt><dd className="font-bold text-slate-800">{omniConfirmMode === 'batch' ? `${omniScenes.length} video · ${omniScenes.length * 15} detik (digabung jadi 1)` : '1 video · 15 detik'}</dd></div><div className="flex justify-between gap-3"><dt className="text-slate-500">Format</dt><dd className="font-bold text-slate-800">{omniAspectRatio} Â· 720p</dd></div></dl>
                     <p className="text-xs text-slate-500 leading-relaxed mb-6">Topik dikirim ke NexaBot memakai kunci server. Tidak ada permintaan sebelum Anda menekan tombol lanjut di bawah, dan submit tidak diulang otomatis setelah job terbentuk.</p>
-                    <div className="flex flex-col sm:flex-row gap-3"><button onClick={() => setOmniConfirmOpen(false)} className="px-4 py-3 border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 font-bold">Batal</button><button onClick={confirmOmniFlash} className="flex-1 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl">Lanjutkan · Buat 15 Detik</button></div>
+                    <div className="flex flex-col sm:flex-row gap-3"><button onClick={() => setOmniConfirmOpen(false)} className="px-4 py-3 border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 font-bold">Batal</button><button onClick={() => omniConfirmMode === 'batch' ? confirmOmniBatch() : confirmOmniFlash()} className="flex-1 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl">{omniConfirmMode === 'batch' ? `Lanjutkan · Buat ${omniScenes.length} Scene` : 'Lanjutkan · Buat 15 Detik'}</button></div>
                   </section>
                 </div>}
               </div>
@@ -1895,16 +2197,21 @@ ATURAN MUTLAK:
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={event => { if (event.target === event.currentTarget) setAiSettingsOpen(false); }}>
           <section role="dialog" aria-modal="true" aria-labelledby="ai-settings-title" className="w-full max-w-lg bg-white border border-slate-200 rounded-2xl shadow-2xl p-6 sm:p-8 anim-zoom-in max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between gap-3 mb-3"><h2 id="ai-settings-title" className="text-xl font-bold text-slate-900 flex items-center gap-2"><KeyRound className="w-5 h-5 text-indigo-600" /> Pengaturan AI</h2><button onClick={() => setAiSettingsOpen(false)} aria-label="Tutup pengaturan AI" className="p-2 rounded-lg hover:bg-slate-100 text-slate-500"><X className="w-5 h-5" /></button></div>
-            <p className="text-sm text-slate-500 leading-relaxed mb-6">Aplikasi bebas dibuka tanpa akun atau email. Fitur generasi memakai API Gemini Anda sendiri karena integrasi bawaan Canvas tidak ikut pada web statis.</p>
-            <form onSubmit={saveAiSettings} className="space-y-4">
-              <div><label htmlFor="gemini-api-key" className="block text-sm font-bold text-slate-700 mb-2">API key Gemini</label><input id="gemini-api-key" type="password" autoComplete="off" spellCheck={false} value={aiApiKey} onChange={e => setAiApiKey(e.target.value)} disabled={pengaturanDikunci} placeholder={pengaturanDikunci ? 'Dikunci oleh admin' : 'Masukkan API key Anda (opsional)'} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-slate-900 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-400 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed" /></div>
-              <div><label htmlFor="gemini-model" className="block text-sm font-bold text-slate-700 mb-2">Model Gemini</label><input id="gemini-model" type="text" value={aiModel} onChange={e => setAiModel(e.target.value)} disabled={pengaturanDikunci} placeholder="gemini-3.1-flash-lite" className="w-full border border-slate-200 rounded-xl px-4 py-3 text-slate-900 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-400 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed" />{pengaturanDikunci && <p className="text-xs text-amber-700 mt-2 flex items-center gap-1"><Lock className="w-3.5 h-3.5" /> Pengaturan AI dikunci oleh admin: model dan API key tidak bisa diubah dari akun member.</p>}</div>
-              <div className="rounded-xl bg-indigo-50 border border-indigo-100 p-4 text-xs text-indigo-800 leading-relaxed">Key hanya disimpan selama sesi tab browser ini, tidak diterbitkan di situs. Topik dan file yang Anda proses dikirim langsung ke Google Gemini. Penggunaan API mengikuti kuota dan tarif akun Google Anda. Jangan gunakan key pribadi di perangkat bersama.</div>
-              {pengaturanDikunci ? (
-                <div className="flex flex-wrap gap-3 pt-2"><button type="button" onClick={() => setAiSettingsOpen(false)} className="flex-1 px-4 py-3 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl">Tutup</button></div>
-              ) : (
-                <div className="flex flex-wrap gap-3 pt-2"><button type="submit" className="flex-1 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl">Simpan pengaturan</button><button type="button" onClick={() => { setAiApiKey(''); try { sessionStorage.removeItem('arkxHealthApiKey'); } catch {} }} className="px-4 py-3 border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 font-semibold">Hapus key</button></div>
-              )}
+            <p className="text-sm text-slate-500 leading-relaxed mb-6">Narasi &amp; prompt scene dibuat lewat relay <code>/api/public/studio-ai</code> dengan kunci Gemini milik server — member tidak perlu (dan tidak bisa) menyimpan key sendiri. Refresh / login ulang tidak akan meminta isi key lagi.</p>
+            {aiServer.loading ? (
+              <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500 text-center">Memeriksa status kunci server…</div>
+            ) : aiServer.configured ? (
+              <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-800 leading-relaxed">✅ <b>Kunci Gemini server AKTIF</b>{aiDailyCap != null && <> — batas <b>{aiDailyCap} panggilan/hari</b> per member</>}{aiUsed != null && <> (hari ini kamu terpakai <b>{aiUsed}{aiDailyCap != null ? `/${aiDailyCap}` : ''}</b>)</>}. Fitur generasi siap dipakai.</div>
+            ) : aiServer.configured === false ? (
+              <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 leading-relaxed">⚠️ <b>Kunci Gemini server BELUM diisi.</b> {pengaturanDikunci ? <>Minta admin menambahkan <code>"studio_gemini_key"</code> di <b>System Settings → AI Studio (Gemini)</b>.</> : <>Isi di <b>System Settings → AI Studio (Gemini)</b> supaya fitur generasi aktif untuk semua member Pro / Unlimited.</>}</div>
+            ) : (
+              <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500 leading-relaxed">Tidak bisa menghubungi server untuk memeriksa status kunci. Coba muat ulang halaman.</div>
+            )}
+            {!pengaturanDikunci && <p className="-mt-2 mb-4 text-[11px] text-slate-400 leading-relaxed">Kunci Gemini dikelola di <b>Admin → System Settings → AI Studio (Gemini)</b> — bukan di halaman ini. Halaman ini hanya memilih model.</p>}
+            <form onSubmit={saveAiModel} className="space-y-4">
+              <div><label htmlFor="gemini-model" className="block text-sm font-bold text-slate-700 mb-2">Model Gemini</label><input id="gemini-model" type="text" value={aiModel} onChange={e => setAiModel(e.target.value)} disabled={pengaturanDikunci} placeholder="gemini-3.1-flash-lite" className="w-full border border-slate-200 rounded-xl px-4 py-3 text-slate-900 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-400 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed" />{pengaturanDikunci && <p className="text-xs text-amber-700 mt-2 flex items-center gap-1"><Lock className="w-3.5 h-3.5" /> Model dikunci oleh admin: member tidak bisa mengubahnya.</p>}</div>
+              <div className="rounded-xl bg-indigo-50 border border-indigo-100 p-4 text-xs text-indigo-800 leading-relaxed">Prompt dan file yang Anda proses dikirim lewat relay server ke Google Gemini (kunci milik server, kuota dihitung per member per hari). Video dibuat oleh NexaBot memakai saldo NexaBot Anda.</div>
+              <div className="flex flex-wrap gap-3 pt-2"><button type="submit" className="flex-1 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl">Simpan model</button><button type="button" onClick={() => setAiSettingsOpen(false)} className="px-4 py-3 border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 font-semibold">Tutup</button></div>
             </form>
           </section>
         </div>
