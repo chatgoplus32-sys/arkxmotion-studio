@@ -47,6 +47,7 @@ import {
   Clapperboard,
   Rocket,
   HeartPulse,
+  Sparkles,
 } from 'lucide-react'
 
 interface NavItem {
@@ -73,6 +74,7 @@ const createNav: NavItem[] = [
   { label: 'Edit Image', href: '/generate/edit-image', icon: <ImagePlus className="h-4 w-4" /> },
   { label: 'Virtual Try-On', href: '/generate/virtual-tryon', icon: <Shirt className="h-4 w-4" /> },
   { label: 'Travel Photo', href: '/generate/travel-photo', icon: <Globe className="h-4 w-4" /> },
+  { label: 'Viral Effects', href: '/generate/viral-effects', icon: <Sparkles className="h-4 w-4" />, pro: true },
 ]
 
 const audioNav: NavItem[] = [

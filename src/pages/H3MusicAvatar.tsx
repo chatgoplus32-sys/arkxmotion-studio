@@ -4,7 +4,7 @@ import { Section, Button, Label, EmptyState } from '@/components/ui'
 import { LogDetailActions } from '@/components/ui/LogDetailActions'
 import { Loader2, Upload, Download, X, User, Sparkles, CheckCircle2, AlertCircle, Clock, Music, Copy, Trash2, Film, AudioLines } from 'lucide-react'
 import { useToastStore } from '@/stores/toastStore'
-import { submitRunningHubH3MusicAvatar, pollRunningHubTask, RUNNINGHUB_PODCAST_LIPSYNC_APP_ID } from '@/lib/runninghub'
+import { submitRunningHubH3MusicAvatar, pollRunningHubTask, RUNNINGHUB_PODCAST_LIPSYNC_APP_ID, MUSIC_VIDEO_ASPECTS, MUSIC_VIDEO_MAX_SCENES, MUSIC_VIDEO_DEFAULT_ASPECT } from '@/lib/runninghub'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { persistResultToR2, addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
 import { usePageActive } from '@/hooks/usePageActive'
@@ -40,7 +40,7 @@ const DEFAULT_PROMPT = 'The character in Image1 faces the camera, speaking and s
 // Contoh prompt untuk mode podcast (app lip-sync). Kosong = pakai default app.
 const PODCAST_PROMPT_PLACEHOLDER = 'Kosongkan untuk perilaku default, atau isi acting, mis.: "The character speaks naturally and relaxed, like a podcast host talking to the audience. Fixed camera. No subtitles, no text."'
 
-type AvatarMode = 'h3' | 'podcast'
+type AvatarMode = 'h3' | 'podcast' | 'mv'
 
 export default function H3MusicAvatarPage() {
   const addToast = useToastStore((s) => s.addToast)
@@ -50,6 +50,8 @@ export default function H3MusicAvatarPage() {
   const [audioFile, setAudioFile] = useState<File | null>(null)
   const [prompt, setPrompt] = useState('')
   const [mode, setMode] = useState<AvatarMode>('h3')
+  const [sceneFiles, setSceneFiles] = useState<File[]>([])
+  const [aspectRatio, setAspectRatio] = useState<string>('9:16 (Portrait Widescreen)')
   const [loading, setLoading] = useState(false)
   const [taskStatus, setTaskStatus] = useState<'idle' | 'submitting' | 'running' | 'success' | 'error'>('idle')
   const [statusText, setStatusText] = useState('')
@@ -97,6 +99,8 @@ export default function H3MusicAvatarPage() {
       prompt: efPrompt,
       apiKey: key,
       appId: mode === 'podcast' ? RUNNINGHUB_PODCAST_LIPSYNC_APP_ID : undefined,
+      sceneFiles: mode === 'mv' ? sceneFiles : undefined,
+      aspectRatio: mode === 'mv' ? aspectRatio : undefined,
     })
     setTaskIdStr(submit.taskId)
     setTaskStatus('running')

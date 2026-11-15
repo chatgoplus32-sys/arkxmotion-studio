@@ -28,6 +28,24 @@ export const RUNNINGHUB_TRYON_FLUX2_APP_ID = '2102388260877221889'
 // avatar menyanyi, segmen tanpa batas + video panjang.
 const RUNNINGHUB_H3_MUSIC_AVATAR_APP_ID = '2111522730906955778'
 
+// MiniMax H3 Music Video (app 2112585854291116033): 1 foto karakter utama +
+// maks 3 foto referensi scene + audio → music video sinematik. Node 137 =
+// karakter utama, 171 = audio, 138 = prompt, 115 = aspect_ratio.
+// https://www.runninghub.ai/id/ai-detail/2112585854291116033
+export const RUNNINGHUB_MUSIC_VIDEO_APP_ID = '2112585854291116033'
+export const MUSIC_VIDEO_MAX_SCENES = 3
+export const MUSIC_VIDEO_ASPECTS = [
+  '9:16 (Portrait Widescreen)',
+  '16:9 (Widescreen)',
+  '1:1 (Square)',
+  '2:3 (Portrait Photo)',
+  '3:2 (Photo)',
+  '3:4 (Portrait Standard)',
+  '4:3 (Standard)',
+  '21:9 (Ultrawide)',
+]
+export const MUSIC_VIDEO_DEFAULT_ASPECT = '9:16 (Portrait Widescreen)'
+
 // FLUX.1 Kontext image edit (instruksi bahasa alami):
 // node 28 = image (foto), node 31 = text (perintah edit)
 export const RUNNINGHUB_IMAGE_EDIT_WORKFLOW_ID = '1928844216607129602'
@@ -765,6 +783,43 @@ export async function submitRunningHubH3MusicAvatar(params: H3MusicAvatarParams)
     prompt: params.prompt || '',
   }, params.apiKey)
 
+  return {
+    id: result.id || result.taskId,
+    taskId: result.taskId || result.id,
+    status: result.status || 'QUEUED',
+    provider: result.provider || 'runninghub',
+    workflowId: result.workflowId || appId,
+  }
+}
+
+// App "60 Popular Video Effects Collection" (Tongyi Wanxiang WAN2.1) — viral effects.
+export const RUNNINGHUB_VIRAL_EFFECTS_APP_ID = '1902990197309476866'
+
+export interface ViralEffectsParams {
+  imageFile: File
+  effectNumber?: number
+  steps?: number
+  frames?: number
+  resolution?: number
+  prompt?: string
+  apiKey?: string
+  appId?: string
+}
+
+export async function submitRunningHubViralEffects(params: ViralEffectsParams): Promise<MotionControlResult> {
+  const appId = params.appId || RUNNINGHUB_VIRAL_EFFECTS_APP_ID
+  const imageBase64 = await fileToBase64(params.imageFile)
+  const result = await runninghubProxy('submit-viral-effects', {
+    app_id: appId,
+    imageBase64,
+    imageFileName: params.imageFile.name,
+    imageMimeType: params.imageFile.type || 'image/jpeg',
+    effectNumber: params.effectNumber ?? 1,
+    steps: params.steps ?? 2,
+    frames: params.frames ?? 2,
+    resolution: params.resolution ?? 3,
+    prompt: params.prompt || '',
+  }, params.apiKey)
   return {
     id: result.id || result.taskId,
     taskId: result.taskId || result.id,

@@ -8,6 +8,7 @@ import { rhJwtExp, rhJwtExpired, rhJwtSub } from '../lib/rhJwt.js'
 import { userIdFromToken } from '../lib/appToken.js'
 import { isAdminUser, keyEligibility, masterKey } from '../lib/providerMasterKey.js'
 import { claimChargeTicket, noteChargeTicketJob, releaseChargeTicket } from '../lib/providerChargeTicket.js'
+import { rhBuildRunBody, rhRunOptions, rhWebhookCallbackUrl } from '../lib/runninghubOpenApi.js'
 import {
   rhPoolCandidates,
   rhPoolMarkFailure,
@@ -247,11 +248,40 @@ const RUNNINGHUB_H3_MUSIC_AVATAR_APP_ID = '2111522730906955778'
 const H3_MUSIC_AVATAR_IMAGE_NODE = '306'
 const H3_MUSIC_AVATAR_AUDIO_NODE = '317'
 const H3_MUSIC_AVATAR_PROMPT_NODE = '214'
+// MiniMax H3 Music Video (app 2112585854291116033): 1 foto karakter utama +
+// audio lagu + maks 3 foto referensi scene → music video sinematik dengan
+// karakter konsisten. node 137 = image (karakter utama), node 171 = audio,
+// node 138 = text (prompt), node 115 = aspect_ratio, node 199/200/201 =
+// image referensi scene (opsional; app memakai contoh default bila kosong).
+// https://www.runninghub.ai/id/ai-detail/2112585854291116033
+const RUNNINGHUB_MUSIC_VIDEO_APP_ID = '2112585854291116033'
+const MUSIC_VIDEO_IMAGE_NODE = '137'
+const MUSIC_VIDEO_AUDIO_NODE = '171'
+const MUSIC_VIDEO_PROMPT_NODE = '138'
+const MUSIC_VIDEO_ASPECT_NODE = '115'
+const MUSIC_VIDEO_SCENE_NODES = ['199', '200', '201']
+const MUSIC_VIDEO_MAX_SCENES = MUSIC_VIDEO_SCENE_NODES.length
+const MUSIC_VIDEO_ASPECTS = new Set([
+  '1:1 (Square)', '2:3 (Portrait Photo)', '3:2 (Photo)', '3:4 (Portrait Standard)',
+  '4:3 (Standard)', '9:16 (Portrait Widescreen)', '16:9 (Widescreen)', '21:9 (Ultrawide)',
+])
+const MUSIC_VIDEO_ASPECT_FALLBACK = '9:16 (Portrait Widescreen)'
+const MUSIC_VIDEO_DEFAULT_PROMPT = `Cinematic music video with High consistent character as Main Character as in Image reference, preserve same identity across all scenes, smooth natural performance, realistic human motion, accurate lipsync with lyrics and gesture movement on music beat.
+
+Scenes details : Main character singing
+Camera : Static > Dynamic Gentle pan orbit >Low angle shot then crane up > Slow zoom close up
+
+Smooth transitions between all reference scenes, consistent character identity, consistent face, realistic anatomy, natural skin and facial movement, accurate lip-sync, beat synchronization, lyric synchronization, cinematic realistic motion, high temporal consistency, high character consistency, no morphing, no face deformation, no extra fingers, no duplicated limbs, no identity change, no sudden camera jumps, No double same character. LIP MOVE WHEN LYRIC SING AVAILABLE, LIP SILENT WHEN NO LYRICS. High quality Video and Clean audio masterpiece result.`
 // App "Digital human lip-sync singing unlimited duration [HD]" — mode podcast:
 // lip-sync murni (foto + audio), TANPA ASR/Whisper sehingga tidak pernah
 // membakar subtitle ke video. Input: image 479, audio 483, text 493 (+3 node
 // default: rCM switch, ukuran mulut, sisi terpanjang video).
 const RUNNINGHUB_PODCAST_LIPSYNC_APP_ID = '1990007675981320194'
+// App \"60 Popular Video Effects Collection\" (Tongyi Wanxiang WAN2.1) — viral effects:
+// 1 foto + nomor efek (1-66) + deskripsi singkat + kualitas → video efek viral.
+// Node: 14 image, 207 int (nomor efek), 150 steps(1/2/3), 151 resolution(1/2/3),
+// 152 frames(1/2/3), 198 text (deskripsi).
+const RUNNINGHUB_VIRAL_EFFECTS_APP_ID = '1902990197309476866'
 // MiniMax H3 Realistic VLOG (app 2112457853784121345): 1 gambar + prompt
 // VLOG terstruktur → video VLOG realistis 15 detik.
 // node 137 = image, node 138 = text (prompt).
@@ -979,6 +1009,7 @@ async function dispatchRhAction(action: string, apiKey: string, params: any, res
   if (action === 'submit-image-edit') return handleSubmitImageEdit(apiKey, params, res)
   if (action === 'submit-h3-i2v') return handleSubmitH3I2V(apiKey, params, res)
   if (action === 'submit-h3-music-avatar') return handleSubmitH3MusicAvatar(apiKey, params, res)
+  if (action === 'submit-viral-effects') return handleSubmitViralEffects(apiKey, params, res)
   if (action === 'submit-h3-vlog') return handleSubmitH3Vlog(apiKey, params, res)
   if (action === 'submit-ugc-storyboard') return handleSubmitUGCStoryboard(apiKey, params, res)
   if (action === 'submit-seedance2') return handleSubmitSeedance2(apiKey, params, res)
@@ -1434,6 +1465,7 @@ async function handleMotionControlUltraHD(apiKey: string, params: any, res: Resp
     prompt = '',
     negative_prompt = '',
     negativePrompt = '',
+    instanceType,
   } = params
 
   if (!imageBase64) return res.status(200).json({ ok: false, error: 'Missing imageBase64' })
@@ -1492,11 +1524,10 @@ async function handleMotionControlUltraHD(apiKey: string, params: any, res: Resp
     console.log(`[runninghub] ultra-hd node discovery failed, pakai base 30/33: ${err.message}`)
   }
 
-  const body = {
-    nodeInfoList,
-    instanceType: 'default',
-    usePersonalQueue: 'false',
-  }
+  const opts = rhRunOptions({ instanceType }, { instanceType: 'default' })
+  const body = rhBuildRunBody({ nodeInfoList, instanceType: opts.instanceType, usePersonalQueue: opts.usePersonalQueue })
+
+  console.log(`[runninghub] submit-tryon instanceType=${opts.instanceType} usePersonalQueue=${opts.usePersonalQueue}`)
 
   const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${effectiveWorkflowId}`
 
@@ -1601,6 +1632,7 @@ async function handleMotionAppWorkflow(apiKey: string, params: any, res: Respons
     negativePrompt = '',
     durationHint = 0,
     instanceType = '',
+    usePersonalQueue,
   } = params
 
   if (!imageBase64) return res.status(200).json({ ok: false, error: 'Missing imageBase64' })
@@ -1653,16 +1685,20 @@ async function handleMotionAppWorkflow(apiKey: string, params: any, res: Respons
 
   // Instance type: client bisa memaksa ('plus'/'ultra'/'default'), atau server
   // memilih 'plus' bila durasi referensi melewati ambang cfg.plusAboveSec.
-  const effectiveInstance = ['default', 'plus', 'ultra'].includes(String(instanceType))
-    ? String(instanceType)
-    : (cfg.plusAboveSec && Number(durationHint) > cfg.plusAboveSec ? 'plus' : 'default')
-  console.log(`[runninghub] ${cfg.label} instanceType=${effectiveInstance} (durationHint=${Number(durationHint)}s)`)
+  const opts = rhRunOptions({ instanceType, usePersonalQueue }, {
+    instanceType: 'default',
+    usePersonalQueue: false,
+  })
 
-  const body = {
+  const body = rhBuildRunBody({
     nodeInfoList,
-    instanceType: effectiveInstance,
-    usePersonalQueue: 'false',
-  }
+    instanceType: opts.instanceType,
+    usePersonalQueue: opts.usePersonalQueue,
+    retainSeconds: opts.retainSeconds,
+    webhookUrl: opts.webhookUrl,
+  })
+
+  console.log(`[runninghub] ${cfg.label} instanceType=${opts.instanceType} usePersonalQueue=${opts.usePersonalQueue} retainSeconds=${opts.retainSeconds ?? '(none)'} webhookUrl=${opts.webhookUrl ?? '(none)'}`)
 
   const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${effectiveWorkflowId}`
 
@@ -1744,6 +1780,7 @@ async function handleSubmitTryOn(apiKey: string, params: any, res: Response) {
     garmentFileName = 'garment.jpg',
     garmentMimeType = 'image/jpeg',
     prompt = '',
+    instanceType,
   } = params
 
   if (!personBase64) return res.status(200).json({ ok: false, error: 'Missing personBase64' })
@@ -1784,11 +1821,10 @@ async function handleSubmitTryOn(apiKey: string, params: any, res: Response) {
     console.log(`[runninghub] tryon discovery skipped: ${err.message}`)
   }
 
-  const body = {
-    nodeInfoList,
-    instanceType: 'default',
-    usePersonalQueue: 'false',
-  }
+  const opts = rhRunOptions({ instanceType }, { instanceType: 'default' })
+  const body = rhBuildRunBody({ nodeInfoList, instanceType: opts.instanceType, usePersonalQueue: opts.usePersonalQueue })
+
+  console.log(`[runninghub] submit-tryon instanceType=${opts.instanceType} usePersonalQueue=${opts.usePersonalQueue}`)
 
   const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${effectiveWorkflowId}`
 
@@ -1868,6 +1904,7 @@ async function handleSubmitTryOnFlux2(apiKey: string, params: any, res: Response
     garmentFileName = 'garment.jpg',
     garmentMimeType = 'image/jpeg',
     prompt = '',
+    instanceType,
   } = params
 
   if (!personBase64) return res.status(200).json({ ok: false, error: 'Missing personBase64' })
@@ -1901,11 +1938,10 @@ async function handleSubmitTryOnFlux2(apiKey: string, params: any, res: Response
     console.log(`[runninghub] tryon-flux2 discovery skipped: ${err.message}`)
   }
 
-  const body = {
-    nodeInfoList,
-    instanceType: 'default',
-    usePersonalQueue: 'false',
-  }
+  const opts = rhRunOptions({ instanceType }, { instanceType: 'default' })
+  const body = rhBuildRunBody({ nodeInfoList, instanceType: opts.instanceType, usePersonalQueue: opts.usePersonalQueue })
+
+  console.log(`[runninghub] submit-tryon instanceType=${opts.instanceType} usePersonalQueue=${opts.usePersonalQueue}`)
 
   const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${effectiveWorkflowId}`
 
@@ -1985,6 +2021,8 @@ async function handleSubmitH3MusicAvatar(apiKey: string, params: any, res: Respo
     audioFileName = 'audio.mp3',
     audioMimeType = 'audio/mpeg',
     prompt = '',
+    sceneImages,
+    aspectRatio,
   } = params
 
   if (!imageBase64) return res.status(200).json({ ok: false, error: 'Missing imageBase64' })
@@ -1992,14 +2030,17 @@ async function handleSubmitH3MusicAvatar(apiKey: string, params: any, res: Respo
 
   const effectiveAppId = app_id || appId || RUNNINGHUB_H3_MUSIC_AVATAR_APP_ID
 
-  // Profil node per app (dua AI App dipakai halaman H3 Music Avatar):
+  // Profil node per app (tiga AI App dipakai halaman H3 Music Avatar):
   //  - H3 Music Avatar  : nyanyi/ekspresif — 3 node (306/317/214).
   //  - Podcast Lip-Sync : bicara/podcast 2-3 menit, tanpa subtitle — 6 node.
+  //  - Music Video      : karakter konsisten + 3 scene referensi + aspect
+  //                       ratio — node 137/171/138/115 (+199/200/201).
   // App tidak dikenal memakai node H3 (perilaku lama).
   const isPodcastApp = effectiveAppId === RUNNINGHUB_PODCAST_LIPSYNC_APP_ID
-  const imageNode = isPodcastApp ? '479' : H3_MUSIC_AVATAR_IMAGE_NODE
-  const audioNode = isPodcastApp ? '483' : H3_MUSIC_AVATAR_AUDIO_NODE
-  const promptNode = isPodcastApp ? '493' : H3_MUSIC_AVATAR_PROMPT_NODE
+  const isMusicVideoApp = effectiveAppId === RUNNINGHUB_MUSIC_VIDEO_APP_ID
+  const imageNode = isMusicVideoApp ? MUSIC_VIDEO_IMAGE_NODE : isPodcastApp ? '479' : H3_MUSIC_AVATAR_IMAGE_NODE
+  const audioNode = isMusicVideoApp ? MUSIC_VIDEO_AUDIO_NODE : isPodcastApp ? '483' : H3_MUSIC_AVATAR_AUDIO_NODE
+  const promptNode = isMusicVideoApp ? MUSIC_VIDEO_PROMPT_NODE : isPodcastApp ? '493' : H3_MUSIC_AVATAR_PROMPT_NODE
   const promptField = isPodcastApp ? 'text' : 'value'
 
   console.log(`[runninghub] Uploading photo (h3-music-avatar)...`)
@@ -2022,6 +2063,43 @@ async function handleSubmitH3MusicAvatar(apiKey: string, params: any, res: Respo
     nodeInfoList.push({ nodeId: promptNode, fieldName: promptField, fieldValue: effPrompt })
   }
 
+  if (isMusicVideoApp) {
+    // Scene referensi bersifat opsional: hanya node yang diisi yang dikirim,
+    // sisanya memakai contoh default di dalam app (example.png).
+    const scenes = (Array.isArray(sceneImages) ? sceneImages : [])
+      .filter((s: any) => s && s.base64)
+      .slice(0, MUSIC_VIDEO_MAX_SCENES)
+
+    if (scenes.length > 0) {
+      console.log(`[runninghub] Uploading ${scenes.length} scene reference(s) (music-video)...`)
+      const uploaded = await Promise.all(scenes.map((scene: any, i: number) =>
+        rhUpload(
+          apiKey,
+          scene.base64,
+          scene.fileName || `scene-${i + 1}.jpg`,
+          scene.mimeType || 'image/jpeg',
+        ),
+      ))
+      uploaded.forEach((up, i) => {
+        nodeInfoList.push({
+          nodeId: MUSIC_VIDEO_SCENE_NODES[i],
+          fieldName: 'image',
+          fieldValue: up.fileName,
+        })
+      })
+      console.log(`[runninghub] Scene uploaded: ${uploaded.map((u) => u.fileName).join(', ')}`)
+    }
+
+    const effAspect = MUSIC_VIDEO_ASPECTS.has(String(aspectRatio))
+      ? String(aspectRatio)
+      : MUSIC_VIDEO_ASPECT_FALLBACK
+    nodeInfoList.push({ nodeId: MUSIC_VIDEO_ASPECT_NODE, fieldName: 'aspect_ratio', fieldValue: effAspect })
+
+    if (!effPrompt) {
+      nodeInfoList.push({ nodeId: promptNode, fieldName: promptField, fieldValue: MUSIC_VIDEO_DEFAULT_PROMPT })
+    }
+  }
+
   if (isPodcastApp) {
     // Nilai default app lip-sync: switch rCM aktif, ukuran mulut normal,
     // sisi terpanjang video 832 (bisa di-request lebih besar via prompt? tidak —
@@ -2029,7 +2107,7 @@ async function handleSubmitH3MusicAvatar(apiKey: string, params: any, res: Respo
     nodeInfoList.push(
       { nodeId: '514', fieldName: 'value', fieldValue: 'true' },
       { nodeId: '508', fieldName: 'value', fieldValue: '1' },
-      { nodeId: '473', fieldName: 'value', fieldValue: '832' },
+      { nodeId: '473', fieldName: 'value', fieldValue: '640' },
     )
   }
 
@@ -2088,6 +2166,121 @@ async function handleSubmitH3MusicAvatar(apiKey: string, params: any, res: Respo
     const taskId = data.data?.taskId || data.taskId || data.id || data.task_id
     if (!taskId) {
       console.error(`[runninghub] No taskId found (h3-music-avatar):`, JSON.stringify(data).slice(0, 500))
+      return res.status(200).json({ ok: false, error: rhTaskErrorFrom(data) || 'No taskId returned', raw: lastRawText.slice(0, 500) })
+    }
+
+    return res.status(200).json({
+      ok: true,
+      data: {
+        id: taskId,
+        taskId,
+        status: data.data?.status || data.status || 'QUEUED',
+        provider: 'runninghub',
+        workflowId: effectiveAppId,
+      },
+    })
+  }
+
+  return res.status(200).json({ ok: false, error: 'Max retries exceeded', raw: lastRawText.slice(0, 500) })
+}
+
+async function handleSubmitViralEffects(apiKey: string, params: any, res: Response) {
+  const {
+    app_id,
+    appId,
+    imageBase64,
+    imageFileName = 'photo.jpg',
+    imageMimeType = 'image/jpeg',
+    effectNumber = 1,
+    steps = 2,
+    frames = 2,
+    resolution = 3,
+    prompt = '',
+  } = params
+
+  if (!imageBase64) return res.status(200).json({ ok: false, error: 'Missing imageBase64' })
+
+  const effNum = Math.max(1, Math.min(99, Number(effectNumber) || 1))
+  const effSteps = [1, 2, 3].includes(Number(steps)) ? Number(steps) : 2
+  const effFrames = [1, 2, 3].includes(Number(frames)) ? Number(frames) : 2
+  const effRes = [1, 2, 3].includes(Number(resolution)) ? Number(resolution) : 3
+
+  const effectiveAppId = app_id || appId || RUNNINGHUB_VIRAL_EFFECTS_APP_ID
+
+  console.log(`[runninghub] Uploading photo (viral-effects)...`)
+  const imageUpload = await rhUpload(apiKey, imageBase64, imageFileName, imageMimeType)
+  console.log(`[runninghub] Photo uploaded: ${imageUpload.fileName}`)
+
+  const nodeInfoList: any[] = [
+    { nodeId: '14', fieldName: 'image', fieldValue: imageUpload.fileName },
+    { nodeId: '207', fieldName: 'int', fieldValue: String(effNum) },
+    { nodeId: '150', fieldName: '步数', fieldValue: String(effSteps) },
+    { nodeId: '151', fieldName: 'Resolution', fieldValue: String(effRes) },
+    { nodeId: '152', fieldName: '帧数', fieldValue: String(effFrames) },
+  ]
+
+  const effPrompt = String(prompt || '').trim()
+  if (effPrompt) {
+    nodeInfoList.push({ nodeId: '198', fieldName: 'text', fieldValue: effPrompt })
+  } else {
+    nodeInfoList.push({ nodeId: '198', fieldName: 'text', fieldValue: 'man' })
+  }
+
+  const body = {
+    nodeInfoList,
+    instanceType: 'default',
+    usePersonalQueue: 'false',
+  }
+
+  const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${effectiveAppId}`
+
+  const MAX_RETRIES = 3
+  const RETRY_DELAY_MS = 10000
+  let lastRawText = ''
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    console.log(`[runninghub] POST ${endpoint} (viral-effects attempt ${attempt}/${MAX_RETRIES})`)
+    console.log(`[runninghub] body:`, JSON.stringify(body).slice(0, 1000))
+
+    const apiRes = await rhFetch(apiKey, endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+    })
+
+    lastRawText = await apiRes.text()
+    console.log(`[runninghub] submit-viral-effects ${apiRes.status}:`, lastRawText.slice(0, 1000))
+
+    let data: any
+    try { data = JSON.parse(lastRawText) } catch { data = { raw: lastRawText } }
+
+    const rhCode = data.code ?? data.errorCode
+    const rhMsg = data.msg || data.errorMessage || data.message
+
+    if (apiRes.status === 429 || rhCode === 429) {
+      return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data, retryable: true })
+    }
+
+    if (rhCode === 421 || rhCode === '421') {
+      console.log(`[runninghub] Queue limit (421), retrying in ${RETRY_DELAY_MS / 1000}s... (${attempt}/${MAX_RETRIES})`)
+      if (attempt < MAX_RETRIES) {
+        await new Promise(r => setTimeout(r, RETRY_DELAY_MS))
+        continue
+      }
+      return res.status(200).json({ ok: false, error: 'Queue limit reached, coba lagi dalam beberapa menit', data, retryable: true })
+    }
+
+    if (rhCode !== undefined && rhCode !== 0 && rhCode !== '0' && rhCode !== '') {
+      const errorMsg = translateRhError(String(rhCode), rhMsg) || rhMsg || `Error code: ${rhCode}`
+      return res.status(200).json({ ok: false, error: errorMsg, code: rhCode, data })
+    }
+
+    const taskId = data.data?.taskId || data.taskId || data.id || data.task_id
+    if (!taskId) {
+      console.error(`[runninghub] No taskId found (viral-effects):`, JSON.stringify(data).slice(0, 500))
       return res.status(200).json({ ok: false, error: rhTaskErrorFrom(data) || 'No taskId returned', raw: lastRawText.slice(0, 500) })
     }
 
@@ -3424,6 +3617,7 @@ async function handleMotionControl(apiKey: string, params: any, res: Response) {
     videoFileName = 'video.mp4',
     imageMimeType = 'image/jpeg',
     videoMimeType = 'video/mp4',
+    instanceType,
   } = params
 
   if (!imageBase64) return res.status(200).json({ ok: false, error: 'Missing imageBase64' })
@@ -3453,11 +3647,10 @@ async function handleMotionControl(apiKey: string, params: any, res: Response) {
     },
   ]
 
-  const body = {
-    nodeInfoList,
-    instanceType: 'default',
-    usePersonalQueue: 'false',
-  }
+  const opts = rhRunOptions({ instanceType }, { instanceType: 'default' })
+  const body = rhBuildRunBody({ nodeInfoList, instanceType: opts.instanceType, usePersonalQueue: opts.usePersonalQueue })
+
+  console.log(`[runninghub] submit-tryon instanceType=${opts.instanceType} usePersonalQueue=${opts.usePersonalQueue}`)
 
   const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${effectiveWorkflowId}`
 
@@ -3633,6 +3826,20 @@ async function handleQuery(apiKey: string, taskId: string, res: Response) {
     }
   }
 
+  // ── Parse usage fields from RunningHub OpenAPI v2 query response ────────
+  // API v2 returns usage: { consumeMoney, consumeCoins, taskCostTime, thirdPartyConsumeMoney }
+  let usageConsumeMoney: string | null = null
+  let usageConsumeCoins: string | null = null
+  let usageTaskCostTime: string | null = null
+  let usageThirdPartyConsumeMoney: string | null = null
+  const rawUsage = taskData.usage || data.usage
+  if (rawUsage && typeof rawUsage === 'object') {
+    usageConsumeMoney = rawUsage.consumeMoney ?? null
+    usageConsumeCoins = rawUsage.consumeCoins ?? null
+    usageTaskCostTime = rawUsage.taskCostTime ?? null
+    usageThirdPartyConsumeMoney = rawUsage.thirdPartyConsumeMoney ?? null
+  }
+
   // ── Otomatisasi pembersih watermark RunningHub ────────────────────────
   // Saat task COMPLETED dan hasilnya video, otomatis panggil pipeline Python
   // untuk menghapus watermark banner RunningHub di atas video.
@@ -3655,7 +3862,10 @@ async function handleQuery(apiKey: string, taskId: string, res: Response) {
       imageUrl,
       imageUrls,
       audioUrl,
-      usage: taskData.usage || data.usage || null,
+      usageConsumeMoney,
+      usageConsumeCoins,
+      usageTaskCostTime,
+      usageThirdPartyConsumeMoney,
       code: taskData.errorCode || data.errorCode || null,
       error: mappedStatus === 'FAILED' ? (failedDetail || taskData.errorMessage || taskData.msg || errorMsg || 'Task failed') : null,
       promptTips: taskData.promptTips || data.promptTips || null,

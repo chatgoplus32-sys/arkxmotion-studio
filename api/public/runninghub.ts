@@ -95,6 +95,30 @@ const RUNNINGHUB_H3_MUSIC_AVATAR_APP_ID = '2111522730906955778'
 const H3_MUSIC_AVATAR_IMAGE_NODE = '306'
 const H3_MUSIC_AVATAR_AUDIO_NODE = '317'
 const H3_MUSIC_AVATAR_PROMPT_NODE = '214'
+// MiniMax H3 Music Video (app 2112585854291116033): 1 foto karakter utama +
+// audio lagu + maks 3 foto referensi scene → music video sinematik dengan
+// karakter konsisten. node 137 = image (karakter utama), node 171 = audio,
+// node 138 = text (prompt), node 115 = aspect_ratio, node 199/200/201 =
+// image referensi scene (opsional; app memakai contoh default bila kosong).
+// https://www.runninghub.ai/id/ai-detail/2112585854291116033
+const RUNNINGHUB_MUSIC_VIDEO_APP_ID = '2112585854291116033'
+const MUSIC_VIDEO_IMAGE_NODE = '137'
+const MUSIC_VIDEO_AUDIO_NODE = '171'
+const MUSIC_VIDEO_PROMPT_NODE = '138'
+const MUSIC_VIDEO_ASPECT_NODE = '115'
+const MUSIC_VIDEO_SCENE_NODES = ['199', '200', '201']
+const MUSIC_VIDEO_MAX_SCENES = MUSIC_VIDEO_SCENE_NODES.length
+const MUSIC_VIDEO_ASPECTS = new Set([
+  '1:1 (Square)', '2:3 (Portrait Photo)', '3:2 (Photo)', '3:4 (Portrait Standard)',
+  '4:3 (Standard)', '9:16 (Portrait Widescreen)', '16:9 (Widescreen)', '21:9 (Ultrawide)',
+])
+const MUSIC_VIDEO_ASPECT_FALLBACK = '9:16 (Portrait Widescreen)'
+const MUSIC_VIDEO_DEFAULT_PROMPT = `Cinematic music video with High consistent character as Main Character as in Image reference, preserve same identity across all scenes, smooth natural performance, realistic human motion, accurate lipsync with lyrics and gesture movement on music beat.
+
+Scenes details : Main character singing
+Camera : Static > Dynamic Gentle pan orbit >Low angle shot then crane up > Slow zoom close up
+
+Smooth transitions between all reference scenes, consistent character identity, consistent face, realistic anatomy, natural skin and facial movement, accurate lip-sync, beat synchronization, lyric synchronization, cinematic realistic motion, high temporal consistency, high character consistency, no morphing, no face deformation, no extra fingers, no duplicated limbs, no identity change, no sudden camera jumps, No double same character. LIP MOVE WHEN LYRIC SING AVAILABLE, LIP SILENT WHEN NO LYRICS. High quality Video and Clean audio masterpiece result.`
 // MiniMax H3 Realistic VLOG (app 2112457853784121345): 1 gambar + prompt
 // VLOG terstruktur → video VLOG realistis 15 detik.
 // node 137 = image, node 138 = text (prompt).
@@ -1447,12 +1471,18 @@ async function handleSubmitH3MusicAvatar(apiKey: string, params: any, res: Verce
     audioFileName = 'audio.mp3',
     audioMimeType = 'audio/mpeg',
     prompt = '',
+    sceneImages,
+    aspectRatio,
   } = params
 
   if (!imageBase64) return res.status(200).json({ ok: false, error: 'Missing imageBase64' })
   if (!audioBase64) return res.status(200).json({ ok: false, error: 'Missing audioBase64' })
 
   const effectiveAppId = app_id || appId || RUNNINGHUB_H3_MUSIC_AVATAR_APP_ID
+  const isMusicVideoApp = effectiveAppId === RUNNINGHUB_MUSIC_VIDEO_APP_ID
+  const imageNode = isMusicVideoApp ? MUSIC_VIDEO_IMAGE_NODE : H3_MUSIC_AVATAR_IMAGE_NODE
+  const audioNode = isMusicVideoApp ? MUSIC_VIDEO_AUDIO_NODE : H3_MUSIC_AVATAR_AUDIO_NODE
+  const promptNode = isMusicVideoApp ? MUSIC_VIDEO_PROMPT_NODE : H3_MUSIC_AVATAR_PROMPT_NODE
 
   console.log(`[runninghub] Uploading photo (h3-music-avatar)...`)
   const imageUpload = await rhUpload(apiKey, imageBase64, imageFileName, imageMimeType)
@@ -1463,15 +1493,52 @@ async function handleSubmitH3MusicAvatar(apiKey: string, params: any, res: Verce
   console.log(`[runninghub] Audio uploaded: ${audioUpload.fileName}`)
 
   const nodeInfoList: any[] = [
-    { nodeId: H3_MUSIC_AVATAR_IMAGE_NODE, fieldName: 'image', fieldValue: imageUpload.fileName },
-    { nodeId: H3_MUSIC_AVATAR_AUDIO_NODE, fieldName: 'audio', fieldValue: audioUpload.fileName },
+    { nodeId: imageNode, fieldName: 'image', fieldValue: imageUpload.fileName },
+    { nodeId: audioNode, fieldName: 'audio', fieldValue: audioUpload.fileName },
   ]
 
   // Node 214 = prompt acting. Sesuai contoh resmi docs, fieldName-nya "value"
   // (teks). Tanpa prompt, app memakai teks default di dalam workflow-nya.
   const effPrompt = String(prompt || '').trim()
   if (effPrompt) {
-    nodeInfoList.push({ nodeId: H3_MUSIC_AVATAR_PROMPT_NODE, fieldName: 'value', fieldValue: effPrompt })
+    nodeInfoList.push({ nodeId: promptNode, fieldName: 'value', fieldValue: effPrompt })
+  }
+
+  if (isMusicVideoApp) {
+    // Scene referensi opsional: hanya node yang diisi yang dikirim, sisanya
+    // memakai contoh default di dalam app (example.png).
+    const scenes = (Array.isArray(sceneImages) ? sceneImages : [])
+      .filter((s: any) => s && s.base64)
+      .slice(0, MUSIC_VIDEO_MAX_SCENES)
+
+    if (scenes.length > 0) {
+      console.log(`[runninghub] Uploading ${scenes.length} scene reference(s) (music-video)...`)
+      const uploaded = await Promise.all(scenes.map((scene: any, i: number) =>
+        rhUpload(
+          apiKey,
+          scene.base64,
+          scene.fileName || `scene-${i + 1}.jpg`,
+          scene.mimeType || 'image/jpeg',
+        ),
+      ))
+      uploaded.forEach((up, i) => {
+        nodeInfoList.push({
+          nodeId: MUSIC_VIDEO_SCENE_NODES[i],
+          fieldName: 'image',
+          fieldValue: up.fileName,
+        })
+      })
+      console.log(`[runninghub] Scene uploaded: ${uploaded.map((u) => u.fileName).join(', ')}`)
+    }
+
+    const effAspect = MUSIC_VIDEO_ASPECTS.has(String(aspectRatio))
+      ? String(aspectRatio)
+      : MUSIC_VIDEO_ASPECT_FALLBACK
+    nodeInfoList.push({ nodeId: MUSIC_VIDEO_ASPECT_NODE, fieldName: 'aspect_ratio', fieldValue: effAspect })
+
+    if (!effPrompt) {
+      nodeInfoList.push({ nodeId: promptNode, fieldName: 'value', fieldValue: MUSIC_VIDEO_DEFAULT_PROMPT })
+    }
   }
 
   const body = {
