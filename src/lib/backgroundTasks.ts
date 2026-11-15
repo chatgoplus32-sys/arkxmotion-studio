@@ -267,6 +267,45 @@ export function addResult(result: CompletedResult, options?: { notify?: boolean 
 
 export function clearResults() { localStorage.removeItem(RESULTS_KEY) }
 
+// ── Resume yang gagal ──────────────────────────────────────────────────────
+// Job yang dilanjutkan setelah tab ditutup bisa gagal (kunci server ditolak,
+// job kedaluwarsa, dsb). Kegagalan itu harus TERLIHAT: tanpa ini job hanya
+// hilang dari daftar resume dan user mengira hasilnya masih diproses.
+const RESUME_FAILURES_KEY = 'arkxmotion_resume_failures'
+
+export interface ResumeFailure {
+  /** jobId provider — dipakai untuk menghapus entri saat job diulang. */
+  id: string
+  provider: string
+  page: GenerationPage
+  model?: string
+  prompt?: string
+  error: string
+  at: number
+}
+
+export function getResumeFailures(): ResumeFailure[] {
+  const raw = readJson(RESUME_FAILURES_KEY, [] as ResumeFailure[])
+  return Array.isArray(raw) ? raw.filter((f) => f && f.id && f.error) : []
+}
+
+export function addResumeFailure(failure: ResumeFailure) {
+  const list = getResumeFailures().filter((f) => f.id !== failure.id)
+  list.unshift(failure)
+  writeJson(RESUME_FAILURES_KEY, list.slice(0, 10))
+  window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
+}
+
+export function dismissResumeFailure(id: string) {
+  writeJson(RESUME_FAILURES_KEY, getResumeFailures().filter((f) => f.id !== id))
+  window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
+}
+
+export function clearResumeFailures() {
+  localStorage.removeItem(RESUME_FAILURES_KEY)
+  window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
+}
+
 export function removeResult(id: string) {
   const results = getResults().filter(r => r.id !== id)
   saveResults(results)

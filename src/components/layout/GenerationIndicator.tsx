@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Activity, ArrowRight, ArrowUpRight, CheckCircle2, Clapperboard, Film, Image as ImageIcon,
+  Activity, AlertTriangle, ArrowRight, ArrowUpRight, CheckCircle2, Clapperboard, Film, Image as ImageIcon,
   Images, Layers, Loader2, MapPin, Mic, Music, Shirt, Sparkles, Video, Wand2, X,
 } from 'lucide-react'
-import { getActiveTasks, getResults, type ActiveTask, type CompletedResult } from '@/lib/backgroundTasks'
+import {
+  dismissResumeFailure,
+  getActiveTasks,
+  getResumeFailures,
+  getResults,
+  type ActiveTask,
+  type CompletedResult,
+  type ResumeFailure,
+} from '@/lib/backgroundTasks'
 import { cn } from '@/lib/utils'
 
 const PAGE_META: Record<ActiveTask['page'], { href: string; label: string; icon: typeof Video }> = {
@@ -63,6 +71,7 @@ export function GenerationIndicator() {
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState<ActiveTask[]>(() => getActiveTasks())
   const [results, setResults] = useState<CompletedResult[]>(() => getResults().slice(0, RESULT_LIMIT))
+  const [failures, setFailures] = useState<ResumeFailure[]>(() => getResumeFailures())
   const [now, setNow] = useState(() => Date.now())
   const [justFinished, setJustFinished] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -80,6 +89,7 @@ export function GenerationIndicator() {
     prevCountRef.current = next.length
     setActive(next)
     setResults(getResults().slice(0, RESULT_LIMIT))
+    setFailures(getResumeFailures())
     setNow(Date.now())
   }, [])
 
@@ -139,8 +149,22 @@ export function GenerationIndicator() {
   }
 
   const running = active.length
-  const label = running > 0 ? `${running} generasi` : justFinished ? 'Selesai' : 'Generasi'
-  const ariaLabel = running > 0 ? `${running} generasi sedang berjalan` : 'Aktivitas generasi'
+  const perluDiulang = failures.length
+  const label = running > 0
+    ? `${running} generasi`
+    : perluDiulang > 0
+      ? `${perluDiulang} perlu diulang`
+      : justFinished ? 'Selesai' : 'Generasi'
+  const ariaLabel = running > 0
+    ? `${running} generasi sedang berjalan`
+    : perluDiulang > 0
+      ? `${perluDiulang} generasi perlu diulang`
+      : 'Aktivitas generasi'
+  const title = running > 0
+    ? `${running} generasi sedang berjalan`
+    : perluDiulang > 0
+      ? `${perluDiulang} generasi perlu diulang`
+      : 'Aktivitas generasi'
 
   return (
     <div className="relative" ref={panelRef}>
@@ -150,25 +174,29 @@ export function GenerationIndicator() {
         aria-label={ariaLabel}
         aria-expanded={open}
         aria-haspopup="dialog"
-        title={running > 0 ? `${running} generasi sedang berjalan` : 'Aktivitas generasi'}
+        title={title}
         className={cn(
           'relative flex h-9 items-center gap-2 rounded-lg px-2.5 transition-colors',
           running > 0
             ? 'bg-primary/10 text-primary hover:bg-primary/15'
-            : justFinished
-              ? 'text-emerald-400 hover:bg-accent'
-              : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+            : perluDiulang > 0
+              ? 'bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'
+              : justFinished
+                ? 'text-emerald-400 hover:bg-accent'
+                : 'text-muted-foreground hover:bg-accent hover:text-foreground',
           open && 'bg-accent text-foreground'
         )}
       >
         {running > 0 ? (
           <Loader2 className="h-4 w-4 animate-spin" />
+        ) : perluDiulang > 0 ? (
+          <AlertTriangle className="h-4 w-4" />
         ) : justFinished ? (
           <CheckCircle2 className="h-4 w-4" />
         ) : (
           <Activity className="h-4 w-4" />
         )}
-        {(running > 0 || justFinished) && (
+        {(running > 0 || perluDiulang > 0 || justFinished) && (
           <span className="hidden text-xs font-medium sm:inline">{label}</span>
         )}
         {running > 0 && (
@@ -191,6 +219,11 @@ export function GenerationIndicator() {
               {running > 0 && (
                 <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
                   {running} berjalan
+                </span>
+              )}
+              {perluDiulang > 0 && (
+                <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-400">
+                  {perluDiulang} perlu diulang
                 </span>
               )}
             </div>
@@ -235,6 +268,50 @@ export function GenerationIndicator() {
                       </span>
                       <ArrowUpRight className="mt-1 h-3.5 w-3.5 shrink-0 text-muted-foreground/50 transition group-hover:text-primary" />
                     </button>
+                  )
+                })}
+              </section>
+            )}
+
+            {perluDiulang > 0 && (
+              <section>
+                <p className="px-4 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Perlu diulang
+                </p>
+                {failures.map((failure) => {
+                  const meta = PAGE_META[failure.page] ?? FALLBACK_PAGE
+                  const Icon = meta.icon
+                  return (
+                    <div key={failure.id} className="flex items-start gap-3 px-4 py-2.5">
+                      <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-amber-500/10 text-amber-400">
+                        <Icon className="h-4 w-4" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-medium">
+                          {failure.provider === 'posbot' ? 'PosBot' : 'NexaBot'} · {meta.label} · gagal dilanjutkan
+                        </p>
+                        <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground" title={failure.error}>
+                          {failure.error.length > 160 ? `${failure.error.slice(0, 160)}…` : failure.error}
+                        </p>
+                        <div className="mt-1.5 flex items-center gap-2">
+                          <button
+                            onClick={() => go(failure.page)}
+                            className="rounded-md bg-primary/10 px-2 py-1 text-[11px] font-medium text-primary transition hover:bg-primary/20"
+                          >
+                            Ulangi di halaman
+                          </button>
+                          <button
+                            onClick={() => dismissResumeFailure(failure.id)}
+                            className="text-[11px] text-muted-foreground transition hover:text-foreground"
+                          >
+                            Tandai sudah tahu
+                          </button>
+                        </div>
+                      </div>
+                      <span className="shrink-0 text-[10px] text-muted-foreground/70">
+                        {timeAgo(new Date(failure.at).toISOString(), now)}
+                      </span>
+                    </div>
                   )
                 })}
               </section>

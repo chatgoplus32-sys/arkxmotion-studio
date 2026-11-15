@@ -8,7 +8,16 @@
 // Resume memakai kunci server lewat relay; job yang dulu memakai kunci pribadi
 // member akan gagal dengan pesan jelas, bukan hilang diam-diam.
 import { useAuthStore } from '@/stores/authStore'
-import { addResult, GENERATION_PAGE_PATH, type GenerationPage } from '@/lib/backgroundTasks'
+import {
+  addResult,
+  addResumeFailure,
+  dismissResumeFailure,
+  GENERATION_PAGE_PATH,
+  removeActiveTask,
+  startGenerationTask,
+  type GenerationPage,
+} from '@/lib/backgroundTasks'
+import { SERVER_KEY } from '@/lib/providerServerKey'
 
 const TRACK_URL = '/api/generation-jobs'
 /** Job yang dipoll tab ini — resume tidak boleh mengambil alih. */
@@ -112,6 +121,17 @@ export async function resumePendingGenerationJobs(): Promise<void> {
     const key = keyOf(job.provider, job.job_id)
     if (aktif.has(key)) continue
     aktif.add(key)
+    const page = (job.page || '') as GenerationPage
+    // Panel Aktivitas generasi harus menunjukkan job yang sedang dilanjutkan,
+    // bukan hanya hasil akhirnya.
+    const taskId = page in GENERATION_PAGE_PATH
+      ? startGenerationTask({
+          page,
+          model: `${job.provider === 'posbot' ? 'PosBot' : 'NexaBot'} · lanjut`,
+          prompt: job.prompt || '',
+          provider: job.provider,
+        })
+      : null
     try {
       if (!await klaim(job.provider, job.job_id)) continue
       if (job.provider === 'nexabot') {
@@ -121,21 +141,37 @@ export async function resumePendingGenerationJobs(): Promise<void> {
         // saveNexabotResult sendiri menandai job selesai.
         const saved = await saveNexabotResult(job.job_id, auth, `resume-${job.job_id}.mp4`)
         if (!saved.ok || !saved.url) throw new Error(saved.error || 'Hasil tidak bisa disimpan')
+        dismissResumeFailure(job.job_id)
         tambahHasil(job, saved.url)
       } else if (job.provider === 'posbot') {
         const { pollPosbotStatus } = await import('@/lib/posbot')
-        // pollPosbotStatus sendiri menandai job selesai.
-        const { url } = await pollPosbotStatus('', job.job_id, { maxTotalMs: 15 * 60 * 1000 })
+        // Kunci server: relay yang memasang kunci PosBot milik operator, klien
+        // hanya mengirim identitas app (X-App-Token). Tanpa sentinel ini relay
+        // menolak dengan 401 "Kunci PosBot milik server hanya untuk member yang
+        // login". pollPosbotStatus sendiri menandai job selesai.
+        const { url } = await pollPosbotStatus(SERVER_KEY, job.job_id, { maxTotalMs: 15 * 60 * 1000 })
+        dismissResumeFailure(job.job_id)
         tambahHasil(job, url)
       }
     } catch (err: any) {
+      const pesan = err?.message || 'Resume gagal'
+      // Tampilkan di panel supaya user tahu hasilnya perlu diulang.
+      addResumeFailure({
+        id: job.job_id,
+        provider: job.provider,
+        page: page in GENERATION_PAGE_PATH ? page : 'video-edit',
+        prompt: job.prompt || '',
+        error: pesan,
+        at: Date.now(),
+      })
       await finishGenerationJob({
         provider: job.provider === 'posbot' ? 'posbot' : 'nexabot',
         jobId: job.job_id,
         status: 'failed',
-        error: err?.message || 'Resume gagal',
+        error: pesan,
       })
     } finally {
+      if (taskId) removeActiveTask(taskId)
       aktif.delete(key)
     }
   }
