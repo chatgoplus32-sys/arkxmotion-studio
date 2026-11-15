@@ -60,12 +60,62 @@ const ALLOWED_UNDEFINED = new Set([
 const SKIP_PATHS = ['public/studio']
 
 // ---------------------------------------------------------------------------
-// 1. Kumpulkan SEMUA file kode, termasuk yang di luar semua tsconfig
+// 1. Kumpulkan file kode yang ikut ter-deploy, termasuk yang di luar semua tsconfig
 // ---------------------------------------------------------------------------
+
+/** Loloskan path relatif terhadap ROOT lewat semua filter (untuk kedua sumber). */
+function layakDiperiksa(rel) {
+  const segmen = rel.split('/')
+  const nama = segmen[segmen.length - 1]
+  if (isArtefakLokal(nama)) return false
+  if (segmen.some((s) => SKIP_DIRS.has(s))) return false
+  if (SKIP_PATHS.some((p) => rel === p || rel.startsWith(p + '/'))) return false
+  return CODE_EXT.has(path.extname(nama)) && !nama.endsWith('.d.ts')
+}
+
+/**
+ * Berkas ter-track di index git — yaitu yang benar-benar ikut ter-deploy.
+ * CI menjalankan `git reset --hard origin/main`, yang membuang semua perubahan
+ * lokal tapi TIDAK menghapus berkas tak-ter-track; sebaliknya, berkas tak-ter-track
+ * tidak pernah ikut ter-deploy. Prinsipnya sama dengan pengecualian `.tmp*` di atas.
+ *
+ * VPS membawa sisa upload manual `arkx-health-animasi/` (bundel Vite:
+ * react.development.js penuh pola `exports.*`) yang membuat gerbang ini gagal di
+ * 26 deploy beruntun (#325–#350, 13–15 Nov 2026) walaupun kode yang ter-deploy
+ * identik dengan yang lolos di mesin lokal.
+ *
+ * @returns {string[] | null} path relatif memakai '/', atau null kalau bukan repo git
+ */
+function daftarBerkasTerTrack() {
+  try {
+    const buf = execFileSync('git', ['-C', ROOT, 'ls-files', '-z'], {
+      encoding: 'buffer',
+      maxBuffer: 64 * 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    return buf.toString('utf8').split('\0').filter(Boolean)
+  } catch {
+    return null // bukan repo git atau git tidak tersedia — pakai jalan penuh
+  }
+}
 
 /** @returns {string[]} path relatif terhadap ROOT, memakai '/' */
 function collectFiles() {
   const out = []
+  const terTrack = daftarBerkasTerTrack()
+
+  if (terTrack) {
+    for (const rel0 of terTrack) {
+      const rel = rel0.split(path.sep).join('/')
+      if (!layakDiperiksa(rel)) continue
+      // bisa tercatat di index tapi sudah terhapus dari worktree
+      if (!fs.existsSync(path.join(ROOT, rel))) continue
+      out.push(rel)
+    }
+    return out.sort()
+  }
+
+  // Salinan tanpa git (tar, dsb.) — jalan penuh seperti sebelumnya.
   const walk = (dir) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const abs = path.join(dir, entry.name)

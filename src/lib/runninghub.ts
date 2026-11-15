@@ -742,6 +742,10 @@ export interface H3MusicAvatarParams {
   appId?: string
 }
 
+// App "Digital human lip-sync singing unlimited duration [HD]" — mode podcast
+// tanpa subtitle (lip-sync murni, cocok untuk konten bicara 2-3 menit).
+export const RUNNINGHUB_PODCAST_LIPSYNC_APP_ID = '1990007675981320194'
+
 export async function submitRunningHubH3MusicAvatar(params: H3MusicAvatarParams): Promise<MotionControlResult> {
   const appId = params.appId || RUNNINGHUB_H3_MUSIC_AVATAR_APP_ID
 

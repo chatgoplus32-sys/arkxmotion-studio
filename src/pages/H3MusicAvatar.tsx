@@ -4,7 +4,7 @@ import { Section, Button, Label, EmptyState } from '@/components/ui'
 import { LogDetailActions } from '@/components/ui/LogDetailActions'
 import { Loader2, Upload, Download, X, User, Sparkles, CheckCircle2, AlertCircle, Clock, Music, Copy, Trash2, Film, AudioLines } from 'lucide-react'
 import { useToastStore } from '@/stores/toastStore'
-import { submitRunningHubH3MusicAvatar, pollRunningHubTask } from '@/lib/runninghub'
+import { submitRunningHubH3MusicAvatar, pollRunningHubTask, RUNNINGHUB_PODCAST_LIPSYNC_APP_ID } from '@/lib/runninghub'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { persistResultToR2, addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
 import { usePageActive } from '@/hooks/usePageActive'
@@ -37,6 +37,11 @@ function getStoredProviderKey(provider: string): string | null {
 // Prompt default sesuai contoh resmi docs app Music Avatar.
 const DEFAULT_PROMPT = 'The character in Image1 faces the camera, speaking and singing affectionately. Fixed camera. Clothing and background remain unchanged. No subtitles, no text.'
 
+// Contoh prompt untuk mode podcast (app lip-sync). Kosong = pakai default app.
+const PODCAST_PROMPT_PLACEHOLDER = 'Kosongkan untuk perilaku default, atau isi acting, mis.: "The character speaks naturally and relaxed, like a podcast host talking to the audience. Fixed camera. No subtitles, no text."'
+
+type AvatarMode = 'h3' | 'podcast'
+
 export default function H3MusicAvatarPage() {
   const addToast = useToastStore((s) => s.addToast)
 
@@ -44,6 +49,7 @@ export default function H3MusicAvatarPage() {
   const [characterPreview, setCharacterPreview] = useState<string | null>(null)
   const [audioFile, setAudioFile] = useState<File | null>(null)
   const [prompt, setPrompt] = useState('')
+  const [mode, setMode] = useState<AvatarMode>('h3')
   const [loading, setLoading] = useState(false)
   const [taskStatus, setTaskStatus] = useState<'idle' | 'submitting' | 'running' | 'success' | 'error'>('idle')
   const [statusText, setStatusText] = useState('')
@@ -83,13 +89,14 @@ export default function H3MusicAvatarPage() {
   // ────────────────────────────────────────────────────────────
   const runSingle = async (key: string) => {
     if (!characterFile || !audioFile) throw new Error('File tidak lengkap')
-    const efPrompt = prompt.trim() || DEFAULT_PROMPT
+    const efPrompt = mode === 'podcast' ? prompt.trim() : (prompt.trim() || DEFAULT_PROMPT)
 
     const submit = await submitRunningHubH3MusicAvatar({
       imageFile: characterFile,
       audioFile,
       prompt: efPrompt,
       apiKey: key,
+      appId: mode === 'podcast' ? RUNNINGHUB_PODCAST_LIPSYNC_APP_ID : undefined,
     })
     setTaskIdStr(submit.taskId)
     setTaskStatus('running')
@@ -116,7 +123,7 @@ export default function H3MusicAvatarPage() {
       return
     }
 
-    const efPrompt = prompt.trim() || DEFAULT_PROMPT
+    const efPrompt = mode === 'podcast' ? prompt.trim() : (prompt.trim() || DEFAULT_PROMPT)
 
     setLoading(true)
     setError(null)
@@ -124,8 +131,8 @@ export default function H3MusicAvatarPage() {
     setProgress(0)
     setTaskStatus('submitting')
     setLogs([])
-    addLog(`Mulai Music Avatar: ${characterFile.name} + ${audioFile.name}`)
-    if (efPrompt !== DEFAULT_PROMPT) addLog(`Prompt: ${efPrompt.slice(0, 100)}...`)
+    addLog(`Mulai ${mode === 'podcast' ? 'Podcast Avatar (Lip-Sync)' : 'Music Avatar'}: ${characterFile.name} + ${audioFile.name}`)
+    if (efPrompt) addLog(`Prompt: ${efPrompt.slice(0, 100)}...`)
 
     const startTime = Date.now()
     const trackId = startGenerationTask({
@@ -237,6 +244,26 @@ export default function H3MusicAvatarPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left: Input */}
         <Section title="🎵 Input" className="!p-6">
+          {/* Mode selector */}
+          <div className="mb-4 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setMode('h3')}
+              className={`p-3 rounded-lg border text-left transition-colors ${mode === 'h3' ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/40'}`}
+            >
+              <div className="text-sm font-medium">🎵 Music Avatar</div>
+              <div className="text-xs text-muted-foreground mt-0.5">Nyanyi / ekspresif (H3)</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('podcast')}
+              className={`p-3 rounded-lg border text-left transition-colors ${mode === 'podcast' ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/40'}`}
+            >
+              <div className="text-sm font-medium">🎙️ Mode Podcast</div>
+              <div className="text-xs text-muted-foreground mt-0.5">Bicara 2-3 menit, tanpa subtitle</div>
+            </button>
+          </div>
+
           {/* Image Upload */}
           <div className="mb-4">
             <Label className="mb-2 block">🧑 Foto Karakter</Label>
@@ -260,7 +287,7 @@ export default function H3MusicAvatarPage() {
 
           {/* Audio Upload */}
           <div className="mb-4">
-            <Label className="mb-2 block">🎧 Audio Lagu</Label>
+            <Label className="mb-2 block">{mode === 'podcast' ? '🎧 Audio Podcast' : '🎧 Audio Lagu'}</Label>
             {audioFile ? (
               <div className="relative rounded-lg border border-border p-3 bg-surface-secondary">
                 <button onClick={() => setAudioFile(null)} className="absolute top-2 right-2 p-1 rounded-full bg-background/80 hover:bg-red-500/80 transition-colors">
@@ -277,7 +304,7 @@ export default function H3MusicAvatarPage() {
             ) : (
               <div onClick={() => audioPickerRef.current?.click()} className="border-2 border-dashed border-border rounded-lg p-6 text-center cursor-pointer hover:border-primary/50 transition-colors">
                 <div className="flex justify-center text-muted-foreground mb-2"><Music className="h-7 w-7" /></div>
-                <div className="text-sm text-muted-foreground">Klik atau seret audio lagu</div>
+                <div className="text-sm text-muted-foreground">Klik atau seret audio</div>
                 <div className="text-xs text-muted-foreground mt-1">MP3, WAV, M4A</div>
               </div>
             )}
@@ -291,7 +318,7 @@ export default function H3MusicAvatarPage() {
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               className="w-full h-20 px-3 py-2 rounded-lg bg-surface-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:ring-2 focus:ring-primary/50"
-              placeholder={DEFAULT_PROMPT}
+              placeholder={mode === 'podcast' ? PODCAST_PROMPT_PLACEHOLDER : DEFAULT_PROMPT}
             />
           </div>
 
@@ -303,7 +330,7 @@ export default function H3MusicAvatarPage() {
             title="Ctrl+Enter untuk jalankan"
           >
             {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
-            {taskStatus === 'submitting' ? '🚀 Submitting...' : taskStatus === 'running' ? `⏳ ${statusText || 'Running...'} ${progress ? `(${progress}%)` : ''}` : '🚀 Generate Music Avatar'}
+            {taskStatus === 'submitting' ? '🚀 Submitting...' : taskStatus === 'running' ? `⏳ ${statusText || 'Running...'} ${progress ? `(${progress}%)` : ''}` : mode === 'podcast' ? '🚀 Generate Podcast Avatar' : '🚀 Generate Music Avatar'}
           </Button>
         </Section>
 

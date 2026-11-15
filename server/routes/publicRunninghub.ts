@@ -247,6 +247,11 @@ const RUNNINGHUB_H3_MUSIC_AVATAR_APP_ID = '2111522730906955778'
 const H3_MUSIC_AVATAR_IMAGE_NODE = '306'
 const H3_MUSIC_AVATAR_AUDIO_NODE = '317'
 const H3_MUSIC_AVATAR_PROMPT_NODE = '214'
+// App "Digital human lip-sync singing unlimited duration [HD]" — mode podcast:
+// lip-sync murni (foto + audio), TANPA ASR/Whisper sehingga tidak pernah
+// membakar subtitle ke video. Input: image 479, audio 483, text 493 (+3 node
+// default: rCM switch, ukuran mulut, sisi terpanjang video).
+const RUNNINGHUB_PODCAST_LIPSYNC_APP_ID = '1990007675981320194'
 // MiniMax H3 Realistic VLOG (app 2112457853784121345): 1 gambar + prompt
 // VLOG terstruktur → video VLOG realistis 15 detik.
 // node 137 = image, node 138 = text (prompt).
@@ -1987,6 +1992,16 @@ async function handleSubmitH3MusicAvatar(apiKey: string, params: any, res: Respo
 
   const effectiveAppId = app_id || appId || RUNNINGHUB_H3_MUSIC_AVATAR_APP_ID
 
+  // Profil node per app (dua AI App dipakai halaman H3 Music Avatar):
+  //  - H3 Music Avatar  : nyanyi/ekspresif — 3 node (306/317/214).
+  //  - Podcast Lip-Sync : bicara/podcast 2-3 menit, tanpa subtitle — 6 node.
+  // App tidak dikenal memakai node H3 (perilaku lama).
+  const isPodcastApp = effectiveAppId === RUNNINGHUB_PODCAST_LIPSYNC_APP_ID
+  const imageNode = isPodcastApp ? '479' : H3_MUSIC_AVATAR_IMAGE_NODE
+  const audioNode = isPodcastApp ? '483' : H3_MUSIC_AVATAR_AUDIO_NODE
+  const promptNode = isPodcastApp ? '493' : H3_MUSIC_AVATAR_PROMPT_NODE
+  const promptField = isPodcastApp ? 'text' : 'value'
+
   console.log(`[runninghub] Uploading photo (h3-music-avatar)...`)
   const imageUpload = await rhUpload(apiKey, imageBase64, imageFileName, imageMimeType)
   console.log(`[runninghub] Photo uploaded: ${imageUpload.fileName}`)
@@ -1996,15 +2011,26 @@ async function handleSubmitH3MusicAvatar(apiKey: string, params: any, res: Respo
   console.log(`[runninghub] Audio uploaded: ${audioUpload.fileName}`)
 
   const nodeInfoList: any[] = [
-    { nodeId: H3_MUSIC_AVATAR_IMAGE_NODE, fieldName: 'image', fieldValue: imageUpload.fileName },
-    { nodeId: H3_MUSIC_AVATAR_AUDIO_NODE, fieldName: 'audio', fieldValue: audioUpload.fileName },
+    { nodeId: imageNode, fieldName: 'image', fieldValue: imageUpload.fileName },
+    { nodeId: audioNode, fieldName: 'audio', fieldValue: audioUpload.fileName },
   ]
 
-  // Node 214 = prompt acting. Sesuai contoh resmi docs, fieldName-nya "value".
-  // Tanpa prompt, app memakai teks default di dalam workflow-nya.
+  // Prompt acting — hanya dikirim kalau diisi; kalau kosong app memakai teks
+  // default di dalam workflow-nya (podcast: "speaks naturally...").
   const effPrompt = String(prompt || '').trim()
   if (effPrompt) {
-    nodeInfoList.push({ nodeId: H3_MUSIC_AVATAR_PROMPT_NODE, fieldName: 'value', fieldValue: effPrompt })
+    nodeInfoList.push({ nodeId: promptNode, fieldName: promptField, fieldValue: effPrompt })
+  }
+
+  if (isPodcastApp) {
+    // Nilai default app lip-sync: switch rCM aktif, ukuran mulut normal,
+    // sisi terpanjang video 832 (bisa di-request lebih besar via prompt? tidak —
+    // tetap default aman).
+    nodeInfoList.push(
+      { nodeId: '514', fieldName: 'value', fieldValue: 'true' },
+      { nodeId: '508', fieldName: 'value', fieldValue: '1' },
+      { nodeId: '473', fieldName: 'value', fieldValue: '832' },
+    )
   }
 
   const body = {
