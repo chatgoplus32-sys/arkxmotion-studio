@@ -58,6 +58,7 @@ const ClipGeniusPage = lazyWithRetry(() => import('@/pages/ClipGenius'))
 const StudioRedirectPage = lazyWithRetry(() => import('@/pages/StudioRedirect'))
 const AutoMotionRedirectPage = lazyWithRetry(() => import('@/pages/AutoMotionRedirect'))
 const HealthAnimPage = lazyWithRetry(() => import('@/pages/HealthAnimPage'))
+const DramaStudioPage = lazyWithRetry(() => import('@/pages/DramaStudioPage'))
 const GeminiToolsPage = lazyWithRetry(() => import('@/pages/GeminiTools'))
 const UpgradeProPage = lazyWithRetry(() => import('@/pages/UpgradePro'))
 const MetadataCleanerPage = lazyWithRetry(() => import('@/pages/MetadataCleaner'))
@@ -262,6 +263,7 @@ export default function App() {
                         <Route path="/generate/video-edit" element={<ProRoute><StudioRedirectPage /></ProRoute>} />
                          <Route path="/generate/auto-motion" element={<ProRoute><AutoMotionRedirectPage /></ProRoute>} />
                         <Route path="/generate/arkx-health" element={<ProRoute><HealthAnimPage /></ProRoute>} />
+                        <Route path="/drama" element={<ProRoute><DramaStudioPage /></ProRoute>} />
                         <Route path="/generate/image" element={<TextToVideoPage />} />
                         <Route path="/generate/edit-image" element={<EditImagePage />} />
                         <Route path="/providers" element={<ProvidersPage />} />
