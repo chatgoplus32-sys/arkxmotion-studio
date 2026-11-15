@@ -341,7 +341,7 @@ const HealthAnimTool = () => {
   const [ideas, setIdeas] = useState<any[]>([]);
   const [loadingIdeas, setLoadingIdeas] = useState(false);
 
-  // === Google Omni Flash: pilih 3/4/6 scene â†’ narasi + prompt tiap scene untuk digenerate di ARKX Studio ===
+  // === Google Omni Flash: pilih 3/4/6 scene → narasi + prompt tiap scene untuk digenerate di ARKX Studio ===
   const [omniIdea, setOmniIdea] = useState('');
   const [omniHookTechnique, setOmniHookTechnique] = useState('Curiosity Gap');
   const [omniAspectRatio, setOmniAspectRatio] = useState<'9:16' | '16:9'>('9:16');
@@ -356,7 +356,7 @@ const HealthAnimTool = () => {
   const [omniConfirmOpen, setOmniConfirmOpen] = useState(false);
   const [omniConfirmMode, setOmniConfirmMode] = useState<'single' | 'batch'>('single');
   const omniVideoUrl = useRef('');
-  // â”€â”€ Batch scene: generate 1 video per scene (3/4/6), lalu gabung via ffmpeg â”€â”€
+  // ── Batch scene: generate 1 video per scene (3/4/6), lalu gabung via ffmpeg ──
   interface OmniBatchScene { scene: number; role: string; status: 'idle' | 'running' | 'done' | 'error'; url?: string; jobId?: string; error?: string }
   const [omniBatch, setOmniBatch] = useState<OmniBatchScene[]>([]);
   const [loadingOmniBatch, setLoadingOmniBatch] = useState(false);
@@ -577,7 +577,7 @@ const HealthAnimTool = () => {
             attempt--;
             continue;
           }
-          if (res.status === 404) break; // model dipensiunkan â†’ langsung model berikutnya
+          if (res.status === 404) break; // model dipensiunkan → langsung model berikutnya
           if (res.status === 429 || res.status >= 500) {
             if (attempt < 1 && Date.now() - mulai < batasTotal) {
               await new Promise(resolve => setTimeout(resolve, 800 + Math.random() * 700));
@@ -585,7 +585,7 @@ const HealthAnimTool = () => {
             }
             break;
           }
-          break; // 4xx lain (key/izin/skema) â†’ coba model berikutnya
+          break; // 4xx lain (key/izin/skema) → coba model berikutnya
         } catch (error: any) {
           if (error?.name === 'TimeoutError') {
             pesanTerakhir = `Model ${model} tidak menjawab dalam 40 detik.`;
@@ -625,7 +625,7 @@ const HealthAnimTool = () => {
 
   const handleApiError = (error: any, defaultMessage: string) => {
     const errorMessage = error?.message || defaultMessage;
-    setAppError(errorMessage.toLowerCase().includes('quota') ? "âš ï¸ Limit API Gemini Anda telah tercapai." : `âŒ ${errorMessage}`);
+    setAppError(errorMessage.toLowerCase().includes('quota') ? "⚠️ Limit API Gemini Anda telah tercapai." : `❌ ${errorMessage}`);
     setTimeout(() => setAppError(''), 8000);
   };
 
@@ -703,7 +703,7 @@ const HealthAnimTool = () => {
   };
 
   // ============================================================================
-  // GOOGLE OMNI FLASH VIDEO â€” paid request requires a separate confirmation
+  // GOOGLE OMNI FLASH VIDEO — paid request requires a separate confirmation
   // ============================================================================
   const generateOmniFlash = () => {
     if (!omniIdea.trim() || loadingOmni || loadingOmniBatch) return;
@@ -741,7 +741,7 @@ const HealthAnimTool = () => {
       provider: 'nexabot',
     });
     try {
-      // 1/3 â€” potong saldo NexaBot (gratis untuk admin / paket Unlimited).
+      // 1/3 — potong saldo NexaBot (gratis untuk admin / paket Unlimited).
       if (!admin) {
         setOmniStatus('Memotong saldo NexaBot...');
         const potong = await chargeNexabotWallet(token, 't2v');
@@ -751,7 +751,7 @@ const HealthAnimTool = () => {
         }
       }
 
-      // 2/3 â€” submit + poll + simpan hasil, semuanya lewat relay NexaBot.
+      // 2/3 — submit + poll + simpan hasil, semuanya lewat relay NexaBot.
       const url = await runNexabotJobWithSessionFallback<string>(
         async (auth, via) => {
           setOmniStatus(`Mengirim permintaan video ke NexaBot (${via})...`);
@@ -769,13 +769,13 @@ const HealthAnimTool = () => {
                 auth,
                 {
                   onRetry: ({ status, delayMs, message }) => {
-                    setOmniStatus(`${message}${status ? ` (HTTP ${status})` : ''} â€” submit diulang dalam ${Math.ceil(delayMs / 1000)}s...`);
+                    setOmniStatus(`${message}${status ? ` (HTTP ${status})` : ''} — submit diulang dalam ${Math.ceil(delayMs / 1000)}s...`);
                   }
                 }
               ),
             {
               onThrottle: (waitSeconds) => {
-                setOmniStatus(`Server NexaBot sedang dibatasi upstream â€” menunggu ${waitSeconds}s lalu submit otomatis...`);
+                setOmniStatus(`Server NexaBot sedang dibatasi upstream — menunggu ${waitSeconds}s lalu submit otomatis...`);
               }
             }
           );
@@ -789,12 +789,12 @@ const HealthAnimTool = () => {
             (msg) => setOmniStatus(msg),
             {
               onRetry: ({ status, delayMs, message }) => {
-                setOmniStatus(`${message}${status ? ` (HTTP ${status})` : ''} â€” coba lagi dalam ${Math.ceil(delayMs / 1000)}s...`);
+                setOmniStatus(`${message}${status ? ` (HTTP ${status})` : ''} — coba lagi dalam ${Math.ceil(delayMs / 1000)}s...`);
               }
             }
           );
 
-          // 3/3 â€” simpan permanen di server; fallback ke URL unduhan NexaBot.
+          // 3/3 — simpan permanen di server; fallback ke URL unduhan NexaBot.
           setOmniStatus('Menyimpan video ke server...');
           const saved = await saveNexabotResult(submit.jobId, auth, `arkx-health-${submit.jobId}.mp4`);
           if (saved.ok && saved.url) return saved.url;
@@ -818,7 +818,7 @@ const HealthAnimTool = () => {
       setOmniStatus('Video siap diputar dan diunduh.');
     } catch (error: any) {
       const pesan = error?.message || 'Pembuatan video belum berhasil.';
-      // Gagal di tengah jalan â†’ kembalikan saldo yang sudah terpotong.
+      // Gagal di tengah jalan → kembalikan saldo yang sudah terpotong.
       let catatanRefund = '';
       if (tiketPotong != null && !admin) {
         const sisa = await refundNexabotWallet(token, tiketPotong).catch(() => null);
@@ -833,8 +833,8 @@ const HealthAnimTool = () => {
   };
 
   // ============================================================================
-  // BATCH SCENE: N scene (3/4/6) â†’ N video 15 detik (1 per scene, berurutan)
-  // â†’ gabung otomatis via ffmpeg.wasm menjadi satu video NÃ—15 detik.
+  // BATCH SCENE: N scene (3/4/6) → N video 15 detik (1 per scene, berurutan)
+  // → gabung otomatis via ffmpeg.wasm menjadi satu video N×15 detik.
   // Setiap scene memotong saldo NexaBot sendiri (Rp 150/video, gratis untuk
   // admin/Unlimited) dan di-refund otomatis bila gagal.
   // ============================================================================
@@ -850,7 +850,7 @@ const HealthAnimTool = () => {
     setOmniConfirmOpen(true);
   };
 
-  // Satu job video dari sebuah prompt scene (charge â†’ submit â†’ poll â†’ save).
+  // Satu job video dari sebuah prompt scene (charge → submit → poll → save).
   // Mengurus saldonya sendiri: di-refund bila gagal.
   const runOmniBatchScene = async (videoPrompt: string, onStatus: (msg: string) => void): Promise<{ url: string; jobId: string }> => {
     const token = authToken;
@@ -860,13 +860,13 @@ const HealthAnimTool = () => {
     let jobTerakhir = '';
     try {
       if (!admin) {
-        onStatus('Memotong saldo NexaBotâ€¦');
+        onStatus('Memotong saldo NexaBot…');
         const potong = await chargeNexabotWallet(token, 't2v');
         tiketPotong = potong.usageId ?? null;
       }
       const url = await runNexabotJobWithSessionFallback<string>(
         async (auth, via) => {
-          onStatus(`Mengirim prompt scene ke NexaBot (${via})â€¦`);
+          onStatus(`Mengirim prompt scene ke NexaBot (${via})…`);
           const submit = await runWithNexabotThrottleRetry(
             () =>
               submitNexabot(
@@ -881,30 +881,30 @@ const HealthAnimTool = () => {
                 auth,
                 {
                   onRetry: ({ status, delayMs, message }) => {
-                    onStatus(`${message}${status ? ` (HTTP ${status})` : ''} â€” submit diulang dalam ${Math.ceil(delayMs / 1000)}sâ€¦`);
+                    onStatus(`${message}${status ? ` (HTTP ${status})` : ''} — submit diulang dalam ${Math.ceil(delayMs / 1000)}s…`);
                   }
                 }
               ),
             {
-              onThrottle: (waitSeconds) => onStatus(`Server NexaBot dibatasi upstream â€” menunggu ${waitSeconds}s lalu submit otomatisâ€¦`),
+              onThrottle: (waitSeconds) => onStatus(`Server NexaBot dibatasi upstream — menunggu ${waitSeconds}s lalu submit otomatis…`),
             }
           );
           if (!submit.ok || !submit.jobId) throw new Error(submit.error || 'NexaBot gagal membuat job video.');
           jobTerakhir = submit.jobId;
 
-          onStatus('Video sedang dibuat NexaBot (biasanya 1-3 menit)â€¦');
+          onStatus('Video sedang dibuat NexaBot (biasanya 1-3 menit)…');
           await pollNexabotJob(
             submit.jobId,
             auth,
             (msg) => onStatus(msg),
             {
               onRetry: ({ status, delayMs, message }) => {
-                onStatus(`${message}${status ? ` (HTTP ${status})` : ''} â€” coba lagi dalam ${Math.ceil(delayMs / 1000)}sâ€¦`);
+                onStatus(`${message}${status ? ` (HTTP ${status})` : ''} — coba lagi dalam ${Math.ceil(delayMs / 1000)}s…`);
               }
             }
           );
 
-          onStatus('Menyimpan video ke serverâ€¦');
+          onStatus('Menyimpan video ke server…');
           const saved = await saveNexabotResult(submit.jobId, auth, `arkx-health-${submit.jobId}.mp4`);
           if (saved.ok && saved.url) return saved.url;
 
@@ -935,16 +935,16 @@ const HealthAnimTool = () => {
     try {
       const files: File[] = [];
       for (let i = 0; i < urls.length; i++) {
-        setOmniBatchStatus(`Mengunduh scene ${i + 1}/${urls.length} untuk digabungâ€¦`);
+        setOmniBatchStatus(`Mengunduh scene ${i + 1}/${urls.length} untuk digabung…`);
         files.push(await fetchVideoFile(urls[i], `scene_${i + 1}.mp4`));
       }
-      setOmniBatchStatus('Menggabungkan semua scene via ffmpegâ€¦');
+      setOmniBatchStatus('Menggabungkan semua scene via ffmpeg…');
       const merged = await concatVideosFFmpeg(files, (msg) => setOmniBatchStatus(msg));
       const mergedUrl = URL.createObjectURL(merged);
       if (mergedVideoUrlRef.current) URL.revokeObjectURL(mergedVideoUrlRef.current);
       mergedVideoUrlRef.current = mergedUrl;
       setOmniMerged({ url: mergedUrl, scenes: urls.length });
-      setOmniBatchStatus(`Gabungan ${urls.length} scene selesai â€” ${urls.length * 15} detik.`);
+      setOmniBatchStatus(`Gabungan ${urls.length} scene selesai — ${urls.length * 15} detik.`);
     } catch (e: any) {
       setAppError(`Video per scene berhasil dibuat, tetapi gagal digabung: ${e?.message || e}. Masing-masing scene bisa diunduh terpisah di bawah.`);
       setOmniBatchStatus('');
@@ -982,7 +982,7 @@ const HealthAnimTool = () => {
       if (doneUrls.length === total && total >= 2) {
         await mergeBatchVideos(doneUrls);
       } else if (doneUrls.length === total) {
-        setOmniBatchStatus('Scene selesai â€” unduh hasilnya di bawah.');
+        setOmniBatchStatus('Scene selesai — unduh hasilnya di bawah.');
       } else {
         setOmniBatchStatus(`${doneUrls.length}/${total} scene berhasil. Ulangi scene yang gagal, atau gabungkan ${doneUrls.length} scene yang jadi (minimal 2).`);
       }
@@ -1013,8 +1013,8 @@ const HealthAnimTool = () => {
   };
 
   // Pilihan 3/4/6 scene = narasi + prompt video tiap scene. Sejak tombol video
-  // beralih ke mode batch: menekan "Buat Video â€¦ Scene" menghasilkan 1 video
-  // per scene (15 detik) lalu menggabungkannya otomatis jadi satu video NÃ—15.
+  // beralih ke mode batch: menekan "Buat Video … Scene" menghasilkan 1 video
+  // per scene (15 detik) lalu menggabungkannya otomatis jadi satu video N×15.
   const generateOmniScenes = async () => {
     if (!omniIdea.trim() || loadingScenes) return;
     setAppError('');
@@ -1324,7 +1324,7 @@ ATURAN MUTLAK:
               <div aria-hidden="true" className="brand-globe" />
               <div className="leading-tight">
                 <div className="text-sm font-extrabold tracking-tight text-slate-900">ARKX Health Animasi</div>
-                <div className="hidden text-[11px] font-medium text-slate-500 sm:block">Riset ide Â· animasi Â· prompt video</div>
+                <div className="hidden text-[11px] font-medium text-slate-500 sm:block">Riset ide · animasi · prompt video</div>
               </div>
             </div>
 
@@ -1488,19 +1488,19 @@ ATURAN MUTLAK:
                   <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
                     <div>
                       <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-100 text-xs font-bold mb-4"><Zap className="w-4 h-4" /> GOOGLE OMNI FLASH</div>
-                      <h2 className="text-2xl font-bold text-slate-900 mb-2">Satu ide. 3â€“6 scene. Narasi + prompt siap copy.</h2>
+                      <h2 className="text-2xl font-bold text-slate-900 mb-2">Satu ide. 3–6 scene. Narasi + prompt siap copy.</h2>
                       <p className="text-sm font-medium text-slate-500 leading-relaxed">Pilih jumlah scene, lalu dapatkan narasi dan prompt video tiap scene. Copy hasilnya, buka ARKX Studio, dan generate videonya di sana memakai NexaBot.</p>
                     </div>
                     <div className="shrink-0 rounded-xl bg-indigo-50 border border-indigo-100 px-5 py-3 text-center">
                       <div className="text-3xl font-extrabold text-indigo-700">15<span className="text-sm ml-1">detik</span></div>
-                      <div className="text-xs font-semibold text-indigo-500 mt-1">per scene Â· {omniSceneCount} scene</div>
+                      <div className="text-xs font-semibold text-indigo-500 mt-1">per scene · {omniSceneCount} scene</div>
                     </div>
                   </div>
 
                   <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 mb-6 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-600">
-                    <span><strong className="text-slate-800">Model:</strong> <code>NexaBot Â· Omni Flash 1.2</code></span>
+                    <span><strong className="text-slate-800">Model:</strong> <code>NexaBot · Omni Flash 1.2</code></span>
                     <span><strong className="text-slate-800">API:</strong> Relay NexaBot (t2v)</span>
-                    <span><strong className="text-slate-800">Output:</strong> MP4 Â· 720p Â· audio native</span>
+                    <span><strong className="text-slate-800">Output:</strong> MP4 · 720p · audio native</span>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-6">
@@ -1526,8 +1526,8 @@ ATURAN MUTLAK:
                     <div>
                       <label htmlFor="omni-aspect" className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Format Video</label>
                       <select id="omni-aspect" value={omniAspectRatio} onChange={e => setOmniAspectRatio(e.target.value as '9:16' | '16:9')} disabled={loadingOmni || loadingOmniBatch || mergingBatch} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-slate-900 font-bold focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-400 cursor-pointer">
-                        <option value="9:16">Vertikal 9:16 Â· Reels / Shorts</option>
-                        <option value="16:9">Landscape 16:9 Â· YouTube</option>
+                        <option value="9:16">Vertikal 9:16 · Reels / Shorts</option>
+                        <option value="16:9">Landscape 16:9 · YouTube</option>
                       </select>
                     </div>
                   </div>
@@ -1545,7 +1545,7 @@ ATURAN MUTLAK:
 
                   <div className="mb-5">
                     <label htmlFor="omni-idea" className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Topik / Ide Utama</label>
-                    <textarea id="omni-idea" value={omniIdea} onChange={e => setOmniIdea(e.target.value)} disabled={loadingOmni || loadingOmniBatch || mergingBatch} maxLength={3000} placeholder="Contoh: Sel darah merah lucu menjelaskan kenapa tubuh butuh cukup air, dengan visual mikroskopis di dalam pembuluh darahâ€¦" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-400 resize-y min-h-[100px]" />
+                    <textarea id="omni-idea" value={omniIdea} onChange={e => setOmniIdea(e.target.value)} disabled={loadingOmni || loadingOmniBatch || mergingBatch} maxLength={3000} placeholder="Contoh: Sel darah merah lucu menjelaskan kenapa tubuh butuh cukup air, dengan visual mikroskopis di dalam pembuluh darah…" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-400 resize-y min-h-[100px]" />
                   </div>
 
                   <div className="mb-6">
@@ -1569,34 +1569,34 @@ ATURAN MUTLAK:
                         );
                       })}
                     </div>
-                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">Pilihan ini menentukan jumlah narasi dan prompt â€” dan juga jumlah video bila kamu menekan tombol buat video setelah narasi jadi: {omniSceneCount} scene = {omniSceneCount} narasi + {omniSceneCount} prompt, masing-masing untuk klip 15 detik yang digabung otomatis jadi {omniSceneCount * 15} detik.</p>
+                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">Pilihan ini menentukan jumlah narasi dan prompt — dan juga jumlah video bila kamu menekan tombol buat video setelah narasi jadi: {omniSceneCount} scene = {omniSceneCount} narasi + {omniSceneCount} prompt, masing-masing untuk klip 15 detik yang digabung otomatis jadi {omniSceneCount * 15} detik.</p>
                   </div>
 
                   <div className="grid grid-cols-3 gap-2 mb-6" aria-label="Alur tiap scene 15 detik">
-                    <div className="rounded-xl border border-rose-100 bg-rose-50 p-3"><p className="text-xs font-bold text-rose-600">0â€“4 detik</p><p className="text-sm font-bold text-slate-800 mt-1">Hook</p></div>
-                    <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-3"><p className="text-xs font-bold text-indigo-600">4â€“11 detik</p><p className="text-sm font-bold text-slate-800 mt-1">Penjelasan</p></div>
-                    <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3"><p className="text-xs font-bold text-emerald-700">11â€“15 detik</p><p className="text-sm font-bold text-slate-800 mt-1">CTA</p></div>
+                    <div className="rounded-xl border border-rose-100 bg-rose-50 p-3"><p className="text-xs font-bold text-rose-600">0–4 detik</p><p className="text-sm font-bold text-slate-800 mt-1">Hook</p></div>
+                    <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-3"><p className="text-xs font-bold text-indigo-600">4–11 detik</p><p className="text-sm font-bold text-slate-800 mt-1">Penjelasan</p></div>
+                    <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3"><p className="text-xs font-bold text-emerald-700">11–15 detik</p><p className="text-sm font-bold text-slate-800 mt-1">CTA</p></div>
                   </div>
 
                   <button onClick={generateOmniScenes} disabled={loadingScenes || loadingOmni || !omniIdea.trim()} className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-all shadow-md shadow-indigo-600/20 active:scale-95">
                     {loadingScenes ? <Loader2 className="w-5 h-5 animate-spin" /> : <List className="w-5 h-5" />}
-                    {loadingScenes ? `Menyusun ${omniSceneCount} sceneâ€¦` : `Buat Narasi & Prompt ${omniSceneCount} Scene`}
+                    {loadingScenes ? `Menyusun ${omniSceneCount} scene…` : `Buat Narasi & Prompt ${omniSceneCount} Scene`}
                   </button>
                   <button onClick={omniScenes.length > 0 ? generateOmniBatch : generateOmniFlash} disabled={loadingScenes || loadingOmni || loadingOmniBatch || mergingBatch || (omniScenes.length > 0 ? false : !omniIdea.trim())} className="w-full mt-3 py-3 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50 text-indigo-700 font-bold rounded-xl flex items-center justify-center gap-2 transition-all">
                     {loadingOmniBatch || loadingOmni ? <Loader2 className="w-5 h-5 animate-spin" /> : <Video className="w-5 h-5" />}
-                    {loadingOmniBatch ? 'Membuat video per sceneâ€¦' : loadingOmni ? 'Membuat video di Googleâ€¦' : omniScenes.length > 0 ? `Buat Video ${omniScenes.length} Scene Â· ${omniScenes.length * 15} Detik â€” Gabung Otomatis` : 'Buat Video Omni Flash Â· 15 Detik'}
+                    {loadingOmniBatch ? 'Membuat video per scene…' : loadingOmni ? 'Membuat video di Google…' : omniScenes.length > 0 ? `Buat Video ${omniScenes.length} Scene · ${omniScenes.length * 15} Detik — Gabung Otomatis` : 'Buat Video Omni Flash · 15 Detik'}
                   </button>
                   {omniScenes.length > 0 && (
                     <button onClick={generateOmniFlash} disabled={loadingScenes || loadingOmni || loadingOmniBatch || mergingBatch || !omniIdea.trim()} className="w-full mt-2 py-2 text-[11px] text-slate-500 hover:text-indigo-600 disabled:opacity-50 font-bold rounded-xl transition-colors">
-                      Atau buat 1 video dari ide saja (15 detik Â· Rp 150)
+                      Atau buat 1 video dari ide saja (15 detik · Rp 150)
                     </button>
                   )}
                   {aiCallInfo && (
                     <div role="status" aria-live="polite" className={`mt-3 rounded-xl border px-3 py-2 text-xs leading-relaxed ${aiCallInfo.status === 'ok' ? 'border-emerald-100 bg-emerald-50 text-emerald-900' : 'border-rose-200 bg-rose-50 text-rose-900'}`}>
                       {aiCallInfo.status === 'ok' ? (
-                        <>Model Gemini: <strong>{aiCallInfo.model}</strong> Â· selesai dalam <strong>{(aiCallInfo.ms / 1000).toFixed(1)} detik</strong>{aiCallInfo.dicoba.length > 1 ? <> Â· cadangan dipakai: {aiCallInfo.dicoba.join(' â†’ ')}</> : null}</>
+                        <>Model Gemini: <strong>{aiCallInfo.model}</strong> · selesai dalam <strong>{(aiCallInfo.ms / 1000).toFixed(1)} detik</strong>{aiCallInfo.dicoba.length > 1 ? <> · cadangan dipakai: {aiCallInfo.dicoba.join(' → ')}</> : null}</>
                       ) : (
-                        <>Gagal. Model dicoba: <strong>{aiCallInfo.dicoba.join(' â†’ ')}</strong>. Pesan asli: <span className="font-mono break-words">{aiCallInfo.pesan || 'tidak ada pesan'}</span></>
+                        <>Gagal. Model dicoba: <strong>{aiCallInfo.dicoba.join(' → ')}</strong>. Pesan asli: <span className="font-mono break-words">{aiCallInfo.pesan || 'tidak ada pesan'}</span></>
                       )}
                     </div>
                   )}
@@ -1604,11 +1604,11 @@ ATURAN MUTLAK:
                   {(loadingOmniBatch || mergingBatch) && <div role="status" aria-live="polite" className="mt-4 bg-indigo-50 border border-indigo-100 rounded-xl p-4 text-sm text-indigo-800"><p className="font-bold flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />{omniBatchStatus || 'Memproses…'}</p><p className="text-xs mt-2 leading-relaxed">Generate berurutan per scene; tiap scene = 1 potongan saldo. Setelah semua jadi, video digabung otomatis via ffmpeg. Biarkan tab terbuka.</p></div>}
                   <div className="mt-4 text-xs text-slate-500 leading-relaxed space-y-2">
                     <p>Video dibuat lewat <strong>relay NexaBot</strong> dengan kunci server; biayanya dipotong dari saldo NexaBot Anda per video (gratis bila paket Unlimited / admin). Jika narasi scene sudah dibuat, tombol utama otomatis membuat 1 video per scene berurutan lalu menggabungkannya jadi satu video (N × 15 detik) via ffmpeg — gagal di satu scene tidak menggagalkan scene lain; saldo scene gagal dikembalikan otomatis. API key Gemini tidak perlu diisi — narasi &amp; prompt scene disusun lewat <button onClick={() => { loadAiStatus(); setAiSettingsOpen(true); }} className="text-indigo-600 font-bold hover:text-indigo-800">relay server</button> dengan kunci milik admin (kuota harian per member).</p>
-                    <p>Setiap pembuatan video meminta konfirmasi dan memotong saldo satu kali; bila gagal, saldo dikembalikan otomatis. Hasil disimpan permanen di server. <a href="https://nexabot.id/api-docs" target="_blank" rel="noopener noreferrer" className="text-indigo-600 font-bold hover:text-indigo-800">Dokumentasi NexaBot â†—</a></p>
+                    <p>Setiap pembuatan video meminta konfirmasi dan memotong saldo satu kali; bila gagal, saldo dikembalikan otomatis. Hasil disimpan permanen di server. <a href="https://nexabot.id/api-docs" target="_blank" rel="noopener noreferrer" className="text-indigo-600 font-bold hover:text-indigo-800">Dokumentasi NexaBot ↗</a></p>
                   </div>
                 </div>
 
-                {loadingScenes && <div role="status" aria-live="polite" className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 text-sm text-indigo-800"><p className="font-bold flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Menyusun narasi dan prompt {omniSceneCount} sceneâ€¦ <span className="font-semibold text-indigo-600">{omniStatus}</span></p><p className="text-xs mt-2 leading-relaxed">Hanya narasi dan prompt yang dibuat di sini; setelah jadi, tekan tombol video di atas — setiap scene dibuat jadi 1 video (15 detik, NexaBot) lalu digabung otomatis jadi satu video (N × 15 detik) via ffmpeg.</p></div>}
+                {loadingScenes && <div role="status" aria-live="polite" className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 text-sm text-indigo-800"><p className="font-bold flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Menyusun narasi dan prompt {omniSceneCount} scene… <span className="font-semibold text-indigo-600">{omniStatus}</span></p><p className="text-xs mt-2 leading-relaxed">Hanya narasi dan prompt yang dibuat di sini; setelah jadi, tekan tombol video di atas — setiap scene dibuat jadi 1 video (15 detik, NexaBot) lalu digabung otomatis jadi satu video (N × 15 detik) via ffmpeg.</p></div>}
 
                 {omniScenes.length > 0 && <section className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm anim-fade-in-up" aria-label="Narasi dan prompt per scene">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-5">
@@ -1617,7 +1617,7 @@ ATURAN MUTLAK:
                       <p className="text-xs text-slate-500 mt-1">Copy narasi &amp; prompt, lalu generate videonya di ARKX Studio dengan NexaBot.</p>
                     </div>
                     <CopyButton
-                      text={omniScenes.map(s2 => `Scene ${s2.scene} (${s2.role} Â· 15 detik)\nNarasi: ${s2.voiceover}\nVisual: ${s2.visual}\nVideo Prompt: ${s2.video_prompt}`).join('\n\n---\n\n')}
+                      text={omniScenes.map(s2 => `Scene ${s2.scene} (${s2.role} · 15 detik)\nNarasi: ${s2.voiceover}\nVisual: ${s2.visual}\nVideo Prompt: ${s2.video_prompt}`).join('\n\n---\n\n')}
                       label="Copy Semua Scene"
                       className="inline-flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2.5 rounded-xl text-xs font-bold transition-colors shadow-sm"
                     />
@@ -1632,7 +1632,7 @@ ATURAN MUTLAK:
                             <span className="text-xs text-slate-500">15 detik</span>
                           </div>
                           <CopyButton
-                            text={`Scene ${scene.scene} (${scene.role} Â· 15 detik)\nNarasi: ${scene.voiceover}\nVisual: ${scene.visual}\nVideo Prompt: ${scene.video_prompt}`}
+                            text={`Scene ${scene.scene} (${scene.role} · 15 detik)\nNarasi: ${scene.voiceover}\nVisual: ${scene.visual}\nVideo Prompt: ${scene.video_prompt}`}
                             label={`Copy Scene ${scene.scene}`}
                             className="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl"
                           />
@@ -1711,7 +1711,7 @@ ATURAN MUTLAK:
 
                 {omniVideo && <section className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm anim-fade-in-up" aria-label="Hasil video Omni Flash">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-5">
-                    <div><h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><Check className="w-5 h-5 text-emerald-600" /> Video Omni Flash siap</h3><p className="text-xs text-slate-500 mt-1">15 detik Â· {omniVideo.aspectRatio} Â· MP4 Â· 720p</p></div>
+                    <div><h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><Check className="w-5 h-5 text-emerald-600" /> Video Omni Flash siap</h3><p className="text-xs text-slate-500 mt-1">15 detik · {omniVideo.aspectRatio} · MP4 · 720p</p></div>
                     <a href={omniVideo.url} download="arkx-omni-flash-15-detik.mp4" className="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm px-5 py-3 rounded-xl"><Video className="w-4 h-4" /> Unduh MP4</a>
                   </div>
                   <div className="rounded-xl overflow-hidden bg-slate-900 border border-slate-200 flex justify-center"><video src={omniVideo.url} controls playsInline preload="metadata" aria-label="Video Omni Flash 15 detik" className="w-full max-h-[560px]" /></div>
@@ -1726,7 +1726,7 @@ ATURAN MUTLAK:
                       ? <>Anda akan membuat <strong>{omniScenes.length} video (1 video per scene, masing-masing 15 detik)</strong> lewat NexaBot, lalu menggabungkannya otomatis jadi <strong>satu video {omniScenes.length * 15} detik</strong> via ffmpeg. Biaya dipotong dari <strong>saldo NexaBot</strong> Anda <strong>per video</strong> (gratis bila paket Unlimited / admin) dan dikembalikan otomatis untuk scene yang gagal.</>
                       : <>Anda akan membuat <strong>satu video 15 detik</strong> lewat NexaBot. Biaya dipotong dari <strong>saldo NexaBot</strong> Anda (gratis bila paket Unlimited aktif) dan dikembalikan otomatis bila gagal.</>}
                     </p>
-                    <dl className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2 text-sm mb-5"><div className="flex justify-between gap-3"><dt className="text-slate-500">Model</dt><dd className="font-bold text-slate-800 text-xs">NexaBot Â· Omni Flash 1.2</dd></div><div className="flex justify-between gap-3"><dt className="text-slate-500">Output</dt><dd className="font-bold text-slate-800">{omniConfirmMode === 'batch' ? `${omniScenes.length} video · ${omniScenes.length * 15} detik (digabung jadi 1)` : '1 video · 15 detik'}</dd></div><div className="flex justify-between gap-3"><dt className="text-slate-500">Format</dt><dd className="font-bold text-slate-800">{omniAspectRatio} Â· 720p</dd></div></dl>
+                    <dl className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2 text-sm mb-5"><div className="flex justify-between gap-3"><dt className="text-slate-500">Model</dt><dd className="font-bold text-slate-800 text-xs">NexaBot · Omni Flash 1.2</dd></div><div className="flex justify-between gap-3"><dt className="text-slate-500">Output</dt><dd className="font-bold text-slate-800">{omniConfirmMode === 'batch' ? `${omniScenes.length} video · ${omniScenes.length * 15} detik (digabung jadi 1)` : '1 video · 15 detik'}</dd></div><div className="flex justify-between gap-3"><dt className="text-slate-500">Format</dt><dd className="font-bold text-slate-800">{omniAspectRatio} · 720p</dd></div></dl>
                     <p className="text-xs text-slate-500 leading-relaxed mb-6">Topik dikirim ke NexaBot memakai kunci server. Tidak ada permintaan sebelum Anda menekan tombol lanjut di bawah, dan submit tidak diulang otomatis setelah job terbentuk.</p>
                     <div className="flex flex-col sm:flex-row gap-3"><button onClick={() => setOmniConfirmOpen(false)} className="px-4 py-3 border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 font-bold">Batal</button><button onClick={() => omniConfirmMode === 'batch' ? confirmOmniBatch() : confirmOmniFlash()} className="flex-1 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl">{omniConfirmMode === 'batch' ? `Lanjutkan · Buat ${omniScenes.length} Scene` : 'Lanjutkan · Buat 15 Detik'}</button></div>
                   </section>
