@@ -76,7 +76,7 @@ export async function trackGenerationJob(input: {
 export async function finishGenerationJob(input: {
   provider: 'nexabot' | 'posbot'
   jobId: string
-  status: 'done' | 'failed'
+  status: 'done' | 'failed' | 'pending'
   resultUrl?: string
   error?: string
 }): Promise<void> {
@@ -154,8 +154,8 @@ export async function resumePendingGenerationJobs(): Promise<void> {
         tambahHasil(job, url)
       }
     } catch (err: any) {
-      const pesan = err?.message || 'Resume gagal'
-      // Tampilkan di panel supaya user tahu hasilnya perlu diulang.
+      const terminal = err?.name === 'NexabotJobFailed' || err?.name === 'PosbotJobFailed'
+      const pesan = terminal ? (err?.message || 'Job gagal') : `Pemantauan terputus; akan dicoba lagi otomatis. ${err?.message || ''}`
       addResumeFailure({
         id: job.job_id,
         provider: job.provider,
@@ -167,7 +167,7 @@ export async function resumePendingGenerationJobs(): Promise<void> {
       await finishGenerationJob({
         provider: job.provider === 'posbot' ? 'posbot' : 'nexabot',
         jobId: job.job_id,
-        status: 'failed',
+        status: terminal ? 'failed' : 'pending',
         error: pesan,
       })
     } finally {
@@ -175,6 +175,18 @@ export async function resumePendingGenerationJobs(): Promise<void> {
       aktif.delete(key)
     }
   }
+}
+
+export function startGenerationJobRecovery(): () => void {
+  let running = false
+  const check = async () => {
+    if (running || !tokenSekarang()) return
+    running = true
+    try { await resumePendingGenerationJobs() } finally { running = false }
+  }
+  void check()
+  const timer = window.setInterval(() => { void check() }, 30_000)
+  return () => window.clearInterval(timer)
 }
 
 function tambahHasil(job: any, url: string) {

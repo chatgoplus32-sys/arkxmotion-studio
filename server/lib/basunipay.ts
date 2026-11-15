@@ -154,25 +154,37 @@ export async function pollBasunipayPayments(): Promise<BasunipayPollResult> {
   if (!basunipayReady()) return result
 
   const rows = db.prepare(
-    "SELECT * FROM basunipay_payment WHERE status = 'pending' AND created_at >= datetime('now', '-7 days') ORDER BY id ASC LIMIT 25",
-  ).all() as Array<{ id: number; order_id: string; ref_table: string; ref_id: number; payable_amount: number; payment_id: string }>
+    "SELECT * FROM basunipay_payment WHERE status = 'pending' AND (paid_at IS NOT NULL OR created_at >= datetime('now', '-7 days')) ORDER BY updated_at ASC, id ASC LIMIT 25",
+  ).all() as Array<{ id: number; order_id: string; ref_table: string; ref_id: number; payable_amount: number; payment_id: string; paid_at: string | null }>
 
   for (const m of rows) {
     result.checked++
-    const d = await basunipayStatus(m.order_id)
+    const d = m.paid_at ? { status: 'paid' } : await basunipayStatus(m.order_id)
     const st = String(d?.status || '').toLowerCase()
+    db.prepare('UPDATE basunipay_payment SET updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(m.id)
     if (!st) continue
 
     if (st === 'paid' || st === 'success' || st === 'completed') {
-      // Kredit/lunas memakai mesin bersama; amount = payable yang benar-benar dibayar.
-      const r = approveTopupRef(m.ref_table, m.ref_id, Number(m.payable_amount) || 0, {
-        source: 'basunipay',
-        from: 'basunipay-api',
-        subject: m.order_id,
-      })
-      db.prepare("UPDATE basunipay_payment SET status = 'paid', paid_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(m.id)
-      result.paid++
-      console.log(`[basunipay] ${m.order_id} PAID → ${r.action} (${m.ref_table} #${m.ref_id})`)
+      // Simpan bukti lunas sebelum kredit; kegagalan kredit tetap bisa direkonsiliasi tanpa memanggil provider lagi.
+      db.prepare('UPDATE basunipay_payment SET paid_at = COALESCE(paid_at, CURRENT_TIMESTAMP) WHERE id = ?').run(m.id)
+      try {
+        const r = approveTopupRef(m.ref_table, m.ref_id, Number(m.payable_amount) || 0, {
+          source: 'basunipay',
+          from: 'basunipay-api',
+          subject: m.order_id,
+        })
+        if (!['auto_approved', 'auto_activated', 'already_approved'].includes(r.action)) {
+          throw new Error(`${r.action}: ${r.detail}`)
+        }
+        const updated = db.prepare("UPDATE basunipay_payment SET status = 'paid', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'pending'").run(m.id)
+        result.paid += updated.changes
+      } catch {
+        logPaymentVerify({
+          source: 'basunipay', refTable: m.ref_table, refId: m.ref_id,
+          amount: Number(m.payable_amount) || 0, action: 'approval_pending',
+          detail: 'Pembayaran lunas; kredit/aktivasi belum selesai. Periksa pengajuan; rekonsiliasi diulang otomatis.',
+        })
+      }
     } else if (['expired', 'failed', 'cancelled', 'canceled'].includes(st)) {
       db.prepare('UPDATE basunipay_payment SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(st, m.id)
       result.closed++

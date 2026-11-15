@@ -250,8 +250,9 @@ export function approveTopupRef(
 ): { action: string; table?: string; id?: number; detail: string } {
   const t = QRIS_TABLES.find((x) => x.table === table)
   if (!t) return { action: 'unknown_table', detail: `Tabel tidak dikenal: ${table}` }
-  const row = db.prepare(`SELECT * FROM ${t.table} WHERE id = ? AND status = 'pending'`).get(id) as PendingRow | undefined
-  if (!row) return { action: 'no_pending_row', detail: `Baris ${table} #${id} sudah tidak pending` }
+  const row = db.prepare(`SELECT * FROM ${t.table} WHERE id = ?`).get(id) as (PendingRow & { status: string }) | undefined
+  if (row?.status === 'approved') return { action: 'already_approved', table, id, detail: 'Sudah disetujui; tidak dikredit ulang' }
+  if (!row || row.status !== 'pending') return { action: 'no_pending_row', detail: `Baris ${table} #${id} tidak pending` }
   return handleRow(t, row, paid, ref)
 }
 

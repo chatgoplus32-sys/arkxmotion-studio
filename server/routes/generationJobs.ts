@@ -123,12 +123,12 @@ router.patch('/:provider/:jobId', (req: AuthRequest, res: Response) => {
   const jobId = String(req.params.jobId || '')
   const status = String(req.body?.status || '')
   if (!PROVIDERS.has(provider) || !jobId) return res.status(400).json({ error: 'provider/jobId tidak valid' })
-  if (!['done', 'failed'].includes(status)) return res.status(400).json({ error: 'status tidak valid' })
+  if (!['done', 'failed', 'pending'].includes(status)) return res.status(400).json({ error: 'status tidak valid' })
   try {
     const hasil = db
       .prepare(
         `UPDATE generation_job SET status = ?, result_url = ?, last_error = ?, updated_at = ?
-         WHERE user_id = ? AND provider = ? AND job_id = ?`,
+         WHERE user_id = ? AND provider = ? AND job_id = ? AND status NOT IN ('done', 'failed')`,
       )
       .run(
         status,

@@ -1092,8 +1092,10 @@ export async function pollNexabotJob(
   if (!apiKey && !cookies && !auth.master) throw new Error('NexaBot: tidak ada API key / cookie session yang valid')
 
   // Catat jobId di server: kalau tab ditutup, job ini bisa dilanjutkan lagi.
-  void import('./jobTracking').then(({ trackGenerationJob }) =>
-    trackGenerationJob({ provider: 'nexabot', jobId }))
+  if (typeof window !== 'undefined') {
+    void import('./jobTracking').then(({ trackGenerationJob }) =>
+      trackGenerationJob({ provider: 'nexabot', jobId })).catch(() => {})
+  }
 
   const attempts = Math.max(1, maxAttempts)
   const startedAt = Date.now()
@@ -1229,7 +1231,7 @@ export async function pollNexabotJob(
     }
 
     if (status === 'failed' || status === 'error' || status === 'cancelled' || status === 'canceled') {
-      throw new Error(`NexaBot job gagal: ${job.error || 'Unknown error'}`)
+      throw Object.assign(new Error(`NexaBot job gagal: ${job.error || 'Unknown error'}`), { name: 'NexabotJobFailed' })
     }
   }
 
@@ -1339,8 +1341,10 @@ export async function saveNexabotResult(
       return { ok: false, error: data?.error || `Simpan gagal: HTTP ${res.status}` }
     }
     // Hasil sudah permanen di server → job tidak perlu dilanjutkan lagi.
-    void import('./jobTracking').then(({ finishGenerationJob }) =>
-      finishGenerationJob({ provider: 'nexabot', jobId, status: 'done', resultUrl: data.url }))
+    if (typeof window !== 'undefined') {
+      void import('./jobTracking').then(({ finishGenerationJob }) =>
+        finishGenerationJob({ provider: 'nexabot', jobId, status: 'done', resultUrl: data.url })).catch(() => {})
+    }
     return { ok: true, url: data.url }
   } catch (err: any) {
     return { ok: false, error: err?.message || String(err) }
