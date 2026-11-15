@@ -65,6 +65,7 @@ import watermarkEngineRoutes from './routes/watermarkEngine.js'
 import { UPLOAD_DIR, DISK_FILE_BASE, UPLOAD_RETENTION_DAYS, pruneOldUploads, freeDiskBytes, mediaStorageMode } from './lib/mediaStorage.js'
 import publicAutoClipRoutes from './routes/publicAutoClip.js'
 import publicFireflyRoutes from './routes/publicFirefly.js'
+import autoMotionTtsRoutes from './routes/autoMotionTts.js'
 import publicTiktokRoutes from './routes/publicTiktok.js'
 import { backupOnStartup, noteStartupBackupDisabled } from './backup.js'
 import { startBackupScheduler, getBackupStatus, runBackup } from './lib/backupR2.js'
@@ -197,6 +198,9 @@ app.use('/api/runninghub', runninghubDailyClaimRoutes)
 app.use('/api/chatgpt', chatgptRoutes)
 app.use('/api/dola', publicDolaRoutes)
 app.use('/api/public/autoclip', publicAutoClipRoutes)
+// Gemini TTS untuk /auto-motion/ (Explainer Studio). Halaman statis memanggil
+// same-origin /api/tts & /api/tts/status; gerbang Pro via cookie arkx_session.
+app.use('/api', autoMotionTtsRoutes)
 
 app.get("/api/health", async (_req, res) => {
   try {

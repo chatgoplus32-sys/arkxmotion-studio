@@ -1415,10 +1415,12 @@ export interface NexabotGptImageParams {
   /** Data URI (data:image/...;base64,...) — maksimum 10, mengikuti halaman web. */
   references?: string[]
   /**
-   * Id model image nexabot.id (update 11 Nov 2026): nano_banana_2,
-   * nano_banana_2_lite, nano_banana_pro, nano_banana, gpt_image_2,
-   * gpt_image_2_5_flare, gpt_image_2_5_sunburst, mai_image_2_6_flash,
-   * mai_image_2_6, mai_image_2_5, mai_image_2_5_pro — semuanya 0,1 kredit.
+   * Id model image nexabot.id (update 11 Nov 2026, diperbaiki 15 Nov 2026):
+   * nano_banana_2, nano_banana_2_lite, nano_banana_pro, nano_banana, gpt_image_2,
+   * gpt_image_2_5_flare, gpt_image_2_5_sunburst, mai_image_26_flash,
+   * mai_image_26, mai_image_25, mai_image_25_pro — semuanya 0,1 kredit.
+   * Id MAI memakai mai_image_25/26 tanpa underscore di minor version;
+   * bentuk mai_image_2_5_x dan mai_image_2_6_x tidak dikenal upstream (HTTP 404).
    * Kosong = perilaku lama (GPT Image 2.5 bawaan halaman web).
    */
   model?: string

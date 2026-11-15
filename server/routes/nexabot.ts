@@ -1339,8 +1339,10 @@ router.post('/gpt-image', async (req: Request, res: Response) => {
     aspect: body.aspect ?? 2,
     references: Array.isArray(body.references) ? body.references.slice(0, 10) : [],
   }
-  // Id model image (nano_banana*, gpt_image_2_5*, mai_image_2_*) — diteruskan apa
-  // adanya; tanpa field ini upstream memakai default GPT Image 2.5 seperti dulu.
+  // Id model image (nano_banana*, gpt_image_2*, mai_image_25*, mai_image_26*)
+  // diteruskan apa adanya; tanpa field ini upstream memakai default GPT Image 2.5
+  // seperti dulu. Bentuk MAI yang benar adalah mai_image_25_pro dsb. — model
+  // mai_image_2_5_* dijawab 404 oleh upstream (bundle /image-generator).
   if (typeof body.model === 'string' && body.model.trim()) upstreamBody.model = body.model.trim()
   if (body.telegram_id) upstreamBody.telegram_id = body.telegram_id
 

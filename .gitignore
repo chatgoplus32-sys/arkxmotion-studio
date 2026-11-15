@@ -45,6 +45,9 @@ __pycache__/
 # tsconfig sementara untuk scripts/check-undefined.mjs
 .tsconfig.undefined-check.json
 
+# Render Remotion (MP4 lokal) tidak perlu masuk repo
+auto-motion-source/remotion-source/out/
+
 # Artefak kerja lokal (arsip dist sementara, log/probe manual)
 .tmpdbg/
 scratch/

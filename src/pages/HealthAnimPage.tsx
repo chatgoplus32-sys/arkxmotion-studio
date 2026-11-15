@@ -396,6 +396,16 @@ const HealthAnimTool = () => {
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
 
   const [affiliateProductPhoto, setAffiliateProductPhoto] = useState<File | null>(null);
+  const [affiliatePhotoPreview, setAffiliatePhotoPreview] = useState<string | null>(null);
+
+  // Simpan object URL sekali — revoke yang lama supaya tidak bocor memori
+  const setAffiliatePhoto = (file: File | null) => {
+    setAffiliateProductPhoto(file);
+    setAffiliatePhotoPreview(prev => {
+      if (prev) URL.revokeObjectURL(prev);
+      return file ? URL.createObjectURL(file) : null;
+    });
+  };
   const [affiliateProductDesc, setAffiliateProductDesc] = useState('');
   const [affiliateIdeas, setAffiliateIdeas] = useState<any[]>([]);
   const [loadingAffiliateIdeas, setLoadingAffiliateIdeas] = useState(false);
@@ -411,7 +421,7 @@ const HealthAnimTool = () => {
   // RESET FUNCTIONS (TOMBOL BUAT BARU)
   // ============================================================================
   const resetAffiliate = () => {
-    setAffiliateProductPhoto(null);
+    setAffiliatePhoto(null);
     setAffiliateProductDesc('');
     setAffiliateIdeas([]);
     setAffiliateScript([]);
@@ -442,7 +452,7 @@ const HealthAnimTool = () => {
     setOmniConfirmMode('single');
     
     // Reset Affiliate
-    setAffiliateProductPhoto(null);
+    setAffiliatePhoto(null);
     setAffiliateProductDesc('');
     setAffiliateIdeas([]);
     setAffiliateScript([]);
@@ -1853,14 +1863,14 @@ ATURAN MUTLAK:
                       <input 
                         type="file" 
                         accept="image/*" 
-                        onChange={(e) => setAffiliateProductPhoto(e.target.files?.[0] || null)}
+                        onChange={(e) => { setAffiliatePhoto(e.target.files?.[0] || null); e.currentTarget.value = ''; }}
                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                       />
                       <div className="flex flex-col items-center gap-3">
                         {affiliateProductPhoto ? (
                           <div className="relative w-32 h-32 rounded-xl overflow-hidden border border-slate-200 shadow-md">
                             <img 
-                              src={URL.createObjectURL(affiliateProductPhoto)} 
+                              src={affiliatePhotoPreview || ''} 
                               alt="Preview" 
                               className="w-full h-full object-cover"
                               referrerPolicy="no-referrer"
@@ -1921,7 +1931,7 @@ ATURAN MUTLAK:
                           onClick={() => {
                             setAffiliateIdeas([]);
                             setAffiliateScript([]);
-                            setAffiliateProductPhoto(null);
+                            setAffiliatePhoto(null);
                             setAffiliateProductDesc('');
                             setAppError('');
                             setProgress(0);

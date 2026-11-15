@@ -71,10 +71,14 @@ const NEXABOT_IMAGE_MODELS: ImageModelOption[] = [
   { value: 'nb:gpt_image_2', label: 'GPT Image 2 (NexaBot)', cr: 0.1, apiModel: 'gpt-image', upstreamModel: 'gpt_image_2' },
   { value: 'nb:gpt_image_2_5_flare', label: 'GPT Image 2.5 Flare (NexaBot)', cr: 0.1, apiModel: 'gpt-image', upstreamModel: 'gpt_image_2_5_flare' },
   { value: 'nb:gpt_image_2_5_sunburst', label: 'GPT Image 2.5 Sunburst (NexaBot)', cr: 0.1, apiModel: 'gpt-image', upstreamModel: 'gpt_image_2_5_sunburst' },
-  { value: 'nb:mai_image_2_6_flash', label: 'MAI Image 2.6 Flash (NexaBot)', cr: 0.1, apiModel: 'gpt-image', upstreamModel: 'mai_image_2_6_flash' },
-  { value: 'nb:mai_image_2_6', label: 'MAI Image 2.6 (NexaBot)', cr: 0.1, apiModel: 'gpt-image', upstreamModel: 'mai_image_2_6' },
-  { value: 'nb:mai_image_2_5', label: 'MAI Image 2.5 (NexaBot)', cr: 0.1, apiModel: 'gpt-image', upstreamModel: 'mai_image_2_5' },
-  { value: 'nb:mai_image_2_5_pro', label: 'MAI Image 2.5 Pro (NexaBot)', cr: 0.1, apiModel: 'gpt-image', upstreamModel: 'mai_image_2_5_pro' },
+  // Id model MAI milik nexabot.id memakai bentuk mai_image_25/26 tanpa
+  // underscore di versi minornya (mai_image_25_pro, bukan mai_image_2_5_pro).
+  // Bentuk lama membuat upstream menjawab 404 (ditemukan 15 Nov 2026 dengan
+  // membandingkan bundle /image-generator nexabot.id).
+  { value: 'nb:mai_image_2_6_flash', label: 'MAI Image 2.6 Flash (NexaBot)', cr: 0.1, apiModel: 'gpt-image', upstreamModel: 'mai_image_26_flash' },
+  { value: 'nb:mai_image_2_6', label: 'MAI Image 2.6 (NexaBot)', cr: 0.1, apiModel: 'gpt-image', upstreamModel: 'mai_image_26' },
+  { value: 'nb:mai_image_2_5', label: 'MAI Image 2.5 (NexaBot)', cr: 0.1, apiModel: 'gpt-image', upstreamModel: 'mai_image_25' },
+  { value: 'nb:mai_image_2_5_pro', label: 'MAI Image 2.5 Pro (NexaBot)', cr: 0.1, apiModel: 'gpt-image', upstreamModel: 'mai_image_25_pro' },
   // Jalur lama mode `img` tetap ada supaya tidak menghilangkan pilihan pengguna.
   { value: 'nb:img', label: '✨ GPT Image (NexaBot)', cr: 0.1, apiModel: 'img' },
 ]
