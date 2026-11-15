@@ -2023,6 +2023,7 @@ async function handleSubmitH3MusicAvatar(apiKey: string, params: any, res: Respo
     prompt = '',
     sceneImages,
     aspectRatio,
+    instanceType,
   } = params
 
   if (!imageBase64) return res.status(200).json({ ok: false, error: 'Missing imageBase64' })
@@ -2111,11 +2112,13 @@ async function handleSubmitH3MusicAvatar(apiKey: string, params: any, res: Respo
     )
   }
 
-  const body = {
-    nodeInfoList,
-    instanceType: 'default',
-    usePersonalQueue: 'false',
-  }
+  // H3 Music Avatar (terutama SelfLiftAvatarH3Sampler) membutuhkan VRAM lebih
+  // besar dari instance default (24G). Default 'plus' (48G) untuk semua mode.
+  const defaultInstance = 'plus'
+  const opts = rhRunOptions({ instanceType }, { instanceType: defaultInstance })
+  const body = rhBuildRunBody({ nodeInfoList, instanceType: opts.instanceType, usePersonalQueue: opts.usePersonalQueue })
+
+  console.log(`[runninghub] submit-h3-music-avatar instanceType=${opts.instanceType} usePersonalQueue=${opts.usePersonalQueue}`)
 
   const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${effectiveAppId}`
 
@@ -2214,9 +2217,6 @@ async function handleSubmitViralEffects(apiKey: string, params: any, res: Respon
   const nodeInfoList: any[] = [
     { nodeId: '14', fieldName: 'image', fieldValue: imageUpload.fileName },
     { nodeId: '207', fieldName: 'int', fieldValue: String(effNum) },
-    { nodeId: '150', fieldName: '步数', fieldValue: String(effSteps) },
-    { nodeId: '151', fieldName: 'Resolution', fieldValue: String(effRes) },
-    { nodeId: '152', fieldName: '帧数', fieldValue: String(effFrames) },
   ]
 
   const effPrompt = String(prompt || '').trim()
