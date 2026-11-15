@@ -1,12 +1,13 @@
 /**
  * ARKX Drama Studio — workspace cerita interaktif (static sub-app di
- * /drama-studio/, dimuat dalam iframe). Navigasi keluar dari workspace
- * ditangani tombol "←" di topbar aplikasi drama-studio itu sendiri
- * (menuju /dashboard), agar tetap bekerja dari dalam iframe.
+ * /drama-studio/, dimuat dalam iframe full-viewport). Navigasi keluar dari
+ * workspace ditangani tombol "←" di topbar aplikasi drama-studio itu sendiri
+ * (menuju /dashboard), agar tetap bekerja dari dalam iframe di semua ukuran
+ * layar (HP & PC).
  */
 export default function DramaStudioPage() {
   return (
-    <div className="relative h-[calc(100vh-4.5rem)] sm:h-[calc(100vh-5.25rem)] w-screen max-w-none -mx-4 sm:-mx-6 lg:-mx-8 -my-4 sm:-my-6 lg:-my-8 overflow-hidden bg-[#0d0b14]">
+    <div className="fixed inset-0 z-[80] h-[100dvh] w-screen overflow-hidden bg-[#0d0b14]">
       <iframe
         src="/drama-studio/index.html"
         title="ARKX Drama Studio"

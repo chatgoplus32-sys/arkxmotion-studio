@@ -42,6 +42,56 @@
   const runningOps = new Set();
   const opRunning = key => runningOps.has(key);
   const setRunning = (key, val) => { if (val) runningOps.add(key); else runningOps.delete(key) };
+  // ── Merge video via ffmpeg.wasm (persis pola Watermark Remover) ───────────
+  let ffmpegCache = null;
+  const loadFfmpeg = async () => {
+    if (ffmpegCache) return ffmpegCache;
+    const loadScript = (src) => new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = src;
+      s.onload = res;
+      s.onerror = () => rej(new Error('Gagal memuat ffmpeg.wasm — periksa koneksi'));
+      document.head.appendChild(s);
+    });
+    await loadScript('https://unpkg.com/@ffmpeg/ffmpeg@0.12.15/dist/umd/ffmpeg.js');
+    await loadScript('https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js');
+    const { FFmpeg } = window.FFmpegWASM;
+    const { toBlobURL, fetchFile } = window.FFmpegUtil;
+    const ffmpeg = new FFmpeg();
+    const base = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+    await ffmpeg.load({
+      coreURL: await toBlobURL(`${base}/ffmpeg-core.js`, 'text/javascript'),
+      wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, 'application/wasm'),
+    });
+    ffmpegCache = { ffmpeg, fetchFile };
+    return ffmpegCache;
+  };
+  async function fetchRemoteVideoFile(url, name) {
+    const tryFetch = async (target) => {
+      const res = await fetch(target);
+      const ct = (res.headers.get('content-type') || '').toLowerCase();
+      if (!res.ok || ct.includes('text/html')) return null;
+      const blob = await res.blob();
+      return blob && blob.size > 1024 ? blob : null;
+    };
+    let blob = null;
+    try { blob = await tryFetch(url); } catch { /* CORS — lanjut ke proxy */ }
+    if (!blob) {
+      const res = await fetch(`/api/public/video-proxy?url=${encodeURIComponent(url)}`);
+      if (res.ok) blob = await res.blob();
+    }
+    if (!blob || blob.size < 1024) throw new Error(`Gagal mengunduh ${name}`);
+    return new File([blob], name, { type: 'video/mp4' });
+  }
+  const mergedVideos = new Map(); // projectId -> { name, size, url, scenes }
+  let mergeStage = '';
+  const setMergeStage = (t) => {
+    mergeStage = t || '';
+    document.querySelectorAll('[data-drama-action="merge-all"]').forEach(b => {
+      b.disabled = !!t;
+      b.innerHTML = t ? esc(t) : '🎬 Gabung jadi 1 Video (ffmpeg)';
+    });
+  };
 
   // ── Gemini via relay studio-ai (member login, key server) ───────────────────
   async function geminiJSON({ prompt, system, schema, models }) {
@@ -356,6 +406,62 @@
     await aiGenerateVideoForQueueItem(q, triggerBtn);
   }
 
+  async function mergeAllVideos() {
+    const p = project(); if (!p) return;
+    if (opRunning('merge')) return;
+    if (!p.queue?.length) { toast('Antrean kosong — belum ada klip yang bisa digabung.'); return; }
+    const items = [...p.queue]
+      .filter(q => q.result && /^video\//.test(q.result.type || '') && q.result.data)
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    if (items.length < 2) { toast('Butuh minimal 2 video jadi untuk digabung (semua adegan).'); return; }
+    const est = items.length * 15;
+    if (!confirm(`Gabung ${items.length} klip (±${est} detik) jadi satu MP4?`)) return;
+    setRunning('merge', true);
+    try {
+      const files = [];
+      for (let i = 0; i < items.length; i++) {
+        setMergeStage(`Mengunduh klip ${i + 1}/${items.length}…`);
+        files.push(await fetchRemoteVideoFile(items[i].result.data, `scene_${String(i + 1).padStart(2, '0')}.mp4`));
+      }
+      setMergeStage('Memuat ffmpeg.wasm…');
+      const { ffmpeg, fetchFile } = await loadFfmpeg();
+      const stamp = Date.now();
+      const names = [];
+      for (let i = 0; i < files.length; i++) {
+        const name = `m_${stamp}_${i}.mp4`;
+        names.push(name);
+        await ffmpeg.writeFile(name, await fetchFile(files[i]));
+      }
+      const listName = `list_${stamp}.txt`;
+      await ffmpeg.writeFile(listName, new TextEncoder().encode(names.map(n => `file '${n}'`).join('\n')));
+      setMergeStage('Menggabungkan…');
+      const outName = `drama_${stamp}.mp4`;
+      try {
+        await ffmpeg.exec(['-f', 'concat', '-safe', '0', '-i', listName, '-c', 'copy', outName]);
+      } catch {
+        // codec/parameter segmen beda → re-encode sekali
+        await ffmpeg.exec(['-f', 'concat', '-safe', '0', '-i', listName, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', outName]);
+      }
+      const out = await ffmpeg.readFile(outName);
+      const bytes = typeof out === 'string' ? new TextEncoder().encode(out) : out;
+      const buf = new ArrayBuffer(bytes.byteLength);
+      new Uint8Array(buf).set(bytes);
+      const url = URL.createObjectURL(new Blob([buf], { type: 'video/mp4' }));
+      mergedVideos.set(p.id, { name: `${slugify(p.name)}-drama.mp4`, size: buf.byteLength, url, scenes: items.length, est });
+      for (const n of names) await ffmpeg.deleteFile(n).catch(() => {});
+      await ffmpeg.deleteFile(listName).catch(() => {});
+      await ffmpeg.deleteFile(outName).catch(() => {});
+      toast('Video drama selesai digabung — unduh sebelum menutup tab.');
+    } catch (e) {
+      toast(`Gagal menggabungkan: ${String(e?.message || e).slice(0, 140)}`);
+    } finally {
+      setRunning('merge', false);
+      setMergeStage('');
+      persist();
+      render();
+    }
+  }
+
   function handleDramaAction(action, id) {
     const p = project();
     if (action === 'ai-story') return aiGenerateStory();
@@ -365,13 +471,13 @@
     }
     if (action === 'gen-video') {
       const btn = document.querySelector(`[data-drama-action="gen-video"][data-id="${id}"]`);
-      // queue item vs adegan: queue items punya id unik yang berbeda, adegan juga unik — dipisahkan lewat data-kind
       if (btn?.dataset.kind === 'scene') return aiGenerateSceneVideo(id, btn);
       const q = p?.queue.find(x => x.id === id);
       if (q) return aiGenerateVideoForQueueItem(q, btn);
       return aiGenerateSceneVideo(id, btn);
     }
     if (action === 'gen-all') return aiGenerateAllVideos();
+    if (action === 'merge-all') return mergeAllVideos();
   }
 
   let state = {projects:[],current:null,page:'dashboard'};
@@ -437,10 +543,10 @@
   }
   function workspacePage(){
     const p=project();if(!p)return noProject();
-    const qs=[...p.queue].sort((a,b)=>(a.order??0)-(b.order??0));const results=qs.filter(q=>q.result).length;const done=qs.filter(q=>q.status==='copied'||q.result).length;
+    const qs=[...p.queue].sort((a,b)=>(a.order??0)-(b.order??0));const results=qs.filter(q=>q.result).length;const done=qs.filter(q=>q.status==='copied'||q.result).length;const videosReady=qs.filter(q=>q.result&&/^video\//.test(q.result.type||'')&&q.result.data).length;const mergedInfo=mergedVideos.get(p.id);
     return `${pageHead('STORY WORKSPACE · SUSUN & EKSPOR','Rangkai urutan klip cerita.','Atur prompt/klip, lihat file yang sudah Anda tambahkan, dan ekspor paket proyek untuk langkah berikutnya.',`<button class="button button-quiet" data-action="export-markdown">↓ Ekspor naskah</button><button class="button button-primary" data-action="export-json">↓ Ekspor proyek</button>`)}
       <div class="grid"><section class="panel col-8"><div class="panel-head"><div><h2>${esc(p.name)}</h2><p>Urutan lokal yang bisa disusun ulang sebelum Anda lanjut di editor/provider lain.</p></div><button class="outline-button" data-page="queue">Kelola prompt →</button></div><div class="workspace-summary"><div class="workspace-stat"><b>${qs.length}</b><small>Item dalam urutan</small></div><div class="workspace-stat"><b>${results}</b><small>File hasil dilampirkan</small></div><div class="workspace-stat"><b>${done}</b><small>Disalin / punya hasil</small><div class="progress-track"><span style="width:${qs.length?Math.round(done/qs.length*100):0}%"></span></div></div></div><div class="workspace-list">${qs.length?qs.map((q,i)=>`<article class="workspace-card"><div class="reorder"><button aria-label="Pindah ke atas" data-action="move-up" data-id="${esc(q.id)}">↑</button><button aria-label="Pindah ke bawah" data-action="move-down" data-id="${esc(q.id)}">↓</button></div><div class="workspace-info"><b>${String(i+1).padStart(2,'0')} · ${esc(q.title||'Prompt tanpa judul')}</b><small><i class="platform-dot ${providerClass(q.provider)}"></i>${esc(q.provider||PROVIDERS[0])} · ${esc(q.ratio||'9:16')} · ${esc(q.duration||'8 detik')}</small></div><div class="workspace-asset">${q.result?(q.result.type?.startsWith('image/')?`<img class="asset-preview" src="${esc(q.result.data)}" alt="Hasil">`:q.result.type?.startsWith('video/')?`<video class="asset-preview" src="${esc(q.result.data)}" muted loop playsinline preload="metadata"></video>`:'<span class="asset-preview" style="display:grid;place-items:center">▣</span>'):'<span class="asset-preview" style="display:grid;place-items:center;color:#746a7e">＋</span>'}<span>${q.result?esc(q.result.name||'File hasil lokal'):'Belum ada hasil terlampir'}<br>${badgeStatus(q)}</span></div><div class="workspace-actions"><button class="outline-button" data-action="copy-prompt" data-id="${esc(q.id)}">Salin</button><button class="outline-button" data-action="edit-prompt" data-id="${esc(q.id)}">Edit</button></div></article>`).join(''):'<div class="empty-state"><b>Belum ada klip untuk dirangkai</b>Tambah prompt di antrean agar dapat menyusun urutannya di sini.</div>'}</div></section>
-      <aside class="panel col-4"><div class="panel-head"><div><h2>Ekspor & catatan</h2><p>Ambil proyek untuk melanjutkan pekerjaan.</p></div><span class="pill mint">Backup</span></div><div class="notice"><span class="notice-icon">↓</span><span><strong>Ekspor JSON</strong> menyimpan proyek, storyboard, antrean, setelan, dan file hasil lokal yang dilampirkan.</span></div><div class="divider"></div><div class="notice warning"><span class="notice-icon">ⓘ</span><span>Susunan ini bukan timeline video yang dirender. Tidak ada file video final yang dibuat oleh workspace.</span></div><div class="divider"></div><button class="button button-primary" style="width:100%" data-action="export-json">Ekspor backup JSON</button><button class="button" style="width:100%;margin-top:8px" data-action="export-markdown">Ekspor naskah Markdown</button><button class="button button-quiet" style="width:100%;margin-top:8px" data-action="open-import-json">Impor backup JSON</button><input class="visually-hidden" id="jsonImportInput" type="file" accept="application/json,.json"></aside></div>`;
+      <aside class="panel col-4"><div class="panel-head"><div><h2>Ekspor & catatan</h2><p>Ambil proyek untuk melanjutkan pekerjaan.</p></div><span class="pill mint">Backup</span></div><div class="notice"><span class="notice-icon">↓</span><span><strong>Ekspor JSON</strong> menyimpan proyek, storyboard, antrean, setelan, dan file hasil lokal yang dilampirkan.</span></div><div class="divider"></div><div class="notice warning"><span class="notice-icon">ⓘ</span><span>Susunan ini bukan timeline video yang dirender. Tidak ada file video final yang dibuat oleh workspace.</span></div><div class="divider"></div><button class="button button-primary" style="width:100%" data-action="export-json">Ekspor backup JSON</button><button class="button" style="width:100%;margin-top:8px" data-action="export-markdown">Ekspor naskah Markdown</button><button class="button button-quiet" style="width:100%;margin-top:8px" data-action="open-import-json">Impor backup JSON</button><div class="divider"></div><div class="panel-head"><div><h2>🎬 Video Drama</h2><p>${videosReady} dari ${qs.length} klip punya hasil.</p></div><span class="pill ${videosReady >= 2 ? 'mint' : ''}">${videosReady >= 2 ? 'SIAP DIGABUNG' : 'MENUNGGU'}</span></div>${mergedInfo ? `<video src="${mergedInfo.url}" controls playsinline style="width:100%;border-radius:12px;background:#000"></video><a class="button button-primary" href="${mergedInfo.url}" download="${esc(mergedInfo.name)}" style="margin-top:8px;width:100%">↓ Unduh ${esc(mergedInfo.name)} (${(mergedInfo.size/1048576).toFixed(1)} MB)</a><p class="muted small" style="margin-top:6px">⏳ Tersimpan sementara di memori browser — unduh sebelum tutup tab.</p>` : `<p class="muted small">Klik <strong>Gabung</strong> setelah semua adegan jadi — klip digabung sesuai urutan di atas.</p>`}<button class="button ${videosReady >= 2 ? 'button-primary' : 'button-quiet'}" data-drama-action="merge-all" style="width:100%;margin-top:8px" ${videosReady >= 2 ? '' : 'disabled'}>${mergeStage || '🎬 Gabung jadi 1 Video (ffmpeg)'}</button><input class="visually-hidden" id="jsonImportInput" type="file" accept="application/json,.json"></aside></div>`;
   }
   function render(){syncProjectLabels();const content=$('#pageContent');content.innerHTML=state.page==='dashboard'?dashboard():state.page==='story'?storyPage():state.page==='storyboard'?storyboardPage():state.page==='queue'?queuePage():workspacePage();document.querySelectorAll('.nav-item').forEach(b=>b.classList.toggle('active',b.dataset.page===state.page));}
   function addPrompt(data={}){const p=project();if(!p)return;const q={id:makeId(),sceneId:'',title:data.title||`Prompt ${String(p.queue.length+1).padStart(2,'0')}`,prompt:data.prompt||'',provider:data.provider||$('#defaultProvider')?.value||PROVIDERS[0],ratio:data.ratio||$('#defaultRatio')?.value||'9:16',resolution:data.resolution||$('#defaultResolution')?.value||'1080p',duration:data.duration||$('#defaultDuration')?.value||'8 detik',variations:String(data.variations||'1'),status:'draft',result:null,order:p.queue.length};p.queue.push(q);state.page='queue';persist();render();toast('Prompt ditambahkan. Isi teksnya lalu salin manual.');}
