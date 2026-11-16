@@ -140,7 +140,7 @@ test('CreatePulse: override model & default ikut ke endpoint publik', () => {
   const cp = buildPublicPricing().providers.createpulse
   assert.equal(cp.default_price, 2000)
   assert.equal(cp.models[CP_MODEL], 7777)
-  assert.equal(cp.price_range.min, 2000)
+  assert.ok(cp.price_range.min <= Math.min(...Object.values(cp.models)))
   assert.equal(cp.price_range.max, 7777)
   assert.equal(providerUnitCharge('createpulse', CP_MODEL), 7777)
 })

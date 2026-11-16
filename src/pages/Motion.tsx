@@ -12,6 +12,8 @@ import { trimVideoFFmpeg } from '@/lib/ffmpeg-compress'
 import { restoreMotionAudio } from '@/lib/motionAudio'
 import { submitWeavyMotionControl, uploadWeavyAssetWithRetry, resolveWeavyAssetUrl, getActiveWeavyAccessToken, compressImageForWeavy } from '@/lib/weavy'
 import { getRunningHubApiKey, getRunningHubWorkflowId, submitRunningHubMotionControl, submitRunningHubUltraFastHD, submitRunningHubMotionApp, pollRunningHubTask, checkRunningHubBalance } from '@/lib/runninghub'
+import { useRunninghubPricing, rhModelPrice } from '@/lib/runninghubPricing'
+import { formatRp } from '@/lib/payment'
 import { getMarkastoolsCookies, runMarkasMotionControl, MARKAS_MOTION_MODELS } from '@/lib/markastools'
 import { getGalleri5AuthHeaders, submitGalleri5MotionControl, pollGalleri5MotionControl, isGalleri5ModelRestricted, getGalleri5ErrorMessage, GALLERI5_MOTION_MODELS, runGalleri5WithRotation } from '@/lib/galleri5'
 import { getMagnificApiKey, submitMagnificMotion, pollMagnificMotion, type MagnificMotionModel } from '@/lib/magnific'
@@ -129,7 +131,7 @@ type MotionProviderId = (typeof MOTION_PROVIDER_IDS)[number]
 const MOTION_PROVIDER_INFO: Record<MotionProviderId, { name: string; tagline: string; note: string; recommended?: boolean }> = {
   runninghub: {
     name: 'RunningHub',
-    tagline: 'Bayar pakai kredit RunningHub',
+    tagline: 'Harga per generate sesuai System Settings',
     note: 'Perlu API key RunningHub yang sudah disimpan di halaman Providers.',
     recommended: true,
   },
@@ -150,6 +152,20 @@ const MOTION_RECOMMENDED_MODEL: Record<MotionProviderId, string> = {
   runninghub: 'rh:std:2.6',
   seavi: 'sv:motion_control_v3_server23_15dtk',
   posbot: 'pb:motion_control_std',
+}
+
+// Aksi charge yang dipakai tiap key RunningHub di menu ini — harga efektifnya
+// diambil dari System Settings (admin) lewat useRunninghubPricing.
+const RH_KEY_TO_ACTION: Record<string, string> = {
+  'rh:wf:72fps': 'motion-control-72fps',
+  'rh:wf:kontrol-gerakan': 'motion-control-kontrol-gerakan',
+  'rh:wf:eposcents': 'motion-control-eposcents',
+  'rh:wf:mc-pro': 'motion-control-pro',
+  'rh:wf:ultra-hd': 'motion-control-ultra-hd',
+  'rh:pro:2.6': 'motion-control',
+  'rh:std:2.6': 'motion-control',
+  'rh:wf:2.9': 'motion-control',
+  'rh:wf:v3.0': 'motion-control',
 }
 
 // Label awam untuk dropdown model — nama workflow aslinya terlalu teknis.
@@ -176,15 +192,25 @@ const SIMPLE_MODEL_LABELS: Record<string, string> = {
   'pb:kling_30_pro': 'Kling 3.0 Pro · maks 30 detik',
 }
 
-function motionModelLabel(providerId: MotionProviderId, model: { key: string; label: string; cr: number }): string {
+function motionModelLabel(
+  providerId: MotionProviderId,
+  model: { key: string; label: string; cr: number },
+  rhPricing?: { models: Record<string, number>; defaultCharge: number },
+): string {
   const name = SIMPLE_MODEL_LABELS[model.key] || model.label
+  const rhAction = RH_KEY_TO_ACTION[model.key]
+  const rhPrice = rhPricing
+    ? rhModelPrice(rhPricing, rhAction ?? 'motion-control')
+    : 2500
   const price = providerId === 'seavi'
     ? `${model.cr} token`
     : providerId === 'posbot'
       ? formatPosbotRupiah(model.cr)
-      : (providerId as string) === 'markastools'
-        ? 'langganan MarkasTools'
-        : `${model.cr} kredit`
+      : providerId === 'runninghub'
+        ? `${formatRp(rhPrice)}/generate`
+        : (providerId as string) === 'markastools'
+          ? 'langganan MarkasTools'
+          : `${model.cr} kredit`
   const tag = model.key === MOTION_RECOMMENDED_MODEL[providerId] ? ' · disarankan' : ''
   return `${name} · ${price}${tag}`
 }
@@ -218,6 +244,7 @@ function createSlot(): Slot {
 
 export default function MotionPage() {
   const [provider, setProvider] = useLocalStorage<ProviderId>('motion.provider', 'runninghub')
+  const rhPricing = useRunninghubPricing()
   const addToast = useToastStore((s) => s.addToast)
   const [modelKey, setModelKey] = useLocalStorage('motion.modelKey', MOTION_RECOMMENDED_MODEL.runninghub)
   const [orientation, setOrientation] = useLocalStorage<'video' | 'image'>('motion.orientation', 'video')
@@ -394,6 +421,11 @@ export default function MotionPage() {
     : slots.filter((s) => s.image && s.video).length
   const rawCredits = filledSlots * (currentModel?.cr || 0)
   const totalCredits = provider === 'roboneo' ? Math.max(rawCredits, getRoboneoMotionMinCredits()) : rawCredits
+  // Harga RunningHub efektif (dari System Settings admin) — dipakai untuk
+  // label dropdown & baris Total. key rh:* → aksi charge (RH_KEY_TO_ACTION).
+  const rhCurrentAction = RH_KEY_TO_ACTION[modelKey] ?? 'motion-control'
+  const rhCurrentCost = provider === 'runninghub' ? rhModelPrice(rhPricing, rhCurrentAction) : 0
+  const rhTotalCost = rhCurrentCost * filledSlots
 
   const addSlot = () => {
     if (slots.length < MAX_SLOTS) {
@@ -673,7 +705,7 @@ export default function MotionPage() {
       provider,
       model: currentModel.label,
       prompt: prompt.slice(0, 500),
-      credits: currentModel.cr * filledSlots.length,
+      credits: provider === 'runninghub' ? rhTotalCost : currentModel.cr * filledSlots.length,
       slot_count: filledSlots.length,
     }) : null
 
@@ -2533,6 +2565,8 @@ export default function MotionPage() {
                         ? `Mulai ${formatPosbotRupiah(minPrice)} / video`
                         : (id as string) === 'markastools'
                           ? 'Langganan MarkasTools'
+                          : id === 'runninghub'
+                          ? `Mulai ${formatRp(Math.min(...Object.values(rhPricing.models), rhPricing.defaultCharge))} / video`
                           : `Mulai ${minPrice} kredit / video`
                     return (
                       <button
@@ -2584,7 +2618,7 @@ export default function MotionPage() {
                   onChange={(e) => setModelKey(e.target.value)}
                   options={[...currentProvider.models]
                     .sort((a, b) => Number(b.key === recommendedModelKey) - Number(a.key === recommendedModelKey))
-                    .map((m) => ({ value: m.key, label: motionModelLabel(provider as MotionProviderId, m) }))}
+                    .map((m) => ({ value: m.key, label: motionModelLabel(provider as MotionProviderId, m, rhPricing) }))}
                 />
               </div>
 
@@ -2817,6 +2851,8 @@ export default function MotionPage() {
                     <>Total: <span className="text-foreground font-mono font-semibold">{totalCredits.toLocaleString()}</span> token ({filledSlots} × {currentModel.cr} token)</>
                   ) : provider === 'posbot' ? (
                     <>Total: <span className="text-foreground font-mono font-semibold">{formatPosbotRupiah(totalCredits)}</span> ({filledSlots} × {formatPosbotRupiah(currentModel.cr)})</>
+                  ) : provider === 'runninghub' ? (
+                    <>Total: <span className="text-foreground font-mono font-semibold">{formatRp(rhTotalCost)}</span> ({filledSlots} × {formatRp(rhCurrentCost)}/generate)</>
                   ) : provider === 'markastools' ? (
                     <>Total: <span className="text-foreground font-mono font-semibold">{filledSlots}</span> video (bayar lewat langganan MarkasTools)</>
                   ) : (

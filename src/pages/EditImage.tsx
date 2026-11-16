@@ -8,6 +8,7 @@ import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { withTokenRotation } from '@/lib/tokenRotation'
 import { submitRunningHubImageEdit, pollRunningHubTask } from '@/lib/runninghub'
+import { useRunninghubPricing, rhModelPrice } from '@/lib/runninghubPricing'
 import { SEAVI_IMAGE_MODELS, buildSeaviPayload, generateSeaviImage, fetchSeaviBalance } from '@/lib/seavi'
 import { FREEBEAT_IMAGE_MODELS, buildFreebeatImageItem, createFreebeatImageBatch, pollFreebeatBatch, getFreebeatModel } from '@/lib/freebeat'
 import { chargeSeaviWallet, refundSeaviWallet, fetchSeaviWallet } from '@/lib/seaviWallet'
@@ -167,6 +168,8 @@ export default function EditImagePage() {
   const addToast = useToastStore((s) => s.addToast)
   const { keys, fetchMaintenance } = useProviderManager()
   const { token: authToken, user } = useAuthStore()
+  // Harga efektif RunningHub dari System Settings (admin).
+  const rhPricing = useRunninghubPricing()
   // Token wallet Seavi (1 token = Rp 1.700). Null = belum dimuat / tamu.
   const [seaviTokens, setSeaviTokens] = useState<number | null>(null)
   // Wallet NexaBot (Rp 150/generate). Null = belum dimuat / tamu.
@@ -1041,7 +1044,7 @@ export default function EditImagePage() {
                       label: provider === 'nexabot'
                         ? `${m.label} — $${m.cr}/gambar`
                         : provider === 'runninghub'
-                          ? `${m.label} — koin RH`
+                          ? `${m.label} — ${formatRp(rhModelPrice(rhPricing, 'submit-image-edit'))}/gambar`
                           : provider === 'freebeat'
                             ? `${m.label} — ${fb?.credits != null ? `${fb.credits} kredit` : 'kredit bervariasi'}`
                             : `${m.label} — $${((m as any).cr / 1000).toFixed(3)}`,

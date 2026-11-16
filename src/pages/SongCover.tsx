@@ -11,8 +11,8 @@ import { persistResultToR2, addResult, startGenerationTask, removeActiveTask } f
 import { usePageActive } from '@/hooks/usePageActive'
 import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
 import { STYLE_PRESETS, GENRE_CATEGORIES, type SongGenreCategory } from '@/lib/song-cover-genres'
-
-const CREDIT_COST = 50
+import { useRunninghubPricing, rhModelPrice } from '@/lib/runninghubPricing'
+import { formatRp } from '@/lib/payment'
 
 type SongEngine = 'song-cover' | 'yue2'
 
@@ -76,6 +76,7 @@ function normalizeGenreSearch(value: string): string {
 export default function SongCoverPage() {
   const addToast = useToastStore((s) => s.addToast)
   const currentUser = useAuthStore((s) => s.user)
+  const rhPricing = useRunninghubPricing()
 
   const [engine, setEngine] = useState<SongEngine>('yue2')
   const [audioFile, setAudioFile] = useState<File | null>(null)
@@ -142,6 +143,8 @@ export default function SongCoverPage() {
     ? manualStyle
     : [...selectedGenres.map((g) => g.prompt), manualStyle].filter(Boolean).join('. ')
   const isYuE2 = engine === 'yue2'
+  // Harga efektif dari System Settings (admin): submit-yue2-reimaginer / submit-song-cover.
+  const rhCost = rhModelPrice(rhPricing, isYuE2 ? 'submit-yue2-reimaginer' : 'submit-song-cover')
   const trimmedLyrics = lyrics.trim()
   const modelLabel = isYuE2 ? 'YuE2 Indonesian Song Reimaginer' : 'AI Song Cover Studio'
 
@@ -197,7 +200,7 @@ export default function SongCoverPage() {
       provider: 'runninghub',
       model: modelLabel,
       prompt: finalStyle.slice(0, 500),
-      credits: CREDIT_COST,
+      credits: rhCost,
       slot_count: 1,
     }) : null
 
@@ -314,8 +317,8 @@ export default function SongCoverPage() {
       {/* Feature badges */}
       <div className="flex flex-wrap gap-2 mb-6">
         {(isYuE2
-          ? ['🎼 Audio Referensi', '🇮🇩 Style Indonesia', '📝 Lirik Baru', '🎙️ Vokal Studio', '🎧 Melodi Dipertahankan', `💠 ${CREDIT_COST} kredit`]
-          : ['🎼 Upload Audio', '🎨 Gaya Bebas', '📝 Lirik Custom', '🎙️ Vokal Studio', '⚡ Fast Render', `💠 ${CREDIT_COST} kredit`]
+          ? ['🎼 Audio Referensi', '🇮🇩 Style Indonesia', '📝 Lirik Baru', '🎙️ Vokal Studio', '🎧 Melodi Dipertahankan', `💠 ${formatRp(rhCost)} / generate`]
+          : ['🎼 Upload Audio', '🎨 Gaya Bebas', '📝 Lirik Custom', '🎙️ Vokal Studio', '⚡ Fast Render', `💠 ${formatRp(rhCost)} / generate`]
         ).map((badge) => (
           <span key={badge} className="px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium">{badge}</span>
         ))}
@@ -552,7 +555,7 @@ export default function SongCoverPage() {
             title="Ctrl+Enter untuk jalankan"
           >
             {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
-            {taskStatus === 'submitting' ? '🚀 Submitting...' : taskStatus === 'running' ? `⏳ Running... ${progress}%` : isYuE2 ? `🚀 Reimagine Lagu (${CREDIT_COST} cr)` : `🚀 Buat Song Cover (${CREDIT_COST} cr)`}
+            {taskStatus === 'submitting' ? '🚀 Submitting...' : taskStatus === 'running' ? `⏳ Running... ${progress}%` : isYuE2 ? `🚀 Reimagine Lagu (${formatRp(rhCost)})` : `🚀 Buat Song Cover (${formatRp(rhCost)})`}
           </Button>
         </Section>
 
