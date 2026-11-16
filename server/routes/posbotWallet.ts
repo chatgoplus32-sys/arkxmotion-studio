@@ -1,7 +1,8 @@
 import { Router, Response } from 'express'
 import db from '../db.js'
 import { authenticateToken, AuthRequest } from '../middleware/auth.js'
-import { POSBOT_MIN_TOPUP, POSBOT_TOPUP_MAX, POSBOT_TOPUP_PRESETS, getPosbotCharge } from '../../shared/pricing.js'
+import { POSBOT_MIN_TOPUP, POSBOT_TOPUP_MAX, POSBOT_TOPUP_PRESETS } from '../../shared/pricing.js'
+import { providerUnitCharge } from '../lib/providerPricing.js'
 import { keyEligibility } from '../lib/providerMasterKey.js'
 import { nextUniqueCode } from '../lib/qrisPayment.js'
 import { createBasunipayPayment } from '../lib/basunipay.js'
@@ -99,7 +100,7 @@ router.post('/deduct', authenticateToken, (req: AuthRequest, res: Response) => {
     // Tarif per model (Rp) ada di shared/pricing.ts — sama dengan yang dipakai
     // katalog UI, jadi angka yang ditampilkan tidak bisa berbeda dari yang dipotong.
     const units = Math.max(1, Math.min(50, Number(quantity) || 1))
-    const cost = getPosbotCharge(model) * units
+    const cost = providerUnitCharge('posbot', model) * units
 
     let row = db.prepare('SELECT balance FROM posbot_balance WHERE user_id = ?').get(userId) as { balance: number } | undefined
     if (!row) {

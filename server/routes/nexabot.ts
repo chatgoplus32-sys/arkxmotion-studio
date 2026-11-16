@@ -79,7 +79,7 @@ interface RelayHasil {
  * (lihat shared/nexabotProxy.ts), lalu teruskan status + body apa adanya ke
  * klien. Read-only (saldo/sesi/job/mode) boleh diulang; submit/generate tidak.
  *
- * Aksi yang MEMBUAT JOB (submit/generate/gpt-image) lebih dulu mengambil satu
+ * Aksi yang MEMBUAT JOB (submit/generate/gpt-image/image) lebih dulu mengambil satu
  * slot antrean per kredensial. Without that, dua member yang menekan generate
  * bersamaan berarti dua submit ke akun yang sama → upstream membalas 429 untuk
  * keduanya. Slot dipegang hanya selama satu percobaan (tidak ada retry di
@@ -247,7 +247,7 @@ async function relayUpstream(
           // Hanya rute yang memotong saldo yang boleh menjanjikan refund.
           error:
             'Akses NexaBot milik server ditolak penyedia (bukan kredensial Anda). ' +
-            (action === 'submit' || action === 'gpt-image' || action === 'nexadance'
+            (action === 'submit' || action === 'gpt-image' || action === 'nexadance' || action === 'image'
               ? 'Saldo yang terpotong dikembalikan otomatis — hubungi admin.'
               : 'Coba lagi nanti; bila berulang, hubungi admin.'),
         })
@@ -793,7 +793,7 @@ interface TiketHasil {
   reason?: string
 }
 
-function tiketServer(req: Request, auth: ResolvedUpstreamAuth, route: 'submit' | 'gpt-image' | 'nexadance'): TiketHasil {
+function tiketServer(req: Request, auth: ResolvedUpstreamAuth, route: 'submit' | 'gpt-image' | 'nexadance' | 'image'): TiketHasil {
   const sumber = auth.credential?.source
   if (sumber !== 'master' && sumber !== 'client-master') return { ok: true, usageId: null }
 
@@ -1365,6 +1365,128 @@ router.post('/gpt-image', async (req: Request, res: Response) => {
     if (!hasil.antreanPenuh) recordUpstreamUsage({
       req,
       route: 'gpt-image',
+      statusCode: hasil.status,
+      bodyText: hasil.text,
+      credential:
+        auth.kredensialKlien && hasil.credential === auth.credential
+          ? auth.kredensialKlien
+          : hasil.credential,
+    })
+  }
+})
+
+// ── Image Generator (dokumentasi publik nexabot.id, sinkron) ────────────────
+// Kontrak (per 16 Nov 2026):
+//   POST { prompt, model?, aspect?, resolution?, image_size?, reference_images? }
+//      → 200 { ok, kind:'image', model, url, credit_cost, credit_balance }
+//   Respons langsung berisi `url` akhir — tidak ada job_id/poll.
+//   Parameter per keluarga model (salah → 400 dari upstream):
+//   - nano_banana_2 / _lite / pro / nano: `aspect` (auto, 21:9, 16:9, 3:2, 4:3,
+//     5:4, 1:1, 4:5, 3:4, 2:3, 9:16; nano_banana_2 tambah 4:1, 1:4, 8:1, 1:8).
+//     `resolution` 0.5K/1K/2K/4K HANYA nano_banana_2 & nano_banana_pro.
+//   - gpt_image_2* / mai_image_*: `image_size` (landscape_4_3 [default],
+//     landscape_16_9, square_hd, square, portrait_4_3, portrait_16_9, auto).
+//   `reference_images`: data URI atau URL https, maksimum 10.
+//   Sinkron sampai gambar jadi (≈10–60 detik) — bukan job, jadi tidak ada
+//   penguncian lane setelah respons diterima.
+const NEXABOT_PREMIUM_IMAGE_MODELS = new Set([
+  'nano_banana_2', 'nano_banana_2_lite', 'nano_banana_pro', 'nano_banana',
+  'gpt_image_2', 'gpt_image_2_5_flare', 'gpt_image_2_5_sunburst',
+  'mai_image_26_flash', 'mai_image_26', 'mai_image_25', 'mai_image_25_pro',
+])
+const NANO_IMAGE_MODELS = new Set(['nano_banana_2', 'nano_banana_2_lite', 'nano_banana_pro', 'nano_banana'])
+const RESOLUTION_MODELS = new Set(['nano_banana_2', 'nano_banana_pro'])
+const NANO_ASPECTS_STANDARD = ['auto', '21:9', '16:9', '3:2', '4:3', '5:4', '1:1', '4:5', '3:4', '2:3', '9:16']
+const NANO2_EXTRA_ASPECTS = ['4:1', '1:4', '8:1', '1:8']
+const RESOLUTION_ENUM = new Set(['0.5K', '1K', '2K', '4K'])
+const IMAGE_SIZE_ENUM = new Set(['landscape_4_3', 'landscape_16_9', 'square_hd', 'square', 'portrait_4_3', 'portrait_16_9', 'auto'])
+
+router.post('/image', async (req: Request, res: Response) => {
+  const auth = resolveUpstreamAuth(req, { membuatJob: true })
+  if (auth.antrean) {
+    return res.status(429).json({
+      ok: false,
+      queued: true,
+      retry_after_seconds: 30,
+      error: auth.error,
+    })
+  }
+  if (Object.keys(auth.headers).length === 0) {
+    return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key header' })
+  }
+  const tiket = tiketServer(req, auth, 'image')
+  if (!tiket.ok) {
+    lepasReservasi(auth.accountId)
+    return res.status(tiket.status ?? 402).json({ ok: false, error: tiket.reason })
+  }
+
+  const body = (req.body ?? {}) as Record<string, unknown>
+  const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : ''
+  if (!prompt) {
+    lepasReservasi(auth.accountId)
+    return res.status(400).json({ ok: false, error: 'prompt wajib diisi' })
+  }
+  if (prompt.length > 3000) {
+    lepasReservasi(auth.accountId)
+    return res.status(400).json({ ok: false, error: 'prompt maksimum 3000 karakter' })
+  }
+
+  const modelRaw = typeof body.model === 'string' && body.model.trim() ? body.model.trim() : 'nano_banana_2'
+  if (!NEXABOT_PREMIUM_IMAGE_MODELS.has(modelRaw)) {
+    lepasReservasi(auth.accountId)
+    return res.status(400).json({
+      ok: false,
+      error: `Model gambar tidak valid: ${JSON.stringify(modelRaw)}. Pilih salah satu dari 11 model premium (nano_banana_2, nano_banana_2_lite, nano_banana_pro, nano_banana, gpt_image_2, gpt_image_2_5_flare, gpt_image_2_5_sunburst, mai_image_26_flash, mai_image_26, mai_image_25, mai_image_25_pro).`,
+    })
+  }
+
+  const isNano = NANO_IMAGE_MODELS.has(modelRaw)
+  const upstreamBody: Record<string, unknown> = { prompt, model: modelRaw }
+  if (isNano) {
+    const aspectEnum = new Set(
+      modelRaw === 'nano_banana_2' ? [...NANO_ASPECTS_STANDARD, ...NANO2_EXTRA_ASPECTS] : NANO_ASPECTS_STANDARD,
+    )
+    upstreamBody.aspect =
+      typeof body.aspect === 'string' && aspectEnum.has(body.aspect) ? body.aspect : (modelRaw === 'nano_banana_2' ? 'auto' : '1:1')
+    if (RESOLUTION_MODELS.has(modelRaw)) {
+      upstreamBody.resolution =
+        typeof body.resolution === 'string' && RESOLUTION_ENUM.has(body.resolution) ? body.resolution : '1K'
+    }
+  } else {
+    upstreamBody.image_size =
+      typeof body.image_size === 'string' && IMAGE_SIZE_ENUM.has(body.image_size) ? body.image_size : 'landscape_4_3'
+  }
+
+  // `references` (nama lama klien) juga diterima, dipetakan ke dokumentasi.
+  const rawRefs = Array.isArray(body.reference_images) ? body.reference_images : (Array.isArray(body.references) ? body.references : [])
+  const refs: string[] = []
+  for (const ref of rawRefs) {
+    if (refs.length >= 10) break
+    if (typeof ref !== 'string' || !ref) continue
+    const isDataUri = /^data:image\/(png|jpe?g|webp);base64,[a-z0-9+/=\r\n]+$/i.test(ref) && ref.length <= 15_000_000
+    const isHttps = /^https:\/\/\S+$/i.test(ref) && ref.length <= 4096
+    if (isDataUri || isHttps) refs.push(ref)
+  }
+  if (refs.length) upstreamBody.reference_images = refs
+
+  console.log(`[nexabot-local] POST /api/v1/image (model: ${modelRaw}, refs: ${refs.length})`)
+
+  // Sinkron: tidak ada job_id; respons berisi url akhir.
+  const hasil = await relayUpstream(res, 'image', `${NEXABOT_BASE}/api/v1/image`, {
+    method: 'POST',
+    headers: {
+      ...auth.headers,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    },
+    body: JSON.stringify(upstreamBody),
+  }, { kredensialServer: auth.credential?.source === 'master', credential: auth.credential, accountId: auth.accountId, cadangan: auth.cadangan })
+  lepasReservasi(auth.accountId)
+  if (hasil) {
+    if (tiket.usageId) selesaikanTiket(tiket.usageId, hasil.status, hasil.text)
+    if (!hasil.antreanPenuh) recordUpstreamUsage({
+      req,
+      route: 'image',
       statusCode: hasil.status,
       bodyText: hasil.text,
       credential:

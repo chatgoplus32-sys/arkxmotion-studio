@@ -1,7 +1,8 @@
 import { Router, Response } from 'express'
 import db from '../db.js'
 import { authenticateToken, AuthRequest } from '../middleware/auth.js'
-import { CREATEPULSE_MIN_TOPUP, getCreatepulseCharge } from '../../shared/pricing.js'
+import { CREATEPULSE_MIN_TOPUP } from '../../shared/pricing.js'
+import { providerUnitCharge } from '../lib/providerPricing.js'
 import { nextUniqueCode } from '../lib/qrisPayment.js'
 import { createBasunipayPayment } from '../lib/basunipay.js'
 
@@ -83,7 +84,7 @@ router.post('/deduct', authenticateToken, (req: AuthRequest, res: Response) => {
     // Tarif per model ada di shared/pricing.ts — sama dengan yang dipakai
     // endpoint publik /api/public/pricing, jadi angka yang ditampilkan ke user
     // tidak bisa berbeda dari yang benar-benar dipotong di sini.
-    const cost = getCreatepulseCharge(model)
+    const cost = providerUnitCharge('createpulse', model)
 
     let row = db.prepare('SELECT balance FROM createpulse_balance WHERE user_id = ?').get(userId) as { balance: number } | undefined
     if (!row) {

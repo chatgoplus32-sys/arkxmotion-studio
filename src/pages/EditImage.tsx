@@ -62,7 +62,20 @@ const RIVERSIDE_IMAGE_MODELS: ImageModelOption[] = [
   { value: 'rs-img:recraft-v3', label: 'Recraft V3', cr: 8, apiModel: 'recraft-v3' },
 ]
 
-// Katalog image nexabot.id (11 Nov 2026): semua 0,1 kredit/gambar.
+// Katalog image nexabot.id (16 Nov 2026, sinkron /api/v1/image — semua 0,1 kredit).
+const NB_NANO_MODELS: string[] = ['nano_banana_2', 'nano_banana_2_lite', 'nano_banana_pro', 'nano_banana']
+const NB_NANO_NANO2: string[] = ['nano_banana_2']
+const NB_ASPECTS_STANDARD = ['auto', '21:9', '16:9', '3:2', '4:3', '5:4', '1:1', '4:5', '3:4', '2:3', '9:16']
+const NB_ASPECTS_NANO2 = [...NB_ASPECTS_STANDARD, '4:1', '1:4', '8:1', '1:8']
+const NB_IMAGE_SIZES = [
+  { v: 'landscape_4_3', label: 'Landscape 4:3' },
+  { v: 'landscape_16_9', label: 'Landscape 16:9' },
+  { v: 'square_hd', label: 'Square HD' },
+  { v: 'square', label: 'Square' },
+  { v: 'portrait_4_3', label: 'Portrait 4:3' },
+  { v: 'portrait_16_9', label: 'Portrait 16:9' },
+  { v: 'auto', label: 'Auto' },
+]
 const NEXABOT_IMAGE_MODELS: ImageModelOption[] = [
   { value: 'nb:nano_banana_2', label: 'Nano Banana 2 (NexaBot)', cr: 0.1, apiModel: 'gpt-image', upstreamModel: 'nano_banana_2' },
   { value: 'nb:nano_banana_2_lite', label: 'Nano Banana 2 Lite (NexaBot)', cr: 0.1, apiModel: 'gpt-image', upstreamModel: 'nano_banana_2_lite' },
@@ -164,9 +177,6 @@ export default function EditImagePage() {
   const [provider, setProvider] = useState<EditProvider>('nexabot')
   const [imgUrl, setImgUrl] = useState<string | null>(null)
   const [imgFile, setImgFile] = useState<File | null>(null)
-  // GPT Image 2.5: rasio + hingga 10 gambar referensi (enum nexabot.id:
-  // 2 = 16:9, 1 = 1:1, 5 = 9:16 — urutan & nilai persis seperti halaman web).
-  const [gptAspect, setGptAspect] = useState<1 | 2 | 5>(2)
   // Seavi: rasio per model (string '9:16' dst), '' = default model.
   const [seaviAspect, setSeaviAspect] = useState('')
   // Freebeat: rasio via parameter `size` — hanya untuk model yang menerimanya.
@@ -175,10 +185,21 @@ export default function EditImagePage() {
   const [refUrls, setRefUrls] = useState<string[]>([])
   const refPickerRef = useRef<HTMLInputElement | null>(null)
   const [model, setModel] = useState(NEXABOT_IMAGE_MODELS[0].value)
+  // Parameter per keluarga model NexaBot (dokumentasi /api/v1/image):
+  // nano_banana_* → aspect (+ resolution untuk 2/pro); gpt_image_* & mai_image_*
+  // → image_size.
+  const [nbAspect, setNbAspect] = useState<string>('auto')
+  const [nbResolution, setNbResolution] = useState<string>('1K')
+  const [nbImageSize, setNbImageSize] = useState<string>('landscape_4_3')
   const handleModelChange = (v: string) => {
     setModel(v)
     setSeaviAspect('')
     setFreebeatAspect('')
+    const nm = NEXABOT_IMAGE_MODELS.find((m) => m.value === v)
+    const up = nm?.upstreamModel || ''
+    setNbAspect(up === 'nano_banana_2' ? 'auto' : '1:1')
+    setNbResolution('1K')
+    setNbImageSize('landscape_4_3')
   }
   const [prompt, setPrompt] = useState('')
   const [generating, setGenerating] = useState(false)
@@ -189,8 +210,14 @@ export default function EditImagePage() {
   const filePickerRef = useRef<HTMLInputElement | null>(null)
 
   const currentModel = ALL_MODELS[provider].find((m) => m.value === model) || ALL_MODELS[provider][0]
-  // Semua model NexaBot kecuali jalur lama `nb:img` memakai endpoint gpt-image.
+  // Semua model NexaBot kecuali jalur lama `nb:img` memakai endpoint premium
+  // `/api/v1/image` (sinkron, dokumentasi publik). Keluarga model menentukan
+  // parameter yang dikirim: nano_banana_* (aspect/resolution) vs gpt/mai (image_size).
   const isGpt25 = provider === 'nexabot' && model !== 'nb:img'
+  const nbUpstream = currentModel?.upstreamModel || ''
+  const nbIsNano = isGpt25 && NB_NANO_MODELS.includes(nbUpstream)
+  const nbHasResolution = nbIsNano && (nbUpstream === 'nano_banana_2' || nbUpstream === 'nano_banana_pro')
+  const nbAspectOptions = NB_NANO_NANO2.includes(nbUpstream) ? NB_ASPECTS_NANO2 : NB_ASPECTS_STANDARD
   const isSeavi = provider === 'seavi'
   const seaviSpec = isSeavi && currentModel ? SEAVI_IMAGE_MODELS[(currentModel as any).apiModel || ''] : undefined
   const seaviAspects = seaviSpec?.aspects || []
@@ -382,7 +409,7 @@ export default function EditImagePage() {
     addLog(`🚀 Mulai generate gambar`, 'info')
     addLog(`   Provider: ${PROVIDER_LABEL[provider]}`, 'debug')
     addLog(`   Model: ${currentModel.label}`, 'debug')
-    addLog(`   Mode: ${isSeavi ? (refFiles.length ? `Edit + ${refFiles.length} referensi` : 'Text to Image') : provider === 'nexabot' ? 'Text to Image' : isFreebeat ? (imgFile ? 'Edit Gambar' : 'Text to Image') : (imgFile ? 'Edit Gambar + Prompt' : 'Text to Image')}`, 'debug')
+    addLog(`   Mode: ${isSeavi ? (refFiles.length ? `Edit + ${refFiles.length} referensi` : 'Text to Image') : provider === 'nexabot' ? (refFiles.length ? `Text to Image + ${refFiles.length} referensi` : 'Text to Image') : isFreebeat ? (imgFile ? 'Edit Gambar' : 'Text to Image') : (imgFile ? 'Edit Gambar + Prompt' : 'Text to Image')}`, 'debug')
     addLog(`   Prompt: "${prompt.trim().slice(0, 80)}${prompt.trim().length > 80 ? '...' : ''}"`, 'debug')
 
     try {
@@ -493,13 +520,18 @@ export default function EditImagePage() {
   }
 
   const handleGenerateGpt25 = async () => {
-    const { submitNexabotGptImage, pollNexabotGptImage, downloadNexabotGptImage, compressForApi, runWithNexabotThrottleRetry } = await import('@/lib/nexabot')
+    // Jalur image premium NexaBot (dokumentasi publik, sinkron): respons langsung
+    // berisi url gambar — tidak ada job_id/poll/download terpisah.
+    const { generateNexabotImage, compressForApi, runWithNexabotThrottleRetry } = await import('@/lib/nexabot')
     const auth = await buildNexabotAuth()
 
-    const aspectLabel = gptAspect === 2 ? '16:9' : gptAspect === 1 ? '1:1' : '9:16'
-    addLog(`[1/3] 📤 Submit GPT Image 2.5 (rasio ${aspectLabel}${refFiles.length ? `, ${refFiles.length} referensi` : ''})...`, 'info')
+    const sizeLabel = nbIsNano
+      ? nbAspect
+      : NB_IMAGE_SIZES.find((s) => s.v === nbImageSize)?.label ?? nbImageSize
+    addLog(`[1/2] Submit ${currentModel.label} (${sizeLabel}${nbHasResolution ? `, ${nbResolution}` : ''}${refFiles.length ? `, ${refFiles.length} referensi` : ''})...`, 'info')
 
-    // Referensi dipadatkan dulu: 10 foto mentah bisa meledakkan body JSON 50MB.
+    // Referensi dipadatkan dulu: data URI (maks 10) dikirim langsung di body —
+    // dokumentasi /api/v1/image membolehkan data URI tanpa unggah terpisah.
     const references: string[] = []
     for (const f of refFiles) {
       const small = await compressForApi(f, 1024, 0.72)
@@ -511,69 +543,60 @@ export default function EditImagePage() {
       }))
     }
 
-    const submit = await runWithNexabotThrottleRetry(() => submitNexabotGptImage({
+    const result = await runWithNexabotThrottleRetry(() => generateNexabotImage({
       prompt: prompt.trim(),
-      aspect: gptAspect,
-      references,
       model: currentModel?.upstreamModel,
+      aspect: nbIsNano ? nbAspect : undefined,
+      resolution: nbHasResolution ? nbResolution : undefined,
+      imageSize: !nbIsNano ? nbImageSize : undefined,
+      references,
     }, auth), {
       onThrottle: (waitSeconds) => {
-        addLog(`⏳ Server gambar NexaBot sedang dibatasi upstream — menunggu ${waitSeconds}s lalu submit otomatis...`, 'warn')
+        addLog(`Antrean generate NexaBot penuh — menunggu ${waitSeconds}s lalu submit otomatis...`, 'warn')
       },
     })
-    if (!submit.ok || !submit.id) throw new Error(submit.error || 'Submit gagal')
-    addLog(`   ✓ Job ID: ${submit.id}`, 'success')
-    addLog(`   💰 Biaya: ${submit.cost ?? 0.1} kredit${submit.creditBalance != null ? ` — sisa saldo ${submit.creditBalance}` : ''}`, 'debug')
+    addLog(`   ✓ Gambar jadi (${result.model ?? currentModel?.upstreamModel}${result.fallback ? ` — upstream memilih Nano Banana Pro; requested: ${result.requestedModel}` : ''})`, 'success')
+    addLog(`   Biaya: ${result.creditCost ?? 0.1} kredit${result.creditBalance != null ? ` — sisa saldo ${result.creditBalance}` : ''}`, 'debug')
 
-    addLog('[2/3] ⏳ Polling status (maks 6 menit)...', 'info')
-    const job = await pollNexabotGptImage(submit.id, auth, (msg) => addLog(msg, 'debug'))
-    addLog(`   ✓ Status: ${job.status}`, 'success')
-
-    const images = (job.images || []).filter((im) => im && typeof im.url === 'string')
-    if (!images.length) throw new Error('Tidak ada gambar yang dihasilkan')
-
-    // URL hasil menuntut header auth — <img> tak bisa mengirimnya, jadi unduh
-    // dengan autentikasi dulu. Simpan di browser saja: blob URL tampil sesi
-    // ini, bytenya masuk IndexedDB lewat addResult dan dipulihkan tiap muat
-    // halaman (efek restore galeri) — tanpa R2/CDN.
-    addLog(`[3/3] 📥 Mengunduh ${images.length} gambar...`, 'info')
-    let tersimpan = 0
-    for (let i = 0; i < images.length; i++) {
-      const dl = await downloadNexabotGptImage(images[i].url, auth)
-      if (!dl.ok || !dl.blob) {
-        addLog(`   ⚠️ Gambar ${i + 1}/${images.length} gagal diunduh: ${dl.error}`, 'warn')
-        continue
+    // URL hasil bisa langsung dipakai (media publik). Unduh sebagai blob supaya
+    // bisa disimpan di IndexedDB galeri; kalau unduhan gagal, pakai URL remote.
+    let finalUrl = result.url
+    try {
+      const dl = await fetch(result.url)
+      if (dl.ok) {
+        const blob = await dl.blob()
+        finalUrl = URL.createObjectURL(blob)
+      } else {
+        addLog(`   Gagal mengunduh langsung (HTTP ${dl.status}) — memakai URL upstream`, 'warn')
       }
-      const finalUrl = URL.createObjectURL(dl.blob)
-
-      const item: GalleryItem = {
-        id: `editimg-${Date.now()}-${i}`,
-        url: finalUrl,
-        prompt: prompt.trim(),
-        provider: 'nexabot',
-        model: currentModel.label,
-        createdAt: new Date().toISOString(),
-      }
-      setGallery((prev) => {
-        const updated = [item, ...prev]
-        saveGallery(updated)
-        return updated
-      })
-      addResult({
-        id: item.id,
-        url: item.url,
-        prompt: item.prompt,
-        date: item.createdAt,
-        page: 'edit-image',
-        provider: 'nexabot',
-        model: item.model,
-      })
-      addLog(`   ✓ Gambar ${i + 1}/${images.length} disimpan di browser ✓`, 'success')
-      tersimpan++
+    } catch {
+      addLog('   Gagal mengunduh langsung — memakai URL upstream', 'warn')
     }
-    if (!tersimpan) throw new Error('Semua gambar gagal diunduh dari NexaBot')
+
+    const item: GalleryItem = {
+      id: `editimg-${Date.now()}`,
+      url: finalUrl,
+      prompt: prompt.trim(),
+      provider: 'nexabot',
+      model: currentModel.label,
+      createdAt: new Date().toISOString(),
+    }
+    setGallery((prev) => {
+      const updated = [item, ...prev]
+      saveGallery(updated)
+      return updated
+    })
+    addResult({
+      id: item.id,
+      url: item.url,
+      prompt: item.prompt,
+      date: item.createdAt,
+      page: 'edit-image',
+      provider: 'nexabot',
+      model: item.model,
+    })
     window.dispatchEvent(new Event('arkxmotion-tasks-changed'))
-    addToast(tersimpan > 1 ? `GPT Image 2.5 selesai — ${tersimpan} gambar!` : 'GPT Image 2.5 selesai!', 'success')
+    addToast('Generate gambar selesai!', 'success')
   }
 
   /** Unggah file ke catbox via relay server (mengikuti pola uploadToCatbox lib roboneo). */
@@ -1043,19 +1066,58 @@ export default function EditImagePage() {
                   </div>
                 )}
 
-                {isGpt25 && (
+                {isGpt25 && nbIsNano && (
+                  <>
+                    <div className="space-y-2">
+                      <Label>Rasio</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {nbAspectOptions.map((v) => (
+                          <button
+                            key={v}
+                            type="button"
+                            disabled={generating}
+                            onClick={() => setNbAspect(v)}
+                            className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-all ${nbAspect === v ? 'border-primary bg-primary/10 text-foreground' : 'border-border text-muted-foreground hover:bg-accent/40'}`}
+                          >
+                            {v}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {nbHasResolution && (
+                      <div className="space-y-2">
+                        <Label>Resolusi</Label>
+                        <div className="flex flex-wrap gap-2">
+                          {(['0.5K', '1K', '2K', '4K'] as const).map((v) => (
+                            <button
+                              key={v}
+                              type="button"
+                              disabled={generating}
+                              onClick={() => setNbResolution(v)}
+                              className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-all ${nbResolution === v ? 'border-primary bg-primary/10 text-foreground' : 'border-border text-muted-foreground hover:bg-accent/40'}`}
+                            >
+                              {v}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {isGpt25 && !nbIsNano && (
                   <div className="space-y-2">
-                    <Label>Rasio</Label>
-                    <div className="flex gap-2">
-                      {([2, 1, 5] as const).map((v) => (
+                    <Label>Ukuran gambar</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {NB_IMAGE_SIZES.map(({ v, label }) => (
                         <button
                           key={v}
                           type="button"
                           disabled={generating}
-                          onClick={() => setGptAspect(v)}
-                          className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-all ${gptAspect === v ? 'border-primary bg-primary/10 text-foreground' : 'border-border text-muted-foreground hover:bg-accent/40'}`}
+                          onClick={() => setNbImageSize(v)}
+                          className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-all ${nbImageSize === v ? 'border-primary bg-primary/10 text-foreground' : 'border-border text-muted-foreground hover:bg-accent/40'}`}
                         >
-                          {v === 2 ? '16:9' : v === 1 ? '1:1' : '9:16'}
+                          {label}
                         </button>
                       ))}
                     </div>
@@ -1140,7 +1202,7 @@ export default function EditImagePage() {
           <div className="lg:col-span-2 space-y-5">
             <Section
               title={isGpt25 ? '🖼️ Gambar Referensi (Opsional)' : provider === 'nexabot' || isFreebeat ? '🖼️ Gambar (Opsional)' : '🖼️ Gambar Input'}
-              sub={isGpt25 ? 'Hingga 10 gambar — acuan karakter & gaya untuk GPT Image 2.5' : provider === 'nexabot' ? 'NexaBot hanya mendukung Text to Image — untuk edit gambar pakai Riverside / RunningHub' : isFreebeat ? 'Upload 1 gambar untuk mode edit — kosongkan untuk Text to Image' : 'Upload 1 gambar untuk diedit'}
+              sub={isGpt25 ? 'Hingga 10 gambar — acuan karakter & gaya untuk image generator premium NexaBot' : provider === 'nexabot' ? 'Hingga 10 gambar — model premium NexaBot menerima referensi langsung' : isFreebeat ? 'Upload 1 gambar untuk mode edit — kosongkan untuk Text to Image' : 'Upload 1 gambar untuk diedit'}
               right={
                 <button
                   onClick={() => (isGpt25 ? refPickerRef.current : filePickerRef.current)?.click()}

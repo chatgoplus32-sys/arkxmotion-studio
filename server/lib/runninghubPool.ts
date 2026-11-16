@@ -165,6 +165,29 @@ export function rhPoolDelete(id: number): boolean {
   return tx()
 }
 
+/** Hapus SEMUA token pool (bulk). Mengembalikan jumlah yang dihapus. */
+export function rhPoolDeleteAll(): number {
+  const tx = db.transaction(() => {
+    const res = db.prepare('DELETE FROM runninghub_master_token').run()
+    db.prepare('DELETE FROM runninghub_task_token').run()
+    return res.changes
+  })
+  return tx()
+}
+
+/** Hapus hanya token yang ditolak permanen (bulk). Mengembalikan jumlah dihapus. */
+export function rhPoolDeleteRejected(): number {
+  const tx = db.transaction(() => {
+    const ids = (db.prepare("SELECT id FROM runninghub_master_token WHERE status = 'rejected'").all() as { id: number }[]).map((r) => r.id)
+    for (const id of ids) {
+      db.prepare('DELETE FROM runninghub_master_token WHERE id = ?').run(id)
+      db.prepare('DELETE FROM runninghub_task_token WHERE token_id = ?').run(id)
+    }
+    return ids.length
+  })
+  return tx()
+}
+
 export function rhPoolSetLabel(id: number, label: string): boolean {
   const res = db.prepare('UPDATE runninghub_master_token SET label = ?, updated_at = ? WHERE id = ?')
     .run(String(label || '').trim().slice(0, 80), Date.now(), id)

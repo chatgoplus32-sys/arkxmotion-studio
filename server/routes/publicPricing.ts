@@ -7,31 +7,35 @@
 import { Router, Response } from 'express'
 import {
   CREATEPULSE_MIN_TOPUP,
-  CREATEPULSE_DEFAULT_PRICE,
-  CREATEPULSE_MODEL_PRICES,
   NEXABOT_MIN_TOPUP,
   NEXABOT_UNLIMITED_SLUG,
   SEAVI_MIN_TOPUP,
   SEAVI_PACKAGES,
   SEAVI_TOKEN_PRICE,
-  SEAVI_DEFAULT_CHARGE,
-  SEAVI_MODEL_TOKENS,
   POSBOT_MIN_TOPUP,
   POSBOT_TOPUP_MAX,
   POSBOT_TOPUP_PRESETS,
-  POSBOT_DEFAULT_CHARGE,
-  POSBOT_MODEL_PRICES,
-  getCreatepulsePriceRange,
-  getPosbotPriceRange,
+  RUNNINGHUB_MIN_TOPUP,
 } from '../../shared/pricing.js'
 import { getNexabotPricing } from './nexabotWallet.js'
+import { getProviderPricing } from '../lib/providerPricing.js'
 
 const router = Router()
 
 /** Bentuk respons yang sama dipakai versi Vercel (api/public/pricing.ts). */
+const rentang = (values: number[]) => ({ min: Math.min(...values), max: Math.max(...values) })
+
 export function buildPublicPricing() {
   const nexabot = getNexabotPricing()
-  const createpulse = getCreatepulsePriceRange()
+  const seavi = getProviderPricing('seavi')
+  const posbot = getProviderPricing('posbot')
+  const runninghub = getProviderPricing('runninghub')
+  const createpulse = getProviderPricing('createpulse')
+
+  const createpulseModels = { ...createpulse.catalog }
+  const posbotModels = { ...posbot.catalog }
+  const createpulseRange = rentang([createpulse.default ?? 1, ...Object.values(createpulseModels)])
+  const posbotRange = rentang([posbot.default ?? 1, ...Object.values(posbotModels)])
 
   return {
     ok: true,
@@ -55,26 +59,31 @@ export function buildPublicPricing() {
       createpulse: {
         name: 'CreatePulse',
         min_topup: CREATEPULSE_MIN_TOPUP,
-        default_price: CREATEPULSE_DEFAULT_PRICE,
-        price_range: createpulse,
-        models: { ...CREATEPULSE_MODEL_PRICES },
+        default_price: createpulse.default,
+        price_range: createpulseRange,
+        models: createpulseModels,
       },
       seavi: {
         name: 'Seavi',
         min_topup: SEAVI_MIN_TOPUP,
         price_per_token: SEAVI_TOKEN_PRICE,
-        default_charge: SEAVI_DEFAULT_CHARGE,
+        default_charge: seavi.default,
         packages: SEAVI_PACKAGES.map((p) => ({ ...p })),
-        models: { ...SEAVI_MODEL_TOKENS },
+        models: { ...seavi.catalog },
       },
       posbot: {
         name: 'PosBot',
         min_topup: POSBOT_MIN_TOPUP,
         max_topup: POSBOT_TOPUP_MAX,
-        default_charge: POSBOT_DEFAULT_CHARGE,
+        default_charge: posbot.default,
         presets: [...POSBOT_TOPUP_PRESETS],
-        price_range: getPosbotPriceRange(),
-        models: { ...POSBOT_MODEL_PRICES },
+        price_range: posbotRange,
+        models: posbotModels,
+      },
+      runninghub: {
+        name: 'RunningHub',
+        min_topup: RUNNINGHUB_MIN_TOPUP,
+        flat_generate: runninghub.flat,
       },
     },
   }

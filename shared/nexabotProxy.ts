@@ -29,6 +29,7 @@ export type NexabotProxyAction =
   | 'generate'
   | 'nexadance'
   | 'gpt-image'
+  | 'image'
   | 'download'
   | 'generic'
 
@@ -72,6 +73,10 @@ export const NEXABOT_PROXY_POLICY: Record<NexabotProxyAction, NexabotProxyPolicy
   // GPT Image 2.5 (nexabot.id/gpt-image): sekali jalan seperti submit —
   // respons hilang berarti job mungkin sudah terbentuk dan 0,1 cr terpotong.
   'gpt-image': { timeoutMs: 180_000, attempts: 1, label: 'generate GPT Image' },
+  // /api/v1/image (dokumentasi publik, sinkron): menunggu sampai gambar jadi
+  // (≈10–60 detik, tulis HTTP timeout ≥ 5 menit). Satu percobaan — request
+  // sudah memotong 0,1 cr di sisi upstream saat gambar jadi.
+  'image': { timeoutMs: 300_000, attempts: 1, label: 'generate gambar' },
   download: { timeoutMs: 180_000, attempts: 1, label: 'unduh hasil' },
   // Jalur cadangan (path yang tidak dikenali): tetap diberi timeout supaya tidak
   // menggantung tanpa batas, tapi tanpa retry karena isinya tidak diketahui.
@@ -745,7 +750,7 @@ export function nexabotErrorCause(err: any): string {
  * mungkin sudah terbentuk, jadi jangan menyarankan "coba lagi" begitu saja.
  */
 export function isNexabotNonIdempotentAction(action: NexabotProxyAction): boolean {
-  return action === 'submit' || action === 'generate' || action === 'gpt-image' || action === 'nexadance'
+  return action === 'submit' || action === 'generate' || action === 'gpt-image' || action === 'nexadance' || action === 'image'
 }
 
 /**
@@ -760,7 +765,7 @@ export function nexabotErrorAdvice(action: NexabotProxyAction): string {
   if (!isNexabotNonIdempotentAction(action)) return 'coba lagi'
   // Biaya per aksi (update 10 Nov 2026): GPT Image 0,1 cr, NexaDance 3.0 0,2 cr,
   // Omni Flash 1.2 0,3 cr/video, sisanya (non-video) 0,15 cr.
-  const biaya = action === 'gpt-image' ? '0,1 cr'
+  const biaya = action === 'gpt-image' || action === 'image' ? '0,1 cr'
     : action === 'nexadance' ? '0,2 cr'
     : action === 'submit' ? '0,3 cr/video Omni Flash 1.2 (0,15 cr non-video)'
     : '0,15 cr'

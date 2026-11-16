@@ -1,7 +1,8 @@
 import { Router, Response } from 'express'
 import db from '../db.js'
 import { authenticateToken, AuthRequest } from '../middleware/auth.js'
-import { SEAVI_MIN_TOPUP, SEAVI_PACKAGES, SEAVI_TOKEN_PRICE, findSeaviPackage, getSeaviCharge } from '../../shared/pricing.js'
+import { SEAVI_MIN_TOPUP, SEAVI_PACKAGES, SEAVI_TOKEN_PRICE, findSeaviPackage } from '../../shared/pricing.js'
+import { providerUnitCharge } from '../lib/providerPricing.js'
 import { keyEligibility } from '../lib/providerMasterKey.js'
 import { nextUniqueCode } from '../lib/qrisPayment.js'
 import { createBasunipayPayment } from '../lib/basunipay.js'
@@ -98,7 +99,7 @@ router.post('/deduct', authenticateToken, (req: AuthRequest, res: Response) => {
     // dipakai endpoint publik /api/public/pricing, jadi angka yang
     // ditampilkan ke user tidak bisa berbeda dari yang dipotong di sini.
     const units = Math.max(1, Math.min(50, Number(quantity) || 1))
-    const cost = getSeaviCharge(model) * units
+    const cost = providerUnitCharge('seavi', model) * units
 
     let row = db.prepare('SELECT balance FROM seavi_balance WHERE user_id = ?').get(userId) as { balance: number } | undefined
     if (!row) {

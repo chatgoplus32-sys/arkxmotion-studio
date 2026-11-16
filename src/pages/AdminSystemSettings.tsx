@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
@@ -16,6 +16,8 @@ import {
   Cookie,
   Activity,
   Gift,
+  Search,
+  Upload,
 } from 'lucide-react'
 
 interface NexabotPackage {
@@ -59,6 +61,49 @@ const toPackageForm = (packages?: NexabotPackage[]): NexabotPackageForm[] =>
     price: String(p.price),
     days: String(p.days),
   }))
+
+type PpProviderId = 'seavi' | 'posbot' | 'runninghub' | 'createpulse'
+
+/** Cermin respons `GET /api/admin/provider-pricing` (lib/providerPricing.ts). */
+interface PpEffective {
+  provider: PpProviderId
+  kind: 'model' | 'flat'
+  flat: number | null
+  default: number | null
+  models: Record<string, number>
+  catalog: Record<string, number>
+  limits: { min: number; max: number }
+}
+
+interface PpFormState {
+  flat: string
+  default: string
+  models: Record<string, string>
+}
+
+const PP_PROVIDERS: { id: PpProviderId; name: string; desc: string; unit: string; flat?: boolean }[] = [
+  { id: 'seavi', name: 'Seavi', desc: 'Token per generate', unit: 'token' },
+  { id: 'posbot', name: 'PosBot', desc: 'Tarif per generate', unit: 'Rp' },
+  { id: 'runninghub', name: 'RunningHub', desc: 'Tarif flat per generate (untuk semua fitur)', unit: 'Rp', flat: true },
+  { id: 'createpulse', name: 'CreatePulse', desc: 'Tarif per generate', unit: 'Rp' },
+]
+
+const PP_FORM_KOSONG: PpFormState = { flat: '', default: '', models: {} }
+
+const ppFormAwal: Record<PpProviderId, PpFormState> = {
+  seavi: { ...PP_FORM_KOSONG },
+  posbot: { ...PP_FORM_KOSONG },
+  runninghub: { ...PP_FORM_KOSONG },
+  createpulse: { ...PP_FORM_KOSONG },
+}
+
+const ppFormDari = (e?: PpEffective): PpFormState => e
+  ? {
+      flat: e.flat != null ? String(e.flat) : '',
+      default: e.default != null ? String(e.default) : '',
+      models: Object.fromEntries(Object.entries(e.catalog).map(([m, v]) => [m, String(v)])),
+    }
+  : { ...PP_FORM_KOSONG }
 
 interface AppSettings {
   [key: string]: string
@@ -693,6 +738,12 @@ function RunningHubPoolSection({
   const [checks, setChecks] = useState<Record<number, RhCheckView>>({})
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editLabel, setEditLabel] = useState('')
+  const [query, setQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'cooldown' | 'rejected'>('all')
+  const [page, setPage] = useState(0)
+  const [clearingAll, setClearingAll] = useState(false)
+  const [clearingRejected, setClearingRejected] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const auth = useCallback(() => ({ Authorization: `Bearer ${token}` }), [token])
 
@@ -715,6 +766,90 @@ function RunningHubPoolSection({
   }, [token, auth])
 
   useEffect(() => { fetchPool() }, [fetchPool])
+
+  const PAGE_SIZE = 25
+  const q = query.trim().toLowerCase()
+  const filteredTokens = tokens.filter((t) => {
+    if (statusFilter !== 'all' && t.status !== statusFilter) return false
+    if (!q) return true
+    return [t.label, t.account, t.kind === 'jwt' ? 'jwt' : 'api key']
+      .join(' ')
+      .toLowerCase()
+      .includes(q)
+  })
+  const totalPages = Math.max(1, Math.ceil(filteredTokens.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages - 1)
+  const pageTokens = filteredTokens.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE)
+
+  useEffect(() => { setPage(0) }, [query, statusFilter])
+
+  const handleBulkFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.currentTarget.value = ''
+    if (!file) return
+    if (file.size > 10 * 1024 * 1024) {
+      addToast('File terlalu besar (maks 10 MB)', 'warning')
+      return
+    }
+    try {
+      const text = await file.text()
+      setBulk((prev) => (prev.trim() ? `${prev.trim()}\n${text}` : text))
+      addToast(`Isi "${file.name}" dimuat ke kolom — cek lalu klik Tambah Token`, 'info')
+    } catch {
+      addToast('Gagal membaca file', 'error')
+    }
+  }
+
+  const handleClearAll = async () => {
+    if (!token || clearingAll) return
+    const n = tokens.length
+    if (n === 0) { addToast('Pool sudah kosong', 'info'); return }
+    if (!window.confirm(`Hapus SEMUA ${n} token dari pool?`)) return
+    if (!window.confirm('Konfirmasi terakhir: semua token dihapus permanen dan tidak bisa dikembalikan. Lanjutkan?')) return
+    setClearingAll(true)
+    try {
+      const res = await fetch('/api/admin/runninghub/pool/clear-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...auth() },
+        body: JSON.stringify({ confirm: 'HAPUS-SEMUA-TOKEN' }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        addToast(`${data.deleted ?? n} token dihapus`, 'success')
+        setChecks({})
+        apply(data)
+      } else {
+        addToast(data.error || 'Gagal menghapus semua token', 'error')
+      }
+    } catch {
+      addToast('Gagal menghapus semua token', 'error')
+    } finally {
+      setClearingAll(false)
+    }
+  }
+
+  const handleClearRejected = async () => {
+    if (!token || clearingRejected) return
+    const n = tokens.filter((t) => t.status === 'rejected').length
+    if (n === 0) { addToast('Tidak ada token ditolak', 'info'); return }
+    if (!window.confirm(`Hapus ${n} token yang ditolak permanen?`)) return
+    setClearingRejected(true)
+    try {
+      const res = await fetch('/api/admin/runninghub/pool/clear-rejected', { method: 'POST', headers: auth() })
+      const data = await res.json()
+      if (res.ok) {
+        addToast(`${data.deleted ?? n} token ditolak dihapus`, 'success')
+        setChecks({})
+        apply(data)
+      } else {
+        addToast(data.error || 'Gagal menghapus token ditolak', 'error')
+      }
+    } catch {
+      addToast('Gagal menghapus token ditolak', 'error')
+    } finally {
+      setClearingRejected(false)
+    }
+  }
 
   const handleAdd = async () => {
     if (!token || saving || !bulk.trim()) return
@@ -823,7 +958,7 @@ function RunningHubPoolSection({
       // Klaim pool berjalan di latar belakang server (jeda 2 detik/token → bisa
       // puluhan menit). Pantau sampai selesai, batas poll mengikuti jumlah token.
       let progress = (data.claimProgress || null) as RhClaimProgress | null
-      const maxPolls = Math.ceil(((progress?.total || 0) * 2.5 + 180) / 2)
+      const maxPolls = Math.ceil(((progress?.total || 0) * 4 + 300) / 2)
       for (let i = 0; i < maxPolls && progress?.running; i++) {
         await new Promise((resolve) => setTimeout(resolve, 2000))
         const poll = await fetch('/api/admin/runninghub/pool', { headers: auth() })
@@ -947,6 +1082,41 @@ function RunningHubPoolSection({
             Belum ada token master. Tempel access token / API key RunningHub di bawah supaya member bisa generate memakai saldo.
           </div>
         ) : (
+          <>
+          {tokens.length > 0 && (
+            <div className="mt-3 flex flex-wrap items-center gap-1.5">
+              <div className="relative min-w-[160px] flex-1">
+                <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Cari label / akun…"
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="w-full rounded-lg border border-border bg-card py-1.5 pl-7 pr-2 text-xs"
+                />
+              </div>
+              <span className="flex flex-wrap items-center gap-1">
+                {([
+                  ['all', 'Semua', tokens.length],
+                  ['active', 'Siap', tokens.filter((t) => t.status === 'active').length],
+                  ['cooldown', 'Cooldown', tokens.filter((t) => t.status === 'cooldown' && t.cooldown_until > Date.now()).length],
+                  ['rejected', 'Ditolak', tokens.filter((t) => t.status === 'rejected').length],
+                ] as Array<[typeof statusFilter, string, number]>).map(([id, label, n]) => (
+                  <button
+                    key={id}
+                    onClick={() => setStatusFilter(id)}
+                    className={`rounded-full border px-2 py-1 text-[10px] transition-colors ${statusFilter === id ? 'border-primary bg-primary/15 text-primary' : 'border-border bg-card text-muted-foreground hover:text-foreground'}`}
+                  >
+                    {label} <b className="font-mono">{n}</b>
+                  </button>
+                ))}
+              </span>
+              <span className="w-full text-right text-[10px] text-muted-foreground">
+                {filteredTokens.length} token · halaman {safePage + 1}/{totalPages}
+              </span>
+            </div>
+          )}
           <ul className="mt-3 divide-y divide-border/60 rounded-lg border border-border">
             {summary?.envConfigured && (
               <li className="px-3 py-2.5">
@@ -963,9 +1133,9 @@ function RunningHubPoolSection({
                 {checkBanner(0)}
               </li>
             )}
-            {tokens.map((t) => (
-              <li key={t.id} className="px-3 py-2.5">
-                <div className="flex flex-wrap items-center gap-2">
+            {pageTokens.map((t) => (
+              <li key={t.id} className="px-2.5 py-1.5">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   {editingId === t.id ? (
                     <span className="flex items-center gap-1.5">
                       <input
@@ -979,50 +1149,74 @@ function RunningHubPoolSection({
                       <Button size="sm" variant="outline" onClick={() => setEditingId(null)}>Batal</Button>
                     </span>
                   ) : (
-                    <span className="text-sm font-medium">{t.label}</span>
+                    <span className="text-[12px] font-medium">{t.label}</span>
                   )}
-                  <span className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-2 py-0.5 text-[10px] text-muted-foreground">
+                  <span className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-1.5 py-0.5 text-[9px] text-muted-foreground">
                     {t.kind === 'jwt' ? <Zap className="h-3 w-3" /> : <KeyRound className="h-3 w-3" />}
-                    {t.kind === 'jwt' ? 'JWT' : 'API key'}
+                    {t.kind === 'jwt' ? 'JWT' : 'Key'}
                   </span>
                   <span className="font-mono text-[10px] text-muted-foreground">{t.account}</span>
                   {statusBadge(t)}
-                  <span className="ml-auto flex items-center gap-1.5">
-                    <Button size="sm" variant="outline" onClick={() => handleCheck(t.id)} disabled={busy}>
-                      <Activity className={`h-3.5 w-3.5 mr-1.5 ${checkingId === t.id ? 'animate-pulse' : ''}`} />
-                      {checkingId === t.id ? 'Memeriksa...' : 'Cek'}
+                  <span className="ml-auto flex items-center gap-1">
+                    <Button size="sm" variant="outline" className="!px-2 !py-1 !text-[10px]" onClick={() => handleCheck(t.id)} disabled={busy} title="Cek token">
+                      <Activity className={`h-3 w-3 mr-1 ${checkingId === t.id ? 'animate-pulse' : ''}`} />
+                      {checkingId === t.id ? '...' : 'Cek'}
                     </Button>
                     {editingId !== t.id && (
-                      <Button size="sm" variant="outline" onClick={() => { setEditingId(t.id); setEditLabel(t.label) }} disabled={busy}>
+                      <Button size="sm" variant="outline" className="!px-2 !py-1 !text-[10px]" onClick={() => { setEditingId(t.id); setEditLabel(t.label) }} disabled={busy} title="Ubah label">
                         Label
                       </Button>
                     )}
-                    <Button size="sm" variant="outline" onClick={() => handleDelete(t)} disabled={busy}>
-                      <Trash2 className="h-3.5 w-3.5 mr-1.5" />
-                      {deletingId === t.id ? 'Menghapus...' : 'Hapus'}
+                    <Button size="sm" variant="outline" className="!px-2 !py-1 !text-[10px]" onClick={() => handleDelete(t)} disabled={busy} title="Hapus token">
+                      <Trash2 className="h-3 w-3 mr-1" />
+                      {deletingId === t.id ? '...' : 'Hapus'}
                     </Button>
                   </span>
                 </div>
 
-                <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-                  <span>
-                    Poin: <b className="text-foreground font-mono">{t.points_balance != null ? fmtPts(t.points_balance) : '—'}</b>
-                    {t.points_checked_at && <span className="opacity-70"> · dicek {cekLalu(t.points_checked_at)}</span>}
-                  </span>
-                  {t.kind === 'jwt' && <span>Klaim harian: <b className="text-foreground">{t.last_claim_day || '—'}</b></span>}
-                  {t.last_used_at && <span>Terakhir dipakai: {new Date(t.last_used_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}</span>}
+                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
+                  <span>Poin <b className="text-foreground font-mono">{t.points_balance != null ? fmtPts(t.points_balance) : '—'}</b>{t.points_checked_at && <span className="opacity-70"> · {cekLalu(t.points_checked_at)}</span>}</span>
+                  {t.kind === 'jwt' && <span>Klaim <b className="text-foreground">{t.last_claim_day || '—'}</b></span>}
+                  {t.last_used_at && <span>Dipakai {cekLalu(t.last_used_at)}</span>}
                 </div>
                 {t.last_error && (
-                  <div className="mt-1 text-[11px] text-red-400/90 leading-relaxed">{t.last_error}</div>
+                  <div className="mt-0.5 truncate text-[10px] text-red-400/90" title={t.last_error}>{t.last_error}</div>
                 )}
                 {checkBanner(t.id)}
               </li>
             ))}
           </ul>
+          </>
+        )}
+        {totalPages > 1 && (
+          <div className="mt-2 flex items-center justify-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={safePage === 0}>
+              Sebelumnya
+            </Button>
+            <span className="text-[11px] text-muted-foreground">{safePage + 1} / {totalPages}</span>
+            <Button size="sm" variant="outline" onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))} disabled={safePage >= totalPages - 1}>
+              Berikutnya
+            </Button>
+          </div>
         )}
 
         <div className="mt-4 border-t border-border/60 pt-3">
-          <div className="text-[12px] font-medium">Tambah token (bulk)</div>
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-[12px] font-medium">Tambah token (bulk)</div>
+            <div className="flex items-center gap-1.5">
+              <Button size="sm" variant="outline" className="!py-1.5 !text-[11px]" onClick={() => fileInputRef.current?.click()}>
+                <Upload className="h-3.5 w-3.5 mr-1.5" />
+                Upload file (.txt)
+              </Button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".txt,.csv,.log,text/plain"
+                className="hidden"
+                onChange={handleBulkFile}
+              />
+            </div>
+          </div>
           <textarea
             value={bulk}
             onChange={(e) => setBulk(e.target.value)}
@@ -1057,6 +1251,19 @@ function RunningHubPoolSection({
               <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-pulse' : ''}`} />
               Muat Ulang
             </Button>
+            <Button size="sm" variant="outline" onClick={handleClearRejected} disabled={busy || clearingRejected || tokens.filter((t) => t.status === 'rejected').length === 0}>
+              <Trash2 className={`h-4 w-4 mr-2 ${clearingRejected ? 'animate-pulse' : ''}`} />
+              {clearingRejected ? 'Menghapus...' : `Hapus Ditolak (${tokens.filter((t) => t.status === 'rejected').length})`}
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleClearAll}
+              disabled={clearingAll || tokens.length === 0}
+              className="bg-red-600 text-white hover:bg-red-700 border-transparent"
+            >
+              <Trash2 className={`h-4 w-4 mr-2 ${clearingAll ? 'animate-pulse' : ''}`} />
+              {clearingAll ? 'Menghapus semua...' : `Hapus Semua (${tokens.length})`}
+            </Button>
           </div>
           {claimProgress && (claimProgress.running || claimProgress.processed > 0) && (() => {
             const p = claimProgress
@@ -1082,8 +1289,10 @@ function RunningHubPoolSection({
             )
           })()}
           <div className="mt-2 text-[11px] text-muted-foreground leading-relaxed">
-            Duplikat dan token kedaluwarsa otomatis dilewati. Maksimal {summary?.max ?? 1000} token. Token yang
-            ditolak permanen (invalid/dicabut) tidak dipakai lagi sampai dihapus dan diganti baru.
+            Duplikat dan token kedaluwarsa otomatis dilewati. Maksimal {summary?.max ?? 1000} token. Klaim poin
+            berjalan di latar belakang server (±2–4 detik per token — 1.000 token ± 40–70 menit), tahan restart:
+            daftar "Klaim" tetap utuh walau halaman ditutup. Token yang ditolak permanen (invalid/dicabut) tidak
+            dipakai lagi sampai dihapus dan diganti baru.
           </div>
         </div>
       </div>
@@ -1114,6 +1323,13 @@ export default function AdminSystemSettings() {
   // Kalau muat harga gagal, simpan DIBEKUKAN: form mungkin memegang angka
   // lama/fallback, dan menyimpannya akan menimpa harga yang justru berjalan.
   const [nbLoadError, setNbLoadError] = useState<string | null>(null)
+  // Harga semua provider (Seavi/PosBot/RunningHub/CreatePulse): disimpan di
+  // app_settings, bisa diubah di sini tanpa deploy. Kejatuhan default = katalog
+  // kode di shared/pricing.ts.
+  const [ppData, setPpData] = useState<Record<PpProviderId, PpEffective> | null>(null)
+  const [ppForms, setPpForms] = useState<Record<PpProviderId, PpFormState>>(ppFormAwal)
+  const [ppSaving, setPpSaving] = useState<PpProviderId | null>(null)
+  const [ppLoadError, setPpLoadError] = useState<string | null>(null)
   // Antrean submit NexaBot (khusus admin): batas submit bersamaan per akun
   // pool, ditampilkan berdampingan dengan jumlah akun supaya admin tidak
   // mengira angka itu menambah job yang benar-benar paralel.
@@ -1218,6 +1434,75 @@ export default function AdminSystemSettings() {
       addToast('Gagal menyimpan antrean submit NexaBot', 'error')
     } finally {
       setNbQueueSaving(false)
+    }
+  }
+
+  const fetchProviderPricing = useCallback(async () => {
+    if (!token) return
+    try {
+      const res = await fetch('/api/admin/provider-pricing', { headers: { Authorization: `Bearer ${token}` } })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      const providers = data.providers as Record<PpProviderId, PpEffective>
+      setPpData(providers)
+      setPpForms(() => {
+        const next = { ...ppFormAwal }
+        for (const p of PP_PROVIDERS) next[p.id] = ppFormDari(providers[p.id])
+        return next
+      })
+      setPpLoadError(null)
+    } catch (err: any) {
+      setPpLoadError(String(err?.message || err).slice(0, 120))
+    }
+  }, [token])
+
+  useEffect(() => { fetchProviderPricing() }, [fetchProviderPricing])
+
+  const handleSavePp = async (provider: PpProviderId) => {
+    setPpSaving(provider)
+    try {
+      const f = ppForms[provider]
+      const body: Record<string, unknown> = { provider }
+      if (f.flat !== '' && Number.isFinite(Number(f.flat))) body.flat = Number(f.flat)
+      if (f.default !== '' && Number.isFinite(Number(f.default))) body.default = Number(f.default)
+      const models: Record<string, number> = {}
+      for (const [m, v] of Object.entries(f.models)) {
+        const n = Number(v)
+        if (v !== '' && Number.isFinite(n)) models[m] = n
+      }
+      body.models = models
+      const res = await fetch('/api/admin/provider-pricing', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error((data as any)?.error || 'Gagal menyimpan harga')
+      setPpData(prev => (prev ? { ...prev, [provider]: (data as any).pricing } : prev))
+      addToast(`Harga ${provider} tersimpan — langsung berlaku`, 'success')
+    } catch (e: any) {
+      addToast(String(e?.message || e).slice(0, 160), 'error')
+    } finally {
+      setPpSaving(null)
+    }
+  }
+
+  const handleResetPp = async (provider: PpProviderId) => {
+    if (!window.confirm(`Reset harga ${provider} ke bawaan kode? Override admin akan dibuang.`)) return
+    try {
+      const res = await fetch('/api/admin/provider-pricing/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ provider }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error((data as any)?.error || 'Gagal reset harga')
+      const pricing = (data as any).pricing as PpEffective
+      setPpData(prev => (prev ? { ...prev, [provider]: pricing } : prev))
+      setPpForms(prev => ({ ...prev, [provider]: ppFormDari(pricing) }))
+      addToast(`Harga ${provider} kembali ke bawaan`, 'success')
+    } catch (e: any) {
+      addToast(String(e?.message || e).slice(0, 160), 'error')
     }
   }
 
@@ -1810,6 +2095,138 @@ export default function AdminSystemSettings() {
                 {nbLoadError} Tombol simpan dibekukan sampai muat ulang berhasil.
               </p>
             )}
+          </div>
+        </Section>
+
+        {/* Harga Token &amp; Wallet — semua provider tanpa deploy */}
+        <Section
+          title="Harga Token &amp; Wallet"
+          sub="Tarif Seavi, PosBot, RunningHub &amp; CreatePulse per generate — berlaku langsung tanpa deploy"
+        >
+          {ppLoadError && (
+            <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-[12px] text-red-400 flex flex-wrap items-center justify-between gap-2">
+              <span>Gagal memuat harga dari server: {ppLoadError}</span>
+              <button
+                type="button"
+                onClick={fetchProviderPricing}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-red-500/40 px-2.5 py-1.5 text-[11px] font-medium text-red-300 transition hover:bg-red-500/10"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Muat ulang
+              </button>
+            </div>
+          )}
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            {PP_PROVIDERS.map((meta) => {
+              const eff = ppData?.[meta.id]
+              const form = ppForms[meta.id]
+              const saving = ppSaving === meta.id
+              const catalog = Object.entries(eff?.catalog || {}).sort(([a], [b]) => a.localeCompare(b))
+              const overrideCount = eff ? Object.keys(eff.models).length : 0
+              const setModel = (m: string, v: string) =>
+                setPpForms(prev => ({
+                  ...prev,
+                  [meta.id]: { ...prev[meta.id], models: { ...prev[meta.id].models, [m]: v } },
+                }))
+              const setFlat = (v: string) =>
+                setPpForms(prev => ({ ...prev, [meta.id]: { ...prev[meta.id], flat: v } }))
+              const setDefault = (v: string) =>
+                setPpForms(prev => ({ ...prev, [meta.id]: { ...prev[meta.id], default: v } }))
+              return (
+                <div key={meta.id} className="rounded-xl border border-border bg-card/40 p-4 flex flex-col">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-semibold text-sm">{meta.name}</div>
+                      <div className="text-[11px] text-muted-foreground">
+                        {meta.desc}
+                        {overrideCount > 0 ? ` · ${overrideCount} override admin` : ''}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleResetPp(meta.id)}
+                      title="Kembali ke harga bawaan kode"
+                      className="shrink-0 rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                    >
+                      Reset bawaan
+                    </button>
+                  </div>
+
+                  {meta.flat ? (
+                    <div className="mt-3">
+                      <label className="block text-[11px] text-muted-foreground mb-1">Tarif flat ({meta.unit}) / generate</label>
+                      <input
+                        type="number"
+                        min={1}
+                        className="w-44 px-3 py-2 rounded-lg border border-border bg-card text-sm"
+                        value={form.flat}
+                        onChange={(e) => setFlat(e.target.value)}
+                        placeholder="1500"
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      <div className="mt-3">
+                        <label className="block text-[11px] text-muted-foreground mb-1">
+                          Harga default ({meta.unit}) — dipakai untuk model tanpa harga khusus
+                        </label>
+                        <input
+                          type="number"
+                          min={eff?.limits.min ?? 1}
+                          max={eff?.limits.max ?? 10000000}
+                          className="w-44 px-3 py-2 rounded-lg border border-border bg-card text-sm"
+                          value={form.default}
+                          onChange={(e) => setDefault(e.target.value)}
+                          placeholder={eff ? String(eff.default ?? '') : ''}
+                        />
+                      </div>
+                      <details className="mt-3 rounded-xl border border-border/70">
+                        <summary className="cursor-pointer select-none px-3 py-2.5 text-[12px] text-muted-foreground">
+                          Harga per model ({catalog.length}) — klik untuk buka &amp; edit
+                        </summary>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-2 p-3 max-h-96 overflow-auto border-t border-border/70">
+                          {catalog.map(([m, v]) => (
+                            <label key={m} className="flex items-center gap-2 text-[11px]">
+                              <span className="flex-1 min-w-0 truncate text-muted-foreground font-mono" title={m}>{m}</span>
+                              <input
+                                type="number"
+                                min={eff?.limits.min ?? 1}
+                                max={eff?.limits.max ?? 10000000}
+                                className="w-20 px-2 py-1.5 rounded-lg border border-border bg-card text-[11px] text-right"
+                                value={form.models[m] ?? String(v)}
+                                onChange={(e) => setModel(m, e.target.value)}
+                              />
+                            </label>
+                          ))}
+                          {catalog.length === 0 && (
+                            <div className="col-span-2 text-[11px] text-muted-foreground">Memuat katalog model dari server…</div>
+                          )}
+                        </div>
+                      </details>
+                    </>
+                  )}
+
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <Button size="sm" onClick={() => handleSavePp(meta.id)} disabled={saving || !eff}>
+                      <Save className="h-3.5 w-3.5 mr-1.5" />
+                      {saving ? 'Menyimpan...' : 'Simpan'}
+                    </Button>
+                    {eff && (
+                      <span className="text-[11px] text-muted-foreground">
+                        Efektif:{' '}
+                        {meta.flat
+                          ? `${meta.unit === 'Rp' ? 'Rp ' : ''}${Number(eff.flat ?? 0).toLocaleString('id-ID')}/generate`
+                          : `${meta.unit === 'Rp' ? 'Rp ' : ''}${Number(eff.default ?? 0).toLocaleString('id-ID')} ${meta.unit === 'token' ? 'token' : ''} default`}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <div className="text-[11px] text-muted-foreground mt-2">
+            Harga tersimpan di database (app_settings) dan dipakai jalur potong saldo/token. Kosongkan field yang tidak ingin diubah;
+            reset akan membuang semua override dan kembali ke bawaan kode.
           </div>
         </Section>
 

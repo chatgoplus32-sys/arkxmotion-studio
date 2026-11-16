@@ -2099,3 +2099,154 @@ export async function submitNexabotElevenLabs(
   if (!url) throw new Error('Generate ElevenLabs selesai tanpa URL audio')
   return url
 }
+
+// ═══════════════════════════════════════════════════════════════
+// Image Generator premium — dokumentasi publik nexabot.id (per 16 Nov 2026)
+//
+// POST /api/v1/image (sinkron): menunggu sampai gambar jadi, TIDAK ada
+// job_id/poll/download terpisah — respons berisi url akhir. 0,1 kredit per
+// gambar (tidak ditanggung API Unlimited upstream).
+//
+//   Nano Banana models: aspect (+ resolution untuk nano_banana_2 & pro saja).
+//   GPT Image & MAI models: image_size.
+//   reference_images: data URI atau URL https, maksimum 10.
+// ═══════════════════════════════════════════════════════════════
+
+export const NEXABOT_PREMIUM_IMAGE_MODELS = [
+  'nano_banana_2', 'nano_banana_2_lite', 'nano_banana_pro', 'nano_banana',
+  'gpt_image_2', 'gpt_image_2_5_flare', 'gpt_image_2_5_sunburst',
+  'mai_image_26_flash', 'mai_image_26', 'mai_image_25', 'mai_image_25_pro',
+] as const
+
+export const NANO_IMAGE_MODELS = ['nano_banana_2', 'nano_banana_2_lite', 'nano_banana_pro', 'nano_banana'] as const
+export const NANO_RESOLUTION_MODELS = ['nano_banana_2', 'nano_banana_pro'] as const
+/** Nano Banana 2 punya rasio sinematik ekstra (4:1, 1:4, 8:1, 1:8). */
+export const NANO_ASPECTS_STANDARD = ['auto', '21:9', '16:9', '3:2', '4:3', '5:4', '1:1', '4:5', '3:4', '2:3', '9:16'] as const
+export const NANO2_EXTRA_ASPECTS = ['4:1', '1:4', '8:1', '1:8'] as const
+export const IMAGE_RESOLUTIONS = ['0.5K', '1K', '2K', '4K'] as const
+export const IMAGE_SIZES = ['landscape_4_3', 'landscape_16_9', 'square_hd', 'square', 'portrait_4_3', 'portrait_16_9', 'auto'] as const
+
+export type NexabotImageModel = (typeof NEXABOT_PREMIUM_IMAGE_MODELS)[number]
+
+/** Keluarga parameter model: nano (aspect/resolution) vs gpt/mai (image_size). */
+export function nexabotImageFamily(model: string | undefined | null): 'nano' | 'gpt-mai' {
+  return model && (NANO_IMAGE_MODELS as readonly string[]).includes(model) ? 'nano' : 'gpt-mai'
+}
+
+export interface NexabotImageParams {
+  prompt: string
+  /** Id model premium — default nano_banana_2 (sesuai dokumen). */
+  model?: string
+  /** Hanya nano models. */
+  aspect?: string
+  /** Hanya nano_banana_2 & nano_banana_pro. */
+  resolution?: string
+  /** Hanya gpt/mai models. */
+  imageSize?: string
+  /** Data URI atau URL https, maksimum 10. */
+  references?: string[]
+}
+
+export interface NexabotImageResult {
+  ok: true
+  url: string
+  model?: string
+  /** Diisi upstream saat request tanpa refs dilayani oleh Nano Banana Pro. */
+  fallback?: boolean
+  requestedModel?: string
+  creditCost?: number
+  creditBalance?: number
+}
+
+const NANO_ASPECTS_SET = (model: string): readonly string[] =>
+  model === 'nano_banana_2' ? [...NANO_ASPECTS_STANDARD, ...NANO2_EXTRA_ASPECTS] : NANO_ASPECTS_STANDARD
+
+export async function generateNexabotImage(
+  params: NexabotImageParams,
+  authOverride?: NexabotAuth | string,
+): Promise<NexabotImageResult> {
+  const auth = fillAuthFromStorage(normalizeAuth(authOverride))
+  const { apiKey, cookies } = normalizeValues(auth)
+  if (!apiKey && !cookies && !auth.master) {
+    throw new Error('NexaBot: tidak ada API key / cookie session yang valid — cek format di halaman Providers')
+  }
+
+  const model = params.model || 'nano_banana_2'
+  const body: Record<string, unknown> = { prompt: params.prompt, model }
+  if (nexabotImageFamily(model) === 'nano') {
+    const aspects = NANO_ASPECTS_SET(model)
+    body.aspect = params.aspect && aspects.includes(params.aspect) ? params.aspect : (model === 'nano_banana_2' ? 'auto' : '1:1')
+    if ((NANO_RESOLUTION_MODELS as readonly string[]).includes(model)) {
+      body.resolution = params.resolution && (IMAGE_RESOLUTIONS as readonly string[]).includes(params.resolution) ? params.resolution : '1K'
+    }
+  } else {
+    body.image_size = params.imageSize && (IMAGE_SIZES as readonly string[]).includes(params.imageSize) ? params.imageSize : 'landscape_4_3'
+  }
+  if (params.references?.length) {
+    body.reference_images = params.references.slice(0, 10)
+  }
+
+  console.log(`[nexabot] Image submit (model: ${model}, refs: ${(body.reference_images as string[] | undefined)?.length || 0})`)
+
+  const res = await fetch(`${NEXABOT_BASE}/image`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(auth),
+      ...(await appAuthHeadersFresh()),
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(300_000),
+  })
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '')
+    // Yang ditolak relay adalah SESI APP kita, bukan kunci NexaBot — segarkan, ulangi.
+    if (isNexabotRelayIdentityError(res.status, errText)) {
+      if (await segarkanSesiApp()) {
+        return generateNexabotImage(params, authOverride)
+      }
+      throw new NexabotAppSessionError(
+        'Sesi app kedaluwarsa — login ulang lalu generate lagi. Kunci NexaBot Anda tidak bermasalah, jadi jangan ganti API key.',
+      )
+    }
+    if (res.status === 401 || res.status === 403) {
+      if (auth.master) throw new Error(jsonErrorMessage(errText) || `NexaBot: kunci server ditolak (HTTP ${res.status})`)
+      throw new Error(cookies
+        ? 'NexaBot: session cookie kedaluwarsa — login ulang di nexabot.id lalu paste cookie baru'
+        : 'NexaBot: API key tidak valid')
+    }
+    if (res.status === 402) {
+      if (auth.master) throw new Error(jsonErrorMessage(errText) || 'NexaBot: pembayaran generate belum terverifikasi server')
+      throw new Error('NexaBot: Kredit tidak cukup (perlu 0.1)')
+    }
+    if (res.status === 429) {
+      const errJson = (() => { try { return JSON.parse(errText) } catch { return null } })()
+      if (errJson?.queued) {
+        const tunggu = Number(errJson?.retry_after_seconds) || 30
+        throw new NexabotThrottleError(tunggu)
+      }
+      throw new Error('NexaBot: terlalu banyak permintaan — coba lagi sebentar lagi')
+    }
+    if (res.status === 503) {
+      const hasRefs = Array.isArray(body.reference_images) && body.reference_images.length > 0
+      throw new Error('NexaBot: mesin gambar sedang penuh' + (hasRefs ? ' (request dengan referensi — coba lagi 2–3 menit; kredit tidak terpotong)' : ''))
+    }
+    throw new Error(`NexaBot HTTP ${res.status}: ${errText.slice(0, 200)}`)
+  }
+
+  const data = await res.json()
+  const url = data?.url
+  if (data?.ok === false || !url) {
+    throw new Error(data?.error || 'NexaBot: generate gambar gagal')
+  }
+  return {
+    ok: true,
+    url: String(url),
+    model: data.model,
+    fallback: !!data.fallback,
+    requestedModel: data.requested_model,
+    creditCost: data.credit_cost,
+    creditBalance: data.credit_balance,
+  }
+}

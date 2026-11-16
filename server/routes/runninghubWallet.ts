@@ -5,8 +5,8 @@ import {
   RUNNINGHUB_MIN_TOPUP,
   RUNNINGHUB_TOPUP_MAX,
   RUNNINGHUB_TOPUP_PRESETS,
-  getRunninghubCharge,
 } from '../../shared/pricing.js'
+import { providerUnitCharge } from '../lib/providerPricing.js'
 import { isAdminUser, keyEligibility } from '../lib/providerMasterKey.js'
 import { nextUniqueCode } from '../lib/qrisPayment.js'
 import { createBasunipayPayment } from '../lib/basunipay.js'
@@ -32,7 +32,7 @@ router.get('/balance', authenticateToken, (req: AuthRequest, res: Response) => {
       presets: RUNNINGHUB_TOPUP_PRESETS,
       min_topup: RUNNINGHUB_MIN_TOPUP,
       max_topup: RUNNINGHUB_TOPUP_MAX,
-      charge: getRunninghubCharge(),
+      charge: providerUnitCharge('runninghub'),
       server_key: { available: kunciServer.ok, reason: kunciServer.reason },
     })
   } catch (error) {
@@ -100,7 +100,7 @@ router.post('/deduct', authenticateToken, (req: AuthRequest, res: Response) => {
     // Admin pemilik pool: tidak dipotong (relay juga melewati tiket untuk admin).
     // Usage tetap dicatat dengan cost 0 supaya jejak generate konsisten.
     const admin = isAdminUser(userId)
-    const cost = admin ? 0 : getRunninghubCharge(model) * units
+    const cost = admin ? 0 : providerUnitCharge('runninghub') * units
 
     let row = db.prepare('SELECT balance FROM runninghub_balance WHERE user_id = ?').get(userId) as { balance: number } | undefined
     if (!row) {

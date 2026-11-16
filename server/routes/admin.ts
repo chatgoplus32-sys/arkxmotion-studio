@@ -17,6 +17,13 @@ import {
 import { getNexabotPricing, setNexabotPricing } from './nexabotWallet.js'
 import { getNexabotSubmitQueueConfig, nexabotRealParallelism, setNexabotSubmitConcurrency } from '../lib/nexabotQueueSettings.js'
 import {
+  getAllProviderPricing,
+  setProviderPricing,
+  resetProviderPricing,
+  PROVIDER_IDS,
+  type ProviderId,
+} from '../lib/providerPricing.js'
+import {
   MASTER_KEY_SETTING,
   checkMasterKey,
   looksLikeSessionCookie,
@@ -58,6 +65,8 @@ import { sendEmail, appUrl } from '../mailer.js'
 import {
   rhPoolAddBulk,
   rhPoolDelete,
+  rhPoolDeleteAll,
+  rhPoolDeleteRejected,
   rhPoolList,
   rhPoolRecordCheck,
   rhPoolSetLabel,
@@ -773,6 +782,35 @@ router.delete('/runninghub/pool/:id', authenticateToken, requireAdmin, (req: Aut
     res.json({ ok: true, summary: rhPoolSummary(), tokens: rhPoolList() })
   } catch (error) {
     console.error('[admin-rh-pool] delete error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// Hapus SEMUA token pool (bulk). Konfirmasi ganda: `confirm` harus berisi
+// 'HAPUS-SEMUA-TOKEN' — mencegah klik tidak sengaja.
+router.post('/runninghub/pool/clear-all', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
+  try {
+    const confirm = (req.body as any)?.confirm
+    if (confirm !== 'HAPUS-SEMUA-TOKEN') {
+      return res.status(400).json({ error: 'Konfirmasi tidak cocok. Token tidak dihapus.' })
+    }
+    const deleted = rhPoolDeleteAll()
+    console.log(`[admin-rh-pool] hapus SEMUA token (${deleted} baris)`)
+    res.json({ ok: true, deleted, summary: rhPoolSummary(), tokens: rhPoolList() })
+  } catch (error) {
+    console.error('[admin-rh-pool] clear-all error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// Hapus hanya token yang ditolak permanen (bulk).
+router.post('/runninghub/pool/clear-rejected', authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
+  try {
+    const deleted = rhPoolDeleteRejected()
+    console.log(`[admin-rh-pool] hapus ${deleted} token ditolak`)
+    res.json({ ok: true, deleted, summary: rhPoolSummary(), tokens: rhPoolList() })
+  } catch (error) {
+    console.error('[admin-rh-pool] clear-rejected error:', error)
     res.status(500).json({ error: 'Internal server error' })
   }
 })
@@ -1742,6 +1780,55 @@ router.post('/notifications/clear-all', authenticateToken, requireAdmin, (_req: 
     res.json({ ok: true })
   } catch (err: any) {
     res.status(500).json({ error: err.message })
+  }
+})
+
+// ─── Harga semua provider (Seavi/PosBot/RunningHub/CreatePulse) ─────────────
+// Semua harga yang dipotong dari wallet member bisa diubah tanpa deploy.
+// Disimpan di app_settings (lihat lib/providerPricing.ts) — `flat` hanya untuk
+// RunningHub; `default`/`models` untuk yang lain.
+
+router.get('/provider-pricing', authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
+  try {
+    res.json({ ok: true, providers: getAllProviderPricing() })
+  } catch (error) {
+    console.error('Get provider pricing error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.patch('/provider-pricing', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
+  try {
+    const { provider, flat, default: def, models } = (req.body || {}) as {
+      provider?: unknown
+      flat?: unknown
+      default?: unknown
+      models?: unknown
+    }
+    const p = String(provider || '') as ProviderId
+    if (!PROVIDER_IDS.includes(p)) {
+      return res.status(400).json({ error: `Provider tidak dikenal: ${provider}` })
+    }
+    const pricing = setProviderPricing(p, { flat, default: def, models })
+    res.json({ ok: true, provider: p, pricing })
+  } catch (error: any) {
+    console.error('Set provider pricing error:', error)
+    // Pesan validasi memang untuk admin.
+    res.status(400).json({ error: error?.message || 'Internal server error' })
+  }
+})
+
+router.post('/provider-pricing/reset', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
+  try {
+    const { provider } = (req.body || {}) as { provider?: unknown }
+    const p = String(provider || '') as ProviderId
+    if (!PROVIDER_IDS.includes(p)) {
+      return res.status(400).json({ error: `Provider tidak dikenal: ${provider}` })
+    }
+    res.json({ ok: true, provider: p, pricing: resetProviderPricing(p) })
+  } catch (error) {
+    console.error('Reset provider pricing error:', error)
+    res.status(500).json({ error: 'Internal server error' })
   }
 })
 
