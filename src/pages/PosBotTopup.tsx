@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { Wallet, Clock, CheckCircle, XCircle, ExternalLink, Copy } from 'lucide-react'
 import { DANA_NUMBER, DANA_NAME, adminWhatsappLink, formatRp } from '@/lib/payment'
+import { usePosbotPricing, posbotPriceRange, posbotImageRange } from '@/lib/posbotPricing'
 import { PaymentMethodToggle, QrisPanel, BasunipayCheckoutButton } from '@/components/QrisPayment'
 import { fetchPosbotWallet, POSBOT_PRESET_FALLBACKS } from '@/lib/posbotWallet'
 
@@ -25,6 +26,10 @@ interface Topup {
 export default function PosBotTopupPage() {
   const { token } = useAuthStore()
   const addToast = useToastStore((s) => s.addToast)
+  // Harga efektif (System Settings admin) — untuk baris ringkasan tarif di atas.
+  const pbPricing = usePosbotPricing()
+  const pbRange = posbotPriceRange(pbPricing)
+  const pbImage = posbotImageRange(pbPricing)
   const [balance, setBalance] = useState(0)
   const [presets, setPresets] = useState<number[]>(POSBOT_PRESET_FALLBACKS)
   const [minTopup, setMinTopup] = useState(10000)
@@ -154,9 +159,10 @@ export default function PosBotTopupPage() {
           </div>
         </div>
         <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
-          <div>Gambar: <b className="text-foreground">{formatRp(350)}/generate</b></div>
-          <div>Video: <b className="text-foreground">{formatRp(1000)}–{formatRp(6500)}/generate</b></div>
+          <div>Gambar: <b className="text-foreground">{formatRp(pbImage.min)}–{formatRp(pbImage.max)}/generate</b></div>
+          <div>Semua model: <b className="text-foreground">{formatRp(pbRange.min)}–{formatRp(pbRange.max)}/generate</b></div>
         </div>
+        <div className="mt-1 text-[10px] text-muted-foreground">Harga per model — bisa diubah admin di System Settings → Harga Token &amp; Wallet.</div>
         <div className="mt-3 text-[11px] leading-relaxed">
           {serverKey?.available ? (
             <span className="text-emerald-500">

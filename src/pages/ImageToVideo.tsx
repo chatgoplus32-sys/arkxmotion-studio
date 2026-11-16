@@ -4546,7 +4546,7 @@ export default function ImageToVideoPage() {
                 )}
               </Button>
               <div className="text-xs text-muted-foreground">
-                Est. Cost: <b className="text-foreground font-mono">{provider === 'createpulse' ? `Rp ${cpCost(currentModel?.apiModel).toLocaleString('id-ID')}` : provider === 'nexabot' ? nbCostLabel : provider === 'posbot' ? `Rp ${totalCredits.toLocaleString('id-ID')}` : provider === 'runninghub' ? formatRp(rhCost) : `${totalCredits} credits`}</b>
+                Est. Cost: <b className="text-foreground font-mono">{provider === 'createpulse' ? `Rp ${cpCost(currentModel?.apiModel).toLocaleString('id-ID')}` : provider === 'nexabot' ? nbCostLabel : provider === 'posbot' ? `Rp ${totalCredits.toLocaleString('id-ID')}` : provider === 'runninghub' ? formatRp(rhCost) : provider === 'seavi' ? `${totalCredits} token` : `${totalCredits} credits`}</b>
                 {provider !== 'createpulse' && <BalanceBadge provider={provider} required={totalCredits} />}
               </div>
               {!hasActiveKey && provider !== 'createpulse' && !(provider === 'nexabot' && nexabotServerReady) && (
@@ -4647,7 +4647,7 @@ export default function ImageToVideoPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Est. Cost</span>
-                  <span className="font-medium text-primary">{provider === 'createpulse' ? `Rp ${cpCost(currentModel?.apiModel).toLocaleString('id-ID')}` : provider === 'nexabot' ? nbCostLabel : provider === 'posbot' ? `Rp ${totalCredits.toLocaleString('id-ID')}` : `${totalCredits} credits`}</span>
+                  <span className="font-medium text-primary">{provider === 'createpulse' ? `Rp ${cpCost(currentModel?.apiModel).toLocaleString('id-ID')}` : provider === 'nexabot' ? nbCostLabel : provider === 'posbot' ? `Rp ${totalCredits.toLocaleString('id-ID')}` : provider === 'seavi' ? `${totalCredits} token` : `${totalCredits} credits`}</span>
                 </div>
               </div>
 

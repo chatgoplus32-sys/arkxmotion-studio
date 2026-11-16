@@ -1044,7 +1044,7 @@ export default function EditImagePage() {
                     return {
                       value: m.value,
                       label: provider === 'nexabot'
-                        ? `${m.label} — $${m.cr}/gambar`
+                        ? `${m.label} — ${formatRp(nbWallet?.price ?? NEXABOT_PRICE_FALLBACK)}/gambar`
                         : provider === 'runninghub'
                           ? `${m.label} — ${formatRp(rhModelPrice(rhPricing, 'submit-image-edit'))}/gambar`
                           : provider === 'freebeat'

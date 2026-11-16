@@ -5,7 +5,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { Wallet, Clock, CheckCircle, XCircle, ExternalLink, Copy } from 'lucide-react'
 import { DANA_NUMBER, DANA_NAME, adminWhatsappLink, formatRp } from '@/lib/payment'
-import { useCreatepulsePricing } from '@/lib/createpulsePricing'
+import { useCreatepulsePricing, cpModelPrice } from '@/lib/createpulsePricing'
 import { PaymentMethodToggle, QrisPanel, BasunipayCheckoutButton } from '@/components/QrisPayment'
 
 const NOMINALS = [10000, 15000, 20000, 25000, 50000, 100000]
@@ -140,8 +140,8 @@ export default function CreatePulseTopupPage() {
           </div>
         </div>
         <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
-          <div>Dreamina Seedance 2.0: <b className="text-foreground">{formatRp(1500)}/generate</b></div>
-          <div>Veo Omni 10s: <b className="text-foreground">{formatRp(1500)}/generate</b></div>
+          <div>Dreamina Seedance 2.0: <b className="text-foreground">{formatRp(cpModelPrice(cpPricing, 'dreamina-seedance-2.0'))}/generate</b></div>
+          <div>Veo Omni 10s: <b className="text-foreground">{formatRp(cpModelPrice(cpPricing, 'veo-omni-10s'))}/generate</b></div>
         </div>
       </div>
 
