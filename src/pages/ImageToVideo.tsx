@@ -54,6 +54,7 @@ import { fetchSeaviWallet, chargeSeaviWallet, refundSeaviWallet } from '@/lib/se
 import { fetchPosbotWallet, chargePosbotWallet, refundPosbotWallet, type PosbotWallet } from '@/lib/posbotWallet'
 import { useCreatepulsePricing, cpModelPrice } from '@/lib/createpulsePricing'
 import { formatRp } from '@/lib/payment'
+import { useRunninghubPricing, rhModelPrice } from '@/lib/runninghubPricing'
 import { runNexabotJobWithSessionFallback } from './image-to-video/nexabotSessionFallback'
 import { runWithNexabotThrottleRetry, NexabotResultError, NEXADANCE_PROMPT_MAX } from '@/lib/nexabot'
 
@@ -77,6 +78,8 @@ const I2V_PROVIDER_HINTS: Partial<Record<ProviderId, { tagline: string; recommen
 
 export default function ImageToVideoPage() {
   const { keys, routing, fetchMaintenance } = useProviderManager()
+  // Harga efektif RunningHub (System Settings admin) — untuk label biaya RH.
+  const rhPricing = useRunninghubPricing()
 
   // ── NexaBot: session (Unlimited) vs API key (pay-as-you-go) ──
   // Cookie bisa berubah kapan saja karena extension auto-sync, jadi status sesi
@@ -516,6 +519,9 @@ export default function ImageToVideoPage() {
   const isRhH3Vlog = provider === 'runninghub' && currentModel?.apiModel === 'h3vlog'
   // Seedance 2.6 Replica (RunningHub): 1-5 gambar referensi karakter + storyboard → video.
   const isRhSeedance26 = provider === 'runninghub' && currentModel?.apiModel === 'seedance26'
+  // Harga RunningHub efektif dari System Settings (admin).
+  const rhAction = isRhSeedance ? 'submit-seedance2' : isRhSeedance26 ? 'submit-seedance2.6' : isRhH3Vlog ? 'submit-h3-vlog' : 'submit-h3-i2v'
+  const rhCost = rhModelPrice(rhPricing, rhAction)
   const SD26_MAX_IMAGES = 5
   const isNbT2V = isNb && nbApiModel === 't2v'
   const isNbSFV = isNb && nbApiModel === 'sfv'
@@ -4445,7 +4451,9 @@ export default function ImageToVideoPage() {
                           ? `${m.label} — Rp ${cpCost(m.apiModel).toLocaleString('id-ID')}`
                           : provider === 'posbot'
                             ? `${m.label} — Rp ${m.cr.toLocaleString('id-ID')}`
-                            : `${m.label} — ${m.cr === 0 ? 'kuota' : '$' + (m.cr / 1000).toFixed(3)}`,
+                            : provider === 'runninghub'
+                              ? `${m.label} — ${formatRp(rhModelPrice(rhPricing, m.apiModel === 'h3vlog' ? 'submit-h3-vlog' : m.apiModel === 'seedance2' ? 'submit-seedance2' : m.apiModel === 'seedance26' ? 'submit-seedance2.6' : 'submit-h3-i2v'))}/generate`
+                              : `${m.label} — ${m.cr === 0 ? 'kuota' : '$' + (m.cr / 1000).toFixed(3)}`,
                       }))}
                     />
                     {isPosbot && posbotSpec && (
@@ -4521,7 +4529,7 @@ export default function ImageToVideoPage() {
                 )}
               </Button>
               <div className="text-xs text-muted-foreground">
-                Est. Cost: <b className="text-foreground font-mono">{provider === 'createpulse' ? `Rp ${cpCost(currentModel?.apiModel).toLocaleString('id-ID')}` : provider === 'nexabot' ? nbCostLabel : provider === 'posbot' ? `Rp ${totalCredits.toLocaleString('id-ID')}` : `${totalCredits} credits`}</b>
+                Est. Cost: <b className="text-foreground font-mono">{provider === 'createpulse' ? `Rp ${cpCost(currentModel?.apiModel).toLocaleString('id-ID')}` : provider === 'nexabot' ? nbCostLabel : provider === 'posbot' ? `Rp ${totalCredits.toLocaleString('id-ID')}` : provider === 'runninghub' ? formatRp(rhCost) : `${totalCredits} credits`}</b>
                 {provider !== 'createpulse' && <BalanceBadge provider={provider} required={totalCredits} />}
               </div>
               {!hasActiveKey && provider !== 'createpulse' && !(provider === 'nexabot' && nexabotServerReady) && (

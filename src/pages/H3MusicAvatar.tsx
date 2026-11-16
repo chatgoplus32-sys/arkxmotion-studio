@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Label, EmptyState } from '@/components/ui'
+import RunninghubPriceNote from '@/components/RunninghubPriceNote'
 import { LogDetailActions } from '@/components/ui/LogDetailActions'
 import { Loader2, Upload, Download, X, User, Sparkles, CheckCircle2, AlertCircle, Clock, Music, Copy, Trash2, Film, AudioLines } from 'lucide-react'
 import { useToastStore } from '@/stores/toastStore'
@@ -295,6 +296,7 @@ export default function H3MusicAvatarPage() {
             />
           </div>
 
+          <RunninghubPriceNote action="submit-h3-music-avatar" className="mb-2" />
           <Button
             onClick={runWorkflow}
             disabled={!canRun}

@@ -1,6 +1,7 @@
 ﻿import { useState, useRef } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Label, Select, Textarea, EmptyState } from '@/components/ui'
+import RunninghubPriceNote from '@/components/RunninghubPriceNote'
 import { LogDetailActions } from '@/components/ui/LogDetailActions'
 import { Loader2, Upload, Download, X, Image as ImageIcon, Sparkles, CheckCircle2, AlertCircle, Clock } from 'lucide-react'
 import { useToastStore } from '@/stores/toastStore'
@@ -315,6 +316,7 @@ export default function H3ImageToVideoPage() {
             </div>
           </div>
 
+          <RunninghubPriceNote action="submit-h3-i2v" className="mb-2" />
           <Button
             onClick={runWorkflow}
             disabled={loading || !apiKey || !photoFile || !prompt.trim()}

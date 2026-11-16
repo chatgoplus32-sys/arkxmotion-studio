@@ -2,6 +2,7 @@
 // Kontrak dari katalog LIVE /models + /models/status (dicek 14 Nov 2026).
 // Kunci maintenance tetap terdaftar (harga latar), harga = tarif developer IDR.
 import { relayAuthHeaders } from './providerServerKey.js'
+import { overrideFor } from './effectivePricing.js'
 
 const POSBOT_PROXY = '/api/public/posbot'
 
@@ -538,7 +539,10 @@ export const POSBOT_MODELS: Record<string, PosbotModelSpec> = {
 }
 
 export function getPosbotSpec(id: string): PosbotModelSpec | undefined {
-  return POSBOT_MODELS[id]
+  const base = POSBOT_MODELS[id]
+  if (!base) return undefined
+  const ov = overrideFor('posbot', id)
+  return ov == null ? base : { ...base, price: ov }
 }
 
 export function listPosbotModelIds(): string[] {

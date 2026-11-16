@@ -1,6 +1,7 @@
 ﻿import { useState, useRef, useEffect } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Label, EmptyState } from '@/components/ui'
+import RunninghubPriceNote from '@/components/RunninghubPriceNote'
 import { LogDetailActions } from '@/components/ui/LogDetailActions'
 import { Loader2, Upload, Download, X, Shirt, User, Sparkles, CheckCircle2, AlertCircle, Clock } from 'lucide-react'
 import { useToastStore } from '@/stores/toastStore'
@@ -511,6 +512,9 @@ export default function VirtualTryOnPage() {
             />
           </div>
 
+          {provider === 'runninghub' && (
+            <RunninghubPriceNote action={engine === 'flux2' ? 'submit-tryon-flux2' : 'submit-tryon'} className="mb-2" />
+          )}
           <Button
             onClick={runWorkflow}
             disabled={loading || (provider === 'runninghub' && !apiKey) || !personFile || ((mode === 'tryon' || (provider === 'runninghub' && engine === 'flux2')) && !garmentFile)}

@@ -1,6 +1,7 @@
 ﻿import { useState, useRef } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Label, Select, Textarea, EmptyState } from '@/components/ui'
+import RunninghubPriceNote from '@/components/RunninghubPriceNote'
 import { LogDetailActions } from '@/components/ui/LogDetailActions'
 import { Loader2, Upload, Download, X, Sparkles, CheckCircle2, AlertCircle, Clock, Plus, User, Film } from 'lucide-react'
 import { useToastStore } from '@/stores/toastStore'
@@ -377,6 +378,7 @@ export default function UGCStoryboardPage() {
             </div>
           </div>
 
+          <RunninghubPriceNote action="submit-ugc-storyboard" className="mb-2" />
           <Button
             onClick={runWorkflow}
             disabled={loading || !apiKey || !charFile || scenes.length === 0}

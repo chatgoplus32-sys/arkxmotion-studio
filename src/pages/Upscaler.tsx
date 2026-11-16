@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Select, Label, Textarea, EmptyState } from '@/components/ui'
+import RunninghubPriceNote from '@/components/RunninghubPriceNote'
 import { LogDetailActions } from '@/components/ui/LogDetailActions'
 import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
 import { Loader2, Upload, Trash2, Key, Download, ImageIcon, Search, X, CheckCircle2, AlertCircle } from 'lucide-react'
@@ -785,6 +786,7 @@ export default function UpscalerPage() {
                     <p className="text-[11px] text-muted-foreground">
                       AI Photo Enhancer — retus potret alami (kulit, wajah, rambut, pakaian). Hasil menjaga tampilan asli, cocok untuk UGC/fashion/profil.
                     </p>
+                    <RunninghubPriceNote action="submit-photo-enhance" className="!justify-start" />
                   </>
                 )}
 

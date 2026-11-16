@@ -16,6 +16,7 @@
 // Tanpa kunci member, relay bisa memasang kunci server untuk member yang sudah
 // top up — lihat providerServerKey.ts.
 import { isServerKey, relayAuthHeaders } from './providerServerKey.js'
+import { overrideFor } from './effectivePricing.js'
 const SEAVI_PROXY = '/api/public/seavi'
 
 export interface SeaviModelSpec {
@@ -344,7 +345,10 @@ export const SEAVI_IMAGE_MODELS: Record<string, SeaviModelSpec> = {
 // menjawab 404 MODEL_NOT_FOUND. Halaman Video Upscaler kini hanya RunningHub.
 
 export function getSeaviSpec(id: string): SeaviModelSpec | undefined {
-  return SEAVI_MODELS[id]
+  const base = SEAVI_MODELS[id] ?? SEAVI_IMAGE_MODELS[id]
+  if (!base) return undefined
+  const ov = overrideFor('seavi', id)
+  return ov == null ? base : { ...base, tokens: ov }
 }
 
 export function listSeaviModelIds(): string[] {

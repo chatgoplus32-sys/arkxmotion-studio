@@ -1,6 +1,7 @@
 ﻿import { useState, useRef, useEffect } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Label, Select, EmptyState } from '@/components/ui'
+import RunninghubPriceNote from '@/components/RunninghubPriceNote'
 import { LogDetailActions } from '@/components/ui/LogDetailActions'
 import { Loader2, Upload, Download, X, Sparkles, CheckCircle2, AlertCircle, Clock, Clapperboard } from 'lucide-react'
 import { useToastStore } from '@/stores/toastStore'
@@ -291,6 +292,7 @@ export default function VideoUpscalerPage() {
           </div>
           </>
 
+          <RunninghubPriceNote action="submit-video-upscale" className="mb-2" />
           <Button
             onClick={runWorkflow}
             disabled={loading || !apiKey || !videoFile}
