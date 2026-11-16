@@ -120,12 +120,16 @@ test('harga default PosBot berlaku untuk model tanpa override, override menang',
   assert.equal(providerUnitCharge('posbot', 'model-tanpa-harga'), 4242)
 })
 
-test('RunningHub: tarif flat ikut berubah di /balance dan charge', () => {
-  const eff = setProviderPricing('runninghub', { flat: 2500 })
+test('RunningHub: harga per model dipakai di charge, override menang', () => {
+  const eff = setProviderPricing('runninghub', { models: { 'submit-seedance2': 2999 } })
 
-  assert.equal(eff.kind, 'flat')
-  assert.equal(eff.flat, 2500)
-  assert.equal(providerUnitCharge('runninghub'), 2500)
+  assert.equal(eff.kind, 'model')
+  assert.equal(eff.catalog['submit-seedance2'], 2999)
+  assert.equal(eff.models['submit-seedance2'], 2999)
+  assert.equal(providerUnitCharge('runninghub', 'submit-seedance2'), 2999)
+  // Model lain tetap seperti katalog kode.
+  assert.equal(providerUnitCharge('runninghub', 'motion-control-v3'), RUNNINGHUB_CHARGE)
+  assert.equal(providerUnitCharge('runninghub', 'submit-h3-music-avatar'), RUNNINGHUB_CHARGE)
   // Provider lain tidak tersentuh.
   assert.equal(providerUnitCharge('createpulse', CP_MODEL), CP_HARGA)
 })
@@ -166,7 +170,7 @@ test('reset membuang semua override provider itu saja', () => {
 test('semua override disimpan di satu kunci app_settings (bukan ribuan baris)', () => {
   setProviderPricing('seavi', { models: { [SEAVI_MODEL]: 4 } })
   setProviderPricing('posbot', { models: { [POSBOT_MODEL]: 1234 } })
-  setProviderPricing('runninghub', { flat: 2000 })
+  setProviderPricing('runninghub', { models: { 'motion-control-v3': 2100 } })
 
   const rows = settingsRows()
   assert.equal(rows.length, 1)
@@ -208,7 +212,7 @@ test('getAllProviderPricing mencakup keempat wallet + bentuk respons admin', () 
 })
 
 test('endpoint publik: RunningHub & Seavi memakai harga efektif', () => {
-  setProviderPricing('runninghub', { flat: 1750 })
+  setProviderPricing('runninghub', { default: 1750 })
   setProviderPricing('seavi', { models: { [SEAVI_MODEL]: 5 } })
 
   const body = buildPublicPricing()
@@ -244,12 +248,14 @@ test('PATCH /api/admin/provider-pricing menyimpan & langsung dipakai charge', as
   const res = await fetch(`${base}/api/admin/provider-pricing`, {
     method: 'PATCH',
     headers: { ...auth(adminToken), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ provider: 'runninghub', flat: 3100 }),
+    body: JSON.stringify({ provider: 'runninghub', default: 3100 }),
   })
   assert.equal(res.status, 200)
   const body = await res.json() as any
-  assert.equal(body.pricing.flat, 3100)
+  assert.equal(body.pricing.default, 3100)
   assert.equal(providerUnitCharge('runninghub'), 3100)
+  assert.equal(providerUnitCharge('runninghub', 'model-tanpa-harga'), 3100)
+  assert.equal(providerUnitCharge('runninghub', 'submit-seedance2'), 2500)
 })
 
 test('PATCH dengan provider asing / harga tidak masuk akal → 400 dengan pesan', async () => {

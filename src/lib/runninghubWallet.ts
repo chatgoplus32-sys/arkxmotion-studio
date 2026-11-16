@@ -1,8 +1,9 @@
 // ─── Klien wallet RunningHub ────────────────────────────────────────────────
-// Saldo RUPIAH per user, tarif flat per generate (shared/pricing.ts
-// getRunninghubCharge). Member top up → relay memasang token master dari pool
-// operator dengan tiket pembayaran dari /deduct. Tanpa top up, member tetap
-// bisa memakai access token/API key RunningHub miliknya sendiri (passthrough).
+// Saldo RUPIAH per user, harga per model (action) — default Rp 2.500/generate,
+// diedit admin lewat Harga Token & Wallet. Member top up → relay memasang token
+// master dari pool operator dengan tiket pembayaran dari /deduct. Tanpa top up,
+// member tetap bisa memakai access token/API key RunningHub miliknya sendiri
+// (passthrough).
 //
 // Dipakai halaman /topup/runninghub dan alur generate (lewat runninghubProxy).
 const API = '/api/runninghub-wallet'
@@ -12,7 +13,7 @@ export interface RunninghubWallet {
   min_topup: number
   max_topup: number
   presets: number[]
-  /** Tarif flat per generate (Rp) — ditampilkan di halaman top up. */
+  /** Harga per generate untuk model paling umum/default (Rp) — ditampilkan di halaman top up. */
   charge?: number
   server_key?: { available: boolean; reason?: string }
 }

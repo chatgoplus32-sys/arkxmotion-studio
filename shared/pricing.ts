@@ -575,8 +575,9 @@ export function getPosbotPriceRange(): { min: number; max: number } {
 // Wallet Rupiah per member, mesinnya sama dengan PosBot: saldo di server,
 // dipotong per generate, relay memasang token master milik operator dari pool
 // (auto-rotate) lewat tiket pembayaran. Upstream menagih poin akun (±58 poin
-// per task video, bisa minus); member membayar tarif FLAT Rp per generate,
-// apa pun fiturnya — keputusan operator 2026-11-14.
+// per task video, bisa minus). Sejak 2026-11-16, member membayar Rp per
+// generate per MODEL (action), semua default Rp 2.500 — harga tiap model bisa
+// diedit admin lewat Harga Token & Wallet, berlaku langsung tanpa deploy.
 
 /** Minimal top up saldo RunningHub (Rp), sama dengan provider lain. */
 export const RUNNINGHUB_MIN_TOPUP = 10000
@@ -587,10 +588,50 @@ export const RUNNINGHUB_TOPUP_MAX = 5000000
 /** Nominal cepat yang ditawarkan di halaman Top Up RunningHub. */
 export const RUNNINGHUB_TOPUP_PRESETS = [25000, 50000, 100000, 250000, 500000, 1000000] as const
 
-/** Tarif flat Rp per generate RunningHub (semua fitur). */
-export const RUNNINGHUB_CHARGE = 1500
+/**
+ * Katalog harga per model RunningHub (action konsumen) — diedit admin lewat
+ * menu Harga Token & Wallet. Kunci = action yang dikirim klien ke /deduct.
+ * Default: Rp 2.500/generate untuk semua model.
+ */
+export const RUNNINGHUB_MODEL_PRICES: Record<string, number> = {
+  // Motion Control (workflow & app)
+  'motion-control': 2500,
+  'motion-control-v2.6-std': 2500,
+  'motion-control-v2.6-pro': 2500,
+  'motion-control-v3': 2500,
+  'motion-control-ultra-hd': 2500,
+  'motion-control-kling-2.6': 2500,
+  'motion-control-ultra-hd-pro': 2500,
+  'motion-control-pro': 2500,
+  'motion-control-eposcents': 2500,
+  'motion-control-kontrol-gerakan': 2500,
+  'motion-control-72fps': 2500,
+  // Virtual try-on
+  'submit-tryon': 2500,
+  'submit-tryon-flux2': 2500,
+  // Music / avatar / video
+  'submit-h3-music-avatar': 2500,
+  'submit-h3-i2v': 2500,
+  'submit-h3-vlog': 2500,
+  'submit-seedance2': 2500,
+  'submit-seedance2.6': 2500,
+  // Gambar & foto
+  'submit-image-edit': 2500,
+  'submit-photo-enhance': 2500,
+  'submit-travel-photo': 2500,
+  // Utilitas media
+  'submit-video-upscale': 2500,
+  // Audio
+  'submit-song-cover': 2500,
+  'submit-yue2-reimaginer': 2500,
+  // Lainnya
+  'submit-ugc-storyboard': 2500,
+}
 
-/** Biaya satu generate RunningHub dalam Rupiah (flat; model diabaikan). */
+/** Tarif default Rp per generate RunningHub (dipakai untuk model yang tidak tercantum). */
+export const RUNNINGHUB_CHARGE = 2500
+
+/** Biaya satu generate RunningHub dalam Rupiah (model tidak dikenali → tarif default). */
 export function getRunninghubCharge(_model?: string): number {
   return RUNNINGHUB_CHARGE
 }

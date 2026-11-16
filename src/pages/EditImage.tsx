@@ -71,9 +71,11 @@ const NB_IMAGE_SIZES = [
   { v: 'landscape_4_3', label: 'Landscape 4:3' },
   { v: 'landscape_16_9', label: 'Landscape 16:9' },
   { v: 'square_hd', label: 'Square HD' },
-  { v: 'square', label: 'Square' },
-  { v: 'portrait_4_3', label: 'Portrait 4:3' },
-  { v: 'portrait_16_9', label: 'Portrait 16:9' },
+  { v: 'square', label: 'Square 1:1' },
+  // Upstream `image_size` memakai label orientasi: portrait_4_3 = 3:4 dan
+  // portrait_16_9 = 9:16. Ditampilkan sebagai rasio supaya tidak rancu.
+  { v: 'portrait_4_3', label: 'Portrait 3:4' },
+  { v: 'portrait_16_9', label: 'Portrait 9:16' },
   { v: 'auto', label: 'Auto' },
 ]
 const NEXABOT_IMAGE_MODELS: ImageModelOption[] = [

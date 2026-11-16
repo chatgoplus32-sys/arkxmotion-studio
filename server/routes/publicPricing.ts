@@ -83,7 +83,11 @@ export function buildPublicPricing() {
       runninghub: {
         name: 'RunningHub',
         min_topup: RUNNINGHUB_MIN_TOPUP,
-        flat_generate: runninghub.flat,
+        // `flat_generate` dipertahankan untuk klien lama — nilainya = tarif default per model.
+        flat_generate: runninghub.default,
+        default_charge: runninghub.default,
+        price_range: rentang([runninghub.default ?? 1, ...Object.values(runninghub.catalog)]),
+        models: { ...runninghub.catalog },
       },
     },
   }

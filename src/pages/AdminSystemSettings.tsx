@@ -84,7 +84,7 @@ interface PpFormState {
 const PP_PROVIDERS: { id: PpProviderId; name: string; desc: string; unit: string; flat?: boolean }[] = [
   { id: 'seavi', name: 'Seavi', desc: 'Token per generate', unit: 'token' },
   { id: 'posbot', name: 'PosBot', desc: 'Tarif per generate', unit: 'Rp' },
-  { id: 'runninghub', name: 'RunningHub', desc: 'Tarif flat per generate (untuk semua fitur)', unit: 'Rp', flat: true },
+  { id: 'runninghub', name: 'RunningHub', desc: 'Harga per model (per fitur) — bisa diedit satu per satu, berlaku langsung', unit: 'Rp' },
   { id: 'createpulse', name: 'CreatePulse', desc: 'Tarif per generate', unit: 'Rp' },
 ]
 

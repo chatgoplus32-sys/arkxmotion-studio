@@ -7,7 +7,7 @@
 // Bentuk simpanan:
 //   {
 //     "<provider>": {
-//       "flat"?:    number,              // RunningHub: tarif flat Rp/generate
+//       "flat"?:    number,              // provider kind 'flat' (saat ini tidak dipakai)
 //       "default"?: number|null,         // harga per unit kalau model tak tercantum
 //       "models"?:  { "<model>": number|null, ... }  // null = hapus override
 //     },
@@ -28,6 +28,7 @@ import {
   SEAVI_DEFAULT_CHARGE,
   POSBOT_MODEL_PRICES,
   POSBOT_DEFAULT_CHARGE,
+  RUNNINGHUB_MODEL_PRICES,
   RUNNINGHUB_CHARGE,
   CREATEPULSE_MODEL_PRICES,
   CREATEPULSE_DEFAULT_PRICE,
@@ -60,7 +61,9 @@ const SPECS: Record<
 > = {
   seavi: { kind: 'model', default: SEAVI_DEFAULT_CHARGE, models: SEAVI_MODEL_TOKENS },
   posbot: { kind: 'model', default: POSBOT_DEFAULT_CHARGE, models: POSBOT_MODEL_PRICES },
-  runninghub: { kind: 'flat', default: RUNNINGHUB_CHARGE, models: {} },
+  // RunningHub: harga per model (action konsumen). Default kode = Rp 2.500
+  // untuk semua model; admin bisa mengubah satu-satu di Harga Token & Wallet.
+  runninghub: { kind: 'model', default: RUNNINGHUB_CHARGE, models: RUNNINGHUB_MODEL_PRICES },
   createpulse: { kind: 'model', default: CREATEPULSE_DEFAULT_PRICE, models: CREATEPULSE_MODEL_PRICES },
 }
 
@@ -102,7 +105,7 @@ function idModel(model: string | null | undefined): string {
 export interface ProviderPricingEffective {
   provider: ProviderId
   kind: 'model' | 'flat'
-  /** Harga per unit untuk provider flat (RunningHub), Rp. */
+  /** Harga per unit (Rp/token) — dipakai untuk provider flat (saat ini tidak dipakai). */
   flat: number | null
   /** Harga unit default (dipakai bila model tak ada), atau null (flat). */
   default: number | null

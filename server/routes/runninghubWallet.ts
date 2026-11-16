@@ -15,7 +15,8 @@ const router = Router()
 
 // Saldo RunningHub dalam RUPIAH (sama seperti PosBot). Member top up → relay
 // memasang token master dari pool operator dan memotong saldo per generate.
-// Tarif flat Rp 1.500/generate untuk semua fitur (shared/pricing.ts).
+// Harga per model (action), default Rp 2.500/generate — bisa diedit admin
+// di Harga Token & Wallet (shared/pricing.ts + app_settings).
 router.get('/balance', authenticateToken, (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id
@@ -100,7 +101,7 @@ router.post('/deduct', authenticateToken, (req: AuthRequest, res: Response) => {
     // Admin pemilik pool: tidak dipotong (relay juga melewati tiket untuk admin).
     // Usage tetap dicatat dengan cost 0 supaya jejak generate konsisten.
     const admin = isAdminUser(userId)
-    const cost = admin ? 0 : providerUnitCharge('runninghub') * units
+    const cost = admin ? 0 : providerUnitCharge('runninghub', model) * units
 
     let row = db.prepare('SELECT balance FROM runninghub_balance WHERE user_id = ?').get(userId) as { balance: number } | undefined
     if (!row) {
