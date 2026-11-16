@@ -830,6 +830,9 @@ export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: s
   omni: {},
 }
 
+// Cermin harga CreatePulse bawaan. UI TIDAK memakai ini secara langsung
+// lagi — harga efektif dibaca dari /api/public/pricing lewat
+// src/lib/createpulsePricing.ts (bisa diubah admin di System Settings).
 export const CP_PRICES: Record<string, number> = {
   'dreamina-seedance-2.0': 1500,
   'dreamina-seedance-2.5': 1500,

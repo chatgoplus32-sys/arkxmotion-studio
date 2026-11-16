@@ -45,13 +45,14 @@ import { isLowConfidenceRejection } from '@/lib/watermark-engine'
 import { precheckProviderBalance } from '@/lib/balancePrecheck'
 import type { NexabotSessionInfo } from '@/lib/nexabot'
 
-import { PROVIDER_MODELS, QUALITY_OPTIONS, getCreatepulseCost, RATIOS, MODEL_RATIO_RESTRICTIONS, TEMPLATES, CREATEPULSE_API } from './image-to-video/constants'
+import { PROVIDER_MODELS, QUALITY_OPTIONS, RATIOS, MODEL_RATIO_RESTRICTIONS, TEMPLATES, CREATEPULSE_API } from './image-to-video/constants'
 
 import VideoPlayer from './image-to-video/VideoPlayer'
 import { nexabotPathPill } from './image-to-video/nexabotPathPill'
 import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, nexabotRemainingLabel, nexabotFreeForModel, nexabotPreferServerKey, NEXABOT_PRICE_FALLBACK, NEXABOT_BOOSTER_COMING_SOON, type NexabotWallet } from '@/lib/nexabotWallet'
 import { fetchSeaviWallet, chargeSeaviWallet, refundSeaviWallet } from '@/lib/seaviWallet'
 import { fetchPosbotWallet, chargePosbotWallet, refundPosbotWallet, type PosbotWallet } from '@/lib/posbotWallet'
+import { useCreatepulsePricing, cpModelPrice } from '@/lib/createpulsePricing'
 import { formatRp } from '@/lib/payment'
 import { runNexabotJobWithSessionFallback } from './image-to-video/nexabotSessionFallback'
 import { runWithNexabotThrottleRetry, NexabotResultError, NEXADANCE_PROMPT_MAX } from '@/lib/nexabot'
@@ -108,6 +109,10 @@ export default function ImageToVideoPage() {
   const addToast = useToastStore((s) => s.addToast)
   const { token: authToken, user } = useAuthStore()
   const [cpBalance, setCpBalance] = useState(0)
+  // Harga CreatePulse efektif dari server (System Settings → Harga Token & Wallet)
+  // dipakai untuk tampilan; angka yang terpotong tetap dari server /deduct.
+  const createpulsePricing = useCreatepulsePricing()
+  const cpCost = (apiModel?: string) => cpModelPrice(createpulsePricing, apiModel)
   // Wallet NexaBot user (harga/generate dari server) + status Paket Unlimited
   // (varian Mingguan/Bulanan/Tahunan — mana pun yang sedang aktif).
   const [nbWallet, setNbWallet] = useState<NexabotWallet | null>(null)
@@ -899,7 +904,7 @@ export default function ImageToVideoPage() {
 
   const generateWithCreatePulse = async (apiKey: string) => {
     const duration = currentQuality?.duration || 10
-    const cost = getCreatepulseCost(currentModel?.apiModel)
+    const cost = cpCost(currentModel?.apiModel)
     const isAdmin = user?.role === 'admin'
     // usage_id dari respons /deduct — referensi refund paling presisi. Kalau deduct
     // gagal, nilai ini tetap undefined sehingga catch TIDAK mengembalikan saldo yang
@@ -1064,7 +1069,7 @@ export default function ImageToVideoPage() {
     if (!prompt.trim()) return 'Prompt harus diisi'
     if (!hasActiveKey && provider !== 'roboneo' && provider !== 'createpulse' && !(provider === 'nexabot' && nexabotServerReady))
       return `Tidak ada API key aktif untuk ${PROVIDER_CONFIGS[provider].name}`
-    if (provider === 'createpulse' && user?.role !== 'admin' && cpBalance < getCreatepulseCost(currentModel?.apiModel)) return 'Saldo CreatePulse tidak cukup. Top up minimal Rp 10.000'
+    if (provider === 'createpulse' && user?.role !== 'admin' && cpBalance < cpCost(currentModel?.apiModel)) return 'Saldo CreatePulse tidak cukup. Top up minimal Rp 10.000'
     // NexaBot: paket aktif untuk mode ini = gratis, jadi cek saldo hanya saat tidak aktif.
     if (provider === 'nexabot' && user?.role !== 'admin' && !nbFreeForCurrentMode && (nbWallet?.balance ?? 0) < (nbWallet?.price ?? NEXABOT_PRICE_FALLBACK))
       // Booster sedang tidak dijual: jangan mengarahkan member ke paket yang
@@ -3927,7 +3932,7 @@ export default function ImageToVideoPage() {
               <div className="text-xs font-medium text-primary">💜 CreatePulse {user?.role === 'admin' && '(Admin — Free)'}</div>
               {user?.role !== 'admin' && (
                 <div className="text-xs">
-                  Saldo: <b className={`font-bold ${cpBalance >= getCreatepulseCost(currentModel?.apiModel) ? 'text-emerald-500' : 'text-destructive'}`}>
+                  Saldo: <b className={`font-bold ${cpBalance >= cpCost(currentModel?.apiModel) ? 'text-emerald-500' : 'text-destructive'}`}>
                     Rp {cpBalance.toLocaleString('id-ID')}
                   </b>
                 </div>
@@ -3940,7 +3945,7 @@ export default function ImageToVideoPage() {
               <div>Veo Omni (10s): <b className="text-foreground">{user?.role === 'admin' ? 'GRATIS' : 'Rp 2.250'}</b></div>
               {user?.role !== 'admin' && <div>Failed generations: <b className="text-emerald-500">auto-refunded</b></div>}
             </div>
-            {user?.role !== 'admin' && cpBalance < getCreatepulseCost(currentModel?.apiModel) && (
+            {user?.role !== 'admin' && cpBalance < cpCost(currentModel?.apiModel) && (
               <div className="mt-2 text-[11px]">
                 <a href="/topup/createpulse" className="text-primary hover:underline font-medium">
                   Top Up Saldo →
@@ -4437,7 +4442,7 @@ export default function ImageToVideoPage() {
                       options={models.map((m) => ({
                         value: m.value,
                         label: provider === 'createpulse'
-                          ? m.label
+                          ? `${m.label} — Rp ${cpCost(m.apiModel).toLocaleString('id-ID')}`
                           : provider === 'posbot'
                             ? `${m.label} — Rp ${m.cr.toLocaleString('id-ID')}`
                             : `${m.label} — ${m.cr === 0 ? 'kuota' : '$' + (m.cr / 1000).toFixed(3)}`,
@@ -4490,7 +4495,8 @@ export default function ImageToVideoPage() {
             <div className="mt-4">
               <Label>Prompt</Label>
               <Textarea
-                rows={4}
+                rows={6}
+                className="min-h-[160px] resize-y text-[15px] leading-relaxed"
                 placeholder="Deskripsikan motion / kamera / suasana video..."
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
@@ -4515,7 +4521,7 @@ export default function ImageToVideoPage() {
                 )}
               </Button>
               <div className="text-xs text-muted-foreground">
-                Est. Cost: <b className="text-foreground font-mono">{provider === 'createpulse' ? `Rp ${getCreatepulseCost(currentModel?.apiModel).toLocaleString('id-ID')}` : provider === 'nexabot' ? nbCostLabel : provider === 'posbot' ? `Rp ${totalCredits.toLocaleString('id-ID')}` : `${totalCredits} credits`}</b>
+                Est. Cost: <b className="text-foreground font-mono">{provider === 'createpulse' ? `Rp ${cpCost(currentModel?.apiModel).toLocaleString('id-ID')}` : provider === 'nexabot' ? nbCostLabel : provider === 'posbot' ? `Rp ${totalCredits.toLocaleString('id-ID')}` : `${totalCredits} credits`}</b>
                 {provider !== 'createpulse' && <BalanceBadge provider={provider} required={totalCredits} />}
               </div>
               {!hasActiveKey && provider !== 'createpulse' && !(provider === 'nexabot' && nexabotServerReady) && (
@@ -4616,7 +4622,7 @@ export default function ImageToVideoPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Est. Cost</span>
-                  <span className="font-medium text-primary">{provider === 'createpulse' ? `Rp ${getCreatepulseCost(currentModel?.apiModel).toLocaleString('id-ID')}` : provider === 'nexabot' ? nbCostLabel : provider === 'posbot' ? `Rp ${totalCredits.toLocaleString('id-ID')}` : `${totalCredits} credits`}</span>
+                  <span className="font-medium text-primary">{provider === 'createpulse' ? `Rp ${cpCost(currentModel?.apiModel).toLocaleString('id-ID')}` : provider === 'nexabot' ? nbCostLabel : provider === 'posbot' ? `Rp ${totalCredits.toLocaleString('id-ID')}` : `${totalCredits} credits`}</span>
                 </div>
               </div>
 
