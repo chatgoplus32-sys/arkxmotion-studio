@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { Wallet, Clock, CheckCircle, XCircle, ExternalLink, Copy } from 'lucide-react'
 import { DANA_NUMBER, DANA_NAME, adminWhatsappLink, formatRp } from '@/lib/payment'
+import { useCreatepulsePricing } from '@/lib/createpulsePricing'
 import { PaymentMethodToggle, QrisPanel, BasunipayCheckoutButton } from '@/components/QrisPayment'
 
 const NOMINALS = [10000, 15000, 20000, 25000, 50000, 100000]
@@ -25,6 +26,11 @@ interface Topup {
 export default function CreatePulseTopupPage() {
   const { token } = useAuthStore()
   const addToast = useToastStore((s) => s.addToast)
+  const cpPricing = useCreatepulsePricing()
+  const effectiveRange = useMemo(() => {
+    const vals = Object.values(cpPricing.models).filter((v) => Number.isFinite(v) && v > 0)
+    return vals.length ? `Rp ${Math.min(...vals).toLocaleString('id-ID')}-${Math.max(...vals).toLocaleString('id-ID')}/generate` : 'sesuai System Settings'
+  }, [cpPricing])
   const [balance, setBalance] = useState(0)
   const [selectedAmount, setSelectedAmount] = useState<number>(10000)
   const [customAmount, setCustomAmount] = useState('')
@@ -119,7 +125,7 @@ export default function CreatePulseTopupPage() {
         eyebrow="CreatePulse"
         title="Top Up"
         highlight="Saldo"
-        desc="Isi saldo khusus provider CreatePulse. Harga: Rp 1.500-2.250/generate"
+        desc={`Isi saldo khusus provider CreatePulse. Harga: ${effectiveRange}`}
       />
 
       {/* Balance */}

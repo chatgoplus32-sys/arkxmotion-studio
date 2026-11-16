@@ -53,6 +53,7 @@ import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, nexabotRe
 import { fetchSeaviWallet, chargeSeaviWallet, refundSeaviWallet } from '@/lib/seaviWallet'
 import { fetchPosbotWallet, chargePosbotWallet, refundPosbotWallet, type PosbotWallet } from '@/lib/posbotWallet'
 import { useCreatepulsePricing, cpModelPrice } from '@/lib/createpulsePricing'
+import { useProviderPricing, overrideFor } from '@/lib/effectivePricing'
 import { formatRp } from '@/lib/payment'
 import { useRunninghubPricing, rhModelPrice } from '@/lib/runninghubPricing'
 import { runNexabotJobWithSessionFallback } from './image-to-video/nexabotSessionFallback'
@@ -490,7 +491,21 @@ export default function ImageToVideoPage() {
     }
   }, [])
 
-  const models = useMemo(() => PROVIDER_MODELS[provider] || [], [provider])
+  const priceTick = useProviderPricing()
+  // Harga efektif Seavi (token) & PosBot (Rp) dari System Settings — cache 60 detik;
+  // `priceTick` memicu re-render begitu data /api/public/pricing masuk sehingga
+  // angka di menu model ikut berubah tanpa reload.
+  const models = useMemo(() => {
+    const base = PROVIDER_MODELS[provider] || []
+    if (provider !== 'posbot' && provider !== 'seavi') return base
+    return base.map((m) => {
+      const id = m.apiModel || m.value.split(':')[1] || m.value
+      const ov = overrideFor(provider as 'posbot' | 'seavi', id)
+      return ov == null ? m : { ...m, cr: ov }
+    })
+    // priceTick memicu recompute dari cache terbaru
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provider, priceTick])
   const currentModel = models.find((m) => m.value === model) || models[0]
   // NexaBot Omni Flash 1.2 — 4 jenis mengikuti nexabot.id/video-generator:
   const isNb = provider === 'nexabot'
@@ -3945,10 +3960,10 @@ export default function ImageToVideoPage() {
               )}
             </div>
             <div className="grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
-              <div>Seedance 2.0 (10s): <b className="text-foreground">{user?.role === 'admin' ? 'GRATIS' : 'Rp 1.500'}</b></div>
-              <div>Seedance 2.5 (10s): <b className="text-foreground">{user?.role === 'admin' ? 'GRATIS' : 'Rp 1.500'}</b></div>
-              <div>Seedance 2.0 (15s): <b className="text-foreground">{user?.role === 'admin' ? 'GRATIS' : 'Rp 2.250'}</b></div>
-              <div>Veo Omni (10s): <b className="text-foreground">{user?.role === 'admin' ? 'GRATIS' : 'Rp 2.250'}</b></div>
+              <div>Seedance 2.0 (10s): <b className="text-foreground">{user?.role === 'admin' ? 'GRATIS' : `Rp ${cpCost('dreamina-seedance-2.0').toLocaleString('id-ID')}`}</b></div>
+              <div>Seedance 2.5 (10s): <b className="text-foreground">{user?.role === 'admin' ? 'GRATIS' : `Rp ${cpCost('dreamina-seedance-2.5').toLocaleString('id-ID')}`}</b></div>
+              <div>Seedance 2.0 (15s): <b className="text-foreground">{user?.role === 'admin' ? 'GRATIS' : `Rp ${cpCost('dreamina-seedance-2.0-15s').toLocaleString('id-ID')}`}</b></div>
+              <div>Veo Omni (10s): <b className="text-foreground">{user?.role === 'admin' ? 'GRATIS' : `Rp ${cpCost('veo-omni-10s').toLocaleString('id-ID')}`}</b></div>
               {user?.role !== 'admin' && <div>Failed generations: <b className="text-emerald-500">auto-refunded</b></div>}
             </div>
             {user?.role !== 'admin' && cpBalance < cpCost(currentModel?.apiModel) && (
@@ -4453,6 +4468,8 @@ export default function ImageToVideoPage() {
                             ? `${m.label} — Rp ${m.cr.toLocaleString('id-ID')}`
                             : provider === 'runninghub'
                               ? `${m.label} — ${formatRp(rhModelPrice(rhPricing, m.apiModel === 'h3vlog' ? 'submit-h3-vlog' : m.apiModel === 'seedance2' ? 'submit-seedance2' : m.apiModel === 'seedance26' ? 'submit-seedance2.6' : 'submit-h3-i2v'))}/generate`
+                            : provider === 'seavi'
+                              ? `${m.label} — ${m.cr} token`
                               : `${m.label} — ${m.cr === 0 ? 'kuota' : '$' + (m.cr / 1000).toFixed(3)}`,
                       }))}
                     />

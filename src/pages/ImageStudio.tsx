@@ -11,9 +11,11 @@ import {
   generateWithPosbot,
   formatPosbotRupiah,
   posbotModeSummary,
+  getPosbotSpec,
   type PosbotModelSpec,
 } from '@/lib/posbot'
 import { fetchPosbotWallet, chargePosbotWallet, refundPosbotWallet, type PosbotWallet } from '@/lib/posbotWallet'
+import { useProviderPricing } from '@/lib/effectivePricing'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { uploadToCatbox, normalizeImage } from '@/lib/roboneo'
 import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
@@ -41,6 +43,7 @@ interface LogEntry {
 export default function ImageStudioPage() {
   const addToast = useToastStore((s) => s.addToast)
   const { token: authToken, user } = useAuthStore()
+  const priceTick = useProviderPricing()
 
   const [modelId, setModelId] = useState(DEFAULT_MODEL)
   const [prompt, setPrompt] = useState('')
@@ -59,7 +62,15 @@ export default function ImageStudioPage() {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const spec: PosbotModelSpec = MODELS.find((m) => m.id === modelId) ?? MODELS[0]
+  // priceTick memicu refetch; spec diambil lewat getPosbotSpec yang membaca
+  // override admin dari cache, jadi "harga" selalu yang tercantum di System Settings.
+  const spec: PosbotModelSpec = useMemo(
+    () => {
+      void priceTick // memicu recompute begitu data effective pricing masuk
+      return getPosbotSpec(modelId) ?? MODELS.find((m) => m.id === modelId) ?? MODELS[0]
+    },
+    [modelId, priceTick],
+  )
   const refMax = spec.imageMode === 'none' ? 0 : spec.imageMax ?? 0
   const refMin = spec.imageMode === 'single' ? 1 : 0
 
@@ -315,7 +326,7 @@ export default function ImageStudioPage() {
                 >
                   <span className="text-[12px] font-medium leading-tight truncate w-full">{m.label}</span>
                   <span className={`text-[10px] ${modelId === m.id ? 'text-primary-foreground/80' : 'text-muted-foreground/70'}`}>
-                    {posbotModeSummary(m)} · {formatPosbotRupiah(m.price)}
+                    {posbotModeSummary(m)} · {formatPosbotRupiah(getPosbotSpec(m.id)?.price ?? m.price)}
                   </span>
                 </button>
               ))}

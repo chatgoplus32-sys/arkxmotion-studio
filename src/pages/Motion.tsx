@@ -193,6 +193,15 @@ const SIMPLE_MODEL_LABELS: Record<string, string> = {
   'pb:kling_30_pro': 'Kling 3.0 Pro · maks 30 detik',
 }
 
+/** Terapkan override harga admin ke daftar model Seavi/PosBot di menu ini. */
+function withEffectivePrices<M extends { key: string; cr: number }>(providerId: string, models: M[]): M[] {
+  if (providerId !== 'seavi' && providerId !== 'posbot') return models
+  return models.map((m) => {
+    const ov = overrideFor(providerId as 'seavi' | 'posbot', m.key.split(':')[1])
+    return ov == null ? m : { ...m, cr: ov }
+  })
+}
+
 function motionModelLabel(
   providerId: MotionProviderId,
   model: { key: string; label: string; cr: number },
@@ -246,6 +255,9 @@ function createSlot(): Slot {
 export default function MotionPage() {
   const [provider, setProvider] = useLocalStorage<ProviderId>('motion.provider', 'runninghub')
   const rhPricing = useRunninghubPricing()
+  // Harga Seavi/PosBot efektif dari System Settings (cache /api/public/pricing,
+  // 60 detik) — tersedia lewat useEffect sekali; re-render otomatis saat data masuk.
+  useProviderPricing()
   const addToast = useToastStore((s) => s.addToast)
   const [modelKey, setModelKey] = useLocalStorage('motion.modelKey', MOTION_RECOMMENDED_MODEL.runninghub)
   const [orientation, setOrientation] = useLocalStorage<'video' | 'image'>('motion.orientation', 'video')
@@ -412,7 +424,8 @@ export default function MotionPage() {
     return () => { if (elapsedRef.current) clearInterval(elapsedRef.current) }
   }, [generating])
 
-  const currentProvider = PROVIDERS[provider as keyof typeof PROVIDERS] || PROVIDERS.runninghub
+  const currentProviderRaw = PROVIDERS[provider as keyof typeof PROVIDERS] || PROVIDERS.runninghub
+  const currentProvider = { ...currentProviderRaw, models: withEffectivePrices(provider, currentProviderRaw.models) }
   const recommendedModelKey = MOTION_RECOMMENDED_MODEL[provider as MotionProviderId] || ''
   const currentModel = currentProvider.models.find((m) => m.key === modelKey) || currentProvider.models[0]
   const isOmni = modelKey === 'rn:google-omni'
@@ -2559,7 +2572,7 @@ export default function MotionPage() {
                   {MOTION_PROVIDER_IDS.map((id) => {
                     const info = MOTION_PROVIDER_INFO[id]
                     const isActive = provider === id
-                    const minPrice = Math.min(...PROVIDERS[id].models.map((m) => m.cr))
+                    const minPrice = Math.min(...withEffectivePrices(id, PROVIDERS[id].models).map((m) => m.cr))
                     const priceLine = id === 'seavi'
                       ? `Mulai ${minPrice} token / video`
                       : id === 'posbot'

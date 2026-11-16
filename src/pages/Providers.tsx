@@ -278,10 +278,10 @@ const TOKEN_GUIDE: Record<string, {
       { text: 'Buka menu Profile → API Keys (atau Dashboard).' },
       { text: 'Klik "Create API Key", beri nama.' },
       { text: 'Copy key cp_… — paste ke input di sebelah.' },
-      { text: 'Top up saldo minimal Rp 15.000 di menu Top Up (biaya per generate ≈ Rp 1.500-2.250).' },
+      { text: 'Top up saldo minimal Rp 10.000 di menu Top Up. Harga per generate mengikuti System Settings → Harga Token & Wallet.' },
       { text: 'Multi-key akan auto-rotate saat quota / balance habis.' },
     ],
-    tip: 'Model: Seedance 2.0/2.5 (Rp 1.500), Seedance 2.0 15s/Veo Omni (Rp 2.250). Token tersimpan di akunmu, bisa dipakai dari mana saja.',
+    tip: 'Model: Seedance 2.0 / 2.5, Seedance 15s, dan Veo Omni — tarif per model mengikuti System Settings → Harga Token & Wallet. Saldo tersimpan di akunmu, bisa dipakai dari mana saja.',
   },
   runninghub: {
     url: 'https://www.runninghub.ai/enterprise-api/consumerApi',

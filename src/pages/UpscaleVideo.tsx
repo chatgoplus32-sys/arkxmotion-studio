@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Label, EmptyState } from '@/components/ui'
 import { LogDetailActions } from '@/components/ui/LogDetailActions'
@@ -12,19 +12,26 @@ import {
   formatPosbotRupiah,
 } from '@/lib/posbot'
 import { fetchPosbotWallet, chargePosbotWallet, refundPosbotWallet, type PosbotWallet } from '@/lib/posbotWallet'
+import { useProviderPricing } from '@/lib/effectivePricing'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
 import { addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
 import { usePageActive } from '@/hooks/usePageActive'
 import { uploadToCatbox, compressVideo } from '@/lib/roboneo'
 
-const SPEC = getPosbotSpec('upscale_video')!
 const MAX_VIDEO_MB = 30
 
 export default function UpscaleVideoPage() {
   const addToast = useToastStore((s) => s.addToast)
   const { token: authToken, user } = useAuthStore()
   const isAdmin = user?.role === 'admin'
+  const priceTick = useProviderPricing()
+  // Harga efektif dari System Settings (cache /api/public/pricing) — dihitung ulang
+  // tiap data masuk supaya bukan nilai bawaan kode.
+  const SPEC = useMemo(() => {
+    void priceTick // memicu recompute begitu data effective pricing masuk
+    return getPosbotSpec('upscale_video')!
+  }, [priceTick])
 
   const [videoFile, setVideoFile] = useState<File | null>(null)
   const [videoDuration, setVideoDuration] = useState<number | null>(null)

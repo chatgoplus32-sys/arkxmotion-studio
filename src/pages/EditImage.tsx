@@ -9,7 +9,8 @@ import { useAuthStore } from '@/stores/authStore'
 import { withTokenRotation } from '@/lib/tokenRotation'
 import { submitRunningHubImageEdit, pollRunningHubTask } from '@/lib/runninghub'
 import { useRunninghubPricing, rhModelPrice } from '@/lib/runninghubPricing'
-import { SEAVI_IMAGE_MODELS, buildSeaviPayload, generateSeaviImage, fetchSeaviBalance } from '@/lib/seavi'
+import { buildSeaviPayload, generateSeaviImage, fetchSeaviBalance, getSeaviSpec } from '@/lib/seavi'
+import { useProviderPricing } from '@/lib/effectivePricing'
 import { FREEBEAT_IMAGE_MODELS, buildFreebeatImageItem, createFreebeatImageBatch, pollFreebeatBatch, getFreebeatModel } from '@/lib/freebeat'
 import { chargeSeaviWallet, refundSeaviWallet, fetchSeaviWallet } from '@/lib/seaviWallet'
 import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, nexabotRemainingLabel, nexabotFreeForModel, nexabotPreferServerKey, NEXABOT_PRICE_FALLBACK, type NexabotWallet } from '@/lib/nexabotWallet'
@@ -224,7 +225,8 @@ export default function EditImagePage() {
   const nbHasResolution = nbIsNano && (nbUpstream === 'nano_banana_2' || nbUpstream === 'nano_banana_pro')
   const nbAspectOptions = NB_NANO_NANO2.includes(nbUpstream) ? NB_ASPECTS_NANO2 : NB_ASPECTS_STANDARD
   const isSeavi = provider === 'seavi'
-  const seaviSpec = isSeavi && currentModel ? SEAVI_IMAGE_MODELS[(currentModel as any).apiModel || ''] : undefined
+  useProviderPricing() // refetch cache effective pricing; getSeaviSpec membaca override admin
+  const seaviSpec = isSeavi && currentModel ? getSeaviSpec((currentModel as any).apiModel || '') : undefined
   const seaviAspects = seaviSpec?.aspects || []
   const isFreebeat = provider === 'freebeat'
   const freebeatSpec = isFreebeat && currentModel ? getFreebeatModel((currentModel as any).apiModel) : undefined
@@ -1047,7 +1049,9 @@ export default function EditImagePage() {
                           ? `${m.label} — ${formatRp(rhModelPrice(rhPricing, 'submit-image-edit'))}/gambar`
                           : provider === 'freebeat'
                             ? `${m.label} — ${fb?.credits != null ? `${fb.credits} kredit` : 'kredit bervariasi'}`
-                            : `${m.label} — $${((m as any).cr / 1000).toFixed(3)}`,
+                            : provider === 'seavi'
+                              ? `${m.label} — ${getSeaviSpec((m as any).apiModel || '')?.tokens ?? (m as any).cr ?? 1} token`
+                              : `${m.label} — $${((m as any).cr / 1000).toFixed(3)}`,
                     }
                   })}
                 />

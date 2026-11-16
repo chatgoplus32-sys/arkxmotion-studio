@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Label, EmptyState } from '@/components/ui'
 import { LogDetailActions } from '@/components/ui/LogDetailActions'
@@ -10,10 +10,12 @@ import {
   buildPosbotPayload,
   generateWithPosbot,
   formatPosbotRupiah,
+  getPosbotSpec,
   type PosbotModelSpec,
 } from '@/lib/posbot'
 import { uploadToCatbox } from '@/lib/roboneo'
 import { fetchPosbotWallet, chargePosbotWallet, refundPosbotWallet, type PosbotWallet } from '@/lib/posbotWallet'
+import { useProviderPricing } from '@/lib/effectivePricing'
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
 import { addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
@@ -40,6 +42,7 @@ interface LogEntry {
 export default function MusicStudioPage() {
   const addToast = useToastStore((s) => s.addToast)
   const { token: authToken, user } = useAuthStore()
+  const priceTick = useProviderPricing()
 
   const [modelId, setModelId] = useState(DEFAULT_MODEL)
   const [prompt, setPrompt] = useState('')
@@ -61,7 +64,13 @@ export default function MusicStudioPage() {
   const [history, setHistory] = useState<HistoryItem[]>([])
   const [logs, setLogs] = useState<LogEntry[]>([])
 
-  const spec: PosbotModelSpec = MODELS.find((m) => m.id === modelId) ?? MODELS[0]
+  const spec: PosbotModelSpec = useMemo(
+    () => {
+      void priceTick // memicu recompute begitu data effective pricing masuk
+      return getPosbotSpec(modelId) ?? MODELS.find((m) => m.id === modelId) ?? MODELS[0]
+    },
+    [modelId, priceTick],
+  )
 
   const addLog = (msg: string, level: LogEntry['level'] = 'info') => {
     const time = new Date().toLocaleTimeString('id-ID')
@@ -329,7 +338,7 @@ export default function MusicStudioPage() {
                 >
                   <span className="text-[12px] font-medium leading-tight truncate w-full">{m.label}</span>
                   <span className={`text-[10px] ${modelId === m.id ? 'text-primary-foreground/80' : 'text-muted-foreground/70'}`}>
-                    {formatPosbotRupiah(m.price)}
+                    {formatPosbotRupiah(getPosbotSpec(m.id)?.price ?? m.price)}
                   </span>
                 </button>
               ))}
