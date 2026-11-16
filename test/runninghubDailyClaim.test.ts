@@ -15,7 +15,7 @@ import express from 'express'
 import jwt from 'jsonwebtoken'
 import os from 'node:os'
 
-const DB_PATH = path.join(os.tmpdir(), `arkxmotion-rh-claim-${process.pid}.db`)
+const DB_PATH = path.join(os.tmpdir(), `arkxmotion-rh-claim-${process.pid}-${Date.now()}.db`)
 process.env.ARKXMOTION_DB_PATH = DB_PATH
 
 const JWT_SECRET = 'test-secret-rh-claim'

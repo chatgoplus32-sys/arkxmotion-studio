@@ -34,7 +34,7 @@ const codeOnly = source
 
 // DB sementara supaya tes tidak pernah menyentuh data/arkxmotion.db milik dev.
 // Harus diset SEBELUM modul db dimuat.
-process.env.ARKXMOTION_DB_PATH = path.join(os.tmpdir(), `arkxmotion-r2-test-${process.pid}.db`)
+process.env.ARKXMOTION_DB_PATH = path.join(os.tmpdir(), `arkxmotion-r2-test-${process.pid}-${Date.now()}.db`)
 
 const { getBackupStatus, runBackup, startBackupScheduler, stopBackupScheduler } = await import(
   '../server/lib/backupR2.js'

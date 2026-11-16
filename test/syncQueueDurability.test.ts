@@ -31,7 +31,7 @@ const ROOT = path.join(__dirname, '..')
 
 // DB terpisah supaya data dev tidak tersentuh — dan supaya kedua proses server
 // benar-benar berbagi satu berkas yang sama (itulah yang sedang diuji).
-const DB_PATH = path.join(os.tmpdir(), `arkxmotion-sync-durable-${process.pid}.db`)
+const DB_PATH = path.join(os.tmpdir(), `arkxmotion-sync-durable-${process.pid}-${Date.now()}.db`)
 const JWT_SECRET = 'test-secret-sync-durability'
 const TSX_CLI = path.join(ROOT, 'node_modules', 'tsx', 'dist', 'cli.mjs')
 

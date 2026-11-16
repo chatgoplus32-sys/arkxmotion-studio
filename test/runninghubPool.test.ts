@@ -21,7 +21,7 @@ import { createRequire } from 'node:module'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-const DB_PATH = path.join(os.tmpdir(), `arkxmotion-rh-pool-${process.pid}.db`)
+const DB_PATH = path.join(os.tmpdir(), `arkxmotion-rh-pool-${process.pid}-${Date.now()}.db`)
 process.env.ARKXMOTION_DB_PATH = DB_PATH
 process.env.JWT_SECRET = 'test-secret-rh-pool'
 process.env.RUNNINGHUB_ACCESS_TOKEN = ''

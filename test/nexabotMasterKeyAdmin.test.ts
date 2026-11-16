@@ -20,7 +20,10 @@ import { resetNexabotLaneJobs } from '../shared/nexabotProxy.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-const DB_PATH = path.join(os.tmpdir(), `arkxmotion-nxb-admin-${process.pid}.db`)
+const DB_PATH = path.join(os.tmpdir(), `arkxmotion-nxb-admin-${process.pid}-${Date.now()}.db`)
+// PID bisa dipakai ulang OS: file sisa run sebelumnya (yang mati sebelum hook
+// `after`) membuat INSERT user/balance gagal UNIQUE. Mulai selalu dari kosong.
+for (const suffix of ['', '-wal', '-shm']) fs.rmSync(DB_PATH + suffix, { force: true })
 process.env.ARKXMOTION_DB_PATH = DB_PATH
 const JWT_SECRET = 'test-secret-nexabot-admin'
 process.env.JWT_SECRET = JWT_SECRET

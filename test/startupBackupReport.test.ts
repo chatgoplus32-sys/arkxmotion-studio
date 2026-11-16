@@ -22,7 +22,7 @@ import { tmpTes, bersihkanFolderTes } from './helpers/tmp'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.join(__dirname, '..')
 
-const dbFile = path.join(os.tmpdir(), `arkxmotion-startup-report-${process.pid}.db`)
+const dbFile = path.join(os.tmpdir(), `arkxmotion-startup-report-${process.pid}-${Date.now()}.db`)
 process.env.ARKXMOTION_DB_PATH = dbFile // harus sebelum modul db dimuat
 
 const tmp = tmpTes

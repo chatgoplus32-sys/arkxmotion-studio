@@ -1466,9 +1466,15 @@ export default function AdminSystemSettings() {
       if (f.flat !== '' && Number.isFinite(Number(f.flat))) body.flat = Number(f.flat)
       if (f.default !== '' && Number.isFinite(Number(f.default))) body.default = Number(f.default)
       const models: Record<string, number> = {}
+      // Hanya kirim model yang harganya benar-benar diubah. Kalau semua harga
+      // katalog ikut dikirim, semuanya jadi override dan perubahan katalog di
+      // kode tidak akan pernah terpakai lagi.
+      const baseline = ppData?.[provider]?.catalog || {}
       for (const [m, v] of Object.entries(f.models)) {
         const n = Number(v)
-        if (v !== '' && Number.isFinite(n)) models[m] = n
+        if (v === '' || !Number.isFinite(n)) continue
+        if (baseline[m] === n) continue
+        models[m] = n
       }
       body.models = models
       const res = await fetch('/api/admin/provider-pricing', {

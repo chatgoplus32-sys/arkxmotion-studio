@@ -113,7 +113,10 @@ export interface ProviderPricingEffective {
   limits: { min: number; max: number }
 }
 
-/** Apakah `model` cocok dengan `id` === or not. */
+/**
+ * Harga satu unit yang benar-benar dipotong untuk `model`.
+ * Urutan: override admin → katalog kode → `default` admin → default kode.
+ */
 export function providerUnitCharge(provider: ProviderId, model?: string | null): number {
   const cfg = readSettings()[provider] || {}
   const spec = SPECS[provider]
@@ -125,6 +128,9 @@ export function providerUnitCharge(provider: ProviderId, model?: string | null):
     const override = cfg.models[id]
     if (override != null) return bounded(override, provider, spec.models[id] ?? spec.default)
   }
+  // Model yang punya harga khusus di katalog kode tetap pakai harga itu;
+  // `default` admin hanya untuk model yang tidak tercantum.
+  if (id && spec.models[id] != null) return bounded(spec.models[id], provider, spec.default)
   return bounded(cfg.default, provider, spec.default)
 }
 

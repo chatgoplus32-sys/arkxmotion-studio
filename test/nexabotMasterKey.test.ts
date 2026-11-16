@@ -27,7 +27,7 @@ import { resetNexabotLaneJobs } from '../shared/nexabotProxy.js'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.join(__dirname, '..')
 
-const DB_PATH = path.join(os.tmpdir(), `arkxmotion-nxb-master-${process.pid}.db`)
+const DB_PATH = path.join(os.tmpdir(), `arkxmotion-nxb-master-${process.pid}-${Date.now()}.db`)
 process.env.ARKXMOTION_DB_PATH = DB_PATH
 const JWT_SECRET = 'test-secret-nexabot-master'
 process.env.JWT_SECRET = JWT_SECRET

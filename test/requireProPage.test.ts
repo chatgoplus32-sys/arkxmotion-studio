@@ -9,7 +9,7 @@ import fs from 'node:fs'
 import jwt from 'jsonwebtoken'
 import { fileURLToPath } from 'node:url'
 
-const DB_PATH = path.join(os.tmpdir(), `arkxmotion-progate-${process.pid}.db`)
+const DB_PATH = path.join(os.tmpdir(), `arkxmotion-progate-${process.pid}-${Date.now()}.db`)
 process.env.ARKXMOTION_DB_PATH = DB_PATH
 process.env.JWT_SECRET = 'test-secret-progate'
 process.env.JWT_REFRESH_SECRET = 'test-refresh-progate'

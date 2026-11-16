@@ -26,7 +26,7 @@ const ROOT = path.join(__dirname, '..')
 
 // DB terpisah: antrean sync sekarang persisten, jadi tanpa ini tes menulis ke
 // data dev dan mewarisi baris dari run sebelumnya (tes jadi tidak idempoten).
-const DB_PATH = path.join(os.tmpdir(), `arkxmotion-sync-auth-${process.pid}.db`)
+const DB_PATH = path.join(os.tmpdir(), `arkxmotion-sync-auth-${process.pid}-${Date.now()}.db`)
 process.env.ARKXMOTION_DB_PATH = DB_PATH
 
 const JWT_SECRET = 'test-secret-sync-tokens'

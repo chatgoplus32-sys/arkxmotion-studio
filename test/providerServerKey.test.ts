@@ -26,7 +26,7 @@ import jwt from 'jsonwebtoken'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-const DB_PATH = path.join(os.tmpdir(), `arkxmotion-server-key-${process.pid}.db`)
+const DB_PATH = path.join(os.tmpdir(), `arkxmotion-server-key-${process.pid}-${Date.now()}.db`)
 
 // Berkas DB tes memakai PID, tapi after() tidak bisa menghapusnya di Windows
 // selama koneksi route masih terbuka (unlink diam-diam gagal) — 64 berkas basi

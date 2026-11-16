@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-const DB_PATH = path.join(os.tmpdir(), `arkxmotion-autorefund-${process.pid}.db`)
+const DB_PATH = path.join(os.tmpdir(), `arkxmotion-autorefund-${process.pid}-${Date.now()}.db`)
 const PREFIX_DB_TES = 'arkxmotion-autorefund-'
 function bersihkanSisaDbTes() {
   let nama: string[]

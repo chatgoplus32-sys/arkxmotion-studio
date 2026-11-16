@@ -15,7 +15,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-const DB_PATH = path.join(os.tmpdir(), `arkxmotion-health-test-${process.pid}.db`)
+const DB_PATH = path.join(os.tmpdir(), `arkxmotion-health-test-${process.pid}-${Date.now()}.db`)
 process.env.ARKXMOTION_DB_PATH = DB_PATH
 
 import { checkHealth, classifyProbe } from '../server/lib/alerts.js'
