@@ -81,6 +81,41 @@ interface PpFormState {
   models: Record<string, string>
 }
 
+// Nama ramah untuk model RunningHub — disamakan dengan nama menu Motion
+// Control / halaman fitur. Key (action) tetap ditampilkan kecil supaya admin
+// tahu field yang benar-benar dipakai charge server.
+const RH_MODEL_LABELS: Record<string, string> = {
+  'motion-control-72fps': 'Motion Control 72 FPS',
+  'motion-control-kontrol-gerakan': 'Kontrol Gerak 50FPS',
+  'motion-control-eposcents': 'Eposcents MC — 512HD 32FPS',
+  'motion-control-pro': 'Motion Control Pro — Motion Transfer',
+  'motion-control-ultra-hd': 'MC Ultra Fast HD',
+  'motion-control': 'Motion Control standar (Kling 2.6 Pro/Std · 2.9 · 3.0)',
+  'motion-control-kling-2.6': 'Kling Motion Control 2.6 (App)',
+  'motion-control-ultra-hd-pro': 'MC Ultra Fast HD Pro — SAM3 multi-person',
+  'motion-control-v2.6-std': 'Motion Control V2.6 Std (URL)',
+  'motion-control-v2.6-pro': 'Motion Control V2.6 Pro (URL)',
+  'motion-control-v3': 'Motion Control V3 (URL)',
+  'submit-h3-music-avatar': 'H3 Music / Podcast Avatar',
+  'submit-h3-i2v': 'H3 Image → Video',
+  'submit-h3-vlog': 'H3 Vlog',
+  'submit-seedance2': 'Seedance 2',
+  'submit-seedance2.6': 'Seedance 2.6',
+  'submit-image-edit': 'Edit Gambar — FLUX Kontext',
+  'submit-photo-enhance': 'Photo Enhance',
+  'submit-travel-photo': 'Travel Photo',
+  'submit-tryon': 'Virtual Try-On',
+  'submit-tryon-flux2': 'Virtual Try-On — Flux 2',
+  'submit-video-upscale': 'Video Upscaler',
+  'submit-song-cover': 'AI Song Cover',
+  'submit-yue2-reimaginer': 'YuE2 Reimagine Lagu',
+  'submit-ugc-storyboard': 'UGC Storyboard',
+}
+// Urutan tampil: model Motion Control dulu (sesuai menu), sisanya menurut antrian penambahan.
+const RH_MODEL_ORDER = Object.keys(RH_MODEL_LABELS)
+// Urutan tampil model lain (Seavi/PosBot/CreatePulse) — leksiografis lama.
+const sortirCatalog = (a: string, b: string) => a.localeCompare(b)
+
 const PP_PROVIDERS: { id: PpProviderId; name: string; desc: string; unit: string; flat?: boolean }[] = [
   { id: 'seavi', name: 'Seavi', desc: 'Token per generate', unit: 'token' },
   { id: 'posbot', name: 'PosBot', desc: 'Tarif per generate', unit: 'Rp' },
@@ -2127,7 +2162,16 @@ export default function AdminSystemSettings() {
               const eff = ppData?.[meta.id]
               const form = ppForms[meta.id]
               const saving = ppSaving === meta.id
-              const catalog = Object.entries(eff?.catalog || {}).sort(([a], [b]) => a.localeCompare(b))
+              const catalog = Object.entries(eff?.catalog || {}).sort(([a], [b]) => {
+                if (meta.id === 'runninghub') {
+                  const ia = RH_MODEL_ORDER.indexOf(a)
+                  const ib = RH_MODEL_ORDER.indexOf(b)
+                  const ra = ia === -1 ? 999 : ia
+                  const rb = ib === -1 ? 999 : ib
+                  return ra - rb || sortirCatalog(a, b)
+                }
+                return sortirCatalog(a, b)
+              })
               const overrideCount = eff ? Object.keys(eff.models).length : 0
               const setModel = (m: string, v: string) =>
                 setPpForms(prev => ({
@@ -2193,7 +2237,14 @@ export default function AdminSystemSettings() {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-2 p-3 max-h-96 overflow-auto border-t border-border/70">
                           {catalog.map(([m, v]) => (
                             <label key={m} className="flex items-center gap-2 text-[11px]">
-                              <span className="flex-1 min-w-0 truncate text-muted-foreground font-mono" title={m}>{m}</span>
+                              {meta.id === 'runninghub' ? (
+                                <span className="flex-1 min-w-0" title={m}>
+                                  <span className="block truncate font-medium text-foreground/90">{RH_MODEL_LABELS[m] ?? m}</span>
+                                  <span className="block truncate font-mono text-[9px] text-muted-foreground/70">{m}</span>
+                                </span>
+                              ) : (
+                                <span className="flex-1 min-w-0 truncate text-muted-foreground font-mono" title={m}>{m}</span>
+                              )}
                               <input
                                 type="number"
                                 min={eff?.limits.min ?? 1}

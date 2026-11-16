@@ -26,7 +26,7 @@ export default function RunningHubTopupPage() {
   const { token } = useAuthStore()
   const addToast = useToastStore((s) => s.addToast)
   const [balance, setBalance] = useState(0)
-  const [charge, setCharge] = useState(1500)
+  const [charge, setCharge] = useState(2500)
   const [presets, setPresets] = useState<number[]>(RUNNINGHUB_PRESET_FALLBACKS)
   const [minTopup, setMinTopup] = useState(10000)
   const [maxTopup, setMaxTopup] = useState(5000000)
@@ -54,7 +54,7 @@ export default function RunningHubTopupPage() {
       const w = await fetchRunninghubWallet(token)
       if (w) {
         setBalance(w.balance)
-        setCharge(w.charge ?? 1500)
+        setCharge(w.charge ?? 2500)
         setPresets(w.presets.length > 0 ? w.presets : RUNNINGHUB_PRESET_FALLBACKS)
         setMinTopup(w.min_topup)
         setMaxTopup(w.max_topup)
@@ -141,7 +141,7 @@ export default function RunningHubTopupPage() {
         eyebrow="RunningHub"
         title="Top Up"
         highlight="Saldo"
-        desc="Isi saldo Rupiah khusus provider RunningHub. Flat per generate — semua fitur, tanpa perlu token sendiri."
+        desc="Isi saldo Rupiah khusus provider RunningHub. Harga per model per generate - sesuai tarif di System Settings, tanpa perlu token sendiri."
       />
 
       {/* Balance */}

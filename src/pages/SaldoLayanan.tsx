@@ -62,7 +62,7 @@ const SERVICES: ServiceDef[] = [
   {
     key: 'runninghub',
     label: 'RunningHub',
-    desc: 'Saldo Rupiah RunningHub — flat per generate, tanpa perlu token sendiri.',
+    desc: 'Saldo Rupiah RunningHub — dipotong per generate sesuai harga model di System Settings.',
     href: '/topup/runninghub',
     icon: <Clapperboard className="h-4 w-4" />,
     accent: 'border-orange-500/25 bg-orange-500/10 text-orange-400',
@@ -287,7 +287,7 @@ export default function SaldoLayananPage() {
       runninghub: {
         amount: runninghub?.balance ?? null,
         unit: 'Rp',
-        unitPrice: runninghub?.charge ?? 1500,
+        unitPrice: runninghub?.charge ?? 2500,
         note: null,
       },
     })
