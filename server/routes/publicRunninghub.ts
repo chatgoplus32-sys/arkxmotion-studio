@@ -39,6 +39,10 @@ function lepasKlaimDanKembalikanSaldo(usageId: number, sebab: string) {
 // ── Watermark Cleaner ─────────────────────────────────────────────────────
 const PYTHON_SCRIPT = join(process.cwd(), 'python', 'watermark_cleaner', 'cli.py')
 const WATERMARK_OUTPUT_DIR = join(process.cwd(), 'data', 'watermark_cleaned')
+// Dedupe pipeline per taskId: poll berturut-turut (setiap 5 detik) bisa
+// men-trigger pembersihan berkali-kali — prosesnya berbagi file raw dan
+// hasil bersih yang sama, jadi poll berikutnya cukup menunggu yang berjalan.
+const inflightCleans = new Map<string, Promise<string | null>>()
 
 if (!existsSync(WATERMARK_OUTPUT_DIR)) {
   mkdirSync(WATERMARK_OUTPUT_DIR, { recursive: true })
@@ -47,8 +51,23 @@ if (!existsSync(WATERMARK_OUTPUT_DIR)) {
 /**
  * Bersihkan watermark RunningHub dari video URL menggunakan pipeline Python.
  * Mengembalikan URL download video hasil bersih, atau null jika gagal.
+ * Dedupe: task yang sama hanya diproses sekali; panggilan paralel menunggu
+ * promise yang sama (menghindari race pada file raw berbagi).
  */
 async function cleanRunninghubWatermark(videoUrl: string, taskId: string): Promise<string | null> {
+  // File bersih sudah ada → tidak perlu proses ulang sama sekali.
+  const cleanPath = join(WATERMARK_OUTPUT_DIR, `clean_${taskId}.mp4`)
+  if (existsSync(cleanPath)) return cleanPath
+  const existing = inflightCleans.get(taskId)
+  if (existing) return existing
+  const p = _cleanRunninghubWatermark(videoUrl, taskId).finally(() => {
+    inflightCleans.delete(taskId)
+  })
+  inflightCleans.set(taskId, p)
+  return p
+}
+
+async function _cleanRunninghubWatermark(videoUrl: string, taskId: string): Promise<string | null> {
   try {
     console.log(`[watermark-clean] Memulai pembersihan: taskId=${taskId}, url=${videoUrl}`)
 

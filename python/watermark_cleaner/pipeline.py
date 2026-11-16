@@ -23,6 +23,7 @@ Alur Standar Industri (End-to-End):
 """
 import os
 import time
+import uuid
 import requests
 import logging
 from typing import Dict, Any, Optional
@@ -47,7 +48,7 @@ class RunningHubPostProcessPipeline:
         Langkah 1: Mengunduh video dari RunningHub CDN dengan streaming & validasi format.
         Mencegah file kosong, file HTML error, atau file korup masuk ke proses FFmpeg.
         """
-        temp_raw_path = os.path.join(self.output_dir, f"raw_{task_id}.mp4")
+        temp_raw_path = os.path.join(self.output_dir, f"raw_{task_id}_{uuid.uuid4().hex[:8]}.mp4")
         logger.info(f"[Langkah 1] Mengunduh output video dari RunningHub: {video_url[:80]}...")
 
         headers = {
