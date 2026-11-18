@@ -88,6 +88,7 @@ const RH_MODEL_LABELS: Record<string, string> = {
   'motion-control-72fps': 'Motion Control 72 FPS',
   'motion-control-kontrol-gerakan': 'Kontrol Gerak 50FPS',
   'motion-control-eposcents': 'Eposcents MC — 512HD 32FPS',
+  'motion-control-eposcents-1080p': 'Eposcents MC — 1080p WAN+SCAIL',
   'motion-control-pro': 'Motion Control Pro — Motion Transfer',
   'motion-control-ultra-hd': 'MC Ultra Fast HD',
   'motion-control': 'Motion Control standar (Kling 2.6 Pro/Std · 2.9 · 3.0)',
@@ -185,17 +186,6 @@ interface MasterCookieCheck {
   transient?: boolean
   error?: string
 }
-
-interface Maintenance {
-  provider: string
-  is_maintenance: boolean
-  message: string
-}
-
-const ALL_PROVIDERS = [
-  'weavy', 'wavespeed', 'magnific', 'roboneo', 'createpulse',
-  'framia', 'firefly', 'leonardo', 'oneover', 'gemini', 'riverside',
-]
 
 // ─── Kunci server Seavi ────────────────────────────────────────────────
 // Pola yang sama dengan NexaBot: relay memasang kunci ini untuk member yang
@@ -1337,7 +1327,6 @@ function RunningHubPoolSection({
 
 export default function AdminSystemSettings() {
   const [settings, setSettings] = useState<AppSettings>({})
-  const [maintenance, setMaintenance] = useState<Maintenance[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   // Harga NexaBot punya jalur sendiri (`/api/admin/nexabot/config`) karena
@@ -1409,7 +1398,6 @@ export default function AdminSystemSettings() {
       if (res.ok) {
         const data = await res.json()
         setSettings(data.settings || {})
-        setMaintenance(data.maintenance || [])
       }
     } catch {
       addToast('Failed to fetch settings', 'error')
@@ -1878,7 +1866,7 @@ export default function AdminSystemSettings() {
       const res = await fetch('/api/admin/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ settings, maintenance }),
+        body: JSON.stringify({ settings }),
       })
       const data = await res.json()
       if (res.ok) {
@@ -1892,24 +1880,6 @@ export default function AdminSystemSettings() {
       setSaving(false)
     }
   }
-
-  const toggleMaintenance = (provider: string) => {
-    setMaintenance(prev => {
-      const existing = prev.find(m => m.provider === provider)
-      if (existing) {
-        return prev.map(m => m.provider === provider ? { ...m, is_maintenance: !m.is_maintenance } : m)
-      }
-      return [...prev, { provider, is_maintenance: true, message: '' }]
-    })
-  }
-
-  const setMaintenanceMessage = (provider: string, message: string) => {
-    setMaintenance(prev =>
-      prev.map(m => m.provider === provider ? { ...m, message } : m)
-    )
-  }
-
-  const maintenanceCount = maintenance.filter(m => m.is_maintenance).length
 
   if (loading) {
     return (
@@ -1926,18 +1896,9 @@ export default function AdminSystemSettings() {
     <div>
       <PageHeader
         title="System Settings"
-        desc="Configure global application settings and provider maintenance"
+        desc="Configure global application settings"
       />
       <PageContent>
-        {/* Maintenance Status Banner */}
-        {maintenanceCount > 0 && (
-          <div className="mb-6 p-3 rounded-xl bg-yellow-500/10 border border-yellow-500/20 flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-yellow-500" />
-            <span className="text-sm text-yellow-500 font-medium">
-              {maintenanceCount} provider(s) dalam mode maintenance
-            </span>
-          </div>
-        )}
 
         {/* App Settings */}
         <Section title="Application Settings" sub="General settings for the application">
@@ -2664,51 +2625,6 @@ export default function AdminSystemSettings() {
         <ProviderServerKeySection provider="posbot" label="PosBot" token={token} addToast={addToast} />
 
         <RunningHubPoolSection token={token} addToast={addToast} />
-
-        {/* Provider Maintenance */}
-        <Section title="Provider Maintenance" sub="Toggle maintenance mode for individual providers">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {ALL_PROVIDERS.map(provider => {
-              const m = maintenance.find(x => x.provider === provider)
-              const isMaint = m?.is_maintenance ?? false
-              return (
-                <div key={provider} className={`rounded-xl border p-4 transition-colors ${
-                  isMaint ? 'border-yellow-500/30 bg-yellow-500/5' : 'border-border bg-card'
-                }`}>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium capitalize">{provider}</span>
-                    <button
-                      onClick={() => toggleMaintenance(provider)}
-                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                        isMaint ? 'bg-yellow-500' : 'bg-secondary'
-                      }`}
-                    >
-                      <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                        isMaint ? 'translate-x-4' : 'translate-x-0.5'
-                      }`} />
-                    </button>
-                  </div>
-                  {isMaint && (
-                    <input
-                      type="text"
-                      value={m?.message || ''}
-                      onChange={e => setMaintenanceMessage(provider, e.target.value)}
-                      placeholder="Maintenance message..."
-                      className="w-full px-2 py-1 text-xs rounded border border-yellow-500/30 bg-yellow-500/10"
-                    />
-                  )}
-                  <div className="mt-2 flex items-center gap-1">
-                    {isMaint ? (
-                      <><AlertTriangle className="h-3 w-3 text-yellow-500" /><span className="text-[12px] text-yellow-500">Maintenance</span></>
-                    ) : (
-                      <><CheckCircle className="h-3 w-3 text-green-500" /><span className="text-[12px] text-green-500">Active</span></>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </Section>
 
         {/* Save Button */}
         <div className="flex items-center gap-3 mt-6">
