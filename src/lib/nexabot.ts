@@ -2156,6 +2156,8 @@ export interface NexabotImageResult {
   requestedModel?: string
   creditCost?: number
   creditBalance?: number
+  /** Hasil berasal dari fallback jalur job /api/v1/gpt-image (mesin sinkron mati). */
+  viaJobFallback?: boolean
 }
 
 const NANO_ASPECTS_SET = (model: string): readonly string[] =>
@@ -2248,5 +2250,123 @@ export async function generateNexabotImage(
     requestedModel: data.requested_model,
     creditCost: data.credit_cost,
     creditBalance: data.credit_balance,
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FALLBACK — mesin /api/v1/image mati → jalur job /api/v1/gpt-image
+//
+// 16 Nov 2026: endpoint sinkron /api/v1/image menjawab HTTP 502
+// {"error":"image engine initialization failed (401).","refunded":true} untuk
+// model non-GPT (nano_banana*, mai_image*) — mesin per-model di sisi
+// nexabot.id gagal init dan kredit di-refund upstream. Mesin job
+// /api/v1/gpt-image (dipakai halaman web nexabot.id) hidup dan menerima
+// seluruh 11 model lewat field `model`. Fungsi ini mencoba jalur sinkron
+// dulu, lalu otomatis beralih ke jalur job saat mesinnya mati, dan
+// mengembalikan bentuk NexabotImageResult yang sama supaya pemanggil
+// (EditImage dkk.) tidak perlu berubah.
+// ═══════════════════════════════════════════════════════════════
+
+/** Kegagalan mesin gambar di sisi upstream — BUKAN masalah kredensial kita. */
+export function isNexabotImageEngineError(message: string | undefined | null): boolean {
+  return !!message && /image engine|engine initialization|initialization failed/i.test(message)
+}
+
+/**
+ * Peta rasio string → enum angka gpt-image (1 = 1:1, 2 = 16:9, 5 = 9:16).
+ * Model gpt/mai memakai image_size, bukan aspect — dipetakan juga dari situ.
+ * Rasio tanpa padanan persis (21:9, 4:3, 4:1, ...) diambil yang terdekat.
+ */
+function nexabotAspectToGptImage(aspect?: string, imageSize?: string): NexabotGptImageAspect {
+  const rasio = aspect
+    || (imageSize === 'portrait_4_3' || imageSize === 'portrait_16_9' ? '9:16'
+      : imageSize === 'square_hd' || imageSize === 'square' ? '1:1' : undefined)
+  switch (rasio) {
+    case '1:1': case '4:5': case '5:4': return 1
+    case '9:16': case '3:4': case '2:3': case '1:4': case '1:8': return 5
+    default: return 2 // 'auto' & semua rasio landscape terdekat ke 16:9
+  }
+}
+
+export interface NexabotImageResilientOptions {
+  /** Log progres fallback (ditampilkan di UI halaman pemanggil). */
+  onLog?: (msg: string) => void
+  /** Opsi polling job fallback — dipakai test supaya jeda nyaris nol. */
+  poll?: NexabotRetryOptions & { maxTotalMs?: number }
+}
+
+/**
+ * generateNexabotImage + fallback otomatis ke jalur job /api/v1/gpt-image
+ * ketika mesin sinkron /api/v1/image mati (HTTP 5xx "image engine
+ * initialization failed"). Throttle & sesi app diteruskan apa adanya supaya
+ * pemanggil (runWithNexabotThrottleRetry) tetap bisa mengulang.
+ */
+export async function generateNexabotImageResilient(
+  params: NexabotImageParams,
+  authOverride?: NexabotAuth | string,
+  opts: NexabotImageResilientOptions = {},
+): Promise<NexabotImageResult> {
+  const onLog = opts.onLog
+  try {
+    return await generateNexabotImage(params, authOverride)
+  } catch (err: any) {
+    if (err instanceof NexabotAppSessionError || err instanceof NexabotThrottleError) throw err
+    if (!isNexabotImageEngineError(err?.message)) throw err
+
+    const model = params.model || 'nano_banana_2'
+    onLog?.(`⚠️ Mesin /api/v1/image mati (${String(err?.message || '').slice(0, 90)}) — beralih ke jalur job GPT Image (model tetap ${model})...`)
+
+    const referensi = (params.references || []).slice(0, GPT_IMAGE_REFERENCES_MAX)
+    const isNano = nexabotImageFamily(model) === 'nano'
+    const jalankan = async (modelDipakai?: string): Promise<{ job: NexabotGptImageJob; submit: NexabotGptImageSubmitResult }> => {
+      const submit = await submitNexabotGptImage({
+        prompt: params.prompt,
+        aspect: nexabotAspectToGptImage(isNano ? params.aspect : undefined, isNano ? undefined : params.imageSize),
+        references: referensi,
+        ...(modelDipakai ? { model: modelDipakai } : {}),
+      }, authOverride)
+      if (!submit.ok || !submit.id) {
+        throw new Error(submit.error || 'NexaBot: fallback jalur job GPT Image gagal submit')
+      }
+      const job = await pollNexabotGptImage(submit.id, authOverride, (msg) => onLog?.(`   ${msg}`), opts.poll)
+      if (job.status !== 'completed') {
+        throw new Error('NexaBot: fallback jalur job GPT Image tidak selesai')
+      }
+      return { job, submit }
+    }
+
+    let hasil: { job: NexabotGptImageJob; submit: NexabotGptImageSubmitResult }
+    try {
+      hasil = await jalankan(model)
+    } catch (errSubmit: any) {
+      // Auth/throttle/mesin job yang juga mati → tidak ada yang bisa diselamatkan.
+      if (errSubmit instanceof NexabotAppSessionError || errSubmit instanceof NexabotThrottleError) throw errSubmit
+      const pesan = String(errSubmit?.message || '')
+      if (isNexabotImageEngineError(pesan)) throw errSubmit
+      if (/cookie kedaluwarsa|API key tidak valid/i.test(pesan)) throw errSubmit
+      // Model tertentu mungkin belum didukung mesin job — ulang tanpa `model`
+      // (upstream memakai default GPT Image 2.5) supaya tetap ada hasil.
+      onLog?.(`⚠️ Model ${model} ditolak mesin job (${pesan.slice(0, 90)}) — memakai default GPT Image 2.5...`)
+      hasil = await jalankan(undefined)
+    }
+
+    const urlJob = hasil.job.images?.[0]?.url
+    if (!urlJob) {
+      throw new Error('NexaBot: fallback jalur job GPT Image tidak menghasilkan gambar')
+    }
+    // URL hasil butuh kredensial (lihat gptImageDownloadUrl) — unduh sebagai
+    // blob di sini, pemanggil menerima blob: URL yang siap dipakai <img>.
+    const dl = await downloadNexabotGptImage(urlJob, authOverride)
+    if (!dl.ok || !dl.blob) {
+      throw new Error(dl.error || 'NexaBot: gagal mengunduh hasil fallback GPT Image')
+    }
+    return {
+      ok: true,
+      url: URL.createObjectURL(dl.blob),
+      model,
+      creditCost: hasil.submit.cost,
+      creditBalance: hasil.submit.creditBalance,
+      viaJobFallback: true,
+    }
   }
 }

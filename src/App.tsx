@@ -58,7 +58,6 @@ const ClipGeniusPage = lazyWithRetry(() => import('@/pages/ClipGenius'))
 const StudioRedirectPage = lazyWithRetry(() => import('@/pages/StudioRedirect'))
 const AutoMotionRedirectPage = lazyWithRetry(() => import('@/pages/AutoMotionRedirect'))
 const HealthAnimPage = lazyWithRetry(() => import('@/pages/HealthAnimPage'))
-const DramaStudioPage = lazyWithRetry(() => import('@/pages/DramaStudioPage'))
 const GeminiToolsPage = lazyWithRetry(() => import('@/pages/GeminiTools'))
 const UpgradeProPage = lazyWithRetry(() => import('@/pages/UpgradePro'))
 const MetadataCleanerPage = lazyWithRetry(() => import('@/pages/MetadataCleaner'))
@@ -66,6 +65,7 @@ const AdminNotificationsPage = lazyWithRetry(() => import('@/pages/AdminNotifica
 const CreatePulseTopupPage = lazyWithRetry(() => import('@/pages/CreatePulseTopup'))
 const NexaBotTopupPage = lazyWithRetry(() => import('@/pages/NexaBotTopup'))
 const PremiumBoosterPage = lazyWithRetry(() => import('@/pages/PremiumBooster'))
+const AddonAkunPage = lazyWithRetry(() => import('@/pages/AddonAkun'))
 const SeaviTopupPage = lazyWithRetry(() => import('@/pages/SeaviTopup'))
 const PosBotTopupPage = lazyWithRetry(() => import('@/pages/PosBotTopup'))
 const RunningHubTopupPage = lazyWithRetry(() => import('@/pages/RunningHubTopup'))
@@ -263,7 +263,6 @@ export default function App() {
                         <Route path="/generate/video-edit" element={<ProRoute><StudioRedirectPage /></ProRoute>} />
                          <Route path="/generate/auto-motion" element={<ProRoute><AutoMotionRedirectPage /></ProRoute>} />
                         <Route path="/generate/arkx-health" element={<ProRoute><HealthAnimPage /></ProRoute>} />
-                        <Route path="/drama" element={<ProRoute><DramaStudioPage /></ProRoute>} />
                         <Route path="/generate/image" element={<TextToVideoPage />} />
                         <Route path="/generate/edit-image" element={<EditImagePage />} />
                         <Route path="/providers" element={<ProvidersPage />} />
@@ -272,6 +271,7 @@ export default function App() {
                         <Route path="/topup/createpulse" element={<CreatePulseTopupPage />} />
                         <Route path="/topup/nexabot" element={<NexaBotTopupPage />} />
                         <Route path="/booster" element={<PremiumBoosterPage />} />
+                        <Route path="/addon-akun" element={<AddonAkunPage />} />
                         <Route path="/topup/seavi" element={<SeaviTopupPage />} />
                         <Route path="/topup/posbot" element={<PosBotTopupPage />} />
                         <Route path="/topup/runninghub" element={<RunningHubTopupPage />} />

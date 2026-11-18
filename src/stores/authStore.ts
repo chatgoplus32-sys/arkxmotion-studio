@@ -18,7 +18,7 @@ interface AuthState {
   isAuthenticated: boolean
   isLoading: boolean
   login: (email: string, password: string) => Promise<{ error?: string }>
-  register: (email: string, password: string, name: string) => Promise<{ error?: string; needsApproval?: boolean; paymentToken?: string | null }>
+  register: (email: string, password: string, name: string) => Promise<{ error?: string; needsApproval?: boolean; paymentToken?: string | null; addonLinked?: boolean }>
   logout: () => void
   checkAuth: () => Promise<void>
   refresh: () => Promise<boolean>
@@ -71,7 +71,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       })
       const data = await response.json()
       if (!response.ok) return { error: data.error || 'Registration failed' }
-      return { needsApproval: true, paymentToken: data.paymentToken ?? null }
+      return { needsApproval: data.needsApproval !== false, paymentToken: data.paymentToken ?? null, addonLinked: data.addonLinked === true }
     } catch {
       return { error: 'Network error. Please try again.' }
     }

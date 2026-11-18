@@ -19,7 +19,7 @@
 import db from '../db.js'
 import { alertInfo } from './alerts.js'
 import { activateUnlimitedTopup } from './unlimitedActivation.js'
-import { approveMembershipPaymentRow, approveProPaymentRow } from './membershipActivation.js'
+import { approveMembershipPaymentRow, approveProPaymentRow, approveAddonPaymentRow } from './membershipActivation.js'
 
 // ── Registry tabel top-up yang bisa diverifikasi ──────────────────────────
 interface QrisTable {
@@ -42,6 +42,8 @@ export const QRIS_TABLES: QrisTable[] = [
   // Pembayaran member (join Pro) & upgrade Pro — aktivasi akun, bukan saldo.
   { table: 'membership_payments', label: 'Pembayaran Member (Join Pro)', mode: 'manual' },
   { table: 'pro_payments', label: 'Upgrade Pro', mode: 'manual' },
+  // Add-on Akun (3 email siap pakai / 30 hari) — aktivasi periode, bukan saldo.
+  { table: 'account_addon_payments', label: 'Add-on Akun (3 Email/Bulan)', mode: 'manual' },
 ]
 
 /** Baris pending hanya dicocokkan selama jendela ini sejak diajukan. */
@@ -192,6 +194,12 @@ function handleRow(
     const r = approveProPaymentRow(row.id, ref.source || 'manual')
     return r.ok
       ? { action: 'auto_activated', table: t.table, id: row.id, detail: 'Plan Pro diaktifkan' }
+      : { action: 'activate_failed', table: t.table, id: row.id, detail: r.reason || 'gagal aktivasi' }
+  }
+  if (t.table === 'account_addon_payments') {
+    const r = approveAddonPaymentRow(row.id, ref.source || 'manual')
+    return r.ok
+      ? { action: 'auto_activated', table: t.table, id: row.id, detail: 'Add-on Akun aktif 30 hari' }
       : { action: 'activate_failed', table: t.table, id: row.id, detail: r.reason || 'gagal aktivasi' }
   }
   if (t.table === 'nexabot_topup' && row.kind === 'unlimited') {

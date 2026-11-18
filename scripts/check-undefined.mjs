@@ -53,14 +53,12 @@ const ALLOWED_UNDEFINED = new Set([
 ])
 
 // Bundel aplikasi statis yang ikut di-commit sebagai aset statis (ARKX AUTO Studio,
-// Drama Studio, auto-motion-source). Sudah ter-minify dan memakai global yang
-// disuntikkan skrip inline di index.html / file vendor (public/drama-studio/
-// assets/xlsx.full.min.js → global XLSX; auto-motion-source/public/app.js →
+// auto-motion-source). Sudah ter-minify dan memakai global yang disuntikkan skrip
+// inline di index.html / file vendor (auto-motion-source/public/app.js →
 // __firebase_config, __app_id, __initial_auth_token), jadi identifier itu memang
 // tidak terdefinisi di file mana pun dan gerbang ini selalu menuduhnya salah
-// (#179, 5 Nov 2026: deploy Studio mati di gerbang 1; 15 Nov 2026: deploy macet
-// lagi — fitur ekspor Excel drama-studio + bundel ARKX AUTO yang ter-commit).
-const SKIP_PATHS = ['public/studio', 'public/drama-studio', 'auto-motion-source/public']
+// (#179, 5 Nov 2026: deploy Studio mati di gerbang 1).
+const SKIP_PATHS = ['public/studio', 'auto-motion-source/public']
 
 // ---------------------------------------------------------------------------
 // 1. Kumpulkan file kode yang ikut ter-deploy, termasuk yang di luar semua tsconfig

@@ -6,6 +6,7 @@ import { z } from 'zod'
 import db from '../db.js'
 import { authenticateToken, AuthRequest } from '../middleware/auth.js'
 import { sendEmail, appUrl, allowDevMailLink } from '../mailer.js'
+import { findAddonProvisioning } from '../lib/effectiveWallet.js'
 
 const RegisterSchema = z.object({ email: z.string().email().max(254), password: z.string().min(8).max(128), name: z.string().min(1).max(80).trim() })
 const LoginSchema = z.object({ email: z.string().email().max(254), password: z.string().min(1).max(128) })
@@ -128,6 +129,43 @@ router.post('/register', async (req, res: Response) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10)
+
+    // Add-on Akun: email yang diserahkan admin (add-on approved & masih
+    // aktif) otomatis jadi akun Pro tanpa biaya join, dan ditautkan ke akun
+    // utama yang membayar add-on. Mode saldo default: ikut akun utama.
+    const provisioning = findAddonProvisioning(email)
+    if (provisioning) {
+      const result = db.prepare(
+        "INSERT INTO users (email, password, name, role, approved, email_verified, plan, pro_since) VALUES (?, ?, ?, 'user', 1, 1, 'pro', CURRENT_TIMESTAMP)"
+      ).run(email, hashedPassword, name)
+      const addonUserId = Number(result.lastInsertRowid)
+      db.prepare(
+        "INSERT INTO account_addon_links (addon_user_id, owner_user_id, saldo_source) VALUES (?, ?, 'parent')"
+      ).run(addonUserId, provisioning.ownerId)
+      db.prepare("INSERT INTO notifications (title, message, type, target, user_id) VALUES (?, ?, 'success', 'users', ?)").run(
+        'Akun Add-on Tertaut',
+        `Akun ${email} terdaftar sebagai akun add-on dan tertaut ke akun utama kamu. Atur mode saldonya di menu Add-on Akun.`,
+        provisioning.ownerId,
+      )
+      db.prepare("INSERT INTO notifications (title, message, type, target) VALUES (?, ?, 'info', 'admins')").run(
+        'Akun Add-on Terdaftar',
+        `${name} (${email}) terdaftar sebagai akun add-on tertaut ke user #${provisioning.ownerId}.`,
+      )
+      return res.status(201).json({
+        message: 'Akun add-on berhasil dibuat & ditautkan ke akun utama. Kamu bisa langsung login.',
+        needsApproval: false,
+        addonLinked: true,
+        user: {
+          id: addonUserId,
+          email,
+          name,
+          role: 'user',
+          approved: true,
+          plan: 'pro',
+        },
+      })
+    }
+
     const paymentToken = generateToken()
 
     const result = db.prepare(

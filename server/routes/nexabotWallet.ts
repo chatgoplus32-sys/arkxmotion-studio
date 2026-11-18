@@ -51,6 +51,7 @@ import { nexadanceQuota, nexadanceQuotaMessage } from '../lib/nexabotQuota.js'
 import { nextUniqueCode } from '../lib/qrisPayment.js'
 import { createBasunipayPayment } from '../lib/basunipay.js'
 import { clearNexabotLanes } from '../../shared/nexabotProxy.js'
+import { walletUserIdFor } from '../lib/effectiveWallet.js'
 
 // Definisi harga tinggal di shared/pricing.ts supaya server, fungsi Vercel, dan
 // endpoint publik /api/public/pricing tidak pernah beda angka.
@@ -219,17 +220,19 @@ router.get('/balance', authenticateToken, (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id
     if (!userId) return res.status(401).json({ error: 'Unauthorized' })
+    // Akun add-on dengan mode 'parent' membaca saldo/paket/kuota akun utama.
+    const walletUserId = walletUserIdFor(userId)
 
-    const balance = ensureBalanceRow(userId)
+    const balance = ensureBalanceRow(walletUserId)
     const pricing = getNexabotPricing()
     // Kelayakan memakai kredensial NexaBot milik server. Dihitung dengan
     // kebijakan yang sama seperti relay, supaya UI hanya menawarkan jalur tanpa
     // API key ketika relay benar-benar akan menerimanya.
-    const serverKey = serverKeyEligible(userId)
+    const serverKey = serverKeyEligible(walletUserId)
     // Sesi (cookie) server didahulukan — sama seperti relay: paket Unlimited
     // hanya dihormati di jalur web, jadi kredensial server tidak memotong kredit
     // upstream. Kunci server jadi cadangan bila sesi tidak tersedia/ditolak.
-    const serverCookie = serverCookieEligible(userId)
+    const serverCookie = serverCookieEligible(walletUserId)
     // `kind` harus mengikuti urutan yang benar-benar dipakai relay — kalau tidak,
     // UI menyebut jalur yang berbeda dari yang menagih akun NexaBot.
     const kind = serverCookie.ok ? 'cookie' : serverKey.ok ? 'key' : null
@@ -250,11 +253,11 @@ router.get('/balance', authenticateToken, (req: AuthRequest, res: Response) => {
       balance,
       price: pricing.price,
       min_topup: NEXABOT_MIN_TOPUP,
-      unlimited: unlimitedPayload(getActivePackage(userId)),
+      unlimited: unlimitedPayload(getActivePackage(walletUserId)),
       // Status Premium Booster. Paket ini TIDAK menggratiskan music/tts, jadi ia
       // sengaja tidak digabung ke `unlimited` — UI menampilkannya sebagai
       // "Booster" terpisah dengan daftar yang dibebaskannya.
-      booster_unlimited: unlimitedPayload(getActivePackage(userId, false)),
+      booster_unlimited: unlimitedPayload(getActivePackage(walletUserId, false)),
       server_key: {
         available: kind !== null,
         reason: alasan,
@@ -272,7 +275,7 @@ router.get('/balance', authenticateToken, (req: AuthRequest, res: Response) => {
       // Sisa jatah NexaDance hari ini (WIB). Dihitung dari usage yang sudah
       // tercatat, jadi UI menampilkan angka otoritatif server — bukan tebakan
       // yang bisa basi setelah halaman dibuka.
-      nexadance_quota: nexadanceQuota(userId),
+      nexadance_quota: nexadanceQuota(walletUserId),
     })
   } catch (error) {
     console.error('NexaBot balance error:', error)
@@ -401,10 +404,11 @@ router.get('/topups/mine', authenticateToken, (req: AuthRequest, res: Response) 
     if (!userId) return res.status(401).json({ error: 'Unauthorized' })
 
     const topups = db.prepare('SELECT * FROM nexabot_topup WHERE user_id = ? ORDER BY created_at DESC').all(userId)
+    const walletUserId = walletUserIdFor(userId)
     res.json({
       topups,
-      unlimited: unlimitedPayload(getActivePackage(userId)),
-      booster_unlimited: unlimitedPayload(getActivePackage(userId, false)),
+      unlimited: unlimitedPayload(getActivePackage(walletUserId)),
+      booster_unlimited: unlimitedPayload(getActivePackage(walletUserId, false)),
     })
   } catch (error) {
     console.error('NexaBot list topups error:', error)
@@ -416,15 +420,16 @@ router.post('/deduct', authenticateToken, (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id
     if (!userId) return res.status(401).json({ error: 'Unauthorized' })
+    const walletUserId = walletUserIdFor(userId)
 
     const { model, batch_id } = req.body
-    const balance = ensureBalanceRow(userId)
+    const balance = ensureBalanceRow(walletUserId)
 
     // Paket Unlimited aktif → generate gratis. Usage tetap dicatat (cost 0)
     // supaya jumlah generate per user tetap terlihat di riwayat/statistik.
     // Untuk Seedance/Omni/GPT Image, Premium Booster juga dihitung; untuk
     // music/tts paket itu sengaja diabaikan server, bukan klien.
-    const pkg = getActivePackageForModel(userId, model)
+    const pkg = getActivePackageForModel(walletUserId, model)
 
     // NexaDance 3.0 = model paket: member tanpa paket (Unlimited/Premium
     // Booster) tidak boleh menagih saldo untuk generate NexaDance — saldo
@@ -441,7 +446,7 @@ router.post('/deduct', authenticateToken, (req: AuthRequest, res: Response) => {
     // video tetap menagih 0,2 kredit akun NexaBot milik operator. Batas ini
     // mencegah satu member menghabiskan kredit server dalam sehari.
     if (pkg && isNexadanceModelName(model)) {
-      const kuota = nexadanceQuota(userId)
+      const kuota = nexadanceQuota(walletUserId)
       if (kuota.habis) {
         return res.status(429).json({
           error: nexadanceQuotaMessage(kuota),
@@ -472,12 +477,12 @@ router.post('/deduct', authenticateToken, (req: AuthRequest, res: Response) => {
     }
 
     if (cost > 0) {
-      db.prepare('UPDATE nexabot_balance SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?').run(cost, userId)
+      db.prepare('UPDATE nexabot_balance SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?').run(cost, walletUserId)
     }
     const insert = db.prepare('INSERT INTO nexabot_usage (user_id, model, cost, batch_id, status) VALUES (?, ?, ?, ?, ?)')
-      .run(userId, model || '', cost, batch_id || '', 'used')
+      .run(walletUserId, model || '', cost, batch_id || '', 'used')
 
-    const updated = db.prepare('SELECT balance FROM nexabot_balance WHERE user_id = ?').get(userId) as { balance: number }
+    const updated = db.prepare('SELECT balance FROM nexabot_balance WHERE user_id = ?').get(walletUserId) as { balance: number }
     res.json({
       balance: updated.balance,
       deducted: cost,
@@ -495,6 +500,7 @@ router.post('/refund', authenticateToken, (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id
     if (!userId) return res.status(401).json({ error: 'Unauthorized' })
+    const walletUserId = walletUserIdFor(userId)
 
     // `usage_id` adalah cara presisi (dikembalikan /deduct). batch_id disimpan
     // sebagai cadangan untuk pemanggil lama.
@@ -505,9 +511,9 @@ router.post('/refund', authenticateToken, (req: AuthRequest, res: Response) => {
     const kolom = `id, cost, CAST((julianday('now') - julianday(created_at)) * 86400000 AS INTEGER) AS age_ms`
     let usage
     if (usage_id) {
-      usage = db.prepare(`SELECT ${kolom} FROM nexabot_usage WHERE user_id = ? AND id = ? AND status = 'used'`).get(userId, usage_id) as { id: number; cost: number; age_ms: number } | undefined
+      usage = db.prepare(`SELECT ${kolom} FROM nexabot_usage WHERE user_id = ? AND id = ? AND status = 'used'`).get(walletUserId, usage_id) as { id: number; cost: number; age_ms: number } | undefined
     } else if (batch_id) {
-      usage = db.prepare(`SELECT ${kolom} FROM nexabot_usage WHERE user_id = ? AND batch_id = ? AND status = 'used'`).get(userId, batch_id) as { id: number; cost: number; age_ms: number } | undefined
+      usage = db.prepare(`SELECT ${kolom} FROM nexabot_usage WHERE user_id = ? AND batch_id = ? AND status = 'used'`).get(walletUserId, batch_id) as { id: number; cost: number; age_ms: number } | undefined
     }
 
     if (!usage) return res.status(404).json({ error: 'Usage not found' })
@@ -525,10 +531,10 @@ router.post('/refund', authenticateToken, (req: AuthRequest, res: Response) => {
     // Usage dari paket Unlimited ber-cost 0 → tidak ada yang perlu dikembalikan,
     // tapi tetap ditandai refunded supaya tidak dihitung sebagai generate sukses.
     if (usage.cost > 0) {
-      db.prepare('UPDATE nexabot_balance SET balance = balance + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?').run(usage.cost, userId)
+      db.prepare('UPDATE nexabot_balance SET balance = balance + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?').run(usage.cost, walletUserId)
     }
 
-    const updated = db.prepare('SELECT balance FROM nexabot_balance WHERE user_id = ?').get(userId) as { balance: number }
+    const updated = db.prepare('SELECT balance FROM nexabot_balance WHERE user_id = ?').get(walletUserId) as { balance: number }
     res.json({ balance: updated.balance, refunded: usage.cost })
   } catch (error) {
     console.error('NexaBot refund error:', error)

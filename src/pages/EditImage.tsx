@@ -529,7 +529,7 @@ export default function EditImagePage() {
   const handleGenerateGpt25 = async () => {
     // Jalur image premium NexaBot (dokumentasi publik, sinkron): respons langsung
     // berisi url gambar — tidak ada job_id/poll/download terpisah.
-    const { generateNexabotImage, compressForApi, runWithNexabotThrottleRetry } = await import('@/lib/nexabot')
+    const { generateNexabotImageResilient, compressForApi, runWithNexabotThrottleRetry } = await import('@/lib/nexabot')
     const auth = await buildNexabotAuth()
 
     const sizeLabel = nbIsNano
@@ -550,19 +550,22 @@ export default function EditImagePage() {
       }))
     }
 
-    const result = await runWithNexabotThrottleRetry(() => generateNexabotImage({
+    const result = await runWithNexabotThrottleRetry(() => generateNexabotImageResilient({
       prompt: prompt.trim(),
       model: currentModel?.upstreamModel,
       aspect: nbIsNano ? nbAspect : undefined,
       resolution: nbHasResolution ? nbResolution : undefined,
       imageSize: !nbIsNano ? nbImageSize : undefined,
       references,
-    }, auth), {
+    }, auth, {
+      // Fallback mesin mati → jalur job GPT Image dicatat sebagai log biasa.
+      onLog: (msg) => addLog(msg, 'warn'),
+    }), {
       onThrottle: (waitSeconds) => {
         addLog(`Antrean generate NexaBot penuh — menunggu ${waitSeconds}s lalu submit otomatis...`, 'warn')
       },
     })
-    addLog(`   ✓ Gambar jadi (${result.model ?? currentModel?.upstreamModel}${result.fallback ? ` — upstream memilih Nano Banana Pro; requested: ${result.requestedModel}` : ''})`, 'success')
+    addLog(`   ✓ Gambar jadi (${result.model ?? currentModel?.upstreamModel}${result.viaJobFallback ? ' — via fallback jalur job GPT Image' : result.fallback ? ` — upstream memilih Nano Banana Pro; requested: ${result.requestedModel}` : ''})`, 'success')
     addLog(`   Biaya: ${result.creditCost ?? 0.1} kredit${result.creditBalance != null ? ` — sisa saldo ${result.creditBalance}` : ''}`, 'debug')
 
     // URL hasil bisa langsung dipakai (media publik). Unduh sebagai blob supaya

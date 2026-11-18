@@ -3,12 +3,18 @@ import db from '../db.js'
 import { authenticateToken, AuthRequest } from '../middleware/auth.js'
 import { nextUniqueCode } from '../lib/qrisPayment.js'
 import { createBasunipayPayment } from '../lib/basunipay.js'
+import { effectiveWallet } from '../lib/effectiveWallet.js'
 
 const router = Router()
 
 const DEFAULT_FEE = 250000
 const DEFAULT_FEE_ORIGINAL = 350000
 const DEFAULT_PRO_FEE = 50000
+const DEFAULT_ADDON_FEE = 100000
+/** Jumlah akun email siap pakai per periode add-on. */
+export const ADDON_ACCOUNTS_PER_PERIOD = 3
+/** Masa aktif add-on (hari) per pembayaran. */
+export const ADDON_PERIOD_DAYS = 30
 
 export function getMembershipFee(): number {
   const row = db.prepare("SELECT value FROM app_settings WHERE key = 'membership_fee'").get() as { value: string } | undefined
@@ -43,6 +49,18 @@ export function getProFee(): number {
 export function setProFee(fee: number) {
   db.prepare(
     "INSERT INTO app_settings (key, value, updated_at) VALUES ('pro_fee', ?, CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP"
+  ).run(String(fee))
+}
+
+export function getAddonFee(): number {
+  const row = db.prepare("SELECT value FROM app_settings WHERE key = 'addon_fee'").get() as { value: string } | undefined
+  const fee = Number(row?.value)
+  return Number.isFinite(fee) && fee > 0 ? fee : DEFAULT_ADDON_FEE
+}
+
+export function setAddonFee(fee: number) {
+  db.prepare(
+    "INSERT INTO app_settings (key, value, updated_at) VALUES ('addon_fee', ?, CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP"
   ).run(String(fee))
 }
 
@@ -101,6 +119,9 @@ router.get('/config', (_req, res: Response) => {
       membershipFee: getMembershipFee(),
       membershipFeeOriginal: getMembershipFeeOriginal(),
       proFee: getProFee(),
+      addonFee: getAddonFee(),
+      addonAccountsPerPeriod: ADDON_ACCOUNTS_PER_PERIOD,
+      addonPeriodDays: ADDON_PERIOD_DAYS,
     })
   } catch (error) {
     console.error('Get membership config error:', error)
@@ -254,6 +275,244 @@ router.post('/pro/payment', authenticateToken, async (req: AuthRequest, res: Res
     })
   } catch (error) {
     console.error('Pro payment error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// ─── Add-on Akun (member aktif): 3 akun email siap pakai / 30 hari ─────────
+// Sama seperti upgrade Pro: nominal DIKUNCI di server, satu user hanya boleh
+// punya satu pengajuan pending. Pembayaran terverifikasi (BasuniPay / email /
+// paste mutasi) otomatis mengaktifkan periode 30 hari via approveAddonPaymentRow.
+
+interface AddonPaymentRow {
+  id: number
+  user_id: number
+  amount: number
+  status: string
+  proof_note: string
+  admin_note: string
+  accounts: string
+  period_start: string | null
+  period_end: string | null
+  created_at: string
+  unique_code?: number | null
+  amount_total?: number | null
+}
+
+function parseAddonAccounts(raw: string | null | undefined): Array<{ email: string; password: string; note?: string }> {
+  try {
+    const arr = JSON.parse(String(raw || '[]'))
+    if (!Array.isArray(arr)) return []
+    return arr
+      .filter((a) => a && typeof a === 'object' && String((a as any).email || '').trim())
+      .map((a) => {
+        const note = String((a as any).note ?? '').trim()
+        return note
+          ? { email: String(a.email), password: String((a as any).password ?? ''), note }
+          : { email: String(a.email), password: String((a as any).password ?? '') }
+      })
+  } catch {
+    return []
+  }
+}
+
+function addonPaymentPayload(p: AddonPaymentRow) {
+  // Sertakan checkout BasuniPay terbaru bila ada — QR tetap tampil walau
+  // halaman di-refresh.
+  const bp = db.prepare(
+    "SELECT checkout_url, qris_image FROM basunipay_payment WHERE ref_table = 'account_addon_payments' AND ref_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1",
+  ).get(p.id) as { checkout_url?: string; qris_image?: string } | undefined
+  return {
+    id: p.id,
+    amount: p.amount,
+    amountTotal: p.amount_total ?? null,
+    uniqueCode: p.unique_code ?? null,
+    status: p.status,
+    proofNote: p.proof_note,
+    adminNote: p.admin_note,
+    periodStart: p.period_start,
+    periodEnd: p.period_end,
+    createdAt: p.created_at,
+    checkoutUrl: bp?.checkout_url || null,
+    qrisImage: bp?.qris_image || null,
+  }
+}
+
+// Status add-on milik user login — dipakai halaman Add-on Akun.
+router.get('/addon/status', authenticateToken, (req: AuthRequest, res: Response) => {
+  try {
+    const user = db.prepare('SELECT id FROM users WHERE id = ?').get(req.user!.id) as { id: number } | undefined
+    if (!user) return res.status(404).json({ error: 'User not found' })
+
+    const latest = db.prepare(
+      'SELECT * FROM account_addon_payments WHERE user_id = ? ORDER BY id DESC LIMIT 1'
+    ).get(user.id) as AddonPaymentRow | undefined
+
+    // Periode aktif = payment approved dengan period_end di masa depan.
+    const active = db.prepare(
+      "SELECT * FROM account_addon_payments WHERE user_id = ? AND status = 'approved' AND period_end > datetime('now') ORDER BY period_end DESC LIMIT 1"
+    ).get(user.id) as AddonPaymentRow | undefined
+
+    // Kalau PEMANGGIL adalah akun add-on, tunjukkan mode saldo yang berlaku.
+    const eff = effectiveWallet(user.id)
+    const owner = eff.ownerUserId
+      ? db.prepare('SELECT name, email FROM users WHERE id = ?').get(eff.ownerUserId) as { name: string; email: string } | undefined
+      : undefined
+
+    res.json({
+      ok: true,
+      fee: getAddonFee(),
+      accountsPerPeriod: ADDON_ACCOUNTS_PER_PERIOD,
+      periodDays: ADDON_PERIOD_DAYS,
+      isActive: !!active,
+      periodStart: active?.period_start ?? null,
+      periodEnd: active?.period_end ?? null,
+      accounts: active ? parseAddonAccounts(active.accounts) : [],
+      payment: latest ? addonPaymentPayload(latest) : null,
+      isAddonAccount: !!eff.ownerUserId,
+      saldoSource: eff.source,
+      ownerName: owner?.name ?? null,
+    })
+  } catch (error) {
+    console.error('Get addon status error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// Ajukan add-on: 1 pengajuan pending per user. Kalau masih dalam periode
+// aktif, pembelian baru tetap boleh (diperlakukan sebagai perpanjangan 30
+// hari yang ditambahkan di atas expiry terakhir saat disetujui).
+router.post('/addon/payment', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = db.prepare('SELECT id, email, name, role, plan FROM users WHERE id = ?').get(req.user!.id) as
+      | { id: number; email: string; name: string; role: string; plan: string }
+      | undefined
+    if (!user) return res.status(404).json({ error: 'User not found' })
+
+    const pending = db.prepare(
+      "SELECT id FROM account_addon_payments WHERE user_id = ? AND status = 'pending'"
+    ).get(user.id) as { id: number } | undefined
+    if (pending) {
+      return res.status(400).json({ error: 'Masih ada pengajuan Add-on Akun yang menunggu approval admin' })
+    }
+
+    const amount = getAddonFee()
+    const proofNote = String((req.body as any)?.proof_note || '').slice(0, 500)
+    const { unique_code, amount_total } = nextUniqueCode(amount)
+    const result = db.prepare(
+      "INSERT INTO account_addon_payments (user_id, amount, unique_code, amount_total, status, proof_note) VALUES (?, ?, ?, ?, 'pending', ?)"
+    ).run(user.id, amount, unique_code, amount_total, proofNote)
+    const refId = Number(result.lastInsertRowid)
+
+    const basunipay = await createBasunipayPayment({
+      refTable: 'account_addon_payments',
+      refId,
+      userId: user.id,
+      baseAmount: amount,
+      description: `Add-on Akun (3 email/bulan) — ${user.email}`,
+    })
+    const payment = db.prepare('SELECT amount_total, unique_code FROM account_addon_payments WHERE id = ?').get(refId) as
+      | { amount_total: number | null; unique_code: number | null }
+      | undefined
+
+    db.prepare(
+      "INSERT INTO notifications (title, message, type, target) VALUES (?, ?, 'warning', 'admins')"
+    ).run(
+      'Permintaan Add-on Akun',
+      `${user.name} (${user.email}) mengajukan Add-on Akun ${formatRp(amount)} — menunggu approval.`,
+    )
+
+    res.status(201).json({
+      ok: true,
+      message: `Konfirmasi pembayaran ${formatRp(amount)} diterima. Add-on akan aktif begitu pembayaran masuk.`,
+      payment: {
+        id: refId,
+        amount,
+        amountTotal: payment?.amount_total ?? amount_total,
+        uniqueCode: payment?.unique_code ?? unique_code,
+        status: 'pending',
+        proofNote,
+        adminNote: '',
+        createdAt: new Date().toISOString(),
+      },
+      basunipay,
+    })
+  } catch (error) {
+    console.error('Addon payment error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// Daftar provisioning akun add-on milik user login + status pendaftaran &
+// mode saldo per akun tertaut. Dipakai halaman Add-on Akun (bagian owner).
+router.get('/addon/links', authenticateToken, (req: AuthRequest, res: Response) => {
+  try {
+    const ownerId = req.user!.id
+    const payments = db.prepare(
+      "SELECT id, accounts, period_start, period_end FROM account_addon_payments WHERE user_id = ? AND status = 'approved' ORDER BY id DESC"
+    ).all(ownerId) as Array<{ id: number; accounts: string; period_start: string | null; period_end: string | null }>
+
+    // Gabungkan semua email yang pernah diserahkan admin (hindari duplikat,
+    // pakai kemunculan terakhir).
+    const byEmail = new Map<string, { email: string; note?: string; periodEnd: string | null; paymentId: number }>()
+    for (const p of payments) {
+      for (const a of parseAddonAccounts(p.accounts)) {
+        const email = a.email.trim().toLowerCase()
+        if (!email) continue
+        byEmail.set(email, { email, note: a.note, periodEnd: p.period_end, paymentId: p.id })
+      }
+    }
+
+    const links = db.prepare(
+      `SELECT l.addon_user_id, l.saldo_source, u.email, u.name, u.plan, u.approved
+         FROM account_addon_links l JOIN users u ON u.id = l.addon_user_id
+        WHERE l.owner_user_id = ?`,
+    ).all(ownerId) as Array<{ addon_user_id: number; saldo_source: string; email: string; name: string; plan: string; approved: number }>
+    const linkByEmail = new Map(links.map((l) => [l.email.trim().toLowerCase(), l]))
+
+    const items = [...byEmail.values()].map((item) => {
+      const link = linkByEmail.get(item.email)
+      const user = db.prepare('SELECT id FROM users WHERE lower(email) = ?').get(item.email) as { id: number } | undefined
+      return {
+        email: item.email,
+        note: item.note ?? '',
+        paymentId: item.paymentId,
+        periodEnd: item.periodEnd,
+        registered: !!user,
+        addonUserId: link?.addon_user_id ?? user?.id ?? null,
+        name: link?.name ?? null,
+        saldoSource: link?.saldo_source === 'own' ? 'own' : 'parent',
+        linked: !!link,
+      }
+    })
+
+    res.json({ ok: true, links: items })
+  } catch (error) {
+    console.error('List addon links error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// Ubah mode saldo akun add-on. Hanya pemilik akun utama yang boleh — akun
+// add-on (addon_user_id) tidak bisa mengubah mode saldonya sendiri.
+router.patch('/addon/links/:addonUserId', authenticateToken, (req: AuthRequest, res: Response) => {
+  try {
+    const ownerId = req.user!.id
+    const addonUserId = Number(req.params.addonUserId)
+    const source = String((req.body as any)?.saldo_source || '')
+    if (!Number.isInteger(addonUserId) || addonUserId <= 0) {
+      return res.status(400).json({ error: 'addonUserId tidak valid' })
+    }
+    if (source !== 'parent' && source !== 'own') {
+      return res.status(400).json({ error: "saldo_source harus 'parent' atau 'own'" })
+    }
+    const link = db.prepare('SELECT id, addon_user_id FROM account_addon_links WHERE addon_user_id = ? AND owner_user_id = ?').get(addonUserId, ownerId) as { id: number; addon_user_id: number } | undefined
+    if (!link) return res.status(404).json({ error: 'Akun add-on tidak tertaut ke akun kamu' })
+
+    db.prepare("UPDATE account_addon_links SET saldo_source = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(source, link.id)
+    res.json({ ok: true, saldoSource: source, message: source === 'parent' ? 'Akun add-on memakai saldo akun utama' : 'Akun add-on memakai saldo sendiri' })
+  } catch (error) {
+    console.error('Update addon link error:', error)
     res.status(500).json({ error: 'Internal server error' })
   }
 })

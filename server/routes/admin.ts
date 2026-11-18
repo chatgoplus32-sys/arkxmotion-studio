@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs'
 
 import db from '../db.js'
 import { authenticateToken, requireAdmin, AuthRequest } from '../middleware/auth.js'
-import { approveMembershipPaymentRow, approveProPaymentRow } from '../lib/membershipActivation.js'
+import { approveMembershipPaymentRow, approveProPaymentRow, approveAddonPaymentRow, sanitizeAddonAccounts } from '../lib/membershipActivation.js'
 import { sendVerificationEmail } from './auth.js'
 import { allowDevMailLink } from '../mailer.js'
 import {
@@ -13,6 +13,8 @@ import {
   setMembershipFeeOriginal,
   getProFee,
   setProFee,
+  getAddonFee,
+  setAddonFee,
 } from './membership.js'
 import { getNexabotPricing, setNexabotPricing } from './nexabotWallet.js'
 import { getNexabotSubmitQueueConfig, nexabotRealParallelism, setNexabotSubmitConcurrency } from '../lib/nexabotQueueSettings.js'
@@ -113,6 +115,7 @@ const hapusUserBesertaData = db.transaction((userId: string) => {
     'generation_logs',
     'membership_payments',
     'pro_payments',
+    'account_addon_payments',
     'notifications',
     // Antrean & klaim kredensial member — tidak boleh tertinggal.
     'sync_token_queue',
@@ -124,6 +127,8 @@ const hapusUserBesertaData = db.transaction((userId: string) => {
   for (const tabel of anak) {
     db.prepare(`DELETE FROM ${tabel} WHERE user_id = ?`).run(userId)
   }
+  // Tautan add-on: hapus baik sebagai akun add-on maupun sebagai pemilik.
+  db.prepare('DELETE FROM account_addon_links WHERE addon_user_id = ? OR owner_user_id = ?').run(userId, userId)
   db.prepare('DELETE FROM users WHERE id = ?').run(userId)
 })
 
@@ -301,6 +306,7 @@ router.get('/membership/config', authenticateToken, requireAdmin, (_req: AuthReq
       membershipFee: getMembershipFee(),
       membershipFeeOriginal: getMembershipFeeOriginal(),
       proFee: getProFee(),
+      addonFee: getAddonFee(),
     })
   } catch (error) {
     console.error('Get membership config error:', error)
@@ -314,13 +320,15 @@ router.patch('/membership/config', authenticateToken, requireAdmin, (req: AuthRe
     const hasMembershipFee = body?.membershipFee !== undefined
     const hasOriginalFee = body?.membershipFeeOriginal !== undefined
     const hasProFee = body?.proFee !== undefined
-    if (!hasMembershipFee && !hasOriginalFee && !hasProFee) {
+    const hasAddonFee = body?.addonFee !== undefined
+    if (!hasMembershipFee && !hasOriginalFee && !hasProFee && !hasAddonFee) {
       return res.status(400).json({ error: 'Tidak ada harga yang dikirim' })
     }
 
     const membershipFee = hasMembershipFee ? Number(body.membershipFee) : undefined
     const originalFee = hasOriginalFee ? Number(body.membershipFeeOriginal) : undefined
     const proFee = hasProFee ? Number(body.proFee) : undefined
+    const addonFee = hasAddonFee ? Number(body.addonFee) : undefined
 
     if (membershipFee !== undefined && (!Number.isFinite(membershipFee) || membershipFee <= 0)) {
       return res.status(400).json({ error: 'Nominal membership harus angka lebih dari 0' })
@@ -338,13 +346,19 @@ router.patch('/membership/config', authenticateToken, requireAdmin, (req: AuthRe
     if (proFee !== undefined && (!Number.isFinite(proFee) || proFee <= 0)) {
       return res.status(400).json({ error: 'Nominal Pro harus angka lebih dari 0' })
     }
+    if (addonFee !== undefined && (!Number.isFinite(addonFee) || addonFee <= 0)) {
+      return res.status(400).json({ error: 'Nominal Add-on Akun harus angka lebih dari 0' })
+    }
 
     if (membershipFee !== undefined) setMembershipFee(membershipFee)
     if (originalFee !== undefined) setMembershipFeeOriginal(originalFee)
     if (proFee !== undefined) setProFee(proFee)
+    if (addonFee !== undefined) setAddonFee(addonFee)
 
     let message = 'Harga diperbarui'
-    if (hasProFee) {
+    if (hasAddonFee) {
+      message = `Harga Add-on Akun diubah menjadi Rp ${Number(body.addonFee).toLocaleString('id-ID')}`
+    } else if (hasProFee) {
       message = `Harga Pro diubah menjadi Rp ${Number(body.proFee).toLocaleString('id-ID')}`
     } else if (hasMembershipFee || hasOriginalFee) {
       message = `Harga join diubah — promo Rp ${getMembershipFee().toLocaleString('id-ID')} (normal Rp ${getMembershipFeeOriginal().toLocaleString('id-ID')})`
@@ -356,6 +370,7 @@ router.patch('/membership/config', authenticateToken, requireAdmin, (req: AuthRe
       membershipFee: getMembershipFee(),
       membershipFeeOriginal: getMembershipFeeOriginal(),
       proFee: getProFee(),
+      addonFee: getAddonFee(),
     })
   } catch (error) {
     console.error('Set membership config error:', error)
@@ -1004,6 +1019,126 @@ router.post('/pro/payments/:id/reject', authenticateToken, requireAdmin, (req: A
     res.json({ ok: true, message: `Pembayaran Pro ${payment.email} ditolak` })
   } catch (error) {
     console.error('Reject pro payment error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// ─── Add-on Akun (3 akun email siap pakai / 30 hari) ───────────────────────
+
+function parseAddonAccountsJson(raw: string | null | undefined): Array<{ email: string; password: string; note?: string }> {
+  try {
+    const arr = JSON.parse(String(raw || '[]'))
+    return Array.isArray(arr) ? arr : []
+  } catch {
+    return []
+  }
+}
+
+router.get('/addon/payments', authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
+  try {
+    const rows = db.prepare(`
+      SELECT ap.id, ap.user_id, ap.amount, ap.status, ap.proof_note, ap.admin_note, ap.accounts,
+             ap.period_start, ap.period_end, ap.created_at,
+             u.email, u.name, u.plan AS user_plan
+      FROM account_addon_payments ap
+      JOIN users u ON u.id = ap.user_id
+      ORDER BY CASE ap.status WHEN 'pending' THEN 0 ELSE 1 END, ap.created_at DESC
+    `).all() as any[]
+    res.json({
+      payments: rows.map((p) => {
+        const accounts = parseAddonAccountsJson(p.accounts)
+        return {
+          id: p.id,
+          userId: p.user_id,
+          amount: p.amount,
+          status: p.status,
+          proofNote: p.proof_note,
+          adminNote: p.admin_note,
+          periodStart: p.period_start,
+          periodEnd: p.period_end,
+          createdAt: p.created_at,
+          email: p.email,
+          name: p.name,
+          userPlan: p.user_plan || 'free',
+          accounts,
+          accountsCount: accounts.length,
+        }
+      }),
+    })
+  } catch (error) {
+    console.error('List addon payments error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// Approve pengajuan add-on. Boleh menyertakan `accounts` (3 akun email)
+// langsung saat approve; kalau kosong, admin bisa set nanti lewat endpoint
+// /addon/payments/:id/accounts.
+router.post('/addon/payments/:id/approve', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params
+    const rawAccounts = (req.body as any)?.accounts
+    const accounts = rawAccounts !== undefined ? sanitizeAddonAccounts(rawAccounts) : undefined
+    if (rawAccounts !== undefined && accounts && accounts.length === 0) {
+      return res.status(400).json({ error: 'Daftar akun tidak valid — minimal 1 akun dengan email' })
+    }
+    const r = approveAddonPaymentRow(String(id), 'manual', accounts)
+    if (!r.ok) {
+      if (r.reason === 'sudah_approve') return res.status(400).json({ error: 'Pembayaran Add-on Akun ini sudah disetujui' })
+      if (r.reason === 'tidak_ditemukan') return res.status(404).json({ error: 'Pembayaran Add-on Akun tidak ditemukan' })
+      return res.status(400).json({ error: 'Pembayaran Add-on Akun tidak valid' })
+    }
+    res.json({ ok: true, message: `Add-on Akun ${r.email} disetujui — periode 30 hari aktif` })
+  } catch (error) {
+    console.error('Approve addon payment error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.post('/addon/payments/:id/reject', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params
+    const adminNote = String((req.body as any)?.admin_note || '').slice(0, 500)
+    const payment = db.prepare(
+      'SELECT ap.id, ap.user_id, ap.status, u.email FROM account_addon_payments ap JOIN users u ON u.id = ap.user_id WHERE ap.id = ?'
+    ).get(id) as { id: number; user_id: number; status: string; email: string } | undefined
+    if (!payment) return res.status(404).json({ error: 'Pembayaran Add-on Akun tidak ditemukan' })
+
+    db.prepare("UPDATE account_addon_payments SET status = 'rejected', admin_note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(adminNote, id)
+    res.json({ ok: true, message: `Add-on Akun ${payment.email} ditolak` })
+  } catch (error) {
+    console.error('Reject addon payment error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// Set/ganti 3 akun email yang diserahkan ke member (dipanggil setelah
+// pembayaran disetujui). Hanya untuk payment yang sudah approved.
+router.post('/addon/payments/:id/accounts', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params
+    const accounts = sanitizeAddonAccounts((req.body as any)?.accounts)
+    if (accounts.length === 0) {
+      return res.status(400).json({ error: 'Minimal 1 akun dengan email harus diisi' })
+    }
+    const payment = db.prepare(
+      'SELECT ap.id, ap.status, u.email FROM account_addon_payments ap JOIN users u ON u.id = ap.user_id WHERE ap.id = ?'
+    ).get(id) as { id: number; status: string; email: string } | undefined
+    if (!payment) return res.status(404).json({ error: 'Pembayaran Add-on Akun tidak ditemukan' })
+    if (payment.status !== 'approved') {
+      return res.status(400).json({ error: 'Akun hanya bisa diserahkan untuk pembayaran yang sudah disetujui' })
+    }
+
+    db.prepare("UPDATE account_addon_payments SET accounts = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(JSON.stringify(accounts), id)
+
+    db.prepare("INSERT INTO notifications (title, message, type, target, user_id) VALUES (?, ?, 'success', 'users', (SELECT user_id FROM account_addon_payments WHERE id = ?))").run(
+      'Akun Add-on Sudah Siap',
+      `Admin sudah menyerahkan akun email untuk periode Add-on Akun kamu. Buka menu Add-on Akun untuk melihat email & password.`,
+      id,
+    )
+    res.json({ ok: true, message: `${accounts.length} akun disimpan untuk ${payment.email}` })
+  } catch (error) {
+    console.error('Set addon accounts error:', error)
     res.status(500).json({ error: 'Internal server error' })
   }
 })

@@ -10,6 +10,7 @@ import { providerUnitCharge } from '../lib/providerPricing.js'
 import { isAdminUser, keyEligibility } from '../lib/providerMasterKey.js'
 import { nextUniqueCode } from '../lib/qrisPayment.js'
 import { createBasunipayPayment } from '../lib/basunipay.js'
+import { walletUserIdFor } from '../lib/effectiveWallet.js'
 
 const router = Router()
 
@@ -21,13 +22,14 @@ router.get('/balance', authenticateToken, (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id
     if (!userId) return res.status(401).json({ error: 'Unauthorized' })
+    const walletUserId = walletUserIdFor(userId)
 
-    let row = db.prepare('SELECT balance FROM runninghub_balance WHERE user_id = ?').get(userId) as { balance: number } | undefined
+    let row = db.prepare('SELECT balance FROM runninghub_balance WHERE user_id = ?').get(walletUserId) as { balance: number } | undefined
     if (!row) {
-      db.prepare('INSERT INTO runninghub_balance (user_id, balance) VALUES (?, 0)').run(userId)
+      db.prepare('INSERT INTO runninghub_balance (user_id, balance) VALUES (?, 0)').run(walletUserId)
       row = { balance: 0 }
     }
-    const kunciServer = keyEligibility('runninghub', userId)
+    const kunciServer = keyEligibility('runninghub', walletUserId)
     res.json({
       balance: row.balance,
       presets: RUNNINGHUB_TOPUP_PRESETS,
@@ -94,18 +96,19 @@ router.post('/deduct', authenticateToken, (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id
     if (!userId) return res.status(401).json({ error: 'Unauthorized' })
+    const walletUserId = walletUserIdFor(userId)
 
     const { model, quantity, batch_id } = req.body
     const units = Math.max(1, Math.min(50, Number(quantity) || 1))
 
     // Admin pemilik pool: tidak dipotong (relay juga melewati tiket untuk admin).
     // Usage tetap dicatat dengan cost 0 supaya jejak generate konsisten.
-    const admin = isAdminUser(userId)
+    const admin = isAdminUser(walletUserId)
     const cost = admin ? 0 : providerUnitCharge('runninghub', model) * units
 
-    let row = db.prepare('SELECT balance FROM runninghub_balance WHERE user_id = ?').get(userId) as { balance: number } | undefined
+    let row = db.prepare('SELECT balance FROM runninghub_balance WHERE user_id = ?').get(walletUserId) as { balance: number } | undefined
     if (!row) {
-      db.prepare('INSERT INTO runninghub_balance (user_id, balance) VALUES (?, 0)').run(userId)
+      db.prepare('INSERT INTO runninghub_balance (user_id, balance) VALUES (?, 0)').run(walletUserId)
       row = { balance: 0 }
     }
 
@@ -114,12 +117,12 @@ router.post('/deduct', authenticateToken, (req: AuthRequest, res: Response) => {
     }
 
     if (cost > 0) {
-      db.prepare('UPDATE runninghub_balance SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?').run(cost, userId)
+      db.prepare('UPDATE runninghub_balance SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?').run(cost, walletUserId)
     }
     const insert = db.prepare('INSERT INTO runninghub_usage (user_id, model, cost, units, batch_id, status) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(userId, model || '', cost, units, batch_id || '', 'used')
+      .run(walletUserId, model || '', cost, units, batch_id || '', 'used')
 
-    const updated = db.prepare('SELECT balance FROM runninghub_balance WHERE user_id = ?').get(userId) as { balance: number }
+    const updated = db.prepare('SELECT balance FROM runninghub_balance WHERE user_id = ?').get(walletUserId) as { balance: number }
     res.json({ balance: updated.balance, deducted: cost, usage_id: Number(insert.lastInsertRowid) })
   } catch (error) {
     console.error('Runninghub deduct error:', error)
@@ -131,29 +134,30 @@ router.post('/refund', authenticateToken, (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id
     if (!userId) return res.status(401).json({ error: 'Unauthorized' })
+    const walletUserId = walletUserIdFor(userId)
 
     const { batch_id, model, usage_id } = req.body
 
     let usage
     if (usage_id) {
       usage = db.prepare("SELECT * FROM runninghub_usage WHERE id = ? AND user_id = ? AND status = 'used'")
-        .get(Number(usage_id), userId) as { id: number; cost: number } | undefined
+        .get(Number(usage_id), walletUserId) as { id: number; cost: number } | undefined
     } else if (batch_id) {
       usage = db.prepare("SELECT * FROM runninghub_usage WHERE user_id = ? AND batch_id = ? AND status = 'used'")
-        .get(userId, batch_id) as { id: number; cost: number } | undefined
+        .get(walletUserId, batch_id) as { id: number; cost: number } | undefined
     } else if (model) {
       usage = db.prepare("SELECT * FROM runninghub_usage WHERE user_id = ? AND model = ? AND status = 'used' ORDER BY id DESC LIMIT 1")
-        .get(userId, model) as { id: number; cost: number } | undefined
+        .get(walletUserId, model) as { id: number; cost: number } | undefined
     }
 
     if (!usage) return res.status(404).json({ error: 'Usage not found' })
 
     db.prepare('UPDATE runninghub_usage SET status = ? WHERE id = ?').run('refunded', usage.id)
     if (usage.cost > 0) {
-      db.prepare('UPDATE runninghub_balance SET balance = balance + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?').run(usage.cost, userId)
+      db.prepare('UPDATE runninghub_balance SET balance = balance + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?').run(usage.cost, walletUserId)
     }
 
-    const updated = db.prepare('SELECT balance FROM runninghub_balance WHERE user_id = ?').get(userId) as { balance: number }
+    const updated = db.prepare('SELECT balance FROM runninghub_balance WHERE user_id = ?').get(walletUserId) as { balance: number }
     res.json({ balance: updated.balance, refunded: usage.cost })
   } catch (error) {
     console.error('Runninghub refund error:', error)

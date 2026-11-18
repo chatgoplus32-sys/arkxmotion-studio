@@ -23,9 +23,10 @@ export default function RegisterPage() {
   const [fee, setFee] = useState(DEFAULT_MEMBERSHIP_FEE)
   const [isLoading, setIsLoading] = useState(false)
   const [paymentToken, setPaymentToken] = useState<string | null>(null)
-  const [qrRetrying, setQrRetrying] = useState(false)
+  const [addonLinked, setAddonLinked] = useState(false)
   // Response /api/membership/payment — nominal TEPAT (dengan kode unik) + checkout BasuniPay.
   const [payFlow, setPayFlow] = useState<{ amountTotal: number; fee: number; checkoutUrl?: string | null; qrisImage?: string | null } | null>(null)
+  const [qrRetrying, setQrRetrying] = useState(false)
   // Akun berubah Pro begitu pembayaran terdeteksi → layar otomatis jadi konfirmasi.
   const [proActive, setProActive] = useState(false)
   const register = useAuthStore((state) => state.register)
@@ -127,6 +128,15 @@ export default function RegisterPage() {
       return
     }
 
+    if (result.addonLinked) {
+      // Email add-on: langsung aktif & tertaut ke akun utama — tidak perlu bayar.
+      setAddonLinked(true)
+      setSuccess(true)
+      setIsLoading(false)
+      addToast('Akun add-on berhasil dibuat & tertaut ke akun utama — langsung login.', 'success')
+      return
+    }
+
     if (result.paymentToken) setPaymentToken(result.paymentToken)
     setSuccess(true)
     setIsLoading(false)
@@ -188,18 +198,22 @@ export default function RegisterPage() {
             <div className="flex flex-col items-center">
               <div className="mb-4 grid h-14 w-14 place-items-center rounded-full border border-emerald-400/30 bg-emerald-500/10 shadow-[0_0_30px_rgba(34,197,94,0.25)]"><CheckCircle className="h-7 w-7 text-emerald-400" /></div>
               <h2 className="text-[20px] font-black italic tracking-tight">
-                {proActive ? (
+                {addonLinked ? (
+                  <>Akun <span className="bg-gradient-to-r from-emerald-400 to-cyan-300 bg-clip-text text-transparent">Add-on Siap!</span></>
+                ) : proActive ? (
                   <>Akun <span className="bg-gradient-to-r from-emerald-400 to-cyan-300 bg-clip-text text-transparent">Pro Aktif!</span></>
                 ) : (
                   <>Registration <span className="bg-gradient-to-r from-emerald-400 to-cyan-300 bg-clip-text text-transparent">Successful!</span></>
                 )}
               </h2>
               <p className="mt-2 text-[13px] leading-relaxed text-white/60">
-                {proActive
+                {addonLinked
+                  ? 'Email add-on kamu berhasil terdaftar sebagai akun Pro yang tertaut ke akun utama member. Silakan login — saldo akun utama yang dipakai secara default, bisa diubah nanti dari menu Add-on Akun.'
+                  : proActive
                   ? 'Pembayaran terdeteksi — akunmu langsung aktif sebagai Pro dan semua fitur AI terbuka. Silakan login.'
                   : 'Akun kamu sudah dibuat. Begitu pembayaran masuk, akun langsung jadi Pro secara otomatis — tidak perlu menunggu admin.'}
               </p>
-              {proActive ? (
+              {proActive || addonLinked ? (
                 <>
                   <Link to="/login" className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#0066FF] via-[#00C6FF] to-[#8B5CF6] px-4 py-3 text-sm font-bold text-white shadow-[0_0_28px_rgba(0,102,255,0.45)] transition hover:-translate-y-0.5">Go to Login <ArrowRight className="h-4 w-4" /></Link>
                 </>
@@ -227,7 +241,7 @@ export default function RegisterPage() {
               </form>
               )}
 
-              {proActive ? null : (
+              {proActive || addonLinked ? null : (
                 <>
                   <Link to="/register-status" className="mb-2 block w-full rounded-xl border border-white/12 bg-white/[0.04] px-4 py-2.5 text-center text-sm font-semibold text-white/85 transition hover:bg-white/[0.08]">Cek Status Pendaftaran</Link>
                   <Link to="/login" className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#0066FF] via-[#00C6FF] to-[#8B5CF6] px-4 py-2.5 text-sm font-bold text-white shadow-[0_0_28px_rgba(0,102,255,0.45)] transition hover:-translate-y-0.5">Go to Login <ArrowRight className="h-4 w-4" /></Link>

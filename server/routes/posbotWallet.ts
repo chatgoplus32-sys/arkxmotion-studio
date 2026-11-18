@@ -6,6 +6,7 @@ import { providerUnitCharge } from '../lib/providerPricing.js'
 import { keyEligibility } from '../lib/providerMasterKey.js'
 import { nextUniqueCode } from '../lib/qrisPayment.js'
 import { createBasunipayPayment } from '../lib/basunipay.js'
+import { walletUserIdFor } from '../lib/effectiveWallet.js'
 
 const router = Router()
 
@@ -16,15 +17,16 @@ router.get('/balance', authenticateToken, (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id
     if (!userId) return res.status(401).json({ error: 'Unauthorized' })
+    const walletUserId = walletUserIdFor(userId)
 
-    let row = db.prepare('SELECT balance FROM posbot_balance WHERE user_id = ?').get(userId) as { balance: number } | undefined
+    let row = db.prepare('SELECT balance FROM posbot_balance WHERE user_id = ?').get(walletUserId) as { balance: number } | undefined
     if (!row) {
-      db.prepare('INSERT INTO posbot_balance (user_id, balance) VALUES (?, 0)').run(userId)
+      db.prepare('INSERT INTO posbot_balance (user_id, balance) VALUES (?, 0)').run(walletUserId)
       row = { balance: 0 }
     }
     // Relay boleh memakai kunci server untuk member ini? UI memakai jawaban
     // server apa adanya, bukan menebak dari saldo di browser.
-    const kunciServer = keyEligibility('posbot', userId)
+    const kunciServer = keyEligibility('posbot', walletUserId)
     res.json({
       balance: row.balance,
       presets: POSBOT_TOPUP_PRESETS,
@@ -95,6 +97,7 @@ router.post('/deduct', authenticateToken, (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id
     if (!userId) return res.status(401).json({ error: 'Unauthorized' })
+    const walletUserId = walletUserIdFor(userId)
 
     const { model, quantity, batch_id } = req.body
     // Tarif per model (Rp) ada di shared/pricing.ts — sama dengan yang dipakai
@@ -102,9 +105,9 @@ router.post('/deduct', authenticateToken, (req: AuthRequest, res: Response) => {
     const units = Math.max(1, Math.min(50, Number(quantity) || 1))
     const cost = providerUnitCharge('posbot', model) * units
 
-    let row = db.prepare('SELECT balance FROM posbot_balance WHERE user_id = ?').get(userId) as { balance: number } | undefined
+    let row = db.prepare('SELECT balance FROM posbot_balance WHERE user_id = ?').get(walletUserId) as { balance: number } | undefined
     if (!row) {
-      db.prepare('INSERT INTO posbot_balance (user_id, balance) VALUES (?, 0)').run(userId)
+      db.prepare('INSERT INTO posbot_balance (user_id, balance) VALUES (?, 0)').run(walletUserId)
       row = { balance: 0 }
     }
 
@@ -112,13 +115,13 @@ router.post('/deduct', authenticateToken, (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: 'Saldo PosBot tidak cukup', balance: row.balance, required: cost })
     }
 
-    db.prepare('UPDATE posbot_balance SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?').run(cost, userId)
+    db.prepare('UPDATE posbot_balance SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?').run(cost, walletUserId)
     // `units` = jumlah job yang dibayar. Tiket relay memakai angka ini sebagai
     // batas, jadi satu potongan multi-slot tidak bisa dipakai lebih dari bayar.
     const insert = db.prepare('INSERT INTO posbot_usage (user_id, model, cost, units, batch_id, status) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(userId, model || '', cost, units, batch_id || '', 'used')
+      .run(walletUserId, model || '', cost, units, batch_id || '', 'used')
 
-    const updated = db.prepare('SELECT balance FROM posbot_balance WHERE user_id = ?').get(userId) as { balance: number }
+    const updated = db.prepare('SELECT balance FROM posbot_balance WHERE user_id = ?').get(walletUserId) as { balance: number }
     res.json({ balance: updated.balance, deducted: cost, usage_id: Number(insert.lastInsertRowid) })
   } catch (error) {
     console.error('Posbot deduct error:', error)
@@ -130,6 +133,7 @@ router.post('/refund', authenticateToken, (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id
     if (!userId) return res.status(401).json({ error: 'Unauthorized' })
+    const walletUserId = walletUserIdFor(userId)
 
     const { batch_id, model } = req.body
 
@@ -137,19 +141,19 @@ router.post('/refund', authenticateToken, (req: AuthRequest, res: Response) => {
     if (batch_id) {
       usage = db.prepare(
         "SELECT * FROM posbot_usage WHERE user_id = ? AND batch_id = ? AND status = 'used'"
-      ).get(userId, batch_id) as { id: number; cost: number } | undefined
+      ).get(walletUserId, batch_id) as { id: number; cost: number } | undefined
     } else if (model) {
       usage = db.prepare(
         "SELECT * FROM posbot_usage WHERE user_id = ? AND model = ? AND status = 'used' ORDER BY id DESC LIMIT 1"
-      ).get(userId, model) as { id: number; cost: number } | undefined
+      ).get(walletUserId, model) as { id: number; cost: number } | undefined
     }
 
     if (!usage) return res.status(404).json({ error: 'Usage not found' })
 
     db.prepare('UPDATE posbot_usage SET status = ? WHERE id = ?').run('refunded', usage.id)
-    db.prepare('UPDATE posbot_balance SET balance = balance + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?').run(usage.cost, userId)
+    db.prepare('UPDATE posbot_balance SET balance = balance + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?').run(usage.cost, walletUserId)
 
-    const updated = db.prepare('SELECT balance FROM posbot_balance WHERE user_id = ?').get(userId) as { balance: number }
+    const updated = db.prepare('SELECT balance FROM posbot_balance WHERE user_id = ?').get(walletUserId) as { balance: number }
     res.json({ balance: updated.balance, refunded: usage.cost })
   } catch (error) {
     console.error('Posbot refund error:', error)

@@ -582,6 +582,53 @@ db.exec(`
 db.exec('CREATE INDEX IF NOT EXISTS idx_pro_payments_user ON pro_payments(user_id)')
 db.exec('CREATE INDEX IF NOT EXISTS idx_pro_payments_status ON pro_payments(status)')
 
+// ─── Add-on Akun (member aktif: 3 akun email siap pakai / 30 hari) ───────────
+// Member yang sudah terdaftar bisa menambah "jatah" akun email siap pakai:
+// bayar Rp 100.000 → dapat 3 akun email per periode 30 hari. Akun diserahkan
+// admin lewat kolom `accounts` (JSON: [{email, password, note}]); member
+// melihatnya di halaman Add-on Akun. Approval menambah masa aktif 30 hari
+// (memperpanjang dari expiry terakhir bila masih aktif).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS account_addon_payments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    amount INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected')),
+    proof_note TEXT NOT NULL DEFAULT '',
+    admin_note TEXT NOT NULL DEFAULT '',
+    accounts TEXT NOT NULL DEFAULT '[]',
+    period_start DATETIME,
+    period_end DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`)
+db.exec('CREATE INDEX IF NOT EXISTS idx_account_addon_payments_user ON account_addon_payments(user_id)')
+db.exec('CREATE INDEX IF NOT EXISTS idx_account_addon_payments_status ON account_addon_payments(status)')
+
+// ─── Tautan akun add-on → akun utama member ────────────────────────────────
+// Member mendaftarkan sendiri email yang diserahkan admin sebagai akun
+// ArkXMotion baru; saat registrasi dengan email yang tercantum di add-on
+// ber-status approved & masih aktif, akun otomatis aktif (Pro, tanpa biaya
+// join) dan DITAUTKAN ke akun utama yang membayar add-on. saldo_source
+// menentukan darimana saldo dipotong: 'parent' = saldo akun utama,
+// 'own' = saldo akun add-on sendiri (bisa top up sendiri). Diatur oleh
+// PEMILIK akun utama dari halaman Add-on Akun.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS account_addon_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    addon_user_id INTEGER NOT NULL UNIQUE,
+    owner_user_id INTEGER NOT NULL,
+    saldo_source TEXT NOT NULL DEFAULT 'parent' CHECK(saldo_source IN ('parent', 'own')),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (addon_user_id) REFERENCES users(id),
+    FOREIGN KEY (owner_user_id) REFERENCES users(id)
+  )
+`)
+db.exec('CREATE INDEX IF NOT EXISTS idx_account_addon_links_owner ON account_addon_links(owner_user_id)')
+
 // ── QRIS manual + verifikasi otomatis via email ───────────────────────────
 // Tiap pengajuan top-up diberi KODE UNIK 3 digit pada digit terakhir nominal
 // (Rp 50.000 → Rp 50.137). User membayar TEPAT segitu, parser email notifikasi
@@ -604,6 +651,7 @@ for (const tableName of [
   'runninghub_topup',
   'membership_payments',
   'pro_payments',
+  'account_addon_payments',
 ]) {
   const cols = db.prepare(`PRAGMA table_info(${tableName})`).all() as { name: string }[]
   for (const [colName, colType] of QRIS_PAYMENT_COLUMNS) {
@@ -696,6 +744,12 @@ if (!feeRow) {
 const proFeeRow = db.prepare("SELECT value FROM app_settings WHERE key = 'pro_fee'").get() as { value: string } | undefined
 if (!proFeeRow) {
   db.prepare("INSERT INTO app_settings (key, value) VALUES ('pro_fee', '50000')").run()
+}
+// Harga Add-on Akun (3 akun email siap pakai / 30 hari). Bisa diubah admin;
+// default Rp 100.000.
+const addonFeeRow = db.prepare("SELECT value FROM app_settings WHERE key = 'addon_fee'").get() as { value: string } | undefined
+if (!addonFeeRow) {
+  db.prepare("INSERT INTO app_settings (key, value) VALUES ('addon_fee', '100000')").run()
 }
 
 const providers = ['weavy', 'wavespeed', 'magnific', 'roboneo', 'createpulse', 'framia', 'firefly', 'leonardo', 'gemini', 'openai', 'shotstack', 'creatomate', 'riverside', 'nexabot']
