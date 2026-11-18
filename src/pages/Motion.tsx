@@ -79,6 +79,7 @@ const PROVIDERS = {
     { key: 'rh:wf:72fps', label: 'Motion Control 72 FPS — gerakan paling mulus (RunningHub)', cr: 80 },
     { key: 'rh:wf:kontrol-gerakan', label: 'Kontrol Gerak 50FPS — Lebih Cepat, maks 24s (RunningHub)', cr: 80 },
     { key: 'rh:wf:eposcents', label: 'Eposcents MC — 512HD 32FPS · 50s (RunningHub)', cr: 80 },
+    { key: 'rh:wf:eposcents-1080p', label: 'Eposcents MC — 1080p WAN+SCAIL · 29s (RunningHub)', cr: 80 },
     { key: 'rh:wf:mc-pro', label: 'Motion Control Pro — Motion Transfer · 15s (RunningHub)', cr: 80 },
     { key: 'rh:wf:ultra-hd', label: 'MC Ultra Fast HD (RunningHub)', cr: 80 },
     { key: 'rh:pro:2.6', label: 'Kling 2.6 Pro (RunningHub)', cr: 80 },
@@ -161,6 +162,7 @@ const RH_KEY_TO_ACTION: Record<string, string> = {
   'rh:wf:72fps': 'motion-control-72fps',
   'rh:wf:kontrol-gerakan': 'motion-control-kontrol-gerakan',
   'rh:wf:eposcents': 'motion-control-eposcents',
+  'rh:wf:eposcents-1080p': 'motion-control-eposcents-1080p',
   'rh:wf:mc-pro': 'motion-control-pro',
   'rh:wf:ultra-hd': 'motion-control-ultra-hd',
   'rh:pro:2.6': 'motion-control',
@@ -173,6 +175,7 @@ const RH_KEY_TO_ACTION: Record<string, string> = {
 const SIMPLE_MODEL_LABELS: Record<string, string> = {
   'rh:wf:kontrol-gerakan': 'Cepat 50 FPS · maks 24 detik',
   'rh:wf:eposcents': 'Eposcents · 512HD 50 detik',
+  'rh:wf:eposcents-1080p': 'Eposcents · 1080p 29 detik',
   'rh:wf:mc-pro': 'Motion Transfer Pro · 15 detik',
   'rh:wf:ultra-hd': 'Ultra Fast HD',
   'rh:pro:2.6': 'Kling 2.6 Pro',
@@ -1648,6 +1651,7 @@ export default function MotionPage() {
                 'rh:wf:ultra-hd': '2102004799470764034',
                 'rh:wf:mc-pro': '2103523610144309249',
                 'rh:wf:eposcents': '2107144516724932610',
+                'rh:wf:eposcents-1080p': '2104569016056942594',
                 'rh:wf:kontrol-gerakan': '2112893346377531393',
                 'rh:wf:72fps': '2114353645982978049',
               }
@@ -1656,7 +1660,9 @@ export default function MotionPage() {
                 ? `#${slotNum} Submit ke RunningHub Ultra HD (fps: ${ultraFps}, steps: ${ultraSteps}, maxFrames: ${ultraMaxFrames})`
                 : modelKey === 'rh:wf:mc-pro'
                   ? `#${slotNum} Submit ke RunningHub Motion Control Pro / Motion Transfer (maks 15s, workflow: ${workflowId.slice(0, 15)}...)`
-                  : modelKey === 'rh:wf:eposcents'
+                  : modelKey === 'rh:wf:eposcents-1080p'
+                    ? `#${slotNum} Submit ke RunningHub Eposcents MC 1080p (WAN+SCAIL, maks 29s, workflow: ${workflowId.slice(0, 15)}...)`
+                    : modelKey === 'rh:wf:eposcents'
                     ? `#${slotNum} Submit ke RunningHub Eposcents MC (512HD 32FPS, maks 50s, workflow: ${workflowId.slice(0, 15)}...)`
                     : modelKey === 'rh:wf:kontrol-gerakan'
                       ? `#${slotNum} Submit ke RunningHub Kontrol Gerak 50FPS (maks 24s, workflow: ${workflowId.slice(0, 15)}...)`
@@ -1668,10 +1674,10 @@ export default function MotionPage() {
               // Eposcents MC: referensi maks 50 detik (>30s otomatis instance Plus).
               // Kontrol Gerak 50FPS: benchmark app 24 detik (1200 frame @ 50fps).
               let mcProVideoFile = videoFile
-              if ((modelKey === 'rh:wf:mc-pro' || modelKey === 'rh:wf:eposcents' || modelKey === 'rh:wf:kontrol-gerakan') && slot.video) {
+              if ((modelKey === 'rh:wf:mc-pro' || modelKey === 'rh:wf:eposcents' || modelKey === 'rh:wf:eposcents-1080p' || modelKey === 'rh:wf:kontrol-gerakan') && slot.video) {
                 const MAX_MOTION_DURATION = modelKey === 'rh:wf:eposcents'
                   ? 50
-                  : modelKey === 'rh:wf:kontrol-gerakan' ? 24 : 15
+                  : modelKey === 'rh:wf:eposcents-1080p' ? 29 : modelKey === 'rh:wf:kontrol-gerakan' ? 24 : 15
                 try {
                   const rawDuration = await getVideoDurationFromFile(slot.video)
                   if (rawDuration > MAX_MOTION_DURATION + 0.2) {
@@ -1723,7 +1729,18 @@ export default function MotionPage() {
                         apiKey,
                         workflowId,
                       })
-                      : modelKey === 'rh:wf:eposcents'
+                      : modelKey === 'rh:wf:eposcents-1080p'
+                        ? await submitRunningHubMotionApp({
+                          action: 'motion-control-eposcents-1080p',
+                          imageFile: normalizedImage,
+                          videoFile: mcProVideoFile,
+                          durationHint: await getVideoDurationFromFile(mcProVideoFile).catch(() => 0),
+                          prompt: finalPrompt || undefined,
+                          negativePrompt: negativePrompt.trim() || undefined,
+                          apiKey,
+                          workflowId,
+                        })
+                        : modelKey === 'rh:wf:eposcents'
                         ? await submitRunningHubMotionApp({
                           action: 'motion-control-eposcents',
                           imageFile: normalizedImage,

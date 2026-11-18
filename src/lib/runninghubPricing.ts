@@ -18,6 +18,7 @@ export const RUNNINGHUB_PRICE_FALLBACK: Record<string, number> = {
   'motion-control-ultra-hd-pro': 2500,
   'motion-control-pro': 2500,
   'motion-control-eposcents': 2500,
+  'motion-control-eposcents-1080p': 2500,
   'motion-control-kontrol-gerakan': 2500,
   'motion-control-72fps': 2500,
   // Virtual try-on

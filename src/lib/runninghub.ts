@@ -71,6 +71,11 @@ export const RUNNINGHUB_MC_PRO_APP_ID = '2103523610144309249'
 // https://www.runninghub.ai/id/ai-detail/2107144516724932610
 export const RUNNINGHUB_EPOSCENTS_MC_APP_ID = '2107144516724932610'
 
+// Eposcents MC 1080p (Kontrol Gerak, WAN + SCAIL) — node 30 = image,
+// node 33 = video. Maks 29 detik. Video >10 detik butuh >300 RH Coins.
+// https://www.runninghub.ai/id/ai-detail/2104569016056942594
+export const RUNNINGHUB_EPOSCENTS_MC_1080P_APP_ID = '2104569016056942594'
+
 // KONTROL GERAK 50 FPS — transfer gerakan video referensi ke gambar karakter,
 // output 50 FPS. Benchmark app: video 24s selesai ~17 menit.
 // node 30 = image, node 33 = video. Tanpa input prompt/resolusi/fps manual.
