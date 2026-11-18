@@ -39,7 +39,6 @@ export const RUNNINGHUB_PRICE_FALLBACK: Record<string, number> = {
   'submit-yue2-reimaginer': 2500,
   // Lainnya
   'submit-ugc-storyboard': 2500,
-  'submit-custom-ai-app': 2500,
 }
 
 export const RUNNINGHUB_DEFAULT_FALLBACK = 2500

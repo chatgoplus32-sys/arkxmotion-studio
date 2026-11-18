@@ -37,7 +37,6 @@ export type GenerationPage =
   | 'video-edit'
   | 'upscale-video'
   | 'arkx-health'
-  | 'custom-ai-app'
 
 export const GENERATION_PAGE_KIND: Record<GenerationPage, GenerationKind> = {
   motion: 'video',
@@ -63,7 +62,6 @@ export const GENERATION_PAGE_KIND: Record<GenerationPage, GenerationKind> = {
   'clip-genius': 'video',
   'upscale-video': 'video',
   'arkx-health': 'video',
-  'custom-ai-app': 'image',
 }
 
 // Rute halaman untuk tiap jenis generasi. Dipakai header (tautan panel
@@ -93,7 +91,6 @@ export const GENERATION_PAGE_PATH: Record<GenerationPage, string> = {
   'video-edit': '/generate/video-edit',
   'upscale-video': '/generate/upscale-video',
   'arkx-health': '/generate/arkx-health',
-  'custom-ai-app': '/generate/ai-app',
 }
 
 export interface ActiveTask {

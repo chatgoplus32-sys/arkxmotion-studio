@@ -409,9 +409,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (action === 'submit-ugc-storyboard') {
       return await handleSubmitUGCStoryboard(apiKey, params, res)
     }
-    if (action === 'submit-custom-ai-app') {
-      return await handleSubmitCustomAiApp(apiKey, params, res)
-    }
     if (action === 'submit-seedance2') {
       return await handleSubmitSeedance2(apiKey, params, res)
     }
@@ -473,134 +470,6 @@ async function rhUpload(apiKey: string, fileBase64: string, fileName: string, mi
   }
 
   return { fileName: uploadedFileName, downloadUrl: fullDownloadUrl }
-}
-
-// ── Custom AI App Runner (OpenAPI v2 — dokumentasi resmi RunningHub) ────────
-// Sama seperti relay Express (server/routes/publicRunninghub.ts): memanggil
-// AI App / workflow ComfyUI manapun lewat /openapi/v2/run/ai-app/{appId}.
-const RH_CUSTOM_APP_ID_RE = /^\d{5,25}$/
-const RH_INSTANCE_TYPES = new Set(['default', 'plus', 'ultra'])
-const RH_CUSTOM_NODE_MAX = 50
-const RH_CUSTOM_FIELDVALUE_MAX = 40 * 1024 * 1024 // 40 MB
-
-async function handleSubmitCustomAiApp(apiKey: string, params: any, res: VercelResponse) {
-  const appId = String(params?.appId ?? '').trim()
-  if (!RH_CUSTOM_APP_ID_RE.test(appId)) {
-    return res.status(200).json({ ok: false, error: 'App ID tidak valid — isi angka ID Aplikasi/Workflow dari URL runninghub.ai, mis. 2116538467715293186.' })
-  }
-
-  const listRaw = Array.isArray(params?.nodeInfoList) ? params.nodeInfoList : null
-  if (!listRaw || listRaw.length === 0) {
-    return res.status(200).json({ ok: false, error: 'nodeInfoList wajib diisi — minimal satu node.' })
-  }
-  if (listRaw.length > RH_CUSTOM_NODE_MAX) {
-    return res.status(200).json({ ok: false, error: `nodeInfoList maksimum ${RH_CUSTOM_NODE_MAX} node.` })
-  }
-
-  const nodeInfoList: Array<{ nodeId: string; fieldName: string; fieldValue: string; description: string | null }> = []
-  for (const [i, node] of listRaw.entries()) {
-    const nodeId = String(node?.nodeId ?? '').trim()
-    const fieldName = String(node?.fieldName ?? '').trim()
-    const fvRaw = node?.fieldValue
-    const fv = typeof fvRaw === 'number' || typeof fvRaw === 'boolean' ? String(fvRaw) : String(fvRaw ?? '')
-    if (!nodeId) return res.status(200).json({ ok: false, error: `Node #${i + 1}: nodeId wajib diisi.` })
-    if (!fieldName) return res.status(200).json({ ok: false, error: `Node #${i + 1}: fieldName wajib diisi.` })
-    if (!fv.trim()) return res.status(200).json({ ok: false, error: `Node #${i + 1} (${nodeId}/${fieldName}): fieldValue kosong.` })
-    if (fv.length > RH_CUSTOM_FIELDVALUE_MAX) return res.status(200).json({ ok: false, error: `Node #${i + 1} (${nodeId}/${fieldName}): fieldValue terlalu besar — tempel URL publik atau perkecil file.` })
-    const description = node?.description == null || String(node.description).trim() === '' ? null : String(node.description).slice(0, 500)
-    nodeInfoList.push({ nodeId: nodeId.slice(0, 100), fieldName: fieldName.slice(0, 100), fieldValue: fv, description })
-  }
-
-  const itRaw = String(params?.instanceType ?? 'default').trim().toLowerCase()
-  const instanceType = RH_INSTANCE_TYPES.has(itRaw) ? itRaw : 'default'
-
-  const pqRaw = params?.usePersonalQueue
-  const usePersonalQueue = pqRaw === true || String(pqRaw ?? '').toLowerCase() === 'true' ? 'true' : 'false'
-
-  let webhookUrl: string | undefined
-  if (params?.webhookUrl != null && String(params.webhookUrl).trim()) {
-    const w = String(params.webhookUrl).trim()
-    if (!/^https:\/\/\S+$/.test(w) || w.length > 2048) {
-      return res.status(200).json({ ok: false, error: 'webhookUrl harus URL https yang valid (maks 2048 karakter).' })
-    }
-    webhookUrl = w
-  }
-
-  let retainSeconds: number | undefined
-  if (params?.retainSeconds != null && String(params.retainSeconds).trim() !== '') {
-    const n = Number(params.retainSeconds)
-    if (!Number.isInteger(n) || n < 10 || n > 180) {
-      return res.status(200).json({ ok: false, error: 'retainSeconds harus bilangan bulat 10–180 detik.' })
-    }
-    retainSeconds = n
-  }
-
-  const body: Record<string, unknown> = { nodeInfoList, instanceType, usePersonalQueue }
-  if (webhookUrl) body.webhookUrl = webhookUrl
-  if (retainSeconds !== undefined) body.retainSeconds = retainSeconds
-
-  const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${appId}`
-  const MAX_RETRIES = 2
-  const RETRY_DELAY_MS = 10_000
-  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
-  let lastRawText = ''
-
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    console.log(`[runninghub] POST ${endpoint} (custom-ai-app attempt ${attempt}/${MAX_RETRIES})`)
-    console.log(`[runninghub] body:`, JSON.stringify(body).slice(0, 1000))
-
-    const apiRes = await rhFetch(apiKey, endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(body),
-    })
-
-    lastRawText = await apiRes.text()
-    console.log(`[runninghub] submit-custom-ai-app ${apiRes.status}:`, lastRawText.slice(0, 1000))
-
-    let data: any
-    try { data = JSON.parse(lastRawText) } catch { data = { raw: lastRawText } }
-
-    const rhCode = data.code ?? data.errorCode
-    const rhMsg = data.msg || data.errorMessage || data.message
-
-    if (apiRes.status === 429 || rhCode === 429) {
-      return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data, retryable: true })
-    }
-    if (rhCode === 421 || rhCode === '421') {
-      if (attempt < MAX_RETRIES) {
-        await sleep(RETRY_DELAY_MS)
-        continue
-      }
-      return res.status(200).json({ ok: false, error: 'Queue limit reached, coba lagi dalam beberapa menit', data, retryable: true })
-    }
-    if (rhCode !== undefined && rhCode !== 0 && rhCode !== '0' && rhCode !== '') {
-      const errorMsg = translateRhError(String(rhCode), rhMsg) || rhMsg || `Error code: ${rhCode}`
-      return res.status(200).json({ ok: false, error: errorMsg, code: rhCode, data })
-    }
-
-    const taskId = data.data?.taskId || data.taskId || data.id || data.task_id
-    if (!taskId) {
-      console.error(`[runninghub] No taskId found (custom-ai-app):`, JSON.stringify(data).slice(0, 500))
-      return res.status(200).json({ ok: false, error: rhTaskErrorFrom(data) || 'No taskId returned', raw: lastRawText.slice(0, 500) })
-    }
-
-    return res.status(200).json({
-      ok: true,
-      data: {
-        id: taskId,
-        taskId,
-        status: data.data?.status || data.status || 'QUEUED',
-        provider: 'runninghub',
-        workflowId: appId,
-      },
-    })
-  }
-
-  return res.status(200).json({ ok: false, error: 'Max retries exceeded', raw: lastRawText.slice(0, 500) })
 }
 
 async function handleMotionControlV26Std(apiKey: string, params: any, res: VercelResponse) {
@@ -3033,15 +2902,6 @@ async function handleQuery(apiKey: string, taskId: string, res: VercelResponse) 
     }
   }
 
-  // Custom AI App Runner: teruskan array results mentah (nodeId/outputType/
-  // url/text) supaya output non-media tidak hilang di klien.
-  let rawResults: unknown = null
-  if (mappedStatus === 'COMPLETED') {
-    const r = taskData.results || taskData.output || data.results || taskData.outputs || data.outputs
-    if (Array.isArray(r)) rawResults = r.slice(0, 20)
-    else if (typeof r === 'string') rawResults = [{ url: r, outputType: 'file' }]
-  }
-
   return res.status(200).json({
     ok: true,
     data: {
@@ -3052,7 +2912,6 @@ async function handleQuery(apiKey: string, taskId: string, res: VercelResponse) 
       videoUrl,
       imageUrl,
       audioUrl,
-      results: rawResults,
       usage: taskData.usage || data.usage || null,
       code: taskData.errorCode || data.errorCode || null,
       error: mappedStatus === 'FAILED' ? (buildFailedDetail(taskData, data, errorMsg) || taskData.errorMessage || taskData.msg || errorMsg || 'Task failed') : null,

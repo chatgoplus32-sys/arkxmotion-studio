@@ -630,7 +630,6 @@ export const RUNNINGHUB_MODEL_PRICES: Record<string, number> = {
   'submit-yue2-reimaginer': 2500,
   // Lainnya
   'submit-ugc-storyboard': 2500,
-  'submit-custom-ai-app': 2500,
 }
 
 /** Tarif default Rp per generate RunningHub (dipakai untuk model yang tidak tercantum). */
