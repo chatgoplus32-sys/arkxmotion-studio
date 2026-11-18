@@ -30,6 +30,7 @@ const AssetsPage = lazyWithRetry(() => import('@/pages/Assets'))
 const CommandPage = lazyWithRetry(() => import('@/pages/Command'))
 const QuickStartPage = lazyWithRetry(() => import('@/pages/QuickStart'))
 const TravelPhotoPage = lazyWithRetry(() => import('@/pages/TravelPhoto'))
+const CustomAiAppPage = lazyWithRetry(() => import('@/pages/CustomAiApp'))
 const DolaChatPage = lazyWithRetry(() => import('@/pages/DolaChat'))
 const MotionPage = lazyWithRetry(() => import('@/pages/Motion'))
 const BulkFashionPage = lazyWithRetry(() => import('@/pages/BulkFashion'))
@@ -239,6 +240,7 @@ export default function App() {
                         <Route path="/generate/bulk-fashion" element={<BulkFashionPage />} />
                         <Route path="/generate/virtual-tryon" element={<VirtualTryOnPage />} />
                         <Route path="/generate/travel-photo" element={<TravelPhotoPage />} />
+                        <Route path="/generate/ai-app" element={<CustomAiAppPage />} />
                         <Route path="/generate/dola-chat" element={<DolaChatPage />} />
                         <Route path="/generate/h3-i2v" element={<H3ImageToVideoPage />} />
                         <Route path="/generate/h3-music-avatar" element={<ProRoute><H3MusicAvatarPage /></ProRoute>} />

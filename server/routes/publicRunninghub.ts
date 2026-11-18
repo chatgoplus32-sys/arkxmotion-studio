@@ -981,6 +981,142 @@ router.all('/', async (req: Request, res: Response) => {
   }
 })
 
+// ── Custom AI App Runner (OpenAPI v2 — dokumentasi resmi RunningHub) ────────
+// POST /openapi/v2/run/ai-app/{appId} dengan body
+//   { nodeInfoList: [{ nodeId, fieldName, fieldValue, description? }],
+//     instanceType: 'default'|'plus'|'ultra', usePersonalQueue: 'true'|'false',
+//     webhookUrl?, retainSeconds? }
+// fieldValue boleh URL publik ATAU data URI base64 (docs: "Parameter file
+// sumber daya menerima URL file publik atau URI data Base64"). Di sesi JWT
+// rhFetch otomatis menerjemahkan ke /task/webapp/create (menagih RH Coin) dan
+// membuang field yang tidak didukung jalur web (webhookUrl/retainSeconds).
+const RH_CUSTOM_APP_ID_RE = /^\d{5,25}$/
+const RH_INSTANCE_TYPES = new Set(['default', 'plus', 'ultra'])
+const RH_CUSTOM_NODE_MAX = 50
+const RH_CUSTOM_FIELDVALUE_MAX = 40 * 1024 * 1024 // 40 MB (batas body JSON relay 50 MB)
+
+async function handleSubmitCustomAiApp(apiKey: string, params: any, res: Response) {
+  const appId = String(params?.appId ?? '').trim()
+  if (!RH_CUSTOM_APP_ID_RE.test(appId)) {
+    return res.status(200).json({ ok: false, error: 'App ID tidak valid — isi angka ID Aplikasi/Workflow dari URL runninghub.ai, mis. 2116538467715293186.' })
+  }
+
+  const listRaw = Array.isArray(params?.nodeInfoList) ? params.nodeInfoList : null
+  if (!listRaw || listRaw.length === 0) {
+    return res.status(200).json({ ok: false, error: 'nodeInfoList wajib diisi — minimal satu node.' })
+  }
+  if (listRaw.length > RH_CUSTOM_NODE_MAX) {
+    return res.status(200).json({ ok: false, error: `nodeInfoList maksimum ${RH_CUSTOM_NODE_MAX} node.` })
+  }
+
+  const nodeInfoList: Array<{ nodeId: string; fieldName: string; fieldValue: string; description: string | null }> = []
+  for (const [i, node] of listRaw.entries()) {
+    const nodeId = String(node?.nodeId ?? '').trim()
+    const fieldName = String(node?.fieldName ?? '').trim()
+    const fvRaw = node?.fieldValue
+    const fv = typeof fvRaw === 'number' || typeof fvRaw === 'boolean' ? String(fvRaw) : String(fvRaw ?? '')
+    if (!nodeId) return res.status(200).json({ ok: false, error: `Node #${i + 1}: nodeId wajib diisi.` })
+    if (!fieldName) return res.status(200).json({ ok: false, error: `Node #${i + 1}: fieldName wajib diisi.` })
+    if (!fv.trim()) return res.status(200).json({ ok: false, error: `Node #${i + 1} (${nodeId}/${fieldName}): fieldValue kosong.` })
+    if (fv.length > RH_CUSTOM_FIELDVALUE_MAX) return res.status(200).json({ ok: false, error: `Node #${i + 1} (${nodeId}/${fieldName}): fieldValue terlalu besar — unggah ke URL publik lalu tempel URL, atau perkecil file.` })
+    const description = node?.description == null || String(node.description).trim() === '' ? null : String(node.description).slice(0, 500)
+    nodeInfoList.push({ nodeId: nodeId.slice(0, 100), fieldName: fieldName.slice(0, 100), fieldValue: fv, description })
+  }
+
+  const itRaw = String(params?.instanceType ?? 'default').trim().toLowerCase()
+  const instanceType = RH_INSTANCE_TYPES.has(itRaw) ? itRaw : 'default'
+
+  // Docs: usePersonalQueue Boolean; contoh resmi mengirim string 'false'.
+  const pqRaw = params?.usePersonalQueue
+  const usePersonalQueue = pqRaw === true || String(pqRaw ?? '').toLowerCase() === 'true' ? 'true' : 'false'
+
+  // webhookUrl: opsional, hanya https. RunningHub mengirim POST callback saat tugas selesai.
+  let webhookUrl: string | undefined
+  if (params?.webhookUrl != null && String(params.webhookUrl).trim()) {
+    const w = String(params.webhookUrl).trim()
+    if (!/^https:\/\/\S+$/.test(w) || w.length > 2048) {
+      return res.status(200).json({ ok: false, error: 'webhookUrl harus URL https yang valid (maks 2048 karakter).' })
+    }
+    webhookUrl = w
+  }
+
+  // retainSeconds: opsional, 10–180 detik; hanya Kunci API Bersama Perusahaan.
+  let retainSeconds: number | undefined
+  if (params?.retainSeconds != null && String(params.retainSeconds).trim() !== '') {
+    const n = Number(params.retainSeconds)
+    if (!Number.isInteger(n) || n < 10 || n > 180) {
+      return res.status(200).json({ ok: false, error: 'retainSeconds harus bilangan bulat 10–180 detik.' })
+    }
+    retainSeconds = n
+  }
+
+  const body: Record<string, unknown> = { nodeInfoList, instanceType, usePersonalQueue }
+  if (webhookUrl) body.webhookUrl = webhookUrl
+  if (retainSeconds !== undefined) body.retainSeconds = retainSeconds
+
+  const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${appId}`
+  const MAX_RETRIES = 2
+  const RETRY_DELAY_MS = 10_000
+  let lastRawText = ''
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    console.log(`[runninghub] POST ${endpoint} (custom-ai-app attempt ${attempt}/${MAX_RETRIES})`)
+    console.log(`[runninghub] body:`, JSON.stringify(body).slice(0, 1000))
+
+    const apiRes = await rhFetch(apiKey, endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+    })
+
+    lastRawText = await apiRes.text()
+    console.log(`[runninghub] submit-custom-ai-app ${apiRes.status}:`, lastRawText.slice(0, 1000))
+
+    let data: any
+    try { data = JSON.parse(lastRawText) } catch { data = { raw: lastRawText } }
+
+    const rhCode = data.code ?? data.errorCode
+    const rhMsg = data.msg || data.errorMessage || data.message
+
+    if (apiRes.status === 429 || rhCode === 429) {
+      return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data, retryable: true })
+    }
+    if (rhCode === 421 || rhCode === '421') {
+      if (attempt < MAX_RETRIES) {
+        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS))
+        continue
+      }
+      return res.status(200).json({ ok: false, error: 'Queue limit reached, coba lagi dalam beberapa menit', data, retryable: true })
+    }
+    if (rhCode !== undefined && rhCode !== 0 && rhCode !== '0' && rhCode !== '') {
+      const errorMsg = translateRhError(String(rhCode), rhMsg) || rhMsg || `Error code: ${rhCode}`
+      return res.status(200).json({ ok: false, error: errorMsg, code: rhCode, data })
+    }
+
+    const taskId = data.data?.taskId || data.taskId || data.id || data.task_id
+    if (!taskId) {
+      console.error(`[runninghub] No taskId found (custom-ai-app):`, JSON.stringify(data).slice(0, 500))
+      return res.status(200).json({ ok: false, error: rhTaskErrorFrom(data) || 'No taskId returned', raw: lastRawText.slice(0, 500) })
+    }
+
+    return res.status(200).json({
+      ok: true,
+      data: {
+        id: taskId,
+        taskId,
+        status: data.data?.status || data.status || 'QUEUED',
+        provider: 'runninghub',
+        workflowId: appId,
+      },
+    })
+  }
+
+  return res.status(200).json({ ok: false, error: 'Max retries exceeded', raw: lastRawText.slice(0, 500) })
+}
+
 /** Rute aksi ke handler — dipakai baik jalur member maupun rotasi pool. */
 async function dispatchRhAction(action: string, apiKey: string, params: any, res: Response): Promise<any> {
   if (action === 'motion-control') return handleMotionControl(apiKey, params, res)
@@ -1002,6 +1138,7 @@ async function dispatchRhAction(action: string, apiKey: string, params: any, res
   if (action === 'submit-h3-i2v') return handleSubmitH3I2V(apiKey, params, res)
   if (action === 'submit-h3-music-avatar') return handleSubmitH3MusicAvatar(apiKey, params, res)
   if (action === 'submit-ugc-storyboard') return handleSubmitUGCStoryboard(apiKey, params, res)
+  if (action === 'submit-custom-ai-app') return handleSubmitCustomAiApp(apiKey, params, res)
   if (action === 'submit-seedance2') return handleSubmitSeedance2(apiKey, params, res)
   if (action === 'submit-seedance2.6') return handleSubmitSeedance26(apiKey, params, res)
   if (action === 'query') return handleQuery(apiKey, params.taskId, res)
@@ -3573,6 +3710,15 @@ async function handleQuery(apiKey: string, taskId: string, res: Response) {
     usageThirdPartyConsumeMoney = rawUsage.thirdPartyConsumeMoney ?? null
   }
 
+  // ── Custom AI App Runner: teruskan array results mentah (nodeId/outputType/
+  // url/text) supaya output non-media (mis. teks LLM) tidak hilang di klien.
+  let rawResults: unknown = null
+  if (mappedStatus === 'COMPLETED') {
+    const r = taskData.results || taskData.output || data.results || taskData.outputs || data.outputs
+    if (Array.isArray(r)) rawResults = r.slice(0, 20)
+    else if (typeof r === 'string') rawResults = [{ url: r, outputType: 'file' }]
+  }
+
   // ── Otomatisasi pembersih watermark RunningHub ────────────────────────
   // Saat task COMPLETED dan hasilnya video, otomatis panggil pipeline Python
   // untuk menghapus watermark banner RunningHub di atas video.
@@ -3602,6 +3748,7 @@ async function handleQuery(apiKey: string, taskId: string, res: Response) {
       code: taskData.errorCode || data.errorCode || null,
       error: mappedStatus === 'FAILED' ? (failedDetail || taskData.errorMessage || taskData.msg || errorMsg || 'Task failed') : null,
       promptTips: taskData.promptTips || data.promptTips || null,
+      results: rawResults,
       provider: 'runninghub',
     },
   })

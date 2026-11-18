@@ -72,6 +72,7 @@ const RESULTS_PAGE_SOURCE: Record<CompletedResult['page'], string> = {
   'video-edit': 'ARKX AUTO Studio',
   'upscale-video': 'Upscale Video',
   'arkx-health': 'ARKX Health Animasi',
+  'custom-ai-app': 'AI App Runner',
 }
 
 const UPSCALER_KEY = 'arkxmotion.upscaler.gallery'

@@ -1277,6 +1277,16 @@ export interface RunningHubQueryFull {
   audioUrl: string | null
   usage: any
   error: string | null
+  /** Hasil mentah OpenAPI v2 (nodeId/outputType/url/text) — diisi Custom AI App Runner. */
+  results?: RunningHubQueryResultItem[] | null
+}
+
+/** Satu item hasil mentah dari Custom AI App (OpenAPI v2 query.results[]). */
+export interface RunningHubQueryResultItem {
+  url?: string | null
+  nodeId?: string | null
+  outputType?: string | null
+  text?: string | null
 }
 
 /** Query sekali dan kembalikan SEMUA hasil (termasuk daftar gambar lengkap). */
@@ -1287,6 +1297,13 @@ export async function queryRunningHubTaskFull(taskId: string, apiKey?: string): 
     : result.imageUrl
       ? [result.imageUrl]
       : []
+  const rawResults: RunningHubQueryResultItem[] | null = Array.isArray(result.results)
+    ? result.results.slice(0, 20).map((r: any) => (
+        typeof r === 'string'
+          ? { url: r, outputType: 'file' }
+          : { url: r?.url ?? null, nodeId: r?.nodeId ?? null, outputType: r?.outputType ?? null, text: r?.text ?? null }
+      ))
+    : null
   return {
     status: String(result.status || '').toUpperCase(),
     progress: result.progress || 0,
@@ -1296,6 +1313,58 @@ export async function queryRunningHubTaskFull(taskId: string, apiKey?: string): 
     audioUrl: result.audioUrl || null,
     usage: result.usage || null,
     error: result.error || null,
+    results: rawResults,
+  }
+}
+
+// ═══ Custom AI App Runner (OpenAPI v2 — dokumentasi resmi RunningHub) ═══════
+// Memanggil AI App / workflow ComfyUI manapun via /openapi/v2/run/ai-app/{appId}.
+export interface CustomAiAppNode {
+  nodeId: string
+  fieldName: string
+  fieldValue: string
+  description?: string | null
+}
+
+export interface CustomAiAppSubmitParams {
+  /** Angka app id / workflow id dari URL runninghub.ai (mis. ai-detail/2116...). */
+  appId: string
+  nodeInfoList: CustomAiAppNode[]
+  /** default (24G) | plus (48G) | ultra (84G). */
+  instanceType?: 'default' | 'plus' | 'ultra'
+  usePersonalQueue?: boolean
+  /** URL https yang menerima POST callback saat tugas selesai. */
+  webhookUrl?: string
+  /** 10–180 detik; hanya Kunci API Bersama Perusahaan. */
+  retainSeconds?: number
+  apiKey?: string
+}
+
+export interface CustomAiAppResult {
+  id: string
+  taskId: string
+  status: string
+  provider: string
+  workflowId?: string
+}
+
+export async function submitCustomAiApp(params: CustomAiAppSubmitParams): Promise<CustomAiAppResult> {
+  const appId = String(params.appId ?? '').trim()
+  const result = await runninghubProxy('submit-custom-ai-app', {
+    appId,
+    nodeInfoList: params.nodeInfoList,
+    instanceType: params.instanceType ?? 'default',
+    usePersonalQueue: params.usePersonalQueue === true ? 'true' : 'false',
+    ...(params.webhookUrl ? { webhookUrl: params.webhookUrl } : {}),
+    ...(params.retainSeconds !== undefined ? { retainSeconds: params.retainSeconds } : {}),
+  }, params.apiKey)
+  const taskId = String(result?.taskId ?? result?.id ?? '')
+  return {
+    id: taskId,
+    taskId,
+    status: String(result?.status ?? 'QUEUED'),
+    provider: 'runninghub',
+    workflowId: result?.workflowId,
   }
 }
 

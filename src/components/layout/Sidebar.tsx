@@ -48,6 +48,7 @@ import {
   Rocket,
   HeartPulse,
   MailPlus,
+  Bot,
 } from 'lucide-react'
 
 interface NavItem {
@@ -74,6 +75,7 @@ const createNav: NavItem[] = [
   { label: 'Edit Image', href: '/generate/edit-image', icon: <ImagePlus className="h-4 w-4" /> },
   { label: 'Virtual Try-On', href: '/generate/virtual-tryon', icon: <Shirt className="h-4 w-4" /> },
   { label: 'Travel Photo', href: '/generate/travel-photo', icon: <Globe className="h-4 w-4" /> },
+  { label: 'AI App Runner', href: '/generate/ai-app', icon: <Bot className="h-4 w-4" /> },
 ]
 
 const audioNav: NavItem[] = [
