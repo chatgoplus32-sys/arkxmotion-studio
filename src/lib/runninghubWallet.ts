@@ -6,6 +6,8 @@
 // (passthrough).
 //
 // Dipakai halaman /topup/runninghub dan alur generate (lewat runninghubProxy).
+import { useEffect, useState } from 'react'
+import { useAuthStore } from '@/stores/authStore'
 const API = '/api/runninghub-wallet'
 
 export interface RunninghubWallet {
@@ -107,4 +109,24 @@ export async function refundRunninghubWallet(
 export function runninghubPreferServerKey(wallet: RunninghubWallet | null | undefined, hasOwnKey: boolean): boolean {
   if (hasOwnKey) return false
   return !!wallet?.server_key?.available
+}
+
+/**
+ * Hook kecil untuk halaman RunningHub: true bila relay bilang member ini boleh
+ * generate lewat token master server (sudah top up / admin) — tanpa key sendiri.
+ * Token sesi dibaca langsung dari auth store, jadi halaman cukup memanggil
+ * `useRunninghubServerReady()` tanpa param.
+ */
+export function useRunninghubServerReady(): boolean {
+  const token = useAuthStore((s) => s.token)
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    if (!token) { setReady(false); return }
+    let alive = true
+    fetchRunninghubWallet(token)
+      .then((w) => { if (alive) setReady(!!w?.server_key?.available) })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [token])
+  return ready
 }

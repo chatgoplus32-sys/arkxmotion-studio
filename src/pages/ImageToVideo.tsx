@@ -72,7 +72,7 @@ const I2V_PROVIDER_IDS: ProviderId[] = ['createpulse', 'nexabot', 'runninghub', 
 const I2V_PROVIDER_HINTS: Partial<Record<ProviderId, { tagline: string; recommended?: boolean }>> = {
   createpulse: { tagline: 'Paling mudah — langsung bisa dipakai tanpa API key.', recommended: true },
   nexabot: { tagline: 'Bayar per video dengan saldo NexaBot atau Paket Unlimited.' },
-  runninghub: { tagline: 'Workflow populer: Seedance dan MiniMax H3.' },
+  runninghub: { tagline: 'Workflow populer: Seedance dan MiniMax H3 — bayar pakai saldo app (top up) atau API key sendiri.' },
   seavi: { tagline: 'Image to video & multimodal — tanpa API key kalau token Seavi sudah diisi.' },
   posbot: { tagline: 'Bayar pakai saldo Rupiah PosBot — 29 model video (T2V · I2V · SFV · F2F · R2V/V2V), API key pb_live_… dari bot Telegram.' },
 }
@@ -1222,6 +1222,10 @@ export default function ImageToVideoPage() {
       if (!lewatiPrecheck) {
         const preOpts = {
           serverKey: provider === 'nexabot' && nexabotServerReady,
+          // RunningHub: tanpa key sendiri, precheck cek wallet (token master
+          // server untuk member yang sudah top up / admin).
+          authToken: authToken || undefined,
+          isAdmin: user?.role === 'admin',
         }
         const pre = await precheckProviderBalance(provider, totalCredits, preOpts as any)
         if (!pre.ok) {

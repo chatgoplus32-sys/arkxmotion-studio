@@ -10,6 +10,7 @@ import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { persistResultToR2, addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
 import { usePageActive } from '@/hooks/usePageActive'
 import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
+import { useRunninghubServerReady } from '@/lib/runninghubWallet'
 
 interface HistoryItem {
   time: string
@@ -58,6 +59,9 @@ export default function H3MusicAvatarPage() {
   const characterPickerRef = useRef<HTMLInputElement | null>(null)
   const audioPickerRef = useRef<HTMLInputElement | null>(null)
   const apiKey = getStoredProviderKey('runninghub')
+  // Jalur token master server: member top up (atau admin) bisa generate tanpa
+  // key sendiri — kelayakan diputuskan relay lewat wallet.
+  const rhServerReady = useRunninghubServerReady()
 
   const addLog = (msg: string, level: LogEntry['level'] = 'info') => {
     const time = new Date().toLocaleTimeString('id-ID')
@@ -104,8 +108,8 @@ export default function H3MusicAvatarPage() {
   }
 
   const runWorkflow = async () => {
-    if (!apiKey) {
-      addToast('⚠️ Belum ada RunningHub API key. Tambahkan di Providers.', 'warning')
+    if (!apiKey && !rhServerReady) {
+      addToast('⚠️ Top up saldo RunningHub dulu, atau tambahkan RunningHub API key di Providers.', 'warning')
       return
     }
     if (!characterFile) {
@@ -207,7 +211,7 @@ export default function H3MusicAvatarPage() {
     }
   }
 
-  const canRun = !!apiKey && !!characterFile && !!audioFile && !loading
+  const canRun = (!!apiKey || rhServerReady) && !!characterFile && !!audioFile && !loading
 
   const pageActive = usePageActive()
   useEffect(() => {
@@ -229,9 +233,9 @@ export default function H3MusicAvatarPage() {
         desc="1 foto + audio lagu → video avatar menyanyi."
       />
 
-      {!apiKey && (
+      {!apiKey && !rhServerReady && (
         <div className="mb-6 p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 text-sm">
-          ⚠️ Belum ada RunningHub API key. Tambahkan di <strong>Providers</strong> untuk menggunakan fitur ini.
+          ⚠️ Top up saldo RunningHub dulu (halaman <strong>Top Up RunningHub</strong>), atau tambahkan RunningHub API key di <strong>Providers</strong> untuk menggunakan fitur ini.
         </div>
       )}
 

@@ -101,6 +101,15 @@ export interface RotateResult<T> {
   triedKeys: number
 }
 
+/**
+ * Provider yang relay-nya bisa menyuntikkan kredensial server untuk member
+ * dengan saldo/top up — tanpa key milik sendiri. Untuk provider ini jalur
+ * server otomatis diizinkan saat member tidak punya key sama sekali (opsi
+ * `allowServerKey` tetap bisa menimpa). Relay yang memutuskan kelayakannya
+ * (saldo cukup / admin) dan menolak dengan pesan yang bisa dibaca.
+ */
+const SERVER_KEY_PROVIDERS = new Set<ProviderId>(['runninghub'])
+
 export async function withTokenRotation<T>(
   provider: ProviderId,
   fn: (apiKey: string, key: ProviderKey) => Promise<T>,
@@ -123,7 +132,7 @@ export async function withTokenRotation<T>(
   const maxRetries = opts?.maxRetries ?? allKeys.length
 
   if (allKeys.length === 0) {
-    if (!opts?.allowServerKey) {
+    if (!opts?.allowServerKey && !SERVER_KEY_PROVIDERS.has(resolvedProvider)) {
       return { ok: false, error: `No API keys for ${provider}`, triedKeys: 0 }
     }
     // Kunci server hanya dipakai kalau member tidak punya kunci sama sekali:

@@ -834,6 +834,7 @@ export default function EditImagePage() {
         return url
       },
       {
+        allowServerKey: true,
         onKeySwitch: (from, to, attempt) => {
           addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn')
         },

@@ -12,6 +12,7 @@ import { usePageActive } from '@/hooks/usePageActive'
 import { logGenerationStart, logGenerationComplete, logGenerationFailed } from '@/lib/generationLog'
 import { STYLE_PRESETS, GENRE_CATEGORIES, type SongGenreCategory } from '@/lib/song-cover-genres'
 import { useRunninghubPricing, rhModelPrice } from '@/lib/runninghubPricing'
+import { useRunninghubServerReady } from '@/lib/runninghubWallet'
 import { formatRp } from '@/lib/payment'
 
 type SongEngine = 'song-cover' | 'yue2'
@@ -99,6 +100,9 @@ export default function SongCoverPage() {
 
   const audioPickerRef = useRef<HTMLInputElement | null>(null)
   const apiKey = getStoredProviderKey('runninghub')
+  // Jalur token master server: member top up (atau admin) bisa generate tanpa
+  // key sendiri — kelayakan diputuskan relay lewat wallet.
+  const rhServerReady = useRunninghubServerReady()
 
   const addLog = (msg: string, level: LogEntry['level'] = 'info') => {
     const time = new Date().toLocaleTimeString('id-ID')
@@ -149,8 +153,8 @@ export default function SongCoverPage() {
   const modelLabel = isYuE2 ? 'YuE2 Indonesian Song Reimaginer' : 'AI Song Cover Studio'
 
   const runWorkflow = async () => {
-    if (!apiKey) {
-      addToast('⚠️ Belum ada RunningHub API key. Tambahkan di Providers.', 'warning')
+    if (!apiKey && !rhServerReady) {
+      addToast('⚠️ Top up saldo RunningHub dulu, atau tambahkan RunningHub API key di Providers.', 'warning')
       return
     }
     if (!audioFile) {
@@ -324,9 +328,9 @@ export default function SongCoverPage() {
         ))}
       </div>
 
-      {!apiKey && (
+      {!apiKey && !rhServerReady && (
         <div className="mb-6 p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 text-sm">
-          ⚠️ Belum ada RunningHub API key. Tambahkan di <strong>Providers</strong> untuk menggunakan fitur ini.
+          ⚠️ Top up saldo RunningHub dulu (halaman <strong>Top Up RunningHub</strong>), atau tambahkan RunningHub API key di <strong>Providers</strong> untuk menggunakan fitur ini.
         </div>
       )}
 

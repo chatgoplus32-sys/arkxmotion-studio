@@ -13,6 +13,7 @@ import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { persistResultToR2, addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
 import { usePageActive } from '@/hooks/usePageActive'
 import { filterDuplicateImages } from '@/lib/imageSim'
+import { useRunninghubServerReady } from '@/lib/runninghubWallet'
 
 interface HistoryItem {
   time: string
@@ -79,6 +80,9 @@ export default function TravelPhotoPage() {
 
   const characterPickerRef = useRef<HTMLInputElement | null>(null)
   const apiKey = getStoredProviderKey('runninghub')
+  // Jalur token master server: member top up (atau admin) bisa generate tanpa
+  // key sendiri — kelayakan diputuskan relay lewat wallet.
+  const rhServerReady = useRunninghubServerReady()
   const nexabotServerReady = !!nbWallet?.server_key?.available
   const nbFreeForModel = nexabotFreeForModel(nbWallet, 'gpt-image')
 
@@ -150,8 +154,8 @@ export default function TravelPhotoPage() {
   }
 
   const runWorkflow = async () => {
-    if (provider === 'runninghub' && !apiKey) {
-      addToast('⚠️ Belum ada RunningHub API key. Tambahkan di Providers.', 'warning')
+    if (provider === 'runninghub' && !apiKey && !rhServerReady) {
+      addToast('⚠️ Top up saldo RunningHub dulu, atau tambahkan RunningHub API key di Providers.', 'warning')
       return
     }
     if (provider === 'nexabot' && !authToken && !getStoredProviderKey('nexabot')) {
@@ -367,7 +371,7 @@ export default function TravelPhotoPage() {
     }
   }
 
-  const canRun = (provider === 'runninghub' ? !!apiKey : true) && !!characterFile && !loading && !(destination === 'custom' && !customDestination.trim())
+  const canRun = (provider === 'runninghub' ? (!!apiKey || rhServerReady) : true) && !!characterFile && !loading && !(destination === 'custom' && !customDestination.trim())
 
   const pageActive = usePageActive()
   useEffect(() => {
@@ -410,9 +414,9 @@ export default function TravelPhotoPage() {
         </div>
       </div>
 
-      {provider === 'runninghub' && !apiKey && (
+      {provider === 'runninghub' && !apiKey && !rhServerReady && (
         <div className="mb-6 p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 text-sm">
-          ⚠️ Belum ada RunningHub API key. Tambahkan di <strong>Providers</strong> untuk menggunakan fitur ini.
+          ⚠️ Top up saldo RunningHub dulu (halaman <strong>Top Up RunningHub</strong>), atau tambahkan RunningHub API key di <strong>Providers</strong> untuk menggunakan fitur ini.
         </div>
       )}
       {provider === 'nexabot' && (

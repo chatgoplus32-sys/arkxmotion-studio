@@ -10,6 +10,7 @@ import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { persistResultToR2, addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
 import { usePageActive } from '@/hooks/usePageActive'
 import { useLocalStorage } from '@/lib/useLocalStorage'
+import { useRunninghubServerReady } from '@/lib/runninghubWallet'
 
 const SCHEDULERS = [
   'beta',
@@ -68,6 +69,9 @@ export default function VideoUpscalerPage() {
   const videoPickerRef = useRef<HTMLInputElement | null>(null)
 
   const apiKey = getStoredProviderKey('runninghub')
+  // Jalur token master server: member top up (atau admin) bisa generate tanpa
+  // key sendiri — kelayakan diputuskan relay lewat wallet.
+  const rhServerReady = useRunninghubServerReady()
 
   const addLog = (msg: string, level: LogEntry['level'] = 'info') => {
     const time = new Date().toLocaleTimeString('id-ID')
@@ -82,8 +86,8 @@ export default function VideoUpscalerPage() {
   }
 
   const runWorkflow = async () => {
-    if (!apiKey) {
-      addToast('⚠️ Belum ada RunningHub API key. Tambahkan di Providers.', 'warning')
+    if (!apiKey && !rhServerReady) {
+      addToast('⚠️ Top up saldo RunningHub dulu, atau tambahkan RunningHub API key di Providers.', 'warning')
       return
     }
     if (!videoFile) {
@@ -188,7 +192,7 @@ export default function VideoUpscalerPage() {
     }
   }
 
-  const canRunUpscale = !!apiKey && !!videoFile && !loading
+  const canRunUpscale = (!!apiKey || rhServerReady) && !!videoFile && !loading
 
   const pageActive = usePageActive()
   useEffect(() => {
@@ -210,9 +214,9 @@ export default function VideoUpscalerPage() {
         desc="Tingkatkan video ke kualitas lebih stabil & tajam — engine RunningHub VOSR2 2K bertingkat."
       />
 
-      {!apiKey && (
+      {!apiKey && !rhServerReady && (
         <div className="mb-6 p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 text-sm">
-          ⚠️ Belum ada RunningHub API key. Tambahkan di <strong>Providers</strong> untuk menggunakan fitur ini.
+          ⚠️ Top up saldo RunningHub dulu (halaman <strong>Top Up RunningHub</strong>), atau tambahkan RunningHub API key di <strong>Providers</strong> untuk menggunakan fitur ini.
         </div>
       )}
 
@@ -295,7 +299,7 @@ export default function VideoUpscalerPage() {
           <RunninghubPriceNote action="submit-video-upscale" className="mb-2" />
           <Button
             onClick={runWorkflow}
-            disabled={loading || !apiKey || !videoFile}
+            disabled={loading || (!apiKey && !rhServerReady) || !videoFile}
             className="w-full"
             size="lg"
           >

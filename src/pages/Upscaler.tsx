@@ -15,6 +15,7 @@ import { withTokenRotation } from '@/lib/tokenRotation'
 import { addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
 import { useAuthStore } from '@/stores/authStore'
 import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, nexabotPreferServerKey, nexabotFreeForModel, NEXABOT_PRICE_FALLBACK, type NexabotWallet } from '@/lib/nexabotWallet'
+import { fetchRunninghubWallet, type RunninghubWallet } from '@/lib/runninghubWallet'
 import { formatRp } from '@/lib/payment'
 import { uploadBlobToCdn } from '@/lib/cdn'
 
@@ -162,13 +163,16 @@ export default function UpscalerPage() {
   const hasWeavyKey = weavyKeys.some(k => k.status !== 'invalid' && k.status !== 'expired')
   const rhKeys = keys.runninghub || []
   const hasRunningHubKey = rhKeys.some(k => k.status !== 'invalid' && k.status !== 'expired')
+  // Jalur token master server (member top up / admin) — status di-fetch di bawah.
+  const [rhWallet, setRhWallet] = useState<RunninghubWallet | null>(null)
+  const rhServerReady = !!rhWallet?.server_key?.available
   const nbKeys = keys.nexabot || []
   const hasNexabotKey = nbKeys.some(k => k.status !== 'invalid' && k.status !== 'expired')
   const nexabotServerReady = !!nbWallet?.server_key?.available
   const nbFreeForModel = nexabotFreeForModel(nbWallet, 'gpt-image')
   const hasNexabotAuth = user?.role === 'admin' || hasNexabotKey || nexabotServerReady
   const canRun = rows.length > 0 && !running &&
-    ((provider === 'topaz' && hasWeavyKey) || (provider === 'magnific' && !!magnificKey) || (provider === 'leonardo' && hasLeonardoKey) || (provider === 'runninghub' && hasRunningHubKey) || (provider === 'nexabot' && hasNexabotAuth))
+    ((provider === 'topaz' && hasWeavyKey) || (provider === 'magnific' && !!magnificKey) || (provider === 'leonardo' && hasLeonardoKey) || (provider === 'runninghub' && (hasRunningHubKey || rhServerReady)) || (provider === 'nexabot' && hasNexabotAuth))
 
   const addLog = useCallback((msg: string, level: LogEntry['level'] = 'info') => {
     const time = new Date().toLocaleTimeString()
@@ -231,6 +235,11 @@ export default function UpscalerPage() {
   useEffect(() => {
     if (!authToken) { setNbWallet(null); return }
     fetchNexabotWallet(authToken).then((w) => { if (w) setNbWallet(w) }).catch(() => {})
+  }, [authToken])
+
+  useEffect(() => {
+    if (!authToken) { setRhWallet(null); return }
+    fetchRunninghubWallet(authToken).then((w) => { if (w) setRhWallet(w) }).catch(() => {})
   }, [authToken])
 
   function removeImage(id: string) {
@@ -319,6 +328,7 @@ export default function UpscalerPage() {
               return url
             },
             {
+              allowServerKey: true,
               onKeySwitch: (from, to, attempt) => {
                 log(`↻ rotate key RunningHub #${attempt}: ${from.name} → ${to.name}`, 'warn')
               },
@@ -658,10 +668,10 @@ export default function UpscalerPage() {
 
                 <MaintenanceBanner providerId={provider === 'topaz' ? 'weavy' : provider as any} />
 
-                {provider === 'runninghub' && !hasRunningHubKey && (
+                {provider === 'runninghub' && !hasRunningHubKey && !rhServerReady && (
                   <div className="flex items-center gap-2 text-xs text-blue-400 bg-blue-500/10 rounded-lg p-2 border border-blue-500/20">
                     <Key className="h-4 w-4" />
-                    <span>Photo Enhancer butuh RunningHub API key. Tambahkan di <b>Kelola Token</b> → provider <b>RunningHub</b>.</span>
+                    <span>Photo Enhancer butuh saldo RunningHub (top up dulu) atau RunningHub API key — tambahkan di <b>Kelola Token</b> → provider <b>RunningHub</b>.</span>
                   </div>
                 )}
 

@@ -12,6 +12,7 @@ import { submitRunningHubTryOn, submitRunningHubTryOnFlux2, pollRunningHubTask }
 import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { persistResultToR2, addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
 import { usePageActive } from '@/hooks/usePageActive'
+import { useRunninghubServerReady } from '@/lib/runninghubWallet'
 
 type TryOnMode = 'tryon' | 'extract'
 type TryOnEngine = 'firered' | 'flux2'
@@ -71,6 +72,9 @@ export default function VirtualTryOnPage() {
   const garmentPickerRef = useRef<HTMLInputElement | null>(null)
 
   const apiKey = getStoredProviderKey('runninghub')
+  // Jalur token master server: member top up (atau admin) bisa generate tanpa
+  // key sendiri — kelayakan diputuskan relay lewat wallet.
+  const rhServerReady = useRunninghubServerReady()
   const nexabotServerReady = !!nbWallet?.server_key?.available
   const nbFreeForModel = nexabotFreeForModel(nbWallet, 'gpt-image')
 
@@ -140,8 +144,8 @@ export default function VirtualTryOnPage() {
   }
 
   const runWorkflow = async () => {
-    if (provider === 'runninghub' && !apiKey) {
-      addToast('⚠️ Belum ada RunningHub API key. Tambahkan di Providers.', 'warning')
+    if (provider === 'runninghub' && !apiKey && !rhServerReady) {
+      addToast('⚠️ Top up saldo RunningHub dulu, atau tambahkan RunningHub API key di Providers.', 'warning')
       return
     }
     if (provider === 'nexabot' && !authToken && !getStoredProviderKey('nexabot')) {
@@ -352,7 +356,7 @@ export default function VirtualTryOnPage() {
     }
   }
 
-  const canRun = (provider === 'runninghub' ? !!apiKey : true) && !!personFile && ((mode === 'tryon' || (provider === 'runninghub' && engine === 'flux2')) ? !!garmentFile : true) && !loading
+  const canRun = (provider === 'runninghub' ? (!!apiKey || rhServerReady) : true) && !!personFile && ((mode === 'tryon' || (provider === 'runninghub' && engine === 'flux2')) ? !!garmentFile : true) && !loading
 
   const pageActive = usePageActive()
   useEffect(() => {
@@ -413,9 +417,9 @@ export default function VirtualTryOnPage() {
         </div>
       </div>
 
-      {provider === 'runninghub' && !apiKey && (
+      {provider === 'runninghub' && !apiKey && !rhServerReady && (
         <div className="mb-6 p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 text-sm">
-          ⚠️ Belum ada RunningHub API key. Tambahkan di <strong>Providers</strong> untuk menggunakan fitur ini.
+          ⚠️ Top up saldo RunningHub dulu (halaman <strong>Top Up RunningHub</strong>), atau tambahkan RunningHub API key di <strong>Providers</strong> untuk menggunakan fitur ini.
         </div>
       )}
       {provider === 'nexabot' && (
@@ -517,7 +521,7 @@ export default function VirtualTryOnPage() {
           )}
           <Button
             onClick={runWorkflow}
-            disabled={loading || (provider === 'runninghub' && !apiKey) || !personFile || ((mode === 'tryon' || (provider === 'runninghub' && engine === 'flux2')) && !garmentFile)}
+            disabled={loading || (provider === 'runninghub' && !apiKey && !rhServerReady) || !personFile || ((mode === 'tryon' || (provider === 'runninghub' && engine === 'flux2')) && !garmentFile)}
             className="w-full"
             size="lg"
             title="Ctrl+Enter untuk jalankan"

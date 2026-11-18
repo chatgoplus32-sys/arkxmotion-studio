@@ -10,6 +10,7 @@ import { withTokenRotation, detectTokenError } from '@/lib/tokenRotation'
 import { persistResultToR2, addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
 import { useLocalStorage } from '@/lib/useLocalStorage'
 import { normalizeImage } from '@/lib/roboneo'
+import { useRunninghubServerReady } from '@/lib/runninghubWallet'
 
 const MAX_SCENES = 4
 const MAX_DURATION = 15
@@ -68,6 +69,9 @@ export default function UGCStoryboardPage() {
   const scenePickerRef = useRef<HTMLInputElement | null>(null)
 
   const apiKey = getStoredProviderKey('runninghub')
+  // Jalur token master server: member top up (atau admin) bisa generate tanpa
+  // key sendiri — kelayakan diputuskan relay lewat wallet.
+  const rhServerReady = useRunninghubServerReady()
 
   const addLog = (msg: string, level: LogEntry['level'] = 'info') => {
     const time = new Date().toLocaleTimeString('id-ID')
@@ -134,8 +138,8 @@ export default function UGCStoryboardPage() {
   }
 
   const runWorkflow = async () => {
-    if (!apiKey) {
-      addToast('⚠️ Belum ada RunningHub API key. Tambahkan di Providers.', 'warning')
+    if (!apiKey && !rhServerReady) {
+      addToast('⚠️ Top up saldo RunningHub dulu, atau tambahkan RunningHub API key di Providers.', 'warning')
       return
     }
     if (!charFile) {
@@ -294,9 +298,9 @@ export default function UGCStoryboardPage() {
         desc="Ubah beberapa gambar referensi jadi video UGC multi-scene via MiniMax H3 I2V — multi-shot storyboard, multi-angle, karakter konsisten, dialog Indonesia + lip-sync, durasi hingga 15 detik."
       />
 
-      {!apiKey && (
+      {!apiKey && !rhServerReady && (
         <div className="mb-6 p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 text-sm">
-          ⚠️ Belum ada RunningHub API key. Tambahkan di <strong>Providers</strong> untuk menggunakan fitur ini.
+          ⚠️ Top up saldo RunningHub dulu (halaman <strong>Top Up RunningHub</strong>), atau tambahkan RunningHub API key di <strong>Providers</strong> untuk menggunakan fitur ini.
         </div>
       )}
 
@@ -381,7 +385,7 @@ export default function UGCStoryboardPage() {
           <RunninghubPriceNote action="submit-ugc-storyboard" className="mb-2" />
           <Button
             onClick={runWorkflow}
-            disabled={loading || !apiKey || !charFile || scenes.length === 0}
+            disabled={loading || (!apiKey && !rhServerReady) || !charFile || scenes.length === 0}
             className="w-full"
             size="lg"
           >

@@ -43,10 +43,28 @@ export async function precheckProviderBalance(
       // upstream). Key yang dulu ditandai invalid karena gangguan cek saldo
       // tetap dicoba — kalau benar mati, upstream menjawab 806 dengan pesan jelas.
       const keys = useProviderManager.getState().keys.runninghub || []
-      if (keys.length === 0) {
-        return { ok: false, error: 'Tidak ada API key RunningHub. Tambahkan di halaman Providers.' }
+      if (keys.length > 0) return { ok: true }
+      // Tanpa key sendiri bukan jalan buntu: relay memasang token master dari
+      // pool admin untuk member yang sudah top up (atau admin). Kelayakan
+      // diputuskan server lewat wallet (server_key.available).
+      if (opts.authToken) {
+        try {
+          const { fetchRunninghubWallet } = await import('@/lib/runninghubWallet')
+          const wallet = await fetchRunninghubWallet(opts.authToken)
+          if (wallet?.server_key?.available) return { ok: true }
+          return {
+            ok: false,
+            balance: wallet?.balance ?? null,
+            error: wallet?.server_key?.reason
+              || 'Top up saldo RunningHub dulu (halaman Top Up RunningHub), atau tambahkan API key RunningHub di Providers.',
+          }
+        } catch {
+          // Wallet tak terbaca (jaringan) → biarkan alur generate memutuskan;
+          // potongan saldo di sana punya pesan error yang jelas.
+          return { ok: true }
+        }
       }
-      return { ok: true }
+      return { ok: false, error: 'Login dulu untuk memakai saldo RunningHub, atau tambahkan API key RunningHub di halaman Providers.' }
     }
     case 'seavi':
       return precheckSeaviBalance(minCredits, { authToken: opts.authToken, isAdmin: opts.isAdmin })

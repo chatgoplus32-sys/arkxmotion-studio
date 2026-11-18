@@ -11,7 +11,7 @@ import { submitGensparkVideo, extractGensparkVideoUrl, uploadToGenspark, pollGen
 import { trimVideoFFmpeg } from '@/lib/ffmpeg-compress'
 import { restoreMotionAudio } from '@/lib/motionAudio'
 import { submitWeavyMotionControl, uploadWeavyAssetWithRetry, resolveWeavyAssetUrl, getActiveWeavyAccessToken, compressImageForWeavy } from '@/lib/weavy'
-import { getRunningHubApiKey, getRunningHubWorkflowId, submitRunningHubMotionControl, submitRunningHubUltraFastHD, submitRunningHubMotionApp, pollRunningHubTask, checkRunningHubBalance } from '@/lib/runninghub'
+import { getRunningHubWorkflowId, submitRunningHubMotionControl, submitRunningHubUltraFastHD, submitRunningHubMotionApp, pollRunningHubTask, checkRunningHubBalance } from '@/lib/runninghub'
 import { useRunninghubPricing, rhModelPrice } from '@/lib/runninghubPricing'
 import { formatRp } from '@/lib/payment'
 import { getMarkastoolsCookies, runMarkasMotionControl, MARKAS_MOTION_MODELS } from '@/lib/markastools'
@@ -133,7 +133,7 @@ const MOTION_PROVIDER_INFO: Record<MotionProviderId, { name: string; tagline: st
   runninghub: {
     name: 'RunningHub',
     tagline: 'Harga per generate sesuai System Settings',
-    note: 'Perlu API key RunningHub yang sudah disimpan di halaman Providers.',
+    note: 'Tanpa API key pun bisa — top up saldo RunningHub (Rp per generate, harga sesuai System Settings) atau pakai API key sendiri di Providers.',
     recommended: true,
   },
   seavi: {
@@ -1601,8 +1601,8 @@ export default function MotionPage() {
               let attemptTaskId: string | null = null
               let lastTaskId: string | null = null
             try {
-              const runninghubKey = getRunningHubApiKey()
-              if (!runninghubKey) throw Error('Belum ada RunningHub API key. Silakan tambahkan di Settings.')
+              // Tanpa key sendiri jalur tetap jalan: runninghubProxy memakai
+              // token master server + saldo wallet (member top up / admin).
 
               let mode = 'pro'
               let modelVersion = '2.6'
