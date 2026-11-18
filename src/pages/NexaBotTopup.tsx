@@ -100,6 +100,25 @@ export default function NexaBotTopupPage() {
     fetchTopups()
   }, [fetchBalance, fetchTopups])
 
+  // Auto-refresh: begitu pembayaran diverifikasi otomatis (BasuNiPay /
+  // notifikasi bank), saldo/paket & status baris berubah tanpa reload
+  // halaman. Polling hanya jalan selama ada yang menunggu — begitu lunas,
+  // berhenti.
+  const adaPending = topups.some((t) => t.status === 'pending')
+  useEffect(() => {
+    if (!adaPending && step === 'select') return
+    const timer = setInterval(() => {
+      fetchBalance()
+      fetchTopups()
+    }, 8000)
+    return () => clearInterval(timer)
+  }, [adaPending, step, fetchBalance, fetchTopups])
+
+  // Status baris yang sedang dibayar, dilihat ulang dari daftar terbaru
+  // (di-update polling) supaya layar konfirmasi ikut berubah saat lunas.
+  const statusDiajukan = submitted ? topups.find((t) => t.id === submitted.id)?.status ?? submitted.status : null
+  const lunas = statusDiajukan === 'approved'
+
   const submit = async (endpoint: 'topup' | 'package') => {
     if (endpoint === 'package' && sedangBooster && NEXABOT_BOOSTER_COMING_SOON) {
       addToast(NEXABOT_BOOSTER_COMING_SOON_NOTE, 'info')
@@ -403,10 +422,10 @@ export default function NexaBotTopupPage() {
 
       {step === 'confirm' && (
         <Section
-          title="Selesaikan Pembayaran"
-          sub="Bayar TEPAT nominal di bawah — verifikasi berjalan otomatis"
+          title={lunas ? 'Pembayaran Terverifikasi' : 'Selesaikan Pembayaran'}
+          sub={lunas ? 'Pembayaran diterima — halaman ini memperbarui sendiri' : 'Bayar TEPAT nominal di bawah — verifikasi berjalan otomatis'}
         >
-          {submitted && (
+          {submitted && !lunas && (
             <>
               <BasunipayCheckoutButton url={basunipay?.checkout_url} payable={basunipay?.payable_amount} image={basunipay?.qris_image} />
               {payMethod === 'qris' ? (
@@ -448,12 +467,18 @@ export default function NexaBotTopupPage() {
           )}
           <div className="text-center py-4">
             <div className="text-lg font-medium mb-1">
-              {mode === 'package' ? `Paket ${pkg.label} menunggu pembayaran` : 'Topup menunggu pembayaran'}
+              {lunas
+                ? mode === 'package' ? `Paket ${pkg.label} aktif` : 'Saldo Masuk!'
+                : mode === 'package' ? `Paket ${pkg.label} menunggu pembayaran` : 'Topup menunggu pembayaran'}
             </div>
             <div className="text-sm text-muted-foreground mb-4">
-              {mode === 'package'
-                ? `Paket ${namaPaketIni} aktif setelah admin menyetujui pembayaran (otomatis bila nominal terdeteksi).${sedangBooster ? ' NexaDance 3.0, Omni Flash 1.2 & GPT Image gratis; music/tts tetap memotong saldo.' : ''}`
-                : 'Saldo masuk otomatis beberapa menit setelah transfer kamu terdeteksi.'}
+              {lunas
+                ? mode === 'package'
+                  ? 'Pembayaran terverifikasi otomatis — paket sudah aktif dan siap dipakai.'
+                  : 'Pembayaran terverifikasi otomatis dan saldo sudah ditambahkan — siap dipakai generate.'
+                : mode === 'package'
+                  ? `Paket ${namaPaketIni} aktif setelah pembayaran terdeteksi (verifikasi otomatis).${sedangBooster ? ' NexaDance 3.0, Omni Flash 1.2 & GPT Image gratis; music/tts tetap memotong saldo.' : ''}`
+                  : 'Saldo masuk otomatis beberapa menit setelah transfer kamu terdeteksi. Halaman ini refresh otomatis.'}
               <br />Kalau sudah lebih dari 15 menit belum masuk, hubungi admin via WhatsApp.
             </div>
             <a
@@ -467,7 +492,7 @@ export default function NexaBotTopupPage() {
             </a>
             <div className="mt-4">
               <Button variant="outline" onClick={() => { setStep('select'); setMode('balance'); fetchBalance(); fetchTopups() }}>
-                Kembali
+                {lunas ? 'Lihat Saldo' : 'Kembali'}
               </Button>
             </div>
           </div>

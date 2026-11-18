@@ -77,7 +77,20 @@ export default function RunningHubTopupPage() {
     fetchTopups()
   }, [fetchWallet, fetchTopups])
 
-  const submitTopup = async (note: string, next: 'pay' | 'confirm') => {
+  // Auto-refresh: begitu pembayaran diverifikasi otomatis (BasuNiPay /
+  // notifikasi bank), saldo & status baris berubah tanpa reload halaman.
+  // Polling hanya jalan selama ada yang menunggu — begitu lunas, berhenti.
+  const adaPending = topups.some((t) => t.status === 'pending')
+  useEffect(() => {
+    if (!adaPending && step === 'select') return
+    const timer = setInterval(() => {
+      fetchWallet()
+      fetchTopups()
+    }, 8000)
+    return () => clearInterval(timer)
+  }, [adaPending, step, fetchWallet, fetchTopups])
+
+  const submitTopup = async (note: string) => {
     if (!Number.isInteger(amount) || amount < minTopup) {
       addToast(`Minimal topup ${formatRp(minTopup)}`, 'error')
       return
@@ -95,21 +108,13 @@ export default function RunningHubTopupPage() {
       })
       const data = await res.json()
       if (res.ok) {
-        if (next === 'pay') {
-          // Simpan baris yang diajukan — amount_total adalah nominal yang
-          // harus dibayar dan yang dicocokkan parser email.
-          setSubmitted(data.topup || null)
-          setBasunipay(data.basunipay || null)
-          addToast(`Topup ${formatRp(amount)} diajukan`, 'success')
-          setStep('pay')
-          fetchTopups()
-        } else {
-          // Baris sudah dibuat di langkah pertama — tidak perlu pengajuan kedua.
-          addToast('Konfirmasi terkirim', 'success')
-          setStep('confirm')
-          fetchTopups()
-          fetchWallet()
-        }
+        // Simpan baris yang diajukan — amount_total adalah nominal yang
+        // harus dibayar dan yang dicocokkan parser email.
+        setSubmitted(data.topup || null)
+        setBasunipay(data.basunipay || null)
+        addToast(`Topup ${formatRp(amount)} diajukan`, 'success')
+        setStep('pay')
+        fetchTopups()
       } else {
         addToast(data.error || 'Gagal', 'error')
       }
@@ -119,8 +124,20 @@ export default function RunningHubTopupPage() {
     setLoading(false)
   }
 
-  const handleTopup = () => submitTopup(proofNote, 'pay')
-  const handleConfirmTransfer = () => submitTopup(proofNote || 'Transfer via DANA', 'confirm')
+  const handleTopup = () => submitTopup(proofNote)
+  // Baris pengajuan sudah dibuat di handleTopup. Tombol "Sudah Bayar/Transfer"
+  // hanya menandai user sudah membayar lalu pindah ke layar konfirmasi —
+  // POST kedua di sini hanya membuat baris pending dobel.
+  const handleConfirmTransfer = () => {
+    setStep('confirm')
+    fetchTopups()
+    fetchWallet()
+  }
+
+  // Status baris yang sedang dibayar, dilihat ulang dari daftar terbaru
+  // (di-update polling) supaya layar konfirmasi ikut berubah saat lunas.
+  const statusDiajukan = submitted ? topups.find((t) => t.id === submitted.id)?.status ?? submitted.status : null
+  const lunas = statusDiajukan === 'approved'
 
   const copyNumber = () => {
     navigator.clipboard.writeText(DANA_NUMBER)
@@ -292,13 +309,18 @@ export default function RunningHubTopupPage() {
       )}
 
       {step === 'confirm' && (
-        <Section title="Menunggu Approval" sub="Topup kamu sedang diproses admin">
+        <Section
+          title={lunas ? 'Pembayaran Terverifikasi' : 'Menunggu Pembayaran'}
+          sub={lunas ? 'Saldo sudah masuk ke akun kamu' : 'Verifikasi berjalan otomatis — halaman ini memperbarui sendiri'}
+        >
           <div className="text-center py-8">
-            <div className="text-5xl mb-4">⏳</div>
-            <div className="text-lg font-medium mb-2">Menunggu Approval Admin</div>
+            <div className="text-5xl mb-4">{lunas ? '✅' : '⏳'}</div>
+            <div className="text-lg font-medium mb-2">{lunas ? 'Saldo Masuk!' : 'Menunggu Pembayaran Masuk'}</div>
             <div className="text-sm text-muted-foreground mb-4">
-              Saldo masuk setelah admin memverifikasi pembayaran.
-              <br />Hubungi admin jika sudah transfer.
+              {lunas
+                ? 'Pembayaran terverifikasi otomatis dan saldo sudah ditambahkan — siap dipakai generate.'
+                : 'Pembayaran diverifikasi otomatis dari QRIS/notifikasi bank — saldo masuk sendiri beberapa menit setelah bayar. Halaman ini refresh otomatis.'}
+              <br />Kalau sudah lebih dari 15 menit belum masuk, hubungi admin via WhatsApp.
             </div>
             <a
               href={WHATSAPP_LINK}
@@ -311,7 +333,7 @@ export default function RunningHubTopupPage() {
             </a>
             <div className="mt-4">
               <Button variant="outline" onClick={() => { setStep('select'); fetchWallet(); fetchTopups() }}>
-                Kembali ke Top Up
+                {lunas ? 'Lihat Saldo' : 'Kembali ke Top Up'}
               </Button>
             </div>
           </div>

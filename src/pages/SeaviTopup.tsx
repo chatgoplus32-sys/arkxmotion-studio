@@ -77,6 +77,19 @@ export default function SeaviTopupPage() {
     fetchTopups()
   }, [fetchWallet, fetchTopups])
 
+  // Auto-refresh: begitu pembayaran diverifikasi otomatis (BasuNiPay /
+  // notifikasi bank), token & status baris berubah tanpa reload halaman.
+  // Polling hanya jalan selama ada yang menunggu — begitu lunas, berhenti.
+  const adaPending = topups.some((t) => t.status === 'pending')
+  useEffect(() => {
+    if (!adaPending && step === 'select') return
+    const timer = setInterval(() => {
+      fetchWallet()
+      fetchTopups()
+    }, 8000)
+    return () => clearInterval(timer)
+  }, [adaPending, step, fetchWallet, fetchTopups])
+
   const handleTopup = async () => {
     if (!selectedPackage) {
       addToast('Pilih paket dulu', 'error')
@@ -113,6 +126,11 @@ export default function SeaviTopupPage() {
     fetchTopups()
     fetchWallet()
   }
+
+  // Status baris yang sedang dibayar, dilihat ulang dari daftar terbaru
+  // (di-update polling) supaya layar konfirmasi ikut berubah saat lunas.
+  const statusDiajukan = submitted ? topups.find((t) => t.id === submitted.id)?.status ?? submitted.status : null
+  const lunas = statusDiajukan === 'approved'
 
   const copyNumber = () => {
     navigator.clipboard.writeText(DANA_NUMBER)
@@ -278,13 +296,18 @@ export default function SeaviTopupPage() {
       )}
 
       {step === 'confirm' && (
-        <Section title="Menunggu Approval" sub="Topup kamu sedang diproses admin">
+        <Section
+          title={lunas ? 'Pembayaran Terverifikasi' : 'Menunggu Pembayaran'}
+          sub={lunas ? 'Token sudah masuk ke akun kamu' : 'Verifikasi berjalan otomatis — halaman ini memperbarui sendiri'}
+        >
           <div className="text-center py-8">
-            <div className="text-5xl mb-4">⏳</div>
-            <div className="text-lg font-medium mb-2">Menunggu Approval Admin</div>
+            <div className="text-5xl mb-4">{lunas ? '✅' : '⏳'}</div>
+            <div className="text-lg font-medium mb-2">{lunas ? 'Token Masuk!' : 'Menunggu Pembayaran Masuk'}</div>
             <div className="text-sm text-muted-foreground mb-4">
-              Token masuk setelah admin memverifikasi pembayaran.
-              <br />Hubungi admin jika sudah transfer.
+              {lunas
+                ? 'Pembayaran terverifikasi otomatis dan token sudah ditambahkan — siap dipakai generate.'
+                : 'Pembayaran diverifikasi otomatis dari QRIS/notifikasi bank — token masuk sendiri beberapa menit setelah bayar. Halaman ini refresh otomatis.'}
+              <br />Kalau sudah lebih dari 15 menit belum masuk, hubungi admin via WhatsApp.
             </div>
             <a
               href={WHATSAPP_LINK}
@@ -297,7 +320,7 @@ export default function SeaviTopupPage() {
             </a>
             <div className="mt-4">
               <Button variant="outline" onClick={() => { setStep('select'); fetchWallet(); fetchTopups() }}>
-                Kembali ke Top Up
+                {lunas ? 'Lihat Saldo' : 'Kembali ke Top Up'}
               </Button>
             </div>
           </div>

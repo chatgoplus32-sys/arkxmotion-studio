@@ -8,7 +8,7 @@
     "dev:server": "tsx server/index.ts",
     "dev:all": "concurrently \"npm run dev:server\" \"npm run dev\"",
     "build": "tsc -b && vite build",
-    "test": "tsx --test test/*.test.ts",
+    "test": "tsx --tsconfig tsconfig.test.json --test test/*.test.ts",
     "typecheck": "tsc -b && tsc --noEmit -p tsconfig.test.json && node scripts/check-undefined.mjs",
     "lint": "oxlint",
     "preview": "vite preview",

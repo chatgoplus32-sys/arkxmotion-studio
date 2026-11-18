@@ -36,8 +36,11 @@ const REFRESH_KEY = 'arkxmotion_refresh'
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
-  token: localStorage.getItem(TOKEN_KEY),
-  refreshToken: localStorage.getItem(REFRESH_KEY),
+  // Dibaca saat inisialisasi store. Di luar browser (tes Node / SSR) localStorage
+  // tidak ada; tanpa penjagaan ini, mengimpor modul yang menarik authStore
+  // (mis. src/lib/runninghubWallet.ts) langsung ReferenceError dan tes meledak.
+  token: typeof localStorage === 'undefined' ? null : localStorage.getItem(TOKEN_KEY),
+  refreshToken: typeof localStorage === 'undefined' ? null : localStorage.getItem(REFRESH_KEY),
   isAuthenticated: false,
   isLoading: true,
 
