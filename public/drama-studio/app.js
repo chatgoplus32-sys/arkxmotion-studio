@@ -36,6 +36,47 @@
       return active?.key || (keys[0]?.key || null);
     } catch { return null }
   };
+  // ── Jalur server (member tanpa API key milik sendiri) ─────────────────────
+  // Anggota dengan saldo/paket NexaBot boleh generate lewat kredensial server —
+  // persis aturan di halaman lain: browser mengirim identitas app (Authorization
+  // Bearer) + tiket pembayaran dari /api/nexabot-wallet/deduct. Relay memverifikasi
+  // tiket itu sebelum menyuntikkan kunci server.
+  async function chargeNexabotWallet(model, token) {
+    const t = token ?? await appToken();
+    if (!t) throw new Error('Sesi aplikasi tidak ditemukan — login dulu ke ARKXMotion.');
+    const res = await fetch('/api/nexabot-wallet/deduct', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + t },
+      body: JSON.stringify({ model: model || '', batch_id: 'drama-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || 'Saldo NexaBot tidak cukup — top up di halaman Top Up NexaBot, atau pasang API key NexaBot milikmu sendiri di Providers.');
+    return data;
+  }
+  async function refundNexabotWallet(usageId, token) {
+    if (!usageId) return;
+    const t = token ?? await appToken();
+    try {
+      await fetch('/api/nexabot-wallet/refund', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + t },
+        body: JSON.stringify({ usage_id: usageId }),
+      });
+    } catch { /* best effort */ }
+  }
+  // Header kredensial untuk satu request ke relay: kunci member diutamakan;
+  // kalau tidak ada, pakai identitas app + tiket pembayaran (jalur server).
+  async function relayHeaders(ownKey, ticket, withContentType) {
+    const t = await appToken();
+    const headers = {};
+    if (withContentType) headers['Content-Type'] = 'application/json';
+    if (ownKey) headers['x-api-key'] = ownKey;
+    else {
+      if (t) headers['Authorization'] = 'Bearer ' + t;
+      if (ticket) headers['X-Nexabot-Charge'] = String(ticket);
+    }
+    return headers;
+  }
   const aspectEnum = (ratio) => ratio === '1:1' ? 1 : ratio === '16:9' ? 2 : 5; // 1=1:1, 2=16:9, 5=9:16 (enum nexabot)
   const ratioSubmit = (ratio) => ratio === '16:9' ? 1 : 2; // ratio 1 = 16:9, 2 = 9:16
   // Prompt video selalu dibarengi kalimat voiceover agar Omni Flash 1.2
@@ -136,26 +177,46 @@
   // Batas percobaan diperbesar (16) supaya job video ~3-5 menit bisa menunggu
   // job sebelumnya selesai tanpa member kehabisan kesabaran aplikasi.
   async function nexabotSubmitT2v({ prompt, ratio, resolution = 720, duration = 15, onQueueWait }) {
-    const k = memberKey(); if (!k) throw new Error('API key NexaBot belum diisi — tambahkan di halaman Providers.');
+    const ownKey = memberKey();
+    const t = await appToken();
+    let chargeId = null;
+    // Jalur server = member harus bayar dulu (Rp per generate; gratis selama
+    // Unlimited aktif). Jalur kunci member memakai kredit NexaBot milik member.
+    if (!ownKey) {
+      if (!t) throw new Error('Sesi aplikasi tidak ditemukan — login dulu ke ARKXMotion.');
+      const charge = await chargeNexabotWallet('omni_flash', t);
+      chargeId = typeof charge?.usage_id === 'number' && charge.usage_id > 0 ? charge.usage_id : null;
+    }
     const MAX_429 = 16;
     for (let attempt = 1; ; attempt++) {
-      const t = await appToken();
+      const t2 = await appToken();
+      const headers = await relayHeaders(ownKey, chargeId, true);
       const res = await fetch('/api/public/nexabot/submit', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': k, ...(t ? { Authorization: 'Bearer ' + t } : {}) },
+        headers,
         body: JSON.stringify({ mode: 't2v', prompt, ratio: ratioSubmit(ratio), resolution, duration }),
       });
       const data = await res.json().catch(() => null);
       if (res.status === 429 && data?.queued) {
         const waitSec = Math.min(Math.max(Number(data?.retry_after_seconds) || 30, 5), 180);
         onQueueWait?.(waitSec, attempt);
-        if (attempt >= MAX_429) throw new Error(`Antrian NexaBot sedang penuh — coba lagi beberapa saat lagi, atau pasang API key NexaBot milikmu sendiri di Providers agar jalurnya tidak antre sesi server.`);
+        if (attempt >= MAX_429) {
+          await refundNexabotWallet(chargeId, t2);
+          throw new Error(`Antrian NexaBot sedang penuh — coba lagi beberapa saat lagi, atau pasang API key NexaBot milikmu sendiri di Providers agar jalurnya tidak antre sesi server.`);
+        }
         await new Promise(r => setTimeout(r, (waitSec + 2) * 1000));
         continue;
       }
-      if (!res.ok || !data?.ok) throw new Error(data?.error || data?.errorMessage || `Submit gagal (HTTP ${res.status})`);
+      if (!res.ok || !data?.ok) {
+        const msg = data?.error || data?.errorMessage || `Submit gagal (HTTP ${res.status})`;
+        await refundNexabotWallet(chargeId, t2);
+        throw new Error(msg);
+      }
       const jobId = data.jobId || data.id || data.taskId || data.data?.jobId || data.data?.id;
-      if (!jobId) throw new Error('Submit tidak mengembalikan job id.');
+      if (!jobId) {
+        await refundNexabotWallet(chargeId, t2);
+        throw new Error('Submit tidak mengembalikan job id.');
+      }
       return jobId;
     }
   }
@@ -192,13 +253,21 @@
     return data.url;
   }
   async function gptImageJob({ prompt, aspect = 5, references = [], model = 'nano_banana_pro', onQueueWait }) {
-    const k = memberKey(); if (!k) throw new Error('API key NexaBot belum diisi — tambahkan di halaman Providers.');
+    const ownKey = memberKey();
+    const t = await appToken();
+    let chargeId = null;
+    if (!ownKey) {
+      if (!t) throw new Error('Sesi aplikasi tidak ditemukan — login dulu ke ARKXMotion.');
+      const charge = await chargeNexabotWallet('gpt-image', t);
+      chargeId = typeof charge?.usage_id === 'number' && charge.usage_id > 0 ? charge.usage_id : null;
+    }
     const MAX_429 = 16;
     for (let attempt = 1; ; attempt++) {
-      const t = await appToken();
+      const t2 = await appToken();
+      const headers = await relayHeaders(ownKey, chargeId, true);
       const res = await fetch('/api/public/nexabot/gpt-image', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': k, ...(t ? { Authorization: 'Bearer ' + t } : {}) },
+        headers,
         // Model default NexaBot untuk gambar: Nano Banana Pro (0,1 kredit) —
         // konsisten dengan katalog gambar NexaBot (semua 0,1 cr).
         body: JSON.stringify({ prompt, aspect, references: (Array.isArray(references) ? references : []).slice(0, 10), model }),
@@ -207,12 +276,24 @@
       if (res.status === 429 && data?.queued) {
         const waitSec = Math.min(Math.max(Number(data?.retry_after_seconds) || 30, 5), 180);
         onQueueWait?.(waitSec, attempt);
-        if (attempt >= MAX_429) throw new Error(`Antrian NexaBot/sesi server sedang penuh — coba lagi nanti, atau pasang API key NexaBot milikmu sendiri di Providers agar tidak ikut antre sesi server.`);
+        if (attempt >= MAX_429) {
+          await refundNexabotWallet(chargeId, t2);
+          throw new Error(`Antrian NexaBot/sesi server sedang penuh — coba lagi nanti, atau pasang API key NexaBot milikmu sendiri di Providers agar tidak ikut antre sesi server.`);
+        }
         await new Promise(r => setTimeout(r, (waitSec + 2) * 1000));
         continue;
       }
-      if (!res.ok || !data?.ok) throw new Error(data?.error || data?.errorMessage || `Submit Nano Banana Pro gagal (HTTP ${res.status})`);
-      return data.id || data.jobId || data.data?.id;
+      if (!res.ok || !data?.ok) {
+        const msg = data?.error || data?.errorMessage || `Submit Nano Banana Pro gagal (HTTP ${res.status})`;
+        await refundNexabotWallet(chargeId, t2);
+        throw new Error(msg);
+      }
+      const id = data.id || data.jobId || data.data?.id;
+      if (!id) {
+        await refundNexabotWallet(chargeId, t2);
+        throw new Error('Submit gambar tidak mengembalikan id job.');
+      }
+      return id;
     }
   }
   async function gptImagePoll(jobId, onStatus, maxMs = 10 * 60 * 1000) {
@@ -355,7 +436,7 @@
     if (opRunning('img-' + sceneId)) return;
     const artPrompt = (s.prompt || s.action || '').trim();
     if (!artPrompt) { toast('Isi aksi / prompt visual adegan dulu.'); return; }
-    if (!memberKey()) { toast('API key NexaBot belum diisi — tambahkan di halaman Providers.'); return; }
+    if (!memberKey() && !(await appToken())) { toast('Login dulu ke ARKXMotion, atau isi API key NexaBot di halaman Providers.'); return; }
     const aspectRatio = ($('[data-default-ratio]')?.value) || '9:16';
     const aspect = aspectEnum(aspectRatio);
     setRunning('img-' + sceneId, true);
@@ -391,7 +472,7 @@
     const p = project(); if (!p || !q) return;
     if (q.genStatus === 'running' || q.genStatus === 'polling') return;
     if (fRunningSoon(q)) return;
-    if (!memberKey()) { toast('API key NexaBot belum diisi — tambahkan di halaman Providers.'); return; }
+    if (!memberKey() && !(await appToken())) { toast('Login dulu ke ARKXMotion, atau isi API key NexaBot di halaman Providers.'); return; }
     if (!q.prompt || !String(q.prompt).trim()) { toast('Isi prompt video dulu.'); return; }
     setRunning('vid-' + q.id, true);
     if (triggerBtn) { triggerBtn.disabled = true; }
@@ -434,7 +515,7 @@
 
   async function aiGenerateAllVideos() {
     const p = project(); if (!p) return;
-    if (!memberKey()) { toast('API key NexaBot belum diisi — tambahkan di halaman Providers.'); return; }
+    if (!memberKey() && !(await appToken())) { toast('Login dulu ke ARKXMotion, atau isi API key NexaBot di halaman Providers.'); return; }
     const items = [...p.queue].filter(q => !(q.result && q.result.data)).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
     if (!items.length) { toast('Semua item antrean sudah punya hasil.'); return; }
     if (!confirm(`Generate ${items.length} video dengan Omni Flash 1.2 secara berurutan? Member membayar NexaBot per video (±Rp 150).`)) return;
