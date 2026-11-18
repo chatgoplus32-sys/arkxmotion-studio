@@ -91,10 +91,8 @@ export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'firefly:kling-3', label: 'Kling 3.0 I2V (Firefly)', cr: 100, provider: 'firefly' },
     { value: 'firefly:kling-v3-pro-i2v', label: 'Kling 3.0 Pro I2V (Firefly)', cr: 130, provider: 'firefly' },
   ],
-  runninghub: [
-    { value: 'rh:h3-vlog', label: 'MiniMax H3 — Realistic VLOG 15 detik (RunningHub)', cr: 80, provider: 'runninghub', apiModel: 'h3vlog' },
-  ],
-
+  // Belum ada model RunningHub di halaman ini (app H3 VLOG sudah dihapus di RunningHub).
+  runninghub: [],
   galleri5: [
     { value: 'g5:gemini-omni-flash-i2v', label: 'Gemini Omni Flash I2V (Galery5)', cr: 134, provider: 'galleri5' },
     { value: 'g5:wan-2.7-i2v', label: 'Wan 2.7 Image to Video (Galery5)', cr: 200, provider: 'galleri5' },
@@ -548,14 +546,6 @@ export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: s
       { value: '10s', label: '10 detik', mult: 2, duration: 10 },
     ],
   },
-  runninghub: {
-    default: [
-      { value: 'std', label: 'Standard', mult: 1, duration: 10 },
-    ],
-    'rh:h3-vlog': [
-      { value: 'std', label: '15 detik · VLOG realistis', mult: 1, duration: 15 },
-    ],
-  },
   galleri5: {
     'g5:gemini-omni-flash-i2v': [
       { value: '10s-720p', label: '10 detik · 720p', mult: 1, duration: 10, cr: 134, resolution: '720p' },
@@ -827,6 +817,8 @@ export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: s
     }
     return out
   })(),
+  // Belum ada model RunningHub di halaman ini (app H3 VLOG sudah dihapus di RunningHub).
+  runninghub: {},
   omni: {},
 }
 
@@ -884,28 +876,7 @@ export const MODEL_RATIO_RESTRICTIONS: Record<string, string[]> = {
   wan3_hd_30s: ['16:9', '9:16'],
 }
 
-export const H3_VLOG_TEMPLATE = `subject_definitions:
-<Picture 1> adalah referensi utama subjek. Pertahankan wajah, bentuk tubuh, pakaian, dan gaya rambut yang sama persis sepanjang video. Subjek adalah seorang content creator yang merekam vlog harian secara natural.
-
-summary:
-Video VLOG realistik berdurasi 15 detik. Satu subjek, satu lokasi konsisten, handheld selfie camera, pencahayaan natural, gerakan kamera halus, ekspresi dan gestur natural. Tidak ada morphing, wajah berubah, atau distorsi.
-
-retention_analysis:
-Pertahankan perhatian penonton dengan variasi sudut kamera ringan, gestur tangan, kontak mata ke lensa, dan transisi momen yang natural. Setiap shot harus terasa seperti rekaman vlog asli, bukan iklan.
-
-detailed_description:
-[Shot 1] 00:00.000 - 00:05.000: Subjek memegang kamera selfie, tersenyum ke lensa sambil berbicara, berjalan pelan di lokasi. Latar terlihat jelas, gerakan kamera handheld halus mengikuti langkah.
-[Shot 2] 00:05.000 - 00:10.000: Potongan ke sudut sedikit lebih dekat. Subjek menunjuk ke arah objek di sekitar, ekspresi antusias, rambut bergerak halus tertiup angin.
-[Shot 3] 00:10.000 - 00:15.000: Subjek kembali menatap lensa, mengangguk dan tersenyum, lalu melambaikan tangan. Kamera perlahan turun dan berhenti dengan komposisi natural.
-
-overall_soundscape:
-Suara ambience lokasi yang natural dan realistis, langkah kaki, angin ringan, suara lingkungan sekitar, serta suara napas dan gestur subjek. Tidak ada suara artifisial atau musik yang mendominasi.
-
-non_diegetic_music:
-Musik latar akustik ringan dan hangat dengan tempo santai, volume rendah agar suara ambience tetap terdengar.`
-
 export const TEMPLATES = [
-  { name: 'Realistic VLOG (MiniMax H3)', body: H3_VLOG_TEMPLATE },
   { name: 'Cinematic Slow Pan', body: 'Cinematic slow camera pan, natural lighting, subtle wind on hair, subject stays centered' },
   { name: 'Dolly Zoom', body: 'Slow dolly zoom in, subject sharp, background bokeh, moody' },
   { name: 'Gentle Parallax', body: 'Gentle parallax movement, soft bokeh background, subject in focus' },

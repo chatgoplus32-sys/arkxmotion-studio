@@ -281,13 +281,6 @@ const RUNNINGHUB_H3_MUSIC_AVATAR_APP_ID = '2111522730906955778'
 const H3_MUSIC_AVATAR_IMAGE_NODE = '306'
 const H3_MUSIC_AVATAR_AUDIO_NODE = '317'
 const H3_MUSIC_AVATAR_PROMPT_NODE = '214'
-// MiniMax H3 Realistic VLOG (app 2112457853784121345): 1 gambar + prompt
-// VLOG terstruktur → video VLOG realistis 15 detik.
-// node 137 = image, node 138 = text (prompt).
-// https://www.runninghub.ai/id/ai-detail/2112457853784121345
-const RUNNINGHUB_H3_VLOG_APP_ID = '2112457853784121345'
-const H3_VLOG_IMAGE_NODE = '137'
-const H3_VLOG_PROMPT_NODE = '138'
 // AI Song Cover Studio (app RunningHub 2104229552179425282):
 // node 1 = audio (lagu asli), node 4 = prompt (gaya/arrangement cover),
 // node 5 = prompt (lirik).
@@ -1008,7 +1001,6 @@ async function dispatchRhAction(action: string, apiKey: string, params: any, res
   if (action === 'submit-image-edit') return handleSubmitImageEdit(apiKey, params, res)
   if (action === 'submit-h3-i2v') return handleSubmitH3I2V(apiKey, params, res)
   if (action === 'submit-h3-music-avatar') return handleSubmitH3MusicAvatar(apiKey, params, res)
-  if (action === 'submit-h3-vlog') return handleSubmitH3Vlog(apiKey, params, res)
   if (action === 'submit-ugc-storyboard') return handleSubmitUGCStoryboard(apiKey, params, res)
   if (action === 'submit-seedance2') return handleSubmitSeedance2(apiKey, params, res)
   if (action === 'submit-seedance2.6') return handleSubmitSeedance26(apiKey, params, res)
@@ -2109,103 +2101,6 @@ async function handleSubmitH3MusicAvatar(apiKey: string, params: any, res: Respo
     const taskId = data.data?.taskId || data.taskId || data.id || data.task_id
     if (!taskId) {
       console.error(`[runninghub] No taskId found (h3-music-avatar):`, JSON.stringify(data).slice(0, 500))
-      return res.status(200).json({ ok: false, error: rhTaskErrorFrom(data) || 'No taskId returned', raw: lastRawText.slice(0, 500) })
-    }
-
-    return res.status(200).json({
-      ok: true,
-      data: {
-        id: taskId,
-        taskId,
-        status: data.data?.status || data.status || 'QUEUED',
-        provider: 'runninghub',
-        workflowId: effectiveAppId,
-      },
-    })
-  }
-
-  return res.status(200).json({ ok: false, error: 'Max retries exceeded', raw: lastRawText.slice(0, 500) })
-}
-
-async function handleSubmitH3Vlog(apiKey: string, params: any, res: Response) {
-  const {
-    app_id,
-    appId,
-    imageBase64,
-    imageFileName = 'photo.jpg',
-    imageMimeType = 'image/jpeg',
-    prompt = '',
-  } = params
-
-  if (!imageBase64) return res.status(200).json({ ok: false, error: 'Missing imageBase64' })
-  if (!String(prompt || '').trim()) return res.status(200).json({ ok: false, error: 'Missing prompt' })
-
-  const effectiveAppId = app_id || appId || RUNNINGHUB_H3_VLOG_APP_ID
-
-  console.log(`[runninghub] Uploading photo (h3-vlog)...`)
-  const imageUpload = await rhUpload(apiKey, imageBase64, imageFileName, imageMimeType)
-  console.log(`[runninghub] Photo uploaded: ${imageUpload.fileName}`)
-
-  const nodeInfoList: any[] = [
-    { nodeId: H3_VLOG_IMAGE_NODE, fieldName: 'image', fieldValue: imageUpload.fileName },
-    { nodeId: H3_VLOG_PROMPT_NODE, fieldName: 'value', fieldValue: String(prompt).trim() },
-  ]
-
-  const body = {
-    nodeInfoList,
-    instanceType: 'default',
-    usePersonalQueue: 'false',
-  }
-
-  const endpoint = `${RUNNINGHUB_BASE}/openapi/v2/run/ai-app/${effectiveAppId}`
-
-  const MAX_RETRIES = 3
-  const RETRY_DELAY_MS = 10000
-  let lastRawText = ''
-
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    console.log(`[runninghub] POST ${endpoint} (h3-vlog attempt ${attempt}/${MAX_RETRIES})`)
-    console.log(`[runninghub] body:`, JSON.stringify(body).slice(0, 1000))
-
-    const apiRes = await rhFetch(apiKey, endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(body),
-    })
-
-    lastRawText = await apiRes.text()
-    console.log(`[runninghub] submit-h3-vlog ${apiRes.status}:`, lastRawText.slice(0, 1000))
-
-    let data: any
-    try { data = JSON.parse(lastRawText) } catch { data = { raw: lastRawText } }
-
-    const rhCode = data.code ?? data.errorCode
-    const rhMsg = data.msg || data.errorMessage || data.message
-
-    if (apiRes.status === 429 || rhCode === 429) {
-      return res.status(200).json({ ok: false, error: 'Rate limit exceeded', data, retryable: true })
-    }
-
-    if (rhCode === 421 || rhCode === '421') {
-      console.log(`[runninghub] Queue limit (421), retrying in ${RETRY_DELAY_MS / 1000}s... (${attempt}/${MAX_RETRIES})`)
-      if (attempt < MAX_RETRIES) {
-        await new Promise(r => setTimeout(r, RETRY_DELAY_MS))
-        continue
-      }
-      return res.status(200).json({ ok: false, error: 'Queue limit reached, coba lagi dalam beberapa menit', data, retryable: true })
-    }
-
-    if (rhCode !== undefined && rhCode !== 0 && rhCode !== '0' && rhCode !== '') {
-      const errorMsg = translateRhError(String(rhCode), rhMsg) || rhMsg || `Error code: ${rhCode}`
-      return res.status(200).json({ ok: false, error: errorMsg, code: rhCode, data })
-    }
-
-    const taskId = data.data?.taskId || data.taskId || data.id || data.task_id
-    if (!taskId) {
-      console.error(`[runninghub] No taskId found (h3-vlog):`, JSON.stringify(data).slice(0, 500))
       return res.status(200).json({ ok: false, error: rhTaskErrorFrom(data) || 'No taskId returned', raw: lastRawText.slice(0, 500) })
     }
 

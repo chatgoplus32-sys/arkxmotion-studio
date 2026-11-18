@@ -98,7 +98,6 @@ const RH_MODEL_LABELS: Record<string, string> = {
   'motion-control-v3': 'Motion Control V3 (URL)',
   'submit-h3-music-avatar': 'H3 Music / Podcast Avatar',
   'submit-h3-i2v': 'H3 Image → Video',
-  'submit-h3-vlog': 'H3 Vlog',
   'submit-seedance2': 'Seedance 2',
   'submit-seedance2.6': 'Seedance 2.6',
   'submit-image-edit': 'Edit Gambar — FLUX Kontext',

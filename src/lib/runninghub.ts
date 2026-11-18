@@ -36,11 +36,6 @@ export const RUNNINGHUB_IMAGE_EDIT_WORKFLOW_ID = '1928844216607129602'
 // node 181 = text (prompt), node 143 = image,
 // node 126 = steps, node 146 = aspect_ratio
 export const RUNNINGHUB_H3_I2V_WORKFLOW_ID = '2099854999999340546'
-// MiniMax H3 Realistic VLOG (app RunningHub): 1 gambar + prompt VLOG
-// terstruktur → video VLOG realistis 15 detik.
-// node 137 = image, node 138 = text (prompt).
-// https://www.runninghub.ai/id/ai-detail/2112457853784121345
-export const RUNNINGHUB_H3_VLOG_APP_ID = '2112457853784121345'
 // UGC Storyboard (MiniMax H3 I2V — gambar ke video multi-scene + audio)
 export const RUNNINGHUB_UGC_WORKFLOW_ID = '2096092981395841025'
 
@@ -960,35 +955,6 @@ export async function submitRunningHubH3I2V(params: H3I2VParams): Promise<Motion
     status: result.status || 'QUEUED',
     provider: result.provider || 'runninghub',
     workflowId: result.workflowId || workflowId,
-  }
-}
-
-export interface H3VlogParams {
-  imageFile: File
-  prompt: string
-  apiKey?: string
-  appId?: string
-}
-
-export async function submitRunningHubH3Vlog(params: H3VlogParams): Promise<MotionControlResult> {
-  const appId = params.appId || RUNNINGHUB_H3_VLOG_APP_ID
-
-  const imageBase64 = await fileToBase64(params.imageFile)
-
-  const result = await runninghubProxy('submit-h3-vlog', {
-    app_id: appId,
-    imageBase64,
-    imageFileName: params.imageFile.name,
-    imageMimeType: params.imageFile.type || 'image/jpeg',
-    prompt: params.prompt,
-  }, params.apiKey)
-
-  return {
-    id: result.id || result.taskId,
-    taskId: result.taskId || result.id,
-    status: result.status || 'QUEUED',
-    provider: result.provider || 'runninghub',
-    workflowId: result.workflowId || appId,
   }
 }
 

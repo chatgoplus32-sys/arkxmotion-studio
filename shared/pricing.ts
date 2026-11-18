@@ -617,7 +617,6 @@ export const RUNNINGHUB_MODEL_PRICES: Record<string, number> = {
   // Music / avatar / video
   'submit-h3-music-avatar': 2500,
   'submit-h3-i2v': 2500,
-  'submit-h3-vlog': 2500,
   'submit-seedance2': 2500,
   'submit-seedance2.6': 2500,
   // Gambar & foto

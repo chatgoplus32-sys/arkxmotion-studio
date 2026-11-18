@@ -66,7 +66,7 @@ const NEXABOT_DEFAULT_VOICE = 'Achernar'
 // Provider yang tampil di halaman Image to Video. Kembangkan daftar ini untuk
 // menampilkan provider lain yang sudah terdaftar (leonardo, roboneo, galleri5,
 // weavy, wavespeed, framia, oneover, firefly, genspark, riverside).
-const I2V_PROVIDER_IDS: ProviderId[] = ['createpulse', 'nexabot', 'runninghub', 'seavi', 'posbot']
+const I2V_PROVIDER_IDS: ProviderId[] = ['createpulse', 'nexabot', 'seavi', 'posbot']
 
 // Bahasa sehari-hari untuk pemilih provider — hindari istilah model/keys mentah.
 const I2V_PROVIDER_HINTS: Partial<Record<ProviderId, { tagline: string; recommended?: boolean }>> = {
@@ -530,12 +530,10 @@ export default function ImageToVideoPage() {
   const nbApiModel = isNb ? (currentModel?.apiModel || 't2v') : ''
   // Seedance 2.0 Replica (RunningHub): gambar + prompt storyboard → video.
   const isRhSeedance = provider === 'runninghub' && currentModel?.apiModel === 'seedance2'
-  // MiniMax H3 Realistic VLOG (RunningHub): gambar + prompt VLOG → video 15 detik.
-  const isRhH3Vlog = provider === 'runninghub' && currentModel?.apiModel === 'h3vlog'
   // Seedance 2.6 Replica (RunningHub): 1-5 gambar referensi karakter + storyboard → video.
   const isRhSeedance26 = provider === 'runninghub' && currentModel?.apiModel === 'seedance26'
   // Harga RunningHub efektif dari System Settings (admin).
-  const rhAction = isRhSeedance ? 'submit-seedance2' : isRhSeedance26 ? 'submit-seedance2.6' : isRhH3Vlog ? 'submit-h3-vlog' : 'submit-h3-i2v'
+  const rhAction = isRhSeedance ? 'submit-seedance2' : isRhSeedance26 ? 'submit-seedance2.6' : 'submit-h3-i2v'
   const rhCost = rhModelPrice(rhPricing, rhAction)
   const SD26_MAX_IMAGES = 5
   const isNbT2V = isNb && nbApiModel === 't2v'
@@ -3541,89 +3539,7 @@ export default function ImageToVideoPage() {
         } else {
           throw new Error(rotation.error || 'Generation failed')
         }
-      } else if (provider === 'runninghub' && isRhH3Vlog) {
-        // ─── RunningHub: MiniMax H3 Realistic VLOG (gambar + prompt → 15s) ───
-        if (!imgFile) throw new Error('MiniMax H3 Realistic VLOG membutuhkan gambar input')
-        addLog(`[1/3] 🖼️ Normalisasi gambar...`, 'info', 'runninghub')
-        let upFile = imgFile
-        try {
-          upFile = await normalizeImage(imgFile, (msg) => addLog(`   ${msg}`, 'debug', 'runninghub'))
-          addLog(`   ✓ Siap: ${(upFile.size / 1024).toFixed(0)}KB`, 'debug', 'runninghub')
-        } catch (e: any) {
-          addLog(`   ⚠️ Normalisasi gagal, pakai file asli: ${e.message}`, 'warn', 'runninghub')
-        }
-
-        const { submitRunningHubH3Vlog, pollRunningHubTask } = await import('@/lib/runninghub')
-
-        const rotation = await withTokenRotation<string>(
-          'runninghub',
-          async (token, keyInfo) => {
-            addLog(`🔑 Trying key: ${keyInfo.name || keyInfo.id}`, 'info', 'runninghub')
-            setStatus((s) => ({ ...s, text: 'Submit H3 VLOG...', pct: 15 }))
-
-            const submit = await submitRunningHubH3Vlog({
-              imageFile: upFile,
-              prompt: prompt.trim(),
-              apiKey: token,
-            })
-            const taskId = submit.taskId
-            addLog(`[2/3] ✅ Task created ✓ task=${taskId.slice(0, 20)}...`, 'success', 'runninghub')
-
-            addActiveTask({
-              id: taskId,
-              taskId,
-              roomId: '',
-              nodeId: '',
-              token,
-              model: currentModel?.label || model,
-              prompt: prompt.trim() || '(no prompt)',
-              startedAt: Date.now(),
-              page: 'image-to-video',
-              provider: 'runninghub',
-            })
-            activeTaskId = taskId
-
-            addLog(`[3/3] ⏳ Polling for result...`, 'info', 'runninghub')
-            setStatus((s) => ({ ...s, text: 'Processing...', pct: 25 }))
-
-            const videoUrl = await pollRunningHubTask(taskId, (status, pct) => {
-              addLog(`⏳ RH ${status} (${pct}%)`, 'debug', 'runninghub')
-              setStatus((s) => ({ ...s, pct: Math.min(pct || 0, 95), text: `RH ${status}` }))
-            }, 3600000, token, currentModel?.value || 'RunningHub H3 VLOG')
-
-            setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
-            addLog(`✅ Video selesai ✓`, 'success', 'runninghub')
-
-            removeActiveTask(taskId)
-            activeTaskId = null
-            return videoUrl
-          },
-          {
-            onKeySwitch: (from, to, attempt) => {
-              addLog(`🔄 Token invalid! Switching key #${attempt}: "${from.name}" → "${to.name}"`, 'warn', 'runninghub')
-              if (activeTaskId) removeActiveTask(activeTaskId)
-              activeTaskId = null
-            },
-            onError: (err, _key) => {
-              if (detectTokenError('runninghub', err)) {
-                addLog(`⚠️ Key is invalid: ${err.message}`, 'warn', 'runninghub')
-              }
-            },
-          }
-        )
-        if (rotation.ok && rotation.result) {
-          setResults((prev) => [rotation.result!, ...prev])
-          saveGalleryItem(rotation.result!)
-          successRef.current = true
-          setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
-          notifyGenerationComplete(currentModel?.label || model, PROVIDER_CONFIGS[provider].name)
-          if (rotation.triedKeys > 1) {
-            addLog(`✅ Used key: ${rotation.usedKey?.name} (after ${rotation.triedKeys} keys tried)`, 'success', 'runninghub')
-          }
-        } else {
-          throw new Error(rotation.error || 'Generation failed')
-        }
-      } else if (provider === 'runninghub') {
+} else if (provider === 'runninghub') {
         // ─── RunningHub: MiniMax H3 Ultra-HD Fast 8-Step I2V ───
         if (!imgFile) throw new Error('RunningHub H3 I2V membutuhkan gambar input')
         addLog(`[1/3] 🖼️ Normalisasi gambar...`, 'info', 'runninghub')
@@ -4471,7 +4387,7 @@ export default function ImageToVideoPage() {
                           : provider === 'posbot'
                             ? `${m.label} — Rp ${m.cr.toLocaleString('id-ID')}`
                             : provider === 'runninghub'
-                              ? `${m.label} — ${formatRp(rhModelPrice(rhPricing, m.apiModel === 'h3vlog' ? 'submit-h3-vlog' : m.apiModel === 'seedance2' ? 'submit-seedance2' : m.apiModel === 'seedance26' ? 'submit-seedance2.6' : 'submit-h3-i2v'))}/generate`
+                              ? `${m.label} — ${formatRp(rhModelPrice(rhPricing, m.apiModel === 'seedance2' ? 'submit-seedance2' : m.apiModel === 'seedance26' ? 'submit-seedance2.6' : 'submit-h3-i2v'))}/generate`
                             : provider === 'seavi'
                               ? `${m.label} — ${m.cr} token`
                               : `${m.label} — ${m.cr === 0 ? 'kuota' : '$' + (m.cr / 1000).toFixed(3)}`,
