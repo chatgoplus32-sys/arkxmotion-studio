@@ -22,13 +22,6 @@ const EPOSCENTS_MC_IMAGE_NODE = '68'
 const EPOSCENTS_MC_VIDEO_NODE = '2'
 const EPOSCENTS_MC_VIDEO_FIELD = 'video'
 
-// Eposcents MC 1080p (Kontrol Gerak, WAN + SCAIL): node 30 = image,
-// node 33 = video. Maks 29 detik. https://www.runninghub.ai/id/ai-detail/2104569016056942594
-const RUNNINGHUB_EPOSCENTS_MC_1080P_APP_ID = '2104569016056942594'
-const EPOSCENTS_MC_1080P_IMAGE_NODE = '30'
-const EPOSCENTS_MC_1080P_VIDEO_NODE = '33'
-const EPOSCENTS_MC_1080P_VIDEO_FIELD = 'video'
-
 // KONTROL GERAK 50 FPS (app RunningHub): transfer gerakan video referensi ke
 // gambar karakter dengan output 50 FPS. Benchmark app: video 24s ~17 menit.
 // node 30 = image, node 33 = video. Tidak ada input prompt/resolusi/fps manual.
@@ -69,15 +62,6 @@ const MOTION_APPS: Record<string, MotionAppConfig> = {
     label: 'eposcents-mc',
     // plusAboveSec sengaja TIDAK dipakai: tes menunjukkan instance 'plus' membuat
     // app ini gagal startup (805, node RuntimeError) — semua durasi pakai 'default'.
-  },
-  // Eposcents MC 1080p (Kontrol Gerak, WAN + SCAIL): instans default.
-  // https://www.runninghub.ai/id/ai-detail/2104569016056942594
-  'motion-control-eposcents-1080p': {
-    appId: RUNNINGHUB_EPOSCENTS_MC_1080P_APP_ID,
-    imageNode: EPOSCENTS_MC_1080P_IMAGE_NODE,
-    videoNode: EPOSCENTS_MC_1080P_VIDEO_NODE,
-    videoField: EPOSCENTS_MC_1080P_VIDEO_FIELD,
-    label: 'eposcents-mc-1080p',
   },
   // KONTROL GERAK 50 FPS — transfer gerakan video referensi ke gambar karakter,
   // output 50 FPS, benchmark 24 detik selesai ~17 menit di instance default.

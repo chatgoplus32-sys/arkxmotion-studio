@@ -88,7 +88,6 @@ const RH_MODEL_LABELS: Record<string, string> = {
   'motion-control-72fps': 'Motion Control 72 FPS',
   'motion-control-kontrol-gerakan': 'Kontrol Gerak 50FPS',
   'motion-control-eposcents': 'Eposcents MC — 512HD 32FPS',
-  'motion-control-eposcents-1080p': 'Eposcents MC — 1080p WAN+SCAIL',
   'motion-control-pro': 'Motion Control Pro — Motion Transfer',
   'motion-control-ultra-hd': 'MC Ultra Fast HD',
   'motion-control': 'Motion Control standar (Kling 2.6 Pro/Std · 2.9 · 3.0)',
