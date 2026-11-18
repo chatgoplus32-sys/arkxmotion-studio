@@ -6,9 +6,6 @@ export const DEFAULT_MEMBERSHIP_FEE_ORIGINAL = 350000
 /** Nomor WhatsApp admin untuk konfirmasi pembayaran. */
 export const WA_NUMBER = '6285156207924'
 
-/** Gambar QRIS tujuan pembayaran. */
-export { QRIS_IMG } from './payment'
-
 export interface MembershipPricing {
   fee: number
   originalFee: number

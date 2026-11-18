@@ -97,20 +97,23 @@ test('setiap tabel di QRIS_TABLES benar-benar dipakai route/lib', () => {
   }
 })
 
-test('semua pemanggil createBasunipayPayment di routes memakai refTable literal', () => {
+test('semua pemanggil createBasunipayPayment di routes tervalidasi', () => {
   const routeFiles = SERVER_FILES.filter((f) => rel(f).startsWith('server/routes/'))
   let dicek = 0
   for (const file of routeFiles) {
     const src = readFileSync(file, 'utf8')
-    const calls = src.match(/createBasunipayPayment\(/g)?.length || 0
+    const calls = (src.match(/createBasunipayPayment\(/g) || []).length
     if (!calls) continue
     dicek++
-    const literals = src.match(/refTable:\s*['"]/g)?.length || 0
-    assert.equal(
-      calls,
-      literals,
+    const literals = (src.match(/refTable:\s*['"][A-Za-z0-9_]+['"]/g) || []).length
+    // refTable dinamis (mis. dari body) hanya boleh kalau file yang sama
+    // memvalidasinya terhadap whitelist QRIS_TABLES.
+    const validated = /QRIS_TABLES\.(find|some|includes)/.test(src)
+    assert.ok(
+      literals >= calls || validated,
       `${rel(file)}: ${calls} panggilan createBasunipayPayment tapi hanya ${literals} ` +
-        `refTable literal — ada refTable dinamis yang lolos dari pemeriksaan QRIS_TABLES`,
+        `refTable literal dan tidak ada validasi terhadap QRIS_TABLES — refTable ` +
+        `tidak terdaftar dapat lolos`,
     )
   }
   assert.ok(dicek >= 1, 'minimal satu route harus memakai createBasunipayPayment')

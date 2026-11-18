@@ -3,10 +3,10 @@ import { Link } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { UserPlus, Mail, Lock, User, AlertCircle, CheckCircle, CheckCircle2, MessageCircle, Crown, ArrowRight, ShieldCheck, Zap, Star } from 'lucide-react'
-import { BasunipayCheckoutButton } from '@/components/QrisPayment'
+import { BasunipayCheckoutButton, QrisPanel } from '@/components/QrisPayment'
+import { fetchMembershipQris } from '@/lib/payment'
 import {
   DEFAULT_MEMBERSHIP_FEE,
-  QRIS_IMG,
   formatRp,
   buildWaPaymentUrl,
   getMembershipPricing,
@@ -23,6 +23,7 @@ export default function RegisterPage() {
   const [fee, setFee] = useState(DEFAULT_MEMBERSHIP_FEE)
   const [isLoading, setIsLoading] = useState(false)
   const [paymentToken, setPaymentToken] = useState<string | null>(null)
+  const [qrRetrying, setQrRetrying] = useState(false)
   // Response /api/membership/payment — nominal TEPAT (dengan kode unik) + checkout BasuniPay.
   const [payFlow, setPayFlow] = useState<{ amountTotal: number; fee: number; checkoutUrl?: string | null; qrisImage?: string | null } | null>(null)
   // Akun berubah Pro begitu pembayaran terdeteksi → layar otomatis jadi konfirmasi.
@@ -81,6 +82,26 @@ export default function RegisterPage() {
     const timer = setInterval(check, 5000)
     return () => { stop = true; clearInterval(timer) }
   }, [success, email, proActive])
+
+  // Checkout BasuNiPay gagal/belum tampil? Muat ulang lewat status email —
+  // tanpa membuat pengajuan pembayaran baru.
+  const retryQris = async () => {
+    if (qrRetrying) return
+    setQrRetrying(true)
+    const bp = await fetchMembershipQris(email)
+    setQrRetrying(false)
+    if (bp) {
+      setPayFlow({
+        amountTotal: bp.payable_amount ?? payFlow?.amountTotal ?? fee,
+        fee: payFlow?.fee ?? fee,
+        checkoutUrl: bp.checkout_url ?? null,
+        qrisImage: bp.qris_image ?? null,
+      })
+      addToast('QRIS BasuNiPay siap — bayar sesuai nominal', 'success')
+    } else {
+      addToast('QRIS BasuNiPay masih gagal disiapkan — coba lagi', 'error')
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -191,10 +212,7 @@ export default function RegisterPage() {
                 </p>
                 <BasunipayCheckoutButton url={payFlow?.checkoutUrl} payable={payFlow?.amountTotal ?? null} image={payFlow?.qrisImage} />
                 {!payFlow?.qrisImage && (
-                  <div className="mb-3 rounded-xl border border-white/10 bg-white p-2">
-                    <img src={QRIS_IMG} alt="QRIS ARKXMotion Studio" className="mx-auto w-full max-w-[180px] rounded" />
-                    <p className="mt-1 text-center text-[11px] text-white/50">Scan QRIS → Bayar {payFlow ? formatRp(payFlow.amountTotal) : formatRp(fee)}</p>
-                  </div>
+                  <QrisPanel amountLabel={`Join Pro — ${formatRp(payFlow ? payFlow.amountTotal : fee)}`} exactAmount={payFlow?.amountTotal} onRetry={retryQris} retrying={qrRetrying} />
                 )}
                 <div className="mb-3 flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2">
                   <span className="text-xs text-white/50">Biaya join Pro</span>

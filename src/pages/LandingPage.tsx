@@ -293,7 +293,7 @@ const buildPricing = (p: MemberPricing): PricingPlan[] => [
 
 const buildFaqs = (p: MemberPricing) => [
   { q: 'Apa itu ARKXMotion Studio?', a: `Platform all-in-one untuk generate video AI. Satu dashboard untuk akses ${PROVIDER_COUNT} provider — Weavy, Roboneo, RunningHub, CreatePulse, NexaBot, Seavi, Freebeat AI, G5 AI Studio, Leonardo, OneOver, Framia, Magnific, Wavespeed, Shotstack, Creatomate dan lainnya — dengan token rotation & smart routing otomatis.` },
-  { q: 'Bagaimana sistem token & credits?', a: 'Saldo CreatePulse, NexaBot, dan Seavi diisi lewat halaman Saldo Layanan. Provider lain (Roboneo, Weavy, Framia, dll.) memakai kunci milikmu sendiri — top up-nya diajukan lewat Top Up Manual dan diverifikasi admin. Sistem cek balance realtime sebelum generate dan auto-fallback ke kunci/token lain jika habis atau error.' },
+  { q: 'Bagaimana sistem token & credits?', a: 'Saldo CreatePulse, NexaBot, dan Seavi diisi lewat halaman Saldo Layanan. Provider lain (Roboneo, Weavy, Framia, dll.) memakai kunci milikmu sendiri — top up-nya diajukan lewat Top Up Manual dan terverifikasi otomatis begitu pembayaran masuk. Sistem cek balance realtime sebelum generate dan auto-fallback ke kunci/token lain jika habis atau error.' },
   { q: 'Apakah bisa bulk generate?', a: 'Bisa. Bulk Fashion mendukung 1 karakter + ratusan outfit sekaligus, parallel processing. Cocok untuk katalog fashion & UGC massal.' },
   { q: 'Apakah ada watermark?', a: 'ARKXMotion Studio tidak menambahkan watermark ke hasil generate. Tool Watermark Remover juga tersedia untuk video dari sumber lain - termasuk fitur Pro.' },
   { q: `Saya sudah punya akun, apa tetap bayar ${rp(p.fee)}?`, a: `Tidak. Harga join ${rp(p.fee)} untuk pendaftar baru. Member lama cukup upgrade ${rp(p.proFee)} sekali bayar untuk membuka ARKX AUTO Studio, ARKX AUTO Motion, Gemini Tools, AI Song Cover, dan H3 Music Avatar — fitur AI lainnya tetap terbuka tanpa upgrade. Biaya token generate tetap terpisah sesuai pemakaian.` },
@@ -788,7 +788,7 @@ export default function LandingPage() {
         <div className="mx-auto max-w-[1240px]">
           <div className="mx-auto max-w-[640px] text-center">
             <h2 className="text-[26px] font-black italic tracking-tight sm:text-[30px] md:text-[40px]">Pricing jelas — Pro sekali bayar</h2>
-            <p className="mt-3 text-[14px] text-white/50 sm:text-[15px]">Sekali bayar jadi Pro — semua fitur AI langsung terbuka untuk pendaftar baru. Belum termasuk token pemakaian. Bayar via QRIS, aktivasi oleh admin.</p>
+            <p className="mt-3 text-[14px] text-white/50 sm:text-[15px]">Sekali bayar jadi Pro — semua fitur AI langsung terbuka untuk pendaftar baru. Belum termasuk token pemakaian. Bayar via QRIS BasuNiPay, akun aktif otomatis.</p>
           </div>
           <div className="mt-10 grid gap-4 md:grid-cols-3 sm:gap-5">
             {pricing.map((p) => (

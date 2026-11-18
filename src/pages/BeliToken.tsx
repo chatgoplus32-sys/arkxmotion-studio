@@ -1,11 +1,10 @@
 import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Label, Input } from '@/components/ui'
-import { ShoppingCart, Copy, ExternalLink, X, Upload, QrCode, Trash2 } from 'lucide-react'
+import { ShoppingCart, ExternalLink, X, Upload, Trash2 } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
 import { useAuthStore } from '@/stores/authStore'
 import { useProviderManager } from '@/stores/providerManager'
 import { useToastStore } from '@/stores/toastStore'
-import { QRIS_IMG, QRIS_MERCHANT, QRIS_NMID } from '@/lib/payment'
 
 interface TokenItem {
   id: number
@@ -50,7 +49,6 @@ export default function BeliTokenPage() {
   const [selectedBuyQty, setSelectedBuyQty] = useState(0)
   const [selectedBuyPrice, setSelectedBuyPrice] = useState(0)
   const [selectedBuyProvider, setSelectedBuyProvider] = useState<Provider>('roboneo')
-  const [paymentMethod, setPaymentMethod] = useState<'dana' | 'qris'>('dana')
 
   const fetchTokens = useCallback(async () => {
     if (!authStore.token) return
@@ -126,11 +124,6 @@ export default function BeliTokenPage() {
 
     setSelectedBuyQty(0)
     setBuyQty('')
-  }
-
-  const handleCopyNumber = () => {
-    navigator.clipboard.writeText('082280204445')
-    addToast('Nomor Dana berhasil disalin', 'success')
   }
 
   return (
@@ -451,7 +444,7 @@ export default function BeliTokenPage() {
           <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl">
             <div className="flex items-center justify-between mb-4">
               <div className="text-lg font-semibold">Order Token {PROVIDERS.find(p => p.key === selectedBuyProvider)?.label}</div>
-              <button onClick={() => { setSelectedBuyQty(0); setSelectedBuyProvider('roboneo'); setPaymentMethod('dana') }} className="p-1 rounded-lg hover:bg-accent text-muted-foreground">
+              <button onClick={() => { setSelectedBuyQty(0); setSelectedBuyProvider('roboneo') }} className="p-1 rounded-lg hover:bg-accent text-muted-foreground">
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -466,84 +459,27 @@ export default function BeliTokenPage() {
                 </div>
               </div>
 
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setPaymentMethod('dana')}
-                  className={`flex-1 p-2.5 rounded-lg border text-sm font-medium transition ${
-                    paymentMethod === 'dana'
-                      ? 'border-primary bg-primary/10 text-primary'
-                      : 'border-border text-muted-foreground hover:bg-accent/30'
-                  }`}
-                >
-                  Dana
-                </button>
-                <button
-                  onClick={() => setPaymentMethod('qris')}
-                  className={`flex-1 p-2.5 rounded-lg border text-sm font-medium transition ${
-                    paymentMethod === 'qris'
-                      ? 'border-primary bg-primary/10 text-primary'
-                      : 'border-border text-muted-foreground hover:bg-accent/30'
-                  }`}
-                >
-                  <QrCode className="h-4 w-4 inline mr-1" />
-                  QRIS
-                </button>
+              {/* Token Bank belum aktif — server menolak pembelian (503), jadi
+                  tidak ada QR/nomor yang bisa ditampilkan. Hubungi admin untuk
+                  pembelian token, atau gunakan top up saldo provider. */}
+              <div className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/5">
+                <div className="text-sm font-medium text-amber-400">Pembelian token belum aktif</div>
+                <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+                  Token Bank sedang tidak dijual (pembelian ditolak server). Hubungi admin untuk memesan token,
+                  atau top up saldo provider di menu top up masing-masing provider.
+                </p>
+                <a href={WHATSAPP_LINK} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-xs text-emerald-500 hover:underline">
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Hubungi Admin via WhatsApp
+                </a>
               </div>
-
-              {paymentMethod === 'dana' && (
-                <div className="p-4 rounded-xl bg-background/50 border border-border">
-                  <div className="text-sm font-medium mb-2">Cara Pembayaran</div>
-                  <ol className="text-sm text-muted-foreground space-y-1.5 list-decimal list-inside">
-                    <li>Transfer ke <span className="font-semibold text-foreground">Dana</span></li>
-                    <li className="flex items-center gap-2">
-                      Nomor: <span className="font-mono font-semibold text-foreground">082280204445</span>
-                      <button onClick={handleCopyNumber} className="p-1 rounded hover:bg-accent" title="Salin nomor">
-                        <Copy className="h-3.5 w-3.5" />
-                      </button>
-                    </li>
-                    <li>a.n <span className="font-semibold text-foreground">Yusuf Prihandoko</span></li>
-                    <li>Transfer sesuai total bayar</li>
-                  </ol>
-                </div>
-              )}
-
-              {paymentMethod === 'qris' && (
-                <div className="p-4 rounded-xl bg-background/50 border border-border">
-                  <div className="text-sm font-medium mb-3">Scan QRIS untuk Bayar</div>
-                  <div className="flex justify-center mb-3">
-                    <img
-                      src={QRIS_IMG}
-                      alt={`QRIS ${QRIS_MERCHANT}`}
-                      className="w-64 h-auto rounded-lg border border-border"
-                      onError={(e) => {
-                        const target = e.target as HTMLImageElement
-                        target.style.display = 'none'
-                        const fallback = target.nextElementSibling as HTMLElement
-                        if (fallback) fallback.style.display = 'flex'
-                      }}
-                    />
-                    <div className="hidden flex-col items-center justify-center w-64 h-64 rounded-lg border border-dashed border-border text-center p-4">
-                      <QrCode className="h-12 w-12 text-muted-foreground mb-2" />
-                      <div className="text-xs text-muted-foreground">
-                        QRIS image belum tersedia.
-                        <br />Simpan ke <code className="text-primary">public/qris-arkx.jpg</code>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="text-center text-sm text-muted-foreground space-y-1">
-                    <div className="font-semibold text-foreground">{QRIS_MERCHANT}</div>
-                    <div className="text-xs">NMID: {QRIS_NMID}</div>
-                    <div className="text-xs">Scan menggunakan aplikasi bank/e-wallet Anda</div>
-                  </div>
-                </div>
-              )}
 
               <div className="flex gap-2 pt-2">
                 <Button className="flex-1" onClick={handleConfirmBuy}>
                   <ExternalLink className="h-4 w-4" />
-                  {paymentMethod === 'qris' ? 'Sudah Bayar & Konfirmasi WhatsApp' : 'Transfer & Konfirmasi WhatsApp'}
+                  Buat Pesanan via WhatsApp
                 </Button>
-                <Button variant="outline" onClick={() => { setSelectedBuyQty(0); setSelectedBuyProvider('roboneo'); setPaymentMethod('dana') }}>
+                <Button variant="outline" onClick={() => { setSelectedBuyQty(0); setSelectedBuyProvider('roboneo') }}>
                   Batal
                 </Button>
               </div>

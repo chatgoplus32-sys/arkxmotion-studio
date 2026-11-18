@@ -7,7 +7,29 @@ import {
   paymentEmailReady,
 } from '../lib/paymentEmailWatcher.js'
 import { QRIS_TABLES, extractAmounts, matchIncomingAmount, logPaymentVerify } from '../lib/qrisPayment.js'
-import { basunipayReady, pollBasunipayPayments } from '../lib/basunipay.js'
+import { basunipayReady, pollBasunipayPayments, createBasunipayPayment } from '../lib/basunipay.js'
+
+type BasunipayCheckout = {
+  checkout_url: string
+  payable_amount: number
+  unique_code: number
+  qris_image: string
+}
+
+/**
+ * Checkout BasuniPay terbaru yang masih pending untuk satu baris pengajuan.
+ * Dipakai ulang supaya halaman yang di-refresh tidak membuat order baru.
+ */
+function findPendingCheckout(refTable: string, refId: number): BasunipayCheckout | undefined {
+  return db
+    .prepare(
+      `SELECT checkout_url, payable_amount, unique_code, qris_image
+         FROM basunipay_payment
+        WHERE ref_table = ? AND ref_id = ? AND status = 'pending'
+        ORDER BY id DESC LIMIT 1`,
+    )
+    .get(refTable, refId) as BasunipayCheckout | undefined
+}
 
 /**
  * Panel kontrol verifikasi pembayaran QRIS manual — status koneksi email,
@@ -123,6 +145,96 @@ router.post('/match-text', authenticateToken, requireAdmin, (req: AuthRequest, r
     })
   } catch (error) {
     console.error('Match-text error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+/**
+ * Siapkan (atau ambil ulang) QRIS BasuniPay untuk pengajuan yang masih
+ * pending — tombol "Coba lagi" di halaman top up / pembayaran.
+ *
+ * Kenapa perlu: checkout pertama bisa gagal dibuat (jaringan/API BasuniPay
+ * sedang bermasalah). Tanpa endpoint ini satu-satunya jalan adalah mengajukan
+ * ulang → baris pengajuan dobel. Di sini HANYA checkout yang dibuat baru;
+ * baris pengajuan, nominal, dan kode unik tetap yang lama. QRIS statis lama
+ * tidak pernah dipakai.
+ */
+router.post('/qris/recreate', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const refTable = String(req.body?.refTable || '')
+    const refId = Number(req.body?.refId)
+    const t = QRIS_TABLES.find((x) => x.table === refTable)
+    if (!t) return res.status(400).json({ error: 'Tabel pembayaran tidak dikenal' })
+    if (!Number.isInteger(refId) || refId <= 0) return res.status(400).json({ error: 'Pengajuan tidak valid' })
+
+    const row = db.prepare(`SELECT id, user_id, amount, status FROM ${t.table} WHERE id = ?`).get(refId) as
+      | { id: number; user_id: number; amount: number; status: string }
+      | undefined
+    if (!row || row.user_id !== req.user!.id) return res.status(404).json({ error: 'Pengajuan tidak ditemukan' })
+    if (row.status !== 'pending') {
+      return res.status(400).json({ error: 'Pengajuan sudah diproses — tidak perlu QR baru' })
+    }
+
+    const existing = findPendingCheckout(refTable, refId)
+    if (existing?.checkout_url) return res.json(existing)
+
+    if (!basunipayReady()) {
+      return res.status(503).json({ error: 'QRIS BasuNiPay sedang tidak tersedia — hubungi admin' })
+    }
+    const bp = await createBasunipayPayment({
+      refTable,
+      refId,
+      userId: row.user_id,
+      baseAmount: row.amount,
+      description: t.label,
+    })
+    if (!bp) return res.status(502).json({ error: 'QRIS BasuNiPay gagal disiapkan — coba lagi' })
+    res.json(bp)
+  } catch (error) {
+    console.error('Basunipay recreate error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+/**
+ * QRIS BasuniPay untuk pembayaran join Pro pada halaman status pendaftaran
+ * (belum login, identitas = email). Mengembalikan checkout terbaru bila ada;
+ * kalau belum pernah dibuat, dibuat sekarang. Hanya untuk akun yang masih
+ * belum aktif — akun approved tidak punya tagihan pending.
+ */
+router.post('/qris/membership', async (req, res: Response) => {
+  try {
+    const email = String(req.body?.email || '').trim().toLowerCase()
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      return res.status(400).json({ error: 'Email tidak valid' })
+    }
+    const user = db.prepare('SELECT id FROM users WHERE email = ? AND approved = 0').get(email) as
+      | { id: number }
+      | undefined
+    if (!user) return res.status(404).json({ error: 'Pendaftaran dengan email itu tidak ditemukan atau sudah aktif' })
+
+    const payment = db.prepare(
+      "SELECT id, amount, amount_total FROM membership_payments WHERE user_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1",
+    ).get(user.id) as { id: number; amount: number; amount_total: number | null } | undefined
+    if (!payment) return res.status(404).json({ error: 'Belum ada tagihan pembayaran yang menunggu' })
+
+    const existing = findPendingCheckout('membership_payments', payment.id)
+    if (existing?.checkout_url) return res.json(existing)
+
+    if (!basunipayReady()) {
+      return res.status(503).json({ error: 'QRIS BasuNiPay sedang tidak tersedia — hubungi admin' })
+    }
+    const bp = await createBasunipayPayment({
+      refTable: 'membership_payments',
+      refId: payment.id,
+      userId: user.id,
+      baseAmount: payment.amount,
+      description: `Join Pro — ${email}`,
+    })
+    if (!bp) return res.status(502).json({ error: 'QRIS BasuNiPay gagal disiapkan — coba lagi' })
+    res.json(bp)
+  } catch (error) {
+    console.error('Basunipay membership QR error:', error)
     res.status(500).json({ error: 'Internal server error' })
   }
 })

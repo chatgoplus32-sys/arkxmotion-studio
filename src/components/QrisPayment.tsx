@@ -1,42 +1,10 @@
-import { QrCode } from 'lucide-react'
-import { QRIS_IMG, QRIS_MERCHANT, QRIS_NMID } from '@/lib/payment'
+import { QrCode, RefreshCw } from 'lucide-react'
 
-/** Toggle metode pembayaran DANA / QRIS (dipakai halaman top up). */
-export function PaymentMethodToggle({
-  value,
-  onChange,
-}: {
-  value: 'dana' | 'qris'
-  onChange: (v: 'dana' | 'qris') => void
-}) {
-  return (
-    <div className="flex gap-2 mb-4">
-      <button
-        onClick={() => onChange('dana')}
-        className={`flex-1 p-2.5 rounded-lg border text-sm font-medium transition ${
-          value === 'dana'
-            ? 'border-primary bg-primary/10 text-primary'
-            : 'border-border text-muted-foreground hover:bg-accent/30'
-        }`}
-      >
-        💜 Dana
-      </button>
-      <button
-        onClick={() => onChange('qris')}
-        className={`flex-1 p-2.5 rounded-lg border text-sm font-medium transition ${
-          value === 'qris'
-            ? 'border-primary bg-primary/10 text-primary'
-            : 'border-border text-muted-foreground hover:bg-accent/30'
-        }`}
-      >
-        <QrCode className="h-4 w-4 inline mr-1" />
-        QRIS
-      </button>
-    </div>
-  )
-}
-
-/** Panel bayar BasuniPay — gambar QR dinamis dengan nominal TEPAT + kode unik. */
+/**
+ * Panel bayar BasuniPay — gambar QR dinamis dengan nominal TEPAT + kode unik.
+ * Satu-satunya tampilan QRIS di aplikasi ini: QRIS statis lama tidak pernah
+ * dirender (lihat tes test/noStaticQris.test.ts sebagai segelnya).
+ */
 export function BasunipayCheckoutButton({ url, payable, image }: { url?: string | null; payable?: number | null; image?: string | null }) {
   if (!url && !image) return null
   const nominal = payable ? Math.round(payable).toLocaleString('id-ID') : null
@@ -61,58 +29,63 @@ export function BasunipayCheckoutButton({ url, payable, image }: { url?: string 
           rel="noopener noreferrer"
           className="block px-4 py-2 text-center text-[11px] font-semibold text-emerald-300 underline underline-offset-2 hover:text-emerald-200"
         >
-          Link pembayaran cadangan (buka checkout BasuniPay)
+          {image ? 'Link pembayaran cadangan (buka checkout BasuniPay)' : 'Gambar QR sedang diproses — buka checkout BasuniPay untuk QR'}
         </a>
       )}
     </div>
   )
 }
 
-/** Panel tampilan QRIS (gambar statis + identitas merchant + nominal). */
-export function QrisPanel({ amountLabel, exactAmount }: { amountLabel?: string; exactAmount?: number }) {
+/**
+ * Panel "QRIS BasuniPay belum siap" — dipakai saat checkout belum bisa
+ * ditampilkan (request gagal / server BasuNiPay sedang bermasalah).
+ *
+ * Sengaja TIDAK menampilkan QRIS statis: pembayaran harus selalu lewat QR
+ * dinamis BasuniPay supaya nominalnya unik dan verifikasinya otomatis.
+ * Kalau tetap menampilkan QRIS lama, nominalnya tidak terikat ke pengajuan
+ * ini dan saldo tidak akan masuk sendiri.
+ */
+export function QrisPanel({
+  amountLabel,
+  exactAmount,
+  onRetry,
+  retrying,
+}: {
+  amountLabel?: string
+  exactAmount?: number
+  /** Siapkan ulang checkout BasuniPay untuk pengajuan ini (tanpa baris baru). */
+  onRetry?: () => void
+  retrying?: boolean
+}) {
+  const nominal = exactAmount && exactAmount > 0 ? Math.round(exactAmount) : null
   return (
-    <div className="rounded-xl border border-border bg-card/50 p-5 mb-4">
-      <div className="text-sm font-medium mb-3">Scan QRIS untuk Bayar</div>
-      <div className="flex justify-center mb-3">
-        <img
-          src={QRIS_IMG}
-          alt={`QRIS ${QRIS_MERCHANT}`}
-          className="w-64 h-auto rounded-lg border border-border"
-          onError={(e) => {
-            const target = e.target as HTMLImageElement
-            target.style.display = 'none'
-            const fallback = target.nextElementSibling as HTMLElement
-            if (fallback) fallback.style.display = 'flex'
-          }}
-        />
-        <div className="hidden flex-col items-center justify-center w-64 h-64 rounded-lg border border-dashed border-border text-center p-4">
-          <QrCode className="h-12 w-12 text-muted-foreground mb-2" />
-          <div className="text-xs text-muted-foreground">
-            QRIS image belum tersedia.
-            <br />Simpan ke <code className="text-primary">public/qris-arkx.jpg</code>
-          </div>
+    <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/5 p-5 text-center">
+      <QrCode className="mx-auto mb-2 h-10 w-10 text-amber-400" />
+      <div className="text-sm font-semibold text-amber-400">QRIS BasuniPay belum siap</div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        QR dinamis sedang disiapkan. Semua pembayaran hanya lewat QRIS BasuniPay — nominal terikat ke
+        pengajuan kamu sehingga verifikasinya otomatis.
+      </p>
+      {nominal ? (
+        <div className="mt-2 text-sm text-muted-foreground">
+          Siap bayar: <b className="text-amber-400">TEPAT Rp {nominal.toLocaleString('id-ID')}</b>
         </div>
-      </div>
-      <div className="text-center text-sm text-muted-foreground space-y-1">
-        <div className="font-semibold text-foreground">{QRIS_MERCHANT}</div>
-        <div className="text-xs">NMID: {QRIS_NMID}</div>
-        <div className="text-xs">Scan menggunakan aplikasi bank/e-wallet Anda</div>
-        {exactAmount !== undefined && exactAmount > 0 ? (
-          <div className="text-xs">
-            Bayar <span className="font-bold text-amber-400">TEPAT Rp {Math.round(exactAmount).toLocaleString('id-ID')}</span>
-            <div className="text-[10px] text-muted-foreground mt-0.5">
-              Nominal ini sudah termasuk kode unik — jangan dibulatkan, kalau tidak verifikasi otomatisnya tidak cocok.
-            </div>
-          </div>
-        ) : (
-          amountLabel && (
-            <div className="text-xs">
-              Bayar sesuai nominal:{' '}
-              <span className="font-semibold text-foreground">{amountLabel}</span>
-            </div>
-          )
-        )}
-      </div>
+      ) : amountLabel ? (
+        <div className="mt-2 text-sm text-muted-foreground">
+          Siap bayar: <b className="text-foreground">{amountLabel}</b>
+        </div>
+      ) : null}
+      {onRetry && (
+        <button
+          type="button"
+          onClick={onRetry}
+          disabled={retrying}
+          className="mt-3 inline-flex items-center gap-2 rounded-lg border border-amber-500/40 px-4 py-2 text-xs font-semibold text-amber-400 transition hover:bg-amber-500/10 disabled:opacity-50"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${retrying ? 'animate-spin' : ''}`} />
+          {retrying ? 'Menyiapkan QRIS…' : 'Coba lagi siapkan QRIS'}
+        </button>
+      )}
     </div>
   )
 }

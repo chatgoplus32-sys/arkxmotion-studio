@@ -4,8 +4,8 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Badge, Input, Select, Textarea } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
-import { DANA_NAME, DANA_NUMBER, adminWhatsappLink, formatRp } from '@/lib/payment'
-import { PaymentMethodToggle, QrisPanel, BasunipayCheckoutButton } from '@/components/QrisPayment'
+import { adminWhatsappLink, formatRp, recreateBasunipayQris } from '@/lib/payment'
+import { QrisPanel, BasunipayCheckoutButton } from '@/components/QrisPayment'
 import {
   MANUAL_PROVIDERS,
   MANUAL_TOPUP_MAX,
@@ -14,7 +14,7 @@ import {
   manualProviderLabel,
   type ManualTopupRequest,
 } from '@/lib/manualTopup'
-import { CheckCircle, Clock, Copy, ExternalLink, Loader2, RefreshCw, Wallet, XCircle } from 'lucide-react'
+import { CheckCircle, Clock, ExternalLink, Loader2, RefreshCw, Wallet, XCircle } from 'lucide-react'
 
 function statusBadge(status: ManualTopupRequest['status']) {
   if (status === 'approved') {
@@ -62,12 +62,12 @@ export default function ManualTopupPage() {
   }, [paramProvider])
   const [amount, setAmount] = useState('')
   const [note, setNote] = useState('')
-  const [payMethod, setPayMethod] = useState<'dana' | 'qris'>('dana')
   const [submitting, setSubmitting] = useState(false)
   const [loading, setLoading] = useState(true)
   const [requests, setRequests] = useState<ManualTopupRequest[]>([])
   const [lastSubmitted, setLastSubmitted] = useState<ManualTopupRequest | null>(null)
   const [basunipay, setBasunipay] = useState<{ checkout_url?: string; payable_amount?: number; qris_image?: string } | null>(null)
+  const [qrRetrying, setQrRetrying] = useState(false)
 
   const load = useCallback(async () => {
     if (!token) {
@@ -132,9 +132,19 @@ export default function ManualTopupPage() {
       : `Halo admin, saya sudah ajukan top up manual ${manualProviderLabel(provider)} ${formatRp(nominal || 0)}. Mohon diverifikasi.`,
   )
 
-  const handleCopyNumber = () => {
-    navigator.clipboard.writeText(DANA_NUMBER)
-    addToast('Nomor DANA disalin', 'success')
+  // Checkout BasuNiPay gagal dibuat (jaringan/API)? Siapkan ulang untuk baris
+  // yang sama — tanpa mengajukan top up baru dan tanpa QRIS statis lama.
+  const handleRetryQris = async () => {
+    if (!token || !lastSubmitted || qrRetrying) return
+    setQrRetrying(true)
+    const bp = await recreateBasunipayQris(token, 'provider_topup_request', lastSubmitted.id)
+    setQrRetrying(false)
+    if (bp) {
+      setBasunipay(bp)
+      addToast('QRIS BasuNiPay siap — bayar sesuai nominal', 'success')
+    } else {
+      addToast('QRIS BasuNiPay masih gagal disiapkan — coba lagi', 'error')
+    }
   }
 
   return (
@@ -148,7 +158,7 @@ export default function ManualTopupPage() {
 
       <div className="grid gap-4 lg:grid-cols-5">
         <div className="lg:col-span-3">
-          <Section title="📝 Ajukan Top Up Manual" sub="Pilih provider dan nominal, lalu bayar lewat DANA atau QRIS.">
+          <Section title="📝 Ajukan Top Up Manual" sub="Pilih provider dan nominal, lalu bayar lewat QRIS BasuNiPay.">
             <div className="space-y-4">
               <div>
                 <label htmlFor="manual-provider" className="mb-1.5 block text-xs font-medium text-muted-foreground">
@@ -197,38 +207,15 @@ export default function ManualTopupPage() {
 
               <div>
                 <div className="mb-1.5 text-xs font-medium text-muted-foreground">Pembayaran</div>
-                <PaymentMethodToggle value={payMethod} onChange={setPayMethod} />
                 <BasunipayCheckoutButton url={basunipay?.checkout_url} payable={basunipay?.payable_amount} image={basunipay?.qris_image} />
-                {payMethod === 'dana' ? (
-                  <div className="rounded-xl border border-border bg-card/50 p-4">
-                    <div className="text-sm font-medium">Transfer DANA</div>
-                    <div className="mt-2 flex items-center justify-between gap-2">
-                      <div>
-                        <div className="font-mono text-lg font-bold">{DANA_NUMBER}</div>
-                        <div className="text-xs text-muted-foreground">a.n. {DANA_NAME}</div>
-                      </div>
-                      <Button type="button" size="sm" variant="outline" onClick={handleCopyNumber}>
-                        <Copy className="h-3.5 w-3.5" /> Salin
-                      </Button>
-                    </div>
-                    {(nominalValid || payTarget) && (
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        Transfer tepat{' '}
-                        <span className="font-semibold text-amber-400">
-                          {formatRp(payTarget ?? nominal)}
-                        </span>
-                        {payTarget
-                          ? ' (termasuk kode unik — jangan dibulatkan).'
-                          : " — setelah pengajuan kamu akan dapat nominal TEPAT (termasuk kode unik) untuk verifikasi otomatis."}
-                      </p>
-                    )}
-                  </div>
-                ) : !basunipay?.qris_image ? (
+                {!(basunipay?.checkout_url || basunipay?.qris_image) && (
                   <QrisPanel
                     amountLabel={nominalValid ? formatRp(nominal) : undefined}
                     exactAmount={payTarget ?? undefined}
+                    onRetry={handleRetryQris}
+                    retrying={qrRetrying}
                   />
-                ) : null}
+                )}
               </div>
 
               <div>
@@ -239,7 +226,7 @@ export default function ManualTopupPage() {
                   id="manual-note"
                   rows={3}
                   maxLength={300}
-                  placeholder="Contoh: transfer DANA Rp 50.000 a.n. Budi, jam 14.20"
+                  placeholder="Contoh: bayar via QRIS Rp 50.000, jam 14.20"
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                 />

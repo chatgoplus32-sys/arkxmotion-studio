@@ -1,13 +1,14 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { Search, Mail, Loader2, CheckCircle, Clock, XCircle, AlertCircle, MessageCircle } from 'lucide-react'
 import {
   DEFAULT_MEMBERSHIP_FEE,
-  QRIS_IMG,
   formatRp,
   buildWaPaymentUrl,
   getMembershipPricing,
 } from '@/lib/membership'
+import { BasunipayCheckoutButton } from '@/components/QrisPayment'
+import { fetchMembershipQris, type BasunipayCheckout } from '@/lib/payment'
 
 interface PaymentInfo {
   amount: number
@@ -30,6 +31,23 @@ export default function RegisterStatusPage() {
   const [error, setError] = useState('')
   const [payNote, setPayNote] = useState('')
   const [fee, setFee] = useState(DEFAULT_MEMBERSHIP_FEE)
+  // QRIS BasuNiPay milik pembayaran yang sedang menunggu (bukan QRIS statis).
+  const [checkout, setCheckout] = useState<BasunipayCheckout | null>(null)
+  const [checkoutLoading, setCheckoutLoading] = useState(false)
+  const [checkoutError, setCheckoutError] = useState(false)
+  const checkoutFetchedFor = useRef<string | null>(null)
+
+  // Muat QRIS BasuNiPay untuk pendaftaran ini (sekali, atau saat "coba lagi").
+  const loadCheckout = useCallback(async (force = false) => {
+    if (!force && checkoutFetchedFor.current === email) return
+    checkoutFetchedFor.current = email
+    setCheckoutLoading(true)
+    setCheckoutError(false)
+    const data = await fetchMembershipQris(email)
+    setCheckout(data)
+    setCheckoutError(!data)
+    setCheckoutLoading(false)
+  }, [email])
 
   useEffect(() => {
     getMembershipPricing()
@@ -54,6 +72,12 @@ export default function RegisterStatusPage() {
     }, 5000)
     return () => clearInterval(t)
   }, [result, email])
+
+  // Begitu ada pembayaran pending, siapkan QRIS BasuNiPay sekali (detail QR
+  // tidak berubah; polling hanya menyegarkan status).
+  useEffect(() => {
+    if (result?.found && !result.approved) void loadCheckout()
+  }, [result, loadCheckout])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -220,8 +244,8 @@ export default function RegisterStatusPage() {
                           : result.payment && result.payment.status === 'rejected'
                             ? `Ditolak admin: ${result.payment.adminNote || 'tanpa keterangan'}. Kirim ulang pembayaran atau hubungi admin.`
                             : result.payment
-                              ? 'Admin sedang memproses pembayaran kamu.'
-                              : 'Bayar via QRIS lalu konfirmasi via WhatsApp (lihat di bawah).'}
+                              ? 'Pembayaran diverifikasi otomatis — akun aktif begitu dana masuk.'
+                              : 'Bayar via QRIS BasuNiPay (lihat di bawah) — akun aktif otomatis.'}
                       </p>
                     </div>
                   </div>
@@ -236,12 +260,34 @@ export default function RegisterStatusPage() {
                     <span className="text-sm font-medium">Konfirmasi Pembayaran (QRIS)</span>
                   </div>
                   <p className="text-xs text-muted-foreground mb-3">
-                    Belum bayar? Scan QRIS di bawah, lalu konfirmasi pembayaran via WhatsApp ke admin.
+                    Belum bayar? Scan QRIS BasuNiPay di bawah — akun terkunci otomatis begitu pembayaran masuk.
                   </p>
-                  <div className="mb-3 rounded-lg overflow-hidden border border-border bg-white p-2">
-                    <img src={QRIS_IMG} alt="QRIS ARKXMotion Studio" className="w-full max-w-[200px] mx-auto rounded" />
-                    <p className="text-center text-[12px] text-muted-foreground mt-1">Bayar {formatRp(result?.payment?.amountTotal ?? fee)}</p>
-                  </div>
+                  {checkout ? (
+                    <div className="mb-3">
+                      <BasunipayCheckoutButton url={checkout.checkout_url} payable={checkout.payable_amount} image={checkout.qris_image} />
+                    </div>
+                  ) : (
+                    <div className="mb-3 rounded-lg border border-dashed border-border p-4 text-center">
+                      {checkoutLoading ? (
+                        <Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" />
+                      ) : (
+                        <>
+                          <p className="text-xs text-muted-foreground">
+                            {checkoutError
+                              ? 'QRIS BasuNiPay belum siap — coba muat ulang.'
+                              : 'QRIS BasuNiPay tidak tersedia untuk email ini.'}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => void loadCheckout(true)}
+                            className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground transition hover:bg-accent"
+                          >
+                            <Loader2 className="h-3 w-3" /> Muat ulang QRIS
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
                   <div className="mb-3 flex items-center justify-between rounded-lg bg-secondary border border-border px-3 py-2">
                     <span className="text-xs text-muted-foreground">Biaya join Pro</span>
                     <span className="text-sm font-bold text-primary">{formatRp(fee)}</span>

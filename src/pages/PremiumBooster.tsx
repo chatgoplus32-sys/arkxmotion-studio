@@ -4,8 +4,8 @@ import { Section, Button, Badge } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { Zap, Clock, CheckCircle, ExternalLink, Rocket, Film, ImageIcon, Video } from 'lucide-react'
-import { adminWhatsappLink, formatRp } from '@/lib/payment'
-import { PaymentMethodToggle, QrisPanel, BasunipayCheckoutButton } from '@/components/QrisPayment'
+import { adminWhatsappLink, formatRp, recreateBasunipayQris } from '@/lib/payment'
+import { QrisPanel, BasunipayCheckoutButton } from '@/components/QrisPayment'
 import {
   fetchNexabotWallet,
   nexabotRemainingLabel,
@@ -39,10 +39,11 @@ export default function PremiumBoosterPage() {
   const [wallet, setWallet] = useState<NexabotWallet | null>(null)
   const [topups, setTopups] = useState<Topup[]>([])
   const [step, setStep] = useState<'select' | 'pay' | 'confirm'>('select')
-  const [payMethod, setPayMethod] = useState<'dana' | 'qris'>('dana')
   const [proofNote, setProofNote] = useState('')
   const [loading, setLoading] = useState(false)
   const [basunipay, setBasunipay] = useState<{ checkout_url?: string; payable_amount?: number; qris_image?: string } | null>(null)
+  const [boosterTopupId, setBoosterTopupId] = useState<number | null>(null)
+  const [qrRetrying, setQrRetrying] = useState(false)
 
   const API = '/api/nexabot'
   const headers = useMemo(() => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }), [token])
@@ -88,6 +89,7 @@ export default function PremiumBoosterPage() {
       const data = await res.json()
       if (res.ok) {
         setBasunipay(data.basunipay || null)
+        setBoosterTopupId(data.package?.id ?? null)
         addToast('Pengajuan terkirim', 'success')
         setStep('confirm')
         fetchAll()
@@ -98,6 +100,20 @@ export default function PremiumBoosterPage() {
       addToast('Network error', 'error')
     }
     setLoading(false)
+  }
+
+  // Checkout BasuNiPay gagal dibuat? Siapkan ulang untuk pengajuan paket ini.
+  const handleRetryQris = async () => {
+    if (!token || !boosterTopupId || qrRetrying) return
+    setQrRetrying(true)
+    const bp = await recreateBasunipayQris(token, 'nexabot_topup', boosterTopupId)
+    setQrRetrying(false)
+    if (bp) {
+      setBasunipay(bp)
+      addToast('QRIS BasuNiPay siap — bayar sesuai nominal', 'success')
+    } else {
+      addToast('QRIS BasuNiPay masih gagal disiapkan — coba lagi', 'error')
+    }
   }
 
   const formatDate = (value: string | null) => {
@@ -223,8 +239,6 @@ export default function PremiumBoosterPage() {
           title="Buat Pengajuan"
           sub={`Premium Booster ${hari} hari — nominal TEPAT muncul di langkah berikutnya`}
         >
-          <PaymentMethodToggle value={payMethod} onChange={setPayMethod} />
-
           {/* Nominal TEPAT (kode unik) baru diketahui setelah pengajuan dibuat di
               server. Membayar nominal bulat akan gagal dicocokkan otomatis. */}
           <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 mb-4 text-sm">
@@ -268,14 +282,14 @@ export default function PremiumBoosterPage() {
           title="Selesaikan Pembayaran"
           sub="Booster aktif otomatis begitu pembayaran terdeteksi"
         >
-          {basunipay?.qris_image || basunipay?.checkout_url ? (
+          {basunipay?.checkout_url || basunipay?.qris_image ? (
             <BasunipayCheckoutButton
               url={basunipay?.checkout_url}
               payable={basunipay?.payable_amount}
               image={basunipay?.qris_image}
             />
           ) : (
-            <QrisPanel amountLabel={`Premium Booster ${hari} hari`} exactAmount={basunipay?.payable_amount} />
+            <QrisPanel amountLabel={`Premium Booster ${hari} hari`} exactAmount={basunipay?.payable_amount} onRetry={handleRetryQris} retrying={qrRetrying} />
           )}
           <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3 text-xs text-muted-foreground mb-4 space-y-1">
             <div>⚡ Paket <b>langsung aktif</b> begitu pembayaran terdeteksi — tidak perlu konfirmasi admin.</div>

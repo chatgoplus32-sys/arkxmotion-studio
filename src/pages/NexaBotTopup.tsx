@@ -3,9 +3,9 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Badge } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
-import { Wallet, Clock, CheckCircle, XCircle, ExternalLink, Copy, Sparkles, Zap } from 'lucide-react'
-import { DANA_NUMBER, DANA_NAME, adminWhatsappLink, formatRp } from '@/lib/payment'
-import { PaymentMethodToggle, QrisPanel, BasunipayCheckoutButton } from '@/components/QrisPayment'
+import { Wallet, Clock, CheckCircle, XCircle, ExternalLink, Sparkles, Zap } from 'lucide-react'
+import { adminWhatsappLink, formatRp, recreateBasunipayQris } from '@/lib/payment'
+import { QrisPanel, BasunipayCheckoutButton } from '@/components/QrisPayment'
 import {
   fetchNexabotWallet,
   nexabotPackageName,
@@ -44,13 +44,13 @@ export default function NexaBotTopupPage() {
   const [selectedAmount, setSelectedAmount] = useState<number>(10000)
   const [customAmount, setCustomAmount] = useState('')
   const [proofNote, setProofNote] = useState('')
-  const [payMethod, setPayMethod] = useState<'dana' | 'qris'>('dana')
   const [loading, setLoading] = useState(false)
   const [topups, setTopups] = useState<Topup[]>([])
   const [mode, setMode] = useState<'balance' | 'package'>('balance')
   const [step, setStep] = useState<'select' | 'pay' | 'confirm'>('select')
   const [submitted, setSubmitted] = useState<Topup | null>(null)
   const [basunipay, setBasunipay] = useState<{ checkout_url?: string; payable_amount?: number; qris_image?: string } | null>(null)
+  const [qrRetrying, setQrRetrying] = useState(false)
   // Varian paket yang sedang dipilih user (Mingguan/Bulanan/Tahunan).
   const [selectedSlug, setSelectedSlug] = useState<string>(NEXABOT_PACKAGE_FALLBACKS[0].slug)
 
@@ -176,9 +176,19 @@ export default function NexaBotTopupPage() {
     setStep('pay')
   }
 
-  const copyNumber = () => {
-    navigator.clipboard.writeText(DANA_NUMBER)
-    addToast('Nomor DANA disalin', 'info')
+  // Checkout BasuNiPay gagal dibuat (jaringan/API)? Siapkan ulang untuk baris
+  // yang sama — tanpa mengajukan top up baru dan tanpa QRIS statis lama.
+  const handleRetryQris = async () => {
+    if (!token || !submitted || qrRetrying) return
+    setQrRetrying(true)
+    const bp = await recreateBasunipayQris(token, 'nexabot_topup', submitted.id)
+    setQrRetrying(false)
+    if (bp) {
+      setBasunipay(bp)
+      addToast('QRIS BasuNiPay siap — bayar sesuai nominal', 'success')
+    } else {
+      addToast('QRIS BasuNiPay masih gagal disiapkan — coba lagi', 'error')
+    }
   }
 
   const getStatusBadge = (status: string) => {
@@ -369,12 +379,10 @@ export default function NexaBotTopupPage() {
       {step === 'pay' && (
         <Section
           title="Buat Pengajuan"
-          sub="Pilih metode bayar — nominal tepat (termasuk kode unik) muncul di langkah berikutnya"
+          sub="QRIS BasuNiPay — nominal tepat (termasuk kode unik) muncul di langkah berikutnya"
         >
-          <PaymentMethodToggle value={payMethod} onChange={setPayMethod} />
-
           {/* Nominal TEPAT (dengan kode unik) baru diketahui setelah pengajuan
-              dibuat di server, jadi QR/DANA tampil di langkah berikutnya.
+              dibuat di server, jadi QRIS BasuNiPay tampil di langkah berikutnya.
               Membayar nominal bulat di langkah ini tidak akan cocok dengan
               notifikasi bank dan verifikasi otomatisnya gagal. */}
           <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 mb-4 text-sm">
@@ -428,40 +436,13 @@ export default function NexaBotTopupPage() {
           {submitted && !lunas && (
             <>
               <BasunipayCheckoutButton url={basunipay?.checkout_url} payable={basunipay?.payable_amount} image={basunipay?.qris_image} />
-              {payMethod === 'qris' ? (
-                !basunipay?.qris_image ? (
-                  <QrisPanel
-                    amountLabel={`${mode === 'package' ? `${pkg.label}` : 'Top up saldo'} · ${formatRp(submitted.amount)}`}
-                    exactAmount={submitted.amount_total ?? undefined}
-                  />
-                ) : null
-              ) : (
-                <div className="rounded-xl border border-border bg-card/50 p-5 mb-4">
-                  <div className="text-center mb-4">
-                    <div className="text-sm text-muted-foreground mb-1">Transfer ke:</div>
-                    <div className="text-xl font-bold">💜 DANA</div>
-                  </div>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between p-3 rounded-lg bg-background">
-                      <div>
-                        <div className="text-xs text-muted-foreground">Nomor HP</div>
-                        <div className="font-mono font-bold text-lg">{DANA_NUMBER}</div>
-                      </div>
-                      <button onClick={copyNumber} className="p-2 rounded-lg hover:bg-accent transition">
-                        <Copy className="h-4 w-4" />
-                      </button>
-                    </div>
-                    <div className="p-3 rounded-lg bg-background">
-                      <div className="text-xs text-muted-foreground">Atas Nama</div>
-                      <div className="font-medium">{DANA_NAME}</div>
-                    </div>
-                    <div className="p-3 rounded-lg bg-background">
-                      <div className="text-xs text-muted-foreground">Jumlah Transfer</div>
-                      <div className="font-bold text-amber-400 text-lg">{formatRp(submitted.amount_total ?? submitted.amount)}</div>
-                      <div className="text-[10px] text-muted-foreground">Termasuk kode unik {submitted.unique_code ?? ''} — jangan dibulatkan</div>
-                    </div>
-                  </div>
-                </div>
+              {!(basunipay?.checkout_url || basunipay?.qris_image) && (
+                <QrisPanel
+                  amountLabel={`${mode === 'package' ? `${pkg.label}` : 'Top up saldo'} · ${formatRp(submitted.amount)}`}
+                  exactAmount={submitted.amount_total ?? undefined}
+                  onRetry={handleRetryQris}
+                  retrying={qrRetrying}
+                />
               )}
             </>
           )}

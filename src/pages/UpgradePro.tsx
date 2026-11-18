@@ -4,8 +4,9 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
-import { QRIS_IMG, formatRp } from '@/lib/membership'
-import { BasunipayCheckoutButton } from '@/components/QrisPayment'
+import { formatRp } from '@/lib/membership'
+import { BasunipayCheckoutButton, QrisPanel } from '@/components/QrisPayment'
+import { recreateBasunipayQris } from '@/lib/payment'
 import {
   DEFAULT_PRO_FEE,
   buildProWaPaymentUrl,
@@ -40,9 +41,9 @@ const BENEFITS = [
 ]
 
 const STEPS = [
-  { title: 'Scan & bayar', desc: 'Bayar sesuai nominal lewat QRIS ARKXMotion Studio.' },
+  { title: 'Scan & bayar', desc: 'Bayar TEPAT nominal lewat QRIS BasuNiPay — termasuk kode unik, jangan dibulatkan.' },
   { title: 'Kirim konfirmasi', desc: 'Isi catatan pembayaran lalu kirim konfirmasi dari halaman ini.' },
-  { title: 'Admin aktifkan', desc: 'Setelah pembayaran dicek, akun otomatis jadi Pro dan lima fitur premium terbuka.' },
+  { title: 'Akun aktif otomatis', desc: 'Begitu pembayaran terverifikasi, akun langsung jadi Pro dan seluruh fitur premium terbuka.' },
 ]
 
 function formatDate(value: string | null): string {
@@ -92,6 +93,7 @@ export default function UpgradeProPage() {
   // nominal TEPAT & kode unik tetap terbawa lewat status.payment (server).
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null)
   const [checkoutImage, setCheckoutImage] = useState<string | null>(null)
+  const [qrRetrying, setQrRetrying] = useState(false)
   const syncedProRef = useRef(false)
 
   const isPro = status?.plan === 'pro' || user?.role === 'admin' || user?.plan === 'pro'
@@ -125,6 +127,22 @@ export default function UpgradeProPage() {
     const timer = setInterval(loadStatus, 10000)
     return () => clearInterval(timer)
   }, [pendingPayment, loadStatus])
+
+  // Checkout BasuNiPay gagal dibuat? Siapkan ulang untuk pengajuan Pro ini.
+  const handleRetryQris = async () => {
+    const paymentId = status?.payment?.id
+    if (!paymentId || qrRetrying || !token) return
+    setQrRetrying(true)
+    const bp = await recreateBasunipayQris(token, 'pro_payments', paymentId)
+    setQrRetrying(false)
+    if (bp) {
+      setCheckoutUrl(bp.checkout_url ?? null)
+      setCheckoutImage(bp.qris_image ?? null)
+      addToast('QRIS BasuNiPay siap — bayar sesuai nominal', 'success')
+    } else {
+      addToast('QRIS BasuNiPay masih gagal disiapkan — coba lagi', 'error')
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -300,12 +318,7 @@ export default function UpgradeProPage() {
                   image={checkoutImage ?? status?.payment?.qrisImage ?? null}
                 />
                 {!(checkoutImage ?? status?.payment?.qrisImage) && (
-                  <div className="rounded-lg border border-white/10 bg-white p-1.5">
-                    <img src={QRIS_IMG} alt="QRIS ARKXMotion Studio" className="mx-auto w-full max-w-[170px] rounded" />
-                    <p className="mt-1 text-center text-[10px] text-muted-foreground">
-                      {status?.payment?.amountTotal ? `Scan QRIS → bayar ${formatRp(status.payment.amountTotal)}` : 'Scan QRIS → bayar sesuai nominal'}
-                    </p>
-                  </div>
+                  <QrisPanel exactAmount={status?.payment?.amountTotal ?? undefined} onRetry={handleRetryQris} retrying={qrRetrying} />
                 )}
               </div>
               <div className="flex items-start gap-3 rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-3">
@@ -338,14 +351,9 @@ export default function UpgradeProPage() {
                 </div>
               )}
 
-              <div className="rounded-xl border border-border bg-white p-2">
-                <img src={QRIS_IMG} alt="QRIS ARKXMotion Studio" className="w-full max-w-[220px] mx-auto rounded" />
-                <p className="text-center text-[12px] text-muted-foreground mt-1">
-                  Scan QRIS → bayar {formatRp(fee)}
-                </p>
-                <p className="text-center text-[10px] text-muted-foreground mt-0.5">
-                  Nominal TEPAT (termasuk kode unik) muncul setelah klik “Saya sudah bayar — Kirim Konfirmasi” — bayar segitu, jangan dibulatkan.
-                </p>
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-center text-xs text-amber-400">
+                Klik “Saya sudah bayar — Kirim Konfirmasi” di bawah — QRIS BasuNiPay dengan nominal TEPAT{' '}
+                (harga Pro + kode unik) dibuat saat itu juga dan ditampilkan di langkah ini.
               </div>
 
               <div>

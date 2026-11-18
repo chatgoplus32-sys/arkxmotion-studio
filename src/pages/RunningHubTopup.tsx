@@ -3,9 +3,9 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Badge } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
-import { Wallet, Clock, CheckCircle, XCircle, ExternalLink, Copy } from 'lucide-react'
-import { DANA_NUMBER, DANA_NAME, adminWhatsappLink, formatRp } from '@/lib/payment'
-import { PaymentMethodToggle, QrisPanel, BasunipayCheckoutButton } from '@/components/QrisPayment'
+import { Wallet, Clock, CheckCircle, XCircle, ExternalLink } from 'lucide-react'
+import { adminWhatsappLink, formatRp, recreateBasunipayQris } from '@/lib/payment'
+import { QrisPanel, BasunipayCheckoutButton } from '@/components/QrisPayment'
 import { fetchRunninghubWallet, RUNNINGHUB_PRESET_FALLBACKS } from '@/lib/runninghubWallet'
 
 const WHATSAPP_LINK = adminWhatsappLink('Halo saya ingin top up saldo RunningHub')
@@ -35,11 +35,11 @@ export default function RunningHubTopupPage() {
   const [selectedAmount, setSelectedAmount] = useState<number>(RUNNINGHUB_PRESET_FALLBACKS[0])
   const [customAmount, setCustomAmount] = useState('')
   const [proofNote, setProofNote] = useState('')
-  const [payMethod, setPayMethod] = useState<'dana' | 'qris'>('dana')
   const [loading, setLoading] = useState(false)
   const [topups, setTopups] = useState<Topup[]>([])
   const [submitted, setSubmitted] = useState<Topup | null>(null)
   const [basunipay, setBasunipay] = useState<{ checkout_url?: string; payable_amount?: number; qris_image?: string } | null>(null)
+  const [qrRetrying, setQrRetrying] = useState(false)
   const [step, setStep] = useState<'select' | 'pay' | 'confirm'>('select')
 
   const API = '/api/runninghub-wallet'
@@ -139,9 +139,19 @@ export default function RunningHubTopupPage() {
   const statusDiajukan = submitted ? topups.find((t) => t.id === submitted.id)?.status ?? submitted.status : null
   const lunas = statusDiajukan === 'approved'
 
-  const copyNumber = () => {
-    navigator.clipboard.writeText(DANA_NUMBER)
-    addToast('Nomor DANA disalin', 'info')
+  // Checkout BasuNiPay gagal dibuat (jaringan/API)? Siapkan ulang untuk baris
+  // yang sama — tanpa mengajukan top up baru dan tanpa QRIS statis lama.
+  const handleRetryQris = async () => {
+    if (!token || !submitted || qrRetrying) return
+    setQrRetrying(true)
+    const bp = await recreateBasunipayQris(token, 'runninghub_topup', submitted.id)
+    setQrRetrying(false)
+    if (bp) {
+      setBasunipay(bp)
+      addToast('QRIS BasuNiPay siap — bayar sesuai nominal', 'success')
+    } else {
+      addToast('QRIS BasuNiPay masih gagal disiapkan — coba lagi', 'error')
+    }
   }
 
   const getStatusBadge = (status: string) => {
@@ -226,52 +236,18 @@ export default function RunningHubTopupPage() {
 
       {step === 'pay' && (
         <Section
-          title={payMethod === 'qris' ? 'Pembayaran via QRIS' : 'Pembayaran via DANA'}
-          sub={payMethod === 'qris' ? 'Scan QRIS di bawah untuk bayar' : 'Transfer ke nomor DANA berikut'}
+          title="Pembayaran via QRIS BasuNiPay"
+          sub="Scan QRIS dinamis di bawah — nominal TEPAT, terverifikasi otomatis"
         >
-          <PaymentMethodToggle value={payMethod} onChange={setPayMethod} />
           <BasunipayCheckoutButton url={basunipay?.checkout_url} payable={basunipay?.payable_amount} image={basunipay?.qris_image} />
 
-          {payMethod === 'qris' && !basunipay?.qris_image && (
+          {!(basunipay?.checkout_url || basunipay?.qris_image) && (
             <QrisPanel
               amountLabel={formatRp(Number.isInteger(amount) ? amount : 0)}
               exactAmount={submitted?.amount_total ?? undefined}
+              onRetry={handleRetryQris}
+              retrying={qrRetrying}
             />
-          )}
-
-          {payMethod === 'dana' && (
-          <div className="rounded-xl border border-border bg-card/50 p-5 mb-4">
-            <div className="text-center mb-4">
-              <div className="text-sm text-muted-foreground mb-1">Transfer ke:</div>
-              <div className="text-xl font-bold">💜 DANA</div>
-            </div>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between p-3 rounded-lg bg-background">
-                <div>
-                  <div className="text-xs text-muted-foreground">Nomor HP</div>
-                  <div className="font-mono font-bold text-lg">{DANA_NUMBER}</div>
-                </div>
-                <button onClick={copyNumber} className="p-2 rounded-lg hover:bg-accent transition">
-                  <Copy className="h-4 w-4" />
-                </button>
-              </div>
-              <div className="flex items-center justify-between p-3 rounded-lg bg-background">
-                <div>
-                  <div className="text-xs text-muted-foreground">Atas Nama</div>
-                  <div className="font-medium">{DANA_NAME}</div>
-                </div>
-              </div>
-              <div className="flex items-center justify-between p-3 rounded-lg bg-background">
-                <div>
-                  <div className="text-xs text-muted-foreground">Jumlah Transfer</div>
-                  <div className="font-bold text-amber-400 text-lg">
-                    {formatRp(submitted?.amount_total ?? (Number.isInteger(amount) ? amount : 0))}
-                  </div>
-                  <div className="text-[10px] text-muted-foreground">Termasuk kode unik — jangan dibulatkan</div>
-                </div>
-              </div>
-            </div>
-          </div>
           )}
 
           <div className="mb-4">
@@ -290,7 +266,7 @@ export default function RunningHubTopupPage() {
               Kembali
             </Button>
             <Button onClick={handleConfirmTransfer} disabled={loading} className="flex-1">
-              {loading ? 'Mengirim...' : payMethod === 'qris' ? 'Sudah Bayar' : 'Sudah Transfer'}
+              {loading ? 'Mengirim...' : 'Sudah Bayar'}
             </Button>
           </div>
 
