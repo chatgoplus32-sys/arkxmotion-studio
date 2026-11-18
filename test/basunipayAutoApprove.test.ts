@@ -293,6 +293,32 @@ test('nexabot_topup kind=unlimited → paket aktif, bukan kredit saldo', async (
   assert.ok(log.n >= 1, 'aktivasi paket tercatat di log audit')
 })
 
+test('checkout kedaluwarsa tapi baris masih pending → admin diberi tahu untuk rekonsiliasi', async () => {
+  const original = globalThis.fetch
+  globalThis.fetch = async () => Response.json({ success: true, data: { status: 'expired' } })
+  try {
+    const userId = 810800
+    seedUser(userId)
+    const seeded = seedBasunipayPending('nexabot_topup', userId, { amount: 71000, kind: 'balance' })
+
+    const r = await pollBasunipayPayments()
+    assert.ok(r.closed >= 1, 'checkout kedaluwarsa ditutup')
+
+    const pay = db.prepare('SELECT status FROM basunipay_payment WHERE order_id = ?').get(seeded.orderId) as { status: string }
+    assert.equal(pay.status, 'expired')
+    const topup = db.prepare('SELECT status FROM nexabot_topup WHERE id = ?').get(seeded.rowId) as { status: string }
+    assert.equal(topup.status, 'pending', 'baris tetap pending — admin yang merekonsiliasi')
+    const notif = db.prepare("SELECT COUNT(*) AS n FROM notifications WHERE target = 'admins' AND title LIKE '%ditutup%'").get() as { n: number }
+    assert.ok(notif.n >= 1, 'admin diberi tahu untuk rekonsiliasi manual mutasi DANA/bank')
+    const log = db
+      .prepare("SELECT COUNT(*) AS n FROM payment_verify_log WHERE action = 'checkout_closed' AND ref_table = 'nexabot_topup' AND ref_id = ?")
+      .get(seeded.rowId) as { n: number }
+    assert.ok(log.n >= 1, 'tercatat di log audit')
+  } finally {
+    globalThis.fetch = original
+  }
+})
+
 test('tabel di luar QRIS_TABLES tetap ditolak (gerbang unknown_table)', () => {
   const r = approveTopupRef('users', 1, 1000, { source: 'basunipay' })
   assert.equal(r.action, 'unknown_table', 'registry adalah satu-satunya pintu approve')

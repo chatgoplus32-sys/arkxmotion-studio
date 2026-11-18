@@ -18,7 +18,7 @@
  * Secret hanya dipakai server — tidak pernah dikirim ke browser.
  */
 import db from '../db.js'
-import { approveTopupRef, logPaymentVerify } from './qrisPayment.js'
+import { approveTopupRef, logPaymentVerify, QRIS_TABLES } from './qrisPayment.js'
 
 const baseUrl = () => (process.env.BASUNIPAY_BASE_URL || 'https://www.basunipay.com').replace(/\/+$/, '')
 const apiKey = () => (process.env.BASUNIPAY_API_KEY || '').trim()
@@ -131,6 +131,41 @@ export async function createBasunipayPayment(opts: {
   }
 }
 
+/** Status yang dianggap lunas oleh penyedia — dipakai untuk menandai bayar. */
+const PAID_STATUSES = new Set(['paid', 'success', 'completed', 'settlement', 'settled', 'done', 'paid_out', 'verified'])
+/** Status terminal (checkout ditutup penyedia). */
+const CLOSED_STATUSES = new Set(['expired', 'failed', 'cancelled', 'canceled'])
+
+/**
+ * Checkout ditutup penyedia TAPI baris top-up masih pending — kemungkinan
+ * member sudah bayar (mis. QRIS lunas di DANA) tapi Bridge tidak mendeteksi
+ * dan BasuNiPay tidak pernah menandainya paid. Beri tahu admin supaya
+ * rekonsiliasi manual DANA/bank tidak terlewat.
+ */
+function alertCheckoutClosed(m: { ref_table: string; ref_id: number; payable_amount: number; order_id: string }, st: string): void {
+  try {
+    const t = QRIS_TABLES.find((x) => x.table === m.ref_table)
+    if (!t) return
+    const row = db.prepare(`SELECT status FROM ${t.table} WHERE id = ?`).get(m.ref_id) as { status: string } | undefined
+    if (row?.status !== 'pending') return
+    const amount = Number(m.payable_amount) || 0
+    db.prepare("INSERT INTO notifications (title, message, type, target) VALUES (?, ?, 'warning', 'admins')").run(
+      `Checkout ${t.label} ditutup (${st}) — cek mutasi`,
+      `Order ${m.order_id} (${t.label} #${m.ref_id}, Rp ${amount.toLocaleString('id-ID')}) berakhir dengan status '${st}'. Member kemungkinan sudah membayar (Bridge tidak mendeteksi) — periksa mutasi DANA/bank lalu approve manual di Admin.`,
+    )
+    logPaymentVerify({
+      source: 'basunipay',
+      refTable: m.ref_table,
+      refId: m.ref_id,
+      amount,
+      action: 'checkout_closed',
+      detail: `Checkout ditutup penyedia (${st}); baris masih pending — kemungkinan perlu rekonsiliasi manual mutasi DANA/bank`,
+    })
+  } catch (e) {
+    console.warn('[basunipay] alert checkout closed gagal:', e)
+  }
+}
+
 /** Status pembayaran dari API (sumber kebenaran — webhook hanya memicu). */
 export async function basunipayStatus(orderId: string): Promise<any | null> {
   try {
@@ -164,7 +199,7 @@ export async function pollBasunipayPayments(): Promise<BasunipayPollResult> {
     db.prepare('UPDATE basunipay_payment SET updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(m.id)
     if (!st) continue
 
-    if (st === 'paid' || st === 'success' || st === 'completed') {
+    if (PAID_STATUSES.has(st)) {
       // Simpan bukti lunas sebelum kredit; kegagalan kredit tetap bisa direkonsiliasi tanpa memanggil provider lagi.
       db.prepare('UPDATE basunipay_payment SET paid_at = COALESCE(paid_at, CURRENT_TIMESTAMP) WHERE id = ?').run(m.id)
       try {
@@ -185,9 +220,10 @@ export async function pollBasunipayPayments(): Promise<BasunipayPollResult> {
           detail: 'Pembayaran lunas; kredit/aktivasi belum selesai. Periksa pengajuan; rekonsiliasi diulang otomatis.',
         })
       }
-    } else if (['expired', 'failed', 'cancelled', 'canceled'].includes(st)) {
+    } else if (CLOSED_STATUSES.has(st)) {
       db.prepare('UPDATE basunipay_payment SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(st, m.id)
       result.closed++
+      alertCheckoutClosed(m, st)
     }
   }
   return result
