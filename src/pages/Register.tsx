@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
-import { UserPlus, Mail, Lock, User, AlertCircle, CheckCircle, CheckCircle2, MessageCircle, Crown, ArrowRight, ShieldCheck, Zap, Star } from 'lucide-react'
+import { UserPlus, Mail, Lock, User, Gift, AlertCircle, CheckCircle, CheckCircle2, MessageCircle, Crown, ArrowRight, ShieldCheck, Zap, Star } from 'lucide-react'
 import { BasunipayCheckoutButton, QrisPanel } from '@/components/QrisPayment'
 import { fetchMembershipQris } from '@/lib/payment'
 import {
@@ -13,10 +13,14 @@ import {
 } from '@/lib/membership'
 
 export default function RegisterPage() {
+  const [searchParams] = useSearchParams()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  // Kode referral dari link afiliasi (?ref=ARKX-XXXXXX). Kalau tautannya basi,
+  // server mengabaikan kodenya dan pendaftaran tetap jalan.
+  const [referralCode, setReferralCode] = useState(() => (searchParams.get('ref') || '').trim().toUpperCase())
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
   const [payNote, setPayNote] = useState('')
@@ -120,7 +124,7 @@ export default function RegisterPage() {
 
     setIsLoading(true)
 
-    const result = await register(email, password, name)
+    const result = await register(email, password, name, referralCode)
 
     if (result.error) {
       setError(result.error)
@@ -298,6 +302,11 @@ export default function RegisterPage() {
               <div>
                 <label htmlFor="confirmPassword" className="mb-1.5 block text-[13px] font-semibold text-white/70">Confirm Password</label>
                 <div className="relative"><Lock className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-white/35" /><input id="confirmPassword" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Ulangi password" required minLength={8} className="w-full rounded-xl border border-white/10 bg-white/[0.04] py-3 pl-10 pr-4 text-sm text-white placeholder:text-white/25 outline-none backdrop-blur transition focus:border-cyan-400/50 focus:bg-white/[0.07] focus:ring-2 focus:ring-cyan-400/25" /></div>
+              </div>
+              <div>
+                <label htmlFor="referralCode" className="mb-1.5 block text-[13px] font-semibold text-white/70">Kode Referral <span className="font-normal text-white/35">(opsional)</span></label>
+                <div className="relative"><Gift className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-white/35" /><input id="referralCode" type="text" value={referralCode} onChange={(e) => setReferralCode(e.target.value.toUpperCase())} placeholder="ARKX-XXXXXX" maxLength={32} autoComplete="off" className="w-full rounded-xl border border-white/10 bg-white/[0.04] py-3 pl-10 pr-4 text-sm uppercase tracking-wider text-white placeholder:text-white/25 placeholder:normal-case placeholder:tracking-normal outline-none backdrop-blur transition focus:border-cyan-400/50 focus:bg-white/[0.07] focus:ring-2 focus:ring-cyan-400/25" /></div>
+                <p className="mt-1.5 text-[11px] text-white/35">Diisi otomatis kalau kamu membuka link afiliasi teman.</p>
               </div>
               <button type="submit" disabled={isLoading} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#0066FF] via-[#00C6FF] to-[#8B5CF6] py-3 text-sm font-bold text-white shadow-[0_0_28px_rgba(0,102,255,0.45)] transition-all hover:-translate-y-0.5 hover:shadow-[0_0_44px_rgba(0,198,255,0.6)] disabled:opacity-50">
                 <UserPlus className="h-4 w-4" /> {isLoading ? 'Creating account…' : 'Create Account'}

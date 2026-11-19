@@ -548,6 +548,15 @@ if (!userCols.some(c => c.name === 'plan')) {
 if (!userCols.some(c => c.name === 'pro_since')) {
   db.exec('ALTER TABLE users ADD COLUMN pro_since DATETIME')
 }
+// Afiliasi: kode unik tiap member + pencatat siapa yang mengundang saat daftar.
+if (!userCols.some(c => c.name === 'referral_code')) {
+  db.exec('ALTER TABLE users ADD COLUMN referral_code TEXT')
+}
+if (!userCols.some(c => c.name === 'referred_by')) {
+  db.exec('ALTER TABLE users ADD COLUMN referred_by INTEGER')
+}
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_referral_code ON users(referral_code)')
+db.exec('CREATE INDEX IF NOT EXISTS idx_users_referred_by ON users(referred_by)')
 
 // ── Konfirmasi pembayaran member baru ────────────────────────────────────
 db.exec(`
@@ -894,5 +903,53 @@ db.exec(`
 `)
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_rh_claim_user_token ON runninghub_claim_token(user_id, token)')
 db.exec('CREATE INDEX IF NOT EXISTS idx_rh_claim_user ON runninghub_claim_token(user_id)')
+
+// ── Afiliasi member ───────────────────────────────────────────────────────
+// Komisi 25% dari pembayaran join Pro yang berasal dari link afiliasi member.
+// Saldo dan penarikan dicatat terpisah dari saldo generate provider.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS affiliate_accounts (
+    user_id INTEGER PRIMARY KEY,
+    balance INTEGER NOT NULL DEFAULT 0,
+    total_earned INTEGER NOT NULL DEFAULT 0,
+    total_withdrawn INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS affiliate_commissions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    affiliate_user_id INTEGER NOT NULL,
+    referred_user_id INTEGER NOT NULL,
+    payment_id INTEGER NOT NULL UNIQUE,
+    amount INTEGER NOT NULL,
+    rate INTEGER NOT NULL DEFAULT 25,
+    source TEXT NOT NULL DEFAULT 'manual',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (affiliate_user_id) REFERENCES users(id),
+    FOREIGN KEY (referred_user_id) REFERENCES users(id),
+    FOREIGN KEY (payment_id) REFERENCES membership_payments(id)
+  )
+`)
+db.exec('CREATE INDEX IF NOT EXISTS idx_affiliate_commissions_user ON affiliate_commissions(affiliate_user_id, created_at DESC)')
+db.exec('CREATE INDEX IF NOT EXISTS idx_affiliate_commissions_referred ON affiliate_commissions(referred_user_id)')
+db.exec(`
+  CREATE TABLE IF NOT EXISTS affiliate_withdrawals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    amount INTEGER NOT NULL,
+    destination TEXT NOT NULL,
+    note TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','paid','rejected')),
+    admin_note TEXT NOT NULL DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    processed_at DATETIME,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`)
+db.exec('CREATE INDEX IF NOT EXISTS idx_affiliate_withdrawals_user ON affiliate_withdrawals(user_id, created_at DESC)')
+db.exec("CREATE INDEX IF NOT EXISTS idx_affiliate_withdrawals_status ON affiliate_withdrawals(status, created_at)")
 
 export default db

@@ -7,8 +7,9 @@ import db from '../db.js'
 import { authenticateToken, AuthRequest } from '../middleware/auth.js'
 import { sendEmail, appUrl, allowDevMailLink } from '../mailer.js'
 import { findAddonProvisioning } from '../lib/effectiveWallet.js'
+import { assignReferralCode, resolveReferralCode } from '../lib/affiliate.js'
 
-const RegisterSchema = z.object({ email: z.string().email().max(254), password: z.string().min(8).max(128), name: z.string().min(1).max(80).trim() })
+const RegisterSchema = z.object({ email: z.string().email().max(254), password: z.string().min(8).max(128), name: z.string().min(1).max(80).trim(), referral_code: z.string().max(32).optional() })
 const LoginSchema = z.object({ email: z.string().email().max(254), password: z.string().min(1).max(128) })
 
 const router = Router()
@@ -104,7 +105,7 @@ router.post('/register', async (req, res: Response) => {
   try {
     const parsed = RegisterSchema.safeParse(req.body)
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0].message })
-    const { email, password, name } = parsed.data
+    const { email, password, name, referral_code } = parsed.data
 
     // Anti-spam: maks 5 percobaan daftar per jam per IP
     const ip = clientIp(req)
@@ -167,10 +168,15 @@ router.post('/register', async (req, res: Response) => {
     }
 
     const paymentToken = generateToken()
+    // Kode afiliasi yang tidak dikenal/sudah tidak ada diabaikan — jangan sampai
+    // membuat pendaftaran gagal gara-gara URL referral basi.
+    const referredBy = resolveReferralCode(referral_code)
 
     const result = db.prepare(
-      'INSERT INTO users (email, password, name, role, approved, email_verified, payment_token) VALUES (?, ?, ?, ?, 0, 1, ?)'
-    ).run(email, hashedPassword, name, 'user', paymentToken)
+      'INSERT INTO users (email, password, name, role, approved, email_verified, payment_token, referred_by) VALUES (?, ?, ?, ?, 0, 1, ?, ?)'
+    ).run(email, hashedPassword, name, 'user', paymentToken, referredBy)
+
+    try { assignReferralCode(Number(result.lastInsertRowid)) } catch (e) { console.warn('[affiliate] kode referral gagal:', e) }
 
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(result.lastInsertRowid) as UserRow
 

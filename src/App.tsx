@@ -51,6 +51,7 @@ const AdminTopupPage = lazyWithRetry(() => import('@/pages/AdminTopup'))
 const AdminAnalyticsPage = lazyWithRetry(() => import('@/pages/AdminAnalytics'))
 const AdminActivityPage = lazyWithRetry(() => import('@/pages/AdminActivity'))
 const AdminCreditManagementPage = lazyWithRetry(() => import('@/pages/AdminCreditManagement'))
+const AdminAffiliatePage = lazyWithRetry(() => import('@/pages/AdminAffiliate'))
 const AdminSystemSettingsPage = lazyWithRetry(() => import('@/pages/AdminSystemSettings'))
 const AdminSystemHealthPage = lazyWithRetry(() => import('@/pages/AdminSystemHealth'))
 const SecondBrainPage = lazyWithRetry(() => import('@/pages/SecondBrain'))
@@ -66,6 +67,7 @@ const CreatePulseTopupPage = lazyWithRetry(() => import('@/pages/CreatePulseTopu
 const NexaBotTopupPage = lazyWithRetry(() => import('@/pages/NexaBotTopup'))
 const PremiumBoosterPage = lazyWithRetry(() => import('@/pages/PremiumBooster'))
 const AddonAkunPage = lazyWithRetry(() => import('@/pages/AddonAkun'))
+const AffiliateToolsPage = lazyWithRetry(() => import('@/pages/AffiliateTools'))
 const SeaviTopupPage = lazyWithRetry(() => import('@/pages/SeaviTopup'))
 const PosBotTopupPage = lazyWithRetry(() => import('@/pages/PosBotTopup'))
 const RunningHubTopupPage = lazyWithRetry(() => import('@/pages/RunningHubTopup'))
@@ -272,6 +274,7 @@ export default function App() {
                         <Route path="/topup/nexabot" element={<NexaBotTopupPage />} />
                         <Route path="/booster" element={<PremiumBoosterPage />} />
                         <Route path="/addon-akun" element={<AddonAkunPage />} />
+                        <Route path="/tools/affiliate" element={<AffiliateToolsPage />} />
                         <Route path="/topup/seavi" element={<SeaviTopupPage />} />
                         <Route path="/topup/posbot" element={<PosBotTopupPage />} />
                         <Route path="/topup/runninghub" element={<RunningHubTopupPage />} />
@@ -291,6 +294,7 @@ export default function App() {
                         <Route path="/admin/analytics" element={<AdminAnalyticsPage />} />
                         <Route path="/admin/activity" element={<AdminActivityPage />} />
                         <Route path="/admin/credits" element={<AdminCreditManagementPage />} />
+                        <Route path="/admin/affiliate" element={<AdminAffiliatePage />} />
                         <Route path="/admin/settings" element={<AdminSystemSettingsPage />} />
                         <Route path="/admin/health" element={<AdminSystemHealthPage />} />
                         <Route path="/admin/notifications" element={<AdminNotificationsPage />} />

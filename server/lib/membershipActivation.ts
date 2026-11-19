@@ -9,6 +9,7 @@
 import db from '../db.js'
 import { sendEmail, appUrl } from '../mailer.js'
 import { logPaymentVerify } from './qrisPayment.js'
+import { creditCommissionForPayment } from './affiliate.js'
 
 export interface AddonAccount {
   email: string
@@ -57,6 +58,13 @@ export function approveMembershipPaymentRow(id: number | string, source = 'manua
     db.prepare(
       "UPDATE users SET approved = 1, email_verified = 1, plan = 'pro', pro_since = COALESCE(pro_since, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP WHERE id = ?",
     ).run(payment.user_id)
+    // Komisi afiliasi (25% dari fee join) — kalau member ini datang lewat link
+    // member lain. Dijaga supaya kegagalan komisi TIDAK membatalkan aktivasi.
+    try {
+      creditCommissionForPayment(pid, source)
+    } catch (e) {
+      console.warn('[affiliate] komisi gagal:', e)
+    }
   })()
 
   // Email & notifikasi — gagal email TIDAK menggagalkan approve.

@@ -81,6 +81,7 @@ import { startPaymentEmailWatcher } from './lib/paymentEmailWatcher.js'
 import paymentIngestRoutes from './routes/paymentIngest.js'
 import basunipayWebhookRoutes from './routes/basunipayWebhook.js'
 import { startBasunipayPoller } from './lib/basunipay.js'
+import affiliateRoutes from './routes/affiliate.js'
 
 // .env sudah dimuat server/env.ts (impor pertama), yaitu sebelum modul-modul di
 // atas dievaluasi. Tidak ada pemuatan kedua di sini supaya hanya ada satu sumber
@@ -134,6 +135,7 @@ app.use(express.json({ limit: '50mb' }))
 
 // --- API Routes ---
 app.use('/api/auth', authRoutes)
+app.use('/api/affiliate', affiliateRoutes)
 app.use('/api/feature-request', featureRequestRoutes)
 app.use('/api/provider-balance', saldoPenyediaRoutes)
 app.use('/api/admin', adminRoutes)
