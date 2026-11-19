@@ -3880,10 +3880,7 @@ export default function ImageToVideoPage() {
               )}
             </div>
             <div className="grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
-              <div>Seedance 2.0 (10s): <b className="text-foreground">{user?.role === 'admin' ? 'GRATIS' : `Rp ${cpCost('dreamina-seedance-2.0').toLocaleString('id-ID')}`}</b></div>
-              <div>Seedance 2.5 (10s): <b className="text-foreground">{user?.role === 'admin' ? 'GRATIS' : `Rp ${cpCost('dreamina-seedance-2.5').toLocaleString('id-ID')}`}</b></div>
-              <div>Seedance 2.0 (15s): <b className="text-foreground">{user?.role === 'admin' ? 'GRATIS' : `Rp ${cpCost('dreamina-seedance-2.0-15s').toLocaleString('id-ID')}`}</b></div>
-              <div>Veo Omni (10s): <b className="text-foreground">{user?.role === 'admin' ? 'GRATIS' : `Rp ${cpCost('veo-omni-10s').toLocaleString('id-ID')}`}</b></div>
+              <div>Seedance 2.0 (FAST · 10s): <b className="text-foreground">{user?.role === 'admin' ? 'GRATIS' : `Rp ${cpCost('dreamina-seedance-2.0').toLocaleString('id-ID')}`}</b></div>
               {user?.role !== 'admin' && <div>Failed generations: <b className="text-emerald-500">auto-refunded</b></div>}
             </div>
             {user?.role !== 'admin' && cpBalance < cpCost(currentModel?.apiModel) && (

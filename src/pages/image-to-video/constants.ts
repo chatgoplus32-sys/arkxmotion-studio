@@ -49,13 +49,7 @@ export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
     { value: 'rn:veo-3-fast', label: 'VEO 3.0 Fast (Roboneo)', cr: 100, provider: 'roboneo' },
   ],
   createpulse: [
-    { value: 'cp:dreamina-seedance-2.0', label: 'Seedance 2.0 (FAST)', cr: 22, provider: 'createpulse', apiModel: 'dreamina-seedance-2.0' },
-    { value: 'cp:dreamina-seedance-2.5', label: 'Seedance 2.5 (BEST)', cr: 22, provider: 'createpulse', apiModel: 'dreamina-seedance-2.5' },
-    { value: 'cp:dreamina-seedance-2.0-15s', label: 'Seedance 2.0 Extended (15s)', cr: 33, provider: 'createpulse', apiModel: 'dreamina-seedance-2.0-15s' },
-    { value: 'cp:dreamina-seedance-2.5-15s', label: 'Seedance 2.5 · 15 Second', cr: 33, provider: 'createpulse', apiModel: 'dreamina-seedance-2.5-15s' },
-    { value: 'cp:dreamina-seedance-2.5-20s', label: 'Seedance 2.5 · 20 Second', cr: 33, provider: 'createpulse', apiModel: 'dreamina-seedance-2.5-20s' },
-    { value: 'cp:dreamina-seedance-2.5-30s', label: 'Seedance 2.5 · 30 Second — longest', cr: 33, provider: 'createpulse', apiModel: 'dreamina-seedance-2.5-30s' },
-    { value: 'cp:veo-omni-10s', label: 'Veo Omni (CINEMATIC)', cr: 33, provider: 'createpulse', apiModel: 'veo-omni-10s' },
+    { value: 'cp:dreamina-seedance-2.0', label: 'Seedance 2.0 Fast', cr: 22, provider: 'createpulse', apiModel: 'dreamina-seedance-2.0' },
   ],
   framia: [
     { value: 'framia:gemini-omni-flash', label: 'Gemini Omni Flash (Framia)', cr: 20, provider: 'framia' },
@@ -435,24 +429,6 @@ export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: s
     'cp:dreamina-seedance-2.0': [
       { value: '10s', label: '10 detik', mult: 1, duration: 10 },
     ],
-    'cp:dreamina-seedance-2.5': [
-      { value: '10s', label: '10 detik', mult: 1, duration: 10 },
-    ],
-    'cp:dreamina-seedance-2.0-15s': [
-      { value: '15s', label: '15 detik', mult: 1, duration: 15 },
-    ],
-    'cp:dreamina-seedance-2.5-15s': [
-      { value: '15s', label: '15 detik', mult: 1, duration: 15 },
-    ],
-    'cp:dreamina-seedance-2.5-20s': [
-      { value: '20s', label: '20 detik', mult: 1, duration: 20 },
-    ],
-    'cp:dreamina-seedance-2.5-30s': [
-      { value: '30s', label: '30 detik', mult: 1, duration: 30 },
-    ],
-    'cp:veo-omni-10s': [
-      { value: '10s', label: '10 detik', mult: 1, duration: 10 },
-    ],
     default: [
       { value: '10s', label: '10 detik', mult: 1, duration: 10 },
     ],
@@ -826,15 +802,9 @@ export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: s
 // lagi — harga efektif dibaca dari /api/public/pricing lewat
 // src/lib/createpulsePricing.ts (bisa diubah admin di System Settings).
 export const CP_PRICES: Record<string, number> = {
-  'dreamina-seedance-2.0': 1500,
-  'dreamina-seedance-2.5': 1500,
-  'dreamina-seedance-2.0-15s': 2250,
-  'dreamina-seedance-2.5-15s': 2500,
-  'dreamina-seedance-2.5-20s': 3000,
-  'dreamina-seedance-2.5-30s': 4500,
-  'veo-omni-10s': 2250,
+  'dreamina-seedance-2.0': 700,
 }
-export const getCreatepulseCost = (apiModel?: string) => apiModel ? (CP_PRICES[apiModel] ?? 1500) : 1500
+export const getCreatepulseCost = (apiModel?: string) => apiModel ? (CP_PRICES[apiModel] ?? 700) : 700
 
 export const RATIOS = ['16:9', '9:16', '1:1', '4:3']
 
@@ -848,7 +818,6 @@ export const MODEL_RATIO_RESTRICTIONS: Record<string, string[]> = {
   seedance25_server19: ['9:16', '16:9', '1:1', '3:4', '4:3'],
   wan30_server19: [],
   gemini_omni_server19: ['9:16', '16:9', '1:1', '3:4', '4:3'],
-  'veo-omni-10s': ['9:16', '16:9'],
   // NexaBot Omni Flash 1.2 (docs /api/v1/modes): ratio 1=landscape, 2=portrait
   // — 1:1 & 4:3 tidak didukung upstream. Kunci memakai `apiModel` (bukan nilai
   // model `nb:*`): halaman mencari batas lewat currentModel.apiModel.

@@ -121,7 +121,7 @@ const PROVIDER_LIST = [
   { key: 'runninghub', label: 'RunningHub', desc: 'RunningHub AI apps & workflows — MiniMax H3 VLOG, UGC Storyboard, Try-On, dll.' },
   { key: 'framia', label: 'Framia', desc: 'Canvas workflow (Converge AI) — semua node & recipe: image, video, avatar, garment, storyboard.' },
   { key: 'leonardo', label: 'Leonardo.ai', desc: 'app.leonardo.ai via Cognito Bearer JWT — Text-to-Image (Phoenix, Diffusion XL, Kino, Anime, Vision).' },
-  { key: 'createpulse', label: 'CreatePulse', desc: 'Video generation (Seedance 2.0/2.5, Veo Omni) via createpulse.online — pakai API key sendiri.' },
+  { key: 'createpulse', label: 'CreatePulse', desc: 'Video generation (Seedance 2.0 FAST) via createpulse.online — pakai API key sendiri.' },
   { key: 'galleri5', label: 'G5 AI Studio', desc: 'Motion Control (Kling V3 & V2.6 motion transfer) via aistudio.galleri5.com — Firebase refresh token (auto-refresh).' },
   { key: 'oneover', label: 'OneOver', desc: 'Video generation (Grok, Seedance 2.0/2.5, Kling, LTX) via oneover.com — Supabase session token.' },
   { key: 'firefly', label: 'Adobe Firefly', desc: 'Video generation (Veo 3.1, Firefly Video) via firefly.adobe.com — Adobe IMS Bearer token.' },
@@ -281,7 +281,7 @@ const TOKEN_GUIDE: Record<string, {
       { text: 'Top up saldo minimal Rp 10.000 di menu Top Up. Harga per generate mengikuti System Settings → Harga Token & Wallet.' },
       { text: 'Multi-key akan auto-rotate saat quota / balance habis.' },
     ],
-    tip: 'Model: Seedance 2.0 / 2.5, Seedance 15s, dan Veo Omni — tarif per model mengikuti System Settings → Harga Token & Wallet. Saldo tersimpan di akunmu, bisa dipakai dari mana saja.',
+    tip: 'Model: Seedance 2.0 (FAST) — tarif mengikuti System Settings → Harga Token & Wallet. Saldo tersimpan di akunmu, bisa dipakai dari mana saja.',
   },
   runninghub: {
     url: 'https://www.runninghub.ai/enterprise-api/consumerApi',

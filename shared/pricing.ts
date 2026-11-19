@@ -350,19 +350,13 @@ export function describeNexabotPricing(pricing: NexabotPricing): string {
 
 export const CREATEPULSE_MIN_TOPUP = 10000
 /** Harga untuk model yang tidak punya tarif khusus. */
-export const CREATEPULSE_DEFAULT_PRICE = 1500
+export const CREATEPULSE_DEFAULT_PRICE = 700
 /** Tarif khusus per apiModel. Cermin `CP_PRICES` di src/pages/image-to-video/constants.ts. */
 export const CREATEPULSE_MODEL_PRICES: Record<string, number> = {
   // Varian dasar (tanpa durasi khusus) — daftar ini harus mencakup SEMUA
   // model yang tampil di UI CreatePulse, supaya admin bisa mengatur semua
   // model dari System Settings. Keduanya sama dengan harga default (Rp 1.500).
-  'dreamina-seedance-2.0': 1500,
-  'dreamina-seedance-2.5': 1500,
-  'dreamina-seedance-2.0-15s': 2250,
-  'dreamina-seedance-2.5-15s': 2500,
-  'dreamina-seedance-2.5-20s': 3000,
-  'dreamina-seedance-2.5-30s': 4500,
-  'veo-omni-10s': 2250,
+  'dreamina-seedance-2.0': 700,
 }
 
 /** Harga satu generate CreatePulse sesuai apiModel (default kalau tidak dikenal). */

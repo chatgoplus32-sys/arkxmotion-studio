@@ -168,8 +168,7 @@ export default function CreatePulseTopupPage() {
           </div>
         </div>
         <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
-          <div>Dreamina Seedance 2.0: <b className="text-foreground">{formatRp(cpModelPrice(cpPricing, 'dreamina-seedance-2.0'))}/generate</b></div>
-          <div>Veo Omni 10s: <b className="text-foreground">{formatRp(cpModelPrice(cpPricing, 'veo-omni-10s'))}/generate</b></div>
+          <div>Seedance 2.0 (FAST): <b className="text-foreground">{formatRp(cpModelPrice(cpPricing, 'dreamina-seedance-2.0'))}/generate</b></div>
         </div>
       </div>
 

@@ -11,7 +11,7 @@
  * Skrip ini menjawab pertanyaan yang tersisa dengan satu perintah:
  *
  *   - model yang SENGAJA salah dijawab 4xx rapi? → validasi model mereka jalan,
- *     jadi `veo-omni-10s` dikenali dan 502 itu kegagalan di sisi mereka untuk
+ *     jadi `dreamina-seedance-2.0` dikenali dan 502 itu kegagalan di sisi mereka untuk
  *     model itu (bukan salah ketik slug di katalog kita);
  *   - model sengaja salah JUGA 502? → handler mereka tumbang untuk model tak
  *     dikenal, dan slug kita patut dicurigai;
@@ -65,7 +65,7 @@ function keyFromEnvFile() {
 }
 
 const apiKey = nilai('key', process.env.CREATEPULSE_API_KEY || keyFromEnvFile())
-const model = nilai('model', 'veo-omni-10s')
+const model = nilai('model', 'dreamina-seedance-2.0')
 const prompt = nilai('prompt', 'animasikan')
 const image = nilai('image', '')
 const submit = has('submit')

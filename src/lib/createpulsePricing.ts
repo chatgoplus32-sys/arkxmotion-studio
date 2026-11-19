@@ -7,18 +7,11 @@
 // Kunci model = apiModel yang dikirim ke upstream & /deduct.
 import { useEffect, useState } from 'react'
 export const CREATEPULSE_PRICE_FALLBACK: Record<string, number> = {
-  // Varian dasar (tanpa durasi khusus)
-  'dreamina-seedance-2.0': 1500,
-  'dreamina-seedance-2.5': 1500,
-  // 15/20/30 detik
-  'dreamina-seedance-2.0-15s': 2250,
-  'dreamina-seedance-2.5-15s': 2500,
-  'dreamina-seedance-2.5-20s': 3000,
-  'dreamina-seedance-2.5-30s': 4500,
-  'veo-omni-10s': 2250,
+  // Hanya Seedance 2.0 (FAST) yang dipakai.
+  'dreamina-seedance-2.0': 700,
 }
 
-export const CREATEPULSE_DEFAULT_FALLBACK = 1500
+export const CREATEPULSE_DEFAULT_FALLBACK = 700
 
 export interface CreatepulsePricing {
   /** Harga efektif per model (Rp/generate). */
