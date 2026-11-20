@@ -118,9 +118,13 @@ function jobIdDari(bodyText: string): string | null {
 /**
  * Status yang PASTI ditolak sebelum job dibuat → jatah tiket dikembalikan.
  * 5xx/timeout sengaja TIDAK di sini: job bisa saja sudah terbentuk.
+ *
+ * 429 ditangani tersendiri di `settleTicket`: klien mengulang dengan usage_id
+ * yang sama, jadi cukup lepas reservasi — me-refund membuat klaim ulang ditolak.
  */
 function menolakSebelumJob(status: number, bodyText: string): boolean {
-  if ([400, 401, 402, 403, 404, 409, 422, 429].includes(status)) return true
+  if (status === 429) return false
+  if ([400, 401, 402, 403, 404, 409, 422].includes(status)) return true
   return status === 503 && /coba lagi dalam|try again/i.test(bodyText)
 }
 
@@ -134,6 +138,10 @@ export function settleTicket(
   if (!usageId) return
   if (status >= 200 && status < 300 && jobIdDari(bodyText)) {
     noteChargeTicketJob(provider, usageId, jobIdDari(bodyText))
+  } else if (status === 429) {
+    // Rate-limit: klien mengulang dengan usage_id yang sama → lepas reservasi
+    // saja, jangan refund (kalau refund, klaim ulang ditolak).
+    releaseChargeTicket(provider, usageId)
   } else if (menolakSebelumJob(status, bodyText)) {
     releaseChargeTicket(provider, usageId)
     // Generate ini jelas tidak pernah membuat job — kembalikan saldonya langsung.

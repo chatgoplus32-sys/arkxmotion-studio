@@ -865,16 +865,29 @@ function estSecondsDari(bodyText: string): number | null {
  * Status yang PASTI ditolak sebelum job dibuat → tiket dilepas supaya klien boleh
  * mengulang dengan tiket yang sama (mis. 429). 5xx/timeout sengaja TIDAK di
  * sini: job bisa saja sudah terbentuk, dan tiket yang lepas membuka job ganda.
+ *
+ * 429 DITANGANI TERSENDINGI: itu rate-limit sementara, dan klien
+ * (`runWithNexabotThrottleRetry`) PASTI mengulang dengan usage_id yang sama.
+ * Me-refund usage di sini mengubah statusnya jadi 'refunded', sehingga klaim
+ * ulang ditolak ("Tiket pembayaran sudah tidak berlaku"). Cukup lepas reservasi.
  */
 function upstreamMenolakSebelumJob(status: number, bodyText: string): boolean {
-  if ([400, 401, 402, 403, 404, 409, 422, 429].includes(status)) return true
+  if (status === 429) return false // ditangani di selesaikanTiket: lepas saja, jangan refund
+  if ([400, 401, 402, 403, 404, 409, 422].includes(status)) return true
   return status === 503 && /coba lagi dalam/i.test(bodyText)
 }
 
 /** Catat hasil relay pada tiket: hanguskan kalau job dibuat, lepas kalau ditolak. */
 function selesaikanTiket(usageId: number, status: number, bodyText: string): void {
-  if (upstreamMembuatJob(status, bodyText)) consumeChargeTicket(usageId, jobIdDari(bodyText))
-  else if (upstreamMenolakSebelumJob(status, bodyText)) {
+  if (upstreamMembuatJob(status, bodyText)) {
+    consumeChargeTicket(usageId, jobIdDari(bodyText))
+  } else if (status === 429) {
+    // Rate-limit sementara: klien (runWithNexabotThrottleRetry) PASTI mengulang
+    // dengan usage_id yang SAMA. Lepas reservasi supaya bisa diklaim lagi, tapi
+    // JANGAN refund — kalau usage jadi 'refunded', klaim ulang ditolak dengan
+    // "Tiket pembayaran sudah tidak berlaku (generate dibatalkan/direfund)".
+    releaseChargeTicket(usageId)
+  } else if (upstreamMenolakSebelumJob(status, bodyText)) {
     releaseChargeTicket(usageId)
     // Generate ini jelas tidak pernah membuat job — kembalikan saldonya langsung.
     // Idempoten dengan /refund: pemanggilan klien setelah ini = no-op.

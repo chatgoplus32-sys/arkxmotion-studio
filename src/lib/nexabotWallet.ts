@@ -109,13 +109,18 @@ export function nexabotFreeForModel(wallet: NexabotWallet | null | undefined, mo
  * situ: saldonya bisa kosong dan generate yang sudah dibayar lewat paket gagal
  * di upstream dengan 402 "Kredit tidak cukup". Tanpa paket, kunci pribadi tetap
  * didahulukan seperti biasa.
+ *
+ * Admin juga memakai kunci server kalau tersedia: admin sengaja SKIP pemotongan
+ * saldo (`coveredByPackage` tetap false), jadi tanpa pengecualian ini API key
+ * pribadi admin yang terpakai → pay-as-you-go → kredit upstream terpotong.
  */
 export function nexabotPreferServerKey(opts: {
   hasOwnKey: boolean
   serverReady: boolean
   coveredByPackage: boolean
+  isAdmin?: boolean
 }): boolean {
-  return opts.serverReady && (opts.coveredByPackage || !opts.hasOwnKey)
+  return opts.serverReady && (opts.isAdmin === true || opts.coveredByPackage || !opts.hasOwnKey)
 }
 
 /**

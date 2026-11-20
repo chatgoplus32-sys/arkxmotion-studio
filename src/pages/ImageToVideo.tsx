@@ -3321,6 +3321,7 @@ export default function ImageToVideoPage() {
           hasOwnKey: hasActiveKey,
           serverReady: serverKeyReady,
           coveredByPackage: gratisKarenaPaket,
+          isAdmin: currentUser?.role === 'admin',
         })
         if (!pakaiKunciServer && gratisKarenaPaket) {
           addLog(`⚠️ Paket aktif tapi kunci NexaBot server belum tersedia (${serverKeyReason || 'tidak diketahui'}) — mencoba API key pribadi`, 'warn', 'nexabot')

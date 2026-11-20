@@ -109,6 +109,7 @@ export default function TravelPhotoPage() {
       hasOwnKey: !!(nbApiKey || nbCookies),
       serverReady,
       coveredByPackage: nbCoveredRef.current,
+      isAdmin: user?.role === 'admin',
     })) return { master: true, ticket }
     if (nbApiKey || nbCookies) return { apiKey: nbApiKey, cookies: nbCookies, ticket }
     throw new Error('NexaBot: tidak ada API key aktif dan kunci server belum tersedia — tambahkan API key di halaman Providers atau top up / ambil paket dulu.')

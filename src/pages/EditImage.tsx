@@ -382,6 +382,7 @@ export default function EditImagePage() {
       hasOwnKey: !!(apiKey || cookies),
       serverReady,
       coveredByPackage: nbCoveredRef.current,
+      isAdmin: user?.role === 'admin',
     })) return { master: true, ticket }
     if (apiKey || cookies) return { apiKey, cookies, ticket }
     throw new Error('NexaBot: tidak ada API key aktif dan kunci server belum tersedia — tambahkan API key di halaman Providers atau top up / ambil Premium Booster dulu.')

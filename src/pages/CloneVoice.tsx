@@ -219,6 +219,7 @@ export default function CloneVoicePage() {
       hasOwnKey: !!(apiKey || cookies),
       serverReady,
       coveredByPackage: coveredRef.current,
+      isAdmin: user?.role === 'admin',
     })) return { master: true, ticket }
     if (apiKey || cookies) return { apiKey, cookies, ticket }
     throw new Error('NexaBot: tidak ada API key/sesi sendiri dan kredensial server belum tersedia — top up NexaBot / ambil paket, atau tambahkan API key di halaman Providers.')

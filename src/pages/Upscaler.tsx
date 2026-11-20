@@ -360,7 +360,7 @@ export default function UpscalerPage() {
           const nbApiKey = getNexabotApiKey()
           const nbCookies = getNexabotCookies()
           let auth: any
-          if (nexabotPreferServerKey({ hasOwnKey: !!(nbApiKey || nbCookies), serverReady, coveredByPackage })) {
+          if (nexabotPreferServerKey({ hasOwnKey: !!(nbApiKey || nbCookies), serverReady, coveredByPackage, isAdmin: user?.role === 'admin' })) {
             auth = { master: true, ticket: nbChargeTicket }
           } else if (nbApiKey || nbCookies) {
             auth = { apiKey: nbApiKey, cookies: nbCookies, ticket: nbChargeTicket }

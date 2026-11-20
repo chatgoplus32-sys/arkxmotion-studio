@@ -900,6 +900,7 @@ export async function submitNexabot(
           attempt,
           attempts,
           retryAfterHeader: res.headers.get('retry-after'),
+          errText,
           antrianSendiri: isAntreanRelay(errText),
           sisaBudgetMs: budgetMs - (Date.now() - mulai),
           sisaQueueBudgetMs: queueBudgetMs - (Date.now() - mulai),
@@ -956,9 +957,37 @@ export async function submitNexabot(
  * Ambil hitungan mundur (detik) dari body 503 throttle nexabot.id,
  * mis. `... Coba lagi dalam ~141s.` → 141. null kalau tidak ada.
  */
+/**
+ * Ambil jumlah detik tunggu dari pesan throttle NexaBot. Menangani dua format:
+ *  - "coba lagi dalam ~30 s" / "coba lagi dalam 30 detik"
+ *  - "Jeda mode unlimited: tunggu 1 menit 10 detik lagi sebelum generate berikutnya"
+ *  - "Jeda mode unlimited: tunggu 45 detik lagi ..."
+ *
+ * Kalau tidak dikenali, klien pakai delay default kecil (2–5s) dan menyerah
+ * setelah ±13s — padahal jeda NexaBot bisa >1 menit. Itu persis yang bikin
+ * generate add-on gagal walau paket Unlimited aktif.
+ */
 export function parseNexabotThrottleSeconds(errText: string): number | null {
-  const m = /coba lagi dalam\s*~?\s*(\d+)\s*s/i.exec(errText || '')
-  return m ? Math.max(1, Number(m[1])) : null
+  const teks = String(errText || '')
+  // Format "coba lagi dalam ~N s/detik"
+  const m = /coba lagi dalam\s*~?\s*(\d+)\s*(?:s|detik)/i.exec(teks)
+  if (m) return Math.max(1, Number(m[1]))
+
+  // Format "tunggu N menit M detik lagi" (N bisa 0)
+  const mm = /tunggu\s*(\d+)\s*menit\s*(?:(\d+)\s*detik)?/i.exec(teks)
+  if (mm) {
+    const total = Number(mm[1]) * 60 + Number(mm[2] || 0)
+    if (total > 0) return total
+  }
+
+  // Format "tunggu N detik lagi" (tanpa menit)
+  const md = /tunggu\s*(\d+)\s*detik/i.exec(teks)
+  if (md) {
+    const total = Number(md[1])
+    if (total > 0) return total
+  }
+
+  return null
 }
 
 /** Error throttle dengan info tunggu — dipakai submit untuk retry terjadwal. */
@@ -1546,6 +1575,7 @@ export async function submitNexabotGptImage(
           attempt,
           attempts,
           retryAfterHeader: res.headers.get('retry-after'),
+          errText,
           antrianSendiri: isAntreanRelay(errText),
           sisaBudgetMs: budgetMs - (Date.now() - mulai),
           sisaQueueBudgetMs: queueBudgetMs - (Date.now() - mulai),
@@ -1869,6 +1899,7 @@ export async function submitNexabotNexadance(
           attempt,
           attempts,
           retryAfterHeader: res.headers.get('retry-after'),
+          errText,
           antrianSendiri: isAntreanRelay(errText),
           sisaBudgetMs: budgetMs - (Date.now() - mulai),
           sisaQueueBudgetMs: queueBudgetMs - (Date.now() - mulai),

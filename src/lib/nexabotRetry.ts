@@ -58,6 +58,28 @@ export function parseRetryAfterMs(header: string | null | undefined, nowMs: numb
   return Math.max(0, at - nowMs)
 }
 
+/**
+ * NexaBot mengirim jeda di BODY 429, bukan di header `Retry-After`:
+ *   "Jeda mode unlimited: tunggu 1 menit 10 detik lagi sebelum generate berikutnya"
+ *   "Jeda mode unlimited: tunggu 24 detik lagi ..."
+ *   "coba lagi dalam ~30 s"
+ * Tanpa ini klien memakai backoff 2–5s dan menyerah setelah ±13s, padahal jedanya
+ * bisa >1 menit — itu yang bikin generate add-on gagal walau paket Unlimited aktif.
+ */
+export function parseNexabotBodyRetryMs(errText: string | null | undefined): number | null {
+  const teks = String(errText || '')
+  let m = /tunggu\s*(\d+)\s*menit\s*(?:(\d+)\s*detik)?/i.exec(teks)
+  if (m) {
+    const detik = Number(m[1]) * 60 + Number(m[2] || 0)
+    if (detik > 0) return detik * 1000
+  }
+  m = /coba lagi dalam\s*~?\s*(\d+)\s*(?:s|detik)/i.exec(teks)
+  if (m) return Math.max(1, Number(m[1])) * 1000
+  m = /tunggu\s*(\d+)\s*detik/i.exec(teks)
+  if (m && Number(m[1]) > 0) return Number(m[1]) * 1000
+  return null
+}
+
 export interface NexabotBackoffOptions {
   /** Jeda percobaan pertama; default 3000ms (sama dengan interval poll lama). */
   baseMs?: number
@@ -159,6 +181,8 @@ export function nexabotSubmit429Decision(params: {
   attempt: number
   attempts: number
   retryAfterHeader?: string | null
+  /** Body JSON error 429 — sumber jeda "Jeda mode unlimited: tunggu ..." */
+  errText?: string | null
   antrianSendiri?: boolean
   /** Sisa anggaran waktu klien (ms) sejak submit dimulai — untuk 429 upstream. */
   sisaBudgetMs: number
@@ -170,15 +194,23 @@ export function nexabotSubmit429Decision(params: {
   nowMs?: number
 }): NexabotRetryDecision {
   const {
-    attempt, attempts, retryAfterHeader, antrianSendiri = false,
+    attempt, attempts, retryAfterHeader, errText, antrianSendiri = false,
     sisaBudgetMs, sisaQueueBudgetMs, sudahMenungguMs = 0, opts = {}, nowMs = Date.now(),
   } = params
   const message = antrianSendiri
     ? 'antrean generate penuh — member lain sedang jalan'
     : describeNexabotStatus(429)
   const hint = parseRetryAfterMs(retryAfterHeader, nowMs)
-  const delayMs = nexabotRetryDelayMs({ attempt, retryAfterHeader, opts, nowMs })
-  const habisPercobaan = !antrianSendiri && attempt >= attempts
+  const bodyHintMs = parseNexabotBodyRetryMs(errText)
+  // Jeda dari body NexaBot lebih otoritatif daripada backoff: dia tahu kapan
+  // akun Unlimitednya boleh generate lagi. Kurangi 2s supaya retry tidak terlambat.
+  const jedaMs = bodyHintMs != null
+    ? Math.max(1000, bodyHintMs - 2000)
+    : nexabotRetryDelayMs({ attempt, retryAfterHeader, opts, nowMs })
+  const delayMs = Math.min(jedaMs, opts.maxRetryAfterMs ?? 180_000)
+  // Kalau NexaBot memberi anjuran waktu dari body, jangan berhenti karena
+  // `attempts` — selama masih ada anggaran waktu, tunggu sampai jedanya lewat.
+  const habisPercobaan = !antrianSendiri && bodyHintMs == null && hint == null && attempt >= attempts
   const sisa = antrianSendiri ? (sisaQueueBudgetMs ?? sisaBudgetMs) : sisaBudgetMs
   // Menunggu lebih lama dari sisa anggaran hanya membuat user melihat spinner
   // palsu; lebih baik berhenti sekarang dengan alasan yang jelas.
@@ -187,9 +219,11 @@ export function nexabotSubmit429Decision(params: {
   if (!tidakSempat && !habisPercobaan) return { ulang: true, delayMs, message }
 
   const sudahMenunggu = Math.round(sudahMenungguMs / 1000)
-  const anjuran = hint != null
-    ? ` — coba lagi dalam ${Math.max(1, Math.round(hint / 1000))} detik`
-    : ' — tunggu sebentar lalu coba lagi'
+  const anjuran = bodyHintMs != null
+    ? ` — coba lagi dalam ${Math.max(1, Math.round(bodyHintMs / 1000))} detik`
+    : hint != null
+      ? ` — coba lagi dalam ${Math.max(1, Math.round(hint / 1000))} detik`
+      : ' — tunggu sebentar lalu coba lagi'
   return {
     ulang: false,
     delayMs,
