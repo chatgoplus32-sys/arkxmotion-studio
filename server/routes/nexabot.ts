@@ -364,11 +364,21 @@ function tanpaKredensial(headers: unknown): Record<string, string> {
 
 // Mode session: request ditandai dengan cookie login nexabot.id (dikirim klien
 // sebagai header X-Nexabot-Cookie karena browser melarang set header `Cookie`).
+// NexaBot menolak request tanpa User-Agent browser sebagai "akses otomatis"
+// (HTTP 403) pada endpoint /api/v1/generate — padahal paket Unlimited hanya
+// dihormati di endpoint web itu. Tanpa UA ini relay jatuh ke API key yang
+// memotong kredit walau member punya paket Unlimited.
+const NEXABOT_BROWSER_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+
 function sessionHeaders(cookies: string): Record<string, string> {
   return {
     'Cookie': cookies,
     'Origin': NEXABOT_BASE,
     'Referer': `${NEXABOT_BASE}/`,
+    'User-Agent': NEXABOT_BROWSER_UA,
+    'Accept': 'application/json, text/plain, */*',
+    'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
   }
 }
 
