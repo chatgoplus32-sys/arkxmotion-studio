@@ -87,6 +87,13 @@ export const NEXABOT_PROXY_POLICY: Record<NexabotProxyAction, NexabotProxyPolicy
 /** Id model video yang diterima upstream. Default (tanpa field `model`) = omni_flash. */
 export const NEXABOT_VIDEO_MODELS = ['omni_flash', 'nexadance', 'omni_lama'] as const
 
+/** Id model gambar yang diterima /api/v1/generate mode=img (jalur Unlimited). */
+export const NEXABOT_IMAGE_MODELS = [
+  'nano_banana', 'nano_banana_lite', 'nano_banana_pro', 'nano_banana_2',
+  'gpt_image_2', 'gpt_image_2_5_flare', 'gpt_image_2_5_sunburst',
+  'mai_image_25', 'mai_image_25_pro', 'mai_image_26', 'mai_image_26_flash',
+] as const
+
 /**
  * Validasi `model` dari klien SEBELUM request dibangun.
  *
@@ -96,9 +103,10 @@ export const NEXABOT_VIDEO_MODELS = ['omni_flash', 'nexadance', 'omni_lama'] as 
  * Ditolak di sini supaya pesannya jelas (400 lokal), bukan 400 dari upstream
  * di tengah antrian submit.
  */
-export function nexabotVideoModelError(model: unknown): string | null {
+export function nexabotVideoModelError(model: unknown, opts?: { allowImage?: boolean }): string | null {
   if (model === undefined || model === null || model === '') return null
   if (typeof model === 'string' && (NEXABOT_VIDEO_MODELS as readonly string[]).includes(model)) return null
+  if (opts?.allowImage && typeof model === 'string' && (NEXABOT_IMAGE_MODELS as readonly string[]).includes(model)) return null
   return `Model tidak valid: ${JSON.stringify(model)}. Pilih omni_flash, nexadance, atau omni_lama (model=omni sudah tidak berlaku sejak update 10 Nov 2026).`
 }
 

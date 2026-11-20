@@ -1190,9 +1190,11 @@ router.post('/submit', async (req: Request, res: Response) => {
   if (Object.keys(auth.headers).length === 0) {
     return res.status(400).json({ ok: false, error: auth.error || 'Missing X-Api-Key header' })
   }
-  // Model video divalidasi SEBELUM tiket dibaca: permintaan bergaya curl dengan
+  // Model divalidasi SEBELUM tiket dibaca: permintaan bergaya curl dengan
   // model salah tidak boleh menghabiskan tiket /deduct yang sudah terbayar.
-  const salahModel = nexabotVideoModelError(req.body?.model)
+  // Mode `img` memakai model image (mai_image_*, nano_banana_*, gpt_image_*),
+  // bukan model video — izinkan daftar itu supaya generate gambar lolos.
+  const salahModel = nexabotVideoModelError(req.body?.model, { allowImage: req.body?.mode === 'img' })
   if (salahModel) {
     lepasReservasi(auth.accountId)
     return res.status(400).json({ ok: false, error: salahModel })
@@ -1310,9 +1312,9 @@ router.post('/generate', async (req: Request, res: Response) => {
   }
 
   const body = req.body
-  // Model video divalidasi dulu supaya permintaan invalid tidak menyentuh
-  // upstream sama sekali (lihat nexabotVideoModelError).
-  const salahModel = nexabotVideoModelError(body?.model)
+  // Model divalidasi dulu supaya permintaan invalid tidak menyentuh upstream
+  // (lihat nexabotVideoModelError). Mode `img` memakai model image.
+  const salahModel = nexabotVideoModelError(body?.model, { allowImage: body?.mode === 'img' })
   if (salahModel) return res.status(400).json({ ok: false, error: salahModel })
   console.log(`[nexabot-local] POST /api/v1/generate (session, mode: ${body.mode})`)
 
