@@ -183,18 +183,31 @@ async function relayUpstream(
     // Kredensial utama ditolak → coba kredensial server lainnya sebelum
     // menyimpulkan admin salah konfigurasi. Kunci yang kedaluwarsa/salah tempel
     // tidak lagi mematikan jalur generate selama sesi cookie masih sah.
-    if ((response.status === 401 || response.status === 403) && opts.cadangan) {
-      const jenis = opts.cadangan.credential.kind === 'cookie' ? 'sesi cookie server' : 'kunci server'
+    // 429 "sesi penuh" juga dipindah ke akun lain yang lane-nya bebas — ini
+    // failover yang diminta: generate tidak menunggu jeda akun pertama.
+    const sesiPenuh = isNexabotUpstreamBusyText(text)
+    const harusCobaCadangan =
+      !!opts.cadangan &&
+      (response.status === 401 ||
+        response.status === 403 ||
+        (response.status === 429 && (jobAction || sesiPenuh)))
+    if (harusCobaCadangan) {
+      const jenis =
+        response.status === 429
+          ? 'akun Unlimited lain (sesi penuh)'
+          : opts.cadangan!.credential.kind === 'cookie'
+            ? 'sesi cookie server'
+            : 'kunci server'
       console.warn(
-        `[nexabot-local] ${action}: kredensial server ditolak (HTTP ${response.status}) — ulangi dengan ${jenis} cadangan`,
+        `[nexabot-local] ${action}: sesi penuh/ditolak (HTTP ${response.status}) — pindah ke ${jenis}`,
       )
-      const ulang = await kirim(opts.cadangan.headers, opts.cadangan.url || url, opts.cadangan.body)
+      const ulang = await kirim(opts.cadangan!.headers, opts.cadangan!.url || url, opts.cadangan!.body)
       response = ulang.response
       attempts = ulang.attempts
       shared = ulang.shared
       text = await response.text()
-      credential = opts.cadangan.credential
-      akunTerpakai = opts.cadangan.accountId ?? akunTerpakai
+      credential = opts.cadangan!.credential
+      akunTerpakai = opts.cadangan!.accountId ?? akunTerpakai
     }
 
     // Job baru yang sah MENGUNCI lane sampai selesai (akun Unlimited hanya
@@ -495,13 +508,33 @@ function authDariAkun(
       : utama.kind === 'api-key' && akun.cookie
         ? { kind: 'cookie', source: 'master', secret: akun.cookie }
         : null
+
+  // Failover AKUN LAIN saat sesi penuh (429 "Generate sedang berjalan" /
+  // "Jeda mode unlimited"). Cari akun cookie lain yang lane-nya bebas, supaya
+  // generate bisa pindah ke akun Unlimited kedua tanpa menunggu jeda akun pertama.
+  let cadanganAkun: ResolvedUpstreamAuth['cadangan'] = lain
+    ? { headers: headersUntuk(lain), credential: lain, accountId: akun.id }
+    : undefined
+  if (!opts?.kunciSaja && utama.kind === 'cookie') {
+    for (const calon of serverAccounts()) {
+      if (calon.id === akun.id || !calon.cookie) continue
+      const kredensialCalon = kredensialAkun(calon, opts)
+      if (!kredensialCalon) continue
+      const sibuk = nexabotLaneBusy(nexabotSubmitLaneKey(kredensialCalon))
+      if (sibuk.busy || laneDireservasi(calon.id)) continue
+      cadanganAkun = {
+        headers: headersUntuk(kredensialCalon),
+        credential: kredensialCalon,
+        accountId: calon.id,
+      }
+      break
+    }
+  }
   return {
     headers: headersUntuk(utama),
     credential: utama,
     accountId: akun.id,
-    cadangan: lain
-      ? { headers: headersUntuk(lain), credential: lain, accountId: akun.id }
-      : undefined,
+    cadangan: cadanganAkun,
   }
 }
 

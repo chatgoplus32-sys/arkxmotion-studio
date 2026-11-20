@@ -692,7 +692,7 @@ export function nexabotLaneBusy(laneKey: string, nowMs: number = Date.now()): Ne
  * relay, bukan ditembakkan lalu ditolak NexaBot lagi.
  */
 export function isNexabotUpstreamBusyText(text: string): boolean {
-  return /generate sedang berjalan|sudah ada job|masih berjalan|tunggu selesai|terlalu banyak permintaan/i
+  return /generate sedang berjalan|sudah ada job|masih berjalan|tunggu selesai|terlalu banyak permintaan|jeda mode unlimited|dibatasi permintaan \(rate limit\)|mode unlimited: tunggu/i
     .test(text || '')
 }
 
