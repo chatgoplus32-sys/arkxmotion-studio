@@ -1,5 +1,6 @@
 import type { Request } from 'express'
 import { userIdFromToken } from './appToken.js'
+import { walletUserIdFor } from './effectiveWallet.js'
 import { isAdminUser, keyEligibility, masterKey, providerLabel, PROVIDER_SPECS, type ServerKeyProvider } from './providerMasterKey.js'
 import { claimChargeTicket, noteChargeTicketJob, releaseChargeTicket } from './providerChargeTicket.js'
 import { autoRefundUsage } from './autoRefund.js'
@@ -84,7 +85,11 @@ export function decideCredential(
 
   if (!consuming) return { kind: 'server', secret, usageId: null }
 
-  const izin = keyEligibility(provider, userId)
+  // /deduct menulis saldo & `*_usage` pada wallet pemilik (akun utama untuk
+  // akun add-on mode 'parent'). Kelayakan dan klaim tiket harus memakai wallet
+  // yang sama - kalau tidak, akun add-on selalu ditolak walau induk punya saldo.
+  const walletUserId = walletUserIdFor(userId)
+  const izin = keyEligibility(provider, walletUserId)
   if (!izin.ok) return { kind: 'reject', status: 402, error: izin.reason }
 
   // Admin tidak dipotong klien, jadi tidak akan pernah membawa tiket.
@@ -92,7 +97,7 @@ export function decideCredential(
 
   const header = req.headers['x-provider-charge']
   const mentah = Array.isArray(header) ? header[0] : header
-  const cek = claimChargeTicket(provider, userId, mentah)
+  const cek = claimChargeTicket(provider, walletUserId, mentah)
   if (!cek.ok) {
     return { kind: 'reject', status: 402, error: cek.reason || 'Pembayaran generate ini belum terverifikasi.' }
   }

@@ -2,6 +2,7 @@ import crypto from 'crypto'
 import type { Request } from 'express'
 import db from '../db.js'
 import { userIdFromRequest } from './appToken.js'
+import { walletUserIdFor } from './effectiveWallet.js'
 
 export { userIdFromRequest }
 
@@ -130,12 +131,18 @@ export function recordUpstreamUsage({ req, route, statusCode, bodyText, credenti
 
     const biaya = extractCost(bodyText)
 
+    // Pencatatan mengikuti wallet yang menanggung biaya: akun add-on mode
+    // 'parent' ditulis ke akun utama, supaya batas harian (`underDailyCap`)
+    // yang membaca tabel ini sejalan dengan gerbang kelayakan.
+    const pengguna = userIdFromRequest(req)
+    const walletUserId = pengguna == null ? null : walletUserIdFor(pengguna)
+
     db.prepare(
       `INSERT INTO nexabot_upstream_usage
          (user_id, route, credential_kind, credential_fingerprint, credential_source, status_code, cost_field, cost_value, evidence, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
-      userIdFromRequest(req),
+      walletUserId,
       route,
       kredensial.kind,
       credentialFingerprint(kredensial.kind, kredensial.secret),

@@ -1,6 +1,7 @@
 import crypto from 'node:crypto'
 
 import db from '../db.js'
+import { walletUserIdFor } from './effectiveWallet.js'
 import { isAdminUser } from './nexabotChargeTicket.js'
 import {
   MASTER_KEY_SETTING,
@@ -334,10 +335,14 @@ export function serverCredentialEligibility(userId: number): Kelayakan {
   if (serverAccounts().length === 0) {
     return { ok: false, reason: 'Kunci/Sesi NexaBot milik server belum diatur admin' }
   }
+  // Akun add-on mode 'parent' menanggung saldo/paket lewat wallet akun utama,
+  // jadi gerbang ini harus membaca wallet itu - bukan saldo akun add-on yang
+  // memang kosong. Status admin tetap milik akun yang LOGIN.
+  const walletUserId = walletUserIdFor(userId)
   if (isAdminUser(userId)) return ADMIN_LOLOS
-  const izin = memberMayUseMasterKey(userId)
+  const izin = memberMayUseMasterKey(walletUserId)
   if (!izin.ok) return izin
-  const cap = underDailyCap(userId)
+  const cap = underDailyCap(walletUserId)
   if (!cap.ok) return cap
   return { ok: true, reason: masterDailyCap() > 0 ? `${izin.reason} · ${cap.reason}` : izin.reason }
 }
@@ -350,10 +355,13 @@ export function serverCookieEligible(userId: number): Kelayakan {
   if (!serverAccounts().some((a) => a.cookie)) {
     return { ok: false, reason: 'Sesi Unlimited NexaBot milik server belum diatur admin' }
   }
+  // Sama seperti serverCredentialEligibility: baca wallet akun utama untuk
+  // akun add-on mode 'parent' (saldo/paket induk), status admin tetap akun login.
+  const walletUserId = walletUserIdFor(userId)
   if (isAdminUser(userId)) return ADMIN_LOLOS
-  const izin = memberMayUseMasterCookie(userId)
+  const izin = memberMayUseMasterCookie(walletUserId)
   if (!izin.ok) return izin
-  const cap = underDailyCap(userId)
+  const cap = underDailyCap(walletUserId)
   if (!cap.ok) return cap
   return { ok: true, reason: masterDailyCap() > 0 ? `${izin.reason} · ${cap.reason}` : izin.reason }
 }
@@ -366,10 +374,13 @@ export function serverKeyEligible(userId: number): Kelayakan {
   if (!serverAccounts().some((a) => a.apiKey)) {
     return { ok: false, reason: 'Kunci Server NexaBot belum diatur' }
   }
+  // Wallet akun utama untuk akun add-on mode 'parent' - lihat catatan di
+  // serverCredentialEligibility.
+  const walletUserId = walletUserIdFor(userId)
   if (isAdminUser(userId)) return ADMIN_LOLOS
-  const izin = memberMayUseMasterKey(userId)
+  const izin = memberMayUseMasterKey(walletUserId)
   if (!izin.ok) return izin
-  const cap = underDailyCap(userId)
+  const cap = underDailyCap(walletUserId)
   if (!cap.ok) return cap
   return { ok: true, reason: masterDailyCap() > 0 ? `${izin.reason} · ${cap.reason}` : izin.reason }
 }

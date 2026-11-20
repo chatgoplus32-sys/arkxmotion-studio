@@ -7,6 +7,7 @@ import { existsSync, mkdirSync } from 'node:fs'
 import { rhJwtExp, rhJwtExpired, rhJwtSub } from '../lib/rhJwt.js'
 import { userIdFromToken } from '../lib/appToken.js'
 import { isAdminUser, keyEligibility, masterKey } from '../lib/providerMasterKey.js'
+import { walletUserIdFor } from '../lib/effectiveWallet.js'
 import { claimChargeTicket, noteChargeTicketJob, releaseChargeTicket } from '../lib/providerChargeTicket.js'
 import { autoRefundUsage } from '../lib/autoRefund.js'
 import { rhBuildRunBody, rhRunOptions } from '../lib/runninghubOpenApi.js'
@@ -958,12 +959,16 @@ router.all('/', async (req: Request, res: Response) => {
   const consuming = rhActionConsuming(action)
   let usageId: number | null = null
   if (consuming) {
-    const izin = keyEligibility('runninghub', userId)
+    // /deduct menulis saldo & `runninghub_usage` pada wallet pemilik (akun
+    // utama untuk akun add-on mode 'parent'); kelayakan dan klaim tiket harus
+    // memakai wallet yang sama supaya akun add-on tidak selalu ditolak.
+    const walletUserId = walletUserIdFor(userId)
+    const izin = keyEligibility('runninghub', walletUserId)
     if (!izin.ok) return res.status(200).json({ ok: false, error: izin.reason })
     // Admin pemilik pool tidak dipotong klien → tidak membawa tiket.
     if (!isAdminUser(userId)) {
       const h = req.headers['x-provider-charge']
-      const cek = claimChargeTicket('runninghub', userId, Array.isArray(h) ? h[0] : h)
+      const cek = claimChargeTicket('runninghub', walletUserId, Array.isArray(h) ? h[0] : h)
       if (!cek.ok) {
         return res.status(200).json({ ok: false, error: cek.reason || 'Pembayaran generate ini belum terverifikasi server.' })
       }

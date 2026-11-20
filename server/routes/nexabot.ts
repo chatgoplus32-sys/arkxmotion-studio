@@ -44,6 +44,7 @@ import { hasActiveUnlimited } from '../lib/nexabotMasterKey.js'
 import { autoRefundUsage } from '../lib/autoRefund.js'
 import { nexadanceQuota, nexadanceQuotaMessage } from '../lib/nexabotQuota.js'
 import { recordUpstreamUsage, userIdFromRequest, type ResolvedCredential } from '../lib/nexabotUpstreamUsage.js'
+import { walletUserIdFor } from '../lib/effectiveWallet.js'
 import { getNexabotSubmitQueueConfig } from '../lib/nexabotQueueSettings.js'
 
 const router = Router()
@@ -809,7 +810,9 @@ function tiketServer(req: Request, auth: ResolvedUpstreamAuth, route: 'submit' |
 
   const header = req.headers['x-nexabot-charge']
   const mentah = Array.isArray(header) ? header[0] : header
-  const cek = reserveChargeTicket(userId, mentah, route)
+  // /deduct menulis `nexabot_usage` pada wallet pemilik saldo (akun utama untuk
+  // akun add-on mode 'parent'), jadi tiket harus diklaim di wallet yang sama.
+  const cek = reserveChargeTicket(walletUserIdFor(userId), mentah, route)
   if (!cek.ok) return { ok: false, status: 402, reason: cek.reason || 'Pembayaran generate ini belum terverifikasi.' }
   return { ok: true, usageId: cek.usageId ?? null }
 }
@@ -1920,7 +1923,10 @@ router.post('/nexadance', async (req: Request, res: Response) => {
   // UI/alur biasa tidak bisa dilewati dari browser.
   const pakaiKredensialServer = auth.credential?.source === 'master' || auth.credential?.source === 'client-master'
   if (pakaiKredensialServer) {
-    const berhakNexadance = !!gateUserId && (isAdminUser(gateUserId) || hasActiveUnlimited(gateUserId))
+    // Paket dibaca dari wallet pemilik (akun utama untuk akun add-on mode
+    // 'parent') - sama seperti /deduct yang menagih wallet itu.
+    const walletUserId = gateUserId ? walletUserIdFor(gateUserId) : null
+    const berhakNexadance = !!walletUserId && (isAdminUser(gateUserId) || hasActiveUnlimited(walletUserId))
     if (!berhakNexadance) {
       return res.status(403).json({
         ok: false,
@@ -1933,7 +1939,9 @@ router.post('/nexadance', async (req: Request, res: Response) => {
   // key sendiri tidak dibatasi. Ditegakkan juga di /deduct supaya klien berhenti
   // sebelum submit; di sini supaya tidak bisa dilewati dari browser.
   if (pakaiKredensialServer && gateUserId && !isAdminUser(gateUserId)) {
-    const kuota = nexadanceQuota(gateUserId)
+    // Kuota dihitung dari `nexabot_usage` yang ditulis /deduct pada wallet
+    // pemilik, jadi akun add-on harus membaca wallet yang sama.
+    const kuota = nexadanceQuota(walletUserIdFor(gateUserId))
     if (kuota.habis) {
       return res.status(429).json({ ok: false, error: nexadanceQuotaMessage(kuota), quota: kuota })
     }
