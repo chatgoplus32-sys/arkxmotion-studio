@@ -528,18 +528,20 @@ export default function EditImagePage() {
   }
 
   const handleGenerateGpt25 = async () => {
-    // Jalur image premium NexaBot (dokumentasi publik, sinkron): respons langsung
-    // berisi url gambar — tidak ada job_id/poll/download terpisah.
-    const { generateNexabotImageResilient, compressForApi, runWithNexabotThrottleRetry } = await import('@/lib/nexabot')
+    // Endpoint sinkron /api/v1/image HANYA menerima API key — cookie sesi (jalur
+    // Unlimited milik server/member) ditolak 401 "API key tidak valid". Pakai
+    // jalur job /api/v1/generate mode=img lewat submitNexabot + poll + download:
+    // endpoint web itu menghormati paket Unlimited (mode_type: unlimited, 0 kredit).
+    const { submitNexabot, pollNexabotJob, downloadNexabotResult, compressForApi, runWithNexabotThrottleRetry } = await import('@/lib/nexabot')
     const auth = await buildNexabotAuth()
 
     const sizeLabel = nbIsNano
       ? nbAspect
       : NB_IMAGE_SIZES.find((s) => s.v === nbImageSize)?.label ?? nbImageSize
-    addLog(`[1/2] Submit ${currentModel.label} (${sizeLabel}${nbHasResolution ? `, ${nbResolution}` : ''}${refFiles.length ? `, ${refFiles.length} referensi` : ''})...`, 'info')
+    addLog(`[1/3] Submit ${currentModel.label} (${sizeLabel}${nbHasResolution ? `, ${nbResolution}` : ''}${refFiles.length ? `, ${refFiles.length} referensi` : ''}) via jalur job Unlimited...`, 'info')
 
-    // Referensi dipadatkan dulu: data URI (maks 10) dikirim langsung di body —
-    // dokumentasi /api/v1/image membolehkan data URI tanpa unggah terpisah.
+    // Referensi dipadatkan jadi data URI lalu dikirim lewat `media` (didukung
+    // submitNexabot → /api/v1/generate), bukan `reference_images` milik /image.
     const references: string[] = []
     for (const f of refFiles) {
       const small = await compressForApi(f, 1024, 0.72)
@@ -551,38 +553,42 @@ export default function EditImagePage() {
       }))
     }
 
-    const result = await runWithNexabotThrottleRetry(() => generateNexabotImageResilient({
+    const submitted = await runWithNexabotThrottleRetry(() => submitNexabot({
+      mode: 'img',
       prompt: prompt.trim(),
       model: currentModel?.upstreamModel,
-      aspect: nbIsNano ? nbAspect : undefined,
-      resolution: nbHasResolution ? nbResolution : undefined,
-      imageSize: !nbIsNano ? nbImageSize : undefined,
-      references,
-    }, auth, {
-      // Fallback mesin mati → jalur job GPT Image dicatat sebagai log biasa.
-      onLog: (msg) => addLog(msg, 'warn'),
-    }), {
+      aspect: nbIsNano
+        ? (/^(1:1|4:5|5:4)$/.test(nbAspect) ? 1 : /^(9:16|3:4|2:3|1:4|1:8)$/.test(nbAspect) ? 5 : 2)
+        : undefined,
+      media: references.length ? references : undefined,
+    }, auth), {
       onThrottle: (waitSeconds) => {
         addLog(`Antrean generate NexaBot penuh — menunggu ${waitSeconds}s lalu submit otomatis...`, 'warn')
       },
     })
-    addLog(`   ✓ Gambar jadi (${result.model ?? currentModel?.upstreamModel}${result.viaJobFallback ? ' — via fallback jalur job GPT Image' : result.fallback ? ` — upstream memilih Nano Banana Pro; requested: ${result.requestedModel}` : ''})`, 'success')
-    addLog(`   Biaya: ${result.creditCost ?? 0.1} kredit${result.creditBalance != null ? ` — sisa saldo ${result.creditBalance}` : ''}`, 'debug')
 
-    // URL hasil bisa langsung dipakai (media publik). Unduh sebagai blob supaya
-    // bisa disimpan di IndexedDB galeri; kalau unduhan gagal, pakai URL remote.
-    let finalUrl = result.url
-    try {
-      const dl = await fetch(result.url)
-      if (dl.ok) {
-        const blob = await dl.blob()
-        finalUrl = URL.createObjectURL(blob)
-      } else {
-        addLog(`   Gagal mengunduh langsung (HTTP ${dl.status}) — memakai URL upstream`, 'warn')
-      }
-    } catch {
-      addLog('   Gagal mengunduh langsung — memakai URL upstream', 'warn')
+    if (!submitted.ok || !submitted.jobId) {
+      throw new Error(submitted.error || 'Submit gambar gagal')
     }
+    addLog(`   ✓ Job ID: ${submitted.jobId}`, 'success')
+
+    addLog(`[2/3] Polling status...`, 'info')
+    const job = await pollNexabotJob(submitted.jobId, auth, (msg) => addLog(`   ${msg}`, 'debug'))
+    if (job.status === 'failed') throw new Error(job.error || 'Job gambar gagal')
+    addLog(`   ✓ Status: ${job.status}`, 'success')
+
+    addLog(`[3/3] Download hasil...`, 'info')
+    const dlResult = await downloadNexabotResult(submitted.jobId, auth)
+    if (!dlResult.ok || !dlResult.url) throw new Error(dlResult.error || 'Download gambar gagal')
+
+    let finalUrl = dlResult.url
+    try {
+      const dl = await fetch(dlResult.url)
+      if (dl.ok) finalUrl = URL.createObjectURL(await dl.blob())
+    } catch { /* pakai URL upstream kalau unduhan gagal */ }
+
+    addLog(`   ✓ Selesai (model ${currentModel?.upstreamModel ?? 'default'})`, 'success')
+    addLog(`   Biaya: ${submitted.creditCost ?? 0.1} kredit${submitted.creditBalance != null ? ` — sisa saldo ${submitted.creditBalance}` : ''}`, 'debug')
 
     const item: GalleryItem = {
       id: `editimg-${Date.now()}`,

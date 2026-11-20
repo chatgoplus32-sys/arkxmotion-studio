@@ -117,6 +117,9 @@ export function nexabotVideoModelError(model: unknown): string | null {
 export function nexabotWebModelId(model: string): string | null {
   if (model === 'omni_lama') return 'vertex_omni_flash'
   if (model === 'nexadance') return 'nexadance_3_0'
+  // Model gambar (nano_banana*, gpt_image*, mai_image*) memakai id yang sama
+  // persis di endpoint web /api/v1/generate mode=img — teruskan apa adanya.
+  if (/^(nano_banana|gpt_image|mai_image)/i.test(model)) return model
   return null
 }
 
