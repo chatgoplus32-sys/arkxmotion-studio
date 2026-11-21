@@ -188,18 +188,35 @@ export async function resumePendingGenerationJobs(): Promise<void> {
         tambahHasil(job, url)
       }
     } catch (err: any) {
-      const terminal = err?.name === 'NexabotJobFailed' || err?.name === 'PosbotJobFailed'
-      const pesan = terminal ? (err?.message || 'Job gagal') : `Pemantauan terputus; akan dicoba lagi otomatis. ${err?.message || ''}`
+      const reason = String(err?.message || '')
+      // Job yang sudah tidak ditemukan di provider (404 / TTL terhapus) TIDAK
+      // bisa dilanjutkan. Tanpa penanganan ini error-nya dianggap non-terminal
+      // → job tetap `pending` → di-retry tiap 30 detik → notifikasi "Perlu
+      // diulang" muncul terus walaupun tidak ada yang bisa diulang.
+      const jobNotFound = /tidak ditemukan|not found|404|job .*hilang/i.test(reason)
+      const terminal =
+        err?.name === 'NexabotJobFailed' ||
+        err?.name === 'PosbotJobFailed' ||
+        jobNotFound
+      const pesan = terminal
+        ? (err?.message || 'Job gagal')
+        : `Pemantauan terputus; akan dicoba lagi otomatis. ${err?.message || ''}`
       // Job gagal secara terminal → kembalikan potongan yang dipasangkan ke jobId ini.
       if (terminal) await refundResumeCharge(job.provider, job.job_id)
-      addResumeFailure({
-        id: job.job_id,
-        provider: job.provider,
-        page: page in GENERATION_PAGE_PATH ? page : 'video-edit',
-        prompt: job.prompt || '',
-        error: pesan,
-        at: Date.now(),
-      })
+      // Job tidak ditemukan tidak bisa diulang → jangan tampilkan notifikasi
+      // "Perlu diulang"; tandai job failed dan buang entri lama bila ada.
+      if (jobNotFound) {
+        dismissResumeFailure(job.job_id)
+      } else {
+        addResumeFailure({
+          id: job.job_id,
+          provider: job.provider,
+          page: page in GENERATION_PAGE_PATH ? page : 'video-edit',
+          prompt: job.prompt || '',
+          error: pesan,
+          at: Date.now(),
+        })
+      }
       await finishGenerationJob({
         provider: job.provider === 'posbot' ? 'posbot' : 'nexabot',
         jobId: job.job_id,

@@ -14,6 +14,8 @@ function harness() {
   let results = 0
   let lists = 0
   let refunds = 0
+  let failuresAdded = 0
+  let failuresDismissed = 0
   const job = { provider: 'nexabot', job_id: 'test-job', page: 'video-edit' }
   const exports: any = {}
   const modules: Record<string, any> = {
@@ -22,7 +24,7 @@ function harness() {
     '@/lib/backgroundTasks': {
       GENERATION_PAGE_PATH: { 'video-edit': '/video-edit' },
       startGenerationTask: () => 'task', removeActiveTask: () => {},
-      addResumeFailure: () => {}, dismissResumeFailure: () => {}, addResult: () => { results++ },
+      addResumeFailure: () => { failuresAdded++ }, dismissResumeFailure: () => { failuresDismissed++ }, addResult: () => { results++ },
     },
     '@/lib/pendingCharges': {
       pairPendingCharge: () => {}, hasResumeCharge: () => false,
@@ -49,6 +51,7 @@ function harness() {
     },
   })
   return { api: exports, patches, get polls() { return polls }, get results() { return results }, get lists() { return lists }, get refunds() { return refunds },
+    get failuresAdded() { return failuresAdded }, get failuresDismissed() { return failuresDismissed },
     setVisible: () => { visible = true }, setToken: (value: string | null) => { token = value },
     setFailure: (error: Error | null) => { failure = error },
     tick: async () => { tick?.(); await new Promise(resolve => setImmediate(resolve)) },
@@ -89,4 +92,19 @@ test('only confirmed provider failure is terminal', async () => {
   await h.api.resumePendingGenerationJobs()
   assert.equal(h.patches[0].status, 'failed')
   assert.equal(h.refunds, 1, 'kegagalan terminal harus mengembalikan saldo potongan job itu')
+})
+
+test('job tidak ditemukan (404/TTL): failed, tidak notifikasi "Perlu diulang", tidak retry', async () => {
+  const h = harness()
+  h.setVisible()
+  h.setFailure(new Error('Job tidak ditemukan'))
+  await h.api.resumePendingGenerationJobs()
+  assert.equal(h.patches[0].status, 'failed', 'job hilang harus ditandai failed supaya tidak di-retry tiap 30 detik')
+  assert.equal(h.refunds, 1, 'job hilang terminal → saldo potongan dikembalikan')
+  assert.equal(h.failuresAdded, 0, 'job yang tidak bisa diulang tidak boleh memunculkan notifikasi "Perlu diulang"')
+  assert.equal(h.failuresDismissed, 1, 'entri lama dibersihkan')
+
+  // Siklus berikutnya tidak boleh menambah notifikasi lagi.
+  await h.api.resumePendingGenerationJobs()
+  assert.equal(h.failuresAdded, 0)
 })
