@@ -237,7 +237,7 @@ export default function RunningHubTopupPage() {
       {step === 'pay' && (
         <Section
           title="Pembayaran via QRIS BasuNiPay"
-          sub="Scan QRIS dinamis di bawah — nominal TEPAT, terverifikasi otomatis"
+          sub="Klik Bayar → checkout BasuNiPay, nominal TEPAT & terverifikasi otomatis"
         >
           <BasunipayCheckoutButton url={basunipay?.checkout_url} payable={basunipay?.payable_amount} image={basunipay?.qris_image} />
 

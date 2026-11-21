@@ -245,7 +245,7 @@ export default function RegisterStatusPage() {
                             ? `Ditolak admin: ${result.payment.adminNote || 'tanpa keterangan'}. Kirim ulang pembayaran atau hubungi admin.`
                             : result.payment
                               ? 'Pembayaran diverifikasi otomatis — akun aktif begitu dana masuk.'
-                              : 'Bayar via QRIS BasuNiPay (lihat di bawah) — akun aktif otomatis.'}
+                              : 'Bayar via QRIS BasuNiPay — klik tombol Bayar, akun aktif otomatis.'}
                       </p>
                     </div>
                   </div>
@@ -260,7 +260,7 @@ export default function RegisterStatusPage() {
                     <span className="text-sm font-medium">Konfirmasi Pembayaran (QRIS)</span>
                   </div>
                   <p className="text-xs text-muted-foreground mb-3">
-                    Belum bayar? Scan QRIS BasuNiPay di bawah — akun terkunci otomatis begitu pembayaran masuk.
+                    Belum bayar? Klik tombol Bayar untuk membuka checkout BasuNiPay — akun aktif otomatis begitu pembayaran masuk.
                   </p>
                   {checkout ? (
                     <div className="mb-3">
