@@ -132,9 +132,9 @@ export async function createBasunipayPayment(opts: {
 }
 
 /** Status yang dianggap lunas oleh penyedia — dipakai untuk menandai bayar. */
-const PAID_STATUSES = new Set(['paid', 'success', 'completed', 'settlement', 'settled', 'done', 'paid_out', 'verified'])
+export const PAID_STATUSES = new Set(['paid', 'success', 'completed', 'settlement', 'settled', 'done', 'paid_out', 'verified'])
 /** Status terminal (checkout ditutup penyedia). */
-const CLOSED_STATUSES = new Set(['expired', 'failed', 'cancelled', 'canceled'])
+export const CLOSED_STATUSES = new Set(['expired', 'failed', 'cancelled', 'canceled'])
 
 /**
  * Checkout ditutup penyedia TAPI baris top-up masih pending — kemungkinan

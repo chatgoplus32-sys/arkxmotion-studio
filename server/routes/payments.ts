@@ -6,8 +6,8 @@ import {
   checkPaymentEmailOnce,
   paymentEmailReady,
 } from '../lib/paymentEmailWatcher.js'
-import { QRIS_TABLES, extractAmounts, matchIncomingAmount, logPaymentVerify } from '../lib/qrisPayment.js'
-import { basunipayReady, pollBasunipayPayments, createBasunipayPayment } from '../lib/basunipay.js'
+import { QRIS_TABLES, extractAmounts, matchIncomingAmount, approveTopupRef, logPaymentVerify } from '../lib/qrisPayment.js'
+import { basunipayReady, basunipayStatus, PAID_STATUSES, pollBasunipayPayments, createBasunipayPayment } from '../lib/basunipay.js'
 
 type BasunipayCheckout = {
   checkout_url: string
@@ -238,6 +238,80 @@ router.post('/qris/membership', async (req, res: Response) => {
     res.status(500).json({ error: 'Internal server error' })
   }
 })
+
+/**
+ * Paksa verifikasi segera ke BasuNiPay untuk satu pengajuan pending — admin
+ * tidak perlu menunggu poller 2 menit. Kalau BasuNiPay sudah menandai order
+ * sebagai lunas, auto-approve akan trigger sekarang (jalan mesinya yang sama
+ * dengan poller, jadi konsisten).
+ */
+router.post(
+  '/admin/payments/qris/verify/:refTable/:refId',
+  authenticateToken,
+  requireAdmin,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const refTable = String(req.params.refTable)
+      const refId = Number(req.params.refId)
+      const t = QRIS_TABLES.find((x) => x.table === refTable)
+      if (!t) return res.status(400).json({ error: 'Tabel pembayaran tidak dikenal' })
+      if (!Number.isInteger(refId) || refId <= 0) {
+        return res.status(400).json({ error: 'Pengajuan tidak valid' })
+      }
+
+      const row = db.prepare(
+        `SELECT id, user_id, amount, status FROM ${t.table} WHERE id = ?`,
+      ).get(refId) as { id: number; user_id: number; amount: number; status: string } | undefined
+      if (!row) {
+        return res.status(404).json({ error: 'Pengajuan tidak ditemukan' })
+      }
+      if (row.status !== 'pending') {
+        return res.status(400).json({ error: 'Pengajuan sudah diproses' })
+      }
+
+      const checkout = db.prepare(
+        'SELECT id, order_id, payable_amount FROM basunipay_payment WHERE ref_table = ? AND ref_id = ? AND status = ? ORDER BY id DESC LIMIT 1',
+      ).get(refTable, refId, 'pending') as
+        | { id: number; order_id: string; payable_amount: number }
+        | undefined
+      if (!checkout) {
+        return res.status(404).json({ error: 'Checkout BasuNiPay pending tidak ditemukan' })
+      }
+
+      if (!basunipayReady()) {
+        return res.status(503).json({ error: 'QRIS BasuNiPay sedang tidak tersedia' })
+      }
+
+      const d = await basunipayStatus(checkout.order_id)
+      const st = String(d?.status || '').toLowerCase()
+      if (!PAID_STATUSES.has(st)) {
+        return res.status(200).json({
+          verified: false,
+          status: st || 'unknown',
+          detail: 'BasuNiPay belum melaporkan lunas — coba lagi nanti.',
+        })
+      }
+
+      const r = approveTopupRef(refTable, refId, Number(checkout.payable_amount) || 0, {
+        source: 'basunipay',
+        from: 'basunipay-api-force-verify',
+        subject: checkout.order_id,
+      })
+      if (!['auto_approved', 'auto_activated', 'already_approved'].includes(r.action)) {
+        return res.status(400).json({ error: r.detail || 'Gagal menyetujui' })
+      }
+
+      db.prepare(
+        "UPDATE basunipay_payment SET status = 'paid', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'pending'",
+      ).run(checkout.id)
+
+      return res.json({ verified: true, action: r.action, detail: r.detail })
+    } catch (error) {
+      console.error('Basunipay force verify error:', error)
+      res.status(500).json({ error: 'Internal server error' })
+    }
+  },
+)
 
 router.get('/log', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
   try {
