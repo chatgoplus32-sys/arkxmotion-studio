@@ -53,6 +53,8 @@ import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, nexabotRe
 import { fetchSeaviWallet, chargeSeaviWallet, refundSeaviWallet } from '@/lib/seaviWallet'
 import { fetchPosbotWallet, chargePosbotWallet, refundPosbotWallet, type PosbotWallet } from '@/lib/posbotWallet'
 import { useCreatepulsePricing, cpModelPrice } from '@/lib/createpulsePricing'
+import { useTiktokPricing, ttModelPrice } from '@/lib/tiktokSymphony'
+import { generateWithTiktok, tiktokCreateTask, tiktokPollTask } from '@/lib/tiktokGenerate'
 import { useProviderPricing, overrideFor } from '@/lib/effectivePricing'
 import { formatRp } from '@/lib/payment'
 import { useRunninghubPricing, rhModelPrice } from '@/lib/runninghubPricing'
@@ -66,11 +68,12 @@ const NEXABOT_DEFAULT_VOICE = 'Achernar'
 // Provider yang tampil di halaman Image to Video. Kembangkan daftar ini untuk
 // menampilkan provider lain yang sudah terdaftar (leonardo, roboneo, galleri5,
 // weavy, wavespeed, framia, oneover, firefly, genspark, riverside).
-const I2V_PROVIDER_IDS: ProviderId[] = ['createpulse', 'nexabot', 'seavi', 'posbot']
+const I2V_PROVIDER_IDS: ProviderId[] = ['createpulse', 'tiktok', 'nexabot', 'seavi', 'posbot']
 
 // Bahasa sehari-hari untuk pemilih provider — hindari istilah model/keys mentah.
 const I2V_PROVIDER_HINTS: Partial<Record<ProviderId, { tagline: string; recommended?: boolean }>> = {
   createpulse: { tagline: 'Paling mudah — langsung bisa dipakai tanpa API key.', recommended: true },
+  tiktok: { tagline: 'Seedance 2.0 Fast lewat API resmi TikTok — tanpa API key, saldo terpisah.' },
   nexabot: { tagline: 'Bayar per video dengan saldo NexaBot atau Paket Unlimited.' },
   runninghub: { tagline: 'Workflow populer: Seedance dan MiniMax H3 — bayar pakai saldo app (top up) atau API key sendiri.' },
   seavi: { tagline: 'Image to video & multimodal — tanpa API key kalau token Seavi sudah diisi.' },
@@ -117,6 +120,9 @@ export default function ImageToVideoPage() {
   // dipakai untuk tampilan; angka yang terpotong tetap dari server /deduct.
   const createpulsePricing = useCreatepulsePricing()
   const cpCost = (apiModel?: string) => cpModelPrice(createpulsePricing, apiModel)
+  const [ttBalance, setTtBalance] = useState(0)
+  const tiktokPricing = useTiktokPricing()
+  const ttCost = (apiModel?: string) => ttModelPrice(tiktokPricing, apiModel || 'SEEDANCE_2_0_FAST')
   // Wallet NexaBot user (harga/generate dari server) + status Paket Unlimited
   // (varian Mingguan/Bulanan/Tahunan — mana pun yang sedang aktif).
   const [nbWallet, setNbWallet] = useState<NexabotWallet | null>(null)
@@ -696,6 +702,17 @@ export default function ImageToVideoPage() {
   }, [provider, authToken])
 
   useEffect(() => {
+    if (provider === 'tiktok' && authToken) {
+      fetch('/api/tiktok-symphony/balance', {
+        headers: { Authorization: `Bearer ${authToken}` },
+      })
+        .then((r) => r.json())
+        .then((d) => setTtBalance(d.balance || 0))
+        .catch(() => {})
+    }
+  }, [provider, authToken])
+
+  useEffect(() => {
     if (!authToken) return
     // Dimuat juga saat provider lain dipilih: kartu NexaBot perlu tahu apakah
     // kunci server tersedia SEBELUM user memilihnya, supaya status "Siap
@@ -1084,11 +1101,97 @@ export default function ImageToVideoPage() {
     }
   }
 
+  const generateWithTiktok = async () => {
+    const duration = currentQuality?.duration || 5
+    const cost = ttCost(currentModel?.apiModel)
+    const isAdmin = user?.role === 'admin'
+    let chargeUsageId: number | undefined
+    let taskId = ''
+
+    if (!isAdmin) {
+      if (ttBalance < cost) {
+        throw new Error(`Saldo TikTok tidak cukup (Rp ${ttBalance.toLocaleString('id-ID')}). Top up minimal Rp 10.000`)
+      }
+      addLog(`[1/4] 💰 Memotong saldo TikTok Rp ${cost.toLocaleString('id-ID')}...`, 'info', 'tiktok')
+      setStatus((s) => ({ ...s, text: 'Memotong saldo...', pct: 5 }))
+      const deductRes = await fetch('/api/tiktok-symphony/deduct', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+        body: JSON.stringify({ model: currentModel?.apiModel || 'SEEDANCE_2_0_FAST' }),
+      })
+      if (!deductRes.ok) {
+        const d = await deductRes.json().catch(() => ({}))
+        throw new Error(d.error || 'Gagal memotong saldo TikTok')
+      }
+      const deductData = await deductRes.json()
+      setTtBalance(deductData.balance)
+      chargeUsageId = typeof deductData.usage_id === 'number' && deductData.usage_id > 0 ? deductData.usage_id : undefined
+      addLog(`[1/4] ✅ Saldo terpotong ✓ sisa Rp ${deductData.balance.toLocaleString('id-ID')}`, 'success', 'tiktok')
+    } else {
+      addLog(`[1/4] ⚡ Mode admin — lewati saldo`, 'info', 'tiktok')
+    }
+
+    try {
+      addLog(`[2/4] 📤 Menyiapkan gambar...`, 'info', 'tiktok')
+      setStatus((s) => ({ ...s, text: 'Mengunggah gambar...', pct: 10 }))
+      const imageUrl = startFrameFile ? await uploadToCatbox(startFrameFile) : undefined
+      const endFrameUrl = endFrameFile ? await uploadToCatbox(endFrameFile) : undefined
+      const referenceImageUrls: string[] = []
+      for (const f of refFiles) referenceImageUrls.push(await uploadToCatbox(f))
+      if (imageUrl) addLog(`[2/4] ✅ Frame awal diunggah`, 'success', 'tiktok')
+      if (referenceImageUrls.length) addLog(`[2/4] ✅ Referensi: ${referenceImageUrls.length} gambar`, 'success', 'tiktok')
+
+      addLog(`[3/4] 🚀 Mengirim ke TikTok Symphony...`, 'info', 'tiktok')
+      setStatus((s) => ({ ...s, text: 'Mengirim ke TikTok...', pct: 20 }))
+      taskId = await tiktokCreateTask({
+        token: authToken!,
+        prompt,
+        model: currentModel?.apiModel || 'SEEDANCE_2_0_FAST',
+        imageUrl,
+        endFrameUrl,
+        referenceImageUrls,
+        duration,
+        ratio,
+        onLog: (m) => addLog(m, 'debug', 'tiktok'),
+      })
+      addLog(`[3/4] ✅ Task dibuat ✓ ${taskId.slice(0, 16)}...`, 'success', 'tiktok')
+
+      addLog(`[4/4] ⏳ Menunggu hasil...`, 'info', 'tiktok')
+      const videoUrl = await tiktokPollTask(authToken!, taskId, {
+        onLog: (m) => addLog(m, 'debug', 'tiktok'),
+        onStatus: (text, pct) => setStatus((s) => ({ ...s, text, pct })),
+      })
+      addLog(`[4/4] ✅ Selesai ✓ ${videoUrl.slice(0, 60)}...`, 'success', 'tiktok')
+      return videoUrl
+    } catch (err: any) {
+      if (!isAdmin) {
+        const refundBody = chargeUsageId != null ? { usage_id: chargeUsageId } : taskId ? { task_id: taskId } : null
+        if (refundBody) {
+          addLog(`💸 Mengembalikan Rp ${cost.toLocaleString('id-ID')}...`, 'warn', 'tiktok')
+          try {
+            const refundRes = await fetch('/api/tiktok-symphony/refund', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+              body: JSON.stringify(refundBody),
+            })
+            if (refundRes.ok) {
+              const rd = await refundRes.json()
+              setTtBalance(rd.balance)
+              addLog(`✅ Refund berhasil ✓ saldo Rp ${rd.balance.toLocaleString('id-ID')}`, 'success', 'tiktok')
+            }
+          } catch (e) { console.warn('[ImageToVideo] Refund TikTok gagal:', e) }
+        }
+      }
+      throw err
+    }
+  }
+
   const validateGenerate = (): string | null => {
     if (!prompt.trim()) return 'Prompt harus diisi'
-    if (!hasActiveKey && provider !== 'roboneo' && provider !== 'createpulse' && !(provider === 'nexabot' && nexabotServerReady))
+    if (!hasActiveKey && provider !== 'roboneo' && provider !== 'createpulse' && provider !== 'tiktok' && !(provider === 'nexabot' && nexabotServerReady))
       return `Tidak ada API key aktif untuk ${PROVIDER_CONFIGS[provider].name}`
     if (provider === 'createpulse' && user?.role !== 'admin' && cpBalance < cpCost(currentModel?.apiModel)) return 'Saldo CreatePulse tidak cukup. Top up minimal Rp 10.000'
+    if (provider === 'tiktok' && user?.role !== 'admin' && ttBalance < ttCost(currentModel?.apiModel)) return 'Saldo TikTok Symphony tidak cukup. Top up minimal Rp 10.000'
     // NexaBot: paket aktif untuk mode ini = gratis, jadi cek saldo hanya saat tidak aktif.
     if (provider === 'nexabot' && user?.role !== 'admin' && !nbFreeForCurrentMode && (nbWallet?.balance ?? 0) < (nbWallet?.price ?? NEXABOT_PRICE_FALLBACK))
       // Booster sedang tidak dijual: jangan mengarahkan member ke paket yang
@@ -1211,9 +1314,9 @@ export default function ImageToVideoPage() {
     }
 
     // Pre-check saldo vs estimasi biaya sebelum upload dimulai.
-    // CreatePulse & Seavi dilewati: keduanya memakai wallet internal yang
+    // CreatePulse & TikTok & Seavi dilewati: memakai wallet internal yang
     // dicek di validateGenerate + deduct/refund di alur generate sendiri.
-    if (provider !== 'createpulse' && provider !== 'seavi') {
+    if (provider !== 'createpulse' && provider !== 'tiktok' && provider !== 'seavi') {
       // NexaBot yang sudah gratis lewat paket tidak perlu cek saldo kredit
       // pribadi: biaya upstream ditanggung kunci server.
       const lewatiPrecheck = provider === 'nexabot' && nbFreeForCurrentMode && nexabotServerReady
@@ -1292,7 +1395,14 @@ export default function ImageToVideoPage() {
     }, 1000)
 
     try {
-      if (provider === 'createpulse') {
+      if (provider === 'tiktok') {
+        const result = await generateWithTiktok()
+        setResults((prev) => [result, ...prev])
+        saveGalleryItem(result)
+        successRef.current = true
+        setStatus((s) => ({ ...s, pct: 100, text: '✅ Selesai!' }))
+        notifyGenerationComplete(currentModel?.label || model, PROVIDER_CONFIGS[provider].name)
+      } else if (provider === 'createpulse') {
         const rotation = await withTokenRotation<string>(
           'createpulse',
           async (apiKey, keyInfo) => {
@@ -3840,7 +3950,7 @@ export default function ImageToVideoPage() {
             Layanan dipilih: <b className="text-foreground">{PROVIDER_CONFIGS[provider].icon} {PROVIDER_CONFIGS[provider].name}</b>
           </div>
           <div>
-            {provider === 'createpulse' ? (
+            {provider === 'createpulse' || provider === 'tiktok' ? (
               <>Akses: <b className="text-emerald-500">tanpa API key</b></>
             ) : hasActiveKey ? (
               <>Akses: <b className="text-emerald-500">{providerKeyCount} API key aktif</b></>
@@ -3851,8 +3961,8 @@ export default function ImageToVideoPage() {
             )}
           </div>
           <div>
-            Status: <b className={provider === 'createpulse' || hasActiveKey || serverKeyReady ? 'text-emerald-500' : 'text-amber-500'}>
-              {provider === 'createpulse' || hasActiveKey || serverKeyReady ? 'Siap dipakai' : 'Perlu API key'}
+            Status: <b className={provider === 'createpulse' || provider === 'tiktok' || hasActiveKey || serverKeyReady ? 'text-emerald-500' : 'text-amber-500'}>
+              {provider === 'createpulse' || provider === 'tiktok' || hasActiveKey || serverKeyReady ? 'Siap dipakai' : 'Perlu API key'}
             </b>
           </div>
           <button
@@ -4464,10 +4574,10 @@ export default function ImageToVideoPage() {
                 )}
               </Button>
               <div className="text-xs text-muted-foreground">
-                Est. Cost: <b className="text-foreground font-mono">{provider === 'createpulse' ? `Rp ${cpCost(currentModel?.apiModel).toLocaleString('id-ID')}` : provider === 'nexabot' ? nbCostLabel : provider === 'posbot' ? `Rp ${totalCredits.toLocaleString('id-ID')}` : provider === 'runninghub' ? formatRp(rhCost) : provider === 'seavi' ? `${totalCredits} token` : `${totalCredits} credits`}</b>
-                {provider !== 'createpulse' && <BalanceBadge provider={provider} required={totalCredits} />}
+                Est. Cost: <b className="text-foreground font-mono">{provider === 'createpulse' ? `Rp ${cpCost(currentModel?.apiModel).toLocaleString('id-ID')}` : provider === 'tiktok' ? `Rp ${ttCost(currentModel?.apiModel).toLocaleString('id-ID')}` : provider === 'nexabot' ? nbCostLabel : provider === 'posbot' ? `Rp ${totalCredits.toLocaleString('id-ID')}` : provider === 'runninghub' ? formatRp(rhCost) : provider === 'seavi' ? `${totalCredits} token` : `${totalCredits} credits`}</b>
+                {provider !== 'createpulse' && provider !== 'tiktok' && <BalanceBadge provider={provider} required={totalCredits} />}
               </div>
-              {!hasActiveKey && provider !== 'createpulse' && !(provider === 'nexabot' && nexabotServerReady) && (
+              {!hasActiveKey && provider !== 'createpulse' && provider !== 'tiktok' && !(provider === 'nexabot' && nexabotServerReady) && (
                 <a
                   href="/providers"
                   className="text-xs text-primary hover:underline flex items-center gap-1"
@@ -4565,7 +4675,7 @@ export default function ImageToVideoPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Est. Cost</span>
-                  <span className="font-medium text-primary">{provider === 'createpulse' ? `Rp ${cpCost(currentModel?.apiModel).toLocaleString('id-ID')}` : provider === 'nexabot' ? nbCostLabel : provider === 'posbot' ? `Rp ${totalCredits.toLocaleString('id-ID')}` : provider === 'seavi' ? `${totalCredits} token` : `${totalCredits} credits`}</span>
+                  <span className="font-medium text-primary">{provider === 'createpulse' ? `Rp ${cpCost(currentModel?.apiModel).toLocaleString('id-ID')}` : provider === 'tiktok' ? `Rp ${ttCost(currentModel?.apiModel).toLocaleString('id-ID')}` : provider === 'nexabot' ? nbCostLabel : provider === 'posbot' ? `Rp ${totalCredits.toLocaleString('id-ID')}` : provider === 'seavi' ? `${totalCredits} token` : `${totalCredits} credits`}</span>
                 </div>
               </div>
 

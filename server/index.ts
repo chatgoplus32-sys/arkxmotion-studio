@@ -16,6 +16,8 @@ import adminTokenRoutes from './routes/adminTokens.js'
 import tokenRoutes from './routes/tokens.js'
 import providerTopupRoutes from './routes/providerTopup.js'
 import createpulseRoutes from './routes/createpulse.js'
+import tiktokSymphonyRoutes from './routes/tiktokSymphony.js'
+import publicTiktokSymphonyRoutes from './routes/publicTiktokSymphony.js'
 import adminTopupRoutes from './routes/adminTopup.js'
 import saldoPenyediaRoutes from './routes/saldoPenyedia.js'
 import { monitorMiddleware, getMetrics } from './lib/monitor.js'
@@ -149,6 +151,7 @@ app.use('/api/public/basunipay/webhook', basunipayWebhookRoutes)
 app.use('/api/tokens', tokenRoutes)
 app.use('/api/provider-topup', providerTopupRoutes)
 app.use('/api/createpulse', createpulseRoutes)
+app.use('/api/tiktok-symphony', tiktokSymphonyRoutes)
 app.use('/api/logs/generation', generationLogRoutes)
 app.use('/api/membership', membershipRoutes)
 app.use('/api/cron', cronRoutes)
@@ -158,6 +161,7 @@ app.use('/api/public/studio-ai', studioAiRoutes)
 app.use('/api/public/pricing', publicPricingRoutes)
 app.use('/api/public/stats', publicStatsRoutes)
 app.use('/api/public/createpulse', publicCreatepulseRoutes)
+app.use('/api/public/tiktok-symphony', publicTiktokSymphonyRoutes)
 app.use('/api/public/maintenance', publicMaintenanceRoutes)
 app.use('/api/public/leonardo', publicLeonardoRoutes)
 app.use('/api/public/magnific', publicMagnificRoutes)

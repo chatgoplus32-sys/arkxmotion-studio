@@ -184,6 +184,47 @@ db.exec(`
   )
 `)
 
+// ─── Wallet TikTok Symphony (Seedance via API resmi TikTok) ───────────────
+// Sama seperti CreatePulse: prepaid Rp per generate. Kredensial TikTok
+// (Access-Token + tto_id) TIDAK disimpan di sini — server-level di app_settings.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS tiktok_balance (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER UNIQUE NOT NULL,
+    balance INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`)
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS tiktok_topup (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    amount INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected')),
+    proof_note TEXT NOT NULL DEFAULT '',
+    admin_note TEXT NOT NULL DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`)
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS tiktok_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    model TEXT NOT NULL,
+    cost INTEGER NOT NULL,
+    task_id TEXT,
+    status TEXT NOT NULL DEFAULT 'used' CHECK(status IN ('used', 'refunded')),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`)
+
 // ─── Wallet NexaBot ────────────────────────────────────────────────────────
 // Sama seperti CreatePulse (prepaid Rp per generate), tapi saldo terpisah:
 // harga flat Rp 150/generate dan tidak menyentuh ledger CreatePulse.
@@ -654,6 +695,7 @@ const QRIS_PAYMENT_COLUMNS: Array<[string, string]> = [
 for (const tableName of [
   'provider_topup_request',
   'createpulse_topup',
+  'tiktok_topup',
   'nexabot_topup',
   'seavi_topup',
   'posbot_topup',

@@ -10,10 +10,10 @@ import { fetchPosbotWallet } from '@/lib/posbotWallet'
 import { fetchRunninghubWallet } from '@/lib/runninghubWallet'
 import { cn } from '@/lib/utils'
 import {
-  ArrowUpRight, Bot, Clapperboard, Coins, Loader2, RefreshCw, Wallet, Zap,
+  ArrowUpRight, Bot, Clapperboard, Coins, Loader2, Music, RefreshCw, Wallet, Zap,
 } from 'lucide-react'
 
-type ServiceKey = 'createpulse' | 'nexabot' | 'seavi' | 'posbot' | 'runninghub'
+type ServiceKey = 'createpulse' | 'tiktok' | 'nexabot' | 'seavi' | 'posbot' | 'runninghub'
 
 interface ServiceDef {
   key: ServiceKey
@@ -34,6 +34,14 @@ const SERVICES: ServiceDef[] = [
     href: '/topup/createpulse',
     icon: <Zap className="h-4 w-4" />,
     accent: 'border-sky-500/25 bg-sky-500/10 text-sky-400',
+  },
+  {
+    key: 'tiktok',
+    label: 'TikTok Symphony',
+    desc: 'Seedance 2.0 Fast lewat API resmi TikTok.',
+    href: '/topup/tiktok',
+    icon: <Music className="h-4 w-4" />,
+    accent: 'border-pink-500/25 bg-pink-500/10 text-pink-400',
   },
   {
     key: 'nexabot',
@@ -91,6 +99,7 @@ interface ServiceState {
 
 const EMPTY_STATE: Record<ServiceKey, ServiceState> = {
   createpulse: { amount: null, unit: 'Rp', unitPrice: null, note: null },
+  tiktok: { amount: null, unit: 'Rp', unitPrice: null, note: null },
   nexabot: { amount: null, unit: 'Rp', unitPrice: null, note: null },
   seavi: { amount: null, unit: 'token', unitPrice: null, note: null },
   posbot: { amount: null, unit: 'Rp', unitPrice: null, note: null },
@@ -100,6 +109,20 @@ const EMPTY_STATE: Record<ServiceKey, ServiceState> = {
 async function fetchCreatePulseBalance(token: string): Promise<number | null> {
   try {
     const res = await fetch('/api/createpulse/balance', {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(8000),
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    return typeof data?.balance === 'number' ? data.balance : null
+  } catch {
+    return null
+  }
+}
+
+async function fetchTiktokBalance(token: string): Promise<number | null> {
+  try {
+    const res = await fetch('/api/tiktok-symphony/balance', {
       headers: { Authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(8000),
     })
@@ -187,6 +210,7 @@ export default function SaldoLayananPage() {
           provider: true,
           unavailable: saldo?.createpulse?.error ?? gagal,
         },
+        tiktok: { amount: null, unit: 'Rp', unitPrice: null, note: null },
         nexabot: {
           amount: nb?.credits ?? null,
           unit: 'kredit',
@@ -236,8 +260,9 @@ export default function SaldoLayananPage() {
       return
     }
 
-    const [createpulse, nexabot, seavi, posbot, runninghub] = await Promise.all([
+    const [createpulse, tiktok, nexabot, seavi, posbot, runninghub] = await Promise.all([
       fetchCreatePulseBalance(token),
+      fetchTiktokBalance(token),
       fetchNexabotWallet(token),
       fetchSeaviWallet(token),
       fetchPosbotWallet(token),
@@ -259,6 +284,7 @@ export default function SaldoLayananPage() {
       : null
     setServices({
       createpulse: { amount: createpulse, unit: 'Rp', unitPrice: null, note: null },
+      tiktok: { amount: tiktok, unit: 'Rp', unitPrice: null, note: null },
       nexabot: {
         amount: nexabot?.balance ?? null,
         unit: 'Rp',

@@ -51,6 +51,9 @@ export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
   createpulse: [
     { value: 'cp:dreamina-seedance-2.0', label: 'Seedance 2.0 Fast', cr: 22, provider: 'createpulse', apiModel: 'dreamina-seedance-2.0' },
   ],
+  tiktok: [
+    { value: 'tt:seedance-2.0-fast', label: 'Seedance 2.0 Fast (TikTok)', cr: 22, provider: 'tiktok', apiModel: 'SEEDANCE_2_0_FAST' },
+  ],
   framia: [
     { value: 'framia:gemini-omni-flash', label: 'Gemini Omni Flash (Framia)', cr: 20, provider: 'framia' },
     { value: 'framia:seedance-2.0', label: 'Seedance 2.0 (Framia)', cr: 45, provider: 'framia' },
@@ -431,6 +434,18 @@ export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: s
     ],
     default: [
       { value: '10s', label: '10 detik', mult: 1, duration: 10 },
+    ],
+  },
+  tiktok: {
+    'tt:seedance-2.0-fast': [
+      { value: '5s', label: '5 detik', mult: 1, duration: 5 },
+      { value: '10s', label: '10 detik', mult: 1, duration: 10 },
+      { value: '15s', label: '15 detik', mult: 1, duration: 15 },
+    ],
+    default: [
+      { value: '5s', label: '5 detik', mult: 1, duration: 5 },
+      { value: '10s', label: '10 detik', mult: 1, duration: 10 },
+      { value: '15s', label: '15 detik', mult: 1, duration: 15 },
     ],
   },
   framia: {
@@ -853,3 +868,4 @@ export const TEMPLATES = [
 ]
 
 export const CREATEPULSE_API = '/api/public/createpulse'
+export const TIKTOK_API = '/api/public/tiktok-symphony'

@@ -57,6 +57,12 @@ import {
   type ServerKeyProvider,
 } from '../lib/providerMasterKey.js'
 import {
+  tiktokCredentialsStatus,
+  saveTiktokCredentials,
+  deleteTiktokCredentials,
+  getTiktokCredits,
+} from '../lib/tiktokSymphony.js'
+import {
   NEXABOT_PRICING_DEFAULTS,
   NEXABOT_MIN_TOPUP,
   describeNexabotPricing,
@@ -475,6 +481,52 @@ router.patch('/nexabot/queue', authenticateToken, requireAdmin, (req: AuthReques
 // Kunci ini disuntikkan relay ke request upstream untuk member yang sudah top
 // up. Karena itu ia TIDAK boleh ikut dalam respons mana pun — termasuk respons
 // admin — dan hanya statusnya yang boleh dibaca browser.
+
+// ── TikTok Symphony credentials (server-level) ────────────────────────────
+// Access-Token & TikTok One (tto_id) disimpan server, tidak pernah dikirim
+// ke browser — hanya statusnya yang bisa dibaca admin.
+
+router.get('/tiktok/credentials', authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
+  try {
+    res.json({ ok: true, ...tiktokCredentialsStatus() })
+  } catch (error) {
+    console.error('[admin-tiktok-credentials] get error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.put('/tiktok/credentials', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
+  try {
+    const accessToken = typeof req.body?.accessToken === 'string' ? req.body.accessToken.trim() : ''
+    const ttoId = typeof req.body?.ttoId === 'string' ? req.body.ttoId.trim() : ''
+    if (!accessToken && !ttoId) return res.status(400).json({ error: 'Access-Token dan tto_id kosong' })
+    saveTiktokCredentials(accessToken, ttoId)
+    res.json({ ok: true, ...tiktokCredentialsStatus() })
+  } catch (error) {
+    console.error('[admin-tiktok-credentials] put error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.delete('/tiktok/credentials', authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
+  try {
+    deleteTiktokCredentials()
+    res.json({ ok: true, ...tiktokCredentialsStatus() })
+  } catch (error) {
+    console.error('[admin-tiktok-credentials] delete error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.post('/tiktok/credentials/check', authenticateToken, requireAdmin, async (_req: AuthRequest, res: Response) => {
+  try {
+    const credits = await getTiktokCredits()
+    res.json({ ok: true, credits })
+  } catch (error: any) {
+    console.warn('[admin-tiktok-credentials] check error:', error?.message)
+    res.status(502).json({ error: error?.message || 'Gagal mengecek kredensial TikTok' })
+  }
+})
 
 router.get('/nexabot/master-key', authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
   try {

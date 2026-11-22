@@ -62,7 +62,7 @@ const toPackageForm = (packages?: NexabotPackage[]): NexabotPackageForm[] =>
     days: String(p.days),
   }))
 
-type PpProviderId = 'seavi' | 'posbot' | 'runninghub' | 'createpulse'
+type PpProviderId = 'seavi' | 'posbot' | 'runninghub' | 'createpulse' | 'tiktok'
 
 /** Cermin respons `GET /api/admin/provider-pricing` (lib/providerPricing.ts). */
 interface PpEffective {
@@ -120,6 +120,7 @@ const PP_PROVIDERS: { id: PpProviderId; name: string; desc: string; unit: string
   { id: 'posbot', name: 'PosBot', desc: 'Tarif per generate', unit: 'Rp' },
   { id: 'runninghub', name: 'RunningHub', desc: 'Harga per model (per fitur) — bisa diedit satu per satu, berlaku langsung', unit: 'Rp' },
   { id: 'createpulse', name: 'CreatePulse', desc: 'Tarif per generate', unit: 'Rp' },
+  { id: 'tiktok', name: 'TikTok Symphony', desc: 'Tarif per generate (Seedance 2.0 Fast)', unit: 'Rp' },
 ]
 
 const PP_FORM_KOSONG: PpFormState = { flat: '', default: '', models: {} }
@@ -129,6 +130,7 @@ const ppFormAwal: Record<PpProviderId, PpFormState> = {
   posbot: { ...PP_FORM_KOSONG },
   runninghub: { ...PP_FORM_KOSONG },
   createpulse: { ...PP_FORM_KOSONG },
+  tiktok: { ...PP_FORM_KOSONG },
 }
 
 const ppFormDari = (e?: PpEffective): PpFormState => e
@@ -392,6 +394,95 @@ function ProviderServerKeySection({
         <div className="mt-2 text-[11px] text-muted-foreground leading-relaxed">
           Urutan yang dipakai server: kunci dashboard → <code>{`${provider.toUpperCase()}_MASTER_API_KEY`}</code> di .env
           → tidak tersedia. Admin tidak dipotong; member wajib punya saldo/token atau baru saja membayar.
+        </div>
+      </div>
+    </Section>
+  )
+}
+
+// ─── Kredensial TikTok Symphony (server-level) ───────────────────────────
+function TiktokCredentialsSection({ token, addToast }: { token: string | null; addToast: (m: string, t?: 'success' | 'error' | 'info' | 'warning') => void }) {
+  const [status, setStatus] = useState<any>(null)
+  const [accessToken, setAccessToken] = useState('')
+  const [ttoId, setTtoId] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [checking, setChecking] = useState(false)
+
+  const fetchStatus = useCallback(async () => {
+    if (!token) return
+    try {
+      const res = await fetch('/api/admin/tiktok/credentials', { headers: { Authorization: `Bearer ${token}` } })
+      if (res.ok) setStatus(await res.json())
+    } catch { /* ignore */ }
+  }, [token])
+  useEffect(() => { void fetchStatus() }, [fetchStatus])
+
+  const save = async () => {
+    if (!token || (!accessToken.trim() && !ttoId.trim())) return
+    setSaving(true)
+    try {
+      const res = await fetch('/api/admin/tiktok/credentials', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ accessToken: accessToken.trim(), ttoId: ttoId.trim() }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        addToast('Kredensial TikTok Symphony disimpan', 'success')
+        setStatus(data)
+        setAccessToken(''); setTtoId('')
+      } else addToast(data.error || 'Gagal menyimpan', 'error')
+    } catch { addToast('Gagal menyimpan', 'error') } finally { setSaving(false) }
+  }
+
+  const check = async () => {
+    if (!token) return
+    setChecking(true)
+    try {
+      const res = await fetch('/api/admin/tiktok/credentials/check', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json()
+      if (res.ok) addToast('Kredensial TikTok valid — tersambung ke Symphony API', 'success')
+      else addToast(data.error || 'Kredensial TikTok tidak valid', 'error')
+    } catch { addToast('Gagal mengecek kredensial', 'error') } finally { setChecking(false) }
+  }
+
+  const hapus = async () => {
+    if (!token || !window.confirm('Hapus kredensial TikTok Symphony dari dashboard?')) return
+    setSaving(true)
+    try {
+      const res = await fetch('/api/admin/tiktok/credentials', { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
+      const data = await res.json()
+      if (res.ok) { setStatus(data); addToast('Kredensial dihapus', 'success') }
+    } catch { addToast('Gagal menghapus', 'error') } finally { setSaving(false) }
+  }
+
+  return (
+    <Section title="Kredensial TikTok Symphony" sub="Access-Token + TikTok One (tto_id) — server-level, tidak pernah dikirim ke browser">
+      <div className="rounded-xl border border-border bg-card/40 p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-medium">Status:</span>
+          {status?.configured ? (
+            <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] text-emerald-400">Aktif — {status.source === 'database' ? 'dari dashboard' : 'dari .env'}{status.ttoConfigured ? '' : ' (tto_id kosong!)'}</span>
+          ) : (
+            <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5 text-[11px] text-amber-400">Belum diatur — generate TikTok tidak bisa dipakai member</span>
+          )}
+        </div>
+        <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">
+          Dapatkan Access-Token & TikTok One (tto_id) dari dashboard TikTok for Business → developer app.
+          Tagihan upstream (PAID_TOKENS / BytePlus) dibayar akun yang terhubung ke TTO ini.
+          Member cukup top up saldo TikTok di aplikasi.
+        </p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          <input type="password" value={accessToken} onChange={(e) => setAccessToken(e.target.value)} placeholder="Access-Token (sk/…)" autoComplete="off" className="rounded-lg border border-border bg-card px-3 py-2 font-mono text-sm" />
+          <input type="text" value={ttoId} onChange={(e) => setTtoId(e.target.value)} placeholder="TikTok One (tto_id)" autoComplete="off" className="rounded-lg border border-border bg-card px-3 py-2 font-mono text-sm" />
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button size="sm" onClick={save} disabled={saving || (!accessToken.trim() && !ttoId.trim())}><KeyRound className="mr-2 h-4 w-4" />{saving ? 'Menyimpan…' : 'Simpan'}</Button>
+          <Button size="sm" variant="outline" onClick={check} disabled={checking || !status?.configured}><Activity className={`mr-2 h-4 w-4 ${checking ? 'animate-pulse' : ''}`} />{checking ? 'Mengecek…' : 'Cek Koneksi'}</Button>
+          <Button size="sm" variant="outline" onClick={hapus} disabled={saving || !status?.configured}><Trash2 className="mr-2 h-4 w-4" />Hapus</Button>
         </div>
       </div>
     </Section>
@@ -2621,6 +2712,8 @@ export default function AdminSystemSettings() {
         <ProviderServerKeySection provider="seavi" label="Seavi Labs" token={token} addToast={addToast} />
 
         <ProviderServerKeySection provider="posbot" label="PosBot" token={token} addToast={addToast} />
+
+        <TiktokCredentialsSection token={token} addToast={addToast} />
 
         <RunningHubPoolSection token={token} addToast={addToast} />
 

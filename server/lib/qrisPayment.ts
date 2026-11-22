@@ -34,6 +34,7 @@ interface QrisTable {
 export const QRIS_TABLES: QrisTable[] = [
   { table: 'provider_topup_request', label: 'Top-up Manual Provider', mode: 'manual' },
   { table: 'createpulse_topup', label: 'Top-up CreatePulse', mode: 'credit', balanceTable: 'createpulse_balance', creditColumn: 'amount' },
+  { table: 'tiktok_topup', label: 'Top-up TikTok Symphony', mode: 'credit', balanceTable: 'tiktok_balance', creditColumn: 'amount' },
   // kind='balance' → kredit saldo; kind='unlimited' → aktivasi paket.
   { table: 'nexabot_topup', label: 'Top-up NexaBot', mode: 'credit', balanceTable: 'nexabot_balance', creditColumn: 'amount' },
   { table: 'seavi_topup', label: 'Top-up Seavi', mode: 'credit', balanceTable: 'seavi_balance', creditColumn: 'tokens' },

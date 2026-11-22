@@ -371,6 +371,25 @@ export function getCreatepulsePriceRange(): { min: number; max: number } {
   return { min: Math.min(...values), max: Math.max(...values) }
 }
 
+// ── TikTok Symphony (Seedance via API resmi TikTok) ─────────────────────────
+// Kredensial (Access-Token + tto_id) disimpan server-level di app_settings,
+// member tidak memasukkan kunci. Tagihan upstream dibayar akun BytePlus
+// operator (payment_method = PAID_TOKENS), member membayar kita lewat wallet.
+export const TIKTOK_MIN_TOPUP = 10000
+export const TIKTOK_DEFAULT_PRICE = 700
+/** Model OpenAI-style id → apiModel TikTok Symphony. */
+export const TIKTOK_MODEL_PRICES: Record<string, number> = {
+  'SEEDANCE_2_0_FAST': 700,
+}
+export function getTiktokCharge(model?: string): number {
+  if (!model) return TIKTOK_DEFAULT_PRICE
+  return TIKTOK_MODEL_PRICES[model] ?? TIKTOK_DEFAULT_PRICE
+}
+export function getTiktokPriceRange(): { min: number; max: number } {
+  const values = [TIKTOK_DEFAULT_PRICE, ...Object.values(TIKTOK_MODEL_PRICES)]
+  return { min: Math.min(...values), max: Math.max(...values) }
+}
+
 // ── Seavi ────────────────────────────────────────────────────────────────
 // Wallet TOKEN (bukan Rp): 1 token = Rp 1.700. User membeli paket token,
 // generate memotong N token sesuai bobot model (lihat `tokens` di

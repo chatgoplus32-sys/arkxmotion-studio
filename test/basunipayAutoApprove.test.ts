@@ -146,6 +146,7 @@ test('kolom QRIS + balance table lengkap untuk semua entri registry', () => {
 const SEED_EXTRA: Record<string, Record<string, string | number>> = {
   provider_topup_request: { provider: 'Roboneo', amount: 71000 },
   createpulse_topup: { amount: 52000 },
+  tiktok_topup: { amount: 48000 },
   nexabot_topup: { amount: 63000, kind: 'balance' },
   seavi_topup: { amount: 84000, tokens: 120 },
   posbot_topup: { amount: 45000 },

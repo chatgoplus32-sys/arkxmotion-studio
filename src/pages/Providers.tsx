@@ -106,6 +106,7 @@ function extractMfTokens(text: string): string[] {
 }
 
 function topupCta(provider: string): { route: string; label: string } {  if (provider === 'createpulse') return { route: '/topup/createpulse', label: 'Topup CreatePulse' }
+  if (provider === 'tiktok') return { route: '/topup/tiktok', label: 'Topup TikTok' }
   if (provider === 'seavi') return { route: '/topup/seavi', label: 'Topup Seavi' }
   if (provider === 'posbot') return { route: '/topup/posbot', label: 'Topup PosBot' }
   if (provider === 'runninghub') return { route: '/topup/runninghub', label: 'Topup RunningHub' }
@@ -122,6 +123,7 @@ const PROVIDER_LIST = [
   { key: 'framia', label: 'Framia', desc: 'Canvas workflow (Converge AI) — semua node & recipe: image, video, avatar, garment, storyboard.' },
   { key: 'leonardo', label: 'Leonardo.ai', desc: 'app.leonardo.ai via Cognito Bearer JWT — Text-to-Image (Phoenix, Diffusion XL, Kino, Anime, Vision).' },
   { key: 'createpulse', label: 'CreatePulse', desc: 'Video generation (Seedance 2.0 FAST) via createpulse.online — pakai API key sendiri.' },
+  { key: 'tiktok', label: 'TikTok Symphony', desc: 'Seedance 2.0 Fast via API resmi TikTok (business-api) — kredensial server-level, bayar pakai saldo TikTok.' },
   { key: 'galleri5', label: 'G5 AI Studio', desc: 'Motion Control (Kling V3 & V2.6 motion transfer) via aistudio.galleri5.com — Firebase refresh token (auto-refresh).' },
   { key: 'oneover', label: 'OneOver', desc: 'Video generation (Grok, Seedance 2.0/2.5, Kling, LTX) via oneover.com — Supabase session token.' },
   { key: 'firefly', label: 'Adobe Firefly', desc: 'Video generation (Veo 3.1, Firefly Video) via firefly.adobe.com — Adobe IMS Bearer token.' },
