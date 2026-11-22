@@ -34,6 +34,21 @@ import {
 } from '../shared/nexabotProxy.js'
 
 const tick = (ms = 10): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+
+/**
+ * Tunggu sampai kondisi benar-benar terjadi, bukan "tunggu N ms lalu berasumsi".
+ * Jeda tetap (tick(30)) bisa kalah dari scheduler mesin yang sibuk — seperti
+ * yang terjadi di runner VPS — sehingga request keduanya lolos sebelum slot
+ * pertama sempat dipegang.
+ */
+async function tungguSampai(syarat: () => boolean, batasMs = 3000): Promise<void> {
+  const mulai = Date.now()
+  while (!syarat()) {
+    if (Date.now() - mulai > batasMs) throw new Error('batas waktu menunggu kondisi test terlampaui')
+    await tick(5)
+  }
+}
+
 const cfg = (over: Partial<ReturnType<typeof nexabotSubmitQueueConfig>> = {}) => ({
   ...nexabotSubmitQueueConfig({} as NodeJS.ProcessEnv),
   ...over,
@@ -351,14 +366,28 @@ test('job yang gagal juga melepas lane', async () => {
 })
 
 test('dua submit bersamaan di satu akun: hanya satu yang dikirim ke upstream', async () => {
-  langkah = [upstreamLambat(80, { ok: true, job_id: 'job-bersamaan' })]
+  process.env.NEXABOT_SUBMIT_QUEUE_MAX_WAIT_MS = '50'
+  let lepasUpstream!: () => void
+  const dipegang = new Promise<void>((resolve) => { lepasUpstream = resolve })
+  langkah = [async () => {
+    await dipegang
+    return new Response(JSON.stringify({ ok: true, job_id: 'job-bersamaan' }), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    })
+  }]
 
-  const hasil = await Promise.all([
-    post('/api/public/nexabot/submit', { mode: 't2v', prompt: 'satu' }, { 'X-Nexabot-Cookie': KUE_A }),
-    post('/api/public/nexabot/submit', { mode: 't2v', prompt: 'dua' }, { 'X-Nexabot-Cookie': KUE_A }),
-  ])
+  const pertama = post('/api/public/nexabot/submit', { mode: 't2v', prompt: 'satu' }, { 'X-Nexabot-Cookie': KUE_A })
+  await tungguSampai(() => calls.length === 1) // slot dipegang request pertama di upstream
+  const kedua = post('/api/public/nexabot/submit', { mode: 't2v', prompt: 'dua' }, { 'X-Nexabot-Cookie': KUE_A })
 
-  assert.deepEqual(hasil.map((r) => r.status).sort(), [200, 429], 'satu jalan, satu dipersilakan menunggu')
+  // Kedua menunggu di antrean dan menyerah lebih dulu (429 buatan kita).
+  // Baru setelah itu upstream pertama dilepas, supaya tidak ada request kedua
+  // yang ikut menembak mock (yang hanya punya satu langkah).
+  const hasilKedua = await kedua
+  lepasUpstream()
+  const hasilPertama = await pertama
+
+  assert.deepEqual([hasilPertama.status, hasilKedua.status], [200, 429], 'satu jalan, satu dipersilakan menunggu')
   assert.equal(calls.length, 1)
   assert.equal(puncak, 1, 'tidak pernah dua submit bersamaan ke akun yang sama')
 })
@@ -398,7 +427,7 @@ test('antrean penuh: 429 buatan kita + Retry-After, tanpa menyentuh upstream', a
   langkah = [upstreamLambat(400, { ok: true }), upstreamOk({ ok: true, job_id: 'job-baru' })]
 
   const pertama = post('/api/public/nexabot/submit', { mode: 't2v', prompt: 'sedang jalan' }, { 'X-Nexabot-Cookie': KUE_A })
-  await tick(30)
+  await tungguSampai(() => calls.length === 1)
   const kedua = await post('/api/public/nexabot/submit', { mode: 't2v', prompt: 'kena antrean' }, { 'X-Nexabot-Cookie': KUE_A })
 
   assert.equal(kedua.status, 429)
@@ -416,7 +445,7 @@ test('/generate (jalur sesi) juga ditahan saat job masih berjalan', async () => 
   langkah = [upstreamLambat(300, { ok: true, job_id: 'gen-satu' }), upstreamOk({ ok: true, job_id: 'gen-dua' })]
 
   const pertama = post('/api/public/nexabot/generate', { mode: 'i2v', prompt: 'satu' }, { 'X-Nexabot-Cookie': KUE_A })
-  await tick(30)
+  await tungguSampai(() => calls.length === 1)
   const kedua = await post('/api/public/nexabot/generate', { mode: 'i2v', prompt: 'dua' }, { 'X-Nexabot-Cookie': KUE_A })
 
   assert.equal(kedua.status, 429)
@@ -432,7 +461,7 @@ test('/jobpoll read-only TIDAK ikut mengantre di belakang submit', async () => {
   ]
 
   const submit = post('/api/public/nexabot/submit', { mode: 't2v', prompt: 'jalan lambat' }, { 'X-Nexabot-Cookie': KUE_A })
-  await tick(30)
+  await tungguSampai(() => calls.length === 1)
   const mulai = Date.now()
   const poll = await getJson('/api/public/nexabot/job/job-tahan', { 'X-Nexabot-Cookie': KUE_A })
   assert.equal(poll.status, 200, 'poll status tidak boleh ditahan antrean submit')
