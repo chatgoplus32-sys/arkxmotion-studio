@@ -124,12 +124,18 @@ const PROVIDERS = {
   markastools: { name: 'MarkasTools', models: MARKAS_MOTION_MODELS.map(m => ({ key: m.key, label: m.label, cr: m.cr })) },
 }
 
-// Halaman Motion Control menawarkan dua provider yang paling stabil, biar
-// member tidak bingung memilih. Provider lain tetap dipakai halaman lain.
-const MOTION_PROVIDER_IDS = ['runninghub', 'seavi', 'posbot'] as const
+// Provider yang tersedia di halaman Motion Control. Weavy diaktifkan kembali
+// (dulu disembunyikan oleh commit c80e00f) — implementasinya masih ada lengkap
+// di halaman ini, jadi cukup dimasukkan ke daftar pilihan.
+const MOTION_PROVIDER_IDS = ['weavy', 'runninghub', 'seavi', 'posbot'] as const
 type MotionProviderId = (typeof MOTION_PROVIDER_IDS)[number]
 
 const MOTION_PROVIDER_INFO: Record<MotionProviderId, { name: string; tagline: string; note: string; recommended?: boolean }> = {
+  weavy: {
+    name: 'Weavy',
+    tagline: 'Kling V3 Pro/Standard via Weavy',
+    note: 'Butuh token Weavy aktif di menu Providers. Upload aset memakai fallback Cloudflare Worker bila api.weavy.ai membalas 403.',
+  },
   runninghub: {
     name: 'RunningHub',
     tagline: 'Harga per generate sesuai System Settings',
@@ -150,6 +156,7 @@ const MOTION_PROVIDER_INFO: Record<MotionProviderId, { name: string; tagline: st
 
 // Default model tiap provider: pilih yang paling murah, bukan yang pertama di daftar.
 const MOTION_RECOMMENDED_MODEL: Record<MotionProviderId, string> = {
+  weavy: 'fal-ai/kling-video/v3/pro/motion-control',
   runninghub: 'rh:std:2.6',
   seavi: 'sv:motion_control_v3_server19_15dtk',
   posbot: 'pb:motion_control_std',

@@ -63,10 +63,10 @@ import { runWithNexabotThrottleRetry, NexabotResultError, NEXADANCE_PROMPT_MAX }
 // voice resmi NexaBot (GET /api/v1/modes → voices).
 const NEXABOT_DEFAULT_VOICE = 'Achernar'
 
-// Provider yang tampil di halaman Image to Video. Kembangkan daftar ini untuk
-// menampilkan provider lain yang sudah terdaftar (leonardo, roboneo, galleri5,
-// weavy, wavespeed, framia, oneover, firefly, genspark, riverside).
-const I2V_PROVIDER_IDS: ProviderId[] = ['createpulse', 'nexabot', 'seavi', 'posbot']
+// Provider yang tampil di halaman Image to Video. Weavy diaktifkan kembali
+// (dulu disembunyikan oleh commit 9a03914). Provider lain yang masih bisa
+// ditambahkan: wavespeed, framia, oneover, firefly, genspark, riverside.
+const I2V_PROVIDER_IDS: ProviderId[] = ['createpulse', 'nexabot', 'weavy', 'seavi', 'posbot']
 
 // Bahasa sehari-hari untuk pemilih provider — hindari istilah model/keys mentah.
 const I2V_PROVIDER_HINTS: Partial<Record<ProviderId, { tagline: string; recommended?: boolean }>> = {
@@ -75,6 +75,7 @@ const I2V_PROVIDER_HINTS: Partial<Record<ProviderId, { tagline: string; recommen
   runninghub: { tagline: 'Workflow populer: Seedance dan MiniMax H3 — bayar pakai saldo app (top up) atau API key sendiri.' },
   seavi: { tagline: 'Image to video & multimodal — tanpa API key kalau token Seavi sudah diisi.' },
   posbot: { tagline: 'Bayar pakai saldo Rupiah PosBot — 29 model video (T2V · I2V · SFV · F2F · R2V/V2V), API key pb_live_… dari bot Telegram.' },
+  weavy: { tagline: 'Kling, Sora, Grok, Omni & Seedance via Weavy — butuh token Weavy di menu Providers.' },
 }
 
 export default function ImageToVideoPage() {
@@ -3741,7 +3742,7 @@ export default function ImageToVideoPage() {
   const nexabotPill = nexabotPathPill(keys.nexabot, nexabotSession, nexabotChecking, nbWallet?.server_key)
 
   // Hanya provider di I2V_PROVIDER_IDS yang tampil sebagai kartu; sisanya
-  // (leonardo, weavy, wavespeed, framia, oneover, firefly, genspark, riverside) disembunyikan.
+  // (wavespeed, framia, oneover, firefly, genspark, riverside) masih disembunyikan.
   const PROVIDER_IDS: ProviderId[] = I2V_PROVIDER_IDS
 
   return (
