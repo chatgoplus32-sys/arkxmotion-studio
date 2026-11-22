@@ -10,6 +10,7 @@
 //     satu akun pada satu waktu, dan penunggu yang kehabisan sabar menjawab 429
 //     BUATAN KITA (Retry-After + tiket tidak hangus), bukan request yang ditolak
 //     NexaBot.
+import { bersihkanTempDb } from './helpers/tempDb.js'
 import test, { after, before, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import type { AddressInfo } from 'node:net'
@@ -310,6 +311,7 @@ after(async () => {
   }
   resetNexabotLaneJobs()
   await new Promise((resolve) => server.close(resolve))
+  bersihkanTempDb()
 })
 
 async function post(path: string, body: unknown, headers: Record<string, string> = {}) {
