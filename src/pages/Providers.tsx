@@ -137,7 +137,8 @@ const PROVIDER_LIST = [
 
 const MENU_HIDDEN_PROVIDERS = [
   'brain',
-  'weavy',
+  // Weavy sengaja TIDAK disembunyikan: token Weavy dipasang dari halaman ini
+  // dan dipakai Motion Control / Image to Video / Text-to-Video / UGC.
   'wavespeed',
   'roboneo',
   'framia',
