@@ -472,15 +472,8 @@ function TiktokCredentialsSection({ token, addToast }: { token: string | null; a
         </div>
         <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">
           Dapatkan Access-Token & TikTok One (tto_id) dari dashboard TikTok for Business → developer app.
-          tto_id ada di dropdown akun kanan atas di Symphony Creative Studio.
           Tagihan upstream (PAID_TOKENS / BytePlus) dibayar akun yang terhubung ke TTO ini.
           Member cukup top up saldo TikTok di aplikasi.
-        </p>
-        <p className="mt-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
-          💡 <b className="text-foreground">Auto-capture:</b> pasang extension Chrome
-          <code className="mx-1 rounded bg-background px-1">extensions/tiktok-symphony-token-ext</code>
-          (Load unpacked di chrome://extensions), login di Symphony Creative Studio saat masih login admin di sini —
-          token &amp; tto_id otomatis terkirim ke form ini.
         </p>
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
           <input type="password" value={accessToken} onChange={(e) => setAccessToken(e.target.value)} placeholder="Access-Token (sk/…)" autoComplete="off" className="rounded-lg border border-border bg-card px-3 py-2 font-mono text-sm" />
