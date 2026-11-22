@@ -1,0 +1,46 @@
+{
+  "manifest_version": 3,
+  "name": "TikTok Symphony Token Manager",
+  "description": "Tangkap Access-Token + tto_id dari Symphony Creative Studio / TikTok for Business — auto-sync ke ARKXMotion Studio (tanpa copy-paste)",
+  "version": "1.0.0",
+  "minimum_chrome_version": "88",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "notifications"
+  ],
+  "host_permissions": [
+    "https://symphony.tiktok.com/*",
+    "https://*.symphony.tiktok.com/*",
+    "https://business-api.tiktok.com/*",
+    "https://*.tiktok.com/*",
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://symphony.tiktok.com/*",
+        "https://*.symphony.tiktok.com/*",
+        "https://business-api.tiktok.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": "icon.png"
+  },
+  "icons": {
+    "16": "icon.png",
+    "48": "icon.png",
+    "128": "icon.png"
+  }
+}
