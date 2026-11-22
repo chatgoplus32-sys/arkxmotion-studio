@@ -69,6 +69,22 @@
 
   $('refreshBtn').addEventListener('click', function () { load(); toast('Diperbarui') })
 
+  $('manualBtn').addEventListener('click', function () {
+    var atk = $('manualAtk').value.trim()
+    var tto = $('manualTto').value.trim()
+    if (!atk && !tto) { toast('Isi Access-Token dan/atau tto_id', false); return }
+    var btn = this
+    btn.disabled = true
+    btn.textContent = 'Mengirim…'
+    chrome.runtime.sendMessage({ type: 'set_manual', accessToken: atk, ttoId: tto }, function (r) {
+      btn.disabled = false
+      btn.textContent = 'Pakai nilai ini & Kirim ke Aplikasi'
+      if (r && r.ok) { toast('✓ Tersimpan & terkirim ke aplikasi', true); $('manualAtk').value = ''; $('manualTto').value = '' }
+      else toast('✗ ' + (r && r.message ? r.message : 'Gagal'), false)
+      setTimeout(load, 400)
+    })
+  })
+
   $('clearBtn').addEventListener('click', function () {
     if (!window.confirm('Hapus token yang tersimpan di extension?')) return
     chrome.runtime.sendMessage({ type: 'clear' }, function () { load(); toast('Dihapus') })

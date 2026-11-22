@@ -191,6 +191,17 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     })
     return true
   }
+  if (msg && msg.type === 'set_manual') {
+    (async function () {
+      await saveCapture('accessToken', String(msg.accessToken || ''), 'manual')
+      await saveCapture('ttoId', String(msg.ttoId || ''), 'manual')
+      var data = await chrome.storage.local.get(CREDS_KEY)
+      var r = await postCredentials(data[CREDS_KEY] || {}, true)
+      await chrome.storage.local.set({ tts_last_sync: { ok: !!r.ok, message: r.message, at: Date.now(), origin: r.origin || '' } })
+      sendResponse(r)
+    })()
+    return true
+  }
 })
 
 // Init badge

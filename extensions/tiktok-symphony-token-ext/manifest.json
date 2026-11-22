@@ -11,6 +11,8 @@
     "notifications"
   ],
   "host_permissions": [
+    "https://ads.tiktok.com/*",
+    "https://*.ads.tiktok.com/*",
     "https://symphony.tiktok.com/*",
     "https://*.symphony.tiktok.com/*",
     "https://business-api.tiktok.com/*",
@@ -23,6 +25,8 @@
   "content_scripts": [
     {
       "matches": [
+        "https://ads.tiktok.com/*",
+        "https://*.ads.tiktok.com/*",
         "https://symphony.tiktok.com/*",
         "https://*.symphony.tiktok.com/*",
         "https://business-api.tiktok.com/*"
