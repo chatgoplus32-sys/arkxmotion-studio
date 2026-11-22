@@ -1,13 +1,17 @@
 # ============================================================
 # Deploy ke VPS produksi (idcloudhost) — /opt/arkxmotion-studio
 #
-# Gerbang 1 dan 2 berjalan SEBELUM proses produksi diganti: kalau salah satu
-# gagal, deploy dibatalkan dan versi lama tetap melayani user — jadi commit
+# Gerbang 1, 1b, dan 2 berjalan SEBELUM proses produksi diganti: kalau salah
+# satu gagal, deploy dibatalkan dan versi lama tetap melayani user — jadi commit
 # yang merusak server tidak pernah sampai ke produksi. Gerbang 3a dan 3 berjalan
 # SESUDAH restart dan mengukur hasilnya.
 #
 #   1. check-undefined.mjs  — identifier tak terdefinisi (TS2304/TS2552) &
 #                             API CommonJS di file ESM
+#   1b. npm test            — seluruh suite test; menangkap test basi/regresi
+#                             logika yang tidak terlihat oleh check-undefined
+#                             maupun build (mis. ekspektasi refund 429 yang
+#                             sudah tidak sesuai perilaku retry tiket).
 #   2. smoke-test.sh        — benar-benar menjalankan server lalu memastikan
 #                             /api/health/live merespons (menangkap server yang
 #                             gagal boot, penyebab 502 di semua endpoint)
@@ -25,8 +29,8 @@
 #
 # Konteks: 42 file di repo ini (extensions/, workers/, cloudflare-worker/,
 # skrip root, public/sw.js, vite.config.ts, shared/) berada di luar semua
-# tsconfig, dan `tsc -b` tidak memeriksa folder server/. Kedua gerbang di atas
-# menutup celah itu.
+# tsconfig, dan `tsc -b` tidak memeriksa folder server/. Gerbang 1, 1b, dan 2
+# di atas menutup celah itu.
 # ============================================================
 name: Deploy to VPS
 
@@ -86,6 +90,12 @@ jobs:
 
             echo "🔎 Gerbang 1 — identifier tak terdefinisi..."
             node scripts/check-undefined.mjs
+
+            echo "🧪 Gerbang 1b — seluruh suite test..."
+            if ! npm test; then
+              echo "❌ Deploy DIBATALKAN — ada test yang gagal. Versi lama tetap jalan."
+              exit 1
+            fi
 
             echo "🔨 Membangun frontend..."
             npm run build

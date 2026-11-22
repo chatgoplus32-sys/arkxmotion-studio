@@ -180,6 +180,16 @@ test('deploy punya jalur darurat kalau server tidak menjawab setelah start', () 
   assert.match(wf, /NODE_ENV=production PORT=6000 pm2 start/, 'jalur darurat harus menyalakan proses dengan environment eksplisit')
 })
 
+test('deploy menjalankan seluruh suite test SEBELUM mengganti proses produksi', () => {
+  const wf = kode('.github/workflows/deploy-vps.yml')
+  const panggil = /^[ \t]*if ! npm test; then[ \t]*$/m
+  assert.match(wf, panggil, 'deploy tidak memanggil npm test sebagai baris perintah')
+
+  const iTest = wf.search(panggil)
+  const iRestart = wf.search(/^[ \t]*pm2 delete arkxmotion/m)
+  assert.ok(iTest > -1 && iRestart > -1 && iTest < iRestart, 'npm test harus gagal lebih dulu daripada restart produksi')
+})
+
 test('deploy benar-benar MEMANGGIL gerbang 3a, sebelum gerbang 3', () => {
   // Bukan sekadar menyebut: yang diperiksa adalah baris perintahnya, karena
   // pesan petunjuk juga memuat nama skrip ini dan itu tidak menjalankan apa pun.
