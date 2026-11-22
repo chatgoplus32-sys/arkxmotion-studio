@@ -18,7 +18,7 @@ ARKXMotion Studio. Tanpa copy-paste manual.
 
 1. **Login sebagai admin** di tab aplikasi ARKXMotion (`https://arkxmotion-studio.win`).
    Extension membaca JWT login kamu dari tab ini untuk mengautentikasi pengiriman ke app.
-2. Di tab lain, buka [Symphony Creative Studio](https://ads.tiktok.com/creative/creativestudio/image-to-video) dan login ke akun TikTok yang dipakai (juga TikTok for Business portal jika perlu generate token).
+2. Di tab lain, buka [Symphony Creative Studio](https://symphony.tiktok.com) dan/login ke akun TikTok yang dipakai.
 3. Extension memindai halaman & network response untuk menangkap:
    - **tto_id** — dari dropdown akun kanan atas di Creative Studio (atau field `tto_id`/account id di response).
    - **Access-Token** — dari response OAuth (`/oauth2/access_token/`) / field `access_token` / storage.
@@ -57,9 +57,8 @@ Endpoint ini hanya menerima admin (`requireAdmin`) dan tidak pernah mengembalika
 
 ## Troubleshooting
 
-- **Status "belum tertangkap"** — pastikan sudah login di Symphony Creative Studio (ads.tiktok.com/creative/creativestudio), lalu klik Refresh.
+- **Status "belum tertangkap"** — pastikan sudah login di Symphony Creative Studio, lalu klik Refresh.
   tto_id muncul dari dropdown akun kanan atas; Access-Token muncul saat token digenerate di developer portal.
-  Kalau tetap tidak tertangkap, pakai **input manual di popup** (paling pasti).
 - **"Buka tab app sambil login sebagai admin dulu"** — extension tidak menemukan JWT admin.
   Pastikan tab aplikasi terbuka & kamu login sebagai **admin**.
 - **HTTP 401/403 saat kirim** — JWT kedaluwarsa; extension akan coba baca ulang sekali. Kalau masih gagal,
