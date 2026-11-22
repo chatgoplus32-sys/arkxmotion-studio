@@ -25,13 +25,6 @@ interface ProviderState {
 }
 
 const defaultProviders: Record<string, Provider> = {
-  weavy: {
-    id: 'weavy',
-    name: 'Weavy',
-    icon: '🌊',
-    keys: [],
-    status: 'no-key',
-  },
   wavespeed: {
     id: 'wavespeed',
     name: 'Wavespeed',
@@ -50,7 +43,7 @@ const defaultProviders: Record<string, Provider> = {
 
 export const useProviderStore = create<ProviderState>((set) => ({
   providers: defaultProviders,
-  activeProvider: 'weavy',
+  activeProvider: 'roboneo',
   setActiveProvider: (provider) => set({ activeProvider: provider }),
   addKey: (providerId, key) =>
     set((state) => ({

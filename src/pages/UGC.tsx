@@ -63,7 +63,7 @@ export default function UGCPage() {
   const [modelFile, setModelFile] = useState<File | null>(null)
   const [modelPreview, setModelPreview] = useState<string | null>(null)
   const [products, setProducts] = useState<ProductImage[]>([])
-  const [provider, setProvider] = useState('weavy')
+  const [provider, setProvider] = useState('leonardo')
   const [productType, setProductType] = useState(PRODUCT_TYPES[0])
   const [modelStyle, setModelStyle] = useState('female-casual')
   const [background, setBackground] = useState('studio')
@@ -127,8 +127,8 @@ export default function UGCPage() {
   const handleGenerate = async () => {
     if (products.length === 0) return
 
-    // Pre-check saldo Weavy sebelum generate dimulai
-    const pre = await precheckProviderBalance('weavy', totalCredits)
+    // Pre-check saldo Leonardo sebelum generate dimulai
+    const pre = await precheckProviderBalance('leonardo', totalCredits)
     if (!pre.ok) {
       addToast(pre.error || 'Saldo tidak cukup', 'error')
       addLog(`❌ ${pre.error || 'Saldo tidak cukup'}`, 'error')
@@ -145,7 +145,7 @@ export default function UGCPage() {
     const currentUser = useAuthStore.getState().user
     const logId = currentUser ? await logGenerationStart({
       page: 'ugc',
-      provider: 'weavy',
+      provider: 'leonardo',
       model: 'nanobanana2',
       prompt: `UGC ${products.length} produk`,
       credits: 50 * products.length,
@@ -157,7 +157,7 @@ export default function UGCPage() {
       page: 'ugc',
       model: 'Nano Banana 2',
       prompt: `UGC ${products.length} produk`,
-      provider: 'weavy',
+      provider: 'leonardo',
     })
     const timer = setInterval(() => {
       const elapsed = Math.floor((Date.now() - startTime) / 1000)
@@ -168,7 +168,7 @@ export default function UGCPage() {
     abortRef.current = controller
 
     try {
-      const { generateWeavyBulkOne } = await import('@/lib/weavy')
+      const { generateBulkFashion } = await import('@/lib/bulk-fashion')
 
       for (let i = 0; i < products.length; i++) {
         if (controller.signal.aborted) break
@@ -181,14 +181,18 @@ export default function UGCPage() {
           const charFile = modelFile || product.file
 
           addLog(`#${i + 1}: Upload & process...`, 'info')
-          const imageUrl = await generateWeavyBulkOne({
-            modelKey: 'nanobanana2',
-            prompt,
+          const [imageUrl] = await generateBulkFashion({
+            provider: 'leonardo',
+            modelKey: 'leonardo:nano-banana-2',
             quality: '1K',
             ratio,
             charFile,
-            outfitFile: product.file,
+            outfitFiles: [product.file],
+            promptTemplate: prompt,
+            productType,
+            signal: controller.signal,
           })
+          if (!imageUrl) throw new Error('Tidak ada hasil dari Leonardo')
 
           if (!controller.signal.aborted) {
             setResults((prev) => [...prev, { id: product.id, url: imageUrl, status: 'done' }])
@@ -199,7 +203,7 @@ export default function UGCPage() {
               date: new Date().toISOString(),
               page: 'ugc',
               kind: 'image',
-              provider: 'weavy',
+              provider: 'leonardo',
               model: 'Nano Banana 2',
             }, { notify: false })
             addLog(`#${i + 1}: ✅ Selesai`, 'success')
@@ -347,7 +351,7 @@ export default function UGCPage() {
               <div>
                 <Label>Provider AI</Label>
                 <Select value={provider} onChange={(e) => setProvider(e.target.value)} options={[
-                  { value: 'weavy', label: 'Weavy (Nano Banana 2)' },
+                  { value: 'leonardo', label: 'Leonardo (Nano Banana 2)' },
                 ]} />
               </div>
               <div>
@@ -383,7 +387,7 @@ export default function UGCPage() {
               )}
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span>Cost: <b className="text-foreground font-mono">{totalCredits}</b> credits ({products.length} × 6 cr)</span>
-                <BalanceBadge provider="weavy" required={totalCredits} />
+                <BalanceBadge provider="leonardo" required={totalCredits} />
               </div>
             </div>
           </Section>

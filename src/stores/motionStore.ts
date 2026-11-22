@@ -60,7 +60,7 @@ const createSlot = (): MotionSlot => ({
 })
 
 export const useMotionStore = create<MotionState>((set) => ({
-  provider: 'weavy',
+  provider: 'runninghub',
   modelKey: '',
   orientation: 'video',
   prompt: '',

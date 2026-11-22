@@ -45,9 +45,9 @@ const WORKFLOW_CONFIGS: WorkflowConfig[] = [
     description: 'Kontrol gerakan video dengan AI — Kling 2.6, Seedance',
     category: 'motion',
     icon: <Film className="h-4 w-4" />,
-    providers: ['weavy', 'roboneo', 'leonardo'],
-    defaultProvider: 'weavy',
-    fallbackProviders: ['roboneo', 'leonardo'],
+    providers: ['runninghub', 'seavi', 'posbot'],
+    defaultProvider: 'runninghub',
+    fallbackProviders: ['seavi', 'posbot'],
   },
   {
     id: 'narrative-video',
@@ -55,8 +55,8 @@ const WORKFLOW_CONFIGS: WorkflowConfig[] = [
     description: 'Video naratif otomatis dengan storyboard & voice-over',
     category: 'video',
     icon: <Video className="h-4 w-4" />,
-    providers: ['weavy', 'roboneo', 'framia', 'createpulse'],
-    defaultProvider: 'weavy',
+    providers: ['roboneo', 'framia', 'createpulse'],
+    defaultProvider: 'roboneo',
     fallbackProviders: ['framia', 'createpulse'],
   },
   {
@@ -65,9 +65,9 @@ const WORKFLOW_CONFIGS: WorkflowConfig[] = [
     description: 'Generasi storyboard visual dari prompt teks',
     category: 'image',
     icon: <Layers className="h-4 w-4" />,
-    providers: ['weavy', 'framia', 'leonardo'],
-    defaultProvider: 'weavy',
-    fallbackProviders: ['framia'],
+    providers: ['framia', 'leonardo'],
+    defaultProvider: 'framia',
+    fallbackProviders: ['leonardo'],
   },
 
   {
@@ -76,8 +76,8 @@ const WORKFLOW_CONFIGS: WorkflowConfig[] = [
     description: 'Ubah gambar statis menjadi video bergerak',
     category: 'video',
     icon: <Video className="h-4 w-4" />,
-    providers: ['weavy', 'roboneo', 'framia', 'createpulse', 'leonardo'],
-    defaultProvider: 'weavy',
+    providers: ['roboneo', 'framia', 'createpulse', 'leonardo'],
+    defaultProvider: 'createpulse',
     fallbackProviders: ['roboneo', 'framia', 'createpulse'],
   },
 
@@ -137,7 +137,6 @@ const CATEGORY_CONFIG = {
 }
 
 const PROVIDER_ICONS: Record<string, string> = {
-  weavy: '🌊',
   wavespeed: '⚡',
   magnific: '✨',
   roboneo: '🤖',
@@ -152,7 +151,6 @@ const PROVIDER_ICONS: Record<string, string> = {
 }
 
 const PROVIDER_COLORS: Record<string, string> = {
-  weavy: '#22d3ee',
   wavespeed: '#38bdf8',
   magnific: '#a78bfa',
   roboneo: '#34d399',
@@ -332,7 +330,7 @@ export default function RoutingProviderPage() {
         </Button>
         <div className="ml-auto flex items-center gap-2">
           <span className="text-[12px] text-[#a0a0a0]">Quick set all ke:</span>
-          {['weavy', 'roboneo', 'framia', 'leonardo'].map((pid) => (
+          {['roboneo', 'framia', 'leonardo'].map((pid) => (
             <button
               key={pid}
               onClick={() => handleSetAllToProvider(pid as ProviderId)}

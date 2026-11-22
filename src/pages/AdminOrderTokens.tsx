@@ -16,12 +16,11 @@ interface BulkOrder {
   total_price: number
 }
 
-type Provider = 'roboneo' | 'framia' | 'weavy'
+type Provider = 'roboneo' | 'framia'
 
 const PROVIDERS: { key: Provider; label: string }[] = [
   { key: 'roboneo', label: 'Roboneo' },
   { key: 'framia', label: 'Framia' },
-  { key: 'weavy', label: 'Weavy' },
 ]
 
 export default function AdminOrderTokensPage() {

@@ -6,7 +6,7 @@ import { nextUniqueCode } from '../lib/qrisPayment.js'
 import { createBasunipayPayment } from '../lib/basunipay.js'
 
 /**
- * Top-up manual untuk provider tanpa dompet (Roboneo/Weavy/Framia, dll.).
+ * Top-up manual untuk provider tanpa dompet (Roboneo/Framia, dll.).
  *
  * Token Bank dikunci dan provider-provider itu memakai kunci milik member
  * sendiri, jadi tidak ada saldo yang bisa dikreditkan otomatis. Alurnya:

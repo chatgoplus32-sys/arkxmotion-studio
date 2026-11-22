@@ -128,7 +128,7 @@ export default function App() {
   }, [addToast])
 
   // Auto-sync extension→app untuk provider token pendek (Riverside, Roboneo,
-  // Weavy, Leonardo). Extension mengirim token terbaru ke /api/sync-tokens —
+  // Leonardo). Extension mengirim token terbaru ke /api/sync-tokens —
   // app polling tiap 10 detik: token baru otomatis mengganti key yang expired,
   // LALU LANGSUNG menjalankan Cek Limit & Status untuk key tsb (balance &
   // pool summary segar), plus toast + badge sidebar + riwayat pergantian.

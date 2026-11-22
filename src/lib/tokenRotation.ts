@@ -1,6 +1,5 @@
 import { useProviderManager, type ProviderId, type ProviderKey } from '@/stores/providerManager'
 import { checkRoboneoBalance, isRoboneoBalanceError, isRoboneoRotatableError, isRoboneoBusyError } from '@/lib/roboneo'
-import { checkWeavyBalance } from '@/lib/weavy'
 import { fetchLeonardoBalance } from '@/lib/leonardo'
 import { checkOneOverBalance, extractOneOverUserId, resolveOneOverAccessToken } from '@/lib/oneover'
 import { isNexabotRotatableError } from '@/lib/nexabot'
@@ -52,12 +51,6 @@ export function isCreatePulseTokenError(error: any): boolean {
   return /unauthorized|forbidden|invalid.*key|key.*invalid|expired|401|403|api.*key/i.test(msg)
 }
 
-export function isWeavyTokenError(error: any): boolean {
-  if (!error) return false
-  const msg = typeof error === 'string' ? error : error?.message || ''
-  return /token|auth|log\s*in|login|expired|unauth|401|403|invalid.*token|token.*invalid|insufficient|balance|credit|quota|no output URL|output tidak ditemukan/i.test(msg)
-}
-
 export function isMagnificTokenError(error: any): boolean {
   if (!error) return false
   const msg = typeof error === 'string' ? error : error?.message || ''
@@ -69,7 +62,6 @@ export function detectTokenError(provider: ProviderId, error: any): boolean {
     case 'framia': return isFramiaTokenError(error)
     case 'roboneo': return isRoboneoTokenError(error)
     case 'createpulse': return isCreatePulseTokenError(error)
-    case 'weavy': return isWeavyTokenError(error)
     case 'magnific': return isMagnificTokenError(error)
     case 'firefly': return /401|403|expired|unauthorized|invalid.*token/i.test(String(error?.message || error))
     case 'leonardo': return /insufficient|not enough|out of|balance|quota|exhaust|limit|too many|rate.?limit|402|401|403|unauthor|forbidden|expired|invalid.*token|token.*invalid|500|502|503|504|server error|network|fetch|timeout|graphql/i.test(String(error?.message || error))
@@ -155,12 +147,9 @@ export async function withTokenRotation<T>(
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     const currentKeys = useProviderManager.getState().keys[resolvedProvider] || []
-    // Sort by balance descending for weavy (prefer higher balance tokens)
-    const sortedKeys = provider === 'weavy'
-      ? [...currentKeys].sort((a, b) => (b.balance ?? 0) - (a.balance ?? 0))
-      // NexaBot: key dengan cookie session (paket Unlimited) dicoba lebih dulu
-      // supaya generate lewat /api/v1/generate dan tidak dipotong kredit.
-      : provider === 'nexabot'
+    // NexaBot: key dengan cookie session (paket Unlimited) dicoba lebih dulu
+    // supaya generate lewat /api/v1/generate dan tidak dipotong kredit.
+    const sortedKeys = provider === 'nexabot'
       ? [...currentKeys].sort((a, b) => Number(!!b.cookies) - Number(!!a.cookies))
       : currentKeys
     const nextKey = sortedKeys.find(
@@ -223,34 +212,7 @@ export async function withTokenRotation<T>(
       } catch (err: any) {
         console.log(`[token-rotation] ${provider} balance check failed for "${nextKey.name}": ${err.message}, proceeding anyway`)
       }
-    } else if (provider === 'weavy') {
-      try {
-        const result = await checkWeavyBalance(nextKey.key)
-        const required = opts?.requiredCredits ?? 0
-        if (result.ok) {
-          const balance = result.balance
-          if (balance !== null && balance !== undefined) {
-            if (balance < required) {
-              console.log(`[token-rotation] ${provider} key "${nextKey.name}" skipped (balance=${balance} < required=${required}). Trying next...`)
-              useProviderManager.getState().updateKeyStatus(resolvedProvider, nextKey.id, 'empty', balance)
-              lastError = new Error(`Token ${nextKey.name} balance tidak cukup (${balance} < ${required})`)
-              opts?.onError?.(lastError, nextKey)
-              continue
-            }
-            console.log(`[token-rotation] ${provider} key "${nextKey.name}" balance=${balance} >= required=${required}, proceeding...`)
-            useProviderManager.getState().updateKeyStatus(resolvedProvider, nextKey.id, 'active', balance)
-          } else {
-            console.log(`[token-rotation] ${provider} key "${nextKey.name}" balance unknown, proceeding anyway...`)
-            useProviderManager.getState().updateKeyStatus(resolvedProvider, nextKey.id, 'active')
-          }
-        } else {
-          console.log(`[token-rotation] ${provider} key "${nextKey.name}" token check failed (${result.error}), proceeding anyway...`)
-          useProviderManager.getState().updateKeyStatus(resolvedProvider, nextKey.id, 'active')
-        }
-       } catch (err: any) {
-         console.log(`[token-rotation] ${provider} balance check failed for "${nextKey.name}": ${err.message}, proceeding anyway`)
-       }
-     } else if (provider === 'leonardo') {
+    } else if (provider === 'leonardo') {
        try {
          const balanceResult = await fetchLeonardoBalance(nextKey.key)
          const required = opts?.requiredCredits ?? 0
@@ -339,18 +301,6 @@ export async function withTokenRotation<T>(
           } else {
             useProviderManager.getState().removeKey(provider, nextKey.id)
             console.log(`[token-rotation] ${provider} key "${nextKey.name}" removed - auth error (${err.message}). Trying next...`)
-          }
-        } else if (provider === 'weavy') {
-          const errMsg = (err.message || '').toLowerCase()
-          if (errMsg.includes('insufficient') || errMsg.includes('credit')) {
-            useProviderManager.getState().updateKeyStatus(resolvedProvider, nextKey.id, 'empty', 0)
-            console.log(`[token-rotation] ${provider} key "${nextKey.name}" credits habis (${err.message}). Marking empty, trying next...`)
-          } else if (errMsg.includes('unauthorized') || errMsg.includes('401') || errMsg.includes('invalid')) {
-            useProviderManager.getState().updateKeyStatus(resolvedProvider, nextKey.id, 'invalid')
-            console.log(`[token-rotation] ${provider} key "${nextKey.name}" marked invalid (${err.message}). Trying next...`)
-          } else {
-            useProviderManager.getState().updateKeyStatus(resolvedProvider, nextKey.id, 'invalid')
-            console.log(`[token-rotation] ${provider} key "${nextKey.name}" marked invalid (${err.message}). Trying next...`)
           }
         } else if (provider === 'galleri5') {
           const errMsg = (err.message || '').toLowerCase()

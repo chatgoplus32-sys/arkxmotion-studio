@@ -18,12 +18,11 @@ interface Token {
   created_at: string
 }
 
-type Provider = 'roboneo' | 'framia' | 'weavy'
+type Provider = 'roboneo' | 'framia'
 
 const PROVIDERS: { key: Provider; label: string; minCredits: number }[] = [
   { key: 'roboneo', label: 'Roboneo', minCredits: 0 },
   { key: 'framia', label: 'Framia', minCredits: 0 },
-  { key: 'weavy', label: 'Weavy', minCredits: 0 },
 ]
 
 interface StockInfo {
@@ -45,7 +44,6 @@ export default function AdminTokensPage() {
   const [stock, setStock] = useState<Record<Provider, StockInfo>>({
     roboneo: { total: 0, available: 0, sold: 0, price: 0 },
     framia: { total: 0, available: 0, sold: 0, price: 0 },
-    weavy: { total: 0, available: 0, sold: 0, price: 0 },
   })
   const [activeTab, setActiveTab] = useState<Provider>('roboneo')
   const [isLoading, setIsLoading] = useState(true)
@@ -140,8 +138,7 @@ export default function AdminTokensPage() {
         const s: Record<Provider, StockInfo> = {
           roboneo: { total: 0, available: 0, sold: 0, price: 0 },
           framia: { total: 0, available: 0, sold: 0, price: 0 },
-          weavy: { total: 0, available: 0, sold: 0, price: 0 },
-        }
+              }
         for (const t of data.tokens) {
           if (s[t.provider as Provider]) {
             s[t.provider as Provider].total++
@@ -429,7 +426,7 @@ export default function AdminTokensPage() {
     <div>
       <PageHeader
         title="Kelola Token"
-        desc="Upload, lihat, dan hapus stok token Roboneo, Framia, dan Weavy"
+        desc="Upload, lihat, dan hapus stok token Roboneo dan Framia"
       />
       <PageContent>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-5">

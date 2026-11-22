@@ -65,85 +65,6 @@ const TOKEN_SCRIPTS: Record<string, { script: string; instructions: string[]; ur
       'Token otomatis copy ke clipboard',
     ],
   },
-  weavy: {
-    url: 'https://app.weavy.ai',
-    script: `// ARKXMotion Token Grab — Weavy
-(async () => {
-  try {
-    const dbs = await indexedDB.databases();
-    for (const db of dbs) {
-      const idb = await new Promise((resolve) => {
-        const req = indexedDB.open(db.name);
-        req.onsuccess = () => resolve(req.result);
-      });
-      for (const name of Array.from(idb.objectStoreNames)) {
-        const tx = idb.transaction(name, 'readonly');
-        const data = await new Promise((resolve) => {
-          const req = tx.objectStore(name).getAll();
-          req.onsuccess = () => resolve(req.result);
-        });
-        for (const item of data) {
-          if (item?.access_token || item?.token) {
-            await navigator.clipboard.writeText(item.access_token || item.token);
-            alert('✅ Weavy token copied!');
-            return;
-          }
-        }
-      }
-    }
-    alert('❌ Token not found.');
-  } catch(e) { alert('Error: ' + e.message); }
-})();`,
-    instructions: [
-      'Buka app.weavy.ai dan login',
-      'Setelah halaman dashboard kebuka, extension auto-sync token terbaru tiap ±45 dtk — key expired di app diganti otomatis, tanpa copy-paste',
-      'Buka DevTools Console (F12 → Console)',
-      'Paste script di atas & Enter',
-      'Token otomatis copy dari IndexedDB',
-    ],
-  },
-  galleri5: {
-    url: 'https://studio.galleri5.com',
-    script: `// ARKXMotion Token Grab — Galleri5
-(async () => {
-  try {
-    const dbs = await indexedDB.databases();
-    for (const db of dbs) {
-      if (!db.name?.includes('firebase')) continue;
-      const idb = await new Promise((resolve) => {
-        const req = indexedDB.open(db.name);
-        req.onsuccess = () => resolve(req.result);
-      });
-      for (const name of Array.from(idb.objectStoreNames)) {
-        const tx = idb.transaction(name, 'readonly');
-        const data = await new Promise((resolve) => {
-          const req = tx.objectStore(name).getAll();
-          req.onsuccess = () => resolve(req.result);
-        });
-        for (const item of data) {
-          if (item?.stsTokenManager?.accessToken) {
-            const token = JSON.stringify({
-              accessToken: item.stsTokenManager.accessToken,
-              refreshToken: item.stsTokenManager.refreshToken,
-              expirationTime: item.stsTokenManager.expirationTime
-            });
-            await navigator.clipboard.writeText(token);
-            alert('✅ Galleri5 token copied!');
-            return;
-          }
-        }
-      }
-    }
-    alert('❌ Token not found.');
-  } catch(e) { alert('Error: ' + e.message); }
-})();`,
-    instructions: [
-      'Buka studio.galleri5.com dan login',
-      'Buka DevTools Console (F12 → Console)',
-      'Paste script di atas & Enter',
-      'Token (JSON) otomatis copy dari Firebase IndexedDB',
-    ],
-  },
   roboneo: {
     url: 'https://roboneo.com',
     script: `// ARKXMotion Token Grab — Roboneo
@@ -360,17 +281,6 @@ const PLUGINS: PluginInfo[] = [
     icon: '🔮',
     color: '#06b6d4',
     description: 'Auto-grab Supabase JWT dari oneover.com',
-    type: 'extension',
-    hasScript: true,
-    hasExtension: true,
-    status: 'available',
-  },
-  {
-    id: 'weavy',
-    name: 'Weavy',
-    icon: '☁️',
-    color: '#3b82f6',
-    description: 'Auto-grab + AUTO-SYNC token dari app.weavy.ai via IndexedDB — token expired diganti otomatis',
     type: 'extension',
     hasScript: true,
     hasExtension: true,

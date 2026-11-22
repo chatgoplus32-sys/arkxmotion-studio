@@ -10,7 +10,6 @@ import { uploadToCatbox, compressVideo, normalizeImage, getVideoDurationFromFile
 import { submitGensparkVideo, extractGensparkVideoUrl, uploadToGenspark, pollGensparkVideo } from '@/lib/genspark'
 import { trimVideoFFmpeg } from '@/lib/ffmpeg-compress'
 import { restoreMotionAudio } from '@/lib/motionAudio'
-import { submitWeavyMotionControl, uploadWeavyAssetWithRetry, resolveWeavyAssetUrl, getActiveWeavyAccessToken, compressImageForWeavy } from '@/lib/weavy'
 import { getRunningHubWorkflowId, submitRunningHubMotionControl, submitRunningHubUltraFastHD, submitRunningHubMotionApp, pollRunningHubTask, checkRunningHubBalance } from '@/lib/runninghub'
 import { useRunninghubPricing, rhModelPrice } from '@/lib/runninghubPricing'
 import { formatRp } from '@/lib/payment'
@@ -48,12 +47,6 @@ import {
 } from 'lucide-react'
 
 const PROVIDERS = {
-  weavy: { name: 'Weavy', models: [
-    { key: 'fal-ai/kling-video/v3/pro/motion-control', label: 'Kling V3.0 Pro', cr: 50 },
-    { key: 'fal-ai/kling-video/v3/standard/motion-control', label: 'Kling V3.0 Standard', cr: 50 },
-    { key: 'fal-ai/kling-video/v2.6/pro/motion-control', label: 'Kling V2.6 Pro', cr: 50 },
-    { key: 'fal-ai/kling-video/v2.6/standard/motion-control', label: 'Kling V2.6 Standard', cr: 50 },
-  ]},
   wavespeed: { name: 'Wavespeed', models: [
     { key: 'ws:kwaivgi/kling-v3.0-pro/motion-control', label: 'Kling V3.0 Pro', cr: 84 },
     { key: 'ws:kwaivgi/kling-v3.0-std/motion-control', label: 'Kling V3.0 Standard', cr: 63 },
@@ -124,18 +117,11 @@ const PROVIDERS = {
   markastools: { name: 'MarkasTools', models: MARKAS_MOTION_MODELS.map(m => ({ key: m.key, label: m.label, cr: m.cr })) },
 }
 
-// Provider yang tersedia di halaman Motion Control. Weavy diaktifkan kembali
-// (dulu disembunyikan oleh commit c80e00f) — implementasinya masih ada lengkap
-// di halaman ini, jadi cukup dimasukkan ke daftar pilihan.
-const MOTION_PROVIDER_IDS = ['weavy', 'runninghub', 'seavi', 'posbot'] as const
+// Provider yang tersedia di halaman Motion Control.
+const MOTION_PROVIDER_IDS = ['runninghub', 'seavi', 'posbot'] as const
 type MotionProviderId = (typeof MOTION_PROVIDER_IDS)[number]
 
 const MOTION_PROVIDER_INFO: Record<MotionProviderId, { name: string; tagline: string; note: string; recommended?: boolean }> = {
-  weavy: {
-    name: 'Weavy',
-    tagline: 'Kling V3 Pro/Standard via Weavy',
-    note: 'Butuh token Weavy aktif di menu Providers. Upload aset memakai fallback Cloudflare Worker bila api.weavy.ai membalas 403.',
-  },
   runninghub: {
     name: 'RunningHub',
     tagline: 'Harga per generate sesuai System Settings',
@@ -156,7 +142,6 @@ const MOTION_PROVIDER_INFO: Record<MotionProviderId, { name: string; tagline: st
 
 // Default model tiap provider: pilih yang paling murah, bukan yang pertama di daftar.
 const MOTION_RECOMMENDED_MODEL: Record<MotionProviderId, string> = {
-  weavy: 'fal-ai/kling-video/v3/pro/motion-control',
   runninghub: 'rh:std:2.6',
   seavi: 'sv:motion_control_v3_server19_15dtk',
   posbot: 'pb:motion_control_std',
@@ -1505,105 +1490,6 @@ export default function MotionPage() {
             }
           } else if (isFramia) {
             throw new Error('Provider aktif Framia. Gunakan Generate → Framia untuk menjalankan node/canvas Framia secara langsung.')
-          } else if (provider === 'weavy' && slot.image && slot.video) {
-            try {
-              let imageUrl = slot.imageUrl || ''
-              let videoUrl = slot.videoUrl || ''
-
-              // Clear blob URLs - they can't be accessed by Weavy server
-              if (imageUrl.startsWith('blob:')) {
-                addLog(`#${slotNum} Clearing invalid blob URL for image, re-uploading...`, 'warn')
-                imageUrl = ''
-                updateSlot(slot.id, { imageUrl: null })
-              }
-              if (videoUrl.startsWith('blob:')) {
-                addLog(`#${slotNum} Clearing invalid blob URL for video, re-uploading...`, 'warn')
-                videoUrl = ''
-                updateSlot(slot.id, { videoUrl: null })
-              }
-
-              if (!imageUrl || !videoUrl) {
-                const tokenInfo = await getActiveWeavyAccessToken()
-                if (!tokenInfo) throw Error('Tidak ada Weavy token aktif. Tambahkan token di Providers.')
-                const weavyToken = tokenInfo.accessToken
-
-                if (!imageUrl) {
-                  let imageFile = slot.image
-                  if (imageFile.size > 8 * 1024 * 1024) {
-                    addLog(`#${slotNum} Compressing image...`)
-                    updateSlotStatus(slot.id, 'uploading img...', 'Compressing...')
-                    const compressed = await compressImageForWeavy(imageFile, 1280, 0.8)
-                    imageFile = compressed
-                  }
-                  updateSlotStatus(slot.id, 'uploading img...')
-                  addLog(`#${slotNum} Upload image to Weavy...`)
-                  const imgAsset = await uploadWeavyAssetWithRetry(
-                    imageFile,
-                    `ref_img_${slotNum}_${Date.now()}.jpg`,
-                    weavyToken
-                  )
-                  imageUrl = resolveWeavyAssetUrl(imgAsset, 'image')
-                  updateSlot(slot.id, { imageUrl })
-                  addLog(`#${slotNum} Image: ${imageUrl.slice(0, 60)}...`)
-                } else {
-                  addLog(`#${slotNum} Using cached image URL`)
-                }
-
-                if (!videoUrl) {
-                  updateSlotStatus(slot.id, 'uploading vid...')
-                  addLog(`#${slotNum} Upload video to Weavy...`)
-                  const vidAsset = await uploadWeavyAssetWithRetry(
-                    slot.video,
-                    `ref_vid_${slotNum}_${Date.now()}.mp4`,
-                    weavyToken
-                  )
-                  videoUrl = resolveWeavyAssetUrl(vidAsset, 'video')
-                  updateSlot(slot.id, { videoUrl })
-                  addLog(`#${slotNum} Video: ${videoUrl.slice(0, 60)}...`)
-                } else {
-                  addLog(`#${slotNum} Using cached video URL`)
-                }
-              } else {
-                addLog(`#${slotNum} Using cached image & video URLs`)
-              }
-
-              updateSlotStatus(slot.id, 'processing', 'submitting...')
-              addLog(`#${slotNum} Submit ke Weavy (${currentModel.label}) — recipe mode...`)
-
-              const result = await submitWeavyMotionControl({
-                modelKey,
-                imageUrl,
-                videoUrl,
-                orientation,
-                keepSound,
-                prompt: finalPrompt || undefined,
-                onProgress: (status, pct) => {
-                  updateSlotStatus(slot.id, 'processing', pct ? `${status} ${pct}%` : status)
-                  addLog(`#${slotNum} ${status}`)
-                },
-              })
-              if (!result.ok || !result.videoUrl) throw Error(result.error || 'Submit failed')
-              const resultUrl = result.videoUrl
-
-              updateSlotStatus(slot.id, 'done')
-              addLog(`#${slotNum} Done: ${resultUrl.slice(0, 60)}...`, 'success')
-
-              const weavyId = `weavy-${Date.now().toString(36)}-${slotNum}`
-              addResult({
-                id: weavyId,
-                url: resultUrl,
-                prompt: finalPrompt || '(no prompt)',
-                date: new Date().toISOString(),
-                page: 'motion',
-              })
-              persistResultToR2(weavyId, resultUrl)
-              return true
-            } catch (err: any) {
-              setCompressDialog(null)
-              updateSlotStatus(slot.id, 'error', err.message)
-              addLog(`#${slotNum} Error: ${err.message}`, 'error')
-              return false
-            }
           } else if (provider === 'runninghub' && slot.image && slot.video) {
               let attemptTaskId: string | null = null
               let lastTaskId: string | null = null
@@ -2263,7 +2149,7 @@ export default function MotionPage() {
                 const finalStatus = latestStatus || (gv0?.status || '').toUpperCase()
                 if (finalStatus === 'FAILURE' || finalStatus === 'FAILED' || finalStatus === 'ERROR') {
                   const reason = gvLatest?.failure_reason || gvLatest?.error_message || gv0?.failure_reason || gv0?.error_message
-                  throw new Error(`Genspark/Kling gagal: ${reason || 'server sedang down'}. Coba lagi beberapa menit, atau gunakan provider lain (Weavy/Wavespeed) yang lebih stabil.`)
+                  throw new Error(`Genspark/Kling gagal: ${reason || 'server sedang down'}. Coba lagi beberapa menit, atau gunakan provider lain (Wavespeed/Seavi) yang lebih stabil.`)
                 }
                 // Genspark membungkus error asli di data.result (mis. "Your credits are insufficient")
                 // sementara status/message-nya bilang "ok"/"success" — jangan percaya envelope itu.

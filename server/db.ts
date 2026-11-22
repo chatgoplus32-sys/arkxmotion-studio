@@ -119,7 +119,7 @@ if (!orderColumns.some(c => c.name === 'bulk_id')) {
   db.exec("ALTER TABLE token_orders ADD COLUMN bulk_id TEXT NOT NULL DEFAULT ''")
 }
 
-// Provider tanpa dompet (Roboneo/Weavy/Framia, dll.) tidak bisa dikreditkan
+// Provider tanpa dompet (Roboneo/Framia, dll.) tidak bisa dikreditkan
 // otomatis. Permintaan top-up-nya dicatat di sini, lalu admin memverifikasi
 // pembayaran dan menyerahkan kunci/saldo provider secara manual.
 db.exec(`
@@ -761,7 +761,7 @@ if (!addonFeeRow) {
   db.prepare("INSERT INTO app_settings (key, value) VALUES ('addon_fee', '100000')").run()
 }
 
-const providers = ['weavy', 'wavespeed', 'magnific', 'roboneo', 'createpulse', 'framia', 'firefly', 'leonardo', 'gemini', 'openai', 'shotstack', 'creatomate', 'riverside', 'nexabot']
+const providers = ['wavespeed', 'magnific', 'roboneo', 'createpulse', 'framia', 'firefly', 'leonardo', 'gemini', 'openai', 'shotstack', 'creatomate', 'riverside', 'nexabot']
 for (const p of providers) {
   const exists = db.prepare('SELECT id FROM provider_maintenance WHERE provider = ?').get(p)
   if (!exists) {

@@ -35,8 +35,8 @@ Sidebar Navigation Groups:
 **File:** `src/pages/Providers.tsx:31-332` (333 lines total)
 
 #### Key Features:
-- **8 AI Providers Supported:**
-  - Weavy, Wavespeed, Magnific, Roboneo (Video/AI)
+- **7 AI Providers Supported:**
+  - Wavespeed, Magnific, Roboneo (Video/AI)
   - CreatePulse (Video creation) 
   - Gemini, OpenAI (Voice/Text)
 
@@ -74,7 +74,7 @@ Sidebar Navigation Groups:
 
 #### Provider Types:
 ```typescript
-type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 
+type ProviderId = 'wavespeed' | 'magnific' | 'roboneo' | 
                  'createpulse' | 'gemini' | 'openai';
 ```
 
@@ -106,9 +106,6 @@ interface ProviderKey {
 
 #### Default Values:
 - **All providers:** Empty keys initially
-- **Default routing:** All workflows → 'weavy'
-- **Active provider:** 'weavy'
-
 ### 4. UI Component Library
 **Location:** `src/components/ui/`
 
@@ -192,7 +189,7 @@ npm run lint      # OXLint linting
 ### Providers Page TypeScript Types:
 ```typescript
 const PROVIDER_IDS: ProviderId[] = [
-  'weavy', 'wavespeed', 'magnific', 'roboneo',
+  'wavespeed', 'magnific', 'roboneo',
   'createpulse', 'gemini', 'openai'
 ];
 
@@ -217,7 +214,6 @@ const WORKFLOW_ROUTES = [
 - **Balance Updates:** Random balance on validation
 
 ### Workflow Routing:
-- **All workflows default to 'weavy'**
 - **Runtime configuration** via dropdowns
 - **Live updates** when settings change
 

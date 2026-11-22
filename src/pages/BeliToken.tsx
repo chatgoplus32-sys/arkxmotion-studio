@@ -27,12 +27,11 @@ interface OrderItem {
   count: number
 }
 
-type Provider = 'roboneo' | 'framia' | 'weavy'
+type Provider = 'roboneo' | 'framia'
 
 const PROVIDERS: { key: Provider; label: string; color: string }[] = [
   { key: 'roboneo', label: 'Roboneo', color: 'text-blue-500' },
   { key: 'framia', label: 'Framia', color: 'text-purple-500' },
-  { key: 'weavy', label: 'Weavy', color: 'text-green-500' },
 ]
 
 const WHATSAPP_LINK = 'https://wa.me/6285156207924?text=Halo%20saya%20ingin%20order%20token'

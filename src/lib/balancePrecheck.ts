@@ -1,5 +1,4 @@
 import { checkRoboneoBalance } from '@/lib/roboneo'
-import { selectWeavyTokenForCredits } from '@/lib/weavy'
 import { getGalleri5AuthHeaders, checkGalleri5Balance } from '@/lib/galleri5'
 import { useProviderManager } from '@/stores/providerManager'
 
@@ -14,7 +13,7 @@ export interface BalancePrecheckResult {
  * Provider yang tidak punya endpoint balance (leonardo, magnific, runninghub,
  * wavespeed, framia, dst) hanya dicek keberadaan key aktif — tanpa blokir.
  *
- * @param provider        ID provider (roboneo | weavy | galleri5 | createpulse | lainnya)
+ * @param provider        ID provider (roboneo | galleri5 | createpulse | lainnya)
  * @param minCredits      Estimasi biaya generate dalam credits
  * @param opts            Opsi tambahan: cpBalance (saldo CreatePulse yang sudah di-fetch di halaman),
  *                        authToken (token sesi untuk CreatePulse),
@@ -30,8 +29,6 @@ export async function precheckProviderBalance(
   switch (provider) {
     case 'roboneo':
       return precheckRoboneoBalance(minCredits)
-    case 'weavy':
-      return precheckWeavyBalance(minCredits)
     case 'galleri5':
       return precheckGalleri5Balance(minCredits)
     case 'oneover':
@@ -134,19 +131,6 @@ export async function precheckRoboneoBalance(minCredits: number): Promise<Balanc
     error: bestBalance != null
       ? `Saldo Roboneo tidak cukup: butuh ${minCredits} cr, saldo tertinggi ${bestBalance} cr. Top up atau pilih model lebih murah.`
       : 'Saldo Roboneo tidak bisa dicek (semua token gagal). Perbarui token di Providers.',
-  }
-}
-
-/**
- * Cek saldo Weavy: pakai selectWeavyTokenForCredits yang sudah ada — memilih
- * token valid dengan balance >= minCredits (probe API bila perlu).
- */
-export async function precheckWeavyBalance(minCredits: number): Promise<BalancePrecheckResult> {
-  const selected = await selectWeavyTokenForCredits(minCredits)
-  if (selected) return { ok: true, balance: selected.token.balance ?? null }
-  return {
-    ok: false,
-    error: `Saldo Weavy tidak cukup: butuh ${minCredits} cr dan tidak ada token dengan saldo mencukupi. Top up atau tambahkan token baru.`,
   }
 }
 
@@ -393,14 +377,6 @@ export async function refreshProviderBalance(
       window.dispatchEvent(new Event('aatools:keys-changed'))
     }
     return { ok: true, balance: bal }
-  }
-
-  if (provider === 'weavy') {
-    // selectWeavyTokenForCredits(0) resolve token + fetch credits + update storage
-    const selected = await selectWeavyTokenForCredits(0)
-    if (!selected) return { ok: false, error: 'Tidak ada token Weavy aktif di Providers.' }
-    window.dispatchEvent(new Event('aatools:keys-changed'))
-    return { ok: true, balance: selected.token.balance ?? null }
   }
 
   if (provider === 'oneover') {

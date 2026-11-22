@@ -65,7 +65,7 @@ const createRow = (): StoryboardRow => ({
 })
 
 export const useStoryboardStore = create<StoryboardState>((set) => ({
-  provider: 'weavy',
+  provider: 'gemini',
   modelKey: '',
   qualityV: '',
   sceneCount: '6',

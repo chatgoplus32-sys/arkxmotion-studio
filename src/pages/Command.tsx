@@ -29,7 +29,7 @@ const workflows: WorkflowRoute[] = [
 ]
 
 const STEPS = ['Analisa intent', 'Pilih workflow', 'Siapkan handoff']
-const EXAMPLES = ['Buat video dance dari gambar karakter','Animasi foto pemandangan jadi video 6s','Bulk 50 outfit katalog fashion','Upscale foto produk jadi 4K','Bikin UGC video untuk Shopee','Cek balance provider Weavy']
+const EXAMPLES = ['Buat video dance dari gambar karakter','Animasi foto pemandangan jadi video 6s','Bulk 50 outfit katalog fashion','Upscale foto produk jadi 4K','Bikin UGC video untuk Shopee','Cek balance provider Seavi']
 
 export default function CommandPage() {
   const navigate = useNavigate()

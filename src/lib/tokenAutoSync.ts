@@ -25,7 +25,6 @@ export interface AutoSyncDef {
 export const AUTO_SYNC_PROVIDERS: AutoSyncDef[] = [
   { id: 'riverside', label: 'Riverside', icon: '🎙️' },
   { id: 'roboneo', label: 'Roboneo', icon: '🤖' },
-  { id: 'weavy', label: 'Weavy', icon: '🌊' },
   { id: 'leonardo', label: 'Leonardo', icon: '🎨' },
   { id: 'nexabot', label: 'NexaBot', icon: '🧠', kind: 'cookie' },
   // MarkasTools: cookie sesi HttpOnly (ai.markastools.id) — cookie ini yang
@@ -227,20 +226,6 @@ async function runProviderCheck(def: AutoSyncDef, key: string): Promise<CheckOut
         return { status: bal != null && bal <= 0 ? 'empty' : 'active', balance: bal }
       }
       if (r.isValidUser === false) return { status: 'invalid', note: 'Token tidak valid' }
-      return { status: undefined, note: r.error || 'Gagal cek token' }
-    }
-    if (def.id === 'weavy') {
-      const { checkWeavyBalance } = await import('@/lib/weavy')
-      const r = await checkWeavyBalance(key)
-      if (r.ok) {
-        const bal = r.balance ?? null
-        return {
-          status: bal != null && bal <= 0 ? 'empty' : 'active',
-          balance: bal,
-          email: r.email,
-        }
-      }
-      if (r.error?.includes('expired')) return { status: 'invalid', note: r.error }
       return { status: undefined, note: r.error || 'Gagal cek token' }
     }
     if (def.id === 'leonardo') {

@@ -553,7 +553,7 @@ async function handleTokenRoutes(req: VercelRequest, res: VercelResponse, segmen
     // GET /api/admin/tokens or /api/admin/tokens?provider=roboneo
     if (req.method === 'GET' && last === 'tokens') {
       const provider = req.query.provider as string | undefined
-      if (provider && ['roboneo', 'framia', 'weavy', 'createpulse', 'riverside'].includes(provider)) {
+      if (provider && ['roboneo', 'framia', 'createpulse', 'riverside'].includes(provider)) {
         const rows = await sql`SELECT * FROM tokens WHERE provider = ${provider} ORDER BY created_at DESC`
         return res.status(200).json({ tokens: rows })
       }
@@ -576,7 +576,7 @@ async function handleTokenRoutes(req: VercelRequest, res: VercelResponse, segmen
         return res.status(201).json({ message: `${created} tokens uploaded`, count: created })
       }
 
-      if (!provider || !['roboneo', 'framia', 'weavy', 'createpulse', 'riverside'].includes(provider)) {
+      if (!provider || !['roboneo', 'framia', 'createpulse', 'riverside'].includes(provider)) {
         return res.status(400).json({ error: 'Invalid provider' })
       }
       if (!name || !token_value) {
@@ -835,43 +835,6 @@ async function checkFramia(): Promise<ProviderStatus> {
   }
 }
 
-async function checkWeavy(): Promise<ProviderStatus> {
-  const start = Date.now()
-  try {
-    const res = await fetch('https://app.weavy.ai', {
-      method: 'GET',
-      signal: AbortSignal.timeout(10000),
-    })
-    const latency = Date.now() - start
-
-    if (res.ok || res.status === 403 || res.status === 401) {
-      return {
-        name: 'Weavy',
-        status: latency > 5000 ? 'slow' : 'online',
-        latency,
-        message: res.ok ? 'Server OK' : `HTTP ${res.status} (server aktif, butuh login)`,
-        lastCheck: new Date().toISOString(),
-      }
-    }
-
-    return {
-      name: 'Weavy',
-      status: 'offline',
-      latency,
-      message: `HTTP ${res.status}`,
-      lastCheck: new Date().toISOString(),
-    }
-  } catch (err: any) {
-    return {
-      name: 'Weavy',
-      status: 'offline',
-      latency: Date.now() - start,
-      message: err.message || 'Connection failed',
-      lastCheck: new Date().toISOString(),
-    }
-  }
-}
-
 async function checkCreatePulse(): Promise<ProviderStatus> {
   const start = Date.now()
   try {
@@ -911,14 +874,13 @@ async function checkCreatePulse(): Promise<ProviderStatus> {
 
 async function handleStatusRoutes(_req: VercelRequest, res: VercelResponse) {
   try {
-    const [roboneo, framia, weavy, createpulse] = await Promise.all([
+    const [roboneo, framia, createpulse] = await Promise.all([
       checkRoboneo(),
       checkFramia(),
-      checkWeavy(),
       checkCreatePulse(),
     ])
 
-    const allStatuses = [roboneo, framia, weavy, createpulse]
+    const allStatuses = [roboneo, framia, createpulse]
     const overallStatus = allStatuses.every(s => s.status === 'online')
       ? 'online'
       : allStatuses.some(s => s.status === 'offline')
@@ -951,7 +913,7 @@ async function handleMaintenanceRoutes(req: VercelRequest, res: VercelResponse) 
     )`
 
     // Seed providers if not exist
-    const providers = ['weavy', 'wavespeed', 'magnific', 'roboneo', 'createpulse', 'framia', 'firefly', 'leonardo', 'gemini', 'openai', 'shotstack', 'creatomate', 'riverside', 'nexabot']
+    const providers = ['wavespeed', 'magnific', 'roboneo', 'createpulse', 'framia', 'firefly', 'leonardo', 'gemini', 'openai', 'shotstack', 'creatomate', 'riverside', 'nexabot']
     for (const p of providers) {
       await sql`INSERT INTO provider_maintenance (provider, is_maintenance, message) VALUES (${p}, 0, '') ON CONFLICT (provider) DO NOTHING`
     }
@@ -1366,7 +1328,7 @@ async function handleSettingsRoutes(req: VercelRequest, res: VercelResponse) {
     await sql`CREATE TABLE IF NOT EXISTS provider_maintenance (id SERIAL PRIMARY KEY, provider TEXT UNIQUE NOT NULL, is_maintenance INTEGER NOT NULL DEFAULT 0, message TEXT NOT NULL DEFAULT '', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`
 
     // Seed providers
-    const providers = ['weavy', 'wavespeed', 'magnific', 'roboneo', 'createpulse', 'framia', 'firefly', 'leonardo', 'gemini', 'openai', 'shotstack', 'creatomate', 'riverside', 'nexabot']
+    const providers = ['wavespeed', 'magnific', 'roboneo', 'createpulse', 'framia', 'firefly', 'leonardo', 'gemini', 'openai', 'shotstack', 'creatomate', 'riverside', 'nexabot']
     for (const p of providers) {
       await sql`INSERT INTO provider_maintenance (provider, is_maintenance, message) VALUES (${p}, 0, '') ON CONFLICT (provider) DO NOTHING`
     }

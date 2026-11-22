@@ -2240,7 +2240,7 @@ export function roboneoProxyPlugin(): Plugin {
       })
 
       // Catch-all untuk endpoint /api/public/* lain (galleri5, magnific,
-      // weavy, uploads, shotstack, creatomate, roboneo-membership, dsb)
+      // uploads, shotstack, creatomate, roboneo-membership, dsb)
       // → diteruskan ke produksi (arkxmotion-studio.win). Spesifik handler di atas menang duluan.
       // NexaBot: proxy langsung ke Express lokal (:6000) — jangan pakai fetch()
       // karena port 6000 termasuk blocked-port WHATWG.

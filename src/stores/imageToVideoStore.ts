@@ -31,7 +31,7 @@ interface ImageToVideoState {
 export const useImageToVideoStore = create<ImageToVideoState>((set) => ({
   imgUrl: null,
   imgFile: null,
-  provider: 'weavy',
+  provider: 'createpulse',
   model: '',
   ratio: '9:16',
   quality: 'std',

@@ -82,7 +82,7 @@ export default function AdminTopupPage() {
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<number | null>(null)
   // Wallet mana yang sedang dibuka: CreatePulse (Rp), NexaBot (Rp), Seavi (token),
-  // atau manual untuk provider tanpa dompet (Roboneo/Weavy/Framia, dll.).
+  // atau manual untuk provider tanpa dompet (Roboneo/Framia, dll.).
   const [provider, setProvider] = useState<'createpulse' | 'nexabot' | 'seavi' | 'posbot' | 'runninghub' | 'manual'>('createpulse')
 
   // Inject saldo langsung (promo) — hanya dompet member yang punya saldo.

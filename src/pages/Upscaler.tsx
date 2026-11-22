@@ -9,7 +9,6 @@ import { useProviderManager } from '@/stores/providerManager'
 import { useToastStore } from '@/stores/toastStore'
 import { runMagnificUpscale, getMagnificApiKey, type MagnificEngine, type MagnificOptimizedFor } from '@/lib/magnific'
 import { runLeonardoUpscale } from '@/lib/leonardo-upscale'
-import { runTopazUpscale } from '@/lib/weavy'
 import { submitRunningHubPhotoEnhance, pollRunningHubTask } from '@/lib/runninghub'
 import { withTokenRotation } from '@/lib/tokenRotation'
 import { addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
@@ -20,12 +19,6 @@ import { formatRp } from '@/lib/payment'
 import { uploadBlobToCdn } from '@/lib/cdn'
 
 const MAX_IMAGES = 50
-
-const TOPAZ_MODELS = [
-  'Standard V2', 'Low Resolution V2', 'CGI', 'High Fidelity V2',
-  'Text Refine', 'Recovery', 'Redefine', 'Recovery V2',
-  'Standard MAX', 'Wonder', 'Wonder 3',
-]
 
 const MAGNIFIC_ENGINES: { value: MagnificEngine; label: string }[] = [
   { value: 'automatic', label: 'automatic' },
@@ -118,7 +111,7 @@ export default function UpscalerPage() {
   const { token: authToken, user } = useAuthStore()
   const [nbWallet, setNbWallet] = useState<NexabotWallet | null>(null)
 
-  const [provider, setProvider] = useState<'topaz' | 'magnific' | 'leonardo' | 'runninghub' | 'nexabot'>('topaz')
+  const [provider, setProvider] = useState<'magnific' | 'leonardo' | 'runninghub' | 'nexabot'>('magnific')
   const [mode, setMode] = useState<'upscale' | 'enhance'>('upscale')
   const [rows, setRows] = useState<ImageRow[]>([])
   const [running, setRunning] = useState(false)
@@ -127,11 +120,6 @@ export default function UpscalerPage() {
   const [gallerySearch, setGallerySearch] = useState('')
   const [gallery, setGallery] = useState<GalleryItem[]>(() => loadGallery())
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-
-  const [topazModel, setTopazModel] = useState('Standard V2')
-  const [topazFactor, setTopazFactor] = useState(2)
-  const [topazFormat, setTopazFormat] = useState('jpeg')
-  const [topazCrop, setTopazCrop] = useState(false)
 
   const [magScale, setMagScale] = useState('2x')
   const [magEngine, setMagEngine] = useState<MagnificEngine>('automatic')
@@ -159,8 +147,6 @@ export default function UpscalerPage() {
   const magnificKey = getMagnificApiKey()
   const leonardoKeys = keys.leonardo || []
   const hasLeonardoKey = leonardoKeys.some(k => k.status !== 'invalid' && k.status !== 'expired')
-  const weavyKeys = keys.weavy || []
-  const hasWeavyKey = weavyKeys.some(k => k.status !== 'invalid' && k.status !== 'expired')
   const rhKeys = keys.runninghub || []
   const hasRunningHubKey = rhKeys.some(k => k.status !== 'invalid' && k.status !== 'expired')
   // Jalur token master server (member top up / admin) — status di-fetch di bawah.
@@ -172,7 +158,7 @@ export default function UpscalerPage() {
   const nbFreeForModel = nexabotFreeForModel(nbWallet, 'gpt-image')
   const hasNexabotAuth = user?.role === 'admin' || hasNexabotKey || nexabotServerReady
   const canRun = rows.length > 0 && !running &&
-    ((provider === 'topaz' && hasWeavyKey) || (provider === 'magnific' && !!magnificKey) || (provider === 'leonardo' && hasLeonardoKey) || (provider === 'runninghub' && (hasRunningHubKey || rhServerReady)) || (provider === 'nexabot' && hasNexabotAuth))
+    ((provider === 'magnific' && !!magnificKey) || (provider === 'leonardo' && hasLeonardoKey) || (provider === 'runninghub' && (hasRunningHubKey || rhServerReady)) || (provider === 'nexabot' && hasNexabotAuth))
 
   const addLog = useCallback((msg: string, level: LogEntry['level'] = 'info') => {
     const time = new Date().toLocaleTimeString()
@@ -273,7 +259,7 @@ export default function UpscalerPage() {
       page: 'upscaler',
       model: `AI Upscaler · ${provider}`,
       prompt: `${rows.length} gambar · ${mode}`,
-      provider: provider === 'topaz' ? 'weavy' : provider,
+      provider,
     })
 
     const Concurrency = 2
@@ -292,14 +278,7 @@ export default function UpscalerPage() {
         log('mulai...')
 
         let url: string
-        if (provider === 'topaz') {
-          url = await runTopazUpscale(item.file, {
-            model: topazModel as any,
-            upscale_factor: topazFactor,
-            output_format: topazFormat as 'jpeg' | 'png',
-            crop_to_fill: topazCrop,
-          }, (msg) => log(msg))
-        } else if (provider === 'magnific') {
+        if (provider === 'magnific') {
           url = await runMagnificUpscale(item.file, mode, {
             scale_factor: magScale,
             engine: magEngine,
@@ -436,7 +415,7 @@ export default function UpscalerPage() {
           page: 'upscaler',
           kind: 'image',
           provider,
-          model: provider === 'topaz' ? 'Topaz Upscale' : provider === 'magnific' ? 'Magnific Upscale' : provider === 'leonardo' ? 'Aurora Upscale' : provider === 'nexabot' ? 'AI Enhance via GPT Image 2.5' : 'AI Photo Enhancer',
+          model: provider === 'magnific' ? 'Magnific Upscale' : provider === 'leonardo' ? 'Aurora Upscale' : provider === 'nexabot' ? 'AI Enhance via GPT Image 2.5' : 'AI Photo Enhancer',
         }, { notify: false })
 
         const newItem: GalleryItem = {
@@ -643,7 +622,7 @@ export default function UpscalerPage() {
         eyebrow="Generate"
         title="AI Upscaler &"
         highlight="Enhancer"
-        desc={`Topaz/Magnific via Weavy, Aurora Leonardo, atau AI Photo Enhancer via RunningHub. Bulk maksimum ${MAX_IMAGES} gambar sekaligus.`}
+        desc={`Magnific, Aurora Leonardo, atau AI Photo Enhancer via RunningHub. Bulk maksimum ${MAX_IMAGES} gambar sekaligus.`}
       />
 
       <div className="flex flex-col gap-5">
@@ -658,15 +637,14 @@ export default function UpscalerPage() {
                   onChange={e => setProvider(e.target.value as any)}
                   disabled={running}
                   options={[
-                    { value: 'topaz', label: 'Topaz Upscale (Weavy node)' },
-                    { value: 'magnific', label: 'Magnific Upscale (Weavy node)' },
+                                        { value: 'magnific', label: 'Magnific Upscale' },
                     { value: 'leonardo', label: 'Aurora (Leonardo)' },
                     { value: 'runninghub', label: 'AI Photo Enhancer (RunningHub)' },
                     { value: 'nexabot', label: 'AI Enhance via GPT Image 2.5 (NexaBot)' },
                   ]}
                 />
 
-                <MaintenanceBanner providerId={provider === 'topaz' ? 'weavy' : provider as any} />
+                <MaintenanceBanner providerId={provider as any} />
 
                 {provider === 'runninghub' && !hasRunningHubKey && !rhServerReady && (
                   <div className="flex items-center gap-2 text-xs text-blue-400 bg-blue-500/10 rounded-lg p-2 border border-blue-500/20">
@@ -675,12 +653,6 @@ export default function UpscalerPage() {
                   </div>
                 )}
 
-                {provider === 'topaz' && !hasWeavyKey && (
-                  <div className="flex items-center gap-2 text-xs text-blue-400 bg-blue-500/10 rounded-lg p-2 border border-blue-500/20">
-                    <Key className="h-4 w-4" />
-                    <span>Topaz via Weavy butuh token. Tambahkan di <b>Kelola Token</b> → provider <b>Weavy</b>.</span>
-                  </div>
-                )}
                 {provider === 'magnific' && !magnificKey && (
                   <div className="flex items-center gap-2 text-xs text-blue-400 bg-blue-500/10 rounded-lg p-2 border border-blue-500/20">
                     <Key className="h-4 w-4" />
@@ -705,25 +677,6 @@ export default function UpscalerPage() {
                     { value: 'enhance', label: 'Enhance (detil / precision)' },
                   ]}
                 />
-
-                {/* Topaz Settings */}
-                {provider === 'topaz' && (
-                  <>
-                    <Label>Model Topaz</Label>
-                    <Select value={topazModel} onChange={e => setTopazModel(e.target.value)} disabled={running}
-                      options={TOPAZ_MODELS.map(m => ({ value: m, label: m }))} />
-                    <Label>Upscale factor</Label>
-                    <Select value={String(topazFactor)} onChange={e => setTopazFactor(Number(e.target.value))} disabled={running}
-                      options={[{ value: '1', label: '1x' }, { value: '2', label: '2x' }, { value: '3', label: '3x' }, { value: '4', label: '4x' }]} />
-                    <Label>Output format</Label>
-                    <Select value={topazFormat} onChange={e => setTopazFormat(e.target.value)} disabled={running}
-                      options={[{ value: 'jpeg', label: 'JPEG' }, { value: 'png', label: 'PNG' }]} />
-                    <label className="flex items-center gap-2 text-sm text-foreground/90">
-                      <input type="checkbox" checked={topazCrop} onChange={e => setTopazCrop(e.target.checked)} disabled={running} />
-                      Crop to fill
-                    </label>
-                  </>
-                )}
 
                 {/* Magnific Settings */}
                 {provider === 'magnific' && (

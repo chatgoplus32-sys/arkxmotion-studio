@@ -16,5 +16,5 @@ export function setRoutingValue(cap: string, providerId: string) {
 
 export function getActiveProviderForCap(cap: string): string {
   const routing = getRouting()
-  return routing[cap] || 'weavy'
+  return routing[cap] || 'runninghub'
 }

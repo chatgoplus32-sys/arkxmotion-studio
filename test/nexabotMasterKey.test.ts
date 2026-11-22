@@ -400,7 +400,7 @@ test('nilai kunci induk tidak pernah tersimpan di catatan pemakaian', async () =
 
 test('pembelian token ditolak dan status token tidak berubah', async () => {
   jalankanSql(
-    `INSERT INTO tokens (provider, name, token_value, price, status) VALUES ('weavy', 'kunci server (uji)', ?, 1000, 'available')`,
+    `INSERT INTO tokens (provider, name, token_value, price, status) VALUES ('roboneo', 'kunci server (uji)', ?, 1000, 'available')`,
     MASTER,
   )
   const id = bacaSql<{ id: number }>(`SELECT id FROM tokens WHERE token_value = ?`, MASTER)[0].id
@@ -438,9 +438,9 @@ test('catatan pembelian menyensor nilai kunci induk', async () => {
 const adminToken = () => tokenUntuk({ id: ADMIN.id, role: 'admin' })
 
 test('daftar token admin menyensor nilai kunci induk, nilai lain apa adanya', async () => {
-  const KUNCI_BOLEH_DILIHAT = 'kunci-weavy-biasa-456'
+  const KUNCI_BOLEH_DILIHAT = 'kunci-roboneo-biasa-456'
   jalankanSql(
-    `INSERT OR IGNORE INTO tokens (provider, name, token_value, price, status) VALUES ('weavy', 'kunci biasa (uji)', ?, 500, 'available')`,
+    `INSERT OR IGNORE INTO tokens (provider, name, token_value, price, status) VALUES ('roboneo', 'kunci biasa (uji)', ?, 500, 'available')`,
     KUNCI_BOLEH_DILIHAT,
   )
 

@@ -428,7 +428,7 @@ export default function SaldoLayananPage() {
             className="mt-3 flex flex-col gap-2 rounded-xl border border-border bg-background/40 px-4 py-3 transition hover:border-primary/40 hover:bg-accent/30 sm:flex-row sm:items-center sm:justify-between"
           >
             <div>
-              <div className="text-sm font-semibold">Provider lain — Roboneo, Weavy, Framia, dll.</div>
+              <div className="text-sm font-semibold">Provider lain — Roboneo, Framia, dll.</div>
               <p className="text-[11px] text-muted-foreground">
                 Belum punya dompet otomatis: ajukan nominal, bayar QRIS BasuNiPay — terverifikasi otomatis.
               </p>

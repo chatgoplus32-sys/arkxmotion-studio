@@ -95,29 +95,6 @@ async function checkGalleri5(): Promise<ProviderHealth> {
   }
 }
 
-// ─── Weavy ──────────────────────────────────────────────────────────────
-// Probe read-only balance via proxy (tidak membuat batch).
-async function checkWeavy(): Promise<ProviderHealth> {
-  const token = firstValidKey('weavy')
-  if (!token) {
-    return { provider: 'weavy', status: 'nokey', detail: 'Tidak ada token', checkedAt: Date.now() }
-  }
-  try {
-    const { latencyMs, res } = await probe('/api/public/weavy?action=balance', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Weavy-Token': token },
-      body: '{}',
-    })
-    const json = await res.json().catch(() => null)
-    if (res.ok && json?.ok) {
-      return { provider: 'weavy', status: 'online', latencyMs, detail: 'API & token OK', checkedAt: Date.now() }
-    }
-    return { provider: 'weavy', status: 'down', latencyMs, detail: json?.error || `HTTP ${res.status}`, checkedAt: Date.now() }
-  } catch (err: any) {
-    return { provider: 'weavy', status: 'down', detail: err?.message || 'Tidak terhubung', checkedAt: Date.now() }
-  }
-}
-
 // ─── Leonardo ───────────────────────────────────────────────────────────
 // GET /v1/users/me — read-only. Token invalid sekalipun, respon 401 dari
 // upstream membuktikan layanan hidup.
@@ -428,7 +405,6 @@ const CHECKERS: Record<string, () => Promise<ProviderHealth>> = {
   runninghub: checkRunningHub,
   roboneo: checkRoboneo,
   galleri5: checkGalleri5,
-  weavy: checkWeavy,
   leonardo: checkLeonardo,
   magnific: checkMagnific,
   framia: checkFramia,

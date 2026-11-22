@@ -1,5 +1,4 @@
 import { useProviderManager } from '@/stores/providerManager'
-import { generateWeavyBulkOne } from '@/lib/weavy'
 import { submitFramiaRun, pollFramiaRun } from '@/lib/framia'
 import { leonardoApi, withLeonardoTokens } from '@/lib/leonardo'
 
@@ -33,50 +32,6 @@ export interface ProviderBulkConfig {
 }
 
 export const BULK_FASHION_PROVIDERS: ProviderBulkConfig[] = [
-  {
-    id: 'weavy',
-    name: 'Weavy',
-    models: [
-      {
-        key: 'nanobanana2',
-        label: 'Gemini Nano Banana 2 (Weavy)',
-        qualities: [
-          { v: '0.5K', label: '0.5K (4.5 cr)', cr: 4.5 },
-          { v: '1K', label: '1K (6 cr)', cr: 6, default: true },
-          { v: '2K', label: '2K (9 cr)', cr: 9 },
-          { v: '4K', label: '4K (12 cr)', cr: 12 },
-        ],
-      },
-      {
-        key: 'gptimage2',
-        label: 'ChatGPT Images 2.0 Edit (Weavy)',
-        qualities: [
-          { v: 'low@1K', label: '1K · Low (1 cr)', cr: 1 },
-          { v: 'medium@1K', label: '1K · Medium (4 cr)', cr: 4, default: true },
-          { v: 'high@1K', label: '1K · High (17 cr)', cr: 17 },
-          { v: 'low@2K', label: '2K · Low (1 cr)', cr: 1 },
-          { v: 'medium@2K', label: '2K · Medium (7 cr)', cr: 7 },
-          { v: 'high@2K', label: '2K · High (28 cr)', cr: 28 },
-          { v: 'low@4K', label: '4K · Low (1 cr)', cr: 1 },
-          { v: 'medium@4K', label: '4K · Medium (9 cr)', cr: 9 },
-          { v: 'high@4K', label: '4K · High (37 cr)', cr: 37 },
-        ],
-      },
-      {
-        key: 'seedream-v50-pro',
-        label: 'Seedream V5.0 Pro Edit (Weavy)',
-        qualities: [
-          { v: 'match_input', label: 'Match Input (12 cr)', cr: 12, default: true },
-          { v: 'square_hd', label: 'Square HD (12 cr)', cr: 12 },
-          { v: 'square', label: 'Square (12 cr)', cr: 12 },
-          { v: 'portrait', label: 'Portrait (12 cr)', cr: 12 },
-          { v: 'landscape', label: 'Landscape (12 cr)', cr: 12 },
-          { v: 'auto_2K', label: 'Auto 2K (12 cr)', cr: 12 },
-          { v: 'auto_3K', label: 'Auto 3K (12 cr)', cr: 12 },
-        ],
-      },
-    ],
-  },
   {
     id: 'framia',
     name: 'Framia',
@@ -197,36 +152,6 @@ function fileToDataUrl(file: File): Promise<string> {
 }
 
 // ─── Provider-Specific Generators ──────────────────────────────────────────
-async function generateWeavyBulk(opts: BulkFashionOptions): Promise<string[]> {
-  const results: string[] = new Array(opts.outfitFiles.length).fill(null)
-
-  await Promise.all(opts.outfitFiles.map(async (outfitFile, idx) => {
-    if (opts.signal?.aborted) return
-    try {
-      opts.onProgress?.(idx, `Generate outfit #${idx + 1}...`)
-      const prompt = buildPrompt(opts.promptTemplate, opts.productType, idx)
-      const imageUrl = await generateWeavyBulkOne({
-        modelKey: opts.modelKey,
-        prompt,
-        quality: opts.quality,
-        ratio: opts.ratio,
-        charFile: opts.charFile,
-        outfitFile: outfitFile,
-      })
-      if (!opts.signal?.aborted) {
-        results[idx] = imageUrl
-        opts.onProgress?.(idx, 'done', imageUrl)
-      }
-    } catch (err: any) {
-      if (!opts.signal?.aborted) {
-        opts.onProgress?.(idx, 'error', undefined, err.message || String(err))
-      }
-    }
-  }))
-
-  return results.filter(Boolean) as string[]
-}
-
 async function generateFramiaBulk(opts: BulkFashionOptions): Promise<string[]> {
   const results: string[] = []
   const store = useProviderManager.getState()
@@ -348,7 +273,6 @@ export interface BulkFashionOptions {
 
 export async function generateBulkFashion(opts: BulkFashionOptions): Promise<string[]> {
   try {
-    if (opts.provider === 'weavy') return await generateWeavyBulk(opts)
     if (opts.provider === 'framia') return await generateFramiaBulk(opts)
     if (opts.provider === 'leonardo') return await generateLeonardoBulk(opts)
     throw Error(`Provider "${opts.provider}" belum support bulk fashion`)

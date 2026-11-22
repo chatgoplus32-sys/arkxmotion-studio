@@ -67,7 +67,7 @@ function seedMember(userId: number, email: string) {
   const tokenId = Number(tokenBank.lastInsertRowid)
 
   db.prepare('INSERT INTO token_orders (user_id, token_id) VALUES (?, ?)').run(userId, tokenId)
-  db.prepare("INSERT INTO provider_topup_request (user_id, provider, amount) VALUES (?, 'weavy', 50000)").run(userId)
+  db.prepare("INSERT INTO provider_topup_request (user_id, provider, amount) VALUES (?, 'roboneo', 50000)").run(userId)
   db.prepare('INSERT INTO createpulse_balance (user_id) VALUES (?)').run(userId)
   db.prepare('INSERT INTO createpulse_topup (user_id, amount) VALUES (?, 50000)').run(userId)
   db.prepare("INSERT INTO createpulse_usage (user_id, model, cost) VALUES (?, 'createpulse-uji', 10)").run(userId)

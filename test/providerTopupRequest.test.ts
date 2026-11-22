@@ -1,5 +1,5 @@
 // ── Test alur top-up manual provider tanpa dompet ──────────────────────────
-// Roboneo/Weavy/Framia tidak punya saldo server, jadi permintaan member harus
+// Roboneo/Framia tidak punya saldo server, jadi permintaan member harus
 // tercatat, dibatasi, dan hanya admin yang boleh memprosesnya. Test menembak
 // HTTP sungguhan dengan router asli supaya middleware auth + validasi ikut
 // teruji, bukan cuma query DB.
@@ -94,18 +94,18 @@ test('provider dan nominal di luar batas ditolak', async () => {
 
   const terlaluKecil = await api('POST', '/api/provider-topup/request', {
     token: userToken,
-    body: { provider: 'weavy', amount: MANUAL_TOPUP_MIN - 1 },
+    body: { provider: 'roboneo', amount: MANUAL_TOPUP_MIN - 1 },
   })
   assert.equal(terlaluKecil.status, 400)
 
   const terlaluBesar = await api('POST', '/api/provider-topup/request', {
     token: userToken,
-    body: { provider: 'weavy', amount: MANUAL_TOPUP_MAX + 1 },
+    body: { provider: 'roboneo', amount: MANUAL_TOPUP_MAX + 1 },
   })
   assert.equal(terlaluBesar.status, 400)
 
   const tanpaLogin = await api('POST', '/api/provider-topup/request', {
-    body: { provider: 'weavy', amount: 50000 },
+    body: { provider: 'roboneo', amount: 50000 },
   })
   assert.equal(tanpaLogin.status, 401)
 })

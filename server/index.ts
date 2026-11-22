@@ -57,9 +57,6 @@ import publicFreebeatRoutes from './routes/publicFreebeat.js'
 import publicGensparkUploadRoutes from './routes/publicGensparkUpload.js'
 import publicRunninghubRoutes from './routes/publicRunninghub.js'
 import publicRunninghubWatermarkRoutes from './routes/publicRunninghubWatermark.js'
-import publicWeavyRoutes from './routes/publicWeavy.js'
-import publicWeavyProxyRoutes from './routes/publicWeavyProxy.js'
-import publicWeavyCreditsRoutes from './routes/publicWeavyCredits.js'
 import publicR2UploadRoutes from './routes/publicR2Upload.js'
 import watermarkEngineRoutes from './routes/watermarkEngine.js'
 import { UPLOAD_DIR, DISK_FILE_BASE, UPLOAD_RETENTION_DAYS, pruneOldUploads, freeDiskBytes, mediaStorageMode } from './lib/mediaStorage.js'
@@ -179,9 +176,6 @@ app.use('/api/public/freebeat', publicFreebeatRoutes)
 app.use('/api/public/genspark-upload', publicGensparkUploadRoutes)
 app.use('/api/public/runninghub/watermark-clean', publicRunninghubWatermarkRoutes)
 app.use('/api/public/runninghub', publicRunninghubRoutes)
-app.use('/api/public/weavy', publicWeavyRoutes)
-app.use('/api/public/weavy-proxy', publicWeavyProxyRoutes)
-app.use('/api/public/weavy-credits', publicWeavyCreditsRoutes)
 app.use('/api/public/r2-upload', publicR2UploadRoutes)
 // Storage fallback disk (dipakai bila kredensial R2 belum di-set di VPS):
 // file hasil generator dilayani dari folder upload di disk via /api path

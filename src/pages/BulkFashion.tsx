@@ -61,7 +61,7 @@ function setRoutingValue(cap: string, providerId: string) {
 
 function getActiveProviderForCap(cap: string): string {
   const routing = getRouting()
-  return routing[cap] || 'weavy'
+  return routing[cap] || 'runninghub'
 }
 
 function aspectToClass(ratio: string): string {

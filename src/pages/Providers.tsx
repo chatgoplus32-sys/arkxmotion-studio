@@ -28,7 +28,6 @@ import ProviderStatusBar from '@/components/providers/ProviderStatusBar'
 import TokenSyncHistory from '@/components/providers/TokenSyncHistory'
 import { checkRoboneoBalance } from '@/lib/roboneo'
 import { fetchLeonardoBalance } from '@/lib/leonardo'
-import { checkWeavyBalance } from '@/lib/weavy'
 import {
   checkRunningHubBalance,
   claimRunningHubDailyGift,
@@ -62,7 +61,6 @@ import { checkGalleri5Balance, isGalleri5TokenError } from '@/lib/galleri5'
 
 const PROVIDER_COLORS: Record<string, string> = {
   brain: '#f472b6',
-  weavy: '#22d3ee',
   wavespeed: '#38bdf8',
   roboneo: '#34d399',
   runninghub: '#f97316',
@@ -84,7 +82,7 @@ const PROVIDER_COLORS: Record<string, string> = {
 
 /**
  * Tujuan tombol isi-saldo per provider (wallet sendiri vs top up manual).
- * Provider tanpa dompet (Roboneo/Weavy/Framia, dll.) memakai kunci milik
+ * Provider tanpa dompet (Roboneo/Framia, dll.) memakai kunci milik
  * member sendiri, jadi top up-nya diajukan ke admin lewat halaman manual.
  */
 /** Access token RunningHub = JWT (header base64 "eyJ..."). */
@@ -115,7 +113,6 @@ function topupCta(provider: string): { route: string; label: string } {  if (pro
 
 const PROVIDER_LIST = [
   { key: 'brain', label: 'Brain (Gemini)', desc: 'Dipakai Produk Storyboard & Naratif Video Maker. Multi-key auto-rotate saat kena limit/429.' },
-  { key: 'weavy', label: 'Weavy', desc: 'Provider utama Kling Motion Control, Wan, Sora, Seedance.' },
   { key: 'wavespeed', label: 'Wavespeed', desc: 'Provider alternatif — cek balance via api.wavespeed.ai/api/v3/balance.' },
   { key: 'roboneo', label: 'Roboneo', desc: 'AI video generation via Roboneo (Meitu) — Seedance 2.0, Kling 3.0, Wan 2.6, Sora 2, VEO 3.0, Happy Horse, Google Omni.' },
   { key: 'runninghub', label: 'RunningHub', desc: 'RunningHub AI apps & workflows — MiniMax H3 VLOG, UGC Storyboard, Try-On, dll.' },
@@ -137,8 +134,6 @@ const PROVIDER_LIST = [
 
 const MENU_HIDDEN_PROVIDERS = [
   'brain',
-  // Weavy sengaja TIDAK disembunyikan: token Weavy dipasang dari halaman ini
-  // dan dipakai Motion Control / Image to Video / Text-to-Video / UGC.
   'wavespeed',
   'roboneo',
   'framia',
@@ -196,23 +191,6 @@ const TOKEN_GUIDE: Record<string, {
       { text: 'Paste ke textarea di sebelah. Boleh tambah banyak key sekaligus (1 per baris) untuk auto-rotate saat kena limit gratis.' },
     ],
     tip: 'Free tier Gemini: 15 request/menit, 1 juta token/hari untuk gemini-2.5-flash. Format AQ… adalah auth key baru Gemini dan tetap valid sebagai API key.',
-  },
-  weavy: {
-    url: 'https://drive.google.com/file/d/1xJEUv31VdzF8FVXPzfcpRcnq8ahV3_8w/view?usp=sharing',
-    urlLabel: 'Weavy Token Extractor',
-    steps: [
-      { text: 'Download Weavy Token Extractor (klik link di atas).' },
-      { text: 'Ekstrak / unzip file yang sudah di-download.' },
-      { text: 'Buka Manager Extension di browser (mis. chrome://extensions).' },
-      { text: 'Aktifkan Developer mode di pojok kanan atas Manager Extension.' },
-      { text: 'Klik tombol Load unpacked.' },
-      { text: 'Cari folder Weavy Token Extension yang sudah di-ekstrak tadi, lalu Select Folder.' },
-      { text: 'Pin Weavy Token Extension agar muncul di taskbar atas browser.' },
-      { text: 'Buka ', link: { url: 'https://app.weavy.ai', label: 'app.weavy.ai' } },
-      { text: 'Klik icon Weavy Token di taskbar → klik Extract Token, lalu klik Copy Token.' },
-      { text: 'Paste token ke Bulk Input di sebelah dan simpan. Ulangi untuk tiap akun Weavy — makin banyak, makin besar credit pool.' },
-    ],
-    tip: 'Refresh token Weavy berumur panjang. Bila expired, ulangi langkah Extract Token dari extension.',
   },
   wavespeed: {
     url: 'https://wavespeed.ai/accesskey',
@@ -1169,7 +1147,6 @@ export default function ProvidersPage() {
   const isCurrentMaintenance = useMemo(() => {
     const providerMap: Record<string, ProviderId> = {
       brain: 'gemini',
-      weavy: 'weavy',
       wavespeed: 'wavespeed',
       roboneo: 'roboneo',
       runninghub: 'runninghub',
@@ -1193,7 +1170,6 @@ export default function ProvidersPage() {
   const currentMaintenanceMessage = useMemo(() => {
     const providerMap: Record<string, ProviderId> = {
       brain: 'gemini',
-      weavy: 'weavy',
       wavespeed: 'wavespeed',
       roboneo: 'roboneo',
       runninghub: 'runninghub',
@@ -1492,33 +1468,6 @@ export default function ProvidersPage() {
         }
       } catch {
         return { state: 'failed', detail: 'Error checking token' }
-      }
-    }
-    if (selectedProvider === 'weavy') {
-      console.log('[Providers] handleCheckKey weavy, key:', key.slice(0, 20) + '...')
-      try {
-        const result = await checkWeavyBalance(key)
-        console.log('[Providers] checkWeavyBalance result:', result)
-        if (result.ok) {
-          const bal = result.balance
-          const email = result.email
-          const sub = result.subscriptionType
-          const subLabel = sub === 'free' ? 'Free' : sub === 'pro' ? 'Pro' : sub || ''
-          if (bal !== null && bal !== undefined) {
-            if (bal > 0) {
-              return { state: 'active', balance: bal, email, detail: `${email || ''}${subLabel ? ` · ${subLabel}` : ''} · Balance: ${bal} cr` }
-            } else if (bal === 0) {
-              return { state: 'empty', balance: 0, email, detail: `${email || ''}${subLabel ? ` · ${subLabel}` : ''} · Balance: 0 — habis` }
-            }
-          }
-          return { state: 'active', email, detail: `${email || 'Token valid'}${subLabel ? ` · ${subLabel}` : ''}` }
-        }
-        if (result.error?.includes('expired') && !result.error?.includes('403')) {
-          return { state: 'invalid', detail: 'Token expired — ambil baru dari browser (F12 → Network → app.weavy.ai → Authorization)' }
-        }
-        return { state: 'unknown', detail: result.error || 'Gagal cek token — coba lagi nanti' }
-      } catch {
-        return { state: 'unknown', detail: 'Error checking token' }
       }
     }
     if (selectedProvider === 'createpulse') {
@@ -2424,8 +2373,7 @@ export default function ProvidersPage() {
                   const color = PROVIDER_COLORS[p.key]
                   const providerMap: Record<string, ProviderId> = {
                     brain: 'gemini',
-                    weavy: 'weavy',
-                    wavespeed: 'wavespeed',
+                                  wavespeed: 'wavespeed',
                     roboneo: 'roboneo',
                     runninghub: 'runninghub',
                     framia: 'framia',
@@ -2780,97 +2728,24 @@ export default function ProvidersPage() {
                     const creditTitle = keyObj?.creditCheckedAt
                       ? `Cek terakhir: ${new Date(keyObj.creditCheckedAt).toLocaleString('id-ID')}`
                       : undefined
-                    const isWeavy = selectedProvider === 'weavy'
                     const isEditing = editingBalanceIdx === i
                     const isActive = state === 'active'
-                    const isEmpty = state === 'empty' || (isWeavy && balance === 0)
+                    const isEmpty = state === 'empty'
                     const dotColor = isEmpty ? 'bg-red-500' : isActive ? 'bg-green-500' : state === 'checking' ? 'bg-yellow-500 animate-pulse' : 'bg-gray-500'
                     return (
                       <div key={i} className={`flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 ${isActive ? 'border-green-500/30 bg-green-500/5' : isEmpty ? 'border-red-500/20 bg-red-500/5' : 'border-[#2a2a2a] bg-[#141414]'}`}>
                         <div className="flex items-center gap-2 min-w-0 flex-1">
                           <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} />
-                          {isWeavy ? (
-                            <div className="min-w-0 flex-1">
-                              <div className="text-[11px] font-mono text-[#f5f5f5]/85 truncate" title={key}>{maskKey(key)}</div>
-                              {detail && (
-                                <div className="text-[12px] text-[#a0a0a0] truncate mt-0.5">{detail}</div>
-                              )}
-                            </div>
-                          ) : (
-                            <code className="text-[11px] font-mono text-[#f5f5f5]/85 truncate">{maskKey(key)}</code>
-                          )}
+                          <code className="text-[11px] font-mono text-[#f5f5f5]/85 truncate">{maskKey(key)}</code>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                          {isWeavy && (
-                            <>
-                              {balance != null ? (
-                                <span
-                                  className={`text-[11px] font-mono font-bold cursor-pointer hover:underline ${balance > 0 ? 'text-green-400' : 'text-red-400'}`}
-                                  onClick={() => { setEditingBalanceIdx(i); setEditingBalanceVal(String(balance)) }}
-                                  title="Klik untuk edit balance"
-                                >
-                                  {balance.toLocaleString()} cr
-                                </span>
-                              ) : !isEditing ? (
-                                <button
-                                  onClick={() => { setEditingBalanceIdx(i); setEditingBalanceVal('') }}
-                                  className="text-[12px] text-[#00a8ff] hover:text-[#f5f5f5] underline underline-offset-2 transition cursor-pointer"
-                                  title="Input manual balance"
-                                >
-                                  ??? cr
-                                </button>
-                              ) : null}
-                              {isEditing && (
-                                <div className="flex items-center gap-1">
-                                  <input
-                                    type="number"
-                                    value={editingBalanceVal}
-                                    onChange={e => setEditingBalanceVal(e.target.value)}
-                                    onKeyDown={e => {
-                                      if (e.key === 'Enter') {
-                                        const val = parseInt(editingBalanceVal)
-                                        if (!isNaN(val) && val >= 0 && keyObj) {
-                                          updateKeyStatus(selectedProvider as ProviderId, keyObj.id, keyObj.status || 'active', val)
-                                        }
-                                        setEditingBalanceIdx(null)
-                                      }
-                                      if (e.key === 'Escape') setEditingBalanceIdx(null)
-                                    }}
-                                    placeholder="0"
-                                    autoFocus
-                                    className="w-20 text-[12px] font-mono bg-[#0a0a0a] border border-[#00a8ff] text-[#f5f5f5] px-1.5 py-0.5 rounded focus:outline-none focus:border-[#f5f5f5]"
-                                  />
-                                  <button
-                                    onClick={() => {
-                                      const val = parseInt(editingBalanceVal)
-                                      if (!isNaN(val) && val >= 0 && keyObj) {
-                                        updateKeyStatus(selectedProvider as ProviderId, keyObj.id, keyObj.status || 'active', val)
-                                      }
-                                      setEditingBalanceIdx(null)
-                                    }}
-                                    className="text-[12px] text-[#22c55e] hover:text-[#4ade80] transition"
-                                    title="Simpan"
-                                  >
-                                    <Check className="h-3 w-3" />
-                                  </button>
-                                  <button
-                                    onClick={() => setEditingBalanceIdx(null)}
-                                    className="text-[12px] text-[#a0a0a0] hover:text-[#f5f5f5] transition"
-                                    title="Batal"
-                                  >
-                                    <XCircle className="h-3 w-3" />
-                                  </button>
-                                </div>
-                              )}
-                            </>
-                          )}
-                          {!isWeavy && detail && (
+                          {detail && (
                             <span title={creditTitle ? `${detail} · ${creditTitle}` : detail} className="text-[12px] text-[#a0a0a0] truncate max-w-[220px]">{detail}</span>
                           )}
-                          {!isWeavy && !detail && (
+                          {!detail && (
                             <span className="text-[12px] text-[#a0a0a0] truncate max-w-[220px]">—</span>
                           )}
-                          {!isWeavy && selectedProvider === 'runninghub' && (
+                          {selectedProvider === 'runninghub' && (
                             <>
                               {formatRhWalletBadges(status?.wallet).map((badge, bi) => (
                                 <span
@@ -2935,7 +2810,6 @@ export default function ProvidersPage() {
             const providerKeys = keys[selectedProvider as ProviderId] || []
             const totalBalance = providerKeys.reduce((sum, k) => sum + (k.balance ?? 0), 0)
             const activeCount = providerKeys.filter(k => k.status === 'active').length
-            const isWeavyPool = selectedProvider === 'weavy'
             const isRunningHub = selectedProvider === 'runninghub'
             if (providerKeys.length === 0) return null
 
@@ -3116,15 +2990,12 @@ export default function ProvidersPage() {
                 <div className="text-[12px] font-mono uppercase tracking-widest text-[#00a8ff]/80">Pool Summary</div>
                 <div className="mt-2 flex items-baseline gap-2">
                   <span className="font-display text-2xl font-black brand-text">
-                    {isWeavyPool && totalBalance === 0 ? '???' : totalBalance.toLocaleString()}
+                    {totalBalance.toLocaleString()}
                   </span>
                   <span className="text-[11px] text-[#a0a0a0]">credits total</span>
                 </div>
                 <div className="mt-1 text-[11px] text-[#a0a0a0]">
                   {activeCount} active / {providerKeys.length} keys
-                  {isWeavyPool && totalBalance === 0 && (
-                    <span className="ml-2 text-[#00a8ff]">· Balance tidak tersedia untuk Free tier</span>
-                  )}
                 </div>
               </div>
             )

@@ -46,7 +46,7 @@ export const useBulkFashionStore = create<BulkFashionState>((set) => ({
   results: [],
   productType: 'Atasan',
   ratio: '9:16',
-  provider: 'weavy',
+  provider: 'runninghub',
   model: '',
   quality: 'standard',
   tplIdx: 0,

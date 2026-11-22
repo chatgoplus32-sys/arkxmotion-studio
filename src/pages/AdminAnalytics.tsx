@@ -39,7 +39,7 @@ interface AnalyticsData {
 }
 
 const PROVIDER_ICONS: Record<string, LucideIcon> = {
-  weavy: Waves, wavespeed: Zap, magnific: Sparkles, roboneo: Bot, createpulse: Radio,
+  wavespeed: Zap, magnific: Sparkles, roboneo: Bot, createpulse: Radio,
   framia: Clapperboard, galleri5: Video, leonardo: Palette, oneover: Gem, firefly: Flame,
   gemini: Gem, openai: Zap, riverside: Mic,
 }

@@ -15,7 +15,7 @@
 export const NEXABOT_MIN_TOPUP = 10000
 
 // ── Top-up manual (provider tanpa dompet) ──────────────────────────────────
-// Roboneo/Weavy/Framia memakai kunci milik member sendiri, jadi tidak punya
+// Roboneo/Framia memakai kunci milik member sendiri, jadi tidak punya
 // saldo yang bisa dikreditkan otomatis. Permintaan top-up mereka diverifikasi
 // admin satu per satu (transfer DANA/QRIS) — bukan pembelian token otomatis.
 export const MANUAL_TOPUP_MIN = 10000

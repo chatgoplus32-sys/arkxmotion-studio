@@ -4,7 +4,7 @@ import { useProviderManager, ProviderId } from '@/stores/providerManager'
 import { checkAllProviderHealth, ProviderHealth } from '@/lib/providerHealth'
 
 const PROVIDER_COLORS: Record<string, string> = {
-  brain: '#f472b6', weavy: '#22d3ee', wavespeed: '#38bdf8',
+  brain: '#f472b6', wavespeed: '#38bdf8',
   roboneo: '#34d399', runninghub: '#f97316', framia: '#fb923c',
   galleri5: '#e879f9', leonardo: '#facc15', createpulse: '#c084fc',
   oneover: '#a78bfa', firefly: '#FF6A00',

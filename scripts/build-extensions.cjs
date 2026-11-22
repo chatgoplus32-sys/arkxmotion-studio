@@ -325,83 +325,6 @@ const LEO_CONTENT = `(function() {
 })();`;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// WEAVY
-// ─────────────────────────────────────────────────────────────────────────────
-const WEAVY_MATCHES = ['*://app.weavy.ai/*'];
-const WEAVY_CONTENT = `(function() {
-  'use strict';
-  var provider = 'weavy';
-  var lastPosted = '';
-  function postIfChanged(t) {
-    if (!t || t === lastPosted || t.length < 20) return;
-    lastPosted = t;
-    window.postMessage({ type: 'ARKX_TOKEN', provider: provider, token: t }, '*');
-  }
-  async function grabFromIndexedDB() {
-    try {
-      const dbs = await indexedDB.databases();
-      for (const db of dbs) {
-        const idb = await new Promise((resolve) => {
-          const req = indexedDB.open(db.name);
-          req.onsuccess = () => resolve(req.result);
-          req.onerror = () => resolve(null);
-        });
-        if (!idb) continue;
-        for (const name of Array.from(idb.objectStoreNames)) {
-          const tx = idb.transaction(name, 'readonly');
-          const store = tx.objectStore(name);
-          const data = await new Promise((resolve) => {
-            const req = store.getAll();
-            req.onsuccess = () => resolve(req.result || []);
-          });
-          for (const item of data) {
-            if (item && (item.access_token || item.token)) {
-              postIfChanged(item.access_token || item.token);
-              idb.close();
-              return;
-            }
-          }
-        }
-        idb.close();
-      }
-    } catch(e) {}
-  }
-  function checkStorage() {
-    for (var i = 0; i < localStorage.length; i++) {
-      var key = localStorage.key(i);
-      if (!key) continue;
-      var val = localStorage.getItem(key);
-      if (!val || val.length <= 50) continue;
-      try {
-        var parsed = JSON.parse(val);
-        if (parsed && parsed.access_token) return parsed.access_token;
-      } catch(e) {
-        if (val.indexOf('eyJ') === 0) return val;
-      }
-    }
-    return null;
-  }
-  function rescan() {
-    try { postIfChanged(checkStorage()); } catch(e) {}
-    grabFromIndexedDB();
-    try {
-      fetch('/api/auth/session').then(function(r) { return r.json(); }).then(function(data) {
-        postIfChanged(data && (data.accessToken || data.access_token || (data.session && data.session.access_token)));
-      }).catch(function() {});
-    } catch(e) {}
-  }
-  rescan();
-  setInterval(rescan, 45000);
-  document.addEventListener('visibilitychange', function() { if (!document.hidden) rescan(); });
-  window.addEventListener('message', function(event) {
-    if (event.source !== window) return;
-    if (event.data && event.data.type === 'ARKX_TOKEN' && event.data.provider === provider) {
-      chrome.runtime.sendMessage({ type: 'TOKEN_GRABBED', provider: provider, token: event.data.token });
-    }
-  });
-})();`;
-
-// ─────────────────────────────────────────────────────────────────────────────
 // ONEOVER (use original extension from extensions/oneover-token-ext/)
 // ─────────────────────────────────────────────────────────────────────────────
 const ONEOVER_EXT_DIR = path.resolve(__dirname, '..', '..', 'arkxmotion-studio', 'extensions', 'oneover-token-ext');
@@ -468,12 +391,6 @@ async function main() {
       desc: 'Auto-grab & sync Bearer JWT dari app.leonardo.ai',
       matches: LEO_MATCHES, content: LEO_CONTENT,
     },
-    // Weavy
-    {
-      name: 'Weavy', id: 'weavy', color: '#3b82f6', icon: '☁️',
-      desc: 'Auto-grab & sync token dari app.weavy.ai via IndexedDB',
-      matches: WEAVY_MATCHES, content: WEAVY_CONTENT,
-    },
     // OneOver (built separately from original extension)
     // Roboneo
     {
@@ -525,7 +442,6 @@ async function main() {
 
   console.log(`\n✅ Built ${only ? `only '${only}'` : `${builds.length + 3} extensions`} in public/downloads/\n`);
   console.log('  📄 leonardo-extension.zip  — MV3, auto-sync');
-  console.log('  📄 weavy-extension.zip     — MV3, auto-sync');
   console.log('  📄 oneover-extension.zip   — MV3, auto-sync');
   console.log('  📄 roboneo-extension.zip   — MV3, auto-sync');
   console.log('  📄 framia-extension.zip    — MV2, original code');

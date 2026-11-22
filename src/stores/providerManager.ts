@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { RHTokenWallet } from '@/lib/runninghub'
 
-export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'runninghub' | 'createpulse' | 'framia' | 'firefly' | 'leonardo' | 'gemini' | 'openai' | 'shotstack' | 'creatomate' | 'galleri5' | 'oneover' | 'genspark' | 'riverside' | 'nexabot' | 'seavi' | 'markastools' | 'freebeat' | 'posbot' | 'omni'
+export type ProviderId = 'wavespeed' | 'magnific' | 'roboneo' | 'runninghub' | 'createpulse' | 'framia' | 'firefly' | 'leonardo' | 'gemini' | 'openai' | 'shotstack' | 'creatomate' | 'galleri5' | 'oneover' | 'genspark' | 'riverside' | 'nexabot' | 'seavi' | 'markastools' | 'freebeat' | 'posbot' | 'omni'
 
 export const HIDDEN_PROVIDERS: ProviderId[] = []
 
@@ -41,16 +41,6 @@ export interface MaintenanceInfo {
 }
 
 export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
-  weavy: {
-    id: 'weavy',
-    name: 'Weavy',
-    icon: '🌊',
-    description: 'AI video generation platform with Kling, Sora, and more',
-    keyPlaceholder: 'Paste your Weavy token...',
-    keyFormat: 'JWT token or API key',
-    minCredits: 5,
-    supportsBalance: true,
-  },
   wavespeed: {
     id: 'wavespeed',
     name: 'Wavespeed',
@@ -275,7 +265,6 @@ export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
 
 function getDefaultMaintenance(): Record<ProviderId, MaintenanceInfo> {
   return {
-    weavy: { isMaintenance: false, message: '' },
     wavespeed: { isMaintenance: false, message: '' },
     magnific: { isMaintenance: false, message: '' },
     roboneo: { isMaintenance: false, message: '' },
@@ -393,7 +382,6 @@ function seedRunningHubKeyIfEmpty(keys: Record<ProviderId, ProviderKey[]>): Reco
 
 function loadKeysFromStorage(): Record<ProviderId, ProviderKey[]> {
   const defaults: Record<ProviderId, ProviderKey[]> = {
-    weavy: [],
     wavespeed: [],
     magnific: [],
     roboneo: [],
@@ -454,11 +442,11 @@ function loadKeysFromStorage(): Record<ProviderId, ProviderKey[]> {
 
 function loadRoutingFromStorage(): Record<string, ProviderId> {
   const defaults: Record<string, ProviderId> = {
-    motion: 'weavy',
-    'narrative-video': 'weavy',
-    storyboard: 'weavy',
-    'bulk-fashion': 'weavy',
-    'image-to-video': 'weavy',
+    motion: 'runninghub',
+    'narrative-video': 'gemini',
+    storyboard: 'gemini',
+    'bulk-fashion': 'runninghub',
+    'image-to-video': 'createpulse',
     upscaler: 'magnific',
     'ai-influencer': 'gemini',
   }
@@ -488,7 +476,7 @@ function loadRoutingFromStorage(): Record<string, ProviderId> {
 
 export const useProviderManager = create<ProviderState>((set, get) => ({
   keys: seedRunningHubKeyIfEmpty(loadKeysFromStorage()),
-  activeProvider: 'weavy',
+  activeProvider: 'runninghub',
   routing: loadRoutingFromStorage(),
   maintenance: getDefaultMaintenance(),
 
@@ -712,7 +700,7 @@ export const useProviderManager = create<ProviderState>((set, get) => ({
   },
 
   getRouting: (workflow) => {
-    return get().routing[workflow] || 'weavy'
+    return get().routing[workflow] || 'runninghub'
   },
 
   fetchMaintenance: async () => {

@@ -16,14 +16,6 @@ export interface ModelOption {
 }
 
 export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
-  weavy: [
-    { value: 'sora-2', label: 'Sora 2 Pro', cr: 96, provider: 'weavy' },
-    { value: 'grok-video', label: 'Grok Imagine Video v1.5', cr: 90, provider: 'weavy' },
-    { value: 'gemini-omni', label: 'Gemini Omni Flash', cr: 100, provider: 'weavy' },
-    { value: 'seedance-mini', label: 'Seedance 2.0 Mini', cr: 130, provider: 'weavy' },
-    { value: 'kling-3-turbo', label: 'Kling 3.0 Turbo Standard', cr: 135, provider: 'weavy' },
-    { value: 'kling-video', label: 'Kling Video 2.1 Pro', cr: 90, provider: 'weavy' },
-  ],
   wavespeed: [
     { value: 'kling-2.1', label: 'Kling V2.1', cr: 26, provider: 'wavespeed' },
     { value: 'seedance', label: 'Seedance', cr: 30, provider: 'wavespeed' },
@@ -282,38 +274,6 @@ export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: s
     'sv:wan30_omni_server23': [
       { value: 'd5', label: '5 detik', mult: 1, duration: 5, cr: 1 },
       { value: 'd10', label: '10 detik', mult: 1, duration: 10, cr: 1 },
-    ],
-  },
-  weavy: {
-    'sora-2': [
-      { value: '16s-720p', label: '16 detik · 720p', mult: 1, duration: 16, cr: 96, resolution: '720p' },
-      { value: '12s-720p', label: '12 detik · 720p', mult: 1, duration: 12, cr: 96, resolution: '720p' },
-      { value: '8s-720p', label: '8 detik · 720p', mult: 1, duration: 8, cr: 96, resolution: '720p' },
-      { value: '4s-720p', label: '4 detik · 720p', mult: 1, duration: 4, cr: 96, resolution: '720p' },
-    ],
-    'grok-video': [
-      { value: '15s-720p', label: '15 detik · 720p', mult: 1, duration: 15, cr: 90, resolution: '720p' },
-      { value: '10s-720p', label: '10 detik · 720p', mult: 1, duration: 10, cr: 90, resolution: '720p' },
-      { value: '5s-720p', label: '5 detik · 720p', mult: 1, duration: 5, cr: 90, resolution: '720p' },
-    ],
-    'gemini-omni': [
-      { value: '10s', label: '10 detik', mult: 1, duration: 10, cr: 125, resolution: '720p' },
-      { value: '8s', label: '8 detik', mult: 1, duration: 8, cr: 100, resolution: '720p' },
-    ],
-    'seedance-mini': [
-      { value: '10s-720p', label: '10 detik · 720p', mult: 1, duration: 10, cr: 130, resolution: '720p' },
-      { value: '10s-480p', label: '10 detik · 480p', mult: 1, duration: 10, cr: 130, resolution: '480p' },
-      { value: '5s-720p', label: '5 detik · 720p', mult: 1, duration: 5, cr: 130, resolution: '720p' },
-      { value: '5s-480p', label: '5 detik · 480p', mult: 1, duration: 5, cr: 130, resolution: '480p' },
-    ],
-    'kling-3-turbo': [
-      { value: '15s', label: '15 detik', mult: 1, duration: 15, cr: 135, resolution: '720p' },
-      { value: '10s', label: '10 detik', mult: 1, duration: 10, cr: 135, resolution: '720p' },
-      { value: '5s', label: '5 detik', mult: 1, duration: 5, cr: 135, resolution: '720p' },
-    ],
-    'kling-video': [
-      { value: '10s', label: '10 detik', mult: 1, duration: 10, cr: 90, resolution: '720p' },
-      { value: '5s', label: '5 detik', mult: 1, duration: 5, cr: 90, resolution: '720p' },
     ],
   },
   wavespeed: {

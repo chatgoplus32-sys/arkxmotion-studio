@@ -34,7 +34,6 @@ interface Summary {
 const PROVIDER_COLORS: Record<string, string> = {
   roboneo: 'bg-blue-500/10 text-blue-500',
   framia: 'bg-purple-500/10 text-purple-500',
-  weavy: 'bg-green-500/10 text-green-500',
   createpulse: 'bg-orange-500/10 text-orange-500',
 }
 

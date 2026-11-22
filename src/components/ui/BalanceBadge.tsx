@@ -6,7 +6,7 @@ import { refreshProviderBalance } from '@/lib/balancePrecheck'
 // Provider yang punya saldo credits tersimpan (bisa ditampilkan di badge).
 // Catatan: Seavi memakai wallet internal server (bukan key), jadi tidak
 // diikutkan di sini — saldonya tampil di halaman top up masing-masing.
-const BALANCE_PROVIDERS = new Set(['roboneo', 'weavy', 'galleri5', 'firefly', 'posbot'])
+const BALANCE_PROVIDERS = new Set(['roboneo', 'galleri5', 'firefly', 'posbot'])
 
 function readBalance(provider: string): { balance: number | null; keyCount: number } {
   try {

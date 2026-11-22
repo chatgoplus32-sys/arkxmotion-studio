@@ -28,7 +28,6 @@ export interface ManualTopupRequest {
 /** Provider tanpa dompet sendiri; top-up-nya diproses admin secara manual. */
 export const MANUAL_PROVIDERS = [
   { key: 'roboneo', label: 'Roboneo' },
-  { key: 'weavy', label: 'Weavy' },
   { key: 'framia', label: 'Framia' },
   { key: 'runninghub', label: 'RunningHub' },
   { key: 'galleri5', label: 'G5 AI Studio' },
