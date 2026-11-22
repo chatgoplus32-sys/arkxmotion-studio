@@ -68,6 +68,63 @@ export function deleteTiktokCredentials(): void {
   )
 }
 
+/**
+ * Tukar auth_code (dari redirect OAuth TikTok) jadi Access-Token + tto_id.
+ * POST /oauth2/access_token/ dengan return_advertiser_ids=true → respons
+ * memuat access_token & advertiser_ids; id pertama dipakai sebagai tto_id.
+ * Dipanggil route admin, kredensial hasilnya langsung disimpan server-level.
+ */
+export async function exchangeAuthCode(input: {
+  appId: string
+  secret: string
+  authCode: string
+}): Promise<{ accessToken: string; ttoId: string; advertiserIds: string[]; expiresIn?: number }> {
+  const appId = String(input.appId || '').trim()
+  const secret = String(input.secret || '').trim()
+  const authCode = String(input.authCode || '').trim()
+  if (!appId || !secret || !authCode) {
+    throw new TiktokApiError('app_id, secret, dan auth_code wajib diisi')
+  }
+
+  const res = await fetch(`${BASE}/oauth2/access_token/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      app_id: appId,
+      secret,
+      auth_code: authCode,
+      return_advertiser_ids: true,
+    }),
+    signal: AbortSignal.timeout(30000),
+  })
+  const text = await res.text()
+  let json: any
+  try { json = JSON.parse(text) } catch { throw new TiktokApiError(`Respons bukan JSON (HTTP ${res.status})`) }
+  if (json?.code !== 0) {
+    throw new TiktokApiError(
+      json?.message || `Gagal menukar auth_code (HTTP ${res.status})`,
+      json?.code,
+      json?.subcode,
+      json?.request_id,
+    )
+  }
+  const data = json?.data || {}
+  const accessToken = String(data.access_token || '')
+  const advertiserIds = Array.isArray(data.advertiser_ids)
+    ? data.advertiser_ids.map((x: any) => String(x))
+    : []
+  if (!accessToken) throw new TiktokApiError('TikTok tidak mengembalikan access_token')
+  if (!advertiserIds.length) {
+    throw new TiktokApiError('TikTok tidak mengembalikan advertiser_ids — pastikan return_advertiser_ids=true & akun sudah authorize app')
+  }
+  return {
+    accessToken,
+    ttoId: advertiserIds[0],
+    advertiserIds,
+    expiresIn: data.expires_in ? Number(data.expires_in) : undefined,
+  }
+}
+
 export class TiktokApiError extends Error {
   constructor(
     message: string,

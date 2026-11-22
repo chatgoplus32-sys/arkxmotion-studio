@@ -407,6 +407,35 @@ function TiktokCredentialsSection({ token, addToast }: { token: string | null; a
   const [ttoId, setTtoId] = useState('')
   const [saving, setSaving] = useState(false)
   const [checking, setChecking] = useState(false)
+  const [oauth, setOauth] = useState({ appId: '', secret: '', authCode: '' })
+  const [exchanging, setExchanging] = useState(false)
+
+  const exchange = async () => {
+    if (!token || !oauth.appId.trim() || !oauth.secret.trim() || !oauth.authCode.trim()) {
+      addToast('Isi app_id, secret, dan auth_code', 'error')
+      return
+    }
+    setExchanging(true)
+    try {
+      const res = await fetch('/api/admin/tiktok/credentials/exchange', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(oauth),
+      })
+      const data = await res.json()
+      if (res.ok && data.ok) {
+        addToast(`✓ Access-Token didapat — tto_id ${data.ttoId} tersimpan`, 'success')
+        setOauth({ appId: '', secret: '', authCode: '' })
+        setStatus(data)
+      } else {
+        addToast(data.error || 'Gagal menukar auth_code', 'error')
+      }
+    } catch {
+      addToast('Gagal menukar auth_code', 'error')
+    } finally {
+      setExchanging(false)
+    }
+  }
 
   const fetchStatus = useCallback(async () => {
     if (!token) return
@@ -477,12 +506,27 @@ function TiktokCredentialsSection({ token, addToast }: { token: string | null; a
           Member cukup top up saldo TikTok di aplikasi.
         </p>
         <p className="mt-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
-          💡 <b className="text-foreground">Auto-capture:</b> pasang extension Chrome
-          <code className="mx-1 rounded bg-background px-1">extensions/tiktok-symphony-token-ext</code>
-          (Load unpacked di chrome://extensions), login di Symphony Creative Studio saat masih login admin di sini —
-          token &amp; tto_id otomatis terkirim ke form ini.
+          💡 <b className="text-foreground">Cara dapat token (paling mudah):</b> isi <code>app_id</code>, <code>secret</code>, dan <code>auth_code</code> dari developer app TikTok kamu di bawah — aplikasi yang menukar jadi Access-Token + tto_id otomatis lewat endpoint OAuth TikTok.
         </p>
-        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+
+        {/* OAuth exchange: auth_code → Access-Token + tto_id */}
+        <div className="mt-3 rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-3">
+          <div className="mb-2 text-[12px] font-semibold text-emerald-400">Tukar auth_code jadi Access-Token</div>
+          <div className="grid gap-2 sm:grid-cols-3">
+            <input type="text" value={oauth.appId} onChange={(e) => setOauth({ ...oauth, appId: e.target.value })} placeholder="app_id" autoComplete="off" className="rounded-lg border border-border bg-card px-3 py-2 font-mono text-sm" />
+            <input type="password" value={oauth.secret} onChange={(e) => setOauth({ ...oauth, secret: e.target.value })} placeholder="secret" autoComplete="off" className="rounded-lg border border-border bg-card px-3 py-2 font-mono text-sm" />
+            <input type="text" value={oauth.authCode} onChange={(e) => setOauth({ ...oauth, authCode: e.target.value })} placeholder="auth_code" autoComplete="off" className="rounded-lg border border-border bg-card px-3 py-2 font-mono text-sm" />
+          </div>
+          <p className="mt-1.5 text-[10px] leading-relaxed text-muted-foreground">
+            auth_code didapat setelah TTO account owner authorize developer app lewat Advertiser authorization URL (My Apps → App Detail → Basic Information). Berlaku 1 jam &amp; sekali pakai.
+          </p>
+          <Button size="sm" className="mt-2" onClick={exchange} disabled={exchanging || !oauth.appId.trim() || !oauth.secret.trim() || !oauth.authCode.trim()}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${exchanging ? 'animate-spin' : ''}`} />{exchanging ? 'Menukar…' : 'Tukar & Simpan Otomatis'}
+          </Button>
+        </div>
+
+        <p className="mt-2 text-[11px] text-muted-foreground">Atau tempel manual Access-Token + tto_id yang sudah kamu punya:</p>
+        <div className="mt-2 grid gap-2 sm:grid-cols-2">
           <input type="password" value={accessToken} onChange={(e) => setAccessToken(e.target.value)} placeholder="Access-Token (sk/…)" autoComplete="off" className="rounded-lg border border-border bg-card px-3 py-2 font-mono text-sm" />
           <input type="text" value={ttoId} onChange={(e) => setTtoId(e.target.value)} placeholder="TikTok One (tto_id)" autoComplete="off" className="rounded-lg border border-border bg-card px-3 py-2 font-mono text-sm" />
         </div>
