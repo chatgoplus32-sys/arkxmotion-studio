@@ -47,26 +47,4 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   }
 })
 
-/**
- * Cek status lewat GET — dipakai client polling (`fetch` tanpa method = GET).
- * Handler ini dan POST/action=status memakai fungsi yang sama.
- */
-router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
-  const action = String(req.query.action || '')
-  if (action !== 'status') return res.status(400).json({ ok: false, error: 'Aksi tidak dikenal' })
-  const taskId = String(req.query.taskId || '')
-  if (!taskId) return res.status(400).json({ ok: false, error: 'taskId wajib diisi' })
-  try {
-    const status = await getTiktokTask(taskId)
-    return res.json({ ok: true, ...status })
-  } catch (error: any) {
-    if (error instanceof TiktokApiError) {
-      console.warn('[tiktok] status error:', error.code, error.message)
-      return res.status(502).json({ ok: false, error: error.message, code: error.code })
-    }
-    console.error('[tiktok] status error:', error)
-    res.status(502).json({ ok: false, error: error?.message || 'Gagal mengecek status TikTok' })
-  }
-})
-
 export default router
