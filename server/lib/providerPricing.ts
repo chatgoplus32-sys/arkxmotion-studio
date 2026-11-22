@@ -32,13 +32,11 @@ import {
   RUNNINGHUB_CHARGE,
   CREATEPULSE_MODEL_PRICES,
   CREATEPULSE_DEFAULT_PRICE,
-  TIKTOK_MODEL_PRICES,
-  TIKTOK_DEFAULT_PRICE,
 } from '../../shared/pricing.js'
 
-export type ProviderId = 'seavi' | 'posbot' | 'runninghub' | 'createpulse' | 'tiktok'
+export type ProviderId = 'seavi' | 'posbot' | 'runninghub' | 'createpulse'
 
-export const PROVIDER_IDS: ProviderId[] = ['seavi', 'posbot', 'runninghub', 'createpulse', 'tiktok']
+export const PROVIDER_IDS: ProviderId[] = ['seavi', 'posbot', 'runninghub', 'createpulse']
 
 interface ProviderPriceConfig {
   flat?: number | null
@@ -55,7 +53,6 @@ const LIMITS: Record<ProviderId, { min: number; max: number }> = {
   posbot: { min: 1, max: 10_000_000 }, // Rp
   runninghub: { min: 1, max: 10_000_000 }, // Rp
   createpulse: { min: 1, max: 10_000_000 }, // Rp
-  tiktok: { min: 1, max: 10_000_000 }, // Rp
 }
 
 const SPECS: Record<
@@ -68,7 +65,6 @@ const SPECS: Record<
   // untuk semua model; admin bisa mengubah satu-satu di Harga Token & Wallet.
   runninghub: { kind: 'model', default: RUNNINGHUB_CHARGE, models: RUNNINGHUB_MODEL_PRICES },
   createpulse: { kind: 'model', default: CREATEPULSE_DEFAULT_PRICE, models: CREATEPULSE_MODEL_PRICES },
-  tiktok: { kind: 'model', default: TIKTOK_DEFAULT_PRICE, models: TIKTOK_MODEL_PRICES },
 }
 
 const MAX_MODELS = 2000

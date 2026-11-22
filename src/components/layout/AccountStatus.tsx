@@ -10,7 +10,6 @@ import { cn } from '@/lib/utils'
 
 const WALLET_ROWS = [
   { key: 'createpulse', label: 'CreatePulse', href: '/topup/createpulse' },
-  { key: 'tiktok', label: 'TikTok Symphony', href: '/topup/tiktok' },
   { key: 'nexabot', label: 'NexaBot', href: '/topup/nexabot' },
   { key: 'seavi', label: 'Seavi', href: '/topup/seavi' },
   { key: 'posbot', label: 'PosBot', href: '/topup/posbot' },

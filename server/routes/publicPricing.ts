@@ -16,7 +16,6 @@ import {
   POSBOT_TOPUP_MAX,
   POSBOT_TOPUP_PRESETS,
   RUNNINGHUB_MIN_TOPUP,
-  TIKTOK_MIN_TOPUP,
 } from '../../shared/pricing.js'
 import { getNexabotPricing } from './nexabotWallet.js'
 import { getProviderPricing } from '../lib/providerPricing.js'
@@ -32,13 +31,10 @@ export function buildPublicPricing() {
   const posbot = getProviderPricing('posbot')
   const runninghub = getProviderPricing('runninghub')
   const createpulse = getProviderPricing('createpulse')
-  const tiktok = getProviderPricing('tiktok')
 
   const createpulseModels = { ...createpulse.catalog }
-  const tiktokModels = { ...tiktok.catalog }
   const posbotModels = { ...posbot.catalog }
   const createpulseRange = rentang([createpulse.default ?? 1, ...Object.values(createpulseModels)])
-  const tiktokRange = rentang([tiktok.default ?? 1, ...Object.values(tiktokModels)])
   const posbotRange = rentang([posbot.default ?? 1, ...Object.values(posbotModels)])
 
   return {
@@ -66,13 +62,6 @@ export function buildPublicPricing() {
         default_price: createpulse.default,
         price_range: createpulseRange,
         models: createpulseModels,
-      },
-      tiktok: {
-        name: 'TikTok Symphony',
-        min_topup: TIKTOK_MIN_TOPUP,
-        default_price: tiktok.default,
-        price_range: tiktokRange,
-        models: tiktokModels,
       },
       seavi: {
         name: 'Seavi',

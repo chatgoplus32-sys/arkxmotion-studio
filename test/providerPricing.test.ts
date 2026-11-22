@@ -196,9 +196,9 @@ test('provider asing ditolak dengan pesan yang jelas', () => {
   assert.throws(() => resetProviderPricing('foo' as any), /Provider tidak dikenal/)
 })
 
-test('getAllProviderPricing mencakup semua wallet + bentuk respons admin', () => {
+test('getAllProviderPricing mencakup keempat wallet + bentuk respons admin', () => {
   const all = getAllProviderPricing()
-  assert.deepEqual(Object.keys(all).sort(), ['createpulse', 'posbot', 'runninghub', 'seavi', 'tiktok'])
+  assert.deepEqual(Object.keys(all).sort(), ['createpulse', 'posbot', 'runninghub', 'seavi'])
   for (const p of PROVIDER_IDS) {
     const eff = all[p]
     assert.equal(eff.provider, p)
@@ -241,7 +241,7 @@ test('GET /api/admin/provider-pricing mengembalikan keempat provider', async () 
   assert.equal(res.status, 200)
   const body = await res.json() as any
   assert.equal(body.ok, true)
-  assert.deepEqual(Object.keys(body.providers).sort(), ['createpulse', 'posbot', 'runninghub', 'seavi', 'tiktok'])
+  assert.deepEqual(Object.keys(body.providers).sort(), ['createpulse', 'posbot', 'runninghub', 'seavi'])
 })
 
 test('PATCH /api/admin/provider-pricing menyimpan & langsung dipakai charge', async () => {
