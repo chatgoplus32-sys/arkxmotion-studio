@@ -1,18 +1,15 @@
 // Seavi Labs REST API client — api.seavilabs.site via relay /api/public/seavi
 // Kontrak terverifikasi dari docs resmi + probe nyata (submit 202 → poll progress → result.url).
-// Katalog = probe langsung GET /v1/models 11 Nov 2026 (23 model: 13 video +
-// 2 motion control + 8 image); 10 model menagih 2 token, 13 model 1 token
-// (cermin SEAVI_MODEL_TOKENS di shared/pricing.ts — dijaga tes kontrak silang).
-// PERUBAHAN 11 Nov 2026 (hasil probe /v1/models):
-//   • Seedance 2.5 S19  → durasi 5/10/15/**25** (1x generate sampai 25 detik)
-//   • Kling 4.0 S19      → durasi 5/10/15/**30** (1x generate sampai 30 detik)
-//   • Wan 3.0 Prime S19  → durasi 5/10/15/**30**
-//   • BARU Kling 2.5 Turbo S23 (kling25_turbo_server23) — i2v, 5/10 detik, 1 token
-//   • seedance25_server10 KEMBALI di katalog (pernah dicabut 1 Nov) — 5/10/15/25, 2 token
-// Keluar dari katalog dibanding 1 Nov 2026 (masih absen 11 Nov):
-// motion_control_v3_server19_15dtk, motion_control_v3_server16.
-// Skema model baru + batas referensi semuanya diprobe langsung dari GET /v1/models
-// (11 Nov 2026) — probe ulang dan bandingkan dengan `npx tsx scratch/audit-seavi-spec.ts`.
+// Katalog = probe langsung GET /v1/models 22 Nov 2026 (25 model).
+// PERUBAHAN 22 Nov 2026 (hasil probe /v1/models — sinkronisasi penuh):
+//   • Seedance 2.5 (seedance25_server19/server10) DICABUT upstream — tidak ada
+//     lagi di /v1/models. Yang ada: seedance2_mini_omni_server23, sd2_omni_s15,
+//     seedance2_multi_s15 — semuanya durasi maks 15 detik.
+//   • TIDAK ADA model dengan durasi 30 detik di /v1/models — kling4_server19 &
+//     wan30_prime_server19 durasinya [5,10,15] (bukan 30).
+//   • happyhorse11_server23 juga tidak ada lagi di katalog live.
+//   • BARU: motion_control_v3_server19_15dtk (1 token), wan30_omni_server23.
+// Skema model & batas referensi diprobe langsung dari GET /v1/models.
 // Tanpa kunci member, relay bisa memasang kunci server untuk member yang sudah
 // top up — lihat providerServerKey.ts.
 import { isServerKey, relayAuthHeaders } from './providerServerKey.js'
@@ -73,16 +70,13 @@ const i2v = (id: string, label: string, tokens: number, durations: number[], asp
 export const SEAVI_MODELS: Record<string, SeaviModelSpec> = {
   // ── Motion Control (gambar + video referensi) ──
   motion_control_v3_server10_30dtk: mc('motion_control_v3_server10_30dtk', 'Motion Control V3 · Server 10 (30 dtk)', 2, 0),
-  // Server 16 dihapus dari katalog 1 Nov 2026 malam: hilang dari GET /v1/models
-  // dan POST /generate menjawab 404 MODEL_NOT_FOUND, sementara job yang telanjur
-  // dikirim berakhir GENERATION_FAILED di 25%. Batas referensinya juga paling
-  // ketat (10 dtk) jadi tidak ada alasan mempertahankannya.
-  motion_control_v3_server23_15dtk: mc('motion_control_v3_server23_15dtk', 'Motion Control V3 · Server 23 (15 dtk)', 1, 0),
+  // Server 23 MC tidak ada lagi di /v1/models 22 Nov; yang ada versi Server 19.
+  motion_control_v3_server19_15dtk: mc('motion_control_v3_server19_15dtk', 'Motion Control V3 · Server 19 (15 dtk)', 1, 0),
 
   // ── Video generation: image to video ──
   kling3_server10: i2v('kling3_server10', 'Kling 3 · Server 10', 1, [6, 10], ['9:16', '16:9']),
   kling21pro_server10: i2v('kling21pro_server10', 'Kling 2.1 Pro · Server 10', 1, [5, 10], ['9:16', '16:9']),
-  grok_imagine_s15: i2v('grok_imagine_s15', 'Grok Imagine · Server 15', 1, [5, 10], ['9:16', '16:9', '1:1', '4:3']),
+  grok_imagine_s15: i2v('grok_imagine_s15', 'Grok Imagine · Server 15', 1, [5, 10, 15], ['9:16', '16:9', '1:1', '4:3']),
   // Sora 2: i2v — 1 gambar WAJIB (upstream menolak t2v: "Missing required
   // input: image_url") dan TANPA aspect_ratio ("Unsupported parameter:
   // aspect_ratio", terverifikasi 17 Okt 2026) — rasio mengikuti gambar sumber.
@@ -116,45 +110,44 @@ export const SEAVI_MODELS: Record<string, SeaviModelSpec> = {
     promptMax: 2000,
     promptRequired: true,
   },
-  seedance25_server19: {
-    id: 'seedance25_server19',
-    label: 'Seedance 2.5 · Server 19',
+  // ── Seedance 2 (live 22 Nov 2026) — durasi maks 15 detik ──
+  // Seedance 2.5 (seedance25_*) sudah DICABUT upstream — tidak ada di /v1/models.
+  // sd2_omni_s15: multimodal images(1-5)+video(opsional) → video, prompt ≤5000,
+  // aspect 9:16/16:9/1:1/3:4/4:3, durasi 5/10/15, 1 token.
+  sd2_omni_s15: {
+    id: 'sd2_omni_s15',
+    label: 'Seedance 2 Omni · S15',
     category: 'video_generation',
     inputType: 'multimodal_to_video',
-    tokens: 2,
+    tokens: 1,
     imageMode: 'multi',
     imageMin: 1,
-    imageMax: 9,
-    // Upstream kini MENERIMA video referensi 0-3 (schema /models 19 Okt 2026:
-    // video_urls max_items 3, sebelumnya 17 Okt masih menolak) — gambar 0-9 + audio mp3 20MB.
+    imageMax: 5,
     videoMode: 'multi',
-    videoMax: 3,
-    audio: true,
-    // 11 Nov 2026: upstream menambah durasi 25 detik (schema /models: [5,10,15,25]).
-    durations: [5, 10, 15, 25],
-    aspects: ['9:16', '16:9', '1:1', '3:4', '4:3'],
-    // Upstream 1 Nov 2026 menaikkan batas prompt model ini ke 20.000 karakter.
-    promptMax: 20000,
-    promptRequired: false,
+    videoMax: 1,
+    audio: false,
+    durations: [5, 10, 15],
+    aspects: ['9:16', '16:9', '1:1', '4:3'],
+    promptMax: 5000,
+    promptRequired: true,
   },
-  // Seedance 2.5 Server 10 — KEMBALI di katalog 11 Nov 2026 (pernah dicabut 1
-  // Nov). Skema upstream 11 Nov: multimodal, gambar 1-20, video 0-1, audio opsional,
-  // durasi 5/10/15/25, prompt wajib ≤2000, max_reference_video_duration 15.
-  seedance25_server10: {
-    id: 'seedance25_server10',
-    label: 'Seedance 2.5 · Server 10',
+  // seedance2_mini_omni_server23: images(1-10)+audio+video opsional → video,
+  // prompt ≤7000, aspect 5 opsi, durasi 5/10/15, 1 token.
+  seedance2_mini_omni_server23: {
+    id: 'seedance2_mini_omni_server23',
+    label: 'Seedance 2 Mini Omni · S23',
     category: 'video_generation',
     inputType: 'multimodal_to_video',
-    tokens: 2,
+    tokens: 1,
     imageMode: 'multi',
     imageMin: 1,
-    imageMax: 20,
+    imageMax: 10,
     videoMode: 'multi',
     videoMax: 1,
     audio: true,
-    durations: [5, 10, 15, 25],
+    durations: [5, 10, 15],
     aspects: ['9:16', '16:9', '1:1', '3:4', '4:3'],
-    promptMax: 2000,
+    promptMax: 7000,
     promptRequired: true,
   },
   wan30_server19: {
@@ -204,8 +197,8 @@ export const SEAVI_MODELS: Record<string, SeaviModelSpec> = {
     videoMode: 'multi',
     videoMax: 1, // upstream 5 Nov 2026: video_urls max_items 1
     audio: true,
-    // 11 Nov 2026: upstream menambah durasi 30 detik (schema /models: [5,10,15,30]).
-    durations: [5, 10, 15, 30],
+    // 22 Nov 2026: /v1/models durasi [5,10,15] — 30 detik tidak tersedia.
+    durations: [5, 10, 15],
     aspects: ['9:16', '16:9', '1:1', '3:4', '4:3'],
     promptMax: 20000,
     promptRequired: true,
@@ -222,8 +215,8 @@ export const SEAVI_MODELS: Record<string, SeaviModelSpec> = {
     videoMode: 'multi',
     videoMax: 1, // upstream 5 Nov 2026: video_urls max_items 1
     audio: true,
-    // 11 Nov 2026: upstream menambah durasi 30 detik (schema /models: [5,10,15,30]).
-    durations: [5, 10, 15, 30],
+    // 22 Nov 2026: /v1/models durasi [5,10,15] — 30 detik tidak tersedia.
+    durations: [5, 10, 15],
     aspects: ['9:16', '16:9', '1:1', '3:4', '4:3'],
     promptMax: 17000,
     promptRequired: true,
@@ -246,28 +239,25 @@ export const SEAVI_MODELS: Record<string, SeaviModelSpec> = {
     promptMax: 2000,
     promptRequired: true,
   },
-  // HappyHorse 1.1 · Server 23 — multimodal ringan: 1-5 gambar (image_urls),
-  // prompt wajib ≤2000, aspect_ratio dan duration 5/10/15. Tanpa video, tanpa
-  // audio (input_media upstream hanya memuat image_urls).
-  happyhorse11_server23: {
-    id: 'happyhorse11_server23',
-    label: 'HappyHorse 1.1 · Server 23',
+  // ── Model baru 22 Nov 2026 (probe /v1/models) ──
+  // wan30_omni_server23: multimodal images(1-10) → video, prompt ≤8000,
+  // aspect 9:16/16:9/3:4/4:3, durasi 5/10, 1 token.
+  wan30_omni_server23: {
+    id: 'wan30_omni_server23',
+    label: 'Wan 3.0 Omni · Server 23',
     category: 'video_generation',
-    inputType: 'images_to_video',
-    tokens: 2,
+    inputType: 'multimodal_to_video',
+    tokens: 1,
     imageMode: 'multi',
     imageMin: 1,
-    imageMax: 5,
+    imageMax: 10,
     videoMode: 'none',
-    durations: [5, 10, 15],
-    aspects: ['9:16', '16:9', '1:1', '3:4', '4:3'],
-    promptMax: 2000,
+    audio: false,
+    durations: [5, 10],
+    aspects: ['9:16', '16:9', '3:4', '4:3'],
+    promptMax: 8000,
     promptRequired: true,
   },
-  // ── Model baru 11 Nov 2026 — Kling 2.5 Turbo · Server 23 ──
-  // Skema upstream 11 Nov (probe /models): image-to-video, SATU gambar wajib,
-  // TANPA audio_url, tanpa aspect_ratio, durasi 5/10, prompt wajib ≤2000,
-  // dan hanya 1 token per generate — paling murah di katalog video.
   kling25_turbo_server23: {
     id: 'kling25_turbo_server23',
     label: 'Kling 2.5 Turbo · Server 23',
@@ -322,17 +312,9 @@ export const SEAVI_IMAGE_MODELS: Record<string, SeaviModelSpec> = {
   ]),
   nano_banana_2_server15: seaviImage('nano_banana_2_server15', 'Nano Banana 2 · Server 15', 10, RATIO_NANO),
   nano_banana_pro_server15: seaviImage('nano_banana_pro_server15', 'Nano Banana Pro · Server 15', 10, RATIO_NANO),
-  // Katalog 11 Nov 2026 (semua 1 token): Nano Banana dasar, dua varian GPT
-  // Image 2.5, dan empat varian MAI Image. Rasio untuk GPT 2.5/MAI tidak
-  // didokumentasikan upstream → aspects kosong berarti parameter
-  // aspect_ratio tidak dikirim dan upstream memakai default-nya.
-  nano_banana: seaviImage('nano_banana', 'Nano Banana', 10, RATIO_NANO),
-  gpt_image_2_5_flare: seaviImage('gpt_image_2_5_flare', 'GPT Image 2.5 Flare', 4, []),
-  gpt_image_2_5_sunburst: seaviImage('gpt_image_2_5_sunburst', 'GPT Image 2.5 Sunburst', 4, []),
-  mai_image_2_5: seaviImage('mai_image_2_5', 'MAI Image 2.5', 4, []),
-  mai_image_2_5_pro: seaviImage('mai_image_2_5_pro', 'MAI Image 2.5 Pro', 4, []),
-  mai_image_2_6: seaviImage('mai_image_2_6', 'MAI Image 2.6', 4, []),
-  mai_image_2_6_flash: seaviImage('mai_image_2_6_flash', 'MAI Image 2.6 Flash', 4, []),
+  // Katalog 22 Nov 2026: 7 model image, semuanya 1 token. Model lama
+  // (nano_banana, GPT Image 2.5 flare/sunburst, MAI Image 2.5/2.6) tidak ada
+  // lagi di /v1/models dan sudah dicabut.
   seedream_4_server15: seaviImage('seedream_4_server15', 'Seedream 4 · Server 15', 4, RATIO_SEEDREAM),
   seedream_4_5_server15: seaviImage('seedream_4_5_server15', 'Seedream 4.5 · Server 15', 4, RATIO_SEEDREAM),
   // Referensi 1-2 gambar (max_items 2 di skema upstream), prompt wajib ≤2000.
@@ -341,8 +323,9 @@ export const SEAVI_IMAGE_MODELS: Record<string, SeaviModelSpec> = {
   ]),
 }
 
-// Upscaler Seavi (upscale_video_server7) sudah dipensiunkan upstream: submit
-// menjawab 404 MODEL_NOT_FOUND. Halaman Video Upscaler kini hanya RunningHub.
+// Upscaler: live /v1/models 22 Nov memuat `upscale_video_server15`, tapi ini
+// tidak dipakai halaman Video Upscaler (yang pakai RunningHub) — tidak didaftar
+// di katalog generasi teks/ gambar di sini.
 
 export function getSeaviSpec(id: string): SeaviModelSpec | undefined {
   const base = SEAVI_MODELS[id] ?? SEAVI_IMAGE_MODELS[id]

@@ -31,39 +31,40 @@ function withFetchStub<T>(impl: (url: string, init?: RequestInit) => SeaviStubRe
 
 // ── Spesifikasi model ────────────────────────────────────────────────────────
 
-test('SEAVI_MODELS: 16 model video/motion aktif terdaftar dan spec kunci tersedia', () => {
+test('SEAVI_MODELS: 16 model video/motion aktif (katalog 22 Nov 2026) dan spec kunci tersedia', () => {
   assert.equal(Object.keys(SEAVI_MODELS).length, 16)
   assert.ok(getSeaviSpec('seedance2_multi_s15'))
-  assert.ok(getSeaviSpec('motion_control_v3_server23_15dtk'))
+  assert.ok(getSeaviSpec('motion_control_v3_server19_15dtk'))
   assert.ok(getSeaviSpec('sora2_server10'))
-  // Katalog 11 Nov 2026 (probe GET /v1/models): sepuluh model 2 token. Server 16
-  // dipensiunkan upstream 1 Nov (sempat lolos submit lalu gagal
-  // GENERATION_FAILED, sekarang POST-nya 404 MODEL_NOT_FOUND) dan
-  // motion_control_v3_server19_15dtk keluar dari katalog; seedance25_server10
-  // justru KEMBALI 11 Nov.
+  // Katalog 22 Nov 2026 (probe GET /v1/models, 25 model): Seedance 2.5
+  // dicabut upstream. Server 16 & Server 23 MC juga tidak ada lagi.
   assert.equal(getSeaviSpec('motion_control_v3_server16'), undefined)
-  assert.equal(getSeaviSpec('motion_control_v3_server19_15dtk'), undefined)
-  // 11 Nov 2026: durasi panjang + model baru.
-  assert.ok(getSeaviSpec('seedance25_server10'), 'seedance25_server10 kembali ke katalog 11 Nov')
-  assert.deepEqual(getSeaviSpec('seedance25_server19')?.durations, [5, 10, 15, 25])
-  assert.deepEqual(getSeaviSpec('seedance25_server10')?.durations, [5, 10, 15, 25])
-  assert.deepEqual(getSeaviSpec('kling4_server19')?.durations, [5, 10, 15, 30])
-  assert.deepEqual(getSeaviSpec('wan30_prime_server19')?.durations, [5, 10, 15, 30])
+  assert.equal(getSeaviSpec('motion_control_v3_server23_15dtk'), undefined)
+  assert.equal(getSeaviSpec('seedance25_server19'), undefined)
+  assert.equal(getSeaviSpec('seedance25_server10'), undefined)
+  assert.equal(getSeaviSpec('happyhorse11_server23'), undefined)
+  // Seedance 2 (maks 15 detik, 1 token) menggantikan Seedance 2.5.
+  assert.deepEqual(getSeaviSpec('sd2_omni_s15')?.durations, [5, 10, 15])
+  assert.deepEqual(getSeaviSpec('seedance2_mini_omni_server23')?.durations, [5, 10, 15])
+  assert.equal(getSeaviSpec('sd2_omni_s15')?.tokens, 1)
+  // Tidak ada durasi 30 detik di katalog live.
+  assert.deepEqual(getSeaviSpec('kling4_server19')?.durations, [5, 10, 15])
+  assert.deepEqual(getSeaviSpec('wan30_prime_server19')?.durations, [5, 10, 15])
+  assert.deepEqual(getSeaviSpec('grok_imagine_s15')?.durations, [5, 10, 15])
   // Model baru: Kling 2.5 Turbo — i2v, 5/10 detik, hanya 1 token.
   const turbo = getSeaviSpec('kling25_turbo_server23')
   assert.ok(turbo)
   assert.equal(turbo?.tokens, 1)
   assert.deepEqual(turbo?.durations, [5, 10])
   assert.deepEqual(turbo?.aspects, [])
+  assert.deepEqual(getSeaviSpec('wan30_omni_server23')?.durations, [5, 10])
+  assert.equal(getSeaviSpec('wan30_omni_server23')?.tokens, 1)
   assert.equal(getSeaviSpec('kling4_server19')?.tokens, 2)
   assert.equal(getSeaviSpec('wan30_prime_server19')?.tokens, 2)
   assert.equal(getSeaviSpec('gemini_omni_server19')?.tokens, 2)
-  assert.equal(getSeaviSpec('seedance25_server19')?.tokens, 2)
-  assert.equal(getSeaviSpec('seedance25_server10')?.tokens, 2)
   assert.equal(getSeaviSpec('wan30_server19')?.tokens, 2)
   assert.equal(getSeaviSpec('motion_control_v3_server10_30dtk')?.tokens, 2)
   assert.equal(getSeaviSpec('wan3_server23')?.tokens, 2)
-  assert.equal(getSeaviSpec('happyhorse11_server23')?.tokens, 2)
   assert.equal(getSeaviSpec('veo31_s9'), undefined)
   assert.equal(getSeaviSpec('model_ngawur'), undefined)
 })
@@ -114,19 +115,16 @@ test('payload sora2: 1 gambar wajib → image_url, tanpa aspect_ratio', () => {
   assert.throws(() => buildSeaviPayload(spec, { prompt: 'tanpa gambar' }), /tepat 1 gambar/)
 })
 
-// Upstream seedance25_server19 MENERIMA video referensi 0-3 (schema /models
-// 19 Okt 2026; 17 Okt masih 422 "Unsupported input: video_url") — gambar 1-9.
-test('payload multimodal: seedance25_server19 gambar 1-9 + video 0-3 + audio', () => {
-  const spec = getSeaviSpec('seedance25_server19')!
+// Seedance 2 Omni (sd2_omni_s15) menerima gambar 1-5 + video opsional (maks 1).
+test('payload multimodal: sd2_omni_s15 gambar 1-5 + video 0-1', () => {
+  const spec = getSeaviSpec('sd2_omni_s15')!
   assert.throws(
-    () => buildSeaviPayload(spec, { imageUrls: ['a'], videoUrls: ['v1', 'v2', 'v3', 'v4'], prompt: 'x' }),
-    /maksimal 3 video/,
+    () => buildSeaviPayload(spec, { imageUrls: ['a'], videoUrls: ['v1', 'v2'], prompt: 'x' }),
+    /maksimal 1 video/,
   )
-  assert.throws(() => buildSeaviPayload(spec, { prompt: 'hanya prompt' }), /menerima 1-9 gambar/)
+  assert.throws(() => buildSeaviPayload(spec, { prompt: 'hanya prompt' }), /menerima 1-5 gambar/)
   const withVideo = buildSeaviPayload(spec, { imageUrls: ['a'], videoUrls: ['v1'], prompt: 'x' })
   assert.deepEqual(withVideo.input, { image_urls: ['a'], video_urls: ['v1'] })
-  const withAudio = buildSeaviPayload(spec, { imageUrls: ['a'], audioUrl: 'au', prompt: 'x' })
-  assert.deepEqual(withAudio.input, { image_urls: ['a'], audio_url: 'au' })
 })
 
 // ── buildSeaviPayload: motion control ───────────────────────────────────────
@@ -135,7 +133,7 @@ test('payload multimodal: seedance25_server19 gambar 1-9 + video 0-3 + audio', (
 // Mengirim prompt berbalas 422 "Unsupported parameter: prompt", jadi prompt yang
 // diketik member harus diabaikan, bukan diteruskan.
 test('payload MC: butuh gambar + video, prompt & aspek & durasi diabaikan', () => {
-  const spec = getSeaviSpec('motion_control_v3_server23_15dtk')!
+  const spec = getSeaviSpec('motion_control_v3_server19_15dtk')!
   const p = buildSeaviPayload(spec, {
     imageUrls: ['img'],
     videoUrls: ['vid'],
@@ -273,25 +271,28 @@ test('poll: HTTP 5xx sementara dilompati, bukan gagal permanen', async () => {
 
 // ── Image models & upscaler ─────────────────────────────────────────────────
 
-test('SEAVI_IMAGE_MODELS: 14 model image aktif (katalog 11 Nov 2026); tiap model wajib 1 gambar sumber', () => {
-  assert.equal(Object.keys(SEAVI_IMAGE_MODELS).length, 14)
-  // Katalog 11 Nov 2026: Nano Banana dasar, GPT Image 2.5 Flare/Sunburst,
-  // dan empat varian MAI Image masuk — semuanya 1 token.
+test('SEAVI_IMAGE_MODELS: 7 model image aktif (katalog 22 Nov 2026); tiap model wajib 1 gambar sumber', () => {
+  assert.equal(Object.keys(SEAVI_IMAGE_MODELS).length, 7)
+  // Katalog 22 Nov 2026: 7 model image, semuanya 1 token. Model lama
+  // (nano_banana, GPT Image 2.5, MAI Image) sudah dicabut upstream.
   for (const id of [
-    'nano_banana',
-    'gpt_image_2_5_flare',
-    'gpt_image_2_5_sunburst',
-    'mai_image_2_5',
-    'mai_image_2_5_pro',
-    'mai_image_2_6',
-    'mai_image_2_6_flash',
+    'gpt_image_2_server15',
+    'nano_banana_2_lite_server15',
+    'nano_banana_2_server15',
+    'nano_banana_pro_server15',
+    'seedream_4_server15',
+    'seedream_4_5_server15',
+    'seavi_image_server15',
   ]) {
     const spec = SEAVI_IMAGE_MODELS[id]
     assert.ok(spec, `${id} harus ada di katalog`)
     assert.equal(spec.tokens, 1)
     assert.equal(spec.imageMin, 1)
   }
-  // Katalog lama sudah tidak aktif di dashboard Seavi.
+  // Model lama sudah tidak aktif di dashboard Seavi.
+  assert.equal(SEAVI_IMAGE_MODELS['nano_banana'], undefined)
+  assert.equal(SEAVI_IMAGE_MODELS['gpt_image_2_5_flare'], undefined)
+  assert.equal(SEAVI_IMAGE_MODELS['mai_image_2_6'], undefined)
   assert.equal(SEAVI_IMAGE_MODELS['gpt_image2_s9'], undefined)
   assert.equal(SEAVI_IMAGE_MODELS['seedream5_s9'], undefined)
   // linocut_image_edit_qwen_server15 dipensiunkan upstream (404 MODEL_NOT_FOUND).
@@ -386,31 +387,27 @@ test('seavi_image_server15: 1-2 referensi, 3 ditolak', () => {
   )
 })
 
-// HappyHorse 1.1 · Server 23, skema upstream 5 Nov 2026: image_urls 1-5,
-// prompt wajib ≤2000, aspect_ratio + duration 5/10/15, tanpa video dan audio.
-test('happyhorse11_server23: 1-5 gambar dengan durasi & aspek, video/audio ditolak', () => {
-  const spec = getSeaviSpec('happyhorse11_server23')!
-  assert.equal(spec.tokens, 2)
+// wan30_omni_server23 (22 Nov 2026): image_urls 1-10, prompt wajib ≤8000,
+// aspect 9:16/16:9/3:4/4:3, durasi 5/10, tanpa video dan audio.
+test('wan30_omni_server23: 1-10 gambar dengan durasi & aspek, video/audio ditolak', () => {
+  const spec = getSeaviSpec('wan30_omni_server23')!
+  assert.equal(spec.tokens, 1)
   const p = buildSeaviPayload(spec, {
     imageUrls: ['https://x/1.jpg', 'https://x/2.jpg'],
-    prompt: 'kuda berlari di padang',
+    prompt: 'animasi produk',
     duration: 10,
-    aspectRatio: '16:9',
+    aspectRatio: '9:16',
   })
   assert.deepEqual(p.input, { image_urls: ['https://x/1.jpg', 'https://x/2.jpg'] })
-  assert.deepEqual(p.params, { prompt: 'kuda berlari di padang', aspect_ratio: '16:9', duration: 10 })
-  assert.throws(() => buildSeaviPayload(spec, { prompt: 'x' }), /menerima 1-5 gambar/)
-  assert.throws(
-    () => buildSeaviPayload(spec, { imageUrls: ['1', '2', '3', '4', '5', '6'], prompt: 'x' }),
-    /menerima 1-5 gambar/,
-  )
+  assert.deepEqual(p.params, { prompt: 'animasi produk', aspect_ratio: '9:16', duration: 10 })
+  assert.throws(() => buildSeaviPayload(spec, { prompt: 'x' }), /menerima 1-10 gambar/)
   assert.throws(
     () => buildSeaviPayload(spec, { imageUrls: ['a'], videoUrls: ['v'], prompt: 'x' }),
     /tidak menerima video/,
   )
 })
 
-test('upscaler Seavi sudah dipensiunkan: modul tidak lagi mengekspornya', async () => {
+test('upscaler Seavi: modul tidak mengekspor SEAVI_VIDEO_UPSCALER', async () => {
   const mod = await import('../src/lib/seavi.js')
   assert.equal((mod as Record<string, unknown>).SEAVI_VIDEO_UPSCALER, undefined)
 })

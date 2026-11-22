@@ -103,9 +103,9 @@ const PROVIDERS = {
     { key: 'gp:kling-v3-std-motion', label: 'Kling V3 Standard Motion Control (Genspark)', cr: 60 },
   ]},
   // Seavi Labs: harga per video dalam TOKEN (cr = token, 1 token = Rp 1.700).
-  // Katalog "Aktif (21)" 5 Nov 2026: Server 23 (15 dtk) 1 token, Server 10 (30 dtk) 2 token.
+  // Katalog 22 Nov 2026: Server 19 (15 dtk) 1 token, Server 10 (30 dtk) 2 token.
   seavi: { name: 'Seavi Labs', models: [
-    { key: 'sv:motion_control_v3_server23_15dtk', label: 'Motion Control V3 · S23 15 dtk', cr: 1 },
+    { key: 'sv:motion_control_v3_server19_15dtk', label: 'Motion Control V3 · S19 15 dtk', cr: 1 },
     { key: 'sv:motion_control_v3_server10_30dtk', label: 'Motion Control V3 · S10 30 dtk', cr: 2 },
   ]},
   // PosBot: cr = harga Rupiah per video (Saldo Generate dipotong dari kunci member).
@@ -151,7 +151,7 @@ const MOTION_PROVIDER_INFO: Record<MotionProviderId, { name: string; tagline: st
 // Default model tiap provider: pilih yang paling murah, bukan yang pertama di daftar.
 const MOTION_RECOMMENDED_MODEL: Record<MotionProviderId, string> = {
   runninghub: 'rh:std:2.6',
-  seavi: 'sv:motion_control_v3_server23_15dtk',
+  seavi: 'sv:motion_control_v3_server19_15dtk',
   posbot: 'pb:motion_control_std',
 }
 
@@ -180,7 +180,7 @@ const SIMPLE_MODEL_LABELS: Record<string, string> = {
   'rh:wf:2.9': 'Kling 2.9 Workflow',
   'rh:wf:v3.0': 'Kling 3.0 Standar',
   'rh:wf:72fps': 'Motion Control 72 FPS',
-  'sv:motion_control_v3_server23_15dtk': 'Motion Control V3 · 15 detik',
+  'sv:motion_control_v3_server19_15dtk': 'Motion Control V3 · 15 detik',
   'sv:motion_control_v3_server10_30dtk': 'Motion Control V3 · 30 detik',
   'mt:markasflow-motion-v25': 'MarkasFlow Motion V2.5',
   'pb:motion_control_std': 'Kling 2.6 Std · maks 30 detik',

@@ -283,15 +283,19 @@ test('findSeaviPackage: slug dikenal / kosong / asing', () => {
 })
 
 test('getSeaviCharge: model 1 token & 2 token sesuai katalog, default 1 token', () => {
-  // Katalog Seavi "Aktif (21)" 5 Nov 2026: 13 model 1 token, 8 model 2 token.
-  // Keluar dari katalog: seedance25_server10, motion_control_v3_server19_15dtk.
+  // Katalog Seavi 22 Nov 2026 (/v1/models, 25 model): 19 model 1 token,
+  // 6 model 2 token. Seedance 2.5 & HappyHorse sudah dicabut upstream.
   for (const id of [
-    'motion_control_v3_server23_15dtk',
+    'motion_control_v3_server19_15dtk',
     'kling3_server10',
     'kling21pro_server10',
     'grok_imagine_s15',
     'sora2_server10',
     'seedance2_multi_s15',
+    'sd2_omni_s15',
+    'seedance2_mini_omni_server23',
+    'kling25_turbo_server23',
+    'wan30_omni_server23',
     'gpt_image_2_server15',
     'nano_banana_2_lite_server15',
     'nano_banana_2_server15',
@@ -302,13 +306,11 @@ test('getSeaviCharge: model 1 token & 2 token sesuai katalog, default 1 token', 
   ]) {
     assert.equal(getSeaviCharge(id), 1, `${id} harus 1 token`)
   }
-  // Katalog 5 Nov 2026: delapan model menagih 2 token.
+  // Katalog 22 Nov 2026: enam model menagih 2 token.
   for (const id of [
     'gemini_omni_server19',
-    'happyhorse11_server23',
     'kling4_server19',
     'motion_control_v3_server10_30dtk',
-    'seedance25_server19',
     'wan30_prime_server19',
     'wan30_server19',
     'wan3_server23',

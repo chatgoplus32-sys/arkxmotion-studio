@@ -406,20 +406,16 @@ export const SEAVI_PACKAGES: SeaviPackagePlan[] = [
 export const SEAVI_DEFAULT_CHARGE = 1
 
 /**
- * Bobot token per model id Seavi (tanpa prefix `sv:`), sesuai katalog upstream
- * "Aktif (21)" 5 Nov 2026 — 13 model 1 token, 8 model 2 token. Hanya bobot yang
- * BEDA dari SEAVI_DEFAULT_CHARGE yang didaftar (kontrak /api/public/pricing);
- * model 1 token jatuh ke default. Cermin `spec.tokens` di src/lib/seavi.ts
- * (SEAVI_MODELS + SEAVI_IMAGE_MODELS) — tes kontrak silang menjaga keduanya
- * tetap sama, jadi daftar lengkap ada di file itu.
+ * Bobot token per model id Seavi (tanpa prefix `sv:`), sesuai katalog live
+ * /v1/models 22 Nov 2026 (25 model): 19 model 1 token, 6 model 2 token. Hanya
+ * bobot yang BEDA dari SEAVI_DEFAULT_CHARGE yang didaftar (kontrak
+ * /api/public/pricing); model 1 token jatuh ke default. Cermin `spec.tokens`
+ * di src/lib/seavi.ts — tes kontrak silang menjaga keduanya tetap sama.
  */
 export const SEAVI_MODEL_TOKENS: Record<string, number> = {
   gemini_omni_server19: 2,
-  happyhorse11_server23: 2,
   kling4_server19: 2,
   motion_control_v3_server10_30dtk: 2,
-  seedance25_server10: 2,
-  seedance25_server19: 2,
   wan30_prime_server19: 2,
   wan30_server19: 2,
   wan3_server23: 2,
