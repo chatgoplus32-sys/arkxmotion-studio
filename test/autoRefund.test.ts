@@ -131,12 +131,12 @@ after(() => {
   }
 })
 
-test('Seavi: upstream menolak (429) → token dikembalikan otomatis', () => {
+test('Seavi: upstream 429 → token TIDAK direfund (client mengulang dengan usage_id yang sama)', () => {
   seedBalance('seavi', 5103, 10)
   const usageId = seedUsage('seavi', 5103, 2)
   settleTicket('seavi', usageId, 429, '{"ok":false,"error":"rate limited"}')
-  assert.equal(saldo('seavi', 5103), 12, 'token harus kembali (+2)')
-  assert.equal(statusUsage('seavi', usageId), 'refunded')
+  assert.equal(saldo('seavi', 5103), 10, '429 bukan refund: client akan mengulang dengan usage_id yang sama')
+  assert.equal(statusUsage('seavi', usageId), 'used', 'usage harus tetap used agar klaim ulang diterima')
 })
 
 test('PosBot: parameter ditolak (400) → saldo dikembalikan otomatis', () => {
@@ -208,11 +208,18 @@ test('autoRefundUsage: usage tidak ada / usageId tidak valid → aman, tanpa efe
   assert.equal(saldo('posbot', 5102), sebelum)
 })
 
-test('klien refund sesudah server auto-refund → no-op, saldo tidak bertambah dua kali', () => {
+test('429 tidak refund; refund manual klien tetap mengembalikan saldo tepat sekali', () => {
   const usageId = seedUsage('runninghub', 5102)
   settleTicket('runninghub', usageId, 429, 'rate limited')
+  assert.equal(saldo('runninghub', 5102), 100000, '429 tidak mengubah saldo')
+  assert.equal(statusUsage('runninghub', usageId), 'used', 'usage tetap used agar retry diterima')
+
+  // Klien yang akhirnya menyerah setelah retry menghubungi /refund.
+  const pertama = autoRefundUsage('runninghub_usage', 'runninghub_balance', usageId)
+  assert.equal(pertama.refunded, 1, 'refund manual klien harus berhasil')
   assert.equal(saldo('runninghub', 5102), 101500)
-  // Simulasikan klien yang "telat" memanggil lagi — usage sudah refunded.
+
+  // Pemanggilan kedua (mis. client mengulang refund) harus no-op.
   const tetap = autoRefundUsage('runninghub_usage', 'runninghub_balance', usageId)
   assert.equal(tetap.refunded, 0)
   assert.equal(saldo('runninghub', 5102), 101500, 'saldo tidak boleh bertambah dua kali')

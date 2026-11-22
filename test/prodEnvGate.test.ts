@@ -176,7 +176,7 @@ test('deploy menyalakan proses lewat jalur start, bukan restart/reload dari berk
 
 test('deploy punya jalur darurat kalau server tidak menjawab setelah start', () => {
   const wf = kode('.github/workflows/deploy-vps.yml')
-  assert.match(wf, /if ! curl -sf --max-time \d+ "http:\/\/127\.0\.0\.1:6000\/api\/health"/, 'deploy harus memeriksa server benar-benar hidup')
+  assert.match(wf, /if ! curl -sf --max-time \d+ "http:\/\/127\.0\.0\.1:6000\/api\/health\/live"/, 'deploy harus memeriksa server benar-benar hidup lewat endpoint liveness')
   assert.match(wf, /NODE_ENV=production PORT=6000 pm2 start/, 'jalur darurat harus menyalakan proses dengan environment eksplisit')
 })
 

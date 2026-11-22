@@ -125,17 +125,31 @@ test('submit 429 dari antrean relay pakai bahasa antrean, bukan bahasa rate limi
   assert.notEqual(antrian.message, upstream.message, 'user harus tahu ini giliran member lain, bukan akun yang dibatasi')
 })
 
-test('submit 429: percobaan terakhir menyerah dengan pesan yang menjelaskan', () => {
-  const d = nexabotSubmit429Decision({
+test('submit 429: Retry-After mengalahkan batas percobaan; tanpa anjuran, attempt terakhir menyerah', () => {
+  // Selama NexaBot memberi Retry-After dan anggaran masih ada, batas attempts
+  // sengaja diabaikan — menyerah di attempt terakhir hanya karena angka akan
+  // membuang jeda yang sebenarnya bisa ditunggu.
+  const denganHeader = nexabotSubmit429Decision({
     attempt: 4,
     attempts: 4,
     retryAfterHeader: '10',
     sisaBudgetMs: 60_000,
     sudahMenungguMs: 95_000,
   })
-  assert.equal(d.ulang, false)
-  assert.match(d.akhir || '', /sudah menunggu ±95s/)
-  assert.match(d.akhir || '', /coba lagi dalam 10 detik/)
+  assert.equal(denganHeader.ulang, true, 'Retry-After lebih otoritatif daripada attempt terakhir')
+  assert.equal(denganHeader.delayMs, 10_000)
+  assert.equal(denganHeader.akhir, undefined)
+
+  // Tanpa anjuran waktu, percobaan terakhir benar-benar menyerah dengan pesan jelas.
+  const tanpaHeader = nexabotSubmit429Decision({
+    attempt: 4,
+    attempts: 4,
+    sisaBudgetMs: 60_000,
+    sudahMenungguMs: 95_000,
+  })
+  assert.equal(tanpaHeader.ulang, false)
+  assert.match(tanpaHeader.akhir || '', /sudah menunggu ±95s/)
+  assert.match(tanpaHeader.akhir || '', /tunggu sebentar lalu coba lagi/)
 })
 
 test('submit 429: anggaran habis menghentikan retry walaupun percobaan masih ada', () => {

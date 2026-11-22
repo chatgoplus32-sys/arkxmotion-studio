@@ -256,7 +256,7 @@ test('request baca hanya butuh identitas (polling tetap jalan)', async () => {
   assert.equal(terakhir().auth, `Bearer ${SEAVI_MASTER}`)
 })
 
-test('upstream 429: tiket dilepas dan SALDO DIKEMBALIKAN', async () => {
+test('upstream 429: tiket dilepas dan SALDO TIDAK direfund agar client bisa retry', async () => {
   const usageId = await potongSeavi(memberToken())
   const saldoSebelum = bacaSql<{ balance: number }>(`SELECT balance FROM seavi_balance WHERE user_id = ?`, MEMBER)[0].balance
   const headers = { 'X-App-Token': memberToken(), 'X-Provider-Charge': String(usageId) }
@@ -267,17 +267,17 @@ test('upstream 429: tiket dilepas dan SALDO DIKEMBALIKAN', async () => {
   assert.equal(tiket(usageId)?.used_jobs, 0, 'jatah tetap terpakai padahal upstream menolak tanpa job')
 
   const saldoSesudah = bacaSql<{ balance: number }>(`SELECT balance FROM seavi_balance WHERE user_id = ?`, MEMBER)[0].balance
-  assert.ok(saldoSesudah > saldoSebelum, 'saldo harus dikembalikan otomatis setelah gagal sebelum job')
+  assert.equal(saldoSesudah, saldoSebelum, 'saldo tidak boleh direfund saat 429: client mengulang dengan usage_id yang sama')
   assert.equal(
     bacaSql<{ status: string }>(`SELECT status FROM seavi_usage WHERE id = ?`, usageId)[0]?.status,
-    'refunded',
-    'usage harus ditandai refunded',
+    'used',
+    'usage harus tetap used agar klaim ulang diterima',
   )
 
-  // Retry dengan tiket yang sama ditolak: usage-nya sudah direfund.
+  // Retry dengan tiket yang sama berhasil: jatah tersedia lagi, usage masih sah.
   const ulang = await submitSeavi(headers)
-  assert.equal(ulang.status, 402, JSON.stringify(ulang.json))
-  assert.match(String(ulang.json?.error), /tidak berlaku/i)
+  assert.equal(ulang.status, 200, JSON.stringify(ulang.json))
+  assert.equal(tiket(usageId)?.used_jobs, 1, 'jatah terpakai setelah retry berhasil')
 })
 
 test('admin memakai kunci server tanpa tiket', async () => {

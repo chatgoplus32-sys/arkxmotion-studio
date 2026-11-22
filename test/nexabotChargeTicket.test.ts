@@ -231,7 +231,7 @@ test('usage yang sudah direfund tidak bisa dipakai sebagai tiket', async () => {
   assert.match(String(hasil.json?.error), /tidak berlaku/i)
 })
 
-test('upstream menolak sebelum job (429): tiket dilepas dan SALDO DIKEMBALIKAN', async () => {
+test('upstream menolak sebelum job (429): tiket dilepas, saldo TIDAK direfund supaya client bisa retry', async () => {
   const tiket = potong(MEMBER)
   const saldoSebelum = saldoOf(MEMBER)
   tolakSekali = true
@@ -239,12 +239,21 @@ test('upstream menolak sebelum job (429): tiket dilepas dan SALDO DIKEMBALIKAN',
   const gagal = await submit({ Authorization: `Bearer ${memberToken()}`, 'X-Nexabot-Charge': String(tiket) })
   assert.equal(gagal.status, 429, JSON.stringify(gagal.json))
   assert.equal(statusTiket(tiket), undefined, 'tiket tidak dilepas padahal upstream menolak tanpa job')
-  assert.equal(saldoOf(MEMBER), saldoSebelum + 150, 'saldo harus dikembalikan otomatis setelah gagal sebelum job')
+  assert.equal(
+    saldoOf(MEMBER),
+    saldoSebelum,
+    'saldo tidak boleh direfund saat 429: client mengulang dengan usage_id yang sama',
+  )
+  assert.equal(
+    bacaSql<{ status: string }>(`SELECT status FROM nexabot_usage WHERE id = ?`, tiket)[0]?.status,
+    'used',
+    'usage harus tetap used agar klaim ulang diterima',
+  )
 
-  // Retry dengan tiket yang sama ditolak: usage-nya sudah direfund.
+  // Retry dengan tiket yang sama berhasil: reservasi dilepas, usage masih sah.
   const ulang = await submit({ Authorization: `Bearer ${memberToken()}`, 'X-Nexabot-Charge': String(tiket) })
-  assert.equal(ulang.status, 402, JSON.stringify(ulang.json))
-  assert.match(String(ulang.json?.error), /tidak berlaku/i)
+  assert.equal(ulang.status, 200, JSON.stringify(ulang.json))
+  assert.equal(statusTiket(tiket)?.state, 'consumed', 'tiket harus hangus setelah retry berhasil')
 })
 
 test('admin tidak perlu tiket (pemilik kredensial server)', async () => {
