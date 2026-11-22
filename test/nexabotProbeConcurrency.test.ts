@@ -53,6 +53,13 @@ const hangUntilAbort = ((_url: string, init: RequestInit) =>
     }
     if (signal?.aborted) return fail()
     signal?.addEventListener('abort', fail, { once: true })
+    // AbortSignal.timeout() dan timer antrean probe sama-sama memakai timer
+    // unref. Di dalam server itu aman (ada handle lain yang menjaga event loop),
+    // tapi di test event loop dianggap selesai lebih dulu sehingga promise
+    // tidak pernah settle dan node:test membatalkan testnya. Jaga loop tetap
+    // hidup dengan handle ref'd sampai signal menyala.
+    const keepAlive = setInterval(() => {}, 10)
+    signal?.addEventListener('abort', () => clearInterval(keepAlive), { once: true })
   })) as unknown as typeof fetch
 
 const initialConcurrency = process.env.NEXABOT_PROBE_CONCURRENCY
