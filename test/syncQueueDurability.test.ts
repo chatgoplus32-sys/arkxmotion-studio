@@ -95,7 +95,7 @@ async function nyalakanServer(): Promise<void> {
 
   for (let i = 0; i < 90; i++) {
     try {
-      const res = await fetch(`${base}/api/health`)
+      const res = await fetch(`${base}/api/health/live`)
       if (res.ok) return
     } catch {
       /* belum listen */
@@ -135,7 +135,7 @@ async function matikanServer(): Promise<void> {
   // Konfirmasi dari luar: port-nya sudah tidak menjawab lagi.
   for (let i = 0; i < 10; i++) {
     try {
-      await fetch(`${baseLama}/api/health`)
+      await fetch(`${baseLama}/api/health/live`)
     } catch {
       break
     }
@@ -161,7 +161,7 @@ async function matikanServer(): Promise<void> {
  * Pastikan ada server yang hidup sebelum tes yang membutuhkannya.
  *
  * Cek cepat dulu: kalau prosesnya masih jalan, tidak perlu /api/health — endpoint
- * itu memeriksa provider dan butuh ~2 detik, dan tes ini tidak sedang menguji itu.
+ * itu memeriksa provider, sedangkan tes ini hanya perlu liveness proses.
  */
 async function pastikanServerHidup(): Promise<void> {
   if (anak && anak.exitCode === null) return

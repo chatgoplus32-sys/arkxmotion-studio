@@ -50,8 +50,9 @@ Langkah yang dijalankan `deploy_dist.py`:
 3. unggah arsip ke `/tmp/arkxmotion_dist_upload.tar.gz`
 4. `rm -rf dist && tar -xzf` di folder remote (`VPS_REMOTE_DIR`, default `/opt/arkxmotion-studio`)
 5. `pm2 restart arkxmotion --update-env`
-6. polling `http://127.0.0.1:6000/api/health` sampai 200 (maks 60 detik); keluar dengan
-   status bukan 0 kalau server tidak siap, supaya kegagalan deploy tidak lolos diam-diam
+6. polling `http://127.0.0.1:6000/api/health/live` sampai 200 (maks 60 detik); keluar dengan
+   status bukan 0 kalau proses server tidak hidup, supaya kegagalan deploy tidak lolos diam-diam.
+   Endpoint `/api/health` tetap menyediakan pemeriksaan database dan layanan upstream yang lebih rinci.
 
 Kredensial dibaca dari `.env` lewat `deploy_config.py` (`VPS_HOST`, `VPS_PORT`,
 `VPS_USER`, `VPS_PASSWORD`, opsional `VPS_REMOTE_DIR`). Tidak ada kredensial di

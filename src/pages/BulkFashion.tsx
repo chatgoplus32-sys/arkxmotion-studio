@@ -227,13 +227,6 @@ export default function BulkFashionPage() {
     }
   }, [])
 
-  // ─── Request notification permission ─────────────────────────────────────
-  useEffect(() => {
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission()
-    }
-  }, [])
-
   // ─── Provider / Model / Quality resolution ──────────────────────────────
   const providerConfig = useMemo(() => BULK_FASHION_PROVIDERS.find((p) => p.id === activeProvider) || BULK_FASHION_PROVIDERS[0], [activeProvider])
   const models = providerConfig.models

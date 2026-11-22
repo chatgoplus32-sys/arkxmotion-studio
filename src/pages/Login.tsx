@@ -4,6 +4,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { logAudit } from '@/lib/auditLog'
 import { LogIn, Mail, Lock, AlertCircle, Sparkles, ShieldCheck, Zap, Star, CheckCircle2 } from 'lucide-react'
+import { formatPublicCount, usePublicStats } from '@/lib/publicStats'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -13,6 +14,7 @@ export default function LoginPage() {
   const login = useAuthStore((state) => state.login)
   const addToast = useToastStore((state) => state.addToast)
   const navigate = useNavigate()
+  const stats = usePublicStats()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -59,12 +61,10 @@ export default function LoginPage() {
               <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-400" /> Kualitas hingga 4K Ultra HD</li>
             </ul>
 
-            <div className="mt-7 flex items-center gap-3">
-              <div className="flex -space-x-2.5">
-                {['RA', 'DP', 'SA', 'MF', 'TN'].map((n) => <span key={n} className="grid h-9 w-9 place-items-center rounded-full border-2 border-[#050816] bg-gradient-to-br from-[#0066FF] to-[#8B5CF6] text-[10px] font-bold">{n}</span>)}
-              </div>
-              <div className="text-[11px] leading-tight text-white/50"><b className="text-white">2.400+ kreator</b> sudah bergabung<br />48k video ter-generate</div>
-              <div className="ml-auto flex gap-1 text-yellow-400">{[1, 2, 3, 4, 5].map((s) => <Star key={s} className="h-4 w-4" fill="currentColor" />)}</div>
+            <div className="mt-7 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-[11px] leading-relaxed text-white/55">
+              {stats?.active_users != null && stats?.videos != null
+                ? <><b className="text-white">{formatPublicCount(stats.active_users)} kreator aktif</b> · <b className="text-white">{formatPublicCount(stats.videos)} video</b> berhasil dibuat.</>
+                : 'Statistik komunitas mengikuti data pemakaian aktual.'}
             </div>
           </div>
 

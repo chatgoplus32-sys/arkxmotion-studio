@@ -8,7 +8,6 @@ import App from './App.tsx'
 // with fresh blob URLs by loading video data from IndexedDB.
 import { restoreIdbVideos, startBackgroundPolling } from '@/lib/backgroundTasks'
 import { startGenerationJobRecovery } from '@/lib/jobTracking'
-import { promptForNotificationsIfNeeded } from '@/lib/notify'
 
 restoreIdbVideos().then(() => {
   // Task yang bisa dilanjutkan (RunningHub/Roboneo menyimpan taskId + token di
@@ -38,9 +37,6 @@ restoreIdbVideos().then(() => {
         .catch((e) => console.warn('[sw] register failed:', e))
     })
   }
-  // Best-effort saat load; page yang punya tombol Generate juga meminta izin
-  // di dalam gestur klik (lihat ImageToVideo) supaya prompt benar-benar muncul.
-  window.addEventListener('load', () => { promptForNotificationsIfNeeded() })
 
   createRoot(document.getElementById('root')!).render(
     <StrictMode>

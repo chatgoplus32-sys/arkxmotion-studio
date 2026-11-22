@@ -19,7 +19,7 @@ start proses 05:27:11), jadi ini bukan peristiwa sekali.
 
 ## Yang diperiksa, berurutan
 
-1. proses baru menjawab `/api/health`
+1. proses baru menjawab `/api/health/live` (endpoint liveness cepat)
 2. proses itu memang **baru** start — umurnya tidak lebih tua dari perintah
    restart. Kalau `pm2 restart` ternyata tidak benar-benar mengganti prosesnya,
    itu kegagalan tersendiri dan gerbang menyebutkannya secara terpisah, bukan
@@ -98,12 +98,12 @@ proses lewat jalur start:
 pm2 delete arkxmotion && pm2 start ecosystem.config.cjs && pm2 save
 ```
 
-Deploy juga tidak lagi meninggalkan produksi mati: kalau `/api/health` belum
+Deploy juga tidak lagi meninggalkan produksi mati: kalau `/api/health/live` belum
 menjawab setelah itu, proses dinyalakan langsung dengan `NODE_ENV=production
 PORT=6000` sebagai jalur darurat.
 
 Aplikasinya sendiri tidak pernah bermasalah. Dijalankan lokal dengan
-`NODE_ENV=production`, ia melayani `/api/health` normal — jadi 502 itu murni
+`NODE_ENV=production`, ia melayani `/api/health/live` normal — jadi 502 itu murni
 soal manajemen proses pm2.
 
 ## Kalau gerbang gagal

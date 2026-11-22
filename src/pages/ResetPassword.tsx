@@ -2,6 +2,7 @@
 import { Link, useSearchParams } from 'react-router-dom'
 import { useToastStore } from '@/stores/toastStore'
 import { Lock, Loader2, CheckCircle2, AlertCircle, KeyRound, ShieldCheck, Zap, ArrowRight, Sparkles } from 'lucide-react'
+import { formatPublicCount, usePublicStats } from '@/lib/publicStats'
 
 export default function ResetPasswordPage() {
   const [searchParams] = useSearchParams()
@@ -12,6 +13,7 @@ export default function ResetPasswordPage() {
   const [done, setDone] = useState(false)
   const [error, setError] = useState('')
   const addToast = useToastStore((state) => state.addToast)
+  const stats = usePublicStats()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -69,11 +71,10 @@ export default function ResetPasswordPage() {
             <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-400" /> Disimpan ter-krip, tidak bisa dilihat siapa pun</li>
             <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-400" /> Langsung bisa login setelah reset</li>
           </ul>
-          <div className="mt-7 flex items-center gap-3">
-            <div className="flex -space-x-2.5">
-              {['RA', 'DP', 'SA', 'MF', 'TN'].map((n) => <span key={n} className="grid h-9 w-9 place-items-center rounded-full border-2 border-[#050816] bg-gradient-to-br from-[#0066FF] to-[#8B5CF6] text-[10px] font-bold">{n}</span>)}
-            </div>
-            <div className="text-[11px] leading-tight text-white/50"><b className="text-white">2.400+ kreator</b> mempercayakan akunnya<br />ke ARKXMotion Studio</div>
+          <div className="mt-7 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-[11px] leading-relaxed text-white/55">
+            {stats?.active_users != null && stats?.videos != null
+              ? <><b className="text-white">{formatPublicCount(stats.active_users)} kreator aktif</b> · <b className="text-white">{formatPublicCount(stats.videos)} video</b> berhasil dibuat.</>
+              : 'Statistik komunitas mengikuti data pemakaian aktual.'}
           </div>
         </div>
 

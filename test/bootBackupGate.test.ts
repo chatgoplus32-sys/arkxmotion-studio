@@ -1,7 +1,7 @@
 // ─── Penjaga gerbang 3: boot harus meninggalkan snapshot ────────────────────
 // Gerbang ini menjalankan bash + curl + stat terhadap VPS, jadi tidak bisa
 // diuji dengan memanggil fungsi. Tes di sini menjalankannya sungguhan terhadap
-// endpoint /api/health tiruan dan folder backup bersuhu waktu terkendali —
+// endpoint /api/health/live tiruan dan folder backup bersuhu waktu terkendali —
 // sehingga logikanya terbukti, bukan diasumsikan.
 //
 // Catatan penting: gerbang dijalankan dengan spawn ASINKRON. `spawnSync` akan
@@ -32,7 +32,7 @@ const mkdir = () => tmpTes('gate3-')
 
 let uptime = 5
 const server = http.createServer((req, res) => {
-  if (req.url === '/api/health') {
+  if (req.url === '/api/health/live') {
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ status: 'ok', timestamp: new Date().toISOString(), uptime }))
     return

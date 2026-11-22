@@ -10,7 +10,7 @@
 # dilaporkan sukses.
 #
 # Gerbang ini mengukurnya dari dalam VPS, tempat semuanya bisa dibuktikan:
-#   1. tunggu sampai /api/health menjawab (proses hidup)
+#   1. tunggu sampai /api/health/live menjawab (proses hidup)
 #   2. pastikan proses MEMANG baru start, bukan restart yang tidak berefek
 #   3. tunggu sampai ada snapshot yang lebih baru dari start proses itu
 # Kalau tidak ada, deploy ditandai gagal — dan penyebabnya ikut dicetak.
@@ -97,14 +97,14 @@ batas=$((mulai + WAIT_SECONDS))
 # ── 1. Tunggu proses melayani ────────────────────────────────────────────────
 health=""
 while [ "$(date +%s)" -lt "$batas" ]; do
-  health=$(curl -sf --max-time 5 "$BASE_URL/api/health" 2>/dev/null || true)
+  health=$(curl -sf --max-time 5 "$BASE_URL/api/health/live" 2>/dev/null || true)
   [ -n "$health" ] && break
   sleep 1
 done
-[ -n "$health" ] || fail "server tidak merespons $BASE_URL/api/health dalam ${WAIT_SECONDS}s"
+[ -n "$health" ] || fail "server tidak merespons $BASE_URL/api/health/live dalam ${WAIT_SECONDS}s"
 
 uptime_raw=$(printf '%s' "$health" | grep -o '"uptime":[0-9.]*' | head -1 | cut -d: -f2)
-[ -n "$uptime_raw" ] || fail "respons /api/health tidak memuat uptime, jadi kapan proses start tidak bisa ditentukan"
+[ -n "$uptime_raw" ] || fail "respons /api/health/live tidak memuat uptime, jadi kapan proses start tidak bisa ditentukan"
 uptime_int="${uptime_raw%%.*}"
 proc_start=$(($(date +%s) - uptime_int))
 echo "   Proses hidup ${uptime_int}s → start $(waktu "$proc_start")"

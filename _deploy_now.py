@@ -110,9 +110,9 @@ out = stdout.read().decode('utf-8', errors='replace')
 print(out)
 
 print('\n[...] Waiting for server...')
-stdin, stdout, stderr = c.exec_command('sleep 3 && curl -s http://localhost:6000/api/health 2>/dev/null || echo no-health', timeout=15)
+stdin, stdout, stderr = c.exec_command('sleep 3 && curl -s http://localhost:6000/api/health/live 2>/dev/null || echo no-health', timeout=15)
 out = stdout.read().decode('utf-8', errors='replace')
-print(f'Health: {out}')
+print(f'Liveness: {out}')
 
 stdin, stdout, stderr = c.exec_command('pm2 list 2>/dev/null | grep -E "arkxmotion|name"', timeout=10)
 out = stdout.read().decode('utf-8', errors='replace')

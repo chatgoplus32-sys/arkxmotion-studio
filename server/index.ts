@@ -204,6 +204,11 @@ app.use('/api/public/autoclip', publicAutoClipRoutes)
 // same-origin /api/tts & /api/tts/status; gerbang Pro via cookie arkx_session.
 app.use('/api', autoMotionTtsRoutes)
 
+// Liveness probe must stay fast and independent of dependency/upstream checks.
+app.get("/api/health/live", (_req, res) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString(), uptime: process.uptime() })
+})
+
 app.get("/api/health", async (_req, res) => {
   try {
     const health = await checkHealth()

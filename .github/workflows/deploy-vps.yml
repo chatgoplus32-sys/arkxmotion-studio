@@ -9,7 +9,7 @@
 #   1. check-undefined.mjs  — identifier tak terdefinisi (TS2304/TS2552) &
 #                             API CommonJS di file ESM
 #   2. smoke-test.sh        — benar-benar menjalankan server lalu memastikan
-#                             /api/health merespons (menangkap server yang
+#                             /api/health/live merespons (menangkap server yang
 #                             gagal boot, penyebab 502 di semua endpoint)
 #   3. check-boot-backup.sh — sesudah pm2 restart, memastikan proses yang BARU
 #                             start benar-benar meninggalkan snapshot backup.
@@ -127,7 +127,7 @@ jobs:
 
             # Jangan tinggalkan produksi mati: kalau setelah itu server tetap
             # tidak menjawab, nyalakan langsung dengan environment eksplisit.
-            if ! curl -sf --max-time 10 "http://127.0.0.1:6000/api/health" >/dev/null; then
+            if ! curl -sf --max-time 10 "http://127.0.0.1:6000/api/health/live" >/dev/null; then
               echo "⚠️  Server belum menjawab — mencoba jalur darurat (tsx langsung)..."
               pm2 delete arkxmotion >/dev/null 2>&1 || true
               NODE_ENV=production PORT=6000 pm2 start "$(pwd)/node_modules/.bin/tsx" --name arkxmotion -- server/index.ts

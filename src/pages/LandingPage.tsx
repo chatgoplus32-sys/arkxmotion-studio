@@ -9,6 +9,7 @@ import { DEFAULT_MEMBERSHIP_FEE, DEFAULT_MEMBERSHIP_FEE_ORIGINAL, WA_NUMBER } fr
 import { DEFAULT_PRO_FEE } from '@/lib/pro'
 import { isBoosterPackage, NEXABOT_BOOSTER_COMING_SOON } from '@/lib/nexabotWallet'
 import { PROVIDER_CONFIGS, HIDDEN_PROVIDERS } from '@/stores/providerManager'
+import { formatPublicCount, usePublicStats } from '@/lib/publicStats'
 
 // Harga provider live dari /api/public/pricing (read-only, tanpa login).
 interface ProviderPrices {
@@ -34,16 +35,6 @@ interface ProviderPrices {
   }
 }
 
-/** Statistik nyata dari /api/public/stats (jumlah video selesai & provider). */
-interface PublicStats {
-  users?: number
-  videos?: number
-  /** Kreator yang benar-benar pernah generate (distinct user di log). */
-  active_users?: number
-  /** Halaman tool dengan generate selesai terbanyak (tanpa data pribadi). */
-  top_pages?: { page: string; count: number }[]
-}
-
 /** Nama halaman di log → label yang dibaca manusia. */
 const PAGE_LABEL: Record<string, string> = {
   'image-to-video': 'Image to Video',
@@ -57,21 +48,15 @@ const PAGE_LABEL: Record<string, string> = {
 const rp = (n: number) => `Rp ${n.toLocaleString('id-ID')}`
 
 /**
- * Ringkas angka besar untuk social proof: 1.272 → "1,3rb".
- * Format Indonesia pakai titik untuk ribuan dan koma untuk desimal.
- */
-const ringkas = (n: number): string => {
-  if (n >= 1000) return `${(n / 1000).toFixed(1).replace('.', ',').replace(/,0$/, '')}rb`
-  return String(n)
-}
-
-/**
  * Link WhatsApp admin. Dulu CTA "Chat admin di WhatsApp" menunjuk ke
  * /register — salah tujuan dan menutup kanal konversi. Sekarang benar-benar
  * membuka WhatsApp dengan pesan pembuka.
  */
 const WA_ADMIN_URL = `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(
   'Halo admin ARKXMotion Studio, saya butuh informasi untuk paket custom enterprise.',
+)}`
+const WA_COMMUNITY_URL = `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(
+  'Halo admin ARKXMotion Studio, saya ingin bergabung dengan komunitas kreator. Mohon info cara masuk ke grup WhatsApp komunitas.',
 )}`
 
 const NAV = [
@@ -150,6 +135,7 @@ interface FeatureItem {
   desc: string
   icon: string
   gradient: string
+  to: string
   /** Fitur premium — dibuka lewat paket Pro / upgrade member lama. */
   pro?: boolean
 }
@@ -160,42 +146,49 @@ const features: FeatureItem[] = [
     desc: 'Transfer motion dari video referensi ke karakter AI. Support Kling V3 Pro, Wan Motion, RoboNeo.',
     icon: 'M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z',
     gradient: 'from-blue-500/20 to-cyan-500/10',
+    to: '/generate/motion',
   },
   {
     title: 'Image to Video',
     desc: 'Hidupkan foto jadi video sinematik. Gemini Veo, Wan 2.7, Grok Imagine, Seedance.',
     icon: 'M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z',
     gradient: 'from-violet-500/20 to-purple-500/10',
+    to: '/generate/image-to-video',
   },
   {
     title: 'Bulk Fashion',
     desc: '1 model + 100 outfit = 100 video sekaligus. CSV upload, parallel engine.',
     icon: 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4',
     gradient: 'from-emerald-500/20 to-teal-500/10',
+    to: '/generate/bulk-fashion',
   },
   {
     title: 'AI Upscaler',
     desc: 'Upscale 4K + enhance detail dengan Magnific, Leonardo & Topaz.',
     icon: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z M10 10a3 3 0 106 0 3 3 0 00-6 0z',
     gradient: 'from-cyan-500/20 to-blue-500/10',
+    to: '/generate/upscaler',
   },
   {
     title: 'Smart Routing',
     desc: 'Auto pilih provider termurah & tercepat. Balance real-time, fallback otomatis.',
     icon: 'M13 10V3L4 14h7v7l9-11h-7z',
     gradient: 'from-blue-500/20 to-yellow-500/10',
+    to: '/manage/routing',
   },
   {
     title: 'UGC Studio',
     desc: 'Product photography ke UGC video siap jual. Shopee, Tokopedia, Tiktok ready.',
     icon: 'M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z',
     gradient: 'from-pink-500/20 to-rose-500/10',
+    to: '/generate/ugc',
   },
   {
     title: 'Virtual Try-On',
     desc: 'Pakai outfit dan aksesori digital ke foto model — untuk katalog dan lookbook.',
     icon: 'M16 7l4 3-4 3M8 7L4 10l4 3M14 4l-4 16',
     gradient: 'from-fuchsia-500/20 to-pink-500/10',
+    to: '/generate/virtual-tryon',
     pro: true,
   },
   {
@@ -203,6 +196,7 @@ const features: FeatureItem[] = [
     desc: 'Buat lagu AI dari nol, atau cover lagu favorit dengan vokal sendiri.',
     icon: 'M9 18V5l12-2v13M9 18a3 3 0 11-6 0 3 3 0 016 0zm12-2a3 3 0 11-6 0 3 3 0 016 0z',
     gradient: 'from-purple-500/20 to-indigo-500/10',
+    to: '/generate/song-cover',
     pro: true,
   },
   {
@@ -210,6 +204,7 @@ const features: FeatureItem[] = [
     desc: 'Avatar AI bicara dengan suara pilihanmu — untuk konten dan penjelasan produk.',
     icon: 'M19 10v2a7 7 0 01-14 0v-2a7 7 0 0114 0zM12 19v3m-4 0h8',
     gradient: 'from-sky-500/20 to-cyan-500/10',
+    to: '/generate/voice-over',
     pro: true,
   },
   {
@@ -217,6 +212,7 @@ const features: FeatureItem[] = [
     desc: 'Edit video, UGC Pro dan auto-motion dalam satu studio AI (Gemini Tools).',
     icon: 'M11 3H4a1 1 0 00-1 1v16a1 1 0 001 1h16a1 1 0 001-1v-7M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4 9.5-9.5z',
     gradient: 'from-cyan-500/20 to-blue-500/10',
+    to: '/generate/auto-motion',
     pro: true,
   },
   {
@@ -224,12 +220,14 @@ const features: FeatureItem[] = [
     desc: 'Hapus watermark dari video milikmu sendiri, termasuk dari sumber lain.',
     icon: 'M4 4h16v16H4zM8 12l3 3 5-6',
     gradient: 'from-teal-500/20 to-emerald-500/10',
+    to: '/generate/watermark-remover',
   },
   {
     title: 'Clip & Highlight',
     desc: 'Potong video panjang jadi klip pendek, plus Second Brain untuk riset konten.',
     icon: 'M8 6v12l8-6-8-6zM4 4h16v16H4z',
     gradient: 'from-orange-500/20 to-amber-500/10',
+    to: '/tools/clip-genius',
   },
 ]
 
@@ -317,7 +315,7 @@ export default function LandingPage() {
   const [aktif, setAktif] = useState('beranda')
   // Kalau endpoint harga tidak bisa diakses, bagian ini cukup tidak tampil.
   const [providerPrices, setProviderPrices] = useState<ProviderPrices | null>(null)
-  const [stats, setStats] = useState<PublicStats | null>(null)
+  const stats = usePublicStats()
   const [memberPricing, setMemberPricing] = useState<MemberPricing>({
     fee: DEFAULT_MEMBERSHIP_FEE,
     proFee: DEFAULT_PRO_FEE,
@@ -364,18 +362,6 @@ export default function LandingPage() {
       .then(r => (r.ok ? r.json() : null))
       .then(d => { if (alive && d?.providers) setProviderPrices(d.providers as ProviderPrices) })
       .catch(() => { /* opsional: biarkan kosong */ })
-    return () => { alive = false }
-  }, [])
-
-  // Angka sosial (jumlah video, provider) diambil dari server supaya tidak
-  // pernah jadi klaim basi. Kalau endpoint mati, baris ini jatuh ke teks
-  // yang tidak menyebut angka.
-  useEffect(() => {
-    let alive = true
-    fetch('/api/public/stats')
-      .then(r => (r.ok ? r.json() : null))
-      .then(d => { if (alive && d?.ok) setStats({ users: d.users, videos: d.videos, active_users: d.active_users, top_pages: d.top_pages }) })
-      .catch(() => { /* biarkan null */ })
     return () => { alive = false }
   }, [])
 
@@ -541,7 +527,7 @@ export default function LandingPage() {
               <p className="text-[12px] leading-tight text-white/60">
                 {stats?.videos ? (
                   <>
-                    <span className="font-bold text-white/85">{ringkas(stats.videos)} video</span> sudah dibuat
+                    <span className="font-bold text-white/85">{formatPublicCount(stats.videos)} video</span> sudah dibuat
                     {stats?.active_users ? <> oleh <span className="font-bold text-white/85">{stats.active_users} kreator</span></> : null}<br />
                     <span className="text-[10.5px] text-white/55">{PROVIDER_COUNT} provider AI · auto rotation & fallback</span>
                   </>
@@ -678,7 +664,7 @@ export default function LandingPage() {
 
           <div className="mt-8 grid gap-3.5 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
             {features.map((f) => (
-              <div key={f.title} className={`group relative rounded-[20px] ${glass} p-5 transition-all duration-300 hover:-translate-y-1 hover:border-cyan-300/45 hover:shadow-[0_14px_44px_rgba(0,240,255,0.14)] sm:p-6`}>
+              <Link key={f.title} to={f.to} aria-label={`Coba ${f.title}`} className={`group relative rounded-[20px] ${glass} p-5 transition-all duration-300 hover:-translate-y-1 hover:border-cyan-300/45 hover:shadow-[0_14px_44px_rgba(0,240,255,0.14)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300 sm:p-6`}>
                 <div className={`grid h-11 w-11 place-items-center rounded-xl border border-white/5 bg-gradient-to-br ${f.gradient} transition-transform duration-300 group-hover:scale-110 sm:h-12 sm:w-12`}>
                   <svg className="h-5 w-5 text-cyan-300 sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}><path strokeLinecap="round" strokeLinejoin="round" d={f.icon} /></svg>
                 </div>
@@ -691,10 +677,10 @@ export default function LandingPage() {
                   )}
                 </div>
                 <p className="mt-2 text-[13px] leading-relaxed text-white/65 transition group-hover:text-white/75 sm:text-sm">{f.desc}</p>
-                <div className="mt-4 inline-flex translate-y-1 items-center gap-1.5 text-xs font-medium text-cyan-300 opacity-0 transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100">
+                <span className="mt-4 inline-flex translate-y-1 items-center gap-1.5 text-xs font-medium text-cyan-300 opacity-0 transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100">
                   Coba sekarang <ChevronRight className="h-3.5 w-3.5" />
-                </div>
-              </div>
+                </span>
+              </Link>
             ))}
           </div>
         </div>
@@ -788,7 +774,7 @@ export default function LandingPage() {
         <div className="mx-auto max-w-[1240px]">
           <div className="mx-auto max-w-[640px] text-center">
             <h2 className="text-[26px] font-black italic tracking-tight sm:text-[30px] md:text-[40px]">Pricing jelas — Pro sekali bayar</h2>
-            <p className="mt-3 text-[14px] text-white/50 sm:text-[15px]">Sekali bayar jadi Pro — semua fitur AI langsung terbuka untuk pendaftar baru. Belum termasuk token pemakaian. Bayar via QRIS BasuNiPay, akun aktif otomatis.</p>
+            <p className="mt-3 text-[14px] text-white/50 sm:text-[15px]">Buat akun gratis. Aktifkan Pro dengan pembayaran sekali bayar untuk membuka semua fitur AI; token generate dibeli terpisah sesuai pemakaian. Bayar via QRIS BasuNiPay dan akun Pro aktif otomatis setelah pembayaran masuk.</p>
           </div>
           <div className="mt-10 grid gap-4 md:grid-cols-3 sm:gap-5">
             {pricing.map((p) => (
@@ -904,7 +890,7 @@ export default function LandingPage() {
           </div>
           <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
             {[
-              stats?.videos != null && { label: 'Video AI selesai dibuat', value: ringkas(stats.videos) },
+              stats?.videos != null && { label: 'Video AI selesai dibuat', value: formatPublicCount(stats.videos) },
               stats?.active_users != null && { label: 'Kreator yang sudah generate', value: String(stats.active_users) },
               { label: 'Provider AI terhubung', value: String(PROVIDER_COUNT) },
               { label: 'Respon support WA', value: '< 1 jam' },
@@ -924,7 +910,7 @@ export default function LandingPage() {
                   <span key={t.page}>
                     {i > 0 && ', '}
                     <span className="font-semibold text-cyan-300">{PAGE_LABEL[t.page] ?? t.page}</span>
-                    <span className="text-white/55"> ({ringkas(t.count)})</span>
+                    <span className="text-white/55"> ({formatPublicCount(t.count)})</span>
                   </span>
                 ))}
               </p>
@@ -932,7 +918,7 @@ export default function LandingPage() {
           )}
 
           <div className="mt-6 text-center">
-            <a href={WA_ADMIN_URL} target="_blank" rel="noopener noreferrer" className={`${ctaUtama} mx-auto`}>
+            <a href={WA_COMMUNITY_URL} target="_blank" rel="noopener noreferrer" className={`${ctaUtama} mx-auto`}>
               <Rocket className="h-[18px] w-[18px]" />
               Gabung Komunitas via WhatsApp
             </a>

@@ -81,10 +81,14 @@ def deploy() -> None:
         for _ in range(30):
             time.sleep(2)
             _in, out, _err = client.exec_command(
-                "curl -s -m 2 -o /dev/null -w '%{http_code}' http://127.0.0.1:6000/api/health", timeout=20,
+                "code=$(curl -s -m 2 -o /dev/null -w '%{http_code}' http://127.0.0.1:6000/api/health/live); "
+                "if [ \"$code\" = '404' ]; then "
+                "curl -s -m 15 -o /dev/null -w '%{http_code}' http://127.0.0.1:6000/api/health; "
+                "else printf '%s' \"$code\"; fi",
+                timeout=20,
             )
             if out.read().decode('utf-8', 'replace').strip() == '200':
-                print('OK /api/health 200 - deploy selesai.')
+                print('OK liveness 200 - deploy selesai.')
                 break
         else:
             print('[X] Server tidak membalas 200 setelah 60 detik. Cek: pm2 logs arkxmotion')

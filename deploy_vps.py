@@ -368,11 +368,11 @@ out = stdout.read().decode('utf-8', errors='replace')
 err = stderr.read().decode('utf-8', errors='replace')
 print(out or err)
 
-# Wait and check health
+# Wait and check liveness (deep /api/health also probes external upstreams)
 print('\n⏳ Waiting for server...')
-stdin, stdout, stderr = c.exec_command('sleep 3 && curl -s http://localhost:6000/api/health 2>/dev/null || curl -s http://localhost:6000/ 2>/dev/null | head -1', timeout=15)
+stdin, stdout, stderr = c.exec_command('sleep 3 && curl -s http://localhost:6000/api/health/live 2>/dev/null || curl -s http://localhost:6000/ 2>/dev/null | head -1', timeout=15)
 out = stdout.read().decode('utf-8', errors='replace')
-print(f'Health: {out}')
+print(f'Liveness: {out}')
 
 stdin, stdout, stderr = c.exec_command('pm2 list 2>/dev/null | grep arkxmotion', timeout=10)
 out = stdout.read().decode('utf-8', errors='replace')

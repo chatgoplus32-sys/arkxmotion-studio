@@ -21,7 +21,8 @@ cd "$ROOT"
 SMOKE_PORT="${SMOKE_PORT:-6099}"
 LOG="${SMOKE_LOG:-/tmp/arkxmotion-smoke.log}"
 WAIT_SECONDS="${SMOKE_WAIT:-45}"
-ENDPOINTS="${SMOKE_ENDPOINTS:-/api/health /api/public/maintenance}"
+ENDPOINTS="${SMOKE_ENDPOINTS:-/api/health/live /api/public/maintenance}"
+LIVE_ENDPOINT="${SMOKE_LIVE_ENDPOINT:-/api/health/live}"
 
 # PID yang sedang LISTEN di sebuah port (Windows & Linux).
 port_pid() {
@@ -84,10 +85,12 @@ NODE_ENV=production PORT="$SMOKE_PORT" npx tsx server/index.ts > "$LOG" 2>&1 &
 LAUNCHER=$!
 
 # ── Tunggu sampai melayani request ────────────────────────────
+# Gunakan endpoint liveness cepat; /api/health juga memeriksa upstream dan
+# karena itu tidak cocok untuk menentukan apakah proses Express sudah hidup.
 # Kegagalan startup = launcher mati DAN port tidak ada yang menempati.
 ready=0
 for _ in $(seq 1 "$WAIT_SECONDS"); do
-  if curl -sf -o /dev/null --max-time 3 "http://127.0.0.1:$SMOKE_PORT/api/health" 2>/dev/null; then
+  if curl -sf -o /dev/null --max-time 3 "http://127.0.0.1:$SMOKE_PORT$LIVE_ENDPOINT" 2>/dev/null; then
     ready=1
     break
   fi
@@ -98,7 +101,7 @@ for _ in $(seq 1 "$WAIT_SECONDS"); do
   sleep 1
 done
 
-[ "$ready" -eq 1 ] || fail "server tidak merespons /api/health dalam ${WAIT_SECONDS}s"
+[ "$ready" -eq 1 ] || fail "server tidak merespons $LIVE_ENDPOINT dalam ${WAIT_SECONDS}s"
 
 # ── Cek endpoint: harus ada respons, bukan 502/hang ───────────
 for ep in $ENDPOINTS; do
