@@ -61,7 +61,6 @@ import {
   saveTiktokCredentials,
   deleteTiktokCredentials,
   getTiktokCredits,
-  exchangeAuthCode,
 } from '../lib/tiktokSymphony.js'
 import {
   NEXABOT_PRICING_DEFAULTS,
@@ -526,29 +525,6 @@ router.post('/tiktok/credentials/check', authenticateToken, requireAdmin, async 
   } catch (error: any) {
     console.warn('[admin-tiktok-credentials] check error:', error?.message)
     res.status(502).json({ error: error?.message || 'Gagal mengecek kredensial TikTok' })
-  }
-})
-
-// Tukar auth_code OAuth → Access-Token + tto_id, lalu simpan otomatis.
-router.post('/tiktok/credentials/exchange', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
-  try {
-    const result = await exchangeAuthCode({
-      appId: String(req.body?.appId || ''),
-      secret: String(req.body?.secret || ''),
-      authCode: String(req.body?.authCode || ''),
-    })
-    saveTiktokCredentials(result.accessToken, result.ttoId)
-    console.log(`[admin-tiktok] auth_code ditukar ✓ tto_id=${result.ttoId}, advertiser=${result.advertiserIds.length}`)
-    res.json({
-      ok: true,
-      ttoId: result.ttoId,
-      advertiserIds: result.advertiserIds,
-      expiresIn: result.expiresIn ?? null,
-      ...tiktokCredentialsStatus(),
-    })
-  } catch (error: any) {
-    console.warn('[admin-tiktok] exchange error:', error?.message)
-    res.status(502).json({ error: error?.message || 'Gagal menukar auth_code' })
   }
 })
 
