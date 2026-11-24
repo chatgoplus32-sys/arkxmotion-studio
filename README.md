@@ -1,35 +1,75 @@
-# React + TypeScript + Vite
+# ARKX Motion Studio
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Platform konten kreatif bertenaga AI: generate video motion, naratif, storyboard,
+bulk fashion, dan image-to-video dalam satu dashboard.
 
-Currently, two official plugins are available:
+**Produksi:** VPS — <https://arkxmotion-studio.win> (health check `/api/health/live`).
+Konfigurasi Vercel lama (`vercel.json`, `api/*`) masih ada di repo tapi tidak
+dipakai lagi.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Stack
 
-## React Compiler
+| Lapisan | Teknologi |
+| --- | --- |
+| Frontend | React 19 + TypeScript + Vite 8 + Tailwind CSS 4 |
+| State | Zustand v5 |
+| Backend | Express 5 (`server/`) + SQLite (better-sqlite3) |
+| Penyimpanan hasil | Cloudflare R2 (opsional, disarankan) |
+| Deploy | VPS + pm2 + nginx (`deploy_vps.py`, `deploy_dist.py`) |
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Menjalankan lokal
 
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
+cp .env.example .env
+# isi minimal JWT_SECRET — server TIDAK start tanpa ini:
+openssl rand -hex 32
+npm run dev:all        # backend :6000 + frontend :5173
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Tanpa `SMTP_*`, email verifikasi/reset hanya di-log ke console. Tanpa `R2_*`,
+hasil video bertahan sementara. Detail semua variabel: komentar di
+[`.env.example`](.env.example).
+
+## Perintah
+
+| Perintah | Fungsi |
+| --- | --- |
+| `npm run dev` | Frontend Vite (port 5173) |
+| `npm run dev:server` | Backend Express (port 6000) |
+| `npm run dev:all` | Keduanya sekaligus |
+| `npm run build` | Typecheck + build produksi ke `dist/` |
+| `npm run test` | Test (node:test lewat tsx, folder `test/`) |
+| `npm run typecheck` | TypeScript app + test + cek undefined |
+| `npm run lint` | OXLint |
+| `npm run seed:admin` | Buat/seed akun admin |
+| `npm run smoke` | Smoke test (`scripts/smoke-test.sh`) |
+| `npm run verify:r2` | Cek koneksi bucket R2 |
+
+## Struktur proyek
+
+```
+src/        # React SPA — halaman, komponen UI, store Zustand
+server/     # Express backend — auth, admin, generate, relay provider
+api/        # Endpoint serverless lama (Vercel) — tidak dipakai produksi
+test/       # Test node:test (*.test.ts)
+scripts/    # Skrip bantu: check-undefined, smoke-test, verify-r2
+docs *.md   # Dokumentasi fitur & operasi (lihat di bawah)
+```
+
+Halaman utama: Dashboard, Command Center, Motion Control, Naratif Video,
+Storyboard, Bulk Fashion, Image to Video, Research, Projects, Assets,
+Providers, Settings.
+
+## Dokumentasi
+
+- [`SMTP_SETUP.md`](SMTP_SETUP.md) — email verifikasi/reset (Gmail App Password, Brevo, Zoho)
+- [`R2_BACKUP_SETUP.md`](R2_BACKUP_SETUP.md) — simpan hasil generate + backup otomatis
+- [`NEXABOT_MASTER_KEY.md`](NEXABOT_MASTER_KEY.md) — kunci induk NexaBot di server (rotasi)
+- [`BOOT_BACKUP_GATE.md`](BOOT_BACKUP_GATE.md) — gerbang backup saat boot
+- [`ADDON_AKUN.md`](ADDON_AKUN.md), [`IMPLEMENTATION_SUMMARY.md`](IMPLEMENTATION_SUMMARY.md),
+  [`CHANGELOG_ROBONEO_UPDATES.md`](CHANGELOG_ROBONEO_UPDATES.md),
+  [`PROJECT_ANALYSIS.md`](PROJECT_ANALYSIS.md) — catatan fitur & riwayat
 
 ## Deploy frontend ke VPS
 

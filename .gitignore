@@ -51,3 +51,8 @@ auto-motion-source/remotion-source/out/
 # Artefak kerja lokal (arsip dist sementara, log/probe manual)
 .tmpdbg/
 scratch/
+
+# Artefak build Next.js sisa eksperimen (proyek pakai Vite) + file uji acak
+.next/
+next-env.d.ts
+test_image.png
