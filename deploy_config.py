@@ -1,11 +1,11 @@
 """Konfigurasi & kredensial VPS untuk skrip deploy.
 
 Kredensial TIDAK boleh ditanam di dalam skrip deploy mana pun. Semua skrip
-(deploy_vps.py, _deploy_now.py) mengimpor modul ini, jadi:
+(deploy_vps.py, deploy_dist.py) mengimpor modul ini, jadi:
 
   • hanya ada SATU sumber kebenaran — `.env` (di-ignore git) atau environment;
   • kunci baru cukup ditambahkan di satu tempat, dan didokumentasikan di
-    `.env.example` (dijaga oleh check.sh pada pre-commit);
+    `.env.example` (kunci baru wajib dicatat di sana);
   • skrip berhenti dengan pesan jelas kalau kredensial belum lengkap, alih-alih
     memakai nilai bawaan yang bisa mengarah ke server yang salah.
 

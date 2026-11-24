@@ -67,9 +67,7 @@ Providers, Settings.
 - [`R2_BACKUP_SETUP.md`](R2_BACKUP_SETUP.md) — simpan hasil generate + backup otomatis
 - [`NEXABOT_MASTER_KEY.md`](NEXABOT_MASTER_KEY.md) — kunci induk NexaBot di server (rotasi)
 - [`BOOT_BACKUP_GATE.md`](BOOT_BACKUP_GATE.md) — gerbang backup saat boot
-- [`ADDON_AKUN.md`](ADDON_AKUN.md), [`IMPLEMENTATION_SUMMARY.md`](IMPLEMENTATION_SUMMARY.md),
-  [`CHANGELOG_ROBONEO_UPDATES.md`](CHANGELOG_ROBONEO_UPDATES.md),
-  [`PROJECT_ANALYSIS.md`](PROJECT_ANALYSIS.md) — catatan fitur & riwayat
+- [`ADDON_AKUN.md`](ADDON_AKUN.md), [`PROJECT_ANALYSIS.md`](PROJECT_ANALYSIS.md) — catatan fitur & riwayat
 
 ## Deploy frontend ke VPS
 
