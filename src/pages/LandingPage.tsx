@@ -55,9 +55,8 @@ const rp = (n: number) => `Rp ${n.toLocaleString('id-ID')}`
 const WA_ADMIN_URL = `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(
   'Halo admin ARKXMotion Studio, saya butuh informasi untuk paket custom enterprise.',
 )}`
-const WA_COMMUNITY_URL = `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(
-  'Halo admin ARKXMotion Studio, saya ingin bergabung dengan komunitas kreator. Mohon info cara masuk ke grup WhatsApp komunitas.',
-)}`
+/** Saluran (channel) WhatsApp resmi ARKXMOTION STUDIO — bukan chat admin. */
+const WA_COMMUNITY_URL = 'https://whatsapp.com/channel/0029Vb9HqCB3wtb4NTdsId1U'
 
 const NAV = [
   { id: 'beranda', label: 'Beranda' },
@@ -920,9 +919,14 @@ export default function LandingPage() {
           <div className="mt-6 text-center">
             <a href={WA_COMMUNITY_URL} target="_blank" rel="noopener noreferrer" className={`${ctaUtama} mx-auto`}>
               <Rocket className="h-[18px] w-[18px]" />
-              Gabung Komunitas via WhatsApp
+              Gabung Saluran via WhatsApp
             </a>
-            <p className="mt-3 text-[11px] text-white/55">Berbagi hasil, tips & update fitur bareng kreator lain.</p>
+            <p className="mt-3 text-[11px] text-white/55">
+              Ikuti saluran ARKXMOTION STUDIO di WhatsApp:{' '}
+              <a href={WA_COMMUNITY_URL} target="_blank" rel="noopener noreferrer" className="text-cyan-300 hover:underline">
+                whatsapp.com/channel/0029Vb9HqCB3wtb4NTdsId1U
+              </a>
+            </p>
           </div>
         </div>
       </section>
