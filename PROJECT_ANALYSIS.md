@@ -249,18 +249,23 @@ const WORKFLOW_ROUTES = [
 
 ## 🚀 Next Development Steps
 
-### Immediate Actions:
-1. **Start development server:** `npm run dev` (port 5173)
-2. **Test providers page:** Navigate to `/providers`
-3. **Add a provider:** Test key management
-4. **Configure routing:** Test workflow assignments
+### Menjalankan lokal:
+1. `cp .env.example .env` lalu isi minimal `JWT_SECRET` (lihat `.env.example` untuk panduan)
+2. `npm install`
+3. `npm run dev:all` — frontend (port 5173) + server (port 6000) bersamaan
+4. Uji berkala: `npm test` · `npm run typecheck` · `npm run lint`
 
-### Development Workflow:
-1. **Edit files in `src/pages/Providers.tsx`** for providers page
-2. **Update `src/stores/providerManager.ts`** for provider logic
-3. **Run `npm run lint`** to check code quality
-4. **Run `npm run build`** to test build
-5. **Test features** manually in browser
+### Workflow deploy:
+1. Push ke branch `main` → GitHub Actions (`.github/workflows/deploy-vps.yml`) otomatis deploy ke VPS
+2. Gerbang yang harus hijau: test suite, smoke test (server harus boot), build frontend, mode production + snapshot backup
+3. Gagal di salah satu gerbang = deploy dibatalkan, versi lama tetap melayani
+
+### Sumber kebenaran setup:
+- `README.md` (struktur, perintah, deploy) dan `.env.example` (semua variabel environment)
+- Dokumen pendukung: `SMTP_SETUP.md`, `R2_BACKUP_SETUP.md`, `BOOT_BACKUP_GATE.md`, `NEXABOT_MASTER_KEY.md`, `ADDON_AKUN.md`
+
+> Catatan: dokumen ini adalah analisis awal proyek. Tooling lama yang disebut di
+> bawah (Lovable.ai) sudah tidak dipakai — ikuti README untuk pekerjaan baru.
 
 ## 📊 Current Status
 
@@ -272,14 +277,9 @@ const WORKFLOW_ROUTES = [
 ✅ **TypeScript:** No errors
 ✅ **Linting:** Working
 
-## 🎯 How to Continue in Lovable.ai:
+## 🎯 Lanjutan pengembangan
 
-1. **Import this backup file** as documentation reference
-2. **Focus on providers page development** (`src/pages/Providers.tsx`)
-3. **Maintain store layer** (`src/stores/providerManager.ts`)
-4. **Follow existing patterns** from other pages
-5. **Test thoroughly** with manual browser testing
-
----
-
-**Backup Complete - Ready for Lovable.ai Development!** 🚀
+1. Baca `README.md` untuk setup dan struktur terkini
+2. Ikuti pola halaman yang sudah ada di `src/pages/`
+3. Jalankan `npm run lint` dan `npm test` sebelum push
+4. Deploy otomatis lewat push ke `main` (lihat bagian Deploy frontend ke VPS)
