@@ -1123,7 +1123,13 @@ export async function pollNexabotJob(
   // Catat jobId di server: kalau tab ditutup, job ini bisa dilanjutkan lagi.
   if (typeof window !== 'undefined') {
     void import('./jobTracking').then(({ trackGenerationJob }) =>
-      trackGenerationJob({ provider: 'nexabot', jobId })).catch(() => {})
+      trackGenerationJob({
+        provider: 'nexabot',
+        jobId,
+        // auth.master = polling memakai kunci server lewat relay → worker
+        // antrean boleh mem-poll job ini; kunci member → 'client' (tidak).
+        credentialSource: auth.master ? 'server' : 'client',
+      })).catch(() => {})
   }
 
   const attempts = Math.max(1, maxAttempts)

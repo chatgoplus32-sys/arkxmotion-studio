@@ -74,6 +74,13 @@ db.exec(`
     status TEXT NOT NULL DEFAULT 'pending',
     result_url TEXT NOT NULL DEFAULT '',
     last_error TEXT NOT NULL DEFAULT '',
+    -- Antrean + notifikasi: sumber kredensial job ('server' = bisa dipoll
+    -- worker, 'client' = kunci pribadi member, tidak pernah dipoll server),
+    -- saklar polling server, hitung 404 berturut-turut, dan cap notifikasi.
+    credential_source TEXT NOT NULL DEFAULT '',
+    server_poll INTEGER NOT NULL DEFAULT 1,
+    poll_misses INTEGER NOT NULL DEFAULT 0,
+    notified_at INTEGER DEFAULT NULL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     UNIQUE(user_id, provider, job_id)
@@ -92,6 +99,29 @@ db.exec(`
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )
 `)
+
+// ── Antrean + notifikasi: kolom worker di generation_job ──────────────────
+// Kolom ditambah hanya bila belum ada, supaya DB produksi yang sudah berisi
+// job tidak perlu dibuat ulang. Kolom-kolomnya juga tercantum di CREATE TABLE
+// di atas untuk instalasi baru.
+const jobColumns = db.prepare("PRAGMA table_info(generation_job)").all() as { name: string }[]
+const GENERATION_JOB_COLUMNS: [string, string][] = [
+  ['credential_source', "TEXT NOT NULL DEFAULT ''"],
+  ['server_poll', 'INTEGER NOT NULL DEFAULT 1'],
+  ['poll_misses', 'INTEGER NOT NULL DEFAULT 0'],
+  ['notified_at', 'INTEGER DEFAULT NULL'],
+]
+for (const [colName, colType] of GENERATION_JOB_COLUMNS) {
+  if (!jobColumns.some((c) => c.name === colName)) {
+    db.exec(`ALTER TABLE generation_job ADD COLUMN ${colName} ${colType}`)
+  }
+}
+// Indeks untuk worker (ambil job server-key tertua) + halaman Antrean (daftar
+// per user terbaru dulu) + pemberitahuan transisi (cari done/failed belum
+// diberitahu).
+db.exec('CREATE INDEX IF NOT EXISTS idx_generation_job_worker ON generation_job(credential_source, server_poll, status, updated_at)')
+db.exec('CREATE INDEX IF NOT EXISTS idx_generation_job_user_updated ON generation_job(user_id, updated_at DESC)')
+db.exec('CREATE INDEX IF NOT EXISTS idx_generation_job_notified ON generation_job(status, notified_at)')
 
 const tokenColumns = db.prepare("PRAGMA table_info(tokens)").all() as { name: string }[]
 if (!tokenColumns.some(c => c.name === 'credits')) {
@@ -779,6 +809,9 @@ db.exec(`
     target TEXT NOT NULL DEFAULT 'all' CHECK(target IN ('all', 'users', 'admins')),
     user_id INTEGER DEFAULT NULL,
     read INTEGER NOT NULL DEFAULT 0,
+    -- Tujuan klik notifikasi, mis. '/queue' (halaman Antrean). Kosong = tidak
+    -- ada navigasi khusus; notifikasi admin lama tetap berfungsi tanpa link.
+    link TEXT NOT NULL DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id)
   )
@@ -786,6 +819,13 @@ db.exec(`
 db.exec('CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id)')
 db.exec('CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(read)')
 db.exec('CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at)')
+// Migrasi kolom link (lihat CREATE TABLE di atas) + indeks untuk endpoint
+// /api/admin/notifications/mine (belum dibaca per user, terbaru dulu).
+const notifColumns = db.prepare("PRAGMA table_info(notifications)").all() as { name: string }[]
+if (!notifColumns.some((c) => c.name === 'link')) {
+  db.exec("ALTER TABLE notifications ADD COLUMN link TEXT NOT NULL DEFAULT ''")
+}
+db.exec('CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, read, created_at DESC)')
 
 // ── Biaya upstream NexaBot per job ────────────────────────────────────
 // Pertanyaan yang tabel ini jawab: "paket Unlimited yang saya jual menutup biaya

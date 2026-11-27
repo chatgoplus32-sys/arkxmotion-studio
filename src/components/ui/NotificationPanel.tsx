@@ -1,6 +1,8 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useToastStore, ToastType } from '@/stores/toastStore'
-import { Bell, CheckCircle, XCircle, Info, AlertTriangle, X, Megaphone, RefreshCw } from 'lucide-react'
+import { useNotificationStore } from '@/stores/notificationStore'
+import { Bell, CheckCircle, XCircle, Info, AlertTriangle, X, Megaphone, RefreshCw, CheckCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 /* ─── Server notification type ─────────────────────────── */
@@ -11,6 +13,7 @@ interface ServerNotification {
   type: 'info' | 'warning' | 'success' | 'error' | 'announcement'
   target: 'all' | 'users' | 'admins'
   read: number
+  link: string
   created_at: string
 }
 
@@ -74,14 +77,21 @@ function formatTime(dateStr: string): string {
 
 /* ─── Main Component ────────────────────────────────────── */
 export function NotificationPanel() {
+  const navigate = useNavigate()
   const [isOpen, setIsOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<'server' | 'local'>('server')
   const panelRef = useRef<HTMLDivElement>(null)
 
-  // Server notifications
-  const [serverNotifs, setServerNotifs] = useState<ServerNotification[]>([])
-  const [serverUnread, setServerUnread] = useState(0)
-  const [serverLoading, setServerLoading] = useState(false)
+  // Notifikasi server via store bersama (polling 30 detik + refresh-on-401
+  // dikelola store; panel ini hanya menampilkan + menandai dibaca).
+  const {
+    notifications: serverNotifs,
+    unread: serverUnread,
+    loading: serverLoading,
+    fetchNotifications: fetchServerNotifs,
+    markRead: markAsRead,
+    markAllRead,
+  } = useNotificationStore()
 
   // Toast store (local)
   const {
@@ -92,51 +102,21 @@ export function NotificationPanel() {
     toggleNotificationType,
   } = useToastStore()
 
-  const token = typeof window !== 'undefined' ? localStorage.getItem('arkxmotion_token') : null
-
-  /* ── Fetch server notifications ── */
-  const fetchServerNotifs = useCallback(async () => {
-    if (!token) return
-    setServerLoading(true)
-    try {
-      const res = await fetch('/api/admin/notifications/mine?limit=20', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (res.ok) {
-        const data = await res.json()
-        setServerNotifs(data.notifications || [])
-        setServerUnread(data.unread || 0)
-      }
-    } catch {
-      // silent
-    } finally {
-      setServerLoading(false)
-    }
-  }, [token])
-
-  // Fetch on mount + every 30s
+  // Muat saat panel pertama kali tampil + setiap kali dibuka (store
+  // menahan panggilan ganda dalam 5 detik; polling berkala milik store).
   useEffect(() => {
-    if (token) fetchServerNotifs()
-    const interval = setInterval(() => {
-      if (token) fetchServerNotifs()
-    }, 30000)
-    return () => clearInterval(interval)
-  }, [token, fetchServerNotifs])
-
-  // Fetch when panel opens
+    void fetchServerNotifs()
+  }, [fetchServerNotifs])
   useEffect(() => {
-    if (isOpen && token) fetchServerNotifs()
-  }, [isOpen, token, fetchServerNotifs])
+    if (isOpen) void fetchServerNotifs()
+  }, [isOpen, fetchServerNotifs])
 
-  // Mark as read
-  const markAsRead = async (id: number) => {
-    if (!token) return
-    await fetch(`/api/admin/notifications/${id}/read`, {
-      method: 'PATCH',
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    setServerNotifs((prev) => prev.map((n) => n.id === id ? { ...n, read: 1 } : n))
-    setServerUnread((prev) => Math.max(0, prev - 1))
+  // Klik notifikasi: tandai dibaca, lalu navigasi ke tujuannya (mis. '/queue'
+  // untuk hasil generate) bila ada link.
+  const bukaNotifikasi = (n: ServerNotification) => {
+    if (!n.read) markAsRead(n.id)
+    setIsOpen(false)
+    if (n.link) navigate(n.link)
   }
 
   // Click outside
@@ -180,8 +160,17 @@ export function NotificationPanel() {
           <div className="flex items-center justify-between px-4 py-3 border-b border-border">
             <h3 className="font-semibold text-sm">Notifikasi</h3>
             <div className="flex items-center gap-1">
+              {serverUnread > 0 && (
+                <button
+                  onClick={() => markAllRead()}
+                  className="p-1.5 rounded-lg hover:bg-accent text-muted-foreground hover:text-foreground transition"
+                  title="Tandai semua dibaca"
+                >
+                  <CheckCheck className="h-3.5 w-3.5" />
+                </button>
+              )}
               <button
-                onClick={fetchServerNotifs}
+                onClick={() => void fetchServerNotifs()}
                 className="p-1.5 rounded-lg hover:bg-accent text-muted-foreground hover:text-foreground transition"
                 title="Refresh"
               >
@@ -237,14 +226,14 @@ export function NotificationPanel() {
                 <div className="px-4 py-10 text-center text-muted-foreground">
                   <Bell className="h-8 w-8 mx-auto mb-2 opacity-30" />
                   <p className="text-sm">Belum ada notifikasi</p>
-                  <p className="text-[11px] mt-1">Notifikasi dari admin akan muncul di sini</p>
+                  <p className="text-[11px] mt-1">Notifikasi admin & hasil generate akan muncul di sini</p>
                 </div>
               ) : (
                 <div>
                   {serverNotifs.map((n) => (
                     <div
                       key={n.id}
-                      onClick={() => !n.read && markAsRead(n.id)}
+                      onClick={() => bukaNotifikasi(n)}
                       className={cn(
                         'flex items-start gap-3 px-4 py-3 border-b border-border/50 transition cursor-pointer hover:bg-accent/30',
                         !n.read && 'bg-primary/5'

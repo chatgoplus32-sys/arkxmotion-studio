@@ -31,6 +31,8 @@ import nexabotWalletRoutes from './routes/nexabotWallet.js'
 import seaviWalletRoutes from './routes/seaviWallet.js'
 import posbotWalletRoutes from './routes/posbotWallet.js'
 import generationJobsRoutes from './routes/generationJobs.js'
+import notificationsRoutes from './routes/notifications.js'
+import { startQueueWorker } from './lib/queueWorker.js'
 import runninghubWalletRoutes from './routes/runninghubWallet.js'
 import publicPricingRoutes from './routes/publicPricing.js'
 import publicStatsRoutes from './routes/publicStats.js'
@@ -189,6 +191,7 @@ app.use('/api/nexabot', nexabotWalletRoutes)
 app.use('/api/seavi', seaviWalletRoutes)
 app.use('/api/posbot', posbotWalletRoutes)
 app.use('/api/generation-jobs', generationJobsRoutes)
+app.use('/api/notifications', notificationsRoutes)
 app.use('/api/runninghub-wallet', runninghubWalletRoutes)
 app.use('/api/runninghub', runninghubDailyClaimRoutes)
 app.use('/api/chatgpt', chatgptRoutes)
@@ -397,6 +400,12 @@ if (UPLOAD_RETENTION_DAYS > 0) {
 // Default aktif di production; status per hari disimpan di DB sehingga restart
 // tidak membuat klaim dobel maupun terlewat.
 startRunningHubDailyClaimScheduler()
+
+// Worker antrean generasi (NexaBot/PosBot): mem-poll job berkunci server dan
+// membuat notifikasi saat job selesai/gagal. Default aktif di production;
+// dimatikan dengan QUEUE_WORKER=0. Job berkunci pribadi TIDAK dipoll worker
+// (kuncinya hanya ada di browser) — statusnya dilanjutkan alur resume klien.
+startQueueWorker()
 
 // Verifikasi otomatis pembayaran QRIS manual lewat email notifikasi bank.
 // Nonaktif (hanya mencetak catatan) kalau PAYMENT_IMAP_* belum diisi.
