@@ -49,6 +49,7 @@ import {
   HeartPulse,
   MailPlus,
   Share2,
+  ListOrdered,
 } from 'lucide-react'
 
 interface NavItem {
@@ -63,6 +64,8 @@ interface NavItem {
 const mainNav: NavItem[] = [
   { label: 'Dashboard', href: '/dashboard', icon: <LayoutDashboard className="h-4 w-4" /> },
   { label: 'Hasil', href: '/hasil', icon: <Images className="h-4 w-4" /> },
+  // Antrean generasi (NexaBot/PosBot): job yang masih berjalan, selesai, gagal.
+  { label: 'Antrean', href: '/queue', icon: <ListOrdered className="h-4 w-4" /> },
 ]
 
 const createNav: NavItem[] = [

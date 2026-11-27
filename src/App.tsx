@@ -63,6 +63,7 @@ const GeminiToolsPage = lazyWithRetry(() => import('@/pages/GeminiTools'))
 const UpgradeProPage = lazyWithRetry(() => import('@/pages/UpgradePro'))
 const MetadataCleanerPage = lazyWithRetry(() => import('@/pages/MetadataCleaner'))
 const AdminNotificationsPage = lazyWithRetry(() => import('@/pages/AdminNotifications'))
+const QueuePage = lazyWithRetry(() => import('@/pages/Queue'))
 const CreatePulseTopupPage = lazyWithRetry(() => import('@/pages/CreatePulseTopup'))
 const NexaBotTopupPage = lazyWithRetry(() => import('@/pages/NexaBotTopup'))
 const PremiumBoosterPage = lazyWithRetry(() => import('@/pages/PremiumBooster'))
@@ -234,6 +235,7 @@ export default function App() {
                     <KeepAliveRoutes>
                         <Route path="/dashboard" element={<DashboardPage />} />
                         <Route path="/hasil" element={<AssetsPage />} />
+                        <Route path="/queue" element={<QueuePage />} />
                         <Route path="/saldo" element={<SaldoLayananPage />} />
                         <Route path="/quick-start" element={<QuickStartPage />} />
                         <Route path="/command" element={<CommandPage />} />

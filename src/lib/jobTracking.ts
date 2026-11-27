@@ -56,6 +56,13 @@ export async function trackGenerationJob(input: {
   provider: 'nexabot' | 'posbot'
   jobId: string
   prompt?: string
+  /**
+   * Sumber kredensial job ini: 'server' bila polling memakai kunci server
+   * lewat relay (worker boleh mem-poll), 'client' bila memakai kunci pribadi
+   * member (worker TIDAK PERNAH mem-poll; default 'client' bila diisi
+   * sembarangan). Diteruskan ke POST /api/generation-jobs.
+   */
+  credentialSource?: 'server' | 'client'
 }): Promise<void> {
   const key = keyOf(input.provider, input.jobId)
   if (aktif.has(key)) return
@@ -74,6 +81,7 @@ export async function trackGenerationJob(input: {
         jobId: input.jobId,
         page: halamanSekarang(),
         prompt: input.prompt || '',
+        credentialSource: input.credentialSource || 'client',
       }),
     })
   } catch { /* pencatatan tidak boleh mengganggu generate */ }

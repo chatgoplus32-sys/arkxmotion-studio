@@ -1,7 +1,7 @@
 // PosBot Developer API v1 — api.posbot.web.id via relay /api/public/posbot
 // Kontrak dari katalog LIVE /models + /models/status (dicek 14 Nov 2026).
 // Kunci maintenance tetap terdaftar (harga latar), harga = tarif developer IDR.
-import { relayAuthHeaders } from './providerServerKey.js'
+import { isServerKey, relayAuthHeaders } from './providerServerKey.js'
 import { overrideFor } from './effectivePricing.js'
 
 const POSBOT_PROXY = '/api/public/posbot'
@@ -878,7 +878,13 @@ export async function pollPosbotStatus(apiKey: string, jobCode: string, opts: Po
   // Catat jobCode di server: job tetap bisa dilanjutkan kalau tab ditutup.
   if (typeof window !== 'undefined') {
     void import('./jobTracking').then(({ trackGenerationJob }) =>
-      trackGenerationJob({ provider: 'posbot', jobId: jobCode })).catch(() => {})
+      trackGenerationJob({
+        provider: 'posbot',
+        jobId: jobCode,
+        // apiKey = sentinel SERVER_KEY → polling memakai kunci server lewat
+        // relay → worker antrean boleh mem-poll; kunci member → 'client'.
+        credentialSource: isServerKey(apiKey) ? 'server' : 'client',
+      })).catch(() => {})
   }
   const startedAt = Date.now()
   let attempt = 0
