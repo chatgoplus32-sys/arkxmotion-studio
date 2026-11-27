@@ -28,7 +28,6 @@ const notificationsRoutes = (await import('../server/routes/notifications.js')).
 const USER1 = 1
 const USER2 = 2
 const tokenUser1 = jwt.sign({ id: USER1, email: 'u1@test.local', role: 'user' }, JWT_SECRET)
-const tokenUser2 = jwt.sign({ id: USER2, email: 'u2@test.local', role: 'user' }, JWT_SECRET)
 
 const app = express()
 app.use(express.json())

@@ -69,6 +69,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   leonardo: '#facc15',
   render: '#94a3b8',
   createpulse: '#c084fc',
+  muse: '#25F4EE',
   oneover: '#a78bfa',
   firefly: '#FF6A00',
   riverside: '#FF6B6B',
@@ -104,6 +105,7 @@ function extractMfTokens(text: string): string[] {
 }
 
 function topupCta(provider: string): { route: string; label: string } {  if (provider === 'createpulse') return { route: '/topup/createpulse', label: 'Topup CreatePulse' }
+  if (provider === 'muse') return { route: '/topup/muse', label: 'Topup MuseAI' }
   if (provider === 'seavi') return { route: '/topup/seavi', label: 'Topup Seavi' }
   if (provider === 'posbot') return { route: '/topup/posbot', label: 'Topup PosBot' }
   if (provider === 'runninghub') return { route: '/topup/runninghub', label: 'Topup RunningHub' }
@@ -119,6 +121,7 @@ const PROVIDER_LIST = [
   { key: 'framia', label: 'Framia', desc: 'Canvas workflow (Converge AI) — semua node & recipe: image, video, avatar, garment, storyboard.' },
   { key: 'leonardo', label: 'Leonardo.ai', desc: 'app.leonardo.ai via Cognito Bearer JWT — Text-to-Image (Phoenix, Diffusion XL, Kino, Anime, Vision).' },
   { key: 'createpulse', label: 'CreatePulse', desc: 'Video generation (Seedance 2.0 FAST) via createpulse.online — pakai API key sendiri.' },
+  { key: 'muse', label: 'MuseAI', desc: 'Chat, gambar & video via muse.ai — kredensial server-level, member cukup top up saldo MuseAI.' },
   { key: 'galleri5', label: 'G5 AI Studio', desc: 'Motion Control (Kling V3 & V2.6 motion transfer) via aistudio.galleri5.com — Firebase refresh token (auto-refresh).' },
   { key: 'oneover', label: 'OneOver', desc: 'Video generation (Grok, Seedance 2.0/2.5, Kling, LTX) via oneover.com — Supabase session token.' },
   { key: 'firefly', label: 'Adobe Firefly', desc: 'Video generation (Veo 3.1, Firefly Video) via firefly.adobe.com — Adobe IMS Bearer token.' },
@@ -261,6 +264,18 @@ const TOKEN_GUIDE: Record<string, {
       { text: 'Multi-key akan auto-rotate saat quota / balance habis.' },
     ],
     tip: 'Model: Seedance 2.0 (FAST) — tarif mengikuti System Settings → Harga Token & Wallet. Saldo tersimpan di akunmu, bisa dipakai dari mana saja.',
+  },
+  muse: {
+    url: 'https://generate/muse',
+    urlLabel: 'Buka MuseAI Studio',
+    prefix: 'kredensial server-level',
+    steps: [
+      { text: 'MuseAI memakai kunci server (MUSE2API_KEY) — member TIDAK perlu API key.' },
+      { text: 'Buka menu Generate → MuseAI untuk chat, gambar, atau video.' },
+      { text: 'Top up saldo MuseAI minimal Rp 10.000 — biaya chat/gambar/video dipotong dari saldo.' },
+      { text: 'Admin mengatur kredensial MusangAPI di System Settings → Kredensial MuseAI.' },
+    ],
+    tip: 'Powered by muse.ai lewat MusangAPI. Video sampai 30 detik. Job gagal direfund otomatis.',
   },
   runninghub: {
     url: 'https://www.runninghub.ai/enterprise-api/consumerApi',

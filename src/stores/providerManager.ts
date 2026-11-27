@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { RHTokenWallet } from '@/lib/runninghub'
 
-export type ProviderId = 'wavespeed' | 'magnific' | 'roboneo' | 'runninghub' | 'createpulse' | 'framia' | 'firefly' | 'leonardo' | 'gemini' | 'openai' | 'shotstack' | 'creatomate' | 'galleri5' | 'oneover' | 'genspark' | 'riverside' | 'nexabot' | 'seavi' | 'markastools' | 'freebeat' | 'posbot' | 'omni'
+export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'runninghub' | 'createpulse' | 'muse' | 'framia' | 'firefly' | 'leonardo' | 'gemini' | 'openai' | 'shotstack' | 'creatomate' | 'galleri5' | 'oneover' | 'genspark' | 'riverside' | 'nexabot' | 'seavi' | 'markastools' | 'freebeat' | 'posbot' | 'omni'
 
 export const HIDDEN_PROVIDERS: ProviderId[] = []
 
@@ -88,6 +88,26 @@ export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
     description: 'AI-powered video creation and editing platform',
     keyPlaceholder: 'Paste your CreatePulse API key...',
     keyFormat: 'API key',
+    minCredits: 10,
+    supportsBalance: true,
+  },
+  weavy: {
+    id: 'weavy',
+    name: 'Weavy',
+    icon: '🌊',
+    description: 'AI video generation platform with Kling, Sora, and more',
+    keyPlaceholder: 'Paste your Weavy token...',
+    keyFormat: 'JWT token or API key',
+    minCredits: 5,
+    supportsBalance: true,
+  },
+  muse: {
+    id: 'muse',
+    name: 'MuseAI',
+    icon: '✨',
+    description: 'Chat, image & video via muse.ai — kredensial diatur admin, tanpa API key member',
+    keyPlaceholder: 'Kredensial diatur admin di System Settings',
+    keyFormat: 'Server-managed',
     minCredits: 10,
     supportsBalance: true,
   },
@@ -270,6 +290,8 @@ function getDefaultMaintenance(): Record<ProviderId, MaintenanceInfo> {
     roboneo: { isMaintenance: false, message: '' },
     runninghub: { isMaintenance: false, message: '' },
     createpulse: { isMaintenance: false, message: '' },
+  weavy: { isMaintenance: false, message: '' },
+    muse: { isMaintenance: false, message: '' },
     framia: { isMaintenance: false, message: '' },
     firefly: { isMaintenance: false, message: '' },
     leonardo: { isMaintenance: false, message: '' },
@@ -387,6 +409,8 @@ function loadKeysFromStorage(): Record<ProviderId, ProviderKey[]> {
     roboneo: [],
     runninghub: [],
     createpulse: [],
+  weavy: [],
+    muse: [],
     framia: [],
     firefly: [],
     leonardo: [],

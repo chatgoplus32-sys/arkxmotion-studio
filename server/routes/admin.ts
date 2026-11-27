@@ -57,6 +57,12 @@ import {
   type ServerKeyProvider,
 } from '../lib/providerMasterKey.js'
 import {
+  museStatus,
+  museApiKey,
+  saveMuseCredentials,
+  deleteMuseCredentials,
+} from '../lib/museAi.js'
+import {
   NEXABOT_PRICING_DEFAULTS,
   NEXABOT_MIN_TOPUP,
   describeNexabotPricing,
@@ -1650,6 +1656,37 @@ router.delete('/studio-ai/key', authenticateToken, requireAdmin, (_req: AuthRequ
   }
 })
 
+// ─── MuseAI (MusangAPI) credentials (server-level) ───────────────────────
+router.get('/muse/credentials', authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
+  try { res.json({ ok: true, ...museStatus() }) }
+  catch (error) { console.error('[admin-muse] get:', error); res.status(500).json({ error: 'Internal server error' }) }
+})
+router.put('/muse/credentials', authenticateToken, requireAdmin, (req: AuthRequest, res: Response) => {
+  try {
+    const apiKey = String(req.body?.apiKey || '').trim()
+    const base = String(req.body?.base || '').trim()
+    if (!apiKey && !base) return res.status(400).json({ error: 'Isi apiKey atau base URL' })
+    saveMuseCredentials(apiKey, base)
+    res.json({ ok: true, ...museStatus() })
+  } catch (error) { console.error('[admin-muse] put:', error); res.status(500).json({ error: 'Internal server error' }) }
+})
+router.delete('/muse/credentials', authenticateToken, requireAdmin, (_req: AuthRequest, res: Response) => {
+  try { deleteMuseCredentials(); res.json({ ok: true, ...museStatus() }) }
+  catch (error) { console.error('[admin-muse] delete:', error); res.status(500).json({ error: 'Internal server error' }) }
+})
+router.post('/muse/credentials/check', authenticateToken, requireAdmin, async (_req: AuthRequest, res: Response) => {
+  try {
+    const r = await fetch(`${museStatus().base}/models`, {
+      headers: { Authorization: `Bearer ${museApiKey()}` },
+      signal: AbortSignal.timeout(15000),
+    }).catch(() => null)
+    if (!r || !r.ok) throw new Error(`MusangAPI tidak merespon (HTTP ${r?.status || '?'})`)
+    res.json({ ok: true, message: 'MuseAI terhubung' })
+  } catch (error: any) {
+    res.status(502).json({ error: error?.message || 'Gagal mengecek MuseAI' })
+  }
+})
+
 // ─── System Settings ───────────────────────────────────────────────
 
 // GET /api/admin/settings — list all settings
@@ -1664,6 +1701,7 @@ router.get('/settings', authenticateToken, requireAdmin, (_req: AuthRequest, res
       if (r.key === MASTER_KEY_SETTING || r.key === MASTER_COOKIE_SETTING || r.key === ACCOUNTS_SETTING) return
       if (r.key === STUDIO_KEY_SETTING) return
       if (PROVIDER_MASTER_SETTING_KEYS.includes(r.key)) return
+      if (r.key === 'muse_api_key' || r.key === 'muse_api_base') return
       settings[r.key] = r.value
     })
 
@@ -1697,6 +1735,7 @@ router.put('/settings', authenticateToken, requireAdmin, (req: AuthRequest, res:
         if (key === MASTER_KEY_SETTING || key === MASTER_COOKIE_SETTING || key === ACCOUNTS_SETTING) continue
         if (key === STUDIO_KEY_SETTING) continue
         if (PROVIDER_MASTER_SETTING_KEYS.includes(key)) continue
+        if (key === 'muse_api_key' || key === 'muse_api_base') continue
         upsert.run(key, String(value))
       }
     }

@@ -9,6 +9,26 @@
 // api/createpulse.ts, api/seavi-wallet.ts, dan endpoint publik
 // /api/public/pricing.
 
+// ── MuseAI (MusangAPI — chat, image, video) ───────────────────────────────
+// Tagihan upstream ditanggung akun muse.ai operator, member membayar kita
+// lewat wallet muse_balance. Harga default per generate bisa dioverride admin.
+export const MUSE_MIN_TOPUP = 10000
+export const MUSE_DEFAULT_PRICE = 500
+/** Harga per model MusangAPI: muse-spark (chat), muse-image, muse-video. */
+export const MUSE_MODEL_PRICES: Record<string, number> = {
+  'muse-spark': 200,
+  'muse-image': 500,
+  'muse-video': 1500,
+}
+export function getMuseCharge(model?: string): number {
+  if (!model) return MUSE_DEFAULT_PRICE
+  return MUSE_MODEL_PRICES[model] ?? MUSE_DEFAULT_PRICE
+}
+export function getMusePriceRange(): { min: number; max: number } {
+  const values = [MUSE_DEFAULT_PRICE, ...Object.values(MUSE_MODEL_PRICES)]
+  return { min: Math.min(...values), max: Math.max(...values) }
+}
+
 // ── NexaBot ────────────────────────────────────────────────────────────────
 
 /** Minimal top up saldo, mengikuti CreatePulse supaya seragam. */

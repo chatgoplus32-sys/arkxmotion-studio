@@ -65,6 +65,8 @@ const MetadataCleanerPage = lazyWithRetry(() => import('@/pages/MetadataCleaner'
 const AdminNotificationsPage = lazyWithRetry(() => import('@/pages/AdminNotifications'))
 const QueuePage = lazyWithRetry(() => import('@/pages/Queue'))
 const CreatePulseTopupPage = lazyWithRetry(() => import('@/pages/CreatePulseTopup'))
+const MusePage = lazyWithRetry(() => import('@/pages/Muse'))
+const MuseTopupPage = lazyWithRetry(() => import('@/pages/MuseTopup'))
 const NexaBotTopupPage = lazyWithRetry(() => import('@/pages/NexaBotTopup'))
 const PremiumBoosterPage = lazyWithRetry(() => import('@/pages/PremiumBooster'))
 const AddonAkunPage = lazyWithRetry(() => import('@/pages/AddonAkun'))
@@ -273,6 +275,8 @@ export default function App() {
                         <Route path="/manage/routing" element={<RoutingProviderPage />} />
                         <Route path="/settings" element={<SettingsPage />} />
                         <Route path="/topup/createpulse" element={<CreatePulseTopupPage />} />
+                        <Route path="/generate/muse" element={<MusePage />} />
+                        <Route path="/topup/muse" element={<MuseTopupPage />} />
                         <Route path="/topup/nexabot" element={<NexaBotTopupPage />} />
                         <Route path="/booster" element={<PremiumBoosterPage />} />
                         <Route path="/addon-akun" element={<AddonAkunPage />} />

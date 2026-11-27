@@ -49,6 +49,7 @@ import {
   HeartPulse,
   MailPlus,
   Share2,
+  Sparkles,
   ListOrdered,
 } from 'lucide-react'
 
@@ -71,6 +72,7 @@ const mainNav: NavItem[] = [
 const createNav: NavItem[] = [
   { label: 'Motion Control', href: '/generate/motion', icon: <Video className="h-4 w-4" /> },
   { label: 'Image to Video', href: '/generate/image-to-video', icon: <Image className="h-4 w-4" /> },
+  { label: 'MuseAI', href: '/generate/muse', icon: <Sparkles className="h-4 w-4" /> },
   { label: 'AI Image Studio', href: '/generate/image-studio', icon: <Image className="h-4 w-4" /> },
   { label: 'ARKX AUTO Studio', href: '/generate/video-edit', icon: <Clapperboard className="h-4 w-4" />, pro: true },
   { label: 'ARKX AUTO Motion', href: '/generate/auto-motion', icon: <Wand2 className="h-4 w-4" />, pro: true },

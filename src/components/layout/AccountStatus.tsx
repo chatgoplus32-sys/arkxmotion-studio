@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 
 const WALLET_ROWS = [
   { key: 'createpulse', label: 'CreatePulse', href: '/topup/createpulse' },
+  { key: 'muse', label: 'MuseAI', href: '/topup/muse' },
   { key: 'nexabot', label: 'NexaBot', href: '/topup/nexabot' },
   { key: 'seavi', label: 'Seavi', href: '/topup/seavi' },
   { key: 'posbot', label: 'PosBot', href: '/topup/posbot' },

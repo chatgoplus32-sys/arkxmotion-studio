@@ -43,6 +43,10 @@ export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
   createpulse: [
     { value: 'cp:dreamina-seedance-2.0', label: 'Seedance 2.0 Fast', cr: 22, provider: 'createpulse', apiModel: 'dreamina-seedance-2.0' },
   ],
+  muse: [
+    { value: 'ms:muse-video', label: 'Muse Video — s/d 30s (MuseAI)', cr: 1500, provider: 'muse', apiModel: 'muse-video' },
+  ],
+  weavy: [],
   framia: [
     { value: 'framia:gemini-omni-flash', label: 'Gemini Omni Flash (Framia)', cr: 20, provider: 'framia' },
     { value: 'framia:seedance-2.0', label: 'Seedance 2.0 (Framia)', cr: 45, provider: 'framia' },
@@ -385,6 +389,19 @@ export const QUALITY_OPTIONS: Record<ProviderId, Record<string, Array<{ value: s
     ],
     default: [
       { value: '10s', label: '10 detik', mult: 1, duration: 10 },
+    ],
+  },
+  weavy: {},
+  muse: {
+    'ms:muse-video': [
+      { value: 'd5', label: '5 detik', mult: 1, duration: 5 },
+      { value: 'd10', label: '10 detik', mult: 1, duration: 10 },
+      { value: 'd15', label: '15 detik', mult: 1, duration: 15 },
+      { value: 'd30', label: '30 detik', mult: 1, duration: 30 },
+    ],
+    default: [
+      { value: 'd10', label: '10 detik', mult: 1, duration: 10 },
+      { value: 'd30', label: '30 detik', mult: 1, duration: 30 },
     ],
   },
   framia: {

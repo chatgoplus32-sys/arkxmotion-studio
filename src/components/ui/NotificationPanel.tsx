@@ -13,7 +13,7 @@ interface ServerNotification {
   type: 'info' | 'warning' | 'success' | 'error' | 'announcement'
   target: 'all' | 'users' | 'admins'
   read: number
-  link: string
+  link?: string
   created_at: string
 }
 
@@ -85,11 +85,11 @@ export function NotificationPanel() {
   // Notifikasi server via store bersama (polling 30 detik + refresh-on-401
   // dikelola store; panel ini hanya menampilkan + menandai dibaca).
   const {
-    notifications: serverNotifs,
+    items: serverNotifs,
     unread: serverUnread,
     loading: serverLoading,
-    fetchNotifications: fetchServerNotifs,
-    markRead: markAsRead,
+    fetchNotifikasi: fetchServerNotifs,
+    markAsRead,
     markAllRead,
   } = useNotificationStore()
 

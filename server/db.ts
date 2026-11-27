@@ -214,6 +214,46 @@ db.exec(`
   )
 `)
 
+// ─── Wallet MuseAI (MusangAPI — chat, image, video via OpenAI-compatible) ──
+// Prepaid Rp per generate. Kredensial MusangAPI server-level (app_settings),
+// member membayar lewat saldo ini.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS muse_balance (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER UNIQUE NOT NULL,
+    balance INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS muse_topup (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    amount INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected')),
+    proof_note TEXT NOT NULL DEFAULT '',
+    admin_note TEXT NOT NULL DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS muse_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    model TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'video',
+    cost INTEGER NOT NULL,
+    batch_id TEXT,
+    status TEXT NOT NULL DEFAULT 'used' CHECK(status IN ('used', 'refunded')),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )
+`)
+
 // ─── Wallet NexaBot ────────────────────────────────────────────────────────
 // Sama seperti CreatePulse (prepaid Rp per generate), tapi saldo terpisah:
 // harga flat Rp 150/generate dan tidak menyentuh ledger CreatePulse.
@@ -684,6 +724,7 @@ const QRIS_PAYMENT_COLUMNS: Array<[string, string]> = [
 for (const tableName of [
   'provider_topup_request',
   'createpulse_topup',
+  'muse_topup',
   'nexabot_topup',
   'seavi_topup',
   'posbot_topup',

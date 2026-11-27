@@ -16,6 +16,7 @@ import {
   POSBOT_TOPUP_MAX,
   POSBOT_TOPUP_PRESETS,
   RUNNINGHUB_MIN_TOPUP,
+  MUSE_MIN_TOPUP,
 } from '../../shared/pricing.js'
 import { getNexabotPricing } from './nexabotWallet.js'
 import { getProviderPricing } from '../lib/providerPricing.js'
@@ -31,10 +32,13 @@ export function buildPublicPricing() {
   const posbot = getProviderPricing('posbot')
   const runninghub = getProviderPricing('runninghub')
   const createpulse = getProviderPricing('createpulse')
+  const muse = getProviderPricing('muse')
 
   const createpulseModels = { ...createpulse.catalog }
+  const museModels = { ...muse.catalog }
   const posbotModels = { ...posbot.catalog }
   const createpulseRange = rentang([createpulse.default ?? 1, ...Object.values(createpulseModels)])
+  const museRange = rentang([muse.default ?? 1, ...Object.values(museModels)])
   const posbotRange = rentang([posbot.default ?? 1, ...Object.values(posbotModels)])
 
   return {
@@ -62,6 +66,13 @@ export function buildPublicPricing() {
         default_price: createpulse.default,
         price_range: createpulseRange,
         models: createpulseModels,
+      },
+      muse: {
+        name: 'MuseAI',
+        min_topup: MUSE_MIN_TOPUP,
+        default_price: muse.default,
+        price_range: museRange,
+        models: museModels,
       },
       seavi: {
         name: 'Seavi',

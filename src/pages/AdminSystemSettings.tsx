@@ -62,7 +62,7 @@ const toPackageForm = (packages?: NexabotPackage[]): NexabotPackageForm[] =>
     days: String(p.days),
   }))
 
-type PpProviderId = 'seavi' | 'posbot' | 'runninghub' | 'createpulse'
+type PpProviderId = 'seavi' | 'posbot' | 'runninghub' | 'createpulse' | 'muse'
 
 /** Cermin respons `GET /api/admin/provider-pricing` (lib/providerPricing.ts). */
 interface PpEffective {
@@ -120,6 +120,7 @@ const PP_PROVIDERS: { id: PpProviderId; name: string; desc: string; unit: string
   { id: 'posbot', name: 'PosBot', desc: 'Tarif per generate', unit: 'Rp' },
   { id: 'runninghub', name: 'RunningHub', desc: 'Harga per model (per fitur) — bisa diedit satu per satu, berlaku langsung', unit: 'Rp' },
   { id: 'createpulse', name: 'CreatePulse', desc: 'Tarif per generate', unit: 'Rp' },
+  { id: 'muse', name: 'MuseAI', desc: 'Tarif chat / gambar / video', unit: 'Rp' },
 ]
 
 const PP_FORM_KOSONG: PpFormState = { flat: '', default: '', models: {} }
@@ -129,6 +130,7 @@ const ppFormAwal: Record<PpProviderId, PpFormState> = {
   posbot: { ...PP_FORM_KOSONG },
   runninghub: { ...PP_FORM_KOSONG },
   createpulse: { ...PP_FORM_KOSONG },
+  muse: { ...PP_FORM_KOSONG },
 }
 
 const ppFormDari = (e?: PpEffective): PpFormState => e
@@ -393,6 +395,76 @@ function ProviderServerKeySection({
           Urutan yang dipakai server: kunci dashboard → <code>{`${provider.toUpperCase()}_MASTER_API_KEY`}</code> di .env
           → tidak tersedia. Admin tidak dipotong; member wajib punya saldo/token atau baru saja membayar.
         </div>
+      </div>
+    </Section>
+  )
+}
+
+// ─── Kredensial MuseAI (server-level) ───────────────────────────────────
+function MuseCredentialsSection({ token, addToast }: { token: string | null; addToast: (m: string, t?: 'success' | 'error' | 'info' | 'warning') => void }) {
+  const [status, setStatus] = useState<any>(null)
+  const [apiKey, setApiKey] = useState('')
+  const [base, setBase] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const load = useCallback(async () => {
+    if (!token) return
+    try {
+      const res = await fetch('/api/admin/muse/credentials', { headers: { Authorization: `Bearer ${token}` } })
+      if (res.ok) setStatus(await res.json())
+    } catch { /* ignore */ }
+  }, [token])
+  useEffect(() => { void load() }, [load])
+
+  const save = async () => {
+    if (!token || (!apiKey.trim() && !base.trim())) return
+    setSaving(true)
+    try {
+      const res = await fetch('/api/admin/muse/credentials', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ apiKey: apiKey.trim(), base: base.trim() }),
+      })
+      const d = await res.json()
+      if (res.ok) { addToast('Kredensial MuseAI disimpan', 'success'); setStatus(d); setApiKey(''); setBase('') }
+      else addToast(d.error || 'Gagal menyimpan', 'error')
+    } catch { addToast('Gagal menyimpan', 'error') } finally { setSaving(false) }
+  }
+
+  const check = async () => {
+    if (!token) return
+    try {
+      const res = await fetch('/api/admin/muse/credentials/check', { method: 'POST', headers: { Authorization: `Bearer ${token}` } })
+      const d = await res.json()
+      if (res.ok) addToast('MuseAI terhubung ✓', 'success')
+      else addToast(d.error || 'Gagal mengecek', 'error')
+    } catch { addToast('Gagal mengecek', 'error') }
+  }
+
+  return (
+    <Section title="Kredensial MuseAI" sub="MusangAPI (OpenAI-compatible bridge ke muse.ai) — server-level, tidak pernah dikirim ke browser">
+      <div className="rounded-xl border border-border bg-card/40 p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-medium">Status:</span>
+          {status?.configured ? (
+            <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] text-emerald-400">Aktif — {status.source === 'database' ? 'dari dashboard' : 'dari .env'}</span>
+          ) : (
+            <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5 text-[11px] text-amber-400">Belum diatur</span>
+          )}
+          <span className="ml-auto text-[11px] text-muted-foreground">Base: {status?.base || '—'}</span>
+        </div>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="MUSE2API_KEY (m2a_…)" autoComplete="off" className="rounded-lg border border-border bg-card px-3 py-2 font-mono text-sm" />
+          <input type="text" value={base} onChange={(e) => setBase(e.target.value)} placeholder="Base URL (default: http://127.0.0.1:18610/v1)" autoComplete="off" className="rounded-lg border border-border bg-card px-3 py-2 font-mono text-sm" />
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button size="sm" onClick={save} disabled={saving || (!apiKey.trim() && !base.trim())}><KeyRound className="mr-2 h-4 w-4" />{saving ? 'Menyimpan…' : 'Simpan'}</Button>
+          <Button size="sm" variant="outline" onClick={check} disabled={!status?.configured}><Activity className="mr-2 h-4 w-4" />Cek Koneksi</Button>
+        </div>
+        <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+          Server MusangAPI jalan di VPS (systemd <code>musangapi</code>, port 18610). Akun muse.ai diimpor lewat
+          halaman <code>/admin</code> MusangAPI (tab Akun → import cookie). Tagihan kuota ditanggung akun muse.ai operator.
+        </p>
       </div>
     </Section>
   )
@@ -2621,6 +2693,8 @@ export default function AdminSystemSettings() {
         <ProviderServerKeySection provider="seavi" label="Seavi Labs" token={token} addToast={addToast} />
 
         <ProviderServerKeySection provider="posbot" label="PosBot" token={token} addToast={addToast} />
+
+        <MuseCredentialsSection token={token} addToast={addToast} />
 
         <RunningHubPoolSection token={token} addToast={addToast} />
 

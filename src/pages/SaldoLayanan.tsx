@@ -10,10 +10,10 @@ import { fetchPosbotWallet } from '@/lib/posbotWallet'
 import { fetchRunninghubWallet } from '@/lib/runninghubWallet'
 import { cn } from '@/lib/utils'
 import {
-  ArrowUpRight, Bot, Clapperboard, Coins, Loader2, RefreshCw, Wallet, Zap,
+  ArrowUpRight, Bot, Clapperboard, Coins, Loader2, RefreshCw, Sparkles, Wallet, Zap,
 } from 'lucide-react'
 
-type ServiceKey = 'createpulse' | 'nexabot' | 'seavi' | 'posbot' | 'runninghub'
+type ServiceKey = 'createpulse' | 'muse' | 'nexabot' | 'seavi' | 'posbot' | 'runninghub'
 
 interface ServiceDef {
   key: ServiceKey
@@ -34,6 +34,14 @@ const SERVICES: ServiceDef[] = [
     href: '/topup/createpulse',
     icon: <Zap className="h-4 w-4" />,
     accent: 'border-sky-500/25 bg-sky-500/10 text-sky-400',
+  },
+  {
+    key: 'muse',
+    label: 'MuseAI',
+    desc: 'Chat, gambar & video via muse.ai.',
+    href: '/topup/muse',
+    icon: <Sparkles className="h-4 w-4" />,
+    accent: 'border-pink-500/25 bg-pink-500/10 text-pink-400',
   },
   {
     key: 'nexabot',
@@ -91,6 +99,7 @@ interface ServiceState {
 
 const EMPTY_STATE: Record<ServiceKey, ServiceState> = {
   createpulse: { amount: null, unit: 'Rp', unitPrice: null, note: null },
+  muse: { amount: null, unit: 'Rp', unitPrice: null, note: null },
   nexabot: { amount: null, unit: 'Rp', unitPrice: null, note: null },
   seavi: { amount: null, unit: 'token', unitPrice: null, note: null },
   posbot: { amount: null, unit: 'Rp', unitPrice: null, note: null },
@@ -109,6 +118,15 @@ async function fetchCreatePulseBalance(token: string): Promise<number | null> {
   } catch {
     return null
   }
+}
+
+async function fetchMuseBalance(token: string): Promise<number | null> {
+  try {
+    const res = await fetch('/api/muse/balance', { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(8000) })
+    if (!res.ok) return null
+    const data = await res.json()
+    return typeof data?.balance === 'number' ? data.balance : null
+  } catch { return null }
 }
 
 interface ProviderBalance {
@@ -187,6 +205,7 @@ export default function SaldoLayananPage() {
           provider: true,
           unavailable: saldo?.createpulse?.error ?? gagal,
         },
+        muse: { amount: null, unit: 'Rp', unitPrice: null, note: null },
         nexabot: {
           amount: nb?.credits ?? null,
           unit: 'kredit',
@@ -236,8 +255,9 @@ export default function SaldoLayananPage() {
       return
     }
 
-    const [createpulse, nexabot, seavi, posbot, runninghub] = await Promise.all([
+    const [createpulse, muse, nexabot, seavi, posbot, runninghub] = await Promise.all([
       fetchCreatePulseBalance(token),
+      fetchMuseBalance(token),
       fetchNexabotWallet(token),
       fetchSeaviWallet(token),
       fetchPosbotWallet(token),
@@ -259,6 +279,7 @@ export default function SaldoLayananPage() {
       : null
     setServices({
       createpulse: { amount: createpulse, unit: 'Rp', unitPrice: null, note: null },
+      muse: { amount: muse, unit: 'Rp', unitPrice: null, note: null },
       nexabot: {
         amount: nexabot?.balance ?? null,
         unit: 'Rp',
