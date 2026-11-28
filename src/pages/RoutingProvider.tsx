@@ -5,6 +5,7 @@ import {
   useProviderManager,
   PROVIDER_CONFIGS,
   ProviderId,
+  SERVER_MANAGED_PROVIDERS,
 } from '@/stores/providerManager'
 import {
   Check,
@@ -38,7 +39,7 @@ interface WorkflowConfig {
   fallbackProviders?: ProviderId[]
 }
 
-const WORKFLOW_CONFIGS: WorkflowConfig[] = [
+const SEMUA_WORKFLOW_CONFIGS: WorkflowConfig[] = [
   {
     id: 'motion',
     name: 'Motion Control',
@@ -163,6 +164,19 @@ const PROVIDER_COLORS: Record<string, string> = {
   shotstack: '#94a3b8',
   creatomate: '#f43f5e',
 }
+
+const WORKFLOW_CONFIGS: WorkflowConfig[] = SEMUA_WORKFLOW_CONFIGS
+  .map(w => {
+    const izin = SERVER_MANAGED_PROVIDERS as readonly string[]
+    const providers = w.providers.filter(p => izin.includes(p))
+    return {
+      ...w,
+      providers,
+      defaultProvider: providers.includes(w.defaultProvider) ? w.defaultProvider : providers[0],
+      fallbackProviders: w.fallbackProviders.filter(p => izin.includes(p)),
+    }
+  })
+  .filter(w => w.providers.length > 0)
 
 export default function RoutingProviderPage() {
   const { keys, routing, setRouting, fetchMaintenance, isProviderMaintenance } = useProviderManager()

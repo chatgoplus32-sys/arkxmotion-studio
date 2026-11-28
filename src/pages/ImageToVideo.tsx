@@ -63,7 +63,7 @@ import { runWithNexabotThrottleRetry, NexabotResultError, NEXADANCE_PROMPT_MAX }
 const NEXABOT_DEFAULT_VOICE = 'Achernar'
 
 // Provider yang tampil di halaman Image to Video.
-const I2V_PROVIDER_IDS: ProviderId[] = ['createpulse', 'nexabot', 'seavi', 'posbot']
+const I2V_PROVIDER_IDS: ProviderId[] = ['nexabot', 'seavi', 'posbot']
 
 // Bahasa sehari-hari untuk pemilih provider — hindari istilah model/keys mentah.
 const I2V_PROVIDER_HINTS: Partial<Record<ProviderId, { tagline: string; recommended?: boolean }>> = {

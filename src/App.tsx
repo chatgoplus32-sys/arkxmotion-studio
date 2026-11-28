@@ -42,7 +42,6 @@ const EditImagePage = lazyWithRetry(() => import('@/pages/EditImage'))
 const ProvidersPage = lazyWithRetry(() => import('@/pages/Providers'))
 const RoutingProviderPage = lazyWithRetry(() => import('@/pages/RoutingProvider'))
 const SettingsPage = lazyWithRetry(() => import('@/pages/Settings'))
-const BeliTokenPage = lazyWithRetry(() => import('@/pages/BeliToken'))
 const AdminUsersPage = lazyWithRetry(() => import('@/pages/AdminUsers'))
 const AdminMembershipPage = lazyWithRetry(() => import('@/pages/AdminMembership'))
 const AdminTokensPage = lazyWithRetry(() => import('@/pages/AdminTokens'))
@@ -284,7 +283,7 @@ export default function App() {
                         <Route path="/topup/posbot" element={<PosBotTopupPage />} />
                         <Route path="/topup/runninghub" element={<RunningHubTopupPage />} />
                         <Route path="/topup/manual" element={<ManualTopupPage />} />
-                        <Route path="/beli-token" element={<BeliTokenPage />} />
+                        <Route path="/beli-token" element={<Navigate to="/saldo" replace />} />
                         <Route path="/plugins" element={<PluginsPage />} />
 
                         <Route path="/tools/second-brain" element={<SecondBrainPage />} />

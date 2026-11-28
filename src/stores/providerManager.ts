@@ -5,6 +5,15 @@ export type ProviderId = 'weavy' | 'wavespeed' | 'magnific' | 'roboneo' | 'runni
 
 export const HIDDEN_PROVIDERS: ProviderId[] = []
 
+/**
+ * Member TIDAK mengelola kredensial — semuanya dipegang server dan diisi admin
+ * lewat System Settings. Daftar ini dipakai UI untuk menyembunyikan provider
+ * yang masih membutuhkan API key/token milik member.
+ */
+export const SERVER_MANAGED_PROVIDERS: ProviderId[] = [
+  'nexabot', 'seavi', 'posbot', 'runninghub', 'muse',
+]
+
 export interface ProviderKey {
   id: string
   key: string

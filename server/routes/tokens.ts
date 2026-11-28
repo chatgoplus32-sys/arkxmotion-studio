@@ -2,7 +2,6 @@ import { Router, Response } from 'express'
 import db from '../db.js'
 import { authenticateToken, AuthRequest } from '../middleware/auth.js'
 import { redactIfServerSecret, serverSecrets } from '../lib/nexabotAccounts.js'
-import { createVelianpayPayment, velianpayReady } from '../lib/velianpay.js'
 
 const router = Router()
 
@@ -159,76 +158,12 @@ router.get('/note/:bulkId', authenticateToken, (req: AuthRequest, res: Response)
 })
 
 /**
- * Token Bank aktif: pesan token lalu bayar lewat checkout VelianPay.
- * Token langsung ditandai 'sold' (anti-oversell); order menunggu pembayaran.
- * Webhook/poller VelianPay mengonfirmasi SEMUA order dalam bulk_id setelah
- * checkout lunas — tidak perlu campur tangan admin.
+ * Token Bank dimatikan: member tidak boleh memegang kredensial/provider apa pun.
+ * Endpoint baca tetap terbuka, tapi pembelian dinonaktifkan juga lewat API
+ * (mengunci halaman saja tidak menutup jalur curl/Postman).
  */
-router.post('/buy', authenticateToken, async (req: AuthRequest, res: Response) => {
-  try {
-    const userId = req.user?.id
-    if (!userId) return res.status(401).json({ error: 'Unauthorized' })
-
-    const { token_ids } = req.body || {}
-    if (!Array.isArray(token_ids) || token_ids.length === 0) {
-      return res.status(400).json({ error: 'token_ids array is required' })
-    }
-    if (!velianpayReady()) {
-      return res.status(503).json({ error: 'QRIS VelianPay belum tersedia — hubungi admin' })
-    }
-
-    const ids = [...new Set(token_ids.map(Number))].filter((n) => Number.isInteger(n) && n > 0)
-    if (ids.length === 0) return res.status(400).json({ error: 'Token tidak valid' })
-
-    const rahasiaServer = serverSecrets()
-    const placeholders = ids.map(() => '?').join(',')
-    const calon = db.prepare(
-      `SELECT id, provider, name, token_value, price FROM tokens WHERE id IN (${placeholders}) AND status = 'available'`,
-    ).all(...ids) as Array<{ id: number; provider: string; name: string; token_value: string; price: number }>
-    const aman = calon.filter((t) => !t.token_value || !rahasiaServer.has(t.token_value.trim()))
-    if (aman.length === 0) return res.status(400).json({ error: 'Tidak ada token yang tersedia' })
-
-    const total = aman.reduce((sum, t) => sum + Math.max(0, Number(t.price) || 0), 0)
-    if (total < 100) return res.status(400).json({ error: 'Total pembelian minimal Rp 100' })
-
-    const bulkId = `bulk_${userId}_${Date.now()}`
-    const firstOrderId = db.transaction(() => {
-      let first = 0
-      for (const t of aman) {
-        const upd = db.prepare("UPDATE tokens SET status = 'sold', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'available'").run(t.id)
-        if (upd.changes === 0) continue
-        const r = db.prepare(
-          'INSERT INTO token_orders (user_id, token_id, status, bulk_id, amount, amount_total) VALUES (?, ?, ?, ?, ?, ?)',
-        ).run(userId, t.id, 'pending', bulkId, Math.max(0, Number(t.price) || 0), 0)
-        if (!first) first = Number(r.lastInsertRowid)
-      }
-      return first
-    })()
-    if (!firstOrderId) return res.status(409).json({ error: 'Token baru saja diambil pembeli lain — muat ulang halaman' })
-
-    const bp = await createVelianpayPayment({
-      refTable: 'token_orders',
-      refId: firstOrderId,
-      userId,
-      baseAmount: total,
-      description: `Beli Token (${aman.length} token)`,
-    })
-    if (!bp) {
-      // Checkout gagal → lepas reservation supaya token bisa dibeli lagi.
-      db.transaction(() => {
-        for (const t of aman) {
-          db.prepare("UPDATE tokens SET status = 'available', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'sold'").run(t.id)
-        }
-        db.prepare("DELETE FROM token_orders WHERE bulk_id = ? AND user_id = ? AND status = 'pending'").run(bulkId, userId)
-      })()
-      return res.status(502).json({ error: 'Gagal menyiapkan pembayaran — coba lagi' })
-    }
-
-    res.status(201).json({ bulk_id: bulkId, count: aman.length, ...bp })
-  } catch (error) {
-    console.error('Buy token error:', error)
-    res.status(500).json({ error: 'Internal server error' })
-  }
+router.post('/buy', authenticateToken, (_req: AuthRequest, res: Response) => {
+  res.status(503).json({ error: 'Token Bank tidak tersedia — semua kredensial dikelola admin' })
 })
 
 // Parameterized routes LAST

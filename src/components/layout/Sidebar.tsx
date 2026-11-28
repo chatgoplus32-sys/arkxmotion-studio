@@ -28,7 +28,6 @@ import {
   ImagePlus,
   ExternalLink,
   Globe,
-  ShoppingCart,
   Puzzle,
   Mic,
   Eraser,
@@ -109,8 +108,6 @@ const toolsNavBase: NavItem[] = [
   { label: 'Saldo Layanan', href: '/saldo', icon: <Wallet className="h-4 w-4" /> },
   { label: 'Add-on Akun', href: '/addon-akun', icon: <MailPlus className="h-4 w-4" /> },
   { label: 'Affiliate Tools', href: '/tools/affiliate', icon: <Share2 className="h-4 w-4" /> },
-  // Token Bank aktif: pembelian lewat QRIS VelianPay + konfirmasi otomatis.
-  { label: 'Beli Token', href: '/beli-token', icon: <ShoppingCart className="h-4 w-4" /> },
   { label: 'Settings', href: '/settings', icon: <Settings className="h-4 w-4" /> },
   { label: 'Plugins', href: '/plugins', icon: <Puzzle className="h-4 w-4" /> },
 ]

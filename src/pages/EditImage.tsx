@@ -3,7 +3,7 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Select, Label, Textarea, EmptyState } from '@/components/ui'
 import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
 import { Loader2, Upload, Trash2, Download, X, ImagePlus, ExternalLink, Search, Copy, ClipboardCheck } from 'lucide-react'
-import { useProviderManager, PROVIDER_CONFIGS } from '@/stores/providerManager'
+import { useProviderManager, PROVIDER_CONFIGS, SERVER_MANAGED_PROVIDERS } from '@/stores/providerManager'
 import { useToastStore } from '@/stores/toastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { withTokenRotation } from '@/lib/tokenRotation'
@@ -33,11 +33,9 @@ const SEAVI_IMAGE_UI_MODELS = [
 
 const PROVIDER_OPTIONS: Array<{ value: EditProvider; label: string; icon: string }> = [
   { value: 'nexabot', label: 'NexaBot (GPT Image)', icon: '🔮' },
-  { value: 'riverside', label: 'Riverside', icon: '🎙️' },
   { value: 'runninghub', label: 'RunningHub (Kontext)', icon: '🖌️' },
   { value: 'seavi', label: 'Seavi Labs', icon: '🌌' },
-  { value: 'freebeat', label: 'Freebeat AI', icon: '🍌' },
-]
+].filter(o => (SERVER_MANAGED_PROVIDERS as readonly string[]).includes(o.value)) as Array<{ value: EditProvider; label: string; icon: string }>
 
 interface ImageModelOption {
   value: string

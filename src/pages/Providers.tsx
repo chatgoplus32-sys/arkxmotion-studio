@@ -20,7 +20,7 @@ import {
   Wallet,
   Gift,
 } from 'lucide-react'
-import { useProviderManager, ProviderId, HIDDEN_PROVIDERS, RUNNINGHUB_SERVER_MANAGED_KEY } from '@/stores/providerManager'
+import { useProviderManager, ProviderId, HIDDEN_PROVIDERS, RUNNINGHUB_SERVER_MANAGED_KEY, SERVER_MANAGED_PROVIDERS } from '@/stores/providerManager'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { syncCreditsToDbAsAdmin } from '@/lib/tokenAutoSync'
@@ -153,7 +153,10 @@ const MENU_HIDDEN_PROVIDERS = [
 ] as const
 
 const HIDDEN_FROM_MENU = new Set<string>([...HIDDEN_PROVIDERS, ...MENU_HIDDEN_PROVIDERS])
-const VISIBLE_PROVIDER_LIST = PROVIDER_LIST.filter(p => !HIDDEN_FROM_MENU.has(p.key))
+// Member hanya melihat provider server-managed — kredensialnya ada di System Settings admin.
+const VISIBLE_PROVIDER_LIST = PROVIDER_LIST.filter(
+  p => !HIDDEN_FROM_MENU.has(p.key) && (SERVER_MANAGED_PROVIDERS as readonly string[]).includes(p.key),
+)
 const DEFAULT_PROVIDER = VISIBLE_PROVIDER_LIST[0]?.key || 'brain'
 
 const SERVER_KEY_PROVIDERS: Record<string, { label: string; route: string; cost: string }> = {

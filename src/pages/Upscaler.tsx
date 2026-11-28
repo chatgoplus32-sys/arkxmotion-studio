@@ -13,6 +13,7 @@ import { submitRunningHubPhotoEnhance, pollRunningHubTask } from '@/lib/runningh
 import { withTokenRotation } from '@/lib/tokenRotation'
 import { addResult, startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks'
 import { useAuthStore } from '@/stores/authStore'
+import { SERVER_MANAGED_PROVIDERS } from '@/stores/providerManager'
 import { fetchNexabotWallet, chargeNexabotWallet, refundNexabotWallet, nexabotPreferServerKey, nexabotFreeForModel, NEXABOT_PRICE_FALLBACK, type NexabotWallet } from '@/lib/nexabotWallet'
 import { fetchRunninghubWallet, type RunninghubWallet } from '@/lib/runninghubWallet'
 import { formatRp } from '@/lib/payment'
@@ -111,7 +112,7 @@ export default function UpscalerPage() {
   const { token: authToken, user } = useAuthStore()
   const [nbWallet, setNbWallet] = useState<NexabotWallet | null>(null)
 
-  const [provider, setProvider] = useState<'magnific' | 'leonardo' | 'runninghub' | 'nexabot'>('magnific')
+  const [provider, setProvider] = useState<'magnific' | 'leonardo' | 'runninghub' | 'nexabot'>('runninghub')
   const [mode, setMode] = useState<'upscale' | 'enhance'>('upscale')
   const [rows, setRows] = useState<ImageRow[]>([])
   const [running, setRunning] = useState(false)
@@ -637,11 +638,9 @@ export default function UpscalerPage() {
                   onChange={e => setProvider(e.target.value as any)}
                   disabled={running}
                   options={[
-                                        { value: 'magnific', label: 'Magnific Upscale' },
-                    { value: 'leonardo', label: 'Aurora (Leonardo)' },
                     { value: 'runninghub', label: 'AI Photo Enhancer (RunningHub)' },
                     { value: 'nexabot', label: 'AI Enhance via GPT Image 2.5 (NexaBot)' },
-                  ]}
+                  ].filter(o => (SERVER_MANAGED_PROVIDERS as readonly string[]).includes(o.value))}
                 />
 
                 <MaintenanceBanner providerId={provider as any} />
