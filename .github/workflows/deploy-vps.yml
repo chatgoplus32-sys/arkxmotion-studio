@@ -48,6 +48,12 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      VELIANPAY_BASE_URL: ${{ secrets.VELIANPAY_BASE_URL }}
+      VELIANPAY_API_KEY: ${{ secrets.VELIANPAY_API_KEY }}
+      VELIANPAY_ENABLED: ${{ secrets.VELIANPAY_ENABLED }}
+      VELIANPAY_CALLBACK_URL: ${{ secrets.VELIANPAY_CALLBACK_URL }}
+      VELIANPAY_WEBHOOK_SECRET: ${{ secrets.VELIANPAY_WEBHOOK_SECRET }}
 
     steps:
       - name: Deploy ke VPS via SSH
@@ -56,6 +62,7 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
+          envs: VELIANPAY_BASE_URL,VELIANPAY_API_KEY,VELIANPAY_ENABLED,VELIANPAY_CALLBACK_URL,VELIANPAY_WEBHOOK_SECRET
           command_timeout: 12m
           script: |
             set -e
@@ -84,6 +91,23 @@ jobs:
             # .env dan data/ tidak tersentuh).
             git reset --hard origin/main
             echo "   HEAD: $(git log --oneline -1)"
+
+            # Kredensial VelianPay disimpan sebagai GitHub Secrets dan ditulis
+            # ke .env VPS (gitignored) — tidak pernah masuk repo / log.
+            echo "🔐 Menyelaraskan kredensial VelianPay..."
+            python3 - <<'PYENV'
+import os
+p = '/opt/arkxmotion-studio/.env'
+keys = ('VELIANPAY_BASE_URL', 'VELIANPAY_API_KEY', 'VELIANPAY_ENABLED',
+        'VELIANPAY_CALLBACK_URL', 'VELIANPAY_WEBHOOK_SECRET')
+lines = open(p).read().splitlines() if os.path.exists(p) else []
+lines = [l for l in lines if l.split('=', 1)[0].strip() not in keys]
+for k in keys:
+    lines.append(k + '=' + os.environ.get(k, ''))
+open(p, 'w').write('\n'.join(lines) + '\n')
+os.chmod(p, 0o600)
+print('   .env diperbarui (nilai tidak dicetak)')
+PYENV
 
             echo "📦 Memasang dependencies..."
             npm install
