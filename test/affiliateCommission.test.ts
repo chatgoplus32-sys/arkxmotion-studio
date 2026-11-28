@@ -93,7 +93,7 @@ test('approve join Pro mengkredit 25% sekali saja', () => {
   const referred = seedUser({ referredBy: referrer })
   const paymentId = seedJoinPayment(referred, 250000)
 
-  const r = approveMembershipPaymentRow(paymentId, 'basunipay')
+  const r = approveMembershipPaymentRow(paymentId, 'velianpay')
   assert.equal(r.ok, true)
 
   const commission = db.prepare('SELECT * FROM affiliate_commissions WHERE payment_id = ?').get(paymentId) as
@@ -103,7 +103,7 @@ test('approve join Pro mengkredit 25% sekali saja', () => {
   assert.equal(commission.affiliate_user_id, referrer)
   assert.equal(commission.amount, 62500)
   assert.equal(commission.rate, 25)
-  assert.equal(commission.source, 'basunipay')
+  assert.equal(commission.source, 'velianpay')
 
   const acc = db.prepare('SELECT balance, total_earned FROM affiliate_accounts WHERE user_id = ?').get(referrer) as {
     balance: number

@@ -5,7 +5,7 @@ import { POSBOT_MIN_TOPUP, POSBOT_TOPUP_MAX, POSBOT_TOPUP_PRESETS } from '../../
 import { providerUnitCharge } from '../lib/providerPricing.js'
 import { keyEligibility } from '../lib/providerMasterKey.js'
 import { nextUniqueCode } from '../lib/qrisPayment.js'
-import { createBasunipayPayment } from '../lib/basunipay.js'
+import { createVelianpayPayment } from '../lib/velianpay.js'
 import { walletUserIdFor } from '../lib/effectiveWallet.js'
 
 const router = Router()
@@ -62,7 +62,7 @@ router.post('/topup', authenticateToken, async (req: AuthRequest, res: Response)
     ).run(userId, topupAmount, unique_code, amount_total, proof_note || '', 'pending')
     const refId = Number(result.lastInsertRowid)
 
-    const basunipay = await createBasunipayPayment({
+    const velianpay = await createVelianpayPayment({
       refTable: 'posbot_topup',
       refId,
       userId,
@@ -71,7 +71,7 @@ router.post('/topup', authenticateToken, async (req: AuthRequest, res: Response)
     })
 
     const topup = db.prepare('SELECT * FROM posbot_topup WHERE id = ?').get(refId)
-    res.status(201).json({ topup, basunipay, message: 'Topup request submitted, waiting admin approval' })
+    res.status(201).json({ topup, velianpay, message: 'Topup request submitted, waiting admin approval' })
   } catch (error) {
     console.error('Posbot topup error:', error)
     res.status(500).json({ error: 'Internal server error' })

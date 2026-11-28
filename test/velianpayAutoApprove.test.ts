@@ -1,5 +1,5 @@
 /**
- * SEGEL: semua jalur pembayaran QRIS BasuNiPay wajib auto-approve.
+ * SEGEL: semua jalur pembayaran QRIS VelianPay wajib auto-approve.
  *
  * Kenapa tes ini ada: `approveTopupRef` menolak tabel yang tidak terdaftar
  * di `QRIS_TABLES` (action `unknown_table`) — satu `refTable` yang lupa
@@ -9,9 +9,9 @@
  *  1. Statis — setiap `refTable: '...'` yang dipakai server ada di
  *     QRIS_TABLES (dan sebaliknya: setiap entri registry benar-benar
  *     dipakai), plus kolom QRIS + balance table lengkap di DB, plus tidak
- *     ada pemanggilan `createBasunipayPayment` dengan refTable dinamis.
+ *     ada pemanggilan `createVelianpayPayment` dengan refTable dinamis.
  *  2. Perilaku — untuk SETIAP tabel di QRIS_TABLES: seed baris pending +
- *     checkout BasuNiPay, poll (jawaban API = lunas), status wajib
+ *     checkout VelianPay, poll (jawaban API = lunas), status wajib
  *     `approved` dan efeknya nyata: saldo/token naik, plan Pro aktif,
  *     provider manual ditandai lunas — lalu poll ulang tidak boleh
  *     mengkredit dua kali.
@@ -28,13 +28,13 @@ import { fileURLToPath } from 'node:url'
 
 process.env.ARKXMOTION_DB_PATH = ':memory:'
 process.env.ALERT_WEBHOOK_URL = ''
-process.env.BASUNIPAY_ENABLED = 'true'
-process.env.BASUNIPAY_API_KEY = 'test-only'
+process.env.VELIANPAY_ENABLED = 'true'
+process.env.VELIANPAY_API_KEY = 'test-only'
 const { default: db } = await import('../server/db.js')
 const { QRIS_TABLES, approveTopupRef } = await import('../server/lib/qrisPayment.js')
-const { pollBasunipayPayments } = await import('../server/lib/basunipay.js')
+const { pollVelianpayPayments } = await import('../server/lib/velianpay.js')
 
-// BasuNiPay selalu menjawab "lunas" — tes ini soal EFEK approve, bukan
+// VelianPay selalu menjawab "lunas" — tes ini soal EFEK approve, bukan
 // soal parsing response provider.
 const originalFetch = globalThis.fetch
 globalThis.fetch = async () => Response.json({ success: true, data: { status: 'paid' } })
@@ -97,12 +97,12 @@ test('setiap tabel di QRIS_TABLES benar-benar dipakai route/lib', () => {
   }
 })
 
-test('semua pemanggil createBasunipayPayment di routes tervalidasi', () => {
+test('semua pemanggil createVelianpayPayment di routes tervalidasi', () => {
   const routeFiles = SERVER_FILES.filter((f) => rel(f).startsWith('server/routes/'))
   let dicek = 0
   for (const file of routeFiles) {
     const src = readFileSync(file, 'utf8')
-    const calls = (src.match(/createBasunipayPayment\(/g) || []).length
+    const calls = (src.match(/createVelianpayPayment\(/g) || []).length
     if (!calls) continue
     dicek++
     const literals = (src.match(/refTable:\s*['"][A-Za-z0-9_]+['"]/g) || []).length
@@ -111,12 +111,12 @@ test('semua pemanggil createBasunipayPayment di routes tervalidasi', () => {
     const validated = /QRIS_TABLES\.(find|some|includes)/.test(src)
     assert.ok(
       literals >= calls || validated,
-      `${rel(file)}: ${calls} panggilan createBasunipayPayment tapi hanya ${literals} ` +
+      `${rel(file)}: ${calls} panggilan createVelianpayPayment tapi hanya ${literals} ` +
         `refTable literal dan tidak ada validasi terhadap QRIS_TABLES — refTable ` +
         `tidak terdaftar dapat lolos`,
     )
   }
-  assert.ok(dicek >= 1, 'minimal satu route harus memakai createBasunipayPayment')
+  assert.ok(dicek >= 1, 'minimal satu route harus memakai createVelianpayPayment')
 })
 
 test('kolom QRIS + balance table lengkap untuk semua entri registry', () => {
@@ -165,11 +165,11 @@ function seedUser(userId: number): void {
 }
 
 /**
- * Baris top-up pending + checkout BasuNiPay-nya, persis seperti yang dibuat
+ * Baris top-up pending + checkout VelianPay-nya, persis seperti yang dibuat
  * route: `amount_total` = base + kode unik, `payable_amount` = yang wajib
  * dibayar (dan jadi nominal yang dikredit saat poll).
  */
-function seedBasunipayPending(table: string, userId: number, extra: Record<string, string | number>) {
+function seedVelianpayPending(table: string, userId: number, extra: Record<string, string | number>) {
   const amount = Number(extra.amount)
   assert.ok(Number.isFinite(amount) && amount > 0, `SEED_EXTRA['${table}'].amount wajib terisi`)
   const payable = amount + UNIQUE_CODE
@@ -188,7 +188,7 @@ function seedBasunipayPending(table: string, userId: number, extra: Record<strin
     .get(userId) as { id: number }
   const orderId = `arkx_${table}_${userId}_segel`
   db.prepare(
-    `INSERT INTO basunipay_payment (order_id, ref_table, ref_id, user_id, base_amount, unique_code, payable_amount, status)
+    `INSERT INTO velianpay_payment (order_id, ref_table, ref_id, user_id, base_amount, unique_code, payable_amount, status)
      VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`,
   ).run(orderId, table, row.id, userId, amount, UNIQUE_CODE, payable)
   return { rowId: row.id, orderId, amount, payable }
@@ -202,7 +202,7 @@ function balanceOf(table: string, userId: number): number {
 }
 
 QRIS_TABLES.forEach((t, i) => {
-  test(`BasuNiPay lunas → ${t.table} approve otomatis + efeknya nyata`, async () => {
+  test(`VelianPay lunas → ${t.table} approve otomatis + efeknya nyata`, async () => {
     const extra = SEED_EXTRA[t.table]
     assert.ok(
       extra,
@@ -210,17 +210,17 @@ QRIS_TABLES.forEach((t, i) => {
     )
     const userId = 810000 + i
     seedUser(userId)
-    const seeded = seedBasunipayPending(t.table, userId, extra)
+    const seeded = seedVelianpayPending(t.table, userId, extra)
 
-    const r = await pollBasunipayPayments()
+    const r = await pollVelianpayPayments()
     assert.ok(r.paid >= 1, `${t.table}: poll harus menemukan pembayaran lunas (dapat ${r.paid})`)
 
     const row = db.prepare(`SELECT status FROM ${t.table} WHERE id = ?`).get(seeded.rowId) as { status: string }
     assert.equal(row.status, 'approved', `${t.table} harus auto-approve tanpa admin`)
     const pay = db
-      .prepare('SELECT status FROM basunipay_payment WHERE order_id = ?')
+      .prepare('SELECT status FROM velianpay_payment WHERE order_id = ?')
       .get(seeded.orderId) as { status: string }
-    assert.equal(pay.status, 'paid', 'checkout BasuNiPay ditandai lunas')
+    assert.equal(pay.status, 'paid', 'checkout VelianPay ditandai lunas')
 
     // Efek nyata per jenis tabel.
     if (t.table === 'membership_payments') {
@@ -262,7 +262,7 @@ QRIS_TABLES.forEach((t, i) => {
     assert.ok(log.n >= 1, `${t.table} harus tercatat di payment_verify_log`)
 
     // Poll ulang tidak boleh mengkredit/aktivasi dua kali.
-    const again = await pollBasunipayPayments()
+    const again = await pollVelianpayPayments()
     assert.equal(again.paid, 0, 'pembayaran lunas tidak dipilih poller lagi')
     if (t.mode === 'credit' && t.balanceTable) {
       const credit = t.creditColumn === 'tokens' ? Number(extra.tokens) || 0 : seeded.payable
@@ -274,9 +274,9 @@ QRIS_TABLES.forEach((t, i) => {
 test('nexabot_topup kind=unlimited → paket aktif, bukan kredit saldo', async () => {
   const userId = 810900
   seedUser(userId)
-  const seeded = seedBasunipayPending('nexabot_topup', userId, { amount: 99000, kind: 'unlimited', days: 30 })
+  const seeded = seedVelianpayPending('nexabot_topup', userId, { amount: 99000, kind: 'unlimited', days: 30 })
 
-  assert.ok((await pollBasunipayPayments()).paid >= 1)
+  assert.ok((await pollVelianpayPayments()).paid >= 1)
 
   const row = db
     .prepare('SELECT status, expires_at, started_at FROM nexabot_topup WHERE id = ?')
@@ -300,12 +300,12 @@ test('checkout kedaluwarsa tapi baris masih pending → admin diberi tahu untuk 
   try {
     const userId = 810800
     seedUser(userId)
-    const seeded = seedBasunipayPending('nexabot_topup', userId, { amount: 71000, kind: 'balance' })
+    const seeded = seedVelianpayPending('nexabot_topup', userId, { amount: 71000, kind: 'balance' })
 
-    const r = await pollBasunipayPayments()
+    const r = await pollVelianpayPayments()
     assert.ok(r.closed >= 1, 'checkout kedaluwarsa ditutup')
 
-    const pay = db.prepare('SELECT status FROM basunipay_payment WHERE order_id = ?').get(seeded.orderId) as { status: string }
+    const pay = db.prepare('SELECT status FROM velianpay_payment WHERE order_id = ?').get(seeded.orderId) as { status: string }
     assert.equal(pay.status, 'expired')
     const topup = db.prepare('SELECT status FROM nexabot_topup WHERE id = ?').get(seeded.rowId) as { status: string }
     assert.equal(topup.status, 'pending', 'baris tetap pending — admin yang merekonsiliasi')
@@ -321,6 +321,6 @@ test('checkout kedaluwarsa tapi baris masih pending → admin diberi tahu untuk 
 })
 
 test('tabel di luar QRIS_TABLES tetap ditolak (gerbang unknown_table)', () => {
-  const r = approveTopupRef('users', 1, 1000, { source: 'basunipay' })
+  const r = approveTopupRef('users', 1, 1000, { source: 'velianpay' })
   assert.equal(r.action, 'unknown_table', 'registry adalah satu-satunya pintu approve')
 })

@@ -1,6 +1,6 @@
 /**
  * SEGEL: kode frontend tidak boleh menampilkan QRIS statis lama atau metode
- * bayar DANA. Semua pembayaran harus lewat QRIS dinamis BasuniPay (nominal
+ * bayar DANA. Semua pembayaran harus lewat QRIS dinamis VelianPay (nominal
  * unik + verifikasi otomatis).
  *
  * QRIS statis lama (/qris-arkx.jpg, NMID merchant) tidak terikat ke nominal
@@ -8,7 +8,7 @@
  * otomatis — itu sebabnya tidak boleh pernah dirender lagi, di mana pun.
  *
  * Tes ini juga melarang referensi metode bayar DANA (nomor/nama penerima),
- * karena seluruh pembayaran harus lewat QRIS BasuNiPay.
+ * karena seluruh pembayaran harus lewat QRIS VelianPay.
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -51,7 +51,7 @@ test('tidak ada referensi QRIS statis / metode DANA di src', () => {
       assert.ok(
         !src.includes(token),
         `${rel(file)} masih mengandung ${label} (${token}) — ` +
-          'semua pembayaran harus lewat QRIS dinamis BasuNiPay',
+          'semua pembayaran harus lewat QRIS dinamis VelianPay',
       )
     }
   }

@@ -80,8 +80,8 @@ import { startRunningHubDailyClaimScheduler } from './lib/runninghubDailyClaim.j
 import paymentsRoutes from './routes/payments.js'
 import { startPaymentEmailWatcher } from './lib/paymentEmailWatcher.js'
 import paymentIngestRoutes from './routes/paymentIngest.js'
-import basunipayWebhookRoutes from './routes/basunipayWebhook.js'
-import { startBasunipayPoller } from './lib/basunipay.js'
+import velianpayWebhookRoutes from './routes/velianpayWebhook.js'
+import { startVelianpayPoller } from './lib/velianpay.js'
 import affiliateRoutes from './routes/affiliate.js'
 
 // .env sudah dimuat server/env.ts (impor pertama), yaitu sebelum modul-modul di
@@ -131,6 +131,11 @@ app.use('/api/public/upload-catbox', publicUploadCatboxRoutes)
 // harus sebelum express.json() supaya body tidak dipotong parser.
 app.use('/api/public/markastools', markastoolsRoutes)
 
+// Webhook VelianPay (https://arkxmotion-studio.win/api/public/velianpay/webhook)
+// WAJIB sebelum express.json(): verifikasi HMAC butuh BODY MENTAH, jadi
+// express.raw menangkap Buffer utuh, bukan objek JSON yang sudah diparse.
+app.use('/api/public/velianpay/webhook', express.raw({ type: '*/*' }), velianpayWebhookRoutes)
+
 app.use(monitorMiddleware)
 app.use(express.json({ limit: '50mb' }))
 
@@ -145,8 +150,7 @@ app.use('/api/admin/topup', adminTopupRoutes)
 app.use('/api/payments', paymentsRoutes)
 // Companion Android (notifikasi bank/e-wallet → verifikasi otomatis QRIS).
 app.use('/api/payments/ingest', paymentIngestRoutes)
-// Webhook BasuniPay (https://arkxmotion-studio.win/api/public/basunipay/webhook)
-app.use('/api/public/basunipay/webhook', basunipayWebhookRoutes)
+// Webhook VelianPay di-mount di atas (sebelum express.json) supaya body mentah utuh.
 app.use('/api/tokens', tokenRoutes)
 app.use('/api/provider-topup', providerTopupRoutes)
 app.use('/api/createpulse', createpulseRoutes)
@@ -415,9 +419,9 @@ startQueueWorker()
 // Nonaktif (hanya mencetak catatan) kalau PAYMENT_IMAP_* belum diisi.
 startPaymentEmailWatcher()
 
-// Poller BasniPay: cek status payment pending tiap 2 menit (fallback bila
-// webhook belum/tidak sampai). Nonaktif bila BASUNIPAY_ENABLED != 'true'.
-startBasunipayPoller()
+// Poller VelianPay: cek status payment pending tiap 2 menit (fallback bila
+// webhook belum/tidak sampai). Nonaktif bila VELIANPAY_ENABLED != 'true'.
+startVelianpayPoller()
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`[${isProd ? 'PROD' : 'DEV'}] Server running on http://0.0.0.0:${PORT}`)

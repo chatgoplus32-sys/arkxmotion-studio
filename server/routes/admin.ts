@@ -94,7 +94,7 @@ import { rhPoolClaimProgress, runPoolDailyClaim } from '../lib/runninghubDailyCl
  * yang pernah aktif.
  *
  * Yang SENGAJA tidak ikut dihapus: `nexabot_upstream_usage`, `studio_ai_usage`,
- * `basunipay_payment`, `payment_verify_log`, `register_attempts`,
+ * `velianpay_payment`, `payment_verify_log`, `register_attempts`,
  * `login_attempts` — audit/atribusi historis (bukan kredensial, tidak punya FK).
  * `tokens` juga tidak ikut: itu stok token milik operator, bukan data member.
  * `token_orders` dihapus lebih dulu: ia juga memegang FK ke tokens(id).
@@ -929,7 +929,7 @@ router.get('/membership/payments', authenticateToken, requireAdmin, (_req: AuthR
 })
 
 // Keputusan aktivasi member (dipakai baik oleh approve manual di sini maupun
-// oleh verifikasi otomatis BasuniPay/email/paste) ada di satu tempat:
+// oleh verifikasi otomatis VelianPay/email/paste) ada di satu tempat:
 // server/lib/membershipActivation.ts — supaya perilakunya identik.
 router.post('/membership/payments/:id/approve', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
