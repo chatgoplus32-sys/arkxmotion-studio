@@ -1,19 +1,20 @@
 import { ExternalLink, ArrowUpRight, QrCode, RefreshCw } from 'lucide-react'
 
 /**
- * Panel bayar VelianPay — pengguna DIARAHKAN ke `checkout_url` resmi
- * VelianPay, tempat QR dinamis yang benar-benar terikat ke order ini tampil.
+ * Panel bayar VelianPay.
  *
- * Kenapa tidak menampilkan gambar QR inline: gambar `qris_image` bisa
- * tidak sinkron dengan order yang sedang dilihat (mis. setelah checkout
- * dibuat ulang / order lama masih pending), sehingga user salah pindai dan
- * pembayaran tidak terdeteksi. Halaman checkout_url adalah sumber kebenaran:
- * QR-nya selalu sesuai order ini dan nominalnya tepat.
+ * QR dinamis (`qris_image` = qris_branded_image_url dari API VelianPay) tampil
+ * LANGSUNG di halaman — user tidak perlu membuka link checkout dulu. URL PNG
+ * ini unik per order dan berasal dari checkout yang sama dengan `url`, jadi
+ * tidak ada risiko QR lama/beda order seperti pada QRIS statis.
  *
- * QRIS statis lama tidak pernah dirender (segelnya: test/noStaticQris.test.ts).
+ * `url` tetap disediakan sebagai jalur alternatif (mis. QR gagal dimuat atau
+ * user ingin membuka halaman pembayaran penuh).
+ *
+ * QRIS statis lama TIDAK pernah dirender (segelnya: test/noStaticQris.test.ts).
  */
-export function VelianpayCheckoutButton({ url, payable }: { url?: string | null; payable?: number | null; image?: string | null }) {
-  if (!url) return null
+export function VelianpayCheckoutButton({ url, payable, image }: { url?: string | null; payable?: number | null; image?: string | null }) {
+  if (!url && !image) return null
   const nominal = payable ? Math.round(payable).toLocaleString('id-ID') : null
   return (
     <div className="mb-4 overflow-hidden rounded-xl border-2 border-emerald-500/50 bg-emerald-500/10 shadow-[0_0_24px_-6px_rgba(16,185,129,0.45)]">
@@ -24,19 +25,31 @@ export function VelianpayCheckoutButton({ url, payable }: { url?: string | null;
         )}
         <div className="mt-1 text-[10px] text-muted-foreground">Pembayaran terverifikasi otomatis — saldo masuk sendiri</div>
       </div>
-      <a
-        href={url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="flex items-center justify-center gap-2 bg-emerald-500 px-4 py-3 text-sm font-bold text-white transition hover:bg-emerald-400"
-      >
-        <ExternalLink className="h-4 w-4" /> Bayar via QRIS VelianPay <ArrowUpRight className="h-4 w-4" />
-      </a>
+      {image && (
+        <div className="flex justify-center bg-white/95 px-4 py-4">
+          <img
+            src={image}
+            alt="QRIS VelianPay — pindai untuk membayar"
+            className="h-56 w-56 rounded-lg object-contain"
+          />
+        </div>
+      )}
+      {url && (
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center justify-center gap-2 bg-emerald-500 px-4 py-3 text-sm font-bold text-white transition hover:bg-emerald-400"
+        >
+          <ExternalLink className="h-4 w-4" /> {image ? 'Buka halaman checkout VelianPay' : 'Bayar via QRIS VelianPay'} <ArrowUpRight className="h-4 w-4" />
+        </a>
+      )}
       <div className="flex items-start gap-2 px-4 py-2.5 text-[10px] leading-relaxed text-muted-foreground">
         <QrCode className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
         <span>
-          Kamu akan diarahkan ke halaman checkout VelianPay. Pindai QR yang ada di sana —
-          jangan pakai QR dari tempat lain, karena nominalnya harus tepat untuk terdeteksi otomatis.
+          {image
+            ? 'Pindai QR di atas dengan aplikasi pembayaranmu. Nominal sudah unik untuk pengajuan ini — jangan dibulatkan atau diganti.'
+            : 'Buka halaman checkout VelianPay lalu pindai QR di sana — jangan pakai QR dari tempat lain, karena nominalnya harus tepat untuk terdeteksi otomatis.'}
         </span>
       </div>
     </div>
