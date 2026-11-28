@@ -8,7 +8,7 @@ import {
   getMembershipPricing,
 } from '@/lib/membership'
 import { VelianpayCheckoutButton } from '@/components/QrisPayment'
-import { fetchMembershipQris, type VelianpayCheckout } from '@/lib/payment'
+import { fetchMembershipQris, adminWhatsappLink, type VelianpayCheckout } from '@/lib/payment'
 
 interface PaymentInfo {
   amount: number
@@ -36,6 +36,16 @@ export default function RegisterStatusPage() {
   const [checkoutLoading, setCheckoutLoading] = useState(false)
   const [checkoutError, setCheckoutError] = useState(false)
   const checkoutFetchedFor = useRef<string | null>(null)
+  // Jalur manual tetap tersedia bila checkout otomatis gagal. Nominal unik
+  // (amountTotal) dipakai mesin verifikasi untuk mengaktifkan akun otomatis.
+  const nominalTagihan = result?.found && result.payment
+    ? Number(result.payment.amountTotal ?? result.payment.amount) || 0
+    : 0
+  const manualPayLink = adminWhatsappLink(
+    nominalTagihan > 0
+      ? `Halo admin, QRIS otomatis belum tersedia. Saya ingin bayar aktivasi Pro dengan nominal TEPAT ${formatRp(nominalTagihan)} untuk email ${email || '(lihat email di form)'}. Mohon konfirmasi setelah pembayaran masuk.`
+      : 'Halo admin, QRIS otomatis belum tersedia. Mohon bantu aktivasi pembayaran Pro saya.',
+  )
 
   // Muat QRIS VelianPay untuk pendaftaran ini (sekali, atau saat "coba lagi").
   const loadCheckout = useCallback(async (force = false) => {
@@ -284,6 +294,16 @@ export default function RegisterStatusPage() {
                           >
                             <Loader2 className="h-3 w-3" /> Muat ulang QRIS
                           </button>
+                          {nominalTagihan > 0 && (
+                            <a
+                              href={manualPayLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="mt-2 ml-2 inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-1.5 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/15"
+                            >
+                              <MessageCircle className="h-3 w-3" /> Bayar manual via Admin · {formatRp(nominalTagihan)}
+                            </a>
+                          )}
                         </>
                       )}
                     </div>

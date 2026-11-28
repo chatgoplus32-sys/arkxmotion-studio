@@ -1,6 +1,9 @@
 import { getGalleri5AuthHeaders } from '@/lib/galleri5'
+
+// Konstanta Google Omni (dulu di lib/omni.ts yang sudah dihapus).
+const OMNI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/interactions'
+const OMNI_MODEL = 'gemini-omni-1.2-flash'
 import { appAuthHeaders } from '@/lib/nexabot'
-import { OMNI_API_URL, OMNI_MODEL } from '@/lib/omni'
 import {
   checkRunningHubBalance,
   formatRhWalletCompact,
