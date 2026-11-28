@@ -4,9 +4,9 @@ import { Section, Button, Badge } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { Wallet, Clock, CheckCircle, XCircle, ExternalLink } from 'lucide-react'
-import { adminWhatsappLink, formatRp, recreateBasunipayQris } from '@/lib/payment'
+import { adminWhatsappLink, formatRp, recreateVelianpayQris } from '@/lib/payment'
 import { usePosbotPricing, posbotPriceRange, posbotImageRange } from '@/lib/posbotPricing'
-import { QrisPanel, BasunipayCheckoutButton } from '@/components/QrisPayment'
+import { QrisPanel, VelianpayCheckoutButton } from '@/components/QrisPayment'
 import { fetchPosbotWallet, POSBOT_PRESET_FALLBACKS } from '@/lib/posbotWallet'
 
 const WHATSAPP_LINK = adminWhatsappLink('Halo saya ingin top up saldo PosBot')
@@ -42,7 +42,7 @@ export default function PosBotTopupPage() {
   const [loading, setLoading] = useState(false)
   const [topups, setTopups] = useState<Topup[]>([])
   const [submitted, setSubmitted] = useState<Topup | null>(null)
-  const [basunipay, setBasunipay] = useState<{ checkout_url?: string; payable_amount?: number; qris_image?: string } | null>(null)
+  const [velianpay, setVelianpay] = useState<{ checkout_url?: string; payable_amount?: number; qris_image?: string } | null>(null)
   const [qrRetrying, setQrRetrying] = useState(false)
   const [step, setStep] = useState<'select' | 'pay' | 'confirm'>('select')
 
@@ -80,7 +80,7 @@ export default function PosBotTopupPage() {
     fetchTopups()
   }, [fetchWallet, fetchTopups])
 
-  // Auto-refresh: begitu pembayaran diverifikasi otomatis (BasuNiPay /
+  // Auto-refresh: begitu pembayaran diverifikasi otomatis (VelianPay /
   // notifikasi bank), saldo & status baris berubah tanpa reload halaman.
   // Polling hanya jalan selama ada yang menunggu — begitu lunas, berhenti.
   const adaPending = topups.some((t) => t.status === 'pending')
@@ -114,7 +114,7 @@ export default function PosBotTopupPage() {
         // Simpan baris yang diajukan — amount_total adalah nominal yang
         // harus dibayar dan yang dicocokkan parser email.
         setSubmitted(data.topup || null)
-        setBasunipay(data.basunipay || null)
+        setVelianpay(data.velianpay || null)
         addToast(`Topup ${formatRp(amount)} diajukan`, 'success')
         setStep('pay')
         fetchTopups()
@@ -142,18 +142,18 @@ export default function PosBotTopupPage() {
   const statusDiajukan = submitted ? topups.find((t) => t.id === submitted.id)?.status ?? submitted.status : null
   const lunas = statusDiajukan === 'approved'
 
-  // Checkout BasuNiPay gagal dibuat (jaringan/API)? Siapkan ulang untuk baris
+  // Checkout VelianPay gagal dibuat (jaringan/API)? Siapkan ulang untuk baris
   // yang sama — tanpa mengajukan top up baru dan tanpa QRIS statis lama.
   const handleRetryQris = async () => {
     if (!token || !submitted || qrRetrying) return
     setQrRetrying(true)
-    const bp = await recreateBasunipayQris(token, 'posbot_topup', submitted.id)
+    const bp = await recreateVelianpayQris(token, 'posbot_topup', submitted.id)
     setQrRetrying(false)
     if (bp) {
-      setBasunipay(bp)
-      addToast('QRIS BasuNiPay siap — bayar sesuai nominal', 'success')
+      setVelianpay(bp)
+      addToast('QRIS VelianPay siap — bayar sesuai nominal', 'success')
     } else {
-      addToast('QRIS BasuNiPay masih gagal disiapkan — coba lagi', 'error')
+      addToast('QRIS VelianPay masih gagal disiapkan — coba lagi', 'error')
     }
   }
 
@@ -239,12 +239,12 @@ export default function PosBotTopupPage() {
 
       {step === 'pay' && (
         <Section
-          title="Pembayaran via QRIS BasuNiPay"
-          sub="Klik Bayar → checkout BasuNiPay, nominal TEPAT & terverifikasi otomatis"
+          title="Pembayaran via QRIS VelianPay"
+          sub="Klik Bayar → checkout VelianPay, nominal TEPAT & terverifikasi otomatis"
         >
-          <BasunipayCheckoutButton url={basunipay?.checkout_url} payable={basunipay?.payable_amount} image={basunipay?.qris_image} />
+          <VelianpayCheckoutButton url={velianpay?.checkout_url} payable={velianpay?.payable_amount} image={velianpay?.qris_image} />
 
-          {!(basunipay?.checkout_url || basunipay?.qris_image) && (
+          {!(velianpay?.checkout_url || velianpay?.qris_image) && (
             <QrisPanel
               amountLabel={formatRp(Number.isInteger(amount) ? amount : 0)}
               exactAmount={submitted?.amount_total ?? undefined}

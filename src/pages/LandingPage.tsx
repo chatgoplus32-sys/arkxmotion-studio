@@ -773,7 +773,7 @@ export default function LandingPage() {
         <div className="mx-auto max-w-[1240px]">
           <div className="mx-auto max-w-[640px] text-center">
             <h2 className="text-[26px] font-black italic tracking-tight sm:text-[30px] md:text-[40px]">Pricing jelas — Pro sekali bayar</h2>
-            <p className="mt-3 text-[14px] text-white/50 sm:text-[15px]">Buat akun gratis. Aktifkan Pro dengan pembayaran sekali bayar untuk membuka semua fitur AI; token generate dibeli terpisah sesuai pemakaian. Bayar via QRIS BasuNiPay dan akun Pro aktif otomatis setelah pembayaran masuk.</p>
+            <p className="mt-3 text-[14px] text-white/50 sm:text-[15px]">Buat akun gratis. Aktifkan Pro dengan pembayaran sekali bayar untuk membuka semua fitur AI; token generate dibeli terpisah sesuai pemakaian. Bayar via QRIS VelianPay dan akun Pro aktif otomatis setelah pembayaran masuk.</p>
           </div>
           <div className="mt-10 grid gap-4 md:grid-cols-3 sm:gap-5">
             {pricing.map((p) => (

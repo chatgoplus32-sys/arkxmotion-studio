@@ -4,8 +4,8 @@ import { Section, Button } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { formatRp } from '@/lib/membership'
-import { BasunipayCheckoutButton, QrisPanel } from '@/components/QrisPayment'
-import { recreateBasunipayQris } from '@/lib/payment'
+import { VelianpayCheckoutButton, QrisPanel } from '@/components/QrisPayment'
+import { recreateVelianpayQris } from '@/lib/payment'
 import {
   DEFAULT_ADDON_FEE,
   ADDON_ACCOUNTS_PER_PERIOD,
@@ -47,7 +47,7 @@ const BENEFITS = [
 ]
 
 const STEPS = [
-  { title: 'Klik Bayar Sekarang', desc: 'QRIS dinamis BasuniPay muncul dengan nominal TEPAT (harga + kode unik).' },
+  { title: 'Klik Bayar Sekarang', desc: 'QRIS dinamis VelianPay muncul dengan nominal TEPAT (harga + kode unik).' },
   { title: 'Scan & bayar', desc: 'Bayar nominal tepat lewat QRIS — pembayaran terverifikasi otomatis.' },
   { title: 'Terima 3 akun', desc: 'Periode add-on langsung aktif 30 hari; admin menyerahkan 3 akun email di halaman ini.' },
 ]
@@ -224,19 +224,19 @@ export default function AddonAkunPage() {
     return () => clearInterval(timer)
   }, [pendingPayment, awaitingAccounts, loadStatus])
 
-  // Checkout BasuNiPay gagal dibuat? Siapkan ulang untuk pengajuan Add-on ini.
+  // Checkout VelianPay gagal dibuat? Siapkan ulang untuk pengajuan Add-on ini.
   const handleRetryQris = async () => {
     const paymentId = status?.payment?.id
     if (!paymentId || qrRetrying || !token) return
     setQrRetrying(true)
-    const bp = await recreateBasunipayQris(token, 'account_addon_payments', paymentId)
+    const bp = await recreateVelianpayQris(token, 'account_addon_payments', paymentId)
     setQrRetrying(false)
     if (bp) {
       setCheckoutUrl(bp.checkout_url ?? null)
       setCheckoutImage(bp.qris_image ?? null)
-      addToast('QRIS BasuNiPay siap — bayar sesuai nominal', 'success')
+      addToast('QRIS VelianPay siap — bayar sesuai nominal', 'success')
     } else {
-      addToast('QRIS BasuNiPay masih gagal disiapkan — coba lagi', 'error')
+      addToast('QRIS VelianPay masih gagal disiapkan — coba lagi', 'error')
     }
   }
 
@@ -246,8 +246,8 @@ export default function AddonAkunPage() {
     setSubmitting(true)
     try {
       const data = await submitAddonPayment(token, note)
-      setCheckoutUrl(data.basunipay?.checkout_url ?? null)
-      setCheckoutImage(data.basunipay?.qris_image ?? null)
+      setCheckoutUrl(data.velianpay?.checkout_url ?? null)
+      setCheckoutImage(data.velianpay?.qris_image ?? null)
       setStatus((prev) => ({
         fee: prev?.fee ?? fee,
         accountsPerPeriod: prev?.accountsPerPeriod ?? ADDON_ACCOUNTS_PER_PERIOD,
@@ -259,7 +259,7 @@ export default function AddonAkunPage() {
         payment: data.payment,
       }))
       setNote('')
-      addToast('QRIS BasuniPay siap — selesaikan pembayaran, add-on aktif otomatis', 'success')
+      addToast('QRIS VelianPay siap — selesaikan pembayaran, add-on aktif otomatis', 'success')
     } catch (e: any) {
       addToast(e?.message || 'Gagal mengirim konfirmasi', 'error')
     } finally {
@@ -442,7 +442,7 @@ export default function AddonAkunPage() {
 
         <Section
           title="Pembayaran Add-on Akun"
-          sub="QRIS dinamis BasuniPay — nominal tepat, terverifikasi otomatis"
+          sub="QRIS dinamis VelianPay — nominal tepat, terverifikasi otomatis"
           right={<StatusBadge status={status?.payment?.status ?? 'none'} />}
         >
           <div className="flex items-baseline justify-between rounded-xl bg-secondary/50 border border-border px-4 py-3 mb-4">
@@ -491,7 +491,7 @@ export default function AddonAkunPage() {
                 <p className="text-[11px] text-muted-foreground mb-2">
                   Nominal sudah termasuk kode unik — add-on teraktivasi otomatis begitu pembayaran masuk, tidak perlu menunggu admin.
                 </p>
-                <BasunipayCheckoutButton
+                <VelianpayCheckoutButton
                   url={checkoutUrl ?? status?.payment?.checkoutUrl ?? null}
                   payable={status?.payment?.amountTotal ?? null}
                   image={checkoutImage ?? status?.payment?.qrisImage ?? null}
@@ -532,7 +532,7 @@ export default function AddonAkunPage() {
 
               <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm">
                 <div className="flex items-center gap-2 font-semibold text-foreground mb-1">
-                  <QrCode className="h-4 w-4 text-primary" /> QRIS dinamis BasuniPay
+                  <QrCode className="h-4 w-4 text-primary" /> QRIS dinamis VelianPay
                 </div>
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   Pembayaran lewat QRIS dinamis: nominal TEPAT (harga Add-on + kode unik),

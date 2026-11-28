@@ -132,7 +132,7 @@ export async function fetchAddonStatus(token: string): Promise<AddonStatus> {
 export async function submitAddonPayment(
   token: string,
   proofNote: string,
-): Promise<{ payment: AddonPayment; basunipay?: { checkout_url?: string; payable_amount?: number; unique_code?: number; qris_image?: string } | null }> {
+): Promise<{ payment: AddonPayment; velianpay?: { checkout_url?: string; payable_amount?: number; unique_code?: number; qris_image?: string } | null }> {
   const res = await fetch('/api/membership/addon/payment', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -140,7 +140,7 @@ export async function submitAddonPayment(
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(data.error || 'Gagal mengirim konfirmasi pembayaran')
-  return data as { payment: AddonPayment; basunipay?: { checkout_url?: string; payable_amount?: number; unique_code?: number; qris_image?: string } | null }
+  return data as { payment: AddonPayment; velianpay?: { checkout_url?: string; payable_amount?: number; unique_code?: number; qris_image?: string } | null }
 }
 
 /** Pesan WhatsApp ke admin bahwa pembayaran add-on sudah dikirim. */

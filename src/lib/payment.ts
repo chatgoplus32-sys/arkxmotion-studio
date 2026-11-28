@@ -1,11 +1,11 @@
 export const ADMIN_WHATSAPP = '6285156207924'
 
 /**
- * Data checkout BasuniPay (QRIS dinamis) yang dipakai halaman pembayaran.
+ * Data checkout VelianPay (QRIS dinamis) yang dipakai halaman pembayaran.
  * QRIS statis lama sengaja TIDAK punya representasi di sini — semua bayar
- * lewat BasuNiPay supaya nominal unik + verifikasi otomatis.
+ * lewat VelianPay supaya nominal unik + verifikasi otomatis.
  */
-export type BasunipayCheckout = {
+export type VelianpayCheckout = {
   checkout_url?: string
   payable_amount?: number
   unique_code?: number
@@ -13,15 +13,15 @@ export type BasunipayCheckout = {
 }
 
 /**
- * Siapkan ulang QRIS BasuniPay untuk pengajuan yang sudah ada (tombol
+ * Siapkan ulang QRIS VelianPay untuk pengajuan yang sudah ada (tombol
  * "Coba lagi" saat checkout pertama gagal dibuat). Tidak membuat baris
  * pengajuan baru. Mengembalikan null bila masih gagal.
  */
-export async function recreateBasunipayQris(
+export async function recreateVelianpayQris(
   token: string,
   refTable: string,
   refId: number,
-): Promise<BasunipayCheckout | null> {
+): Promise<VelianpayCheckout | null> {
   try {
     const res = await fetch('/api/payments/qris/recreate', {
       method: 'POST',
@@ -30,7 +30,7 @@ export async function recreateBasunipayQris(
       signal: AbortSignal.timeout(20000),
     })
     if (!res.ok) return null
-    const data = (await res.json()) as BasunipayCheckout
+    const data = (await res.json()) as VelianpayCheckout
     return data?.checkout_url || data?.qris_image ? data : null
   } catch {
     return null
@@ -38,10 +38,10 @@ export async function recreateBasunipayQris(
 }
 
 /**
- * QRIS BasuniPay pembayaran join Pro untuk halaman status pendaftaran
+ * QRIS VelianPay pembayaran join Pro untuk halaman status pendaftaran
  * (belum login — identitasnya email). Membuat checkout bila belum ada.
  */
-export async function fetchMembershipQris(email: string): Promise<BasunipayCheckout | null> {
+export async function fetchMembershipQris(email: string): Promise<VelianpayCheckout | null> {
   try {
     const res = await fetch('/api/payments/qris/membership', {
       method: 'POST',
@@ -50,7 +50,7 @@ export async function fetchMembershipQris(email: string): Promise<BasunipayCheck
       signal: AbortSignal.timeout(20000),
     })
     if (!res.ok) return null
-    const data = (await res.json()) as BasunipayCheckout
+    const data = (await res.json()) as VelianpayCheckout
     return data?.checkout_url || data?.qris_image ? data : null
   } catch {
     return null

@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { UserPlus, Mail, Lock, User, Gift, AlertCircle, CheckCircle, CheckCircle2, MessageCircle, Crown, ArrowRight, ShieldCheck, Zap } from 'lucide-react'
-import { BasunipayCheckoutButton, QrisPanel } from '@/components/QrisPayment'
+import { VelianpayCheckoutButton, QrisPanel } from '@/components/QrisPayment'
 import { fetchMembershipQris } from '@/lib/payment'
 import {
   DEFAULT_MEMBERSHIP_FEE,
@@ -29,7 +29,7 @@ export default function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [paymentToken, setPaymentToken] = useState<string | null>(null)
   const [addonLinked, setAddonLinked] = useState(false)
-  // Response /api/membership/payment — nominal TEPAT (dengan kode unik) + checkout BasuniPay.
+  // Response /api/membership/payment — nominal TEPAT (dengan kode unik) + checkout VelianPay.
   const [payFlow, setPayFlow] = useState<{ amountTotal: number; fee: number; checkoutUrl?: string | null; qrisImage?: string | null } | null>(null)
   const [qrRetrying, setQrRetrying] = useState(false)
   // Akun berubah Pro begitu pembayaran terdeteksi → layar otomatis jadi konfirmasi.
@@ -45,7 +45,7 @@ export default function RegisterPage() {
   }, [])
 
   // Begitu akun jadi dibuat, langsung buat pengajuan pembayaran + checkout
-  // BasuniPay (kalau aktif). Tanpa ini, pembayaran member tidak akan
+  // VelianPay (kalau aktif). Tanpa ini, pembayaran member tidak akan
   // terdeteksi otomatis karena belum ada baris payment yang cocok.
   useEffect(() => {
     if (!success || !paymentToken) return
@@ -61,15 +61,15 @@ export default function RegisterPage() {
         setPayFlow({
           amountTotal: Number(data.amountTotal) || fee,
           fee: Number(data.amount) || fee,
-          checkoutUrl: data.basunipay?.checkout_url || null,
-          qrisImage: data.basunipay?.qris_image || null,
+          checkoutUrl: data.velianpay?.checkout_url || null,
+          qrisImage: data.velianpay?.qris_image || null,
         })
       })
       .catch(() => {})
     return () => { cancelled = true }
   }, [success, paymentToken, fee])
 
-  // Setelah pembayaran terdeteksi BasuniPay, akun otomatis Pro — tampilkan
+  // Setelah pembayaran terdeteksi VelianPay, akun otomatis Pro — tampilkan
   // konfirmasi tanpa menunggu pengguna refresh manual.
   useEffect(() => {
     if (!success || proActive) return
@@ -90,7 +90,7 @@ export default function RegisterPage() {
     return () => { stop = true; clearInterval(timer) }
   }, [success, email, proActive])
 
-  // Checkout BasuNiPay gagal/belum tampil? Muat ulang lewat status email —
+  // Checkout VelianPay gagal/belum tampil? Muat ulang lewat status email —
   // tanpa membuat pengajuan pembayaran baru.
   const retryQris = async () => {
     if (qrRetrying) return
@@ -104,9 +104,9 @@ export default function RegisterPage() {
         checkoutUrl: bp.checkout_url ?? null,
         qrisImage: bp.qris_image ?? null,
       })
-      addToast('QRIS BasuNiPay siap — bayar sesuai nominal', 'success')
+      addToast('QRIS VelianPay siap — bayar sesuai nominal', 'success')
     } else {
-      addToast('QRIS BasuNiPay masih gagal disiapkan — coba lagi', 'error')
+      addToast('QRIS VelianPay masih gagal disiapkan — coba lagi', 'error')
     }
   }
 
@@ -228,7 +228,7 @@ export default function RegisterPage() {
                   Bayar <b className="text-white">{payFlow ? formatRp(payFlow.amountTotal) : formatRp(fee)}</b> via QRIS —
                   <b className="text-emerald-300"> akun otomatis Pro begitu pembayaran masuk</b>, tidak perlu konfirmasi admin.
                 </p>
-                <BasunipayCheckoutButton url={payFlow?.checkoutUrl} payable={payFlow?.amountTotal ?? null} image={payFlow?.qrisImage} />
+                <VelianpayCheckoutButton url={payFlow?.checkoutUrl} payable={payFlow?.amountTotal ?? null} image={payFlow?.qrisImage} />
                 {!payFlow?.qrisImage && (
                   <QrisPanel amountLabel={`Aktivasi Pro — ${formatRp(payFlow ? payFlow.amountTotal : fee)}`} exactAmount={payFlow?.amountTotal} onRetry={retryQris} retrying={qrRetrying} />
                 )}

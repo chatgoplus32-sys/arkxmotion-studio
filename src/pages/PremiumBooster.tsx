@@ -4,8 +4,8 @@ import { Section, Button, Badge } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { Zap, Clock, CheckCircle, ExternalLink, Rocket, Film, ImageIcon, Video } from 'lucide-react'
-import { adminWhatsappLink, formatRp, recreateBasunipayQris } from '@/lib/payment'
-import { QrisPanel, BasunipayCheckoutButton } from '@/components/QrisPayment'
+import { adminWhatsappLink, formatRp, recreateVelianpayQris } from '@/lib/payment'
+import { QrisPanel, VelianpayCheckoutButton } from '@/components/QrisPayment'
 import {
   fetchNexabotWallet,
   nexabotRemainingLabel,
@@ -41,7 +41,7 @@ export default function PremiumBoosterPage() {
   const [step, setStep] = useState<'select' | 'pay' | 'confirm'>('select')
   const [proofNote, setProofNote] = useState('')
   const [loading, setLoading] = useState(false)
-  const [basunipay, setBasunipay] = useState<{ checkout_url?: string; payable_amount?: number; qris_image?: string } | null>(null)
+  const [velianpay, setVelianpay] = useState<{ checkout_url?: string; payable_amount?: number; qris_image?: string } | null>(null)
   const [boosterTopupId, setBoosterTopupId] = useState<number | null>(null)
   const [qrRetrying, setQrRetrying] = useState(false)
 
@@ -88,7 +88,7 @@ export default function PremiumBoosterPage() {
       })
       const data = await res.json()
       if (res.ok) {
-        setBasunipay(data.basunipay || null)
+        setVelianpay(data.velianpay || null)
         setBoosterTopupId(data.package?.id ?? null)
         addToast('Pengajuan terkirim', 'success')
         setStep('confirm')
@@ -102,17 +102,17 @@ export default function PremiumBoosterPage() {
     setLoading(false)
   }
 
-  // Checkout BasuNiPay gagal dibuat? Siapkan ulang untuk pengajuan paket ini.
+  // Checkout VelianPay gagal dibuat? Siapkan ulang untuk pengajuan paket ini.
   const handleRetryQris = async () => {
     if (!token || !boosterTopupId || qrRetrying) return
     setQrRetrying(true)
-    const bp = await recreateBasunipayQris(token, 'nexabot_topup', boosterTopupId)
+    const bp = await recreateVelianpayQris(token, 'nexabot_topup', boosterTopupId)
     setQrRetrying(false)
     if (bp) {
-      setBasunipay(bp)
-      addToast('QRIS BasuNiPay siap — bayar sesuai nominal', 'success')
+      setVelianpay(bp)
+      addToast('QRIS VelianPay siap — bayar sesuai nominal', 'success')
     } else {
-      addToast('QRIS BasuNiPay masih gagal disiapkan — coba lagi', 'error')
+      addToast('QRIS VelianPay masih gagal disiapkan — coba lagi', 'error')
     }
   }
 
@@ -282,14 +282,14 @@ export default function PremiumBoosterPage() {
           title="Selesaikan Pembayaran"
           sub="Booster aktif otomatis begitu pembayaran terdeteksi"
         >
-          {basunipay?.checkout_url || basunipay?.qris_image ? (
-            <BasunipayCheckoutButton
-              url={basunipay?.checkout_url}
-              payable={basunipay?.payable_amount}
-              image={basunipay?.qris_image}
+          {velianpay?.checkout_url || velianpay?.qris_image ? (
+            <VelianpayCheckoutButton
+              url={velianpay?.checkout_url}
+              payable={velianpay?.payable_amount}
+              image={velianpay?.qris_image}
             />
           ) : (
-            <QrisPanel amountLabel={`Premium Booster ${hari} hari`} exactAmount={basunipay?.payable_amount} onRetry={handleRetryQris} retrying={qrRetrying} />
+            <QrisPanel amountLabel={`Premium Booster ${hari} hari`} exactAmount={velianpay?.payable_amount} onRetry={handleRetryQris} retrying={qrRetrying} />
           )}
           <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3 text-xs text-muted-foreground mb-4 space-y-1">
             <div>⚡ Paket <b>langsung aktif</b> begitu pembayaran terdeteksi — tidak perlu konfirmasi admin.</div>
