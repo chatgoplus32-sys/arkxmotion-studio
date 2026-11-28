@@ -17,6 +17,7 @@ import { startGenerationTask, removeActiveTask } from '@/lib/backgroundTasks';
 import { runNexabotJobWithSessionFallback } from '@/pages/image-to-video/nexabotSessionFallback';
 import { concatVideosFFmpeg } from '@/lib/ffmpeg-compress';
 import { fetchVideoFile } from '@/lib/videoChunks';
+import { potongVoiceoverOmni, susunPromptVideoOmni, MAKS_KATA_VOICEOVER } from '@/lib/omniScript';
 import { useAuthStore } from '@/stores/authStore';
 import { Lightbulb, FileText, Image as ImageIcon, Sparkles, Loader2, Check, Copy, X, ArrowRight, ArrowLeft, PlayCircle, List, Trash2, AlertCircle, Video, ScanSearch, Upload, ShoppingBag, Plus, Zap, ImagePlay, KeyRound, Lock } from 'lucide-react';
 
@@ -970,13 +971,8 @@ const HealthAnimTool = () => {
   // injeksikan kalimat voiceover Bahasa Indonesia ke prompt video agar
   // audionya berbahasa Indonesia (bukan Inggris default). Dilewati bila
   // prompt sudah memuat arahan voiceover Indonesia.
-  const buildOmniVideoPromptWithVoice = (prompt: string, voiceover: string) => {
-    const vo = String(voiceover || '').trim();
-    const body = String(prompt || '').trim();
-    if (!vo) return body;
-    if (/voiceover[^.]*(Indonesian|Bahasa Indonesia)/i.test(body)) return body;
-    return `${body}\nA voiceover narrates in Indonesian (Bahasa Indonesia), warm and friendly tone, saying exactly: "${vo}". No English speech.`;
-  };
+  const buildOmniVideoPromptWithVoice = (prompt: string, voiceover: string) =>
+    susunPromptVideoOmni(prompt, potongVoiceoverOmni(voiceover));
 
   // Loop berurutan atas index scene yang diminta; gabung otomatis bila SEMUA
   // scene berhasil (termasuk hasil retry). State di-update papan ke papan.
@@ -1046,7 +1042,7 @@ const HealthAnimTool = () => {
       role: i === 0 ? 'Hook' : i === target - 1 ? 'CTA' : 'Penjelasan',
       voiceover: String(item?.voiceover || '').trim(),
       visual: String(item?.image_prompt || item?.visual || '').trim(),
-      video_prompt: String(item?.video_prompt || item?.visual || '').trim(),
+      video_prompt: susunPromptVideoOmni(String(item?.video_prompt || item?.visual || ''), String(item?.voiceover || '')),
     });
     setAppError('');
     if (fits) {
@@ -1149,11 +1145,11 @@ ATURAN MUTLAK:
 1. Tepat ${omniSceneCount} scene, bernomor 1 sampai ${omniSceneCount}.
 2. Scene 1 = HOOK yang menghentikan scroll. Scene ${omniSceneCount} = CTA singkat. Scene di antaranya = BODY, satu poin penjelasan per scene.
 3. Latar visual SELALU di dalam tubuh manusia (pembuluh darah, organ, jaringan) dengan karakter organ/sel lucu; bukan manusia asli dan tidak ada orang berbicara.
-4. voiceover: SELALU Bahasa Indonesia (BUKAN Bahasa Inggris), kalimat pendek yang muat diucapkan dalam 15 detik.
+4. voiceover: SELALU Bahasa Indonesia (BUKAN Bahasa Inggris), 20-${MAKS_KATA_VOICEOVER} kata, maksimal 2 kalimat pendek — harus muat dibacakan dalam 15 detik dengan jeda natural.
 5. visual: deskripsi visual scene dalam Bahasa Indonesia.
-6. video_prompt: prompt sinematik BAHASA INGGRIS untuk video generator, satu paragraf, sebutkan kamera, gerakan kamera, lighting, dan durasi 15 detik — WAJIB diakhiri dengan kalimat: 'A voiceover narrates in Indonesian (Bahasa Indonesia), warm and friendly tone, saying exactly: "<teks voiceover scene>".' (pakai teks voiceover Bahasa Indonesia persis seperti di field voiceover).
+6. video_prompt: prompt sinematik BAHASA INGGRIS, satu paragraf, sebutkan kamera, gerakan kamera, lighting, dan durasi TEPAT 15 detik. JANGAN menulis instruksi voiceover — sistem akan menambahkannya otomatis dengan teks voiceover yang sama persis.
 7. Tanpa diagnosis, janji kesembuhan, atau klaim kesehatan berlebihan.`;
-      const systemInstruction = 'Anda penulis skrip video kesehatan vertikal. Output JSON sesuai skema. Narasi HANYA dalam Bahasa Indonesia — JANGAN pernah Bahasa Inggris untuk voiceover. Prompt video dalam Bahasa Inggris, dan WAJIB diakhiri dengan kalimat voiceover Bahasa Indonesia seperti diminta di aturan 6.';
+      const systemInstruction = `Anda penulis skrip video kesehatan vertikal. Output JSON sesuai skema. Narasi HANYA Bahasa Indonesia, maksimal ${MAKS_KATA_VOICEOVER} kata per scene agar pas 15 detik. Prompt video Bahasa Inggris. JANGAN menulis instruksi voiceover di video_prompt — sistem yang menambahkannya.`;
       const schema = {
         type: Type.OBJECT,
         properties: {
@@ -1177,13 +1173,16 @@ ATURAN MUTLAK:
       const parsed = await callGeminiAPI(prompt, systemInstruction, schema);
       const scenes = Array.isArray(parsed?.scenes) ? parsed.scenes : [];
       if (!scenes.length) throw new Error('Gemini tidak mengembalikan scene. Coba topik yang lebih spesifik.');
-      setOmniScenes(scenes.slice(0, omniSceneCount).map((scene: any, index: number) => ({
-        scene: Number(scene?.scene) || index + 1,
-        role: String(scene?.role || (index === 0 ? 'Hook' : index === omniSceneCount - 1 ? 'CTA' : 'Penjelasan')),
-        voiceover: String(scene?.voiceover || ''),
-        visual: String(scene?.visual || ''),
-        video_prompt: String(scene?.video_prompt || '')
-      })));
+      setOmniScenes(scenes.slice(0, omniSceneCount).map((scene: any, index: number) => {
+        const vo = potongVoiceoverOmni(String(scene?.voiceover || ''));
+        return {
+          scene: Number(scene?.scene) || index + 1,
+          role: String(scene?.role || (index === 0 ? 'Hook' : index === omniSceneCount - 1 ? 'CTA' : 'Penjelasan')),
+          voiceover: vo,
+          visual: String(scene?.visual || ''),
+          video_prompt: susunPromptVideoOmni(String(scene?.video_prompt || ''), vo)
+        };
+      }));
     } catch (error: any) {
       handleApiError(error, 'Gagal membuat narasi dan prompt scene.');
     } finally {
