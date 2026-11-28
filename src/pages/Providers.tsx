@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { PageHeader, PageContent } from '@/components/layout'
 import { Button, Input, Textarea } from '@/components/ui'
@@ -1240,6 +1240,8 @@ export default function ProvidersPage() {
     }
   }, [])
 
+  const checkKeyRef = useRef<((key: string) => Promise<any>) | null>(null)
+
   const handleAddKey = useCallback(() => {
     // NexaBot: hasil “Copy as cURL” multi-baris harus dibaca sebagai SATU key —
     // jangan dipecah per baris (dulu pecah → header invalid & cek saldo hang).
@@ -1288,6 +1290,7 @@ export default function ProvidersPage() {
     }
 
     const existing = new Set(savedKeys)
+    const addedKeys: string[] = []
     let added = 0
     let skipped = 0
 
@@ -1340,6 +1343,7 @@ export default function ProvidersPage() {
       }
       addKey(selectedProvider as ProviderId, key, undefined, refreshToken)
       existing.add(key)
+      addedKeys.push(key)
       added++
     })
 
@@ -1353,6 +1357,18 @@ export default function ProvidersPage() {
         ],
         footer: `Total key tersimpan: ${existing.size}`,
       })
+      // Auto-check: validasi langsung setelah simpan supaya key invalid
+      // ketahuan di sini, bukan saat user mencoba generate.
+      void (async () => {
+        for (const k of addedKeys) {
+          try {
+            const result = await checkKeyRef.current?.(k)
+            if (result) setStatusMap(prev => ({ ...prev, [k]: result }))
+          } catch {
+            setStatusMap(prev => ({ ...prev, [k]: { state: 'unknown', detail: 'Gagal cek otomatis — klik Cek Token' } }))
+          }
+        }
+      })()
     }
   }, [inputValue, savedKeys, selectedProvider, addKey])
 
@@ -1975,6 +1991,7 @@ export default function ProvidersPage() {
     }
     return { state: 'unknown', detail: 'Cek limit belum tersedia untuk provider ini' }
   }, [selectedProvider, keys.riverside, keys.nexabot, replaceKey])
+  checkKeyRef.current = handleCheckKey
   /**
    * Klaim hadiah harian RunningHub (30 poin) untuk satu access token, lalu
    * segarkan baris key itu supaya saldo & status watermark langsung terbaca.
