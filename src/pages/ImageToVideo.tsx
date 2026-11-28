@@ -5,7 +5,7 @@ import { MaintenanceBanner } from '@/components/ui/MaintenanceBanner'
 import { Image, Upload, Rocket, Loader2, Trash2, Key, ExternalLink, Download, X, Copy, Check, Eraser, BrainCircuit } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Swipeable } from '@/components/Swipeable'
-import { useProviderManager, PROVIDER_CONFIGS, ProviderId } from '@/stores/providerManager'
+import { useProviderManager, PROVIDER_CONFIGS, ProviderId, SERVER_MANAGED_PROVIDERS } from '@/stores/providerManager'
 import { getSeaviSpec, generateWithSeavi, fetchSeaviBalance, buildSeaviPayload } from '@/lib/seavi'
 import { downloadExternalViaProxy } from '@/lib/downloadExternal'
 import { buildPosbotPayload, getPosbotSpec, submitPosbotGeneration, pollPosbotStatus, PosbotJobFailed, POSBOT_MODE_LABELS, posbotModeSummary } from '@/lib/posbot'
@@ -602,6 +602,10 @@ export default function ImageToVideoPage() {
   const serverKeyReady = (provider === 'nexabot' && nexabotServerReady)
     || (provider === 'seavi' && seaviServerReady)
     || (provider === 'posbot' && posbotServerReady)
+  // Kredensial ALL server-managed: UI tidak boleh memblokir hanya karena flag
+  // wallet belum termuat/basi. Relay yang memutuskan kelayakan (saldo/admin)
+  // dan mengembalikan pesan yang jelas bila kunci server belum diatur.
+  const pakaiKunciServer = (SERVER_MANAGED_PROVIDERS as readonly string[]).includes(provider)
 
   const isVeoI2V = provider === 'firefly' && model.includes('veo') && !!imgFile
 
@@ -1083,10 +1087,8 @@ export default function ImageToVideoPage() {
 
   const validateGenerate = (): string | null => {
     if (!prompt.trim()) return 'Prompt harus diisi'
-    if (!hasActiveKey && provider !== 'roboneo' && provider !== 'createpulse' && !serverKeyReady)
-      return provider === 'posbot' || provider === 'seavi' || provider === 'runninghub'
-        ? `Top up saldo ${PROVIDER_CONFIGS[provider].name} dulu untuk generate.`
-        : `Tidak ada API key aktif untuk ${PROVIDER_CONFIGS[provider].name}`
+    if (!hasActiveKey && !pakaiKunciServer && provider !== 'roboneo' && provider !== 'createpulse')
+      return `Tidak ada API key aktif untuk ${PROVIDER_CONFIGS[provider].name}`
     if (provider === 'createpulse' && user?.role !== 'admin' && cpBalance < cpCost(currentModel?.apiModel)) return 'Saldo CreatePulse tidak cukup. Top up minimal Rp 10.000'
     // NexaBot: paket aktif untuk mode ini = gratis, jadi cek saldo hanya saat tidak aktif.
     if (provider === 'nexabot' && user?.role !== 'admin' && !nbFreeForCurrentMode && (nbWallet?.balance ?? 0) < (nbWallet?.price ?? NEXABOT_PRICE_FALLBACK))
@@ -3403,8 +3405,8 @@ export default function ImageToVideoPage() {
             )}
           </div>
           <div>
-            Status: <b className={provider === 'createpulse' || hasActiveKey || serverKeyReady ? 'text-emerald-500' : 'text-amber-500'}>
-              {provider === 'createpulse' || hasActiveKey || serverKeyReady ? 'Siap dipakai' : 'Perlu API key'}
+            Status: <b className={provider === 'createpulse' || hasActiveKey || pakaiKunciServer ? 'text-emerald-500' : 'text-amber-500'}>
+              {provider === 'createpulse' || hasActiveKey || pakaiKunciServer ? 'Siap dipakai' : 'Perlu API key'}
             </b>
           </div>
           <button
@@ -4019,7 +4021,7 @@ export default function ImageToVideoPage() {
                 Est. Cost: <b className="text-foreground font-mono">{provider === 'createpulse' ? `Rp ${cpCost(currentModel?.apiModel).toLocaleString('id-ID')}` : provider === 'nexabot' ? nbCostLabel : provider === 'posbot' ? `Rp ${totalCredits.toLocaleString('id-ID')}` : provider === 'runninghub' ? formatRp(rhCost) : provider === 'seavi' ? `${totalCredits} token` : `${totalCredits} credits`}</b>
                 {provider !== 'createpulse' && <BalanceBadge provider={provider} required={totalCredits} />}
               </div>
-              {!hasActiveKey && provider !== 'createpulse' && !serverKeyReady && (
+              {!hasActiveKey && provider !== 'createpulse' && !pakaiKunciServer && (
                 <a
                   href="/providers"
                   className="text-xs text-primary hover:underline flex items-center gap-1"
