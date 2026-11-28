@@ -96,18 +96,18 @@ jobs:
             # ke .env VPS (gitignored) — tidak pernah masuk repo / log.
             echo "🔐 Menyelaraskan kredensial VelianPay..."
             python3 - <<'PYENV'
-import os
-p = '/opt/arkxmotion-studio/.env'
-keys = ('VELIANPAY_BASE_URL', 'VELIANPAY_API_KEY', 'VELIANPAY_ENABLED',
-        'VELIANPAY_CALLBACK_URL', 'VELIANPAY_WEBHOOK_SECRET')
-lines = open(p).read().splitlines() if os.path.exists(p) else []
-lines = [l for l in lines if l.split('=', 1)[0].strip() not in keys]
-for k in keys:
-    lines.append(k + '=' + os.environ.get(k, ''))
-open(p, 'w').write('\n'.join(lines) + '\n')
-os.chmod(p, 0o600)
-print('   .env diperbarui (nilai tidak dicetak)')
-PYENV
+            import os
+            p = '/opt/arkxmotion-studio/.env'
+            keys = ('VELIANPAY_BASE_URL', 'VELIANPAY_API_KEY', 'VELIANPAY_ENABLED',
+                    'VELIANPAY_CALLBACK_URL', 'VELIANPAY_WEBHOOK_SECRET')
+            lines = open(p).read().splitlines() if os.path.exists(p) else []
+            lines = [l for l in lines if l.split('=', 1)[0].strip() not in keys]
+            for k in keys:
+                lines.append(k + '=' + os.environ.get(k, ''))
+            open(p, 'w').write('\n'.join(lines) + '\n')
+            os.chmod(p, 0o600)
+            print('   .env diperbarui (nilai tidak dicetak)')
+            PYENV
 
             echo "📦 Memasang dependencies..."
             npm install
