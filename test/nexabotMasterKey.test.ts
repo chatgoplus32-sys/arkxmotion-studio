@@ -396,7 +396,7 @@ test('nilai kunci induk tidak pernah tersimpan di catatan pemakaian', async () =
   }
 })
 
-// ── Toko token: endpoint beli dimatikan ─────────────────────────────────────
+// ── Toko token: kunci induk TIDAK boleh bisa dibeli ────────────────────────
 
 test('pembelian token ditolak dan status token tidak berubah', async () => {
   jalankanSql(
@@ -410,10 +410,13 @@ test('pembelian token ditolak dan status token tidak berubah', async () => {
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenUntuk({ id: BERHAK, role: 'user' })}` },
     body: JSON.stringify({ token_ids: [id] }),
   })
-  assert.equal(res.status, 503, 'endpoint beli masih memproses pembelian')
+  assert.ok(
+    [400, 503].includes(res.status),
+    `pembelian kunci induk harus ditolak (dapat ${res.status})`,
+  )
 
   const sesudah = bacaSql<{ status: string }>(`SELECT status FROM tokens WHERE id = ?`, id)[0]
-  assert.equal(sesudah.status, 'available', 'status token berubah walau pembelian ditutup')
+  assert.equal(sesudah.status, 'available', 'status token berubah walau pembelian ditolak')
 })
 
 test('catatan pembelian menyensor nilai kunci induk', async () => {
