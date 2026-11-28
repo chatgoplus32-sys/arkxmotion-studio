@@ -1083,8 +1083,10 @@ export default function ImageToVideoPage() {
 
   const validateGenerate = (): string | null => {
     if (!prompt.trim()) return 'Prompt harus diisi'
-    if (!hasActiveKey && provider !== 'roboneo' && provider !== 'createpulse' && !(provider === 'nexabot' && nexabotServerReady))
-      return `Tidak ada API key aktif untuk ${PROVIDER_CONFIGS[provider].name}`
+    if (!hasActiveKey && provider !== 'roboneo' && provider !== 'createpulse' && !serverKeyReady)
+      return provider === 'posbot' || provider === 'seavi' || provider === 'runninghub'
+        ? `Top up saldo ${PROVIDER_CONFIGS[provider].name} dulu untuk generate.`
+        : `Tidak ada API key aktif untuk ${PROVIDER_CONFIGS[provider].name}`
     if (provider === 'createpulse' && user?.role !== 'admin' && cpBalance < cpCost(currentModel?.apiModel)) return 'Saldo CreatePulse tidak cukup. Top up minimal Rp 10.000'
     // NexaBot: paket aktif untuk mode ini = gratis, jadi cek saldo hanya saat tidak aktif.
     if (provider === 'nexabot' && user?.role !== 'admin' && !nbFreeForCurrentMode && (nbWallet?.balance ?? 0) < (nbWallet?.price ?? NEXABOT_PRICE_FALLBACK))
@@ -4017,7 +4019,7 @@ export default function ImageToVideoPage() {
                 Est. Cost: <b className="text-foreground font-mono">{provider === 'createpulse' ? `Rp ${cpCost(currentModel?.apiModel).toLocaleString('id-ID')}` : provider === 'nexabot' ? nbCostLabel : provider === 'posbot' ? `Rp ${totalCredits.toLocaleString('id-ID')}` : provider === 'runninghub' ? formatRp(rhCost) : provider === 'seavi' ? `${totalCredits} token` : `${totalCredits} credits`}</b>
                 {provider !== 'createpulse' && <BalanceBadge provider={provider} required={totalCredits} />}
               </div>
-              {!hasActiveKey && provider !== 'createpulse' && !(provider === 'nexabot' && nexabotServerReady) && (
+              {!hasActiveKey && provider !== 'createpulse' && !serverKeyReady && (
                 <a
                   href="/providers"
                   className="text-xs text-primary hover:underline flex items-center gap-1"

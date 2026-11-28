@@ -66,7 +66,7 @@ export async function precheckProviderBalance(
     case 'seavi':
       return precheckSeaviBalance(minCredits, { authToken: opts.authToken, isAdmin: opts.isAdmin })
     case 'posbot':
-      return precheckPosbotBalance(minCredits)
+      return precheckPosbotBalance(minCredits, { authToken: opts.authToken, isAdmin: opts.isAdmin })
     case 'createpulse': {
       if (opts.isCpAdmin) return { ok: true }
       const balance = opts.cpBalance
@@ -304,11 +304,30 @@ export async function precheckSeaviBalance(
  * Cek saldo PosBot dalam Rupiah (minIdr = harga model).
  * Cache dulu; kalau tidak cukup / belum diketahui, probe langsung ke relay.
  */
-export async function precheckPosbotBalance(minIdr: number): Promise<BalancePrecheckResult> {
+export async function precheckPosbotBalance(
+  minIdr: number,
+  opts: { authToken?: string; isAdmin?: boolean } = {},
+): Promise<BalancePrecheckResult> {
   const store = useProviderManager.getState()
   const keys = (store.keys.posbot || []).filter((k) => k.status !== 'invalid' && k.status !== 'expired')
   if (keys.length === 0) {
-    return { ok: false, error: 'Tidak ada API key PosBot. Tambahkan di halaman Providers.' }
+    // Member yang sudah top up saldo memakai kunci server PosBot — relai yang
+    // menyuntik, sama seperti Seavi/RunningHub. Kelayakan diputuskan server.
+    if (opts.authToken || opts.isAdmin) {
+      try {
+        const { fetchPosbotWallet } = await import('@/lib/posbotWallet')
+        const wallet = opts.authToken ? await fetchPosbotWallet(opts.authToken) : null
+        if (opts.isAdmin || wallet?.server_key?.available) return { ok: true, balance: wallet?.balance ?? null }
+        return {
+          ok: false,
+          balance: wallet?.balance ?? null,
+          error: wallet?.server_key?.reason || 'Top up saldo PosBot dulu di halaman Top Up PosBot.',
+        }
+      } catch {
+        return { ok: true } // jaringan gagal → alur generate yang memutuskan
+      }
+    }
+    return { ok: false, error: 'Login lalu top up saldo PosBot untuk generate.' }
   }
 
   const cached = keys.find((k) => k.balance != null && k.balance >= minIdr)
@@ -348,14 +367,22 @@ export async function precheckPosbotBalance(minIdr: number): Promise<BalancePrec
  * (klik untuk refresh) dan halaman Providers.
  */
 export async function refreshProviderBalance(
-  provider: string
+  provider: string,
+  opts: { authToken?: string } = {}
 ): Promise<BalancePrecheckResult & { email?: string }> {
   const store = useProviderManager.getState()
 
   if (provider === 'posbot') {
     const keys = store.keys.posbot || []
     const key = keys.find((k) => k.status !== 'invalid' && k.status !== 'expired') || keys[0]
-    if (!key) return { ok: false, error: 'Tidak ada API key PosBot di Providers.' }
+    if (!key) {
+      // Member top up saldo → relay memakai kunci server; baca saldo dari wallet.
+      const { fetchPosbotWallet } = await import('@/lib/posbotWallet')
+      const token = opts.authToken
+      const wallet = token ? await fetchPosbotWallet(token) : null
+      if (wallet) return { ok: true, balance: wallet.balance ?? 0 }
+      return { ok: false, error: 'Login lalu top up saldo PosBot untuk generate.' }
+    }
     const { fetchPosbotBalance } = await import('@/lib/posbot')
     const res = await fetchPosbotBalance(key.key)
     if (!res.ok) return { ok: false, error: res.error || 'Gagal cek saldo PosBot' }
