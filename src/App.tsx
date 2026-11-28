@@ -69,7 +69,6 @@ const CreatePulseTopupPage = lazyWithRetry(() => import('@/pages/CreatePulseTopu
 const MusePage = lazyWithRetry(() => import('@/pages/Muse'))
 const MuseTopupPage = lazyWithRetry(() => import('@/pages/MuseTopup'))
 const NexaBotTopupPage = lazyWithRetry(() => import('@/pages/NexaBotTopup'))
-const PremiumBoosterPage = lazyWithRetry(() => import('@/pages/PremiumBooster'))
 const AddonAkunPage = lazyWithRetry(() => import('@/pages/AddonAkun'))
 const AffiliateToolsPage = lazyWithRetry(() => import('@/pages/AffiliateTools'))
 const SeaviTopupPage = lazyWithRetry(() => import('@/pages/SeaviTopup'))
@@ -279,7 +278,6 @@ export default function App() {
                         <Route path="/generate/muse" element={<MusePage />} />
                         <Route path="/topup/muse" element={<MuseTopupPage />} />
                         <Route path="/topup/nexabot" element={<NexaBotTopupPage />} />
-                        <Route path="/booster" element={<PremiumBoosterPage />} />
                         <Route path="/addon-akun" element={<AddonAkunPage />} />
                         <Route path="/tools/affiliate" element={<AffiliateToolsPage />} />
                         <Route path="/topup/seavi" element={<SeaviTopupPage />} />

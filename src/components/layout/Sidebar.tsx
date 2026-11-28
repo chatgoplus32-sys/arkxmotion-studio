@@ -45,7 +45,6 @@ import {
   FileCog,
   Images,
   Clapperboard,
-  Rocket,
   HeartPulse,
   MailPlus,
   Share2,
@@ -108,7 +107,6 @@ const enhanceNav: NavItem[] = [
 const toolsNavBase: NavItem[] = [
   { label: 'Providers', href: '/providers', icon: <Zap className="h-4 w-4" /> },
   { label: 'Saldo Layanan', href: '/saldo', icon: <Wallet className="h-4 w-4" /> },
-  { label: 'Premium Booster', href: '/booster', icon: <Rocket className="h-4 w-4" /> },
   { label: 'Add-on Akun', href: '/addon-akun', icon: <MailPlus className="h-4 w-4" /> },
   { label: 'Affiliate Tools', href: '/tools/affiliate', icon: <Share2 className="h-4 w-4" /> },
   // Token Bank aktif: pembelian lewat QRIS VelianPay + konfirmasi otomatis.
