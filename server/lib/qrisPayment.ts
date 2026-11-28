@@ -3,7 +3,7 @@
  *
  * QRIS statis tidak punya API, jadi identitas pembayaran dipindahkan ke
  * NOMINAL: tiap pengajuan top-up diberi kode unik 3 digit (Rp 50.000 →
- * Rp 50.137). Parser email (paymentEmailWatcher) / BasuniPay mengekstrak
+ * Rp 50.137). Parser email (paymentEmailWatcher) / VelianPay mengekstrak
  * nominal masuk, lalu `matchIncomingAmount` mencocokkannya ke baris pending
  * lewat `amount_total` — approve/kredit saldo berjalan tanpa campur tangan
  * admin.
@@ -169,10 +169,10 @@ export function matchIncomingAmount(
   return { action: 'no_match', detail: `Tidak ada baris pending untuk ${amount}` }
 }
 
-type IncomingRef = { from?: string; subject?: string; source?: 'email' | 'android' | 'paste' | 'basunipay' }
+type IncomingRef = { from?: string; subject?: string; source?: 'email' | 'android' | 'paste' | 'velianpay' }
 
 /**
- * Approve baris top-up langsung dari identitas tabel+id (dipakai BasuniPay:
+ * Approve baris top-up langsung dari identitas tabel+id (dipakai VelianPay:
  * webhook/polling status tahu PERSIS baris mana yang dibayar, tidak perlu
  * mencocokkan nominal). Logika kredit/tanda-lunas sama dengan pencocokan.
  */

@@ -4,7 +4,7 @@ import { authenticateToken, AuthRequest } from '../middleware/auth.js'
 import { MUSE_MIN_TOPUP } from '../../shared/pricing.js'
 import { providerUnitCharge } from '../lib/providerPricing.js'
 import { nextUniqueCode } from '../lib/qrisPayment.js'
-import { createBasunipayPayment } from '../lib/basunipay.js'
+import { createVelianpayPayment } from '../lib/velianpay.js'
 import { walletUserIdFor } from '../lib/effectiveWallet.js'
 
 const router = Router()
@@ -39,7 +39,7 @@ router.post('/topup', authenticateToken, async (req: AuthRequest, res: Response)
       'INSERT INTO muse_topup (user_id, amount, unique_code, amount_total, proof_note, status) VALUES (?, ?, ?, ?, ?, ?)'
     ).run(userId, amount, unique_code, amount_total, proof_note || '', 'pending')
     const refId = Number(result.lastInsertRowid)
-    const basunipay = await createBasunipayPayment({
+    const velianpay = await createVelianpayPayment({
       refTable: 'muse_topup',
       refId,
       userId,
@@ -47,7 +47,7 @@ router.post('/topup', authenticateToken, async (req: AuthRequest, res: Response)
       description: `Top up MuseAI — user #${userId}`,
     })
     const topup = db.prepare('SELECT * FROM muse_topup WHERE id = ?').get(refId)
-    res.status(201).json({ topup, basunipay, message: 'Topup diajukan — bayar QRIS BasuNiPay, saldo otomatis masuk' })
+    res.status(201).json({ topup, velianpay, message: 'Topup diajukan — bayar QRIS VelianPay, saldo otomatis masuk' })
   } catch (error) {
     console.error('Muse topup error:', error)
     res.status(500).json({ error: 'Internal server error' })

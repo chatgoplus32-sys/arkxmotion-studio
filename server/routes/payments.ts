@@ -7,9 +7,9 @@ import {
   paymentEmailReady,
 } from '../lib/paymentEmailWatcher.js'
 import { QRIS_TABLES, extractAmounts, matchIncomingAmount, approveTopupRef, logPaymentVerify } from '../lib/qrisPayment.js'
-import { basunipayReady, basunipayStatus, PAID_STATUSES, pollBasunipayPayments, createBasunipayPayment } from '../lib/basunipay.js'
+import { velianpayReady, velianpayStatus, PAID_STATUSES, pollVelianpayPayments, createVelianpayPayment } from '../lib/velianpay.js'
 
-type BasunipayCheckout = {
+type VelianpayCheckout = {
   checkout_url: string
   payable_amount: number
   unique_code: number
@@ -17,18 +17,18 @@ type BasunipayCheckout = {
 }
 
 /**
- * Checkout BasuniPay terbaru yang masih pending untuk satu baris pengajuan.
+ * Checkout VelianPay terbaru yang masih pending untuk satu baris pengajuan.
  * Dipakai ulang supaya halaman yang di-refresh tidak membuat order baru.
  */
-function findPendingCheckout(refTable: string, refId: number): BasunipayCheckout | undefined {
+function findPendingCheckout(refTable: string, refId: number): VelianpayCheckout | undefined {
   return db
     .prepare(
       `SELECT checkout_url, payable_amount, unique_code, qris_image
-         FROM basunipay_payment
+         FROM velianpay_payment
         WHERE ref_table = ? AND ref_id = ? AND status = 'pending'
         ORDER BY id DESC LIMIT 1`,
     )
-    .get(refTable, refId) as BasunipayCheckout | undefined
+    .get(refTable, refId) as VelianpayCheckout | undefined
 }
 
 /**
@@ -62,16 +62,16 @@ router.get('/status', authenticateToken, requireAdmin, (_req: AuthRequest, res: 
          SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
          SUM(CASE WHEN status = 'paid' AND paid_at >= datetime('now', '-24 hours') THEN 1 ELSE 0 END) AS paid_24h,
          MAX(created_at) AS last_created_at
-       FROM basunipay_payment`,
+       FROM velianpay_payment`,
     ).get() as { pending: number | null; paid_24h: number | null; last_created_at: string | null }
-    const basunipay = {
-      ready: basunipayReady(),
+    const velianpay = {
+      ready: velianpayReady(),
       pending: bp.pending ?? 0,
       paid_24h: bp.paid_24h ?? 0,
       last_created_at: bp.last_created_at,
     }
 
-    res.json({ email, ready: paymentEmailReady(), basunipay, queues, unmatched_24h: unmatched.n })
+    res.json({ email, ready: paymentEmailReady(), velianpay, queues, unmatched_24h: unmatched.n })
   } catch (error) {
     console.error('Payment status error:', error)
     res.status(500).json({ error: 'Internal server error' })
@@ -80,14 +80,14 @@ router.get('/status', authenticateToken, requireAdmin, (_req: AuthRequest, res: 
 
 router.post('/check-now', authenticateToken, requireAdmin, async (_req: AuthRequest, res: Response) => {
   try {
-    const bpReady = basunipayReady()
+    const bpReady = velianpayReady()
     const emailReady = paymentEmailReady()
     if (!bpReady && !emailReady) {
-      return res.status(400).json({ error: 'Belum ada jalur verifikasi aktif — set BASUNIPAY_* atau PAYMENT_IMAP_* di .env' })
+      return res.status(400).json({ error: 'Belum ada jalur verifikasi aktif — set VELIANPAY_* atau PAYMENT_IMAP_* di .env' })
     }
-    const basunipay = bpReady ? await pollBasunipayPayments() : null
+    const velianpay = bpReady ? await pollVelianpayPayments() : null
     const email = emailReady ? await checkPaymentEmailOnce() : null
-    res.json({ ok: !email?.error, basunipay, email })
+    res.json({ ok: !email?.error, velianpay, email })
   } catch (error) {
     console.error('Payment check-now error:', error)
     res.status(500).json({ error: 'Internal server error' })
@@ -150,10 +150,10 @@ router.post('/match-text', authenticateToken, requireAdmin, (req: AuthRequest, r
 })
 
 /**
- * Siapkan (atau ambil ulang) QRIS BasuniPay untuk pengajuan yang masih
+ * Siapkan (atau ambil ulang) QRIS VelianPay untuk pengajuan yang masih
  * pending — tombol "Coba lagi" di halaman top up / pembayaran.
  *
- * Kenapa perlu: checkout pertama bisa gagal dibuat (jaringan/API BasuniPay
+ * Kenapa perlu: checkout pertama bisa gagal dibuat (jaringan/API VelianPay
  * sedang bermasalah). Tanpa endpoint ini satu-satunya jalan adalah mengajukan
  * ulang → baris pengajuan dobel. Di sini HANYA checkout yang dibuat baru;
  * baris pengajuan, nominal, dan kode unik tetap yang lama. QRIS statis lama
@@ -178,26 +178,26 @@ router.post('/qris/recreate', authenticateToken, async (req: AuthRequest, res: R
     const existing = findPendingCheckout(refTable, refId)
     if (existing?.checkout_url) return res.json(existing)
 
-    if (!basunipayReady()) {
-      return res.status(503).json({ error: 'QRIS BasuNiPay sedang tidak tersedia — hubungi admin' })
+    if (!velianpayReady()) {
+      return res.status(503).json({ error: 'QRIS VelianPay sedang tidak tersedia — hubungi admin' })
     }
-    const bp = await createBasunipayPayment({
+    const bp = await createVelianpayPayment({
       refTable,
       refId,
       userId: row.user_id,
       baseAmount: row.amount,
       description: t.label,
     })
-    if (!bp) return res.status(502).json({ error: 'QRIS BasuNiPay gagal disiapkan — coba lagi' })
+    if (!bp) return res.status(502).json({ error: 'QRIS VelianPay gagal disiapkan — coba lagi' })
     res.json(bp)
   } catch (error) {
-    console.error('Basunipay recreate error:', error)
+    console.error('Velianpay recreate error:', error)
     res.status(500).json({ error: 'Internal server error' })
   }
 })
 
 /**
- * QRIS BasuniPay untuk pembayaran join Pro pada halaman status pendaftaran
+ * QRIS VelianPay untuk pembayaran join Pro pada halaman status pendaftaran
  * (belum login, identitas = email). Mengembalikan checkout terbaru bila ada;
  * kalau belum pernah dibuat, dibuat sekarang. Hanya untuk akun yang masih
  * belum aktif — akun approved tidak punya tagihan pending.
@@ -221,27 +221,27 @@ router.post('/qris/membership', async (req, res: Response) => {
     const existing = findPendingCheckout('membership_payments', payment.id)
     if (existing?.checkout_url) return res.json(existing)
 
-    if (!basunipayReady()) {
-      return res.status(503).json({ error: 'QRIS BasuNiPay sedang tidak tersedia — hubungi admin' })
+    if (!velianpayReady()) {
+      return res.status(503).json({ error: 'QRIS VelianPay sedang tidak tersedia — hubungi admin' })
     }
-    const bp = await createBasunipayPayment({
+    const bp = await createVelianpayPayment({
       refTable: 'membership_payments',
       refId: payment.id,
       userId: user.id,
       baseAmount: payment.amount,
       description: `Join Pro — ${email}`,
     })
-    if (!bp) return res.status(502).json({ error: 'QRIS BasuNiPay gagal disiapkan — coba lagi' })
+    if (!bp) return res.status(502).json({ error: 'QRIS VelianPay gagal disiapkan — coba lagi' })
     res.json(bp)
   } catch (error) {
-    console.error('Basunipay membership QR error:', error)
+    console.error('Velianpay membership QR error:', error)
     res.status(500).json({ error: 'Internal server error' })
   }
 })
 
 /**
- * Paksa verifikasi segera ke BasuNiPay untuk satu pengajuan pending — admin
- * tidak perlu menunggu poller 2 menit. Kalau BasuNiPay sudah menandai order
+ * Paksa verifikasi segera ke VelianPay untuk satu pengajuan pending — admin
+ * tidak perlu menunggu poller 2 menit. Kalau VelianPay sudah menandai order
  * sebagai lunas, auto-approve akan trigger sekarang (jalan mesinya yang sama
  * dengan poller, jadi konsisten).
  */
@@ -270,31 +270,31 @@ router.post(
       }
 
       const checkout = db.prepare(
-        'SELECT id, order_id, payable_amount FROM basunipay_payment WHERE ref_table = ? AND ref_id = ? AND status = ? ORDER BY id DESC LIMIT 1',
+        'SELECT id, order_id, payable_amount FROM velianpay_payment WHERE ref_table = ? AND ref_id = ? AND status = ? ORDER BY id DESC LIMIT 1',
       ).get(refTable, refId, 'pending') as
         | { id: number; order_id: string; payable_amount: number }
         | undefined
       if (!checkout) {
-        return res.status(404).json({ error: 'Checkout BasuNiPay pending tidak ditemukan' })
+        return res.status(404).json({ error: 'Checkout VelianPay pending tidak ditemukan' })
       }
 
-      if (!basunipayReady()) {
-        return res.status(503).json({ error: 'QRIS BasuNiPay sedang tidak tersedia' })
+      if (!velianpayReady()) {
+        return res.status(503).json({ error: 'QRIS VelianPay sedang tidak tersedia' })
       }
 
-      const d = await basunipayStatus(checkout.order_id)
+      const d = await velianpayStatus(checkout.order_id)
       const st = String(d?.status || '').toLowerCase()
       if (!PAID_STATUSES.has(st)) {
         return res.status(200).json({
           verified: false,
           status: st || 'unknown',
-          detail: 'BasuNiPay belum melaporkan lunas — coba lagi nanti.',
+          detail: 'VelianPay belum melaporkan lunas — coba lagi nanti.',
         })
       }
 
       const r = approveTopupRef(refTable, refId, Number(checkout.payable_amount) || 0, {
-        source: 'basunipay',
-        from: 'basunipay-api-force-verify',
+        source: 'velianpay',
+        from: 'velianpay-api-force-verify',
         subject: checkout.order_id,
       })
       if (!['auto_approved', 'auto_activated', 'already_approved'].includes(r.action)) {
@@ -302,12 +302,12 @@ router.post(
       }
 
       db.prepare(
-        "UPDATE basunipay_payment SET status = 'paid', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'pending'",
+        "UPDATE velianpay_payment SET status = 'paid', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'pending'",
       ).run(checkout.id)
 
       return res.json({ verified: true, action: r.action, detail: r.detail })
     } catch (error) {
-      console.error('Basunipay force verify error:', error)
+      console.error('Velianpay force verify error:', error)
       res.status(500).json({ error: 'Internal server error' })
     }
   },

@@ -3,7 +3,7 @@ import db from '../db.js'
 import { authenticateToken, requireAdmin, AuthRequest } from '../middleware/auth.js'
 import { MANUAL_TOPUP_MAX, MANUAL_TOPUP_MIN } from '../../shared/pricing.js'
 import { nextUniqueCode } from '../lib/qrisPayment.js'
-import { createBasunipayPayment } from '../lib/basunipay.js'
+import { createVelianpayPayment } from '../lib/velianpay.js'
 
 /**
  * Top-up manual untuk provider tanpa dompet (Roboneo/Framia, dll.).
@@ -73,9 +73,9 @@ router.post('/request', authenticateToken, async (req: AuthRequest, res: Respons
     ).run(userId, provider, amount, unique_code, amount_total, note, 'pending')
     const refId = Number(result.lastInsertRowid)
 
-    // BasuniPay: checkout QRIS dinamis. Bila sukses, baris berubah ke
-    // payable_amount BasuniPay dan response membawa link checkout.
-    const basunipay = await createBasunipayPayment({
+    // VelianPay: checkout QRIS dinamis. Bila sukses, baris berubah ke
+    // payable_amount VelianPay dan response membawa link checkout.
+    const velianpay = await createVelianpayPayment({
       refTable: 'provider_topup_request',
       refId,
       userId,
@@ -84,7 +84,7 @@ router.post('/request', authenticateToken, async (req: AuthRequest, res: Respons
     })
 
     const request = findRequest(refId)
-    res.status(201).json({ request, basunipay, message: 'Permintaan top-up terkirim, menunggu verifikasi admin' })
+    res.status(201).json({ request, velianpay, message: 'Permintaan top-up terkirim, menunggu verifikasi admin' })
   } catch (error) {
     console.error('Manual topup request error:', error)
     res.status(500).json({ error: 'Internal server error' })

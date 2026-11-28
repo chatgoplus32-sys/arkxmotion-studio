@@ -70,7 +70,7 @@ router.patch('/approve', authenticateToken, requireAdmin, (req: AuthRequest, res
     if (!topup) return res.status(404).json({ error: 'Pending topup not found' })
 
     // Paket Unlimited NexaBot: approve = aktifkan masa berlaku, BUKAN menambah
-    // saldo. Logika identik dengan aktivasi otomatis via BasuniPay — satu
+    // saldo. Logika identik dengan aktivasi otomatis via VelianPay — satu
     // sumber kebenaran di server/lib/unlimitedActivation.ts.
     if (topup.kind === 'unlimited') {
       const act = activateUnlimitedTopup(topup, admin_note || '')

@@ -1,5 +1,5 @@
 /**
- * Pendaftaran baru → bayar QRIS BasuNiPay → akun langsung aktif TANPA admin.
+ * Pendaftaran baru → bayar QRIS VelianPay → akun langsung aktif TANPA admin.
  *
  * Registrasi sengaja membuat `users.approved = 0` (gerbang login 403) plus
  * satu baris `membership_payments` pending. Begitu pembayaran terverifikasi,
@@ -7,10 +7,10 @@
  * terbuka dan fitur Pro langsung kepakai.
  *
  * Dua jalur verifikasi diuji di sini:
- *  1. poll API BasuNiPay (dipicu webhook / internal 2 menit) — status selalu
- *     dicek ke API BasuNiPay, body webhook tidak dipercaya;
+ *  1. poll API VelianPay (dipicu webhook / internal 2 menit) — status selalu
+ *     dicek ke API VelianPay, body webhook tidak dipercaya;
  *  2. pencocokan nominal `matchIncomingAmount` (email notifikasi bank /
- *     paste mutasi) — jalur fallback bila checkout BasuNiPay gagal.
+ *     paste mutasi) — jalur fallback bila checkout VelianPay gagal.
  *
  * Kedua jalur memakai mesin yang sama: `handleRow` →
  * `approveMembershipPaymentRow`.
@@ -20,13 +20,13 @@ import assert from 'node:assert/strict'
 
 process.env.ARKXMOTION_DB_PATH = ':memory:'
 process.env.ALERT_WEBHOOK_URL = ''
-process.env.BASUNIPAY_ENABLED = 'true'
-process.env.BASUNIPAY_API_KEY = 'test-only'
+process.env.VELIANPAY_ENABLED = 'true'
+process.env.VELIANPAY_API_KEY = 'test-only'
 const { default: db } = await import('../server/db.js')
-const { pollBasunipayPayments } = await import('../server/lib/basunipay.js')
+const { pollVelianpayPayments } = await import('../server/lib/velianpay.js')
 const { matchIncomingAmount } = await import('../server/lib/qrisPayment.js')
 
-// API BasuNiPay selalu menjawab "lunas" — tes ini soal EFEK approve,
+// API VelianPay selalu menjawab "lunas" — tes ini soal EFEK approve,
 // bukan soal parsing response provider.
 const originalFetch = globalThis.fetch
 globalThis.fetch = async () => Response.json({ success: true, data: { status: 'paid' } })
@@ -37,10 +37,10 @@ const FEE = 250000
 
 /**
  * Buat satu registrasi persis seperti `POST /api/auth/register`
- * (approved=0) + pembayaran member pending. `withBasunipay` juga menaruh
- * baris checkout di `basunipay_payment` supaya poller menemukannya.
+ * (approved=0) + pembayaran member pending. `withVelianpay` juga menaruh
+ * baris checkout di `velianpay_payment` supaya poller menemukannya.
  */
-function seedRegistration(total: number, withBasunipay: boolean) {
+function seedRegistration(total: number, withVelianpay: boolean) {
   const userId = 900000 + (total % 100000)
   db.prepare(
     "INSERT INTO users (id,email,password,name,role,approved,email_verified) VALUES (?,?,?,'Tester','user',0,1)",
@@ -50,9 +50,9 @@ function seedRegistration(total: number, withBasunipay: boolean) {
     'INSERT INTO membership_payments (user_id, amount, amount_total, unique_code) VALUES (?, ?, ?, ?)',
   ).run(userId, FEE, total, uniqueCode)
   const payment = db.prepare('SELECT id FROM membership_payments WHERE user_id = ?').get(userId) as { id: number }
-  if (withBasunipay) {
+  if (withVelianpay) {
     db.prepare(
-      `INSERT INTO basunipay_payment (order_id, ref_table, ref_id, user_id, base_amount, unique_code, payable_amount)
+      `INSERT INTO velianpay_payment (order_id, ref_table, ref_id, user_id, base_amount, unique_code, payable_amount)
        VALUES (?, 'membership_payments', ?, ?, ?, ?, ?)`,
     ).run(`arkx_membership_${userId}`, payment.id, userId, FEE, uniqueCode, total)
   }
@@ -85,10 +85,10 @@ test('sebelum bayar: akun tetap terkunci (approved=0)', () => {
   assert.equal(u.plan, 'free')
 })
 
-test('poll BasuNiPay mengaktifkan akun registrasi tanpa sentuh admin', async () => {
+test('poll VelianPay mengaktifkan akun registrasi tanpa sentuh admin', async () => {
   const { userId, paymentId } = seedRegistration(250412, true)
 
-  const r = await pollBasunipayPayments()
+  const r = await pollVelianpayPayments()
   assert.ok(r.paid >= 1, `minimal satu pembayaran lunas (dapat ${r.paid})`)
 
   assert.equal(paymentRow(paymentId).status, 'approved', 'baris pembayaran disetujui')
@@ -101,13 +101,13 @@ test('poll BasuNiPay mengaktifkan akun registrasi tanpa sentuh admin', async () 
 
 test('approve kedua kali tidak menggandakan aktivasi', async () => {
   const { userId, paymentId } = seedRegistration(250555, true)
-  await pollBasunipayPayments()
+  await pollVelianpayPayments()
   const before = activations()
   assert.equal(paymentRow(paymentId).status, 'approved')
 
   // Siklus kedua: baris checkout sudah 'paid' — tidak boleh diproses ulang,
   // dan approve manual/poll ganda tidak boleh menimpa atau dobel-log.
-  const again = await pollBasunipayPayments()
+  const again = await pollVelianpayPayments()
   assert.equal(again.paid, 0, 'baris lunas tidak dipilih poller lagi')
   assert.equal(activations(), before, 'tidak ada aktivasi ganda')
 
