@@ -3496,8 +3496,8 @@ export default function ImageToVideoPage() {
             )}
             {user?.role !== 'admin' && !nbFreeForCurrentMode && (nbWallet?.balance ?? 0) < (nbWallet?.price ?? NEXABOT_PRICE_FALLBACK) && (
               <div className="mt-2 text-[11px]">
-                <a href="/booster" className="text-primary hover:underline font-medium">
-                  {NEXABOT_BOOSTER_COMING_SOON ? 'Top Up Saldo / Lihat Paket →' : 'Top Up Saldo / Beli Premium Booster →'}
+                <a href="/topup/nexabot" className="text-primary hover:underline font-medium">
+                  Top Up Saldo NexaBot →
                 </a>
               </div>
             )}

@@ -6,7 +6,7 @@
 // Varian ber-scope (Premium Booster) hanya membebaskan keluarga model yang
 // server kenal; klien cuma menampilkan. See isBoosterModelName (shared/pricing.ts).
 //
-// Dipakai halaman /topup/nexabot, /booster, dan alur generate (Image to Video,
+// Dipakai halaman /topup/nexabot dan alur generate (Image to Video,
 // AI Video Edit, Edit Gambar).
 import { rememberPendingCharge } from './pendingCharges'
 const API = '/api/nexabot'

@@ -18,7 +18,6 @@ import {
   Key,
   ClipboardCheck,
   Activity,
-  Lock,
   Wallet,
   Wand2,
   BarChart3,
@@ -56,7 +55,6 @@ interface NavItem {
   href: string
   icon: ReactNode
   badge?: string
-  comingSoon?: boolean
   pro?: boolean
 }
 
@@ -213,24 +211,7 @@ export function Sidebar({ collapsed = false, onClose }: SidebarProps) {
         </div>
       )}
       {items.map((item) => (
-        item.comingSoon ? (
-          <div
-            key={item.href}
-            className={cn(
-              'flex cursor-not-allowed items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] opacity-50',
-              'text-muted-foreground'
-            )}
-            title={collapsed ? `${item.label} (Coming Soon)` : `${item.label} - Coming Soon`}
-          >
-            {item.icon}
-            {!collapsed && <span className="line-through">{item.label}</span>}
-            {!collapsed && (
-              <span className="ml-auto flex items-center gap-1 rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                <Lock className="h-2.5 w-2.5" /> Soon
-              </span>
-            )}
-          </div>
-        ) : item.href.startsWith('http') ? (
+        item.href.startsWith('http') ? (
           <a
             key={item.href}
             href={item.href}
