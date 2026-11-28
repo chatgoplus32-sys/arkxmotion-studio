@@ -1,6 +1,6 @@
 /**
  * Aktivasi Paket Unlimited NexaBot — dipakai baik oleh approve manual admin
- * (`/api/admin/topup/approve`) maupun oleh verifikasi otomatis BasuniPay.
+ * (`/api/admin/topup/approve`) maupun oleh verifikasi otomatis VelianPay.
  *
  * Paket aktif saat pembayaran diverifikasi, dengan penumpukan masa berlaku:
  * pembelian baru menumpuk di atas expiry TERJAUH yang sudah disetujui (per

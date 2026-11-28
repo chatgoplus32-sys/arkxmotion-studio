@@ -4,8 +4,8 @@ import { Section, Button, Badge } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { Wallet, Clock, CheckCircle, XCircle, ExternalLink, Sparkles, Zap } from 'lucide-react'
-import { adminWhatsappLink, formatRp, recreateBasunipayQris } from '@/lib/payment'
-import { QrisPanel, BasunipayCheckoutButton } from '@/components/QrisPayment'
+import { adminWhatsappLink, formatRp, recreateVelianpayQris } from '@/lib/payment'
+import { QrisPanel, VelianpayCheckoutButton } from '@/components/QrisPayment'
 import {
   fetchNexabotWallet,
   nexabotPackageName,
@@ -49,7 +49,7 @@ export default function NexaBotTopupPage() {
   const [mode, setMode] = useState<'balance' | 'package'>('balance')
   const [step, setStep] = useState<'select' | 'pay' | 'confirm'>('select')
   const [submitted, setSubmitted] = useState<Topup | null>(null)
-  const [basunipay, setBasunipay] = useState<{ checkout_url?: string; payable_amount?: number; qris_image?: string } | null>(null)
+  const [velianpay, setVelianpay] = useState<{ checkout_url?: string; payable_amount?: number; qris_image?: string } | null>(null)
   const [qrRetrying, setQrRetrying] = useState(false)
   // Varian paket yang sedang dipilih user (Mingguan/Bulanan/Tahunan).
   const [selectedSlug, setSelectedSlug] = useState<string>(NEXABOT_PACKAGE_FALLBACKS[0].slug)
@@ -100,7 +100,7 @@ export default function NexaBotTopupPage() {
     fetchTopups()
   }, [fetchBalance, fetchTopups])
 
-  // Auto-refresh: begitu pembayaran diverifikasi otomatis (BasuNiPay /
+  // Auto-refresh: begitu pembayaran diverifikasi otomatis (VelianPay /
   // notifikasi bank), saldo/paket & status baris berubah tanpa reload
   // halaman. Polling hanya jalan selama ada yang menunggu — begitu lunas,
   // berhenti.
@@ -146,7 +146,7 @@ export default function NexaBotTopupPage() {
         // Simpan baris yang diajukan — amount_total (nominal + kode unik)
         // inilah yang kamu bayar dan yang dicocokkan parser email.
         setSubmitted(data.topup || data.package || null)
-        setBasunipay(data.basunipay || null)
+        setVelianpay(data.velianpay || null)
         addToast(
           endpoint === 'package'
             ? `Paket ${pkg.label} ${pkg.days} hari diajukan — ${formatRp(pkg.price)}`
@@ -176,18 +176,18 @@ export default function NexaBotTopupPage() {
     setStep('pay')
   }
 
-  // Checkout BasuNiPay gagal dibuat (jaringan/API)? Siapkan ulang untuk baris
+  // Checkout VelianPay gagal dibuat (jaringan/API)? Siapkan ulang untuk baris
   // yang sama — tanpa mengajukan top up baru dan tanpa QRIS statis lama.
   const handleRetryQris = async () => {
     if (!token || !submitted || qrRetrying) return
     setQrRetrying(true)
-    const bp = await recreateBasunipayQris(token, 'nexabot_topup', submitted.id)
+    const bp = await recreateVelianpayQris(token, 'nexabot_topup', submitted.id)
     setQrRetrying(false)
     if (bp) {
-      setBasunipay(bp)
-      addToast('QRIS BasuNiPay siap — bayar sesuai nominal', 'success')
+      setVelianpay(bp)
+      addToast('QRIS VelianPay siap — bayar sesuai nominal', 'success')
     } else {
-      addToast('QRIS BasuNiPay masih gagal disiapkan — coba lagi', 'error')
+      addToast('QRIS VelianPay masih gagal disiapkan — coba lagi', 'error')
     }
   }
 
@@ -379,10 +379,10 @@ export default function NexaBotTopupPage() {
       {step === 'pay' && (
         <Section
           title="Buat Pengajuan"
-          sub="QRIS BasuNiPay — nominal tepat (termasuk kode unik) muncul di langkah berikutnya"
+          sub="QRIS VelianPay — nominal tepat (termasuk kode unik) muncul di langkah berikutnya"
         >
           {/* Nominal TEPAT (dengan kode unik) baru diketahui setelah pengajuan
-              dibuat di server, jadi QRIS BasuNiPay tampil di langkah berikutnya.
+              dibuat di server, jadi QRIS VelianPay tampil di langkah berikutnya.
               Membayar nominal bulat di langkah ini tidak akan cocok dengan
               notifikasi bank dan verifikasi otomatisnya gagal. */}
           <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 mb-4 text-sm">
@@ -435,8 +435,8 @@ export default function NexaBotTopupPage() {
         >
           {submitted && !lunas && (
             <>
-              <BasunipayCheckoutButton url={basunipay?.checkout_url} payable={basunipay?.payable_amount} image={basunipay?.qris_image} />
-              {!(basunipay?.checkout_url || basunipay?.qris_image) && (
+              <VelianpayCheckoutButton url={velianpay?.checkout_url} payable={velianpay?.payable_amount} image={velianpay?.qris_image} />
+              {!(velianpay?.checkout_url || velianpay?.qris_image) && (
                 <QrisPanel
                   amountLabel={`${mode === 'package' ? `${pkg.label}` : 'Top up saldo'} · ${formatRp(submitted.amount)}`}
                   exactAmount={submitted.amount_total ?? undefined}

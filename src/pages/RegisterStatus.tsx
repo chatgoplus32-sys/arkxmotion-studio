@@ -7,8 +7,8 @@ import {
   buildWaPaymentUrl,
   getMembershipPricing,
 } from '@/lib/membership'
-import { BasunipayCheckoutButton } from '@/components/QrisPayment'
-import { fetchMembershipQris, type BasunipayCheckout } from '@/lib/payment'
+import { VelianpayCheckoutButton } from '@/components/QrisPayment'
+import { fetchMembershipQris, type VelianpayCheckout } from '@/lib/payment'
 
 interface PaymentInfo {
   amount: number
@@ -31,13 +31,13 @@ export default function RegisterStatusPage() {
   const [error, setError] = useState('')
   const [payNote, setPayNote] = useState('')
   const [fee, setFee] = useState(DEFAULT_MEMBERSHIP_FEE)
-  // QRIS BasuNiPay milik pembayaran yang sedang menunggu (bukan QRIS statis).
-  const [checkout, setCheckout] = useState<BasunipayCheckout | null>(null)
+  // QRIS VelianPay milik pembayaran yang sedang menunggu (bukan QRIS statis).
+  const [checkout, setCheckout] = useState<VelianpayCheckout | null>(null)
   const [checkoutLoading, setCheckoutLoading] = useState(false)
   const [checkoutError, setCheckoutError] = useState(false)
   const checkoutFetchedFor = useRef<string | null>(null)
 
-  // Muat QRIS BasuNiPay untuk pendaftaran ini (sekali, atau saat "coba lagi").
+  // Muat QRIS VelianPay untuk pendaftaran ini (sekali, atau saat "coba lagi").
   const loadCheckout = useCallback(async (force = false) => {
     if (!force && checkoutFetchedFor.current === email) return
     checkoutFetchedFor.current = email
@@ -73,7 +73,7 @@ export default function RegisterStatusPage() {
     return () => clearInterval(t)
   }, [result, email])
 
-  // Begitu ada pembayaran pending, siapkan QRIS BasuNiPay sekali (detail QR
+  // Begitu ada pembayaran pending, siapkan QRIS VelianPay sekali (detail QR
   // tidak berubah; polling hanya menyegarkan status).
   useEffect(() => {
     if (result?.found && !result.approved) void loadCheckout()
@@ -245,7 +245,7 @@ export default function RegisterStatusPage() {
                             ? `Ditolak admin: ${result.payment.adminNote || 'tanpa keterangan'}. Kirim ulang pembayaran atau hubungi admin.`
                             : result.payment
                               ? 'Pembayaran diverifikasi otomatis — akun aktif begitu dana masuk.'
-                              : 'Bayar via QRIS BasuNiPay — klik tombol Bayar, akun aktif otomatis.'}
+                              : 'Bayar via QRIS VelianPay — klik tombol Bayar, akun aktif otomatis.'}
                       </p>
                     </div>
                   </div>
@@ -260,11 +260,11 @@ export default function RegisterStatusPage() {
                     <span className="text-sm font-medium">Konfirmasi Pembayaran (QRIS)</span>
                   </div>
                   <p className="text-xs text-muted-foreground mb-3">
-                    Belum bayar? Klik tombol Bayar untuk membuka checkout BasuNiPay — akun aktif otomatis begitu pembayaran masuk.
+                    Belum bayar? Klik tombol Bayar untuk membuka checkout VelianPay — akun aktif otomatis begitu pembayaran masuk.
                   </p>
                   {checkout ? (
                     <div className="mb-3">
-                      <BasunipayCheckoutButton url={checkout.checkout_url} payable={checkout.payable_amount} image={checkout.qris_image} />
+                      <VelianpayCheckoutButton url={checkout.checkout_url} payable={checkout.payable_amount} image={checkout.qris_image} />
                     </div>
                   ) : (
                     <div className="mb-3 rounded-lg border border-dashed border-border p-4 text-center">
@@ -274,8 +274,8 @@ export default function RegisterStatusPage() {
                         <>
                           <p className="text-xs text-muted-foreground">
                             {checkoutError
-                              ? 'QRIS BasuNiPay belum siap — coba muat ulang.'
-                              : 'QRIS BasuNiPay tidak tersedia untuk email ini.'}
+                              ? 'QRIS VelianPay belum siap — coba muat ulang.'
+                              : 'QRIS VelianPay tidak tersedia untuk email ini.'}
                           </p>
                           <button
                             type="button"

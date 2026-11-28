@@ -4,8 +4,8 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Badge, Input, Select, Textarea } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
-import { adminWhatsappLink, formatRp, recreateBasunipayQris } from '@/lib/payment'
-import { QrisPanel, BasunipayCheckoutButton } from '@/components/QrisPayment'
+import { adminWhatsappLink, formatRp, recreateVelianpayQris } from '@/lib/payment'
+import { QrisPanel, VelianpayCheckoutButton } from '@/components/QrisPayment'
 import {
   MANUAL_PROVIDERS,
   MANUAL_TOPUP_MAX,
@@ -66,7 +66,7 @@ export default function ManualTopupPage() {
   const [loading, setLoading] = useState(true)
   const [requests, setRequests] = useState<ManualTopupRequest[]>([])
   const [lastSubmitted, setLastSubmitted] = useState<ManualTopupRequest | null>(null)
-  const [basunipay, setBasunipay] = useState<{ checkout_url?: string; payable_amount?: number; qris_image?: string } | null>(null)
+  const [velianpay, setVelianpay] = useState<{ checkout_url?: string; payable_amount?: number; qris_image?: string } | null>(null)
   const [qrRetrying, setQrRetrying] = useState(false)
 
   const load = useCallback(async () => {
@@ -109,7 +109,7 @@ export default function ManualTopupPage() {
         addToast(data.message || 'Permintaan terkirim', 'success')
         setRequests((prev) => [data.request, ...prev])
         setLastSubmitted(data.request)
-        setBasunipay(data.basunipay || null)
+        setVelianpay(data.velianpay || null)
         setAmount('')
         setNote('')
       } else {
@@ -132,18 +132,18 @@ export default function ManualTopupPage() {
       : `Halo admin, saya sudah ajukan top up manual ${manualProviderLabel(provider)} ${formatRp(nominal || 0)}. Mohon diverifikasi.`,
   )
 
-  // Checkout BasuNiPay gagal dibuat (jaringan/API)? Siapkan ulang untuk baris
+  // Checkout VelianPay gagal dibuat (jaringan/API)? Siapkan ulang untuk baris
   // yang sama — tanpa mengajukan top up baru dan tanpa QRIS statis lama.
   const handleRetryQris = async () => {
     if (!token || !lastSubmitted || qrRetrying) return
     setQrRetrying(true)
-    const bp = await recreateBasunipayQris(token, 'provider_topup_request', lastSubmitted.id)
+    const bp = await recreateVelianpayQris(token, 'provider_topup_request', lastSubmitted.id)
     setQrRetrying(false)
     if (bp) {
-      setBasunipay(bp)
-      addToast('QRIS BasuNiPay siap — bayar sesuai nominal', 'success')
+      setVelianpay(bp)
+      addToast('QRIS VelianPay siap — bayar sesuai nominal', 'success')
     } else {
-      addToast('QRIS BasuNiPay masih gagal disiapkan — coba lagi', 'error')
+      addToast('QRIS VelianPay masih gagal disiapkan — coba lagi', 'error')
     }
   }
 
@@ -158,7 +158,7 @@ export default function ManualTopupPage() {
 
       <div className="grid gap-4 lg:grid-cols-5">
         <div className="lg:col-span-3">
-          <Section title="📝 Ajukan Top Up Manual" sub="Pilih provider dan nominal, lalu bayar lewat QRIS BasuNiPay.">
+          <Section title="📝 Ajukan Top Up Manual" sub="Pilih provider dan nominal, lalu bayar lewat QRIS VelianPay.">
             <div className="space-y-4">
               <div>
                 <label htmlFor="manual-provider" className="mb-1.5 block text-xs font-medium text-muted-foreground">
@@ -207,8 +207,8 @@ export default function ManualTopupPage() {
 
               <div>
                 <div className="mb-1.5 text-xs font-medium text-muted-foreground">Pembayaran</div>
-                <BasunipayCheckoutButton url={basunipay?.checkout_url} payable={basunipay?.payable_amount} image={basunipay?.qris_image} />
-                {!(basunipay?.checkout_url || basunipay?.qris_image) && (
+                <VelianpayCheckoutButton url={velianpay?.checkout_url} payable={velianpay?.payable_amount} image={velianpay?.qris_image} />
+                {!(velianpay?.checkout_url || velianpay?.qris_image) && (
                   <QrisPanel
                     amountLabel={nominalValid ? formatRp(nominal) : undefined}
                     exactAmount={payTarget ?? undefined}

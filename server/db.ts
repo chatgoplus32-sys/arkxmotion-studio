@@ -761,12 +761,26 @@ db.exec(`
 `)
 db.exec('CREATE INDEX IF NOT EXISTS idx_payment_verify_log_created ON payment_verify_log(created_at DESC)')
 
-// ── BasuniPay (checkout QRIS dinamis + deteksi bayar otomatis) ────────────
-// Mapping pembayaran BasuniPay → baris top-up kita. Dibuat server saat user
+// ── VelianPay (checkout QRIS dinamis + deteksi bayar otomatis) ────────────
+// Mapping pembayaran VelianPay → baris top-up kita. Dibuat server saat user
 // mengajukan, diperbarui poller/webhook. Baris yang masih pending dan sudah
 // lebih dari 7 hari tidak dipoll lagi.
+//
+// MIGRASI: database lama masih memakai tabel `basunipay_payment`. Kalau ada
+// tabel lama dan tabel baru belum ada, rename tabel supaya DATA lama tetap
+// terbaca (bukan bikin tabel baru yang kosong). Index lama dibuang, lalu
+// index baru dibuat di bawah.
+{
+  const hasTable = (name: string) =>
+    !!db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(name)
+  if (hasTable('basunipay_payment') && !hasTable('velianpay_payment')) {
+    db.exec('ALTER TABLE basunipay_payment RENAME TO velianpay_payment')
+  }
+  db.exec('DROP INDEX IF EXISTS idx_basunipay_payment_status')
+  db.exec('DROP INDEX IF EXISTS idx_basunipay_payment_ref')
+}
 db.exec(`
-  CREATE TABLE IF NOT EXISTS basunipay_payment (
+  CREATE TABLE IF NOT EXISTS velianpay_payment (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     order_id TEXT NOT NULL UNIQUE,
     payment_id TEXT NOT NULL DEFAULT '',
@@ -783,16 +797,16 @@ db.exec(`
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )
 `)
-// Gambar QR (data URI) dari checkout BasuniPay — ditampilkan inline di UI
-// "Bayar TEPAT Rp …" tanpa perlu buka halaman checkout lagi.
+// URL QR (dari qris_branded_image_url) dari checkout VelianPay — ditampilkan
+// inline di UI "Bayar TEPAT Rp …" tanpa perlu buka halaman checkout lagi.
 {
-  const cols = db.prepare("PRAGMA table_info(basunipay_payment)").all() as { name: string }[]
+  const cols = db.prepare("PRAGMA table_info(velianpay_payment)").all() as { name: string }[]
   if (!cols.some((c) => c.name === 'qris_image')) {
-    db.exec("ALTER TABLE basunipay_payment ADD COLUMN qris_image TEXT NOT NULL DEFAULT ''")
+    db.exec("ALTER TABLE velianpay_payment ADD COLUMN qris_image TEXT NOT NULL DEFAULT ''")
   }
 }
-db.exec('CREATE INDEX IF NOT EXISTS idx_basunipay_payment_status ON basunipay_payment(status, created_at)')
-db.exec('CREATE INDEX IF NOT EXISTS idx_basunipay_payment_ref ON basunipay_payment(ref_table, ref_id)')
+db.exec('CREATE INDEX IF NOT EXISTS idx_velianpay_payment_status ON velianpay_payment(status, created_at)')
+db.exec('CREATE INDEX IF NOT EXISTS idx_velianpay_payment_ref ON velianpay_payment(ref_table, ref_id)')
 
 // ── Pengaturan app (key-value) ───────────────────────────────────────────
 db.exec(`

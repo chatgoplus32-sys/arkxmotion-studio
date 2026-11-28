@@ -54,7 +54,7 @@ interface PaymentStatus {
     processed_total: number
   }
   ready: boolean
-  basunipay?: {
+  velianpay?: {
     ready: boolean
     pending: number
     paid_24h: number
@@ -139,7 +139,7 @@ export default function AdminTopupPage() {
       const data = await res.json().catch(() => ({} as any))
       if (res.ok) {
         const parts: string[] = []
-        if (data.basunipay) parts.push(`BasuniPay: ${data.basunipay.checked ?? 0} dicek, ${data.basunipay.paid ?? 0} lunas`)
+        if (data.velianpay) parts.push(`VelianPay: ${data.velianpay.checked ?? 0} dicek, ${data.velianpay.paid ?? 0} lunas`)
         if (data.email) parts.push(`Email: ${data.email.checked ?? 0} email, ${data.email.matched ?? 0} cocok`)
         addToast(parts.join(' · ') || 'Cek selesai', data.email?.error ? 'error' : 'success')
         fetchPayStatus()
@@ -438,9 +438,9 @@ export default function AdminTopupPage() {
 
       <Section
         title="🤖 Verifikasi Otomatis QRIS"
-        sub="Pembayaran QRIS disetujui otomatis lewat BasuniPay; email notifikasi bank/e-wallet jadi jalur cadangan"
+        sub="Pembayaran QRIS disetujui otomatis lewat VelianPay; email notifikasi bank/e-wallet jadi jalur cadangan"
         right={
-          <Button size="sm" onClick={handleCheckNow} disabled={payChecking || !(payStatus?.ready || payStatus?.basunipay?.ready)}>
+          <Button size="sm" onClick={handleCheckNow} disabled={payChecking || !(payStatus?.ready || payStatus?.velianpay?.ready)}>
             {payChecking ? 'Mengecek…' : 'Cek Pembayaran Sekarang'}
           </Button>
         }
@@ -448,16 +448,16 @@ export default function AdminTopupPage() {
         {payStatus ? (
           <div className="space-y-3">
             <div className="text-sm flex flex-wrap items-center gap-x-3 gap-y-1">
-              {payStatus.basunipay?.ready ? (
+              {payStatus.velianpay?.ready ? (
                 <>
-                  <span className="text-emerald-400 font-semibold">✅ BasuniPay aktif</span>
+                  <span className="text-emerald-400 font-semibold">✅ VelianPay aktif</span>
                   <span className="text-muted-foreground">
-                    {payStatus.basunipay.paid_24h} lunas otomatis 24j · {payStatus.basunipay.pending} menunggu bayar
+                    {payStatus.velianpay.paid_24h} lunas otomatis 24j · {payStatus.velianpay.pending} menunggu bayar
                   </span>
                 </>
               ) : (
                 <span className="text-amber-400">
-                  ⚠️ BasuniPay nonaktif — set <code>BASUNIPAY_ENABLED=true</code> + <code>BASUNIPAY_API_KEY</code> di .env lalu restart server.
+                  ⚠️ VelianPay nonaktif — set <code>VELIANPAY_ENABLED=true</code> + <code>VELIANPAY_API_KEY</code> di .env lalu restart server.
                 </span>
               )}
             </div>

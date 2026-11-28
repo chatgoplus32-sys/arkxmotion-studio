@@ -5,8 +5,8 @@ import { Section, Button } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
 import { formatRp } from '@/lib/membership'
-import { BasunipayCheckoutButton, QrisPanel } from '@/components/QrisPayment'
-import { recreateBasunipayQris } from '@/lib/payment'
+import { VelianpayCheckoutButton, QrisPanel } from '@/components/QrisPayment'
+import { recreateVelianpayQris } from '@/lib/payment'
 import {
   DEFAULT_PRO_FEE,
   buildProWaPaymentUrl,
@@ -41,7 +41,7 @@ const BENEFITS = [
 ]
 
 const STEPS = [
-  { title: 'Scan & bayar', desc: 'Bayar TEPAT nominal lewat QRIS BasuNiPay — termasuk kode unik, jangan dibulatkan.' },
+  { title: 'Scan & bayar', desc: 'Bayar TEPAT nominal lewat QRIS VelianPay — termasuk kode unik, jangan dibulatkan.' },
   { title: 'Kirim konfirmasi', desc: 'Isi catatan pembayaran lalu kirim konfirmasi dari halaman ini.' },
   { title: 'Akun aktif otomatis', desc: 'Begitu pembayaran terverifikasi, akun langsung jadi Pro dan seluruh fitur premium terbuka.' },
 ]
@@ -89,7 +89,7 @@ export default function UpgradeProPage() {
   const [fee, setFee] = useState(DEFAULT_PRO_FEE)
   const [note, setNote] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  // Link checkout BasuniPay dari response submit — hilang saat refresh, tapi
+  // Link checkout VelianPay dari response submit — hilang saat refresh, tapi
   // nominal TEPAT & kode unik tetap terbawa lewat status.payment (server).
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null)
   const [checkoutImage, setCheckoutImage] = useState<string | null>(null)
@@ -128,19 +128,19 @@ export default function UpgradeProPage() {
     return () => clearInterval(timer)
   }, [pendingPayment, loadStatus])
 
-  // Checkout BasuNiPay gagal dibuat? Siapkan ulang untuk pengajuan Pro ini.
+  // Checkout VelianPay gagal dibuat? Siapkan ulang untuk pengajuan Pro ini.
   const handleRetryQris = async () => {
     const paymentId = status?.payment?.id
     if (!paymentId || qrRetrying || !token) return
     setQrRetrying(true)
-    const bp = await recreateBasunipayQris(token, 'pro_payments', paymentId)
+    const bp = await recreateVelianpayQris(token, 'pro_payments', paymentId)
     setQrRetrying(false)
     if (bp) {
       setCheckoutUrl(bp.checkout_url ?? null)
       setCheckoutImage(bp.qris_image ?? null)
-      addToast('QRIS BasuNiPay siap — bayar sesuai nominal', 'success')
+      addToast('QRIS VelianPay siap — bayar sesuai nominal', 'success')
     } else {
-      addToast('QRIS BasuNiPay masih gagal disiapkan — coba lagi', 'error')
+      addToast('QRIS VelianPay masih gagal disiapkan — coba lagi', 'error')
     }
   }
 
@@ -150,8 +150,8 @@ export default function UpgradeProPage() {
     setSubmitting(true)
     try {
       const data = await submitProPayment(token, note)
-      setCheckoutUrl(data.basunipay?.checkout_url ?? null)
-      setCheckoutImage(data.basunipay?.qris_image ?? null)
+      setCheckoutUrl(data.velianpay?.checkout_url ?? null)
+      setCheckoutImage(data.velianpay?.qris_image ?? null)
       setStatus((prev) => ({
         plan: prev?.plan ?? 'free',
         isAdmin: prev?.isAdmin ?? false,
@@ -312,7 +312,7 @@ export default function UpgradeProPage() {
                 <p className="text-[11px] text-muted-foreground mb-2">
                   Nominal sudah termasuk kode unik — akun Pro aktif otomatis begitu pembayaran masuk, tidak perlu menunggu admin.
                 </p>
-                <BasunipayCheckoutButton
+                <VelianpayCheckoutButton
                   url={checkoutUrl ?? status?.payment?.checkoutUrl ?? null}
                   payable={status?.payment?.amountTotal ?? null}
                   image={checkoutImage ?? status?.payment?.qrisImage ?? null}
@@ -352,7 +352,7 @@ export default function UpgradeProPage() {
               )}
 
               <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-center text-xs text-amber-400">
-                Klik “Saya sudah bayar — Kirim Konfirmasi” di bawah — QRIS BasuNiPay dengan nominal TEPAT{' '}
+                Klik “Saya sudah bayar — Kirim Konfirmasi” di bawah — QRIS VelianPay dengan nominal TEPAT{' '}
                 (harga Pro + kode unik) dibuat saat itu juga dan ditampilkan di langkah ini.
               </div>
 

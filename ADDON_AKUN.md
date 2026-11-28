@@ -1,7 +1,7 @@
 # Skema Add-on Akun — ARKXMotion Studio
 
 Add-on bulanan khusus member: **Rp 100.000 / 30 hari → 3 akun email siap pakai**.
-Pembayaran QRIS (BasuniPay, kode unik) diverifikasi otomatis; admin menyerahkan akun.
+Pembayaran QRIS (VelianPay, kode unik) diverifikasi otomatis; admin menyerahkan akun.
 
 3 email add-on bisa didaftarkan member sebagai **akun ArkXMotion sendiri**;
 saldo akun itu bisa diatur: **top up saldo sendiri** atau **ambil saldo dari
@@ -22,9 +22,9 @@ akun utama member** (diatur pemilik akun utama di halaman Add-on Akun).
 1. Member buka menu **Lainnya → Add-on Akun** (`/addon-akun`).
 2. Member klik "Saya sudah bayar — Kirim Konfirmasi" → server membuat baris
    `account_addon_payments` (pending) dengan **nominal terkunci di server**
-   (Rp 100.000) + kode unik 3 digit → BasuniPay QRIS dinamis ditampilkan.
+   (Rp 100.000) + kode unik 3 digit → VelianPay QRIS dinamis ditampilkan.
 3. Member bayar nominal TEPAT. Pembayaran terdeteksi lewat:
-   - webhook/poller BasuniPay → `approveTopupRef('account_addon_payments', …)`, atau
+   - webhook/poller VelianPay → `approveTopupRef('account_addon_payments', …)`, atau
    - parser email mutasi → `matchIncomingAmount`, atau
    - admin approve manual di **Admin → Membership → Antrian Add-on Akun**.
 4. Saat disetujui (`approveAddonPaymentRow`): `period_start`/`period_end` diisi
@@ -60,7 +60,7 @@ created_at DATETIME, updated_at DATETIME
 ```
 
 Setting harga di `app_settings`: key `addon_fee` (default `100000`).
-Terdaftar di `QRIS_TABLES` (`mode: 'manual'`) supaya verifikasi BasuniPay/email otomatis.
+Terdaftar di `QRIS_TABLES` (`mode: 'manual'`) supaya verifikasi VelianPay/email otomatis.
 
 ## Endpoint
 

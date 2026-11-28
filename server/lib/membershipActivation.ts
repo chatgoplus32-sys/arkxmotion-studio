@@ -1,7 +1,7 @@
 /**
  * Aktivasi pembayaran Member (join Pro) & Upgrade Pro — dipakai baik oleh
  * approve manual admin (`/api/admin/membership|pro/payments/:id/approve`)
- * maupun oleh verifikasi otomatis BasuniPay / email / paste mutasi.
+ * maupun oleh verifikasi otomatis VelianPay / email / paste mutasi.
  *
  * Satu sumber kebenaran: update membership_payments|pro_payments → update
  * users → kirim email (fire-and-forget) → notifikasi + log audit.

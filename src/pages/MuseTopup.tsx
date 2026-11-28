@@ -3,8 +3,8 @@ import { PageHeader, PageContent } from '@/components/layout'
 import { Section, Button, Badge } from '@/components/ui'
 import { useAuthStore } from '@/stores/authStore'
 import { useToastStore } from '@/stores/toastStore'
-import { formatRp, recreateBasunipayQris } from '@/lib/payment'
-import { BasunipayCheckoutButton, QrisPanel } from '@/components/QrisPayment'
+import { formatRp, recreateVelianpayQris } from '@/lib/payment'
+import { VelianpayCheckoutButton, QrisPanel } from '@/components/QrisPayment'
 import { MUSE_MIN_TOPUP } from '@/lib/muse'
 import { Wallet, CheckCircle, XCircle, Clock } from 'lucide-react'
 
@@ -18,7 +18,7 @@ export default function MuseTopupPage() {
   const [amount, setAmount] = useState(20000)
   const [loading, setLoading] = useState(false)
   const [submitted, setSubmitted] = useState<Topup | null>(null)
-  const [basunipay, setBasunipay] = useState<{ checkout_url?: string; payable_amount?: number; qris_image?: string } | null>(null)
+  const [velianpay, setVelianpay] = useState<{ checkout_url?: string; payable_amount?: number; qris_image?: string } | null>(null)
   const [retrying, setRetrying] = useState(false)
   const [step, setStep] = useState<'select' | 'pay'>('select')
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
@@ -49,7 +49,7 @@ export default function MuseTopupPage() {
       const res = await fetch('/api/muse/topup', { method: 'POST', headers, body: JSON.stringify({ amount }) })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Gagal')
-      setSubmitted(d.topup); setBasunipay(d.basunipay); setStep('pay')
+      setSubmitted(d.topup); setVelianpay(d.velianpay); setStep('pay')
       addToast('Topup diajukan', 'success'); void load()
     } catch (e: any) { addToast(e?.message || 'Gagal', 'error') } finally { setLoading(false) }
   }
@@ -57,9 +57,9 @@ export default function MuseTopupPage() {
   const retry = async () => {
     if (!token || !submitted || retrying) return
     setRetrying(true)
-    const bp = await recreateBasunipayQris(token, 'muse_topup', submitted.id)
+    const bp = await recreateVelianpayQris(token, 'muse_topup', submitted.id)
     setRetrying(false)
-    if (bp) { setBasunipay(bp); addToast('QRIS siap', 'success') } else addToast('QRIS gagal — coba lagi', 'error')
+    if (bp) { setVelianpay(bp); addToast('QRIS siap', 'success') } else addToast('QRIS gagal — coba lagi', 'error')
   }
 
   const badge = (s: string) => s === 'approved'
@@ -90,9 +90,9 @@ export default function MuseTopupPage() {
         </Section>
       )}
       {step === 'pay' && (
-        <Section title="Bayar via QRIS BasuNiPay" sub="Klik Bayar → checkout, saldo otomatis masuk saat lunas">
-          <BasunipayCheckoutButton url={basunipay?.checkout_url} payable={basunipay?.payable_amount} image={basunipay?.qris_image} />
-          {!(basunipay?.checkout_url || basunipay?.qris_image) && <QrisPanel exactAmount={submitted?.amount_total ?? undefined} onRetry={retry} retrying={retrying} />}
+        <Section title="Bayar via QRIS VelianPay" sub="Klik Bayar → checkout, saldo otomatis masuk saat lunas">
+          <VelianpayCheckoutButton url={velianpay?.checkout_url} payable={velianpay?.payable_amount} image={velianpay?.qris_image} />
+          {!(velianpay?.checkout_url || velianpay?.qris_image) && <QrisPanel exactAmount={submitted?.amount_total ?? undefined} onRetry={retry} retrying={retrying} />}
           <Button variant="outline" className="mt-3" onClick={() => setStep('select')}>Kembali</Button>
         </Section>
       )}

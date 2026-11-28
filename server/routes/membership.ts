@@ -2,7 +2,7 @@ import { Router, Response } from 'express'
 import db from '../db.js'
 import { authenticateToken, AuthRequest } from '../middleware/auth.js'
 import { nextUniqueCode } from '../lib/qrisPayment.js'
-import { createBasunipayPayment } from '../lib/basunipay.js'
+import { createVelianpayPayment } from '../lib/velianpay.js'
 import { effectiveWallet } from '../lib/effectiveWallet.js'
 
 const router = Router()
@@ -89,10 +89,10 @@ function proPayload(user: ProUserRow) {
     proSince: user.pro_since,
     payment: payment
       ? (() => {
-          // Sertakan checkout BasuniPay terbaru bila ada — gambar QR tetap
+          // Sertakan checkout VelianPay terbaru bila ada — gambar QR tetap
           // tampil walau halaman di-refresh.
           const bp = db.prepare(
-            "SELECT checkout_url, qris_image FROM basunipay_payment WHERE ref_table = 'pro_payments' AND ref_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1",
+            "SELECT checkout_url, qris_image FROM velianpay_payment WHERE ref_table = 'pro_payments' AND ref_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1",
           ).get(payment.id) as { checkout_url?: string; qris_image?: string } | undefined
           return {
             id: payment.id,
@@ -155,7 +155,7 @@ router.post('/payment', async (req, res: Response) => {
       // Idempoten: panggilan berulang (mis. halaman dimuat ulang) mengembalikan
       // data yang sama, bukan error — user perlu link & nominal yang sama.
       const bp = db.prepare(
-        "SELECT checkout_url, payable_amount, unique_code, qris_image FROM basunipay_payment WHERE ref_table = 'membership_payments' AND ref_id = ? ORDER BY id DESC LIMIT 1",
+        "SELECT checkout_url, payable_amount, unique_code, qris_image FROM velianpay_payment WHERE ref_table = 'membership_payments' AND ref_id = ? ORDER BY id DESC LIMIT 1",
       ).get(pending.id) as { checkout_url: string; payable_amount: number; unique_code: number; qris_image?: string } | undefined
       return res.json({
         ok: true,
@@ -164,7 +164,7 @@ router.post('/payment', async (req, res: Response) => {
         amount: amt,
         amountTotal: pending.amount_total ?? amt,
         uniqueCode: pending.unique_code,
-        basunipay: bp ? { checkout_url: bp.checkout_url, payable_amount: bp.payable_amount, unique_code: bp.unique_code, qris_image: bp.qris_image || '' } : null,
+        velianpay: bp ? { checkout_url: bp.checkout_url, payable_amount: bp.payable_amount, unique_code: bp.unique_code, qris_image: bp.qris_image || '' } : null,
         pending: true,
       })
     }
@@ -175,7 +175,7 @@ router.post('/payment', async (req, res: Response) => {
     ).run(user.id, amt, unique_code, amount_total, 'pending', String(proof_note || '').slice(0, 500))
     const refId = Number(result.lastInsertRowid)
 
-    const basunipay = await createBasunipayPayment({
+    const velianpay = await createVelianpayPayment({
       refTable: 'membership_payments',
       refId,
       userId: user.id,
@@ -193,7 +193,7 @@ router.post('/payment', async (req, res: Response) => {
       amount: amt,
       amountTotal: payment?.amount_total ?? amount_total,
       uniqueCode: payment?.unique_code ?? unique_code,
-      basunipay,
+      velianpay,
     })
   } catch (error) {
     console.error('Membership payment error:', error)
@@ -240,7 +240,7 @@ router.post('/pro/payment', authenticateToken, async (req: AuthRequest, res: Res
     ).run(user.id, amount, unique_code, amount_total, proofNote)
     const refId = Number(result.lastInsertRowid)
 
-    const basunipay = await createBasunipayPayment({
+    const velianpay = await createVelianpayPayment({
       refTable: 'pro_payments',
       refId,
       userId: user.id,
@@ -271,7 +271,7 @@ router.post('/pro/payment', authenticateToken, async (req: AuthRequest, res: Res
         adminNote: '',
         createdAt: new Date().toISOString(),
       },
-      basunipay,
+      velianpay,
     })
   } catch (error) {
     console.error('Pro payment error:', error)
@@ -281,7 +281,7 @@ router.post('/pro/payment', authenticateToken, async (req: AuthRequest, res: Res
 
 // ─── Add-on Akun (member aktif): 3 akun email siap pakai / 30 hari ─────────
 // Sama seperti upgrade Pro: nominal DIKUNCI di server, satu user hanya boleh
-// punya satu pengajuan pending. Pembayaran terverifikasi (BasuniPay / email /
+// punya satu pengajuan pending. Pembayaran terverifikasi (VelianPay / email /
 // paste mutasi) otomatis mengaktifkan periode 30 hari via approveAddonPaymentRow.
 
 interface AddonPaymentRow {
@@ -317,10 +317,10 @@ function parseAddonAccounts(raw: string | null | undefined): Array<{ email: stri
 }
 
 function addonPaymentPayload(p: AddonPaymentRow) {
-  // Sertakan checkout BasuniPay terbaru bila ada — QR tetap tampil walau
+  // Sertakan checkout VelianPay terbaru bila ada — QR tetap tampil walau
   // halaman di-refresh.
   const bp = db.prepare(
-    "SELECT checkout_url, qris_image FROM basunipay_payment WHERE ref_table = 'account_addon_payments' AND ref_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1",
+    "SELECT checkout_url, qris_image FROM velianpay_payment WHERE ref_table = 'account_addon_payments' AND ref_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1",
   ).get(p.id) as { checkout_url?: string; qris_image?: string } | undefined
   return {
     id: p.id,
@@ -404,7 +404,7 @@ router.post('/addon/payment', authenticateToken, async (req: AuthRequest, res: R
     ).run(user.id, amount, unique_code, amount_total, proofNote)
     const refId = Number(result.lastInsertRowid)
 
-    const basunipay = await createBasunipayPayment({
+    const velianpay = await createVelianpayPayment({
       refTable: 'account_addon_payments',
       refId,
       userId: user.id,
@@ -435,7 +435,7 @@ router.post('/addon/payment', authenticateToken, async (req: AuthRequest, res: R
         adminNote: '',
         createdAt: new Date().toISOString(),
       },
-      basunipay,
+      velianpay,
     })
   } catch (error) {
     console.error('Addon payment error:', error)

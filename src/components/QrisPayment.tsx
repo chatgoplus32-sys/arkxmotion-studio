@@ -1,8 +1,8 @@
 import { ExternalLink, ArrowUpRight, QrCode, RefreshCw } from 'lucide-react'
 
 /**
- * Panel bayar BasuniPay — pengguna DIARAHKAN ke `checkout_url` resmi
- * BasuNiPay, tempat QR dinamis yang benar-benar terikat ke order ini tampil.
+ * Panel bayar VelianPay — pengguna DIARAHKAN ke `checkout_url` resmi
+ * VelianPay, tempat QR dinamis yang benar-benar terikat ke order ini tampil.
  *
  * Kenapa tidak menampilkan gambar QR inline: gambar `qris_image` bisa
  * tidak sinkron dengan order yang sedang dilihat (mis. setelah checkout
@@ -12,7 +12,7 @@ import { ExternalLink, ArrowUpRight, QrCode, RefreshCw } from 'lucide-react'
  *
  * QRIS statis lama tidak pernah dirender (segelnya: test/noStaticQris.test.ts).
  */
-export function BasunipayCheckoutButton({ url, payable }: { url?: string | null; payable?: number | null; image?: string | null }) {
+export function VelianpayCheckoutButton({ url, payable }: { url?: string | null; payable?: number | null; image?: string | null }) {
   if (!url) return null
   const nominal = payable ? Math.round(payable).toLocaleString('id-ID') : null
   return (
@@ -30,12 +30,12 @@ export function BasunipayCheckoutButton({ url, payable }: { url?: string | null;
         rel="noopener noreferrer"
         className="flex items-center justify-center gap-2 bg-emerald-500 px-4 py-3 text-sm font-bold text-white transition hover:bg-emerald-400"
       >
-        <ExternalLink className="h-4 w-4" /> Bayar via QRIS BasuNiPay <ArrowUpRight className="h-4 w-4" />
+        <ExternalLink className="h-4 w-4" /> Bayar via QRIS VelianPay <ArrowUpRight className="h-4 w-4" />
       </a>
       <div className="flex items-start gap-2 px-4 py-2.5 text-[10px] leading-relaxed text-muted-foreground">
         <QrCode className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
         <span>
-          Kamu akan diarahkan ke halaman checkout BasuNiPay. Pindai QR yang ada di sana —
+          Kamu akan diarahkan ke halaman checkout VelianPay. Pindai QR yang ada di sana —
           jangan pakai QR dari tempat lain, karena nominalnya harus tepat untuk terdeteksi otomatis.
         </span>
       </div>
@@ -44,11 +44,11 @@ export function BasunipayCheckoutButton({ url, payable }: { url?: string | null;
 }
 
 /**
- * Panel "QRIS BasuniPay belum siap" — dipakai saat checkout belum bisa
- * ditampilkan (request gagal / server BasuNiPay sedang bermasalah).
+ * Panel "QRIS VelianPay belum siap" — dipakai saat checkout belum bisa
+ * ditampilkan (request gagal / server VelianPay sedang bermasalah).
  *
  * Sengaja TIDAK menampilkan QRIS statis: pembayaran harus selalu lewat QR
- * dinamis BasuniPay supaya nominalnya unik dan verifikasinya otomatis.
+ * dinamis VelianPay supaya nominalnya unik dan verifikasinya otomatis.
  * Kalau tetap menampilkan QRIS lama, nominalnya tidak terikat ke pengajuan
  * ini dan saldo tidak akan masuk sendiri.
  */
@@ -60,7 +60,7 @@ export function QrisPanel({
 }: {
   amountLabel?: string
   exactAmount?: number
-  /** Siapkan ulang checkout BasuniPay untuk pengajuan ini (tanpa baris baru). */
+  /** Siapkan ulang checkout VelianPay untuk pengajuan ini (tanpa baris baru). */
   onRetry?: () => void
   retrying?: boolean
 }) {
@@ -68,9 +68,9 @@ export function QrisPanel({
   return (
     <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/5 p-5 text-center">
       <QrCode className="mx-auto mb-2 h-10 w-10 text-amber-400" />
-      <div className="text-sm font-semibold text-amber-400">QRIS BasuniPay belum siap</div>
+      <div className="text-sm font-semibold text-amber-400">QRIS VelianPay belum siap</div>
       <p className="mt-1 text-xs text-muted-foreground">
-        QR dinamis sedang disiapkan. Semua pembayaran hanya lewat QRIS BasuniPay — nominal terikat ke
+        QR dinamis sedang disiapkan. Semua pembayaran hanya lewat QRIS VelianPay — nominal terikat ke
         pengajuan kamu sehingga verifikasinya otomatis.
       </p>
       {nominal ? (

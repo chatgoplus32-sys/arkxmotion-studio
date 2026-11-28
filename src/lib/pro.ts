@@ -59,7 +59,7 @@ export async function fetchProStatus(token: string): Promise<ProStatus> {
 export async function submitProPayment(
   token: string,
   proofNote: string,
-): Promise<{ payment: ProPayment; basunipay?: { checkout_url?: string; payable_amount?: number; unique_code?: number; qris_image?: string } | null }> {
+): Promise<{ payment: ProPayment; velianpay?: { checkout_url?: string; payable_amount?: number; unique_code?: number; qris_image?: string } | null }> {
   const res = await fetch('/api/membership/pro/payment', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -67,7 +67,7 @@ export async function submitProPayment(
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(data.error || 'Gagal mengirim konfirmasi pembayaran')
-  return data as { payment: ProPayment; basunipay?: { checkout_url?: string; payable_amount?: number; unique_code?: number; qris_image?: string } | null }
+  return data as { payment: ProPayment; velianpay?: { checkout_url?: string; payable_amount?: number; unique_code?: number; qris_image?: string } | null }
 }
 
 /** Pesan WhatsApp ke admin bahwa pembayaran Pro sudah dikirim. */

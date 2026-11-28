@@ -300,7 +300,8 @@ def _sync_payment_imap():
     keys = ['PAYMENT_IMAP_HOST', 'PAYMENT_IMAP_PORT', 'PAYMENT_IMAP_SECURE',
             'PAYMENT_IMAP_USER', 'PAYMENT_IMAP_PASS', 'PAYMENT_IMAP_ENABLED',
             'PAYMENT_INGEST_SECRET',
-            'BASUNIPAY_BASE_URL', 'BASUNIPAY_API_KEY', 'BASUNIPAY_ENABLED']
+            'VELIANPAY_BASE_URL', 'VELIANPAY_API_KEY', 'VELIANPAY_ENABLED',
+            'VELIANPAY_CALLBACK_URL', 'VELIANPAY_WEBHOOK_SECRET']
     nilai = {}
     with open(local_env, encoding='utf-8', errors='replace') as fh:
         for baris in fh:
