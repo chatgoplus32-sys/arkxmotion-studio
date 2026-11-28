@@ -60,6 +60,23 @@ async function velianpayRequest(path: string, init?: RequestInit): Promise<{ sta
 }
 
 /**
+ * Hanya terima URL absolut http/https; selain itu kembalikan '' (string kosong).
+ * Kolom `checkout_url`/`qris_image` berkontrak URL, jadi nilai tak sah seperti
+ * 'bukan-url' atau data URI TIDAK boleh disimpan apa adanya. Kegagalan satu
+ * field tidak menggagalkan pembayaran — order tetap dibuat, field lain tetap.
+ */
+function safeHttpUrl(raw: unknown): string {
+  const s = String(raw ?? '').trim()
+  if (!s) return ''
+  try {
+    const u = new URL(s)
+    return u.protocol === 'http:' || u.protocol === 'https:' ? s : ''
+  } catch {
+    return ''
+  }
+}
+
+/**
  * Buat pembayaran VelianPay untuk sebuah baris top-up yang baru diajukan.
  * Mengembalikan checkout (link + nominal bayar + QR) atau null bila gagal
  * (caller boleh lanjut dengan perilaku kode unik lokal).
@@ -91,8 +108,8 @@ export async function createVelianpayPayment(opts: {
       return null
     }
     const code = Math.max(0, payable - Math.round(opts.baseAmount))
-    const checkout = String(data?.payment_link || '')
-    const qrisImage = String(data?.qris_branded_image_url || data?.qris_image_url || '')
+    const checkout = safeHttpUrl(data?.payment_link)
+    const qrisImage = safeHttpUrl(data?.qris_branded_image_url || data?.qris_image_url)
 
     // Selaraskan baris top-up dengan nominal VelianPay — parser paste-mutasi
     // & tampilan "Bayar TEPAT" otomatis ikut benar.
