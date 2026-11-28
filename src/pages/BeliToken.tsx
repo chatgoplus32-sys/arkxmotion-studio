@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useAuthStore } from '@/stores/authStore'
 import { useProviderManager } from '@/stores/providerManager'
 import { useToastStore } from '@/stores/toastStore'
+import { VelianpayCheckoutButton } from '@/components/QrisPayment'
 
 interface TokenItem {
   id: number
@@ -48,6 +49,8 @@ export default function BeliTokenPage() {
   const [selectedBuyQty, setSelectedBuyQty] = useState(0)
   const [selectedBuyPrice, setSelectedBuyPrice] = useState(0)
   const [selectedBuyProvider, setSelectedBuyProvider] = useState<Provider>('roboneo')
+  const [checkout, setCheckout] = useState<{ url: string; payable: number; image: string } | null>(null)
+  const [buying, setBuying] = useState(false)
 
   const fetchTokens = useCallback(async () => {
     if (!authStore.token) return
@@ -95,7 +98,8 @@ export default function BeliTokenPage() {
   }
 
   const handleConfirmBuy = async () => {
-    if (!authStore.token) return
+    if (!authStore.token || buying) return
+    setBuying(true)
     const providerTokens = availableTokens.filter(t => t.provider === selectedBuyProvider && t.status === 'available')
     const qty = selectedBuyQty
     if (qty < 1 || qty > providerTokens.length) return
@@ -108,21 +112,24 @@ export default function BeliTokenPage() {
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authStore.token}` },
         body: JSON.stringify({ token_ids: tokenIds })
       })
+      const data = await response.json().catch(() => ({}))
       if (response.ok) {
-        addToast(`${qty} token ${PROVIDERS.find(p => p.key === selectedBuyProvider)?.label} berhasil dipesan!`, 'success')
+        setCheckout({
+          url: String(data.checkout_url || ''),
+          payable: Number(data.payable_amount) || 0,
+          image: String(data.qris_image || ''),
+        })
+        addToast(`${qty} token berhasil dipesan — silakan bayar QRIS di bawah`, 'success')
         fetchTokens()
         fetchMyOrders()
-        window.open(WHATSAPP_LINK, '_blank')
       } else {
-        const data = await response.json()
         addToast(data.error || 'Gagal memesan', 'error')
       }
     } catch {
       addToast('Gagal memesan', 'error')
+    } finally {
+      setBuying(false)
     }
-
-    setSelectedBuyQty(0)
-    setBuyQty('')
   }
 
   return (
@@ -458,30 +465,33 @@ export default function BeliTokenPage() {
                 </div>
               </div>
 
-              {/* Token Bank belum aktif — server menolak pembelian (503), jadi
-                  tidak ada QR/nomor yang bisa ditampilkan. Hubungi admin untuk
-                  pembelian token, atau gunakan top up saldo provider. */}
-              <div className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/5">
-                <div className="text-sm font-medium text-amber-400">Pembelian token belum aktif</div>
-                <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
-                  Token Bank sedang tidak dijual (pembelian ditolak server). Hubungi admin untuk memesan token,
-                  atau top up saldo provider di menu top up masing-masing provider.
-                </p>
-                <a href={WHATSAPP_LINK} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-xs text-emerald-500 hover:underline">
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  Hubungi Admin via WhatsApp
-                </a>
-              </div>
+              {checkout ? (
+                <>
+                  <VelianpayCheckoutButton url={checkout.url} payable={checkout.payable} image={checkout.image} />
+                  <p className="text-[11px] text-muted-foreground">
+                    Setelah pembayaran terverifikasi, token otomatis aktif dan bisa diunduh di menu <b>Pesanan Saya</b>.
+                  </p>
+                </>
+              ) : (
+                <div className="p-3 rounded-xl border border-border bg-background/50 text-xs text-muted-foreground">
+                  Klik <b>“Buat Pesanan & Bayar”</b> untuk menyiapkan QRIS dinamis VelianPay dengan nominal unik.
+                </div>
+              )}
 
               <div className="flex gap-2 pt-2">
-                <Button className="flex-1" onClick={handleConfirmBuy}>
-                  <ExternalLink className="h-4 w-4" />
-                  Buat Pesanan via WhatsApp
-                </Button>
-                <Button variant="outline" onClick={() => { setSelectedBuyQty(0); setSelectedBuyProvider('roboneo') }}>
-                  Batal
+                {!checkout && (
+                  <Button className="flex-1" onClick={handleConfirmBuy} disabled={buying}>
+                    <ExternalLink className="h-4 w-4" />
+                    {buying ? 'Menyiapkan QRIS…' : 'Buat Pesanan & Bayar'}
+                  </Button>
+                )}
+                <Button variant="outline" className={checkout ? 'flex-1' : ''} onClick={() => { setCheckout(null); setSelectedBuyQty(0); setBuyQty(''); setSelectedBuyProvider('roboneo') }}>
+                  Tutup
                 </Button>
               </div>
+              <a href={WHATSAPP_LINK} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground hover:underline">
+                <ExternalLink className="h-3 w-3" /> Kendala pembayaran? Hubungi admin
+              </a>
             </div>
           </div>
         </div>

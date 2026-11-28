@@ -10,6 +10,7 @@ export default function ForgotPasswordPage() {
   const [sent, setSent] = useState(false)
   const [emailSent, setEmailSent] = useState(true)
   const [devLink, setDevLink] = useState<string | null>(null)
+  const [supportLink, setSupportLink] = useState<string | null>(null)
   const [error, setError] = useState('')
   const addToast = useToastStore((state) => state.addToast)
   const stats = usePublicStats()
@@ -33,6 +34,7 @@ export default function ForgotPasswordPage() {
       setSent(true)
       setEmailSent(delivered)
       setDevLink(data.devResetLink || null)
+      setSupportLink(data.supportLink || null)
       addToast(
         delivered
           ? 'Link reset dikirim ke email kamu (jika email terdaftar)'
@@ -101,8 +103,13 @@ export default function ForgotPasswordPage() {
               ) : (
                 <>
                   <h2 className="text-[22px] font-black italic tracking-tight">Email <span className="bg-gradient-to-r from-amber-400 to-orange-300 bg-clip-text text-transparent">Belum Terkirim</span></h2>
-                  <p className="mt-2 text-[13px] leading-relaxed text-white/60">Server email belum bisa mengirim ke <b className="text-white">{email}</b>. {devLink ? 'Untuk sementara, buka link reset langsung di bawah ini.' : 'Coba lagi beberapa saat lagi atau hubungi admin.'}</p>
-                  <button type="button" onClick={() => { setSent(false); setDevLink(null) }} className="mt-3 text-xs font-semibold text-cyan-300 hover:text-cyan-200">Coba kirim ulang</button>
+                  <p className="mt-2 text-[13px] leading-relaxed text-white/60">Email reset belum bisa dikirim ke <b className="text-white">{email}</b>. {devLink ? 'Untuk sementara, buka link reset langsung di bawah ini.' : 'Hubungi admin lewat WhatsApp di bawah untuk bantuan reset akun — sertakan email kamu.'}</p>
+                  <button type="button" onClick={() => { setSent(false); setDevLink(null); setSupportLink(null) }} className="mt-3 text-xs font-semibold text-cyan-300 hover:text-cyan-200">Coba kirim ulang</button>
+                  {supportLink && (
+                    <a href={supportLink} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex items-center gap-2 rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20">
+                      Hubungi Admin via WhatsApp
+                    </a>
+                  )}
                 </>
               )}
 

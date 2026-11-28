@@ -45,6 +45,8 @@ export const QRIS_TABLES: QrisTable[] = [
   { table: 'pro_payments', label: 'Upgrade Pro', mode: 'manual' },
   // Add-on Akun (3 email siap pakai / 30 hari) — aktivasi periode, bukan saldo.
   { table: 'account_addon_payments', label: 'Add-on Akun (3 Email/Bulan)', mode: 'manual' },
+  // Token Bank — pembayaran mengonfirmasi SEMUA order dalam satu bulk_id.
+  { table: 'token_orders', label: 'Beli Token', mode: 'manual' },
 ]
 
 /** Baris pending hanya dicocokkan selama jendela ini sejak diajukan. */
@@ -176,6 +178,46 @@ type IncomingRef = { from?: string; subject?: string; source?: 'email' | 'androi
  * webhook/polling status tahu PERSIS baris mana yang dibayar, tidak perlu
  * mencocokkan nominal). Logika kredit/tanda-lunas sama dengan pencocokan.
  */
+/**
+ * Token Bank: satu checkout membayar banyak token sekaligus (bulk_id).
+ * Token sudah ditandai 'sold' saat order dibuat (anti-oversell); pembayaran
+ * yang terverifikasi mengubah semua order dalam bulk itu jadi 'confirmed'.
+ */
+function confirmTokenBankBulk(
+  row: PendingRow,
+  paid: number,
+  ref: IncomingRef,
+): { action: string; table: string; id: number; detail: string } {
+  const bulkId = String(row.bulk_id || '')
+  const orders = bulkId
+    ? db.prepare("SELECT * FROM token_orders WHERE bulk_id = ? AND user_id = ? AND status = 'pending'").all(bulkId, row.user_id) as PendingRow[]
+    : [row]
+  db.transaction(() => {
+    for (const o of orders) {
+      db.prepare(
+        `UPDATE token_orders SET status = 'confirmed', paid_amount = ?, paid_at = CURRENT_TIMESTAMP,
+           pay_ref = ? WHERE id = ? AND status = 'pending'`,
+      ).run(paid, (ref.subject || ref.from || '').slice(0, 300), o.id)
+    }
+  })()
+  insertNotification(
+    'Token Dibeli — Siap Dipakai ✅',
+    `${orders.length} token pembayarannya terverifikasi otomatis. Buka menu Beli Token → Pesanan Saya untuk mengunduh catatan token kamu.`,
+    'success', 'users', row.user_id,
+  )
+  insertNotification(
+    '💰 Token Bank Terbayar (auto)',
+    `Order ${bulkId || `#${row.id}`} — ${orders.length} token, Rp ${paid.toLocaleString('id-ID')} terverifikasi via ${ref.source || 'velianpay'}.`,
+    'success', 'admins', null,
+  )
+  logPaymentVerify({
+    source: ref.source || 'velianpay', refTable: 'token_orders', refId: row.id,
+    amount: paid, action: 'auto_approved',
+    detail: `${orders.length} order dikonfirmasi (bulk ${bulkId || '-'})`,
+  })
+  return { action: 'auto_approved', table: 'token_orders', id: row.id, detail: `${orders.length} token dikonfirmasi` }
+}
+
 /** Satu pintu keputusan: semaunya benar-benar otomatis penuh. */
 function handleRow(
   t: QrisTable,
@@ -206,6 +248,7 @@ function handleRow(
   if (t.table === 'nexabot_topup' && row.kind === 'unlimited') {
     return activateUnlimitedRef(t, row, paid, ref)
   }
+  if (t.table === 'token_orders') return confirmTokenBankBulk(row, paid, ref)
   if (t.mode === 'credit') return approveCredit(t, row, paid, ref)
   return approveManual(t, row, paid, ref)
 }

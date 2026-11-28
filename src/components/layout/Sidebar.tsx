@@ -111,9 +111,8 @@ const toolsNavBase: NavItem[] = [
   { label: 'Premium Booster', href: '/booster', icon: <Rocket className="h-4 w-4" /> },
   { label: 'Add-on Akun', href: '/addon-akun', icon: <MailPlus className="h-4 w-4" /> },
   { label: 'Affiliate Tools', href: '/tools/affiliate', icon: <Share2 className="h-4 w-4" /> },
-  // Token Bank belum dipakai: top up per layanan sudah punya halaman sendiri.
-  // Menu dikunci dulu supaya member tidak masuk ke alur yang belum aktif.
-  { label: 'Beli Token', href: '/beli-token', icon: <ShoppingCart className="h-4 w-4" />, comingSoon: true },
+  // Token Bank aktif: pembelian lewat QRIS VelianPay + konfirmasi otomatis.
+  { label: 'Beli Token', href: '/beli-token', icon: <ShoppingCart className="h-4 w-4" /> },
   { label: 'Settings', href: '/settings', icon: <Settings className="h-4 w-4" /> },
   { label: 'Plugins', href: '/plugins', icon: <Puzzle className="h-4 w-4" /> },
 ]

@@ -8,6 +8,9 @@ import { authenticateToken, AuthRequest } from '../middleware/auth.js'
 import { sendEmail, appUrl, allowDevMailLink } from '../mailer.js'
 import { findAddonProvisioning } from '../lib/effectiveWallet.js'
 import { assignReferralCode, resolveReferralCode } from '../lib/affiliate.js'
+const ADMIN_WHATSAPP = '6285156207924'
+const adminWhatsappLink = (message: string) =>
+  `https://wa.me/${ADMIN_WHATSAPP}?text=${encodeURIComponent(message)}`
 
 const RegisterSchema = z.object({ email: z.string().email().max(254), password: z.string().min(8).max(128), name: z.string().min(1).max(80).trim(), referral_code: z.string().max(32).optional() })
 const LoginSchema = z.object({ email: z.string().email().max(254), password: z.string().min(1).max(128) })
@@ -422,7 +425,14 @@ router.post('/forgot-password', async (req, res: Response) => {
     }
 
     const exposedDevLink = devLinkOrNull(devLink)
-    res.json({ ok: true, sent, ...(exposedDevLink ? { devResetLink: exposedDevLink } : {}) })
+    // Kalau email gagal terkirim, berikan jalur bantuan nyata ke admin.
+    // Link reset TIDAK pernah dikembalikan di produksi (lihat allowDevMailLink).
+    const supportLink = sent
+      ? null
+      : adminWhatsappLink(
+          `Halo admin, saya belum menerima email reset password untuk ${String(email).toLowerCase()}. Mohon bantu reset akun saya.`,
+        )
+    res.json({ ok: true, sent, ...(exposedDevLink ? { devResetLink: exposedDevLink } : {}), ...(supportLink ? { supportLink } : {}) })
   } catch (error) {
     console.error('Forgot password error:', error)
     res.status(500).json({ error: 'Internal server error' })

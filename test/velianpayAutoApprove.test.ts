@@ -154,6 +154,7 @@ const SEED_EXTRA: Record<string, Record<string, string | number>> = {
   membership_payments: { amount: 250000 },
   pro_payments: { amount: 150000 },
   account_addon_payments: { amount: 100000 },
+  token_orders: { amount: 25000 },
 }
 
 const UNIQUE_CODE = 137
@@ -172,6 +173,13 @@ function seedUser(userId: number): void {
 function seedVelianpayPending(table: string, userId: number, extra: Record<string, string | number>) {
   const amount = Number(extra.amount)
   assert.ok(Number.isFinite(amount) && amount > 0, `SEED_EXTRA['${table}'].amount wajib terisi`)
+  if (table === 'token_orders') {
+    const tok = db.prepare(
+      "INSERT INTO tokens (provider, name, token_value, price) VALUES ('roboneo', 'segel-token', 'segel-token-value', 25000)",
+    ).run()
+    extra.token_id = Number(tok.lastInsertRowid)
+    extra.bulk_id = `segel-bulk-${userId}`
+  }
   const payable = amount + UNIQUE_CODE
   const cols: Record<string, string | number> = {
     user_id: userId,
@@ -216,7 +224,11 @@ QRIS_TABLES.forEach((t, i) => {
     assert.ok(r.paid >= 1, `${t.table}: poll harus menemukan pembayaran lunas (dapat ${r.paid})`)
 
     const row = db.prepare(`SELECT status FROM ${t.table} WHERE id = ?`).get(seeded.rowId) as { status: string }
-    assert.equal(row.status, 'approved', `${t.table} harus auto-approve tanpa admin`)
+    assert.equal(
+      row.status,
+      t.table === 'token_orders' ? 'confirmed' : 'approved',
+      `${t.table} harus auto-approve tanpa admin`,
+    )
     const pay = db
       .prepare('SELECT status FROM velianpay_payment WHERE order_id = ?')
       .get(seeded.orderId) as { status: string }

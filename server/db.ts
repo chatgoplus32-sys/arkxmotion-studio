@@ -148,6 +148,24 @@ const orderColumns = db.prepare("PRAGMA table_info(token_orders)").all() as { na
 if (!orderColumns.some(c => c.name === 'bulk_id')) {
   db.exec("ALTER TABLE token_orders ADD COLUMN bulk_id TEXT NOT NULL DEFAULT ''")
 }
+// Token Bank: pembelian sekarang lewat checkout VelianPay. Nominal unik
+// disimpan per order supaya webhook/poller bisa mengonfirmasi bulk yang dibayar.
+if (!orderColumns.some(c => c.name === 'amount')) {
+  db.exec("ALTER TABLE token_orders ADD COLUMN amount INTEGER NOT NULL DEFAULT 0")
+}
+if (!orderColumns.some(c => c.name === 'amount_total')) {
+  db.exec("ALTER TABLE token_orders ADD COLUMN amount_total INTEGER NOT NULL DEFAULT 0")
+}
+if (!orderColumns.some(c => c.name === 'unique_code')) {
+  db.exec("ALTER TABLE token_orders ADD COLUMN unique_code INTEGER NOT NULL DEFAULT 0")
+}
+for (const [name, sql] of [
+  ['paid_amount', 'ALTER TABLE token_orders ADD COLUMN paid_amount INTEGER NOT NULL DEFAULT 0'],
+  ['paid_at', 'ALTER TABLE token_orders ADD COLUMN paid_at DATETIME'],
+  ['pay_ref', "ALTER TABLE token_orders ADD COLUMN pay_ref TEXT NOT NULL DEFAULT ''"],
+] as const) {
+  if (!orderColumns.some(c => c.name === name)) db.exec(sql)
+}
 
 // Provider tanpa dompet (Roboneo/Framia, dll.) tidak bisa dikreditkan
 // otomatis. Permintaan top-up-nya dicatat di sini, lalu admin memverifikasi
